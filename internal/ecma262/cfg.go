@@ -62,6 +62,12 @@ type Func struct {
 	Promise  bool     // the algorithm returns a promise
 	Nodes    []Node   // CFG nodes in flat order
 
+	// Implements names the declared function types this function is stored
+	// as, such as an event handler type, so a CallNode whose Via names one
+	// may reach it. A front end reads them off the library's types. The
+	// ECMA-262 graph holds none.
+	Implements []string
+
 	// Digest fingerprints this algorithm as cfg.json serializes it. A curated
 	// entry records the digest of the algorithm its author reviewed. A spec
 	// bump then flags the entries whose algorithm it rewrote and leaves the
@@ -97,11 +103,17 @@ type LetNode struct {
 // a formal parameter holding a function, which is a callback such as the
 // `callbackfn` in `? Call(callbackfn, ...)`. The origin map tells the two
 // apart: a callee whose origin is a parameter is a callback.
+//
+// Via names the declared function type of a callee read out of state rather
+// than passed as a parameter, such as a handler an emitter stored when it was
+// registered. A front end reads it off the library's types. It is empty on
+// every other call, and on every call in the ECMA-262 graph.
 type CallNode struct {
 	Target string // empty when the result is discarded
 	Callee string
 	Args   []Expr
 	Guard  Guard
+	Via    string
 }
 
 // SlotWriteNode writes Value into Object's Slot. Slot is the name without its
@@ -336,6 +348,8 @@ type decodeFunc struct {
 	Variadic *int          `json:"variadic"`
 	Promise  bool          `json:"promise"`
 	Nodes    []*decodeNode `json:"nodes"`
+	// omitempty keeps the digest of a function without the field unchanged.
+	Implements []string `json:"implements,omitempty"`
 }
 
 type decodeNode struct {
@@ -350,6 +364,7 @@ type decodeNode struct {
 	ErrorType string        `json:"errorType"`
 	Value     *decodeExpr   `json:"value"`
 	Text      []string      `json:"text"`
+	Via       string        `json:"via,omitempty"`
 }
 
 type decodeExpr struct {
@@ -394,6 +409,7 @@ func (d *decodeNode) fields() []field {
 		{"errorType", d.ErrorType != ""},
 		{"value", d.Value != nil},
 		{"text", d.Text != nil},
+		{"via", d.Via != ""},
 	}
 }
 
@@ -440,6 +456,8 @@ func (d *decodeFunc) toFunc(index int) (*Func, error) {
 		Promise:  d.Promise,
 		Nodes:    make([]Node, 0, len(d.Nodes)),
 		Digest:   digest,
+
+		Implements: d.Implements,
 	}
 	for i, dn := range d.Nodes {
 		if dn == nil {
@@ -466,14 +484,14 @@ func (d *decodeNode) toNode() (Node, error) {
 		}
 		return &LetNode{Target: d.Target, Source: source}, nil
 	case NodeCall:
-		if err := d.check("target", "callee", "args", "guard"); err != nil {
+		if err := d.check("target", "callee", "args", "guard", "via"); err != nil {
 			return nil, err
 		}
 		args, err := toExprs(d.Args)
 		if err != nil {
 			return nil, err
 		}
-		return &CallNode{Target: d.Target, Callee: d.Callee, Args: args, Guard: d.Guard}, nil
+		return &CallNode{Target: d.Target, Callee: d.Callee, Args: args, Guard: d.Guard, Via: d.Via}, nil
 	case NodeSlotWrite:
 		if err := d.check("object", "slot", "value"); err != nil {
 			return nil, err

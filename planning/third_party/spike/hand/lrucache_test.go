@@ -133,7 +133,7 @@ func init() {
 				let("v", Prop(Prop(V("this$")))).
 				to("bf", "LRUCache.#isBackgroundFetch", V("this$"), V("v")).
 				unresolved("", "property-value:v.__abortController.abort(...)", Prop(V("v")), Alloc()).
-				unresolved("", "property-value:this.#dispose(v, k, reason)", V("v"), V("k"), V("reason")).
+				stored("", "LRUCache.Disposer", Prop(V("this$")), Lit(), V("v"), V("k"), V("reason")).
 				builtin("", "Array.prototype.push", Prop(V("this$")), Alloc(V("v"), V("k"), V("reason"))).
 				builtin("", "Map.prototype.delete", Prop(V("this$")), V("k")).
 				set(Prop(V("this$")), Lit()).
@@ -142,7 +142,7 @@ func init() {
 				set(V("this$"), Lit()).
 				builtin("", "Array.prototype.push", Prop(V("this$")), V("index")).
 				builtin("task", "Array.prototype.shift", Prop(V("this$"))).
-				unresolved("", "property-value:this.#disposeAfter(...task)", Prop(V("task"))).
+				stored("", "LRUCache.Disposer", Prop(V("this$")), Lit(), Prop(V("task"))).
 				ret(Lit()),
 
 			// #clear(reason) empties every list the cache holds and calls the
@@ -150,7 +150,7 @@ func init() {
 			impl("LRUCache.#clear", "reason").
 				builtin("", "Map.prototype.clear", Prop(V("this$"))).
 				builtin("", "Array.prototype.fill", Prop(V("this$")), Lit()).
-				unresolved("", "property-value:this.#dispose(v, k, reason)", Lit(), Lit(), V("reason")).
+				stored("", "LRUCache.Disposer", Prop(V("this$")), Lit(), Lit(), Lit(), V("reason")).
 				set(V("this$"), Lit()).
 				ret(Lit()),
 

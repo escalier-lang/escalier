@@ -12,9 +12,11 @@ rather than unknown.
 
 The check ran twice. The first run used the analysis as the builtins
 workstream left it. The second ran after the origin-lattice changes that
-section A below describes, which are now part of `internal/ecma262`. A third
-run added the callback rule that section C describes, which changed no
-member's settled status, so the tables below report the first two runs.
+section A below describes, which are now part of `internal/ecma262`. Two
+later runs added the callback rule and its extension to stored callbacks,
+which section C describes. The callback rule settled nothing, and stored
+callbacks settled 2 more members, for 24 of 56. The tables below report the
+first two runs, and section C reports the later two.
 
 ## Result
 
@@ -207,13 +209,49 @@ now an owned value, so `immer`'s `produce` proves `base` is `&mut`, and
 zod's `string` returns a fresh value where its return was unknown. The return
 alias is known for 36 of 56 members.
 
-`mitt`'s `Emitter.emit` is the one member callbacks still block alone. It
-reads the handlers `on` stored in the captured map and calls each with
-`evt`. A stored callback is outside the rule, because the function the
-caller registered reaches `emit` through state rather than as a parameter.
-Covering it means carrying the `&` contract from `on`'s `handler`
-parameter to the map that holds it. `lru-cache`'s `dispose` option is the
-same shape.
+#### Stored callbacks
+
+A stored callback is a function the package reads out of state and calls,
+rather than one it was passed. Examples are `mitt`'s handlers, which `on`
+stores in the captured map and `emit` calls, and `lru-cache`'s `dispose`
+option, which the constructor stores in a private field.
+
+The analysis cannot follow a function through state without points-to
+analysis, so the rule keys on the declared type instead. A front end reads
+both facts off the library's types:
+
+- A call through a function read out of state carries `via`, the declared
+  function type of the value, such as `Handler` or `LRUCache.Disposer`.
+- Each of the package's own functions that the types say is stored as that
+  type lists it in `implements`.
+
+A `via` call keeps the callback contract. The summary records the type as
+`stored{T}` and charges nothing for a function the caller supplied, since
+Escalier checks that function where the caller registers it. Each of the
+package's own implementers is charged against the call's arguments as if it
+were called directly, because no caller checked it. The call's result is an
+owned value joined with what those implementers return.
+
+The rule is sound only if the `implements` lists are complete. A package
+function stored as `T` that no list names would run unchecked. A
+TypeScript-checker front end can produce the lists from assignments and
+contextual types. Code typed `any` can hide one, as untyped JavaScript does.
+No fixture in this check lowers a package function stored as a callback type,
+which each fixture was checked against the package source.
+
+With stored callbacks covered, theme C blocks nothing. Two members settle in
+the base run, both matching the source:
+
+- `mitt`'s `Emitter.emit` comes out `self: &` and `evt: &`.
+- `eventemitter3`'s `EventEmitter.emit` comes out `evt: &`. It calls each
+  listener through `listeners.fn.call(listeners.context, ...)`, a stored
+  `EventEmitter.ListenerFn`.
+
+`lru-cache`'s `dispose` calls no longer block anything, but every member
+that makes them has other blockers. rxjs's `map` was blocked by calls this
+check had filed as closure parameters. They are method calls on an
+`Observable` or a `Subscriber`, so they now count as dynamic dispatch, and
+its `project.call(thisArg, ...)` is a callback through a parameter.
 
 `Array.prototype.forEach` and the other builtins that take a callback still
 report `none` rather than `callbacks{0}`. They call it through the `Call`
@@ -305,11 +343,12 @@ nothing a front end has to supply.
 What remains is theme D, and it is the expensive part. Most open members wait
 on resolving functions that exist only at runtime. The ladder puts the
 members a front end that handles theme D could settle at 21 of the 34 still
-open. Whether to build one is the decision for the spike. The callback rule is in
-place. It settles nothing on its own, because every member a callback blocked
-had another blocker, but it sharpens return aliases and lets a front end that
-resolves theme D settle callback-heavy members without a separate pass.
-Stored callbacks are the part of theme C it leaves open.
+open. Whether to build one is the decision for the spike. The callback rule and its
+extension to stored callbacks are in place, and theme C blocks nothing. The
+direct rule settled nothing on its own, because every member a callback
+blocked had another blocker. Stored callbacks settled both emitters. The
+rule's soundness rests on the front end listing every package function stored
+as a callback type, which is one more thing the front end has to produce.
 
 ## Reproducing
 

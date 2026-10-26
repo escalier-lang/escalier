@@ -47,7 +47,7 @@ func init() {
 				let("options", V("options")).let("options", Alloc()).
 				// options.random ?? options.rng?.() ?? rng()
 				let("rnds", Prop(V("options"))).
-				unresolved("r1", "property-value:options.rng()", V("options")).
+				stored("r1", "Version4Options.rng", Prop(V("options")), Lit()).
 				let("rnds", V("r1")).
 				to("r2", "rng", Lit()).
 				let("rnds", V("r2")).

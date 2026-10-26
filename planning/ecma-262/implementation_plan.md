@@ -633,6 +633,10 @@ while worklist nonempty:
         switch node.Kind:
         case SlotWrite where node.Slot in BackingStoreSlots:   // FR3
             attribute(F, origin, node.Object)
+        case Call where node.Via != "" and originOf(origin, node.Callee) is not Param:
+            Stored[F].add(node.Via)                            // a stored callback
+            for G in implementers[node.Via]:                   // the package's own, unchecked
+                charge G as a call with node.Args
         case Call:
             if node.Callee not in AllFuncs:                    // unresolved callee
                 chargeUnresolved(F, origin, node)
@@ -2377,6 +2381,10 @@ type Func struct {
     Promise bool     `json:"promise"` // true when the algorithm builds a promise capability and
                                        // returns its [[Promise]], or the function is async (§9.3)
     Nodes   []Node   `json:"nodes"`   // CFG nodes in flat order; branches carry no analyzed data
+    Implements []string `json:"implements,omitempty"` // the declared function types this function is
+                                       // stored as, which a Call whose Via names one may reach.
+                                       // Never emitted for ECMA-262, only by a front end reading a
+                                       // library's types.
 }
 
 type NodeKind string
@@ -2420,6 +2428,9 @@ type Node struct {
                                                     // escape detection — the V in "Append V to O.[[slot]]");
                                                     // Throw of a non-constructed value: the thrown expr,
                                                     // whose origin §9.1 reads (rare in std:*)
+    Via       string   `json:"via,omitempty"`       // Call: the declared function type of a callee read
+                                                    // out of state, a stored callback (§4.1). Never
+                                                    // emitted for ECMA-262.
     Text      []string `json:"text,omitempty"`      // Opaque: the specification prose of each phrase the
                                                     // lowering could not formalize, one entry per phrase.
                                                     // It is the evidence for telling a step that costs the

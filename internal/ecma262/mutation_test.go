@@ -51,9 +51,10 @@ func TestMutationsString(t *testing.T) {
 		"Unattributable": {Mutations{Unattributable: true}, "unattributable"},
 		"Incomplete":     {Mutations{Incomplete: true}, "incomplete"},
 		"Callbacks":      {Mutations{Callbacks: []int{0, 3}}, "callbacks{0,3}"},
+		"Stored":         {Mutations{Stored: []string{"Handler", "Listener"}}, "stored{Handler,Listener}"},
 		"Every": {
-			Mutations{Args: []int{1}, Receiver: true, Callbacks: []int{2}, Unattributable: true, Incomplete: true},
-			"receiver args{1} callbacks{2} unattributable incomplete",
+			Mutations{Args: []int{1}, Receiver: true, Callbacks: []int{2}, Stored: []string{"Handler"}, Unattributable: true, Incomplete: true},
+			"receiver args{1} callbacks{2} stored{Handler} unattributable incomplete",
 		},
 	}
 
@@ -577,6 +578,82 @@ func TestMutationSummaryCallbacks(t *testing.T) {
 			s := NewMutationSummary(cfg)
 			require.Equal(t, "callbacks{1}", s.Of(cfg.AbstractOp("Each")).String())
 			require.Equal(t, test.want, s.Of(cfg.AbstractOp("Caller")).String())
+		})
+	}
+}
+
+// A stored callback is a function read out of state rather than passed in,
+// and the call's Via names its declared type. One the caller supplied keeps
+// the callback contract, so the call charges nothing. One of the graph's own
+// functions that implements the type is charged against the call's arguments.
+// Each graph below holds `Emit`, which reads a handler out of its receiver
+// and calls it with parameter 0.
+func TestMutationSummaryStoredCallbacks(t *testing.T) {
+	const emit = `{"name":"Emit","kind":"builtin-method","params":["evt"],"nodes":[` +
+		`{"kind":"let","target":"h","source":{"kind":"prop","object":{"kind":"this"}}},` +
+		`{"kind":"call","callee":"h","args":[{"kind":"var","var":"evt"}],"guard":"plain","via":"Handler"}]},` +
+		`{"name":"Set","kind":"abstract-op","params":["O","P","V","Throw"]}`
+	tests := map[string]struct {
+		implementer string
+		want        string
+	}{
+		"CallerSuppliedOnly": {"", "stored{Handler}"},
+		"WritingImplementer": {
+			`,{"name":"Log","kind":"abstract-op","params":["e"],"implements":["Handler"],"nodes":[` +
+				`{"kind":"call","callee":"Set","args":[{"kind":"var","var":"e"}],"guard":"plain"}]}`,
+			"args{0} stored{Handler}",
+		},
+		"ReadingImplementer": {
+			`,{"name":"Log","kind":"abstract-op","params":["e"],"implements":["Handler"],"nodes":[]}`,
+			"stored{Handler}",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg, err := ParseCFG([]byte(`{"specTarget":"abc","funcs":[` + emit + test.implementer + `]}`))
+			require.NoError(t, err)
+
+			require.Equal(t, test.want, NewMutationSummary(cfg).Of(cfg.Builtin("Emit")).String())
+		})
+	}
+}
+
+// A Via on a callee bound to a parameter leaves the call to the callback rule,
+// which records it under the parameter's position.
+func TestMutationSummaryViaOnAParameterIsACallback(t *testing.T) {
+	cfg, err := ParseCFG([]byte(`{"specTarget":"abc","funcs":[` +
+		`{"name":"Demo","kind":"abstract-op","params":["fn"],"nodes":[` +
+		`{"kind":"call","callee":"fn","guard":"plain","via":"Handler"}]}]}`))
+	require.NoError(t, err)
+
+	require.Equal(t, "callbacks{0}", NewMutationSummary(cfg).Of(cfg.AbstractOp("Demo")).String())
+}
+
+// A stored callback's result is the owned value the contract promises, joined
+// with what the graph's implementers of its type return in the call's terms.
+func TestOriginOfAStoredCallbackResult(t *testing.T) {
+	const demo = `{"name":"Demo","kind":"abstract-op","params":["x"],"nodes":[` +
+		`{"kind":"let","target":"h","source":{"kind":"var","var":"?"}},` +
+		`{"kind":"call","target":"r","callee":"h","args":[{"kind":"var","var":"x"}],"guard":"plain","via":"Handler"}]}`
+	tests := map[string]struct {
+		implementer string
+		want        Origin
+	}{
+		"CallerSuppliedOnly": {"", Fresh},
+		"IdentityImplementer": {
+			`,{"name":"Id","kind":"abstract-op","params":["e"],"implements":["Handler"],"nodes":[` +
+				`{"kind":"return","value":{"kind":"var","var":"e"}}]}`,
+			Origin{Kind: OriginParam, Index: 0, Shallow: true},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg, err := ParseCFG([]byte(`{"specTarget":"abc","funcs":[` + demo + test.implementer + `]}`))
+			require.NoError(t, err)
+
+			require.Equal(t, test.want, NewOriginMaps(cfg)[cfg.AbstractOp("Demo")].Of("r"))
 		})
 	}
 }

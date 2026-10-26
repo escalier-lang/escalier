@@ -438,6 +438,11 @@ type OriginMap struct {
 	origins map[string]Origin
 	free    set.Set[string]
 	returns func(m *OriginMap, callee string) (Origin, bool)
+
+	// stored, when set, answers what the graph's functions that implement a
+	// declared function type return, one origin each in the implementer's
+	// terms. It reports false when any of them is not known yet.
+	stored func(via string) ([]Origin, bool)
 }
 
 // freeNames returns fn's free names, the value names it reads but never binds.
@@ -521,15 +526,16 @@ func freeNames(fn *Func) set.Set[string] {
 // loop's back edge redefines still reaches its uses. It terminates because an
 // origin only climbs the lattice, from unset to one origin to `Unknown`.
 func NewOriginMap(fn *Func) *OriginMap {
-	return newOriginMap(fn, nil)
+	return newOriginMap(fn, nil, nil)
 }
 
-func newOriginMap(fn *Func, returns func(m *OriginMap, callee string) (Origin, bool)) *OriginMap {
+func newOriginMap(fn *Func, returns func(m *OriginMap, callee string) (Origin, bool), stored func(via string) ([]Origin, bool)) *OriginMap {
 	m := &OriginMap{
 		fn:      fn,
 		origins: make(map[string]Origin, len(fn.Params)+len(fn.Nodes)),
 		free:    freeNames(fn),
 		returns: returns,
+		stored:  stored,
 	}
 	for {
 		changed := false
@@ -542,7 +548,7 @@ func newOriginMap(fn *Func, returns func(m *OriginMap, callee string) (Origin, b
 				changed = m.bind(node.Target, m.eval(node.Source)) || changed
 			case *CallNode:
 				if node.Target != "" {
-					changed = m.bind(node.Target, m.evalCall(node.Callee, node.Args)) || changed
+					changed = m.bind(node.Target, m.evalCallNode(node)) || changed
 				}
 			default:
 				// No other node shape binds a name.
@@ -567,6 +573,18 @@ func newOriginMap(fn *Func, returns func(m *OriginMap, callee string) (Origin, b
 // more precise callee makes its caller more precise, so the rounds stop.
 func NewOriginMaps(cfg *CFG) map[*Func]*OriginMap {
 	summaries := make(map[*Func]Origin)
+	implementers := implementersOf(cfg)
+	stored := func(via string) ([]Origin, bool) {
+		var rs []Origin
+		for _, target := range implementers[via] {
+			r, ok := summaries[target]
+			if !ok {
+				return nil, false
+			}
+			rs = append(rs, r)
+		}
+		return rs, true
+	}
 	for {
 		maps := make(map[*Func]*OriginMap, len(cfg.Funcs))
 		for _, fn := range cfg.Funcs {
@@ -577,7 +595,7 @@ func NewOriginMaps(cfg *CFG) map[*Func]*OriginMap {
 				}
 				r, ok := summaries[target]
 				return r, ok
-			})
+			}, stored)
 		}
 		changed := false
 		for _, fn := range cfg.Funcs {
@@ -594,6 +612,18 @@ func NewOriginMaps(cfg *CFG) map[*Func]*OriginMap {
 			return maps
 		}
 	}
+}
+
+// implementersOf maps each declared function type to the graph's functions
+// that implement it, in graph order.
+func implementersOf(cfg *CFG) map[string][]*Func {
+	implementers := map[string][]*Func{}
+	for _, fn := range cfg.Funcs {
+		for _, via := range fn.Implements {
+			implementers[via] = append(implementers[via], fn)
+		}
+	}
+	return implementers
 }
 
 // returnOrigin joins the origins of every value fn returns, in fn's own terms.
@@ -719,6 +749,30 @@ func (m *OriginMap) eval(e Expr) Origin {
 		// An operand the graph left out, which reaches Eval as a nil Expr.
 		return Unknown
 	}
+}
+
+// evalCallNode returns the origin of the result of a call node.
+//
+// A call through a stored function returns what the callback contract
+// promises, an owned value, or what one of the graph's own implementers of its
+// type returns. A callee bound to a parameter is a callback whatever its Via
+// says, which evalCall answers.
+func (m *OriginMap) evalCallNode(node *CallNode) Origin {
+	if node.Via == "" || m.Of(node.Callee).Kind == OriginParam {
+		return m.evalCall(node.Callee, node.Args)
+	}
+	if m.stored == nil {
+		return Unknown
+	}
+	rs, ok := m.stored(node.Via)
+	if !ok {
+		return Unknown
+	}
+	acc := Fresh
+	for _, r := range rs {
+		acc = acc.join(resolved(m.instantiate(r, node.Args)))
+	}
+	return acc
 }
 
 // evalCall returns the origin of a call's result.

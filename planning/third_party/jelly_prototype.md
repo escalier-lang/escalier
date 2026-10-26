@@ -46,8 +46,13 @@ other five have blockers the rule does not cover:
   callback, but they are dynamic dispatch on a value the caller passed, not
   calls through a parameter. `toDate` also passes `context || argument` to
   `constructFrom`, and the join of two parameters is Unknown.
-- `mitt`'s `Emitter.emit` calls handlers `on` stored, which the rule does not
-  reach.
+- `mitt`'s `Emitter.emit` calls handlers `on` stored, which the callback rule
+  does not reach.
+
+Extending the rule to stored callbacks settles 3 more, for 27 of 56. These are
+`mitt`'s and `eventemitter3`'s `emit`, plus rxjs's `Observable.pipe`. With
+Jelly's targets, `pipe` calls either `piped` or the one operator the caller
+passed, and both reach operators only as stored `UnaryFunction`s.
 
 The rule also proves lodash's `mapValues` writes its object. `keys`, the
 function `mapValues` passes to `baseFor`'s closure, reaches `getRawTag`,
@@ -60,12 +65,14 @@ hand-derived expectation had missed that path.
 | Jelly's targets, before lowering them       | 28/56   | an upper bound                                     |
 | Jelly's targets, lowered                    | 23/56   | 12 / 5 / 18 / 8 / 12 / 10                          |
 | The same, with the callback rule            | 24/56   | 16 / 5 / 5 / 15 / 12 / 10                          |
+| The same, with stored callbacks too         | 27/56   | 16 / 5 / 0 / 13 / 12 / 9                           |
 
 The themes are the ones in [hand_lowering.md](hand_lowering.md): A the origin
 lattice, B module-level and captured state, C callbacks, D dynamic dispatch, E
 code outside the package, and F not lowered. With the callback rule, theme C
 covers only callbacks the package stores and calls later, and calls on a
-method of the caller's object count under theme D. Theme F grew because the rxjs and
+method of the caller's object count under theme D. With stored callbacks
+covered, theme C is empty. Theme F grew because the rxjs and
 zod targets fan out into code this check does not lower. Every answer the
 analysis gave still matches the source except `app.enabled`, the sound but
 over-strict `&mut self` the earlier run found.
@@ -184,8 +191,9 @@ stores and calls later, such as `mitt`'s handlers and lru-cache's
   lattice the analysis has now.
 - **Callbacks were the next lever, and pulling it moved little.** They
   blocked 18 of the 33 open members after Jelly, more than any other theme.
-  The callback rule settles one of them, because the rest also wait on joins,
-  dispatch on the caller's objects, or stored callbacks.
+  The callback rule settles one of them, and its extension to stored
+  callbacks three more. The rest also wait on joins or on dispatch on the
+  caller's objects.
 - **Context-insensitive targets fan out.** A callback or an initializer that
   many callers share collects all of their functions. Summarizing such a call
   with the union of its targets is sound but merges unrelated effects.

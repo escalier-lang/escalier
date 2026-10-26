@@ -239,11 +239,11 @@ func init() {
 			impl("LRUCache#removeItemSizeDefault", "index").ret(Lit()),
 
 			// #clear(reason), with its dispose call resolved to the
-			// caller's option.
+			// caller's option, a stored LRUCache.Disposer.
 			impl("LRUCache.#clear", "reason").
 				builtin("", "Map.prototype.clear", Prop(V("this$"))).
 				builtin("", "Array.prototype.fill", Prop(V("this$")), Lit()).
-				unresolved("", "closure-param:this.#dispose(v, k, reason), the caller's dispose option", Lit(), Lit(), V("reason")).
+				stored("", "LRUCache.Disposer", Prop(V("this$")), Lit(), Lit(), Lit(), V("reason")).
 				set(V("this$"), Lit()).
 				ret(Lit()),
 
@@ -310,8 +310,9 @@ func init() {
 				to("bf", "LRUCache.#isBackgroundFetch", V("this$"), V("v")).
 				unresolved("", "host-api:v.__abortController.abort(...)", Prop(V("v")), Alloc()).
 				// #dispose and #disposeAfter hold the dispose and
-				// disposeAfter options, which the caller supplies.
-				unresolved("", "closure-param:this.#dispose(v, k, reason), the caller's dispose option", V("v"), V("k"), V("reason")).
+				// disposeAfter options, which the caller supplies and which
+				// share the type LRUCache.Disposer.
+				stored("", "LRUCache.Disposer", Prop(V("this$")), Lit(), V("v"), V("k"), V("reason")).
 				builtin("", "Array.prototype.push", Prop(V("this$")), Alloc(V("v"), V("k"), V("reason"))).
 				builtin("", "Map.prototype.delete", Prop(V("this$")), V("k")).
 				set(Prop(V("this$")), Lit()).
@@ -320,7 +321,7 @@ func init() {
 				set(V("this$"), Lit()).
 				builtin("", "Array.prototype.push", Prop(V("this$")), V("index")).
 				builtin("task", "Array.prototype.shift", Prop(V("this$"))).
-				unresolved("", "closure-param:this.#disposeAfter(...task), the caller's disposeAfter option", Prop(V("task"))).
+				stored("", "LRUCache.Disposer", Prop(V("this$")), Lit(), Prop(V("task"))).
 				ret(Lit()),
 		},
 
@@ -359,14 +360,24 @@ func init() {
 				unresolved("", "not-lowered:Subscriber.complete and its destination's complete", V("o")).
 				ret(Lit()),
 
+			// piped(input), the closure pipeFromArray returns, which calls
+			// each operator its fns hold.
+			impl("util/pipe#piped", "input").
+				let("prev", Unknown()).let("cfn", Unknown()).
+				stored("", "UnaryFunction", V("cfn"), Lit(), V("prev")).
+				builtin("r", "Array.prototype.reduce", V("fns"), Alloc(), V("input")).
+				ret(V("r")),
+
 			// Observable.pipe(...operations): pipeFromArray(operations)
 			// returns a function that Jelly resolves to piped, identity,
-			// the operate closure, or take's. piped calls each operator,
-			// and the operate closure calls source.lift, neither lowered
-			// here.
+			// the operate closure, or take's. The last two are operators
+			// the caller passed, which pipeFromArray hands back when there
+			// is only one, so the call is a stored UnaryFunction call.
 			impl("Observable.pipe", "operations").
 				to("piped", "util/pipe#pipeFromArray", Lit(), V("operations")).
-				unresolved("r", "not-lowered:piped(this), operate's closure and take's", Lit(), V("this$")).
+				to("r1", "util/pipe#piped", Lit(), V("this$")).
+				stored("r2", "UnaryFunction", Prop(V("operations")), Lit(), V("this$")).
+				let("r", V("r1")).let("r", V("r2")).let("r", V("this$")).
 				ret(V("r")),
 		},
 

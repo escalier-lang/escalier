@@ -67,9 +67,11 @@ func init() {
 				ret(G("fn:identity")).
 				ret(Prop(V("fns"))).
 				// function piped(input) { return fns.reduce((prev, fn) => fn(prev), input) }
+				// Each fn is an operator the caller passed to pipe, a stored
+				// UnaryFunction.
 				let("input", Unknown()).
 				let("prev", Unknown()).let("cfn", Unknown()).
-				unresolved("", "closure-param:fn(prev)", V("prev")).
+				stored("", "UnaryFunction", V("cfn"), Lit(), V("prev")).
 				builtin("", "Array.prototype.reduce", V("fns"), Alloc(), V("input")).
 				ret(Alloc()),
 
@@ -83,7 +85,7 @@ func init() {
 			// source.lift with a function that calls init.
 			impl("util/lift#operate", "init").
 				let("source", Unknown()).
-				unresolved("", "closure-param:source.lift(...)", V("source"), Alloc()).
+				unresolved("", "interface-dispatch:source.lift(...)", V("source"), Alloc()).
 				let("liftedSource", Unknown()).
 				call("", "init", Lit(), V("liftedSource"), Unknown()).
 				unresolved("", "untyped:this.error(err)", Unknown(), Unknown()).
@@ -95,10 +97,10 @@ func init() {
 				let("source", Unknown()).let("subscriber", Unknown()).
 				let("index", Lit()).
 				let("value", Unknown()).
-				unresolved("pv", "closure-param:project.call(thisArg, value, index++)", V("project"), V("thisArg"), V("value"), Lit()).
-				unresolved("", "closure-param:subscriber.next(...)", V("subscriber"), V("pv")).
+				call("pv", "project", V("thisArg"), V("value"), Lit()).
+				unresolved("", "interface-dispatch:subscriber.next(...)", V("subscriber"), V("pv")).
 				unresolved("os", "not-lowered:createOperatorSubscriber(subscriber, ...)", Lit(), V("subscriber"), Alloc()).
-				unresolved("", "closure-param:source.subscribe(...)", V("source"), V("os")).
+				unresolved("", "interface-dispatch:source.subscribe(...)", V("source"), V("os")).
 				to("r", "util/lift#operate", Lit(), Alloc()).
 				ret(V("r")),
 		},

@@ -36,6 +36,13 @@
 //     abstract operation, as V("impl:keys"), and a builtin passed as a value
 //     is V("builtin:String"). A call that hands it to a callback charges what
 //     it mutates.
+//   - A call through a function read out of state, such as a handler an
+//     emitter stored when it was registered, is a stored callback. It names
+//     the declared function type the library's types give the value, as
+//     stored("", "Handler", V("handler"), Lit(), V("evt")). A package
+//     function that the types say is stored as that type lists it with
+//     implementing. No fixture has one, which each fixture checked against
+//     the package source.
 //   - A module-level binding is a GlobalExpr, written G(name). So is a
 //     package function held in a variable, which the analysis does not follow.
 //     A value a method's closure captures, such as mitt's `all`, is not
@@ -83,9 +90,16 @@ func G(name string) expr { return expr{"kind": "global", "var": name} }
 func Unknown() expr { return V("?") }
 
 type fn struct {
-	name   string
-	params []string
-	nodes  []node
+	name       string
+	params     []string
+	nodes      []node
+	implements []string
+}
+
+// implementing lists the declared function types f is stored as.
+func (f *fn) implementing(types ...string) *fn {
+	f.implements = append(f.implements, types...)
+	return f
 }
 
 func impl(name string, params ...string) *fn {
@@ -122,6 +136,15 @@ func (f *fn) builtin(target, key string, args ...expr) *fn {
 // reason and the call site, as "untyped:value.valueOf()".
 func (f *fn) unresolved(target, why string, args ...expr) *fn {
 	return f.call(target, "?"+why, args...)
+}
+
+// stored lowers a call through fnValue, a function read out of state whose
+// declared type is via. Its first argument is the receiver.
+func (f *fn) stored(target, via string, fnValue expr, args ...expr) *fn {
+	name := "stored$" + via
+	f.let(name, fnValue).call(target, name, args...)
+	f.nodes[len(f.nodes)-1]["via"] = via
+	return f
 }
 
 // set lowers `o.p = v` and `o[k] = v`.
@@ -444,7 +467,11 @@ func analyze(t *testing.T, p pkg) []memberResult {
 	var decoded []map[string]any
 	for _, f := range all {
 		byName[f.name] = f
-		decoded = append(decoded, map[string]any{"name": f.name, "kind": "abstract-op", "params": f.params, "nodes": f.nodes})
+		d := map[string]any{"name": f.name, "kind": "abstract-op", "params": f.params, "nodes": f.nodes}
+		if len(f.implements) > 0 {
+			d["implements"] = f.implements
+		}
+		decoded = append(decoded, d)
 	}
 	data, err := json.Marshal(map[string]any{"specTarget": p.name + "@" + p.version, "funcs": decoded})
 	require.NoError(t, err)
@@ -511,6 +538,17 @@ func (r *run) blockers(root *ecma262.Func) []string {
 				}
 				if origins.Of(n.Callee).Kind == ecma262.OriginParam {
 					// A callback, which the caller checks.
+					continue
+				}
+				if n.Via != "" {
+					// A stored callback. One the caller supplied is the
+					// caller's to check, and the package's own implementers
+					// are walked like any callee.
+					for _, impl := range r.cfg.Funcs {
+						if set.FromSlice(impl.Implements).Contains(n.Via) {
+							walk(impl)
+						}
+					}
 					continue
 				}
 				callee := r.cfg.AbstractOp(n.Callee)
@@ -890,11 +928,11 @@ type jellySite struct {
 
 // writeJellyLadder reports how many open members would settle once Jelly's
 // call targets replace the blockers it resolved. A blocker Jelly resolves to
-// package code or to a builtin is dropped. One it traces to a value the
-// caller supplies and the package stores counts as a stored callback, one it
-// traces to a method of an object the caller supplies counts as dynamic
-// dispatch, and one it traces outside the package counts as outside code. The count is an upper bound, since a resolved
-// target can bring blockers of its own.
+// package code or to a builtin is dropped. One it traces to a stored callback
+// counts under theme C, one it traces to a method of an object the caller
+// supplies counts as dynamic dispatch, and one it traces outside the package
+// counts as outside code. The count is an upper bound, since a resolved target
+// can bring blockers of its own.
 func writeJellyLadder(t *testing.T, sb *strings.Builder, names []string, blockers [][]string) {
 	_, here, _, _ := runtime.Caller(0)
 	data, err := os.ReadFile(filepath.Join(filepath.Dir(here), "../jelly/sites.json"))
@@ -914,7 +952,7 @@ func writeJellyLadder(t *testing.T, sb *strings.Builder, names []string, blocker
 				switch s.Outcome {
 				case "resolved", "builtin":
 					continue
-				case "caller":
+				case "stored":
 					theme = themeOrder[2]
 				case "caller-method":
 					theme = themeOrder[3]
@@ -927,16 +965,12 @@ func writeJellyLadder(t *testing.T, sb *strings.Builder, names []string, blocker
 		return themes
 	}
 
-	var settled, withStored []string
+	var settled []string
 	remaining := map[string]int{}
 	for i, bs := range blockers {
 		themes := themesAfter(bs)
 		if themes.Len() == 0 {
 			settled = append(settled, names[i])
-		}
-		themes.Remove(themeOrder[2])
-		if themes.Len() == 0 {
-			withStored = append(withStored, names[i])
 		}
 		for _, theme := range themesAfter(bs).ToSlice() {
 			remaining[theme]++
@@ -944,7 +978,6 @@ func writeJellyLadder(t *testing.T, sb *strings.Builder, names []string, blocker
 	}
 	fmt.Fprintf(sb, "\nwith the Jelly prototype's call targets, of %d open members:\n", len(blockers))
 	fmt.Fprintf(sb, "  %2d would settle: %s\n", len(settled), strings.Join(settled, ", "))
-	fmt.Fprintf(sb, "  %2d would settle if stored callbacks were the caller's responsibility too: %s\n", len(withStored), strings.Join(withStored, ", "))
 	fmt.Fprintf(sb, "  open members each theme still blocks:\n")
 	for _, theme := range themeOrder {
 		fmt.Fprintf(sb, "    %-66s %2d\n", theme, remaining[theme])

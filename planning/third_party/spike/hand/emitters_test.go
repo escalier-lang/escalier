@@ -39,11 +39,11 @@ func init() {
 				builtin("copy", "Array.prototype.slice", V("handlers")).
 				// .map((handler) => { handler(evt) }), with the closure inlined.
 				let("handler", Unknown()).
-				unresolved("", "closure-param:handler(evt)", V("evt")).
+				stored("", "Handler", V("handler"), Lit(), V("evt")).
 				builtin("", "Array.prototype.map", V("copy"), Alloc()).
 				builtin("handlers2", "Map.prototype.get", V("all"), Lit()).
 				builtin("copy2", "Array.prototype.slice", V("handlers2")).
-				unresolved("", "closure-param:handler(type, evt)", V("type"), V("evt")).
+				stored("", "WildcardHandler", V("handler"), Lit(), V("type"), V("evt")).
 				builtin("", "Array.prototype.map", V("copy2"), Alloc()).
 				ret(Lit()),
 		},
@@ -114,14 +114,14 @@ func init() {
 				ret(Lit()).
 				let("listeners", Prop(V("this$"))).
 				to("", "EventEmitter.removeListener", V("this$"), V("event"), Prop(V("listeners")), Lit(), Lit()).
-				// listeners.fn.call(listeners.context, a1, ...), a function the
-				// emitter read out of its own state.
-				unresolved("", "property-value:listeners.fn.call(listeners.context, a1)", Prop(V("listeners")), V("a1")).
+				// listeners.fn.call(listeners.context, a1, ...), a listener the
+				// emitter stored when it was added.
+				stored("", "EventEmitter.ListenerFn", Prop(V("listeners")), Prop(V("listeners")), V("a1")).
 				let("args", Alloc()).
 				set(V("args"), V("a1")).
-				unresolved("", "property-value:listeners.fn.apply(listeners.context, args)", Prop(V("listeners")), V("args")).
+				stored("", "EventEmitter.ListenerFn", Prop(V("listeners")), Prop(V("listeners")), V("args")).
 				to("", "EventEmitter.removeListener", V("this$"), V("event"), Prop(Prop(V("listeners"))), Lit(), Lit()).
-				unresolved("", "property-value:listeners[i].fn.call(listeners[i].context, a1)", Prop(Prop(V("listeners"))), V("a1")).
+				stored("", "EventEmitter.ListenerFn", Prop(Prop(V("listeners"))), Prop(Prop(V("listeners"))), V("a1")).
 				ret(Lit()),
 
 			// EventEmitter.prototype.on(event, fn, context)

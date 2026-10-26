@@ -150,6 +150,13 @@ var readOnlyInternalMethods = set.FromSlice([]string{
 // appears when the function called is read off the parameter, as
 // `options.rng` is.
 //
+// Stored holds the sorted declared function types of the stored callbacks the
+// function calls. A stored callback is a function read out of state, such as a
+// handler an emitter kept when it was registered, and the call's Via names its
+// type. It keeps the same contract as a callback, so a function the caller
+// supplied charges nothing. A function of the graph that implements the type
+// is charged against the call's arguments, since the caller never checked it.
+//
 // The two warnings name different failures, and §4.3 turns either into a
 // method the analysis publishes no receiver for, which §4.4 then answers by
 // review. Unattributable means the analysis saw a mutation it could not tie to
@@ -159,6 +166,7 @@ type Mutations struct {
 	Args           []int
 	Receiver       bool
 	Callbacks      []int
+	Stored         []string
 	Unattributable bool
 	Incomplete     bool
 }
@@ -184,6 +192,9 @@ func (m Mutations) String() string {
 		}
 		parts = append(parts, "callbacks{"+strings.Join(positions, ",")+"}")
 	}
+	if len(m.Stored) > 0 {
+		parts = append(parts, "stored{"+strings.Join(m.Stored, ",")+"}")
+	}
 	if m.Unattributable {
 		parts = append(parts, "unattributable")
 	}
@@ -208,6 +219,7 @@ type facts struct {
 	args           set.Set[int]
 	receiver       bool
 	callbacks      map[int]map[string][]Origin
+	stored         set.Set[string]
 	unattributable bool
 	incomplete     bool
 }
@@ -250,11 +262,12 @@ func NewMutationSummary(cfg *CFG) *MutationSummary {
 			facts:   make(map[*Func]*facts, len(cfg.Funcs)),
 			origins: make(map[*Func]*OriginMap, len(cfg.Funcs)),
 		},
-		callers: make(map[*Func][]*Func, len(cfg.Funcs)),
+		callers:      make(map[*Func][]*Func, len(cfg.Funcs)),
+		implementers: implementersOf(cfg),
 	}
 	origins := NewOriginMaps(cfg)
 	for _, fn := range cfg.Funcs {
-		a.summary.facts[fn] = &facts{args: set.NewSet[int](), callbacks: map[int]map[string][]Origin{}}
+		a.summary.facts[fn] = &facts{args: set.NewSet[int](), callbacks: map[int]map[string][]Origin{}, stored: set.NewSet[string]()}
 		a.summary.origins[fn] = origins[fn]
 	}
 	for _, fn := range cfg.Funcs {
@@ -289,10 +302,16 @@ func (s *MutationSummary) Of(fn *Func) Mutations {
 		callbacks = append(callbacks, position)
 	}
 	sort.Ints(callbacks)
+	var stored []string
+	if f.stored.Len() > 0 {
+		stored = f.stored.ToSlice()
+		sort.Strings(stored)
+	}
 	return Mutations{
 		Args:           args,
 		Receiver:       f.receiver,
 		Callbacks:      callbacks,
+		Stored:         stored,
 		Unattributable: f.unattributable,
 		Incomplete:     f.incomplete,
 	}
@@ -307,9 +326,13 @@ func (s *MutationSummary) originsOf(fn *Func) *OriginMap {
 // analysis is the state the fixpoint runs over. callers is built once and read
 // from then on, as are the origin maps the summary holds. Only the summary's
 // facts change as the fixpoint iterates.
+//
+// implementers maps a declared function type to the graph's functions that
+// implement it, which a call through a stored function of that type may reach.
 type analysis struct {
-	summary *MutationSummary
-	callers map[*Func][]*Func
+	summary      *MutationSummary
+	callers      map[*Func][]*Func
+	implementers map[string][]*Func
 }
 
 // callees returns the functions fn calls, in call order and without repeats. A
@@ -362,7 +385,16 @@ func (a *analysis) callees(cfg *CFG, fn *Func) []*Func {
 
 	for _, node := range fn.Nodes {
 		if call, ok := node.(*CallNode); ok {
-			add(call.Callee)
+			if stored(a.summary.origins[fn], call) {
+				for _, target := range a.implementers[call.Via] {
+					if !seen.Contains(target) {
+						seen.Add(target)
+						called = append(called, target)
+					}
+				}
+			} else {
+				add(call.Callee)
+			}
 			addPassed(call.Args)
 		}
 		for _, e := range readsOf(node) {
@@ -385,6 +417,13 @@ func resolveCallee(cfg *CFG, origin *OriginMap, callee string) *Func {
 		return nil
 	}
 	return cfg.AbstractOp(callee)
+}
+
+// stored reports whether call goes through a stored function: one its Via
+// names a type for, and whose callee is not one of the function's parameters,
+// which the callback rule answers for instead.
+func stored(origin *OriginMap, call *CallNode) bool {
+	return call.Via != "" && origin.Of(call.Callee).Kind != OriginParam
 }
 
 // passedFunc returns the function of the graph an argument names, or nil when
@@ -462,7 +501,11 @@ func (a *analysis) transfer(cfg *CFG, fn *Func) bool {
 				changed = f.markIncomplete() || changed
 			}
 		case *CallNode:
-			changed = a.charge(cfg, f, origin, node.Callee, node.Args) || changed
+			if stored(origin, node) {
+				changed = a.chargeStored(cfg, f, origin, node.Via, node.Args) || changed
+			} else {
+				changed = a.charge(cfg, f, origin, node.Callee, node.Args) || changed
+			}
 		case *OpaqueNode:
 			// A step §3 could not lower, such as a prose step.
 			changed = f.markIncomplete() || changed
@@ -530,7 +573,29 @@ func (a *analysis) charge(cfg *CFG, f *facts, origin *OriginMap, callee string, 
 	if target == nil {
 		return a.chargeUnresolved(f, origin, callee, args)
 	}
+	return a.chargeTarget(cfg, f, origin, target, args)
+}
 
+// chargeStored charges a call through a stored function of type via, and
+// reports whether that grew the summary. A function the caller supplied keeps
+// the callback contract, so the call records via and charges nothing for it.
+// Each of the graph's own implementers of via is charged as if called
+// directly.
+func (a *analysis) chargeStored(cfg *CFG, f *facts, origin *OriginMap, via string, args []Expr) bool {
+	changed := false
+	if !f.stored.Contains(via) {
+		f.stored.Add(via)
+		changed = true
+	}
+	for _, target := range a.implementers[via] {
+		changed = a.chargeTarget(cfg, f, origin, target, args) || changed
+	}
+	return changed
+}
+
+// chargeTarget charges one call to target, a function of the graph, and
+// reports whether that grew the calling function's summary.
+func (a *analysis) chargeTarget(cfg *CFG, f *facts, origin *OriginMap, target *Func, args []Expr) bool {
 	changed := false
 	summary := a.summary.facts[target]
 	if summary.unattributable {
