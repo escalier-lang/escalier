@@ -114,6 +114,24 @@ borrows its receiver mutably. With `val p = {x: 1}`, `&mut p` reports
 `cannot constrain immutable object <: mutable object`. With
 `val mut p = {x: 1}`, both `&p` and `&mut p` are accepted.
 
+**T9. A writable slot widens the literal types in its initializer.** A slot is
+writable when it is a `var` binding, or a field of a `mut` value that is not
+`readonly`. When no type is written, the slot's inferred type replaces each
+literal type in its initializer with that literal's primitive, since a later
+write can store any value of the primitive. A slot that cannot be written keeps
+the literal type, because it can never hold anything else. An annotation fixes
+whichever type it names.
+
+- `val n = 5` gives `n: 5`, and `var n = 5` gives `n: number`.
+- `val p = {x: 1}` gives `p: {x: 1}`, and `val mut p = {x: 1, y: {z: "a"}}`
+  gives `p: mut {x: number, y: {z: string}}`, since T3 makes every owned layer
+  writable.
+- `var p = {x: 1}` gives `p: {x: number}`. The object is immutable, but the
+  binding can be reassigned to any `{x: number}`.
+- A `readonly` field keeps its literal type, since T5 forbids writing it. A
+  value behind a `&` or `&mut` keeps the type of the value it borrows, since
+  the borrow carries its own mutability.
+
 ## Flow rules
 
 An operation such as a binding, an assignment, or a function call passes a value
@@ -396,6 +414,7 @@ Rust has no matching feature.
 | T5 `readonly` | No `readonly` fields. Rust restricts writes through field privacy instead | No equivalent | Inherited from TypeScript |
 | T6 borrow into owned | `&T` does not satisfy `T`. Moving a field out of a borrow is rejected with E0507 | Differs | Escalier reads `r.f` through a borrow as a borrow of the field. Rust rejects the move and asks for `&r.f`, unless the field's type is `Copy` |
 | T7 mutable borrows need a mutable owner | `&mut x` requires `let mut x` | Same | |
+| T9 writable slots widen literals | No literal types. An integer literal's type is inferred from how it is used | No equivalent | Inherited from TypeScript, which widens a `let` binding's literal type the same way |
 | F2 copy, borrow, or move | `Copy` types copy, `&T` copies, and an owned value moves into an owned destination | Differs | A `&mut` source copies, because Escalier allows aliased `&mut` |
 | F3 owned when it escapes | Every parameter type is written. A closure captures by reference unless it is marked `move` | Differs | Escalier infers an unannotated parameter's ownership and a returned closure's moves. Rust requires both to be written |
 | F3 binding always moves | `let q = p` moves `p` whatever `q`'s scope | Same | |
@@ -426,7 +445,7 @@ The differences come from four sources:
 - **Inference over annotation.** F3, L2, and L3 infer what Rust requires the
   user to write: parameter ownership, closure moves, and signature lifetimes.
 - **TypeScript heritage.** T5, D5, and D6 cover `readonly` fields, getters, and
-  setters, which Rust does not have.
+  setters, and T9 covers literal types. Rust has none of them.
 
 ## Checking model
 
@@ -441,7 +460,7 @@ The rules suggest one checker, which is the target of the simplification:
 4. One forward pass over the control-flow graph checks E1, E2, and E3 against the
    events and the liveness of each path.
 
-Type rules T1 through T7 stay in the type checker, where they already sit.
+The type rules stay in the type checker, where they already sit.
 
 ## Open decisions
 
