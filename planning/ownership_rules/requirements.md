@@ -572,6 +572,23 @@ export fn go() -> number {
 }
 ```
 
+**B4. `mut` does not reach through a mapped type.** The two functions below
+declare the same parameter type, once written out and once through
+`Readonly<T>`. T3 says `mut` reaches every owned layer, including through type
+arguments, so both should check clean. The first does, and the second reports
+`cannot constrain immutable object <: mutable object` at the write. An owned
+`mut Readonly<{a: {b: number}}>` parameter fails the same way.
+
+```esc
+fn resetWritten(x: &mut {readonly a: {b: number}}) {
+    x.a.b = 0
+}
+
+fn resetMapped(x: &mut Readonly<{a: {b: number}}>) {
+    x.a.b = 0
+}
+```
+
 ## Divergences from the docs
 
 These came from reading the code and need confirming with a fixture each before
@@ -605,23 +622,33 @@ the docs change.
 These rules decide how the TypeScript declaration converter and any source
 analysis map a TypeScript type onto the rules above.
 
-**I1. `Readonly<T>` maps to `&T` only when the whole of `T` is read-only.**
-TypeScript's `Readonly<T>` and `readonly T[]` forbid writes at the top level
-only. In the declaration below, `reset` can still run `x.a.b = 0`, so its
-parameter cannot become `&{a: {b: number}}`. Escalier's `&` is read-only all
-the way down, by T3. So the converter reads `Readonly<T>` as `&T` only when
-every property and element type inside `T` is a value type, or is itself
-wrapped in `Readonly` or `readonly` all the way down. A recursive helper type
-such as `DeepReadonly<T>` counts when its structure shows it. Any other
-`Readonly<T>` gives no signal, and the converter's lower tiers decide.
+**I1. `Readonly<T>` keeps its `readonly` slots, and the borrow's mutability is
+decided separately.** TypeScript defines `Readonly<T>` as
+`{readonly [K in keyof T]: T[K]}`, which adds `readonly` to each top-level slot
+and nothing more. That is T5's `readonly`, and Escalier's prelude defines
+`Readonly<T>` the same way. Since `readonly` and `mut` are independent, the
+converter keeps `Readonly<T>` as written and picks `&` or `&mut` for the
+parameter from its other signals, falling back to I3 when they are uncertain.
+In the declaration below, `reset` cannot reassign `x.a` but can still run
+`x.a.b = 0`. The Escalier signature `reset(x: &mut Readonly<{a: {b: number}}>)`
+allows and forbids the same writes, once B4 is fixed.
 
 ```ts
 declare function reset(x: Readonly<{a: {b: number}}>): void;
 ```
 
+When every slot in `T`, and in every layer `T` owns, is `readonly` or holds a
+value type, a `&mut` grants no writes. The converter then emits `&T` instead.
+`Readonly<{a: number}>` and a recursive `DeepReadonly<T>` both qualify.
+
 `classifyExplicitSignal` in
 [mutability.go](../../internal/dts_to_esc/mutability.go) maps `this:
-Readonly<T>` to `&self` today without checking the nested types.
+Readonly<T>` to `&self` today. That is right only when no slot reachable
+through `T` is writable.
+
+`readonly T[]` needs the same treatment, but Escalier has no array type whose
+elements are fixed while their contents stay writable, so that case is still
+open.
 
 **I2. A value-type parameter is written as its bare type.** A primitive,
 function, or promise parameter is copied, so the converter writes the bare type
