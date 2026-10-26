@@ -73,26 +73,31 @@ These rules constrain types alone. They need no flow or liveness information.
 type written `&T`, `&mut T`, `&'a T`, or `&'a mut T` is borrowed. This holds in
 every annotation position: bindings, parameters, returns, and fields.
 
-**T2. Every type is immutable unless it is written `mut`, and `mut` is deep
-through owned structure.** A bare `T` and a borrow `&T` are both immutable.
-Only `mut T` and `&mut T` permit writes. A fresh value, such as a literal or a
-constructor call, is immutable until a `mut` annotation or a `val mut` binding
-makes it mutable. `mut T` makes every layer of `T` that the value owns
-writable, including type arguments. The `mut` stops at a borrow, since a `&` or
-`&mut` inside `T` carries its own mutability. A `mut` annotation on a single
-field is rejected, since the enclosing value decides the field's mutability.
+**T2. Every type is immutable unless it is written `mut`.** A bare `T` and a
+borrow `&T` are both immutable. Only `mut T` and `&mut T` permit writes. A
+fresh value, such as a literal or a constructor call, is immutable until a `mut`
+annotation or a `val mut` binding makes it mutable.
 
-**T3. A borrow's mutability narrows and never widens.** `&mut T` satisfies
+**T3. Mutability is deep through owned structure and stops at a borrow.** A
+type's mutability applies to every layer the value owns, including type
+arguments. Every owned layer of `mut T` is writable, and every owned layer of
+`T` is read-only. A `&` or `&mut` inside the type carries its own mutability
+either way. An immutable `Array<&mut Point>` can still write through each
+element, and a `mut Array<&Point>` cannot write any point. A `mut` annotation
+on a single field is rejected, since the enclosing value decides the field's
+mutability.
+
+**T4. A borrow's mutability narrows and never widens.** `&mut T` satisfies
 `&T`. `&T` does not satisfy `&mut T`. Every write, every `&mut` borrow, and every
-call to a `&mut self` method requires a mutable path to its target, and T3 is
+call to a `&mut self` method requires a mutable path to its target, and T4 is
 the rule that decides each of them.
 
-**T4. `readonly` forbids reassigning a slot.** A write to a `readonly` field is
+**T5. `readonly` forbids reassigning a slot.** A write to a `readonly` field is
 rejected after the field's one initialization. A `readonly` field does not
 satisfy a writable field, because a holder of the writable type could reassign
 it. A getter with no setter counts as a `readonly` field.
 
-**T5. A borrow cannot fill an owned destination.** A value of type `&T` or
+**T6. A borrow cannot fill an owned destination.** A value of type `&T` or
 `&mut T` does not satisfy a bare `T` or `mut T`, since the destination would
 claim ownership of storage owned elsewhere. Reading a field through a borrow
 produces a borrow of that field, not an owned value.
@@ -109,7 +114,7 @@ on the source type and the destination type:
 1. A value-type source or a `&` source is copied. Copying a `&` borrow produces
    another `&` borrow of the same value.
 2. A `&mut` source flowing into a `&` or `&mut` destination is copied as a
-   borrow of the same kind or narrower, as T3 allows.
+   borrow of the same kind or narrower, as T4 allows.
 3. An owned source flowing into a borrow destination is borrowed. The source
    keeps ownership.
 4. An owned source flowing into an owned destination is moved. The source place
@@ -194,7 +199,7 @@ The rules above produce each of the following. None of them is a separate rule.
 - **Moves into literals and spreads.** A literal element and a spread source fill
   owned slots of the new value, so F1 moves an owned source.
 - **Consuming receivers.** A `self` or `mut self` receiver is an owned
-  destination, so F1 moves the instance. T5 rejects the call through a borrow.
+  destination, so F1 moves the instance. T6 rejects the call through a borrow.
 - **The owned-to-`mut` upgrade.** A uniquely owned source can fill a `mut`
   destination because F1 moves it. E3 confirms no live path remains, so no immutable
   path can observe the new mutability.
@@ -213,10 +218,11 @@ Rust has no matching feature.
 | Rule | Rust behaviour | Verdict | Note |
 |---|---|---|---|
 | T1 ownership in the type | `T` is owned and `&T` or `&mut T` borrows | Differs | Rust puts the mutability of an owned value on the binding, as `let mut x`. Escalier puts it in the type, as `mut T` |
-| T2 immutable by default, deep `mut` | Bindings and references are immutable unless written `mut`. Inherited mutability: a mutable owner can write every field it owns, and a reference field carries its own mutability | Differs | Same defaults and the same inheritance, but Rust adds interior mutability through `Cell` and `RefCell`. Escalier has no escape hatch, which is what makes freezing deep |
-| T3 narrow, never widen | `&mut T` coerces to `&T`, never the reverse | Same | |
-| T4 `readonly` | No `readonly` fields. Rust restricts writes through field privacy instead | No equivalent | Inherited from TypeScript |
-| T5 borrow into owned | `&T` does not satisfy `T`. Moving a field out of a borrow is rejected with E0507 | Differs | Escalier reads `r.f` through a borrow as a borrow of the field. Rust rejects the move and asks for `&r.f`, unless the field's type is `Copy` |
+| T2 immutable by default | Bindings and references are immutable unless written `mut` | Same | |
+| T3 deep mutability, stopped by a borrow | Inherited mutability: an owner's mutability reaches every field it owns, and a reference field carries its own mutability | Differs | Same inheritance, but Rust adds interior mutability through `Cell` and `RefCell`. Escalier has no escape hatch, which is what makes freezing deep |
+| T4 narrow, never widen | `&mut T` coerces to `&T`, never the reverse | Same | |
+| T5 `readonly` | No `readonly` fields. Rust restricts writes through field privacy instead | No equivalent | Inherited from TypeScript |
+| T6 borrow into owned | `&T` does not satisfy `T`. Moving a field out of a borrow is rejected with E0507 | Differs | Escalier reads `r.f` through a borrow as a borrow of the field. Rust rejects the move and asks for `&r.f`, unless the field's type is `Copy` |
 | F1 copy, borrow, or move | `Copy` types copy, `&T` copies, and an owned value moves into an owned destination | Differs | Two changes. A `&mut` source copies, because Escalier allows aliased `&mut`. An owned value fills a `&` annotation by borrowing, where Rust reports a type mismatch |
 | F2 owned when it escapes | Every parameter type is written. A closure captures by reference unless it is marked `move` | Differs | Escalier infers an unannotated parameter's ownership and a returned closure's moves. Rust requires both to be written |
 | F2 binding always moves | `let q = p` moves `p` whatever `q`'s scope | Same | |
@@ -243,10 +249,10 @@ The differences come from four sources:
   borrows that outlive their owner in L1, and the per-call closure borrows in E4.
 - **A deep immutability guarantee.** Escalier's invariant promises that an
   immutable value never changes. Rust's interior mutability would break that
-  promise, so T2 has no escape hatch.
+  promise, so T3 has no escape hatch.
 - **Inference over annotation.** F2, L2, and L3 infer what Rust requires the
   user to write: parameter ownership, closure moves, and signature lifetimes.
-- **TypeScript heritage.** T4, D5, and D6 cover `readonly` fields, getters, and
+- **TypeScript heritage.** T5, D5, and D6 cover `readonly` fields, getters, and
   setters, which Rust does not have.
 
 ## Flow-site table
@@ -282,7 +288,7 @@ The rules suggest one checker, which is the target of the simplification:
 4. One forward pass over the control-flow graph checks E1, E2, and E3 against the
    events and the liveness of each path.
 
-Type rules T1 through T5 stay in the type checker, where they already sit.
+Type rules T1 through T6 stay in the type checker, where they already sit.
 
 ## Open decisions
 
@@ -323,7 +329,7 @@ The options are:
 - Join the branches to a borrow. The owned branch would then need an owner that
   outlives the expression, and no such owner exists for a fresh value.
 
-Recommendation: keep the error and add it as a type rule, T6.
+Recommendation: keep the error and add it as a type rule, T7.
 
 ### D4. Declared lifetime bounds are obligations
 
@@ -346,7 +352,7 @@ A second write to a `readonly` field inside a constructor is rejected, using the
 definite-initialization lattice
 ([infer_class_ctor.go](../../internal/solver/infer_class_ctor.go)).
 
-Recommendation: keep it. T4 already says one initialization, so this needs no
+Recommendation: keep it. T5 already says one initialization, so this needs no
 new rule, only the docs.
 
 ### D6. Getter and setter receivers
@@ -506,7 +512,7 @@ analysis map a TypeScript type onto the rules above.
 **I1. `Readonly<T>` maps to `&T` only when the whole of `T` is read-only.**
 TypeScript's `Readonly<T>` and `readonly T[]` forbid writes at the top level
 only. `Readonly<{a: {b: number}}>` still allows `x.a.b = 1`. Escalier's `&`
-is read-only all the way down, by T2. So the converter reads `Readonly<T>` as
+is read-only all the way down, by T3. So the converter reads `Readonly<T>` as
 `&T` only when every property and element type inside `T` is a value type, or
 is itself wrapped in `Readonly` or `readonly` all the way down. A recursive
 helper type such as `DeepReadonly<T>` counts when its structure shows it. Any
@@ -541,14 +547,14 @@ with the full expected diagnostic, as `CLAUDE.md` asks.
 |---|---|---|---|---|---|
 | copy | value type | any | use the source | Accepted | F1.1 |
 | immutable copy | `&T` | `&T` | use the source | Accepted | F1.1 |
-| narrow | `&mut T` | `&T` | use both | Accepted | F1.2, T3 |
-| widen | `&T` | `&mut T` | none | Mutability mismatch | T3 |
+| narrow | `&mut T` | `&T` | use both | Accepted | F1.2, T4 |
+| widen | `&T` | `&mut T` | none | Mutability mismatch | T4 |
 | borrow | owned | borrow | use the source | Accepted | F1.3 |
 | move | owned | owned | use the source | Use of moved value | F1.4, E1 |
 | move on one branch | owned | owned, in one branch | use after the join | Use of moved value | E1 |
 | outlive owner | owned | borrow that outlives the source's binding | use the destination | Accepted | L1 |
 | write after `'static` immutable borrow | owned `mut` | `'static` `&T` | write the source | Exclusivity error | L1, E2 |
-| borrow into owned | `&T` | owned | none | Borrow cannot fill owned | T5 |
+| borrow into owned | `&T` | owned | none | Borrow cannot fill owned | T6 |
 | write during immutable borrow | owned `mut` | `&T` | write the source, then use the destination | Exclusivity error | E2 |
 | sequential phases | owned `mut` | `&T` | write the source, then create and use the destination | Accepted | E2 |
 | move while borrowed | owned | owned | while a borrow of the source is live | Move while borrowed | E3 |
