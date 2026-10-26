@@ -142,6 +142,14 @@ var readOnlyInternalMethods = set.FromSlice([]string{
 // sorted 0-based positions of the declared parameters it may mutate. A method's
 // receiver is not a parameter, so Receiver reports it separately.
 //
+// Callbacks holds the sorted positions of the declared parameters whose
+// function the function may call, directly or through a callee it passes the
+// function on to. A callback receives its arguments as `&` borrows and returns
+// an owned value, so a call through one charges nothing. Checking that the
+// function a caller passes keeps to that is the caller's job. A position also
+// appears when the function called is read off the parameter, as
+// `options.rng` is.
+//
 // The two warnings name different failures, and §4.3 turns either into a
 // method the analysis publishes no receiver for, which §4.4 then answers by
 // review. Unattributable means the analysis saw a mutation it could not tie to
@@ -150,6 +158,7 @@ var readOnlyInternalMethods = set.FromSlice([]string{
 type Mutations struct {
 	Args           []int
 	Receiver       bool
+	Callbacks      []int
 	Unattributable bool
 	Incomplete     bool
 }
@@ -168,6 +177,13 @@ func (m Mutations) String() string {
 		}
 		parts = append(parts, "args{"+strings.Join(positions, ",")+"}")
 	}
+	if len(m.Callbacks) > 0 {
+		positions := make([]string, 0, len(m.Callbacks))
+		for _, position := range m.Callbacks {
+			positions = append(positions, fmt.Sprint(position))
+		}
+		parts = append(parts, "callbacks{"+strings.Join(positions, ",")+"}")
+	}
 	if m.Unattributable {
 		parts = append(parts, "unattributable")
 	}
@@ -182,9 +198,16 @@ func (m Mutations) String() string {
 
 // facts is one function's summary while the fixpoint is still running. It holds
 // the mutated positions as a set, which Mutations reports as a sorted slice.
+//
+// callbacks maps a parameter position to the calls the function makes through
+// the function passed there. Each call is the list of origins of the arguments
+// it passes, in this function's own terms, keyed by its rendering so a repeat
+// adds nothing. A caller that passes one of its own functions at that position
+// reads the list back to charge what that function mutates.
 type facts struct {
 	args           set.Set[int]
 	receiver       bool
+	callbacks      map[int]map[string][]Origin
 	unattributable bool
 	incomplete     bool
 }
@@ -211,8 +234,12 @@ type MutationSummary struct {
 // arguments. A summary that grows re-enqueues its callers.
 //
 // A callee that resolves to no body is an object internal method, which the two
-// tables answer for, or a function the caller supplied, which leaves the summary
-// incomplete.
+// tables answer for, or a function the caller supplied. A call through a
+// supplied function charges nothing and is recorded under that parameter's
+// position, since a callback takes its arguments as `&` borrows. A caller that
+// passes the parameter on records the call under its own parameter, and one
+// that passes a function of the graph charges what that function mutates
+// against the arguments the call gives it.
 //
 // The analysis never invents a mutation. Every position in an Args set traces
 // back to a seed entry, an internal-method entry, or a backing-store slot
@@ -227,7 +254,7 @@ func NewMutationSummary(cfg *CFG) *MutationSummary {
 	}
 	origins := NewOriginMaps(cfg)
 	for _, fn := range cfg.Funcs {
-		a.summary.facts[fn] = &facts{args: set.NewSet[int]()}
+		a.summary.facts[fn] = &facts{args: set.NewSet[int](), callbacks: map[int]map[string][]Origin{}}
 		a.summary.origins[fn] = origins[fn]
 	}
 	for _, fn := range cfg.Funcs {
@@ -257,9 +284,15 @@ func (s *MutationSummary) Of(fn *Func) Mutations {
 		args = f.args.ToSlice()
 		sort.Ints(args)
 	}
+	var callbacks []int
+	for position := range f.callbacks {
+		callbacks = append(callbacks, position)
+	}
+	sort.Ints(callbacks)
 	return Mutations{
 		Args:           args,
 		Receiver:       f.receiver,
+		Callbacks:      callbacks,
 		Unattributable: f.unattributable,
 		Incomplete:     f.incomplete,
 	}
@@ -294,11 +327,23 @@ func (a *analysis) callees(cfg *CFG, fn *Func) []*Func {
 		called = append(called, target)
 	}
 
+	// A function of the graph passed as an argument is a callee too, since the
+	// call may hand it to a callback position and charge what it mutates.
+	addPassed := func(args []Expr) {
+		for _, arg := range args {
+			if target := passedFunc(cfg, a.summary.origins[fn], arg); target != nil && !seen.Contains(target) {
+				seen.Add(target)
+				called = append(called, target)
+			}
+		}
+	}
+
 	var nested func(Expr)
 	nested = func(e Expr) {
 		switch e := e.(type) {
 		case *CallExpr:
 			add(e.Callee)
+			addPassed(e.Args)
 			for _, arg := range e.Args {
 				nested(arg)
 			}
@@ -318,6 +363,7 @@ func (a *analysis) callees(cfg *CFG, fn *Func) []*Func {
 	for _, node := range fn.Nodes {
 		if call, ok := node.(*CallNode); ok {
 			add(call.Callee)
+			addPassed(call.Args)
 		}
 		for _, e := range readsOf(node) {
 			nested(e)
@@ -339,6 +385,17 @@ func resolveCallee(cfg *CFG, origin *OriginMap, callee string) *Func {
 		return nil
 	}
 	return cfg.AbstractOp(callee)
+}
+
+// passedFunc returns the function of the graph an argument names, or nil when
+// the argument is not a bare name of one. A name the function binds itself is
+// a value it holds, whatever it is named.
+func passedFunc(cfg *CFG, origin *OriginMap, e Expr) *Func {
+	v, ok := e.(*VarExpr)
+	if !ok || !origin.free.Contains(v.Var) {
+		return nil
+	}
+	return cfg.AbstractOp(v.Var)
 }
 
 // run iterates the transfer function until no summary moves. It terminates
@@ -489,6 +546,77 @@ func (a *analysis) charge(cfg *CFG, f *facts, origin *OriginMap, callee string, 
 		}
 		changed = a.attribute(f, origin, args[position]) || changed
 	}
+	for position, calls := range summary.callbacks {
+		if position >= len(args) {
+			// No function was passed there, and calling the absent one throws.
+			continue
+		}
+		changed = a.chargeCallback(cfg, f, origin, args[position], calls, args) || changed
+	}
+	return changed
+}
+
+// chargeCallback charges the calls a callee makes through the function passed
+// to it as fnArg, and reports whether that grew the caller's summary. calls
+// holds each call's argument origins in the callee's terms, and args are the
+// arguments the caller passed the callee.
+//
+// A function the caller was itself handed stays a callback, so the calls are
+// recorded under the caller's parameter in the caller's terms. A function of
+// the graph is charged with what it mutates, read against the arguments each
+// call gives it. A closure the caller allocated is held to the callback
+// contract like any other, so it charges nothing. Any other value is a
+// function the analysis cannot read.
+func (a *analysis) chargeCallback(cfg *CFG, f *facts, origin *OriginMap, fnArg Expr, calls map[string][]Origin, args []Expr) bool {
+	if target := passedFunc(cfg, origin, fnArg); target != nil {
+		return a.chargePassed(f, origin, target, calls, args)
+	}
+	o := origin.Eval(fnArg)
+	switch o.Kind {
+	case OriginParam:
+	case OriginFresh:
+		// The modification function `Atomics.add` hands
+		// `AtomicReadModifyWrite` is one. It computes bytes from the values
+		// it is passed and writes nothing.
+		return false
+	default:
+		return f.markIncomplete()
+	}
+	changed := false
+	for _, call := range calls {
+		translated := make([]Origin, len(call))
+		for i, c := range call {
+			translated[i] = resolved(origin.instantiate(c, args))
+		}
+		changed = f.recordCallback(o.Index, translated) || changed
+	}
+	return changed
+}
+
+// chargePassed charges what target mutates when a callee calls it with each of
+// calls, and reports whether that grew the caller's summary.
+func (a *analysis) chargePassed(f *facts, origin *OriginMap, target *Func, calls map[string][]Origin, args []Expr) bool {
+	summary := a.summary.facts[target]
+	changed := false
+	if summary.unattributable {
+		changed = f.markUnattributable() || changed
+	}
+	if summary.receiver || len(summary.callbacks) > 0 {
+		// A receiver the callee picks, or a function passed on through a call
+		// whose arguments are not the caller's own expressions. Neither has a
+		// value to charge it to.
+		changed = f.markIncomplete() || changed
+	}
+	for _, call := range calls {
+		for position := range summary.args {
+			if position >= len(call) {
+				// The write has no argument to charge it to.
+				changed = f.markIncomplete() || changed
+				continue
+			}
+			changed = a.attributeOrigin(f, resolved(origin.instantiate(call[position], args))) || changed
+		}
+	}
 	return changed
 }
 
@@ -497,10 +625,16 @@ func (a *analysis) charge(cfg *CFG, f *facts, origin *OriginMap, callee string, 
 // for an object internal method. Anything else is a step the analysis could not
 // see.
 func (a *analysis) chargeUnresolved(f *facts, origin *OriginMap, callee string, args []Expr) bool {
-	if origin.Of(callee).Kind == OriginParam {
+	if o := origin.Of(callee); o.Kind == OriginParam {
 		// A function the caller supplied, which may name an internal method
-		// without being one.
-		return f.markIncomplete()
+		// without being one. It takes its arguments as `&` borrows, so the
+		// call charges nothing, and a caller that passes one of the graph's
+		// own functions charges that function's mutations.
+		call := make([]Origin, len(args))
+		for i, arg := range args {
+			call[i] = origin.Eval(arg)
+		}
+		return f.recordCallback(o.Index, call)
 	}
 	if position, ok := mutatingInternalMethods[callee]; ok {
 		if position >= len(args) {
@@ -518,7 +652,13 @@ func (a *analysis) chargeUnresolved(f *facts, origin *OriginMap, callee string, 
 // attribute charges one mutated value expression to fn's receiver or to one of
 // its parameters, and reports whether that grew the summary.
 func (a *analysis) attribute(f *facts, origin *OriginMap, e Expr) bool {
-	switch o := origin.Eval(e); o.Kind {
+	return a.attributeOrigin(f, origin.Eval(e))
+}
+
+// attributeOrigin charges a mutated value of origin o, and reports whether that
+// grew the summary.
+func (a *analysis) attributeOrigin(f *facts, o Origin) bool {
+	switch o.Kind {
 	case OriginReceiver:
 		if f.receiver {
 			return false
@@ -543,6 +683,26 @@ func (a *analysis) attribute(f *facts, origin *OriginMap, e Expr) bool {
 		// OriginUnknown. A mutation the analysis cannot place.
 		return f.markUnattributable()
 	}
+}
+
+// recordCallback records one call through the function at position, and
+// reports whether it was new.
+func (f *facts) recordCallback(position int, call []Origin) bool {
+	parts := make([]string, len(call))
+	for i, o := range call {
+		parts[i] = o.String()
+	}
+	key := strings.Join(parts, ",")
+	calls := f.callbacks[position]
+	if calls == nil {
+		calls = map[string][]Origin{}
+		f.callbacks[position] = calls
+	}
+	if _, ok := calls[key]; ok {
+		return false
+	}
+	calls[key] = call
+	return true
 }
 
 func (f *facts) markIncomplete() bool {

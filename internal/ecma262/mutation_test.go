@@ -50,9 +50,10 @@ func TestMutationsString(t *testing.T) {
 		"SeveralArgs":    {Mutations{Args: []int{0, 2}}, "args{0,2}"},
 		"Unattributable": {Mutations{Unattributable: true}, "unattributable"},
 		"Incomplete":     {Mutations{Incomplete: true}, "incomplete"},
+		"Callbacks":      {Mutations{Callbacks: []int{0, 3}}, "callbacks{0,3}"},
 		"Every": {
-			Mutations{Args: []int{1}, Receiver: true, Unattributable: true, Incomplete: true},
-			"receiver args{1} unattributable incomplete",
+			Mutations{Args: []int{1}, Receiver: true, Callbacks: []int{2}, Unattributable: true, Incomplete: true},
+			"receiver args{1} callbacks{2} unattributable incomplete",
 		},
 	}
 
@@ -272,10 +273,14 @@ func TestMutationSummarySkipsNonBackingStoreSlots(t *testing.T) {
 // which the algorithm addresses by index. `GetModifySetValueInBuffer` reaches
 // the block through `arrayBuffer.[[ArrayBufferData]]`, so the store lands on
 // `arrayBuffer`, and `AtomicReadModifyWrite` passes the buffer behind its own
-// typed array as it.
+// typed array as it. `GetModifySetValueInBuffer` also calls the modification
+// function it was passed at position 4. `AtomicReadModifyWrite` passes on the
+// one it was passed at position 3, and `Atomics.add` hands it a closure it
+// allocated, which the callback contract covers.
 func TestMutationSummaryChargesAComputedSlotWriteOnAnInterior(t *testing.T) {
-	require.Equal(t, "args{0} incomplete", mutationsOf(t, "GetModifySetValueInBuffer").String())
-	require.Equal(t, "args{0}", mutationsOf(t, "AtomicReadModifyWrite").String())
+	require.Equal(t, "args{0} callbacks{4} incomplete", mutationsOf(t, "GetModifySetValueInBuffer").String())
+	require.Equal(t, "args{0} callbacks{3}", mutationsOf(t, "AtomicReadModifyWrite").String())
+	require.Equal(t, "args{0}", mutationsOf(t, "Atomics.add").String())
 }
 
 // A write whose slot the algorithm computes leaves the function incomplete when
@@ -387,9 +392,9 @@ __REMOVE_ELEM__: list`))
 // write the callback may never perform.
 //
 // This asserts the order of those two checks. The graph holds callbacks, and
-// `chargeUnresolved` treats them as unreadable bodies on every one, but none
-// carries a seeded name, so reversing the order would leave every real answer
-// and every tally unchanged. `TestGraphHoldsNoneOfTheHandWrittenShapes` is what
+// `chargeUnresolved` records each one under its parameter, but none carries a
+// seeded name, so reversing the order would leave every real answer and every
+// tally unchanged. `TestGraphHoldsNoneOfTheHandWrittenShapes` is what
 // reports the day the graph grows a collision.
 func TestMutationSummaryCalleeNamingAParameterIsACallback(t *testing.T) {
 	cfg, err := ParseCFG([]byte(
@@ -401,7 +406,7 @@ func TestMutationSummaryCalleeNamingAParameterIsACallback(t *testing.T) {
 
 	s := NewMutationSummary(cfg)
 	require.Equal(t, "args{0}", s.Of(cfg.AbstractOp("Set")).String())
-	require.Equal(t, "incomplete", s.Of(cfg.Builtin("Demo")).String())
+	require.Equal(t, "callbacks{0}", s.Of(cfg.Builtin("Demo")).String())
 }
 
 // A call that omits the argument its callee mutates leaves the write with no
@@ -531,7 +536,60 @@ func TestInternalMethodTableSkipsACallback(t *testing.T) {
 
 	fn := cfg.AbstractOp("Demo")
 	require.NotNil(t, fn)
-	require.Equal(t, "incomplete", NewMutationSummary(cfg).Of(fn).String())
+	require.Equal(t, "callbacks{0}", NewMutationSummary(cfg).Of(fn).String())
+}
+
+// A callback takes its arguments as `&` borrows, so a call through one charges
+// nothing to the values it passes. What the caller passes at the callback's
+// position decides the rest. Each graph below holds `Each`, which calls the
+// function at position 1 with the value at position 0, and a `Caller` that
+// passes `Each` a different kind of function.
+func TestMutationSummaryCallbacks(t *testing.T) {
+	const each = `{"name":"Each","kind":"abstract-op","params":["xs","fn"],"nodes":[` +
+		`{"kind":"call","callee":"fn","args":[{"kind":"prop","object":{"kind":"var","var":"xs"}}],"guard":"plain"}]},` +
+		`{"name":"Set","kind":"abstract-op","params":["O","P","V","Throw"]},` +
+		`{"name":"Write","kind":"abstract-op","params":["v"],"nodes":[` +
+		`{"kind":"call","callee":"Set","args":[{"kind":"var","var":"v"}],"guard":"plain"}]},` +
+		`{"name":"Read","kind":"abstract-op","params":["v"],"nodes":[]},`
+	tests := map[string]struct {
+		passed string
+		want   string
+	}{
+		// A function the caller was handed stays a callback, now the caller's.
+		"Parameter": {`{"kind":"var","var":"g"}`, "callbacks{1}"},
+		// A function of the graph that writes its argument writes what `Each`
+		// passes it, which is inside the caller's parameter 0.
+		"WritingFunction": {`{"kind":"var","var":"Write"}`, "args{0}"},
+		"ReadingFunction": {`{"kind":"var","var":"Read"}`, "none"},
+		// A closure the caller allocated is held to the callback contract.
+		"Closure": {`{"kind":"alloc"}`, "none"},
+		// A value the analysis cannot read as a function.
+		"UnknownValue": {`{"kind":"var","var":"?"}`, "incomplete"},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg, err := ParseCFG([]byte(`{"specTarget":"abc","funcs":[` + each +
+				`{"name":"Caller","kind":"abstract-op","params":["ys","g"],"nodes":[` +
+				`{"kind":"call","callee":"Each","args":[{"kind":"var","var":"ys"},` + test.passed + `],"guard":"plain"}]}]}`))
+			require.NoError(t, err)
+
+			s := NewMutationSummary(cfg)
+			require.Equal(t, "callbacks{1}", s.Of(cfg.AbstractOp("Each")).String())
+			require.Equal(t, test.want, s.Of(cfg.AbstractOp("Caller")).String())
+		})
+	}
+}
+
+// A callback's result is the owned value the contract promises, so it aliases
+// nothing the calling function was given.
+func TestOriginOfACallbackResult(t *testing.T) {
+	cfg, err := ParseCFG([]byte(`{"specTarget":"abc","funcs":[` +
+		`{"name":"Demo","kind":"abstract-op","params":["x","fn"],"nodes":[` +
+		`{"kind":"call","target":"r","callee":"fn","args":[{"kind":"var","var":"x"}],"guard":"plain"}]}]}`))
+	require.NoError(t, err)
+
+	require.Equal(t, Fresh, NewOriginMap(cfg.AbstractOp("Demo")).Of("r"))
 }
 
 // handWrittenShapes are the four shapes the committed graph does not hold, each

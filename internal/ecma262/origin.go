@@ -734,6 +734,10 @@ func (m *OriginMap) evalCall(callee string, args []Expr) Origin {
 		return Fresh
 	case identityCoercions.Contains(callee) && len(args) > 0:
 		return m.eval(args[0])
+	case m.Of(callee).Kind == OriginParam:
+		// A function the caller supplied. A callback returns an owned value,
+		// so its result aliases nothing the function was given.
+		return Fresh
 	default:
 		if m.returns != nil {
 			if r, ok := m.returns(m, callee); ok {
@@ -741,8 +745,8 @@ func (m *OriginMap) evalCall(callee string, args []Expr) Origin {
 			}
 		}
 		// Everything else breaks the chain. That covers a call into a
-		// function whose returns the map was not given, a callback, and an
-		// operation with no body, such as an internal method.
+		// function whose returns the map was not given and an operation with
+		// no body, such as an internal method.
 		return Unknown
 	}
 }
