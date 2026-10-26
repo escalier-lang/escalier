@@ -1,10 +1,10 @@
 {"package":"mitt","sites":16,"one":2,"several":2,"unresolved":0,"native":12}
-{"package":"uuid","sites":143,"one":75,"several":1,"unresolved":15,"native":52}
+{"package":"uuid","sites":143,"one":78,"several":1,"unresolved":12,"native":52}
 {"package":"eventemitter3","sites":38,"one":14,"several":0,"unresolved":2,"native":22}
-{"package":"lru-cache","sites":281,"one":119,"several":30,"unresolved":14,"native":118}
+{"package":"lru-cache","sites":281,"one":139,"several":31,"unresolved":14,"native":97}
 {"package":"immer","sites":575,"one":334,"several":31,"unresolved":11,"native":199}
 {"package":"express","sites":470,"one":228,"several":7,"unresolved":49,"native":186}
-{"package":"rxjs","sites":3232,"one":1992,"several":480,"unresolved":66,"native":694}
-{"package":"date-fns","sites":2629,"one":1850,"several":8,"unresolved":45,"native":726}
+{"package":"rxjs","sites":3232,"one":1877,"several":605,"unresolved":60,"native":690}
+{"package":"date-fns","sites":2629,"one":1824,"several":35,"unresolved":44,"native":726}
 {"package":"lodash-es","sites":4107,"one":3494,"several":277,"unresolved":62,"native":274}
-{"package":"zod","sites":5137,"one":3316,"several":161,"unresolved":613,"native":1047}
+{"package":"zod","sites":5137,"one":3315,"several":164,"unresolved":613,"native":1045}

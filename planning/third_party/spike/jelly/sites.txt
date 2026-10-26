@@ -8,7 +8,7 @@ constructFrom.js:44  new date.constructor(value)
 
 ## date-fns: callback:date(value) in constructFrom
 constructFrom.js:39  date(value)
-    -> drivers/datefns.mjs:21, drivers/datefns.mjs:253, drivers/datefns.mjs:22, drivers/datefns.mjs:252, constructFrom.js:38, parse/_lib/Setter.js:49
+    -> 180 targets: drivers/datefns.mjs:21, drivers/datefns.mjs:235, drivers/datefns.mjs:191, drivers/datefns.mjs:253, drivers/datefns.mjs:65, drivers/datefns.mjs:22, ...
 
 ## date-fns: bound-function:normalize(date)
 _lib/normalizeDates.js:8  dates.map(normalize)
@@ -40,11 +40,11 @@ toNumber.js:51  value.valueOf()
 
 ## lodash-es: callback:iteratee(value, key, object) in mapValues
 mapKeys.js:31  iteratee(value, key, object)
-    -> 377 targets: drivers/lodashes.mjs:168, identity.js:17, drivers/lodashes.mjs:303, drivers/lodashes.mjs:292, drivers/lodashes.mjs:273, drivers/lodashes.mjs:272, ...
+    -> 378 targets: drivers/lodashes.mjs:168, identity.js:17, drivers/lodashes.mjs:303, drivers/lodashes.mjs:292, drivers/lodashes.mjs:273, drivers/lodashes.mjs:272, ...
 mapKeys.js:31  baseAssignValue(result, iteratee(value, key, object), value)
     -> _baseAssignValue.js:12
 mapValues.js:38  iteratee(value, key, object)
-    -> 377 targets: drivers/lodashes.mjs:169, identity.js:17, drivers/lodashes.mjs:303, drivers/lodashes.mjs:292, drivers/lodashes.mjs:273, drivers/lodashes.mjs:272, ...
+    -> 378 targets: drivers/lodashes.mjs:169, identity.js:17, drivers/lodashes.mjs:303, drivers/lodashes.mjs:292, drivers/lodashes.mjs:273, drivers/lodashes.mjs:272, ...
 mapValues.js:38  baseAssignValue(result, key, iteratee(value, key, object))
     -> _baseAssignValue.js:12
 
@@ -100,17 +100,17 @@ src/index.ts:3130  this.#removeItemSize(index)
 
 ## lru-cache: property-value:this.#dispose(v, k, reason)
 src/index.ts:3136  this.#dispose?.(v as V, k, reason)
-    -> native or external
+    -> drivers/lrucache.mjs:14
 
 ## lru-cache: property-value:this.#disposeAfter(...task)
 src/index.ts:2315  this.#disposeAfter?.(...task)
-    -> native or external
+    -> drivers/lrucache.mjs:14
 src/index.ts:2343  this.#disposeAfter?.(...task)
-    -> native or external
+    -> drivers/lrucache.mjs:14
 src/index.ts:3164  this.#disposeAfter?.(...task)
-    -> native or external
+    -> drivers/lrucache.mjs:14
 src/index.ts:3215  this.#disposeAfter?.(...task)
-    -> native or external
+    -> drivers/lrucache.mjs:14
 
 ## lru-cache: property-value:v.__abortController.abort(...)
 src/index.ts:3133  v.__abortController.abort(new Error('deleted'))
@@ -124,13 +124,13 @@ src/index.ts:3180  v.__abortController.abort(new Error('deleted'))
 
 ## uuid: property-value:options.rng()
 dist-node/v1.js:14  options.rng?.()
-    -> UNRESOLVED
+    -> drivers/uuid.mjs:5
 dist-node/v1.js:14  v1Bytes(options.random ?? options.rng?.() ?? rng(), options.msecs, options.nsecs, options.
     -> dist-node/v1.js:48
 dist-node/v4.js:11  options.rng?.()
-    -> UNRESOLVED
+    -> drivers/uuid.mjs:8
 dist-node/v7.js:7  options.rng?.()
-    -> UNRESOLVED
+    -> drivers/uuid.mjs:12
 dist-node/v7.js:7  v7Bytes(options.random ?? options.rng?.() ?? rng(), options.msecs, options.seq, buf, offse
     -> dist-node/v7.js:32
 
@@ -196,11 +196,11 @@ src/core/immerClass.ts:110  result = recipe(proxy)
 
 ## rxjs: interface-dispatch:observer.next(value)
 src/internal/Subject.ts:67  observer.next(value)
-    -> 7 targets: src/internal/Subject.ts:59, src/internal/Subject.ts:169, src/internal/ReplaySubject.ts:58, src/internal/BehaviorSubject.ts:34, src/internal/AsyncSubject.ts:24, src/internal/Subscriber.ts:67, ...
+    -> 108 targets: dist/cjs/internal/observable/innerFrom.js:49, dist/cjs/internal/observable/generate.js:5, src/internal/Subject.ts:169, src/internal/Subject.ts:59, src/internal/BehaviorSubject.ts:34, src/internal/ReplaySubject.ts:58, ...
 
 ## rxjs: interface-dispatch:observers.shift()!.complete()
 src/internal/Subject.ts:94  observers.shift().complete()
-    -> src/internal/Subject.ts:87, src/internal/Subject.ts:177, src/internal/AsyncSubject.ts:31, src/internal/Subscriber.ts:95
+    -> 20 targets: src/internal/Subject.ts:177, src/internal/Subject.ts:87, src/internal/AsyncSubject.ts:31, src/internal/Subscriber.ts:95, drivers/rxjs.mjs:358, drivers/rxjs.mjs:208, ...
 
 ## rxjs: local-value:pipeFromArray(operations)(this)
 src/internal/Observable.ts:427  pipe_1.pipeFromArray(operations)(this)
@@ -212,7 +212,7 @@ src/internal/util/errorContext.ts:18  cb()
 src/internal/util/errorContext.ts:29  cb()
     -> src/internal/Subject.ts:60, src/internal/Subject.ts:74, src/internal/Subject.ts:88, src/internal/Observable.ts:211
 src/internal/util/Immediate.ts:29  cb()
-    -> src/internal/scheduler/AnimationFrameScheduler.ts:5, src/internal/scheduler/AsyncScheduler.ts:26, src/internal/scheduler/AsapScheduler.ts:5, src/internal/scheduler/VirtualTimeScheduler.ts:40
+    -> 7 targets: drivers/rxjs.mjs:172, drivers/rxjs.mjs:180, drivers/rxjs.mjs:169, src/internal/scheduler/AnimationFrameScheduler.ts:5, src/internal/scheduler/AsyncScheduler.ts:26, src/internal/scheduler/AsapScheduler.ts:5, ...
 
 ## zod: package-value:new ZodOptional({...})
 v4/classic/schemas.js:1000  new ZodOptional({ type: "optional", innerType: item })

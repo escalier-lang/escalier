@@ -9,6 +9,8 @@
 //   found     Jelly has the edge.
 //   silent    Jelly gives the site other targets but not this one. These are
 //             the misses that matter, since nothing marks the site as open.
+//             The counts split them by where the missed function is: the
+//             driver, which stands for the caller's own code, or a package.
 //   visible   Jelly gives the site no target at all, so the site is open
 //             already.
 //   unmatched the site or the function is one Jelly's output does not name,
@@ -73,6 +75,7 @@ console.log(
     sites: sitesSeen,
     found: buckets.found.length,
     silent: buckets.silent.length,
+    silentToCaller: buckets.silent.filter(([, fn]) => fn.startsWith("drivers/")).length,
     visible: buckets.visible.length,
     unmatched: buckets.unmatched.length,
   }),
