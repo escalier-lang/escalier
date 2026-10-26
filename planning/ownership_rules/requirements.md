@@ -551,10 +551,9 @@ export fn go() -> number {
 The store and the call themselves are fine under L1. The bug is that E2 does not
 treat the `'static` path as live afterward.
 
-**B3. A borrow taken by an annotation alone escapes E3.** The binding
-`val c: &{x: number} = p` borrows `p`, but the move check does not see that
-borrow. The program below
-checks clean, and `take` changes the value `c` reads. Written with
+**B3. A borrow taken by an annotation alone escapes E3.** The binding `val c:
+&{x: number} = p` borrows `p`, but the move check does not see that borrow. The
+program below checks clean, and `take` changes the value `c` reads. Written with
 `val c = &p`, the same program reports `cannot move 'p' while it is borrowed`.
 F3 rejects the annotation-only form, which closes the hole.
 
