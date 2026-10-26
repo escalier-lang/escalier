@@ -13,10 +13,17 @@ nothing into the repository except the two result files named below.
   each, or lists the sites whose source line matches a pattern.
 - `sites.mjs` looks up every call site in `sites.json`, the call sites the
   hand-lowered fixtures in [../hand/](../hand/) leave unresolved.
+- `trace.sh <work-dir>` is the stand-in for Jelly's dynamic soundness check.
+  It runs after `run.sh`. `instrument.mjs` copies the drivers and packages
+  into `<work-dir>/instrumented` with every call site and function
+  instrumented. Each driver then runs under `tracer.cjs`, which records which
+  call site entered which function. `compare.mjs` diffs those edges against
+  Jelly's.
 
-`counts.jsonl` holds `report.mjs`'s counts for the ten packages, and
-`sites.txt` holds `sites.mjs`'s output, both from the run the report
-describes. Regenerate them with:
+`counts.jsonl` holds `report.mjs`'s counts for the ten packages,
+`sites.txt` holds `sites.mjs`'s output, and `recall.jsonl` and
+`misses.txt` hold `compare.mjs`'s, all from the run the report describes.
+Regenerate them with:
 
 ```sh
 work=/path/outside/the/repo
@@ -25,6 +32,10 @@ for p in mitt uuid eventemitter3 lru-cache immer express rxjs date-fns lodash-es
   node planning/third_party/spike/jelly/report.mjs "$work" "$p"
 done > planning/third_party/spike/jelly/counts.jsonl
 node planning/third_party/spike/jelly/sites.mjs "$work" > planning/third_party/spike/jelly/sites.txt
+planning/third_party/spike/jelly/trace.sh "$work" > planning/third_party/spike/jelly/recall.jsonl
+for p in mitt uuid eventemitter3 lru-cache immer express rxjs date-fns lodash-es zod; do
+  node planning/third_party/spike/jelly/compare.mjs "$work" "$p" --list | tail -n +2
+done > planning/third_party/spike/jelly/misses.txt
 ```
 
 `sites.json` also records each site's outcome. The harness in

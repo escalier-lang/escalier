@@ -66,14 +66,22 @@ const MAX_DEPTH = 2;
 const isPrim = (t) =>
   !!(t.flags & (ts.TypeFlags.StringLike | ts.TypeFlags.NumberLike | ts.TypeFlags.BooleanLike | ts.TypeFlags.BigIntLike | ts.TypeFlags.ESSymbolLike));
 
-// placeholder renders a value of type t for an argument.
-function placeholder(t) {
+// placeholder renders a value of type t for an argument. An object type gets
+// a literal with a value for each property, so a constructor that requires an
+// option, such as lru-cache's `max`, does not throw before the code under it
+// runs. A run under tracer.cjs only sees code that runs.
+const MAX_LITERAL_PROPS = 40;
+function placeholder(t, depth = 0) {
   if (!t) return "undefined";
   if (t.isUnion()) {
     const nonNull = t.types.filter((u) => !(u.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null)));
     const fn = nonNull.find((u) => u.getCallSignatures().length > 0);
-    if (fn) return placeholder(fn);
-    if (nonNull.length) return placeholder(nonNull[0]);
+    if (fn) return placeholder(fn, depth);
+    // A union of an options object and an instance, as lru-cache's
+    // `Options | LRUCache`, takes the options object.
+    const plain = nonNull.find((u) => !(u.getSymbol()?.flags & ts.SymbolFlags.Class));
+    if (plain) return placeholder(plain, depth);
+    if (nonNull.length) return placeholder(nonNull[0], depth);
     return "undefined";
   }
   if (t.flags & ts.TypeFlags.StringLike) return t.isStringLiteral() ? JSON.stringify(t.value) : '"x"';
@@ -81,14 +89,26 @@ function placeholder(t) {
   if (t.flags & ts.TypeFlags.BooleanLike) return "true";
   if (t.flags & ts.TypeFlags.BigIntLike) return "1n";
   if (t.getCallSignatures().length > 0) return "(...a) => a[0]";
-  if (checker.isArrayType?.(t) || checker.isTupleType?.(t)) return "[{}]";
+  if (checker.isArrayType?.(t) || checker.isTupleType?.(t)) {
+    const el = checker.getTypeArguments(t)[0];
+    return depth < 2 && el ? `[${placeholder(el, depth + 1)}]` : "[{}]";
+  }
   const name = t.getSymbol()?.getName();
   if (name === "Date") return "new Date()";
   if (name === "Map") return "new Map()";
   if (name === "Set") return "new Set()";
   if (name === "Uint8Array") return "new Uint8Array(16)";
   if (name === "RegExp") return "/x/";
-  return "{}";
+  if (depth >= 2 || !(t.flags & ts.TypeFlags.Object)) return "{}";
+  const props = checker
+    .getPropertiesOfType(t)
+    .filter((p) => !/^(_|#|__@)/.test(p.getName()))
+    .slice(0, MAX_LITERAL_PROPS);
+  const fields = props.map((p) => {
+    const pt = checker.getTypeOfSymbolAtLocation(p, p.valueDeclaration ?? importDecl);
+    return `${JSON.stringify(p.getName())}: ${placeholder(pt, depth + 1)}`;
+  });
+  return fields.length ? `{ ${fields.join(", ")} }` : "{}";
 }
 
 function argsFor(sig) {
