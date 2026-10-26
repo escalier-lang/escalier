@@ -54,8 +54,8 @@ A *region* is the span of program points during which a binding's storage
 exists. A module-level binding's region is `'static`.
 
 A *path* to a value is any place or borrow through which the value can be read
-or written. A path is *shared* when it permits reads only and *mutable* when it
-permits writes.
+or written. A path is *immutable* when it permits reads only and *mutable* when
+it also permits writes.
 
 A path is *live* at a program point when some path through the control-flow
 graph from that point reaches a later use of it.
@@ -161,13 +161,13 @@ until `p` is reassigned. A use is a read, a write, a method call, a borrow, or a
 second move. A move on one branch consumes `p` only on the paths through that
 branch.
 
-**E2. A shared path and a mutable path to one place are never live together.** At
-no program point are a shared path and a mutable path to overlapping places both
-live. The owner's own writes count as a mutable path. Several shared paths may be
-live at once, and so may several mutable paths. A path with a `'static` lifetime
-is live at every later point, so a value with a `'static` shared path is never
-written again, and a value with a `'static` mutable path never gets a new shared
-path.
+**E2. An immutable path and a mutable path to one place are never live
+together.** At no program point are an immutable path and a mutable path to
+overlapping places both live. The owner's own writes count as a mutable path.
+Several immutable paths may be live at once, and so may several mutable paths. A
+path with a `'static` lifetime is live at every later point, so a value with a
+`'static` immutable path is never written again, and a value with a `'static`
+mutable path never gets a new immutable path.
 
 **E3. A place with a live borrow cannot be moved.** Moving `p` while a borrow of
 a place overlapping `p` is live is rejected, because the borrow would point into
@@ -176,7 +176,7 @@ storage the move consumed.
 **E4. A closure call is a use of each borrow the closure holds.** A call to a
 closure, or a call that may run a closure, uses each borrow the closure holds. A
 capture the closure writes is used as a mutable path, and a capture it only reads
-is used as a shared path. A closure stored into module-level state may run during
+is used as an immutable path. A closure stored into module-level state may run during
 any later call, so every later call uses its borrows.
 
 ## Derived behaviour
@@ -193,7 +193,7 @@ The rules above produce each of the following. None of them is a separate rule.
 - **Consuming receivers.** A `self` or `mut self` receiver is an owned
   destination, so F1 moves the instance. T5 rejects the call through a borrow.
 - **The owned-to-`mut` upgrade.** A uniquely owned source can fill a `mut`
-  destination because F1 moves it. E3 confirms no live path remains, so no shared
+  destination because F1 moves it. E3 confirms no live path remains, so no immutable
   path can observe the new mutability.
 - **Mutability transitions created by annotation.** `val q: &{x: number} = p`
   borrows `p` by F1. A later write to `p` while `q` is live is rejected by E2.
@@ -221,7 +221,7 @@ Rust has no matching feature.
 | L2 signature states the body's relations | Lifetimes are inferred only inside a body, never in a signature. A declared bound is an assumption the body may use | Differs | Escalier infers signature lifetimes for an unannotated function and treats a declared bound as an obligation. See D4 |
 | L3 render only connecting lifetimes | Elision follows fixed syntactic rules, such as one input lifetime flowing to every output | Differs | Escalier elides by whether a lifetime connects anything, which also covers signatures Rust's elision rules reject |
 | E1 no use after move | Flow-sensitive per branch, with partial moves, and reassignment re-initializes | Same | Reassignment does not yet re-initialize in Escalier. See [#1269](https://github.com/escalier-lang/escalier/issues/1269) |
-| E2 no shared and mutable path live together | Aliasing XOR mutability over non-lexical lifetimes: one `&mut`, or any number of `&` | Differs | Escalier allows several live mutable paths at once. The target is single-threaded and garbage collected, so the only hazard left is a shared path observing a write |
+| E2 no immutable and mutable path live together | Aliasing XOR mutability over non-lexical lifetimes: one `&mut`, or any number of `&` | Differs | Escalier allows several live mutable paths at once. The target is single-threaded and garbage collected, so the only hazard left is an immutable path observing a write |
 | E3 no move while borrowed | Rejected with E0505 | Same | |
 | E4 closure calls use its borrows | A closure holds its captured borrows from creation to its last use | Differs | Escalier counts the borrows only at each call, so a write to a captured value between two calls is accepted. Rust rejects it. A closure stored into module-level state needs `move` and `'static` captures in Rust |
 | D1 no move out of module-level state | Moving out of a `static` is rejected with E0507 | Same | |
@@ -441,7 +441,7 @@ export fn go() -> number {
 }
 ```
 
-**B2. A `'static` shared path does not block a later write.** Each program
+**B2. A `'static` immutable path does not block a later write.** Each program
 below checks clean, and each should report an E2 error on its last write or
 borrow:
 
@@ -537,16 +537,16 @@ with the full expected diagnostic, as `CLAUDE.md` asks.
 | Column | Source | Destination | Then | Expected result | Rule |
 |---|---|---|---|---|---|
 | copy | value type | any | use the source | Accepted | F1.1 |
-| shared copy | `&T` | `&T` | use the source | Accepted | F1.1 |
+| immutable copy | `&T` | `&T` | use the source | Accepted | F1.1 |
 | narrow | `&mut T` | `&T` | use both | Accepted | F1.2, T3 |
 | widen | `&T` | `&mut T` | none | Mutability mismatch | T3 |
 | borrow | owned | borrow | use the source | Accepted | F1.3 |
 | move | owned | owned | use the source | Use of moved value | F1.4, E1 |
 | move on one branch | owned | owned, in one branch | use after the join | Use of moved value | E1 |
 | outlive owner | owned | borrow that outlives the source's binding | use the destination | Accepted | L1 |
-| write after `'static` share | owned `mut` | `'static` `&T` | write the source | Exclusivity error | L1, E2 |
+| write after `'static` immutable borrow | owned `mut` | `'static` `&T` | write the source | Exclusivity error | L1, E2 |
 | borrow into owned | `&T` | owned | none | Borrow cannot fill owned | T5 |
-| write while shared | owned `mut` | `&T` | write the source, then use the destination | Exclusivity error | E2 |
+| write during immutable borrow | owned `mut` | `&T` | write the source, then use the destination | Exclusivity error | E2 |
 | sequential phases | owned `mut` | `&T` | write the source, then create and use the destination | Accepted | E2 |
 | move while borrowed | owned | owned | while a borrow of the source is live | Move while borrowed | E3 |
 | disjoint field | owned | owned, of `p.a` | use `p.b` | Accepted | E1 |
