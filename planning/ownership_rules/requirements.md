@@ -88,9 +88,9 @@ on a single field is rejected, since the enclosing value decides the field's
 mutability.
 
 **T4. A borrow's mutability narrows and never widens.** `&mut T` satisfies
-`&T`. `&T` does not satisfy `&mut T`. Every write, every `&mut` borrow, and every
-call to a `&mut self` method requires a mutable path to its target, and T4 is
-the rule that decides each of them. A function holding `p: &mut {x: number}`
+`&T`. `&T` does not satisfy `&mut T`. Every write through a borrow, and every
+`&mut self` call through one, requires a `&mut` borrow, and T4 is the rule that
+decides each of them. T7 states the matching rule for an owned value. A function holding `p: &mut {x: number}`
 can pass `p` to a parameter typed `&{x: number}`. A function holding
 `p: &{x: number}` cannot pass it to a parameter typed `&mut {x: number}`, and
 the call reports `cannot constrain immutable object <: mutable object`.
@@ -106,6 +106,13 @@ claim ownership of storage owned elsewhere. Reading a field through a borrow
 produces a borrow of that field, not an owned value. With `r: &{x: number}`, the
 binding `val q: {x: number} = r` reports `cannot use borrowed &object as owned
 object`, and `val q: &{x: number} = r` is accepted.
+
+**T7. An owned value is borrowed mutably only when it is mutable.** An owned
+mutable value can be borrowed as `&` or `&mut`. An owned immutable value can be
+borrowed only as `&`. The same holds for a call to a `&mut self` method, which
+borrows its receiver mutably. With `val p = {x: 1}`, `&mut p` reports
+`cannot constrain immutable object <: mutable object`. With
+`val mut p = {x: 1}`, both `&p` and `&mut p` are accepted.
 
 ## Flow rules
 
@@ -292,6 +299,7 @@ Rust has no matching feature.
 | T4 narrow, never widen | `&mut T` coerces to `&T`, never the reverse | Same | |
 | T5 `readonly` | No `readonly` fields. Rust restricts writes through field privacy instead | No equivalent | Inherited from TypeScript |
 | T6 borrow into owned | `&T` does not satisfy `T`. Moving a field out of a borrow is rejected with E0507 | Differs | Escalier reads `r.f` through a borrow as a borrow of the field. Rust rejects the move and asks for `&r.f`, unless the field's type is `Copy` |
+| T7 mutable borrows need a mutable owner | `&mut x` requires `let mut x` | Same | |
 | F1 copy, borrow, or move | `Copy` types copy, `&T` copies, and an owned value moves into an owned destination | Differs | A `&mut` source copies, because Escalier allows aliased `&mut` |
 | F2 owned when it escapes | Every parameter type is written. A closure captures by reference unless it is marked `move` | Differs | Escalier infers an unannotated parameter's ownership and a returned closure's moves. Rust requires both to be written |
 | F2 binding always moves | `let q = p` moves `p` whatever `q`'s scope | Same | |
@@ -357,7 +365,7 @@ The rules suggest one checker, which is the target of the simplification:
 4. One forward pass over the control-flow graph checks E1, E2, and E3 against the
    events and the liveness of each path.
 
-Type rules T1 through T6 stay in the type checker, where they already sit.
+Type rules T1 through T7 stay in the type checker, where they already sit.
 
 ## Open decisions
 
@@ -398,7 +406,7 @@ The options are:
 - Join the branches to a borrow. The owned branch would then need an owner that
   outlives the expression, and no such owner exists for a fresh value.
 
-Recommendation: keep the error and add it as a type rule, T7.
+Recommendation: keep the error and add it as a type rule, T8.
 
 ### D4. Declared lifetime bounds are obligations
 
@@ -677,6 +685,7 @@ with the full expected diagnostic, as `CLAUDE.md` asks.
 | immutable copy | `&T` | `&T` | use the source | Accepted | F1.1 |
 | narrow | `&mut T` | `&T` | use both | Accepted | F1.2, T4 |
 | widen | `&T` | `&mut T` | none | Mutability mismatch | T4 |
+| mutable borrow of immutable owner | owned, written `&mut p` | `&mut T` | none | Mutability mismatch | T7 |
 | borrow | owned, written `&p` | borrow | use the source | Accepted | F1.3, F3 |
 | unwritten borrow | owned, written `p` | borrow | none | Missing `&` | F3 |
 | move | owned | owned | use the source | Use of moved value | F1.4, E1 |
