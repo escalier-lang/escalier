@@ -84,6 +84,42 @@ jobs:
             ./bin/dts_to_esc generate --overlay internal/interop/overlay \
             node_modules/typescript/lib internal/interop/data
 
+  # Rates each change to the committed fixture outputs by review risk and
+  # writes the report to the job summary. The fixture tests in check_go
+  # confirm the committed outputs match the compiler, so this job reads
+  # them straight from git without building anything. The tiers are
+  # advisory, so the job fails only when the classifier itself breaks.
+  classify_fixture_deltas:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Test the classifier
+        run: node --test .github/scripts/classify-fixture-deltas.test.mjs
+
+      - name: Classify fixture deltas
+        run: |
+          node .github/scripts/classify-fixture-deltas.mjs \
+            "origin/${{ github.base_ref }}" --json fixture-deltas.json
+
+      - name: Upload the classification
+        uses: actions/upload-artifact@v4
+        with:
+          name: fixture-deltas
+          path: fixture-deltas.json
+
   check_ts:
     runs-on: ubuntu-latest
     steps:
