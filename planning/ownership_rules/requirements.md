@@ -395,19 +395,22 @@ fn cache(p: &mut {x: number}) { sink = p }
 These rules run over the control-flow graph. They use the copy, borrow, and move
 events from F2 and the liveness of each path.
 
-The table below combines E1 through E3. Each row is what is already live on a
-place `p` that a `val mut` binding owns, and each column is the next operation
-on `p`. A borrow is live while it is used again later. After its last use, the
-row drops back to "Nothing", which is how an immutable phase can follow a
-mutable one. A `'static` borrow follows the row for its kind, but it is live at
-every later point, so its row never drops back. When `p` is a `val` binding
-instead, T2 and T7 also reject "Write `p`" and "`&mut p`" in every row.
+The table below combines E1 through E3, with two rows for closures from E4. Each
+row is what is already live on a place `p` that a `val mut` binding owns, and
+each column is the next operation on `p`. A borrow is live while it is used
+again later. After its last use, the row drops back to "Nothing", which is how
+an immutable phase can follow a mutable one. A `'static` borrow follows the row
+for its kind, but it is live at every later point, so its row never drops back.
+When `p` is a `val` binding instead, T2 and T7 also reject "Write `p`" and
+"`&mut p`" in every row.
 
 | Already live on `p` | Read `p` | Write `p` | `&p` | `&mut p` | Move `p` |
 |---|---|---|---|---|---|
 | Nothing | Allowed | Allowed | Allowed | Allowed | Allowed |
 | An immutable borrow, `val a = &p` | Allowed | Rejected by E2 | Allowed | Rejected by E2 | Rejected by E3 |
 | A mutable borrow, `val b = &mut p` | Allowed | Allowed | Rejected by E2 | Allowed | Rejected by E3 |
+| A closure that reads `p`, between calls | Allowed | Allowed | Allowed | Allowed | Rejected by E3 |
+| A closure that writes `p`, between calls | Allowed | Allowed | Allowed | Allowed | Rejected by E3 |
 | `p` was moved | Rejected by E1 | Rejected by E1 | Rejected by E1 | Rejected by E1 | Rejected by E1 |
 
 **E1. A moved place is not used until it is reassigned.** After a move of place
@@ -471,8 +474,15 @@ fn go() -> number {
 **E4. A closure call is a use of each borrow the closure holds.** A call to a
 closure, or a call that may run a closure, uses each borrow the closure holds. A
 capture the closure writes is used as a mutable path, and a capture it only reads
-is used as an immutable path. A closure stored into module-level state may run during
-any later call, so every later call uses its borrows.
+is used as an immutable path. A closure stored into module-level state may run
+during any later call, so every later call uses its borrows.
+
+E4 adds no column to the exclusivity table, because it does not decide whether
+an operation on `p` is allowed. It decides when a closure's captures count as
+used, and so which row applies. Between calls, the two closure rows apply. They
+allow writes and new borrows of `p`, and they reject a move, since the closure
+holds its borrows until its last call. During a call, the borrow row for the
+capture's kind applies for that statement.
 
 ## Derived behaviour
 
