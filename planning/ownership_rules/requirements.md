@@ -23,7 +23,8 @@ section [Divergences from the docs](#divergences-from-the-docs) lists the
 disagreements found so far.
 
 The section [Open decisions](#open-decisions) lists behaviour the solver has
-today that no document states. Each needs a decision before the rules are final.
+today that no document states, and two design questions the rules leave open.
+Each needs a decision before the rules are final.
 
 ## The invariant
 
@@ -118,7 +119,7 @@ Each case below follows from that:
 - A `return` outlives the frame, so it is an owned destination.
 - A store into module-level state outlives every local, so it is an owned
   destination. [D9](#d9-whether-an-escaping-value-moves-or-borrows) asks whether
-  it should be a 'static borrow instead.
+  it should be a `'static` borrow instead.
 - An unannotated parameter is owned when the body lets the parameter escape, and
   a borrow otherwise.
 - A closure that is returned owns what it captures. A closure that stays in the
@@ -562,7 +563,7 @@ each a separate PR:
 
 1. Write the conformance tests above against the current solver. A test the
    current solver fails becomes a known-bug entry, or a reason to change a rule.
-2. Settle D1 through D8 and update `docs/08_mutability.md` and
+2. Settle D1 through D10 and update `docs/08_mutability.md` and
    `docs/09_ownership.md` to match.
 3. Build the event lowering and the single control-flow pass behind a flag. Run
    it alongside the current checks and compare diagnostics across every test and
