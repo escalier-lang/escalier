@@ -16,7 +16,7 @@ func init() {
 			// mitt(all)
 			impl("mitt", "all").
 				let("all", V("all")).let("all", Alloc()).
-				ret(Alloc(V("all"), G("fn:on"), G("fn:off"), G("fn:emit"))),
+				ret(Alloc(V("all"), Alloc(), Alloc(), Alloc())),
 
 			// on(type, handler)
 			impl("on", "type", "handler").
@@ -40,11 +40,11 @@ func init() {
 				// .map((handler) => { handler(evt) }), with the closure inlined.
 				let("handler", Unknown()).
 				unresolved("", "closure-param:handler(evt)", V("evt")).
-				builtin("", "Array.prototype.map", V("copy"), G("fn:emit/closure")).
+				builtin("", "Array.prototype.map", V("copy"), Alloc()).
 				builtin("handlers2", "Map.prototype.get", V("all"), Lit()).
 				builtin("copy2", "Array.prototype.slice", V("handlers2")).
 				unresolved("", "closure-param:handler(type, evt)", V("type"), V("evt")).
-				builtin("", "Array.prototype.map", V("copy2"), G("fn:emit/closure2")).
+				builtin("", "Array.prototype.map", V("copy2"), Alloc()).
 				ret(Lit()),
 		},
 		members: []member{

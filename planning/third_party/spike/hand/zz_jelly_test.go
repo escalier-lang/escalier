@@ -19,9 +19,9 @@ func init() {
 			// to constructFrom.
 			impl("_lib/normalizeDates", "context", "dates").
 				let("date", Unknown()).
-				builtin("found", "Array.prototype.find", V("dates"), G("fn:normalizeDates/closure")).
+				builtin("found", "Array.prototype.find", V("dates"), Alloc()).
 				let("c", V("context")).let("c", V("found")).
-				builtin("normalize", "Function.prototype.bind", G("fn:constructFrom"), Lit(), V("c")).
+				builtin("normalize", "Function.prototype.bind", V("impl:constructFrom"), Lit(), V("c")).
 				to("e", "constructFrom", Lit(), V("c"), Prop(V("dates"))).
 				builtin("r", "Array.prototype.map", V("dates"), V("normalize")).
 				ret(V("r")),
@@ -48,20 +48,15 @@ func init() {
 				builtin("k2", "Object.keys", Lit(), V("obj")).
 				let("keys", V("k1")).let("keys", V("k2")).
 				let("key", Unknown()).
-				call("", "iter", V("key"), Prop(V("obj")), V("obj")).
-				builtin("", "Array.prototype.forEach", V("keys"), G("fn:each/closure")).
+				call("", "iter", Lit(), V("key"), Prop(V("obj")), V("obj")).
+				builtin("", "Array.prototype.forEach", V("keys"), Alloc()).
 				let("entry", Unknown()).let("index", Unknown()).
-				call("", "iter", V("index"), V("entry"), V("obj")).
-				builtin("", "Array.prototype.forEach", V("obj"), G("fn:each/closure2")).
+				call("", "iter", Lit(), V("index"), V("entry"), V("obj")).
+				builtin("", "Array.prototype.forEach", V("obj"), Alloc()).
 				ret(Lit()),
 		},
 
 		"uuid": {
-			// sha1(bytes) and md5(bytes) read their input and return a
-			// digest they allocate.
-			impl("sha1", "bytes").ret(Alloc()),
-			impl("md5", "bytes").ret(Alloc()),
-
 			// v35(version, hash, value, namespace, buf, offset): hash(bytes)
 			// resolves to sha1 and md5, the only functions any caller
 			// passes as hash.
@@ -113,7 +108,7 @@ func init() {
 				let("result", Alloc()).
 				builtin("c", "String.prototype.charCodeAt", V("string"), Lit()).
 				builtin("", "Array.prototype.push", V("result"), Lit()).
-				builtin("", "String.prototype.replace", V("string"), G("rePropName"), G("fn:_stringToPath/replacer")).
+				builtin("", "String.prototype.replace", V("string"), G("rePropName"), Alloc()).
 				builtin("", "Array.prototype.push", V("result"), Lit()).
 				ret(V("result")),
 
@@ -150,8 +145,8 @@ func init() {
 			// The closure createBaseFor returns, which baseFor holds.
 			impl("_createBaseFor#closure", "object", "iteratee", "keysFunc").
 				builtin("iterable", "Object", Lit(), V("object")).
-				call("props", "keysFunc", V("object")).
-				call("r", "iteratee", Prop(V("iterable")), Lit(), V("iterable")).
+				call("props", "keysFunc", Lit(), V("object")).
+				call("r", "iteratee", Lit(), Prop(V("iterable")), Lit(), V("iterable")).
 				ret(V("object")),
 
 			// mapValues(object, iteratee), with baseFor resolved.
@@ -159,24 +154,25 @@ func init() {
 				let("result", Alloc()).
 				to("it", "_baseIteratee", Lit(), V("iteratee")).
 				let("iteratee", V("it")).
-				to("", "_createBaseFor#closure", Lit(), V("object"), G("fn:mapValues/closure"), G("fn:keys")).
+				to("", "_createBaseFor#closure", Lit(), V("object"), Alloc(), V("impl:keys")).
 				let("cvalue", Unknown()).let("ckey", Unknown()).let("cobject", Unknown()).
-				call("x", "iteratee", V("cvalue"), V("ckey"), V("cobject")).
+				call("x", "iteratee", Lit(), V("cvalue"), V("ckey"), V("cobject")).
 				to("", "_baseAssignValue", Lit(), V("result"), V("ckey"), V("x")).
 				ret(V("result")),
 
 			// baseIndexOf and baseIndexOfWith, the two functions basePullAll's
 			// indexOf holds.
 			impl("_strictIndexOf", "array", "value", "fromIndex").ret(Lit()),
+			impl("_baseIsNaN", "value").ret(Lit()),
 			impl("_baseFindIndex", "array", "predicate", "fromIndex", "fromRight").
-				call("r", "predicate", Prop(V("array")), Lit(), V("array")).
+				call("r", "predicate", Lit(), Prop(V("array")), Lit(), V("array")).
 				ret(Lit()),
 			impl("_baseIndexOf", "array", "value", "fromIndex").
 				to("a", "_strictIndexOf", Lit(), V("array"), V("value"), V("fromIndex")).
-				to("b", "_baseFindIndex", Lit(), V("array"), G("fn:baseIsNaN"), V("fromIndex")).
+				to("b", "_baseFindIndex", Lit(), V("array"), V("impl:_baseIsNaN"), V("fromIndex")).
 				ret(Lit()),
 			impl("_baseIndexOfWith", "array", "value", "fromIndex", "comparator").
-				call("r", "comparator", Prop(V("array")), V("value")).
+				call("r", "comparator", Lit(), Prop(V("array")), V("value")).
 				ret(Lit()),
 
 			// basePullAll, with indexOf resolved to both candidates.
@@ -188,7 +184,7 @@ func init() {
 				to("mapped", "_arrayMap", Lit(), V("array"), V("u")).
 				let("seen", V("mapped")).
 				let("value", Prop(V("values"))).
-				call("computed", "iteratee", V("value")).
+				call("computed", "iteratee", Lit(), V("value")).
 				let("computed", V("value")).
 				to("f1", "_baseIndexOf", Lit(), V("seen"), V("computed"), Lit()).
 				to("f2", "_baseIndexOfWith", Lit(), V("seen"), V("computed"), Lit(), V("comparator")).
@@ -217,7 +213,7 @@ func init() {
 			impl("LRUCache#setPurgeTimer", "index", "ttl").
 				unresolved("", "host-api:clearTimeout(purgeTimers[index])", Lit(), Prop(V("purgeTimers"))).
 				set(V("purgeTimers"), Lit()).
-				unresolved("t", "host-api:setTimeout(...)", Lit(), G("fn:setPurgeTimer/timeout"), Lit()).
+				unresolved("t", "host-api:setTimeout(...)", Lit(), Alloc(), Lit()).
 				set(V("purgeTimers"), V("t")).
 				ret(Lit()),
 			impl("LRUCache#updateItemAge", "index").
@@ -342,7 +338,7 @@ func init() {
 			// those dispatches again through its destination, which this
 			// check does not lower.
 			impl("Subject.next", "value").
-				to("", "util/errorContext", Lit(), G("fn:next/closure")).
+				to("", "util/errorContext", Lit(), Alloc()).
 				to("", "Subject._throwIfClosed", V("this$")).
 				builtin("copy", "Array.from", Lit(), Prop(V("this$"))).
 				set(V("this$"), V("copy")).
@@ -354,7 +350,7 @@ func init() {
 			// Subject.complete(): observers.shift().complete() resolves to
 			// four complete methods, which again dispatch further.
 			impl("Subject.complete").
-				to("", "util/errorContext", Lit(), G("fn:complete/closure")).
+				to("", "util/errorContext", Lit(), Alloc()).
 				to("", "Subject._throwIfClosed", V("this$")).
 				set(V("this$"), Lit()).
 				let("observers", Prop(V("this$"))).

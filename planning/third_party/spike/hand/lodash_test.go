@@ -63,6 +63,12 @@ func init() {
 				to("b", "isFunction", Lit(), V("value")).
 				ret(Lit()),
 
+			// keys(object) lists the object's own enumerable keys through
+			// arrayLikeKeys or baseKeys, which read it and build a new array.
+			impl("keys", "object").
+				to("a", "isArrayLike", Lit(), V("object")).
+				ret(Alloc()),
+
 			// isKey(value, object)
 			impl("_isKey", "value", "object").
 				builtin("a", "Array.isArray", Lit(), V("value")).
@@ -75,7 +81,7 @@ func init() {
 			// arrayMap(array, iteratee)
 			impl("_arrayMap", "array", "iteratee").
 				let("result", Alloc()).
-				call("x", "iteratee", Prop(V("array")), Lit(), V("array")).
+				call("x", "iteratee", Lit(), Prop(V("array")), Lit(), V("array")).
 				set(V("result"), V("x")).
 				ret(V("result")),
 
@@ -83,7 +89,7 @@ func init() {
 			impl("_baseToString", "value").
 				ret(V("value")).
 				builtin("a", "Array.isArray", Lit(), V("value")).
-				to("m", "_arrayMap", Lit(), V("value"), G("fn:_baseToString")).
+				to("m", "_arrayMap", Lit(), V("value"), V("impl:_baseToString")).
 				ret(Lit()).
 				to("s", "isSymbol", Lit(), V("value")).
 				builtin("t", "Symbol.prototype.toString", V("value")).
@@ -153,7 +159,7 @@ func init() {
 				let("newValue", V("value")).
 				ret(V("object")).
 				let("objValue", Prop(V("nested"))).
-				call("c", "customizer", V("objValue"), V("key"), V("nested")).
+				call("c", "customizer", Lit(), V("objValue"), V("key"), V("nested")).
 				let("newValue", V("c")).
 				to("io", "isObject", Lit(), V("objValue")).
 				let("newValue", V("objValue")).
@@ -249,8 +255,8 @@ func init() {
 			// baseUnary(func) returns `function (value) { return func(value) }`.
 			impl("_baseUnary", "func").
 				let("value", Unknown()).
-				call("r", "func", V("value")).
-				ret(G("fn:baseUnary/closure")),
+				call("r", "func", Lit(), V("value")).
+				ret(Alloc()),
 
 			// basePullAll(array, values, iteratee, comparator)
 			impl("_basePullAll", "array", "values", "iteratee", "comparator").
@@ -262,7 +268,7 @@ func init() {
 				to("mapped", "_arrayMap", Lit(), V("array"), V("u")).
 				let("seen", V("mapped")).
 				let("value", Prop(V("values"))).
-				call("computed", "iteratee", V("value")).
+				call("computed", "iteratee", Lit(), V("value")).
 				let("computed", V("value")).
 				// indexOf is a local holding one of two package functions.
 				unresolved("fromIndex", "local-value:indexOf(seen, computed, fromIndex, comparator)", Lit(), V("seen"), V("computed"), Lit(), V("comparator")).
@@ -298,9 +304,9 @@ func init() {
 				// baseForOwn(object, function (value, key, object) {...}), with
 				// the closure inlined. baseFor is `createBaseFor()`, a value
 				// computed at module load.
-				unresolved("", "package-value:baseFor(object, iteratee, keys)", Lit(), V("object"), G("fn:mapValues/closure"), G("fn:keys")).
+				unresolved("", "package-value:baseFor(object, iteratee, keys)", Lit(), V("object"), Alloc(), V("impl:keys")).
 				let("cvalue", Unknown()).let("ckey", Unknown()).let("cobject", Unknown()).
-				call("x", "iteratee", V("cvalue"), V("ckey"), V("cobject")).
+				call("x", "iteratee", Lit(), V("cvalue"), V("ckey"), V("cobject")).
 				to("", "_baseAssignValue", Lit(), V("result"), V("ckey"), V("x")).
 				ret(V("result")),
 		},
@@ -309,7 +315,10 @@ func init() {
 			{name: "get", impl: "get", params: []string{obj, obj, obj}, expect: "p0:& p1:&mut p2:&"},
 			{name: "set", impl: "set", params: []string{obj, obj, obj}, expect: "p0:&mut p1:&mut p2:&"},
 			{name: "pullAll", impl: "pullAll", params: []string{obj, obj}, expect: "p0:&mut p1:&"},
-			{name: "mapValues", impl: "mapValues", params: []string{obj, cb}, expect: "p0:& p1:&"},
+			// mapValues reaches getRawTag through keys, isArrayLike and
+			// isFunction, which masks Symbol.toStringTag on the object the
+			// way isSymbol does on its value.
+			{name: "mapValues", impl: "mapValues", params: []string{obj, cb}, expect: "p0:&mut p1:&"},
 			{name: "isSymbol", impl: "isSymbol", params: []string{obj}, expect: "p0:&mut"},
 		},
 	})

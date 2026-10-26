@@ -79,6 +79,11 @@ func init() {
 				set(V("bytes"), V("c")).
 				ret(V("bytes")),
 
+			// sha1(bytes) and md5(bytes) read their input and return a
+			// digest they allocate.
+			impl("sha1", "bytes").ret(Alloc()),
+			impl("md5", "bytes").ret(Alloc()),
+
 			// v35(version, hash, value, namespace, buf, offset)
 			impl("v35", "version", "hash", "value", "namespace", "buf", "offset").
 				to("vb", "v35#stringToBytes", Lit(), V("value")).
@@ -91,7 +96,7 @@ func init() {
 				let("bytes", Alloc()).
 				builtin("", "TypedArray.prototype.set", V("bytes"), V("namespaceBytes")).
 				builtin("", "TypedArray.prototype.set", V("bytes"), V("valueBytes"), Lit()).
-				call("h", "hash", V("bytes")).
+				call("h", "hash", Lit(), V("bytes")).
 				let("bytes", V("h")).
 				set(V("bytes"), Lit()).
 				set(V("bytes"), Lit()).
@@ -103,7 +108,7 @@ func init() {
 
 			// v5(value, namespace, buf, offset)
 			impl("v5", "value", "namespace", "buf", "offset").
-				to("r", "v35", Lit(), Lit(), G("fn:sha1"), V("value"), V("namespace"), V("buf"), V("offset")).
+				to("r", "v35", Lit(), Lit(), V("impl:sha1"), V("value"), V("namespace"), V("buf"), V("offset")).
 				ret(V("r")),
 		},
 		members: []member{

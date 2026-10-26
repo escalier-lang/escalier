@@ -636,8 +636,11 @@ while worklist nonempty:
         case Call:
             if node.Callee not in AllFuncs:                    // unresolved callee
                 chargeUnresolved(F, origin, node)
-            else for k in MutArgs[node.Callee]:
-                attribute(F, origin, node.Args[k])
+            else:
+                for k in MutArgs[node.Callee]:
+                    attribute(F, origin, node.Args[k])
+                for k, calls in Callbacks[node.Callee]:
+                    chargeCallback(F, origin, node.Args[k], calls, node.Args)
         case Opaque: Incomplete.add(F)  // a step the serializer could not lower (§3)
     // (a fresh-origin mutation is intentionally ignored: mutating a
     //  value F allocated itself is not observable to F's callers.)
@@ -647,10 +650,23 @@ while worklist nonempty:
 // chargeUnresolved: a callee with no body is an object internal method or a
 // function F's caller supplied. The tables answer for the first kind.
 func chargeUnresolved(F, origin, node):
-    if originOf(origin, node.Callee) is Param: Incomplete.add(F)   // a callback
+    if originOf(origin, node.Callee) is Param(j):                 // a callback
+        Callbacks[F][j].add(originOf(origin, a) for a in node.Args)
     elif node.Callee in mutatingInternalMethods:
         attribute(F, origin, node.Args[0])                         // the dispatching object
     elif node.Callee in readOnlyInternalMethods: pass              // writes nothing
+    else: Incomplete.add(F)
+
+// chargeCallback: a callee calls the function passed at one of its positions.
+// A callback takes `&` borrows and returns an owned value, so the call itself
+// charges nothing. calls are its argument origins in the callee's terms.
+func chargeCallback(F, origin, fnArg, calls, args):
+    if fnArg names a function G of the graph:
+        for call in calls, for k in MutArgs[G]:
+            attribute(F, instantiate(call[k], args))   // in F's terms
+    elif originOf(origin, fnArg) is Param(j):
+        Callbacks[F][j].add(instantiate(call, args) for call in calls)
+    elif originOf(origin, fnArg) is Fresh: pass        // a closure F allocated
     else: Incomplete.add(F)
 
 // attribute: charge a mutated value expression to F's receiver or a formal.

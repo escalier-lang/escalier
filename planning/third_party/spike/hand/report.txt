@@ -1,29 +1,31 @@
 ## date-fns@4.4.0
 
 addDays                            open     p0:? p1:prim p2:?; returns unknown
-    blocked by callback date
+    blocked by callback value unknown in addDays: copy+property read (c)
+    blocked by callback value unknown in toDate: copy (c)
     blocked by unresolved dynamic:date[constructFromSymbol](value)
     blocked by unresolved dynamic:new date.constructor(value)
     blocked by write to unknown in addDays: call result (_date)
 startOfDay                         open     p0:? p1:?; returns unknown
-    blocked by callback date
+    blocked by callback value unknown in toDate: copy (c)
     blocked by unresolved dynamic:date[constructFromSymbol](value)
     blocked by unresolved dynamic:new date.constructor(value)
     blocked by write to unknown in startOfDay: call result (_date)
 isAfter                            open     p0:? p1:?; returns fresh
-    blocked by callback date
+    blocked by callback value unknown in toDate: copy (c)
     blocked by unresolved dynamic:date[constructFromSymbol](value)
     blocked by unresolved dynamic:new date.constructor(value)
 getYear                            open     p0:? p1:?; returns unknown
-    blocked by callback date
+    blocked by callback value unknown in toDate: copy (c)
     blocked by unresolved dynamic:date[constructFromSymbol](value)
     blocked by unresolved dynamic:new date.constructor(value)
 max                                open     p0:? p1:?; returns unknown
-    blocked by callback date
+    blocked by callback value unknown in toDate: copy (c)
     blocked by unresolved dynamic:date[constructFromSymbol](value)
     blocked by unresolved dynamic:new date.constructor(value)
 closestTo                          open     p0:? p1:? p2:?; returns unknown
-    blocked by callback date
+    blocked by callback value unknown in closestTo: property read (dateToCompare_)
+    blocked by callback value unknown in toDate: copy (c)
     blocked by unresolved bound-function:normalize(date)
     blocked by unresolved dynamic:date[constructFromSymbol](value)
     blocked by unresolved dynamic:new date.constructor(value)
@@ -90,20 +92,15 @@ settled 3/7 members, 3/7 excluding trivial ones; return alias known for 4/7
 
 ## immer@11.2.9
 
-produce                            open     p0:? p1:? p2:?; returns unknown
-    blocked by callback iter
-    blocked by callback patchListener
-    blocked by callback recipe
+produce                            open     p0:&mut p1:? p2:?; returns unknown
     blocked by unresolved not-lowered:createProxy(scope, base, undefined)
     blocked by unresolved not-lowered:enterScope(this)
     blocked by unresolved not-lowered:processResult(result, scope)
     blocked by unresolved not-lowered:usePatchesInScope(scope, patchListener)
     blocked by unresolved property-value:e.apply(null, args)
     blocked by unresolved untyped:obj.forEach(...)
-    blocked by write to unknown in Immer.produce: copy+fresh (r)
     blocked by write to unknown in freeze: closure parameter (value)
 freeze                             settled  p0:&mut p1:prim; returns p0 (matches source)
-    blocked by callback iter
     blocked by unresolved untyped:obj.forEach(...)
     blocked by write to unknown in freeze: closure parameter (value)
 original                           open     p0:?; returns unknown
@@ -119,21 +116,16 @@ chunk                              open     p0:? p1:prim; returns fresh
     blocked by unresolved untyped:value.valueOf()
     blocked by write to unknown in toNumber: copy+fresh (value)
 get                                open     p0:? p1:? p2:?; returns unknown
-    blocked by callback iteratee
     blocked by unresolved package-value:stringToPath(toString(value))
     blocked by write to unknown in _baseGet: copy (path)
     blocked by write to unknown in _baseGet: property read
 set                                open     p0:? p1:? p2:?; returns p0
-    blocked by callback customizer
-    blocked by callback iteratee
     blocked by unresolved package-value:defineProperty(object, key, {...})
     blocked by unresolved package-value:stringToPath(toString(value))
     blocked by write to unknown in _baseSet: copy (path)
     blocked by write to unknown in _baseSet: copy+property read (nested)
     blocked by write to unknown in _baseSet: property read
 pullAll                            open     p0:&mut p1:?; returns p0
-    blocked by callback func
-    blocked by callback iteratee
     blocked by unresolved local-value:indexOf(seen, computed, fromIndex, comparator)
 mapValues                          open     p0:? p1:?; returns fresh
     blocked by unresolved iteratee
@@ -184,8 +176,7 @@ settled 1/5 members, 1/5 excluding trivial ones; return alias known for 2/5
 Observable.pipe                    open     self:? p0:?; returns unknown
     blocked by unresolved closure-param:fn(prev)
     blocked by unresolved local-value:pipeFromArray(operations)(this)
-map                                open     p0:? p1:?; returns global
-    blocked by callback init
+map                                open     p0:? p1:?; returns fresh
     blocked by unresolved closure-param:project.call(thisArg, value, index++)
     blocked by unresolved closure-param:source.lift(...)
     blocked by unresolved closure-param:source.subscribe(...)
@@ -193,14 +184,11 @@ map                                open     p0:? p1:?; returns global
     blocked by unresolved not-lowered:createOperatorSubscriber(subscriber, ...)
     blocked by unresolved untyped:this.error(err)
 Subject.next                       open     self:&mut p0:?; returns fresh
-    blocked by callback cb
     blocked by unresolved interface-dispatch:observer.next(value)
 Subject.complete                   settled  self:&mut; returns fresh (matches source)
-    blocked by callback cb
     blocked by unresolved interface-dispatch:observers.shift()!.complete()
 BehaviorSubject.getValue           settled  self:&; returns unknown (matches source)
 BehaviorSubject.next               open     self:&mut p0:?; returns fresh
-    blocked by callback cb
     blocked by unresolved interface-dispatch:observer.next(value)
 
 settled 2/6 members, 2/6 excluding trivial ones; return alias known for 4/6
@@ -213,9 +201,7 @@ v4                                 open     p0:? p1:&mut p2:prim; returns unknow
     blocked by unresolved property-value:options.rng()
     blocked by write to unknown in v4#_v4: copy+property read (rnds)
 v5                                 open     p0:? p1:? p2:&mut p3:prim; returns p2
-    blocked by callback hash
     blocked by unresolved builtin-unkeyed:unescape(...)
-    blocked by write to unknown in v35: copy+fresh (bytes)
 stringify                          settled  p0:& p1:prim; returns fresh (matches source)
 validate                           settled  p0:&; returns fresh (matches source)
 parse                              settled  p0:prim; returns fresh (matches source)
@@ -224,8 +210,8 @@ settled 3/5 members, 2/4 excluding trivial ones; return alias known for 4/5
 
 ## zod@4.6.7
 
-string                             settled  p0:&mut; returns unknown (matches source)
-    blocked by callback Class
+string                             settled  p0:&mut; returns fresh (matches source)
+    blocked by callback value unknown in string: module-level value (ZodString)
 optional                           open     p0:?; returns unknown
     blocked by unresolved package-value:new ZodOptional({...})
 ZodType.optional                   open     self:?; returns unknown
@@ -235,17 +221,17 @@ ZodType.register                   settled  self:& p0:&mut p1:&; returns self (m
 ZodType.parse                      open     self:? p0:? p1:?; returns unknown
     blocked by unresolved package-value:parse.parse(this, data, params, { callee: _parse })
 
-settled 3/6 members, 3/6 excluding trivial ones; return alias known for 2/6
+settled 3/6 members, 3/6 excluding trivial ones; return alias known for 3/6
 
 ## Total
 
-settled 22/56 members, 21/55 excluding trivial ones; return alias known for 35/56
-hand check: 21/22 settled members match the source, and 12/12 settled positions of open members
+settled 22/56 members, 21/55 excluding trivial ones; return alias known for 36/56
+hand check: 21/22 settled members match the source, and 13/13 settled positions of open members
 
 blocker classes, counted once per open member they block:
-   14  callback parameter called
     8  unresolved: external-package
     8  unresolved: property-value
+    6  callback value unknown: copy
     6  unresolved: dynamic
     6  unresolved: package-value
     6  unresolved: untyped
@@ -253,7 +239,6 @@ blocker classes, counted once per open member they block:
     4  write to unknown: call result
     3  unresolved: closure-param
     3  unresolved: host-api
-    3  write to unknown: copy+fresh
     2  unresolved: interface-dispatch
     2  unresolved: local-value
     2  write to unknown: closure parameter
@@ -261,33 +246,36 @@ blocker classes, counted once per open member they block:
     2  write to unknown: copy+property read
     2  write to unknown: free name
     2  write to unknown: property read
+    1  callback value unknown: copy+property read
+    1  callback value unknown: property read
     1  unresolved: bound-function
     1  unresolved: builtin-unkeyed
     1  unresolved: iteratee
+    1  write to unknown: copy+fresh
 
 open members each theme blocks, and those it alone blocks:
-  A. origin lattice: writes through properties, call results and joins 11   0
+  A. origin lattice: writes through properties, call results and joins 14   0
   B. module-level and captured state                                  2   0
-  C. callbacks the caller supplies                                   16   1
-  D. dynamic dispatch and functions built at runtime                 29   5
-  E. code outside the package                                        10   1
+  C. callbacks the package stores and calls later                     3   1
+  D. dynamic dispatch and functions built at runtime                 29   8
+  E. code outside the package                                        10   2
   F. not lowered for this check                                       4   0
 
 open members whose every blocker falls in the themes so far, cumulative:
   + A. origin lattice: writes through properties, call results and joins  0/34
   + B. module-level and captured state                              2/34
-  + C. callbacks the caller supplies                                3/34
+  + C. callbacks the package stores and calls later                 3/34
   + D. dynamic dispatch and functions built at runtime             21/34
   + E. code outside the package                                    30/34
   + F. not lowered for this check                                  34/34
 
 with the Jelly prototype's call targets, of 34 open members:
-   6 would settle: immer original, rxjs Subject.next, rxjs BehaviorSubject.next, zod optional, zod ZodType.optional, zod ZodType.parse
-  13 would settle if callbacks were the caller's responsibility: date-fns isAfter, date-fns getYear, date-fns max, date-fns closestTo, mitt Emitter.emit, immer original, lodash-es pullAll, rxjs Observable.pipe, rxjs Subject.next, rxjs BehaviorSubject.next, zod optional, zod ZodType.optional, zod ZodType.parse
+   7 would settle: immer original, lodash-es pullAll, rxjs Subject.next, rxjs BehaviorSubject.next, zod optional, zod ZodType.optional, zod ZodType.parse
+   9 would settle if stored callbacks were the caller's responsibility too: mitt Emitter.emit, immer original, lodash-es pullAll, rxjs Observable.pipe, rxjs Subject.next, rxjs BehaviorSubject.next, zod optional, zod ZodType.optional, zod ZodType.parse
   open members each theme still blocks:
-    A. origin lattice: writes through properties, call results and joins 11
+    A. origin lattice: writes through properties, call results and joins 14
     B. module-level and captured state                                  2
-    C. callbacks the caller supplies                                   18
-    D. dynamic dispatch and functions built at runtime                  4
+    C. callbacks the package stores and calls later                     5
+    D. dynamic dispatch and functions built at runtime                 13
     E. code outside the package                                        10
     F. not lowered for this check                                       4

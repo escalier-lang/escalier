@@ -36,20 +36,36 @@ targets themselves. They bring their own blockers:
   which calls an initializer with 10 candidates. `parse` reaches a
   `schema._zod.run` call with 50.
 
-Callbacks matter more than call targets for this sample. With Jelly's targets,
-treating a call through a parameter as the caller's responsibility settles 6
-more members, for 29 of 56. Callbacks still block 18 of the 33 open members.
+The callback rule, which [hand_lowering.md](hand_lowering.md) section C
+describes, settles one more member with Jelly's targets, for 24 of 56. The
+blockers suggested 6, for 29. lodash's `pullAll` is the one that settles. The
+other five have blockers the rule does not cover:
+
+- The four `date-fns` members reach methods `constructFrom` calls on the
+  caller's date. Day 4 counted those calls as the caller's, like an option
+  callback, but they are dynamic dispatch on a value the caller passed, not
+  calls through a parameter. `toDate` also passes `context || argument` to
+  `constructFrom`, and the join of two parameters is Unknown.
+- `mitt`'s `Emitter.emit` calls handlers `on` stored, which the rule does not
+  reach.
+
+The rule also proves lodash's `mapValues` writes its object. `keys`, the
+function `mapValues` passes to `baseFor`'s closure, reaches `getRawTag`,
+which masks `Symbol.toStringTag` on the object the way `isSymbol` does. The
+hand-derived expectation had missed that path.
 
 | Run                                         | Settled | Open members a theme blocks: A / B / C / D / E / F |
 | ------------------------------------------- | ------- | -------------------------------------------------- |
 | After the lattice changes                   | 22/56   | 11 / 2 / 16 / 29 / 10 / 4                          |
 | Jelly's targets, before lowering them       | 28/56   | an upper bound                                     |
 | Jelly's targets, lowered                    | 23/56   | 12 / 5 / 18 / 8 / 12 / 10                          |
-| The same, with the callback rule            | 29/56   | not measured                                       |
+| The same, with the callback rule            | 24/56   | 16 / 5 / 5 / 15 / 12 / 10                          |
 
 The themes are the ones in [hand_lowering.md](hand_lowering.md): A the origin
 lattice, B module-level and captured state, C callbacks, D dynamic dispatch, E
-code outside the package, and F not lowered. Theme F grew because the rxjs and
+code outside the package, and F not lowered. With the callback rule, theme C
+covers only callbacks the package stores and calls later, and calls on a
+method of the caller's object count under theme D. Theme F grew because the rxjs and
 zod targets fan out into code this check does not lower. Every answer the
 analysis gave still matches the source except `app.enabled`, the sound but
 over-strict `&mut self` the earlier run found.
@@ -147,6 +163,15 @@ against the later run changes no outcome. lru-cache's `dispose` and uuid's
 `rng` now resolve to the driver's own option callbacks instead of to nothing,
 which was already how this table read them.
 
+With the callback rule in the analysis, `sites.json` splits the 11 caller
+sites three ways. Four are callbacks the rule covers or would cover if the
+lattice tracked them, such as `immer`'s `recipe` and uuid's `options.rng`,
+which reads off a parameter joined with a fresh object. Three are methods of
+an object the caller passed, such as `date-fns`'s `date[constructFromSymbol]`,
+which count as dynamic dispatch. The other four are callbacks the package
+stores and calls later, such as `mitt`'s handlers and lru-cache's
+`dispose`.
+
 ## What the prototype found
 
 - **Captured state needs points-to, not only call targets.** Jelly's
@@ -157,9 +182,10 @@ which was already how this table read them.
   of it would charge a write to every parameter and receiver that may reach the
   written object, which is a points-to charging rule rather than the origin
   lattice the analysis has now.
-- **Callbacks are the next lever.** They block 18 of the 33 open members after
-  Jelly, more than any other theme. The caller's-responsibility rule settles
-  6 of them.
+- **Callbacks were the next lever, and pulling it moved little.** They
+  blocked 18 of the 33 open members after Jelly, more than any other theme.
+  The callback rule settles one of them, because the rest also wait on joins,
+  dispatch on the caller's objects, or stored callbacks.
 - **Context-insensitive targets fan out.** A callback or an initializer that
   many callers share collects all of their functions. Summarizing such a call
   with the union of its targets is sound but merges unrelated effects.
@@ -168,9 +194,10 @@ which was already how this table read them.
   driver cannot construct a request.
 - **Calls through a caller's object are where Jelly is unsound.** Day 5's
   silent misses are almost all calls to methods of an object the caller
-  passed. The callback rule would treat such a call as the caller's, which
-  makes the miss harmless. Without the rule, a summary built from Jelly's
-  targets is unsound there.
+  passed. A rule that treated such a call as the caller's would make the miss
+  harmless. The callback rule covers a function passed as a parameter, not a
+  method of a passed object, so a summary built from Jelly's targets is still
+  unsound there.
 - **The evaluation overstated one row.** [jelly_evaluation.md](jelly_evaluation.md)
   listed eventemitter3's `listeners.fn.call(...)` as resolved under `--approx`.
   Neither its own runs nor these give that call a target. The dynamic key

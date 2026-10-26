@@ -72,11 +72,11 @@ func init() {
 				let("keys", V("k1")).let("keys", V("k2")).
 				// keys.forEach(key => { iter(key, obj[key], obj) })
 				let("key", Unknown()).
-				call("", "iter", V("key"), Prop(V("obj")), V("obj")).
-				builtin("", "Array.prototype.forEach", V("keys"), G("fn:each/closure")).
+				call("", "iter", Lit(), V("key"), Prop(V("obj")), V("obj")).
+				builtin("", "Array.prototype.forEach", V("keys"), Alloc()).
 				// obj.forEach((entry, index) => iter(index, entry, obj)), where
 				// obj is `any`.
-				unresolved("", "untyped:obj.forEach(...)", V("obj"), G("fn:each/closure2")).
+				unresolved("", "untyped:obj.forEach(...)", V("obj"), Alloc()).
 				ret(Lit()),
 
 			// freeze(obj, deep = false)
@@ -91,7 +91,7 @@ func init() {
 				// each(obj, (_key, value) => { freeze(value, true) }, false)
 				let("value", Unknown()).
 				to("", "freeze", Lit(), V("value"), Lit()).
-				to("", "each", Lit(), V("obj"), G("fn:freeze/closure"), Lit()).
+				to("", "each", Lit(), V("obj"), Alloc(), Lit()).
 				ret(V("obj")),
 
 			// original(value)
@@ -104,7 +104,7 @@ func init() {
 			// curried branch returns a closure and is lowered as an allocation.
 			impl("Immer.produce", "base", "recipe", "patchListener").
 				to("fb", "isFunction", Lit(), V("base")).
-				ret(G("fn:curriedProduce")).
+				ret(Alloc()).
 				to("", "die", Lit(), Lit(), Alloc()).
 				to("dr", "isDraftable", Lit(), V("base")).
 				// enterScope, createProxy and processResult build the draft
@@ -112,15 +112,15 @@ func init() {
 				// callback below already blocks the member.
 				unresolved("scope", "not-lowered:enterScope(this)", Lit(), V("this$")).
 				unresolved("proxy", "not-lowered:createProxy(scope, base, undefined)", Lit(), V("scope"), V("base"), Lit()).
-				call("result", "recipe", V("proxy")).
+				call("result", "recipe", Lit(), V("proxy")).
 				unresolved("", "not-lowered:usePatchesInScope(scope, patchListener)", Lit(), V("scope"), V("patchListener")).
 				unresolved("pr", "not-lowered:processResult(result, scope)", Lit(), V("result"), V("scope")).
 				ret(V("pr")).
 				to("oi", "isObjectish", Lit(), V("base")).
-				call("result2", "recipe", V("base")).
+				call("result2", "recipe", Lit(), V("base")).
 				let("r", V("result2")).let("r", V("base")).let("r", Lit()).
 				to("", "freeze", Lit(), V("r"), Lit()).
-				call("", "patchListener", Alloc(), Alloc()).
+				call("", "patchListener", Lit(), Alloc(), Alloc()).
 				ret(V("r")),
 		},
 		members: []member{

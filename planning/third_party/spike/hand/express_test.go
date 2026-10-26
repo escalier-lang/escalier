@@ -59,9 +59,9 @@ func init() {
 				unresolved("", "external-package:debug('.use app under %s', path)", Lit(), V("path")).
 				set(V("cfn"), V("path")).
 				set(V("cfn"), Unknown()).
-				unresolved("", "untyped:router.use(path, mounted_app)", V("router"), V("path"), G("fn:mounted_app")).
+				unresolved("", "untyped:router.use(path, mounted_app)", V("router"), V("path"), Alloc()).
 				unresolved("", "untyped:fn.emit('mount', this)", V("cfn"), Unknown()).
-				builtin("", "Array.prototype.forEach", V("fns"), G("fn:use/closure"), V("this$")).
+				builtin("", "Array.prototype.forEach", V("fns"), Alloc(), V("this$")).
 				ret(V("this$")),
 
 			// res.status(code)
@@ -76,7 +76,7 @@ func init() {
 			// res.set(field, val)
 			impl("res.set", "field", "val").
 				builtin("", "Array.isArray", Lit(), V("val")).
-				builtin("m", "Array.prototype.map", V("val"), G("fn:String")).
+				builtin("m", "Array.prototype.map", V("val"), V("builtin:String")).
 				let("value", V("m")).let("value", Lit()).
 				builtin("lc", "String.prototype.toLowerCase", V("field")).
 				throw(Alloc()).

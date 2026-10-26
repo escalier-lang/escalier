@@ -24,16 +24,22 @@
 //     facts publish for that builtin.
 //   - A closure is lowered into the function that creates it. Its parameters
 //     bind to `?`, a name the function never binds, so they read as Unknown.
-//     A call the closure is passed to is lowered as if the builtin did not
-//     call it, since its body is already part of the caller.
+//     The closure value itself is Alloc(), which the analysis holds to the
+//     callback contract, so a call it is passed to charges nothing more for
+//     it. Its body is already part of the caller.
 //   - A call the lowering cannot resolve is a call to `?<reason>`, which names
 //     no body, so the analysis marks the caller incomplete.
 //   - A call through a parameter is a call to that parameter's name, which the
-//     analysis treats as a callback.
-//   - A module-level binding is a GlobalExpr, written G(name). So is one of the
-//     package's own functions passed as a value. A value a method's closure
-//     captures, such as mitt's `all`, is not module-level, so it stays a name
-//     the method does not bind.
+//     analysis treats as a callback. Its first argument is the receiver, as
+//     for any other call.
+//   - One of the package's own functions passed as a value is a name for its
+//     abstract operation, as V("impl:keys"), and a builtin passed as a value
+//     is V("builtin:String"). A call that hands it to a callback charges what
+//     it mutates.
+//   - A module-level binding is a GlobalExpr, written G(name). So is a
+//     package function held in a variable, which the analysis does not follow.
+//     A value a method's closure captures, such as mitt's `all`, is not
+//     module-level, so it stays a name the method does not bind.
 package hand
 
 import (
@@ -204,9 +210,13 @@ var packages []pkg
 // ---------------------------------------------------------------------------
 // Builtin stubs
 
-// builtinStubs writes an abstract operation for every `builtin:` callee the
-// lowered functions name. A stub's parameter 0 is the receiver and the rest
-// are the builtin's own parameters.
+// builtinStubs writes an abstract operation for every `builtin:` callee or
+// value the lowered functions name. A stub's parameter 0 is the receiver and
+// the rest are the builtin's own parameters.
+//
+// A stub calls each parameter its builtin calls, with the shape
+// `Array.prototype.forEach` uses: an element of the receiver, an index, and
+// the receiver.
 func builtinStubs(t *testing.T, funcs []*fn) []*fn {
 	_, here, _, _ := runtime.Caller(0)
 	cfg, err := ecma262.LoadCFG(filepath.Join(filepath.Dir(here), "../../../../internal/ecma262/cfg.json"))
@@ -216,10 +226,29 @@ func builtinStubs(t *testing.T, funcs []*fn) []*fn {
 	summary := ecma262.NewMutationSummary(cfg)
 
 	needed := set.NewSet[string]()
+	var values func(v any)
+	values = func(v any) {
+		switch v := v.(type) {
+		case expr:
+			if name, ok := v["var"].(string); ok && strings.HasPrefix(name, "builtin:") {
+				needed.Add(strings.TrimPrefix(name, "builtin:"))
+			}
+			for _, child := range v {
+				values(child)
+			}
+		case []expr:
+			for _, child := range v {
+				values(child)
+			}
+		}
+	}
 	for _, f := range funcs {
 		for _, n := range f.nodes {
 			if c, ok := n["callee"].(string); ok && strings.HasPrefix(c, "builtin:") {
 				needed.Add(strings.TrimPrefix(c, "builtin:"))
+			}
+			for _, v := range n {
+				values(v)
 			}
 		}
 	}
@@ -227,6 +256,7 @@ func builtinStubs(t *testing.T, funcs []*fn) []*fn {
 	sort.Strings(keys)
 
 	var stubs []*fn
+	memo := map[*ecma262.Func][]int{}
 	for _, key := range keys {
 		b := cfg.Builtin(key)
 		require.NotNil(t, b, "no builtin named %s in the ECMA-262 graph", key)
@@ -241,6 +271,9 @@ func builtinStubs(t *testing.T, funcs []*fn) []*fn {
 		m := summary.Of(b)
 		for _, arg := range m.Args {
 			stub.set(V(stub.params[arg+1]), Lit())
+		}
+		for _, i := range calledParams(cfg, b, memo) {
+			stub.call("", stub.params[i+1], Lit(), Prop(V("recv")), Lit(), V("recv"))
 		}
 		// The stub returns what the builtin's fact says it returns, so a call
 		// to it takes that origin. An unknown return leaves the stub with no
@@ -258,6 +291,65 @@ func builtinStubs(t *testing.T, funcs []*fn) []*fn {
 		stubs = append(stubs, stub)
 	}
 	return stubs
+}
+
+// calledParams returns the positions of b's parameters that b calls. A
+// parameter is called when it is a call's callee, when it is the function
+// `Call` is given, or when it is passed at a position the callee calls in
+// turn, as `Array.prototype.find` passes its predicate to
+// `FindViaPredicate`. memo holds the answer for each function already read,
+// and an operation still being read answers none, which breaks a cycle.
+func calledParams(cfg *ecma262.CFG, b *ecma262.Func, memo map[*ecma262.Func][]int) []int {
+	if out, ok := memo[b]; ok {
+		return out
+	}
+	memo[b] = nil
+	index := map[string]int{}
+	for i, p := range b.Params {
+		index[p] = i
+	}
+	param := func(e ecma262.Expr) (int, bool) {
+		v, ok := e.(*ecma262.VarExpr)
+		if !ok {
+			return 0, false
+		}
+		i, ok := index[v.Var]
+		return i, ok
+	}
+	called := set.NewSet[int]()
+	for _, n := range b.Nodes {
+		call, ok := n.(*ecma262.CallNode)
+		if !ok {
+			continue
+		}
+		if i, ok := index[call.Callee]; ok {
+			called.Add(i)
+			continue
+		}
+		if call.Callee == "Call" {
+			if len(call.Args) > 0 {
+				if i, ok := param(call.Args[0]); ok {
+					called.Add(i)
+				}
+			}
+			continue
+		}
+		callee := cfg.AbstractOp(call.Callee)
+		if callee == nil {
+			continue
+		}
+		for _, k := range calledParams(cfg, callee, memo) {
+			if k < len(call.Args) {
+				if i, ok := param(call.Args[k]); ok {
+					called.Add(i)
+				}
+			}
+		}
+	}
+	out := called.ToSlice()
+	sort.Ints(out)
+	memo[b] = out
+	return out
 }
 
 // returnRefs lists the values a builtin's return fact names, one for a single
@@ -372,7 +464,9 @@ func analyze(t *testing.T, p pkg) []memberResult {
 // classify reads one member's answer off the mutation summary. A position the
 // summary charges is a proven `&mut`. Any other position is a proven `&` only
 // when nothing the member reaches leaves the analysis blind: no unresolved
-// call, no callback, and no write it could not place. The analysis carries an
+// call, no function passed to a callback that the analysis cannot read, and no
+// write it could not place. A callback the member calls is the caller's to
+// check, so it does not blind the analysis. The analysis carries an
 // unplaced write up the call graph itself but not an unresolved call, so the
 // harness walks the callees for those.
 func (r *run) classify(m member, target *ecma262.Func) memberResult {
@@ -416,7 +510,7 @@ func (r *run) blockers(root *ecma262.Func) []string {
 					continue
 				}
 				if origins.Of(n.Callee).Kind == ecma262.OriginParam {
-					found.Add("callback " + strings.SplitN(n.Callee, "$", 2)[0])
+					// A callback, which the caller checks.
 					continue
 				}
 				callee := r.cfg.AbstractOp(n.Callee)
@@ -438,6 +532,23 @@ func (r *run) blockers(root *ecma262.Func) []string {
 					}
 				}
 				if callee != nil {
+					for _, pos := range r.summary.Of(callee).Callbacks {
+						if pos >= len(n.Args) {
+							continue
+						}
+						if v, ok := n.Args[pos].(*ecma262.VarExpr); ok {
+							if passed := r.cfg.AbstractOp(v.Var); passed != nil {
+								walk(passed)
+								continue
+							}
+						}
+						switch o := origins.Eval(n.Args[pos]); o.Kind {
+						case ecma262.OriginParam, ecma262.OriginFresh:
+						default:
+							why, name := unknownWhy(f, n.Args[pos])
+							found.Add(fmt.Sprintf("callback value unknown in %s: %s%s", strings.TrimPrefix(f.Name, "impl:"), why, name))
+						}
+					}
 					walk(callee)
 				}
 			case *ecma262.OpaqueNode:
@@ -460,6 +571,8 @@ func unknownWhy(f *ecma262.Func, e ecma262.Expr) (why, name string) {
 	switch e := e.(type) {
 	case *ecma262.PropExpr:
 		return "property read", ""
+	case *ecma262.GlobalExpr:
+		return "module-level value", " (" + e.Var + ")"
 	case *ecma262.VarExpr:
 		if e.Var == "?" {
 			return "closure parameter", ""
@@ -701,7 +814,7 @@ func TestHandLowering(t *testing.T) {
 var themeOrder = []string{
 	"A. origin lattice: writes through properties, call results and joins",
 	"B. module-level and captured state",
-	"C. callbacks the caller supplies",
+	"C. callbacks the package stores and calls later",
 	"D. dynamic dispatch and functions built at runtime",
 	"E. code outside the package",
 	"F. not lowered for this check",
@@ -712,9 +825,18 @@ func themeOf(class string) string {
 	switch {
 	case class == "write to unknown: free name":
 		return themeOrder[1]
-	case strings.HasPrefix(class, "write to unknown"):
+	case strings.HasPrefix(class, "write to unknown"), class == "callback value unknown: module-level value":
+		// A module-level function value is one zod's `$constructor` builds
+		// at load, which belongs with the functions built at runtime.
+		if class == "callback value unknown: module-level value" {
+			return themeOrder[3]
+		}
 		return themeOrder[0]
-	case class == "callback parameter called", class == "unresolved: closure-param":
+	case strings.HasPrefix(class, "callback value unknown"):
+		// A function passed on after a join or a property read, as
+		// date-fns's `context || argument`.
+		return themeOrder[0]
+	case class == "unresolved: closure-param":
 		return themeOrder[2]
 	case class == "unresolved: external-package", class == "unresolved: host-api", class == "unresolved: builtin-unkeyed":
 		return themeOrder[4]
@@ -731,8 +853,9 @@ func blockerClass(b string) string {
 	case strings.HasPrefix(b, "unresolved "):
 		reason := strings.TrimPrefix(b, "unresolved ")
 		return "unresolved: " + strings.SplitN(reason, ":", 2)[0]
-	case strings.HasPrefix(b, "callback "):
-		return "callback parameter called"
+	case strings.HasPrefix(b, "callback value unknown"):
+		why := b[strings.LastIndex(b, ": ")+2:]
+		return "callback value unknown: " + strings.SplitN(why, " (", 2)[0]
 	case strings.HasPrefix(b, "write to unknown"):
 		why := b[strings.LastIndex(b, ": ")+2:]
 		return "write to unknown: " + strings.SplitN(why, " (", 2)[0]
@@ -768,8 +891,9 @@ type jellySite struct {
 // writeJellyLadder reports how many open members would settle once Jelly's
 // call targets replace the blockers it resolved. A blocker Jelly resolves to
 // package code or to a builtin is dropped. One it traces to a value the
-// caller supplies counts as a callback, and one it traces outside the package
-// counts as outside code. The count is an upper bound, since a resolved
+// caller supplies and the package stores counts as a stored callback, one it
+// traces to a method of an object the caller supplies counts as dynamic
+// dispatch, and one it traces outside the package counts as outside code. The count is an upper bound, since a resolved
 // target can bring blockers of its own.
 func writeJellyLadder(t *testing.T, sb *strings.Builder, names []string, blockers [][]string) {
 	_, here, _, _ := runtime.Caller(0)
@@ -792,6 +916,8 @@ func writeJellyLadder(t *testing.T, sb *strings.Builder, names []string, blocker
 					continue
 				case "caller":
 					theme = themeOrder[2]
+				case "caller-method":
+					theme = themeOrder[3]
 				case "external", "dependency":
 					theme = themeOrder[4]
 				}
@@ -801,7 +927,7 @@ func writeJellyLadder(t *testing.T, sb *strings.Builder, names []string, blocker
 		return themes
 	}
 
-	var settled, withCallbacks []string
+	var settled, withStored []string
 	remaining := map[string]int{}
 	for i, bs := range blockers {
 		themes := themesAfter(bs)
@@ -810,7 +936,7 @@ func writeJellyLadder(t *testing.T, sb *strings.Builder, names []string, blocker
 		}
 		themes.Remove(themeOrder[2])
 		if themes.Len() == 0 {
-			withCallbacks = append(withCallbacks, names[i])
+			withStored = append(withStored, names[i])
 		}
 		for _, theme := range themesAfter(bs).ToSlice() {
 			remaining[theme]++
@@ -818,7 +944,7 @@ func writeJellyLadder(t *testing.T, sb *strings.Builder, names []string, blocker
 	}
 	fmt.Fprintf(sb, "\nwith the Jelly prototype's call targets, of %d open members:\n", len(blockers))
 	fmt.Fprintf(sb, "  %2d would settle: %s\n", len(settled), strings.Join(settled, ", "))
-	fmt.Fprintf(sb, "  %2d would settle if callbacks were the caller's responsibility: %s\n", len(withCallbacks), strings.Join(withCallbacks, ", "))
+	fmt.Fprintf(sb, "  %2d would settle if stored callbacks were the caller's responsibility too: %s\n", len(withStored), strings.Join(withStored, ", "))
 	fmt.Fprintf(sb, "  open members each theme still blocks:\n")
 	for _, theme := range themeOrder {
 		fmt.Fprintf(sb, "    %-66s %2d\n", theme, remaining[theme])

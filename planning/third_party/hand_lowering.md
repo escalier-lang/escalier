@@ -12,7 +12,9 @@ rather than unknown.
 
 The check ran twice. The first run used the analysis as the builtins
 workstream left it. The second ran after the origin-lattice changes that
-section A below describes, which are now part of `internal/ecma262`.
+section A below describes, which are now part of `internal/ecma262`. A third
+run added the callback rule that section C describes, which changed no
+member's settled status, so the tables below report the first two runs.
 
 ## Result
 
@@ -173,18 +175,54 @@ lattice.
 Some callbacks belong to the caller, such as `immer`'s `recipe` and the
 `options.in` context function that every `date-fns` member reaches through
 `constructFrom`. Others are internal higher-order helpers that the package
-always calls with a closure it writes itself, such as lodash's `arrayMap`,
-`immer`'s `each` and `rxjs`'s `errorContext`. Treating a call through a
-parameter as the caller's responsibility settles the first kind. The second
-kind needs the callee's summary to take the closure argument's effects into
-account.
+always calls with a function it writes itself, such as lodash's `arrayMap`,
+`immer`'s `each` and `rxjs`'s `errorContext`.
 
-`mitt`'s `Emitter.emit` is the one member callbacks block alone. It reads
-the handlers registered for `type` and calls each with `evt`. Today the call
-leaves `evt` unknown, because a handler could do anything with it. Under the
-caller's-responsibility reading, `evt`'s disposition is whatever the handler's
-declared parameter says. With handlers declared as taking `&T`, `emit` takes
-`evt: &T`, and Escalier rejects a mutating handler where it is registered.
+The analysis now applies a callback rule to both kinds. A callback takes its
+arguments as `&` borrows and returns an owned value. Checking that the
+function a caller passes keeps to that is the caller's job, which Escalier's
+checker does where the call is written. The mutation summary records each
+call through a parameter under that parameter's position, as `callbacks{k}`,
+instead of marking the function incomplete. A caller that passes the
+parameter on records the call under its own parameter. A caller that passes
+one of the package's own functions, such as `uuid`'s `v5` passing `sha1` to
+`v35`, charges what that function mutates against the arguments the call
+gives it. A closure the caller allocates is held to the same contract.
+
+The rule removed the 14 callback blockers but settled no member in this run.
+Every member they blocked had another blocker:
+
+- `date-fns`: `toDate` passes `context || argument` to `constructFrom`'s
+  callback position. The join of two parameters is Unknown, so the callback
+  blocker moves from `constructFrom` to `toDate`. Every member also reaches
+  the methods `constructFrom` calls on the caller's date, which are dynamic
+  dispatch.
+- lodash's `mapValues` reassigns `iteratee` to `baseIteratee(iteratee)`,
+  which returns either the parameter or a matcher closure. That call result
+  is Unknown, so the call through it stays unresolved.
+- The rest are blocked by theme D or E as well.
+
+What the rule did change is visible in the answers. A callback's result is
+now an owned value, so `immer`'s `produce` proves `base` is `&mut`, and
+zod's `string` returns a fresh value where its return was unknown. The return
+alias is known for 36 of 56 members.
+
+`mitt`'s `Emitter.emit` is the one member callbacks still block alone. It
+reads the handlers `on` stored in the captured map and calls each with
+`evt`. A stored callback is outside the rule, because the function the
+caller registered reaches `emit` through state rather than as a parameter.
+Covering it means carrying the `&` contract from `on`'s `handler`
+parameter to the map that holds it. `lru-cache`'s `dispose` option is the
+same shape.
+
+`Array.prototype.forEach` and the other builtins that take a callback still
+report `none` rather than `callbacks{0}`. They call it through the `Call`
+abstract operation, whose body calls `Call` again, a name collision between
+the operation and the `[[Call]]` internal method that resolves back to the
+operation itself. Recording that call would also mark incomplete every
+builtin that calls a function the analysis cannot name, such as a method
+`GetMethod` returns. The harness stubs for these builtins call their
+callback parameters directly instead.
 
 ### D. Dynamic dispatch and functions built at runtime
 
@@ -267,9 +305,11 @@ nothing a front end has to supply.
 What remains is theme D, and it is the expensive part. Most open members wait
 on resolving functions that exist only at runtime. The ladder puts the
 members a front end that handles theme D could settle at 21 of the 34 still
-open. Whether to build one is the decision for the spike. Callbacks are the
-other open question. They block 16 open members, but only alongside other
-themes, so their rule matters once theme D is solved.
+open. Whether to build one is the decision for the spike. The callback rule is in
+place. It settles nothing on its own, because every member a callback blocked
+had another blocker, but it sharpens return aliases and lets a front end that
+resolves theme D settle callback-heavy members without a separate pass.
+Stored callbacks are the part of theme C it leaves open.
 
 ## Reproducing
 
