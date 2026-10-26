@@ -90,7 +90,10 @@ mutability.
 **T4. A borrow's mutability narrows and never widens.** `&mut T` satisfies
 `&T`. `&T` does not satisfy `&mut T`. Every write, every `&mut` borrow, and every
 call to a `&mut self` method requires a mutable path to its target, and T4 is
-the rule that decides each of them.
+the rule that decides each of them. A function holding `p: &mut {x: number}`
+can pass `p` to a parameter typed `&{x: number}`. A function holding
+`p: &{x: number}` cannot pass it to a parameter typed `&mut {x: number}`, and
+the call reports `cannot constrain immutable object <: mutable object`.
 
 **T5. `readonly` forbids reassigning a slot.** A write to a `readonly` field is
 rejected after the field's one initialization. A `readonly` field does not
@@ -100,7 +103,9 @@ it. A getter with no setter counts as a `readonly` field.
 **T6. A borrow cannot fill an owned destination.** A value of type `&T` or
 `&mut T` does not satisfy a bare `T` or `mut T`, since the destination would
 claim ownership of storage owned elsewhere. Reading a field through a borrow
-produces a borrow of that field, not an owned value.
+produces a borrow of that field, not an owned value. With `r: &{x: number}`, the
+binding `val q: {x: number} = r` reports `cannot use borrowed &object as owned
+object`, and `val q: &{x: number} = r` is accepted.
 
 ## Flow rules
 
@@ -119,6 +124,22 @@ on the source type and the destination type:
    keeps ownership.
 4. An owned source flowing into an owned destination is moved. The source place
    is consumed.
+
+Each binding in the function below shows one of the outcomes. Reading `q.x`
+after `val d = q` would report `use of moved value 'q'`.
+
+```esc
+fn go(r: &{x: number}) -> number {
+    val n = 1
+    val a = n                  // copy, since n is a value type
+    val b = r                  // copy, since r is a & borrow
+    val p = {x: 1}
+    val c: &{x: number} = p    // borrow, so p stays usable
+    val q = {x: 2}
+    val d = q                  // move, so q is consumed
+    return a + b.x + c.x + p.x + d.x
+}
+```
 
 **F2. A destination with no written type is owned exactly when the value
 escapes.** A value escapes when the destination outlives the source's region.
@@ -176,6 +197,28 @@ Several immutable paths may be live at once, and so may several mutable paths. A
 path with a `'static` lifetime is live at every later point, so a value with a
 `'static` immutable path is never written again, and a value with a `'static`
 mutable path never gets a new immutable path.
+
+The two functions below differ only in statement order. In the first, `q` is
+read after the write to `p`, so the two paths overlap and the binding of `q`
+reports `cannot assign 'p' to immutable 'q': 'p' is still used mutably after
+this point`. In the second, the write is `p`'s last mutable use, so nothing
+overlaps.
+
+```esc
+fn overlapping() -> number {
+    val mut p = {x: 0}
+    val q: &{x: number} = p
+    p.x = 1
+    return q.x
+}
+
+fn sequential() -> number {
+    val mut p = {x: 0}
+    p.x = 1
+    val q: &{x: number} = p
+    return q.x
+}
+```
 
 **E3. A place with a live borrow cannot be moved.** Moving `p` while a borrow of
 a place overlapping `p` is live is rejected, because the borrow would point into
@@ -511,12 +554,17 @@ analysis map a TypeScript type onto the rules above.
 
 **I1. `Readonly<T>` maps to `&T` only when the whole of `T` is read-only.**
 TypeScript's `Readonly<T>` and `readonly T[]` forbid writes at the top level
-only. `Readonly<{a: {b: number}}>` still allows `x.a.b = 1`. Escalier's `&`
-is read-only all the way down, by T3. So the converter reads `Readonly<T>` as
-`&T` only when every property and element type inside `T` is a value type, or
-is itself wrapped in `Readonly` or `readonly` all the way down. A recursive
-helper type such as `DeepReadonly<T>` counts when its structure shows it. Any
-other `Readonly<T>` gives no signal, and the converter's lower tiers decide.
+only. In the declaration below, `reset` can still run `x.a.b = 0`, so its
+parameter cannot become `&{a: {b: number}}`. Escalier's `&` is read-only all
+the way down, by T3. So the converter reads `Readonly<T>` as `&T` only when
+every property and element type inside `T` is a value type, or is itself
+wrapped in `Readonly` or `readonly` all the way down. A recursive helper type
+such as `DeepReadonly<T>` counts when its structure shows it. Any other
+`Readonly<T>` gives no signal, and the converter's lower tiers decide.
+
+```ts
+declare function reset(x: Readonly<{a: {b: number}}>): void;
+```
 
 `classifyExplicitSignal` in
 [mutability.go](../../internal/dts_to_esc/mutability.go) maps `this:
