@@ -313,16 +313,73 @@ is never an error on its own. The lifetime matters only to E2, which reads it to
 decide how long the path is live. A borrow that flows into module-level state
 gets the lifetime `'static`, so its path stays live for the rest of the program.
 
+In `make` below, the returned borrow outlives `p`, which is accepted. In
+`remember`, the borrow stored in `cache` is `'static`, so `cache` can read `p`
+at any later point and the write to `p` is rejected by E2.
+
+```esc
+fn make() -> &{x: number} {
+    val p = {x: 1}
+    return &p          // accepted, since the value stays alive for the borrow
+}
+
+var cache: &{x: number} = &{x: 0}
+
+fn remember() {
+    val mut p = {x: 1}
+    cache = &p         // the borrow's lifetime is 'static
+    p.x = 2            // rejected by E2, since cache can still read p
+}
+```
+
 **L2. A signature states exactly the lifetime relations its body needs.** A
 body-carrying function must declare every outlives relation between its
 parameters and return that its body establishes. Each declared bound `'a: 'b`
 must also be established by the body. A bodyless `declare fn` is taken at its
 word. See [D4](#d4-declared-lifetime-bounds-are-obligations).
 
+`pick` declares that its result lives as long as `p`, and its body returns `p`.
+`wrong` makes the same declaration but returns `q`, so its body needs a relation
+the signature does not state. `unproven` declares `'b: 'a`, but its body never
+relates `q` to anything, so it does not establish the bound.
+
+```esc
+fn pick<'a>(p: &'a {x: number}, q: &{x: number}) -> &'a {x: number} {
+    return p    // accepted
+}
+
+fn wrong<'a>(p: &'a {x: number}, q: &{x: number}) -> &'a {x: number} {
+    return q    // rejected, since the result's tie to q is not declared
+}
+
+fn unproven<'a, 'b: 'a>(p: &'a {x: number}, q: &'b {x: number}) -> &'a {x: number} {
+    return p    // rejected, since the body never establishes 'b: 'a
+}
+
+declare fn trusted<'a, 'b: 'a>(p: &'a {x: number}, q: &'b {x: number}) -> &'a {x: number}
+```
+
+`trusted` has no body, so its bound is taken as written.
+
 **L3. Lifetimes appear in a rendered type only when they connect something.** A
 lifetime that relates an input to an output, or that is `'static`, is rendered.
 Any other lifetime is elided. The rendered signature is always a valid
 annotation that produces the same type when written back.
+
+Each comment below gives the rendered signature:
+
+```esc
+var sink = {x: 0}
+
+fn read(p: &{x: number}) -> number { return p.x }
+// fn (p: &{x: number}) -> number, since the lifetime connects nothing
+
+fn same(p: &{x: number}) { return p }
+// fn <'a>(p: &'a {x: number}) -> &'a {x: number}, since it ties p to the result
+
+fn cache(p: &mut {x: number}) { sink = p }
+// fn (p: &'static mut {x: number}) -> undefined, since p escapes to 'static
+```
 
 ## Exclusivity rules
 
