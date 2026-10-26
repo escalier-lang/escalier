@@ -211,8 +211,10 @@ This measures recall on the calls the drivers make, not on a test suite's.
 An edge is silent when Jelly names other targets for its site but not this
 one, so nothing marks the site as open. A visible edge is at a site Jelly
 gives no target, which reads as open already. An unmatched edge names a
-function Jelly's output does not. All 10 are a class whose constructor the
-tracer names by the method and Jelly by the class.
+function Jelly's output does not. Each of the 10 lands on or one line below
+a target Jelly does name. That is the shape of a class whose constructor the
+tracer names by the method and Jelly by the class, though the check did not
+confirm each one.
 [spike/jelly/misses.txt](spike/jelly/misses.txt) lists every edge outside the
 found column.
 
