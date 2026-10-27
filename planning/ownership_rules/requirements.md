@@ -651,18 +651,41 @@ The differences come from four sources:
 
 ## Checking model
 
-The rules suggest one checker, which is the target of the simplification:
+The rules suggest one checker, which is the target of the simplification. It
+does not replace the AST or add a second representation of the program. It
+keeps the control-flow graph that the [liveness](../../internal/liveness/)
+package already builds, and attaches a short list of ownership events to each
+node:
 
-1. Each flow site lowers to one event: copy, borrow of a kind, or move. Each
-   borrow also gets the lifetime L1 gives it.
-2. Each read, write, and call lowers to a use event on a place. A call that may
-   run a closure also produces the E4 uses.
-3. The lifetime solver settles F3's escape questions from the outlives
-   constraints.
-4. One forward pass over the control-flow graph checks E1, E2, and E3 against the
-   events and the liveness of each path.
+| Event | Produced by | Example |
+|---|---|---|
+| `copy(place, holder)` | A flow site whose outcome is a copy, by F2 | `val b = r` |
+| `borrow(kind, place, holder, lifetime)` | A written `&` or `&mut`, a method receiver, or a pattern over a borrow, by F4 | `val c = &p` |
+| `move(place, holder)` | A flow site whose outcome is a move, by F2 | `val d = q` |
+| `use(place, read or write)` | Each read, write, and call. A call that may run a closure also uses each borrow the closure holds, by E4 | `p.x = 1` |
+
+The `holder` is the binding or place that receives the value. A borrow stays
+live while its holder, or any copy of it, is used again later.
+
+The checker runs in three steps:
+
+1. The type checker emits the events while it infers. Only it knows each
+   destination's type, and F2 needs that type to choose between copy, borrow,
+   and move. Each borrow carries the lifetime L1 gives it.
+2. Once inference finishes, the lifetime solver settles F3's escape questions
+   from the outlives constraints.
+3. One forward dataflow pass over the control-flow graph checks E1, E2, and E3
+   against the events and the liveness of each holder.
 
 The type rules stay in the type checker, where they already sit.
+
+The design is close to Polonius, the borrow checker the Rust project is
+developing to replace its current one. Polonius reduces Rust's MIR, a fully
+lowered form of the program, to flat relations, such as where each loan is
+issued, where each variable is used, and where each loan ends. It then solves
+over those relations. The events above are the same kind of flat facts per
+control-flow point. Escalier produces them directly from inference, with no MIR
+in between.
 
 ## Open decisions
 
