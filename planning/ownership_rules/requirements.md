@@ -45,7 +45,9 @@ change.
 ## Terms
 
 A *value type* is a primitive, a function, or a promise. Value types are copied
-freely and none of the rules below apply to them.
+freely, and the rules below do not apply to them. The one exception is a
+function parameter, which may carry a lifetime saying how long the callee keeps
+the function, as E4 states.
 
 A *reference-shaped* value is an object, tuple, array, or class instance. The
 rules below govern reference-shaped values only.
@@ -543,6 +545,14 @@ is used as an immutable path. A closure stored into module-level state may run
 during any later call, so every later call uses its borrows. A closure that moves
 one of its captures moves it at each call, so by E1 a second call is rejected.
 
+A function parameter says how long the callee keeps the function it receives.
+A parameter written `f: fn () -> undefined` is only called during the call, so a
+closure passed to it holds its borrows for that call alone. A parameter written
+`f: &'a fn () -> undefined` may keep the function for `'a`, so a closure passed
+to it holds its borrows for `'a`, and `&'static` keeps them for the rest of the
+program. [D10](#d10-recording-that-a-callback-is-not-retained) shows an
+example.
+
 E4 adds no column to the exclusivity table, because it does not decide whether
 an operation on `p` is allowed. It decides when a closure's captures count as
 used, and so which row applies. Between calls, the two closure rows apply. They
@@ -736,7 +746,7 @@ in between.
 
 D1 through D8 record behaviour the solver enforces today that no document
 stated. D9 through D11 are design questions the rules left open. Each decided
-entry says where its outcome now lives. D10 is still open. The current
+entry says where its outcome now lives. All of them are now decided. The current
 behaviour comes from reading the code, and the file references point at where
 it lives.
 
@@ -950,6 +960,10 @@ The options are:
 
 Recommendation: the lifetime form. It reuses L1 and E4 instead of adding a rule.
 
+Decided: accepted. A function type takes an optional lifetime, as in
+`&'a fn () -> undefined`, and E4 states how a call reads it. A function
+parameter with no lifetime is only called during the call.
+
 ### D11. Interior mutability for state no reader can observe
 
 T3 has no escape hatch, so a value in a `val` binding or behind a `&` never
@@ -1141,6 +1155,13 @@ signature should be `fn <T0>(p: &{x: T0}) -> T0`. Today `read(&b)` reports
 `cannot use borrowed &object as owned object`, and `read(b)` is accepted
 without moving `b`.
 
+**B7. A retained callback's captures are borrowed only for the call.** The
+checker treats every function parameter as one the callee only calls, so a
+closure passed to a callee that keeps it holds its borrows for the call alone.
+The first program in [D10](#d10-recording-that-a-callback-is-not-retained)
+checks clean today and should report the error marked there.
+[#1267](https://github.com/escalier-lang/escalier/issues/1267) tracks the gap.
+
 ## Divergences from the docs
 
 These came from reading the code and need confirming with a fixture each before
@@ -1266,8 +1287,8 @@ each a separate PR:
 
 1. Write the conformance tests above against the current solver. A test the
    current solver fails becomes a known-bug entry, or a reason to change a rule.
-2. Settle D10 and update `docs/08_mutability.md` and
-   `docs/09_ownership.md` to match.
+2. Update `docs/08_mutability.md` and `docs/09_ownership.md` to match the
+   decisions.
 3. Move owned mutability from types to bindings, as T1 states. This rewrites the
    `mut T` annotations in tests, fixtures, and the stdlib, and drops the
    owned-mutable `RefType` with no lifetime from
