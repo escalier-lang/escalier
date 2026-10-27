@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+    COMMENT_MARKER,
     classifyFixture,
     diffDiagnostics,
     parseDiagnostics,
+    renderComment,
 } from './classify-fixture-deltas.mjs';
 
 const missingZ = `lib/index.esc:9:12: object is missing property: z
@@ -165,5 +167,26 @@ describe('classifyFixture', () => {
             '- declare const x: number;',
             '+ declare const x: 1;',
         ]);
+    });
+});
+
+describe('renderComment', () => {
+    test('starts with the marker and keeps a short report whole', () => {
+        const report = '## Fixture deltas\n\nNo fixture outputs changed.\n';
+        assert.equal(renderComment(report), `${COMMENT_MARKER}\n${report}`);
+    });
+
+    test('cuts a long report and closes the open diff block', () => {
+        const line = `${'x'.repeat(99)}\n`;
+        const report = `## Fixture deltas\n\n\`\`\`diff\n${line.repeat(1000)}\`\`\`\n`;
+        const body = renderComment(report);
+        assert.ok(body.length < 65536);
+        assert.equal((body.match(/^\`\`\`/gm) ?? []).length, 2);
+        assert.ok(
+            body.endsWith(
+                'The report is too long for a comment. The job summary of ' +
+                    'the `classify_fixture_deltas` check has the rest.\n',
+            ),
+        );
     });
 });

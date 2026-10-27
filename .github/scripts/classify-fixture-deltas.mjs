@@ -3,7 +3,7 @@
 // Classifies how a PR changes the committed fixture outputs and rates each
 // change by review risk.
 //
-//     classify-fixture-deltas.mjs <base-ref> [--json <out.json>]
+//     classify-fixture-deltas.mjs <base-ref> [--json <out.json>] [--comment <out.md>]
 //
 // The fixture harness in cmd/escalier/fixture_test.go fails unless each
 // fixture's committed build/ tree and error.txt match what the compiler
@@ -25,7 +25,8 @@
 //
 // The script prints a Markdown report, writes it to $GITHUB_STEP_SUMMARY
 // when that is set, and emits a workflow annotation for each high and
-// medium change. It exits 0 whatever tiers it finds, since the tiers are
+// medium change. With --comment it also writes the report as the body of
+// a PR comment that starts with COMMENT_MARKER. It exits 0 whatever tiers it finds, since the tiers are
 // advisory and do not gate the merge.
 
 import { execFileSync } from 'node:child_process';
@@ -354,16 +355,44 @@ export function renderReport(results) {
     return lines.join('\n');
 }
 
+// The first line of the PR comment. The workflow finds the comment it
+// posted on an earlier run by this line and edits it in place.
+export const COMMENT_MARKER = '<!-- classify-fixture-deltas -->';
+
+// GitHub rejects a comment body longer than 65,536 characters.
+const COMMENT_LIMIT = 60000;
+
+// Returns the body of the PR comment for `report`. A report that does not
+// fit in a comment is cut at a line boundary and ends with a pointer to
+// the job summary, which holds the full report.
+export function renderComment(report) {
+    let body = report;
+    if (body.length > COMMENT_LIMIT) {
+        const cut = body.lastIndexOf('\n', COMMENT_LIMIT);
+        body = body.slice(0, cut);
+        // A cut inside a diff block leaves the fence open, so close it.
+        if ((body.match(/^```/gm) ?? []).length % 2 === 1) {
+            body += '\n```';
+        }
+        body +=
+            '\n\nThe report is too long for a comment. The job summary of ' +
+            'the `classify_fixture_deltas` check has the rest.\n';
+    }
+    return `${COMMENT_MARKER}\n${body}`;
+}
+
 function main(argv) {
     const [baseRef, ...rest] = argv;
     if (!baseRef) {
         console.error(
-            'usage: classify-fixture-deltas.mjs <base-ref> [--json <out.json>]',
+            'usage: classify-fixture-deltas.mjs <base-ref> [--json <out.json>] [--comment <out.md>]',
         );
         process.exit(2);
     }
     const jsonIndex = rest.indexOf('--json');
     const jsonPath = jsonIndex >= 0 ? rest[jsonIndex + 1] : null;
+    const commentIndex = rest.indexOf('--comment');
+    const commentPath = commentIndex >= 0 ? rest[commentIndex + 1] : null;
 
     const base = git(['merge-base', baseRef, 'HEAD']).trim();
     const results = [];
@@ -390,6 +419,9 @@ function main(argv) {
             jsonPath,
             `${JSON.stringify({ base, results }, null, 2)}\n`,
         );
+    }
+    if (commentPath) {
+        writeFileSync(commentPath, renderComment(report));
     }
 }
 

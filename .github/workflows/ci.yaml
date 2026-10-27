@@ -85,15 +85,24 @@ jobs:
             node_modules/typescript/lib internal/interop/data
 
   # Rates each change to the committed fixture outputs by review risk and
-  # writes the report to the job summary. The fixture tests in check_go
-  # confirm the committed outputs match the compiler, so this job reads
-  # them straight from git without building anything. The tiers are
-  # advisory, so the job fails only when the classifier itself breaks.
+  # posts the report as a PR comment, which later runs edit in place. The
+  # fixture tests in check_go confirm the committed outputs match the
+  # compiler, so this job reads them straight from git without building
+  # anything. The tiers are advisory, so the job fails only when the
+  # classifier itself breaks.
   classify_fixture_deltas:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    # Writing the comment needs pull-requests: write. A PR from a fork
+    # gets a read-only token whatever the job asks for.
     permissions:
       contents: read
+      pull-requests: write
+    # Two runs on one PR could each see no comment and both post one, so a
+    # newer push cancels the run already in flight.
+    concurrency:
+      group: classify-fixture-deltas-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -116,7 +125,31 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: |
           node .github/scripts/classify-fixture-deltas.mjs \
-            "origin/${BASE_REF}" --json fixture-deltas.json
+            "origin/${BASE_REF}" --json fixture-deltas.json \
+            --comment fixture-deltas.md
+
+      # The step edits the comment an earlier run posted. It posts a new
+      # one only when fixtures changed, so a PR that never touches a
+      # fixture gets no comment. The token on a fork's PR cannot write, so
+      # the step skips those PRs.
+      - name: Post the classification to the PR
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          existing=$(gh api --paginate "repos/${REPO}/issues/${PR}/comments" \
+            --jq '.[] | select(.user.login == "github-actions[bot]")
+                      | select(.body | startswith("<!-- classify-fixture-deltas -->"))
+                      | .id' | sed -n 1p)
+          if [ -n "$existing" ]; then
+            gh api -X PATCH "repos/${REPO}/issues/comments/${existing}" \
+              -F body=@fixture-deltas.md > /dev/null
+          elif [ "$(jq '.results | length' fixture-deltas.json)" -gt 0 ]; then
+            gh api -X POST "repos/${REPO}/issues/${PR}/comments" \
+              -F body=@fixture-deltas.md > /dev/null
+          fi
 
       - name: Upload the classification
         uses: actions/upload-artifact@v4
