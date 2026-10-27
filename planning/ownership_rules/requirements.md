@@ -811,6 +811,45 @@ contents. From the smallest change to the largest:
 - A general `RefCell`, which holds any value and checks its borrows at runtime.
 - No cell, which keeps the invariant as written.
 
+The cache case looks like this today. `wordCount` writes its cache, so it needs
+`&mut self`, and a caller holding only `&Document` cannot call it:
+
+```esc
+class Document {
+    text: string,
+    count: number | undefined,
+    wordCount(&mut self) -> number {
+        if val n: number = self.count {
+            return n
+        }
+        val n = self.text.split(" ").length
+        self.count = n
+        return n
+    },
+}
+
+fn summary(doc: &Document) -> number {
+    return doc.wordCount()    // error: wordCount needs a &mut receiver, by T4
+}
+```
+
+With a write-once cell, written here as a hypothetical `OnceCell<T>`, the cache
+stays inside the cell and `wordCount` only reads:
+
+```esc
+class Document {
+    text: string,
+    count: OnceCell<number>,
+    wordCount(&self) -> number {
+        return self.count.getOrInit(fn () { return self.text.split(" ").length })
+    },
+}
+
+fn summary(doc: &Document) -> number {
+    return doc.wordCount()    // allowed, since wordCount takes &self
+}
+```
+
 Recommendation: start with the write-once cell, since it covers caches and lazy
 fields with the smallest exception. Keep counters and the interop methods on
 `&mut self` until real code shows how often they come up.
