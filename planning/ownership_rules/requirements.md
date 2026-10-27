@@ -1128,11 +1128,27 @@ each a separate PR:
    `isUniquelyOwned` in
    [infer_decl.go](../../internal/solver/infer_decl.go) becomes an ordinary move
    checked by E3.
-4. Build the event lowering and the single control-flow pass behind a flag. Run
+4. Extend the missing-`&` check from call arguments to every flow site and to
+   field reads through a borrow, as F4 states. Each error carries the borrow
+   its destination needs, `&` or `&mut`, the way `ImplicitBorrowArgError` in
+   [borrow_exclusivity.go](../../internal/solver/borrow_exclusivity.go) does
+   today. The same PR adds an LSP quick fix that inserts that borrow:
+   - The published diagnostic carries the borrow and the range of the
+     expression in its `data` field.
+   - `textDocumentCodeAction` in
+     [text_document.go](../../cmd/lsp-server/text_document.go) returns a
+     `quickfix` action whose edit inserts `&` or `&mut ` before the expression.
+     It wraps the expression in parentheses unless the expression is an
+     identifier, a field access, an index, or a call.
+   - `quickfix` joins the code action kinds the server advertises in
+     [main.go](../../cmd/lsp-server/main.go).
+   - Tests in `text_document_test.go` cover `&`, `&mut`, and the parenthesized
+     case.
+5. Build the event lowering and the single control-flow pass behind a flag. Run
    it alongside the current checks and compare diagnostics across every test and
    fixture. Resolve each difference as a bug in the old checks or a change to the
    rules.
-5. Remove the old checks one at a time once the new pass matches them. The groups
+6. Remove the old checks one at a time once the new pass matches them. The groups
    that the checking model replaces are:
    - The per-site `consume*` functions in
      [moves.go](../../internal/solver/moves.go) and
