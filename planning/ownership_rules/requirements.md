@@ -185,7 +185,7 @@ There are three outcomes:
   source keeps ownership.
 - A *move* gives the destination ownership. The source place is consumed, and
   E1 rejects any later use of it. A move may change the value's mutability,
-  which is how freezing and thawing work.
+  which is how a move to immutable and a move to mutable work.
 
 The table gives the outcome for each kind of source and destination. The
 operation that passes the value does not change it.
@@ -454,8 +454,8 @@ a place overlapping `p` is live is rejected. The move makes the destination an
 owner, and an owner can always make its value mutable by moving it into a
 `val mut` binding. The live borrow would then observe that owner's writes, even
 when every path is immutable at the moment of the move. Below, `go` never
-writes `p`, but `take` thaws its argument and writes it while `c` is still
-live, so the call reports `cannot move 'p' while it is borrowed`.
+writes `p`, but `take` moves its argument to mutable and writes it while `c` is
+still live, so the call reports `cannot move 'p' while it is borrowed`.
 
 ```esc
 fn take(p: {x: number}) -> number {
@@ -485,13 +485,45 @@ allow writes and new borrows of `p`, and they reject a move, since the closure
 holds its borrows until its last call. During a call, the borrow row for the
 capture's kind applies for that statement.
 
+In `local` below, the write to `p` between the two calls is allowed. In
+`moved`, `get` still holds its borrow of `p` for its later call, so the move
+is rejected. In `stored`, the closure in `sink` may run during any later call,
+so `readIt(&p)` conflicts with the write it may perform.
+
+```esc
+var sink: fn () -> undefined = fn () {}
+declare fn readIt(a: &{x: number}) -> undefined
+
+fn local() -> number {
+    val mut p = {x: 1}
+    val get = fn () { return p.x }
+    val a = get()
+    p.x = 2       // allowed, since get holds no live borrow between calls
+    return a + get()
+}
+
+fn moved() -> number {
+    val p = {x: 1}
+    val get = fn () { return p.x }
+    val q = p     // error: cannot move 'p' while it is borrowed
+    return get()
+}
+
+fn stored() {
+    val mut p = {x: 1}
+    sink = fn () { p.x = 2 }
+    readIt(&p)    // error: this call may run 'sink', which writes 'p' while it is borrowed as immutable
+}
+```
+
 ## Derived behaviour
 
 The rules above produce each of the following. None of them is a separate rule.
 
-- **Freezing and thawing.** `val frozen = g` moves `g` by F2. E3 rejects the move
-  while a mutable path into `g` is live. The thaw `val mut thawed = frozen` is the
-  same move in the other direction.
+- **Move to immutable and move to mutable.** `val settled = g` moves `g` to
+  immutable by F2. E3 rejects the move while a mutable path into `g` is live.
+  `val mut editable = settled` is a move to mutable, the same move in the other
+  direction.
 - **Partial moves.** E1 and E3 work on places, so moving `pair.a` leaves
   `pair.b` usable.
 - **Moves into literals and spreads.** A literal element and a spread source fill
@@ -516,7 +548,7 @@ Rust has no matching feature.
 |---|---|---|---|
 | T1 ownership in the type | `T` is owned and `&T` or `&mut T` borrows | Differs | Rust puts the mutability of an owned value on the binding, as `let mut x`. Escalier puts it in the type, as `mut T` |
 | T2 immutable by default | Bindings and references are immutable unless written `mut` | Same | |
-| T3 deep mutability, stopped by a borrow | Inherited mutability: an owner's mutability reaches every field it owns, and a reference field carries its own mutability | Differs | Same inheritance, but Rust adds interior mutability through `Cell` and `RefCell`. Escalier has no escape hatch, which is what makes freezing deep |
+| T3 deep mutability, stopped by a borrow | Inherited mutability: an owner's mutability reaches every field it owns, and a reference field carries its own mutability | Differs | Same inheritance, but Rust adds interior mutability through `Cell` and `RefCell`. Escalier has no escape hatch, which is what makes a move to immutable deep |
 | T4 narrow, never widen | `&mut T` coerces to `&T`, never the reverse | Same | |
 | T5 `readonly` | No `readonly` fields. Rust restricts writes through field privacy instead | No equivalent | Inherited from TypeScript |
 | T6 borrow into owned | `&T` does not satisfy `T`. Moving a field out of a borrow is rejected with E0507 | Differs | Escalier reads `r.f` through a borrow as a borrow of the field. Rust rejects the move and asks for `&r.f`, unless the field's type is `Copy` |
@@ -539,7 +571,7 @@ Rust has no matching feature.
 | D4 declared bounds are obligations | Declared bounds are assumptions | Differs | Follows from L3 |
 | D5 `readonly` initialized once | A struct literal initializes every field at once | No equivalent | |
 | D6 getter and setter receivers | No getters or setters | No equivalent | |
-| Freezing and thawing | `let frozen = v; let mut thawed = frozen;` moves between bindings of different mutability | Same | `docs/09_ownership.md` says Rust has no equivalent. The moves are the same, but interior mutability keeps Rust's freeze from being deep |
+| Move to immutable and move to mutable | `let settled = v; let mut editable = settled;` moves between bindings of different mutability | Same | `docs/09_ownership.md` says Rust has no equivalent. The moves are the same, but interior mutability keeps Rust's move to immutable from being deep |
 
 The differences come from four sources:
 
@@ -804,8 +836,8 @@ The compiler infers `store` below as `fn (p: {x: number}) -> undefined`, an
 owned parameter, yet `store(a)` records no move and `a.x` checks clean. With
 the parameter written as `p: {x: number}`, the same call reports
 `use of moved value 'a'`. The unannotated form leaves `a` usable while
-`sink` holds the same value, so a later thaw of `a` could write what `sink`
-reads.
+`sink` holds the same value, so a later move of `a` to mutable could write what
+`sink` reads.
 
 ```esc
 var sink = {x: 0}
