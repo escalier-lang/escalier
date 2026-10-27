@@ -109,10 +109,14 @@ jobs:
       - name: Test the classifier
         run: node --test .github/scripts/classify-fixture-deltas.test.mjs
 
+      # The base ref reaches the shell through the environment, so a branch
+      # name that contains shell syntax is passed as data and never runs.
       - name: Classify fixture deltas
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
           node .github/scripts/classify-fixture-deltas.mjs \
-            "origin/${{ github.base_ref }}" --json fixture-deltas.json
+            "origin/${BASE_REF}" --json fixture-deltas.json
 
       - name: Upload the classification
         uses: actions/upload-artifact@v4
