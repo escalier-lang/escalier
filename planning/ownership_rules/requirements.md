@@ -1250,35 +1250,101 @@ rules reject every program the true answer would reject:
 
 ## Conformance tests
 
-Each flow site that [F1](#flow-rules) lists gets one test per column below. The
-expected result follows from the rules, so reviewing the table of expected
-results reviews the rules. The tests are written as Escalier source with the
-full expected diagnostic, as `CLAUDE.md` asks.
+The tests come in two sets. The flow matrix crosses every flow site with the
+cases the flow and exclusivity rules decide. The per-rule list covers the rules a
+flow site cannot express. In both, the expected result follows from the rules,
+so reviewing the expected results reviews the rules. The tests are written as
+Escalier source with the full expected diagnostic, as `CLAUDE.md` asks.
+
+### Flow matrix
+
+Each flow site that [F1](#flow-rules) lists gets one test per column below.
 
 | Column | Source | Destination | Then | Expected result | Rule |
 |---|---|---|---|---|---|
-| copy | value type | any | use the source | Accepted | F2 |
+| copy | value type | owned | use the source | Accepted | F2 |
 | immutable copy | `&T` | `&T` | use the source | Accepted | F2 |
+| mutable copy | `&mut T` | `&mut T` | write through both | Accepted | F2, E2 |
 | narrow | `&mut T` | `&T` | use both | Accepted | F2, T4 |
 | widen | `&T` | `&mut T` | none | Mutability mismatch | T4 |
+| borrow | owned, written `&p` | `&T` | use the source | Accepted | F2, F4 |
+| mutable borrow | owned by `val mut p`, written `&mut p` | `&mut T` | write through the destination | Accepted | F2, T7 |
 | mutable borrow through a `val` binding | owned by `val p`, written `&mut p` | `&mut T` | none | Mutability mismatch | T7 |
-| borrow | owned, written `&p` | borrow | use the source | Accepted | F2, F4 |
 | unwritten borrow | owned, written `p` | borrow | none | Missing `&` | F4 |
 | unwritten field borrow | field read through a borrow, written `r.f` | any | none | Missing `&` | F4, T6 |
+| immutable borrow into owned | `&T` | owned | none | Borrow cannot fill owned | T6 |
+| mutable borrow into owned | `&mut T` | owned | none | Borrow cannot fill owned | T6 |
 | move | owned | owned | use the source | Use of moved value | F2, E1 |
 | move on one branch | owned | owned, in one branch | use after the join | Use of moved value | E1 |
-| outlive owner | owned | borrow that outlives the source's binding | use the destination | Accepted | L1 |
-| write after `'static` immutable borrow | owned, `val mut` | `'static` `&T` | write the source | Exclusivity error | L1, E2 |
-| borrow into owned | `&T` | owned | none | Borrow cannot fill owned | T6 |
-| write during immutable borrow | owned, `val mut` | `&T` | write the source, then use the destination | Exclusivity error | E2 |
-| sequential phases | owned, `val mut` | `&T` | write the source, then create and use the destination | Accepted | E2 |
-| move while borrowed | owned | owned | while a borrow of the source is live | Move while borrowed | E3 |
-| disjoint field | owned | owned, of `p.a` | use `p.b` | Accepted | E1 |
+| move in a loop | owned | owned, inside a loop body | the next iteration | Use of moved value | E1 |
+| reassign after a move | owned | owned | reassign the source, then use it | Accepted | E1 |
+| partial move | owned field `p.a` | owned | use `p` | Use of moved value | E1 |
+| disjoint field | owned field `p.a` | owned | use `p.b` | Accepted | E1 |
+| move out of module-level state | module-level binding | owned | none | Move out of module-level binding | E1 |
+| outlive owner | owned, written `&p` | borrow that outlives the source's binding | use the destination | Accepted | L1 |
+| write during immutable borrow | owned by `val mut p`, written `&p` | `&T` | write the source, then use the destination | Exclusivity error | E2 |
+| sequential phases | owned by `val mut p`, written `&p` | `&T` | write the source, then create and use the destination | Accepted | E2 |
+| write during mutable borrow | owned by `val mut p`, written `&mut p` | `&mut T` | write the source, then use the destination | Accepted | E2 |
+| immutable borrow during mutable borrow | owned by `val mut p`, written `&mut p` | `&mut T` | take `&p`, then use both | Exclusivity error | E2 |
+| write after `'static` immutable borrow | owned by `val mut p`, written `&p` | `'static` `&T` | write the source | Exclusivity error | L1, E2 |
+| immutable borrow after `'static` mutable borrow | owned by `val mut p`, written `&mut p` | `'static` `&mut T` | take `&p` | Exclusivity error | L1, E2 |
+| disjoint borrows | owned by `val mut p`, written `&p.a` | `&T` | write `p.b`, then use the destination | Accepted | E2 |
+| element borrows | owned by `val mut a`, written `&a[i]` | `&T` | write `a[j]`, then use the destination | Exclusivity error | E2 |
+| move while immutably borrowed | owned, written `&p` | owned, in a `val` binding | move the source while the borrow is live | Move while borrowed | E3 |
+| move to mutable while immutably borrowed | owned, written `&p` | owned, in a `val mut` binding | move the source while the borrow is live | Move while borrowed | E3 |
+| move while mutably borrowed | owned by `val mut p`, written `&mut p` | owned | move the source, then use the borrow | Move while borrowed | E3 |
 
-Some cells do not apply. A literal element has no borrow destination, so its
-borrow column is empty, and a value type never meets the move columns. The test
-file records such a cell as not applicable instead of leaving it out, so a reader
-can see the cell was considered.
+Some cells do not apply, and the test file records each one as not applicable
+instead of leaving it out, so a reader can see the cell was considered:
+
+- A literal element has no borrow destination, so its borrow columns are empty.
+- A value type never meets the borrow or move columns.
+- A method receiver and a pattern over a borrow borrow without a written `&`,
+  by F4. For those two sites, the "unwritten borrow" and "unwritten field
+  borrow" columns expect Accepted, not a missing `&`.
+
+### Per-rule tests
+
+Each case below is one test. Most of them are the examples already in the rule,
+so the test and the rule state the same program. The interop cases are tests of
+the declaration converter in `internal/dts_to_esc`, and the rest are tests of
+the solver.
+
+| Rule | Case | Expected result |
+|---|---|---|
+| T2 | Write `p.x = 1` with `val p` | Rejected |
+| T3 | Write `p.a.b = 1` with `val mut p` | Accepted |
+| T3 | Push onto `val a: Array<&mut Point>`, then write `a[0].x` | Push rejected, write accepted |
+| T3 | Push onto `val mut b: Array<&Point>`, then write `b[0].x` | Push accepted, write rejected |
+| T3 | Annotate `{a: mut {b: number}}` or `Array<mut Point>` | Rejected |
+| T5 | Write a `readonly` field after its initialization | Rejected |
+| T5 | A `{readonly a: number}` value into a `{a: number}` slot of a `val mut` binding | Rejected |
+| T5 | Assign to a getter with no setter | Rejected |
+| T5 | Write a `readonly` field twice in a constructor | Rejected |
+| T8 | `if c { p } else { q }` with `p` owned and `q` a borrow | Rejected |
+| T8 | `if c { &r } else { q }` | Accepted |
+| T9 | `val n = 5`, `var n = 5`, `val p = {x: 1}`, `val mut p = {x: 1, y: {z: "a"}}`, and `var p = {x: 1}` | The inferred types T9 lists |
+| T9 | The `Request` class fields | The inferred types T9 lists |
+| T10 | A getter with `&mut self`, and a setter with `&self` | Both rejected |
+| F3 | `make` and `same` from F3 | The signatures F3 lists |
+| F3 | `store` and `read` from F3 | `store(a)` moves `a`, and `read(&b)` leaves `b` usable |
+| F3 | `local` and `returned` from F3 | `local` accepted, and `returned` owns `p` |
+| F3 | A binding inside an `if` | The later use reports a moved value |
+| F3, D9 | An escaping parameter the body only reads, stored where the type leaves ownership open | Inferred as `&'static` |
+| L1 | `make` and `remember` from L1 | `make` accepted, and the write in `remember` rejected |
+| L2 | `pick`, `wrong`, `either`, `unproven`, and `trusted` | As marked in L2 |
+| L3 | `read`, `same`, and `cache` | The rendered signatures L3 lists |
+| E4 | `local`, `moved`, and `stored` from E4 | As marked in E4 |
+| E4 | A closure that moves a capture, called twice | The second call reports a moved value |
+| E4, D10 | The three `setup` programs from D10 | The first rejected, the other two accepted |
+| I1 | Convert `reset(x: Readonly<{a: {b: number}}>)` | `reset(x: &mut Readonly<{a: {b: number}}>)` |
+| I1 | Convert a parameter typed `Readonly<{a: number}>` | `&Readonly<{a: number}>` |
+| I1 | Convert `this: Readonly<T>` where `T` has a writable nested slot | Not `&self` |
+| I2 | Convert a `number` parameter | `number`, with no borrow |
+| I3 | Convert a method the analysis cannot settle | `&mut self` |
+| I3 | Convert a function returning `{...opts}` | A borrow of `opts` |
+
+D11's write-once cell gets its tests once its API is designed.
 
 ## Migration
 
