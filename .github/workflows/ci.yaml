@@ -84,6 +84,79 @@ jobs:
             ./bin/dts_to_esc generate --overlay internal/interop/overlay \
             node_modules/typescript/lib internal/interop/data
 
+  # Rates each change to the committed fixture outputs by review risk and
+  # posts the report as a PR comment, which later runs edit in place. The
+  # fixture tests in check_go confirm the committed outputs match the
+  # compiler, so this job reads them straight from git without building
+  # anything. The tiers are advisory, so the job fails only when the
+  # classifier itself breaks.
+  classify_fixture_deltas:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    # Writing the comment needs pull-requests: write. A PR from a fork
+    # gets a read-only token whatever the job asks for.
+    permissions:
+      contents: read
+      pull-requests: write
+    # Two runs on one PR could each see no comment and both post one, so a
+    # newer push cancels the run already in flight.
+    concurrency:
+      group: classify-fixture-deltas-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Test the classifier
+        run: node --test .github/scripts/classify-fixture-deltas.test.mjs
+
+      # The base ref reaches the shell through the environment, so a branch
+      # name that contains shell syntax is passed as data and never runs.
+      - name: Classify fixture deltas
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          node .github/scripts/classify-fixture-deltas.mjs \
+            "origin/${BASE_REF}" --json fixture-deltas.json \
+            --comment fixture-deltas.md
+
+      # The step edits the comment an earlier run posted. It posts a new
+      # one only when fixtures changed, so a PR that never touches a
+      # fixture gets no comment. The token on a fork's PR cannot write, so
+      # the step skips those PRs.
+      - name: Post the classification to the PR
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          existing=$(gh api --paginate "repos/${REPO}/issues/${PR}/comments" \
+            --jq '.[] | select(.user.login == "github-actions[bot]")
+                      | select(.body | startswith("<!-- classify-fixture-deltas -->"))
+                      | .id' | sed -n 1p)
+          if [ -n "$existing" ]; then
+            gh api -X PATCH "repos/${REPO}/issues/comments/${existing}" \
+              -F body=@fixture-deltas.md > /dev/null
+          elif [ "$(jq '.results | length' fixture-deltas.json)" -gt 0 ]; then
+            gh api -X POST "repos/${REPO}/issues/${PR}/comments" \
+              -F body=@fixture-deltas.md > /dev/null
+          fi
+
+      - name: Upload the classification
+        uses: actions/upload-artifact@v4
+        with:
+          name: fixture-deltas
+          path: fixture-deltas.json
+
   check_ts:
     runs-on: ubuntu-latest
     steps:
