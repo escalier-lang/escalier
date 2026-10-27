@@ -507,7 +507,7 @@ func TestScriptTransitionParity(t *testing.T) {
 			stmts: `
 				val items: mut {x: number} = {x: 1}
 				items.x = 2
-				val snapshot: &{x: number} = items
+				val snapshot: &{x: number} = &items
 				snapshot
 			`,
 		},
@@ -515,7 +515,7 @@ func TestScriptTransitionParity(t *testing.T) {
 		"Rule3_MultipleMutableAliases_OK": {
 			stmts: `
 				val a: mut {x: number} = {x: 1}
-				val b: &mut {x: number} = a
+				val b: &mut {x: number} = &mut a
 				b.x = 2
 				a.x
 			`,

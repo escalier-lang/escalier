@@ -136,12 +136,13 @@ func TestMoveSemantics(t *testing.T) {
 				}
 			`,
 		},
-		// A `&` annotation borrows rather than moves, so the source stays usable.
+		// A binding annotated as a `&` borrow takes `&p` without moving p, so the source stays
+		// usable.
 		"BorrowAnnotationKeepsSource": {
 			src: `
 				fn test() {
 					val p: mut {x: number} = {x: 0}
-					val q: &{x: number} = p
+					val q: &{x: number} = &p
 					p.x
 				}
 			`,
