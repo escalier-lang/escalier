@@ -303,8 +303,6 @@ func hoverBindingName(info *solver.Info, node ast.Node) (string, bool) {
 	switch n := node.(type) {
 	case *ast.IdentPat:
 		return n.Name, true
-	case *ast.ObjShorthandPat:
-		return n.Key.Name, true
 	case *ast.IdentExpr:
 		decl, found := info.DeclOf(n)
 		if !found {
