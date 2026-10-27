@@ -443,7 +443,7 @@ annotation that produces the same type when written back.
 Each comment below gives the rendered signature:
 
 ```esc
-var sink = {x: 0}
+var sink: &mut {x: number} = &mut {x: 0}
 
 fn read(p: &{x: number}) -> number { return p.x }
 // fn (p: &{x: number}) -> number, since the lifetime connects nothing
@@ -550,7 +550,10 @@ A parameter written `f: fn () -> undefined` is only called during the call, so a
 closure passed to it holds its borrows for that call alone. A parameter written
 `f: &'a fn () -> undefined` may keep the function for `'a`, so a closure passed
 to it holds its borrows for `'a`, and `&'static` keeps them for the rest of the
-program. [D10](#d10-recording-that-a-callback-is-not-retained) shows an
+program. A function is still a value type, so F2 copies it into either kind of
+parameter, and the call needs no written `&`. The `&'a` on a function
+parameter does not borrow the function. It only says how long the callee keeps
+its copy. [D10](#d10-recording-that-a-callback-is-not-retained) shows an
 example.
 
 E4 adds no column to the exclusivity table, because it does not decide whether
@@ -708,9 +711,13 @@ The checker runs in three steps:
 
 1. The type checker emits the events while it infers. Only it knows each
    destination's type, and F2 needs that type to choose between copy, borrow,
-   and move. Each borrow carries the lifetime L1 gives it.
+   and move. Each borrow carries the lifetime L1 gives it. A flow into a
+   destination whose ownership F3 has not settled yet, such as an unannotated
+   parameter, is recorded as a provisional flow from its source to its
+   destination.
 2. Once inference finishes, the lifetime solver settles F3's escape questions
-   from the outlives constraints.
+   from the outlives constraints. Each provisional flow then becomes the copy,
+   borrow, or move event that F2 gives for the settled destination type.
 3. One forward dataflow pass over the control-flow graph checks E1, E2, and E3
    against the events and the liveness of each holder.
 
@@ -1236,7 +1243,8 @@ open.
 
 **I2. A value-type parameter is written as its bare type.** A primitive,
 function, or promise parameter is copied, so the converter writes the bare type
-and no borrow marker.
+and no borrow marker. A function parameter the callee keeps is the one
+exception, written `&'a fn …` as E4 states.
 
 **I3. An uncertain answer takes the form that rejects more programs.** When the
 converter or an analysis cannot settle a fact, it picks the form under which the
@@ -1388,7 +1396,7 @@ The steps:
      carries the borrow and the range of the expression in its `data` field.
      `textDocumentCodeAction` in
      [text_document.go](../../cmd/lsp-server/text_document.go) returns a
-     `quickfix` action whose edit inserts `&` or `&mut ` before the
+     `quickfix` action whose edit inserts `&`, or `&mut` and a space, before the
      expression. It wraps the expression in parentheses unless the expression
      is an identifier, a field access, an index, or a call. `quickfix` joins
      the code action kinds the server advertises in
