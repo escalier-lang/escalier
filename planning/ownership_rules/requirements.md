@@ -260,10 +260,10 @@ Each case below follows from that:
 
 - A `return` outlives the frame, so it is an owned destination.
 - A store into module-level state outlives every local, so it is an owned
-  destination. [D9](#d9-whether-an-escaping-value-moves-or-borrows) asks whether
-  it should be a `'static` borrow instead.
+  destination unless the state's type is a borrow.
 - An unannotated parameter is owned when the body lets the parameter escape, and
-  a borrow otherwise.
+  a borrow otherwise. When the destination's type leaves the ownership open,
+  [D9](#d9-whether-an-escaping-value-moves-or-borrows) decides.
 - A closure that is returned owns what it captures. A closure that stays in the
   body or is stored into a caller-owned object borrows what it captures.
 
@@ -736,7 +736,7 @@ in between.
 
 D1 through D8 record behaviour the solver enforces today that no document
 stated. D9 through D11 are design questions the rules left open. Each decided
-entry says where its outcome now lives. D9 and D10 are still open. The current
+entry says where its outcome now lives. D10 is still open. The current
 behaviour comes from reading the code, and the file references point at where
 it lives.
 
@@ -875,6 +875,13 @@ writes the stored value needs one of the other two forms.
 Recommendation: infer a `'static &` borrow for an escaping parameter that the
 body never writes, and an owned parameter otherwise. A written annotation
 overrides the inference either way.
+
+Decided: accepted. An escaping parameter that the body never writes is inferred
+as a `'static &` borrow, and one the body writes is owned. The rule applies only
+where the destination's type leaves the ownership open, such as a `Map` whose
+value type is inferred, or a function the converter declares from JavaScript
+source. Where the destination's type is owned, T6 already makes the parameter
+owned, as for `store` in F3. A written annotation overrides the inference.
 
 ### D10. Recording that a callback is not retained
 
@@ -1259,7 +1266,7 @@ each a separate PR:
 
 1. Write the conformance tests above against the current solver. A test the
    current solver fails becomes a known-bug entry, or a reason to change a rule.
-2. Settle D9 and D10 and update `docs/08_mutability.md` and
+2. Settle D10 and update `docs/08_mutability.md` and
    `docs/09_ownership.md` to match.
 3. Move owned mutability from types to bindings, as T1 states. This rewrites the
    `mut T` annotations in tests, fixtures, and the stdlib, and drops the
