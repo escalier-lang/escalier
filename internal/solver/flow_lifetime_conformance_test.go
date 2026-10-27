@@ -427,8 +427,8 @@ func TestFlowLifetimeClosureBlocksMove(t *testing.T) {
 // DISABLED until #2264, which keeps a closure's borrows for the lifetime of a function parameter
 // that retains it. Today the parameter type `&'static fn () -> undefined` reports
 // `Unsupported: borrow of a non-borrowable type` and `onClick` infers as
-// `fn <T0>(handler: T0) -> undefined`. The first program also checks clean apart from that error,
-// since a closure passed to any function parameter holds its borrows for the call alone.
+// `fn <T0>(handler: T0) -> undefined`. Apart from that error the program checks clean, since a
+// closure passed to any function parameter holds its borrows for the call alone.
 /*
 func TestFlowLifetimeRetainedCallback(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{
@@ -448,6 +448,17 @@ func TestFlowLifetimeRetainedCallback(t *testing.T) {
 			`,
 			want: []string{"10:6-10:20: this call may run the 'handler' that 'onClick' retains, which writes 'count' while it is borrowed as immutable"},
 		},
+	})
+}
+*/
+
+// DISABLED until #2263, which parses and types a function parameter written `&'a fn`. Today the
+// parameter type `&'static fn () -> undefined` reports
+// `Unsupported: borrow of a non-borrowable type`. These two programs are accepted under D10, so
+// they need only the parameter type.
+/*
+func TestFlowLifetimeRetainedCallbackAccepted(t *testing.T) {
+	runFlowLifetimeCases(t, []flowLifetimeCase{
 		// E4 and D10. The handler owns `count`, since `onClick` keeps it past the frame, so the
 		// borrow inside the handler lasts for one call.
 		{
