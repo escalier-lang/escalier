@@ -884,6 +884,55 @@ The source-analysis plan for third-party packages expects to record exactly that
 fact. [#1267](https://github.com/escalier-lang/escalier/issues/1267) tracks the
 same gap for Escalier's own functions.
 
+The program below shows the gap. It writes the parameters in the lifetime form
+recommended below. `onClick` keeps its handler for the rest of the program, so
+the handler's mutable borrow of `count` stays live after the call, as for a
+closure stored into module-level state under E4. `render` then takes an
+immutable view of `count` that a click could change. Today the two parameter
+types are the same `fn () -> undefined`, so the checker treats `onClick` like a
+callee that only calls its argument and accepts the program.
+
+```esc
+declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+declare fn forEachItem(f: fn () -> undefined) -> undefined
+declare fn render(view: &{n: number}) -> undefined
+
+fn setup() {
+    val mut count = {n: 0}
+    onClick(fn () { count.n = count.n + 1 })
+    render(&count)    // error: a click may run the handler, which writes 'count' while it is borrowed as immutable
+}
+```
+
+There are two ways to write `setup` so that it checks. The first lets the
+handler own its state. `onClick` keeps the closure past the frame, so by F3 the
+closure owns `count`, and the borrow inside it lasts only for one call:
+
+```esc
+fn setup() {
+    val mut count = {n: 0}
+    onClick(fn () {
+        count.n = count.n + 1
+        render(&count)    // accepted
+    })
+}
+```
+
+The second gives `render` a mutable view. An immutable view promises that the
+value does not change while it is held, which a stored handler makes
+impossible. A mutable view makes no such promise, and E2 allows several mutable
+paths at once:
+
+```esc
+declare fn render(view: &mut {n: number}) -> undefined
+
+fn setup() {
+    val mut count = {n: 0}
+    onClick(fn () { count.n = count.n + 1 })
+    render(&mut count)    // accepted
+}
+```
+
 The options are:
 
 - Give function types an optional lifetime, as in `&'a fn () -> undefined`.
