@@ -39,7 +39,6 @@ const (
 	captureWidenIsWrite   = "A capture takes the mutability the closure body needs, so widening a capture is a write through a `&` binding, which T2 rejects with or without the closure."
 	captureReadsNoField   = "A closure captures a binding, never a field read, so no capture reads a field through a borrow."
 	returnEndsFunction    = "A `return` leaves the function, so nothing after it can use the source."
-	returnEndsLoop        = "A `return` inside a loop leaves the function, so the loop never runs another iteration after it."
 )
 
 // runFlowMatrix checks each cell's program against the standard library and asserts the full
@@ -1212,10 +1211,11 @@ func TestFlowMatrix(t *testing.T) {
 						val q = p
 						return q.x
 					}
-					return p.x
+					val n = f()
+					return n + p.x
 				}
 			`,
-			want: []string{"8:13-8:16: use of moved value 'p'"},
+			want: []string{"9:17-9:20: use of moved value 'p'"},
 		},
 		// A move in one branch of an `if` leaves the source moved after the branches join. Rule E1.
 		{
@@ -1333,9 +1333,17 @@ func TestFlowMatrix(t *testing.T) {
 			want: []string{"13:13-13:16: use of moved value 'p'"},
 		},
 		{
-			column:        "MoveOnOneBranch",
-			site:          "Return",
-			notApplicable: returnEndsFunction,
+			column: "MoveOnOneBranch",
+			site:   "Return",
+			src: `
+				fn g(c: boolean) -> {x: number} {
+					val p = {x: 1}
+					if c {
+						return p
+					}
+					return p
+				}
+			`,
 		},
 		{
 			column: "MoveOnOneBranch",
@@ -1363,11 +1371,12 @@ func TestFlowMatrix(t *testing.T) {
 							val q = p
 							return q.x
 						}
+						val n = f()
 					}
 					return p.x
 				}
 			`,
-			want: []string{"10:13-10:16: use of moved value 'p'"},
+			want: []string{"11:13-11:16: use of moved value 'p'"},
 		},
 		// A move inside a loop body is rejected, since the next iteration uses the moved source. Rule E1.
 		{
@@ -1477,9 +1486,17 @@ func TestFlowMatrix(t *testing.T) {
 			want: []string{"11:15-11:21: use of moved value 'p'"},
 		},
 		{
-			column:        "MoveInALoop",
-			site:          "Return",
-			notApplicable: returnEndsLoop,
+			column: "MoveInALoop",
+			site:   "Return",
+			src: `
+				fn g() -> {x: number} {
+					val p = {x: 1}
+					for i in [1, 2] {
+						return p
+					}
+					return p
+				}
+			`,
 		},
 		{
 			column: "MoveInALoop",
@@ -1494,22 +1511,6 @@ func TestFlowMatrix(t *testing.T) {
 				}
 			`,
 			want: []string{"6:14-6:15: use of moved value 'p'"},
-		},
-		{
-			column: "MoveInALoop",
-			site:   "ClosureCapture",
-			src: `
-				fn g() {
-					val p = {x: 1}
-					for i in [1, 2] {
-						val f = fn () {
-							val q = p
-							return q.x
-						}
-					}
-				}
-			`,
-			want: []string{"5:15-8:8: use of moved value 'p'"},
 		},
 		// Reassigning a moved `var` gives it a new value, so a use after the reassignment is accepted.
 		// Rule E1.
@@ -2150,6 +2151,7 @@ func TestFlowMatrixReassignAfterAMove(t *testing.T) {
 						val q = p
 						return q.x
 					}
+					val n = f()
 					p = {x: 2}
 					return p.x
 				}
@@ -2391,6 +2393,25 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"4:13-4:14: cannot use borrowed &mut object as owned object"},
 		},
+		// Today the call of `f` also reports `use of moved value 'f'`, though each iteration binds a new
+		// `f`.
+		{
+			column: "MoveInALoop",
+			site:   "ClosureCapture",
+			src: `
+				fn g() {
+					val p = {x: 1}
+					for i in [1, 2] {
+						val f = fn () {
+							val q = p
+							return q.x
+						}
+						val n = f()
+					}
+				}
+			`,
+			want: []string{"5:15-8:8: use of moved value 'p'"},
+		},
 		// Today the closure's capture moves all of `p` instead of `p.a`, so the use reports
 		// `use of moved value 'p'`.
 		{
@@ -2403,10 +2424,11 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 						val q = p.a
 						return q.x
 					}
+					val n = f()
 					val e = p
 				}
 			`,
-			want: []string{"8:14-8:15: use of partially moved value 'p'; field 'p.a' was moved out"},
+			want: []string{"9:14-9:15: use of partially moved value 'p'; field 'p.a' was moved out"},
 		},
 		// Today the closure's capture moves all of `p` instead of `p.a`, so the read of `p.b` reports
 		// `use of moved value 'p'`.
@@ -2420,7 +2442,8 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 						val q = p.a
 						return q.x
 					}
-					return p.b.x
+					val n = f()
+					return n + p.b.x
 				}
 			`,
 		},
