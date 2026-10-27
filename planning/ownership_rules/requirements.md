@@ -679,6 +679,24 @@ The checker runs in three steps:
 
 The type rules stay in the type checker, where they already sit.
 
+The function below shows the events each statement produces, as comments:
+
+```esc
+fn go() -> number {
+    val mut p = {x: 0}
+    val c = &p          // borrow(&, p, c, 'c)
+    val d = c           // copy(c, d)
+    p.x = 1             // use(p.x, write)
+    return d.x          // use(d.x, read)
+}
+```
+
+The pass reaches `p.x = 1` holding an immutable borrow of `p`. Its first holder,
+`c`, is never used again, but the copy made `d` a second holder, and `d` is
+read on the next line. So the borrow is live at the write, and E2 reports the
+write. Without the copy event, the pass would see the borrow end with `c` and
+accept a write that `d` can observe.
+
 The design is close to Polonius, the borrow checker the Rust project is
 developing to replace its current one. Polonius reduces Rust's MIR, a fully
 lowered form of the program, to flat relations, such as where each loan is
