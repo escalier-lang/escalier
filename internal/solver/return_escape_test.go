@@ -459,7 +459,7 @@ func TestReturnValueBorrows(t *testing.T) {
 // returns the place it reaches. a borrows all of b, so `a.peer` projects into b. The edge
 // a → b sits at path [], above the read path [peer], so the field return still follows it.
 //
-// DISABLED until returning a written `&mut` borrow of a local's field is accepted against a
+// DISABLED until #2301, which accepts a written `&mut` borrow of a local's field against a
 // `&mut` return annotation. `return &mut a.peer` reports `cannot constrain immutable object
 // <: mutable object` on the annotation, and so does `return &mut b.peer`.
 /*
