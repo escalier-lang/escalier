@@ -633,11 +633,18 @@ while worklist nonempty:
         switch node.Kind:
         case SlotWrite where node.Slot in BackingStoreSlots:   // FR3
             attribute(F, origin, node.Object)
+        case Call where node.Via != "" and originOf(origin, node.Callee) is not Param:
+            Stored[F].add(node.Via)                            // a stored callback
+            for G in implementers[node.Via]:                   // the package's own, unchecked
+                charge G as a call with node.Args
         case Call:
             if node.Callee not in AllFuncs:                    // unresolved callee
                 chargeUnresolved(F, origin, node)
-            else for k in MutArgs[node.Callee]:
-                attribute(F, origin, node.Args[k])
+            else:
+                for k in MutArgs[node.Callee]:
+                    attribute(F, origin, node.Args[k])
+                for k, calls in Callbacks[node.Callee]:
+                    chargeCallback(F, origin, node.Args[k], calls, node.Args)
         case Opaque: Incomplete.add(F)  // a step the serializer could not lower (§3)
     // (a fresh-origin mutation is intentionally ignored: mutating a
     //  value F allocated itself is not observable to F's callers.)
@@ -647,10 +654,23 @@ while worklist nonempty:
 // chargeUnresolved: a callee with no body is an object internal method or a
 // function F's caller supplied. The tables answer for the first kind.
 func chargeUnresolved(F, origin, node):
-    if originOf(origin, node.Callee) is Param: Incomplete.add(F)   // a callback
+    if originOf(origin, node.Callee) is Param(j):                 // a callback
+        Callbacks[F][j].add(originOf(origin, a) for a in node.Args)
     elif node.Callee in mutatingInternalMethods:
         attribute(F, origin, node.Args[0])                         // the dispatching object
     elif node.Callee in readOnlyInternalMethods: pass              // writes nothing
+    else: Incomplete.add(F)
+
+// chargeCallback: a callee calls the function passed at one of its positions.
+// A callback takes `&` borrows and returns an owned value, so the call itself
+// charges nothing. calls are its argument origins in the callee's terms.
+func chargeCallback(F, origin, fnArg, calls, args):
+    if fnArg names a function G of the graph:
+        for call in calls, for k in MutArgs[G]:
+            attribute(F, instantiate(call[k], args))   // in F's terms
+    elif originOf(origin, fnArg) is Param(j):
+        Callbacks[F][j].add(instantiate(call, args) for call in calls)
+    elif originOf(origin, fnArg) is Fresh: pass        // a closure F allocated
     else: Incomplete.add(F)
 
 // attribute: charge a mutated value expression to F's receiver or a formal.
@@ -2361,6 +2381,10 @@ type Func struct {
     Promise bool     `json:"promise"` // true when the algorithm builds a promise capability and
                                        // returns its [[Promise]], or the function is async (§9.3)
     Nodes   []Node   `json:"nodes"`   // CFG nodes in flat order; branches carry no analyzed data
+    Implements []string `json:"implements,omitempty"` // the declared function types this function is
+                                       // stored as, which a Call whose Via names one may reach.
+                                       // Never emitted for ECMA-262, only by a front end reading a
+                                       // library's types.
 }
 
 type NodeKind string
@@ -2404,6 +2428,9 @@ type Node struct {
                                                     // escape detection — the V in "Append V to O.[[slot]]");
                                                     // Throw of a non-constructed value: the thrown expr,
                                                     // whose origin §9.1 reads (rare in std:*)
+    Via       string   `json:"via,omitempty"`       // Call: the declared function type of a callee read
+                                                    // out of state, a stored callback (§4.1). Never
+                                                    // emitted for ECMA-262.
     Text      []string `json:"text,omitempty"`      // Opaque: the specification prose of each phrase the
                                                     // lowering could not formalize, one entry per phrase.
                                                     // It is the evidence for telling a step that costs the
@@ -2414,6 +2441,8 @@ type Node struct {
 type ExprKind string
 const (
     ExprVar  ExprKind = "var"  // a named value
+    ExprGlobal ExprKind = "global" // a module-level value; never emitted for ECMA-262,
+                                   // only by a front end lowering library source
     ExprThis ExprKind = "this" // the this value
     ExprLit  ExprKind = "lit"  // literal / primitive
     ExprCall ExprKind = "call" // nested AO call, e.g. ToObject(x)
@@ -2427,7 +2456,7 @@ const (
 
 type Expr struct {
     Kind   ExprKind `json:"kind"`
-    Var    string   `json:"var,omitempty"`    // ExprVar; also names a closure passed as a value,
+    Var    string   `json:"var,omitempty"`    // ExprVar, ExprGlobal; ExprVar also names a closure passed as a value,
                                               // which resolves against Funcs like a Callee does
     Callee string   `json:"callee,omitempty"` // ExprCall
     Args   []Expr   `json:"args,omitempty"`   // ExprCall / ExprAlloc
