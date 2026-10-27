@@ -339,8 +339,8 @@ func TestFlowLifetimeStaticBorrow(t *testing.T) {
 }
 */
 
-// DISABLED until a body that ties a result to a parameter whose lifetime the signature leaves
-// unnamed reports the undeclared relation. Not tracked by an issue yet.
+// DISABLED until #2286, which rejects a body that ties its result to a lifetime the signature
+// leaves unnamed.
 //
 // Today the solver checks only the relations between lifetimes the signature names. It gives the
 // unnamed lifetime of `q` a fresh variable, records the bound the body needs on it, and renders
