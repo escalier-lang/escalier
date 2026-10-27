@@ -68,23 +68,33 @@ every kind of flow site.
 
 These rules constrain types alone. They need no flow or liveness information.
 
-**T1. Ownership is part of the type.** A bare type `T` or `mut T` is owned. A
-type written `&T`, `&mut T`, `&'a T`, or `&'a mut T` is borrowed. This holds in
-every annotation position: bindings, parameters, returns, and fields.
+**T1. Ownership is part of the type, and an owned value's mutability belongs to
+its binding.** A bare type `T` is owned. A type written `&T`, `&mut T`, `&'a T`,
+or `&'a mut T` is borrowed. This holds in every annotation position: bindings,
+parameters, returns, and fields. An owned value is mutable or immutable
+according to the binding that owns it, written `val mut p` or `val p`, and its
+type is `T` either way. So `mut` appears in a type only inside a borrow, as
+`&mut T`. A parameter declares a mutable binding the same way, as
+`fn f(mut p: T)`. That signature has the same type as `fn f(p: T)`, since the
+caller moves the argument in both. A rendered binding shows its mutability on
+the name, as `mut p: {x: number}`. A `var` binding is reassignable, which is
+independent of whether the value it owns is mutable.
 
-**T2. Every type is immutable unless it is written `mut`.** A bare `T` and a
-borrow `&T` are both immutable. Only `mut T` and `&mut T` permit writes. A
-fresh value, such as a literal or a constructor call, is immutable until a `mut`
-annotation or a `val mut` binding makes it mutable.
+**T2. Every binding and every borrow is immutable unless it is written `mut`.**
+A value owned by `val p` and a borrow `&T` are both immutable. Only a `mut`
+binding, such as `val mut p`, and a `&mut T` borrow permit writes. A fresh
+value, such as a literal or a constructor call, takes its mutability from the
+binding it lands in.
 
 **T3. Mutability is deep through owned structure and stops at a borrow.** A
-type's mutability applies to every layer the value owns, including type
-arguments. Every owned layer of `mut T` is writable, and every owned layer of
-`T` is read-only. A `&` or `&mut` inside the type carries its own mutability
-either way. An immutable `Array<&mut Point>` can still write through each
-element, and a `mut Array<&Point>` cannot write any point. A `mut` annotation
-on a single field is rejected, since the enclosing value decides the field's
-mutability.
+binding's mutability applies to every layer the value owns, including type
+arguments. Every owned layer of a value in a `val mut` binding is writable, and
+every owned layer of a value in a `val` binding is read-only. A `&` or `&mut`
+inside the type carries its own mutability either way. With
+`val a: Array<&mut Point>`, `a` cannot push but can still write through each
+element. With `val mut b: Array<&Point>`, `b` can push but cannot write any
+point. Since `mut` is not part of an owned type, `{a: mut {b: number}}` and
+`Array<mut Point>` are rejected, and the owner decides each field's mutability.
 
 **T4. A borrow's mutability narrows and never widens.** `&mut T` satisfies `&T`.
 `&T` does not satisfy `&mut T`. Every write through a borrow, and every `&mut
@@ -101,23 +111,23 @@ satisfy a writable field, because a holder of the writable type could reassign
 it. A getter with no setter counts as a `readonly` field.
 
 **T6. A borrow cannot fill an owned destination.** A value of type `&T` or
-`&mut T` does not satisfy a bare `T` or `mut T`, since the destination would
+`&mut T` does not satisfy an owned `T`, since the destination would
 claim ownership of storage owned elsewhere. Reading a field through a borrow
 produces a borrow of that field, not an owned value. With `r: &{x: number}`, the
 binding `val q: {x: number} = r` reports `cannot use borrowed &object as owned
 object`, and `val q: &{x: number} = r` is accepted.
 
-**T7. An owned value is borrowed mutably only when it is mutable.** An owned
-mutable value can be borrowed as `&` or `&mut`. An owned immutable value can be
-borrowed only as `&`. The same holds for a call to a `&mut self` method, which
+**T7. An owned value is borrowed mutably only through a `mut` binding.** A
+value in a `val mut` binding can be borrowed as `&` or `&mut`. A value in a
+`val` binding can be borrowed only as `&`. The same holds for a call to a `&mut self` method, which
 borrows its receiver mutably. With `val p = {x: 1}`, `&mut p` reports
 `cannot constrain immutable object <: mutable object`. With
 `val mut p = {x: 1}`, both `&p` and `&mut p` are accepted.
 
 **T9. A writable slot widens the literal types in its initializer.** A slot is
-writable when it is a `var` binding, a field of a `mut` value, or a class
-field, since any instance of the class may be `mut`. A `readonly` field is
-never writable. When no type is written, the slot's inferred type replaces each
+writable when it is a `var` binding, any owned layer of a value in a `mut`
+binding, or a class field, since any instance of the class may sit in a `mut`
+binding. A `readonly` field is never writable. When no type is written, the slot's inferred type replaces each
 literal type in its initializer with that literal's primitive, since a later
 write can store any value of the primitive. A slot that cannot be written keeps
 the literal type, because it can never hold anything else. An annotation fixes
@@ -125,7 +135,7 @@ whichever type it names.
 
 - `val n = 5` gives `n: 5`, and `var n = 5` gives `n: number`.
 - `val p = {x: 1}` gives `p: {x: 1}`, and `val mut p = {x: 1, y: {z: "a"}}`
-  gives `p: mut {x: number, y: {z: string}}`, since T3 makes every owned layer
+  gives `mut p: {x: number, y: {z: string}}`, since T3 makes every owned layer
   writable.
 - `var p = {x: 1}` gives `p: {x: number}`. The object is immutable, but the
   binding can be reassigned to any `{x: number}`.
@@ -134,7 +144,8 @@ whichever type it names.
   the borrow carries its own mutability.
 
 A `readonly` field meets T9 when a class declares a field with an initializer
-and no type. In the class below, a `mut` instance can write `retries` but
+and no type. In the class below, an instance in a `mut` binding can write
+`retries` but
 never `method`, so only `retries` widens. The static fields follow the same
 rule.
 
@@ -184,8 +195,9 @@ There are three outcomes:
 - A *borrow* gives the destination a new borrow of the source's place. The
   source keeps ownership.
 - A *move* gives the destination ownership. The source place is consumed, and
-  E1 rejects any later use of it. A move may change the value's mutability,
-  which is how a move to immutable and a move to mutable work.
+  E1 rejects any later use of it. The destination binding decides the value's
+  mutability after the move, which is how a move to immutable and a move to
+  mutable work.
 
 The table gives the outcome for each kind of source and destination. The
 operation that passes the value does not change it.
@@ -193,8 +205,8 @@ operation that passes the value does not change it.
 | Source | Owned destination | `&` destination | `&mut` destination |
 |---|---|---|---|
 | Value type, such as `number` | Copy | Not applicable | Not applicable |
-| Owned immutable, `T` | Move | Borrow, written `&p` | Rejected by T7 |
-| Owned mutable, `mut T` | Move | Borrow, written `&p` | Borrow, written `&mut p` |
+| Owned, in a `val` binding | Move | Borrow, written `&p` | Rejected by T7 |
+| Owned, in a `val mut` binding | Move | Borrow, written `&p` | Borrow, written `&mut p` |
 | Immutable borrow, `&T` | Rejected by T6 | Copy | Rejected by T4 |
 | Mutable borrow, `&mut T` | Rejected by T6 | Copy, narrowed to `&` by T4 | Copy |
 
@@ -558,9 +570,6 @@ The rules above produce each of the following. None of them is a separate rule.
       return shared.finish() // error: 'finish' takes its receiver by value, so it moves the instance and cannot be reached through a borrow.
   }
   ```
-- **The owned-to-`mut` upgrade.** A uniquely owned source can fill a `mut`
-  destination because F2 moves it. E3 confirms no live path remains, so no immutable
-  path can observe the new mutability.
 - **Mutability transitions.** `val q = &p` borrows `p` by F2 and F4. A later
   write to `p` while `q` is live is rejected by E2.
 
@@ -574,13 +583,13 @@ Rust has no matching feature.
 
 | Rule | Rust behaviour | Verdict | Note |
 |---|---|---|---|
-| T1 ownership in the type | `T` is owned and `&T` or `&mut T` borrows | Differs | Rust puts the mutability of an owned value on the binding, as `let mut x`. Escalier puts it in the type, as `mut T` |
+| T1 ownership in the type, mutability on the binding | `T` is owned and `&T` or `&mut T` borrows. An owned value's mutability is on the binding, as `let mut x` | Same | |
 | T2 immutable by default | Bindings and references are immutable unless written `mut` | Same | |
 | T3 deep mutability, stopped by a borrow | Inherited mutability: an owner's mutability reaches every field it owns, and a reference field carries its own mutability | Differs | Same inheritance, but Rust adds interior mutability through `Cell` and `RefCell`. Escalier has no escape hatch, which is what makes a move to immutable deep |
 | T4 narrow, never widen | `&mut T` coerces to `&T`, never the reverse | Same | |
 | T5 `readonly` | No `readonly` fields. Rust restricts writes through field privacy instead | No equivalent | Inherited from TypeScript |
 | T6 borrow into owned | `&T` does not satisfy `T`. Moving a field out of a borrow is rejected with E0507 | Differs | Escalier reads `r.f` through a borrow as a borrow of the field. Rust rejects the move and asks for `&r.f`, unless the field's type is `Copy` |
-| T7 mutable borrows need a mutable owner | `&mut x` requires `let mut x` | Same | |
+| T7 mutable borrows need a `mut` binding | `&mut x` requires `let mut x` | Same | |
 | T9 writable slots widen literals | No literal types. An integer literal's type is inferred from how it is used | No equivalent | Inherited from TypeScript, which widens a `let` binding's literal type the same way |
 | F2 copy, borrow, or move | `Copy` types copy, `&T` copies, and an owned value moves into an owned destination | Differs | A `&mut` source copies, because Escalier allows aliased `&mut` |
 | F3 owned when it escapes | Every parameter type is written. A closure captures by reference unless it is marked `move` | Differs | Escalier infers an unannotated parameter's ownership and a returned closure's moves. Rust requires both to be written |
@@ -786,7 +795,7 @@ clean today.
 export fn go() -> number {
     val p = {x: 1}
     val q = {x: 2}
-    val h: mut {slot: &{x: number}} = {slot: &q}
+    val mut h: {slot: &{x: number}} = {slot: &q}
     h.slot = p
     return p.x + h.slot.x
 }
@@ -847,7 +856,7 @@ declare the same parameter type, once written out and once through
 `Readonly<T>`. T3 says `mut` reaches every owned layer, including through type
 arguments, so both should check clean. The first does, and the second reports
 `cannot constrain immutable object <: mutable object` at the write. An owned
-`mut Readonly<{a: {b: number}}>` parameter fails the same way.
+parameter written `mut x: Readonly<{a: {b: number}}>` fails the same way.
 
 ```esc
 fn resetWritten(x: &mut {readonly a: {b: number}}) {
@@ -914,6 +923,13 @@ the docs change.
   decides moves separately at each flow site with its own conditions. The checking
   model above is the proposal to make the docs true.
 
+- Both docs and the solver write an owned value's mutability in its type, as
+  `mut T`, and `docs/08_mutability.md` calls `val mut a: {a: {b: {c: number}}}`
+  a conflict. T1 moves the mutability to the binding, so that binding is
+  ordinary. A `p: mut T` parameter becomes `mut p: T`, a `-> mut T` return
+  becomes `-> T`, and the stdlib's `...items: mut Array<T>` rest parameters
+  become `...items: Array<T>`.
+
 ## Interop
 
 These rules decide how the TypeScript declaration converter and any source
@@ -974,16 +990,16 @@ full expected diagnostic, as `CLAUDE.md` asks.
 | immutable copy | `&T` | `&T` | use the source | Accepted | F2 |
 | narrow | `&mut T` | `&T` | use both | Accepted | F2, T4 |
 | widen | `&T` | `&mut T` | none | Mutability mismatch | T4 |
-| mutable borrow of immutable owner | owned, written `&mut p` | `&mut T` | none | Mutability mismatch | T7 |
+| mutable borrow through a `val` binding | owned by `val p`, written `&mut p` | `&mut T` | none | Mutability mismatch | T7 |
 | borrow | owned, written `&p` | borrow | use the source | Accepted | F2, F4 |
 | unwritten borrow | owned, written `p` | borrow | none | Missing `&` | F4 |
 | move | owned | owned | use the source | Use of moved value | F2, E1 |
 | move on one branch | owned | owned, in one branch | use after the join | Use of moved value | E1 |
 | outlive owner | owned | borrow that outlives the source's binding | use the destination | Accepted | L1 |
-| write after `'static` immutable borrow | owned `mut` | `'static` `&T` | write the source | Exclusivity error | L1, E2 |
+| write after `'static` immutable borrow | owned, `val mut` | `'static` `&T` | write the source | Exclusivity error | L1, E2 |
 | borrow into owned | `&T` | owned | none | Borrow cannot fill owned | T6 |
-| write during immutable borrow | owned `mut` | `&T` | write the source, then use the destination | Exclusivity error | E2 |
-| sequential phases | owned `mut` | `&T` | write the source, then create and use the destination | Accepted | E2 |
+| write during immutable borrow | owned, `val mut` | `&T` | write the source, then use the destination | Exclusivity error | E2 |
+| sequential phases | owned, `val mut` | `&T` | write the source, then create and use the destination | Accepted | E2 |
 | move while borrowed | owned | owned | while a borrow of the source is live | Move while borrowed | E3 |
 | disjoint field | owned | owned, of `p.a` | use `p.b` | Accepted | E1 |
 
@@ -1001,11 +1017,18 @@ each a separate PR:
    current solver fails becomes a known-bug entry, or a reason to change a rule.
 2. Settle D1 through D10 and update `docs/08_mutability.md` and
    `docs/09_ownership.md` to match.
-3. Build the event lowering and the single control-flow pass behind a flag. Run
+3. Move owned mutability from types to bindings, as T1 states. This rewrites the
+   `mut T` annotations in tests, fixtures, and the stdlib, and drops the
+   owned-mutable `RefType` with no lifetime from
+   [soltype](../../internal/soltype/ref.go). The owned-to-`mut` upgrade around
+   `isUniquelyOwned` in
+   [infer_decl.go](../../internal/solver/infer_decl.go) becomes an ordinary move
+   checked by E3.
+4. Build the event lowering and the single control-flow pass behind a flag. Run
    it alongside the current checks and compare diagnostics across every test and
    fixture. Resolve each difference as a bug in the old checks or a change to the
    rules.
-4. Remove the old checks one at a time once the new pass matches them. The groups
+5. Remove the old checks one at a time once the new pass matches them. The groups
    that the checking model replaces are:
    - The per-site `consume*` functions in
      [moves.go](../../internal/solver/moves.go) and
