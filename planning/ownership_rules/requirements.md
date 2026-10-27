@@ -22,9 +22,9 @@ Where this document and those disagree, this document is the proposal. The
 section [Divergences from the docs](#divergences-from-the-docs) lists the
 disagreements found so far.
 
-The section [Open decisions](#open-decisions) lists behaviour the solver has
-today that no document states, and two design questions the rules leave open.
-Each needs a decision before the rules are final.
+The section [Decisions](#decisions) records behaviour the solver has today that
+no document stated, and design questions the rules left open. Most are decided,
+and the rest need a decision before the rules are final.
 
 ## The invariant
 
@@ -36,6 +36,11 @@ Each needs a decision before the rules are final.
 Every accepted program preserves the invariant. Among programs that preserve it,
 the checks reject as few as they can. When the two goals conflict, the checks
 reject.
+
+The invariant has one exception, from
+[D11](#d11-interior-mutability-for-state-no-reader-can-observe). A write-once
+cell may be filled the first time it is read. After that its contents never
+change.
 
 ## Terms
 
@@ -126,6 +131,21 @@ borrows its receiver mutably. With `val p = {x: 1}`, `&mut p` reports
 `cannot constrain immutable object <: mutable object`. With
 `val mut p = {x: 1}`, both `&p` and `&mut p` are accepted.
 
+**T8. The branches of a conditional agree on ownership.** When the branches of
+an `if`, a `match`, or another conditional produce the value of one
+expression, they all produce owned values or all produce borrows. A branch with
+an owned value borrows it to match, as `&p`.
+
+```esc
+fn pick(cond: boolean, q: &{x: number}) -> number {
+    val p = {x: 1}
+    val r = {x: 2}
+    val a = if cond { p } else { q }     // error: mixed-ownership union: members disagree on ownership; make ownership uniform first
+    val b = if cond { &r } else { q }    // accepted
+    return b.x
+}
+```
+
 **T9. A writable slot widens the literal types in its initializer.** A slot is
 writable when it is a `var` binding, any owned layer of a value in a `mut`
 binding, or a class field, since any instance of the class may sit in a `mut`
@@ -159,6 +179,10 @@ class Request {
     static count = 0,             // count: number
 }
 ```
+
+**T10. A getter takes `&self`, and a setter takes `&mut self`.** A getter only
+reads its instance, and a setter writes one field of it. A getter or a setter
+declared with any other receiver is rejected.
 
 ## Flow rules
 
@@ -456,7 +480,9 @@ When `p` is a `val` binding instead, T2 and T7 also reject "Write `p`" and
 `p`, no path through the control-flow graph uses `p` or a place overlapping `p`
 until `p` is reassigned. A use is a read, a write, a method call, a borrow, or a
 second move. A move on one branch consumes `p` only on the paths through that
-branch.
+branch. A place whose region is `'static`, such as a module-level binding or an
+import, is never consumed, so a move out of it is rejected. Every later call
+would otherwise find it gone.
 
 **E2. An immutable path and a mutable path to one place are never live
 together.** At no program point are an immutable path and a mutable path to
@@ -514,7 +540,8 @@ fn go() -> number {
 closure, or a call that may run a closure, uses each borrow the closure holds. A
 capture the closure writes is used as a mutable path, and a capture it only reads
 is used as an immutable path. A closure stored into module-level state may run
-during any later call, so every later call uses its borrows.
+during any later call, so every later call uses its borrows. A closure that moves
+one of its captures moves it at each call, so by E1 a second call is rejected.
 
 E4 adds no column to the exclusivity table, because it does not decide whether
 an operation on `p` is allowed. It decides when a closure's captures count as
@@ -630,10 +657,10 @@ Rust has no matching feature.
 | E4 closure calls use its borrows | A closure holds its captured borrows from creation to its last use | Differs | Escalier counts the borrows only at each call, so a write to a captured value between two calls is accepted. Rust rejects it. A closure stored into module-level state needs `move` and `'static` captures in Rust |
 | D1 no move out of module-level state | Moving out of a `static` is rejected with E0507 | Same | |
 | D2 a moving closure is called once | `FnOnce` | Same | |
-| D3 mixed owned and borrowed branches | `if` branches must have one type, so `T` and `&T` do not join | Same | |
+| T8 branches agree on ownership | `if` branches must have one type, so `T` and `&T` do not join | Same | |
 | D4 declared bounds are obligations | Declared bounds are assumptions | Differs | Follows from L3 |
 | D5 `readonly` initialized once | A struct literal initializes every field at once | No equivalent | |
-| D6 getter and setter receivers | No getters or setters | No equivalent | |
+| T10 getter and setter receivers | No getters or setters | No equivalent | |
 | Move to immutable and move to mutable | `let settled = v; let mut editable = settled;` moves between bindings of different mutability | Same | `docs/09_ownership.md` says Rust has no equivalent. The moves are the same, but interior mutability keeps Rust's move to immutable from being deep |
 
 The differences come from four sources:
@@ -646,7 +673,7 @@ The differences come from four sources:
   promise, so T3 has no escape hatch.
 - **Inference over annotation.** F3, L2, and L3 infer what Rust requires the
   user to write: parameter ownership, closure moves, and signature lifetimes.
-- **TypeScript heritage.** T5, D5, and D6 cover `readonly` fields, getters, and
+- **TypeScript heritage.** T5, D5, and T10 cover `readonly` fields, getters, and
   setters, and T9 covers literal types. Rust has none of them.
 
 ## Checking model
@@ -705,12 +732,13 @@ over those relations. The events above are the same kind of flat facts per
 control-flow point. Escalier produces them directly from inference, with no MIR
 in between.
 
-## Open decisions
+## Decisions
 
-The solver enforces D1 through D8 today, but no document states them. D9
-through D11 are design questions the rules above leave open. Each needs a choice before the
-rules are final. The current behaviour comes from reading the code, and the file
-references point at where it lives.
+D1 through D8 record behaviour the solver enforces today that no document
+stated. D9 through D11 are design questions the rules left open. Each decided
+entry says where its outcome now lives. D9 and D10 are still open. The current
+behaviour comes from reading the code, and the file references point at where
+it lives.
 
 ### D1. Moving out of a module-level binding
 
@@ -722,6 +750,8 @@ for every later caller.
 Recommendation: keep the behaviour and state it as part of E1. A place whose
 region is `'static` is never consumed, so a move out of it is rejected.
 
+Decided: accepted. E1 states it.
+
 ### D2. Closures that move a capture can be called once
 
 `consumeOnceCallee` consumes a closure that moves one of its captures when the
@@ -731,6 +761,8 @@ closure is called
 Recommendation: keep it and derive it. The call moves the capture, so by E1 a
 second call would use a moved place. No separate rule is needed once E4 treats a
 moved capture as a move event.
+
+Decided: accepted. E4 states it.
 
 ### D3. Branches that mix owned and borrowed values
 
@@ -745,6 +777,9 @@ The options are:
   outlives the expression, and no such owner exists for a fresh value.
 
 Recommendation: keep the error and add it as a type rule, T8.
+
+Decided: accepted. T8 states it. A branch with an owned value can borrow it to
+match the others.
 
 ### D4. Declared lifetime bounds are obligations
 
@@ -761,6 +796,8 @@ signature the inference does not produce.
 Recommendation: keep the behaviour, as L2 states it, and document it in
 `docs/09_ownership.md`.
 
+Decided: accepted. L2 states it, and the docs change in the migration.
+
 ### D5. A `readonly` field is initialized once in a constructor
 
 A second write to a `readonly` field inside a constructor is rejected, using the
@@ -770,6 +807,8 @@ definite-initialization lattice
 Recommendation: keep it. T5 already says one initialization, so this needs no
 new rule, only the docs.
 
+Decided: accepted. T5 states it.
+
 ### D6. Getter and setter receivers
 
 A getter must take `&self` and a setter must take `&mut self`
@@ -777,6 +816,8 @@ A getter must take `&self` and a setter must take `&mut self`
 
 Recommendation: keep both as declaration well-formedness rules alongside the type
 rules. They do not interact with flow.
+
+Decided: accepted. T10 states it.
 
 ### D7. Explicit `&` at a call site
 
@@ -790,6 +831,8 @@ the `&`. The compiler accepts `val c: &{x: number} = p`, and a store into a
 Recommendation: adopt F4, which extends the call-site requirement to every flow
 site, and update the docs to match.
 
+Decided: accepted. F4 states it.
+
 ### D8. A global write moves a borrow
 
 `consumeAtGlobalWrite` records a move for any reference-shaped source, including
@@ -799,6 +842,9 @@ which a borrow is copied and never consumed.
 Recommendation: drop the special case. A borrow stored into module-level state
 is copied by F2 and gets a `'static` lifetime by L1. E2 then keeps any
 conflicting path from forming for the rest of the program.
+
+Decided: accepted. The migration drops the move that
+`consumeAtGlobalWrite` records for a borrow.
 
 ### D9. Whether an escaping value moves or borrows
 
@@ -920,6 +966,10 @@ fn summary(doc: &Document) -> number {
 Recommendation: start with the write-once cell, since it covers caches and lazy
 fields with the smallest exception. Keep counters and the interop methods on
 `&mut self` until real code shows how often they come up.
+
+Decided: accepted. Escalier adds a write-once cell, and the invariant states
+the exception it makes. The cell's name, syntax, and API are still to be
+designed. Counters and the interop methods stay on `&mut self` for now.
 
 ## Known bugs
 
@@ -1160,7 +1210,7 @@ each a separate PR:
 
 1. Write the conformance tests above against the current solver. A test the
    current solver fails becomes a known-bug entry, or a reason to change a rule.
-2. Settle D1 through D11 and update `docs/08_mutability.md` and
+2. Settle D9 and D10 and update `docs/08_mutability.md` and
    `docs/09_ownership.md` to match.
 3. Move owned mutability from types to bindings, as T1 states. This rewrites the
    `mut T` annotations in tests, fixtures, and the stdlib, and drops the
