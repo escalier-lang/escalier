@@ -46,7 +46,7 @@ const (
 	captureOwnsWhenOutliving   = "A closure that outlives the source's binding owns its captures, by F3, so no capture borrow outlives its owner."
 	receiverBorrowEndsWithCall = "A method borrows its receiver for the call, so no receiver borrow outlives its owner."
 	patternHasNoStatic         = "A pattern takes the lifetime of the borrow it reads, so it has no `'static` destination of its own."
-	containerDecidesMutability = "The destination's mutability comes from its container, not a binding, so the move while immutably borrowed column covers this site."
+	containerDecidesMutability = "The destination is a slot of a container the function borrows or a module-level declaration, so no binding at this site decides its mutability. The move while immutably borrowed column covers this site."
 	tuplePatternNeedsTuple     = "A tuple pattern needs a tuple type, and an `Array` has no fixed length, so no pattern borrows one element of an array."
 )
 
@@ -1969,7 +1969,7 @@ func TestFlowMatrix(t *testing.T) {
 			notApplicable: captureOwnsWhenOutliving,
 		},
 		// A write to a source while an immutable borrow of it is live is rejected. Rule E2. A closure
-		// holds its captures between calls, and E4 allows a write there.
+		// writes its capture during each call, by E4.
 		{
 			column: "WriteDuringImmutableBorrow",
 			site:   "Binding",
@@ -2040,12 +2040,13 @@ func TestFlowMatrix(t *testing.T) {
 			src: `
 				fn g() -> number {
 					val mut p = {x: 1}
-					val f = fn () { return p.x }
-					val a = f()
-					p.x = 2
-					return a + f()
+					val r = &p
+					val f = fn () { p.x = 2 }
+					f()
+					return r.x
 				}
 			`,
+			want: []string{"6:6-6:7: this call runs 'f', which writes 'p' while it is borrowed as immutable"},
 		},
 		// A write that ends before an immutable borrow begins is accepted. Rule E2.
 		{
@@ -2480,18 +2481,6 @@ func TestFlowMatrix(t *testing.T) {
 				}
 			`,
 		},
-		{
-			column: "DisjointBorrows",
-			site:   "ClosureCapture",
-			src: `
-				fn g() -> number {
-					val mut p = {a: {x: 1}, b: {x: 2}}
-					val f = fn () { return p.a.x }
-					p.b.x = 3
-					return f()
-				}
-			`,
-		},
 		// The checker does not tell array elements apart, so a write to one element while another is
 		// borrowed is rejected. Rule E2.
 		{
@@ -2585,9 +2574,18 @@ func TestFlowMatrix(t *testing.T) {
 			want: []string{"5:18-5:19: cannot move 'p' while it is borrowed"},
 		},
 		{
-			column:        "MoveToMutableWhileImmutablyBorrowed",
-			site:          "Reassignment",
-			notApplicable: containerDecidesMutability,
+			column: "MoveToMutableWhileImmutablyBorrowed",
+			site:   "Reassignment",
+			src: `
+				fn g() -> number {
+					val p = {x: 1}
+					val r = &p
+					var mut d = {x: 0}
+					d = p
+					return r.x
+				}
+			`,
+			want: []string{"6:10-6:11: cannot move 'p' while it is borrowed"},
 		},
 		{
 			column:        "MoveToMutableWhileImmutablyBorrowed",
@@ -3178,7 +3176,7 @@ func TestFlowMatrixStaticBorrow(t *testing.T) {
 					p.x = 2
 				}
 			`,
-			want: []string{"6:6-6:13: cannot assign to 'p.x' while it is borrowed as immutable"},
+			want: []string{"6:6-6:9: cannot assign to 'p.x' while it is borrowed as immutable"},
 		},
 		{
 			column: "WriteAfterStaticImmutableBorrow",
@@ -3271,7 +3269,7 @@ func TestFlowMatrixStaticBorrowAndOwnershipPass(t *testing.T) {
 			want: []string{"6:14-6:16: cannot borrow 'p' as immutable while it is borrowed as mutable"},
 		},
 		// Today the element store reports
-		// `borrowed value \'p\' does not live long enough to escape the function`, which the frame-exit
+		// `borrowed value 'p' does not live long enough to escape the function`, which the frame-exit
 		// check reports for any borrow of a local stored into an element.
 		{
 			column: "WriteAfterStaticImmutableBorrow",
@@ -3286,7 +3284,7 @@ func TestFlowMatrixStaticBorrowAndOwnershipPass(t *testing.T) {
 			want: []string{"5:6-5:9: cannot assign to 'p.x' while it is borrowed as immutable"},
 		},
 		// Today the element store reports
-		// `borrowed value \'p\' does not live long enough to escape the function`, which the frame-exit
+		// `borrowed value 'p' does not live long enough to escape the function`, which the frame-exit
 		// check reports for any borrow of a local stored into an element.
 		{
 			column: "ImmutableBorrowAfterStaticMutableBorrow",
@@ -3421,11 +3419,13 @@ func TestFlowMatrixBindingMutability(t *testing.T) {
 			src: `
 				fn g() -> number {
 					val mut xs: Array<{x: number}> = [{x: 1}, {x: 2}]
-					val f = fn () { return xs[0].x }
-					xs[1].x = 3
-					return f()
+					val r = &xs[0]
+					val f = fn () { xs[1].x = 3 }
+					f()
+					return r.x
 				}
 			`,
+			want: []string{"6:6-6:7: this call runs 'f', which writes 'xs' while it is borrowed as immutable"},
 		},
 	})
 }
@@ -3461,7 +3461,7 @@ func TestFlowMatrixBindingMutabilityAndStaticBorrow(t *testing.T) {
 func TestFlowMatrixBindingMutabilityAndOwnershipPass(t *testing.T) {
 	runFlowMatrix(t, []flowCell{
 		// Today the element store reports
-		// `borrowed value \'p\' does not live long enough to escape the function`, which the frame-exit
+		// `borrowed value 'p' does not live long enough to escape the function`, which the frame-exit
 		// check reports for any borrow of a local stored into an element.
 		{
 			column: "ElementBorrows",
@@ -3760,7 +3760,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			want: []string{"10:13-10:16: cannot move module-level value 'cfg' inside a function. Borrow it with `&cfg`"},
 		},
 		// Today the element store reports
-		// `borrowed value \'p\' does not live long enough to escape the function`, which the frame-exit
+		// `borrowed value 'p' does not live long enough to escape the function`, which the frame-exit
 		// check reports for any borrow of a local stored into an element.
 		{
 			column: "OutliveOwner",
@@ -3776,7 +3776,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			`,
 		},
 		// Today the element store reports
-		// `borrowed value \'p\' does not live long enough to escape the function`, which the frame-exit
+		// `borrowed value 'p' does not live long enough to escape the function`, which the frame-exit
 		// check reports for any borrow of a local stored into an element. The write is not reported.
 		{
 			column: "WriteDuringImmutableBorrow",
@@ -3827,7 +3827,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			want: []string{"11:17-11:23: cannot borrow 'p' as mutable while it is borrowed as immutable"},
 		},
 		// Today the element store reports
-		// `borrowed value \'p\' does not live long enough to escape the function`, which the frame-exit
+		// `borrowed value 'p' does not live long enough to escape the function`, which the frame-exit
 		// check reports for any borrow of a local stored into an element.
 		{
 			column: "SequentialPhases",
@@ -3842,7 +3842,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			`,
 		},
 		// Today the element store reports
-		// `borrowed value \'p\' does not live long enough to escape the function`, which the frame-exit
+		// `borrowed value 'p' does not live long enough to escape the function`, which the frame-exit
 		// check reports for any borrow of a local stored into an element.
 		{
 			column: "WriteDuringMutableBorrow",
@@ -3872,7 +3872,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			`,
 		},
 		// Today the frame-exit check also reports
-		// `\'p\' leaves the function through a mutable path and an immutable one`, though the function
+		// `'p' leaves the function through a mutable path and an immutable one`, though the function
 		// returns a `number`.
 		{
 			column: "ImmutableBorrowDuringMutableBorrow",
@@ -3889,9 +3889,9 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			want: []string{"5:14-5:16: cannot borrow 'p' as immutable while it is borrowed as mutable"},
 		},
 		// Today the element store reports
-		// `borrowed value \'p\' does not live long enough to escape the function`, which the frame-exit
+		// `borrowed value 'p' does not live long enough to escape the function`, which the frame-exit
 		// check reports for any borrow of a local stored into an element. The frame-exit check also
-		// reports `\'p\' leaves the function through a mutable path and an immutable one`, and the borrow
+		// reports `'p' leaves the function through a mutable path and an immutable one`, and the borrow
 		// `&p` is not reported.
 		{
 			column: "ImmutableBorrowDuringMutableBorrow",
@@ -3943,7 +3943,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			want: []string{"11:18-11:20: cannot borrow 'p' as immutable while it is borrowed as mutable"},
 		},
 		// Today the element store reports
-		// `borrowed value \'p\' does not live long enough to escape the function`, which the frame-exit
+		// `borrowed value 'p' does not live long enough to escape the function`, which the frame-exit
 		// check reports for any borrow of a local stored into an element.
 		{
 			column: "DisjointBorrows",
@@ -3957,8 +3957,23 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 				}
 			`,
 		},
+		// Today the closure captures all of `p` instead of `p.b`, so the call reports
+		// `this call runs 'f', which writes 'p' while 'p.a' is borrowed as immutable`.
+		{
+			column: "DisjointBorrows",
+			site:   "ClosureCapture",
+			src: `
+				fn g() -> number {
+					val mut p = {a: {x: 1}, b: {x: 2}}
+					val r = &p.a
+					val f = fn () { p.b.x = 3 }
+					f()
+					return r.x
+				}
+			`,
+		},
 		// Today the frame-exit check also reports
-		// `\'p\' leaves the function both as an owned value and through a borrow`, though the function
+		// `'p' leaves the function both as an owned value and through a borrow`, though the function
 		// returns a `number`.
 		{
 			column: "MoveWhileImmutablyBorrowed",
@@ -3974,7 +3989,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			want: []string{"5:12-5:13: cannot move 'p' while it is borrowed"},
 		},
 		// Today the frame-exit check also reports
-		// `\'p\' leaves the function both as an owned value and through a borrow`, though the function
+		// `'p' leaves the function both as an owned value and through a borrow`, though the function
 		// returns a `number`.
 		{
 			column: "MoveWhileImmutablyBorrowed",
@@ -3990,7 +4005,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			want: []string{"5:15-5:16: cannot move 'p' while it is borrowed"},
 		},
 		// Today the frame-exit check also reports
-		// `\'p\' leaves the function both as an owned value and through a borrow`, though the function
+		// `'p' leaves the function both as an owned value and through a borrow`, though the function
 		// returns a `number`.
 		{
 			column: "MoveWhileImmutablyBorrowed",
@@ -4036,7 +4051,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			want: []string{"6:13-6:14: cannot move 'p' while it is borrowed"},
 		},
 		// Today the move is accepted, and the later call reports
-		// `this call runs \'peek\', which reads \'p\' after it was moved`.
+		// `this call runs 'peek', which reads 'p' after it was moved`.
 		{
 			column: "MoveWhileImmutablyBorrowed",
 			site:   "ClosureCapture",
@@ -4050,8 +4065,8 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"5:14-5:15: cannot move 'p' while it is borrowed"},
 		},
-		// Today the alias-set transition check reports `cannot assign \'p\' to mutable \'q\'`, and the
-		// later call reports that `peek` reads `p` after it was moved.
+		// Today the alias-set transition check reports `cannot assign 'p' to mutable 'q'`, and the later
+		// call reports that `peek` reads `p` after it was moved.
 		{
 			column: "MoveToMutableWhileImmutablyBorrowed",
 			site:   "ClosureCapture",
@@ -4096,7 +4111,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			want: []string{"6:13-6:14: cannot move 'p' while it is borrowed"},
 		},
 		// Today the move is accepted, and the later call reports
-		// `this call runs \'bump\', which writes \'p\' after it was moved`.
+		// `this call runs 'bump', which writes 'p' after it was moved`.
 		{
 			column: "MoveWhileMutablyBorrowed",
 			site:   "ClosureCapture",
