@@ -355,39 +355,28 @@ func TestInferValAnnotatedOwnedImm(t *testing.T) {
 	require.Equal(t, "fn (p: {x: number}) -> {x: number}", values["f"])
 }
 
-// `val q: &{x} = p` for an owned p auto-borrows p into the annotated borrow destination.
-// The constrain rule's bare<:RefType arm wraps p as an immutable view.
-//
-// DISABLED until lifetime-bounds (M6.5) lands. The annotated borrow form has
-// the same dangling-borrow soundness gap as the inferred `val q = &p` case
-// in TestInferValBorrowFromOwnedImm.
-/*
+// `val q: &{x} = p` for an owned p fills a borrow annotation without writing the borrow, so
+// it reports the missing `&`. `val q: &{x} = &p` is the accepted form.
 func TestInferValAnnotatedBorrowImm(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f(p: {x: number}) {
   val q: &{x: number} = p
   return q
 }`)
 	require.Equal(t, []string{
-		"cannot return borrow of local 'p': 'p' does not live long enough",
+		"2:25-2:26: this value is borrowed by its destination, so write the borrow: `&`",
 	}, messagesWithSpan(t, errs))
 }
-*/
 
-// `val q: &mut {x} = p` for an owned-mutable p auto-borrows p as a mutable borrow.
-//
-// DISABLED until lifetime-bounds (M6.5) lands. Mutable analogue of
-// TestInferValAnnotatedBorrowImm.
-/*
+// `val q: &mut {x} = p` for an owned-mutable p reports the missing `&mut` the same way.
 func TestInferValAnnotatedBorrowMut(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f(p: mut {x: number}) {
   val q: &mut {x: number} = p
   return q
 }`)
 	require.Equal(t, []string{
-		"cannot return borrow of local 'p': 'p' does not live long enough",
+		"2:29-2:30: this value is borrowed by its destination, so write the borrow: `&mut`",
 	}, messagesWithSpan(t, errs))
 }
-*/
 
 // --- Auto-borrow at call sites -------------------------------------------------
 

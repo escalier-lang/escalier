@@ -1185,9 +1185,6 @@ the docs change.
   [#794](https://github.com/escalier-lang/escalier/issues/794).
 - An owned argument to a borrow parameter needs a written `&`. The docs say the
   borrow is still inserted for the user. See D7.
-- Both docs borrow an owned value with an annotation alone, as in
-  `val q: &{x: number} = p`. F4 rejects that form, so those examples change to
-  `&p`.
 - A call to a `&mut self` method on an immutable binding goes through
   `checkReceiverMut` in [classes.go](../../internal/solver/classes.go), which
   appears to reject it. `docs/08_mutability.md` says the call is accepted.

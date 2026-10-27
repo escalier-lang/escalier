@@ -614,7 +614,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// body opens its own context, so its returns never leak out here).
 		saved := c.pushFuncCtx(sig.Async, node, lvl)
 		c.fn.throws = declaredThrows
-		_, c.fn.returnsBorrow = sig.Return.(*ast.RefTypeAnn)
+		if retAnnOK {
+			c.fn.returnAnn = retAnnT
+		}
 		switch {
 		case gen != nil && gen.ann != nil && gen.ann.Raises():
 			c.fn.throwsAnn, c.fn.throwsForm = sig.Return, throwsGenerator
@@ -2613,6 +2615,10 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	// the `b.Kind != ast.VarKind` gate above before reaching here.
 	targetT := c.freshenAll(schemeType(b.Schemes[0]), lvl)
 	c.recordType(target, targetT)
+	// A source that fills a borrow binding without a written borrow is reported for that
+	// alone. The reassignment records no alias, borrow edge, or move for it, as for one that
+	// fails to type-check.
+	missing := c.checkWrittenBorrow(e.Right, targetT)
 	// M4 G1: track the alias this reassignment creates and check its mutability
 	// transition, but only when the constraint below succeeds — an ill-typed
 	// reassignment must not seed a false-positive transition error off types that
@@ -2643,7 +2649,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		if !c.constrainAgainstImmutableTarget(e, e.Right, soltype.CarrierOf(sourceT), targetT) {
 			c.constrain(e, soltype.CarrierOf(sourceT), targetT)
 		}
-		if len(c.errs) == errsBefore {
+		if len(c.errs) == errsBefore && !missing {
 			// The store aliases the source into a permanent module-level storage location. If the
 			// source's mutability differs from that location's and the source stays live at
 			// the conflicting mutability, that is a mut↔immutable transition the local
@@ -2660,7 +2666,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 			// any OTHER live alias of the same value.
 			if c.fn != nil {
 				if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
-					if isBorrowType(bindingType(b)) || !c.rejectModuleLevelMove(scope, e.Right) {
+					if !c.rejectModuleLevelMove(scope, e.Right) {
 						c.consumeAtGlobalWrite(e.Right, sourceT, e.Right, ref)
 					}
 					// Anything can call a closure in a module-level binding from here on, so what
@@ -2684,7 +2690,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		// union-super exists rule, which trials each member under a probe.
 		c.constrain(e, sourceT, targetT)
 	}
-	if c.fn != nil && len(c.errs) == assignErrsBefore && c.varIDs.Of(target) > 0 {
+	if c.fn != nil && len(c.errs) == assignErrsBefore && !missing && c.varIDs.Of(target) > 0 {
 		// Track against the binding's own type, not the freshened targetT. The G2
 		// escape query reads the recorded type, and a later global write forces the
 		// lifetime on the binding's shared pointer. The freshened copy carries an
@@ -2694,7 +2700,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		// A non-module reassignment that moves its source consumes it. The global-write
 		// branch above runs its own consume, so this covers only the local-binding
 		// reassignment.
-		moduleLevel := !b.ModuleLevel && !isBorrowType(bindingType(b)) && c.rejectModuleLevelMove(scope, e.Right)
+		moduleLevel := !b.ModuleLevel && c.rejectModuleLevelMove(scope, e.Right)
 		if !b.ModuleLevel && !moduleLevel && c.movesSourceInto(e.Right, bindingType(b)) {
 			if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
 				c.consumeOwned(e.Right, c.info.TypeOf(e.Right), e.Right, ref)
@@ -2828,6 +2834,9 @@ func (c *checker) inferFieldAssign(scope *Scope, lvl int, e *ast.BinaryExpr, obj
 			upgraded = true
 		}
 	}
+	// A source that fills a borrow field without a written borrow is reported for that alone,
+	// and the store records no alias or move for it.
+	missing := hasDeclared && c.checkWrittenBorrow(e.Right, declared.Type)
 	errsBefore := len(c.errs)
 	reqField := &soltype.PropertyElem{Name: name, Type: w}
 	// A receiver that declares the field takes the write against the declared type. The
@@ -2863,7 +2872,7 @@ func (c *checker) inferFieldAssign(scope *Scope, lvl int, e *ast.BinaryExpr, obj
 	// M4 G1: when the written value aliases a variable, merge the receiver's and the
 	// source's alias sets so a later transition off either sees the shared value. Only
 	// when the write type-checked, so a rejected write does not record a bogus alias.
-	if c.fn != nil && len(c.errs) == errsBefore {
+	if c.fn != nil && len(c.errs) == errsBefore && !missing {
 		c.trackAliasesForPropAssignment(e.Left, e.Right)
 		// Storing an owned value into a field transfers ownership into the receiver, so
 		// the source binding is consumed and a later use of it is a use-after-move. The
@@ -2871,9 +2880,7 @@ func (c *checker) inferFieldAssign(scope *Scope, lvl int, e *ast.BinaryExpr, obj
 		// rather than c.fn.currentStmt, which inferring the receiver and source may have
 		// overwritten with an inner branch statement.
 		if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
-			// A field declared as a borrow takes the value without moving it.
-			borrowField := hasDeclared && isBorrowType(declared.Type)
-			if borrowField || !c.rejectModuleLevelMove(scope, e.Right) {
+			if !c.rejectModuleLevelMove(scope, e.Right) {
 				c.consumeOwned(e.Right, source, e.Right, ref)
 			}
 			// Storing a value that borrows a local into a borrow parameter's field hands the
@@ -2984,17 +2991,20 @@ func (c *checker) inferElementAssign(scope *Scope, lvl int, e *ast.BinaryExpr, i
 		c.recordType(e, w)
 		return w
 	}
+	// A source that fills a borrow slot without a written borrow is reported once, however
+	// many slots the write may reach, and the store records no alias or move for it.
+	missing := slices.ContainsFunc(slots, func(slot soltype.Type) bool {
+		return c.checkWrittenBorrow(e.Right, slot)
+	})
 	for _, slot := range slots {
 		c.constrain(e.Right, source, slot)
 	}
-	if c.fn != nil && len(c.errs) == errsBefore {
+	if c.fn != nil && len(c.errs) == errsBefore && !missing {
 		c.trackAliasesForPropAssignment(e.Left, e.Right)
 		if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
 			// Storing an owned value into an element moves it into the receiver, and storing
 			// a borrow of a local into a parameter's element escapes, as a field store does.
-			// Slots that all hold borrows take the value without moving it.
-			borrowSlots := !slices.ContainsFunc(slots, func(slot soltype.Type) bool { return !isBorrowType(slot) })
-			if borrowSlots || !c.rejectModuleLevelMove(scope, e.Right) {
+			if !c.rejectModuleLevelMove(scope, e.Right) {
 				c.consumeOwned(e.Right, source, e.Right, ref)
 			}
 			c.checkParamElementStoreEscape(ix.Object, e.Right, ref)
@@ -3103,6 +3113,7 @@ func (c *checker) inferAccessorAssign(
 	c.raiseAccessorThrows(lvl, e, describeSite("assigning", "this assignment", e.Left), setter.ThrowsOrNever())
 	errsBefore := len(c.errs)
 	c.checkReceiverMut(e.Left, name, recv, setter.SelfParam)
+	c.checkWrittenBorrow(e.Right, setter.Param.Type)
 	c.constrain(e.Right, source, setter.Param.Type)
 	// A concretely owned parameter takes the value out of this frame, so the source
 	// binding is consumed and a later use of it is a use-after-move. This mirrors

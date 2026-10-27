@@ -189,6 +189,23 @@ func (e *ImplicitBorrowArgError) Message() string {
 	return fmt.Sprintf("this argument is borrowed by the callee, so write the borrow: `%s`", e.Written)
 }
 
+// ImplicitBorrowError reports a value filling a `&` or `&mut` destination without a borrow
+// written where it flows. The destination is a binding, a reassignment, a field or element
+// store, a setter's parameter, a `return`, or an element of a literal. A call argument reports
+// ImplicitBorrowArgError instead.
+type ImplicitBorrowError struct {
+	// Written is the borrow the value needs, `&` or `&mut`, taken from the destination's type.
+	Written string
+	node    ast.Node
+}
+
+func (*ImplicitBorrowError) isSolverError()        {}
+func (e *ImplicitBorrowError) Span() ast.Span      { return e.node.Span() }
+func (e *ImplicitBorrowError) Related() []ast.Span { return nil }
+func (e *ImplicitBorrowError) Message() string {
+	return fmt.Sprintf("this value is borrowed by its destination, so write the borrow: `%s`", e.Written)
+}
+
 // loan is one borrow the exclusivity check tracks.
 type loan struct {
 	// place is the data the borrow reaches.
@@ -876,16 +893,9 @@ func (c *checker) checkUsesAgainstLoans(reported set.Set[ast.Node]) {
 
 // checkExplicitBorrowArgs reports an argument that fills a borrow parameter without a borrow
 // written at the call. A borrow is where a second view of a value comes into existence, and
-// every borrow rule keys on it, so the call site is where it should be visible.
-//
-// Two arguments are already borrows and need nothing written:
-//
-//   - A borrow expression, `&e` or `&mut e`.
-//   - A value whose own type is a borrow, passed by name. `fn g(m: &mut T) { f(m) }` hands on a
-//     borrow g holds rather than creating one.
-//
-// An argument whose type has not settled is left alone, since what it becomes decides whether a
-// borrow is missing and this walk cannot wait for it.
+// every borrow rule keys on it, so the call site is where it should be visible. missingBorrow
+// lists the arguments that need nothing written. An argument that is an object or tuple literal
+// has each element checked against the parameter's matching slot, as at any other flow site.
 //
 // A method call's RECEIVER is not an argument and does not reach here. It keeps auto-borrowing,
 // because the method's signature already names the mode: `bump(&mut self)` says the receiver is
@@ -897,29 +907,179 @@ func (c *checker) checkExplicitBorrowArgs(e *ast.CallExpr, fn *soltype.FuncType)
 			// them fills a borrow slot. #1530 covers what the borrow rules still miss there.
 			break
 		}
-		mut, isBorrowParam := paramBorrowMut(fn.Params[i].Type)
-		if !isBorrowParam {
-			continue
-		}
-		if _, written := arg.(*ast.BorrowExpr); written {
-			continue
-		}
-		argT := c.info.TypeOf(arg)
-		if argT == nil {
-			continue
-		}
-		if ref, isRef := argT.(*soltype.RefType); isRef && ref.Lt != nil {
-			continue
-		}
-		if _, unsettled := argT.(*soltype.TypeVarType); unsettled {
-			continue
-		}
-		written := "&"
-		if mut {
-			written = "&mut"
-		}
-		c.report(&ImplicitBorrowArgError{Written: written, node: arg})
+		c.checkBorrowsWritten(arg, fn.Params[i].Type, true)
 	}
+}
+
+// missingBorrow returns the borrow, `&` or `&mut`, that src needs written to fill a destination
+// of type destT. It returns false when destT is not a borrow or when src needs nothing written.
+// Only an owned value needs a borrow written, so these sources need nothing:
+//
+//   - A borrow expression, `&e` or `&mut e`.
+//   - A value whose own type is a borrow. `fn g(m: &mut T) { f(m) }` hands on a borrow g holds
+//     rather than creating one.
+//   - A value type, which has no borrow form.
+//   - A value whose type has not settled on an owned shape. What it becomes decides whether a
+//     borrow is missing, and the caller cannot wait for it.
+func (c *checker) missingBorrow(src ast.Expr, destT soltype.Type) (string, bool) {
+	mut, isBorrow := destBorrowMut(c.expandAliasChain(destT))
+	if !isBorrow || src == nil {
+		return "", false
+	}
+	if _, written := src.(*ast.BorrowExpr); written {
+		return "", false
+	}
+	if !c.isSettledOwned(c.info.TypeOf(src)) {
+		return "", false
+	}
+	if mut {
+		return "&mut", true
+	}
+	return "&", true
+}
+
+// destBorrowMut reports whether a destination of type t borrows the value that fills it, and
+// whether that borrow is `&mut`. t is a borrow, or a union of borrows with `null` or
+// `undefined`, as in `&T | undefined`. The borrow is `&mut` only when every borrow in t is.
+func destBorrowMut(t soltype.Type) (bool, bool) {
+	u, isUnion := t.(*soltype.UnionType)
+	if !isUnion {
+		return paramBorrowMut(t)
+	}
+	mut, found := true, false
+	for _, member := range u.Types {
+		if isNullishAtom(member) {
+			continue
+		}
+		memberMut, isBorrow := paramBorrowMut(member)
+		if !isBorrow {
+			return false, false
+		}
+		mut, found = mut && memberMut, true
+	}
+	return mut && found, found
+}
+
+// isSettledOwned reports whether a value of type t is owned and its shape is known. A union
+// counts when every member does. A read of a module-level binding inside a function types as a
+// variable whose lower bound is the binding's type, so a variable counts when such a bound does.
+func (c *checker) isSettledOwned(t soltype.Type) bool {
+	if u, isUnion := c.expandAliasChain(t).(*soltype.UnionType); isUnion {
+		return len(u.Types) > 0 && !slices.ContainsFunc(u.Types, func(member soltype.Type) bool {
+			return !c.isSettledOwned(member)
+		})
+	}
+	return c.holdsConcreteOwned(t, set.NewSet[*soltype.TypeVarType]())
+}
+
+// checkWrittenBorrow reports src when it fills a destination of type destT that borrows it
+// without a borrow written, as checkBorrowsWritten does for a destination that is not a call
+// argument. It returns whether anything in src was reported, and a caller records no alias or
+// move for src when it was.
+func (c *checker) checkWrittenBorrow(src ast.Expr, destT soltype.Type) bool {
+	return c.checkBorrowsWritten(src, destT, false)
+}
+
+// checkBorrowsWritten reports each value src produces that fills a destination of type destT
+// without the borrow destT needs written. arg says src is a call argument, which selects
+// ImplicitBorrowArgError over ImplicitBorrowError. It returns whether anything was reported,
+// including an element of a literal in src.
+//
+// A conditional, `match`, `do`, or `try` produces the value of one of its branches, so each
+// branch's result is checked on its own and reported where its borrow belongs. A value that
+// needs no borrow of its own and is an object or tuple literal has each element checked
+// against the slot of destT it fills.
+func (c *checker) checkBorrowsWritten(src ast.Expr, destT soltype.Type, arg bool) bool {
+	reported := false
+	for _, r := range branchResults(src) {
+		written, missing := c.missingBorrow(r, destT)
+		if !missing {
+			if c.checkLiteralElemBorrows(r, destT) {
+				reported = true
+			}
+			continue
+		}
+		if arg {
+			c.report(&ImplicitBorrowArgError{Written: written, node: r})
+		} else {
+			c.report(&ImplicitBorrowError{Written: written, node: r})
+		}
+		// A literal element is moved into the literal as the literal is built, before its
+		// destination is known. The element is a borrow the program left unwritten, not a move.
+		c.retractMove(r)
+		reported = true
+	}
+	if reported && c.fn != nil {
+		if c.fn.unwrittenBorrows == nil {
+			c.fn.unwrittenBorrows = set.NewSet[ast.Node]()
+		}
+		c.fn.unwrittenBorrows.Add(src)
+	}
+	return reported
+}
+
+// checkLiteralElemBorrows checks each element of an object or tuple literal src against the
+// slot of destT it fills, through checkWrittenBorrow, and returns whether any element was
+// reported. `{f: p}` filling `{f: &T}` reports p. A borrow `&{f: p}` filling `&{f: &T}` is
+// checked against the borrow's inner type. Any other src, and an element whose slot destT does
+// not name, is left alone.
+func (c *checker) checkLiteralElemBorrows(src ast.Expr, destT soltype.Type) bool {
+	destT = c.expandAliasChain(destT)
+	if b, isBorrow := src.(*ast.BorrowExpr); isBorrow {
+		if ref, isRef := destT.(*soltype.RefType); isRef {
+			return c.checkLiteralElemBorrows(b.Arg, ref.Inner)
+		}
+		return false
+	}
+	reported := false
+	check := func(el ast.Expr, slotT soltype.Type) {
+		if c.checkWrittenBorrow(el, slotT) {
+			reported = true
+		}
+	}
+	switch lit := src.(type) {
+	case *ast.ObjectExpr:
+		obj, isObj := soltype.CarrierOf(destT).(*soltype.ObjectType)
+		if !isObj {
+			return false
+		}
+		for _, elem := range lit.Elems {
+			prop, isProp := elem.(*ast.PropertyExpr)
+			if !isProp {
+				continue
+			}
+			name, named := objKeyName(prop.Name)
+			if !named {
+				continue
+			}
+			if slot, found := obj.Prop(name); found {
+				check(prop.ValueExpr(), slot.Type)
+			}
+		}
+	case *ast.TupleExpr:
+		target := soltype.CarrierOf(destT)
+		if elemT, isArray := c.ctx.arrayElem(target); isArray {
+			for _, el := range lit.Elems {
+				if _, spread := el.(*ast.ArraySpreadExpr); !spread {
+					check(el, elemT)
+				}
+			}
+			return reported
+		}
+		tuple, isTuple := target.(*soltype.TupleType)
+		if !isTuple {
+			return false
+		}
+		for i, el := range lit.Elems {
+			// A spread fills a run of slots whose length the literal does not show, so no later
+			// element has a known slot.
+			if _, spread := el.(*ast.ArraySpreadExpr); spread || i >= len(tuple.Elems) {
+				break
+			}
+			check(el, tuple.Elems[i])
+		}
+	}
+	return reported
 }
 
 // checkCallBorrowExclusivity reports two arguments of one call that borrow overlapping data

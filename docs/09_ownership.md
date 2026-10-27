@@ -48,15 +48,18 @@ in a borrow, ownership does not apply to them, and they are freely duplicated.
    unannotated parameter is inferred from whether the body lets the value escape.
 3. **A bare annotation is owned; a `&` annotation borrows.** This holds in every
    annotation position — a binding, a return type, a field, a parameter. So
-   `val q: &{x: number} = p` borrows `p` and leaves it usable, while
-   `val q: {x: number} = p` moves `p` into `q` and consumes it.
+   `val q: &{x: number} = &p` borrows `p` and leaves it usable, while
+   `val q: {x: number} = p` moves `p` into `q` and consumes it. An owned value
+   fills a `&` destination only with the borrow written, so
+   `val q: &{x: number} = p` reports
+   ``this value is borrowed by its destination, so write the borrow: `&` ``.
 4. **Member reads borrow the receiver.** `obj.f` yields a borrow of the field for
    a lifetime bounded by the receiver, not a fresh owned value.
 5. **Escape forces ownership and a lifetime.** A value that flows into storage
    outliving its current binding has its lifetime constrained to outlive the
    destination.
 
-A binding can also borrow with an explicit `&` on the initializer, which avoids
+A binding can also borrow with the `&` alone and no annotation, which avoids
 repeating the pointee's shape:
 
 ```esc
@@ -316,16 +319,6 @@ fn overlapping() {
     a.x = 1
     val n = b.x      // should be rejected — b is live across the write
 }
-```
-
-Escalier catches that today only when the immutable view is created by
-annotation rather than by an explicit `&`:
-
-```esc
-val mut p = {x: 0}
-val b: &{x: number} = p   // ERROR: cannot assign 'p' to immutable 'b':
-p.x = 1                   //        'p' is still used mutably after this point
-val n = b.x
 ```
 
 `overlapping` above is accepted as written; exclusivity between two `&` borrows

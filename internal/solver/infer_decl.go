@@ -174,11 +174,11 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 	}
 	initT := c.inferExpr(scope, lvl, d.Init)
 	// A binding that takes its initializer by value moves it. A move out of a module-level
-	// binding is reported here, before the upgrade below asks movesOwnedPlace about it.
-	if _, isIdent := d.Pattern.(*ast.IdentPat); isIdent {
-		if _, borrowAnn := d.TypeAnn.(*ast.RefTypeAnn); !borrowAnn {
-			c.rejectModuleLevelMove(scope, d.Init)
-		}
+	// binding is reported here, before the upgrade below asks movesOwnedPlace about it. An
+	// annotated binding reports it once the annotation has resolved.
+	_, isIdent := d.Pattern.(*ast.IdentPat)
+	if isIdent && d.TypeAnn == nil {
+		c.rejectModuleLevelMove(scope, d.Init)
 	}
 	switch {
 	case d.TypeAnn == nil && isMutableIdentPat(d.Pattern) && c.callReturnsOwned(d.Init, initT):
@@ -262,7 +262,15 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 		// placeholder, so constraining `initT <: never` would cascade a spurious
 		// error and adopting `never` would poison the binding. Keep the inferred
 		// initializer type instead (error recovery).
-		if annT, ok := c.resolveDeclaredTypeAnn(scope, d.TypeAnn, lvl, symName, varDeclSymbolPosition(d)); ok {
+		annT, ok := c.resolveDeclaredTypeAnn(scope, d.TypeAnn, lvl, symName, varDeclSymbolPosition(d))
+		// An initializer that fills a borrow annotation without a written borrow is reported
+		// for that alone. Reporting it as a move out of a module-level binding as well would
+		// blame one fault twice.
+		missing := ok && c.checkWrittenBorrow(d.Init, annT)
+		if isIdent && !missing {
+			c.rejectModuleLevelMove(scope, d.Init)
+		}
+		if ok {
 			annT = c.constrainInitAgainstAnnotation(d.Init, initT, annT)
 			c.checkExcessLiteralMembers(d.Init, initT, annT)
 			initT = annT
@@ -315,8 +323,8 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 // 2. A bare owned annotation whose initializer is a borrow is a borrow-into-owned
 // escape. A `val` binding consumes an owned source, so a borrowed `p` flowing into a
 // bare owned destination, as in `val q: {x} = p`, does not alias `p`. The constraint takes the
-// ordinary RefType<:bare arm, which trips BorrowEscapeError. The explicit `&` form
-// `val q: &{x} = p` is the opt-in for an alias.
+// ordinary RefType<:bare arm, which trips BorrowEscapeError. A `&` annotation,
+// `val q: &{x} = p`, copies the borrow instead.
 func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT soltype.Type) soltype.Type {
 	// Check a generic function annotation in checking mode, holding each declared type
 	// parameter rigid as a skolem, so `fn (x) { return 5 }` is rejected against
