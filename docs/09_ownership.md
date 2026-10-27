@@ -53,8 +53,16 @@ in a borrow, ownership does not apply to them, and they are freely duplicated.
    fills a `&` destination only with the borrow written, so
    `val q: &{x: number} = p` reports
    ``this value is borrowed by its destination, so write the borrow: `&` ``.
-4. **Member reads borrow the receiver.** `obj.f` yields a borrow of the field for
-   a lifetime bounded by the receiver, not a fresh owned value.
+4. **A member read through a borrow borrows the field.** With `line: &Line`,
+   `line.start` reads a borrow of `start` that lives as long as `line` does, so
+   the read is written `&line.start`, or `&mut line.start` through a `&mut`
+   receiver. `val s = line.start` reports
+   ``this value is borrowed by its destination, so write the borrow: `&` ``.
+   A read that ends at a value type copies and needs nothing written, as
+   `line.start.x` does. A field declared as a borrow hands its borrow on, and a
+   read off an owned receiver yields the owned field. A method receiver and a
+   destructuring pattern borrow without the `&`, so `line.start.norm()` and
+   `val {start} = line` need nothing written.
 5. **Escape forces ownership and a lifetime.** A value that flows into storage
    outliving its current binding has its lifetime constrained to outlive the
    destination.

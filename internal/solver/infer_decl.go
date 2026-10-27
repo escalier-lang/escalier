@@ -177,7 +177,10 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 	// binding is reported here, before the upgrade below asks movesOwnedPlace about it. An
 	// annotated binding reports it once the annotation has resolved.
 	_, isIdent := d.Pattern.(*ast.IdentPat)
-	if isIdent && d.TypeAnn == nil {
+	// An unannotated name binds whatever its initializer produces, so a field read through a
+	// borrow binds a borrow and needs the borrow written. A destructuring pattern reads
+	// through the borrow itself and needs nothing written.
+	if isIdent && d.TypeAnn == nil && !c.checkWrittenBorrow(d.Init, nil) {
 		c.rejectModuleLevelMove(scope, d.Init)
 	}
 	switch {

@@ -2905,10 +2905,9 @@ func TestFlowMatrixMissingBorrow(t *testing.T) {
 	})
 }
 
-// DISABLED until #2258, which reports a missing `&` on a field read through a borrow that
-// yields an object. Today `h.f` fills each destination below with no diagnostic, including a
-// call argument.
-/*
+// TestFlowMatrixMissingFieldBorrow covers the "unwritten field borrow" column at each flow site
+// whose destination is a borrow or takes its type from the source. `h.f` reads an object
+// through the borrow `h`, so each site reports the `&` the read needs. Rules F4 and T6.
 func TestFlowMatrixMissingFieldBorrow(t *testing.T) {
 	runFlowMatrix(t, []flowCell{
 		{
@@ -2996,7 +2995,6 @@ func TestFlowMatrixMissingFieldBorrow(t *testing.T) {
 		},
 	})
 }
-*/
 
 // DISABLED until #2284. The module-level move check looks at bindings, stores, literals, and
 // returns, but not at a call argument or an owned receiver, so each move of `cfg` below goes

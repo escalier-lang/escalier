@@ -436,6 +436,9 @@ type funcCtx struct {
 	// each `return`. It is nil when the function has no annotation, and for an async or
 	// generator function, whose `return` fills a type nested in the annotation.
 	returnAnn soltype.Type
+	// returnAnnotated says the function's signature writes a return annotation, whether or
+	// not returnAnn holds what it resolves to.
+	returnAnnotated bool
 
 	// throws is this body's exceptional SINK: the single type every `throw` and every call
 	// is constrained against, the twin of the joined return type. inferFunc seeds it from

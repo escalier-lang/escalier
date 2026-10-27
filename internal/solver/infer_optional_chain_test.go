@@ -185,8 +185,8 @@ func TestInferOptionalChainErrors(t *testing.T) {
 }
 
 // TestInferOptionalObjectFieldRead covers a plain read of an optional field whose type is
-// an object. The read yields the field or `undefined`, and a borrowed receiver still lends
-// the field at its own lifetime.
+// an object. The read yields the field or `undefined`. A read off a borrowed receiver writes
+// the borrow, and `&a.b` yields a borrow at the receiver's lifetime or `undefined`.
 func TestInferOptionalObjectFieldRead(t *testing.T) {
 	tests := []struct {
 		name string
@@ -200,7 +200,7 @@ func TestInferOptionalObjectFieldRead(t *testing.T) {
 		},
 		{
 			name: "BorrowedReceiver",
-			src:  "fn read(a: &{b?: {c: number}}) { return a.b }",
+			src:  "fn read(a: &{b?: {c: number}}) { return &a.b }",
 			want: "fn <'a>(a: &'a {b?: {c: number}}) -> &'a {c: number} | undefined",
 		},
 	}

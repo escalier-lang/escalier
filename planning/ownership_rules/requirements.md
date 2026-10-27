@@ -1205,10 +1205,6 @@ the docs change.
   becomes `-> T`, and the stdlib's `...items: mut Array<T>` rest parameters
   become `...items: Array<T>`.
 
-- A reference-shaped field read through a borrow, such as `line.start` with
-  `line: &Line`, produces a borrow today with no `&` written. F4 requires
-  `&line.start` there, except on a method receiver and in a pattern.
-
 ## Interop
 
 These rules decide how the TypeScript declaration converter and any source

@@ -912,30 +912,138 @@ func (c *checker) checkExplicitBorrowArgs(e *ast.CallExpr, fn *soltype.FuncType)
 }
 
 // missingBorrow returns the borrow, `&` or `&mut`, that src needs written to fill a destination
-// of type destT. It returns false when destT is not a borrow or when src needs nothing written.
-// Only an owned value needs a borrow written, so these sources need nothing:
+// of type destT. A nil destT stands for a destination that takes its type from src, such as an
+// unannotated binding. It returns false when src needs nothing written.
+//
+// Two sources need a borrow written:
+//
+//   - An owned value filling a borrow destination. The destination decides the mutability.
+//   - A field read through a borrow that fieldReadThroughBorrow recognizes. It needs the borrow
+//     written when it fills a borrow destination, a nil destT, or a destination typed by a type
+//     variable, as a generic parameter is. A borrow destination decides the mutability, and
+//     otherwise the receiver's borrow does.
+//
+// These sources need nothing:
 //
 //   - A borrow expression, `&e` or `&mut e`.
-//   - A value whose own type is a borrow. `fn g(m: &mut T) { f(m) }` hands on a borrow g holds
-//     rather than creating one.
+//   - Any other value whose own type is a borrow. `fn g(m: &mut T) { f(m) }` hands on a
+//     borrow g holds rather than creating one.
 //   - A value type, which has no borrow form.
 //   - A value whose type has not settled on an owned shape. What it becomes decides whether a
 //     borrow is missing, and the caller cannot wait for it.
+//
+// A field read through a borrow that fills an owned destination is left to the constraint
+// that rejects a borrow in an owned slot, since a written borrow would not fill it either.
 func (c *checker) missingBorrow(src ast.Expr, destT soltype.Type) (string, bool) {
-	mut, isBorrow := c.destBorrowMut(destT)
-	if !isBorrow || src == nil {
+	if src == nil {
 		return "", false
 	}
 	if _, written := src.(*ast.BorrowExpr); written {
 		return "", false
 	}
-	if !c.isSettledOwned(c.info.TypeOf(src)) {
+	var mut, isBorrow bool
+	if destT != nil {
+		mut, isBorrow = c.destBorrowMut(destT)
+	}
+	_, destIsVar := destT.(*soltype.TypeVarType)
+	if readMut, isRead := c.fieldReadThroughBorrow(src); isRead && (destT == nil || destIsVar || isBorrow) {
+		if !isBorrow {
+			mut = readMut
+		}
+		return borrowOperator(mut), true
+	}
+	if !isBorrow || !c.isSettledOwned(c.info.TypeOf(src)) {
 		return "", false
 	}
+	return borrowOperator(mut), true
+}
+
+// borrowOperator returns the operator that writes a borrow of the given mutability.
+func borrowOperator(mut bool) string {
 	if mut {
-		return "&mut", true
+		return "&mut"
 	}
-	return "&", true
+	return "&"
+}
+
+// fieldReadThroughBorrow reports whether src is a member read through a borrow that yields a
+// borrow of the field, and whether the receiver's borrow is `&mut`. With `line: &Line`, `line.start`
+// is such a read when `start` is declared as an object, tuple, class instance, or alias of
+// one. These reads yield something else and return false:
+//
+//   - A read off an owned receiver, which yields the owned field.
+//   - A read of a field declared as a borrow, which hands on the field's own borrow.
+//   - A read that ends at a value type or a function, which copies.
+//   - A read off a receiver whose shape is not statically known, which has no declared field.
+func (c *checker) fieldReadThroughBorrow(src ast.Expr) (bool, bool) {
+	member, isMember := src.(*ast.MemberExpr)
+	if !isMember || member.Prop == nil {
+		return false, false
+	}
+	recvT, prop, declared := c.declaredReceiverField(member)
+	if !declared {
+		return false, false
+	}
+	_, recvMut, recvLt := soltype.UnwrapRef(recvT)
+	if recvLt == nil {
+		return false, false
+	}
+	fieldT := c.expandAliasChain(prop.Type)
+	if _, fieldIsBorrow := paramBorrowMut(fieldT); fieldIsBorrow {
+		return false, false
+	}
+	// A borrowed receiver carries a lifetime, so fieldBorrow mints none and its level
+	// argument goes unread.
+	if _, isRead := c.fieldBorrow(fieldT, nil, recvMut, recvLt, 0); !isRead {
+		return false, false
+	}
+	// A field declared `mut` reads as `&mut` even through `&`. Writing `&mut r.f` needs a
+	// `&mut` receiver, so the written borrow takes the receiver's mutability.
+	return recvMut, true
+}
+
+// declaredReceiverField returns the receiver type member reads off and the field it reads,
+// according to the declared types along member's chain. The receiver type has `null` and
+// `undefined` removed. It returns false when a link's type or field is not known.
+func (c *checker) declaredReceiverField(member *ast.MemberExpr) (soltype.Type, *soltype.PropertyElem, bool) {
+	recvT := c.declaredRead(member.Object)
+	if recvT == nil {
+		return nil, nil, false
+	}
+	recvT, _ = definedReceiver(recvT)
+	prop, declared := c.declaredField(recvT, member.Prop.Name)
+	return recvT, prop, declared
+}
+
+// declaredRead returns the type the read e yields according to the declared types along its
+// member chain, or nil when a link's type is not known. A link that is not a member read
+// takes the type recorded for it. A member read takes its field's declared type, wrapped as
+// fieldBorrow wraps it when the receiver is a borrow. An optional field or link reads as the
+// field without the `undefined` it may add.
+//
+// The declared types name each link of a chain read through an immutable borrow, where the
+// recorded types do not. With `h: &{f: {g: T}}`, the recorded type of `h.f` borrows a
+// variable rather than `{g: T}`, so it declares no field `g` for `h.f.g` to read.
+func (c *checker) declaredRead(e ast.Expr) soltype.Type {
+	member, isMember := e.(*ast.MemberExpr)
+	if !isMember || member.Prop == nil {
+		t := c.info.TypeOf(e)
+		if t == nil {
+			return nil
+		}
+		return c.expandAliasChain(t)
+	}
+	recvT, prop, declared := c.declaredReceiverField(member)
+	if !declared {
+		return nil
+	}
+	fieldT := c.expandAliasChain(prop.Type)
+	if _, recvMut, recvLt := soltype.UnwrapRef(recvT); recvLt != nil {
+		if borrow, ok := c.fieldBorrow(fieldT, nil, recvMut, recvLt, 0); ok {
+			return borrow
+		}
+	}
+	return fieldT
 }
 
 // destBorrowMut reports whether a destination of type t borrows the value that fills it, and
@@ -1023,11 +1131,16 @@ func (c *checker) checkBorrowsWritten(src ast.Expr, destT soltype.Type, arg bool
 // checkLiteralElemBorrows checks each element of an object or tuple literal src against the
 // slot of destT it fills, through checkWrittenBorrow, and returns whether any element was
 // reported. `{f: p}` filling `{f: &T}` reports p. A borrow `&{f: p}` filling `&{f: &T}` is
-// checked against the borrow's inner type. Any other src, and an element whose slot destT does
-// not name, is left alone.
+// checked against the borrow's inner type. A nil destT gives every element a nil slot. Any
+// other src, and an element whose slot destT does not name, is left alone.
 func (c *checker) checkLiteralElemBorrows(src ast.Expr, destT soltype.Type) bool {
-	destT = c.expandAliasChain(destT)
+	if destT != nil {
+		destT = c.expandAliasChain(destT)
+	}
 	if b, isBorrow := src.(*ast.BorrowExpr); isBorrow {
+		if destT == nil {
+			return c.checkLiteralElemBorrows(b.Arg, nil)
+		}
 		if ref, isRef := destT.(*soltype.RefType); isRef {
 			return c.checkLiteralElemBorrows(b.Arg, ref.Inner)
 		}
@@ -1041,13 +1154,20 @@ func (c *checker) checkLiteralElemBorrows(src ast.Expr, destT soltype.Type) bool
 	}
 	switch lit := src.(type) {
 	case *ast.ObjectExpr:
-		obj, isObj := soltype.CarrierOf(destT).(*soltype.ObjectType)
-		if !isObj {
-			return false
+		var obj *soltype.ObjectType
+		if destT != nil {
+			var isObj bool
+			if obj, isObj = soltype.CarrierOf(destT).(*soltype.ObjectType); !isObj {
+				return false
+			}
 		}
 		for _, elem := range lit.Elems {
 			prop, isProp := elem.(*ast.PropertyExpr)
 			if !isProp {
+				continue
+			}
+			if obj == nil {
+				check(prop.ValueExpr(), nil)
 				continue
 			}
 			name, named := objKeyName(prop.Name)
@@ -1059,8 +1179,13 @@ func (c *checker) checkLiteralElemBorrows(src ast.Expr, destT soltype.Type) bool
 			}
 		}
 	case *ast.TupleExpr:
-		target := soltype.CarrierOf(destT)
-		if elemT, isArray := c.ctx.arrayElem(target); isArray {
+		var elemT, target soltype.Type
+		uniform := destT == nil
+		if !uniform {
+			target = soltype.CarrierOf(destT)
+			elemT, uniform = c.ctx.arrayElem(target)
+		}
+		if uniform {
 			for _, el := range lit.Elems {
 				if _, spread := el.(*ast.ArraySpreadExpr); !spread {
 					check(el, elemT)
