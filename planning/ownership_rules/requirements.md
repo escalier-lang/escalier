@@ -205,7 +205,8 @@ it. These operations are the flow sites:
 | Reassignment | `q = p` | The binding's type |
 | Field store | `o.f = p` | The field's declared type |
 | Element store | `a[i] = p` | The element type |
-| Literal element or spread | `{f: p}`, `[p]`, `{...p}` | Owned |
+| Literal element | `{f: p}`, `[p]` | The matching field or element type of the literal's expected type, as in `val o: {f: &T} = {f: &p}`. Owned when the literal has no expected type |
+| Spread | `{...p}` | Owned |
 | Destructuring or `match` arm | `val {f} = p` | Per part, as for a binding. A pattern over a borrow binds borrows, by F4 |
 | Argument | `f(p)` | The parameter's type. An unannotated parameter is decided by F3 |
 | Receiver | `p.m()` | The method's `self` type |
@@ -345,12 +346,15 @@ so every borrow is visible where it is taken, along with its mutability.
 `val c: &{x: number} = p` is rejected, and `val c: &{x: number} = &p` and
 `val c = &p` are accepted.
 
-Two places borrow without a written `&`:
+Three places borrow without a written `&`:
 
 - A method receiver, since the method's own `self` declares the borrow.
   `line.start.norm()` borrows `line.start` for the call.
 - A pattern over a borrow. With `line: &Line`, `val {start} = line` binds
   `start: &Point`, since the pattern already says it reads from `line`.
+- A closure capture, since F3 decides whether the closure borrows or owns what
+  it captures, and the body decides the borrow's mutability.
+  `fn () { return p.x }` borrows `p` immutably while it stays in the body.
 
 A read that ends at a value type copies and needs no `&`, as in `line.width`
 or `line.start.x`.
@@ -604,10 +608,10 @@ The rules above produce each of the following. None of them is a separate rule.
   direction.
 - **Partial moves.** E1 and E3 work on places, so moving `pair.a` leaves
   `pair.b` usable.
-- **Moves into literals and spreads.** A literal element fills an owned slot of
-  the new value, so F2 moves an owned source. A spread fills one slot for each
-  field of its source, so it moves each reference-shaped field and copies each
-  value-type field.
+- **Moves into literals and spreads.** A literal element with no expected type
+  fills an owned slot of the new value, so F2 moves an owned source. A spread
+  fills one slot for each field of its source, so it moves each
+  reference-shaped field and copies each value-type field.
 
   ```esc
   fn go() -> number {
@@ -1302,14 +1306,23 @@ Each flow site that [F1](#flow-rules) lists gets one test per column below.
 | move to mutable while immutably borrowed | owned, written `&p` | owned, in a `val mut` binding | move the source while the borrow is live | Move while borrowed | E3 |
 | move while mutably borrowed | owned by `val mut p`, written `&mut p` | owned | move the source, then use the borrow | Move while borrowed | E3 |
 
-Some cells do not apply, and the test file records each one as not applicable
-instead of leaving it out, so a reader can see the cell was considered:
+Every cell that a program can express is a test, and its expected result is
+the one the rules give at that site. At a few sites that result differs from
+the column's, and the test says why:
 
-- A literal element has no borrow destination, so its borrow columns are empty.
-- A value type never meets the borrow or move columns.
-- A method receiver and a pattern over a borrow borrow without a written `&`,
-  by F4. For those two sites, the "unwritten borrow" and "unwritten field
-  borrow" columns expect Accepted, not a missing `&`.
+- A method receiver, a pattern over a borrow, and a closure capture borrow
+  without a written `&`, by F4. At those sites the "unwritten borrow" column
+  expects Accepted, not a missing `&`. A receiver and a pattern do the same
+  for the "unwritten field borrow" column.
+- A closure capture takes the borrow its body needs, so the written-borrow
+  columns test the capture the closure makes.
+- A capture of a borrow copies it, so a returned closure that captures a borrow
+  gives T6 no owned destination to reject.
+
+A cell no program can express is recorded as not applicable instead of left
+out, so a reader can see it was considered. The only such cells are the move
+columns that use the source after the flow, at a `return`, since nothing after
+the `return` can use the source.
 
 ### Per-rule tests
 
