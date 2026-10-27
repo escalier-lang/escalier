@@ -544,6 +544,20 @@ The rules above produce each of the following. None of them is a separate rule.
   ```
 - **Consuming receivers.** A `self` or `mut self` receiver is an owned
   destination, so F2 moves the instance. T6 rejects the call through a borrow.
+
+  ```esc
+  class Builder {
+      parts: Array<string>,
+      finish(self) -> string { return self.parts.join("") },
+  }
+
+  fn go(shared: &Builder) -> string {
+      val b = Builder([])
+      val s = b.finish()     // moves b into the call
+      val t = b.finish()     // error: use of moved value 'b'
+      return shared.finish() // error: 'finish' takes its receiver by value, so it moves the instance and cannot be reached through a borrow.
+  }
+  ```
 - **The owned-to-`mut` upgrade.** A uniquely owned source can fill a `mut`
   destination because F2 moves it. E3 confirms no live path remains, so no immutable
   path can observe the new mutability.
