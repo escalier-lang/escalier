@@ -594,17 +594,20 @@ func TestExplicitBorrowFlowSites(t *testing.T) {
 			src: `
 				type U = {a: number} | {b: number}
 				type R = &{f: &{x: number}}
+				type B = &{x: number}
 				fn g(u: U) {
 					val p = {x: 1}
 					val a: &U = u
 					val b: &{x: number} | undefined = p
 					val r: R = &{f: p}
+					val s: B | undefined = p
 				}
 			`,
 			want: []string{
-				"6:18-6:19: this value is borrowed by its destination, so write the borrow: `&`",
-				"7:40-7:41: this value is borrowed by its destination, so write the borrow: `&`",
-				"8:22-8:23: this value is borrowed by its destination, so write the borrow: `&`",
+				"7:18-7:19: this value is borrowed by its destination, so write the borrow: `&`",
+				"8:40-8:41: this value is borrowed by its destination, so write the borrow: `&`",
+				"9:22-9:23: this value is borrowed by its destination, so write the borrow: `&`",
+				"10:29-10:30: this value is borrowed by its destination, so write the borrow: `&`",
 			},
 		},
 		// A borrow that is already a value is copied, so nothing is missing. A destination

@@ -922,7 +922,7 @@ func (c *checker) checkExplicitBorrowArgs(e *ast.CallExpr, fn *soltype.FuncType)
 //   - A value whose type has not settled on an owned shape. What it becomes decides whether a
 //     borrow is missing, and the caller cannot wait for it.
 func (c *checker) missingBorrow(src ast.Expr, destT soltype.Type) (string, bool) {
-	mut, isBorrow := destBorrowMut(c.expandAliasChain(destT))
+	mut, isBorrow := c.destBorrowMut(destT)
 	if !isBorrow || src == nil {
 		return "", false
 	}
@@ -940,8 +940,10 @@ func (c *checker) missingBorrow(src ast.Expr, destT soltype.Type) (string, bool)
 
 // destBorrowMut reports whether a destination of type t borrows the value that fills it, and
 // whether that borrow is `&mut`. t is a borrow, or a union of borrows with `null` or
-// `undefined`, as in `&T | undefined`. The borrow is `&mut` only when every borrow in t is.
-func destBorrowMut(t soltype.Type) (bool, bool) {
+// `undefined`, as in `&T | undefined`. An alias naming a borrow counts as that borrow, at the
+// top of t and as a member of the union. The borrow is `&mut` only when every borrow in t is.
+func (c *checker) destBorrowMut(t soltype.Type) (bool, bool) {
+	t = c.expandAliasChain(t)
 	u, isUnion := t.(*soltype.UnionType)
 	if !isUnion {
 		return paramBorrowMut(t)
@@ -951,7 +953,7 @@ func destBorrowMut(t soltype.Type) (bool, bool) {
 		if isNullishAtom(member) {
 			continue
 		}
-		memberMut, isBorrow := paramBorrowMut(member)
+		memberMut, isBorrow := paramBorrowMut(c.expandAliasChain(member))
 		if !isBorrow {
 			return false, false
 		}
