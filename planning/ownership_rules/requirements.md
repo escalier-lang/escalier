@@ -526,8 +526,22 @@ The rules above produce each of the following. None of them is a separate rule.
   direction.
 - **Partial moves.** E1 and E3 work on places, so moving `pair.a` leaves
   `pair.b` usable.
-- **Moves into literals and spreads.** A literal element and a spread source fill
-  owned slots of the new value, so F2 moves an owned source.
+- **Moves into literals and spreads.** A literal element fills an owned slot of
+  the new value, so F2 moves an owned source. A spread fills one slot for each
+  field of its source, so it moves each reference-shaped field and copies each
+  value-type field.
+
+  ```esc
+  fn go() -> number {
+      val p = {x: 1}
+      val box = {inner: p}             // moves p into box
+      val q = {n: 1, inner: {y: 2}}
+      val copy = {...q}                // copies q.n and moves q.inner
+      val a = q.n                      // allowed, since q.n was copied
+      val b = q.inner.y                // error: use of moved value 'q.inner'
+      return p.x                       // error: use of moved value 'p'
+  }
+  ```
 - **Consuming receivers.** A `self` or `mut self` receiver is an owned
   destination, so F2 moves the instance. T6 rejects the call through a borrow.
 - **The owned-to-`mut` upgrade.** A uniquely owned source can fill a `mut`
