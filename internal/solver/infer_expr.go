@@ -427,10 +427,25 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 				// scope holding just the bindings made so far.
 				defaults = append(defaults, paramDefaultSite{def: def, param: pt, scope: snapshotScope(declScope, fnScope)})
 			}
+			// A `mut p: T` parameter owns a mutable `T` in the body. The caller moves its
+			// argument into `p` either way, so the signature keeps the plain `T` and only
+			// the binding the body reads is owned-mutable.
+			//
+			// A call moves its argument only into a concrete owned shape. Any other
+			// parameter, such as an unannotated one or a union, leaves the caller holding
+			// the value, so its binding stays as the signature types it. An unannotated
+			// parameter still infers `mut` from a write in the body.
+			bodyT := pt
+			if ip, ok := pat.(*ast.IdentPat); ok && ip.Mutable && c.isConcreteOwned(pt) {
+				bodyT = c.ownedMutCell(pt, pat)
+			}
 			// A parameter binding never generalizes — its var is fixed for the body — so
-			// it is a MonoScheme; instantiate returns pt unchanged at every use.
-			fnScope.defineValue(name, ValueBinding{Schemes: []TypeScheme{monoScheme(pt)}, Sources: sources})
-			paramTypes[name] = pt
+			// it is a MonoScheme; instantiate returns bodyT unchanged at every use.
+			fnScope.defineValue(name, ValueBinding{Schemes: []TypeScheme{monoScheme(bodyT)}, Sources: sources})
+			paramTypes[name] = bodyT
+			// Hover reads the binding's type off its name, so the name records the type the
+			// body sees.
+			c.recordType(pat, bodyT)
 			// An `x?` parameter (parsed onto ast.Param.Optional) lowers the function's
 			// `required` count without dropping the param — carried onto the soltype so
 			// the accept-set rule and the printer (x?: T) see it. KNOWN GAP (M6): the
@@ -4221,6 +4236,17 @@ func (c *checker) readsByPosition(recv soltype.Type) bool {
 // read, such as a parameter whose type is inferred from its uses, leaves the read
 // unsupported.
 func (c *checker) dynamicIndexRead(e *ast.IndexExpr, recv soltype.Type, objPos bool) pathResult {
+	// An element is an owned layer of its container, so an owned-mutable receiver makes
+	// it writable too. `val mut xs: Array<{x: number}>` admits `xs[0].x = 1`. The receiver
+	// is read here, before a variadic tuple below stands in for it.
+	target, ok := c.boundValueType(recv)
+	mutRecv := ok && isOwnedMut(target)
+	element := func(t soltype.Type) soltype.Type {
+		if mutRecv && c.isConcreteOwned(t) {
+			return c.ownedMutCell(t, e)
+		}
+		return t
+	}
 	// A variadic tuple fixes the type at a position only within its prefix. Any other
 	// index reads one of the values the tuple may hold, so it reads off `Array` of them.
 	if key, ok := c.boundValueType(c.info.TypeOf(e.Index)); ok {
@@ -4229,8 +4255,9 @@ func (c *checker) dynamicIndexRead(e *ast.IndexExpr, recv soltype.Type, objPos b
 				if !objPos {
 					c.recordMemberUse(e)
 				}
-				c.recordType(e, shape.prefix[i])
-				return pathResult{value: shape.prefix[i]}
+				elem := element(shape.prefix[i])
+				c.recordType(e, elem)
+				return pathResult{value: elem}
 			}
 		}
 	}
@@ -4254,6 +4281,7 @@ func (c *checker) dynamicIndexRead(e *ast.IndexExpr, recv soltype.Type, objPos b
 	if !objPos {
 		c.recordMemberUse(e)
 	}
+	reduced = element(reduced)
 	c.recordType(e, reduced)
 	return pathResult{value: reduced}
 }

@@ -17,17 +17,33 @@ that enforces it lives in [Ownership](09_ownership.md); this page covers what
 ## `mut`
 
 A freshly produced value is owned and immutable. Opt into mutability at the
-binding pattern or with a `mut` annotation.
+binding pattern. An owned value's mutability belongs to the binding that owns
+it, so the editor shows it on the name, as `mut q: {x: number, y: number}`.
 
 ```esc
-val p = {x: 0, y: 0}                       // p: {x: number, y: number}
+val p = {x: 0, y: 0}                       // p: {x: 0, y: 0}
 // p.x = 1                                 // ERROR: p is immutable
 
-val mut q = {x: 0, y: 0}                   // q: mut {x: number, y: number}
+val mut q = {x: 0, y: 0}                   // mut q: {x: number, y: number}
 q.x = 1                                    // OK
 
-val r: mut {x: number, y: number} = {x: 0, y: 0}
+val mut r: {x: number, y: number} = {x: 0, y: 0}
+r.x = 1                                    // OK
 ```
+
+A parameter takes `mut` the same way. `fn f(mut p: {x: number})` has the same
+type as `fn f(p: {x: number})`, since the caller moves its argument into `p`
+either way. The `mut` lets the body write the value it now owns.
+
+```esc
+fn reset(mut p: {x: number}) -> number {
+    p.x = 0
+    return p.x
+}
+```
+
+The older spelling puts `mut` on the type, as `val r: mut {x: number}` or
+`p: mut {x: number}`. It checks the same programs as the binding form.
 
 This applies uniformly to object literals, tuple and array literals, and class
 instances. A class instance is immutable by default whether or not the class
@@ -41,7 +57,7 @@ class Counter {
 }
 
 val c = Counter(0)        // c: Counter — immutable
-val mut d = Counter(0)    // d: mut Counter
+val mut d = Counter(0)    // mut d: Counter
 ```
 
 A method declares its receiver's mutability in its own parameter list. `fn m(&self)`
@@ -86,22 +102,17 @@ fn go() {
 
 ## `mut` is deep and uniform
 
-A `mut` applies to a type and propagates through everything the value owns.
+A `mut` binding's mutability propagates through everything the value owns.
 
 ```esc
-val a: mut {a: {b: {c: number}}} = {a: {b: {c: 0}}}
+val mut a: {a: {b: {c: number}}} = {a: {b: {c: 0}}}
 a.a.b.c = 1                     // OK — every layer is writable
 ```
 
-The `mut` goes on the type, not on the outermost layer of it. Writing
-`val mut a: {a: {b: {c: number}}} = ...` is a conflict: the binding pattern asks
-for a mutable value and the annotation names an immutable one.
-
 It flows through type arguments as well, so it does not stop at a type parameter.
-`mut Foo<Point>` makes both `Foo`'s body and the `Point` it holds writable. The
-container case follows: `mut Array<Point>` is a mutable array of mutable points,
+A `val mut xs: Array<Point>` binding owns a mutable array of mutable points,
 where you may push, reorder, and reassign elements *and* mutate a point's fields.
-`Array<Point>` is immutable all the way down.
+A plain `val xs: Array<Point>` is immutable all the way down.
 
 Depth is therefore all-or-nothing. There is no "mutable container, immutable
 element" type built out of `mut` alone.

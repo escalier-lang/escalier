@@ -44,7 +44,9 @@ in a borrow, ownership does not apply to them, and they are freely duplicated.
    or with a `mut` annotation.
 2. **A parameter is owned or borrowed according to its annotation.** `p: &T` and
    `p: &mut T` borrow, and the caller keeps the value. A bare `p: T` or
-   `p: mut T` is consuming: the signature declares an ownership transfer. An
+   `p: mut T` is consuming: the signature declares an ownership transfer. A
+   `mut p: T` parameter consumes its argument the same way and has the same type
+   as `p: T`. The `mut` lets the body write the value it now owns. An
    unannotated parameter is inferred from whether the body lets the value escape.
 3. **A bare annotation is owned; a `&` annotation borrows.** This holds in every
    annotation position — a binding, a return type, a field, a parameter. So

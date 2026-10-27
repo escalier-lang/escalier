@@ -267,7 +267,7 @@ func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.
 		}
 		server.solverMu.RLock()
 		if t := info.DisplayTypeOf(hoverNode); t != nil {
-			value = "`" + soltype.PrintAsScheme(t) + "`"
+			value = "`" + hoverText(info, hoverNode, t) + "`"
 		}
 		server.solverMu.RUnlock()
 	}
@@ -280,6 +280,42 @@ func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.
 		Range: nil,
 	}
 	return &hover, nil
+}
+
+// hoverText renders the hover for node, whose display type is t. A binding, or a read
+// of one, renders as `name: T`. A binding that owns a mutable value shows that on its
+// name as `mut p: {x: number}`, so its type carries no `mut`. Any other node renders
+// as its type alone.
+func hoverText(info *solver.Info, node ast.Node, t soltype.Type) string {
+	name, ok := hoverBindingName(info, node)
+	if !ok {
+		return soltype.PrintAsScheme(t)
+	}
+	if ref, isRef := t.(*soltype.RefType); isRef && ref.Mut && ref.Lt == nil {
+		return "mut " + name + ": " + soltype.PrintAsScheme(ref.Inner)
+	}
+	return name + ": " + soltype.PrintAsScheme(t)
+}
+
+// hoverBindingName returns the name node binds or reads. ok is false when node neither
+// binds a name nor reads one a `val`, `var`, or parameter binding declared.
+func hoverBindingName(info *solver.Info, node ast.Node) (string, bool) {
+	switch n := node.(type) {
+	case *ast.IdentPat:
+		return n.Name, true
+	case *ast.ObjShorthandPat:
+		return n.Key.Name, true
+	case *ast.IdentExpr:
+		decl, found := info.DeclOf(n)
+		if !found {
+			return "", false
+		}
+		switch decl.(type) {
+		case *ast.VarDecl, ast.Pat, *ast.ObjShorthandPat:
+			return n.Name, true
+		}
+	}
+	return "", false
 }
 
 func addr[T any](x T) *T {
