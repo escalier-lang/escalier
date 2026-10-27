@@ -766,11 +766,7 @@ func (p *Printer) printEnumDecl(decl *ast.EnumDecl) {
 			if len(e.Params) > 0 {
 				p.writeString("(")
 				for j, param := range e.Params {
-					p.printPattern(param.Pattern)
-					if param.TypeAnn != nil {
-						p.writeString(": ")
-						p.printTypeAnn(param.TypeAnn)
-					}
+					p.printParam(param)
 					if j < len(e.Params)-1 {
 						p.writeString(", ")
 					}

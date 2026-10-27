@@ -3862,9 +3862,10 @@ func TestFlowMatrixBindingMutabilityAndOwnershipPass(t *testing.T) {
 }
 */
 
-// DISABLED until #2251 and #2269. The cell writes a value that a `mut` parameter owns, which today
-// stays immutable. It also fails a check that the single ownership pass replaces. The comment above
-// the cell says what the solver reports today.
+// DISABLED until #2251 and #2269. The cell writes a value that a `mut` parameter owns. The checker
+// ignores the `mut` on a parameter until #2251, so the write is rejected. The cell also trips the
+// frame-exit check, which the ownership pass in #2269 replaces. The comment above the cell says
+// what the solver reports today.
 /*
 func TestFlowMatrixMutParameter(t *testing.T) {
 	runFlowMatrix(t, []flowCell{

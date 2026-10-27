@@ -23,8 +23,8 @@ func TestParseMutParam(t *testing.T) {
 		"Open":           {"fn f(open mut p) {}", map[string]bool{"p": true}},
 		"MixedWithPlain": {"fn f(mut p: number, q: number) {}", map[string]bool{"p": true, "q": false}},
 		"Rest":           {"fn f(...mut rest: Array<number>) {}", map[string]bool{"rest": true}},
-		// A `mut` with nothing but a name's follower after it is the rest
-		// parameter's name, the way `...from` names one.
+		// A `mut` followed by `:` is the rest parameter's name, the way
+		// `...from` names one.
 		"RestNamedMut":      {"fn f(...mut: Array<number>) {}", map[string]bool{"mut": false}},
 		"ObjectShorthand":   {"fn f({mut a, b}: {a: number, b: number}) {}", map[string]bool{"a": true, "b": false}},
 		"ObjectKeyValue":    {"fn f({x: mut a, y: b}: {x: number, y: number}) {}", map[string]bool{"a": true, "b": false}},

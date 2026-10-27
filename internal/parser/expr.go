@@ -918,9 +918,9 @@ func (p *Parser) param() *ast.Param {
 
 	// A rest parameter's name is a binding too, as in `f(...from: Array<number>)`. The
 	// `...` already fixes the position, so most keywords need no lookahead past it.
-	// `mut` is the exception. In `...mut rest` it marks the binding `rest` mutable, so
-	// it is a name only when nothing but a name's follower comes after it, as in
-	// `...mut: Array<number>`. Otherwise p.pattern parses the `mut` prefix.
+	// `mut` is the exception. In `...mut rest` it marks the binding `rest` mutable, and
+	// p.pattern parses it that way. It names the parameter only when followsAName
+	// accepts the token after it, such as the `:` in `...mut: Array<number>`.
 	if p.lexer.peek().Type == DotDotDot && bindsAsAName(p.lexer.peek2().Type) {
 		saved := p.lexer.saveState()
 		dots := p.lexer.next()
