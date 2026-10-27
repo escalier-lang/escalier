@@ -112,10 +112,12 @@ it. A getter with no setter counts as a `readonly` field.
 
 **T6. A borrow cannot fill an owned destination.** A value of type `&T` or
 `&mut T` does not satisfy an owned `T`, since the destination would
-claim ownership of storage owned elsewhere. Reading a field through a borrow
-produces a borrow of that field, not an owned value. With `r: &{x: number}`, the
-binding `val q: {x: number} = r` reports `cannot use borrowed &object as owned
-object`, and `val q: &{x: number} = r` is accepted.
+claim ownership of storage owned elsewhere. The same holds for a
+reference-shaped field read through a borrow. Reading it does not move it out,
+so it cannot fill an owned destination, and F4 requires the borrow of it to be
+written as `&r.f` or `&mut r.f`. With `r: &{x: number}`, the binding
+`val q: {x: number} = r` reports `cannot use borrowed &object as owned object`,
+and `val q: &{x: number} = r` is accepted.
 
 **T7. An owned value is borrowed mutably only through a `mut` binding.** A
 value in a `val mut` binding can be borrowed as `&` or `&mut`. A value in a
@@ -178,7 +180,7 @@ it. These operations are the flow sites:
 | Field store | `o.f = p` | The field's declared type |
 | Element store | `a[i] = p` | The element type |
 | Literal element or spread | `{f: p}`, `[p]`, `{...p}` | Owned |
-| Destructuring or `match` arm | `val {f} = p` | Per part, as for a binding |
+| Destructuring or `match` arm | `val {f} = p` | Per part, as for a binding. A pattern over a borrow binds borrows, by F4 |
 | Argument | `f(p)` | The parameter's type. An unannotated parameter is decided by F3 |
 | Receiver | `p.m()` | The method's `self` type |
 | `return` | `return p` | Owned, unless the return type is a borrow |
@@ -308,13 +310,37 @@ fn go() -> number {
 }
 ```
 
-**F4. Borrowing an owned value is always written.** An owned source reaches a
-borrow destination only through `&p` or `&mut p`. This holds at every flow
-site, including bindings, arguments, field and element stores, returns, and
-literal elements. A method receiver is the one exception, since the method's own
-`self` declares the borrow. A site that borrows without the `&` is an error,
-so every borrow is visible where it is taken. `val c: &{x: number} = p` is
-rejected, and `val c: &{x: number} = &p` and `val c = &p` are accepted.
+**F4. Every borrow is written.** A borrow is taken only through `&e` or
+`&mut e`. Here `e` is an owned place such as `p`, or a reference-shaped field
+read through a borrow, such as `line.start` with `line: &Line`. This holds at
+every flow site, including bindings, arguments, field and element stores,
+returns, and literal elements. A site that borrows without the `&` is an error,
+so every borrow is visible where it is taken, along with its mutability.
+`val c: &{x: number} = p` is rejected, and `val c: &{x: number} = &p` and
+`val c = &p` are accepted.
+
+Two places borrow without a written `&`:
+
+- A method receiver, since the method's own `self` declares the borrow.
+  `line.start.norm()` borrows `line.start` for the call.
+- A pattern over a borrow. With `line: &Line`, `val {start} = line` binds
+  `start: &Point`, since the pattern already says it reads from `line`.
+
+A read that ends at a value type copies and needs no `&`, as in `line.width`
+or `line.start.x`.
+
+```esc
+class Point { x: number, y: number }
+class Line { start: Point, width: number }
+
+fn first(line: &Line) -> &Point {
+    val w = line.width      // copies, since number is a value type
+    val x = line.start.x    // copies, since the read ends at a value type
+    val {start} = line      // start: &Point, since the pattern reads through line
+    val s = line.start      // error: line.start is read through a borrow, so write &line.start
+    return &line.start
+}
+```
 
 ## Lifetime rules
 
@@ -588,13 +614,13 @@ Rust has no matching feature.
 | T3 deep mutability, stopped by a borrow | Inherited mutability: an owner's mutability reaches every field it owns, and a reference field carries its own mutability | Differs | Same inheritance, but Rust adds interior mutability through `Cell` and `RefCell`. Escalier has no escape hatch, which is what makes a move to immutable deep. See D11 |
 | T4 narrow, never widen | `&mut T` coerces to `&T`, never the reverse | Same | |
 | T5 `readonly` | No `readonly` fields. Rust restricts writes through field privacy instead | No equivalent | Inherited from TypeScript |
-| T6 borrow into owned | `&T` does not satisfy `T`. Moving a field out of a borrow is rejected with E0507 | Differs | Escalier reads `r.f` through a borrow as a borrow of the field. Rust rejects the move and asks for `&r.f`, unless the field's type is `Copy` |
+| T6 borrow into owned | `&T` does not satisfy `T`. Moving a field out of a borrow is rejected with E0507 | Same | Both ask for `&r.f`. Rust also copies a field whose type is `Copy`, where Escalier copies only value types |
 | T7 mutable borrows need a `mut` binding | `&mut x` requires `let mut x` | Same | |
 | T9 writable slots widen literals | No literal types. An integer literal's type is inferred from how it is used | No equivalent | Inherited from TypeScript, which widens a `let` binding's literal type the same way |
 | F2 copy, borrow, or move | `Copy` types copy, `&T` copies, and an owned value moves into an owned destination | Differs | A `&mut` source copies, because Escalier allows aliased `&mut` |
 | F3 owned when it escapes | Every parameter type is written. A closure captures by reference unless it is marked `move` | Differs | Escalier infers an unannotated parameter's ownership and a returned closure's moves. Rust requires both to be written |
 | F3 binding always moves | `let q = p` moves `p` whatever `q`'s scope | Same | |
-| F4 borrows are written | `&` and `&mut` are written to borrow an owned value, except on a method receiver, which auto-borrows | Same | |
+| F4 borrows are written | `&` and `&mut` are written to borrow, except on a method receiver, which auto-borrows. Pattern binding modes bind borrows when a pattern destructures a borrow | Same | |
 | L1 lifetime is liveness | A borrow cannot outlive its referent, and storing one in a `static` requires `'static` | Differs | A borrow may outlive its owner, because the garbage collector keeps the value alive. Lifetimes only bound how long a path is live for E2 |
 | L2 signature states the body's relations | Lifetimes are inferred only inside a body, never in a signature. A declared bound is an assumption the body may use | Differs | Escalier infers signature lifetimes for an unannotated function and treats a declared bound as an obligation. See D4 |
 | L3 render only connecting lifetimes | Elision follows fixed syntactic rules, such as one input lifetime flowing to every output | Differs | Escalier elides by whether a lifetime connects anything, which also covers signatures Rust's elision rules reject |
@@ -1003,6 +1029,10 @@ the docs change.
   becomes `-> T`, and the stdlib's `...items: mut Array<T>` rest parameters
   become `...items: Array<T>`.
 
+- A reference-shaped field read through a borrow, such as `line.start` with
+  `line: &Line`, produces a borrow today with no `&` written. F4 requires
+  `&line.start` there, except on a method receiver and in a pattern.
+
 ## Interop
 
 These rules decide how the TypeScript declaration converter and any source
@@ -1066,6 +1096,7 @@ full expected diagnostic, as `CLAUDE.md` asks.
 | mutable borrow through a `val` binding | owned by `val p`, written `&mut p` | `&mut T` | none | Mutability mismatch | T7 |
 | borrow | owned, written `&p` | borrow | use the source | Accepted | F2, F4 |
 | unwritten borrow | owned, written `p` | borrow | none | Missing `&` | F4 |
+| unwritten field borrow | field read through a borrow, written `r.f` | any | none | Missing `&` | F4, T6 |
 | move | owned | owned | use the source | Use of moved value | F2, E1 |
 | move on one branch | owned | owned, in one branch | use after the join | Use of moved value | E1 |
 | outlive owner | owned | borrow that outlives the source's binding | use the destination | Accepted | L1 |
