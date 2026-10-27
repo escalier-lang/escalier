@@ -499,17 +499,16 @@ func mergeDecls(stmts []dts_parser.Statement) []dts_parser.Statement {
 // method does not mutate.
 //
 // `ReadonlyFoo` itself is dropped from emission, and no alias stands in
-// for it. Escalier spells the immutable view `Foo<…>`, so once the
-// rewrite below has respelled every reference there is nothing left for
-// the readonly name to denote.
+// for it. Escalier spells an owned value `Foo<…>` whether or not it is
+// mutable, so once the rewrite below has respelled every reference there
+// is nothing left for the readonly name to denote.
 //
 // After conversion, rewriteReadonlyTwinRefs walks every TypeAnn slot
-// in the emitted module and rewrites references to the twin names so
-// they match Escalier's mut-modifier model: TS `ReadonlyFoo<…>` becomes
-// `Foo<…>` (immutable view), TS `Foo<…>` becomes `mut Foo<…>` (mutable
-// view). `T[]` is already desugared to `Array<T>` by convertTypeAnn so
-// it flows through the same rewrite; `readonly T[]` is desugared to
-// `ReadonlyArray<T>` for the same reason.
+// in the emitted module and renames TS `ReadonlyFoo<…>` to `Foo<…>`.
+// The binding that owns a value decides its mutability, so TS `Foo<…>`
+// stays `Foo<…>`. convertTypeAnn desugars `T[]` to `Array<T>` and
+// `readonly T[]` to `ReadonlyArray<T>`, so both flow through the same
+// rewrite.
 func ConvertBucket(stmts []dts_parser.Statement, facts *ReceiverFacts) (*StandaloneModule, error) {
 	stmts, twins := fuseReadonlyTwins(stmts)
 	classNames := withTwinNames(ClassNames(stmts), twins)

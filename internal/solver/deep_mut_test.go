@@ -988,23 +988,22 @@ func TestMutReceiverFollowsAnAliasChain(t *testing.T) {
 	}
 }
 
-// The shape the committed stdlib tree writes, and the case #1554 needs before it can drop
-// the `mut` its fields carry: an interface whose field is a generic class carrying a
-// `mut self` mutator. `web:web_rtc` declares `certificates?: mut Array<RTCCertificate>`,
-// and `std:prelude` declares `push(&mut self, ...items: mut Array<T>) -> number`.
+// The shape the committed stdlib tree writes: an interface whose field is a generic class
+// carrying a `&mut self` mutator. `web:web_rtc` declares
+// `certificates?: Array<RTCCertificate>`, and `std:prelude` declares
+// `push(&mut self, ...items: Array<T>) -> number`.
 //
-// `config.certificates.push(cert)` exercises both halves of this change at once. The
-// receiver's mutability has to reach the field, and then satisfy `push`'s own `mut self`.
-// The carrier table above only writes a field, so it stops short of the second half.
+// `config.certificates.push(cert)` checks two steps at once. The receiver's mutability has
+// to reach the field, and the field then has to satisfy `push`'s own `&mut self`. The
+// carrier table above only writes a field, so it stops short of the second step.
 //
 // The receiver is a `&mut` borrow and the argument a `&` one, the borrowed forms a caller
 // holding neither value outright would write. `push` takes `item: &T` to match: with an
 // owned `item: T` the borrowed argument reports that it does not outlive the parameter,
 // which is the borrow checker doing its job and not what this test is about.
 //
-// `List` stands in for `Array` so the case does not depend on the prelude, and the field is
-// written without `mut` because that is the spelling #1554 moves the tree to; inside an
-// interface the two behave alike, #779 stripping the `mut`.
+// `List` stands in for `Array` so the case does not depend on the prelude. The field is
+// written without `mut`, the spelling the stdlib uses.
 func TestMutSelfMethodOnAGenericFieldOfAnInterface(t *testing.T) {
 	const decls = `
 		export declare class RTCCertificate { expires: number }

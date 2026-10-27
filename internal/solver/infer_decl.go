@@ -194,6 +194,9 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 		// `&mut self` method would be unreachable on a value a factory just built and handed
 		// over, which is how a class with validation or a hidden constructor is written.
 		//
+		// An awaited call qualifies the same way. The promise it returns is a temporary no
+		// place holds, so `val mut rs = await Promise.all(ps)` binds the array mutably.
+		//
 		// The value is wrapped, not the variable the result arrives as. Wrapping the
 		// variable would leave its own name in the coalesced binding, so `d` would render
 		// `mut (T0 | Counter)` instead of `mut Counter`.
@@ -530,7 +533,8 @@ func (c *checker) immutableTarget(target soltype.Type) (soltype.Type, bool) {
 //   - A call whose return type is owned returns true. In `val m: mut Counter = make()` the
 //     callee kept nothing, so the caller holds the only reference to the result. It is the
 //     annotated twin of the `val mut m = make()` upgrade, and callReturnsOwned decides both.
-//     A call needs no consume, since its result is a temporary no place holds. A result
+//     A call needs no consume, since its result is a temporary no place holds. An `await` of
+//     such a call counts too, as in `val m: mut Array<number> = await load()`. A result
 //     that already holds an owned-mutable cell, as `g() -> mut {a: 1}` does, returns false
 //     for the covariance reason the next case gives.
 //
@@ -594,11 +598,14 @@ func (c *checker) acceptsBorrowLeaf(leaf ast.Expr) bool {
 	return ok
 }
 
-// callReturnsOwned reports whether e is a call whose result is an owned value. An owned
-// return type is the callee's statement that it kept nothing, so the caller holds the only
-// reference to what comes back. A callee that did keep the value returns a borrow instead,
-// which ownedCarrier declines.
+// callReturnsOwned reports whether e is a call, or an `await` of a call, whose result t is an
+// owned value. An owned return type is the callee's statement that it kept nothing, so the
+// caller holds the only reference to what comes back. A callee that did keep the value returns
+// a borrow instead, which ownedCarrier declines.
 func (c *checker) callReturnsOwned(e ast.Expr, t soltype.Type) bool {
+	if awaitExpr, ok := e.(*ast.AwaitExpr); ok {
+		e = awaitExpr.Arg
+	}
 	if _, ok := e.(*ast.CallExpr); !ok {
 		return false
 	}

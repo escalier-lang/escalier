@@ -49,7 +49,7 @@ export declare class Map<K, V> {
     readonly [Symbol.toStringTag]: string,
     constructor(&mut self),
     constructor(&mut self, entries?: Array<[K, V]> | null),
-    static readonly prototype: mut Map<any, any>,
+    static readonly prototype: Map<any, any>,
     constructor(&mut self, iterable?: Iterable<[K, V]> | null),
     static readonly [Symbol.species]: typeof Map,
     /**
@@ -57,7 +57,7 @@ export declare class Map<K, V> {
      * @param items An iterable.
      * @param keySelector A callback which will be invoked for each item in items.
      */
-    static groupBy<K, T>(items: Iterable<T>, keySelector: fn (item: T, index: number) -> K) -> Map<K, mut Array<T>>
+    static groupBy<K, T>(items: Iterable<T>, keySelector: fn (item: T, index: number) -> K) -> Map<K, Array<T>>
 }
 
 @js("WeakMap")

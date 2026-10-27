@@ -330,3 +330,61 @@ func TestValMutUnionWithBorrow(t *testing.T) {
 }`)
 	require.Equal(t, []string{"3:2-3:9: cannot constrain immutable object <: mutable object"}, errs)
 }
+
+// TestAwaitedCallResultOwned covers an `await` of a call as the initializer of a `mut`
+// binding. The promise is a temporary, so an owned value it settles to belongs to the binding
+// alone. want lists every diagnostic the program reports.
+func TestAwaitedCallResultOwned(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "ValMut",
+			src: `declare fn load() -> Promise<Array<number>>
+async fn g() {
+	val mut r = await load()
+	r.push(1)
+}`,
+		},
+		{
+			name: "AnnotatedMut",
+			src: `declare fn load() -> Promise<Array<number>>
+async fn g() {
+	val r: mut Array<number> = await load()
+	r.push(1)
+}`,
+		},
+		// A borrow the promise settles to is still owned by someone else, so the binding
+		// gets no mutable access to it.
+		{
+			name: "SettlesToBorrow",
+			src: `declare fn shared() -> Promise<&'static Array<number>>
+async fn g() {
+	val mut r = await shared()
+	r.push(1)
+}`,
+			want: []string{"4:2-4:8: cannot constrain immutable Array<number> <: mutable Array<number>"},
+		},
+		// A promise held in a variable can be awaited again, so the value it settles to is
+		// not the binding's alone.
+		{
+			name: "AwaitedVariable",
+			src: `declare fn load() -> Promise<Array<number>>
+async fn g() {
+	val p = load()
+	val mut r = await p
+	r.push(1)
+}`,
+			want: []string{"5:2-5:8: cannot constrain immutable Array<number> <: mutable Array<number>"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, errs := inferAgainstTreeWithSpans(t, tt.src)
+			require.Equal(t, tt.want, errs)
+		})
+	}
+}
