@@ -585,7 +585,7 @@ Rust has no matching feature.
 |---|---|---|---|
 | T1 ownership in the type, mutability on the binding | `T` is owned and `&T` or `&mut T` borrows. An owned value's mutability is on the binding, as `let mut x` | Same | |
 | T2 immutable by default | Bindings and references are immutable unless written `mut` | Same | |
-| T3 deep mutability, stopped by a borrow | Inherited mutability: an owner's mutability reaches every field it owns, and a reference field carries its own mutability | Differs | Same inheritance, but Rust adds interior mutability through `Cell` and `RefCell`. Escalier has no escape hatch, which is what makes a move to immutable deep |
+| T3 deep mutability, stopped by a borrow | Inherited mutability: an owner's mutability reaches every field it owns, and a reference field carries its own mutability | Differs | Same inheritance, but Rust adds interior mutability through `Cell` and `RefCell`. Escalier has no escape hatch, which is what makes a move to immutable deep. See D11 |
 | T4 narrow, never widen | `&mut T` coerces to `&T`, never the reverse | Same | |
 | T5 `readonly` | No `readonly` fields. Rust restricts writes through field privacy instead | No equivalent | Inherited from TypeScript |
 | T6 borrow into owned | `&T` does not satisfy `T`. Moving a field out of a borrow is rejected with E0507 | Differs | Escalier reads `r.f` through a borrow as a borrow of the field. Rust rejects the move and asks for `&r.f`, unless the field's type is `Copy` |
@@ -640,8 +640,8 @@ The type rules stay in the type checker, where they already sit.
 
 ## Open decisions
 
-The solver enforces D1 through D8 today, but no document states them. D9 and D10
-are design questions the rules above leave open. Each needs a choice before the
+The solver enforces D1 through D8 today, but no document states them. D9
+through D11 are design questions the rules above leave open. Each needs a choice before the
 rules are final. The current behaviour comes from reading the code, and the file
 references point at where it lives.
 
@@ -780,6 +780,40 @@ The options are:
   every unmarked function parameter as retained.
 
 Recommendation: the lifetime form. It reuses L1 and E4 instead of adding a rule.
+
+### D11. Interior mutability for state no reader can observe
+
+T3 has no escape hatch, so a value in a `val` binding or behind a `&` never
+changes. Rust's `Cell` and `RefCell` exist mostly because `&mut` is unique
+there, and Escalier does not need them for that. Several mutable paths may be
+live at once, the garbage collector keeps shared graphs alive, and a `&mut`
+field puts one mutable part inside an immutable value, as T3 allows.
+
+Three cases still push against the rule:
+
+- A cache or a lazy field. A `&self` method that computes an expensive result
+  once and keeps it, such as a memoized hash, must be `&mut self` today, and
+  that requirement spreads to every caller.
+- Bookkeeping that is not part of the value, such as a counter, an id
+  generator, or debug statistics on an otherwise immutable object.
+- JavaScript methods that change internal state while reading. Examples are
+  `RegExp.prototype.exec`, which updates `lastIndex`, and an iterator's
+  `next`. Each must be declared `&mut self`, which makes code that only reads
+  through them noisy.
+
+Every option except the last narrows the invariant to exclude the cell's
+contents. From the smallest change to the largest:
+
+- A write-once cell, like Rust's `OnceCell`. A reader can see a value appear
+  the first time it is read, but never see it change.
+- A `Cell` that holds only value types and returns copies, so no path into its
+  contents exists.
+- A general `RefCell`, which holds any value and checks its borrows at runtime.
+- No cell, which keeps the invariant as written.
+
+Recommendation: start with the write-once cell, since it covers caches and lazy
+fields with the smallest exception. Keep counters and the interop methods on
+`&mut self` until real code shows how often they come up.
 
 ## Known bugs
 
@@ -1015,7 +1049,7 @@ each a separate PR:
 
 1. Write the conformance tests above against the current solver. A test the
    current solver fails becomes a known-bug entry, or a reason to change a rule.
-2. Settle D1 through D10 and update `docs/08_mutability.md` and
+2. Settle D1 through D11 and update `docs/08_mutability.md` and
    `docs/09_ownership.md` to match.
 3. Move owned mutability from types to bindings, as T1 states. This rewrites the
    `mut T` annotations in tests, fixtures, and the stdlib, and drops the
