@@ -853,7 +853,7 @@ Recommendation: drop the special case. A borrow stored into module-level state
 is copied by F2 and gets a `'static` lifetime by L1. E2 then keeps any
 conflicting path from forming for the rest of the program.
 
-Decided: accepted. The migration drops the move that
+Decided: accepted. Step 3 of the migration drops the move that
 `consumeAtGlobalWrite` records for a borrow.
 
 ### D9. Whether an escaping value moves or borrows
@@ -1348,55 +1348,123 @@ D11's write-once cell gets its tests once its API is designed.
 
 ## Migration
 
-The checking model replaces several passes the solver runs today. The steps,
-each a separate PR:
+The checking model replaces several passes the solver runs today. Each step
+below is a separate PR. Every step also does two things for its own change:
+
+- It updates the parts of `docs/08_mutability.md` and `docs/09_ownership.md`
+  that its change makes true. `docs/README.md` says the pages describe the
+  checker as it is, so the docs change with the code rather than ahead of it.
+- It rewrites the tests, fixtures, and stdlib declarations its change breaks.
+  The fixture-delta classifier in CI rates the resulting fixture changes for
+  review.
+
+The steps:
 
 1. Write the conformance tests above against the current solver. A test the
-   current solver fails becomes a known-bug entry, or a reason to change a rule.
-2. Update `docs/08_mutability.md` and `docs/09_ownership.md` to match the
-   decisions.
-3. Move owned mutability from types to bindings, as T1 states. This rewrites the
-   `mut T` annotations in tests, fixtures, and the stdlib, and drops the
-   owned-mutable `RefType` with no lifetime from
-   [soltype](../../internal/soltype/ref.go). The owned-to-`mut` upgrade around
-   `isUniquelyOwned` in
-   [infer_decl.go](../../internal/solver/infer_decl.go) becomes an ordinary move
-   checked by E3.
-4. Extend the missing-`&` check from call arguments to every flow site and to
-   field reads through a borrow, as F4 states. Each error carries the borrow
-   its destination needs, `&` or `&mut`, the way `ImplicitBorrowArgError` in
-   [borrow_exclusivity.go](../../internal/solver/borrow_exclusivity.go) does
-   today. The same PR adds an LSP quick fix that inserts that borrow:
-   - The published diagnostic carries the borrow and the range of the
-     expression in its `data` field.
-   - `textDocumentCodeAction` in
+   current solver fails is still written with its expected result, then
+   disabled the way `CLAUDE.md` describes. A Go test body is wrapped in
+   `/* */` under a `DISABLED until <step>` comment that names the step which
+   enables it, and a fixture gets a `DISABLED` marker file. A failing test that
+   no step below fixes becomes a known-bug entry, or a reason to change a rule.
+2. Move owned mutability from types to bindings, as T1 states:
+   - The parser accepts `mut` on a parameter binding, as in `fn f(mut p: T)`,
+     and rejects `mut` in an owned type annotation, as T3 states.
+   - The `mut T` annotations in tests, fixtures, and the stdlib become binding
+     annotations. There are about 600 in the solver tests and 174 in the stdlib,
+     most of them `...items: mut Array<T>` rest parameters.
+   - The owned-mutable `RefType` with no lifetime leaves
+     [soltype](../../internal/soltype/ref.go).
+   - The owned-to-`mut` upgrade around `isUniquelyOwned` in
+     [infer_decl.go](../../internal/solver/infer_decl.go) becomes an ordinary move checked by E3.
+   - The printer and the LSP hover show a binding's mutability on its name, as
+     `mut p: {x: number}`.
+   - T9's widening reads the binding's mutability instead of the type's.
+3. Require every borrow to be written, as F4 states. The missing-`&` check
+   extends from call arguments to every flow site and to field reads through a
+   borrow. Each error carries the borrow its destination needs, `&` or
+   `&mut`, the way `ImplicitBorrowArgError` in
+   [borrow_exclusivity.go](../../internal/solver/borrow_exclusivity.go) does today. The same PR:
+   - Adds an LSP quick fix that inserts that borrow. The published diagnostic
+     carries the borrow and the range of the expression in its `data` field.
+     `textDocumentCodeAction` in
      [text_document.go](../../cmd/lsp-server/text_document.go) returns a
-     `quickfix` action whose edit inserts `&` or `&mut ` before the expression.
-     It wraps the expression in parentheses unless the expression is an
-     identifier, a field access, an index, or a call.
-   - `quickfix` joins the code action kinds the server advertises in
-     [main.go](../../cmd/lsp-server/main.go).
-   - Tests in `text_document_test.go` cover `&`, `&mut`, and the parenthesized
-     case.
-5. Build the event lowering and the single control-flow pass behind a flag. Run
+     `quickfix` action whose edit inserts `&` or `&mut ` before the
+     expression. It wraps the expression in parentheses unless the expression
+     is an identifier, a field access, an index, or a call. `quickfix` joins
+     the code action kinds the server advertises in
+     [main.go](../../cmd/lsp-server/main.go), and tests in
+     `text_document_test.go` cover `&`, `&mut`, and the parenthesized case.
+   - Drops the move that `consumeAtGlobalWrite` in [moves.go](../../internal/solver/moves.go)
+     records for a borrow, as D8 decides.
+4. Change parameter inference to follow F3 and D9. An unannotated parameter
+   that does not escape becomes a borrow. A call to an escaping one moves its
+   argument. An escaping parameter that the body only reads becomes a
+   `'static &` borrow where the destination's type leaves the ownership open.
+5. Add function-type lifetimes, as D10 decides. The parser and the type system
+   accept `&'a fn …` in a parameter, and E4 holds a passed closure's borrows
+   for `'a`. A function parameter without a lifetime keeps its current
+   meaning, so existing code keeps checking.
+6. Update the declaration converter to follow I1 through I3. It keeps
+   `Readonly<T>` as written, emits `&T` only when no slot reachable through
+   `T` is writable, and fixes `classifyExplicitSignal` in
+   [mutability.go](../../internal/dts_to_esc/mutability.go) to match. B4 has to
+   be fixed first, since I1's `&mut Readonly<T>` depends on it.
+7. Build the event lowering and the single control-flow pass behind a flag. Run
    it alongside the current checks and compare diagnostics across every test and
    fixture. Resolve each difference as a bug in the old checks or a change to the
    rules.
-6. Remove the old checks one at a time once the new pass matches them. The groups
-   that the checking model replaces are:
-   - The per-site `consume*` functions in
-     [moves.go](../../internal/solver/moves.go) and
-     [module_level_moves.go](../../internal/solver/module_level_moves.go),
-     replaced by F2 and F3.
-   - The alias-set transition check in
-     [transitions.go](../../internal/solver/transitions.go) and the loan check
-     in [borrow_exclusivity.go](../../internal/solver/borrow_exclusivity.go),
-     both replaced by E2 and E3.
-   - The frame-exit checks in
-     [return_escape.go](../../internal/solver/return_escape.go) and
-     [return_shared_paths.go](../../internal/solver/return_shared_paths.go),
-     replaced by L1 and E2 at the return.
-   - The separate escape logic in
-     [return_escape.go](../../internal/solver/return_escape.go) and
-     [borrow_flow.go](../../internal/solver/borrow_flow.go), replaced by the
-     lifetime solver answering F3.
+8. Remove the old checks one at a time once the new pass matches them. The
+   checking model replaces these groups:
+   - The per-site `consume*` functions in [moves.go](../../internal/solver/moves.go) and
+     [module_level_moves.go](../../internal/solver/module_level_moves.go), replaced by F2 and
+     F3. This includes `consumeOnceCallee`, replaced by E4, and the separate
+     pass behind `ModuleLevelMoveError`, replaced by E1.
+   - The alias-set transition check in [transitions.go](../../internal/solver/transitions.go),
+     the alias tracker in [alias.go](../../internal/liveness/alias.go) and
+     [alias_analysis.go](../../internal/liveness/alias_analysis.go), and the
+     loan check in [borrow_exclusivity.go](../../internal/solver/borrow_exclusivity.go), all
+     replaced by E2 and E3.
+   - The frame-exit checks in [return_escape.go](../../internal/solver/return_escape.go) and
+     [return_shared_paths.go](../../internal/solver/return_shared_paths.go), replaced by L1 and
+     E2 at the return.
+   - The separate escape logic in [return_escape.go](../../internal/solver/return_escape.go) and
+     [borrow_flow.go](../../internal/solver/borrow_flow.go), and the owned-return rewriting in
+     [owned_return.go](../../internal/solver/owned_return.go), replaced by the lifetime solver
+     answering F3.
+   - The plumbing that keeps the engines from reporting one error twice, such
+     as `resolvePhaseTransitions` and `reportedMixedOwnership`.
+
+   These stay, since they enforce rules the checking model does not cover:
+   - T8's `MixedOwnershipError` in [infer_expr.go](../../internal/solver/infer_expr.go).
+   - The L2 checks in [lifetime_signature.go](../../internal/solver/lifetime_signature.go),
+     [lifetime_rigid.go](../../internal/solver/lifetime_rigid.go), and
+     [lifetime_undeclared.go](../../internal/solver/lifetime_undeclared.go), and the L3
+     rendering in [lifetime_coalesce.go](../../internal/solver/lifetime_coalesce.go).
+   - The type rules in [constrain.go](../../internal/solver/constrain.go).
+9. Design and add the write-once cell from D11. It does not depend on the steps
+   above and can land any time after step 2.
+
+Each known bug closes at a step:
+
+| Bug | Closed by | Soundness hole |
+|---|---|---|
+| B1 | Step 3, since F4 rejects the unwritten borrow | No |
+| B2 | Step 7, or sooner by its own fix to the current checker | Yes |
+| B3 | Step 3, since F4 rejects the annotation-only borrow | Yes |
+| B4 | Its own fix, which step 6 needs first | No |
+| B5 | Step 4 | Yes |
+| B6 | Step 4 | No |
+| B7 | Step 5 | Yes |
+
+Steps 3 through 5 close B3, B5, and B7 in the current checker, so those holes
+close before the rewrite in step 7. B2 already has its own fix queued, so it
+does not need to wait for step 7 either.
+
+The migration is finished when every conformance test is enabled and passing,
+and the groups step 8 lists are gone. The point of the work is a simpler
+solver, so record two measurements before step 1 and after step 8:
+
+- The line count of the ownership, lifetime, and mutability files. It is about
+  12,000 lines across about 25 files today.
+- The `gocognit` cognitive complexity total for `internal/solver`. It is
+  about 10,800 today.
