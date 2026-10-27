@@ -281,8 +281,8 @@ func TestTypeRulesOwnedMutType(t *testing.T) {
 }
 */
 
-// DISABLED until a class field with an initializer and no type infers its type. Not tracked by
-// an issue yet.
+// DISABLED until #2288, which infers a class field's type from its initializer and widens each
+// writable field.
 //
 // Today an instance field needs a type annotation and cannot take an initializer, so the class
 // below reports parse errors. A static field takes an initializer but keeps its literal type, so
@@ -320,7 +320,7 @@ func TestTypeRuleClassFieldWidening(t *testing.T) {
 }
 */
 
-// DISABLED until a getter declared with `&mut self` is rejected. Not tracked by an issue yet.
+// DISABLED until #2287, which rejects a getter declared with `&mut self`.
 //
 // Today `GetterReceiverError` accepts a getter that takes `&self` or `&mut self`, so the class
 // below checks clean. D6 decides that a getter takes `&self` only.
