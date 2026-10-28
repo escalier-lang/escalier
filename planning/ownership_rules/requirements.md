@@ -1293,9 +1293,6 @@ the docs change.
 - `docs/09_ownership.md` says a move is read off lifetime constraints. The solver
   decides moves separately at each flow site with its own conditions. The checking
   model above is the proposal to make the docs true.
-- A reference-shaped field read through a borrow, such as `line.start` with
-  `line: &Line`, produces a borrow today with no `&` written. F4 requires
-  `&line.start` there, except on a method receiver and in a pattern.
 
 ## Interop
 

@@ -860,6 +860,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		if retAnnOK {
 			c.fn.returnAnn = retAnnT
 		}
+		c.fn.returnAnnotated = sig.Return != nil
 		switch {
 		case gen != nil && gen.ann != nil && gen.ann.Raises():
 			c.fn.throwsAnn, c.fn.throwsForm = sig.Return, throwsGenerator
@@ -1889,8 +1890,14 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 	// on the inner `obj.f` reads the same whether it stands alone or under
 	// `&obj.f` or `&mut obj.f`.
 	c.recordType(accessNode, c.fieldReadBorrow(fieldVar, recv, propName, lvl))
-	c.recordType(e, target)
-	return target
+	// An optional field may be absent, so its borrow is the borrow or `undefined`, the same
+	// value fieldReadBorrow gives an unwritten read of the field.
+	var result soltype.Type = target
+	if prop, declared := c.declaredField(recv, propName); declared && prop.Optional {
+		result = newUnion(nil, []soltype.Type{target, &soltype.UndefinedType{}})
+	}
+	c.recordType(e, result)
+	return result
 }
 
 // borrowInnerOf returns the RefInner an explicit `&`/`&mut obj.f` should re-wrap
@@ -4159,24 +4166,7 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 // the new borrow.
 func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Type, name string, lvl int) soltype.Type {
 	_, recvMut, recvLt := soltype.UnwrapRef(recv)
-	carrier := soltype.CarrierOf(recv)
-	// An alias and a class name the same field list an object type writes inline, so each
-	// resolves to that list before the read. Without this a receiver annotated `&mut Config`
-	// or `&mut Box` would fall to the unknown-shape branch below and lose its mutability,
-	// while the inline `&mut {…}` spelling of the same type kept it.
-	carrier = c.memberCarrier(carrier)
-	if ct, isClass := c.classCarrier(carrier); isClass {
-		// Projected at the instance's arguments, so a field typed `T` reads as the
-		// argument `Box<number>` supplies rather than as the declared parameter.
-		if body, ok := c.ctx.projectClassBody(ct); ok {
-			carrier = body
-		}
-	}
-	obj, ok := carrier.(*soltype.ObjectType)
-	if !ok {
-		return fieldVar
-	}
-	prop, ok := obj.Prop(name)
+	prop, ok := c.declaredField(recv, name)
 	if !ok {
 		return fieldVar
 	}
@@ -4193,6 +4183,29 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 		return newUnion(nil, []soltype.Type{borrow, &soltype.UndefinedType{}})
 	}
 	return fieldVar
+}
+
+// declaredField returns the property named name on the field list a receiver of type recv
+// carries. It returns false when recv's shape is not statically known or declares no such
+// property.
+func (c *checker) declaredField(recv soltype.Type, name string) (*soltype.PropertyElem, bool) {
+	// An alias and a class name the same field list an object type writes inline, so each
+	// resolves to that list before the read. Without this a receiver annotated `&mut Config`
+	// or `&mut Box` would declare no fields and its reads would lose their mutability, while
+	// the inline `&mut {…}` spelling of the same type kept it.
+	carrier := c.memberCarrier(soltype.CarrierOf(recv))
+	if ct, isClass := c.classCarrier(carrier); isClass {
+		// Projected at the instance's arguments, so a field typed `T` reads as the
+		// argument `Box<number>` supplies rather than as the declared parameter.
+		if body, ok := c.ctx.projectClassBody(ct); ok {
+			carrier = body
+		}
+	}
+	obj, ok := carrier.(*soltype.ObjectType)
+	if !ok {
+		return nil, false
+	}
+	return obj.Prop(name)
 }
 
 // fieldBorrow returns the value a read of a field typed fieldType yields off a receiver

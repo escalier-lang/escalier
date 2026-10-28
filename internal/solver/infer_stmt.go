@@ -79,7 +79,11 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 				if ref, ok := c.fn.stmtToRef[s]; ok {
 					// A value that fills a borrow return without a written borrow is reported for
 					// that alone, and records no move.
-					missing := c.fn.returnAnn != nil && c.checkWrittenBorrow(s.Expr, c.fn.returnAnn)
+					// With no return annotation the function returns whatever s.Expr produces, so
+					// the check runs against a nil destination type. An annotation that does not
+					// resolve, or that nests the returned type, names no destination to check.
+					checked := c.fn.returnAnn != nil || !c.fn.returnAnnotated
+					missing := checked && c.checkWrittenBorrow(s.Expr, c.fn.returnAnn)
 					if !missing && !c.rejectModuleLevelMove(scope, s.Expr) {
 						c.consumeOwned(s.Expr, t, s.Expr, ref)
 					}

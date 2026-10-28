@@ -690,11 +690,11 @@ func TestInferClassMutualRecursion(t *testing.T) {
 			src: `
 				class A {
 					b: B,
-					getB(&self) { return self.b },
+					getB(&self) { return &self.b },
 				}
 				class B {
 					a: A,
-					getA(&self) { return self.a },
+					getA(&self) { return &self.a },
 				}
 			`,
 			wantValues: map[string]string{

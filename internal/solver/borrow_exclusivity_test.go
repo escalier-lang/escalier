@@ -702,6 +702,241 @@ func TestExplicitBorrowFlowSites(t *testing.T) {
 	}
 }
 
+// TestFieldReadThroughBorrow covers rule F4 for a field read through a borrow. A read that
+// yields a borrow of an object field has the borrow written, or the site reports the borrow it
+// needs. The cases that need nothing written check clean.
+func TestFieldReadThroughBorrow(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want []string
+	}{
+		// The example under F4 in planning/ownership_rules/requirements.md.
+		"RuleExample": {
+			src: `
+				class Point { x: number, y: number }
+				class Line { start: Point, width: number }
+				fn first(line: &Line) -> &Point {
+					val w = line.width
+					val x = line.start.x
+					val {start} = line
+					val s = line.start
+					return &line.start
+				}
+			`,
+			want: []string{"8:14-8:24: this value is borrowed by its destination, so write the borrow: `&`"},
+		},
+		// An unannotated destination takes the read's own mutability, so a read through
+		// `&mut` asks for `&mut`.
+		"MutableReceiverAsksForMut": {
+			src: `
+				fn g(h: &mut {f: {x: number}}) {
+					val d = h.f
+				}
+			`,
+			want: []string{"3:14-3:17: this value is borrowed by its destination, so write the borrow: `&mut`"},
+		},
+		// A borrow destination decides the mutability, so a `&` destination asks for `&` even
+		// through a `&mut` receiver.
+		"BorrowDestinationDecidesMutability": {
+			src: `
+				fn g(h: &mut {f: {x: number}}) -> &{x: number} {
+					return h.f
+				}
+			`,
+			want: []string{"3:13-3:16: this value is borrowed by its destination, so write the borrow: `&`"},
+		},
+		// A chain reports its last link, and an unannotated return and an element of an
+		// unannotated literal are destinations like any other.
+		"ChainsReturnsAndLiterals": {
+			src: `
+				fn g(h: &{f: {g: {x: number}}}) {
+					val o = [h.f.g, {k: h.f}]
+					return h.f.g
+				}
+			`,
+			want: []string{
+				"3:15-3:20: this value is borrowed by its destination, so write the borrow: `&`",
+				"3:26-3:29: this value is borrowed by its destination, so write the borrow: `&`",
+				"4:13-4:18: this value is borrowed by its destination, so write the borrow: `&`",
+			},
+		},
+		// An optional field reads as its borrow or `undefined`, and still needs the borrow
+		// written.
+		"OptionalField": {
+			src: `
+				fn g(h: &{f?: {x: number}}) {
+					val d = h.f
+				}
+			`,
+			want: []string{"3:14-3:17: this value is borrowed by its destination, so write the borrow: `&`"},
+		},
+		// An optional chain still borrows, but `&h?.f` is not supported, so the report tells
+		// the program to bind the receiver first instead of suggesting `&`.
+		"OptionalChain": {
+			src: `
+				fn g(h: &{f: {x: number}} | undefined) {
+					val d = h?.f
+				}
+			`,
+			want: []string{
+				"3:14-3:18: this optional chain is borrowed by its destination, and an optional chain cannot be borrowed, so bind the receiver with `if val` and borrow the field through it",
+			},
+		},
+		// Binding the receiver with `if val` lets the plain read be borrowed.
+		"BoundOptionalReceiverOk": {
+			src: `
+				fn g(h: &{f: {x: number}} | undefined) {
+					if val k = h {
+						val d = &k.f
+					}
+				}
+			`,
+		},
+		// An owned destination rejects the read by T6 alone, since a written `&` would not
+		// fill it either.
+		"OwnedDestinationReportsT6": {
+			src: `
+				fn g(h: &{f: {x: number}}) {
+					val d: {x: number} = h.f
+				}
+			`,
+			want: []string{"3:13-3:24: cannot use borrowed &t3 as owned object"},
+		},
+		// None of these reads creates a borrow, so none needs one written:
+		//   - `o.f` reads an owned receiver and yields the owned field.
+		//   - `r.f` hands on the borrow the field already holds.
+		//   - `h.f.x` and `h.n` end at a value type and copy.
+		//   - `h.m` reads a function, which copies.
+		//   - `h.f.get()` borrows `h.f` as a method receiver.
+		//   - `{f} = h` is a pattern over a borrow.
+		"NothingToWrite": {
+			src: `
+				class C { v: number, get(&self) -> number { return self.v } }
+				fn g(
+					o: {f: {x: number}},
+					r: &{f: &{x: number}},
+					h: &{f: {x: number}, n: number, m: fn () -> number},
+					c: &{f: C},
+				) -> number {
+					val a = o.f
+					val b = r.f
+					val x = h.f.x
+					val n = h.n
+					val m = h.m
+					val {f} = h
+					return c.f.get() + x + n + m() + f.x
+				}
+			`,
+			want: nil,
+		},
+		// A field typed through an alias reads as the type the alias names, so an alias of a
+		// value type, a borrow, or a function needs nothing written.
+		"AliasedFieldsNothingToWrite": {
+			src: `
+				type Id = string
+				type PR = &{x: number}
+				type F = fn () -> number
+				fn g(h: &{id: Id, p: PR, f: F}) -> number {
+					val i = h.id
+					val p = h.p
+					val f = h.f
+					return p.x
+				}
+			`,
+			want: nil,
+		},
+		// An alias of an object type lends a borrow like the object type it names.
+		"AliasedObjectField": {
+			src: `
+				type P = {x: number}
+				fn g(h: &{p: P}) {
+					val p = h.p
+				}
+			`,
+			want: []string{"4:14-4:17: this value is borrowed by its destination, so write the borrow: `&`"},
+		},
+		// A parameter whose type is an alias of a borrow reads its fields through that borrow.
+		"AliasedBorrowReceiver": {
+			src: `
+				type HP = &{p: {x: number}}
+				fn g(h: HP) {
+					val p = h.p
+				}
+			`,
+			want: []string{"4:14-4:17: this value is borrowed by its destination, so write the borrow: `&`"},
+		},
+		// A generic parameter takes its type from the argument, like an unannotated binding. The
+		// fix borrows the argument, `id(&h.f)`. The prefix `&` binds looser than a call, so
+		// `&id(h.f)` borrows the result and leaves the argument unwritten.
+		"GenericParameter": {
+			src: `
+				fn id<T>(x: T) -> T { return x }
+				fn g(h: &{f: {x: number}}) {
+					val s = id(h.f)
+				}
+			`,
+			want: []string{"4:17-4:20: this argument is borrowed by the callee, so write the borrow: `&`"},
+		},
+		"GenericParameterBorrowWritten": {
+			src: `
+				fn id<T>(x: T) -> T { return x }
+				fn g(h: &{f: {x: number}}) {
+					val s = id(&h.f)
+				}
+			`,
+			want: nil,
+		},
+		// Borrowing the call's result leaves the argument unwritten, so the error stays on it.
+		"GenericParameterResultBorrowed": {
+			src: `
+				fn id<T>(x: T) -> T { return x }
+				fn g(h: &{f: {x: number}}) {
+					val s = &id(h.f)
+				}
+			`,
+			want: []string{"4:18-4:21: this argument is borrowed by the callee, so write the borrow: `&`"},
+		},
+		// A field typed `&mut` keeps its own mutability through a `&` receiver, as T3 states, and
+		// a read of a borrow-typed field copies the borrow, so nothing needs writing.
+		"MutBorrowFieldThroughImmutableReceiver": {
+			src: `
+				class Box { v: number }
+				class C { readonly inner: &mut Box }
+				fn g(c: &C) {
+					val b = c.inner
+				}
+			`,
+			want: nil,
+		},
+		// A return annotation that does not resolve names no destination, so only the
+		// annotation is reported.
+		"UnresolvedReturnAnnotation": {
+			src: `
+				fn g(h: &{f: {x: number}}) -> Unknown {
+					return h.f
+				}
+			`,
+			want: []string{"2:35-2:42: cannot find type `Unknown`"},
+		},
+		// A written borrow of an optional field keeps the `undefined` the field may hold.
+		"WrittenOptionalFieldKeepsUndefined": {
+			src: `
+				fn g(h: &{f?: {x: number}}) -> number {
+					val d: &{x: number} = &h.f
+					return d.x
+				}
+			`,
+			want: []string{"3:28-3:32: cannot constrain undefined <: object"},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src)
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+		})
+	}
+}
+
 // storeEffectDecls declares a callee that writes its second argument into its first, plus the
 // helpers the cases read the aliased data back through. `'a` at both item and target's peer
 // field is what makes the signature declare a store.
