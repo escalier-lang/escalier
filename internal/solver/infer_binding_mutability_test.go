@@ -1,0 +1,332 @@
+package solver
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+// TestBindingMutabilityMatchesOwnedMutType asserts that a binding written `mut` checks the
+// same programs as the `mut T` annotation it replaces. src writes `val mut p: T` or
+// `mut p: T`, and old writes `val p: mut T` or `p: mut T` in the same places. The two
+// spellings have the same length, so both report want at the same spans.
+func TestBindingMutabilityMatchesOwnedMutType(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		old  string
+		want []string
+	}{
+		{
+			name: "WriteThroughValMut",
+			src: `fn g() -> number {
+	val mut p: {a: {b: number}} = {a: {b: 0}}
+	p.a.b = 1
+	return p.a.b
+}`,
+			old: `fn g() -> number {
+	val p: mut {a: {b: number}} = {a: {b: 0}}
+	p.a.b = 1
+	return p.a.b
+}`,
+		},
+		{
+			name: "WriteArrayElement",
+			src: `fn g() -> number {
+	val mut xs: Array<{x: number}> = [{x: 1}]
+	xs[0].x = 2
+	xs.push({x: 3})
+	return xs[0].x
+}`,
+			old: `fn g() -> number {
+	val xs: mut Array<{x: number}> = [{x: 1}]
+	xs[0].x = 2
+	xs.push({x: 3})
+	return xs[0].x
+}`,
+		},
+		{
+			name: "UseAfterMoveIntoValMut",
+			src: `fn g(q: {x: number}) -> number {
+	val mut p: {x: number} = q
+	p.x = 1
+	return q.x
+}`,
+			old: `fn g(q: {x: number}) -> number {
+	val p: mut {x: number} = q
+	p.x = 1
+	return q.x
+}`,
+			want: []string{"4:9-4:12: use of moved value 'q'"},
+		},
+		{
+			name: "ReadonlyFieldIntoValMut",
+			src: `fn g() {
+	val q: {readonly a: number} = {a: 1}
+	val mut p: {a: number} = q
+}`,
+			old: `fn g() {
+	val q: {readonly a: number} = {a: 1}
+	val p: mut {a: number} = q
+}`,
+			want: []string{"3:27-3:28: readonly field 'a' cannot satisfy a writable field requirement"},
+		},
+		{
+			name: "WriteThroughMutParam",
+			src: `fn f(mut p: {x: number}) -> number {
+	p.x = 2
+	return p.x
+}
+fn g() -> number {
+	val q = {x: 1}
+	return f(q)
+}`,
+			old: `fn f(p: mut {x: number}) -> number {
+	p.x = 2
+	return p.x
+}
+fn g() -> number {
+	val q = {x: 1}
+	return f(q)
+}`,
+		},
+		{
+			name: "PushOntoMutParam",
+			src:  `fn f(mut xs: Array<number>) { xs.push(1) }`,
+			old:  `fn f(xs: mut Array<number>) { xs.push(1) }`,
+		},
+		{
+			name: "UseAfterMoveIntoMutParam",
+			src: `fn f(mut p: {x: number}) -> number {
+	p.x = 2
+	return p.x
+}
+fn g(q: {x: number}) -> number {
+	val n = f(q)
+	return q.x
+}`,
+			old: `fn f(p: mut {x: number}) -> number {
+	p.x = 2
+	return p.x
+}
+fn g(q: {x: number}) -> number {
+	val n = f(q)
+	return q.x
+}`,
+			want: []string{"7:9-7:12: use of moved value 'q'"},
+		},
+		{
+			name: "MoveIntoMutParamWhileBorrowed",
+			src: `fn f(mut p: {x: number}) -> number {
+	p.x = 2
+	return p.x
+}
+fn g() -> number {
+	val q = {x: 1}
+	val r = &q
+	return f(q) + r.x
+}`,
+			old: `fn f(p: mut {x: number}) -> number {
+	p.x = 2
+	return p.x
+}
+fn g() -> number {
+	val q = {x: 1}
+	val r = &q
+	return f(q) + r.x
+}`,
+			want: []string{"8:11-8:12: cannot move 'q' while it is borrowed"},
+		},
+		{
+			name: "WriteThroughDeclareVarMut",
+			src: `declare var mut sink: {x: number}
+fn f() { sink.x = 1 }`,
+			old: `declare var sink: mut {x: number}
+fn f() { sink.x = 1 }`,
+		},
+		{
+			name: "ReassignMutParam",
+			src:  `fn f(mut p: {x: number}) { p = {x: 2} }`,
+			old:  `fn f(p: mut {x: number}) { p = {x: 2} }`,
+			want: []string{"1:28-1:38: Cannot assign to immutable binding: p"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, errs := inferAgainstTreeWithSpans(t, tt.src)
+			_, oldErrs := inferAgainstTreeWithSpans(t, tt.old)
+			require.Equal(t, tt.want, errs)
+			require.Equal(t, tt.want, oldErrs)
+		})
+	}
+}
+
+// TestMutParamSignature asserts that a `mut` parameter leaves the function's signature
+// with the plain type, so a caller moves any owned value of that type into it. want is
+// the type of `f`, and errs lists every diagnostic the program reports.
+func TestMutParamSignature(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+		errs []string
+	}{
+		{
+			name: "Write",
+			src:  `fn f(mut p: {x: number}) { p.x = 1 }`,
+			want: "fn (p: {x: number}) -> undefined",
+		},
+		// A call moves its argument only into a concrete owned shape, so an unannotated
+		// parameter infers `mut` from the write the way it does without the marker.
+		{
+			name: "UnannotatedWrite",
+			src:  `fn f(mut p) { p.x = 1 }`,
+			want: "fn (p: mut {x: number}) -> undefined",
+		},
+		// A union parameter is not moved by a call either, so the write is rejected.
+		{
+			name: "UnionWrite",
+			src:  `fn f(mut p: {x: number} | {x: string}) { p.x = 1 }`,
+			want: "fn (p: {x: number} | {x: string}) -> undefined",
+			errs: []string{"1:42-1:49: cannot constrain immutable object <: mutable object"},
+		},
+		{
+			name: "RestPush",
+			src:  `fn f(...mut rest: Array<number>) { rest.push(1) }`,
+			want: "fn (...rest: Array<number>) -> undefined",
+		},
+		// A borrow cannot fill the owned parameter. The solver blames the borrow's
+		// annotation on `q`.
+		{
+			name: "BorrowedArgument",
+			src: `fn f(mut p: {x: number}) { p.x = 1 }
+fn g(q: &{x: number}) { f(q) }`,
+			want: "fn (p: {x: number}) -> undefined",
+			errs: []string{"2:9-2:21: cannot use borrowed &object as owned object"},
+		},
+		// A borrow carries its own mutability, so `mut` on the binding does not make the
+		// referent writable. The solver blames the parameter's annotation.
+		{
+			name: "BorrowParamKeepsItsMutability",
+			src:  `fn f(mut p: &{x: number}) { p.x = 1 }`,
+			want: "fn (p: &{x: number}) -> undefined",
+			errs: []string{"1:13-1:25: cannot constrain immutable object <: mutable object"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, errs := inferAgainstTreeWithSpans(t, tt.src)
+			require.Equal(t, tt.errs, errs)
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}
+
+// TestValMutCallResultWidens asserts that a `val mut` binding widens the literals of the
+// owned value a call returns, since every owned layer of the value is writable.
+func TestValMutCallResultWidens(t *testing.T) {
+	values, errs := inferAgainstTreeWithSpans(t, `
+		fn mk() { return {x: 1} }
+		val mut d = mk()
+		val n = d.x
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "mut {x: number}", values["d"])
+	require.Equal(t, "number", values["n"])
+}
+
+// TestDynamicIndexPlace covers how a dynamic index off a binding names the whole binding.
+// A write through `xs[1]` is a write to `xs`, so it conflicts with a live borrow of
+// another element. A read of one element moves nothing the next read needs.
+func TestDynamicIndexPlace(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "WriteWhileElementBorrowed",
+			src: `fn g() -> number {
+	val mut xs: Array<{x: number}> = [{x: 1}, {x: 2}]
+	val r = &xs[0]
+	xs[1].x = 3
+	return r.x
+}`,
+			want: []string{"4:2-4:9: cannot assign to 'xs[1].x' while it is borrowed as immutable"},
+		},
+		{
+			name: "ReadTwoElements",
+			src: `fn g() {
+	val xs: Array<{x: number}> = [{x: 1}, {x: 2}]
+	val a = xs[0]
+	val b = xs[1]
+}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, errs := inferAgainstTreeWithSpans(t, tt.src)
+			require.Equal(t, tt.want, errs)
+		})
+	}
+}
+
+// TestValMutBorrowedInitializer covers a borrow filling an owned binding. src writes
+// `val mut p: T` and reports that a borrow cannot fill an owned binding. old writes
+// `val p: mut T`, which reports the borrow's immutability instead.
+func TestValMutBorrowedInitializer(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		want    []string
+		old     string
+		oldWant []string
+	}{
+		{
+			// The solver blames the borrow's annotation on `q`.
+			name:    "BorrowedParameter",
+			src:     `fn g(q: &{x: number}) { val mut p: {x: number} = q }`,
+			want:    []string{"1:9-1:21: cannot use borrowed &object as owned object"},
+			old:     `fn g(q: &{x: number}) { val p: mut {x: number} = q }`,
+			oldWant: []string{"1:9-1:21: cannot constrain immutable object <: mutable object"},
+		},
+		{
+			name: "BorrowReturnedByCall",
+			src: `fn h(a: &{x: number}) -> &{x: number} { return a }
+fn g() {
+	val o = {x: 1}
+	val mut p: {x: number} = h(&o)
+}`,
+			want: []string{"4:13-4:24: cannot use borrowed &object as owned object"},
+			old: `fn h(a: &{x: number}) -> &{x: number} { return a }
+fn g() {
+	val o = {x: 1}
+	val p: mut {x: number} = h(&o)
+}`,
+			oldWant: []string{"4:13-4:14: cannot constrain immutable object <: mutable object"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, errs := inferAgainstTreeWithSpans(t, tt.src)
+			_, oldErrs := inferAgainstTreeWithSpans(t, tt.old)
+			require.Equal(t, tt.want, errs)
+			require.Equal(t, tt.oldWant, oldErrs)
+		})
+	}
+}
+
+// TestValMutUnionWithBorrow asserts that `val mut` makes no owned layer writable when the
+// annotation is a union with a borrow member, since the borrow carries its own
+// mutability. The write through `p` is rejected.
+func TestValMutUnionWithBorrow(t *testing.T) {
+	_, errs := inferAgainstTreeWithSpans(t, `fn g() {
+	val mut p: {x: number} | &{x: number} = {x: 1}
+	p.x = 2
+}`)
+	require.Equal(t, []string{"3:2-3:9: cannot constrain immutable object <: mutable object"}, errs)
+}

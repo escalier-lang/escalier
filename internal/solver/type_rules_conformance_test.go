@@ -203,13 +203,11 @@ func TestTypeRuleLiteralWidening(t *testing.T) {
 	})
 }
 
-// DISABLED until #2251, which checks owned mutability from the binding. Today a `val mut` binding
-// with a type annotation takes the annotation's mutability, so the annotated value stays
-// immutable. The comment above each case says what the solver reports today.
-/*
+// TestTypeRulesBindingMutability covers the T3 and T5 cases where a `val mut` binding with a type
+// annotation owns a mutable value of the annotated type.
 func TestTypeRulesBindingMutability(t *testing.T) {
 	runTypeRuleCases(t, []typeRuleCase{
-		// Today the write reports `cannot constrain immutable object <: mutable object`.
+		// A `val mut` binding makes every owned layer of its annotated value writable.
 		{
 			name: "T3/DeepWriteThroughAnnotatedValMutBinding",
 			src: `
@@ -220,8 +218,7 @@ func TestTypeRulesBindingMutability(t *testing.T) {
 			`,
 		},
 		// The array is owned by a `val mut` binding, so `push` is accepted. Each element is a `&`
-		// borrow, so the write through `b[0]` is rejected. Today `push` also reports
-		// `cannot constrain immutable Array<&Point> <: mutable Array<&Point>`.
+		// borrow, so the write through `b[0]` is rejected.
 		{
 			name: "T3/ValMutArrayOfImmutableBorrows",
 			src: `
@@ -235,7 +232,7 @@ func TestTypeRulesBindingMutability(t *testing.T) {
 			want: []string{"6:6-6:16: cannot constrain immutable Point <: mutable object"},
 		},
 		// A holder of the `val mut` binding could reassign `a`, so a `readonly` field cannot fill
-		// it. Today the move into `p` reports nothing.
+		// it.
 		{
 			name: "T5/ReadonlyFieldIntoWritableSlot",
 			src: `
@@ -248,7 +245,6 @@ func TestTypeRulesBindingMutability(t *testing.T) {
 		},
 	})
 }
-*/
 
 // DISABLED until #2254, which rejects `mut` inside an owned type annotation and removes the
 // owned-mutable type. The comment above each case says what the solver does today.

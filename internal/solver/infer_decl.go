@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"slices"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/set"
@@ -161,6 +163,9 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 				// every reader of the binding constrains against something rather than
 				// cascading on the one fault.
 				t = c.freshAt(lvl)
+			} else if isMutableIdentPat(d.Pattern) {
+				// `declare var mut sink: T` describes a binding that owns a mutable `T`.
+				t = c.ownedMutCell(t, d.TypeAnn)
 			}
 			return t, true
 		}
@@ -192,10 +197,12 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 		// The value is wrapped, not the variable the result arrives as. Wrapping the
 		// variable would leave its own name in the coalesced binding, so `d` would render
 		// `mut (T0 | Counter)` instead of `mut Counter`.
+		//
+		// The binding is `mut`, so every owned layer of the value is writable and its
+		// literals widen. `fn mk() { return {x: 1} }` makes `val mut d = mk()` bind
+		// `mut {x: number}`, which admits the write `d.x = 2`.
 		if inner := c.ownedCarrier(initT); inner != nil {
-			ref := soltype.NewRef(true, nil, inner)
-			c.recordProv(ref, d.Init, OwnedMutConstruction)
-			initT = ref
+			initT = c.ownedMutCell(widen(inner), d.Init)
 		}
 	case d.TypeAnn == nil && isMutableIdentPat(d.Pattern) && freshLiteralShape(d.Init, c.acceptsBorrowLeaf):
 		// An unannotated `val mut q = {…}` / `var mut q = {…}` from a freshly
@@ -263,6 +270,17 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 		// error and adopting `never` would poison the binding. Keep the inferred
 		// initializer type instead (error recovery).
 		if annT, ok := c.resolveDeclaredTypeAnn(scope, d.TypeAnn, lvl, symName, varDeclSymbolPosition(d)); ok {
+			// A `val mut p: T` binding owns a mutable `T`, so it checks its initializer the
+			// way `val p: mut T` does. The initializer moves in, and
+			// constrainInitAgainstAnnotation admits it when nothing else can reach it, as
+			// with a fresh literal or a moved binding.
+			//
+			// A borrowed initializer is checked against the plain `T` instead. A borrow
+			// cannot fill an owned binding at all, and that is the fault to report rather
+			// than the borrow's mutability.
+			if isMutableIdentPat(d.Pattern) && len(heldBorrows(initT)) == 0 {
+				annT = c.ownedMutCell(annT, d.TypeAnn)
+			}
 			annT = c.constrainInitAgainstAnnotation(d.Init, initT, annT)
 			c.checkExcessLiteralMembers(d.Init, initT, annT)
 			initT = annT
@@ -417,7 +435,38 @@ func (c *checker) constrainAgainstImmutableTarget(site ast.Node, src ast.Expr, s
 		return false
 	}
 	c.constrain(site, srcT, view)
+	// The immutable form names no writable field, so the constraint above lets a readonly
+	// field of the source fill a field the target can write. A literal built only from
+	// literals declares no readonly field, so it skips the check.
+	if !freshLiteralShape(src, func(ast.Expr) bool { return false }) {
+		c.reportReadonlyIntoWritable(site, srcT, target)
+	}
 	return true
+}
+
+// reportReadonlyIntoWritable reports ReadonlyFieldSubtypeError for each readonly field of
+// srcT that fills a writable field of the owned-mutable target, blamed at site. It reports
+// no other fault and records no bound. A borrow keeps the mutability its referent has, so
+// it has no readonly field to report here.
+func (c *checker) reportReadonlyIntoWritable(site ast.Node, srcT, target soltype.Type) {
+	if isBorrowType(srcT) {
+		return
+	}
+	inner, ok := soltype.CarrierOf(srcT).(soltype.RefInner)
+	if !ok {
+		return
+	}
+	// The trial reads srcT as an owned-mutable cell, which makes every field the target
+	// can write invariant. That is where constrain compares readonly-ness. A literal field
+	// such as the `1` in `{a: 1}` fails the invariant check against `number` too, so every
+	// other fault the trial finds is dropped.
+	var readonly []SolverError
+	for _, e := range c.ctx.trialUnderProbe(soltype.NewRef(true, nil, inner), target) {
+		if _, ok := e.(*ReadonlyFieldSubtypeError); ok {
+			readonly = append(readonly, e)
+		}
+	}
+	c.blameConstraintErrors(site, readonly)
 }
 
 // immutableTargetForSource returns target's immutable form when src is uniquely owned, and false
@@ -869,6 +918,37 @@ func resultContainsOwnedMut(t soltype.Type, seen set.Set[*soltype.TypeVarType]) 
 func isMutableIdentPat(p ast.Pat) bool {
 	ip, ok := p.(*ast.IdentPat)
 	return ok && ip.Mutable
+}
+
+// ownedMutCell returns the owned-mutable cell `mut T` over t, with its provenance
+// recorded at node. It returns t unchanged when t has no owned layer to make writable.
+// That covers a borrow, which carries its own mutability, a value that is already an
+// owned-mutable cell, a union or intersection holding a borrow, and a primitive or
+// function, which has nothing to write through.
+func (c *checker) ownedMutCell(t soltype.Type, node ast.Node) soltype.Type {
+	if _, isRef := t.(*soltype.RefType); isRef {
+		return t
+	}
+	inner, ok := t.(soltype.RefInner)
+	if !ok || hasBorrowMember(inner) {
+		return t
+	}
+	ref := soltype.NewRef(true, nil, inner)
+	c.recordProv(ref, node, OwnedMutConstruction)
+	return ref
+}
+
+// hasBorrowMember reports whether t is a union or intersection with a borrow among its
+// members.
+func hasBorrowMember(t soltype.Type) bool {
+	var members []soltype.Type
+	switch t := t.(type) {
+	case *soltype.UnionType:
+		members = t.Types
+	case *soltype.IntersectionType:
+		members = t.Types
+	}
+	return slices.ContainsFunc(members, isBorrowType)
 }
 
 // checkExcessLiteralMembers is the construction-site excess check (M4 A3): a
