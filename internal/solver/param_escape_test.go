@@ -19,12 +19,12 @@ func TestInferUnannotatedParamOwnership(t *testing.T) {
 		{
 			name: "MemberRead",
 			src:  `fn f(p) { return p.x }`,
-			want: "fn <T0>(p: &{x: T0}) -> T0",
+			want: "fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0",
 		},
 		{
 			name: "NestedMemberRead",
 			src:  `fn f(p) { return p.x.y }`,
-			want: "fn <T0>(p: &{x: {y: T0}}) -> T0",
+			want: "fn <T0, 'a>(p: &'a {x: {y: T0}}) -> &'a T0",
 		},
 		{
 			name: "MemberReadIntoArithmetic",
@@ -97,7 +97,7 @@ func TestInferUnannotatedParamOwnership(t *testing.T) {
 		{
 			name: "MutBindingOnlyRead",
 			src:  `fn f(mut p) { return p.x }`,
-			want: "fn <T0>(p: &{x: T0}) -> T0",
+			want: "fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0",
 		},
 		{
 			name: "Returned",
@@ -193,7 +193,7 @@ func TestInferCallbackParamTakesCalleeType(t *testing.T) {
 		val r = measure(fn (s) { return s.n })
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <T0>(s: &{n: T0}) -> T0", values["g"])
+	require.Equal(t, "fn <T0, 'a>(s: &'a {n: T0}) -> &'a T0", values["g"])
 	require.Equal(t, "number", values["r"])
 }
 
@@ -226,6 +226,49 @@ func TestCallToBorrowParamNeedsWrittenBorrow(t *testing.T) {
 				}
 			`)
 			require.Equal(t, tt.errs, errs)
+		})
+	}
+}
+
+// TestReadThroughBorrowParamKeepsBorrow covers the value a field read through an inferred
+// borrow parameter returns. The read keeps the parameter's borrow, so the caller cannot write
+// through it, and a value-type field copies out of it.
+func TestReadThroughBorrowParamKeepsBorrow(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+		errs []string
+	}{
+		{
+			name: "WriteThroughReturnedField",
+			body: `
+					val b = {x: {y: 1}}
+					var mut r = read(&b)
+					r.y = 5
+					return b
+			`,
+			want: "fn () -> {x: {y: 1}}",
+			errs: []string{"6:6-6:13: cannot constrain immutable object <: mutable object"},
+		},
+		{
+			name: "ValueFieldCopiesOut",
+			body: `
+					val b = {x: 1}
+					val n = read(&b)
+					return n + 1
+			`,
+			want: "fn () -> number",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, errs := inferAgainstTreeWithSpans(t, `
+				fn read(p) { return p.x }
+				fn h() {`+tt.body+`}
+			`)
+			require.Equal(t, tt.errs, errs)
+			require.Equal(t, tt.want, values["h"])
 		})
 	}
 }

@@ -658,6 +658,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// variable for each parameter, since the callee's signature gives each one its type.
 		if v, ok := pt.(*soltype.TypeVarType); ok && !written && !isArg && body != nil && identParamOnlyReadThrough(pat, rest, optional, body) {
 			pt = soltype.NewRef(false, c.ctx.freshLifetime(lvl), v)
+			c.addReadThroughVar(v)
 		}
 		if name, ok := identPatName(pat); ok {
 			// The param's IdentPat IS its definition site, so record it as the binding's
@@ -4215,11 +4216,19 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 // unchanged. A usage-inferred TypeVar carrier and an index path with no
 // concrete property both fall into this branch. The inferred-receiver paths
 // keep their pre-PR-4 behaviour, so only annotated reference shapes pick up
-// the new borrow.
+// the new borrow. The exception is an immutable borrow whose inner is in
+// readThroughVars, which reads as `fieldVar` borrowed at the receiver's lifetime.
 func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Type, name string, lvl int) soltype.Type {
-	_, recvMut, recvLt := soltype.UnwrapRef(recv)
+	recvInner, recvMut, recvLt := soltype.UnwrapRef(recv)
 	prop, ok := c.declaredField(recv, name)
 	if !ok {
+		// The field's type is not known yet, so the read keeps the receiver's borrow, as a read
+		// through a written `&` parameter keeps it for a reference-shaped field. A use that needs
+		// a value type copies the field out, which constrain allows for a borrow of a variable.
+		if v, isVar := recvInner.(*soltype.TypeVarType); isVar && recvLt != nil && !recvMut && c.readThroughVars.Contains(v) {
+			c.addReadThroughVar(fieldVar)
+			return &soltype.RefType{Mut: false, Lt: recvLt, Inner: fieldVar}
+		}
 		return fieldVar
 	}
 	if !prop.Optional {
@@ -4235,6 +4244,14 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 		return newUnion(nil, []soltype.Type{borrow, &soltype.UndefinedType{}})
 	}
 	return fieldVar
+}
+
+// addReadThroughVar adds v to readThroughVars.
+func (c *checker) addReadThroughVar(v *soltype.TypeVarType) {
+	if c.readThroughVars == nil {
+		c.readThroughVars = set.NewSet[*soltype.TypeVarType]()
+	}
+	c.readThroughVars.Add(v)
 }
 
 // declaredField returns the property named name on the field list a receiver of type recv

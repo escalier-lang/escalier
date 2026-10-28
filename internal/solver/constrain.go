@@ -1089,6 +1089,15 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		return nil
 	}
 
+	// A value type copies out of a borrow, so a borrow of a variable fills a value-type
+	// destination when the variable does. `fn read(p) { return p.x }` returns `&'a T0`, and
+	// `read(&b) + 1` checks `T0` against `number`.
+	if ref, ok := sub.(*soltype.RefType); ok && ref.Lt != nil && isValueType(super) {
+		if inner, ok := ref.Inner.(*soltype.TypeVarType); ok {
+			return c.constrain(inner, super, seen, false)
+		}
+	}
+
 	// A variable constrained against itself is reflexively true, so it records
 	// nothing. Without this guard the self-edge `T <: T` lands in the variable's own
 	// upper bounds and renders as `fn <T: T>(x: T) -> T`. A generic function whose
