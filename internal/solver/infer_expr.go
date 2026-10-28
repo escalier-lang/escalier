@@ -147,7 +147,8 @@ func holdsBorrow(t soltype.Type) bool {
 
 // inferPlace infers e in value position, the way inferExpr does, and also returns the place
 // its value is an owned layer of. A mutating operation on e, such as `&mut e`, reads the
-// place to decide whether e may be mutated.
+// place to decide whether e may be mutated. e must hold no optional link, since a chain
+// that short-circuits yields `undefined` rather than the place's value.
 func (c *checker) inferPlace(scope *Scope, lvl int, e ast.Expr) (soltype.Type, *ownedPlace) {
 	var r pathResult
 	switch e := e.(type) {
@@ -163,10 +164,6 @@ func (c *checker) inferPlace(scope *Scope, lvl int, e ast.Expr) (soltype.Type, *
 		r = c.resolveIndexPath(scope, lvl, e, false)
 	default:
 		return c.inferExpr(scope, lvl, e), nil
-	}
-	// A chain that may short-circuit yields `undefined` rather than the place's value.
-	if r.shortCircuits {
-		return c.chainValue(lvl, r, e), nil
 	}
 	return c.chainValue(lvl, r, e), r.place
 }

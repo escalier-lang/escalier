@@ -574,16 +574,13 @@ func (v *mutLeafFinder) EnterPat(p ast.Pat) bool {
 	return !v.found
 }
 
-// leafMutable reports whether a pattern leaf, an identifier or an object shorthand, is
-// written with the `mut` prefix.
+// leafMutable reports whether a pattern leaf is written with the `mut` prefix. leaf is an
+// *ast.IdentPat or an *ast.ObjShorthandPat, the two nodes bindLeaf passes for a leaf.
 func leafMutable(leaf ast.Node) bool {
-	switch leaf := leaf.(type) {
-	case *ast.IdentPat:
-		return leaf.Mutable
-	case *ast.ObjShorthandPat:
-		return leaf.Mutable
+	if sh, ok := leaf.(*ast.ObjShorthandPat); ok {
+		return sh.Mutable
 	}
-	return false
+	return leaf.(*ast.IdentPat).Mutable
 }
 
 // hasBorrowMember reports whether t is a union or intersection with a borrow among its

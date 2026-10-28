@@ -696,6 +696,15 @@ func TestHoverFromSolver(t *testing.T) {
 			open: "bin/main.esc", line: 0, col: 9,
 			expected: "`fn (a: number, b: number) -> number`",
 		},
+		// The checker binds `self` with no declaration, so the hover shows its type alone.
+		{
+			name: "SelfRead",
+			files: map[string]string{
+				"lib/c.esc": "export class C { n: number, get(self) -> number { return self.n } }",
+			},
+			open: "lib/c.esc", line: 0, col: 58,
+			expected: "`{n: number, get(self) -> number}`",
+		},
 		{
 			name: "LibParam",
 			files: map[string]string{

@@ -413,3 +413,45 @@ func TestNilVarDeclPatternBlamesDeclWithoutPanic(t *testing.T) {
 	require.Equal(t, "Unsupported: VarDecl", c.errs[0].Message())
 	require.Equal(t, testSpan(), c.errs[0].Span()) // derefs the decl node, not a nil pattern
 }
+
+// TestBlameMutabilityDiagnostics covers the primary and related spans of the diagnostics
+// that decide where a value's mutability is written. A write through an immutable parameter
+// relates the parameter that would take the `mut`. `self` has no declaration to relate, and
+// neither a `mut` type nor a shared await relates a second node.
+func TestBlameMutabilityDiagnostics(t *testing.T) {
+	tests := map[string]struct {
+		src     string
+		want    string
+		primary string
+		related []string
+	}{
+		"WriteThroughImmutableParam": {
+			src:     `fn f(p: {x: number}) { p.x = 1 }`,
+			want:    "1:24-1:31: cannot mutate 'p' because its binding is immutable; declare it as `mut p`",
+			primary: "p.x = 1",
+			related: []string{"p"},
+		},
+		"WriteThroughImmutableSelf": {
+			src:     `class C { n: number, bump(self) -> undefined { self.n = 1 } }`,
+			want:    "1:48-1:58: cannot mutate 'self' because its binding is immutable; declare it as `mut self`",
+			primary: "self.n = 1",
+		},
+		"OwnedMutType": {
+			src:     `fn f(p: mut {x: number}) {}`,
+			want:    "1:9-1:12: " + ownedMutTypeMsg,
+			primary: "mut",
+		},
+		"SharedAwaitIntoMut": {
+			src:     `async fn g(p) { val mut r = await p }`,
+			want:    "1:29-1:36: cannot bind the value 'p' settles to with `mut`, since awaiting 'p' again yields the same value; await a call that makes a new promise instead",
+			primary: "await p",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			requireBlame(t, tt.src, errs, tt.want, tt.primary, tt.related...)
+		})
+	}
+}

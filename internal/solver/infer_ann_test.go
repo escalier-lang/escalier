@@ -377,6 +377,26 @@ func TestInferValMutMoveNeedsAConsume(t *testing.T) {
 			[]string{"2:15-2:18: cannot move module-level value 'cfg' into a `mut` binding, since the module keeps it. Borrow it with `&cfg`"},
 			messagesWithSpan(t, errs))
 	})
+	t.Run("a field of a place does not move in at top level", func(t *testing.T) {
+		_, _, errs := inferSource(t, "val cfg = {a: {x: 1}}\nval mut m = cfg.a")
+		require.Equal(t,
+			[]string{"2:13-2:18: cannot move module-level value 'cfg.a' into a `mut` binding, since the module keeps it. Borrow it with `&cfg.a`"},
+			messagesWithSpan(t, errs))
+	})
+	t.Run("an element of a place does not move in at top level", func(t *testing.T) {
+		_, _, errs := inferSource(t, "val cfg = [{x: 1}]\nval mut m = cfg[0]")
+		require.Equal(t,
+			[]string{"2:13-2:19: cannot move module-level value 'cfg[0]' into a `mut` binding, since the module keeps it. Borrow it with `&cfg[0]`"},
+			messagesWithSpan(t, errs))
+	})
+	t.Run("a primitive place copies in at top level", func(t *testing.T) {
+		_, _, errs := inferSource(t, "val cfg = 5\nval mut m = cfg")
+		require.Empty(t, errs)
+	})
+	t.Run("a class name is not a place", func(t *testing.T) {
+		_, _, errs := inferSource(t, "class C { x: number }\nval mut m = C")
+		require.Empty(t, errs)
+	})
 	t.Run("a closure in the initializer writes through the binding being declared", func(t *testing.T) {
 		_, _, errs := inferSource(t, "val mut counter = {n: 0, bump: fn () { counter.n = 1 }}")
 		require.Empty(t, errs)

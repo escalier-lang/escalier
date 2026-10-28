@@ -317,8 +317,6 @@ func hoverBinding(info *solver.Info, node ast.Node) (name string, mut bool, ok b
 			return n.Name, info.BindsMut(decl), true
 		case *ast.ObjShorthandPat:
 			return n.Name, decl.Mutable, true
-		case ast.Pat:
-			return n.Name, false, true
 		}
 	}
 	return "", false, false
