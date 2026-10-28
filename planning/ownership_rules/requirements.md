@@ -756,7 +756,7 @@ in between.
 ## Decisions
 
 D1 through D8 record behaviour the solver enforces today that no document
-stated. D9 through D11 are design questions the rules left open. Each decided
+stated. D9 through D12 are design questions the rules left open. Each decided
 entry says where its outcome now lives. All of them are now decided. The current
 behaviour comes from reading the code, and the file references point at where
 it lives.
@@ -1051,6 +1051,36 @@ fields with the smallest exception. Keep counters and the interop methods on
 Decided: accepted. Escalier adds a write-once cell, and the invariant states
 the exception it makes. The cell's name, syntax, and API are still to be
 designed. Counters and the interop methods stay on `&mut self` for now.
+
+### D12. A `mut` binding that grants nothing
+
+T1 lets any binding or parameter be written `mut`, and nothing rejects one whose
+`mut` cannot matter. A value type has no owned layers, so T2 and T3 give the
+`mut` nothing to make writable. T1 keeps reassignment on `var`, so the `mut`
+does not make the binding reassignable either:
+
+```esc
+fn f(mut p?: number) -> number { return 1 }
+```
+
+The options are:
+
+- Accept it silently, as the checker does today.
+- Warn when the binding's type is a value type. This needs only the binding's
+  type, and such a `mut` can never matter.
+- Warn when a `mut` binding is never written and never borrowed as `&mut`, as
+  Rust's `unused_mut` lint does. This covers the value-type case and also an
+  owned binding the body only reads, but it needs the body's write analysis.
+
+Recommendation: warn on a value type now and add the unused-binding warning
+later. Both are warnings rather than errors, since the program means the same
+with or without the `mut`.
+
+Decided: accepted. A `mut` binding whose type is a value type reports a
+warning, tracked by [#2304](https://github.com/escalier-lang/escalier/issues/2304).
+A warning on any `mut` binding the body never writes or borrows as `&mut` is a
+later addition, tracked by
+[#2305](https://github.com/escalier-lang/escalier/issues/2305).
 
 ## Known bugs
 
