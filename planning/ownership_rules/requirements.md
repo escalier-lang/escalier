@@ -1244,6 +1244,31 @@ The first program in [D10](#d10-recording-that-a-callback-is-not-retained)
 checks clean today and should report the error marked there.
 [#1267](https://github.com/escalier-lang/escalier/issues/1267) tracks the gap.
 
+**B8. A borrow copied into a second binding is not tracked.** A loan records
+only the binding that a written `&` or `&mut` fills. `recordBorrowLoan` in
+[borrow_exclusivity.go](../../internal/solver/borrow_exclusivity.go) ignores an
+initializer that names an existing borrow, so the copy holds no loan. A
+conflict through the copy is not reported. The loan also ends when the
+original holder is last used, even while the copy is still read. The program
+below checks clean today and should report the shared and mutable pair at the
+call:
+
+```esc
+declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
+
+fn g() {
+    val mut x = {v: 1}
+    val a = &x
+    val c = a
+    val b = &mut x
+    readWrite(c, b)
+}
+```
+
+The checking model closes it by recording the copy as a `copy(place, holder)`
+event, which makes `c` a second holder of the borrow.
+[#1527](https://github.com/escalier-lang/escalier/issues/1527) tracks the gap.
+
 ## Divergences from the docs
 
 These came from reading the code and need confirming with a fixture each before
@@ -1551,6 +1576,7 @@ Each known bug closes at a step:
 | B5 | Step 4 | Yes |
 | B6 | Step 4 | No |
 | B7 | Step 5 | Yes |
+| B8 | Step 7, since the dataflow pass records a copied borrow as a holder | Yes |
 
 Steps 3 through 5 close B3, B5, and B7 in the current checker, so those holes
 close before the rewrite in step 7. B2 already has its own fix queued, so it
