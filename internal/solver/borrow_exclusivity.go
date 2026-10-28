@@ -1151,6 +1151,37 @@ func (c *checker) checkWrittenBorrow(src ast.Expr, destT soltype.Type) bool {
 	return c.checkBorrowsWritten(src, destT, false)
 }
 
+// sharedView returns t with each `&mut` borrow in a positive position rewritten to `&`. A
+// borrow in a function's parameter keeps its mutability, since loosening it would make t ask
+// more of a function, not less.
+func sharedView(t soltype.Type) soltype.Type {
+	return t.Accept(sharedViewVisitor{}, soltype.Positive)
+}
+
+type sharedViewVisitor struct{}
+
+func (sharedViewVisitor) EnterType(soltype.Type, soltype.Polarity) soltype.EnterResult {
+	return soltype.EnterResult{}
+}
+
+func (sharedViewVisitor) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
+	if ref, ok := t.(*soltype.RefType); ok && ref.Mut && pol == soltype.Positive {
+		return &soltype.RefType{Mut: false, Lt: ref.Lt, Inner: ref.Inner}
+	}
+	return t
+}
+
+// checkTarget returns the type a source is checked against for a destination of type destT.
+// missing says the source was already reported for a borrow it left unwritten. The check then
+// reads destT through sharedView, so it reports a wrong shape but not the mutability the
+// missing borrow would have supplied.
+func checkTarget(destT soltype.Type, missing bool) soltype.Type {
+	if missing {
+		return sharedView(destT)
+	}
+	return destT
+}
+
 // checkBorrowsWritten reports each value src produces that fills a destination of type destT
 // without the borrow destT needs written. arg says src is a call argument, which selects
 // ImplicitBorrowArgError over ImplicitBorrowError. It returns whether anything was reported,
