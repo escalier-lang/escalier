@@ -835,7 +835,9 @@ func TestFieldReadThroughBorrow(t *testing.T) {
 			`,
 			want: []string{"4:14-4:17: this value is borrowed by its destination, so write the borrow: `&`"},
 		},
-		// A generic parameter takes its type from the argument, like an unannotated binding.
+		// A generic parameter takes its type from the argument, like an unannotated binding. The
+		// fix borrows the argument, `id(&h.f)`. The prefix `&` binds looser than a call, so
+		// `&id(h.f)` borrows the result and leaves the argument unwritten.
 		"GenericParameter": {
 			src: `
 				fn id<T>(x: T) -> T { return x }
@@ -844,6 +846,25 @@ func TestFieldReadThroughBorrow(t *testing.T) {
 				}
 			`,
 			want: []string{"4:17-4:20: this argument is borrowed by the callee, so write the borrow: `&`"},
+		},
+		"GenericParameterBorrowWritten": {
+			src: `
+				fn id<T>(x: T) -> T { return x }
+				fn g(h: &{f: {x: number}}) {
+					val s = id(&h.f)
+				}
+			`,
+			want: nil,
+		},
+		// Borrowing the call's result leaves the argument unwritten, so the error stays on it.
+		"GenericParameterResultBorrowed": {
+			src: `
+				fn id<T>(x: T) -> T { return x }
+				fn g(h: &{f: {x: number}}) {
+					val s = &id(h.f)
+				}
+			`,
+			want: []string{"4:18-4:21: this argument is borrowed by the callee, so write the borrow: `&`"},
 		},
 		// A field typed `&mut` keeps its own mutability through a `&` receiver, as T3 states, and
 		// a read of a borrow-typed field copies the borrow, so nothing needs writing.
