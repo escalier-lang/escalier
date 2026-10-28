@@ -756,7 +756,7 @@ in between.
 ## Decisions
 
 D1 through D8 record behaviour the solver enforces today that no document
-stated. D9 through D12 are design questions the rules left open. Each decided
+stated. D9 through D13 are design questions the rules left open. Each decided
 entry says where its outcome now lives. All of them are now decided. The current
 behaviour comes from reading the code, and the file references point at where
 it lives.
@@ -1081,6 +1081,47 @@ warning, tracked by [#2304](https://github.com/escalier-lang/escalier/issues/230
 A warning on any `mut` binding the body never writes or borrows as `&mut` is a
 later addition, tracked by
 [#2305](https://github.com/escalier-lang/escalier/issues/2305).
+
+### D13. Binding mutability is written, not inferred
+
+T2 makes every binding immutable unless it is written `mut`, and T1 lets a
+parameter declare a mutable binding as `fn f(mut p: T)`. F3 infers an
+unannotated parameter's ownership from the body, but says nothing about its
+binding's mutability. The checker infers that too. A write in the body makes an
+unannotated parameter's binding mutable:
+
+```esc
+var sink = {x: 0}
+
+fn f(p) {
+    p.x = 1
+    sink = p
+}
+```
+
+The options are:
+
+- Infer the binding's mutability from writes in the body, as the checker does
+  today.
+- Require `mut` to be written, as T2 states, and report a write through an
+  immutable binding with a message that says to write `mut p`.
+
+A binding's mutability is not part of the signature, since `fn f(mut p: T)`
+has the same type as `fn f(p: T)`. Inferring it gives the caller nothing, and
+it hides from a reader of the signature whether the body changes its own value.
+
+The parameter's type is different. Whether an unannotated parameter is owned,
+`&T`, or `&mut T` decides what the caller writes, so it stays inferred. F3
+says a parameter that does not escape is a borrow. A body that writes through
+such a parameter makes it `&mut`, and one that only reads it makes it `&`.
+
+Recommendation: require `mut` on every mutable binding, parameters included,
+and keep inferring an unannotated parameter's type.
+
+Decided: accepted. `fn f(p)` above reports the write to `p.x` and asks for
+`mut p`. Step 2 of the migration removes the inference of binding mutability.
+Step 4 infers `&` or `&mut` for an unannotated parameter that does not
+escape, from whether the body writes through it.
 
 ## Known bugs
 
@@ -1430,6 +1471,8 @@ The steps:
    - The printer and the LSP hover show a binding's mutability on its name, as
      `mut p: {x: number}`.
    - T9's widening reads the binding's mutability instead of the type's.
+   - A parameter's binding is mutable only when written `mut`, as D13 decides.
+     The checker stops inferring it from writes in the body.
 3. Require every borrow to be written, as F4 states. The missing-`&` check
    extends from call arguments to every flow site and to field reads through a
    borrow. Each error carries the borrow its destination needs, `&` or
@@ -1451,6 +1494,8 @@ The steps:
    that does not escape becomes a borrow. A call to an escaping one moves its
    argument. An escaping parameter that the body only reads becomes a
    `'static &` borrow where the destination's type leaves the ownership open.
+   A parameter that does not escape becomes `&mut` when the body writes through
+   it and `&` otherwise, as D13 decides.
 5. Add function-type lifetimes, as D10 decides. The parser and the type system
    accept `&'a fn …` in a parameter, and E4 holds a passed closure's borrows
    for `'a`. A function parameter without a lifetime keeps its current
