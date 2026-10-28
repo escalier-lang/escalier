@@ -143,12 +143,15 @@ func (v *ltOccVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltype.E
 	if _, isNeg := t.(*soltype.NegationType); isNeg {
 		v.negTypeDepth++
 	}
-	// A lifetime is written at three kinds of node: the lifetime slot of a borrow, and the
-	// lifetime-argument list of an alias or class reference. `&'b mut Holder<'a>` writes 'a
-	// as an alias argument, and a signature that also writes it at a borrow ties the two
-	// together, so all three positions have to be recorded for the relation to be visible.
+	// A lifetime is written at four kinds of node: the lifetime slot of a borrow, the
+	// retention lifetime of a function type, and the lifetime-argument list of an alias or
+	// class reference. `&'b mut Holder<'a>` writes 'a as an alias argument, and a signature
+	// that also writes it at a borrow ties the two together, so every position has to be
+	// recorded for the relation to be visible.
 	switch t := t.(type) {
 	case *soltype.RefType:
+		v.record(t.Lt, pol)
+	case *soltype.FuncType:
 		v.record(t.Lt, pol)
 	case *soltype.AliasType:
 		for _, arg := range t.LifetimeArgs {
@@ -549,6 +552,11 @@ func (r *ltRewriter) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type {
 			cp.LifetimeParams = lps
 			out = &cp
 		}
+		if lt := r.resolveBorrowLt(out.Lt); lt != out.Lt {
+			cp := *out
+			cp.Lt = lt
+			out = &cp
+		}
 		if root && r.bindRoot {
 			out = r.bindInferredLifetimes(out)
 		}
@@ -576,23 +584,34 @@ func (r *ltRewriter) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type {
 		return &cp
 	}
 	rt, ok := t.(*soltype.RefType)
-	if !ok || rt.Lt == nil {
+	if !ok {
 		return t
 	}
-	lv, ok := rt.Lt.(*soltype.LifetimeVar)
+	lt := r.resolveBorrowLt(rt.Lt)
+	if lt == rt.Lt {
+		return t
+	}
+	return &soltype.RefType{Mut: rt.Mut, Lt: lt, Inner: rt.Inner}
+}
+
+// resolveBorrowLt returns the display form of the lifetime written after a `&`, either a
+// borrow's or a function type's retention lifetime. A variable resolves through the
+// analysis, and one the analysis elides becomes soltype.Anon. A nil or concrete lifetime
+// such as 'static is returned unchanged.
+func (r *ltRewriter) resolveBorrowLt(lt soltype.Lifetime) soltype.Lifetime {
+	lv, ok := lt.(*soltype.LifetimeVar)
 	if !ok {
-		return t // already a concrete display lifetime ('static)
+		return lt
 	}
 	resolved, elide := r.a.resolveLt(lv)
 	if elide {
-		// Keep the `&` on an elided borrow by parking the lifetime on the Anon
-		// sentinel. The printer renders it as the bare `&`/`&mut` with no
-		// lifetime name, so the displayed type still records owned vs borrowed.
-		// A nil lifetime would make NewRef return the bare inner and hide the
-		// borrow at call sites.
-		return &soltype.RefType{Mut: rt.Mut, Lt: soltype.Anon, Inner: rt.Inner}
+		// Keep the `&` on an elided lifetime by parking it on the Anon sentinel. The
+		// printer renders it as a bare `&` with no lifetime name, so the displayed type
+		// still shows the borrow or the retained function. A nil lifetime would make
+		// NewRef return the bare inner and hide the borrow at call sites.
+		return soltype.Anon
 	}
-	return &soltype.RefType{Mut: rt.Mut, Lt: resolved, Inner: rt.Inner}
+	return resolved
 }
 
 // resolveArgs rewrites a class or alias reference's lifetime arguments to their display

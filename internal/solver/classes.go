@@ -2637,6 +2637,8 @@ func (s *typeSubst) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterR
 	switch t := t.(type) {
 	case *soltype.RefType:
 		return rewriteRefLifetime(t, s.lifetime(t.Lt))
+	case *soltype.FuncType:
+		return rewriteFuncLifetimes(t, s.lifetime)
 	case *soltype.ClassType:
 		return rewriteClassLifetimes(t, s.lifetime)
 	case *soltype.AliasType:

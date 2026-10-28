@@ -3694,6 +3694,19 @@ func (e *extruder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Enter
 		}
 		return rewriteRefLifetime(r, e.c.extrudeLt(r.Lt, pol, e.lvl, e.ltCache))
 	}
+	if ft, ok := t.(*soltype.FuncType); ok && ft.Lt != nil {
+		// A function's retention lifetime is never walked by Accept either, so it
+		// extrudes here in the function's polarity, the same way a borrow's does.
+		if e.ltCache == nil {
+			e.ltCache = map[ltExtrudeKey]*soltype.LifetimeVar{}
+		}
+		if lt := e.c.extrudeLt(ft.Lt, pol, e.lvl, e.ltCache); lt != ft.Lt {
+			repl := *ft
+			repl.Lt = lt
+			return soltype.EnterResult{Type: &repl}
+		}
+		return soltype.EnterResult{}
+	}
 	v, ok := t.(*soltype.TypeVarType)
 	if !ok {
 		return soltype.EnterResult{} // structural node: let Accept rebuild it

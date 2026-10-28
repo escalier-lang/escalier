@@ -1726,6 +1726,9 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		if !ok || len(a.Params) != len(b.Params) || a.Inexact != b.Inexact || len(a.TypeParams) != len(b.TypeParams) || len(a.LifetimeParams) != len(b.LifetimeParams) {
 			return false
 		}
+		if !ctx.sameLifetime(a.Lt, b.Lt) {
+			return false
+		}
 		if len(a.TypeParams) > 0 {
 			// Bind the two functions' type parameters positionally, then compare each
 			// one's upper bounds and default under that

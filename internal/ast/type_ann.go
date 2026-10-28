@@ -866,6 +866,10 @@ func (t *MutableTypeAnn) Accept(v Visitor) {
 //
 // The prefix `&` binds tight to a single atom, so `&A | B` is `(&A) | B`.
 // A borrow of a compound is written with explicit parens, `&(A | B)`.
+//
+// The same node carries a function parameter's retention lifetime, as in
+// `&'a fn () -> undefined`. That form does not borrow the function. The checker
+// lowers it to a function type whose lifetime bounds how long a callee keeps it.
 type RefTypeAnn struct {
 	Mut      bool
 	Lifetime LifetimeAnnNode // optional

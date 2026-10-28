@@ -1111,6 +1111,8 @@ func TestPrintBorrowTypeAnnotations(t *testing.T) {
 		{"borrow mut", "&mut Point", "&mut Point"},
 		{"borrow lifetime", "&'a Point", "&'a Point"},
 		{"borrow lifetime mut", "&'a mut Point", "&'a mut Point"},
+		{"borrow lifetime of function", "&'a fn () -> undefined", "&'a fn () -> undefined"},
+		{"static borrow of function", "&'static fn (x: number) -> number", "&'static fn (x: number) -> number"},
 		{"borrow of union parenthesized", "&(A | B)", "&(A | B)"},
 		{"borrow binds tighter than union", "&A | B", "&A | B"},
 		{"borrow as intersection member", "&A & B", "&A & B"},

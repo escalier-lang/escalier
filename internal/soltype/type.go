@@ -339,6 +339,11 @@ type FuncType struct {
 	// LifetimeParams are the function's quantified lifetime parameters, the twin of TypeParams;
 	// LevelOf skips them too, though a body lifetime still counts through its RefType.
 	LifetimeParams []*LifetimeParam
+	// Lt is how long a callee may keep a function it receives, written `&'a fn () -> R`
+	// on a parameter. Nil means the callee only calls the function during the call. The
+	// lifetime does not make the function a borrow. A function value is still copied.
+	// Lt is free in the function type, unlike the lifetimes in LifetimeParams.
+	Lt Lifetime
 }
 
 // ThrowsOrNever returns the type a call to t may raise, resolving the nil shorthand to the
@@ -1585,7 +1590,7 @@ func LevelOf(t Type) int {
 		if t.Throws != nil {
 			m = max(m, LevelOf(t.Throws))
 		}
-		return m
+		return max(m, LevelOfLifetime(t.Lt))
 	case *TupleType:
 		m := 0
 		for _, e := range t.Elems {

@@ -3206,3 +3206,49 @@
     span: 0-24,
 }
 ---
+
+[TestParseTypeAnnNoErrors/BorrowStaticFuncType - 1]
+&ast.RefTypeAnn{
+    Lifetime: &ast.LifetimeAnn{
+        Name: "static",
+        span: 1-8,
+    },
+    Inner: &ast.FuncTypeAnn{
+        Params: []*ast.Param{
+            &ast.Param{
+                Pattern: &ast.IdentPat{
+                    Name: "x",
+                    span: 13-14,
+                },
+                TypeAnn: &ast.NumberTypeAnn{
+                    span: 16-22,
+                },
+            },
+        },
+        Return: &ast.NumberTypeAnn{
+            span: 27-33,
+        },
+        span: 9-33,
+    },
+    span: 0-33,
+}
+---
+
+[TestParseTypeAnnNoErrors/BorrowLifetimeFuncType - 1]
+&ast.RefTypeAnn{
+    Lifetime: &ast.LifetimeAnn{
+        Name: "a",
+        span: 1-3,
+    },
+    Inner: &ast.FuncTypeAnn{
+        Return: &ast.LitTypeAnn{
+            Lit: &ast.UndefinedLit{
+                span: 13-22,
+            },
+            span: 13-22,
+        },
+        span: 4-22,
+    },
+    span: 0-22,
+}
+---

@@ -372,22 +372,25 @@ func freshenLifetimeFormer(t soltype.Type, lf *ltFreshener) (soltype.EnterResult
 	return soltype.EnterResult{}, false
 }
 
-// rewriteFuncLifetimes rewrites a FuncType's own lifetime parameters through tf,
-// which Accept never walks. It shares tf's cache with the body's uses, so a
-// rebuilt binder and its `&'a` uses stay one lifetime. No change signals an ordinary descent.
+// rewriteFuncLifetimes rewrites a FuncType's own lifetime parameters and its retention
+// lifetime through tf, which Accept never walks. It shares tf's cache with the body's
+// uses, so a rebuilt binder and its `&'a` uses stay one lifetime. No change signals an
+// ordinary descent.
 func rewriteFuncLifetimes(
 	t *soltype.FuncType,
 	tf func(soltype.Lifetime) soltype.Lifetime,
 ) soltype.EnterResult {
-	if len(t.LifetimeParams) == 0 {
+	if len(t.LifetimeParams) == 0 && t.Lt == nil {
 		return soltype.EnterResult{}
 	}
 	nlps, changed := rewriteLtParams(t.LifetimeParams, tf)
-	if !changed {
+	nlt := tf(t.Lt)
+	if !changed && nlt == t.Lt {
 		return soltype.EnterResult{}
 	}
 	repl := *t
 	repl.LifetimeParams = nlps
+	repl.Lt = nlt
 	return soltype.EnterResult{Type: &repl}
 }
 
@@ -657,8 +660,8 @@ func (f *methodLtFreshener) EnterType(t soltype.Type, _ soltype.Polarity) soltyp
 func (f *methodLtFreshener) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // lifetimeCollector records every LifetimeVar a type writes: a borrow's lifetime, a class or
-// alias reference's lifetime arguments, a class's borrow lifetime, and a function's own
-// lifetime parameters. It does not descend into a type variable's bounds.
+// alias reference's lifetime arguments, a class's borrow lifetime, and a function's
+// retention lifetime and own lifetime parameters. It does not descend into a type variable's bounds.
 type lifetimeCollector struct {
 	out set.Set[*soltype.LifetimeVar]
 	// order holds the same variables in first-appearance order.
@@ -686,6 +689,7 @@ func (v *lifetimeCollector) EnterType(t soltype.Type, _ soltype.Polarity) soltyp
 			v.add(a)
 		}
 	case *soltype.FuncType:
+		v.add(t.Lt)
 		for _, lp := range t.LifetimeParams {
 			v.add(lp.Var)
 		}

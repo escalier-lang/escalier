@@ -108,11 +108,11 @@ func (t *FuncType) Accept(v TypeVisitor, pol Polarity) Type {
 	}
 	out := cur
 	if tpChanged || selfChanged || changed || ret != cur.Ret || throws != cur.Throws {
-		// LifetimeParams carry through unchanged here, because Accept never walks a
+		// LifetimeParams and Lt carry through unchanged here, because Accept never walks a
 		// lifetime. A lifetime-aware visitor freshens them in its EnterType, replacing
 		// the whole FuncType before this rebuild, so cur already holds the freshened
 		// params.
-		out = &FuncType{SelfParam: self, Params: params, Ret: ret, Throws: throws, Inexact: cur.Inexact, TypeParams: tparams, LifetimeParams: cur.LifetimeParams}
+		out = &FuncType{SelfParam: self, Params: params, Ret: ret, Throws: throws, Inexact: cur.Inexact, TypeParams: tparams, LifetimeParams: cur.LifetimeParams, Lt: cur.Lt}
 	}
 	return v.ExitType(out, pol)
 }
