@@ -787,6 +787,16 @@ func TestFieldReadThroughBorrow(t *testing.T) {
 			`,
 			want: []string{"4:14-4:17: this value is borrowed by its destination, so write the borrow: `&`"},
 		},
+		// A parameter whose type is an alias of a borrow reads its fields through that borrow.
+		"AliasedBorrowReceiver": {
+			src: `
+				type HP = &{p: {x: number}}
+				fn g(h: HP) {
+					val p = h.p
+				}
+			`,
+			want: []string{"4:14-4:17: this value is borrowed by its destination, so write the borrow: `&`"},
+		},
 		// A generic parameter takes its type from the argument, like an unannotated binding.
 		"GenericParameter": {
 			src: `
