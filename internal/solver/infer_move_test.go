@@ -657,6 +657,99 @@ fn f() -> number {
 	}
 }
 
+// TestUnannotatedMovedParamConsumesArgument covers calls to a parameter written with no type.
+// A call moves its argument there when the callee's body moves the whole parameter, and leaves
+// the argument usable otherwise.
+func TestUnannotatedMovedParamConsumesArgument(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "StoreIntoModuleLevelState",
+			src: `var sink = {x: 0}
+fn store(p) { sink = p }
+fn f() -> number {
+  val a = {x: 1}
+  store(a)
+  return a.x
+}`,
+			want: []string{"6:10-6:13: use of moved value 'a'"},
+		},
+		{
+			name: "ReturnTheParameter",
+			src: `fn give(p) { return p }
+fn f() -> number {
+  val a = {x: 1}
+  val b = give(a)
+  return a.x + b.x
+}`,
+			want: []string{"5:10-5:13: use of moved value 'a'"},
+		},
+		{
+			// relay moves p into store's parameter, so relay's parameter is moved too.
+			name: "PassToAnotherMovedParameter",
+			src: `var sink = {x: 0}
+fn store(p) { sink = p }
+fn relay(p) { store(p) }
+fn f() -> number {
+  val a = {x: 1}
+  relay(a)
+  return a.x
+}`,
+			want: []string{"7:10-7:13: use of moved value 'a'"},
+		},
+		{
+			// The second parameter is moved and the first is only read, so the call moves b alone.
+			name: "OnlyTheMovedPositionConsumes",
+			src: `var sink = {x: 0}
+fn pick(p, q) -> number {
+  sink = q
+  return p.x
+}
+fn f() -> number {
+  val a = {x: 1}
+  val b = {x: 2}
+  pick(a, b)
+  return a.x + b.x
+}`,
+			want: []string{"10:16-10:19: use of moved value 'b'"},
+		},
+		{
+			// read only reads a field of p, so the argument stays usable.
+			name: "ReadOnlyParameterKeepsArgument",
+			src: `fn read(p) { return p.x }
+fn f() -> number {
+  val a = {x: 1}
+  val n = read(a)
+  return a.x + n
+}`,
+		},
+		{
+			// A number argument copies into the parameter, so moving the parameter moves nothing.
+			name: "ValueTypeArgumentCopies",
+			src: `var total = 0
+fn keep(p) { total = p }
+fn f() -> number {
+  val n = 1
+  keep(n)
+  return n
+}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if len(tt.want) == 0 {
+				require.Empty(t, errs)
+				return
+			}
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
+		})
+	}
+}
+
 // A call resolved through an overload set moves the arguments the winning arm consumes, the
 // way a call to a single signature does. Resolution owns the argument checking and leaves
 // inferCall before its move recording runs, so the arm it picks has to drive that separately.

@@ -128,7 +128,7 @@ func acceptSelfParam(sp *FuncParam, v TypeVisitor, pol Polarity) (*FuncParam, bo
 	if pt == sp.Type {
 		return sp, false
 	}
-	return &FuncParam{Pattern: sp.Pattern, Type: pt, Optional: sp.Optional, Rest: sp.Rest}, true
+	return &FuncParam{Pattern: sp.Pattern, Type: pt, Optional: sp.Optional, Rest: sp.Rest, Moved: sp.Moved}, true
 }
 
 func (t *TupleType) Accept(v TypeVisitor, pol Polarity) Type {
@@ -553,8 +553,8 @@ func acceptTypes(ts []Type, v TypeVisitor, pol Polarity) ([]Type, bool) {
 }
 
 // acceptParams walks each parameter's type CONTRAVARIANTLY (pol flipped),
-// copy-on-write like acceptTypes: a changed param gets a fresh *FuncParam (surface
-// markers Optional/Rest ride through), unchanged params keep their pointer.
+// copy-on-write like acceptTypes: a changed param gets a fresh *FuncParam that keeps
+// the Optional, Rest, and Moved markers, and unchanged params keep their pointer.
 func acceptParams(ps []*FuncParam, v TypeVisitor, pol Polarity) ([]*FuncParam, bool) {
 	out := ps
 	changed := false
@@ -565,7 +565,7 @@ func acceptParams(ps []*FuncParam, v TypeVisitor, pol Polarity) ([]*FuncParam, b
 				out = append([]*FuncParam(nil), ps...)
 				changed = true
 			}
-			out[i] = &FuncParam{Pattern: p.Pattern, Type: pt, Optional: p.Optional, Rest: p.Rest}
+			out[i] = &FuncParam{Pattern: p.Pattern, Type: pt, Optional: p.Optional, Rest: p.Rest, Moved: p.Moved}
 		}
 	}
 	return out, changed

@@ -660,11 +660,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			// argument into `p` either way, so the signature keeps the plain `T`. An
 			// unannotated `mut p` is mutable too, and its type is inferred from its uses.
 			//
-			// A call moves its argument only into a concrete owned shape. An annotation
-			// naming a union, an intersection, or a type parameter leaves the caller holding
-			// the value, so a write through it would change a value the caller can still
-			// read. Its binding stays immutable, and a write through it reports that the
-			// `mut` has no effect.
+			// A call moves its argument into a written type only when the type is a
+			// concrete owned shape. An annotation naming a union, an intersection, or a type
+			// parameter leaves the caller holding the value, so a write through it would
+			// change a value the caller can still read. Its binding stays immutable, and a
+			// write through it reports that the `mut` has no effect.
 			ip, isIdent := pat.(*ast.IdentPat)
 			mutable := isIdent && ip.Mutable && !(written && c.notMovedInto(pt))
 			if isIdent && ip.Mutable && !mutable {
@@ -899,6 +899,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// use-after-move. This runs before popFuncCtx restores the outer context, since
 		// it reads this body's move and use state off c.fn.
 		c.checkUseAfterMoves()
+		// A body that moves an unannotated parameter takes ownership of the caller's value,
+		// so each call moves the argument it passes there.
+		c.markMovedParams(sig.Params, params)
 		retExprs = c.fn.returnExprs
 		throws = c.fn.throws
 		raised = c.fn.raised
@@ -2303,12 +2306,11 @@ func (c *checker) calleeReceiver(callee ast.Expr) (ast.Expr, *soltype.FuncParam)
 
 // consumeCallArgs consumes each owned argument passed to a bare owned parameter of
 // the resolved callee, recording the move at ref, the call's statement. A `&`/`&mut`
-// parameter borrows, so it leaves the argument usable. An unannotated parameter, whose
-// ownership is a fresh inference variable rather than a concrete owned shape, is left
-// to borrow conservatively, so only a parameter typed as a concrete owned object,
-// tuple, or owned RefType consumes its argument. An extra argument beyond the declared
-// parameters, the surplus of a too-many-arguments call, has no parameter to move into,
-// so it is skipped.
+// parameter borrows, so it leaves the argument usable. A parameter consumes its argument
+// when its type is a concrete owned object, tuple, or owned RefType. An unannotated
+// parameter's type is a fresh inference variable, so it consumes its argument when it is
+// marked Moved instead. An extra argument beyond the declared parameters, the surplus of
+// a too-many-arguments call, has no parameter to move into, so it is skipped.
 //
 // A rest slot is read through its element type, since each argument it gathers fills one
 // element of the array the callee owns rather than the array itself.
@@ -2332,7 +2334,7 @@ func (c *checker) consumeCallArgs(e *ast.CallExpr, fn *soltype.FuncType, ref liv
 			}
 			return
 		}
-		if !c.isConcreteOwned(fn.Params[i].Type) {
+		if !fn.Params[i].Moved && !c.isConcreteOwned(fn.Params[i].Type) {
 			continue
 		}
 		c.consumeOwned(arg, c.info.TypeOf(arg), arg, ref)
@@ -2340,7 +2342,7 @@ func (c *checker) consumeCallArgs(e *ast.CallExpr, fn *soltype.FuncType, ref liv
 		// borrow of a local the argument carries escapes unless the argument owns a
 		// self-contained component the move re-anchors. recordEscapeSite records the
 		// argument for the post-pass to decide. A `&`/`&mut` parameter borrows instead of
-		// consuming, so the isConcreteOwned gate above skips it.
+		// consuming, so the gate above skips it.
 		c.recordEscapeSite(arg, ref)
 	}
 }
