@@ -2816,10 +2816,9 @@ func TestFlowMatrix(t *testing.T) {
 	})
 }
 
-// DISABLED until #2256, which reports a missing `&` at every flow site that borrows an owned
-// value. Today only a call argument reports it, so each program below borrows `p` with no
-// diagnostic.
-/*
+// TestFlowMatrixMissingBorrow covers the unwritten-borrow column at the sites other than a call
+// argument. Each program fills a borrow destination with the owned `p`, and F4 reports the `&`
+// the destination needs.
 func TestFlowMatrixMissingBorrow(t *testing.T) {
 	runFlowMatrix(t, []flowCell{
 		{
@@ -2905,7 +2904,6 @@ func TestFlowMatrixMissingBorrow(t *testing.T) {
 		},
 	})
 }
-*/
 
 // DISABLED until #2258, which reports a missing `&` on a field read through a borrow that
 // yields an object. Today `h.f` fills each destination below with no diagnostic, including a

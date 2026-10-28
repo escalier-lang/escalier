@@ -512,10 +512,9 @@ func (c *checker) movesSourceInto(source ast.Expr, destT soltype.Type) bool {
 }
 
 // consumeBindingInit moves the owned source a `val`/`var` initializer names into
-// the new binding. `val q = p` for an owned p consumes p; a borrow binding leaves
-// p usable, whether the borrow comes from a `&` annotation — `val q: &{x} = p` — or
-// an explicit `&p` initializer, which is a BorrowExpr rather than a plain
-// identifier and so names no owned source to consume.
+// the new binding. `val q = p` for an owned p consumes p. A borrow binding such as
+// `val q = &p` or `val q: &{x} = &p` leaves p usable, since its initializer is a
+// BorrowExpr rather than a plain identifier and so names no owned source to consume.
 func (c *checker) consumeBindingInit(vd *ast.VarDecl, bindingT soltype.Type, stmt ast.Stmt) {
 	// inferVarDeclInit reported a move out of a module-level binding, which records no move.
 	if c.fn.moduleLevelMoves.Contains(vd.Init) {
@@ -739,7 +738,41 @@ func (c *checker) recordMove(varID liveness.VarID, moveNode ast.Node, ref livene
 	if c.fn.moveNodes == nil {
 		c.fn.moveNodes = map[liveness.VarID]ast.Node{}
 	}
+	if c.fn.moveRecords == nil {
+		c.fn.moveRecords = map[ast.Node]moveRecord{}
+	}
+	c.fn.moveRecords[moveNode] = moveRecord{varID: varID, ref: ref, prevNode: c.fn.moveNodes[varID]}
 	c.fn.moveNodes[varID] = moveNode
+}
+
+// moveRecord is one move recordMove recorded: the place moved, the statement it moved at, and
+// the node moveNodes named for that place before this move.
+type moveRecord struct {
+	varID    liveness.VarID
+	ref      liveness.StmtRef
+	prevNode ast.Node
+}
+
+// retractMove removes the move recordMove recorded for moveNode, so the use-after-move check
+// does not see it. It does nothing when moveNode recorded no move.
+func (c *checker) retractMove(moveNode ast.Node) {
+	if c.fn == nil {
+		return
+	}
+	rec, ok := c.fn.moveRecords[moveNode]
+	if !ok {
+		return
+	}
+	delete(c.fn.moveRecords, moveNode)
+	c.fn.moveSites[rec.ref].Remove(rec.varID)
+	if c.fn.moveNodes[rec.varID] == moveNode {
+		if rec.prevNode != nil {
+			c.fn.moveNodes[rec.varID] = rec.prevNode
+		} else {
+			delete(c.fn.moveNodes, rec.varID)
+		}
+	}
+	c.fn.movedSources.Remove(moveNode)
 }
 
 // checkUseAfterMoves runs the consumed-lattice dataflow over the function body's

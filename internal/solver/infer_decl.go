@@ -177,21 +177,20 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 	}
 	initT := c.inferExpr(scope, lvl, d.Init)
 	// A binding that takes its initializer by value moves it. A move out of a module-level
-	// binding is reported here.
-	if _, borrowAnn := d.TypeAnn.(*ast.RefTypeAnn); !borrowAnn {
-		if _, isIdent := d.Pattern.(*ast.IdentPat); isIdent {
-			c.rejectModuleLevelMove(scope, d.Init)
+	// binding is reported here. An annotated binding reports it once the annotation has
+	// resolved.
+	_, isIdent := d.Pattern.(*ast.IdentPat)
+	if isIdent && d.TypeAnn == nil {
+		c.rejectModuleLevelMove(scope, d.Init)
+	}
+	// A `mut` leaf owns a writable value, so it may not share one with the module or with
+	// another await of the same promise. A destructuring pattern with a `mut` leaf takes that
+	// leaf's value out of the initializer the same way `val mut` takes all of it.
+	if _, borrowAnn := d.TypeAnn.(*ast.RefTypeAnn); !borrowAnn && hasMutLeaf(d.Pattern) {
+		if c.fn == nil {
+			c.rejectModuleLevelMutMove(scope, d.Init)
 		}
-		// A `mut` leaf owns a writable value, so it may not share one with the module or
-		// with another await of the same promise. A destructuring pattern with a `mut` leaf
-		// takes that leaf's value out of the initializer the same way `val mut` takes all
-		// of it.
-		if hasMutLeaf(d.Pattern) {
-			if c.fn == nil {
-				c.rejectModuleLevelMutMove(scope, d.Init)
-			}
-			c.rejectSharedAwait(d.Init, initT)
-		}
+		c.rejectSharedAwait(d.Init, initT)
 	}
 	switch {
 	case d.TypeAnn == nil && isMutableIdentPat(d.Pattern) && !holdsBorrow(initT):
@@ -236,7 +235,15 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 		// placeholder, so constraining `initT <: never` would cascade a spurious
 		// error and adopting `never` would poison the binding. Keep the inferred
 		// initializer type instead (error recovery).
-		if annT, ok := c.resolveDeclaredTypeAnn(scope, d.TypeAnn, lvl, symName, varDeclSymbolPosition(d)); ok {
+		annT, ok := c.resolveDeclaredTypeAnn(scope, d.TypeAnn, lvl, symName, varDeclSymbolPosition(d))
+		// An initializer that fills a borrow annotation without a written borrow is reported
+		// for that alone. Reporting it as a move out of a module-level binding as well would
+		// blame one fault twice.
+		missing := ok && c.checkWrittenBorrow(d.Init, annT)
+		if _, borrowAnn := d.TypeAnn.(*ast.RefTypeAnn); isIdent && !borrowAnn && !missing {
+			c.rejectModuleLevelMove(scope, d.Init)
+		}
+		if ok {
 			// A `val mut p: T` binding may write any writable field of `T`, so a readonly
 			// field in the value it moves in cannot fill one, as T5 states. A borrowed
 			// initializer cannot fill the owned binding at all, and that is the fault to
@@ -244,7 +251,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 			if isMutableIdentPat(d.Pattern) && len(heldBorrows(initT)) == 0 {
 				c.reportReadonlyIntoWritable(d.Init, initT, annT)
 			}
-			annT = c.constrainInitAgainstAnnotation(d.Init, initT, annT)
+			annT = c.constrainInitAgainstAnnotation(d.Init, initT, annT, missing)
 			c.checkExcessLiteralMembers(d.Init, initT, annT)
 			initT = annT
 		}
@@ -253,7 +260,8 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 }
 
 // constrainInitAgainstAnnotation constrains a `val`/`var` initializer against its
-// resolved annotation and returns the type the binding adopts.
+// resolved annotation and returns the type the binding adopts. missing says the initializer
+// was already reported for a borrow it left unwritten, as checkTarget describes.
 //
 // A generic function annotation is checked against a fresh instance, so the adopted
 // annotation keeps its declared `<T>` as its only quantifier. See the inline note.
@@ -263,7 +271,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 // destination, as in `val q: {x} = p`, does not alias `p`. The constraint takes the
 // ordinary RefType<:bare arm, which trips BorrowEscapeError. The explicit `&` form
 // `val q: &{x} = &p` is the opt-in for an alias.
-func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT soltype.Type) soltype.Type {
+func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT soltype.Type, missing bool) soltype.Type {
 	// Check a generic function annotation in checking mode, holding each declared type
 	// parameter rigid as a skolem, so `fn (x) { return 5 }` is rejected against
 	// `fn <T>(x: T) -> T` with `cannot constrain 5 <: T`. The check runs under a discard-only
@@ -273,7 +281,7 @@ func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT solt
 		c.blameConstraintErrors(init, c.ctx.trialUnderProbe(initT, c.skolemizeGenericAnn(annT)))
 		return annT
 	}
-	c.constrain(init, c.implicitMutBorrow(init, initT, annT), annT)
+	c.constrain(init, c.implicitMutBorrow(init, initT, annT), checkTarget(annT, missing))
 	return annT
 }
 

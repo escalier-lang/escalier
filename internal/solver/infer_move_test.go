@@ -348,8 +348,7 @@ func TestMoveSemantics(t *testing.T) {
 		},
 		// The move reconciliation is path-sensitive. A consuming move of p on one branch
 		// does not suppress the exclusivity check for p on a sibling branch where it was
-		// not moved, so the immutable borrow of a still-mutated p is a real Rule 1
-		// conflict and is reported.
+		// not moved, so the write to p while snapshot still borrows it is reported.
 		"PathSensitiveExclusivityKept": {
 			src: `
 				fn store(p: {x: number}) {}
@@ -358,14 +357,14 @@ func TestMoveSemantics(t *testing.T) {
 					if cond {
 						store(p)
 					} else {
-						val snapshot: &{x: number} = p
+						val snapshot: &{x: number} = &p
 						p.x = 5
 						snapshot
 					}
 				}
 			`,
 			want: []string{
-				"8:7-8:37: cannot assign 'p' to immutable 'snapshot': 'p' is still used mutably after this point",
+				"9:7-9:10: cannot assign to 'p.x' while it is borrowed as immutable",
 			},
 		},
 		// Storing p into the global consumes it, so the later borrow `val snap = p` is a
@@ -388,14 +387,14 @@ func TestMoveSemantics(t *testing.T) {
 			src: `
 				fn test() {
 					val mut p: {x: number} = {x: 0}
-					val r: &mut {x: number} = p
+					val r: &mut {x: number} = &mut p
 					val q: {x: number} = p
 					r.x = 5
 					q.x
 				}
 			`,
 			want: []string{
-				"5:6-5:28: cannot assign 'p' to immutable 'q': 'r' still has mutable access to 'p' after this point",
+				"5:27-5:28: cannot move 'p' while it is borrowed",
 			},
 		},
 		// Binding a borrowed source into a bare owned annotation is a borrow-into-owned

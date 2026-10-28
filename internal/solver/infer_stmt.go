@@ -77,8 +77,10 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 			// flows out at its own lifetime and is not consumed here.
 			if s.Expr != nil {
 				if ref, ok := c.fn.stmtToRef[s]; ok {
-					// A function declared to return a borrow hands the value out without moving it.
-					if c.fn.returnsBorrow || !c.rejectModuleLevelMove(scope, s.Expr) {
+					// A value that fills a borrow return without a written borrow is reported for
+					// that alone, and records no move.
+					missing := c.fn.returnAnn != nil && c.checkWrittenBorrow(s.Expr, c.fn.returnAnn)
+					if !missing && !c.rejectModuleLevelMove(scope, s.Expr) {
 						c.consumeOwned(s.Expr, t, s.Expr, ref)
 					}
 					// A returned value must not borrow a function-local, which dies when the
@@ -206,7 +208,7 @@ func (c *checker) defineLocal(scope *Scope, name string, vd *ast.VarDecl, b Valu
 		b.VarID = int(c.varIDs.Of(ip))
 	}
 	scope.defineValue(name, b)
-	if c.fn == nil {
+	if c.fn == nil || c.fn.unwrittenBorrows.Contains(vd.Init) {
 		return
 	}
 	c.trackAliasesForVarDecl(scope, vd, bindingType(b), s)

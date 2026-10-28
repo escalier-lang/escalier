@@ -437,9 +437,10 @@ type funcCtx struct {
 	// immutable→mutable upgrade at a `mut` return annotation. The upgrade fires only when
 	// every returned value is uniquely owned, so the join of the returns is too.
 	returnExprs []ast.Expr
-	// returnsBorrow is true when the function's return annotation is a borrow, `&T` or
-	// `&mut T`.
-	returnsBorrow bool
+	// returnAnn is the type the function's return annotation resolves to, the destination of
+	// each `return`. It is nil when the function has no annotation, and for an async or
+	// generator function, whose `return` fills a type nested in the annotation.
+	returnAnn soltype.Type
 
 	// throws is this body's exceptional SINK: the single type every `throw` and every call
 	// is constrained against, the twin of the joined return type. inferFunc seeds it from
@@ -541,6 +542,9 @@ type funcCtx struct {
 	// binding moved on more than one path keeps the last-recorded move node, which
 	// is a coarse but adequate blame target.
 	moveNodes map[liveness.VarID]ast.Node
+	// moveRecords maps each node recordMove blamed for a move to what it recorded, so
+	// retractMove can take the move back.
+	moveRecords map[ast.Node]moveRecord
 	// movedSources holds each expression whose owned value an assignment or argument moves,
 	// such as the b in `val y = b`. checkUsesAgainstLoans reads it to report a move of
 	// borrowed data as a move rather than as a plain use.
@@ -548,6 +552,10 @@ type funcCtx struct {
 	// moduleLevelMoves holds each expression reported as a move out of a module-level binding.
 	// The sites that record a move read it, so such a move records nothing.
 	moduleLevelMoves set.Set[ast.Node]
+	// unwrittenBorrows holds each expression reported for filling a borrow destination without
+	// a written borrow. A binding whose initializer is in it records no alias, move, borrow
+	// edge, or loan.
+	unwrittenBorrows set.Set[ast.Node]
 	// placeCopies lists each place a binding takes its value from, such as the b in `val q = b`
 	// or in `a.peer = b`. movedOrigins keeps the ones movedSources says were moved, so the
 	// escape check can follow a local into the binding that owns its data afterwards.

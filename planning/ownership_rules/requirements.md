@@ -1284,9 +1284,6 @@ the docs change.
   [#794](https://github.com/escalier-lang/escalier/issues/794).
 - An owned argument to a borrow parameter needs a written `&`. The docs say the
   borrow is still inserted for the user. See D7.
-- Both docs borrow an owned value with an annotation alone, as in
-  `val q: &{x: number} = p`. F4 rejects that form, so those examples change to
-  `&p`.
 - An element store `t[i] = x` is typed and moves its source. `docs/09_ownership.md`
   says it is rejected as unsupported and cites
   [#1268](https://github.com/escalier-lang/escalier/issues/1268).

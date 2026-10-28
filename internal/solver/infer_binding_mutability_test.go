@@ -164,10 +164,7 @@ fn g() {
 	val mut n = 5
 	f(n)
 }`,
-			want: []string{
-				"4:4-4:5: cannot constrain 5 <: mut object",
-				"4:4-4:5: this argument is borrowed by the callee, so write the borrow: `&mut`",
-			},
+			want: []string{"4:4-4:5: cannot constrain 5 <: mut object"},
 		},
 		{
 			name: "ObjectIntoValMutNumber",

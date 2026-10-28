@@ -475,6 +475,233 @@ func TestExplicitBorrowArgs(t *testing.T) {
 	}
 }
 
+// TestExplicitBorrowFlowSites covers rule F4 at the flow sites other than a call argument. A
+// value that fills a `&` or `&mut` destination has the borrow written where it flows, or the
+// site reports the borrow it needs.
+func TestExplicitBorrowFlowSites(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want []string
+	}{
+		// B1 in planning/ownership_rules/requirements.md. The store into the `&` field reports
+		// the missing `&` and does not move p, so the later read of p.x reports nothing. B1
+		// writes `val mut h: {slot: …}`, which #2251 makes mutable. Until then the binding is
+		// written with a `mut` annotation instead.
+		"StoreIntoABorrowFieldB1": {
+			src: `
+				export fn go() -> number {
+					val p = {x: 1}
+					val q = {x: 2}
+					val mut h: {slot: &{x: number}} = {slot: &q}
+					h.slot = p
+					return p.x + h.slot.x
+				}
+			`,
+			want: []string{"6:15-6:16: this value is borrowed by its destination, so write the borrow: `&`"},
+		},
+		// B3 in planning/ownership_rules/requirements.md. The annotated binding reports the
+		// missing `&`. The next case writes it, and the move check then sees the borrow.
+		"AnnotationOnlyBorrowB3": {
+			src: `
+				fn take(p: {x: number}) -> number {
+					val mut q = p
+					q.x = 5
+					return q.x
+				}
+				export fn go() -> number {
+					val p = {x: 1}
+					val c: &{x: number} = p
+					val n = take(p)
+					return c.x + n
+				}
+			`,
+			want: []string{"9:28-9:29: this value is borrowed by its destination, so write the borrow: `&`"},
+		},
+		// With the borrow written, B3's program reports the move of p while c borrows it.
+		"WrittenBorrowThenMoveB3": {
+			src: `
+				fn take(p: {x: number}) -> number {
+					val mut q = p
+					q.x = 5
+					return q.x
+				}
+				export fn go() -> number {
+					val p = {x: 1}
+					val c: &{x: number} = &p
+					val n = take(p)
+					return c.x + n
+				}
+			`,
+			want: []string{"10:19-10:20: cannot move 'p' while it is borrowed"},
+		},
+		// Each branch of a conditional produces the value, so each branch that yields an owned
+		// value reports on its own.
+		"EachBranchReports": {
+			src: `
+				fn g(cond: boolean) {
+					val p = {x: 1}
+					val mut q = {x: 2}
+					val a: &{x: number} = if cond { p } else { q }
+					val b: &mut {x: number} = do { q }
+				}
+			`,
+			want: []string{
+				"5:38-5:39: this value is borrowed by its destination, so write the borrow: `&`",
+				"5:49-5:50: this value is borrowed by its destination, so write the borrow: `&`",
+				"6:37-6:38: this value is borrowed by its destination, so write the borrow: `&mut`",
+			},
+		},
+		// A borrow written on a call result borrows the value the call hands back. The `&` binds
+		// looser than the call, so `&mk()` is `&(mk())`.
+		"BorrowOfCallResult": {
+			src: `
+				fn mk() -> {x: number} { return {x: 1} }
+				fn g() -> number {
+					val s: &{x: number} = &mk()
+					val t = &mk()
+					return s.x + t.x
+				}
+			`,
+			want: nil,
+		},
+		// DISABLED until #2324, which decides whether a `&mut` borrow of a call result is allowed.
+		// The call hands back the only reference to its value, so the borrow aliases nothing.
+		// Today it is rejected with `cannot constrain immutable object <: mutable object`.
+		/*
+			"MutBorrowOfCallResult": {
+				src: `
+					fn mk() -> {x: number} { return {x: 1} }
+					fn bump(p: &mut {x: number}) { p.x = 2 }
+					fn g() {
+						val s: &mut {x: number} = &mut mk()
+						s.x = 2
+						bump(&mut mk())
+					}
+				`,
+				want: nil,
+			},
+		*/
+		// A source reported for an unwritten `&mut` is checked against the destination as if it
+		// were `&`, so the missing borrow is the one fault reported for its mutability. A wrong
+		// shape is still reported.
+		"MissingMutBorrowWrongShape": {
+			src: `
+				fn g() {
+					val mut q = {y: "a"}
+					val b: &mut {x: number} = do { q }
+				}
+			`,
+			want: []string{
+				"4:37-4:38: this value is borrowed by its destination, so write the borrow: `&mut`",
+				"4:22-4:28: object is missing property: x",
+				"4:32-4:40: object has extra property: y",
+			},
+		},
+		"MissingMutBorrowInReassignment": {
+			src: `
+				fn g(cond: boolean) {
+					val mut q = {x: 2}
+					var b: &mut {x: number} = &mut q
+					b = if cond { q } else { q }
+				}
+			`,
+			want: []string{
+				"5:20-5:21: this value is borrowed by its destination, so write the borrow: `&mut`",
+				"5:31-5:32: this value is borrowed by its destination, so write the borrow: `&mut`",
+			},
+		},
+		"MissingMutBorrowInFieldStore": {
+			src: `
+				fn g(mut h: {slot: &mut {x: number}}) {
+					val mut q = {x: 2}
+					h.slot = do { q }
+				}
+			`,
+			want: []string{"4:20-4:21: this value is borrowed by its destination, so write the borrow: `&mut`"},
+		},
+		// A literal element is checked against the matching slot of the literal's destination,
+		// including when the literal is a call argument or nested in another literal.
+		"LiteralElements": {
+			src: `
+				declare fn hold(h: {slot: &{x: number}}) -> undefined
+				fn g() -> number {
+					val p = {x: 1}
+					val mut m = {x: 2}
+					hold({slot: p})
+					val t: [number, &{x: number}] = [1, p]
+					val a: Array<&{x: number}> = [p]
+					val o: {inner: {slot: &mut {x: number}}} = {inner: {slot: m}}
+					return p.x + m.x
+				}
+			`,
+			want: []string{
+				"6:18-6:19: this value is borrowed by its destination, so write the borrow: `&`",
+				"7:42-7:43: this value is borrowed by its destination, so write the borrow: `&`",
+				"8:36-8:37: this value is borrowed by its destination, so write the borrow: `&`",
+				"9:64-9:65: this value is borrowed by its destination, so write the borrow: `&mut`",
+			},
+		},
+		// An unwritten borrow of a module-level binding reports the missing `&` alone, not also
+		// a move out of module-level state.
+		"ModuleLevelSourceReportsOnce": {
+			src: `
+				val xs: Array<number> = [1]
+				fn g() -> &Array<number> {
+					val a: &Array<number> = xs
+					return xs
+				}
+			`,
+			want: []string{
+				"4:30-4:32: this value is borrowed by its destination, so write the borrow: `&`",
+				"5:13-5:15: this value is borrowed by its destination, so write the borrow: `&`",
+			},
+		},
+		// An owned union fills a borrow like any owned value. A borrow destination may also allow
+		// `undefined`, and it may be named through an alias.
+		"UnionsOptionalsAndAliases": {
+			src: `
+				type U = {a: number} | {b: number}
+				type R = &{f: &{x: number}}
+				type B = &{x: number}
+				fn g(u: U) {
+					val p = {x: 1}
+					val a: &U = u
+					val b: &{x: number} | undefined = p
+					val r: R = &{f: p}
+					val s: B | undefined = p
+				}
+			`,
+			want: []string{
+				"7:18-7:19: this value is borrowed by its destination, so write the borrow: `&`",
+				"8:40-8:41: this value is borrowed by its destination, so write the borrow: `&`",
+				"9:22-9:23: this value is borrowed by its destination, so write the borrow: `&`",
+				"10:29-10:30: this value is borrowed by its destination, so write the borrow: `&`",
+			},
+		},
+		// A borrow that is already a value is copied, so nothing is missing. A destination
+		// written through an alias of a borrow type is a borrow like any other.
+		"ExistingBorrowsAndAliasesOk": {
+			src: `
+				type R = &{x: number}
+				fn g(r: &{x: number}, s: R) -> R {
+					val a: R = r
+					val b: &{x: number} = s
+					val p = {x: 1}
+					val c: R = &p
+					return s
+				}
+			`,
+			want: nil,
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src)
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+		})
+	}
+}
+
 // storeEffectDecls declares a callee that writes its second argument into its first, plus the
 // helpers the cases read the aliased data back through. `'a` at both item and target's peer
 // field is what makes the signature declare a store.

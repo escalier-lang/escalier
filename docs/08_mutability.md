@@ -183,15 +183,15 @@ is still live:
 ```esc
 fn go() {
     val mut p = {a: 0}
-    val q: &{readonly a: number} = p
-    p.a = 1                  // ERROR: cannot assign 'p' to immutable 'q':
-    val n = q.a              //        'p' is still used mutably after this point
+    val q: &{readonly a: number} = &p
+    p.a = 1                  // ERROR: cannot assign to 'p.a' while it is borrowed as immutable
+    val n = q.a
 }
 
 fn ok() {
     val mut p = {a: 0}
     p.a = 1                  // last mutable use of p
-    val q: &{readonly a: number} = p
+    val q: &{readonly a: number} = &p
     val n = q.a              // OK
 }
 ```
@@ -232,15 +232,15 @@ overlap does.
 ```esc
 fn conflicting() {
     val mut p = {x: 0}
-    val q: &{x: number} = p   // ERROR: cannot assign 'p' to immutable 'q':
-    p.x = 1                   //        'p' is still used mutably after this point
+    val q: &{x: number} = &p
+    p.x = 1                   // ERROR: cannot assign to 'p.x' while it is borrowed as immutable
     val n = q.x
 }
 
 fn fine() {
     val mut p = {x: 0}
     p.x = 1                   // the mutable path ends here
-    val q: &{x: number} = p   // OK — nothing mutable is live past this point
+    val q: &{x: number} = &p  // OK — nothing mutable is live past this point
     val n = q.x
 }
 ```
