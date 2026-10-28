@@ -22,7 +22,8 @@ it, so the editor shows it on the name, as `mut q: {x: number, y: number}`.
 
 ```esc
 val p = {x: 0, y: 0}                       // p: {x: 0, y: 0}
-// p.x = 1                                 // ERROR: p is immutable
+// p.x = 1                                 // ERROR: cannot mutate 'p' because its
+                                           // binding is immutable
 
 val mut q = {x: 0, y: 0}                   // mut q: {x: number, y: number}
 q.x = 1                                    // OK
@@ -42,8 +43,14 @@ fn reset(mut p: {x: number}) -> number {
 }
 ```
 
-The older spelling puts `mut` on the type, as `val r: mut {x: number}` or
-`p: mut {x: number}`. It checks the same programs as the binding form.
+A binding is mutable only when it is written `mut`. That holds for a parameter
+too, whether or not it has a type annotation, so `fn f(p) { p.x = 1 }` is an
+error that asks for `mut p`.
+
+`mut` never appears inside an owned type. `val r: mut {x: number}` and
+`Array<mut Point>` are errors, and the diagnostic names the two forms to write
+instead. Write `mut` on the binding, as in `val mut r: {x: number}`, or write
+`&mut T` for a mutable borrow.
 
 This applies uniformly to object literals, tuple and array literals, and class
 instances. A class instance is immutable by default whether or not the class
@@ -78,14 +85,15 @@ fn go() {
 }
 ```
 
-A `&mut self` method is meant to require a mutable binding, so calling `incr` on a
-plain `val c = Counter(0)` should be an error. The receiver's mutability is not
-checked at the call yet, so that call is currently accepted.
+A `&mut self` method requires a mutable binding, so calling `incr` on a plain
+`val c = Counter(0)` is an error that asks for `val mut c`.
 
 A receiver written without `&` consumes the instance instead of borrowing it.
 Calling a `self` or `mut self` method moves the instance into the call, so the
-caller cannot use it afterwards. A consuming method cannot be called through a
-borrow, since a borrow has no instance to give up.
+caller cannot use it afterwards. The caller's binding does not need `mut` for
+either one. In a `mut self` method, `mut` makes the method's own `self` binding
+mutable, the way it does for any other parameter. A consuming method cannot be
+called through a borrow, since a borrow has no instance to give up.
 
 ```esc
 class Builder {
@@ -114,23 +122,23 @@ A `val mut xs: Array<Point>` binding owns a mutable array of mutable points,
 where you may push, reorder, and reassign elements *and* mutate a point's fields.
 A plain `val xs: Array<Point>` is immutable all the way down.
 
-Depth is therefore all-or-nothing. There is no "mutable container, immutable
-element" type built out of `mut` alone.
+Depth is therefore all-or-nothing. A binding cannot make a container mutable
+and leave its elements immutable.
 
 ## Mixing mutable and immutable data
 
 The one boundary that stops the propagation is a **borrow**. A `&` or `&mut`
 field is a window into another value and carries its own mutability, not the
-enclosing modifier's.
+mutability of the binding that holds it.
 
 ```esc
-type A = mut Array<&Point>       // mutable array of immutable points
-type B = Array<&mut Point>       // immutable array of mutable points
+val mut a: Array<&Point> = []    // mutable array of immutable points
+val b: Array<&mut Point> = []    // immutable array of mutable points
 ```
 
-In `A` you may push, reorder, and reassign elements, but each element is a
-read-only window. In `B` the array's shape is fixed, yet each element lets you
-write through to its point. The trade-off is ownership: the array holds borrows,
+Through `a` you may push, reorder, and reassign elements, but each element is a
+read-only window. Through `b` the array's shape is fixed, yet each element lets
+you write through to its point. The trade-off is ownership: the array holds borrows,
 so the points live elsewhere and must outlive it.
 
 ## `readonly`
@@ -138,25 +146,27 @@ so the points live elsewhere and must outlive it.
 `readonly` is a field-level modifier that forbids **reassigning** the field.
 
 ```esc
-fn f(p: mut {readonly id: string, name: string}) {
+fn f(mut p: {readonly id: string, name: string}) {
     p.name = "x"    // OK
-    p.id = "y"      // ERROR: cannot assign to readonly property: id
+    p.id = "y"      // ERROR: cannot assign to 'id' because it is a readonly
+                    // property
 }
 ```
 
-`readonly` governs one slot; `mut` governs everything the value owns. So the two
-answer different questions and compose without interacting. A field is never
-annotated `mut` on its own — the enclosing context decides mutability, and the
-compiler rejects a `mut` on a field with a diagnostic saying so.
+`readonly` governs one slot, and `mut` governs everything the value owns. So the
+two answer different questions and compose without interacting. A field is never
+annotated `mut` on its own. The binding that owns the value decides its
+mutability, and the compiler rejects a `mut` on a field with a diagnostic saying
+so.
 
 `readonly` also constrains structural compatibility. A `{readonly a: T}` value
 cannot satisfy a **writable** `{a: T}` target, since a holder of that target
 could reassign through `a` and break the source's guarantee:
 
 ```esc
-fn f(p: mut {readonly a: number}) {
-    val q: mut {a: number} = p
-    // ERROR: readonly field a cannot satisfy a writable field requirement
+fn f(mut p: {readonly a: number}) {
+    val mut q: {a: number} = p
+    // ERROR: readonly field 'a' cannot satisfy a writable field requirement
 }
 ```
 
@@ -187,7 +197,7 @@ fn ok() {
 This is the exclusivity rule below, not a `readonly` rule of its own.
 
 `readonly` survives a freeze and a thaw unchanged, since it is part of the
-structural shape rather than the `mut` wrapper.
+structural shape rather than the binding's mutability.
 
 ## Freezing and thawing
 
