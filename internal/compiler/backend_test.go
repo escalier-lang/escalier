@@ -744,7 +744,7 @@ func TestBindsOnlyAMethodRead(t *testing.T) {
 			// A method the TypeScript lib declares names no `self`, and still runs against
 			// the value it was read from.
 			name: "AMethodTheLibDeclares",
-			src:  "val xs: mut Array<number> = [1]\nexport val push = xs.push",
+			src:  "val mut xs: Array<number> = [1]\nexport val push = xs.push",
 			want: "export const push = xs.push.bind(xs);",
 		},
 		{

@@ -769,9 +769,10 @@ func NeedsMutReceiver(member soltype.ObjTypeElem) bool {
 }
 
 // mutReceiver reports whether a member's `self` receiver demands mutable access, which is
-// what makes the member unreachable through an immutable reference. Both `&mut self` and `mut
-// self` are a mutable RefType over the class. A `&self` or `self` receiver is not, and a nil
-// receiver is a static member or a plain function.
+// what makes the member unreachable through an immutable reference. Only `&mut self` is a
+// mutable RefType over the class. A `&self` receiver is not, and neither is a consuming `self`
+// or `mut self`, whose `mut` marks the method's own binding. A nil receiver is a static member
+// or a plain function.
 func mutReceiver(self *soltype.FuncParam) bool {
 	if self == nil {
 		return false
@@ -850,9 +851,9 @@ func (v *varianceVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 			}
 			return soltype.EnterResult{}
 		}
-		// A `mut` borrow is a read-write window on its pointee, so a parameter reached
+		// A `&mut` borrow is a read-write window on its pointee, so a parameter reached
 		// through one occupies an input position as well as an output position and comes
-		// out invariant. This is what keeps `readonly inner: mut Box<T>` from measuring T
+		// out invariant. This is what keeps `readonly inner: &mut Box<T>` from measuring T
 		// covariant: the field itself rejects `h.inner = …`, but the borrow it holds still
 		// admits `h.inner.value = …`.
 		inner := v.withMutable(true)
@@ -1393,7 +1394,7 @@ func (c *Context) ancestorInstanceWalk(ct *soltype.ClassType, name string, walke
 // field-requirement path, which threads the read-through-borrow and read-after-write
 // rules a direct lookup would drop; a method or getter member reaches valueProp only
 // through a class instance, since class bodies are the only source of those elements.
-func (c *checker) projectedMember(lvl int, blame ast.Node, name string, recv, carrier soltype.Type) (pathResult, bool) {
+func (c *checker) projectedMember(lvl int, blame ast.Node, name string, recv, carrier soltype.Type, place *ownedPlace) (pathResult, bool) {
 	ct, ok := c.classCarrier(carrier)
 	if !ok {
 		return pathResult{}, false
@@ -1425,7 +1426,7 @@ func (c *checker) projectedMember(lvl int, blame ast.Node, name string, recv, ca
 	// reached from outside the class as much as on the `self` classBodyMember serves. Both
 	// call the same check, so `c.bump()` and `self.bump()` answer the same way for the same
 	// receiver.
-	c.checkReceiverMut(blame, name, recv, memberSelfParam(member))
+	c.checkReceiverMut(blame, name, recv, place, memberSelfParam(member))
 	// Each access from outside the class gets its own copy of the method's lifetimes, the
 	// way a call to a free function instantiates the function's scheme.
 	return c.instanceMemberValue(lvl, blame, c.instantiateMethodLifetimes(lvl, blame, recv, member)), true
@@ -1815,7 +1816,7 @@ func (c *Context) expandedCarrier(t soltype.Type) soltype.Type {
 // falls through to the structural `{name: fieldVar}` requirement. That requirement is a
 // PropertyElem, so a method or getter under the name is reported as missing rather than read.
 //
-// A borrow an expansion uncovers is peeled, so `type M = mut {m(&self) -> number}` reads the way
+// A borrow an expansion uncovers is peeled, so `type M = &mut {m(&self) -> number}` reads the way
 // the inline spelling does. The walk is bounded rather than guarded by the names it has
 // expanded, because `type Id<T> = T` over `Id<Id<X>>` reaches one name twice at different
 // arguments and has to keep going. Running out returns the handle, which declines the lookup.
@@ -1921,7 +1922,7 @@ type memberLookup func(*soltype.ObjectType, string) (soltype.ObjTypeElem, bool)
 // call by wrapping the resolved method in a scheme — remain future work: their inference
 // depends on the generic-function machinery outside this milestone, so no method carries them
 // yet and memberValue passes the field through unchanged.
-func (c *checker) classBodyMember(lvl int, blame ast.Node, name string, recv, carrier soltype.Type) (pathResult, bool) {
+func (c *checker) classBodyMember(lvl int, blame ast.Node, name string, recv, carrier soltype.Type, place *ownedPlace) (pathResult, bool) {
 	obj, ok := c.memberCarrier(carrier).(*soltype.ObjectType)
 	if !ok {
 		return pathResult{}, false
@@ -1933,7 +1934,7 @@ func (c *checker) classBodyMember(lvl int, blame ast.Node, name string, recv, ca
 	if _, isProp := member.(*soltype.PropertyElem); isProp {
 		return pathResult{}, false
 	}
-	c.checkReceiverMut(blame, name, recv, memberSelfParam(member))
+	c.checkReceiverMut(blame, name, recv, place, memberSelfParam(member))
 	return c.instanceMemberValue(lvl, blame, member), true
 }
 
@@ -2359,29 +2360,29 @@ func (c *checker) recordMethodSelfParam(blame ast.Node, self *soltype.FuncParam)
 
 // checkReceiverMut rejects a member reached through a receiver that cannot give it the access
 // its `self` declares. It constrains the accessing receiver recv against the accessed member's
-// own declared `self`, which the caller passes as self.
+// own declared `self`, which the caller passes as self. place is the binding recv is an owned
+// layer of, or nil when it is not one.
 //
-// A member needs mutable access for `&mut self` and `mut self`. The four pairings:
+// A `&mut self` member needs mutable access. The four pairings:
 //
 //   - immutable receiver → mutable member: rejected, there is no mut to lend
 //   - mutable receiver   → mutable member: ok
 //   - mutable receiver   → immutable member: ok, mutable downgrades to shared
 //   - immutable receiver → immutable member: ok
 //
-// The receiver is rebuilt as `Self` in the mutability it lends, so the diagnostic reads
+// A receiver lends mutable access when it is a `&mut` borrow, or an owned layer of a `mut`
+// binding. An owned layer of an immutable binding reports ImmutableBindingError. Any other
+// receiver is rebuilt as `Self` in the mutability it lends, so the diagnostic reads
 // `immutable C <: mutable C`.
 //
-// A consuming `self` or `mut self` member moves the instance, so the receiver must also own
-// it. An owned receiver is moved at the access, through consumeReceiver. A borrowed receiver
-// has nothing to move, so it is reported as a ConsumingReceiverBorrowedError naming the
-// member. A `mut self` member still asks for a mutable receiver. Passing a class instance to
-// an owned parameter does not move it in the caller, so an immutable instance may still be
-// shared, and only a mutable binding vouches that nothing else reads it.
+// A consuming `self` or `mut self` member moves the instance, so the receiver must own it and
+// needs no other access. An owned receiver is moved at the access, through consumeReceiver. A
+// borrowed receiver has nothing to move, so it is reported as a ConsumingReceiverBorrowedError
+// naming the member.
 //
-// recv is the un-stripped receiver, so it still carries the access it has to lend. A nil
-// self, which a static member and a property both have, is a no-op, as is a receiver that is
-// not a class instance.
-func (c *checker) checkReceiverMut(blame ast.Node, name string, recv soltype.Type, self *soltype.FuncParam) {
+// A nil self, which a static member and a property both have, is a no-op, as is a receiver
+// that is not a class instance.
+func (c *checker) checkReceiverMut(blame ast.Node, name string, recv soltype.Type, place *ownedPlace, self *soltype.FuncParam) {
 	if self == nil {
 		return
 	}
@@ -2389,16 +2390,26 @@ func (c *checker) checkReceiverMut(blame ast.Node, name string, recv soltype.Typ
 	if inner == nil {
 		return
 	}
-	if !isBorrowType(self.Type) {
+	selfRef, isBorrow := self.Type.(*soltype.RefType)
+	if !isBorrow || selfRef.Lt == nil {
 		if len(heldBorrows(recv)) > 0 {
 			c.report(&ConsumingReceiverBorrowedError{Name: name, Site: blame})
 			return
 		}
 		c.consumeReceiver(blame)
+		return
 	}
+	// The receiver lends its access at the member's own lifetime, so the constraint below
+	// compares mutability alone.
 	recvT := soltype.Type(inner)
-	if lendsMut(recv) {
-		recvT = soltype.NewRef(true, nil, inner)
+	switch {
+	case lendsMut(recv):
+		recvT = &soltype.RefType{Mut: true, Lt: selfRef.Lt, Inner: inner}
+	case selfRef.Mut && place != nil:
+		if !place.b.Mut {
+			c.reportImmutableBinding(blame, place)
+		}
+		recvT = &soltype.RefType{Mut: true, Lt: selfRef.Lt, Inner: inner}
 	}
 	c.constrain(blame, recvT, self.Type)
 }
@@ -2426,15 +2437,15 @@ func heldBorrows(recv soltype.Type) []*soltype.RefType {
 	return nil
 }
 
-// lendsMut reports whether recv has mutable access to lend: a `mut` borrow directly, or a
-// binding var whose lower bounds are all `mut` borrows. The look-through matches
-// classCarrier's, since a `mut` borrow that reaches a receiver position through a call
+// lendsMut reports whether recv has mutable access to lend: a `&mut` borrow directly, or a
+// binding var whose lower bounds are all `&mut` borrows. The look-through matches
+// classCarrier's, since a `&mut` borrow that reaches a receiver position through a call
 // result or a branch join arrives as a variable with the borrow among its lower bounds
-// rather than as a bare RefType. `g(c).x = 5`, where `g` returns `mut C`, is one such
+// rather than as a bare RefType. `g(c).x = 5`, where `g` returns `&mut C`, is one such
 // receiver.
 //
 // EVERY lower bound must be mutable, since each is a value the receiver may actually hold
-// at run time. A join of `mut C` and `C` lends no mutable access, because the branch taken
+// at run time. A join of `&mut C` and `&C` lends no mutable access, because the branch taken
 // may be the immutable one. Reporting mutable off a single bound would accept a `&mut self`
 // setter write the structural field-write path rejects on the same receiver.
 func lendsMut(recv soltype.Type) bool {

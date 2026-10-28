@@ -55,7 +55,7 @@ export declare class Array<T> {
      *
      * Change it in internal/interop/overlay/std/prelude.replace.esc.
      */
-    toLocaleString(&self, locales: string | mut Array<string>, options?: {...}) -> string,
+    toLocaleString(&self, locales: string | Array<string>, options?: {...}) -> string,
     /**
      * Returns a string representation of an array. The elements are converted to string using their toLocaleString methods.
      */
@@ -79,7 +79,7 @@ export declare class Array<T> {
      * when they will be absent when used in a 'with' statement.
      */
     readonly [Symbol.unscopables]: {
-        [K]+?: boolean for K in keyof mut Array<any>
+        [K]+?: boolean for K in keyof Array<any>
     },
     /**
      * Determines whether an array includes a certain element, returning true or false as appropriate.
@@ -152,7 +152,7 @@ export declare class Array<T> {
      * @param items Elements to insert into the copied array in place of the deleted elements.
      * @returns The copied array.
      */
-    toSpliced<B>(&self, start: number, deleteCount: number, ...items: mut Array<B>) -> Array<B> where T: B,
+    toSpliced<B>(&self, start: number, deleteCount: number, ...items: Array<B>) -> Array<B> where T: B,
     /**
      * Copies an array and removes elements while returning the remaining elements.
      * @param start The zero-based location in the array from which to start removing elements.
@@ -187,19 +187,19 @@ export declare class Array<T> {
      * Appends new elements to the end of an array, and returns the new length of the array.
      * @param items New elements to add to the array.
      */
-    push(&mut self, ...items: mut Array<T>) -> number,
+    push(&mut self, ...items: Array<T>) -> number,
     /**
      * Combines two or more arrays.
      * This method returns a new array without modifying any existing arrays.
      * @param items Additional arrays and/or items to add to the end of the array.
      */
-    concat<B>(&self, ...items: mut Array<ConcatArray<B>>) -> Array<B> where T: B,
+    concat<B>(&self, ...items: Array<ConcatArray<B>>) -> Array<B> where T: B,
     /**
      * Combines two or more arrays.
      * This method returns a new array without modifying any existing arrays.
      * @param items Additional arrays and/or items to add to the end of the array.
      */
-    concat<B>(&self, ...items: mut Array<B | ConcatArray<B>>) -> Array<B> where T: B,
+    concat<B>(&self, ...items: Array<B | ConcatArray<B>>) -> Array<B> where T: B,
     /**
      * Adds all the elements of an array into a string, separated by the specified separator string.
      * @param separator A string used to separate one element of the array from the next in the resulting string. If omitted, the array elements are separated with a comma.
@@ -250,12 +250,12 @@ export declare class Array<T> {
      * @param items Elements to insert into the array in place of the deleted elements.
      * @returns An array containing the elements that were deleted.
      */
-    splice(&mut self, start: number, deleteCount: number, ...items: mut Array<T>) -> Array<T>,
+    splice(&mut self, start: number, deleteCount: number, ...items: Array<T>) -> Array<T>,
     /**
      * Inserts new elements at the start of an array, and returns the new length of the array.
      * @param items Elements to insert at the start of the array.
      */
-    unshift(&mut self, ...items: mut Array<T>) -> number,
+    unshift(&mut self, ...items: Array<T>) -> number,
     /**
      * Returns the index of the first occurrence of a value in an array, or -1 if it is not present.
      * @param searchElement The value to locate in the array.
@@ -361,7 +361,7 @@ export declare class Array<T> {
      * Returns a new array from a set of elements.
      * @param items A set of elements to include in the new array object.
      */
-    static of<T>(...items: mut Array<T>) -> Array<T>,
+    static of<T>(...items: Array<T>) -> Array<T>,
     /**
      * Creates an array from an iterable object.
      * @param iterable An iterable object to convert to an array.
@@ -377,17 +377,17 @@ export declare class Array<T> {
     static readonly [Symbol.species]: typeof Array,
     constructor(&mut self, arrayLength?: number),
     constructor(&mut self, arrayLength: number),
-    constructor(&mut self, ...items: mut Array<T>),
+    constructor(&mut self, ...items: Array<T>),
     (arrayLength?: number) -> Array<any>,
     <T>(arrayLength: number) -> Array<T>,
-    <T>(...items: mut Array<T>) -> Array<T>,
+    <T>(...items: Array<T>) -> Array<T>,
     static isArray(arg: unknown) -> boolean,
-    static readonly prototype: mut Array<any>,
+    static readonly prototype: Array<any>,
     /**
      * Creates an array from an async iterator or iterable object.
      * @param iterableOrArrayLike An async iterator or array-like object to convert to an array.
      */
-    static fromAsync<T>(iterableOrArrayLike: AsyncIterable<T> | Iterable<T | PromiseLike<T>> | ArrayLike<T | PromiseLike<T>>) -> Promise<mut Array<T>>,
+    static fromAsync<T>(iterableOrArrayLike: AsyncIterable<T> | Iterable<T | PromiseLike<T>> | ArrayLike<T | PromiseLike<T>>) -> Promise<Array<T>>,
     /**
      * Creates an array from an async iterator or iterable object.
      *
@@ -396,7 +396,7 @@ export declare class Array<T> {
      *      Each return value is awaited before being added to result array.
      * @param thisArg Value of 'this' used when executing mapfn.
      */
-    static fromAsync<T, U>(iterableOrArrayLike: AsyncIterable<T> | Iterable<T> | ArrayLike<T>, mapFn: fn (value: Awaited<T>, index: number) -> U, thisArg?: unknown) -> Promise<mut Array<Awaited<U>>>
+    static fromAsync<T, U>(iterableOrArrayLike: AsyncIterable<T> | Iterable<T> | ArrayLike<T>, mapFn: fn (value: Awaited<T>, index: number) -> U, thisArg?: unknown) -> Promise<Array<Awaited<U>>>
 }
 
 export declare interface Generator<T = unknown, TReturn = any, TNext = any, E = never> extends IteratorObject<T, TReturn, TNext> {
@@ -562,7 +562,7 @@ export declare class Promise<T, E = never> {
      * @param values An iterable of Promises.
      * @returns A new Promise.
      */
-    static all<T>(values: Iterable<T | PromiseLike<T>>) -> Promise<mut Array<Awaited<T>>>,
+    static all<T>(values: Iterable<T | PromiseLike<T>>) -> Promise<Array<Awaited<T>>>,
     /**
      * Creates a Promise that is resolved or rejected when any of the provided Promises are resolved
      * or rejected.
@@ -636,7 +636,7 @@ export declare class Promise<T, E = never> {
      * @param values An array of Promises.
      * @returns A new Promise.
      */
-    static allSettled<T>(values: Iterable<T | PromiseLike<T>>) -> Promise<mut Array<PromiseSettledResult<Awaited<T>>>>,
+    static allSettled<T>(values: Iterable<T | PromiseLike<T>>) -> Promise<Array<PromiseSettledResult<Awaited<T>>>>,
     /**
      * The any function returns a promise that is fulfilled by the first given promise to be fulfilled, or rejected with an AggregateError containing an array of rejection reasons if all of the given promises are rejected. It resolves all elements of the passed iterable to promises as it runs this algorithm.
      * @param values An array or iterable of Promises.
@@ -671,7 +671,7 @@ export declare class Promise<T, E = never> {
      * - Already rejected, if the callback synchronously throws an error.
      * - Asynchronously fulfilled or rejected, if the callback returns a promise.
      */
-    static try<T, U: mut Array<unknown>>(callbackFn: fn (...args: U) -> T | PromiseLike<T>, ...args: U) -> Promise<Awaited<T>>
+    static try<T, U: Array<unknown>>(callbackFn: fn (...args: U) -> T | PromiseLike<T>, ...args: U) -> Promise<Awaited<T>>
 }
 
 @js("Symbol")

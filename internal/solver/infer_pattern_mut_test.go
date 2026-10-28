@@ -35,7 +35,7 @@ func TestDestructureMutLeaf(t *testing.T) {
 				val [p, q] = line
 				q.y = 5
 				return p
-			}`, want: []string{"5:5-5:12: cannot constrain immutable object <: mutable object"}},
+			}`, want: []string{"5:5-5:12: cannot mutate 'q' because its binding is immutable; declare it as `mut q`"}},
 		// Owned scrutinee, object key-value form: `{a: mut m}` is mutable, `{b: n}` not.
 		"OwnedObjectKeyValueMutLeaf": {src: `
 			fn f() {
@@ -50,7 +50,7 @@ func TestDestructureMutLeaf(t *testing.T) {
 				val {a: m, b: n} = pt
 				m.x = 5
 				return n
-			}`, want: []string{"5:5-5:12: cannot constrain immutable object <: mutable object"}},
+			}`, want: []string{"5:5-5:12: cannot mutate 'm' because its binding is immutable; declare it as `mut m`"}},
 		// Owned scrutinee, object shorthand form: `{mut x}` is mutable.
 		"OwnedObjectShorthandMutLeaf": {src: `
 			fn f() {
@@ -80,7 +80,7 @@ func TestDestructureMutLeaf(t *testing.T) {
 						p
 					}
 				}
-			}`, want: []string{"6:7-6:14: cannot constrain immutable object <: mutable object"}},
+			}`, want: []string{"6:7-6:14: cannot mutate 'q' because its binding is immutable; declare it as `mut q`"}},
 		// A destructured `mut` parameter leaf is mutable.
 		"OwnedParamMutLeaf": {src: `
 			fn f([a, mut b]: [{x: number}, {y: number}]) {
@@ -91,7 +91,7 @@ func TestDestructureMutLeaf(t *testing.T) {
 			fn f([a, b]: [{x: number}, {y: number}]) {
 				b.y = 5
 				return a
-			}`, want: []string{"3:5-3:12: cannot constrain immutable object <: mutable object"}},
+			}`, want: []string{"3:5-3:12: cannot mutate 'b' because its binding is immutable; declare it as `mut b`"}},
 		// Shared `&` borrow scrutinee: a `mut` leaf is rejected.
 		"SharedBorrowMutLeafRejected": {src: `
 			fn f(line: &[{x: number}, {y: number}]) {

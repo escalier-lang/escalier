@@ -224,7 +224,7 @@ export declare fn fetch(input: RequestInfo | url.URL, init?: RequestInit) -> Pro
 
 export declare type BodyInit = streams.ReadableStream | file.Blob | BufferSource | file.FormData | url.URLSearchParams | string
 
-export declare type HeadersInit = mut Array<[string, string]> | Record<string, string> | Headers
+export declare type HeadersInit = Array<[string, string]> | Record<string, string> | Headers
 
 export declare type RequestInfo = Request | string
 

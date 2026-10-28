@@ -165,7 +165,7 @@ func TestSharedReturnPaths(t *testing.T) {
 					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
 					item: &'a mut {value: number},
 				) -> undefined
-				fn build(p: mut {value: number}, q: mut {value: number}) -> [&mut {value: number}, &mut {value: number}] {
+				fn build(mut p: {value: number}, mut q: {value: number}) -> [&mut {value: number}, &mut {value: number}] {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p, spare: &mut q}
 					store(&mut a, &mut b)
@@ -184,7 +184,7 @@ func TestSharedReturnPaths(t *testing.T) {
 					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
 					item: &'a mut {value: number},
 				) -> undefined
-				fn build(p: mut {value: number}, q: mut {value: number}) -> [&{value: number}, &mut {value: number}, &mut {value: number}] {
+				fn build(mut p: {value: number}, mut q: {value: number}) -> [&{value: number}, &mut {value: number}, &mut {value: number}] {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p, spare: &mut q}
 					store(&mut a, &mut b)
@@ -202,7 +202,7 @@ func TestSharedReturnPaths(t *testing.T) {
 					target: &'c mut {peer: &'a mut T, spare: &'b mut T},
 					item: &'a mut T,
 				) -> undefined
-				fn build(p: mut T, q: mut T) -> [&T, &mut T, &mut T, {x: number}] {
+				fn build(mut p: T, mut q: T) -> [&T, &mut T, &mut T, {x: number}] {
 					val mut b = {value: 2, inner: {x: 1}}
 					val mut a = {peer: &mut p, spare: &mut q}
 					store(&mut a, &mut b)

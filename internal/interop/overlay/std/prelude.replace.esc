@@ -118,7 +118,7 @@ export declare class Array<T> {
      *
      * Change it in internal/interop/overlay/std/prelude.replace.esc.
      */
-    toLocaleString(&self, locales: string | mut Array<string>, options?: {...}) -> string,
+    toLocaleString(&self, locales: string | Array<string>, options?: {...}) -> string,
     toLocaleString(&self) -> string,
 }
 
@@ -197,11 +197,11 @@ export declare class Array<T> {
     includes<B>(&self, searchElement: B, fromIndex?: number) -> boolean where T: B,
     findLast(&self, predicate: fn (value: T, index: number, array: &Self) -> boolean, thisArg?: unknown) -> T | undefined,
     findLast(&self, predicate: fn (value: T, index: number, array: &Self) -> unknown, thisArg?: unknown) -> T | undefined,
-    toSpliced<B>(&self, start: number, deleteCount: number, ...items: mut Array<B>) -> Array<B> where T: B,
+    toSpliced<B>(&self, start: number, deleteCount: number, ...items: Array<B>) -> Array<B> where T: B,
     toSpliced(&self, start: number, deleteCount?: number) -> Array<T>,
     with<B>(&self, index: number, value: B) -> Array<B> where T: B,
-    concat<B>(&self, ...items: mut Array<ConcatArray<B>>) -> Array<B> where T: B,
-    concat<B>(&self, ...items: mut Array<B | ConcatArray<B>>) -> Array<B> where T: B,
+    concat<B>(&self, ...items: Array<ConcatArray<B>>) -> Array<B> where T: B,
+    concat<B>(&self, ...items: Array<B | ConcatArray<B>>) -> Array<B> where T: B,
     indexOf<B>(&self, searchElement: B, fromIndex?: number) -> number where T: B,
     lastIndexOf<B>(&self, searchElement: B, fromIndex?: number) -> number where T: B,
     filter(&self, predicate: fn (value: T, index: number, array: &Self) -> boolean, thisArg?: unknown) -> Array<T>,

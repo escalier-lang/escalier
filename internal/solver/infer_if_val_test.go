@@ -169,7 +169,7 @@ func TestInferIfValAndValElse(t *testing.T) {
 			name: "if-val narrows borrow union for write",
 			src: `fn f(p: &mut {x: number}, q: &mut {x: string}) {
 				val r = if true { p } else { q }
-				if val r2: mut {x: number} = r {
+				if val r2: &mut {x: number} = r {
 					r2.x = 5
 				}
 				return r
@@ -177,11 +177,11 @@ func TestInferIfValAndValElse(t *testing.T) {
 			want: "fn <'a, 'b>(p: &'a mut {x: number}, q: &'b mut {x: string}) -> &'a mut {x: number} | &'b mut {x: string}",
 		},
 		{
-			// r2 binds at mut {x: number}, so a string write to r2.x is rejected.
+			// r2 binds at &mut {x: number}, so a string write to r2.x is rejected.
 			name: "if-val narrowed write is type-checked",
 			src: `fn f(p: &mut {x: number}, q: &mut {x: string}) {
 				val r = if true { p } else { q }
-				if val r2: mut {x: number} = r {
+				if val r2: &mut {x: number} = r {
 					r2.x = "hi"
 				}
 			}`,

@@ -42,22 +42,22 @@ func TestParseLifetimeAnnotations(t *testing.T) {
 		input string
 	}{
 		"FnSingleLifetimeParam": {
-			input: `fn identity<'a>(p: mut 'a Point) -> mut 'a Point { return p }`,
+			input: `fn identity<'a>(mut p: 'a Point) -> 'a Point { return p }`,
 		},
 		"FnTwoLifetimeParams": {
-			input: `fn first<'a, 'b>(a: mut 'a Point, b: mut 'b Point) -> mut 'a Point { return a }`,
+			input: `fn first<'a, 'b>(mut a: 'a Point, mut b: 'b Point) -> 'a Point { return a }`,
 		},
 		"FnLifetimeAndTypeParams": {
-			input: `fn identity<'a, T>(p: mut 'a T) -> mut 'a T { return p }`,
+			input: `fn identity<'a, T>(mut p: 'a T) -> 'a T { return p }`,
 		},
 		"FnLifetimeParamSingleBound": {
-			input: `fn pick<'a, 'b: 'a>(a: mut 'a Point, b: mut 'b Point) -> mut 'b Point { return b }`,
+			input: `fn pick<'a, 'b: 'a>(mut a: 'a Point, mut b: 'b Point) -> 'b Point { return b }`,
 		},
 		"FnLifetimeParamMultiBound": {
-			input: `fn pick<'a: 'b & 'c, 'b, 'c>(a: mut 'a Point) -> mut 'a Point { return a }`,
+			input: `fn pick<'a: 'b & 'c, 'b, 'c>(mut a: 'a Point) -> 'a Point { return a }`,
 		},
 		"FnLifetimeParamStaticBound": {
-			input: `fn keep<'a: 'static>(p: mut 'a Point) -> mut 'a Point { return p }`,
+			input: `fn keep<'a: 'static>(mut p: 'a Point) -> 'a Point { return p }`,
 		},
 		"FnTypeAnnLifetimeParamBound": {
 			input: `val f: fn<'a, 'b: 'a>(a: 'a Point, b: 'b Point) -> 'b Point = pick`,
@@ -75,13 +75,13 @@ func TestParseLifetimeAnnotations(t *testing.T) {
 			input: `class Box { borrow<'a>(&self, p: 'a Point) -> 'a Point { return p } }`,
 		},
 		"ClassMethodMutSelfLifetime": {
-			input: `class Container { setItem<'a>(&'a mut self, p: mut 'a Point) -> undefined { } }`,
+			input: `class Container { setItem<'a>(&'a mut self, mut p: 'a Point) -> undefined { } }`,
 		},
 		"ClassMethodSelfLifetime": {
 			input: `class View { peek<'a>(&'a self) -> 'a Point { return self.p } }`,
 		},
 		"InterfaceMethodMutSelfLifetime": {
-			input: `interface Mutator { setItem<'a>(&'a mut self, p: mut 'a Point) -> undefined }`,
+			input: `interface Mutator { setItem<'a>(&'a mut self, mut p: 'a Point) -> undefined }`,
 		},
 		"InterfaceMethodSelfLifetime": {
 			input: `interface Viewer { peek<'a>(&'a self) -> 'a Point }`,
@@ -153,8 +153,8 @@ func TestParseLifetimeInUnsupportedContextErrors(t *testing.T) {
 	tests := map[string]struct {
 		input string
 	}{
-		"EnumWithLifetimeParam":       {input: `enum Maybe<'a> { Some, None }`},
-		"ClassFieldWithLifetimeParam":   {input: `class Box { p<'a>: Point }`},
+		"EnumWithLifetimeParam":           {input: `enum Maybe<'a> { Some, None }`},
+		"ClassFieldWithLifetimeParam":     {input: `class Box { p<'a>: Point }`},
 		"ObjectPropertyWithLifetimeParam": {input: `val x: { p<'a>: Point } = ref`},
 	}
 
@@ -217,4 +217,3 @@ func TestParseLifetimeBoundErrors(t *testing.T) {
 		})
 	}
 }
-

@@ -121,8 +121,8 @@ func TestWidenHelper(t *testing.T) {
 		},
 		{
 			name: "mut borrow widens inner and keeps Mut",
-			in:   &soltype.RefType{Mut: true, Inner: objLit},
-			want: "mut {x: number}",
+			in:   &soltype.RefType{Mut: true, Lt: soltype.Anon, Inner: objLit},
+			want: "&mut {x: number}",
 		},
 		{
 			name: "object property keeps its optional flag while widening",

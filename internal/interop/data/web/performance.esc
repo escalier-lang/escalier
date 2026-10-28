@@ -461,6 +461,6 @@ export declare interface PerformanceObserverCallback {
 @js("performance")
 export declare var performance: Performance
 
-export declare type PerformanceEntryList = mut Array<PerformanceEntry>
+export declare type PerformanceEntryList = Array<PerformanceEntry>
 
 export declare type NavigationTimingType = "back_forward" | "navigate" | "prerender" | "reload"

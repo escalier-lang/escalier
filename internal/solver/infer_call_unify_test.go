@@ -100,7 +100,7 @@ func TestInferOverloadArmMatchesPlainCallee(t *testing.T) {
 		{"a union-of-tuples rest, empty member", "declare fn f(...v: [] | [number]) -> number", "f()", true},
 		{"a union-of-tuples rest, filled member", "declare fn f(...v: [] | [number]) -> number", "f(1)", true},
 		{"a union-of-tuples rest, no member matches", "declare fn f(...v: [] | [number]) -> number", `f("z")`, false},
-		{"an owned-mutable parameter", "declare fn f(a: mut {x: number}) -> number", "f({x: 1})", true},
+		{"an owned-mutable parameter", "declare fn f(mut a: {x: number}) -> number", "f({x: 1})", true},
 		{"too few arguments", "declare fn f(a: number, b: string) -> number", "f(1)", false},
 	}
 	for _, tt := range tests {

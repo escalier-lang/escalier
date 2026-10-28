@@ -36,11 +36,8 @@ import (
 //     single-polarity type-variable elimination. A lifetime written at two or more
 //     borrows survives, since repeating one name across borrows says the regions are
 //     the same, which is a constraint on the caller whether or not it reaches an
-//     output. The drop branches on the borrow's Mut flag:
-//     - A mutable borrow becomes owned-mutable, RefType{Mut: true, Lt: nil}.
-//     - An immutable borrow drops the RefType wrapper entirely and returns its
-//     bare inner, because RefType{Mut: false, Lt: nil} is the forbidden
-//     degenerate cell NewRef rejects.
+//     output. The dropped lifetime is replaced by the Anon sentinel, which keeps the
+//     borrow and its mutability. The printer renders it as a bare `&` or `&mut`.
 //
 //  3. Join naming. A non-param lifetime is a join variable minted at a return or
 //     branch, or a lifetime freshened when a borrow-passing function was instantiated.
@@ -117,7 +114,7 @@ func newLtRewriter(t soltype.Type, pol soltype.Polarity, keepLts set.Set[*soltyp
 // reaches no output. `fn f<'a>(x: &'a mut B, y: &'a mut B)` renders its `'a` for that reason,
 // while the single-write `fn f(x: &mut B)` elides. A write is any of the three positions
 // EnterType records: a borrow's lifetime slot and an alias or class reference's lifetime
-// argument, so `fn f<'a>(a: mut Holder<'a>, b: mut Holder<'a>)` counts too. negPolSeen is the
+// argument, so `fn f<'a>(a: Holder<'a>, b: Holder<'a>)` counts too. negPolSeen is the
 // running per-lifetime tally that second entry is derived from.
 //
 // Only a parameter lifetime enters by the second route, since the count runs in the negative
@@ -591,8 +588,8 @@ func (r *ltRewriter) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type {
 		// Keep the `&` on an elided borrow by parking the lifetime on the Anon
 		// sentinel. The printer renders it as the bare `&`/`&mut` with no
 		// lifetime name, so the displayed type still records owned vs borrowed.
-		// Dropping to nil instead would collapse the wrapper to owned-mutable for
-		// mut and to the bare inner for immutable, hiding the borrow at call sites.
+		// A nil lifetime would make NewRef return the bare inner and hide the
+		// borrow at call sites.
 		return &soltype.RefType{Mut: rt.Mut, Lt: soltype.Anon, Inner: rt.Inner}
 	}
 	return &soltype.RefType{Mut: rt.Mut, Lt: resolved, Inner: rt.Inner}
