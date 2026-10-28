@@ -135,6 +135,9 @@ value in a `val mut` binding can be borrowed as `&` or `&mut`. A value in a
 borrows its receiver mutably. With `val p = {x: 1}`, `&mut p` reports
 ``cannot mutate 'p' because its binding is immutable; declare it as `val mut p` ``.
 With `val mut p = {x: 1}`, both `&p` and `&mut p` are accepted.
+A value that no binding holds, such as a literal or a call's result, is borrowed
+as though a fresh `val mut` held it, as D15 decides. `&mut e` checks the same
+way as `val mut t = e` followed by `&mut t`.
 
 **T8. The branches of a conditional agree on ownership.** When the branches of
 an `if`, a `match`, or another conditional produce the value of one
@@ -761,7 +764,7 @@ in between.
 ## Decisions
 
 D1 through D8 record behaviour the solver enforces today that no document
-stated. D9 through D14 are design questions the rules left open. Each decided
+stated. D9 through D15 are design questions the rules left open. Each decided
 entry says where its outcome now lives. All of them are now decided. The current
 behaviour comes from reading the code, and the file references point at where
 it lives.
@@ -1166,6 +1169,50 @@ wherever it needs only reads.
 
 Decided: accepted. F4 states it. The checker change is tracked by
 [#2318](https://github.com/escalier-lang/escalier/issues/2318).
+
+### D15. A mutable borrow of a value no binding holds
+
+T7 grants `&mut` through a binding's `mut`. A literal or a call's result has no
+binding, so T7 gives no answer for it:
+
+```esc
+fn mk() -> {x: number} { return {x: 1} }
+fn bump(p: &mut {x: number}) { p.x = 2 }
+
+fn g() {
+    val s: &mut {x: number} = &mut mk()
+    bump(&mut {x: 1})
+}
+```
+
+The checker rejects both borrows with
+`cannot constrain immutable object <: mutable object`. The literal also reports
+`cannot constrain number <: 1`, since its field keeps the literal type.
+
+The same programs check when the value goes through a binding first, as in
+`val mut t = mk()` followed by `bump(&mut t)`. Nothing else holds the value
+the borrow reaches, so the borrow aliases nothing.
+
+The options are:
+
+- Reject `&mut` of a value no binding holds, and require the binding.
+- Check `&mut e` as `val mut t = e` followed by `&mut t`, for an `e` that is
+  not a place. Each check the binding runs then decides the borrow.
+
+Under the second option the answer for a call follows its return type. An owned
+return is accepted, as `val mut t = mk()` is. A `&mut T` return is a mutable
+reborrow. A `&T` return is rejected, as is a readonly collection that a
+`.d.ts` return type hands out as a `'static` borrow, since neither fills an
+owned `mut` binding. A literal widens its fields, as `val mut q = {x: 1}` does,
+so `&mut {x: 1}` borrows a `{x: number}`. A literal that holds a place, such as
+`&mut {p: cfg}` with a module-level `cfg`, reports the module-level move that
+`val mut t = {p: cfg}` reports. The runtime is garbage collected, so the
+borrowed value lives as long as the borrow does.
+
+Recommendation: check `&mut e` as the binding it stands for.
+
+Decided: accepted. T7 states it. The checker change is tracked by
+[#2324](https://github.com/escalier-lang/escalier/issues/2324).
 
 ## Known bugs
 
