@@ -65,6 +65,25 @@ func TestInferUnannotatedParamOwnership(t *testing.T) {
 			want: "fn <T0>(p: {x: T0}) -> T0",
 		},
 		{
+			name: "MemberReadAsBlockValue",
+			src: `
+				var sink = {y: 0}
+				fn f(p) { sink = do { p.x } }
+			`,
+			want: "fn (p: {x: {y: number}}) -> undefined",
+		},
+		{
+			name: "MemberReadDiscardedInNestedBlock",
+			src: `fn f(p) {
+				if p.ok {
+					p.x
+					return 1
+				}
+				return 2
+			}`,
+			want: "fn (p: &{ok: boolean, x: unknown}) -> 1 | 2",
+		},
+		{
 			name: "MutBindingOnlyRead",
 			src:  `fn f(mut p) { return p.x }`,
 			want: "fn <T0>(p: &{x: T0}) -> T0",

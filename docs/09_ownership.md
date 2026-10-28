@@ -55,7 +55,8 @@ in a borrow, ownership does not apply to them, and they are freely duplicated.
    `return p.x` or `p.x + 1`, does not escape, so it is a borrow, and
    `fn read(p) { return p.x }` infers as
    `fn <T0>(p: &{x: T0}) -> T0`. Any other use leaves the parameter owned,
-   unless that use needs a borrow, as passing it to a `&` parameter does. A
+   unless that use needs a borrow, as passing it straight to a `&` parameter
+   in `g(p)` does. A
    function passed straight to a call takes its parameters' types from the
    callee's signature instead.
 3. **A bare annotation is owned; a `&` annotation borrows.** This holds in every

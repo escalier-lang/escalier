@@ -9,7 +9,8 @@ import (
 // That holds when every use of the parameter is the root of a member or element read, as in
 // `p.x` or `p[i].y`, and the read's value goes to one of these places:
 //   - a `return`, as in `return p.x`
-//   - an expression statement that discards it
+//   - an expression statement that discards it, which excludes the last statement of a nested
+//     block, since that statement is the value of an `if`, `do`, or `try` block
 //   - an operand of an arithmetic, comparison, or unary operator, as in `p.x + 1`
 //   - an operand of `&&`, `||`, or `??` whose own value goes to one of these places
 //   - an immutable borrow, as in `&p.x`
@@ -23,6 +24,7 @@ func paramOnlyReadThrough(name string, body *ast.Block) bool {
 		name:        name,
 		consumed:    set.NewSet[ast.Expr](),
 		readThrough: set.NewSet[*ast.IdentExpr](),
+		tails:       set.NewSet[ast.Stmt](),
 	}
 	body.Accept(v)
 	return !v.other && v.uses > 0
@@ -33,22 +35,35 @@ func paramOnlyReadThrough(name string, body *ast.Block) bool {
 //
 // consumed holds each expression whose value goes to one of the places paramOnlyReadThrough
 // lists. A member or element read passes the mark on to its object. readThrough holds each use
-// of the parameter that is the object of a consumed read.
+// of the parameter that is the object of a consumed read. tails holds the last statement of
+// each block nested in the body, and inBody records that the walk has entered the body itself.
 type paramReadScanner struct {
 	ast.DefaultVisitor
 	name        string
 	consumed    set.Set[ast.Expr]
 	readThrough set.Set[*ast.IdentExpr]
+	tails       set.Set[ast.Stmt]
+	inBody      bool
 	uses        int
 	other       bool
 }
 
+func (v *paramReadScanner) EnterBlock(b ast.Block) bool {
+	if v.inBody && len(b.Stmts) > 0 {
+		v.tails.Add(b.Stmts[len(b.Stmts)-1])
+	}
+	v.inBody = true
+	return !v.other
+}
+
 func (v *paramReadScanner) EnterStmt(s ast.Stmt) bool {
-	switch s := s.(type) {
+	switch st := s.(type) {
 	case *ast.ReturnStmt:
-		v.consume(s.Expr)
+		v.consume(st.Expr)
 	case *ast.ExprStmt:
-		v.consume(s.Expr)
+		if !v.tails.Contains(s) {
+			v.consume(st.Expr)
+		}
 	}
 	return !v.other
 }
