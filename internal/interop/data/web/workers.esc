@@ -53,7 +53,7 @@ export declare class Worker extends EventTarget implements AbstractWorker, dom.M
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Worker/postMessage)
      */
-    postMessage(&mut self, message: unknown, transfer: mut Array<dom.Transferable>) -> undefined,
+    postMessage(&mut self, message: unknown, transfer: Array<dom.Transferable>) -> undefined,
     postMessage(&mut self, message: unknown, options?: dom.StructuredSerializeOptions) -> undefined,
     /**
      * Aborts worker's associated global environment.

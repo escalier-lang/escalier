@@ -195,7 +195,7 @@ export declare class PaymentRequest extends EventTarget {
     removeEventListener<K: keyof PaymentRequestEventMap>(&mut self, type: K, listener: fn (this: PaymentRequest, ev: PaymentRequestEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: PaymentRequest,
-    constructor(&mut self, methodData: mut Array<PaymentMethodData>, details: PaymentDetailsInit, options?: PaymentOptions)
+    constructor(&mut self, methodData: Array<PaymentMethodData>, details: PaymentDetailsInit, options?: PaymentOptions)
 }
 
 /**

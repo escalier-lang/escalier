@@ -1332,7 +1332,7 @@ func (c *Context) keyofObjectNamed(obj *soltype.ObjectType) soltype.Type {
 // reduces to `0 | 1 | "length"`. A tuple is a subtype of the `Array` of its element union, and
 // those are the keys that `Array` declares outside its methods, which keyof omits for any class
 // body the way keyofObject does. `[Symbol.unscopables]` is the one other such member. It is left
-// out because its value is a mapped type over `keyof mut Array<any>` that indexed access does not
+// out because its value is a mapped type over `keyof Array<any>` that indexed access does not
 // reduce, so keeping its key would leave `Tup[keyof Tup]` symbolic instead of the union of the
 // elements.
 //

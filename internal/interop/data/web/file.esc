@@ -37,7 +37,7 @@ export declare class Blob {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob/text) */
     text(&mut self) -> Promise<string>,
     static prototype: Blob,
-    constructor(&mut self, blobParts?: mut Array<BlobPart>, options?: BlobPropertyBag)
+    constructor(&mut self, blobParts?: Array<BlobPart>, options?: BlobPropertyBag)
 }
 
 /**
@@ -54,7 +54,7 @@ export declare class File extends Blob {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/File/webkitRelativePath) */
     readonly webkitRelativePath: string,
     static prototype: File,
-    constructor(&mut self, fileBits: mut Array<BlobPart>, fileName: string, options?: FilePropertyBag)
+    constructor(&mut self, fileBits: Array<BlobPart>, fileName: string, options?: FilePropertyBag)
 }
 
 /**

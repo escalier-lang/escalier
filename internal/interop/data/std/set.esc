@@ -72,7 +72,7 @@ export declare class Set<T> {
      */
     isDisjointFrom(&self, other: ReadonlySetLike<unknown>) -> boolean,
     constructor(&mut self, values?: Array<T> | null),
-    static readonly prototype: mut Set<any>,
+    static readonly prototype: Set<any>,
     constructor(&mut self, iterable?: Iterable<T> | null),
     static readonly [Symbol.species]: typeof Set
 }
