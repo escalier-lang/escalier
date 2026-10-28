@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -394,6 +396,28 @@ func awaitDiagnostics(
 	version protocol.UInteger,
 ) []string {
 	t.Helper()
+	diags := awaitPublished(t, published, uri, version)
+	rendered := make([]string, len(diags))
+	for i, d := range diags {
+		rendered[i] = fmt.Sprintf(
+			"%d:%d-%d:%d %s",
+			d.Range.Start.Line, d.Range.Start.Character,
+			d.Range.End.Line, d.Range.End.Character,
+			d.Message,
+		)
+	}
+	return rendered
+}
+
+// awaitPublished reads published notifications until one names uri at version, and
+// returns its diagnostics.
+func awaitPublished(
+	t *testing.T,
+	published <-chan *protocol.PublishDiagnosticsParams,
+	uri protocol.DocumentUri,
+	version protocol.UInteger,
+) []protocol.Diagnostic {
+	t.Helper()
 	// The first solver check in the process loads the standard library from disk,
 	// which takes several seconds under the race detector.
 	timeout := time.After(60 * time.Second)
@@ -403,16 +427,7 @@ func awaitDiagnostics(
 			if params.URI != uri || params.Version == nil || *params.Version != version {
 				continue
 			}
-			rendered := make([]string, len(params.Diagnostics))
-			for i, d := range params.Diagnostics {
-				rendered[i] = fmt.Sprintf(
-					"%d:%d-%d:%d %s",
-					d.Range.Start.Line, d.Range.Start.Character,
-					d.Range.End.Line, d.Range.End.Character,
-					d.Message,
-				)
-			}
-			return rendered
+			return params.Diagnostics
 		case <-timeout:
 			t.Fatalf("no diagnostics published for %s at version %d", uri, version)
 			return nil
@@ -749,4 +764,193 @@ func TestHoverFromSolver(t *testing.T) {
 			require.Equal(t, tt.expected, content.Value)
 		})
 	}
+}
+
+// --- Quick fix that writes a missing borrow ---
+
+// insertAt returns an edit that inserts text at a 0-based line and column.
+func insertAt(line, col protocol.UInteger, text string) protocol.TextEdit {
+	pos := protocol.Position{Line: line, Character: col}
+	return protocol.TextEdit{Range: protocol.Range{Start: pos, End: pos}, NewText: text}
+}
+
+// applyEdits returns src with edits applied. The edits must not overlap.
+func applyEdits(src string, edits []protocol.TextEdit) string {
+	lineMap := ast.NewLineMap(src)
+	sorted := slices.Clone(edits)
+	// Applying the last edit first keeps the offsets of the earlier ones valid.
+	slices.SortFunc(sorted, func(a, b protocol.TextEdit) int {
+		return posToLoc(lineMap, b.Range.Start).Offset - posToLoc(lineMap, a.Range.Start).Offset
+	})
+	for _, edit := range sorted {
+		start := posToLoc(lineMap, edit.Range.Start).Offset
+		end := posToLoc(lineMap, edit.Range.End).Offset
+		src = src[:start] + edit.NewText + src[end:]
+	}
+	return src
+}
+
+func TestBorrowQuickFix(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		// message is the message of the one diagnostic published for src.
+		message string
+		// data is the data the diagnostic is published with.
+		data borrowFixData
+		// title and edits describe the quick fix offered for that diagnostic.
+		title string
+		edits []protocol.TextEdit
+	}{
+		{
+			name:    "ImmutableBorrowOfAFieldRead",
+			message: "this value is borrowed by its destination, so write the borrow: `&`",
+			src:     "fn g(h: &{f: {x: number}}) -> &{x: number} {\n\treturn h.f\n}",
+			data: borrowFixData{
+				Borrow: "&",
+				Range: protocol.Range{
+					Start: protocol.Position{Line: 1, Character: 8},
+					End:   protocol.Position{Line: 1, Character: 11},
+				},
+			},
+			title: "Write the borrow &",
+			edits: []protocol.TextEdit{insertAt(1, 8, "&")},
+		},
+		{
+			name:    "MutableBorrowOfAnArgument",
+			message: "this argument is borrowed by the callee, so write the borrow: `&mut`",
+			src:     "fn write(p: &mut {v: number}) {}\nfn g() {\n\tval mut x = {v: 1}\n\twrite(x)\n}",
+			data: borrowFixData{
+				Borrow: "&mut",
+				Range: protocol.Range{
+					Start: protocol.Position{Line: 3, Character: 7},
+					End:   protocol.Position{Line: 3, Character: 8},
+				},
+			},
+			title: "Write the borrow &mut",
+			edits: []protocol.TextEdit{insertAt(3, 7, "&mut ")},
+		},
+		{
+			name:    "LiteralIsParenthesized",
+			message: "this argument is borrowed by the callee, so write the borrow: `&`",
+			src:     "fn read(p: &{v: number}) {}\nfn g() {\n\tread({v: 1})\n}",
+			data: borrowFixData{
+				Borrow: "&",
+				Range: protocol.Range{
+					Start: protocol.Position{Line: 2, Character: 6},
+					End:   protocol.Position{Line: 2, Character: 12},
+				},
+				Parenthesize: true,
+			},
+			title: "Write the borrow &",
+			edits: []protocol.TextEdit{insertAt(2, 6, "&("), insertAt(2, 12, ")")},
+		},
+		{
+			// The span of `(h).f` starts inside the parentheses, and the borrow goes before them.
+			name:    "ParenthesizedReceiver",
+			message: "this argument is borrowed by the callee, so write the borrow: `&`",
+			src:     "fn read(p: &{v: number}) {}\nfn g(h: &{f: {v: number}}) {\n\tread((h).f)\n}",
+			data: borrowFixData{
+				Borrow: "&",
+				Range: protocol.Range{
+					Start: protocol.Position{Line: 2, Character: 6},
+					End:   protocol.Position{Line: 2, Character: 11},
+				},
+			},
+			title: "Write the borrow &",
+			edits: []protocol.TextEdit{insertAt(2, 6, "&")},
+		},
+		{
+			name:    "ShorthandProperty",
+			message: "this value is borrowed by its destination, so write the borrow: `&`",
+			src:     "fn g(f: {x: number}) {\n\tval o: {f: &{x: number}} = {f}\n}",
+			data: borrowFixData{
+				Borrow: "&",
+				Range: protocol.Range{
+					Start: protocol.Position{Line: 1, Character: 29},
+					End:   protocol.Position{Line: 1, Character: 30},
+				},
+				Key: "f",
+			},
+			title: "Write the borrow &",
+			edits: []protocol.TextEdit{insertAt(1, 29, "f: &")},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := integrationServer(t, map[string]string{"bin/main.esc": tt.src})
+			ctx, published := publishedDiagnostics()
+			uri := openFileIn(t, s, ctx, "bin/main.esc", tt.src)
+			diags := awaitPublished(t, published, uri, 1)
+			require.Len(t, diags, 1)
+			require.Equal(t, tt.message, diags[0].Message)
+			require.Equal(t, tt.data, diags[0].Data)
+
+			// A client sends the diagnostics back as JSON, which decodes the data into a map.
+			raw, err := json.Marshal(diags)
+			require.NoError(t, err)
+			var sent []protocol.Diagnostic
+			require.NoError(t, json.Unmarshal(raw, &sent))
+
+			result, err := s.textDocumentCodeAction(&glsp.Context{}, &protocol.CodeActionParams{
+				TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+				Range:        tt.data.Range,
+				Context: protocol.CodeActionContext{
+					Diagnostics: sent,
+					Only:        []protocol.CodeActionKind{protocol.CodeActionKindQuickFix},
+				},
+			})
+			require.NoError(t, err)
+			actions, ok := result.([]protocol.CodeAction)
+			require.True(t, ok)
+			require.Len(t, actions, 1)
+			fix := actions[0]
+			require.Equal(t, tt.title, fix.Title)
+			require.Equal(t, addr(protocol.CodeActionKindQuickFix), fix.Kind)
+			require.Equal(t, addr(true), fix.IsPreferred)
+			require.Equal(t, sent, fix.Diagnostics)
+			require.Equal(t, &protocol.WorkspaceEdit{
+				Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: tt.edits},
+			}, fix.Edit)
+
+			// The fixed source checks clean.
+			require.NoError(t, s.textDocumentDidChange(ctx, &protocol.DidChangeTextDocumentParams{
+				TextDocument: protocol.VersionedTextDocumentIdentifier{
+					TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uri},
+					Version:                2,
+				},
+				ContentChanges: []any{
+					protocol.TextDocumentContentChangeEventWhole{Text: applyEdits(tt.src, tt.edits)},
+				},
+			}))
+			require.Empty(t, awaitDiagnostics(t, published, uri, 2))
+		})
+	}
+}
+
+// TestBorrowQuickFixSkipsOptionalChain asserts that an optional chain filling a borrow
+// destination gets no quick fix, because `&h?.f` is not a borrow the checker accepts.
+func TestBorrowQuickFixSkipsOptionalChain(t *testing.T) {
+	src := "fn g(h: &{f: {x: number}} | undefined) {\n\tval d = h?.f\n}"
+	s := integrationServer(t, map[string]string{"bin/main.esc": src})
+	ctx, published := publishedDiagnostics()
+	uri := openFileIn(t, s, ctx, "bin/main.esc", src)
+	diags := awaitPublished(t, published, uri, 1)
+	require.Len(t, diags, 1)
+	require.Equal(t,
+		"this optional chain is borrowed by its destination, and an optional chain cannot be borrowed, "+
+			"so bind the receiver with `if val` and borrow the field through it",
+		diags[0].Message)
+	require.Nil(t, diags[0].Data)
+
+	result, err := s.textDocumentCodeAction(&glsp.Context{}, &protocol.CodeActionParams{
+		TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+		Range:        diags[0].Range,
+		Context:      protocol.CodeActionContext{Diagnostics: diags},
+	})
+	require.NoError(t, err)
+	actions, ok := result.([]protocol.CodeAction)
+	require.True(t, ok)
+	require.Len(t, actions, 1)
+	require.Equal(t, "Compile", actions[0].Title)
 }

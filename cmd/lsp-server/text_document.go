@@ -355,9 +355,34 @@ func (*Server) textDocumentCodeAction(context *glsp.Context, params *protocol.Co
 		Data: nil,
 	}
 
-	codeActions := []protocol.CodeAction{compileAction}
+	codeActions := []protocol.CodeAction{}
+	if wantsCodeActionKind(params.Context.Only, "compile") {
+		codeActions = append(codeActions, compileAction)
+	}
+	if wantsCodeActionKind(params.Context.Only, protocol.CodeActionKindQuickFix) {
+		for _, diag := range params.Context.Diagnostics {
+			if action, ok := borrowFixAction(params.TextDocument.URI, diag); ok {
+				codeActions = append(codeActions, action)
+			}
+		}
+	}
 
 	return codeActions, nil
+}
+
+// wantsCodeActionKind reports whether a code action request asks for actions of kind. only is
+// the `only` list of the request's context, and an empty list asks for every kind. A listed
+// kind also covers the kinds nested under it, so `quickfix` covers `quickfix.borrow`.
+func wantsCodeActionKind(only []protocol.CodeActionKind, kind protocol.CodeActionKind) bool {
+	if len(only) == 0 {
+		return true
+	}
+	for _, k := range only {
+		if kind == k || strings.HasPrefix(string(kind), string(k)+".") {
+			return true
+		}
+	}
+	return false
 }
 
 // isCacheStale returns true if the document has been updated since the last
@@ -566,7 +591,7 @@ func (server *Server) validateBinScript(
 	server.validated.Broadcast()
 
 	// Publish diagnostics for just this file.
-	server.publishDiagnosticsForScript(lspContext, uri, version, triggerSourceID, src.LineMap(), result.ParseErrors, result.TypeErrors)
+	server.publishDiagnosticsForScript(lspContext, uri, version, triggerSourceID, src, result.ParseErrors, result.TypeErrors)
 }
 
 // packageConfig reads the PackageConfig from the package.json in rootPath. A file that
@@ -652,13 +677,9 @@ func (server *Server) validateFull(
 		})
 	}
 	for _, err := range output.TypeErrors {
-		span := err.Span()
-		diagsBySourceID[span.SourceID] = append(diagsBySourceID[span.SourceID], protocol.Diagnostic{
-			Range:    spanToRange(lineMapFor(checkedSource(&output, span.SourceID)), span),
-			Severity: &severity,
-			Source:   &source,
-			Message:  err.Message(),
-		})
+		sourceID := err.Span().SourceID
+		diagsBySourceID[sourceID] = append(diagsBySourceID[sourceID],
+			toDiagnostic(err, checkedSource(&output, sourceID)))
 	}
 
 	// Publish diagnostics for all files. Guard against nil context
@@ -713,7 +734,7 @@ func (server *Server) publishDiagnosticsForScript(
 	uri protocol.DocumentUri,
 	version protocol.Integer,
 	sourceID int,
-	lineMap *ast.LineMap,
+	src *ast.Source,
 	parseErrors []*parser.Error,
 	typeErrors []compiler.Diagnostic,
 ) {
@@ -726,7 +747,7 @@ func (server *Server) publishDiagnosticsForScript(
 	for _, err := range parseErrors {
 		if err.Span.SourceID == sourceID {
 			diags = append(diags, protocol.Diagnostic{
-				Range:    spanToRange(lineMap, err.Span),
+				Range:    spanToRange(src.LineMap(), err.Span),
 				Severity: &severity,
 				Source:   &source,
 				Message:  err.Message,
@@ -734,14 +755,8 @@ func (server *Server) publishDiagnosticsForScript(
 		}
 	}
 	for _, err := range typeErrors {
-		span := err.Span()
-		if span.SourceID == sourceID {
-			diags = append(diags, protocol.Diagnostic{
-				Range:    spanToRange(lineMap, span),
-				Severity: &severity,
-				Source:   &source,
-				Message:  err.Message(),
-			})
+		if err.Span().SourceID == sourceID {
+			diags = append(diags, toDiagnostic(err, src))
 		}
 	}
 
@@ -752,6 +767,23 @@ func (server *Server) publishDiagnosticsForScript(
 		Diagnostics: emptyIfNil(diags),
 		Version:     &diagVersion,
 	})
+}
+
+// toDiagnostic converts a type error into the diagnostic published for it. src is the file
+// the error's span indexes into, or nil when the check output holds none.
+func toDiagnostic(err compiler.Diagnostic, src *ast.Source) protocol.Diagnostic {
+	severity := protocol.DiagnosticSeverityError
+	source := "escalier"
+	diag := protocol.Diagnostic{
+		Range:    spanToRange(lineMapFor(src), err.Span()),
+		Severity: &severity,
+		Source:   &source,
+		Message:  err.Message(),
+	}
+	if data, ok := borrowFixDataFor(err, src); ok {
+		diag.Data = data
+	}
+	return diag
 }
 
 // filterOutSourceID removes parse errors belonging to the given sourceID.
