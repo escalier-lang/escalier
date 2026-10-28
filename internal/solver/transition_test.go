@@ -607,7 +607,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 				fn test() {
 					val mut items: {x: number} = {x: 1}
 					items.x = 2
-					val snapshot: &{x: number} = items
+					val snapshot: &{x: number} = &items
 					snapshot
 				}
 			`,
@@ -661,7 +661,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 			src: `
 				fn test() {
 					val mut a: {x: number} = {x: 1}
-					val b: &mut {x: number} = a
+					val b: &mut {x: number} = &mut a
 					b.x = 2
 					a.x
 				}
@@ -704,7 +704,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 			src: `
 				fn test() {
 					val mut items: {x: number} = {x: 1}
-					val snapshot: &{x: number} = items
+					val snapshot: &{x: number} = &items
 					items.x = 2
 				}
 			`,
@@ -813,7 +813,7 @@ func TestBorrowPhaseExclusion(t *testing.T) {
 			src: `
 				fn test() {
 					val mut a: {x: number} = {x: 1}
-					val s: &{x: number} = a
+					val s: &{x: number} = &a
 					s
 				}
 			`,
@@ -842,8 +842,8 @@ func TestBorrowPhaseExclusion(t *testing.T) {
 			src: `
 				fn test() {
 					val mut a: {x: number} = {x: 1}
-					val b: &mut {x: number} = a
-					val c: &mut {x: number} = a
+					val b: &mut {x: number} = &mut a
+					val c: &mut {x: number} = &mut a
 					b.x = 2
 					c.x = 3
 					a.x
@@ -906,13 +906,13 @@ func TestPhaseConflictUnderConditionalMove(t *testing.T) {
 				fn test() {
 					val mut a: {x: number} = {x: 1}
 					sink(a)
-					val snapshot: &{x: number} = a
+					val snapshot: &{x: number} = &a
 					a.x = 2
 					snapshot
 				}
 			`,
 			want: []string{
-				"6:35-6:36: use of moved value 'a'",
+				"6:36-6:37: use of moved value 'a'",
 				"7:6-7:7: use of moved value 'a'",
 			},
 		},

@@ -195,20 +195,20 @@ fn f() { val a = &xs }`,
 		{
 			name: "returned as a borrow",
 			src: `val xs: Array<number> = [1]
-fn get() -> &Array<number> { return xs }`,
+fn get() -> &Array<number> { return &xs }`,
 		},
 		{
 			name: "stored into a borrow field",
 			src: `val xs: Array<number> = [1]
 fn f() {
 	val mut o: {a: &Array<number>} = {a: &xs}
-	o.a = xs
+	o.a = &xs
 }`,
 		},
 		{
 			name: "bound to an annotated borrow",
 			src: `val xs: Array<number> = [1]
-fn f() { val a: &Array<number> = xs }`,
+fn f() { val a: &Array<number> = &xs }`,
 		},
 		{
 			name: "a number element copied",
