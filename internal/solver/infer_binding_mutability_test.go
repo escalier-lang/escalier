@@ -367,8 +367,11 @@ async fn g() {
 }`,
 			want: []string{"4:2-4:8: cannot constrain immutable Array<number> <: mutable Array<number>"},
 		},
-		// A promise held in a variable can be awaited again, so the value it settles to is
-		// not the binding's alone.
+		// A promise is a value type, so `p` copies freely, and any copy can await the same
+		// settled array. The array is not the binding's alone, so `r` stays immutable.
+		// `val mut r = await load()` gets a mutable binding, because nothing else holds
+		// that promise. A local promise that is never copied could be accepted, as #2308
+		// describes.
 		{
 			name: "AwaitedVariable",
 			src: `declare fn load() -> Promise<Array<number>>
