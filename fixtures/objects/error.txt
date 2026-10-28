@@ -1,5 +1,10 @@
-lib/main.esc:4:5: cannot constrain immutable object <: mutable object
+lib/main.esc:4:5: cannot mutate 'obj3' because its binding is immutable; declare it as `val mut obj3`
 
 4:      obj3.bar = "hello"
         ^^^^^^^^^^^^^^^^^^
+
+lib/main.esc:4:16: cannot constrain "hello" <: boolean
+
+4:      obj3.bar = "hello"
+                   ^^^^^^^
 

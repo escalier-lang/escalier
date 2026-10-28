@@ -435,10 +435,10 @@ declare var Map: MapConstructor;
 	rootNS, ok := mod.Module.Namespaces.Get("")
 	require.True(t, ok)
 
-	// ReadonlyMap leaves the output entirely. Escalier spells the
-	// immutable view `Map<K, V>` and the mutable one `mut Map<K, V>`,
-	// so the readonly name has nothing left to denote once every
-	// reference to it is respelled.
+	// ReadonlyMap leaves the output entirely. Escalier spells an owned
+	// map `Map<K, V>` whether or not its binding is mutable, so the
+	// readonly name has nothing left to denote once every reference to
+	// it is respelled.
 	var mapClass *ast.ClassDecl
 	for _, decl := range rootNS.Decls {
 		switch d := decl.(type) {
@@ -537,10 +537,10 @@ declare var Foo: FooConstructor;
 func TestConvertBucket_ReadonlyTwinRewritesRefs(t *testing.T) {
 	t.Parallel()
 	// References to the readonly twin should be renamed to the
-	// mutable name; references to the mutable name should be wrapped
-	// in MutableTypeAnn. Both bare-name and `T[]` (and `readonly T[]`)
-	// shorthands flow through the same rewrite because the converter
-	// desugars them to `Array<T>` / `ReadonlyArray<T>` first.
+	// mutable name, and references to the mutable name are left bare.
+	// The converter desugars `T[]` to `Array<T>` and `readonly T[]`
+	// to `ReadonlyArray<T>` first, so both shorthands flow through the
+	// same rewrite.
 	lib := parseLib(t, "lib.es5.d.ts", `
 interface ReadonlyArray<T> {
     readonly length: number;
@@ -576,7 +576,7 @@ declare var Array: ArrayConstructor;
 	// Per-method assertions are replaced with a single inline snapshot
 	// of the printed class so the param/return rewrites are reviewed
 	// holistically. The expected output covers:
-	//   - push(...items: T[]) → `mut Array<T>` (T[] desugared then wrapped)
+	//   - push(...items: T[]) → `Array<T>`, with no `mut` on the owned type
 	//   - concat(items: ReadonlyArray<T>) → renamed to `Array<T>`;
 	//     return `T[]` keeps the bare `Array<T>`, since the caller owns it
 	//   - readArr(readonly T[]) → desugared then renamed to `Array<T>`
@@ -585,11 +585,11 @@ declare var Array: ArrayConstructor;
 	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("Array")
 export declare class Array<T> {
     length: number,
-    push(&mut self, ...items: mut Array<T>) -> number,
+    push(&mut self, ...items: Array<T>) -> number,
     concat(&self, items: Array<T>) -> Array<T>,
     readArr(&mut self, items: Array<T>) -> undefined,
     constructor(&mut self),
-    static readonly prototype: mut Array<any>
+    static readonly prototype: Array<any>
 }`))
 
 	// No `ReadonlyArray` survives in any form. The rewrite above put
@@ -1281,23 +1281,29 @@ declare var Array: ArrayConstructor;
 		libs []lib
 		want string
 	}{
-		// A property takes its mutability from the object holding it, and a
-		// caller owns what a method returns, so a mutable array keeps its bare
-		// name in both slots. A parameter still takes `mut`.
-		"APropertyAndAReturnHoldNoMutableTwin": {
+		// The binding that owns a value decides its mutability, so a mutable
+		// array converts to the bare `Array<T>` in every slot, including a rest
+		// parameter, a type argument, and a callback's parameter.
+		"AnOwnedArrayCarriesNoMut": {
 			libs: []lib{{"lib.es5.d.ts", arrayDecls + `
 interface ArrayLike<T> {
     items: T[];
     copy(): T[];
     find(): T[] | null;
     fill(items: T[]): void;
+    add(...items: T[]): void;
+    group(): Map<string, T[]>;
+    each(cb: (chunk: T[]) => void): void;
 }
 `}},
 			want: `export declare interface ArrayLike<T> {
     items: Array<T>,
     copy() -> Array<T>,
     find() -> Array<T> | null,
-    fill(items: mut Array<T>) -> undefined
+    fill(items: Array<T>) -> undefined,
+    add(...items: Array<T>) -> undefined,
+    group() -> Map<string, Array<T>>,
+    each(cb: fn (chunk: Array<T>) -> unknown) -> undefined
 }`,
 		},
 		// TypeScript requires a restated property to have the same type, not

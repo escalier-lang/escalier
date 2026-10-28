@@ -70,7 +70,7 @@ export declare class Object {
      * @param target The target object to copy to.
      * @param sources One or more source objects from which to copy properties
      */
-    static assign(target: {...}, ...sources: mut Array<any>) -> any,
+    static assign(target: {...}, ...sources: Array<any>) -> any,
     /**
      * Returns an array of all symbol properties found directly on object o.
      * @param o Object to retrieve the symbols from.
@@ -141,7 +141,7 @@ export declare class Object {
      * @param items An iterable.
      * @param keySelector A callback which will be invoked for each item in items.
      */
-    static groupBy<K: PropertyKey, T>(items: Iterable<T>, keySelector: fn (item: T, index: number) -> K) -> Partial<Record<K, mut Array<T>>>,
+    static groupBy<K: PropertyKey, T>(items: Iterable<T>, keySelector: fn (item: T, index: number) -> K) -> Partial<Record<K, Array<T>>>,
     constructor(&mut self, value?: unknown),
     () -> any,
     (value: unknown) -> any,

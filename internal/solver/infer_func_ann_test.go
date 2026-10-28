@@ -694,7 +694,7 @@ func TestInferFunctionTopType(t *testing.T) {
 // body's scope, which the annotation path never does, so it reaches the marker separately and
 // needs its own coverage.
 func TestInferRestParamDeclaration(t *testing.T) {
-	const cls = "declare class Box<T> {\n  push(&mut self, ...items: mut Array<T>) -> number,\n}\n"
+	const cls = "declare class Box<T> {\n  push(&mut self, ...mut items: Array<T>) -> number,\n}\n"
 	tests := []struct {
 		name string
 		src  string
@@ -729,24 +729,24 @@ func TestInferRestParamDeclaration(t *testing.T) {
 			// describes the array the call gathers its surplus arguments into and says nothing
 			// about the arguments, so it must not reach the element.
 			name: "OwnedMutableSlotChecksTheElement",
-			src:  `declare fn f(...xs: mut Array<number>) -> number` + "\n" + `val r = f(1, "a")`,
+			src:  `declare fn f(...mut xs: Array<number>) -> number` + "\n" + `val r = f(1, "a")`,
 			want: []string{`cannot constrain "a" <: number`},
 		},
 		{
 			// The shape `std/array.esc` writes for `Array.push`.
 			name: "MethodSlotAcceptsElements",
-			src:  cls + `fn g(xs: mut Box<number>) -> number { return xs.push(1, 2) }`,
+			src:  cls + `fn g(mut xs: Box<number>) -> number { return xs.push(1, 2) }`,
 		},
 		{
 			name: "MethodSlotAcceptsNoArguments",
-			src:  cls + `fn g(xs: mut Box<number>) -> number { return xs.push() }`,
+			src:  cls + `fn g(mut xs: Box<number>) -> number { return xs.push() }`,
 		},
 		{
 			// The gap this case asserts. A member's slot that degrades to a positional parameter
 			// demands the whole array, so the call is rejected for passing an element:
 			// `cannot constrain 1 <: Array<number>`.
 			name: "MethodSlotRejectsAWrongElement",
-			src:  cls + `fn g(xs: mut Box<number>) -> number { return xs.push("a") }`,
+			src:  cls + `fn g(mut xs: Box<number>) -> number { return xs.push("a") }`,
 			want: []string{`cannot constrain "a" <: number`},
 		},
 	}

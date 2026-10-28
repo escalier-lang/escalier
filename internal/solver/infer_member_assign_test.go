@@ -8,161 +8,149 @@ import (
 
 // --- M4 C3: field-write inference + read-after-write ---
 //
-// A field write `recv.prop = source` extends inferAssign's member-target branch. It
-// constrains `recv <: mut {prop: widen(source), ...}` — a mutable, inexact
-// one-property requirement — and the C3 coalesce fold collapses every selection on
-// the receiver (reads and writes) into one `mut` object once any field is written.
-// The stored value is widened (5 ⇒ number) because writing through a `mut` receiver
-// is itself a mutation. These tests exercise the feature end to end through inferred
-// function signatures.
+// A field write `recv.prop = source` extends inferAssign's member-target branch. Through a
+// `mut` binding it constrains `recv <: {prop: widen(source), ...}`, an inexact one-property
+// requirement, and the C3 coalesce fold collapses every selection on the receiver, reads and
+// writes alike, into one object. The stored value is widened (5 ⇒ number) because the field
+// may be written again. These tests exercise the feature end to end through the inferred
+// signatures of unannotated `mut` parameters.
 
-// Two writes on an inferred param fold into a single `mut` object: each write
-// contributes a mutable one-property requirement, and the fold unions them and wraps
-// the whole object in `mut`.
+// Two writes on an inferred param fold into a single object: each write contributes a
+// one-property requirement, and the fold unions them.
 func TestInferMemberAssignTwoWrites(t *testing.T) {
-	values, _, errs := inferSource(t, `fn foo(obj) { obj.x = 5
+	values, _, errs := inferSource(t, `fn foo(mut obj) { obj.x = 5
  obj.y = 10 }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (obj: mut {x: number, y: number}) -> undefined", values["foo"])
+	require.Equal(t, "fn (obj: {x: number, y: number}) -> undefined", values["foo"])
 }
 
 // Read-after-write: a read of a field just written to the same receiver returns the
 // recorded concrete (widened) type, not a fresh var, so `obj.x = 5; return obj.x` is
-// `number`. The receiver renders `mut {x: number}` from the single write.
+// `number`. The receiver renders `{x: number}` from the single write.
 func TestInferMemberAssignReadAfterWrite(t *testing.T) {
-	values, _, errs := inferSource(t, `fn foo(obj) { obj.x = 5
+	values, _, errs := inferSource(t, `fn foo(mut obj) { obj.x = 5
  return obj.x }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (obj: mut {x: number}) -> number", values["foo"])
+	require.Equal(t, "fn (obj: {x: number}) -> number", values["foo"])
 }
 
-// A mixed read and write folds into ONE `mut` object rather than the spike's
-// `{bar: …} & mut {baz: …}` intersection: the presence of any write makes every
-// selection — the read-only `bar` included — fold into the mutable object. Folding
-// `bar` into the `mut` object makes it invariant (#737), so its var occurs in both
-// polarities and is retained as a type parameter `T0` the caller picks, rather than
-// inlined to `unknown`. The written `baz` is the widened `number`.
+// A mixed read and write folds into ONE object rather than an intersection of a read and a
+// write requirement. The caller moves the argument in, so the read-only `bar` stays
+// covariant, and its unused var is inlined to `unknown`. The written `baz` is the widened
+// `number`.
 func TestInferMemberAssignMixedReadWrite(t *testing.T) {
-	values, _, errs := inferSource(t, `fn foo(obj) { val x = obj.bar
+	values, _, errs := inferSource(t, `fn foo(mut obj) { val x = obj.bar
  obj.baz = 5 }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <T0>(obj: mut {bar: T0, baz: number}) -> undefined", values["foo"])
+	require.Equal(t, "fn (obj: {bar: unknown, baz: number}) -> undefined", values["foo"])
 }
 
 // A compound written value widens recursively via the shared widen (B3): writing
 // `{x: 0}` stores `{x: number}`, not the literal `{x: 0}`.
 func TestInferMemberAssignCompoundValueWidens(t *testing.T) {
-	values, _, errs := inferSource(t, "fn foo(obj) { obj.p = {x: 0} }")
+	values, _, errs := inferSource(t, "fn foo(mut obj) { obj.p = {x: 0} }")
 	require.Empty(t, errs)
-	require.Equal(t, "fn (obj: mut {p: {x: number}}) -> undefined", values["foo"])
+	require.Equal(t, "fn (obj: {p: {x: number}}) -> undefined", values["foo"])
 }
 
 // The assignment expression evaluates to the value just stored, so its type is the
 // widened source: `val r = (obj.x = 5)` ⇒ r: number, used inside a function so the
 // receiver is an inferable place.
 func TestInferMemberAssignValueIsStored(t *testing.T) {
-	values, _, errs := inferSource(t, `fn foo(obj) { val r = (obj.x = 5)
+	values, _, errs := inferSource(t, `fn foo(mut obj) { val r = (obj.x = 5)
  return r }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (obj: mut {x: number}) -> number", values["foo"])
+	require.Equal(t, "fn (obj: {x: number}) -> number", values["foo"])
 }
 
 // Writing different literal values to the same field is the same widened primitive,
 // so the field stays `number` (no contradiction between `5` and `10`).
 func TestInferMemberAssignSameFieldTwice(t *testing.T) {
-	values, _, errs := inferSource(t, `fn foo(obj) { obj.x = 5
+	values, _, errs := inferSource(t, `fn foo(mut obj) { obj.x = 5
  obj.x = 10 }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (obj: mut {x: number}) -> undefined", values["foo"])
+	require.Equal(t, "fn (obj: {x: number}) -> undefined", values["foo"])
 }
 
 // A written field and a read-only field that ESCAPES (is returned) fold into one
-// `mut` object: the written `x` is `number`, while the returned `y` becomes a real
-// type parameter rather than collapsing to `unknown`, because it occurs in an output
-// position. This is the key interplay between the C3 mut-merge and generalization.
+// object: the written `x` is `number`, while the returned `y` becomes a real type
+// parameter rather than collapsing to `unknown`, because it occurs in an output position.
+// This is the key interplay between the C3 merge and generalization.
 func TestInferMemberAssignWrittenAndEscapingReadField(t *testing.T) {
-	values, _, errs := inferSource(t, `fn foo(obj) { obj.x = 5
+	values, _, errs := inferSource(t, `fn foo(mut obj) { obj.x = 5
  return obj.y }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <T0>(obj: mut {x: number, y: T0}) -> T0", values["foo"])
+	require.Equal(t, "fn <T0>(obj: {x: number, y: T0}) -> T0", values["foo"])
 }
 
 // Write-after-read on the SAME field needs no `written`-map support: the read mints
-// `T0` and constrains `obj <: {x: T0}`, the later write adds `obj <: mut {x: number}`,
+// `T0` and constrains `obj <: {x: T0}`, the later write adds `obj <: {x: number}`,
 // and the two upper bounds merge so the field folds to `T0 & number`. The read's
 // value (returned `x`) stays `T0`. This asserts the plan's claim that write-after-read
 // falls out of ordinary constraint accumulation, the reverse of read-after-write.
 func TestInferMemberAssignWriteAfterRead(t *testing.T) {
-	values, _, errs := inferSource(t, `fn foo(obj) { val x = obj.x
+	values, _, errs := inferSource(t, `fn foo(mut obj) { val x = obj.x
  obj.x = 5
  return x }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <T0>(obj: mut {x: T0 & number}) -> T0", values["foo"])
+	require.Equal(t, "fn <T0>(obj: {x: T0 & number}) -> T0", values["foo"])
 }
 
-// A write through a nested receiver marks the WHOLE container `mut` (#779): writing
-// `obj.p.x` makes `obj` itself mutable rather than nesting an owned-mut cell on the
-// `p` field. `mut` is deep, so `mut {p: {x: number}}` already makes `p.x` writable,
-// and unlike the rejected `{p: mut {x: number}}` it is a valid annotation — the
-// displayed signature round-trips. The cost is precision: a caller must pass a mutable
-// container even though only the nested field is written.
+// A write through a nested receiver needs only the `mut` on the root binding: every owned
+// layer of a `mut` binding's value is writable, so `obj.p.x = 5` infers `{p: {x: number}}`
+// with no mutability in the type, and the displayed signature round-trips.
 func TestInferMemberAssignNestedReceiver(t *testing.T) {
-	values, _, errs := inferSource(t, "fn foo(obj) { obj.p.x = 5 }")
+	values, _, errs := inferSource(t, "fn foo(mut obj) { obj.p.x = 5 }")
 	require.Empty(t, errs)
-	require.Equal(t, "fn (obj: mut {p: {x: number}}) -> undefined", values["foo"])
+	require.Equal(t, "fn (obj: {p: {x: number}}) -> undefined", values["foo"])
 }
 
 // An `open` param's written object stays row-polymorphic: the C3 fold passes the
-// var's Open flag to mergeObjectGroup, so the merged `mut` object is inexact and
-// callers may pass an object with extra fields.
+// var's Open flag to mergeObjectGroup, so the merged object is inexact and callers
+// may pass an object with extra fields.
 func TestInferMemberAssignOpenParam(t *testing.T) {
-	values, _, errs := inferSource(t, "fn foo(open obj) { obj.x = 5 }")
+	values, _, errs := inferSource(t, "fn foo(open mut obj) { obj.x = 5 }")
 	require.Empty(t, errs)
-	require.Equal(t, "fn (obj: mut {x: number, ...}) -> undefined", values["foo"])
+	require.Equal(t, "fn (obj: {x: number, ...}) -> undefined", values["foo"])
 }
 
 // A written receiver that ESCAPES (the whole object is returned) is not sealed: it
-// occurs in an output position, so the param keeps an open row and renders as the
-// written requirement intersected with the returned type parameter.
+// occurs in an output position, so the param keeps an open row and renders as a type
+// parameter bounded by the written requirement.
 func TestInferMemberAssignWrittenObjectEscapes(t *testing.T) {
-	values, _, errs := inferSource(t, `fn foo(obj) { obj.x = 5
+	values, _, errs := inferSource(t, `fn foo(mut obj) { obj.x = 5
  return obj }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <T0>(obj: mut {x: number} & T0) -> T0", values["foo"])
+	require.Equal(t, "fn <T0: {x: number, ...}>(obj: T0) -> T0", values["foo"])
 }
 
 // Writing a parameter's value into a field LINKS their types (#737). The write
-// `obj.x = v` makes the field's type the variable `v`, and because the field is
-// `mut` — hence invariant — `v` occurs in BOTH polarities, so single-polarity
-// elimination retains it as a shared type parameter instead of inlining each
-// occurrence to `unknown`. So `fn foo(obj, v) { obj.x = v }` infers the tighter
-// `fn <T0>(obj: mut {x: T0}, v: T0) -> undefined`. The mut-field invariance reaches the
+// `obj.x = v` makes the field's type the variable `v`, and `v` occurs in BOTH
+// polarities, so single-polarity elimination retains it as a shared type parameter
+// instead of inlining each occurrence to `unknown`. So `fn foo(mut obj, v) { obj.x = v }` infers the tighter
+// `fn <T0>(obj: {x: T0}, v: T0) -> undefined`. The mut-field invariance reaches the
 // occurrence analysis via recordMutWriteView (simplify.go).
 func TestInferMemberAssignVariableValueLinked(t *testing.T) {
-	values, _, errs := inferSource(t, "fn foo(obj, v) { obj.x = v }")
+	values, _, errs := inferSource(t, "fn foo(mut obj, v) { obj.x = v }")
 	require.Empty(t, errs)
-	require.Equal(t, "fn <T0>(obj: mut {x: T0}, v: T0) -> undefined", values["foo"])
+	require.Equal(t, "fn <T0>(obj: {x: T0}, v: T0) -> undefined", values["foo"])
 }
 
-// Writing one field of a concretely-typed (annotated) mut object checks: the field
-// write lowers to the inexact requirement `mut {x, ...}`, and the RefType rule's
-// per-field write view pins x invariantly while tolerating the object's other
-// declared fields. Before the per-field write view this reported spurious
-// "missing property: y" / "inexact <: exact" errors.
+// Writing one field of a concretely-typed (annotated) `mut` parameter checks: the field
+// write lowers to the inexact requirement `{x, ...}`, which tolerates the object's other
+// declared fields.
 //
-// The annotated `mut` param originates a borrow lifetime (D2), but it is unused in
-// the `undefined` result, so D4's display-time elision drops it and the param renders as
-// plain owned-mutable `mut {…}`.
+// The signature carries the parameter's plain type, so it renders as `obj: {x: number, y: string}`.
 func TestInferMemberAssignAnnotatedMutObject(t *testing.T) {
-	values, _, errs := inferSource(t, "fn f(obj: mut {x: number, y: string}) { obj.x = 5 }")
+	values, _, errs := inferSource(t, "fn f(mut obj: {x: number, y: string}) { obj.x = 5 }")
 	require.Empty(t, errs)
-	require.Equal(t, "fn (obj: mut {x: number, y: string}) -> undefined", values["f"])
+	require.Equal(t, "fn (obj: {x: number, y: string}) -> undefined", values["f"])
 }
 
 // A write into a declared field is checked against the field's type, so storing a string
 // into a number field of an annotated mut object reports one error, blamed on the value.
 func TestInferMemberAssignAnnotatedMutWrongType(t *testing.T) {
-	_, _, errs := inferSource(t, "fn f(obj: mut {x: number, y: string}) { obj.x = \"bad\" }")
+	_, _, errs := inferSource(t, "fn f(mut obj: {x: number, y: string}) { obj.x = \"bad\" }")
 	require.Equal(t, []string{
 		`1:49-1:54: cannot constrain "bad" <: number`,
 	}, messagesWithSpan(t, errs))
@@ -184,27 +172,27 @@ func TestInferMemberAssignIntoAWiderDeclaredField(t *testing.T) {
 	}{
 		{
 			name: "a member of a union field",
-			src:  `fn go(d: mut {x: number | string}) { d.x = "s" }`,
+			src:  `fn go(mut d: {x: number | string}) { d.x = "s" }`,
 		},
 		{
 			name: "the other member of a union field",
-			src:  `fn go(d: mut {x: number | string}) { d.x = 5 }`,
+			src:  `fn go(mut d: {x: number | string}) { d.x = 5 }`,
 		},
 		{
 			name: "undefined into a union with undefined",
-			src:  `fn go(d: mut {x: string | undefined}) { d.x = undefined }`,
+			src:  `fn go(mut d: {x: string | undefined}) { d.x = undefined }`,
 		},
 		{
 			name: "a value into an optional field",
-			src:  `fn go(d: mut {x?: string}) { d.x = "s" }`,
+			src:  `fn go(mut d: {x?: string}) { d.x = "s" }`,
 		},
 		{
 			name: "undefined into an optional field",
-			src:  `fn go(d: mut {x?: string}) { d.x = undefined }`,
+			src:  `fn go(mut d: {x?: string}) { d.x = undefined }`,
 		},
 		{
 			name: "a member of a literal union field",
-			src:  `fn go(d: mut {x: "a" | "b"}) { d.x = "a" }`,
+			src:  `fn go(mut d: {x: "a" | "b"}) { d.x = "a" }`,
 		},
 		{
 			name: "through a mutable borrow",
@@ -212,44 +200,44 @@ func TestInferMemberAssignIntoAWiderDeclaredField(t *testing.T) {
 		},
 		{
 			name: "into a class instance's union field",
-			src:  "class C { x: number | string }\nfn go(c: mut C) { c.x = \"s\" }",
+			src:  "class C { x: number | string }\nfn go(mut c: C) { c.x = \"s\" }",
 		},
 		{
 			name: "into an annotated binding's union field",
-			src:  "fn go() { val d: mut {x: number | string} = {x: 1}\nd.x = \"s\" }",
+			src:  "fn go() { val mut d: {x: number | string} = {x: 1}\nd.x = \"s\" }",
 		},
 		{
 			name: "a member of a setter's union parameter",
-			src:  setter("number | string") + `fn go(c: mut C) { c.v = "s" }`,
+			src:  setter("number | string") + `fn go(mut c: C) { c.v = "s" }`,
 		},
 		{
 			name: "a member of a setter's literal union parameter",
-			src:  setter(`"a" | "b"`) + `fn go(c: mut C) { c.v = "a" }`,
+			src:  setter(`"a" | "b"`) + `fn go(mut c: C) { c.v = "a" }`,
 		},
 		{
 			name:    "a value outside a union field",
-			src:     `fn go(d: mut {x: number | string}) { d.x = true }`,
+			src:     `fn go(mut d: {x: number | string}) { d.x = true }`,
 			wantErr: "cannot constrain true <: number | string",
 		},
 		{
 			name:    "a value outside a literal union field",
-			src:     `fn go(d: mut {x: "a" | "b"}) { d.x = "c" }`,
+			src:     `fn go(mut d: {x: "a" | "b"}) { d.x = "c" }`,
 			wantErr: `cannot constrain "c" <: "a" | "b"`,
 		},
 		{
 			name:    "a value outside a setter's union parameter",
-			src:     setter("number | string") + `fn go(c: mut C) { c.v = true }`,
+			src:     setter("number | string") + `fn go(mut c: C) { c.v = true }`,
 			wantErr: "cannot constrain true <: number | string",
 		},
 		{
 			name:    "a value outside a setter's literal union parameter",
-			src:     setter(`"a" | "b"`) + `fn go(c: mut C) { c.v = "c" }`,
+			src:     setter(`"a" | "b"`) + `fn go(mut c: C) { c.v = "c" }`,
 			wantErr: `cannot constrain "c" <: "a" | "b"`,
 		},
 		{
 			name:    "an immutable receiver",
 			src:     `fn go(d: {x: number | string}) { d.x = "s" }`,
-			wantErr: "cannot constrain immutable object <: mutable object",
+			wantErr: "cannot mutate 'd' because its binding is immutable; declare it as `mut d`",
 		},
 	}
 	for _, tt := range tests {
@@ -267,7 +255,7 @@ func TestInferMemberAssignIntoAWiderDeclaredField(t *testing.T) {
 // Writing a field absent from an EXACT annotated mut object still errors: the read
 // view demands the object carry the written field.
 func TestInferMemberAssignAnnotatedMutMissingField(t *testing.T) {
-	src := "fn f(obj: mut {x: number}) { obj.z = 5 }"
+	src := "fn f(mut obj: {x: number}) { obj.z = 5 }"
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, []string{"1:15-1:26: object is missing property: z"}, messagesWithSpan(t, errs))
 }
@@ -280,10 +268,10 @@ func TestInferMemberAssignAnnotatedMutMissingField(t *testing.T) {
 // TODO(#738): report conflicting writes to one field instead of folding to an
 // uninhabited intersection.
 func TestInferMemberAssignConflictingWritesNoError(t *testing.T) {
-	values, _, errs := inferSource(t, `fn foo(obj) { obj.x = 5
+	values, _, errs := inferSource(t, `fn foo(mut obj) { obj.x = 5
  obj.x = "hi" }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (obj: mut {x: number & string}) -> undefined", values["foo"])
+	require.Equal(t, "fn (obj: {x: number & string}) -> undefined", values["foo"])
 }
 
 // A field write through a `mut` reference to a CLASS instance projects the class body and
@@ -302,7 +290,7 @@ func TestInferMemberAssignClassReceiver(t *testing.T) {
 			name: "mut receiver accepts a well-typed write",
 			src: `
 				class C { v: number }
-				fn f(c: mut C) { c.v = 5 }
+				fn f(mut c: C) { c.v = 5 }
 			`,
 		},
 		{
@@ -312,7 +300,7 @@ func TestInferMemberAssignClassReceiver(t *testing.T) {
 			name: "mut receiver rejects a wrongly-typed write",
 			src: `
 				class C { v: number }
-				fn f(c: mut C) { c.v = "bad" }
+				fn f(mut c: C) { c.v = "bad" }
 			`,
 			want: []string{
 				`3:28-3:33: cannot constrain "bad" <: number`,
@@ -326,7 +314,7 @@ func TestInferMemberAssignClassReceiver(t *testing.T) {
 				class C { v: number }
 				fn f(c: C) { c.v = 5 }
 			`,
-			want: []string{"3:18-3:25: cannot constrain immutable C <: mutable object"},
+			want: []string{"3:18-3:25: cannot mutate 'c' because its binding is immutable; declare it as `mut c`"},
 		},
 	}
 	for _, tt := range tests {
@@ -356,7 +344,7 @@ func TestInferMemberAssignSetter(t *testing.T) {
 			name: "mut instance receiver",
 			src: `
 				class C { v: number, set x(&mut self, n: number) { self.v = n } }
-				fn f(c: mut C) { c.x = 5 }
+				fn f(mut c: C) { c.x = 5 }
 			`,
 		},
 		{
@@ -365,7 +353,7 @@ func TestInferMemberAssignSetter(t *testing.T) {
 				class C { v: number, set x(&mut self, n: number) { self.v = n } }
 				fn f(c: C) { c.x = 5 }
 			`,
-			want: []string{"3:18-3:21: cannot constrain immutable C <: mutable C"},
+			want: []string{"3:18-3:21: cannot mutate 'c' because its binding is immutable; declare it as `mut c`"},
 		},
 		{
 			// A setter mutates the instance, so a plain `self` receiver is rejected at the
@@ -387,7 +375,7 @@ func TestInferMemberAssignSetter(t *testing.T) {
 			name: "value is checked against the setter parameter",
 			src: `
 				class C { v: number, set x(&mut self, n: number) { self.v = n } }
-				fn f(c: mut C) { c.x = "hi" }
+				fn f(mut c: C) { c.x = "hi" }
 			`,
 			want: []string{`3:28-3:32: cannot constrain "hi" <: number`},
 		},
@@ -396,7 +384,7 @@ func TestInferMemberAssignSetter(t *testing.T) {
 			src: `
 				class C { v: number, set x(&mut self, n: number) { self.v = n } }
 				class D extends C { constructor(&mut self) { super(0) } }
-				fn f(d: mut D) { d.x = 5 }
+				fn f(mut d: D) { d.x = 5 }
 			`,
 		},
 		{
@@ -413,7 +401,7 @@ func TestInferMemberAssignSetter(t *testing.T) {
 			name: "generic setter parameter projects the instance argument",
 			src: `
 				class Box<T> { v: T, set x(&mut self, n: T) { self.v = n } }
-				fn f(b: mut Box<number>) { b.x = "hi" }
+				fn f(mut b: Box<number>) { b.x = "hi" }
 			`,
 			want: []string{`3:38-3:42: cannot constrain "hi" <: number`},
 		},
@@ -458,7 +446,7 @@ func TestInferMemberAssignAccessorPair(t *testing.T) {
 					set x(&mut self, n: number) { self.v = n },
 					get x(&self) -> number { return self.v },
 				}
-				fn f(c: mut C) -> number {
+				fn f(mut c: C) -> number {
 					c.x = 5
 					return c.x
 				}
@@ -472,7 +460,7 @@ func TestInferMemberAssignAccessorPair(t *testing.T) {
 					get x(&self) -> number { return self.v },
 					set x(&mut self, n: number) { self.v = n },
 				}
-				fn f(c: mut C) -> number {
+				fn f(mut c: C) -> number {
 					c.x = 5
 					return c.x
 				}
@@ -499,7 +487,7 @@ func TestInferMemberAssignGetterOnly(t *testing.T) {
 			name: "instance receiver",
 			src: `
 				class C { v: number, get x(&self) -> number { return self.v } }
-				fn f(c: mut C) { c.x = 5 }
+				fn f(mut c: C) { c.x = 5 }
 			`,
 			want: []string{"3:22-3:29: Property 'x' is read-only; it has a getter but no setter or field to write."},
 		},
@@ -536,20 +524,20 @@ func TestInferMemberAssignSetterValue(t *testing.T) {
 			get x(&self) -> string { return "s" },
 			set x(&mut self, n: number) { self.v = n },
 		}
-		fn written(c: mut C) { return (c.x = 5) }
-		fn readBack(c: mut C) { c.x = 5
+		fn written(mut c: C) { return (c.x = 5) }
+		fn readBack(mut c: C) { c.x = 5
 			return c.x
 		}
 	`)
 	require.Empty(t, messagesWithSpan(t, errs))
-	require.Equal(t, "fn (c: mut C) -> number", values["written"])
-	require.Equal(t, "fn (c: mut C) -> string", values["readBack"])
+	require.Equal(t, "fn (c: C) -> number", values["written"])
+	require.Equal(t, "fn (c: C) -> string", values["readBack"])
 }
 
-// A `mut` borrow reaches a receiver position through a call result or a branch join as a
+// A `&mut` borrow reaches a receiver position through a call result or a branch join as a
 // variable carrying the borrow among its lower bounds, not as a bare RefType. The setter
 // write looks through that variable for the receiver's mutability, so it accepts the same
-// receivers a field write and a `mut self` method call accept. An immutable receiver is
+// receivers a field write and a `&mut self` method call accept. An immutable receiver is
 // still rejected.
 func TestInferMemberAssignSetterIndirectReceiver(t *testing.T) {
 	tests := []struct {
@@ -561,15 +549,15 @@ func TestInferMemberAssignSetterIndirectReceiver(t *testing.T) {
 			name: "call result",
 			src: `
 				class C { v: number, set x(&mut self, n: number) { self.v = n } }
-				declare fn g(c: mut C) -> mut C
-				fn f(c: mut C) { g(c).x = 5 }
+				declare fn g(c: &mut C) -> &mut C
+				fn f(mut c: C) { g(&mut c).x = 5 }
 			`,
 		},
 		{
 			name: "branch join",
 			src: `
 				class C { v: number, set x(&mut self, n: number) { self.v = n } }
-				fn f(a: mut C, b: mut C, cond: boolean) { val r = if (cond) { a } else { b }
+				fn f(a: &mut C, b: &mut C, cond: boolean) { val r = if (cond) { a } else { b }
 					r.x = 5
 				}
 			`,
@@ -581,13 +569,14 @@ func TestInferMemberAssignSetterIndirectReceiver(t *testing.T) {
 			name: "branch join with one immutable arm",
 			src: `
 				class C { v: number, set x(&mut self, n: number) { self.v = n } }
-				fn f(a: mut C, b: C, cond: boolean) { val r = if (cond) { a } else { b }
+				fn f(a: &mut C, b: &C, cond: boolean) { val r = if (cond) { a } else { b }
 					r.x = 5
 				}
 			`,
 			want: []string{"4:6-4:9: cannot constrain immutable C <: mutable C"},
 		},
 		{
+			// A call result is a temporary no binding owns, so nothing makes it mutable.
 			name: "immutable call result",
 			src: `
 				class C { v: number, set x(&mut self, n: number) { self.v = n } }

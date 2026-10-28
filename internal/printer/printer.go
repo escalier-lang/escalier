@@ -517,14 +517,7 @@ func (p *Printer) printMethodSigParts(sig *ast.FuncSig, recv *ast.MethodReceiver
 			p.writeString(", ")
 		}
 		first = false
-		p.printPattern(param.Pattern)
-		if param.Optional {
-			p.writeString("?")
-		}
-		if param.TypeAnn != nil {
-			p.writeString(": ")
-			p.printTypeAnn(param.TypeAnn)
-		}
+		p.printParam(param)
 	}
 	p.writeString(")")
 	if withReturn {
@@ -580,14 +573,7 @@ func (p *Printer) printAnnMemberParams(recv string, params []*ast.Param) {
 			p.writeString(", ")
 		}
 		first = false
-		p.printPattern(param.Pattern)
-		if param.Optional {
-			p.writeString("?")
-		}
-		if param.TypeAnn != nil {
-			p.writeString(": ")
-			p.printTypeAnn(param.TypeAnn)
-		}
+		p.printParam(param)
 	}
 	p.writeString(")")
 }
@@ -780,11 +766,7 @@ func (p *Printer) printEnumDecl(decl *ast.EnumDecl) {
 			if len(e.Params) > 0 {
 				p.writeString("(")
 				for j, param := range e.Params {
-					p.printPattern(param.Pattern)
-					if param.TypeAnn != nil {
-						p.writeString(": ")
-						p.printTypeAnn(param.TypeAnn)
-					}
+					p.printParam(param)
 					if j < len(e.Params)-1 {
 						p.writeString(", ")
 					}
@@ -1282,19 +1264,38 @@ func (p *Printer) printFuncExpr(expr *ast.FuncExpr) {
 	p.printBlock(expr.Body)
 }
 
+// printParam prints one parameter as `pattern?: T = default`, leaving out each part
+// the parameter does not have.
+func (p *Printer) printParam(param *ast.Param) {
+	// The parser stores a parameter's default on its IdentPat, but the default
+	// follows the parameter's type annotation in source. Printing the pattern
+	// with its default would put `= default` ahead of `: T`.
+	pat := param.Pattern
+	var def ast.Expr
+	if ip, ok := pat.(*ast.IdentPat); ok && ip.Default != nil {
+		def = ip.Default
+		pat = ast.NewIdentPat(ip.Name, ip.Mutable, ip.TypeAnn, nil, ip.Span())
+	}
+	p.printPattern(pat)
+	if param.Optional {
+		p.writeString("?")
+	}
+	if param.TypeAnn != nil {
+		p.writeString(": ")
+		p.printTypeAnn(param.TypeAnn)
+	}
+	if def != nil {
+		p.writeString(" = ")
+		p.printExpr(def)
+	}
+}
+
 func (p *Printer) printFuncSig(sig *ast.FuncSig) {
 	p.printGenericParams(sig.LifetimeParams, sig.TypeParams)
 
 	p.writeString("(")
 	for i, param := range sig.Params {
-		p.printPattern(param.Pattern)
-		if param.Optional {
-			p.writeString("?")
-		}
-		if param.TypeAnn != nil {
-			p.writeString(": ")
-			p.printTypeAnn(param.TypeAnn)
-		}
+		p.printParam(param)
 		if i < len(sig.Params)-1 {
 			p.writeString(", ")
 		}
@@ -1863,14 +1864,7 @@ func (p *Printer) printFuncTypeAnnTail(typ *ast.FuncTypeAnn) {
 func (p *Printer) printFuncTypeAnnParams(typ *ast.FuncTypeAnn) {
 	p.writeString("(")
 	for i, param := range typ.Params {
-		p.printPattern(param.Pattern)
-		if param.Optional {
-			p.writeString("?")
-		}
-		if param.TypeAnn != nil {
-			p.writeString(": ")
-			p.printTypeAnn(param.TypeAnn)
-		}
+		p.printParam(param)
 		if i < len(typ.Params)-1 {
 			p.writeString(", ")
 		}

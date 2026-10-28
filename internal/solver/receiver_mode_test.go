@@ -107,14 +107,17 @@ func TestReceiverModes(t *testing.T) {
 			`,
 		},
 		{
-			name: "a mutable consuming receiver rejects an immutable instance",
+			// The call moves the instance into the `mut self` binding, which then owns it
+			// alone, the way `val mut d = c` would.
+			name: "a mutable consuming receiver takes an immutable instance and moves it",
 			src: counter + `
 				fn f() {
 					val c = C(1)
 					c.drain()
+					c.look()
 				}
 			`,
-			want: []string{"14:6-14:13: cannot constrain immutable C <: mutable C"},
+			want: []string{"15:6-15:12: use of moved value 'c'"},
 		},
 		{
 			name: "a consuming call through a borrowed parameter is rejected",

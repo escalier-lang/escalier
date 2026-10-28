@@ -35,6 +35,15 @@ type Info struct {
 	// destructured leaf. A read of a binding with no source, such as one the
 	// prelude seeded, has no entry.
 	decls map[*ast.IdentExpr]ast.Node
+	// mutPlaces holds each identifier, member, or index read that is an owned layer of a
+	// `mut` binding, such as `p`, `p.a`, and `p.a.b` under `val mut p`. Such a value lends
+	// mutable access, which its recorded type cannot say, since the binding rather than
+	// the type holds the mutability.
+	mutPlaces set.Set[ast.Node]
+	// inertMut holds each parameter written `mut` whose binding is immutable anyway, because a
+	// call does not move its argument into the parameter's type, as with
+	// `fn f(mut p: A | B)`.
+	inertMut set.Set[*ast.IdentPat]
 	// ctx is the Context of the run that recorded this table, or nil for a table built
 	// by NewInfo. MemberObject reads the class and alias registries it holds.
 	ctx *Context
@@ -48,6 +57,8 @@ func NewInfo() *Info {
 		methodReads: set.NewSet[ast.Node](),
 		absentKeys:  map[*ast.ObjectPat][]string{},
 		decls:       map[*ast.IdentExpr]ast.Node{},
+		mutPlaces:   set.NewSet[ast.Node](),
+		inertMut:    set.NewSet[*ast.IdentPat](),
 	}
 }
 
@@ -136,12 +147,22 @@ func (i *Info) Expand(t soltype.Type) soltype.Type {
 	return i.ctx.expandedCarrier(t)
 }
 
+// BindsMut reports whether the identifier pattern p declares a mutable binding, which it does
+// when it is written `mut` and the checker kept the binding mutable.
+func (i *Info) BindsMut(p *ast.IdentPat) bool {
+	return p.Mutable && !i.inertMut.Contains(p)
+}
+
 // LendsMut reports whether the value recorded for n lends mutable access, which a
-// `&mut self` member and a setter need from their receiver. It reads the type as
-// recorded, before any coalescing, because a binding's read records a variable whose
-// lower bounds carry the borrow. Every one of those bounds has to be a `mut` borrow,
-// since the value at run time may be any of them.
+// `&mut self` member and a setter need from their receiver. An owned layer of a `mut`
+// binding lends it. Otherwise it reads the type as recorded, before any coalescing,
+// because a binding's read records a variable whose lower bounds carry the borrow. Every
+// one of those bounds has to be a `mut` borrow, since the value at run time may be any of
+// them.
 func (i *Info) LendsMut(n ast.Node) bool {
+	if i.mutPlaces.Contains(n) {
+		return true
+	}
 	t := i.types[n]
 	return t != nil && lendsMut(t)
 }

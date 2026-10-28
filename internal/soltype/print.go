@@ -959,7 +959,7 @@ func (p *namedPrinter) printedArgs(typeArgs, defaults []Type) []string {
 
 // printType renders a coalesced type. Under the lazy deep-mut form (PR 14) the
 // stored type already matches the surface annotation the user wrote, so the
-// printer needs no special elision pass — `mut {a: {x}}` is stored and printed
+// printer needs no special elision pass — `&mut {a: {x}}` is stored and printed
 // verbatim.
 func (p *namedPrinter) printType(t Type) string {
 	if p.maxDepth > 0 {
@@ -1170,11 +1170,8 @@ func (p *namedPrinter) printType(t Type) string {
 		}
 		return t.Name() + "<" + slots + ">"
 	case *RefType:
-		// Ownership and the borrow `&` split on Lt. An owned value has Lt nil and
-		// renders bare. NewRef collapses the owned-immutable cell, so a surviving owned
-		// RefType is always owned-mutable and renders `mut {x}`. A borrow has Lt set and
-		// leads with `&`, then the lifetime name when it is load-bearing, then `mut`.
-		// The four forms are:
+		// A borrow leads with `&`, then the lifetime name when it is load-bearing, then
+		// `mut`. The four forms are:
 		//
 		//	&{x}        &mut {x}        &'a {x}        &'a mut {x}
 		//
@@ -1391,9 +1388,8 @@ func enumVariantDisplayName(qname string) string {
 	return qname
 }
 
-// refBorrowPrefix renders the ownership and borrow prefix of a RefType: "" for an
-// owned-immutable cell, "mut " for owned-mutable, "&" or "&'a " for an immutable
-// borrow, and "&mut " or "&'a mut " for a mutable borrow. The RefType arm and the
+// refBorrowPrefix renders the borrow prefix of a RefType: "&" or "&'a " for an
+// immutable borrow, and "&mut " or "&'a mut " for a mutable borrow. The RefType arm and the
 // method self-receiver share it so a borrow renders the same in both places.
 func (p *namedPrinter) refBorrowPrefix(t *RefType) string {
 	prefix := ""
@@ -1411,9 +1407,10 @@ func (p *namedPrinter) refBorrowPrefix(t *RefType) string {
 
 // printSelfReceiver renders a method's receiver as the Rust-style shorthand, reading
 // it back from the desugared receiver type. An owned receiver `Self` renders `self`.
-// The `mut Self`, `&Self`, and `&mut Self` receivers render `mut self`, `&self`, and
-// `&mut self` through the shared borrow prefix, so a named borrow lifetime renders
-// `&'a self`.
+// The `&Self` and `&mut Self` receivers render `&self` and `&mut self` through the
+// shared borrow prefix, so a named borrow lifetime renders `&'a self`. A `mut self`
+// receiver has the type `Self`, since its `mut` belongs to the `self` binding, so it
+// renders `self`.
 func (p *namedPrinter) printSelfReceiver(sp *FuncParam) string {
 	if ref, ok := sp.Type.(*RefType); ok {
 		return p.refBorrowPrefix(ref) + "self"

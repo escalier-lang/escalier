@@ -238,7 +238,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// An owned parameter dies with the frame, so a closure stored into it borrows p.
 		"StoreIntoAnOwnedParameterLeavesTheCaptureOk": {
 			src: `
-				fn go(box: mut {cb: fn () -> number}) {
+				fn go(mut box: {cb: fn () -> number}) {
 					val p = {x: 1}
 					box.cb = fn () { return p.x }
 					val n = p.x
