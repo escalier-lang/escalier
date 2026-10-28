@@ -399,6 +399,9 @@ type ImmutableBindingError struct {
 	Site      ast.Node
 	Fix       string
 	Unmovable bool
+	// Foreign marks a global the standard library declares, such as `console`. The message
+	// names no fix for it.
+	Foreign bool
 }
 
 // ReadonlyFieldError fires on an assignment such as `obj.f = …` or `obj[k] = …` whose
@@ -3531,6 +3534,9 @@ func (e *ImmutableBindingError) Related() []ast.Span {
 func (e *ImmutableBindingError) Message() string {
 	if e.Unmovable {
 		return fmt.Sprintf("cannot mutate '%s': a call moves its argument only into a parameter typed as an object, tuple, or class, so `mut` has no effect on this one; annotate it as `mut %s: T` with such a type, or as `%s: &mut T`", e.Name, e.Name, e.Name)
+	}
+	if e.Foreign {
+		return fmt.Sprintf("cannot mutate '%s' because its binding is immutable; the standard library declares it without `mut`", e.Name)
 	}
 	return fmt.Sprintf("cannot mutate '%s' because its binding is immutable; declare it as `%s`", e.Name, e.Fix)
 }
