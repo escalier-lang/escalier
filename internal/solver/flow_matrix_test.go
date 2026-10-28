@@ -3862,11 +3862,17 @@ func TestFlowMatrixBindingMutabilityAndOwnershipPass(t *testing.T) {
 }
 */
 
-// DISABLED until #2250, which parses `mut` on a parameter binding. Today `fn take(mut d: T)` is a
-// parse error.
+// DISABLED until #2251 and #2269. The cell writes a value that a `mut` parameter owns. The checker
+// ignores the `mut` on a parameter until #2251, so the write is rejected. The cell also trips the
+// frame-exit check, which the ownership pass in #2269 replaces. The comment above the cell says
+// what the solver reports today.
 /*
 func TestFlowMatrixMutParameter(t *testing.T) {
 	runFlowMatrix(t, []flowCell{
+		// Today the write to `d.x` reports `cannot constrain immutable object <: mutable object`, and
+		// the frame-exit check reports
+		// `'p' leaves the function both as an owned value and through a borrow`, though the function
+		// returns a `number`.
 		{
 			column: "MoveToMutableWhileImmutablyBorrowed",
 			site:   "Argument",
