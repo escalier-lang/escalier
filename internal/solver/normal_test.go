@@ -61,7 +61,7 @@ func TestDNFRoundTrip(t *testing.T) {
 		{name: "an inexact record keeps its open marker", in: "{x: number, ...}", want: "{x: number, ...}"},
 		{name: "a tuple is one atom", in: "[number, string]", want: "[number, string]"},
 		{name: "a function is one atom", in: "fn (x: number) -> string", want: "fn (x: number) -> string"},
-		{name: "a borrow is an opaque atom", in: "mut {x: number}", want: "mut {x: number}"},
+		{name: "a borrow is an opaque atom", in: "&mut {x: number}", want: "&'static mut {x: number}"},
 		{name: "a union of two primitives keeps both", in: "number | string", want: "number | string"},
 		{
 			name: "two exact records over disjoint fields meet to the bottom of the lattice",
@@ -1081,14 +1081,14 @@ func TestDeepNormalizeKeepsBorrows(t *testing.T) {
 			build: func(t *testing.T) soltype.Type {
 				return mutRef(newUnion(nil, parseTypes(t, "{x: number, ...}", "{y: number, ...}")).(soltype.RefInner))
 			},
-			want: "mut ({x: number, ...} | {y: number, ...})",
+			want: "&'static mut ({x: number, ...} | {y: number, ...})",
 		},
 		{
 			name: "an inner that normalizes to a bare primitive keeps the borrow as written",
 			build: func(t *testing.T) soltype.Type {
 				return mutRef(newUnion(nil, parseTypes(t, "number", "5")).(soltype.RefInner))
 			},
-			want: "mut (number | 5)",
+			want: "&'static mut (number | 5)",
 		},
 	}
 	for _, tt := range tests {

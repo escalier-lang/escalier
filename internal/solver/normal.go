@@ -967,7 +967,7 @@ func litFamily(l soltype.Lit) valueFamily {
 // atoms of the family are disjoint.
 //
 // Two borrows are the exception to that last rule, so they are handed back
-// unfused. `mut {x: number}` and `mut {y: string}` are distinct atoms of
+// unfused. `&mut {x: number}` and `&mut {y: string}` are distinct atoms of
 // refCellFamily and are not disjoint, since an object carrying both fields
 // inhabits each. meetAtoms reaches meetRefs once this bails, and meetRefs decides
 // the pair by comparing carriers.

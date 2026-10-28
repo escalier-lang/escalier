@@ -67,10 +67,9 @@ func (v *LifetimeVar) BoundsAt(pol Polarity) []Lifetime {
 type StaticLifetime struct{}
 
 // AnonLifetime is a display-only marker that keeps the `&` on a borrow whose
-// lifetime is not load-bearing. The lifetime coalescer (D4) inserts it where it
-// used to drop the lifetime entirely, so an `&mut {x}` parameter still renders
-// as `&mut {x}` instead of collapsing to owned-mutable `mut {x}`. It is never a
-// constrain input. Only coalesce produces it, only the printer reads it, and it
+// lifetime is not load-bearing. The lifetime coalescer (D4) parks an elided borrow
+// on it, so an `&mut {x}` parameter renders as `&mut {x}` rather than as an owned
+// `{x}`. It is never a constrain input. Only coalesce produces it, only the printer reads it, and it
 // carries no bounds since the underlying lifetime variable has already been
 // determined unobservable.
 type AnonLifetime struct{}

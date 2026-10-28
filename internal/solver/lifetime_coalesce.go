@@ -117,7 +117,7 @@ func newLtRewriter(t soltype.Type, pol soltype.Polarity, keepLts set.Set[*soltyp
 // reaches no output. `fn f<'a>(x: &'a mut B, y: &'a mut B)` renders its `'a` for that reason,
 // while the single-write `fn f(x: &mut B)` elides. A write is any of the three positions
 // EnterType records: a borrow's lifetime slot and an alias or class reference's lifetime
-// argument, so `fn f<'a>(a: mut Holder<'a>, b: mut Holder<'a>)` counts too. negPolSeen is the
+// argument, so `fn f<'a>(a: Holder<'a>, b: Holder<'a>)` counts too. negPolSeen is the
 // running per-lifetime tally that second entry is derived from.
 //
 // Only a parameter lifetime enters by the second route, since the count runs in the negative

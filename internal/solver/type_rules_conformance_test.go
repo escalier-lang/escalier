@@ -64,7 +64,7 @@ func TestTypeRules(t *testing.T) {
 					p.x = 1
 				}
 			`,
-			want: []string{"4:6-4:13: cannot constrain immutable object <: mutable object"},
+			want: []string{"4:6-4:13: cannot mutate 'p' because its binding is immutable; declare it as `val mut p`"},
 		},
 		// A `val mut` binding makes every owned layer writable, so a write two layers down is
 		// accepted. The case leaves the type unannotated. TestTypeRulesBindingMutability covers
@@ -90,7 +90,7 @@ func TestTypeRules(t *testing.T) {
 					a[0].x = 1
 				}
 			`,
-			want: []string{"5:6-5:12: cannot constrain immutable Array<&mut Point> <: mutable Array<&mut Point>"},
+			want: []string{"5:6-5:12: cannot mutate 'a' because its binding is immutable; declare it as `val mut a`"},
 		},
 		// A `mut` inside an owned object annotation is rejected, since the owner decides each
 		// field's mutability.
@@ -101,7 +101,7 @@ func TestTypeRules(t *testing.T) {
 					val p: {a: mut {b: number}} = {a: {b: 0}}
 				}
 			`,
-			want: []string{"3:21-3:22: owned-mutable field annotation is not allowed; the enclosing context decides mutability — wrap the whole annotation in `mut` to make this field writable, or use interior mutability"},
+			want: []string{"3:17-3:20: " + ownedMutTypeMsg},
 		},
 		// A `readonly` field is written once, by the constructor call, so a later write is
 		// rejected even through a `val mut` binding.
@@ -246,12 +246,10 @@ func TestTypeRulesBindingMutability(t *testing.T) {
 	})
 }
 
-// DISABLED until #2254, which rejects `mut` inside an owned type annotation and removes the
-// owned-mutable type. The comment above each case says what the solver does today.
-/*
+// TestTypeRulesOwnedMutType covers T3 and T9 for a `mut` written in a type and for a `val mut`
+// binding's literals.
 func TestTypeRulesOwnedMutType(t *testing.T) {
-	// Since `mut` is not part of an owned type, `Array<mut Point>` is rejected. Today the
-	// annotation is accepted with no diagnostic.
+	// Since `mut` is not part of an owned type, `Array<mut Point>` is rejected at its `mut`.
 	runTypeRuleCases(t, []typeRuleCase{
 		{
 			name: "T3/MutInOwnedTypeArgument",
@@ -261,12 +259,11 @@ func TestTypeRulesOwnedMutType(t *testing.T) {
 					val a: Array<mut Point> = []
 				}
 			`,
-			want: []string{"4:19-4:28: `mut` is not allowed in an owned type; the binding decides mutability, so write `val mut` on the binding or borrow with `&mut`"},
+			want: []string{"4:19-4:22: " + ownedMutTypeMsg},
 		},
 	})
 	// T3 makes every owned layer of a `val mut` binding writable, so every literal widens. The
-	// binding's mutability shows on its name as `mut p`, so the type carries no `mut`. Today the
-	// type renders as `mut {x: number, y: {z: string}}`.
+	// binding's mutability shows on its name as `mut p`, so the type carries no `mut`.
 	runLiteralWideningCases(t, []literalWideningCase{
 		{
 			name: "T9/ValMutObject",
@@ -275,7 +272,6 @@ func TestTypeRulesOwnedMutType(t *testing.T) {
 		},
 	})
 }
-*/
 
 // DISABLED until #2288, which infers a class field's type from its initializer and widens each
 // writable field.

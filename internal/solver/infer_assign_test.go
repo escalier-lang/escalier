@@ -221,7 +221,7 @@ func TestInferAssignMemberTargetImmutable(t *testing.T) {
 	src := `val o = {x: 5}
 fn f() { o.x = 6 }`
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "2:10-2:17: cannot constrain immutable object <: mutable object", "o.x = 6")
+	requireBlame(t, src, errs, "2:10-2:17: cannot mutate 'o' because its binding is immutable; declare it as `val mut o`", "o.x = 6", "val o = {x: 5}")
 }
 
 // An index target `xs[i] = …` writes an element, which needs a mutable receiver the
@@ -231,7 +231,7 @@ func TestInferAssignIndexTargetImmutable(t *testing.T) {
 	src := `val xs = [1, 2]
 fn f() { xs[0] = 6 }`
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "2:10-2:19: cannot constrain immutable tuple <: mutable tuple", "xs[0] = 6")
+	requireBlame(t, src, errs, "2:10-2:19: cannot mutate 'xs' because its binding is immutable; declare it as `val mut xs`", "xs[0] = 6", "val xs = [1, 2]")
 }
 
 // An immutable target with an independently-broken source reports BOTH errors — they

@@ -671,7 +671,7 @@ func TestHoverFromSolver(t *testing.T) {
 		},
 		{
 			// A call moves its argument only into a concrete owned shape, so the `mut` on a
-			// union parameter leaves the binding immutable.
+			// union parameter leaves the binding immutable, and the hover shows no `mut`.
 			name: "MutUnionParam",
 			files: map[string]string{
 				"lib/point.esc": "export fn f(mut p: {x: number} | {y: number}) -> number { return 1 }",

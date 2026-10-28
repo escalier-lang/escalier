@@ -36,18 +36,68 @@ import (
 //	}
 
 // ModuleLevelMoveError is reported when a function body moves an owned value out of a module-level
-// binding or an import.
+// binding or an import, or when a module-level `mut` binding takes one.
 type ModuleLevelMoveError struct {
 	// Source is the source text of the moved place, such as `xs` or `cfg.items`.
 	Source string
-	node   ast.Node
+	// IntoMut marks a move into a module-level `mut` binding rather than one inside a body.
+	IntoMut bool
+	node    ast.Node
 }
 
 func (*ModuleLevelMoveError) isSolverError()      {}
 func (e *ModuleLevelMoveError) Span() ast.Span    { return e.node.Span() }
 func (*ModuleLevelMoveError) Related() []ast.Span { return nil }
 func (e *ModuleLevelMoveError) Message() string {
+	if e.IntoMut {
+		return fmt.Sprintf("cannot move module-level value '%s' into a `mut` binding, since the module keeps it. Borrow it with `&%s`", e.Source, e.Source)
+	}
 	return fmt.Sprintf("cannot move module-level value '%s' inside a function. Borrow it with `&%s`", e.Source, e.Source)
+}
+
+// rejectModuleLevelMutMove reports a ModuleLevelMoveError for each place rooted at a
+// module-level binding or an import that source moves into a `mut` binding at module level.
+// Code outside a function body consumes nothing, so the place stays readable after the move,
+// and a write through the `mut` binding would change a value that place still reads. The value
+// moved is source itself, or a result of one of its branches. scope resolves the root.
+func (c *checker) rejectModuleLevelMutMove(scope *Scope, source ast.Expr) {
+	for _, r := range branchResults(source) {
+		b, ok := c.placeRootBinding(scope, r)
+		if !ok {
+			continue
+		}
+		t := c.info.TypeOf(r)
+		if _, isIdent := r.(*ast.IdentExpr); isIdent {
+			t = bindingType(b)
+		}
+		if !c.holdsConcreteOwned(t, set.NewSet[*soltype.TypeVarType]()) {
+			continue
+		}
+		text, _ := printer.Print(r, printer.DefaultOptions())
+		c.report(&ModuleLevelMoveError{Source: text, IntoMut: true, node: r})
+	}
+}
+
+// placeRootBinding returns the value binding the place e is rooted at. e is a binding's name, or
+// a member or index chain off one. A class or enum name is not such a binding, and neither is a
+// class value.
+func (c *checker) placeRootBinding(scope *Scope, e ast.Expr) (ValueBinding, bool) {
+	for {
+		switch x := e.(type) {
+		case *ast.IdentExpr:
+			b, found := c.lookupValueBinding(scope, x.Name)
+			if !found || declaredAsClassOrEnum(b) || c.isClassValue(bindingType(b)) {
+				return ValueBinding{}, false
+			}
+			return b, true
+		case *ast.MemberExpr:
+			e = x.Object
+		case *ast.IndexExpr:
+			e = x.Object
+		default:
+			return ValueBinding{}, false
+		}
+	}
 }
 
 // moduleLevelRootInBody returns the binding the place e is rooted at, when e is read inside a

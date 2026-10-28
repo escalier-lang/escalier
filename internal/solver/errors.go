@@ -304,7 +304,7 @@ type ExactNonFinalClassError struct {
 // borrow but the super is mutable: writing through the mutable target would mutate a
 // value the source only lent out as read-only, so an immutable reference cannot fill
 // a mutable target. The reverse — a mutable source decaying to an immutable target — is
-// fine, so only this direction errors. It also fires for `{x} <: mut {x}`, where the
+// fine, so only this direction errors. It also fires for `{x} <: &mut {x}`, where the
 // bare source is wrapped as an immutable view before re-dispatch.
 type MutabilityMismatchError struct {
 	Sub, Super *soltype.RefType
@@ -368,16 +368,37 @@ type SpreadNotObjectError struct {
 	Operand soltype.Type
 }
 
-// MutFieldError fires when a `mut T` annotation appears as an object property
-// value or a tuple element inside a non-mut container — `{a: mut {x}}` or
-// `[mut {x}]`. An owned-mutable cell nested inside an immutable container is
-// misleading: the enclosing container's immutability already reaches into the
-// field, so the field is not actually writable, and interior mutability (#618) is
-// the proper mechanism for the case the user wants. A borrow field (`&T`,
-// `&mut T`) is a reference to external storage, not an interior owned-mutable
-// cell, so it stays legal. The annotation node carries the blame span.
-type MutFieldError struct {
+// OwnedMutTypeError fires on a `mut T` annotation, in any position: a binding, a
+// parameter, a return, a field, a tuple element, a type argument, an alias body, or a type
+// parameter's bound. A value's mutability belongs to the binding that owns it, so `mut`
+// appears in a type only as part of a mutable borrow `&mut T`. Ann is the rejected
+// annotation, and the error blames its `mut` keyword.
+type OwnedMutTypeError struct {
 	Ann *ast.MutableTypeAnn
+}
+
+// SharedAwaitIntoMutError fires when a `mut` binding takes the value a promise held in a place
+// settles to, as `val mut r = await p` does. Awaiting `p` again yields the same value, so the
+// binding would not be its only owner. Await is the `await` expression, which carries the
+// blame span, and Source is the promise's source text.
+type SharedAwaitIntoMutError struct {
+	Await  *ast.AwaitExpr
+	Source string
+}
+
+// ImmutableBindingError fires on a write, a `&mut` borrow, or a `&mut self` call through a
+// place rooted at a binding that cannot mutate the value it owns. A place is a binding or a
+// field path rooted at one, such as `p` or `p.a.b`. Name is the root binding's name and Decl
+// its declaration, related as "declared here". Site is the operation, which carries the
+// blame span. Fix is the declaration the message tells the user to write, such as
+// `val mut p`. Unmovable marks a parameter written `mut` whose type a call does not move its
+// argument into, such as a union, so the `mut` has no effect.
+type ImmutableBindingError struct {
+	Name      string
+	Decl      ast.Node
+	Site      ast.Node
+	Fix       string
+	Unmovable bool
 }
 
 // ReadonlyFieldError fires on an assignment such as `obj.f = …` or `obj[k] = …` whose
@@ -390,7 +411,7 @@ type ReadonlyFieldError struct {
 
 // ReadonlyFieldSubtypeError fires when a readonly source field flows into a
 // non-readonly target field through structural subtyping under a mutable borrow:
-// a `mut {readonly a: T}` cannot fill a `mut {a: T}` target, since the target view
+// a `&mut {readonly a: T}` cannot fill a `&mut {a: T}` target, since the target view
 // would otherwise let a holder write through and break the source's readonly
 // contract. The check sits in the ObjectType <: ObjectType arm under the
 // mut-context flag, the contravariant write view of a mutable borrow, and blames
@@ -564,7 +585,9 @@ type OverrideFormMismatchError struct {
 }
 
 func (*CannotConstrainError) isSolverError()         {}
-func (*MutFieldError) isSolverError()                {}
+func (*OwnedMutTypeError) isSolverError()            {}
+func (*ImmutableBindingError) isSolverError()        {}
+func (*SharedAwaitIntoMutError) isSolverError()      {}
 func (*ReadonlyFieldError) isSolverError()           {}
 func (*ReadonlyFieldSubtypeError) isSolverError()    {}
 func (*RaisingGetterPropertyError) isSolverError()   {}
@@ -3481,10 +3504,35 @@ func (e *BorrowEscapeError) Message() string {
 	return fmt.Sprintf("cannot use borrowed &%s as owned %s", describe(e.Sub), describe(e.Super))
 }
 
-func (e *MutFieldError) Span() ast.Span      { return e.Ann.Span() }
-func (e *MutFieldError) Related() []ast.Span { return nil }
-func (e *MutFieldError) Message() string {
-	return "owned-mutable field annotation is not allowed; the enclosing context decides mutability — wrap the whole annotation in `mut` to make this field writable, or use interior mutability"
+// Span covers the `mut` keyword alone, which is the part the message asks the user to move.
+func (e *OwnedMutTypeError) Span() ast.Span {
+	span := e.Ann.Span()
+	span.End.Offset = span.Start.Offset + len("mut")
+	return span
+}
+func (e *OwnedMutTypeError) Related() []ast.Span { return nil }
+func (e *OwnedMutTypeError) Message() string {
+	return "`mut` is not allowed in an owned type; the binding that owns a value decides whether it is mutable, so write `mut` on the binding, as in `mut p: T` or `val mut x: T`, or write `&mut T` for a mutable borrow"
+}
+
+func (e *SharedAwaitIntoMutError) Span() ast.Span      { return e.Await.Span() }
+func (e *SharedAwaitIntoMutError) Related() []ast.Span { return nil }
+func (e *SharedAwaitIntoMutError) Message() string {
+	return fmt.Sprintf("cannot bind the value '%s' settles to with `mut`, since awaiting '%s' again yields the same value; await a call that makes a new promise instead", e.Source, e.Source)
+}
+
+func (e *ImmutableBindingError) Span() ast.Span { return spanOfNode(e.Site) }
+func (e *ImmutableBindingError) Related() []ast.Span {
+	if e.Decl == nil {
+		return nil
+	}
+	return []ast.Span{e.Decl.Span()}
+}
+func (e *ImmutableBindingError) Message() string {
+	if e.Unmovable {
+		return fmt.Sprintf("cannot mutate '%s': a call moves its argument only into a parameter typed as an object, tuple, or class, so `mut` has no effect on this one; annotate it as `mut %s: T` with such a type, or as `%s: &mut T`", e.Name, e.Name, e.Name)
+	}
+	return fmt.Sprintf("cannot mutate '%s' because its binding is immutable; declare it as `%s`", e.Name, e.Fix)
 }
 
 func (e *ReadonlyFieldError) Span() ast.Span      { return spanOfNode(e.site) }
