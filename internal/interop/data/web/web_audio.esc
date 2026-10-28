@@ -153,8 +153,8 @@ export declare interface PeriodicWaveConstraints {
 }
 
 export declare interface PeriodicWaveOptions extends PeriodicWaveConstraints {
-    imag?: mut Array<number> | typed_arrays.Float32Array,
-    real?: mut Array<number> | typed_arrays.Float32Array
+    imag?: Array<number> | typed_arrays.Float32Array,
+    real?: Array<number> | typed_arrays.Float32Array
 }
 
 export declare interface StereoPannerOptions extends AudioNodeOptions {
@@ -162,7 +162,7 @@ export declare interface StereoPannerOptions extends AudioNodeOptions {
 }
 
 export declare interface WaveShaperOptions extends AudioNodeOptions {
-    curve?: mut Array<number> | typed_arrays.Float32Array,
+    curve?: Array<number> | typed_arrays.Float32Array,
     oversample?: OverSampleType
 }
 
@@ -399,7 +399,7 @@ export declare class AudioParam {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioParam/setValueAtTime) */
     setValueAtTime(&mut self, value: number, startTime: number) -> AudioParam,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioParam/setValueCurveAtTime) */
-    setValueCurveAtTime(&mut self, values: mut Array<number> | typed_arrays.Float32Array, startTime: number, duration: number) -> AudioParam,
+    setValueCurveAtTime(&mut self, values: Array<number> | typed_arrays.Float32Array, startTime: number, duration: number) -> AudioParam,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioParam/setValueCurveAtTime) */
     setValueCurveAtTime(&mut self, values: Iterable<number>, startTime: number, duration: number) -> AudioParam,
     static prototype: AudioParam,
@@ -549,13 +549,13 @@ export declare class BaseAudioContext extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createGain) */
     createGain(&mut self) -> GainNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createIIRFilter) */
-    createIIRFilter(&mut self, feedforward: mut Array<number>, feedback: mut Array<number>) -> IIRFilterNode,
+    createIIRFilter(&mut self, feedforward: Array<number>, feedback: Array<number>) -> IIRFilterNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createOscillator) */
     createOscillator(&mut self) -> OscillatorNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createPanner) */
     createPanner(&mut self) -> PannerNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createPeriodicWave) */
-    createPeriodicWave(&mut self, real: mut Array<number> | typed_arrays.Float32Array, imag: mut Array<number> | typed_arrays.Float32Array, constraints?: PeriodicWaveConstraints) -> PeriodicWave,
+    createPeriodicWave(&mut self, real: Array<number> | typed_arrays.Float32Array, imag: Array<number> | typed_arrays.Float32Array, constraints?: PeriodicWaveConstraints) -> PeriodicWave,
     /**
      * @deprecated
      *

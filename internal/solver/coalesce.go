@@ -104,16 +104,14 @@ func coalesceMemberSig(
 }
 
 // coalesceStructure is the structural half of coalesceKeeping: the variables are inlined to
-// their bounds apart from keep, and an owned-mut cell is lifted out of an immutable
-// container. The borrow lifetimes are left raw for the lifetime pass.
+// their bounds apart from keep. The borrow lifetimes are left raw for the lifetime pass.
 func coalesceStructure(
 	t soltype.Type,
 	pol soltype.Polarity,
 	keep set.Set[*soltype.TypeVarType],
 	flow map[*soltype.TypeVarType][]*soltype.TypeVarType,
 ) soltype.Type {
-	c := t.Accept(&coalescer{seen: set.NewSet[*soltype.TypeVarType](), keep: keep, flow: flow}, pol)
-	return bubbleOwnedMut(c) // #779: lift an owned-mut cell out of an immutable container
+	return t.Accept(&coalescer{seen: set.NewSet[*soltype.TypeVarType](), keep: keep, flow: flow}, pol)
 }
 
 // muBinders turns a cycle in the bound graph into a finite μ-knot. Both coalescers embed it, so
@@ -309,89 +307,6 @@ func foldNegation(t soltype.Type) soltype.Type {
 	return folded
 }
 
-// bubbleOwnedMut rewrites a coalesced display type so no owned-mutable cell ever
-// sits inside an immutable object or tuple (#779). `mut` is deep, so an owned-mut
-// field is equivalent to making the whole container `mut`: `{p: mut {x}}` means the
-// same as `mut {p: {x}}`. The nested form is the one the C3 field-write fold produces
-// for `obj.p.x = 5`, and it is no longer a valid annotation, so the rendered
-// signature must take the bubbled-up form to stay re-writable.
-//
-// It runs at DISPLAY time only, over the already-coalesced type — the operative
-// bounds the solver checks against are untouched, so this changes only how an
-// inferred signature is printed, never what it accepts. A `&`/`&mut` borrow field
-// carries a lifetime and references external storage, so it is left in place; only an
-// owned-mut cell (Mut set, Lt nil) bubbles.
-func bubbleOwnedMut(t soltype.Type) soltype.Type {
-	return t.Accept(&mutBubbler{}, soltype.Positive)
-}
-
-// mutBubbler is the rewriting visitor behind bubbleOwnedMut. The lift happens in
-// ExitType, bottom-up: by the time an object/tuple is exited its children are already
-// bubbled, so a child that bubbled to an owned-mut cell is visible here and lifts the
-// cell one level further out.
-type mutBubbler struct{}
-
-func (b *mutBubbler) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
-	return soltype.EnterResult{}
-}
-
-func (b *mutBubbler) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
-	switch t := t.(type) {
-	case *soltype.ObjectType:
-		anyMut := false
-		elems := make([]soltype.ObjTypeElem, len(t.Elems))
-		for i, e := range t.Elems {
-			// Only a property can hold an owned-mut cell to bubble. A method, getter, or
-			// setter — carried by the object a class-body `self` binds to — has no field
-			// cell, so it passes through unchanged (M5 B3).
-			p, ok := e.(*soltype.PropertyElem)
-			if !ok {
-				elems[i] = e
-				continue
-			}
-			ft := p.Type
-			if inner, isMut, lt := soltype.UnwrapRef(ft); isMut && lt == nil {
-				anyMut = true
-				ft = inner // strip the redundant cell; the container's `mut` covers it
-			}
-			elems[i] = &soltype.PropertyElem{Name: p.Name, Type: ft, Optional: p.Optional, Readonly: p.Readonly}
-		}
-		obj := &soltype.ObjectType{Elems: elems, Inexact: t.Inexact, Class: t.Class}
-		if anyMut {
-			return soltype.NewRef(true, nil, obj)
-		}
-		return obj
-	case *soltype.TupleType:
-		anyMut := false
-		elems := make([]soltype.Type, len(t.Elems))
-		for i, e := range t.Elems {
-			if inner, isMut, lt := soltype.UnwrapRef(e); isMut && lt == nil {
-				anyMut = true
-				e = inner
-			}
-			elems[i] = e
-		}
-		tup := &soltype.TupleType{Elems: elems, Inexact: t.Inexact}
-		if anyMut {
-			return soltype.NewRef(true, nil, tup)
-		}
-		return tup
-	case *soltype.RefType:
-		// An owned-mut wrapper over an inner that itself bubbled to owned-mut would be a
-		// redundant `mut mut {…}`. Collapse it so the wrapper stays single.
-		if t.Mut && t.Lt == nil {
-			if inner, isMut, lt := soltype.UnwrapRef(t.Inner); isMut && lt == nil {
-				if ri, ok := inner.(soltype.RefInner); ok {
-					return &soltype.RefType{Mut: true, Lt: nil, Inner: ri}
-				}
-			}
-		}
-		return t
-	default:
-		return t
-	}
-}
-
 // widenVar lowers a widenable `var` binding's coalesced value to its primitive
 // (M4 B3) when it is read in covariant (Positive) position — `var a = 5` ⇒
 // number, `var p = {x: 0}` ⇒ {x: number}. It runs AFTER combine, so a union of
@@ -508,7 +423,6 @@ func coalesceSchemeKeeping(
 		binders:    map[*soltype.TypeVarType]*soltype.TypeVarType{},
 		seen:       set.NewSet[*soltype.TypeVarType](),
 	}, soltype.Positive)
-	c = bubbleOwnedMut(c) // #779: lift an owned-mut cell out of an immutable container
 	// A scheme display is always coalesced from the Positive root.
 	// D4: resolve borrow lifetimes to their display form. A declared lifetime parameter is
 	// pinned, so a class's `'a` keeps its name in a constructor binder's bound as well as in
@@ -1359,17 +1273,17 @@ func combine(pol soltype.Polarity, parts []soltype.Type, open bool) soltype.Type
 // parameter marker (B2) is the opt-out: when set, the folded object stays inexact
 // so the param is row-polymorphic and callers may pass objects with extra fields.
 //
-// Whole-object `mut` merge (M4 C3): the field-write path records a write `obj.x =
-// 5` as a MUTABLE inexact requirement `mut {x: number, ...}` on the receiver var,
-// alongside the bare inexact reads. When ANY write is present, every selection —
-// reads and writes alike — folds into ONE object wrapped in `mut`, rather than a
-// per-field partition: `obj.x = 5; obj.y = 10` ⇒ `mut {x, y}` and the mixed
-// `val x = obj.bar; obj.baz = 5` ⇒
-// `mut {bar, baz}` — a single object, not `{bar} & mut {baz}`. With
-// no write the reads fold into a bare (immutable) object, the pre-C3 behavior. The
-// tradeoff: wrapping the whole object in `mut` makes read-only fields invariant
-// rather than covariant; for a generalized function this is invisible because each
-// read-only field is a fresh-per-call type parameter.
+// Whole-object `&mut` merge (M4 C3): a write `obj.x = 5` through a receiver var that
+// holds a borrow records a mutable borrow requirement `&mut {x: number, ...}` on the
+// var, alongside the bare inexact reads. When ANY write is present, every selection —
+// reads and writes alike — folds into ONE object under one `&mut`, rather than a
+// per-field partition: `obj.x = 5; obj.y = 10` ⇒ `&mut {x, y}` and the mixed
+// `val x = obj.bar; obj.baz = 5` ⇒ `&mut {bar, baz}`, a single object rather than
+// `{bar} & &mut {baz}`. With no write the reads fold into a bare object. The tradeoff:
+// the `&mut` makes read-only fields invariant rather than covariant; for a
+// generalized function this is invisible because each read-only field is a
+// fresh-per-call type parameter. A write through an owned receiver records no such
+// requirement, since the binding's own mutability decides it.
 //
 // This is NOT recursive: it folds the objects of ONE var's bound list and does not
 // descend into property types. Nesting (`p.a.b`) is reached by the callers' walks
@@ -1379,11 +1293,14 @@ func combine(pol soltype.Polarity, parts []soltype.Type, open bool) soltype.Type
 func foldUsageBounds(parts []soltype.Type, open bool) []soltype.Type {
 	var objs []*soltype.ObjectType
 	var others []soltype.Type
-	mut := false
+	// writeLt is the lifetime of the first write requirement, or nil when there is none.
+	var writeLt soltype.Lifetime
 	for _, p := range parts {
 		if o, isWrite, ok := usageObject(p); ok {
 			objs = append(objs, o)
-			mut = mut || isWrite
+			if _, _, lt := soltype.UnwrapRef(p); isWrite && writeLt == nil {
+				writeLt = lt
+			}
 			continue
 		}
 		others = append(others, p)
@@ -1393,10 +1310,10 @@ func foldUsageBounds(parts []soltype.Type, open bool) []soltype.Type {
 	}
 	mergedObj := mergeObjectGroup(objs, open)
 	merged := soltype.Type(mergedObj)
-	if mut {
-		// NewRef does not collapse a (true, nil) cell — an owned-mutable object — so
-		// the wrapper survives. mergeObjectGroup returns a *ObjectType, a RefInner.
-		merged = soltype.NewRef(true, nil, mergedObj)
+	if writeLt != nil {
+		// Every write requirement borrows the receiver for the write alone, so the folded
+		// requirement borrows it at the first write's lifetime.
+		merged = &soltype.RefType{Mut: true, Lt: writeLt, Inner: mergedObj}
 	}
 	return append([]soltype.Type{merged}, others...)
 }
@@ -1406,8 +1323,8 @@ func foldUsageBounds(parts []soltype.Type, open bool) []soltype.Type {
 // shapes the inference walk mints:
 //   - a bare inexact object is a member READ — `obj.x` lowers to {x: β, ...}
 //     (valueProp); ok=true, write=false.
-//   - a `mut`-wrapped inexact object is a field WRITE — `obj.x = v` lowers to
-//     mut {x: widen(v), ...} (inferMemberAssign); ok=true, write=true.
+//   - a mutable borrow of an inexact object is a field WRITE — `obj.x = v` lowers to
+//     &mut {x: widen(v), ...} (inferMemberAssign); ok=true, write=true.
 //
 // Everything else is not a usage requirement and returns ok=false: an EXACT object
 // is an already-closed shape (folding it would be wrong), an immutable borrow is not
@@ -1418,7 +1335,7 @@ func usageObject(t soltype.Type) (obj *soltype.ObjectType, write bool, ok bool) 
 	if o, isObj := t.(*soltype.ObjectType); isObj && o.Inexact {
 		return o, false, true
 	}
-	if inner, isMut, _ := soltype.UnwrapRef(t); isMut {
+	if inner, isMut, lt := soltype.UnwrapRef(t); isMut && lt != nil {
 		if o, isObj := inner.(*soltype.ObjectType); isObj && o.Inexact {
 			return o, true, true
 		}
@@ -1719,8 +1636,8 @@ func (ctx *alphaCtx) bindLifetimeParams(as, bs []*soltype.LifetimeParam) {
 // one.
 //
 // This reads the ltp bijection through partner and boundRight rather than through decide,
-// because either side may be a lifetime with no variable id at all. 'static, an
-// owned-mutable nil, an anonymous marker, and a union are all such lifetimes. A
+// because either side may be a lifetime with no variable id at all. 'static, a nil
+// lifetime, an anonymous marker, and a union are all such lifetimes. A
 // non-variable side is unbound by construction, and a bound variable facing one is a
 // mismatch.
 func (ctx *alphaCtx) sameLifetime(a, b soltype.Lifetime) bool {
@@ -2168,7 +2085,7 @@ func equalSelfParam(a, b *soltype.FuncParam, ctx *alphaCtx) bool {
 // two variables together through the bijection, so two borrows minted in independent
 // schemes match when they occupy corresponding positions and a variable reused on one
 // side must be reused the same way on the other. A borrow whose lifetime is not a
-// variable — 'static, an owned-mutable nil, an anonymous marker, or a union — falls back
+// variable — 'static, a nil lifetime, an anonymous marker, or a union — falls back
 // to ltEqual's by-value rule in both modes.
 func ltEqualWith(a, b soltype.Lifetime, p *ltPairing) bool {
 	if p == nil {
@@ -2190,7 +2107,8 @@ func ltEqualWith(a, b soltype.Lifetime, p *ltPairing) bool {
 //   - A LifetimeVar is identity-keyed. Two are equal only when they are the same
 //     pointer.
 //   - 'static is a value, so any two StaticLifetimes are equal.
-//   - A nil lifetime is an owned-mutable borrow. It equals only another nil.
+//   - A nil lifetime marks the transient owned view the bare<:RefType constrain arm
+//     builds. It equals only another nil.
 //
 // This mirrors how the rest of equalType keys variables by pointer and primitives by
 // value.

@@ -91,7 +91,10 @@ independent of whether the value it owns is mutable.
 A value owned by `val p` and a borrow `&T` are both immutable. Only a `mut`
 binding, such as `val mut p`, and a `&mut T` borrow permit writes. A fresh
 value, such as a literal or a constructor call, takes its mutability from the
-binding it lands in.
+binding it lands in. Inference never makes a binding mutable. A parameter is
+mutable only when it is written `mut p`, whether or not it has a type
+annotation, so `fn f(p) { p.x = 1 }` reports that `p`'s binding is immutable.
+F3 still infers an unannotated parameter's type.
 
 **T3. Mutability is deep through owned structure and stops at a borrow.** A
 binding's mutability applies to every layer the value owns, including type
@@ -130,8 +133,8 @@ and `val q: &{x: number} = r` is accepted.
 value in a `val mut` binding can be borrowed as `&` or `&mut`. A value in a
 `val` binding can be borrowed only as `&`. The same holds for a call to a `&mut self` method, which
 borrows its receiver mutably. With `val p = {x: 1}`, `&mut p` reports
-`cannot constrain immutable object <: mutable object`. With
-`val mut p = {x: 1}`, both `&p` and `&mut p` are accepted.
+``cannot mutate 'p' because its binding is immutable; declare it as `val mut p` ``.
+With `val mut p = {x: 1}`, both `&p` and `&mut p` are accepted.
 
 **T8. The branches of a conditional agree on ownership.** When the branches of
 an `if`, a `match`, or another conditional produce the value of one
@@ -1325,9 +1328,6 @@ the docs change.
 - Both docs borrow an owned value with an annotation alone, as in
   `val q: &{x: number} = p`. F4 rejects that form, so those examples change to
   `&p`.
-- A call to a `&mut self` method on an immutable binding goes through
-  `checkReceiverMut` in [classes.go](../../internal/solver/classes.go), which
-  appears to reject it. `docs/08_mutability.md` says the call is accepted.
 - An element store `t[i] = x` is typed and moves its source. `docs/09_ownership.md`
   says it is rejected as unsupported and cites
   [#1268](https://github.com/escalier-lang/escalier/issues/1268).
@@ -1337,14 +1337,6 @@ the docs change.
 - `docs/09_ownership.md` says a move is read off lifetime constraints. The solver
   decides moves separately at each flow site with its own conditions. The checking
   model above is the proposal to make the docs true.
-
-- Both docs and the solver write an owned value's mutability in its type, as
-  `mut T`, and `docs/08_mutability.md` calls `val mut a: {a: {b: {c: number}}}`
-  a conflict. T1 moves the mutability to the binding, so that binding is
-  ordinary. A `p: mut T` parameter becomes `mut p: T`, a `-> mut T` return
-  becomes `-> T`, and the stdlib's `...items: mut Array<T>` rest parameters
-  become `...items: Array<T>`.
-
 - A reference-shaped field read through a borrow, such as `line.start` with
   `line: &Line`, produces a borrow today with no `&` written. F4 requires
   `&line.start` there, except on a method receiver and in a pattern.

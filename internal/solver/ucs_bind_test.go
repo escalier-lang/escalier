@@ -471,12 +471,12 @@ func TestPathBinderBindsShorthandElements(t *testing.T) {
 			elem: shorthandElem("x", false, numExpr(0)),
 			want: "number | 0",
 		},
-		// A `mut` leaf moved out of an owned scrutinee thaws into an owned-mutable cell,
-		// the same thaw bindPatMode's shorthand arm performs.
+		// A `mut` leaf moved out of an owned scrutinee binds the value itself. Its binding
+		// holds the mutability, so the type carries none.
 		"MutLeaf": {
 			rootType: func(t *testing.T) soltype.Type { return parseType(t, "{x: {a: number}}") },
 			elem:     shorthandElem("x", true, nil),
-			want:     "mut {a: number}",
+			want:     "{a: number}",
 		},
 		// A leaf of a `&mut` scrutinee is a mutable borrow bounded by the scrutinee's
 		// lifetime. The projection takes no upper bound, which is what leaves the borrowed

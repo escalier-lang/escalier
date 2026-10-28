@@ -87,6 +87,7 @@ func defineLeafMono(scope *Scope, name string, t soltype.Type, node ast.Node) {
 	scope.defineValue(name, ValueBinding{
 		Schemes: []TypeScheme{monoScheme(t)},
 		Sources: []provenance.Provenance{&ast.NodeProvenance{Node: node}},
+		Mut:     leafMutable(node),
 	})
 }
 
@@ -154,8 +155,8 @@ func (c *checker) scrutineeBinding(lvl int, scrutinee soltype.Type) (soltype.Typ
 // `&'a {x: number} | &'b {y: string}` peels to `{x: number} | {y: string}`, and a leaf
 // projects out of an owned member while the borrow rides the mode.
 //
-// ok is false for every other type, including a union holding one non-borrow member, an
-// owned-mutable `mut {…}` cell, and an INEXACT union whose unlisted tail may be owned.
+// ok is false for every other type, including a union holding one non-borrow member and an
+// INEXACT union whose unlisted tail may be owned.
 //
 // The mode is mutable only when every member is, since a leaf reached through an immutable
 // member cannot be written. Its lifetime is the members' join.
@@ -214,10 +215,10 @@ func (c *checker) projectLeaves(scope *Scope, lvl int, pat ast.Pat, scrutinee, c
 //
 // concrete is the scrutinee's resolved type for this level when it is statically
 // known. It is the tuple element or object field a leaf projects, not the fresh
-// projection variable carried in scrutinee. An owned `mut` leaf thaws concrete, so it
-// renders as a clean `mut {…}` cell rather than a variable inside the cell. concrete
-// is nil when the scrutinee's shape is not statically known. The thaw then falls back
-// to the projection variable.
+// projection variable carried in scrutinee. An owned `mut` leaf widens concrete, so it
+// renders as a clean `{…}` rather than as a variable. concrete is nil when the
+// scrutinee's shape is not statically known. The widening then falls back to the
+// projection variable.
 func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee soltype.Type, concrete soltype.Type, scrutineeMode bindMode, leafTypes map[string]soltype.Type, emit leafEmit, purpose bindPurpose) soltype.Pat {
 	scrutinee = soltype.CarrierOf(scrutinee)
 	switch p := pat.(type) {
@@ -1438,9 +1439,8 @@ func (c *checker) definedMembers(t soltype.Type) (soltype.Type, bool) {
 // applyBindMode wraps a destructured leaf's leaf type according to the scrutinee's
 // binding mode and the leaf's own `mut` marker. It returns the type the leaf binds at.
 //
-//   - Owned scrutinee: the leaf is moved out. A `mut` leaf thaws into an owned-mutable
-//     cell, so a later write through it succeeds. A plain leaf keeps the leaf's
-//     immutable type.
+//   - Owned scrutinee: the leaf is moved out. A `mut` leaf's binding may write what it
+//     owns, so its literals widen, as T9 states. A plain leaf keeps the leaf's type.
 //   - `&` scrutinee: the leaf is a shared borrow bounded by the scrutinee's lifetime.
 //     A `mut` leaf is rejected and recovers as the shared borrow. Mutable access cannot
 //     be projected out of an immutable borrow.
@@ -1468,7 +1468,7 @@ func (c *checker) applyBindMode(lvl int, node ast.Node, mut bool, leafType, conc
 			// leaf type directly. A tuple or object pattern pins each leaf type to the
 			// scrutinee's concrete element as an upper bound. That makes the leaf type
 			// invariantly exact under the `&mut` wrapper, so an inexact write
-			// requirement `mut {y, ...}` would clash with the exact element. The fresh
+			// requirement `&mut {y, ...}` would clash with the exact element. The fresh
 			// variable takes the leaf type only as a lower bound. Its shape stays free to
 			// absorb the write requirement.
 			v := c.freshAt(lvl)
@@ -1478,44 +1478,35 @@ func (c *checker) applyBindMode(lvl int, node ast.Node, mut bool, leafType, conc
 		return leafType
 	default: // bmOwned
 		if mut {
-			return c.thawOwnedLeaf(lvl, node, leafType, concrete)
+			return c.widenOwnedLeaf(lvl, node, leafType, concrete)
 		}
 		return leafType
 	}
 }
 
-// thawOwnedLeaf turns a `mut` leaf moved out of an owned scrutinee into an
-// owned-mutable cell. It is the destructuring analogue of the `val mut q = p` thaw in
-// inferVarDeclInit. When the leaf's projected type is statically known the cell wraps
-// the widened concrete type directly. The common case is a concrete tuple or object
-// scrutinee. The cell then renders as a clean `mut {y: number}`, and a later write
-// checks against the concrete shape, exactly as the IdentPat thaw does.
+// widenOwnedLeaf returns the type a `mut` leaf moved out of an owned scrutinee binds at.
+// The leaf's binding may write every owned layer of the value, so the value's literals widen
+// to their primitives, the destructuring analogue of `val mut q = p` in inferVarDeclInit.
+// When the leaf's projected type is statically known, the result is that type widened, so
+// `val [mut p] = [{y: 1}]` binds `p: {y: number}`.
 //
-// When the projected type is not statically known, concrete is nil. The thaw then
-// routes the projection variable through a fresh widenable variable. The leaf type
-// flows in as a lower bound, and widening at coalesce time turns a literal field into
-// its primitive. The cell carries a variable rather than a concrete object. That is
-// less precise to render but still admits the write.
-func (c *checker) thawOwnedLeaf(lvl int, node ast.Node, leafType, concrete soltype.Type) soltype.Type {
+// When the projected type is not statically known, concrete is nil. The leaf type then flows
+// into a fresh widenable variable as a lower bound, and widening at coalesce time turns a
+// literal field into its primitive.
+func (c *checker) widenOwnedLeaf(lvl int, node ast.Node, leafType, concrete soltype.Type) soltype.Type {
 	if concrete != nil {
-		widened := widen(stripOwnedMut(concrete))
-		inner, ok := widened.(soltype.RefInner)
-		if !ok {
-			// A primitive or function leaf is not borrowable, so `mut` is a no-op. It
-			// keeps its leaf type, mirroring `val mut a = 1` keeping the primitive. Only
-			// an object or tuple leaf thaws into a mutable cell.
+		widened := widen(concrete)
+		if _, ok := widened.(soltype.RefInner); !ok {
+			// A primitive or function leaf has no layer to write, so it keeps its leaf type,
+			// mirroring `val mut a = 1` keeping the literal.
 			return leafType
 		}
-		ref := soltype.NewRef(true, nil, inner)
-		c.recordProv(ref, node, OwnedMutConstruction)
-		return ref
+		return widened
 	}
 	v := c.freshAt(lvl)
 	v.Widenable = true
 	c.constrain(node, leafType, v)
-	ref := soltype.NewRef(true, nil, v)
-	c.recordProv(ref, node, OwnedMutConstruction)
-	return ref
+	return v
 }
 
 // concreteLeaf resolves the concrete type a leaf binds at. A leaf with its own type

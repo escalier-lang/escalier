@@ -115,7 +115,7 @@ export declare interface RTCIceCandidatePairStats extends RTCStats {
 
 export declare interface RTCIceServer {
     credential?: string,
-    urls: string | mut Array<string>,
+    urls: string | Array<string>,
     username?: string
 }
 
@@ -701,7 +701,7 @@ export declare class RTCPeerConnection extends EventTarget {
     /** @deprecated */
     addIceCandidate(&mut self, candidate: RTCIceCandidateInit | null, successCallback: dom.VoidFunction, failureCallback: RTCPeerConnectionErrorCallback) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/addTrack) */
-    addTrack(&mut self, track: dom.MediaStreamTrack, ...streams: mut Array<dom.MediaStream>) -> RTCRtpSender,
+    addTrack(&mut self, track: dom.MediaStreamTrack, ...streams: Array<dom.MediaStream>) -> RTCRtpSender,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/addTransceiver) */
     addTransceiver(&mut self, trackOrKind: dom.MediaStreamTrack | string, init?: RTCRtpTransceiverInit) -> RTCRtpTransceiver,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/close) */
@@ -809,7 +809,7 @@ export declare class RTCRtpReceiver {
 @js("RTCRtpScriptTransform")
 export declare class RTCRtpScriptTransform {
     static prototype: RTCRtpScriptTransform,
-    constructor(&mut self, worker: workers.Worker, options?: unknown, transfer?: mut Array<any>)
+    constructor(&mut self, worker: workers.Worker, options?: unknown, transfer?: Array<any>)
 }
 
 /**
@@ -836,7 +836,7 @@ export declare class RTCRtpSender {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpSender/setParameters) */
     setParameters(&mut self, parameters: RTCRtpSendParameters, setParameterOptions?: RTCSetParameterOptions) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpSender/setStreams) */
-    setStreams(&mut self, ...streams: mut Array<dom.MediaStream>) -> undefined,
+    setStreams(&mut self, ...streams: Array<dom.MediaStream>) -> undefined,
     static prototype: RTCRtpSender,
     constructor(&mut self),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpSender/getCapabilities_static) */
@@ -857,7 +857,7 @@ export declare class RTCRtpTransceiver {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpTransceiver/sender) */
     readonly sender: RTCRtpSender,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpTransceiver/setCodecPreferences) */
-    setCodecPreferences(&mut self, codecs: mut Array<RTCRtpCodec>) -> undefined,
+    setCodecPreferences(&mut self, codecs: Array<RTCRtpCodec>) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpTransceiver/stop) */
     stop(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpTransceiver/setCodecPreferences) */

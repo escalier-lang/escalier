@@ -48,7 +48,7 @@ fn f() {
 		{
 			name: "bound to an annotated mut local",
 			src: `val xs: Array<number> = [1]
-fn f() { val m: mut Array<number> = xs }`,
+fn f() { val mut m: Array<number> = xs }`,
 			want: []string{"2:37-2:39: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
 		},
 		{
@@ -118,12 +118,6 @@ fn g() -> Array<number> { return xs }`,
 			want: []string{"2:34-2:36: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
 		},
 		{
-			name: "returned as mut",
-			src: `val xs: Array<number> = [1]
-fn g() -> mut Array<number> { return xs }`,
-			want: []string{"2:38-2:40: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
-		},
-		{
 			name: "assigned to a local",
 			src: `val xs: Array<number> = [1]
 fn f() {
@@ -143,7 +137,7 @@ fn f() { ys = xs }`,
 			name: "stored into a field",
 			src: `val xs: Array<number> = [1]
 fn f() {
-	val o: mut {a: Array<number>} = {a: [1]}
+	val mut o: {a: Array<number>} = {a: [1]}
 	o.a = xs
 }`,
 			want: []string{"4:8-4:10: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
@@ -152,7 +146,7 @@ fn f() {
 			name: "stored into an element",
 			src: `val xs: Array<number> = [1]
 fn f(i: number) {
-	val a: mut Array<Array<number>> = [[1]]
+	val mut a: Array<Array<number>> = [[1]]
 	a[i] = xs
 }`,
 			want: []string{"4:9-4:11: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
@@ -207,7 +201,7 @@ fn get() -> &Array<number> { return xs }`,
 			name: "stored into a borrow field",
 			src: `val xs: Array<number> = [1]
 fn f() {
-	val o: mut {a: &Array<number>} = {a: &xs}
+	val mut o: {a: &Array<number>} = {a: &xs}
 	o.a = xs
 }`,
 		},
@@ -253,7 +247,7 @@ fn f() { val {n} = cfg }`,
 		},
 		{
 			name: "a fresh literal",
-			src:  `fn f() { val m: mut Array<number> = [1] }`,
+			src:  `fn f() { val mut m: Array<number> = [1] }`,
 		},
 		{
 			name: "an owned parameter",

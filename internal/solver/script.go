@@ -137,6 +137,8 @@ func (c *checker) inferScriptIn(scope *Scope, script *ast.Script) (*Scope, *Info
 	// it or its functions made is decided here.
 	c.pendingRecvReads = append(c.pendingRecvReads, c.fn.inferredRecvReads...)
 	c.checkPendingRecvReads()
+	c.pendingMutations = append(c.pendingMutations, c.fn.unsettledMutations...)
+	c.checkPendingMutations()
 
 	return scope, c.info, c.errs
 }

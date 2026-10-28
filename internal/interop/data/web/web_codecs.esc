@@ -529,7 +529,7 @@ export declare class VideoFrame {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/close) */
     close(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/copyTo) */
-    copyTo(&self, destination: AllowSharedBufferSource, options?: VideoFrameCopyToOptions) -> Promise<mut Array<PlaneLayout>>,
+    copyTo(&self, destination: AllowSharedBufferSource, options?: VideoFrameCopyToOptions) -> Promise<Array<PlaneLayout>>,
     static prototype: VideoFrame,
     constructor(&mut self, image: dom.CanvasImageSource, init?: VideoFrameInit),
     constructor(&mut self, data: AllowSharedBufferSource, init: VideoFrameBufferInit)

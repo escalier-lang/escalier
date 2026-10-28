@@ -17,16 +17,16 @@ import (
 func TestInferOverloadOwnedMutArgument(t *testing.T) {
 	t.Run("function, fresh literal", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
-			fn take(a: mut {x: number}) -> number { return 1 }
-			fn take(a: mut {x: number}, b: number) -> number { return 2 }
+			fn take(mut a: {x: number}) -> number { return 1 }
+			fn take(mut a: {x: number}, b: number) -> number { return 2 }
 			val r = take({x: 1})
 		`)
 		require.Empty(t, errs)
 	})
 	t.Run("function, moved variable", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
-			fn take(a: mut {x: number}) -> number { return 1 }
-			fn take(a: mut {x: number}, b: number) -> number { return 2 }
+			fn take(mut a: {x: number}) -> number { return 1 }
+			fn take(mut a: {x: number}, b: number) -> number { return 2 }
 			fn g() -> number {
 				val p = {x: 1}
 				return take(p)
@@ -38,8 +38,8 @@ func TestInferOverloadOwnedMutArgument(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class C {
 				n: number,
-				m(&self, a: mut {x: number}) -> number { return 1 },
-				m(&self, a: mut {x: number}, b: number) -> number { return 2 },
+				m(&self, mut a: {x: number}) -> number { return 1 },
+				m(&self, mut a: {x: number}, b: number) -> number { return 2 },
 			}
 			val c = C(0)
 			val r = c.m({x: 1})
@@ -49,8 +49,8 @@ func TestInferOverloadOwnedMutArgument(t *testing.T) {
 	t.Run("constructor", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			declare class Box {
-				constructor(&mut self, a: mut {x: number}),
-				constructor(&mut self, a: mut {x: number}, b: number),
+				constructor(&mut self, mut a: {x: number}),
+				constructor(&mut self, mut a: {x: number}, b: number),
 			}
 			val r = Box({x: 1})
 		`)
@@ -63,8 +63,8 @@ func TestInferOverloadOwnedMutArgument(t *testing.T) {
 // owner would be observing writes made through the mutable view the arm asks for.
 func TestInferOverloadOwnedMutArgumentLiveSourceRejected(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn take(a: mut {x: number}) -> number { return 1 }
-		fn take(a: mut {x: number}, b: number) -> number { return 2 }
+		fn take(mut a: {x: number}) -> number { return 1 }
+		fn take(mut a: {x: number}, b: number) -> number { return 2 }
 		fn g() -> number {
 			val p = {x: 1}
 			val n = take(p)
@@ -81,8 +81,8 @@ func TestInferOverloadOwnedMutArgumentLiveSourceRejected(t *testing.T) {
 // show up as an error here or as the wrong type for `r`.
 func TestInferOverloadOwnedMutArgumentLosingArmRollsBack(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn take(a: mut {x: number}, b: string) -> string { return b }
-		fn take(a: mut {x: number}, b: number) -> number { return b }
+		fn take(mut a: {x: number}, b: string) -> string { return b }
+		fn take(mut a: {x: number}, b: number) -> number { return b }
 		val r = take({x: 1}, 5)
 	`)
 	require.Empty(t, errs)
@@ -100,7 +100,7 @@ func TestInferOverloadOwnedMutArgumentLosingArmRollsBack(t *testing.T) {
 func TestInferOverloadRestSlotChecksElement(t *testing.T) {
 	t.Run("matching elements accept", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
-			fn g(...xs: mut Array<number>) { return 1 }
+			fn g(...mut xs: Array<number>) { return 1 }
 			fn g(a: string, b: string) { return a }
 			val r = g(1, 2)
 		`)
@@ -109,13 +109,13 @@ func TestInferOverloadRestSlotChecksElement(t *testing.T) {
 	})
 	t.Run("a mismatched element rejects", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
-			fn g(...xs: mut Array<number>) { return 1 }
+			fn g(...mut xs: Array<number>) { return 1 }
 			fn g(a: string, b: string) { return a }
 			val r = g(1, true)
 		`)
 		require.Equal(t,
 			[]string{"4:12-4:22: No matching overload for this call\n" +
-				"  fn (...xs: mut Array<number>) -> 1\n" +
+				"  fn (...xs: Array<number>) -> 1\n" +
 				"  fn (a: string, b: string) -> string"},
 			messagesWithSpan(t, errs))
 	})

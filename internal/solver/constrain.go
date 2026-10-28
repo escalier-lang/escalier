@@ -27,11 +27,9 @@ func hasRest(f *soltype.FuncType) bool {
 }
 
 // restSlotElem returns the element type a rest parameter's slot stands for, and false when the
-// slot is not an array. It looks through a borrow first, so `...items: mut Array<T>` binds the
+// slot is not an array. It looks through a borrow first, so `...items: &mut Array<T>` binds the
 // same arguments `...items: Array<T>` does. The borrow describes the array a call gathers its
 // surplus arguments into and says nothing about the arguments, so it must not reach the element.
-// `std/prelude.esc` writes `push(&mut self, ...items: mut Array<T>) -> number`, which is the form
-// this reads.
 func (c *Context) restSlotElem(slot soltype.Type) (soltype.Type, bool) {
 	if ref, ok := slot.(*soltype.RefType); ok {
 		return c.arrayElem(ref.Inner)
@@ -439,8 +437,8 @@ func (c *Context) Constrain(sub, super soltype.Type) []SolverError {
 // A cross-name class pair is one of those arms. The nominal walk decides `Sub <: Super` on
 // the declared `extends` edge, and checkInheritedMembers is what makes that edge stand for
 // something. For every member Super declares as writable, it requires Sub to still offer a
-// write and to accept every value Super's declaration accepts. A write through `mut Super`
-// therefore lands somewhere Sub admits it, so `mut Sub <: mut Super` needs no reverse
+// write and to accept every value Super's declaration accepts. A write through `&mut Super`
+// therefore lands somewhere Sub admits it, so `&mut Sub <: &mut Super` needs no reverse
 // constraint of its own.
 //
 // Any other inner reaches no such arm, so the whole reverse constraint pins it. That covers
@@ -475,9 +473,9 @@ func (c *Context) needsResidualWriteBack(sub, sup soltype.Type) bool {
 // which is checked by constraining P against the whole array. An inexact tuple may carry any
 // trailing element, so `unknown` must fit elemT as well.
 //
-// Under a mutable view the pair is rejected outright. A write through `mut Array<E>` can push
+// Under a mutable view the pair is rejected outright. A write through `&mut Array<E>` can push
 // an element or change the length, which no tuple type admits, so no element choice makes
-// `mut [A, B] <: mut Array<E>` sound.
+// `&mut [A, B] <: &mut Array<E>` sound.
 func (c *Context) constrainTupleIntoArray(sub *soltype.TupleType, super, elemT soltype.Type, seen *seenPairs, mutCtx bool) []SolverError {
 	if mutCtx {
 		return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
@@ -634,17 +632,14 @@ func (c *Context) readThroughBound(r borrowedRead, lb soltype.Type, seen *seenPa
 }
 
 // borrowedFieldType returns the type a field of type field reads as through borrow, or nil
-// for a field that reads as declared. An owned `mut` cell and an object, tuple, class
-// instance, alias, or generator read as a borrow bounded by borrow's lifetime. A union reads member by
+// for a field that reads as declared. An object, tuple, class instance, alias, or
+// generator reads as a borrow bounded by borrow's lifetime. A union reads member by
 // member. A field holding an immutable borrow reads as declared. A field holding a mutable
 // borrow is reborrowed immutably whatever borrow's own mutability, so an immutable borrow
 // never lends a write.
 func borrowedFieldType(field soltype.Type, borrow *soltype.RefType) soltype.Type {
 	switch f := field.(type) {
 	case *soltype.RefType:
-		if f.Lt == nil {
-			return &soltype.RefType{Mut: f.Mut, Lt: borrow.Lt, Inner: f.Inner}
-		}
 		if f.Mut {
 			return &soltype.RefType{Mut: false, Lt: f.Lt, Inner: f.Inner}
 		}
@@ -1892,13 +1887,13 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			//    carried by the mut-context flag, set to sup.Mut here, which the
 			//    ObjectType/TupleType arms read to add the contravariant write view. An
 			//    INEXACT target tolerates extra source fields while still pinning its
-			//    named ones, so `mut {x, y} <: mut {x, ...}` SUCCEEDS — the inexact target
-			//    names only x — while `mut {x: 5} <: mut {x: number}` still rejects (x
-			//    invariant) and an EXACT target demands an identical field set.
+			//    named ones, so `&mut {x, y} <: &mut {x, ...}` SUCCEEDS — the inexact
+			//    target names only x — while `&mut {x: 5} <: &mut {x: number}` still
+			//    rejects (x invariant) and an EXACT target demands an identical field set.
 			//
-			//    A literal-typed field like the `5` in `mut {x: 5}` only arises from an
+			//    A literal-typed field like the `5` in `&mut {x: 5}` only arises from an
 			//    ANNOTATION. inferMemberAssign builds its requirement with widen(source),
-			//    so `obj.x = 5` lowers to `mut {x: number, ...}`, not `mut {x: 5, ...}`.
+			//    so `obj.x = 5` lowers to `&mut {x: number, ...}`, not `&mut {x: 5, ...}`.
 			//
 			//    The flag passes `sup.Mut`, equivalent to `sub.Mut && sup.Mut`: the check
 			//    above already returned for `!sub.Mut && sup.Mut`, so reaching here with
