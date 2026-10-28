@@ -174,14 +174,31 @@ func (e *BorrowedValueWriteError) Message() string {
 	return fmt.Sprintf("cannot assign to '%s' while it is borrowed as immutable", e.Place)
 }
 
+// MissingBorrowError is an error whose fix writes a borrow before the expression it reports.
+// ImplicitBorrowArgError and ImplicitBorrowError implement it.
+type MissingBorrowError interface {
+	SolverError
+	// Borrow returns the operator the expression needs written before it, `&` or `&mut`.
+	Borrow() string
+	// Expr returns the expression the borrow is written before. Its span is the error's span.
+	Expr() ast.Expr
+	// ShorthandKey returns the property name when Expr is the key of a shorthand property
+	// such as `{f}`, and "" for any other expression. The borrow of a shorthand key is
+	// written by spelling the property out, as in `{f: &f}`.
+	ShorthandKey() string
+}
+
 // ImplicitBorrowArgError reports an argument filling a `&` or `&mut` parameter without a borrow
 // written at the call.
 type ImplicitBorrowArgError struct {
 	// Written is the borrow the argument needs, `&` or `&mut`, taken from the parameter.
 	Written string
-	node    ast.Node
+	node    ast.Expr
 }
 
+func (e *ImplicitBorrowArgError) Borrow() string      { return e.Written }
+func (e *ImplicitBorrowArgError) Expr() ast.Expr      { return e.node }
+func (*ImplicitBorrowArgError) ShorthandKey() string  { return "" }
 func (*ImplicitBorrowArgError) isSolverError()        {}
 func (e *ImplicitBorrowArgError) Span() ast.Span      { return e.node.Span() }
 func (e *ImplicitBorrowArgError) Related() []ast.Span { return nil }
@@ -196,12 +213,17 @@ func (e *ImplicitBorrowArgError) Message() string {
 type ImplicitBorrowError struct {
 	// Written is the borrow the value needs, `&` or `&mut`, taken from the destination's type.
 	Written string
-	node    ast.Node
+	node    ast.Expr
+	// shorthandKey is what ShorthandKey returns.
+	shorthandKey string
 }
 
-func (*ImplicitBorrowError) isSolverError()        {}
-func (e *ImplicitBorrowError) Span() ast.Span      { return e.node.Span() }
-func (e *ImplicitBorrowError) Related() []ast.Span { return nil }
+func (e *ImplicitBorrowError) Borrow() string       { return e.Written }
+func (e *ImplicitBorrowError) Expr() ast.Expr       { return e.node }
+func (e *ImplicitBorrowError) ShorthandKey() string { return e.shorthandKey }
+func (*ImplicitBorrowError) isSolverError()         {}
+func (e *ImplicitBorrowError) Span() ast.Span       { return e.node.Span() }
+func (e *ImplicitBorrowError) Related() []ast.Span  { return nil }
 func (e *ImplicitBorrowError) Message() string {
 	return fmt.Sprintf("this value is borrowed by its destination, so write the borrow: `%s`", e.Written)
 }
@@ -1182,13 +1204,28 @@ func (c *checker) checkLiteralElemBorrows(src ast.Expr, destT soltype.Type) bool
 				return false
 			}
 		}
+		checkProp := func(prop *ast.PropertyExpr, slotT soltype.Type) {
+			from := len(c.errs)
+			check(prop.ValueExpr(), slotT)
+			key, isIdent := prop.Name.(*ast.IdentExpr)
+			if prop.Value != nil || !isIdent {
+				return
+			}
+			// A shorthand property `{f}` has no Value, so its key is the expression checked. The
+			// error on that key records the property name for ShorthandKey.
+			for _, e := range c.errs[from:] {
+				if missing, ok := e.(*ImplicitBorrowError); ok && missing.node == ast.Expr(key) {
+					missing.shorthandKey = key.Name
+				}
+			}
+		}
 		for _, elem := range lit.Elems {
 			prop, isProp := elem.(*ast.PropertyExpr)
 			if !isProp {
 				continue
 			}
 			if obj == nil {
-				check(prop.ValueExpr(), nil)
+				checkProp(prop, nil)
 				continue
 			}
 			name, named := objKeyName(prop.Name)
@@ -1196,7 +1233,7 @@ func (c *checker) checkLiteralElemBorrows(src ast.Expr, destT soltype.Type) bool
 				continue
 			}
 			if slot, found := obj.Prop(name); found {
-				check(prop.ValueExpr(), slot.Type)
+				checkProp(prop, slot.Type)
 			}
 		}
 	case *ast.TupleExpr:
