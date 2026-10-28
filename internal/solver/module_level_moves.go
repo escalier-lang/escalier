@@ -58,10 +58,10 @@ func (e *ModuleLevelMoveError) Message() string {
 // rejectModuleLevelMutMove reports a ModuleLevelMoveError for each place rooted at a
 // module-level binding or an import that source moves into a `mut` binding at module level.
 // Code outside a function body consumes nothing, so the place stays readable after the move,
-// and a write through the `mut` binding would change a value that place still reads. The value
-// moved is source itself, or a result of one of its branches. scope resolves the root.
+// and a write through the `mut` binding would change a value that place still reads. scope
+// resolves the root.
 func (c *checker) rejectModuleLevelMutMove(scope *Scope, source ast.Expr) {
-	for _, r := range branchResults(source) {
+	for _, r := range movedValues(source) {
 		b, ok := c.placeRootBinding(scope, r)
 		if !ok {
 			continue
@@ -244,6 +244,37 @@ func (c *checker) rejectModuleLevelMove(scope *Scope, source ast.Expr) bool {
 		}
 	}
 	return moved
+}
+
+// movedValues returns the expressions whose values source moves. It starts from the results of
+// source's branches. An object or tuple literal among them contributes its property values and
+// elements instead, found the same way. A shorthand property contributes its key, which names
+// the binding it reads. A spread contributes nothing.
+func movedValues(source ast.Expr) []ast.Expr {
+	var out []ast.Expr
+	for _, r := range branchResults(source) {
+		switch lit := r.(type) {
+		case *ast.ObjectExpr:
+			for _, elem := range lit.Elems {
+				prop, ok := elem.(*ast.PropertyExpr)
+				if !ok {
+					continue
+				}
+				if prop.Value != nil {
+					out = append(out, movedValues(prop.Value)...)
+				} else if key, ok := prop.Name.(*ast.IdentExpr); ok {
+					out = append(out, key)
+				}
+			}
+		case *ast.TupleExpr:
+			for _, elem := range lit.Elems {
+				out = append(out, movedValues(elem)...)
+			}
+		default:
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // branchResults returns the expressions whose value e produces. It descends through the

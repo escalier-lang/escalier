@@ -311,8 +311,21 @@ func hoverBinding(info *solver.Info, node ast.Node) (name string, mut bool, ok b
 		}
 		switch decl := decl.(type) {
 		case *ast.VarDecl:
-			ip, isIdent := decl.Pattern.(*ast.IdentPat)
-			return n.Name, isIdent && info.BindsMut(ip), true
+			// A module-level read resolves to the whole declaration, so find the leaf of its
+			// pattern that binds the name.
+			mut := false
+			ast.ForEachLeafBinding(decl.Pattern, func(name string, leaf ast.Node) {
+				if name != n.Name {
+					return
+				}
+				switch leaf := leaf.(type) {
+				case *ast.IdentPat:
+					mut = info.BindsMut(leaf)
+				case *ast.ObjShorthandPat:
+					mut = leaf.Mutable
+				}
+			})
+			return n.Name, mut, true
 		case *ast.IdentPat:
 			return n.Name, info.BindsMut(decl), true
 		case *ast.ObjShorthandPat:

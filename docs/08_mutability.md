@@ -85,8 +85,10 @@ fn go() {
 }
 ```
 
-A `&mut self` method requires a mutable binding, so calling `incr` on a plain
-`val c = Counter(0)` is an error that asks for `val mut c`.
+A `&mut self` method needs mutable access to its receiver. An owned receiver
+gets it from a `mut` binding, so calling `incr` on a plain `val c = Counter(0)`
+is an error that asks for `val mut c`. A `&mut Counter` borrow already grants
+it, so `fn bump(c: &mut Counter) { c.incr() }` needs no `mut` on `c`.
 
 A receiver written without `&` consumes the instance instead of borrowing it.
 Calling a `self` or `mut self` method moves the instance into the call, so the

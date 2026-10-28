@@ -650,6 +650,24 @@ func TestHoverFromSolver(t *testing.T) {
 			expected: "`mut p: {x: number}`",
 		},
 		{
+			name:  "DestructuredMutShorthandReadInFunction",
+			files: map[string]string{"lib/a.esc": "val {mut a, b} = {a: {x: 1}, b: {x: 2}}\nexport fn f() -> number { return a.x + b.x }"},
+			open:  "lib/a.esc", line: 1, col: 33,
+			expected: "`mut a: {x: number}`",
+		},
+		{
+			name:  "DestructuredShorthandReadInFunction",
+			files: map[string]string{"lib/a.esc": "val {mut a, b} = {a: {x: 1}, b: {x: 2}}\nexport fn f() -> number { return a.x + b.x }"},
+			open:  "lib/a.esc", line: 1, col: 39,
+			expected: "`b: {x: 2}`",
+		},
+		{
+			name:  "DestructuredMutKeyValueReadInFunction",
+			files: map[string]string{"lib/a.esc": "val {a: mut c} = {a: {x: 1}}\nexport fn f() -> number { return c.x }"},
+			open:  "lib/a.esc", line: 1, col: 33,
+			expected: "`mut c: {x: number}`",
+		},
+		{
 			name:  "AnnotatedValMut",
 			files: map[string]string{"bin/main.esc": "val mut p: {x: number} = {x: 1}"},
 			open:  "bin/main.esc", line: 0, col: 8,

@@ -389,6 +389,43 @@ func TestInferValMutMoveNeedsAConsume(t *testing.T) {
 			[]string{"2:13-2:19: cannot move module-level value 'cfg[0]' into a `mut` binding, since the module keeps it. Borrow it with `&cfg[0]`"},
 			messagesWithSpan(t, errs))
 	})
+	t.Run("a place does not move in through a literal at top level", func(t *testing.T) {
+		tests := map[string]struct {
+			src  string
+			want []string
+		}{
+			"PropertyValue": {
+				src:  "val cfg = {x: 1}\nval mut m = {p: cfg}",
+				want: []string{"2:17-2:20: cannot move module-level value 'cfg' into a `mut` binding, since the module keeps it. Borrow it with `&cfg`"},
+			},
+			"ShorthandProperty": {
+				src:  "val cfg = {x: 1}\nval mut m = {cfg}",
+				want: []string{"2:14-2:17: cannot move module-level value 'cfg' into a `mut` binding, since the module keeps it. Borrow it with `&cfg`"},
+			},
+			"TupleElement": {
+				src:  "val cfg = {x: 1}\nval mut m = [cfg]",
+				want: []string{"2:14-2:17: cannot move module-level value 'cfg' into a `mut` binding, since the module keeps it. Borrow it with `&cfg`"},
+			},
+			"NestedLiterals": {
+				src:  "val cfg = {x: 1}\nval mut m = {a: [{b: cfg}]}",
+				want: []string{"2:22-2:25: cannot move module-level value 'cfg' into a `mut` binding, since the module keeps it. Borrow it with `&cfg`"},
+			},
+			"PrimitivePropertyCopies": {
+				src:  "val n = 5\nval mut m = {p: n}",
+				want: nil,
+			},
+			"ImmutableBindingShares": {
+				src:  "val cfg = {x: 1}\nval m = {p: cfg}",
+				want: nil,
+			},
+		}
+		for name, tc := range tests {
+			t.Run(name, func(t *testing.T) {
+				_, _, errs := inferSource(t, tc.src)
+				require.Equal(t, tc.want, messagesWithSpan(t, errs))
+			})
+		}
+	})
 	t.Run("a primitive place copies in at top level", func(t *testing.T) {
 		_, _, errs := inferSource(t, "val cfg = 5\nval mut m = cfg")
 		require.Empty(t, errs)
