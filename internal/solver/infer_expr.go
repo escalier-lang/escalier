@@ -563,6 +563,10 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// that is not an instance member, a constructor included, since a constructor binds its own.
 	member := c.memberSelf
 	c.memberSelf = nil
+	// Take the argument marker inferCallArgs left, and clear it so a lambda nested in the body
+	// is not taken for a call argument.
+	isArg := c.argFunc != nil && ast.Node(c.argFunc) == node
+	c.argFunc = nil
 	// Report any named lifetime the signature uses without binding it in its own `<…>`
 	// list, and the symmetric unused binder. Run before resolving the params so the scan
 	// reads the written names, not what namedLifetime has since interned.
@@ -647,6 +651,13 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			if v, ok := pt.(*soltype.TypeVarType); ok {
 				v.Open = true
 			}
+		}
+		// F3 makes an unannotated parameter that does not escape a borrow. A parameter the body
+		// only reads through does not escape, so it borrows immutably, as `p` in
+		// `fn read(p) { return p.x }` does. A function passed as a call argument is left alone,
+		// since the callee's signature gives each of its parameters a type.
+		if v, ok := pt.(*soltype.TypeVarType); ok && !written && !isArg && body != nil && c.readOnlyBorrowParam(p, pat, rest, optional, body) {
+			pt = soltype.NewRef(false, c.ctx.freshLifetime(lvl), v)
 		}
 		if name, ok := identPatName(pat); ok {
 			// The param's IdentPat IS its definition site, so record it as the binding's
@@ -2438,6 +2449,9 @@ func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr, preset m
 		if t, ok := preset[a]; ok {
 			args[i] = t
 			continue
+		}
+		if fe, ok := a.(*ast.FuncExpr); ok {
+			c.argFunc = fe
 		}
 		args[i] = c.inferExpr(scope, lvl, a)
 	}

@@ -210,10 +210,8 @@ func TestFlowLifetimeRules(t *testing.T) {
 	})
 }
 
-// DISABLED until #2260, which infers an unannotated parameter that does not escape as a borrow.
-// Today `read` infers as `fn <T0>(p: {x: T0}) -> T0`, an owned parameter, so `read(&b)` reports
-// `cannot use borrowed &object as owned object`.
-/*
+// TestFlowLifetimeNonEscapingParam covers F3's `store` and `read`, whose unannotated parameters
+// take their ownership from the body.
 func TestFlowLifetimeNonEscapingParam(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{
 		// F3. `store` lets `p` escape into module-level state, so its parameter is owned. `read`
@@ -241,7 +239,6 @@ func TestFlowLifetimeNonEscapingParam(t *testing.T) {
 		},
 	})
 }
-*/
 
 func TestFlowLifetimeEscapingParamMoves(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{

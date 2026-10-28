@@ -164,7 +164,7 @@ func TestInferParamGeneralization(t *testing.T) {
 		{
 			name: "a bounded type parameter's bound reaches a field",
 			src:  fstNum + "fn f(o) { return fstNum(1, o.x) }",
-			want: "fn (o: {x: number}) -> 1",
+			want: "fn (o: &{x: number}) -> 1",
 		},
 	}
 	for _, tt := range tests {

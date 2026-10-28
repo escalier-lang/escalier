@@ -27,7 +27,7 @@ func TestInferMutParamMatchesPlainParam(t *testing.T) {
 			name:  "Unannotated",
 			src:   `fn f(mut p) { return p.x }`,
 			plain: `fn f(p) { return p.x }`,
-			want:  "fn <T0>(p: {x: T0}) -> T0",
+			want:  "fn <T0>(p: &{x: T0}) -> T0",
 		},
 		{
 			name:  "Optional",

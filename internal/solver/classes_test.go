@@ -895,7 +895,7 @@ func TestInferWarnsAboutAFunctionReadOffAnInferredReceiver(t *testing.T) {
 					return g()
 				}
 			`,
-			types:    map[string]string{"f": "fn <T0>(o: {m: fn () -> T0}) -> T0"},
+			types:    map[string]string{"f": "fn <T0>(o: &{m: fn () -> T0}) -> T0"},
 			wantErrs: []string{"3:14-3:17: " + warning},
 		},
 		{
@@ -909,14 +909,14 @@ func TestInferWarnsAboutAFunctionReadOffAnInferredReceiver(t *testing.T) {
 		{
 			name:  "ADataRead",
 			src:   `fn f(o) { return o.x + 1 }`,
-			types: map[string]string{"f": "fn (o: {x: number}) -> number"},
+			types: map[string]string{"f": "fn (o: &{x: number}) -> number"},
 		},
 		{
 			// Nothing in the body uses the value as a function.
 			name: "AReadNeverUsedAsAFunction",
 			src: `fn f(o) { val g = o.m
 				return g }`,
-			types: map[string]string{"f": "fn <T0>(o: {m: T0}) -> T0"},
+			types: map[string]string{"f": "fn <T0>(o: &{m: T0}) -> T0"},
 		},
 		{
 			// The closure reads `o.m` and the enclosing body calls what it returns.
