@@ -650,9 +650,9 @@ func TestHoverFromSolver(t *testing.T) {
 			expected: "`mut p: {x: number}`",
 		},
 		{
-			name:  "OwnedMutAnnotation",
-			files: map[string]string{"bin/main.esc": "val p: mut {x: number} = {x: 1}"},
-			open:  "bin/main.esc", line: 0, col: 4,
+			name:  "AnnotatedValMut",
+			files: map[string]string{"bin/main.esc": "val mut p: {x: number} = {x: 1}"},
+			open:  "bin/main.esc", line: 0, col: 8,
 			expected: "`mut p: {x: number}`",
 		},
 		{

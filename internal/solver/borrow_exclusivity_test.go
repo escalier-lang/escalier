@@ -327,7 +327,7 @@ func TestBorrowExclusivity(t *testing.T) {
 		// time b is created, and nothing then reaches x twice.
 		"ReassignedBorrowDropsItsOldLoanOk": {
 			src: exclusivityDecls + `
-				fn g(x: mut {v: number}, y: mut {v: number}) {
+				fn g(mut x: {v: number}, mut y: {v: number}) {
 					var a = &mut x
 					a = &mut y
 					val b = &mut x
@@ -340,7 +340,7 @@ func TestBorrowExclusivity(t *testing.T) {
 		// the immutable borrow of b then reads data a can write.
 		"ReassignedBorrowStillConflicts": {
 			src: exclusivityDecls + `
-				fn g(x: mut {v: number}, y: mut {v: number}) {
+				fn g(mut x: {v: number}, mut y: {v: number}) {
 					var a = &mut y
 					a = &mut x
 					val b = &x
@@ -354,7 +354,7 @@ func TestBorrowExclusivity(t *testing.T) {
 		// repointed later in the body.
 		"AReassignmentDoesNotSilenceAnEarlierMove": {
 			src: exclusivityDecls + `
-				fn g(x: mut {v: number}, y: mut {v: number}) -> undefined {
+				fn g(mut x: {v: number}, mut y: {v: number}) -> undefined {
 					var a = &mut x
 					val w = x
 					write(a)
@@ -503,7 +503,7 @@ func TestStoreEffectLoans(t *testing.T) {
 		// leaves, since the target can still write through it.
 		"SecondBorrowAfterAStore": {
 			src: storeEffectDecls + `
-				fn f(q: mut {value: number}, r: mut {value: number}) -> undefined {
+				fn f(mut q: {value: number}, mut r: {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut q, spare: &mut r}
 					store(&mut a, &mut b)
@@ -518,7 +518,7 @@ func TestStoreEffectLoans(t *testing.T) {
 		// move is not a borrow.
 		"MoveAfterAStore": {
 			src: storeEffectDecls + `
-				fn g(q: mut {value: number}, r: mut {value: number}) -> undefined {
+				fn g(mut q: {value: number}, mut r: {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut q, spare: &mut r}
 					store(&mut a, &mut b)
@@ -533,7 +533,7 @@ func TestStoreEffectLoans(t *testing.T) {
 		// the same subtree.
 		"RepointingTheStoredFieldReleasesTheItemOk": {
 			src: storeEffectDecls + `
-				fn f(q: mut {value: number}, r: mut {value: number}) -> undefined {
+				fn f(mut q: {value: number}, mut r: {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut c = {value: 3}
 					val mut a = {peer: &mut q, spare: &mut r}
@@ -549,7 +549,7 @@ func TestStoreEffectLoans(t *testing.T) {
 		// reaches only the field it writes.
 		"RepointingASiblingFieldKeepsTheLoan": {
 			src: storeEffectDecls + `
-				fn g(q: mut {value: number}, r: mut {value: number}) -> undefined {
+				fn g(mut q: {value: number}, mut r: {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut c = {value: 3}
 					val mut a = {peer: &mut q, spare: &mut r}
@@ -566,7 +566,7 @@ func TestStoreEffectLoans(t *testing.T) {
 		// which is what keeps a later store from silencing an earlier move.
 		"AMoveBeforeTheRepointKeepsItsDiagnostic": {
 			src: storeEffectDecls + `
-				fn h(q: mut {value: number}, r: mut {value: number}) -> undefined {
+				fn h(mut q: {value: number}, mut r: {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut c = {value: 3}
 					val mut a = {peer: &mut q, spare: &mut r}
@@ -584,7 +584,7 @@ func TestStoreEffectLoans(t *testing.T) {
 		// mutable borrow of b beside the store's loan, which is allowed.
 		"MutableBorrowInAReturnAfterAStoreOk": {
 			src: storeEffectDecls + `
-				fn g(q: mut {value: number}, r: mut {value: number}) -> [&mut {value: number}, &mut {value: number}] {
+				fn g(mut q: {value: number}, mut r: {value: number}) -> [&mut {value: number}, &mut {value: number}] {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut q, spare: &mut r}
 					store(&mut a, &mut b)
@@ -596,7 +596,7 @@ func TestStoreEffectLoans(t *testing.T) {
 		// The same holds for a borrow inside a literal a binding holds.
 		"MutableBorrowInALiteralAfterAStoreOk": {
 			src: storeEffectDecls + `
-				fn g(q: mut {value: number}, r: mut {value: number}) -> undefined {
+				fn g(mut q: {value: number}, mut r: {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut q, spare: &mut r}
 					store(&mut a, &mut b)
@@ -611,7 +611,7 @@ func TestStoreEffectLoans(t *testing.T) {
 		"ReadOfTheItemAfterAStoreOk": {
 			src: storeEffectDecls + `
 				declare fn useNum(n: number) -> undefined
-				fn g(q: mut {value: number}, r: mut {value: number}) -> undefined {
+				fn g(mut q: {value: number}, mut r: {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut q, spare: &mut r}
 					store(&mut a, &mut b)
@@ -623,7 +623,7 @@ func TestStoreEffectLoans(t *testing.T) {
 		},
 		"FieldReadOfTheItemIntoABindingAfterAStoreOk": {
 			src: storeEffectDecls + `
-				fn g(q: mut {value: number}, r: mut {value: number}) -> undefined {
+				fn g(mut q: {value: number}, mut r: {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut q, spare: &mut r}
 					store(&mut a, &mut b)
@@ -635,7 +635,7 @@ func TestStoreEffectLoans(t *testing.T) {
 		},
 		"DeadTargetReleasesTheItemOk": {
 			src: storeEffectDecls + `
-				fn h(q: mut {value: number}, r: mut {value: number}) -> undefined {
+				fn h(mut q: {value: number}, mut r: {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut q, spare: &mut r}
 					store(&mut a, &mut b)
@@ -648,7 +648,7 @@ func TestStoreEffectLoans(t *testing.T) {
 		// are the only path to it.
 		"NoStoreLeavesTheItemFreeOk": {
 			src: storeEffectDecls + `
-				fn k(q: mut {value: number}, r: mut {value: number}) -> undefined {
+				fn k(mut q: {value: number}, mut r: {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut q, spare: &mut r}
 					readMutBorrow(&mut b)
@@ -663,7 +663,7 @@ func TestStoreEffectLoans(t *testing.T) {
 		// the store is written, so it reports nothing on its own.
 		"TheStoreCallItselfIsQuietOk": {
 			src: storeEffectDecls + `
-				fn m(q: mut {value: number}, r: mut {value: number}) -> undefined {
+				fn m(mut q: {value: number}, mut r: {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut q, spare: &mut r}
 					store(&mut a, &mut b)
@@ -683,7 +683,7 @@ func TestStoreEffectLoans(t *testing.T) {
 				) -> undefined
 				declare fn readImmBorrow(x: &{value: number}) -> undefined
 				declare fn hold<'d>(x: &'d mut {peer: &{value: number}, spare: &mut {value: number}}) -> undefined
-				fn f(q: {value: number}, r: mut {value: number}) -> undefined {
+				fn f(q: {value: number}, mut r: {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut a = {peer: &q, spare: &mut r}
 					store(&mut a, &b)
@@ -698,7 +698,7 @@ func TestStoreEffectLoans(t *testing.T) {
 		// reaches data the target cannot write.
 		"StoreOfOneFieldLeavesItsSiblingFreeOk": {
 			src: storeEffectDecls + `
-				fn f(q: mut {value: number}, r: mut {value: number}) -> undefined {
+				fn f(mut q: {value: number}, mut r: {value: number}) -> undefined {
 					val mut b = {inner: {value: 1}, other: {value: 2}}
 					val mut a = {peer: &mut q, spare: &mut r}
 					store(&mut a, &mut b.inner)
@@ -713,7 +713,7 @@ func TestStoreEffectLoans(t *testing.T) {
 		"ABorrowOnOneArmDoesNotReachTheOtherOk": {
 			src: `
 				declare fn readMutBorrow(x: &mut {value: number}) -> undefined
-				fn f(cond: boolean, x: mut {value: number}) -> undefined {
+				fn f(cond: boolean, mut x: {value: number}) -> undefined {
 					var a = &mut x
 					if cond {
 						val y = x
@@ -751,7 +751,7 @@ func TestMutSelfIsAMutableStoreSource(t *testing.T) {
 			drain(&mut self, out: &mut {slot: &'a mut {value: number}}) -> undefined { out.slot = self.peer },
 		}
 		declare fn touch<'e>(x: &'e mut {slot: &mut {value: number}}) -> undefined
-		fn build(p: mut {value: number}) -> undefined {
+		fn build(mut p: {value: number}) -> undefined {
 			val mut h = Holder(&mut p)
 			val mut o = {slot: &mut p}
 			h.drain(&mut o)
