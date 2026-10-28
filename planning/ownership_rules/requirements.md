@@ -354,7 +354,9 @@ Three places borrow without a written `&`:
 - A method receiver, since the method's own `self` declares the borrow.
   `line.start.norm()` borrows `line.start` for the call.
 - A pattern over a borrow. With `line: &Line`, `val {start} = line` binds
-  `start: &Point`, since the pattern already says it reads from `line`.
+  `start: &Point`, since the pattern already says it reads from `line`. The
+  pattern binds with the borrow's mutability, so with `line: &mut Line` it
+  binds `start: &mut Point`, as D14 decides.
 - A closure capture, since F3 decides whether the closure borrows or owns what
   it captures, and the body decides the borrow's mutability.
   `fn () { return p.x }` borrows `p` immutably while it stays in the body.
@@ -759,7 +761,7 @@ in between.
 ## Decisions
 
 D1 through D8 record behaviour the solver enforces today that no document
-stated. D9 through D13 are design questions the rules left open. Each decided
+stated. D9 through D14 are design questions the rules left open. Each decided
 entry says where its outcome now lives. All of them are now decided. The current
 behaviour comes from reading the code, and the file references point at where
 it lives.
@@ -1125,6 +1127,45 @@ Decided: accepted. `fn f(p)` above reports the write to `p.x` and asks for
 `mut p`. Step 2 of the migration removes the inference of binding mutability.
 Step 4 infers `&` or `&mut` for an unannotated parameter that does not
 escape, from whether the body writes through it.
+
+### D14. The mutability of a borrow a pattern binds
+
+F4 lets a pattern over a borrow bind borrows without a written `&`. With
+`line: &Line`, `val {start} = line` binds `start: &Point`. F4 does not say
+what the pattern binds when the scrutinee is a `&mut` borrow:
+
+```esc
+class Point { x: number, y: number }
+class Line { start: Point, width: number }
+
+fn f(line: &mut Line) {
+    val {start} = line
+    start.x = 1
+}
+```
+
+The checker binds `start` as an immutable `Point`, so the write reports
+`cannot constrain immutable Point <: mutable object`. Writing `line.start.x = 1`
+is accepted, so the pattern takes away a write the borrow allows.
+
+The options are:
+
+- Bind borrows with the scrutinee's mutability. A pattern over `&mut Line` binds
+  `start: &mut Point`, and a pattern over `&Line` binds `start: &Point`. This
+  is Rust's default binding mode.
+- Always bind `&`. A pattern over `&mut Line` binds `start: &Point`, and a
+  caller that needs to write uses `&mut line.start`. The mutability of every
+  `&mut` stays written, but a pattern over a `&mut` gives up its writes.
+
+The binding's own `mut` plays no part in either option. T3 applies a
+binding's `mut` to the layers its value owns, and `start` owns none.
+
+Recommendation: bind borrows with the scrutinee's mutability. The scrutinee's
+type already shows the `&mut`, and T4 lets a caller narrow `start` to `&Point`
+wherever it needs only reads.
+
+Decided: accepted. F4 states it. The checker change is tracked by
+[#2318](https://github.com/escalier-lang/escalier/issues/2318).
 
 ## Known bugs
 
