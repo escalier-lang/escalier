@@ -91,7 +91,10 @@ independent of whether the value it owns is mutable.
 A value owned by `val p` and a borrow `&T` are both immutable. Only a `mut`
 binding, such as `val mut p`, and a `&mut T` borrow permit writes. A fresh
 value, such as a literal or a constructor call, takes its mutability from the
-binding it lands in.
+binding it lands in. Inference never makes a binding mutable. A parameter is
+mutable only when it is written `mut p`, whether or not it has a type
+annotation, so `fn f(p) { p.x = 1 }` reports that `p`'s binding is immutable.
+F3 still infers an unannotated parameter's type.
 
 **T3. Mutability is deep through owned structure and stops at a borrow.** A
 binding's mutability applies to every layer the value owns, including type
@@ -130,8 +133,8 @@ and `val q: &{x: number} = r` is accepted.
 value in a `val mut` binding can be borrowed as `&` or `&mut`. A value in a
 `val` binding can be borrowed only as `&`. The same holds for a call to a `&mut self` method, which
 borrows its receiver mutably. With `val p = {x: 1}`, `&mut p` reports
-`cannot constrain immutable object <: mutable object`. With
-`val mut p = {x: 1}`, both `&p` and `&mut p` are accepted.
+``cannot mutate 'p' because its binding is immutable; declare it as `val mut p` ``.
+With `val mut p = {x: 1}`, both `&p` and `&mut p` are accepted.
 
 **T8. The branches of a conditional agree on ownership.** When the branches of
 an `if`, a `match`, or another conditional produce the value of one
@@ -756,7 +759,7 @@ in between.
 ## Decisions
 
 D1 through D8 record behaviour the solver enforces today that no document
-stated. D9 through D11 are design questions the rules left open. Each decided
+stated. D9 through D13 are design questions the rules left open. Each decided
 entry says where its outcome now lives. All of them are now decided. The current
 behaviour comes from reading the code, and the file references point at where
 it lives.
@@ -1052,6 +1055,77 @@ Decided: accepted. Escalier adds a write-once cell, and the invariant states
 the exception it makes. The cell's name, syntax, and API are still to be
 designed. Counters and the interop methods stay on `&mut self` for now.
 
+### D12. A `mut` binding that grants nothing
+
+T1 lets any binding or parameter be written `mut`, and nothing rejects one whose
+`mut` cannot matter. A value type has no owned layers, so T2 and T3 give the
+`mut` nothing to make writable. T1 keeps reassignment on `var`, so the `mut`
+does not make the binding reassignable either:
+
+```esc
+fn f(mut p?: number) -> number { return 1 }
+```
+
+The options are:
+
+- Accept it silently, as the checker does today.
+- Warn when the binding's type is a value type. This needs only the binding's
+  type, and such a `mut` can never matter.
+- Warn when a `mut` binding is never written and never borrowed as `&mut`, as
+  Rust's `unused_mut` lint does. This covers the value-type case and also an
+  owned binding the body only reads, but it needs the body's write analysis.
+
+Recommendation: warn on a value type now and add the unused-binding warning
+later. Both are warnings rather than errors, since the program means the same
+with or without the `mut`.
+
+Decided: accepted. A `mut` binding whose type is a value type reports a
+warning, tracked by [#2304](https://github.com/escalier-lang/escalier/issues/2304).
+A warning on any `mut` binding the body never writes or borrows as `&mut` is a
+later addition, tracked by
+[#2305](https://github.com/escalier-lang/escalier/issues/2305).
+
+### D13. Binding mutability is written, not inferred
+
+T2 makes every binding immutable unless it is written `mut`, and T1 lets a
+parameter declare a mutable binding as `fn f(mut p: T)`. F3 infers an
+unannotated parameter's ownership from the body, but says nothing about its
+binding's mutability. The checker infers that too. A write in the body makes an
+unannotated parameter's binding mutable:
+
+```esc
+var sink = {x: 0}
+
+fn f(p) {
+    p.x = 1
+    sink = p
+}
+```
+
+The options are:
+
+- Infer the binding's mutability from writes in the body, as the checker does
+  today.
+- Require `mut` to be written, as T2 states, and report a write through an
+  immutable binding with a message that says to write `mut p`.
+
+A binding's mutability is not part of the signature, since `fn f(mut p: T)`
+has the same type as `fn f(p: T)`. Inferring it gives the caller nothing, and
+it hides from a reader of the signature whether the body changes its own value.
+
+The parameter's type is different. Whether an unannotated parameter is owned,
+`&T`, or `&mut T` decides what the caller writes, so it stays inferred. F3
+says a parameter that does not escape is a borrow. A body that writes through
+such a parameter makes it `&mut`, and one that only reads it makes it `&`.
+
+Recommendation: require `mut` on every mutable binding, parameters included,
+and keep inferring an unannotated parameter's type.
+
+Decided: accepted. `fn f(p)` above reports the write to `p.x` and asks for
+`mut p`. Step 2 of the migration removes the inference of binding mutability.
+Step 4 infers `&` or `&mut` for an unannotated parameter that does not
+escape, from whether the body writes through it.
+
 ## Known bugs
 
 **B1. A store into a `&` field without `&` moves the source.** The field and
@@ -1173,6 +1247,31 @@ The first program in [D10](#d10-recording-that-a-callback-is-not-retained)
 checks clean today and should report the error marked there.
 [#1267](https://github.com/escalier-lang/escalier/issues/1267) tracks the gap.
 
+**B8. A borrow copied into a second binding is not tracked.** A loan records
+only the binding that a written `&` or `&mut` fills. `recordBorrowLoan` in
+[borrow_exclusivity.go](../../internal/solver/borrow_exclusivity.go) ignores an
+initializer that names an existing borrow, so the copy holds no loan. A
+conflict through the copy is not reported. The loan also ends when the
+original holder is last used, even while the copy is still read. The program
+below checks clean today and should report the shared and mutable pair at the
+call:
+
+```esc
+declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
+
+fn g() {
+    val mut x = {v: 1}
+    val a = &x
+    val c = a
+    val b = &mut x
+    readWrite(c, b)
+}
+```
+
+The checking model closes it by recording the copy as a `copy(place, holder)`
+event, which makes `c` a second holder of the borrow.
+[#1527](https://github.com/escalier-lang/escalier/issues/1527) tracks the gap.
+
 ## Divergences from the docs
 
 These came from reading the code and need confirming with a fixture each before
@@ -1185,9 +1284,6 @@ the docs change.
   [#794](https://github.com/escalier-lang/escalier/issues/794).
 - An owned argument to a borrow parameter needs a written `&`. The docs say the
   borrow is still inserted for the user. See D7.
-- A call to a `&mut self` method on an immutable binding goes through
-  `checkReceiverMut` in [classes.go](../../internal/solver/classes.go), which
-  appears to reject it. `docs/08_mutability.md` says the call is accepted.
 - An element store `t[i] = x` is typed and moves its source. `docs/09_ownership.md`
   says it is rejected as unsupported and cites
   [#1268](https://github.com/escalier-lang/escalier/issues/1268).
@@ -1197,13 +1293,6 @@ the docs change.
 - `docs/09_ownership.md` says a move is read off lifetime constraints. The solver
   decides moves separately at each flow site with its own conditions. The checking
   model above is the proposal to make the docs true.
-
-- Both docs and the solver write an owned value's mutability in its type, as
-  `mut T`, and `docs/08_mutability.md` calls `val mut a: {a: {b: {c: number}}}`
-  a conflict. T1 moves the mutability to the binding, so that binding is
-  ordinary. A `p: mut T` parameter becomes `mut p: T`, a `-> mut T` return
-  becomes `-> T`, and the stdlib's `...items: mut Array<T>` rest parameters
-  become `...items: Array<T>`.
 
 ## Interop
 
@@ -1393,6 +1482,8 @@ The steps:
    - The printer and the LSP hover show a binding's mutability on its name, as
      `mut p: {x: number}`.
    - T9's widening reads the binding's mutability instead of the type's.
+   - A parameter's binding is mutable only when written `mut`, as D13 decides.
+     The checker stops inferring it from writes in the body.
 3. Require every borrow to be written, as F4 states. The missing-`&` check
    extends from call arguments to every flow site and to field reads through a
    borrow. Each error carries the borrow its destination needs, `&` or
@@ -1414,6 +1505,8 @@ The steps:
    that does not escape becomes a borrow. A call to an escaping one moves its
    argument. An escaping parameter that the body only reads becomes a
    `'static &` borrow where the destination's type leaves the ownership open.
+   A parameter that does not escape becomes `&mut` when the body writes through
+   it and `&` otherwise, as D13 decides.
 5. Add function-type lifetimes, as D10 decides. The parser and the type system
    accept `&'a fn …` in a parameter, and E4 holds a passed closure's borrows
    for `'a`. A function parameter without a lifetime keeps its current
@@ -1469,6 +1562,7 @@ Each known bug closes at a step:
 | B5 | Step 4 | Yes |
 | B6 | Step 4 | No |
 | B7 | Step 5 | Yes |
+| B8 | Step 7, since the dataflow pass records a copied borrow as a holder | Yes |
 
 Steps 3 through 5 close B3, B5, and B7 in the current checker, so those holes
 close before the rewrite in step 7. B2 already has its own fix queued, so it

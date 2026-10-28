@@ -50,9 +50,9 @@ export declare class DateTimeFormat {
     constructor(&mut self, locales?: LocalesArgument, options?: DateTimeFormatOptions),
     (locales?: LocalesArgument, options?: DateTimeFormatOptions) -> DateTimeFormat,
     static supportedLocalesOf(locales: LocalesArgument, options?: DateTimeFormatOptions) -> Array<string>,
-    constructor(&mut self, locales?: string | mut Array<string>, options?: DateTimeFormatOptions),
-    (locales?: string | mut Array<string>, options?: DateTimeFormatOptions) -> DateTimeFormat,
-    static supportedLocalesOf(locales: string | mut Array<string>, options?: DateTimeFormatOptions) -> Array<string>,
+    constructor(&mut self, locales?: string | Array<string>, options?: DateTimeFormatOptions),
+    (locales?: string | Array<string>, options?: DateTimeFormatOptions) -> DateTimeFormat,
+    static supportedLocalesOf(locales: string | Array<string>, options?: DateTimeFormatOptions) -> Array<string>,
     static readonly prototype: DateTimeFormat
 }
 
@@ -138,9 +138,9 @@ export declare class NumberFormat {
     constructor(&mut self, locales?: LocalesArgument, options?: NumberFormatOptions),
     (locales?: LocalesArgument, options?: NumberFormatOptions) -> NumberFormat,
     static supportedLocalesOf(locales: LocalesArgument, options?: NumberFormatOptions) -> Array<string>,
-    constructor(&mut self, locales?: string | mut Array<string>, options?: NumberFormatOptions),
-    (locales?: string | mut Array<string>, options?: NumberFormatOptions) -> NumberFormat,
-    static supportedLocalesOf(locales: string | mut Array<string>, options?: NumberFormatOptions) -> Array<string>,
+    constructor(&mut self, locales?: string | Array<string>, options?: NumberFormatOptions),
+    (locales?: string | Array<string>, options?: NumberFormatOptions) -> NumberFormat,
+    static supportedLocalesOf(locales: string | Array<string>, options?: NumberFormatOptions) -> Array<string>,
     static readonly prototype: NumberFormat
 }
 
@@ -815,9 +815,9 @@ export declare class Collator {
     constructor(&mut self, locales?: LocalesArgument, options?: CollatorOptions),
     (locales?: LocalesArgument, options?: CollatorOptions) -> Collator,
     static supportedLocalesOf(locales: LocalesArgument, options?: CollatorOptions) -> Array<string>,
-    constructor(&mut self, locales?: string | mut Array<string>, options?: CollatorOptions),
-    (locales?: string | mut Array<string>, options?: CollatorOptions) -> Collator,
-    static supportedLocalesOf(locales: string | mut Array<string>, options?: CollatorOptions) -> Array<string>
+    constructor(&mut self, locales?: string | Array<string>, options?: CollatorOptions),
+    (locales?: string | Array<string>, options?: CollatorOptions) -> Collator,
+    static supportedLocalesOf(locales: string | Array<string>, options?: CollatorOptions) -> Array<string>
 }
 
 export declare type NumberFormatOptionsStyle = keyof NumberFormatOptionsStyleRegistry

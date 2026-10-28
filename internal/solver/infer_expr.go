@@ -95,6 +95,234 @@ type pathResult struct {
 	// value leaves that `undefined` out, so each later link of the chain reads the defined
 	// value. chainValue adds it back once the outermost link is resolved.
 	shortCircuits bool
+	// place is the binding value is an owned layer of, or nil when value is not one. See
+	// ownedPlace.
+	place *ownedPlace
+}
+
+// ownedPlace names the binding a value is read from when no borrow lies between the
+// binding and the value, so the value is one of the owned layers of what the binding
+// holds. `p`, `p.a`, and `p.a[0]` are owned layers of `p` when `p` holds an owned object,
+// and `q.a` is not one when `q` holds a borrow. A write, a `&mut` borrow, or a `&mut self`
+// call through an owned layer mutates the binding's value, so it needs the binding to be
+// `mut`. Through a borrow, the borrow's own mutability decides instead.
+type ownedPlace struct {
+	name string
+	b    ValueBinding
+}
+
+// placeOf returns the place a read of value off the binding b, named name, comes from, or nil
+// when value is not an owned layer of b. A value that holds a borrow is not one. Neither is
+// the object a class declaration binds, which holds the class's constructor and statics and
+// which no binding owns.
+func placeOf(name string, b ValueBinding, value soltype.Type) *ownedPlace {
+	if _, isClass := bindingDecl(b).(*ast.ClassDecl); isClass || holdsBorrow(value) {
+		return nil
+	}
+	return &ownedPlace{name: name, b: b}
+}
+
+// fieldPlace returns the place a value read off a receiver at recv comes from. A value that
+// holds a borrow starts no owned layer, and a receiver that is not an owned layer passes
+// none on.
+func fieldPlace(recv *ownedPlace, value soltype.Type) *ownedPlace {
+	if recv == nil || holdsBorrow(value) {
+		return nil
+	}
+	return recv
+}
+
+// noteMutPlace records in Info that the path read e is an owned layer of a `mut` binding,
+// when place says it is.
+func (c *checker) noteMutPlace(e ast.Expr, place *ownedPlace) {
+	if place != nil && place.b.Mut {
+		c.info.mutPlaces.Add(e)
+	}
+}
+
+// holdsBorrow reports whether t is a borrow, or a variable or union that may hold one.
+func holdsBorrow(t soltype.Type) bool {
+	return isBorrowType(t) || len(heldBorrows(t)) > 0 || hasBorrowMember(t)
+}
+
+// inferPlace infers e in value position, the way inferExpr does, and also returns the place
+// its value is an owned layer of. A mutating operation on e, such as `&mut e`, reads the
+// place to decide whether e may be mutated. e must hold no optional link, since a chain
+// that short-circuits yields `undefined` rather than the place's value.
+func (c *checker) inferPlace(scope *Scope, lvl int, e ast.Expr) (soltype.Type, *ownedPlace) {
+	var r pathResult
+	switch e := e.(type) {
+	case *ast.IdentExpr:
+		c.markLifetimes(e)
+		r = c.resolveIdentPath(scope, lvl, e, false, false)
+		return c.demandValue(r, e), r.place
+	case *ast.MemberExpr:
+		c.markLifetimes(e)
+		r = c.resolveMemberPath(scope, lvl, e, false)
+	case *ast.IndexExpr:
+		c.markLifetimes(e)
+		r = c.resolveIndexPath(scope, lvl, e, false)
+	default:
+		return c.inferExpr(scope, lvl, e), nil
+	}
+	return c.chainValue(lvl, r, e), r.place
+}
+
+// ownedMutation reports whether a mutating operation at site acts on an owned layer of a
+// binding, given the value t that the operation's target reads and the place t is an owned
+// layer of. A mutating operation is a write, a `&mut` borrow, or a `&mut self` call. The
+// binding's mutability decides such an operation, so its caller skips the `&mut` requirement
+// it puts on any other target. An owned layer of an immutable binding reports
+// ImmutableBindingError at site, and the result is still true, so the one fault does not also
+// fail the operation's requirement.
+//
+// It returns false for every other target, whose own type decides: a borrow, whose
+// mutability is its own, a temporary that no binding owns, and a value with no layer to
+// mutate, such as a number.
+func (c *checker) ownedMutation(site ast.Node, t soltype.Type, place *ownedPlace) bool {
+	owned, _ := c.ownedOrUnsettledMutation(site, t, place)
+	return owned
+}
+
+// ownedOrUnsettledMutation is ownedMutation, and also reports whether the decision waits on
+// the value's type. A value no lower bound has typed yet may still turn out to be a borrow, as
+// a callback's parameter does once the call it is passed to types it, and then the binding
+// plays no part. Such an operation through an immutable binding is recorded as an
+// unsettledMutation rather than reported, and its caller asks only for what the operation
+// reads.
+func (c *checker) ownedOrUnsettledMutation(site ast.Node, t soltype.Type, place *ownedPlace) (owned, unsettled bool) {
+	if place == nil {
+		return false, false
+	}
+	if _, layered := t.(soltype.RefInner); !layered {
+		return false, false
+	}
+	if !place.b.Mut {
+		if v, ok := t.(*soltype.TypeVarType); ok && c.fn != nil && !holdsKnownValue(v, set.NewSet[*soltype.TypeVarType]()) {
+			c.fn.unsettledMutations = append(c.fn.unsettledMutations, unsettledMutation{site: site, place: place, value: v})
+			return true, true
+		}
+		c.reportImmutableBinding(site, place)
+	}
+	return true, false
+}
+
+// holdsKnownValue reports whether some lower bound of v, followed through lower bounds that
+// are themselves variables, is a type rather than a variable. seen holds the variables on the
+// current path.
+func holdsKnownValue(v *soltype.TypeVarType, seen set.Set[*soltype.TypeVarType]) bool {
+	if seen.Contains(v) {
+		return false
+	}
+	seen.Add(v)
+	defer seen.Remove(v)
+	for _, lb := range v.LowerBounds {
+		inner, isVar := lb.(*soltype.TypeVarType)
+		if !isVar || holdsKnownValue(inner, seen) {
+			return true
+		}
+	}
+	return false
+}
+
+// unsettledMutation is a mutating operation at site through place, an owned layer of an
+// immutable binding as far as the operation could tell. value is the layer's type, which had
+// no lower bound yet, so the value may yet turn out to be a borrow.
+type unsettledMutation struct {
+	site  ast.Node
+	place *ownedPlace
+	value *soltype.TypeVarType
+}
+
+// settleUnsettledMutations hands mutations, collected by a body that has just been walked, to
+// the body enclosing it. A body at module top level hands them to pendingMutations, which
+// checkPendingMutations checks.
+func (c *checker) settleUnsettledMutations(mutations []unsettledMutation) {
+	if c.fn == nil {
+		c.pendingMutations = append(c.pendingMutations, mutations...)
+		return
+	}
+	c.fn.unsettledMutations = append(c.fn.unsettledMutations, mutations...)
+}
+
+// checkPendingMutations decides each mutation in pendingMutations by what its value turned
+// out to hold, then empties pendingMutations. A value that holds no borrow is an owned layer
+// of the immutable binding, which reports ImmutableBindingError. A value that holds a borrow
+// is mutated through the borrow, which must be `&mut`.
+func (c *checker) checkPendingMutations() {
+	for _, m := range c.pendingMutations {
+		borrows := reachableBorrows(m.value, set.NewSet[*soltype.TypeVarType]())
+		if len(borrows) == 0 {
+			c.reportImmutableBinding(m.site, m.place)
+			continue
+		}
+		for _, b := range borrows {
+			if b.Mut {
+				continue
+			}
+			mutable := &soltype.RefType{Mut: true, Lt: b.Lt, Inner: b.Inner}
+			c.blameConstraintErrors(m.site, []SolverError{&MutabilityMismatchError{Sub: b, Super: mutable}})
+		}
+	}
+	c.pendingMutations = nil
+}
+
+// reachableBorrows returns the borrows among t's lower bounds, following lower bounds that
+// are themselves variables. seen holds the variables on the current path.
+func reachableBorrows(t soltype.Type, seen set.Set[*soltype.TypeVarType]) []*soltype.RefType {
+	switch t := t.(type) {
+	case *soltype.RefType:
+		if t.Lt != nil {
+			return []*soltype.RefType{t}
+		}
+	case *soltype.TypeVarType:
+		if seen.Contains(t) {
+			return nil
+		}
+		seen.Add(t)
+		defer seen.Remove(t)
+		var out []*soltype.RefType
+		for _, lb := range t.LowerBounds {
+			out = append(out, reachableBorrows(lb, seen)...)
+		}
+		return out
+	}
+	return nil
+}
+
+// reportImmutableBinding reports ImmutableBindingError at site for a mutating operation
+// through place, whose binding is immutable.
+func (c *checker) reportImmutableBinding(site ast.Node, place *ownedPlace) {
+	decl := bindingDecl(place.b)
+	err := &ImmutableBindingError{Name: place.name, Decl: decl, Site: site, Fix: mutDeclFix(place.name, decl)}
+	// A parameter written `mut` stays immutable when a call does not move its argument
+	// into it. The message says why the `mut` has no effect.
+	if ip, ok := decl.(*ast.IdentPat); ok && ip.Mutable {
+		err.Unmovable = true
+	}
+	// A global the standard library declares, such as `console`, is not one this code can
+	// rewrite, so the message suggests no new declaration.
+	if g, ok := c.globalsScope().GetValue(place.name); ok && decl != nil && bindingDecl(g) == decl {
+		err.Foreign = true
+	}
+	c.report(err)
+}
+
+// mutDeclFix returns the declaration that makes the binding named name mutable, as the
+// user would write it. decl is the binding's declaration.
+func mutDeclFix(name string, decl ast.Node) string {
+	switch decl := decl.(type) {
+	case *ast.VarDecl:
+		if decl.Kind == ast.VarKind {
+			return "var mut " + name
+		}
+		return "val mut " + name
+	case nil:
+		if name == "self" {
+			return "mut self"
+		}
+	}
+	return "mut " + name
 }
 
 // resolvePath resolves an ident / member / index chain to a value or a namespace
@@ -250,7 +478,9 @@ func (c *checker) resolveIdentPath(scope *Scope, lvl int, e *ast.IdentExpr, objP
 		if !objPos {
 			c.recordUse(e, bindingType(b))
 		}
-		return pathResult{value: t}
+		place := placeOf(e.Name, b, t)
+		c.noteMutPlace(e, place)
+		return pathResult{value: t, place: place}
 	}
 	if ns, ok := scope.GetNamespace(e.Name); ok {
 		return pathResult{ns: ns}
@@ -388,7 +618,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// it, so `...xs` binds `xs` at the slot's own type and the flag rides onto the
 		// FuncParam below.
 		pat, rest, optional := c.restParamSlot(p, i == len(sig.Params)-1)
-		pt := c.paramType(declScope, p, lvl)
+		pt, written := c.writtenParamType(declScope, p, lvl)
 		// A caller fills the parameter, so the lower bounds the body sees are not all it
 		// can hold.
 		c.markOpenVar(pt)
@@ -399,8 +629,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// performs both steps.
 		// Rule 2 of PR 3. A bare annotation is owned and only an `&` annotation
 		// borrows. An `&` annotation already mints its lifetime in
-		// resolveLifetimeAnn, so a parameter has nothing to attach here. A bare
-		// `mut T` stays owned-mutable.
+		// resolveLifetimeAnn, so a parameter has nothing to attach here.
 		// An `open` un-annotated param keeps its usage-inferred object inexact at
 		// display time (B2). The marker only makes sense for an inferred var; an
 		// annotated param's exactness is fixed by its annotation, and paramType
@@ -427,10 +656,25 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 				// scope holding just the bindings made so far.
 				defaults = append(defaults, paramDefaultSite{def: def, param: pt, scope: snapshotScope(declScope, fnScope)})
 			}
+			// A `mut p: T` parameter may mutate the `T` it owns. The caller moves its
+			// argument into `p` either way, so the signature keeps the plain `T`. An
+			// unannotated `mut p` is mutable too, and its type is inferred from its uses.
+			//
+			// A call moves its argument only into a concrete owned shape. An annotation
+			// naming a union, an intersection, or a type parameter leaves the caller holding
+			// the value, so a write through it would change a value the caller can still
+			// read. Its binding stays immutable, and a write through it reports that the
+			// `mut` has no effect.
+			ip, isIdent := pat.(*ast.IdentPat)
+			mutable := isIdent && ip.Mutable && !(written && c.notMovedInto(pt))
+			if isIdent && ip.Mutable && !mutable {
+				c.info.inertMut.Add(ip)
+			}
 			// A parameter binding never generalizes — its var is fixed for the body — so
 			// it is a MonoScheme; instantiate returns pt unchanged at every use.
-			fnScope.defineValue(name, ValueBinding{Schemes: []TypeScheme{monoScheme(pt)}, Sources: sources})
+			fnScope.defineValue(name, ValueBinding{Schemes: []TypeScheme{monoScheme(pt)}, Sources: sources, Mut: mutable})
 			paramTypes[name] = pt
+			c.recordType(pat, pt)
 			// An `x?` parameter (parsed onto ast.Param.Optional) lowers the function's
 			// `required` count without dropping the param — carried onto the soltype so
 			// the accept-set rule and the printer (x?: T) see it. KNOWN GAP (M6): the
@@ -545,7 +789,6 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// inferStmt appends to both at every ReturnStmt, so they have the same length.
 	var collected []soltype.Type
 	var retExprs []ast.Expr
-	returnsUniquelyOwned := false
 	// bodyDiverges records that every path through the body left along the exceptional
 	// edge, and raised that some exceptional exit can actually raise. Both are read after
 	// the walk to warn about a signature the body cannot deliver on.
@@ -657,10 +900,6 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// it reads this body's move and use state off c.fn.
 		c.checkUseAfterMoves()
 		retExprs = c.fn.returnExprs
-		// Decided here, while this body's context is still current. isUniquelyOwned reads c.fn
-		// to admit a borrow leaf, and popFuncCtx below restores the outer context, so asking at
-		// the annotation check would answer no for every borrow a body returns.
-		returnsUniquelyOwned = c.allReturnsUniquelyOwned(retExprs)
 		throws = c.fn.throws
 		raised = c.fn.raised
 		yielded = c.fn.yielded
@@ -668,6 +907,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			gen.delegateNexts = c.fn.delegateNexts
 		}
 		recvReads := c.fn.inferredRecvReads
+		mutations := c.fn.unsettledMutations
 		// A closure that moves a local it captures takes the local from the body it is
 		// written in. recordCaptureLoans reads these names there.
 		if fn, ok := node.(ast.Func); ok && saved != nil {
@@ -683,6 +923,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// as a callback's parameter does from the call it is passed to, so the enclosing body
 		// decides it. The outermost body decides once everything it encloses is walked.
 		c.settleInferredRecvReads(recvReads)
+		c.settleUnsettledMutations(mutations)
 		// A body with no `return` that always leaves along the exceptional edge reaches
 		// no normal exit, so it produces `never`, not the `undefined` a fall-through body
 		// produces. Without this `fn f() -> number { throw Error("no") }` would report
@@ -692,15 +933,6 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			bodyDiverges = true
 		} else {
 			ret = c.joinReturnPoints(node, lvl, collected)
-			// A return moves the value out of the frame, so the caller's own binding decides
-			// mutability. `val r = f()` freezes what it gets and `val mut r = f()` takes it
-			// mutably. Only the inferred type is frozen, so a written `-> mut T` still means it.
-			//
-			// The peel reads the joined type's shape, so a return still standing as an
-			// inference variable keeps its `mut`. #1505 covers those.
-			if sig.Return == nil {
-				ret = stripOwnedMut(ret)
-			}
 		}
 	}
 	// Each return operand is checked against the annotation at its own site. A failure is
@@ -765,7 +997,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// stays `never`. Iterating or delegating is what advances it, and those sites read the
 	// slot back into their enclosing sink.
 	if sig.Gen {
-		ret = c.genReturn(node, gen, returnsUniquelyOwned, returnPoints, ret, throws, hasBody)
+		ret = c.genReturn(node, gen, returnPoints, ret, throws, hasBody)
 		throws = nil
 	} else if sig.Async {
 		// The async arm also moves the body's throws. An `async fn` rejects its promise
@@ -795,7 +1027,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			// would raise a spurious `undefined <: T`).
 			if hasBody {
 				for _, rp := range returnPoints {
-					c.constrainReturnAgainstAnnotation(rp.site, returnsUniquelyOwned, rp.t, annT) // body <: declared return
+					c.constrain(rp.site, rp.t, annT) // body <: declared return
 				}
 				// No caller can observe an annotated return the body never reaches, so warn
 				// and point at the annotation. A body that diverges into `never` on purpose
@@ -1054,57 +1286,6 @@ func (c *checker) reportedMixedOwnership(node ast.Node) bool {
 	return false
 }
 
-// constrainReturnAgainstAnnotation constrains a function body's joined return type against its
-// declared return annotation. It does not change the function's return type, which is annT
-// either way; what it decides is which form of annT the body is checked against.
-func (c *checker) constrainReturnAgainstAnnotation(node ast.Node, returnsUniquelyOwned bool, ret, annT soltype.Type) {
-	// A `mut` annotation checked strictly would reject its own body, since an owned-immutable
-	// value does not satisfy an owned-mutable type invariantly. The immutable form drops the
-	// write-back that makes it invariant, which is sound here because every return operand is
-	// uniquely owned and so has no other holder a write could surprise. One operand that is not
-	// blocks it, and the strict constraint runs.
-	//
-	// The gate is immutableTargetForSource's, split so each half runs where it can. Re-inlining
-	// the RefType test here is what let this site and immutableTargetForSource drift apart,
-	// which #1534 records.
-	if view, ok := c.immutableReturnTarget(returnsUniquelyOwned, annT); ok {
-		c.constrain(node, ret, view)
-		return
-	}
-	c.constrain(node, ret, annT)
-}
-
-// immutableReturnTarget returns annT's immutable form when every return operand is uniquely
-// owned, and false otherwise. It is immutableTargetForSource over a body's returns rather than
-// one expression, so the two sites cannot disagree on when the conversion applies.
-//
-// The source half is decided by the caller rather than here. isUniquelyOwned reads c.fn to admit
-// a borrow leaf, and inferFunc has to ask while the body's context is still current, since
-// popFuncCtx restores the outer one before the annotation is checked. Asking here would answer
-// no for every borrow a body returns.
-func (c *checker) immutableReturnTarget(returnsUniquelyOwned bool, annT soltype.Type) (soltype.Type, bool) {
-	if !returnsUniquelyOwned {
-		return nil, false
-	}
-	return c.immutableTarget(annT)
-}
-
-// allReturnsUniquelyOwned is the source half of immutableReturnTarget's gate, folded over a
-// body's return operands. An empty set, a bare `return` with a nil operand, or one operand that
-// is not uniquely owned makes it false, since the annotation covers the join of every return and
-// the join is uniquely owned only when each part is.
-func (c *checker) allReturnsUniquelyOwned(retExprs []ast.Expr) bool {
-	if len(retExprs) == 0 {
-		return false
-	}
-	for _, e := range retExprs {
-		if e == nil || !c.isUniquelyOwned(e) {
-			return false
-		}
-	}
-	return true
-}
-
 // joinBorrows joins several mutable borrows of objects. It applies only when EVERY
 // input is a mutable borrow of an object, all sharing the same field-name set with
 // each carrying a lifetime, and returns ok=false otherwise so the caller falls back
@@ -1127,7 +1308,7 @@ func (c *checker) allReturnsUniquelyOwned(retExprs []ast.Expr) bool {
 // write to a conflicting field is rejected, which keeps the union sound: it is
 // read-only at its conflicting fields, and a rejected write never changes its type.
 // To write, narrow to one branch with
-// `if val r2: mut {x: number} = r` and write through the fresh mutable view.
+// `if val r2: &mut {x: number} = r` and write through the fresh mutable view.
 func (c *checker) joinBorrows(node ast.Node, lvl int, types []soltype.Type) (soltype.Type, bool) {
 	inners, lts, allMut, ok := soltype.UnwrapRefs(types)
 	if !ok || !allMut {
@@ -1397,11 +1578,11 @@ func (c *checker) resolveGenSinks(scope *Scope, node ast.Node, sig ast.FuncSig, 
 // slot and what the body raises in the generator's Throws. A bodyless `declare gen fn`
 // wraps `unknown` rather than the synthetic `undefined`, which would signal that it
 // returns nothing.
-func (c *checker) genReturn(node ast.Node, gs *genSinks, returnsUniquelyOwned bool, returnPoints []returnPoint, bodyType, throws soltype.Type, hasBody bool) soltype.Type {
+func (c *checker) genReturn(node ast.Node, gs *genSinks, returnPoints []returnPoint, bodyType, throws soltype.Type, hasBody bool) soltype.Type {
 	if gs.ann != nil {
 		if hasBody {
 			for _, rp := range returnPoints {
-				c.constrainReturnAgainstAnnotation(rp.site, returnsUniquelyOwned, rp.t, gs.ann.Ret) // body <: declared Ret
+				c.constrain(rp.site, rp.t, gs.ann.Ret) // body <: declared Ret
 			}
 		}
 		return gs.ann
@@ -1440,6 +1621,25 @@ func (c *checker) wrapGenerator(node ast.Node, gs *genSinks, bodyType, throws so
 // call site recover against an unconstrained variable instead of cascading
 // `<: never` failures.
 func (c *checker) paramType(scope *Scope, p *ast.Param, lvl int) soltype.Type {
+	t, _ := c.writtenParamType(scope, p, lvl)
+	return t
+}
+
+// notMovedInto reports whether t is a parameter type a call does not move its argument into
+// although the argument may be reference-shaped: a union, an intersection, or a type
+// parameter, read through any alias naming one.
+func (c *checker) notMovedInto(t soltype.Type) bool {
+	switch c.expandAliasChain(t).(type) {
+	case *soltype.UnionType, *soltype.IntersectionType, *soltype.TypeVarType:
+		return true
+	}
+	return false
+}
+
+// writtenParamType is paramType, and also reports whether the type is the one p's annotation
+// names. It is false for an unannotated parameter and for one whose annotation failed to
+// resolve, whose type is then inferred from its uses.
+func (c *checker) writtenParamType(scope *Scope, p *ast.Param, lvl int) (soltype.Type, bool) {
 	if p.TypeAnn != nil {
 		// A parameter's annotation sits one position deeper in the input, which flips the
 		// variance. reportSelfInInput reads the depth to judge where a `Self` was written.
@@ -1447,10 +1647,10 @@ func (c *checker) paramType(scope *Scope, p *ast.Param, lvl int) soltype.Type {
 		t, ok := c.resolveTypeAnn(scope, p.TypeAnn, lvl)
 		c.inputDepth--
 		if ok {
-			return t
+			return t, true
 		}
 	}
-	return c.freshAt(lvl)
+	return c.freshAt(lvl), false
 }
 
 // inferBorrow types a borrow expression `&p` or `&mut p`. The result is a
@@ -1461,17 +1661,9 @@ func (c *checker) paramType(scope *Scope, p *ast.Param, lvl int) soltype.Type {
 // the same way a call-site argument does.
 //
 // The inner is taken directly from the operand rather than a fresh variable, so
-// the borrow renders against the operand's actual shape. `&mut p` on an
-// owned-mutable `mut {x: number}` reads as `mut {x: number}` when the lifetime
-// elides locally, and as `&'a mut {x: number}` when the borrow reaches an output.
-//
-// Concretely, `fn f(p: mut {x: number}) { return &mut p }` renders as
-// `fn (p: mut {x: number}) -> mut {x: number}`. The fresh lifetime on `&mut p`
-// has no upper bound from `p` because `p` is owned (Lt nil), so it occurs only
-// positively in the return, fails the param-lifetime test, and D4 elides the
-// wrapper. The borrow is real in the type graph; the elision just hides it at
-// display time. A proper rejection of this dangling-borrow case needs the
-// directional lifetime bounds slated for M6.5.
+// the borrow renders against the operand's actual shape. With `val mut p = {x: 0}`,
+// `&mut p` reads as `&mut {x: number}`, and as `&'a mut {x: number}` when the borrow
+// reaches an output.
 //
 // `&p` and `&mut p` are the explicit borrow form. A binding initializer uses one of
 // them to choose "borrow" over "move", as in `val q = &p` and `val q = &mut p`, so
@@ -1506,18 +1698,25 @@ func (c *checker) inferBorrow(scope *Scope, lvl int, e *ast.BorrowExpr) soltype.
 			return c.inferBorrowOfMember(scope, lvl, e, arg.Object, name, arg.Index, arg)
 		}
 	}
-	sub := c.inferExpr(scope, lvl, e.Arg)
-	return c.wrapBorrow(e, lvl, sub)
+	if !e.Mut {
+		return c.wrapBorrow(e, lvl, c.inferExpr(scope, lvl, e.Arg), false)
+	}
+	// A `&mut` borrow mutates what it borrows, so an owned layer of a binding needs a `mut`
+	// binding, which ownedMutation checks. The borrow then lends exactly the operand's
+	// own shape, so nothing is left to constrain.
+	sub, place := c.inferPlace(scope, lvl, e.Arg)
+	return c.wrapBorrow(e, lvl, sub, c.ownedMutation(e, sub, place))
 }
 
 // wrapBorrow wraps an already-typed operand in a `&` or `&mut` borrow, the
 // shared core of inferBorrow's main path and the namespace fallback in
-// inferBorrowOfMember. The operand's ErrorType recovery sentinel passes
+// inferBorrowOfMember. checked marks an operand whose mutability its binding already
+// decided, which skips the operand's own constraint against the borrow. The operand's ErrorType recovery sentinel passes
 // through unchanged so a reported diagnostic does not cascade a second one.
 // A primitive, function, or promise reports the non-borrowable diagnostic and
 // builds the wrapper around a fresh inner var, keeping the surrounding
 // expression cascade-safe.
-func (c *checker) wrapBorrow(e *ast.BorrowExpr, lvl int, sub soltype.Type) soltype.Type {
+func (c *checker) wrapBorrow(e *ast.BorrowExpr, lvl int, sub soltype.Type, checked bool) soltype.Type {
 	if _, ok := sub.(*soltype.ErrorType); ok {
 		c.recordType(e, sub)
 		return sub
@@ -1529,7 +1728,7 @@ func (c *checker) wrapBorrow(e *ast.BorrowExpr, lvl int, sub soltype.Type) solty
 		inner = s.Inner
 	case *soltype.TypeVarType:
 		// A read of a `var` binding is a variable whose lower bound is the value it holds,
-		// `mut {x: number}` for `var mut q = {x: 0}`. The borrow wraps that value. Wrapping
+		// `{x: number}` for `var mut q = {x: 0}`. The borrow wraps that value. Wrapping
 		// the variable itself would constrain it against a borrow of itself, so the value's
 		// immutable inner would reach the variable and then fail the `&mut` it now sits under.
 		// A variable that holds no known owned value, such as an unannotated parameter's, is
@@ -1554,7 +1753,7 @@ func (c *checker) wrapBorrow(e *ast.BorrowExpr, lvl int, sub soltype.Type) solty
 	lt := c.ctx.freshLifetime(lvl)
 	target := &soltype.RefType{Mut: e.Mut, Lt: lt, Inner: inner}
 	c.recordProv(target, e, BorrowExprOrigin)
-	if constrainable {
+	if constrainable && !checked {
 		c.constrain(e, sub, target)
 	}
 	c.recordType(e, target)
@@ -1602,7 +1801,7 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 		// then runs on the value with no receiver-bounded lifetime.
 		nsResult := c.resolveNamespaceMember(lvl, accessNode, provNode, obj.ns, propName)
 		sub := c.demandValue(nsResult, accessNode)
-		return c.wrapBorrow(e, lvl, sub)
+		return c.wrapBorrow(e, lvl, sub, false)
 	}
 	recv := obj.value
 	if _, ok := recv.(*soltype.ErrorType); ok {
@@ -1614,6 +1813,10 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 	// use of `obj.f`. The receiver resolved with objPos set, so it recorded no
 	// whole-receiver use that would collide with a partial move of a sibling.
 	c.recordMemberUse(accessNode)
+	// A `&mut` borrow of a field mutates the receiver's value. An owned layer of a binding
+	// needs a `mut` binding, which ownedMutation checks, and then asks the receiver only to
+	// hold the field.
+	ownedMut := e.Mut && c.ownedMutation(e, recv, obj.place)
 	_, _, recvLt := soltype.UnwrapRef(recv)
 	recvCarrier := soltype.CarrierOf(recv)
 	// Read-after-write cache. A usage-inferred receiver may carry a recorded
@@ -1623,7 +1826,7 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 	// inferMemberAssign uses when it records a write.
 	var cachedT soltype.Type
 	if c.fn != nil {
-		if v, ok := recv.(*soltype.TypeVarType); ok {
+		if v, ok := recvCarrier.(*soltype.TypeVarType); ok {
 			if t, found := c.fn.written[fieldKey{recvID: v.ID, field: propName}]; found {
 				cachedT = t
 			}
@@ -1647,7 +1850,7 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 		Elems:   []soltype.ObjTypeElem{&soltype.PropertyElem{Name: propName, Type: fieldVar}},
 		Inexact: true,
 	}
-	if e.Mut {
+	if e.Mut && !ownedMut {
 		mutPropSelection := &soltype.RefType{
 			Mut:   true,
 			Lt:    c.ctx.freshLifetime(lvl),
@@ -1698,20 +1901,11 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 }
 
 // borrowInnerOf returns the RefInner an explicit `&`/`&mut obj.f` should re-wrap
-// at the receiver's lifetime. The lazy deep-mut form (PR 14) no longer synthesizes
-// owned-mut cells for a plain `mut {a: {x}}`, so a field is usually the bare
-// object/tuple the user wrote, returned by the ordinary RefInner cast. Two RefType
-// cases remain, the same shapes fieldReadBorrow distinguishes:
-//   - An explicit `mut {x}` field, Lt nil: peel to its bare inner so `&mut obj.f`
-//     re-wraps a clean `{x}` rather than the fresh check var, which the
-//     co-occurrence pass would widen into a union and strip the borrow.
-//   - A borrow field, Lt set: return ok=false so the field's own borrow flows
-//     through unchanged.
+// at the receiver's lifetime. An owned field is the bare object or tuple the user
+// wrote, returned by the ordinary RefInner cast. A borrow field returns ok=false, so
+// the field's own borrow flows through unchanged.
 func borrowInnerOf(t soltype.Type) (soltype.RefInner, bool) {
-	if r, ok := t.(*soltype.RefType); ok {
-		if r.Lt == nil {
-			return r.Inner, ok
-		}
+	if _, ok := t.(*soltype.RefType); ok {
 		return nil, false
 	}
 	ri, ok := t.(soltype.RefInner)
@@ -2028,25 +2222,8 @@ func (c *checker) applyCallShape(lvl int, e *ast.CallExpr, callee soltype.Type, 
 		callShapeParams = padded
 	}
 
-	// Grant the immutable→mutable upgrade per argument: a uniquely-owned argument
-	// flowing into an owned-mutable parameter takes the mutable type, the same grant the
-	// annotated declaration makes, so `f({x: 1})` and `f(cfg)` for an owned-mutable
-	// parameter type-check. The argument's shape is constrained covariantly against the
-	// parameter's immutable read view, and the callShapeParams entry for that argument is pinned to
-	// the parameter's own type so the callee <: callShape constraint below does not re-check
-	// it strictly.
-	// consumeCallArgs still moves the argument, since an owned-mutable parameter is
-	// concrete-owned. It runs only for a resolved callee, where the parameter types are
-	// known. A deferred callee, one called through a `var`, keeps every argument on the
-	// strict path.
 	if resolved {
-		// upgradeCallShapeParams replaces the slots it pins in place, so the slots before it
-		// ran are kept to tell those apart.
-		unpinned := slices.Clone(callShapeParams)
-		callShapeParams = c.upgradeCallShapeParams(e.Args, callShapeParams, fn, func(src ast.Node, srcT, target soltype.Type) {
-			c.constrain(src, srcT, target)
-		})
-		// Checking each remaining argument against its parameter here, with the argument as
+		// Checking each argument against its parameter here, with the argument as
 		// the site, blames a mismatch on the argument. Through the call shape below, the
 		// blame would land on the whole call whenever the argument's type was written
 		// elsewhere, as `s` in `add(1, s)` after `val s: string = "x"`. Each argument also
@@ -2059,7 +2236,7 @@ func (c *checker) applyCallShape(lvl int, e *ast.CallExpr, callee soltype.Type, 
 		// call shape instantiates its signature again, and checking fn's copy too would
 		// report each mismatch twice.
 		if !secondInstance && c.isWholeSignature(callee, fn) {
-			callShapeParams = c.checkArgsAgainstParams(e.Args, unpinned, callShapeParams, fn)
+			callShapeParams = c.checkArgsAgainstParams(e.Args, callShapeParams, fn)
 		}
 	}
 
@@ -2168,78 +2345,6 @@ func (c *checker) consumeCallArgs(e *ast.CallExpr, fn *soltype.FuncType, ref liv
 	}
 }
 
-// upgradeCallShapeParams applies the immutable→mutable argument upgrade across a call shape's
-// parameter list and returns the list it leaves behind. It is the ONE place either call path
-// decides which arguments take an owned-mutable parameter's type, so a call shape and an
-// overload arm's trial agree on what a `mut` parameter accepts.
-//
-// `take({x: 1})` against `a: mut {x: number | string}` runs in three steps:
-//
-//  1. immutableTargetForSource hands back stripOwnedMut of the parameter's inner, `{x: number | string}`.
-//  2. check runs `{x: 1} <: {x: number | string}` COVARIANTLY. That is where the widening the
-//     argument needs happens, and where a wrong shape such as `take({y: 1})` still fails.
-//  3. That entry becomes the parameter's own type, so the later `callee <: callShape`
-//     compares `mut {x: number | string}` against itself. An owned-mutable cell is invariant,
-//     and identity is what satisfies it — no subtype relation is asked for at that position.
-//
-// check is what differs between the two callers: inferCall passes the accumulating constrain,
-// since its callee is settled, and an overload trial passes the error-returning one, since a
-// losing arm must write nothing.
-//
-// An argument at a rest slot takes no upgrade, since it fills one element of the gathered array
-// rather than the slot itself. The element check belongs to constrain's scatter rule.
-func (c *checker) upgradeCallShapeParams(
-	argExprs []ast.Expr, callShapeParams []*soltype.FuncParam, fn *soltype.FuncType,
-	check func(src ast.Node, srcT, target soltype.Type),
-) []*soltype.FuncParam {
-	for i := 0; i < len(argExprs) && i < len(fn.Params) && i < len(callShapeParams); i++ {
-		if fn.Params[i].Rest {
-			continue
-		}
-		view, ok := c.immutableTargetForSource(argExprs[i], fn.Params[i].Type)
-		if !ok {
-			continue
-		}
-		// The argument is checked against the parameter's immutable read view rather than
-		// the parameter, so an IMMUTABLE argument fills a `mut` parameter: `take({x: 1})`
-		// is not rejected on the mutability wrapper. Only the wrapper is dropped, since the
-		// check stays covariant, so `take({y: 1})` still fails on the shape.
-		//
-		// The decision is immutableTargetForSource's, and bottoms out in isUniquelyOwned and
-		// freshLiteralShape over in infer_decl.go. Those admit three shapes: a freshly built
-		// literal, a moved owned place, or a borrow expression.
-		//
-		// The first two are uniquely owned, so nothing else refers to the value and no live
-		// alias can observe a write the callee makes through the mutable view it receives,
-		// which is Rule 2 of the mutability-transition checker with an empty alias set.
-		// recordCallArgEffects then moves the argument, so a later use of it is a
-		// use-after-move and the uniqueness holds past the call rather than only at it. That
-		// move is not ordered against this grant, so it would be a convention — it is a data
-		// dependency instead, since the place-move shape needs the same VarID the move engine
-		// needs, and TestInferOwnedMutUpgradeNeedsABackingMove asserts the boundary.
-		//
-		// A borrow is sound for a different reason: the mutable view lets the container's
-		// field be repointed but grants no write to the referent, whose type stays invariant
-		// through the RefType arm, so the covariant check here cannot widen it.
-		check(argExprs[i], callShapeParams[i].Type, view)
-		// Step 3 of the walkthrough above. Upgrading the argument in place would not do,
-		// which is the reason this pins instead. An owned-mutable cell is INVARIANT, so the
-		// shape has to carry the parameter's type exactly. Wrapping the argument's own type gives `mut {x: 1}` for `take({x: 1})`
-		// against `a: mut {x: number}`, rejected with `cannot constrain number <: 1`.
-		// Widening the literals first, as the unannotated `val mut q = {x: 1}` case does in
-		// inferVarDeclInit, gives `mut {x: number}` and fixes that one — but only that one.
-		// It then rejects `a: mut {x: number | string}` and `a: mut {x: 1}`, since an
-		// invariant position admits neither a narrower nor a wider type.
-		//
-		// The difference is that `val mut q = {x: 1}` has no target to adopt, so widening
-		// has to invent a usable one; `mut {x: 1}` there would reject the later `q.x = 2`.
-		// An argument has the parameter, and adopting it lands on the invariant position by
-		// construction whatever shape it takes.
-		callShapeParams[i] = &soltype.FuncParam{Type: fn.Params[i].Type}
-	}
-	return callShapeParams
-}
-
 // isWholeSignature reports whether fn is every signature callee carries. That holds when
 // callee is fn itself, a type variable whose one lower bound is fn, or a class value with a
 // constructor and no call signature, whose constructor fn was read from.
@@ -2262,25 +2367,42 @@ func (c *checker) isWholeSignature(callee soltype.Type, fn *soltype.FuncType) bo
 // asks nothing more of fn's parameters. The caller passes an fn that is the callee's whole
 // signature.
 //
-// unpinned holds the slots before upgradeCallShapeParams ran, and params holds them after.
-// A slot that pass already pinned is left alone, and so is a rest parameter's slot and one
-// past the end of either list.
+// A rest parameter's slot is left alone, and so is one past the end of either list.
 func (c *checker) checkArgsAgainstParams(
-	argExprs []ast.Expr, unpinned, params []*soltype.FuncParam, fn *soltype.FuncType,
+	argExprs []ast.Expr, params []*soltype.FuncParam, fn *soltype.FuncType,
 ) []*soltype.FuncParam {
 	for i := 0; i < len(argExprs) && i < len(fn.Params) && i < len(params); i++ {
-		if fn.Params[i].Rest || params[i] != unpinned[i] {
+		if fn.Params[i].Rest {
 			continue
 		}
-		c.constrain(argExprs[i], params[i].Type, fn.Params[i].Type)
+		c.constrain(argExprs[i], c.implicitMutBorrow(argExprs[i], params[i].Type, fn.Params[i].Type), fn.Params[i].Type)
 		params[i] = &soltype.FuncParam{Type: &soltype.NeverType{}}
 	}
 	return params
 }
 
+// implicitMutBorrow returns the type a source expression src of type srcT presents to a
+// destination of type dest. An owned layer of a `mut` binding presents a mutable borrow of
+// itself to a `&mut` destination, at the destination's own lifetime, since the binding
+// lends that access. Every other source presents srcT.
+//
+// A call argument still needs the borrow written as `&mut arg`, which
+// ImplicitBorrowArgError reports. The mutable borrow keeps the parameter check from also
+// reporting the argument as immutable.
+func (c *checker) implicitMutBorrow(src ast.Expr, srcT, dest soltype.Type) soltype.Type {
+	ref, ok := dest.(*soltype.RefType)
+	if !ok || !ref.Mut || ref.Lt == nil || !c.info.mutPlaces.Contains(src) || holdsBorrow(srcT) {
+		return srcT
+	}
+	inner, ok := srcT.(soltype.RefInner)
+	if !ok {
+		return srcT
+	}
+	return &soltype.RefType{Mut: true, Lt: ref.Lt, Inner: inner}
+}
+
 // inferCallArgs types a call's arguments left to right, the ONE place either call path does so.
-// The result is index-aligned with e.Args, which is what lets the owned-mutable upgrade read the
-// source expression behind an argument to tell a uniquely-owned one from a live one.
+// The result is index-aligned with e.Args.
 //
 // The enclosing statement's CFG point must be read BEFORE this runs: inferring an argument that
 // contains statements, such as an `if`, overwrites c.fn.currentStmt, so reading the point
@@ -2646,16 +2768,9 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		// of an escaped borrow's mutability rides M4 G2.
 		//
 		// Escape runs only when the compatibility check passes, so a rejected store does
-		// not leave the source's lifetime forced to 'static. So `var sink = {…}; fn(p:
-		// mut {…}) { sink = p }` reports p as `mut 'static {…}`.
+		// not leave the source's lifetime forced to 'static.
 		errsBefore := len(c.errs)
-		// A uniquely-owned source has no other holder, so the write-back an owned-mutable
-		// global would impose is unnecessary and `sink = {x: 1}` type-checks against the
-		// immutable form. The carrier feeds it for the same reason it feeds the strict check
-		// below: a borrow forced to 'static satisfies the owned global.
-		if !c.constrainAgainstImmutableTarget(e, e.Right, soltype.CarrierOf(sourceT), targetT) {
-			c.constrain(e, soltype.CarrierOf(sourceT), targetT)
-		}
+		c.constrain(e, soltype.CarrierOf(sourceT), targetT)
 		if len(c.errs) == errsBefore && !missing {
 			// The store aliases the source into a permanent module-level storage location. If the
 			// source's mutability differs from that location's and the source stays live at
@@ -2663,7 +2778,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 			// reassignment path cannot see, since the global target is not a tracked
 			// local. Check it before forcing the escape so the source's own escape is
 			// not double-counted as a prior permanent alias.
-			c.checkGlobalWriteTransition(target, e.Right, bindingType(b), assignStmt)
+			c.checkGlobalWriteTransition(target, e.Right, bindingMutable(b), assignStmt)
 			c.constrainEscape(sourceT)
 			// The store transfers the value into a permanent 'static storage location, so it consumes
 			// the source binding. A later use of the source is then a use-after-move, the
@@ -2690,12 +2805,8 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 			// unique, which is the borrow checker's job. Move/affine semantics (#762),
 			// under the sound borrow checker (#618), will eventually reject it.
 		}
-	} else if !c.constrainAgainstImmutableTarget(e, e.Right, sourceT, targetT) {
-		// A uniquely-owned source reassigned into an owned-mutable `var` is checked against the
-		// target's immutable form, the same reading the annotated declaration takes. Only a
-		// RefType target has one, so a union target instead routes through constrain's
-		// union-super exists rule, which trials each member under a probe.
-		c.constrain(e, sourceT, targetT)
+	} else {
+		c.constrain(e, c.implicitMutBorrow(e.Right, sourceT, targetT), targetT)
 	}
 	if c.fn != nil && len(c.errs) == assignErrsBefore && !missing && c.varIDs.Of(target) > 0 {
 		// Track against the binding's own type, not the freshened targetT. The G2
@@ -2703,7 +2814,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		// lifetime on the binding's shared pointer. The freshened copy carries an
 		// independent lifetime var that the escape never touches. isMutableType reads
 		// the same top-level Mut from either, so the alias mutability is unchanged.
-		c.trackAliasesForAssignment(target, e.Right, bindingType(b), assignStmt)
+		c.trackAliasesForAssignment(target, e.Right, bindingType(b), bindingMutable(b), assignStmt)
 		// A non-module reassignment that moves its source consumes it. The global-write
 		// branch above runs its own consume, so this covers only the local-binding
 		// reassignment.
@@ -2742,31 +2853,32 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 
 // inferMemberAssign types a field write `recv.prop = source` (M4 C3). It extends
 // inferAssign's member-target branch: the receiver must ACCEPT a write to prop, so
-// the source is constrained against a mutable, inexact one-property requirement
+// it is constrained against an inexact one-property requirement. Where the write lands
+// decides the requirement's form:
 //
-//	recv <: mut {prop: widen(source), ...}
+//	recv <: {prop: widen(source), ...}           recv is an owned layer of a binding
+//	recv <: &'fresh mut {prop: widen(source), ...}   recv is reached through a borrow
 //
 // The inexact requirement says "must accept a write to this field," not "is exactly
-// this shape." The mut wrapper makes the receiver a mutable cell, which the C3
-// coalesce fold collapses with the receiver's other selections into one `mut`
-// object. The stored value is WIDENED (5 ⇒ number) because writing through a `mut`
-// receiver is itself a mutation — a later write may store any number — mirroring
-// the `var`-binding widening (B3).
+// this shape." Through a borrow, the C3 coalesce fold collapses the `&mut` requirement
+// with the receiver's other selections into one `&mut` object. On an owned layer, the
+// binding's `mut` decides whether the write is allowed, and ownedMutation reports an
+// immutable one. The stored value is WIDENED (5 ⇒ number) because the field is
+// writable, so a later write may store any number, mirroring the `var`-binding
+// widening (B3).
 //
 // A receiver that declares prop, as an annotated object or a class instance does, takes
 // the requirement at the field's declared type instead. The source is then constrained
 // against that type on its own, and an optional field also accepts `undefined`.
 //
-// The write requirement carries a fresh lifetime (D2): a mut-borrow receiver of
-// any lifetime is accepted (the fresh var imposes no obligation), and an owned
-// receiver satisfies the borrow destination by the RefType rule.
+// The borrow requirement carries a fresh lifetime (D2), so a `&mut` receiver of any
+// lifetime is accepted. The fresh variable imposes no obligation.
 //
 // A write has no result borrow to construct, so it needs no counterpart to the
 // read path's fieldReadBorrow. That helper builds the value a read yields: a
 // reference-shaped field comes back as a fresh borrow bounded by the receiver.
-// Here the borrow exists only as the `mut` requirement above. The requirement
-// constrains the receiver and is then discarded. The assignment's own value is
-// the plain stored `w` recorded below.
+// Here the requirement constrains the receiver and is then discarded. The
+// assignment's own value is the plain stored `w` recorded below.
 //
 // When the receiver is a variable, the widened type is recorded in `written` so a
 // later read of the same field returns it (read-after-write; see valueProp). The
@@ -2785,22 +2897,29 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 		// name, so emit nothing further and recover to `undefined`.
 		return undefinedT
 	}
-	recv := c.inferWriteReceiver(scope, lvl, m.Object)
-	return c.inferFieldAssign(scope, lvl, e, m.Object, m.Prop.Name, recv, source, assignStmt)
+	recv, place := c.inferWriteReceiver(scope, lvl, m.Object)
+	return c.inferFieldAssign(scope, lvl, e, m.Object, m.Prop.Name, recv, place, source, assignStmt)
 }
 
 // inferFieldAssign types a write of field `name` on the receiver object, whose type
-// recv the caller has inferred. e is the assignment and e.Left is `object.name` or a
-// bracket form naming the same field, such as `object["name"]`. The rules are the
-// ones inferMemberAssign documents.
-func (c *checker) inferFieldAssign(scope *Scope, lvl int, e *ast.BinaryExpr, object ast.Expr, name string, recv, source soltype.Type, assignStmt ast.Stmt) soltype.Type {
+// recv the caller has inferred. place is the place recv is an owned layer of, or nil. e is
+// the assignment and e.Left is `object.name` or a bracket form naming the same field, such
+// as `object["name"]`. The rules are the ones inferMemberAssign documents.
+func (c *checker) inferFieldAssign(scope *Scope, lvl int, e *ast.BinaryExpr, object ast.Expr, name string, recv soltype.Type, place *ownedPlace, source soltype.Type, assignStmt ast.Stmt) soltype.Type {
 	// The receiver's reads are part of this write, so the use check weighs them as a write to
 	// the target rather than as reads of the receiver.
 	c.noteFieldWrite(e.Left, object)
 	// The member is looked up once on the receiver's class instance, class body, or class
 	// value, or on its known object shape. A receiver whose shape is still being inferred
-	// declares no member.
-	member, _ := c.writeMember(name, readCarrier(recv))
+	// declares no member. A binding's read is a variable bounded below by the value it
+	// holds, so an owned value is looked up through that bound.
+	carrier := readCarrier(recv)
+	if _, isVar := carrier.(*soltype.TypeVarType); isVar {
+		if owned := c.ownedCarrier(recv); owned != nil {
+			carrier = owned
+		}
+	}
+	member, _ := c.writeMember(name, carrier)
 	// An accessor named prop resolves here rather than through the structural requirement
 	// below, whose element is a PropertyElem. constrain's object arm matches the sub side
 	// with ObjectType.Prop, so an accessor would read there as a missing property. A getter
@@ -2808,7 +2927,7 @@ func (c *checker) inferFieldAssign(scope *Scope, lvl int, e *ast.BinaryExpr, obj
 	// no setter to call.
 	switch member.(type) {
 	case *soltype.SetterElem, *soltype.GetterElem:
-		return c.inferAccessorAssign(scope, lvl, e, name, recv, source, member, assignStmt)
+		return c.inferAccessorAssign(scope, lvl, e, name, recv, place, source, member, assignStmt)
 	}
 	w := widen(source)
 	// A write to a declared readonly field is reported here, blamed on the target, so every
@@ -2827,25 +2946,23 @@ func (c *checker) inferFieldAssign(scope *Scope, lvl int, e *ast.BinaryExpr, obj
 		c.recordType(e, w)
 		return w
 	}
-	// An owned-mutable field takes the immutable→mutable upgrade through the same shared
-	// helper as the other value-flow sites, so the field write stays consistent with them:
-	// a uniquely-owned source is constrained covariantly against the field's read view, and
-	// the field's owned-mutable type is stored. The field's declared type is read off the
-	// receiver's carrier. An owned-mutable field arises only through inference, since #779
-	// rejects the annotation, so no source program reaches this branch today. The guard
-	// keeps the field write consistent for when one does.
-	upgraded := false
-	if recvObj, ok := soltype.CarrierOf(recv).(*soltype.ObjectType); ok {
-		if prop, ok := recvObj.Prop(name); ok && c.constrainAgainstImmutableTarget(e.Right, e.Right, source, prop.Type) {
-			w = prop.Type
-			upgraded = true
-		}
-	}
 	// A source that fills a borrow field without a written borrow is reported for that alone,
 	// and the store records no alias or move for it.
 	missing := hasDeclared && c.checkWrittenBorrow(e.Right, declared.Type)
 	errsBefore := len(c.errs)
+	// An owned layer of a binding is writable when the binding is `mut`. An immutable binding
+	// is reported here, and the checks below that a known shape would fail are skipped, since
+	// each would report the same write again.
+	owned, unsettled := c.ownedOrUnsettledMutation(e, recv, place)
+	rejected := owned && !unsettled && !place.b.Mut
 	reqField := &soltype.PropertyElem{Name: name, Type: w}
+	if unsettled {
+		// The receiver may turn out to be a borrow, and the requirement reads through one
+		// when its field is a variable, so the written type reaches the field through one.
+		fieldVar := c.freshAt(lvl)
+		c.constrain(e.Right, w, fieldVar)
+		reqField = &soltype.PropertyElem{Name: name, Type: fieldVar}
+	}
 	// A receiver that declares the field takes the write against the declared type. The
 	// requirement below pins its field invariant, which suits a receiver whose field type
 	// the write is inferring, but against a declared field it would also demand that the
@@ -2854,27 +2971,34 @@ func (c *checker) inferFieldAssign(scope *Scope, lvl int, e *ast.BinaryExpr, obj
 	// the declared type instead, and the requirement carries that type, so it asks only
 	// that the receiver be mutable and hold the field.
 	if hasDeclared {
-		// The upgrade above already constrained the source against this field.
-		if !upgraded {
+		if !rejected {
 			c.constrain(e.Right, source, writableFieldType(declared))
 		}
 		// An initializing write keeps the field readonly in the requirement, which asks only
 		// that the receiver hold the field. A writable field there would reject `self`.
 		reqField = &soltype.PropertyElem{Name: name, Type: declared.Type, Optional: declared.Optional, Readonly: initWrite}
 	}
-	req := &soltype.RefType{
-		Mut: true,
-		// A fresh lifetime imposes no obligation on the receiver (D2): constrainLt
-		// gives the new variable an upper bound and constrains nothing back, so a
-		// mut-borrow receiver of ANY lifetime satisfies the write requirement. A
-		// nil lifetime would instead reject a borrow receiver as an escape.
-		Lt: c.ctx.freshLifetime(lvl),
-		Inner: &soltype.ObjectType{
-			Elems:   []soltype.ObjTypeElem{reqField},
-			Inexact: true, // "must accept a write to this field," not a full shape
-		},
+	reqObj := &soltype.ObjectType{
+		Elems:   []soltype.ObjTypeElem{reqField},
+		Inexact: true, // "must accept a write to this field," not a full shape
 	}
-	c.constrain(e, recv, req)
+	if owned {
+		// The receiver need only hold the field. A shape still being inferred learns the
+		// field from the write even when the binding was rejected.
+		if !rejected || carrierIsVar(recv) {
+			c.constrain(e, recv, reqObj)
+		}
+	} else {
+		c.constrain(e, recv, &soltype.RefType{
+			Mut: true,
+			// A fresh lifetime imposes no obligation on the receiver (D2): constrainLt
+			// gives the new variable an upper bound and constrains nothing back, so a
+			// mut-borrow receiver of ANY lifetime satisfies the write requirement. A
+			// nil lifetime would instead reject a borrow receiver as an escape.
+			Lt:    c.ctx.freshLifetime(lvl),
+			Inner: reqObj,
+		})
+	}
 	c.recordWritten(recv, name, w)
 	// M4 G1: when the written value aliases a variable, merge the receiver's and the
 	// source's alias sets so a later transition off either sees the shared value. Only
@@ -2929,19 +3053,20 @@ func (c *checker) inferIndexAssign(scope *Scope, lvl int, e *ast.BinaryExpr, ix 
 		return &soltype.UndefinedType{}
 	}
 	// JavaScript evaluates the receiver before the key.
-	recv := c.inferWriteReceiver(scope, lvl, ix.Object)
+	recv, place := c.inferWriteReceiver(scope, lvl, ix.Object)
 	if name, ok := c.indexKeyName(scope, lvl, ix, recv); ok {
-		return c.inferFieldAssign(scope, lvl, e, ix.Object, name, recv, source, assignStmt)
+		return c.inferFieldAssign(scope, lvl, e, ix.Object, name, recv, place, source, assignStmt)
 	}
-	return c.inferElementAssign(scope, lvl, e, ix, recv, source, assignStmt)
+	return c.inferElementAssign(scope, lvl, e, ix, recv, place, source, assignStmt)
 }
 
 // inferElementAssign types a write `recv[k] = source` whose key names no single property,
 // once inferIndexAssign has inferred the receiver and the key. The write applies the
 // gates a field write does:
 //
-//   - The receiver must be mutable. It is constrained against a `mut` borrow of its own
-//     type, so a write through an immutable `Array<number>` is rejected.
+//   - The receiver must be mutable. An owned layer of a binding needs a `mut` binding, which
+//     ownedMutation checks. Any other receiver is constrained against a `mut` borrow of
+//     its own type, so a write through an `&Array<number>` is rejected.
 //   - The slot must not be `readonly`. A `readonly` index signature, or a `readonly`
 //     property the key may name, is reported as a ReadonlyFieldError naming the key's
 //     type.
@@ -2957,7 +3082,7 @@ func (c *checker) inferIndexAssign(scope *Scope, lvl int, e *ast.BinaryExpr, ix 
 //
 // The assignment evaluates to the value just stored, widened the way a field write
 // widens it.
-func (c *checker) inferElementAssign(scope *Scope, lvl int, e *ast.BinaryExpr, ix *ast.IndexExpr, recv, source soltype.Type, assignStmt ast.Stmt) soltype.Type {
+func (c *checker) inferElementAssign(scope *Scope, lvl int, e *ast.BinaryExpr, ix *ast.IndexExpr, recv soltype.Type, place *ownedPlace, source soltype.Type, assignStmt ast.Stmt) soltype.Type {
 	undefinedT := soltype.Type(&soltype.UndefinedType{})
 	c.noteFieldWrite(e.Left, ix.Object)
 	if _, failed := c.info.TypeOf(ix.Index).(*soltype.ErrorType); failed {
@@ -2986,12 +3111,16 @@ func (c *checker) inferElementAssign(scope *Scope, lvl int, e *ast.BinaryExpr, i
 		return w
 	}
 	errsBefore := len(c.errs)
-	c.constrain(e, recv, &soltype.RefType{
-		Mut: true,
-		// A fresh lifetime imposes no obligation on the receiver, matching the field write.
-		Lt:    c.ctx.freshLifetime(lvl),
-		Inner: access.Target.(soltype.RefInner),
-	})
+	// An owned layer of a binding is writable when the binding is `mut`, which
+	// ownedMutation checks. Any other receiver must lend mutable access.
+	if !c.ownedMutation(e, recv, place) {
+		c.constrain(e, recv, &soltype.RefType{
+			Mut: true,
+			// A fresh lifetime imposes no obligation on the receiver, matching the field write.
+			Lt:    c.ctx.freshLifetime(lvl),
+			Inner: access.Target.(soltype.RefInner),
+		})
+	}
 	if len(c.errs) > errsBefore {
 		// A receiver that cannot be written is the one fault, so the source is not checked
 		// against a slot the write never reaches.
@@ -3103,6 +3232,7 @@ func (c *checker) inferAccessorAssign(
 	e *ast.BinaryExpr,
 	name string,
 	recv soltype.Type,
+	place *ownedPlace,
 	source soltype.Type,
 	accessor soltype.ObjTypeElem,
 	assignStmt ast.Stmt,
@@ -3119,7 +3249,12 @@ func (c *checker) inferAccessorAssign(
 	// checks are independent.
 	c.raiseAccessorThrows(lvl, e, describeSite("assigning", "this assignment", e.Left), setter.ThrowsOrNever())
 	errsBefore := len(c.errs)
-	c.checkReceiverMut(e.Left, name, recv, setter.SelfParam)
+	c.checkReceiverMut(e.Left, name, recv, place, setter.SelfParam)
+	// A setter an object type declares names no receiver, and running it still writes the
+	// object, so an owned receiver needs a `mut` binding.
+	if setter.SelfParam == nil {
+		c.ownedMutation(e, recv, place)
+	}
 	c.checkWrittenBorrow(e.Right, setter.Param.Type)
 	c.constrain(e.Right, source, setter.Param.Type)
 	// A concretely owned parameter takes the value out of this frame, so the source
@@ -3145,68 +3280,74 @@ func (c *checker) inferAccessorAssign(
 	return w
 }
 
-// inferWriteReceiver infers the receiver of a field write `recv.prop = …`. Each
-// member/index step in the receiver CHAIN imposes a MUTABLE requirement on its own
-// receiver rather than the immutable read a plain access would, so writing one nested
-// field marks the whole container `mut` (#779): `fn foo(obj) { obj.p.x = 5 }` infers
-// `obj: mut {p: …}`, the mutability propagating up to the outermost container. The
-// alternative — an owned-mut cell on the inner field inside an immutable container —
-// is no longer a valid annotation, so inference must not produce it.
+// inferWriteReceiver infers the receiver of a field write `recv.prop = …`, where site is
+// the write, and returns the place the receiver is an owned layer of, or nil when it is not
+// one. The write itself checks the place through ownedMutation.
 //
-// Only the direct receiver of an assignment takes this path; a plain read elsewhere
-// in the body stays immutable. A bare identifier reads through ordinary inferExpr,
-// since there is no enclosing container to mark.
-func (c *checker) inferWriteReceiver(scope *Scope, lvl int, e ast.Expr) soltype.Type {
+// Each member or index step in the chain reads its field for writing. Through an owned layer
+// of a binding the field is an owned layer too, and the binding decides whether it may be
+// written. Through a borrow, each step imposes a MUTABLE requirement on its own receiver
+// rather than the immutable read a plain access would, so a write to a nested field asks the
+// whole chain to be writable. A field read through a mutable borrow is itself a mutable
+// borrow, so each step's receiver lends the next one mutable access.
+//
+// Only the direct receiver of an assignment takes this path; a plain read elsewhere in the
+// body stays immutable.
+func (c *checker) inferWriteReceiver(scope *Scope, lvl int, e ast.Expr) (soltype.Type, *ownedPlace) {
 	switch e := e.(type) {
 	case *ast.MemberExpr:
 		if e.OptChain || e.Prop == nil || e.Prop.Name == "" {
-			return c.inferExpr(scope, lvl, e)
+			return c.inferExpr(scope, lvl, e), nil
 		}
-		recv := c.inferWriteReceiver(scope, lvl, e.Object)
-		return c.mutFieldRead(lvl, e, e.Prop, e.Prop.Name, recv)
+		recv, place := c.inferWriteReceiver(scope, lvl, e.Object)
+		return c.mutFieldRead(lvl, e, e.Prop, e.Prop.Name, recv, place)
 	case *ast.IndexExpr:
 		// A constant-string index `obj["p"].x = …` reads the same field `obj.p` would,
-		// so it propagates mutability the same way. A dynamic key is not a supported
-		// place and falls through to the ordinary path.
+		// so it propagates mutability the same way. A dynamic key reads an element, which
+		// is an owned layer of the receiver like a field is.
 		if name, ok := constStringKey(e.Index); ok && !e.OptChain {
-			recv := c.inferWriteReceiver(scope, lvl, e.Object)
-			return c.mutFieldRead(lvl, e, e.Index, name, recv)
+			recv, place := c.inferWriteReceiver(scope, lvl, e.Object)
+			return c.mutFieldRead(lvl, e, e.Index, name, recv, place)
 		}
-		return c.inferExpr(scope, lvl, e)
+		return c.inferPlace(scope, lvl, e)
 	case *ast.IdentExpr:
 		// Every call reaches here through a member or index object, so the identifier is the
 		// root of the chain being written. `self.x = v` writes through the structural view.
-		return c.demandValue(c.resolveIdentPath(scope, lvl, e, false, true), e)
+		r := c.resolveIdentPath(scope, lvl, e, false, true)
+		return c.demandValue(r, e), r.place
 	default:
-		return c.inferExpr(scope, lvl, e)
+		return c.inferExpr(scope, lvl, e), nil
 	}
 }
 
-// mutFieldRead reads property `name` off `recv` as the receiver of a write chain.
-// When the receiver's shape is still an inference variable, it imposes a MUTABLE
-// requirement `mut {name: fieldVar, ...}` so the inferred container folds `mut` at
-// coalesce time (#779) and hands back a mutable borrow of the field, the deep-mut read
-// view, so a deeper write relates the field covariantly under the mut-context
-// invariance. When the receiver is already concrete — an annotated `mut {…}` or a
-// borrow — it defers to valueProp's ordinary read: the deep-mut machinery already
-// yields a mutable borrow off a mut receiver, and imposing a fresh inexact requirement
-// would clash with the annotation's exact shape under the write-back. blame is the
-// access node a constraint failure points at; provNode is the node the fresh field
-// var's provenance records.
-func (c *checker) mutFieldRead(lvl int, blame ast.Node, provNode ast.Node, name string, recv soltype.Type) soltype.Type {
+// mutFieldRead reads property `name` off `recv` as the receiver of a write chain, and returns
+// the field with the place it is an owned layer of. place is the place recv is an owned layer
+// of, or nil. blame is the access node a constraint failure points at; provNode is the node
+// the fresh field var's provenance records.
+//
+// Through an owned layer, the read is the ordinary one, since the binding decides whether
+// the field may be written. Through a borrow whose shape is still an inference variable, it
+// imposes a MUTABLE requirement `&mut {name: fieldVar, ...}` and hands back a mutable borrow
+// of the field, the deep-mut read view, so a deeper write relates the field under the
+// mut-context invariance. Through a concrete borrow it defers to valueProp's ordinary read:
+// the deep-mut machinery already yields a mutable borrow off a `&mut` receiver, and imposing
+// a fresh inexact requirement would clash with the annotation's exact shape under the
+// write-back.
+func (c *checker) mutFieldRead(lvl int, blame ast.Node, provNode ast.Node, name string, recv soltype.Type, place *ownedPlace) (soltype.Type, *ownedPlace) {
 	// Read-after-write (M4 C3): a field already written to the same receiver var
 	// returns the recorded concrete type, the same shortcut valueProp takes.
 	if c.fn != nil {
-		if v, ok := recv.(*soltype.TypeVarType); ok {
+		if v, ok := soltype.CarrierOf(recv).(*soltype.TypeVarType); ok {
 			if t, found := c.fn.written[fieldKey{recvID: v.ID, field: name}]; found {
 				c.recordType(blame, t)
-				return t
+				return t, fieldPlace(place, t)
 			}
 		}
 	}
-	if !carrierIsVar(recv) {
-		// Concrete receiver: a plain read composes the chain correctly.
-		return c.valueProp(lvl, blame, provNode, name, recv).value
+	if place != nil || !carrierIsVar(recv) {
+		// An owned layer or a concrete receiver: a plain read composes the chain correctly.
+		r := c.valueProp(lvl, blame, provNode, name, recv, place)
+		return r.value, fieldPlace(place, r.value)
 	}
 	fieldVar := c.freshAt(lvl)
 	c.recordProv(fieldVar, provNode, MemberAccess)
@@ -3222,7 +3363,7 @@ func (c *checker) mutFieldRead(lvl int, blame ast.Node, provNode ast.Node, name 
 	})
 	out := soltype.NewRef(true, c.ctx.freshLifetime(lvl), fieldVar)
 	c.recordType(blame, out)
-	return out
+	return out, nil
 }
 
 // recordWritten remembers that field `name` of receiver `recv` was written with
@@ -3235,7 +3376,7 @@ func (c *checker) recordWritten(recv soltype.Type, name string, t soltype.Type) 
 	if c.fn == nil {
 		return
 	}
-	if v, ok := recv.(*soltype.TypeVarType); ok {
+	if v, ok := soltype.CarrierOf(recv).(*soltype.TypeVarType); ok {
 		c.fn.written[fieldKey{recvID: v.ID, field: name}] = t
 	}
 }
@@ -3868,8 +4009,10 @@ func (c *checker) resolveMemberPath(scope *Scope, lvl int, e *ast.MemberExpr, ob
 	if !objPos {
 		c.recordMemberUse(e)
 	}
-	r := c.valueMember(lvl, e, obj.value)
+	r := c.valueMember(lvl, e, obj.value, obj.place)
 	r.shortCircuits = obj.shortCircuits
+	r.place = fieldPlace(obj.place, r.value)
+	c.noteMutPlace(e, r.place)
 	return r
 }
 
@@ -3889,11 +4032,11 @@ func (c *checker) resolveMemberPath(scope *Scope, lvl int, e *ast.MemberExpr, ob
 // The ObjectType <: ObjectType arm of constrain lowers fieldVar from the receiver's
 // matching property (so fieldVar coalesces to that property's type); a receiver
 // missing the property surfaces as a MissingPropertyError stamped with the member's span.
-func (c *checker) valueMember(lvl int, e *ast.MemberExpr, recv soltype.Type) pathResult {
+func (c *checker) valueMember(lvl int, e *ast.MemberExpr, recv soltype.Type, place *ownedPlace) pathResult {
 	// Record the fresh result var against the .prop IDENTIFIER (not the whole
 	// MemberExpr), so a missing-property read blames the property (.foo), not the
 	// receiver.
-	return c.valueProp(lvl, e, e.Prop, e.Prop.Name, recv)
+	return c.valueProp(lvl, e, e.Prop, e.Prop.Name, recv, place)
 }
 
 // valueProp is the shared core of property access off a value receiver, used by
@@ -3903,7 +4046,7 @@ func (c *checker) valueMember(lvl int, e *ast.MemberExpr, recv soltype.Type) pat
 // the property identifier for dot access, the string-literal key for index access
 // — so a missing-property read blames the property, not the receiver. name is the
 // property key being read.
-func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name string, recv soltype.Type) pathResult {
+func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name string, recv soltype.Type, place *ownedPlace) pathResult {
 	// Read-after-write (M4 C3): a read of a field just written to the same receiver
 	// var returns the recorded concrete type instead of minting a fresh var, so
 	// `obj.x = 5; obj.x` is `number`. The write already constrained the receiver to
@@ -3951,14 +4094,14 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	// field, resolves through the projected class body by direct member lookup rather
 	// than the structural field-requirement below — the constraint path reads only
 	// PropertyElems and cannot see a method or getter (M5 B1).
-	if res, ok := c.projectedMember(lvl, blame, name, recv, recvCarrier); ok {
+	if res, ok := c.projectedMember(lvl, blame, name, recv, recvCarrier, place); ok {
 		return res
 	}
 	// A `self` receiver inside a class body binds to the full instance object, which
 	// carries method, getter, and setter members alongside fields. A read of such a
 	// member resolves through member lookup here, since the structural field-requirement
 	// path below reads only properties and panics on a non-property member (M5 B3).
-	if res, ok := c.classBodyMember(lvl, blame, name, recv, recvCarrier); ok {
+	if res, ok := c.classBodyMember(lvl, blame, name, recv, recvCarrier, place); ok {
 		return res
 	}
 	// A static read `Point.origin` resolves through member lookup here, since the
@@ -4047,9 +4190,9 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 // property.
 func (c *checker) declaredField(recv soltype.Type, name string) (*soltype.PropertyElem, bool) {
 	// An alias and a class name the same field list an object type writes inline, so each
-	// resolves to that list before the read. Without this a receiver annotated `mut Config`
-	// or `mut Box` would declare no fields and its reads would lose their mutability, while
-	// the inline `mut {…}` spelling of the same type kept it.
+	// resolves to that list before the read. Without this a receiver annotated `&mut Config`
+	// or `&mut Box` would declare no fields and its reads would lose their mutability, while
+	// the inline `&mut {…}` spelling of the same type kept it.
 	carrier := c.memberCarrier(soltype.CarrierOf(recv))
 	if ct, isClass := c.classCarrier(carrier); isClass {
 		// Projected at the instance's arguments, so a field typed `T` reads as the
@@ -4072,20 +4215,6 @@ func (c *checker) declaredField(recv soltype.Type, name string) (*soltype.Proper
 func (c *checker) fieldBorrow(fieldType soltype.Type, readVar soltype.RefInner, recvMut bool, recvLt soltype.Lifetime, lvl int) (soltype.Type, bool) {
 	switch fieldType := fieldType.(type) {
 	case *soltype.RefType:
-		if fieldType.Lt == nil {
-			// An owned-mutable field cell, which a class body writes as `mut Box<T>`. Read
-			// it as a receiver-bounded borrow that keeps the field's own mutability rather
-			// than capping it by the receiver's. That is interior mutability: a field the
-			// source marked `mut` stays writable through an immutable receiver, which is
-			// what `readonly inner: mut Box<T>` asks for. The receiver decides the
-			// mutability of a field that did NOT ask, and the bare arm below does that.
-			// An object type annotation cannot write this shape, #779 rejecting it there.
-			lt := recvLt
-			if lt == nil {
-				lt = c.ctx.freshLifetime(lvl)
-			}
-			return &soltype.RefType{Mut: fieldType.Mut, Lt: lt, Inner: fieldType.Inner}, true
-		}
 		if !fieldType.Mut {
 			// Flat copy-out of an immutable borrow field. Immutable borrows are
 			// freely duplicable, so the read hands back the field's borrow at
@@ -4113,9 +4242,9 @@ func (c *checker) fieldBorrow(fieldType soltype.Type, readVar soltype.RefInner, 
 			// field read can be moved out of it. `pair.a` off an owned `pair` is the
 			// owned field `{x}` and flows into an owned binding, argument, return, or
 			// store as a move that consumes `pair.a`. The move engine keys the consume
-			// on the field's place (PR 7). A mutable receiver yields an owned-mutable
-			// field and an immutable one the bare field.
-			return soltype.NewRef(recvMut, nil, fieldType.(soltype.RefInner)), true
+			// on the field's place (PR 7). Whether the field may be mutated is decided
+			// by the binding the receiver is an owned layer of.
+			return fieldType, true
 		}
 		if recvMut {
 			// Mutable read: keep the concrete field shape as the borrow's inner, the
@@ -4167,7 +4296,7 @@ func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr, objP
 		if !objPos {
 			c.recordMemberUse(e)
 		}
-		r = c.valueProp(lvl, e, e.Index, name, obj.value)
+		r = c.valueProp(lvl, e, e.Index, name, obj.value, obj.place)
 	} else if _, isNever := obj.value.(*soltype.NeverType); isNever && obj.shortCircuits {
 		// definedReceiver returns `never` for a receiver that is always nullish. The link
 		// always short-circuits, so there is no element to read.
@@ -4177,6 +4306,10 @@ func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr, objP
 		r = c.dynamicIndexRead(e, obj.value, objPos)
 	}
 	r.shortCircuits = obj.shortCircuits
+	// An element is an owned layer of its container, the same as a field, so
+	// `val mut xs: Array<{x: number}>` admits `xs[0].x = 1`.
+	r.place = fieldPlace(obj.place, r.value)
+	c.noteMutPlace(e, r.place)
 	return r
 }
 
@@ -4253,8 +4386,9 @@ func (c *checker) dynamicIndexRead(e *ast.IndexExpr, recv soltype.Type, objPos b
 				if !objPos {
 					c.recordMemberUse(e)
 				}
-				c.recordType(e, shape.prefix[i])
-				return pathResult{value: shape.prefix[i]}
+				elem := shape.prefix[i]
+				c.recordType(e, elem)
+				return pathResult{value: elem}
 			}
 		}
 	}
@@ -4386,7 +4520,7 @@ func (c *checker) resolveNamespaceMember(lvl int, node ast.Expr, provNode ast.No
 		return pathResult{value: t}
 	}
 	if ns.AsValue != nil && len(ns.AsValue.Schemes) > 0 {
-		return c.valueProp(lvl, node, provNode, name, c.bindingValue(lvl, *ns.AsValue))
+		return c.valueProp(lvl, node, provNode, name, c.bindingValue(lvl, *ns.AsValue), nil)
 	}
 	c.report(&UnknownNamespaceMemberError{Node: node, NS: ns, Name: name})
 	return pathResult{err: true}
@@ -4971,6 +5105,7 @@ func (c *checker) bindNarrowedIdent(scope *Scope, lvl int, ip *ast.IdentPat, ann
 	binding := ValueBinding{
 		Schemes: []TypeScheme{monoScheme(narrowed)},
 		Sources: []provenance.Provenance{&ast.NodeProvenance{Node: ip}},
+		Mut:     ip.Mutable,
 	}
 	// Carry the rename-assigned VarID onto the binding so a later closure capture or
 	// alias-set check resolves this name, matching the ordinary body-level decl path.
@@ -4994,7 +5129,11 @@ func (c *checker) narrowToAnn(scope *Scope, lvl int, node ast.Node, ann ast.Type
 		// whole scrutinee so the body still type-checks against a real type rather
 		// than cascading a second error off a `never` placeholder.
 		narrowed = scrutinee
-	case c.admitsPartOf(scrutinee, narrowed):
+	case c.admitsPartOf(scrutinee, narrowed),
+		// A pattern over a borrow reads the borrowed values, so a borrow annotation such as
+		// `r2: &mut {x: number}` over `&mut {x: number} | &mut {x: string}` is tested
+		// against the values it borrows. The binding mode carries the borrow itself.
+		isBorrowType(narrowed) && c.admitsPartOf(scrutinee, soltype.CarrierOf(narrowed)):
 		// Some value of the scrutinee fits the annotation, so the test can pass and nothing
 		// needs constraining. The name keeps the annotated type set below, which is what the
 		// test proved about every value reaching the body.
@@ -5202,19 +5341,14 @@ func (c *checker) joinLeaf(
 // and false when the leaf joins its two sources instead. matched is what the success path
 // bound the leaf to, node the leaf's pattern.
 //
-// Two leaves take no join. An owned `mut` leaf is a cell the block writes through, so the
-// fallback flows into its contents. A union of that cell and a plain value would reject
-// `x.a = 2`. An annotated leaf already has the annotation as its type, so the fallback has
-// to fit it. `val {x::number} = p else { {x: "s"} }` reports the `"s"`.
+// An annotated leaf takes no join. It already has the annotation as its type, so the fallback
+// has to fit it. `val {x::number} = p else { {x: "s"} }` reports the `"s"`.
 //
 // An unannotated leaf of a borrowed scrutinee is neither. It names a place inside the
 // initializer, where the fallback's fresh value does not live, so the two join and a write
 // through the union is rejected. An annotated leaf of that same scrutinee is no borrow at
 // all, since concreteLeaf drops the shape hint applyBindMode needs to wrap one.
 func leafFixedType(matched soltype.Type, node ast.Node) (soltype.Type, bool) {
-	if ref, isRef := matched.(*soltype.RefType); isRef && ref.Mut && ref.Lt == nil {
-		return ref.Inner, true
-	}
 	if leafTypeAnn(node) != nil {
 		return matched, true
 	}

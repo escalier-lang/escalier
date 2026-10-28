@@ -3,7 +3,7 @@
     "decl": "Array",
     "member": "concat",
     "kind": "method",
-    "digest": "39737156f8603cba"
+    "digest": "6226167ec472d2ea"
   },
   {
     "decl": "Array",
@@ -57,13 +57,13 @@
     "decl": "Array",
     "member": "toLocaleString",
     "kind": "method",
-    "digest": "7bffe5dcbefe46ae"
+    "digest": "c7e27135ff89a6ac"
   },
   {
     "decl": "Array",
     "member": "toSpliced",
     "kind": "method",
-    "digest": "90a76cfbbf459b88"
+    "digest": "f0c1c9b2ae5ed897"
   },
   {
     "decl": "Array",

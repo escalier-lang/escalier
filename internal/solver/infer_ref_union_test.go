@@ -32,11 +32,10 @@ func TestInferRefUnion(t *testing.T) {
 			want: "fn <'a>(p: &'a mut ({a: number} | {b: number})) -> &'a mut ({a: number} | {b: number})",
 		},
 		{
-			// The union joins RefInner, so the `mut` wrapper has a borrowable pointee to
-			// wrap rather than reporting an unsupported feature.
-			name: "owned-mutable union accepted",
-			src:  `fn f(p: mut ({a: number} | {b: number})) { return p }`,
-			want: "fn (p: mut ({a: number} | {b: number})) -> {a: number} | {b: number}",
+			// A `mut` binding of a union keeps the union as its type.
+			name: "mut union parameter accepted",
+			src:  `fn f(mut p: {a: number} | {b: number}) { return p }`,
+			want: "fn (p: {a: number} | {b: number}) -> {a: number} | {b: number}",
 		},
 		{
 			name: "immutable borrow over an intersection",
@@ -398,10 +397,10 @@ func TestBorrowUnionLeafBindsAsBorrow(t *testing.T) {
 			want: "&({a: number} | {b: number})",
 		},
 		{
-			// An owned-mutable `mut {…}` cell carries no lifetime, so it is a value rather than
-			// a borrow and its leaves move out.
-			name: "owned-mutable members are not peeled",
-			src: `fn f(p: mut {x: {a: number}} | mut {y: string}) {
+			// An owned member carries no lifetime, so it is a value rather than a borrow and
+			// its leaves move out.
+			name: "owned members are not peeled",
+			src: `fn f(p: {x: {a: number}} | {y: string}) {
   val {x: v} = p else { return 0 }
   return 0
 }`,

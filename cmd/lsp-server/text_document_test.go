@@ -184,7 +184,7 @@ func TestIntegration_HoverShowsType(t *testing.T) {
 
 	content, ok := hover.Contents.(protocol.MarkupContent)
 	require.True(t, ok)
-	assert.Equal(t, "`number`", content.Value)
+	assert.Equal(t, "`x: number`", content.Value)
 }
 
 // --- Integration test: diagnostics ---
@@ -650,7 +650,75 @@ func TestHoverFromSolver(t *testing.T) {
 			name:  "InferredVal",
 			files: map[string]string{"bin/main.esc": "val x = 5"},
 			open:  "bin/main.esc", line: 0, col: 4,
-			expected: "`5`",
+			expected: "`x: 5`",
+		},
+		{
+			name:  "ValMutBinding",
+			files: map[string]string{"bin/main.esc": "val mut p = {x: 1}"},
+			open:  "bin/main.esc", line: 0, col: 8,
+			expected: "`mut p: {x: number}`",
+		},
+		{
+			name:  "ValMutRead",
+			files: map[string]string{"bin/main.esc": "val mut p = {x: 1}\nval n = p.x"},
+			open:  "bin/main.esc", line: 1, col: 8,
+			expected: "`mut p: {x: number}`",
+		},
+		{
+			name:  "DestructuredMutShorthandReadInFunction",
+			files: map[string]string{"lib/a.esc": "val {mut a, b} = {a: {x: 1}, b: {x: 2}}\nexport fn f() -> number { return a.x + b.x }"},
+			open:  "lib/a.esc", line: 1, col: 33,
+			expected: "`mut a: {x: number}`",
+		},
+		{
+			name:  "DestructuredShorthandReadInFunction",
+			files: map[string]string{"lib/a.esc": "val {mut a, b} = {a: {x: 1}, b: {x: 2}}\nexport fn f() -> number { return a.x + b.x }"},
+			open:  "lib/a.esc", line: 1, col: 39,
+			expected: "`b: {x: 2}`",
+		},
+		{
+			name:  "DestructuredMutKeyValueReadInFunction",
+			files: map[string]string{"lib/a.esc": "val {a: mut c} = {a: {x: 1}}\nexport fn f() -> number { return c.x }"},
+			open:  "lib/a.esc", line: 1, col: 33,
+			expected: "`mut c: {x: number}`",
+		},
+		{
+			name:  "AnnotatedValMut",
+			files: map[string]string{"bin/main.esc": "val mut p: {x: number} = {x: 1}"},
+			open:  "bin/main.esc", line: 0, col: 8,
+			expected: "`mut p: {x: number}`",
+		},
+		{
+			name: "MutParam",
+			files: map[string]string{
+				"lib/point.esc": "export fn f(mut p: {x: number}) -> number { return p.x }",
+			},
+			open: "lib/point.esc", line: 0, col: 16,
+			expected: "`mut p: {x: number}`",
+		},
+		{
+			name:  "DestructuredMutRead",
+			files: map[string]string{"bin/main.esc": "val {mut a} = {a: {x: 1}}\nval n = a.x"},
+			open:  "bin/main.esc", line: 1, col: 8,
+			expected: "`mut a: {x: number}`",
+		},
+		{
+			// A call moves its argument only into a concrete owned shape, so the `mut` on a
+			// union parameter leaves the binding immutable, and the hover shows no `mut`.
+			name: "MutUnionParam",
+			files: map[string]string{
+				"lib/point.esc": "export fn f(mut p: {x: number} | {y: number}) -> number { return 1 }",
+			},
+			open: "lib/point.esc", line: 0, col: 16,
+			expected: "`p: {x: number} | {y: number}`",
+		},
+		{
+			name: "MutParamRead",
+			files: map[string]string{
+				"lib/point.esc": "export fn f(mut p: {x: number}) -> number { return p.x }",
+			},
+			open: "lib/point.esc", line: 0, col: 51,
+			expected: "`mut p: {x: number}`",
 		},
 		{
 			name: "LibFuncReadFromBin",
@@ -661,13 +729,22 @@ func TestHoverFromSolver(t *testing.T) {
 			open: "bin/main.esc", line: 0, col: 9,
 			expected: "`fn (a: number, b: number) -> number`",
 		},
+		// The checker binds `self` with no declaration, so the hover shows its type alone.
+		{
+			name: "SelfRead",
+			files: map[string]string{
+				"lib/c.esc": "export class C { n: number, get(self) -> number { return self.n } }",
+			},
+			open: "lib/c.esc", line: 0, col: 58,
+			expected: "`{n: number, get(self) -> number}`",
+		},
 		{
 			name: "LibParam",
 			files: map[string]string{
 				"lib/math.esc": "export fn add(a: number, b: number) -> number { return a + b }",
 			},
 			open: "lib/math.esc", line: 0, col: 55,
-			expected: "`number`",
+			expected: "`a: number`",
 		},
 	}
 	for _, tt := range tests {

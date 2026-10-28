@@ -30,7 +30,7 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 					put(&mut self, p: &'a mut {value: number}) -> undefined { self.peer = p },
 				}
 
-				fn build(p: mut {value: number}, out: &mut {slot: &mut {value: number}}) {
+				fn build(mut p: {value: number}, out: &mut {slot: &mut {value: number}}) {
 					val mut b = {value: 2}
 					val mut h = Holder(&mut p)
 					h.put(&mut b)
@@ -42,7 +42,7 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 			want: []string{"12:14-12:15: cannot move 'b' while it is borrowed"},
 			types: map[string]string{
 				"Holder": "{new <'a>(peer: &'a mut {value: number}) -> Holder<'a>}",
-				"build":  "fn (p: mut {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined",
+				"build":  "fn (p: {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined",
 			},
 		},
 		// A receiver the caller owns outlives the frame, so a borrow of a local written into
@@ -78,7 +78,7 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 					look(&self, p: &'a mut {value: number}) -> undefined { },
 				}
 
-				fn build(p: mut {value: number}) -> &mut {value: number} {
+				fn build(mut p: {value: number}) -> &mut {value: number} {
 					val mut b = {value: 2}
 					val mut h = Holder(&mut p)
 					h.look(&mut b)
@@ -88,7 +88,7 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 			want: nil,
 			types: map[string]string{
 				"Holder": "{new <'a>(peer: &'a mut {value: number}) -> Holder<'a>}",
-				"build":  "fn (p: mut {value: number}) -> &mut {value: number}",
+				"build":  "fn (p: {value: number}) -> &mut {value: number}",
 			},
 		},
 		// The bracket form of a member access reaches the same method, so it records the same
@@ -101,7 +101,7 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 					put(&mut self, p: &'a mut {value: number}) -> undefined { self.peer = p },
 				}
 
-				fn build(p: mut {value: number}, out: &mut {slot: &mut {value: number}}) {
+				fn build(mut p: {value: number}, out: &mut {slot: &mut {value: number}}) {
 					val mut b = {value: 2}
 					val mut h = Holder(&mut p)
 					h["put"](&mut b)
@@ -113,7 +113,7 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 			want: []string{"12:14-12:15: cannot move 'b' while it is borrowed"},
 			types: map[string]string{
 				"Holder": "{new <'a>(peer: &'a mut {value: number}) -> Holder<'a>}",
-				"build":  "fn (p: mut {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined",
+				"build":  "fn (p: {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined",
 			},
 		},
 	}
@@ -143,7 +143,7 @@ func TestSelfReceiverIsAStoreSource(t *testing.T) {
 			drain(&self, out: &mut {slot: &'a mut {value: number}}) -> undefined { out.slot = self.peer },
 		}
 
-		fn build(p: mut {value: number}, sink: &mut {slot: &mut {value: number}}) {
+		fn build(mut p: {value: number}, sink: &mut {slot: &mut {value: number}}) {
 			val mut b = {value: 2}
 			val mut h = Holder(&mut b)
 			val mut o = {slot: &mut p}
@@ -216,7 +216,7 @@ func TestIndirectStoreIntoParameter(t *testing.T) {
 		// direct store would report — would be a false positive on sound code.
 		"HoldingAParameterBorrowIsExempt": {
 			src: decl + `
-				fn build(o: &mut {slot: &mut {value: number}}, q: mut {value: number}) -> undefined {
+				fn build(o: &mut {slot: &mut {value: number}}, mut q: {value: number}) -> undefined {
 					val mut s = {held: &mut q}
 					drain(&mut s, o)
 				}

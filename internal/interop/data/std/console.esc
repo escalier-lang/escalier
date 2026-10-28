@@ -5,7 +5,7 @@
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console) */
 export declare interface Console {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/assert_static) */
-    assert(condition?: boolean, ...data: mut Array<any>) -> undefined,
+    assert(condition?: boolean, ...data: Array<any>) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/clear_static) */
     clear() -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/count_static) */
@@ -13,36 +13,36 @@ export declare interface Console {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/countReset_static) */
     countReset(label?: string) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/debug_static) */
-    debug(...data: mut Array<any>) -> undefined,
+    debug(...data: Array<any>) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/dir_static) */
     dir(item?: unknown, options?: unknown) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/dirxml_static) */
-    dirxml(...data: mut Array<any>) -> undefined,
+    dirxml(...data: Array<any>) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/error_static) */
-    error(...data: mut Array<any>) -> undefined,
+    error(...data: Array<any>) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/group_static) */
-    group(...data: mut Array<any>) -> undefined,
+    group(...data: Array<any>) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/groupCollapsed_static) */
-    groupCollapsed(...data: mut Array<any>) -> undefined,
+    groupCollapsed(...data: Array<any>) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/groupEnd_static) */
     groupEnd() -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/info_static) */
-    info(...data: mut Array<any>) -> undefined,
+    info(...data: Array<any>) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/log_static) */
-    log(...data: mut Array<any>) -> undefined,
+    log(...data: Array<any>) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/table_static) */
-    table(tabularData?: unknown, properties?: mut Array<string>) -> undefined,
+    table(tabularData?: unknown, properties?: Array<string>) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/time_static) */
     time(label?: string) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/timeEnd_static) */
     timeEnd(label?: string) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/timeLog_static) */
-    timeLog(label?: string, ...data: mut Array<any>) -> undefined,
+    timeLog(label?: string, ...data: Array<any>) -> undefined,
     timeStamp(label?: string) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/trace_static) */
-    trace(...data: mut Array<any>) -> undefined,
+    trace(...data: Array<any>) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/warn_static) */
-    warn(...data: mut Array<any>) -> undefined
+    warn(...data: Array<any>) -> undefined
 }
 
 @js("console")

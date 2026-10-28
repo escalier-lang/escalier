@@ -35,8 +35,8 @@ func TestArrayResolvesToTheIngestedClass(t *testing.T) {
 		{
 			// A method the declaration names, checked against its signature.
 			name: "PushChecks",
-			src:  `fn f(xs: mut Array<number>) { return xs.push(1) }`,
-			want: map[string]string{"f": "fn (xs: mut Array<number>) -> number"},
+			src:  `fn f(mut xs: Array<number>) { return xs.push(1) }`,
+			want: map[string]string{"f": "fn (xs: Array<number>) -> number"},
 		},
 		{
 			// A numeric key reads the element. An array declares no position for the key to
@@ -75,10 +75,10 @@ func TestArrayResolvesToTheIngestedClass(t *testing.T) {
 	}
 }
 
-// `Array<T>` is covariant in T and `mut Array<T>` is invariant. `at(&self, index)` is an
+// `Array<T>` is covariant in T and `&mut Array<T>` is invariant. `at(&self, index)` is an
 // output position both views reach, and `push(&mut self, item: T)` an input position only a
 // mutable reference reaches, so the widening holds for an immutable array while two mutable
-// ones over different elements stay unrelated.
+// borrows over different elements stay unrelated.
 func TestArrayIsCovariantAndMutArrayIsNot(t *testing.T) {
 	t.Parallel()
 
@@ -94,8 +94,8 @@ func TestArrayIsCovariantAndMutArrayIsNot(t *testing.T) {
 		},
 		{
 			name: "MutArrayDoesNotWiden",
-			src: `fn take(xs: mut Array<number>) -> number { return 1 }
-				fn give(ys: mut Array<1>) { return take(ys) }`,
+			src: `fn take(xs: &mut Array<number>) -> number { return 1 }
+				fn give(ys: &mut Array<1>) { return take(ys) }`,
 			want: []string{"cannot constrain number <: 1"},
 		},
 	}
@@ -255,15 +255,15 @@ func TestIterationCallbacksBorrowTheReceiver(t *testing.T) {
 		want []string
 	}{
 		{
-			// The checker rejects this callback. A caller may pass a `mut Array<number>` to
+			// The checker rejects this callback. A caller may lend its `Array<number>` to
 			// `widen`, because an immutable `Array` is covariant and `Array<number>` reads
 			// as `Array<number | string>`. If the callback could take `arr` as mutable, its
 			// `push("s")` would put a string into the caller's array of numbers. `forEach`
 			// hands the callback `&Self`, an immutable borrow of the receiver, and an
-			// immutable `Array` does not fit the callback's `mut` annotation.
+			// immutable `Array` does not fit the callback's `&mut` annotation.
 			name: "ArrayCallbackCannotWriteThroughAWidenedView",
 			src: `fn widen(xs: &Array<number | string>) {
-				xs.forEach(fn (v, i, arr: mut Array<number | string>) {
+				xs.forEach(fn (v, i, arr: &mut Array<number | string>) {
 					arr.push("s")
 					return 0
 				})
@@ -274,7 +274,7 @@ func TestIterationCallbacksBorrowTheReceiver(t *testing.T) {
 			name: "SetCallbackCannotMutateTheSet",
 			src: `import "std:set"
 				fn f(xs: &set.Set<number>) {
-					xs.forEach(fn (v, v2, s: mut set.Set<number>) {
+					xs.forEach(fn (v, v2, s: &mut set.Set<number>) {
 						s.add(1)
 						return 0
 					})
@@ -325,7 +325,7 @@ func TestIterationCallbacksBorrowTheReceiver(t *testing.T) {
 func TestArrayMethodRejectsAWrongElement(t *testing.T) {
 	t.Parallel()
 
-	_, _, errs := inferSource(t, `fn f(xs: mut Array<number>) { return xs.push("a") }`)
+	_, _, errs := inferSource(t, `fn f(mut xs: Array<number>) { return xs.push("a") }`)
 	require.Equal(t, []string{`cannot constrain "a" <: number`}, errorMessagesOf(errs))
 }
 
@@ -471,13 +471,13 @@ func TestTupleIntoArray(t *testing.T) {
 		{
 			name: "LiteralIntoMutAnnotationThenPush",
 			src: `fn g() {
-					val m: mut Array<number> = [1, 2]
+					val mut m: Array<number> = [1, 2]
 					m.push(3)
 				}`,
 		},
 		{
 			name: "LiteralIntoMutParam",
-			src: `fn h(xs: mut Array<number>) -> number { return 0 }
+			src: `fn h(mut xs: Array<number>) -> number { return 0 }
 				val r = h([1, 2])`,
 		},
 		{

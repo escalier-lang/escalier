@@ -271,7 +271,7 @@
         },
         span: 4-5,
     },
-    span: 4-5,
+    span: 0-5,
 }
 ---
 
@@ -1182,13 +1182,13 @@
             Target: &ast.NumberTypeAnn{
                 span: 4-10,
             },
-            span: 4-10,
+            span: 0-10,
         },
         &ast.StringTypeAnn{
             span: 13-19,
         },
     },
-    span: 4-19,
+    span: 0-19,
 }
 ---
 

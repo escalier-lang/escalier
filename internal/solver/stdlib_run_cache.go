@@ -309,6 +309,7 @@ func (c *checker) fork(source ModuleSource, groupSource GroupSource, groups Pack
 	f.moduleDeclared = declaredNames{values: maps.Clone(c.moduleDeclared.values), types: maps.Clone(c.moduleDeclared.types)}
 	f.loadStack = slices.Clip(c.loadStack)
 	f.pendingRecvReads = slices.Clip(c.pendingRecvReads)
+	f.pendingMutations = slices.Clip(c.pendingMutations)
 	f.deferredArgBounds = slices.Clip(c.deferredArgBounds)
 	f.pendingReturns = slices.Clip(c.pendingReturns)
 	f.pendingOverrides = slices.Clip(c.pendingOverrides)
