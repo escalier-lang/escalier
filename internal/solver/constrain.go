@@ -1092,7 +1092,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	// A value type copies out of a borrow, so a borrow of a variable fills a value-type
 	// destination when the variable does. `fn read(p) { return p.x }` returns `&'a T0`, and
 	// `read(&b) + 1` checks `T0` against `number`.
-	if ref, ok := sub.(*soltype.RefType); ok && ref.Lt != nil && isValueType(super) {
+	if ref, ok := sub.(*soltype.RefType); ok && ref.Lt != nil && copiesOutOfBorrow(super) {
 		if inner, ok := ref.Inner.(*soltype.TypeVarType); ok {
 			return c.constrain(inner, super, seen, false)
 		}
@@ -2161,6 +2161,23 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	}
 
 	return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+}
+
+// copiesOutOfBorrow reports whether t is a value type a read can copy out of a borrow: a
+// primitive, a literal, a regex, `undefined`, `null`, a function, or a union of these.
+func copiesOutOfBorrow(t soltype.Type) bool {
+	switch t := t.(type) {
+	case *soltype.UndefinedType, *soltype.NullType, *soltype.FuncType:
+		return true
+	case *soltype.UnionType:
+		for _, member := range t.Types {
+			if !copiesOutOfBorrow(member) {
+				return false
+			}
+		}
+		return len(t.Types) > 0
+	}
+	return isValueType(t)
 }
 
 // constrainRigidParamIntoVar checks `v <: superVar` for a rigid type parameter v and a

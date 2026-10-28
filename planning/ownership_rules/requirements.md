@@ -299,7 +299,7 @@ escape into module-level state, so its parameter is owned and the call moves
 `a`. `read` only reads `p`, so its parameter is a borrow and the call borrows
 `b`. A field read through that borrow keeps it, as a read through a written
 `&` parameter does, so `read` returns `&'a T0`. A use that needs a value type,
-such as `b.x + n`, copies the field out of the borrow:
+such as the `n` in `b.x + n`, copies the field out of the borrow:
 
 ```esc
 var sink = {x: 0}

@@ -260,6 +260,33 @@ func TestReadThroughBorrowParamKeepsBorrow(t *testing.T) {
 			`,
 			want: "fn () -> number",
 		},
+		{
+			name: "UndefinedFieldCopiesOut",
+			body: `
+					val b = {x: undefined}
+					val s: undefined = read(&b)
+					return s
+			`,
+			want: "fn () -> undefined",
+		},
+		{
+			name: "FunctionFieldCopiesOut",
+			body: `
+					val b = {x: fn () { return 1 }}
+					return read(&b)()
+			`,
+			want: "fn () -> 1",
+		},
+		{
+			name: "ObjectFieldIntoOwnedDestination",
+			body: `
+					val b = {x: {y: 1}}
+					val s: {y: number} = read(&b)
+					return s
+			`,
+			want: "fn () -> {y: number}",
+			errs: []string{"5:13-5:24: cannot use borrowed &object as owned object"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

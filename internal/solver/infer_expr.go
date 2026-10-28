@@ -4227,7 +4227,7 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 		// a value type copies the field out, which constrain allows for a borrow of a variable.
 		if v, isVar := recvInner.(*soltype.TypeVarType); isVar && recvLt != nil && !recvMut && c.readThroughVars.Contains(v) {
 			c.addReadThroughVar(fieldVar)
-			return &soltype.RefType{Mut: false, Lt: recvLt, Inner: fieldVar}
+			return soltype.NewRef(false, recvLt, fieldVar)
 		}
 		return fieldVar
 	}

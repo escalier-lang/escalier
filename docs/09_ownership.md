@@ -112,8 +112,9 @@ needs no marker — `c.read()`, never `(&c).read()` — because the receiver's
 mutability is already written on `self` in the method's own parameter list and
 there is only ever one receiver to mark.
 
-The call-site `&` is not required yet. Today the compiler inserts the borrow
-itself, so both `read(p)` and `read(&p)` are accepted.
+The call-site `&` is required. With an owned `p`, `read(&p)` is accepted and
+`read(p)` reports
+``this argument is borrowed by the callee, so write the borrow: `&` ``.
 
 ## Copy, borrow, move
 
@@ -156,8 +157,18 @@ fn go() {
 }
 ```
 
-A callee that only reads its parameter lets nothing escape, so the same call
-shape borrows and leaves the source usable.
+A callee that only reads its parameter lets nothing escape, so its parameter is
+a borrow. The call writes the borrow and leaves the source usable:
+
+```esc
+fn read(p) { return p.x }   // read: fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0
+
+fn go() {
+    val p = {x: 1}
+    val n = read(&p)
+    val m = p.x     // p is still usable
+}
+```
 
 A value does **not** escape when it flows into a strictly shorter-lived
 destination: a non-escaping argument or a local reborrow. Those are borrows, and
