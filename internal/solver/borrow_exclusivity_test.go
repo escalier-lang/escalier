@@ -551,6 +551,36 @@ func TestExplicitBorrowFlowSites(t *testing.T) {
 				"6:37-6:38: this value is borrowed by its destination, so write the borrow: `&mut`",
 			},
 		},
+		// A borrow written on a call result borrows the value the call hands back. The `&` binds
+		// looser than the call, so `&mk()` is `&(mk())`.
+		"BorrowOfCallResult": {
+			src: `
+				fn mk() -> {x: number} { return {x: 1} }
+				fn g() -> number {
+					val s: &{x: number} = &mk()
+					val t = &mk()
+					return s.x + t.x
+				}
+			`,
+			want: nil,
+		},
+		// DISABLED until #2324, which decides whether a `&mut` borrow of a call result is allowed.
+		// The call hands back the only reference to its value, so the borrow aliases nothing.
+		// Today it is rejected with `cannot constrain immutable object <: mutable object`.
+		/*
+			"MutBorrowOfCallResult": {
+				src: `
+					fn mk() -> {x: number} { return {x: 1} }
+					fn bump(p: &mut {x: number}) { p.x = 2 }
+					fn g() {
+						val s: &mut {x: number} = &mut mk()
+						s.x = 2
+						bump(&mut mk())
+					}
+				`,
+				want: nil,
+			},
+		*/
 		// A source reported for an unwritten `&mut` is checked against the destination as if it
 		// were `&`, so the missing borrow is the one fault reported for its mutability. A wrong
 		// shape is still reported.
