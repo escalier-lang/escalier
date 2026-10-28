@@ -1,13 +1,13 @@
 package soltype
 
-// NewRef wraps inner in a borrow, collapsing the degenerate immutable-no-lifetime
-// cell back to the bare inner so no *RefType ever names a value that isn't really a
-// borrow. A type-switch on *RefType can therefore assume the wrapper is meaningful.
-// Construct a &RefType literal directly when that cell must survive — the
-// bare<:RefType constrain arm (C2) does, to re-dispatch a source as an immutable
-// view without recursing forever.
+// NewRef wraps inner in a borrow at lifetime lt. A nil lt names no borrow, so NewRef
+// returns the bare inner, owned, whatever mut says: an owned value's mutability
+// belongs to the binding that owns it, not to its type. A type-switch on *RefType
+// can therefore assume the wrapper is a borrow. Construct a &RefType literal directly
+// when a lifetime-less view must survive, as the bare<:RefType constrain arm (C2)
+// does to re-dispatch a source as an immutable view without recursing forever.
 func NewRef(mut bool, lt Lifetime, inner RefInner) Type {
-	if !mut && lt == nil {
+	if lt == nil {
 		return inner
 	}
 	return &RefType{Mut: mut, Lt: lt, Inner: inner}
@@ -27,8 +27,7 @@ func UnwrapRef(t Type) (inner Type, mut bool, lt Lifetime) {
 // whether every one of them is mutable.
 //
 // ok is false unless EVERY type is a borrow carrying a lifetime. A plain value is not one,
-// and neither is an owned-mutable `mut {…}` cell, whose nil lifetime makes it a value
-// rather than a borrow. An empty set names no borrow either, so it is false as well.
+// and an empty set names no borrow either, so both are false.
 //
 // allMut is the conjunction rather than a rejection, since callers differ on what a mixed
 // set means. A join of returned borrows needs every input mutable and gives up otherwise,

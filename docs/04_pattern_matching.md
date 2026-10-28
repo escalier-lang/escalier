@@ -55,10 +55,11 @@ to the identifier rather than to the surrounding pattern, and each leaf decides
 for itself:
 
 ```esc
-fn go(pair: mut {left: {x: number}, right: {x: number}}) {
+fn go(pair: {left: {x: number}, right: {x: number}}) {
     val {mut left, right} = pair
     left.x = 1      // OK — left is mutable
-    // right.x = 1  // ERROR: cannot constrain immutable object <: mutable object
+    // right.x = 1  // ERROR: cannot mutate 'right' because its binding is
+                    // immutable; declare it as `mut right`
 }
 ```
 

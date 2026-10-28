@@ -150,8 +150,8 @@ export declare class String {
      * @param replacer A function that returns the replacement text.
      */
     replace(&self, searchValue: {
-        [Symbol.replace](string: string, replacer: fn (substring: string, ...args: mut Array<any>) -> string) -> string
-    }, replacer: fn (substring: string, ...args: mut Array<any>) -> string) -> string,
+        [Symbol.replace](string: string, replacer: fn (substring: string, ...args: Array<any>) -> string) -> string
+    }, replacer: fn (substring: string, ...args: Array<any>) -> string) -> string,
     /**
      * Finds the first substring match in a regular expression search.
      * @param searcher An object which supports searching within a string.
@@ -233,7 +233,7 @@ export declare class String {
      * @param searchValue A string to search for.
      * @param replacer A function that returns the replacement text.
      */
-    replaceAll(&self, searchValue: string | regexp.RegExp, replacer: fn (substring: string, ...args: mut Array<any>) -> string) -> string,
+    replaceAll(&self, searchValue: string | regexp.RegExp, replacer: fn (substring: string, ...args: Array<any>) -> string) -> string,
     /**
      * Returns a new String consisting of the single UTF-16 code unit located at the specified index.
      * @param index The zero-based index of the desired code unit. A negative index will count back from the last item.
@@ -263,7 +263,7 @@ export declare class String {
      * Returns a string that contains the concatenation of two or more strings.
      * @param strings The strings to append to the end of the string.
      */
-    concat(&self, ...strings: mut Array<string>) -> string,
+    concat(&self, ...strings: Array<string>) -> string,
     /**
      * Returns the position of the first occurrence of a substring.
      * @param searchString The substring to search for in the string
@@ -297,7 +297,7 @@ export declare class String {
      * @param searchValue A string to search for.
      * @param replacer A function that returns the replacement text.
      */
-    replace(&self, searchValue: string | regexp.RegExp, replacer: fn (substring: string, ...args: mut Array<any>) -> string) -> string,
+    replace(&self, searchValue: string | regexp.RegExp, replacer: fn (substring: string, ...args: Array<any>) -> string) -> string,
     /**
      * Finds the first substring match in a regular expression search.
      * @param regexp The regular expression pattern and applicable flags.
@@ -326,11 +326,11 @@ export declare class String {
     /** Converts all the alphabetic characters in a string to lowercase. */
     toLowerCase(&self) -> string,
     /** Converts all alphabetic characters to lowercase, taking into account the host environment's current locale. */
-    toLocaleLowerCase(&self, locales?: string | mut Array<string>) -> string,
+    toLocaleLowerCase(&self, locales?: string | Array<string>) -> string,
     /** Converts all the alphabetic characters in a string to uppercase. */
     toUpperCase(&self) -> string,
     /** Returns a string where all alphabetic characters have been converted to uppercase, taking into account the host environment's current locale. */
-    toLocaleUpperCase(&self, locales?: string | mut Array<string>) -> string,
+    toLocaleUpperCase(&self, locales?: string | Array<string>) -> string,
     /** Removes the leading and trailing white space and line terminator characters from a string. */
     trim(&self) -> string,
     /** Returns the length of a String object. */
@@ -350,12 +350,12 @@ export declare class String {
      * @param locales A locale string or array of locale strings that contain one or more language or locale tags. If you include more than one locale string, list them in descending order of priority so that the first entry is the preferred locale. If you omit this parameter, the default locale of the JavaScript runtime is used. This parameter must conform to BCP 47 standards; see the Intl.Collator object for details.
      * @param options An object that contains one or more properties that specify comparison options. see the Intl.Collator object for details.
      */
-    localeCompare(&self, that: string, locales?: string | mut Array<string>, options?: intl.CollatorOptions) -> number,
+    localeCompare(&self, that: string, locales?: string | Array<string>, options?: intl.CollatorOptions) -> number,
     /**
      * Return the String value whose elements are, in order, the elements in the List elements.
      * If length is 0, the empty string is returned.
      */
-    static fromCodePoint(...codePoints: mut Array<number>) -> string,
+    static fromCodePoint(...codePoints: Array<number>) -> string,
     /**
      * String.raw is usually used as a tag function of a Tagged Template String. When called as
      * such, the first argument will be a well formed template call site object and the rest
@@ -367,10 +367,10 @@ export declare class String {
      */
     static raw(template: {
         raw: Array<string> | ArrayLike<string>
-    }, ...substitutions: mut Array<any>) -> string,
+    }, ...substitutions: Array<any>) -> string,
     (value?: unknown) -> string,
     static readonly prototype: String,
-    static fromCharCode(...codes: mut Array<number>) -> string
+    static fromCharCode(...codes: Array<number>) -> string
 }
 
 export declare interface StringIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {

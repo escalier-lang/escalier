@@ -93,8 +93,8 @@ type Ok = [...Pair, boolean]`,
 			// with, and its `[...A, ...B]` is the only tuple-annotation spread the
 			// committed tree writes. The tree spells the element `any`, which resolves to
 			// the `unknown` written here.
-			name: "a type parameter bounded by an owned-mutable array",
-			src:  "declare fn h<A: mut Array<unknown>, B: mut Array<unknown>>(x: [...A, ...B]) -> number",
+			name: "two type parameters bounded by arrays",
+			src:  "declare fn h<A: Array<unknown>, B: Array<unknown>>(x: [...A, ...B]) -> number",
 		},
 		{
 			// A union of tuples is how an optional argument is spelled in a rest

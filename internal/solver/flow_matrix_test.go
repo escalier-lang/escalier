@@ -819,7 +819,7 @@ func TestFlowMatrix(t *testing.T) {
 					val d: &mut {x: number} = &mut p
 				}
 			`,
-			want: []string{"4:32-4:38: cannot constrain immutable object <: mutable object"},
+			want: []string{"4:32-4:38: cannot mutate 'p' because its binding is immutable; declare it as `val mut p`"},
 		},
 		{
 			column: "MutableBorrowThroughVal",
@@ -831,7 +831,7 @@ func TestFlowMatrix(t *testing.T) {
 					d = &mut p
 				}
 			`,
-			want: []string{"5:10-5:16: cannot constrain immutable object <: mutable object"},
+			want: []string{"5:10-5:16: cannot mutate 'p' because its binding is immutable; declare it as `val mut p`"},
 		},
 		{
 			column: "MutableBorrowThroughVal",
@@ -842,7 +842,7 @@ func TestFlowMatrix(t *testing.T) {
 					o.f = &mut p
 				}
 			`,
-			want: []string{"4:12-4:18: cannot constrain immutable object <: mutable object"},
+			want: []string{"4:12-4:18: cannot mutate 'p' because its binding is immutable; declare it as `val mut p`"},
 		},
 		// A literal with an expected type gives each element the type of the matching field, so this
 		// literal holds a borrow.
@@ -855,7 +855,7 @@ func TestFlowMatrix(t *testing.T) {
 					val o: {f: &mut {x: number}} = {f: &mut p}
 				}
 			`,
-			want: []string{"4:41-4:47: cannot constrain immutable object <: mutable object"},
+			want: []string{"4:41-4:47: cannot mutate 'p' because its binding is immutable; declare it as `val mut p`"},
 		},
 		{
 			column: "MutableBorrowThroughVal",
@@ -866,7 +866,7 @@ func TestFlowMatrix(t *testing.T) {
 					val {f: d} = &mut p
 				}
 			`,
-			want: []string{"4:19-4:25: cannot constrain immutable object <: mutable object"},
+			want: []string{"4:19-4:25: cannot mutate 'p' because its binding is immutable; declare it as `val mut p`"},
 		},
 		{
 			column: "MutableBorrowThroughVal",
@@ -878,7 +878,7 @@ func TestFlowMatrix(t *testing.T) {
 					take(&mut p)
 				}
 			`,
-			want: []string{"5:11-5:17: cannot constrain immutable object <: mutable object"},
+			want: []string{"5:11-5:17: cannot mutate 'p' because its binding is immutable; declare it as `val mut p`"},
 		},
 		{
 			column: "MutableBorrowThroughVal",
@@ -889,7 +889,7 @@ func TestFlowMatrix(t *testing.T) {
 					val r = (&mut p).set()
 				}
 			`,
-			want: []string{"10:15-10:21: cannot constrain immutable C <: mutable C"},
+			want: []string{"10:15-10:21: cannot mutate 'p' because its binding is immutable; declare it as `val mut p`"},
 		},
 		// A capture is never written with `&`. The closure borrows `p` in the mode its body needs. A
 		// `val` binding owns `p`, so the closure cannot write it.
@@ -903,7 +903,7 @@ func TestFlowMatrix(t *testing.T) {
 					f()
 				}
 			`,
-			want: []string{"4:22-4:29: cannot constrain immutable object <: mutable object"},
+			want: []string{"4:22-4:29: cannot mutate 'p' because its binding is immutable; declare it as `val mut p`"},
 		},
 		// An owned value written without `&` cannot fill a borrow destination. Rule F4. A receiver, a
 		// pattern over a borrow, and a closure capture take their borrow without a written `&`, so those
@@ -3602,11 +3602,9 @@ func TestFlowMatrixArrayElementMutAndOwnershipPass(t *testing.T) {
 }
 */
 
-// DISABLED until #2251. A `val mut` binding owns a mutable value, and T3 carries that
-// mutability through every owned layer, including an array's elements and a field's class
-// instance. Today the element or field stays immutable, so each write or `&mut` borrow of it
-// reports `cannot constrain immutable object <: mutable object`.
-/*
+// TestFlowMatrixBindingMutability covers the cells whose source a `val mut` binding owns. T3
+// carries the binding's mutability through every owned layer, including an array's elements and a
+// field's class instance, so each cell writes or `&mut` borrows one of those layers.
 func TestFlowMatrixBindingMutability(t *testing.T) {
 	runFlowMatrix(t, []flowCell{
 		{
@@ -3682,24 +3680,6 @@ func TestFlowMatrixBindingMutability(t *testing.T) {
 		},
 		{
 			column: "ElementBorrows",
-			site:   "Receiver",
-			src: `
-				class R {
-					x: number,
-					readWith(&self, w: &mut R) -> undefined {},
-					writeWith(&mut self, w: &mut R) -> undefined {},
-					writeRead(&mut self, r: &R) -> undefined {},
-					take(self) -> number { return self.x },
-				}
-				fn g() {
-					val mut xs: Array<R> = [R(1), R(2)]
-					xs[0].readWith(&mut xs[1])
-				}
-			`,
-			want: []string{"11:21-11:31: cannot borrow 'xs' as mutable while it is borrowed as immutable"},
-		},
-		{
-			column: "ElementBorrows",
 			site:   "ClosureCapture",
 			src: `
 				fn g() -> number {
@@ -3714,10 +3694,10 @@ func TestFlowMatrixBindingMutability(t *testing.T) {
 		},
 	})
 }
-*/
 
-// DISABLED until #2247 and #2251. The cell writes an element of an array owned by a `val mut`
-// binding, which today is immutable, while a `'static` borrow of another element is live.
+// DISABLED until #2247. The cell writes an element of an array owned by a `val mut` binding
+// while a `'static` borrow of another element is live. Today the exclusivity check treats the
+// borrow as ending at the store that takes it, so the write reports nothing.
 /*
 func TestFlowMatrixBindingMutabilityAndStaticBorrow(t *testing.T) {
 	runFlowMatrix(t, []flowCell{
@@ -3739,15 +3719,14 @@ func TestFlowMatrixBindingMutabilityAndStaticBorrow(t *testing.T) {
 }
 */
 
-// DISABLED until #2251 and #2269. Each cell below writes a value that a `val mut`, `var mut`, or
-// `mut self` binding owns, which today stays immutable. The cell also fails a check that the
-// single ownership pass replaces, or holds a borrow where no current check tracks it. The comment
-// above each cell says what the solver reports today.
+// DISABLED until #2269. Each cell below writes a value that a `val mut` or `var mut` binding
+// owns. The cell fails a check that the single ownership pass replaces, or holds a borrow where no
+// current check tracks it. The comment above each cell says what the solver reports today.
 /*
 func TestFlowMatrixBindingMutabilityAndOwnershipPass(t *testing.T) {
 	runFlowMatrix(t, []flowCell{
 		// Today the element store reports
-		// `borrowed value 'p' does not live long enough to escape the function`, which the frame-exit
+		// `borrowed value 'xs' does not live long enough to escape the function`, which the frame-exit
 		// check reports for any borrow of a local stored into an element.
 		{
 			column: "ElementBorrows",
@@ -3763,9 +3742,8 @@ func TestFlowMatrixBindingMutabilityAndOwnershipPass(t *testing.T) {
 			want: []string{"5:6-5:13: cannot assign to 'xs[1].x' while it is borrowed as immutable"},
 		},
 		// A literal with an expected type gives each element the type of the matching field, so this
-		// literal holds a borrow. Today the write to `xs[1].x` reports
-		// `cannot constrain immutable object <: mutable object`, and the borrow the literal holds is not
-		// tracked.
+		// literal holds a borrow. Today the borrow the literal holds is not tracked, so the write to
+		// `xs[1].x` reports nothing.
 		{
 			column: "ElementBorrows",
 			site:   "LiteralElement",
@@ -3779,9 +3757,8 @@ func TestFlowMatrixBindingMutabilityAndOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"5:6-5:13: cannot assign to 'xs[1].x' while it is borrowed as immutable"},
 		},
-		// A tuple pattern destructures a tuple, so the source is a tuple literal. Today the write to
-		// `xs[1].x` reports `cannot constrain immutable object <: mutable object`, and the borrow the
-		// pattern takes is not tracked.
+		// A tuple pattern destructures a tuple, so the source is a tuple literal. Today the borrow the
+		// pattern takes is not tracked, so the write to `xs[1].x` reports nothing.
 		{
 			column: "ElementBorrows",
 			site:   "Destructuring",
@@ -3796,9 +3773,8 @@ func TestFlowMatrixBindingMutabilityAndOwnershipPass(t *testing.T) {
 			want: []string{"5:6-5:13: cannot assign to 'xs[1].x' while it is borrowed as immutable"},
 		},
 		// A return passes the borrow back to the caller, so the caller uses the source while the returned
-		// borrow is live. Today the write to `xs[1].x` reports
-		// `cannot constrain immutable object <: mutable object`, and the borrow `pick` returns is not
-		// tied to `xs`.
+		// borrow is live. Today the borrow `pick` returns is not tied to `xs`, so the write to `xs[1].x`
+		// reports nothing.
 		{
 			column: "ElementBorrows",
 			site:   "Return",
@@ -3815,9 +3791,36 @@ func TestFlowMatrixBindingMutabilityAndOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"8:6-8:13: cannot assign to 'xs[1].x' while it is borrowed as immutable"},
 		},
-		// The method takes `mut self`, so the call moves `p` into a mutable owner. Today the call reports
-		// `cannot constrain immutable W <: mutable W`, since a `mut self` method cannot take a value a
-		// `val` binding owns. Moving `p` through the receiver while it is borrowed reports nothing.
+		// The module-level binding is `var mut`, so it owns a mutable value. Today storing `p` into
+		// module-level state while it is borrowed reports nothing.
+		{
+			column: "MoveToMutableWhileImmutablyBorrowed",
+			site:   "ModuleLevelStore",
+			src: `
+				declare var mut sink: {x: number}
+				fn g() -> number {
+					val p: {x: number} = {x: 1}
+					val r = &p
+					sink = p
+					sink.x = 2
+					return r.x
+				}
+			`,
+			want: []string{"6:13-6:14: cannot move 'p' while it is borrowed"},
+		},
+	})
+}
+*/
+
+// DISABLED until #2269. The cell calls a `mut self` method on a value a `val` binding owns,
+// which moves the value into the method's `self`. No current check reports that move while the
+// value is borrowed, which the single ownership pass in #2269 does. The comment above the cell says
+// what the solver reports today.
+/*
+func TestFlowMatrixMutSelfAndOwnershipPass(t *testing.T) {
+	runFlowMatrix(t, []flowCell{
+		// The method takes `mut self`, so the call moves `p` into a mutable owner. Today moving `p`
+		// through the receiver while it is borrowed reports nothing.
 		{
 			column: "MoveToMutableWhileImmutablyBorrowed",
 			site:   "Receiver",
@@ -3838,33 +3841,19 @@ func TestFlowMatrixBindingMutabilityAndOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"12:14-12:15: cannot move 'p' while it is borrowed"},
 		},
-		// The module-level binding is `var mut`, so it owns a mutable value. Today the write to `sink.x`
-		// reports `cannot constrain immutable object <: mutable object`, though `sink` is `var mut`.
-		// Storing `p` into module-level state while it is borrowed reports nothing.
-		{
-			column: "MoveToMutableWhileImmutablyBorrowed",
-			site:   "ModuleLevelStore",
-			src: `
-				declare var mut sink: {x: number}
-				fn g() -> number {
-					val p: {x: number} = {x: 1}
-					val r = &p
-					sink = p
-					sink.x = 2
-					return r.x
-				}
-			`,
-			want: []string{"6:13-6:14: cannot move 'p' while it is borrowed"},
-		},
 	})
 }
 */
 
-// DISABLED until #2250, which parses `mut` on a parameter binding. Today `fn take(mut d: T)` is a
-// parse error.
+// DISABLED until #2269. The cell writes a value that a `mut` parameter owns. It also trips the
+// frame-exit check, which the ownership pass in #2269 replaces. The comment above the cell says
+// what the solver reports today.
 /*
 func TestFlowMatrixMutParameter(t *testing.T) {
 	runFlowMatrix(t, []flowCell{
+		// Today the frame-exit check also reports
+		// `'p' leaves the function both as an owned value and through a borrow`, though the function
+		// returns a `number`.
 		{
 			column: "MoveToMutableWhileImmutablyBorrowed",
 			site:   "Argument",
@@ -3983,7 +3972,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 					a[0] = &mut p
 				}
 			`,
-			want: []string{"4:13-4:19: cannot constrain immutable object <: mutable object"},
+			want: []string{"4:13-4:19: cannot mutate 'p' because its binding is immutable; declare it as `val mut p`"},
 		},
 		// Today returning `&mut` of a local also reports
 		// `cannot constrain immutable object <: mutable object` at the return type.
@@ -3996,7 +3985,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 					return &mut p
 				}
 			`,
-			want: []string{"4:13-4:19: cannot constrain immutable object <: mutable object"},
+			want: []string{"4:13-4:19: cannot mutate 'p' because its binding is immutable; declare it as `val mut p`"},
 		},
 		// Today the store into the module-level `&mut` binding also reports
 		// `cannot constrain immutable object <: mutable object` on the whole assignment.
@@ -4010,7 +3999,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 					sink = &mut p
 				}
 			`,
-			want: []string{"5:13-5:19: cannot constrain immutable object <: mutable object"},
+			want: []string{"5:13-5:19: cannot mutate 'p' because its binding is immutable; declare it as `val mut p`"},
 		},
 		// Today the literal takes the borrow as an element with no diagnostic.
 		{
@@ -4395,6 +4384,26 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 					return r.x
 				}
 			`,
+		},
+		// Today a method call's receiver borrow is not checked against its arguments, so `&mut xs[1]`
+		// reports nothing.
+		{
+			column: "ElementBorrows",
+			site:   "Receiver",
+			src: `
+				class R {
+					x: number,
+					readWith(&self, w: &mut R) -> undefined {},
+					writeWith(&mut self, w: &mut R) -> undefined {},
+					writeRead(&mut self, r: &R) -> undefined {},
+					take(self) -> number { return self.x },
+				}
+				fn g() {
+					val mut xs: Array<R> = [R(1), R(2)]
+					xs[0].readWith(&mut xs[1])
+				}
+			`,
+			want: []string{"11:21-11:31: cannot borrow 'xs' as mutable while it is borrowed as immutable"},
 		},
 		// Today the frame-exit check also reports
 		// `'p' leaves the function both as an owned value and through a borrow`, though the function

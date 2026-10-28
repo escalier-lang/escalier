@@ -934,7 +934,7 @@ func borrowsIn(e ast.Expr) []*ast.BorrowExpr {
 //
 // Only a BORROW parameter does. `&T` and `&mut T` name data the caller still holds, so a borrow
 // of a local written into one reaches the caller after the frame ends. An owned parameter,
-// `mut T` or plain `T`, is MOVED into the frame. The caller gave up every handle at the call,
+// `p: T` or `mut p: T`, is MOVED into the frame. The caller gave up every handle at the call,
 // and the value dies with the frame, so nothing written into it can outlive anything.
 //
 // A settled type answers directly. A `RefType` carrying a lifetime is a borrow. Anything else

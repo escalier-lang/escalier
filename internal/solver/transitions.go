@@ -133,14 +133,18 @@ func isValueType(t soltype.Type) bool {
 	return false
 }
 
-// isMutableType reports whether the type is a mutable borrow. In the new type
-// system mutability is carried by a RefType wrapper with Mut set, replacing the old
-// checker's MutType wrapper.
+// isMutableType reports whether the type is a mutable borrow.
 func isMutableType(t soltype.Type) bool {
 	if r, ok := t.(*soltype.RefType); ok {
 		return r.Mut
 	}
 	return false
+}
+
+// bindingMutable reports whether a path through the binding b may write the value it reaches:
+// b holds a mutable borrow, or b is a `mut` binding of an owned value.
+func bindingMutable(b ValueBinding) bool {
+	return b.Mut || isMutableType(bindingType(b))
 }
 
 // borrowEscapedToStatic reports, for the variable's recorded type, whether it
@@ -455,7 +459,7 @@ func (c *checker) trackAliasesForIdentPat(
 		return
 	}
 	targetVarID := c.varIDs.Of(identPat)
-	targetMut := isMutableType(bindingT)
+	targetMut := isMutableType(bindingT) || identPat.Mutable
 	aliasMut := aliasMutability(targetMut)
 	c.recordVarIDType(targetVarID, bindingT)
 
@@ -534,12 +538,11 @@ func (c *checker) trackCapturedAliases(scope *Scope, closure ast.Func, closureVa
 // or a block expression all trigger this. Reading the clobbered currentStmt would
 // resolve a valid-but-wrong CFG StmtRef and run the liveness query at the wrong
 // program point.
-func (c *checker) trackAliasesForAssignment(target *ast.IdentExpr, rhs ast.Expr, targetType soltype.Type, enclosingStmt ast.Stmt) {
+func (c *checker) trackAliasesForAssignment(target *ast.IdentExpr, rhs ast.Expr, targetType soltype.Type, targetMut bool, enclosingStmt ast.Stmt) {
 	if c.fn == nil || c.fn.aliases == nil || c.varIDs.Of(target) <= 0 {
 		return
 	}
 	targetVarID := c.varIDs.Of(target)
-	targetMut := isMutableType(targetType)
 	aliasMut := aliasMutability(targetMut)
 	c.recordVarIDType(targetVarID, targetType)
 
@@ -598,7 +601,7 @@ func (c *checker) trackAliasesForAssignment(target *ast.IdentExpr, rhs ast.Expr,
 //
 // Run BEFORE constrainEscape so the source's own about-to-happen escape is not
 // double-counted by the G2 escape query as a prior permanent alias.
-func (c *checker) checkGlobalWriteTransition(target *ast.IdentExpr, rhs ast.Expr, targetType soltype.Type, enclosingStmt ast.Stmt) {
+func (c *checker) checkGlobalWriteTransition(target *ast.IdentExpr, rhs ast.Expr, targetMut bool, enclosingStmt ast.Stmt) {
 	if c.fn == nil || c.fn.aliases == nil {
 		return
 	}
@@ -609,7 +612,6 @@ func (c *checker) checkGlobalWriteTransition(target *ast.IdentExpr, rhs ast.Expr
 	source := liveness.DetermineAliasSource(c.varIDs, rhs)
 	switch source.RootKind() {
 	case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
-		targetMut := isMutableType(targetType)
 		for _, sourceVarID := range source.UniqueVarIDs() {
 			c.checkMutabilityTransition(
 				sourceVarID, 0,
@@ -751,7 +753,7 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 	// mutability it derives from the same type.
 	aliases := liveness.NewAliasTracker()
 	varIDTypes := map[liveness.VarID]soltype.Type{}
-	seedParamLeafAliases(c.varIDs, astParams, paramTypes, aliases, varIDTypes)
+	seedParamLeafAliases(scope, c.varIDs, astParams, paramTypes, aliases, varIDTypes)
 	selfVarID := renameResult.ExtraParamVarIDs["self"]
 	if selfVarID > 0 {
 		seedSelfAlias(scope, selfVarID, aliases, varIDTypes)
@@ -1045,14 +1047,14 @@ func seedSelfAlias(scope *Scope, selfVarID liveness.VarID, aliases *liveness.Ali
 
 // seedBindingAlias seeds the alias tracker with an alias set for `id`, the VarID the rename
 // assigned to `name`, and records the type of `name`'s binding in `scope` into varIDTypes. The
-// alias set is mutable when that type is.
+// alias set is mutable when the binding is.
 func seedBindingAlias(scope *Scope, name string, id liveness.VarID, aliases *liveness.AliasTracker, varIDTypes map[liveness.VarID]soltype.Type) {
 	mut := liveness.AliasImmutable
 	if b, found := scope.GetValue(name); found {
+		if bindingMutable(b) {
+			mut = liveness.AliasMutable
+		}
 		if t := bindingType(b); t != nil {
-			if isMutableType(t) {
-				mut = liveness.AliasMutable
-			}
 			varIDTypes[id] = t
 		}
 	}
@@ -1095,11 +1097,10 @@ func collectParamVarIDs(varIDs *liveness.VarIDs, astParams []*ast.Param) set.Set
 // paramTypes is keyed by leaf name. An IdentPat parameter contributes the parameter
 // itself, and a destructuring param (M4 E1) contributes one entry per leaf via
 // bindPattern, so the lookup below resolves every leaf. bindPattern runs before this
-// pre-pass for parameters and applies each leaf's binding mode, so a `mut` leaf moved
-// out of an owned param already carries its thawed owned-mutable type and a leaf
-// projected from a `&mut` param its mutable borrow. isMutableType therefore sees a
-// RefType and seeds AliasMutable for those leaves.
-func seedParamLeafAliases(varIDs *liveness.VarIDs, astParams []*ast.Param, paramTypes map[string]soltype.Type, aliases *liveness.AliasTracker, varIDTypes map[liveness.VarID]soltype.Type) {
+// pre-pass for parameters and applies each leaf's binding mode, so a leaf projected from
+// a `&mut` param carries its mutable borrow. A leaf's binding in scope says whether it is
+// a `mut` binding of an owned value. Either seeds AliasMutable.
+func seedParamLeafAliases(scope *Scope, varIDs *liveness.VarIDs, astParams []*ast.Param, paramTypes map[string]soltype.Type, aliases *liveness.AliasTracker, varIDTypes map[liveness.VarID]soltype.Type) {
 	for _, param := range astParams {
 		ast.ForEachLeafBinding(param.Pattern, func(name string, leaf ast.Node) {
 			varID := varIDs.Of(leaf)
@@ -1107,6 +1108,9 @@ func seedParamLeafAliases(varIDs *liveness.VarIDs, astParams []*ast.Param, param
 				return
 			}
 			mut := liveness.AliasImmutable
+			if b, found := scope.GetValue(name); found && b.Mut {
+				mut = liveness.AliasMutable
+			}
 			if t, ok := paramTypes[name]; ok {
 				if isMutableType(t) {
 					mut = liveness.AliasMutable
@@ -1226,7 +1230,7 @@ func (c *checker) trackDestructureLeaves(scope *Scope, pat ast.Pat) {
 		b.VarID = int(varID)
 		scope.defineValue(name, b)
 		if c.fn != nil && c.fn.aliases != nil {
-			c.fn.aliases.NewValue(varID, aliasMutability(isMutableType(bindingType(b))))
+			c.fn.aliases.NewValue(varID, aliasMutability(bindingMutable(b)))
 		}
 	})
 }

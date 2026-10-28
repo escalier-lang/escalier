@@ -2128,6 +2128,39 @@ func TestPatternLevelMutRoundTrip(t *testing.T) {
 	}
 }
 
+// TestPrintMutParam asserts that a `mut` marker on a parameter binding prints
+// back where it was written, in every parameter form that accepts one.
+func TestPrintMutParam(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"ident", "fn f(mut p: number) {}"},
+		{"unannotated", "fn f(mut p) {}"},
+		{"optional", "fn f(mut p?: number) {}"},
+		{"default", "fn f(mut p: number = 1) {}"},
+		{"default without mut", "fn f(p: number = 1) {}"},
+		{"mixed with plain", "fn f(mut p: number, q: number) {}"},
+		{"rest", "fn f(...mut rest: Array<number>) {}"},
+		{"object shorthand leaf", "fn f({mut a, b}: Point) {}"},
+		{"object key-value leaf", "fn f({x: mut a, y: b}: Point) {}"},
+		{"tuple leaf", "fn f([mut a, b]: [number, number]) {}"},
+		{"declare", "declare fn f(mut p: number) -> number"},
+		{"function expression", "val f = fn (mut p: number) {}"},
+		{"function type", "type F = fn (mut p: number) -> number"},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			script := parseScript(t, tt.input)
+			result, err := PrintScript(script, opts)
+			require.NoError(t, err)
+			require.Equal(t, tt.input, result)
+		})
+	}
+}
+
 // collectMutLeaves walks the script collecting the Mutable flag of every
 // IdentPat / ObjShorthandPat leaf, keyed by binding name. It descends
 // into every pattern kind that can carry binding leaves so a future

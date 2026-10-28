@@ -6,6 +6,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
+	"github.com/escalier-lang/escalier/internal/printer"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
@@ -752,6 +753,16 @@ func (c *checker) noteFieldWrite(target, object ast.Expr) {
 			recv = nil
 		}
 	}
+	// A dynamic index off a binding, such as the `xs[1]` in `xs[1].x = 3`, names the whole
+	// binding. Its read records no use, since every read of one element would then count
+	// as a read of the others. The write records the use here for the use check to find.
+	if ix, isIndex := object.(*ast.IndexExpr); isIndex && c.fn.cfg != nil {
+		place, ok := c.exprPlace(ix)
+		ref, hasRef := c.currentStmtRef()
+		if ok && len(place.path) == 0 && hasRef {
+			c.fn.useSites = append(c.fn.useSites, moveUse{place: place, ref: ref, node: ix, loanSeqAt: c.fn.loanSeq + 1})
+		}
+	}
 }
 
 // recordStoreEdgeLoan records the loan a call's store effect creates. `store(&mut p, &mut b)`
@@ -880,8 +891,10 @@ func (c *checker) checkUsesAgainstLoans(reported set.Set[ast.Node]) {
 					borrow:  l.node.Span(),
 				})
 			} else {
+				// The written place collapses a dynamic index into its container, so it
+				// would name `xs[1].x` as `xs.x`. The write's own target names it as written.
 				c.report(&BorrowedValueWriteError{
-					Place:  c.renderPlace(place),
+					Place:  c.renderWrittenPlace(place, blame),
 					write:  blame,
 					borrow: l.node.Span(),
 				})
@@ -889,6 +902,16 @@ func (c *checker) checkUsesAgainstLoans(reported set.Set[ast.Node]) {
 			break
 		}
 	}
+}
+
+// renderWrittenPlace names the place a write targets for a diagnostic. It renders target,
+// the expression the write names, as written, so `xs[1].x = 3` names `xs[1].x`. When the
+// printer cannot render target, it renders place instead.
+func (c *checker) renderWrittenPlace(place movePlace, target ast.Node) string {
+	if text, err := printer.Print(target, printer.DefaultOptions()); err == nil {
+		return text
+	}
+	return c.renderPlace(place)
 }
 
 // checkExplicitBorrowArgs reports an argument that fills a borrow parameter without a borrow

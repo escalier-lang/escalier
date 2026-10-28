@@ -1,7 +1,10 @@
 package solver
 
 import (
+	"slices"
+
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/printer"
 	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -174,80 +177,50 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 	}
 	initT := c.inferExpr(scope, lvl, d.Init)
 	// A binding that takes its initializer by value moves it. A move out of a module-level
-	// binding is reported here, before the upgrade below asks movesOwnedPlace about it. An
-	// annotated binding reports it once the annotation has resolved.
+	// binding is reported here. An annotated binding reports it once the annotation has
+	// resolved.
 	_, isIdent := d.Pattern.(*ast.IdentPat)
 	if isIdent && d.TypeAnn == nil {
 		c.rejectModuleLevelMove(scope, d.Init)
 	}
+	// A `mut` leaf owns a writable value, so it may not share one with the module or with
+	// another await of the same promise. A destructuring pattern with a `mut` leaf takes that
+	// leaf's value out of the initializer the same way `val mut` takes all of it.
+	if _, borrowAnn := d.TypeAnn.(*ast.RefTypeAnn); !borrowAnn && hasMutLeaf(d.Pattern) {
+		if c.fn == nil {
+			c.rejectModuleLevelMutMove(scope, d.Init)
+		}
+		c.rejectSharedAwait(d.Init, initT)
+	}
 	switch {
-	case d.TypeAnn == nil && isMutableIdentPat(d.Pattern) && c.callReturnsOwned(d.Init, initT):
-		// An unannotated `val mut d = f()` whose call returns an owned value binds it
-		// owned-mutable, the call twin of the fresh-literal upgrade below. An owned return
-		// type says the caller holds the only reference, so granting the binding mutable
-		// access aliases nothing, the same reasoning a fresh literal uses. Without this a
-		// `&mut self` method would be unreachable on a value a factory just built and handed
-		// over, which is how a class with validation or a hidden constructor is written.
+	case d.TypeAnn == nil && isMutableIdentPat(d.Pattern) && !holdsBorrow(initT):
+		// T9: every owned layer of a value in a `mut` binding is writable, so a literal in it
+		// widens to its primitive. `val mut q = {x: 1}` binds `{x: number}`, which admits the
+		// write `q.x = 2`. The binding moves its initializer in, so no other holder sees the
+		// wider type. A primitive has no layer to write, so `val mut n = 1` keeps `1`, and
+		// a borrow keeps the type of the value it borrows.
 		//
-		// The value is wrapped, not the variable the result arrives as. Wrapping the
-		// variable would leave its own name in the coalesced binding, so `d` would render
-		// `mut (T0 | Counter)` instead of `mut Counter`.
-		if inner := c.ownedCarrier(initT); inner != nil {
-			ref := soltype.NewRef(true, nil, inner)
-			c.recordProv(ref, d.Init, OwnedMutConstruction)
-			initT = ref
+		// A call result reaches the binding as a variable bounded by what the call returns.
+		// The bound is widened rather than the variable, which would leave its own name in
+		// the coalesced binding, so `val mut d = mk()` renders `Counter` rather than
+		// `T0 | Counter`.
+		if inner := c.ownedCarrier(initT); inner != nil && c.callReturnsOwned(d.Init, initT) {
+			initT = widen(inner)
+		} else if _, layered := initT.(soltype.RefInner); layered || d.Kind == ast.VarKind {
+			initT = widen(initT)
 		}
-	case d.TypeAnn == nil && isMutableIdentPat(d.Pattern) && freshLiteralShape(d.Init, c.acceptsBorrowLeaf):
-		// An unannotated `val mut q = {…}` / `var mut q = {…}` from a freshly
-		// constructed literal, or from a call handing back an owned value, constructs an
-		// owned-mutable value. This mirrors the
-		// annotated `val q: mut {x} = {x: 1}` upgrade in
-		// constrainInitAgainstAnnotation, which uses the same fresh-literal
-		// reasoning. A fresh literal is uniquely owned, so granting it the mutable
-		// type aliases nothing. The literal's fields widen, since a mutable cell
-		// admits any value of the field's primitive type. So `val mut q = {x: 1}`
-		// is `mut {x: number}`. A `mut {x: 1}` would reject the ordinary write
-		// `q.x = 2`. A borrow leaf is admitted too: `val mut b = {peer: &mut d}`
-		// builds the owned-mutable `mut {peer: &mut {…}}`, whose field is repointable
-		// and which is `&mut`-borrowable. A primitive initializer is not borrowable and
-		// has no interior mutability to make mutable, so it falls back to the
-		// var-widening and val-keep behaviour below.
-		widened := widen(initT)
-		if inner, ok := widened.(soltype.RefInner); ok {
-			ref := soltype.NewRef(true, nil, inner)
-			c.recordProv(ref, d.Init, OwnedMutConstruction)
-			initT = ref
-		} else if d.Kind == ast.VarKind {
-			initT = widened
-		}
-	case d.TypeAnn == nil && c.bindingMovesOwnedPlace(d.Pattern, d.Init, initT):
-		// `val q = p` / `val mut q = p` moves an owned value out of the place `p`
-		// into the new binding `q`. The move consumes `p` and leaves `q` the sole
-		// owner, so `q`'s mutability is taken from the binding pattern rather than
-		// inherited from `p`. A `val mut q` thaws an owned-immutable source into an
-		// owned-mutable binding, and a plain `val q` freezes an owned-mutable source
-		// into an owned-immutable one. consumeBindingInit records the consume for the
-		// same binding, and trackAliasesForIdentPat seeds `q` as a fresh owner.
-		if isMutableIdentPat(d.Pattern) {
-			// Thaw: widen the source's literal fields and wrap the result in an
-			// owned-mutable cell, the same owned-mutable cell the fresh-literal
-			// `val mut q = {…}` upgrade above produces. A place move's source is an
-			// object, tuple, or owned RefType, so the widened type is a RefInner and
-			// the wrap always applies.
-			if inner, ok := widen(stripOwnedMut(initT)).(soltype.RefInner); ok {
-				ref := soltype.NewRef(true, nil, inner)
-				c.recordProv(ref, d.Init, OwnedMutConstruction)
-				initT = ref
-			}
-		} else {
-			// Freeze: take the source's immutable skeleton, so a later write through
-			// `q` is rejected. A `var` binding still widens so a reassignment can store
-			// another value of the widened shape.
-			initT = stripOwnedMut(initT)
-			if d.Kind == ast.VarKind {
-				initT = widen(initT)
-			}
-		}
+	case d.TypeAnn == nil && d.Kind == ast.VarKind:
+		// M4 B3: eager-widen a DIRECT literal initializer to its primitive at the
+		// constraint level (`5` ⇒ number), recursively through objects/tuples. This
+		// is the constraint-level half of widening: the widened type propagates
+		// through the bound graph, so a read of the binding widens too
+		// (`var a = 5; val z = a` ⇒ z: number). A literal that arrives through a
+		// REFERENCE (`var y = x`) is a type variable here, which widen passes
+		// through unchanged. The binding var's Widenable flag widens that at coalesce
+		// time. That covers display, the reassignment target, and the binding's own
+		// rendered type. A `val` keeps its literal singleton; only a writable slot
+		// widens.
+		initT = widen(initT)
 	case d.TypeAnn != nil:
 		// M2.5: constrain the initializer against the annotation (the one
 		// non-provenance addition, §3.7), so `val x: number = "hi"` produces a
@@ -267,64 +240,36 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 		// for that alone. Reporting it as a move out of a module-level binding as well would
 		// blame one fault twice.
 		missing := ok && c.checkWrittenBorrow(d.Init, annT)
-		if isIdent && !missing {
+		if _, borrowAnn := d.TypeAnn.(*ast.RefTypeAnn); isIdent && !borrowAnn && !missing {
 			c.rejectModuleLevelMove(scope, d.Init)
 		}
 		if ok {
+			// A `val mut p: T` binding may write any writable field of `T`, so a readonly
+			// field in the value it moves in cannot fill one, as T5 states. A borrowed
+			// initializer cannot fill the owned binding at all, and that is the fault to
+			// report rather than its fields.
+			if isMutableIdentPat(d.Pattern) && len(heldBorrows(initT)) == 0 {
+				c.reportReadonlyIntoWritable(d.Init, initT, annT)
+			}
 			annT = c.constrainInitAgainstAnnotation(d.Init, initT, annT)
 			c.checkExcessLiteralMembers(d.Init, initT, annT)
 			initT = annT
 		}
-	case d.Kind == ast.VarKind:
-		// M4 B3: eager-widen a DIRECT literal initializer to its primitive at the
-		// constraint level (`5` ⇒ number), recursively through objects/tuples. This
-		// is the constraint-level half of widening: the widened type propagates
-		// through the bound graph, so a read of the binding widens too
-		// (`var a = 5; val z = a` ⇒ z: number). A literal that arrives through a
-		// REFERENCE (`var y = x`) is a type variable here, which widen passes
-		// through unchanged. The binding var's Widenable flag widens that at coalesce
-		// time. That covers display, the reassignment target, and the binding's own
-		// rendered type. A `val` keeps its literal singleton; only a mutable cell
-		// widens.
-		initT = widen(initT)
 	}
 	return initT, true
 }
 
 // constrainInitAgainstAnnotation constrains a `val`/`var` initializer against its
-// resolved annotation and returns the type the binding adopts, which may differ from
-// the written annotation in three refinements over a plain constrain.
+// resolved annotation and returns the type the binding adopts.
 //
-// 0. A generic function annotation is checked against a fresh instance, so the adopted
+// A generic function annotation is checked against a fresh instance, so the adopted
 // annotation keeps its declared `<T>` as its only quantifier. See the inline note.
 //
-// 1. A uniquely-owned initializer flowing into an OWNED-mutable annotation is allowed to
-// take that mutable type. The C2 gate rejects immutable <: mutable structurally, because
-// writing through the target would otherwise mutate a read-only value. But that is only
-// unsound when a live immutable alias to the source exists. A uniquely-owned source has
-// none, so granting it the annotated mutable type is safe. This is Rule 2 with an empty
-// alias set. Two sources qualify, both recognised by isUniquelyOwned: a freshly
-// constructed literal such as `val items: mut {x} = {x: 1}`, and a consuming move of an
-// owned place such as `val m: mut {x} = cfg` where `cfg` is dead afterward.
-//
-// The decision belongs at this value-flow site rather than inside the constraint solver.
-// The solver, c.constrain, compares only the two types. It has no access to the source
-// expression, to variable liveness, or to the move analysis, so it cannot tell whether
-// the source is the sole owner of its value or is shared with a live immutable alias.
-// Lacking that information it always rejects immutable <: mutable. That information is
-// visible only here, so this site decides whether the source is uniquely owned and then
-// hands the solver a check it can do soundly.
-//
-// constrainAgainstImmutableTarget constrains the initializer's shape against the borrow's INNER, its
-// covariant read view, exactly as the non-mut path constrains against the annotation
-// directly. A borrow annotation is a reference into a caller's region, not an owned value,
-// so a source flowing into it stays on the strict path.
-//
-// 2. A bare owned annotation whose initializer is a borrow is a borrow-into-owned
-// escape. A `val` binding consumes an owned source, so a borrowed `p` flowing into a
-// bare owned destination, as in `val q: {x} = p`, does not alias `p`. The constraint takes the
-// ordinary RefType<:bare arm, which trips BorrowEscapeError. A `&` annotation,
-// `val q: &{x} = p`, copies the borrow instead.
+// A bare owned annotation whose initializer is a borrow is a borrow-into-owned escape. A
+// `val` binding consumes an owned source, so a borrowed `p` flowing into a bare owned
+// destination, as in `val q: {x} = p`, does not alias `p`. The constraint takes the
+// ordinary RefType<:bare arm, which trips BorrowEscapeError. The explicit `&` form
+// `val q: &{x} = &p` is the opt-in for an alias.
 func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT soltype.Type) soltype.Type {
 	// Check a generic function annotation in checking mode, holding each declared type
 	// parameter rigid as a skolem, so `fn (x) { return 5 }` is rejected against
@@ -335,10 +280,7 @@ func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT solt
 		c.blameConstraintErrors(init, c.ctx.trialUnderProbe(initT, c.skolemizeGenericAnn(annT)))
 		return annT
 	}
-	if c.constrainAgainstImmutableTarget(init, init, initT, annT) {
-		return annT
-	}
-	c.constrain(init, initT, annT)
+	c.constrain(init, c.implicitMutBorrow(init, initT, annT), annT)
 	return annT
 }
 
@@ -412,152 +354,90 @@ func (s *skolemizer) skolemizeBound(bounds []soltype.Type) soltype.Type {
 	return bounds[0].Accept(s, soltype.Positive)
 }
 
-// constrainAgainstImmutableTarget constrains srcT against target's immutable form and reports
-// whether it did. It constrains nothing and reports false when target has no immutable form to
-// use, leaving the caller to run its ordinary constraint. site is the node blamed on failure.
-//
-// Every site where a value flows into an owned-mutable type routes through here: a declaration
-// initializer's annotation, a reassignment's binding type, a `mut` parameter, a `mut` return
-// annotation, and a `mut` field.
-func (c *checker) constrainAgainstImmutableTarget(site ast.Node, src ast.Expr, srcT, target soltype.Type) bool {
-	view, ok := c.immutableTargetForSource(src, target)
+// reportReadonlyIntoWritable reports ReadonlyFieldSubtypeError for each readonly field of
+// srcT that fills a writable field of target, blamed at site. It reports no other fault and
+// records no bound. A borrow keeps the mutability its referent has, so it has no readonly
+// field to report here.
+func (c *checker) reportReadonlyIntoWritable(site ast.Node, srcT, target soltype.Type) {
+	if isBorrowType(srcT) {
+		return
+	}
+	inner, ok := soltype.CarrierOf(srcT).(soltype.RefInner)
 	if !ok {
+		return
+	}
+	targetInner, ok := target.(soltype.RefInner)
+	if !ok {
+		return
+	}
+	// The trial compares two mutable borrows, which makes every field the target can write
+	// invariant. That is where constrain compares readonly-ness. A literal field such as the
+	// `1` in `{a: 1}` fails the invariant check against `number` too, so every other fault
+	// the trial finds is dropped.
+	var readonly []SolverError
+	sub := &soltype.RefType{Mut: true, Lt: soltype.Static, Inner: inner}
+	super := &soltype.RefType{Mut: true, Lt: soltype.Static, Inner: targetInner}
+	for _, e := range c.ctx.trialUnderProbe(sub, super) {
+		if _, ok := e.(*ReadonlyFieldSubtypeError); ok {
+			readonly = append(readonly, e)
+		}
+	}
+	c.blameConstraintErrors(site, readonly)
+}
+
+// rejectSharedAwait reports SharedAwaitIntoMutError when init, the initializer of a `mut`
+// binding, awaits a promise that is not a call's result, and the value it settles to, initT,
+// may have an owned layer to write. Such a promise can be awaited again, so the value it
+// settles to has another holder. The promise of a call is a temporary that no place holds.
+func (c *checker) rejectSharedAwait(init ast.Expr, initT soltype.Type) {
+	awaitExpr, ok := init.(*ast.AwaitExpr)
+	if !ok {
+		return
+	}
+	if _, isCall := awaitExpr.Arg.(*ast.CallExpr); isCall {
+		return
+	}
+	// A primitive has no layer to write, so another holder of it observes nothing.
+	if !mayHoldLayered(initT, set.NewSet[*soltype.TypeVarType]()) || holdsBorrow(initT) {
+		return
+	}
+	text, _ := printer.Print(awaitExpr.Arg, printer.DefaultOptions())
+	c.report(&SharedAwaitIntoMutError{Await: awaitExpr, Source: text})
+}
+
+// mayHoldLayered reports whether t may be a value with a layer that a write can change, such
+// as an object, a tuple, or a class instance. A variable may hold one when it has no lower
+// bound yet or when one of its lower bounds may. seen holds the variables on the current path.
+func mayHoldLayered(t soltype.Type, seen set.Set[*soltype.TypeVarType]) bool {
+	v, isVar := t.(*soltype.TypeVarType)
+	if !isVar {
+		_, layered := t.(soltype.RefInner)
+		return layered
+	}
+	if seen.Contains(v) {
 		return false
 	}
-	c.constrain(site, srcT, view)
-	return true
-}
-
-// immutableTargetForSource returns target's immutable form when src is uniquely owned, and false
-// otherwise.
-//
-// isUniquelyOwned runs first. A source that cannot use the result should not reach
-// immutableTarget's walk over the target's inner.
-func (c *checker) immutableTargetForSource(src ast.Expr, target soltype.Type) (soltype.Type, bool) {
-	if !c.isUniquelyOwned(src) {
-		return nil, false
+	seen.Add(v)
+	defer seen.Remove(v)
+	if len(v.LowerBounds) == 0 {
+		return true
 	}
-	return c.immutableTarget(target)
-}
-
-// immutableTarget converts an owned-mutable target to its immutable form and reports false when
-// target is not owned-mutable.
-//
-// A `mut` destination constrains a source in both directions, because constrain's RefType arm adds
-// a reverse write-back alongside the forward read. The immutable form carries no `mut`, so
-// constraining against it drops the write-back.
-func (c *checker) immutableTarget(target soltype.Type) (soltype.Type, bool) {
-	ref, ok := target.(*soltype.RefType)
-	if !ok {
-		// DISPATCH. A bare owned target needs no upgrade at all, since ordinary subtyping
-		// already accepts a fresh literal and a moved variable there.
-		return nil, false
-	}
-	if !ref.Mut {
-		// A GUARD, not a live branch. A RefType with a nil lifetime is always the
-		// owned-mutable form, so no owned-immutable one reaches here today. It is kept so
-		// that if one ever becomes constructible it does not silently take this path.
-		return nil, false
-	}
-	if ref.Lt != nil {
-		// SOUNDNESS. A borrow is not an ownership transfer, so a uniquely-owned value says
-		// nothing about whether a borrowed-mutable target may take it.
-		return nil, false
-	}
-	return stripOwnedMut(ref.Inner), true
-}
-
-// isUniquelyOwned reports whether the value built by src is owned by this expression and by
-// nothing else. It reads only src, so it says nothing about where the value is going; a caller
-// pairs it with a target of its own. The owned-mutable upgrade is the caller that needs it,
-// because granting a value a mutable view is sound exactly when no live immutable alias can
-// observe a write through that view — Rule 2 of the mutability-transition checker with an
-// empty alias set.
-//
-// Four cases show what it returns and why:
-//
-//   - A syntactically fresh literal returns true. In `val m: mut {x} = {x: 1}` the literal
-//     is newly built and nothing else refers to it, so it is uniquely owned and granting it
-//     mutability aliases nothing. A fresh literal carries no identifier and needs no VarID,
-//     so this case holds at module top level where the liveness pre-pass has not run.
-//
-//   - A consuming move of an owned place returns true. In `val m: mut {x} = cfg` the move
-//     consumes `cfg` and leaves `m` the sole owner, so again no live alias remains, and a
-//     later use of `cfg` is a use-after-move. exprPlace ties the place to a VarID, so this
-//     case holds only inside a function body where the move engine records the consume.
-//
-//   - A call whose return type is owned returns true. In `val m: mut Counter = make()` the
-//     callee kept nothing, so the caller holds the only reference to the result. It is the
-//     annotated twin of the `val mut m = make()` upgrade, and callReturnsOwned decides both.
-//     A call needs no consume, since its result is a temporary no place holds. A result
-//     that already holds an owned-mutable cell, as `g() -> mut {a: 1}` does, returns false
-//     for the covariance reason the next case gives.
-//
-//   - A literal wrapping an owned-mutable leaf returns false. In `{p: inner}` with
-//     `inner: mut {x: number}`, `inner` already holds a mutable cell. This one is NOT an
-//     ownership question — the literal is as uniquely owned as any other — but a covariance
-//     one. The upgrade checks the source against the target's covariant read view, which
-//     would widen that cell, for example accepting it where `mut {x: number | string}` is
-//     expected. Returning false routes the source to the strict mut<:mut path, which pins the
-//     cell's element type invariant. containsOwnedMut is recursive, so an owned-mutable cell
-//     at any depth rejects the whole source. #1534 asks whether this belongs with the
-//     covariant check rather than here.
-//
-// It generalizes the fresh-literal-only isFreshlyConstructed: both share the
-// freshLiteralShape recursion and differ only at a non-literal leaf, which this predicate
-// accepts when it is an owned-place move carrying no owned-mutable cell. The recursion
-// reaches such a leaf nested inside a fresh literal, so `{p: cfg}` qualifies when `cfg` is a
-// dead owned variable even though the literal is not identifier-free.
-//
-// SOUNDNESS: every place leaf this predicate admits must be consumed by the move engine, so
-// a later use of it is a use-after-move. That holds because movesOwnedPlace admits two kinds
-// of type, and isOwnedMovable, the set consumeOwned moves at every flow site, holds both. One
-// is a concrete owned shape that isConcreteOwned accepts. The other is a variable that
-// ownedCarrier resolves to an owned value, which holds a reference shape and so is not one
-// holdsOnlyValueTypes excludes. Widening movesOwnedPlace toward a place consumeOwned does not
-// move would break this and grant a mutable view with no backing move.
-func (c *checker) isUniquelyOwned(src ast.Expr) bool {
-	return freshLiteralShape(src, func(leaf ast.Expr) bool {
-		if c.acceptsBorrowLeaf(leaf) {
+	for _, lb := range v.LowerBounds {
+		if mayHoldLayered(lb, seen) {
 			return true
 		}
-		t := c.info.TypeOf(leaf)
-		// A leaf that already holds an owned-mutable cell is not admitted. The upgrade checks
-		// the source against the target's covariant read view, which would widen that cell, so
-		// the source takes the strict mut<:mut path instead and the cell stays invariant. In
-		// `val d: mut {a: number} = g()` with `g() -> mut {a: 1}`, the read view would accept
-		// the `mut {a: 1}` cell as `{a: number}`. The cell can sit behind a type variable, as it
-		// does in a call result or in a local bound from one, so the check follows each
-		// variable's lower bounds rather than reading t's shape alone.
-		if resultContainsOwnedMut(t, set.NewSet[*soltype.TypeVarType]()) {
-			return false
-		}
-		return c.callReturnsOwned(leaf, t) || c.movesOwnedPlace(leaf, t)
-	})
-}
-
-// acceptsBorrowLeaf reports whether leaf is a borrow expression `&e`/`&mut e` that may sit in
-// an owned-mutable literal — `val mut b = {peer: &mut d}` builds the owned-mutable `mut {peer:
-// &mut d}`, so `b` is `&mut`-borrowable and its field repointable. The container's mutability
-// lets the field be repointed but grants no write to the referent beyond what the borrow
-// already carries, and the borrow's pointee stays invariant through the C2 RefType arm, so the
-// covariant read-view constrain the upgrade runs does not widen the pointee. A borrow of a
-// function-local that this makes constructible is tracked by the borrow-edge graph, so a later
-// flow-out of the container is caught by the escape check. It is confined to a function body,
-// where that escape tracking runs.
-func (c *checker) acceptsBorrowLeaf(leaf ast.Expr) bool {
-	if c.fn == nil {
-		return false
 	}
-	_, ok := leaf.(*ast.BorrowExpr)
-	return ok
+	return false
 }
 
-// callReturnsOwned reports whether e is a call whose result is an owned value. An owned
-// return type is the callee's statement that it kept nothing, so the caller holds the only
-// reference to what comes back. A callee that did keep the value returns a borrow instead,
-// which ownedCarrier declines.
+// callReturnsOwned reports whether e is a call, or an `await` of a call, whose result t is an
+// owned value. An owned return type is the callee's statement that it kept nothing, so the
+// caller holds the only reference to what comes back. A callee that did keep the value returns
+// a borrow instead, which ownedCarrier declines.
 func (c *checker) callReturnsOwned(e ast.Expr, t soltype.Type) bool {
+	if awaitExpr, ok := e.(*ast.AwaitExpr); ok {
+		e = awaitExpr.Arg
+	}
 	if _, ok := e.(*ast.CallExpr); !ok {
 		return false
 	}
@@ -604,10 +484,6 @@ func (c *checker) ownedCarrierSeen(t soltype.Type, seen *ownedSeen) soltype.RefI
 		return nil
 	}
 	switch t := t.(type) {
-	case *soltype.RefType:
-		// An owned-mutable cell, already carrying what the upgrade grants. Its inner is the
-		// value, so the wrap is not nested.
-		return c.ownedCarrierSeen(t.Inner, seen)
 	case *soltype.AliasType:
 		// An alias owns whatever its body owns, so the decision follows the chain. An alias
 		// naming a primitive has nothing to make mutable and declines here. The handle is
@@ -659,224 +535,72 @@ func (c *checker) ownedCarrierSeen(t soltype.Type, seen *ownedSeen) soltype.RefI
 	return nil
 }
 
-// freshLiteralShape reports whether e is a primitive literal, or an object/tuple literal
-// whose every element satisfies leafOK. It is the structural recursion shared by
-// isFreshlyConstructed and isUniquelyOwned, which differ only in what they accept at
-// a non-literal leaf. isFreshlyConstructed accepts nothing there; isUniquelyOwned
-// accepts a uniquely-owned place move.
-func freshLiteralShape(e ast.Expr, leafOK func(ast.Expr) bool) bool {
-	switch e := e.(type) {
-	case *ast.LiteralExpr:
-		return true
-	case *ast.TupleExpr:
-		for _, elem := range e.Elems {
-			if !freshLiteralShape(elem, leafOK) {
-				return false
-			}
-		}
-		return true
-	case *ast.ObjectExpr:
-		for _, elem := range e.Elems {
-			prop, ok := elem.(*ast.PropertyExpr)
-			if !ok {
-				return false
-			}
-			if !freshLiteralShape(prop.ValueExpr(), leafOK) {
-				return false
-			}
-		}
-		return true
-	default:
-		return leafOK(e)
-	}
-}
-
-// stripOwnedMut returns t's deeply-immutable skeleton by peeling every owned-mut
-// cell (Mut set, Lt nil) and recursing through objects and tuples. Borrows are
-// left untouched. Under the lazy deep-mut form (PR 14) a plain `mut {a: {x}}` stores
-// a bare inner, and a nested `mut {x}` field inside a non-mut container is now
-// rejected at the annotation site (#779), so there is usually nothing to strip; the
-// peel is retained defensively so a fresh literal can upgrade into any deeply-mutable
-// target the whole way down.
-func stripOwnedMut(t soltype.Type) soltype.Type {
-	switch t := t.(type) {
-	case *soltype.RefType:
-		if t.Mut && t.Lt == nil {
-			return stripOwnedMut(t.Inner)
-		}
-		return t
-	case *soltype.ObjectType:
-		// A residual object carries a `...A` spread or a `[K]: V for K in Keys` member instead of a
-		// settled property list, so there is no field to peel. Return it unchanged; the evaluator
-		// reduces it at the constraint site and the peel applies to whatever it becomes.
-		if soltype.HasResidualElem(t.Elems) {
-			return t
-		}
-		elems := make([]soltype.ObjTypeElem, len(t.Elems))
-		for i, e := range t.Elems {
-			// Only a plain property holds a type to peel. A getter, setter, method, or index
-			// signature carries a signature of its own, so it passes through unchanged.
-			// Asserting it into a property would panic on the element kind.
-			prop, isProp := e.(*soltype.PropertyElem)
-			if !isProp {
-				elems[i] = e
-				continue
-			}
-			elems[i] = &soltype.PropertyElem{Name: prop.Name, Type: stripOwnedMut(prop.Type), Optional: prop.Optional, Readonly: prop.Readonly}
-		}
-		return &soltype.ObjectType{Elems: elems, Inexact: t.Inexact, Class: t.Class}
-	case *soltype.TupleType:
-		elems := make([]soltype.Type, len(t.Elems))
-		for i, e := range t.Elems {
-			elems[i] = stripOwnedMut(e)
-		}
-		return &soltype.TupleType{Elems: elems, Inexact: t.Inexact}
-	default:
-		return t
-	}
-}
-
-// bindingMovesOwnedPlace reports whether the unannotated initializer of an IdentPat
-// binding moves an owned value out of a place. A place is a binding or a field path
-// such as `p` or `pair.a`, and its value moves when it is a concrete owned object,
-// tuple, or owned RefType. Such a binding takes ownership of the value, so the
-// binding's declared mutability replaces the source's. A `val mut q` thaws an
-// owned-immutable source into a mutable binding, and a plain `val q` freezes an
-// owned-mutable source into an immutable one.
-//
-// A borrow, value type, fresh literal, generic type-parameter value, or non-place
-// initializer is not a place move and keeps the ordinary inference. exprPlace also
-// fails outside a function body, where the rename pass has assigned no VarID, so the
-// mutability rewrite is confined to bodies where the move engine enforces the consume.
-func (c *checker) bindingMovesOwnedPlace(pat ast.Pat, init ast.Expr, initT soltype.Type) bool {
-	if _, ok := pat.(*ast.IdentPat); !ok {
-		return false
-	}
-	return c.movesOwnedPlace(init, initT)
-}
-
-// movesOwnedPlace reports whether init names a uniquely-owned place whose value moves
-// when it flows into an owning destination. A place is a binding or a field path, so
-// exprPlace succeeds on it. Its value moves when it is a concrete owned object, tuple, class
-// instance, or owned RefType, or a variable every value of which is one. The move consumes
-// the place and leaves the destination its sole owner. exprPlace fails outside a function
-// body, where the rename pass has assigned no VarID, so a move is confined to bodies where
-// the move engine enforces the consume. This is the place-move half of both
-// bindingMovesOwnedPlace and the isUniquelyOwned leaf check.
-func (c *checker) movesOwnedPlace(init ast.Expr, initT soltype.Type) bool {
-	// A move out of a module-level binding is reported where the value moves and records no
-	// move. Accepting it here types the destination as the move would, so the binding reports
-	// nothing more.
-	if c.fn != nil && c.fn.moduleLevelMoves.Contains(init) {
-		return true
-	}
-	if _, ok := c.exprPlace(init); !ok {
-		return false
-	}
-	if c.isConcreteOwned(initT) {
-		return true
-	}
-	// A binding initialized from a call, as `val c = Counter(0)` is, holds a variable
-	// bounded by the call's result rather than the result itself. The move engine
-	// consumes such a variable, since isOwnedMovable counts every variable that may hold
-	// a reference shape, so accepting it here keeps the upgrade within what is consumed.
-	_, isVar := initT.(*soltype.TypeVarType)
-	return isVar && c.ownedCarrier(initT) != nil
-}
-
-// isOwnedMut reports whether t is an owned-mutable cell — a RefType with Mut set and a
-// nil lifetime. It is the shape a `mut T` annotation lowers to and the shape the
-// immutable→mutable upgrade grants.
-func isOwnedMut(t soltype.Type) bool {
-	ref, ok := t.(*soltype.RefType)
-	return ok && ref.Mut && ref.Lt == nil
-}
-
-// containsOwnedMut reports whether t is an owned-mutable cell or holds one nested inside
-// an object or tuple. It detects exactly what stripOwnedMut would peel. The
-// immutable→mutable upgrade constrains the source against the target's covariant read view,
-// which is sound only when the source has no mutable cell to widen, so isUniquelyOwned
-// rejects a source where this returns true and routes it to the strict mut<:mut path. A
-// borrow's pointee belongs to another region, so it is left to the borrow rules and not
-// recursed into.
-func containsOwnedMut(t soltype.Type) bool {
-	switch t := t.(type) {
-	case *soltype.RefType:
-		return isOwnedMut(t)
-	case *soltype.ObjectType:
-		for _, e := range t.Elems {
-			// Only a plain property carries a type to look inside. A spread, getter, setter,
-			// method, or index signature does not, and asserting one here would panic on the
-			// element kind rather than skipping it.
-			prop, isProp := e.(*soltype.PropertyElem)
-			if !isProp {
-				continue
-			}
-			if containsOwnedMut(prop.Type) {
-				return true
-			}
-		}
-		return false
-	case *soltype.TupleType:
-		for _, e := range t.Elems {
-			if containsOwnedMut(e) {
-				return true
-			}
-		}
-		return false
-	default:
-		return false
-	}
-}
-
-// resultContainsOwnedMut reports whether a value t may hold contains an owned-mutable cell.
-// It is containsOwnedMut extended through each type variable's lower bounds, at the top level
-// and inside an object or tuple. A call result reaches its destination as a variable, and a
-// callee with an inferred return type hands back an object or tuple whose fields are
-// variables too. seen holds the variables on the current path, so a cycle in the bound graph
-// ends the walk.
-func resultContainsOwnedMut(t soltype.Type, seen set.Set[*soltype.TypeVarType]) bool {
-	switch t := t.(type) {
-	case *soltype.TypeVarType:
-		if seen.Contains(t) {
-			return false
-		}
-		seen.Add(t)
-		defer seen.Remove(t)
-		for _, lb := range t.LowerBounds {
-			if resultContainsOwnedMut(lb, seen) {
-				return true
-			}
-		}
-		return false
-	case *soltype.ObjectType:
-		for _, e := range t.Elems {
-			// Only a plain property carries a type to look inside, as in containsOwnedMut.
-			prop, isProp := e.(*soltype.PropertyElem)
-			if isProp && resultContainsOwnedMut(prop.Type, seen) {
-				return true
-			}
-		}
-		return false
-	case *soltype.TupleType:
-		for _, e := range t.Elems {
-			if resultContainsOwnedMut(e, seen) {
-				return true
-			}
-		}
-		return false
-	default:
-		return containsOwnedMut(t)
-	}
-}
-
 // isMutableIdentPat reports whether p is a simple identifier binding written with
-// the `mut` prefix, as in `val mut q = …`. The construction upgrade applies only to
-// an IdentPat. A `mut` leaf inside a destructuring pattern carries the same flag and
-// is thawed per-leaf by applyBindMode during bindPattern, not here.
+// the `mut` prefix, as in `val mut q = …`. A `mut` leaf inside a destructuring pattern
+// carries the same flag, which leafMutable reads.
 func isMutableIdentPat(p ast.Pat) bool {
 	ip, ok := p.(*ast.IdentPat)
 	return ok && ip.Mutable
+}
+
+// hasMutLeaf reports whether some leaf of p, an identifier or an object shorthand, is written
+// with the `mut` prefix. A nil p, which a malformed declaration leaves, has no leaf.
+func hasMutLeaf(p ast.Pat) bool {
+	if p == nil {
+		return false
+	}
+	v := &mutLeafFinder{}
+	p.Accept(v)
+	return v.found
+}
+
+// mutLeafFinder sets found on reaching a pattern leaf written `mut`.
+type mutLeafFinder struct {
+	ast.DefaultVisitor
+	found bool
+}
+
+// EnterExpr keeps the walk out of a default value, whose patterns bind nothing here.
+func (v *mutLeafFinder) EnterExpr(ast.Expr) bool { return false }
+
+// EnterTypeAnn keeps the walk out of an annotation, which binds nothing.
+func (v *mutLeafFinder) EnterTypeAnn(ast.TypeAnn) bool { return false }
+
+func (v *mutLeafFinder) EnterPat(p ast.Pat) bool {
+	switch p := p.(type) {
+	case *ast.IdentPat:
+		v.found = v.found || p.Mutable
+	case *ast.ObjectPat:
+		// ObjectPat.Accept visits a shorthand leaf's default but not the leaf itself.
+		for _, elem := range p.Elems {
+			if sh, ok := elem.(*ast.ObjShorthandPat); ok && sh.Mutable {
+				v.found = true
+			}
+		}
+	}
+	return !v.found
+}
+
+// leafMutable reports whether a pattern leaf is written with the `mut` prefix. leaf is an
+// *ast.IdentPat or an *ast.ObjShorthandPat, the two nodes bindLeaf passes for a leaf.
+func leafMutable(leaf ast.Node) bool {
+	if sh, ok := leaf.(*ast.ObjShorthandPat); ok {
+		return sh.Mutable
+	}
+	return leaf.(*ast.IdentPat).Mutable
+}
+
+// hasBorrowMember reports whether t is a union or intersection with a borrow among its
+// members.
+func hasBorrowMember(t soltype.Type) bool {
+	var members []soltype.Type
+	switch t := t.(type) {
+	case *soltype.UnionType:
+		members = t.Types
+	case *soltype.IntersectionType:
+		members = t.Types
+	}
+	return slices.ContainsFunc(members, isBorrowType)
 }
 
 // checkExcessLiteralMembers is the construction-site excess check (M4 A3): a
@@ -900,7 +624,7 @@ func isMutableIdentPat(p ast.Pat) bool {
 // and the parallel ExtraElementError for tuples, wired with the same Prov table /
 // site as the constraint path so blame resolves to the offending member.
 //
-// A `mut T` annotation resolves to a RefType wrapping the object/tuple, so peel
+// A `&mut T` annotation resolves to a RefType wrapping the object/tuple, so peel
 // the borrow first: the excess rule is about the literal's SHAPE versus the
 // target's declared members, which is independent of the borrow's mutability. The
 // literal source itself is never a borrow, so only the annotation needs peeling.
@@ -1021,6 +745,7 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl, self *solt
 		Schemes: []TypeScheme{scheme},
 		Sources: []provenance.Provenance{&ast.NodeProvenance{Node: d}},
 		Kind:    d.Kind,
+		Mut:     isMutableIdentPat(d.Pattern),
 	}, true
 }
 

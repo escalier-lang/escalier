@@ -50,6 +50,11 @@ type checker struct {
 	// receiver, so checkPendingRecvReads checks them once the component is constrained.
 	pendingRecvReads []inferredRecvRead
 
+	// pendingMutations holds the unsettled mutations that top-level bodies collected, which
+	// checkPendingMutations checks once the component is constrained, for the same reason
+	// pendingRecvReads waits.
+	pendingMutations []unsettledMutation
+
 	// topThrows is the throws sink for a `try` block written at module top level, where
 	// there is no funcCtx to hold one. inferTryCatch installs it for the duration of the
 	// block and clears it afterwards, so it is nil everywhere else. throwsSink reads it
@@ -485,6 +490,10 @@ type funcCtx struct {
 	// inferredRecvReads holds each member read in this body, or in a body it encloses, whose
 	// receiver is an identifier typed only by how the body uses it.
 	inferredRecvReads []inferredRecvRead
+	// unsettledMutations holds each mutating operation in this body, or in a body it
+	// encloses, through an immutable binding whose value had no known type yet. See
+	// unsettledMutation.
+	unsettledMutations []unsettledMutation
 	// lvl is the level this body is walked at, so throwsSink mints the sink there rather
 	// than inside a `val` initializer, which is typed one level deeper. A sink minted deep
 	// gets extruded by a later exit, and the resulting cycle renders as a μ-knot.

@@ -26,7 +26,7 @@ export declare class Cache {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Cache/add) */
     add(&mut self, request: fetch.RequestInfo | url.URL) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Cache/addAll) */
-    addAll(&mut self, requests: mut Array<fetch.RequestInfo>) -> Promise<undefined>,
+    addAll(&mut self, requests: Array<fetch.RequestInfo>) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Cache/delete) */
     delete(&mut self, request: fetch.RequestInfo | url.URL, options?: CacheQueryOptions) -> Promise<boolean>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Cache/keys) */
@@ -56,7 +56,7 @@ export declare class CacheStorage {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CacheStorage/has) */
     has(&self, cacheName: string) -> Promise<boolean>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CacheStorage/keys) */
-    keys(&self) -> Promise<mut Array<string>>,
+    keys(&self) -> Promise<Array<string>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CacheStorage/match) */
     match(&mut self, request: fetch.RequestInfo | url.URL, options?: MultiCacheQueryOptions) -> Promise<fetch.Response | undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CacheStorage/open) */

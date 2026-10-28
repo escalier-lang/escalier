@@ -325,7 +325,7 @@ export declare interface WEBGL_depth_texture {
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_draw_buffers) */
 export declare interface WEBGL_draw_buffers {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_draw_buffers/drawBuffersWEBGL) */
-    drawBuffersWEBGL(buffers: mut Array<GLenum>) -> undefined,
+    drawBuffersWEBGL(buffers: Array<GLenum>) -> undefined,
     readonly COLOR_ATTACHMENT0_WEBGL: 36064,
     readonly COLOR_ATTACHMENT1_WEBGL: 36065,
     readonly COLOR_ATTACHMENT2_WEBGL: 36066,
@@ -375,13 +375,13 @@ export declare interface WEBGL_lose_context {
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_multi_draw) */
 export declare interface WEBGL_multi_draw {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_multi_draw/multiDrawArraysInstancedWEBGL) */
-    multiDrawArraysInstancedWEBGL(mode: GLenum, firstsList: typed_arrays.Int32Array | mut Array<GLint>, firstsOffset: number, countsList: typed_arrays.Int32Array | mut Array<GLsizei>, countsOffset: number, instanceCountsList: typed_arrays.Int32Array | mut Array<GLsizei>, instanceCountsOffset: number, drawcount: GLsizei) -> undefined,
+    multiDrawArraysInstancedWEBGL(mode: GLenum, firstsList: typed_arrays.Int32Array | Array<GLint>, firstsOffset: number, countsList: typed_arrays.Int32Array | Array<GLsizei>, countsOffset: number, instanceCountsList: typed_arrays.Int32Array | Array<GLsizei>, instanceCountsOffset: number, drawcount: GLsizei) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_multi_draw/multiDrawArraysWEBGL) */
-    multiDrawArraysWEBGL(mode: GLenum, firstsList: typed_arrays.Int32Array | mut Array<GLint>, firstsOffset: number, countsList: typed_arrays.Int32Array | mut Array<GLsizei>, countsOffset: number, drawcount: GLsizei) -> undefined,
+    multiDrawArraysWEBGL(mode: GLenum, firstsList: typed_arrays.Int32Array | Array<GLint>, firstsOffset: number, countsList: typed_arrays.Int32Array | Array<GLsizei>, countsOffset: number, drawcount: GLsizei) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_multi_draw/multiDrawElementsInstancedWEBGL) */
-    multiDrawElementsInstancedWEBGL(mode: GLenum, countsList: typed_arrays.Int32Array | mut Array<GLsizei>, countsOffset: number, type: GLenum, offsetsList: typed_arrays.Int32Array | mut Array<GLsizei>, offsetsOffset: number, instanceCountsList: typed_arrays.Int32Array | mut Array<GLsizei>, instanceCountsOffset: number, drawcount: GLsizei) -> undefined,
+    multiDrawElementsInstancedWEBGL(mode: GLenum, countsList: typed_arrays.Int32Array | Array<GLsizei>, countsOffset: number, type: GLenum, offsetsList: typed_arrays.Int32Array | Array<GLsizei>, offsetsOffset: number, instanceCountsList: typed_arrays.Int32Array | Array<GLsizei>, instanceCountsOffset: number, drawcount: GLsizei) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_multi_draw/multiDrawElementsWEBGL) */
-    multiDrawElementsWEBGL(mode: GLenum, countsList: typed_arrays.Int32Array | mut Array<GLsizei>, countsOffset: number, type: GLenum, offsetsList: typed_arrays.Int32Array | mut Array<GLsizei>, offsetsOffset: number, drawcount: GLsizei) -> undefined,
+    multiDrawElementsWEBGL(mode: GLenum, countsList: typed_arrays.Int32Array | Array<GLsizei>, countsOffset: number, type: GLenum, offsetsList: typed_arrays.Int32Array | Array<GLsizei>, offsetsOffset: number, drawcount: GLsizei) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_multi_draw/multiDrawArraysInstancedWEBGL) */
     multiDrawArraysInstancedWEBGL(mode: GLenum, firstsList: typed_arrays.Int32Array | Iterable<GLint>, firstsOffset: number, countsList: typed_arrays.Int32Array | Iterable<GLsizei>, countsOffset: number, instanceCountsList: typed_arrays.Int32Array | Iterable<GLsizei>, instanceCountsOffset: number, drawcount: GLsizei) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WEBGL_multi_draw/multiDrawArraysWEBGL) */
@@ -1016,7 +1016,7 @@ export declare interface WebGL2RenderingContextBase {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/drawArraysInstanced) */
     drawArraysInstanced(mode: GLenum, first: GLint, count: GLsizei, instanceCount: GLsizei) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/drawBuffers) */
-    drawBuffers(buffers: mut Array<GLenum>) -> undefined,
+    drawBuffers(buffers: Array<GLenum>) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/drawElementsInstanced) */
     drawElementsInstanced(mode: GLenum, count: GLsizei, type: GLenum, offset: GLintptr, instanceCount: GLsizei) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/drawRangeElements) */
@@ -1034,7 +1034,7 @@ export declare interface WebGL2RenderingContextBase {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/getActiveUniformBlockParameter) */
     getActiveUniformBlockParameter(program: WebGLProgram, uniformBlockIndex: GLuint, pname: GLenum) -> any,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/getActiveUniforms) */
-    getActiveUniforms(program: WebGLProgram, uniformIndices: mut Array<GLuint>, pname: GLenum) -> any,
+    getActiveUniforms(program: WebGLProgram, uniformIndices: Array<GLuint>, pname: GLenum) -> any,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/getBufferSubData) */
     getBufferSubData(target: GLenum, srcByteOffset: GLintptr, dstBuffer: typed_arrays.ArrayBufferView, dstOffset?: number, length?: GLuint) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/getFragDataLocation) */
@@ -1056,11 +1056,11 @@ export declare interface WebGL2RenderingContextBase {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/getUniformBlockIndex) */
     getUniformBlockIndex(program: WebGLProgram, uniformBlockName: string) -> GLuint,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/getUniformIndices) */
-    getUniformIndices(program: WebGLProgram, uniformNames: mut Array<string>) -> Array<GLuint> | null,
+    getUniformIndices(program: WebGLProgram, uniformNames: Array<string>) -> Array<GLuint> | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/invalidateFramebuffer) */
-    invalidateFramebuffer(target: GLenum, attachments: mut Array<GLenum>) -> undefined,
+    invalidateFramebuffer(target: GLenum, attachments: Array<GLenum>) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/invalidateSubFramebuffer) */
-    invalidateSubFramebuffer(target: GLenum, attachments: mut Array<GLenum>, x: GLint, y: GLint, width: GLsizei, height: GLsizei) -> undefined,
+    invalidateSubFramebuffer(target: GLenum, attachments: Array<GLenum>, x: GLint, y: GLint, width: GLsizei, height: GLsizei) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/isQuery) */
     isQuery(query: WebGLQuery | null) -> GLboolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/isSampler) */
@@ -1097,7 +1097,7 @@ export declare interface WebGL2RenderingContextBase {
     texSubImage3D(target: GLenum, level: GLint, xoffset: GLint, yoffset: GLint, zoffset: GLint, width: GLsizei, height: GLsizei, depth: GLsizei, format: GLenum, type: GLenum, source: TexImageSource) -> undefined,
     texSubImage3D(target: GLenum, level: GLint, xoffset: GLint, yoffset: GLint, zoffset: GLint, width: GLsizei, height: GLsizei, depth: GLsizei, format: GLenum, type: GLenum, srcData: typed_arrays.ArrayBufferView | null, srcOffset?: number) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/transformFeedbackVaryings) */
-    transformFeedbackVaryings(program: WebGLProgram, varyings: mut Array<string>, bufferMode: GLenum) -> undefined,
+    transformFeedbackVaryings(program: WebGLProgram, varyings: Array<string>, bufferMode: GLenum) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/uniform) */
     uniform1ui(location: WebGLUniformLocation | null, v0: GLuint) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/uniform) */
@@ -2646,7 +2646,7 @@ export declare class WebGLVertexArrayObject {
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLVertexArrayObject) */
 export declare interface WebGLVertexArrayObjectOES {}
 
-export declare type Float32List = typed_arrays.Float32Array | mut Array<GLfloat>
+export declare type Float32List = typed_arrays.Float32Array | Array<GLfloat>
 
 export declare type GLbitfield = number
 
@@ -2672,10 +2672,10 @@ export declare type GLuint = number
 
 export declare type GLuint64 = number
 
-export declare type Int32List = typed_arrays.Int32Array | mut Array<GLint>
+export declare type Int32List = typed_arrays.Int32Array | Array<GLint>
 
 export declare type TexImageSource = dom.ImageBitmap | dom.ImageData | dom.HTMLImageElement | dom.HTMLCanvasElement | dom.HTMLVideoElement | dom.OffscreenCanvas | web_codecs.VideoFrame
 
-export declare type Uint32List = typed_arrays.Uint32Array | mut Array<GLuint>
+export declare type Uint32List = typed_arrays.Uint32Array | Array<GLuint>
 
 export declare type WebGLPowerPreference = "default" | "high-performance" | "low-power"

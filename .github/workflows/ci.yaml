@@ -42,6 +42,7 @@ jobs:
       - name: Upload results to Codecov
         uses: codecov/codecov-action@v5
         with:
+          flags: go
           verbose: true
           token: ${{ secrets.CODECOV_TOKEN }}
 
@@ -222,6 +223,7 @@ jobs:
       - name: Upload results to Codecov
         uses: codecov/codecov-action@v5
         with:
+          flags: ts
           verbose: true
           token: ${{ secrets.CODECOV_TOKEN }}
 

@@ -394,6 +394,8 @@ type componentBinding struct {
 	// rather than a function. It is NOT the `var`-vs-`val` distinction — that is kind.
 	isVarDecl bool
 	kind      ast.VariableKind // PR8: the primary definition's kind — VarKind ⇒ reassignable
+	// mut marks a definition written `mut`, which lets the binding mutate what it owns.
+	mut bool
 	// recovered marks that a contributing definition was WHOLLY the ErrorType recovery
 	// sentinel (e.g. `val a = <unknown ident>`). ErrorType absorbs in constrain, so it
 	// leaves no bound on the binding var; phase 3 uses this to recover the binding AS
@@ -414,6 +416,19 @@ type componentBinding struct {
 	// on the group-var path, where fuseOverloadArms records the whole set as one lower
 	// bound on that var. See annotatedOverloadArms.
 	signatureBound bool
+}
+
+// identVarDecl returns the `val` or `var` declaration that binds key with a plain identifier
+// pattern, or nil when no such declaration binds it.
+func identVarDecl(g *dep_graph.DepGraph, key dep_graph.BindingKey) *ast.VarDecl {
+	for _, d := range g.GetDecls(key) {
+		if vd, ok := d.(*ast.VarDecl); ok {
+			if _, isIdent := vd.Pattern.(*ast.IdentPat); isIdent {
+				return vd
+			}
+		}
+	}
+	return nil
 }
 
 // inferComponent infers one strongly connected component — a group of
@@ -509,8 +524,14 @@ func (c *checker) inferComponent(
 		bindings[key] = &componentBinding{v: v}
 		// Pre-bind the binding var as a MonoScheme so a mutually-recursive reference
 		// resolves through the var itself (instantiate returns it unchanged) before
-		// generalization happens in phase 3.
-		scope.defineValue(key.Name(), ValueBinding{Schemes: []TypeScheme{monoScheme(v)}})
+		// generalization happens in phase 3. A `val mut` declaration pre-binds as mutable,
+		// so a closure in its own initializer may write the value the binding owns.
+		pre := ValueBinding{Schemes: []TypeScheme{monoScheme(v)}}
+		if vd := identVarDecl(g, key); vd != nil {
+			pre.Mut = isMutableIdentPat(vd.Pattern)
+			pre.Sources = []provenance.Provenance{&ast.NodeProvenance{Node: vd}}
+		}
+		scope.defineValue(key.Name(), pre)
 	}
 	// Every binding var in the component now exists, so a namespace holding these
 	// members can answer for them. Two functions in one namespace calling each other
@@ -839,6 +860,7 @@ func (c *checker) inferComponent(
 				// a `val`/`fn` is not. A FuncDecl leaves kind at its ValKind zero value.
 				if isVarDecl {
 					b.kind = vd.Kind
+					b.mut = isMutableIdentPat(vd.Pattern)
 					// M4 B3: an un-annotated `var` widens at coalesce time, so its literal
 					// initializer reads back as the primitive (`var a = 5` ⇒ number) and a
 					// later reassignment of the same primitive checks. An annotated `var`
@@ -906,6 +928,9 @@ func (c *checker) inferComponent(
 	// Every call in the component has constrained the functions passed to it, so a callback's
 	// receiver has every lower bound it will get.
 	c.checkPendingRecvReads()
+	// The same holds for a value mutated through an immutable binding before its type was
+	// known.
+	c.checkPendingMutations()
 	// Every subtype check in the component has recorded what its sub required of a super
 	// signature's quantified lifetimes, so a requirement the signature's caller cannot be
 	// held to is reported now.
@@ -998,7 +1023,7 @@ func (c *checker) inferComponent(
 		} else {
 			scheme = c.generalize(b.v, lvl)
 		}
-		scope.defineValue(key.Name(), ValueBinding{Schemes: []TypeScheme{scheme}, Sources: b.sources, Kind: b.kind, ModuleLevel: true})
+		scope.defineValue(key.Name(), ValueBinding{Schemes: []TypeScheme{scheme}, Sources: b.sources, Kind: b.kind, Mut: b.mut, ModuleLevel: true})
 		// Record the binding's final (coalesced) DISPLAY type in Info on infoNode, so
 		// it is queryable even for a `val` in a recursive group (where coalescing at
 		// definition time would have frozen it to `never`). infoNode is the binding's
@@ -1096,6 +1121,7 @@ func (c *checker) bindModuleDestructureLeaf(
 	b.infoNode = leaf.node
 	b.isVarDecl = true
 	b.kind = d.Kind
+	b.mut = leafMutable(leaf.node)
 	b.bound = true
 	b.sources = append(b.sources, &ast.NodeProvenance{Node: d})
 	if md.recovered {
