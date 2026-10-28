@@ -18,7 +18,7 @@ import (
 //
 // It returns false when the body never uses the parameter, and when the body binds the name
 // again anywhere, since a use may then name the inner binding. Any use inside a nested function
-// or class also returns false, since the nested body may capture the parameter.
+// also returns false, since the nested body may capture the parameter.
 func paramOnlyReadThrough(name string, body *ast.Block) bool {
 	v := &paramReadScanner{
 		name:        name,
@@ -128,18 +128,6 @@ func (v *paramReadScanner) EnterPat(p ast.Pat) bool {
 				v.other = true
 			}
 		}
-	}
-	return !v.other
-}
-
-func (v *paramReadScanner) EnterDecl(d ast.Decl) bool {
-	switch d := d.(type) {
-	case *ast.FuncDecl:
-		v.other = v.other || d.Name.Name == v.name || mentionsName(v.name, d)
-		return false
-	case *ast.ClassDecl:
-		v.other = v.other || d.Name.Name == v.name || mentionsName(v.name, d)
-		return false
 	}
 	return !v.other
 }

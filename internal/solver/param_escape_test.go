@@ -85,6 +85,16 @@ func TestInferUnannotatedParamOwnership(t *testing.T) {
 			want: "fn (p: &{ok: boolean, x: unknown}) -> 1 | 2",
 		},
 		{
+			name: "MemberReadInLogicalOperand",
+			src:  `fn f(p) { return p.a || p.b }`,
+			want: "fn (p: &{a: boolean, b: boolean}) -> boolean",
+		},
+		{
+			name: "MemberReadInTemplate",
+			src:  "fn f(p) { return `${p.x}` }",
+			want: "fn (p: &{x: string | number | boolean | bigint}) -> string",
+		},
+		{
 			name: "MutBindingOnlyRead",
 			src:  `fn f(mut p) { return p.x }`,
 			want: "fn <T0>(p: &{x: T0}) -> T0",
@@ -126,6 +136,15 @@ func TestInferUnannotatedParamOwnership(t *testing.T) {
 			name: "CapturedByClosure",
 			src:  `fn f(p) { return fn () { return p.x } }`,
 			want: "fn <T0>(p: {x: T0}) -> fn () -> T0",
+		},
+		{
+			// The nested function reads p through a shorthand property, which counts as a use of p.
+			name: "CapturedByShorthandInClosure",
+			src: `fn f(p) {
+				val g = fn () { return {p} }
+				return p.x
+			}`,
+			want: "fn <T0>(p: {x: T0}) -> T0",
 		},
 		{
 			name: "NameRebound",
