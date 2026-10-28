@@ -5,40 +5,55 @@ import (
 	"github.com/escalier-lang/escalier/internal/set"
 )
 
-// paramOnlyReadThrough reports whether every use of the parameter named name in body reads a
-// member or an element of it, as `p.x` and `p[i]` do. It returns false when the body uses the
-// parameter in any other way, and when the body never uses it.
+// paramOnlyReadThrough reports whether the body only reads through the parameter named name.
+// That holds when every use of the parameter is the root of a member or element read, as in
+// `p.x` or `p[i].y`, and the read's value goes to one of these places:
+//   - a `return`, as in `return p.x`
+//   - an expression statement that discards it
+//   - an operand of an arithmetic, comparison, or unary operator, as in `p.x + 1`
+//   - an operand of `&&`, `||`, or `??` whose own value goes to one of these places
+//   - an immutable borrow, as in `&p.x`
+//   - an `if` condition or a template literal interpolation
 //
-// These uses count as other ways:
-//   - a bare use, as in `return p`, `sink = p`, `f(p)`, `p + 1`, or a shorthand `{p}`
-//   - a write through a member or element chain rooted at the parameter, as in `p.x = 1`
-//   - a call through such a chain, as in `p.m()` or `p.f.g()`
-//   - a `&mut` borrow of such a chain, as in `&mut p.x`
-//   - any use inside a nested function or class, which may capture the parameter
-//
-// A body that binds the name again anywhere also returns false, since a use may then name
-// the inner binding instead.
+// It returns false when the body never uses the parameter, and when the body binds the name
+// again anywhere, since a use may then name the inner binding. Any use inside a nested function
+// or class also returns false, since the nested body may capture the parameter.
 func paramOnlyReadThrough(name string, body *ast.Block) bool {
-	v := &paramReadScanner{name: name, readThrough: set.NewSet[*ast.IdentExpr]()}
+	v := &paramReadScanner{
+		name:        name,
+		consumed:    set.NewSet[ast.Expr](),
+		readThrough: set.NewSet[*ast.IdentExpr](),
+	}
 	body.Accept(v)
 	return !v.other && v.uses > 0
 }
 
-// paramReadScanner walks a function body for paramOnlyReadThrough. readThrough holds each
-// use of the parameter that is the object of a member or element read, recorded when the
-// scanner enters the read, which is before it reaches the use.
+// paramReadScanner walks a function body for paramOnlyReadThrough. The walk enters a node
+// before its children, so each node marks its children before the scanner reaches them.
+//
+// consumed holds each expression whose value goes to one of the places paramOnlyReadThrough
+// lists. A member or element read passes the mark on to its object. readThrough holds each use
+// of the parameter that is the object of a consumed read.
 type paramReadScanner struct {
 	ast.DefaultVisitor
 	name        string
+	consumed    set.Set[ast.Expr]
 	readThrough set.Set[*ast.IdentExpr]
 	uses        int
 	other       bool
 }
 
-func (v *paramReadScanner) EnterExpr(e ast.Expr) bool {
-	if v.other {
-		return false
+func (v *paramReadScanner) EnterStmt(s ast.Stmt) bool {
+	switch s := s.(type) {
+	case *ast.ReturnStmt:
+		v.consume(s.Expr)
+	case *ast.ExprStmt:
+		v.consume(s.Expr)
 	}
+	return !v.other
+}
+
+func (v *paramReadScanner) EnterExpr(e ast.Expr) bool {
 	switch e := e.(type) {
 	case *ast.IdentExpr:
 		if e.Name == v.name {
@@ -48,20 +63,32 @@ func (v *paramReadScanner) EnterExpr(e ast.Expr) bool {
 			}
 		}
 	case *ast.MemberExpr:
-		v.noteObject(e.Object)
+		v.readObject(e, e.Object)
 	case *ast.IndexExpr:
-		v.noteObject(e.Object)
+		v.readObject(e, e.Object)
 	case *ast.BinaryExpr:
-		if e.Op == ast.Assign && v.rootedHere(e.Left) {
-			v.other = true
+		switch e.Op {
+		case ast.Assign:
+		case ast.LogicalAnd, ast.LogicalOr, ast.NullishCoalescing:
+			if v.consumed.Contains(e) {
+				v.consume(e.Left)
+				v.consume(e.Right)
+			}
+		default:
+			v.consume(e.Left)
+			v.consume(e.Right)
 		}
-	case *ast.CallExpr:
-		if v.rootedHere(e.Callee) {
-			v.other = true
-		}
+	case *ast.UnaryExpr:
+		v.consume(e.Arg)
 	case *ast.BorrowExpr:
-		if e.Mut && v.rootedHere(e.Arg) {
-			v.other = true
+		if !e.Mut {
+			v.consume(e.Arg)
+		}
+	case *ast.IfElseExpr:
+		v.consume(e.Cond)
+	case *ast.TemplateLitExpr:
+		for _, interp := range e.Exprs {
+			v.consume(interp)
 		}
 	case *ast.FuncExpr:
 		v.other = v.other || mentionsName(v.name, e)
@@ -71,56 +98,59 @@ func (v *paramReadScanner) EnterExpr(e ast.Expr) bool {
 }
 
 func (v *paramReadScanner) EnterObjExprElem(e ast.ObjExprElem) bool {
-	if prop, ok := e.(*ast.PropertyExpr); ok && prop.Value == nil {
-		if key, ok := prop.Name.(*ast.IdentExpr); ok && key.Name == v.name {
-			v.other = true
-		}
-	}
+	v.other = v.other || isShorthandFor(v.name, e)
 	return !v.other
 }
 
 func (v *paramReadScanner) EnterPat(p ast.Pat) bool {
-	if ip, ok := p.(*ast.IdentPat); ok && ip.Name == v.name {
-		v.other = true
+	switch p := p.(type) {
+	case *ast.IdentPat:
+		v.other = v.other || p.Name == v.name
+	case *ast.ObjectPat:
+		for _, elem := range p.Elems {
+			if sh, ok := elem.(*ast.ObjShorthandPat); ok && sh.Key.Name == v.name {
+				v.other = true
+			}
+		}
 	}
 	return !v.other
 }
 
 func (v *paramReadScanner) EnterDecl(d ast.Decl) bool {
-	switch d.(type) {
-	case *ast.FuncDecl, *ast.ClassDecl:
-		v.other = v.other || mentionsName(v.name, d)
+	switch d := d.(type) {
+	case *ast.FuncDecl:
+		v.other = v.other || d.Name.Name == v.name || mentionsName(v.name, d)
+		return false
+	case *ast.ClassDecl:
+		v.other = v.other || d.Name.Name == v.name || mentionsName(v.name, d)
 		return false
 	}
 	return !v.other
 }
 
-// noteObject records obj as a read through the parameter when obj names it.
-func (v *paramReadScanner) noteObject(obj ast.Expr) {
+// consume marks e as an expression whose value goes to a place that does not let it escape.
+// A nil e, such as a bare `return`, marks nothing.
+func (v *paramReadScanner) consume(e ast.Expr) {
+	if e != nil {
+		v.consumed.Add(e)
+	}
+}
+
+// readObject passes the mark of the consumed read on to obj, the read's object. A use of the
+// parameter as that object is a read through it.
+func (v *paramReadScanner) readObject(read, obj ast.Expr) {
+	if !v.consumed.Contains(read) {
+		return
+	}
+	v.consume(obj)
 	if id, ok := obj.(*ast.IdentExpr); ok && id.Name == v.name {
 		v.readThrough.Add(id)
 	}
 }
 
-// rootedHere reports whether e is the parameter, or a member or element chain whose root
-// object is the parameter, as `p`, `p.x`, and `p.x[0].y` are.
-func (v *paramReadScanner) rootedHere(e ast.Expr) bool {
-	for {
-		switch n := e.(type) {
-		case *ast.MemberExpr:
-			e = n.Object
-		case *ast.IndexExpr:
-			e = n.Object
-		case *ast.IdentExpr:
-			return n.Name == v.name
-		default:
-			return false
-		}
-	}
-}
-
 // mentionsName reports whether node reads a variable named name, either as an identifier or
-// as a shorthand object property.
+// as a shorthand object property. It does not track scope, so a nested binding of the same
+// name counts as a mention.
 func mentionsName(name string, node interface{ Accept(ast.Visitor) }) bool {
 	v := &nameMentionScanner{name: name}
 	node.Accept(v)
@@ -141,20 +171,27 @@ func (v *nameMentionScanner) EnterExpr(e ast.Expr) bool {
 }
 
 func (v *nameMentionScanner) EnterObjExprElem(e ast.ObjExprElem) bool {
-	if prop, ok := e.(*ast.PropertyExpr); ok && prop.Value == nil {
-		if key, ok := prop.Name.(*ast.IdentExpr); ok && key.Name == v.name {
-			v.found = true
-		}
-	}
+	v.found = v.found || isShorthandFor(v.name, e)
 	return !v.found
 }
 
-// readOnlyBorrowParam reports whether the unannotated parameter p binds a single name that body
-// only reads through, as paramOnlyReadThrough decides. A rest, optional, or defaulted parameter,
-// and a destructuring one, report false.
-func (c *checker) readOnlyBorrowParam(p *ast.Param, pat ast.Pat, rest, optional bool, body *ast.Block) bool {
+// isShorthandFor reports whether e is a shorthand property `{name}`, which reads the variable
+// name.
+func isShorthandFor(name string, e ast.ObjExprElem) bool {
+	prop, ok := e.(*ast.PropertyExpr)
+	if !ok || prop.Value != nil {
+		return false
+	}
+	key, ok := prop.Name.(*ast.IdentExpr)
+	return ok && key.Name == name
+}
+
+// identParamOnlyReadThrough reports whether pat binds a single name that body only reads
+// through, as paramOnlyReadThrough decides. A rest, optional, or defaulted parameter, and a
+// destructuring one, report false.
+func identParamOnlyReadThrough(pat ast.Pat, rest, optional bool, body *ast.Block) bool {
 	ip, ok := pat.(*ast.IdentPat)
-	if !ok || p.TypeAnn != nil || ip.Default != nil || rest || optional {
+	if !ok || ip.Default != nil || rest || optional {
 		return false
 	}
 	return paramOnlyReadThrough(ip.Name, body)

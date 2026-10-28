@@ -31,6 +31,40 @@ func TestInferUnannotatedParamOwnership(t *testing.T) {
 			want: "fn (p: &{x: number, y: number}) -> number",
 		},
 		{
+			name: "MemberReadInCondition",
+			src:  `fn f(p) { return if p.ok { 1 } else { 2 } }`,
+			want: "fn (p: &{ok: boolean}) -> 1 | 2",
+		},
+		{
+			name: "MemberReadBorrowed",
+			src:  `fn f(p) { return &p.x }`,
+			want: "fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0",
+		},
+		{
+			name: "MemberReadStoredInModuleState",
+			src: `
+				var sink = {y: 0}
+				fn f(p) { sink = p.x }
+			`,
+			want: "fn (p: {x: {y: number}}) -> undefined",
+		},
+		{
+			name: "MemberReadPassedToCall",
+			src: `
+				declare fn own(q: {y: number}) -> number
+				fn f(p) { return own(p.x) }
+			`,
+			want: "fn (p: {x: {y: number}}) -> number",
+		},
+		{
+			name: "MemberReadBound",
+			src: `fn f(p) {
+				val q = p.x
+				return q
+			}`,
+			want: "fn <T0>(p: {x: T0}) -> T0",
+		},
+		{
 			name: "MutBindingOnlyRead",
 			src:  `fn f(mut p) { return p.x }`,
 			want: "fn <T0>(p: &{x: T0}) -> T0",
@@ -81,6 +115,14 @@ func TestInferUnannotatedParamOwnership(t *testing.T) {
 				return p.x
 			}`,
 			want: "fn <T0>(p: {x: T0}) -> T0",
+		},
+		{
+			name: "NameReboundByShorthandPattern",
+			src: `fn f(p) {
+				val {p} = {p: {x: 1}}
+				return p.x
+			}`,
+			want: "fn <T0>(p: T0) -> 1",
 		},
 		{
 			name: "Unused",

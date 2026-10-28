@@ -656,7 +656,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// only reads through does not escape, so it borrows immutably, as `p` in
 		// `fn read(p) { return p.x }` does. A function passed as a call argument is left alone,
 		// since the callee's signature gives each of its parameters a type.
-		if v, ok := pt.(*soltype.TypeVarType); ok && !written && !isArg && body != nil && c.readOnlyBorrowParam(p, pat, rest, optional, body) {
+		if v, ok := pt.(*soltype.TypeVarType); ok && !written && !isArg && body != nil && identParamOnlyReadThrough(pat, rest, optional, body) {
 			pt = soltype.NewRef(false, c.ctx.freshLifetime(lvl), v)
 		}
 		if name, ok := identPatName(pat); ok {
