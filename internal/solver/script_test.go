@@ -489,11 +489,11 @@ func TestScriptTransitionParity(t *testing.T) {
 		want  []string
 	}{
 		// Rule 1, the mut→immutable case, errors when the mutable source is live after an
-		// immutable borrow of it. A top-level `val items: mut {…}` borrowed immutably and
+		// immutable borrow of it. A top-level `val mut items: {…}` borrowed immutably and
 		// then used mutably reports the Rule 1 transition error.
 		"Rule1_SourceLive_Error": {
 			stmts: `
-				val items: mut {x: number} = {x: 1}
+				val mut items: {x: number} = {x: 1}
 				val snapshot: &{x: number} = items
 				items.x = 2
 				snapshot
@@ -505,7 +505,7 @@ func TestScriptTransitionParity(t *testing.T) {
 		// Rule 1: safe when the mutable source is dead after the borrow.
 		"Rule1_SourceDead_OK": {
 			stmts: `
-				val items: mut {x: number} = {x: 1}
+				val mut items: {x: number} = {x: 1}
 				items.x = 2
 				val snapshot: &{x: number} = items
 				snapshot
@@ -514,7 +514,7 @@ func TestScriptTransitionParity(t *testing.T) {
 		// Rule 3: two mutable borrows of the same value are always allowed.
 		"Rule3_MultipleMutableAliases_OK": {
 			stmts: `
-				val a: mut {x: number} = {x: 1}
+				val mut a: {x: number} = {x: 1}
 				val b: &mut {x: number} = a
 				b.x = 2
 				a.x
@@ -524,7 +524,7 @@ func TestScriptTransitionParity(t *testing.T) {
 		// alias, not the source itself.
 		"ChainAlias_TargetLive_Error": {
 			stmts: `
-				val a: mut {x: number} = {x: 1}
+				val mut a: {x: number} = {x: 1}
 				val b: &mut {x: number} = a
 				val c: &{x: number} = b
 				a.x = 2
@@ -693,7 +693,7 @@ func TestScriptReassignTransition(t *testing.T) {
 	t.Run("source_live_error", func(t *testing.T) {
 		_, _, errs := inferScriptSource(t, `
 			var snap: {x: number} = {x: 0}
-			val items: mut {x: number} = {x: 1}
+			val mut items: {x: number} = {x: 1}
 			snap = items
 			items.x = 2
 			snap
@@ -706,7 +706,7 @@ func TestScriptReassignTransition(t *testing.T) {
 	t.Run("source_dead_ok", func(t *testing.T) {
 		_, _, errs := inferScriptSource(t, `
 			var snap: {x: number} = {x: 0}
-			val items: mut {x: number} = {x: 1}
+			val mut items: {x: number} = {x: 1}
 			items.x = 2
 			snap = items
 			snap

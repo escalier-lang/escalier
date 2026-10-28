@@ -1019,13 +1019,13 @@ func TestInferVarObjectDestructureWidens(t *testing.T) {
 // the borrowed field values, just as a member read through the borrow would.
 func TestInferDestructureBorrowScrutinee(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: mut {x: number, y: string}) {
+		fn f(mut p: {x: number, y: string}) {
 			val {x, y} = p
 			return [x, y]
 		}
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: mut {x: number, y: string}) -> [number, string]", values["f"])
+	require.Equal(t, "fn (p: {x: number, y: string}) -> [number, string]", values["f"])
 }
 
 // A default is checked against an explicit leaf annotation: a default that the

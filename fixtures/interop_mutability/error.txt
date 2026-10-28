@@ -20,7 +20,7 @@ lib/index.esc:128:5: cannot constrain immutable Widget <: mutable Widget
 
 lib/index.esc:73:5: cannot constrain immutable Array<number> <: mutable Array<number>
 
-73:     xs.sort()               // EXPECTED-ERROR (tier 2: sort requires mut Array)
+73:     xs.sort()               // EXPECTED-ERROR (tier 2: sort requires a mut binding)
         ^^^^^^^
 
 lib/index.esc:33:5: cannot assign to 'x' because it is a readonly property

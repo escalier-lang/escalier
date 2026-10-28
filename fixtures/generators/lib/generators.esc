@@ -75,16 +75,16 @@ export gen fn genNoYield() {
     return 1
 }
 
-// Drive a generator by hand. `next` takes `mut self`, so the binding is annotated
-// `mut` to make the method visible.
+// Drive a generator by hand. `next` takes `mut self`, so the binding is declared
+// `val mut` to make the method visible.
 export fn drive() {
-    val it: mut Generator<1 | 2 | 3, undefined, unknown> = count()
+    val mut it: Generator<1 | 2 | 3, undefined, unknown> = count()
     return it.next()
 }
 
 // The inferred send type is `unknown`, so a caller may send a value back in
 export fn driveWithValue() {
-    val it: mut Generator<1 | 2 | 3, undefined, unknown> = count()
+    val mut it: Generator<1 | 2 | 3, undefined, unknown> = count()
     return it.next("resume")
 }
 
@@ -96,7 +96,7 @@ export gen fn resumable() -> Generator<number, string, string> {
 }
 
 export fn driveResumable() {
-    val it: mut Generator<number, string, string> = resumable()
+    val mut it: Generator<number, string, string> = resumable()
     return it.next("go")
 }
 

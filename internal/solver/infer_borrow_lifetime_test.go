@@ -86,9 +86,9 @@ func TestInferSharedParamLifetimeIsNamed(t *testing.T) {
 // Writing a field through an owned-mutable param checks. The write requirement's
 // fresh lifetime imposes no obligation, so an owned receiver satisfies it.
 func TestInferFieldWriteThroughBorrowParam(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(p: mut {x: number}) { p.x = 10 }`)
+	values, _, errs := inferSource(t, `fn f(mut p: {x: number}) { p.x = 10 }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: mut {x: number}) -> undefined", values["f"])
+	require.Equal(t, "fn (p: {x: number}) -> undefined", values["f"])
 }
 
 // Passing a borrow into a function whose parameter is an OWNED (bare) object is the
@@ -488,7 +488,7 @@ fn f(r: {x: number}) {
 func TestInferOwnedMutDecayToOwnedImmutable(t *testing.T) {
 	src := `fn acceptObj(o: {x: number}) -> number { return o.x }
 fn f() {
-  val items: mut {x: number} = {x: 1}
+  val mut items: {x: number} = {x: 1}
   val q: {x: number} = items
   return acceptObj(q)
 }`

@@ -382,10 +382,10 @@ func TestInferAnnAccessorReadRaises(t *testing.T) {
 		{
 			name: "SetterWriteRaisesUndeclared",
 			src: `
-				declare fn make() -> mut {set a(&mut self, v: number) throws string, ...}
-				fn g() { var o = make() o.a = 5 }
+				declare fn make() -> {set a(&mut self, v: number) throws string, ...}
+				fn g() { var mut o = make() o.a = 5 }
 			`,
-			want: []string{"3:29-3:36: `g` can throw `string`, but it doesn't declare it; add `throws string` to `g`'s signature"},
+			want: []string{"3:33-3:40: `g` can throw `string`, but it doesn't declare it; add `throws string` to `g`'s signature"},
 		},
 	}
 	for _, tt := range tests {
@@ -397,8 +397,7 @@ func TestInferAnnAccessorReadRaises(t *testing.T) {
 }
 
 // A field write resolves the setter half of an annotated object through writeMember, which reads
-// a plain object type. The receiver must be mutable, so these bind with `var` through a `mut`
-// return.
+// a plain object type. The receiver must be mutable, so these bind the result with `var mut`.
 func TestInferAnnSetterWrite(t *testing.T) {
 	tests := []struct {
 		name string
@@ -408,32 +407,32 @@ func TestInferAnnSetterWrite(t *testing.T) {
 		{
 			name: "Write",
 			src: `
-				declare fn make() -> mut {set a(&mut self, v: number), ...}
-				fn g() { var o = make() o.a = 5 }
+				declare fn make() -> {set a(&mut self, v: number), ...}
+				fn g() { var mut o = make() o.a = 5 }
 			`,
 			want: nil,
 		},
 		{
 			name: "WrittenValueIsChecked",
 			src: `
-				declare fn make() -> mut {set a(&mut self, v: number), ...}
-				fn g() { var o = make() o.a = "nope" }
+				declare fn make() -> {set a(&mut self, v: number), ...}
+				fn g() { var mut o = make() o.a = "nope" }
 			`,
-			want: []string{`3:35-3:41: cannot constrain "nope" <: number`},
+			want: []string{`3:39-3:45: cannot constrain "nope" <: number`},
 		},
 		{
 			name: "GetterOnlyNameIsReadOnly",
 			src: `
-				declare fn make() -> mut {get a(&self) -> number, ...}
-				fn g() { var o = make() o.a = 5 }
+				declare fn make() -> {get a(&self) -> number, ...}
+				fn g() { var mut o = make() o.a = 5 }
 			`,
-			want: []string{"3:29-3:36: Property 'a' is read-only; it has a getter but no setter or field to write."},
+			want: []string{"3:33-3:40: Property 'a' is read-only; it has a getter but no setter or field to write."},
 		},
 		{
 			name: "PairWritesThenReads",
 			src: `
-				declare fn make() -> mut {get a(&self) -> number, set a(&mut self, v: number), ...}
-				fn g() -> number { var o = make() o.a = 5 return o.a }
+				declare fn make() -> {get a(&self) -> number, set a(&mut self, v: number), ...}
+				fn g() -> number { var mut o = make() o.a = 5 return o.a }
 			`,
 			want: nil,
 		},

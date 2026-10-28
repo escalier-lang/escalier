@@ -202,7 +202,7 @@ func TestInferClassStaticMissing(t *testing.T) {
 	`
 	_, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
-	require.Equal(t, "object is missing property: nope", errs[0].Message())
+	require.Equal(t, "6:17-6:21: object is missing property: nope", msgWithSpan(t, errs[0]))
 }
 
 // TestInferClassGeneric covers a generic class: the constructor is generalized over
@@ -299,7 +299,7 @@ func TestInferClassForwardBoundEnforced(t *testing.T) {
 			val b = Box("hi")
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, `cannot constrain "hi" <: number`, errs[0].Message())
+		require.Equal(t, `3:16-3:20: cannot constrain "hi" <: number`, msgWithSpan(t, errs[0]))
 	})
 	t.Run("Satisfied", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
@@ -367,12 +367,12 @@ func TestInferClassNominalSubtype(t *testing.T) {
 	t.Run("unrelated class rejects", func(t *testing.T) {
 		_, _, errs := inferSource(t, base+`val b = Box(Other())`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "cannot constrain Other <: A", errs[0].Message())
+		require.Equal(t, "6:14-6:21: cannot constrain Other <: A", msgWithSpan(t, errs[0]))
 	})
 	t.Run("structural object rejects against a class bound", func(t *testing.T) {
 		_, _, errs := inferSource(t, base+`val b = Box({x: 0})`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "cannot constrain object <: class A", errs[0].Message())
+		require.Equal(t, "6:14-6:20: cannot constrain object <: class A", msgWithSpan(t, errs[0]))
 	})
 }
 
@@ -393,7 +393,7 @@ func TestInferClassIntoObject(t *testing.T) {
 	t.Run("into exact object rejects", func(t *testing.T) {
 		_, _, errs := inferSource(t, point+`val foo: {x: number, y: number} = p`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "cannot constrain class Point <: exact object", errs[0].Message())
+		require.Equal(t, "4:11-4:33: cannot constrain class Point <: exact object", msgWithSpan(t, errs[0]))
 	})
 }
 
@@ -413,7 +413,7 @@ func TestInferClassFinal(t *testing.T) {
 	t.Run("into an exact object missing one of its members rejects", func(t *testing.T) {
 		_, _, errs := inferSource(t, finalPoint+`val foo: {x: number} = p`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "object has extra property: y", errs[0].Message())
+		require.Equal(t, "2:37-2:43: object has extra property: y", msgWithSpan(t, errs[0]))
 	})
 	t.Run("into an inexact object still succeeds", func(t *testing.T) {
 		_, _, errs := inferSource(t, finalPoint+`val foo: {x: number, y: number, ...} = p`)
@@ -455,7 +455,7 @@ func TestInferClassObjectDestructure(t *testing.T) {
 			val {z} = p
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "object is missing property: z", errs[0].Message())
+		require.Equal(t, "4:9-4:10: object is missing property: z", msgWithSpan(t, errs[0]))
 	})
 }
 
@@ -468,17 +468,17 @@ func TestInferClassNonClassSuper(t *testing.T) {
 	t.Run("extends a type parameter", func(t *testing.T) {
 		_, _, errs := inferSource(t, `class B<T> extends T { constructor(&mut self) {} }`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "`T` does not name a class and cannot be extended or implemented.", errs[0].Message())
+		require.Equal(t, "1:20-1:21: `T` does not name a class and cannot be extended or implemented.", msgWithSpan(t, errs[0]))
 	})
 	t.Run("extends an interface", func(t *testing.T) {
 		_, _, errs := inferSource(t, "interface I { x: number }\nclass C extends I { constructor(&mut self) {} }")
 		require.Len(t, errs, 1)
-		require.Equal(t, "`I` does not name a class and cannot be extended or implemented.", errs[0].Message())
+		require.Equal(t, "2:17-2:18: `I` does not name a class and cannot be extended or implemented.", msgWithSpan(t, errs[0]))
 	})
 	t.Run("implements a type parameter", func(t *testing.T) {
 		_, _, errs := inferSource(t, `class C<T> implements T {}`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "`T` does not name a class and cannot be extended or implemented.", errs[0].Message())
+		require.Equal(t, "1:23-1:24: `T` does not name a class and cannot be extended or implemented.", msgWithSpan(t, errs[0]))
 	})
 	t.Run("implements an alias of a primitive", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
@@ -486,7 +486,7 @@ func TestInferClassNonClassSuper(t *testing.T) {
 			class C implements N { constructor(&mut self) {} }
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "`N` does not name a class and cannot be extended or implemented.", errs[0].Message())
+		require.Equal(t, "3:23-3:24: `N` does not name a class and cannot be extended or implemented.", msgWithSpan(t, errs[0]))
 	})
 	t.Run("implements an interface with too many type arguments", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
@@ -494,7 +494,7 @@ func TestInferClassNonClassSuper(t *testing.T) {
 			class C implements Box<number, string> { value: number, constructor(&mut self) { self.value = 0 } }
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "type alias `Box` expects 1 type argument but got 2", errs[0].Message())
+		require.Equal(t, "3:23-3:42: type alias `Box` expects 1 type argument but got 2", msgWithSpan(t, errs[0]))
 	})
 	t.Run("extends a type parameter applied to arguments", func(t *testing.T) {
 		// A type parameter carries no type arguments, so `T<X>` is doubly ill-formed. The
@@ -502,7 +502,7 @@ func TestInferClassNonClassSuper(t *testing.T) {
 		// rather than dropped silently.
 		_, _, errs := inferSource(t, `class B<T, X> extends T<X> { constructor(&mut self) {} }`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "`T` does not name a class and cannot be extended or implemented.", errs[0].Message())
+		require.Equal(t, "1:23-1:27: `T` does not name a class and cannot be extended or implemented.", msgWithSpan(t, errs[0]))
 	})
 }
 
@@ -639,7 +639,7 @@ func TestInferClassExtendFinal(t *testing.T) {
 			class B extends A { constructor(&mut self) {} }
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "Cannot extend `A`; it is a final class and has no subclasses.", errs[0].Message())
+		require.Equal(t, "3:20-3:21: Cannot extend `A`; it is a final class and has no subclasses.", msgWithSpan(t, errs[0]))
 	})
 	t.Run("extending a non-final class is allowed", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
@@ -980,11 +980,11 @@ func TestInferClassMutualRecursionRequiresAnnotation(t *testing.T) {
 	`)
 	msgs := make([]string, len(errs))
 	for i, e := range errs {
-		msgs[i] = e.Message()
+		msgs[i] = msgWithSpan(t, e)
 	}
 	require.ElementsMatch(t, []string{
-		"Mutually recursive method 'ping' must declare a return type; the cycle ping, pong has no annotated return to ground it.",
-		"Mutually recursive method 'pong' must declare a return type; the cycle ping, pong has no annotated return to ground it.",
+		"4:4-4:50: Mutually recursive method 'ping' must declare a return type; the cycle ping, pong has no annotated return to ground it.",
+		"5:4-5:50: Mutually recursive method 'pong' must declare a return type; the cycle ping, pong has no annotated return to ground it.",
 	}, msgs)
 }
 
@@ -1002,7 +1002,7 @@ func TestInferClassMutMethodFromImmutMethod(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "cannot constrain immutable C <: mutable C", errs[0].Message())
+	require.Equal(t, "5:35-5:44: cannot constrain immutable C <: mutable C", msgWithSpan(t, errs[0]))
 }
 
 // TestInferClassMutMethodFromMutMethod is the passing companion: a `mut self` method may
@@ -1036,7 +1036,7 @@ func TestInferClassMutGetterFromImmutMethod(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "cannot constrain immutable C <: mutable C", errs[0].Message())
+	require.Equal(t, "5:35-5:47: cannot constrain immutable C <: mutable C", msgWithSpan(t, errs[0]))
 }
 
 // TestInferClassGenericMethodReturnsTypeParam checks that a method whose return flows from a
@@ -1327,7 +1327,7 @@ func TestInferClassVariance(t *testing.T) {
 			val wide: Consumer<number | string> = narrow
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "cannot constrain string <: number", errs[0].Message())
+		require.Equal(t, "6:42-6:48: cannot constrain string <: number", msgWithSpan(t, errs[0]))
 	})
 	t.Run("a mut self parameter does not shape the immutable view", func(t *testing.T) {
 		// No immutable reference reaches `push`, so its parameter says nothing about how
@@ -1360,7 +1360,7 @@ func TestInferClassVariance(t *testing.T) {
 			fn narrow(c: Cell<number | string>) -> Cell<number> { return c }
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "cannot constrain string <: number", errs[0].Message())
+		require.Equal(t, "6:65-6:66: cannot constrain string <: number", msgWithSpan(t, errs[0]))
 	})
 	t.Run("a self reader beside a mut self mutator stays covariant", func(t *testing.T) {
 		// The shape `Array<T>` has. `read` is an output position both views reach and
@@ -1511,11 +1511,11 @@ func TestInferClassMutVariance(t *testing.T) {
 		// under `mut`, which is what rejects it.
 		_, _, errs := inferSource(t, `
 			class Box<T> { value: T }
-			fn wide(b: mut Box<number | string>) { }
-			fn narrow(b: mut Box<number>) { wide(b) }
+			fn wide(b: &mut Box<number | string>) { }
+			fn narrow(b: &mut Box<number>) { wide(b) }
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "cannot constrain string <: number", errs[0].Message())
+		require.Equal(t, "4:42-4:43: cannot constrain string <: number", msgWithSpan(t, errs[0]))
 	})
 	t.Run("mut field parameter rejects a narrowing", func(t *testing.T) {
 		// The other direction fails too, which is what invariance means. Here the danger
@@ -1523,11 +1523,11 @@ func TestInferClassMutVariance(t *testing.T) {
 		// instance holds a `string`.
 		_, _, errs := inferSource(t, `
 			class Box<T> { value: T }
-			fn narrow(b: mut Box<number>) { }
-			fn wide(b: mut Box<number | string>) { narrow(b) }
+			fn narrow(b: &mut Box<number>) { }
+			fn wide(b: &mut Box<number | string>) { narrow(b) }
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "cannot constrain string <: number", errs[0].Message())
+		require.Equal(t, "4:51-4:52: cannot constrain string <: number", msgWithSpan(t, errs[0]))
 	})
 	t.Run("mut method parameter accepts a narrowing", func(t *testing.T) {
 		// `T` reaches no storage, only `accept`'s parameter, so a `mut` reference buys no
@@ -1538,8 +1538,8 @@ func TestInferClassMutVariance(t *testing.T) {
 			class Consumer<T> {
 				accept(&self, x: T) { },
 			}
-			fn narrow(c: mut Consumer<number>) { }
-			fn wide(c: mut Consumer<number | string>) { narrow(c) }
+			fn narrow(c: &mut Consumer<number>) { }
+			fn wide(c: &mut Consumer<number | string>) { narrow(c) }
 		`)
 		require.Empty(t, errs)
 	})
@@ -1552,11 +1552,11 @@ func TestInferClassMutVariance(t *testing.T) {
 			class Consumer<T> {
 				accept(&self, x: T) { },
 			}
-			fn wide(c: mut Consumer<number | string>) { }
-			fn narrow(c: mut Consumer<number>) { wide(c) }
+			fn wide(c: &mut Consumer<number | string>) { }
+			fn narrow(c: &mut Consumer<number>) { wide(c) }
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "cannot constrain string <: number", errs[0].Message())
+		require.Equal(t, "6:47-6:48: cannot constrain string <: number", msgWithSpan(t, errs[0]))
 	})
 	t.Run("mut readonly field accepts a widening", func(t *testing.T) {
 		// `readonly` rejects `f.value = …` through any reference, so the field is an
@@ -1564,8 +1564,8 @@ func TestInferClassMutVariance(t *testing.T) {
 		// and a read yields the `number` the instance holds.
 		_, _, errs := inferSource(t, `
 			class Frozen<T> { readonly value: T }
-			fn wide(f: mut Frozen<number | string>) { }
-			fn narrow(f: mut Frozen<number>) { wide(f) }
+			fn wide(f: &mut Frozen<number | string>) { }
+			fn narrow(f: &mut Frozen<number>) { wide(f) }
 		`)
 		require.Empty(t, errs)
 	})
@@ -1575,11 +1575,11 @@ func TestInferClassMutVariance(t *testing.T) {
 		// rejected here as it would be immutably.
 		_, _, errs := inferSource(t, `
 			class Frozen<T> { readonly value: T }
-			fn narrow(f: mut Frozen<number>) { }
-			fn wide(f: mut Frozen<number | string>) { narrow(f) }
+			fn narrow(f: &mut Frozen<number>) { }
+			fn wide(f: &mut Frozen<number | string>) { narrow(f) }
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "cannot constrain string <: number", errs[0].Message())
+		require.Equal(t, "4:54-4:55: cannot constrain string <: number", msgWithSpan(t, errs[0]))
 	})
 	t.Run("mut method return accepts a widening", func(t *testing.T) {
 		// Both of Reader's occurrences of T are output positions, and neither becomes
@@ -1590,8 +1590,8 @@ func TestInferClassMutVariance(t *testing.T) {
 				readonly value: T,
 				read(&self) -> T { return self.value },
 			}
-			fn wide(r: mut Reader<number | string>) { }
-			fn narrow(r: mut Reader<number>) { wide(r) }
+			fn wide(r: &mut Reader<number | string>) { }
+			fn narrow(r: &mut Reader<number>) { wide(r) }
 		`)
 		require.Empty(t, errs)
 	})
@@ -1603,8 +1603,8 @@ func TestInferClassMutVariance(t *testing.T) {
 			class Sink<T> {
 				push(&mut self, item: T) -> undefined { return undefined },
 			}
-			fn narrow(s: mut Sink<number>) { }
-			fn wide(s: mut Sink<number | string>) { narrow(s) }
+			fn narrow(s: &mut Sink<number>) { }
+			fn wide(s: &mut Sink<number | string>) { narrow(s) }
 		`)
 		require.Empty(t, errs)
 	})
@@ -1615,11 +1615,11 @@ func TestInferClassMutVariance(t *testing.T) {
 			class Sink<T> {
 				push(&mut self, item: T) -> undefined { return undefined },
 			}
-			fn wide(s: mut Sink<number | string>) { }
-			fn narrow(s: mut Sink<number>) { wide(s) }
+			fn wide(s: &mut Sink<number | string>) { }
+			fn narrow(s: &mut Sink<number>) { wide(s) }
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "cannot constrain string <: number", errs[0].Message())
+		require.Equal(t, "6:43-6:44: cannot constrain string <: number", msgWithSpan(t, errs[0]))
 	})
 	t.Run("a mut self mutator pins a parameter a self reader returns", func(t *testing.T) {
 		// The shape `Array<T>` has, and the reason it is covariant shared and invariant
@@ -1632,11 +1632,11 @@ func TestInferClassMutVariance(t *testing.T) {
 				read(&self) -> T { return self.value },
 				write(&mut self, v: T) -> undefined { return undefined },
 			}
-			fn wide(s: mut Slot<number | string>) { }
-			fn narrow(s: mut Slot<number>) { wide(s) }
+			fn wide(s: &mut Slot<number | string>) { }
+			fn narrow(s: &mut Slot<number>) { wide(s) }
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "cannot constrain string <: number", errs[0].Message())
+		require.Equal(t, "8:43-8:44: cannot constrain string <: number", msgWithSpan(t, errs[0]))
 	})
 	t.Run("a setter pins a parameter its getter returns", func(t *testing.T) {
 		// A setter is a write, so no immutable reference reaches it and it lands in the
@@ -1651,11 +1651,11 @@ func TestInferClassMutVariance(t *testing.T) {
 			}
 		`
 		_, _, errs := inferSource(t, src+`
-			fn wide(p: mut Prop<number | string>) { }
-			fn narrow(p: mut Prop<number>) { wide(p) }
+			fn wide(p: &mut Prop<number | string>) { }
+			fn narrow(p: &mut Prop<number>) { wide(p) }
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "cannot constrain string <: number", errs[0].Message())
+		require.Equal(t, "9:43-9:44: cannot constrain string <: number", msgWithSpan(t, errs[0]))
 
 		_, _, errs = inferSource(t, src+`
 			fn widen(p: Prop<number>) -> Prop<number | string> { return p }
@@ -1671,16 +1671,16 @@ func TestInferClassMutVariance(t *testing.T) {
 				value: T,
 				read(&self) -> T { return self.value },
 			}
-			fn wide(b: mut Box<number | string>) { }
-			fn narrow(b: mut Box<number>) { wide(b) }
+			fn wide(b: &mut Box<number | string>) { }
+			fn narrow(b: &mut Box<number>) { wide(b) }
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "cannot constrain string <: number", errs[0].Message())
+		require.Equal(t, "7:42-7:43: cannot constrain string <: number", msgWithSpan(t, errs[0]))
 	})
 	t.Run("a mut subclass reference reaches its superclass", func(t *testing.T) {
 		// The write `reset` performs lands on `pos`, and checkInheritedMembers makes a
 		// member Dog redeclares invariant against Animal's declaration whenever Animal's is
-		// writable. Every member reachable through `mut Animal` therefore holds the type
+		// writable. Every member reachable through `&mut Animal` therefore holds the type
 		// Animal declares, so the widening is licensed. Dog's extra `breed` is unreachable
 		// through the Animal view, so adding it changes nothing.
 		_, _, errs := inferSource(t, `
@@ -1695,8 +1695,8 @@ func TestInferClassMutVariance(t *testing.T) {
 					self.breed = breed
 				},
 			}
-			fn reset(a: mut Animal) { a.pos = {x: 0} }
-			fn resetDog(d: mut Dog) { reset(d) }
+			fn reset(a: &mut Animal) { a.pos = {x: 0} }
+			fn resetDog(d: &mut Dog) { reset(d) }
 		`)
 		require.Empty(t, errs)
 	})
@@ -1728,21 +1728,24 @@ func TestInferClassMutVariance(t *testing.T) {
 		// first accepted, `poke` would store a `number` into a `Box<5>.value`.
 		src := `
 			class Box<T> { value: T }
-			class Holder<T> { readonly inner: mut Box<T> }
+			class Holder<T> { readonly inner: &mut Box<T> }
 			fn poke(h: %s Holder<number>) { h.inner.value = 42 }
 			fn narrow(h: %s Holder<5>) { poke(h) }
 		`
-		for _, mutability := range []string{"mut", ""} {
-			_, _, errs := inferSource(t, fmt.Sprintf(src, mutability, mutability))
-			require.Len(t, errs, 1, "mutability %q", mutability)
-			require.Equal(t, "cannot constrain number <: 5", errs[0].Message())
+		// The argument `h` sits four columns further right when the parameter is `&mut`.
+		for _, tc := range []struct{ mutability, want string }{
+			{"&mut", "5:40-5:41: cannot constrain number <: 5"},
+			{"", "5:36-5:37: cannot constrain number <: 5"},
+		} {
+			_, _, errs := inferSource(t, fmt.Sprintf(src, tc.mutability, tc.mutability))
+			require.Equal(t, []string{tc.want}, messagesWithSpan(t, errs), "mutability %q", tc.mutability)
 		}
 	})
 	t.Run("a class spelled through an alias behaves as the class it names", func(t *testing.T) {
-		// An alias is transparent, so `mut CNum` must permit exactly what `mut
+		// An alias is transparent, so `&mut CNum` must permit exactly what `&mut
 		// Consumer<number>` permits — no more, which would be unsound, and no less, which
 		// would reject a sound program. The residual write-back dispatches on the
-		// pointee's kind, so it peels the alias first. Without that, `mut CNum` would miss
+		// pointee's kind, so it peels the alias first. Without that, `&mut CNum` would miss
 		// the class arm and take the whole reverse constraint, rejecting the narrowing the
 		// bare spelling accepts a few cases above.
 		_, _, errs := inferSource(t, `
@@ -1750,14 +1753,14 @@ func TestInferClassMutVariance(t *testing.T) {
 				accept(&self, x: T) { },
 			}
 			type CNum = Consumer<number>
-			fn narrow(c: mut CNum) { }
-			fn wide(c: mut Consumer<number | string>) { narrow(c) }
+			fn narrow(c: &mut CNum) { }
+			fn wide(c: &mut Consumer<number | string>) { narrow(c) }
 		`)
 		require.Empty(t, errs)
 	})
 	t.Run("the same widening is accepted through an immutable reference", func(t *testing.T) {
 		// The immutable counterpart of the writable-field case above, and the pair is the
-		// point: dropping `mut` from both signatures leaves `wide` unable to write, so the
+		// point: dropping `&mut` from both signatures leaves `wide` unable to write, so the
 		// field is an output position again and the widening becomes sound. This is the
 		// precision the mutable-view vector buys — the two views genuinely differ rather
 		// than one being conservatively pinned to the other.
@@ -2291,7 +2294,7 @@ func TestInferClassErrors(t *testing.T) {
 		{
 			name: "MissingSelfReceiver",
 			src:  `class C { foo() -> number { return 1 } }`,
-			want: "Instance member 'foo' must declare a `self` receiver as its first parameter.",
+			want: "1:11-1:39: Instance member 'foo' must declare a `self` receiver as its first parameter.",
 		},
 		{
 			name: "WriteOnlySetterRead",
@@ -2303,7 +2306,7 @@ func TestInferClassErrors(t *testing.T) {
 				val c = C(0)
 				val r = c.value
 			`,
-			want: "Property 'value' is write-only; it has a setter but no getter or field to read.",
+			want: "7:13-7:20: Property 'value' is write-only; it has a setter but no getter or field to read.",
 		},
 		{
 			name: "SetterNoParams",
@@ -2313,7 +2316,7 @@ func TestInferClassErrors(t *testing.T) {
 					set value(&mut self) { },
 				}
 			`,
-			want: "Setter 'value' must declare exactly one value parameter; found 0.",
+			want: "4:6-4:30: Setter 'value' must declare exactly one value parameter; found 0.",
 		},
 		{
 			name: "SetterTooManyParams",
@@ -2323,7 +2326,7 @@ func TestInferClassErrors(t *testing.T) {
 					set value(&mut self, a: number, b: number) { },
 				}
 			`,
-			want: "Setter 'value' must declare exactly one value parameter; found 2.",
+			want: "4:6-4:52: Setter 'value' must declare exactly one value parameter; found 2.",
 		},
 		{
 			name: "SetterPlainSelfReceiver",
@@ -2333,12 +2336,12 @@ func TestInferClassErrors(t *testing.T) {
 					set value(&self, x: number) { },
 				}
 			`,
-			want: "Setter 'value' must declare a `&mut self` receiver; writing through it mutates the instance.",
+			want: "4:6-4:37: Setter 'value' must declare a `&mut self` receiver; writing through it mutates the instance.",
 		},
 		{
 			name: "FieldInitializerNotAllowed",
 			src:  `class C { x: number = 5 }`,
-			want: "Field 'x' cannot have a `= expr` initializer; only static fields may use this form. Initialize instance fields in the constructor body.",
+			want: "1:11-1:24: Field 'x' cannot have a `= expr` initializer; only static fields may use this form. Initialize instance fields in the constructor body.",
 		},
 		{
 			name: "SubclassConstructorRequired",
@@ -2346,7 +2349,7 @@ func TestInferClassErrors(t *testing.T) {
 				class A { x: number }
 				class B extends A { }
 			`,
-			want: "Subclasses must declare an explicit `constructor` block; constructor synthesis is not supported for classes with an `extends` clause.",
+			want: "3:11-3:12: Subclasses must declare an explicit `constructor` block; constructor synthesis is not supported for classes with an `extends` clause.",
 		},
 		{
 			name: "ConstraintViolated",
@@ -2354,12 +2357,12 @@ func TestInferClassErrors(t *testing.T) {
 				class Box<T: number> { value: T }
 				val b = Box("hi")
 			`,
-			want: `cannot constrain "hi" <: number`,
+			want: `3:17-3:21: cannot constrain "hi" <: number`,
 		},
 		{
 			name: "StaticFieldInitializerMismatch",
 			src:  `class C { static x: number = "hi" }`,
-			want: `cannot constrain "hi" <: number`,
+			want: `1:30-1:34: cannot constrain "hi" <: number`,
 		},
 		{
 			// An undefined type argument in the `extends` clause reports the general
@@ -2373,7 +2376,7 @@ func TestInferClassErrors(t *testing.T) {
 					constructor(&mut self) { super(5) }
 				}
 			`,
-			want: "cannot find type `Bogus`",
+			want: "3:30-3:35: cannot find type `Bogus`",
 		},
 	}
 
@@ -2381,7 +2384,7 @@ func TestInferClassErrors(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, test.src)
 			require.Len(t, errs, 1)
-			require.Equal(t, test.want, errs[0].Message())
+			require.Equal(t, test.want, msgWithSpan(t, errs[0]))
 		})
 	}
 }
@@ -2507,7 +2510,7 @@ func TestConstructorInitErrors(t *testing.T) {
 					},
 				}
 			`,
-			want: "Field 'y' is not initialized on every path through the constructor.",
+			want: "5:40-7:7: Field 'y' is not initialized on every path through the constructor.",
 		},
 		{
 			name: "MultipleFieldsUnassigned",
@@ -2518,7 +2521,7 @@ func TestConstructorInitErrors(t *testing.T) {
 					constructor(&mut self) { },
 				}
 			`,
-			want: "Fields 'x', 'y' are not initialized on every path through the constructor.",
+			want: "5:29-5:32: Fields 'x', 'y' are not initialized on every path through the constructor.",
 		},
 		{
 			name: "AssignedOnOnlyOnePath",
@@ -2532,7 +2535,7 @@ func TestConstructorInitErrors(t *testing.T) {
 					},
 				}
 			`,
-			want: "Field 'x' is not initialized on every path through the constructor.",
+			want: "4:44-8:7: Field 'x' is not initialized on every path through the constructor.",
 		},
 		{
 			name: "ReadBeforeInit",
@@ -2546,7 +2549,7 @@ func TestConstructorInitErrors(t *testing.T) {
 					},
 				}
 			`,
-			want: "Field 'self.x' is read before it has been initialized.",
+			want: "6:16-6:22: Field 'self.x' is read before it has been initialized.",
 		},
 		{
 			name: "MethodCallBeforeInit",
@@ -2560,7 +2563,7 @@ func TestConstructorInitErrors(t *testing.T) {
 					},
 				}
 			`,
-			want: "Cannot call a method on `self` before all required fields are initialized; missing 'x'.",
+			want: "6:15-6:25: Cannot call a method on `self` before all required fields are initialized; missing 'x'.",
 		},
 		{
 			name: "MethodCallMissingMultiple",
@@ -2576,7 +2579,7 @@ func TestConstructorInitErrors(t *testing.T) {
 					},
 				}
 			`,
-			want: "Cannot call a method on `self` before all required fields are initialized; missing 'x', 'y'.",
+			want: "7:15-7:25: Cannot call a method on `self` before all required fields are initialized; missing 'x', 'y'.",
 		},
 	}
 
@@ -2584,7 +2587,7 @@ func TestConstructorInitErrors(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, test.src)
 			require.Len(t, errs, 1)
-			require.Equal(t, test.want, errs[0].Message())
+			require.Equal(t, test.want, msgWithSpan(t, errs[0]))
 		})
 	}
 }
@@ -2798,8 +2801,8 @@ func TestInferMethodOverloadNoMatch(t *testing.T) {
 	`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
-		"No matching overload for this call\n  fn (x: number) -> number\n  fn (x: string) -> string",
-		errs[0].Message())
+		"8:11-8:20: No matching overload for this call\n  fn (x: number) -> number\n  fn (x: string) -> string",
+		msgWithSpan(t, errs[0]))
 }
 
 // TestInferMethodOverloadDeferredFallsBackToFirstMatch confirms the declaration-order
@@ -2839,8 +2842,8 @@ func TestInferMethodOverloadMixedReceiverRejected(t *testing.T) {
 	`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
-		"Overloaded method 'f' must use the same `self` receiver in every arm.",
-		errs[0].Message())
+		"5:4-5:50: Overloaded method 'f' must use the same `self` receiver in every arm.",
+		msgWithSpan(t, errs[0]))
 }
 
 // TestInferMethodOverloadUniformMutReceiverAccepted is the passing companion: an overload
@@ -2882,7 +2885,7 @@ func TestInferClassMethodTypeParams(t *testing.T) {
 				val c = C()
 				val r = c.pick(1)
 			`,
-			want: []string{`cannot constrain 1 <: string`},
+			want: []string{`6:20-6:21: cannot constrain 1 <: string`},
 		},
 		{
 			name: "StaticMethodBinderEnforcesItsBound",
@@ -2892,7 +2895,7 @@ func TestInferClassMethodTypeParams(t *testing.T) {
 				}
 				val r = C.pick(1)
 			`,
-			want: []string{`cannot constrain 1 <: string`},
+			want: []string{`5:20-5:21: cannot constrain 1 <: string`},
 		},
 		{
 			name: "ClassBinderStillEnforcesItsBound",
@@ -2902,7 +2905,7 @@ func TestInferClassMethodTypeParams(t *testing.T) {
 				}
 				val c = C("z")
 			`,
-			want: []string{`cannot constrain "z" <: number`},
+			want: []string{`5:15-5:18: cannot constrain "z" <: number`},
 		},
 	}
 	for _, tt := range tests {
@@ -2910,7 +2913,7 @@ func TestInferClassMethodTypeParams(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
 			var msgs []string
 			for _, e := range errs {
-				msgs = append(msgs, e.Message())
+				msgs = append(msgs, msgWithSpan(t, e))
 			}
 			require.Equal(t, tt.want, msgs)
 		})
@@ -2944,7 +2947,7 @@ func TestInferClassMethodTypeParamBounds(t *testing.T) {
 				val c = C()
 				val r = c.pick(1)
 			`,
-			want: []string{"cannot constrain 1 <: string"},
+			want: []string{"6:20-6:21: cannot constrain 1 <: string"},
 		},
 		{
 			name: "UnboundedBinderAcceptsAnyArgument",
@@ -2991,7 +2994,7 @@ func TestInferClassMethodTypeParamBounds(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
 			var msgs []string
 			for _, e := range errs {
-				msgs = append(msgs, e.Message())
+				msgs = append(msgs, msgWithSpan(t, e))
 			}
 			require.Equal(t, tt.want, msgs)
 		})
@@ -3275,9 +3278,9 @@ func TestInferClassConstructorTypeParamsGated(t *testing.T) {
 	`)
 	var msgs []string
 	for _, e := range errs {
-		msgs = append(msgs, e.Message())
+		msgs = append(msgs, msgWithSpan(t, e))
 	}
-	require.Equal(t, []string{"Unsupported: TypeParam"}, msgs)
+	require.Equal(t, []string{"4:4-4:55: Unsupported: TypeParam"}, msgs)
 }
 
 // A class may declare more than one constructor. Every arm binds under the one
@@ -3311,19 +3314,19 @@ func TestInferClassConstructorOverloads(t *testing.T) {
 			// one arm's parameter.
 			name: "RejectsAgainstTheWholeSet",
 			src:  decl + `val v = Box(true)`,
-			want: noMatch,
+			want: "5:9-5:18: " + noMatch,
 		},
 		{
 			name: "RejectsAnArityNoArmAccepts",
 			src:  decl + `val v = Box(1, 2, 3)`,
-			want: noMatch,
+			want: "5:9-5:21: " + noMatch,
 		},
 		{
 			// The arity matches the second arm and the element does not, which is still a
 			// no-match rather than a per-argument mismatch against that arm.
 			name: "RejectsAWrongElementAtAMatchingArity",
 			src:  decl + `val v = Box("x", 2)`,
-			want: noMatch,
+			want: "5:9-5:20: " + noMatch,
 		},
 	}
 	for _, tt := range tests {
@@ -3335,7 +3338,7 @@ func TestInferClassConstructorOverloads(t *testing.T) {
 				return
 			}
 			require.Len(t, errs, 1)
-			require.Equal(t, tt.want, errs[0].Message())
+			require.Equal(t, tt.want, msgWithSpan(t, errs[0]))
 		})
 	}
 }
@@ -3358,7 +3361,7 @@ func TestInferClassSingleConstructorUnaffected(t *testing.T) {
 	src := "declare class Box {\n  constructor(&mut self, n: number),\n}\nval v = Box(\"x\")"
 	_, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
-	require.Equal(t, `cannot constrain "x" <: number`, errs[0].Message())
+	require.Equal(t, `4:13-4:16: cannot constrain "x" <: number`, msgWithSpan(t, errs[0]))
 }
 
 // An overload arm whose last parameter is an `Array<E>` rest slot checks every argument the
@@ -3368,11 +3371,11 @@ func TestInferClassSingleConstructorUnaffected(t *testing.T) {
 func TestInferClassConstructorOverloadWithARestArm(t *testing.T) {
 	const decl = "declare class Arr {\n" +
 		"  constructor(&mut self, arrayLength: number),\n" +
-		"  constructor(&mut self, ...items: mut Array<string>),\n" +
+		"  constructor(&mut self, ...mut items: Array<string>),\n" +
 		"}\n"
 	const noMatch = "No matching overload for this call\n" +
 		"  fn (arrayLength: number) -> Arr\n" +
-		"  fn (...items: mut Array<string>) -> Arr"
+		"  fn (...items: Array<string>) -> Arr"
 	tests := []struct {
 		name string
 		src  string
@@ -3396,7 +3399,7 @@ func TestInferClassConstructorOverloadWithARestArm(t *testing.T) {
 			// argument at all past the first, so the call resolves clean.
 			name: "RejectsAWrongElement",
 			src:  decl + `val v = Arr("x", true)`,
-			want: noMatch,
+			want: "5:9-5:23: " + noMatch,
 		},
 	}
 	for _, tt := range tests {
@@ -3408,7 +3411,7 @@ func TestInferClassConstructorOverloadWithARestArm(t *testing.T) {
 				return
 			}
 			require.Len(t, errs, 1)
-			require.Equal(t, tt.want, errs[0].Message())
+			require.Equal(t, tt.want, msgWithSpan(t, errs[0]))
 		})
 	}
 }
@@ -3429,9 +3432,9 @@ func TestInferClassSelfType(t *testing.T) {
 			// `Self` inside `class Box<T>` is `Box<T>` and an instance's argument substitutes
 			// for `T` the way it does through any other reference to the class.
 			name:  "MethodReturnOnAGenericClass",
-			src:   "declare class Box<T> {\n  fill(&mut self, value: T) -> Self,\n}\nfn g(b: mut Box<number>) -> Box<number> { return b.fill(1) }",
+			src:   "declare class Box<T> {\n  fill(&mut self, value: T) -> Self,\n}\nfn g(mut b: Box<number>) -> Box<number> { return b.fill(1) }",
 			which: "g",
-			want:  "fn (b: mut Box<number>) -> Box<number>",
+			want:  "fn (b: Box<number>) -> Box<number>",
 		},
 		{
 			name:  "MethodReturnOnANonGenericClass",
@@ -3561,24 +3564,24 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 			src: `
 				class Box { v: number }
 				class C {
-					readonly inner: mut Box,
+					readonly inner: Box,
 					each(&self, cb: fn (c: &C) -> undefined) -> undefined { return undefined },
 				}
-				fn f(c: &C, keep: &mut Array<mut Box>) {
+				fn f(c: &C, keep: &mut Array<Box>) {
 					c.each(fn (x) {
 						keep.push(x.inner)
 						return undefined
 					})
 				}
 			`,
-			want: []string{"cannot use borrowed &mut Box as owned mut Box"},
+			want: []string{"cannot use borrowed &Box as owned Box"},
 		},
 		{
 			name: "a callback reads a field's field through a borrow",
 			src: `
 				class Box { v: number }
 				class C {
-					readonly inner: mut Box,
+					readonly inner: Box,
 					readonly n: number,
 					each(&self, cb: fn (c: &C) -> undefined) -> undefined { return undefined },
 				}
@@ -3606,17 +3609,17 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 			src: `
 				class Box { v: number }
 				class C {
-					readonly inner: mut Box | null,
+					readonly inner: Box | null,
 					each(&self, cb: fn (c: &C) -> undefined) -> undefined { return undefined },
 				}
-				fn f(c: &C, keep: &mut Array<mut Box | null>) {
+				fn f(c: &C, keep: &mut Array<Box | null>) {
 					c.each(fn (x) {
 						keep.push(x.inner)
 						return undefined
 					})
 				}
 			`,
-			want: []string{"cannot constrain mut Box <: mut Box | null"},
+			want: []string{"cannot use borrowed &Box as owned Box | null"},
 		},
 		{
 			// `T` is still a variable when `x.inner` is read, but `c` has already given it
@@ -3624,22 +3627,22 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 			name: "a callback cannot keep a field it reads through a borrowed variable",
 			src: `
 				class Box { v: number }
-				class C { readonly inner: mut Box }
+				class C { readonly inner: Box }
 				declare fn each<T>(v: &T, cb: fn (x: &T) -> undefined) -> undefined
-				fn f(c: &C, keep: &mut Array<mut Box>) {
+				fn f(c: &C, keep: &mut Array<Box>) {
 					each(c, fn (x) {
 						keep.push(x.inner)
 						return undefined
 					})
 				}
 			`,
-			want: []string{"cannot use borrowed &mut Box as owned mut Box"},
+			want: []string{"cannot use borrowed &Box as owned Box"},
 		},
 		{
 			name: "a callback reads a field's field through a borrowed variable",
 			src: `
 				class Box { v: number }
-				class C { readonly inner: mut Box }
+				class C { readonly inner: Box }
 				declare fn each<T>(v: &T, cb: fn (x: &T) -> undefined) -> undefined
 				fn f(c: &C) -> number {
 					var total = 0
@@ -3657,7 +3660,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 			name: "a callback reads through a borrowed variable bound after it",
 			src: `
 				class Box { v: number }
-				class C { readonly inner: mut Box }
+				class C { readonly inner: Box }
 				declare fn each<T>(cb: fn (x: &T) -> undefined, v: &T) -> undefined
 				fn f(c: &C) -> number {
 					var total = 0
@@ -3673,16 +3676,16 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 			name: "a callback cannot keep a field it reads through a borrowed variable bound after it",
 			src: `
 				class Box { v: number }
-				class C { readonly inner: mut Box }
+				class C { readonly inner: Box }
 				declare fn each<T>(cb: fn (x: &T) -> undefined, v: &T) -> undefined
-				fn f(c: &C, keep: &mut Array<mut Box>) {
+				fn f(c: &C, keep: &mut Array<Box>) {
 					each(fn (x) {
 						keep.push(x.inner)
 						return undefined
 					}, c)
 				}
 			`,
-			want: []string{"cannot use borrowed &mut Box as owned mut Box"},
+			want: []string{"cannot use borrowed &Box as owned Box"},
 		},
 		{
 			// `a` and `b` each give `T` a lower bound, so `x.n` reads as `number | string`
@@ -3841,7 +3844,7 @@ func TestInferSelfTypeInAnOverrideCheck(t *testing.T) {
 func TestInferSelfTypeOutsideAClassBody(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f(x: Self) -> number { return 1 }`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "cannot find type `Self`", errs[0].Message())
+	require.Equal(t, "1:9-1:13: cannot find type `Self`", msgWithSpan(t, errs[0]))
 }
 
 // A `-> Self` return is an output position, so the immutable view measures the class's type
@@ -3943,39 +3946,39 @@ func TestInferTypeNamedSelf(t *testing.T) {
 		{
 			name: "Class",
 			src:  "declare class Self {\n  x: number,\n}",
-			want: []string{"a class" + tail},
+			want: []string{"1:15-1:19: a class" + tail},
 		},
 		{
 			name: "Interface",
 			src:  "declare interface Self {\n  x: number,\n}",
-			want: []string{"an interface" + tail},
+			want: []string{"1:19-1:23: an interface" + tail},
 		},
 		{
 			// Interface declarations of one name merge into a single binding, so the report is
 			// against the first rather than once per declaration.
 			name: "MergedInterfaces",
 			src:  "declare interface Self {\n  x: number,\n}\ndeclare interface Self {\n  y: number,\n}",
-			want: []string{"an interface" + tail},
+			want: []string{"1:19-1:23: an interface" + tail},
 		},
 		{
 			name: "TypeAlias",
 			src:  "type Self = number",
-			want: []string{"a type alias" + tail},
+			want: []string{"1:6-1:10: a type alias" + tail},
 		},
 		{
 			name: "Enum",
 			src:  "enum Self { A, B }",
-			want: []string{"an enum" + tail},
+			want: []string{"1:6-1:10: an enum" + tail},
 		},
 		{
 			name: "InANamespace",
 			src:  "namespace Geo {\n  declare class Self {\n    x: number,\n  }\n}",
-			want: []string{"a class" + tail},
+			want: []string{"2:17-2:21: a class" + tail},
 		},
 		{
 			name: "StillBoundAfterTheReport",
 			src:  "declare class Self<T> {\n  v: T,\n}\nfn f(p: Self) -> number { return 1 }",
-			want: []string{"a class" + tail, "class `Self` expects 1 type argument but got 0"},
+			want: []string{"1:15-1:19: a class" + tail, "4:9-4:13: class `Self` expects 1 type argument but got 0"},
 		},
 	}
 	for _, tt := range tests {
@@ -3983,7 +3986,7 @@ func TestInferTypeNamedSelf(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
 			require.Len(t, errs, len(tt.want))
 			for i, want := range tt.want {
-				require.Equal(t, want, errs[i].Message())
+				require.Equal(t, want, msgWithSpan(t, errs[i]))
 			}
 		})
 	}
@@ -4001,19 +4004,19 @@ func TestInferSelfTypeRejectsLifetimeArgs(t *testing.T) {
 		{
 			name: "NoneDeclared",
 			src:  "declare class Box<T> {\n  m(&self) -> Self<'a>,\n}",
-			want: "class `Self` expects 0 lifetime arguments but got 1",
+			want: "2:15-2:23: class `Self` expects 0 lifetime arguments but got 1",
 		},
 		{
 			name: "MoreThanDeclared",
 			src:  "declare class Box<'a, T> {\n  m(&self) -> Self<'a, 'a>,\n}",
-			want: "class `Self` expects 1 lifetime arguments but got 2",
+			want: "2:15-2:27: class `Self` expects 1 lifetime arguments but got 2",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
 			require.Len(t, errs, 1)
-			require.Equal(t, tt.want, errs[0].Message())
+			require.Equal(t, tt.want, msgWithSpan(t, errs[0]))
 		})
 	}
 }
@@ -4077,7 +4080,7 @@ func TestInferClassReadsLaterClassMember(t *testing.T) {
 				class B { m(&self) { return 1 } }
 				val x: string = A(B()).get()
 			`,
-			wantErrs: []string{"cannot constrain 1 <: string"},
+			wantErrs: []string{"4:21-4:33: cannot constrain 1 <: string"},
 		},
 		{
 			name: "InferredReturnMismatch",
@@ -4086,7 +4089,7 @@ func TestInferClassReadsLaterClassMember(t *testing.T) {
 				class B { m(&self) -> number { return 1 } }
 				val x: string = A(B()).get()
 			`,
-			wantErrs: []string{"cannot constrain number <: string"},
+			wantErrs: []string{"4:21-4:33: cannot constrain number <: string"},
 		},
 		{
 			// A and B each read the other, so neither body can be walked first. A's
@@ -4106,7 +4109,7 @@ func TestInferClassReadsLaterClassMember(t *testing.T) {
 				}
 				fn f(a: A) -> string { return a.get() }
 			`,
-			wantErrs: []string{"cannot constrain number <: string"},
+			wantErrs: []string{"12:35-12:42: cannot constrain number <: string"},
 		},
 		{
 			// f and B depend on each other, so f reads m's stub before B's bodies are
@@ -4117,7 +4120,7 @@ func TestInferClassReadsLaterClassMember(t *testing.T) {
 				class B { m(&self) -> number { return 1 }, n(&self, b: B) { return f(b) } }
 				fn g(b: B) -> string { return f(b) }
 			`,
-			wantErrs: []string{"cannot constrain number <: string"},
+			wantErrs: []string{"4:35-4:39: cannot constrain number <: string"},
 		},
 		{
 			name: "MissingMember",
@@ -4125,7 +4128,7 @@ func TestInferClassReadsLaterClassMember(t *testing.T) {
 				class A { readonly b: B, get(&self) -> number { return self.b.z } }
 				class B { readonly n: number }
 			`,
-			wantErrs: []string{"object is missing property: z"},
+			wantErrs: []string{"2:60-2:68: object is missing property: z"},
 		},
 		{
 			name: "MismatchedReturn",
@@ -4133,7 +4136,7 @@ func TestInferClassReadsLaterClassMember(t *testing.T) {
 				class A { readonly b: B, get(&self) -> string { return self.b.m() } }
 				class B { m(&self) -> number { return 1 } }
 			`,
-			wantErrs: []string{"cannot constrain number <: string"},
+			wantErrs: []string{"2:60-2:70: cannot constrain number <: string"},
 		},
 	}
 
@@ -4142,7 +4145,7 @@ func TestInferClassReadsLaterClassMember(t *testing.T) {
 			_, _, errs := inferSource(t, test.src)
 			msgs := make([]string, len(errs))
 			for i, err := range errs {
-				msgs[i] = err.Message()
+				msgs[i] = msgWithSpan(t, err)
 			}
 			if test.wantErrs == nil {
 				require.Empty(t, msgs)

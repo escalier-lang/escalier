@@ -220,7 +220,7 @@ val x = "hi"`
 // An assignment through an optional chain blames the whole target `o?.a` and names the
 // optional chain as the reason.
 func TestBlameOptionalChainAssignmentTarget(t *testing.T) {
-	src := `fn f(o: mut {a: number}) {
+	src := `fn f(mut o: {a: number}) {
     o?.a = 6
 }`
 	_, _, errs := inferSource(t, src)

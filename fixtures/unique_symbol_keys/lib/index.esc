@@ -5,4 +5,4 @@ export class C {
 }
 export val c = C(5)
 export val r = c[sym]
-export fn store(c: mut C, v: number) { c[sym] = v }
+export fn store(mut c: C, v: number) { c[sym] = v }

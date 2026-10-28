@@ -352,7 +352,7 @@ async fn g() {
 			name: "AnnotatedMut",
 			src: `declare fn load() -> Promise<Array<number>>
 async fn g() {
-	val r: mut Array<number> = await load()
+	val mut r: Array<number> = await load()
 	r.push(1)
 }`,
 		},

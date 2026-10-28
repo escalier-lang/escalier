@@ -87,7 +87,7 @@ func TestReturnValueBorrows(t *testing.T) {
 					item: &'a mut {value: number},
 				) -> undefined
 
-				fn build(p: mut {value: number}, q: mut {value: number}) -> &mut {value: number} {
+				fn build(mut p: {value: number}, mut q: {value: number}) -> &mut {value: number} {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p, spare: &mut q}
 					store(&mut a, &mut b)
@@ -98,7 +98,7 @@ func TestReturnValueBorrows(t *testing.T) {
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut {peer: &'a mut {value: number}, spare: &mut {value: number}}, " +
 					"item: &'a mut {value: number}) -> undefined",
-				"build": "fn (p: mut {value: number}, q: mut {value: number}) -> &mut {value: number}",
+				"build": "fn (p: {value: number}, q: {value: number}) -> &mut {value: number}",
 			},
 		},
 		// Returning the borrow field `a.peer` hands out the only path to b, since a dies with
@@ -170,12 +170,12 @@ func TestReturnValueBorrows(t *testing.T) {
 		// Borrowing a parameter and returning the borrow keeps the parameter's lifetime too.
 		"ReturnBorrowOfParamOk": {
 			src: `
-				fn pass(p: mut {x: number}) {
+				fn pass(mut p: {x: number}) {
 					return &mut p
 				}
 			`,
 			want:  nil,
-			types: map[string]string{"pass": "fn (p: mut {x: number}) -> &mut {x: number}"},
+			types: map[string]string{"pass": "fn (p: {x: number}) -> &mut {x: number}"},
 		},
 		// A local that only borrows a parameter records no edge, so the return carries nothing
 		// the escape check tracks and the parameter's lifetime reaches the result.
@@ -337,7 +337,7 @@ func TestReturnValueBorrows(t *testing.T) {
 		// must not.
 		"ReturnOfALocalWhileAnotherIsStoredOut": {
 			src: `
-				fn f(p: mut {node: {peer: &mut {value: number}}}) {
+				fn f(mut p: {node: {peer: &mut {value: number}}}) {
 					val mut b = {value: 0}
 					val mut d = {value: 1}
 					p.node = {peer: &mut d}
@@ -345,7 +345,7 @@ func TestReturnValueBorrows(t *testing.T) {
 				}
 			`,
 			want:  nil,
-			types: map[string]string{"f": "fn (p: mut {node: {peer: &mut {value: number}}}) -> {value: number}"},
+			types: map[string]string{"f": "fn (p: {node: {peer: &mut {value: number}}}) -> {value: number}"},
 		},
 		// Two returns of one local on exclusive branches are each the only path, since only one
 		// of them runs. Neither is a flow-out the other has to account for.
@@ -497,12 +497,12 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 		// carries the caller's lifetime, which outlives the frame.
 		"StoreParamBorrowIntoParamFieldOk": {
 			src: `
-				fn f(p: mut {peer: &mut {value: number}}, q: &mut {value: number}) {
+				fn f(mut p: {peer: &mut {value: number}}, q: &mut {value: number}) {
 					p.peer = q
 				}
 			`,
 			want:  nil,
-			types: map[string]string{"f": "fn (p: mut {peer: &mut {value: number}}, q: &mut {value: number}) -> undefined"},
+			types: map[string]string{"f": "fn (p: {peer: &mut {value: number}}, q: &mut {value: number}) -> undefined"},
 		},
 		// Storing an owned carrier that holds a local borrow into a parameter's field is a
 		// connected-component move, not an escape: the stored `{peer: &mut b}` owns a

@@ -92,10 +92,10 @@ func TestAMemberResolvesThroughAnAliasOrTypeof(t *testing.T) {
 		},
 		{
 			// A borrow the expansion uncovers is peeled, so the alias reads the way the
-			// inline `mut {…}` spelling of the same type does.
+			// inline `&mut {…}` spelling of the same type does.
 			name: "AMethodBehindAnAliasNamingABorrow",
 			src: `
-				type M = mut { m(&self) -> number }
+				type M = &mut { m(&self) -> number }
 				declare val v: M
 				val r = v.m()
 			`,
@@ -140,7 +140,7 @@ func TestAMemberResolvesThroughAnAliasOrTypeof(t *testing.T) {
 func TestASetterWriteResolvesThroughAnAlias(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		type C = { get v(&self) -> number, set v(&mut self, x: number) }
-		declare val c: mut C
+		declare val mut c: C
 		fn f() { c.v = 5 }
 	`)
 	require.Empty(t, errorMessagesOf(errs))

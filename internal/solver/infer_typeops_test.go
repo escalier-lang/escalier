@@ -3927,8 +3927,8 @@ func TestInferResidualObjectSurvivesPropertyWalks(t *testing.T) {
 		name string
 		src  string
 	}{
-		{"MappedIntoOwnedMutCell", "type P = {x: number}\nvar v: mut {[K]: P[K] for K in keyof P} = {x: 1}"},
-		{"SpreadIntoOwnedMutCell", "fn f<T>(p: T) -> number { return 1 }\nvar v: mut {...T} = {x: 1}"},
+		{"MappedIntoOwnedMutCell", "type P = {x: number}\nvar mut v: {[K]: P[K] for K in keyof P} = {x: 1}"},
+		{"SpreadIntoOwnedMutCell", "fn f<T>(p: T) -> number { return 1 }\nvar mut v: {...T} = {x: 1}"},
 		{"MappedBehindBorrow", "type P = {x: number}\nfn f(a: &{[K]: P[K] for K in keyof P}) -> number { return 1 }"},
 		{"MappedInUnion", "type P = {x: number}\nfn f(a: {[K]: P[K] for K in keyof P} | number) -> number { return 1 }"},
 		{"MappedReturnPosition", "type P = {x: number}\nfn f() -> {[K]: P[K] for K in keyof P} { return {x: 1} }"},
