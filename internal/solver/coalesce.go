@@ -1767,7 +1767,7 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 			return false
 		}
 		for i := range a.Params {
-			if a.Params[i].Optional != b.Params[i].Optional || a.Params[i].Rest != b.Params[i].Rest || !equalTypeWith(a.Params[i].Type, b.Params[i].Type, ctx) {
+			if a.Params[i].Optional != b.Params[i].Optional || a.Params[i].Rest != b.Params[i].Rest || a.Params[i].Moved != b.Params[i].Moved || !equalTypeWith(a.Params[i].Type, b.Params[i].Type, ctx) {
 				return false
 			}
 		}

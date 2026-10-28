@@ -850,3 +850,28 @@ func TestMeetFuncsKeepsMovedMarker(t *testing.T) {
 	require.True(t, fn.Params[0].Moved)
 	require.False(t, a.Params[0].Moved)
 }
+
+// TestMovedMarkerDistinguishesArrows asserts that two arrows differing only in a parameter's
+// Moved marker compare unequal and sort apart, and that their meet keeps the marker.
+func TestMovedMarkerDistinguishesArrows(t *testing.T) {
+	arrow := func(moved bool) *soltype.FuncType {
+		return &soltype.FuncType{
+			Params: []*soltype.FuncParam{{
+				Pattern: &soltype.IdentPat{Name: "p"},
+				Type:    &soltype.ObjectType{},
+				Moved:   moved,
+			}},
+			Ret: &soltype.UndefinedType{},
+		}
+	}
+	plain, moved := arrow(false), arrow(true)
+
+	require.False(t, equalType(plain, moved))
+	require.NotZero(t, compareType(plain, moved))
+
+	met, ok := (&Context{}).meetFusedAtoms(plain, moved)
+	require.True(t, ok)
+	fn, isFunc := met.(*soltype.FuncType)
+	require.True(t, isFunc)
+	require.True(t, fn.Params[0].Moved)
+}
