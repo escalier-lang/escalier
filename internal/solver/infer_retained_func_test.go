@@ -3,6 +3,7 @@ package solver
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -168,4 +169,53 @@ func TestInferRetainedFuncErrors(t *testing.T) {
 			require.Equal(t, tt.want, errs[0].Message())
 		})
 	}
+}
+
+// TestRetainedFuncAtom asserts that a function type's retention lifetime keeps it apart from
+// the same function type without one. The two compare unequal, sort apart, and do not fuse
+// into one arrow.
+func TestRetainedFuncAtom(t *testing.T) {
+	fnWith := func(lt soltype.Lifetime) *soltype.FuncType {
+		return &soltype.FuncType{Ret: &soltype.UndefinedType{}, Lt: lt}
+	}
+	retained := fnWith(soltype.Static)
+	plain := fnWith(nil)
+
+	require.False(t, equalType(retained, plain))
+	require.NotZero(t, compareType(retained, plain))
+	require.False(t, fusableFuncs(retained, plain))
+}
+
+// TestExtrudeRetainedFunc asserts that extruding a function type copies its retention
+// lifetime down to the target level, the way a borrow's lifetime is copied.
+func TestExtrudeRetainedFunc(t *testing.T) {
+	c := &Context{}
+	low := c.freshVar(0)
+	lt := c.freshLifetime(1)
+	fn := &soltype.FuncType{Ret: &soltype.UndefinedType{}, Lt: lt}
+
+	require.Empty(t, c.Constrain(low, fn))
+
+	require.Len(t, low.UpperBounds, 1)
+	extruded, ok := low.UpperBounds[0].(*soltype.FuncType)
+	require.True(t, ok)
+	extrudedLt, ok := extruded.Lt.(*soltype.LifetimeVar)
+	require.True(t, ok)
+	require.NotSame(t, lt, extrudedLt)
+	require.Equal(t, 0, extrudedLt.Level)
+}
+
+// TestExtrudeStaticRetainedFunc asserts that extruding a function type keeps a 'static
+// retention lifetime as it is. The level-1 return forces the extrusion.
+func TestExtrudeStaticRetainedFunc(t *testing.T) {
+	c := &Context{}
+	low := c.freshVar(0)
+	fn := &soltype.FuncType{Ret: c.freshVar(1), Lt: soltype.Static}
+
+	require.Empty(t, c.Constrain(low, fn))
+
+	require.Len(t, low.UpperBounds, 1)
+	extruded, ok := low.UpperBounds[0].(*soltype.FuncType)
+	require.True(t, ok)
+	require.Same(t, soltype.Static, extruded.Lt)
 }
