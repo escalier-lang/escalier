@@ -44,7 +44,7 @@ override declare global {
 //
 //   override declare module "fp-ts" {
 //       @all_pure
-//       export fn unsafePush(arr: mut Array<number>, x: number) -> undefined
+//       export fn unsafePush(arr: Array<number>, x: number) -> undefined
 //   }
 override declare module "fp-ts" {
     declare fn unsafePush(arr: number, x: number) -> undefined

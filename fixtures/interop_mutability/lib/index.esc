@@ -5,9 +5,8 @@
 
 // ---------------------------------------------------------------------------
 // Tier 2 / principle #2: Readonly collection variants. In Escalier source,
-// `Array<T>` is the immutable form; `mut Array<T>` is the mutable form.
-// (Across the interop boundary, TS `ReadonlyArray<T>` maps to `Array<T>`
-// and TS `Array<T>` maps to `mut Array<T>`.)
+// an `Array<T>` is mutable only through a `mut` binding such as
+// `mut xs: Array<T>`.
 // ---------------------------------------------------------------------------
 
 // Non-mutating methods on an immutable Array work on an immutable receiver.
@@ -29,7 +28,7 @@ class Point {
     y: number,
 }
 
-fn cannot_write_readonly_field_on_mut(p: mut Point) {
+fn cannot_write_readonly_field_on_mut(mut p: Point) {
     p.x = 0     // EXPECTED-ERROR (tier 2: readonly prop)
     p.y = 1     // OK: y is not readonly, p is mutable
 }
@@ -55,7 +54,7 @@ fn cannot_mutate_immutable_date(d: Date) {
     d.setHours(12)          // EXPECTED-ERROR (tier 4: Date.setHours mutates)
 }
 
-fn mutate_mutable_date(d: mut Date) {
+fn mutate_mutable_date(mut d: Date) {
     d.setHours(12)          // OK: receiver is mutable
 }
 
@@ -70,7 +69,7 @@ fn to_sorted_on_immutable(xs: Array<number>) -> Array<number> {
 }
 
 fn cannot_sort_immutable(xs: Array<number>) {
-    xs.sort()               // EXPECTED-ERROR (tier 2: sort requires mut Array)
+    xs.sort()               // EXPECTED-ERROR (tier 2: sort requires a mut binding)
 }
 
 // ---------------------------------------------------------------------------

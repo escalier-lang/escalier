@@ -120,7 +120,7 @@ func TestInferSpreadTupleRest(t *testing.T) {
 // ungroundable. A spread splices a positional list, so its operand has to name one — a tuple,
 // an array, or a parameter constrained to either. An unconstrained `T` does not, and the
 // committed tree writes the constrained form throughout, as `Function.bind` does with
-// `bind<A: mut Array<any>, B: mut Array<any>, R>(this: fn (...args: [...A, ...B]) -> R, …)`.
+// `bind<A: Array<any>, B: Array<any>, R>(this: fn (...args: [...A, ...B]) -> R, …)`.
 // Nothing enforces that today, which is #1533; writing it correctly here keeps these cases
 // resting on a program that issue would still accept.
 const ungroundableRestDecl = "declare fn f<T: Array<number>>(...args: [...T, string]) -> number\n"

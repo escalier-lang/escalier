@@ -119,7 +119,7 @@ func TestInferInexactTupleAnnotationVariableWidthSubtyping(t *testing.T) {
 // value is uniquely owned, so the excess-member diagnostic is the only error.
 func TestInferMutInexactAnnotationStillChecksExcess(t *testing.T) {
 	t.Run("object", func(t *testing.T) {
-		_, _, errs := inferSource(t, `val r: mut {x: number, ...} = {x: 1, y: 2}`)
+		_, _, errs := inferSource(t, `val mut r: {x: number, ...} = {x: 1, y: 2}`)
 		msgs := make([]string, len(errs))
 		for i, e := range errs {
 			msgs[i] = msgWithSpan(t, e)
@@ -127,7 +127,7 @@ func TestInferMutInexactAnnotationStillChecksExcess(t *testing.T) {
 		require.Equal(t, []string{"1:41-1:42: object has extra property: y"}, msgs)
 	})
 	t.Run("tuple", func(t *testing.T) {
-		_, _, errs := inferSource(t, `val t: mut [number, ...] = [1, 2, 3]`)
+		_, _, errs := inferSource(t, `val mut t: [number, ...] = [1, 2, 3]`)
 		msgs := make([]string, len(errs))
 		for i, e := range errs {
 			msgs[i] = msgWithSpan(t, e)
@@ -139,37 +139,37 @@ func TestInferMutInexactAnnotationStillChecksExcess(t *testing.T) {
 	})
 }
 
-// A freshly constructed literal is uniquely owned, so it may be given an owned-mutable
-// annotation: `val items: mut {x} = {x: 1}` type-checks and the binding is mutable.
+// A freshly constructed literal is uniquely owned, so it may fill an annotated `val mut`
+// binding: `val mut items: {x} = {x: 1}` type-checks and the binding is mutable.
 // The upgrade recurses through nested literals and tuples.
 func TestInferOwnedMutFromFreshLiteral(t *testing.T) {
 	t.Run("object", func(t *testing.T) {
-		values, _, errs := inferSource(t, `val items: mut {x: number} = {x: 1}`)
+		values, _, errs := inferSource(t, `val mut items: {x: number} = {x: 1}`)
 		require.Empty(t, errs)
 		require.Equal(t, "mut {x: number}", values["items"])
 	})
 	t.Run("nested object", func(t *testing.T) {
 		// Deep `mut` makes the upgrade reach every nested literal.
-		values, _, errs := inferSource(t, `val w: mut {p: {x: number}} = {p: {x: 0}}`)
+		values, _, errs := inferSource(t, `val mut w: {p: {x: number}} = {p: {x: 0}}`)
 		require.Empty(t, errs)
 		require.Equal(t, "mut {p: {x: number}}", values["w"])
 	})
 	t.Run("tuple", func(t *testing.T) {
-		values, _, errs := inferSource(t, `val t: mut [number, number] = [1, 2]`)
+		values, _, errs := inferSource(t, `val mut t: [number, number] = [1, 2]`)
 		require.Empty(t, errs)
 		require.Equal(t, "mut [number, number]", values["t"])
 	})
 }
 
 // A non-fresh source that is a consuming MOVE of a uniquely-owned place upgrades into an
-// owned-mutable annotation. `val m: mut {x} = cfg` with cfg dead afterward grants m the
+// annotated `val mut` binding. `val mut m: {x} = cfg` with cfg dead afterward grants m the
 // mutable type, so the write `m.x = 2` succeeds. The move consumes cfg, so the same
 // source with cfg still read afterward is a use-after-move rather than an upgrade error.
 func TestInferOwnedMutFromMovedVariable(t *testing.T) {
 	t.Run("dead source upgrades", func(t *testing.T) {
 		src := `fn f() {
 	val cfg: {x: number} = {x: 1}
-	val m: mut {x: number} = cfg
+	val mut m: {x: number} = cfg
 	m.x = 2
 }`
 		_, _, errs := inferSource(t, src)
@@ -178,7 +178,7 @@ func TestInferOwnedMutFromMovedVariable(t *testing.T) {
 	t.Run("live source is a use-after-move", func(t *testing.T) {
 		src := `fn f() {
 	val cfg: {x: number} = {x: 1}
-	val m: mut {x: number} = cfg
+	val mut m: {x: number} = cfg
 	cfg.x
 }`
 		_, _, errs := inferSource(t, src)
@@ -196,7 +196,7 @@ func TestInferOwnedMutFromMovedVariableNested(t *testing.T) {
 		// mutable, so storing a new number into m.p.x type-checks.
 		src := `fn f() {
 	val cfg = {x: 1}
-	val m: mut {p: {x: number}} = {p: cfg}
+	val mut m: {p: {x: number}} = {p: cfg}
 	m.p.x = 9
 }`
 		_, _, errs := inferSource(t, src)
@@ -205,7 +205,7 @@ func TestInferOwnedMutFromMovedVariableNested(t *testing.T) {
 	t.Run("tuple element is a moved variable", func(t *testing.T) {
 		src := `fn f() {
 	val cfg = {x: 1}
-	val t: mut [number, {x: number}] = [1, cfg]
+	val mut t: [number, {x: number}] = [1, cfg]
 	t
 }`
 		_, _, errs := inferSource(t, src)
@@ -214,7 +214,7 @@ func TestInferOwnedMutFromMovedVariableNested(t *testing.T) {
 	t.Run("live nested source is a use-after-move", func(t *testing.T) {
 		src := `fn f() {
 	val cfg = {x: 1}
-	val m: mut {p: {x: number}} = {p: cfg}
+	val mut m: {p: {x: number}} = {p: cfg}
 	cfg.x
 }`
 		_, _, errs := inferSource(t, src)
@@ -234,7 +234,7 @@ func TestInferOwnedMutFromMovedVariableNested(t *testing.T) {
 func TestInferOwnedMutReassign(t *testing.T) {
 	t.Run("fresh literal", func(t *testing.T) {
 		src := `fn f() {
-	var m: mut {x: number} = {x: 0}
+	var mut m: {x: number} = {x: 0}
 	m = {x: 1}
 	m.x = 2
 }`
@@ -243,7 +243,7 @@ func TestInferOwnedMutReassign(t *testing.T) {
 	})
 	t.Run("moved variable", func(t *testing.T) {
 		src := `fn f() {
-	var m: mut {x: number} = {x: 0}
+	var mut m: {x: number} = {x: 0}
 	val cfg: {x: number} = {x: 1}
 	m = cfg
 	m.x = 2
@@ -253,7 +253,7 @@ func TestInferOwnedMutReassign(t *testing.T) {
 	})
 	t.Run("live source is a use-after-move", func(t *testing.T) {
 		src := `fn f() {
-	var m: mut {x: number} = {x: 0}
+	var mut m: {x: number} = {x: 0}
 	val cfg: {x: number} = {x: 1}
 	m = cfg
 	cfg.x
@@ -268,13 +268,13 @@ func TestInferOwnedMutReassign(t *testing.T) {
 // later read is a use-after-move.
 func TestInferOwnedMutCallArgument(t *testing.T) {
 	t.Run("fresh literal", func(t *testing.T) {
-		src := `fn sink(q: mut {x: number}) {}
+		src := `fn sink(mut q: {x: number}) {}
 fn f() { sink({x: 1}) }`
 		_, _, errs := inferSource(t, src)
 		require.Empty(t, errs)
 	})
 	t.Run("moved variable", func(t *testing.T) {
-		src := `fn sink(q: mut {x: number}) {}
+		src := `fn sink(mut q: {x: number}) {}
 fn f() {
 	val cfg: {x: number} = {x: 1}
 	sink(cfg)
@@ -283,7 +283,7 @@ fn f() {
 		require.Empty(t, errs)
 	})
 	t.Run("live argument is a use-after-move", func(t *testing.T) {
-		src := `fn sink(q: mut {x: number}) {}
+		src := `fn sink(mut q: {x: number}) {}
 fn f() {
 	val cfg: {x: number} = {x: 1}
 	sink(cfg)
@@ -297,7 +297,7 @@ fn f() {
 		// constraint, which pins the nested field invariant, so a narrower field is
 		// rejected rather than silently accepted through the upgrade's covariant view.
 		src := `fn sink(q: mut {a: {x: number | string}}) {}
-fn f(p: mut {a: {x: number}}) { sink(p) }`
+fn f(mut p: {a: {x: number}}) { sink(p) }`
 		_, _, errs := inferSource(t, src)
 		require.Equal(t, []string{"2:38-2:39: cannot constrain string <: number"}, messagesWithSpan(t, errs))
 	})
@@ -332,14 +332,14 @@ func TestInferOwnedMutReturn(t *testing.T) {
 // today, so no case here drives that branch.
 func TestInferOwnedMutFieldWrite(t *testing.T) {
 	t.Run("fresh literal", func(t *testing.T) {
-		src := `fn f(obj: mut {a: {x: number}}) {
+		src := `fn f(mut obj: {a: {x: number}}) {
 	obj.a = {x: 5}
 }`
 		_, _, errs := inferSource(t, src)
 		require.Empty(t, errs)
 	})
 	t.Run("moved variable", func(t *testing.T) {
-		src := `fn f(obj: mut {a: {x: number}}) {
+		src := `fn f(mut obj: {a: {x: number}}) {
 	val cfg: {x: number} = {x: 5}
 	obj.a = cfg
 }`
@@ -347,7 +347,7 @@ func TestInferOwnedMutFieldWrite(t *testing.T) {
 		require.Empty(t, errs)
 	})
 	t.Run("live source is a use-after-move", func(t *testing.T) {
-		src := `fn f(obj: mut {a: {x: number}}) {
+		src := `fn f(mut obj: {a: {x: number}}) {
 	val cfg: {x: number} = {x: 5}
 	obj.a = cfg
 	cfg.x
@@ -377,26 +377,26 @@ func TestInferOwnedMutFieldWrite(t *testing.T) {
 // move to need. A place move does not, and is rejected on the mutability wrapper.
 func TestInferOwnedMutUpgradeNeedsABackingMove(t *testing.T) {
 	t.Run("a fresh literal upgrades at top level, needing no move", func(t *testing.T) {
-		_, _, errs := inferSource(t, `val m: mut {x: number} = {x: 1}`)
+		_, _, errs := inferSource(t, `val mut m: {x: number} = {x: 1}`)
 		require.Empty(t, errs)
 	})
 	t.Run("a place move does not upgrade at top level", func(t *testing.T) {
-		_, _, errs := inferSource(t, "val cfg = {x: 1}\nval m: mut {x: number} = cfg")
+		_, _, errs := inferSource(t, "val cfg = {x: 1}\nval mut m: {x: number} = cfg")
 		require.Equal(t,
-			[]string{"2:12-2:13: cannot constrain immutable object <: mutable object"},
+			[]string{"2:12-2:23: cannot constrain immutable object <: mutable object"},
 			messagesWithSpan(t, errs))
 	})
 	t.Run("the same place move upgrades inside a function, and consumes", func(t *testing.T) {
 		const src = `fn f() {
 	val cfg = {x: 1}
-	val m: mut {x: number} = cfg
+	val mut m: {x: number} = cfg
 }`
 		_, _, errs := inferSource(t, src)
 		require.Empty(t, errs)
 
 		_, _, errs = inferSource(t, `fn f() {
 	val cfg = {x: 1}
-	val m: mut {x: number} = cfg
+	val mut m: {x: number} = cfg
 	cfg.x
 }`)
 		require.Equal(t, []string{"4:2-4:7: use of moved value 'cfg'"}, messagesWithSpan(t, errs))
@@ -411,16 +411,16 @@ func TestInferOwnedMutUpgradeNeedsABackingMove(t *testing.T) {
 func TestInferOwnedMutNestedOwnedMutRejected(t *testing.T) {
 	t.Run("declaration", func(t *testing.T) {
 		src := `fn f() {
-	val inner: mut {x: number} = {x: 0}
-	val m: mut {p: {x: number | string}} = {p: inner}
+	val mut inner: {x: number} = {x: 0}
+	val mut m: {p: {x: number | string}} = {p: inner}
 	m
 }`
 		_, _, errs := inferSource(t, src)
-		require.Equal(t, []string{"3:13-3:14: cannot constrain immutable object <: mutable object"}, messagesWithSpan(t, errs))
+		require.Equal(t, []string{"3:13-3:38: cannot constrain immutable object <: mutable object"}, messagesWithSpan(t, errs))
 	})
 	t.Run("return", func(t *testing.T) {
 		src := `fn f() -> mut {p: {x: number | string}} {
-	val inner: mut {x: number} = {x: 0}
+	val mut inner: {x: number} = {x: 0}
 	return {p: inner}
 }`
 		_, _, errs := inferSource(t, src)
@@ -429,7 +429,7 @@ func TestInferOwnedMutNestedOwnedMutRejected(t *testing.T) {
 	t.Run("call argument", func(t *testing.T) {
 		src := `declare fn take(a: mut {p: {x: number | string}}) -> number
 fn f() -> number {
-	val inner: mut {x: number} = {x: 0}
+	val mut inner: {x: number} = {x: 0}
 	return take({p: inner})
 }`
 		_, _, errs := inferSource(t, src)
@@ -462,7 +462,7 @@ func TestInferOwnedMutArgumentIntoAWiderParam(t *testing.T) {
 	})
 	t.Run("a pre-existing mut cell does not, so the widening is rejected", func(t *testing.T) {
 		src := take + `fn g() -> number {
-	val cfg: mut {x: number} = {x: 1}
+	val mut cfg: {x: number} = {x: 1}
 	return take(cfg)
 }`
 		_, _, errs := inferSource(t, src)
@@ -476,13 +476,13 @@ func TestInferOwnedMutArgumentIntoAWiderParam(t *testing.T) {
 // consumes a moved source, so a later read of it is a use-after-move.
 func TestInferOwnedMutModuleGlobalWrite(t *testing.T) {
 	t.Run("fresh literal", func(t *testing.T) {
-		src := `var sink: mut {x: number} = {x: 0}
+		src := `var mut sink: {x: number} = {x: 0}
 fn f() { sink = {x: 1} }`
 		_, _, errs := inferSource(t, src)
 		require.Empty(t, errs)
 	})
 	t.Run("moved variable", func(t *testing.T) {
-		src := `var sink: mut {x: number} = {x: 0}
+		src := `var mut sink: {x: number} = {x: 0}
 fn f() {
 	val cfg: {x: number} = {x: 1}
 	sink = cfg
@@ -491,7 +491,7 @@ fn f() {
 		require.Empty(t, errs)
 	})
 	t.Run("live source is a use-after-move", func(t *testing.T) {
-		src := `var sink: mut {x: number} = {x: 0}
+		src := `var mut sink: {x: number} = {x: 0}
 fn f() {
 	val cfg: {x: number} = {x: 1}
 	sink = cfg
@@ -505,20 +505,18 @@ fn f() {
 // A fully fresh literal is uniquely owned at every level, so it upgrades to a
 // nested `mut` target the same way it does to a top-level one.
 func TestInferOwnedMutNestedMutFieldUpgraded(t *testing.T) {
-	values, _, errs := inferSource(t, `val w: mut {p: {x: number}} = {p: {x: 0}}`)
+	values, _, errs := inferSource(t, `val mut w: {p: {x: number}} = {p: {x: 0}}`)
 	require.Empty(t, errs)
 	require.Equal(t, "mut {p: {x: number}}", values["w"])
 }
 
-// A `mut T` annotation lowers to a borrow (RefType{Mut: true}); a function
-// parameter typed `mut {x: number}` originates a fresh borrow lifetime (D2), and a
-// member read through it peels the borrow to resolve the inner property. The lifetime
-// is unused in the result, since the body returns a number, not the borrow, so D4's
-// display-time elision drops it and the param renders as plain owned-mutable `mut {…}`.
+// A `mut` parameter binds an owned-mutable `{x: number}` in the body, and a member read
+// through it resolves the inner property. The signature carries the plain type, so the
+// parameter renders as `p: {x: number}`.
 func TestInferMutObjectAnnotation(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(p: mut {x: number}) -> number { return p.x }`)
+	values, _, errs := inferSource(t, `fn f(mut p: {x: number}) -> number { return p.x }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: mut {x: number}) -> number", values["f"])
+	require.Equal(t, "fn (p: {x: number}) -> number", values["f"])
 }
 
 // `unknown` in annotation position resolves to the top of the lattice. Every type is a subtype of

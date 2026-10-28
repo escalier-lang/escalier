@@ -1,5 +1,5 @@
 // Test readonly properties in object types
-val config: mut {readonly apiUrl: string, timeout: number} = {
+val mut config: {readonly apiUrl: string, timeout: number} = {
     apiUrl: "https://api.example.com",
     timeout: 5000,
 }
@@ -11,7 +11,7 @@ class Point {
 }
 
 // Create instances
-val point: mut Point = Point(10, 20)
+val mut point: Point = Point(10, 20)
 val immutablePoint = Point(5, 15)
 
 // Test that we can read readonly properties
@@ -38,4 +38,4 @@ class Counter {
     },
 }
 
-val counter: mut Counter = Counter(0)
+val mut counter: Counter = Counter(0)

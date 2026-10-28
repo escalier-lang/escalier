@@ -276,7 +276,7 @@ func TestGlobalWriteMutTransition(t *testing.T) {
 	t.Run("mut_into_immutable_global_then_mutate_error", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			var sink = {x: 0}
-			fn f(p: mut {x: number}) {
+			fn f(mut p: {x: number}) {
 				sink = p
 				p.x = 5
 			}
@@ -296,7 +296,7 @@ func TestGlobalWriteMutTransition(t *testing.T) {
 	t.Run("dead_in_body_source_no_inbody_conflict", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			var sink = {x: 0}
-			fn f(p: mut {x: number}) {
+			fn f(mut p: {x: number}) {
 				sink = p
 			}
 		`)
@@ -489,7 +489,7 @@ func TestTransitionWiringNoSpuriousErrors(t *testing.T) {
 		// A mut and an immutable parameter are seeded into the alias tracker, and a
 		// field write through the mut param walks the prop-assignment path.
 		"params_seeded": `
-			fn test(p: mut {x: number}, q: {y: number}) {
+			fn test(mut p: {x: number}, q: {y: number}) {
 				p.x = 5
 				q.y
 			}
@@ -511,7 +511,7 @@ func TestTransitionWiringNoSpuriousErrors(t *testing.T) {
 // p and consumes it, so the later `p.x = 5` is a use-after-move.
 func TestTransitionWiringReportsMoveError(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn test(p: mut {x: number}) {
+		fn test(mut p: {x: number}) {
 			val q: {x: number} = p
 			p.x = 5
 			q.x
@@ -549,7 +549,7 @@ func TestCollectOuterBindingsPreludeCache(t *testing.T) {
 }
 
 // TestMutabilityTransitionsFromSource exercises the mutability-exclusivity rule from
-// source. Each case mints an owned-mutable value with `val x: mut {…} = {…}`, borrows
+// source. Each case mints an owned-mutable value with `val mut x: {…} = {…}`, borrows
 // it with `&`/`&mut`, and asserts the transition verdict. The aliasing cases borrow
 // explicitly, since binding an owned value into another owned binding moves it rather
 // than aliasing it, which the move-engine tests cover separately. want is empty for the
@@ -564,7 +564,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 		"Rule1_SourceLive_Error": {
 			src: `
 				fn test() {
-					val items: mut {x: number} = {x: 1}
+					val mut items: {x: number} = {x: 1}
 					val snapshot: &{x: number} = items
 					items.x = 2
 					snapshot
@@ -578,7 +578,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 		"Rule1_SourceLiveThroughDo_Error": {
 			src: `
 				fn test() {
-					val items: mut {x: number} = {x: 1}
+					val mut items: {x: number} = {x: 1}
 					val snapshot: &{x: number} = do { items }
 					items.x = 2
 					snapshot
@@ -591,7 +591,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 		"Rule1_SourceLiveThroughTry_Error": {
 			src: `
 				fn test() {
-					val items: mut {x: number} = {x: 1}
+					val mut items: {x: number} = {x: 1}
 					val snapshot: &{x: number} = try { items } catch { e => items }
 					items.x = 2
 					snapshot
@@ -605,7 +605,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 		"Rule1_SourceDead_OK": {
 			src: `
 				fn test() {
-					val items: mut {x: number} = {x: 1}
+					val mut items: {x: number} = {x: 1}
 					items.x = 2
 					val snapshot: &{x: number} = items
 					snapshot
@@ -635,7 +635,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 		// lifetime sort accepts it.
 		"UnforcedLifetime_LocalReborrow_OK": {
 			src: `
-				fn f(p: mut {x: number}) {
+				fn f(mut p: {x: number}) {
 					val snap: {x: number} = p
 				}
 			`,
@@ -648,7 +648,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 				var sink = {x: 0}
 				fn f(p: {x: number}) {
 				  sink = p
-				  val snap: mut {x: number} = p
+				  val mut snap: {x: number} = p
 				  snap.x = 5
 				}
 			`,
@@ -660,7 +660,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 		"Rule3_MultipleMutableAliases_OK": {
 			src: `
 				fn test() {
-					val a: mut {x: number} = {x: 1}
+					val mut a: {x: number} = {x: 1}
 					val b: &mut {x: number} = a
 					b.x = 2
 					a.x
@@ -672,7 +672,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 		"ChainAlias_TargetLive_Error": {
 			src: `
 				fn test() {
-					val a: mut {x: number} = {x: 1}
+					val mut a: {x: number} = {x: 1}
 					val b: &mut {x: number} = a
 					val c: &{x: number} = b
 					a.x = 2
@@ -687,8 +687,8 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 		"Conditional_IfElse_Error": {
 			src: `
 				fn test(cond: boolean) {
-					val a: mut {x: number} = {x: 0}
-					val b: mut {x: number} = {x: 1}
+					val mut a: {x: number} = {x: 0}
+					val mut b: {x: number} = {x: 1}
 					val c: {x: number} = if cond { a } else { b }
 					a.x = 5
 					c
@@ -703,7 +703,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 		"Rule1_TargetDead_OK": {
 			src: `
 				fn test() {
-					val items: mut {x: number} = {x: 1}
+					val mut items: {x: number} = {x: 1}
 					val snapshot: &{x: number} = items
 					items.x = 2
 				}
@@ -715,9 +715,9 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 		"Conditional_SourceMutInTwoSets_Error": {
 			src: `
 				fn test(cond: boolean) {
-					val a: mut {x: number} = {x: 0}
-					val b: mut {x: number} = {x: 1}
-					val c: mut {x: number} = if cond { a } else { b }
+					val mut a: {x: number} = {x: 0}
+					val mut b: {x: number} = {x: 1}
+					val mut c: {x: number} = if cond { a } else { b }
 					val frozen: &{x: number} = c
 					c.x = 3
 					frozen
@@ -746,7 +746,7 @@ func TestRule2TransitionFromSource(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		fn test() {
 			val config: {x: number} = {x: 1}
-			val mutableConfig: mut {x: number} = config
+			val mut mutableConfig: {x: number} = config
 			mutableConfig.x = 5
 			config.x
 		}
@@ -769,7 +769,7 @@ func TestMutabilityTransitionReassignFromSource(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			fn f() {
 				var snap: {x: number} = {x: 0}
-				val items: mut {x: number} = {x: 1}
+				val mut items: {x: number} = {x: 1}
 				snap = items
 				items.x = 2
 				snap
@@ -786,7 +786,7 @@ func TestMutabilityTransitionReassignFromSource(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			fn f() {
 				var snap: {x: number} = {x: 0}
-				val items: mut {x: number} = {x: 1}
+				val mut items: {x: number} = {x: 1}
 				items.x = 2
 				snap = items
 				snap
@@ -812,7 +812,7 @@ func TestBorrowPhaseExclusion(t *testing.T) {
 		"ImmutableBorrowOfMutable_OK": {
 			src: `
 				fn test() {
-					val a: mut {x: number} = {x: 1}
+					val mut a: {x: number} = {x: 1}
 					val s: &{x: number} = a
 					s
 				}
@@ -824,7 +824,7 @@ func TestBorrowPhaseExclusion(t *testing.T) {
 		"ImmutableBorrowWhileMutableLive_Error": {
 			src: `
 				fn test() {
-					val a: mut {x: number} = {x: 1}
+					val mut a: {x: number} = {x: 1}
 					val m: &mut {x: number} = a
 					val s: &{x: number} = a
 					m.x = 2
@@ -841,7 +841,7 @@ func TestBorrowPhaseExclusion(t *testing.T) {
 		"MultipleMutableBorrows_OK": {
 			src: `
 				fn test() {
-					val a: mut {x: number} = {x: 1}
+					val mut a: {x: number} = {x: 1}
 					val b: &mut {x: number} = a
 					val c: &mut {x: number} = a
 					b.x = 2
@@ -877,9 +877,9 @@ func TestPhaseConflictUnderConditionalMove(t *testing.T) {
 		// conditional use-after-move.
 		"SomePathsMove_ConflictSurvives": {
 			src: `
-				fn sink(p: mut {x: number}) {}
+				fn sink(mut p: {x: number}) {}
 				fn test(cond: boolean) {
-					val a: mut {x: number} = {x: 1}
+					val mut a: {x: number} = {x: 1}
 					if cond {
 						sink(a)
 					} else {
@@ -902,9 +902,9 @@ func TestPhaseConflictUnderConditionalMove(t *testing.T) {
 		// reported alongside them.
 		"AllPathsMove_ConflictSubsumed": {
 			src: `
-				fn sink(p: mut {x: number}) {}
+				fn sink(mut p: {x: number}) {}
 				fn test() {
-					val a: mut {x: number} = {x: 1}
+					val mut a: {x: number} = {x: 1}
 					sink(a)
 					val snapshot: &{x: number} = a
 					a.x = 2

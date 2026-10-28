@@ -21,7 +21,7 @@ func TestMoveSemantics(t *testing.T) {
 		"ValBindingConsumesSource": {
 			src: `
 				fn test() {
-					val p: mut {x: number} = {x: 0}
+					val mut p: {x: number} = {x: 0}
 					val q = p
 					p.x
 				}
@@ -32,7 +32,7 @@ func TestMoveSemantics(t *testing.T) {
 		"OptionalLinkReadsAMovedBinding": {
 			src: `
 				fn test() {
-					val p: mut {x: number} = {x: 0}
+					val mut p: {x: number} = {x: 0}
 					val q = p
 					p?.x
 				}
@@ -99,7 +99,7 @@ func TestMoveSemantics(t *testing.T) {
 		},
 		"ValueFieldOfAParameterOk": {
 			src: `
-				fn test(b: mut {v: number}) -> undefined {
+				fn test(mut b: {v: number}) -> undefined {
 					val n = b.v
 					val m = b.v
 				}
@@ -130,7 +130,7 @@ func TestMoveSemantics(t *testing.T) {
 		"BorrowBindingKeepsSource": {
 			src: `
 				fn test() {
-					val p: mut {x: number} = {x: 0}
+					val mut p: {x: number} = {x: 0}
 					val q = &p
 					p.x
 				}
@@ -140,7 +140,7 @@ func TestMoveSemantics(t *testing.T) {
 		"BorrowAnnotationKeepsSource": {
 			src: `
 				fn test() {
-					val p: mut {x: number} = {x: 0}
+					val mut p: {x: number} = {x: 0}
 					val q: &{x: number} = p
 					p.x
 				}
@@ -337,7 +337,7 @@ func TestMoveSemantics(t *testing.T) {
 		"FieldStoreConsumesSource": {
 			src: `
 				fn test() {
-					val obj: mut {f: {x: number}} = {f: {x: 0}}
+					val mut obj: {f: {x: number}} = {f: {x: 0}}
 					val p = {x: 1}
 					obj.f = p
 					p.x
@@ -353,7 +353,7 @@ func TestMoveSemantics(t *testing.T) {
 			src: `
 				fn store(p: {x: number}) {}
 				fn test(cond: boolean) {
-					val p: mut {x: number} = {x: 0}
+					val mut p: {x: number} = {x: 0}
 					if cond {
 						store(p)
 					} else {
@@ -386,7 +386,7 @@ func TestMoveSemantics(t *testing.T) {
 		"MoveWithLiveBorrowRejected": {
 			src: `
 				fn test() {
-					val p: mut {x: number} = {x: 0}
+					val mut p: {x: number} = {x: 0}
 					val r: &mut {x: number} = p
 					val q: {x: number} = p
 					r.x = 5
@@ -467,7 +467,7 @@ func TestMoveSemantics(t *testing.T) {
 			src: `
 				fn test() {
 					val pair = {a: {id: 1}, b: {id: 2}}
-					val obj: mut {f: {id: number}} = {f: {id: 0}}
+					val mut obj: {f: {id: number}} = {f: {id: 0}}
 					obj.f = pair.a
 					pair.b.id
 					pair.a.id
@@ -586,16 +586,16 @@ func TestFreezeMove(t *testing.T) {
 // owned-mutable `p` into a plain `val q` moves the value into an immutable owner and
 // consumes `p`. With `p` never used again, the move produces no error. `q` is
 // owned-immutable, so the function returns the value at the frozen type
-// `fn (p: mut {x: number}) -> {x: number}`. This is the mirror of
+// `fn (p: {x: number}) -> {x: number}`. This is the mirror of
 // TestInferValMutThawFromVariable, which thaws an owned-immutable source into an
 // owned-mutable binding.
 func TestFreezeMoveAllowed(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(p: mut {x: number}) {
+	values, _, errs := inferSource(t, `fn f(mut p: {x: number}) {
   val q = p
   return q
 }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: mut {x: number}) -> {x: number}", values["f"])
+	require.Equal(t, "fn (p: {x: number}) -> {x: number}", values["f"])
 }
 
 // An argument a rest slot gathers is carried out of the frame the way one passed to a bare

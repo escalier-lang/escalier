@@ -32,29 +32,29 @@ func TestReadonlyWriteDiagnostic(t *testing.T) {
     readonly x: number,
     y: number,
 }
-fn f(p: mut Point) { p.x = 0 }`,
+fn f(mut p: Point) { p.x = 0 }`,
 			want: []string{"5:22-5:25: cannot assign to 'x' because it is a readonly property"},
 		},
 		{
 			name: "ThroughModuleLevelVal",
-			src: `val config: mut {readonly apiUrl: string} = {apiUrl: "a"}
+			src: `val mut config: {readonly apiUrl: string} = {apiUrl: "a"}
 fn f() { config.apiUrl = "b" }`,
 			want: []string{"2:10-2:23: cannot assign to 'apiUrl' because it is a readonly property"},
 		},
 		{
 			name: "ThroughObjectParam",
-			src:  `fn f(obj: mut {readonly a: number}) { obj.a = 5 }`,
+			src:  `fn f(mut obj: {readonly a: number}) { obj.a = 5 }`,
 			want: []string{"1:39-1:44: cannot assign to 'a' because it is a readonly property"},
 		},
 		{
 			name: "ThroughMappedReadonlyType",
 			src: `type RO<T> = {readonly [P]: T[P] for P in keyof T}
-fn f(o: mut RO<{a: number}>) { o.a = 5 }`,
+fn f(mut o: RO<{a: number}>) { o.a = 5 }`,
 			want: []string{"2:32-2:35: cannot assign to 'a' because it is a readonly property"},
 		},
 		{
 			name: "ConstantStringIndex",
-			src:  `fn f(obj: mut {readonly a: number}) { obj["a"] = 5 }`,
+			src:  `fn f(mut obj: {readonly a: number}) { obj["a"] = 5 }`,
 			want: []string{"1:39-1:47: cannot assign to 'a' because it is a readonly property"},
 		},
 		{
@@ -65,7 +65,7 @@ fn f(o: mut RO<{a: number}>) { o.a = 5 }`,
 		{
 			name: "SubtypingIntoWritableParam",
 			src: `fn sink(o: mut {a: number}) {}
-fn f(obj: mut {readonly a: number}) { sink(obj) }`,
+fn f(mut obj: {readonly a: number}) { sink(obj) }`,
 			want: []string{"2:44-2:47: readonly field 'a' cannot satisfy a writable field requirement"},
 		},
 	}
