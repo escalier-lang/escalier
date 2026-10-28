@@ -144,8 +144,8 @@ func (v *ltOccVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltype.E
 		v.negTypeDepth++
 	}
 	// A lifetime is written at four kinds of node: the lifetime slot of a borrow, the
-	// retention lifetime of a function type, and the lifetime-argument list of an alias or
-	// class reference. `&'b mut Holder<'a>` writes 'a as an alias argument, and a signature
+	// retention lifetime of a function type, and the lifetime-argument list of an alias
+	// reference or of a class reference. `&'b mut Holder<'a>` writes 'a as an alias argument, and a signature
 	// that also writes it at a borrow ties the two together, so every position has to be
 	// recorded for the relation to be visible.
 	switch t := t.(type) {

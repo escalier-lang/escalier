@@ -3688,19 +3688,13 @@ func (e *extruder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Enter
 		// extrude it here in the wrapper's polarity (M4 D2.5). rewriteRefLifetime then
 		// hands back a RefType carrying the fresh lifetime for the descend path to
 		// rebuild Inner around, or signals an ordinary rebuild when no extrusion was
-		// needed. The cache is allocated on first use so a borrow-free pass pays nothing.
-		if e.ltCache == nil {
-			e.ltCache = map[ltExtrudeKey]*soltype.LifetimeVar{}
-		}
-		return rewriteRefLifetime(r, e.c.extrudeLt(r.Lt, pol, e.lvl, e.ltCache))
+		// needed.
+		return rewriteRefLifetime(r, e.extrudeLifetime(r.Lt, pol))
 	}
 	if ft, ok := t.(*soltype.FuncType); ok && ft.Lt != nil {
 		// A function's retention lifetime is never walked by Accept either, so it
 		// extrudes here in the function's polarity, the same way a borrow's does.
-		if e.ltCache == nil {
-			e.ltCache = map[ltExtrudeKey]*soltype.LifetimeVar{}
-		}
-		if lt := e.c.extrudeLt(ft.Lt, pol, e.lvl, e.ltCache); lt != ft.Lt {
+		if lt := e.extrudeLifetime(ft.Lt, pol); lt != ft.Lt {
 			repl := *ft
 			repl.Lt = lt
 			return soltype.EnterResult{Type: &repl}
@@ -3748,3 +3742,13 @@ func (e *extruder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Enter
 }
 
 func (e *extruder) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+
+// extrudeLifetime extrudes lt to the extruder's level at polarity pol through extrudeLt,
+// sharing one cache across the walk. The cache is allocated on first use, so a pass that
+// meets no lifetime allocates nothing.
+func (e *extruder) extrudeLifetime(lt soltype.Lifetime, pol soltype.Polarity) soltype.Lifetime {
+	if e.ltCache == nil {
+		e.ltCache = map[ltExtrudeKey]*soltype.LifetimeVar{}
+	}
+	return e.c.extrudeLt(lt, pol, e.lvl, e.ltCache)
+}
