@@ -106,7 +106,7 @@ func TestInferClassBasic(t *testing.T) {
 				val mut c = Counter(0)
 				val n = c.increment()
 			`,
-			wantValues: map[string]string{"c": "mut Counter", "n": "number"},
+			wantValues: map[string]string{"c": "Counter", "n": "number"},
 		},
 		{
 			name: "Getter",
@@ -3765,7 +3765,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 					})
 				}
 			`,
-			want: []string{"cannot constrain immutable Box <: mutable object"},
+			want: []string{"cannot constrain immutable Box <: mutable Box"},
 		},
 		{
 			name: "a direct parameter cannot borrow Self",

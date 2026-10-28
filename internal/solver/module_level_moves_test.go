@@ -118,12 +118,6 @@ fn g() -> Array<number> { return xs }`,
 			want: []string{"2:34-2:36: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
 		},
 		{
-			name: "returned as mut",
-			src: `val xs: Array<number> = [1]
-fn g() -> mut Array<number> { return xs }`,
-			want: []string{"2:38-2:40: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
-		},
-		{
 			name: "assigned to a local",
 			src: `val xs: Array<number> = [1]
 fn f() {

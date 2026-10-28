@@ -110,7 +110,7 @@ func TestInferBorrowMutOnImmutableRejected(t *testing.T) {
   return q
 }`)
 	require.Equal(t, []string{
-		"2:11-2:17: cannot constrain immutable object <: mutable object",
+		"2:11-2:17: cannot mutate 'p' because its binding is immutable; declare it as `mut p`",
 	}, messagesWithSpan(t, errs))
 }
 
@@ -132,20 +132,16 @@ func TestInferValMutConstructsOwnedMut(t *testing.T) {
 	require.Equal(t, "fn () -> {x: number}", values["f"])
 }
 
-// `var mut q = {…}` constructs owned-mutable too. The reassignable binding and the
-// mutable value are orthogonal: both widen the literal, so the cell holds the same
-// `mut {x: number}` as the `val mut` form.
-//
-// The `mut` reaches the rendered return here where the `val mut` form's does not. A `var`
-// binding is an inference variable that resolves at coalescing, after the peel on the
-// inferred return has run. #1505 covers closing that gap.
+// `var mut q = {…}` widens the literal the way the `val mut` form does. The reassignable
+// binding and the mutable value are orthogonal, and the returned value carries neither, so
+// the return renders `{x: number}`.
 func TestInferVarMutConstructsOwnedMut(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f() {
   var mut q = {x: 0}
   return q
 }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn () -> mut {x: number}", values["f"])
+	require.Equal(t, "fn () -> {x: number}", values["f"])
 }
 
 // The owned-mutable construction is deep and uniform, reaching nested objects and
@@ -227,7 +223,7 @@ func TestInferVarBindingBorrowsMut(t *testing.T) {
   var q = {x: 0}
   val r = &mut q
 }`,
-			want: []string{"3:11-3:17: cannot constrain immutable object <: mutable object"},
+			want: []string{"3:11-3:17: cannot mutate 'q' because its binding is immutable; declare it as `var mut q`"},
 		},
 	}
 	for name, tc := range tests {
@@ -303,18 +299,6 @@ fn use() {
 	require.Empty(t, errs)
 	require.Equal(t, "fn () -> {x: number}", values["build"])
 	require.Equal(t, "fn () -> {x: number}", values["use"])
-}
-
-// An annotated `-> mut T` still means what it says. Only the INFERRED return is frozen, so a
-// signature that asks for a mutable return keeps it and the caller needs no `val mut` to
-// write through what it gets.
-func TestAnnotatedMutReturnKeepsItsMut(t *testing.T) {
-	values, _, errs := inferSource(t, `fn build() -> mut {x: number} {
-  val mut p = {x: 0}
-  return p
-}`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn () -> mut {x: number}", values["build"])
 }
 
 // Freezing into a `var` binding widens the source's literal fields, since a `var` binding
@@ -456,7 +440,7 @@ fn f(p: {x: number}) {
 }`
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, []string{
-		"5:14-5:20: cannot constrain immutable object <: mutable object",
+		"5:14-5:20: cannot mutate 'p' because its binding is immutable; declare it as `mut p`",
 	}, messagesWithSpan(t, errs))
 }
 

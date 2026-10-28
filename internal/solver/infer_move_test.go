@@ -577,7 +577,7 @@ func TestFreezeMove(t *testing.T) {
 		}
 	`)
 	require.Equal(t, []string{
-		"6:4-6:11: cannot constrain immutable object <: mutable object",
+		"6:4-6:11: cannot mutate 'q' because its binding is immutable; declare it as `val mut q`",
 		"7:4-7:7: use of moved value 'p'",
 	}, messagesWithSpan(t, errs))
 }

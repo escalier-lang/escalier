@@ -650,6 +650,24 @@ func TestHoverFromSolver(t *testing.T) {
 			expected: "`mut p: {x: number}`",
 		},
 		{
+			name:  "DestructuredMutShorthandReadInFunction",
+			files: map[string]string{"lib/a.esc": "val {mut a, b} = {a: {x: 1}, b: {x: 2}}\nexport fn f() -> number { return a.x + b.x }"},
+			open:  "lib/a.esc", line: 1, col: 33,
+			expected: "`mut a: {x: number}`",
+		},
+		{
+			name:  "DestructuredShorthandReadInFunction",
+			files: map[string]string{"lib/a.esc": "val {mut a, b} = {a: {x: 1}, b: {x: 2}}\nexport fn f() -> number { return a.x + b.x }"},
+			open:  "lib/a.esc", line: 1, col: 39,
+			expected: "`b: {x: 2}`",
+		},
+		{
+			name:  "DestructuredMutKeyValueReadInFunction",
+			files: map[string]string{"lib/a.esc": "val {a: mut c} = {a: {x: 1}}\nexport fn f() -> number { return c.x }"},
+			open:  "lib/a.esc", line: 1, col: 33,
+			expected: "`mut c: {x: number}`",
+		},
+		{
 			name:  "AnnotatedValMut",
 			files: map[string]string{"bin/main.esc": "val mut p: {x: number} = {x: 1}"},
 			open:  "bin/main.esc", line: 0, col: 8,
@@ -671,7 +689,7 @@ func TestHoverFromSolver(t *testing.T) {
 		},
 		{
 			// A call moves its argument only into a concrete owned shape, so the `mut` on a
-			// union parameter leaves the binding immutable.
+			// union parameter leaves the binding immutable, and the hover shows no `mut`.
 			name: "MutUnionParam",
 			files: map[string]string{
 				"lib/point.esc": "export fn f(mut p: {x: number} | {y: number}) -> number { return 1 }",
@@ -695,6 +713,15 @@ func TestHoverFromSolver(t *testing.T) {
 			},
 			open: "bin/main.esc", line: 0, col: 9,
 			expected: "`fn (a: number, b: number) -> number`",
+		},
+		// The checker binds `self` with no declaration, so the hover shows its type alone.
+		{
+			name: "SelfRead",
+			files: map[string]string{
+				"lib/c.esc": "export class C { n: number, get(self) -> number { return self.n } }",
+			},
+			open: "lib/c.esc", line: 0, col: 58,
+			expected: "`{n: number, get(self) -> number}`",
 		},
 		{
 			name: "LibParam",

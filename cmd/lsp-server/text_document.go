@@ -283,37 +283,56 @@ func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.
 }
 
 // hoverText renders the hover for node, whose display type is t. A binding, or a read
-// of one, renders as `name: T`. A binding that owns a mutable value shows that on its
-// name as `mut p: {x: number}`, so its type carries no `mut`. Any other node renders
-// as its type alone.
+// of one, renders as `name: T`. A mutable binding shows that on its name as
+// `mut p: {x: number}`, since a value's mutability belongs to its binding rather than
+// its type. Any other node renders as its type alone.
 func hoverText(info *solver.Info, node ast.Node, t soltype.Type) string {
-	name, ok := hoverBindingName(info, node)
+	name, mut, ok := hoverBinding(info, node)
 	if !ok {
 		return soltype.PrintAsScheme(t)
 	}
-	if ref, isRef := t.(*soltype.RefType); isRef && ref.Mut && ref.Lt == nil {
-		return "mut " + name + ": " + soltype.PrintAsScheme(ref.Inner)
+	if mut {
+		return "mut " + name + ": " + soltype.PrintAsScheme(t)
 	}
 	return name + ": " + soltype.PrintAsScheme(t)
 }
 
-// hoverBindingName returns the name node binds or reads. ok is false when node neither
-// binds a name nor reads one a `val`, `var`, or parameter binding declared.
-func hoverBindingName(info *solver.Info, node ast.Node) (string, bool) {
+// hoverBinding returns the name node binds or reads, and whether that binding is mutable.
+// ok is false when node neither binds a name nor reads one a `val`, `var`, or parameter
+// binding declared.
+func hoverBinding(info *solver.Info, node ast.Node) (name string, mut bool, ok bool) {
 	switch n := node.(type) {
 	case *ast.IdentPat:
-		return n.Name, true
+		return n.Name, info.BindsMut(n), true
 	case *ast.IdentExpr:
 		decl, found := info.DeclOf(n)
 		if !found {
-			return "", false
+			return "", false, false
 		}
-		switch decl.(type) {
-		case *ast.VarDecl, ast.Pat, *ast.ObjShorthandPat:
-			return n.Name, true
+		switch decl := decl.(type) {
+		case *ast.VarDecl:
+			// A module-level read resolves to the whole declaration, so find the leaf of its
+			// pattern that binds the name.
+			mut := false
+			ast.ForEachLeafBinding(decl.Pattern, func(name string, leaf ast.Node) {
+				if name != n.Name {
+					return
+				}
+				switch leaf := leaf.(type) {
+				case *ast.IdentPat:
+					mut = info.BindsMut(leaf)
+				case *ast.ObjShorthandPat:
+					mut = leaf.Mutable
+				}
+			})
+			return n.Name, mut, true
+		case *ast.IdentPat:
+			return n.Name, info.BindsMut(decl), true
+		case *ast.ObjShorthandPat:
+			return n.Name, decl.Mutable, true
 		}
 	}
-	return "", false
+	return "", false, false
 }
 
 func addr[T any](x T) *T {

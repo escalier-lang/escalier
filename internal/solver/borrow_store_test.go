@@ -422,13 +422,6 @@ func TestCallStoreEdgePositions(t *testing.T) {
 // without naming a field: an array element, a promise's resolved value, and a generator's
 // yield. Each stores at the container holding it, so the store lands at the tuple slot the
 // payload sits in and passing that tuple to a consuming call follows the edge.
-//
-// Every case also reports one constrain error unrelated to the store. `&mut a` over a tuple
-// literal whose element is a bare name does not read as a mutable tuple, a pre-existing
-// limitation of the deep-mut rule rather than anything the store recorder does. The same shape
-// with a borrow element, TestCallStoreEdgePositions/StoreIntoTupleElement, reports only the
-// escape. #1270 tracks it, and the constrain error drops out of these expectations once the
-// unannotated `val mut` arm accepts a moved place inside a literal.
 func TestCallStoreEdgePayloadPositions(t *testing.T) {
 	tests := map[string]struct {
 		payload  string
@@ -455,7 +448,6 @@ func TestCallStoreEdgePayloadPositions(t *testing.T) {
 			`, tc.payload, tc.declared, tc.declared)
 			_, _, errs := inferSource(t, src)
 			require.Equal(t, []string{
-				"10:12-10:18: cannot constrain immutable tuple <: mutable tuple",
 				"11:11-11:12: borrowed value 'b' does not live long enough to escape the function",
 			}, messagesWithSpan(t, errs))
 		})

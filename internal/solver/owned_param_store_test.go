@@ -199,7 +199,7 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 					store(&mut p, &mut b)
 				}
 			`,
-			want: []string{"8:12-8:18: cannot constrain immutable object <: mutable object"},
+			want: []string{"8:12-8:18: cannot mutate 'p' because its binding is immutable; declare it as `mut p`"},
 		},
 	}
 	for name, tc := range tests {

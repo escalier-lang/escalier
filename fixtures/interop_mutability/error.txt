@@ -1,24 +1,24 @@
-lib/index.esc:95:5: cannot constrain immutable Cache <: mutable Cache
+lib/index.esc:95:5: cannot mutate 'c' because its binding is immutable; declare it as `mut c`
 
 95:     c.getOrInsert("k", 0)   // EXPECTED-ERROR (tier 6 exception)
         ^^^^^^^^^^^^^
 
-lib/index.esc:55:5: cannot constrain immutable Date <: mutable Date
+lib/index.esc:55:5: cannot mutate 'd' because its binding is immutable; declare it as `mut d`
 
 55:     d.setHours(12)          // EXPECTED-ERROR (tier 4: Date.setHours mutates)
         ^^^^^^^^^^
 
-lib/index.esc:20:5: cannot constrain immutable Array<number> <: mutable Array<number>
+lib/index.esc:20:5: cannot mutate 'xs' because its binding is immutable; declare it as `mut xs`
 
 20:     xs.push(1)  // EXPECTED-ERROR (tier 2)
         ^^^^^^^
 
-lib/index.esc:128:5: cannot constrain immutable Widget <: mutable Widget
+lib/index.esc:128:5: cannot mutate 'w' because its binding is immutable; declare it as `mut w`
 
 128:    w.render()              // EXPECTED-ERROR (tier 8: defaults to mutating)
         ^^^^^^^^
 
-lib/index.esc:73:5: cannot constrain immutable Array<number> <: mutable Array<number>
+lib/index.esc:73:5: cannot mutate 'xs' because its binding is immutable; declare it as `mut xs`
 
 73:     xs.sort()               // EXPECTED-ERROR (tier 2: sort requires a mut binding)
         ^^^^^^^

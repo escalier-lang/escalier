@@ -6,9 +6,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// NewRef collapses the degenerate immutable-no-lifetime cell to the bare inner, and
-// keeps the wrapper for every meaningful borrow. Lt is always nil in C1, so the
-// only meaningful borrow constructible here is the owned-mutable one.
+// NewRef returns the bare inner when no lifetime names a borrow, since an owned value
+// carries no mutability of its own, and keeps the wrapper for every borrow.
 func TestNewRef(t *testing.T) {
 	obj := &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: &PrimType{Prim: NumPrim}}}}
 
@@ -16,12 +15,17 @@ func TestNewRef(t *testing.T) {
 		require.Same(t, obj, NewRef(false, nil, obj))
 	})
 
-	t.Run("owned-mutable keeps the wrapper", func(t *testing.T) {
-		got := NewRef(true, nil, obj)
+	t.Run("mutable no-lifetime collapses to bare inner", func(t *testing.T) {
+		require.Same(t, obj, NewRef(true, nil, obj))
+	})
+
+	t.Run("a mutable borrow keeps the wrapper", func(t *testing.T) {
+		lt := &LifetimeVar{ID: 1}
+		got := NewRef(true, lt, obj)
 		r, ok := got.(*RefType)
 		require.True(t, ok, "a mutable borrow stays a *RefType")
 		require.True(t, r.Mut)
-		require.Nil(t, r.Lt)
+		require.Same(t, lt, r.Lt)
 		require.Same(t, obj, r.Inner)
 	})
 }
@@ -45,8 +49,7 @@ func TestUnwrapRef(t *testing.T) {
 }
 
 // UnwrapRefs answers for a whole set at once, so every rejection is a case where one
-// borrow cannot stand in for all of them. Only a borrow carrying a lifetime counts, which
-// is what separates a real borrow from an owned-mutable cell.
+// borrow cannot stand in for all of them. Only a borrow carrying a lifetime counts.
 func TestUnwrapRefs(t *testing.T) {
 	objX := &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: &PrimType{Prim: NumPrim}}}}
 	objY := &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "y", Type: &PrimType{Prim: StrPrim}}}}
@@ -87,11 +90,6 @@ func TestUnwrapRefs(t *testing.T) {
 		{
 			name:  "a plain value is not a borrow",
 			types: []Type{borrow(false, ltA, objX), objY},
-		},
-		{
-			// An owned-mutable `mut {…}` cell carries no lifetime, so it is a value.
-			name:  "an owned-mutable cell is not a borrow",
-			types: []Type{borrow(false, ltA, objX), borrow(true, nil, objY)},
 		},
 		{
 			name:  "an empty set names no borrow",

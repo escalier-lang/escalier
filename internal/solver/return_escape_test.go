@@ -45,17 +45,16 @@ func TestReturnValueBorrows(t *testing.T) {
 			want:  nil,
 			types: map[string]string{"build": "fn () -> {value: number}"},
 		},
-		// A signature may still ask to hand the value out mutably. Every return operand is
-		// uniquely owned, so the immutable-to-mutable upgrade grants it.
-		"ReturnDirectBorrowUnderAMutAnnotation": {
+		// An owned return annotation takes the borrow's pointee the same way.
+		"ReturnDirectBorrowUnderAnOwnedAnnotation": {
 			src: `
-				fn f() -> mut {value: number} {
+				fn f() -> {value: number} {
 					val mut q = {value: 1}
 					return &mut q
 				}
 			`,
 			want:  nil,
-			types: map[string]string{"f": "fn () -> mut {value: number}"},
+			types: map[string]string{"f": "fn () -> {value: number}"},
 		},
 		// The caller decides mutability, which is what makes the immutable default workable.
 		// A plain `val` keeps the returned value frozen; `val mut` thaws it.

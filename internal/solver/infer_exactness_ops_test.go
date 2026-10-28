@@ -346,10 +346,10 @@ func TestInferExactnessIntrinsics(t *testing.T) {
 			name: "InexactThroughMut",
 			src: `
 				type Point = {x: number}
-				type Result = Inexact<mut Point>
+				type Result = Inexact<&mut Point>
 			`,
-			wantSymbolic: "Inexact<mut Point>",
-			wantExpanded: "mut {x: number, ...}",
+			wantSymbolic: "Inexact<&mut Point>",
+			wantExpanded: "&mut {x: number, ...}",
 		},
 		{
 			// An intersection's exactness is its members', so the operator reaches each of them.
@@ -631,7 +631,6 @@ func TestInferExactOnBorrowedNonFinalClassErrors(t *testing.T) {
 		ann  string
 	}{
 		{"Bare", "Exact<Point>"},
-		{"OwnedMut", "Exact<mut Point>"},
 		{"MutBorrow", "Exact<&mut Point>"},
 	}
 	for _, tt := range tests {

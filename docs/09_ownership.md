@@ -17,12 +17,14 @@ possible.
 
 At each point in the program, an object, tuple, array, or class instance is
 either owned by a binding or borrowed from an owner. The distinction is written
-in the type.
+in the type. A borrow's mutability is part of its type too. An owned value's
+mutability is not, since it belongs to the binding that owns the value, so the
+owned column below shows a binding.
 
 | | owned | borrowed |
 |---|---|---|
-| **immutable** | `{x: number}` | `&{x: number}` / `&'a {x: number}` |
-| **mutable** | `mut {x: number}` | `&mut {x: number}` / `&'a mut {x: number}` |
+| **immutable** | `val p: {x: number}` | `&{x: number}` / `&'a {x: number}` |
+| **mutable** | `val mut p: {x: number}` | `&mut {x: number}` / `&'a mut {x: number}` |
 
 - **Owned** — the binding is the value's owner and the value's lifetime is the
   binding's own region.
@@ -40,11 +42,12 @@ in a borrow, ownership does not apply to them, and they are freely duplicated.
 
 1. **Freshly produced values are owned, and immutable by default.** An object,
    tuple, or array literal and a class constructor call all yield a value the
-   binding owns. Opt into mutability at the binding pattern, `val mut p = ...`,
-   or with a `mut` annotation.
+   binding owns. Opt into mutability at the binding, as in `val mut p = ...` or
+   a `mut p` parameter. A binding is mutable only when it is written `mut`, and
+   `mut` never appears inside an owned type.
 2. **A parameter is owned or borrowed according to its annotation.** `p: &T` and
-   `p: &mut T` borrow, and the caller keeps the value. A bare `p: T` or
-   `p: mut T` is consuming: the signature declares an ownership transfer. A
+   `p: &mut T` borrow, and the caller keeps the value. A bare `p: T` is
+   consuming: the signature declares an ownership transfer. A
    `mut p: T` parameter consumes its argument the same way and has the same type
    as `p: T`. The `mut` lets the body write the value it now owns. An
    unannotated parameter is inferred from whether the body lets the value escape.
@@ -63,7 +66,7 @@ repeating the pointee's shape:
 
 ```esc
 val q = &p       // q: &Point — immutable borrow
-val r = &mut p   // r: &mut Point — mutable borrow; requires p to be owned-mutable
+val r = &mut p   // r: &mut Point — mutable borrow; requires `val mut p`
 ```
 
 Passing an **owned** value to a borrowing parameter takes the same `&` or `&mut`,
@@ -352,8 +355,8 @@ val mut thawed = frozen   // thaw: consumes frozen, mutable again
 thawed.peers[0].value = 7
 ```
 
-Neither transition costs anything at runtime. The value is unchanged and only the
-type is stricter or looser. Soundness comes from the move: the freeze requires
+Neither transition costs anything at runtime. The value is unchanged, and only the
+mutability of the binding that owns it changes. Soundness comes from the move: the freeze requires
 every mutable path to be dead, and the thaw requires no live immutable observer.
 
 The "only binding" requirement is load-bearing, and the checker enforces it by

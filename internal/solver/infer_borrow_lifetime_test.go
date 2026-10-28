@@ -152,7 +152,7 @@ func TestInferFieldWriteToImmutableObjectRejected(t *testing.T) {
 }`
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, []string{
-		"2:3-2:10: cannot constrain immutable object <: mutable object",
+		"2:3-2:10: cannot mutate 'o' because its binding is immutable; declare it as `mut o`",
 	}, messagesWithSpan(t, errs))
 }
 
