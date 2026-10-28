@@ -3,6 +3,7 @@ package solver
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -819,4 +820,33 @@ fn f() {
 			require.Equal(t, tt.want, messagesWithSpan(t, errs))
 		})
 	}
+}
+
+// TestMeetFuncsKeepsMovedMarker asserts that meeting two arrows with equal parameter types
+// marks a parameter Moved when only the second arrow's parameter is Moved, and leaves the
+// first arrow's parameters unchanged. The returns differ so the two arrows are not equal
+// and the meet builds a new arrow.
+func TestMeetFuncsKeepsMovedMarker(t *testing.T) {
+	param := func(moved bool) *soltype.FuncParam {
+		return &soltype.FuncParam{
+			Pattern: &soltype.IdentPat{Name: "p"},
+			Type:    &soltype.ObjectType{},
+			Moved:   moved,
+		}
+	}
+	a := &soltype.FuncType{
+		Params: []*soltype.FuncParam{param(false)},
+		Ret:    &soltype.PrimType{Prim: soltype.NumPrim},
+	}
+	b := &soltype.FuncType{
+		Params: []*soltype.FuncParam{param(true)},
+		Ret:    &soltype.PrimType{Prim: soltype.StrPrim},
+	}
+
+	met, ok := (&Context{}).meetFuncs(a, b)
+	require.True(t, ok)
+	fn, isFunc := met.(*soltype.FuncType)
+	require.True(t, isFunc)
+	require.True(t, fn.Params[0].Moved)
+	require.False(t, a.Params[0].Moved)
 }
