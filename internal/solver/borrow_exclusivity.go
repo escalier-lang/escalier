@@ -206,6 +206,22 @@ func (e *ImplicitBorrowError) Message() string {
 	return fmt.Sprintf("this value is borrowed by its destination, so write the borrow: `%s`", e.Written)
 }
 
+// OptionalChainBorrowError reports an optional chain that fills a borrow destination without a
+// borrow written. The fix ImplicitBorrowError suggests does not apply, because a borrow of an
+// optional chain such as `&h?.f` is not supported. The program binds the receiver first and
+// borrows the plain read through it, as in `if val k = h { val d = &k.f }`.
+type OptionalChainBorrowError struct {
+	node ast.Node
+}
+
+func (*OptionalChainBorrowError) isSolverError()        {}
+func (e *OptionalChainBorrowError) Span() ast.Span      { return e.node.Span() }
+func (e *OptionalChainBorrowError) Related() []ast.Span { return nil }
+func (e *OptionalChainBorrowError) Message() string {
+	return "this optional chain is borrowed by its destination, and an optional chain cannot be borrowed, " +
+		"so bind the receiver with `if val` and borrow the field through it"
+}
+
 // loan is one borrow the exclusivity check tracks.
 type loan struct {
 	// place is the data the borrow reaches.
@@ -1109,9 +1125,14 @@ func (c *checker) checkBorrowsWritten(src ast.Expr, destT soltype.Type, arg bool
 			}
 			continue
 		}
-		if arg {
+		switch {
+		case hasOptionalLink(r):
+			// `&h?.f` is rejected as a borrow of an optional chain, so suggesting it would
+			// trade this error for that one.
+			c.report(&OptionalChainBorrowError{node: r})
+		case arg:
 			c.report(&ImplicitBorrowArgError{Written: written, node: r})
-		} else {
+		default:
 			c.report(&ImplicitBorrowError{Written: written, node: r})
 		}
 		// A literal element is moved into the literal as the literal is built, before its

@@ -702,6 +702,28 @@ func TestFieldReadThroughBorrow(t *testing.T) {
 			`,
 			want: []string{"3:14-3:17: this value is borrowed by its destination, so write the borrow: `&`"},
 		},
+		// An optional chain still borrows, but `&h?.f` is not supported, so the report tells
+		// the program to bind the receiver first instead of suggesting `&`.
+		"OptionalChain": {
+			src: `
+				fn g(h: &{f: {x: number}} | undefined) {
+					val d = h?.f
+				}
+			`,
+			want: []string{
+				"3:14-3:18: this optional chain is borrowed by its destination, and an optional chain cannot be borrowed, so bind the receiver with `if val` and borrow the field through it",
+			},
+		},
+		// Binding the receiver with `if val` lets the plain read be borrowed.
+		"BoundOptionalReceiverOk": {
+			src: `
+				fn g(h: &{f: {x: number}} | undefined) {
+					if val k = h {
+						val d = &k.f
+					}
+				}
+			`,
+		},
 		// An owned destination rejects the read by T6 alone, since a written `&` would not
 		// fill it either.
 		"OwnedDestinationReportsT6": {
