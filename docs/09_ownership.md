@@ -52,13 +52,11 @@ in a borrow, ownership does not apply to them, and they are freely duplicated.
    as `p: T`. The `mut` lets the body write the value it now owns. An
    unannotated parameter is inferred from whether the body lets the value escape.
    One whose members the body only returns, compares, or computes with, as in
-   `return p.x` or `p.x + 1`, does not escape, so it is a borrow, and
-   `fn read(p) { return p.x }` infers as
-   `fn <T0>(p: &{x: T0}) -> T0`. Any other use leaves the parameter owned,
-   unless that use needs a borrow, as passing it straight to a `&` parameter
-   in `g(p)` does. A
-   function passed straight to a call takes its parameters' types from the
-   callee's signature instead.
+   `return p.x` or `p.x + 1`, does not escape, so it is a borrow.
+   `fn read(p) { return p.x }` infers as `fn <T0>(p: &{x: T0}) -> T0`. Any other
+   use leaves the parameter owned, unless that use needs a borrow, as passing it
+   straight to a `&` parameter in `g(p)` does. A function passed straight to a
+   call takes its parameters' types from the callee's signature instead.
 3. **A bare annotation is owned; a `&` annotation borrows.** This holds in every
    annotation position — a binding, a return type, a field, a parameter. So
    `val q: &{x: number} = &p` borrows `p` and leaves it usable, while

@@ -7,7 +7,8 @@ import (
 )
 
 // TestInferUnannotatedParamOwnership covers which unannotated parameters infer as a borrow. A
-// parameter the body only reads through infers as `&`. Every other use leaves it owned.
+// parameter the body only reads through infers as `&`. Every other use in the table leaves it
+// owned.
 func TestInferUnannotatedParamOwnership(t *testing.T) {
 	tests := []struct {
 		name string

@@ -5,7 +5,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/set"
 )
 
-// paramOnlyReadThrough reports whether the body only reads through the parameter named name.
+// paramOnlyReadThrough reports whether body only reads through the parameter named `name`.
 // That holds when every use of the parameter is the root of a member or element read, as in
 // `p.x` or `p[i].y`, and the read's value goes to one of these places:
 //   - a `return`, as in `return p.x`
@@ -37,6 +37,7 @@ func paramOnlyReadThrough(name string, body *ast.Block) bool {
 // lists. A member or element read passes the mark on to its object. readThrough holds each use
 // of the parameter that is the object of a consumed read. tails holds the last statement of
 // each block nested in the body, and inBody records that the walk has entered the body itself.
+// uses counts the uses of the parameter, and other records a use that is not a read through it.
 type paramReadScanner struct {
 	ast.DefaultVisitor
 	name        string

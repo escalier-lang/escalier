@@ -654,8 +654,8 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		}
 		// F3 makes an unannotated parameter that does not escape a borrow. A parameter the body
 		// only reads through does not escape, so it borrows immutably, as `p` in
-		// `fn read(p) { return p.x }` does. A function passed as a call argument is left alone,
-		// since the callee's signature gives each of its parameters a type.
+		// `fn read(p) { return p.x }` does. A function passed as a call argument keeps a plain
+		// variable for each parameter, since the callee's signature gives each one its type.
 		if v, ok := pt.(*soltype.TypeVarType); ok && !written && !isArg && body != nil && identParamOnlyReadThrough(pat, rest, optional, body) {
 			pt = soltype.NewRef(false, c.ctx.freshLifetime(lvl), v)
 		}
