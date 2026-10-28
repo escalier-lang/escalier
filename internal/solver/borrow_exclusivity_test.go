@@ -549,8 +549,45 @@ func TestExplicitBorrowFlowSites(t *testing.T) {
 				"5:38-5:39: this value is borrowed by its destination, so write the borrow: `&`",
 				"5:49-5:50: this value is borrowed by its destination, so write the borrow: `&`",
 				"6:37-6:38: this value is borrowed by its destination, so write the borrow: `&mut`",
-				"6:13-6:29: cannot constrain immutable object <: mutable object",
 			},
+		},
+		// A source reported for an unwritten `&mut` is checked against the destination as if it
+		// were `&`, so the missing borrow is the one fault reported for its mutability. A wrong
+		// shape is still reported.
+		"MissingMutBorrowWrongShape": {
+			src: `
+				fn g() {
+					val mut q = {y: "a"}
+					val b: &mut {x: number} = do { q }
+				}
+			`,
+			want: []string{
+				"4:37-4:38: this value is borrowed by its destination, so write the borrow: `&mut`",
+				"4:22-4:28: object is missing property: x",
+				"4:32-4:40: object has extra property: y",
+			},
+		},
+		"MissingMutBorrowInReassignment": {
+			src: `
+				fn g(cond: boolean) {
+					val mut q = {x: 2}
+					var b: &mut {x: number} = &mut q
+					b = if cond { q } else { q }
+				}
+			`,
+			want: []string{
+				"5:20-5:21: this value is borrowed by its destination, so write the borrow: `&mut`",
+				"5:31-5:32: this value is borrowed by its destination, so write the borrow: `&mut`",
+			},
+		},
+		"MissingMutBorrowInFieldStore": {
+			src: `
+				fn g(mut h: {slot: &mut {x: number}}) {
+					val mut q = {x: 2}
+					h.slot = do { q }
+				}
+			`,
+			want: []string{"4:20-4:21: this value is borrowed by its destination, so write the borrow: `&mut`"},
 		},
 		// A literal element is checked against the matching slot of the literal's destination,
 		// including when the literal is a call argument or nested in another literal.
@@ -572,7 +609,6 @@ func TestExplicitBorrowFlowSites(t *testing.T) {
 				"7:42-7:43: this value is borrowed by its destination, so write the borrow: `&`",
 				"8:36-8:37: this value is borrowed by its destination, so write the borrow: `&`",
 				"9:64-9:65: this value is borrowed by its destination, so write the borrow: `&mut`",
-				"9:28-9:44: cannot constrain immutable object <: mutable object",
 			},
 		},
 		// An unwritten borrow of a module-level binding reports the missing `&` alone, not also

@@ -2763,7 +2763,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		// Escape runs only when the compatibility check passes, so a rejected store does
 		// not leave the source's lifetime forced to 'static.
 		errsBefore := len(c.errs)
-		c.constrain(e, soltype.CarrierOf(sourceT), targetT)
+		c.constrain(e, soltype.CarrierOf(sourceT), checkTarget(targetT, missing))
 		if len(c.errs) == errsBefore && !missing {
 			// The store aliases the source into a permanent module-level storage location. If the
 			// source's mutability differs from that location's and the source stays live at
@@ -2799,7 +2799,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 			// under the sound borrow checker (#618), will eventually reject it.
 		}
 	} else {
-		c.constrain(e, c.implicitMutBorrow(e.Right, sourceT, targetT), targetT)
+		c.constrain(e, c.implicitMutBorrow(e.Right, sourceT, targetT), checkTarget(targetT, missing))
 	}
 	if c.fn != nil && len(c.errs) == assignErrsBefore && !missing && c.varIDs.Of(target) > 0 {
 		// Track against the binding's own type, not the freshened targetT. The G2
@@ -2965,7 +2965,7 @@ func (c *checker) inferFieldAssign(scope *Scope, lvl int, e *ast.BinaryExpr, obj
 	// that the receiver be mutable and hold the field.
 	if hasDeclared {
 		if !rejected {
-			c.constrain(e.Right, source, writableFieldType(declared))
+			c.constrain(e.Right, source, checkTarget(writableFieldType(declared), missing))
 		}
 		// An initializing write keeps the field readonly in the requirement, which asks only
 		// that the receiver hold the field. A writable field there would reject `self`.
@@ -3126,7 +3126,7 @@ func (c *checker) inferElementAssign(scope *Scope, lvl int, e *ast.BinaryExpr, i
 		return c.checkWrittenBorrow(e.Right, slot)
 	})
 	for _, slot := range slots {
-		c.constrain(e.Right, source, slot)
+		c.constrain(e.Right, source, checkTarget(slot, missing))
 	}
 	if c.fn != nil && len(c.errs) == errsBefore && !missing {
 		c.trackAliasesForPropAssignment(e.Left, e.Right)
@@ -3248,8 +3248,8 @@ func (c *checker) inferAccessorAssign(
 	if setter.SelfParam == nil {
 		c.ownedMutation(e, recv, place)
 	}
-	c.checkWrittenBorrow(e.Right, setter.Param.Type)
-	c.constrain(e.Right, source, setter.Param.Type)
+	missing := c.checkWrittenBorrow(e.Right, setter.Param.Type)
+	c.constrain(e.Right, source, checkTarget(setter.Param.Type, missing))
 	// A concretely owned parameter takes the value out of this frame, so the source
 	// binding is consumed and a later use of it is a use-after-move. This mirrors
 	// consumeCallArgs, since a setter write is a call on the argument side. The move

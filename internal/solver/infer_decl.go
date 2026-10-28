@@ -251,7 +251,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 			if isMutableIdentPat(d.Pattern) && len(heldBorrows(initT)) == 0 {
 				c.reportReadonlyIntoWritable(d.Init, initT, annT)
 			}
-			annT = c.constrainInitAgainstAnnotation(d.Init, initT, annT)
+			annT = c.constrainInitAgainstAnnotation(d.Init, initT, annT, missing)
 			c.checkExcessLiteralMembers(d.Init, initT, annT)
 			initT = annT
 		}
@@ -260,7 +260,8 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 }
 
 // constrainInitAgainstAnnotation constrains a `val`/`var` initializer against its
-// resolved annotation and returns the type the binding adopts.
+// resolved annotation and returns the type the binding adopts. missing says the initializer
+// was already reported for a borrow it left unwritten, as checkTarget describes.
 //
 // A generic function annotation is checked against a fresh instance, so the adopted
 // annotation keeps its declared `<T>` as its only quantifier. See the inline note.
@@ -270,7 +271,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 // destination, as in `val q: {x} = p`, does not alias `p`. The constraint takes the
 // ordinary RefType<:bare arm, which trips BorrowEscapeError. The explicit `&` form
 // `val q: &{x} = &p` is the opt-in for an alias.
-func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT soltype.Type) soltype.Type {
+func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT soltype.Type, missing bool) soltype.Type {
 	// Check a generic function annotation in checking mode, holding each declared type
 	// parameter rigid as a skolem, so `fn (x) { return 5 }` is rejected against
 	// `fn <T>(x: T) -> T` with `cannot constrain 5 <: T`. The check runs under a discard-only
@@ -280,7 +281,7 @@ func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT solt
 		c.blameConstraintErrors(init, c.ctx.trialUnderProbe(initT, c.skolemizeGenericAnn(annT)))
 		return annT
 	}
-	c.constrain(init, c.implicitMutBorrow(init, initT, annT), annT)
+	c.constrain(init, c.implicitMutBorrow(init, initT, annT), checkTarget(annT, missing))
 	return annT
 }
 
