@@ -1097,6 +1097,14 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			return c.constrain(inner, super, seen, false)
 		}
 	}
+	// A value type copies into an immutable borrow of a variable the same way, since it has no
+	// storage for the borrow to share. `fn remember(value) { seen.set("last", value) }` takes
+	// `&'static T0`, and `remember("a")` checks `"a"` against `T0`.
+	if ref, ok := super.(*soltype.RefType); ok && ref.Lt != nil && !ref.Mut && copiesOutOfBorrow(sub) {
+		if inner, ok := ref.Inner.(*soltype.TypeVarType); ok {
+			return c.constrain(sub, inner, seen, false)
+		}
+	}
 
 	// A variable constrained against itself is reflexively true, so it records
 	// nothing. Without this guard the self-edge `T <: T` lands in the variable's own

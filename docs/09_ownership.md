@@ -180,7 +180,8 @@ arguments. An unannotated parameter passed whole to such a destination escapes,
 and the body decides how:
 
 - A parameter the body never writes is a `'static` borrow. The caller writes the
-  borrow and can keep reading the value.
+  borrow and can keep reading the value. A value-type argument such as a string
+  copies and needs nothing written.
 - A `mut` parameter, which the body may write, is owned. The call moves the
   argument.
 

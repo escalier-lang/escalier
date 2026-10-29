@@ -417,6 +417,37 @@ func TestInferOpenEscapeParam(t *testing.T) {
 			`,
 			want: "fn <T0>(value: T0) -> undefined",
 		},
+		{
+			// id's parameter is a fresh variable for each call, which m's own type does not
+			// reach, so the call stores nothing in m.
+			name: "GenericMethodDoesNotEscape",
+			src: `
+				val m = {id: fn <T>(x: T) -> T { return x }}
+				fn remember(value) { m.id(value) }
+				fn go() -> number {
+					val opts = {retries: 3}
+					remember(opts)
+					return opts.retries
+				}
+			`,
+			want: "fn <T0>(value: T0) -> undefined",
+		},
+		{
+			// A value type has no storage to borrow, so it copies into the borrow without a
+			// written `&`. The key escapes into seen too, so it is a `'static` borrow as well.
+			name: "ValueTypeArgumentsCopy",
+			src: `
+				val mut seen = Map()
+				fn remember(key, value) { seen.set(key, value) }
+				fn go() -> number {
+					val k = "a"
+					remember(k, 3)
+					remember("b", 4)
+					return 1
+				}
+			`,
+			want: "fn <T0, T1>(key: &'static T0, value: &'static T1) -> undefined",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

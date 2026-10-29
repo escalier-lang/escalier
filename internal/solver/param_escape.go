@@ -203,14 +203,12 @@ func identParamOnlyReadThrough(pat ast.Pat, rest, optional bool, body *ast.Block
 	return paramOnlyReadThrough(ip.Name, body)
 }
 
-// noteOpenEscapes adds to openEscapes each argument of the call e that is a bare name passed
-// into a destination whose type leaves ownership open and that outlives the frame. fn is the
-// signature the call resolved to, and nil when it resolved to none.
-//
-// Such a destination is a parameter of a method called on a module-level binding, as in
-// `seen.set("last", value)`, where the parameter's type is still an inference variable. A
-// variable is neither owned nor a borrow until a use decides it. The receiver outlives every
-// local, so what the method stores there does too.
+// noteOpenEscapes adds to openEscapes the VarID of each argument of the call e that is a bare
+// name passed to an open destination. An open destination is a parameter of a method called
+// on a module-level binding, where the parameter's type is an inference variable that the
+// receiver's own type reaches. `set` on a `Map()` written with no type arguments has one, so
+// `seen.set("last", value)` records `value`. fn is the signature the call resolved to, and nil
+// when it resolved to none.
 func (c *checker) noteOpenEscapes(scope *Scope, e *ast.CallExpr, fn *soltype.FuncType) {
 	if c.fn == nil || fn == nil {
 		return
@@ -235,7 +233,8 @@ func (c *checker) noteOpenEscapes(scope *Scope, e *ast.CallExpr, fn *soltype.Fun
 		if !ok {
 			continue
 		}
-		if _, open := fn.Params[i].Type.(*soltype.TypeVarType); !open {
+		dest, open := fn.Params[i].Type.(*soltype.TypeVarType)
+		if !open || !typeReachesVar(c.info.TypeOf(recv), dest) {
 			continue
 		}
 		if vid := c.varIDs.Of(id); vid > 0 {
@@ -247,13 +246,12 @@ func (c *checker) noteOpenEscapes(scope *Scope, e *ast.CallExpr, fn *soltype.Fun
 	}
 }
 
-// markOpenEscapeParams decides the type of each parameter in openEscapes that is a bare name
-// with no type annotation, no default, and no Moved mark. A `mut` parameter, which the body
-// may write, stays owned and is marked Moved, so each call moves its argument. Any other
-// such parameter becomes a `'static` immutable borrow of its inferred type, so each call
-// lends its argument for good. params holds the FuncParams built from sigParams, one for
-// one. It reads the body's context, so it runs once the body is walked and before the
-// context is popped.
+// markOpenEscapeParams sets the ownership of each parameter in openEscapes that is a bare name
+// with no type annotation, no default, and no Moved mark. A `mut` parameter stays owned and is
+// marked Moved, so each call moves its argument. Any other such parameter's type T becomes
+// `&'static T`, so each call lends its argument for good. params holds the FuncParams built
+// from sigParams, one for one. It reads the body's context, so it runs once the body is walked
+// and before the context is popped.
 func (c *checker) markOpenEscapeParams(sigParams []*ast.Param, params []*soltype.FuncParam) {
 	if c.fn == nil || c.fn.openEscapes.Len() == 0 {
 		return
@@ -278,3 +276,45 @@ func (c *checker) markOpenEscapeParams(sigParams []*ast.Param, params []*soltype
 		fp.Type = soltype.NewRef(false, soltype.Static, v)
 	}
 }
+
+// typeReachesVar reports whether v occurs in t, either in t's structure or in the bounds of a
+// variable t reaches.
+func typeReachesVar(t soltype.Type, v *soltype.TypeVarType) bool {
+	if t == nil {
+		return false
+	}
+	r := &varReacher{target: v, seen: set.NewSet[*soltype.TypeVarType]()}
+	t.Accept(r, soltype.Positive)
+	return r.found
+}
+
+// varReacher walks a type for typeReachesVar. It descends each variable's bounds itself,
+// since the bounds are not children the type visitor walks.
+type varReacher struct {
+	target *soltype.TypeVarType
+	seen   set.Set[*soltype.TypeVarType]
+	found  bool
+}
+
+func (r *varReacher) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	v, ok := t.(*soltype.TypeVarType)
+	if r.found || !ok {
+		return soltype.EnterResult{SkipChildren: r.found}
+	}
+	if v == r.target {
+		r.found = true
+	}
+	if r.seen.Contains(v) || r.found {
+		return soltype.EnterResult{SkipChildren: true}
+	}
+	r.seen.Add(v)
+	for _, b := range v.LowerBounds {
+		b.Accept(r, pol)
+	}
+	for _, b := range v.UpperBounds {
+		b.Accept(r, pol)
+	}
+	return soltype.EnterResult{SkipChildren: true}
+}
+
+func (r *varReacher) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }

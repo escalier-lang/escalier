@@ -934,8 +934,10 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// so each call moves the argument it passes there.
 		c.markMovedParams(sig.Params, params)
 		// D9 decides an unannotated parameter that escapes where the destination's type
-		// leaves ownership open. It runs after markMovedParams, since a parameter the body
-		// also moves is owned by that move.
+		// leaves ownership open. A parameter the body cannot write is a `'static` borrow, so
+		// the caller keeps reading its value. A `mut` parameter may be written, so it stays
+		// owned. This runs after markMovedParams, since a parameter the body also moves is
+		// owned by that move.
 		c.markOpenEscapeParams(sig.Params, params)
 		retExprs = c.fn.returnExprs
 		throws = c.fn.throws
@@ -2017,6 +2019,9 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 		ret, fn = c.applyCallShape(lvl, e, target.callee, target.fn, target.secondInstance, args)
 	}
 	c.recordCallArgEffects(e, fn, consumeRef, hasConsumeRef)
+	// A module-level receiver outlives every local, so an argument its method stores there
+	// escapes. A destination typed by an inference variable has no ownership yet, so D9 decides
+	// it from the enclosing function's parameter once the body is walked.
 	c.noteOpenEscapes(scope, e, fn)
 	if hasConsumeRef {
 		c.consumeOnceCallee(e, consumeRef)
