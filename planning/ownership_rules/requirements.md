@@ -389,6 +389,9 @@ collector keeps the value alive while any path reaches it, so outliving the owne
 is never an error on its own. The lifetime matters only to E2, which reads it to
 decide how long the path is live. A borrow that flows into module-level state
 gets the lifetime `'static`, so its path stays live for the rest of the program.
+A shared borrow of a place that already has a `'static` shared borrow is itself
+`'static`, as D16 decides. E2 rejects every later write to the place, so the
+second borrow reads a value that never changes again.
 
 In `make` below, the returned borrow outlives `p`, which is accepted. In
 `remember`, the borrow stored in `cache` is `'static`, so `cache` can read `p`
@@ -452,10 +455,29 @@ lifetime that relates an input to an output, or that is `'static`, is rendered.
 Any other lifetime is elided. The rendered signature is always a valid
 annotation that produces the same type when written back.
 
+An unannotated function whose return is a `&` borrow that ties to nothing in
+the signature and is not `'static` gets an owned return, as D16 decides. Only a
+value that nothing outside the call can reach fits that description, so the
+caller may own it.
+
 Each comment below gives the rendered signature:
 
 ```esc
 var sink: &mut {x: number} = &mut {x: 0}
+var shared: &{x: number} = &{x: 0}
+
+fn fresh() {
+    val q = {x: 1}
+    return &q
+}
+// fn () -> {x: number}, since nothing outside the call reaches q
+
+fn kept() {
+    val q = {x: 1}
+    shared = &q
+    return &q
+}
+// fn () -> &'static {x: number}, since shared also reads q
 
 fn read(p: &{x: number}) -> number { return p.x }
 // fn (p: &{x: number}) -> number, since the lifetime connects nothing
@@ -764,7 +786,7 @@ in between.
 ## Decisions
 
 D1 through D8 record behaviour the solver enforces today that no document
-stated. D9 through D15 are design questions the rules left open. Each decided
+stated. D9 through D16 are design questions the rules left open. Each decided
 entry says where its outcome now lives. All of them are now decided. The current
 behaviour comes from reading the code, and the file references point at where
 it lives.
@@ -1213,6 +1235,68 @@ Recommendation: check `&mut e` as the binding it stands for.
 
 Decided: accepted. T7 states it. The checker change is tracked by
 [#2324](https://github.com/escalier-lang/escalier/issues/2324).
+
+### D16. A returned borrow of a value nothing else reaches
+
+L1 lets a borrow outlive the binding that owns its place, so a function may
+return `&b` for a local `b`. The rules do not say what type the caller receives.
+The checker infers an owned return, which is unsound when module-level state
+still reads `b`:
+
+```esc
+var cache: &{x: number} = &{x: 0}
+
+fn h() {
+    val b = {x: 1}
+    cache = &b
+    return &b        // h infers fn () -> {x: 1}
+}
+
+fn k() {
+    val mut r = h()
+    r.x = 5          // writes the value cache still reads
+}
+```
+
+A lifetime says how long one borrow stays usable. It does not say whether
+another path reaches the same value, so the two borrows of `b` above can carry
+different lifetimes. E2 closes that gap. Once a `'static` shared borrow of `b`
+exists, no write to `b` can follow for the rest of the program, so any other
+shared borrow of `b` can be `'static` too.
+
+The options are:
+
+- Infer every returned `&` as a borrow. This is always sound, but `return &b`
+  for a local that nothing else reaches hands the caller a borrow it could
+  safely own.
+- Infer an owned return only when no other borrow of `b` outlives the frame.
+  Combined with treating every shared borrow of a place that has a `'static`
+  shared borrow as `'static`, the lifetime of the returned borrow then records
+  whether anything outside the call reaches the value.
+
+Under the second option, a returned `&` whose lifetime ties to nothing in the
+signature and is not `'static` points at a value only the caller can reach, so
+the return is owned. The answer for a call follows the callee's signature:
+
+- `return same(&b)` with `same<'a>(p: &'a {x: number}) -> &'a {x: number}`
+  stays a borrow. The `'a` result may be a `'static` value rather than `b`, and
+  owning it would alias that value.
+- `return same(&b)` with `same(p: &{x: number}) -> &{x: number}` is owned. The
+  result ties to nothing and is not `'static`. A body that returns `p` under
+  that signature is rejected by L2.
+- A function that returns a borrow of module-level state renders its result as
+  `&'static`, since L3 always renders `'static`.
+
+A bodyless signature is taken at its word, so the declaration converter must
+render `'static` for any returned borrow it cannot vouch for. This entry covers
+`&` returns only. A `&mut` return keeps its current behaviour.
+
+Recommendation: infer an owned return only when nothing outside the call reaches
+the value, and make every shared borrow of a place with a `'static` shared
+borrow `'static`.
+
+Decided: accepted. L1 and L3 state it. The checker change is tracked by
+[#2330](https://github.com/escalier-lang/escalier/issues/2330).
 
 ## Known bugs
 
