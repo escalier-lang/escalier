@@ -231,7 +231,8 @@ type checker struct {
 
 	// weakBindingVars holds the type each binding that did not generalize binds, when that
 	// type is a variable. Every read of such a binding returns this one variable, where a
-	// generalized binding gives each read a fresh copy.
+	// generalized binding gives each read a fresh copy. A module walk starts its own set
+	// and puts the previous one back when it ends.
 	weakBindingVars set.Set[*soltype.TypeVarType]
 
 	// fileScopes holds one scope per file of the module being inferred, keyed by

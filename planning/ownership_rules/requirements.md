@@ -1476,8 +1476,9 @@ binding in these cases:
 
 - An unexported binding has a weak variable that is both writable and
   unresolved.
-- An exported binding has any weak variable that is writable or unresolved.
-  An importer could otherwise write into a type the module's own uses decide.
+- An exported binding has a weak variable that is unresolved, or one that is
+  writable and has no concrete upper bound to cap what a write adds. An
+  importer could otherwise write into a type the module's own uses decide.
 - A weak variable received an owned value from one use and a borrow from
   another. This reports the error T8 gives a join of such branches.
 

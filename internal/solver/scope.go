@@ -47,7 +47,7 @@ type ValueBinding struct {
 	ModuleLevel bool
 	// Weak marks a `val` or `var` that did not generalize, as generalizes decides. Its
 	// single scheme quantifies no variable, so every use shares the variables its type
-	// holds. inferAssign reads it to write a reassignment into those variables.
+	// holds.
 	Weak bool
 	// VarID is the liveness VarID assigned to this binding's name by the function
 	// body's rename pass (M4 G1), or 0 for a binding outside any liveness-analysed

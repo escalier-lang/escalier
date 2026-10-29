@@ -161,6 +161,45 @@ fn make() {
 `,
 			values: map[string]string{"make": `fn () -> Map<"k", 1 | "s">`},
 		},
+		{
+			name: "AGenericFunctionKeepsItsOwnTypeParameter",
+			src: `
+var id = fn <T>(x: T) -> T { return x }
+declare fn mk() -> fn <T>(x: T) -> T
+val made = mk()
+`,
+			values: map[string]string{
+				"id":   "fn <T>(x: T) -> T",
+				"made": "fn <T>(x: T) -> T",
+			},
+		},
+		{
+			name: "AnExportedFunctionACallSettles",
+			src: `
+declare fn twice<T>(f: fn (x: T) -> T) -> fn (x: T) -> T
+export val inc2 = twice(fn (x: number) -> number { return x + 1 })
+`,
+			values: map[string]string{"inc2": "fn (x: number) -> number"},
+		},
+		{
+			name: "AnExportedFunctionNothingSettlesPrintsOnOneLine",
+			src: `
+declare fn wrap<T>(f: fn (x: T) -> T) -> fn (x: T) -> T
+export val same = wrap(fn (x) { return x })
+`,
+			want: []string{
+				"3:12-3:16: cannot infer the type of 'same'; annotate it, as in `val same: fn (x: T0) -> T0 = …`",
+			},
+		},
+		{
+			name: "APatternTestLeavesASharedElementAlone",
+			src: `
+val mk = fn (v) { return [v] }
+val o = mk(5)
+fn f() { return match o[0] { 6 => "six", _ => "other" } }
+`,
+			values: map[string]string{"o": "[5]"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

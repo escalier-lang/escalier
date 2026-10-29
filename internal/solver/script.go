@@ -116,7 +116,8 @@ func (c *checker) inferScriptIn(scope *Scope, script *ast.Script) (*Scope, *Info
 	// Walk the body through inferBlock, the same source-order statement walker a
 	// function body uses, at level 0. inferVarDecl types each initializer one level
 	// deeper and generalizes back to 0, so a top-level binding is a generalized local
-	// exactly like one in a function body walked at its level. inferBlock's tail value
+	// exactly like one in a function body walked at its level. A binding that does not
+	// generalize types its initializer at 0 and binds it as it is. inferBlock's tail value
 	// and divergence flag are discarded, just as inferFunc discards them. A script,
 	// like a function body, produces no value from its last statement.
 	c.inferBlock(scope, 0, scriptBody)

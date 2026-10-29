@@ -155,14 +155,18 @@ func (c *checker) newPathBinder(lvl int, blame ast.Node, root *ucs.Scrutinee, ro
 }
 
 // localScrutinee returns the type a test reads the scrutinee t through. A test adds bounds
-// to a scrutinee variable, as a literal pattern adds its literal. The binding var of a weak
-// binding is shared by every reader, as weakBindingVars describes, so each of them would
-// see those bounds. Such a t is returned as a fresh variable at lvl bounded below by t,
-// which takes the bounds instead. Any other t is returned unchanged. blame is the node the
-// bound between the two is recorded against.
+// to a scrutinee variable, as a literal pattern adds its literal. Two kinds of variable are
+// shared with other readers, which would each see those bounds:
+//   - the binding var of a weak binding, as weakBindingVars describes, and
+//   - a variable outside lvl, such as the element of a weak module-level
+//     `val o = mk(5)` that `match o[0] { … }` reads inside a function.
+//
+// Such a t is returned as a fresh variable at lvl bounded below by t, which takes the
+// bounds instead. Any other t is returned unchanged. blame is the node the bound between
+// the two is recorded against.
 func (c *checker) localScrutinee(lvl int, blame ast.Node, t soltype.Type) soltype.Type {
 	v, isVar := t.(*soltype.TypeVarType)
-	if !isVar || !c.weakBindingVars.Contains(v) {
+	if !isVar || (v.Level >= lvl && !c.weakBindingVars.Contains(v)) {
 		return t
 	}
 	local := c.freshAt(lvl)

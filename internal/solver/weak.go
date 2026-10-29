@@ -82,9 +82,11 @@ type weakReader struct {
 
 // noteWeakReader records the generalized module-level binding b for settleWeakBindings when
 // its type reaches a weak variable at or below lvl. scheme is the scheme b was bound to.
+// Only a weak binding of the module mints a variable at lvl that a later binding can
+// read, so the walk is skipped until the module has one.
 func (c *checker) noteWeakReader(b *componentBinding, scheme TypeScheme, lvl int) {
 	sc, ok := scheme.(*PolyScheme)
-	if !ok || c.weakBindingVars.Len() == 0 {
+	if !ok || len(c.weakBindings) == 0 {
 		return
 	}
 	if len(c.scanWeakVars(b.v, lvl, false).vars) > 0 {
@@ -101,7 +103,7 @@ func (c *checker) noteWeakReader(b *componentBinding, scheme TypeScheme, lvl int
 //     module's functions settled its weak variables on rather than the type they had when
 //     the binding's component closed;
 //  2. reports a weak variable that received both an owned value and a borrow;
-//  3. reports an exported binding that noteWeakBinding found weak variables in, since its
+//  3. reports an exported binding with a weak variable exportedWeakVars selects, since its
 //     type then depends on how the module's functions use it rather than on its
 //     declaration; and
 //  4. reports any other binding that still has an unresolved weak variable a write could
@@ -199,14 +201,17 @@ func (s weakVarScan) unresolvedWritable() []*soltype.TypeVarType {
 }
 
 // exportedWeakVars returns the weak variables an importer of the binding could observe
-// change, in the order the walk reached them. Those are the writable ones and the
-// unresolved ones, since a module that never decides a variable leaves the exported type
-// to whatever its uses add later.
+// change, in the order the walk reached them. Those are the unresolved ones, which a module
+// that never decides them leaves to whatever its uses add later, and the writable ones that
+// no concrete upper bound caps, which a write could still widen. The T of
+// `twice(fn (x: number) -> number { … })` is writable, but `number` caps it from above, so
+// it is settled.
 func (s weakVarScan) exportedWeakVars() []*soltype.TypeVarType {
 	unresolved := set.FromSlice(s.unresolvedAmong(s.vars))
 	var out []*soltype.TypeVarType
 	for _, v := range s.vars {
-		if s.writable.Contains(v) || unresolved.Contains(v) {
+		capped := reachesConcrete(v, soltype.Negative, set.NewSet[*soltype.TypeVarType]())
+		if unresolved.Contains(v) || (s.writable.Contains(v) && !capped) {
 			out = append(out, v)
 		}
 	}
@@ -230,6 +235,7 @@ func (c *checker) scanWeakVars(v *soltype.TypeVarType, lvl int, mut bool) weakVa
 		mut:     mut,
 		seen:    set.NewSet[weakScanKey](),
 		reached: set.NewSet[*soltype.TypeVarType](),
+		binders: set.NewSet[*soltype.TypeVarType](),
 		out:     weakVarScan{writable: set.NewSet[*soltype.TypeVarType]()},
 	}
 	v.Accept(s, soltype.Positive)
@@ -252,6 +258,8 @@ type weakVarScanner struct {
 	mut     bool
 	seen    set.Set[weakScanKey]
 	reached set.Set[*soltype.TypeVarType]
+	// binders holds the type-parameter variables of each function type the walk entered.
+	binders set.Set[*soltype.TypeVarType]
 	out     weakVarScan
 }
 
@@ -273,7 +281,7 @@ func (s *weakVarScanner) EnterType(t soltype.Type, pol soltype.Polarity) soltype
 			return skip
 		}
 		s.seen.Add(key)
-		if t != s.root && t.Level <= s.lvl {
+		if t != s.root && t.Level <= s.lvl && !s.binders.Contains(t) {
 			if !s.reached.Contains(t) {
 				s.reached.Add(t)
 				s.out.vars = append(s.out.vars, t)
@@ -293,6 +301,12 @@ func (s *weakVarScanner) EnterType(t soltype.Type, pol soltype.Polarity) soltype
 	case *soltype.RefType:
 		s.walk(t.Inner, pol, t.Mut)
 		return skip
+	case *soltype.FuncType:
+		// A function type's own type parameters are quantified by the function, so they
+		// are not weak however low their level.
+		for _, tp := range t.TypeParams {
+			s.binders.Add(tp.Var)
+		}
 	case *soltype.ClassType:
 		def, _ := s.ctx.classDef(t.Name)
 		for i, arg := range t.TypeArgs {
@@ -364,11 +378,11 @@ func (c *checker) renderWeakAnnotation(v *soltype.TypeVarType, unresolved []*sol
 	return soltype.PrintWithDeclaredParams(t, params, c.declaredLifetimeParams(t))
 }
 
-// weakAssignTarget returns the type a reassignment of the weak binding b is checked
-// against. Its weak variables that sit inside a type constructor stay variables, so the
-// source's type flows into them. The binding var and any variable that only passes the
-// initializer's type through to it are coalesced to their bounds. `var a = 5` then checks
-// `a = "x"` against `number` and rejects it, where `var id = makeId()` checks
+// weakAssignTarget returns the type a reassignment of the weak module-level binding b is
+// checked against. Its weak variables stay variables, so the source's type flows into
+// them. The exception is the binding var and each variable that only passes the
+// initializer's type through to it, which are coalesced to their bounds. `var a = 5` then
+// checks `a = "x"` against `number` and rejects it, where `var id = makeId()` checks
 // `id = fn (n: number) -> number { … }` against `fn (x: T) -> T` and settles T on
 // `number`.
 //
@@ -409,17 +423,22 @@ func collectPassThrough(v *soltype.TypeVarType, out set.Set[*soltype.TypeVarType
 // inlineWeakVars returns t with each type variable at or below lvl replaced by the
 // coalesced bounds its polarity reads, the union of its lower bounds where t produces it
 // and the intersection of its upper bounds where t consumes it. Every other node is kept.
+//
+// A variable a function type binds as its own type parameter stays, since it is not weak.
+// `var id = fn <T>(x: T) -> T { … }` keeps its T.
 func inlineWeakVars(t soltype.Type, lvl int) soltype.Type {
-	return t.Accept(&weakVarInliner{lvl: lvl}, soltype.Positive)
+	return t.Accept(&weakVarInliner{lvl: lvl, binders: funcTypeParamVars(t)}, soltype.Positive)
 }
 
-// weakVarInliner is the visitor behind inlineWeakVars.
+// weakVarInliner is the visitor behind inlineWeakVars. binders holds the type-parameter
+// variables of every function type in the walked type.
 type weakVarInliner struct {
-	lvl int
+	lvl     int
+	binders set.Set[*soltype.TypeVarType]
 }
 
 func (w *weakVarInliner) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
-	if v, ok := t.(*soltype.TypeVarType); ok && v.Level <= w.lvl {
+	if v, ok := t.(*soltype.TypeVarType); ok && v.Level <= w.lvl && !w.binders.Contains(v) {
 		return soltype.EnterResult{Type: coalesce(v, pol), SkipChildren: true}
 	}
 	return soltype.EnterResult{}

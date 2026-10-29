@@ -1051,10 +1051,11 @@ type MissingInitializerError struct {
 	Decl *ast.VarDecl
 }
 
-// UninferredWeakBindingError fires when a module-level `val` or `var` that does not
-// generalize, such as `val mut seen = Map()`, either is exported or ends the module with a
-// type variable no use decided. Node is the pattern leaf that binds Name, and TypeText is
-// the binding's rendered type, which the message offers as the annotation to write.
+// UninferredWeakBindingError fires for a module-level `val` or `var` that does not
+// generalize, such as `val mut seen = Map()`, when the module leaves its type to uses it
+// cannot see or never decides part of it. settleWeakBindings lists the cases. Node is the
+// pattern leaf that binds Name, and TypeText is the binding's rendered type, which the
+// message offers as the annotation to write.
 type UninferredWeakBindingError struct {
 	Decl     *ast.VarDecl
 	Node     ast.Node
@@ -3157,7 +3158,12 @@ func (e *UninferredWeakBindingError) Message() string {
 	if ip.Mutable {
 		kw += "mut "
 	}
-	init, _ := printer.Print(e.Decl.Init, printer.DefaultOptions())
+	// The initializer is spelled out only when it prints on one line, so the message stays
+	// one line.
+	init, err := printer.Print(e.Decl.Init, printer.DefaultOptions())
+	if err != nil || strings.Contains(init, "\n") {
+		init = "…"
+	}
 	return head + "annotate it, as in `" + kw + ip.Name + ": " + e.TypeText + " = " + init + "`"
 }
 
