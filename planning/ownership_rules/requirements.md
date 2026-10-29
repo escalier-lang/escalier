@@ -591,6 +591,12 @@ parameter does not borrow the function. It only says how long the callee keeps
 its copy. [D10](#d10-recording-that-a-callback-is-not-retained) shows an
 example.
 
+A `fn` type outside a parameter, such as in a binding, a field, an array element,
+or a return type, keeps the function for a lifetime inferred from where the
+value flows, the same way an elided `&` lifetime is inferred, as D17 decides. A
+module-level slot keeps it for `'static`, so storing a plain `fn` parameter
+there is rejected.
+
 E4 adds no column to the exclusivity table, because it does not decide whether
 an operation on `p` is allowed. It decides when a closure's captures count as
 used, and so which row applies. Between calls, the two closure rows apply. They
@@ -787,7 +793,7 @@ in between.
 ## Decisions
 
 D1 through D8 record behaviour the solver enforces today that no document
-stated. D9 through D16 are design questions the rules left open. Each decided
+stated. D9 through D17 are design questions the rules left open. Each decided
 entry says where its outcome now lives. All of them are now decided. The current
 behaviour comes from reading the code, and the file references point at where
 it lives.
@@ -1364,6 +1370,47 @@ the value, using the two rules above.
 
 Decided: accepted. L1 and L3 state it. The checker change is tracked by
 [#2330](https://github.com/escalier-lang/escalier/issues/2330).
+
+### D17. The retention lifetime of a `fn` type outside a parameter
+
+E4 and D10 give a plain `fn` parameter a meaning: the callee only calls the
+function during the call. A `fn` type also appears in a binding, a field, an
+array element, and a return type, and the rules do not say how long those keep
+the function. The checker accepts any plain `fn` there, which lets a body keep
+a call-only parameter past the call:
+
+```esc
+var sink: fn () -> undefined = fn () {}
+
+fn keep(g: fn () -> undefined) {
+    val k: fn () -> undefined = g
+    k()            // harmless, since k lives only in the body
+    sink = g       // keeps g for the rest of the program
+}
+```
+
+The options are:
+
+- Read a plain `fn` outside a parameter as `&'static fn`. This is always sound,
+  but it rejects `val k: fn () -> undefined = g`, which keeps `g` no longer
+  than the call does.
+- Infer the retention lifetime from where the value flows, the same way an
+  elided `&` lifetime is inferred. A module-level slot such as `sink` lives for
+  the rest of the program, so its lifetime is `'static`. A local such as `k`
+  keeps the function only while `k` is live. A return type or a class field
+  takes the lifetime of the caller's result or the instance, which the
+  signature or the class names.
+
+Under the second option, `sink = g` is rejected, since `g` is kept only for the
+call and `sink` needs `'static`. `val k = g; k()` is accepted. L3 renders the
+inferred lifetime the way it renders a borrow's, so `sink` shows as
+`&'static fn () -> undefined` and an unconnected local lifetime is elided.
+
+Recommendation: infer the retention lifetime of a `fn` type outside a parameter
+the way an elided `&` lifetime is inferred.
+
+Decided: accepted. E4 states it. The checker change is tracked by
+[#2342](https://github.com/escalier-lang/escalier/issues/2342).
 
 ## Known bugs
 
