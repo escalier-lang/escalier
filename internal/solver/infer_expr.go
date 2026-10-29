@@ -2744,7 +2744,16 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	// b.Schemes[0]: a reassignable binding is always single-scheme — overload sets
 	// come only from FuncDecls, whose Kind is never VarKind, so they are rejected by
 	// the `b.Kind != ast.VarKind` gate above before reaching here.
-	targetT := c.freshenAll(schemeType(b.Schemes[0]), lvl)
+	var targetT soltype.Type
+	if b.Weak {
+		// A weak binding's variables are shared by every use, so a reassignment writes
+		// into them the way `seen.set` writes into a weak `Map`. The display type is the
+		// wrong target, since it was sealed before this write and its copied variables
+		// would take the write instead.
+		targetT = c.weakAssignTarget(b)
+	} else {
+		targetT = c.freshenAll(schemeType(b.Schemes[0]), lvl)
+	}
 	c.recordType(target, targetT)
 	// A source that fills a borrow binding without a written borrow is reported for that
 	// alone. The reassignment records no alias, borrow edge, or move for it, as for one that
@@ -5395,7 +5404,7 @@ func monoTypeOf(b ValueBinding) (soltype.Type, bool) {
 //
 // Exhaustiveness is checked off the same normalized form by checkCondExhaustive.
 func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Type {
-	scrutinee := c.inferExpr(scope, lvl, e.Target)
+	scrutinee := c.localScrutinee(lvl, e, c.inferExpr(scope, lvl, e.Target))
 	// Snapshot the scrutinee before any arm binds. A literal pattern adds its literal as a
 	// lower bound, which would otherwise leak a phantom member into the coalesced union read
 	// after the walk. Both the coverage check and the arms below a catch-all read their union

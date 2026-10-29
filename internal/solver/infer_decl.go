@@ -705,12 +705,21 @@ func (c *checker) checkExcessLiteralMembers(e ast.Expr, sub, annT soltype.Type) 
 // owns the recursive top-level path of a module (see inferDeclDef). ok=false when there
 // is no initializer.
 //
+// A declaration that does not generalize, as generalizes decides, infers its initializer
+// at lvl instead. Its variables are then weak, so generalizing at lvl quantifies none of
+// them. Each use of the binding shares them, and the enclosing function quantifies them
+// when it generalizes.
+//
 // self is the variable a recursive reference in the initializer reads, or nil when the
 // initializer cannot name the binding. The caller binds self in scope at level lvl+1
 // before the call. The initializer's type flows into self before generalization, so
 // each recursive use constrains the binding's own type.
 func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl, self *soltype.TypeVarType) (ValueBinding, bool) {
-	initType, ok := c.inferVarDeclInit(scope, lvl+1, d, "")
+	initLvl := lvl + 1
+	if !generalizes(d) {
+		initLvl = lvl
+	}
+	initType, ok := c.inferVarDeclInit(scope, initLvl, d, "")
 	if !ok {
 		return ValueBinding{}, false
 	}
@@ -732,10 +741,13 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl, self *solt
 	// Generalizing the ErrorType directly keeps the absorbing recovery binding.
 	_, isErr := initType.(*soltype.ErrorType)
 	if d.Kind == ast.VarKind && d.TypeAnn == nil && !isErr {
-		v := c.freshAt(lvl + 1)
+		v := c.freshAt(initLvl)
 		v.Widenable = true
 		c.constrain(d.Init, initType, v)
 		bound = v
+	}
+	if bv, isVar := bound.(*soltype.TypeVarType); isVar && initLvl == lvl {
+		c.weakBindingVars.Add(bv)
 	}
 	scheme := c.generalize(bound, lvl)
 	// The recorded display type retains any quantified type-parameter vars (it is
@@ -750,6 +762,7 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl, self *solt
 		Sources: []provenance.Provenance{&ast.NodeProvenance{Node: d}},
 		Kind:    d.Kind,
 		Mut:     isMutableIdentPat(d.Pattern),
+		Weak:    initLvl == lvl,
 	}, true
 }
 

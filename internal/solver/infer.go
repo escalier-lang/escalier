@@ -221,6 +221,19 @@ type checker struct {
 	// symbol_owner.go. It is nil outside a walk.
 	symbolOwners map[string]string
 
+	// weakBindings lists the module-level bindings that did not generalize, in the order
+	// the walk bound them. See settleWeakBindings. It is nil outside a walk.
+	weakBindings []weakBinding
+
+	// weakReaders lists the generalized module-level bindings whose type reads a weak
+	// variable, in the order the walk bound them. It is nil outside a walk.
+	weakReaders []weakReader
+
+	// weakBindingVars holds the type each binding that did not generalize binds, when that
+	// type is a variable. Every read of such a binding returns this one variable, where a
+	// generalized binding gives each read a fresh copy.
+	weakBindingVars set.Set[*soltype.TypeVarType]
+
 	// fileScopes holds one scope per file of the module being inferred, keyed by
 	// source id, each carrying that file's import bindings.
 	fileScopes map[int]*Scope
@@ -924,11 +937,12 @@ func (c *checker) popFuncCtx(saved *funcCtx) []soltype.Type {
 // method returns.
 func newChecker() *checker {
 	c := &checker{
-		ctx:          &Context{packages: NewPackageRegistry()},
-		info:         NewInfo(),
-		prov:         newProvTable(),
-		varIDCounter: 1,
-		varIDs:       liveness.NewVarIDs(),
+		ctx:             &Context{packages: NewPackageRegistry()},
+		info:            NewInfo(),
+		prov:            newProvTable(),
+		varIDCounter:    1,
+		varIDs:          liveness.NewVarIDs(),
+		weakBindingVars: set.NewSet[*soltype.TypeVarType](),
 	}
 	c.ctx.fusionRecorder = c.recordFusionEdge
 	c.info.ctx = c.ctx
@@ -969,6 +983,7 @@ func (c *checker) forScript(pkgURI string) *checker {
 		groupSource:       c.groupSource,
 		groups:            c.groups,
 		checkJsDecorators: c.checkJsDecorators,
+		weakBindingVars:   set.NewSet[*soltype.TypeVarType](),
 	}
 	// Point the recorder at the script, so a fusion its walk records lands in the
 	// script's Prov table rather than the module's.

@@ -130,19 +130,19 @@ func TestInferAssignUnknownTarget(t *testing.T) {
 	requireBlame(t, src, errs, "1:10-1:14: Unknown identifier: nope", "nope")
 }
 
-// Reassigning a POLYMORPHIC var must not corrupt the binding. inferAssign freshens
-// the binding's coalesced type before constraining, so the source flows into
-// throwaway copies rather than the binding's retained type-parameter vars; `id`
-// keeps its generic type and a later `id("hello")` still type-checks.
-func TestInferAssignPolyVarNoCorruption(t *testing.T) {
-	values, _, errs := inferSource(t, `
+// TestInferAssignWeakVarWritesItsVariables asserts that a `var` does not generalize, so a
+// reassignment writes into the variables every use of the binding shares. Assigning a
+// `number` function to `id` settles its parameter on `number`, and the later call with a
+// string is rejected. A generalized `id` would have let each use pick its own type, so the
+// call would have returned "hello" from a function that adds to a number.
+func TestInferAssignWeakVarWritesItsVariables(t *testing.T) {
+	values, errs := inferAgainstTreeWithSpans(t, `
 		var id = fn (x) { return x }
-		fn f() { id = fn (n: number) -> number { return n } }
+		fn f() { id = fn (n: number) -> number { return n + 1 } }
 		val r = id("hello")
 	`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn <T0>(x: T0) -> T0", values["id"]) // not the corrupted fn <T0>(x: T0 & number) -> T0 | number
-	require.Equal(t, `"hello"`, values["r"])
+	require.Equal(t, []string{`4:14-4:21: cannot constrain "hello" <: number`}, errs)
+	require.Equal(t, `fn (x: number) -> number | "hello"`, values["id"])
 }
 
 // A broken TOP-LEVEL binding recovers AS the error sentinel (Fix A), so reassigning

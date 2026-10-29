@@ -3712,6 +3712,12 @@ func (e *extruder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Enter
 	nv := e.c.freshVar(e.lvl)
 	e.c.copyParamMark(nv, v)
 	e.cache[key] = nv
+	// A default that applies to v carries over to the copy, counted against the bounds the
+	// copy holds once they are copied, so the copy takes the default for as long as no
+	// further bound reaches it. It is read before v is linked to the copy, since that link
+	// is itself a bound of v. `val ws = cb()` at module level reads a generic call's result
+	// through such a copy, and the call's `<T = number>` still settles it.
+	def, hasDefault := v.DefaultApplies()
 	// v is the original (possibly pre-probe) var — its append is the one a Discard
 	// must truncate. nv was just minted here, so journaling it is a harmless no-op
 	// (a fresh var is unreachable after a Discard); it goes through the helpers
@@ -3737,6 +3743,9 @@ func (e *extruder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Enter
 				shape:  r.shape.Accept(e, pol).(*soltype.ObjectType),
 			})
 		}
+	}
+	if hasDefault {
+		nv.Default = &soltype.VarDefault{Type: def.Accept(e, pol), Lower: len(nv.LowerBounds), Upper: len(nv.UpperBounds)}
 	}
 	return soltype.EnterResult{Type: nv, SkipChildren: true}
 }
