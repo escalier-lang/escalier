@@ -219,3 +219,218 @@ func TestExtrudeStaticRetainedFunc(t *testing.T) {
 	require.True(t, ok)
 	require.Same(t, soltype.Static, extruded.Lt)
 }
+
+// A retention lifetime is covariant, like a borrow's, so a function flows into a retained slot
+// only when it is kept at least that long. TestRetainedFuncSubtyping covers the signatures a
+// body infers when it passes a parameter on to a `&'static fn` slot, and asserts each renders
+// as written.
+func TestRetainedFuncSubtyping(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		// A bare `&` mints an inferred lifetime, and passing the parameter on to a `&'static fn`
+		// slot forces it to 'static.
+		{
+			name: "bare retention passed on to a static parameter",
+			src: `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+fn f(g: &fn () -> undefined) { onClick(g) }`,
+			want: "fn (g: &'static fn () -> undefined) -> undefined",
+		},
+		{
+			name: "static retention passed on to a static parameter",
+			src: `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+fn f(g: &'static fn () -> undefined) { onClick(g) }`,
+			want: "fn (g: &'static fn () -> undefined) -> undefined",
+		},
+		{
+			name: "unannotated parameter passed on to a static parameter",
+			src: `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+fn f(g) { onClick(g) }`,
+			want: "fn (g: &'static fn () -> undefined) -> undefined",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, errs := inferAgainstTreeWithSpans(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}
+
+// A function parameter with no retention lifetime is only called during the call.
+// TestCallOnlyFunc covers bodies that use such a parameter and asserts the full message, with
+// its span, of each error they report.
+func TestCallOnlyFunc(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "called",
+			src:  `fn f(g: fn () -> undefined) { g() }`,
+		},
+		{
+			name: "passed on to a parameter that only calls it",
+			src: `declare fn each(f: fn () -> undefined) -> undefined
+fn f(g: fn () -> undefined) { each(g) }`,
+		},
+		// keep returns its argument at the argument's retention lifetime, and k is a local of
+		// the body, so g is kept no longer than the call.
+		{
+			name: "kept by a local",
+			src: `declare fn keep<'a>(f: &'a fn () -> undefined) -> &'a fn () -> undefined
+fn f(g: fn () -> undefined) {
+    val k = keep(g)
+    k()
+}`,
+		},
+		{
+			name: "bound to a retained local",
+			src: `fn f(g: fn () -> undefined) {
+    val h: &fn () -> undefined = g
+    h()
+}`,
+		},
+		{
+			name: "passed on to a static parameter",
+			src: `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+fn f(g: fn () -> undefined) { onClick(g) }`,
+			want: []string{"2:6-2:7: parameter 'g' is only called during the call, so it cannot be kept for 'static"},
+		},
+		{
+			name: "named retention passed on to a static parameter",
+			src: `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+fn f<'a>(g: &'a fn () -> undefined) { onClick(g) }`,
+			want: []string{"2:6-2:8: the body requires 'a to outlive 'static, but the signature does not declare it; add the bound 'a: 'static"},
+		},
+		{
+			name: "stored into a static field of a borrowed parameter",
+			src:  `fn f(g: fn () -> undefined, p: &mut {cb: &'static fn () -> undefined}) { p.cb = g }`,
+			want: []string{"1:6-1:7: parameter 'g' is only called during the call, so it cannot be kept for 'static"},
+		},
+		{
+			name: "stored into a retained field of a borrowed parameter",
+			src:  `fn f<'a>(g: fn () -> undefined, p: &mut {cb: &'a fn () -> undefined}) { p.cb = g }`,
+			want: []string{"1:10-1:11: parameter 'g' is only called during the call, so it cannot outlive the call"},
+		},
+		{
+			name: "returned",
+			src:  `fn f(g: fn () -> undefined) { return g }`,
+			want: []string{"1:6-1:7: parameter 'g' is only called during the call, so it cannot outlive the call"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, errs := inferAgainstTreeWithSpans(t, tt.src)
+			require.Equal(t, tt.want, errs)
+		})
+	}
+}
+
+// A closure passed to a `&'static fn` parameter may run during any later call, so each later
+// call writes what the closure writes. TestRetainedClosureBorrows covers the ways a call reaches
+// such a parameter and asserts the full message, with its span, of each conflict reported.
+func TestRetainedClosureBorrows(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		// The first render runs before onClick keeps its handler, so only the second conflicts.
+		{
+			name: "call before the closure is retained",
+			src: `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+declare fn forEachItem(f: fn () -> undefined) -> undefined
+declare fn render(view: &{n: number}) -> undefined
+fn setup() {
+    val mut count = {n: 0}
+    forEachItem(fn () { count.n = count.n + 1 })
+    render(&count)
+    onClick(fn () { count.n = count.n + 1 })
+    render(&count)
+}`,
+			want: []string{"9:5-9:19: this call may run the 'handler' that 'onClick' retains, which writes 'count' while it is borrowed as immutable"},
+		},
+		{
+			name: "closure bound to a name",
+			src: `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+declare fn render(view: &{n: number}) -> undefined
+fn setup() {
+    val mut count = {n: 0}
+    val h = fn () { count.n = count.n + 1 }
+    onClick(h)
+    render(&count)
+}`,
+			want: []string{"7:5-7:19: this call may run the 'handler' that 'onClick' retains, which writes 'count' while it is borrowed as immutable"},
+		},
+		{
+			name: "method that retains its argument",
+			src: `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+declare fn render(view: &{n: number}) -> undefined
+class Button { on(self, handler: &'static fn () -> undefined) -> undefined { onClick(handler) } }
+fn setup(b: Button) {
+    val mut count = {n: 0}
+    b.on(fn () { count.n = count.n + 1 })
+    render(&count)
+}`,
+			want: []string{"7:5-7:19: this call may run the 'handler' that 'on' retains, which writes 'count' while it is borrowed as immutable"},
+		},
+		{
+			name: "retention lifetime bound to outlive static",
+			src: `declare fn onClick<'a: 'static>(handler: &'a fn () -> undefined) -> undefined
+declare fn render(view: &{n: number}) -> undefined
+fn setup() {
+    val mut count = {n: 0}
+    onClick(fn () { count.n = count.n + 1 })
+    render(&count)
+}`,
+			want: []string{"6:5-6:19: this call may run the 'handler' that 'onClick' retains, which writes 'count' while it is borrowed as immutable"},
+		},
+		{
+			name: "retained on one branch",
+			src: `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+declare fn render(view: &{n: number}) -> undefined
+fn setup() {
+    val mut count = {n: 0}
+    if count.n > 0 {
+        onClick(fn () { count.n = count.n + 1 })
+    }
+    render(&count)
+}`,
+			want: []string{"8:5-8:19: this call may run the 'handler' that 'onClick' retains, which writes 'count' while it is borrowed as immutable"},
+		},
+		{
+			name: "moved into a later call",
+			src: `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+declare fn take(view: {n: number}) -> undefined
+fn setup() {
+    val mut count = {n: 0}
+    onClick(fn () { count.n = count.n + 1 })
+    take(count)
+}`,
+			want: []string{"6:10-6:15: cannot move 'count' in a call that may run the 'handler' that 'onClick' retains, which writes it"},
+		},
+		// A closure that only reads its capture needs it unchanged only while the closure runs,
+		// and the frame cannot write it then.
+		{
+			name: "closure that only reads",
+			src: `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+declare fn bump(view: &mut {n: number}) -> undefined
+fn setup() {
+    val mut count = {n: 0}
+    onClick(fn () { val x = count.n })
+    bump(&mut count)
+}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, errs := inferAgainstTreeWithSpans(t, tt.src)
+			require.Equal(t, tt.want, errs)
+		})
+	}
+}

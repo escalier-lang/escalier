@@ -266,6 +266,51 @@ fn go() {
 }
 ```
 
+#### Retained callbacks
+
+A function parameter says how long the callee keeps the function it receives.
+A parameter written `f: fn () -> undefined` is only called during the call, so a
+closure passed to it borrows its captures for that call alone. A parameter
+written `f: &'a fn () -> undefined` may keep the function for `'a`. The `&'a`
+does not borrow the function. A function is still copied into the parameter, and
+the call needs no written `&`.
+
+A closure passed to a `&'static fn` parameter is checked like one stored into
+module-level state. The callee may run it during any later call, so each later
+call mutably borrows the owned values the closure writes:
+
+```esc
+declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+declare fn forEachItem(f: fn () -> undefined) -> undefined
+declare fn render(view: &{n: number}) -> undefined
+
+fn setup() {
+    val mut count = {n: 0}
+    forEachItem(fn () { count.n = count.n + 1 })
+    render(&count)    // fine, since forEachItem is done with its closure
+    onClick(fn () { count.n = count.n + 1 })
+    render(&count)    // ERROR: this call may run the 'handler' that 'onClick' retains, which writes 'count' while it is borrowed as immutable
+}
+```
+
+Two changes make `setup` check. The handler can own `count` and call
+`render(&count)` itself, or `render` can take `&mut {n: number}`, since several
+mutable paths may be live at once.
+
+A retention lifetime is checked like a borrow's lifetime. A function flows into a
+`&'a fn` slot only when it is kept at least as long as `'a`. A parameter with no
+retention lifetime is kept for the call alone, so its body cannot pass it on to
+a `&'static fn` parameter, store it where it outlives the call, or return it:
+
+```esc
+fn f(g: fn () -> undefined) {
+    onClick(g)    // ERROR: parameter 'g' is only called during the call, so it cannot be kept for 'static
+}
+```
+
+Writing `g: &'static fn () -> undefined` lets `f` keep it. Writing `g: &fn () ->
+undefined` with no name lets the compiler infer the lifetime the body needs.
+
 ## Partial moves
 
 Moving one field out of an owned object consumes that field's slot, not the whole
@@ -490,12 +535,10 @@ Out of scope by design:
 
 Specified above but not yet enforced:
 
-- **Closures passed to a retaining function**
-  ([#1267](https://github.com/escalier-lang/escalier/issues/1267)). A closure
-  passed to a function that keeps it is checked like one the function only
-  calls, so its captures are borrowed for the call alone. A function-typed
-  parameter carries no lifetime, so the checker cannot tell a callee that keeps
-  the closure from one that only calls it.
+- **Closures retained for a named lifetime.** A closure passed to a
+  `&'a fn` parameter whose `'a` is not `'static` borrows its captures for the
+  call alone, even when the callee returns the function or stores it into
+  another argument.
 - **Element stores**
   ([#1268](https://github.com/escalier-lang/escalier/issues/1268)). `t[i] = x`
   is rejected as unsupported rather than treated as an escape.

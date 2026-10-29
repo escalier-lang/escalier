@@ -935,6 +935,7 @@ func (c *checker) inferComponent(
 	// signature's quantified lifetimes, so a requirement the signature's caller cannot be
 	// held to is reported now.
 	c.checkRigidLifetimes()
+	c.checkCallOnlyParams()
 
 	// Phase 3: rebind each value name to its coalesced monomorphic type. A binding
 	// whose declarations all failed to produce a definition (missing initializer,

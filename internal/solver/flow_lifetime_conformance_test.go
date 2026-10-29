@@ -424,12 +424,7 @@ func TestFlowLifetimeClosureBlocksMove(t *testing.T) {
 }
 */
 
-// DISABLED until #2264, which keeps a closure's borrows for the lifetime of a function parameter
-// that retains it. Today the parameter type `&'static fn () -> undefined` reports
-// `Unsupported: borrow of a non-borrowable type` and `onClick` infers as
-// `fn <T0>(handler: T0) -> undefined`. Apart from that error the program checks clean, since a
-// closure passed to any function parameter holds its borrows for the call alone.
-/*
+// TestFlowLifetimeRetainedCallback covers the first `setup` program in D10, which E4 rejects.
 func TestFlowLifetimeRetainedCallback(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{
 		// E4 and D10. `onClick` keeps its handler for the rest of the program, so the handler's
@@ -450,13 +445,9 @@ func TestFlowLifetimeRetainedCallback(t *testing.T) {
 		},
 	})
 }
-*/
 
-// DISABLED until #2263, which parses and types a function parameter written `&'a fn`. Today the
-// parameter type `&'static fn () -> undefined` reports
-// `Unsupported: borrow of a non-borrowable type`. These two programs are accepted under D10, so
-// they need only the parameter type.
-/*
+// TestFlowLifetimeRetainedCallbackAccepted covers the two fixed `setup` programs in D10 and a
+// closure passed to a parameter that only calls it, each of which E4 accepts.
 func TestFlowLifetimeRetainedCallbackAccepted(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{
 		// E4 and D10. The handler owns `count`, since `onClick` keeps it past the frame, so the
@@ -489,6 +480,19 @@ func TestFlowLifetimeRetainedCallbackAccepted(t *testing.T) {
 				}
 			`,
 		},
+		// E4 and D10. `forEachItem` only calls its function during the call, so the closure's
+		// mutable borrow of `count` ends with that call.
+		{
+			name: "D10/CalledOnlyDuringCall",
+			src: d10Decls + `
+				declare fn render(view: &{n: number}) -> undefined
+
+				fn setup() {
+					val mut count = {n: 0}
+					forEachItem(fn () { count.n = count.n + 1 })
+					render(&count)    // accepted
+				}
+			`,
+		},
 	})
 }
-*/

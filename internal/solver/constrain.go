@@ -1388,6 +1388,14 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			if quantified(sub) {
 				return c.constrain(c.instantiateFuncBinder(sub, binderLevel(sub)), sup, seen, mutCtx)
 			}
+			// A retention lifetime is covariant, like a borrow's. A function kept for the
+			// destination's lifetime has to stay valid that long, so the source's lifetime must
+			// outlive it. A source with no lifetime is a function value whose captures decide how
+			// long it stays valid, so it fills any slot. A destination with no lifetime only calls
+			// the function during the call, so it accepts any source.
+			if sub.Lt != nil && sup.Lt != nil {
+				c.constrainLt(sub.Lt, sup.Lt)
+			}
 			// A tuple-typed rest param on either side expands to one positional param per element,
 			// so a written rest param works as a value-level type and not only as a pattern. The
 			// unexpanded sub and sup are what a diagnostic reports.
