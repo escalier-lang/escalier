@@ -702,7 +702,8 @@ fn f() -> number {
 			want: []string{"7:10-7:13: use of moved value 'a'"},
 		},
 		{
-			// The second parameter is moved and the first is only read, so the call moves b alone.
+			// The second parameter is moved and the first is only read, so the first is a borrow
+			// and the call moves b alone.
 			name: "OnlyTheMovedPositionConsumes",
 			src: `var sink = {x: 0}
 fn pick(p, q) -> number {
@@ -712,18 +713,18 @@ fn pick(p, q) -> number {
 fn f() -> number {
   val a = {x: 1}
   val b = {x: 2}
-  pick(a, b)
+  pick(&a, b)
   return a.x + b.x
 }`,
 			want: []string{"10:16-10:19: use of moved value 'b'"},
 		},
 		{
-			// read only reads a field of p, so the argument stays usable.
+			// read only reads a field of p, so p is a borrow and the argument stays usable.
 			name: "ReadOnlyParameterKeepsArgument",
 			src: `fn read(p) { return p.x }
 fn f() -> number {
   val a = {x: 1}
-  val n = read(a)
+  val n = read(&a)
   return a.x + n
 }`,
 		},
