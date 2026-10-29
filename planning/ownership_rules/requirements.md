@@ -1287,6 +1287,36 @@ the return is owned. The answer for a call follows the callee's signature:
 - A function that returns a borrow of module-level state renders its result as
   `&'static`, since L3 always renders `'static`.
 
+The two rules work together. A result that ties to nothing in the signature
+comes from outside the parameters. Either the function built it, or the result
+borrows something that already exists outside the call. Each comment below
+gives the rendered signature:
+
+```esc
+var cfg = {x: 0}
+var cache: &{x: number} = &{x: 0}
+
+fn same1(p: &{x: number}) {
+    return &cfg
+}
+// fn (p: &{x: number}) -> &'static {x: number}, since cfg is module-level
+
+fn same2(p: &{x: number}) {
+    val q = {x: 1}
+    cache = &q
+    return &q
+}
+// fn (p: &{x: number}) -> &'static {x: number}, since cache also reads q
+```
+
+In both functions, something else still reads the returned value after the
+call. In `same1` it is `cfg` itself, and in `same2` it is `cache`. Without the
+first rule, the `&q` that `same2` returns would carry its own unconnected
+lifetime, because only the `&q` stored in `cache` flows into module-level
+state. The second rule would then make the result owned, and a caller could
+write the value `cache` reads. The first rule makes the returned `&q` `'static`
+as well, so the result stays a borrow.
+
 A bodyless signature is taken at its word, so the declaration converter must
 render `'static` for any returned borrow it cannot vouch for. This entry covers
 `&` returns only. A `&mut` return keeps its current behaviour.
