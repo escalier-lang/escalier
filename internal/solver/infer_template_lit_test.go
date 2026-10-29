@@ -651,5 +651,5 @@ func TestTemplateOverATypeParameterWithinString(t *testing.T) {
 func TestTemplateWithinATemplateOverAnInferenceVariable(t *testing.T) {
 	_, _, errs := inferSource(t, "declare fn g<T>(x: `a${T}`) -> T\ndeclare val a: `a${number}`\nval r = g(a)")
 	require.Len(t, errs, 1)
-	require.Equal(t, "cannot constrain `a${number}` <: `a${t10}`", errs[0].Message())
+	require.Equal(t, "cannot constrain `a${number}` <: `a${t5}`", errs[0].Message())
 }

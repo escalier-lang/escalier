@@ -696,17 +696,19 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 	rep := c.simp.rep(v)
 	retain := rep.Level > c.genLevel && c.simp.mergedOcc[rep.ID].both() && !hasEqualBounds(rep) &&
 		!c.inlined.Contains(rep)
-	// A non-binder var whose class representative is a binder renders under that binder's
-	// display copy, so an artifact reached in a structural position reads as the declared
-	// parameter rather than a second name for the same type.
+	// A non-binder var whose class representative is a binder renders under that binder, or
+	// under the display copy cleanBinderBounds made for it. An artifact reached in a
+	// structural position then reads as the declared parameter rather than a second name for
+	// the same type. In `fn f<T>({x :: T}) -> T`, the variable `x` projects to merges with `T`
+	// and the parameter renders `{x: T}`.
 	// v's own bounds, or at a negative position the upper bounds of every member of its
 	// class. A member reached once its class is on the path is cut short below, so its
 	// upper bounds are read here, by the first member reached. A call that passes a
 	// parameter to a callee's bounded type parameter records the bound on a member other
 	// than the parameter's own variable.
 	bs := v.BoundsAt(pol)
-	if shown := c.displayBinder(rep); shown != rep {
-		rep = shown
+	if c.keep.Contains(rep) {
+		rep = c.displayBinder(rep)
 	} else {
 		if pol == soltype.Negative {
 			bs = c.classUpper[rep]
