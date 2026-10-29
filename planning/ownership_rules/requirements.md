@@ -245,7 +245,10 @@ operation that passes the value does not change it.
 | Immutable borrow, `&T` | Rejected by T6 | Copy | Rejected by T4 |
 | Mutable borrow, `&mut T` | Rejected by T6 | Copy, narrowed to `&` by T4 | Copy |
 
-A value type has no borrow form, so its destination is always bare. Each binding
+A value type has no borrow form, so its destination is always bare. A generic
+`&T` whose `T` is a value type stands for `T`. With `fn f<T>(x: &T)`, the call
+`f(5)` copies `5` into `x`, and a read of a value-type field through a `&` copies
+the field out. Each binding
 in the function below shows one outcome, and the read of `q.x` shows the error a
 use after a move reports.
 
