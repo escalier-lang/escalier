@@ -1509,7 +1509,7 @@ func (c *Context) meetFuncs(a, b *soltype.FuncType) (soltype.Type, bool) {
 	if equalParamTypes(a, b) {
 		return &soltype.FuncType{
 			SelfParam:      nil,
-			Params:         a.Params,
+			Params:         joinMovedParams(a.Params, b.Params),
 			Ret:            c.meetTypes(a.Ret, b.Ret),
 			Throws:         c.meetThrows(a, b),
 			Inexact:        a.Inexact || b.Inexact,
@@ -1524,6 +1524,7 @@ func (c *Context) meetFuncs(a, b *soltype.FuncType) (soltype.Type, bool) {
 			Type:     c.joinTypes(param.Type, b.Params[0].Type),
 			Optional: param.Optional,
 			Rest:     param.Rest,
+			Moved:    param.Moved || b.Params[0].Moved,
 		}
 		return &soltype.FuncType{
 			SelfParam:      nil,
@@ -1584,6 +1585,27 @@ func sameThrows(a, b *soltype.FuncType) bool {
 // `never` the printer would have to suppress.
 func (c *Context) meetThrows(a, b *soltype.FuncType) soltype.Type {
 	return c.meetThrowsTypes(a.Throws, b.Throws)
+}
+
+// joinMovedParams returns a's parameters with each one marked Moved that is Moved in a or at
+// the same position in b. a and b have the same length. It returns a itself when no marker
+// changes.
+func joinMovedParams(a, b []*soltype.FuncParam) []*soltype.FuncParam {
+	out := a
+	copied := false
+	for i, p := range a {
+		if p.Moved || !b[i].Moved {
+			continue
+		}
+		if !copied {
+			out = append([]*soltype.FuncParam(nil), a...)
+			copied = true
+		}
+		moved := *p
+		moved.Moved = true
+		out[i] = &moved
+	}
+	return out
 }
 
 func equalParamTypes(a, b *soltype.FuncType) bool {
