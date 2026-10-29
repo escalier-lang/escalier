@@ -431,8 +431,8 @@ func coalesceSchemeKeeping(
 }
 
 // paramOnlyReps returns the class representative of each quantifiable variable that
-// is the whole type of one of t's own parameters and whose upper bounds are all
-// variables. t is the scheme's body, and a body that is not a function has none.
+// is the whole type of one of t's own parameters, or the whole inner of a borrow that is,
+// and whose upper bounds are all variables. t is the scheme's body, and a body that is not a function has none.
 //
 // Every bound such a variable carries reaches it from a variable, which is either a
 // parameter of a function it was passed to or a variable that inference has yet to
@@ -465,7 +465,8 @@ func paramOnlyReps(t soltype.Type, genLevel int, simp *schemeSimplification) set
 // addParamOnlyRep adds the representative of param's variable to reps when
 // paramOnlyReps describes it.
 func addParamOnlyRep(reps set.Set[*soltype.TypeVarType], param *soltype.FuncParam, genLevel int, simp *schemeSimplification) {
-	v, ok := param.Type.(*soltype.TypeVarType)
+	inner, _, _ := soltype.UnwrapRef(param.Type)
+	v, ok := inner.(*soltype.TypeVarType)
 	if !ok || v.Level <= genLevel || len(v.LowerBounds) > 0 {
 		return
 	}

@@ -570,6 +570,11 @@ type funcCtx struct {
 	// body; AnalyzeMoves(cfg, moveSites) then yields the branch-merged consumed
 	// lattice the use-after-move check reads after the body walk completes.
 	moveSites map[liveness.StmtRef]set.Set[liveness.VarID]
+	// openEscapes holds the VarID of each binding the body passes whole as a call argument
+	// into a destination that outlives the frame and whose type leaves ownership open.
+	// noteOpenEscapes records them, and markOpenEscapeParams reads them once the body is
+	// walked.
+	openEscapes set.Set[liveness.VarID]
 	// moveNodes maps a consumed binding's VarID to the node that moved it, so a
 	// UseAfterMoveError can point its "moved here" related span at the move site. A
 	// binding moved on more than one path keeps the last-recorded move node, which

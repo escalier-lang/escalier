@@ -301,3 +301,128 @@ func TestReadThroughBorrowParamKeepsBorrow(t *testing.T) {
 		})
 	}
 }
+
+// TestInferOpenEscapeParam covers D9's rule for an unannotated parameter stored where the
+// destination's type leaves ownership open. Each case declares `remember` and a caller `go`.
+// A parameter the body never writes infers as a `'static` borrow, and one the body writes, or
+// one the destination's type makes owned, stays owned and moves the caller's argument.
+func TestInferOpenEscapeParam(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+		errs []string
+	}{
+		{
+			name: "ReadOnlyIsStaticBorrow",
+			src: `
+				val mut seen = Map()
+				fn remember(value) { seen.set("last", value) }
+				fn go() -> number {
+					val opts = {retries: 3}
+					remember(&opts)
+					return opts.retries
+				}
+			`,
+			want: "fn <T0>(value: &'static T0) -> undefined",
+		},
+		{
+			name: "ReadOnlyNeedsWrittenBorrow",
+			src: `
+				val mut seen = Map()
+				fn remember(value) { seen.set("last", value) }
+				fn go() -> number {
+					val opts = {retries: 3}
+					remember(opts)
+					return opts.retries
+				}
+			`,
+			want: "fn <T0>(value: &'static T0) -> undefined",
+			errs: []string{"6:15-6:19: this argument is borrowed by the callee, so write the borrow: `&`"},
+		},
+		{
+			name: "WrittenIsOwned",
+			src: `
+				val mut seen = Map()
+				fn remember(mut value) {
+					value.retries = 0
+					seen.set("last", value)
+				}
+				fn go() -> number {
+					val opts = {retries: 3}
+					remember(opts)
+					return opts.retries
+				}
+			`,
+			want: "fn (value: {retries: number}) -> undefined",
+			errs: []string{"10:13-10:25: use of moved value 'opts'"},
+		},
+		{
+			name: "OwnedDestinationIsOwned",
+			src: `
+				val mut seen: Map<string, {retries: number}> = Map()
+				fn remember(value) { seen.set("last", value) }
+				fn go() -> number {
+					val opts = {retries: 3}
+					remember(opts)
+					return opts.retries
+				}
+			`,
+			want: "fn (value: {retries: number}) -> undefined",
+			errs: []string{"7:13-7:25: use of moved value 'opts'"},
+		},
+		{
+			name: "AnnotationOverrides",
+			src: `
+				val mut seen = Map()
+				fn remember(value: {retries: number}) { seen.set("last", value) }
+				fn go() -> number {
+					val opts = {retries: 3}
+					remember(opts)
+					return opts.retries
+				}
+			`,
+			want: "fn (value: {retries: number}) -> undefined",
+			errs: []string{"7:13-7:25: use of moved value 'opts'"},
+		},
+		{
+			name: "AlsoReturnedIsOwned",
+			src: `
+				val mut seen = Map()
+				fn remember(value) {
+					seen.set("last", value)
+					return value
+				}
+				fn go() -> number {
+					val opts = {retries: 3}
+					remember(opts)
+					return opts.retries
+				}
+			`,
+			want: "fn <T0>(value: T0) -> T0",
+			errs: []string{"10:13-10:25: use of moved value 'opts'"},
+		},
+		{
+			name: "LocalReceiverDoesNotEscape",
+			src: `
+				fn remember(value) {
+					val mut seen = Map()
+					seen.set("last", value)
+				}
+				fn go() -> number {
+					val opts = {retries: 3}
+					remember(opts)
+					return opts.retries
+				}
+			`,
+			want: "fn <T0>(value: T0) -> undefined",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, errs := inferAgainstTreeWithSpans(t, tt.src)
+			require.Equal(t, tt.errs, errs)
+			require.Equal(t, tt.want, values["remember"])
+		})
+	}
+}

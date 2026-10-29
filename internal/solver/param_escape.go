@@ -2,7 +2,9 @@ package solver
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/liveness"
 	"github.com/escalier-lang/escalier/internal/set"
+	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
 // paramOnlyReadThrough reports whether body only reads through the parameter named `name`.
@@ -199,4 +201,80 @@ func identParamOnlyReadThrough(pat ast.Pat, rest, optional bool, body *ast.Block
 		return false
 	}
 	return paramOnlyReadThrough(ip.Name, body)
+}
+
+// noteOpenEscapes adds to openEscapes each argument of the call e that is a bare name passed
+// into a destination whose type leaves ownership open and that outlives the frame. fn is the
+// signature the call resolved to, and nil when it resolved to none.
+//
+// Such a destination is a parameter of a method called on a module-level binding, as in
+// `seen.set("last", value)`, where the parameter's type is still an inference variable. A
+// variable is neither owned nor a borrow until a use decides it. The receiver outlives every
+// local, so what the method stores there does too.
+func (c *checker) noteOpenEscapes(scope *Scope, e *ast.CallExpr, fn *soltype.FuncType) {
+	if c.fn == nil || fn == nil {
+		return
+	}
+	var recv ast.Expr
+	switch callee := e.Callee.(type) {
+	case *ast.MemberExpr:
+		recv = callee.Object
+	case *ast.IndexExpr:
+		recv = callee.Object
+	default:
+		return
+	}
+	if _, ok := c.moduleLevelRootInBody(scope, recv); !ok {
+		return
+	}
+	for i, arg := range e.Args {
+		if i >= len(fn.Params) || fn.Params[i].Rest {
+			return
+		}
+		id, ok := arg.(*ast.IdentExpr)
+		if !ok {
+			continue
+		}
+		if _, open := fn.Params[i].Type.(*soltype.TypeVarType); !open {
+			continue
+		}
+		if vid := c.varIDs.Of(id); vid > 0 {
+			if c.fn.openEscapes == nil {
+				c.fn.openEscapes = set.NewSet[liveness.VarID]()
+			}
+			c.fn.openEscapes.Add(vid)
+		}
+	}
+}
+
+// markOpenEscapeParams decides the type of each parameter in openEscapes that is a bare name
+// with no type annotation, no default, and no Moved mark. A `mut` parameter, which the body
+// may write, stays owned and is marked Moved, so each call moves its argument. Any other
+// such parameter becomes a `'static` immutable borrow of its inferred type, so each call
+// lends its argument for good. params holds the FuncParams built from sigParams, one for
+// one. It reads the body's context, so it runs once the body is walked and before the
+// context is popped.
+func (c *checker) markOpenEscapeParams(sigParams []*ast.Param, params []*soltype.FuncParam) {
+	if c.fn == nil || c.fn.openEscapes.Len() == 0 {
+		return
+	}
+	for i, p := range sigParams {
+		ip, ok := p.Pattern.(*ast.IdentPat)
+		if !ok || p.TypeAnn != nil || ip.Default != nil || i >= len(params) {
+			continue
+		}
+		fp := params[i]
+		if fp.Moved || fp.Rest || fp.Optional || !c.fn.openEscapes.Contains(c.varIDs.Of(ip)) {
+			continue
+		}
+		v, isVar := fp.Type.(*soltype.TypeVarType)
+		if !isVar {
+			continue
+		}
+		if ip.Mutable {
+			fp.Moved = true
+			continue
+		}
+		fp.Type = soltype.NewRef(false, soltype.Static, v)
+	}
 }

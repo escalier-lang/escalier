@@ -933,6 +933,10 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// A body that moves an unannotated parameter takes ownership of the caller's value,
 		// so each call moves the argument it passes there.
 		c.markMovedParams(sig.Params, params)
+		// D9 decides an unannotated parameter that escapes where the destination's type
+		// leaves ownership open. It runs after markMovedParams, since a parameter the body
+		// also moves is owned by that move.
+		c.markOpenEscapeParams(sig.Params, params)
 		retExprs = c.fn.returnExprs
 		throws = c.fn.throws
 		raised = c.fn.raised
@@ -2013,6 +2017,7 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 		ret, fn = c.applyCallShape(lvl, e, target.callee, target.fn, target.secondInstance, args)
 	}
 	c.recordCallArgEffects(e, fn, consumeRef, hasConsumeRef)
+	c.noteOpenEscapes(scope, e, fn)
 	if hasConsumeRef {
 		c.consumeOnceCallee(e, consumeRef)
 	}
