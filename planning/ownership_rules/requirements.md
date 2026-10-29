@@ -1064,28 +1064,43 @@ designed. Counters and the interop methods stay on `&mut self` for now.
 
 T1 lets any binding or parameter be written `mut`, and nothing rejects one whose
 `mut` cannot matter. A value type has no owned layers, so T2 and T3 give the
-`mut` nothing to make writable. T1 keeps reassignment on `var`, so the `mut`
-does not make the binding reassignable either:
+`mut` nothing to make writable. A borrow has none either. A `&` borrow allows
+no writes, and a `&mut` borrow gets its writes from the borrow, not from the
+binding. T1 keeps reassignment on `var`, so the `mut` does not make the binding
+reassignable either:
 
 ```esc
+fn read<'a>(p: &'a {x: {y: number}}) -> &'a {y: number} { return &p.x }
+
 fn f(mut p?: number) -> number { return 1 }
+
+fn g() {
+    val b = {x: {y: 1}}
+    var mut r = read(&b)    // r holds a & borrow, so the mut grants nothing
+    r.y = 5                 // rejected, since r is a & borrow
+}
 ```
+
+In `g`, a warning on the `mut` points at the binding behind the error on
+`r.y = 5`.
 
 The options are:
 
 - Accept it silently, as the checker does today.
-- Warn when the binding's type is a value type. This needs only the binding's
-  type, and such a `mut` can never matter.
+- Warn when the binding's type has no owned layer, meaning a value type, a `&`
+  borrow, or a `&mut` borrow. This needs only the binding's type, and such a
+  `mut` can never matter.
 - Warn when a `mut` binding is never written and never borrowed as `&mut`, as
   Rust's `unused_mut` lint does. This covers the value-type case and also an
   owned binding the body only reads, but it needs the body's write analysis.
 
-Recommendation: warn on a value type now and add the unused-binding warning
-later. Both are warnings rather than errors, since the program means the same
-with or without the `mut`.
+Recommendation: warn on a type with no owned layer now and add the
+unused-binding warning later. Both are warnings rather than errors, since the
+program means the same with or without the `mut`.
 
-Decided: accepted. A `mut` binding whose type is a value type reports a
-warning, tracked by [#2304](https://github.com/escalier-lang/escalier/issues/2304).
+Decided: accepted. A `mut` binding whose type is a value type or a borrow
+reports a warning, tracked by
+[#2304](https://github.com/escalier-lang/escalier/issues/2304).
 A warning on any `mut` binding the body never writes or borrows as `&mut` is a
 later addition, tracked by
 [#2305](https://github.com/escalier-lang/escalier/issues/2305).
