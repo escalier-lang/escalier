@@ -612,9 +612,15 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// defaults holds each parameter default until the body's context is open, so a raise
 	// or a use inside one belongs to this function.
 	var defaults []paramDefaultSite
-	// callOnlyParams holds the parameters typed as a function with no retention lifetime. Each
-	// takes its call lifetime once the signature is resolved.
+	// callOnlyParams holds the parameters typed as a function with no retention lifetime.
 	var callOnlyParams []callOnlyParam
+	// A function written inside another body shares that body's level, so the lifetimes the
+	// enclosing body minted are told apart by the counter instead. outerMark is -1 for a
+	// function with no enclosing body.
+	outerMark := -1
+	if c.fn != nil {
+		outerMark = c.ctx.lifetimeCounter
+	}
 	for i, p := range sig.Params {
 		// A `...xs: Array<E>` parameter binds the slot rather than one argument. restParamSlot
 		// unwraps the marker to the pattern underneath and reports the forms that cannot carry
@@ -674,13 +680,14 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 				c.info.inertMut.Add(ip)
 			}
 			// A function parameter with no retention lifetime is only called during the call,
-			// so the body sees it at a lifetime that ends with the call. The signature keeps
-			// the plain type, which is what a caller reads.
+			// so the body sees it at a fresh lifetime that ends with the call. The signature
+			// keeps the plain type, which is what a caller reads.
 			bodyT := pt
 			if ft, isFn := pt.(*soltype.FuncType); isFn && written && body != nil && ft.Lt == nil {
 				callOnly := *ft
+				callOnly.Lt = c.ctx.freshLifetime(lvl)
 				bodyT = &callOnly
-				callOnlyParams = append(callOnlyParams, callOnlyParam{name: name, node: pat, ft: &callOnly})
+				callOnlyParams = append(callOnlyParams, callOnlyParam{name: name, node: pat, ft: &callOnly, outerMark: outerMark})
 			}
 			// A parameter binding never generalizes — its var is fixed for the body — so
 			// it is a MonoScheme; instantiate returns bodyT unchanged at every use.
@@ -887,9 +894,6 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			c.fn.yieldNext = gen.next
 			c.fn.nextDeclared = gen.ann != nil
 		}
-		// The whole signature is resolved by now, so every lifetime minted from here on belongs
-		// to the body.
-		c.mintCallLifetimes(lvl, callOnlyParams)
 		// A default runs when the function is called, so it is inferred inside this context,
 		// where a raise reaches this function's throws sink.
 		c.inferParamDefaults(lvl, defaults)
@@ -1082,7 +1086,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// not tied until every body in the group has been walked.
 	if hasBody {
 		c.queueReturnCheck(node, ft, lvl-1, memberName)
-		c.queueCallOnlyChecks(callOnlyParams, ft.Ret)
+		c.queueCallOnlyChecks(callOnlyParams, ft)
 	}
 	// A body-carrying function must prove every lifetime bound its signature declares,
 	// so its bounds are checked against the inferred relation. A no-body `declare fn` has
@@ -1979,7 +1983,8 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 	// callee comes before the arguments so moves and borrows record in evaluation order.
 	// In `obj.m(take(obj))` the receiver read comes before the move.
 	consumeRef, hasConsumeRef := c.currentStmtRef()
-	// A closure stored into a module-level binding may run during any call.
+	// A closure stored into a module-level binding, or passed to a parameter that keeps it, may
+	// run during a later call.
 	if hasConsumeRef {
 		c.noteCallSite(e, consumeRef)
 	}
@@ -2482,9 +2487,9 @@ func (c *checker) recordCallArgEffects(
 	// existed before the call rather than against the one its own store creates.
 	c.checkCallBorrowExclusivity(e, fn, consumeRef)
 
-	// A closure passed to a `&'static fn` parameter may run during any later call, the same as
+	// A closure passed to a parameter that keeps it may run during a later call, the same as
 	// one stored into a module-level binding.
-	c.noteStaticClosureArgs(e, fn, consumeRef)
+	c.noteRetainedClosureArgs(e, fn, consumeRef)
 
 	// A borrow argument the signature stores into another argument, or into a method's
 	// receiver, aliases the two for as long as the target lives. Record that edge here rather
@@ -2813,7 +2818,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 					}
 					// Anything can call a closure in a module-level binding from here on, so what
 					// it writes has to stay borrowed for the rest of the body.
-					c.noteStaticClosureStore(staticClosureStore{via: closureVia(target.Name), expr: e.Right, ref: ref})
+					c.noteRetainedClosureStore(retainedClosureStore{via: closureVia(target.Name), expr: e.Right, ref: ref, static: true})
 				}
 			}
 			// KNOWN GAP (#762): this store is accepted even though it is not sound in

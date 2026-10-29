@@ -297,6 +297,29 @@ Two changes make `setup` check. The handler can own `count` and call
 `render(&count)` itself, or `render` can take `&mut {n: number}`, since several
 mutable paths may be live at once.
 
+A closure passed to a `&'a fn` parameter whose `'a` is not `'static` stays
+reachable while a binding that shares `'a` is live. That binding is an argument
+or receiver whose parameter type mentions `'a`, or the binding the call's result
+initializes when the return type mentions `'a`. While one of them is live, each
+call may run the closure:
+
+```esc
+class Button<'a> {
+    onClick: &'a fn () -> undefined,
+    click(&self) -> undefined { self.onClick() },
+}
+
+fn setup() {
+    val mut count = {n: 0}
+    val b = Button(fn () { count.n = count.n + 1 })
+    render(&count)    // ERROR: this call may run the 'onClick' that 'Button' retains, which writes 'count' while it is borrowed as immutable
+    b.click()
+}
+```
+
+Moving `b.click()` above `render(&count)` makes `setup` check, since `b` is no
+longer live at the render.
+
 A retention lifetime is checked like a borrow's lifetime. A function flows into a
 `&'a fn` slot only when it is kept at least as long as `'a`. A parameter with no
 retention lifetime is kept for the call alone, so its body cannot pass it on to
@@ -535,10 +558,12 @@ Out of scope by design:
 
 Specified above but not yet enforced:
 
-- **Closures retained for a named lifetime.** A closure passed to a
-  `&'a fn` parameter whose `'a` is not `'static` borrows its captures for the
-  call alone, even when the callee returns the function or stores it into
-  another argument.
+- **Call-only parameters reached indirectly.** A parameter typed plain `fn`
+  can still outlive the call in three ways. A closure that captures it can be
+  passed to a `&'static fn` parameter. It can be copied into a plain `fn` slot
+  outside a parameter, such as a module-level binding, an array element, or a
+  return annotation. Its type can be written through an alias or bound by a
+  destructuring pattern, which the check does not read.
 - **Element stores**
   ([#1268](https://github.com/escalier-lang/escalier/issues/1268)). `t[i] = x`
   is rejected as unsupported rather than treated as an escape.

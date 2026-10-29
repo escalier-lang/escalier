@@ -1,51 +1,37 @@
 package solver
 
 import (
-	"maps"
-	"slices"
-
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
 // callOnlyParam is a parameter of a body-carrying function whose written type is a function
 // with no retention lifetime. Such a parameter is only called during the call. ft is the copy
-// of that type the body's binding holds, and its Lt is the parameter's call lifetime once
-// mintCallLifetimes has run. The call lifetime is the lifetime the body sees the parameter at,
-// and it ends when the call returns.
+// of that type the body's binding holds. Its Lt is the parameter's call lifetime, a fresh
+// lifetime at the level of the function's parameters that ends when the call returns.
 type callOnlyParam struct {
 	name string
 	node ast.Node
 	ft   *soltype.FuncType
-	// mark is the lifetime counter before the call lifetime was minted. Every lifetime minted
-	// earlier belongs to the signature or to something outside the function.
-	mark int
+	// outerMark is the lifetime counter when the function's inference began, for a function
+	// written inside another body. Every lifetime minted before it belongs to the enclosing body
+	// or to the module. It is -1 for a function with no enclosing body.
+	outerMark int
 }
 
-// callOnlyCheck is one parameter waiting for checkCallOnlyParams. ret is the return type of
-// the function that declares it.
+// callOnlyCheck is one parameter waiting for checkCallOnlyParams. sig is the type of the
+// function that declares it.
 type callOnlyCheck struct {
 	param callOnlyParam
-	ret   soltype.Type
+	sig   *soltype.FuncType
 }
 
-// mintCallLifetimes sets each parameter's retention lifetime to a fresh lifetime at level lvl,
-// its call lifetime. It must run once the whole signature is resolved and before the body is
-// walked, so the lifetimes checkCallOnlyParams reads as outside the call are exactly the ones
-// minted before it.
-func (c *checker) mintCallLifetimes(lvl int, params []callOnlyParam) {
-	mark := c.ctx.lifetimeCounter
-	for i := range params {
-		params[i].ft.Lt = c.ctx.freshLifetime(lvl)
-		params[i].mark = mark
-	}
-}
-
-// queueCallOnlyChecks queues a check of each parameter for checkCallOnlyParams. ret is the
-// return type of the function that declares the parameters.
-func (c *checker) queueCallOnlyChecks(params []callOnlyParam, ret soltype.Type) {
+// queueCallOnlyChecks queues a check of each parameter for checkCallOnlyParams. sig is the type
+// of the function that declares the parameters.
+func (c *checker) queueCallOnlyChecks(params []callOnlyParam, sig *soltype.FuncType) {
 	for _, p := range params {
-		c.pendingCallOnly = append(c.pendingCallOnly, callOnlyCheck{param: p, ret: ret})
+		c.pendingCallOnly = append(c.pendingCallOnly, callOnlyCheck{param: p, sig: sig})
 	}
 }
 
@@ -53,47 +39,67 @@ func (c *checker) queueCallOnlyChecks(params []callOnlyParam, ret soltype.Type) 
 // keeps it past the call when it requires the call lifetime to outlive one of these:
 //
 //   - 'static.
-//   - A lifetime minted before the call lifetime, such as one in the signature or in an
+//   - A lifetime the function's own type holds, since a caller reads its arguments and its
+//     result after the call.
+//   - A lifetime at a lower level than the call lifetime, which belongs to the module or to an
 //     enclosing body.
-//   - A lifetime the function's return type holds, since the caller reads the result after
-//     the call.
+//   - For a function written inside another body, a lifetime minted before the function's
+//     inference began. The enclosing body minted it at the same level.
+//   - An elided lifetime, which a binding of the enclosing body holds in its display type.
 //
-// A lifetime the body mints itself ends with the call at the latest, so the call lifetime may
-// outlive it.
+// Any other lifetime is one the body mints itself, or a parameter lifetime of a function
+// inferred together with this one. The call lifetime may outlive those.
 //
 // It runs once the enclosing component has solved, since a constraint a sibling's body records
 // can reach the call lifetime after this function's body is walked.
 func (c *checker) checkCallOnlyParams() {
 	pending := c.pendingCallOnly
 	c.pendingCallOnly = nil
-	if len(pending) == 0 {
-		return
-	}
-	var seeds []*soltype.LifetimeVar
-	returned := make([][]*soltype.LifetimeVar, len(pending))
-	for i, check := range pending {
-		seeds = append(seeds, check.param.ft.Lt.(*soltype.LifetimeVar))
-		occ, _ := walkLtOcc(check.ret, soltype.Positive)
-		// Sorted so the lifetime a violation is found against is the same on every run.
-		returned[i] = slices.SortedFunc(maps.Keys(occ), func(a, b *soltype.LifetimeVar) int { return a.ID - b.ID })
-		seeds = append(seeds, returned[i]...)
-	}
-	graph := buildLtBoundSet(occOf(seeds))
-	ids := slices.Sorted(maps.Keys(graph.rep))
-	for i, check := range pending {
+	for _, check := range pending {
 		p := check.param
 		lt := p.ft.Lt.(*soltype.LifetimeVar)
-		if graph.static.Contains(graph.repOf(lt.ID)) {
-			c.report(&CallOnlyFuncKeptError{Name: p.name, Static: true, Param: p.node})
-			continue
+		occ, _ := walkLtOcc(check.sig, soltype.Positive)
+		_, outside := occ[lt]
+		static := false
+		for _, kept := range outlivedBy(lt) {
+			switch kept := kept.(type) {
+			case *soltype.StaticLifetime:
+				static = true
+			case *soltype.AnonLifetime:
+				// An elided lifetime is one a binding's display type kept in place of the
+				// variable it came from, so what it stands for cannot be told apart from a
+				// lifetime outside the call.
+				outside = true
+			case *soltype.LifetimeVar:
+				_, inSig := occ[kept]
+				outside = outside || inSig || kept.Level < lt.Level || kept.ID < p.outerMark
+			}
 		}
-		kept := slices.ContainsFunc(returned[i], func(r *soltype.LifetimeVar) bool {
-			return graph.implies(lt.ID, r.ID)
-		}) || slices.ContainsFunc(ids, func(id int) bool {
-			return id < p.mark && graph.implies(lt.ID, id)
-		})
-		if kept {
-			c.report(&CallOnlyFuncKeptError{Name: p.name, Param: p.node})
+		if static || outside {
+			c.report(&CallOnlyFuncKeptError{Name: p.name, Static: static, Param: p.node})
 		}
 	}
+}
+
+// outlivedBy returns every lifetime lt is required to outlive, read through the upper bounds of
+// lt and of each variable reached. lt itself is not included.
+func outlivedBy(lt *soltype.LifetimeVar) []soltype.Lifetime {
+	var out []soltype.Lifetime
+	seen := set.NewSet[*soltype.LifetimeVar]()
+	seen.Add(lt)
+	pending := append([]soltype.Lifetime(nil), lt.UpperBounds...)
+	for len(pending) > 0 {
+		cur := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		v, isVar := cur.(*soltype.LifetimeVar)
+		if isVar && seen.Contains(v) {
+			continue
+		}
+		out = append(out, cur)
+		if isVar {
+			seen.Add(v)
+			pending = append(pending, v.UpperBounds...)
+		}
+	}
+	return out
 }

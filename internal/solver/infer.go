@@ -634,10 +634,14 @@ type funcCtx struct {
 	capturedLocals map[ast.Func][]capturedLocal
 	// capturedTypes holds the binding type of every local in capturedLocals.
 	capturedTypes map[liveness.VarID]soltype.Type
-	// staticClosureStores records each place this body hands a closure to for the rest of the
-	// program, a store into a module-level binding or an argument to a `&'static fn`
-	// parameter. The post-pass takes a loan of each local those closures write.
-	staticClosureStores []staticClosureStore
+	// retainedClosureStores records each place this body hands a closure to that keeps it past
+	// the statement, a store into a module-level binding or an argument to a parameter with a
+	// retention lifetime. The post-pass takes a loan of each local those closures write.
+	retainedClosureStores []retainedClosureStore
+	// retainedResults maps a call to the indices in retainedClosureStores of the stores whose
+	// closure the call's result keeps. noteRetainedResult adds the binding the result
+	// initializes to each store's holders.
+	retainedResults map[ast.Expr][]int
 	// callSites holds every call in this body, in source order.
 	callSites []callSite
 	// callArgLoans holds the borrows each call's arguments take for the call's parameters,

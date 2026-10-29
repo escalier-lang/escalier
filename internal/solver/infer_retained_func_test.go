@@ -322,6 +322,25 @@ fn f<'a>(g: &'a fn () -> undefined) { onClick(g) }`,
 			src:  `fn f(g: fn () -> undefined) { return g }`,
 			want: []string{"1:6-1:7: parameter 'g' is only called during the call, so it cannot outlive the call"},
 		},
+		// h is inferred together with f, so its parameter's lifetime is no longer than the call
+		// of f.
+		{
+			name: "passed to a recursive sibling that only calls it",
+			src: `fn f(g: fn () -> undefined, n: number) { if n > 0 { h(g, n) } }
+fn h(x: &fn () -> undefined, n: number) {
+    x()
+    f(x, n - 1)
+}`,
+		},
+		{
+			name: "stored into a binding of the enclosing body",
+			src: `fn outer() {
+    var keep: &fn () -> undefined = fn () {}
+    val inner = fn (g: fn () -> undefined) { keep = g }
+    keep()
+}`,
+			want: []string{"3:21-3:22: parameter 'g' is only called during the call, so it cannot outlive the call"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -414,6 +433,39 @@ fn setup() {
 }`,
 			want: []string{"6:10-6:15: cannot move 'count' in a call that may run the 'handler' that 'onClick' retains, which writes it"},
 		},
+		{
+			name: "rest parameter",
+			src: `declare fn onAll(...hs: Array<&'static fn () -> undefined>) -> undefined
+declare fn render(view: &{n: number}) -> undefined
+fn setup() {
+    val mut count = {n: 0}
+    onAll(fn () { count.n = count.n + 1 })
+    render(&count)
+}`,
+			want: []string{"6:5-6:19: this call may run the 'hs' that 'onAll' retains, which writes 'count' while it is borrowed as immutable"},
+		},
+		{
+			name: "union with null",
+			src: `declare fn onClick(handler: (&'static fn () -> undefined) | null) -> undefined
+declare fn render(view: &{n: number}) -> undefined
+fn setup() {
+    val mut count = {n: 0}
+    onClick(fn () { count.n = count.n + 1 })
+    render(&count)
+}`,
+			want: []string{"6:5-6:19: this call may run the 'handler' that 'onClick' retains, which writes 'count' while it is borrowed as immutable"},
+		},
+		{
+			name: "object field",
+			src: `declare fn mount(props: {onClick: &'static fn () -> undefined}) -> undefined
+declare fn render(view: &{n: number}) -> undefined
+fn setup() {
+    val mut count = {n: 0}
+    mount({onClick: fn () { count.n = count.n + 1 }})
+    render(&count)
+}`,
+			want: []string{"6:5-6:19: this call may run the 'props' that 'mount' retains, which writes 'count' while it is borrowed as immutable"},
+		},
 		// A closure that only reads its capture needs it unchanged only while the closure runs,
 		// and the frame cannot write it then.
 		{
@@ -424,6 +476,169 @@ fn setup() {
     val mut count = {n: 0}
     onClick(fn () { val x = count.n })
     bump(&mut count)
+}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, errs := inferAgainstTreeWithSpans(t, tt.src)
+			require.Equal(t, tt.want, errs)
+		})
+	}
+}
+
+// A closure passed to a `&'a fn` parameter holds its captures for 'a, which lasts as long as a
+// binding that shares 'a is live. That binding is an argument or receiver whose parameter type
+// mentions 'a, or the binding the call's result initializes when the return type mentions 'a.
+// TestNamedRetentionBorrows covers each kind of holder and asserts the full message, with its
+// span, of each conflict reported.
+//
+// A write to a captured local while the closure is retained is accepted, as E4 allows. A
+// closure that writes the local holds a mutable path, and E2 allows several mutable paths at
+// once. One that only reads it needs it unchanged only while it runs. So each rejected case
+// takes an immutable borrow of a local the closure writes.
+func TestNamedRetentionBorrows(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		// The emitter borrow shares 'a with the handler, so the handler stays reachable while e
+		// is live.
+		{
+			name: "borrowed object used after the conflicting borrow",
+			src: `declare class Emitter { n: number }
+declare fn subscribe<'a>(emitter: &'a mut Emitter, handler: &'a fn () -> undefined) -> undefined
+declare fn emit(emitter: &mut Emitter) -> undefined
+declare fn render(view: &{n: number}) -> undefined
+fn setup(em: &mut Emitter) {
+    val mut count = {n: 0}
+    val e = &mut em
+    subscribe(e, fn () { count.n = count.n + 1 })
+    render(&count)
+    emit(e)
+}`,
+			want: []string{"9:5-9:19: this call may run the 'handler' that 'subscribe' retains, which writes 'count' while it is borrowed as immutable"},
+		},
+		{
+			name: "borrowed object dead before the borrow",
+			src: `declare class Emitter { n: number }
+declare fn subscribe<'a>(emitter: &'a mut Emitter, handler: &'a fn () -> undefined) -> undefined
+declare fn emit(emitter: &mut Emitter) -> undefined
+declare fn render(view: &{n: number}) -> undefined
+fn setup(em: &mut Emitter) {
+    val mut count = {n: 0}
+    val e = &mut em
+    subscribe(e, fn () { count.n = count.n + 1 })
+    emit(e)
+    render(&count)
+}`,
+		},
+		{
+			name: "borrowed object live across a write of the captured local",
+			src: `declare class Emitter { n: number }
+declare fn subscribe<'a>(emitter: &'a mut Emitter, handler: &'a fn () -> undefined) -> undefined
+declare fn emit(emitter: &mut Emitter) -> undefined
+fn setup(em: &mut Emitter) {
+    val mut count = {n: 0}
+    val e = &mut em
+    subscribe(e, fn () { val x = count.n })
+    count.n = 5
+    emit(e)
+}`,
+		},
+		// The result shares 'a with f, so the closure stays reachable while lazy is live.
+		{
+			name: "returned holder used after the conflicting borrow",
+			src: `declare class Lazy<'a> { force(&self) -> number }
+declare fn mapLazy<'a>(xs: &'a Array<number>, f: &'a fn (x: number) -> number) -> Lazy<'a>
+declare fn render(view: &{n: number}) -> undefined
+fn go() -> number {
+    val xs = [1, 2, 3]
+    val mut count = {n: 0}
+    val lazy = mapLazy(&xs, fn (x) {
+        count.n = count.n + 1
+        return x
+    })
+    render(&count)
+    return lazy.force()
+}`,
+			want: []string{"11:5-11:19: this call may run the 'f' that 'mapLazy' retains, which writes 'count' while it is borrowed as immutable"},
+		},
+		{
+			name: "returned holder dead before the borrow",
+			src: `declare class Lazy<'a> { force(&self) -> number }
+declare fn mapLazy<'a>(xs: &'a Array<number>, f: &'a fn (x: number) -> number) -> Lazy<'a>
+declare fn render(view: &{n: number}) -> undefined
+fn go() -> number {
+    val xs = [1, 2, 3]
+    val mut count = {n: 0}
+    val lazy = mapLazy(&xs, fn (x) {
+        count.n = count.n + 1
+        return x
+    })
+    val n = lazy.force()
+    render(&count)
+    return n
+}`,
+		},
+		// The constructor returns Button<'a>, so b holds the handler.
+		{
+			name: "class constructed with a handler",
+			src: `declare fn render(view: &{n: number}) -> undefined
+class Button<'a> {
+    onClick: &'a fn () -> undefined,
+    click(&self) -> undefined { self.onClick() },
+}
+fn setup() {
+    val mut count = {n: 0}
+    val b = Button(fn () { count.n = count.n + 1 })
+    render(&count)
+    b.click()
+}`,
+			want: []string{"9:5-9:19: this call may run the 'onClick' that 'Button' retains, which writes 'count' while it is borrowed as immutable"},
+		},
+		{
+			name: "class constructed with a handler and dead before the borrow",
+			src: `declare fn render(view: &{n: number}) -> undefined
+class Button<'a> {
+    onClick: &'a fn () -> undefined,
+    click(&self) -> undefined { self.onClick() },
+}
+fn setup() {
+    val mut count = {n: 0}
+    val b = Button(fn () { count.n = count.n + 1 })
+    b.click()
+    render(&count)
+}`,
+		},
+		// The receiver's type is Button<'a>, so b holds the handler on() stores.
+		{
+			name: "class method that stores a handler",
+			src: `declare fn render(view: &{n: number}) -> undefined
+class Button<'a> {
+    handler: &'a fn () -> undefined,
+    on(&mut self, h: &'a fn () -> undefined) -> undefined { self.handler = h },
+    click(&self) -> undefined { self.handler() },
+}
+fn setup() {
+    val mut count = {n: 0}
+    val mut b = Button(fn () {})
+    b.on(fn () { count.n = count.n + 1 })
+    render(&count)
+    b.click()
+}`,
+			want: []string{"11:5-11:19: this call may run the 'h' that 'on' retains, which writes 'count' while it is borrowed as immutable"},
+		},
+		// No binding shares 'a, so the callee keeps the handler no longer than the call.
+		{
+			name: "retention lifetime no binding shares",
+			src: `declare fn run<'a>(handler: &'a fn () -> undefined) -> undefined
+declare fn render(view: &{n: number}) -> undefined
+fn setup() {
+    val mut count = {n: 0}
+    run(fn () { count.n = count.n + 1 })
+    render(&count)
 }`,
 		},
 	}
