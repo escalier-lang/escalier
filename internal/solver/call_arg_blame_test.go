@@ -87,6 +87,13 @@ func TestACallBlamesTheArgumentThatDoesNotFit(t *testing.T) {
 			src:  "fn g<T>(p) -> T {\n\tval z: T = p.x\n\treturn z\n}\n" + `val n: number = g({x: "s"})`,
 			want: []string{`5:23-5:26: cannot constrain "s" <: number`},
 		},
+		{
+			// `g` holds both functions, so the argument is checked against `num` as well as `id`.
+			name: "AGeneralizedCalleeWithAGenericAndAMonomorphicSignature",
+			src: "fn id<T>(x: T) -> T { return x }\nfn num(x: number) -> number { return x }\n" +
+				"declare val c: boolean\nval g = if c { id } else { num }\n" + `val r = g("s")`,
+			want: []string{`5:11-5:14: cannot constrain "s" <: number`},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

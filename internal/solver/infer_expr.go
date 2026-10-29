@@ -2172,18 +2172,20 @@ func (c *checker) calleeTarget(lvl int, e *ast.CallExpr, callee soltype.Type, fr
 	secondInstance := false
 	if resolved && quantified(fn) {
 		_, isClassValue := c.classValueCarrier(callee)
-		if fresh && c.ctx.binderMintedAt(fn, lvl) {
-			// Reading the name copied the binder, together with the links the declaration's
-			// bodies recorded on its parameters. A class's member bodies record them on the
-			// class's parameters. A function records them between its parameters and the
-			// other variables of its signature, so in `fn f<T>({x :: T}) -> T` the variable
-			// `x` projects to has `T` as an upper bound. Those copies belong to this call, so
+		if fresh && (isClassValue || isSoleSignature(callee, fn)) && c.ctx.binderMintedAt(fn, lvl) {
+			// Reading the name copied the binder along with the links the declaration's bodies
+			// recorded on its type parameters. In `fn f<T>({x :: T}) -> T`, the variable the
+			// pattern reads `x` into has `T` as an upper bound, and a class's member bodies
+			// link the class's parameters the same way. These copies belong to this call, so
 			// the call binds them where they stand. Copying the binder again would leave the
-			// links naming the first copy, and an argument reaching it only through them
-			// would never reach the copy the return reads. binderMintedAt confirms the binder
-			// holds this read's copies and no lifetime parameter whose bounds would need
-			// rewriting. The callee is a copy this call alone reads, so no later lower bound
-			// reaches it, and the bound signature replaces it.
+			// links naming the first copy, and the argument for `x` would never reach the `T`
+			// the return reads.
+			//
+			// binderMintedAt confirms the binder holds this read's copies and no lifetime
+			// parameter whose bounds would need rewriting. No later lower bound reaches a copy
+			// this call alone reads, so the bound signature replaces the callee. A function
+			// callee must hold fn as its only signature for that. `val g = if c { id } else
+			// { num }` gives `g` two, and a call to `g` is checked against both through `g`.
 			fn = c.ctx.bindFuncBinderInPlace(fn)
 			callee = fn
 		} else {
@@ -2213,6 +2215,18 @@ func (c *checker) calleeTarget(lvl int, e *ast.CallExpr, callee soltype.Type, fr
 	return callTarget{callee: callee, fn: fn, secondInstance: secondInstance}
 }
 
+// isSoleSignature reports whether callee is fn itself or a variable whose only lower bound
+// is fn.
+func isSoleSignature(callee soltype.Type, fn *soltype.FuncType) bool {
+	switch t := callee.(type) {
+	case *soltype.FuncType:
+		return t == fn
+	case *soltype.TypeVarType:
+		return len(t.LowerBounds) == 1 && t.LowerBounds[0] == soltype.Type(fn)
+	}
+	return false
+}
+
 // armsTarget returns a call target that picks one of arms, each wrapped as a monomorphic
 // scheme so resolveOverload trials it the way it trials a named overload set's arms.
 func armsTarget(arms []*soltype.FuncType) callTarget {
@@ -2233,8 +2247,8 @@ func armsTarget(arms []*soltype.FuncType) callTarget {
 //     In `fn inc(x: number) -> number` the call `inc(1)` has a signature with no binder
 //     to instantiate. A class value such as `Box(5)` has its callee replaced by fn. So
 //     does a generic function called through its name, as `id(5)` is for
-//     `fn id<T>(x: T) -> T`, since inferCallTarget binds that read's copy of the binder
-//     in place. fn.Ret flows into the call's type, so `inc("a")` still has type `number`
+//     `fn id<T>(x: T) -> T`, since calleeTarget binds that read's copy of the binder in
+//     place. fn.Ret flows into the call's type, so `inc("a")` still has type `number`
 //     after its argument is reported.
 //   - secondInstance is true when callee is any other variable whose bound is quantified.
 //     With `val o = {f: id}`, the call `o.f(5)` reads a callee whose bound is
