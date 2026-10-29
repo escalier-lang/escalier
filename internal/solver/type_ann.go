@@ -1519,7 +1519,8 @@ func (c *checker) resolveMutableTypeAnn(scope *Scope, ta *ast.MutableTypeAnn, lv
 // resolveRefTypeAnn lowers a borrow annotation `&T`, `&mut T`, `&'a T`, or `&'a mut T`
 // to a soltype.RefType{Mut, Lt, Inner}. The inner must be a RefInner. A borrow of a
 // value type such as a primitive has nothing to point at and is reported as an
-// unsupported feature.
+// unsupported feature. A function type inner is the exception, and lowers through
+// retainedFuncType to a FuncType carrying the lifetime.
 //
 // resolveLifetimeAnn mints the lifetime. A bare `&` gets a fresh inferred lifetime, and
 // `&'a` resolves the named lifetime to the variable that name denotes in the current
@@ -1536,6 +1537,9 @@ func (c *checker) resolveRefTypeAnn(scope *Scope, ta *ast.RefTypeAnn, lvl int) (
 	// A borrow whose pointee is itself a borrow collapses to depth one.
 	if nested, isRef := inner.(*soltype.RefType); isRef {
 		return c.normalizeNestedBorrow(ta, lt, nested)
+	}
+	if fn, isFn := inner.(*soltype.FuncType); isFn {
+		return c.retainedFuncType(ta, lt, fn)
 	}
 	ri, isRI := inner.(soltype.RefInner)
 	if !isRI {
@@ -1566,6 +1570,26 @@ func (c *checker) normalizeNestedBorrow(ta *ast.RefTypeAnn, outerLt soltype.Life
 	t := soltype.NewRef(false, outerLt, inner.Inner)
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
+}
+
+// retainedFuncType lowers `&'a fn (…) -> R` to the function type fn with its retention
+// lifetime Lt set to lt. The result is a FuncType, not a RefType, since a function is a
+// value type that is copied, and the `&'a` only bounds how long a callee keeps its copy.
+// Two forms are reported as unsupported features:
+//
+//   - `&mut fn`, since nothing can write through a function.
+//   - `&'a (&'b fn)`, since a function has one retention lifetime.
+func (c *checker) retainedFuncType(ta *ast.RefTypeAnn, lt soltype.Lifetime, fn *soltype.FuncType) (soltype.Type, bool) {
+	if ta.Mut {
+		return c.reportUnsupportedFeature(ta, "mutable borrow of a function type"), false
+	}
+	if fn.Lt != nil {
+		return c.reportUnsupportedFeature(ta, "second retention lifetime on a function type"), false
+	}
+	t := *fn
+	t.Lt = lt
+	c.recordProv(&t, ta, AnnotationType)
+	return &t, true
 }
 
 // resolveLifetimeAnn resolves the lifetime of a borrow annotation. A nil node is

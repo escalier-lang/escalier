@@ -343,6 +343,20 @@ func TestAcceptObjectIdentityPreservation(t *testing.T) {
 	require.Same(t, obj, obj.Accept(identityVisitor{}, Positive), "an unchanged ObjectType keeps its pointer")
 }
 
+// TestAcceptFuncCarriesRetentionLifetime asserts that rewriting a parameter of a
+// `&'static fn` rebuilds the FuncType with its retention lifetime intact.
+func TestAcceptFuncCarriesRetentionLifetime(t *testing.T) {
+	str := &PrimType{Prim: StrPrim}
+	a := &TypeVarType{ID: 1}
+	fn := &FuncType{Params: []*FuncParam{{Type: a}}, Ret: &UndefinedType{}, Lt: Static}
+
+	got := fn.Accept(&replaceVar{target: a, repl: str}, Positive).(*FuncType)
+
+	require.NotSame(t, fn, got, "a changed parameter forces a new FuncType")
+	require.Same(t, Static, got.Lt, "the retention lifetime carries through unchanged")
+	require.Same(t, str, got.Params[0].Type, "the variable took the replacement")
+}
+
 // A no-op rewrite over a RefType keeps its pointer all the way down (copy-on-write).
 func TestAcceptRefIdentityPreservation(t *testing.T) {
 	num := &PrimType{Prim: NumPrim}
