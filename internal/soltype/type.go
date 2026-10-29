@@ -303,6 +303,10 @@ type FuncParam struct {
 	// `...` marker (which is callback-only). Per-extra element-type checking (§4.2.2)
 	// needs Array types and is M4; M3 models only the arity effect.
 	Rest bool
+	// Moved marks an unannotated parameter whose whole binding the function body moves. A
+	// call moves its argument into such a parameter, as it does into one written with an
+	// owned type. The rendered type does not show it.
+	Moved bool
 }
 
 // FuncType is a (possibly multi-argument) function type. M3 (PR4) adds Inexact: a

@@ -253,10 +253,6 @@ func TestFlowLifetimeNonEscapingParam(t *testing.T) {
 }
 */
 
-// DISABLED until #2261, which moves the argument when calling an unannotated parameter that
-// escapes. Today `store` infers as `fn (p: {x: number}) -> undefined`, yet `store(a)` records no
-// move, so the read of `a.x` checks clean.
-/*
 func TestFlowLifetimeEscapingParamMoves(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{
 		// F3. The call to `store` moves `a`, so the later read of `a.x` uses a moved value.
@@ -277,7 +273,6 @@ func TestFlowLifetimeEscapingParamMoves(t *testing.T) {
 		},
 	})
 }
-*/
 
 // DISABLED until #2262, which infers an escaping parameter that the body only reads as a
 // `'static` borrow. Today `remember` infers as `fn <T0>(value: T0) -> undefined`, which leaves

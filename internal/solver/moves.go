@@ -159,9 +159,7 @@ func (c *checker) isReferenceShaped(t soltype.Type) bool {
 
 // isConcreteOwned reports whether t is a CONCRETE owned reference shape — an owned
 // object, tuple, class instance, or owned RefType — excluding a bare type variable. An alias
-// or interface is decided by what it names. A consuming parameter must be spelled as a
-// concrete owned shape, so a fresh inference variable for an unannotated parameter does not
-// consume its argument.
+// or interface is decided by what it names.
 //
 // Excluding the bare type variable is the opposite of isReferenceShaped, which includes
 // it, so the two are conservative in opposite directions on an unresolved variable. This
@@ -673,6 +671,31 @@ func (c *checker) consumeAtGlobalWrite(source ast.Expr, sourceT soltype.Type, mo
 		return
 	}
 	c.recordMovePlace(p, moveNode, ref)
+}
+
+// markMovedParams sets Moved on each parameter that is a bare name with no type annotation
+// and that a move in the current body consumes whole. params holds the FuncParams built from
+// sigParams, one for one. It reads the body's move sites, so it runs once the body is walked
+// and before the body's context is popped.
+func (c *checker) markMovedParams(sigParams []*ast.Param, params []*soltype.FuncParam) {
+	if c.fn == nil || len(c.fn.moveSites) == 0 {
+		return
+	}
+	moved := set.NewSet[liveness.VarID]()
+	for _, at := range c.fn.moveSites {
+		for id := range at {
+			moved.Add(id)
+		}
+	}
+	for i, p := range sigParams {
+		ip, ok := p.Pattern.(*ast.IdentPat)
+		if !ok || p.TypeAnn != nil || i >= len(params) {
+			continue
+		}
+		if moved.Contains(c.varIDs.Of(ip)) {
+			params[i].Moved = true
+		}
+	}
 }
 
 // consumeIntoLiteral moves an owned place built into a fresh object or tuple literal,
