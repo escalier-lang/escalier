@@ -564,6 +564,13 @@ Specified above but not yet enforced:
   outside a parameter, such as a module-level binding, an array element, or a
   return annotation. Its type can be written through an alias or bound by a
   destructuring pattern, which the check does not read.
+- **Retained closures reached indirectly.** A closure is found in a parameter
+  type only when the type is written out. One behind a type alias, such as
+  `Cb<'static>` for `type Cb<'a> = &'a fn () -> undefined`, is not. A result
+  that keeps a closure is tracked only when it initializes or is assigned to a
+  binding whole, so a result placed in an array or destructured is not. A
+  binding whose lifetime is related to the retention lifetime by a declared
+  bound, rather than equal to it, is not read as holding the closure.
 - **Element stores**
   ([#1268](https://github.com/escalier-lang/escalier/issues/1268)). `t[i] = x`
   is rejected as unsupported rather than treated as an escape.

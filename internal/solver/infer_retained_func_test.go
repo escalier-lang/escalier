@@ -630,6 +630,58 @@ fn setup() {
 }`,
 			want: []string{"11:5-11:19: this call may run the 'h' that 'on' retains, which writes 'count' while it is borrowed as immutable"},
 		},
+		// The borrow of em ends with the call, but em's own type mentions 'a, so em holds the
+		// handler.
+		{
+			name: "borrowed object whose type holds the handler",
+			src: `declare fn render(view: &{n: number}) -> undefined
+class Emitter<'a> {
+    handler: &'a fn () -> undefined,
+    emit(&self) -> undefined { self.handler() },
+}
+declare fn subscribe<'a>(emitter: &mut Emitter<'a>, handler: &'a fn () -> undefined) -> undefined
+fn setup() {
+    val mut count = {n: 0}
+    val mut em = Emitter(fn () {})
+    subscribe(&mut em, fn () { count.n = count.n + 1 })
+    render(&count)
+    em.emit()
+}`,
+			want: []string{"11:5-11:19: this call may run the 'handler' that 'subscribe' retains, which writes 'count' while it is borrowed as immutable"},
+		},
+		{
+			name: "holder reassigned",
+			src: `declare fn render(view: &{n: number}) -> undefined
+class Button<'a> {
+    onClick: &'a fn () -> undefined,
+    click(&self) -> undefined { self.onClick() },
+}
+fn setup() {
+    val mut count = {n: 0}
+    var b = Button(fn () {})
+    b.click()
+    b = Button(fn () { count.n = count.n + 1 })
+    render(&count)
+    b.click()
+}`,
+			want: []string{"11:5-11:19: this call may run the 'onClick' that 'Button' retains, which writes 'count' while it is borrowed as immutable"},
+		},
+		{
+			name: "holder copied",
+			src: `declare fn render(view: &{n: number}) -> undefined
+class Button<'a> {
+    onClick: &'a fn () -> undefined,
+    click(&self) -> undefined { self.onClick() },
+}
+fn setup() {
+    val mut count = {n: 0}
+    val b = Button(fn () { count.n = count.n + 1 })
+    val c = b
+    render(&count)
+    c.click()
+}`,
+			want: []string{"10:5-10:19: this call may run the 'onClick' that 'Button' retains, which writes 'count' while it is borrowed as immutable"},
+		},
 		// No binding shares 'a, so the callee keeps the handler no longer than the call.
 		{
 			name: "retention lifetime no binding shares",

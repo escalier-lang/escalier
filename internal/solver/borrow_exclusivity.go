@@ -1503,14 +1503,23 @@ func paramForArg(fn *soltype.FuncType, i int) (*soltype.FuncParam, bool) {
 // retentionHolders returns the bindings that share one of the lifetimes in shared with the
 // parameter at index skip of the call e. They are the arguments, and the receiver recv whose
 // parameter is self, that name a binding and whose parameter types mention one of those
-// lifetimes. An argument written as a borrow, such as `&mut em`, names no binding that outlives
-// the statement, so it is left out.
+// lifetimes. For an argument written as a borrow, such as `&mut em`, the holder is the borrowed
+// binding, and only when the borrowed type mentions one of those lifetimes.
 func (c *checker) retentionHolders(
 	e *ast.CallExpr, fn *soltype.FuncType, recv ast.Expr, self *soltype.FuncParam, skip int, shared []*soltype.LifetimeVar,
 ) []liveness.VarID {
 	var holders []liveness.VarID
 	add := func(expr ast.Expr, t soltype.Type) {
-		if _, isBorrow := expr.(*ast.BorrowExpr); isBorrow || !typeMentionsLifetime(c.ctx, t, shared) {
+		// A borrow written at the call ends with the statement, so only its referent can keep
+		// the closure, and only when the referent's own type mentions the lifetime.
+		if borrow, isBorrow := expr.(*ast.BorrowExpr); isBorrow {
+			ref, isRef := t.(*soltype.RefType)
+			if !isRef {
+				return
+			}
+			expr, t = borrow.Arg, ref.Inner
+		}
+		if !typeMentionsLifetime(c.ctx, t, shared) {
 			return
 		}
 		if p, ok := c.exprPlace(expr); ok && p.root > 0 && !slices.Contains(holders, p.root) {
@@ -1531,14 +1540,25 @@ func (c *checker) retentionHolders(
 	return holders
 }
 
-// noteRetainedResult adds holder to each store the call init recorded whose closure the call's
-// result keeps. It must run once the binding init initializes is known.
-func (c *checker) noteRetainedResult(holder liveness.VarID, init ast.Expr) {
-	if c.fn == nil || holder <= 0 {
+// noteRetainedHolder adds holder to the holders of each store whose closure the value init
+// carries. init carries it when init is a call whose result keeps the closure, or a name that
+// is already one of the store's holders. It must run once the binding init flows into is known.
+func (c *checker) noteRetainedHolder(holder liveness.VarID, init ast.Expr) {
+	if c.fn == nil || holder <= 0 || init == nil {
 		return
 	}
 	for _, idx := range c.fn.retainedResults[init] {
 		c.fn.retainedClosureStores[idx].holders = append(c.fn.retainedClosureStores[idx].holders, holder)
+	}
+	p, ok := c.exprPlace(init)
+	if !ok || p.root <= 0 || p.root == holder {
+		return
+	}
+	for i := range c.fn.retainedClosureStores {
+		store := &c.fn.retainedClosureStores[i]
+		if slices.Contains(store.holders, p.root) && !slices.Contains(store.holders, holder) {
+			store.holders = append(store.holders, holder)
+		}
 	}
 }
 

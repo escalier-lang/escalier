@@ -55,10 +55,15 @@ func (c *checker) queueCallOnlyChecks(params []callOnlyParam, sig *soltype.FuncT
 func (c *checker) checkCallOnlyParams() {
 	pending := c.pendingCallOnly
 	c.pendingCallOnly = nil
+	sigOcc := map[*soltype.FuncType]map[*soltype.LifetimeVar]occPolarity{}
 	for _, check := range pending {
 		p := check.param
 		lt := p.ft.Lt.(*soltype.LifetimeVar)
-		occ, _ := walkLtOcc(check.sig, soltype.Positive)
+		occ, walked := sigOcc[check.sig]
+		if !walked {
+			occ, _ = walkLtOcc(check.sig, soltype.Positive)
+			sigOcc[check.sig] = occ
+		}
 		_, outside := occ[lt]
 		static := false
 		for _, kept := range outlivedBy(lt) {

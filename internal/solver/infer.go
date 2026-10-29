@@ -639,7 +639,7 @@ type funcCtx struct {
 	// retention lifetime. The post-pass takes a loan of each local those closures write.
 	retainedClosureStores []retainedClosureStore
 	// retainedResults maps a call to the indices in retainedClosureStores of the stores whose
-	// closure the call's result keeps. noteRetainedResult adds the binding the result
+	// closure the call's result keeps. noteRetainedHolder adds the binding the result
 	// initializes to each store's holders.
 	retainedResults map[ast.Expr][]int
 	// callSites holds every call in this body, in source order.

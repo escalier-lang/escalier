@@ -2856,6 +2856,8 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		// later merges.
 		if !b.ModuleLevel {
 			c.recordBorrowEdges(c.varIDs.Of(target), e.Right)
+			// A value that keeps a closure keeps it reachable while the target is live.
+			c.noteRetainedHolder(c.varIDs.Of(target), e.Right)
 			if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
 				c.flushBorrowDirty(ref)
 				// The reassignment repoints the binding, so the loan it held is gone and the
