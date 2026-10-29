@@ -236,64 +236,66 @@ func TestCallToBorrowParamNeedsWrittenBorrow(t *testing.T) {
 func TestReadThroughBorrowParamKeepsBorrow(t *testing.T) {
 	tests := []struct {
 		name string
-		body string
+		src  string
 		want string
 		errs []string
 	}{
 		{
 			name: "WriteThroughReturnedField",
-			body: `
+			src: `fn read(p) { return p.x }
+				fn h() {
 					val b = {x: {y: 1}}
 					var mut r = read(&b)
 					r.y = 5
 					return b
-			`,
+				}`,
 			want: "fn () -> {x: {y: 1}}",
-			errs: []string{"6:6-6:13: cannot constrain immutable object <: mutable object"},
+			errs: []string{"5:6-5:13: cannot constrain immutable object <: mutable object"},
 		},
 		{
 			name: "ValueFieldCopiesOut",
-			body: `
+			src: `fn read(p) { return p.x }
+				fn h() {
 					val b = {x: 1}
 					val n = read(&b)
 					return n + 1
-			`,
+				}`,
 			want: "fn () -> number",
 		},
 		{
 			name: "UndefinedFieldCopiesOut",
-			body: `
+			src: `fn read(p) { return p.x }
+				fn h() {
 					val b = {x: undefined}
 					val s: undefined = read(&b)
 					return s
-			`,
+				}`,
 			want: "fn () -> undefined",
 		},
 		{
 			name: "FunctionFieldCopiesOut",
-			body: `
+			src: `fn read(p) { return p.x }
+				fn h() {
 					val b = {x: fn () { return 1 }}
 					return read(&b)()
-			`,
+				}`,
 			want: "fn () -> 1",
 		},
 		{
 			name: "ObjectFieldIntoOwnedDestination",
-			body: `
+			src: `fn read(p) { return p.x }
+				fn h() {
 					val b = {x: {y: 1}}
 					val s: {y: number} = read(&b)
 					return s
-			`,
+				}`,
 			want: "fn () -> {y: number}",
-			errs: []string{"5:13-5:24: cannot use borrowed &object as owned object"},
+			errs: []string{"4:13-4:24: cannot use borrowed &object as owned object"},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			values, errs := inferAgainstTreeWithSpans(t, `
-				fn read(p) { return p.x }
-				fn h() {`+tt.body+`}
-			`)
+			values, errs := inferAgainstTreeWithSpans(t, tt.src)
 			require.Equal(t, tt.errs, errs)
 			require.Equal(t, tt.want, values["h"])
 		})
