@@ -14,8 +14,8 @@ type callOnlyParam struct {
 	name string
 	node ast.Node
 	ft   *soltype.FuncType
-	// outerMark is the lifetime counter when the function's inference began, for a function
-	// written inside another body. Every lifetime minted before it belongs to the enclosing body
+	// outerMark is the lifetime counter before the function's parameters resolved, for a
+	// function written inside another body. Every lifetime minted before it belongs to the enclosing body
 	// or to the module. It is -1 for a function with no enclosing body.
 	outerMark int
 }
@@ -43,8 +43,8 @@ func (c *checker) queueCallOnlyChecks(params []callOnlyParam, sig *soltype.FuncT
 //     result after the call.
 //   - A lifetime at a lower level than the call lifetime, which belongs to the module or to an
 //     enclosing body.
-//   - For a function written inside another body, a lifetime minted before the function's
-//     inference began. The enclosing body minted it at the same level.
+//   - For a function written inside another body, a lifetime minted before its parameters
+//     resolved. The enclosing body minted it, possibly at the same level.
 //   - An elided lifetime, which a binding of the enclosing body holds in its display type.
 //
 // Any other lifetime is one the body mints itself, or a parameter lifetime of a function

@@ -614,9 +614,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	var defaults []paramDefaultSite
 	// callOnlyParams holds the parameters typed as a function with no retention lifetime.
 	var callOnlyParams []callOnlyParam
-	// A function written inside another body shares that body's level, so the lifetimes the
-	// enclosing body minted are told apart by the counter instead. outerMark is -1 for a
-	// function with no enclosing body.
+	// A lifetime the enclosing body minted can sit at the level of this function's parameters,
+	// so the counter tells those lifetimes apart. outerMark is -1 for a function with no
+	// enclosing body.
 	outerMark := -1
 	if c.fn != nil {
 		outerMark = c.ctx.lifetimeCounter

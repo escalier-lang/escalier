@@ -1399,9 +1399,9 @@ func (c *checker) markNamedClosure(closure ast.Func) {
 	c.fn.namedClosures.Add(closure)
 }
 
-// retainedClosureStore is a place the body hands a value that may carry a closure to, where the
-// closure stays reachable after the statement. It is a store into a module-level binding, or an
-// argument to a parameter whose function type carries a retention lifetime.
+// retainedClosureStore records a value that may carry a closure and stays reachable after its
+// statement. The value is stored into a module-level binding, or passed to a parameter whose
+// function type carries a retention lifetime.
 type retainedClosureStore struct {
 	// via names the binding or parameter that keeps the closure, as closureVia or retainedVia
 	// returns it.
@@ -1416,8 +1416,8 @@ type retainedClosureStore struct {
 	static bool
 	// holders are the bindings that keep the closure reachable when static is false. They are
 	// the arguments and the receiver whose parameter types share the retention lifetime, and
-	// the binding the call's result initializes when the return type shares it. A call may run
-	// the closure only while one of them is live.
+	// each binding the call's result or another holder flows into. A call may run the closure
+	// only while one of them is live.
 	holders []liveness.VarID
 }
 
