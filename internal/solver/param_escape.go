@@ -273,7 +273,11 @@ func (c *checker) markOpenEscapeParams(sigParams []*ast.Param, params []*soltype
 			fp.Moved = true
 			continue
 		}
-		fp.Type = soltype.NewRef(false, soltype.Static, v)
+		// The body already passed v to the open destination, so the borrow flows into v
+		// rather than replacing it. The destination then holds the borrow the caller lends.
+		ref := soltype.NewRef(false, soltype.Static, c.freshAt(v.Level))
+		c.constrain(ip, ref, v)
+		fp.Type = ref
 	}
 }
 

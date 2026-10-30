@@ -310,10 +310,15 @@ func TestInferOpenEscapeParam(t *testing.T) {
 	tests := []struct {
 		name string
 		src  string
+		// want is remember's rendered type.
 		want string
+		// seen is the rendered type of the module-level map, checked when it is not empty.
+		seen string
 		errs []string
 	}{
 		{
+			// #2352 keeps remember monomorphic over seen's value type, so it renders
+			// `fn (value: &'static {retries: 3}) -> undefined`.
 			name: "ReadOnlyIsStaticBorrow",
 			src: `
 				val mut seen = Map()
@@ -324,9 +329,12 @@ func TestInferOpenEscapeParam(t *testing.T) {
 					return opts.retries
 				}
 			`,
-			want: "fn <T0>(value: &'static T0) -> undefined",
+			want: "fn (value: unknown) -> undefined",
+			seen: "Map<string, &'static {retries: 3}>",
 		},
 		{
+			// #2352 keeps remember monomorphic over seen's value type, so it renders
+			// `fn (value: &'static {retries: 3}) -> undefined`.
 			name: "ReadOnlyNeedsWrittenBorrow",
 			src: `
 				val mut seen = Map()
@@ -337,7 +345,8 @@ func TestInferOpenEscapeParam(t *testing.T) {
 					return opts.retries
 				}
 			`,
-			want: "fn <T0>(value: &'static T0) -> undefined",
+			want: "fn (value: unknown) -> undefined",
+			seen: "Map<string, &'static {retries: 3}>",
 			errs: []string{"6:15-6:19: this argument is borrowed by the callee, so write the borrow: `&`"},
 		},
 		{
@@ -435,6 +444,9 @@ func TestInferOpenEscapeParam(t *testing.T) {
 		{
 			// A value type has no storage to borrow, so it copies into the borrow without a
 			// written `&`. The key escapes into seen too, so it is a `'static` borrow as well.
+			// #2352 keeps remember monomorphic over seen's key and value types, so it renders
+			// `fn (key: &'static "a" | "b", value: &'static 3 | 4) -> undefined`. A `&'static` of a
+			// value type stands for the value type, so seen holds the strings and numbers.
 			name: "ValueTypeArgumentsCopy",
 			src: `
 				val mut seen = Map()
@@ -446,7 +458,8 @@ func TestInferOpenEscapeParam(t *testing.T) {
 					return 1
 				}
 			`,
-			want: "fn <T0, T1>(key: &'static T0, value: &'static T1) -> undefined",
+			want: "fn (key: unknown, value: unknown) -> undefined",
+			seen: `Map<&'static ("a" | "b"), &'static (3 | 4)>`,
 		},
 	}
 	for _, tt := range tests {
@@ -454,6 +467,9 @@ func TestInferOpenEscapeParam(t *testing.T) {
 			values, errs := inferAgainstTreeWithSpans(t, tt.src)
 			require.Equal(t, tt.errs, errs)
 			require.Equal(t, tt.want, values["remember"])
+			if tt.seen != "" {
+				require.Equal(t, tt.seen, values["seen"])
+			}
 		})
 	}
 }
