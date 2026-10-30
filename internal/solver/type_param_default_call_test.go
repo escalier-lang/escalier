@@ -38,7 +38,7 @@ func TestInferTypeParamDefaultAtCall(t *testing.T) {
 			name:    "ArgumentCandidate",
 			src:     "declare fn wrap<T = number>(x: T) -> Array<T>\nval xs = wrap(\"s\")",
 			binding: "xs",
-			want:    "Array<string>",
+			want:    `Array<"s">`,
 		},
 		{
 			name:    "ExpectedTypeCandidate",
@@ -51,7 +51,7 @@ func TestInferTypeParamDefaultAtCall(t *testing.T) {
 			name:    "DefaultNamingASibling",
 			src:     "declare fn pair<T, U = T>(x: T) -> [T, Array<U>]\nval p = pair(\"s\")",
 			binding: "p",
-			want:    "[string, Array<string>]",
+			want:    `["s", Array<"s">]`,
 		},
 		{
 			// The callback's parameter bounds `T` from above, so the default does not
@@ -74,7 +74,7 @@ func TestInferTypeParamDefaultAtCall(t *testing.T) {
 			name:    "DefaultInsideABoundCycle",
 			src:     "declare fn f<T, U: T = T>(x: T) -> Array<U>\nval r = f(1)",
 			binding: "r",
-			want:    "Array<number>",
+			want:    "Array<1>",
 		},
 		{
 			name:    "NoDefault",

@@ -50,7 +50,7 @@ func TestInferGenericFuncDecl(t *testing.T) {
 			`,
 			want: map[string]string{
 				"pair": "fn <T, U>(x: T, y: U) -> [T, U]",
-				"p":    "[number, string]",
+				"p":    `[1, "two"]`,
 			},
 		},
 		{

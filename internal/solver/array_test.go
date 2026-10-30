@@ -204,7 +204,7 @@ func TestCommittedReadersWidenTheBinder(t *testing.T) {
 			name: "WithReturnsTheUnion",
 			src: `declare val nums: Array<number>
 				val got = nums.with(0, "s")`,
-			want: "Array<number | string>",
+			want: `Array<number | "s">`,
 		},
 		{
 			name: "ConcatOfTheSameElementTypeKeepsIt",

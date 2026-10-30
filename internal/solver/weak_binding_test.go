@@ -188,15 +188,26 @@ export val inc2 = twice(fn (x: number) -> number { return x + 1 })
 			values: map[string]string{"inc2": "fn (x: number) -> number"},
 		},
 		{
-			// `o` owns its tuple, so its element widens. The `6` the pattern tests is not
-			// part of it.
+			// The `6` the pattern tests is not part of `o`'s type, which keeps the `5` it
+			// was built from.
 			name: "APatternTestLeavesASharedElementAlone",
 			src: `
 val mk = fn (v) { return [v] }
 val o = mk(5)
 fn f() { return match o[0] { 6 => "six", _ => "other" } }
 `,
-			values: map[string]string{"o": "[number]"},
+			values: map[string]string{"o": "[5]"},
+		},
+		{
+			// An immutable binding keeps its literals whether its initializer is a call or
+			// the literal itself.
+			name: "AnImmutableCallResultKeepsItsLiterals",
+			src: `
+declare fn id<T>(x: T) -> T
+val a = [5, 10]
+val c = id([5, 10])
+`,
+			values: map[string]string{"a": "[5, 10]", "c": "[5, 10]"},
 		},
 		{
 			// `T` appears only in a parameter of `put`, so it is contravariant, and widening

@@ -1472,13 +1472,13 @@ the settled type for display, so hover and the rendered bindings show what the
 uses decided rather than what the initializer alone gave.
 
 The settled type widens its literals the way a `var` does when the binding is
-written `mut` or declared with `var`, or when it owns what it holds. In the
-example, `seen` settles to `Map<string, number | string>`. An immutable binding
-that owns its value widens only the literals inside it, so `val five = id(5)`
-keeps `5` as `val five = 5` does, while `val b = Box(5)` settles to
-`Box<number>`. An immutable binding of a borrow keeps its literals, whether the
-borrow is `&` or `&mut`. Those literals belong to the place the borrow points
-to, not to the binding. With `val mut p: {x: 1} = {x: 1}`, widening
+written `mut` or declared with `var`. In the example, `seen` settles to
+`Map<string, number | string>`. An immutable binding keeps its literals, the
+same as one whose initializer is a literal. `val c = id([5, 10])` settles to
+`[5, 10]` as `val a = [5, 10]` does, and `val b = Box(5)` settles to
+`Box<5>`. This holds for a binding of a borrow too, whether the borrow is `&`
+or `&mut`. A borrow's literals belong to the place it points to, not to the
+binding. With `val mut p: {x: 1} = {x: 1}`, widening
 `val r = borrowMut(&mut p)` to `&mut {x: number}` would claim that `r.x = 2` is
 allowed, which the type of `p` rejects.
 

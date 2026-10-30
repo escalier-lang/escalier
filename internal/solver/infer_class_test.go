@@ -224,7 +224,7 @@ func TestInferClassGeneric(t *testing.T) {
 			`,
 			wantValues: map[string]string{
 				"Box": "{new <T>(value: T) -> Box<T>}",
-				"b":   "Box<number>",
+				"b":   "Box<5>",
 				"v":   "5",
 			},
 		},
@@ -237,7 +237,7 @@ func TestInferClassGeneric(t *testing.T) {
 				val b = p.second
 			`,
 			wantValues: map[string]string{
-				"p": "Pair<number, string>",
+				"p": `Pair<1, "x">`,
 				"a": "1",
 				"b": `"x"`,
 			},
@@ -249,7 +249,7 @@ func TestInferClassGeneric(t *testing.T) {
 				val b = Box(5)
 				val v = b.value
 			`,
-			wantValues: map[string]string{"b": "Box<number>", "v": "5"},
+			wantValues: map[string]string{"b": "Box<5>", "v": "5"},
 		},
 	}
 
@@ -307,14 +307,13 @@ func TestInferClassForwardBoundEnforced(t *testing.T) {
 			val b = Box(5)
 		`)
 		require.Empty(t, errs)
-		require.Equal(t, "Box<number, number>", values["b"])
+		require.Equal(t, "Box<5, 5>", values["b"])
 	})
 }
 
 // A join of the same class at two different type arguments — the value of
 // `if c { Box(5) } else { Box("hello") }` — leaves the binding a union of both
-// instantiations, Box<5> | Box<"hello">. `b` owns the union, so its settled display widens
-// the literals to Box<number> | Box<string>. That union is the shape classCarrier sees as two
+// instantiations, Box<5> | Box<"hello">. That union is the shape classCarrier sees as two
 // distinct class instances on one variable's lower bounds, so a member access on it cannot
 // take the fast projected-member path and rides the nominal-vs-structural rule instead.
 func TestInferClassJoinDistinctArgs(t *testing.T) {
@@ -324,7 +323,7 @@ func TestInferClassJoinDistinctArgs(t *testing.T) {
 		val b = if c { Box(5) } else { Box("hello") }
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "Box<number> | Box<string>", values["b"])
+	require.Equal(t, `Box<5> | Box<"hello">`, values["b"])
 }
 
 // Reading a member off that union — `b.value` for b : Box<5> | Box<"hello"> — distributes
@@ -1201,7 +1200,7 @@ func TestInferClassInheritedMemberAccessCollidingVal(t *testing.T) {
 // the inherited field `food: A` at Dog's argument. And Dog's constructor parameter `tag: D`
 // resolves the class parameter `D` through the general resolveTypeAnn path, so Dog infers
 // generic in `D` and `Dog("bone")` recovers `Dog<"bone">` rather than a non-generic
-// `Dog<never>`. `d` owns the instance, so its settled display widens to `Dog<string>`. The inherited field read projects through the edge to the same argument.
+// `Dog<never>`. The inherited field read projects through the edge to the same argument.
 //
 // The constructor writes Dog's own field. It could assign the inherited one too, since
 // `self` carries the whole chain, but definite assignment covers only a class's own fields,
@@ -1224,7 +1223,7 @@ func TestInferClassGenericSubGenericSuper(t *testing.T) {
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, "{new <D>(tag: D) -> Dog<D>}", values["Dog"])
-	require.Equal(t, "Dog<string>", values["d"])
+	require.Equal(t, `Dog<"bone">`, values["d"])
 	require.Equal(t, `"bone"`, values["f"])
 	require.Equal(t, `"bone"`, values["g"])
 }
@@ -1264,7 +1263,7 @@ func TestInferClassGenericMemberParam(t *testing.T) {
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, "{new <T>(v: T) -> Box<T>}", values["Box"])
-	require.Equal(t, "Box<number>", values["b"])
+	require.Equal(t, "Box<5>", values["b"])
 }
 
 // TestInferClassNameInAnnotation checks that a class name resolves in a type annotation

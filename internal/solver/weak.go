@@ -163,21 +163,16 @@ func (c *checker) settleWeakLocals() {
 // smallest μ form. A weak variable that survives that pass occurs in both polarities. It
 // is not a type parameter of the binding, so the second pass inlines it to its bounds.
 //
-// The settled type widens its literals, as a `var` does, when the binding is writable or
-// owns what it holds. `val mut seen = Map()` written with `seen.set("k", 1)` settles to
-// `Map<string, number>`. An immutable binding that owns its value widens only the literals
-// inside it, so `val five = id(5)` keeps `5` the way `val five = 5` does. An immutable
-// binding of a borrow keeps every literal, whether the borrow is `&` or `&mut`, since those
-// literals belong to the place the borrow points to.
+// The settled type widens its literals, as a `var` does, when the binding is writable.
+// `val mut seen = Map()` written with `seen.set("k", 1)` settles to `Map<string, number>`.
+// An immutable binding keeps its literals the way one with a literal initializer does, so
+// `val b = Box(5)` settles to `Box<5>` as `val p = [5, 10]` keeps `[5, 10]`.
 func (c *checker) settleWeakDisplay(w weakBinding) {
 	sc := w.scheme
 	simplified := coalesceScheme(sc.Body, sc.Level-1, sc.declared, sc.declaredLts)
 	display := inlineWeakVars(simplified, sc.Level)
-	switch {
-	case w.writable:
-		display = c.widenLiterals(display, true)
-	case !holdsBorrow(display):
-		display = c.widenLiterals(display, false)
+	if w.writable {
+		display = c.widenLiterals(display)
 	}
 	sc.coalesced = c.subsumeFinal(display)
 	if w.infoNode != nil {
@@ -186,44 +181,27 @@ func (c *checker) settleWeakDisplay(w weakBinding) {
 }
 
 // widenLiterals returns t with each literal widened to its primitive, as widen does for
-// one. With top false, only the literals inside a class instance, object, tuple, or borrow
-// are widened. A literal that t is, or that is a member of a union t is, is kept. A function
-// type is kept whole, and so is a class type argument the class's measured variance makes
-// contravariant, since widening either would change what the value accepts.
-func (c *checker) widenLiterals(t soltype.Type, top bool) soltype.Type {
-	return t.Accept(&literalWidener{ctx: c.ctx, top: top}, soltype.Positive)
+// one. A function type is kept whole, and so is a class type argument the class's measured
+// variance makes contravariant, since widening either would change what the value accepts.
+func (c *checker) widenLiterals(t soltype.Type) soltype.Type {
+	return t.Accept(&literalWidener{ctx: c.ctx}, soltype.Positive)
 }
 
-// literalWidener is the visitor behind widenLiterals. depth counts the class instances,
-// objects, tuples, and borrows enclosing the node being walked. entered holds, for each
-// node entered and not yet exited, whether entering it raised depth.
+// literalWidener is the visitor behind widenLiterals.
 type literalWidener struct {
-	ctx     *Context
-	top     bool
-	depth   int
-	entered []bool
+	ctx *Context
 }
 
 func (w *literalWidener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
-	raised := false
-	res := soltype.EnterResult{}
-	switch t.(type) {
+	switch t := t.(type) {
 	case *soltype.FuncType:
-		res = soltype.EnterResult{SkipChildren: true}
+		return soltype.EnterResult{SkipChildren: true}
 	case *soltype.LitType, *soltype.UniqueSymbolType, *soltype.RegexType:
-		if w.top || w.depth > 0 {
-			res = soltype.EnterResult{Type: widen(t), SkipChildren: true}
-		}
+		return soltype.EnterResult{Type: widen(t), SkipChildren: true}
 	case *soltype.ClassType:
-		w.depth++
-		raised = true
-		res = soltype.EnterResult{Type: w.widenClassArgs(t.(*soltype.ClassType)), SkipChildren: true}
-	case *soltype.ObjectType, *soltype.TupleType, *soltype.RefType:
-		w.depth++
-		raised = true
+		return soltype.EnterResult{Type: w.widenClassArgs(t), SkipChildren: true}
 	}
-	w.entered = append(w.entered, raised)
-	return res
+	return soltype.EnterResult{}
 }
 
 // widenClassArgs returns ct with each type argument widened, except one the class's measured
@@ -244,11 +222,6 @@ func (w *literalWidener) widenClassArgs(ct *soltype.ClassType) soltype.Type {
 }
 
 func (w *literalWidener) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type {
-	last := len(w.entered) - 1
-	if w.entered[last] {
-		w.depth--
-	}
-	w.entered = w.entered[:last]
 	return t
 }
 
