@@ -304,6 +304,10 @@ func (c *checker) fork(source ModuleSource, groupSource GroupSource, groups Pack
 	f.memberNamespaces = maps.Clone(c.memberNamespaces)
 	f.nsIndex = maps.Clone(c.nsIndex)
 	f.symbolOwners = maps.Clone(c.symbolOwners)
+	f.weakBindings = slices.Clip(c.weakBindings)
+	f.weakReaders = slices.Clip(c.weakReaders)
+	f.weakLocals = slices.Clip(c.weakLocals)
+	f.weakBindingVars = set.NewSet[*soltype.TypeVarType]()
 	f.fileScopes = maps.Clone(c.fileScopes)
 	f.activeGroup = maps.Clone(c.activeGroup)
 	f.moduleDeclared = declaredNames{values: maps.Clone(c.moduleDeclared.values), types: maps.Clone(c.moduleDeclared.types)}

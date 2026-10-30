@@ -109,10 +109,21 @@ val x = o.b`
 // instantiation.
 func TestBlameMissingPropertyPolymorphicReceiverLosesRelated(t *testing.T) {
 	src := `val mk = fn (v) { return {a: v} }
+val x = mk(5).b`
+	_, _, errs := inferSource(t, src)
+	requireBlame(t, src, errs, "2:15-2:16: object is missing property: b", "b")
+}
+
+// TestBlameMissingPropertyWeakReceiver asserts that a read off a module-level binding that
+// did not generalize blames the whole member expression. `o` keeps the variable `mk(5)`
+// returned, and the read sits one level deeper, so the read's property requirement is
+// copied out to o's level. The copy has no Prov entry, so the blame falls back to the read.
+func TestBlameMissingPropertyWeakReceiver(t *testing.T) {
+	src := `val mk = fn (v) { return {a: v} }
 val o = mk(5)
 val x = o.b`
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "3:11-3:12: object is missing property: b", "b")
+	requireBlame(t, src, errs, "3:9-3:12: object is missing property: b", "o.b")
 }
 
 // An identifier-flow mismatch blames the USE, not the definition: x's type traces

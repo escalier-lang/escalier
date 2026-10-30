@@ -793,7 +793,7 @@ in between.
 ## Decisions
 
 D1 through D8 record behaviour the solver enforces today that no document
-stated. D9 through D17 are design questions the rules left open. Each decided
+stated. D9 through D18 are design questions the rules left open. Each decided
 entry says where its outcome now lives. All of them are now decided. The current
 behaviour comes from reading the code, and the file references point at where
 it lives.
@@ -1457,6 +1457,117 @@ the way an elided `&` lifetime is inferred.
 
 Decided: accepted. E4 states it. The checker change is tracked by
 [#2342](https://github.com/escalier-lang/escalier/issues/2342).
+
+### D18. A module-level binding whose type its uses decide
+
+The checker generalizes every binding. Each use of a generalized binding gets
+fresh copies of its type variables, which is right for a function and wrong for
+a container a call creates:
+
+```esc
+val mut seen = Map()
+fn a() { seen.set("k", 1) }
+fn b() { seen.set("k", "s") }
+```
+
+`a` and `b` each write into their own copy of `seen`'s key and value types, so
+both calls check and `seen` renders as `Map<never, never>`. A function that
+stores a `'static` borrow and another that stores an owned value also both
+check, which D9 relies on not happening.
+
+The options are:
+
+- Generalize every binding, as the checker does today.
+- Generalize only a binding whose initializer is a syntactic value, and leave
+  the variables of any other binding weak. A weak variable is shared by every
+  use of its binding, so the uses decide its type together. OCaml calls this
+  the value restriction, and prints such a variable as `'_weak1`.
+- Require an annotation on every module-level binding, as Rust requires one on
+  every `static`.
+
+An annotation on every binding gives up inference for the common case of a
+call whose result needs none, such as `val five = id(5)`. Weak variables keep
+that case and still give `seen` one type.
+
+Recommendation: adopt weak variables, as OCaml does, and require no
+annotation.
+
+Decided: accepted. A `val` or `var` generalizes when it has a type annotation,
+or when it is an immutable binding whose initializer is a syntactic value. These
+initializers are syntactic values:
+
+- a function expression,
+- a literal, and a template literal whose interpolations are syntactic values,
+- an identifier,
+- a member or index read whose object and index are syntactic values,
+- an object or tuple literal whose members and spreads are syntactic values,
+  where a method is a property holding a function expression, and
+- a unary, binary, borrow, or type-cast expression whose operands are syntactic
+  values.
+
+A call, which also constructs a class instance, is not one. Neither is a tagged
+template, `await`, `yield`, `throw`, or an `if`, `match`, `do`, or `try`
+expression. A `var` and a binding written `mut` never generalize, whatever
+their initializer, since a write through one use would not reach another. So
+`val f = fn (x) { return x }` stays `fn <T0>(x: T0) -> T0`.
+
+A weak binding's type settles once everything that can write it is inferred.
+For a module-level binding that is the end of the module, and for a binding in
+a function or script body it is the end of that body. The checker then records
+the settled type for display, so hover and the rendered bindings show what the
+uses decided rather than what the initializer alone gave.
+
+A weak variable is one type, so the settled type shows it the same way in every
+position. That type is the union of the values that flowed into it, or the
+types its uses require when no value did, or `never` when nothing reached it.
+With `fn makeId() { return fn (x) { return x } }`, `val g = makeId()` called
+as `g(5)` and `g("a")` settles to `fn (x: 5 | "a") -> 5 | "a"`. A `g` that
+nothing calls settles to `fn (x: never) -> never`, so a module that imports it
+cannot call it with a value the exporting module never settled it on.
+
+The settled type widens the literals in each slot the binding can write, the
+same slots T9 widens in a literal initializer:
+
+- A `val` binding writes nothing, so it keeps every literal.
+  `val c = id([5, 10])` settles to `[5, 10]` as `val a = [5, 10]` does, and
+  `val b = Box(5)` settles to `Box<5>`.
+- A `var` binding can be rebound, so its whole value is a writable slot.
+  `var q = fetchNum()` settles to `Promise<number>`.
+- A `mut` binding can write its owned layers. A field that is not `readonly`, a
+  tuple element, and a class argument the class's `MutVariance` makes invariant
+  are writable slots. In the example, `seen` settles to
+  `Map<string, number | string>`, and `val mut b = Box(5)` settles to
+  `Box<number>`. A class argument that is only read, such as the `T` of
+  `Promise<T>` or of a class whose field holding `T` is `readonly`, is not a
+  writable slot. `val mut p = fetchNum()` keeps `Promise<5>`, since nothing can
+  write the value inside a promise.
+- Every position inside a writable slot is writable too, since a write replaces
+  the slot's whole value. `val mut a = [fetchNum()]` settles to
+  `[Promise<number>]`.
+
+A class argument the class makes contravariant keeps its literal in every case,
+since widening it would change what the value accepts. A borrow keeps its
+literals too, whether it is `&` or `&mut`. They belong to the place the borrow
+points to, not to the binding. With `val mut p: {x: 1} = {x: 1}`, widening
+`val r = borrowMut(&mut p)` to `&mut {x: number}` would claim that `r.x = 2` is
+allowed, which the type of `p` rejects.
+
+The checker requires no annotation. A weak variable no use decides settles
+silently. A container that is never written settles at `never`, so
+`val mut seen = Map()` with no `seen.set` reads as `Map<never, never>`. A
+function that stores its parameter in the map and has no caller leaves the
+parameter `unknown`, as `value` is in
+`fn remember(value) { seen.set("last", value) }`.
+An exported binding needs no annotation either, so `export val mut b = Box(5)`
+settles to `Box<number>`. Requiring one for an exported or undecided weak
+variable is a possible later tightening.
+
+A weak variable that received an owned value from one use and a borrow from
+another reports the error T8 gives a join of such branches, against the
+module-level binding.
+
+The rule lives in `generalizes` in [poly.go](../../internal/solver/poly.go),
+and the settling in [weak.go](../../internal/solver/weak.go).
 
 ## Known bugs
 

@@ -234,10 +234,14 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	// symbols are minted before the `val` that names them is reached.
 	prevOwners := c.symbolOwners
 	c.symbolOwners = symbolOwners(module, g)
+	prevWeak, prevReaders, prevLocals, prevWeakVars := c.weakBindings, c.weakReaders, c.weakLocals, c.weakBindingVars
+	c.weakBindings, c.weakReaders, c.weakLocals = nil, nil, nil
+	c.weakBindingVars = set.NewSet[*soltype.TypeVarType]()
 	defer func() {
 		target.onDefine = prevOnDefine
 		c.nsIndex = nil
 		c.symbolOwners = prevOwners
+		c.weakBindings, c.weakReaders, c.weakLocals, c.weakBindingVars = prevWeak, prevReaders, prevLocals, prevWeakVars
 	}()
 	// M4 E3: dep_graph fans one top-level destructuring `val {x, y} = …` across one
 	// SCC component per leaf key. Its initializer is typed and its pattern bound
@@ -272,6 +276,9 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	c.settleQueuedVariance()
 	c.checkQueuedInheritedMembers()
 	c.checkQueuedImplements()
+	// Every function that reads a weak binding has been inferred, so its variables have
+	// every bound the module gives them.
+	c.settleWeakBindings(lvl)
 	// Reconcile against the source: BuildDepGraph only produces binding keys for
 	// the decl kinds it models, so a kind it does not descend into — e.g. a
 	// NamespaceDecl — yields no component and would vanish without a diagnostic.
@@ -407,6 +414,11 @@ type componentBinding struct {
 	// set, bound as a multi-scheme ValueBinding in phase 3. arms[i] lines up with the
 	// FuncDecl's entry in sources.
 	arms []overloadArm
+	// weak marks a `val` or `var` whose declaration does not generalize, as generalizes
+	// decides. Its binding var and initializer are inferred at the component's own level,
+	// so the variables they carry are weak. Every function that reads the binding shares
+	// them, and no later component quantifies them.
+	weak bool
 	// signatureBound marks an overload set whose arms are ALL fully annotated, so phase
 	// 1 could build their signatures body-free and pre-bind the whole set in scope.
 	// b.arms then holds those signature types. A reference WITHIN the component — a
@@ -520,8 +532,21 @@ func (c *checker) inferComponent(
 			scope.defineValue(key.Name(), ValueBinding{Schemes: schemes})
 			continue
 		}
-		v := c.freshAt(inner)
-		bindings[key] = &componentBinding{v: v}
+		// A weak binding's var sits at lvl with the variables its initializer mints, so
+		// no component's generalization at lvl quantifies it, this one's included.
+		weak := false
+		if vd := keyVarDecl(g, key); vd != nil {
+			weak = !generalizes(vd)
+		}
+		vLvl := inner
+		if weak {
+			vLvl = lvl
+		}
+		v := c.freshAt(vLvl)
+		if weak {
+			c.weakBindingVars.Add(v)
+		}
+		bindings[key] = &componentBinding{v: v, weak: weak}
 		// Pre-bind the binding var as a MonoScheme so a mutually-recursive reference
 		// resolves through the var itself (instantiate returns it unchanged) before
 		// generalization happens in phase 3. A `val mut` declaration pre-binds as mutable,
@@ -800,7 +825,7 @@ func (c *checker) inferComponent(
 			// leaves and the collision reports as a duplicate rather than as an
 			// unsupported pattern.
 			if vd := asDestructureDecl(d); vd != nil {
-				c.bindModuleDestructureLeaf(c.lookupScope(scope, vd), inner, vd, g, key, b, handled, destructured)
+				c.bindModuleDestructureLeaf(c.lookupScope(scope, vd), declLevel(vd, lvl), vd, g, key, b, handled, destructured)
 				continue
 			}
 			if handled.Contains(d) {
@@ -813,7 +838,7 @@ func (c *checker) inferComponent(
 			// A class decl is keyed by its dep_graph-qualified name, so pass the key's
 			// namespace down for inferClassDecl to reconstruct it. Every other decl
 			// kind ignores it.
-			t, src, ok := c.inferDeclDef(c.lookupScope(scope, d), inner, d, g.GetNamespace(key))
+			t, src, ok := c.inferDeclDef(c.lookupScope(scope, d), declLevel(d, lvl), d, g.GetNamespace(key))
 			if !ok {
 				continue
 			}
@@ -1018,13 +1043,16 @@ func (c *checker) inferComponent(
 		// matching the body-level path (inferVarDecl) and keeping downstream uses
 		// absorbing. Guarded by an empty binding var so a binding that ALSO picked up a
 		// real type (a recovered overload arm alongside a good one) still generalizes.
+		//
+		// A weak binding's var and every variable its initializer minted sit at lvl, so
+		// generalizing it quantifies nothing and every reader shares its variables.
 		var scheme TypeScheme
 		if b.recovered && len(b.v.LowerBounds) == 0 {
 			scheme = &MonoScheme{Ty: &soltype.ErrorType{}}
 		} else {
 			scheme = c.generalize(b.v, lvl)
 		}
-		scope.defineValue(key.Name(), ValueBinding{Schemes: []TypeScheme{scheme}, Sources: b.sources, Kind: b.kind, Mut: b.mut, ModuleLevel: true})
+		scope.defineValue(key.Name(), ValueBinding{Schemes: []TypeScheme{scheme}, Sources: b.sources, Kind: b.kind, Mut: b.mut, ModuleLevel: true, Weak: b.weak})
 		// Record the binding's final (coalesced) DISPLAY type in Info on infoNode, so
 		// it is queryable even for a `val` in a recursive group (where coalescing at
 		// definition time would have frozen it to `never`). infoNode is the binding's
@@ -1040,6 +1068,11 @@ func (c *checker) inferComponent(
 		display := schemeType(scheme)
 		if b.infoNode != nil {
 			c.recordType(b.infoNode, display)
+		}
+		if b.weak {
+			c.noteWeakBinding(b, scheme)
+		} else {
+			c.noteWeakReader(b, scheme, lvl)
 		}
 	}
 }

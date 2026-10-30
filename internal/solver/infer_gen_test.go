@@ -774,7 +774,7 @@ func TestInferGenNext(t *testing.T) {
 				fn f(b: boolean) { val it = if b { g() } else { 5 } return it.next() }
 			`,
 			wantErrs: []string{
-				"3:64-3:71: cannot constrain Generator<t9, undefined, unknown> <: object",
+				"3:64-3:71: cannot constrain Generator<t4, undefined, unknown> <: object",
 				`3:64-3:71: cannot constrain 5 <: object`,
 			},
 		},
