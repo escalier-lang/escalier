@@ -188,6 +188,8 @@ val s = g("a")
 			values: map[string]string{"g": `fn (x: 5 | "a") -> 5 | "a"`},
 		},
 		{
+			// make's type comes from the bounds the checker uses for m, which keep the literals.
+			// #2348 widens those bounds, so make becomes `fn () -> Map<string, number | string>`.
 			name: "ALocalContainerGeneralizesWithItsFunction",
 			src: `
 fn make() {
