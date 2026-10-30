@@ -258,7 +258,8 @@ var q = fetchNum()
 		},
 		{
 			// A `mut` binding can write `Box`'s field, so `T` widens. `Frozen`'s field is
-			// `readonly`, so its literal stays unless the binding can be rebound.
+			// `readonly`, so its literal stays unless the binding can be rebound. #2304 warns on
+			// the `mut` of `f`, since `f` has no writable slot.
 			name: "AClassArgumentWidensWhenAMutableOwnerCanWriteIt",
 			src: `
 class Box<T> { value: T }
