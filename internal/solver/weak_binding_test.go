@@ -192,6 +192,35 @@ val s = g("a")
 			values: map[string]string{"g": `fn (x: 5 | "a") -> 5 | "a"`},
 		},
 		{
+			// No value but `never` flows into T, so its type is what its uses require. Each
+			// call needs a different object, and g settles to their intersection.
+			name: "AWeakVariableOnlyUsesDecideIsTheirIntersection",
+			src: `
+declare fn mk<T>() -> fn (x: T) -> T
+val g = mk()
+declare val z: never
+fn u() {
+	val a: {x: number} = g(z)
+	val b: {y: string} = g(z)
+}
+`,
+			values: map[string]string{"g": "fn (x: {x: number} & {y: string}) -> {x: number} & {y: string}"},
+		},
+		{
+			// T appears only where h produces a value, so coalescing drops it before its uses
+			// are read. #2351 keeps it, so h becomes `fn () -> {x: number} & {y: string}`.
+			name: "AWeakVariableInOnePositionOnlyUsesDecide",
+			src: `
+declare fn mk<T>() -> fn () -> T
+val h = mk()
+fn u() {
+	val a: {x: number} = h()
+	val b: {y: string} = h()
+}
+`,
+			values: map[string]string{"h": "fn () -> never"},
+		},
+		{
 			// make's type comes from the bounds the checker uses for m, which keep the literals.
 			// #2348 widens those bounds, so make becomes `fn () -> Map<string, number | string>`.
 			name: "ALocalContainerGeneralizesWithItsFunction",
