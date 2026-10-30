@@ -10,8 +10,8 @@ import (
 
 // TestWeakModuleBinding covers a module-level binding whose initializer is not a syntactic
 // value. Such a binding does not generalize, so every function that uses it constrains the
-// same variables. Its type settles once the module is inferred, with its literals widened
-// when the binding is writable or owns what it holds.
+// same variables. Its type settles once the module is inferred, with the literals in each
+// slot the binding can write widened.
 func TestWeakModuleBinding(t *testing.T) {
 	tests := []struct {
 		name string
@@ -59,7 +59,8 @@ fn b() { seen.set("k", {a: 2}) }
 		},
 		{
 			// Nothing calls `remember`, so nothing decides what `value` holds. The map's value
-			// type settles at `never` and the parameter at `unknown`, with no error.
+			// type settles at `never` and the parameter at `unknown`, with no error. #2352 keeps
+			// remember monomorphic over the map's value type, so `value` becomes `never` too.
 			name: "AStoreOfAParameterNothingCalls",
 			src: `
 val mut seen = Map()
@@ -71,6 +72,7 @@ fn remember(value) { seen.set("last", value) }
 			},
 		},
 		{
+			// #2305 warns on the `mut` of seen, since nothing writes it.
 			name: "AMutableContainerNothingWrites",
 			src: `
 val mut seen = Map()
@@ -102,6 +104,8 @@ fn a() { seen.set("k", 1) }
 			values: map[string]string{"seen": "Map<string, number>"},
 		},
 		{
+			// #2305 warns on the `mut` of b, since nothing in the module writes it, unless it
+			// exempts an exported binding an importer can write.
 			name: "AnExportedMutableClassInstance",
 			src: `
 class Box<T> { value: T }
@@ -247,7 +251,8 @@ val c = id([5, 10])
 		},
 		{
 			// Nothing can write the value inside a promise, so a `mut` binding keeps its
-			// literal. A `var` binding can be rebound to any promise, so it widens.
+			// literal. A `var` binding can be rebound to any promise, so it widens. #2304 warns
+			// on the `mut` of p, since a promise has no writable slot.
 			name: "APromiseWidensOnlyWhenItsBindingIsReassignable",
 			src: `
 async fn fetchNum() { return 5 }
@@ -259,7 +264,8 @@ var q = fetchNum()
 		{
 			// A `mut` binding can write `Box`'s field, so `T` widens. `Frozen`'s field is
 			// `readonly`, so its literal stays unless the binding can be rebound. #2304 warns on
-			// the `mut` of `f`, since `f` has no writable slot.
+			// the `mut` of `f`, since `f` has no writable slot. #2305 warns on the `mut` of b,
+			// since nothing writes it.
 			name: "AClassArgumentWidensWhenAMutableOwnerCanWriteIt",
 			src: `
 class Box<T> { value: T }
@@ -272,7 +278,7 @@ var g = Frozen(5)
 		},
 		{
 			// A write to the element or field replaces the promise in it, so the promise's
-			// argument widens too.
+			// argument widens too. #2305 warns on the `mut` of a and o, since nothing writes them.
 			name: "APromiseInsideAWritableSlotWidens",
 			src: `
 declare fn id<T>(x: T) -> T
@@ -284,7 +290,8 @@ val mut o = id({x: 1, y: fetchNum()})
 		},
 		{
 			// `T` appears only in a parameter of `put`, so it is contravariant, and widening
-			// it would claim `s` accepts every number.
+			// it would claim `s` accepts every number. #2304 warns on the `mut` of s, since
+			// `Sink` has no writable slot.
 			name: "AContravariantClassArgumentKeepsItsLiteral",
 			src: `
 class Sink<T> { put(&self, x: T) -> undefined { return undefined } }
