@@ -139,10 +139,10 @@ func TestTypeRules(t *testing.T) {
 				}
 			`,
 		},
-		// A shared borrow grants no writes at any layer, so the mapped form rejects the deep
+		// An immutable borrow grants no writes at any layer, so the mapped form rejects the deep
 		// write the same way the inline form does.
 		{
-			name: "T3/SharedBorrowThroughMappedType",
+			name: "T3/ImmutableBorrowThroughMappedType",
 			src: `
 				fn resetWritten(x: &{readonly a: {b: number}}) {
 					x.a.b = 0
