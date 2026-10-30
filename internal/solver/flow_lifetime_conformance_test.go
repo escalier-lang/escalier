@@ -35,19 +35,6 @@ func runFlowLifetimeCases(t *testing.T, cases []flowLifetimeCase) {
 	}
 }
 
-// e4Decls declares the module-level closure and the callee that E4's `stored` reads.
-const e4Decls = `
-	var sink: fn () -> undefined = fn () {}
-	declare fn readIt(a: &{x: number}) -> undefined
-`
-
-// d10Decls declares the callees the three `setup` programs in D10 share. `onClick` keeps its
-// handler for the rest of the program, and `forEachItem` only calls its function during the call.
-const d10Decls = `
-	declare fn onClick(handler: &'static fn () -> undefined) -> undefined
-	declare fn forEachItem(f: fn () -> undefined) -> undefined
-`
-
 // TestFlowLifetimeRules covers the per-rule conformance cases for F3, L1, L2, L3, and E4 that
 // the current solver gets right. The cases it gets wrong sit in the disabled tests after this
 // one, grouped by the issue that enables them.
@@ -178,7 +165,7 @@ func TestFlowLifetimeRules(t *testing.T) {
 		// E4. `peek` holds no live borrow between its calls, so the write to `p` is allowed.
 		{
 			name: "E4/Local",
-			src: e4Decls + `
+			src: `
 				fn local() -> number {
 					val mut p = {x: 1}
 					val peek = fn () { return p.x }
@@ -192,7 +179,10 @@ func TestFlowLifetimeRules(t *testing.T) {
 		// the write the closure performs.
 		{
 			name: "E4/Stored",
-			src: e4Decls + `
+			src: `
+				var sink: fn () -> undefined = fn () {}
+				declare fn readIt(a: &{x: number}) -> undefined
+
 				fn stored() {
 					val mut p = {x: 1}
 					sink = fn () { p.x = 2 }
@@ -405,7 +395,7 @@ func TestFlowLifetimeClosureBlocksMove(t *testing.T) {
 		// E4. `peek` still holds its borrow of `p` for its later call, so E3 rejects the move.
 		{
 			name: "E4/Moved",
-			src: e4Decls + `
+			src: `
 				fn moved() -> number {
 					val p = {x: 1}
 					val peek = fn () { return p.x }
@@ -413,7 +403,7 @@ func TestFlowLifetimeClosureBlocksMove(t *testing.T) {
 					return peek()
 				}
 			`,
-			want: []string{"8:14-8:15: cannot move 'p' while it is borrowed"},
+			want: []string{"5:14-5:15: cannot move 'p' while it is borrowed"},
 		},
 	})
 }
@@ -427,7 +417,8 @@ func TestFlowLifetimeRetainedCallback(t *testing.T) {
 		// a click could change.
 		{
 			name: "D10/RetainedHandlerConflicts",
-			src: d10Decls + `
+			src: `
+				declare fn onClick(handler: &'static fn () -> undefined) -> undefined
 				declare fn render(view: &{n: number}) -> undefined
 
 				fn setup() {
@@ -436,7 +427,7 @@ func TestFlowLifetimeRetainedCallback(t *testing.T) {
 					render(&count)    // error: a click may run the handler, which writes 'count' while it is borrowed as immutable
 				}
 			`,
-			want: []string{"10:6-10:20: this call may run the 'handler' that 'onClick' retains, which writes 'count' while it is borrowed as immutable"},
+			want: []string{"8:6-8:20: this call may run the 'handler' that 'onClick' retains, which writes 'count' while it is borrowed as immutable"},
 		},
 	})
 }
@@ -449,7 +440,8 @@ func TestFlowLifetimeRetainedCallbackAccepted(t *testing.T) {
 		// borrow inside the handler lasts for one call.
 		{
 			name: "D10/HandlerOwnsState",
-			src: d10Decls + `
+			src: `
+				declare fn onClick(handler: &'static fn () -> undefined) -> undefined
 				declare fn render(view: &{n: number}) -> undefined
 
 				fn setup() {
@@ -465,7 +457,8 @@ func TestFlowLifetimeRetainedCallbackAccepted(t *testing.T) {
 		// several mutable paths at once.
 		{
 			name: "D10/MutableView",
-			src: d10Decls + `
+			src: `
+				declare fn onClick(handler: &'static fn () -> undefined) -> undefined
 				declare fn render(view: &mut {n: number}) -> undefined
 
 				fn setup() {
@@ -479,7 +472,8 @@ func TestFlowLifetimeRetainedCallbackAccepted(t *testing.T) {
 		// mutable borrow of `count` ends with that call.
 		{
 			name: "D10/CalledOnlyDuringCall",
-			src: d10Decls + `
+			src: `
+				declare fn forEachItem(f: fn () -> undefined) -> undefined
 				declare fn render(view: &{n: number}) -> undefined
 
 				fn setup() {
