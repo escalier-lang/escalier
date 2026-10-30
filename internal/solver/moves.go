@@ -71,7 +71,8 @@ type UseAfterMoveError struct {
 	// path moved it (Moved).
 	Conditional bool
 	// Via names the closure the call being blamed may run, when the read is that closure's
-	// access to what it captures. It is empty otherwise.
+	// access to what it captures. It is a phrase closureVia or retainedVia returns, and is empty
+	// otherwise.
 	Via string
 	// ViaRuns marks a closure named by Via that the call is sure to run, because the call's
 	// callee names it.
@@ -103,7 +104,7 @@ func (e *UseAfterMoveError) Message() string {
 		if e.ViaReads {
 			access = "reads"
 		}
-		return fmt.Sprintf("this call %s '%s', which %s '%s' after it was moved", runsVerb(e.ViaRuns), e.Via, access, e.Name)
+		return fmt.Sprintf("this call %s %s, which %s '%s' after it was moved", runsVerb(e.ViaRuns), e.Via, access, e.Name)
 	}
 	return fmt.Sprintf("use of moved value '%s'", e.Name)
 }
@@ -816,21 +817,21 @@ func (c *checker) checkUseAfterMoves() {
 	if c.fn == nil || c.fn.cfg == nil {
 		return
 	}
-	if len(c.fn.useSites) == 0 && len(c.fn.moveSites) == 0 && len(c.fn.pendingTransitions) == 0 && len(c.fn.escapeSites) == 0 && len(c.fn.globalClosureStores) == 0 && len(c.fn.borrowSites) == 0 {
+	if len(c.fn.useSites) == 0 && len(c.fn.moveSites) == 0 && len(c.fn.pendingTransitions) == 0 && len(c.fn.escapeSites) == 0 && len(c.fn.retainedClosureStores) == 0 && len(c.fn.borrowSites) == 0 {
 		return
 	}
 	info := liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites)
 	// Decide deferred escapes against the move lattice and the flow-sensitive borrow-edge
 	// graph, then fold any component-move consumes back into moveSites and recompute, so a
 	// use after a co-moved local is caught.
-	if len(c.fn.escapeSites) > 0 || len(c.fn.globalClosureStores) > 0 {
+	if len(c.fn.escapeSites) > 0 || len(c.fn.retainedClosureStores) > 0 {
 		flowBorrowGraph := c.analyzeBorrows()
 		if c.resolveComponentEscapes(info, flowBorrowGraph) {
 			info = liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites)
 		}
 		// These loans have to be in place before checkUsesAgainstLoans below weighs the
 		// body's writes and moves.
-		c.recordGlobalCaptureLoans(flowBorrowGraph)
+		c.recordRetainedCaptureLoans(flowBorrowGraph)
 	}
 	reported := set.NewSet[ast.Node]()
 	for _, u := range c.fn.useSites {

@@ -117,6 +117,9 @@ type checker struct {
 	// same reason. The map is allocated lazily by namedLifetime on first use.
 	namedLifetimes map[string]*soltype.LifetimeVar
 
+	// pendingCallOnly holds a check per function parameter that has no retention lifetime, for
+	// checkCallOnlyParams to read once the enclosing component has solved.
+	pendingCallOnly []callOnlyCheck
 	// ltMarks maps a node to the lifetime counter at the start of its inference, written by
 	// markLifetimes for every expression and statement. A rigid-lifetime check sited at the
 	// node reads it to tell the lifetimes the checked value minted from the ones it shares.
@@ -631,9 +634,14 @@ type funcCtx struct {
 	capturedLocals map[ast.Func][]capturedLocal
 	// capturedTypes holds the binding type of every local in capturedLocals.
 	capturedTypes map[liveness.VarID]soltype.Type
-	// globalClosureStores records each store whose value may carry a closure into a
-	// module-level binding. The post-pass takes a loan of each local those closures write.
-	globalClosureStores []globalClosureStore
+	// retainedClosureStores records each place this body hands a closure to that keeps it past
+	// the statement, a store into a module-level binding or an argument to a parameter with a
+	// retention lifetime. The post-pass takes a loan of each local those closures write.
+	retainedClosureStores []retainedClosureStore
+	// retainedResults maps a call to the indices in retainedClosureStores of the stores whose
+	// closure the call's result keeps. noteRetainedHolder adds the binding the result
+	// initializes to each store's holders.
+	retainedResults map[ast.Expr][]int
 	// callSites holds every call in this body, in source order.
 	callSites []callSite
 	// callArgLoans holds the borrows each call's arguments take for the call's parameters,

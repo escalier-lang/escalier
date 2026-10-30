@@ -2503,6 +2503,28 @@ func (e *LifetimeRelationUndeclaredError) Message() string {
 		e.Sub, e.Super, e.Sub, e.Super)
 }
 
+// CallOnlyFuncKeptError fires when a body keeps a function parameter that has no retention
+// lifetime past the call. Such a parameter, as `g` in `fn f(g: fn () -> undefined)`, is only
+// called during the call, so a caller lends it a closure's captures for that call alone.
+// `onClick(g)` against `declare fn onClick(handler: &'static fn () -> undefined)` keeps it for
+// 'static. Name is the parameter's name, Static says the body keeps it for 'static, and Param
+// is the parameter's pattern, which the error blames.
+type CallOnlyFuncKeptError struct {
+	Name   string
+	Static bool
+	Param  ast.Node
+}
+
+func (*CallOnlyFuncKeptError) isSolverError()        {}
+func (e *CallOnlyFuncKeptError) Span() ast.Span      { return e.Param.Span() }
+func (e *CallOnlyFuncKeptError) Related() []ast.Span { return nil }
+func (e *CallOnlyFuncKeptError) Message() string {
+	if e.Static {
+		return fmt.Sprintf("parameter '%s' is only called during the call, so it cannot be kept for 'static", e.Name)
+	}
+	return fmt.Sprintf("parameter '%s' is only called during the call, so it cannot outlive the call", e.Name)
+}
+
 // LifetimeBinderNotSatisfiedError fires when a value is checked against a signature that
 // quantifies a lifetime and works only for some choices of it. The signature's caller chooses
 // the lifetime, so a closure passed where `fn <'a>(q: &'a T) -> &'a T` is expected has to

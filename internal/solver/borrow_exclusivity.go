@@ -86,9 +86,9 @@ type BorrowAliasError struct {
 	FirstMut  bool
 	SecondMut bool
 	// FirstVia and SecondVia name the closure a call may run, when the matching borrow is that
-	// closure's access to what it captures during the call. They are empty for a borrow the
-	// program writes. FirstRuns and SecondRuns mark a closure the call is sure to run, because
-	// the call's callee names it.
+	// closure's access to what it captures during the call. Each is a phrase closureVia or
+	// retainedVia returns, and is empty for a borrow the program writes. FirstRuns and
+	// SecondRuns mark a closure the call is sure to run, because the call's callee names it.
 	FirstVia   string
 	SecondVia  string
 	FirstRuns  bool
@@ -110,15 +110,15 @@ func (e *BorrowAliasError) Message() string {
 	}
 	if e.SecondVia != "" {
 		if e.SecondMut {
-			return fmt.Sprintf("this call %s '%s', which writes '%s' while %s borrowed as immutable", runsVerb(e.SecondRuns), e.SecondVia, e.Place, held)
+			return fmt.Sprintf("this call %s %s, which writes '%s' while %s borrowed as immutable", runsVerb(e.SecondRuns), e.SecondVia, e.Place, held)
 		}
-		return fmt.Sprintf("this call %s '%s', which reads '%s' while %s borrowed as mutable", runsVerb(e.SecondRuns), e.SecondVia, e.Place, held)
+		return fmt.Sprintf("this call %s %s, which reads '%s' while %s borrowed as mutable", runsVerb(e.SecondRuns), e.SecondVia, e.Place, held)
 	}
 	if e.FirstVia != "" {
 		if e.FirstMut {
-			return fmt.Sprintf("cannot borrow '%s' as immutable in a call that %s '%s', which writes it", e.Place, runsVerb(e.FirstRuns), e.FirstVia)
+			return fmt.Sprintf("cannot borrow '%s' as immutable in a call that %s %s, which writes it", e.Place, runsVerb(e.FirstRuns), e.FirstVia)
 		}
-		return fmt.Sprintf("cannot borrow '%s' as mutable in a call that %s '%s', which reads it", e.Place, runsVerb(e.FirstRuns), e.FirstVia)
+		return fmt.Sprintf("cannot borrow '%s' as mutable in a call that %s %s, which reads it", e.Place, runsVerb(e.FirstRuns), e.FirstVia)
 	}
 	if e.SecondMut {
 		return fmt.Sprintf("cannot borrow '%s' as mutable while %s borrowed as immutable", e.Place, held)
@@ -132,8 +132,8 @@ type MoveWhileBorrowedError struct {
 	// Place names the data moved, `x` for a whole binding and `x.a` for a field.
 	Place string
 	// Via names the closure the call may run, when the borrow is the write that closure makes
-	// during the call, and is empty otherwise. ViaRuns marks a closure the call is sure to run,
-	// because the call's callee names it.
+	// during the call, and is empty otherwise. It is a phrase closureVia or retainedVia returns.
+	// ViaRuns marks a closure the call is sure to run, because the call's callee names it.
 	Via     string
 	ViaRuns bool
 	move    ast.Node
@@ -145,7 +145,7 @@ func (e *MoveWhileBorrowedError) Span() ast.Span      { return e.move.Span() }
 func (e *MoveWhileBorrowedError) Related() []ast.Span { return []ast.Span{e.borrow} }
 func (e *MoveWhileBorrowedError) Message() string {
 	if e.Via != "" {
-		return fmt.Sprintf("cannot move '%s' in a call that %s '%s', which writes it", e.Place, runsVerb(e.ViaRuns), e.Via)
+		return fmt.Sprintf("cannot move '%s' in a call that %s %s, which writes it", e.Place, runsVerb(e.ViaRuns), e.Via)
 	}
 	return fmt.Sprintf("cannot move '%s' while it is borrowed", e.Place)
 }
@@ -157,6 +157,26 @@ func runsVerb(runs bool) string {
 		return "runs"
 	}
 	return "may run"
+}
+
+// closureVia returns the phrase a message names a closure by when the closure is reached
+// through the binding `name`, as in `'sink'`.
+func closureVia(name string) string {
+	return fmt.Sprintf("'%s'", name)
+}
+
+// retainedVia returns the phrase a message names a closure by when the callee `callee` keeps
+// it through its parameter `param`, as in `the 'handler' that 'onClick' retains`. An empty
+// callee or param leaves that name out.
+func retainedVia(param, callee string) string {
+	held := "the function"
+	if param != "" {
+		held = fmt.Sprintf("the '%s'", param)
+	}
+	if callee == "" {
+		return held + " the callee retains"
+	}
+	return fmt.Sprintf("%s that '%s' retains", held, callee)
 }
 
 // BorrowedValueWriteError reports a field write through the owner while an immutable borrow of
@@ -279,9 +299,10 @@ type loan struct {
 	// while the frame still runs, so there the loan lasts to the end of the function.
 	callerOwned bool
 	// via names the closure a call may run, for a loan standing for that closure's access to
-	// what it captures during the call. It is the module-level binding a stored closure is
-	// reached through, or the local binding a closure is called through or passed as. It is
-	// empty for a borrow the program writes.
+	// what it captures during the call. It names the module-level binding a stored closure is
+	// reached through, the parameter of the callee that retains it, or the local binding a
+	// closure is called through or passed as. It is a phrase closureVia or retainedVia returns,
+	// and is empty for a borrow the program writes.
 	via string
 	// viaRuns marks a closure named by via that the call is sure to run, because the call's
 	// callee names it.
@@ -537,13 +558,13 @@ func (c *checker) useClosureCaptures(expr ast.Expr, ref liveness.StmtRef, runs b
 	// Sorting keeps the order of the loans, and so of any reports, the same from run to run.
 	slices.Sort(roots)
 	for _, root := range roots {
-		c.takeCaptureLoan(capturedLocal{root: root, mut: writes[root]}, ref, e, e.Name, runs)
+		c.takeCaptureLoan(capturedLocal{root: root, mut: writes[root]}, ref, e, closureVia(e.Name), runs)
 		c.fn.useSites = append(c.fn.useSites, moveUse{
 			place:     movePlace{root: root},
 			ref:       ref,
 			node:      e,
 			loanSeqAt: c.fn.loanSeq + 1,
-			via:       e.Name,
+			via:       closureVia(e.Name),
 			viaRuns:   runs,
 			viaReads:  !writes[root],
 		})
@@ -1378,21 +1399,220 @@ func (c *checker) markNamedClosure(closure ast.Func) {
 	c.fn.namedClosures.Add(closure)
 }
 
-// globalClosureStore is a store into a module-level binding whose value may carry a closure.
-type globalClosureStore struct {
-	// name is the module-level binding stored into.
-	name string
+// retainedClosureStore records a value that may carry a closure and stays reachable after its
+// statement. The value is stored into a module-level binding, or passed to a parameter whose
+// function type carries a retention lifetime.
+type retainedClosureStore struct {
+	// via names the binding or parameter that keeps the closure, as closureVia or retainedVia
+	// returns it.
+	via  string
 	expr ast.Expr
 	ref  liveness.StmtRef
+	// call is the call whose parameter keeps the closure, and nil for a store into a
+	// module-level binding.
+	call ast.Node
+	// static marks a closure kept for the rest of the program. Every call after the store may
+	// run it.
+	static bool
+	// holders are the bindings that keep the closure reachable when static is false. They are
+	// the arguments and the receiver whose parameter types share the retention lifetime, and
+	// each binding the call's result or another holder flows into. A call may run the closure
+	// only while one of them is live.
+	holders []liveness.VarID
 }
 
-// noteGlobalClosureStore records that the value e is stored at `ref` into the module-level
-// binding `name`, for recordGlobalCaptureLoans to find the locals its closures write.
-func (c *checker) noteGlobalClosureStore(name string, e ast.Expr, ref liveness.StmtRef) {
+// noteRetainedClosureStore records store for recordRetainedCaptureLoans to find the locals its
+// closures write. It returns the store's index in retainedClosureStores, or -1 when the body
+// tracks no stores.
+func (c *checker) noteRetainedClosureStore(store retainedClosureStore) int {
 	if c.fn == nil || c.fn.cfg == nil {
+		return -1
+	}
+	c.fn.retainedClosureStores = append(c.fn.retainedClosureStores, store)
+	return len(c.fn.retainedClosureStores) - 1
+}
+
+// noteRetainedClosureArgs records each argument of the call e that fills a parameter fn keeps
+// past the call, as a retainedClosureStore. Such a parameter's type holds a function type with a
+// retention lifetime, at its top or inside a union, an object field, or an array. A whole
+// argument filling it is taken as kept, so each closure written in an object literal counts.
+//
+// A retention lifetime that is 'static, or bound to outlive 'static, keeps the closure for the
+// rest of the program. Any other retention lifetime keeps it as long as a binding that shares
+// the lifetime is live. When no binding shares it, the callee can keep the closure no longer
+// than the call, and nothing is recorded.
+func (c *checker) noteRetainedClosureArgs(e *ast.CallExpr, fn *soltype.FuncType, ref liveness.StmtRef) {
+	recv, self := c.calleeReceiver(e.Callee)
+	for i, arg := range e.Args {
+		param, ok := paramForArg(fn, i)
+		if !ok {
+			break
+		}
+		lts := retentionLifetimes(param.Type)
+		if len(lts) == 0 {
+			continue
+		}
+		paramName := ""
+		if ip, isIdent := param.Pattern.(*soltype.IdentPat); isIdent {
+			paramName = ip.Name
+		}
+		store := retainedClosureStore{
+			via:  retainedVia(paramName, calleeName(e.Callee)),
+			expr: arg,
+			ref:  ref,
+			call: e,
+		}
+		var shared []*soltype.LifetimeVar
+		for _, lt := range lts {
+			if lifetimeEscapedToStatic(lt) {
+				store.static = true
+			} else if lv, isVar := lt.(*soltype.LifetimeVar); isVar {
+				shared = append(shared, lv)
+			}
+		}
+		returned := false
+		if !store.static {
+			store.holders = c.retentionHolders(e, fn, recv, self, i, shared)
+			returned = typeMentionsLifetime(c.ctx, fn.Ret, shared)
+			if len(store.holders) == 0 && !returned {
+				continue
+			}
+		}
+		idx := c.noteRetainedClosureStore(store)
+		if returned && idx >= 0 {
+			if c.fn.retainedResults == nil {
+				c.fn.retainedResults = map[ast.Expr][]int{}
+			}
+			c.fn.retainedResults[e] = append(c.fn.retainedResults[e], idx)
+		}
+	}
+}
+
+// paramForArg returns the parameter of fn the argument at index i fills. Every argument past a
+// trailing rest parameter fills that parameter. ok is false when no parameter takes the argument.
+func paramForArg(fn *soltype.FuncType, i int) (*soltype.FuncParam, bool) {
+	if i < len(fn.Params) {
+		return fn.Params[i], true
+	}
+	if n := len(fn.Params); n > 0 && fn.Params[n-1].Rest {
+		return fn.Params[n-1], true
+	}
+	return nil, false
+}
+
+// retentionHolders returns the bindings that share one of the lifetimes in shared with the
+// parameter at index skip of the call e. They are the arguments, and the receiver recv whose
+// parameter is self, that name a binding and whose parameter types mention one of those
+// lifetimes. For an argument written as a borrow, such as `&mut em`, the holder is the borrowed
+// binding, and only when the borrowed type mentions one of those lifetimes.
+func (c *checker) retentionHolders(
+	e *ast.CallExpr, fn *soltype.FuncType, recv ast.Expr, self *soltype.FuncParam, skip int, shared []*soltype.LifetimeVar,
+) []liveness.VarID {
+	var holders []liveness.VarID
+	add := func(expr ast.Expr, t soltype.Type) {
+		// A borrow written at the call ends with the statement, so only its referent can keep
+		// the closure, and only when the referent's own type mentions the lifetime.
+		if borrow, isBorrow := expr.(*ast.BorrowExpr); isBorrow {
+			ref, isRef := t.(*soltype.RefType)
+			if !isRef {
+				return
+			}
+			expr, t = borrow.Arg, ref.Inner
+		}
+		if !typeMentionsLifetime(c.ctx, t, shared) {
+			return
+		}
+		if p, ok := c.exprPlace(expr); ok && p.root > 0 && !slices.Contains(holders, p.root) {
+			holders = append(holders, p.root)
+		}
+	}
+	if recv != nil && self != nil {
+		add(recv, self.Type)
+	}
+	for j, arg := range e.Args {
+		if j == skip {
+			continue
+		}
+		if param, ok := paramForArg(fn, j); ok {
+			add(arg, param.Type)
+		}
+	}
+	return holders
+}
+
+// noteRetainedHolder adds holder to the holders of each store whose closure the value init
+// carries. init carries it when init is a call whose result keeps the closure, or a name that
+// is already one of the store's holders. It must run once the binding init flows into is known.
+func (c *checker) noteRetainedHolder(holder liveness.VarID, init ast.Expr) {
+	if c.fn == nil || holder <= 0 || init == nil {
 		return
 	}
-	c.fn.globalClosureStores = append(c.fn.globalClosureStores, globalClosureStore{name: name, expr: e, ref: ref})
+	for _, idx := range c.fn.retainedResults[init] {
+		c.fn.retainedClosureStores[idx].holders = append(c.fn.retainedClosureStores[idx].holders, holder)
+	}
+	p, ok := c.exprPlace(init)
+	if !ok || p.root <= 0 || p.root == holder {
+		return
+	}
+	for i := range c.fn.retainedClosureStores {
+		store := &c.fn.retainedClosureStores[i]
+		if slices.Contains(store.holders, p.root) && !slices.Contains(store.holders, holder) {
+			store.holders = append(store.holders, holder)
+		}
+	}
+}
+
+// typeMentionsLifetime reports whether one of the lifetimes in lts occurs in t, as a borrow's
+// lifetime, a function's retention lifetime, or a class or alias lifetime argument.
+func typeMentionsLifetime(ctx *Context, t soltype.Type, lts []*soltype.LifetimeVar) bool {
+	if t == nil || len(lts) == 0 {
+		return false
+	}
+	occ, _ := walkLtOcc(t, soltype.Positive)
+	found, _ := lifetimeVarsIn(ctx, t)
+	return slices.ContainsFunc(lts, func(lv *soltype.LifetimeVar) bool {
+		_, inOcc := occ[lv]
+		return inOcc || slices.Contains(found, lv)
+	})
+}
+
+// retentionLifetimes returns the retention lifetime of each function type in t, reached through
+// unions, intersections, object fields, and type arguments. A function type's own parameters
+// and return are not searched, since a function there belongs to a callback's signature.
+func retentionLifetimes(t soltype.Type) []soltype.Lifetime {
+	v := &retentionVisitor{}
+	t.Accept(v, soltype.Positive)
+	return v.lts
+}
+
+// retentionVisitor collects the retention lifetimes retentionLifetimes returns.
+type retentionVisitor struct {
+	lts []soltype.Lifetime
+}
+
+func (v *retentionVisitor) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	ft, isFn := t.(*soltype.FuncType)
+	if !isFn {
+		return soltype.EnterResult{}
+	}
+	if ft.Lt != nil {
+		v.lts = append(v.lts, ft.Lt)
+	}
+	return soltype.EnterResult{SkipChildren: true}
+}
+
+func (*retentionVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+
+// calleeName returns the name a call's callee is written as, `onClick` for `onClick(h)` and `on`
+// for `button.on(h)`, and "" for any other callee.
+func calleeName(callee ast.Expr) string {
+	switch callee := callee.(type) {
+	case *ast.IdentExpr:
+		return callee.Name
+	case *ast.MemberExpr:
+		return callee.Prop.Name
+	}
+	return ""
 }
 
 // callSite is one call in the body, the statement it runs at, and the loan sequence reserved
@@ -1412,8 +1632,8 @@ func (c *checker) noteCallSite(e ast.Node, ref liveness.StmtRef) {
 	c.fn.callSites = append(c.fn.callSites, callSite{node: e, ref: ref, seq: c.nextLoanSeq()})
 }
 
-// recordGlobalCaptureLoans finds each owned local a closure writes when the closure reaches a
-// store noteGlobalClosureStore recorded. The closure is one written inside the stored value or
+// recordRetainedCaptureLoans finds each owned local a closure writes when the closure reaches a
+// store noteRetainedClosureStore recorded. The closure is one written inside the stored value or
 // one the value reaches through the borrow graph at the store, so a closure bound to a name,
 // copied to another name, or chosen on a branch counts. A local the closures only read is left
 // out, and so is a capture holding a borrow.
@@ -1422,9 +1642,9 @@ func (c *checker) noteCallSite(e ast.Node, ref liveness.StmtRef) {
 // and records a read of the local there. It reports each conflict between that loan and another
 // loan live at the call. The walk has already recorded those loans by the time this runs, so it
 // checks them itself. checkUsesAgainstLoans weighs a move at the call against the loan.
-func (c *checker) recordGlobalCaptureLoans(flowBorrowGraph *flowBorrowGraph) {
+func (c *checker) recordRetainedCaptureLoans(flowBorrowGraph *flowBorrowGraph) {
 	taken := map[int]set.Set[liveness.VarID]{}
-	for _, store := range c.fn.globalClosureStores {
+	for _, store := range c.fn.retainedClosureStores {
 		graph := flowBorrowGraph.fieldBorrowGraphBefore(store.ref)
 		writes := map[liveness.VarID]bool{}
 		var edges []fieldBorrow
@@ -1453,8 +1673,15 @@ func (c *checker) recordGlobalCaptureLoans(flowBorrowGraph *flowBorrowGraph) {
 		// Sorting keeps the order of the loans, and so of any reports, the same from run to run.
 		slices.Sort(roots)
 		for i, call := range c.fn.callSites {
-			// Anything can call the stored closure, so every call after the store may run it.
-			if !c.stmtReaches(store.ref, call.ref) {
+			// Anything that reaches the stored closure can call it, so a call after the store may
+			// run it. A closure kept for the rest of the program is reachable from every such
+			// call, and any other only while one of its holders is live. A call that retains the
+			// closure takes the capture loans for its own statement where its argument is
+			// inferred, so it is left out here.
+			if !c.stmtReaches(store.ref, call.ref) || call.node == store.call {
+				continue
+			}
+			if !store.static && !c.anyLiveAt(store.holders, call.ref) {
 				continue
 			}
 			if taken[i] == nil {
@@ -1465,15 +1692,22 @@ func (c *checker) recordGlobalCaptureLoans(flowBorrowGraph *flowBorrowGraph) {
 					continue
 				}
 				taken[i].Add(root)
-				c.takeCallLoan(movePlace{root: root}, call, store.name)
+				c.takeCallLoan(movePlace{root: root}, call, store.via)
 			}
 		}
 	}
 }
 
+// anyLiveAt reports whether one of holders is live entering the statement at ref.
+func (c *checker) anyLiveAt(holders []liveness.VarID, ref liveness.StmtRef) bool {
+	return slices.ContainsFunc(holders, func(h liveness.VarID) bool {
+		return c.liveAt(loan{holder: h, ref: ref}, ref)
+	})
+}
+
 // takeCallLoan records a mutable loan of `place` for the statement `call` runs at, and a read
 // of `place` there, after reporting each conflict with another loan live at that statement.
-// `via` names the module-level binding whose closure the call may run, for the reports.
+// `via` names the binding or parameter that keeps the closure the call may run, for the reports.
 func (c *checker) takeCallLoan(place movePlace, call callSite, via string) {
 	fresh := loan{place: place, mut: true, ref: call.ref, node: call.node, seq: call.seq, via: via}
 	// The call's own borrow arguments are live for as long as the call runs.

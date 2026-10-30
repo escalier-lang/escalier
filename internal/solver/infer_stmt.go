@@ -226,4 +226,6 @@ func (c *checker) defineLocal(scope *Scope, name string, vd *ast.VarDecl, b Valu
 		// then has to stay exclusive for as long as the binding is read.
 		c.recordBorrowLoan(liveness.VarID(b.VarID), vd.Init, ref)
 	}
+	// A value that keeps a closure keeps it reachable while this binding is live.
+	c.noteRetainedHolder(liveness.VarID(b.VarID), vd.Init)
 }
