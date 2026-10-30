@@ -392,7 +392,7 @@ func TestInferScriptTypeAndFuncDecls(t *testing.T) {
 			`,
 			wantValues: map[string]string{
 				"fetchNum": "fn () -> Promise<5>",
-				"p":        "Promise<5>",
+				"p":        "Promise<number>",
 			},
 		},
 		{

@@ -1443,8 +1443,8 @@ An annotation on every binding gives up inference for the common case of a
 call whose result needs none, such as `val five = id(5)`. Weak variables keep
 that case and still give `seen` one type.
 
-Recommendation: adopt weak variables, as OCaml does, and require an annotation
-only where the module leaves a weak variable undecided.
+Recommendation: adopt weak variables, as OCaml does, and require no
+annotation.
 
 Decided: accepted. A `val` or `var` generalizes when it has a type annotation,
 or when it is an immutable binding whose initializer is a syntactic value. These
@@ -1465,38 +1465,36 @@ expression. A `var` and a binding written `mut` never generalize, whatever
 their initializer, since a write through one use would not reach another. So
 `val f = fn (x) { return x }` stays `fn <T0>(x: T0) -> T0`.
 
-A weak variable is writable when a write or a call can still add a value to
-it. That holds for a function parameter, and for a class type argument that
-the class's measured variance lets a write reach. A `Map`'s key and value are
-writable through a `mut` binding and not through an immutable one. A weak
-variable is unresolved when no concrete type bounds it from either side.
+A weak binding's type settles once everything that can write it is inferred.
+For a module-level binding that is the end of the module, and for a binding in
+a function or script body it is the end of that body. The checker then records
+the settled type for display, so hover and the rendered bindings show what the
+uses decided rather than what the initializer alone gave.
 
-Once every declaration in the module is inferred, the checker reports a
-binding in these cases:
+The settled type widens its literals the way a `var` does when the binding is
+written `mut` or declared with `var`, or when it owns what it holds. In the
+example, `seen` settles to `Map<string, number | string>`. An immutable binding
+that owns its value widens only the literals inside it, so `val five = id(5)`
+keeps `5` as `val five = 5` does, while `val b = Box(5)` settles to
+`Box<number>`. An immutable binding of a borrow keeps its literals, since
+nothing it reaches writes through it.
 
-- An unexported binding has a weak variable that is both writable and
-  unresolved.
-- An exported binding has a weak variable that is unresolved, or one that is
-  writable and has no concrete upper bound to cap what a write adds. An
-  importer could otherwise write into a type the module's own uses decide.
-- A weak variable received an owned value from one use and a borrow from
-  another. This reports the error T8 gives a join of such branches.
+The checker requires no annotation. A weak variable no use decides settles
+silently. A container that is never written settles at `never`, so
+`val mut seen = Map()` with no `seen.set` reads as `Map<never, never>`. A
+function that stores its parameter in the map and has no caller leaves the
+parameter `unknown`, as `value` is in
+`fn remember(value) { seen.set("last", value) }`.
+An exported binding needs no annotation either, so `export val mut b = Box(5)`
+settles to `Box<number>`. Requiring one for an exported or undecided weak
+variable is a possible later tightening.
 
-The first two report `` cannot infer the type of 'seen'; annotate it, as in
-`val mut seen: Map<K, V> = Map()` ``. The suggested annotation names each
-undecided variable after the class parameter it fills.
+A weak variable that received an owned value from one use and a borrow from
+another reports the error T8 gives a join of such branches, against the
+module-level binding.
 
-A container that is never written counts as unresolved when its binding can
-write it. `val mut seen = Map()` with no `seen.set` reports the error, since
-the program never says what the map holds. `val seen = Map()` cannot be
-written, so it settles at `Map<never, never>` without one.
-
-The binding's displayed type is recorded after every function that uses it is
-inferred, so `seen` in the example renders `Map<"k", 1 | "s">`. A local
-binding follows the same generalization rule, and the enclosing function
-quantifies its weak variables when it generalizes. The rule lives in
-`generalizes` in [poly.go](../../internal/solver/poly.go), and the checks in
-[weak.go](../../internal/solver/weak.go).
+The rule lives in `generalizes` in [poly.go](../../internal/solver/poly.go),
+and the settling in [weak.go](../../internal/solver/weak.go).
 
 ## Known bugs
 

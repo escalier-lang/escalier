@@ -234,14 +234,14 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	// symbols are minted before the `val` that names them is reached.
 	prevOwners := c.symbolOwners
 	c.symbolOwners = symbolOwners(module, g)
-	prevWeak, prevReaders, prevWeakVars := c.weakBindings, c.weakReaders, c.weakBindingVars
-	c.weakBindings, c.weakReaders = nil, nil
+	prevWeak, prevReaders, prevLocals, prevWeakVars := c.weakBindings, c.weakReaders, c.weakLocals, c.weakBindingVars
+	c.weakBindings, c.weakReaders, c.weakLocals = nil, nil, nil
 	c.weakBindingVars = set.NewSet[*soltype.TypeVarType]()
 	defer func() {
 		target.onDefine = prevOnDefine
 		c.nsIndex = nil
 		c.symbolOwners = prevOwners
-		c.weakBindings, c.weakReaders, c.weakBindingVars = prevWeak, prevReaders, prevWeakVars
+		c.weakBindings, c.weakReaders, c.weakLocals, c.weakBindingVars = prevWeak, prevReaders, prevLocals, prevWeakVars
 	}()
 	// M4 E3: dep_graph fans one top-level destructuring `val {x, y} = …` across one
 	// SCC component per leaf key. Its initializer is typed and its pattern bound
@@ -1069,7 +1069,7 @@ func (c *checker) inferComponent(
 			c.recordType(b.infoNode, display)
 		}
 		if b.weak {
-			c.noteWeakBinding(key.Name(), b, scheme, lvl)
+			c.noteWeakBinding(b, scheme)
 		} else {
 			c.noteWeakReader(b, scheme, lvl)
 		}

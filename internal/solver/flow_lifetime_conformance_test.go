@@ -299,7 +299,7 @@ func TestFlowLifetimeEscapingReadOnlyParam(t *testing.T) {
 			`,
 			values: map[string]string{
 				"remember": "fn (value: &'static {retries: 3}) -> undefined",
-				"seen":     "Map<\"last\", &'static {retries: 3}>",
+				"seen":     "Map<string, &'static {retries: number}>",
 			},
 		},
 	})

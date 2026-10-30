@@ -229,7 +229,7 @@ func TestConstructionInstantiatesTheClassBinder(t *testing.T) {
 			src: `class Box<T> { v: T }
 				val b = Box(1)
 				val s = Box("s")`,
-			want: map[string]string{"b": "Box<1>", "s": `Box<"s">`},
+			want: map[string]string{"b": "Box<number>", "s": "Box<string>"},
 		},
 		{
 			name: "an upper bound is checked at the call",

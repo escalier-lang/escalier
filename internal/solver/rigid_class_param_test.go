@@ -162,7 +162,7 @@ class Keyed<U> extends Bag<U> {
 }
 val p = Box(1).pair("s")`,
 			binding: "p",
-			want:    `[1, "s"]`,
+			want:    "[number, string]",
 		},
 	}
 	for _, tt := range tests {

@@ -309,7 +309,7 @@ val o = make(i)
 val r = o[i.key]
 val p = {[i.key]: "x"}
 fn readP(x: &I) { return p[x.key] }`},
-			want: map[string]string{"o": "{[i.key]: 1}", "r": "1", "readP": `fn (x: &I) -> "x"`},
+			want: map[string]string{"o": "{[i.key]: number}", "r": "1", "readP": `fn (x: &I) -> "x"`},
 		},
 		{
 			name: "NamespacedVal",

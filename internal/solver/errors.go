@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/printer"
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/escalier-lang/escalier/internal/solver/ucs"
 )
@@ -1051,18 +1050,6 @@ type MissingInitializerError struct {
 	Decl *ast.VarDecl
 }
 
-// UninferredWeakBindingError fires for a module-level `val` or `var` that does not
-// generalize, such as `val mut seen = Map()`, when the module leaves its type to uses it
-// cannot see or never decides part of it. settleWeakBindings lists the cases. Node is the
-// pattern leaf that binds Name, and TypeText is the binding's rendered type, which the
-// message offers as the annotation to write.
-type UninferredWeakBindingError struct {
-	Decl     *ast.VarDecl
-	Node     ast.Node
-	Name     string
-	TypeText string
-}
-
 // DuplicateDeclarationError fires when a top-level `val`/`var` rebinds a name
 // already declared in the module scope. Unlike a function (whose repeated
 // top-level declarations are overloads, supported from PR-3), a variable may be
@@ -1430,7 +1417,6 @@ func (*BodyDeclNotAllowedError) isSolverError()             {}
 func (*RegexTypeError) isSolverError()                      {}
 func (*MissingInitializerError) isSolverError()             {}
 func (*DuplicateDeclarationError) isSolverError()           {}
-func (*UninferredWeakBindingError) isSolverError()          {}
 func (*NoMatchingOverloadError) isSolverError()             {}
 func (*UnannotatedRecursiveOverloadError) isSolverError()   {}
 func (*DuplicateOverloadError) isSolverError()              {}
@@ -3131,40 +3117,6 @@ func (e *MissingInitializerError) Message() string {
 		return "Variable declaration requires an initializer: " + name
 	}
 	return "Variable declaration requires an initializer"
-}
-
-func (e *UninferredWeakBindingError) Span() ast.Span {
-	if e.Node != nil {
-		return e.Node.Span()
-	}
-	return e.Decl.Span()
-}
-func (e *UninferredWeakBindingError) Related() []ast.Span { return nil }
-
-// Message names the annotation to write. For a binding with a plain identifier pattern it
-// spells out the whole declaration with the annotation in place. A destructuring pattern
-// cannot carry a per-name annotation, so for one of its names the message asks for the
-// declaration to be annotated.
-func (e *UninferredWeakBindingError) Message() string {
-	head := "cannot infer the type of '" + e.Name + "'; "
-	ip, isIdent := e.Decl.Pattern.(*ast.IdentPat)
-	if !isIdent || e.Decl.Init == nil {
-		return head + "annotate its declaration"
-	}
-	kw := "val "
-	if e.Decl.Kind == ast.VarKind {
-		kw = "var "
-	}
-	if ip.Mutable {
-		kw += "mut "
-	}
-	// The initializer is spelled out only when it prints on one line, so the message stays
-	// one line.
-	init, err := printer.Print(e.Decl.Init, printer.DefaultOptions())
-	if err != nil || strings.Contains(init, "\n") {
-		init = "…"
-	}
-	return head + "annotate it, as in `" + kw + ip.Name + ": " + e.TypeText + " = " + init + "`"
 }
 
 func (e *DuplicateDeclarationError) Span() ast.Span      { return e.Decl.Span() }

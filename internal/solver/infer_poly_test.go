@@ -83,7 +83,7 @@ func TestInferModuleInnerCapturesOuterParam(t *testing.T) {
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn <T0>(y: T0) -> [T0, T0]", values["outer"], "co-occurring variables merge to one type parameter")
-	require.Equal(t, "[5, 5]", values["r"], "the captured outer param reaches both result positions")
+	require.Equal(t, "[number, number]", values["r"], "the captured outer param reaches both result positions")
 }
 
 // Let-polymorphism extends to body-level `val`s: an inner polymorphic function

@@ -229,6 +229,11 @@ type checker struct {
 	// variable, in the order the walk bound them. It is nil outside a walk.
 	weakReaders []weakReader
 
+	// weakLocals lists the body-level bindings that did not generalize, in the order the
+	// walk bound them. A module walk starts its own list and puts the previous one back when
+	// it ends. A script settles and clears the list once it is walked.
+	weakLocals []weakBinding
+
 	// weakBindingVars holds the type each binding that did not generalize binds, when that
 	// type is a variable. Every read of such a binding returns this one variable, where a
 	// generalized binding gives each read a fresh copy. A module walk starts its own set
