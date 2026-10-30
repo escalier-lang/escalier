@@ -1089,7 +1089,7 @@ Decided: accepted. Escalier adds a write-once cell, and the invariant states
 the exception it makes. The cell's name, syntax, and API are still to be
 designed. Counters and the interop methods stay on `&mut self` for now.
 
-### D12. A `mut` binding that grants nothing
+### D12. A `mut` that grants nothing
 
 T1 lets any binding or parameter be written `mut`, and nothing rejects one whose
 `mut` cannot matter. A value type has no owned layers, so T2 and T3 give the
@@ -1097,9 +1097,8 @@ T1 lets any binding or parameter be written `mut`, and nothing rejects one whose
 no writes, and a `&mut` borrow gets its writes from the borrow, not from the
 binding. An owned value can also have nothing to write. A `Promise<T>` is one,
 since nothing can write the value inside it. An instance of a class whose fields
-are all `readonly` is another. T1
-keeps reassignment on `var`, so the `mut` does not make the binding
-reassignable either:
+are all `readonly` is another. T1 keeps reassignment on `var`, so the `mut`
+does not make the binding reassignable either:
 
 ```esc
 fn read<'a>(p: &'a {x: {y: number}}) -> &'a {y: number} { return &p.x }
@@ -1126,16 +1125,30 @@ A slot is writable through a `mut` binding when it is a field that is not
 `readonly`, a tuple or array element, or a class argument the class writes. A
 class writes an argument when the argument is invariant in the class's
 `MutVariance`, as it is when a field that is not `readonly` holds it.
-`Map<K, V>` and a class with a writable `value: T` have
-writable slots. `Promise<T>` does not.
+`Map<K, V>` and a class with a writable `value: T` have writable slots.
+`Promise<T>` does not.
+
+The same holds for the `mut` of a `&mut` borrow. A `&mut` borrow of a value
+with no writable slot allows exactly the reads a `&` borrow allows, yet it
+reads as a promise that the callee may change the value:
+
+```esc
+fn wait(p: &mut Promise<number>) -> undefined { … }   // nothing in p can be written
+
+fn k() {
+    val mut q = fetchNum()  // warns, since q has no writable slot
+    wait(&mut q)            // warns, since &mut q allows no write
+}
+```
 
 The options are:
 
 - Accept it silently, as the checker does today.
 - Warn when the binding's type has no writable slot, meaning a value type, a
   `&` borrow, a `&mut` borrow, or an owned value whose layers hold nothing a
-  write can replace. This needs only the binding's type, and such a `mut` can
-  never matter.
+  write can replace. Warn the same way on a `&mut` type or a `&mut`
+  expression whose referent has no writable slot, and suggest `&`. Each check
+  needs only one type, and such a `mut` can never matter.
 - Warn when a `mut` binding is never written and never borrowed as `&mut`, as
   Rust's `unused_mut` lint does. This covers the value-type case and also an
   owned binding the body only reads, but it needs the body's write analysis.
@@ -1145,7 +1158,8 @@ unused-binding warning later. Both are warnings rather than errors, since the
 program means the same with or without the `mut`.
 
 Decided: accepted. A `mut` binding whose type has no writable slot reports a
-warning, tracked by
+warning, and so does a `&mut` type or expression whose referent has none. Both
+are tracked by
 [#2304](https://github.com/escalier-lang/escalier/issues/2304).
 A warning on any `mut` binding the body never writes or borrows as `&mut` is a
 later addition, tracked by
