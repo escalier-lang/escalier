@@ -1834,6 +1834,21 @@ func (c *checker) memberCarrier(t soltype.Type) soltype.Type {
 	return t
 }
 
+// reducedObject returns obj with its mapped and spread members expanded into the fields they
+// contribute. An object built from a mapped type or a spread names its fields only once reduced.
+// `{readonly [P]: T[P] for P in keyof T}` at `T = {a: number}` declares `a` after reduction and
+// nothing before it. An object with no such member, or one whose reduction is not an object,
+// returns obj unchanged.
+func (c *checker) reducedObject(obj *soltype.ObjectType) *soltype.ObjectType {
+	if !soltype.HasResidualElem(obj.Elems) {
+		return obj
+	}
+	if reduced, ok := newTypeEvaluator(c.ctx, newSeenPairs()).reduce(obj).(*soltype.ObjectType); ok {
+		return reduced
+	}
+	return obj
+}
+
 // objectCarrier reads the object type a receiver denotes: the type itself, or the single
 // object among an unresolved var's lower bounds. It mirrors classCarrier and
 // classValueCarrier, and like them it declines a var whose bounds disagree, since there is no
@@ -2130,15 +2145,7 @@ func (c *checker) writeMember(name string, carrier soltype.Type) (soltype.ObjTyp
 		return c.projectedClassMember(ct, ct, name, (*soltype.ObjectType).WriteMember, set.NewSet[string]())
 	}
 	if obj, ok := c.memberCarrier(carrier).(*soltype.ObjectType); ok {
-		// An object built from a mapped type or a spread names its fields only once reduced.
-		// `{readonly [P]: T[P] for P in keyof T}` at `T = {a: number}` declares `a` after
-		// reduction and nothing before it.
-		if soltype.HasResidualElem(obj.Elems) {
-			if reduced, isObj := newTypeEvaluator(c.ctx, newSeenPairs()).reduce(obj).(*soltype.ObjectType); isObj {
-				obj = reduced
-			}
-		}
-		return obj.WriteMember(name)
+		return c.reducedObject(obj).WriteMember(name)
 	}
 	if obj, ok := c.classValueCarrier(carrier); ok {
 		return obj.WriteMember(name)

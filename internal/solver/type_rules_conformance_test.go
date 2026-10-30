@@ -103,6 +103,45 @@ func TestTypeRules(t *testing.T) {
 			`,
 			want: []string{"3:17-3:20: " + ownedMutTypeMsg},
 		},
+		// `mut` reaches the layer under a `readonly` slot, so `x.a.b` is writable and `x.a` is
+		// not. Each form below spells the same parameter type, once inline and once through
+		// `Readonly<T>`, and each allows and rejects the same writes.
+		{
+			name: "T3/MutBorrowThroughReadonlySlot",
+			src: `
+				fn resetWritten(x: &mut {readonly a: {b: number}}) {
+					x.a.b = 0
+				}
+				fn replaceWritten(x: &mut {readonly a: {b: number}}) {
+					x.a = {b: 0}
+				}
+			`,
+			want: []string{"6:6-6:9: cannot assign to 'a' because it is a readonly property"},
+		},
+		{
+			name: "T3/MutBorrowThroughMappedType",
+			src: `
+				fn resetMapped(x: &mut Readonly<{a: {b: number}}>) {
+					x.a.b = 0
+				}
+				fn replaceMapped(x: &mut Readonly<{a: {b: number}}>) {
+					x.a = {b: 0}
+				}
+			`,
+			want: []string{"6:6-6:9: cannot assign to 'a' because it is a readonly property"},
+		},
+		{
+			name: "T3/OwnedMutThroughMappedType",
+			src: `
+				fn resetOwned(mut x: Readonly<{a: {b: number}}>) {
+					x.a.b = 0
+				}
+				fn replaceOwned(mut x: Readonly<{a: {b: number}}>) {
+					x.a = {b: 0}
+				}
+			`,
+			want: []string{"6:6-6:9: cannot assign to 'a' because it is a readonly property"},
+		},
 		// A `readonly` field is written once, by the constructor call, so a later write is
 		// rejected even through a `val mut` binding.
 		{
