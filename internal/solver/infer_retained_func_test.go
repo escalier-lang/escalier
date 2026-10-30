@@ -341,6 +341,15 @@ fn h(x: &fn () -> undefined, n: number) {
 }`,
 			want: []string{"3:21-3:22: parameter 'g' is only called during the call, so it cannot outlive the call"},
 		},
+		// 'a belongs to outer, so inner's call lifetime would have to outlive a lifetime of the
+		// enclosing body.
+		{
+			name: "stored into a retained field of an enclosing function's parameter",
+			src: `fn outer<'a>(p: &mut {cb: &'a fn () -> undefined}) {
+    val inner = fn (g: fn () -> undefined) { p.cb = g }
+}`,
+			want: []string{"2:21-2:22: parameter 'g' is only called during the call, so it cannot outlive the call"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -36,16 +36,21 @@ func (c *checker) queueCallOnlyChecks(params []callOnlyParam, sig *soltype.FuncT
 }
 
 // checkCallOnlyParams reports each queued parameter whose body keeps it past the call. A body
-// keeps it past the call when it requires the call lifetime to outlive one of these:
+// keeps it past the call when it requires the call lifetime to outlive one of these. Each item
+// names the TestCallOnlyFunc cases that reach it.
 //
-//   - 'static.
+//   - 'static. See "passed on to a static parameter" and "stored into a static field of a
+//     borrowed parameter".
 //   - A lifetime the function's own type holds, since a caller reads its arguments and its
-//     result after the call.
+//     result after the call. See "returned" and "stored into a retained field of a borrowed
+//     parameter".
 //   - A lifetime at a lower level than the call lifetime, which belongs to the module or to an
-//     enclosing body.
+//     enclosing body. See "stored into a retained field of an enclosing function's parameter".
 //   - For a function written inside another body, a lifetime minted before its parameters
-//     resolved. The enclosing body minted it, possibly at the same level.
-//   - An elided lifetime, which a binding of the enclosing body holds in its display type.
+//     resolved. The enclosing body minted it, possibly at the same level. See "stored into a
+//     retained field of an enclosing function's parameter".
+//   - An elided lifetime, which a binding of the enclosing body holds in its display type. See
+//     "stored into a binding of the enclosing body".
 //
 // Any other lifetime is one the body mints itself, or a parameter lifetime of a function
 // inferred together with this one. The call lifetime may outlive those.
