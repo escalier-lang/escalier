@@ -4246,7 +4246,13 @@ func (c *checker) declaredField(recv soltype.Type, name string) (*soltype.Proper
 	// A receiver written through a mapped type, such as `&mut Readonly<{a: {b: number}}>`,
 	// declares `a` only after reduction. Reading the reduced field keeps the receiver's `mut`
 	// on the field's borrow, the same as the inline `&mut {readonly a: {b: number}}`.
-	return c.reducedObject(obj).Prop(name)
+	obj = c.reducedObject(obj)
+	// A member that stays unreduced may declare or override any field, so no field read off
+	// the rest of the list is the one the receiver holds.
+	if soltype.HasResidualElem(obj.Elems) {
+		return nil, false
+	}
+	return obj.Prop(name)
 }
 
 // fieldBorrow returns the value a read of a field typed fieldType yields off a receiver

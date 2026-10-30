@@ -131,6 +131,32 @@ func TestTypeRules(t *testing.T) {
 			want: []string{"6:6-6:9: cannot assign to 'a' because it is a readonly property"},
 		},
 		{
+			name: "T3/MutBorrowThroughMappedAlias",
+			src: `
+				type R = Readonly<{a: {b: number}}>
+				fn resetAlias(x: &mut R) {
+					x.a.b = 0
+				}
+			`,
+		},
+		// A shared borrow grants no writes at any layer, so the mapped form rejects the deep
+		// write the same way the inline form does.
+		{
+			name: "T3/SharedBorrowThroughMappedType",
+			src: `
+				fn resetWritten(x: &{readonly a: {b: number}}) {
+					x.a.b = 0
+				}
+				fn resetMapped(x: &Readonly<{a: {b: number}}>) {
+					x.a.b = 0
+				}
+			`,
+			want: []string{
+				"6:6-6:15: cannot constrain immutable object <: mutable object",
+				"3:6-3:15: cannot constrain immutable object <: mutable object",
+			},
+		},
+		{
 			name: "T3/OwnedMutThroughMappedType",
 			src: `
 				fn resetOwned(mut x: Readonly<{a: {b: number}}>) {
