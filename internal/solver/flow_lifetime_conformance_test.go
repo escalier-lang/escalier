@@ -274,10 +274,11 @@ func TestFlowLifetimeEscapingParamMoves(t *testing.T) {
 	})
 }
 
-// DISABLED until #2262, which infers an escaping parameter that the body only reads as a
-// `'static` borrow. Today `remember` infers as `fn (value: unknown) -> undefined`, which leaves
+// DISABLED until #2262 and #2348. #2262 infers an escaping parameter that the body only reads as
+// a `'static` borrow. Today `remember` infers as `fn (value: unknown) -> undefined`, which leaves
 // the parameter owned. `seen` does not generalize, so its value type is one weak variable that
-// `remember` and every caller share, and `remember` is not generic.
+// `remember` and every caller share, and `remember` is not generic. #2348 widens that variable
+// to `{retries: number}` when `seen` settles, so `remember` shows the same type `seen` does.
 /*
 func TestFlowLifetimeEscapingReadOnlyParam(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{
@@ -298,7 +299,7 @@ func TestFlowLifetimeEscapingReadOnlyParam(t *testing.T) {
 				}
 			`,
 			values: map[string]string{
-				"remember": "fn (value: &'static {retries: 3}) -> undefined",
+				"remember": "fn (value: &'static {retries: number}) -> undefined",
 				"seen":     "Map<string, &'static {retries: number}>",
 			},
 		},
