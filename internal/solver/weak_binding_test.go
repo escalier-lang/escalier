@@ -224,6 +224,8 @@ export val inc2 = twice(fn (x: number) -> number { return x + 1 })
 		{
 			// The `6` the pattern tests is not part of `o`'s type, which keeps the `5` it
 			// was built from.
+			// #2355 reports `6` as a pattern that cannot match `5`, so this case then needs
+			// `val mut o`, which makes the element `number`.
 			name: "APatternTestLeavesASharedElementAlone",
 			src: `
 val mk = fn (v) { return [v] }
