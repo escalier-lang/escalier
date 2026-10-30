@@ -389,10 +389,10 @@ collector keeps the value alive while any path reaches it, so outliving the owne
 is never an error on its own. The lifetime matters only to E2, which reads it to
 decide how long the path is live. A borrow that flows into module-level state
 gets the lifetime `'static`, so its path stays live for the rest of the program.
-A shared borrow of a place that already has a shared borrow outliving the
-current frame takes that borrow's lifetime, as D16 decides. E2 rejects every
-write to the place while the first borrow is live, so the second borrow reads a
-value that does not change for as long as either can read it.
+An immutable borrow of a place that already has an immutable borrow outliving
+the current frame takes that borrow's lifetime, as D16 decides. E2 rejects
+every write to the place while the first borrow is live, so the second borrow
+reads a value that does not change for as long as either can read it.
 
 In `make` below, the returned borrow outlives `p`, which is accepted. In
 `remember`, the borrow stored in `cache` is `'static`, so `cache` can read `p`
@@ -1261,9 +1261,9 @@ fn k() {
 
 A lifetime says how long one borrow stays usable. It does not say whether
 another path reaches the same value, so the two borrows of `b` above can carry
-different lifetimes. E2 closes that gap. While one shared borrow of `b` is live,
-no write to `b` can follow, so any other shared borrow of `b` can live as long
-as that one does.
+different lifetimes. E2 closes that gap. While one immutable borrow of `b` is
+live, no write to `b` can follow, so any other immutable borrow of `b` can
+live as long as that one does.
 
 The options are:
 
@@ -1272,8 +1272,8 @@ The options are:
   safely own.
 - Infer an owned return only when nothing outside the call reaches the value.
   The returned borrow's lifetime records that, given two rules:
-  1. A shared borrow of a place that already has a shared borrow outliving the
-     current frame takes that borrow's lifetime.
+  1. An immutable borrow of a place that already has an immutable borrow
+     outliving the current frame takes that borrow's lifetime.
   2. A returned `&` is owned when its lifetime ends with the callee's frame,
      meaning it is not tied to a parameter, a capture, or `'static`.
 
