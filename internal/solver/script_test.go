@@ -291,7 +291,9 @@ func TestInferScriptTypeAndFuncDecls(t *testing.T) {
 		{
 			// The recursive call writes x through the capture while `a` still borrows x.
 			name: "RecursiveCallWritesACaptureBesideLiveBorrow",
-			src: captureDecls + `
+			src: `
+				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
+
 				val mut x = {v: 1}
 				fn f(n: number) {
 					if n > 0 {
@@ -569,28 +571,36 @@ func TestScriptFnCaptureParity(t *testing.T) {
 	}{
 		// Calling f writes x through the capture while `a` still borrows x immutably.
 		"WriteThroughCaptureBesideLiveBorrow": {
-			src: captureDecls + `
+			src: `
+				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
+
 				val mut x = {v: 1}
 				val a = &x
 				FN { x.v = 5 }
 				f()
 				readRead(a, a)
 			`,
-			want: []string{"10:5-10:6: this call runs 'f', which writes 'x' while it is borrowed as immutable"},
+			want: []string{"7:5-7:6: this call runs 'f', which writes 'x' while it is borrowed as immutable"},
 		},
 		// Calling f reads x, so a call after x moves is a use after the move.
 		"CallAfterMovingTheCapture": {
-			src: captureDecls + `
+			src: `
+				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
+				declare fn take(x: {v: number}) -> undefined
+
 				val x = {v: 1}
 				FN { readRead(&x, &x) }
 				take(x)
 				f()
 			`,
-			want: []string{"10:5-10:6: this call runs 'f', which reads 'x' after it was moved"},
+			want: []string{"8:5-8:6: this call runs 'f', which reads 'x' after it was moved"},
 		},
 		// f reads x only while it runs, so x can move once the last call returns.
 		"MoveAfterTheLastCall": {
-			src: captureDecls + `
+			src: `
+				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
+				declare fn take(x: {v: number}) -> undefined
+
 				val x = {v: 1}
 				FN { readRead(&x, &x) }
 				f()

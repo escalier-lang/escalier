@@ -6,17 +6,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// ownedParamDecls declares a callee that writes its second argument into its first, plus the
-// helpers each case reaches the stored data back through.
-const ownedParamDecls = `
-	declare fn store<'a, 'b, 'c>(
-		target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
-		item: &'a mut {value: number},
-	) -> undefined
-	declare fn takeOwned(mut x: {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined
-	declare fn touch<'d>(x: &'d mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined
-`
-
 // TestStoreIntoOwnedParameter covers which parameters a store hands a local out through.
 //
 // Only a BORROW parameter names data the caller still holds. `&T` and `&mut T` reach an object
@@ -37,7 +26,12 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 		// The core of the rule. p is moved in and dies with the frame, and nothing reads it
 		// after the store, so b is reachable one way and nothing escapes.
 		"StoreIntoAnOwnedParameterIsNotAnEscapeOk": {
-			src: ownedParamDecls + `
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+
 				fn f(mut p: {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined {
 					val mut b = {value: 2}
 					store(&mut p, &mut b)
@@ -50,7 +44,12 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 		// nothing in the frame reaches b after the store. The stored borrow is the only path to
 		// b once f returns, so the store is accepted.
 		"StoreIntoABorrowParameterOk": {
-			src: ownedParamDecls + `
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+
 				fn f(p: &mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined {
 					val mut b = {value: 2}
 					store(&mut p, &mut b)
@@ -61,7 +60,12 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 		// f never reads p after the store, so the caller is the next to see b. Moving b into a
 		// binding that dies with the frame changes nothing the caller can observe.
 		"MovingAfterAStoreIntoABorrowParameterOk": {
-			src: ownedParamDecls + `
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+
 				fn f(p: &mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined {
 					val mut b = {value: 2}
 					store(&mut p, &mut b)
@@ -73,7 +77,12 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 		// The contrast. p holds the loan the store takes while f reads p, so moving b out
 		// before the read of p conflicts with it.
 		"MovingAfterAStoreIntoABorrowParameterConflicts": {
-			src: ownedParamDecls + `
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+
 				fn f(p: &mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined {
 					val mut b = {value: 2}
 					store(&mut p, &mut b)
@@ -81,12 +90,17 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 					val z = p
 				}
 			`,
-			want: []string{"12:14-12:15: cannot move 'b' while it is borrowed"},
+			want: []string{"10:14-10:15: cannot move 'b' while it is borrowed"},
 		},
 		// An immutable borrow of b taken after the same store disagrees with the mutable one
 		// the caller holds, so it is reported against the same loan.
 		"BorrowingImmutablyAfterAStoreIntoABorrowParameterConflicts": {
-			src: ownedParamDecls + `
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+
 				fn f(p: &mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined {
 					val mut b = {value: 2}
 					store(&mut p, &mut b)
@@ -94,7 +108,7 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 					val z = p
 				}
 			`,
-			want: []string{"12:14-12:16: cannot borrow 'b' as immutable while it is borrowed as mutable"},
+			want: []string{"10:14-10:16: cannot borrow 'b' as immutable while it is borrowed as mutable"},
 		},
 		// A field store follows the same split. Writing into an owned parameter's field writes
 		// into a value that dies with the frame.
@@ -111,7 +125,13 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 		// new owner controls. That is an aliasing hazard rather than a lifetime one, and the
 		// exclusivity check reports it.
 		"MovingTheStoredLocalAfterAStoreConflicts": {
-			src: ownedParamDecls + `
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+				declare fn touch<'d>(x: &'d mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined
+
 				fn f(mut p: {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined {
 					val mut b = {value: 2}
 					store(&mut p, &mut b)
@@ -119,12 +139,18 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 					touch(&mut p)
 				}
 			`,
-			want: []string{"12:14-12:15: cannot move 'b' while it is borrowed"},
+			want: []string{"11:14-11:15: cannot move 'b' while it is borrowed"},
 		},
 		// Moving the parameter out carries its alias with it. The component move re-anchors
 		// the graph, consuming b along with p, so the frame keeps no path to either.
 		"MovingAnOwnedParameterOutCarriesTheStoredLocalOk": {
-			src: ownedParamDecls + `
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+				declare fn takeOwned(mut x: {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined
+
 				fn f(mut p: {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined {
 					val mut b = {value: 2}
 					store(&mut p, &mut b)
@@ -136,7 +162,13 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 		// Reading b after that move reads a value the co-move consumed, which names the real
 		// mistake more precisely than an escape would.
 		"ReadingTheStoredLocalAfterTheParameterMovesOut": {
-			src: ownedParamDecls + `
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+				declare fn takeOwned(mut x: {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined
+
 				fn f(mut p: {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined {
 					val mut b = {value: 2}
 					store(&mut p, &mut b)
@@ -144,7 +176,7 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 					val y = b
 				}
 			`,
-			want: []string{"13:14-13:15: use of moved value 'b'"},
+			want: []string{"12:14-12:15: use of moved value 'b'"},
 		},
 		// An owned parameter takes borrow edges like a local, so an argument that reaches a
 		// local only through those edges still carries it into a caller-owned target. Here

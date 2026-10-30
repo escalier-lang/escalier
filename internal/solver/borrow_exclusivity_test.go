@@ -6,15 +6,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// exclusivityDecls are the callees the exclusivity cases pass borrows to. Each spells out its
-// parameters' mutability, since that is what decides whether a pair of arguments conflicts.
-const exclusivityDecls = `
-	declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
-	declare fn writeWrite(a: &mut {v: number}, b: &mut {v: number}) -> undefined
-	declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
-	declare fn write(a: &mut {v: number}) -> undefined
-`
-
 // TestBorrowExclusivity covers the mutable-XOR-immutable rule: data one borrow can write through
 // may not be reachable at the same time through a borrow that expects it to hold still. Two
 // borrows that agree, both mutable or both immutable, are allowed.
@@ -29,20 +20,24 @@ func TestBorrowExclusivity(t *testing.T) {
 		// The canonical case. One argument reads x and the other writes it, so the callee holds
 		// two views of one value and one of them can change it.
 		"ImmutableAndMutableOfOnePlace": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
+
 				fn g() {
 					val mut x = {v: 1}
 					readWrite(&x, &mut x)
 				}
 			`,
-			want: []string{"9:20-9:26: cannot borrow 'x' as mutable while it is borrowed as immutable"},
+			want: []string{"6:20-6:26: cannot borrow 'x' as mutable while it is borrowed as immutable"},
 		},
 		// Two writable views of one value both expect it to change, so neither is surprised by
 		// the other's write. Rule 3 of planning/lifetimes/requirements.md allows this, where Rust
 		// would not: one thread cannot observe a tear, and `&mut` is invariant in its referent, so
 		// the two views agree on the type as well as on the mutability.
 		"TwoMutableOfOnePlaceOk": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn writeWrite(a: &mut {v: number}, b: &mut {v: number}) -> undefined
+
 				fn g() {
 					val mut x = {v: 1}
 					writeWrite(&mut x, &mut x)
@@ -52,7 +47,9 @@ func TestBorrowExclusivity(t *testing.T) {
 		},
 		// Two readers see the same value, so nothing can disagree.
 		"TwoImmutableOfOnePlaceOk": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
+
 				fn g() {
 					val mut x = {v: 1}
 					readRead(&x, &x)
@@ -64,7 +61,9 @@ func TestBorrowExclusivity(t *testing.T) {
 		// `&`, which would be the conflicting pair if the argument decided. The callee takes both
 		// as immutable, so neither view can change the value.
 		"MutableArgumentIntoAnImmutableParamOk": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
+
 				fn g() {
 					val mut x = {v: 1}
 					readRead(&mut x, &x)
@@ -75,7 +74,9 @@ func TestBorrowExclusivity(t *testing.T) {
 		// Field paths keep disjoint data apart. x.p and x.q name different values, so writing
 		// one cannot be observed through a read of the other.
 		"DisjointFieldsOk": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
+
 				fn g() {
 					val mut x = {p: {v: 1}, q: {v: 2}}
 					readWrite(&x.p, &mut x.q)
@@ -85,13 +86,15 @@ func TestBorrowExclusivity(t *testing.T) {
 		},
 		// The same field through both arguments is the same data.
 		"SameFieldConflicts": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
+
 				fn g() {
 					val mut x = {p: {v: 1}, q: {v: 2}}
 					readWrite(&x.p, &mut x.p)
 				}
 			`,
-			want: []string{"9:22-9:30: cannot borrow 'x.p' as mutable while it is borrowed as immutable"},
+			want: []string{"6:22-6:30: cannot borrow 'x.p' as mutable while it is borrowed as immutable"},
 		},
 		// A whole binding contains its fields, so borrowing x.p and then x reaches overlapping
 		// data even though the paths differ in length. The message names both places, since
@@ -109,7 +112,9 @@ func TestBorrowExclusivity(t *testing.T) {
 		},
 		// Separate bindings share no data.
 		"DisjointRootsOk": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
+
 				fn g() {
 					val mut x = {v: 1}
 					val mut y = {v: 2}
@@ -122,17 +127,21 @@ func TestBorrowExclusivity(t *testing.T) {
 		// what makes the pair a conflict is that the callee may write through one view while
 		// reading the other.
 		"OneBorrowFillingAnImmutableAndAMutableParam": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
+
 				fn g(m: &mut {v: number}) {
 					readWrite(m, m)
 				}
 			`,
-			want: []string{"8:19-8:20: cannot borrow 'm' as mutable while it is borrowed as immutable"},
+			want: []string{"5:19-5:20: cannot borrow 'm' as mutable while it is borrowed as immutable"},
 		},
 		// The cross-statement form a call-site-only check misses. The conflict is reported at
 		// the second borrow, which is where the program first holds two views of x.
 		"BorrowsBoundToNamesConflict": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
+
 				fn g() {
 					val mut x = {v: 1}
 					val a = &x
@@ -140,12 +149,14 @@ func TestBorrowExclusivity(t *testing.T) {
 					readWrite(a, b)
 				}
 			`,
-			want: []string{"10:14-10:20: cannot borrow 'x' as mutable while it is borrowed as immutable"},
+			want: []string{"7:14-7:20: cannot borrow 'x' as mutable while it is borrowed as immutable"},
 		},
 		// A borrow nothing reads again constrains nothing, which is the NLL rule. Here a is
 		// never read at all, so it and b are never live at once.
 		"UnreadFirstBorrowOk": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn write(a: &mut {v: number}) -> undefined
+
 				fn g() {
 					val mut x = {v: 1}
 					val a = &x
@@ -158,7 +169,9 @@ func TestBorrowExclusivity(t *testing.T) {
 		// A move conflicts with an immutable borrow too. After `val y = x` the data belongs to y,
 		// and a still expects it to hold still.
 		"MoveWhileImmutablyBorrowed": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
+
 				fn g() {
 					val mut x = {v: 1}
 					val a = &x
@@ -166,11 +179,13 @@ func TestBorrowExclusivity(t *testing.T) {
 					readRead(a, a)
 				}
 			`,
-			want: []string{"10:14-10:15: cannot move 'x' while it is borrowed"},
+			want: []string{"7:14-7:15: cannot move 'x' while it is borrowed"},
 		},
 		// Once nothing reads the borrow again, its loan is over and the move is the only path.
 		"MoveAfterAnImmutableBorrowEndsOk": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
+
 				fn g() {
 					val mut x = {v: 1}
 					val a = &x
@@ -186,7 +201,9 @@ func TestBorrowExclusivity(t *testing.T) {
 		// A borrow inside a literal takes its own loan rather than counting as a use of x. Two
 		// mutable borrows of x are allowed.
 		"MutableBorrowInALiteralBesideAMutableLoanOk": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn write(a: &mut {v: number}) -> undefined
+
 				fn g() {
 					val mut x = {v: 1}
 					val a = &mut x
@@ -199,7 +216,9 @@ func TestBorrowExclusivity(t *testing.T) {
 		// An immutable borrow inside a literal beside a live mutable loan is the pair that
 		// conflicts, and it reports as a borrow rather than as a use.
 		"ImmutableBorrowInALiteralBesideAMutableLoan": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn write(a: &mut {v: number}) -> undefined
+
 				fn g() {
 					val mut x = {v: 1}
 					val a = &mut x
@@ -207,12 +226,14 @@ func TestBorrowExclusivity(t *testing.T) {
 					write(a)
 				}
 			`,
-			want: []string{"10:18-10:20: cannot borrow 'x' as immutable while it is borrowed as mutable"},
+			want: []string{"7:18-7:20: cannot borrow 'x' as immutable while it is borrowed as mutable"},
 		},
 		// The owner is one more path to the value. A read through it beside a live borrow of
 		// either kind sees nothing the borrow does not.
 		"ReadThroughOwnerBesideAMutableLoanOk": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn write(a: &mut {v: number}) -> undefined
+
 				fn g() {
 					val mut x = {v: 1}
 					val a = &mut x
@@ -223,7 +244,9 @@ func TestBorrowExclusivity(t *testing.T) {
 			want: nil,
 		},
 		"ReadThroughOwnerBesideAnImmutableLoanOk": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
+
 				fn g() {
 					val mut x = {v: 1}
 					val a = &x
@@ -236,7 +259,9 @@ func TestBorrowExclusivity(t *testing.T) {
 		// A write through the owner beside a live mutable borrow is one more writer, which
 		// Rule 3 allows.
 		"WriteThroughOwnerBesideAMutableLoanOk": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn write(a: &mut {v: number}) -> undefined
+
 				fn g() {
 					val mut x = {v: 1}
 					val a = &mut x
@@ -249,7 +274,9 @@ func TestBorrowExclusivity(t *testing.T) {
 		// The same write beside a live immutable borrow changes data the borrow expects to
 		// hold still.
 		"WriteThroughOwnerBesideAnImmutableLoan": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
+
 				fn g() {
 					val mut x = {v: 1}
 					val a = &x
@@ -257,12 +284,14 @@ func TestBorrowExclusivity(t *testing.T) {
 					readRead(a, a)
 				}
 			`,
-			want: []string{"10:6-10:9: cannot assign to 'x.v' while it is borrowed as immutable"},
+			want: []string{"7:6-7:9: cannot assign to 'x.v' while it is borrowed as immutable"},
 		},
 		// A write reaches only the field it names, so a borrow of a disjoint field is unaffected
 		// and a borrow of the field it writes into conflicts.
 		"WriteBesideAnImmutableLoanOfADisjointFieldOk": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
+
 				fn g() {
 					val mut x = {a: {v: 1}, b: {v: 2}}
 					val r = &x.a
@@ -273,7 +302,9 @@ func TestBorrowExclusivity(t *testing.T) {
 			want: nil,
 		},
 		"NestedWriteBesideAnImmutableLoanOfItsField": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
+
 				fn g() {
 					val mut x = {a: {v: 1}, b: {v: 2}}
 					val r = &x.a
@@ -281,7 +312,7 @@ func TestBorrowExclusivity(t *testing.T) {
 					readRead(r, r)
 				}
 			`,
-			want: []string{"10:6-10:11: cannot assign to 'x.a.v' while it is borrowed as immutable"},
+			want: []string{"7:6-7:11: cannot assign to 'x.a.v' while it is borrowed as immutable"},
 		},
 		// Reassigning the whole binding leaves each borrow pointing at the old object, which
 		// nothing writes through the owner anymore.
@@ -291,7 +322,9 @@ func TestBorrowExclusivity(t *testing.T) {
 		// checks.
 		/*
 			"ReassignBesideAMutableLoanOk": {
-				src: exclusivityDecls + `
+				src: `
+					declare fn write(a: &mut {v: number}) -> undefined
+
 					fn g() {
 						var mut x = {v: 1}
 						val a = &mut x
@@ -303,7 +336,9 @@ func TestBorrowExclusivity(t *testing.T) {
 			},
 		*/
 		"ReassignBesideAnImmutableLoanOk": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
+
 				fn g() {
 					var mut x = {v: 1}
 					val a = &x
@@ -314,19 +349,23 @@ func TestBorrowExclusivity(t *testing.T) {
 			want: nil,
 		},
 		"FreshBorrowBesideALoanOnItsLastUse": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
+
 				fn g() {
 					val mut x = {v: 1}
 					val b = &mut x
 					readWrite(&x, b)
 				}
 			`,
-			want: []string{"10:16-10:18: cannot borrow 'x' as immutable while it is borrowed as mutable"},
+			want: []string{"7:16-7:18: cannot borrow 'x' as immutable while it is borrowed as mutable"},
 		},
 		// A reassignment repoints the binding, so the loan it held is gone. a borrows y by the
 		// time b is created, and nothing then reaches x twice.
 		"ReassignedBorrowDropsItsOldLoanOk": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn write(a: &mut {v: number}) -> undefined
+
 				fn g(mut x: {v: number}, mut y: {v: number}) {
 					var a = &mut x
 					a = &mut y
@@ -339,7 +378,9 @@ func TestBorrowExclusivity(t *testing.T) {
 		// The reassignment does not silence a real conflict: a borrows x mutably after it, and
 		// the immutable borrow of b then reads data a can write.
 		"ReassignedBorrowStillConflicts": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
+
 				fn g(mut x: {v: number}, mut y: {v: number}) {
 					var a = &mut y
 					a = &mut x
@@ -347,13 +388,15 @@ func TestBorrowExclusivity(t *testing.T) {
 					readWrite(b, a)
 				}
 			`,
-			want: []string{"10:14-10:16: cannot borrow 'x' as immutable while it is borrowed as mutable"},
+			want: []string{"7:14-7:16: cannot borrow 'x' as immutable while it is borrowed as mutable"},
 		},
 		// A reassignment ends the binding's loan from that point on, and no further back. The
 		// move of x sits before it, while a still borrows x, so it reports even though a is
 		// repointed later in the body.
 		"AReassignmentDoesNotSilenceAnEarlierMove": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn write(a: &mut {v: number}) -> undefined
+
 				fn g(mut x: {v: number}, mut y: {v: number}) -> undefined {
 					var a = &mut x
 					val w = x
@@ -362,7 +405,7 @@ func TestBorrowExclusivity(t *testing.T) {
 					write(a)
 				}
 			`,
-			want: []string{"9:14-9:15: cannot move 'x' while it is borrowed"},
+			want: []string{"6:14-6:15: cannot move 'x' while it is borrowed"},
 		},
 	}
 	for name, tc := range tests {
@@ -382,28 +425,35 @@ func TestExplicitBorrowArgs(t *testing.T) {
 	}{
 		// A bare place filling an immutable parameter reports, naming the borrow it needs.
 		"BarePlaceIntoAnImmutableParam": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
+				declare fn write(a: &mut {v: number}) -> undefined
+
 				fn g() {
 					val mut x = {v: 1}
 					write(&mut x)
 					readRead(x, &x)
 				}
 			`,
-			want: []string{"10:15-10:16: this argument is borrowed by the callee, so write the borrow: `&`"},
+			want: []string{"8:15-8:16: this argument is borrowed by the callee, so write the borrow: `&`"},
 		},
 		// The mutable parameter asks for `&mut`, so the message names that instead.
 		"BarePlaceIntoAMutableParam": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn write(a: &mut {v: number}) -> undefined
+
 				fn g() {
 					val mut x = {v: 1}
 					write(x)
 				}
 			`,
-			want: []string{"9:12-9:13: this argument is borrowed by the callee, so write the borrow: `&mut`"},
+			want: []string{"6:12-6:13: this argument is borrowed by the callee, so write the borrow: `&mut`"},
 		},
 		// Writing the borrow is what the rule asks for.
 		"WrittenBorrowsOk": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
+
 				fn g() {
 					val mut x = {v: 1}
 					val mut y = {v: 2}
@@ -415,7 +465,9 @@ func TestExplicitBorrowArgs(t *testing.T) {
 		// A value that is ALREADY a borrow is handed on rather than borrowed afresh, so there
 		// is no borrow missing at this call and nothing to write.
 		"PassingAnExistingBorrowOk": {
-			src: exclusivityDecls + `
+			src: `
+				declare fn write(a: &mut {v: number}) -> undefined
+
 				fn g(m: &mut {v: number}) {
 					write(m)
 				}
@@ -937,19 +989,6 @@ func TestFieldReadThroughBorrow(t *testing.T) {
 	}
 }
 
-// storeEffectDecls declares a callee that writes its second argument into its first, plus the
-// helpers the cases read the aliased data back through. `'a` at both item and target's peer
-// field is what makes the signature declare a store.
-const storeEffectDecls = `
-	declare fn store<'a, 'b, 'c>(
-		target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
-		item: &'a mut {value: number},
-	) -> undefined
-	declare fn readMutBorrow(x: &mut {value: number}) -> undefined
-	declare fn readImmBorrow(x: &{value: number}) -> undefined
-	declare fn touch<'d>(x: &'d mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined
-`
-
 // TestStoreEffectLoans covers the borrow a call's store effect creates. A signature that writes
 // one argument into another leaves the target reaching the item, so the target holds a borrow
 // of it that an immutable borrow or a move of the item has to respect.
@@ -964,7 +1003,14 @@ func TestStoreEffectLoans(t *testing.T) {
 		// An immutable borrow of the stored item conflicts with the mutable loan the store
 		// leaves, since the target can still write through it.
 		"SecondBorrowAfterAStore": {
-			src: storeEffectDecls + `
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+				declare fn readImmBorrow(x: &{value: number}) -> undefined
+				declare fn touch<'d>(x: &'d mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined
+
 				fn f(mut q: {value: number}, mut r: {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut q, spare: &mut r}
@@ -973,13 +1019,19 @@ func TestStoreEffectLoans(t *testing.T) {
 					touch(&mut a)
 				}
 			`,
-			want: []string{"14:20-14:22: cannot borrow 'b' as immutable while it is borrowed as mutable"},
+			want: []string{"13:20-13:22: cannot borrow 'b' as immutable while it is borrowed as mutable"},
 		},
 		// Moving the item out while the target still reaches it leaves the target pointing at
 		// data the new owner controls. The loan-against-loan check does not see this, because a
 		// move is not a borrow.
 		"MoveAfterAStore": {
-			src: storeEffectDecls + `
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+				declare fn touch<'d>(x: &'d mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined
+
 				fn g(mut q: {value: number}, mut r: {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut q, spare: &mut r}
@@ -988,13 +1040,19 @@ func TestStoreEffectLoans(t *testing.T) {
 					touch(&mut a)
 				}
 			`,
-			want: []string{"14:14-14:15: cannot move 'b' while it is borrowed"},
+			want: []string{"12:14-12:15: cannot move 'b' while it is borrowed"},
 		},
 		// Repointing the field the store wrote to ends the loan there, so the item is reachable
 		// one way again. This is the loan side of the strong update the borrow graph makes on
 		// the same subtree.
 		"RepointingTheStoredFieldReleasesTheItemOk": {
-			src: storeEffectDecls + `
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+				declare fn touch<'d>(x: &'d mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined
+
 				fn f(mut q: {value: number}, mut r: {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut c = {value: 3}
@@ -1010,7 +1068,13 @@ func TestStoreEffectLoans(t *testing.T) {
 		// A store into a SIBLING field leaves the loan at [peer] holding, since the update
 		// reaches only the field it writes.
 		"RepointingASiblingFieldKeepsTheLoan": {
-			src: storeEffectDecls + `
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+				declare fn touch<'d>(x: &'d mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined
+
 				fn g(mut q: {value: number}, mut r: {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut c = {value: 3}
@@ -1021,13 +1085,19 @@ func TestStoreEffectLoans(t *testing.T) {
 					touch(&mut a)
 				}
 			`,
-			want: []string{"16:14-16:15: cannot move 'b' while it is borrowed"},
+			want: []string{"14:14-14:15: cannot move 'b' while it is borrowed"},
 		},
 		// A move walked BEFORE the repoint happened while the loan still held, so it keeps its
 		// diagnostic. The loan carries the sequence it ended at rather than leaving the list,
 		// which is what keeps a later store from silencing an earlier move.
 		"AMoveBeforeTheRepointKeepsItsDiagnostic": {
-			src: storeEffectDecls + `
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+				declare fn touch<'d>(x: &'d mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined
+
 				fn h(mut q: {value: number}, mut r: {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut c = {value: 3}
@@ -1038,14 +1108,19 @@ func TestStoreEffectLoans(t *testing.T) {
 					touch(&mut a)
 				}
 			`,
-			want: []string{"15:14-15:15: cannot move 'b' while it is borrowed"},
+			want: []string{"13:14-13:15: cannot move 'b' while it is borrowed"},
 		},
 		// Nothing reads the target after the store, so its borrow of the item is dead and the
 		// item is reachable one way again. This is the same NLL rule a named borrow follows.
 		// A borrow in a returned literal takes its own loan, so the `&mut b` here is a second
 		// mutable borrow of b beside the store's loan, which is allowed.
 		"MutableBorrowInAReturnAfterAStoreOk": {
-			src: storeEffectDecls + `
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+
 				fn g(mut q: {value: number}, mut r: {value: number}) -> [&mut {value: number}, &mut {value: number}] {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut q, spare: &mut r}
@@ -1057,7 +1132,13 @@ func TestStoreEffectLoans(t *testing.T) {
 		},
 		// The same holds for a borrow inside a literal a binding holds.
 		"MutableBorrowInALiteralAfterAStoreOk": {
-			src: storeEffectDecls + `
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+				declare fn touch<'d>(x: &'d mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined
+
 				fn g(mut q: {value: number}, mut r: {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut q, spare: &mut r}
@@ -1071,7 +1152,13 @@ func TestStoreEffectLoans(t *testing.T) {
 		// A read of the stored item through its owner beside the store's mutable loan sees
 		// nothing the loan does not.
 		"ReadOfTheItemAfterAStoreOk": {
-			src: storeEffectDecls + `
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+				declare fn touch<'d>(x: &'d mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined
+
 				declare fn useNum(n: number) -> undefined
 				fn g(mut q: {value: number}, mut r: {value: number}) -> undefined {
 					val mut b = {value: 2}
@@ -1084,7 +1171,13 @@ func TestStoreEffectLoans(t *testing.T) {
 			want: nil,
 		},
 		"FieldReadOfTheItemIntoABindingAfterAStoreOk": {
-			src: storeEffectDecls + `
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+				declare fn touch<'d>(x: &'d mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined
+
 				fn g(mut q: {value: number}, mut r: {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut q, spare: &mut r}
@@ -1096,7 +1189,12 @@ func TestStoreEffectLoans(t *testing.T) {
 			want: nil,
 		},
 		"DeadTargetReleasesTheItemOk": {
-			src: storeEffectDecls + `
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+
 				fn h(mut q: {value: number}, mut r: {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut q, spare: &mut r}
@@ -1109,7 +1207,10 @@ func TestStoreEffectLoans(t *testing.T) {
 		// Without the store the target reaches nothing of b's, so both the borrow and the read
 		// are the only path to it.
 		"NoStoreLeavesTheItemFreeOk": {
-			src: storeEffectDecls + `
+			src: `
+				declare fn readMutBorrow(x: &mut {value: number}) -> undefined
+				declare fn touch<'d>(x: &'d mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined
+
 				fn k(mut q: {value: number}, mut r: {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut q, spare: &mut r}
@@ -1124,7 +1225,13 @@ func TestStoreEffectLoans(t *testing.T) {
 		// check, not against the loan that same call creates. Reading b to pass `&mut b` is how
 		// the store is written, so it reports nothing on its own.
 		"TheStoreCallItselfIsQuietOk": {
-			src: storeEffectDecls + `
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+				declare fn touch<'d>(x: &'d mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined
+
 				fn m(mut q: {value: number}, mut r: {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut q, spare: &mut r}
@@ -1159,7 +1266,14 @@ func TestStoreEffectLoans(t *testing.T) {
 		// the target reaches b.inner and nothing else of b. Borrowing the disjoint b.other
 		// reaches data the target cannot write.
 		"StoreOfOneFieldLeavesItsSiblingFreeOk": {
-			src: storeEffectDecls + `
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+				declare fn readMutBorrow(x: &mut {value: number}) -> undefined
+				declare fn touch<'d>(x: &'d mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined
+
 				fn f(mut q: {value: number}, mut r: {value: number}) -> undefined {
 					val mut b = {inner: {value: 1}, other: {value: 2}}
 					val mut a = {peer: &mut q, spare: &mut r}
