@@ -250,7 +250,9 @@ func PrintAsSchemeWith(
 	// A function's own type parameters claim their source names before anything else, so a
 	// generated T0 skips a name the source itself wrote. `fn <T0>` beside a free scheme
 	// variable renders `fn <T1, T0>`, with each binder naming one variable.
-	if ft, ok := t.(*FuncType); ok {
+	// A retained function binds its own type parameters in printFuncTail instead, since it
+	// renders through the general path below.
+	if ft, ok := t.(*FuncType); ok && ft.Lt == nil {
 		p.bindTypeParams(ft.TypeParams)
 	}
 	// The free variables the caller is willing to quantify, in first-appearance print order.
@@ -394,7 +396,9 @@ func PrintAsSchemeWith(
 	for i, lv := range ltVars {
 		ltLabels[i] = p.lifetimeBinder(lv, ltBounds[lv], ltIndex)
 	}
-	if ft, ok := t.(*FuncType); ok {
+	// A retained function such as `&'a fn () -> R` takes the general prefix path below,
+	// since its quantifier prefix must also bind the retention lifetime outside the `&'a`.
+	if ft, ok := t.(*FuncType); ok && ft.Lt == nil {
 		// Merge the scheme's free variables, the function's OWN type and lifetime
 		// parameters, and the free scheme lifetimes into one ordered prefix, so a generic
 		// method that also captures a scheme variable renders `fn <T0, U, 'a>(...)` rather
@@ -566,6 +570,9 @@ func (c *ltVarCollector) EnterType(t Type, _ Polarity) EnterResult {
 			c.add(la)
 		}
 	case *FuncType:
+		// The retention lifetime of `&'a fn` is free and prints ahead of the function's
+		// own binders, so it is collected before they are marked seen.
+		c.add(t.Lt)
 		// A function's own lifetime parameters are bound, not free, so mark their
 		// variables seen up front to exclude every use in the receiver, params, and
 		// return. An outlives bound may reference an outer free lifetime, collected
@@ -1107,7 +1114,7 @@ func (p *namedPrinter) printType(t Type) string {
 		parts = append(parts, args...)
 		return name + "<" + strings.Join(parts, ", ") + ">"
 	case *FuncType:
-		return "fn " + p.printFuncTail(t)
+		return p.funcRetentionPrefix(t) + "fn " + p.printFuncTail(t)
 	case *KeyofType:
 		// `keyof T`. The operand prints at
 		// precPrefix so a looser operand such as a union gets parenthesized: `keyof (A | B)`.
@@ -1403,6 +1410,19 @@ func (p *namedPrinter) refBorrowPrefix(t *RefType) string {
 		prefix += "mut "
 	}
 	return prefix
+}
+
+// funcRetentionPrefix renders the retention lifetime of a function type. It returns
+// "&'a " for `&'a fn () -> R`, "&" when the lifetime elides, and the empty string for a
+// function with no retention lifetime.
+func (p *namedPrinter) funcRetentionPrefix(t *FuncType) string {
+	if t.Lt == nil {
+		return ""
+	}
+	if name := p.borrowLifetimeName(t.Lt); name != "" {
+		return "&" + name + " "
+	}
+	return "&"
 }
 
 // printSelfReceiver renders a method's receiver as the Rust-style shorthand, reading

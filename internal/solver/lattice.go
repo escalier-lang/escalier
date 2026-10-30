@@ -605,6 +605,9 @@ func compareSameKind(a, b soltype.Type) int {
 		if a.Inexact != b.Inexact {
 			return boolOrder(a.Inexact) - boolOrder(b.Inexact)
 		}
+		if c := compareLifetime(a.Lt, b.Lt); c != 0 {
+			return c
+		}
 		if c := len(a.Params) - len(b.Params); c != 0 {
 			return c
 		}

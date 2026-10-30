@@ -100,6 +100,12 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"BorrowTypeRef": {
 			input: "&Point",
 		},
+		"BorrowLifetimeFuncType": {
+			input: "&'a fn () -> undefined",
+		},
+		"BorrowStaticFuncType": {
+			input: "&'static fn (x: number) -> number",
+		},
 		"BorrowBindsTighterThanUnion": {
 			input: "&A | B", // parses as (&A) | B
 		},
