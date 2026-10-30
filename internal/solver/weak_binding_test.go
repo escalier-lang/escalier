@@ -85,6 +85,8 @@ val seen = Map()
 			values: map[string]string{"seen": "Map<never, never>"},
 		},
 		{
+			// No use decides the map's types, and an importer sees them as `never`. #2354
+			// decides whether this reports an error or a warning asking for an annotation.
 			name: "AnExportedContainer",
 			src: `
 export val seen = Map()
@@ -108,8 +110,8 @@ export val mut b = Box(5)
 			values: map[string]string{"b": "Box<number>"},
 		},
 		{
-			// An immutable binding widens only the literals inside what it owns, so the
-			// top-level `5` stays the way `val five = 5` keeps it.
+			// An immutable binding keeps its literals, so `five` is `5` the way
+			// `val five = 5` is.
 			name: "AnExportedValueACallDecides",
 			src: `
 fn id(x) { return x }
