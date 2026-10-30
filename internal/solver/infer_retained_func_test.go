@@ -359,20 +359,29 @@ func TestRetainedClosureBorrows(t *testing.T) {
 		src  string
 		want []string
 	}{
-		// The first render runs before onClick keeps its handler, so only the second conflicts.
+		// forEachItem only calls its closure during the call, so the closure's write to `count`
+		// is over before render borrows it.
 		{
-			name: "call before the closure is retained",
-			src: `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
-declare fn forEachItem(f: fn () -> undefined) -> undefined
+			name: "closure only called during the call",
+			src: `declare fn forEachItem(f: fn () -> undefined) -> undefined
 declare fn render(view: &{n: number}) -> undefined
 fn setup() {
     val mut count = {n: 0}
     forEachItem(fn () { count.n = count.n + 1 })
     render(&count)
+}`,
+		},
+		// onClick keeps its handler, so a click may write `count` while render borrows it.
+		{
+			name: "closure retained before the borrow",
+			src: `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+declare fn render(view: &{n: number}) -> undefined
+fn setup() {
+    val mut count = {n: 0}
     onClick(fn () { count.n = count.n + 1 })
     render(&count)
 }`,
-			want: []string{"9:5-9:19: this call may run the 'handler' that 'onClick' retains, which writes 'count' while it is borrowed as immutable"},
+			want: []string{"6:5-6:19: this call may run the 'handler' that 'onClick' retains, which writes 'count' while it is borrowed as immutable"},
 		},
 		{
 			name: "closure bound to a name",
