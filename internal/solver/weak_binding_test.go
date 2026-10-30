@@ -32,6 +32,8 @@ fn b() { seen.set("j", "s") }
 			values: map[string]string{"seen": "Map<string, number | string>"},
 		},
 		{
+			// #2348 widens the weak variable in the checked type as well as in seen's display,
+			// so get becomes `fn () -> number | undefined`.
 			name: "AReadSeesTheWritesOfALaterFunction",
 			src: `
 val mut seen = Map()
@@ -136,6 +138,8 @@ val b = f("s")
 			},
 		},
 		{
+			// #2349 quantifies the closure makeId returns on the closure itself, so g
+			// becomes `fn <T0>(x: T0) -> T0`.
 			name: "AFunctionACallReturnsIsSettledByItsUse",
 			src: `
 fn makeId() { return fn (x) { return x } }
@@ -148,6 +152,8 @@ fn use() { return g(1) }
 			},
 		},
 		{
+			// #2349 quantifies the closure makeId returns on the closure itself, so g
+			// becomes `fn <T0>(x: T0) -> T0`.
 			name: "AFunctionACallReturnsThatNothingCalls",
 			src: `
 fn makeId() { return fn (x) { return x } }
@@ -157,7 +163,8 @@ val g = makeId()
 		},
 		{
 			// An importer sees the same type, so it cannot call g with a value the module
-			// never settled g on.
+			// never settled g on. #2349 quantifies the closure makeId returns on the closure
+			// itself, so g becomes `fn <T0>(x: T0) -> T0`.
 			name: "AnExportedFunctionACallReturnsThatNothingCalls",
 			src: `
 fn makeId() { return fn (x) { return x } }
@@ -167,7 +174,8 @@ export val g = makeId()
 		},
 		{
 			// The parameter and the result are one variable, so both show every value the
-			// module passed.
+			// module passed. #2349 quantifies the closure makeId returns on the closure itself,
+			// so g becomes `fn <T0>(x: T0) -> T0`.
 			name: "AnExportedFunctionACallReturnsCalledTwice",
 			src: `
 fn makeId() { return fn (x) { return x } }
@@ -330,6 +338,8 @@ fn put() { seen.set("k", 1) }
 	get, ok := ns.Decls[1].(*ast.FuncDecl)
 	require.True(t, ok)
 	require.Equal(t, "Map<string, number>", soltype.Print(res.Info.DisplayTypeOf(seen.Pattern)))
+	// #2348 widens the weak variable in the checked type as well, so get becomes
+	// `fn () -> number | undefined`.
 	require.Equal(t, "fn () -> 1 | undefined", soltype.Print(res.Info.DisplayTypeOf(get.Name)))
 }
 
