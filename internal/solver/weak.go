@@ -127,7 +127,7 @@ func (c *checker) settleWeakBindings(lvl int) {
 	for _, r := range c.weakReaders {
 		// A weak variable is not one of the reader's type parameters, so it is inlined to
 		// the bounds it holds now.
-		r.scheme.coalesced = c.subsumeFinal(inlineWeakVars(coalesceScheme(r.scheme.Body, r.scheme.Level, r.scheme.declared, r.scheme.declaredLts), lvl))
+		r.scheme.coalesced = c.subsumeFinal(simplifyWithWeakVars(r.scheme, r.scheme.Level, lvl))
 		if r.infoNode != nil {
 			c.recordType(r.infoNode, r.scheme.coalesced)
 		}
@@ -168,7 +168,9 @@ func (c *checker) settleWeakLocals() {
 // were quantified, which simplifies them the way a generalized binding's variables are. A
 // variable that only receives values reads as `never`, and a recursive type folds to its
 // smallest μ form. A weak variable that survives that pass occurs in both polarities. It
-// is not a type parameter of the binding, so the second pass inlines it to its bounds.
+// is not a type parameter of the binding, so it is replaced by the one type it stands for
+// in both, as simplifyWithWeakVars describes. `fn (x) { return x }` called with `1`
+// settles to `fn (x: 1) -> 1`.
 //
 // The settled type widens the literals in each slot the binding can write, the way T9
 // widens a literal initializer. widenLiterals says which slots those are.
@@ -176,8 +178,7 @@ func (c *checker) settleWeakLocals() {
 // `val b = Box(5)` keeps `Box<5>`, and `val mut p = fetchNum()` keeps `Promise<5>`.
 func (c *checker) settleWeakDisplay(w weakBinding) {
 	sc := w.scheme
-	simplified := coalesceScheme(sc.Body, sc.Level-1, sc.declared, sc.declaredLts)
-	display := inlineWeakVars(simplified, sc.Level)
+	display := simplifyWithWeakVars(sc, sc.Level-1, sc.Level)
 	if w.reassignable || w.mutable {
 		display = c.widenLiterals(display, w.reassignable, w.mutable)
 	}
@@ -396,26 +397,113 @@ func collectPassThrough(v *soltype.TypeVarType, out set.Set[*soltype.TypeVarType
 	}
 }
 
-// inlineWeakVars returns t with each type variable at or below lvl replaced by the
-// coalesced bounds its polarity reads, the union of its lower bounds where t produces it
-// and the intersection of its upper bounds where t consumes it. Every other node is kept.
+// simplifyWithWeakVars returns sc's body coalesced above lvl, with each type variable at or
+// below weakLvl replaced by the one type it stands for, the same in every position.
 //
-// A variable a function type binds as its own type parameter stays, since it is not weak.
-// `var id = fn <T>(x: T) -> T { … }` keeps its T.
-func inlineWeakVars(t soltype.Type, lvl int) soltype.Type {
-	return t.Accept(&weakVarInliner{lvl: lvl, binders: funcTypeParamVars(t)}, soltype.Positive)
+// Coalescing rebuilds such a variable as a fresh one with no bounds and puts the types that
+// flowed into it beside it, so `fn (x: T) -> T` with `T` written 1 coalesces to
+// `fn (x: t) -> t | 1`. The variable's type is read from there. It is the union of the types
+// beside it where it is produced, or the intersection of those beside it where it is
+// consumed when it is never produced. A variable with neither reads its own bounds the same
+// way, and is `never` when it has no bound either.
+func simplifyWithWeakVars(sc *PolyScheme, lvl, weakLvl int) soltype.Type {
+	simplified := coalesceScheme(sc.Body, lvl, sc.declared, sc.declaredLts)
+	s := &weakCompanionScanner{
+		lvl:      weakLvl,
+		binders:  funcTypeParamVars(simplified),
+		produced: map[*soltype.TypeVarType][]soltype.Type{},
+		consumed: map[*soltype.TypeVarType][]soltype.Type{},
+	}
+	simplified.Accept(s, soltype.Positive)
+	return simplified.Accept(&weakVarInliner{lvl: weakLvl, binders: s.binders, scan: s}, soltype.Positive)
 }
 
-// weakVarInliner is the visitor behind inlineWeakVars. binders holds the type-parameter
-// variables of every function type in the walked type.
+// weakCompanionScanner records, for each type variable at or below lvl, the other members of
+// each union it is produced in and of each intersection it is consumed in.
+type weakCompanionScanner struct {
+	lvl      int
+	binders  set.Set[*soltype.TypeVarType]
+	produced map[*soltype.TypeVarType][]soltype.Type
+	consumed map[*soltype.TypeVarType][]soltype.Type
+}
+
+func (s *weakCompanionScanner) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	var members []soltype.Type
+	into := s.produced
+	switch t := t.(type) {
+	case *soltype.UnionType:
+		if pol != soltype.Positive {
+			return soltype.EnterResult{}
+		}
+		members = t.Types
+	case *soltype.IntersectionType:
+		if pol != soltype.Negative {
+			return soltype.EnterResult{}
+		}
+		members, into = t.Types, s.consumed
+	default:
+		return soltype.EnterResult{}
+	}
+	for i, m := range members {
+		v, ok := m.(*soltype.TypeVarType)
+		if !ok || !s.isWeak(v) {
+			continue
+		}
+		for j, other := range members {
+			if j != i {
+				into[v] = append(into[v], other)
+			}
+		}
+	}
+	return soltype.EnterResult{}
+}
+
+func (s *weakCompanionScanner) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+
+func (s *weakCompanionScanner) isWeak(v *soltype.TypeVarType) bool {
+	return v.Level <= s.lvl && !s.binders.Contains(v)
+}
+
+// typeOf returns the one type the weak variable v stands for, as simplifyWithWeakVars
+// describes.
+func (s *weakCompanionScanner) typeOf(v *soltype.TypeVarType) soltype.Type {
+	if ts := s.produced[v]; len(ts) > 0 {
+		return joinAll(ts)
+	}
+	if ts := s.consumed[v]; len(ts) > 0 {
+		if len(ts) == 1 {
+			return ts[0]
+		}
+		return &soltype.IntersectionType{Types: ts}
+	}
+	if lower := coalesce(v, soltype.Positive); !isNeverType(lower) {
+		return lower
+	}
+	if upper := coalesce(v, soltype.Negative); !isUnknown(upper) {
+		return upper
+	}
+	return &soltype.NeverType{}
+}
+
+// joinAll returns the union of ts, or its one member.
+func joinAll(ts []soltype.Type) soltype.Type {
+	if len(ts) == 1 {
+		return ts[0]
+	}
+	return &soltype.UnionType{Types: ts}
+}
+
+// weakVarInliner is the visitor behind simplifyWithWeakVars. It replaces each weak variable
+// with the type scan gives it.
 type weakVarInliner struct {
 	lvl     int
 	binders set.Set[*soltype.TypeVarType]
+	scan    *weakCompanionScanner
 }
 
-func (w *weakVarInliner) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
-	if v, ok := t.(*soltype.TypeVarType); ok && v.Level <= w.lvl && !w.binders.Contains(v) {
-		return soltype.EnterResult{Type: coalesce(v, pol), SkipChildren: true}
+func (w *weakVarInliner) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	if v, ok := t.(*soltype.TypeVarType); ok && w.scan.isWeak(v) {
+		return soltype.EnterResult{Type: w.scan.typeOf(v), SkipChildren: true}
 	}
 	return soltype.EnterResult{}
 }
@@ -428,4 +516,10 @@ func mixesOwnership(v *soltype.TypeVarType) bool {
 	sawOwned, sawBorrowed := false, false
 	collectBranchOwnership(coalesce(v, soltype.Positive), &sawOwned, &sawBorrowed)
 	return sawOwned && sawBorrowed
+}
+
+// isUnknown reports whether t is `unknown`, the top of the subtype lattice.
+func isUnknown(t soltype.Type) bool {
+	_, top := t.(*soltype.UnknownType)
+	return top
 }

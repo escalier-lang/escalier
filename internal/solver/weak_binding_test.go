@@ -143,7 +143,7 @@ val g = makeId()
 fn use() { return g(1) }
 `,
 			values: map[string]string{
-				"g":   "fn (x: unknown) -> 1",
+				"g":   "fn (x: 1) -> 1",
 				"use": "fn () -> 1",
 			},
 		},
@@ -153,7 +153,29 @@ fn use() { return g(1) }
 fn makeId() { return fn (x) { return x } }
 val g = makeId()
 `,
-			values: map[string]string{"g": "fn (x: unknown) -> never"},
+			values: map[string]string{"g": "fn (x: never) -> never"},
+		},
+		{
+			// An importer sees the same type, so it cannot call g with a value the module
+			// never settled g on.
+			name: "AnExportedFunctionACallReturnsThatNothingCalls",
+			src: `
+fn makeId() { return fn (x) { return x } }
+export val g = makeId()
+`,
+			values: map[string]string{"g": "fn (x: never) -> never"},
+		},
+		{
+			// The parameter and the result are one variable, so both show every value the
+			// module passed.
+			name: "AnExportedFunctionACallReturnsCalledTwice",
+			src: `
+fn makeId() { return fn (x) { return x } }
+export val g = makeId()
+val n = g(5)
+val s = g("a")
+`,
+			values: map[string]string{"g": `fn (x: 5 | "a") -> 5 | "a"`},
 		},
 		{
 			name: "ALocalContainerGeneralizesWithItsFunction",

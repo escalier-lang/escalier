@@ -1471,6 +1471,14 @@ a function or script body it is the end of that body. The checker then records
 the settled type for display, so hover and the rendered bindings show what the
 uses decided rather than what the initializer alone gave.
 
+A weak variable is one type, so the settled type shows it the same way in every
+position. That type is the union of the values that flowed into it, or the
+types its uses require when no value did, or `never` when nothing reached it.
+With `fn makeId() { return fn (x) { return x } }`, `val g = makeId()` called
+as `g(5)` and `g("a")` settles to `fn (x: 5 | "a") -> 5 | "a"`. A `g` that
+nothing calls settles to `fn (x: never) -> never`, so a module that imports it
+cannot call it with a value the exporting module never settled it on.
+
 The settled type widens the literals in each slot the binding can write, the
 same slots T9 widens in a literal initializer:
 

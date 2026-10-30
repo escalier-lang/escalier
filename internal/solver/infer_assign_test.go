@@ -142,7 +142,7 @@ func TestInferAssignWeakVarWritesItsVariables(t *testing.T) {
 		val r = id("hello")
 	`)
 	require.Equal(t, []string{`4:14-4:21: cannot constrain "hello" <: number`}, errs)
-	require.Equal(t, `fn (x: number) -> number | "hello"`, values["id"])
+	require.Equal(t, `fn (x: number | "hello") -> number | "hello"`, values["id"])
 }
 
 // A broken TOP-LEVEL binding recovers AS the error sentinel (Fix A), so reassigning
