@@ -47,9 +47,12 @@ type weakBinding struct {
 	// infoNode is the node the binding's display type is recorded on, or nil when it has
 	// none.
 	infoNode ast.Node
-	// writable marks a binding written `mut` or declared with `var`, which can replace or
-	// write what it holds.
-	writable bool
+	// reassignable marks a binding declared with `var`, which can be rebound to any value
+	// of its type.
+	reassignable bool
+	// mutable marks a binding written `mut`, which can write the owned layers of what it
+	// holds.
+	mutable bool
 }
 
 // newWeakBinding returns the weakBinding for a binding declared by d and bound to scheme,
@@ -60,8 +63,12 @@ func newWeakBinding(d *ast.VarDecl, scheme TypeScheme, infoNode ast.Node) (weakB
 	if !ok {
 		return weakBinding{}, false
 	}
-	writable := d.Kind == ast.VarKind || hasMutLeaf(d.Pattern)
-	return weakBinding{scheme: sc, infoNode: infoNode, writable: writable}, true
+	return weakBinding{
+		scheme:       sc,
+		infoNode:     infoNode,
+		reassignable: d.Kind == ast.VarKind,
+		mutable:      hasMutLeaf(d.Pattern),
+	}, true
 }
 
 // noteWeakBinding records the weak module-level binding b for settleWeakBindings. scheme
@@ -163,16 +170,16 @@ func (c *checker) settleWeakLocals() {
 // smallest μ form. A weak variable that survives that pass occurs in both polarities. It
 // is not a type parameter of the binding, so the second pass inlines it to its bounds.
 //
-// The settled type widens its literals, as a `var` does, when the binding is writable.
-// `val mut seen = Map()` written with `seen.set("k", 1)` settles to `Map<string, number>`.
-// An immutable binding keeps its literals the way one with a literal initializer does, so
-// `val b = Box(5)` settles to `Box<5>` as `val p = [5, 10]` keeps `[5, 10]`.
+// The settled type widens the literals in each slot the binding can write, the way T9
+// widens a literal initializer. widenLiterals says which slots those are.
+// `val mut seen = Map()` written with `seen.set("k", 1)` settles to `Map<string, number>`,
+// `val b = Box(5)` keeps `Box<5>`, and `val mut p = fetchNum()` keeps `Promise<5>`.
 func (c *checker) settleWeakDisplay(w weakBinding) {
 	sc := w.scheme
 	simplified := coalesceScheme(sc.Body, sc.Level-1, sc.declared, sc.declaredLts)
 	display := inlineWeakVars(simplified, sc.Level)
-	if w.writable {
-		display = c.widenLiterals(display)
+	if w.reassignable || w.mutable {
+		display = c.widenLiterals(display, w.reassignable, w.mutable)
 	}
 	sc.coalesced = c.subsumeFinal(display)
 	if w.infoNode != nil {
@@ -180,41 +187,98 @@ func (c *checker) settleWeakDisplay(w weakBinding) {
 	}
 }
 
-// widenLiterals returns t with each literal widened to its primitive, as widen does for
-// one. A function type is kept whole, and so is a class type argument the class's measured
-// variance makes contravariant, since widening either would change what the value accepts.
-func (c *checker) widenLiterals(t soltype.Type) soltype.Type {
-	return t.Accept(&literalWidener{ctx: c.ctx}, soltype.Positive)
+// widenLiterals returns t with each literal in a writable slot widened to its primitive, as
+// widen does for one. A slot is writable when a write can replace the value in it:
+//
+//   - With replace set, t itself is such a slot, as the value of a `var` binding is.
+//   - With mutable set, t's owned layers are writable. Each field that is not `readonly`, each
+//     tuple element, and each class argument the class's MutVariance makes invariant is a
+//     slot. A class argument it makes covariant, such as the `T` of `Promise<T>`, can only be
+//     read, so it is not.
+//
+// Every covariant position inside a writable slot is writable too, since a write replaces the
+// slot's whole value. A function type and a borrow are kept whole, since the borrowed place
+// decides the type behind a borrow. A class argument the class makes contravariant is kept,
+// since widening it would change what the value accepts.
+func (c *checker) widenLiterals(t soltype.Type, replace, mutable bool) soltype.Type {
+	return t.Accept(&literalWidener{ctx: c.ctx, replace: replace, mutable: mutable}, soltype.Positive)
 }
 
-// literalWidener is the visitor behind widenLiterals.
+// literalWidener is the visitor behind widenLiterals. replace and mutable describe the node
+// being walked, the way widenLiterals' parameters describe t.
 type literalWidener struct {
-	ctx *Context
+	ctx     *Context
+	replace bool
+	mutable bool
 }
 
 func (w *literalWidener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
 	switch t := t.(type) {
-	case *soltype.FuncType:
+	case *soltype.FuncType, *soltype.RefType:
 		return soltype.EnterResult{SkipChildren: true}
 	case *soltype.LitType, *soltype.UniqueSymbolType, *soltype.RegexType:
-		return soltype.EnterResult{Type: widen(t), SkipChildren: true}
+		if w.replace {
+			return soltype.EnterResult{Type: widen(t), SkipChildren: true}
+		}
+		return soltype.EnterResult{SkipChildren: true}
+	case *soltype.ObjectType:
+		return soltype.EnterResult{Type: w.widenFields(t), SkipChildren: true}
+	case *soltype.TupleType:
+		elems := make([]soltype.Type, len(t.Elems))
+		for i, elem := range t.Elems {
+			elems[i] = w.widenSlot(elem, w.mutable, w.mutable)
+		}
+		out := *t
+		out.Elems = elems
+		return soltype.EnterResult{Type: &out, SkipChildren: true}
 	case *soltype.ClassType:
 		return soltype.EnterResult{Type: w.widenClassArgs(t), SkipChildren: true}
 	}
 	return soltype.EnterResult{}
 }
 
-// widenClassArgs returns ct with each type argument widened, except one the class's measured
-// variance makes contravariant.
+// widenSlot returns t widened as a slot that a write can replace when writable is set and
+// whose owned layers are writable when mutable is set.
+func (w *literalWidener) widenSlot(t soltype.Type, writable, mutable bool) soltype.Type {
+	inner := &literalWidener{ctx: w.ctx, replace: w.replace || writable, mutable: mutable}
+	return t.Accept(inner, soltype.Positive)
+}
+
+// widenFields returns obj with each property's type widened. A property that is not
+// `readonly` is a slot a mutable owner can write. Every other member is kept.
+func (w *literalWidener) widenFields(obj *soltype.ObjectType) soltype.Type {
+	elems := make([]soltype.ObjTypeElem, len(obj.Elems))
+	for i, elem := range obj.Elems {
+		prop, ok := elem.(*soltype.PropertyElem)
+		if !ok {
+			elems[i] = elem
+			continue
+		}
+		cp := *prop
+		cp.Type = w.widenSlot(prop.Type, w.mutable && !prop.Readonly, w.mutable)
+		elems[i] = &cp
+	}
+	out := *obj
+	out.Elems = elems
+	return &out
+}
+
+// widenClassArgs returns ct with each type argument widened. An argument the class's
+// variance makes contravariant is kept. One that MutVariance makes invariant is a slot a
+// mutable owner can write. Any other argument can only be read, so its owned layers are not
+// writable through it.
 func (w *literalWidener) widenClassArgs(ct *soltype.ClassType) soltype.Type {
 	def, _ := w.ctx.classDef(ct.Name)
 	args := make([]soltype.Type, len(ct.TypeArgs))
 	for i, arg := range ct.TypeArgs {
-		if def.varianceAt(i, false) == Contravariant {
+		switch {
+		case def.varianceAt(i, w.mutable) == Contravariant:
 			args[i] = arg
-			continue
+		case w.mutable && def.varianceAt(i, true) == Invariant:
+			args[i] = w.widenSlot(arg, true, true)
+		default:
+			args[i] = w.widenSlot(arg, false, false)
 		}
-		args[i] = arg.Accept(w, soltype.Positive)
 	}
 	out := *ct
 	out.TypeArgs = args

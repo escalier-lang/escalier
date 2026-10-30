@@ -210,6 +210,42 @@ val c = id([5, 10])
 			values: map[string]string{"a": "[5, 10]", "c": "[5, 10]"},
 		},
 		{
+			// Nothing can write the value inside a promise, so a `mut` binding keeps its
+			// literal. A `var` binding can be rebound to any promise, so it widens.
+			name: "APromiseWidensOnlyWhenItsBindingIsReassignable",
+			src: `
+async fn fetchNum() { return 5 }
+val mut p = fetchNum()
+var q = fetchNum()
+`,
+			values: map[string]string{"p": "Promise<5>", "q": "Promise<number>"},
+		},
+		{
+			// A `mut` binding can write `Box`'s field, so `T` widens. `Frozen`'s field is
+			// `readonly`, so its literal stays unless the binding can be rebound.
+			name: "AClassArgumentWidensWhenAMutableOwnerCanWriteIt",
+			src: `
+class Box<T> { value: T }
+class Frozen<T> { readonly value: T }
+val mut b = Box(5)
+val mut f = Frozen(5)
+var g = Frozen(5)
+`,
+			values: map[string]string{"b": "Box<number>", "f": "Frozen<5>", "g": "Frozen<number>"},
+		},
+		{
+			// A write to the element or field replaces the promise in it, so the promise's
+			// argument widens too.
+			name: "APromiseInsideAWritableSlotWidens",
+			src: `
+declare fn id<T>(x: T) -> T
+async fn fetchNum() { return 5 }
+val mut a = id([fetchNum()])
+val mut o = id({x: 1, y: fetchNum()})
+`,
+			values: map[string]string{"a": "[Promise<number>]", "o": "{x: number, y: Promise<number>}"},
+		},
+		{
 			// `T` appears only in a parameter of `put`, so it is contravariant, and widening
 			// it would claim `s` accepts every number.
 			name: "AContravariantClassArgumentKeepsItsLiteral",

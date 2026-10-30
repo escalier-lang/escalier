@@ -1471,14 +1471,30 @@ a function or script body it is the end of that body. The checker then records
 the settled type for display, so hover and the rendered bindings show what the
 uses decided rather than what the initializer alone gave.
 
-The settled type widens its literals the way a `var` does when the binding is
-written `mut` or declared with `var`. In the example, `seen` settles to
-`Map<string, number | string>`. An immutable binding keeps its literals, the
-same as one whose initializer is a literal. `val c = id([5, 10])` settles to
-`[5, 10]` as `val a = [5, 10]` does, and `val b = Box(5)` settles to
-`Box<5>`. This holds for a binding of a borrow too, whether the borrow is `&`
-or `&mut`. A borrow's literals belong to the place it points to, not to the
-binding. With `val mut p: {x: 1} = {x: 1}`, widening
+The settled type widens the literals in each slot the binding can write, the
+same slots T9 widens in a literal initializer:
+
+- A `val` binding writes nothing, so it keeps every literal.
+  `val c = id([5, 10])` settles to `[5, 10]` as `val a = [5, 10]` does, and
+  `val b = Box(5)` settles to `Box<5>`.
+- A `var` binding can be rebound, so its whole value is a writable slot.
+  `var q = fetchNum()` settles to `Promise<number>`.
+- A `mut` binding can write its owned layers. A field that is not `readonly`, a
+  tuple element, and a class argument the class's `MutVariance` makes invariant
+  are writable slots. In the example, `seen` settles to
+  `Map<string, number | string>`, and `val mut b = Box(5)` settles to
+  `Box<number>`. A class argument that is only read, such as the `T` of
+  `Promise<T>` or of a class whose field holding `T` is `readonly`, is not a
+  writable slot. `val mut p = fetchNum()` keeps `Promise<5>`, since nothing can
+  write the value inside a promise.
+- Every position inside a writable slot is writable too, since a write replaces
+  the slot's whole value. `val mut a = [fetchNum()]` settles to
+  `[Promise<number>]`.
+
+A class argument the class makes contravariant keeps its literal in every case,
+since widening it would change what the value accepts. A borrow keeps its
+literals too, whether it is `&` or `&mut`. They belong to the place the borrow
+points to, not to the binding. With `val mut p: {x: 1} = {x: 1}`, widening
 `val r = borrowMut(&mut p)` to `&mut {x: number}` would claim that `r.x = 2` is
 allowed, which the type of `p` rejects.
 
