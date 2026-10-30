@@ -167,7 +167,8 @@ func (c *checker) settleWeakLocals() {
 // owns what it holds. `val mut seen = Map()` written with `seen.set("k", 1)` settles to
 // `Map<string, number>`. An immutable binding that owns its value widens only the literals
 // inside it, so `val five = id(5)` keeps `5` the way `val five = 5` does. An immutable
-// binding of a borrow keeps every literal, since nothing it can reach writes through it.
+// binding of a borrow keeps every literal, whether the borrow is `&` or `&mut`, since those
+// literals belong to the place the borrow points to.
 func (c *checker) settleWeakDisplay(w weakBinding) {
 	sc := w.scheme
 	simplified := coalesceScheme(sc.Body, sc.Level-1, sc.declared, sc.declaredLts)

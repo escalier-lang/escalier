@@ -219,6 +219,17 @@ val r = borrow(&p)
 `,
 			values: map[string]string{"r": "&{x: 1}"},
 		},
+		{
+			// The literal belongs to p, so widening r to `&mut {x: number}` would let r write
+			// a value the type of p rejects.
+			name: "AnImmutableMutableBorrowKeepsItsLiterals",
+			src: `
+val mut p: {x: 1} = {x: 1}
+fn borrowMut(q: &mut {x: 1}) -> &mut {x: 1} { return q }
+val r = borrowMut(&mut p)
+`,
+			values: map[string]string{"r": "&mut {x: 1}"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

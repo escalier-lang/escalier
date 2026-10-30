@@ -1476,8 +1476,11 @@ written `mut` or declared with `var`, or when it owns what it holds. In the
 example, `seen` settles to `Map<string, number | string>`. An immutable binding
 that owns its value widens only the literals inside it, so `val five = id(5)`
 keeps `5` as `val five = 5` does, while `val b = Box(5)` settles to
-`Box<number>`. An immutable binding of a borrow keeps its literals, since
-nothing it reaches writes through it.
+`Box<number>`. An immutable binding of a borrow keeps its literals, whether the
+borrow is `&` or `&mut`. Those literals belong to the place the borrow points
+to, not to the binding. With `val mut p: {x: 1} = {x: 1}`, widening
+`val r = borrowMut(&mut p)` to `&mut {x: number}` would claim that `r.x = 2` is
+allowed, which the type of `p` rejects.
 
 The checker requires no annotation. A weak variable no use decides settles
 silently. A container that is never written settles at `never`, so
