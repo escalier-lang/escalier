@@ -393,10 +393,9 @@ directly above the field says so and the type contradicts it. A file reaching
 `MessageEvent` is told `null` and handed an object, which is the one way a
 declaration can be actively wrong rather than merely unhelpful. #1613 tracks it.
 
-Undoing the retype is what moves `MessageEvent` out of the prelude. Its real
-`ports` is `Array<MessagePort>`, and `MessagePort` closes over 1193
-declarations, so §7.4.5 of the other stream gives the messaging family its own
-package rather than letting the ambient one reach the platform.
+Undoing the retype is also what moves `MessageEvent` out of the prelude. Its
+real `ports` is `Array<MessagePort>`, so it belongs with the port it carries,
+and §7.4.5 of the other stream gives that family a package of its own.
 
 Unnameable beats narrow. A declaration whose type a file cannot spell is sound,
 and `Transferable` is the shape that proves it: the union names arms in packages
@@ -594,13 +593,16 @@ needs no new case.
    `string | function.Function`, reaches 29 declarations and all but itself are
    `std:*`. `VoidFunction` reaches nothing but itself.
 
-   `structuredClone` is the one that cannot come yet. Its options bag is
+   `structuredClone` goes somewhere else entirely. Its options bag is
    `StructuredSerializeOptions`, whose `transfer` field is
-   `Array<Transferable>`, and `Transferable` reaches 1193 declarations through
-   `OffscreenCanvas` as far as `WebGLRenderingContext`. §7.4.5 of the other
-   stream gives that family a package of its own, `web:messaging`, and
-   `structuredClone` goes there rather than into the prelude. Calling it costs
-   an import, which is what its options bag naming `Transferable` buys.
+   `Array<Transferable>`, so it belongs with the messaging family rather than
+   with the timers. §7.4.5 of the other stream gives that family the package
+   `web:messaging` and takes `structuredClone` with it, which means calling it
+   costs an import where `setTimeout` costs none.
+
+   It could not come here anyway before §7.4.9 of that stream.
+   `Transferable` names the canvas types, and until `tier.go` is gone a
+   `TierCore` package naming a browser-tier one is refused.
 2. Move the family globals to their families: `caches` to `web:cache`,
    `indexedDB` to `web:indexeddb`, `localStorage` and `sessionStorage` to
    `web:storage`. `crypto`, `performance` and `fetch` already went.

@@ -357,3 +357,11 @@ The first prints the closure per package against each package's size. `TRACE`
 adds the path the walk took to one name in the closure, which is how the chain
 through `UIEvent` above was found. Every figure in the listener section comes
 from this script.
+
+**A closure figure is about reachability, not cost.** It says which packages a
+declaration's references land in, which answers whether an edge crosses a tier
+and whether a move is possible at all. It does not say what loading costs:
+`PackageGroups` maps every URI in a closure to one group, so they load together
+whichever package a program names, and `../design.md`'s measurement section has
+cold load tracking tree size rather than closure size. A package naming many
+others is ordinary.

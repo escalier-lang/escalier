@@ -414,9 +414,8 @@ Nothing left in `web:prelude` differs by environment. Its 22 declarations are
 the event model, the abort pair, `DOMException` and the text codecs, every one
 of them `Exposed=*`, so one cached prelude serves every target. The declarations
 that do differ, `location` and `onmessage` among them, are scope members under
-F4 and live in `web:window` and `web:worker`. `MessageEvent` was the exception
-and §7.4.5 moves it to `web:messaging`, which also keeps the ambient layer's
-closure at 62 declarations rather than 1193.
+F4 and live in `web:window` and `web:worker`. `MessageEvent` was the one
+exception, and §7.4.5 moves it to `web:messaging`.
 
 What is left to measure is the per-environment content itself. A tree carrying
 nine forms of a declaration is a larger tree, and section 8 says cold load tracks
@@ -701,34 +700,33 @@ The other half of #1644. `MessageEvent`, `MessageEventInit`, `MessagePort`,
 package of their own, which is the structured-clone and channel-messaging
 family.
 
-**They cannot go to `web:prelude`, and `MessageEvent` cannot stay there.**
-`web:prelude` closes over 64 declarations today only because the overlay retypes
-`MessageEvent.ports` to `Array<unknown>` and `source` to `null`. N6 of the other
-stream requires those retypes to go, and `MessagePort` alone closes over 1193
-declarations through `Transferable`. So satisfying N6 while `MessageEvent` sits
-in the ambient package puts the whole platform in every file's scope. Without
-`MessageEvent` the prelude closes over 62, which is the number that keeps it
-portable.
+The reason is cohesion, not cost. These six are one API: a port pair carries
+structured clones, `Transferable` says what may be transferred with them, and
+`MessageEvent` is what arrives. `web:prelude` is the event model, the abort
+pair, `DOMException` and the text codecs, and messaging is a family beside
+those rather than part of them. A package naming other packages is ordinary, and
+a cycle among pseudo-packages is allowed, so neither is an argument here.
+
+`MessageEvent` moves with them for the same reason, and that is a change from
+leaving it in the prelude. Its `ports` is `Array<MessagePort>` once N6 of the
+other stream removes the overlay retype, so it belongs with the port it carries.
 
 `MessageChannel` comes for the reason `createImageBitmap` goes with
 `ImageBitmap`: `MessagePort` has no constructor, and `new MessageChannel()` is
 how a worker gets a pair of them.
 
-`structuredClone` lands here too, not in `web:prelude`. Its options bag is
+`structuredClone` lands here too. Its options bag is
 `StructuredSerializeOptions`, so §5.6 of the other stream defers it to this
-stage. Calling it costs an import, which is what its signature naming
-`Transferable` buys.
+stage rather than sending it to the prelude with the other portable globals.
 
-`Transferable` names the canvas types, so §7.4.4 lands first or this package's
-edges point at one a worker cannot import.
-
-This also settles N4. With `MessageEvent` gone, every declaration left in
-`web:prelude` is `Exposed=*`, so the ambient layer is the same for every target
-and #1567's cache needs no per-target key.
+One ordering constraint, and it is the tier check rather than the closure.
+`Transferable` names the canvas types, so until §7.4.9 retires `tier.go` a
+`TierCore` package naming a browser-tier one is refused. §7.4.4 lands first so
+the arms sit in packages a worker can import.
 
 **Done when** a worker fixture receives a `MessagePort` and reads a
 `MessageEvent` after `import "web:messaging"` and without importing `web:dom`,
-and `web:prelude`'s closure is unchanged at 62 declarations.
+and the generated tree converts clean.
 
 #### 7.4.6 Move the transferable arms no worker can import
 
