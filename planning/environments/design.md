@@ -846,6 +846,7 @@ backported.
 | #1644 | moving `MessagePort` and `Transferable` into `web:core`, which is F4 in one family |
 | #1861 | warm whole-tree inference regressed 1.5x. Closed, overtaken by the cross-run cache |
 | #1862 | the closure benchmark silently measures fewer packages than it claims |
+| #2377 | importing `web:dom` reports 346 errors, which blocks every stage that moves a declaration out of it |
 
 #1644's blocker section was wrong when filed and has been corrected. It claimed
 that a `Transferable` in `web:core` naming `OffscreenCanvas` would fail the

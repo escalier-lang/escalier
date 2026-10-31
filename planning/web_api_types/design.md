@@ -109,7 +109,32 @@ top-level names in scope without an import is the problem F4 is about. Nothing
 asserts what `ambientPackages` binds either, so N4 stands. Section 5.1 does
 both.
 
-### 3.4 What else moved
+### 3.4 A third-party `.d.ts` cannot name a DOM type
+
+An npm package's declarations are checked against the ambient scope.
+`package_load.go` parents the package's scope at `globalsScope()`, because a
+`.d.ts` is written against TypeScript's global library and names `Document` or
+`Blob` with no import of its own.
+
+The ambient scope holds 26 packages, of which two are `web:*`: `web:core` and
+`web:fetch`. So the global library a `.d.ts` is checked against is missing most
+of the platform.
+
+| name | package | resolves in a `.d.ts` |
+| --- | --- | --- |
+| `Event`, `EventTarget`, `AbortSignal`, `DOMException` | `web:core` | yes |
+| `Request`, `Response`, `Headers` | `web:fetch` | yes |
+| `Blob`, `File`, `FormData` | `web:file` | no |
+| `ReadableStream` | `web:streams` | no |
+| `URL` | `web:url` | no |
+| `Document`, `HTMLElement`, `Node` | `web:dom` | no |
+
+A package naming one of the unreachable ones fails to load with
+`cannot find type` against its own `.d.ts`, so the error lands on a file nobody
+can edit. These are not obscure names: a client library takes a `Blob` body, a
+React binding names `HTMLElement`, and an upload helper names `FormData`.
+
+### 3.5 What else moved
 
 #1648 landed, so an interface with several supertypes converts to a class that
 `implements` the rest. `constructorSide` has moved to
@@ -253,6 +278,33 @@ set a timer and a worker cannot set one at all. `hoisted/` has the per-global
 assignment; this requirement is what makes it binding, and its 176 window-only
 routings are superseded by F4 rather than by a different package.
 
+**F9. A third-party `.d.ts` resolves every web type it names.** A converted npm
+package reaches the whole platform, not the two `web:*` packages the ambient
+list happens to hold. A library that takes a `Blob` or returns an `HTMLElement`
+loads, and a `cannot find type` never lands on a `.d.ts` the project cannot
+edit.
+
+F7 splits the ambient scope so it serves a `.d.ts` and not a project's own
+files. That is what makes this affordable: once no `.esc` file reads the ambient
+scope, what it holds is invisible to user code and can be as wide as the global
+library it stands in for.
+
+Two mechanisms would do it, and §5.1 picks one.
+
+The first adds every `web:*` package to `ambientPackages`, so the scope a
+`.d.ts` is checked against is the platform. It is the honest model, since
+TypeScript's global library is exactly that, and it costs a load of packages the
+program may not use. The measurement in section 6 says that cost is small:
+`buildPackageGraph` already parses every file in the tree to read its import
+header, so the packages are read whether or not anything binds them.
+
+The second qualifies the references instead. `qualifyCrossPackageRefs` in
+`internal/dts_to_esc/import_header.go` already rewrites `Blob` to `file.Blob`
+and adds the matching import when generating the tree, and the same pass over a
+converted npm package would give it exactly the packages it names. That is
+narrower, and it needs the name-to-package map at check time rather than
+conversion time, where the solver does not have one today.
+
 ### 4.2 Non-functional
 
 **N1. The generated table is pinned and hermetic.** `@webref/idl` is a
@@ -318,11 +370,11 @@ line-by-line review. The hand-written part is the generator and the fixture, and
 `check_generated_tree` is what validates the rest. §5.2, §5.3 and §5.7 are the
 three where the generated half is big enough to say so.
 
-### 5.1 Make the ambient split the behavior rather than an option
+### 5.1 Split the ambient scope, and make it complete for a `.d.ts`
 
-**Goal.** F7 and N4, before anything else. Every later stage moves declarations
-between packages, and while the globals scope covers a project's own files,
-moving one silently changes what every `.esc` file has in scope.
+**Goal.** F7, F9 and N4, before anything else. Every later stage moves
+declarations between packages, and while the globals scope covers a project's
+own files, moving one silently changes what every `.esc` file has in scope.
 
 `Options.NoAmbientNames` already does what F7 wants, and
 `TestNodeModulesImportReadsGlobalsWithoutAmbientNames` already asserts it. The
@@ -334,14 +386,17 @@ work is removing the choice.
    scope alone. That is the half of F7 that stays.
 3. Keep `coreURI` and `bindCoreExports`, which bind `web:core`'s exports
    unprefixed on import and report a collision with a module's own declaration.
-4. Add the test N4 asks for, over what an `.esc` file reaches with no import.
-5. Record in `docs/03_imports.md` where the shape-loading line falls, which the
+4. Settle F9 and apply it, so a `.d.ts` naming `Blob` or `HTMLElement` loads.
+   Widening `ambientPackages` is the smaller change and the one to try first.
+5. Add the test N4 asks for, over what an `.esc` file reaches with no import.
+   Assert the `.d.ts` side separately, since the two scopes now differ.
+6. Record in `docs/03_imports.md` where the shape-loading line falls, which the
    document predates.
 
 **Done when** a fixture naming `PI`, `console` or `Error` with no import fails,
-the same fixture compiles with the imports, an npm package referencing `Console`
-still resolves, `setTimeout` still resolves after `import "web:core"` alone, and
-the no-import name set is pinned.
+the same fixture compiles with the imports, an npm package whose `.d.ts` names
+`Blob` and `HTMLElement` loads clean, `setTimeout` still resolves after
+`import "web:core"` alone, and both name sets are pinned.
 
 **Not this stage.** Any change to which package holds a declaration. This moves
 nothing; it changes what a file reaches without asking.
@@ -584,4 +639,5 @@ the suite exercising `internal/checker` is not being backported.
 | #1861 | warm whole-tree inference regressed 1.5x. Closed, overtaken by the cross-run cache |
 | #1862 | the closure benchmark silently measures fewer packages than it claims |
 | #1586 | the tier is per package where availability is per declaration |
+| #2377 | importing `web:dom` reports 346 errors, so several done-conditions here cannot be met until it is fixed |
 
