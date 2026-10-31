@@ -245,14 +245,13 @@ func (w *literalWidener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.E
 // widenRef returns ref with the literals its referent holds widened when ref is a `&` borrow in
 // a writable slot, and ref unchanged otherwise.
 func (w *literalWidener) widenRef(ref *soltype.RefType) soltype.Type {
-	if ref.Mut || !w.replace {
-		return ref
+	if !ref.Mut && w.replace {
+		widened := ref.Inner.Accept(&literalWidener{ctx: w.ctx, replace: true}, soltype.Positive)
+		if inner, ok := widened.(soltype.RefInner); ok {
+			return soltype.NewRef(false, ref.Lt, inner)
+		}
 	}
-	inner, ok := ref.Inner.Accept(&literalWidener{ctx: w.ctx, replace: true}, soltype.Positive).(soltype.RefInner)
-	if !ok {
-		return ref
-	}
-	return soltype.NewRef(false, ref.Lt, inner)
+	return ref
 }
 
 // widenSlot returns t widened as a slot that a write can replace when writable is set and
