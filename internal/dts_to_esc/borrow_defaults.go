@@ -116,7 +116,13 @@ func applyBorrowDefaults(mod *StandaloneModule, idx *typeIndex) {
 // borrowSigDefaults applies applyBorrowDefaults to one signature. outerTypeParams holds
 // the type parameters of the enclosing class.
 func (idx *typeIndex) borrowSigDefaults(sig *ast.FuncSig, outerTypeParams set.Set[string]) {
+	// A method sees the type parameters of its class as well as its own. A name in this
+	// set is never an object type, since it may be instantiated with a value type.
 	typeParams := outerTypeParams.Union(typeParamNameSet(sig.TypeParams))
+
+	// Wrap each parameter of an object type in a `&mut` borrow, and keep the borrows so
+	// the return can be tied to them below. A rest parameter has a RestPat, so it fails
+	// the IdentPat check. `this` is left to receiver classification.
 	var borrowed []*ast.RefTypeAnn
 	for _, param := range sig.Params {
 		if param.TypeAnn == nil {
@@ -134,16 +140,29 @@ func (idx *typeIndex) borrowSigDefaults(sig *ast.FuncSig, outerTypeParams set.Se
 	if sig.Return == nil {
 		return
 	}
+
+	// Build the borrowed form of the return without installing it yet. ret is the new
+	// return type and retRefs holds the borrows it added, one per object type. When the
+	// return has no object type, retRefs is empty and no parameter can share with it.
 	ret, retRefs := idx.borrowObjectTypes(sig.Return, typeParams)
+
+	// Keep the borrowed parameters that may share structure with one of the returned
+	// object types. A parameter that cannot share keeps a borrow scoped to the call, so
+	// holding the result does not keep it borrowed.
 	var shared []*ast.RefTypeAnn
 	for _, ref := range borrowed {
 		if idx.mayShareWithAny(ref.Inner, retRefs, typeParams) {
 			shared = append(shared, ref)
 		}
 	}
+
+	// With no parameter to tie it to, the return stays owned, so ret is discarded.
 	if len(shared) == 0 {
 		return
 	}
+
+	// Tie the sharing parameters and the returned borrows together with one new lifetime
+	// parameter. The name skips any lifetime the signature already declares.
 	name := freshLifetimeName(sig.LifetimeParams)
 	span := sig.Return.Span()
 	sig.LifetimeParams = append(sig.LifetimeParams, ast.NewLifetimeParam(name, nil, span))
