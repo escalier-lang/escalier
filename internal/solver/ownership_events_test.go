@@ -80,10 +80,10 @@ func TestOwnershipEventsCheckingModel(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.1: borrow(&, p, c, '1)", // `val c = &p` borrows p immutably into c
-				"b0.2: copy(c, d)",          // `val d = c` copies the immutable borrow
-				"b0.3: use(p.x, write)",     // `p.x = 1`
-				"b0.4: use(d.x, read)",      // `return d.x` reads a `number`
+				"b0.1: borrow(&, `p`, `c`, '1)", // `val c = &p` borrows p immutably into c
+				"b0.2: copy(`c`, `d`)",          // `val d = c` copies the immutable borrow
+				"b0.3: use(`p.x`, write)",       // `p.x = 1`
+				"b0.4: use(`d.x`, read)",        // `return d.x` reads a `number`
 			},
 		},
 		{
@@ -101,15 +101,15 @@ func TestOwnershipEventsCheckingModel(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.1: use(n, read)",        // `val a = n` only reads n, since a `number` is a value type
-				"b0.2: copy(r, b)",          // `val b = r` copies the borrow parameter r
-				"b0.4: borrow(&, p, c, '1)", // `val c = &p`
-				"b0.6: move(q, d)",          // `val d = q` moves the owned object q
-				"b0.7: use(a, read)",        // `a` in the return
-				"b0.7: use(b.x, read)",      // `b.x` in the return
-				"b0.7: use(c.x, read)",      // `c.x` in the return
-				"b0.7: use(p.x, read)",      // `p.x` in the return
-				"b0.7: use(d.x, read)",      // `d.x` in the return
+				"b0.1: use(`n`, read)",          // `val a = n` only reads n, since a `number` is a value type
+				"b0.2: copy(`r`, `b`)",          // `val b = r` copies the borrow parameter r
+				"b0.4: borrow(&, `p`, `c`, '1)", // `val c = &p`
+				"b0.6: move(`q`, `d`)",          // `val d = q` moves the owned object q
+				"b0.7: use(`a`, read)",          // `a` in the return
+				"b0.7: use(`b.x`, read)",        // `b.x` in the return
+				"b0.7: use(`c.x`, read)",        // `c.x` in the return
+				"b0.7: use(`p.x`, read)",        // `p.x` in the return
+				"b0.7: use(`d.x`, read)",        // `d.x` in the return
 			},
 		},
 		{
@@ -127,12 +127,12 @@ func TestOwnershipEventsCheckingModel(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.1: use(store, read)",               // `store(a)` reads the callee `store`
-				"b0.1: move(a, arg(store, 0))",         // `store(a)` moves a, since `store` stores its parameter into `sink`
-				"b0.3: use(read, read)",                // `read(&b)` reads the callee `read`
-				"b0.3: borrow(&, b, arg(read, 0), '1)", // `read(&b)` passes the written borrow `&b`
-				"b0.4: use(b.x, read)",                 // `b.x` in the return
-				"b0.4: use(n, read)",                   // `n` in the return
+				"b0.1: use(`store`, read)",                 // `store(a)` reads the callee `store`
+				"b0.1: move(`a`, arg(`store`, 0))",         // `store(a)` moves a, since `store` stores its parameter into `sink`
+				"b0.3: use(`read`, read)",                  // `read(&b)` reads the callee `read`
+				"b0.3: borrow(&, `b`, arg(`read`, 0), '1)", // `read(&b)` passes the written borrow `&b`
+				"b0.4: use(`b.x`, read)",                   // `b.x` in the return
+				"b0.4: use(`n`, read)",                     // `n` in the return
 			},
 		},
 		{
@@ -143,8 +143,8 @@ func TestOwnershipEventsCheckingModel(t *testing.T) {
 				fn store(p) { sink = p }
 			`,
 			want: []string{
-				"b0.0: move(p, sink)",    // `sink = p` moves p, so F3 settles p as owned
-				"b0.0: use(sink, write)", // `sink = p` writes the module binding
+				"b0.0: move(`p`, `sink`)",  // `sink = p` moves p, so F3 settles p as owned
+				"b0.0: use(`sink`, write)", // `sink = p` writes the module binding
 			},
 		},
 		{
@@ -154,7 +154,7 @@ func TestOwnershipEventsCheckingModel(t *testing.T) {
 				fn read(p) { return p.x }
 			`,
 			want: []string{
-				"b0.0: copy(p.x, return)", // `return p.x` copies out of p, which F3 settles as a borrow since the body never moves it
+				"b0.0: copy(`p.x`, return)", // `return p.x` copies out of p, which F3 settles as a borrow since the body never moves it
 			},
 		},
 		{
@@ -168,10 +168,10 @@ func TestOwnershipEventsCheckingModel(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.1: borrow(&, p, f, '_)", // `val f = fn ...` captures p, and f is never returned, so the capture is a borrow
-				"b0.2: use(f, read)",        // `f()` reads the closure
-				"b0.3: use(a, read)",        // `a` in the return
-				"b0.3: use(p.x, read)",      // `p.x` in the return
+				"b0.1: borrow(&, `p`, `f`, '_)", // `val f = fn ...` captures p, and f is never returned, so the capture is a borrow
+				"b0.2: use(`f`, read)",          // `f()` reads the closure
+				"b0.3: use(`a`, read)",          // `a` in the return
+				"b0.3: use(`p.x`, read)",        // `p.x` in the return
 			},
 		},
 		{
@@ -183,7 +183,7 @@ func TestOwnershipEventsCheckingModel(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.1: move(p, return)", // `return fn ...` returns the closure, so it owns its capture p
+				"b0.1: move(`p`, return)", // `return fn ...` returns the closure, so it owns its capture p
 			},
 		},
 		{
@@ -199,10 +199,10 @@ func TestOwnershipEventsCheckingModel(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.0: use(line.width, read)",             // `val w = line.width` reads a `number`
-				"b0.1: use(line.start.x, read)",           // `val x = line.start.x` reads a `number`
-				"b0.2: borrow(&, line.start, start, '1)",  // `val {start} = line` binds a borrow, since the pattern reads through the borrow `line`
-				"b0.3: borrow(&, line.start, return, '1)", // `return &line.start`
+				"b0.0: use(`line.width`, read)",              // `val w = line.width` reads a `number`
+				"b0.1: use(`line.start.x`, read)",            // `val x = line.start.x` reads a `number`
+				"b0.2: borrow(&, `line.start`, `start`, '1)", // `val {start} = line` binds a borrow, since the pattern reads through the borrow `line`
+				"b0.3: borrow(&, `line.start`, return, '1)",  // `return &line.start`
 			},
 		},
 	})
@@ -222,10 +222,10 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.1: move(p.a, a)",        // `val {a, n} = p` moves the object field a out of p
-				"b0.1: use(p.n, read)",      // `val {a, n} = p` only reads the `number` field n
-				"b0.2: move(a, return.0)",   // `a` in `return [a, p.b]`
-				"b0.2: move(p.b, return.1)", // `p.b` in `return [a, p.b]` moves the field out of p
+				"b0.1: move(`p.a`, `a`)",      // `val {a, n} = p` moves the object field a out of p
+				"b0.1: use(`p.n`, read)",      // `val {a, n} = p` only reads the `number` field n
+				"b0.2: move(`a`, return.0)",   // `a` in `return [a, p.b]`
+				"b0.2: move(`p.b`, return.1)", // `p.b` in `return [a, p.b]` moves the field out of p
 			},
 		},
 		{
@@ -237,10 +237,10 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.0: borrow(&mut, p.a, a, '1)", // `val {a, n} = p` binds a as `&mut`, since p is a `&mut` borrow
-				"b0.0: use(p.n, read)",           // `val {a, n} = p` only reads the `number` field n
-				"b0.1: use(n, read)",             // `a.x = n` reads n
-				"b0.1: use(a.x, write)",          // `a.x = n` writes through a
+				"b0.0: borrow(&mut, `p.a`, `a`, '1)", // `val {a, n} = p` binds a as `&mut`, since p is a `&mut` borrow
+				"b0.0: use(`p.n`, read)",             // `val {a, n} = p` only reads the `number` field n
+				"b0.1: use(`n`, read)",               // `a.x = n` reads n
+				"b0.1: use(`a.x`, write)",            // `a.x = n` writes through a
 			},
 		},
 		{
@@ -255,10 +255,10 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.3: borrow(&, p, o.a, '1)", // `a: &p` in the literal bound to o
-				"b0.3: move(q, o.b)",          // `b: q` moves the owned q into the literal
-				"b0.3: move(r, o.c.0)",        // `c: [r]` moves r into element 0 of the nested tuple
-				"b0.4: move(o, return)",       // `return o`
+				"b0.3: borrow(&, `p`, `o.a`, '1)", // `a: &p` in the literal bound to o
+				"b0.3: move(`q`, `o.b`)",          // `b: q` moves the owned q into the literal
+				"b0.3: move(`r`, `o.c.0`)",        // `c: [r]` moves r into element 0 of the nested tuple
+				"b0.4: move(`o`, return)",         // `return o`
 			},
 		},
 		{
@@ -272,10 +272,10 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.2: use(c, read)",    // the condition of `if c`
-				"b3.0: move(p, r)",      // the consequent `{ p }` moves p into r
-				"b4.0: move(q, r)",      // the alternative `{ q }` moves q into r
-				"b2.0: move(r, return)", // `return r` after the branches join
+				"b0.2: use(`c`, read)",    // the condition of `if c`
+				"b3.0: move(`p`, `r`)",    // the consequent `{ p }` moves p into r
+				"b4.0: move(`q`, `r`)",    // the alternative `{ q }` moves q into r
+				"b2.0: move(`r`, return)", // `return r` after the branches join
 			},
 		},
 		{
@@ -291,11 +291,11 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.1: move(q, o.a)",    // `o.a = q` moves q, since the field a holds an owned object
-				"b0.1: use(o.a, write)", // `o.a = q` writes the field
-				"b0.4: move(s, r)",      // `r = s` moves s into r
-				"b0.4: use(r, write)",   // `r = s` writes r
-				"b0.5: move(r, return)", // `return r`
+				"b0.1: move(`q`, `o.a`)",  // `o.a = q` moves q, since the field a holds an owned object
+				"b0.1: use(`o.a`, write)", // `o.a = q` writes the field
+				"b0.4: move(`s`, `r`)",    // `r = s` moves s into r
+				"b0.4: use(`r`, write)",   // `r = s` writes r
+				"b0.5: move(`r`, return)", // `return r`
 			},
 		},
 		{
@@ -314,9 +314,9 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.0: borrow(&, c, recv(get), '1)",    // `c.get()` borrows c for the `&self` receiver
-				"b0.1: borrow(&mut, c, recv(set), '1)", // `c.set()` borrows c mutably for the `&mut self` receiver
-				"b0.2: move(c, recv(take))",            // `c.take()` moves c into the owned `self` receiver
+				"b0.0: borrow(&, `c`, recv(`get`), '1)",    // `c.get()` borrows c for the `&self` receiver
+				"b0.1: borrow(&mut, `c`, recv(`set`), '1)", // `c.set()` borrows c mutably for the `&mut self` receiver
+				"b0.2: move(`c`, recv(`take`))",            // `c.take()` moves c into the owned `self` receiver
 			},
 		},
 		{
@@ -330,11 +330,11 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.0: use(v.x, read)", // the guard `v.x > 0`
-				"b0.0: use(v.x, read)", // the first arm's body `v.x`
-				"b0.0: use(n, read)",   // the second arm's body `n`
-				"b0.0: move(p.v, v)",   // the pattern `{v}` moves the field v out of p
-				"b0.0: use(p.n, read)", // the pattern `{n}` only reads the `number` field n
+				"b0.0: use(`v.x`, read)", // the guard `v.x > 0`
+				"b0.0: use(`v.x`, read)", // the first arm's body `v.x`
+				"b0.0: use(`n`, read)",   // the second arm's body `n`
+				"b0.0: move(`p.v`, `v`)", // the pattern `{v}` moves the field v out of p
+				"b0.0: use(`p.n`, read)", // the pattern `{n}` only reads the `number` field n
 			},
 		},
 		{
@@ -353,12 +353,12 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b3.0: use(v.x, read)",  // the guard `v.x > 0`
-				"b4.0: use(n, read)",    // `{x: n}` in the second arm reads n
-				"b3.-1: move(p.v, v)",   // the pattern `{v}` binds v on entry to the first arm
-				"b4.-1: use(p.n, read)", // the pattern `{n}` reads the `number` field n on entry to the second arm
-				"b3.1: move(v, r)",      // the first arm's tail `v` moves into r
-				"b2.0: move(r, return)", // `return r` after the arms join
+				"b3.0: use(`v.x`, read)",  // the guard `v.x > 0`
+				"b4.0: use(`n`, read)",    // `{x: n}` in the second arm reads n
+				"b3.-1: move(`p.v`, `v`)", // the pattern `{v}` binds v on entry to the first arm
+				"b4.-1: use(`p.n`, read)", // the pattern `{n}` reads the `number` field n on entry to the second arm
+				"b3.1: move(`v`, `r`)",    // the first arm's tail `v` moves into r
+				"b2.0: move(`r`, return)", // `return r` after the arms join
 			},
 		},
 		{
@@ -372,8 +372,8 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b3.0: use(v.x, read)", // `return v.x` in the consequent
-				"b3.-1: move(p.v, v)",  // `if val {v} = p` binds v on entry to the consequent
+				"b3.0: use(`v.x`, read)",  // `return v.x` in the consequent
+				"b3.-1: move(`p.v`, `v`)", // `if val {v} = p` binds v on entry to the consequent
 			},
 		},
 	})
@@ -394,9 +394,9 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.1: borrow(&mut, p, f, '_)", // `val f = fn () { p.x = 2 }` writes p and is never returned, so it borrows p mutably
-				"b0.2: use(f, read)",           // `f()` reads the closure
-				"b0.3: move(p, return)",        // `return p`
+				"b0.1: borrow(&mut, `p`, `f`, '_)", // `val f = fn () { p.x = 2 }` writes p and is never returned, so it borrows p mutably
+				"b0.2: use(`f`, read)",             // `f()` reads the closure
+				"b0.3: move(`p`, return)",          // `return p`
 			},
 		},
 		{
@@ -408,8 +408,8 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.1: borrow(&, p, arg(map, 0), '_)", // the closure passed to `xs.map` captures p and is not returned, so it borrows p
-				"b0.1: borrow(&, xs, recv(map), '1)",  // `xs.map(...)` borrows xs for the `&self` receiver of `map`
+				"b0.1: borrow(&, `p`, arg(`map`, 0), '_)", // the closure passed to `xs.map` captures p and is not returned, so it borrows p
+				"b0.1: borrow(&, `xs`, recv(`map`), '1)",  // `xs.map(...)` borrows xs for the `&self` receiver of `map`
 			},
 		},
 		{
@@ -422,8 +422,8 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.1: move(p, handler)",    // `handler = fn ...` stores the closure in a module binding, so it owns p
-				"b0.1: use(handler, write)", // `handler = fn ...` writes the module binding
+				"b0.1: move(`p`, `handler`)",  // `handler = fn ...` stores the closure in a module binding, so it owns p
+				"b0.1: use(`handler`, write)", // `handler = fn ...` writes the module binding
 			},
 		},
 		{
@@ -438,8 +438,8 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.0: move(p, f)",   // `val f = fn ...` captures p, and `return f` lets the closure escape, so it owns p
-				"b0.1: use(f, read)", // `return f` only reads f, since a closure is a value type
+				"b0.0: move(`p`, `f`)", // `val f = fn ...` captures p, and `return f` lets the closure escape, so it owns p
+				"b0.1: use(`f`, read)", // `return f` only reads f, since a closure is a value type
 			},
 		},
 	})
@@ -460,10 +460,10 @@ func TestOwnershipEventsProvisionalFlows(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.0: use(n, read)",        // the condition `n > 0`
-				"b3.0: use(n, read)",        // `n - 1` in the recursive call
-				"b3.0: move(p, arg(go, 1))", // `go(n - 1, p)` moves p, since `val q = p` settles p as owned
-				"b2.0: move(p, q)",          // `val q = p`
+				"b0.0: use(`n`, read)",          // the condition `n > 0`
+				"b3.0: use(`n`, read)",          // `n - 1` in the recursive call
+				"b3.0: move(`p`, arg(`go`, 1))", // `go(n - 1, p)` moves p, since `val q = p` settles p as owned
+				"b2.0: move(`p`, `q`)",          // `val q = p`
 			},
 		},
 		{
@@ -476,9 +476,9 @@ func TestOwnershipEventsProvisionalFlows(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.0: use(read, read)",       // `read(p)` reads the callee `read`
-				"b0.0: copy(p, arg(read, 0))", // `read(p)` copies p, which settles as a borrow since the body only passes it to a `&` parameter
-				"b0.1: use(n, read)",          // `return n` reads a `number`
+				"b0.0: use(`read`, read)",         // `read(p)` reads the callee `read`
+				"b0.0: copy(`p`, arg(`read`, 0))", // `read(p)` copies p, which settles as a borrow since the body only passes it to a `&` parameter
+				"b0.1: use(`n`, read)",            // `return n` reads a `number`
 			},
 		},
 		{
@@ -495,9 +495,9 @@ func TestOwnershipEventsProvisionalFlows(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.0: use(n, read)",          // the condition `n > 0`
-				"b3.0: use(n, read)",          // `n - 1` in the call to `stop`
-				"b3.0: move(p, arg(stop, 1))", // `stop(n - 1, p)` moves p, since `val r = q` in `stop` settles q as owned
+				"b0.0: use(`n`, read)",            // the condition `n > 0`
+				"b3.0: use(`n`, read)",            // `n - 1` in the call to `stop`
+				"b3.0: move(`p`, arg(`stop`, 1))", // `stop(n - 1, p)` moves p, since `val r = q` in `stop` settles q as owned
 			},
 		},
 	})
@@ -529,11 +529,11 @@ func TestOwnershipEventsByNode(t *testing.T) {
 		}
 	}
 	require.Equal(t, map[string][]string{
-		"b0.1": {"borrow(&, p, q, '1)"},
-		"b0.2": {"use(c, read)"},
-		"b3.0": {"copy(q, d)"},
-		"b3.1": {"use(p.x, write)"},
-		"b3.2": {"use(d.x, read)"},
+		"b0.1": {"borrow(&, `p`, `q`, '1)"},
+		"b0.2": {"use(`c`, read)"},
+		"b3.0": {"copy(`q`, `d`)"},
+		"b3.1": {"use(`p.x`, write)"},
+		"b3.2": {"use(`d.x`, read)"},
 	}, got)
 }
 
@@ -551,8 +551,8 @@ func TestOwnershipEventsPatterns(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b2.-1: move(p.v, v)",  // `val {v} = p else ...` binds v on entry to the code after the `else`
-				"b2.0: use(v.x, read)", // `return v.x`
+				"b2.-1: move(`p.v`, `v`)", // `val {v} = p else ...` binds v on entry to the code after the `else`
+				"b2.0: use(`v.x`, read)",  // `return v.x`
 			},
 		},
 		{
@@ -565,13 +565,13 @@ func TestOwnershipEventsPatterns(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.0: move(t.0, a)",       // `val [a, ...rest] = t` moves element 0 into a
-				"b0.0: move(t.1..., rest)", // `...rest` moves every element from 1 on
-				"b0.1: move(rest.0, b)",    // `val [b, c] = rest` moves element 0 into b
-				"b0.1: move(rest.1, c)",    // `val [b, c] = rest` moves element 1 into c
-				"b0.2: move(a, return.0)",  // `a` in `return [a, b, c]`
-				"b0.2: move(b, return.1)",  // `b` in `return [a, b, c]`
-				"b0.2: move(c, return.2)",  // `c` in `return [a, b, c]`
+				"b0.0: move(`t.0`, `a`)",       // `val [a, ...rest] = t` moves element 0 into a
+				"b0.0: move(`t.1...`, `rest`)", // `...rest` moves every element from 1 on
+				"b0.1: move(`rest.0`, `b`)",    // `val [b, c] = rest` moves element 0 into b
+				"b0.1: move(`rest.1`, `c`)",    // `val [b, c] = rest` moves element 1 into c
+				"b0.2: move(`a`, return.0)",    // `a` in `return [a, b, c]`
+				"b0.2: move(`b`, return.1)",    // `b` in `return [a, b, c]`
+				"b0.2: move(`c`, return.2)",    // `c` in `return [a, b, c]`
 			},
 		},
 		{
@@ -584,11 +584,11 @@ func TestOwnershipEventsPatterns(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.1: move(o.a, a)",         // `val {a, ...rest} = o` moves the field a into a
-				"b0.1: move(o.b, rest.b)",    // `...rest` takes the field b, which the pattern does not name
-				"b0.1: move(o.c, rest.c)",    // `...rest` takes the field c, which the pattern does not name
-				"b0.2: move(a, return.0)",    // `a` in `return [a, rest]`
-				"b0.2: move(rest, return.1)", // `rest` in `return [a, rest]`
+				"b0.1: move(`o.a`, `a`)",       // `val {a, ...rest} = o` moves the field a into a
+				"b0.1: move(`o.b`, `rest.b`)",  // `...rest` takes the field b, which the pattern does not name
+				"b0.1: move(`o.c`, `rest.c`)",  // `...rest` takes the field c, which the pattern does not name
+				"b0.2: move(`a`, return.0)",    // `a` in `return [a, rest]`
+				"b0.2: move(`rest`, return.1)", // `rest` in `return [a, rest]`
 			},
 		},
 		{
@@ -604,9 +604,9 @@ func TestOwnershipEventsPatterns(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b3.-1: move(o.0, v)",   // `Opt.Some(v)` binds the payload v on entry to the arm
-				"b3.0: move(v, r)",      // the arm body `v` moves into r
-				"b2.0: move(r, return)", // `return r`
+				"b3.-1: move(`o.0`, `v`)", // `Opt.Some(v)` binds the payload v on entry to the arm
+				"b3.0: move(`v`, `r`)",    // the arm body `v` moves into r
+				"b2.0: move(`r`, return)", // `return r`
 			},
 		},
 	})
@@ -634,14 +634,14 @@ func TestOwnershipEventsMatchArmNodes(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.3: use(c, read)",          // the target of `match c`
-				"b3.0: use(take, read)",       // `take(p)` in the first arm reads the callee
-				"b3.0: move(p, arg(take, 0))", // `take(p)` moves p, since `take` declares an owned parameter
-				"b3.0: use(y, write)",         // `y = take(p)` writes y
-				"b4.0: use(take, read)",       // `take(q)` in the second arm reads the callee
-				"b4.0: move(q, arg(take, 0))", // `take(q)` moves q into the owned parameter
-				"b4.0: use(y, write)",         // `y = take(q)` writes y
-				"b2.0: use(y, read)",          // `return y` reads a `number`
+				"b0.3: use(`c`, read)",            // the target of `match c`
+				"b3.0: use(`take`, read)",         // `take(p)` in the first arm reads the callee
+				"b3.0: move(`p`, arg(`take`, 0))", // `take(p)` moves p, since `take` declares an owned parameter
+				"b3.0: use(`y`, write)",           // `y = take(p)` writes y
+				"b4.0: use(`take`, read)",         // `take(q)` in the second arm reads the callee
+				"b4.0: move(`q`, arg(`take`, 0))", // `take(q)` moves q into the owned parameter
+				"b4.0: use(`y`, write)",           // `y = take(q)` writes y
+				"b2.0: use(`y`, read)",            // `return y` reads a `number`
 			},
 		},
 		{
@@ -657,12 +657,12 @@ func TestOwnershipEventsMatchArmNodes(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b3.0: use(check, read)",                // the guard `check(&v)` reads the callee
-				"b3.0: borrow(&, v, arg(check, 0), '1)", // the guard passes the written borrow `&v` to `check`
-				"b4.0: use(n, read)",                    // the second arm's body `n`
-				"b3.-1: move(p.v, v)",                   // the pattern `{v}` moves the field v on entry to the first arm
-				"b4.-1: use(p.n, read)",                 // the pattern `{n}` reads the `number` field n on entry to the second arm
-				"b2.0: use(r, read)",                    // `return r` reads a `number`
+				"b3.0: use(`check`, read)",                  // the guard `check(&v)` reads the callee
+				"b3.0: borrow(&, `v`, arg(`check`, 0), '1)", // the guard passes the written borrow `&v` to `check`
+				"b4.0: use(`n`, read)",                      // the second arm's body `n`
+				"b3.-1: move(`p.v`, `v`)",                   // the pattern `{v}` moves the field v on entry to the first arm
+				"b4.-1: use(`p.n`, read)",                   // the pattern `{n}` reads the `number` field n on entry to the second arm
+				"b2.0: use(`r`, read)",                      // `return r` reads a `number`
 			},
 		},
 	})
@@ -682,8 +682,8 @@ func TestOwnershipEventsUnionSources(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.0: move(p, q)",      // `val q = p` moves, since `{x: number} | null` has an owned member
-				"b0.1: move(q, return)", // `return q`
+				"b0.0: move(`p`, `q`)",    // `val q = p` moves, since `{x: number} | null` has an owned member
+				"b0.1: move(`q`, return)", // `return q`
 			},
 		},
 		{
@@ -695,8 +695,8 @@ func TestOwnershipEventsUnionSources(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.0: copy(r, q)",      // `val q = r` copies, since the union's only reference-shaped member is a borrow
-				"b0.1: copy(q, return)", // `return q` copies the borrow on
+				"b0.0: copy(`r`, `q`)",    // `val q = r` copies, since the union's only reference-shaped member is a borrow
+				"b0.1: copy(`q`, return)", // `return q` copies the borrow on
 			},
 		},
 	})
@@ -723,12 +723,12 @@ func TestOwnershipEventsBranchInsideExpression(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.3: use(c, read)",          // the condition of the `if` in the tuple element
-				"b0.3: use(log, read)",        // `log()` inside the consequent
-				"b0.3: move(p, x.0)",          // the consequent's tail `p` moves into element 0 of x
-				"b0.3: move(q, x.0)",          // the alternative's tail `q` moves into element 0 of x
-				"b0.3: borrow(&, r, x.1, '1)", // `&r` in element 1
-				"b0.4: move(x, return)",       // `return x`
+				"b0.3: use(`c`, read)",            // the condition of the `if` in the tuple element
+				"b0.3: use(`log`, read)",          // `log()` inside the consequent
+				"b0.3: move(`p`, `x.0`)",          // the consequent's tail `p` moves into element 0 of x
+				"b0.3: move(`q`, `x.0`)",          // the alternative's tail `q` moves into element 0 of x
+				"b0.3: borrow(&, `r`, `x.1`, '1)", // `&r` in element 1
+				"b0.4: move(`x`, return)",         // `return x`
 			},
 		},
 	})

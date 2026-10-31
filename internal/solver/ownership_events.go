@@ -963,8 +963,8 @@ func renderOwnershipEvents(t *ownershipEvents) []string {
 	return out
 }
 
-// renderEvent renders one event in the notation of the checking model, such as
-// `borrow(&, p, c, '1)`.
+// renderEvent renders one event in the notation of the checking model. A name is in
+// backticks and a keyword is bare, so `val c = &p` renders as borrow(&, `p`, `c`, '1).
 func (t *ownershipEvents) renderEvent(ev ownershipEvent, ltNames map[soltype.Lifetime]string) string {
 	place := t.renderPlace(ev.place)
 	switch ev.kind {
@@ -1005,28 +1005,39 @@ func renderLifetime(lt soltype.Lifetime, ltNames map[soltype.Lifetime]string) st
 	return name
 }
 
-// renderPlace renders a place as its root's name followed by its field path.
+// renderPlace renders a place as its root's name followed by its field path, in
+// backticks so a name reads apart from the keywords an event renders, such as `read` or
+// `return`. A root with no name renders bare as `var#<id>`.
 func (t *ownershipEvents) renderPlace(p movePlace) string {
 	var b strings.Builder
-	if name, ok := t.names[p.root]; ok {
-		b.WriteString(name)
-	} else {
+	name, ok := t.names[p.root]
+	if !ok {
 		fmt.Fprintf(&b, "var#%d", p.root)
+		writePath(&b, p.path)
+		return b.String()
 	}
+	b.WriteByte('`')
+	b.WriteString(name)
 	writePath(&b, p.path)
+	b.WriteByte('`')
 	return b.String()
 }
 
 // renderHolder renders a holder: a place by name, a module-level binding by name, an
 // argument as `arg(<callee>, <index>)`, a receiver as `recv(<method>)`, a return as
-// `return`, and a temporary as `temp`. A path within the holder follows it.
+// `return`, and a temporary as `temp`. A path within the holder follows it. A name is in
+// backticks, as renderPlace writes it, and a keyword is bare.
 func (t *ownershipEvents) renderHolder(h eventHolder) string {
 	var b strings.Builder
 	switch h.kind {
 	case placeHolder:
 		return t.renderPlace(h.place)
 	case moduleHolder:
+		b.WriteByte('`')
 		b.WriteString(h.name)
+		writePath(&b, h.place.path)
+		b.WriteByte('`')
+		return b.String()
 	case argHolder:
 		fmt.Fprintf(&b, "arg(%s, %d)", renderCallee(h.node), h.index)
 	case receiverHolder:
@@ -1048,12 +1059,12 @@ func writePath(b *strings.Builder, path []placeSeg) {
 	}
 }
 
-// renderCallee names the callee of the call node for rendering, as calleeName does, and
-// renders any other callee as `call`.
+// renderCallee names the callee of the call node for rendering, as calleeName does, in
+// backticks. Any other callee renders as the bare keyword `call`.
 func renderCallee(node ast.Node) string {
 	if ce, ok := node.(*ast.CallExpr); ok {
 		if name := calleeName(ce.Callee); name != "" {
-			return name
+			return "`" + name + "`"
 		}
 	}
 	return "call"
