@@ -280,6 +280,34 @@ cold is 4.6s and barely moves with closure size. #1862 is open against the
 benchmark and unfixed. #1861 is closed as not planned, since it measured the warm
 cost the cache removed.
 
+**N6. A read is never narrower than an environment provides.** Where environments
+disagree about what a member yields, the tree states each environment's form,
+which is `planning/environments/`' F5. It does not pick the narrowest and call it
+portable.
+
+The rule is about reads, not writes. Narrowing what a program may pass or
+construct rejects valid code, which is a cost and not a lie. `FormData`'s
+overlay entry keeps only the no-argument constructor, so a browser program
+cannot build one from a form element, and #1586 is where that goes. Narrowing
+what a program receives tells it something false about a value it already holds,
+and no amount of inconvenience elsewhere makes that the cheaper trade.
+
+`web:core`'s `MessageEvent` is the case to undo. The overlay types
+`readonly source: null` and `readonly ports: Array<unknown>`, where a browser
+gives `source` a `WindowProxy`, a `MessagePort` or a `ServiceWorker`. The doc
+comment directly above the field says so and the type contradicts it. A file
+importing `web:core` is told `null` and handed an object, which is the one way a
+declaration can be actively wrong rather than merely unhelpful. #1613 tracks it.
+
+Unnameable beats narrow. A declaration whose type a file cannot spell is sound,
+and `Transferable` is the shape that proves it: the union names arms in packages
+an importer may not reach, so the type is accurate and the file cannot narrow to
+those arms. That costs a cast. A retype costs correctness, and the two are not
+alternatives of the same kind.
+
+This bounds what the overlay may do. It keeps a retype that no source answers.
+It does not keep one that understates what a real target provides.
+
 ## 5. Plan
 
 Stages land on their own and leave the tree green. Each names what it leaves
@@ -513,11 +541,14 @@ the suite exercising `internal/checker` is not being backported.
 
 2. **What is left of the overlay?** *Decided: it shrinks but stays.* Every fact
    moved to WebIDL is a reason for an overlay entry to go, and nobody has checked
-   which. What does not go is the one-off retype that no source answers, as with
-   `MessageEvent.source` to `null` and `ports` to `Array<unknown>`, where the
-   platform's own type names a class the portable tier cannot reach. Those are a
-   tier decision rather than a `.d.ts` error, so WebIDL has nothing to say about
-   them.
+   which. What stays is the one-off that no source answers, such as `EventTarget`
+   dropping the `null` listener the DOM spec allows, where the correction is a
+   judgement the `.d.ts` and WebIDL both leave open.
+
+   What does not stay is a retype that narrows a member below what a target
+   provides, which N6 now forbids. `MessageEvent.source` to `null` is one, and
+   its replacement is a per-environment declaration rather than an overlay
+   entry.
 
 3. **What is the new name for `self`?** *Decided: `worker` and `worklet`,
    mirroring `window`.* The scope object is exposed so a worker can reach

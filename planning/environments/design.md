@@ -634,6 +634,11 @@ per environment, and are not read as an overload set.
 F5 applied, and the end of #1613. `Transferable` splits into sixteen arms for a
 page or a dedicated worker and ten for the rest.
 
+This is also what satisfies the other stream's N6, which forbids typing a read
+narrower than some environment provides. `MessageEvent.source` is `null` in
+`web:core` today where a browser yields a `WindowProxy`, a `MessagePort` or a
+`ServiceWorker`, so the retype goes and the per-environment forms replace it.
+
 **Done when** a service worker sees `source` as
 `Client | ServiceWorker | MessagePort | null`, a page sees
 `WindowProxy | MessagePort | ServiceWorker | null`, and the retypes leave
