@@ -110,9 +110,11 @@ func (e *MutabilityTransitionError) Message() string {
 	)
 }
 
-// isValueType reports whether the type is a primitive, literal or regex type, or a union of
-// such types. Value types have copy semantics. Assigning one to another variable
-// creates an independent copy, so alias tracking is unnecessary.
+// isValueType reports whether the type is a primitive, literal, regex, `undefined` or `null`
+// type, or a union of such types. Value types have copy semantics. Assigning one to another
+// variable creates an independent copy, so alias tracking is unnecessary. A function type
+// reports false, since a binding that holds a closure carries the closure's captured
+// borrows, and its callers track loans through that binding.
 //
 // Every caller passes a binding's coalesced display type, which carries
 // no inference-variable indirection to prune. A bare *soltype.TypeVarType falls through to
@@ -120,7 +122,7 @@ func (e *MutabilityTransitionError) Message() string {
 // a spurious alias edge or loan, so it over-reports rather than under-reports.
 func isValueType(t soltype.Type) bool {
 	switch p := t.(type) {
-	case *soltype.PrimType, *soltype.LitType, *soltype.RegexType:
+	case *soltype.PrimType, *soltype.LitType, *soltype.RegexType, *soltype.UndefinedType, *soltype.NullType:
 		return true
 	case *soltype.UnionType:
 		for _, member := range p.Types {

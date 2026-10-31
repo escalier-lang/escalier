@@ -297,13 +297,15 @@ fn same(p: &{x: number}) {
 An unannotated parameter takes its ownership from the body. `store` lets `p`
 escape into module-level state, so its parameter is owned and the call moves
 `a`. `read` only reads `p`, so its parameter is a borrow and the call borrows
-`b`:
+`b`. A field read through that borrow keeps it, as a read through a written
+`&` parameter does, so `read` returns `&'a T0`. A use that needs a value type,
+such as the `n` in `b.x + n`, copies the field out of the borrow:
 
 ```esc
 var sink = {x: 0}
 
 fn store(p) { sink = p }     // store: fn (p: {x: number}) -> undefined
-fn read(p) { return p.x }    // read: fn (p: &{x: number}) -> number
+fn read(p) { return p.x }    // read: fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0
 
 fn go() -> number {
     val a = {x: 1}
@@ -1679,7 +1681,7 @@ fn go() -> number {
 **B6. An unannotated parameter that does not escape is inferred as owned.** The
 compiler infers `fn read(p) { return p.x }` as
 `fn <T0>(p: {x: T0}) -> T0`. F3 makes that parameter a borrow, so the
-signature should be `fn <T0>(p: &{x: T0}) -> T0`. Today `read(&b)` reports
+signature should be `fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0`. Today `read(&b)` reports
 `cannot use borrowed &object as owned object`, and `read(b)` is accepted
 without moving `b`.
 

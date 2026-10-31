@@ -51,6 +51,15 @@ in a borrow, ownership does not apply to them, and they are freely duplicated.
    `mut p: T` parameter consumes its argument the same way and has the same type
    as `p: T`. The `mut` lets the body write the value it now owns. An
    unannotated parameter is inferred from whether the body lets the value escape.
+   One whose members the body only returns, compares, or computes with, as in
+   `return p.x` or `p.x + 1`, does not escape, so it is a borrow. A field read
+   through it keeps the borrow, so `fn read(p) { return p.x }` infers as
+   `fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0`, and a caller cannot write through
+   what `read(&b)` returns. A use that needs a value type, as `read(&b) + 1`
+   does, copies the field out of the borrow. Any other use leaves the parameter
+   owned, unless that use needs a borrow, as passing it straight to a `&`
+   parameter in `g(p)` does. A function passed straight to a call takes its
+   parameters' types from the callee's signature instead.
 3. **A bare annotation is owned; a `&` annotation borrows.** This holds in every
    annotation position — a binding, a return type, a field, a parameter. So
    `val q: &{x: number} = &p` borrows `p` and leaves it usable, while
@@ -103,8 +112,9 @@ needs no marker — `c.read()`, never `(&c).read()` — because the receiver's
 mutability is already written on `self` in the method's own parameter list and
 there is only ever one receiver to mark.
 
-The call-site `&` is not required yet. Today the compiler inserts the borrow
-itself, so both `read(p)` and `read(&p)` are accepted.
+The call-site `&` is required. With an owned `p`, `read(&p)` is accepted and
+`read(p)` reports
+``this argument is borrowed by the callee, so write the borrow: `&` ``.
 
 ## Copy, borrow, move
 
@@ -147,8 +157,18 @@ fn go() {
 }
 ```
 
-A callee that only reads its parameter lets nothing escape, so the same call
-shape borrows and leaves the source usable.
+A callee that only reads its parameter lets nothing escape, so its parameter is
+a borrow. The call writes the borrow and leaves the source usable:
+
+```esc
+fn read(p) { return p.x }   // read: fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0
+
+fn go() {
+    val p = {x: 1}
+    val n = read(&p)
+    val m = p.x     // p is still usable
+}
+```
 
 A value does **not** escape when it flows into a strictly shorter-lived
 destination: a non-escaping argument or a local reborrow. Those are borrows, and
