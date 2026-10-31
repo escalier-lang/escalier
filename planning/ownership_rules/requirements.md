@@ -1551,11 +1551,20 @@ same slots T9 widens in a literal initializer:
   `[Promise<number>]`.
 
 A class argument the class makes contravariant keeps its literal in every case,
-since widening it would change what the value accepts. A borrow keeps its
-literals too, whether it is `&` or `&mut`. They belong to the place the borrow
-points to, not to the binding. With `val mut p: {x: 1} = {x: 1}`, widening
-`val r = borrowMut(&mut p)` to `&mut {x: number}` would claim that `r.x = 2` is
-allowed, which the type of `p` rejects.
+since widening it would change what the value accepts.
+
+A borrow's literals belong to the place it points to, so a borrow that is not
+in a writable slot keeps them, whether it is `&` or `&mut`. `val r = borrow(&p)`
+with `val p = {x: 1}` settles to `&{x: 1}`. A `&` borrow in a writable slot
+widens what it points to, since a write can replace it with a borrow of any
+value of the widened type, and `&T` accepts a borrow of any subtype of `T`.
+With `val mut seen = Map()` written with `seen.set("k", &p)`, `seen` settles to
+`Map<string, &{x: number}>`, and `var r = borrow(&p)` settles to
+`&{x: number}`. A `&mut` borrow keeps its literals even in a writable slot,
+since `&mut T` accepts only a borrow of exactly `T`. With
+`val mut p: {x: 1} = {x: 1}`, widening `val r = borrowMut(&mut p)` to
+`&mut {x: number}` would claim that `r.x = 2` is allowed, which the type of `p`
+rejects.
 
 The checker requires no annotation. A weak variable no use decides settles
 silently. A container that is never written settles at `never`, so

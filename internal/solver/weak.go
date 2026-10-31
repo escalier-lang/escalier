@@ -198,9 +198,11 @@ func (c *checker) settleWeakDisplay(w weakBinding) {
 //     read, so it is not.
 //
 // Every covariant position inside a writable slot is writable too, since a write replaces the
-// slot's whole value. A function type and a borrow are kept whole, since the borrowed place
-// decides the type behind a borrow. A class argument the class makes contravariant is kept,
-// since widening it would change what the value accepts.
+// slot's whole value. A `&` borrow in a writable slot is one: a write can store a borrow of any
+// value of the widened type, and `&T` is covariant in `T`. A `&` borrow outside a writable slot
+// keeps its literals, which belong to the place it points to. A `&mut` borrow is invariant in
+// what it points to, so it is kept whole, as a function type is. A class argument the class
+// makes contravariant is kept, since widening it would change what the value accepts.
 func (c *checker) widenLiterals(t soltype.Type, replace, mutable bool) soltype.Type {
 	return t.Accept(&literalWidener{ctx: c.ctx, replace: replace, mutable: mutable}, soltype.Positive)
 }
@@ -215,8 +217,10 @@ type literalWidener struct {
 
 func (w *literalWidener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
 	switch t := t.(type) {
-	case *soltype.FuncType, *soltype.RefType:
+	case *soltype.FuncType:
 		return soltype.EnterResult{SkipChildren: true}
+	case *soltype.RefType:
+		return soltype.EnterResult{Type: w.widenRef(t), SkipChildren: true}
 	case *soltype.LitType, *soltype.UniqueSymbolType, *soltype.RegexType:
 		if w.replace {
 			return soltype.EnterResult{Type: widen(t), SkipChildren: true}
@@ -236,6 +240,18 @@ func (w *literalWidener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.E
 		return soltype.EnterResult{Type: w.widenClassArgs(t), SkipChildren: true}
 	}
 	return soltype.EnterResult{}
+}
+
+// widenRef returns ref with the literals its referent holds widened when ref is a `&` borrow in
+// a writable slot, and ref unchanged otherwise.
+func (w *literalWidener) widenRef(ref *soltype.RefType) soltype.Type {
+	if !ref.Mut && w.replace {
+		widened := ref.Inner.Accept(&literalWidener{ctx: w.ctx, replace: true}, soltype.Positive)
+		if inner, ok := widened.(soltype.RefInner); ok {
+			return soltype.NewRef(false, ref.Lt, inner)
+		}
+	}
+	return ref
 }
 
 // widenSlot returns t widened as a slot that a write can replace when writable is set and
