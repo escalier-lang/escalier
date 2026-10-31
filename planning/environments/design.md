@@ -1,10 +1,19 @@
-# Design: Which web APIs each environment has
+# Design: Which APIs each environment has
 
 ## 1. Scope
 
 This is one of two streams. It covers **where** a declaration exists: which
-global scopes the platform gives it, how a program says which scope it targets,
-and what the compiler does when a reference escapes it.
+environments provide it, how a program says which it targets, and what the
+compiler does when a reference escapes it.
+
+An environment is anywhere Escalier code runs. Two kinds exist. A browser global
+scope, of which the platform declares nine, is one. A non-browser runtime, such
+as Node, Deno or Bun, is the other. They differ in where the facts come from and
+in nothing else: both answer whether a declaration is reachable, both are a
+compilation target, and one `@env` vocabulary covers them.
+
+The browser global scopes come first because the `web:*` tree is what exists to
+annotate. The runtimes are phase four and the design holds for them unchanged.
 
 `planning/web_api_types/` covers **what** a declaration says, and owns the
 WebIDL generator this stream reads. Section 7.1 records what waits on it and
@@ -284,9 +293,9 @@ whose scope class inherits it:
 | `ServiceWorkerGlobalScope` | `service_worker` |
 | `Window` | `window` |
 
-**F7. The environment vocabulary matches the platform's globals.** `@env` names
-the nine global scopes WebIDL declares with `[Global=...]`, and the two group
-names those scopes answer to. An unannotated declaration means all nine, which
+**F7. The vocabulary covers every browser global scope.** `@env` names the nine
+global scopes WebIDL declares with `[Global=...]`, and the two group names those
+scopes answer to. An unannotated declaration means all nine, which
 is `Exposed=*`. `vocabulary.md` has the names and what the change
 costs.
 
@@ -340,6 +349,27 @@ declarations of one name with disjoint environments, which is F5. `onmessage` is
 a `MessageEvent` handler on `DedicatedWorkerGlobalScope` and an
 `ExtendableMessageEvent` handler on `ServiceWorkerGlobalScope`. `location` is a
 `WorkerLocation` in a worker and a `Location` in a page.
+
+**F10. A non-browser runtime is an environment.** `node`, `deno` and `bun` join
+the vocabulary and are compilation targets, and F1 through F6 and F9 apply to
+them as written. An environment is where code runs, and a runtime is as much
+that as a global scope is.
+
+This is what lets the tier axis retire rather than be renamed. A tier answers
+whether a package exists off the browser at all, which no browser global scope
+can say, and §7.4.8 could not remove `tier.go` while that question had no home.
+A runtime environment is the home: a declaration available in Node carries
+`@env("node")`, and the portability a tier approximated per package becomes a
+per-declaration fact. N1 is then satisfied by removal.
+
+The `node:` scheme becomes live with it. `closureSchemes` in
+`internal/solver/stdlib_closure.go` reserves it and populates it with nothing,
+which is the right shape for a package set a runtime environment makes
+reachable.
+
+What does not carry over is the source. `[Exposed]` is a WebIDL attribute and
+says nothing about Node, so N3's requirement that a claim be derived needs a
+different answer per runtime. Open question 6 is where that sits.
 
 ### 6.2 Non-functional
 
@@ -412,32 +442,39 @@ and switched to the generated one when it lands.
 
 ### 7.2 What each phase carries
 
-The work lands in three phases, one environment family at a time: `window`, then
-the workers, then the worklets. A phase is done when programs targeting that
-family compile correctly and the requirements marked for it hold.
+The work lands in four phases, one environment family at a time: `window`, then
+the workers, then the worklets, then the non-browser runtimes. A phase is done
+when programs targeting that family compile correctly and the requirements
+marked for it hold.
 
-| requirement | window | workers | worklets |
-| --- | --- | --- | --- |
-| F1 target environment | ✅ | extend | extend |
-| F2 unsatisfiable imports | — | ✅ | extend |
-| F3 reference check | ✅ | extend | extend |
-| F4 nameable where provided | partial | ✅ | ✅ |
-| F5 per-environment declarations | — | ✅ | extend |
-| F6 hoisted member's environments | ✅ | extend | extend |
-| F7 vocabulary | ✅ | — | — |
-| F8 worklets as targets | — | — | ✅ |
-| F9 entrypoint environments | ✅ | extend | extend |
-| N1 one fact, one place | ✅ | — | — |
-| N2 importable as a unit | partial | ✅ | ✅ |
-| N3 derived claims | ✅ | — | — |
-| N4 cold load | ✅ | ✅ | ✅ |
-| N5 new fixtures | ✅ | extend | extend |
+| requirement | window | workers | worklets | runtimes |
+| --- | --- | --- | --- | --- |
+| F1 target environment | ✅ | extend | extend | extend |
+| F2 unsatisfiable imports | — | ✅ | extend | extend |
+| F3 reference check | ✅ | extend | extend | extend |
+| F4 nameable where provided | partial | ✅ | ✅ | ✅ |
+| F5 per-environment declarations | — | ✅ | extend | extend |
+| F6 hoisted member's environments | ✅ | extend | extend | extend |
+| F7 vocabulary | ✅ | — | — | — |
+| F8 worklets as targets | — | — | ✅ | — |
+| F9 entrypoint environments | ✅ | extend | extend | extend |
+| F10 runtimes as environments | — | — | — | ✅ |
+| N1 one fact, one place | partial | — | — | ✅ |
+| N2 importable as a unit | partial | ✅ | ✅ | ✅ |
+| N3 derived claims | ✅ | — | — | extend |
+| N4 cold load | ✅ | ✅ | ✅ | ✅ |
+| N5 new fixtures | ✅ | extend | extend | extend |
 
 ✅ lands in that phase. "extend" means the phase applies an existing mechanism to
 more environments without changing it. "partial" means the phase does as much as
 one family allows.
 
-Three are phase-one work for a reason the table does not give.
+N1 is the row the phasing changed. One fact in one place means the tier axis
+goes, and it cannot go until the question it answers has a home, which is a
+runtime environment. So phase one states the requirement and phase four is what
+satisfies it.
+
+Three others are phase-one work for a reason the table does not give.
 
 **F7 lands whole in phase one, before any worklet is a target.** A declaration
 that says `@env("window")` is making a claim about the other eight environments.
@@ -616,12 +653,13 @@ N1 and #1614. Once `@env` records where a declaration exists, the tier rank is a
 second mechanism answering an overlapping question, and N1 says one fact lives in
 one place.
 
-This is a decision before it is a change, so it is not one PR. A tier answers
-whether a package exists off the browser at all, which `@env`'s nine browser
-scopes do not answer, so the WinterTC question needs a home before `tier.go` can
-go. The options are an environment for each non-browser runtime, which the
-non-goals currently exclude, or a separate per-package claim that keeps the
-portability axis and drops the ordering. Settle that, then remove the machinery.
+A tier answers whether a package exists off the browser at all, which `@env`'s
+nine browser scopes do not answer. F10 is the home for that question: a runtime
+environment states it per declaration, where a tier approximated it per package.
+
+So the removal waits on phase four, and until then the two mechanisms coexist
+with a stated division rather than one replacing the other. `tier.go` answers
+off-browser availability; `@env` answers which browser global scope.
 
 Phase two is where it becomes pressing, because `CheckTiers` and the reference
 check would both be live and would disagree: a tier forbids a portable package
@@ -668,6 +706,44 @@ object, so the rest is reached as `worklet.<member>`.
 
 **Done when** a paint-worklet fixture reads a member off `worklet` and is
 refused `document`.
+
+### 7.6 Phase four: runtimes
+
+F10, and F1 through F6 and F9 applied unchanged. This is where N1 is satisfied
+and the tier axis goes.
+
+#### 7.6.1 Settle where a runtime's facts come from
+
+Open question 6. `[Exposed]` says nothing about Node, so each runtime needs a
+source N3 accepts, and the answer shapes everything after it.
+
+**Done when** the source is named, pinned, and generates a table the way §7.3.1's
+does.
+
+#### 7.6.2 Accept the runtime targets
+
+Add `node`, `deno` and `bun` to the vocabulary and to the accepted targets.
+
+**Done when** a fixture declares a Node entrypoint and the checker reports the
+target it resolved.
+
+#### 7.6.3 Populate the `node:` scheme
+
+`closureSchemes` in `internal/solver/stdlib_closure.go` reserves `node:` and
+populates it with nothing. The packages a Node program reaches go there, and the
+reference check refuses them to a window target.
+
+**Done when** a Node fixture imports a `node:` package and a window fixture
+naming the same declaration fails.
+
+#### 7.6.4 Retire the tier machinery
+
+What §7.4.8 left. With off-browser availability stated per declaration, the
+tier rank is the second mechanism N1 forbids, so `tier.go` and `CheckTiers` go
+and #1614 closes.
+
+**Done when** `tier.go` is gone, the reference check is the only thing refusing
+an unavailable declaration, and `check_generated_tree` passes.
 
 ## 8. Measurement
 
@@ -733,15 +809,26 @@ backported.
    file name, the two import headers that name `web:workers`, and its row in
    `internal/dts_to_esc/tier.go`. The worklets have no such clash.
 
+6. **Where do a runtime's availability facts come from?** `[Exposed]` is a
+   WebIDL attribute, so it answers the nine browser global scopes and nothing
+   else. N3 says a claim is derived rather than hand-maintained, and for `node`,
+   `deno` and `bun` the candidate sources are each runtime's own type
+   definitions, the WinterTC minimum common API for what they share, or a
+   hand-written table with a stated reason per entry. None is surveyed. §7.6.1
+   is the stage, and it comes first in phase four because the answer shapes the
+   rest.
+
 ## 11. Non-goals
 
 - Improving what a declaration says. The other stream owns the conversion
   input, the constructors, the derived sets and the hoisting.
 - Feature detection at runtime in user code, such as narrowing on
   `typeof OffscreenCanvas !== "undefined"`.
-- Node, Deno and Bun. Widening the vocabulary past the browser is separate work.
-  The worklets are not in this exclusion: they are browser global scopes and F7
-  brings them in.
+- A runtime's own API surface. F10 makes `node` an environment and phase four
+  makes it a target, but ingesting `@types/node` and the rest is the other
+  stream's kind of work, not this one's.
+- Picking a winner among the runtimes. The vocabulary names what a program can
+  target; it does not say which a project should use.
 
 ## 12. Related issues
 

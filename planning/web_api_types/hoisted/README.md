@@ -82,7 +82,7 @@ Environments:
 
 ### The worker kinds are derivable here
 
-Section 5.6 of `../../web_environments/design.md` records that
+Section 5.6 of `../../environments/design.md` records that
 `lib.webworker.d.ts` collapses the three worker kinds into one file, so
 per-worker-kind facts need WebIDL. That does not apply to globals. The scope
 classes are separate interfaces, so
@@ -114,7 +114,7 @@ export declare var onmessage: (fn (this: T, ev: MessageEvent) -> any) | null
 export declare var onmessage: (fn (this: ServiceWorkerGlobalScope, ev: ExtendableMessageEvent) -> any) | null
 ```
 
-Every one of these needs `web_environments`' F5. Without per-environment declarations the hoist has
+Every one of these needs `environments`' F5. Without per-environment declarations the hoist has
 to intersect the three, which loses `ExtendableMessageEvent` for the service
 worker.
 
@@ -176,9 +176,9 @@ decorator says where a member exists, not whether it can be assigned, so a
 merged type has to choose, and both choices are wrong. Writable everywhere lets
 a worker assign and throw under strict mode. Readonly everywhere takes
 navigation away from pages. So `location` keeps one declaration per environment,
-which needs `web_environments`' F5.
+which needs `environments`' F5.
 
-**So `web_environments`' F5 has a third option, and it is partial.** Where the platform factored the
+**So `environments`' F5 has a third option, and it is partial.** Where the platform factored the
 shared surface out and the divergence is only which members exist, the types
 merge and per-member `@env` covers it. Where the divergence is in a modifier or
 in the type itself, it does not. `location` needs it for mutability and
@@ -223,7 +223,7 @@ resolution rule has to answer either way.
 It is `window` plus `dedicated_worker`, and no current package is importable
 from exactly those two. `web:dom` is a page, `web:worker` is a worker. Both are
 placed in `web:core` here, which is importable from everywhere and therefore
-wider than the declaration needs. This is `web_environments`' N2 biting: the packages are not carved
+wider than the declaration needs. This is `environments`' N2 biting: the packages are not carved
 along environment lines, so a member spanning an unusual pair has nowhere exact
 to go.
 

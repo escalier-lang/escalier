@@ -1,7 +1,12 @@
 # The environment vocabulary
 
-`@env` names four environments. The platform has nine. This is what the
+`@env` names four environments. The browser platform has nine. This is what the
 vocabulary becomes when it matches, and what the change costs.
+
+The nine below are the browser global scopes. F10 adds the non-browser runtimes,
+`node`, `deno` and `bun`, which this file does not cover: they are not WebIDL
+global scopes, so the derivation here does not reach them and open question 6 in
+`design.md` is where their source is settled.
 
 Derived from `@webref/idl` 3.84.0. A WebIDL interface declares a global scope
 with `[Global=(names)]`, and those names are what an `Exposed` value resolves

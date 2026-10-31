@@ -6,8 +6,10 @@ This is one of two streams. It covers what a declaration in
 `internal/interop/data/web/` **says**: its members, their signatures, which
 package holds it, and whether a global is reachable at all.
 
-`planning/web_environments/` covers **where** a declaration exists, which
-global scopes have it and what the compiler does about that.
+`planning/environments/` covers **where** a declaration exists, which
+environments provide it and what the compiler does about that. Its environments
+are the browser global scopes and, from its phase four, the non-browser
+runtimes.
 
 Two parts of this stream are ordered against that one. Section 5.2 emits the
 WebIDL table its phase one waits on, and section 5.6 moves the portable globals
@@ -36,7 +38,7 @@ the tree and throw `TypeError: Illegal constructor` at runtime. #1645.
 marks `[Transferable]` on each interface and sixteen carry it; TypeScript's
 convenience union names ten, omitting `MIDIAccess`, `MediaStreamTrack`,
 `MediaStreamTrackHandle` and the three WebTransport streams. The tree inherits
-the omission. `planning/web_environments/transferable.md` has the table.
+the omission. `planning/environments/transferable.md` has the table.
 
 A third is fixed and worth recording as the pattern: an interface with several
 supertypes used to convert to a class with one, so `Element` kept `Node` and
@@ -375,7 +377,7 @@ so they wait on the wider conversion input rather than being ingested here.
 
 **Done when** the union carries 13 arms, the 12 WebIDL interfaces the pinned
 libs declare plus `typed_arrays.ArrayBuffer`, and
-`planning/web_environments/transferable.md` records which four of its sixteen
+`planning/environments/transferable.md` records which four of its sixteen
 rows are still unreachable and why.
 
 **Not this stage.** Splitting `Transferable` by environment, which is the other
