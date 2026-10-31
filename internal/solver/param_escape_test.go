@@ -424,7 +424,9 @@ func TestInferOpenEscapeParam(t *testing.T) {
 		},
 		{
 			// id's parameter is a fresh variable for each call, which m's own type does not
-			// reach, so the call stores nothing in m.
+			// reach, so the call stores nothing in m. remember keeps T0 only because a parameter
+			// the caller picks the type of renders as a type parameter, which #2010 drops, so
+			// remember becomes `fn (value: unknown) -> undefined`.
 			name: "GenericMethodDoesNotEscape",
 			src: `
 				val m = {id: fn <T>(x: T) -> T { return x }}
