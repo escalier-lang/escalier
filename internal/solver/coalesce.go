@@ -407,23 +407,40 @@ func coalesceSchemeKeeping(
 ) soltype.Type {
 	simp := simplifyScheme(t, genLevel, keep)
 	// A parameter the caller picks the type of is kept like a variable that occurs at
-	// both polarities, which matches the type parameter internal/checker gives it.
-	// TODO(#2010): Drop this once internal/checker is retired. A type parameter that
-	// occurs in one position links nothing, so its bound alone says the same.
+	// both polarities. When it shares its class with another position, as v and the
+	// field it is written to do in `fn foo(mut obj, v) { obj.x = v }`, the type
+	// parameter links the two.
 	for rep := range paramOnlyReps(t, genLevel, simp) {
 		simp.mergedOcc[rep.ID] = occPos | occNeg
 	}
 	cleaned := cleanBinderBounds(keep, simp, declared)
-	c := t.Accept(&schemeCoalescer{
-		simp:       simp,
-		genLevel:   genLevel,
-		keep:       keep,
-		cleaned:    cleaned,
-		classUpper: classUpperBounds(simp),
-		binders:    map[*soltype.TypeVarType]*soltype.TypeVarType{},
-		seen:       set.NewSet[*soltype.TypeVarType](),
-	}, soltype.Positive)
-	// A scheme display is always coalesced from the Positive root.
+	classUpper := classUpperBounds(simp)
+	inlined := set.NewSet[*soltype.TypeVarType]()
+	var c soltype.Type
+	for {
+		sc := &schemeCoalescer{
+			simp:       simp,
+			genLevel:   genLevel,
+			keep:       keep,
+			cleaned:    cleaned,
+			classUpper: classUpper,
+			inlined:    inlined,
+			binders:    map[*soltype.TypeVarType]*soltype.TypeVarType{},
+			seen:       set.NewSet[*soltype.TypeVarType](),
+		}
+		// A scheme display is always coalesced from the Positive root.
+		c = t.Accept(sc, soltype.Positive)
+		// A type parameter that occurs in one position links nothing to anything else,
+		// so it says no more than its bounds do. `fn fst(a, b) { return a }` renders
+		// `fn <T0>(a: T0, b: unknown) -> T0` rather than giving b a parameter of its own.
+		// Inlining a binder never adds an occurrence of another, so the loop ends once a
+		// pass drops nothing.
+		once := singleUseBinders(c, sc.binders)
+		if once.Len() == 0 {
+			break
+		}
+		inlined = inlined.Union(once)
+	}
 	// D4: resolve borrow lifetimes to their display form. A declared lifetime parameter is
 	// pinned, so a class's `'a` keeps its name in a constructor binder's bound as well as in
 	// the instance the constructor returns.
@@ -478,6 +495,36 @@ func addParamOnlyRep(reps set.Set[*soltype.TypeVarType], param *soltype.FuncPara
 	}
 	reps.Add(simp.rep(v))
 }
+
+// singleUseBinders returns each key of binders whose copy occurs at most once in t.
+// binders maps a kept representative to the copy it renders as, so t names the copy
+// wherever the representative is kept.
+func singleUseBinders(t soltype.Type, binders map[*soltype.TypeVarType]*soltype.TypeVarType) set.Set[*soltype.TypeVarType] {
+	counter := &varCounter{counts: map[*soltype.TypeVarType]int{}}
+	t.Accept(counter, soltype.Positive)
+	once := set.NewSet[*soltype.TypeVarType]()
+	for rep, cp := range binders {
+		if counter.counts[cp] < 2 {
+			once.Add(rep)
+		}
+	}
+	return once
+}
+
+// varCounter counts the occurrences of each variable in a type's structure. It does
+// not walk a variable's bounds.
+type varCounter struct {
+	counts map[*soltype.TypeVarType]int
+}
+
+func (vc *varCounter) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	if v, ok := t.(*soltype.TypeVarType); ok {
+		vc.counts[v]++
+	}
+	return soltype.EnterResult{}
+}
+
+func (vc *varCounter) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // funcTypeParamVars collects every generic function's own TypeParams binder var
 // reachable from t, descending structural children and each var's bound side-graph.
@@ -553,6 +600,9 @@ type schemeCoalescer struct {
 	binders map[*soltype.TypeVarType]*soltype.TypeVarType
 	// classUpper holds classUpperBounds, which binderFor and a negative position read.
 	classUpper map[*soltype.TypeVarType][]soltype.Type
+	// inlined holds representatives that render inlined to their bounds even when the
+	// retain decision would keep them.
+	inlined set.Set[*soltype.TypeVarType]
 }
 
 // classUpperBounds maps each class representative to the upper bounds its members
@@ -631,7 +681,8 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 		return soltype.EnterResult{Type: c.displayBinder(v), SkipChildren: true}
 	}
 	rep := c.simp.rep(v)
-	retain := rep.Level > c.genLevel && c.simp.mergedOcc[rep.ID].both() && !hasEqualBounds(rep)
+	retain := rep.Level > c.genLevel && c.simp.mergedOcc[rep.ID].both() && !hasEqualBounds(rep) &&
+		!c.inlined.Contains(rep)
 	// A non-binder var whose class representative is a binder renders under that binder's
 	// display copy, so an artifact reached in a structural position reads as the declared
 	// parameter rather than a second name for the same type.

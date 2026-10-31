@@ -388,7 +388,7 @@ func TestConstrainStampsObjectExactnessErrors(t *testing.T) {
 // `never`-poisoned binding. Covers each annotation position:
 //   - val: keeps the initializer's inferred type;
 //   - function return: keeps the inferred body return type;
-//   - param: recovers to a fresh var, which generalizes like an unannotated parameter.
+//   - param: recovers to a fresh var, which renders like an unannotated parameter.
 func TestUnsupportedAnnotationRecovers(t *testing.T) {
 	tests := []struct {
 		name string
@@ -397,7 +397,7 @@ func TestUnsupportedAnnotationRecovers(t *testing.T) {
 	}{
 		{"val", `val x: Foo = 5`, map[string]string{"x": "5"}},
 		{"return", `fn f() -> Foo { return 5 }`, map[string]string{"f": "fn () -> 5"}},
-		{"param", `fn g(x: Foo) -> number { return 5 }`, map[string]string{"g": "fn <T0>(x: T0) -> number"}},
+		{"param", `fn g(x: Foo) -> number { return 5 }`, map[string]string{"g": "fn (x: unknown) -> number"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
