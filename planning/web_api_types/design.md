@@ -411,24 +411,23 @@ It does not keep one that understates what a real target provides.
 Stages land on their own and leave the tree green. Each names what it leaves
 alone.
 
-The stages are tracked in three milestones:
+Every stage is tracked in one milestone:
 
 | milestone | stages | issues | tracking |
 | --- | --- | --- | --- |
-| [Web API - A: WebIDL as a conversion input](https://github.com/escalier-lang/escalier/milestone/11) | 5.2, 5.3, 5.4 | #2388, #1645, #1646, #2389 | #2414 |
-| [Web API - B: Prelude packages and unprefixed binding](https://github.com/escalier-lang/escalier/milestone/12) | 5.1, 5.5 | #2390, #2391 | #2415 |
-| [Web API - C: Global placement and `web:window`](https://github.com/escalier-lang/escalier/milestone/13) | 5.6, 5.7 | #2394, #2395 | #2416 |
+| [Web API: Type definitions](https://github.com/escalier-lang/escalier/milestone/11) | 5.1 to 5.7 | #2390, #2388, #1645, #1646, #2389, #2391, #2394, #2395 | #2414 |
 
-Each tracking issue holds the dependency graph for its milestone as a mermaid
-diagram, and says which orderings are forced and why.
+#2414 holds the dependency graph as a mermaid diagram and says which orderings
+are forced and why. There are two chains in it, independent of each other. §5.2
+roots the WebIDL work, and §5.1 roots the binding and placement work that runs
+from §5.1 through §5.7.
 
 Section 5.8 has no milestone. It is a standing instruction to measure before
 planning, not work to schedule.
 
-Milestone A comes first because §5.2's table is what the environments stream
-waits on, and B before C because §5.7 needs the binding rule §5.5 adds. #2378 is
-not in a milestone and blocks any fixture importing `web:dom` or `web:window`,
-which is §5.7's done-condition.
+§5.2 comes first within the milestone, because its table is what the
+environments stream waits on. #2378 is not in a milestone and blocks any fixture
+importing `web:dom` or `web:window`, which is §5.7's done-condition.
 
 A stage that regenerates the tree produces a large diff that needs no
 line-by-line review. The hand-written part is the generator and the fixture, and
