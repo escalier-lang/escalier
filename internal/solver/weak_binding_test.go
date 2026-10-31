@@ -350,6 +350,40 @@ val r = borrowMut(&mut p)
 `,
 			values: map[string]string{"r": "&mut {x: 1}"},
 		},
+		{
+			// The map's values are writable slots, so a write can store a borrow of any
+			// `{x: number}`, and `&` accepts it.
+			name: "AnImmutableBorrowInAWritableSlotWidens",
+			src: `
+val p = {x: 1}
+val mut seen = Map()
+fn f() { seen.set("k", &p) }
+`,
+			values: map[string]string{"seen": "Map<string, &{x: number}>"},
+		},
+		{
+			// A `var` binding can be rebound to a borrow of any `{x: number}`. A `val` binding
+			// of the same borrow cannot, so it keeps the literal that belongs to p.
+			name: "AnImmutableBorrowInAReassignableBindingWidens",
+			src: `
+val p = {x: 1}
+fn borrow(q: &{x: 1}) -> &{x: 1} { return q }
+var r = borrow(&p)
+val s = borrow(&p)
+`,
+			values: map[string]string{"r": "&{x: number}", "s": "&{x: 1}"},
+		},
+		{
+			// `&mut` accepts a borrow of exactly what it points to, so its literals stay even
+			// in a writable slot.
+			name: "AMutableBorrowInAWritableSlotKeepsItsLiterals",
+			src: `
+val mut p: {x: 1} = {x: 1}
+val mut seen = Map()
+fn f() { seen.set("k", &mut p) }
+`,
+			values: map[string]string{"seen": "Map<string, &mut {x: 1}>"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
