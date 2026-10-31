@@ -166,8 +166,8 @@ a reorganization has to watch. Cold is the whole story at 4.6s, and it barely
 moves with closure size, because the new `NoImports` case costs 954ms against
 `OnePackage`'s 980ms.
 
-So #1861 is obsolete as filed: it measured the warm figure the cache removed,
-and its bisect hashes are not in `main`'s rewritten history. #1862 is still
+#1861 is closed as not planned. It measured the warm figure the cache removed,
+and its bisect hashes are outside `main`'s rewritten history. #1862 is still
 live and unfixed. #1643 moves the cold baseline when it lands, and cold is now
 the only baseline that matters.
 

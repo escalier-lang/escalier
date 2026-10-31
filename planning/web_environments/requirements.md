@@ -199,9 +199,9 @@ which matches no partition entry, and `reachable` skips a root it has no edges
 for. That is #1862, still unfixed, and
 `TestTheClosureIgnoresAnUnknownRoot` shows the skipping is deliberate in the
 loader, so the fix belongs in the benchmark. A later reading then called the warm
-cost a 1.5x regression and bisected it, which #1861 records; the cache has since
-removed the figure that regressed, and the bisect's commits are not in `main`'s
-rewritten history.
+cost a 1.5x regression and bisected it, which #1861 records. The cache has since
+removed the figure that regressed and the bisect's commits are outside `main`'s
+rewritten history, so that issue is closed as not planned.
 
 ## 5. Requirements
 
@@ -433,7 +433,7 @@ window program can reach is a window package.
 | #1586 | the tier is per package where availability is per declaration |
 | #1641, #1642 | per-environment source files |
 | #1644 | moving `MessagePort` and `Transferable` into `web:core`, which is F4 in one family |
-| #1861 | warm whole-tree inference regressed 1.5x |
+| #1861 | warm whole-tree inference regressed 1.5x. Closed, overtaken by the cross-run cache |
 | #1862 | the closure benchmark silently measures fewer packages than it claims |
 
 #1644's blocker section was wrong when filed and has been corrected. It claimed

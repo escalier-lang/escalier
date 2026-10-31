@@ -210,8 +210,8 @@ the tree to read its import header whether or not the program reaches it. So
 cold is a property of the tree's size, not of what a program imports, and #1643
 is the lever on it.
 
-Two consequences for this plan. §2.2 no longer needs #1861 resolved first, since
-#1861 measured the warm figure the cache removed and its bisect hashes are not in
-`main`'s rewritten history; it should be closed or re-filed against cold. And
-#1862 is still live and unfixed, so a per-environment file landing in phase two
-would silently shrink what the benchmark measures.
+Two consequences for this plan. §2.2 no longer waits on #1861, which is closed
+as not planned: it measured the warm figure the cache removed, and its bisect
+hashes are outside `main`'s rewritten history. And #1862 is still live and
+unfixed, so a per-environment file landing in phase two would silently shrink
+what the benchmark measures.

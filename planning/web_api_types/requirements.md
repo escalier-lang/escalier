@@ -178,8 +178,8 @@ deliberate edit rather than a side effect of moving a declaration.
 `BenchmarkStdlibClosureLoad`. Cold is the only figure that constrains this work:
 the cross-run checker cache has taken whole-tree warm inference to 0.67ms, while
 cold is 4.6s and barely moves with closure size. #1862 is open against the
-benchmark and unfixed. #1861 measured the warm cost the cache removed and should
-be closed or re-filed against cold.
+benchmark and unfixed. #1861 is closed as not planned, since it measured the warm
+cost the cache removed.
 
 ## 4. The shared input
 
@@ -237,6 +237,6 @@ is a claim about the other eight environments and only `[Exposed]` knows it.
 | #1648 | an interface's supertypes beyond the first were dropped. Fixed with `implements`, and the pattern this stream generalizes |
 | #1646 | a type guard on an alias to a class matches every value |
 | #1643 | comment attachment dominates cold load |
-| #1861 | warm whole-tree inference regressed 1.5x |
+| #1861 | warm whole-tree inference regressed 1.5x. Closed, overtaken by the cross-run cache |
 | #1862 | the closure benchmark silently measures fewer packages than it claims |
 | #1586 | the tier is per package where availability is per declaration |
