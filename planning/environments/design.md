@@ -225,11 +225,19 @@ binding. Narrowing it means testing `Window`, which a worker genuinely lacks.
 into `web:dom` pulls the whole tree into every program's closure. Measured on
 `main` at 4ae93f0b with `BenchmarkStdlibClosureLoad`:
 
-| | warm | cold |
-| --- | --- | --- |
-| no imports | 0.45ms | 954ms |
-| `web:fetch` alone | 0.36ms | 980ms |
-| every package | 0.67ms | 4.6s |
+| | warm | cold, recorded | cold, re-measured |
+| --- | --- | --- | --- |
+| no imports | 0.45ms | 954ms | 1015ms |
+| `web:fetch` alone | 0.36ms | 980ms | 987ms |
+| every package | 0.67ms | 4.6s | 5.3s and 6.4s |
+
+**The every-package figure is under re-measurement and the recorded one is too
+low.** Two runs on one container, at `-benchtime 3x` and `6x`, gave 6.4s and
+5.3s against the 4.6s recorded, with warm at 1.12ms and 0.71ms against 0.67ms.
+No commit has touched `internal/interop/data/` since 4ae93f0b, so the tree is
+byte-identical and this is not growth, and the two smaller cases match within
+noise, so it is not the machine. Cold varies by about a fifth between runs,
+which a figure quoted to two significant digits hides.
 
 Warm is not the constraint. The cross-run checker cache in
 `internal/solver/stdlib_run_cache.go` keeps one loaded checker per stdlib tree
@@ -237,24 +245,43 @@ and forks it per run, so the whole tree costs 0.67ms of inference against 380ms
 before that landed. Closure size no longer costs inference, and the argument
 against an edge into `web:dom` has to be made on cold load alone.
 
-Cold barely moves with closure size either. The `NoImports` case costs 954ms
-against `OnePackage`'s 980ms, because `buildPackageGraph` parses every file in
-the tree to read its import header whether or not the program reaches it. So
-cold is a property of the tree's size rather than of what a program imports.
-#1643 records that comment attachment is 74% of it, all of it in one linear scan
-in `ast.(*nodeIndex).enclosing`, and it has not landed.
+**Whether cold moves with closure size is open, and this section answered it
+wrongly.** It concluded that cold is a property of the tree's size rather than
+of what a program imports, drawing that from `NoImports` at 954ms against
+`OnePackage`'s 980ms. Those two agree because `buildPackageGraph` parses every
+file's import header either way and both closures are small. Generalising from
+them was wrong: every package costs five to six times no imports, which a
+tree-size-bound cost could not do. Cold looks instead like a per-tree parse
+floor of about a second plus the inference of whatever closure is loaded.
+
+The measurement that would settle it is `web:dom` alone, whose closure is 1193
+declarations, against `web:streams` alone, whose closure is 47. If cold tracks
+the closure, the first costs most of the every-package figure and the second
+costs near the floor. That is not run here.
+
+It matters beyond this section. An edge from an ambient package into the
+platform would make every program's closure the whole tree, so every program
+would pay the every-package figure rather than the no-imports one. §7.4.5 keeps
+the messaging family out of `web:prelude` on cohesion grounds, and this would be
+a second reason.
+
+#1643 records that comment attachment is 74% of cold load, all of it in one
+linear scan in `ast.(*nodeIndex).enclosing`, and it has not landed.
 
 Two earlier readings of this section were wrong and are worth keeping as a
 caution about the harness. A 46ms warm baseline came from a benchmark that
-measured less than it claimed: `committedPackageURIs` derives a root URI by
-trimming `.esc` from the file name, so `dom.window.esc` yields `web:dom.window`,
-which matches no partition entry, and `reachable` skips a root it has no edges
-for. That is #1862, still unfixed, and
-`TestTheClosureIgnoresAnUnknownRoot` shows the skipping is deliberate in the
-loader, so the fix belongs in the benchmark. A later reading then called the warm
-cost a 1.5x regression and bisected it, which #1861 records. The cache has since
-removed the figure that regressed and the bisect's commits are outside `main`'s
-rewritten history, so that issue is closed as not planned.
+measured less than it claimed, because `committedPackageURIs` derives a root URI
+by trimming `.esc` from the file name. `dom.window.esc` yielded
+`web:dom.window`, which matched no partition entry, and `reachable` skips a root
+it has no edges for. That is #1862, and its symptom is moot on `main`, where no
+committed file name carries a suffix any more and the benchmark does name all 48
+packages. `TestTheClosureIgnoresAnUnknownRoot` shows the skipping is deliberate
+in the loader, so the guard the benchmark lacks is still worth having.
+
+A later reading then called the warm cost a 1.5x regression and bisected it,
+which #1861 records. The cache has since removed the figure that regressed and
+the bisect's commits are outside `main`'s rewritten history, so that issue is
+closed as not planned.
 
 ## 6. Requirements
 
@@ -899,11 +926,11 @@ N4, and the figures have inverted since this was written.
 The cross-run checker cache in `internal/solver/stdlib_run_cache.go` keeps one
 loaded checker per stdlib tree and forks it per run, so warm cost has collapsed:
 
-| | warm | cold |
-| --- | --- | --- |
-| no imports | 0.45ms | 954ms |
-| `web:fetch` alone | 0.36ms | 980ms |
-| every package | 0.67ms | 4.6s |
+| | warm | cold, recorded | cold, re-measured |
+| --- | --- | --- | --- |
+| no imports | 0.45ms | 954ms | 1015ms |
+| `web:fetch` alone | 0.36ms | 980ms | 987ms |
+| every package | 0.67ms | 4.6s | 5.3s and 6.4s |
 
 Warm was the constraint on repartitioning at 380ms for every package. At 0.67ms
 it is not a constraint at all, so **closure size no longer costs inference** and
