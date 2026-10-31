@@ -505,12 +505,19 @@ program reaches is reachable from a window.
 
 The four `*GlobalScope` classes, `importScripts`, `WorkerLocation`,
 `WorkerNavigator`, the service-worker events and `Clients` are not in the tree.
-Partition them into a worker package and regenerate. The name wants deciding:
-the closed stack produced `web/worker.worker.esc`, which read badly because of a
-file-name suffix that no longer exists.
+Partition them into a worker package and regenerate.
 
-Their globals then hoist by the other stream's mechanism, carrying the `@env`
-F6 derives from the declaring scope.
+The package name is forced by the binding, since the other stream's F4 makes a
+scope package's binding the scope object. A binding of `worker` means a package
+named `web:worker`, one letter from the `web:workers` that holds `Worker`,
+`SharedWorker` and `WorkerOptions`. Two names a letter apart holding different
+kinds of thing want settling before either is written. Open question 5 has the
+choice.
+
+The receiverless globals then hoist by the other stream's mechanism, carrying
+the `@env` F6 derives from the declaring scope. `postMessage`, `onmessage` and
+`close` are operations on the scope, so F4 keeps them members and they are
+reached through the binding.
 
 **Done when** a worker fixture calls `importScripts` and reads `location` as a
 `WorkerLocation`.
@@ -596,7 +603,9 @@ F8, and F1 through F5 applied unchanged.
    `Worker`, sitting in `web:dom` today where no worklet can reach them. The
    remainder is each worklet's own machinery: `AudioWorkletProcessor`,
    `PaintRenderingContext2D`, `LayoutFragment` and `IntrinsicSizes`.
-3. Ingest and hoist the worklet scope classes.
+3. Ingest the worklet scope classes, hoist their receiverless globals, and
+   point each worklet package's binding at its scope object so a program reaches
+   the rest as `worklet.<member>`.
 
 **Done when** a fixture declares a paint-worklet entrypoint, names
 `CSSUnitValue` and `PaintRenderingContext2D`, and is refused `document`.
@@ -654,6 +663,14 @@ backported.
 4. **How is enforcement rolled out?** F3 says an error from the first release.
    The fixtures that exercise the old path are not being migrated, so the
    question is what happens to user code rather than to the suite.
+
+5. **What is the worker scope package called?** The other stream's F4 makes a
+   scope package's binding the scope object, so a binding of `worker` forces a
+   package named `web:worker`. That sits one letter from `web:workers`, which
+   holds `Worker`, `SharedWorker`, `AbstractWorker` and `WorkerOptions`, the API
+   for starting a worker from outside one. Either the scope package takes a name
+   whose binding is not `worker`, or `web:workers` is renamed to say what it is
+   for. The worklets have no such clash, since nothing else is called `worklet`.
 
 ## 11. Non-goals
 
