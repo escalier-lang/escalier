@@ -176,10 +176,10 @@ func TestInferParamGeneralization(t *testing.T) {
 	}
 }
 
-// TestInferOverloadArmGeneralizesAnUnreadParam asserts that an overload arm renders
+// TestInferOverloadArmRendersAnUnreadParamAsUnknown asserts that an overload arm renders
 // a parameter its body never reads as `unknown`. Each arm generalizes on its own, from
 // a scheme body that is the arm's signature itself.
-func TestInferOverloadArmGeneralizesAnUnreadParam(t *testing.T) {
+func TestInferOverloadArmRendersAnUnreadParamAsUnknown(t *testing.T) {
 	module := parseModuleFiles(t, map[string]string{"input.esc": `
 		fn f(x: number) -> number { return x }
 		fn f(x: string, y) -> string { return x }
