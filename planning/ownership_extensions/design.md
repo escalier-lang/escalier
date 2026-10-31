@@ -30,9 +30,8 @@ for [#2426](https://github.com/escalier-lang/escalier/issues/2426),
 
 Each suspension hands its consumer a value that something else still holds.
 
-**A settled promise returns the same object every time.** Every `await` of a
-promise and every reaction registered with `.then`, `.catch` or `.finally`
-receives the one object it settled to. The checker treats each `await p` as an
+Every `await` of a promise and every reaction registered with `.then`,
+`.catch` or `.finally` receives the one object the promise settled to. The checker treats each `await p` as an
 owned value and leaves `p` usable:
 
 ```esc
@@ -55,8 +54,8 @@ This checks clean today. `SharedAwaitIntoMutError` in
 [infer_decl.go](../../internal/solver/infer_decl.go) rejects `val mut a = await
 p`, but an owning parameter, an owned field and a `return` are unguarded.
 
-**A generator yields a value and keeps running.** The checker treats `yield`
-as neither a move nor a borrow:
+A generator yields a value and keeps running afterward. The checker treats
+`yield` as neither a move nor a borrow:
 
 ```esc
 gen fn g() {
@@ -75,9 +74,9 @@ gen fn h() {
 `g` renders as `fn () -> Generator<Flat, undefined, unknown>` and `h` as
 `fn () -> Generator<&Flat, undefined, unknown>`.
 
-**A suspended body still holds its parameters' borrows.** An `async fn` body
-keeps running after the call returns, and a `gen fn` body does not start until
-the first `next`. The checker ends an argument's borrow when the call returns,
+An `async fn` body keeps running after the call returns, and a `gen fn` body
+does not start until the first `next`. Either way the body still holds its
+parameters' borrows after the call. The checker ends an argument's borrow when the call returns,
 so the caller can write a value the body reads later. Both programs below check
 clean today:
 
@@ -106,8 +105,7 @@ fn run() {
 }
 ```
 
-**A loop binds an element that its source still holds.** With
-`arr: Array<Flat>` and `keep(f: Flat)`, `for f in arr { keep(f) }` reports
+With `arr: Array<Flat>` and `keep(f: Flat)`, `for f in arr { keep(f) }` reports
 `use of moved value 'f'` at `keep(f)`. Each iteration binds a new `f`, so the
 message is wrong. Worse, the element stays in `arr`, so accepting `keep(f)`
 would give the element two owners.
@@ -540,8 +538,9 @@ loop, an owned destination. It has the same three forms as `await` and
 | `for x in r`, with `r: &Array<T>` | `r` is copied, by F2 | `&T` |
 | `for x in mk()`, any `e` that is not a place | Nothing | `T`, owned |
 
-A loop over an owned source is the source's last owner. Each element reaches
-`x` once and nothing else reaches it afterwards, so `x` owns it. A loop over a
+A loop over an owned source is the source's last owner. An owned container
+holds each reference-shaped element in exactly one slot, by X3. So each element
+reaches `x` once and nothing else reaches it afterward, and `x` owns it. A loop over a
 borrow binds borrows with the borrow's mutability, the same way F4 and D14 say
 a pattern over a borrow binds them. The loop's pattern is a pattern.
 
@@ -865,6 +864,28 @@ owned.
 `Array.from(&arr)` then returns `Array<&Flat>`, which I3 already asks of a
 shallow copy.
 
+R1 and E1 both rely on an owned container holding each reference-shaped
+element in exactly one slot. Two `Array` methods break that today.
+`fill(&mut self, value: T, …)` writes one owned `value` into every slot it
+covers, and `copyWithin` copies slots onto other slots. Each would let the
+loop in `go` below hand one object to two iterations:
+
+```esc
+fn go(mut arr: Array<Flat>) {
+    arr.fill({x: 0})
+    for f in arr {
+        keep(f)    // the first two iterations would receive the same Flat
+    }
+}
+```
+
+So both methods require an element type that F2 copies, meaning a value type
+or a `&` borrow. `arr.fill({x: 0})` on an `Array<Flat>` reports
+``cannot call 'fill' on an array of owned elements, since it stores one value in several slots; fill an array of a value type or of `&` borrows``.
+This is a new diagnostic, `DuplicatingArrayMethodError`, and `copyWithin`
+reports it with its own name. A `TypedArray` holds only numbers and keeps both
+methods unchanged.
+
 `Generator` and `AsyncGenerator` take `&mut self` on `next`, `return` and
 `throw`, since advancing a generator writes it. `[Symbol.iterator]` on a
 generator returns itself, so R3 decides the loop.
@@ -929,13 +950,16 @@ The PRs:
    the moved-value message from section 8.2. Closes the rest of
    [#2428](https://github.com/escalier-lang/escalier/issues/2428).
 6. **Iterable declarations.** Implements X3 and X4 in the prelude and the
-   converter. Closes a new issue for the element-reading methods of `Array`,
-   `Map` and `Set`.
+   converter, and adds `DuplicatingArrayMethodError`. PR 5 depends on its
+   `fill` and `copyWithin` change, since R1 relies on it. Closes a new issue
+   for the element-reading methods of `Array`, `Map` and `Set`, and another
+   for `fill` and `copyWithin`.
 7. **Async generators.** Implements S1 to S3, including the implicit `await`
    of a promise operand to `yield`. Closes a new issue.
 
 PRs 1 and 2 go first and in that order, since A3 builds on A1. PR 3 depends on
-1. PR 4 can land in parallel with 1 to 3. PR 5 depends on 4, and PR 6 on 5.
+1. PR 4 can land in parallel with 1 to 3. PR 5 depends on 4 and on the `fill`
+and `copyWithin` part of PR 6, and the rest of PR 6 depends on 5.
 PR 7 depends on 3 and 5.
 
 The doc changes two outcomes the existing issues expect. Their Done-when lists
@@ -957,6 +981,8 @@ New issues to file in the milestone:
   write a value the body reads on a later `next`. Bug. PR 4.
 - `Array`, `Map` and `Set` iterator methods hand out owned elements the
   container still holds. Bug. PR 6.
+- `Array.prototype.fill` and `copyWithin` store one owned element in several
+  slots of an owned array. Bug. PR 6.
 - Async generators: `for await`, the implicit `await` in `yield`, and the
   lifetime of a pending `next`. Feature. PR 7.
 - Module-level state written by another function while a borrow of it is live,
