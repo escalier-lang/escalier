@@ -516,6 +516,9 @@ func ConvertBucket(stmts []dts_parser.Statement, facts *ReceiverFacts) (*Standal
 	if err != nil {
 		return nil, err
 	}
+	// A `.d.ts` does not say whether a callee writes an argument or returns
+	// structure it shares with one. Rule I3 picks the signature that rejects
+	// more programs. The bucket is the whole input here, so it indexes itself.
 	applyBorrowDefaults(mod, newTypeIndex(mod))
 	return mod, nil
 }
@@ -960,8 +963,10 @@ func ConvertBuckets(result *PartitionResult, facts *ReceiverFacts) (map[string]*
 		}
 		mods[uri] = mod
 	}
-	// A parameter in one bucket may name a type another bucket declares, so every
-	// bucket reads one index of the whole tree.
+	// A `.d.ts` does not say whether a callee writes an argument or returns
+	// structure it shares with one. Rule I3 picks the signature that rejects
+	// more programs. A parameter in one bucket may name a type another bucket
+	// declares, so every bucket reads one index of the whole tree.
 	modList := make([]*StandaloneModule, len(uris))
 	for i, uri := range uris {
 		modList[i] = mods[uri]

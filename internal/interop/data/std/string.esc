@@ -221,7 +221,7 @@ export declare class String {
      * @param locales A locale string or array of locale strings that contain one or more language or locale tags. If you include more than one locale string, list them in descending order of priority so that the first entry is the preferred locale. If you omit this parameter, the default locale of the JavaScript runtime is used. This parameter must conform to BCP 47 standards; see the Intl.Collator object for details.
      * @param options An object that contains one or more properties that specify comparison options. see the Intl.Collator object for details.
      */
-    localeCompare(&self, that: string, locales?: intl.LocalesArgument, options?: intl.CollatorOptions) -> number,
+    localeCompare(&self, that: string, locales?: intl.LocalesArgument, options?: &mut intl.CollatorOptions) -> number,
     /**
      * Replace all instances of a substring in a string, using a regular expression or search string.
      * @param searchValue A string to search for.
@@ -350,7 +350,7 @@ export declare class String {
      * @param locales A locale string or array of locale strings that contain one or more language or locale tags. If you include more than one locale string, list them in descending order of priority so that the first entry is the preferred locale. If you omit this parameter, the default locale of the JavaScript runtime is used. This parameter must conform to BCP 47 standards; see the Intl.Collator object for details.
      * @param options An object that contains one or more properties that specify comparison options. see the Intl.Collator object for details.
      */
-    localeCompare(&self, that: string, locales?: string | Array<string>, options?: intl.CollatorOptions) -> number,
+    localeCompare(&self, that: string, locales?: string | Array<string>, options?: &mut intl.CollatorOptions) -> number,
     /**
      * Return the String value whose elements are, in order, the elements in the List elements.
      * If length is 0, the empty string is returned.

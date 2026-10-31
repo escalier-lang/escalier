@@ -65,6 +65,19 @@ func TestApplyBorrowDefaults(t *testing.T) {
 				"@js(\"f\")\nexport declare fn f<'a>(a: &mut Flat, b: &'a mut Nested) -> &'a mut Pair",
 			},
 		},
+		"NullableReturnBorrowsItsObjectType": {
+			src: `declare function f(a: Nested): Nested | null;`,
+			want: []string{
+				"@js(\"f\")\nexport declare fn f<'a>(a: &'a mut Nested) -> &'a mut Nested | null",
+			},
+		},
+		"NamespaceQualifiedParam": {
+			src: `declare namespace NS { interface Opts { a: number; } }
+declare function f(o: NS.Opts): void;`,
+			want: []string{
+				"@js(\"f\")\nexport declare fn f(o: &mut NS.Opts) -> undefined",
+			},
+		},
 		"ValueTypeReturnStaysOwned": {
 			src: `declare function f(a: Nested): Promise<Nested>;`,
 			want: []string{

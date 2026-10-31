@@ -26,8 +26,9 @@ type typeIndex struct {
 	aliases    map[string]*ast.TypeDecl
 }
 
-// newTypeIndex indexes the declarations of every module in mods. A later module's
-// declaration of a name replaces an earlier one's.
+// newTypeIndex indexes the declarations of every module in mods. A declaration that
+// namespace flattening lifted to the top level is indexed under its dotted runtime path
+// as well as its name, so a reference written `Intl.DateTimeFormatOptions` finds it.
 func newTypeIndex(mods ...*StandaloneModule) *typeIndex {
 	idx := &typeIndex{
 		interfaces: make(map[string]*ast.InterfaceDecl),
@@ -37,13 +38,14 @@ func newTypeIndex(mods ...*StandaloneModule) *typeIndex {
 	for _, mod := range mods {
 		mod.Module.Namespaces.Scan(func(ns string, n *ast.Namespace) bool {
 			for _, decl := range n.Decls {
+				path := mod.Paths[decl]
 				switch d := decl.(type) {
 				case *ast.InterfaceDecl:
-					idx.interfaces[qualifiedName(ns, d.Name.Name)] = d
+					indexUnder(idx.interfaces, d, qualifiedName(ns, d.Name.Name), path)
 				case *ast.ClassDecl:
-					idx.classes[qualifiedName(ns, d.Name.Name)] = d
+					indexUnder(idx.classes, d, qualifiedName(ns, d.Name.Name), path)
 				case *ast.TypeDecl:
-					idx.aliases[qualifiedName(ns, d.Name.Name)] = d
+					indexUnder(idx.aliases, d, qualifiedName(ns, d.Name.Name), path)
 				}
 			}
 			return true
@@ -52,29 +54,32 @@ func newTypeIndex(mods ...*StandaloneModule) *typeIndex {
 	return idx
 }
 
-// applyBorrowDefaults rewrites the signature of every declared function and method in mod
-// to follow rules I2 and I3 in planning/ownership_rules/requirements.md.
+// indexUnder adds decl to m under each of names that is not empty.
+func indexUnder[T any](m map[string]T, decl T, names ...string) {
+	for _, name := range names {
+		if name != "" {
+			m[name] = decl
+		}
+	}
+}
+
+// applyBorrowDefaults rewrites the signature of every declared function and every method
+// of a declared class in mod, following rules I2 and I3 in
+// planning/ownership_rules/requirements.md. idx holds the declarations a type in a
+// signature may name.
 //
-//   - A parameter whose type is an object type becomes a `&mut` borrow. A `.d.ts` does
-//     not say whether the callee writes the argument, and `&mut` rejects every program
-//     `&` would.
+//   - A parameter whose type is an object type becomes a `&mut` borrow.
 //   - Every other parameter keeps its type as written. That covers a primitive, a
-//     function and a promise, which are copied. It also covers a type parameter, a union,
-//     `unknown`, and a name idx does not declare, since the checker rejects a borrow of a
-//     value type and each of these may hold one.
-//   - A return whose type is an object type becomes a `&'a mut` borrow when it may share
-//     structure with a borrowed parameter, and that parameter takes the lifetime `'a`. A
-//     `.d.ts` does not say whether the result shares structure with an input, and a
-//     borrow of the inputs rejects every program an owned return would.
+//     function, a promise, a type parameter, `unknown`, a name idx does not declare, and
+//     every union.
+//   - A return whose type is an object type, or a union of object types and value types,
+//     becomes a `&'a mut` borrow of each object type when it may share structure with a
+//     borrowed parameter. Each such parameter takes the lifetime `'a`.
+//   - A rest parameter, a `this` parameter, a constructor and a setter keep their
+//     parameters as written.
 //
 // A borrowed parameter may share structure with the return unless every slot of its type
-// holds a value type. Such a parameter holds no object besides itself, so the return
-// shares structure with it only by being the argument itself. The converter takes that
-// to be possible when the parameter and the return types print the same.
-//
-// A rest parameter, a `this` parameter, a constructor and a setter keep their parameters
-// owned. Each may store its argument, and an owned parameter is the form for a value the
-// callee may keep.
+// holds a value type and the two types print differently.
 func applyBorrowDefaults(mod *StandaloneModule, idx *typeIndex) {
 	mod.Module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
 		for _, decl := range ns.Decls {
@@ -116,12 +121,13 @@ func (idx *typeIndex) borrowSigDefaults(sig *ast.FuncSig, outerTypeParams set.Se
 		borrowed = append(borrowed, ref)
 	}
 
-	if sig.Return == nil || !idx.isObjectType(sig.Return, typeParams) {
+	if sig.Return == nil {
 		return
 	}
+	ret, retRefs := idx.borrowObjectTypes(sig.Return, typeParams)
 	var shared []*ast.RefTypeAnn
 	for _, ref := range borrowed {
-		if idx.mayShareStructure(ref.Inner, sig.Return, typeParams) {
+		if idx.mayShareWithAny(ref.Inner, retRefs, typeParams) {
 			shared = append(shared, ref)
 		}
 	}
@@ -131,10 +137,55 @@ func (idx *typeIndex) borrowSigDefaults(sig *ast.FuncSig, outerTypeParams set.Se
 	name := freshLifetimeName(sig.LifetimeParams)
 	span := sig.Return.Span()
 	sig.LifetimeParams = append(sig.LifetimeParams, ast.NewLifetimeParam(name, nil, span))
-	for _, ref := range shared {
+	for _, ref := range append(shared, retRefs...) {
 		ref.Lifetime = ast.NewLifetimeAnn(name, ref.Span())
 	}
-	sig.Return = ast.NewBorrowTypeAnn(true, ast.NewLifetimeAnn(name, span), sig.Return, span)
+	sig.Return = ret
+}
+
+// borrowObjectTypes returns t with each object type in it wrapped in a `&mut` borrow,
+// along with the borrows it wrote. t is wrapped whole when it is an object type. In a
+// union, each member that is an object type is wrapped and each value type is left
+// alone. Any other t comes back unchanged with no borrows, and so does a union with a
+// member that is neither. t itself is not modified.
+func (idx *typeIndex) borrowObjectTypes(t ast.TypeAnn, typeParams set.Set[string]) (ast.TypeAnn, []*ast.RefTypeAnn) {
+	if idx.isObjectType(t, typeParams) {
+		ref := ast.NewBorrowTypeAnn(true, nil, t, t.Span())
+		return ref, []*ast.RefTypeAnn{ref}
+	}
+	union, ok := t.(*ast.UnionTypeAnn)
+	if !ok {
+		return t, nil
+	}
+	members := make([]ast.TypeAnn, len(union.Types))
+	var refs []*ast.RefTypeAnn
+	for i, member := range union.Types {
+		switch {
+		case idx.isObjectType(member, typeParams):
+			ref := ast.NewBorrowTypeAnn(true, nil, member, member.Span())
+			members[i] = ref
+			refs = append(refs, ref)
+		case idx.isValueType(member, typeParams, set.NewSet[string]()):
+			members[i] = member
+		default:
+			return t, nil
+		}
+	}
+	if len(refs) == 0 {
+		return t, nil
+	}
+	return ast.NewUnionTypeAnn(members, union.Span()), refs
+}
+
+// mayShareWithAny reports whether an argument of type param may share structure with the
+// type any borrow in rets borrows. See mayShareStructure.
+func (idx *typeIndex) mayShareWithAny(param ast.TypeAnn, rets []*ast.RefTypeAnn, typeParams set.Set[string]) bool {
+	for _, ret := range rets {
+		if idx.mayShareStructure(param, ret.Inner, typeParams) {
+			return true
+		}
+	}
+	return false
 }
 
 // mayShareStructure reports whether a return of type ret may share structure with an
@@ -194,7 +245,8 @@ func (idx *typeIndex) isObjectTypeSeen(t ast.TypeAnn, typeParams, seen set.Set[s
 
 // isValueType reports whether t is a value type: a primitive, a literal, a function, a
 // promise, or a union of these. A name in typeParams is a type parameter, which may be
-// bound to an object type, so it is not one.
+// bound to an object type, so it is not one. seen holds the aliases already being
+// resolved.
 func (idx *typeIndex) isValueType(t ast.TypeAnn, typeParams, seen set.Set[string]) bool {
 	switch t := t.(type) {
 	case *ast.NumberTypeAnn, *ast.StringTypeAnn, *ast.BooleanTypeAnn, *ast.SymbolTypeAnn,

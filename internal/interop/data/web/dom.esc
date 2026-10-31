@@ -4949,7 +4949,7 @@ export declare class Document extends Node implements DocumentOrShadowRoot, Font
     /** @deprecated */
     captureEvents(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Document/caretPositionFromPoint) */
-    caretPositionFromPoint(&mut self, x: number, y: number, options?: &mut CaretPositionFromPointOptions) -> CaretPosition | null,
+    caretPositionFromPoint<'a>(&mut self, x: number, y: number, options?: &'a mut CaretPositionFromPointOptions) -> &'a mut CaretPosition | null,
     /** @deprecated */
     caretRangeFromPoint(&mut self, x: number, y: number) -> Range | null,
     /**
@@ -5578,7 +5578,7 @@ export declare class Element extends Node implements ARIAMixin, Animatable, Chil
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/hasPointerCapture) */
     hasPointerCapture(&self, pointerId: number) -> boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/insertAdjacentElement) */
-    insertAdjacentElement(&mut self, where: InsertPosition, element: &mut Element) -> Element | null,
+    insertAdjacentElement<'a>(&mut self, where: InsertPosition, element: &'a mut Element) -> &'a mut Element | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/insertAdjacentHTML) */
     insertAdjacentHTML(&mut self, position: InsertPosition, string: string) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/insertAdjacentText) */
@@ -5639,9 +5639,9 @@ export declare class Element extends Node implements ARIAMixin, Animatable, Chil
      */
     setAttributeNS(&mut self, namespace: string | null, qualifiedName: string, value: string) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/setAttributeNode) */
-    setAttributeNode(&mut self, attr: &mut Attr) -> Attr | null,
+    setAttributeNode<'a>(&mut self, attr: &'a mut Attr) -> &'a mut Attr | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/setAttributeNodeNS) */
-    setAttributeNodeNS(&mut self, attr: &mut Attr) -> Attr | null,
+    setAttributeNodeNS<'a>(&mut self, attr: &'a mut Attr) -> &'a mut Attr | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/setHTMLUnsafe) */
     setHTMLUnsafe(&mut self, html: string) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/setPointerCapture) */
@@ -12392,9 +12392,9 @@ export declare class NamedNodeMap {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NamedNodeMap/removeNamedItemNS) */
     removeNamedItemNS(&mut self, namespace: string | null, localName: string) -> Attr,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NamedNodeMap/setNamedItem) */
-    setNamedItem(&mut self, attr: &mut Attr) -> Attr | null,
+    setNamedItem<'a>(&mut self, attr: &'a mut Attr) -> &'a mut Attr | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NamedNodeMap/setNamedItemNS) */
-    setNamedItemNS(&mut self, attr: &mut Attr) -> Attr | null,
+    setNamedItemNS<'a>(&mut self, attr: &'a mut Attr) -> &'a mut Attr | null,
     [Symbol.iterator](&self) -> ArrayIterator<Attr>,
     static prototype: NamedNodeMap,
     constructor(&mut self)

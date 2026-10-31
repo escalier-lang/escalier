@@ -74,7 +74,7 @@ export declare fn getOwnPropertyDescriptor<T: {...}, P: PropertyKey>(target: T, 
  * @param target The object that references the prototype.
  */
 @js("Reflect.getPrototypeOf")
-export declare fn getPrototypeOf(target: &mut {...}) -> {...} | null
+export declare fn getPrototypeOf<'a>(target: &'a mut {...}) -> &'a mut {...} | null
 
 /**
  * Equivalent to `propertyKey in target`.
