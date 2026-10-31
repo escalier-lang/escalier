@@ -120,6 +120,12 @@ func (c *checker) walkConstructorBody(scope *Scope, lvl int, self *soltype.Class
 	bodySig.Params = valueParams
 
 	ctorScope := scope.Child()
+	// A declared constructor has no body to bind `self` in, call `super` from, or assign
+	// fields in, so only its signature is resolved.
+	if ctor.Fn.Body == nil {
+		ft := c.inferFunc(ctorScope, lvl, bodySig, nil, ctor, false, true)
+		return &soltype.FuncType{Params: ft.Params, Ret: self, Throws: ft.Throws, Inexact: ft.Inexact}
+	}
 	// A constructor's `self` is always a mutable borrow so its body can assign fields,
 	// regardless of the class's default mutability. The body hands the instance back to the
 	// caller, so it may not consume it, and a borrow keeps a consuming method out of reach.

@@ -434,7 +434,11 @@ func (c *checker) inferClassBodies(
 	// inherited member is reachable through `self`. Every own member signature is in the
 	// body by now, so the view is complete, and it shares each own element pointer so the
 	// signature installs and field refinements still land on the registered body.
-	c.inferMemberBodies(scope, lvl, c.ctx.selfView(self, body), sigs.pending)
+	// A class whose members have no bodies has nothing left to walk, so it skips building the
+	// view.
+	if len(sigs.pending) > 0 {
+		c.inferMemberBodies(scope, lvl, c.ctx.selfView(self, body), sigs.pending)
+	}
 
 	return callFns, ctorFns
 }
@@ -1643,9 +1647,10 @@ type pendingMember struct {
 	seeded bool
 }
 
-// buildMemberSigs is phase 1 of the member walk. It appends a signature stub for every
-// method, getter, and setter, so a sibling call resolves before any body is walked.
-// memberSigStub describes what a stub holds. A
+// buildMemberSigs is phase 1 of the member walk. It appends a signature for every method,
+// getter, and setter, so a sibling call resolves before any body is walked. A member with
+// a body gets a stub, which memberSigStub describes, and an entry in the returned list for
+// the body pass. A member with no body gets its final signature here and no entry. A
 // non-static instance member missing its `self` receiver is reported here.
 func (c *checker) buildMemberSigs(
 	scope *Scope,
@@ -1655,6 +1660,18 @@ func (c *checker) buildMemberSigs(
 	body, static *soltype.ObjectType,
 ) []pendingMember {
 	var pending []pendingMember
+	// add queues a member with a body for the body pass. A member with no body has a
+	// signature that only its annotations decide, so it is resolved now and replaces the
+	// stub before anything reads it. That skips linking the signature to the stub, and a
+	// caller inferred before the class reads the declared signature rather than a stub.
+	add := func(m pendingMember) {
+		if m.fn.Body != nil {
+			pending = append(pending, m)
+			return
+		}
+		c.memberName = m.name
+		m.apply(c.inferMemberFunc(scope, lvl, m, body))
+	}
 	for _, elem := range decl.Body {
 		switch elem := elem.(type) {
 		case *ast.MethodElem:
@@ -1665,7 +1682,9 @@ func (c *checker) buildMemberSigs(
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
 			stub := c.memberSigStub(scope, lvl, elem.Fn)
 			stub.SelfParam = c.selfParam(lvl, elem.Receiver, elem.Static, self)
-			seeded := c.seedStubReturn(scope, lvl, elem.Fn, stub)
+			// add replaces a bodyless member's stub before anything reads it, so only a
+			// member with a body has a stub return worth seeding.
+			seeded := elem.Fn.Body != nil && c.seedStubReturn(scope, lvl, elem.Fn, stub)
 			method, arm := appendMethodSig(targetBody(body, static, elem.Static), name, stub, elem.Static)
 			// An overloaded method dispatches on its value arguments, so its arms must agree
 			// on the receiver they take. The receiver check reads only the first arm, so a
@@ -1677,7 +1696,7 @@ func (c *checker) buildMemberSigs(
 				selfParamConsumes(stub.SelfParam) != selfParamConsumes(first)) {
 				c.report(&MethodOverloadReceiverMismatchError{Name: name, Elem: elem})
 			}
-			pending = append(pending, pendingMember{
+			add(pendingMember{
 				fn: elem.Fn, name: name, recv: elem.Receiver, class: self, static: elem.Static, stub: stub,
 				generic: true, seeded: seeded,
 				apply: func(bodyFt *soltype.FuncType) {
@@ -1696,7 +1715,7 @@ func (c *checker) buildMemberSigs(
 				c.report(&GetterReceiverError{Name: name, Elem: elem})
 			}
 			stub := c.memberSigStub(scope, lvl, elem.Fn)
-			seeded := c.seedStubReturn(scope, lvl, elem.Fn, stub)
+			seeded := elem.Fn.Body != nil && c.seedStubReturn(scope, lvl, elem.Fn, stub)
 			getter := &soltype.GetterElem{
 				Name:      name,
 				SelfParam: c.selfParam(lvl, elem.Receiver, elem.Static, self),
@@ -1705,7 +1724,7 @@ func (c *checker) buildMemberSigs(
 			}
 			target := targetBody(body, static, elem.Static)
 			target.Elems = append(target.Elems, getter)
-			pending = append(pending, pendingMember{
+			add(pendingMember{
 				fn: elem.Fn, name: name, recv: elem.Receiver, class: self, static: elem.Static, stub: stub,
 				seeded: seeded,
 				apply: func(bodyFt *soltype.FuncType) {
@@ -1748,7 +1767,7 @@ func (c *checker) buildMemberSigs(
 			}
 			target := targetBody(body, static, elem.Static)
 			target.Elems = append(target.Elems, setter)
-			pending = append(pending, pendingMember{
+			add(pendingMember{
 				fn: elem.Fn, name: name, recv: elem.Receiver, class: self, static: elem.Static, stub: stub,
 				apply: func(bodyFt *soltype.FuncType) {
 					setter.SelfParam = bodyFt.SelfParam

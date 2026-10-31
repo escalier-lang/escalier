@@ -604,7 +604,10 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	var selfParam *soltype.FuncParam
 	if member != nil {
 		lt := c.receiverLifetime(recv, lvl)
-		c.bindSelf(fnScope, recv, lt, member.class, member.body)
+		// Only a body can read `self`, and the view bindSelf builds copies the class body.
+		if body != nil {
+			c.bindSelf(fnScope, recv, lt, member.class, member.body)
+		}
 		if recv != nil {
 			selfParam = receiverParam(recv, lt, member.class)
 		}

@@ -4197,3 +4197,61 @@ func TestInferReaderOfLaterClassMemberType(t *testing.T) {
 		})
 	}
 }
+
+// TestInferDeclaredClassReadBeforeDeclared covers a function that reads a member of a
+// `declare class` written below it. Each row's function is inferred before the class's
+// value key, so it reads the member's signature from the class's signature phase.
+func TestInferDeclaredClassReadBeforeDeclared(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		wantF    string
+		wantErrs []string
+	}{
+		{
+			name: "MethodCallChecksTheArgument",
+			src: `
+				fn f(b: B) { return b.m(5) }
+				declare class B { m(&self, x: string) -> string }
+			`,
+			wantF:    "fn (b: B) -> string",
+			wantErrs: []string{"cannot constrain 5 <: string"},
+		},
+		{
+			name: "MethodCallReturnsTheDeclaredType",
+			src: `
+				fn f(b: B) { return b.m("a") }
+				declare class B { m(&self, x: string) -> string }
+			`,
+			wantF: "fn (b: B) -> string",
+		},
+		{
+			name: "GetterReadReturnsTheDeclaredType",
+			src: `
+				fn f(b: B) { return b.v }
+				declare class B { get v(&self) -> number }
+			`,
+			wantF: "fn (b: B) -> number",
+		},
+		{
+			name: "SetterWriteChecksTheValue",
+			src: `
+				fn f(b: &mut B) { b.v = "x" }
+				declare class B { set v(&mut self, x: number) }
+			`,
+			wantF:    "fn (b: &mut B) -> undefined",
+			wantErrs: []string{`cannot constrain "x" <: number`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			var msgs []string
+			for _, err := range errs {
+				msgs = append(msgs, err.Message())
+			}
+			require.Equal(t, tt.wantErrs, msgs)
+			require.Equal(t, tt.wantF, values["f"])
+		})
+	}
+}
