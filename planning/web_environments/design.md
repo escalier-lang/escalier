@@ -83,15 +83,19 @@ collapse into `TierBrowser` together.
 
 ### 4.4 What the other stream changed
 
-**An ambient scope landed.** `internal/solver/ambient.go` binds 25 packages
-without an import, `web:core` and `web:fetch` among them. That is the other
-stream's F7, and it sharpens N4: the per-environment prelude this stream needs
-is now a per-environment `ambientPackages` plus a cache keyed to match.
+**An ambient scope landed, and a project's own files are losing it.**
+`internal/solver/ambient.go` reproduces the JavaScript global object over 26
+packages, 203 top-level names plus the namespaces it rebuilds from dotted `@js`
+paths. The other stream's F7 keeps that for a converted `.d.ts` and takes it
+away from a project's own `.esc` files, where `std:prelude` and an explicit
+import are what resolve. Its §5.1 does it. This stream benefits: a
+per-environment `web:core` resolved at each import is simpler than an ambient
+layer keyed by environment.
 
 **`Window`'s globals were hoisted into `web:dom`.** 294 top-level
 declarations, including portable ones such as `setTimeout` and `atob` that
 belong in `web:core`. `web:dom` is browser-tier and a worker cannot import it,
-so a worker cannot set a timer until §5.5 of the other stream moves them.
+so a worker cannot set a timer until §5.6 of the other stream moves them.
 
 ## 5. Observed problems
 
@@ -362,13 +366,18 @@ and each entry says why it exists.
 `BenchmarkStdlibClosureLoad`. #1643 covers the separate finding that comment
 attachment is 74% of cold load.
 
-The other stream's ambient `web:core` complicates this. #1567 caches one prelude
-across runs, and F5 makes `web:core`'s content differ by environment, since
-`location` is a `Location` or a `WorkerLocation` and `onmessage` has three forms.
-So the prelude becomes nine things keyed by environment, and the cache has to be
-keyed the same way. That is work on top of #1567 and it lowers the hit rate a
-single shared prelude gets. It is the one place the two streams' designs
-interact beyond the shared generator.
+The other stream's F7 keeps this simple, where the ambient scope would not have.
+#1567 caches one prelude across runs, and F5 makes `web:core`'s content differ
+by environment, since `location` is a `Location` or a `WorkerLocation` and
+`onmessage` has three forms. Had `web:core` been ambient, that cached prelude
+would have become nine keyed by environment, at work on top of #1567 and a lower
+hit rate. It is imported instead, and `bindCoreExports` resolves it into each
+file's own scope, so the cross-run cache holds `std:prelude` alone and does not
+vary by target.
+
+What is left to measure is the per-environment content itself. A tree carrying
+nine forms of a declaration is a larger tree, and section 8 says cold load tracks
+tree size rather than closure size.
 
 **N5. New fixtures cover the new import style rather than migrated ones.** The
 environment rules land in `internal/solver`, and the fixture suite that exercises
@@ -387,7 +396,7 @@ declarations this way, and §7.4.1 adds a whole package.
 
 ### 7.1 Prerequisite, in the other stream
 
-Section 5.1 of `../web_api_types/design.md` adds `@webref/idl` and emits a
+Section 5.2 of `../web_api_types/design.md` adds `@webref/idl` and emits a
 checked-in Go table carrying `[Exposed]` per interface and `[Global=...]` per
 global scope.
 
@@ -435,7 +444,7 @@ that says `@env("window")` is making a claim about the other eight environments.
 Without all nine names the claim cannot be written down, so the vocabulary has to
 be complete even while only `window` is an accepted target.
 
-**N3 lands with it,** which means §5.1 of the other stream lands first.
+**N3 lands with it,** which means §5.2 of the other stream lands first.
 `@env("window")` is only correct if something knows the declaration is absent
 everywhere else, and `[Exposed]` is what knows.
 
@@ -553,8 +562,8 @@ The other half of #1644. `MessagePort`, `StructuredSerializeOptions` and
 `Transferable` names the canvas types, so §7.4.2 lands first or this edge points
 at a package a worker cannot import.
 
-**Done when** a worker fixture receives a `MessagePort` with `web:core` ambient
-and no import.
+**Done when** a worker fixture receives a `MessagePort` after
+`import "web:core"` and without importing `web:dom`.
 
 #### 7.4.4 Move the transferable arms no worker can import
 
