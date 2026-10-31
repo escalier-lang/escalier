@@ -224,8 +224,8 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 			want: []string{
 				"b0.1: move(p.a, a)",
 				"b0.1: use(p.n, read)",
-				"b0.2: move(a, return)",
-				"b0.2: move(p.b, return)",
+				"b0.2: move(a, return.0)",
+				"b0.2: move(p.b, return.1)",
 			},
 		},
 		{
@@ -257,7 +257,7 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 			want: []string{
 				"b0.3: borrow(&, p, o.a, '1)",
 				"b0.3: move(q, o.b)",
-				"b0.3: move(r, o.c)",
+				"b0.3: move(r, o.c.0)",
 				"b0.4: move(o, return)",
 			},
 		},
@@ -569,9 +569,9 @@ func TestOwnershipEventsPatterns(t *testing.T) {
 				"b0.0: move(t.1..., rest)",
 				"b0.1: move(rest.0, b)",
 				"b0.1: move(rest.1, c)",
-				"b0.2: move(a, return)",
-				"b0.2: move(b, return)",
-				"b0.2: move(c, return)",
+				"b0.2: move(a, return.0)",
+				"b0.2: move(b, return.1)",
+				"b0.2: move(c, return.2)",
 			},
 		},
 		{
@@ -587,8 +587,8 @@ func TestOwnershipEventsPatterns(t *testing.T) {
 				"b0.1: move(o.a, a)",
 				"b0.1: move(o.b, rest.b)",
 				"b0.1: move(o.c, rest.c)",
-				"b0.2: move(a, return)",
-				"b0.2: move(rest, return)",
+				"b0.2: move(a, return.0)",
+				"b0.2: move(rest, return.1)",
 			},
 		},
 		{
@@ -705,8 +705,8 @@ func TestOwnershipEventsUnionSources(t *testing.T) {
 // TestOwnershipEventsBranchInsideExpression asserts that a branch the CFG builder leaves
 // inside an expression attaches its events to the statement holding the expression. The
 // `if` in a tuple element gets no blocks of its own, and the `log()` statement inside it has
-// no CFG node, so the read of `log`, the moves out of the branches, and the borrow after
-// them all attach to the binding of `x`.
+// no CFG node, so the read of `log`, the moves out of the branches into `x.0`, and the
+// borrow into `x.1` all attach to the binding of `x`.
 func TestOwnershipEventsBranchInsideExpression(t *testing.T) {
 	runOwnershipEvents(t, []ownershipEventsCase{
 		{
@@ -725,9 +725,9 @@ func TestOwnershipEventsBranchInsideExpression(t *testing.T) {
 			want: []string{
 				"b0.3: use(c, read)",
 				"b0.3: use(log, read)",
-				"b0.3: move(p, x)",
-				"b0.3: move(q, x)",
-				"b0.3: borrow(&, r, x, '1)",
+				"b0.3: move(p, x.0)",
+				"b0.3: move(q, x.0)",
+				"b0.3: borrow(&, r, x.1, '1)",
 				"b0.4: move(x, return)",
 			},
 		},

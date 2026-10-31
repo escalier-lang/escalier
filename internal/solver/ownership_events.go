@@ -18,6 +18,10 @@ import (
 // the walk knows the type of each destination, and F2 needs that type to choose between
 // a copy, a borrow, and a move.
 //
+// The holder of a copy, borrow, or move is the destination that receives the value, such
+// as the binding `d` in `val d = c`. A flow of a value type, such as `val a = n` with
+// `n: number`, makes no holder of a borrow, so it is recorded as a read of its source.
+//
 // A flow whose destination or source F3 has not settled yet is a provisional flow. The
 // walk records a placeholder for it, and settleFlowsWaitingOn replaces the placeholder
 // with the copy, borrow, or move F2 gives once F3 is settled. Three kinds of flow are
@@ -28,8 +32,9 @@ import (
 //   - A flow into a parameter of a callee whose body is still being walked, or whose
 //     signature the call cannot see yet.
 //   - A closure capture. A closure that is returned or stored into module-level state
-//     owns what it captures, and any other closure borrows it, so the capture waits for
-//     the closure's own flow site.
+//     owns what it captures, and any other closure borrows it. A closure a local holds
+//     may be returned through that local later, so the capture waits until the body
+//     holding the closure is walked.
 
 // ownershipEventKind is the kind of one ownership event.
 type ownershipEventKind uint8
@@ -110,8 +115,8 @@ func (h eventHolder) extend(path []placeSeg) eventHolder {
 // receives the value of a copy, borrow, or move. borrow and lifetime describe a borrow
 // event's borrow, and lifetime is nil when the borrow's type carries none. access says
 // what a use does. node is the expression to blame for the event. at is the CFG node
-// the event is attached to. fromRead marks a use a read of the expression node emitted,
-// which a later event that reads the same expression replaces.
+// the event is attached to. fromRead marks a use that reading the expression node emitted.
+// A later event that reads the same expression replaces such a use.
 type ownershipEvent struct {
 	kind     ownershipEventKind
 	place    movePlace
@@ -167,10 +172,10 @@ func (t *ownershipEvents) escapes(root liveness.VarID) bool {
 	return false
 }
 
-// emitSite is one expression that emits events in the role role, and the CFG point they
-// attach to. One expression can emit in two roles, such as the `q` of `{b: q}`, which is
-// read and is also a literal element. root tells apart the captures one closure emits, and
-// is 0 for any other expression.
+// emitSite is one expression, the role it emits events in, and the CFG point they attach
+// to. One expression can emit in two roles, such as the `q` of `{b: q}`, which is read and
+// is also a literal element. root tells apart the captures one closure emits, and is 0 for
+// any other expression.
 type emitSite struct {
 	node ast.Node
 	role emitRole
@@ -193,8 +198,8 @@ const (
 	returnRole
 )
 
-// firstEmit reports whether the events node emits in role, for the captured local root when
-// node is a closure, are not yet emitted at the CFG point at, and records that they are.
+// firstEmit records that node emits its events in role at the CFG point at, and reports
+// whether it had not done so before. root names the captured local when node is a closure.
 func (c *checker) firstEmit(node ast.Node, role emitRole, at liveness.StmtRef, root liveness.VarID) bool {
 	site := emitSite{node: node, role: role, at: at, root: root}
 	if c.fn.events.emitted.Contains(site) {
@@ -595,7 +600,7 @@ func (c *checker) emitBorrow(e *ast.BorrowExpr) {
 
 // finishOwnershipEvents completes the current body's table once its body is walked. Each
 // written borrow takes the lifetime of its expression's type. Then each closure capture
-// still waiting for a flow site settles, since no later flow site can receive the closure.
+// settles, since the body is walked and every place that holds a closure is known.
 func (c *checker) finishOwnershipEvents() {
 	if c.fn == nil || c.fn.events == nil {
 		return
@@ -649,7 +654,8 @@ func (c *checker) emitValueFlow(p movePlace, source ast.Expr, sourceT soltype.Ty
 	if source != nil {
 		sourceT = c.info.TypeOf(source)
 	}
-	// A closure is a value type, so its flows are recorded whatever the source's type.
+	// The escape check of a closure capture reads these records. A closure is a value type,
+	// so they are recorded before the value-type case below returns.
 	switch holder.kind {
 	case returnHolder, moduleHolder:
 		c.fn.events.escaping.Add(p.root)
@@ -813,8 +819,8 @@ func (c *checker) resolvedCallee(call *ast.CallExpr) *soltype.FuncType {
 
 // sourceKindOf classifies the value place p holds, whose type is t. ok is false when p is
 // rooted at an unannotated parameter whose body is still being walked and force is unset,
-// and wait then names that parameter. A value type copies whatever its root, so it is
-// classified first. A place rooted at an unannotated parameter takes the parameter's
+// and wait then names that parameter. A value type is a value source whatever its root,
+// so it is classified first. A place rooted at an unannotated parameter takes the parameter's
 // ownership, which paramDestOf gives the caller's side of the same parameter. A field of an
 // owned parameter, and every other place, is classified by its own type.
 func (c *checker) sourceKindOf(p movePlace, t soltype.Type, force bool) (sourceKind, flowWait, bool) {
@@ -855,8 +861,8 @@ func (c *checker) fieldType(t soltype.Type, name string) soltype.Type {
 }
 
 // holdsValueType reports whether a value of type t is a value type, which a flow copies. A
-// type with no recorded type counts as one, since it names no value a flow can move. A
-// variable is a value type when every value it can hold is one, and so is a union, such as
+// nil t counts as one, since it names no value a flow can move. A variable is a value type
+// when every value it can hold is one. So is a union whose members all are, such as
 // `number | undefined`, but not `{x: number} | null`.
 func (c *checker) holdsValueType(t soltype.Type) bool {
 	if t == nil {

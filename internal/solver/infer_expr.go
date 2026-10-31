@@ -3544,6 +3544,9 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 	eventRef, hasEventRef := c.eventStmtRef()
 	pieces := make([]tuplePiece, 0, len(e.Elems))
 	variadic := false
+	// spreadSeen records whether a spread came before the current element, after which the
+	// element's position in the tuple is not known.
+	spreadSeen := false
 	for i, el := range e.Elems {
 		spread, ok := el.(*ast.ArraySpreadExpr)
 		if !ok {
@@ -3551,12 +3554,18 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 			pieces = append(pieces, tuplePiece{fixed: []soltype.Type{elemT}})
 			// Building an owned value into the tuple moves it.
 			c.consumeIntoLiteral(scope, el, elemT, stmtRef, hasStmtRef)
-			// A tuple element has no field segment, so the element is held by the whole tuple.
+			// The element is held at its position, the segment a tuple pattern reads it at. An
+			// element after a spread is held by the whole tuple.
 			if hasEventRef {
-				c.emitTempFlow(el, e, nil, flowDest{kind: ownedDest}, eventRef)
+				var path []placeSeg
+				if !spreadSeen {
+					path = []placeSeg{{kind: namedSeg, name: strconv.Itoa(i)}}
+				}
+				c.emitTempFlow(el, e, path, flowDest{kind: ownedDest}, eventRef)
 			}
 			continue
 		}
+		spreadSeen = true
 		spreadT := c.inferExpr(scope, lvl, spread.Value)
 		// A spread is an owned destination, as F1 states.
 		if hasEventRef {

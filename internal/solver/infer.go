@@ -574,10 +574,10 @@ type funcCtx struct {
 	// cfg. runLivenessPrePass opens it. See ownership_events.go.
 	events *ownershipEvents
 	// exprRefs maps the expression of each expression statement in cfg's blocks to the
-	// statement's CFG point. The CFG builder wraps a branch's condition, a match target, and
-	// a match arm's expression body in an expression statement of its own, which no AST
-	// statement maps to, so this is how the event emitters find the point such an
-	// expression runs at.
+	// statement's CFG point. The CFG builder wraps some expressions in an expression
+	// statement of its own, such as a branch's condition, a match target, or a match arm's
+	// expression body. No AST statement maps to such a statement, so this is how the event
+	// emitters find the point such an expression runs at.
 	exprRefs map[ast.Expr]liveness.StmtRef
 	// eventStmt is the innermost statement being walked that has a CFG point. The ownership
 	// events of the expression being walked attach to its point. See eventStmtRef.
