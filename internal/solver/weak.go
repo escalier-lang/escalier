@@ -311,9 +311,11 @@ func (c *checker) settleWeakDisplay(w weakBinding) {
 //     `Promise<T>`, can only be read, so it is not.
 //
 // Every covariant position inside a writable slot is writable too, since a write replaces the
-// slot's whole value. A function type and a borrow are kept whole, since the borrowed place
-// decides the type behind a borrow. A class argument the class makes contravariant is kept,
-// since widening it would change what the value accepts.
+// slot's whole value. A `&` borrow in a writable slot is one: a write can store a borrow of any
+// value of the widened type, and `&T` is covariant in `T`. A `&` borrow outside a writable slot
+// keeps its literals, which belong to the place it points to. A `&mut` borrow is invariant in
+// what it points to, so it is kept whole, as a function type is. A class argument the class
+// makes contravariant is kept, since widening it would change what the value accepts.
 //
 // onVar returns the type that replaces a type variable in a writable slot of the given
 // mode. When `changed` is not nil, it is set once a literal widens or onVar returns a type
@@ -363,8 +365,10 @@ func (w *literalWidener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.E
 		return soltype.EnterResult{SkipChildren: true}
 	}
 	switch t := t.(type) {
-	case *soltype.FuncType, *soltype.RefType:
+	case *soltype.FuncType:
 		return soltype.EnterResult{SkipChildren: true}
+	case *soltype.RefType:
+		return soltype.EnterResult{Type: w.widenRef(t), SkipChildren: true}
 	case *soltype.TypeVarType:
 		out := w.onVar(t, w.mode)
 		if out != t {
@@ -391,6 +395,27 @@ func (w *literalWidener) markChanged() {
 	if w.changed != nil {
 		*w.changed = true
 	}
+}
+
+// widenRef returns ref with the literals its referent holds widened when ref is a `&` borrow in
+// a slot a write can replace, and ref unchanged otherwise.
+func (w *literalWidener) widenRef(ref *soltype.RefType) soltype.Type {
+	if ref.Mut || !w.mode.replace {
+		return ref
+	}
+	// The referent is walked as a slot a write can replace, with the same onVar, so a type
+	// variable behind the borrow widens in the checked type as well.
+	changed := false
+	inner := *w
+	inner.mode = slotMode{replace: true}
+	inner.changed = &changed
+	widened := ref.Inner.Accept(&inner, soltype.Positive)
+	referent, ok := widened.(soltype.RefInner)
+	if !changed || !ok {
+		return ref
+	}
+	w.markChanged()
+	return soltype.NewRef(false, ref.Lt, referent)
 }
 
 // widenSlot returns t widened as a slot that a write can replace when writable is set and

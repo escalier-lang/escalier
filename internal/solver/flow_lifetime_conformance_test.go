@@ -261,11 +261,10 @@ func TestFlowLifetimeEscapingParamMoves(t *testing.T) {
 	})
 }
 
-// DISABLED until #2352 and #2359. `seen` does not generalize, so its value type is one weak
-// variable that `remember` and every caller share. `seen` holds `&'static {retries: 3}` until
-// the literals behind a `&` in a writable slot widen, which #2359 adds. `remember` renders as
-// `fn (value: unknown) -> undefined`, and #2352 keeps it monomorphic over the same variable, so
-// it shows the type `seen` holds.
+// DISABLED until #2352. `seen` does not generalize, so its value type is one weak variable that
+// `remember` and every caller share. `seen` holds `&'static {retries: number}`, since its values
+// are writable slots. `remember` renders as `fn (value: unknown) -> undefined`. #2352 keeps it
+// monomorphic over the same variable, so `remember` shows the type `seen` holds.
 /*
 func TestFlowLifetimeEscapingReadOnlyParam(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{

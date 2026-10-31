@@ -441,6 +441,60 @@ val r = borrowMut(&mut p)
 `,
 			values: map[string]string{"r": "&mut {x: 1}"},
 		},
+		{
+			// The map's values are writable slots, so a write can store a borrow of any
+			// `{x: number}`, and `&` accepts it.
+			name: "AnImmutableBorrowInAWritableSlotWidens",
+			src: `
+val p = {x: 1}
+val mut seen = Map()
+fn f() { seen.set("k", &p) }
+`,
+			values: map[string]string{"seen": "Map<string, &{x: number}>"},
+		},
+		{
+			// A `var` binding can be rebound to a borrow of any `{x: number}`. A `val` binding
+			// of the same borrow cannot, so it keeps the literal that belongs to p.
+			name: "AnImmutableBorrowInAReassignableBindingWidens",
+			src: `
+val p = {x: 1}
+fn borrow(q: &{x: 1}) -> &{x: 1} { return q }
+var r = borrow(&p)
+val s = borrow(&p)
+`,
+			values: map[string]string{"r": "&{x: number}", "s": "&{x: 1}"},
+		},
+		{
+			// The map holds `&mut p`, and a write through a `&mut` lands in p. p is declared
+			// `{x: 1}`, so the referent has to keep that type exactly. `&mut` is invariant, so
+			// the map can only hold `&mut {x: 1}`. Widening it to `&mut {x: number}` would let
+			// anything that reads the map write `x = 2` into p. The literals therefore stay
+			// even though the map's values are writable slots. Only the borrow in the slot
+			// could be replaced, and only by another `&mut {x: 1}`.
+			name: "AMutableBorrowInAWritableSlotKeepsItsLiterals",
+			src: `
+val mut p: {x: 1} = {x: 1}
+val mut seen = Map()
+fn f() { seen.set("k", &mut p) }
+`,
+			values: map[string]string{"seen": "Map<string, &mut {x: 1}>"},
+		},
+		{
+			// setX can write any number to x. Passing it the borrow the map holds would write
+			// through to p, whose x is declared 1, so the call is rejected.
+			name: "AMutableBorrowFromAWritableSlotRejectsAWiderWrite",
+			src: `
+val mut p: {x: 1} = {x: 1}
+val mut seen = Map()
+fn f() { seen.set("k", &mut p) }
+fn setX(r: &mut {x: number} | undefined) {}
+fn g() { setX(seen.get("k")) }
+`,
+			values: map[string]string{"seen": "Map<string, &mut {x: 1}>"},
+			want: []string{
+				"6:15-6:28: cannot constrain mut object <: mut object | undefined",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
