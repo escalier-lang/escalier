@@ -271,6 +271,9 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	for _, component := range classBodiesFirst(g) {
 		c.inferComponent(scope, lvl, module, g, component, handled, destructured)
 	}
+	// Every function body is walked, so every flow F3 can settle is settled, and the rest
+	// take the answer settleProvisionalFlows gives a destination it cannot see.
+	c.settleProvisionalFlows(nil, true)
 	// Every class is inferred, so each superclass edge and body is final. Check the members
 	// each subclass redeclares against the ones they override.
 	c.settleQueuedVariance()

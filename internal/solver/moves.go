@@ -461,6 +461,7 @@ func (c *checker) recordMemberUse(e ast.Expr) {
 		return
 	}
 	c.fn.useSites = append(c.fn.useSites, moveUse{place: p, ref: ref, node: e, loanSeqAt: c.fn.loanSeq + 1})
+	c.emitRead(e)
 }
 
 // consumeOwned records a move of the owned place the source expression names, at the

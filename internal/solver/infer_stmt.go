@@ -77,6 +77,7 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 			// flows out at its own lifetime and is not consumed here.
 			if s.Expr != nil {
 				if ref, ok := c.fn.stmtToRef[s]; ok {
+					c.emitReturnFlow(s.Expr, ref)
 					// A value that fills a borrow return without a written borrow is reported for
 					// that alone, and records no move.
 					// With no return annotation the function returns whatever s.Expr produces, so
@@ -184,6 +185,7 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 					if !moduleLevel {
 						c.consumeDestructureLeaves(scope, vd.Pattern, vd.Init, ref)
 					}
+					c.emitPatternFlows(vd.Pattern, vd.Init, ref)
 					c.flushBorrowDirty(ref)
 				}
 			}
@@ -212,7 +214,13 @@ func (c *checker) defineLocal(scope *Scope, name string, vd *ast.VarDecl, b Valu
 		b.VarID = int(c.varIDs.Of(ip))
 	}
 	scope.defineValue(name, b)
-	if c.fn == nil || c.fn.unwrittenBorrows.Contains(vd.Init) {
+	if c.fn == nil {
+		return
+	}
+	if ref, ok := c.fn.stmtToRef[s]; ok {
+		c.emitBindingFlow(vd, liveness.VarID(b.VarID), bindingType(b), ref)
+	}
+	if c.fn.unwrittenBorrows.Contains(vd.Init) {
 		return
 	}
 	c.trackAliasesForVarDecl(scope, vd, bindingType(b), s)

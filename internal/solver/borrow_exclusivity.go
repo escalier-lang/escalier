@@ -489,11 +489,18 @@ func (c *checker) recordCaptureLoans(scope *Scope, closure ast.Func) {
 	var captured []capturedLocal
 	for _, capture := range c.closureCaptures(closure) {
 		b, found := scope.GetValue(capture.Name)
-		if !found || b.VarID <= 0 || isValueType(bindingType(b)) {
+		if !found || b.VarID <= 0 {
 			continue
 		}
 		root := liveness.VarID(b.VarID)
 		if name, ok := c.fn.varIDNames[root]; !ok || name != capture.Name {
+			continue
+		}
+		if eventRef, ok := c.eventStmtRef(); ok {
+			_, moves := moved[capture.Name]
+			c.emitCaptureFlow(closure, root, bindingType(b), capture.IsMutable, moves, eventRef)
+		}
+		if isValueType(bindingType(b)) {
 			continue
 		}
 		// Writing the closure reads the local, so capturing one that has moved is a use after

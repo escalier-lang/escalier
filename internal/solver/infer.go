@@ -45,6 +45,17 @@ type checker struct {
 	// consumeOnceCallee moves a binding holding the closure at each call.
 	capturesMovedBy map[ast.Func]map[string]ast.Node
 
+	// provisionalFlows holds each flow whose ownership F3 has not settled yet, across every
+	// body walked so far. settleProvisionalFlows turns each into its event once it is
+	// settled. See ownership_events.go.
+	provisionalFlows []provisionalFlow
+	// paramByVar maps the VarID of each unannotated parameter a walked body binds to the
+	// parameter, so a flow out of it can read the ownership its body settles.
+	paramByVar map[liveness.VarID]*soltype.FuncParam
+	// unsettledParams holds each unannotated parameter whose body is still being walked.
+	// Its ownership is not settled until the walk finishes.
+	unsettledParams set.Set[*soltype.FuncParam]
+
 	// pendingRecvReads holds the member reads off inferred receivers that top-level bodies
 	// collected. A value initializer can still pass such a body to a call that types its
 	// receiver, so checkPendingRecvReads checks them once the component is constrained.
@@ -559,6 +570,23 @@ type funcCtx struct {
 	aliases    *liveness.AliasTracker
 	stmtToRef  map[ast.Stmt]liveness.StmtRef
 	varIDNames map[liveness.VarID]string
+	// events holds the ownership events this body's walk emits, attached to the nodes of
+	// cfg. runLivenessPrePass opens it. See ownership_events.go.
+	events *ownershipEvents
+	// exprRefs maps the expression of each expression statement in cfg's blocks to the
+	// statement's CFG point. The CFG builder wraps a branch's condition, a match target, and
+	// a match arm's expression body in an expression statement of its own, which no AST
+	// statement maps to, so this is how the event emitters find the point such an
+	// expression runs at.
+	exprRefs map[ast.Expr]liveness.StmtRef
+	// scrutinee is the CFG point of the condition or target being inferred, and the
+	// statement that was current when its inference began. eventStmtRef answers it while
+	// that statement is still current.
+	scrutinee struct {
+		stmt ast.Stmt
+		ref  liveness.StmtRef
+		set  bool
+	}
 	// cfg is this body's control-flow graph, retained from the pre-pass so the move
 	// engine can run AnalyzeMoves over it. liveness and stmtToRef are derived from
 	// it; the move engine's branch-merged consumed lattice joins over the same
