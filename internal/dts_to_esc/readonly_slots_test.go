@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/dts_parser"
 	"github.com/escalier-lang/escalier/internal/printer"
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/require"
@@ -89,4 +90,54 @@ export declare class Store {
         a: number
     }>)
 }`))
+}
+
+// TestReadonlyParamBorrowByTarget covers which `T` in a `Readonly<T>`
+// parameter give `&` and which give `&mut`.
+func TestReadonlyParamBorrowByTarget(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		target string
+		mut    bool
+	}{
+		"Parenthesized":         {target: "({a: number})", mut: false},
+		"OptionalTupleElem":     {target: "[number, string?]", mut: false},
+		"RestTupleElem":         {target: "[number, ...string[]]", mut: false},
+		"RestTupleWritableElem": {target: "[number, ...{a: number}[]]", mut: true},
+		"TupleWritableElem":     {target: "[{a: number}]", mut: true},
+		"Any":                   {target: "{a: any}", mut: true},
+		"Primitive":             {target: "{a: string}", mut: false},
+		"Literal":               {target: "{a: \"x\"}", mut: false},
+		"TemplateLiteral":       {target: "{a: `x${string}`}", mut: false},
+		"KeyOf":                 {target: "{a: keyof Foo}", mut: false},
+		"Function":              {target: "{a: () => void}", mut: false},
+		"Constructor":           {target: "{a: new () => Foo}", mut: false},
+		"Union":                 {target: "{a: number} | {b: number[]}", mut: true},
+		"Intersection":          {target: "{a: number} & {b: string}", mut: false},
+		"ReadonlyIndex":         {target: "{[k: string]: number}", mut: false},
+		"WritableIndexValue":    {target: "{[k: string]: number[]}", mut: true},
+		"NestedWritableIndex":   {target: "{a: {[k: string]: number}}", mut: true},
+		"Method":                {target: "{m(): void}", mut: false},
+		"Getter":                {target: "{get a(): number[]}", mut: true},
+		"Setter":                {target: "{set a(v: number)}", mut: false},
+		"CallSignature":         {target: "{(): void}", mut: false},
+		"ConstructSignature":    {target: "{new (): Foo}", mut: false},
+		"NestedReadonly":        {target: "{a: Readonly<{b: number}>}", mut: false},
+		"ReadonlySet":           {target: "{a: ReadonlySet<number>}", mut: false},
+		"ReadonlyMap":           {target: "{a: ReadonlyMap<string, number[]>}", mut: true},
+		"InterfaceRef":          {target: "{a: Foo}", mut: true},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			lib := parseLib(t, "lib.interop.d.ts",
+				"declare function f(x: Readonly<"+tc.target+">): void;")
+			fn, ok := lib.Module.Statements[0].(*dts_parser.FuncDecl)
+			require.True(t, ok)
+			target, ok := readonlyTarget(fn.Params[0].Type)
+			require.True(t, ok)
+			require.Equal(t, tc.mut, reachesWritableSlot(target, true))
+		})
+	}
 }
