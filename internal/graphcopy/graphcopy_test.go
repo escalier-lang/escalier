@@ -264,6 +264,12 @@ type diffInner struct{ leaf *copyLeaf }
 
 type diffOther struct{ n int }
 
+// diffTriangle is a copyShape no source in these tests holds before the copy, so
+// the copier has no plan for it.
+type diffTriangle struct{ base int }
+
+func (t diffTriangle) area() int { return t.base }
+
 // diffRecord holds the map keys, nested structs, and field layouts copyNode lacks.
 type diffRecord struct {
 	byName  map[string]int
@@ -317,6 +323,14 @@ func TestDiffKeysAndLayouts(t *testing.T) {
 					}
 				}
 				src.byShape[&copyCircle{radius: 2}] = 1
+			},
+			want: map[string]string{"graphcopy.diffRecord.byShape": "holds a key the snapshot lacks"},
+		},
+		{
+			name: "interface key holding a type the copy never planned",
+			change: func(src *diffRecord) {
+				delete(src.byShape, nil)
+				src.byShape[diffTriangle{base: 1}] = 6
 			},
 			want: map[string]string{"graphcopy.diffRecord.byShape": "holds a key the snapshot lacks"},
 		},
