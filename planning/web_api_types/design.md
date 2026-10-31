@@ -640,4 +640,5 @@ the suite exercising `internal/checker` is not being backported.
 | #1862 | the closure benchmark silently measures fewer packages than it claims |
 | #1586 | the tier is per package where availability is per declaration |
 | #2377 | importing `web:dom` reports 346 errors, so several done-conditions here cannot be met until it is fixed |
+| #2378 | the override check rejects a method that indexes its own type parameter, which is 319 of those errors |
 
