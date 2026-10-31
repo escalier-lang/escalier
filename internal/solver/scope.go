@@ -38,6 +38,10 @@ type ValueBinding struct {
 	// its own mutability. A binding that holds a borrow ignores Mut, since the borrow
 	// decides what it may write.
 	Mut bool
+	// InitVars is the range of variable IDs a body-level weak binding's initializer
+	// minted, and nil for every other binding. When it is set, a reassignment writes only
+	// into the variables in the range.
+	InitVars *varIDRange
 	// ModuleLevel marks a top-level binding — one defined directly in the module
 	// scope, as opposed to a function parameter or body-local `val`/`var`. It is set
 	// only by inferComponent's phase-3 definitions, the module's SCC bindings, and

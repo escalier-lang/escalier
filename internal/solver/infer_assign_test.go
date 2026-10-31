@@ -183,6 +183,20 @@ func TestInferAssignBodyLevelWeakVarWritesItsVariables(t *testing.T) {
 	}
 }
 
+// TestInferAssignBodyLevelWeakVarLeavesCapturedVariables asserts that reassigning a
+// body-level `var` does not write into a variable its initializer captured. k's return is
+// p's variable, so the reassignment is rejected rather than adding 5 to p's type, and f's
+// signature stays `fn <T0>(p: T0) -> T0`.
+func TestInferAssignBodyLevelWeakVarLeavesCapturedVariables(t *testing.T) {
+	values, _, errs := inferSource(t, `fn f(p) {
+	var k = fn (x) { return p }
+	k = fn (x) { return 5 }
+	return p
+}`)
+	require.Equal(t, []string{"3:22-3:23: cannot constrain 5 <: never"}, messagesWithSpan(t, errs))
+	require.Equal(t, "fn <T0>(p: T0) -> T0", values["f"])
+}
+
 // A broken TOP-LEVEL binding recovers AS the error sentinel (Fix A), so reassigning
 // it yields exactly one diagnostic — the same single-error guarantee the body-level
 // path gives. Before the fix the top-level group var coalesced to `never` and the

@@ -2785,6 +2785,8 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	// B3) the widened `number` for an un-annotated `var a = 5`, so `a = 6` ⇒
 	// `6 <: number` checks.
 	//
+	// A weak binding is the exception, and its branch below says why.
+	//
 	// freshenAll copies the coalesced type so constraining the source cannot mutate
 	// type-parameter vars the coalesced form still shares with the binding
 	// (coalesceScheme retains them by pointer): without the copy, reassigning a
