@@ -145,6 +145,44 @@ func TestInferAssignWeakVarWritesItsVariables(t *testing.T) {
 	require.Equal(t, `fn (x: number | "hello") -> number | "hello"`, values["id"])
 }
 
+// TestInferAssignBodyLevelWeakVarWritesItsVariables covers a reassignment of a `var`
+// declared in a function body. The binding does not generalize, so the reassignment
+// writes into the variables its uses share, as it does for a module-level `var`.
+func TestInferAssignBodyLevelWeakVarWritesItsVariables(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want []string
+	}{
+		{
+			name: "an identical function checks",
+			body: "var k = fn (x) { return x }\n\tk = fn (x) { return x }",
+			want: nil,
+		},
+		{
+			name: "an identical function with an unread parameter checks",
+			body: "var k = fn (x, y) { return x }\n\tk = fn (x, y) { return x }",
+			want: nil,
+		},
+		{
+			name: "a reassignment settles the parameter for a later call",
+			body: "var k = fn (x) { return x }\n\tk = fn (x: number) { return x }\n\tk(\"s\")",
+			want: []string{`4:4-4:7: cannot constrain "s" <: number`},
+		},
+		{
+			name: "an earlier call constrains the reassignment",
+			body: "var k = fn (x) { return x }\n\tk(1)\n\tk = fn (x: string) { return x }",
+			want: []string{`4:2-4:33: cannot constrain 1 <: string`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, errs := inferAgainstTreeWithSpans(t, "fn f() {\n\t"+tt.body+"\n}")
+			require.Equal(t, tt.want, errs)
+		})
+	}
+}
+
 // A broken TOP-LEVEL binding recovers AS the error sentinel (Fix A), so reassigning
 // it yields exactly one diagnostic — the same single-error guarantee the body-level
 // path gives. Before the fix the top-level group var coalesced to `never` and the
