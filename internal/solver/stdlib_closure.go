@@ -250,27 +250,13 @@ func readPackageImports(path string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot read %s: %w", path, err)
 	}
-	base := filepath.Base(path)
-	module, err := stdlibParses.get(base, string(contents), func(sourceID int) (*ast.Module, error) {
-		parsed, parseErrs := parser.ParseLibFiles(context.Background(), []*ast.Source{{
-			ID: sourceID, Path: base, Contents: string(contents),
-		}})
-		if len(parseErrs) > 0 {
-			return nil, fmt.Errorf("parse errors in %s", path)
-		}
-		return parsed, nil
-	})
-	if err != nil {
-		return nil, nil
-	}
+	stmts := parser.ParseImports(context.Background(), &ast.Source{Path: filepath.Base(path), Contents: string(contents)})
 
 	var imports []string
-	for _, file := range module.Files {
-		for _, stmt := range file.Imports {
-			scheme, _, ok := splitScheme(stmt.PackageName)
-			if ok && slices.Contains(closureSchemes, scheme) {
-				imports = append(imports, stmt.PackageName)
-			}
+	for _, stmt := range stmts {
+		scheme, _, ok := splitScheme(stmt.PackageName)
+		if ok && slices.Contains(closureSchemes, scheme) {
+			imports = append(imports, stmt.PackageName)
 		}
 	}
 	return imports, nil

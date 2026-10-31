@@ -3,7 +3,9 @@ package parser
 import (
 	"context"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/tidwall/btree"
@@ -195,18 +197,29 @@ type ParsedModuleFile struct {
 // Import statements must appear at the top of the file before any declarations.
 func (p *Parser) parseModuleFile() *ParsedModuleFile {
 	result := &ParsedModuleFile{
-		Imports: []*ast.ImportStmt{},
+		Imports: p.imports(),
 		Decls:   []ast.Decl{},
 	}
+	result.Decls = p.decls()
+	return result
+}
 
-	// Parse imports first (they must appear at the top)
+// ParseImports parses the import statements at the top of source and stops at the
+// first declaration.
+func ParseImports(ctx context.Context, source *ast.Source) []*ast.ImportStmt {
+	return NewParser(ctx, source).imports()
+}
+
+// imports parses the import statements at the top of a module file.
+func (p *Parser) imports() []*ast.ImportStmt {
+	imports := []*ast.ImportStmt{}
 	token := p.lexer.peek()
 importLoop:
 	for {
 		// Check if context has been cancelled
 		select {
 		case <-p.ctx.Done():
-			return result
+			return imports
 		default:
 		}
 
@@ -223,7 +236,7 @@ importLoop:
 		case Import:
 			stmt := p.importStmt()
 			if importStmt, ok := stmt.(*ast.ImportStmt); ok {
-				result.Imports = append(result.Imports, importStmt)
+				imports = append(imports, importStmt)
 			}
 			token = p.lexer.peek()
 		default:
@@ -232,9 +245,7 @@ importLoop:
 		}
 	}
 
-	// Parse declarations
-	result.Decls = p.decls()
-	return result
+	return imports
 }
 
 func ParseLibFiles(ctx context.Context, sources []*ast.Source) (*ast.Module, []*Error) {
@@ -245,7 +256,30 @@ func ParseLibFiles(ctx context.Context, sources []*ast.Source) (*ast.Module, []*
 	sourcesMap := make(map[int]*ast.Source)
 	comments := make(map[int][]*ast.Comment)
 
-	for _, source := range sources {
+	// Each file parses on its own, so the files parse concurrently and merge in order.
+	type parsedFile struct {
+		parsed *ParsedModuleFile
+		parser *Parser
+	}
+	results := make([]parsedFile, len(sources))
+	var wg sync.WaitGroup
+	limit := make(chan struct{}, runtime.GOMAXPROCS(0))
+	for i, source := range sources {
+		if source == nil {
+			continue
+		}
+		wg.Add(1)
+		limit <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-limit }()
+			parser := NewParser(ctx, source)
+			results[i] = parsedFile{parsed: parser.parseModuleFile(), parser: parser}
+		}()
+	}
+	wg.Wait()
+
+	for i, source := range sources {
 		if source == nil {
 			continue
 		}
@@ -262,8 +296,7 @@ func ParseLibFiles(ctx context.Context, sources []*ast.Source) (*ast.Module, []*
 			})
 		}
 
-		parser := NewParser(ctx, source)
-		parsed := parser.parseModuleFile()
+		parser, parsed := results[i].parser, results[i].parsed
 
 		// Create File entry with imports
 		file := &ast.File{
