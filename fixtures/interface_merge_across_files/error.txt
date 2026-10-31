@@ -1,0 +1,5 @@
+lib/use.esc:16:27: cannot find type `file.Blob`
+
+16: export declare val named: file.Blob
+                              ^^^^^^^^^
+

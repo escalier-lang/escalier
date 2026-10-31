@@ -1,0 +1,8 @@
+// This file contributes one member of `Shape` and types it from `web:file`,
+// which is not an ambient package, so only this file can name it.
+import "web:file"
+
+export interface Shape {
+    tag: string,
+    payload: file.Blob,
+}
