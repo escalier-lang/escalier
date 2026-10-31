@@ -181,12 +181,18 @@ as `window.window`.
 
 This is the general rule that a pseudo-package exporting one value is treated as
 that value, and not something scope packages need of their own. `std:console` is
-the same shape: it exports `Console` and a `console` value, and the useful
-spelling is `console.log(...)` rather than `console.console.log(...)`. A
-namespace's `AsValue` carries it, since a member the namespace does not hold is
-read off that value, so `window.alert(...)` resolves through the `Window`
-instance while `window.Window` resolves as the type. Section 5.5 states the rule
-precisely and says why it tests the name rather than counting value exports.
+the same shape. It exports a `console` value and a `Console` type, and the
+useful spelling is `console.log(...)` rather than `console.console.log(...)`.
+
+The binding occupies both sorts, so it reads as a namespace that happens to
+carry values and a type together. `console.Console` resolves as the type, from
+the namespace. `console.log(...)` is not a member the namespace holds, so
+`AsValue` supplies it off the `Console` instance. The two spellings share a
+qualifier and neither needs the package's name repeated.
+
+`web:window` is the same arrangement one scope up: `window.Window` is the type
+and `window.alert(...)` is the member. Section 5.5 states the rule precisely and
+says why it tests the name rather than counting value exports.
 
 Each scope package names its binding after its own scope, so the three are
 `window`, `worker` and `worklet`.
@@ -478,11 +484,16 @@ in `internal/solver/package_load.go` leaves `AsValue` nil, and only
 `export = f`.
 
 The rule is that a pseudo-package exporting one value is treated as that value.
-`std:console` is the case that already exists: it exports `Console` and a
-`console` value, and `console.log(...)` works today only because `std:console`
-is in `ambientPackages` and the ambient layer binds a package's exports
-unprefixed. Under this rule the explicit import works the same way, and the
-ambient layer stops being what makes the common spelling resolve.
+`std:console` is the case that already exists. It exports a `console` value and
+a `Console` type, and `console.log(...)` resolves today only because
+`std:console` is in `ambientPackages` and the ambient layer binds a package's
+exports unprefixed. Section 5.1 takes that layer away from a project's own
+files, so by the time this stage runs nothing makes `console.log(...)` resolve
+and this rule is what restores it.
+
+Both sorts come back under one qualifier. `console.Console` is the type, read
+off the namespace, and `console.log(...)` is a member the namespace does not
+hold, so `AsValue` supplies it off the `Console` instance.
 
 The test is the value whose name is the package's own binding, not a count of
 value exports. `web:window` exports `window` and also `Window`, since a class
@@ -492,12 +503,12 @@ each match their package's derived name, and `Window` does not.
 
 1. In `exportedSurface`, set `AsValue` to the exported value whose name equals
    `ast.DeriveImportName(uri)`, when the package has one.
-2. Assert it on `std:console`, where `console.log(...)` must resolve through an
-   explicit `import "std:console"` rather than through the ambient layer.
+2. Assert it on `std:console`, which §5.1 has already stopped binding ambiently
+   in a project's own files.
 
-**Done when** a fixture importing `std:console` calls `console.log` and reads
-`console.Console` as a type, with `std:console` removed from `ambientPackages`
-for the duration of the test.
+**Done when** a fixture importing `std:console` calls `console.log(...)` and
+annotates with `console.Console`, and the same fixture without the import fails
+on both.
 
 **Not this stage.** Any scope package, and any `export =` in a generated file.
 The rule reads the declarations the converter already emits, so the printer
