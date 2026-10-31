@@ -586,8 +586,8 @@ declare var Array: ArrayConstructor;
 export declare class Array<T> {
     length: number,
     push(&mut self, ...items: Array<T>) -> number,
-    concat(&self, items: Array<T>) -> Array<T>,
-    readArr(&mut self, items: Array<T>) -> undefined,
+    concat<'a>(&self, items: &'a mut Array<T>) -> &'a mut Array<T>,
+    readArr(&mut self, items: &mut Array<T>) -> undefined,
     constructor(&mut self),
     static readonly prototype: Array<any>
 }`))

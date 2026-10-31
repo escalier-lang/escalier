@@ -133,7 +133,7 @@ export declare class String {
      * containing the results of that search, or null if no matches are found.
      * @param matcher An object that supports being matched against.
      */
-    match(&self, matcher: {
+    match(&self, matcher: &mut {
         [Symbol.match](string: string) -> regexp.RegExpMatchArray | null
     }) -> regexp.RegExpMatchArray | null,
     /**
@@ -141,7 +141,7 @@ export declare class String {
      * @param searchValue An object that supports searching for and replacing matches within a string.
      * @param replaceValue The replacement text.
      */
-    replace(&self, searchValue: {
+    replace(&self, searchValue: &mut {
         [Symbol.replace](string: string, replaceValue: string) -> string
     }, replaceValue: string) -> string,
     /**
@@ -149,14 +149,14 @@ export declare class String {
      * @param searchValue A object can search for and replace matches within a string.
      * @param replacer A function that returns the replacement text.
      */
-    replace(&self, searchValue: {
+    replace(&self, searchValue: &mut {
         [Symbol.replace](string: string, replacer: fn (substring: string, ...args: Array<any>) -> string) -> string
     }, replacer: fn (substring: string, ...args: Array<any>) -> string) -> string,
     /**
      * Finds the first substring match in a regular expression search.
      * @param searcher An object which supports searching within a string.
      */
-    search(&self, searcher: {
+    search(&self, searcher: &mut {
         [Symbol.search](string: string) -> number
     }) -> number,
     /**
@@ -164,7 +164,7 @@ export declare class String {
      * @param splitter An object that can split a string.
      * @param limit A value used to limit the number of elements returned in the array.
      */
-    split(&self, splitter: {
+    split(&self, splitter: &mut {
         [Symbol.split](string: string, limit?: number) -> Array<string>
     }, limit?: number) -> Array<string>,
     /**
@@ -210,7 +210,7 @@ export declare class String {
      * containing the results of that search.
      * @param regexp A variable name or string literal containing the regular expression pattern and flags.
      */
-    matchAll(&self, regexp: regexp.RegExp) -> regexp.RegExpStringIterator<regexp.RegExpExecArray>,
+    matchAll(&self, regexp: &mut regexp.RegExp) -> regexp.RegExpStringIterator<regexp.RegExpExecArray>,
     /** Converts all alphabetic characters to lowercase, taking into account the host environment's current locale. */
     toLocaleLowerCase(&self, locales?: intl.LocalesArgument) -> string,
     /** Returns a string where all alphabetic characters have been converted to uppercase, taking into account the host environment's current locale. */
@@ -365,7 +365,7 @@ export declare class String {
      * @param template A well-formed template string call site representation.
      * @param substitutions A set of substitution values.
      */
-    static raw(template: {
+    static raw(template: &mut {
         raw: Array<string> | ArrayLike<string>
     }, ...substitutions: Array<any>) -> string,
     (value?: unknown) -> string,

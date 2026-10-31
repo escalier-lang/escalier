@@ -66,8 +66,8 @@ export declare class ServiceWorker extends EventTarget implements workers.Abstra
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker/state) */
     readonly state: ServiceWorkerState,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker/postMessage) */
-    postMessage(&mut self, message: unknown, transfer: Array<dom.Transferable>) -> undefined,
-    postMessage(&mut self, message: unknown, options?: dom.StructuredSerializeOptions) -> undefined,
+    postMessage(&mut self, message: unknown, transfer: &mut Array<dom.Transferable>) -> undefined,
+    postMessage(&mut self, message: unknown, options?: &mut dom.StructuredSerializeOptions) -> undefined,
     addEventListener<K: keyof ServiceWorkerEventMap>(&mut self, type: K, listener: fn (this: ServiceWorker, ev: ServiceWorkerEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> undefined,
     removeEventListener<K: keyof ServiceWorkerEventMap>(&mut self, type: K, listener: fn (this: ServiceWorker, ev: ServiceWorkerEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
@@ -105,7 +105,7 @@ export declare class ServiceWorkerContainer extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/getRegistrations) */
     getRegistrations(&self) -> Promise<Array<ServiceWorkerRegistration>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/register) */
-    register(&mut self, scriptURL: string | url.URL, options?: RegistrationOptions) -> Promise<ServiceWorkerRegistration>,
+    register(&mut self, scriptURL: string | url.URL, options?: &mut RegistrationOptions) -> Promise<ServiceWorkerRegistration>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/startMessages) */
     startMessages(&mut self) -> undefined,
     addEventListener<K: keyof ServiceWorkerContainerEventMap>(&mut self, type: K, listener: fn (this: ServiceWorkerContainer, ev: ServiceWorkerContainerEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,
@@ -145,9 +145,9 @@ export declare class ServiceWorkerRegistration extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/waiting) */
     readonly waiting: ServiceWorker | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/getNotifications) */
-    getNotifications(&self, filter?: GetNotificationOptions) -> Promise<Array<dom.Notification>>,
+    getNotifications(&self, filter?: &mut GetNotificationOptions) -> Promise<Array<dom.Notification>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/showNotification) */
-    showNotification(&mut self, title: string, options?: dom.NotificationOptions) -> Promise<undefined>,
+    showNotification(&mut self, title: string, options?: &mut dom.NotificationOptions) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/unregister) */
     unregister(&mut self) -> Promise<boolean>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/update) */

@@ -86,7 +86,7 @@ export declare class BigInt {
      */
     toString(&self, radix?: number) -> string,
     /** Returns a string representation appropriate to the host environment's current locale. */
-    toLocaleString(&self, locales?: intl.LocalesArgument, options?: BigIntToLocaleStringOptions) -> string,
+    toLocaleString(&self, locales?: intl.LocalesArgument, options?: &mut BigIntToLocaleStringOptions) -> string,
     /** Returns the primitive value of the specified object. */
     valueOf(&self) -> bigint,
     readonly [Symbol.toStringTag]: "BigInt",

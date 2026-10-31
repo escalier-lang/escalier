@@ -244,7 +244,7 @@ export declare class Int8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike> 
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(&mut self, array: ArrayLike<number>, offset?: number) -> undefined,
+    set(&mut self, array: &mut ArrayLike<number>, offset?: number) -> undefined,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -292,14 +292,14 @@ export declare class Int8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike> 
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      */
-    static from(elements: Iterable<number>) -> Int8Array<ArrayBuffer>,
+    static from(elements: &mut Iterable<number>) -> Int8Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Int8Array<ArrayBuffer>,
+    static from<T>(elements: &mut Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Int8Array<ArrayBuffer>,
     constructor(&mut self),
     static readonly prototype: Int8Array<ArrayBufferLike>,
     constructor(&mut self, length: number),
@@ -320,14 +320,14 @@ export declare class Int8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike> 
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      */
-    static from(arrayLike: ArrayLike<number>) -> Int8Array<ArrayBuffer>,
+    static from(arrayLike: &mut ArrayLike<number>) -> Int8Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(arrayLike: ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Int8Array<ArrayBuffer>
+    static from<T>(arrayLike: &mut ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Int8Array<ArrayBuffer>
 }
 
 @js("Uint8Array")
@@ -570,7 +570,7 @@ export declare class Uint8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(&mut self, array: ArrayLike<number>, offset?: number) -> undefined,
+    set(&mut self, array: &mut ArrayLike<number>, offset?: number) -> undefined,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -618,14 +618,14 @@ export declare class Uint8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      */
-    static from(elements: Iterable<number>) -> Uint8Array<ArrayBuffer>,
+    static from(elements: &mut Iterable<number>) -> Uint8Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint8Array<ArrayBuffer>,
+    static from<T>(elements: &mut Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint8Array<ArrayBuffer>,
     constructor(&mut self),
     static readonly prototype: Uint8Array<ArrayBufferLike>,
     constructor(&mut self, length: number),
@@ -646,14 +646,14 @@ export declare class Uint8Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      */
-    static from(arrayLike: ArrayLike<number>) -> Uint8Array<ArrayBuffer>,
+    static from(arrayLike: &mut ArrayLike<number>) -> Uint8Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(arrayLike: ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint8Array<ArrayBuffer>
+    static from<T>(arrayLike: &mut ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint8Array<ArrayBuffer>
 }
 
 @js("Uint8ClampedArray")
@@ -896,7 +896,7 @@ export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike = ArrayBuff
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(&mut self, array: ArrayLike<number>, offset?: number) -> undefined,
+    set(&mut self, array: &mut ArrayLike<number>, offset?: number) -> undefined,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -944,14 +944,14 @@ export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike = ArrayBuff
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      */
-    static from(elements: Iterable<number>) -> Uint8ClampedArray<ArrayBuffer>,
+    static from(elements: &mut Iterable<number>) -> Uint8ClampedArray<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint8ClampedArray<ArrayBuffer>,
+    static from<T>(elements: &mut Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint8ClampedArray<ArrayBuffer>,
     constructor(&mut self),
     static readonly prototype: Uint8ClampedArray<ArrayBufferLike>,
     constructor(&mut self, length: number),
@@ -972,14 +972,14 @@ export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike = ArrayBuff
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      */
-    static from(arrayLike: ArrayLike<number>) -> Uint8ClampedArray<ArrayBuffer>,
+    static from(arrayLike: &mut ArrayLike<number>) -> Uint8ClampedArray<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(arrayLike: ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint8ClampedArray<ArrayBuffer>
+    static from<T>(arrayLike: &mut ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint8ClampedArray<ArrayBuffer>
 }
 
 @js("Int16Array")
@@ -1222,7 +1222,7 @@ export declare class Int16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(&mut self, array: ArrayLike<number>, offset?: number) -> undefined,
+    set(&mut self, array: &mut ArrayLike<number>, offset?: number) -> undefined,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -1270,14 +1270,14 @@ export declare class Int16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      */
-    static from(elements: Iterable<number>) -> Int16Array<ArrayBuffer>,
+    static from(elements: &mut Iterable<number>) -> Int16Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Int16Array<ArrayBuffer>,
+    static from<T>(elements: &mut Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Int16Array<ArrayBuffer>,
     constructor(&mut self),
     static readonly prototype: Int16Array<ArrayBufferLike>,
     constructor(&mut self, length: number),
@@ -1298,14 +1298,14 @@ export declare class Int16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      */
-    static from(arrayLike: ArrayLike<number>) -> Int16Array<ArrayBuffer>,
+    static from(arrayLike: &mut ArrayLike<number>) -> Int16Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(arrayLike: ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Int16Array<ArrayBuffer>
+    static from<T>(arrayLike: &mut ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Int16Array<ArrayBuffer>
 }
 
 @js("Uint16Array")
@@ -1548,7 +1548,7 @@ export declare class Uint16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(&mut self, array: ArrayLike<number>, offset?: number) -> undefined,
+    set(&mut self, array: &mut ArrayLike<number>, offset?: number) -> undefined,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -1596,14 +1596,14 @@ export declare class Uint16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      */
-    static from(elements: Iterable<number>) -> Uint16Array<ArrayBuffer>,
+    static from(elements: &mut Iterable<number>) -> Uint16Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint16Array<ArrayBuffer>,
+    static from<T>(elements: &mut Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint16Array<ArrayBuffer>,
     constructor(&mut self),
     static readonly prototype: Uint16Array<ArrayBufferLike>,
     constructor(&mut self, length: number),
@@ -1624,14 +1624,14 @@ export declare class Uint16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      */
-    static from(arrayLike: ArrayLike<number>) -> Uint16Array<ArrayBuffer>,
+    static from(arrayLike: &mut ArrayLike<number>) -> Uint16Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(arrayLike: ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint16Array<ArrayBuffer>
+    static from<T>(arrayLike: &mut ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint16Array<ArrayBuffer>
 }
 
 @js("Int32Array")
@@ -1874,7 +1874,7 @@ export declare class Int32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(&mut self, array: ArrayLike<number>, offset?: number) -> undefined,
+    set(&mut self, array: &mut ArrayLike<number>, offset?: number) -> undefined,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -1922,14 +1922,14 @@ export declare class Int32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      */
-    static from(elements: Iterable<number>) -> Int32Array<ArrayBuffer>,
+    static from(elements: &mut Iterable<number>) -> Int32Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Int32Array<ArrayBuffer>,
+    static from<T>(elements: &mut Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Int32Array<ArrayBuffer>,
     constructor(&mut self),
     static readonly prototype: Int32Array<ArrayBufferLike>,
     constructor(&mut self, length: number),
@@ -1950,14 +1950,14 @@ export declare class Int32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike>
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      */
-    static from(arrayLike: ArrayLike<number>) -> Int32Array<ArrayBuffer>,
+    static from(arrayLike: &mut ArrayLike<number>) -> Int32Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(arrayLike: ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Int32Array<ArrayBuffer>
+    static from<T>(arrayLike: &mut ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Int32Array<ArrayBuffer>
 }
 
 @js("Uint32Array")
@@ -2200,7 +2200,7 @@ export declare class Uint32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(&mut self, array: ArrayLike<number>, offset?: number) -> undefined,
+    set(&mut self, array: &mut ArrayLike<number>, offset?: number) -> undefined,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -2248,14 +2248,14 @@ export declare class Uint32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      */
-    static from(elements: Iterable<number>) -> Uint32Array<ArrayBuffer>,
+    static from(elements: &mut Iterable<number>) -> Uint32Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint32Array<ArrayBuffer>,
+    static from<T>(elements: &mut Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint32Array<ArrayBuffer>,
     constructor(&mut self),
     static readonly prototype: Uint32Array<ArrayBufferLike>,
     constructor(&mut self, length: number),
@@ -2276,14 +2276,14 @@ export declare class Uint32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLike
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      */
-    static from(arrayLike: ArrayLike<number>) -> Uint32Array<ArrayBuffer>,
+    static from(arrayLike: &mut ArrayLike<number>) -> Uint32Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(arrayLike: ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint32Array<ArrayBuffer>
+    static from<T>(arrayLike: &mut ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Uint32Array<ArrayBuffer>
 }
 
 @js("Float32Array")
@@ -2526,7 +2526,7 @@ export declare class Float32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(&mut self, array: ArrayLike<number>, offset?: number) -> undefined,
+    set(&mut self, array: &mut ArrayLike<number>, offset?: number) -> undefined,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -2574,14 +2574,14 @@ export declare class Float32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      */
-    static from(elements: Iterable<number>) -> Float32Array<ArrayBuffer>,
+    static from(elements: &mut Iterable<number>) -> Float32Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Float32Array<ArrayBuffer>,
+    static from<T>(elements: &mut Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Float32Array<ArrayBuffer>,
     constructor(&mut self),
     static readonly prototype: Float32Array<ArrayBufferLike>,
     constructor(&mut self, length: number),
@@ -2602,14 +2602,14 @@ export declare class Float32Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      */
-    static from(arrayLike: ArrayLike<number>) -> Float32Array<ArrayBuffer>,
+    static from(arrayLike: &mut ArrayLike<number>) -> Float32Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(arrayLike: ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Float32Array<ArrayBuffer>
+    static from<T>(arrayLike: &mut ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Float32Array<ArrayBuffer>
 }
 
 @js("Float64Array")
@@ -2852,7 +2852,7 @@ export declare class Float64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(&mut self, array: ArrayLike<number>, offset?: number) -> undefined,
+    set(&mut self, array: &mut ArrayLike<number>, offset?: number) -> undefined,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -2900,14 +2900,14 @@ export declare class Float64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      */
-    static from(elements: Iterable<number>) -> Float64Array<ArrayBuffer>,
+    static from(elements: &mut Iterable<number>) -> Float64Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Float64Array<ArrayBuffer>,
+    static from<T>(elements: &mut Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Float64Array<ArrayBuffer>,
     constructor(&mut self),
     static readonly prototype: Float64Array<ArrayBufferLike>,
     constructor(&mut self, length: number),
@@ -2928,14 +2928,14 @@ export declare class Float64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      */
-    static from(arrayLike: ArrayLike<number>) -> Float64Array<ArrayBuffer>,
+    static from(arrayLike: &mut ArrayLike<number>) -> Float64Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(arrayLike: ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Float64Array<ArrayBuffer>
+    static from<T>(arrayLike: &mut ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Float64Array<ArrayBuffer>
 }
 
 @js("ArrayBuffer")
@@ -3274,7 +3274,7 @@ export declare fn sub(typedArray: Int8Array<ArrayBufferLike> | Uint8Array<ArrayB
  * `"not-equal"`.
  */
 @js("Atomics.wait")
-export declare fn wait(typedArray: Int32Array<ArrayBufferLike>, index: number, value: number, timeout?: number) -> "ok" | "not-equal" | "timed-out"
+export declare fn wait(typedArray: &mut Int32Array<ArrayBufferLike>, index: number, value: number, timeout?: number) -> "ok" | "not-equal" | "timed-out"
 
 /**
  * Wakes up sleeping agents that are waiting on the given index of the array, returning the
@@ -3284,7 +3284,7 @@ export declare fn wait(typedArray: Int32Array<ArrayBufferLike>, index: number, v
  * @param count The number of sleeping agents to notify. Defaults to +Infinity.
  */
 @js("Atomics.notify")
-export declare fn notify(typedArray: Int32Array<ArrayBufferLike>, index: number, count?: number) -> number
+export declare fn notify(typedArray: &mut Int32Array<ArrayBufferLike>, index: number, count?: number) -> number
 
 /**
  * Stores the bitwise XOR of a value with the value at the given position in the array,
@@ -3363,7 +3363,7 @@ export declare fn sub(typedArray: BigInt64Array<ArrayBufferLike> | BigUint64Arra
  * `"not-equal"`.
  */
 @js("Atomics.wait")
-export declare fn wait(typedArray: BigInt64Array<ArrayBufferLike>, index: number, value: bigint, timeout?: number) -> "ok" | "not-equal" | "timed-out"
+export declare fn wait(typedArray: &mut BigInt64Array<ArrayBufferLike>, index: number, value: bigint, timeout?: number) -> "ok" | "not-equal" | "timed-out"
 
 /**
  * Wakes up sleeping agents that are waiting on the given index of the array, returning the
@@ -3373,7 +3373,7 @@ export declare fn wait(typedArray: BigInt64Array<ArrayBufferLike>, index: number
  * @param count The number of sleeping agents to notify. Defaults to +Infinity.
  */
 @js("Atomics.notify")
-export declare fn notify(typedArray: BigInt64Array<ArrayBufferLike>, index: number, count?: number) -> number
+export declare fn notify(typedArray: &mut BigInt64Array<ArrayBufferLike>, index: number, count?: number) -> number
 
 /**
  * Stores the bitwise XOR of a value with the value at the given position in the array,
@@ -3392,7 +3392,7 @@ export declare fn xor(typedArray: BigInt64Array<ArrayBufferLike> | BigUint64Arra
  * @param [timeout] The expected value to test.
  */
 @js("Atomics.waitAsync")
-export declare fn waitAsync(typedArray: Int32Array, index: number, value: number, timeout?: number) -> {
+export declare fn waitAsync(typedArray: &mut Int32Array, index: number, value: number, timeout?: number) -> {
     async: false,
     value: "not-equal" | "timed-out"
 } | {
@@ -3409,7 +3409,7 @@ export declare fn waitAsync(typedArray: Int32Array, index: number, value: number
  * @param [timeout] The expected value to test.
  */
 @js("Atomics.waitAsync")
-export declare fn waitAsync(typedArray: BigInt64Array, index: number, value: bigint, timeout?: number) -> {
+export declare fn waitAsync(typedArray: &mut BigInt64Array, index: number, value: bigint, timeout?: number) -> {
     async: false,
     value: "not-equal" | "timed-out"
 } | {
@@ -3587,7 +3587,7 @@ export declare class BigInt64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLi
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(&mut self, array: ArrayLike<bigint>, offset?: number) -> undefined,
+    set(&mut self, array: &mut ArrayLike<bigint>, offset?: number) -> undefined,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -3691,26 +3691,26 @@ export declare class BigInt64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLi
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      */
-    static from(arrayLike: ArrayLike<bigint>) -> BigInt64Array<ArrayBuffer>,
+    static from(arrayLike: &mut ArrayLike<bigint>) -> BigInt64Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<U>(arrayLike: ArrayLike<U>, mapfn: fn (v: U, k: number) -> bigint, thisArg?: unknown) -> BigInt64Array<ArrayBuffer>,
+    static from<U>(arrayLike: &mut ArrayLike<U>, mapfn: fn (v: U, k: number) -> bigint, thisArg?: unknown) -> BigInt64Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      */
-    static from(elements: Iterable<bigint>) -> BigInt64Array<ArrayBuffer>,
+    static from(elements: &mut Iterable<bigint>) -> BigInt64Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> bigint, thisArg?: unknown) -> BigInt64Array<ArrayBuffer>
+    static from<T>(elements: &mut Iterable<T>, mapfn?: fn (v: T, k: number) -> bigint, thisArg?: unknown) -> BigInt64Array<ArrayBuffer>
 }
 
 /**
@@ -3883,7 +3883,7 @@ export declare class BigUint64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferL
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(&mut self, array: ArrayLike<bigint>, offset?: number) -> undefined,
+    set(&mut self, array: &mut ArrayLike<bigint>, offset?: number) -> undefined,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -3987,26 +3987,26 @@ export declare class BigUint64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferL
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      */
-    static from(arrayLike: ArrayLike<bigint>) -> BigUint64Array<ArrayBuffer>,
+    static from(arrayLike: &mut ArrayLike<bigint>) -> BigUint64Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<U>(arrayLike: ArrayLike<U>, mapfn: fn (v: U, k: number) -> bigint, thisArg?: unknown) -> BigUint64Array<ArrayBuffer>,
+    static from<U>(arrayLike: &mut ArrayLike<U>, mapfn: fn (v: U, k: number) -> bigint, thisArg?: unknown) -> BigUint64Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      */
-    static from(elements: Iterable<bigint>) -> BigUint64Array<ArrayBuffer>,
+    static from(elements: &mut Iterable<bigint>) -> BigUint64Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> bigint, thisArg?: unknown) -> BigUint64Array<ArrayBuffer>
+    static from<T>(elements: &mut Iterable<T>, mapfn?: fn (v: T, k: number) -> bigint, thisArg?: unknown) -> BigUint64Array<ArrayBuffer>
 }
 
 export declare type ArrayBufferLike = ArrayBufferTypes[keyof ArrayBufferTypes]
@@ -4232,7 +4232,7 @@ export declare class Float16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * @param array A typed or untyped array of values to set.
      * @param offset The index in the current array at which the values are to be written.
      */
-    set(&mut self, array: ArrayLike<number>, offset?: number) -> undefined,
+    set(&mut self, array: &mut ArrayLike<number>, offset?: number) -> undefined,
     /**
      * Returns a section of an array.
      * @param start The beginning of the specified portion of the array.
@@ -4329,24 +4329,24 @@ export declare class Float16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      */
-    static from(arrayLike: ArrayLike<number>) -> Float16Array<ArrayBuffer>,
+    static from(arrayLike: &mut ArrayLike<number>) -> Float16Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(arrayLike: ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Float16Array<ArrayBuffer>,
+    static from<T>(arrayLike: &mut ArrayLike<T>, mapfn: fn (v: T, k: number) -> number, thisArg?: unknown) -> Float16Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      */
-    static from(elements: Iterable<number>) -> Float16Array<ArrayBuffer>,
+    static from(elements: &mut Iterable<number>) -> Float16Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Float16Array<ArrayBuffer>
+    static from<T>(elements: &mut Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: unknown) -> Float16Array<ArrayBuffer>
 }

@@ -12,8 +12,9 @@ import (
 // typed as the class at its own type parameters does, whether TypeScript writes it by name,
 // as the mutable `T[]` an array's callbacks take, or as `this`, and whether the callback is
 // the parameter's type or sits inside an object type. A `this` parameter, the class at other
-// arguments, the class at a method type parameter shadowing the class's, and a direct method
-// parameter keep the type they convert to.
+// arguments, and the class at a method type parameter shadowing the class's keep the type
+// they convert to. A direct method parameter is not a callback parameter, so it takes the
+// `&mut` borrow that applyBorrowDefaults gives an object type rather than `&Self`.
 func TestBorrowSelfInCallbacks(t *testing.T) {
 	t.Parallel()
 
@@ -72,9 +73,9 @@ declare var Array: ArrayConstructor;
 		"Coll.eachOrNull":    "eachOrNull(&mut self, callbackfn: (fn (value: T, coll: &Self) -> unknown) | null) -> undefined",
 		"Coll.eachOther":     "eachOther(&mut self, callbackfn: fn (coll: Coll<number>) -> unknown) -> undefined",
 		"Coll.eachShadowed":  "eachShadowed<T>(&mut self, callbackfn: fn (value: T, coll: Coll<T>) -> unknown) -> undefined",
-		"Coll.eachInOptions": "eachInOptions(&mut self, options: {\n    callbackfn: fn (coll: &Self) -> unknown\n}) -> undefined",
+		"Coll.eachInOptions": "eachInOptions(&mut self, options: &mut {\n    callbackfn: fn (coll: &Self) -> unknown\n}) -> undefined",
 		"Coll.eachThis":      "eachThis(&mut self, callbackfn: fn (value: T, coll: &Self) -> unknown) -> undefined",
-		"Coll.merge":         "merge(&mut self, other: Coll<T>) -> undefined",
+		"Coll.merge":         "merge(&mut self, other: &mut Coll<T>) -> undefined",
 		"Coll.on":            "on(&mut self, listener: fn (this: Coll<T>, ev: number) -> unknown) -> undefined",
 	}, got)
 }
