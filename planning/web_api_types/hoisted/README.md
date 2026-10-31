@@ -96,6 +96,11 @@ carry a single worker kind, all derived without any external source.
 `onmessageerror`, `onoffline`, `ononline`, `onrejectionhandled`,
 `onunhandledrejection`, `postMessage` and `self`.
 
+`self` is settled differently from the other twelve. It is the scope object, and
+each family's package binding stands for its own, so the three names are
+`window`, `worker` and `worklet` and nothing has to differ by environment under
+one name. F4 in `../design.md` has the mechanism.
+
 `onmessage` is the sharpest, with three forms:
 
 ```

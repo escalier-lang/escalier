@@ -140,8 +140,17 @@ widens.
 as a function of no particular object, `setTimeout` and `atob` among them,
 hoists to a top-level declaration in the package owning its family, reached
 through that package's binding. A member that reads as an operation on the scope
-keeps its receiver, and the scope object is a value its own package exports, so a
-program writes `window.alert(...)` after importing `web:window`.
+keeps its receiver, and the scope object is what its own package's binding
+stands for, so a program writes `window.alert(...)` after importing
+`web:window`.
+
+The binding and the object are one name rather than two. `import "web:window"`
+binds `window`, and a separate value of that name inside the package would read
+as `window.window`. A namespace's `AsValue` is the mechanism: its contract is
+that a member the namespace does not hold is read off that value, so
+`window.alert(...)` resolves through the `Window` instance and `window.Window`
+resolves as the type. Each scope package names its binding after its own scope,
+so the three are `window`, `worker` and `worklet`.
 
 The number of names a program gets without asking is the thing being held down.
 `hoisted/` routes 239 declarations and counts 176 of them window-only. Hoisting
@@ -202,9 +211,16 @@ no browser type the family is `web:core`. `setTimeout` and `atob` belong there
 and not in a browser-tier package a worker cannot import.
 
 The browsing-context API earns `web:window`. `Window` itself, the `window`
-value, and the members that stay members under F4 go there, which leaves
-`web:dom` the document and element surface a program uses without touching the
-browsing context.
+value, and the members that stay members under F4 go there.
+
+The reason is the qualifier, not partitioning. `web:dom` and `web:window` cannot
+be separated: `Window` names 29 other `web:dom` declarations and 139 `web:dom`
+declarations name `Window` or `WindowProxy` back, `Document.defaultView` and
+`UIEvent.view` among them. The cycle that creates is routine, since `web:dom`
+already cycles with six packages, and `PackageGroups` maps every URI in a
+closure to the same group, so the two load together whichever one a program
+imports. What the split buys is that the browsing context is reached as
+`window` rather than through `dom`.
 
 This is stated because the hoisting landed without it. 294 globals went to
 `web:dom`, including the portable ones, so a program imports the whole DOM to
@@ -329,8 +345,9 @@ against `main` first; the scripts are checked in to do that.
 3. Un-hoist the window-only globals, which `hoisted/` counts at 176, and add
    `web:window` holding `Window`, the `window` value and the members that stay
    members. `alert` is then `window.alert`.
-4. Rename the scope object's `self` so it does not read as a method receiver,
-   per open question 3.
+4. Set each scope package's `AsValue` to its scope object, so `window`, `worker`
+   and `worklet` are each both the package binding and the object. This replaces
+   `self`, per open question 3.
 
 **Done when** a fixture calls `setTimeout` and `atob` with no import at all,
 reaches `alert` only as `window.alert` after importing `web:window`, and the
@@ -421,10 +438,20 @@ the suite exercising `internal/checker` is not being backported.
    tier decision rather than a `.d.ts` error, so WebIDL has nothing to say about
    them.
 
-3. **What is the new name for `self`?** The scope object is exposed, so a worker
-   can reach itself, but `self` collides with the receiver `self` in a method
-   body and a reader would have to know which is which. The name wants settling
-   before §5.4 step 4 lands.
+3. **What is the new name for `self`?** *Decided: `worker` and `worklet`,
+   mirroring `window`.* The scope object is exposed so a worker can reach
+   itself, and `self` would read as the receiver `self` of a method body. Each
+   family names its handle after itself, and the declaration carries
+   `@js("self")` the way `window` carries `@js("window")`.
+
+   `self` is not reserved. The parser treats it specially only in a receiver
+   position, so the rename serves the reader rather than the grammar.
+
+   What this needs is a generated package that sets `AsValue`, which F4
+   describes. Today only an npm package whose `.d.ts` writes `export = f` does.
+   The converter has `ast.ExportAssignmentStmt` for that form already, so the
+   gap is emitting one for a scope package and teaching the printer to print it,
+   which it has no case for.
 
 ## 9. Non-goals
 
@@ -434,7 +461,7 @@ the suite exercising `internal/checker` is not being backported.
 - Runtime feature detection in user code, such as narrowing on
   `typeof OffscreenCanvas !== "undefined"`.
 - `typeof globalThis`. A program names the scope object through its package, as
-  `window` or the renamed `self`, so the intersections naming `globalThis` lose
+  `window`, `worker` or `worklet`, so the intersections naming `globalThis` lose
   their second half and the annotation goes. Nothing replaces it.
 
 ## 10. Related issues
