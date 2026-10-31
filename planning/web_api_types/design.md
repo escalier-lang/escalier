@@ -194,6 +194,13 @@ qualifier and neither needs the package's name repeated.
 and `window.alert(...)` is the member. Section 5.5 states the rule precisely and
 says why it tests the name rather than counting value exports.
 
+`web:fetch` is a third instance, and the reason F7 costs it nothing. Its only
+value export is `fetch`, which matches the package's binding name, so
+`import "web:fetch"` gives `fetch(...)` as a call and `fetch.Response` as a
+type. That is the shape `assignedSurface` already documents for an npm package
+whose `.d.ts` writes a function and a namespace of one name, so the rule covers
+a callable binding as well as an object.
+
 Each scope package names its binding after its own scope, so the three are
 `window`, `worker` and `worklet`.
 
