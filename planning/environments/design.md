@@ -483,13 +483,16 @@ A stage lands on its own and leaves the tree green.
 The stages are tracked in five milestones, which do not line up with the phases
 in two places:
 
-| milestone | stages | issues |
-| --- | --- | --- |
-| [Environments - A: Environment vocabulary and targets](https://github.com/escalier-lang/escalier/milestone/14) | 7.3.1, 7.3.2, 7.3.4, 7.3.5, 7.4.2 | #1613, #1642, #1641, #2396, #2397, #2398 |
-| [Environments - B: Retire the package tier axis](https://github.com/escalier-lang/escalier/milestone/15) | 7.3.3 | #1614, #1586 |
-| [Environments - C: Worker environments](https://github.com/escalier-lang/escalier/milestone/16) | 7.4.1, 7.4.3 to 7.4.8 | #2399, #2400, #2401, #1644, #2402, #2403, #2404, #2405 |
-| [Environments - D: Worklet environments](https://github.com/escalier-lang/escalier/milestone/17) | 7.5.1 to 7.5.4 | #2406, #2407, #2408, #2409 |
-| [Environments - E: Non-browser runtimes](https://github.com/escalier-lang/escalier/milestone/18) | 7.6.1 to 7.6.4 | #2410, #2411, #2412, #2413 |
+| milestone | stages | issues | tracking |
+| --- | --- | --- | --- |
+| [Environments - A: Environment vocabulary and targets](https://github.com/escalier-lang/escalier/milestone/14) | 7.3.1, 7.3.2, 7.3.4, 7.3.5, 7.4.2 | #1613, #1642, #1641, #2396, #2397, #2398 | #2417 |
+| [Environments - B: Retire the package tier axis](https://github.com/escalier-lang/escalier/milestone/15) | 7.3.3 | #1614, #1586 | #2418 |
+| [Environments - C: Worker environments](https://github.com/escalier-lang/escalier/milestone/16) | 7.4.1, 7.4.3 to 7.4.8 | #2399, #2400, #2401, #1644, #2402, #2403, #2404, #2405 | #2419 |
+| [Environments - D: Worklet environments](https://github.com/escalier-lang/escalier/milestone/17) | 7.5.1 to 7.5.4 | #2406, #2407, #2408, #2409 | #2420 |
+| [Environments - E: Non-browser runtimes](https://github.com/escalier-lang/escalier/milestone/18) | 7.6.1 to 7.6.4 | #2410, #2411, #2412, #2413 | #2421 |
+
+Each tracking issue holds the dependency graph for its milestone as a mermaid
+diagram, and says which orderings are forced and why.
 
 §7.4.2's slot key sits in milestone A rather than with the workers, because the
 worklet and runtime milestones need it too and nothing in phase two is its only

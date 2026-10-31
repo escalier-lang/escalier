@@ -413,11 +413,14 @@ alone.
 
 The stages are tracked in three milestones:
 
-| milestone | stages | issues |
-| --- | --- | --- |
-| [Web API - A: WebIDL as a conversion input](https://github.com/escalier-lang/escalier/milestone/11) | 5.2, 5.3, 5.4 | #2388, #1645, #1646, #2389 |
-| [Web API - B: Prelude packages and unprefixed binding](https://github.com/escalier-lang/escalier/milestone/12) | 5.1, 5.5 | #2390, #2391 |
-| [Web API - C: Global placement and `web:window`](https://github.com/escalier-lang/escalier/milestone/13) | 5.6, 5.7 | #2394, #2395 |
+| milestone | stages | issues | tracking |
+| --- | --- | --- | --- |
+| [Web API - A: WebIDL as a conversion input](https://github.com/escalier-lang/escalier/milestone/11) | 5.2, 5.3, 5.4 | #2388, #1645, #1646, #2389 | #2414 |
+| [Web API - B: Prelude packages and unprefixed binding](https://github.com/escalier-lang/escalier/milestone/12) | 5.1, 5.5 | #2390, #2391 | #2415 |
+| [Web API - C: Global placement and `web:window`](https://github.com/escalier-lang/escalier/milestone/13) | 5.6, 5.7 | #2394, #2395 | #2416 |
+
+Each tracking issue holds the dependency graph for its milestone as a mermaid
+diagram, and says which orderings are forced and why.
 
 Section 5.8 has no milestone. It is a standing instruction to measure before
 planning, not work to schedule.
