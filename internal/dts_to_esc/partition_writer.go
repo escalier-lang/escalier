@@ -512,7 +512,15 @@ func mergeDecls(stmts []dts_parser.Statement) []dts_parser.Statement {
 func ConvertBucket(stmts []dts_parser.Statement, facts *ReceiverFacts) (*StandaloneModule, error) {
 	stmts, twins := fuseReadonlyTwins(stmts)
 	classNames := withTwinNames(ClassNames(stmts), twins)
-	return convertFusedBucket(stmts, twins, twins, ConsumedCtorNames(stmts), classNames, facts)
+	mod, err := convertFusedBucket(stmts, twins, twins, ConsumedCtorNames(stmts), classNames, facts)
+	if err != nil {
+		return nil, err
+	}
+	// A `.d.ts` does not say whether a callee writes an argument or returns
+	// structure it shares with one. Rule I3 picks the signature that rejects
+	// more programs. The bucket is the whole input here, so it indexes itself.
+	applyBorrowDefaults(mod, newTypeIndex(mod))
+	return mod, nil
 }
 
 // withTwinNames adds each readonly twin's name to a set holding its mutable
@@ -954,6 +962,18 @@ func ConvertBuckets(result *PartitionResult, facts *ReceiverFacts) (map[string]*
 			return nil, &BucketConvertError{pkgError{uri}, err}
 		}
 		mods[uri] = mod
+	}
+	// A `.d.ts` does not say whether a callee writes an argument or returns
+	// structure it shares with one. Rule I3 picks the signature that rejects
+	// more programs. A parameter in one bucket may name a type another bucket
+	// declares, so every bucket reads one index of the whole tree.
+	modList := make([]*StandaloneModule, len(uris))
+	for i, uri := range uris {
+		modList[i] = mods[uri]
+	}
+	idx := newTypeIndex(modList...)
+	for _, mod := range modList {
+		applyBorrowDefaults(mod, idx)
 	}
 	return mods, nil
 }

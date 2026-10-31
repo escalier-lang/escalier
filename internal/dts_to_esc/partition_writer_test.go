@@ -577,17 +577,20 @@ declare var Array: ArrayConstructor;
 	// of the printed class so the param/return rewrites are reviewed
 	// holistically. The expected output covers:
 	//   - push(...items: T[]) → `Array<T>`, with no `mut` on the owned type
-	//   - concat(items: ReadonlyArray<T>) → renamed to `Array<T>`;
-	//     return `T[]` keeps the bare `Array<T>`, since the caller owns it
-	//   - readArr(readonly T[]) → desugared then renamed to `Array<T>`
+	//   - concat(items: ReadonlyArray<T>) → renamed to `Array<T>`. The
+	//     parameter becomes `&'a mut Array<T>` and the `T[]` return becomes
+	//     `&'a mut Array<T>`, since applyBorrowDefaults cannot tell whether
+	//     the result shares structure with `items`
+	//   - readArr(readonly T[]) → desugared, renamed to `Array<T>`, then
+	//     borrowed as `&mut Array<T>`
 	printed, err := printer.Print(arrayClass, printer.DefaultOptions())
 	require.NoError(t, err)
 	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("Array")
 export declare class Array<T> {
     length: number,
     push(&mut self, ...items: Array<T>) -> number,
-    concat(&self, items: Array<T>) -> Array<T>,
-    readArr(&mut self, items: Array<T>) -> undefined,
+    concat<'a>(&self, items: &'a mut Array<T>) -> &'a mut Array<T>,
+    readArr(&mut self, items: &mut Array<T>) -> undefined,
     constructor(&mut self),
     static readonly prototype: Array<any>
 }`))

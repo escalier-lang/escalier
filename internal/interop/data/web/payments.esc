@@ -245,7 +245,7 @@ export declare class PaymentResponse extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentResponse/complete) */
     complete(&mut self, result?: PaymentComplete) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentResponse/retry) */
-    retry(&mut self, errorFields?: PaymentValidationErrors) -> Promise<undefined>,
+    retry(&mut self, errorFields?: &mut PaymentValidationErrors) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentResponse/toJSON) */
     toJSON(&self) -> any,
     addEventListener<K: keyof PaymentResponseEventMap>(&mut self, type: K, listener: fn (this: PaymentResponse, ev: PaymentResponseEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,

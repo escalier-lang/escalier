@@ -231,13 +231,13 @@ export declare class AudioData {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioData/timestamp) */
     readonly timestamp: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioData/allocationSize) */
-    allocationSize(&mut self, options: AudioDataCopyToOptions) -> number,
+    allocationSize(&mut self, options: &mut AudioDataCopyToOptions) -> number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioData/clone) */
     clone(&self) -> AudioData,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioData/close) */
     close(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioData/copyTo) */
-    copyTo(&self, destination: AllowSharedBufferSource, options: AudioDataCopyToOptions) -> undefined,
+    copyTo(&self, destination: AllowSharedBufferSource, options: &mut AudioDataCopyToOptions) -> undefined,
     static prototype: AudioData,
     constructor(&mut self, init: AudioDataInit)
 }
@@ -262,9 +262,9 @@ export declare class AudioDecoder extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder/close) */
     close(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder/configure) */
-    configure(&mut self, config: AudioDecoderConfig) -> undefined,
+    configure(&mut self, config: &mut AudioDecoderConfig) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder/decode) */
-    decode(&mut self, chunk: EncodedAudioChunk) -> undefined,
+    decode(&mut self, chunk: &mut EncodedAudioChunk) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder/flush) */
     flush(&mut self) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder/reset) */
@@ -276,7 +276,7 @@ export declare class AudioDecoder extends EventTarget {
     static prototype: AudioDecoder,
     constructor(&mut self, init: AudioDecoderInit),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder/isConfigSupported_static) */
-    static isConfigSupported(config: AudioDecoderConfig) -> Promise<AudioDecoderSupport>
+    static isConfigSupported(config: &mut AudioDecoderConfig) -> Promise<AudioDecoderSupport>
 }
 
 export declare interface AudioEncoderEventMap {
@@ -299,9 +299,9 @@ export declare class AudioEncoder extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder/close) */
     close(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder/configure) */
-    configure(&mut self, config: AudioEncoderConfig) -> undefined,
+    configure(&mut self, config: &mut AudioEncoderConfig) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder/encode) */
-    encode(&mut self, data: AudioData) -> undefined,
+    encode(&mut self, data: &mut AudioData) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder/flush) */
     flush(&mut self) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder/reset) */
@@ -313,7 +313,7 @@ export declare class AudioEncoder extends EventTarget {
     static prototype: AudioEncoder,
     constructor(&mut self, init: AudioEncoderInit),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder/isConfigSupported_static) */
-    static isConfigSupported(config: AudioEncoderConfig) -> Promise<AudioEncoderSupport>
+    static isConfigSupported(config: &mut AudioEncoderConfig) -> Promise<AudioEncoderSupport>
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EncodedAudioChunk) */
@@ -368,7 +368,7 @@ export declare class ImageDecoder {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageDecoder/close) */
     close(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageDecoder/decode) */
-    decode(&mut self, options?: ImageDecodeOptions) -> Promise<ImageDecodeResult>,
+    decode(&mut self, options?: &mut ImageDecodeOptions) -> Promise<ImageDecodeResult>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageDecoder/reset) */
     reset(&mut self) -> undefined,
     static prototype: ImageDecoder,
@@ -445,9 +445,9 @@ export declare class VideoDecoder extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder/close) */
     close(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder/configure) */
-    configure(&mut self, config: VideoDecoderConfig) -> undefined,
+    configure(&mut self, config: &mut VideoDecoderConfig) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder/decode) */
-    decode(&mut self, chunk: EncodedVideoChunk) -> undefined,
+    decode(&mut self, chunk: &mut EncodedVideoChunk) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder/flush) */
     flush(&mut self) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder/reset) */
@@ -459,7 +459,7 @@ export declare class VideoDecoder extends EventTarget {
     static prototype: VideoDecoder,
     constructor(&mut self, init: VideoDecoderInit),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder/isConfigSupported_static) */
-    static isConfigSupported(config: VideoDecoderConfig) -> Promise<VideoDecoderSupport>
+    static isConfigSupported(config: &mut VideoDecoderConfig) -> Promise<VideoDecoderSupport>
 }
 
 export declare interface VideoEncoderEventMap {
@@ -482,9 +482,9 @@ export declare class VideoEncoder extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder/close) */
     close(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder/configure) */
-    configure(&mut self, config: VideoEncoderConfig) -> undefined,
+    configure(&mut self, config: &mut VideoEncoderConfig) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder/encode) */
-    encode(&mut self, frame: VideoFrame, options?: VideoEncoderEncodeOptions) -> undefined,
+    encode(&mut self, frame: &mut VideoFrame, options?: &mut VideoEncoderEncodeOptions) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder/flush) */
     flush(&mut self) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder/reset) */
@@ -496,7 +496,7 @@ export declare class VideoEncoder extends EventTarget {
     static prototype: VideoEncoder,
     constructor(&mut self, init: VideoEncoderInit),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder/isConfigSupported_static) */
-    static isConfigSupported(config: VideoEncoderConfig) -> Promise<VideoEncoderSupport>
+    static isConfigSupported(config: &mut VideoEncoderConfig) -> Promise<VideoEncoderSupport>
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame) */
@@ -523,13 +523,13 @@ export declare class VideoFrame {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/visibleRect) */
     readonly visibleRect: dom.DOMRectReadOnly | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/allocationSize) */
-    allocationSize(&mut self, options?: VideoFrameCopyToOptions) -> number,
+    allocationSize(&mut self, options?: &mut VideoFrameCopyToOptions) -> number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/clone) */
     clone(&self) -> VideoFrame,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/close) */
     close(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/copyTo) */
-    copyTo(&self, destination: AllowSharedBufferSource, options?: VideoFrameCopyToOptions) -> Promise<Array<PlaneLayout>>,
+    copyTo(&self, destination: AllowSharedBufferSource, options?: &mut VideoFrameCopyToOptions) -> Promise<Array<PlaneLayout>>,
     static prototype: VideoFrame,
     constructor(&mut self, image: dom.CanvasImageSource, init?: VideoFrameInit),
     constructor(&mut self, data: AllowSharedBufferSource, init: VideoFrameBufferInit)

@@ -169,7 +169,7 @@ export declare class ReadableByteStreamController {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableByteStreamController/close) */
     close(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableByteStreamController/enqueue) */
-    enqueue(&mut self, chunk: typed_arrays.ArrayBufferView) -> undefined,
+    enqueue(&mut self, chunk: &mut typed_arrays.ArrayBufferView) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableByteStreamController/error) */
     error(&mut self, e?: unknown) -> undefined,
     static prototype: ReadableByteStreamController,
@@ -188,19 +188,19 @@ export declare class ReadableStream<R = any> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/cancel) */
     cancel(&mut self, reason?: unknown) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/getReader) */
-    getReader(&self, options: {
+    getReader(&self, options: &mut {
         mode: "byob"
     }) -> ReadableStreamBYOBReader,
     getReader(&self) -> ReadableStreamDefaultReader<R>,
-    getReader(&self, options?: ReadableStreamGetReaderOptions) -> ReadableStreamReader<R>,
+    getReader(&self, options?: &mut ReadableStreamGetReaderOptions) -> ReadableStreamReader<R>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/pipeThrough) */
-    pipeThrough<T>(&mut self, transform: ReadableWritablePair<T, R>, options?: StreamPipeOptions) -> ReadableStream<T>,
+    pipeThrough<'a, T>(&mut self, transform: &'a mut ReadableWritablePair<T, R>, options?: &'a mut StreamPipeOptions) -> &'a mut ReadableStream<T>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/pipeTo) */
-    pipeTo(&mut self, destination: WritableStream<R>, options?: StreamPipeOptions) -> Promise<undefined>,
+    pipeTo(&mut self, destination: &mut WritableStream<R>, options?: &mut StreamPipeOptions) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/tee) */
     tee(&mut self) -> [ReadableStream<R>, ReadableStream<R>],
-    [Symbol.asyncIterator](&self, options?: ReadableStreamIteratorOptions) -> ReadableStreamAsyncIterator<R>,
-    values(&self, options?: ReadableStreamIteratorOptions) -> ReadableStreamAsyncIterator<R>,
+    [Symbol.asyncIterator](&self, options?: &mut ReadableStreamIteratorOptions) -> ReadableStreamAsyncIterator<R>,
+    values(&self, options?: &mut ReadableStreamIteratorOptions) -> ReadableStreamAsyncIterator<R>,
     static prototype: ReadableStream,
     constructor(&mut self, underlyingSource: UnderlyingByteSource, strategy?: {
         highWaterMark?: number
@@ -228,7 +228,7 @@ export declare class ReadableStreamBYOBRequest {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBRequest/respond) */
     respond(&mut self, bytesWritten: number) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBRequest/respondWithNewView) */
-    respondWithNewView(&mut self, view: typed_arrays.ArrayBufferView) -> undefined,
+    respondWithNewView(&mut self, view: &mut typed_arrays.ArrayBufferView) -> undefined,
     static prototype: ReadableStreamBYOBRequest,
     constructor(&mut self)
 }
