@@ -171,28 +171,21 @@ fn f() { y = 6 }`)
 		require.Empty(t, errs)
 		require.Equal(t, "number", values["y"])
 	})
-	// Reference widening rides the Widenable flag at coalesce time (display, the
-	// reassignment target, the binding's own type), but the literal still flows into
-	// the bound graph unwidened, so a read of the reference-widened var into a new
-	// binding keeps the precise literal: `val z = y` ⇒ z: 5. A direct literal
-	// widens at the constraint level instead, so ITS reads widen (see
-	// TestInferVarWideningPropagatesToReads). z: 5 is sound — z is an immutable
-	// snapshot of the value 5 — and this asserts the narrow remaining corner.
-	t.Run("reading a reference-widened var keeps the literal", func(t *testing.T) {
+	// y is a weak binding, and widenWeakSlots widens the `5` its binding var holds in the
+	// bound graph, so a read of y sees `number` as a read of a direct literal does.
+	t.Run("reading a reference-widened var sees the primitive", func(t *testing.T) {
 		values, _, errs := inferSource(t, `val x = 5
 var y = x
 val z = y`)
 		require.Empty(t, errs)
 		require.Equal(t, "number", values["y"])
-		require.Equal(t, "5", values["z"])
+		require.Equal(t, "number", values["z"])
 	})
 }
 
 // A read of a directly-widened `var` into another binding widens too: the eager
 // constraint-level widening of a direct literal propagates through the bound
-// graph, so `var a = 5; val z = a` ⇒ z: number, matching `a`'s own widened type
-// (unlike the reference corner above, where the literal reaches the reader
-// unwidened).
+// graph, so `var a = 5; val z = a` ⇒ z: number, matching `a`'s own widened type.
 func TestInferVarWideningPropagatesToReads(t *testing.T) {
 	t.Run("scalar read widens", func(t *testing.T) {
 		values, _, errs := inferSource(t, `var a = 5
