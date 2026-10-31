@@ -69,43 +69,43 @@ func (c *checker) noteWeakBinding(b *componentBinding, scheme TypeScheme) {
 	}
 	if w, ok := newWeakBinding(scheme, b.infoNode); ok {
 		// A leaf of a destructuring is `mut` on its own, so b.mut is read in place of the
-		// pattern's. The binding var is minted before the component's initializers are
-		// inferred, so every variable an initializer mints comes after it.
-		c.widenWeakSlots(w.scheme, vd, b.mut, b.v.ID)
+		// pattern's. The binding var is minted before the initializer is inferred, so it is
+		// owned apart from the initializer's range.
+		owns := func(v *soltype.TypeVarType) bool { return v == b.v || b.initVars.contains(v) }
+		c.widenWeakSlots(w.scheme, vd, b.mut, owns)
 		c.weakBindings = append(c.weakBindings, w)
 	}
 }
 
 // noteWeakLocal records the weak body-level binding d, bound to scheme, for
-// settleWeakLocals and widens its writable slots, as widenWeakSlots does. firstVar is the
-// id of the first variable d's initializer could mint.
-func (c *checker) noteWeakLocal(d *ast.VarDecl, scheme TypeScheme, firstVar int) {
+// settleWeakLocals and widens its writable slots, as widenWeakSlots does. initVars is the
+// range of ids of the variables d's initializer and binding var minted.
+func (c *checker) noteWeakLocal(d *ast.VarDecl, scheme TypeScheme, initVars varRange) {
 	if w, ok := newWeakBinding(scheme, d.Pattern); ok {
-		c.widenWeakSlots(w.scheme, d, hasMutLeaf(d.Pattern), firstVar)
+		c.widenWeakSlots(w.scheme, d, hasMutLeaf(d.Pattern), initVars.contains)
 		c.weakLocals = append(c.weakLocals, w)
 	}
 }
 
 // widenWeakSlots makes each value that reaches a writable slot of the weak binding d
 // declares widen as widenLiterals widens that slot, so a read of the binding sees the type
-// it settles to. sc is the binding's scheme, and mutable marks a binding written `mut`. It
-// must run before any use of the binding outside its own component. A value that reached a
-// slot earlier is checked against a read again only when this widens it.
+// it settles to. sc is the binding's scheme, mutable marks a binding written `mut`, and owns
+// reports whether a type variable belongs to the binding alone.
 //
-// A type variable d's initializer minted, one whose id is at least firstVar, stands for
-// its slot. It is given the slot's mode in slotModes, so every lower bound it gains later
-// is widened by widenSlotBound. Each lower bound it already holds is replaced by its
-// widened form and checked again against the variable's upper bounds. Any other variable
-// in a slot can belong to another binding too. The slot holds a fresh variable in its
-// place that only receives that variable's values, as widenSlotBound describes.
+// A variable the binding owns stands for its slot. It is given the slot's mode in
+// slotModes, so every lower bound it gains later is widened by widenSlotBound. Each lower
+// bound it already holds is replaced by its widened form and checked again against the
+// variable's upper bounds. A failed check is reported against d's initializer.
 //
-// A failed check of a widened bound is reported against d's initializer.
-func (c *checker) widenWeakSlots(sc *PolyScheme, d *ast.VarDecl, mutable bool, firstVar int) {
+// Any other variable in a slot can belong to another binding too. The slot holds a fresh
+// variable in its place that only receives that variable's values, as widenSlotBound
+// describes.
+func (c *checker) widenWeakSlots(sc *PolyScheme, d *ast.VarDecl, mutable bool, owns func(*soltype.TypeVarType) bool) {
 	mode := slotMode{replace: d.Kind == ast.VarKind, mutable: mutable}
 	if !mode.writable() {
 		return
 	}
-	m := &slotMarker{c: c, firstVar: firstVar, site: d}
+	m := &slotMarker{c: c, owns: owns, site: d}
 	if d.Init != nil {
 		m.site = d.Init
 	}
@@ -118,10 +118,18 @@ func (c *checker) widenWeakSlots(sc *PolyScheme, d *ast.VarDecl, mutable bool, f
 	}
 }
 
+// varRange is a half-open range of type variable ids, the ids the variables one stretch of
+// inference minted.
+type varRange struct{ from, to int }
+
+// contains reports whether v's id is in r.
+func (r varRange) contains(v *soltype.TypeVarType) bool { return r.from <= v.ID && v.ID < r.to }
+
 // slotMarker is the walk widenWeakSlots runs over a weak binding's type.
 type slotMarker struct {
-	c        *checker
-	firstVar int
+	c *checker
+	// owns reports whether a variable belongs to the binding alone.
+	owns func(*soltype.TypeVarType) bool
 	// site is the node a failed check of a widened bound is reported against.
 	site ast.Node
 }
@@ -130,7 +138,7 @@ type slotMarker struct {
 func (m *slotMarker) widen(t soltype.Type, mode slotMode) (soltype.Type, bool) {
 	changed := false
 	onVar := func(v *soltype.TypeVarType, vm slotMode) soltype.Type {
-		if v.ID >= m.firstVar {
+		if m.owns(v) {
 			m.mark(v, vm)
 			return v
 		}
@@ -180,9 +188,10 @@ func (c *Context) newSlotVar(v *soltype.TypeVarType, mode slotMode) *soltype.Typ
 //
 // A literal in a writable slot widens as widenLiterals widens it. A variable in a writable
 // slot is kept when its own slot mode covers the slot's, since every value that reaches it
-// is widened already. Any other variable is replaced by a fresh one of the slot's mode that
-// it is constrained into, so the fresh one holds the widened form of each value it holds.
-// The variable itself keeps its literals, which every other place it reaches still reads.
+// is widened already. Any other variable is replaced by a fresh variable of the slot's mode,
+// and the original is constrained into it. The fresh variable then holds the widened form
+// of each value the original holds. The original keeps its literals, which every other
+// place it reaches still reads.
 // With `fn put(x) { seen.set("k", [x]) }`, `put(1)` leaves `x` at `1` and adds `[number]`
 // to the values of a weak `val mut seen = Map()`.
 func (c *Context) widenSlotBound(sub soltype.Type, mode slotMode, seen *seenPairs) (soltype.Type, []SolverError) {
@@ -279,8 +288,8 @@ func (c *checker) settleWeakLocals() {
 // in both, as simplifyWithWeakVars describes. `fn (x) { return x }` called with `1`
 // settles to `fn (x: 1) -> 1`.
 //
-// The bounds already hold each literal in a slot the binding can write widened, as
-// widenWeakSlots arranged when the binding was noted. `val mut seen = Map()` written with
+// Each literal in a slot the binding can write is widened in the bounds already, since
+// widenWeakSlots widened the slots when the binding was noted. `val mut seen = Map()` written with
 // `seen.set("k", 1)` settles to `Map<string, number>`, `val b = Box(5)` keeps `Box<5>`,
 // and `val mut p = fetchNum()` keeps `Promise<5>`.
 func (c *checker) settleWeakDisplay(w weakBinding) {
@@ -307,17 +316,18 @@ func (c *checker) settleWeakDisplay(w weakBinding) {
 // since widening it would change what the value accepts.
 //
 // onVar returns the type that replaces a type variable in a writable slot of the given
-// mode. When changed is not nil, it is set once a literal widens or onVar returns a type
+// mode. When `changed` is not nil, it is set once a literal widens or onVar returns a type
 // other than its variable.
 func (c *Context) widenLiterals(t soltype.Type, mode slotMode, onVar slotVarFunc, changed *bool) soltype.Type {
 	return t.Accept(&literalWidener{ctx: c, mode: mode, onVar: onVar, changed: changed}, soltype.Positive)
 }
 
-// slotVarFunc is the callback widenLiterals passes each type variable it reaches in a writable
-// slot, with that slot's mode.
+// slotVarFunc is the callback widenLiterals passes each type variable it reaches in a
+// writable slot, with that slot's mode.
 type slotVarFunc func(v *soltype.TypeVarType, mode slotMode) soltype.Type
 
-// slotMode describes a slot of a weak binding by what a write through the binding can do there.
+// slotMode describes a slot of a weak binding by what a write through the binding can do
+// there.
 type slotMode struct {
 	// replace marks a slot a write can replace whole.
 	replace bool
@@ -348,13 +358,14 @@ type literalWidener struct {
 }
 
 func (w *literalWidener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	// Nothing below a slot no write reaches is writable either.
+	if !w.mode.writable() {
+		return soltype.EnterResult{SkipChildren: true}
+	}
 	switch t := t.(type) {
 	case *soltype.FuncType, *soltype.RefType:
 		return soltype.EnterResult{SkipChildren: true}
 	case *soltype.TypeVarType:
-		if !w.mode.writable() {
-			return soltype.EnterResult{SkipChildren: true}
-		}
 		out := w.onVar(t, w.mode)
 		if out != t {
 			w.markChanged()
@@ -369,13 +380,7 @@ func (w *literalWidener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.E
 	case *soltype.ObjectType:
 		return soltype.EnterResult{Type: w.widenFields(t), SkipChildren: true}
 	case *soltype.TupleType:
-		elems := make([]soltype.Type, len(t.Elems))
-		for i, elem := range t.Elems {
-			elems[i] = w.widenSlot(elem, w.mode.mutable, w.mode.mutable)
-		}
-		out := *t
-		out.Elems = elems
-		return soltype.EnterResult{Type: &out, SkipChildren: true}
+		return soltype.EnterResult{Type: w.widenElems(t), SkipChildren: true}
 	case *soltype.ClassType:
 		return soltype.EnterResult{Type: w.widenClassArgs(t), SkipChildren: true}
 	}
@@ -396,41 +401,83 @@ func (w *literalWidener) widenSlot(t soltype.Type, writable, mutable bool) solty
 	return t.Accept(&inner, soltype.Positive)
 }
 
-// widenFields returns obj with each property's type widened. A property that is not
-// `readonly` is a slot a mutable owner can write. Every other member is kept.
+// widenElems returns tup with each element widened as a slot a mutable owner can write, or
+// tup itself when no element changes.
+func (w *literalWidener) widenElems(tup *soltype.TupleType) soltype.Type {
+	var elems []soltype.Type
+	for i, elem := range tup.Elems {
+		widened := w.widenSlot(elem, w.mode.mutable, w.mode.mutable)
+		if widened == elem {
+			continue
+		}
+		if elems == nil {
+			elems = slices.Clone(tup.Elems)
+		}
+		elems[i] = widened
+	}
+	if elems == nil {
+		return tup
+	}
+	out := *tup
+	out.Elems = elems
+	return &out
+}
+
+// widenFields returns obj with each property's type widened, or obj itself when no
+// property changes. A property that is not `readonly` is a slot a mutable owner can write.
+// Every other member is kept.
 func (w *literalWidener) widenFields(obj *soltype.ObjectType) soltype.Type {
-	elems := make([]soltype.ObjTypeElem, len(obj.Elems))
+	var elems []soltype.ObjTypeElem
 	for i, elem := range obj.Elems {
 		prop, ok := elem.(*soltype.PropertyElem)
 		if !ok {
-			elems[i] = elem
 			continue
 		}
+		widened := w.widenSlot(prop.Type, w.mode.mutable && !prop.Readonly, w.mode.mutable)
+		if widened == prop.Type {
+			continue
+		}
+		if elems == nil {
+			elems = slices.Clone(obj.Elems)
+		}
 		cp := *prop
-		cp.Type = w.widenSlot(prop.Type, w.mode.mutable && !prop.Readonly, w.mode.mutable)
+		cp.Type = widened
 		elems[i] = &cp
+	}
+	if elems == nil {
+		return obj
 	}
 	out := *obj
 	out.Elems = elems
 	return &out
 }
 
-// widenClassArgs returns ct with each type argument widened. An argument the class's
-// variance makes contravariant is kept. One that MutVariance makes invariant is a slot a
-// mutable owner can write. Any other argument can only be read, so its owned layers are not
-// writable through it.
+// widenClassArgs returns ct with each type argument widened, or ct itself when no argument
+// changes. An argument the class's variance makes contravariant is kept. One that
+// MutVariance makes invariant is a slot a mutable owner can write. Any other argument can
+// only be read, so its owned layers are not writable through it.
 func (w *literalWidener) widenClassArgs(ct *soltype.ClassType) soltype.Type {
 	def, _ := w.ctx.classDef(ct.Name)
-	args := make([]soltype.Type, len(ct.TypeArgs))
+	var args []soltype.Type
 	for i, arg := range ct.TypeArgs {
+		widened := arg
 		switch {
 		case def.varianceAt(i, w.mode.mutable) == Contravariant:
-			args[i] = arg
 		case w.mode.mutable && def.varianceAt(i, true) == Invariant:
-			args[i] = w.widenSlot(arg, true, true)
+			widened = w.widenSlot(arg, true, true)
 		default:
-			args[i] = w.widenSlot(arg, false, false)
+			widened = w.widenSlot(arg, false, false)
 		}
+		if widened == arg {
+			continue
+		}
+		if args == nil {
+			args = slices.Clone(ct.TypeArgs)
+		}
+		args[i] = widened
+	}
+	if args == nil {
+		return ct
 	}
 	out := *ct
 	out.TypeArgs = args

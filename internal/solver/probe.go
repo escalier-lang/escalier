@@ -18,7 +18,9 @@ import (
 //     a fresh var is unreachable after a Discard (every surviving reference to it
 //     rides a journaled append that gets truncated), so it self-rolls-back. What
 //     must never happen is whole-slice replacement of a var that has already been
-//     recorded under the probe; rollback asserts against that.
+//     recorded under the probe; rollback asserts against that. replaceLowerBound
+//     overwrites one element in place and keeps the length, so it registers an
+//     onRollback closure that puts the old element back.
 //  2. Side-table writes. Writes to the carrier's Info / Prov tables (and the
 //     checker's accumulated errs) under the probe register an onRollback closure
 //     (the carrier owns those, so it registers the closures — see

@@ -25,7 +25,8 @@ import (
 // the probe snapshot with the append. A bare `v.LowerBounds = append(...)` must
 // never appear — routing every append through the two helpers is what makes
 // "forgot to journal the mutation" structurally impossible (an un-journaled
-// append would silently survive a Discard and corrupt committed state).
+// append would silently survive a Discard and corrupt committed state). The one
+// in-place write to a bound list is replaceLowerBound, which journals its own undo.
 type Context struct {
 	varCounter int
 
@@ -760,7 +761,9 @@ func (c *Context) addBorrowedRead(v *soltype.TypeVarType, r borrowedRead) {
 // dedups (only the first touch of v in a probe snapshots), so calling this at
 // every append site is cheap and correct: append-only bound lists mean the first
 // snapshot already covers every later append to v under the same probe. Reached
-// only through addLowerBound/addUpperBound.
+// only through addLowerBound, addUpperBound, and replaceLowerBound. A replacement
+// keeps the list's length, so replaceLowerBound registers its own rollback to put
+// the replaced bound back.
 func (c *Context) recordMutation(v *soltype.TypeVarType) {
 	c.checkThawed(v, "a type bound")
 	if c.probe != nil {

@@ -414,6 +414,8 @@ type componentBinding struct {
 	// set, bound as a multi-scheme ValueBinding in phase 3. arms[i] lines up with the
 	// FuncDecl's entry in sources.
 	arms []overloadArm
+	// initVars is the range of ids of the variables the binding's initializer minted.
+	initVars varRange
 	// weak marks a `val` or `var` whose declaration does not generalize, as generalizes
 	// decides. Its binding var and initializer are inferred at the component's own level,
 	// so the variables they carry are weak. Every function that reads the binding shares
@@ -838,9 +840,13 @@ func (c *checker) inferComponent(
 			// A class decl is keyed by its dep_graph-qualified name, so pass the key's
 			// namespace down for inferClassDecl to reconstruct it. Every other decl
 			// kind ignores it.
+			firstVar := c.ctx.varCounter
 			t, src, ok := c.inferDeclDef(c.lookupScope(scope, d), declLevel(d, lvl), d, g.GetNamespace(key))
 			if !ok {
 				continue
+			}
+			if !b.bound {
+				b.initVars = varRange{from: firstVar, to: c.ctx.varCounter}
 			}
 			// Accumulate every contributing decl's provenance in encounter order: the
 			// primary, every overload arm, and every decl later rejected as a duplicate.
@@ -1092,7 +1098,10 @@ func (c *checker) inferComponent(
 // already reported. recovered marks an initializer that fell back to the ErrorType
 // sentinel, so each leaf recovers AS the sentinel rather than freezing to `never`.
 type moduleDestructure struct {
-	leaves    map[string]destructureLeaf
+	leaves map[string]destructureLeaf
+	// initVars is the range of ids of the variables minted while the initializer was typed
+	// and the pattern bound.
+	initVars  varRange
 	recovered bool
 	ok        bool
 }
@@ -1156,6 +1165,7 @@ func (c *checker) bindModuleDestructureLeaf(
 	b.isVarDecl = true
 	b.kind = d.Kind
 	b.mut = leafMutable(leaf.node)
+	b.initVars = md.initVars
 	b.bound = true
 	b.sources = append(b.sources, &ast.NodeProvenance{Node: d})
 	if md.recovered {
@@ -1189,6 +1199,8 @@ func (c *checker) destructurePattern(
 	handled.Add(d)
 	md := &moduleDestructure{leaves: map[string]destructureLeaf{}}
 	destructured[d] = md
+	firstVar := c.ctx.varCounter
+	defer func() { md.initVars = varRange{from: firstVar, to: c.ctx.varCounter} }()
 	initType, ok := c.inferVarDeclInit(scope, lvl, d, "")
 	if !ok {
 		return md // MissingInitializerError already reported, so md.ok stays false
