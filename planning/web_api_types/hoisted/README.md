@@ -226,9 +226,19 @@ scope, all colliding on the name. Resolving the collision needs
 belong to: `Event`, `EventTarget`, `EventListener`, `EventListenerOptions` and
 `AddEventListenerOptions`. It is not. The window overload names `WindowEventMap`
 and `this: Window`, and each reaches 1193 of the tree's 2132 declarations, every
-`web:` package included, because `UIEvent.view` is a `Window`. `web:core` is
-`TierCore` and `web:dom` is `TierBrowser`, so the import edge it would need is
-one `CheckTiers` rejects.
+`web:` package included. Every event map value is a concrete event class, and
+the UI event base re-enters `Window`:
+
+```
+GlobalEventHandlersEventMap -> UIEvent -> Window -> Transferable
+  -> OffscreenCanvas -> WebGLRenderingContext
+```
+
+`UIEvent` carries `readonly view: Window | null`, so one member on the base
+class of every pointer and keyboard event is what makes the closure total.
+
+`web:core` is `TierCore` and `web:dom` is `TierBrowser`, so the import edge it
+would need is one `CheckTiers` rejects.
 
 Taking only the untyped overload is no better. `EventTarget.addEventListener`
 already carries that exact signature in `web:core`, so a hoisted copy adds
@@ -280,9 +290,9 @@ their scope, which for `Window` is `web:dom`, where the hoist already put them.
 
 ## Reproducing
 
-The three scripts are in `scripts/`. They read TypeScript's libs from
-`node_modules` and the converted members from a git ref, so run them from that
-directory:
+The scripts are in `scripts/`. Four of them form a pipeline that reads
+TypeScript's libs from `node_modules` and the converted members from a git ref,
+so run them from that directory:
 
 ```sh
 mkdir -p /tmp/hoist
@@ -301,3 +311,18 @@ appends the merged `Navigator` to `core.esc`, so it runs after `emit.mjs` and
 has to be re-run whenever `emit.mjs` is. The files here were
 produced from `claude/undrop-worker-libs`, which is #1635's branch, since
 `web/worker.worker.esc` does not exist on `main` yet.
+
+`closure.mjs` is separate and takes no scratch directory. It reads the converted
+tree in the working copy and reports how many declarations a set of names
+transitively reaches, which is what says whether moving a declaration between
+packages drags the rest of the platform with it:
+
+```sh
+node closure.mjs WindowEventMap
+TRACE=WebGLRenderingContext node closure.mjs GlobalEventHandlersEventMap
+```
+
+The first prints the closure per package against each package's size. `TRACE`
+adds the path the walk took to one name in the closure, which is how the chain
+through `UIEvent` above was found. Every figure in the listener section comes
+from this script.
