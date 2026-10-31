@@ -146,11 +146,19 @@ stands for, so a program writes `window.alert(...)` after importing
 
 The binding and the object are one name rather than two. `import "web:window"`
 binds `window`, and a separate value of that name inside the package would read
-as `window.window`. A namespace's `AsValue` is the mechanism: its contract is
-that a member the namespace does not hold is read off that value, so
-`window.alert(...)` resolves through the `Window` instance and `window.Window`
-resolves as the type. Each scope package names its binding after its own scope,
-so the three are `window`, `worker` and `worklet`.
+as `window.window`.
+
+This is the general rule that a pseudo-package exporting one value is treated as
+that value, and not something scope packages need of their own. `std:console` is
+the same shape: it exports `Console` and a `console` value, and the useful
+spelling is `console.log(...)` rather than `console.console.log(...)`. A
+namespace's `AsValue` carries it, since a member the namespace does not hold is
+read off that value, so `window.alert(...)` resolves through the `Window`
+instance while `window.Window` resolves as the type. Section 5.4 states the rule
+precisely and says why it tests the name rather than counting value exports.
+
+Each scope package names its binding after its own scope, so the three are
+`window`, `worker` and `worklet`.
 
 The number of names a program gets without asking is the thing being held down.
 `hoisted/` routes 239 declarations and counts 176 of them window-only. Hoisting
@@ -330,24 +338,42 @@ rows are still unreachable and why.
 **Not this stage.** Splitting `Transferable` by environment, which is the other
 stream's.
 
-### 5.4 Let a generated package bind its scope object
+### 5.4 A pseudo-package that is one object binds as that object
 
 **Goal.** The mechanism F4 needs, landed before anything depends on it.
 
-A namespace's `AsValue` already does the work: a member the namespace does not
-hold is read off that value. What is missing is a generated package that sets
-it. Today only an npm package whose `.d.ts` writes `export = f` does.
+A namespace's `AsValue` already does the work: `bindNamespace` binds the name in
+both sorts, and a member read looks in the namespace first and falls through to
+that value. What is missing is a pseudo-package that sets it. `exportedSurface`
+in `internal/solver/package_load.go` leaves `AsValue` nil, and only
+`assignedSurface` beside it sets one, reached solely from an npm `.d.ts` writing
+`export = f`.
 
-1. Give `internal/printer` a case for `ast.ExportAssignmentStmt`, which it has
-   none for, so a generated `.esc` file can carry `export = x`.
-2. Have the converter emit one for a package named as a scope package.
-3. Round-trip it: print, reparse, and check the namespace binds `AsValue`.
+The rule is that a pseudo-package exporting one value is treated as that value.
+`std:console` is the case that already exists: it exports `Console` and a
+`console` value, and `console.log(...)` works today only because `std:console`
+is in `ambientPackages` and the ambient layer binds a package's exports
+unprefixed. Under this rule the explicit import works the same way, and the
+ambient layer stops being what makes the common spelling resolve.
 
-**Done when** a converter fixture declares a package with `export = x` and a
-program reads `p.member` off it without the namespace declaring `member`.
+The test is the value whose name is the package's own binding, not a count of
+value exports. `web:window` exports `window` and also `Window`, since a class
+occupies the value sort as well as the type sort, so a count would find two and
+the rule would not fire. `console` in `std:console` and `window` in `web:window`
+each match their package's derived name, and `Window` does not.
 
-**Not this stage.** Any scope package. This is the capability alone, which is
-why it can land first and on its own.
+1. In `exportedSurface`, set `AsValue` to the exported value whose name equals
+   `ast.DeriveImportName(uri)`, when the package has one.
+2. Assert it on `std:console`, where `console.log(...)` must resolve through an
+   explicit `import "std:console"` rather than through the ambient layer.
+
+**Done when** a fixture importing `std:console` calls `console.log` and reads
+`console.Console` as a type, with `std:console` removed from `ambientPackages`
+for the duration of the test.
+
+**Not this stage.** Any scope package, and any `export =` in a generated file.
+The rule reads the declarations the converter already emits, so the printer
+needs no new case.
 
 ### 5.5 Place the portable and family globals
 
