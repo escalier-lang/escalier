@@ -453,6 +453,18 @@ fn f() { seen.set("k", &p) }
 			values: map[string]string{"seen": "Map<string, &{x: number}>"},
 		},
 		{
+			// A read of the map sees the borrow its writable slot holds, with the referent's
+			// literals widened in the checked type as well as in the display.
+			name: "AReadOfAnImmutableBorrowInAWritableSlotSeesItWidened",
+			src: `
+val p = {x: 1}
+val mut seen = Map()
+fn f() { seen.set("k", &p) }
+fn g() { return seen.get("k") }
+`,
+			values: map[string]string{"g": "fn () -> &{x: number} | undefined"},
+		},
+		{
 			// A `var` binding can be rebound to a borrow of any `{x: number}`. A `val` binding
 			// of the same borrow cannot, so it keeps the literal that belongs to p.
 			name: "AnImmutableBorrowInAReassignableBindingWidens",
