@@ -65,10 +65,24 @@ values form a total order:
 | `TierPortable` | 1 | every non-browser WinterTC runtime, and the browser. |
 | `TierBrowser` | 2 | a browser alone. |
 
-`webTiers` assigns one to each of the 24 `web:*` packages. Nine are portable,
-including `web:fetch`, `web:url`, `web:streams` and `web:websocket`. Ten are
+`webTiers` assigns one to each of the 24 `web:*` packages. The nine portable
+ones are `web:fetch`, `web:url`, `web:streams`, `web:file`, `web:crypto`,
+`web:performance`, `web:websocket`, `web:compression` and `web:wasm`. Ten are
 browser, including `web:dom`, `web:workers`, `web:service_worker`,
 `web:indexeddb` and `web:webgl`. `web:core` is the only core package.
+
+Core and portable both promise availability off the browser, so the line between
+them is not about where code runs. It is the WinterTC minimum common API, which
+a runtime must implement to claim conformance, against the wider set every such
+runtime implements in practice. What the ordering buys is one rule: `CheckTiers`
+refuses an edge going up, so `web:core` may not name `web:fetch` while
+`web:fetch` may name `web:core`. The base cannot come to depend on the layer
+above it.
+
+The portable promise is per package and already leaks. `tier.go`'s own comment
+says so and gives the case: `web:performance` is portable and contains
+`PerformanceTiming`, which Node 22 does not define. #1586 tracks tiering a
+declaration rather than a package, which is what `@env` does.
 
 ### 4.2 The check is on import edges, and runs in the converter
 
