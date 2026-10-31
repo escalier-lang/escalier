@@ -322,6 +322,11 @@ declaration. Nothing else may restate it. A package file name, a partition entry
 and a directory layout must not carry an environment claim that can drift from the
 declaration's own.
 
+The tier rank is the live case. It answers a different question, how many
+runtimes ship a package, but once `@env` lands the two overlap enough to
+disagree, so one of them has to go or the division has to be stated. #1614 and
+§2.5 of the plan carry it.
+
 **N2. A package is importable as a unit.** Every declaration a package holds is
 reachable from every environment that may import the package. Splitting a family
 across packages is acceptable; a package no environment can fully use is not.

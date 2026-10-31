@@ -14,9 +14,14 @@ green.
 `planning/web_api_types/` Stage 1 adds `@webref/idl` and emits a checked-in Go
 table carrying `[Exposed]` per interface and `[Global=...]` per global scope.
 
-Nothing here can start before it. An `@env("window")` is a claim about the
-other eight environments, and `[Exposed]` is the only thing that knows whether
-the claim is true.
+§1.1 cannot start before it. An `@env("window")` is a claim about the other
+eight environments, and `[Exposed]` is the only thing that knows whether the
+claim is true.
+
+The rest of phase one does not wait. §1.2 reads a `package.json` field, §1.3
+checks references against whatever the annotations say, and §1.4 is tooling over
+§1.2's answer, so all three can be built against a hand-written annotation set
+and switched to the generated one when it lands.
 
 ## What main holds today
 
@@ -148,9 +153,13 @@ on it, without importing `web:dom`.
 F5, and the end of #1613.
 
 Open question 1 in `requirements.md` has the three mechanisms and which one
-needs new machinery. Replace `EnvIndex`'s intersection over a duplicate name,
-which is right for the interface and `declare var` pair and wrong for disjoint
-per-environment copies.
+needs new machinery.
+
+Whatever name index §1.1 builds must not intersect over a duplicate name. The
+closed stack's `EnvIndex` did, which is right for the interface and `declare
+var` pair that share a name and wrong for disjoint per-environment copies, where
+it yields the empty set. That index does not exist on `main`, so this is a
+constraint on §1.1's design rather than a change to existing code.
 
 Split `Transferable` by environment, sixteen arms for a page or a dedicated
 worker and ten for the rest.
@@ -165,6 +174,26 @@ worker and ten for the rest.
 Turn on the unsatisfiable-import check, which now has something to catch: a page
 importing the worker package, or a dependency whose entrypoint does not cover a
 worker. F2.
+
+### 2.5 Retire the tier machinery
+
+N1 and #1614. Once `@env` records where a declaration exists, the tier rank is a
+second mechanism answering an overlapping question, and N1 says one fact lives in
+one place.
+
+Retiring it is not a rename. A tier answers whether a package exists off the
+browser at all, which `@env`'s nine browser scopes do not answer, so the WinterTC
+question needs a home before `tier.go` can go. The options are an environment for
+each non-browser runtime, which the non-goals currently exclude, or a separate
+per-package claim that keeps the portability axis and drops the ordering.
+
+Phase two is where this becomes pressing, because `CheckTiers` and the reference
+check would both be live and would disagree: a tier forbids a portable package
+naming a browser one, where `@env` would permit it if both declarations exist in
+the importer's environments.
+
+**Done when** either `tier.go` is gone and the WinterTC question has a stated
+home, or the two mechanisms have a documented division and #1614 says which.
 
 ## Phase three: worklets
 

@@ -1,13 +1,15 @@
 # Implementation plan: Improving the web API type definitions
 
 `requirements.md` in this folder states the problems and the requirements F1
-through F8 and N1 through N5 referenced here.
+through F9 and N1 through N5 referenced here.
 
 Stages land on their own and leave the tree green. Each names what it leaves
 alone.
 
-`planning/web_environments/` is the other stream. Stage 1 here is its
-prerequisite; nothing else in either folder is ordered against the other.
+`planning/web_environments/` is the other stream, and two stages here are
+ordered against it. Stage 1 is the prerequisite for that stream's phase one,
+and Stage 4 is what its phase two needs, since a worker cannot import the
+`web:dom` the portable globals currently sit in.
 
 ## What main holds today
 
@@ -57,7 +59,8 @@ pinning its contents, so N4 stands.
    global scope, `[Transferable]`, and each interface's `constructor()`
    operations.
 3. Emit a Go table and check it in, so conversion stays hermetic and offline.
-   The hand-written tables in `internal/dts_to_esc` are the shape to follow.
+   `webTiers` in `internal/dts_to_esc/tier.go` is the shape to follow: a map
+   literal in its own file with a comment saying what each entry claims.
 4. Add a test asserting the table against the pinned `@webref/idl` version.
 
 **Done when** the table is checked in, the test passes, and `go test ./...`
@@ -69,16 +72,24 @@ needs no network.
 
 **Goal.** F2, and #1645.
 
-1. In `constructorSide` in `internal/dts_to_esc/dts_to_esc.go`, drop the
+1. In `constructorSide` at `internal/dts_to_esc/dts_to_esc.go:470`, drop the
    construct signatures for an interface the table says has no
    `constructor()`.
 2. Keep the rest of the trio fusion unchanged.
-3. Check what the overlay was correcting here and remove the entries the table
-   now answers.
+3. Check the overlay's constructor entries, but do not expect to remove them.
+   `file.replace.esc` gives `FormData` a no-argument constructor because the
+   browser-typed overload is not expressible in a portable package, which is a
+   tier problem and not a `.d.ts` error, so the table does not answer it. #1586
+   is where that one goes.
 
 **Done when** `new ImageBitmap()` and `new MessagePort()` are rejected,
 `x is ImageBitmap` still compiles and still narrows, and
 `check_generated_tree` passes. The regenerated tree will show a large diff.
+
+The narrowing half of that needs care, because #1646 reports that a guard on an
+alias to a class matches every value. A guard on `ImageBitmap` names the class
+directly and is unaffected, but anything this stage checks through an alias
+would pass for the wrong reason.
 
 **Not this stage.** The real parameter lists. WebIDL carries them for the
 constructible cases and replacing TypeScript's is separate.
@@ -87,11 +98,14 @@ constructible cases and replacing TypeScript's is separate.
 
 **Goal.** F3.
 
-Generate `Transferable` from `[Transferable]`. The union gains six members:
-`MIDIAccess`, `MediaStreamTrack`, `MediaStreamTrackHandle`,
+Generate `Transferable` from `[Transferable]`. The tree declares 11 arms, the 10
+WebIDL interfaces plus `typed_arrays.ArrayBuffer`, where WebIDL marks 16, so the
+union gains six: `MIDIAccess`, `MediaStreamTrack`, `MediaStreamTrackHandle`,
 `WebTransportDatagramsWritable`, `WebTransportReceiveStream` and
-`WebTransportSendStream`. Four of those are not in the tree at all and have to
-be ingested first.
+`WebTransportSendStream`.
+
+`MIDIAccess` and `MediaStreamTrack` are already in `web/dom.esc`. The other
+four are not in the tree at all and have to be ingested first.
 
 **Done when** the union is generated and `planning/web_environments/transferable.md`'s
 sixteen-row table matches what the tree declares.
@@ -140,8 +154,14 @@ everywhere.
 1. Add a test pinning the set of names the ambient scope binds.
 2. Record in `docs/03_imports.md` where the shape-loading line now falls, since
    25 packages bind ambiently and the document predates that.
-3. Retire `coreURI` if the ambient scope has made it redundant. It is still
-   referenced in three files.
+3. Decide whether the two unqualified-binding paths should agree. `coreURI` is
+   not redundant: its own comment says it "still takes an import, which is the
+   whole difference between it and the prelude", and `bindCoreExports` binds
+   core's exports into the file scope, which is a child of the module scope, so
+   a module's own declaration wins and a collision is reported. The ambient
+   scope binds from a parent layer, where a module declaration shadows
+   silently. One package therefore has two bindings with two shadowing rules,
+   and whether that is deliberate wants settling before either moves.
 
 **Done when** the name set is pinned and a deliberate addition has to update the
 test.
