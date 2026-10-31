@@ -67,10 +67,21 @@ func indexUnder[T any](m map[string]T, decl T, names ...string) {
 // planning/ownership_rules/requirements.md. idx holds the declarations a type in a
 // signature may name.
 //
-//   - A parameter whose type is an object type becomes a `&mut` borrow. A `.d.ts` does
-//     not say whether the callee writes the argument, so I3 assumes it does. The caller
-//     keeps ownership, since an owned parameter would move the caller's value on every
-//     call, which most library functions do not need.
+// A `.d.ts` leaves most ownership facts open: whether a callee writes an argument, keeps
+// it, or returns part of it. Each rule below is meant to be the most conservative choice
+// the declaration allows. Under I3, an unsettled fact takes the form that rejects every
+// program the true answer would reject, so a wrong guess makes a call stricter than it
+// needs to be, never unsound. The one exception is retention, noted in the first rule.
+//
+//   - A parameter whose type is an object type becomes a `&mut` borrow. A TypeScript
+//     parameter is writable unless its type says otherwise, so the callee may write the
+//     argument. A `&` would accept a caller that keeps reading the argument through
+//     another path while the callee writes it, which the rules must reject. A `&mut`
+//     costs only a caller whose binding or borrow is immutable. The borrow lasts for the
+//     call.
+//     I3 would treat a parameter that may be stored as escaping, but an owned or
+//     `'static` default would make every library call give up its arguments, so
+//     retention is left to curated facts.
 //   - A primitive, a function or a promise parameter keeps its type as written. Each is a
 //     value type under I2, with no place to lend, and the checker rejects a written
 //     `&mut string`.
