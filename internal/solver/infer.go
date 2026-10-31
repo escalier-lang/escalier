@@ -349,6 +349,14 @@ type checker struct {
 	// inferFunc reads and clears it on entry, so a lambda nested inside the body does not
 	// take the member's receiver as its own.
 	memberReceiver *ast.MethodReceiver
+	// argFunc is the function expression inferCallArgs is about to infer as a call argument,
+	// consumed by the inferFunc call that walks it. inferFunc reads and clears it on entry, so a
+	// lambda nested inside the argument's body is not taken for an argument itself.
+	argFunc *ast.FuncExpr
+	// readThroughVars holds the inner variable of each borrow inferFunc infers for an
+	// unannotated parameter, and the result variable of each field read through one of those
+	// borrows. fieldReadBorrow reads a field off such a borrow as a borrow at the same lifetime.
+	readThroughVars set.Set[*soltype.TypeVarType]
 
 	// memberSelf is set beside memberReceiver for an instance member, by inferMemberFunc, and
 	// carries what inferFunc needs to bind the member's `self` and build its SelfParam.
@@ -562,6 +570,11 @@ type funcCtx struct {
 	// body; AnalyzeMoves(cfg, moveSites) then yields the branch-merged consumed
 	// lattice the use-after-move check reads after the body walk completes.
 	moveSites map[liveness.StmtRef]set.Set[liveness.VarID]
+	// openEscapes holds the VarID of each binding the body passes whole as a call argument
+	// into a destination that outlives the frame and whose type leaves ownership open.
+	// noteOpenEscapes records them, and markOpenEscapeParams reads them once the body is
+	// walked.
+	openEscapes set.Set[liveness.VarID]
 	// moveNodes maps a consumed binding's VarID to the node that moved it, so a
 	// UseAfterMoveError can point its "moved here" related span at the move site. A
 	// binding moved on more than one path keeps the last-recorded move node, which

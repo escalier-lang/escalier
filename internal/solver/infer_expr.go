@@ -563,6 +563,10 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// that is not an instance member, a constructor included, since a constructor binds its own.
 	member := c.memberSelf
 	c.memberSelf = nil
+	// Take the argument marker inferCallArgs left, and clear it so a lambda nested in the body
+	// is not taken for a call argument.
+	isArg := c.argFunc != nil && ast.Node(c.argFunc) == node
+	c.argFunc = nil
 	// Report any named lifetime the signature uses without binding it in its own `<…>`
 	// list, and the symmetric unused binder. Run before resolving the params so the scan
 	// reads the written names, not what namedLifetime has since interned.
@@ -647,6 +651,14 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			if v, ok := pt.(*soltype.TypeVarType); ok {
 				v.Open = true
 			}
+		}
+		// F3 makes an unannotated parameter that does not escape a borrow. A parameter the body
+		// only reads through does not escape, so it borrows immutably, as `p` in
+		// `fn read(p) { return p.x }` does. A function passed as a call argument keeps a plain
+		// variable for each parameter, since the callee's signature gives each one its type.
+		if v, ok := pt.(*soltype.TypeVarType); ok && !written && !isArg && body != nil && identParamOnlyReadThrough(pat, rest, optional, body) {
+			pt = soltype.NewRef(false, c.ctx.freshLifetime(lvl), v)
+			c.addReadThroughVar(v)
 		}
 		if name, ok := identPatName(pat); ok {
 			// The param's IdentPat IS its definition site, so record it as the binding's
@@ -921,6 +933,16 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// A body that moves an unannotated parameter takes ownership of the caller's value,
 		// so each call moves the argument it passes there.
 		c.markMovedParams(sig.Params, params)
+		// D9 decides an unannotated parameter that escapes where the destination's type
+		// leaves ownership open. A parameter the body cannot write is a `'static` borrow, so
+		// the caller keeps reading its value. A `mut` parameter may be written, so it stays
+		// owned. This runs after markMovedParams, since a parameter the body also moves is
+		// owned by that move. A function passed as a call argument takes its parameter types
+		// from the callee, so the callee decides their ownership, as it does for a read-through
+		// parameter.
+		if !isArg {
+			c.markOpenEscapeParams(sig.Params, params)
+		}
 		retExprs = c.fn.returnExprs
 		throws = c.fn.throws
 		raised = c.fn.raised
@@ -2001,6 +2023,10 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 		ret, fn = c.applyCallShape(lvl, e, target.callee, target.fn, target.secondInstance, args)
 	}
 	c.recordCallArgEffects(e, fn, consumeRef, hasConsumeRef)
+	// A module-level receiver outlives every local, so an argument its method stores there
+	// escapes. A destination typed by an inference variable has no ownership yet, so D9 decides
+	// it from the enclosing function's parameter once the body is walked.
+	c.noteOpenEscapes(scope, e, fn)
 	if hasConsumeRef {
 		c.consumeOnceCallee(e, consumeRef)
 	}
@@ -2438,6 +2464,9 @@ func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr, preset m
 		if t, ok := preset[a]; ok {
 			args[i] = t
 			continue
+		}
+		if fe, ok := a.(*ast.FuncExpr); ok {
+			c.argFunc = fe
 		}
 		args[i] = c.inferExpr(scope, lvl, a)
 	}
@@ -4201,11 +4230,19 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 // unchanged. A usage-inferred TypeVar carrier and an index path with no
 // concrete property both fall into this branch. The inferred-receiver paths
 // keep their pre-PR-4 behaviour, so only annotated reference shapes pick up
-// the new borrow.
+// the new borrow. The exception is an immutable borrow whose inner is in
+// readThroughVars, which reads as `fieldVar` borrowed at the receiver's lifetime.
 func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Type, name string, lvl int) soltype.Type {
-	_, recvMut, recvLt := soltype.UnwrapRef(recv)
+	recvInner, recvMut, recvLt := soltype.UnwrapRef(recv)
 	prop, ok := c.declaredField(recv, name)
 	if !ok {
+		// The field's type is not known yet, so the read keeps the receiver's borrow, as a read
+		// through a written `&` parameter keeps it for a reference-shaped field. A use that needs
+		// a value type copies the field out, which constrain allows for a borrow of a variable.
+		if v, isVar := recvInner.(*soltype.TypeVarType); isVar && recvLt != nil && !recvMut && c.readThroughVars.Contains(v) {
+			c.addReadThroughVar(fieldVar)
+			return soltype.NewRef(false, recvLt, fieldVar)
+		}
 		return fieldVar
 	}
 	if !prop.Optional {
@@ -4221,6 +4258,14 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 		return newUnion(nil, []soltype.Type{borrow, &soltype.UndefinedType{}})
 	}
 	return fieldVar
+}
+
+// addReadThroughVar adds v to readThroughVars.
+func (c *checker) addReadThroughVar(v *soltype.TypeVarType) {
+	if c.readThroughVars == nil {
+		c.readThroughVars = set.NewSet[*soltype.TypeVarType]()
+	}
+	c.readThroughVars.Add(v)
 }
 
 // declaredField returns the property named name on the field list a receiver of type recv
@@ -4241,6 +4286,15 @@ func (c *checker) declaredField(recv soltype.Type, name string) (*soltype.Proper
 	}
 	obj, ok := carrier.(*soltype.ObjectType)
 	if !ok {
+		return nil, false
+	}
+	// A receiver written through a mapped type, such as `&mut Readonly<{a: {b: number}}>`,
+	// declares `a` only after reduction. Reading the reduced field keeps the receiver's `mut`
+	// on the field's borrow, the same as the inline `&mut {readonly a: {b: number}}`.
+	obj = c.reducedObject(obj)
+	// A member that stays unreduced may declare or override any field, so no field read off
+	// the rest of the list is the one the receiver holds.
+	if soltype.HasResidualElem(obj.Elems) {
 		return nil, false
 	}
 	return obj.Prop(name)

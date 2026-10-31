@@ -245,7 +245,10 @@ operation that passes the value does not change it.
 | Immutable borrow, `&T` | Rejected by T6 | Copy | Rejected by T4 |
 | Mutable borrow, `&mut T` | Rejected by T6 | Copy, narrowed to `&` by T4 | Copy |
 
-A value type has no borrow form, so its destination is always bare. Each binding
+A value type has no borrow form, so its destination is always bare. A generic
+`&T` whose `T` is a value type stands for `T`. With `fn f<T>(x: &T)`, the call
+`f(5)` copies `5` into `x`, and a read of a value-type field through a `&` copies
+the field out. Each binding
 in the function below shows one outcome, and the read of `q.x` shows the error a
 use after a move reports.
 
@@ -297,13 +300,15 @@ fn same(p: &{x: number}) {
 An unannotated parameter takes its ownership from the body. `store` lets `p`
 escape into module-level state, so its parameter is owned and the call moves
 `a`. `read` only reads `p`, so its parameter is a borrow and the call borrows
-`b`:
+`b`. A field read through that borrow keeps it, as a read through a written
+`&` parameter does, so `read` returns `&'a T0`. A use that needs a value type,
+such as the `n` in `b.x + n`, copies the field out of the borrow:
 
 ```esc
 var sink = {x: 0}
 
 fn store(p) { sink = p }     // store: fn (p: {x: number}) -> undefined
-fn read(p) { return p.x }    // read: fn (p: &{x: number}) -> number
+fn read(p) { return p.x }    // read: fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0
 
 fn go() -> number {
     val a = {x: 1}
@@ -1639,23 +1644,6 @@ export fn go() -> number {
 }
 ```
 
-**B4. `mut` does not reach through a mapped type.** The two functions below
-declare the same parameter type, once written out and once through
-`Readonly<T>`. T3 says `mut` reaches every owned layer, including through type
-arguments, so both should check clean. The first does, and the second reports
-`cannot constrain immutable object <: mutable object` at the write. An owned
-parameter written `mut x: Readonly<{a: {b: number}}>` fails the same way.
-
-```esc
-fn resetWritten(x: &mut {readonly a: {b: number}}) {
-    x.a.b = 0
-}
-
-fn resetMapped(x: &mut Readonly<{a: {b: number}}>) {
-    x.a.b = 0
-}
-```
-
 **B5. A call to an unannotated escaping parameter does not move its argument.**
 The compiler infers `store` below as `fn (p: {x: number}) -> undefined`, an
 owned parameter, yet `store(a)` records no move and `a.x` checks clean. With
@@ -1679,7 +1667,7 @@ fn go() -> number {
 **B6. An unannotated parameter that does not escape is inferred as owned.** The
 compiler infers `fn read(p) { return p.x }` as
 `fn <T0>(p: {x: T0}) -> T0`. F3 makes that parameter a borrow, so the
-signature should be `fn <T0>(p: &{x: T0}) -> T0`. Today `read(&b)` reports
+signature should be `fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0`. Today `read(&b)` reports
 `cannot use borrowed &object as owned object`, and `read(b)` is accepted
 without moving `b`.
 
@@ -1751,7 +1739,7 @@ converter keeps `Readonly<T>` as written and picks `&` or `&mut` for the
 parameter from its other signals, falling back to I3 when they are uncertain.
 In the declaration below, `reset` cannot reassign `x.a` but can still run
 `x.a.b = 0`. The Escalier signature `reset(x: &mut Readonly<{a: {b: number}}>)`
-allows and forbids the same writes, once B4 is fixed.
+allows and forbids the same writes.
 
 ```ts
 declare function reset(x: Readonly<{a: {b: number}}>): void;
@@ -1957,8 +1945,7 @@ The steps:
 6. Update the declaration converter to follow I1 through I3. It keeps
    `Readonly<T>` as written, emits `&T` only when no slot reachable through
    `T` is writable, and fixes `classifyExplicitSignal` in
-   [mutability.go](../../internal/dts_to_esc/mutability.go) to match. B4 has to
-   be fixed first, since I1's `&mut Readonly<T>` depends on it.
+   [mutability.go](../../internal/dts_to_esc/mutability.go) to match.
 7. Build the event lowering and the single control-flow pass behind a flag. Run
    it alongside the current checks and compare diagnostics across every test and
    fixture. Resolve each difference as a bug in the old checks or a change to the
@@ -2001,7 +1988,6 @@ Each known bug closes at a step:
 | B1 | Step 3, since F4 rejects the unwritten borrow | No |
 | B2 | Step 7, or sooner by its own fix to the current checker | Yes |
 | B3 | Step 3, since F4 rejects the annotation-only borrow | Yes |
-| B4 | Its own fix, which step 6 needs first | No |
 | B5 | Step 4 | Yes |
 | B6 | Step 4 | No |
 | B7 | Step 5 | Yes |

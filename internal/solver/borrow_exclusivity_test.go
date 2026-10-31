@@ -800,7 +800,7 @@ func TestFieldReadThroughBorrow(t *testing.T) {
 					val d: {x: number} = h.f
 				}
 			`,
-			want: []string{"3:13-3:24: cannot use borrowed &t3 as owned object"},
+			want: []string{"3:13-3:24: cannot use borrowed &object as owned object"},
 		},
 		// None of these reads creates a borrow, so none needs one written:
 		//   - `o.f` reads an owned receiver and yields the owned field.
