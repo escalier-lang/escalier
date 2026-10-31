@@ -128,6 +128,10 @@ func (c *checker) inferScriptIn(scope *Scope, script *ast.Script) (*Scope, *Info
 	// here too. With the whole body walked, replay the recorded reads against the
 	// consumed lattice to report use-after-move.
 	c.checkUseAfterMoves()
+	// The whole script is inferred, so every flow F3 can settle is settled, and the rest
+	// take the answer settleAllFlows gives what it cannot see.
+	c.finishOwnershipEvents()
+	c.settleAllFlows()
 	// Every class the script declares is inferred, so each superclass edge and body is
 	// final. Check the members each subclass redeclares against the ones they override.
 	c.settleQueuedVariance()

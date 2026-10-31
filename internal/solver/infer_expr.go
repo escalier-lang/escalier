@@ -477,6 +477,7 @@ func (c *checker) resolveIdentPath(scope *Scope, lvl int, e *ast.IdentExpr, objP
 		// member read records the full place instead.
 		if !objPos {
 			c.recordUse(e, bindingType(b))
+			c.emitRead(e)
 		}
 		place := placeOf(e.Name, b, t)
 		c.noteMutPlace(e, place)
@@ -918,6 +919,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		extraVarIDs := c.runLivenessPrePass(fnScope, sig.Params, recv, closure, enclosed, paramTypes, body)
 		recordParamVarIDs(c.varIDs, fnScope, sig.Params)
 		recordExtraParamVarIDs(fnScope, extraVarIDs)
+		c.registerUnsettledParams(sig.Params, params)
 		// Walk the body for type-checking and to collect its ReturnStmts; the
 		// block's TAIL value is intentionally discarded. Unlike a value-position
 		// block, where the last expression IS the block's value, a function body's
@@ -943,6 +945,10 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		if !isArg {
 			c.markOpenEscapeParams(sig.Params, params)
 		}
+		// The parameters' ownership is now settled, so a flow out of or into one of them can
+		// become its event.
+		c.settleParams(params)
+		c.finishOwnershipEvents()
 		retExprs = c.fn.returnExprs
 		throws = c.fn.throws
 		raised = c.fn.raised
@@ -1715,6 +1721,7 @@ func (c *checker) writtenParamType(scope *Scope, p *ast.Param, lvl int) (soltype
 // the borrow leaves the source usable where a bare `val q = p` would consume it.
 func (c *checker) inferBorrow(scope *Scope, lvl int, e *ast.BorrowExpr) soltype.Type {
 	c.noteBorrowSite(e)
+	c.emitBorrow(e)
 	// PR 4. An explicit borrow of a field path takes the receiver-bounded
 	// lifetime of the implicit read at field granularity. The dispatch covers
 	// both `MemberExpr` and the constant-string `IndexExpr` form, so
@@ -2008,6 +2015,7 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 	// callee comes before the arguments so moves and borrows record in evaluation order.
 	// In `obj.m(take(obj))` the receiver read comes before the move.
 	consumeRef, hasConsumeRef := c.currentStmtRef()
+	eventRef, hasEventRef := c.eventStmtRef()
 	// A closure stored into a module-level binding, or passed to a parameter that keeps it, may
 	// run during a later call.
 	if hasConsumeRef {
@@ -2023,6 +2031,9 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 		ret, fn = c.applyCallShape(lvl, e, target.callee, target.fn, target.secondInstance, args)
 	}
 	c.recordCallArgEffects(e, fn, consumeRef, hasConsumeRef)
+	if hasEventRef {
+		c.emitCallFlows(e, fn, eventRef)
+	}
 	// A module-level receiver outlives every local, so an argument its method stores there
 	// escapes. A destination typed by an inference variable has no ownership yet, so D9 decides
 	// it from the enclosing function's parameter once the body is walked.
@@ -2716,6 +2727,9 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	if c.fn != nil {
 		assignStmt = c.fn.currentStmt
 	}
+	// The assignment's ownership events attach to the CFG point it runs at, read before the
+	// RHS for the same reason.
+	eventRef, hasEventRef := c.eventStmtRef()
 	if target, ok := e.Left.(*ast.IdentExpr); ok {
 		if b, found := c.lookupValueBinding(scope, target.Name); found {
 			if closure, ok := e.Right.(*ast.FuncExpr); ok && !b.ModuleLevel {
@@ -2731,6 +2745,11 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		}
 	}
 	sourceT := c.inferExpr(scope, lvl, e.Right)
+	// The assignment's events read the types its checks record, so they are emitted once
+	// every path below has returned.
+	if hasEventRef {
+		defer c.emitAssignFlow(scope, e, eventRef)
+	}
 	// Record `undefined` on e up front as the recovery type. Every error path below
 	// returns undefinedT without recording a type, so this guarantees the node is typed
 	// on failure. The success path overwrites it with the stored value's type; see the
@@ -3522,8 +3541,12 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 	// Resolve the enclosing statement's CFG point before inferring elements, which can
 	// overwrite c.fn.currentStmt with an inner branch statement.
 	stmtRef, hasStmtRef := c.currentStmtRef()
+	eventRef, hasEventRef := c.eventStmtRef()
 	pieces := make([]tuplePiece, 0, len(e.Elems))
 	variadic := false
+	// spreadSeen records whether a spread came before the current element, after which the
+	// element's position in the tuple is not known.
+	spreadSeen := false
 	for i, el := range e.Elems {
 		spread, ok := el.(*ast.ArraySpreadExpr)
 		if !ok {
@@ -3531,9 +3554,24 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 			pieces = append(pieces, tuplePiece{fixed: []soltype.Type{elemT}})
 			// Building an owned value into the tuple moves it.
 			c.consumeIntoLiteral(scope, el, elemT, stmtRef, hasStmtRef)
+			// The element is held at its position, the segment a tuple pattern reads it at. An
+			// element after a spread is held by the whole tuple.
+			if hasEventRef {
+				var path []placeSeg
+				if !spreadSeen {
+					path = []placeSeg{{kind: namedSeg, name: strconv.Itoa(i)}}
+				}
+				c.emitTempFlow(el, e, path, flowDest{kind: ownedDest}, eventRef)
+			}
 			continue
 		}
-		switch op := c.inferExpr(scope, lvl, spread.Value).(type) {
+		spreadSeen = true
+		spreadT := c.inferExpr(scope, lvl, spread.Value)
+		// A spread is an owned destination, as F1 states.
+		if hasEventRef {
+			c.emitTempFlow(spread.Value, e, nil, flowDest{kind: ownedDest}, eventRef)
+		}
+		switch op := spreadT.(type) {
 		case *soltype.TupleType:
 			piece := tuplePiece{fixed: op.Elems}
 			shape, shaped := c.ctx.shapeOf(op)
@@ -3690,6 +3728,7 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 	// Resolve the enclosing statement's CFG point before inferring property values,
 	// which can overwrite c.fn.currentStmt with an inner branch statement.
 	stmtRef, hasStmtRef := c.currentStmtRef()
+	eventRef, hasEventRef := c.eventStmtRef()
 	// Each element contributes one field list, folded left to right by mergeSpreadOperands so a
 	// later element wins over an earlier key. A property contributes its single field; a spread
 	// contributes the operand object's fields, so `{...a, x: 1}` merges a's fields under x.
@@ -3699,6 +3738,10 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 	for _, elem := range e.Elems {
 		if spread, ok := elem.(*ast.ObjSpreadExpr); ok {
 			op := c.inferExpr(scope, lvl, spread.Value)
+			// A spread is an owned destination, as F1 states.
+			if hasEventRef {
+				c.emitTempFlow(spread.Value, e, nil, flowDest{kind: ownedDest}, eventRef)
+			}
 			if _, errored := op.(*soltype.ErrorType); errored {
 				// The operand already reported its own failure; absorb it rather than layering a
 				// SpreadNotObjectError on the recovery sentinel, the object twin of the array arm.
@@ -3742,6 +3785,10 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 			keyT := c.inferExpr(scope, lvl, computed.Expr)
 			ft := c.inferExpr(scope, lvl, value)
 			c.consumeIntoLiteral(scope, value, ft, stmtRef, hasStmtRef)
+			// A computed key names no field segment, so the value is held by the whole object.
+			if hasEventRef {
+				c.emitTempFlow(value, e, nil, flowDest{kind: ownedDest}, eventRef)
+			}
 			keyName, keySet, ok := c.computedObjKey(computed, keyT)
 			switch {
 			case !ok:
@@ -3762,6 +3809,10 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 		operandElems = append(operandElems, []soltype.ObjTypeElem{&soltype.PropertyElem{Name: name, Type: ft}})
 		// Building an owned value into the object moves it.
 		c.consumeIntoLiteral(scope, value, ft, stmtRef, hasStmtRef)
+		// A literal with no expected type is an owned destination, as F1 states.
+		if hasEventRef {
+			c.emitTempFlow(value, e, []placeSeg{{kind: namedSeg, name: name}}, flowDest{kind: ownedDest}, eventRef)
+		}
 	}
 	elems := mergeSpreadOperands(operandElems)
 	if len(sigKeys) > 0 {
@@ -5085,6 +5136,12 @@ func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.
 // non-diverging half constrains into one fresh branch-join var, exactly as inferIfElse
 // joins its two branches.
 func (c *checker) inferIfVal(scope *Scope, lvl int, e *ast.IfValExpr) soltype.Type {
+	// The pattern takes its parts from the target on entry to the consequent, once the
+	// pattern's bindings are typed.
+	siteRef, hasSiteRef := c.eventStmtRef()
+	if ref, ok := c.branchEntryRef(e.Target, 0, siteRef, hasSiteRef); ok {
+		defer c.emitPatternFlows(e.Pattern, e.Target, ref)
+	}
 	scrutinee := c.inferExpr(scope, lvl, e.Target)
 	res := c.freshAt(lvl)
 	c.recordProv(res, e, IfValBranch)
@@ -5293,6 +5350,15 @@ func (c *checker) typeAdmits(ann, t soltype.Type) bool {
 // match. An annotation pins the binding's type, so that value has to fit it. Otherwise
 // joinFallbackLeaves takes the value apart with the same pattern and joins each leaf.
 func (c *checker) inferValElse(scope *Scope, lvl int, d *ast.VarDecl) {
+	// The pattern takes its parts from the initializer where the matched path reaches the
+	// rest of the block, once the pattern's bindings are typed. The CFG builder adds the
+	// edge to the `else` block first and the edge to that join block second.
+	siteRef, hasSiteRef := c.eventStmtRef()
+	defer func() {
+		if ref, ok := c.branchEntryRef(d.Init, 1, siteRef, hasSiteRef); ok {
+			c.emitPatternFlows(d.Pattern, d.Init, ref)
+		}
+	}()
 	// The UCS IR names no step for a rest before the last element, so the walk below binds
 	// nothing under one and cannot report it.
 	c.reportInteriorRests(d.Pattern)
@@ -5485,6 +5551,16 @@ func monoTypeOf(b ValueBinding) (soltype.Type, bool) {
 //
 // Exhaustiveness is checked off the same normalized form by checkCondExhaustive.
 func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Type {
+	// Each arm's pattern takes its parts from the target on entry to the arm, once the arm's
+	// bindings are typed.
+	siteRef, hasSiteRef := c.eventStmtRef()
+	defer func() {
+		for i, arm := range e.Cases {
+			if ref, ok := c.branchEntryRef(e.Target, i, siteRef, hasSiteRef); ok {
+				c.emitPatternFlows(arm.Pattern, e.Target, ref)
+			}
+		}
+	}()
 	scrutinee := c.localScrutinee(lvl, e, c.inferExpr(scope, lvl, e.Target))
 	// Snapshot the scrutinee before any arm binds. A literal pattern adds its literal as a
 	// lower bound, which would otherwise leak a phantom member into the coalesced union read

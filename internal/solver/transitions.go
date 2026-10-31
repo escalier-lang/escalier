@@ -772,6 +772,8 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 	c.fn.stmtToRef = stmtToRef
 	c.fn.varIDNames = renameResult.VarIDNames
 	c.fn.varIDTypes = varIDTypes
+	c.startOwnershipEvents(renameResult.VarIDNames)
+	c.fn.exprRefs = exprStmtRefs(cfg)
 
 	// Retain the CFG and the move-engine state. The body walk records consume sites
 	// into moveSites, which liveness.AnalyzeMoves folds into the branch-merged consumed

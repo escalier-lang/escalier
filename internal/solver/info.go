@@ -44,6 +44,9 @@ type Info struct {
 	// call does not move its argument into the parameter's type, as with
 	// `fn f(mut p: A | B)`.
 	inertMut set.Set[*ast.IdentPat]
+	// ownership maps the node of each function whose body was walked to the ownership events
+	// that body emitted. A script's top level is keyed by a nil node.
+	ownership map[ast.Node]*ownershipEvents
 	// ctx is the Context of the run that recorded this table, or nil for a table built
 	// by NewInfo. MemberObject reads the class and alias registries it holds.
 	ctx *Context
