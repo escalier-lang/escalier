@@ -11,6 +11,13 @@ window-only members routed to `web:dom` below stay `Window` members under that
 rule and go to `web:window`, so read those rows as what each member is rather
 than as where it lands.
 
+They also predate the nine-name vocabulary. A member carrying no `@env` here
+meant all four environments the vocabulary then had, and now means all nine. So
+the unannotated declarations in `core.esc`, `setTimeout` and `atob` among them,
+now claim the four worklets as well. That is wrong, since they come from
+`WindowOrWorkerGlobalScope`, which `WorkletGlobalScope` does not include. They
+need `@env("window", "worker")` when regenerated.
+
 ## Method
 
 **Which scopes provide a member** comes from the interface inheritance in
@@ -22,7 +29,7 @@ member is recorded against every scope that reaches it.
 | `Window` | `window` |
 | `GlobalEventHandlers`, `WindowEventHandlers` | `window` |
 | `WindowLocalStorage`, `WindowSessionStorage` | `window` |
-| `WindowOrWorkerGlobalScope` | every environment |
+| `WindowOrWorkerGlobalScope` | `window` and every worker, not the worklets |
 | `AnimationFrameProvider` | `window`, `dedicated_worker` |
 | `FontFaceSource` | every worker, through `WorkerGlobalScope` |
 | `MessageEventTarget` | `dedicated_worker` |

@@ -80,6 +80,13 @@ of that family. The remainder is each worklet's own scope and machinery, such as
 `MessagePort` and `MessageEvent` are exposed in `AudioWorklet`, which is the
 case the four-name vocabulary cannot state at all.
 
+What a worklet does **not** hold is `WindowOrWorkerGlobalScope`.
+`WorkletGlobalScope` does not include that mixin, so a worklet has no
+`setTimeout`, `setInterval`, `atob`, `btoa`, `structuredClone` or
+`queueMicrotask`. Those are the members a four-name vocabulary could leave
+unannotated and still be right about, and a nine-name one cannot: unannotated
+means all nine, so they need `@env("window", "worker")`.
+
 So the worklets are not a corner to postpone. `LayoutWorklet` and `PaintWorklet`
 each appear on more interfaces than `SharedWorker` does.
 

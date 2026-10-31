@@ -524,6 +524,11 @@ needs no new case.
    `crossOriginIsolated` name no browser type and belong in `web:core`, whose
    exports an importer binds unprefixed, so reaching them is one import and no
    qualifier.
+
+   Every one of them carries `@env("window", "worker")`. They are members of
+   `WindowOrWorkerGlobalScope`, which `WorkletGlobalScope` does not include, so
+   a worklet has no timers. Portable is not the same claim as universal, and
+   leaving these unannotated would say all nine environments have them.
 2. Move the family globals to their families: `caches` to `web:cache`,
    `indexedDB` to `web:indexeddb`, `localStorage` and `sessionStorage` to
    `web:storage`. `crypto`, `performance` and `fetch` already went.
