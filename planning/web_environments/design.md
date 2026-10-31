@@ -91,7 +91,7 @@ is now a per-environment `ambientPackages` plus a cache keyed to match.
 **`Window`'s globals were hoisted into `web:dom`.** 294 top-level
 declarations, including portable ones such as `setTimeout` and `atob` that
 belong in `web:core`. `web:dom` is browser-tier and a worker cannot import it,
-so §7.4.2 below has more to move than it did when it was written.
+so a worker cannot set a timer until §5.5 of the other stream moves them.
 
 ## 5. Observed problems
 
@@ -347,7 +347,7 @@ declaration's own.
 The tier rank is the live case. It answers a different question, how many
 runtimes ship a package, but once `@env` lands the two overlap enough to
 disagree, so one of them has to go or the division has to be stated. #1614 and
-§7.4.5 carries it.
+§7.4.8 carry it.
 
 **N2. A package is importable as a unit.** Every declaration a package holds is
 reachable from every environment that may import the package. Splitting a family
@@ -379,6 +379,11 @@ unchanged against the old path.
 ## 7. Plan
 
 A stage lands on its own and leaves the tree green.
+
+A stage that regenerates the tree produces a large diff that needs no
+line-by-line review. The hand-written part is the generator and the fixture, and
+`check_generated_tree` is what validates the rest. §7.3.1 annotates roughly 290
+declarations this way, and §7.4.1 adds a whole package.
 
 ### 7.1 Prerequisite, in the other stream
 
@@ -501,6 +506,11 @@ program reaches is reachable from a window.
 
 ### 7.4 Phase two: workers
 
+**The phase is done when** the worker program in section 5.2 compiles: it
+receives an `OffscreenCanvas` over `postMessage` and draws on it without
+importing `web:dom`. Each stage below lands on its own and is checked on its
+own; this is what they add up to.
+
 #### 7.4.1 Ingest the worker surface
 
 The four `*GlobalScope` classes, `importScripts`, `WorkerLocation`,
@@ -522,70 +532,89 @@ reached through the binding.
 **Done when** a worker fixture calls `importScripts` and reads `location` as a
 `WorkerLocation`.
 
-#### 7.4.2 Repartition so a package is importable as a unit
+#### 7.4.2 Add `web:canvas`
 
-F4, N2, and the substance of #1644.
+F4 and N2 for the canvas surface, which is the half of #1644 a new package
+answers.
 
-1. Add `web:canvas` for the worker-reachable canvas surface:
-   `OffscreenCanvas`, `OffscreenCanvasRenderingContext2D`,
-   `ImageBitmapRenderingContext`, `ImageBitmap`, `ImageData`, `Path2D`,
-   `CanvasGradient`, `CanvasPattern`, `TextMetrics` and the 2D-context mixins.
-2. Move `MessagePort`, `StructuredSerializeOptions` and `Transferable` into
-   `web:core`.
-3. Move the nine transferable arms no worker can import, per
-   `transferable.md`. The six that are `Exposed=(DedicatedWorker, Window)` need a
-   package importable from a page and a dedicated worker, which no current
-   package is.
-4. Move the portable globals the other stream's hoisting left in `web:dom`.
-   `setTimeout`, `atob`, `structuredClone`, `queueMicrotask` and the rest exist
-   in every environment and sit in a browser-tier package, so a worker cannot
-   reach them. §5.4 of the other stream owns the move; this phase is what
-   makes it necessary.
+`OffscreenCanvas`, `OffscreenCanvasRenderingContext2D`,
+`ImageBitmapRenderingContext`, `ImageBitmap`, `ImageData`, `Path2D`,
+`CanvasGradient`, `CanvasPattern`, `TextMetrics` and the 2D-context mixins are
+worker-reachable and sit in `web:dom`, which a worker cannot import.
 
-**Done when** a fixture compiles the worker program in section 5.2, receiving
-an `OffscreenCanvas` over `postMessage` and drawing on it, without importing
-`web:dom`.
+**Done when** a worker fixture names `OffscreenCanvas` and draws on it without
+importing `web:dom`.
 
-#### 7.4.3 Per-environment declarations
+#### 7.4.3 Move the portable event plumbing into `web:core`
 
-F5, and the end of #1613.
+The other half of #1644. `MessagePort`, `StructuredSerializeOptions` and
+`Transferable` go to `web:core`.
 
-open question 1 in section 10 has the three mechanisms and which one
-needs new machinery.
+`Transferable` names the canvas types, so §7.4.2 lands first or this edge points
+at a package a worker cannot import.
 
-Whatever name index §7.3.1 builds must not intersect over a duplicate name. The
-closed stack's `EnvIndex` did, which is right for the interface and `declare
-var` pair that share a name and wrong for disjoint per-environment copies, where
-it yields the empty set. That index does not exist on `main`, so this is a
-constraint on §7.3.1's design rather than a change to existing code.
+**Done when** a worker fixture receives a `MessagePort` with `web:core` ambient
+and no import.
 
-Split `Transferable` by environment, sixteen arms for a page or a dedicated
-worker and ten for the rest.
+#### 7.4.4 Move the transferable arms no worker can import
+
+The nine arms `transferable.md` lists. Six are
+`Exposed=(DedicatedWorker, Window)` and need a package importable from a page
+and a dedicated worker, which no current package is, so this stage decides that
+package as well as doing the move.
+
+**Done when** `transferable.md`'s table has no row a worker can name but not
+import.
+
+#### 7.4.5 Make the slot key carry environments
+
+F5's machinery, landed before anything is split by environment.
+
+The slot key in `internal/dts_to_esc/decl_key.go` has to distinguish a
+per-environment duplicate from an overload set. Whatever name index §7.3.1
+builds must not intersect over a duplicate name: the closed stack's `EnvIndex`
+did, which is right for the interface and `declare var` pair that share a name
+and wrong for disjoint per-environment copies, where it yields the empty set.
+That index does not exist on `main`, so this is a constraint on §7.3.1's design
+rather than a change to existing code.
+
+Open question 1 in section 10 has the three mechanisms and which one needs this.
+
+**Done when** two declarations of one name with disjoint `@env` convert, resolve
+per environment, and are not read as an overload set.
+
+#### 7.4.6 Split the declarations that differ by environment
+
+F5 applied, and the end of #1613. `Transferable` splits into sixteen arms for a
+page or a dedicated worker and ten for the rest.
 
 **Done when** a service worker sees `source` as
 `Client | ServiceWorker | MessagePort | null`, a page sees
 `WindowProxy | MessagePort | ServiceWorker | null`, and the retypes leave
 `internal/interop/overlay/web/core.replace.esc`.
 
-#### 7.4.4 The rest
+#### 7.4.7 Turn on the unsatisfiable-import check
 
-Turn on the unsatisfiable-import check, which now has something to catch: a page
-importing `web:worker`, or a dependency whose entrypoint does not cover a
-worker. F2.
+F2. The check now has something to catch: a page importing `web:worker`, or a
+dependency whose entrypoint does not cover a worker.
 
-#### 7.4.5 Retire the tier machinery
+**Done when** a fixture importing two packages no single environment provides
+fails with the full diagnostic.
+
+#### 7.4.8 Retire the tier machinery
 
 N1 and #1614. Once `@env` records where a declaration exists, the tier rank is a
 second mechanism answering an overlapping question, and N1 says one fact lives in
 one place.
 
-Retiring it is not a rename. A tier answers whether a package exists off the
-browser at all, which `@env`'s nine browser scopes do not answer, so the WinterTC
-question needs a home before `tier.go` can go. The options are an environment for
-each non-browser runtime, which the non-goals currently exclude, or a separate
-per-package claim that keeps the portability axis and drops the ordering.
+This is a decision before it is a change, so it is not one PR. A tier answers
+whether a package exists off the browser at all, which `@env`'s nine browser
+scopes do not answer, so the WinterTC question needs a home before `tier.go` can
+go. The options are an environment for each non-browser runtime, which the
+non-goals currently exclude, or a separate per-package claim that keeps the
+portability axis and drops the ordering. Settle that, then remove the machinery.
 
-Phase two is where this becomes pressing, because `CheckTiers` and the reference
+Phase two is where it becomes pressing, because `CheckTiers` and the reference
 check would both be live and would disagree: a tier forbids a portable package
 naming a browser one, where `@env` would permit it if both declarations exist in
 the importer's environments.
@@ -595,20 +624,41 @@ home, or the two mechanisms have a documented division and #1614 says which.
 
 ### 7.5 Phase three: worklets
 
-F8, and F1 through F5 applied unchanged.
+F8, and F1 through F5 applied unchanged. Phases one and two built every
+mechanism this phase needs, so the work is vocabulary and partitioning.
 
-1. Accept the four worklet names as targets.
-2. Add packages for the worklet surface. The CSS Typed OM is the bulk, 36
-   interfaces that `LayoutWorklet` and `PaintWorklet` share with `Window` and
-   `Worker`, sitting in `web:dom` today where no worklet can reach them. The
-   remainder is each worklet's own machinery: `AudioWorkletProcessor`,
-   `PaintRenderingContext2D`, `LayoutFragment` and `IntrinsicSizes`.
-3. Ingest the worklet scope classes, hoist their receiverless globals, and
-   point each worklet package's binding at its scope object so a program reaches
-   the rest as `worklet.<member>`.
+#### 7.5.1 Accept the worklet targets
 
-**Done when** a fixture declares a paint-worklet entrypoint, names
-`CSSUnitValue` and `PaintRenderingContext2D`, and is refused `document`.
+Add `audio_worklet`, `paint_worklet`, `layout_worklet` and `animation_worklet`
+to the set of accepted targets, which §7.3.1 already put in the vocabulary.
+
+**Done when** a fixture declares a paint-worklet entrypoint and the checker
+reports the target it resolved.
+
+#### 7.5.2 Partition the CSS Typed OM
+
+The bulk of the phase. 36 interfaces that `LayoutWorklet` and `PaintWorklet`
+share with `Window` and `Worker` sit in `web:dom` today, where no worklet can
+reach them.
+
+**Done when** a worklet fixture names `CSSUnitValue` without importing
+`web:dom`.
+
+#### 7.5.3 Add each worklet's own machinery
+
+`AudioWorkletProcessor`, `PaintRenderingContext2D`, `LayoutFragment` and
+`IntrinsicSizes`, none of which is in the tree.
+
+**Done when** a paint-worklet fixture names `PaintRenderingContext2D`.
+
+#### 7.5.4 Ingest the worklet scope classes
+
+The four `*WorkletGlobalScope` classes. Their receiverless globals hoist by the
+other stream's mechanism, and each worklet package's binding points at its scope
+object, so the rest is reached as `worklet.<member>`.
+
+**Done when** a paint-worklet fixture reads a member off `worklet` and is
+refused `document`.
 
 ## 8. Measurement
 
@@ -633,7 +683,8 @@ the tree to read its import header whether or not the program reaches it. So
 cold is a property of the tree's size, not of what a program imports, and #1643
 is the lever on it.
 
-Two consequences for this plan. §7.4.2 no longer waits on #1861, which is closed
+Two consequences for this plan. The repartition stages, §7.4.2 through §7.4.4,
+no longer wait on #1861, which is closed
 as not planned: it measured the warm figure the cache removed, and its bisect
 hashes are outside `main`'s rewritten history. And #1862 is still live and
 unfixed, so a per-environment file landing in phase two would silently shrink

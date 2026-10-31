@@ -10,7 +10,7 @@ package holds it, and whether a global is reachable at all.
 global scopes have it and what the compiler does about that.
 
 Two parts of this stream are ordered against that one. Section 5.1 emits the
-WebIDL table its phase one waits on, and section 5.4 moves the portable globals
+WebIDL table its phase one waits on, and section 5.5 moves the portable globals
 out of `web:dom`, which its phase two needs because a worker cannot import
 `web:dom`. Nothing else in either stream is ordered against the other.
 
@@ -101,7 +101,7 @@ silently.
 So F7 is met, and by a mechanism that goes further than F7 proposed by including
 `web:fetch`, which its own boundary rule allows since `web:fetch` is also small
 and portable. Nothing asserts what `ambientPackages` binds, so N4 stands, and
-section 5.5 is where the two shadowing rules get settled.
+section 5.7 is where the two shadowing rules get settled.
 
 ### 3.4 What else moved
 
@@ -260,6 +260,11 @@ cost the cache removed.
 Stages land on their own and leave the tree green. Each names what it leaves
 alone.
 
+A stage that regenerates the tree produces a large diff that needs no
+line-by-line review. The hand-written part is the generator and the fixture, and
+`check_generated_tree` is what validates the rest. §5.1, §5.2 and §5.6 are the
+three where the generated half is big enough to say so.
+
 ### 5.1 WebIDL as an input
 
 **Goal.** F1 and N1, and the prerequisite the environment stream waits on.
@@ -325,14 +330,28 @@ rows are still unreachable and why.
 **Not this stage.** Splitting `Transferable` by environment, which is the other
 stream's.
 
-### 5.4 Place the globals and un-hoist the rest
+### 5.4 Let a generated package bind its scope object
 
-**Goal.** F8, and the part of F4 the landed hoisting left undone.
+**Goal.** The mechanism F4 needs, landed before anything depends on it.
 
-`Window`'s globals are already hoisted, all 294 into `web:dom`, so this stage is
-partly a move and partly a reversal. `hoisted/` in this folder has the per-global
-analysis. It was generated from the closed stack's tree, so re-derive the counts
-against `main` first; the scripts are checked in to do that.
+A namespace's `AsValue` already does the work: a member the namespace does not
+hold is read off that value. What is missing is a generated package that sets
+it. Today only an npm package whose `.d.ts` writes `export = f` does.
+
+1. Give `internal/printer` a case for `ast.ExportAssignmentStmt`, which it has
+   none for, so a generated `.esc` file can carry `export = x`.
+2. Have the converter emit one for a package named as a scope package.
+3. Round-trip it: print, reparse, and check the namespace binds `AsValue`.
+
+**Done when** a converter fixture declares a package with `export = x` and a
+program reads `p.member` off it without the namespace declaring `member`.
+
+**Not this stage.** Any scope package. This is the capability alone, which is
+why it can land first and on its own.
+
+### 5.5 Place the portable and family globals
+
+**Goal.** F8 for the globals that move rather than un-hoist.
 
 1. Move the portable globals out of `web:dom`. `setTimeout`, `clearTimeout`,
    `setInterval`, `clearInterval`, `atob`, `btoa`, `structuredClone`,
@@ -342,24 +361,36 @@ against `main` first; the scripts are checked in to do that.
 2. Move the family globals to their families: `caches` to `web:cache`,
    `indexedDB` to `web:indexeddb`, `localStorage` and `sessionStorage` to
    `web:storage`. `crypto`, `performance` and `fetch` already went.
-3. Un-hoist the window-only globals, which `hoisted/` counts at 176, and add
-   `web:window` holding `Window`, its mixins and `WindowEventMap`. The members
-   that stay members need no declaration of their own, since they are already
-   `Window` members. `alert` is then `window.alert`, where `window` is the
-   package binding step 4 points at the instance.
-4. Set each scope package's `AsValue` to its scope object, so `window`, `worker`
-   and `worklet` are each both the package binding and the object. This replaces
-   `self`, per open question 3.
 
-**Done when** a fixture calls `setTimeout` and `atob` with no import at all,
-reaches `alert` only as `window.alert` after importing `web:window`, and the
-converter rejects a bare `alert`.
+Around 16 declarations move. `hoisted/` has the per-global analysis, generated
+from the closed stack's tree, so re-derive the counts against `main` first; the
+scripts are checked in to do that.
+
+**Done when** a fixture calls `setTimeout` and `atob` with no import at all, and
+`check_generated_tree` passes.
+
+**Not this stage.** The window-only globals, which do not move anywhere.
+
+### 5.6 Add `web:window` and un-hoist the window-only globals
+
+**Goal.** F4 and the rest of F8, and the part of the landed hoisting that has to
+be reversed rather than relocated.
+
+1. Add `web:window` holding `Window`, its mixins and `WindowEventMap`, which is
+   around 1038 lines across 14 declarations in `web/dom.esc` today.
+2. Point its binding at the scope object, using §5.4.
+3. Delete the top-level copies of the window-only globals, which `hoisted/`
+   counts at 176. The members they were copied from are already on `Window`, so
+   nothing is declared to replace them.
+
+**Done when** a fixture reaches `alert` only as `window.alert` after importing
+`web:window`, the converter rejects a bare `alert`, and
+`check_generated_tree` passes.
 
 **Not this stage.** The worker and worklet scope classes, which are not in the
-tree. Their globals hoist by the same mechanism once the other stream ingests
-them.
+tree. They get the same treatment once the other stream ingests them.
 
-### 5.5 Pin what the ambient scope binds
+### 5.7 Pin what the ambient scope binds
 
 **Goal.** N4. F7 itself has landed; this is the guard it was paired with.
 
@@ -383,7 +414,7 @@ everywhere.
 **Done when** the name set is pinned and a deliberate addition has to update the
 test.
 
-### 5.6 The rest of the augmentation, if measured
+### 5.8 The rest of the augmentation, if measured
 
 Open question 1 lists what else WebIDL carries that the `.d.ts` flattens:
 nullability, integer width and range, `sequence<T>` against array, `USVString`
@@ -450,10 +481,7 @@ the suite exercising `internal/checker` is not being backported.
    position, so the rename serves the reader rather than the grammar.
 
    What this needs is a generated package that sets `AsValue`, which F4
-   describes. Today only an npm package whose `.d.ts` writes `export = f` does.
-   The converter has `ast.ExportAssignmentStmt` for that form already, so the
-   gap is emitting one for a scope package and teaching the printer to print it,
-   which it has no case for.
+   describes and section 5.4 builds.
 
 ## 9. Non-goals
 
