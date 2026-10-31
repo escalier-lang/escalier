@@ -95,11 +95,14 @@ collapse into `TierBrowser` together.
 **An ambient scope landed, and a project's own files are losing it.**
 `internal/solver/ambient.go` reproduces the JavaScript global object over 26
 packages, 203 top-level names plus the namespaces it rebuilds from dotted `@js`
-paths. The other stream's F7 keeps that for a converted `.d.ts` and takes it
-away from a project's own `.esc` files, where `std:prelude` and an explicit
-import are what resolve. Its §5.1 does it. This stream benefits: a
-per-environment `web:core` resolved at each import is simpler than an ambient
-layer keyed by environment.
+paths. The other stream's F7 keeps that for a converted `.d.ts` and reduces it
+for a project's own `.esc` files to the `*:prelude` packages, renaming
+`web:core` to `web:prelude` as part of it. Its §5.1 does that much.
+
+What it leaves here is the gate. F7 makes `web:prelude` ambient for every
+program, because deciding otherwise needs a target, so §7.3.2 is where a
+prelude becomes ambient only for the environments its scheme covers. N4 carries
+what the ambient half costs.
 
 **`Window`'s globals were hoisted into `web:dom`.** 294 top-level
 declarations, including portable ones such as `setTimeout` and `atob` that
@@ -396,14 +399,16 @@ and each entry says why it exists.
 `BenchmarkStdlibClosureLoad`. #1643 covers the separate finding that comment
 attachment is 74% of cold load.
 
-The other stream's F7 keeps this simple, where the ambient scope would not have.
-#1567 caches one prelude across runs, and F5 makes `web:core`'s content differ
-by environment, since `location` is a `Location` or a `WorkerLocation` and
-`onmessage` has three forms. Had `web:core` been ambient, that cached prelude
-would have become nine keyed by environment, at work on top of #1567 and a lower
-hit rate. It is imported instead, and `bindCoreExports` resolves it into each
-file's own scope, so the cross-run cache holds `std:prelude` alone and does not
-vary by target.
+The other stream's F7 makes `web:prelude` ambient, which is what this has to
+pay for. #1567 caches one prelude across runs, and F5 makes `web:prelude`'s
+content differ by environment, since `location` is a `Location` or a
+`WorkerLocation` and `onmessage` has three forms. So the cached prelude becomes
+one per target, and the cache has to be keyed the same way. That is work on top
+of #1567 and it lowers the hit rate a single shared prelude gets. It is the one
+place the two streams' designs interact beyond the shared generator.
+
+`std:prelude` is unaffected, since nothing in it differs by environment. Only
+the `web:prelude` half of the ambient layer varies.
 
 What is left to measure is the per-environment content itself. A tree carrying
 nine forms of a declaration is a larger tree, and section 8 says cold load tracks
@@ -519,8 +524,21 @@ intersection of what they provide. That intersection is empty for a declaration
 that differs by environment, so a no-target program cannot use `location` at
 all. That is the intended answer.
 
-**Done when** a fixture declares a window entrypoint and the checker can report
-what it resolved.
+The target also decides which prelude is ambient, so the rule lands here: a
+`*:prelude` package is ambient when the program's environments are ones its
+scheme can run on. `web:prelude` passes that for every environment, since its
+24 declarations are the portable core Node, Deno and Bun implement as well as
+the browser, so this stage changes nothing about it in practice. The rule is
+built now because §7.6 is where it first refuses something, when `node:prelude`
+must not reach a browser program.
+
+What a prelude holds is still gated per declaration by `@env` and F3. An
+ambient package decides what a file can name; the reference check decides what
+the target provides.
+
+**Done when** a fixture declares a window entrypoint, the checker reports what
+it resolved, and `web:prelude` is ambient for it through the scheme rule rather
+than by being hard-coded.
 
 #### 7.3.3 The reference check
 
@@ -591,16 +609,16 @@ worker-reachable and sit in `web:dom`, which a worker cannot import.
 **Done when** a worker fixture names `OffscreenCanvas` and draws on it without
 importing `web:dom`.
 
-#### 7.4.3 Move the portable event plumbing into `web:core`
+#### 7.4.3 Move the portable event plumbing into `web:prelude`
 
 The other half of #1644. `MessagePort`, `StructuredSerializeOptions` and
-`Transferable` go to `web:core`.
+`Transferable` go to `web:prelude`.
 
 `Transferable` names the canvas types, so §7.4.2 lands first or this edge points
 at a package a worker cannot import.
 
 **Done when** a worker fixture receives a `MessagePort` after
-`import "web:core"` and without importing `web:dom`.
+`import "web:prelude"` and without importing `web:dom`.
 
 #### 7.4.4 Move the transferable arms no worker can import
 
@@ -636,7 +654,7 @@ page or a dedicated worker and ten for the rest.
 
 This is also what satisfies the other stream's N6, which forbids typing a read
 narrower than some environment provides. `MessageEvent.source` is `null` in
-`web:core` today where a browser yields a `WindowProxy`, a `MessagePort` or a
+`web:prelude` today where a browser yields a `WindowProxy`, a `MessagePort` or a
 `ServiceWorker`, so the retype goes and the per-environment forms replace it.
 
 **Done when** a service worker sees `source` as
@@ -843,14 +861,14 @@ backported.
 | #1614 | retiring the package-to-tier machinery, attempted in #1631 and still open |
 | #1586 | the tier is per package where availability is per declaration |
 | #1641, #1642 | per-environment source files |
-| #1644 | moving `MessagePort` and `Transferable` into `web:core`, which is F4 in one family |
+| #1644 | moving `MessagePort` and `Transferable` into `web:prelude`, which is F4 in one family |
 | #1861 | warm whole-tree inference regressed 1.5x. Closed, overtaken by the cross-run cache |
 | #1862 | the closure benchmark silently measures fewer packages than it claims |
 | #2377 | importing `web:dom` reports 346 errors, which blocks every stage that moves a declaration out of it |
 | #2378 | the override check rejects a method that indexes its own type parameter, which is most of #2377 |
 
 #1644's blocker section was wrong when filed and has been corrected. It claimed
-that a `Transferable` in `web:core` naming `OffscreenCanvas` would fail the
+that a `Transferable` in `web:prelude` naming `OffscreenCanvas` would fail the
 environment check. The check it named no longer exists on `main`, and even in the
 tree it was written against the claim did not hold. The blocker is reachability: a
 worker cannot import the packages the arms live in.

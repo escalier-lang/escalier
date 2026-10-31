@@ -103,11 +103,10 @@ package on the list still binds it as a namespace. The layer is a parent of the
 module scope, so a module declaration shadows an ambient name silently.
 
 So one package has two unqualified bindings with two shadowing rules, and 26
-packages have the second one. F7 keeps `bindCoreExports` and takes the globals
-scope away from a project's own files, because reported beats silent and 203
-top-level names in scope without an import is the problem F4 is about. Nothing
+packages have the second one. F7 removes both, keeping one layer and deciding
+membership by the package's name rather than by a list and a constant. Nothing
 asserts what `ambientPackages` binds either, so N4 stands. Section 5.1 does
-both.
+both, and renames `web:core` to `web:prelude` as part of it.
 
 ### 3.4 A third-party `.d.ts` cannot name a DOM type
 
@@ -228,27 +227,42 @@ on every element, and a program calls them on the thing it is listening to. F4
 keeps a member that has a receiver, and this is the clearest case of one.
 
 That also settles where they live, which the earlier plan to put them in
-`web:core` could not. `EventTarget.addEventListener` is in `web:core` already
-and `Window` restates the four typed overloads, so `window.addEventListener`
-and `element.addEventListener` are both correctly typed today with nothing to
-move. `hoisted/README.md` records what a hoisted copy would have cost.
+`web:prelude` could not. `EventTarget.addEventListener` is in `web:prelude`
+already and `Window` restates the four typed overloads, so
+`window.addEventListener` and `element.addEventListener` are both correctly
+typed today with nothing to move. `hoisted/README.md` records what a hoisted
+copy would have cost.
 
 **F6. A member a family package already declares is not hoisted twice.** `fetch`
 is a member of `WindowOrWorkerGlobalScope` and a top-level declaration of
 `web:fetch`. The hoist drops the member rather than adding a second binding for
 one global.
 
-**F7. A project's own file imports what it uses. A `.d.ts` does not have to.**
-An `.esc` file reaches `std:prelude` without an import and nothing else, so
-`std:math` gives `math.PI` and `std:error` gives `error.Error`. `web:core` keeps
-the unprefixed binding `coreURI` and `bindCoreExports` give it, so
-`import "web:core"` puts `setTimeout` and `Event` in scope under their own
-names.
+**F7. Only a prelude is ambient in a project's own file.** An `.esc` file reaches
+the `*:prelude` packages without an import, and every other package by importing
+it, so `std:math` gives `math.PI` and `std:error` gives
+`error.Error`. `web:prelude` is renamed `web:prelude` to say what it is.
 
-A converted `.d.ts` keeps the ambient globals. It is written against
-TypeScript's global library and names `Console` or `JsonTag` with no import, and
-it cannot be rewritten to add one, so the package it becomes is inferred with
-those names in scope.
+The naming convention is the rule. Whether a package is ambient is readable from
+its URI, rather than from a list in `internal/solver/ambient.go` plus a
+`coreURI` constant in two more packages. Nothing else may join the ambient layer
+without being named a prelude, which is a decision a reader can see at the
+import site.
+
+`coreURI` and `bindCoreExports` go. They exist to bind one package's exports
+unprefixed while still requiring an import, which is the shape a prelude already
+has without the import, so the two collapse into one. Section 3.3 has the two
+mechanisms they currently are.
+
+*This trades a diagnostic away.* `bindCoreExports` binds into the file scope, a
+child of the module scope, so a module declaring `Event` gets a reported
+collision. The ambient layer binds from a parent, so the module's declaration
+wins silently. That is what `std:prelude` already does, and shadowing a prelude
+name is ordinary, so the loss is accepted rather than overlooked.
+
+A converted `.d.ts` keeps the whole ambient globals scope, which is F9. It is
+written against TypeScript's global library and names `Console` or `JsonTag` with
+no import, and it cannot be rewritten to add one.
 
 *The split already exists as an option.* `Options.NoAmbientNames` empties the
 ambient scope for the project's own files while an npm package's scope stays a
@@ -256,7 +270,7 @@ child of the globals scope, which `package_load.go` says is deliberate: "that
 option governs the names the project's own files reach."
 `TestNodeModulesImportReadsGlobalsWithoutAmbientNames` asserts both halves, that
 the package resolves `JsonTag` and the entry module does not. What F7 asks is
-that this stop being an option and become the behavior.
+that this stop being an option, become the behavior, and admit the preludes.
 
 What an `.esc` file gives up is 203 top-level names plus the `Math`, `Intl`,
 `JSON`, `Reflect` and `Atomics` namespaces that `bindGlobals` reconstructs from
@@ -264,20 +278,28 @@ dotted `@js` paths. That scope is a faithful copy of the JavaScript global
 object, which is the right thing for a `.d.ts` to be checked against and the
 wrong thing for a language that has imports.
 
-Two mechanisms bind a package unprefixed, and this keeps the older one.
-`bindCoreExports` binds into the file scope, a child of the module scope, so a
-module's own declaration wins and the collision is reported. The globals scope
-binds from a parent layer, where a module declaration shadows silently.
-Reported beats silent, and `web:core` is the one package small and portable
-enough to earn it: 24 declarations, every one of which a portable program uses.
+**`web:prelude` is ambient unconditionally here, and probably everywhere.** Its
+24 declarations are `Event`, `EventTarget`, `AbortController`, `AbortSignal`,
+`DOMException`, `MessageEvent`, `TextEncoder`, `TextDecoder` and their option
+bags. Node, Deno and Bun all implement that set, which is what makes the package
+`TierCore` rather than browser-tier, so a gate on the target would admit it for
+every environment anyway.
 
-This costs F4 the ergonomics the ambient scope was giving it. A file that sets a
-timer writes `import "web:core"` first. That is one line for the unprefixed
-names of the one package that has them.
+The gate is for a prelude whose scheme names one runtime. `node:prelude` holding
+`process` and `Buffer` has no business in scope for a browser program, and that
+is the case worth refusing. `planning/environments/` owns the rule, its §7.3.2
+builds it, and F10's `node:prelude` is the first prelude it excludes from
+anything.
+
+Availability inside an ambient package is a separate question that `@env`
+answers. `MessageEvent` is `Exposed=(Window, Worker, AudioWorklet)` and the
+timers §5.6 moves in are `@env("window", "worker")`, so a paint worklet has
+those names in scope and the reference check refuses them. The package being
+ambient is about what a file can name, not about what the platform provides.
 
 **F8. A hoisted global goes to the package that owns it, not to `web:dom`.** A
 global's package is the family that owns its type, and where the signature names
-no browser type the family is `web:core`. `setTimeout` and `atob` belong there
+no browser type the family is `web:prelude`. `setTimeout` and `atob` belong there
 and not in a browser-tier package a worker cannot import.
 
 The browsing-context API earns `web:window`. `Window` itself, the `window`
@@ -300,7 +322,7 @@ routings are superseded by F4 rather than by a different package.
 
 **F9. A third-party `.d.ts` resolves every web type it names.** A converted npm
 package reaches the whole platform, not just the two `web:*` packages
-`ambientPackages` happens to hold, which are `web:core` and `web:fetch`. A
+`ambientPackages` happens to hold, which are `web:prelude` and `web:fetch`. A
 library that takes a `Blob` or returns an `HTMLElement` loads, and a
 `cannot find type` never lands on a `.d.ts` the project cannot edit.
 
@@ -364,11 +386,11 @@ cannot build one from a form element, and #1586 is where that goes. Narrowing
 what a program receives tells it something false about a value it already holds,
 and no amount of inconvenience elsewhere makes that the cheaper trade.
 
-`web:core`'s `MessageEvent` is the case to undo. The overlay types
-`readonly source: null` and `readonly ports: Array<unknown>`, where a browser
-gives `source` a `WindowProxy`, a `MessagePort` or a `ServiceWorker`. The doc
-comment directly above the field says so and the type contradicts it. A file
-importing `web:core` is told `null` and handed an object, which is the one way a
+`web:prelude`'s `MessageEvent` is the case to undo. The overlay types `readonly
+source: null` and `readonly ports: Array<unknown>`, where a browser gives
+`source` a `WindowProxy`, a `MessagePort` or a `ServiceWorker`. The doc comment
+directly above the field says so and the type contradicts it. A file importing
+`web:prelude` is told `null` and handed an object, which is the one way a
 declaration can be actively wrong rather than merely unhelpful. #1613 tracks it.
 
 Unnameable beats narrow. A declaration whose type a file cannot spell is sound,
@@ -390,35 +412,45 @@ line-by-line review. The hand-written part is the generator and the fixture, and
 `check_generated_tree` is what validates the rest. §5.2, §5.3 and §5.7 are the
 three where the generated half is big enough to say so.
 
-### 5.1 Split the ambient scope, and make it complete for a `.d.ts`
+### 5.1 Rename `web:prelude`, and let only a prelude be ambient
 
 **Goal.** F7, F9 and N4, before anything else. Every later stage moves
 declarations between packages, and while the globals scope covers a project's
 own files, moving one silently changes what every `.esc` file has in scope.
 
-`Options.NoAmbientNames` already does what F7 wants, and
-`TestNodeModulesImportReadsGlobalsWithoutAmbientNames` already asserts it. The
-work is removing the choice.
+`Options.NoAmbientNames` already does the `.esc` half of F7, and
+`TestNodeModulesImportReadsGlobalsWithoutAmbientNames` already asserts it, so
+part of the work is removing a choice rather than building a mechanism.
 
-1. Make the `NoAmbientNames` behavior unconditional for a project's own files
-   and remove the option, so there is one answer rather than two.
-2. Leave `package_load.go`'s parenting of an npm package's scope at the globals
+1. Rename `web:prelude` to `web:prelude`: the generated file, the two import
+   headers that name it, its row in `internal/dts_to_esc/tier.go`, and the
+   overlay `internal/interop/overlay/web/core.replace.esc`.
+2. Make the `NoAmbientNames` behavior unconditional for a project's own files
+   and remove the option, so there is one answer rather than two. An `.esc`
+   file's ambient layer is then the `*:prelude` packages and nothing else.
+3. Delete `coreURI` and `bindCoreExports`, whose nine call sites across
+   `internal/solver/imports.go`, `internal/solver/stdlib_group_load.go` and
+   `internal/dts_to_esc/import_header.go` all go. A reference to a
+   `web:prelude` export needs no qualifier and no import, so
+   `qualifyCrossPackageRefs` skips it for the reason it already skips
+   `std:prelude`.
+4. Leave `package_load.go`'s parenting of an npm package's scope at the globals
    scope alone. That is the half of F7 that stays.
-3. Keep `coreURI` and `bindCoreExports`, which bind `web:core`'s exports
-   unprefixed on import and report a collision with a module's own declaration.
-4. Settle F9 and apply it, so a `.d.ts` naming `Blob` or `HTMLElement` loads.
+5. Settle F9 and apply it, so a `.d.ts` naming `Blob` or `HTMLElement` loads.
    Widening `ambientPackages` is the smaller change and the one to try first.
-5. Add the test N4 asks for, over what an `.esc` file reaches with no import.
+6. Add the test N4 asks for, over what an `.esc` file reaches with no import.
    Assert the `.d.ts` side separately, since the two scopes now differ.
-6. Record in `docs/03_imports.md` where the shape-loading line falls, which the
+7. Record in `docs/03_imports.md` where the shape-loading line falls, which the
    document predates.
 
 **Done when** a fixture naming `PI`, `console` or `Error` with no import fails,
-the same fixture compiles with the imports, an npm package whose `.d.ts` names
-`Blob` and `HTMLElement` loads clean, `setTimeout` still resolves after
-`import "web:core"` alone, and both name sets are pinned.
+the same fixture compiles with the imports, a fixture reaching `Event` and
+`setTimeout` with no import succeeds, an npm package whose `.d.ts` names `Blob`
+and `HTMLElement` loads clean, no `coreURI` remains, and both name sets are
+pinned.
 
-**Not this stage.** Any change to which package holds a declaration. This moves
+**Not this stage.** Any change to which package holds a declaration, and gating
+`web:prelude` on the target, which F7 leaves to the other stream. This moves
 nothing; it changes what a file reaches without asking.
 
 ### 5.2 WebIDL as an input
@@ -536,9 +568,8 @@ needs no new case.
 1. Move the portable globals out of `web:dom`. `setTimeout`, `clearTimeout`,
    `setInterval`, `clearInterval`, `atob`, `btoa`, `queueMicrotask`,
    `reportError`, `origin`, `isSecureContext` and
-   `crossOriginIsolated` name no browser type and belong in `web:core`, whose
-   exports an importer binds unprefixed, so reaching them is one import and no
-   qualifier.
+   `crossOriginIsolated` name no browser type and belong in `web:prelude`, which
+   is ambient, so reaching them takes no import and no qualifier.
 
    Every one of them carries `@env("window", "worker")`. They are members of
    `WindowOrWorkerGlobalScope`, which `WorkletGlobalScope` does not include, so
@@ -546,7 +577,7 @@ needs no new case.
    leaving these unannotated would say all nine environments have them.
 
    Two helper types move with them, or the signatures name `web:dom` from
-   `web:core` and `CheckTiers` rejects the edge. `TimerHandler`, which is
+   `web:prelude` and `CheckTiers` rejects the edge. `TimerHandler`, which is
    `string | function.Function`, reaches 29 declarations and all but itself are
    `std:*`. `VoidFunction` reaches nothing but itself.
 
@@ -566,9 +597,9 @@ the closed stack's tree, so re-derive the counts against `main` first. The
 scripts are checked in to do that, and `hoisted/scripts/closure.mjs` is what
 says whether a signature's references can follow it.
 
-**Done when** a fixture reaches `setTimeout` and `atob` after
-`import "web:core"` alone, a worklet fixture is refused both, and
-`check_generated_tree` passes.
+**Done when** a fixture reaches `setTimeout` and `atob` with no import at all, a
+worklet fixture is refused both once the other stream can express a worklet
+target, and `check_generated_tree` passes.
 
 **Not this stage.** The window-only globals, which do not move anywhere, and
 `structuredClone`, which waits on the other stream.

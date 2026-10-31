@@ -11,6 +11,10 @@ window-only members routed to `web:dom` below stay `Window` members under that
 rule and go to `web:window`, so read those rows as what each member is rather
 than as where it lands.
 
+They also predate the rename of `web:core` to `web:prelude`, which F7 makes. The
+file beside this one is still `core.esc` and the rows below still say `web:core`;
+read both as the prelude package.
+
 They also predate the nine-name vocabulary. A member carrying no `@env` here
 meant all four environments the vocabulary then had, and now means all nine. So
 the unannotated declarations in `core.esc`, `setTimeout` and `atob` among them,
