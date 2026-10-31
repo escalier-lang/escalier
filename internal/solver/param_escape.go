@@ -215,9 +215,9 @@ func identParamOnlyReadThrough(pat ast.Pat, rest, optional bool, body *ast.Block
 //	val m = {id: fn <T>(x: T) -> T { return x }}
 //
 //	fn remember(value) {
-//	    seen.set("last", value) // records value: seen's type reaches set's V
+//	    seen.set("last", value) // records value, since seen's type reaches set's V
 //	    m.id(value)             // id's T is fresh for this call, so m's type does not reach it
-//	    val local = Map()
+//	    val mut local = Map()
 //	    local.set("k", value)   // local is not a module-level binding
 //	}
 func (c *checker) noteOpenEscapes(scope *Scope, e *ast.CallExpr, fn *soltype.FuncType) {
