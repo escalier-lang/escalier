@@ -10,9 +10,10 @@ are easy to confuse:
   platform gives it, how a program declares which scope it targets, and what the
   compiler does when a reference escapes it.
 
-They share one input. `web_api_types/` Stage 1 emits the WebIDL table, and
-`web_environments/` cannot start before it, because an `@env("window")` is a
-claim about the other eight environments and only `[Exposed]` knows it.
+They share one input. Section 5.1 of `web_api_types/design.md` emits the WebIDL
+table, and `web_environments/` cannot start before it, because an
+`@env("window")` is a claim about the other eight environments and only
+`[Exposed]` knows it.
 
-They were one folder until the split. If a cross-reference looks wrong, the
-other folder is where it went.
+Each folder's `design.md` is the whole of it: the problem, the requirements and
+the plan.

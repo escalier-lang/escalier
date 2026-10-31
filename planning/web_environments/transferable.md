@@ -1,13 +1,12 @@
 # Validating the plan against `Transferable`
 
-Checks whether the requirements in `requirements.md` let a program name every
-transferable type in every environment the platform exposes it in. They do not
-yet, and the gaps are listed below.
+Checks whether the requirements in section 6 of `design.md` let a program name
+every transferable type in every environment the platform exposes it in. They do
+not yet, and the gaps are listed below.
 
 The data here comes from `@webref/idl` 3.84.0, the curated WebIDL for the whole
-platform. It is reachable from the build environment, which settles open
-question 4 in `requirements.md`: the source for per-worker-kind exposure exists
-and can be fetched.
+platform. It is reachable from the build environment, so the source for
+per-worker-kind exposure exists and can be fetched.
 
 ## The set is larger than the tree knows
 
@@ -107,6 +106,6 @@ of the interfaces exposed in each:
 worklets are not a corner: `LayoutWorklet` and `PaintWorklet` together carry
 more interfaces than `ServiceWorker`.
 
-Decided: the vocabulary grows to match. F10 in `requirements.md` states it and
+Decided: the vocabulary grows to match. F7 in `design.md` states it and
 `vocabulary.md` has the nine names, the two groups, and the roughly 290
 declarations that gain a decorator as a result.

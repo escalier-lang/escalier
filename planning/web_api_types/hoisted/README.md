@@ -1,9 +1,9 @@
 # Hoisting the scope-class globals
 
-Planning artifact for requirements F4 through F7 in `../requirements.md`. The
-`.esc` files beside this one show what every member of every `*GlobalScope`
-class looks like as a top-level declaration, which package it lands in, and what
-`@env` it carries. They are illustrative and are not part of the generated tree.
+Planning artifact for requirements F4 through F7 in section 4.1 of
+`../design.md`. The `.esc` files beside this one show what every member of every
+`*GlobalScope` class looks like as a top-level declaration, which package it
+lands in, and what `@env` it carries. They are illustrative and are not part of the generated tree.
 
 ## Method
 
@@ -76,10 +76,10 @@ Environments:
 
 ### The worker kinds are derivable here
 
-Section 4.6 of `../../web_environments/requirements.md` records that
-`lib.webworker.d.ts` collapses
-the three worker kinds into one file, so per-worker-kind facts need WebIDL. That
-does not apply to globals. The scope classes are separate interfaces, so
+Section 5.6 of `../../web_environments/design.md` records that
+`lib.webworker.d.ts` collapses the three worker kinds into one file, so
+per-worker-kind facts need WebIDL. That does not apply to globals. The scope
+classes are separate interfaces, so
 `skipWaiting` is visibly service-worker-only and `onconnect` visibly
 shared-worker-only, straight from the inheritance. 19 of the 246 declarations
 carry a single worker kind, all derived without any external source.

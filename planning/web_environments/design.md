@@ -1,46 +1,50 @@
-# Requirements: Which web APIs each environment has
+# Design: Which web APIs each environment has
 
-## 0. Scope
+## 1. Scope
 
 This is one of two streams. It covers **where** a declaration exists: which
 global scopes the platform gives it, how a program says which scope it targets,
 and what the compiler does when a reference escapes it.
 
 `planning/web_api_types/` covers **what** a declaration says, and owns the
-WebIDL generator both streams read. Stage 1 there is this stream's prerequisite,
-because an `@env("window")` is a claim about the other eight environments and
-only `[Exposed]` knows it.
+WebIDL generator this stream reads. Section 7.1 records what waits on it and
+what does not.
 
-Both streams were one document until this split. Hoisting the globals out of the
-`*GlobalScope` classes moved to the other folder; only the question of which
-environments a hoisted member reaches stayed here.
+Hoisting the globals out of the `*GlobalScope` classes belongs to that stream;
+only the question of which environments a hoisted member reaches is here.
 
-## 1. History
+`vocabulary.md` beside this file has the nine global scopes and what matching
+them costs. `transferable.md` works one API family through in full.
+
+## 2. History
 
 An earlier environment system, the stack of PRs #1628 through #1635, was closed
 without merging. `main` has none of it: no `@env` decorator and no annotations,
 no `internal/dts_to_esc/env*.go`, no `CheckEnvs` or `DeclEnvs`, no environment
 vocabulary, no file-name suffix convention, and no `web:worker` package. What it
 has instead is the package-level tier rank that stack was replacing, described in
-section 3.
+section 4.
 
 So this is a greenfield design rather than a revision.
 
-## 2. Problem statement
+## 3. Problem statement
 
 A web declaration exists on some set of global scopes. A page has the DOM, a
 dedicated worker has a different surface, a shared worker a third, a service
 worker a fourth, and the four worklets more. Nothing in the tree records which,
 and the one mechanism that comes close measures a different thing.
 
-The tier rank in section 3 answers how many runtimes ship a package, which is the
+The tier rank in section 4 answers how many runtimes ship a package, which is the
 question of whether code runs off the browser at all. Every global scope inside a
 browser is one tier, so the rank cannot distinguish them, and portability is a
-total order where global scopes are not. Section 4 is what that costs.
+total order where global scopes are not. Section 5 is what that costs.
 
-## 3. What the tree does today
+## 4. Current state
 
-### 3.1 One rank per package, ordered by portability
+Reviewed against `main` at 4ae93f0b. Every premise this stream rests on is
+unchanged, line numbers included.
+
+### 4.1 One rank per package, ordered by portability
 
 `internal/dts_to_esc/tier.go` gives each pseudo-package a `Tier`, and the four
 values form a total order:
@@ -57,7 +61,7 @@ including `web:fetch`, `web:url`, `web:streams` and `web:websocket`. Ten are
 browser, including `web:dom`, `web:workers`, `web:service_worker`,
 `web:indexeddb` and `web:webgl`. `web:core` is the only core package.
 
-### 3.2 The check is on import edges, and runs in the converter
+### 4.2 The check is on import edges, and runs in the converter
 
 `CheckTiers` at `internal/dts_to_esc/import_header.go:116` reports every import
 edge whose target sits above its source. A portable package may name a core one
@@ -67,7 +71,7 @@ It has one caller, `internal/dts_to_esc/generate.go:138`. Like the system before
 it, it validates the generated tree against itself at conversion time. The
 compiler pipeline has no notion of a tier, so none of it reaches a user program.
 
-### 3.3 What the axis measures
+### 4.3 What the axis measures
 
 A tier answers "how many runtimes ship this", and the values order because that
 is a nesting: language ⊃ core ⊃ portable ⊃ browser. The axis is the WinterTC
@@ -77,9 +81,21 @@ It says nothing about which global scope inside a browser has a declaration. A
 page, a dedicated worker and a service worker are all "the browser", so all three
 collapse into `TierBrowser` together.
 
-## 4. Observed problems
+### 4.4 What the other stream changed
 
-### 4.1 The tier axis cannot express a global scope
+**An ambient scope landed.** `internal/solver/ambient.go` binds 25 packages
+without an import, `web:core` and `web:fetch` among them. That is the other
+stream's F8, and it sharpens N4: the per-environment prelude this stream needs
+is now a per-environment `ambientPackages` plus a cache keyed to match.
+
+**`Window`'s globals were hoisted into `web:dom`.** 294 top-level
+declarations, including portable ones such as `setTimeout` and `atob` that
+belong in `web:core`. `web:dom` is browser-tier and a worker cannot import it,
+so §7.4.2 below has more to move than it did when it was written.
+
+## 5. Observed problems
+
+### 5.1 The tier axis cannot express a global scope
 
 Portability is a total order and global scopes are not. A page has `document`, a
 dedicated worker has `importScripts`, a service worker has `clients`, and no two
@@ -90,7 +106,7 @@ window-versus-worker by adding values to it.
 `web:workers` and `web:service_worker` are both `TierBrowser`, which is correct
 about the browser and silent about everything this document is for.
 
-### 4.2 A worker has no surface at all
+### 5.2 A worker has no surface at all
 
 A page transfers an `OffscreenCanvas` to a worker:
 
@@ -114,20 +130,20 @@ runs inside.
 So a worker program cannot name what it receives, and cannot name its own
 globals either.
 
-### 4.3 Nothing enforces a tier on user code
+### 5.3 Nothing enforces a tier on user code
 
 `CheckTiers` has one caller and it is the converter. A program can import
 `web:dom` and `web:workers` together, or import `web:dom` from code meant for a
 worker, and nothing reports it.
 
-### 4.4 A program has no target environment
+### 5.4 A program has no target environment
 
 Nothing records which runtime a program is compiled for. Any rule that resolves a
 name differently per environment, or rejects an import, has nowhere to read the
 answer from. `escalier.toml` holds a project name and `package.json` holds
 `main` and `bin`; neither says where the code runs.
 
-### 4.5 The partition cuts across environments
+### 5.5 The partition cuts across environments
 
 `webPackages` in `internal/dts_to_esc/partition.go` groups declarations by API
 family, and environments cut across those families. `OffscreenCanvas`,
@@ -135,7 +151,7 @@ family, and environments cut across those families. `OffscreenCanvas`,
 `Element`, though the first four exist in every worker and the last two in none.
 A package is therefore not usable as a unit by any environment but a page.
 
-### 4.6 Availability is per package, where the facts are per declaration
+### 5.6 Availability is per package, where the facts are per declaration
 
 `TierPortable`'s own doc comment says the promise is per package and not per
 name, and #1586 measured the gap against Node 22: `web:file` is portable but
@@ -148,7 +164,7 @@ and service workers, so it cannot distinguish them. WebIDL can, through
 `[Exposed]` and `[Global=...]`, and `vocabulary.md` and `transferable.md` are
 built from it.
 
-### 4.7 Per-arm availability has no representation
+### 5.7 Per-arm availability has no representation
 
 `internal/interop/overlay/web/core.replace.esc` still retypes
 `MessageEvent.source` to `null` and `ports` to `Array<unknown>`, and its comment
@@ -166,7 +182,7 @@ tier. `url.replace.esc` suppresses the `MediaSource` overload of
 `type WindowProxy = Window`, a type alias, so no realm has a `WindowProxy`
 binding. Narrowing it means testing `Window`, which a worker genuinely lacks.
 
-### 4.8 Load cost is charged per closure but paid per tree
+### 5.8 Load cost is charged per closure but paid per tree
 
 `BuildPackageClosure` puts every reachable package into one group, so any edge
 into `web:dom` pulls the whole tree into every program's closure. Measured on
@@ -203,9 +219,9 @@ cost a 1.5x regression and bisected it, which #1861 records. The cache has since
 removed the figure that regressed and the bisect's commits are outside `main`'s
 rewritten history, so that issue is closed as not planned.
 
-## 5. Requirements
+## 6. Requirements
 
-### 5.1 Functional
+### 6.1 Functional
 
 **F1. A program has a target environment, or none.** A program compiled for a
 runtime declares which one, or it is inferred from the packages it imports.
@@ -261,7 +277,7 @@ whose scope class inherits it:
 **F7. The environment vocabulary matches the platform's globals.** `@env` names
 the nine global scopes WebIDL declares with `[Global=...]`, and the two group
 names those scopes answer to. An unannotated declaration means all nine, which
-is `Exposed=*`. `vocabulary.md` in this folder has the names and what the change
+is `Exposed=*`. `vocabulary.md` has the names and what the change
 costs.
 
 Two consequences, both breaking. `worker` covers four environments rather than
@@ -315,7 +331,7 @@ a `MessageEvent` handler on `DedicatedWorkerGlobalScope` and an
 `ExtendableMessageEvent` handler on `ServiceWorkerGlobalScope`. `location` is a
 `WorkerLocation` in a worker and a `Location` in a page.
 
-### 5.2 Non-functional
+### 6.2 Non-functional
 
 **N1. One fact, one place.** Where a declaration exists is a property of the
 declaration. Nothing else may restate it. A package file name, a partition entry
@@ -325,7 +341,7 @@ declaration's own.
 The tier rank is the live case. It answers a different question, how many
 runtimes ship a package, but once `@env` lands the two overlap enough to
 disagree, so one of them has to go or the division has to be stated. #1614 and
-§2.5 of the plan carry it.
+§7.4.5 carries it.
 
 **N2. A package is importable as a unit.** Every declaration a package holds is
 reachable from every environment that may import the package. Splitting a family
@@ -354,7 +370,26 @@ environment rules land in `internal/solver`, and the fixture suite that exercise
 copies written against the new imports, and the existing ones keep running
 unchanged against the old path.
 
-### 5.3 Phases
+## 7. Plan
+
+A stage lands on its own and leaves the tree green.
+
+### 7.1 Prerequisite, in the other stream
+
+Section 5.1 of `../web_api_types/design.md` adds `@webref/idl` and emits a
+checked-in Go table carrying `[Exposed]` per interface and `[Global=...]` per
+global scope.
+
+§7.3.1 cannot start before it. An `@env("window")` is a claim about the other
+eight environments, and `[Exposed]` is the only thing that knows whether the
+claim is true.
+
+The rest of phase one does not wait. §7.3.2 reads a `package.json` field, §7.3.3
+checks references against whatever the annotations say, and §7.3.4 is tooling over
+§7.3.2's answer, so all three can be built against a hand-written annotation set
+and switched to the generated one when it lands.
+
+### 7.2 What each phase carries
 
 The work lands in three phases, one environment family at a time: `window`, then
 the workers, then the worklets. A phase is done when programs targeting that
@@ -388,7 +423,7 @@ that says `@env("window")` is making a claim about the other eight environments.
 Without all nine names the claim cannot be written down, so the vocabulary has to
 be complete even while only `window` is an accepted target.
 
-**N3 lands with it,** which means the other stream's Stage 1 lands first.
+**N3 lands with it,** which means §5.1 of the other stream lands first.
 `@env("window")` is only correct if something knows the declaration is absent
 everywhere else, and `[Exposed]` is what knows.
 
@@ -400,17 +435,201 @@ F2 and F5 have nothing to do in phase one. A single environment cannot
 contradict itself, and no set of imports is unsatisfiable when every package a
 window program can reach is a window package.
 
-## 6. Non-goals
+### 7.3 Phase one: window
 
-- Improving what a declaration says. The other stream owns the conversion
-  input, the constructors, the derived sets and the hoisting.
-- Feature detection at runtime in user code, such as narrowing on
-  `typeof OffscreenCanvas !== "undefined"`.
-- Node, Deno and Bun. Widening the vocabulary past the browser is separate work.
-  The worklets are not in this exclusion: they are browser global scopes and F7
-  brings them in.
+#### 7.3.1 The vocabulary and the annotations
 
-## 7. Open questions
+Build `@env` with all nine names from F7 and both groups, and annotate the tree
+from the generated table. F7, N3, N1.
+
+The vocabulary is complete here even though only `window` is an accepted target.
+`worker` covers four environments, not three, since
+`RTCIdentityProviderGlobalScope` answers to it.
+
+**Done when** the regenerated tree carries an `@env` derived from `Exposed` on
+every declaration that needs one, roughly 290 more than a four-name vocabulary
+would produce, and `check_generated_tree` passes.
+
+#### 7.3.2 The target environment
+
+Read each entrypoint's environments from `package.json`, both the `lib/` one and
+each `bin/` one, and settle the field's spelling. Thread the result through to
+the checker. F1, F9.
+
+An entrypoint may state none, which claims every environment and reaches the
+intersection of what they provide. That intersection is empty for a declaration
+that differs by environment, so a no-target program cannot use `location` at
+all. That is the intended answer.
+
+**Done when** a fixture declares a window entrypoint and the checker can report
+what it resolved.
+
+#### 7.3.3 The reference check
+
+Run the check against the program's target, reporting a reference to a
+declaration absent from it. An error from this release, not a warning. It covers
+a value reference in any position, so matching `x is OffscreenCanvas` against an
+environment without it is an error rather than a guard that never fires. F3.
+
+Keep the tier check, which answers a different question until #1614 retires it.
+
+**Done when** a new fixture referencing a worker-only declaration from a window
+program fails with the full diagnostic, and the committed tree still converts
+clean.
+
+#### 7.3.4 Tooling
+
+The language server resolves the target from the same `package.json` field and
+filters completion by it. F9.
+
+**Done when** completion in a window entrypoint offers `document` and completion
+in an entrypoint declared for a worker does not.
+
+#### Not this phase
+
+No repartitioning, so a declaration may still sit in a package the wrong
+environments can import. No per-environment declarations: one environment cannot
+contradict itself. No unsatisfiable-import check, since every package a window
+program reaches is reachable from a window.
+
+### 7.4 Phase two: workers
+
+#### 7.4.1 Ingest the worker surface
+
+The four `*GlobalScope` classes, `importScripts`, `WorkerLocation`,
+`WorkerNavigator`, the service-worker events and `Clients` are not in the tree.
+Partition them into a worker package and regenerate. The name wants deciding:
+the closed stack produced `web/worker.worker.esc`, which read badly because of a
+file-name suffix that no longer exists.
+
+Their globals then hoist by the other stream's mechanism, carrying the `@env`
+F6 derives from the declaring scope.
+
+**Done when** a worker fixture calls `importScripts` and reads `location` as a
+`WorkerLocation`.
+
+#### 7.4.2 Repartition so a package is importable as a unit
+
+F4, N2, and the substance of #1644.
+
+1. Add `web:canvas` for the worker-reachable canvas surface:
+   `OffscreenCanvas`, `OffscreenCanvasRenderingContext2D`,
+   `ImageBitmapRenderingContext`, `ImageBitmap`, `ImageData`, `Path2D`,
+   `CanvasGradient`, `CanvasPattern`, `TextMetrics` and the 2D-context mixins.
+2. Move `MessagePort`, `StructuredSerializeOptions` and `Transferable` into
+   `web:core`.
+3. Move the nine transferable arms no worker can import, per
+   `transferable.md`. The six that are `Exposed=(DedicatedWorker, Window)` need a
+   package importable from a page and a dedicated worker, which no current
+   package is.
+4. Move the portable globals the other stream's hoisting left in `web:dom`.
+   `setTimeout`, `atob`, `structuredClone`, `queueMicrotask` and the rest exist
+   in every environment and sit in a browser-tier package, so a worker cannot
+   reach them. §5.4 of the other stream owns the move; this phase is what
+   makes it necessary.
+
+**Done when** a fixture compiles the worker program in section 5.2, receiving
+an `OffscreenCanvas` over `postMessage` and drawing on it, without importing
+`web:dom`.
+
+#### 7.4.3 Per-environment declarations
+
+F5, and the end of #1613.
+
+open question 1 in section 10 has the three mechanisms and which one
+needs new machinery.
+
+Whatever name index §7.3.1 builds must not intersect over a duplicate name. The
+closed stack's `EnvIndex` did, which is right for the interface and `declare
+var` pair that share a name and wrong for disjoint per-environment copies, where
+it yields the empty set. That index does not exist on `main`, so this is a
+constraint on §7.3.1's design rather than a change to existing code.
+
+Split `Transferable` by environment, sixteen arms for a page or a dedicated
+worker and ten for the rest.
+
+**Done when** a service worker sees `source` as
+`Client | ServiceWorker | MessagePort | null`, a page sees
+`WindowProxy | MessagePort | ServiceWorker | null`, and the retypes leave
+`internal/interop/overlay/web/core.replace.esc`.
+
+#### 7.4.4 The rest
+
+Turn on the unsatisfiable-import check, which now has something to catch: a page
+importing the worker package, or a dependency whose entrypoint does not cover a
+worker. F2.
+
+#### 7.4.5 Retire the tier machinery
+
+N1 and #1614. Once `@env` records where a declaration exists, the tier rank is a
+second mechanism answering an overlapping question, and N1 says one fact lives in
+one place.
+
+Retiring it is not a rename. A tier answers whether a package exists off the
+browser at all, which `@env`'s nine browser scopes do not answer, so the WinterTC
+question needs a home before `tier.go` can go. The options are an environment for
+each non-browser runtime, which the non-goals currently exclude, or a separate
+per-package claim that keeps the portability axis and drops the ordering.
+
+Phase two is where this becomes pressing, because `CheckTiers` and the reference
+check would both be live and would disagree: a tier forbids a portable package
+naming a browser one, where `@env` would permit it if both declarations exist in
+the importer's environments.
+
+**Done when** either `tier.go` is gone and the WinterTC question has a stated
+home, or the two mechanisms have a documented division and #1614 says which.
+
+### 7.5 Phase three: worklets
+
+F8, and F1 through F5 applied unchanged.
+
+1. Accept the four worklet names as targets.
+2. Add packages for the worklet surface. The CSS Typed OM is the bulk, 36
+   interfaces that `LayoutWorklet` and `PaintWorklet` share with `Window` and
+   `Worker`, sitting in `web:dom` today where no worklet can reach them. The
+   remainder is each worklet's own machinery: `AudioWorkletProcessor`,
+   `PaintRenderingContext2D`, `LayoutFragment` and `IntrinsicSizes`.
+3. Ingest and hoist the worklet scope classes.
+
+**Done when** a fixture declares a paint-worklet entrypoint, names
+`CSSUnitValue` and `PaintRenderingContext2D`, and is refused `document`.
+
+## 8. Measurement
+
+N4, and the figures have inverted since this was written.
+
+The cross-run checker cache in `internal/solver/stdlib_run_cache.go` keeps one
+loaded checker per stdlib tree and forks it per run, so warm cost has collapsed:
+
+| | warm | cold |
+| --- | --- | --- |
+| no imports | 0.45ms | 954ms |
+| `web:fetch` alone | 0.36ms | 980ms |
+| every package | 0.67ms | 4.6s |
+
+Warm was the constraint on repartitioning at 380ms for every package. At 0.67ms
+it is not a constraint at all, so **closure size no longer costs inference** and
+the argument against an edge into `web:dom` has to be made on cold load alone.
+
+Cold barely moves with closure size either: the `NoImports` case costs 954ms
+against `OnePackage`'s 980ms, because `buildPackageGraph` parses every file in
+the tree to read its import header whether or not the program reaches it. So
+cold is a property of the tree's size, not of what a program imports, and #1643
+is the lever on it.
+
+Two consequences for this plan. §7.4.2 no longer waits on #1861, which is closed
+as not planned: it measured the warm figure the cache removed, and its bisect
+hashes are outside `main`'s rewritten history. And #1862 is still live and
+unfixed, so a per-environment file landing in phase two would silently shrink
+what the benchmark measures.
+
+## 9. Testing
+
+New fixtures throughout, not migrated ones. N5. The rules land in
+`internal/solver`, and the suite exercising `internal/checker` is not being
+backported.
+
+## 10. Open questions
 
 1. **Per-environment declarations, per-member duplicates, or a merge?** Three
    mechanisms cover different cases and `../web_api_types/hoisted/README.md`
@@ -429,7 +648,17 @@ window program can reach is a window package.
    The fixtures that exercise the old path are not being migrated, so the
    question is what happens to user code rather than to the suite.
 
-## 8. Related issues
+## 11. Non-goals
+
+- Improving what a declaration says. The other stream owns the conversion
+  input, the constructors, the derived sets and the hoisting.
+- Feature detection at runtime in user code, such as narrowing on
+  `typeof OffscreenCanvas !== "undefined"`.
+- Node, Deno and Bun. Widening the vocabulary past the browser is separate work.
+  The worklets are not in this exclusion: they are browser global scopes and F7
+  brings them in.
+
+## 12. Related issues
 
 | issue | relation |
 | --- | --- |
@@ -446,3 +675,4 @@ that a `Transferable` in `web:core` naming `OffscreenCanvas` would fail the
 environment check. The check it named no longer exists on `main`, and even in the
 tree it was written against the claim did not hold. The blocker is reachability: a
 worker cannot import the packages the arms live in.
+
