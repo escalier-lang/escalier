@@ -25,7 +25,8 @@ import (
 // the probe snapshot with the append. A bare `v.LowerBounds = append(...)` must
 // never appear — routing every append through the two helpers is what makes
 // "forgot to journal the mutation" structurally impossible (an un-journaled
-// append would silently survive a Discard and corrupt committed state).
+// append would silently survive a Discard and corrupt committed state). The one
+// in-place write to a bound list is replaceLowerBound, which journals its own undo.
 type Context struct {
 	varCounter int
 
@@ -168,6 +169,12 @@ type Context struct {
 	// entry's borrow. addBorrowedRead appends to it and constrainBorrowedVarFieldRead
 	// explains the rule.
 	borrowedReads map[*soltype.TypeVarType][]borrowedRead
+
+	// slotModes holds, per type variable, the writable slot of a weak binding the variable
+	// stands for. Each lower bound the variable gains is widened as that slot widens it.
+	// markSlot fills it for a weak binding's own variables, and widenSlotBound for the
+	// variables it mints. widenSlotBound explains the rule.
+	slotModes map[*soltype.TypeVarType]slotMode
 
 	// muBinderCount numbers the μ-variables the regular-tree check has minted, so two aliases whose
 	// knots are composed into one type carry distinct binders. coalesce numbers its own binders per
@@ -705,6 +712,27 @@ func (c *Context) addUpperBound(v *soltype.TypeVarType, t soltype.Type) {
 	v.UpperBounds = append(v.UpperBounds, t)
 }
 
+// replaceLowerBound replaces v's lower bound at index i with t and returns the errors that
+// checking t against v's upper bounds and borrowed reads reports, as adding t would. A
+// discarded probe puts the replaced bound back.
+func (c *Context) replaceLowerBound(v *soltype.TypeVarType, i int, t soltype.Type) []SolverError {
+	c.recordMutation(v)
+	prev := v.LowerBounds[i]
+	v.LowerBounds[i] = t
+	if c.probe != nil {
+		c.probe.onRollback(func() { v.LowerBounds[i] = prev })
+	}
+	seen := newSeenPairs()
+	var errs []SolverError
+	for _, ub := range v.UpperBounds {
+		errs = append(errs, c.constrain(t, ub, seen, false)...)
+	}
+	for _, r := range c.borrowedReads[v] {
+		errs = append(errs, c.readThroughLowerBound(r, v, t, seen)...)
+	}
+	return c.breadcrumbUnionCommit(errs, v)
+}
+
 // borrowedRead is a field-read requirement made through a borrow whose pointee is a type
 // variable. borrow carries the mutability and lifetime the read is bounded by. shape is the
 // requirement the variable itself is constrained against. It names the same properties as
@@ -733,7 +761,9 @@ func (c *Context) addBorrowedRead(v *soltype.TypeVarType, r borrowedRead) {
 // dedups (only the first touch of v in a probe snapshots), so calling this at
 // every append site is cheap and correct: append-only bound lists mean the first
 // snapshot already covers every later append to v under the same probe. Reached
-// only through addLowerBound/addUpperBound.
+// only through addLowerBound, addUpperBound, and replaceLowerBound. A replacement
+// keeps the list's length, so replaceLowerBound registers its own rollback to put
+// the replaced bound back.
 func (c *Context) recordMutation(v *soltype.TypeVarType) {
 	c.checkThawed(v, "a type bound")
 	if c.probe != nil {
