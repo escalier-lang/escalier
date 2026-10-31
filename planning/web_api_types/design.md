@@ -343,8 +343,10 @@ against `main` first; the scripts are checked in to do that.
    `indexedDB` to `web:indexeddb`, `localStorage` and `sessionStorage` to
    `web:storage`. `crypto`, `performance` and `fetch` already went.
 3. Un-hoist the window-only globals, which `hoisted/` counts at 176, and add
-   `web:window` holding `Window`, the `window` value and the members that stay
-   members. `alert` is then `window.alert`.
+   `web:window` holding `Window`, its mixins and `WindowEventMap`. The members
+   that stay members need no declaration of their own, since they are already
+   `Window` members. `alert` is then `window.alert`, where `window` is the
+   package binding step 4 points at the instance.
 4. Set each scope package's `AsValue` to its scope object, so `window`, `worker`
    and `worklet` are each both the package binding and the object. This replaces
    `self`, per open question 3.
