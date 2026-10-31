@@ -485,7 +485,15 @@ needs no network.
    tier problem and not a `.d.ts` error, so the table does not answer it. #1586
    is where that one goes.
 
+Dropping a constructor is a redirection, not a loss, and the thing it redirects
+to has to stay reachable from the same environments as the class. A worker gets
+an `ImageBitmap` from `createImageBitmap` and a `MessagePort` from
+`new MessageChannel()`, both of which are `Exposed=(Window, Worker)` and keep
+their own constructor. The class value also stays, since `instanceof` needs it,
+so what goes is the construct signature alone.
+
 **Done when** `new ImageBitmap()` and `new MessagePort()` are rejected,
+`createImageBitmap` and `new MessageChannel()` still typecheck,
 `x is ImageBitmap` still compiles and still narrows, and
 `check_generated_tree` passes. The regenerated tree will show a large diff.
 

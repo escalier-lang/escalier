@@ -613,13 +613,23 @@ answers.
 `CanvasGradient`, `CanvasPattern`, `TextMetrics` and the 2D-context mixins are
 worker-reachable and sit in `web:dom`, which a worker cannot import.
 
+`createImageBitmap` comes too. `ImageBitmap` has no constructor, so that
+function is the only way to make one, and leaving it in `web:dom` would give a
+worker a type it cannot instantiate. `hoisted/canvas.esc` in the other stream
+already routes it here.
+
 **Done when** a worker fixture names `OffscreenCanvas` and draws on it without
 importing `web:dom`.
 
 #### 7.4.3 Move the portable event plumbing into `web:prelude`
 
-The other half of #1644. `MessagePort`, `StructuredSerializeOptions` and
-`Transferable` go to `web:prelude`.
+The other half of #1644. `MessagePort`, `MessageChannel`,
+`StructuredSerializeOptions` and `Transferable` go to `web:prelude`.
+
+`MessageChannel` comes for the same reason `createImageBitmap` goes with
+`ImageBitmap`: `MessagePort` has no constructor, and `new MessageChannel()` is
+how a worker gets a pair of them. Its closure is `MessagePort`'s, so it moves in
+this stage and not a later one.
 
 `Transferable` names the canvas types, so §7.4.2 lands first or this edge points
 at a package a worker cannot import.
