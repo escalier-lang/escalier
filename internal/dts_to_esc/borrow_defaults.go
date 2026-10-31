@@ -67,18 +67,36 @@ func indexUnder[T any](m map[string]T, decl T, names ...string) {
 // planning/ownership_rules/requirements.md. idx holds the declarations a type in a
 // signature may name.
 //
-//   - A parameter whose type is an object type becomes a `&mut` borrow.
-//   - Every other parameter keeps its type as written. That covers a primitive, a
-//     function, a promise, a type parameter, `unknown`, a name idx does not declare, and
-//     every union.
+//   - A parameter whose type is an object type becomes a `&mut` borrow. A `.d.ts` does
+//     not say whether the callee writes the argument, so I3 assumes it does. The caller
+//     keeps ownership, since an owned parameter would move the caller's value on every
+//     call, which most library functions do not need.
+//   - A primitive, a function or a promise parameter keeps its type as written. Each is a
+//     value type under I2, with no place to lend, and the checker rejects a written
+//     `&mut string`.
+//   - A parameter whose type is a type parameter, `unknown`, or a name idx does not
+//     declare keeps its type as written. Each may stand for a value type, which a borrow
+//     cannot hold.
+//   - A union parameter keeps its type as written. A union may hold a value-type member,
+//     and a borrow of the whole union would borrow that member too.
 //   - A return whose type is an object type, or a union of object types and value types,
 //     becomes a `&'a mut` borrow of each object type when it may share structure with a
-//     borrowed parameter. Each such parameter takes the lifetime `'a`.
-//   - A rest parameter, a `this` parameter, a constructor and a setter keep their
-//     parameters as written.
+//     borrowed parameter. Each such parameter takes the lifetime `'a`. An owned return
+//     that is part of an argument would give the caller a second owner of an object it
+//     only lent. The lifetime keeps the argument borrowed while the result is live.
+//     Only the parameters that may share take `'a`, so a call does not hold the others.
+//   - A rest parameter keeps its type as written. It receives an array the call builds,
+//     not a place the caller lends.
+//   - A `this` parameter keeps its type as written. Receiver classification in
+//     mutability.go decides how `this` is borrowed.
+//   - Constructor and setter parameters keep their types as written. The instance stores
+//     the argument, so it has to own it.
 //
 // A borrowed parameter may share structure with the return unless every slot of its type
 // holds a value type and the return type requires a member the parameter's type lacks.
+// A parameter of value-type slots holds no object the return could be. The return can
+// then only be the argument itself, and an argument without one of the return type's
+// members cannot be.
 func applyBorrowDefaults(mod *StandaloneModule, idx *typeIndex) {
 	mod.Module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
 		for _, decl := range ns.Decls {
