@@ -179,8 +179,9 @@ The binding and the object are one name rather than two. `import "web:window"`
 binds `window`, and a separate value of that name inside the package would read
 as `window.window`.
 
-This is the general rule that a pseudo-package exporting one value is treated as
-that value, and not something scope packages need of their own. `std:console` is
+This is the general rule that a pseudo-package exporting a value under its own
+name is treated as that value, and not something scope packages need of their
+own. `std:console` is
 the same shape. It exports a `console` value and a `Console` type, and the
 useful spelling is `console.log(...)` rather than `console.console.log(...)`.
 
@@ -194,12 +195,18 @@ qualifier and neither needs the package's name repeated.
 and `window.alert(...)` is the member. Section 5.5 states the rule precisely and
 says why it tests the name rather than counting value exports.
 
-`web:fetch` is a third instance, and the reason F7 costs it nothing. Its only
-value export is `fetch`, which matches the package's binding name, so
+`web:fetch` is a third instance, and the reason F7 costs it nothing. It exports
+four values, the classes `Headers`, `Request` and `Response` plus the function
+`fetch`, and `fetch` is the one whose name matches the package's binding. So
 `import "web:fetch"` gives `fetch(...)` as a call and `fetch.Response` as a
 type. That is the shape `assignedSurface` already documents for an npm package
 whose `.d.ts` writes a function and a namespace of one name, so the rule covers
 a callable binding as well as an object.
+
+None of the three exports exactly one value. A class occupies the value sort
+beside the type sort, so `web:window` has `window` and `Window`, and `web:fetch`
+has four. Only `std:console` would pass a count, which is why the test is the
+name and never the number.
 
 Each scope package names its binding after its own scope, so the three are
 `window`, `worker` and `worklet`.
@@ -490,9 +497,10 @@ in `internal/solver/package_load.go` leaves `AsValue` nil, and only
 `assignedSurface` beside it sets one, reached solely from an npm `.d.ts` writing
 `export = f`.
 
-The rule is that a pseudo-package exporting one value is treated as that value.
-`std:console` is the case that already exists. It exports a `console` value and
-a `Console` type, and `console.log(...)` resolves today only because
+The rule is that a pseudo-package exporting a value under its own name is
+treated as that value. `std:console` is the case that already exists. It exports
+a `console` value and a `Console` type, and `console.log(...)` resolves today
+only because
 `std:console` is in `ambientPackages` and the ambient layer binds a package's
 exports unprefixed. Section 5.1 takes that layer away from a project's own
 files, so by the time this stage runs nothing makes `console.log(...)` resolve
