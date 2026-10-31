@@ -579,9 +579,12 @@ type funcCtx struct {
 	// statement maps to, so this is how the event emitters find the point such an
 	// expression runs at.
 	exprRefs map[ast.Expr]liveness.StmtRef
+	// eventStmt is the innermost statement being walked that has a CFG point. The ownership
+	// events of the expression being walked attach to its point. See eventStmtRef.
+	eventStmt ast.Stmt
 	// exprAt is the CFG point of the expression attachEventsAt is attaching events for,
-	// and the statement that was current when its inference began. eventStmtRef answers it
-	// while that statement is still current.
+	// and the eventStmt when its inference began. eventStmtRef answers it while that
+	// statement is still eventStmt.
 	exprAt struct {
 		stmt ast.Stmt
 		ref  liveness.StmtRef

@@ -319,7 +319,9 @@ func (c *checker) fork(source ModuleSource, groupSource GroupSource, groups Pack
 	f.pendingOverrides = slices.Clip(c.pendingOverrides)
 	f.pendingImplements = slices.Clip(c.pendingImplements)
 	f.provisionalVariance = slices.Clip(c.provisionalVariance)
-	f.pendingFlows = clipValues(c.pendingFlows)
+	// A finished load settles every flow it records, and a pending flow would point into the
+	// loaded checker's tables, so the run starts with none.
+	f.pendingFlows = nil
 	f.paramByVar = maps.Clone(c.paramByVar)
 	f.unsettledParams = maps.Clone(c.unsettledParams)
 

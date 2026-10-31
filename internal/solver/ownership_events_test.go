@@ -427,7 +427,7 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 			},
 		},
 		{
-			name: "NestedClosureFlowsOutOfOuterParam",
+			name: "ClosureReturnedThroughLocalOwnsCapture",
 			src: `
 				fn go(p) {
 					val f = fn () {
@@ -438,7 +438,7 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.0: borrow(&, p, f, '_)",
+				"b0.0: move(p, f)",
 				"b0.1: use(f, read)",
 			},
 		},
@@ -663,6 +663,72 @@ func TestOwnershipEventsMatchArmNodes(t *testing.T) {
 				"b3.-1: move(p.v, v)",
 				"b4.-1: use(p.n, read)",
 				"b2.0: use(r, read)",
+			},
+		},
+	})
+}
+
+// TestOwnershipEventsUnionSources covers sources whose type is a union. A union with a
+// reference-shaped member moves like that member, and a union whose reference-shaped members
+// are borrows copies like a borrow.
+func TestOwnershipEventsUnionSources(t *testing.T) {
+	runOwnershipEvents(t, []ownershipEventsCase{
+		{
+			name: "OwnedOrNull",
+			src: `
+				fn go(p: {x: number} | null) {
+					val q = p
+					return q
+				}
+			`,
+			want: []string{
+				"b0.0: move(p, q)",
+				"b0.1: move(q, return)",
+			},
+		},
+		{
+			name: "BorrowOrUndefined",
+			src: `
+				fn go(r: &{x: number} | undefined) {
+					val q = r
+					return q
+				}
+			`,
+			want: []string{
+				"b0.0: copy(r, q)",
+				"b0.1: copy(q, return)",
+			},
+		},
+	})
+}
+
+// TestOwnershipEventsBranchInsideExpression asserts that a branch the CFG builder leaves
+// inside an expression attaches its events to the statement holding the expression. The
+// `if` in a tuple element gets no blocks of its own, and the `log()` statement inside it has
+// no CFG node, so the read of `log`, the moves out of the branches, and the borrow after
+// them all attach to the binding of `x`.
+func TestOwnershipEventsBranchInsideExpression(t *testing.T) {
+	runOwnershipEvents(t, []ownershipEventsCase{
+		{
+			name: "IfInTupleElement",
+			src: `
+				fn log() {}
+				fn go(c: boolean) {
+					val p = {x: 1}
+					val q = {x: 2}
+					val r = {x: 3}
+					val x = [if c { log()
+						p } else { q }, &r]
+					return x
+				}
+			`,
+			want: []string{
+				"b0.3: use(c, read)",
+				"b0.3: use(log, read)",
+				"b0.3: move(p, x)",
+				"b0.3: move(q, x)",
+				"b0.3: borrow(&, r, x, '1)",
+				"b0.4: move(x, return)",
 			},
 		},
 	})

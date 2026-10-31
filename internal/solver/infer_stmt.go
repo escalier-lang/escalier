@@ -54,6 +54,13 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 	// body (c.fn == nil), where no liveness analysis ran.
 	if c.fn != nil {
 		c.fn.currentStmt = s
+		// A statement inside an expression the CFG builder did not decompose has no CFG point
+		// of its own, so the ownership events inside it attach to the enclosing statement's.
+		if _, ok := c.fn.stmtToRef[s]; ok {
+			fn, saved := c.fn, c.fn.eventStmt
+			fn.eventStmt = s
+			defer func() { fn.eventStmt = saved }()
+		}
 	}
 	switch s := s.(type) {
 	case *ast.ExprStmt:

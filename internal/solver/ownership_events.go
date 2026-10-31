@@ -139,6 +139,32 @@ type ownershipEvents struct {
 	emitted set.Set[emitSite]
 	// temps maps the expression of each tempHolder to the indices of the events it holds.
 	temps map[ast.Node][]int
+	// escaping holds the root of each place whose value flows into a return or a
+	// module-level binding. flowsInto maps the root of each place whose value flows into a
+	// local place to the roots of those places. A closure held by a place that reaches
+	// escaping through flowsInto outlives the frame. See escapes.
+	escaping  set.Set[liveness.VarID]
+	flowsInto map[liveness.VarID][]liveness.VarID
+}
+
+// escapes reports whether the value held by the place rooted at root flows into a return
+// or a module-level binding, directly or through other local places.
+func (t *ownershipEvents) escapes(root liveness.VarID) bool {
+	seen := set.NewSet[liveness.VarID]()
+	stack := []liveness.VarID{root}
+	for len(stack) > 0 {
+		r := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if t.escaping.Contains(r) {
+			return true
+		}
+		if seen.Contains(r) {
+			continue
+		}
+		seen.Add(r)
+		stack = append(stack, t.flowsInto[r]...)
+	}
+	return false
 }
 
 // emitSite is one expression that emits events in the role role, and the CFG point they
@@ -162,6 +188,9 @@ const (
 	captureRole
 	callRole
 	assignRole
+	bindingRole
+	patternRole
+	returnRole
 )
 
 // firstEmit reports whether the events node emits in role, for the captured local root when
@@ -178,10 +207,12 @@ func (c *checker) firstEmit(node ast.Node, role emitRole, at liveness.StmtRef, r
 // newOwnershipEvents returns an empty table whose places render through names.
 func newOwnershipEvents(names map[liveness.VarID]string) *ownershipEvents {
 	return &ownershipEvents{
-		names:    names,
-		subsumed: set.NewSet[ast.Node](),
-		emitted:  set.NewSet[emitSite](),
-		temps:    map[ast.Node][]int{},
+		names:     names,
+		subsumed:  set.NewSet[ast.Node](),
+		emitted:   set.NewSet[emitSite](),
+		temps:     map[ast.Node][]int{},
+		escaping:  set.NewSet[liveness.VarID](),
+		flowsInto: map[liveness.VarID][]liveness.VarID{},
 	}
 }
 
@@ -215,7 +246,6 @@ const (
 	valueSource sourceKind = iota
 	borrowSource
 	ownedSource
-	unsettledSource
 )
 
 // destKind classifies a flow's destination, the column of F2's table.
@@ -256,11 +286,38 @@ type flowDest struct {
 
 // destOfType returns the destination a flow into a slot of type t has: a borrow
 // destination when t is a borrow, and an owned one otherwise.
-func destOfType(t soltype.Type) flowDest {
-	if r, ok := t.(*soltype.RefType); ok && r.Lt != nil {
+func (c *checker) destOfType(t soltype.Type) flowDest {
+	if r, ok := c.borrowOf(t); ok {
 		return flowDest{kind: borrowDest, borrow: borrowKindOf(r.Mut), lt: r.Lt}
 	}
 	return flowDest{kind: ownedDest}
+}
+
+// borrowOf returns the borrow t is. A union is a borrow when each member that is not a
+// value type is a borrow, as `&{x: number} | undefined` is, and borrowOf returns its first
+// such member.
+func (c *checker) borrowOf(t soltype.Type) (*soltype.RefType, bool) {
+	if r, ok := t.(*soltype.RefType); ok && r.Lt != nil {
+		return r, true
+	}
+	u, ok := c.expandAliasChain(t).(*soltype.UnionType)
+	if !ok {
+		return nil, false
+	}
+	var first *soltype.RefType
+	for _, member := range u.Types {
+		if c.holdsValueType(member) {
+			continue
+		}
+		r, isRef := member.(*soltype.RefType)
+		if !isRef || r.Lt == nil {
+			return nil, false
+		}
+		if first == nil {
+			first = r
+		}
+	}
+	return first, first != nil
 }
 
 // borrowKindOf returns `&mut` for a mutable borrow and `&` otherwise.
@@ -362,23 +419,30 @@ func exprStmtRefs(cfg *liveness.CFG) map[ast.Expr]liveness.StmtRef {
 }
 
 // eventStmtRef returns the CFG point the events of the expression being walked attach to.
-// That is the point attachEventsAt set, while the statement current when it was set is
-// still current, and the current statement's point otherwise. ok is false outside a body or
-// when the point is unknown.
+// That is the point attachEventsAt set, while c.fn.eventStmt is the statement it was set
+// under, and c.fn.eventStmt's point otherwise. ok is false outside a body or when the point
+// is unknown.
 func (c *checker) eventStmtRef() (liveness.StmtRef, bool) {
-	if c.fn != nil && c.fn.exprAt.set && c.fn.exprAt.stmt == c.fn.currentStmt {
+	if c.fn == nil {
+		return liveness.StmtRef{}, false
+	}
+	if c.fn.exprAt.set && c.fn.exprAt.stmt == c.fn.eventStmt {
 		return c.fn.exprAt.ref, true
 	}
-	return c.currentStmtRef()
+	if c.fn.eventStmt == nil {
+		return liveness.StmtRef{}, false
+	}
+	ref, ok := c.fn.stmtToRef[c.fn.eventStmt]
+	return ref, ok
 }
 
-// attachEventsAt makes eventStmtRef return ref until the statement current now changes or
-// the returned function restores the previous point. A statement inside the expression
-// being inferred changes the current statement, so its events attach to its own point.
+// attachEventsAt makes eventStmtRef return ref until the returned function restores the
+// previous point. A statement with a CFG point inside the expression being inferred
+// attaches its events to its own point while it is walked.
 func (c *checker) attachEventsAt(ref liveness.StmtRef) func() {
-	saved := c.fn.exprAt
-	c.fn.exprAt.stmt, c.fn.exprAt.ref, c.fn.exprAt.set = c.fn.currentStmt, ref, true
 	fn := c.fn
+	saved := fn.exprAt
+	fn.exprAt.stmt, fn.exprAt.ref, fn.exprAt.set = fn.eventStmt, ref, true
 	return func() { fn.exprAt = saved }
 }
 
@@ -585,8 +649,16 @@ func (c *checker) emitValueFlow(p movePlace, source ast.Expr, sourceT soltype.Ty
 	if source != nil {
 		sourceT = c.info.TypeOf(source)
 	}
+	// A closure is a value type, so its flows are recorded whatever the source's type.
+	switch holder.kind {
+	case returnHolder, moduleHolder:
+		c.fn.events.escaping.Add(p.root)
+	case placeHolder:
+		c.fn.events.flowsInto[p.root] = append(c.fn.events.flowsInto[p.root], holder.place.root)
+	case argHolder, receiverHolder, tempHolder:
+	}
 	ev := ownershipEvent{place: p, holder: holder, node: node}
-	kind, wait, settled := c.classifyFlow(p, sourceT, holder, dest, false, false, &ev)
+	kind, wait, settled := c.classifyFlow(c.fn.events, p, sourceT, holder, dest, false, false, &ev)
 	if settled && kind == useEvent {
 		if source == nil {
 			c.emitEvent(ownershipEvent{kind: useEvent, place: p, access: readAccess, node: node}, ref)
@@ -609,17 +681,18 @@ func (c *checker) emitValueFlow(p movePlace, source ast.Expr, sourceT soltype.Ty
 }
 
 // classifyFlow returns the event kind F2 gives the flow of place p, whose value has type
-// t, into holder through dest. It fills ev's borrow and lifetime for a borrow. A value
+// t, into holder through dest. table holds the flow's event. It fills ev's borrow and
+// lifetime for a borrow. A value
 // type returns useEvent, since copying it is only a read of p. settled is false when F3
 // has not settled the source or the destination, and wait then names what the flow waits
 // on.
 //
 // force settles every such flow the way the current solver treats what it cannot see: an
 // unsettled parameter is read as it stands, a callee with no signature borrows its
-// argument, and a closure no flow site received borrows what it captures. forceCapture
-// settles only that last case.
-func (c *checker) classifyFlow(p movePlace, t soltype.Type, holder eventHolder, dest flowDest, force, forceCapture bool, ev *ownershipEvent) (ownershipEventKind, flowWait, bool) {
-	dest, wait, ok := c.settleDest(dest, holder, force, force || forceCapture)
+// argument, and a closure capture settles from the holder the closure has then.
+// forceCapture settles only that last case.
+func (c *checker) classifyFlow(table *ownershipEvents, p movePlace, t soltype.Type, holder eventHolder, dest flowDest, force, forceCapture bool, ev *ownershipEvent) (ownershipEventKind, flowWait, bool) {
+	dest, wait, ok := c.settleDest(table, dest, holder, force, force || forceCapture)
 	if !ok {
 		return 0, wait, false
 	}
@@ -636,7 +709,7 @@ func (c *checker) classifyFlow(p movePlace, t soltype.Type, holder eventHolder, 
 			return borrowEvent, flowWait{}, true
 		}
 		return copyEvent, flowWait{}, true
-	case ownedSource, unsettledSource:
+	case ownedSource:
 	}
 	if dest.kind == borrowDest {
 		ev.borrow, ev.lifetime = dest.borrow, dest.lt
@@ -649,7 +722,7 @@ func (c *checker) classifyFlow(p movePlace, t soltype.Type, holder eventHolder, 
 // borrow, or inferred-return destination. ok is false when F3 has not decided it yet, and
 // wait then names what it waits on. force and forceCapture are the flags classifyFlow
 // describes.
-func (c *checker) settleDest(dest flowDest, holder eventHolder, force, forceCapture bool) (flowDest, flowWait, bool) {
+func (c *checker) settleDest(table *ownershipEvents, dest flowDest, holder eventHolder, force, forceCapture bool) (flowDest, flowWait, bool) {
 	switch dest.kind {
 	case paramDest:
 		if !force && c.unsettledParams.Contains(dest.param) {
@@ -659,7 +732,7 @@ func (c *checker) settleDest(dest flowDest, holder eventHolder, force, forceCapt
 	case calleeDest:
 		if fn := c.resolvedCallee(dest.call); fn != nil {
 			if param, ok := argDest(dest.call, fn, dest.index); ok {
-				return c.settleDest(param, holder, force, forceCapture)
+				return c.settleDest(table, param, holder, force, forceCapture)
 			}
 		}
 		if !force {
@@ -667,14 +740,20 @@ func (c *checker) settleDest(dest flowDest, holder eventHolder, force, forceCapt
 		}
 		return flowDest{kind: borrowDest, borrow: immutableBorrow}, flowWait{}, true
 	case captureDest:
+		// A closure that is returned or stored into module-level state owns what it
+		// captures, and any other closure borrows it. A closure a local holds may still be
+		// returned through that local, so it waits for the whole body.
 		switch holder.kind {
 		case returnHolder, moduleHolder:
 			return flowDest{kind: ownedDest}, flowWait{}, true
-		case tempHolder:
+		case tempHolder, placeHolder:
 			if !forceCapture {
 				return dest, flowWait{capture: true}, false
 			}
-		case placeHolder, argHolder, receiverHolder:
+			if holder.kind == placeHolder && table.escapes(holder.place.root) {
+				return flowDest{kind: ownedDest}, flowWait{}, true
+			}
+		case argHolder, receiverHolder:
 		}
 		return flowDest{kind: borrowDest, borrow: borrowKindOf(dest.writes), reborrows: true}, flowWait{}, true
 	case ownedDest, borrowDest, inferredReturnDest:
@@ -736,25 +815,24 @@ func (c *checker) resolvedCallee(call *ast.CallExpr) *soltype.FuncType {
 // rooted at an unannotated parameter whose body is still being walked and force is unset,
 // and wait then names that parameter. A value type copies whatever its root, so it is
 // classified first. A place rooted at an unannotated parameter takes the parameter's
-// ownership. The parameter is owned when its body moves it or its type is a concrete owned
-// shape, the test paramDestOf applies to the caller's side, and a borrow otherwise. A field
-// of an owned parameter, and every other place, is classified by its own type.
+// ownership, which paramDestOf gives the caller's side of the same parameter. A field of an
+// owned parameter, and every other place, is classified by its own type.
 func (c *checker) sourceKindOf(p movePlace, t soltype.Type, force bool) (sourceKind, flowWait, bool) {
 	if c.holdsValueType(t) {
 		return valueSource, flowWait{}, true
 	}
 	if fp, isParam := c.paramByVar[p.root]; isParam {
 		if !force && c.unsettledParams.Contains(fp) {
-			return unsettledSource, flowWait{param: fp}, false
+			return valueSource, flowWait{param: fp}, false
 		}
-		if isBorrowType(fp.Type) || (!fp.Moved && !c.isConcreteOwned(fp.Type)) {
+		if c.paramDestOf(fp, false).kind != ownedDest {
 			return borrowSource, flowWait{}, true
 		}
 		if len(p.path) == 0 {
 			return ownedSource, flowWait{}, true
 		}
 	}
-	if isBorrowType(t) {
+	if _, ok := c.borrowOf(t); ok {
 		return borrowSource, flowWait{}, true
 	}
 	return ownedSource, flowWait{}, true
@@ -778,9 +856,21 @@ func (c *checker) fieldType(t soltype.Type, name string) soltype.Type {
 
 // holdsValueType reports whether a value of type t is a value type, which a flow copies. A
 // type with no recorded type counts as one, since it names no value a flow can move. A
-// variable is a value type when every value it can hold is one.
+// variable is a value type when every value it can hold is one, and so is a union, such as
+// `number | undefined`, but not `{x: number} | null`.
 func (c *checker) holdsValueType(t soltype.Type) bool {
-	if t == nil || !c.isReferenceShaped(t) {
+	if t == nil {
+		return true
+	}
+	if u, ok := c.expandAliasChain(t).(*soltype.UnionType); ok {
+		for _, member := range u.Types {
+			if !c.holdsValueType(member) {
+				return false
+			}
+		}
+		return true
+	}
+	if !c.isReferenceShaped(t) {
 		return true
 	}
 	v, isVar := t.(*soltype.TypeVarType)
@@ -811,7 +901,7 @@ func (c *checker) settleFlowsWaitingOn(wait flowWait, force, forceCapture bool) 
 		if pf.source != nil {
 			t = c.info.TypeOf(pf.source)
 		}
-		kind, next, settled := c.classifyFlow(ev.place, t, ev.holder, pf.dest, force, forceCapture, &ev)
+		kind, next, settled := c.classifyFlow(pf.table, ev.place, t, ev.holder, pf.dest, force, forceCapture, &ev)
 		if !settled {
 			c.addPendingFlow(pf, next)
 			continue
@@ -964,26 +1054,29 @@ func renderCallee(node ast.Node) string {
 }
 
 // registerUnsettledParams records each unannotated parameter of the body about to be
-// walked, so a flow out of it waits until the body settles its ownership. sigParams are the
+// walked, and each leaf such a parameter's pattern binds, so a flow out of one waits until
+// the body settles the parameter's ownership. sigParams are the
 // declared parameters and params the FuncParams built from them, one for one.
 func (c *checker) registerUnsettledParams(sigParams []*ast.Param, params []*soltype.FuncParam) {
 	for i, p := range sigParams {
-		ip, ok := p.Pattern.(*ast.IdentPat)
-		if !ok || p.TypeAnn != nil || i >= len(params) {
+		if p.TypeAnn != nil || i >= len(params) {
 			continue
 		}
-		id := c.varIDs.Of(ip)
-		if id <= 0 {
-			continue
-		}
-		if c.paramByVar == nil {
-			c.paramByVar = map[liveness.VarID]*soltype.FuncParam{}
-		}
-		if c.unsettledParams == nil {
-			c.unsettledParams = set.NewSet[*soltype.FuncParam]()
-		}
-		c.paramByVar[id] = params[i]
-		c.unsettledParams.Add(params[i])
+		// Each leaf a destructuring parameter binds takes the parameter's ownership.
+		ast.ForEachLeafBinding(p.Pattern, func(_ string, leaf ast.Node) {
+			id := c.varIDs.Of(leaf)
+			if id <= 0 {
+				return
+			}
+			if c.paramByVar == nil {
+				c.paramByVar = map[liveness.VarID]*soltype.FuncParam{}
+			}
+			if c.unsettledParams == nil {
+				c.unsettledParams = set.NewSet[*soltype.FuncParam]()
+			}
+			c.paramByVar[id] = params[i]
+			c.unsettledParams.Add(params[i])
+		})
 	}
 }
 
@@ -1004,12 +1097,12 @@ func (c *checker) settleParams(params []*soltype.FuncParam) {
 // VarID is id, attached to ref. A binding with an annotation takes the annotation's
 // ownership. One without is owned, as F3 states.
 func (c *checker) emitBindingFlow(vd *ast.VarDecl, id liveness.VarID, bindingT soltype.Type, ref liveness.StmtRef) {
-	if id <= 0 {
+	if id <= 0 || c.fn.events == nil || !c.firstEmit(vd, bindingRole, ref, 0) {
 		return
 	}
 	dest := flowDest{kind: ownedDest}
 	if vd.TypeAnn != nil {
-		dest = destOfType(bindingT)
+		dest = c.destOfType(bindingT)
 	}
 	c.emitFlow(vd.Init, eventHolder{kind: placeHolder, place: movePlace{root: id}}, dest, ref)
 }
@@ -1021,7 +1114,7 @@ func (c *checker) emitBindingFlow(vd *ast.VarDecl, id liveness.VarID, bindingT s
 // or extractor element flows out of the place extended by its position, as elements
 // describes.
 func (c *checker) emitPatternFlows(pat ast.Pat, source ast.Expr, ref liveness.StmtRef) {
-	if c.fn == nil || c.fn.events == nil || source == nil {
+	if c.fn == nil || c.fn.events == nil || source == nil || !c.firstEmit(pat, patternRole, ref, 0) {
 		return
 	}
 	src, ok := c.exprPlace(source)
@@ -1148,8 +1241,8 @@ func (w *patternEmitter) leaf(node ast.Node, at movePlace, path []placeSeg) {
 	}
 	w.bound = true
 	sourceT := leafT
-	dest := destOfType(leafT)
-	if r, ok := w.sourceT.(*soltype.RefType); ok && r.Lt != nil && !w.c.holdsValueType(leafT) {
+	dest := w.c.destOfType(leafT)
+	if r, ok := w.c.borrowOf(w.sourceT); ok && !w.c.holdsValueType(leafT) {
 		// The leaf binds a borrow with the source's mutability, as D14 decides.
 		sourceT = r
 		dest = flowDest{kind: borrowDest, borrow: borrowKindOf(r.Mut), lt: r.Lt}
@@ -1173,7 +1266,7 @@ func (c *checker) emitAssignFlow(scope *Scope, e *ast.BinaryExpr, ref liveness.S
 		if !found || len(b.Schemes) == 0 {
 			return
 		}
-		dest := destOfType(bindingType(b))
+		dest := c.destOfType(bindingType(b))
 		// A module-level binding is a local of a function body that reaches it, but a store
 		// into it outlives every local, so it is a moduleHolder.
 		switch id := c.varIDs.Of(left); {
@@ -1215,7 +1308,7 @@ func (c *checker) storeDest(target ast.Expr) flowDest {
 		return flowDest{kind: ownedDest}
 	}
 	if prop, ok := c.lookupWriteField(name, recv); ok {
-		return destOfType(prop.Type)
+		return c.destOfType(prop.Type)
 	}
 	return flowDest{kind: ownedDest}
 }
@@ -1273,10 +1366,13 @@ func argDest(e *ast.CallExpr, fn *soltype.FuncType, i int) (flowDest, bool) {
 // attached to ref. An annotated return takes the annotation's ownership. One without an
 // annotation is an inferredReturnDest. An annotation that did not resolve is owned.
 func (c *checker) emitReturnFlow(expr ast.Expr, ref liveness.StmtRef) {
+	if c.fn.events == nil || !c.firstEmit(expr, returnRole, ref, 0) {
+		return
+	}
 	dest := flowDest{kind: ownedDest}
 	switch {
 	case c.fn.returnAnn != nil:
-		dest = destOfType(c.fn.returnAnn)
+		dest = c.destOfType(c.fn.returnAnn)
 	case !c.fn.returnAnnotated:
 		dest = flowDest{kind: inferredReturnDest}
 	}
