@@ -151,33 +151,47 @@ func TestInferAssignWeakVarWritesItsVariables(t *testing.T) {
 func TestInferAssignBodyLevelWeakVarWritesItsVariables(t *testing.T) {
 	tests := []struct {
 		name string
-		body string
+		src  string
 		want []string
 	}{
 		{
 			name: "an identical function checks",
-			body: "var k = fn (x) { return x }\n\tk = fn (x) { return x }",
+			src: `fn f() {
+	var k = fn (x) { return x }
+	k = fn (x) { return x }
+}`,
 			want: nil,
 		},
 		{
 			name: "an identical function with an unread parameter checks",
-			body: "var k = fn (x, y) { return x }\n\tk = fn (x, y) { return x }",
+			src: `fn f() {
+	var k = fn (x, y) { return x }
+	k = fn (x, y) { return x }
+}`,
 			want: nil,
 		},
 		{
 			name: "a reassignment settles the parameter for a later call",
-			body: "var k = fn (x) { return x }\n\tk = fn (x: number) { return x }\n\tk(\"s\")",
+			src: `fn f() {
+	var k = fn (x) { return x }
+	k = fn (x: number) { return x }
+	k("s")
+}`,
 			want: []string{`4:4-4:7: cannot constrain "s" <: number`},
 		},
 		{
 			name: "an earlier call constrains the reassignment",
-			body: "var k = fn (x) { return x }\n\tk(1)\n\tk = fn (x: string) { return x }",
+			src: `fn f() {
+	var k = fn (x) { return x }
+	k(1)
+	k = fn (x: string) { return x }
+}`,
 			want: []string{`4:2-4:33: cannot constrain 1 <: string`},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, errs := inferAgainstTreeWithSpans(t, "fn f() {\n\t"+tt.body+"\n}")
+			_, errs := inferAgainstTreeWithSpans(t, tt.src)
 			require.Equal(t, tt.want, errs)
 		})
 	}
