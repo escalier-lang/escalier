@@ -1970,10 +1970,11 @@ func borrowInnerOf(t soltype.Type) (soltype.RefInner, bool) {
 // so the return is wired through directly here. The callee is concrete either as a
 // bare FuncType (an inline callee) OR as a var whose lower bound is a FuncType (a
 // named/generalized callee, which inferIdent now resolves through instantiate — see
-// resolveFunc). The one exception is a var callee whose bound is quantified: the
-// signature resolved here is one instantiation of that bound and the constraint below
-// makes another, so wiring this one's return in would put a second copy of the binder's
-// lifetimes into the result, and such a callee recovers through the constraint alone.
+// resolveFunc). The one exception is a var callee whose quantified bound is not bound in
+// place, as applyCallShape describes. The signature resolved here is one instantiation of
+// that bound and the constraint below makes another, so wiring this one's return in would
+// put a second copy of the binder's lifetimes into the result, and such a callee recovers
+// through the constraint alone.
 //
 // PR4 adds two #677 pieces: an EXACT all-required call callShapeParams, and the extra-arg
 // lint that rejects passing more arguments than a concrete callee declares.
@@ -2157,33 +2158,43 @@ func (c *checker) calleeTarget(lvl int, e *ast.CallExpr, callee soltype.Type, fr
 	fn, resolved := resolveFunc(callee)
 	// A class value's constructor carries the class's parameters as its own binder, and the
 	// value reaches here as an object or as a variable bounded by one, so the instantiation
-	// above did not reach it. Each construction binds the parameters afresh here. For a
-	// class value the instantiated signature also stands in for the callee from now on.
-	// Constraining the object itself would instantiate the binder a second time through the
-	// object arm, and the result would then carry two instances of the class that no member
-	// lookup could pick between. Any other callee keeps receiving the call shape itself, so
-	// a variable's later lower bound is still checked against it.
+	// above did not reach it. A generic function read through its name reaches here the same
+	// way, as a variable whose lower bound is the signature. Each call binds the parameters
+	// afresh here. For a class value the instantiated signature also stands in for the callee
+	// from now on. Constraining the object itself would instantiate the binder a second time
+	// through the object arm, and the result would then carry two instances of the class that
+	// no member lookup could pick between. A callee whose binder is bound in place is replaced
+	// the same way. Any other callee keeps receiving the call shape itself, so a variable's
+	// later lower bound is still checked against it.
 	// secondInstance marks a resolved signature that is one instantiation of a var
 	// callee's quantified bound while the callee <: callShape constraint in
 	// applyCallShape makes another, for the reason inferCall's doc comment gives.
 	secondInstance := false
 	if resolved && quantified(fn) {
 		_, isClassValue := c.classValueCarrier(callee)
-		if isClassValue && fresh && c.ctx.binderMintedAt(fn, lvl) {
-			// Reading the class's name copied the constructor's binder, together with the
-			// links its member bodies recorded on the class's parameters. Those copies belong
-			// to this call, so the call binds them where they stand. Copying the binder again
-			// would leave the links naming the first copy, and the argument would reach it
-			// only through them. binderMintedAt confirms the binder holds this read's copies
-			// and no lifetime parameter whose bounds would need rewriting.
+		if fresh && (isClassValue || isSoleSignature(callee, fn)) && c.ctx.binderMintedAt(fn, lvl) {
+			// Reading the name copied the binder along with the links the declaration's bodies
+			// recorded on its type parameters. In `fn f<T>({x :: T}) -> T`, the variable the
+			// pattern reads `x` into has `T` as an upper bound, and a class's member bodies
+			// link the class's parameters the same way. These copies belong to this call, so
+			// the call binds them where they stand. Copying the binder again would leave the
+			// links naming the first copy, and the argument for `x` would never reach the `T`
+			// the return reads.
+			//
+			// binderMintedAt confirms the binder holds this read's copies and no lifetime
+			// parameter whose bounds would need rewriting. No later lower bound reaches a copy
+			// this call alone reads, so the bound signature replaces the callee. A function
+			// callee must hold fn as its only signature for that. `val g = if c { id } else
+			// { num }` gives `g` two, and a call to `g` is checked against both through `g`.
 			fn = c.ctx.bindFuncBinderInPlace(fn)
-		} else {
-			fn = c.ctx.instantiateFuncBinder(fn, lvl)
-		}
-		if isClassValue {
 			callee = fn
 		} else {
-			secondInstance = true
+			fn = c.ctx.instantiateFuncBinder(fn, lvl)
+			if isClassValue {
+				callee = fn
+			} else {
+				secondInstance = true
+			}
 		}
 	}
 	if resolved {
@@ -2204,6 +2215,12 @@ func (c *checker) calleeTarget(lvl int, e *ast.CallExpr, callee soltype.Type, fr
 	return callTarget{callee: callee, fn: fn, secondInstance: secondInstance}
 }
 
+// isSoleSignature reports whether callee is a variable whose only lower bound is fn.
+func isSoleSignature(callee soltype.Type, fn *soltype.FuncType) bool {
+	v, ok := callee.(*soltype.TypeVarType)
+	return ok && len(v.LowerBounds) == 1 && v.LowerBounds[0] == soltype.Type(fn)
+}
+
 // armsTarget returns a call target that picks one of arms, each wrapped as a monomorphic
 // scheme so resolveOverload trials it the way it trials a named overload set's arms.
 func armsTarget(arms []*soltype.FuncType) callTarget {
@@ -2222,11 +2239,13 @@ func armsTarget(arms []*soltype.FuncType) callTarget {
 //
 //   - secondInstance is false when fn is the only copy of the signature the call makes.
 //     In `fn inc(x: number) -> number` the call `inc(1)` has a signature with no binder
-//     to instantiate. A class value such as `Box(5)` has its callee replaced by fn.
-//     fn.Ret flows into the call's type, so `inc("a")` still has type `number` after its
-//     argument is reported.
-//   - secondInstance is true when callee is a variable whose bound is quantified. Given
-//     `fn id<T>(x: T) -> T`, the call `id(5)` reads a callee whose bound is
+//     to instantiate. A class value such as `Box(5)` has its callee replaced by fn. So
+//     does a generic function called through its name, as `id(5)` is for
+//     `fn id<T>(x: T) -> T`, since calleeTarget binds that read's copy of the binder in
+//     place. fn.Ret flows into the call's type, so `inc("a")` still has type `number`
+//     after its argument is reported.
+//   - secondInstance is true when callee is any other variable whose bound is quantified.
+//     With `val o = {f: id}`, the call `o.f(5)` reads a callee whose bound is
 //     `fn <T>(x: T) -> T`. inferCallTarget instantiates that bound once to produce fn,
 //     and constraining callee against the call shape instantiates it again with a fresh
 //     `T`. Only that second copy carries `5` to the call's type, so fn.Ret is left out.
