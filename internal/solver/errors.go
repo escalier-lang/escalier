@@ -3805,7 +3805,7 @@ func describe(t soltype.Type) string {
 		if t.Mut {
 			prefix = "mut "
 		}
-		return prefix + describe(t.Inner)
+		return prefix + describeBorrowInner(t.Inner)
 	case *soltype.NullType:
 		return "null"
 	case *soltype.UndefinedType:

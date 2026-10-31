@@ -1089,6 +1089,23 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		return nil
 	}
 
+	// A value type copies out of a borrow, so a borrow of a variable fills a value-type
+	// destination when the variable does. `fn read(p) { return p.x }` returns `&'a T0`, and
+	// `read(&b) + 1` checks `T0` against `number`.
+	if ref, ok := sub.(*soltype.RefType); ok && ref.Lt != nil && copiesOutOfBorrow(super) {
+		if inner, ok := ref.Inner.(*soltype.TypeVarType); ok {
+			return c.constrain(inner, super, seen, false)
+		}
+	}
+	// A value type copies into an immutable borrow of a variable the same way, since it has no
+	// storage for the borrow to share. `fn remember(value) { seen.set("last", value) }` takes
+	// `&'static T0`, and `remember("a")` checks `"a"` against `T0`.
+	if ref, ok := super.(*soltype.RefType); ok && ref.Lt != nil && !ref.Mut && copiesOutOfBorrow(sub) {
+		if inner, ok := ref.Inner.(*soltype.TypeVarType); ok {
+			return c.constrain(sub, inner, seen, false)
+		}
+	}
+
 	// A variable constrained against itself is reflexively true, so it records
 	// nothing. Without this guard the self-edge `T <: T` lands in the variable's own
 	// upper bounds and renders as `fn <T: T>(x: T) -> T`. A generic function whose
@@ -2152,6 +2169,23 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	}
 
 	return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+}
+
+// copiesOutOfBorrow reports whether t is a value type a read can copy out of a borrow: a type
+// isValueType accepts, a function, or a union of these.
+func copiesOutOfBorrow(t soltype.Type) bool {
+	switch t := t.(type) {
+	case *soltype.FuncType:
+		return true
+	case *soltype.UnionType:
+		for _, member := range t.Types {
+			if !copiesOutOfBorrow(member) {
+				return false
+			}
+		}
+		return len(t.Types) > 0
+	}
+	return isValueType(t)
 }
 
 // constrainRigidParamIntoVar checks `v <: superVar` for a rigid type parameter v and a

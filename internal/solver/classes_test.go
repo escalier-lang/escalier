@@ -909,7 +909,7 @@ func TestInferWarnsAboutAFunctionReadOffAnInferredReceiver(t *testing.T) {
 		{
 			name:  "ADataRead",
 			src:   `fn f(o) { return o.x + 1 }`,
-			types: map[string]string{"f": "fn (o: {x: number}) -> number"},
+			types: map[string]string{"f": "fn (o: &{x: number}) -> number"},
 		},
 		{
 			// Nothing in the body uses the value as a function.

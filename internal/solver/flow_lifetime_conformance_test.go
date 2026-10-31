@@ -210,10 +210,8 @@ func TestFlowLifetimeRules(t *testing.T) {
 	})
 }
 
-// DISABLED until #2260, which infers an unannotated parameter that does not escape as a borrow.
-// Today `read` infers as `fn <T0>(p: {x: T0}) -> T0`, an owned parameter, so `read(&b)` reports
-// `cannot use borrowed &object as owned object`.
-/*
+// TestFlowLifetimeNonEscapingParam covers F3's `store` and `read`, whose unannotated parameters
+// take their ownership from the body.
 func TestFlowLifetimeNonEscapingParam(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{
 		// F3. `store` lets `p` escape into module-level state, so its parameter is owned. `read`
@@ -224,7 +222,7 @@ func TestFlowLifetimeNonEscapingParam(t *testing.T) {
 				var sink = {x: 0}
 
 				fn store(p) { sink = p }     // store: fn (p: {x: number}) -> undefined
-				fn read(p) { return p.x }    // read: fn (p: &{x: number}) -> number
+				fn read(p) { return p.x }    // read: fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0
 
 				fn go() -> number {
 					val a = {x: 1}
@@ -236,12 +234,11 @@ func TestFlowLifetimeNonEscapingParam(t *testing.T) {
 			`,
 			values: map[string]string{
 				"store": "fn (p: {x: number}) -> undefined",
-				"read":  "fn <T0>(p: &{x: T0}) -> T0",
+				"read":  "fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0",
 			},
 		},
 	})
 }
-*/
 
 func TestFlowLifetimeEscapingParamMoves(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{
@@ -264,11 +261,11 @@ func TestFlowLifetimeEscapingParamMoves(t *testing.T) {
 	})
 }
 
-// DISABLED until #2262 and #2348. #2262 infers an escaping parameter that the body only reads as
-// a `'static` borrow. Today `remember` infers as `fn (value: unknown) -> undefined`, which leaves
-// the parameter owned. `seen` does not generalize, so its value type is one weak variable that
-// `remember` and every caller share, and `remember` is not generic. #2348 widens that variable
-// to `{retries: number}` when `seen` settles, so `remember` shows the same type `seen` does.
+// DISABLED until #2348 and #2352. `seen` does not generalize, so its value type is one weak
+// variable that `remember` and every caller share. Today `seen` holds `&'static {retries: 3}`,
+// and #2348 widens it to `{retries: number}` when `seen` settles. `remember` renders as
+// `fn (value: unknown) -> undefined`, and #2352 keeps it monomorphic over the same variable, so
+// it shows the type `seen` holds.
 /*
 func TestFlowLifetimeEscapingReadOnlyParam(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{
