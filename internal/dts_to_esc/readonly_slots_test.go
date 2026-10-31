@@ -20,43 +20,57 @@ func TestBorrowReadonlyParam(t *testing.T) {
 		"TypeParam": {
 			src: `declare function f<T>(x: Readonly<T>): void;`,
 			want: []string{
-				"@js(\"f\")\nexport declare fn f<T>(x: &mut Readonly<T>) -> undefined",
+				`@js("f")
+export declare fn f<T>(x: &mut Readonly<T>) -> undefined`,
 			},
 		},
 		"Optional": {
 			src: `declare function f(x?: Readonly<{a: string}>): void;`,
 			want: []string{
-				"@js(\"f\")\nexport declare fn f(x?: &Readonly<{\n    a: string\n}>) -> undefined",
+				`@js("f")
+export declare fn f(x?: &Readonly<{
+    a: string
+}>) -> undefined`,
 			},
 		},
 		"ReadonlyArraySlot": {
 			src: `declare function f(x: Readonly<{a: readonly number[]}>): void;`,
 			want: []string{
-				"@js(\"f\")\nexport declare fn f(x: &Readonly<{\n    a: ReadonlyArray<number>\n}>) -> undefined",
+				`@js("f")
+export declare fn f(x: &Readonly<{
+    a: ReadonlyArray<number>
+}>) -> undefined`,
 			},
 		},
 		"WritableArraySlot": {
 			src: `declare function f(x: Readonly<{a: number[]}>): void;`,
 			want: []string{
-				"@js(\"f\")\nexport declare fn f(x: &mut Readonly<{\n    a: Array<number>\n}>) -> undefined",
+				`@js("f")
+export declare fn f(x: &mut Readonly<{
+    a: Array<number>
+}>) -> undefined`,
 			},
 		},
 		"MethodParam": {
 			src: widgetLib(`getA(x: Readonly<{a: number}>): number;`),
 			want: []string{
-				"Widget.getA(&self, x: &Readonly<{\n    a: number\n}>) -> number",
+				`Widget.getA(&self, x: &Readonly<{
+    a: number
+}>) -> number`,
 			},
 		},
 		"ReadonlyOfArrayRef": {
 			src: `declare function f(x: Readonly<Array<number>>): void;`,
 			want: []string{
-				"@js(\"f\")\nexport declare fn f(x: &Readonly<Array<number>>) -> undefined",
+				`@js("f")
+export declare fn f(x: &Readonly<Array<number>>) -> undefined`,
 			},
 		},
 		"RestParam": {
 			src: `declare function f(...xs: Readonly<number[]>): void;`,
 			want: []string{
-				"@js(\"f\")\nexport declare fn f(...xs: Readonly<Array<number>>) -> undefined",
+				`@js("f")
+export declare fn f(...xs: Readonly<Array<number>>) -> undefined`,
 			},
 		},
 	})
