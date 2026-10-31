@@ -285,10 +285,10 @@ assignment; this requirement is what makes it binding, and its 176 window-only
 routings are superseded by F4 rather than by a different package.
 
 **F9. A third-party `.d.ts` resolves every web type it names.** A converted npm
-package reaches the whole platform, not the two `web:*` packages the ambient
-list happens to hold. A library that takes a `Blob` or returns an `HTMLElement`
-loads, and a `cannot find type` never lands on a `.d.ts` the project cannot
-edit.
+package reaches the whole platform, not just the two `web:*` packages
+`ambientPackages` happens to hold, which are `web:core` and `web:fetch`. A
+library that takes a `Blob` or returns an `HTMLElement` loads, and a
+`cannot find type` never lands on a `.d.ts` the project cannot edit.
 
 F7 splits the ambient scope so it serves a `.d.ts` and not a project's own
 files. That is what makes this affordable: once no `.esc` file reads the ambient
@@ -519,8 +519,8 @@ needs no new case.
 **Goal.** F8 for the globals that move rather than un-hoist.
 
 1. Move the portable globals out of `web:dom`. `setTimeout`, `clearTimeout`,
-   `setInterval`, `clearInterval`, `atob`, `btoa`, `structuredClone`,
-   `queueMicrotask`, `reportError`, `origin`, `isSecureContext` and
+   `setInterval`, `clearInterval`, `atob`, `btoa`, `queueMicrotask`,
+   `reportError`, `origin`, `isSecureContext` and
    `crossOriginIsolated` name no browser type and belong in `web:core`, whose
    exports an importer binds unprefixed, so reaching them is one import and no
    qualifier.
@@ -529,18 +529,34 @@ needs no new case.
    `WindowOrWorkerGlobalScope`, which `WorkletGlobalScope` does not include, so
    a worklet has no timers. Portable is not the same claim as universal, and
    leaving these unannotated would say all nine environments have them.
+
+   Two helper types move with them, or the signatures name `web:dom` from
+   `web:core` and `CheckTiers` rejects the edge. `TimerHandler`, which is
+   `string | function.Function`, reaches 29 declarations and all but itself are
+   `std:*`. `VoidFunction` reaches nothing but itself.
+
+   `structuredClone` is the one that cannot come yet. Its options bag is
+   `StructuredSerializeOptions`, whose `transfer` field is
+   `Array<Transferable>`, and `Transferable` reaches 1193 declarations through
+   `OffscreenCanvas` as far as `WebGLRenderingContext`. §7.4.2 and §7.4.3 of the
+   other stream are what make that arm reachable from a portable package, so
+   `structuredClone` moves there and not here.
 2. Move the family globals to their families: `caches` to `web:cache`,
    `indexedDB` to `web:indexeddb`, `localStorage` and `sessionStorage` to
    `web:storage`. `crypto`, `performance` and `fetch` already went.
 
-Around 16 declarations move. `hoisted/` has the per-global analysis, generated
-from the closed stack's tree, so re-derive the counts against `main` first; the
-scripts are checked in to do that.
+Around 17 declarations move: the 11 globals above, the two helper types, and the
+four family globals below. `hoisted/` has the per-global analysis, generated from
+the closed stack's tree, so re-derive the counts against `main` first. The
+scripts are checked in to do that, and `hoisted/scripts/closure.mjs` is what
+says whether a signature's references can follow it.
 
-**Done when** a fixture calls `setTimeout` and `atob` with no import at all, and
+**Done when** a fixture reaches `setTimeout` and `atob` after
+`import "web:core"` alone, a worklet fixture is refused both, and
 `check_generated_tree` passes.
 
-**Not this stage.** The window-only globals, which do not move anywhere.
+**Not this stage.** The window-only globals, which do not move anywhere, and
+`structuredClone`, which waits on the other stream.
 
 ### 5.7 Add `web:window` and un-hoist the window-only globals
 
