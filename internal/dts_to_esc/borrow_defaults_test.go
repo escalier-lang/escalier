@@ -78,6 +78,34 @@ declare function f(o: NS.Opts): void;`,
 				"@js(\"f\")\nexport declare fn f(o: &mut NS.Opts) -> undefined",
 			},
 		},
+		// Each parameter type reaches only value-type slots, through a tuple, an intersection,
+		// an alias, an inherited interface, a getter, a mapped type or a superclass.
+		"FlatShapesDoNotShareWithReturn": {
+			src: `type FlatPair = Flat & {c: boolean};
+type FlatAlias = Flat;
+interface FlatChild extends Flat { c: boolean; }
+interface FlatGetter { get a(): number; }
+type FlatMapped = {[K in "a" | "b"]: number};
+declare class FlatClass { a: number; static s: Nested; get b(): string; }
+declare class FlatSub extends FlatClass { c: boolean; }
+declare function f(a: [number, string], b: FlatPair, c: FlatAlias, d: FlatChild, e: FlatGetter, g: FlatMapped, h: FlatSub): Nested;`,
+			want: []string{
+				"@js(\"f\")\nexport declare fn f(a: &mut [number, string], b: &mut FlatPair, c: &mut FlatAlias, d: &mut FlatChild, e: &mut FlatGetter, g: &mut FlatMapped, h: &mut FlatSub) -> Nested",
+			},
+		},
+		// Each parameter type reaches an object or a type parameter through one slot.
+		"ShapesWithAnObjectSlotShareWithReturn": {
+			src: `type NestedPair = Flat & {n: Nested};
+interface NestedChild extends Nested { c: boolean; }
+interface Generic<T> { a: T; }
+declare class Holder { n: Nested; }
+declare class HolderSub extends Holder { c: boolean; }
+declare class TypedGetter { get n(): Nested; }
+declare function f(a: [Nested], b: NestedPair, c: NestedChild, d: Generic<number>, e: HolderSub, g: TypedGetter): Nested;`,
+			want: []string{
+				"@js(\"f\")\nexport declare fn f<'a>(a: &'a mut [Nested], b: &'a mut NestedPair, c: &'a mut NestedChild, d: &'a mut Generic<number>, e: &'a mut HolderSub, g: &'a mut TypedGetter) -> &'a mut Nested",
+			},
+		},
 		"ValueTypeReturnStaysOwned": {
 			src: `declare function f(a: Nested): Promise<Nested>;`,
 			want: []string{
