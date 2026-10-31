@@ -261,9 +261,11 @@ Where environments genuinely disagree, as with `MessageEvent.source`, the tree
 states each environment's form rather than narrowing every environment to their
 intersection.
 
-`addEventListener` is the larger case. It is generic over its scope's own event
-map, so the nine scopes give nine declarations under one name, and the other
-stream's F5 defers the collision to this requirement.
+`addEventListener` is not one of these cases, though it looks like one. It is
+generic over its scope's own event map, so the nine scopes disagree about its
+type, but it stays a method on `EventTarget` rather than hoisting to a global,
+so each scope class carries its own overloads and no two declarations contend
+for one name. The other stream's F4 and F5 have the reasoning.
 
 **F6. A hoisted member's environments come from the scope that declares it.**
 Resolution follows the inheritance chain, so a member reaches every environment
@@ -389,7 +391,8 @@ eight environments, and `[Exposed]` is the only thing that knows whether the
 claim is true.
 
 The rest of phase one does not wait. §7.3.2 reads a `package.json` field, §7.3.3
-checks references against whatever the annotations say, and §7.3.4 is tooling over
+checks references against whatever the annotations say, and §7.3.4 is tooling
+over
 §7.3.2's answer, so all three can be built against a hand-written annotation set
 and switched to the generated one when it lands.
 

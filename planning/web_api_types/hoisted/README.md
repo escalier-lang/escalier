@@ -3,7 +3,13 @@
 Planning artifact for requirements F4 through F6 and F8 in section 4.1 of
 `../design.md`. The `.esc` files beside this one show what every member of every
 `*GlobalScope` class looks like as a top-level declaration, which package it
-lands in, and what `@env` it carries. They are illustrative and are not part of the generated tree.
+lands in, and what `@env` it carries. They are illustrative and are not part of
+the generated tree.
+
+They predate F4's rule that only a receiverless member hoists. The 176
+window-only members routed to `web:dom` below stay `Window` members under that
+rule and go to `web:window`, so read those rows as what each member is rather
+than as where it lands.
 
 ## Method
 
@@ -51,7 +57,7 @@ divergent names, which contribute one declaration per environment.
 
 | package | declarations |
 | --- | --- |
-| `web:dom` | 176 |
+| `web:dom` | 176, superseded by F4: these stay `Window` members in `web:window` |
 | `web:core` | 39, plus the merged `Navigator` and its 11 mixins |
 | `web:worker` | 16 |
 | `web:storage` | 2 |
@@ -216,11 +222,15 @@ wider than the declaration needs. This is `web_environments`' N2 biting: the pac
 along environment lines, so a member spanning an unusual pair has nowhere exact
 to go.
 
-### `addEventListener` and `removeEventListener` stay with their scope
+### `addEventListener` and `removeEventListener` do not hoist
 
-Both are generic over each scope's own event map, so hoisting yields one per
-scope, all colliding on the name. Resolving the collision needs
-`web_environments`' F5, so the files here leave both out.
+Both are methods on every `EventTarget`, so a program calls them on the element,
+document or window it is listening to. F4 keeps a member that has a receiver,
+which settles it without reference to anything below. The files here leave both
+out.
+
+The rest of this section is the record of why the alternative was rejected,
+since the placement rule used to name `web:core` outright.
 
 `web:core` looked like the home, since it already holds the event model they
 belong to: `Event`, `EventTarget`, `EventListener`, `EventListenerOptions` and
@@ -269,11 +279,16 @@ their scope, which for `Window` is `web:dom`, where the hoist already put them.
 - **`requestIdleCallback` stays in `web:dom`** while `requestAnimationFrame`
   moves to `web:core`, because the idle callbacks are window-only and the
   animation frame is not.
-- **The 176 window-only members mostly stay in `web:dom`.** Around 120 are the
+- **The 176 window-only members do not hoist.** Around 120 are the
   `GlobalEventHandlers` set, `onclick` through `onwheel`, which belong with the
   DOM event model. The remaining 56 are the browsing context, `alert`, `scroll`,
-  `innerWidth`, `history`, `frames` and the rest. A `web:window` package for
-  those is a real option and is left open.
+  `innerWidth`, `history`, `frames` and the rest.
+
+  These are the routings F4 superseded. All of them read as operations on the
+  browsing context, so they stay `Window` members and go to `web:window` with
+  the class, reached as `window.alert(...)`. The per-member assignment below is
+  kept because it records what each member is, which is what decided this. The
+  package column for a window-only member no longer applies.
 
 ## Artifacts to fix before any of this is generated
 

@@ -131,29 +131,39 @@ never invokes `[[Construct]]`.
 `[Transferable]` rather than copied from TypeScript's union. The same holds for
 any other set WebIDL states and the `.d.ts` restates.
 
-**F4. A global is reached through a package binding.** Every member of a
-`*GlobalScope` class is a top-level declaration in the package owning its
-family, and no program is handed a scope object to read members off.
+A generated set holds the arms the tree declares. WebIDL marks six transferable
+interfaces the tree lacks, and four of those are outside `lib.dom.d.ts`
+altogether, so the set gains two arms now and the rest when the conversion input
+widens.
+
+**F4. Only a receiverless member becomes a global.** A scope member that reads
+as a function of no particular object, `setTimeout` and `atob` among them,
+hoists to a top-level declaration in the package owning its family, reached
+through that package's binding. A member that reads as an operation on the scope
+keeps its receiver, and the scope object is a value its own package exports, so a
+program writes `window.alert(...)` after importing `web:window`.
+
+The number of names a program gets without asking is the thing being held down.
+`hoisted/` routes 239 declarations and counts 176 of them window-only. Hoisting
+those would put the browsing-context API in scope unqualified for every file
+that imports `web:dom`, where keeping them as `Window` members costs one import
+and one receiver.
 
 **F5. Each member kind hoists to its matching top-level form.** A method becomes
 a `declare fn`, a read-only property a `declare val`, a settable event-handler
 property a `declare var`, and an overload set one `declare fn` per signature.
 The hoisted declaration carries `@js` with the global's own name.
 
-`addEventListener` and `removeEventListener` are the case this cannot settle on
-its own. Both are generic over their scope's own event map, so every scope
-hoists a different declaration under one name. The window copy is in `web:dom`
-today and the other eight would collide with it, so expressing them needs
-per-environment declarations, which is `web_environments`' F5. Where they sit
-then follows F8 rather than a rule of their own.
+`addEventListener` and `removeEventListener` do not hoist at all. They are
+methods on every `EventTarget`, which is to say on `window`, on `document` and
+on every element, and a program calls them on the thing it is listening to. F4
+keeps a member that has a receiver, and this is the clearest case of one.
 
-A portable copy is not the way out. The window overload names `WindowEventMap`
-and `this: Window`, and each of those reaches 1193 of the tree's 2132
-declarations, every `web:` package included, because `UIEvent.view` is a
-`Window`. Moving the untyped overload alone costs nothing and buys nothing.
-`EventTarget.addEventListener` already carries that exact signature in
-`web:core`. A second copy would make `addEventListener("click", ...)` resolve to
-the untyped arm and yield an `Event` where the typed arm yields a `MouseEvent`.
+That also settles where they live, which the earlier plan to put them in
+`web:core` could not. `EventTarget.addEventListener` is in `web:core` already
+and `Window` restates the four typed overloads, so `window.addEventListener`
+and `element.addEventListener` are both correctly typed today with nothing to
+move. `hoisted/README.md` records what a hoisted copy would have cost.
 
 **F6. A member a family package already declares is not hoisted twice.** `fetch`
 is a member of `WindowOrWorkerGlobalScope` and a top-level declaration of
@@ -191,10 +201,16 @@ global's package is the family that owns its type, and where the signature names
 no browser type the family is `web:core`. `setTimeout` and `atob` belong there
 and not in a browser-tier package a worker cannot import.
 
+The browsing-context API earns `web:window`. `Window` itself, the `window`
+value, and the members that stay members under F4 go there, which leaves
+`web:dom` the document and element surface a program uses without touching the
+browsing context.
+
 This is stated because the hoisting landed without it. 294 globals went to
 `web:dom`, including the portable ones, so a program imports the whole DOM to
 set a timer and a worker cannot set one at all. `hoisted/` has the per-global
-assignment; this requirement is what makes it binding.
+assignment; this requirement is what makes it binding, and its 176 window-only
+routings are superseded by F4 rather than by a different package.
 
 ### 4.2 Non-functional
 
@@ -203,8 +219,9 @@ devDependency, the table it produces is checked in, and a test asserts the table
 against the pinned version. Conversion stays offline.
 
 **N2. A hoisted global compiles to a bare reference.** Codegen emits
-`importScripts(...)`, never a member access on a scope object, since no such
-object is in scope.
+`importScripts(...)` for a hoisted declaration, never a synthesized member
+access. A member that kept its receiver compiles to the access the source
+wrote.
 
 **N3. The scope classes survive as types.** Event-handler signatures annotate
 `this` with the scope class and event maps are keyed by it, so hoisting the
@@ -276,27 +293,29 @@ constructible cases and replacing TypeScript's is separate.
 **Goal.** F3.
 
 Generate `Transferable` from `[Transferable]`. The tree declares 11 arms, the 10
-WebIDL interfaces plus `typed_arrays.ArrayBuffer`, where WebIDL marks 16, so the
-union gains six: `MIDIAccess`, `MediaStreamTrack`, `MediaStreamTrackHandle`,
-`WebTransportDatagramsWritable`, `WebTransportReceiveStream` and
-`WebTransportSendStream`.
+WebIDL interfaces plus `typed_arrays.ArrayBuffer`, where WebIDL marks 16.
 
-`MIDIAccess` and `MediaStreamTrack` are already in `web/dom.esc`. The other
-four are not in the tree at all and have to be ingested first.
+Two of the six it lacks are declared already and join the union here:
+`MIDIAccess` and `MediaStreamTrack`, both in `web/dom.esc`.
+`MediaStreamTrackHandle`, `WebTransportDatagramsWritable`,
+`WebTransportReceiveStream` and `WebTransportSendStream` are in no pinned lib,
+so they wait on the wider conversion input rather than being ingested here.
 
-**Done when** the union is generated and `planning/web_environments/transferable.md`'s
-sixteen-row table matches what the tree declares.
+**Done when** the union carries 13 arms, the 12 WebIDL interfaces the pinned
+libs declare plus `typed_arrays.ArrayBuffer`, and
+`planning/web_environments/transferable.md` records which four of its sixteen
+rows are still unreachable and why.
 
 **Not this stage.** Splitting `Transferable` by environment, which is the other
 stream's.
 
-### 5.4 Place the hoisted globals
+### 5.4 Place the globals and un-hoist the rest
 
 **Goal.** F8, and the part of F4 the landed hoisting left undone.
 
-`Window`'s globals are already hoisted, so what remains is where they sit.
-`hoisted/` in this folder has the analysis: which package each global belongs to
-and why. It was generated from the closed stack's tree, so re-derive the counts
+`Window`'s globals are already hoisted, all 294 into `web:dom`, so this stage is
+partly a move and partly a reversal. `hoisted/` in this folder has the per-global
+analysis. It was generated from the closed stack's tree, so re-derive the counts
 against `main` first; the scripts are checked in to do that.
 
 1. Move the portable globals out of `web:dom`. `setTimeout`, `clearTimeout`,
@@ -307,11 +326,15 @@ against `main` first; the scripts are checked in to do that.
 2. Move the family globals to their families: `caches` to `web:cache`,
    `indexedDB` to `web:indexeddb`, `localStorage` and `sessionStorage` to
    `web:storage`. `crypto`, `performance` and `fetch` already went.
-3. Resolve `self` and the `this` of a hoisted listener, both open in
-   section 8.
+3. Un-hoist the window-only globals, which `hoisted/` counts at 176, and add
+   `web:window` holding `Window`, the `window` value and the members that stay
+   members. `alert` is then `window.alert`.
+4. Rename the scope object's `self` so it does not read as a method receiver,
+   per open question 3.
 
-**Done when** a fixture calls `setTimeout` and `atob` with no import at all, and
-`alert` after importing `web:dom` alone.
+**Done when** a fixture calls `setTimeout` and `atob` with no import at all,
+reaches `alert` only as `window.alert` after importing `web:window`, and the
+converter rejects a bare `alert`.
 
 **Not this stage.** The worker and worklet scope classes, which are not in the
 tree. Their globals hoist by the same mechanism once the other stream ingests
@@ -343,14 +366,16 @@ test.
 
 ### 5.6 The rest of the augmentation, if measured
 
-open question 1 in section 8 lists what else WebIDL carries that the
-`.d.ts` flattens: nullability, integer width and range, `sequence<T>` against
-array, `USVString` against `string`, `optional` with a default, `[SameObject]`
-and `[NewObject]`.
+Open question 1 lists what else WebIDL carries that the `.d.ts` flattens:
+nullability, integer width and range, `sequence<T>` against array, `USVString`
+against `string`, `optional` with a default, `[SameObject]` and `[NewObject]`.
 
 None is measured. Measure one before planning it, the way #1645 and the
 `Transferable` set were measured, because the argument for each is how often the
 `.d.ts` is wrong rather than how much WebIDL says.
+
+Widening the conversion input past `lib.dom.d.ts` belongs to the same later
+phase. It is what unblocks the four transferable interfaces §5.3 leaves out.
 
 ## 6. Measurement
 
@@ -373,25 +398,33 @@ the suite exercising `internal/checker` is not being backported.
 
 ## 8. Open questions
 
-1. **How far does the augmentation go?** F1 names four facts because four have
-   been measured. WebIDL carries more that the `.d.ts` flattens: nullability
-   markers, integer width and range through `unsigned long`, `[Clamp]` and
-   `[EnforceRange]`, `sequence<T>` against array, `USVString` and `ByteString`
-   against `string`, `optional` with a default, and `[SameObject]` and
-   `[NewObject]`. Each is a separate piece of work with its own payoff, and none
-   is measured yet.
-2. **Does the overlay shrink?** The overlay exists partly to correct what the
-   `.d.ts` gets wrong. Every fact moved to WebIDL is a reason for an overlay
-   entry to go, and nobody has checked which.
-3. **Does `Window` get hoisted whole?** F4 says every member, which for `Window`
-   and its mixins is around 176 declarations. `hoisted/`
-   has the analysis. Whether they all belong in `web:dom` or the browsing-context
-   API earns a `web:window` is open.
-4. **Does `self` survive?** `WorkerGlobalScope.self` is the global object, and
-   exposing it returns the program the handle F4 withholds.
-5. **What is the `this` of a hoisted listener?** `addEventListener` annotates its
-   callback with `this: DedicatedWorkerGlobalScope`, which stays true after the
-   hoist even though the receiver is no longer nameable.
+1. **Which of the remaining WebIDL facts are worth adopting?** F1 names four
+   because four have been measured. WebIDL carries more that the `.d.ts`
+   flattens: nullability markers, integer width and range through
+   `unsigned long`, `[Clamp]` and `[EnforceRange]`, `sequence<T>` against array,
+   `USVString` and `ByteString` against `string`, `optional` with a default, and
+   `[SameObject]` and `[NewObject]`. Each is separate work with its own payoff
+   and none is measured, so the argument for each is how often the `.d.ts` is
+   wrong rather than how much WebIDL says.
+
+   *Decided, for the surface rather than the facts.* The augmentation covers
+   what `lib.dom.d.ts` declares. An interface WebIDL marks and no pinned lib
+   carries waits for a later phase that widens the conversion input, which is
+   why F3's set gains two arms and not six. Which facts that later phase adds is
+   what stays open here.
+
+2. **What is left of the overlay?** *Decided: it shrinks but stays.* Every fact
+   moved to WebIDL is a reason for an overlay entry to go, and nobody has checked
+   which. What does not go is the one-off retype that no source answers, as with
+   `MessageEvent.source` to `null` and `ports` to `Array<unknown>`, where the
+   platform's own type names a class the portable tier cannot reach. Those are a
+   tier decision rather than a `.d.ts` error, so WebIDL has nothing to say about
+   them.
+
+3. **What is the new name for `self`?** The scope object is exposed, so a worker
+   can reach itself, but `self` collides with the receiver `self` in a method
+   body and a reader would have to know which is which. The name wants settling
+   before §5.4 step 4 lands.
 
 ## 9. Non-goals
 
@@ -400,8 +433,9 @@ the suite exercising `internal/checker` is not being backported.
   is a larger question and this does not answer it.
 - Runtime feature detection in user code, such as narrowing on
   `typeof OffscreenCanvas !== "undefined"`.
-- `typeof globalThis`. F4 withholds the global object, so the intersections
-  naming it lose their second half and the annotation goes. Nothing replaces it.
+- `typeof globalThis`. A program names the scope object through its package, as
+  `window` or the renamed `self`, so the intersections naming `globalThis` lose
+  their second half and the annotation goes. Nothing replaces it.
 
 ## 10. Related issues
 
