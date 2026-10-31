@@ -84,6 +84,13 @@ says so and gives the case: `web:performance` is portable and contains
 `PerformanceTiming`, which Node 22 does not define. #1586 tracks tiering a
 declaration rather than a package, which is what `@env` does.
 
+The membership does not follow the boundary either. ECMA-429, the Minimum common
+web API, was published in December 2025 by Ecma TC55, and WebAssembly is in it.
+`web:wasm` is `TierPortable`, so a package inside the minimum set sits above the
+rank named after it. Several of the other eight look the same way. That is one
+more reason the axis is the wrong instrument rather than a mislabelled one, and
+§7.3.3 retires it.
+
 ### 4.2 The check is on import edges, and runs in the converter
 
 `CheckTiers` at `internal/dts_to_esc/import_header.go:116` reports every import
@@ -381,7 +388,9 @@ that as a global scope is.
 
 This is what lets the tier axis retire rather than be renamed. A tier answers
 whether a package exists off the browser at all, which no browser global scope
-can say, and §7.4.9 could not remove `tier.go` while that question had no home.
+can say. §7.3.3 removes `tier.go` without waiting for an answer, because the
+tier check was a converter guard rail whose only reader was itself, and F10 is
+where the claim comes back on the right unit.
 A runtime environment is the home: a declaration available in Node carries
 `@env("node")`, and the portability a tier approximated per package becomes a
 per-declaration fact. N1 is then satisfied by removal.
@@ -404,8 +413,7 @@ declaration's own.
 
 The tier rank is the live case. It answers a different question, how many
 runtimes ship a package, but once `@env` lands the two overlap enough to
-disagree, so one of them has to go or the division has to be stated. #1614 and
-§7.4.9 carry it.
+disagree, so one of them has to go. #1614 and §7.3.3 carry it.
 
 **N2. A package is importable as a unit.** Every declaration a package holds is
 reachable from every environment that may import the package. Splitting a family
@@ -485,7 +493,7 @@ marked for it hold.
 | F8 worklets as targets | — | — | ✅ | — |
 | F9 entrypoint environments | ✅ | extend | extend | extend |
 | F10 runtimes as environments | — | — | — | ✅ |
-| N1 one fact, one place | partial | — | — | ✅ |
+| N1 one fact, one place | ✅ | — | — | extend |
 | N2 importable as a unit | partial | ✅ | ✅ | ✅ |
 | N3 derived claims | ✅ | — | — | extend |
 | N4 cold load | ✅ | ✅ | ✅ | ✅ |
@@ -495,12 +503,7 @@ marked for it hold.
 more environments without changing it. "partial" means the phase does as much as
 one family allows.
 
-N1 is the row the phasing changed. One fact in one place means the tier axis
-goes, and it cannot go until the question it answers has a home, which is a
-runtime environment. So phase one states the requirement and phase four is what
-satisfies it.
-
-Three others are phase-one work for a reason the table does not give.
+Three are phase-one work for a reason the table does not give.
 
 **F7 lands whole in phase one, before any worklet is a target.** A declaration
 that says `@env("window")` is making a claim about the other eight environments.
@@ -561,7 +564,43 @@ the target provides.
 it resolved, and `web:prelude` is ambient for it through the scheme rule rather
 than by being hard-coded.
 
-#### 7.3.3 The reference check
+#### 7.3.3 Retire the tier machinery
+
+N1 and #1614, as soon as §7.3.1 makes it possible.
+
+The tier axis is a converter guard rail, not a user-facing check. `CheckTiers`
+has one caller, `generate.go:138`, which fails the conversion when an import
+edge goes up a rank. Nothing in `internal/solver` or the compiler pipeline
+consults a tier, so no program is ever checked against one, and `TierOf` is used
+only by `CheckTiers` itself.
+
+So replacing it does not wait on a target or on F10. Once every declaration
+carries `@env`, the converter can check each reference instead of each package
+edge: a declaration may name another only where the second is available in every
+environment the first claims. That is the same guard on a better unit, and it
+catches what the per-package promise cannot. `web:performance` is portable and
+holds `PerformanceTiming`, which Node 22 does not define, and the tier check
+passes it.
+
+What this gives up until §7.6.4 is the off-browser claim. An
+`@env("window", "worker")` declaration may or may not exist in Node and nothing
+records which. Nothing consumes that answer today either, since `CheckTiers` was
+its only reader, so removing the question and its reader together loses nothing
+a program can observe.
+
+1. Add the per-reference check over `@env`, reporting the same shape
+   `TierViolation` does.
+2. Delete `tier.go`, `CheckTiers`, `TierOf` and `webTiers`, and the
+   `generate.go` call.
+3. Close #1614.
+
+**Done when** a converted tree with a reference outside the referrer's
+environments fails the conversion, `tier.go` is gone, and
+`check_generated_tree` passes.
+
+**Not this stage.** Off-browser availability, which has no vocabulary until F10.
+
+#### 7.3.4 The reference check
 
 Run the check against the program's target, reporting a reference to a
 declaration absent from it. An error from this release, not a warning. It covers
@@ -574,7 +613,7 @@ Keep the tier check, which answers a different question until #1614 retires it.
 program fails with the full diagnostic, and the committed tree still converts
 clean.
 
-#### 7.3.4 Tooling
+#### 7.3.5 Tooling
 
 The language server resolves the target from the same `package.json` field and
 filters completion by it. F9.
@@ -734,9 +773,9 @@ how a worker gets a pair of them.
 stage rather than sending it to the prelude with the other portable globals.
 
 One ordering constraint, and it is the tier check rather than the closure.
-`Transferable` names the canvas types, so until §7.4.9 retires `tier.go` a
-`TierCore` package naming a browser-tier one is refused. §7.4.4 lands first so
-the arms sit in packages a worker can import.
+One ordering constraint, and the reason is F4 rather than the tier check.
+`Transferable` names the canvas types, so §7.4.4 lands first or a worker can
+name an arm it cannot import.
 
 **Done when** a worker fixture receives a `MessagePort` and reads a
 `MessageEvent` after `import "web:messaging"` and without importing `web:dom`,
@@ -775,28 +814,6 @@ dependency whose entrypoint does not cover a worker.
 
 **Done when** a fixture importing two packages no single environment provides
 fails with the full diagnostic.
-
-#### 7.4.9 Retire the tier machinery
-
-N1 and #1614. Once `@env` records where a declaration exists, the tier rank is a
-second mechanism answering an overlapping question, and N1 says one fact lives in
-one place.
-
-A tier answers whether a package exists off the browser at all, which `@env`'s
-nine browser scopes do not answer. F10 is the home for that question: a runtime
-environment states it per declaration, where a tier approximated it per package.
-
-So the removal waits on phase four, and until then the two mechanisms coexist
-with a stated division rather than one replacing the other. `tier.go` answers
-off-browser availability; `@env` answers which browser global scope.
-
-Phase two is where it becomes pressing, because `CheckTiers` and the reference
-check would both be live and would disagree: a tier forbids a portable package
-naming a browser one, where `@env` would permit it if both declarations exist in
-the importer's environments.
-
-**Done when** either `tier.go` is gone and the WinterTC question has a stated
-home, or the two mechanisms have a documented division and #1614 says which.
 
 ### 7.5 Phase three: worklets
 
@@ -865,14 +882,15 @@ reference check refuses them to a window target.
 **Done when** a Node fixture imports a `node:` package and a window fixture
 naming the same declaration fails.
 
-#### 7.6.4 Retire the tier machinery
+#### 7.6.4 State off-browser availability per declaration
 
-What §7.4.9 left. With off-browser availability stated per declaration, the
-tier rank is the second mechanism N1 forbids, so `tier.go` and `CheckTiers` go
-and #1614 closes.
+What §7.3.2 deferred. `@env`'s browser scopes cannot say whether a declaration
+exists in Node, and the tier rank that approximated it per package is gone by
+then, so this is where the claim returns on the right unit.
 
-**Done when** `tier.go` is gone, the reference check is the only thing refusing
-an unavailable declaration, and `check_generated_tree` passes.
+**Done when** a declaration available in Node carries `@env("node")`, the
+reference check refuses one that does not to a Node target, and
+`check_generated_tree` passes.
 
 ## 8. Measurement
 

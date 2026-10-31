@@ -600,9 +600,6 @@ needs no new case.
    `web:messaging` and takes `structuredClone` with it, which means calling it
    costs an import where `setTimeout` costs none.
 
-   It could not come here anyway before §7.4.9 of that stream.
-   `Transferable` names the canvas types, and until `tier.go` is gone a
-   `TierCore` package naming a browser-tier one is refused.
 2. Move the family globals to their families: `caches` to `web:cache`,
    `indexedDB` to `web:indexeddb`, `localStorage` and `sessionStorage` to
    `web:storage`. `crypto`, `performance` and `fetch` already went.
