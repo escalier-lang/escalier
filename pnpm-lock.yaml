@@ -107,6 +107,8 @@ importers:
 
   fixtures/call_only_class: {}
 
+  fixtures/class_constructs_later_class: {}
+
   fixtures/class_field_name_collision: {}
 
   fixtures/class_inheritance: {}
@@ -167,6 +169,8 @@ importers:
 
   fixtures/func_rest_params: {}
 
+  fixtures/func_retained_callback: {}
+
   fixtures/generalize: {}
 
   fixtures/generators: {}
@@ -181,15 +185,21 @@ importers:
 
   fixtures/interface: {}
 
+  fixtures/interface_merge_across_files: {}
+
   fixtures/interop_mutability: {}
 
   fixtures/iterators: {}
+
+  fixtures/large_num_lit: {}
 
   fixtures/literals: {}
 
   fixtures/logging: {}
 
   fixtures/member_access: {}
+
+  fixtures/module_temp_names: {}
 
   fixtures/mut_class_reference: {}
 
@@ -219,9 +229,13 @@ importers:
 
   fixtures/readonly_properties: {}
 
+  fixtures/regex_match: {}
+
   fixtures/stdlib_import_class_via_namespace: {}
 
   fixtures/stdlib_import_local: {}
+
+  fixtures/stdlib_owned_arrays: {}
 
   fixtures/symbols: {}
 
@@ -230,6 +244,10 @@ importers:
   fixtures/template_literals: {}
 
   fixtures/try_catch: {}
+
+  fixtures/type_ann_computed_keys: {}
+
+  fixtures/unique_symbol_keys: {}
 
   packages/cli: {}
 
