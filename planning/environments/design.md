@@ -480,6 +480,29 @@ unchanged against the old path.
 
 A stage lands on its own and leaves the tree green.
 
+The stages are tracked in five milestones, which do not line up with the phases
+in two places:
+
+| milestone | stages | issues |
+| --- | --- | --- |
+| [Environments - A: Environment vocabulary and targets](https://github.com/escalier-lang/escalier/milestone/14) | 7.3.1, 7.3.2, 7.3.4, 7.3.5, 7.4.2 | #1613, #1642, #1641, #2396, #2397, #2398 |
+| [Environments - B: Retire the package tier axis](https://github.com/escalier-lang/escalier/milestone/15) | 7.3.3 | #1614, #1586 |
+| [Environments - C: Worker environments](https://github.com/escalier-lang/escalier/milestone/16) | 7.4.1, 7.4.3 to 7.4.8 | #2399, #2400, #2401, #1644, #2402, #2403, #2404, #2405 |
+| [Environments - D: Worklet environments](https://github.com/escalier-lang/escalier/milestone/17) | 7.5.1 to 7.5.4 | #2406, #2407, #2408, #2409 |
+| [Environments - E: Non-browser runtimes](https://github.com/escalier-lang/escalier/milestone/18) | 7.6.1 to 7.6.4 | #2410, #2411, #2412, #2413 |
+
+§7.4.2's slot key sits in milestone A rather than with the workers, because the
+worklet and runtime milestones need it too and nothing in phase two is its only
+caller. §7.3.3 is a milestone of its own because it is a `Task`-type cleanup
+with its own issue, and isolating it means reverting it does not drag the
+vocabulary back.
+
+Milestone A waits on §5.2 of the other stream. After it, C, D and E are parallel:
+the worklets and the runtimes need the vocabulary and the slot key, not the
+worker repartition. Within C the order is forced, since §7.4.3 precedes §7.4.4,
+which precedes §7.4.5, which precedes §7.4.7. #2378 is in no milestone and
+blocks any fixture importing `web:dom` or `web:window`.
+
 A stage that regenerates the tree produces a large diff that needs no
 line-by-line review. The hand-written part is the generator and the fixture, and
 `check_generated_tree` is what validates the rest. §7.3.1 annotates roughly 290
