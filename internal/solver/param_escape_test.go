@@ -328,7 +328,7 @@ func TestInferOpenEscapeParam(t *testing.T) {
 					return opts.retries
 				}
 			`,
-			seen: "Map<string, &'static {retries: 3}>",
+			seen: "Map<string, &'static {retries: number}>",
 		},
 		{
 			// remember's rendering waits on #2352, so TestInferOpenEscapeParamRendering holds it.
@@ -342,7 +342,7 @@ func TestInferOpenEscapeParam(t *testing.T) {
 					return opts.retries
 				}
 			`,
-			seen: "Map<string, &'static {retries: 3}>",
+			seen: "Map<string, &'static {retries: number}>",
 			errs: []string{"6:15-6:19: this argument is borrowed by the callee, so write the borrow: `&`"},
 		},
 		{
@@ -457,9 +457,9 @@ func TestInferOpenEscapeParam(t *testing.T) {
 		{
 			// A value type has no storage to borrow, so it copies into the borrow without a
 			// written `&`. The key escapes into seen too, so it is a `'static` borrow as well.
-			// A `&'static` of a value type stands for the value type, so seen holds the strings
-			// and numbers. remember's rendering waits on #2352, so
-			// TestInferOpenEscapeParamRendering holds it.
+			// A `&'static` of a value type stands for the value type, and seen's values are
+			// writable slots that widen it, so seen holds strings and numbers. remember's
+			// rendering waits on #2352, so TestInferOpenEscapeParamRendering holds it.
 			name: "ValueTypeArgumentsCopy",
 			src: `
 				val mut seen = Map()
@@ -471,7 +471,7 @@ func TestInferOpenEscapeParam(t *testing.T) {
 					return 1
 				}
 			`,
-			seen: `Map<&'static ("a" | "b"), &'static (3 | 4)>`,
+			seen: "Map<string, number>",
 		},
 	}
 	for _, tt := range tests {
