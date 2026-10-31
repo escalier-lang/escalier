@@ -367,7 +367,7 @@ that as a global scope is.
 
 This is what lets the tier axis retire rather than be renamed. A tier answers
 whether a package exists off the browser at all, which no browser global scope
-can say, and §7.4.8 could not remove `tier.go` while that question had no home.
+can say, and §7.4.9 could not remove `tier.go` while that question had no home.
 A runtime environment is the home: a declaration available in Node carries
 `@env("node")`, and the portability a tier approximated per package becomes a
 per-declaration fact. N1 is then satisfied by removal.
@@ -391,7 +391,7 @@ declaration's own.
 The tier rank is the live case. It answers a different question, how many
 runtimes ship a package, but once `@env` lands the two overlap enough to
 disagree, so one of them has to go or the division has to be stated. #1614 and
-§7.4.8 carry it.
+§7.4.9 carry it.
 
 **N2. A package is importable as a unit.** Every declaration a package holds is
 reachable from every environment that may import the package. Splitting a family
@@ -603,51 +603,7 @@ reached through the binding.
 **Done when** a worker fixture calls `importScripts` and reads `location` as a
 `WorkerLocation`.
 
-#### 7.4.2 Add `web:canvas`
-
-F4 and N2 for the canvas surface, which is the half of #1644 a new package
-answers.
-
-`OffscreenCanvas`, `OffscreenCanvasRenderingContext2D`,
-`ImageBitmapRenderingContext`, `ImageBitmap`, `ImageData`, `Path2D`,
-`CanvasGradient`, `CanvasPattern`, `TextMetrics` and the 2D-context mixins are
-worker-reachable and sit in `web:dom`, which a worker cannot import.
-
-`createImageBitmap` comes too. `ImageBitmap` has no constructor, so that
-function is the only way to make one, and leaving it in `web:dom` would give a
-worker a type it cannot instantiate. `hoisted/canvas.esc` in the other stream
-already routes it here.
-
-**Done when** a worker fixture names `OffscreenCanvas` and draws on it without
-importing `web:dom`.
-
-#### 7.4.3 Move the portable event plumbing into `web:prelude`
-
-The other half of #1644. `MessagePort`, `MessageChannel`,
-`StructuredSerializeOptions` and `Transferable` go to `web:prelude`.
-
-`MessageChannel` comes for the same reason `createImageBitmap` goes with
-`ImageBitmap`: `MessagePort` has no constructor, and `new MessageChannel()` is
-how a worker gets a pair of them. Its closure is `MessagePort`'s, so it moves in
-this stage and not a later one.
-
-`Transferable` names the canvas types, so §7.4.2 lands first or this edge points
-at a package a worker cannot import.
-
-**Done when** a worker fixture receives a `MessagePort` after
-`import "web:prelude"` and without importing `web:dom`.
-
-#### 7.4.4 Move the transferable arms no worker can import
-
-The nine arms `transferable.md` lists. Six are
-`Exposed=(DedicatedWorker, Window)` and need a package importable from a page
-and a dedicated worker, which no current package is, so this stage decides that
-package as well as doing the move.
-
-**Done when** `transferable.md`'s table has no row a worker can name but not
-import.
-
-#### 7.4.5 Make the slot key carry environments
+#### 7.4.2 Make the slot key carry environments
 
 F5's machinery, landed before anything is split by environment.
 
@@ -664,7 +620,84 @@ Open question 1 in section 10 has the three mechanisms and which one needs this.
 **Done when** two declarations of one name with disjoint `@env` convert, resolve
 per environment, and are not read as an overload set.
 
-#### 7.4.6 Split the declarations that differ by environment
+#### 7.4.3 Split the canvas back-references
+
+F5 applied to the two declarations that keep `web:canvas` out of a worker's
+reach. `hoisted/scripts/closure.mjs` says the proposed package closes over 1193
+declarations, the whole platform, and both paths are back-references to
+window-only element types:
+
+```
+ImageBitmapRenderingContext -> HTMLCanvasElement -> HTMLElement
+  -> Element -> Document
+```
+
+`ImageBitmapRenderingContext.canvas` is `HTMLCanvasElement | OffscreenCanvas`,
+and `CanvasImageSource`, which the 2D-context mixins take, is
+`HTMLOrSVGImageElement | HTMLVideoElement | HTMLCanvasElement | ImageBitmap |
+OffscreenCanvas | web_codecs.VideoFrame`. In a worker the first can only be an
+`OffscreenCanvas` and the second only the last three arms, so each needs a
+per-environment form. N6 of the other stream forbids narrowing them for every
+environment instead, since a page really can draw an `HTMLVideoElement`.
+
+**Done when** a worker form of each exists, a window program still draws an
+`HTMLImageElement`, and the canvas surface closes over no window-only
+declaration for a worker target.
+
+#### 7.4.4 Add `web:canvas`
+
+F4 and N2 for the canvas surface, which is the half of #1644 a new package
+answers.
+
+`OffscreenCanvas`, `OffscreenCanvasRenderingContext2D`,
+`ImageBitmapRenderingContext`, `ImageBitmap`, `ImageData`, `Path2D`,
+`CanvasGradient`, `CanvasPattern`, `TextMetrics` and the 2D-context mixins are
+worker-reachable and sit in `web:dom`, which a worker cannot import.
+
+§7.4.3 is what makes the package importable as a unit. Without those two splits
+the surface closes over the whole platform, so this stage follows it rather than
+opening phase two.
+
+Three edges remain and all are worker-reachable, so N2 holds: `web:webgl` for
+the contexts `OffscreenCanvas.getContext` returns, `web:web_codecs` for the
+`VideoFrame` arm of `CanvasImageSource`, and `web:file` for the `Blob` that
+`convertToBlob` yields.
+
+`createImageBitmap` comes too. `ImageBitmap` has no constructor, so that
+function is the only way to make one, and leaving it in `web:dom` would give a
+worker a type it cannot instantiate. `hoisted/canvas.esc` in the other stream
+already routes it here.
+
+**Done when** a worker fixture names `OffscreenCanvas` and draws on it without
+importing `web:dom`.
+
+#### 7.4.5 Move the portable event plumbing into `web:prelude`
+
+The other half of #1644. `MessagePort`, `MessageChannel`,
+`StructuredSerializeOptions` and `Transferable` go to `web:prelude`.
+
+`MessageChannel` comes for the same reason `createImageBitmap` goes with
+`ImageBitmap`: `MessagePort` has no constructor, and `new MessageChannel()` is
+how a worker gets a pair of them. Its closure is `MessagePort`'s, so it moves in
+this stage and not a later one.
+
+`Transferable` names the canvas types, so §7.4.4 lands first or this edge points
+at a package a worker cannot import.
+
+**Done when** a worker fixture receives a `MessagePort` after
+`import "web:prelude"` and without importing `web:dom`.
+
+#### 7.4.6 Move the transferable arms no worker can import
+
+The nine arms `transferable.md` lists. Six are
+`Exposed=(DedicatedWorker, Window)` and need a package importable from a page
+and a dedicated worker, which no current package is, so this stage decides that
+package as well as doing the move.
+
+**Done when** `transferable.md`'s table has no row a worker can name but not
+import.
+
+#### 7.4.7 Split the declarations that differ by environment
 
 F5 applied, and the end of #1613. `Transferable` splits into sixteen arms for a
 page or a dedicated worker and ten for the rest.
@@ -679,7 +712,7 @@ narrower than some environment provides. `MessageEvent.source` is `null` in
 `WindowProxy | MessagePort | ServiceWorker | null`, and the retypes leave
 `internal/interop/overlay/web/core.replace.esc`.
 
-#### 7.4.7 Turn on the unsatisfiable-import check
+#### 7.4.8 Turn on the unsatisfiable-import check
 
 F2. The check now has something to catch: a page importing `web:worker`, or a
 dependency whose entrypoint does not cover a worker.
@@ -687,7 +720,7 @@ dependency whose entrypoint does not cover a worker.
 **Done when** a fixture importing two packages no single environment provides
 fails with the full diagnostic.
 
-#### 7.4.8 Retire the tier machinery
+#### 7.4.9 Retire the tier machinery
 
 N1 and #1614. Once `@env` records where a declaration exists, the tier rank is a
 second mechanism answering an overlapping question, and N1 says one fact lives in
@@ -778,7 +811,7 @@ naming the same declaration fails.
 
 #### 7.6.4 Retire the tier machinery
 
-What §7.4.8 left. With off-browser availability stated per declaration, the
+What §7.4.9 left. With off-browser availability stated per declaration, the
 tier rank is the second mechanism N1 forbids, so `tier.go` and `CheckTiers` go
 and #1614 closes.
 
@@ -808,7 +841,7 @@ the tree to read its import header whether or not the program reaches it. So
 cold is a property of the tree's size, not of what a program imports, and #1643
 is the lever on it.
 
-Two consequences for this plan. The repartition stages, §7.4.2 through §7.4.4,
+Two consequences for this plan. The repartition stages, §7.4.4 through §7.4.6,
 no longer wait on #1861, which is closed
 as not planned: it measured the warm figure the cache removed, and its bisect
 hashes are outside `main`'s rewritten history. And #1862 is still live and

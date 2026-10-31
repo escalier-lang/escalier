@@ -592,7 +592,7 @@ needs no new case.
    `structuredClone` is the one that cannot come yet. Its options bag is
    `StructuredSerializeOptions`, whose `transfer` field is
    `Array<Transferable>`, and `Transferable` reaches 1193 declarations through
-   `OffscreenCanvas` as far as `WebGLRenderingContext`. §7.4.2 and §7.4.3 of the
+   `OffscreenCanvas` as far as `WebGLRenderingContext`. §7.4.4 and §7.4.5 of the
    other stream are what make that arm reachable from a portable package, so
    `structuredClone` moves there and not here.
 2. Move the family globals to their families: `caches` to `web:cache`,
