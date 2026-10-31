@@ -268,9 +268,16 @@ It covers a value reference in any position, including a pattern. Matching
 is a compile-time error, not a guard that never fires. Nothing is emitted that
 could throw `ReferenceError` at a narrowing site.
 
-**F4. Every declaration an environment provides is nameable in it.** A worker can
-name an `OffscreenCanvas` it receives, and everything reachable from it, without
-importing declarations that environment lacks.
+**F4. A declaration is nameable in the sorts its environment provides.** A worker
+can name an `OffscreenCanvas` it receives, and
+everything reachable from it, without importing declarations that environment
+lacks.
+
+A class is two bindings, a type and a value, and an environment can provide one
+without the other. A worker holding a `MessageEvent` needs `WindowProxy` as a
+type to say what `source` is, and must not get it as a value, since
+`Exposed=Window` means no such global is there to name. Open question 3 has what
+that costs.
 
 **F5. A declaration that differs by environment is expressible per environment.**
 Where environments genuinely disagree, as with `MessageEvent.source`, the tree
@@ -816,9 +823,29 @@ backported.
    an overload set.
 2. **What is the `package.json` field called?** F9 sketches a shape and leaves
    the spelling open.
-3. **Is a type-only reference needed?** For `WindowProxy` in a portable union the
-   answer looks like yes, since no repartition can make it portable. It is not
-   needed for `OffscreenCanvas`, which a repartition reaches.
+3. **Is a type-only reference needed?** *Decided: yes, and `WindowProxy` is the
+   case that needs it.* A declaration's type and value components are separate
+   bindings, and an environment can provide one without the other. Where it
+   provides only the type, that is what the tree gives it.
+
+   `WindowProxy` is `Exposed=Window`. A worker receives a `MessageEvent` whose
+   `source` may be one, so it needs the type to annotate what it holds, and the
+   global does not exist there, so a value binding would name something absent.
+   No repartition fixes that, since the problem is the platform's and not the
+   package layout's.
+
+   The cost is that such a type cannot be narrowed. `x is C` for a class
+   compiles to `x instanceof C` at `internal/codegen/builder.go:1378`, which
+   needs the constructor at runtime, so a type-only binding has to reject the
+   guard rather than emit one. A worker holding a `MessageEvent` can say its
+   `source` is a `WindowProxy` and cannot test for it, which is what the
+   platform allows and no more.
+
+   The transferables are not this case, though they look like it. Every one of
+   the sixteen in `transferable.md` is exposed in at least one worker kind, so
+   wherever a worker can hold one it also has the global and `instanceof`
+   works. What several of them lack is a constructor, which is the other
+   stream's F2 and leaves the class in place for narrowing.
 4. **How is enforcement rolled out?** F3 says an error from the first release.
    The fixtures that exercise the old path are not being migrated, so the
    question is what happens to user code rather than to the suite.
