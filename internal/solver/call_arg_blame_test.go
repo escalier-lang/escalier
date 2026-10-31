@@ -9,8 +9,8 @@ import (
 // TestACallBlamesTheArgumentThatDoesNotFit covers where a call to a function with one
 // signature reports an argument that does not fit its parameter. Each such argument is
 // reported at its own span, whether its type comes from a literal, a parameter, a local's
-// annotation, or a bounded type parameter. A generic callee, and one with more than one
-// signature, report at the call.
+// annotation, or a bounded type parameter, and whether or not the callee is generic. A
+// callee with more than one signature reports at the call.
 func TestACallBlamesTheArgumentThatDoesNotFit(t *testing.T) {
 	const add = "fn add(a: number, b: number) -> number { return a + b }\n"
 	tests := []struct {
@@ -78,7 +78,21 @@ func TestACallBlamesTheArgumentThatDoesNotFit(t *testing.T) {
 		{
 			name: "AGenericCallee",
 			src:  "fn first<T: number>(a: T, b: T) -> T { return a }\n" + `fn strs(a: string) { return first(1, a) }`,
-			want: []string{"2:29-2:40: cannot constrain string <: number"},
+			want: []string{"2:38-2:39: cannot constrain string <: number"},
+		},
+		{
+			// The parameter's type reaches `T` only through the body, so the argument has to
+			// reach the same copy of `T` that the return reads.
+			name: "AGenericCalleeLinkingAParameterToItsTypeParameter",
+			src:  "fn g<T>(p) -> T {\n\tval z: T = p.x\n\treturn z\n}\n" + `val n: number = g({x: "s"})`,
+			want: []string{`5:23-5:26: cannot constrain "s" <: number`},
+		},
+		{
+			// `g` holds both functions, so the argument is checked against `num` as well as `id`.
+			name: "AGeneralizedCalleeWithAGenericAndAMonomorphicSignature",
+			src: "fn id<T>(x: T) -> T { return x }\nfn num(x: number) -> number { return x }\n" +
+				"declare val c: boolean\nval g = if c { id } else { num }\n" + `val r = g("s")`,
+			want: []string{`5:11-5:14: cannot constrain "s" <: number`},
 		},
 	}
 	for _, test := range tests {

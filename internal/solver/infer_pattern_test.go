@@ -150,6 +150,56 @@ func TestInferObjectPatternLeafTypeAnnAdopted(t *testing.T) {
 	require.Equal(t, "fn (p: {x: number}) -> number", values["f"])
 }
 
+// TestInferParamPatternLeafTypeAnnNamesTypeParam covers a leaf annotation in a parameter
+// pattern that names the function's own type parameter. The annotation reads the declared
+// `T`, so the signature renders the parameter's shape over `T` and a call checks its argument
+// against the same `T` the return reads.
+func TestInferParamPatternLeafTypeAnnNamesTypeParam(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+		errs []string
+	}{
+		{
+			name: "ObjectPattern",
+			src:  `fn f<T0>({x :: T0}) -> T0 { return x }`,
+			want: "fn <T0>({x}: {x: T0}) -> T0",
+		},
+		{
+			name: "ObjectPatternInferredReturn",
+			src:  `fn f<T0>({x :: T0}) { return x }`,
+			want: "fn <T0>({x}: {x: T0}) -> T0",
+		},
+		{
+			name: "TuplePattern",
+			src:  `fn f<T0>([a: T0]) -> T0 { return a }`,
+			want: "fn <T0>([a]: [T0]) -> T0",
+		},
+		{
+			name: "ObjectPatternCallMismatch",
+			src: `fn f<T>({x :: T}) -> T { return x }
+val n: number = f({x: "s"})`,
+			want: "fn <T>({x}: {x: T}) -> T",
+			errs: []string{`2:23-2:26: cannot constrain "s" <: number`},
+		},
+		{
+			name: "TuplePatternCallMismatch",
+			src: `fn f<T>([a: T]) -> T { return a }
+val n: number = f(["s"])`,
+			want: "fn <T>([a]: [T]) -> T",
+			errs: []string{`2:20-2:23: cannot constrain "s" <: number`},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, test.src)
+			require.Equal(t, test.errs, messagesWithSpan(t, errs))
+			require.Equal(t, test.want, values["f"])
+		})
+	}
+}
+
 // A field default makes the field optional, so destructuring an absent field
 // that carries a default binds the default's type instead of reporting a missing
 // property.
