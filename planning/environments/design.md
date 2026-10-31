@@ -632,17 +632,39 @@ ImageBitmapRenderingContext -> HTMLCanvasElement -> HTMLElement
   -> Element -> Document
 ```
 
-`ImageBitmapRenderingContext.canvas` is `HTMLCanvasElement | OffscreenCanvas`,
-and `CanvasImageSource`, which the 2D-context mixins take, is
-`HTMLOrSVGImageElement | HTMLVideoElement | HTMLCanvasElement | ImageBitmap |
-OffscreenCanvas | web_codecs.VideoFrame`. In a worker the first can only be an
-`OffscreenCanvas` and the second only the last three arms, so each needs a
-per-environment form. N6 of the other stream forbids narrowing them for every
-environment instead, since a page really can draw an `HTMLVideoElement`.
+`ImageBitmapRenderingContext.canvas` splits in two. A worker's context is only
+ever bound to an `OffscreenCanvas`:
 
-**Done when** a worker form of each exists, a window program still draws an
-`HTMLImageElement`, and the canvas surface closes over no window-only
-declaration for a worker target.
+```
+@env("window")  readonly canvas: HTMLCanvasElement | OffscreenCanvas
+@env("worker")  readonly canvas: OffscreenCanvas
+```
+
+`CanvasImageSource`, which the 2D-context mixins take for `drawImage`, splits in
+three, because its arms do not share one exposure. `HTMLImageElement`,
+`SVGImageElement`, `HTMLVideoElement` and `HTMLCanvasElement` are
+`Exposed=Window`, `ImageBitmap` and `OffscreenCanvas` are `Window, Worker`, and
+`VideoFrame` is `Window, DedicatedWorker`:
+
+```
+@env("window")
+  = HTMLOrSVGImageElement | HTMLVideoElement | HTMLCanvasElement
+  | ImageBitmap | OffscreenCanvas | web_codecs.VideoFrame
+@env("dedicated_worker")
+  = ImageBitmap | OffscreenCanvas | web_codecs.VideoFrame
+@env("shared_worker", "service_worker")
+  = ImageBitmap | OffscreenCanvas
+```
+
+Three forms of one name is the shape F5 already cites for `onmessage`, so this
+needs no mechanism §7.4.2 does not provide. N6 of the other stream forbids
+narrowing either declaration for every environment instead, since a page really
+can draw an `HTMLVideoElement`.
+
+**Done when** a dedicated-worker fixture draws a `VideoFrame` and is refused an
+`HTMLImageElement`, a service-worker fixture is refused both, a window program
+still draws an `HTMLImageElement`, and the canvas surface closes over no
+window-only declaration for a worker target.
 
 #### 7.4.4 Add `web:canvas`
 
