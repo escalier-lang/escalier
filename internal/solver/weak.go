@@ -407,7 +407,7 @@ func collectPassThrough(v *soltype.TypeVarType, out set.Set[*soltype.TypeVarType
 // consumed when it is never produced. A variable with neither reads its own bounds the same
 // way, and is `never` when it has no bound either.
 func simplifyWithWeakVars(sc *PolyScheme, lvl, weakLvl int) soltype.Type {
-	simplified := coalesceScheme(sc.Body, lvl, sc.declared, sc.declaredLts)
+	simplified := coalesceScheme(sc.Body, lvl, sc.declared, sc.declaredLts, true)
 	s := &weakCompanionScanner{
 		lvl:      weakLvl,
 		binders:  funcTypeParamVars(simplified),

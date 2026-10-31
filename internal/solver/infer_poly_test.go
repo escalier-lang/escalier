@@ -110,9 +110,8 @@ func TestInferModuleDistinctParamsStayDistinct(t *testing.T) {
 }
 
 // A polymorphic function with a parameter the body never reads. The second
-// parameter's variable occurs only negatively, and it still becomes a type
-// parameter, since the parameter's type is the caller's to pick. Per-call
-// instantiation keeps k(1, "z") and k("s", true) at distinct types.
+// parameter's variable occurs in one position, so it links nothing and renders as
+// `unknown`. Per-call instantiation keeps k(1, "z") and k("s", true) at distinct types.
 func TestInferModulePolymorphicWithParameterOnlyVar(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		val k = fn (x, y) { return x }
@@ -121,14 +120,15 @@ func TestInferModulePolymorphicWithParameterOnlyVar(t *testing.T) {
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, map[string]string{
-		"k": "fn <T0, T1>(x: T0, y: T1) -> T0",
+		"k": "fn <T0>(x: T0, y: unknown) -> T0",
 		"a": "1",
 		"b": `"s"`,
 	}, values)
 }
 
 // TestInferParamGeneralization covers when a parameter's variable becomes a type
-// parameter and which bound its binder carries.
+// parameter and which bound its binder carries. A variable that occurs in one position
+// of the signature renders as its bound, or `unknown` when it has none.
 func TestInferParamGeneralization(t *testing.T) {
 	const fstNum = "fn fstNum<A: number, B: number>(a: A, b: B) -> A { return a }\n"
 	tests := []struct {
@@ -139,17 +139,17 @@ func TestInferParamGeneralization(t *testing.T) {
 		{
 			name: "a parameter the body never reads",
 			src:  "fn f(a, b) { return b }",
-			want: "fn <T0, T1>(a: T0, b: T1) -> T1",
+			want: "fn <T0>(a: unknown, b: T0) -> T0",
 		},
 		{
 			name: "a parameter passed to a bounded type parameter",
 			src:  fstNum + "fn f(b) { return fstNum(1, b) }",
-			want: "fn <T0: number>(b: T0) -> 1",
+			want: "fn (b: number) -> 1",
 		},
 		{
 			name: "a bound reaches a parameter the return also holds",
 			src:  fstNum + "fn f(a, b) { return fstNum(a, b) }",
-			want: "fn <T0: number, T1: number>(a: T0, b: T1) -> T0",
+			want: "fn <T0: number>(a: T0, b: number) -> T0",
 		},
 		{
 			name: "a concrete bound on a parameter the return holds renders on its binder",
@@ -176,10 +176,10 @@ func TestInferParamGeneralization(t *testing.T) {
 	}
 }
 
-// TestInferOverloadArmGeneralizesAnUnreadParam asserts that an overload arm keeps
-// a parameter its body never reads as a type parameter. Each arm generalizes on its
-// own, from a scheme body that is the arm's signature itself.
-func TestInferOverloadArmGeneralizesAnUnreadParam(t *testing.T) {
+// TestInferOverloadArmRendersAnUnreadParamAsUnknown asserts that an overload arm renders
+// a parameter its body never reads as `unknown`. Each arm generalizes on its own, from
+// a scheme body that is the arm's signature itself.
+func TestInferOverloadArmRendersAnUnreadParamAsUnknown(t *testing.T) {
 	module := parseModuleFiles(t, map[string]string{"input.esc": `
 		fn f(x: number) -> number { return x }
 		fn f(x: string, y) -> string { return x }
@@ -193,14 +193,14 @@ func TestInferOverloadArmGeneralizesAnUnreadParam(t *testing.T) {
 	require.True(t, ok)
 	require.Len(t, b.Schemes, 2)
 	require.Equal(t, "fn (x: number) -> number", renderScheme(b.Schemes[0]))
-	require.Equal(t, "fn <T0>(x: string, y: T0) -> string", renderScheme(b.Schemes[1]))
+	require.Equal(t, "fn (x: string, y: unknown) -> string", renderScheme(b.Schemes[1]))
 }
 
 // A recursive group generalizes without looping (the coalesce seen-guard, shipped
 // in M2 PR-5, keeps the cyclic var↔var bound graph total under generalization too).
 // The ungrounded mutual recursion bottoms out. Each parameter is only passed to the
-// other function, so it becomes a type parameter, and each return is an ungrounded
-// recursive position, so it is `never`. The real contract is that inference
+// other function and occurs in one position, so it is `unknown`. Each return is an
+// ungrounded recursive position, so it is `never`. The real contract is that inference
 // TERMINATES rather than hangs.
 func TestInferModuleRecursiveGroupGeneralizesWithoutLooping(t *testing.T) {
 	values, _, errs := inferSource(t, `
@@ -209,7 +209,7 @@ func TestInferModuleRecursiveGroupGeneralizesWithoutLooping(t *testing.T) {
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, map[string]string{
-		"ping": "fn <T0>(n: T0) -> never",
-		"pong": "fn <T0>(n: T0) -> never",
+		"ping": "fn (n: unknown) -> never",
+		"pong": "fn (n: unknown) -> never",
 	}, values)
 }

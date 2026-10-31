@@ -161,12 +161,12 @@ func TestInferUnannotatedParamOwnership(t *testing.T) {
 				val {p} = {p: {x: 1}}
 				return p.x
 			}`,
-			want: "fn <T0>(p: T0) -> 1",
+			want: "fn (p: unknown) -> 1",
 		},
 		{
 			name: "Unused",
 			src:  `fn f(p) { return 1 }`,
-			want: "fn <T0>(p: T0) -> 1",
+			want: "fn (p: unknown) -> 1",
 		},
 		{
 			name: "Destructured",
@@ -420,13 +420,11 @@ func TestInferOpenEscapeParam(t *testing.T) {
 					return opts.retries
 				}
 			`,
-			want: "fn <T0>(value: T0) -> undefined",
+			want: "fn (value: unknown) -> undefined",
 		},
 		{
 			// id's parameter is a fresh variable for each call, which m's own type does not
-			// reach, so the call stores nothing in m. remember keeps T0 only because a parameter
-			// the caller picks the type of renders as a type parameter, which #2010 drops, so
-			// remember becomes `fn (value: unknown) -> undefined`.
+			// reach, so the call stores nothing in m.
 			name: "GenericMethodDoesNotEscape",
 			src: `
 				val m = {id: fn <T>(x: T) -> T { return x }}
@@ -437,7 +435,7 @@ func TestInferOpenEscapeParam(t *testing.T) {
 					return opts.retries
 				}
 			`,
-			want: "fn <T0>(value: T0) -> undefined",
+			want: "fn (value: unknown) -> undefined",
 		},
 		{
 			// A callback's parameter takes its type from the callee, so the callee decides its
