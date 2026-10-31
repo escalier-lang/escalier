@@ -1557,6 +1557,15 @@ points to, not to the binding. With `val mut p: {x: 1} = {x: 1}`, widening
 `val r = borrowMut(&mut p)` to `&mut {x: number}` would claim that `r.x = 2` is
 allowed, which the type of `p` rejects.
 
+The widening applies to the type the checker uses, not only to the type it
+displays. A value widens as it reaches a writable slot, so every read of the
+binding sees the settled type, whichever function writes it and in whatever
+order. With `seen` written by `seen.set("k", 1)`, `fn get() { return seen.get("k") }`
+infers as `fn () -> number | undefined`, and `val one: 1 | undefined = seen.get("k")`
+is rejected. A value keeps its literals everywhere else it flows. With
+`fn put(x) { seen.set("k", [x]); return x }`, `put(1)` returns `1` and stores
+`[number]`.
+
 The checker requires no annotation. A weak variable no use decides settles
 silently. A container that is never written settles at `never`, so
 `val mut seen = Map()` with no `seen.set` reads as `Map<never, never>`. A

@@ -169,6 +169,12 @@ type Context struct {
 	// explains the rule.
 	borrowedReads map[*soltype.TypeVarType][]borrowedRead
 
+	// slotModes holds, per type variable, the writable slot of a weak binding the variable
+	// stands for. Each lower bound the variable gains is widened as that slot widens it.
+	// markSlot fills it for a weak binding's own variables, and widenSlotBound for the
+	// variables it mints. widenSlotBound explains the rule.
+	slotModes map[*soltype.TypeVarType]slotMode
+
 	// muBinderCount numbers the μ-variables the regular-tree check has minted, so two aliases whose
 	// knots are composed into one type carry distinct binders. coalesce numbers its own binders per
 	// walk instead, since the knots one walk produces are numbered together.
@@ -703,6 +709,27 @@ func (c *Context) addLowerBound(v *soltype.TypeVarType, t soltype.Type) {
 func (c *Context) addUpperBound(v *soltype.TypeVarType, t soltype.Type) {
 	c.recordMutation(v)
 	v.UpperBounds = append(v.UpperBounds, t)
+}
+
+// replaceLowerBound replaces v's lower bound at index i with t and returns the errors that
+// checking t against v's upper bounds and borrowed reads reports, as adding t would. A
+// discarded probe puts the replaced bound back.
+func (c *Context) replaceLowerBound(v *soltype.TypeVarType, i int, t soltype.Type) []SolverError {
+	c.recordMutation(v)
+	prev := v.LowerBounds[i]
+	v.LowerBounds[i] = t
+	if c.probe != nil {
+		c.probe.onRollback(func() { v.LowerBounds[i] = prev })
+	}
+	seen := newSeenPairs()
+	var errs []SolverError
+	for _, ub := range v.UpperBounds {
+		errs = append(errs, c.constrain(t, ub, seen, false)...)
+	}
+	for _, r := range c.borrowedReads[v] {
+		errs = append(errs, c.readThroughLowerBound(r, v, t, seen)...)
+	}
+	return c.breadcrumbUnionCommit(errs, v)
 }
 
 // borrowedRead is a field-read requirement made through a borrow whose pointee is a type

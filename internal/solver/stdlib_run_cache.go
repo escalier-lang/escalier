@@ -360,6 +360,7 @@ func (c *Context) fork() *Context {
 	f.unfoldingAliases = maps.Clone(c.unfoldingAliases)
 	f.buildingAliases = maps.Clone(c.buildingAliases)
 	f.borrowedReads = clipValues(c.borrowedReads)
+	f.slotModes = maps.Clone(c.slotModes)
 	f.unionCommits = maps.Clone(c.unionCommits)
 	f.holeVars = maps.Clone(c.holeVars)
 	return &f

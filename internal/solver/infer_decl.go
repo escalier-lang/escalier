@@ -719,6 +719,7 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl, self *solt
 	if !generalizes(d) {
 		initLvl = lvl
 	}
+	firstVar := c.ctx.varCounter
 	initType, ok := c.inferVarDeclInit(scope, initLvl, d, "")
 	if !ok {
 		return ValueBinding{}, false
@@ -751,7 +752,7 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl, self *solt
 	}
 	scheme := c.generalize(bound, lvl)
 	if initLvl == lvl {
-		c.noteWeakLocal(d, scheme)
+		c.noteWeakLocal(d, scheme, firstVar)
 	}
 	// The recorded display type retains any quantified type-parameter vars (it is
 	// not var-free), so Info consumers must render it with renderScheme, which threads
