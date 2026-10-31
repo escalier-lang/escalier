@@ -58,8 +58,11 @@ in a borrow, ownership does not apply to them, and they are freely duplicated.
    what `read(&b)` returns. A use that needs a value type, as `read(&b) + 1`
    does, copies the field out of the borrow. Any other use leaves the parameter
    owned, unless that use needs a borrow, as passing it straight to a `&`
-   parameter in `g(p)` does. A function passed straight to a call takes its
-   parameters' types from the callee's signature instead.
+   parameter in `g(p)` does. A parameter that escapes into a destination whose
+   type leaves ownership open is a `'static` borrow when the body never writes
+   it, as [What counts as escape](#what-counts-as-escape) describes. A function
+   passed straight to a call takes its parameters' types from the callee's
+   signature instead.
 3. **A bare annotation is owned; a `&` annotation borrows.** This holds in every
    annotation position — a binding, a return type, a field, a parameter. So
    `val q: &{x: number} = &p` borrows `p` and leaves it usable, while
@@ -169,6 +172,36 @@ fn go() {
     val m = p.x     // p is still usable
 }
 ```
+
+Some destinations outlive the call but leave the ownership of what they hold
+open. One is a parameter of a method called on a module-level binding whose type
+is still being inferred, such as `set` on a `Map()` written with no type
+arguments. An unannotated parameter passed whole to such a destination escapes,
+and the body decides how:
+
+- A parameter the body never writes is a `'static` borrow. The caller writes the
+  borrow and can keep reading the value. A value-type argument such as a string
+  copies and needs nothing written.
+- A `mut` parameter, which the body may write, is owned. The call moves the
+  argument.
+
+```esc
+val mut seen = Map()
+
+fn remember(value) { seen.set("last", value) }
+// remember: fn <T0>(value: &'static T0) -> undefined
+
+fn go() -> number {
+    val opts = {retries: 3}
+    remember(&opts)
+    return opts.retries     // opts is still readable
+}
+```
+
+Where the destination's type is owned, as with
+`val mut seen: Map<string, {retries: number}> = Map()`, the parameter is owned
+and the call moves the argument. A written parameter type overrides the
+inference either way.
 
 A value does **not** escape when it flows into a strictly shorter-lived
 destination: a non-escaping argument or a local reborrow. Those are borrows, and

@@ -2,7 +2,9 @@ package solver
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/liveness"
 	"github.com/escalier-lang/escalier/internal/set"
+	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
 // paramOnlyReadThrough reports whether body only reads through the parameter named `name`.
@@ -200,3 +202,136 @@ func identParamOnlyReadThrough(pat ast.Pat, rest, optional bool, body *ast.Block
 	}
 	return paramOnlyReadThrough(ip.Name, body)
 }
+
+// noteOpenEscapes adds to openEscapes the VarID of each argument of the call e that is a bare
+// name passed to an open destination. An open destination is a parameter of a method called
+// on a module-level binding, where the parameter's type is an inference variable that the
+// receiver's own type reaches. fn is the signature the call resolved to, and nil when it
+// resolved to none.
+//
+// In the module below, `seen.set("last", value)` is an open escape. `set`'s second parameter
+// has type V, an inference variable that `seen`'s own type `Map<K, V>` reaches, and `seen` is
+// a module-level binding. The call records `value`. The other two calls are not open escapes.
+//
+//	val mut seen = Map()
+//	val m = {id: fn <T>(x: T) -> T { return x }}
+//
+//	fn remember(value) {
+//	    seen.set("last", value) // open escape, which records value
+//	    m.id(value)             // id's T is fresh for this call, so m's type does not reach it
+//	    val mut local = Map()
+//	    local.set("k", value)   // local is not a module-level binding
+//	}
+func (c *checker) noteOpenEscapes(scope *Scope, e *ast.CallExpr, fn *soltype.FuncType) {
+	if c.fn == nil || fn == nil {
+		return
+	}
+	var recv ast.Expr
+	switch callee := e.Callee.(type) {
+	case *ast.MemberExpr:
+		recv = callee.Object
+	case *ast.IndexExpr:
+		recv = callee.Object
+	default:
+		return
+	}
+	if _, ok := c.moduleLevelRootInBody(scope, recv); !ok {
+		return
+	}
+	for i, arg := range e.Args {
+		if i >= len(fn.Params) || fn.Params[i].Rest {
+			return
+		}
+		id, ok := arg.(*ast.IdentExpr)
+		if !ok {
+			continue
+		}
+		dest, open := fn.Params[i].Type.(*soltype.TypeVarType)
+		if !open || !typeReachesVar(c.info.TypeOf(recv), dest) {
+			continue
+		}
+		if vid := c.varIDs.Of(id); vid > 0 {
+			if c.fn.openEscapes == nil {
+				c.fn.openEscapes = set.NewSet[liveness.VarID]()
+			}
+			c.fn.openEscapes.Add(vid)
+		}
+	}
+}
+
+// markOpenEscapeParams sets the ownership of each parameter in openEscapes that is a bare name
+// with no type annotation, no default, and no Moved mark. A `mut` parameter stays owned and is
+// marked Moved, so each call moves its argument. Any other such parameter's type T becomes
+// `&'static T`, so each call lends its argument for good. params holds the FuncParams built
+// from sigParams, one for one. It reads the body's context, so it runs once the body is walked
+// and before the context is popped.
+func (c *checker) markOpenEscapeParams(sigParams []*ast.Param, params []*soltype.FuncParam) {
+	if c.fn == nil || c.fn.openEscapes.Len() == 0 {
+		return
+	}
+	for i, p := range sigParams {
+		ip, ok := p.Pattern.(*ast.IdentPat)
+		if !ok || p.TypeAnn != nil || ip.Default != nil || i >= len(params) {
+			continue
+		}
+		fp := params[i]
+		if fp.Moved || fp.Rest || fp.Optional || !c.fn.openEscapes.Contains(c.varIDs.Of(ip)) {
+			continue
+		}
+		v, isVar := fp.Type.(*soltype.TypeVarType)
+		if !isVar {
+			continue
+		}
+		if ip.Mutable {
+			fp.Moved = true
+			continue
+		}
+		// The body already passed v to the open destination, so the borrow flows into v
+		// rather than replacing it. The destination then holds the borrow the caller lends.
+		ref := soltype.NewRef(false, soltype.Static, c.freshAt(v.Level))
+		c.constrain(ip, ref, v)
+		fp.Type = ref
+	}
+}
+
+// typeReachesVar reports whether v occurs in t, either in t's structure or in the bounds of a
+// variable t reaches.
+func typeReachesVar(t soltype.Type, v *soltype.TypeVarType) bool {
+	if t == nil {
+		return false
+	}
+	r := &varReacher{target: v, seen: set.NewSet[*soltype.TypeVarType]()}
+	t.Accept(r, soltype.Positive)
+	return r.found
+}
+
+// varReacher walks a type for typeReachesVar. It descends each variable's bounds itself,
+// since the bounds are not children the type visitor walks.
+type varReacher struct {
+	target *soltype.TypeVarType
+	seen   set.Set[*soltype.TypeVarType]
+	found  bool
+}
+
+func (r *varReacher) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	v, ok := t.(*soltype.TypeVarType)
+	if r.found || !ok {
+		return soltype.EnterResult{SkipChildren: r.found}
+	}
+	if v == r.target {
+		r.found = true
+	}
+	if r.seen.Contains(v) || r.found {
+		return soltype.EnterResult{SkipChildren: true}
+	}
+	r.seen.Add(v)
+	for _, b := range v.LowerBounds {
+		b.Accept(r, pol)
+	}
+	for _, b := range v.UpperBounds {
+		b.Accept(r, pol)
+	}
+	return soltype.EnterResult{SkipChildren: true}
+}
+
+func (r *varReacher) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }

@@ -301,3 +301,237 @@ func TestReadThroughBorrowParamKeepsBorrow(t *testing.T) {
 		})
 	}
 }
+
+// TestInferOpenEscapeParam covers D9's rule for an unannotated parameter stored where the
+// destination's type leaves ownership open. Each case declares `remember` and a caller `go`.
+// A parameter the body never writes infers as a `'static` borrow, and one the body writes, or
+// one the destination's type makes owned, stays owned and moves the caller's argument.
+func TestInferOpenEscapeParam(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		// want is remember's rendered type, checked when it is not empty.
+		want string
+		// seen is the rendered type of the module-level map, checked when it is not empty.
+		seen string
+		errs []string
+	}{
+		{
+			// remember's rendering waits on #2352, so TestInferOpenEscapeParamRendering holds it.
+			name: "ReadOnlyIsStaticBorrow",
+			src: `
+				val mut seen = Map()
+				fn remember(value) { seen.set("last", value) }
+				fn go() -> number {
+					val opts = {retries: 3}
+					remember(&opts)
+					return opts.retries
+				}
+			`,
+			seen: "Map<string, &'static {retries: 3}>",
+		},
+		{
+			// remember's rendering waits on #2352, so TestInferOpenEscapeParamRendering holds it.
+			name: "ReadOnlyNeedsWrittenBorrow",
+			src: `
+				val mut seen = Map()
+				fn remember(value) { seen.set("last", value) }
+				fn go() -> number {
+					val opts = {retries: 3}
+					remember(opts)
+					return opts.retries
+				}
+			`,
+			seen: "Map<string, &'static {retries: 3}>",
+			errs: []string{"6:15-6:19: this argument is borrowed by the callee, so write the borrow: `&`"},
+		},
+		{
+			name: "WrittenIsOwned",
+			src: `
+				val mut seen = Map()
+				fn remember(mut value) {
+					value.retries = 0
+					seen.set("last", value)
+				}
+				fn go() -> number {
+					val opts = {retries: 3}
+					remember(opts)
+					return opts.retries
+				}
+			`,
+			want: "fn (value: {retries: number}) -> undefined",
+			errs: []string{"10:13-10:25: use of moved value 'opts'"},
+		},
+		{
+			name: "OwnedDestinationIsOwned",
+			src: `
+				val mut seen: Map<string, {retries: number}> = Map()
+				fn remember(value) { seen.set("last", value) }
+				fn go() -> number {
+					val opts = {retries: 3}
+					remember(opts)
+					return opts.retries
+				}
+			`,
+			want: "fn (value: {retries: number}) -> undefined",
+			errs: []string{"7:13-7:25: use of moved value 'opts'"},
+		},
+		{
+			name: "AnnotationOverrides",
+			src: `
+				val mut seen = Map()
+				fn remember(value: {retries: number}) { seen.set("last", value) }
+				fn go() -> number {
+					val opts = {retries: 3}
+					remember(opts)
+					return opts.retries
+				}
+			`,
+			want: "fn (value: {retries: number}) -> undefined",
+			errs: []string{"7:13-7:25: use of moved value 'opts'"},
+		},
+		{
+			name: "AlsoReturnedIsOwned",
+			src: `
+				val mut seen = Map()
+				fn remember(value) {
+					seen.set("last", value)
+					return value
+				}
+				fn go() -> number {
+					val opts = {retries: 3}
+					remember(opts)
+					return opts.retries
+				}
+			`,
+			want: "fn <T0>(value: T0) -> T0",
+			errs: []string{"10:13-10:25: use of moved value 'opts'"},
+		},
+		{
+			name: "LocalReceiverDoesNotEscape",
+			src: `
+				fn remember(value) {
+					val mut seen = Map()
+					seen.set("last", value)
+				}
+				fn go() -> number {
+					val opts = {retries: 3}
+					remember(opts)
+					return opts.retries
+				}
+			`,
+			want: "fn <T0>(value: T0) -> undefined",
+		},
+		{
+			// id's parameter is a fresh variable for each call, which m's own type does not
+			// reach, so the call stores nothing in m. remember keeps T0 only because a parameter
+			// the caller picks the type of renders as a type parameter, which #2010 drops, so
+			// remember becomes `fn (value: unknown) -> undefined`.
+			name: "GenericMethodDoesNotEscape",
+			src: `
+				val m = {id: fn <T>(x: T) -> T { return x }}
+				fn remember(value) { m.id(value) }
+				fn go() -> number {
+					val opts = {retries: 3}
+					remember(opts)
+					return opts.retries
+				}
+			`,
+			want: "fn <T0>(value: T0) -> undefined",
+		},
+		{
+			// A callback's parameter takes its type from the callee, so the callee decides its
+			// ownership and storing it in seen leaves it owned.
+			name: "CallbackArgumentKeepsTheCalleeType",
+			src: `
+				val mut seen = Map()
+				declare fn each<T>(x: T, f: fn (v: T) -> undefined) -> undefined
+				fn go() -> number {
+					val opts = {retries: 3}
+					each(opts, fn (v) { seen.set("last", v) })
+					return opts.retries
+				}
+			`,
+			seen: "Map<string, {retries: number}>",
+		},
+		{
+			// A value type has no storage to borrow, so it copies into the borrow without a
+			// written `&`. The key escapes into seen too, so it is a `'static` borrow as well.
+			// A `&'static` of a value type stands for the value type, so seen holds the strings
+			// and numbers. remember's rendering waits on #2352, so
+			// TestInferOpenEscapeParamRendering holds it.
+			name: "ValueTypeArgumentsCopy",
+			src: `
+				val mut seen = Map()
+				fn remember(key, value) { seen.set(key, value) }
+				fn go() -> number {
+					val k = "a"
+					remember(k, 3)
+					remember("b", 4)
+					return 1
+				}
+			`,
+			seen: `Map<&'static ("a" | "b"), &'static (3 | 4)>`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, errs := inferAgainstTreeWithSpans(t, tt.src)
+			require.Equal(t, tt.errs, errs)
+			if tt.want != "" {
+				require.Equal(t, tt.want, values["remember"])
+			}
+			if tt.seen != "" {
+				require.Equal(t, tt.seen, values["seen"])
+			}
+		})
+	}
+}
+
+// DISABLED until #2352, which keeps a function monomorphic when its parameter flows into a weak
+// binding. Today remember renders each such parameter as `unknown`, since seen's weak variable
+// holds the type the parameter's borrow points to and remember is coalesced as if it were generic.
+/*
+func TestInferOpenEscapeParamRendering(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "ReadOnlyIsStaticBorrow",
+			src: `
+				val mut seen = Map()
+				fn remember(value) { seen.set("last", value) }
+				fn go() -> number {
+					val opts = {retries: 3}
+					remember(&opts)
+					return opts.retries
+				}
+			`,
+			want: "fn (value: &'static {retries: 3}) -> undefined",
+		},
+		{
+			name: "ValueTypeArgumentsCopy",
+			src: `
+				val mut seen = Map()
+				fn remember(key, value) { seen.set(key, value) }
+				fn go() -> number {
+					val k = "a"
+					remember(k, 3)
+					remember("b", 4)
+					return 1
+				}
+			`,
+			want: `fn (key: &'static ("a" | "b"), value: &'static (3 | 4)) -> undefined`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, errs := inferAgainstTreeWithSpans(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["remember"])
+		})
+	}
+}
+*/
