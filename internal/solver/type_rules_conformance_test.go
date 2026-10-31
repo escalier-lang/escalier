@@ -103,6 +103,71 @@ func TestTypeRules(t *testing.T) {
 			`,
 			want: []string{"3:17-3:20: " + ownedMutTypeMsg},
 		},
+		// `mut` reaches the layer under a `readonly` slot, so `x.a.b` is writable and `x.a` is
+		// not. Each form below spells the same parameter type, once inline and once through
+		// `Readonly<T>`, and each allows and rejects the same writes.
+		{
+			name: "T3/MutBorrowThroughReadonlySlot",
+			src: `
+				fn resetWritten(x: &mut {readonly a: {b: number}}) {
+					x.a.b = 0
+				}
+				fn replaceWritten(x: &mut {readonly a: {b: number}}) {
+					x.a = {b: 0}
+				}
+			`,
+			want: []string{"6:6-6:9: cannot assign to 'a' because it is a readonly property"},
+		},
+		{
+			name: "T3/MutBorrowThroughMappedType",
+			src: `
+				fn resetMapped(x: &mut Readonly<{a: {b: number}}>) {
+					x.a.b = 0
+				}
+				fn replaceMapped(x: &mut Readonly<{a: {b: number}}>) {
+					x.a = {b: 0}
+				}
+			`,
+			want: []string{"6:6-6:9: cannot assign to 'a' because it is a readonly property"},
+		},
+		{
+			name: "T3/MutBorrowThroughMappedAlias",
+			src: `
+				type R = Readonly<{a: {b: number}}>
+				fn resetAlias(x: &mut R) {
+					x.a.b = 0
+				}
+			`,
+		},
+		// An immutable borrow grants no writes at any layer, so the mapped form rejects the deep
+		// write the same way the inline form does.
+		{
+			name: "T3/ImmutableBorrowThroughMappedType",
+			src: `
+				fn resetWritten(x: &{readonly a: {b: number}}) {
+					x.a.b = 0
+				}
+				fn resetMapped(x: &Readonly<{a: {b: number}}>) {
+					x.a.b = 0
+				}
+			`,
+			want: []string{
+				"6:6-6:15: cannot constrain immutable object <: mutable object",
+				"3:6-3:15: cannot constrain immutable object <: mutable object",
+			},
+		},
+		{
+			name: "T3/OwnedMutThroughMappedType",
+			src: `
+				fn resetOwned(mut x: Readonly<{a: {b: number}}>) {
+					x.a.b = 0
+				}
+				fn replaceOwned(mut x: Readonly<{a: {b: number}}>) {
+					x.a = {b: 0}
+				}
+			`,
+			want: []string{"6:6-6:9: cannot assign to 'a' because it is a readonly property"},
+		},
 		// A `readonly` field is written once, by the constructor call, so a later write is
 		// rejected even through a `val mut` binding.
 		{
@@ -328,6 +393,43 @@ func TestTypeRuleGetterReceiver(t *testing.T) {
 				}
 			`,
 			want: []string{"4:6-4:51: Getter 'x' must declare a `&self` receiver; reading through it leaves the instance in place."},
+		},
+	})
+}
+*/
+
+// DISABLED until #2357, which reads a field through a receiver whose mapped or spread member is
+// over a type parameter. Today each read reports `cannot constrain ... <: object`, since the
+// member does not reduce and `declaredField` finds no field past it.
+/*
+func TestTypeRulesGenericMappedReceiver(t *testing.T) {
+	runTypeRuleCases(t, []typeRuleCase{
+		// T3. `mut` reaches through the mapped member to `a`'s object, and `a` itself stays
+		// `readonly`.
+		{
+			name: "T3/MutBorrowThroughGenericMappedType",
+			src: `
+				fn read<T: {a: number}>(x: &Readonly<T>) -> number {
+					return x.a
+				}
+				fn write<T: {a: {b: number}}>(x: &mut Readonly<T>) {
+					x.a.b = 0
+				}
+				fn replace<T: {a: {b: number}}>(x: &mut Readonly<T>) {
+					x.a = {b: 0}
+				}
+			`,
+			want: []string{"9:6-9:9: cannot assign to 'a' because it is a readonly property"},
+		},
+		// A field written after a spread wins over any field the spread brings, so `a` reads
+		// `number` whatever `T` holds.
+		{
+			name: "T3/FieldAfterSpreadOfTypeParameter",
+			src: `
+				fn read<T: {}>(x: {...T, a: number}) -> number {
+					return x.a
+				}
+			`,
 		},
 	})
 }

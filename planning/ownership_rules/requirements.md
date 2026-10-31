@@ -1644,23 +1644,6 @@ export fn go() -> number {
 }
 ```
 
-**B4. `mut` does not reach through a mapped type.** The two functions below
-declare the same parameter type, once written out and once through
-`Readonly<T>`. T3 says `mut` reaches every owned layer, including through type
-arguments, so both should check clean. The first does, and the second reports
-`cannot constrain immutable object <: mutable object` at the write. An owned
-parameter written `mut x: Readonly<{a: {b: number}}>` fails the same way.
-
-```esc
-fn resetWritten(x: &mut {readonly a: {b: number}}) {
-    x.a.b = 0
-}
-
-fn resetMapped(x: &mut Readonly<{a: {b: number}}>) {
-    x.a.b = 0
-}
-```
-
 **B5. A call to an unannotated escaping parameter does not move its argument.**
 The compiler infers `store` below as `fn (p: {x: number}) -> undefined`, an
 owned parameter, yet `store(a)` records no move and `a.x` checks clean. With
@@ -1756,7 +1739,7 @@ converter keeps `Readonly<T>` as written and picks `&` or `&mut` for the
 parameter from its other signals, falling back to I3 when they are uncertain.
 In the declaration below, `reset` cannot reassign `x.a` but can still run
 `x.a.b = 0`. The Escalier signature `reset(x: &mut Readonly<{a: {b: number}}>)`
-allows and forbids the same writes, once B4 is fixed.
+allows and forbids the same writes.
 
 ```ts
 declare function reset(x: Readonly<{a: {b: number}}>): void;
@@ -1962,8 +1945,7 @@ The steps:
 6. Update the declaration converter to follow I1 through I3. It keeps
    `Readonly<T>` as written, emits `&T` only when no slot reachable through
    `T` is writable, and fixes `classifyExplicitSignal` in
-   [mutability.go](../../internal/dts_to_esc/mutability.go) to match. B4 has to
-   be fixed first, since I1's `&mut Readonly<T>` depends on it.
+   [mutability.go](../../internal/dts_to_esc/mutability.go) to match.
 7. Build the event lowering and the single control-flow pass behind a flag. Run
    it alongside the current checks and compare diagnostics across every test and
    fixture. Resolve each difference as a bug in the old checks or a change to the
@@ -2006,7 +1988,6 @@ Each known bug closes at a step:
 | B1 | Step 3, since F4 rejects the unwritten borrow | No |
 | B2 | Step 7, or sooner by its own fix to the current checker | Yes |
 | B3 | Step 3, since F4 rejects the annotation-only borrow | Yes |
-| B4 | Its own fix, which step 6 needs first | No |
 | B5 | Step 4 | Yes |
 | B6 | Step 4 | No |
 | B7 | Step 5 | Yes |
