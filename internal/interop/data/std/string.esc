@@ -133,7 +133,7 @@ export declare class String {
      * containing the results of that search, or null if no matches are found.
      * @param matcher An object that supports being matched against.
      */
-    match(&self, matcher: {
+    match(&self, matcher: &mut {
         [Symbol.match](string: string) -> regexp.RegExpMatchArray | null
     }) -> regexp.RegExpMatchArray | null,
     /**
@@ -141,7 +141,7 @@ export declare class String {
      * @param searchValue An object that supports searching for and replacing matches within a string.
      * @param replaceValue The replacement text.
      */
-    replace(&self, searchValue: {
+    replace(&self, searchValue: &mut {
         [Symbol.replace](string: string, replaceValue: string) -> string
     }, replaceValue: string) -> string,
     /**
@@ -149,14 +149,14 @@ export declare class String {
      * @param searchValue A object can search for and replace matches within a string.
      * @param replacer A function that returns the replacement text.
      */
-    replace(&self, searchValue: {
+    replace(&self, searchValue: &mut {
         [Symbol.replace](string: string, replacer: fn (substring: string, ...args: Array<any>) -> string) -> string
     }, replacer: fn (substring: string, ...args: Array<any>) -> string) -> string,
     /**
      * Finds the first substring match in a regular expression search.
      * @param searcher An object which supports searching within a string.
      */
-    search(&self, searcher: {
+    search(&self, searcher: &mut {
         [Symbol.search](string: string) -> number
     }) -> number,
     /**
@@ -164,7 +164,7 @@ export declare class String {
      * @param splitter An object that can split a string.
      * @param limit A value used to limit the number of elements returned in the array.
      */
-    split(&self, splitter: {
+    split(&self, splitter: &mut {
         [Symbol.split](string: string, limit?: number) -> Array<string>
     }, limit?: number) -> Array<string>,
     /**
@@ -210,7 +210,7 @@ export declare class String {
      * containing the results of that search.
      * @param regexp A variable name or string literal containing the regular expression pattern and flags.
      */
-    matchAll(&self, regexp: regexp.RegExp) -> regexp.RegExpStringIterator<regexp.RegExpExecArray>,
+    matchAll<'a>(&self, regexp: &'a mut regexp.RegExp) -> &'a mut regexp.RegExpStringIterator<regexp.RegExpExecArray>,
     /** Converts all alphabetic characters to lowercase, taking into account the host environment's current locale. */
     toLocaleLowerCase(&self, locales?: intl.LocalesArgument) -> string,
     /** Returns a string where all alphabetic characters have been converted to uppercase, taking into account the host environment's current locale. */
@@ -221,7 +221,7 @@ export declare class String {
      * @param locales A locale string or array of locale strings that contain one or more language or locale tags. If you include more than one locale string, list them in descending order of priority so that the first entry is the preferred locale. If you omit this parameter, the default locale of the JavaScript runtime is used. This parameter must conform to BCP 47 standards; see the Intl.Collator object for details.
      * @param options An object that contains one or more properties that specify comparison options. see the Intl.Collator object for details.
      */
-    localeCompare(&self, that: string, locales?: intl.LocalesArgument, options?: intl.CollatorOptions) -> number,
+    localeCompare(&self, that: string, locales?: intl.LocalesArgument, options?: &mut intl.CollatorOptions) -> number,
     /**
      * Replace all instances of a substring in a string, using a regular expression or search string.
      * @param searchValue A string to search for.
@@ -350,7 +350,7 @@ export declare class String {
      * @param locales A locale string or array of locale strings that contain one or more language or locale tags. If you include more than one locale string, list them in descending order of priority so that the first entry is the preferred locale. If you omit this parameter, the default locale of the JavaScript runtime is used. This parameter must conform to BCP 47 standards; see the Intl.Collator object for details.
      * @param options An object that contains one or more properties that specify comparison options. see the Intl.Collator object for details.
      */
-    localeCompare(&self, that: string, locales?: string | Array<string>, options?: intl.CollatorOptions) -> number,
+    localeCompare(&self, that: string, locales?: string | Array<string>, options?: &mut intl.CollatorOptions) -> number,
     /**
      * Return the String value whose elements are, in order, the elements in the List elements.
      * If length is 0, the empty string is returned.
@@ -365,7 +365,7 @@ export declare class String {
      * @param template A well-formed template string call site representation.
      * @param substitutions A set of substitution values.
      */
-    static raw(template: {
+    static raw(template: &mut {
         raw: Array<string> | ArrayLike<string>
     }, ...substitutions: Array<any>) -> string,
     (value?: unknown) -> string,

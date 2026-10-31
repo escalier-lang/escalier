@@ -73,7 +73,7 @@ export declare class Performance extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Performance/getEntriesByType) */
     getEntriesByType(&self, type: string) -> PerformanceEntryList,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Performance/mark) */
-    mark(&mut self, markName: string, markOptions?: PerformanceMarkOptions) -> PerformanceMark,
+    mark<'a>(&mut self, markName: string, markOptions?: &'a mut PerformanceMarkOptions) -> &'a mut PerformanceMark,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Performance/measure) */
     measure(&mut self, measureName: string, startOrMeasureOptions?: string | PerformanceMeasureOptions, endMark?: string) -> PerformanceMeasure,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Performance/now) */
@@ -214,7 +214,7 @@ export declare class PerformanceObserver {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceObserver/disconnect) */
     disconnect(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceObserver/observe) */
-    observe(&mut self, options?: PerformanceObserverInit) -> undefined,
+    observe(&mut self, options?: &mut PerformanceObserverInit) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceObserver/takeRecords) */
     takeRecords(&mut self) -> PerformanceEntryList,
     static prototype: PerformanceObserver,

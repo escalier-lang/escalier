@@ -1252,7 +1252,7 @@ export declare class AnimationEffect {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AnimationEffect/getTiming) */
     getTiming(&self) -> EffectTiming,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AnimationEffect/updateTiming) */
-    updateTiming(&mut self, timing?: OptionalEffectTiming) -> undefined,
+    updateTiming(&mut self, timing?: &mut OptionalEffectTiming) -> undefined,
     static prototype: AnimationEffect,
     constructor(&mut self)
 }
@@ -3624,7 +3624,7 @@ export declare class CanvasPattern {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasPattern/setTransform)
      */
-    setTransform(&mut self, transform?: DOMMatrix2DInit) -> undefined,
+    setTransform(&mut self, transform?: &mut DOMMatrix2DInit) -> undefined,
     static prototype: CanvasPattern,
     constructor(&mut self)
 }
@@ -3818,7 +3818,7 @@ export declare class Clipboard extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Clipboard/readText) */
     readText(&mut self) -> Promise<string>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Clipboard/write) */
-    write(&mut self, data: ClipboardItems) -> Promise<undefined>,
+    write(&mut self, data: &mut ClipboardItems) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Clipboard/writeText) */
     writeText(&mut self, data: string) -> Promise<undefined>,
     static prototype: Clipboard,
@@ -3900,13 +3900,13 @@ export declare class ContentVisibilityAutoStateChangeEvent extends Event {
 @js("CustomElementRegistry")
 export declare class CustomElementRegistry {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CustomElementRegistry/define) */
-    define(&mut self, name: string, constructor: CustomElementConstructor, options?: ElementDefinitionOptions) -> undefined,
+    define(&mut self, name: string, constructor: &mut CustomElementConstructor, options?: &mut ElementDefinitionOptions) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CustomElementRegistry/get) */
     get(&self, name: string) -> CustomElementConstructor | undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CustomElementRegistry/getName) */
-    getName(&self, constructor: CustomElementConstructor) -> string | null,
+    getName(&self, constructor: &mut CustomElementConstructor) -> string | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CustomElementRegistry/upgrade) */
-    upgrade(&mut self, root: Node) -> undefined,
+    upgrade(&mut self, root: &mut Node) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CustomElementRegistry/whenDefined) */
     whenDefined(&mut self, name: string) -> Promise<CustomElementConstructor>,
     static prototype: CustomElementRegistry,
@@ -4013,9 +4013,9 @@ export declare class DOMMatrix extends DOMMatrixReadOnly {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMMatrix/invertSelf) */
     invertSelf(&mut self) -> DOMMatrix,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMMatrix/multiplySelf) */
-    multiplySelf(&mut self, other?: DOMMatrixInit) -> DOMMatrix,
+    multiplySelf(&mut self, other?: &mut DOMMatrixInit) -> DOMMatrix,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMMatrix/preMultiplySelf) */
-    preMultiplySelf(&mut self, other?: DOMMatrixInit) -> DOMMatrix,
+    preMultiplySelf(&mut self, other?: &mut DOMMatrixInit) -> DOMMatrix,
     rotateAxisAngleSelf(&mut self, x?: number, y?: number, z?: number, angle?: number) -> DOMMatrix,
     rotateFromVectorSelf(&mut self, x?: number, y?: number) -> DOMMatrix,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMMatrix/rotateSelf) */
@@ -4032,9 +4032,9 @@ export declare class DOMMatrix extends DOMMatrixReadOnly {
     translateSelf(&mut self, tx?: number, ty?: number, tz?: number) -> DOMMatrix,
     static prototype: DOMMatrix,
     constructor(&mut self, init?: string | Array<number>),
-    static fromFloat32Array(array32: typed_arrays.Float32Array) -> DOMMatrix,
-    static fromFloat64Array(array64: typed_arrays.Float64Array) -> DOMMatrix,
-    static fromMatrix(other?: DOMMatrixInit) -> DOMMatrix
+    static fromFloat32Array<'a>(array32: &'a mut typed_arrays.Float32Array) -> &'a mut DOMMatrix,
+    static fromFloat64Array<'a>(array64: &'a mut typed_arrays.Float64Array) -> &'a mut DOMMatrix,
+    static fromMatrix(other?: &mut DOMMatrixInit) -> DOMMatrix
 }
 
 export declare type SVGMatrix = DOMMatrix
@@ -4105,7 +4105,7 @@ export declare class DOMMatrixReadOnly {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMMatrixReadOnly/inverse) */
     inverse(&mut self) -> DOMMatrix,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMMatrixReadOnly/multiply) */
-    multiply(&mut self, other?: DOMMatrixInit) -> DOMMatrix,
+    multiply(&mut self, other?: &mut DOMMatrixInit) -> DOMMatrix,
     rotate(&mut self, rotX?: number, rotY?: number, rotZ?: number) -> DOMMatrix,
     rotateAxisAngle(&mut self, x?: number, y?: number, z?: number, angle?: number) -> DOMMatrix,
     rotateFromVector(&mut self, x?: number, y?: number) -> DOMMatrix,
@@ -4123,15 +4123,15 @@ export declare class DOMMatrixReadOnly {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMMatrixReadOnly/toJSON) */
     toJSON(&self) -> any,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMMatrixReadOnly/transformPoint) */
-    transformPoint(&mut self, point?: DOMPointInit) -> DOMPoint,
+    transformPoint(&mut self, point?: &mut DOMPointInit) -> DOMPoint,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMMatrixReadOnly/translate) */
     translate(&mut self, tx?: number, ty?: number, tz?: number) -> DOMMatrix,
     toString(&self) -> string,
     static prototype: DOMMatrixReadOnly,
     constructor(&mut self, init?: string | Array<number>),
-    static fromFloat32Array(array32: typed_arrays.Float32Array) -> DOMMatrixReadOnly,
-    static fromFloat64Array(array64: typed_arrays.Float64Array) -> DOMMatrixReadOnly,
-    static fromMatrix(other?: DOMMatrixInit) -> DOMMatrixReadOnly
+    static fromFloat32Array<'a>(array32: &'a mut typed_arrays.Float32Array) -> &'a mut DOMMatrixReadOnly,
+    static fromFloat64Array<'a>(array64: &'a mut typed_arrays.Float64Array) -> &'a mut DOMMatrixReadOnly,
+    static fromMatrix(other?: &mut DOMMatrixInit) -> DOMMatrixReadOnly
 }
 
 /**
@@ -4171,7 +4171,7 @@ export declare class DOMPoint extends DOMPointReadOnly {
     static prototype: DOMPoint,
     constructor(&mut self, x?: number, y?: number, z?: number, w?: number),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMPoint/fromPoint_static) */
-    static fromPoint(other?: DOMPointInit) -> DOMPoint
+    static fromPoint(other?: &mut DOMPointInit) -> DOMPoint
 }
 
 export declare type SVGPoint = DOMPoint
@@ -4191,13 +4191,13 @@ export declare class DOMPointReadOnly {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMPointReadOnly/z) */
     readonly z: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMPointReadOnly/matrixTransform) */
-    matrixTransform(&mut self, matrix?: DOMMatrixInit) -> DOMPoint,
+    matrixTransform(&mut self, matrix?: &mut DOMMatrixInit) -> DOMPoint,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMPointReadOnly/toJSON) */
     toJSON(&self) -> any,
     static prototype: DOMPointReadOnly,
     constructor(&mut self, x?: number, y?: number, z?: number, w?: number),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMPointReadOnly/fromPoint_static) */
-    static fromPoint(other?: DOMPointInit) -> DOMPointReadOnly
+    static fromPoint(other?: &mut DOMPointInit) -> DOMPointReadOnly
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMQuad) */
@@ -4217,8 +4217,8 @@ export declare class DOMQuad {
     toJSON(&self) -> any,
     static prototype: DOMQuad,
     constructor(&mut self, p1?: DOMPointInit, p2?: DOMPointInit, p3?: DOMPointInit, p4?: DOMPointInit),
-    static fromQuad(other?: DOMQuadInit) -> DOMQuad,
-    static fromRect(other?: DOMRectInit) -> DOMQuad
+    static fromQuad<'a>(other?: &'a mut DOMQuadInit) -> &'a mut DOMQuad,
+    static fromRect(other?: &mut DOMRectInit) -> DOMQuad
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMRect) */
@@ -4235,7 +4235,7 @@ export declare class DOMRect extends DOMRectReadOnly {
     static prototype: DOMRect,
     constructor(&mut self, x?: number, y?: number, width?: number, height?: number),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMRect/fromRect_static) */
-    static fromRect(other?: DOMRectInit) -> DOMRect
+    static fromRect(other?: &mut DOMRectInit) -> DOMRect
 }
 
 export declare type SVGRect = DOMRect
@@ -4279,7 +4279,7 @@ export declare class DOMRectReadOnly {
     static prototype: DOMRectReadOnly,
     constructor(&mut self, x?: number, y?: number, width?: number, height?: number),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMRectReadOnly/fromRect_static) */
-    static fromRect(other?: DOMRectInit) -> DOMRectReadOnly
+    static fromRect(other?: &mut DOMRectInit) -> DOMRectReadOnly
 }
 
 /**
@@ -4486,7 +4486,7 @@ export declare class DataTransfer {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DataTransfer/setDragImage)
      */
-    setDragImage(&mut self, image: Element, x: number, y: number) -> undefined,
+    setDragImage(&mut self, image: &mut Element, x: number, y: number) -> undefined,
     static prototype: DataTransfer,
     constructor(&mut self)
 }
@@ -4547,7 +4547,7 @@ export declare class DataTransferItemList {
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DataTransferItemList/add)
      */
     add(&mut self, data: string, type: string) -> DataTransferItem | null,
-    add(&mut self, data: file.File) -> DataTransferItem | null,
+    add(&mut self, data: &mut file.File) -> DataTransferItem | null,
     /**
      * Removes all the entries in the drag data store.
      *
@@ -4949,7 +4949,7 @@ export declare class Document extends Node implements DocumentOrShadowRoot, Font
     /** @deprecated */
     captureEvents(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Document/caretPositionFromPoint) */
-    caretPositionFromPoint(&mut self, x: number, y: number, options?: CaretPositionFromPointOptions) -> CaretPosition | null,
+    caretPositionFromPoint<'a>(&mut self, x: number, y: number, options?: &'a mut CaretPositionFromPointOptions) -> &'a mut CaretPosition | null,
     /** @deprecated */
     caretRangeFromPoint(&mut self, x: number, y: number) -> Range | null,
     /**
@@ -4998,10 +4998,10 @@ export declare class Document extends Node implements DocumentOrShadowRoot, Font
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Document/createElement)
      */
-    createElement<K: keyof HTMLElementTagNameMap>(&mut self, tagName: K, options?: ElementCreationOptions) -> HTMLElementTagNameMap[K],
+    createElement<K: keyof HTMLElementTagNameMap>(&mut self, tagName: K, options?: &mut ElementCreationOptions) -> HTMLElementTagNameMap[K],
     /** @deprecated */
-    createElement<K: keyof HTMLElementDeprecatedTagNameMap>(&mut self, tagName: K, options?: ElementCreationOptions) -> HTMLElementDeprecatedTagNameMap[K],
-    createElement(&mut self, tagName: string, options?: ElementCreationOptions) -> HTMLElement,
+    createElement<K: keyof HTMLElementDeprecatedTagNameMap>(&mut self, tagName: K, options?: &mut ElementCreationOptions) -> HTMLElementDeprecatedTagNameMap[K],
+    createElement(&mut self, tagName: string, options?: &mut ElementCreationOptions) -> HTMLElement,
     /**
      * Returns an element with namespace namespace. Its namespace prefix will be everything before ":" (U+003E) in qualifiedName or null. Its local name will be everything after ":" (U+003E) in qualifiedName or qualifiedName.
      *
@@ -5024,7 +5024,7 @@ export declare class Document extends Node implements DocumentOrShadowRoot, Font
     createElementNS(&mut self, namespaceURI: "http://www.w3.org/2000/svg", qualifiedName: string) -> SVGElement,
     createElementNS<K: keyof MathMLElementTagNameMap>(&mut self, namespaceURI: "http://www.w3.org/1998/Math/MathML", qualifiedName: K) -> MathMLElementTagNameMap[K],
     createElementNS(&mut self, namespaceURI: "http://www.w3.org/1998/Math/MathML", qualifiedName: string) -> MathMLElement,
-    createElementNS(&mut self, namespaceURI: string | null, qualifiedName: string, options?: ElementCreationOptions) -> Element,
+    createElementNS(&mut self, namespaceURI: string | null, qualifiedName: string, options?: &mut ElementCreationOptions) -> Element,
     createElementNS(&mut self, namespace: string | null, qualifiedName: string, options?: string | ElementCreationOptions) -> Element,
     /**
      * @deprecated
@@ -5104,7 +5104,7 @@ export declare class Document extends Node implements DocumentOrShadowRoot, Font
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Document/createNodeIterator)
      */
-    createNodeIterator(&mut self, root: Node, whatToShow?: number, filter?: NodeFilter | null) -> NodeIterator,
+    createNodeIterator<'a>(&mut self, root: &'a mut Node, whatToShow?: number, filter?: NodeFilter | null) -> &'a mut NodeIterator,
     /**
      * Returns a ProcessingInstruction node whose target is target and data is data. If target does not match the Name production an "InvalidCharacterError" DOMException will be thrown. If data contains "?>" an "InvalidCharacterError" DOMException will be thrown.
      *
@@ -5132,7 +5132,7 @@ export declare class Document extends Node implements DocumentOrShadowRoot, Font
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Document/createTreeWalker)
      */
-    createTreeWalker(&mut self, root: Node, whatToShow?: number, filter?: NodeFilter | null) -> TreeWalker,
+    createTreeWalker<'a>(&mut self, root: &'a mut Node, whatToShow?: number, filter?: NodeFilter | null) -> &'a mut TreeWalker,
     /**
      * Executes a command on the current document, current selection, or the given range.
      * @param commandId String that specifies the command to execute. This command can be any of the command identifiers that can be executed in script.
@@ -5497,9 +5497,9 @@ export declare class Element extends Node implements ARIAMixin, Animatable, Chil
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/attachShadow)
      */
-    attachShadow(&mut self, init: ShadowRootInit) -> ShadowRoot,
+    attachShadow(&mut self, init: &mut ShadowRootInit) -> ShadowRoot,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/checkVisibility) */
-    checkVisibility(&mut self, options?: CheckVisibilityOptions) -> boolean,
+    checkVisibility(&mut self, options?: &mut CheckVisibilityOptions) -> boolean,
     /**
      * Returns the first (starting at element) inclusive ancestor that matches selectors, and null otherwise.
      *
@@ -5556,7 +5556,7 @@ export declare class Element extends Node implements ARIAMixin, Animatable, Chil
     getElementsByTagNameNS(&self, namespaceURI: "http://www.w3.org/1998/Math/MathML", localName: string) -> HTMLCollectionOf<MathMLElement>,
     getElementsByTagNameNS(&self, namespace: string | null, localName: string) -> HTMLCollectionOf<Element>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/getHTML) */
-    getHTML(&self, options?: GetHTMLOptions) -> string,
+    getHTML(&self, options?: &mut GetHTMLOptions) -> string,
     /**
      * Returns true if element has an attribute whose qualified name is qualifiedName, and false otherwise.
      *
@@ -5578,7 +5578,7 @@ export declare class Element extends Node implements ARIAMixin, Animatable, Chil
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/hasPointerCapture) */
     hasPointerCapture(&self, pointerId: number) -> boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/insertAdjacentElement) */
-    insertAdjacentElement(&mut self, where: InsertPosition, element: Element) -> Element | null,
+    insertAdjacentElement<'a>(&mut self, where: InsertPosition, element: &'a mut Element) -> &'a mut Element | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/insertAdjacentHTML) */
     insertAdjacentHTML(&mut self, position: InsertPosition, string: string) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/insertAdjacentText) */
@@ -5604,7 +5604,7 @@ export declare class Element extends Node implements ARIAMixin, Animatable, Chil
      */
     removeAttributeNS(&mut self, namespace: string | null, localName: string) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/removeAttributeNode) */
-    removeAttributeNode(&mut self, attr: Attr) -> Attr,
+    removeAttributeNode<'a>(&mut self, attr: &'a mut Attr) -> &'a mut Attr,
     /**
      * Displays element fullscreen and resolves promise when done.
      *
@@ -5612,19 +5612,19 @@ export declare class Element extends Node implements ARIAMixin, Animatable, Chil
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/requestFullscreen)
      */
-    requestFullscreen(&mut self, options?: FullscreenOptions) -> Promise<undefined>,
+    requestFullscreen(&mut self, options?: &mut FullscreenOptions) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/requestPointerLock) */
-    requestPointerLock(&mut self, options?: PointerLockOptions) -> Promise<undefined>,
+    requestPointerLock(&mut self, options?: &mut PointerLockOptions) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/scroll) */
-    scroll(&mut self, options?: ScrollToOptions) -> undefined,
+    scroll(&mut self, options?: &mut ScrollToOptions) -> undefined,
     scroll(&mut self, x: number, y: number) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/scrollBy) */
-    scrollBy(&mut self, options?: ScrollToOptions) -> undefined,
+    scrollBy(&mut self, options?: &mut ScrollToOptions) -> undefined,
     scrollBy(&mut self, x: number, y: number) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/scrollIntoView) */
     scrollIntoView(&mut self, arg?: boolean | ScrollIntoViewOptions) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/scrollTo) */
-    scrollTo(&mut self, options?: ScrollToOptions) -> undefined,
+    scrollTo(&mut self, options?: &mut ScrollToOptions) -> undefined,
     scrollTo(&mut self, x: number, y: number) -> undefined,
     /**
      * Sets the value of element's first attribute whose qualified name is qualifiedName to value.
@@ -5639,9 +5639,9 @@ export declare class Element extends Node implements ARIAMixin, Animatable, Chil
      */
     setAttributeNS(&mut self, namespace: string | null, qualifiedName: string, value: string) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/setAttributeNode) */
-    setAttributeNode(&mut self, attr: Attr) -> Attr | null,
+    setAttributeNode<'a>(&mut self, attr: &'a mut Attr) -> &'a mut Attr | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/setAttributeNodeNS) */
-    setAttributeNodeNS(&mut self, attr: Attr) -> Attr | null,
+    setAttributeNodeNS<'a>(&mut self, attr: &'a mut Attr) -> &'a mut Attr | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/setHTMLUnsafe) */
     setHTMLUnsafe(&mut self, html: string) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/setPointerCapture) */
@@ -5753,7 +5753,7 @@ export declare class ElementInternals implements ARIAMixin {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ElementInternals/setValidity)
      */
-    setValidity(&mut self, flags?: ValidityStateFlags, message?: string, anchor?: HTMLElement) -> undefined,
+    setValidity(&mut self, flags?: &mut ValidityStateFlags, message?: string, anchor?: &mut HTMLElement) -> undefined,
     static prototype: ElementInternals,
     constructor(&mut self)
 }
@@ -5898,17 +5898,17 @@ export declare class FileReader extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/abort) */
     abort(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/readAsArrayBuffer) */
-    readAsArrayBuffer(&mut self, blob: file.Blob) -> undefined,
+    readAsArrayBuffer(&mut self, blob: &mut file.Blob) -> undefined,
     /**
      * @deprecated
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/readAsBinaryString)
      */
-    readAsBinaryString(&mut self, blob: file.Blob) -> undefined,
+    readAsBinaryString(&mut self, blob: &mut file.Blob) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/readAsDataURL) */
-    readAsDataURL(&mut self, blob: file.Blob) -> undefined,
+    readAsDataURL(&mut self, blob: &mut file.Blob) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/readAsText) */
-    readAsText(&mut self, blob: file.Blob, encoding?: string) -> undefined,
+    readAsText(&mut self, blob: &mut file.Blob, encoding?: string) -> undefined,
     readonly EMPTY: 0,
     readonly LOADING: 1,
     readonly DONE: 2,
@@ -5940,9 +5940,9 @@ export declare class FileSystemDirectoryEntry extends FileSystemEntry {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemDirectoryEntry/createReader) */
     createReader(&mut self) -> FileSystemDirectoryReader,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemDirectoryEntry/getDirectory) */
-    getDirectory(&self, path?: string | null, options?: FileSystemFlags, successCallback?: FileSystemEntryCallback, errorCallback?: ErrorCallback) -> undefined,
+    getDirectory(&self, path?: string | null, options?: &mut FileSystemFlags, successCallback?: FileSystemEntryCallback, errorCallback?: ErrorCallback) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemDirectoryEntry/getFile) */
-    getFile(&self, path?: string | null, options?: FileSystemFlags, successCallback?: FileSystemEntryCallback, errorCallback?: ErrorCallback) -> undefined,
+    getFile(&self, path?: string | null, options?: &mut FileSystemFlags, successCallback?: FileSystemEntryCallback, errorCallback?: ErrorCallback) -> undefined,
     static prototype: FileSystemDirectoryEntry,
     constructor(&mut self)
 }
@@ -5956,13 +5956,13 @@ export declare class FileSystemDirectoryEntry extends FileSystemEntry {
 export declare class FileSystemDirectoryHandle extends FileSystemHandle {
     readonly kind: "directory",
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemDirectoryHandle/getDirectoryHandle) */
-    getDirectoryHandle(&self, name: string, options?: FileSystemGetDirectoryOptions) -> Promise<FileSystemDirectoryHandle>,
+    getDirectoryHandle(&self, name: string, options?: &mut FileSystemGetDirectoryOptions) -> Promise<FileSystemDirectoryHandle>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemDirectoryHandle/getFileHandle) */
-    getFileHandle(&self, name: string, options?: FileSystemGetFileOptions) -> Promise<FileSystemFileHandle>,
+    getFileHandle(&self, name: string, options?: &mut FileSystemGetFileOptions) -> Promise<FileSystemFileHandle>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemDirectoryHandle/removeEntry) */
-    removeEntry(&mut self, name: string, options?: FileSystemRemoveOptions) -> Promise<undefined>,
+    removeEntry(&mut self, name: string, options?: &mut FileSystemRemoveOptions) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemDirectoryHandle/resolve) */
-    resolve(&mut self, possibleDescendant: FileSystemHandle) -> Promise<Array<string> | null>,
+    resolve(&mut self, possibleDescendant: &mut FileSystemHandle) -> Promise<Array<string> | null>,
     [Symbol.asyncIterator](&self) -> FileSystemDirectoryHandleAsyncIterator<[string, FileSystemHandle]>,
     entries(&self) -> FileSystemDirectoryHandleAsyncIterator<[string, FileSystemHandle]>,
     keys(&self) -> FileSystemDirectoryHandleAsyncIterator<string>,
@@ -6017,7 +6017,7 @@ export declare class FileSystemFileEntry extends FileSystemEntry {
 export declare class FileSystemFileHandle extends FileSystemHandle {
     readonly kind: "file",
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemFileHandle/createWritable) */
-    createWritable(&mut self, options?: FileSystemCreateWritableOptions) -> Promise<FileSystemWritableFileStream>,
+    createWritable(&mut self, options?: &mut FileSystemCreateWritableOptions) -> Promise<FileSystemWritableFileStream>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemFileHandle/getFile) */
     getFile(&self) -> Promise<file.File>,
     static prototype: FileSystemFileHandle,
@@ -6036,7 +6036,7 @@ export declare class FileSystemHandle {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemHandle/name) */
     readonly name: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemHandle/isSameEntry) */
-    isSameEntry(&self, other: FileSystemHandle) -> Promise<boolean>,
+    isSameEntry(&self, other: &mut FileSystemHandle) -> Promise<boolean>,
     static prototype: FileSystemHandle,
     constructor(&mut self)
 }
@@ -6245,7 +6245,7 @@ export declare class GamepadEvent extends Event {
 @js("GamepadHapticActuator")
 export declare class GamepadHapticActuator {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/GamepadHapticActuator/playEffect) */
-    playEffect(&mut self, type: GamepadHapticEffectType, params?: GamepadEffectParameters) -> Promise<GamepadHapticsResult>,
+    playEffect(&mut self, type: GamepadHapticEffectType, params?: &mut GamepadEffectParameters) -> Promise<GamepadHapticsResult>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/GamepadHapticActuator/reset) */
     reset(&mut self) -> Promise<GamepadHapticsResult>,
     static prototype: GamepadHapticActuator,
@@ -6262,9 +6262,9 @@ export declare class Geolocation {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Geolocation/clearWatch) */
     clearWatch(&mut self, watchId: number) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Geolocation/getCurrentPosition) */
-    getCurrentPosition(&self, successCallback: PositionCallback, errorCallback?: PositionErrorCallback | null, options?: PositionOptions) -> undefined,
+    getCurrentPosition(&self, successCallback: PositionCallback, errorCallback?: PositionErrorCallback | null, options?: &mut PositionOptions) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Geolocation/watchPosition) */
-    watchPosition(&mut self, successCallback: PositionCallback, errorCallback?: PositionErrorCallback | null, options?: PositionOptions) -> number,
+    watchPosition(&mut self, successCallback: PositionCallback, errorCallback?: PositionErrorCallback | null, options?: &mut PositionOptions) -> number,
     static prototype: Geolocation,
     constructor(&mut self)
 }
@@ -7265,10 +7265,10 @@ export declare class HTMLCanvasElement extends HTMLElement {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLCanvasElement/getContext)
      */
-    getContext(&self, contextId: "2d", options?: CanvasRenderingContext2DSettings) -> CanvasRenderingContext2D | null,
-    getContext(&self, contextId: "bitmaprenderer", options?: ImageBitmapRenderingContextSettings) -> ImageBitmapRenderingContext | null,
-    getContext(&self, contextId: "webgl", options?: webgl.WebGLContextAttributes) -> webgl.WebGLRenderingContext | null,
-    getContext(&self, contextId: "webgl2", options?: webgl.WebGLContextAttributes) -> webgl.WebGL2RenderingContext | null,
+    getContext(&self, contextId: "2d", options?: &mut CanvasRenderingContext2DSettings) -> CanvasRenderingContext2D | null,
+    getContext(&self, contextId: "bitmaprenderer", options?: &mut ImageBitmapRenderingContextSettings) -> ImageBitmapRenderingContext | null,
+    getContext(&self, contextId: "webgl", options?: &mut webgl.WebGLContextAttributes) -> webgl.WebGLRenderingContext | null,
+    getContext(&self, contextId: "webgl2", options?: &mut webgl.WebGLContextAttributes) -> webgl.WebGL2RenderingContext | null,
     getContext(&self, contextId: string, options?: unknown) -> RenderingContext | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLCanvasElement/toBlob) */
     toBlob(&self, callback: BlobCallback, type?: string, quality?: number) -> undefined,
@@ -9940,9 +9940,9 @@ export declare class HTMLSlotElement extends HTMLElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLSlotElement/assign) */
     assign(&mut self, ...nodes: Array<Element | Text>) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLSlotElement/assignedElements) */
-    assignedElements(&mut self, options?: AssignedNodesOptions) -> Array<Element>,
+    assignedElements(&mut self, options?: &mut AssignedNodesOptions) -> Array<Element>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLSlotElement/assignedNodes) */
-    assignedNodes(&mut self, options?: AssignedNodesOptions) -> Array<Node>,
+    assignedNodes(&mut self, options?: &mut AssignedNodesOptions) -> Array<Node>,
     addEventListener<K: keyof HTMLElementEventMap>(&mut self, type: K, listener: fn (this: HTMLSlotElement, ev: HTMLElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> undefined,
     removeEventListener<K: keyof HTMLElementEventMap>(&mut self, type: K, listener: fn (this: HTMLSlotElement, ev: HTMLElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
@@ -11112,11 +11112,11 @@ export declare class IntersectionObserver {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IntersectionObserver/disconnect) */
     disconnect(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IntersectionObserver/observe) */
-    observe(&mut self, target: Element) -> undefined,
+    observe(&mut self, target: &mut Element) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IntersectionObserver/takeRecords) */
     takeRecords(&mut self) -> Array<IntersectionObserverEntry>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IntersectionObserver/unobserve) */
-    unobserve(&mut self, target: Element) -> undefined,
+    unobserve(&mut self, target: &mut Element) -> undefined,
     static prototype: IntersectionObserver,
     constructor(&mut self, callback: IntersectionObserverCallback, options?: IntersectionObserverInit)
 }
@@ -11381,7 +11381,7 @@ export declare class LockManager {
     query(&mut self) -> Promise<LockManagerSnapshot>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/LockManager/request) */
     request(&mut self, name: string, callback: LockGrantedCallback) -> Promise<any>,
-    request(&mut self, name: string, options: LockOptions, callback: LockGrantedCallback) -> Promise<any>,
+    request(&mut self, name: string, options: &mut LockOptions, callback: LockGrantedCallback) -> Promise<any>,
     static prototype: LockManager,
     constructor(&mut self)
 }
@@ -11480,13 +11480,13 @@ export declare class MIDIMessageEvent extends Event {
 @js("MIDIOutput")
 export declare class MIDIOutput extends MIDIPort {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MIDIOutput/send) */
-    send(&mut self, data: Array<number>, timestamp?: DOMHighResTimeStamp) -> undefined,
+    send(&mut self, data: &mut Array<number>, timestamp?: DOMHighResTimeStamp) -> undefined,
     addEventListener<K: keyof MIDIPortEventMap>(&mut self, type: K, listener: fn (this: MIDIOutput, ev: MIDIPortEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> undefined,
     removeEventListener<K: keyof MIDIPortEventMap>(&mut self, type: K, listener: fn (this: MIDIOutput, ev: MIDIPortEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MIDIOutput/send) */
-    send(&mut self, data: Iterable<number>, timestamp?: DOMHighResTimeStamp) -> undefined,
+    send(&mut self, data: &mut Iterable<number>, timestamp?: DOMHighResTimeStamp) -> undefined,
     static prototype: MIDIOutput,
     constructor(&mut self)
 }
@@ -11559,9 +11559,9 @@ export declare class MathMLElement extends Element implements ElementCSSInlineSt
 @js("MediaCapabilities")
 export declare class MediaCapabilities {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaCapabilities/decodingInfo) */
-    decodingInfo(&mut self, configuration: MediaDecodingConfiguration) -> Promise<MediaCapabilitiesDecodingInfo>,
+    decodingInfo(&mut self, configuration: &mut MediaDecodingConfiguration) -> Promise<MediaCapabilitiesDecodingInfo>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaCapabilities/encodingInfo) */
-    encodingInfo(&mut self, configuration: MediaEncodingConfiguration) -> Promise<MediaCapabilitiesEncodingInfo>,
+    encodingInfo(&mut self, configuration: &mut MediaEncodingConfiguration) -> Promise<MediaCapabilitiesEncodingInfo>,
     static prototype: MediaCapabilities,
     constructor(&mut self)
 }
@@ -11605,11 +11605,11 @@ export declare class MediaDevices extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaDevices/enumerateDevices) */
     enumerateDevices(&mut self) -> Promise<Array<MediaDeviceInfo>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaDevices/getDisplayMedia) */
-    getDisplayMedia(&self, options?: DisplayMediaStreamOptions) -> Promise<MediaStream>,
+    getDisplayMedia(&self, options?: &mut DisplayMediaStreamOptions) -> Promise<MediaStream>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaDevices/getSupportedConstraints) */
     getSupportedConstraints(&self) -> MediaTrackSupportedConstraints,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaDevices/getUserMedia) */
-    getUserMedia(&self, constraints?: MediaStreamConstraints) -> Promise<MediaStream>,
+    getUserMedia(&self, constraints?: &mut MediaStreamConstraints) -> Promise<MediaStream>,
     addEventListener<K: keyof MediaDevicesEventMap>(&mut self, type: K, listener: fn (this: MediaDevices, ev: MediaDevicesEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> undefined,
     removeEventListener<K: keyof MediaDevicesEventMap>(&mut self, type: K, listener: fn (this: MediaDevices, ev: MediaDevicesEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
@@ -11763,7 +11763,7 @@ export declare class MediaKeys {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaKeys/createSession) */
     createSession(&mut self, sessionType?: MediaKeySessionType) -> MediaKeySession,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaKeys/getStatusForPolicy) */
-    getStatusForPolicy(&self, policy?: MediaKeysPolicy) -> Promise<MediaKeyStatus>,
+    getStatusForPolicy(&self, policy?: &mut MediaKeysPolicy) -> Promise<MediaKeyStatus>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaKeys/setServerCertificate) */
     setServerCertificate(&mut self, serverCertificate: BufferSource) -> Promise<boolean>,
     static prototype: MediaKeys,
@@ -11916,7 +11916,7 @@ export declare class MediaSession {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaSession/setActionHandler) */
     setActionHandler(&mut self, action: MediaSessionAction, handler: MediaSessionActionHandler | null) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaSession/setPositionState) */
-    setPositionState(&mut self, state?: MediaPositionState) -> undefined,
+    setPositionState(&mut self, state?: &mut MediaPositionState) -> undefined,
     static prototype: MediaSession,
     constructor(&mut self)
 }
@@ -11952,7 +11952,7 @@ export declare class MediaSource extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaSource/endOfStream) */
     endOfStream(&mut self, error?: EndOfStreamError) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaSource/removeSourceBuffer) */
-    removeSourceBuffer(&mut self, sourceBuffer: SourceBuffer) -> undefined,
+    removeSourceBuffer(&mut self, sourceBuffer: &mut SourceBuffer) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaSource/setLiveSeekableRange) */
     setLiveSeekableRange(&mut self, start: number, end: number) -> undefined,
     addEventListener<K: keyof MediaSourceEventMap>(&mut self, type: K, listener: fn (this: MediaSource, ev: MediaSourceEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,
@@ -11995,7 +11995,7 @@ export declare class MediaStream extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStream/removetrack_event) */
     onremovetrack: (fn (this: MediaStream, ev: MediaStreamTrackEvent) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStream/addTrack) */
-    addTrack(&mut self, track: MediaStreamTrack) -> undefined,
+    addTrack(&mut self, track: &mut MediaStreamTrack) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStream/clone) */
     clone(&self) -> MediaStream,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStream/getAudioTracks) */
@@ -12007,7 +12007,7 @@ export declare class MediaStream extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStream/getVideoTracks) */
     getVideoTracks(&self) -> Array<MediaStreamTrack>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStream/removeTrack) */
-    removeTrack(&mut self, track: MediaStreamTrack) -> undefined,
+    removeTrack(&mut self, track: &mut MediaStreamTrack) -> undefined,
     addEventListener<K: keyof MediaStreamEventMap>(&mut self, type: K, listener: fn (this: MediaStream, ev: MediaStreamEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> undefined,
     removeEventListener<K: keyof MediaStreamEventMap>(&mut self, type: K, listener: fn (this: MediaStream, ev: MediaStreamEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
@@ -12052,7 +12052,7 @@ export declare class MediaStreamTrack extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStreamTrack/readyState) */
     readonly readyState: MediaStreamTrackState,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStreamTrack/applyConstraints) */
-    applyConstraints(&mut self, constraints?: MediaTrackConstraints) -> Promise<undefined>,
+    applyConstraints(&mut self, constraints?: &mut MediaTrackConstraints) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStreamTrack/clone) */
     clone(&self) -> MediaStreamTrack,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStreamTrack/getCapabilities) */
@@ -12148,8 +12148,8 @@ export declare class MessagePort extends EventTarget implements MessageEventTarg
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MessagePort/postMessage)
      */
-    postMessage(&mut self, message: unknown, transfer: Array<Transferable>) -> undefined,
-    postMessage(&mut self, message: unknown, options?: StructuredSerializeOptions) -> undefined,
+    postMessage(&mut self, message: unknown, transfer: &mut Array<Transferable>) -> undefined,
+    postMessage(&mut self, message: unknown, options?: &mut StructuredSerializeOptions) -> undefined,
     /**
      * Begins dispatching messages received on the port.
      *
@@ -12271,7 +12271,7 @@ export declare class MouseEvent extends UIEvent {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MouseEvent/initMouseEvent)
      */
-    initMouseEvent(&mut self, typeArg: string, canBubbleArg: boolean, cancelableArg: boolean, viewArg: Window, detailArg: number, screenXArg: number, screenYArg: number, clientXArg: number, clientYArg: number, ctrlKeyArg: boolean, altKeyArg: boolean, shiftKeyArg: boolean, metaKeyArg: boolean, buttonArg: number, relatedTargetArg: EventTarget | null) -> undefined,
+    initMouseEvent(&mut self, typeArg: string, canBubbleArg: boolean, cancelableArg: boolean, viewArg: &mut Window, detailArg: number, screenXArg: number, screenYArg: number, clientXArg: number, clientYArg: number, ctrlKeyArg: boolean, altKeyArg: boolean, shiftKeyArg: boolean, metaKeyArg: boolean, buttonArg: number, relatedTargetArg: EventTarget | null) -> undefined,
     static prototype: MouseEvent,
     constructor(&mut self, type: string, eventInitDict?: MouseEventInit)
 }
@@ -12296,7 +12296,7 @@ export declare class MutationObserver {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MutationObserver/observe)
      */
-    observe(&mut self, target: Node, options?: MutationObserverInit) -> undefined,
+    observe(&mut self, target: &mut Node, options?: &mut MutationObserverInit) -> undefined,
     /**
      * Empties the record queue and returns what was in there.
      *
@@ -12392,9 +12392,9 @@ export declare class NamedNodeMap {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NamedNodeMap/removeNamedItemNS) */
     removeNamedItemNS(&mut self, namespace: string | null, localName: string) -> Attr,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NamedNodeMap/setNamedItem) */
-    setNamedItem(&mut self, attr: Attr) -> Attr | null,
+    setNamedItem<'a>(&mut self, attr: &'a mut Attr) -> &'a mut Attr | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NamedNodeMap/setNamedItemNS) */
-    setNamedItemNS(&mut self, attr: Attr) -> Attr | null,
+    setNamedItemNS<'a>(&mut self, attr: &'a mut Attr) -> &'a mut Attr | null,
     [Symbol.iterator](&self) -> ArrayIterator<Attr>,
     static prototype: NamedNodeMap,
     constructor(&mut self)
@@ -12493,7 +12493,7 @@ export declare class Navigator implements NavigatorAutomationInformation, Naviga
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/canShare)
      */
-    canShare(&self, data?: ShareData) -> boolean,
+    canShare(&self, data?: &mut ShareData) -> boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/getGamepads) */
     getGamepads(&self) -> Array<Gamepad | null>,
     /**
@@ -12501,13 +12501,13 @@ export declare class Navigator implements NavigatorAutomationInformation, Naviga
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/requestMIDIAccess)
      */
-    requestMIDIAccess(&mut self, options?: MIDIOptions) -> Promise<MIDIAccess>,
+    requestMIDIAccess(&mut self, options?: &mut MIDIOptions) -> Promise<MIDIAccess>,
     /**
      * Available only in secure contexts.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/requestMediaKeySystemAccess)
      */
-    requestMediaKeySystemAccess(&mut self, keySystem: string, supportedConfigurations: Array<MediaKeySystemConfiguration>) -> Promise<MediaKeySystemAccess>,
+    requestMediaKeySystemAccess(&mut self, keySystem: string, supportedConfigurations: &mut Array<MediaKeySystemConfiguration>) -> Promise<MediaKeySystemAccess>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/sendBeacon) */
     sendBeacon(&mut self, url: string | url.URL, data?: fetch.BodyInit | null) -> boolean,
     /**
@@ -12515,7 +12515,7 @@ export declare class Navigator implements NavigatorAutomationInformation, Naviga
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/share)
      */
-    share(&mut self, data?: ShareData) -> Promise<undefined>,
+    share(&mut self, data?: &mut ShareData) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/vibrate) */
     vibrate(&mut self, pattern: VibratePattern) -> boolean,
     /**
@@ -12523,9 +12523,9 @@ export declare class Navigator implements NavigatorAutomationInformation, Naviga
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/requestMediaKeySystemAccess)
      */
-    requestMediaKeySystemAccess(&mut self, keySystem: string, supportedConfigurations: Iterable<MediaKeySystemConfiguration>) -> Promise<MediaKeySystemAccess>,
+    requestMediaKeySystemAccess(&mut self, keySystem: string, supportedConfigurations: &mut Iterable<MediaKeySystemConfiguration>) -> Promise<MediaKeySystemAccess>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/vibrate) */
-    vibrate(&mut self, pattern: Iterable<number>) -> boolean,
+    vibrate(&mut self, pattern: &mut Iterable<number>) -> boolean,
     static prototype: Navigator,
     constructor(&mut self)
 }
@@ -12758,7 +12758,7 @@ export declare class Node extends EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Node/compareDocumentPosition)
      */
-    compareDocumentPosition(&mut self, other: Node) -> number,
+    compareDocumentPosition(&mut self, other: &mut Node) -> number,
     /**
      * Returns true if other is an inclusive descendant of node, and false otherwise.
      *
@@ -12770,7 +12770,7 @@ export declare class Node extends EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Node/getRootNode)
      */
-    getRootNode(&self, options?: GetRootNodeOptions) -> Node,
+    getRootNode(&self, options?: &mut GetRootNodeOptions) -> Node,
     /**
      * Returns whether node has children.
      *
@@ -12802,7 +12802,7 @@ export declare class Node extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Node/removeChild) */
     removeChild<T: Node>(&mut self, child: T) -> T,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Node/replaceChild) */
-    replaceChild<T: Node>(&mut self, node: Node, child: T) -> T,
+    replaceChild<T: Node>(&mut self, node: &mut Node, child: T) -> T,
     /** node is an element. */
     readonly ELEMENT_NODE: 1,
     readonly ATTRIBUTE_NODE: 2,
@@ -13068,7 +13068,7 @@ export declare class OffscreenCanvas extends EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/OffscreenCanvas/convertToBlob)
      */
-    convertToBlob(&mut self, options?: ImageEncodeOptions) -> Promise<file.Blob>,
+    convertToBlob(&mut self, options?: &mut ImageEncodeOptions) -> Promise<file.Blob>,
     /**
      * Returns an object that exposes an API for drawing on the OffscreenCanvas object. contextId specifies the desired API: "2d", "bitmaprenderer", "webgl", or "webgl2". options is handled by that API.
      *
@@ -13242,7 +13242,7 @@ export declare class Path2D implements CanvasPath {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Path2D/addPath)
      */
-    addPath(&mut self, path: Path2D, transform?: DOMMatrix2DInit) -> undefined,
+    addPath(&mut self, path: &mut Path2D, transform?: &mut DOMMatrix2DInit) -> undefined,
     static prototype: Path2D,
     constructor(&mut self, path?: Path2D | string)
 }
@@ -13289,7 +13289,7 @@ export declare class PermissionStatus extends EventTarget {
 @js("Permissions")
 export declare class Permissions {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Permissions/query) */
-    query(&mut self, permissionDesc: PermissionDescriptor) -> Promise<PermissionStatus>,
+    query(&mut self, permissionDesc: &mut PermissionDescriptor) -> Promise<PermissionStatus>,
     static prototype: Permissions,
     constructor(&mut self)
 }
@@ -13526,13 +13526,13 @@ export declare class Range extends AbstractRange {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Range/collapse) */
     collapse(&mut self, toStart?: boolean) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Range/compareBoundaryPoints) */
-    compareBoundaryPoints(&mut self, how: number, sourceRange: Range) -> number,
+    compareBoundaryPoints(&mut self, how: number, sourceRange: &mut Range) -> number,
     /**
      * Returns −1 if the point is before the range, 0 if the point is in the range, and 1 if the point is after the range.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Range/comparePoint)
      */
-    comparePoint(&mut self, node: Node, offset: number) -> number,
+    comparePoint(&mut self, node: &mut Node, offset: number) -> number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Range/createContextualFragment) */
     createContextualFragment(&mut self, string: string) -> DocumentFragment,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Range/deleteContents) */
@@ -13546,33 +13546,33 @@ export declare class Range extends AbstractRange {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Range/getClientRects) */
     getClientRects(&self) -> DOMRectList,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Range/insertNode) */
-    insertNode(&mut self, node: Node) -> undefined,
+    insertNode(&mut self, node: &mut Node) -> undefined,
     /**
      * Returns whether range intersects node.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Range/intersectsNode)
      */
-    intersectsNode(&mut self, node: Node) -> boolean,
+    intersectsNode(&mut self, node: &mut Node) -> boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Range/isPointInRange) */
-    isPointInRange(&self, node: Node, offset: number) -> boolean,
+    isPointInRange(&self, node: &mut Node, offset: number) -> boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Range/selectNode) */
-    selectNode(&mut self, node: Node) -> undefined,
+    selectNode(&mut self, node: &mut Node) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Range/selectNodeContents) */
-    selectNodeContents(&mut self, node: Node) -> undefined,
+    selectNodeContents(&mut self, node: &mut Node) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Range/setEnd) */
-    setEnd(&mut self, node: Node, offset: number) -> undefined,
+    setEnd(&mut self, node: &mut Node, offset: number) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Range/setEndAfter) */
-    setEndAfter(&mut self, node: Node) -> undefined,
+    setEndAfter(&mut self, node: &mut Node) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Range/setEndBefore) */
-    setEndBefore(&mut self, node: Node) -> undefined,
+    setEndBefore(&mut self, node: &mut Node) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Range/setStart) */
-    setStart(&mut self, node: Node, offset: number) -> undefined,
+    setStart(&mut self, node: &mut Node, offset: number) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Range/setStartAfter) */
-    setStartAfter(&mut self, node: Node) -> undefined,
+    setStartAfter(&mut self, node: &mut Node) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Range/setStartBefore) */
-    setStartBefore(&mut self, node: Node) -> undefined,
+    setStartBefore(&mut self, node: &mut Node) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Range/surroundContents) */
-    surroundContents(&mut self, newParent: Node) -> undefined,
+    surroundContents(&mut self, newParent: &mut Node) -> undefined,
     toString(&self) -> string,
     readonly START_TO_START: 0,
     readonly START_TO_END: 1,
@@ -13659,9 +13659,9 @@ export declare class ResizeObserver {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ResizeObserver/disconnect) */
     disconnect(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ResizeObserver/observe) */
-    observe(&mut self, target: Element, options?: ResizeObserverOptions) -> undefined,
+    observe(&mut self, target: &mut Element, options?: &mut ResizeObserverOptions) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ResizeObserver/unobserve) */
-    unobserve(&mut self, target: Element) -> undefined,
+    unobserve(&mut self, target: &mut Element) -> undefined,
     static prototype: ResizeObserver,
     constructor(&mut self, callback: ResizeObserverCallback)
 }
@@ -14808,9 +14808,9 @@ export declare class SVGGeometryElement extends SVGGraphicsElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGGeometryElement/getTotalLength) */
     getTotalLength(&self) -> number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGGeometryElement/isPointInFill) */
-    isPointInFill(&self, point?: DOMPointInit) -> boolean,
+    isPointInFill(&self, point?: &mut DOMPointInit) -> boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGGeometryElement/isPointInStroke) */
-    isPointInStroke(&self, point?: DOMPointInit) -> boolean,
+    isPointInStroke(&self, point?: &mut DOMPointInit) -> boolean,
     addEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGGeometryElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> undefined,
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGGeometryElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
@@ -14857,7 +14857,7 @@ export declare class SVGGradientElement extends SVGElement implements SVGURIRefe
 export declare class SVGGraphicsElement extends SVGElement implements SVGTests {
     readonly transform: SVGAnimatedTransformList,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGGraphicsElement/getBBox) */
-    getBBox(&self, options?: SVGBoundingBoxOptions) -> DOMRect,
+    getBBox(&self, options?: &mut SVGBoundingBoxOptions) -> DOMRect,
     getCTM(&self) -> DOMMatrix | null,
     getScreenCTM(&self) -> DOMMatrix | null,
     addEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGGraphicsElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,
@@ -14945,19 +14945,19 @@ export declare class SVGLengthList {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGLengthList/numberOfItems) */
     readonly numberOfItems: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGLengthList/appendItem) */
-    appendItem(&mut self, newItem: SVGLength) -> SVGLength,
+    appendItem<'a>(&mut self, newItem: &'a mut SVGLength) -> &'a mut SVGLength,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGLengthList/clear) */
     clear(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGLengthList/getItem) */
     getItem(&self, index: number) -> SVGLength,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGLengthList/initialize) */
-    initialize(&mut self, newItem: SVGLength) -> SVGLength,
+    initialize<'a>(&mut self, newItem: &'a mut SVGLength) -> &'a mut SVGLength,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGLengthList/insertItemBefore) */
-    insertItemBefore(&mut self, newItem: SVGLength, index: number) -> SVGLength,
+    insertItemBefore<'a>(&mut self, newItem: &'a mut SVGLength, index: number) -> &'a mut SVGLength,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGLengthList/removeItem) */
     removeItem(&mut self, index: number) -> SVGLength,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGLengthList/replaceItem) */
-    replaceItem(&mut self, newItem: SVGLength, index: number) -> SVGLength,
+    replaceItem<'a>(&mut self, newItem: &'a mut SVGLength, index: number) -> &'a mut SVGLength,
     [Symbol.iterator](&self) -> ArrayIterator<SVGLength>,
     static prototype: SVGLengthList,
     constructor(&mut self)
@@ -15038,7 +15038,7 @@ export declare class SVGMarkerElement extends SVGElement implements SVGFitToView
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGMarkerElement/refY) */
     readonly refY: SVGAnimatedLength,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGMarkerElement/setOrientToAngle) */
-    setOrientToAngle(&mut self, angle: SVGAngle) -> undefined,
+    setOrientToAngle(&mut self, angle: &mut SVGAngle) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGMarkerElement/setOrientToAuto) */
     setOrientToAuto(&mut self) -> undefined,
     readonly SVG_MARKERUNITS_UNKNOWN: 0,
@@ -15127,19 +15127,19 @@ export declare class SVGNumberList {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGNumberList/numberOfItems) */
     readonly numberOfItems: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGNumberList/appendItem) */
-    appendItem(&mut self, newItem: SVGNumber) -> SVGNumber,
+    appendItem<'a>(&mut self, newItem: &'a mut SVGNumber) -> &'a mut SVGNumber,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGNumberList/clear) */
     clear(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGNumberList/getItem) */
     getItem(&self, index: number) -> SVGNumber,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGNumberList/initialize) */
-    initialize(&mut self, newItem: SVGNumber) -> SVGNumber,
+    initialize<'a>(&mut self, newItem: &'a mut SVGNumber) -> &'a mut SVGNumber,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGNumberList/insertItemBefore) */
-    insertItemBefore(&mut self, newItem: SVGNumber, index: number) -> SVGNumber,
+    insertItemBefore<'a>(&mut self, newItem: &'a mut SVGNumber, index: number) -> &'a mut SVGNumber,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGNumberList/removeItem) */
     removeItem(&mut self, index: number) -> SVGNumber,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGNumberList/replaceItem) */
-    replaceItem(&mut self, newItem: SVGNumber, index: number) -> SVGNumber,
+    replaceItem<'a>(&mut self, newItem: &'a mut SVGNumber, index: number) -> &'a mut SVGNumber,
     [Symbol.iterator](&self) -> ArrayIterator<SVGNumber>,
     static prototype: SVGNumberList,
     constructor(&mut self)
@@ -15193,19 +15193,19 @@ export declare class SVGPointList {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGPointList/numberOfItems) */
     readonly numberOfItems: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGPointList/appendItem) */
-    appendItem(&mut self, newItem: DOMPoint) -> DOMPoint,
+    appendItem<'a>(&mut self, newItem: &'a mut DOMPoint) -> &'a mut DOMPoint,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGPointList/clear) */
     clear(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGPointList/getItem) */
     getItem(&self, index: number) -> DOMPoint,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGPointList/initialize) */
-    initialize(&mut self, newItem: DOMPoint) -> DOMPoint,
+    initialize<'a>(&mut self, newItem: &'a mut DOMPoint) -> &'a mut DOMPoint,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGPointList/insertItemBefore) */
-    insertItemBefore(&mut self, newItem: DOMPoint, index: number) -> DOMPoint,
+    insertItemBefore<'a>(&mut self, newItem: &'a mut DOMPoint, index: number) -> &'a mut DOMPoint,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGPointList/removeItem) */
     removeItem(&mut self, index: number) -> DOMPoint,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGPointList/replaceItem) */
-    replaceItem(&mut self, newItem: DOMPoint, index: number) -> DOMPoint,
+    replaceItem<'a>(&mut self, newItem: &'a mut DOMPoint, index: number) -> &'a mut DOMPoint,
     [Symbol.iterator](&self) -> ArrayIterator<DOMPoint>,
     static prototype: SVGPointList,
     constructor(&mut self)
@@ -15351,8 +15351,8 @@ export declare class SVGSVGElement extends SVGGraphicsElement implements SVGFitT
     readonly x: SVGAnimatedLength,
     readonly y: SVGAnimatedLength,
     animationsPaused(&mut self) -> boolean,
-    checkEnclosure(&mut self, element: SVGElement, rect: DOMRectReadOnly) -> boolean,
-    checkIntersection(&mut self, element: SVGElement, rect: DOMRectReadOnly) -> boolean,
+    checkEnclosure(&mut self, element: &mut SVGElement, rect: &mut DOMRectReadOnly) -> boolean,
+    checkIntersection(&mut self, element: &mut SVGElement, rect: &mut DOMRectReadOnly) -> boolean,
     createSVGAngle(&mut self) -> SVGAngle,
     createSVGLength(&mut self) -> SVGLength,
     createSVGMatrix(&mut self) -> DOMMatrix,
@@ -15360,14 +15360,14 @@ export declare class SVGSVGElement extends SVGGraphicsElement implements SVGFitT
     createSVGPoint(&mut self) -> DOMPoint,
     createSVGRect(&mut self) -> DOMRect,
     createSVGTransform(&mut self) -> SVGTransform,
-    createSVGTransformFromMatrix(&mut self, matrix?: DOMMatrix2DInit) -> SVGTransform,
+    createSVGTransformFromMatrix(&mut self, matrix?: &mut DOMMatrix2DInit) -> SVGTransform,
     deselectAll(&mut self) -> undefined,
     /** @deprecated */
     forceRedraw(&mut self) -> undefined,
     getCurrentTime(&self) -> number,
     getElementById(&self, elementId: string) -> Element,
-    getEnclosureList(&self, rect: DOMRectReadOnly, referenceElement: SVGElement | null) -> NodeListOf<SVGCircleElement | SVGEllipseElement | SVGImageElement | SVGLineElement | SVGPathElement | SVGPolygonElement | SVGPolylineElement | SVGRectElement | SVGTextElement | SVGUseElement>,
-    getIntersectionList(&self, rect: DOMRectReadOnly, referenceElement: SVGElement | null) -> NodeListOf<SVGCircleElement | SVGEllipseElement | SVGImageElement | SVGLineElement | SVGPathElement | SVGPolygonElement | SVGPolylineElement | SVGRectElement | SVGTextElement | SVGUseElement>,
+    getEnclosureList(&self, rect: &mut DOMRectReadOnly, referenceElement: SVGElement | null) -> NodeListOf<SVGCircleElement | SVGEllipseElement | SVGImageElement | SVGLineElement | SVGPathElement | SVGPolygonElement | SVGPolylineElement | SVGRectElement | SVGTextElement | SVGUseElement>,
+    getIntersectionList(&self, rect: &mut DOMRectReadOnly, referenceElement: SVGElement | null) -> NodeListOf<SVGCircleElement | SVGEllipseElement | SVGImageElement | SVGLineElement | SVGPathElement | SVGPolygonElement | SVGPolylineElement | SVGRectElement | SVGTextElement | SVGUseElement>,
     pauseAnimations(&mut self) -> undefined,
     setCurrentTime(&mut self, seconds: number) -> undefined,
     /** @deprecated */
@@ -15540,7 +15540,7 @@ export declare class SVGTextContentElement extends SVGGraphicsElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTextContentElement/textLength) */
     readonly textLength: SVGAnimatedLength,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTextContentElement/getCharNumAtPosition) */
-    getCharNumAtPosition(&self, point?: DOMPointInit) -> number,
+    getCharNumAtPosition(&self, point?: &mut DOMPointInit) -> number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTextContentElement/getComputedTextLength) */
     getComputedTextLength(&self) -> number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTextContentElement/getEndPositionOfChar) */
@@ -15668,7 +15668,7 @@ export declare class SVGTransform {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTransform/type) */
     readonly type: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTransform/setMatrix) */
-    setMatrix(&mut self, matrix?: DOMMatrix2DInit) -> undefined,
+    setMatrix(&mut self, matrix?: &mut DOMMatrix2DInit) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTransform/setRotate) */
     setRotate(&mut self, angle: number, cx: number, cy: number) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTransform/setScale) */
@@ -15709,23 +15709,23 @@ export declare class SVGTransformList {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTransformList/numberOfItems) */
     readonly numberOfItems: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTransformList/appendItem) */
-    appendItem(&mut self, newItem: SVGTransform) -> SVGTransform,
+    appendItem<'a>(&mut self, newItem: &'a mut SVGTransform) -> &'a mut SVGTransform,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTransformList/clear) */
     clear(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTransformList/consolidate) */
     consolidate(&mut self) -> SVGTransform | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTransformList/createSVGTransformFromMatrix) */
-    createSVGTransformFromMatrix(&mut self, matrix?: DOMMatrix2DInit) -> SVGTransform,
+    createSVGTransformFromMatrix(&mut self, matrix?: &mut DOMMatrix2DInit) -> SVGTransform,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTransformList/getItem) */
     getItem(&self, index: number) -> SVGTransform,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTransformList/initialize) */
-    initialize(&mut self, newItem: SVGTransform) -> SVGTransform,
+    initialize<'a>(&mut self, newItem: &'a mut SVGTransform) -> &'a mut SVGTransform,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTransformList/insertItemBefore) */
-    insertItemBefore(&mut self, newItem: SVGTransform, index: number) -> SVGTransform,
+    insertItemBefore<'a>(&mut self, newItem: &'a mut SVGTransform, index: number) -> &'a mut SVGTransform,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTransformList/removeItem) */
     removeItem(&mut self, index: number) -> SVGTransform,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTransformList/replaceItem) */
-    replaceItem(&mut self, newItem: SVGTransform, index: number) -> SVGTransform,
+    replaceItem<'a>(&mut self, newItem: &'a mut SVGTransform, index: number) -> &'a mut SVGTransform,
     [Symbol.iterator](&self) -> ArrayIterator<SVGTransform>,
     static prototype: SVGTransformList,
     constructor(&mut self)
@@ -15894,7 +15894,7 @@ export declare class Selection {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Selection/type) */
     readonly type: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Selection/addRange) */
-    addRange(&mut self, range: Range) -> undefined,
+    addRange(&mut self, range: &mut Range) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Selection/collapse) */
     collapse(&mut self, node: Node | null, offset?: number) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Selection/collapseToEnd) */
@@ -15902,13 +15902,13 @@ export declare class Selection {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Selection/collapseToStart) */
     collapseToStart(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Selection/containsNode) */
-    containsNode(&mut self, node: Node, allowPartialContainment?: boolean) -> boolean,
+    containsNode(&mut self, node: &mut Node, allowPartialContainment?: boolean) -> boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Selection/deleteFromDocument) */
     deleteFromDocument(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Selection/empty) */
     empty(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Selection/extend) */
-    extend(&mut self, node: Node, offset?: number) -> undefined,
+    extend(&mut self, node: &mut Node, offset?: number) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Selection/getRangeAt) */
     getRangeAt(&self, index: number) -> Range,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Selection/modify) */
@@ -15916,11 +15916,11 @@ export declare class Selection {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Selection/removeAllRanges) */
     removeAllRanges(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Selection/removeRange) */
-    removeRange(&mut self, range: Range) -> undefined,
+    removeRange(&mut self, range: &mut Range) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Selection/selectAllChildren) */
-    selectAllChildren(&mut self, node: Node) -> undefined,
+    selectAllChildren(&mut self, node: &mut Node) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Selection/setBaseAndExtent) */
-    setBaseAndExtent(&mut self, anchorNode: Node, anchorOffset: number, focusNode: Node, focusOffset: number) -> undefined,
+    setBaseAndExtent(&mut self, anchorNode: &mut Node, anchorOffset: number, focusNode: &mut Node, focusOffset: number) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Selection/setPosition) */
     setPosition(&mut self, node: Node | null, offset?: number) -> undefined,
     toString(&self) -> string,
@@ -15951,7 +15951,7 @@ export declare class ShadowRoot extends DocumentFragment implements DocumentOrSh
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ShadowRoot/slotAssignment) */
     readonly slotAssignment: SlotAssignmentMode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ShadowRoot/getHTML) */
-    getHTML(&self, options?: GetHTMLOptions) -> string,
+    getHTML(&self, options?: &mut GetHTMLOptions) -> string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ShadowRoot/setHTMLUnsafe) */
     setHTMLUnsafe(&mut self, html: string) -> undefined,
     /** Throws a "NotSupportedError" DOMException if context object is a shadow root. */
@@ -16106,7 +16106,7 @@ export declare class SpeechSynthesis extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechSynthesis/resume) */
     resume(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechSynthesis/speak) */
-    speak(&mut self, utterance: SpeechSynthesisUtterance) -> undefined,
+    speak(&mut self, utterance: &mut SpeechSynthesisUtterance) -> undefined,
     addEventListener<K: keyof SpeechSynthesisEventMap>(&mut self, type: K, listener: fn (this: SpeechSynthesis, ev: SpeechSynthesisEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> undefined,
     removeEventListener<K: keyof SpeechSynthesisEventMap>(&mut self, type: K, listener: fn (this: SpeechSynthesis, ev: SpeechSynthesisEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
@@ -16540,13 +16540,13 @@ export declare class TextTrack extends EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextTrack/addCue)
      */
-    addCue(&mut self, cue: TextTrackCue) -> undefined,
+    addCue(&mut self, cue: &mut TextTrackCue) -> undefined,
     /**
      * Removes the given cue from textTrack's text track list of cues.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextTrack/removeCue)
      */
-    removeCue(&mut self, cue: TextTrackCue) -> undefined,
+    removeCue(&mut self, cue: &mut TextTrackCue) -> undefined,
     addEventListener<K: keyof TextTrackEventMap>(&mut self, type: K, listener: fn (this: TextTrack, ev: TextTrackEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> undefined,
     removeEventListener<K: keyof TextTrackEventMap>(&mut self, type: K, listener: fn (this: TextTrack, ev: TextTrackEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
@@ -17116,11 +17116,11 @@ export declare class WebTransport {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransport/ready) */
     readonly ready: Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransport/close) */
-    close(&mut self, closeInfo?: WebTransportCloseInfo) -> undefined,
+    close(&mut self, closeInfo?: &mut WebTransportCloseInfo) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransport/createBidirectionalStream) */
-    createBidirectionalStream(&mut self, options?: WebTransportSendStreamOptions) -> Promise<WebTransportBidirectionalStream>,
+    createBidirectionalStream(&mut self, options?: &mut WebTransportSendStreamOptions) -> Promise<WebTransportBidirectionalStream>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransport/createUnidirectionalStream) */
-    createUnidirectionalStream(&mut self, options?: WebTransportSendStreamOptions) -> Promise<streams.WritableStream>,
+    createUnidirectionalStream(&mut self, options?: &mut WebTransportSendStreamOptions) -> Promise<streams.WritableStream>,
     static prototype: WebTransport,
     constructor(&mut self, url: string | url.URL, options?: WebTransportOptions)
 }
@@ -17420,7 +17420,7 @@ export declare class Window extends EventTarget implements AnimationFrameProvide
      */
     focus(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/getComputedStyle) */
-    getComputedStyle(&self, elt: Element, pseudoElt?: string | null) -> CSSStyleDeclaration,
+    getComputedStyle<'a>(&self, elt: &'a mut Element, pseudoElt?: string | null) -> &'a mut CSSStyleDeclaration,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/getSelection) */
     getSelection(&self) -> Selection | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/matchMedia) */
@@ -17444,8 +17444,8 @@ export declare class Window extends EventTarget implements AnimationFrameProvide
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/postMessage)
      */
-    postMessage(&mut self, message: unknown, targetOrigin: string, transfer?: Array<Transferable>) -> undefined,
-    postMessage(&mut self, message: unknown, options?: WindowPostMessageOptions) -> undefined,
+    postMessage(&mut self, message: unknown, targetOrigin: string, transfer?: &mut Array<Transferable>) -> undefined,
+    postMessage(&mut self, message: unknown, options?: &mut WindowPostMessageOptions) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/print) */
     print(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/prompt) */
@@ -17457,19 +17457,19 @@ export declare class Window extends EventTarget implements AnimationFrameProvide
      */
     releaseEvents(&mut self) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/requestIdleCallback) */
-    requestIdleCallback(&mut self, callback: IdleRequestCallback, options?: IdleRequestOptions) -> number,
+    requestIdleCallback(&mut self, callback: IdleRequestCallback, options?: &mut IdleRequestOptions) -> number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/resizeBy) */
     resizeBy(&mut self, x: number, y: number) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/resizeTo) */
     resizeTo(&mut self, width: number, height: number) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/scroll) */
-    scroll(&mut self, options?: ScrollToOptions) -> undefined,
+    scroll(&mut self, options?: &mut ScrollToOptions) -> undefined,
     scroll(&mut self, x: number, y: number) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/scrollBy) */
-    scrollBy(&mut self, options?: ScrollToOptions) -> undefined,
+    scrollBy(&mut self, options?: &mut ScrollToOptions) -> undefined,
     scrollBy(&mut self, x: number, y: number) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/scrollTo) */
-    scrollTo(&mut self, options?: ScrollToOptions) -> undefined,
+    scrollTo(&mut self, options?: &mut ScrollToOptions) -> undefined,
     scrollTo(&mut self, x: number, y: number) -> undefined,
     /**
      * Cancels the document load.
@@ -17629,7 +17629,7 @@ export declare class Worklet {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Worklet/addModule)
      */
-    addModule(&mut self, moduleURL: string | url.URL, options?: WorkletOptions) -> Promise<undefined>,
+    addModule(&mut self, moduleURL: string | url.URL, options?: &mut WorkletOptions) -> Promise<undefined>,
     static prototype: Worklet,
     constructor(&mut self)
 }
@@ -17846,7 +17846,7 @@ export declare class XMLHttpRequestUpload extends XMLHttpRequestEventTarget {
 @js("XMLSerializer")
 export declare class XMLSerializer {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/XMLSerializer/serializeToString) */
-    serializeToString(&mut self, root: Node) -> string,
+    serializeToString(&mut self, root: &mut Node) -> string,
     static prototype: XMLSerializer,
     constructor(&mut self)
 }
@@ -17883,7 +17883,7 @@ export declare interface XPathEvaluatorBase {
 @js("XPathExpression")
 export declare class XPathExpression {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/XPathExpression/evaluate) */
-    evaluate(&mut self, contextNode: Node, type?: number, result?: XPathResult | null) -> XPathResult,
+    evaluate<'a>(&mut self, contextNode: &'a mut Node, type?: number, result?: XPathResult | null) -> &'a mut XPathResult,
     static prototype: XPathExpression,
     constructor(&mut self)
 }
@@ -17949,7 +17949,7 @@ export declare class XSLTProcessor {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/XSLTProcessor/getParameter) */
     getParameter(&self, namespaceURI: string | null, localName: string) -> any,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/XSLTProcessor/importStylesheet) */
-    importStylesheet(&mut self, style: Node) -> undefined,
+    importStylesheet(&mut self, style: &mut Node) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/XSLTProcessor/removeParameter) */
     removeParameter(&mut self, namespaceURI: string | null, localName: string) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/XSLTProcessor/reset) */
@@ -17957,9 +17957,9 @@ export declare class XSLTProcessor {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/XSLTProcessor/setParameter) */
     setParameter(&mut self, namespaceURI: string | null, localName: string, value: unknown) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/XSLTProcessor/transformToDocument) */
-    transformToDocument(&mut self, source: Node) -> Document,
+    transformToDocument<'a>(&mut self, source: &'a mut Node) -> &'a mut Document,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/XSLTProcessor/transformToFragment) */
-    transformToFragment(&mut self, source: Node, output: Document) -> DocumentFragment,
+    transformToFragment<'a>(&mut self, source: &'a mut Node, output: &'a mut Document) -> &'a mut DocumentFragment,
     static prototype: XSLTProcessor,
     constructor(&mut self)
 }
@@ -18145,7 +18145,7 @@ export declare fn rch(value: number) -> CSSUnitValue
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSS/registerProperty_static) */
 @js("CSS.registerProperty")
-export declare fn registerProperty(definition: PropertyDefinition) -> undefined
+export declare fn registerProperty(definition: &mut PropertyDefinition) -> undefined
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSS/factory_functions_static) */
 @js("CSS.rem")
@@ -18887,7 +18887,7 @@ export declare fn focus() -> undefined
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/getComputedStyle) */
 @js("getComputedStyle")
-export declare fn getComputedStyle(elt: Element, pseudoElt?: string | null) -> CSSStyleDeclaration
+export declare fn getComputedStyle<'a>(elt: &'a mut Element, pseudoElt?: string | null) -> &'a mut CSSStyleDeclaration
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/getSelection) */
 @js("getSelection")
@@ -18923,10 +18923,10 @@ export declare fn open(url?: string | url.URL, target?: string, features?: strin
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/postMessage)
  */
 @js("postMessage")
-export declare fn postMessage(message: unknown, targetOrigin: string, transfer?: Array<Transferable>) -> undefined
+export declare fn postMessage(message: unknown, targetOrigin: string, transfer?: &mut Array<Transferable>) -> undefined
 
 @js("postMessage")
-export declare fn postMessage(message: unknown, options?: WindowPostMessageOptions) -> undefined
+export declare fn postMessage(message: unknown, options?: &mut WindowPostMessageOptions) -> undefined
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/print) */
 @js("print")
@@ -18946,7 +18946,7 @@ export declare fn releaseEvents() -> undefined
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/requestIdleCallback) */
 @js("requestIdleCallback")
-export declare fn requestIdleCallback(callback: IdleRequestCallback, options?: IdleRequestOptions) -> number
+export declare fn requestIdleCallback(callback: IdleRequestCallback, options?: &mut IdleRequestOptions) -> number
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/resizeBy) */
 @js("resizeBy")
@@ -18958,21 +18958,21 @@ export declare fn resizeTo(width: number, height: number) -> undefined
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/scroll) */
 @js("scroll")
-export declare fn scroll(options?: ScrollToOptions) -> undefined
+export declare fn scroll(options?: &mut ScrollToOptions) -> undefined
 
 @js("scroll")
 export declare fn scroll(x: number, y: number) -> undefined
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/scrollBy) */
 @js("scrollBy")
-export declare fn scrollBy(options?: ScrollToOptions) -> undefined
+export declare fn scrollBy(options?: &mut ScrollToOptions) -> undefined
 
 @js("scrollBy")
 export declare fn scrollBy(x: number, y: number) -> undefined
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/scrollTo) */
 @js("scrollTo")
-export declare fn scrollTo(options?: ScrollToOptions) -> undefined
+export declare fn scrollTo(options?: &mut ScrollToOptions) -> undefined
 
 @js("scrollTo")
 export declare fn scrollTo(x: number, y: number) -> undefined
@@ -18994,7 +18994,7 @@ export declare fn toString() -> string
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/EventTarget/dispatchEvent)
  */
 @js("dispatchEvent")
-export declare fn dispatchEvent(event: Event) -> boolean
+export declare fn dispatchEvent(event: &mut Event) -> boolean
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DedicatedWorkerGlobalScope/cancelAnimationFrame) */
 @js("cancelAnimationFrame")
@@ -19768,10 +19768,10 @@ export declare fn clearTimeout(id: number | undefined) -> undefined
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/createImageBitmap) */
 @js("createImageBitmap")
-export declare fn createImageBitmap(image: ImageBitmapSource, options?: ImageBitmapOptions) -> Promise<ImageBitmap>
+export declare fn createImageBitmap(image: ImageBitmapSource, options?: &mut ImageBitmapOptions) -> Promise<ImageBitmap>
 
 @js("createImageBitmap")
-export declare fn createImageBitmap(image: ImageBitmapSource, sx: number, sy: number, sw: number, sh: number, options?: ImageBitmapOptions) -> Promise<ImageBitmap>
+export declare fn createImageBitmap(image: ImageBitmapSource, sx: number, sy: number, sw: number, sh: number, options?: &mut ImageBitmapOptions) -> Promise<ImageBitmap>
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/queueMicrotask) */
 @js("queueMicrotask")
@@ -19791,7 +19791,7 @@ export declare fn setTimeout(handler: TimerHandler, timeout?: number, ...argumen
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/structuredClone) */
 @js("structuredClone")
-export declare fn structuredClone<T = any>(value: T, options?: StructuredSerializeOptions) -> T
+export declare fn structuredClone<T = any>(value: T, options?: &mut StructuredSerializeOptions) -> T
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/sessionStorage) */
 @js("sessionStorage")

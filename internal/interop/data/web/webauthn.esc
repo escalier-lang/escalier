@@ -205,9 +205,9 @@ export declare class PublicKeyCredential extends credentials.Credential {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/isUserVerifyingPlatformAuthenticatorAvailable_static) */
     static isUserVerifyingPlatformAuthenticatorAvailable() -> Promise<boolean>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/parseCreationOptionsFromJSON_static) */
-    static parseCreationOptionsFromJSON(options: PublicKeyCredentialCreationOptionsJSON) -> PublicKeyCredentialCreationOptions,
+    static parseCreationOptionsFromJSON<'a>(options: &'a mut PublicKeyCredentialCreationOptionsJSON) -> &'a mut PublicKeyCredentialCreationOptions,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/parseRequestOptionsFromJSON_static) */
-    static parseRequestOptionsFromJSON(options: PublicKeyCredentialRequestOptionsJSON) -> PublicKeyCredentialRequestOptions
+    static parseRequestOptionsFromJSON<'a>(options: &'a mut PublicKeyCredentialRequestOptionsJSON) -> &'a mut PublicKeyCredentialRequestOptions
 }
 
 export declare type Base64URLString = string

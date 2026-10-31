@@ -157,26 +157,24 @@ func TestInteropReadonlyKeepsWritableSlots(t *testing.T) {
 	})
 }
 
-// DISABLED until #2266, which applies the uncertain-answer defaults. The
-// converter emits `withDefaults(opts: Options) -> Options`, which reads as an
-// owned return that shares nothing with `opts`.
+// TestInteropUncertainReturnBorrowsInputs covers the parameter and return
+// halves of I3. A parameter the declaration may write takes `&mut`, and a
+// return that may share structure with it borrows it.
 func TestInteropUncertainReturnBorrowsInputs(t *testing.T) {
-	/*
-		t.Parallel()
+	t.Parallel()
 
-		runInteropCases(t, map[string]interopCase{
-			// The implementation is `return {...opts}`. A `.d.ts` carries no
-			// body, so the converter cannot tell that copy from a fresh object.
-			// The shallow copy shares every object below its top level with
-			// `opts`, so the return borrows `opts`. The converter cannot tell
-			// whether `withDefaults` writes `opts` either, so `opts` is `&mut`.
-			"ShallowCopyReturn": {
-				src: "interface Options { a: {b: number}; }\n" +
-					"declare function withDefaults(opts: Options): Options;",
-				want: []string{
-					"@js(\"withDefaults\")\nexport declare fn withDefaults<'a>(opts: &'a mut Options) -> &'a mut Options",
-				},
+	runInteropCases(t, map[string]interopCase{
+		// The implementation is `return {...opts}`. A `.d.ts` carries no
+		// body, so the converter cannot tell that copy from a fresh object.
+		// The shallow copy shares every object below its top level with
+		// `opts`, so the return borrows `opts`. The converter cannot tell
+		// whether `withDefaults` writes `opts` either, so `opts` is `&mut`.
+		"ShallowCopyReturn": {
+			src: "interface Options { a: {b: number}; }\n" +
+				"declare function withDefaults(opts: Options): Options;",
+			want: []string{
+				"@js(\"withDefaults\")\nexport declare fn withDefaults<'a>(opts: &'a mut Options) -> &'a mut Options",
 			},
-		})
-	*/
+		},
+	})
 }

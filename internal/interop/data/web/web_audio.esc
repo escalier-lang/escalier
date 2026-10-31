@@ -184,13 +184,13 @@ export declare class AnalyserNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AnalyserNode/smoothingTimeConstant) */
     smoothingTimeConstant: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AnalyserNode/getByteFrequencyData) */
-    getByteFrequencyData(&self, array: typed_arrays.Uint8Array) -> undefined,
+    getByteFrequencyData(&self, array: &mut typed_arrays.Uint8Array) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AnalyserNode/getByteTimeDomainData) */
-    getByteTimeDomainData(&self, array: typed_arrays.Uint8Array) -> undefined,
+    getByteTimeDomainData(&self, array: &mut typed_arrays.Uint8Array) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AnalyserNode/getFloatFrequencyData) */
-    getFloatFrequencyData(&self, array: typed_arrays.Float32Array) -> undefined,
+    getFloatFrequencyData(&self, array: &mut typed_arrays.Float32Array) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AnalyserNode/getFloatTimeDomainData) */
-    getFloatTimeDomainData(&self, array: typed_arrays.Float32Array) -> undefined,
+    getFloatTimeDomainData(&self, array: &mut typed_arrays.Float32Array) -> undefined,
     static prototype: AnalyserNode,
     constructor(&mut self, context: BaseAudioContext, options?: AnalyserOptions)
 }
@@ -211,9 +211,9 @@ export declare class AudioBuffer {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioBuffer/sampleRate) */
     readonly sampleRate: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioBuffer/copyFromChannel) */
-    copyFromChannel(&self, destination: typed_arrays.Float32Array, channelNumber: number, bufferOffset?: number) -> undefined,
+    copyFromChannel(&self, destination: &mut typed_arrays.Float32Array, channelNumber: number, bufferOffset?: number) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioBuffer/copyToChannel) */
-    copyToChannel(&self, source: typed_arrays.Float32Array, channelNumber: number, bufferOffset?: number) -> undefined,
+    copyToChannel(&self, source: &mut typed_arrays.Float32Array, channelNumber: number, bufferOffset?: number) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioBuffer/getChannelData) */
     getChannelData(&self, channel: number) -> typed_arrays.Float32Array,
     static prototype: AudioBuffer,
@@ -263,11 +263,11 @@ export declare class AudioContext extends BaseAudioContext {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioContext/close) */
     close(&mut self) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioContext/createMediaElementSource) */
-    createMediaElementSource(&mut self, mediaElement: dom.HTMLMediaElement) -> MediaElementAudioSourceNode,
+    createMediaElementSource<'a>(&mut self, mediaElement: &'a mut dom.HTMLMediaElement) -> &'a mut MediaElementAudioSourceNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioContext/createMediaStreamDestination) */
     createMediaStreamDestination(&mut self) -> MediaStreamAudioDestinationNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioContext/createMediaStreamSource) */
-    createMediaStreamSource(&mut self, mediaStream: dom.MediaStream) -> MediaStreamAudioSourceNode,
+    createMediaStreamSource(&mut self, mediaStream: &mut dom.MediaStream) -> MediaStreamAudioSourceNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioContext/getOutputTimestamp) */
     getOutputTimestamp(&self) -> AudioTimestamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioContext/resume) */
@@ -356,16 +356,16 @@ export declare class AudioNode extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioNode/numberOfOutputs) */
     readonly numberOfOutputs: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioNode/connect) */
-    connect(&mut self, destinationNode: AudioNode, output?: number, input?: number) -> AudioNode,
-    connect(&mut self, destinationParam: AudioParam, output?: number) -> undefined,
+    connect<'a>(&mut self, destinationNode: &'a mut AudioNode, output?: number, input?: number) -> &'a mut AudioNode,
+    connect(&mut self, destinationParam: &mut AudioParam, output?: number) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioNode/disconnect) */
     disconnect(&mut self) -> undefined,
     disconnect(&mut self, output: number) -> undefined,
-    disconnect(&mut self, destinationNode: AudioNode) -> undefined,
-    disconnect(&mut self, destinationNode: AudioNode, output: number) -> undefined,
-    disconnect(&mut self, destinationNode: AudioNode, output: number, input: number) -> undefined,
-    disconnect(&mut self, destinationParam: AudioParam) -> undefined,
-    disconnect(&mut self, destinationParam: AudioParam, output: number) -> undefined,
+    disconnect(&mut self, destinationNode: &mut AudioNode) -> undefined,
+    disconnect(&mut self, destinationNode: &mut AudioNode, output: number) -> undefined,
+    disconnect(&mut self, destinationNode: &mut AudioNode, output: number, input: number) -> undefined,
+    disconnect(&mut self, destinationParam: &mut AudioParam) -> undefined,
+    disconnect(&mut self, destinationParam: &mut AudioParam, output: number) -> undefined,
     static prototype: AudioNode,
     constructor(&mut self)
 }
@@ -401,7 +401,7 @@ export declare class AudioParam {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioParam/setValueCurveAtTime) */
     setValueCurveAtTime(&mut self, values: Array<number> | typed_arrays.Float32Array, startTime: number, duration: number) -> AudioParam,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioParam/setValueCurveAtTime) */
-    setValueCurveAtTime(&mut self, values: Iterable<number>, startTime: number, duration: number) -> AudioParam,
+    setValueCurveAtTime(&mut self, values: &mut Iterable<number>, startTime: number, duration: number) -> AudioParam,
     static prototype: AudioParam,
     constructor(&mut self)
 }
@@ -549,13 +549,13 @@ export declare class BaseAudioContext extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createGain) */
     createGain(&mut self) -> GainNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createIIRFilter) */
-    createIIRFilter(&mut self, feedforward: Array<number>, feedback: Array<number>) -> IIRFilterNode,
+    createIIRFilter<'a>(&mut self, feedforward: &'a mut Array<number>, feedback: &'a mut Array<number>) -> &'a mut IIRFilterNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createOscillator) */
     createOscillator(&mut self) -> OscillatorNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createPanner) */
     createPanner(&mut self) -> PannerNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createPeriodicWave) */
-    createPeriodicWave(&mut self, real: Array<number> | typed_arrays.Float32Array, imag: Array<number> | typed_arrays.Float32Array, constraints?: PeriodicWaveConstraints) -> PeriodicWave,
+    createPeriodicWave<'a>(&mut self, real: Array<number> | typed_arrays.Float32Array, imag: Array<number> | typed_arrays.Float32Array, constraints?: &'a mut PeriodicWaveConstraints) -> &'a mut PeriodicWave,
     /**
      * @deprecated
      *
@@ -567,15 +567,15 @@ export declare class BaseAudioContext extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createWaveShaper) */
     createWaveShaper(&mut self) -> WaveShaperNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/decodeAudioData) */
-    decodeAudioData(&mut self, audioData: typed_arrays.ArrayBuffer, successCallback?: DecodeSuccessCallback | null, errorCallback?: DecodeErrorCallback | null) -> Promise<AudioBuffer>,
+    decodeAudioData(&mut self, audioData: &mut typed_arrays.ArrayBuffer, successCallback?: DecodeSuccessCallback | null, errorCallback?: DecodeErrorCallback | null) -> Promise<AudioBuffer>,
     addEventListener<K: keyof BaseAudioContextEventMap>(&mut self, type: K, listener: fn (this: BaseAudioContext, ev: BaseAudioContextEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> undefined,
     removeEventListener<K: keyof BaseAudioContextEventMap>(&mut self, type: K, listener: fn (this: BaseAudioContext, ev: BaseAudioContextEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createIIRFilter) */
-    createIIRFilter(&mut self, feedforward: Iterable<number>, feedback: Iterable<number>) -> IIRFilterNode,
+    createIIRFilter(&mut self, feedforward: &mut Iterable<number>, feedback: &mut Iterable<number>) -> IIRFilterNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createPeriodicWave) */
-    createPeriodicWave(&mut self, real: Iterable<number>, imag: Iterable<number>, constraints?: PeriodicWaveConstraints) -> PeriodicWave,
+    createPeriodicWave<'a>(&mut self, real: &'a mut Iterable<number>, imag: &'a mut Iterable<number>, constraints?: &'a mut PeriodicWaveConstraints) -> &'a mut PeriodicWave,
     static prototype: BaseAudioContext,
     constructor(&mut self)
 }
@@ -598,7 +598,7 @@ export declare class BiquadFilterNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BiquadFilterNode/type) */
     type: BiquadFilterType,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BiquadFilterNode/getFrequencyResponse) */
-    getFrequencyResponse(&self, frequencyHz: typed_arrays.Float32Array, magResponse: typed_arrays.Float32Array, phaseResponse: typed_arrays.Float32Array) -> undefined,
+    getFrequencyResponse(&self, frequencyHz: &mut typed_arrays.Float32Array, magResponse: &mut typed_arrays.Float32Array, phaseResponse: &mut typed_arrays.Float32Array) -> undefined,
     static prototype: BiquadFilterNode,
     constructor(&mut self, context: BaseAudioContext, options?: BiquadFilterOptions)
 }
@@ -710,7 +710,7 @@ export declare class GainNode extends AudioNode {
 @js("IIRFilterNode")
 export declare class IIRFilterNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IIRFilterNode/getFrequencyResponse) */
-    getFrequencyResponse(&self, frequencyHz: typed_arrays.Float32Array, magResponse: typed_arrays.Float32Array, phaseResponse: typed_arrays.Float32Array) -> undefined,
+    getFrequencyResponse(&self, frequencyHz: &mut typed_arrays.Float32Array, magResponse: &mut typed_arrays.Float32Array, phaseResponse: &mut typed_arrays.Float32Array) -> undefined,
     static prototype: IIRFilterNode,
     constructor(&mut self, context: BaseAudioContext, options: IIRFilterOptions)
 }
@@ -807,7 +807,7 @@ export declare class OscillatorNode extends AudioScheduledSourceNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OscillatorNode/type) */
     type: OscillatorType,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OscillatorNode/setPeriodicWave) */
-    setPeriodicWave(&mut self, periodicWave: PeriodicWave) -> undefined,
+    setPeriodicWave(&mut self, periodicWave: &mut PeriodicWave) -> undefined,
     addEventListener<K: keyof AudioScheduledSourceNodeEventMap>(&mut self, type: K, listener: fn (this: OscillatorNode, ev: AudioScheduledSourceNodeEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> undefined,
     removeEventListener<K: keyof AudioScheduledSourceNodeEventMap>(&mut self, type: K, listener: fn (this: OscillatorNode, ev: AudioScheduledSourceNodeEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
