@@ -1,10 +1,13 @@
 package dts_to_esc
 
 import (
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/printer"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/require"
 )
@@ -208,4 +211,67 @@ export declare class Widget {
     static readonly prototype: Widget,
     static from<'a>(n: &'a mut Nested) -> &'a mut Widget
 }`))
+}
+
+// walkMembersTypes declares the types the TestWalkMembers cases name. `Loop1` and
+// `Loop2` extend each other.
+const walkMembersTypes = `
+interface Base { a: number; b?: string; }
+interface Child extends Base { c: boolean; }
+declare class Impl implements Base { d: number; static s: Base; }
+interface Loop1 extends Loop2 { x: number; }
+interface Loop2 extends Loop1 { y: number; }
+type Ident<T> = T;
+`
+
+// TestWalkMembers covers the types walkMembers lists members for and the ones it gives
+// up on, through memberNames and holdsOnlyValueTypes. Each case names a type with
+// `type Probe = …`. members renders memberNames as the names it lists, with a `?` on
+// an optional one, or "unlisted" when memberNames reports false.
+func TestWalkMembers(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		probe      string
+		members    string
+		onlyValues bool
+	}{
+		"Interface":    {probe: "Base", members: "a b?", onlyValues: true},
+		"Extends":      {probe: "Child", members: "a b? c", onlyValues: true},
+		"Implements":   {probe: "Impl", members: "a b? d", onlyValues: true},
+		"Intersection": {probe: "Base & {e: Base}", members: "a b? e", onlyValues: false},
+		"Cycle":        {probe: "Loop1", members: "unlisted", onlyValues: false},
+		"Union":        {probe: "Base | Child", members: "unlisted", onlyValues: false},
+		"Tuple":        {probe: "[number, string]", members: "unlisted", onlyValues: true},
+		"EmptyTuple":   {probe: "[]", members: "unlisted", onlyValues: true},
+		"TypeParam":    {probe: "Ident<Base>", members: "unlisted", onlyValues: false},
+		"Undeclared":   {probe: "Missing", members: "unlisted", onlyValues: false},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			lib := parseLib(t, "lib.walk.d.ts", walkMembersTypes+"type Probe = "+tc.probe+";\n")
+			mod, err := ConvertBucket(mergeDecls(lib.Module.Statements), nil)
+			require.NoError(t, err)
+			idx := newTypeIndex(mod)
+			probe, ok := idx.aliases["Probe"]
+			require.True(t, ok)
+
+			members, listed := idx.memberNames(probe.TypeAnn, set.NewSet[string](), set.NewSet[string]())
+			got := "unlisted"
+			if listed {
+				var names []string
+				for _, name := range members.all.ToSlice() {
+					if !members.required.Contains(name) {
+						name += "?"
+					}
+					names = append(names, name)
+				}
+				sort.Strings(names)
+				got = strings.Join(names, " ")
+			}
+			require.Equal(t, tc.members, got)
+			require.Equal(t, tc.onlyValues, idx.holdsOnlyValueTypes(probe.TypeAnn, set.NewSet[string](), set.NewSet[string]()))
+		})
+	}
 }

@@ -278,38 +278,79 @@ func (m memberSet) add(slot memberSlot, ok, optional bool) memberSet {
 // already being walked.
 func (idx *typeIndex) memberNames(t ast.TypeAnn, typeParams, seen set.Set[string]) (memberSet, bool) {
 	members := memberSet{all: set.NewSet[string](), required: set.NewSet[string]()}
+	ok := idx.walkMembers(t, typeParams, seen, func(block memberBlock) bool {
+		if block.tuple {
+			// A tuple's members are its indexes, which no named member can require.
+			return false
+		}
+		members = objElemNames(members, block.objElems)
+		for _, elem := range block.classElems {
+			if _, isCtor := elem.(*ast.ConstructorElem); isCtor {
+				continue
+			}
+			slot, ok := classElemSlot(elem)
+			if ok && slot.Static {
+				continue
+			}
+			field, isField := elem.(*ast.FieldElem)
+			members = members.add(slot, ok, isField && field.Optional)
+		}
+		return true
+	})
+	return members, ok
+}
+
+// memberBlock is one group of members a type declares: the elements of an object type,
+// the body of a class, or the elements of a tuple. Only the slice for its kind is set,
+// and tuple marks a tuple, whose element list may be empty. typeParams holds the type
+// parameters in scope for the block, which are those of the declaration it came from.
+type memberBlock struct {
+	objElems   []ast.ObjTypeAnnElem
+	classElems []ast.ClassElem
+	tupleElems []ast.TypeAnn
+	tuple      bool
+	typeParams set.Set[string]
+}
+
+// walkMembers calls visit with each block of members the type t declares, including the
+// blocks it inherits. It follows a reference to an alias, an interface's `extends`
+// clause, and a class's superclass and the interfaces it implements, and it visits each
+// member of an intersection. An interface or class visits its inherited blocks before
+// its own.
+//
+// It returns false as soon as visit does, and also when t is not a type whose members
+// idx can list. That covers a name in typeParams, a name idx does not declare, a
+// reference already in seen, and any type that is not an object type, tuple,
+// intersection or reference, such as a union. seen holds the declarations already
+// being walked, and walkMembers restores it before returning.
+func (idx *typeIndex) walkMembers(t ast.TypeAnn, typeParams, seen set.Set[string], visit func(memberBlock) bool) bool {
 	switch t := t.(type) {
 	case *ast.ObjectTypeAnn:
-		return objElemNames(members, t.Elems), true
+		return visit(memberBlock{objElems: t.Elems, typeParams: typeParams})
+	case *ast.TupleTypeAnn:
+		return visit(memberBlock{tupleElems: t.Elems, tuple: true, typeParams: typeParams})
 	case *ast.IntersectionTypeAnn:
 		for _, member := range t.Types {
-			inner, ok := idx.memberNames(member, typeParams, seen)
-			if !ok {
-				return members, false
+			if !idx.walkMembers(member, typeParams, seen, visit) {
+				return false
 			}
-			members = members.merge(inner)
 		}
-		return members, true
+		return true
 	case *ast.TypeRefTypeAnn:
 		name := ast.QualIdentToString(t.Name)
 		if typeParams.Contains(name) || seen.Contains(name) {
-			return members, false
+			return false
 		}
 		seen.Add(name)
 		defer seen.Remove(name)
 		if decl, ok := idx.interfaces[name]; ok {
 			declParams := typeParamNameSet(decl.TypeParams)
 			for _, ext := range decl.Extends {
-				inner, ok := idx.memberNames(ext, declParams, seen)
-				if !ok {
-					return members, false
+				if !idx.walkMembers(ext, declParams, seen, visit) {
+					return false
 				}
-				members = members.merge(inner)
 			}
-			if decl.TypeAnn != nil {
-				members = objElemNames(members, decl.TypeAnn.Elems)
-			}
-			return members, true
+			return decl.TypeAnn == nil || visit(memberBlock{objElems: decl.TypeAnn.Elems, typeParams: declParams})
 		}
 		if decl, ok := idx.classes[name]; ok {
 			declParams := typeParamNameSet(decl.TypeParams)
@@ -318,30 +359,17 @@ func (idx *typeIndex) memberNames(t ast.TypeAnn, typeParams, seen set.Set[string
 				supers = append([]*ast.TypeRefTypeAnn{decl.Extends}, supers...)
 			}
 			for _, super := range supers {
-				inner, ok := idx.memberNames(super, declParams, seen)
-				if !ok {
-					return members, false
+				if !idx.walkMembers(super, declParams, seen, visit) {
+					return false
 				}
-				members = members.merge(inner)
 			}
-			for _, elem := range decl.Body {
-				if _, isCtor := elem.(*ast.ConstructorElem); isCtor {
-					continue
-				}
-				slot, ok := classElemSlot(elem)
-				if ok && slot.Static {
-					continue
-				}
-				field, isField := elem.(*ast.FieldElem)
-				members = members.add(slot, ok, isField && field.Optional)
-			}
-			return members, true
+			return visit(memberBlock{classElems: decl.Body, typeParams: declParams})
 		}
 		if decl, ok := idx.aliases[name]; ok {
-			return idx.memberNames(decl.TypeAnn, typeParamNameSet(decl.TypeParams), seen)
+			return idx.walkMembers(decl.TypeAnn, typeParamNameSet(decl.TypeParams), seen, visit)
 		}
 	}
-	return members, false
+	return false
 }
 
 // objElemNames adds the members of an object type to members. A call or construct
@@ -460,47 +488,15 @@ func (idx *typeIndex) isValueType(t ast.TypeAnn, typeParams, seen set.Set[string
 // not. An inherited slot counts, and a slot whose type is a type parameter does not hold
 // a value type. seen holds the declarations already being walked.
 func (idx *typeIndex) holdsOnlyValueTypes(t ast.TypeAnn, typeParams, seen set.Set[string]) bool {
-	switch t := t.(type) {
-	case *ast.ObjectTypeAnn:
-		return idx.elemsHoldOnlyValueTypes(t.Elems, typeParams, seen)
-	case *ast.TupleTypeAnn:
-		for _, elem := range t.Elems {
-			if !idx.isValueType(elem, typeParams, seen) {
+	return idx.walkMembers(t, typeParams, seen, func(block memberBlock) bool {
+		for _, elem := range block.tupleElems {
+			if !idx.isValueType(elem, block.typeParams, seen) {
 				return false
 			}
 		}
-		return true
-	case *ast.IntersectionTypeAnn:
-		for _, member := range t.Types {
-			if !idx.holdsOnlyValueTypes(member, typeParams, seen) {
-				return false
-			}
-		}
-		return true
-	case *ast.TypeRefTypeAnn:
-		name := ast.QualIdentToString(t.Name)
-		if typeParams.Contains(name) || seen.Contains(name) {
-			return false
-		}
-		seen.Add(name)
-		defer seen.Remove(name)
-		if decl, ok := idx.interfaces[name]; ok {
-			declParams := typeParamNameSet(decl.TypeParams)
-			for _, ext := range decl.Extends {
-				if !idx.holdsOnlyValueTypes(ext, declParams, seen) {
-					return false
-				}
-			}
-			return decl.TypeAnn == nil || idx.elemsHoldOnlyValueTypes(decl.TypeAnn.Elems, declParams, seen)
-		}
-		if decl, ok := idx.classes[name]; ok {
-			return idx.classHoldsOnlyValueTypes(decl, seen)
-		}
-		if decl, ok := idx.aliases[name]; ok {
-			return idx.holdsOnlyValueTypes(decl.TypeAnn, typeParamNameSet(decl.TypeParams), seen)
-		}
-	}
-	return false
+		return idx.elemsHoldOnlyValueTypes(block.objElems, block.typeParams, seen) &&
+			idx.classElemsHoldOnlyValueTypes(block.classElems, block.typeParams, seen)
+	})
 }
 
 // elemsHoldOnlyValueTypes is holdsOnlyValueTypes for the members of an object type.
@@ -526,19 +522,10 @@ func (idx *typeIndex) elemsHoldOnlyValueTypes(elems []ast.ObjTypeAnnElem, typePa
 	return true
 }
 
-// classHoldsOnlyValueTypes is holdsOnlyValueTypes for the instance slots of a class,
-// including the ones its superclass and the interfaces it implements declare.
-func (idx *typeIndex) classHoldsOnlyValueTypes(decl *ast.ClassDecl, seen set.Set[string]) bool {
-	typeParams := typeParamNameSet(decl.TypeParams)
-	if decl.Extends != nil && !idx.holdsOnlyValueTypes(decl.Extends, typeParams, seen) {
-		return false
-	}
-	for _, iface := range decl.Implements {
-		if !idx.holdsOnlyValueTypes(iface, typeParams, seen) {
-			return false
-		}
-	}
-	for _, elem := range decl.Body {
+// classElemsHoldOnlyValueTypes is holdsOnlyValueTypes for the instance fields and
+// getters a class body declares. A static member is not a slot of an instance.
+func (idx *typeIndex) classElemsHoldOnlyValueTypes(elems []ast.ClassElem, typeParams, seen set.Set[string]) bool {
+	for _, elem := range elems {
 		switch e := elem.(type) {
 		case *ast.FieldElem:
 			if !e.Static && (e.Type == nil || !idx.isValueType(e.Type, typeParams, seen)) {
