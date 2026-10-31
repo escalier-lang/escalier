@@ -108,5 +108,5 @@ worklets are not a corner: `LayoutWorklet` and `PaintWorklet` together carry
 more interfaces than `ServiceWorker`.
 
 Decided: the vocabulary grows to match. F7 in `design.md` states it and
-`vocabulary.md` has the nine names, the two groups, and the roughly 290
+`vocabulary.md` has the nine names, the two groups, and the 336
 declarations that gain a decorator as a result.

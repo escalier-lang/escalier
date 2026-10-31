@@ -468,8 +468,9 @@ F4 and live in `web:window` and `web:worker`. `MessageEvent` was the one
 exception, and §7.4.5 moves it to `web:messaging`.
 
 What is left to measure is the per-environment content itself. A tree carrying
-nine forms of a declaration is a larger tree, and section 8 says cold load tracks
-tree size rather than closure size.
+nine forms of a declaration is larger on both terms section 8 separates: it
+raises the tree-size floor every program pays, and it raises what inferring any
+one closure costs above that floor.
 
 **N5. New fixtures cover the new import style rather than migrated ones.** The
 environment rules land in `internal/solver`, and the fixture suite that exercises
@@ -501,7 +502,10 @@ caller. §7.3.3 is a milestone of its own because it is a `Task`-type cleanup
 with its own issue, and isolating it means reverting it does not drag the
 vocabulary back.
 
-Milestone A waits on §5.2 of the other stream. After it, C, D and E are parallel:
+Within milestone A, §7.3.1 waits on §5.2 of the other stream and the rest does
+not, since §7.3.2 builds the target against a hand-written annotation set and
+switches over when the table lands. So the table gates the milestone's
+completion rather than its start. After milestone A, C, D and E are parallel:
 the worklets and the runtimes need the vocabulary and the slot key, not the
 worker repartition. Within C the order is forced, since §7.4.3 precedes §7.4.4,
 which precedes §7.4.5, which precedes §7.4.7. #2378 is in no milestone and
@@ -509,7 +513,7 @@ blocks any fixture importing `web:dom` or `web:window`.
 
 A stage that regenerates the tree produces a large diff that needs no
 line-by-line review. The hand-written part is the generator and the fixture, and
-`check_generated_tree` is what validates the rest. §7.3.1 annotates roughly 290
+`check_generated_tree` is what validates the rest. §7.3.1 annotates 336
 declarations this way, and §7.4.1 adds a whole package.
 
 ### 7.1 Prerequisite, in the other stream
@@ -588,7 +592,7 @@ The vocabulary is complete here even though only `window` is an accepted target.
 `RTCIdentityProviderGlobalScope` answers to it.
 
 **Done when** the regenerated tree carries an `@env` derived from `Exposed` on
-every declaration that needs one, roughly 290 more than a four-name vocabulary
+every declaration that needs one, 336 more than a four-name vocabulary
 would produce, and `check_generated_tree` passes.
 
 #### 7.3.2 The target environment
@@ -963,11 +967,14 @@ Warm was the constraint on repartitioning at 380ms for every package. At 0.67ms
 it is not a constraint at all, so **closure size no longer costs inference** and
 the argument against an edge into `web:dom` has to be made on cold load alone.
 
-Cold barely moves with closure size either: the `NoImports` case costs 954ms
-against `OnePackage`'s 980ms, because `buildPackageGraph` parses every file in
-the tree to read its import header whether or not the program reaches it. So
-cold is a property of the tree's size, not of what a program imports, and #1643
-is the lever on it.
+Cold has two terms, and only the smaller one is flat. Every program pays about
+1s to build the import graph, because `buildPackageGraph` parses every file in
+the tree to read its header whether or not the program reaches it, which is why
+`NoImports` at 954ms and `OnePackage` at 980ms are indistinguishable. Above that
+floor, cold scales with closure size: inferring every package costs between 4.6s
+and 6.4s, five to six times the floor. How it scales between one package and all
+of them is not measured, and §5.8 names the run that would settle it. #1643 is
+the lever on the floor.
 
 Two consequences for this plan. The repartition stages, §7.4.4 through §7.4.6,
 no longer wait on #1861, which is closed
