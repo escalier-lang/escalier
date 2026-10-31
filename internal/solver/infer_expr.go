@@ -2215,16 +2215,10 @@ func (c *checker) calleeTarget(lvl int, e *ast.CallExpr, callee soltype.Type, fr
 	return callTarget{callee: callee, fn: fn, secondInstance: secondInstance}
 }
 
-// isSoleSignature reports whether callee is fn itself or a variable whose only lower bound
-// is fn.
+// isSoleSignature reports whether callee is a variable whose only lower bound is fn.
 func isSoleSignature(callee soltype.Type, fn *soltype.FuncType) bool {
-	switch t := callee.(type) {
-	case *soltype.FuncType:
-		return t == fn
-	case *soltype.TypeVarType:
-		return len(t.LowerBounds) == 1 && t.LowerBounds[0] == soltype.Type(fn)
-	}
-	return false
+	v, ok := callee.(*soltype.TypeVarType)
+	return ok && len(v.LowerBounds) == 1 && v.LowerBounds[0] == soltype.Type(fn)
 }
 
 // armsTarget returns a call target that picks one of arms, each wrapped as a monomorphic
