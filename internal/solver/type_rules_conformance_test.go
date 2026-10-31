@@ -397,3 +397,40 @@ func TestTypeRuleGetterReceiver(t *testing.T) {
 	})
 }
 */
+
+// DISABLED until #2357, which reads a field through a receiver whose mapped or spread member is
+// over a type parameter. Today each read reports `cannot constrain ... <: object`, since the
+// member does not reduce and `declaredField` finds no field past it.
+/*
+func TestTypeRulesGenericMappedReceiver(t *testing.T) {
+	runTypeRuleCases(t, []typeRuleCase{
+		// T3. `mut` reaches through the mapped member to `a`'s object, and `a` itself stays
+		// `readonly`.
+		{
+			name: "T3/MutBorrowThroughGenericMappedType",
+			src: `
+				fn read<T: {a: number}>(x: &Readonly<T>) -> number {
+					return x.a
+				}
+				fn write<T: {a: {b: number}}>(x: &mut Readonly<T>) {
+					x.a.b = 0
+				}
+				fn replace<T: {a: {b: number}}>(x: &mut Readonly<T>) {
+					x.a = {b: 0}
+				}
+			`,
+			want: []string{"9:6-9:9: cannot assign to 'a' because it is a readonly property"},
+		},
+		// A field written after a spread wins over any field the spread brings, so `a` reads
+		// `number` whatever `T` holds.
+		{
+			name: "T3/FieldAfterSpreadOfTypeParameter",
+			src: `
+				fn read<T: {}>(x: {...T, a: number}) -> number {
+					return x.a
+				}
+			`,
+		},
+	})
+}
+*/
