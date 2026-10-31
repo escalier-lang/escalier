@@ -406,16 +406,17 @@ and each entry says why it exists.
 `BenchmarkStdlibClosureLoad`. #1643 covers the separate finding that comment
 attachment is 74% of cold load.
 
-The other stream's F7 makes `web:prelude` ambient, which is what this has to
-pay for. #1567 caches one prelude across runs, and F5 makes `web:prelude`'s
-content differ by environment, since `location` is a `Location` or a
-`WorkerLocation` and `onmessage` has three forms. So the cached prelude becomes
-one per target, and the cache has to be keyed the same way. That is work on top
-of #1567 and it lowers the hit rate a single shared prelude gets. It is the one
-place the two streams' designs interact beyond the shared generator.
+The other stream's F7 makes `web:prelude` ambient, and #1567 caches one prelude
+across runs, so the question is whether the cache needs a per-target key. It
+does not, and §7.4.5 is why.
 
-`std:prelude` is unaffected, since nothing in it differs by environment. Only
-the `web:prelude` half of the ambient layer varies.
+Nothing left in `web:prelude` differs by environment. Its 22 declarations are
+the event model, the abort pair, `DOMException` and the text codecs, every one
+of them `Exposed=*`, so one cached prelude serves every target. The declarations
+that do differ, `location` and `onmessage` among them, are scope members under
+F4 and live in `web:window` and `web:worker`. `MessageEvent` was the exception
+and §7.4.5 moves it to `web:messaging`, which also keeps the ambient layer's
+closure at 62 declarations rather than 1193.
 
 What is left to measure is the per-environment content itself. A tree carrying
 nine forms of a declaration is a larger tree, and section 8 says cold load tracks
@@ -693,21 +694,41 @@ already routes it here.
 **Done when** a worker fixture names `OffscreenCanvas` and draws on it without
 importing `web:dom`.
 
-#### 7.4.5 Move the portable event plumbing into `web:prelude`
+#### 7.4.5 Add `web:messaging`
 
-The other half of #1644. `MessagePort`, `MessageChannel`,
-`StructuredSerializeOptions` and `Transferable` go to `web:prelude`.
+The other half of #1644. `MessageEvent`, `MessageEventInit`, `MessagePort`,
+`MessageChannel`, `StructuredSerializeOptions` and `Transferable` go to one
+package of their own, which is the structured-clone and channel-messaging
+family.
 
-`MessageChannel` comes for the same reason `createImageBitmap` goes with
+**They cannot go to `web:prelude`, and `MessageEvent` cannot stay there.**
+`web:prelude` closes over 64 declarations today only because the overlay retypes
+`MessageEvent.ports` to `Array<unknown>` and `source` to `null`. N6 of the other
+stream requires those retypes to go, and `MessagePort` alone closes over 1193
+declarations through `Transferable`. So satisfying N6 while `MessageEvent` sits
+in the ambient package puts the whole platform in every file's scope. Without
+`MessageEvent` the prelude closes over 62, which is the number that keeps it
+portable.
+
+`MessageChannel` comes for the reason `createImageBitmap` goes with
 `ImageBitmap`: `MessagePort` has no constructor, and `new MessageChannel()` is
-how a worker gets a pair of them. Its closure is `MessagePort`'s, so it moves in
-this stage and not a later one.
+how a worker gets a pair of them.
 
-`Transferable` names the canvas types, so §7.4.4 lands first or this edge points
-at a package a worker cannot import.
+`structuredClone` lands here too, not in `web:prelude`. Its options bag is
+`StructuredSerializeOptions`, so §5.6 of the other stream defers it to this
+stage. Calling it costs an import, which is what its signature naming
+`Transferable` buys.
 
-**Done when** a worker fixture receives a `MessagePort` after
-`import "web:prelude"` and without importing `web:dom`.
+`Transferable` names the canvas types, so §7.4.4 lands first or this package's
+edges point at one a worker cannot import.
+
+This also settles N4. With `MessageEvent` gone, every declaration left in
+`web:prelude` is `Exposed=*`, so the ambient layer is the same for every target
+and #1567's cache needs no per-target key.
+
+**Done when** a worker fixture receives a `MessagePort` and reads a
+`MessageEvent` after `import "web:messaging"` and without importing `web:dom`,
+and `web:prelude`'s closure is unchanged at 62 declarations.
 
 #### 7.4.6 Move the transferable arms no worker can import
 
@@ -726,8 +747,9 @@ page or a dedicated worker and ten for the rest.
 
 This is also what satisfies the other stream's N6, which forbids typing a read
 narrower than some environment provides. `MessageEvent.source` is `null` in
-`web:prelude` today where a browser yields a `WindowProxy`, a `MessagePort` or a
-`ServiceWorker`, so the retype goes and the per-environment forms replace it.
+`web:core` today, where a browser yields a `WindowProxy`, a `MessagePort` or a
+`ServiceWorker`, so the retype goes and the per-environment forms replace it in
+whichever package §7.4.5 left `MessageEvent` in.
 
 **Done when** a service worker sees `source` as
 `Client | ServiceWorker | MessagePort | null`, a page sees
@@ -953,14 +975,14 @@ backported.
 | #1614 | retiring the package-to-tier machinery, attempted in #1631 and still open |
 | #1586 | the tier is per package where availability is per declaration |
 | #1641, #1642 | per-environment source files |
-| #1644 | moving `MessagePort` and `Transferable` into `web:prelude`, which is F4 in one family |
+| #1644 | moving `MessagePort` and `Transferable` out of `web:dom`, which is F4 in one family |
 | #1861 | warm whole-tree inference regressed 1.5x. Closed, overtaken by the cross-run cache |
 | #1862 | the closure benchmark silently measures fewer packages than it claims |
 | #2377 | importing `web:dom` reports 346 errors, which blocks every stage that moves a declaration out of it |
 | #2378 | the override check rejects a method that indexes its own type parameter, which is most of #2377 |
 
 #1644's blocker section was wrong when filed and has been corrected. It claimed
-that a `Transferable` in `web:prelude` naming `OffscreenCanvas` would fail the
+that a `Transferable` in `web:core` naming `OffscreenCanvas` would fail the
 environment check. The check it named no longer exists on `main`, and even in the
 tree it was written against the claim did not hold. The blocker is reachability: a
 worker cannot import the packages the arms live in.

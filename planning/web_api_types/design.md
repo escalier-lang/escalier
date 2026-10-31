@@ -386,12 +386,17 @@ cannot build one from a form element, and #1586 is where that goes. Narrowing
 what a program receives tells it something false about a value it already holds,
 and no amount of inconvenience elsewhere makes that the cheaper trade.
 
-`web:prelude`'s `MessageEvent` is the case to undo. The overlay types `readonly
+`web:core`'s `MessageEvent` is the case to undo. The overlay types `readonly
 source: null` and `readonly ports: Array<unknown>`, where a browser gives
 `source` a `WindowProxy`, a `MessagePort` or a `ServiceWorker`. The doc comment
-directly above the field says so and the type contradicts it. A file importing
-`web:prelude` is told `null` and handed an object, which is the one way a
+directly above the field says so and the type contradicts it. A file reaching
+`MessageEvent` is told `null` and handed an object, which is the one way a
 declaration can be actively wrong rather than merely unhelpful. #1613 tracks it.
+
+Undoing the retype is what moves `MessageEvent` out of the prelude. Its real
+`ports` is `Array<MessagePort>`, and `MessagePort` closes over 1193
+declarations, so §7.4.5 of the other stream gives the messaging family its own
+package rather than letting the ambient one reach the platform.
 
 Unnameable beats narrow. A declaration whose type a file cannot spell is sound,
 and `Transferable` is the shape that proves it: the union names arms in packages
@@ -592,9 +597,10 @@ needs no new case.
    `structuredClone` is the one that cannot come yet. Its options bag is
    `StructuredSerializeOptions`, whose `transfer` field is
    `Array<Transferable>`, and `Transferable` reaches 1193 declarations through
-   `OffscreenCanvas` as far as `WebGLRenderingContext`. §7.4.4 and §7.4.5 of the
-   other stream are what make that arm reachable from a portable package, so
-   `structuredClone` moves there and not here.
+   `OffscreenCanvas` as far as `WebGLRenderingContext`. §7.4.5 of the other
+   stream gives that family a package of its own, `web:messaging`, and
+   `structuredClone` goes there rather than into the prelude. Calling it costs
+   an import, which is what its options bag naming `Transferable` buys.
 2. Move the family globals to their families: `caches` to `web:cache`,
    `indexedDB` to `web:indexeddb`, `localStorage` and `sessionStorage` to
    `web:storage`. `crypto`, `performance` and `fetch` already went.

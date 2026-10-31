@@ -71,7 +71,8 @@ families has a worker-visible part sitting in a window-only package.
 
 1. **Move the nine.** Each needs a package importable from the environments it
    is exposed in. `MessagePort`, `ImageBitmap` and `OffscreenCanvas` are
-   Window plus every worker, so `web:prelude` or the proposed `web:canvas` fits.
+   Window plus every worker, so the proposed `web:messaging` fits `MessagePort`
+   and `web:canvas` fits the other two.
    The six dedicated-worker-only ones need a package importable from a page and
    a dedicated worker, which no current package is. This is the same shape as
    `requestAnimationFrame` in `../web_api_types/hoisted/README.md`.
