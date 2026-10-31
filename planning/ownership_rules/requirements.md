@@ -1747,7 +1747,9 @@ declare function reset(x: Readonly<{a: {b: number}}>): void;
 
 When every slot in `T`, and in every layer `T` owns, is `readonly` or holds a
 value type, a `&mut` grants no writes. The converter then emits `&T` instead.
-`Readonly<{a: number}>` and a recursive `DeepReadonly<T>` both qualify.
+`Readonly<{a: number}>` qualifies. A recursive `DeepReadonly<T>` qualifies too,
+but the converter does not resolve a reference to an alias, so it still emits
+`&mut` for one.
 
 `classifyExplicitSignal` in
 [mutability.go](../../internal/dts_to_esc/mutability.go) maps `this:
