@@ -20,15 +20,31 @@ the claim is true.
 
 ## What main holds today
 
+Reviewed against `main` at 4ae93f0b. Every premise this stream rests on is
+unchanged, line numbers included.
+
 `internal/dts_to_esc/tier.go` gives each package one of four ranks ordered by
-portability, and `CheckTiers` reports an import edge that goes up a rank. It has
-one caller, the converter. The compiler pipeline has no notion of a tier, so a
-program can import `web:dom` and `web:workers` together and nothing reports it.
+portability, and `CheckTiers` at `import_header.go:116` reports an import edge
+that goes up a rank. It still has one caller, `generate.go:138`. The compiler
+pipeline has no notion of a tier, so a program can import `web:dom` and
+`web:workers` together and nothing reports it.
 
 There is no `@env`, no environment vocabulary, and no worker surface: none of
 the four `*GlobalScope` classes is declared, and `importScripts`,
 `WorkerLocation`, `FetchEvent` and `Clients` have zero occurrences under
 `internal/interop/data/`.
+
+Two things changed in the other stream that bear on this one.
+
+**An ambient scope landed.** `internal/solver/ambient.go` binds 25 packages
+without an import, `web:core` and `web:fetch` among them. That is the other
+stream's F8, and it sharpens N4 below: the per-environment prelude this stream
+needs is now a per-environment `ambientPackages` plus a cache keyed to match.
+
+**`Window`'s globals were hoisted into `web:dom`.** 294 top-level declarations,
+including portable ones such as `setTimeout` and `atob` that belong in
+`web:core`. `web:dom` is browser-tier and a worker cannot import it, so §2.2
+below has more to move than it did when it was written.
 
 ## Phase one: window
 
@@ -117,6 +133,11 @@ F4, N2, and the substance of #1644.
    `transferable.md`. The six that are `Exposed=(DedicatedWorker, Window)` need a
    package importable from a page and a dedicated worker, which no current
    package is.
+4. Move the portable globals the other stream's hoisting left in `web:dom`.
+   `setTimeout`, `atob`, `structuredClone`, `queueMicrotask` and the rest exist
+   in every environment and sit in a browser-tier package, so a worker cannot
+   reach them. The other stream's Stage 4 owns the move; this phase is what
+   makes it necessary.
 
 **Done when** a fixture compiles the worker program in section 4.2 of
 `requirements.md`, receiving an `OffscreenCanvas` over `postMessage` and drawing
@@ -168,11 +189,29 @@ backported.
 
 ## Measurement
 
-N4. Two issues are open against the harness and both want resolving before any
-figure from it is trusted: #1862, which says it can silently measure a smaller
-closure than it claims, and #1861, which says warm whole-tree inference
-regressed 1.5x and bisects it to one commit. Resolve #1861 before §2.2, because a
-repartition measured against a regressed baseline looks cheaper than it is.
+N4, and the figures have inverted since this was written.
 
-`main` costs 43ms warm and 810ms cold for `web:fetch` alone, and 380ms warm and
-4.45s cold for every package. #1643 moves the cold baseline when it lands.
+The cross-run checker cache in `internal/solver/stdlib_run_cache.go` keeps one
+loaded checker per stdlib tree and forks it per run, so warm cost has collapsed:
+
+| | warm | cold |
+| --- | --- | --- |
+| no imports | 0.45ms | 954ms |
+| `web:fetch` alone | 0.36ms | 980ms |
+| every package | 0.67ms | 4.6s |
+
+Warm was the constraint on repartitioning at 380ms for every package. At 0.67ms
+it is not a constraint at all, so **closure size no longer costs inference** and
+the argument against an edge into `web:dom` has to be made on cold load alone.
+
+Cold barely moves with closure size either: the `NoImports` case costs 954ms
+against `OnePackage`'s 980ms, because `buildPackageGraph` parses every file in
+the tree to read its import header whether or not the program reaches it. So
+cold is a property of the tree's size, not of what a program imports, and #1643
+is the lever on it.
+
+Two consequences for this plan. §2.2 no longer needs #1861 resolved first, since
+#1861 measured the warm figure the cache removed and its bisect hashes are not in
+`main`'s rewritten history; it should be closed or re-filed against cold. And
+#1862 is still live and unfixed, so a per-environment file landing in phase two
+would silently shrink what the benchmark measures.

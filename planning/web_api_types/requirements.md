@@ -125,6 +125,11 @@ into scope the way `std:prelude`'s are, so a program writes `setTimeout(...)` an
 no-op, which is how the generated tree and existing code migrate without a flag
 day.
 
+*Met.* `internal/solver/ambient.go` binds an ambient scope between the prelude
+scope and a module's own, over the 25 packages `ambientPackages` lists, and
+`web:core` and `web:fetch` are on it. Importing one still binds it as a
+namespace. N4 is the part still outstanding.
+
 This removes a special case rather than adding one. `coreURI` exists in two
 places to make `web:core` bind unprefixed, and the comment beside it already
 calls `web:core` and `std:prelude` the two packages that do. The exception goes.
@@ -139,6 +144,16 @@ much.** `Document` and `Element` are as ambient at runtime as `Event` is, so
 prelude is that it is small and portable: 24 declarations against
 `std:prelude`'s 44. A package that is large stays an import however ambient the
 runtime makes it.
+
+**F9. A hoisted global goes to the package that owns it, not to `web:dom`.** A
+global's package is the family that owns its type, and where the signature names
+no browser type the family is `web:core`. `setTimeout` and `atob` belong there
+and not in a browser-tier package a worker cannot import.
+
+This is stated because the hoisting landed without it. 294 globals went to
+`web:dom`, including the portable ones, so a program imports the whole DOM to
+set a timer and a worker cannot set one at all. `hoisted/` has the per-global
+assignment; this requirement is what makes it binding.
 
 ### 3.2 Non-functional
 
@@ -159,9 +174,12 @@ what every file has in scope, where today it decides which package holds a
 declaration. A test asserts the set of ambient names, so adding one is a
 deliberate edit rather than a side effect of moving a declaration.
 
-**N5. Nothing regresses load cost.** Measured against
-`BenchmarkStdlibClosureLoad`. #1861 and #1862 are open against that benchmark
-and both want resolving before any figure from it is trusted.
+**N5. Nothing regresses cold load.** Measured against
+`BenchmarkStdlibClosureLoad`. Cold is the only figure that constrains this work:
+the cross-run checker cache has taken whole-tree warm inference to 0.67ms, while
+cold is 4.6s and barely moves with closure size. #1862 is open against the
+benchmark and unfixed. #1861 measured the warm cost the cache removed and should
+be closed or re-filed against cold.
 
 ## 4. The shared input
 

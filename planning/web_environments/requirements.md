@@ -170,41 +170,38 @@ binding. Narrowing it means testing `Window`, which a worker genuinely lacks.
 
 `BuildPackageClosure` puts every reachable package into one group, so any edge
 into `web:dom` pulls the whole tree into every program's closure. Measured on
-`main` at 06b28c81 with `BenchmarkStdlibClosureLoad`:
+`main` at 4ae93f0b with `BenchmarkStdlibClosureLoad`:
 
 | | warm | cold |
 | --- | --- | --- |
-| `web:fetch` alone | 43ms | 810ms |
-| every package | 380ms | 4.45s |
+| no imports | 0.45ms | 954ms |
+| `web:fetch` alone | 0.36ms | 980ms |
+| every package | 0.67ms | 4.6s |
 
-Cold is dominated by something other than closure size: `buildPackageGraph`
-parses every file in the tree to read its import header, reached or not. #1643
-records that comment attachment is 74% of that, all of it in one linear scan in
-`ast.(*nodeIndex).enclosing`, and it has not landed.
+Warm is not the constraint. The cross-run checker cache in
+`internal/solver/stdlib_run_cache.go` keeps one loaded checker per stdlib tree
+and forks it per run, so the whole tree costs 0.67ms of inference against 380ms
+before that landed. Closure size no longer costs inference, and the argument
+against an edge into `web:dom` has to be made on cold load alone.
 
-The warm figure is what closure size costs per inference run, and at 380ms
-against 43ms it is the constraint on any repartitioning.
+Cold barely moves with closure size either. The `NoImports` case costs 954ms
+against `OnePackage`'s 980ms, because `buildPackageGraph` parses every file in
+the tree to read its import header whether or not the program reaches it. So
+cold is a property of the tree's size rather than of what a program imports.
+#1643 records that comment attachment is 74% of it, all of it in one linear scan
+in `ast.(*nodeIndex).enclosing`, and it has not landed.
 
-An earlier draft of this section compared those numbers against 46ms warm and
-951ms cold and concluded that whole-tree load was cheap. Both halves of that were
-wrong.
-
-The 46ms came from a benchmark that measured less than it claimed.
-`committedPackageURIs` derives a root URI by trimming `.esc` from the file name,
-so `dom.window.esc` yields `web:dom.window`, which matches no partition entry,
-and `reachable` skips a root it has no edges for. On the branch those figures
-came from, 15 of 25 `web/` files carried such a suffix, so "every package"
-resolved 10 of them and reported a number anyway. #1862 covers it.
-
-And warm has genuinely regressed, by 1.5x rather than the 8x the bad baseline
-implied. Probing the 65 commits between 6c620c22 and 06b28c81 puts almost all of
-it in one step, 282ms to 413ms at 6c447c63, which added 177 lines to
-`internal/solver/infer_class.go`. #1861 covers it, with the profile: 21% in
-`inferClassDecl`, 21% in `constrain`, 21% in `trialUnderProbe` and 29% in garbage
-collection.
-
-So #1631's 4.4s was right. It is what the whole tree costs, and the figure this
-document called unreliable was the only correct measurement of the three.
+Two earlier readings of this section were wrong and are worth keeping as a
+caution about the harness. A 46ms warm baseline came from a benchmark that
+measured less than it claimed: `committedPackageURIs` derives a root URI by
+trimming `.esc` from the file name, so `dom.window.esc` yields `web:dom.window`,
+which matches no partition entry, and `reachable` skips a root it has no edges
+for. That is #1862, still unfixed, and
+`TestTheClosureIgnoresAnUnknownRoot` shows the skipping is deliberate in the
+loader, so the fix belongs in the benchmark. A later reading then called the warm
+cost a 1.5x regression and bisected it, which #1861 records; the cache has since
+removed the figure that regressed, and the bisect's commits are not in `main`'s
+rewritten history.
 
 ## 5. Requirements
 
