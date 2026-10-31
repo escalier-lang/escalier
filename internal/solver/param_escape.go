@@ -206,9 +206,20 @@ func identParamOnlyReadThrough(pat ast.Pat, rest, optional bool, body *ast.Block
 // noteOpenEscapes adds to openEscapes the VarID of each argument of the call e that is a bare
 // name passed to an open destination. An open destination is a parameter of a method called
 // on a module-level binding, where the parameter's type is an inference variable that the
-// receiver's own type reaches. `set` on a `Map()` written with no type arguments has one, so
-// `seen.set("last", value)` records `value`. fn is the signature the call resolved to, and nil
-// when it resolved to none.
+// receiver's own type reaches. fn is the signature the call resolved to, and nil when it
+// resolved to none.
+//
+// In the module below, only the first call records `value`:
+//
+//	val mut seen = Map()
+//	val m = {id: fn <T>(x: T) -> T { return x }}
+//
+//	fn remember(value) {
+//	    seen.set("last", value) // records value: seen's type reaches set's V
+//	    m.id(value)             // id's T is fresh for this call, so m's type does not reach it
+//	    val local = Map()
+//	    local.set("k", value)   // local is not a module-level binding
+//	}
 func (c *checker) noteOpenEscapes(scope *Scope, e *ast.CallExpr, fn *soltype.FuncType) {
 	if c.fn == nil || fn == nil {
 		return
