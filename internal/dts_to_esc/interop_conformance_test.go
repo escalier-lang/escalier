@@ -123,42 +123,38 @@ func TestInteropUncertainReceiver(t *testing.T) {
 	})
 }
 
-// DISABLED until #2265, which keeps `Readonly<T>` as written and picks the
-// borrow's mutability apart from it. The converter emits `Readonly<T>` with no
-// borrow marker for each parameter below. It gives `this: Readonly<Widget>`
-// the receiver `&self` even though `this.a.b` stays writable through it.
+// TestInteropReadonlyKeepsWritableSlots covers I1. The converter keeps
+// `Readonly<T>` as written and picks the borrow's mutability apart from it.
 func TestInteropReadonlyKeepsWritableSlots(t *testing.T) {
-	/*
-		t.Parallel()
+	t.Parallel()
 
-		runInteropCases(t, map[string]interopCase{
-			// `Readonly` makes `x.a` readonly and leaves `x.a.b` writable, so
-			// `reset` needs a `&mut` borrow to run `x.a.b = 0`.
-			"NestedWritableSlot": {
-				src: `declare function reset(x: Readonly<{a: {b: number}}>): void;`,
-				want: []string{
-					"@js(\"reset\")\nexport declare fn reset(x: &mut Readonly<{\n    a: {\n        b: number\n    }\n}>) -> undefined",
-				},
+	runInteropCases(t, map[string]interopCase{
+		// `Readonly` makes `x.a` readonly and leaves `x.a.b` writable, so
+		// `reset` needs a `&mut` borrow to run `x.a.b = 0`.
+		"NestedWritableSlot": {
+			src: `declare function reset(x: Readonly<{a: {b: number}}>): void;`,
+			want: []string{
+				"@js(\"reset\")\nexport declare fn reset(x: &mut Readonly<{\n    a: {\n        b: number\n    }\n}>) -> undefined",
 			},
-			// Every slot is readonly or holds a value type, so a `&mut` grants
-			// no writes and the converter emits `&`.
-			"NoWritableSlot": {
-				src: `declare function read(x: Readonly<{a: number}>): void;`,
-				want: []string{
-					"@js(\"read\")\nexport declare fn read(x: &Readonly<{\n    a: number\n}>) -> undefined",
-				},
+		},
+		// Every slot is readonly or holds a value type, so a `&mut` grants
+		// no writes and the converter emits `&`.
+		"NoWritableSlot": {
+			src: `declare function read(x: Readonly<{a: number}>): void;`,
+			want: []string{
+				"@js(\"read\")\nexport declare fn read(x: &Readonly<{\n    a: number\n}>) -> undefined",
 			},
-			// `this: Readonly<Widget>` leaves `this.a.b` writable, so it is no
-			// signal for `&self`. The other tiers decide the receiver, and
-			// `frob` falls through them to `&mut self`.
-			"ReadonlyThisWithWritableSlot": {
-				src: widgetLib(`frob(this: Readonly<Widget>): void;`),
-				want: []string{
-					"Widget.frob(&mut self, this: Readonly<Widget>) -> undefined",
-				},
+		},
+		// `this: Readonly<Widget>` leaves `this.a.b` writable, so it is no
+		// signal for `&self`. The other tiers decide the receiver, and
+		// `frob` falls through them to `&mut self`.
+		"ReadonlyThisWithWritableSlot": {
+			src: widgetLib(`frob(this: Readonly<Widget>): void;`),
+			want: []string{
+				"Widget.frob(&mut self, this: Readonly<Widget>) -> undefined",
 			},
-		})
-	*/
+		},
+	})
 }
 
 // DISABLED until #2266, which applies the uncertain-answer defaults. The

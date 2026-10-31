@@ -1751,8 +1751,7 @@ value type, a `&mut` grants no writes. The converter then emits `&T` instead.
 
 `classifyExplicitSignal` in
 [mutability.go](../../internal/dts_to_esc/mutability.go) maps `this:
-Readonly<T>` to `&self` today. That is right only when no slot reachable
-through `T` is writable.
+Readonly<T>` to `&self` only when no slot reachable through `T` is writable.
 
 `readonly T[]` needs the same treatment, but Escalier has no array type whose
 elements are fixed while their contents stay writable, so that case is still
