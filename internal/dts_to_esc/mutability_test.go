@@ -102,6 +102,9 @@ func TestClassifyTier3_WellKnownMethods(t *testing.T) {
 // method `&self` at tier 3. A readonly wrapper qualifies only when no slot
 // reachable through it is writable. Any other `this` type falls through to the
 // default, since the method name `m` matches no heuristic.
+//
+// Each case's source also declares the aliases `Flat`, whose slots all hold
+// value types, and `Nested`, which holds an object.
 func TestClassifyTier3_ReadonlyThisParam(t *testing.T) {
 	t.Parallel()
 
@@ -121,18 +124,24 @@ func TestClassifyTier3_ReadonlyThisParam(t *testing.T) {
 		"ReadonlyOfArray":          {"Readonly<number[]>", ClassifyResult{Mut: false, Source: TierExplicitSignal}},
 		"ReadonlyOfTypeParam":      {"Readonly<T>", ClassifyResult{Mut: true, Source: TierDefault}},
 		"ReadonlyArrayOfTypeParam": {"ReadonlyArray<T>", ClassifyResult{Mut: true, Source: TierDefault}},
-		"ReadonlyObjectShape":      {"{readonly a: number}", ClassifyResult{Mut: true, Source: TierDefault}},
-		"PlainType":                {"C", ClassifyResult{Mut: true, Source: TierDefault}},
+		// The converter does not resolve a reference to an alias, so it cannot see
+		// that every slot of `Flat` holds a value type and answers `&mut self`.
+		"ReadonlyOfValueAlias":  {"Readonly<Flat>", ClassifyResult{Mut: true, Source: TierDefault}},
+		"ReadonlyOfNestedAlias": {"Readonly<Nested>", ClassifyResult{Mut: true, Source: TierDefault}},
+		"ReadonlyObjectShape":   {"{readonly a: number}", ClassifyResult{Mut: true, Source: TierDefault}},
+		"PlainType":             {"C", ClassifyResult{Mut: true, Source: TierDefault}},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			dts := "declare class C<T> { m(this: " + tt.thisType + "): void }"
+			dts := "declare class C<T> { m(this: " + tt.thisType + "): void }\n" +
+				"type Flat = {a: number};\n" +
+				"type Nested = {a: {b: number}};"
 			p := dts_parser.NewDtsParser(&ast.Source{Path: "test.d.ts", Contents: dts, ID: 0})
 			module, errs := p.ParseModule()
 			require.Empty(t, errs)
-			require.Len(t, module.Statements, 1)
+			require.Len(t, module.Statements, 3)
 			classDecl, ok := module.Statements[0].(*dts_parser.ClassDecl)
 			require.True(t, ok)
 			require.Len(t, classDecl.Members, 1)

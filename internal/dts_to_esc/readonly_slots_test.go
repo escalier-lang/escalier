@@ -17,6 +17,9 @@ func TestBorrowReadonlyParam(t *testing.T) {
 	t.Parallel()
 
 	runInteropCases(t, map[string]interopCase{
+		// `Readonly<T>` fixes only the top-level slots of `x`. When `T` is
+		// instantiated with a deep object such as `{a: {b: number}}`, `x.a.b`
+		// stays writable, so the borrow has to be `&mut`.
 		"TypeParam": {
 			src: `declare function f<T>(x: Readonly<T>): void;`,
 			want: []string{
