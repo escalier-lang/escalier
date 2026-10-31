@@ -371,13 +371,16 @@ func (s *weakVarScanner) EnterType(t soltype.Type, pol soltype.Polarity) soltype
 
 func (s *weakVarScanner) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
-// weakAssignTarget returns the type a reassignment of the weak module-level binding b is
-// checked against. Its weak variables stay variables, so the source's type flows into
+// weakAssignTarget returns the type a reassignment of the weak binding b is checked
+// against. Its weak variables stay variables, so the source's type flows into
 // them. The exception is the binding var and each variable that only passes the
 // initializer's type through to it, which are coalesced to their bounds. `var a = 5` then
 // checks `a = "x"` against `number` and rejects it, where `var id = makeId()` checks
 // `id = fn (n: number) -> number { … }` against `fn (x: T) -> T` and settles T on
 // `number`.
+//
+// When b.InitVars is set, only the weak variables in that range stay variables, and every
+// other one is coalesced to its bounds.
 //
 // A binding that recovered to the error sentinel holds a MonoScheme, and its type is
 // returned as it is.
@@ -391,12 +394,21 @@ func (c *checker) weakAssignTarget(b ValueBinding) soltype.Type {
 	if root, isVar := sc.Body.(*soltype.TypeVarType); isVar {
 		collectPassThrough(root, passThrough)
 		for _, v := range scanWeakVars(root, sc.Level) {
-			if !passThrough.Contains(v) {
+			if !passThrough.Contains(v) && (b.InitVars == nil || b.InitVars.contains(v)) {
 				keep.Add(v)
 			}
 		}
 	}
 	return coalesceKeeping(sc.Body, soltype.Positive, keep, nil, nil)
+}
+
+// varIDRange is the half-open range of variable IDs [lo, hi).
+type varIDRange struct {
+	lo, hi int
+}
+
+func (r *varIDRange) contains(v *soltype.TypeVarType) bool {
+	return v.ID >= r.lo && v.ID < r.hi
 }
 
 // collectPassThrough adds v to out, and every variable that is a lower bound of v, directly

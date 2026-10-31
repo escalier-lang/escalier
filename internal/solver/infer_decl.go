@@ -719,6 +719,7 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl, self *solt
 	if !generalizes(d) {
 		initLvl = lvl
 	}
+	firstVar := c.ctx.varCounter
 	initType, ok := c.inferVarDeclInit(scope, initLvl, d, "")
 	if !ok {
 		return ValueBinding{}, false
@@ -749,6 +750,14 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl, self *solt
 	if bv, isVar := bound.(*soltype.TypeVarType); isVar && initLvl == lvl {
 		c.weakBindingVars.Add(bv)
 	}
+	var initVars *varIDRange
+	if initLvl == lvl {
+		// A body-level binding shares its level with the enclosing function's parameters
+		// and earlier locals, so the level does not tell its own variables from the ones
+		// it captures. In `fn f(p) { var k = fn (x) { return p } }`, p's variable is
+		// captured. A reassignment of k that wrote into it would change f's signature.
+		initVars = &varIDRange{lo: firstVar, hi: c.ctx.varCounter}
+	}
 	scheme := c.generalize(bound, lvl)
 	if initLvl == lvl {
 		c.noteWeakLocal(d, scheme)
@@ -761,11 +770,12 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl, self *solt
 	// PR8: carry the introducing decl's kind so inferAssign can gate reassignment —
 	// only a `var` is reassignable, a `val` is not.
 	return ValueBinding{
-		Schemes: []TypeScheme{scheme},
-		Sources: []provenance.Provenance{&ast.NodeProvenance{Node: d}},
-		Kind:    d.Kind,
-		Mut:     isMutableIdentPat(d.Pattern),
-		Weak:    initLvl == lvl,
+		Schemes:  []TypeScheme{scheme},
+		Sources:  []provenance.Provenance{&ast.NodeProvenance{Node: d}},
+		Kind:     d.Kind,
+		Mut:      isMutableIdentPat(d.Pattern),
+		Weak:     initLvl == lvl,
+		InitVars: initVars,
 	}, true
 }
 
