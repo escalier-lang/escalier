@@ -12,10 +12,12 @@ are easy to confuse:
   non-browser runtime such as Node or Deno.
 
 They share one input. Section 5.2 of `web_api_types/design.md` emits the WebIDL
-table, and `environments/` cannot start before it, because an `@env("window")`
-is a claim about the other eight browser environments and only `[Exposed]` knows
-it. It answers nothing about the runtimes, which is why their source is still
-open.
+table, and §7.3.1 of `environments/design.md` cannot start before it, because an
+`@env("window")` is a claim about the other eight browser environments and only
+`[Exposed]` knows it. The rest of `environments/` does not wait: §7.3.2 builds
+the target against a hand-written annotation set and switches over when the
+table lands. `[Exposed]` answers nothing about the runtimes, which is why their
+source is still open.
 
 Each folder's `design.md` is the whole of it: the problem, the requirements and
 the plan.

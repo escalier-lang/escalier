@@ -49,7 +49,8 @@ most of what carries no decorator now needs one.
 
 ## What it costs
 
-1139 interfaces in the curated IDL carry `Exposed`. By signature:
+1139 interfaces in the curated IDL carry `Exposed`. The ten largest signatures,
+which cover 1115 of them:
 
 | `Exposed` | interfaces | `@env` after |
 | --- | --- | --- |
@@ -64,9 +65,15 @@ most of what carries no decorator now needs one.
 | `DedicatedWorker, SharedWorker, Window` | 6 | new |
 | `DedicatedWorker, ServiceWorker, Window` | 4 | new |
 
-Around 290 declarations gain a decorator they do not carry today. Every one is
-derived from `Exposed`, so the cost is in the size of the diff rather than in
-the judgement.
+The 24 interfaces the table omits are spread across the remaining signatures,
+each a handful of interfaces, and none of them changes the shape of the
+vocabulary.
+
+The six rows marked new cover 336 interfaces, so that many declarations gain a
+decorator they do not carry today. Every one is derived from `Exposed`, so the
+cost is in the size of the diff rather than in the judgement. §5.2 of
+`../web_api_types/design.md` is where these counts get derived by the generator
+rather than by hand.
 
 ## What the worklets hold
 
@@ -99,7 +106,7 @@ reads it applies to a worklet unchanged.
 **`web:*` gains worklet packages.** The CSS Typed OM is in window-only `web:dom`
 today, so a paint worklet cannot name `CSSUnitValue`. That is the same
 reachability failure `transferable.md` records, in a family nothing has looked at
-yet, and F11 covers it.
+yet, and F8 covers it.
 
 Both land in phase three. The vocabulary itself lands in phase one, because a
 declaration that says `@env("window")` is making a claim about the other eight

@@ -42,8 +42,8 @@ export declare var location: Location
 export declare val location: WorkerLocation
 
 // Navigator here is the merged type. WorkerNavigator is a strict subset,
-// 17 of 43 members with no signature differing, so the 26 members only a
-// page has carry `@env("window")` on the type itself.
+// 20 of 43 members with no signature differing, so the 23 members only a
+// page has carry `@env("window")` on the merged type.
 @js("navigator")
 export declare val navigator: Navigator
 
@@ -69,7 +69,7 @@ export declare var onmessage: (fn (this: WindowEventHandlers, ev: MessageEvent) 
 
 @env("dedicated_worker")
 @js("onmessage")
-export declare var onmessage: (fn (this: T, ev: MessageEvent) -> any) | null
+export declare var onmessage: (fn (this: DedicatedWorkerGlobalScope, ev: MessageEvent) -> any) | null
 
 @env("service_worker")
 @js("onmessage")
@@ -81,7 +81,7 @@ export declare var onmessageerror: (fn (this: WindowEventHandlers, ev: MessageEv
 
 @env("dedicated_worker")
 @js("onmessageerror")
-export declare var onmessageerror: (fn (this: T, ev: MessageEvent) -> any) | null
+export declare var onmessageerror: (fn (this: DedicatedWorkerGlobalScope, ev: MessageEvent) -> any) | null
 
 @env("service_worker")
 @js("onmessageerror")

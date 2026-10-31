@@ -344,7 +344,7 @@ whose scope class inherits it:
 
 | declaring scope | `@env` on the hoisted declaration |
 | --- | --- |
-| `WindowOrWorkerGlobalScope` | none, meaning every environment |
+| `WindowOrWorkerGlobalScope` | `window`, `worker` |
 | `WorkerGlobalScope` | `worker` |
 | `DedicatedWorkerGlobalScope` | `dedicated_worker` |
 | `SharedWorkerGlobalScope` | `shared_worker` |
@@ -360,8 +360,9 @@ costs.
 Two consequences, both breaking. `worker` covers four environments rather than
 three, because `RTCIdentityProviderGlobalScope` is
 `[Global=(Worker, RTCIdentityProvider)]`. And an unannotated declaration claims
-nine environments rather than four, so around 290 declarations that carry no
-decorator today need one.
+nine environments rather than four, so 336 declarations that carry no
+decorator today need one. `vocabulary.md` has the breakdown by `Exposed`
+signature.
 
 **F8. A worklet is a compilation target with packages of its own.** A paint
 worklet is a module the browser loads, so it is a target in the same sense a
@@ -660,7 +661,8 @@ declaration absent from it. An error from this release, not a warning. It covers
 a value reference in any position, so matching `x is OffscreenCanvas` against an
 environment without it is an error rather than a guard that never fires. F3.
 
-Keep the tier check, which answers a different question until #1614 retires it.
+§7.3.3 has already deleted the tier check by this point, so there is no second
+mechanism to keep in step with.
 
 **Done when** a new fixture referencing a worker-only declaration from a window
 program fails with the full diagnostic, and the committed tree still converts
@@ -825,7 +827,6 @@ how a worker gets a pair of them.
 `StructuredSerializeOptions`, so §5.6 of the other stream defers it to this
 stage rather than sending it to the prelude with the other portable globals.
 
-One ordering constraint, and it is the tier check rather than the closure.
 One ordering constraint, and the reason is F4 rather than the tier check.
 `Transferable` names the canvas types, so §7.4.4 lands first or a worker can
 name an arm it cannot import.

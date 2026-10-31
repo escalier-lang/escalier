@@ -241,7 +241,7 @@ one global.
 **F7. Only a prelude is ambient in a project's own file.** An `.esc` file reaches
 the `*:prelude` packages without an import, and every other package by importing
 it, so `std:math` gives `math.PI` and `std:error` gives
-`error.Error`. `web:prelude` is renamed `web:prelude` to say what it is.
+`error.Error`. `web:core` is renamed `web:prelude` to say what it is.
 
 The naming convention is the rule. Whether a package is ambient is readable from
 its URI, rather than from a list in `internal/solver/ambient.go` plus a
@@ -368,10 +368,12 @@ a side effect of moving a declaration. Under F7 that set is `std:prelude`'s
 exports, and the test is what keeps a package from quietly rejoining it.
 
 **N5. Nothing regresses cold load.** Measured against
-`BenchmarkStdlibClosureLoad`. Cold is the only figure that constrains this work:
-the cross-run checker cache has taken whole-tree warm inference to 0.67ms, while
-cold is 4.6s and barely moves with closure size. #1862 is open against the
-benchmark and unfixed. #1861 is closed as not planned, since it measured the warm
+`BenchmarkStdlibClosureLoad`. Cold is the only figure that constrains this work,
+since the cross-run checker cache has taken whole-tree warm inference to 0.67ms.
+Cold is between 4.6s and 6.4s for every package against about 1s for none, so it
+does scale with closure size, and the every-package figure is still under
+re-measurement. §5.8 and §6.2 of `../environments/design.md` carry the runs.
+#1862 is open against the benchmark and unfixed. #1861 is closed as not planned, since it measured the warm
 cost the cache removed.
 
 **N6. A read is never narrower than an environment provides.** Where environments
@@ -672,9 +674,10 @@ phase. It is what unblocks the four transferable interfaces §5.4 leaves out.
 `BenchmarkStdlibClosureLoad` is the harness. Warm cost has collapsed since the
 cross-run checker cache landed in `internal/solver/stdlib_run_cache.go`: every
 package is 0.67ms warm against 380ms before it, so inference is no longer what
-a reorganization has to watch. Cold is the whole story at 4.6s, and it barely
-moves with closure size, because the new `NoImports` case costs 954ms against
-`OnePackage`'s 980ms.
+a reorganization has to watch. Cold is the whole story, and it does scale with
+closure size: `NoImports` costs 954ms and `OnePackage` 980ms, where every
+package is between 4.6s and 6.4s across runs. The spread is why the
+every-package figure is under re-measurement rather than quoted as one number.
 
 #1861 is closed as not planned. It measured the warm figure the cache removed,
 and its bisect hashes are outside `main`'s rewritten history. #1862 is still

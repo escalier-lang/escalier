@@ -119,7 +119,7 @@ one name. F4 in `../design.md` has the mechanism.
 export declare var onmessage: (fn (this: WindowEventHandlers, ev: MessageEvent) -> any) | null
 
 @env("dedicated_worker")
-export declare var onmessage: (fn (this: T, ev: MessageEvent) -> any) | null
+export declare var onmessage: (fn (this: DedicatedWorkerGlobalScope, ev: MessageEvent) -> any) | null
 
 @env("service_worker")
 export declare var onmessage: (fn (this: ServiceWorkerGlobalScope, ev: ExtendableMessageEvent) -> any) | null
@@ -144,7 +144,7 @@ differ, and moving a type wholesale does not work:
 | --- | --- |
 | `Location` | 13 members |
 | `WorkerLocation` | 10 members, exactly `Location` without `ancestorOrigins`, `assign`, `reload` and `replace` |
-| `Navigator` | 11 mixins and 69 own members |
+| `Navigator` | 11 mixins and 19 own members |
 | `WorkerNavigator` | 7 mixins and 3 own members |
 
 `Navigator` reaches most of the browser, so it cannot move to `web:core`.
@@ -165,10 +165,11 @@ the unsplit types and would not compile as written.
 
 **The two are not alike, and they take different treatments.**
 
-`navigator` merges. `WorkerNavigator` is a strict subset of `Navigator`, 17 of
+`navigator` merges. `WorkerNavigator` is a strict subset of `Navigator`, 20 of
 43 members with no shared member differing in signature and nothing worker-only.
-So one declaration on every environment serves both, and the 26 members a page
-adds carry `@env("window")` on the type. `core.esc` holds a single
+The 20 are the 17 members of the 7 mixins the two share plus `WorkerNavigator`'s
+3 own. So one declaration on every environment serves both, and the 23 members a
+page adds carry `@env("window")` on the type. `core.esc` holds a single
 `export declare val navigator: Navigator` with no decorator.
 
 `location` does not merge. The member sets match, but eight of them differ in
@@ -197,7 +198,7 @@ in the type itself, it does not. `location` needs it for mutability and
 `ExtendableEvent` rather than `MessageEvent`.
 
 **The merged `Navigator` is at the foot of `core.esc`.** The environment lands
-in two places rather than on 26 members. The four mixins only a page has carry
+in two places rather than on 23 members. The four mixins only a page has carry
 `@env("window")` where they are declared, covering seven members with no
 per-member annotation, and the 16 that are `Navigator`'s own are tagged
 individually. `WorkerNavigator` goes away.
@@ -308,9 +309,6 @@ their scope, which for `Window` is `web:dom`, where the hoist already put them.
 
 ## Artifacts to fix before any of this is generated
 
-- `onmessage` for a dedicated worker renders as `this: T`, because
-  `MessageEventTarget<T>` is generic and the hoist does not substitute the type
-  argument. It should read `DedicatedWorkerGlobalScope`.
 - Window's `onerror` is typed `OnErrorEventHandler`, a type alias, where the
   worker's is written out. Both are correct; they just do not look alike.
 - Every hoisted handler keeps a `this:` annotation naming a scope class. That is
