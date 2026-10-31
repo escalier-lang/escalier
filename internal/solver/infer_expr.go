@@ -937,8 +937,12 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// leaves ownership open. A parameter the body cannot write is a `'static` borrow, so
 		// the caller keeps reading its value. A `mut` parameter may be written, so it stays
 		// owned. This runs after markMovedParams, since a parameter the body also moves is
-		// owned by that move.
-		c.markOpenEscapeParams(sig.Params, params)
+		// owned by that move. A function passed as a call argument takes its parameter types
+		// from the callee, so the callee decides their ownership, as it does for a read-through
+		// parameter.
+		if !isArg {
+			c.markOpenEscapeParams(sig.Params, params)
+		}
 		retExprs = c.fn.returnExprs
 		throws = c.fn.throws
 		raised = c.fn.raised
