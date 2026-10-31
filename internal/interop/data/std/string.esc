@@ -210,7 +210,7 @@ export declare class String {
      * containing the results of that search.
      * @param regexp A variable name or string literal containing the regular expression pattern and flags.
      */
-    matchAll(&self, regexp: &mut regexp.RegExp) -> regexp.RegExpStringIterator<regexp.RegExpExecArray>,
+    matchAll<'a>(&self, regexp: &'a mut regexp.RegExp) -> &'a mut regexp.RegExpStringIterator<regexp.RegExpExecArray>,
     /** Converts all alphabetic characters to lowercase, taking into account the host environment's current locale. */
     toLocaleLowerCase(&self, locales?: intl.LocalesArgument) -> string,
     /** Returns a string where all alphabetic characters have been converted to uppercase, taking into account the host environment's current locale. */

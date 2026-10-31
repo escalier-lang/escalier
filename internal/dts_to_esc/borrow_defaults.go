@@ -2,7 +2,6 @@ package dts_to_esc
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/printer"
 	"github.com/escalier-lang/escalier/internal/set"
 )
 
@@ -79,7 +78,7 @@ func indexUnder[T any](m map[string]T, decl T, names ...string) {
 //     parameters as written.
 //
 // A borrowed parameter may share structure with the return unless every slot of its type
-// holds a value type and the two types print differently.
+// holds a value type and the return type requires a member the parameter's type lacks.
 func applyBorrowDefaults(mod *StandaloneModule, idx *typeIndex) {
 	mod.Module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
 		for _, decl := range ns.Decls {
@@ -190,14 +189,158 @@ func (idx *typeIndex) mayShareWithAny(param ast.TypeAnn, rets []*ast.RefTypeAnn,
 
 // mayShareStructure reports whether a return of type ret may share structure with an
 // argument of type param. It is false only when every slot of param holds a value type
-// and the two types print differently.
+// and the argument cannot be the return itself, which mayBeArgument decides.
 func (idx *typeIndex) mayShareStructure(param, ret ast.TypeAnn, typeParams set.Set[string]) bool {
 	if !idx.holdsOnlyValueTypes(param, typeParams, set.NewSet[string]()) {
 		return true
 	}
-	paramText, errParam := printer.Print(param, printer.DefaultOptions())
-	retText, errRet := printer.Print(ret, printer.DefaultOptions())
-	return errParam != nil || errRet != nil || paramText == retText
+	return idx.mayBeArgument(param, ret, typeParams)
+}
+
+// mayBeArgument reports whether a value of type param may be returned as type ret. It
+// is false only when ret requires a member by name that param does not declare, as
+// `DOMMatrix` requires `multiply` and `DOMMatrixInit` does not declare it. An alias, a
+// subtype and a structurally compatible type all declare every member ret requires.
+func (idx *typeIndex) mayBeArgument(param, ret ast.TypeAnn, typeParams set.Set[string]) bool {
+	paramMembers, ok := idx.memberNames(param, typeParams, set.NewSet[string]())
+	if !ok || paramMembers.open {
+		return true
+	}
+	retMembers, ok := idx.memberNames(ret, typeParams, set.NewSet[string]())
+	if !ok {
+		return true
+	}
+	for _, name := range retMembers.required.ToSlice() {
+		if !paramMembers.all.Contains(name) {
+			return false
+		}
+	}
+	return true
+}
+
+// memberSet holds the instance member names an object type declares.
+type memberSet struct {
+	// all holds every member name, and required the names of the members that are not
+	// optional.
+	all, required set.Set[string]
+	// open is true when the type also has members it does not name, through an index
+	// signature or a mapped type.
+	open bool
+}
+
+// add returns m with the member that slot names added. ok is false for a member with no
+// name, which marks m open instead.
+func (m memberSet) add(slot memberSlot, ok, optional bool) memberSet {
+	if !ok {
+		m.open = true
+		return m
+	}
+	m.all.Add(slot.Name)
+	if !optional {
+		m.required.Add(slot.Name)
+	}
+	return m
+}
+
+// memberNames returns the instance members the object type t declares, including the
+// ones it inherits. ok is false when t is not an object type whose members idx can
+// list, such as a type parameter, a union or a tuple. seen holds the declarations
+// already being walked.
+func (idx *typeIndex) memberNames(t ast.TypeAnn, typeParams, seen set.Set[string]) (memberSet, bool) {
+	members := memberSet{all: set.NewSet[string](), required: set.NewSet[string]()}
+	switch t := t.(type) {
+	case *ast.ObjectTypeAnn:
+		return objElemNames(members, t.Elems), true
+	case *ast.IntersectionTypeAnn:
+		for _, member := range t.Types {
+			inner, ok := idx.memberNames(member, typeParams, seen)
+			if !ok {
+				return members, false
+			}
+			members = members.merge(inner)
+		}
+		return members, true
+	case *ast.TypeRefTypeAnn:
+		name := ast.QualIdentToString(t.Name)
+		if typeParams.Contains(name) || seen.Contains(name) {
+			return members, false
+		}
+		seen.Add(name)
+		defer seen.Remove(name)
+		if decl, ok := idx.interfaces[name]; ok {
+			declParams := typeParamNameSet(decl.TypeParams)
+			for _, ext := range decl.Extends {
+				inner, ok := idx.memberNames(ext, declParams, seen)
+				if !ok {
+					return members, false
+				}
+				members = members.merge(inner)
+			}
+			if decl.TypeAnn != nil {
+				members = objElemNames(members, decl.TypeAnn.Elems)
+			}
+			return members, true
+		}
+		if decl, ok := idx.classes[name]; ok {
+			declParams := typeParamNameSet(decl.TypeParams)
+			supers := decl.Implements
+			if decl.Extends != nil {
+				supers = append([]*ast.TypeRefTypeAnn{decl.Extends}, supers...)
+			}
+			for _, super := range supers {
+				inner, ok := idx.memberNames(super, declParams, seen)
+				if !ok {
+					return members, false
+				}
+				members = members.merge(inner)
+			}
+			for _, elem := range decl.Body {
+				if _, isCtor := elem.(*ast.ConstructorElem); isCtor {
+					continue
+				}
+				slot, ok := classElemSlot(elem)
+				if ok && slot.Static {
+					continue
+				}
+				field, isField := elem.(*ast.FieldElem)
+				members = members.add(slot, ok, isField && field.Optional)
+			}
+			return members, true
+		}
+		if decl, ok := idx.aliases[name]; ok {
+			return idx.memberNames(decl.TypeAnn, typeParamNameSet(decl.TypeParams), seen)
+		}
+	}
+	return members, false
+}
+
+// objElemNames adds the members of an object type to members. A call or construct
+// signature declares no member name.
+func objElemNames(members memberSet, elems []ast.ObjTypeAnnElem) memberSet {
+	for _, elem := range elems {
+		switch e := elem.(type) {
+		case *ast.CallableTypeAnn, *ast.ConstructorTypeAnn:
+			continue
+		case *ast.PropertyTypeAnn:
+			slot, ok := objElemSlot(e)
+			members = members.add(slot, ok, e.Optional)
+		case *ast.MethodTypeAnn:
+			slot, ok := objElemSlot(e)
+			members = members.add(slot, ok, e.Optional)
+		default:
+			slot, ok := objElemSlot(e)
+			members = members.add(slot, ok, false)
+		}
+	}
+	return members
+}
+
+// merge returns m with the members of other added.
+func (m memberSet) merge(other memberSet) memberSet {
+	m.all = m.all.Union(other.all)
+	m.required = m.required.Union(other.required)
+	m.open = m.open || other.open
+	return m
 }
 
 // isObjectType reports whether t is an object type: an object literal type that is not
@@ -354,11 +497,16 @@ func (idx *typeIndex) elemsHoldOnlyValueTypes(elems []ast.ObjTypeAnnElem, typePa
 }
 
 // classHoldsOnlyValueTypes is holdsOnlyValueTypes for the instance slots of a class,
-// including the ones its superclass declares.
+// including the ones its superclass and the interfaces it implements declare.
 func (idx *typeIndex) classHoldsOnlyValueTypes(decl *ast.ClassDecl, seen set.Set[string]) bool {
 	typeParams := typeParamNameSet(decl.TypeParams)
 	if decl.Extends != nil && !idx.holdsOnlyValueTypes(decl.Extends, typeParams, seen) {
 		return false
+	}
+	for _, iface := range decl.Implements {
+		if !idx.holdsOnlyValueTypes(iface, typeParams, seen) {
+			return false
+		}
 	}
 	for _, elem := range decl.Body {
 		switch e := elem.(type) {

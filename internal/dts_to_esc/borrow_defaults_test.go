@@ -78,19 +78,29 @@ declare function f(o: NS.Opts): void;`,
 				"@js(\"f\")\nexport declare fn f(o: &mut NS.Opts) -> undefined",
 			},
 		},
-		// Each parameter type reaches only value-type slots, through a tuple, an intersection,
-		// an alias, an inherited interface, a getter, a mapped type or a superclass.
+		// Each parameter type reaches only value-type slots, through an intersection, an
+		// alias, an inherited interface, a getter or a superclass. None declares the `inner`
+		// member `Nested` requires, so none may be the return.
 		"FlatShapesDoNotShareWithReturn": {
 			src: `type FlatPair = Flat & {c: boolean};
 type FlatAlias = Flat;
 interface FlatChild extends Flat { c: boolean; }
 interface FlatGetter { get a(): number; }
-type FlatMapped = {[K in "a" | "b"]: number};
 declare class FlatClass { a: number; static s: Nested; get b(): string; }
 declare class FlatSub extends FlatClass { c: boolean; }
-declare function f(a: [number, string], b: FlatPair, c: FlatAlias, d: FlatChild, e: FlatGetter, g: FlatMapped, h: FlatSub): Nested;`,
+declare function f(b: FlatPair, c: FlatAlias, d: FlatChild, e: FlatGetter, h: FlatSub): Nested;`,
 			want: []string{
-				"@js(\"f\")\nexport declare fn f(a: &mut [number, string], b: &mut FlatPair, c: &mut FlatAlias, d: &mut FlatChild, e: &mut FlatGetter, g: &mut FlatMapped, h: &mut FlatSub) -> Nested",
+				"@js(\"f\")\nexport declare fn f(b: &mut FlatPair, c: &mut FlatAlias, d: &mut FlatChild, e: &mut FlatGetter, h: &mut FlatSub) -> Nested",
+			},
+		},
+		// A tuple and a mapped type reach only value-type slots, but the converter does not
+		// list their members by name. Either may declare `inner`, so either may be the
+		// return.
+		"FlatShapesWithUnlistedMembersShareWithReturn": {
+			src: `type FlatMapped = {[K in "a" | "b"]: number};
+declare function f(a: [number, string], g: FlatMapped): Nested;`,
+			want: []string{
+				"@js(\"f\")\nexport declare fn f<'a>(a: &'a mut [number, string], g: &'a mut FlatMapped) -> &'a mut Nested",
 			},
 		},
 		// Each parameter type reaches an object or a type parameter through one slot.
@@ -104,6 +114,44 @@ declare class TypedGetter { get n(): Nested; }
 declare function f(a: [Nested], b: NestedPair, c: NestedChild, d: Generic<number>, e: HolderSub, g: TypedGetter): Nested;`,
 			want: []string{
 				"@js(\"f\")\nexport declare fn f<'a>(a: &'a mut [Nested], b: &'a mut NestedPair, c: &'a mut NestedChild, d: &'a mut Generic<number>, e: &'a mut HolderSub, g: &'a mut TypedGetter) -> &'a mut Nested",
+			},
+		},
+		// Each parameter type holds only value types but declares every member `Flat`
+		// requires, through an alias, an inherited interface or its own members. The
+		// function may return the argument itself.
+		"FlatParamThatMayBeTheReturnShares": {
+			src: `type FlatAlias = Flat;
+interface FlatChild extends Flat { c: boolean; }
+declare function f(a: FlatAlias): Flat;
+declare function g(a: FlatChild): Flat;
+declare function h(a: {a: number; c: boolean}): Flat;`,
+			want: []string{
+				"@js(\"f\")\nexport declare fn f<'a>(a: &'a mut FlatAlias) -> &'a mut Flat",
+				"@js(\"g\")\nexport declare fn g<'a>(a: &'a mut FlatChild) -> &'a mut Flat",
+				"@js(\"h\")\nexport declare fn h<'a>(a: &'a mut {\n    a: number,\n    c: boolean\n}) -> &'a mut Flat",
+			},
+		},
+		// Each class declares no members of its own. `FlatImpl` takes the members `Flat`
+		// requires from the interface it implements, so it may be the return.
+		// `NestedImpl` takes an object slot from `Nested`, so it shares structure with
+		// any object-type return.
+		"ClassMembersFromImplements": {
+			src: `declare class FlatImpl implements Flat {}
+declare class NestedImpl implements Nested {}
+declare function f(a: FlatImpl): Flat;
+declare function g(a: NestedImpl): Flat;`,
+			want: []string{
+				"@js(\"f\")\nexport declare fn f<'a>(a: &'a mut FlatImpl) -> &'a mut Flat",
+				"@js(\"g\")\nexport declare fn g<'a>(a: &'a mut NestedImpl) -> &'a mut Flat",
+			},
+		},
+		// `Flat` lacks the `m` method `WithMethod` requires, so the argument cannot be
+		// the return.
+		"FlatParamMissingAReturnMemberDoesNotShare": {
+			src: `interface WithMethod { a: number; m(): void; }
+declare function f(a: Flat): WithMethod;`,
+			want: []string{
+				"@js(\"f\")\nexport declare fn f(a: &mut Flat) -> WithMethod",
 			},
 		},
 		"ValueTypeReturnStaysOwned": {

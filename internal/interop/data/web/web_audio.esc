@@ -555,7 +555,7 @@ export declare class BaseAudioContext extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createPanner) */
     createPanner(&mut self) -> PannerNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createPeriodicWave) */
-    createPeriodicWave(&mut self, real: Array<number> | typed_arrays.Float32Array, imag: Array<number> | typed_arrays.Float32Array, constraints?: &mut PeriodicWaveConstraints) -> PeriodicWave,
+    createPeriodicWave<'a>(&mut self, real: Array<number> | typed_arrays.Float32Array, imag: Array<number> | typed_arrays.Float32Array, constraints?: &'a mut PeriodicWaveConstraints) -> &'a mut PeriodicWave,
     /**
      * @deprecated
      *
@@ -575,7 +575,7 @@ export declare class BaseAudioContext extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createIIRFilter) */
     createIIRFilter(&mut self, feedforward: &mut Iterable<number>, feedback: &mut Iterable<number>) -> IIRFilterNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createPeriodicWave) */
-    createPeriodicWave(&mut self, real: &mut Iterable<number>, imag: &mut Iterable<number>, constraints?: &mut PeriodicWaveConstraints) -> PeriodicWave,
+    createPeriodicWave<'a>(&mut self, real: &'a mut Iterable<number>, imag: &'a mut Iterable<number>, constraints?: &'a mut PeriodicWaveConstraints) -> &'a mut PeriodicWave,
     static prototype: BaseAudioContext,
     constructor(&mut self)
 }

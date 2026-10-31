@@ -51,11 +51,12 @@ export declare class Array<T> {
      * loaded before anything it could import, so an import here would resolve
      * nothing. An inexact object accepts an options bag and rejects a
      * non-object. Reach for `Intl.NumberFormat` where the checked options
-     * matter.
+     * matter. The bag is a `&mut` borrow, as every converted options bag is,
+     * since the declaration does not say whether the method writes it.
      *
      * Change it in internal/interop/overlay/std/prelude.replace.esc.
      */
-    toLocaleString(&self, locales: string | Array<string>, options?: {...}) -> string,
+    toLocaleString(&self, locales: string | Array<string>, options?: &mut {...}) -> string,
     /**
      * Returns a string representation of an array. The elements are converted to string using their toLocaleString methods.
      */
