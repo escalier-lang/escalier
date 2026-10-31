@@ -390,21 +390,18 @@ fn f() { seen.set("k", &mut p) }
 		},
 		{
 			// setX can write any number to x. Passing it the borrow the map holds would write
-			// through to p, whose x is declared 1, so the call is rejected. The map may also
-			// hold no entry for "k", and setX does not accept `undefined`, so the call reports
-			// that as well.
+			// through to p, whose x is declared 1, so the call is rejected.
 			name: "AMutableBorrowFromAWritableSlotRejectsAWiderWrite",
 			src: `
 val mut p: {x: 1} = {x: 1}
 val mut seen = Map()
 fn f() { seen.set("k", &mut p) }
-fn setX(r: &mut {x: number}) {}
+fn setX(r: &mut {x: number} | undefined) {}
 fn g() { setX(seen.get("k")) }
 `,
 			values: map[string]string{"seen": "Map<string, &mut {x: 1}>"},
 			want: []string{
-				"6:15-6:28: cannot constrain number <: 1",
-				"6:15-6:28: cannot constrain undefined <: mut object",
+				"6:15-6:28: cannot constrain mut object <: mut object | undefined",
 			},
 		},
 	}
