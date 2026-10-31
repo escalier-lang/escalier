@@ -374,8 +374,12 @@ val s = borrow(&p)
 			values: map[string]string{"r": "&{x: number}", "s": "&{x: 1}"},
 		},
 		{
-			// `&mut` accepts a borrow of exactly what it points to, so its literals stay even
-			// in a writable slot.
+			// The map holds `&mut p`, and a write through a `&mut` lands in p. p is declared
+			// `{x: 1}`, so the referent has to keep that type exactly. `&mut` is invariant, so
+			// the map can only hold `&mut {x: 1}`. Widening it to `&mut {x: number}` would let
+			// anything that reads the map write `x = 2` into p. The literals therefore stay
+			// even though the map's values are writable slots. Only the borrow in the slot
+			// could be replaced, and only by another `&mut {x: 1}`.
 			name: "AMutableBorrowInAWritableSlotKeepsItsLiterals",
 			src: `
 val mut p: {x: 1} = {x: 1}
@@ -383,6 +387,22 @@ val mut seen = Map()
 fn f() { seen.set("k", &mut p) }
 `,
 			values: map[string]string{"seen": "Map<string, &mut {x: 1}>"},
+		},
+		{
+			// setX can write any number to x. Passing it the borrow the map holds would write
+			// through to p, whose x is declared 1, so the call is rejected.
+			name: "AMutableBorrowFromAWritableSlotRejectsAWiderWrite",
+			src: `
+val mut p: {x: 1} = {x: 1}
+val mut seen = Map()
+fn f() { seen.set("k", &mut p) }
+fn setX(r: &mut {x: number} | undefined) {}
+fn g() { setX(seen.get("k")) }
+`,
+			values: map[string]string{"seen": "Map<string, &mut {x: 1}>"},
+			want: []string{
+				"6:15-6:28: cannot constrain mut object <: mut object | undefined",
+			},
 		},
 	}
 	for _, tt := range tests {
