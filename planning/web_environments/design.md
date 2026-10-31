@@ -505,14 +505,14 @@ program reaches is reachable from a window.
 
 The four `*GlobalScope` classes, `importScripts`, `WorkerLocation`,
 `WorkerNavigator`, the service-worker events and `Clients` are not in the tree.
-Partition them into a worker package and regenerate.
+Partition them into `web:worker` and regenerate.
 
-The package name is forced by the binding, since the other stream's F4 makes a
-scope package's binding the scope object. A binding of `worker` means a package
-named `web:worker`, one letter from the `web:workers` that holds `Worker`,
-`SharedWorker` and `WorkerOptions`. Two names a letter apart holding different
-kinds of thing want settling before either is written. Open question 5 has the
-choice.
+The name follows from the binding, since the other stream's F4 makes a scope
+package's binding the scope object and the binding is `worker`. `web:workers`
+keeps its name and its contents, `Worker`, `SharedWorker`, `AbstractWorker` and
+`WorkerOptions`. The two are a letter apart and hold different kinds of thing,
+one the worker's view of itself and the other a page's API for starting one.
+That is accepted for now, and open question 5 says what a later rename costs.
 
 The receiverless globals then hoist by the other stream's mechanism, carrying
 the `@env` F6 derives from the declaring scope. `postMessage`, `onmessage` and
@@ -570,7 +570,7 @@ worker and ten for the rest.
 #### 7.4.4 The rest
 
 Turn on the unsatisfiable-import check, which now has something to catch: a page
-importing the worker package, or a dependency whose entrypoint does not cover a
+importing `web:worker`, or a dependency whose entrypoint does not cover a
 worker. F2.
 
 #### 7.4.5 Retire the tier machinery
@@ -664,13 +664,14 @@ backported.
    The fixtures that exercise the old path are not being migrated, so the
    question is what happens to user code rather than to the suite.
 
-5. **What is the worker scope package called?** The other stream's F4 makes a
-   scope package's binding the scope object, so a binding of `worker` forces a
-   package named `web:worker`. That sits one letter from `web:workers`, which
-   holds `Worker`, `SharedWorker`, `AbstractWorker` and `WorkerOptions`, the API
-   for starting a worker from outside one. Either the scope package takes a name
-   whose binding is not `worker`, or `web:workers` is renamed to say what it is
-   for. The worklets have no such clash, since nothing else is called `worklet`.
+5. **What is the worker scope package called?** *Decided: `web:worker`, with
+   `web:workers` unchanged.* F4 makes a scope package's binding the scope
+   object, and the binding is `worker`, so the name follows. `web:workers` holds
+   `Worker`, `SharedWorker`, `AbstractWorker` and `WorkerOptions`, the API for
+   starting a worker from outside one. The two names are a letter apart, which
+   is accepted rather than unnoticed. Renaming either later means a generated
+   file name, the two import headers that name `web:workers`, and its row in
+   `internal/dts_to_esc/tier.go`. The worklets have no such clash.
 
 ## 11. Non-goals
 
