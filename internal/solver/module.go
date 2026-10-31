@@ -1050,6 +1050,13 @@ func (c *checker) inferComponent(
 		if b.recovered && len(b.v.LowerBounds) == 0 {
 			scheme = &MonoScheme{Ty: &soltype.ErrorType{}}
 		} else {
+			// Every use of a weak binding shares its variables, so a variable whose values
+			// flow into one is shared by every use of this binding too. It is moved to lvl
+			// so that generalizing does not quantify it. Only a weak binding noted so far
+			// has variables at lvl, so the walk is skipped until the module has one.
+			if !b.weak && len(c.weakBindings) > 0 {
+				c.lowerWeakInputs(b.v, lvl)
+			}
 			scheme = c.generalize(b.v, lvl)
 		}
 		scope.defineValue(key.Name(), ValueBinding{Schemes: []TypeScheme{scheme}, Sources: b.sources, Kind: b.kind, Mut: b.mut, ModuleLevel: true, Weak: b.weak})

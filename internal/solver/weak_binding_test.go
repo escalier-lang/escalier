@@ -58,9 +58,9 @@ fn b() { seen.set("k", {a: 2}) }
 			},
 		},
 		{
-			// Nothing calls `remember`, so nothing decides what `value` holds. The map's value
-			// type settles at `never` and the parameter at `unknown`, with no error. #2352 keeps
-			// remember monomorphic over the map's value type, so `value` becomes `never` too.
+			// Nothing calls `remember`, so nothing decides what `value` holds. remember does not
+			// quantify `value`, since it flows into the map's value type, and both settle at
+			// `never` with no error.
 			name: "AStoreOfAParameterNothingCalls",
 			src: `
 val mut seen = Map()
@@ -68,7 +68,7 @@ fn remember(value) { seen.set("last", value) }
 `,
 			values: map[string]string{
 				"seen":     "Map<string, never>",
-				"remember": "fn (value: unknown) -> undefined",
+				"remember": "fn (value: never) -> undefined",
 			},
 		},
 		{
@@ -190,6 +190,71 @@ val n = g(5)
 val s = g("a")
 `,
 			values: map[string]string{"g": `fn (x: 5 | "a") -> 5 | "a"`},
+		},
+		{
+			// y flows into g's parameter, which is weak, so h does not quantify y. Nothing
+			// calls h or g, so both show `never` in every position.
+			name: "AFunctionPassingItsParameterToAWeakFunction",
+			src: `
+fn makeId() { return fn (x) { return x } }
+val g = makeId()
+fn h(y) { return g(y) }
+`,
+			values: map[string]string{
+				"g": "fn (x: never) -> never",
+				"h": "fn (y: never) -> never",
+			},
+		},
+		{
+			// Each call of h passes its argument on to g, so g and h settle together on both
+			// arguments.
+			name: "AFunctionPassingItsParameterToAWeakFunctionCalledTwice",
+			src: `
+fn makeId() { return fn (x) { return x } }
+val g = makeId()
+fn h(y) { return g(y) }
+val n = h(5)
+val s = h("a")
+`,
+			values: map[string]string{
+				"g": `fn (x: 5 | "a") -> 5 | "a"`,
+				"h": `fn (y: 5 | "a") -> 5 | "a"`,
+				"n": `5 | "a"`,
+				"s": `5 | "a"`,
+			},
+		},
+		{
+			// z flows only into the result, never into g, so h still quantifies it.
+			name: "AParameterThatSkipsTheWeakFunctionStaysGeneric",
+			src: `
+fn makeId() { return fn (x) { return x } }
+val g = makeId()
+fn h(y, z) {
+	g(y)
+	return z
+}
+`,
+			values: map[string]string{"h": "fn <T0>(y: never, z: T0) -> T0"},
+		},
+		{
+			// y and z both flow into the result, but only y flows into g. Every call shares
+			// y, so each result holds both values passed for y, and only its own z.
+			name: "AParameterJoinedWithAWeakInputStaysGeneric",
+			src: `
+fn makeId() { return fn (x) { return x } }
+val g = makeId()
+fn h(y, z, c: boolean) {
+	g(y)
+	return if c { y } else { z }
+}
+val a = h(1, "a", true)
+val b = h(2, true, true)
+`,
+			values: map[string]string{
+				"h": "fn <T0>(y: 1 | 2, z: T0, c: boolean) -> T0 | 1 | 2",
+				"a": `1 | "a" | 2`,
+				"b": "1 | 2 | true",
+			},
 		},
 		{
 			// No value but `never` flows into T, so its type is what its uses require. Each
