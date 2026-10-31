@@ -145,6 +145,72 @@ func TestInferAssignWeakVarWritesItsVariables(t *testing.T) {
 	require.Equal(t, `fn (x: number | "hello") -> number | "hello"`, values["id"])
 }
 
+// TestInferAssignBodyLevelWeakVarWritesItsVariables covers a reassignment of a `var`
+// declared in a function body. The binding does not generalize, so the reassignment
+// writes into the variables its uses share, as it does for a module-level `var`.
+func TestInferAssignBodyLevelWeakVarWritesItsVariables(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "an identical function checks",
+			src: `fn f() {
+	var k = fn (x) { return x }
+	k = fn (x) { return x }
+}`,
+			want: nil,
+		},
+		{
+			name: "an identical function with an unread parameter checks",
+			src: `fn f() {
+	var k = fn (x, y) { return x }
+	k = fn (x, y) { return x }
+}`,
+			want: nil,
+		},
+		{
+			name: "a reassignment settles the parameter for a later call",
+			src: `fn f() {
+	var k = fn (x) { return x }
+	k = fn (x: number) { return x }
+	k("s")
+}`,
+			want: []string{`4:4-4:7: cannot constrain "s" <: number`},
+		},
+		{
+			name: "an earlier call constrains the reassignment",
+			src: `fn f() {
+	var k = fn (x) { return x }
+	k(1)
+	k = fn (x: string) { return x }
+}`,
+			want: []string{`4:2-4:33: cannot constrain 1 <: string`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, errs := inferAgainstTreeWithSpans(t, tt.src)
+			require.Equal(t, tt.want, errs)
+		})
+	}
+}
+
+// TestInferAssignBodyLevelWeakVarLeavesCapturedVariables asserts that reassigning a
+// body-level `var` does not write into a variable its initializer captured. k's return is
+// p's variable, so the reassignment is rejected rather than adding 5 to p's type, and f's
+// signature stays `fn <T0>(p: T0) -> T0`.
+func TestInferAssignBodyLevelWeakVarLeavesCapturedVariables(t *testing.T) {
+	values, _, errs := inferSource(t, `fn f(p) {
+	var k = fn (x) { return p }
+	k = fn (x) { return 5 }
+	return p
+}`)
+	require.Equal(t, []string{"3:22-3:23: cannot constrain 5 <: never"}, messagesWithSpan(t, errs))
+	require.Equal(t, "fn <T0>(p: T0) -> T0", values["f"])
+}
+
 // A broken TOP-LEVEL binding recovers AS the error sentinel (Fix A), so reassigning
 // it yields exactly one diagnostic — the same single-error guarantee the body-level
 // path gives. Before the fix the top-level group var coalesced to `never` and the

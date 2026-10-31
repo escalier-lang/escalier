@@ -60,7 +60,7 @@ func (*PolyScheme) isScheme() {}
 // goes stale.
 func (sc *PolyScheme) display() soltype.Type {
 	if sc.coalesced == nil {
-		sc.coalesced = coalesceScheme(sc.Body, sc.Level, sc.declared, sc.declaredLts)
+		sc.coalesced = coalesceScheme(sc.Body, sc.Level, sc.declared, sc.declaredLts, true)
 	}
 	return sc.coalesced
 }

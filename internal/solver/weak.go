@@ -198,9 +198,11 @@ func (c *checker) settleWeakDisplay(w weakBinding) {
 //     read, so it is not.
 //
 // Every covariant position inside a writable slot is writable too, since a write replaces the
-// slot's whole value. A function type and a borrow are kept whole, since the borrowed place
-// decides the type behind a borrow. A class argument the class makes contravariant is kept,
-// since widening it would change what the value accepts.
+// slot's whole value. A `&` borrow in a writable slot is one: a write can store a borrow of any
+// value of the widened type, and `&T` is covariant in `T`. A `&` borrow outside a writable slot
+// keeps its literals, which belong to the place it points to. A `&mut` borrow is invariant in
+// what it points to, so it is kept whole, as a function type is. A class argument the class
+// makes contravariant is kept, since widening it would change what the value accepts.
 func (c *checker) widenLiterals(t soltype.Type, replace, mutable bool) soltype.Type {
 	return t.Accept(&literalWidener{ctx: c.ctx, replace: replace, mutable: mutable}, soltype.Positive)
 }
@@ -215,8 +217,10 @@ type literalWidener struct {
 
 func (w *literalWidener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
 	switch t := t.(type) {
-	case *soltype.FuncType, *soltype.RefType:
+	case *soltype.FuncType:
 		return soltype.EnterResult{SkipChildren: true}
+	case *soltype.RefType:
+		return soltype.EnterResult{Type: w.widenRef(t), SkipChildren: true}
 	case *soltype.LitType, *soltype.UniqueSymbolType, *soltype.RegexType:
 		if w.replace {
 			return soltype.EnterResult{Type: widen(t), SkipChildren: true}
@@ -236,6 +240,18 @@ func (w *literalWidener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.E
 		return soltype.EnterResult{Type: w.widenClassArgs(t), SkipChildren: true}
 	}
 	return soltype.EnterResult{}
+}
+
+// widenRef returns ref with the literals its referent holds widened when ref is a `&` borrow in
+// a writable slot, and ref unchanged otherwise.
+func (w *literalWidener) widenRef(ref *soltype.RefType) soltype.Type {
+	if !ref.Mut && w.replace {
+		widened := ref.Inner.Accept(&literalWidener{ctx: w.ctx, replace: true}, soltype.Positive)
+		if inner, ok := widened.(soltype.RefInner); ok {
+			return soltype.NewRef(false, ref.Lt, inner)
+		}
+	}
+	return ref
 }
 
 // widenSlot returns t widened as a slot that a write can replace when writable is set and
@@ -355,13 +371,16 @@ func (s *weakVarScanner) EnterType(t soltype.Type, pol soltype.Polarity) soltype
 
 func (s *weakVarScanner) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
-// weakAssignTarget returns the type a reassignment of the weak module-level binding b is
-// checked against. Its weak variables stay variables, so the source's type flows into
+// weakAssignTarget returns the type a reassignment of the weak binding b is checked
+// against. Its weak variables stay variables, so the source's type flows into
 // them. The exception is the binding var and each variable that only passes the
 // initializer's type through to it, which are coalesced to their bounds. `var a = 5` then
 // checks `a = "x"` against `number` and rejects it, where `var id = makeId()` checks
 // `id = fn (n: number) -> number { … }` against `fn (x: T) -> T` and settles T on
 // `number`.
+//
+// When b.InitVars is set, only the weak variables in that range stay variables, and every
+// other one is coalesced to its bounds.
 //
 // A binding that recovered to the error sentinel holds a MonoScheme, and its type is
 // returned as it is.
@@ -375,12 +394,21 @@ func (c *checker) weakAssignTarget(b ValueBinding) soltype.Type {
 	if root, isVar := sc.Body.(*soltype.TypeVarType); isVar {
 		collectPassThrough(root, passThrough)
 		for _, v := range scanWeakVars(root, sc.Level) {
-			if !passThrough.Contains(v) {
+			if !passThrough.Contains(v) && (b.InitVars == nil || b.InitVars.contains(v)) {
 				keep.Add(v)
 			}
 		}
 	}
 	return coalesceKeeping(sc.Body, soltype.Positive, keep, nil, nil)
+}
+
+// varIDRange is the half-open range of variable IDs [lo, hi).
+type varIDRange struct {
+	lo, hi int
+}
+
+func (r *varIDRange) contains(v *soltype.TypeVarType) bool {
+	return v.ID >= r.lo && v.ID < r.hi
 }
 
 // collectPassThrough adds v to out, and every variable that is a lower bound of v, directly
@@ -407,7 +435,7 @@ func collectPassThrough(v *soltype.TypeVarType, out set.Set[*soltype.TypeVarType
 // consumed when it is never produced. A variable with neither reads its own bounds the same
 // way, and is `never` when it has no bound either.
 func simplifyWithWeakVars(sc *PolyScheme, lvl, weakLvl int) soltype.Type {
-	simplified := coalesceScheme(sc.Body, lvl, sc.declared, sc.declaredLts)
+	simplified := coalesceScheme(sc.Body, lvl, sc.declared, sc.declaredLts, true)
 	s := &weakCompanionScanner{
 		lvl:      weakLvl,
 		binders:  funcTypeParamVars(simplified),

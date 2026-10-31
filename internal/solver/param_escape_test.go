@@ -161,12 +161,12 @@ func TestInferUnannotatedParamOwnership(t *testing.T) {
 				val {p} = {p: {x: 1}}
 				return p.x
 			}`,
-			want: "fn <T0>(p: T0) -> 1",
+			want: "fn (p: unknown) -> 1",
 		},
 		{
 			name: "Unused",
 			src:  `fn f(p) { return 1 }`,
-			want: "fn <T0>(p: T0) -> 1",
+			want: "fn (p: unknown) -> 1",
 		},
 		{
 			name: "Destructured",
@@ -328,7 +328,7 @@ func TestInferOpenEscapeParam(t *testing.T) {
 					return opts.retries
 				}
 			`,
-			seen: "Map<string, &'static {retries: 3}>",
+			seen: "Map<string, &'static {retries: number}>",
 		},
 		{
 			// remember's rendering waits on #2352, so TestInferOpenEscapeParamRendering holds it.
@@ -342,7 +342,7 @@ func TestInferOpenEscapeParam(t *testing.T) {
 					return opts.retries
 				}
 			`,
-			seen: "Map<string, &'static {retries: 3}>",
+			seen: "Map<string, &'static {retries: number}>",
 			errs: []string{"6:15-6:19: this argument is borrowed by the callee, so write the borrow: `&`"},
 		},
 		{
@@ -420,13 +420,11 @@ func TestInferOpenEscapeParam(t *testing.T) {
 					return opts.retries
 				}
 			`,
-			want: "fn <T0>(value: T0) -> undefined",
+			want: "fn (value: unknown) -> undefined",
 		},
 		{
 			// id's parameter is a fresh variable for each call, which m's own type does not
-			// reach, so the call stores nothing in m. remember keeps T0 only because a parameter
-			// the caller picks the type of renders as a type parameter, which #2010 drops, so
-			// remember becomes `fn (value: unknown) -> undefined`.
+			// reach, so the call stores nothing in m.
 			name: "GenericMethodDoesNotEscape",
 			src: `
 				val m = {id: fn <T>(x: T) -> T { return x }}
@@ -437,7 +435,7 @@ func TestInferOpenEscapeParam(t *testing.T) {
 					return opts.retries
 				}
 			`,
-			want: "fn <T0>(value: T0) -> undefined",
+			want: "fn (value: unknown) -> undefined",
 		},
 		{
 			// A callback's parameter takes its type from the callee, so the callee decides its
@@ -457,9 +455,9 @@ func TestInferOpenEscapeParam(t *testing.T) {
 		{
 			// A value type has no storage to borrow, so it copies into the borrow without a
 			// written `&`. The key escapes into seen too, so it is a `'static` borrow as well.
-			// A `&'static` of a value type stands for the value type, so seen holds the strings
-			// and numbers. remember's rendering waits on #2352, so
-			// TestInferOpenEscapeParamRendering holds it.
+			// A `&'static` of a value type stands for the value type, and seen's values are
+			// writable slots that widen it, so seen holds strings and numbers. remember's
+			// rendering waits on #2352, so TestInferOpenEscapeParamRendering holds it.
 			name: "ValueTypeArgumentsCopy",
 			src: `
 				val mut seen = Map()
@@ -471,7 +469,7 @@ func TestInferOpenEscapeParam(t *testing.T) {
 					return 1
 				}
 			`,
-			seen: `Map<&'static ("a" | "b"), &'static (3 | 4)>`,
+			seen: "Map<string, number>",
 		},
 	}
 	for _, tt := range tests {
