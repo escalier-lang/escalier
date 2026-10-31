@@ -222,7 +222,7 @@ func (w *condWalk) walkGuard(cur, fall condState, matched *pathBinder, guard *uc
 	// A guard is an ordinary boolean condition. As in inferIfElse, the synthesized
 	// boolean requirement is left out of Prov. It is a language rule, not a user
 	// annotation, so there is no source node to anchor a related span to.
-	cond := w.c.inferScrutinee(cur.scope, w.lvl, guard.Cond)
+	cond := w.c.inferExpr(cur.scope, w.lvl, guard.Cond)
 	w.c.constrain(guard.Cond, cond, &soltype.PrimType{Prim: soltype.BoolPrim})
 	w.walkNorm(cur, fall, matched, guard.Cont)
 	w.walkFallthrough(fall, matched, guard.Default)

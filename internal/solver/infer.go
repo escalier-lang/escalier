@@ -45,10 +45,10 @@ type checker struct {
 	// consumeOnceCallee moves a binding holding the closure at each call.
 	capturesMovedBy map[ast.Func]map[string]ast.Node
 
-	// provisionalFlows holds each flow whose ownership F3 has not settled yet, across every
-	// body walked so far. settleProvisionalFlows turns each into its event once it is
-	// settled. See ownership_events.go.
-	provisionalFlows []provisionalFlow
+	// pendingFlows holds each flow whose ownership F3 has not settled yet, across every body
+	// walked so far, keyed by what it waits on. settleFlowsWaitingOn turns each into its
+	// event once what it waits on is settled. See ownership_events.go.
+	pendingFlows map[flowWait][]provisionalFlow
 	// paramByVar maps the VarID of each unannotated parameter a walked body binds to the
 	// parameter, so a flow out of it can read the ownership its body settles.
 	paramByVar map[liveness.VarID]*soltype.FuncParam
@@ -579,10 +579,10 @@ type funcCtx struct {
 	// statement maps to, so this is how the event emitters find the point such an
 	// expression runs at.
 	exprRefs map[ast.Expr]liveness.StmtRef
-	// scrutinee is the CFG point of the condition or target being inferred, and the
-	// statement that was current when its inference began. eventStmtRef answers it while
-	// that statement is still current.
-	scrutinee struct {
+	// exprAt is the CFG point of the expression attachEventsAt is attaching events for,
+	// and the statement that was current when its inference began. eventStmtRef answers it
+	// while that statement is still current.
+	exprAt struct {
 		stmt ast.Stmt
 		ref  liveness.StmtRef
 		set  bool
@@ -1258,6 +1258,14 @@ func (c *checker) recordType(n ast.Node, t soltype.Type) {
 // never a panic.
 func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 	c.markLifetimes(e)
+	// The CFG builder runs some expressions in a statement of its own, such as a branch's
+	// condition, a match arm's expression body, or a guard. The ownership events such an
+	// expression emits attach to that statement.
+	if c.fn != nil {
+		if ref, ok := c.fn.exprRefs[e]; ok {
+			defer c.attachEventsAt(ref)()
+		}
+	}
 	switch e := e.(type) {
 	case *ast.ErrorExpr:
 		// The parser substitutes this for an expression it could not read and reports

@@ -16,7 +16,7 @@ func inferOwnershipEvents(t *testing.T, src, fn string) (*ownershipEvents, []str
 	t.Helper()
 	module := parseModule(t, src)
 	res := InferModuleAgainstStdlib(module, benchTree, Options{})
-	require.Empty(t, res.checker.provisionalFlows)
+	require.Empty(t, res.checker.pendingFlows)
 	msgs := make([]string, len(res.Errors))
 	for i, e := range res.Errors {
 		msgs[i] = e.Message()
@@ -535,4 +535,135 @@ func TestOwnershipEventsByNode(t *testing.T) {
 		"b3.1": {"use(p.x, write)"},
 		"b3.2": {"use(d.x, read)"},
 	}, got)
+}
+
+// TestOwnershipEventsPatterns covers the patterns F1 makes flow sites: a `val … else`, a
+// tuple pattern with a rest element, an object pattern with a rest element, and an extractor.
+// Each part flows out of its own place, so no place moves twice.
+func TestOwnershipEventsPatterns(t *testing.T) {
+	runOwnershipEvents(t, []ownershipEventsCase{
+		{
+			name: "ValElse",
+			src: `
+				fn go(p: {v: {x: number}} | undefined) -> number {
+					val {v} = p else { return 0 }
+					return v.x
+				}
+			`,
+			want: []string{
+				"b2.-1: move(p.v, v)",
+				"b2.0: use(v.x, read)",
+			},
+		},
+		{
+			name: "TupleWithRest",
+			src: `
+				fn go(t: [{x: number}, {y: number}, {z: number}]) {
+					val [a, ...rest] = t
+					val [b, c] = rest
+					return [a, b, c]
+				}
+			`,
+			want: []string{
+				"b0.0: move(t.0, a)",
+				"b0.0: move(t.1..., rest)",
+				"b0.1: move(rest.0, b)",
+				"b0.1: move(rest.1, c)",
+				"b0.2: move(a, return)",
+				"b0.2: move(b, return)",
+				"b0.2: move(c, return)",
+			},
+		},
+		{
+			name: "ObjectWithRest",
+			src: `
+				fn go() {
+					val o = {a: {x: 1}, b: {y: 2}, c: {z: 3}}
+					val {a, ...rest} = o
+					return [a, rest]
+				}
+			`,
+			want: []string{
+				"b0.1: move(o.a, a)",
+				"b0.1: move(o.b, rest.b)",
+				"b0.1: move(o.c, rest.c)",
+				"b0.2: move(a, return)",
+				"b0.2: move(rest, return)",
+			},
+		},
+		{
+			name: "Extractor",
+			src: `
+				enum Opt { Some(v: {x: number}), None }
+				fn go(o: Opt) {
+					val r = match o {
+						Opt.Some(v) => v,
+						Opt.None => ({x: 0}),
+					}
+					return r
+				}
+			`,
+			want: []string{
+				"b3.-1: move(o.0, v)",
+				"b3.0: move(v, r)",
+				"b2.0: move(r, return)",
+			},
+		},
+	})
+}
+
+// TestOwnershipEventsMatchArmNodes asserts that the events of a match arm attach to the CFG
+// node of that arm. An arm whose body is an expression runs in a statement of its own, as a
+// guard does. The walk types a guard once per path that reaches it, and its events are
+// emitted once.
+func TestOwnershipEventsMatchArmNodes(t *testing.T) {
+	runOwnershipEvents(t, []ownershipEventsCase{
+		{
+			name: "ArmBodies",
+			src: `
+				fn take(p: {x: number}) -> number { return p.x }
+				fn go(c: boolean) {
+					val p = {x: 1}
+					val q = {x: 2}
+					var y = 0
+					val r = match c {
+						true => { y = take(p) },
+						false => y = take(q),
+					}
+					return y
+				}
+			`,
+			want: []string{
+				"b0.3: use(c, read)",
+				"b3.0: use(take, read)",
+				"b3.0: move(p, arg(take, 0))",
+				"b3.0: use(y, write)",
+				"b4.0: use(take, read)",
+				"b4.0: move(q, arg(take, 0))",
+				"b4.0: use(y, write)",
+				"b2.0: use(y, read)",
+			},
+		},
+		{
+			name: "Guard",
+			src: `
+				fn check(p: &{ok: boolean}) -> boolean { return p.ok }
+				fn go(p: {v: {ok: boolean}, n: number}) -> number {
+					val r = match p {
+						{v} if check(&v) => 1,
+						{n} => n,
+					}
+					return r
+				}
+			`,
+			want: []string{
+				"b3.0: use(check, read)",
+				"b3.0: borrow(&, v, arg(check, 0), '1)",
+				"b4.0: use(n, read)",
+				"b3.-1: move(p.v, v)",
+				"b4.-1: use(p.n, read)",
+				"b2.0: use(r, read)",
+			},
+		},
+	})
 }

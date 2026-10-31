@@ -2727,6 +2727,9 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	if c.fn != nil {
 		assignStmt = c.fn.currentStmt
 	}
+	// The assignment's ownership events attach to the CFG point it runs at, read before the
+	// RHS for the same reason.
+	eventRef, hasEventRef := c.eventStmtRef()
 	if target, ok := e.Left.(*ast.IdentExpr); ok {
 		if b, found := c.lookupValueBinding(scope, target.Name); found {
 			if closure, ok := e.Right.(*ast.FuncExpr); ok && !b.ModuleLevel {
@@ -2744,7 +2747,9 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	sourceT := c.inferExpr(scope, lvl, e.Right)
 	// The assignment's events read the types its checks record, so they are emitted once
 	// every path below has returned.
-	defer c.emitAssignFlow(scope, e, assignStmt)
+	if hasEventRef {
+		defer c.emitAssignFlow(scope, e, eventRef)
+	}
 	// Record `undefined` on e up front as the recovery type. Every error path below
 	// returns undefinedT without recording a type, so this guarantees the node is typed
 	// on failure. The success path overwrites it with the stored value's type; see the
@@ -5068,7 +5073,7 @@ func (c *checker) inferDo(scope *Scope, lvl int, e *ast.DoExpr) soltype.Type {
 // if's value, which binds x. The two roles are orthogonal: X is a return point,
 // but not part of the if-EXPRESSION's value.
 func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.Type {
-	cond := c.inferScrutinee(scope, lvl, e.Cond)
+	cond := c.inferExpr(scope, lvl, e.Cond)
 	// The synthesized `boolean` requirement is intentionally NOT recorded in Prov
 	// (so a `string <: boolean` failure has no "expected boolean here" related
 	// span): it is a language rule, not a user-authored annotation, so there is no
@@ -5125,10 +5130,10 @@ func (c *checker) inferIfVal(scope *Scope, lvl int, e *ast.IfValExpr) soltype.Ty
 	// The pattern takes its parts from the target on entry to the consequent, once the
 	// pattern's bindings are typed.
 	siteRef, hasSiteRef := c.eventStmtRef()
-	if ref, ok := c.entryRef(ast.BlockOrExpr{Block: &e.Cons}, siteRef, hasSiteRef); ok {
+	if ref, ok := c.branchEntryRef(e.Target, 0, siteRef, hasSiteRef); ok {
 		defer c.emitPatternFlows(e.Pattern, e.Target, ref)
 	}
-	scrutinee := c.inferScrutinee(scope, lvl, e.Target)
+	scrutinee := c.inferExpr(scope, lvl, e.Target)
 	res := c.freshAt(lvl)
 	c.recordProv(res, e, IfValBranch)
 	// The UCS IR names no step for a rest before the last element, so the walk below binds
@@ -5336,6 +5341,15 @@ func (c *checker) typeAdmits(ann, t soltype.Type) bool {
 // match. An annotation pins the binding's type, so that value has to fit it. Otherwise
 // joinFallbackLeaves takes the value apart with the same pattern and joins each leaf.
 func (c *checker) inferValElse(scope *Scope, lvl int, d *ast.VarDecl) {
+	// The pattern takes its parts from the initializer where the matched path reaches the
+	// rest of the block, once the pattern's bindings are typed. The CFG builder adds the
+	// edge to the `else` block first and the edge to that join block second.
+	siteRef, hasSiteRef := c.eventStmtRef()
+	defer func() {
+		if ref, ok := c.branchEntryRef(d.Init, 1, siteRef, hasSiteRef); ok {
+			c.emitPatternFlows(d.Pattern, d.Init, ref)
+		}
+	}()
 	// The UCS IR names no step for a rest before the last element, so the walk below binds
 	// nothing under one and cannot report it.
 	c.reportInteriorRests(d.Pattern)
@@ -5532,13 +5546,13 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 	// bindings are typed.
 	siteRef, hasSiteRef := c.eventStmtRef()
 	defer func() {
-		for _, arm := range e.Cases {
-			if ref, ok := c.entryRef(arm.Body, siteRef, hasSiteRef); ok {
+		for i, arm := range e.Cases {
+			if ref, ok := c.branchEntryRef(e.Target, i, siteRef, hasSiteRef); ok {
 				c.emitPatternFlows(arm.Pattern, e.Target, ref)
 			}
 		}
 	}()
-	scrutinee := c.localScrutinee(lvl, e, c.inferScrutinee(scope, lvl, e.Target))
+	scrutinee := c.localScrutinee(lvl, e, c.inferExpr(scope, lvl, e.Target))
 	// Snapshot the scrutinee before any arm binds. A literal pattern adds its literal as a
 	// lower bound, which would otherwise leak a phantom member into the coalesced union read
 	// after the walk. Both the coverage check and the arms below a catch-all read their union

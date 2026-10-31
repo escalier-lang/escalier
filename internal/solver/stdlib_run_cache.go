@@ -319,6 +319,9 @@ func (c *checker) fork(source ModuleSource, groupSource GroupSource, groups Pack
 	f.pendingOverrides = slices.Clip(c.pendingOverrides)
 	f.pendingImplements = slices.Clip(c.pendingImplements)
 	f.provisionalVariance = slices.Clip(c.provisionalVariance)
+	f.pendingFlows = clipValues(c.pendingFlows)
+	f.paramByVar = maps.Clone(c.paramByVar)
+	f.unsettledParams = maps.Clone(c.unsettledParams)
 
 	// Whether each held diagnostic is reported is the run's own.
 	f.heldLoadErrs = make(map[string]*heldLoadErrors, len(c.heldLoadErrs))
