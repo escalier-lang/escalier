@@ -78,8 +78,7 @@ their family packages; everything else defaulted to `web:dom`. So `setTimeout`,
 `atob` and `structuredClone`, which `hoisted/` routed to `web:core`, sit in
 `web:dom`. That package is not ambient, so a program writes
 `import "web:dom"` to set a timer, and it is browser-tier, so a worker cannot
-import it at all. F9 exists because of this, and `addEventListener` is in
-`web:dom` rather than `web:core`, so F7 stands too.
+import it at all. F8 exists because of this.
 
 ### 3.3 `web:core` binds unprefixed twice over
 
@@ -99,7 +98,7 @@ lists, and `web:core` and `web:fetch` are on it. Importing one still binds it as
 a namespace. It binds from a parent layer, so a module declaration shadows
 silently.
 
-So F8 is met, and by a mechanism that goes further than F8 proposed by including
+So F7 is met, and by a mechanism that goes further than F7 proposed by including
 `web:fetch`, which its own boundary rule allows since `web:fetch` is also small
 and portable. Nothing asserts what `ambientPackages` binds, so N4 stands, and
 section 5.5 is where the two shadowing rules get settled.
@@ -141,18 +140,27 @@ a `declare fn`, a read-only property a `declare val`, a settable event-handler
 property a `declare var`, and an overload set one `declare fn` per signature.
 The hoisted declaration carries `@js` with the global's own name.
 
+`addEventListener` and `removeEventListener` are the case this cannot settle on
+its own. Both are generic over their scope's own event map, so every scope
+hoists a different declaration under one name. The window copy is in `web:dom`
+today and the other eight would collide with it, so expressing them needs
+per-environment declarations, which is `web_environments`' F5. Where they sit
+then follows F8 rather than a rule of their own.
+
+A portable copy is not the way out. The window overload names `WindowEventMap`
+and `this: Window`, and each of those reaches 1193 of the tree's 2132
+declarations, every `web:` package included, because `UIEvent.view` is a
+`Window`. Moving the untyped overload alone costs nothing and buys nothing.
+`EventTarget.addEventListener` already carries that exact signature in
+`web:core`. A second copy would make `addEventListener("click", ...)` resolve to
+the untyped arm and yield an `Event` where the typed arm yields a `MouseEvent`.
+
 **F6. A member a family package already declares is not hoisted twice.** `fetch`
 is a member of `WindowOrWorkerGlobalScope` and a top-level declaration of
 `web:fetch`. The hoist drops the member rather than adding a second binding for
 one global.
 
-**F7. `addEventListener` and `removeEventListener` live in `web:core`.** They are
-among the most used globals on the platform, and `web:core` already holds the
-event model they belong to. What that pulls along is the event maps, which are in
-`web:dom` today, so either they move too or `web:core` imports the package
-holding them.
-
-**F8. `web:core` is ambient rather than imported.** Its declarations are injected
+**F7. `web:core` is ambient rather than imported.** Its declarations are injected
 into scope the way `std:prelude`'s are, so a program writes `setTimeout(...)` and
 `Event` without naming a package. `import "web:core"` stays legal as a redundant
 no-op, which is how the generated tree and existing code migrate without a flag
@@ -178,7 +186,7 @@ prelude is that it is small and portable: 24 declarations against
 `std:prelude`'s 44. A package that is large stays an import however ambient the
 runtime makes it.
 
-**F9. A hoisted global goes to the package that owns it, not to `web:dom`.** A
+**F8. A hoisted global goes to the package that owns it, not to `web:dom`.** A
 global's package is the family that owns its type, and where the signature names
 no browser type the family is `web:core`. `setTimeout` and `atob` belong there
 and not in a browser-tier package a worker cannot import.
@@ -202,7 +210,7 @@ object is in scope.
 `this` with the scope class and event maps are keyed by it, so hoisting the
 members does not make the classes removable.
 
-**N4. The ambient name set is pinned.** F8 makes `web:core`'s membership decide
+**N4. The ambient name set is pinned.** F7 makes `web:core`'s membership decide
 what every file has in scope, where today it decides which package holds a
 declaration. A test asserts the set of ambient names, so adding one is a
 deliberate edit rather than a side effect of moving a declaration.
@@ -284,7 +292,7 @@ stream's.
 
 ### 5.4 Place the hoisted globals
 
-**Goal.** F7, and the part of F4 the landed hoisting left undone.
+**Goal.** F8, and the part of F4 the landed hoisting left undone.
 
 `Window`'s globals are already hoisted, so what remains is where they sit.
 `hoisted/` in this folder has the analysis: which package each global belongs to
@@ -299,9 +307,7 @@ against `main` first; the scripts are checked in to do that.
 2. Move the family globals to their families: `caches` to `web:cache`,
    `indexedDB` to `web:indexeddb`, `localStorage` and `sessionStorage` to
    `web:storage`. `crypto`, `performance` and `fetch` already went.
-3. Put `addEventListener` and `removeEventListener` in `web:core`, and settle
-   where the event maps live. F7.
-4. Resolve `self` and the `this` of a hoisted listener, both open in
+3. Resolve `self` and the `this` of a hoisted listener, both open in
    section 8.
 
 **Done when** a fixture calls `setTimeout` and `atob` with no import at all, and
@@ -313,7 +319,7 @@ them.
 
 ### 5.5 Pin what the ambient scope binds
 
-**Goal.** N4. F8 itself has landed; this is the guard it was paired with.
+**Goal.** N4. F7 itself has landed; this is the guard it was paired with.
 
 `ambientPackages` in `internal/solver/ambient.go` now decides what every file
 has in scope, and nothing asserts its contents. Adding a package to that list,

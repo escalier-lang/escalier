@@ -1,6 +1,6 @@
 # Hoisting the scope-class globals
 
-Planning artifact for requirements F4 through F7 in section 4.1 of
+Planning artifact for requirements F4 through F6 and F8 in section 4.1 of
 `../design.md`. The `.esc` files beside this one show what every member of every
 `*GlobalScope` class looks like as a top-level declaration, which package it
 lands in, and what `@env` it carries. They are illustrative and are not part of the generated tree.
@@ -216,21 +216,28 @@ wider than the declaration needs. This is `web_environments`' N2 biting: the pac
 along environment lines, so a member spanning an unusual pair has nowhere exact
 to go.
 
-### `addEventListener` and `removeEventListener` go to `web:core`
+### `addEventListener` and `removeEventListener` stay with their scope
 
 Both are generic over each scope's own event map, so hoisting yields one per
-scope, all colliding on the name. They are also the only members that are more
-the scope's machinery than a global a program calls, and they are the most used
-globals in the set.
+scope, all colliding on the name. Resolving the collision needs
+`web_environments`' F5, so the files here leave both out.
 
-They go to `web:core`, which already holds the event model they belong to:
-`Event`, `EventTarget`, `EventListener`, `EventListenerOptions` and
-`AddEventListenerOptions`. What that pulls along is the event maps, which are in
-`web:dom` and `web:worker` today, so either the maps move too or `web:core`
-imports the packages holding them.
+`web:core` looked like the home, since it already holds the event model they
+belong to: `Event`, `EventTarget`, `EventListener`, `EventListenerOptions` and
+`AddEventListenerOptions`. It is not. The window overload names `WindowEventMap`
+and `this: Window`, and each reaches 1193 of the tree's 2132 declarations, every
+`web:` package included, because `UIEvent.view` is a `Window`. `web:core` is
+`TierCore` and `web:dom` is `TierBrowser`, so the import edge it would need is
+one `CheckTiers` rejects.
 
-The files here still leave both out, since their per-scope forms need `web_environments`' F5 and
-event maps need somewhere to live first.
+Taking only the untyped overload is no better. `EventTarget.addEventListener`
+already carries that exact signature in `web:core`, so a hoisted copy adds
+nothing, and its `type: string` accepts `"click"` as readily as a custom name. A
+program calling it unqualified would get an `Event` where the typed overload
+gives a `MouseEvent`, with no diagnostic saying so.
+
+So placement follows the general rule in F8 and sends them to the package owning
+their scope, which for `Window` is `web:dom`, where the hoist already put them.
 
 ## Assignments worth arguing about
 

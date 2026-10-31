@@ -85,7 +85,7 @@ collapse into `TierBrowser` together.
 
 **An ambient scope landed.** `internal/solver/ambient.go` binds 25 packages
 without an import, `web:core` and `web:fetch` among them. That is the other
-stream's F8, and it sharpens N4: the per-environment prelude this stream needs
+stream's F7, and it sharpens N4: the per-environment prelude this stream needs
 is now a per-environment `ambientPackages` plus a cache keyed to match.
 
 **`Window`'s globals were hoisted into `web:dom`.** 294 top-level
@@ -260,6 +260,10 @@ importing declarations that environment lacks.
 Where environments genuinely disagree, as with `MessageEvent.source`, the tree
 states each environment's form rather than narrowing every environment to their
 intersection.
+
+`addEventListener` is the larger case. It is generic over its scope's own event
+map, so the nine scopes give nine declarations under one name, and the other
+stream's F5 defers the collision to this requirement.
 
 **F6. A hoisted member's environments come from the scope that declares it.**
 Resolution follows the inheritance chain, so a member reaches every environment
