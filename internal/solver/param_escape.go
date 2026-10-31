@@ -209,13 +209,15 @@ func identParamOnlyReadThrough(pat ast.Pat, rest, optional bool, body *ast.Block
 // receiver's own type reaches. fn is the signature the call resolved to, and nil when it
 // resolved to none.
 //
-// In the module below, only the first call records `value`:
+// In the module below, `seen.set("last", value)` is an open escape. `set`'s second parameter
+// has type V, an inference variable that `seen`'s own type `Map<K, V>` reaches, and `seen` is
+// a module-level binding. The call records `value`. The other two calls are not open escapes.
 //
 //	val mut seen = Map()
 //	val m = {id: fn <T>(x: T) -> T { return x }}
 //
 //	fn remember(value) {
-//	    seen.set("last", value) // records value, since seen's type reaches set's V
+//	    seen.set("last", value) // open escape, which records value
 //	    m.id(value)             // id's T is fresh for this call, so m's type does not reach it
 //	    val mut local = Map()
 //	    local.set("k", value)   // local is not a module-level binding
