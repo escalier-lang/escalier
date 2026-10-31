@@ -98,32 +98,55 @@ func TestClassifyTier3_WellKnownMethods(t *testing.T) {
 	}
 }
 
+// TestClassifyTier3_ReadonlyThisParam covers the `this` types that give a
+// method `&self` at tier 3. A readonly wrapper qualifies only when no slot
+// reachable through it is writable. Any other `this` type falls through to the
+// default, since the method name `m` matches no heuristic.
+//
+// Each case's source also declares the aliases `Flat`, whose slots all hold
+// value types, and `Nested`, which holds an object.
 func TestClassifyTier3_ReadonlyThisParam(t *testing.T) {
-	tests := []struct {
-		name     string
-		thisType dts_parser.TypeAnn
-		wantMut  bool
+	t.Parallel()
+
+	tests := map[string]struct {
+		thisType string
+		want     ClassifyResult
 	}{
-		{"Readonly<T>", makeTypeRef("Readonly"), false},
-		{"ReadonlyArray<T>", makeTypeRef("ReadonlyArray"), false},
-		{"ReadonlySet<T>", makeTypeRef("ReadonlySet"), false},
-		{"ReadonlyMap<K,V>", makeTypeRef("ReadonlyMap"), false},
-		{"readonly T[]", &dts_parser.ArrayType{Readonly: true}, false},
-		{"plain type", makeTypeRef("Foo"), true},
+		"ReadonlyValueSlots":       {"Readonly<{a: number, b: string}>", ClassifyResult{Mut: false, Source: TierExplicitSignal}},
+		"ReadonlyNestedWritable":   {"Readonly<{a: {b: number}}>", ClassifyResult{Mut: true, Source: TierDefault}},
+		"ReadonlyNestedReadonly":   {"Readonly<{a: Readonly<{b: number}>}>", ClassifyResult{Mut: false, Source: TierExplicitSignal}},
+		"ReadonlyOfInterface":      {"Readonly<C>", ClassifyResult{Mut: true, Source: TierDefault}},
+		"ReadonlyArrayOfNumber":    {"ReadonlyArray<number>", ClassifyResult{Mut: false, Source: TierExplicitSignal}},
+		"ReadonlyArrayOfObject":    {"ReadonlyArray<{a: number}>", ClassifyResult{Mut: true, Source: TierDefault}},
+		"ReadonlySetOfString":      {"ReadonlySet<string>", ClassifyResult{Mut: false, Source: TierExplicitSignal}},
+		"ReadonlyMapOfValues":      {"ReadonlyMap<string, number>", ClassifyResult{Mut: false, Source: TierExplicitSignal}},
+		"ReadonlyArrayShorthand":   {"readonly number[]", ClassifyResult{Mut: false, Source: TierExplicitSignal}},
+		"ReadonlyOfArray":          {"Readonly<number[]>", ClassifyResult{Mut: false, Source: TierExplicitSignal}},
+		"ReadonlyOfTypeParam":      {"Readonly<T>", ClassifyResult{Mut: true, Source: TierDefault}},
+		"ReadonlyArrayOfTypeParam": {"ReadonlyArray<T>", ClassifyResult{Mut: true, Source: TierDefault}},
+		// The converter does not resolve a reference to an alias, so it cannot see
+		// that every slot of `Flat` holds a value type and answers `&mut self`.
+		"ReadonlyOfValueAlias":  {"Readonly<Flat>", ClassifyResult{Mut: true, Source: TierDefault}},
+		"ReadonlyOfNestedAlias": {"Readonly<Nested>", ClassifyResult{Mut: true, Source: TierDefault}},
+		"ReadonlyObjectShape":   {"{readonly a: number}", ClassifyResult{Mut: true, Source: TierDefault}},
+		"PlainType":             {"C", ClassifyResult{Mut: true, Source: TierDefault}},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			method := makeMethodDecl("doSomething", []*dts_parser.Param{
-				makeParam("this", tt.thisType),
-			})
-			result := Classify(ClassifyContext{Member: method})
-			if result.Mut != tt.wantMut {
-				t.Errorf("method with `this: %s`: got Mut=%v, want Mut=%v", tt.name, result.Mut, tt.wantMut)
-			}
-			if !tt.wantMut && result.Source != TierExplicitSignal {
-				t.Errorf("expected TierExplicitSignal, got %d", result.Source)
-			}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			dts := "declare class C<T> { m(this: " + tt.thisType + "): void }\n" +
+				"type Flat = {a: number};\n" +
+				"type Nested = {a: {b: number}};"
+			p := dts_parser.NewDtsParser(&ast.Source{Path: "test.d.ts", Contents: dts, ID: 0})
+			module, errs := p.ParseModule()
+			require.Empty(t, errs)
+			require.Len(t, module.Statements, 3)
+			classDecl, ok := module.Statements[0].(*dts_parser.ClassDecl)
+			require.True(t, ok)
+			require.Len(t, classDecl.Members, 1)
+			result := Classify(ClassifyContext{Member: classDecl.Members[0], ClassName: "C"})
+			require.Equal(t, tt.want, result)
 		})
 	}
 }
@@ -164,7 +187,10 @@ func TestClassifyTier3_ThisParamNotFirst(t *testing.T) {
 	// `this` param that is NOT first should not trigger this: Readonly<T> classification.
 	method := makeMethodDecl("doSomething", []*dts_parser.Param{
 		makeParam("arg", makeTypeRef("string")),
-		makeParam("this", makeTypeRef("Readonly")),
+		makeParam("this", &dts_parser.TypeReference{
+			Name:     makeIdent("ReadonlyArray"),
+			TypeArgs: []dts_parser.TypeAnn{&dts_parser.PrimitiveType{Kind: dts_parser.PrimNumber}},
+		}),
 	})
 	result := Classify(ClassifyContext{Member: method})
 	if !result.Mut {
@@ -212,7 +238,7 @@ func TestClassifyTier3_EndToEnd(t *testing.T) {
 		},
 		{
 			name:        "this: Readonly<T> param",
-			dts:         "declare class C { m(this: Readonly<C>): void }",
+			dts:         "declare class C { m(this: Readonly<{a: number}>): void }",
 			className:   "C",
 			wantMut:     false,
 			wantSource:  TierExplicitSignal,

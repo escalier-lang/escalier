@@ -252,6 +252,11 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 				return nil, fmt.Errorf("converting method signature parameter: %w", err)
 			}
 		}
+		// The caller writes an optional method's body, so its `Readonly<T>`
+		// parameters take no borrow, the same as a callback's.
+		if !m.Optional {
+			borrowReadonlyParams(m.Params, params)
+		}
 		returnType, err := convertReturn(m.ReturnType)
 		if err != nil {
 			return nil, fmt.Errorf("converting method signature return type: %w", err)
@@ -774,6 +779,7 @@ func convertMethodDecl(cctx *convertCtx, md *dts_parser.MethodDecl, className st
 	if err != nil {
 		return nil, fmt.Errorf("converting method parameters: %w", err)
 	}
+	borrowReadonlyParams(md.Params, params)
 
 	// Convert return type
 	var returnType ast.TypeAnn
