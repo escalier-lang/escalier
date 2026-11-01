@@ -154,7 +154,9 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"use of moved value 'p'"},
 		},
 		{
-			// noop's body records no ownership events. The pass still checks go after it.
+			// noop is never called. It is here because its body records no ownership events,
+			// so tableSpan gives it no span when the pass orders the bodies. The pass must still
+			// check go after it.
 			name: "E1BesideBodyWithoutEvents",
 			src: `
 				fn noop() {}
