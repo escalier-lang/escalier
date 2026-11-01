@@ -497,11 +497,9 @@ func TestOwnershipDataflow(t *testing.T) {
 					return peek()
 				}
 			`,
-			// The first diagnostic is E4's, which the current checks still report.
-			errs: []string{
-				"this call runs 'peek', which reads 'p' after it was moved",
-				"cannot move 'p' while it is borrowed",
-			},
+			// The move is reported once, at the move. The current checks' E4 report of the later
+			// call is dropped, since it names the same move.
+			errs: []string{"cannot move 'p' while it is borrowed"},
 		},
 		{
 			name: "E4WriteBetweenClosureCalls",

@@ -2,6 +2,7 @@ package solver
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -30,10 +31,12 @@ import (
 //     decides whether the parameter is owned or a borrow.
 //   - A flow into a parameter of a callee whose body is still being walked, or whose
 //     signature the call cannot see yet.
-//   - A closure capture. A closure that is returned or stored into module-level state
-//     owns what it captures, and any other closure borrows it. A closure a local holds
-//     may be returned through that local later, so the capture waits until the body
-//     holding the closure is walked.
+//   - A closure capture. A closure stored into module-level state borrows what it
+//     captures for `'static`. A closure returned where it is written owns what it
+//     captures. Any other closure borrows it, and a return of a local that holds the
+//     closure moves the capture at that return. A closure a local holds may be stored or
+//     returned through that local later, so the capture waits until the body holding the
+//     closure is walked.
 
 // borrowKind is the mutability of a borrow: `&` or `&mut`.
 type borrowKind uint8
@@ -190,6 +193,10 @@ type borrowEvent struct {
 // moveEvent gives the holder ownership of the place, which is consumed.
 type moveEvent struct {
 	flowBase
+	// closure is the closure whose capture of the place a return hands to the caller, or
+	// nil for any other move. The closure's own borrow of the place passes to the return
+	// with it, so the move does not conflict with that borrow.
+	closure ast.Func
 }
 
 // useEvent reads or writes the place.
@@ -238,11 +245,14 @@ type ownershipEvents struct {
 	// value flows into it. retargetTemp records those roots against the flow site that
 	// receives the temporary value.
 	tempRoots map[ast.Node][]liveness.VarID
-	// escaping holds the root of each place whose value flows into a return or a
-	// module-level binding. flowsInto maps the root of each place whose value flows into a
-	// local place to the roots of those places. A closure held by a place that reaches
-	// escaping through flowsInto outlives the frame. See escapes.
-	escaping  set.Set[liveness.VarID]
+	// stored holds the root of each place whose value flows into a module-level binding.
+	// returns maps the root of each place whose value flows into a return to each return
+	// that receives it. flowsInto maps the root of each place whose value flows into a
+	// local place to the roots of those places. A closure a place holds reaches the
+	// module-level bindings and the returns of every root reachable from that place through
+	// flowsInto. See storedFrom and returnsOf.
+	stored    set.Set[liveness.VarID]
+	returns   map[liveness.VarID][]returnSite
 	flowsInto map[liveness.VarID][]liveness.VarID
 	// tupleParts maps the placeKey of each place a tuple pattern destructures to the segment
 	// of each element the pattern names. `val [x, ...rest] = b` maps `b` to `0` and `1...`.
@@ -268,12 +278,22 @@ type ownershipEvents struct {
 	checked bool
 }
 
+// returnSite is a return that receives a value: the expression returned, and the CFG point
+// of the return.
+type returnSite struct {
+	node ast.Node
+	at   liveness.StmtRef
+}
+
 // noteFlowInto records that the value of the place rooted at root flows into holder, for
-// escapes to read.
-func (t *ownershipEvents) noteFlowInto(root liveness.VarID, holder eventHolder) {
+// storedFrom and returnsOf to read. node is the expression that passes the value, and at
+// is the CFG point of the flow.
+func (t *ownershipEvents) noteFlowInto(root liveness.VarID, holder eventHolder, node ast.Node, at liveness.StmtRef) {
 	switch tg := holder.target.(type) {
-	case returnTarget, moduleTarget:
-		t.escaping.Add(root)
+	case moduleTarget:
+		t.stored.Add(root)
+	case returnTarget:
+		t.returns[root] = append(t.returns[root], returnSite{node: node, at: at})
 	case placeTarget:
 		t.flowsInto[root] = append(t.flowsInto[root], tg.root)
 	case tempTarget:
@@ -285,29 +305,45 @@ func (t *ownershipEvents) noteFlowInto(root liveness.VarID, holder eventHolder) 
 	}
 }
 
-// escapes reports whether the value held by the place rooted at root flows into a return
-// or a module-level binding, directly or through other local places.
-func (t *ownershipEvents) escapes(root liveness.VarID) bool {
+// storedFrom reports whether the value held by the place rooted at root flows into a
+// module-level binding, directly or through other local places.
+func (t *ownershipEvents) storedFrom(root liveness.VarID) bool {
+	return slices.ContainsFunc(t.reachedFrom(root), t.stored.Contains)
+}
+
+// returnsOf returns each return that receives the value held by the place rooted at root,
+// directly or through other local places, in source order.
+func (t *ownershipEvents) returnsOf(root liveness.VarID) []returnSite {
+	var out []returnSite
+	for _, r := range t.reachedFrom(root) {
+		out = append(out, t.returns[r]...)
+	}
+
+	slices.SortStableFunc(out, func(a, b returnSite) int { return compareSpans(a.node.Span(), b.node.Span()) })
+	return out
+}
+
+// reachedFrom returns root and each root whose place the value held at root flows into
+// through flowsInto, each once.
+func (t *ownershipEvents) reachedFrom(root liveness.VarID) []liveness.VarID {
 	seen := set.NewSet[liveness.VarID]()
 	stack := []liveness.VarID{root}
+	var out []liveness.VarID
 
 	for len(stack) > 0 {
 		r := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
-
-		if t.escaping.Contains(r) {
-			return true
-		}
 
 		if seen.Contains(r) {
 			continue
 		}
 
 		seen.Add(r)
+		out = append(out, r)
 		stack = append(stack, t.flowsInto[r]...)
 	}
 
-	return false
+	return out
 }
 
 // emitSite is one expression, the role it emits events in, and the CFG point they attach
@@ -346,7 +382,8 @@ func newOwnershipEvents(names map[liveness.VarID]string) *ownershipEvents {
 		emitted:        set.NewSet[emitSite](),
 		temps:          map[ast.Node][]int{},
 		tempRoots:      map[ast.Node][]liveness.VarID{},
-		escaping:       set.NewSet[liveness.VarID](),
+		stored:         set.NewSet[liveness.VarID](),
+		returns:        map[liveness.VarID][]returnSite{},
 		flowsInto:      map[liveness.VarID][]liveness.VarID{},
 		tupleParts:     map[string][]placeSeg{},
 		callees:        map[ast.Expr]*ast.CallExpr{},

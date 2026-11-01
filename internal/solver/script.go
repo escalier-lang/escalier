@@ -293,6 +293,12 @@ func (c *checker) trackFuncDeclCaptures(scope *Scope, decl *ast.FuncDecl, bindin
 			c.dropLoansHeldBy(id)
 		}
 	}
+
+	// The declaration binds the closure to its name, as `val name = fn …` does, so the name
+	// holds the captures the closure emitted.
+	if ref, ok := c.eventStmtRef(); ok && id > 0 && c.eventTable() != nil {
+		c.retargetTemp(decl, eventHolder{target: placeTarget{root: id}}, ref)
+	}
 }
 
 // ownFuncDecl returns scope's own binding of name and the function declaration that

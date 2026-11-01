@@ -276,8 +276,14 @@ Each case below follows from that:
 - An unannotated parameter is owned when the body lets the parameter escape, and
   a borrow otherwise. When the destination's type leaves the ownership open,
   [D9](#d9-whether-an-escaping-value-moves-or-borrows) decides.
-- A closure that is returned owns what it captures. A closure that stays in the
-  body or is stored into a caller-owned object borrows what it captures.
+- A closure that is returned owns what it captures. A closure returned through a
+  local, such as `return f` after `val f = fn () { … }`, takes its captures at the
+  return, so the body can use them until then. A closure that stays in the body or
+  is stored into a caller-owned object borrows what it captures.
+- A closure stored into module-level state borrows what it captures for
+  `'static`. The borrow is `&mut` for a capture the closure writes and `&`
+  otherwise. By the closure rows of the exclusivity table, the captured place can
+  then never move, and E4 checks each later call against the borrow.
 
 A `val` or `var` binding of an owned value is always an owned destination, even
 when the binding's scope is shorter than the source's. A binding whose
@@ -974,9 +980,11 @@ fn setup() {
 }
 ```
 
-There are two ways to write `setup` so that it checks. The first lets the
-handler own its state. `onClick` keeps the closure past the frame, so by F3 the
-closure owns `count`, and the borrow inside it lasts only for one call:
+There are two ways to write `setup` so that it checks. The first moves every use
+of `count` into the handler. `onClick` keeps the closure for the rest of the
+program, so the closure borrows `count` for `'static`, as a closure stored into
+module-level state does by F3. `setup` never uses `count` again, and the borrow
+`render` takes inside the closure lasts only for one call:
 
 ```esc
 fn setup() {

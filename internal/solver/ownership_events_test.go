@@ -463,7 +463,7 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 			},
 		},
 		{
-			name: "ClosureStoredInModuleOwnsCapture",
+			name: "ClosureStoredInModuleBorrowsCaptureForStatic",
 			src: `
 				var handler: fn () -> number = fn () { return 0 }
 				fn go() {
@@ -472,12 +472,54 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.1: move(`p`, `handler`)",  // `handler = fn ...` stores the closure in a module binding, so it owns p
-				"b0.1: use(`handler`, write)", // `handler = fn ...` writes the module binding
+				"b0.1: borrow(&, `p`, `handler`, 'static)", // `handler = fn ...` stores the closure in a module binding, so it borrows p for 'static
+				"b0.1: use(`handler`, write)",              // `handler = fn ...` writes the module binding
 			},
 		},
 		{
-			name: "ClosureReturnedThroughLocalOwnsCapture",
+			name: "WritingClosureStoredInModuleBorrowsCaptureMutably",
+			src: `
+				var handler: fn () -> undefined = fn () {}
+				fn go() {
+					val mut p = {x: 1}
+					handler = fn () { p.x = 2 }
+				}
+			`,
+			want: []string{
+				"b0.1: borrow(&mut, `p`, `handler`, 'static)", // the stored closure writes p, so its 'static borrow is mutable
+				"b0.1: use(`handler`, write)",                 // `handler = fn ...` writes the module binding
+			},
+		},
+		{
+			name: "ClosureStoredInModuleThroughLocalBorrowsCaptureForStatic",
+			src: `
+				var handler: fn () -> number = fn () { return 0 }
+				fn go() {
+					val p = {x: 1}
+					val f = fn () { return p.x }
+					handler = f
+				}
+			`,
+			want: []string{
+				"b0.1: borrow(&, `p`, `f`, 'static)", // `handler = f` stores the closure f holds, so it borrows p for 'static
+				"b0.2: use(`f`, read)",               // `handler = f` reads f, since a closure is a value type
+				"b0.2: use(`handler`, write)",        // `handler = f` writes the module binding
+			},
+		},
+		{
+			name: "ClosureReturnedWhereWrittenOwnsCapture",
+			src: `
+				fn go() {
+					val p = {x: 1}
+					return fn () { return p.x }
+				}
+			`,
+			want: []string{
+				"b0.1: move(`p`, return)", // `return fn ...` returns the closure it creates, so the closure owns p
+			},
+		},
+		{
+			name: "ClosureReturnedThroughLocalMovesCaptureAtReturn",
 			src: `
 				fn go(p) {
 					val f = fn () {
@@ -488,12 +530,32 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.0: move(`p`, `f`)", // `val f = fn ...` captures p, and `return f` lets the closure escape, so it owns p
-				"b0.1: use(`f`, read)", // `return f` only reads f, since a closure is a value type
+				"b0.0: borrow(&, `p`, `f`, '_)", // `val f = fn ...` borrows p until a return hands the closure out
+				"b0.1: use(`f`, read)",          // `return f` reads f, since a closure is a value type
+				"b0.1: move(`p`, return)",       // `return f` lets the closure escape, so the return moves p
 			},
 		},
 		{
-			name: "ClosureReturnedInLiteralOwnsCapture",
+			name: "ClosureReturnedOnOneBranchMovesCaptureThere",
+			src: `
+				fn go(c: boolean) {
+					val p = {x: 1}
+					val f = fn () { return p.x }
+					if c {
+						return f
+					}
+					return fn () { return 0 }
+				}
+			`,
+			want: []string{
+				"b0.1: borrow(&, `p`, `f`, '_)", // `val f = fn ...` borrows p
+				"b0.2: use(`c`, read)",          // the condition `c`
+				"b3.0: use(`f`, read)",          // `return f` reads f
+				"b3.0: move(`p`, return)",       // only the branch that returns f moves p
+			},
+		},
+		{
+			name: "ClosureReturnedInLiteralMovesCaptureAtReturn",
 			src: `
 				fn go() {
 					val p = {x: 1}
@@ -502,12 +564,13 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.1: move(`p`, `f`)", // `val f = fn ...` captures p, and `return {h: f}` lets the closure escape inside the literal, so it owns p
-				"b0.2: use(`f`, read)", // `{h: f}` only reads f, since a closure is a value type
+				"b0.1: borrow(&, `p`, `f`, '_)", // `val f = fn ...` borrows p
+				"b0.2: use(`f`, read)",          // `{h: f}` only reads f, since a closure is a value type
+				"b0.2: move(`p`, return)",       // `return {h: f}` lets the closure escape inside the literal, so the return moves p
 			},
 		},
 		{
-			name: "ClosureReturnedThroughLiteralLocalOwnsCapture",
+			name: "ClosureReturnedThroughLiteralLocalMovesCaptureAtReturn",
 			src: `
 				fn go() {
 					val p = {x: 1}
@@ -517,9 +580,23 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.1: move(`p`, `f`)",    // `val o = {h: f}` stores the closure in o, and `return o` lets it escape, so it owns p
-				"b0.2: use(`f`, read)",    // `{h: f}` only reads f, since a closure is a value type
-				"b0.3: move(`o`, return)", // `return o`
+				"b0.1: borrow(&, `p`, `f`, '_)", // `val f = fn ...` borrows p
+				"b0.2: use(`f`, read)",          // `{h: f}` only reads f, since a closure is a value type
+				"b0.3: move(`o`, return)",       // `return o`
+				"b0.3: move(`p`, return)",       // `return o` lets the closure in o escape, so the return moves p
+			},
+		},
+		{
+			name: "ReturnedClosureDoesNotMoveABorrowedCapture",
+			src: `
+				fn go(p: &{x: number}) {
+					val f = fn () { return p.x }
+					return f
+				}
+			`,
+			want: []string{
+				"b0.0: borrow(&, `p`, `f`, '_)", // `val f = fn ...` reborrows through the borrow p holds
+				"b0.1: use(`f`, read)",          // `return f` moves nothing, since p holds a borrow
 			},
 		},
 	})

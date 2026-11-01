@@ -560,11 +560,13 @@ func TestScriptTransitionParity(t *testing.T) {
 // TestScriptFnCaptureParity asserts that a script-level `fn f() { … }` checks its captures
 // of the script's earlier bindings the way `val f = fn () { … }` does. Each case writes the
 // function on one line marked FN, then runs once with `fn f()` there and once with
-// `val f = fn ()`. Both runs must report exactly the expected messages.
+// `val f = fn ()`. Both runs must report exactly the expected messages. wantDataflow is what
+// both report with the dataflow pass on, when that differs from want.
 func TestScriptFnCaptureParity(t *testing.T) {
 	tests := map[string]struct {
-		src  string
-		want []string
+		src          string
+		want         []string
+		wantDataflow []string
 	}{
 		// Calling f writes x through the capture while `a` still borrows x immutably.
 		"WriteThroughCaptureBesideLiveBorrow": {
@@ -590,7 +592,9 @@ func TestScriptFnCaptureParity(t *testing.T) {
 				take(x)
 				f()
 			`,
-			want: []string{"8:5-8:6: this call runs 'f', which reads 'x' after it was moved"},
+			// The pass rejects the move, since f holds its borrow of x until its last call.
+			want:         []string{"8:5-8:6: this call runs 'f', which reads 'x' after it was moved"},
+			wantDataflow: []string{"7:10-7:11: cannot move 'x' while it is borrowed"},
 		},
 		// f reads x only while it runs, so x can move once the last call returns.
 		"MoveAfterTheLastCall": {
@@ -618,7 +622,7 @@ func TestScriptFnCaptureParity(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			for _, form := range []string{"fn f()", "val f = fn ()"} {
 				_, _, errs := inferScriptSource(t, strings.ReplaceAll(tt.src, "FN", form))
-				require.Equal(t, tt.want, messagesWithSpan(t, errs), form)
+				require.Equal(t, wantForPass(tt.want, tt.wantDataflow), messagesWithSpan(t, errs), form)
 			}
 		})
 	}

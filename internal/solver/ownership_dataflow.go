@@ -94,7 +94,35 @@ func (c *checker) runOwnershipDataflow() {
 	}
 
 	c.errs = slices.DeleteFunc(c.errs, replacedByDataflow)
+	c.errs = slices.DeleteFunc(c.errs, closureMoveReported(found))
 	c.errs = append(c.errs, found...)
+}
+
+// closureMoveReported returns a filter that matches each E4 diagnostic of the current checks
+// about a capture whose move the dataflow pass already rejects by E3. found holds the pass's
+// diagnostics. E4's `moved` example puts that error on the move, so the move is reported
+// once, there, and not again at a later call of the closure. The filter matches a call that
+// runs a closure after the capture moved, and a move in a call that may run a closure, when
+// the pass reports the move of the same place against a closure's borrow.
+func closureMoveReported(found []SolverError) func(SolverError) bool {
+	moves := map[ast.Node]string{}
+	for _, err := range found {
+		if e, ok := err.(*MoveWhileBorrowedError); ok && e.closure {
+			moves[e.move] = e.Place
+		}
+	}
+
+	return func(err SolverError) bool {
+		switch e := err.(type) {
+		case *UseAfterMoveError:
+			place, ok := moves[e.moveSite]
+			return ok && e.Via != "" && place == e.Name
+		case *MoveWhileBorrowedError:
+			place, ok := moves[e.move]
+			return ok && e.Via != "" && place == e.Place
+		}
+		return false
+	}
 }
 
 // tableSpan returns the span of the first event of t, or the zero span when t has none.
@@ -667,12 +695,14 @@ func (d *bodyDataflow) derivedLoan(ev *copyEvent, from *liveLoan, s *dataflowSta
 }
 
 // move applies the move ev. E1 rejects a move of a moved place, and E3 rejects a move while
-// a borrow of an overlapping place is live.
+// a borrow of an overlapping place is live. A return that moves a closure's capture hands
+// over the closure's own borrow of the place too, so that borrow is no conflict.
 func (d *bodyDataflow) move(ev *moveEvent, at liveness.StmtRef, s *dataflowState) {
 	if !d.checkMoved(ev.place, ev.node, s) {
 		for _, l := range d.sortedLoans(s) {
-			if !l.alias && placesOverlap(l.ev.place, ev.place) && d.loanLive(l, at, true) {
-				d.report(&MoveWhileBorrowedError{Place: d.placeName(ev.place), move: ev.node, borrow: l.ev.node.Span()})
+			own := ev.closure != nil && l.ev.node == ev.closure
+			if !own && !l.alias && placesOverlap(l.ev.place, ev.place) && d.loanLive(l, at, true) {
+				d.report(&MoveWhileBorrowedError{Place: d.placeName(ev.place), move: ev.node, borrow: l.ev.node.Span(), closure: l.closure()})
 				break
 			}
 		}
