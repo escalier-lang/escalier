@@ -4501,7 +4501,8 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 
 // DISABLED until #2249 and #2269. Each cell below returns a `&mut` of a local or stores one into
 // a module-level `&mut` binding, which reports `cannot constrain immutable object <: mutable object`
-// as #2249 tracks. With the ownership dataflow pass on, each cell reports nothing else.
+// as #2249 tracks. With the ownership dataflow pass on, that error is the only one a cell
+// reports beyond its expected result.
 /*
 func TestFlowMatrixMutableBorrowOutOfFrame(t *testing.T) {
 	runFlowMatrix(t, []flowCell{

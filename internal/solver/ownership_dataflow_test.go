@@ -865,8 +865,7 @@ func TestOwnershipDataflow(t *testing.T) {
 		{
 			// The pass reports E2 for b at `&mut b`, which lies outside both the store `q.s = c`
 			// that the frame-exit diagnostic blames and the store `p.r = a` it relates. So the
-			// frame-exit diagnostic about b stays beside the E2. This case comes from CodeRabbit's
-			// review of #2455.
+			// frame-exit diagnostic about b stays beside the E2.
 			name: "E2OutsideTheOutflowSpansKeepsTheSharedPathsCheck",
 			src: `
 				fn f(p: &mut {r: &{v: number}}, q: &mut {s: &mut {v: number}}) {
