@@ -498,7 +498,7 @@ func (c *checker) copyHeldLoans(holder liveness.VarID, holderT soltype.Type, sou
 
 		cp := l
 		cp.mut = l.mut && writable
-		cp.holder, cp.holderPath = holder, nil
+		cp.holder = holder
 		cp.ref, cp.seq = ref, c.nextLoanSeq()
 		cp.fromStore, cp.callerOwned = false, false
 		c.fn.loans = append(c.fn.loans, cp)

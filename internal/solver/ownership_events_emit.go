@@ -294,31 +294,35 @@ func (c *checker) finishOwnershipEvents() {
 		if r, isRef := c.info.TypeOf(be).(*soltype.RefType); isRef {
 			bev.lifetime = r.Lt
 		}
-		c.borrowFromDest(t, bev)
+		c.borrowFromDest(t, bev, false)
 	}
 
 	c.settleFlowsWaitingOn(flowWait{capture: true, table: t}, false, true)
 }
 
 // borrowFromDest gives the written borrow bev the mutability and lifetime of the borrow
-// destination it flows into, when that destination is settled. A `&` destination narrows a
+// destination it flows into, once that destination is settled. A `&` destination narrows a
 // `&mut` borrow to `&`, the way a `&` parameter gives the callee a read-only view. A
-// `'static` destination makes the borrow `'static`. Any other destination, and one F3 has
-// not settled, leaves bev as written. table is the event table that holds bev.
-func (c *checker) borrowFromDest(table *ownershipEvents, bev *borrowEvent) {
+// `'static` destination makes the borrow `'static`. Any other destination leaves bev as
+// written. table is the event table that holds bev. force settles a destination F3 has not
+// settled, the way classifyFlow's force flag describes. bev keeps a destination that is not
+// settled, so a later call with force can apply it.
+func (c *checker) borrowFromDest(table *ownershipEvents, bev *borrowEvent, force bool) {
 	if bev.dest == nil {
 		return
 	}
 
-	dest, _, settled := c.settleDest(table, bev.dest, bev.holder, false, false)
-	b, toBorrow := dest.(*borrowDest)
-	if !settled || !toBorrow {
+	dest, _, settled := c.settleDest(table, bev.dest, bev.holder, force, force)
+	if !settled {
 		return
 	}
 
-	bev.borrow = b.narrow(bev.borrow)
-	if soltype.IsStaticLifetime(b.lt) {
-		bev.lifetime = b.lt
+	bev.dest = nil
+	if b, toBorrow := dest.(*borrowDest); toBorrow {
+		bev.borrow = b.narrow(bev.borrow)
+		if soltype.IsStaticLifetime(b.lt) {
+			bev.lifetime = b.lt
+		}
 	}
 }
 

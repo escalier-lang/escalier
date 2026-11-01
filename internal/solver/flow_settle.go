@@ -267,12 +267,20 @@ func (c *checker) settleFlowsWaitingOn(wait flowWait, force, forceCapture bool) 
 	}
 }
 
-// settleAllFlows settles every provisional flow, the way classifyFlow's force flag
-// describes. It runs once a module or script is inferred, when nothing is left to settle
-// them.
+// settleAllFlows settles every provisional flow, and the destination of every written borrow
+// finishOwnershipEvents could not settle, the way classifyFlow's force flag describes. It runs
+// once a module or script is inferred, when nothing is left to settle them.
 func (c *checker) settleAllFlows() {
 	for wait := range c.pendingFlows {
 		c.settleFlowsWaitingOn(wait, true, true)
+	}
+
+	for _, t := range c.info.ownership {
+		for _, ev := range t.events {
+			if bev, ok := ev.(*borrowEvent); ok {
+				c.borrowFromDest(t, bev, true)
+			}
+		}
 	}
 }
 

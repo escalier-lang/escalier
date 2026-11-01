@@ -915,8 +915,8 @@ func (d *bodyDataflow) placeName(p movePlace) string {
 	return b.String()
 }
 
-// sortedLoans returns the loans of s in the order their borrow events were emitted, so a
-// report names the same loan on every run.
+// sortedLoans returns the loans of s in the order loanOrder gives, so a report names the same
+// loan on every run.
 func (d *bodyDataflow) sortedLoans(s *dataflowState) []*liveLoan {
 	out := make([]*liveLoan, 0, len(s.loans))
 	for _, l := range s.loans {
