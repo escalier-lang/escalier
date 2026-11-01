@@ -216,12 +216,33 @@ type ownershipEvents struct {
 	emitted set.Set[emitSite]
 	// temps maps the expression of each tempTarget to the indices of the events it holds.
 	temps map[ast.Node][]int
+	// tempRoots maps the expression of each tempTarget to the root of each place whose
+	// value flows into it. retargetTemp records those roots against the flow site that
+	// receives the temporary value.
+	tempRoots map[ast.Node][]liveness.VarID
 	// escaping holds the root of each place whose value flows into a return or a
 	// module-level binding. flowsInto maps the root of each place whose value flows into a
 	// local place to the roots of those places. A closure held by a place that reaches
 	// escaping through flowsInto outlives the frame. See escapes.
 	escaping  set.Set[liveness.VarID]
 	flowsInto map[liveness.VarID][]liveness.VarID
+}
+
+// noteFlowInto records that the value of the place rooted at root flows into holder, for
+// escapes to read.
+func (t *ownershipEvents) noteFlowInto(root liveness.VarID, holder eventHolder) {
+	switch tg := holder.target.(type) {
+	case returnTarget, moduleTarget:
+		t.escaping.Add(root)
+	case placeTarget:
+		t.flowsInto[root] = append(t.flowsInto[root], tg.root)
+	case tempTarget:
+		t.tempRoots[tg.node] = append(t.tempRoots[tg.node], root)
+	case argTarget, receiverTarget:
+		// A value passed to a call goes to the callee's parameter, and escapes does not
+		// follow it into the callee. A closure passed as an argument borrows what it
+		// captures, as settleDest decides for a capture held by an argument.
+	}
 }
 
 // escapes reports whether the value held by the place rooted at root flows into a return
@@ -277,6 +298,7 @@ func newOwnershipEvents(names map[liveness.VarID]string) *ownershipEvents {
 		subsumed:  set.NewSet[ast.Node](),
 		emitted:   set.NewSet[emitSite](),
 		temps:     map[ast.Node][]int{},
+		tempRoots: map[ast.Node][]liveness.VarID{},
 		escaping:  set.NewSet[liveness.VarID](),
 		flowsInto: map[liveness.VarID][]liveness.VarID{},
 	}

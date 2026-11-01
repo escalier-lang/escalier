@@ -478,6 +478,36 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 				"b0.1: use(`f`, read)", // `return f` only reads f, since a closure is a value type
 			},
 		},
+		{
+			name: "ClosureReturnedInLiteralOwnsCapture",
+			src: `
+				fn go() {
+					val p = {x: 1}
+					val f = fn () { return p.x }
+					return {h: f}
+				}
+			`,
+			want: []string{
+				"b0.1: move(`p`, `f`)", // `val f = fn ...` captures p, and `return {h: f}` lets the closure escape inside the literal, so it owns p
+				"b0.2: use(`f`, read)", // `{h: f}` only reads f, since a closure is a value type
+			},
+		},
+		{
+			name: "ClosureReturnedThroughLiteralLocalOwnsCapture",
+			src: `
+				fn go() {
+					val p = {x: 1}
+					val f = fn () { return p.x }
+					val o = {h: f}
+					return o
+				}
+			`,
+			want: []string{
+				"b0.1: move(`p`, `f`)",    // `val o = {h: f}` stores the closure in o, and `return o` lets it escape, so it owns p
+				"b0.2: use(`f`, read)",    // `{h: f}` only reads f, since a closure is a value type
+				"b0.3: move(`o`, return)", // `return o`
+			},
+		},
 	})
 }
 

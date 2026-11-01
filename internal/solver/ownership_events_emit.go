@@ -270,9 +270,15 @@ func (c *checker) emitTempFlow(source ast.Expr, value ast.Expr, path []placeSeg,
 }
 
 // retargetTemp moves every event held by the temporary value to holder, keeping the
-// path within the value.
+// path within the value. It also records each place whose value flowed into the temporary
+// value as flowing into holder.
 func (c *checker) retargetTemp(value ast.Expr, holder eventHolder) {
 	t := c.fn.events
+	roots := t.tempRoots[value]
+	delete(t.tempRoots, value)
+	for _, root := range roots {
+		t.noteFlowInto(root, holder)
+	}
 	indices := t.temps[value]
 	delete(t.temps, value)
 	for _, i := range indices {
@@ -301,15 +307,9 @@ func (c *checker) emitValueFlow(p movePlace, source ast.Expr, sourceT soltype.Ty
 	if source != nil {
 		sourceT = c.info.TypeOf(source)
 	}
-	// The escape check of a closure capture reads these records. A closure is a value type,
-	// so they are recorded before the value-type case below returns.
-	switch tg := holder.target.(type) {
-	case returnTarget, moduleTarget:
-		c.fn.events.escaping.Add(p.root)
-	case placeTarget:
-		c.fn.events.flowsInto[p.root] = append(c.fn.events.flowsInto[p.root], tg.root)
-	case argTarget, receiverTarget, tempTarget:
-	}
+	// The escape check of a closure capture reads this record. A closure is a value type,
+	// so it is recorded before the value-type case below returns.
+	c.fn.events.noteFlowInto(p.root, holder)
 	flow := flowBase{eventBase: eventBase{place: p, node: node}, holder: holder}
 	ev, wait, settled := c.classifyFlow(c.fn.events, flow, sourceT, dest, false, false)
 	if use, ok := ev.(*useEvent); settled && ok {
