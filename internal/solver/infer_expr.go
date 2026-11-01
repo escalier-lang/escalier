@@ -3560,7 +3560,7 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 				if !spreadSeen {
 					path = []placeSeg{{kind: namedSeg, name: strconv.Itoa(i)}}
 				}
-				c.emitTempFlow(el, e, path, flowDest{kind: ownedDest}, eventRef)
+				c.emitTempFlow(el, e, path, &ownedDest{}, eventRef)
 			}
 			continue
 		}
@@ -3568,7 +3568,7 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 		spreadT := c.inferExpr(scope, lvl, spread.Value)
 		// A spread is an owned destination, as F1 states.
 		if hasEventRef {
-			c.emitTempFlow(spread.Value, e, nil, flowDest{kind: ownedDest}, eventRef)
+			c.emitTempFlow(spread.Value, e, nil, &ownedDest{}, eventRef)
 		}
 		switch op := spreadT.(type) {
 		case *soltype.TupleType:
@@ -3739,7 +3739,7 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 			op := c.inferExpr(scope, lvl, spread.Value)
 			// A spread is an owned destination, as F1 states.
 			if hasEventRef {
-				c.emitTempFlow(spread.Value, e, nil, flowDest{kind: ownedDest}, eventRef)
+				c.emitTempFlow(spread.Value, e, nil, &ownedDest{}, eventRef)
 			}
 			if _, errored := op.(*soltype.ErrorType); errored {
 				// The operand already reported its own failure; absorb it rather than layering a
@@ -3786,7 +3786,7 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 			c.consumeIntoLiteral(scope, value, ft, stmtRef, hasStmtRef)
 			// A computed key names no field segment, so the value is held by the whole object.
 			if hasEventRef {
-				c.emitTempFlow(value, e, nil, flowDest{kind: ownedDest}, eventRef)
+				c.emitTempFlow(value, e, nil, &ownedDest{}, eventRef)
 			}
 			keyName, keySet, ok := c.computedObjKey(computed, keyT)
 			switch {
@@ -3810,7 +3810,7 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 		c.consumeIntoLiteral(scope, value, ft, stmtRef, hasStmtRef)
 		// A literal with no expected type is an owned destination, as F1 states.
 		if hasEventRef {
-			c.emitTempFlow(value, e, []placeSeg{{kind: namedSeg, name: name}}, flowDest{kind: ownedDest}, eventRef)
+			c.emitTempFlow(value, e, []placeSeg{{kind: namedSeg, name: name}}, &ownedDest{}, eventRef)
 		}
 	}
 	elems := mergeSpreadOperands(operandElems)

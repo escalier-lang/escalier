@@ -48,52 +48,13 @@ const (
 	ownedSource
 )
 
-// destKind classifies a flow's destination, the column of F2's table.
-type destKind uint8
-
-const (
-	// ownedDest takes ownership.
-	ownedDest destKind = iota
-	// borrowDest takes a borrow of the kind and lifetime flowDest names.
-	borrowDest
-	// inferredReturnDest is a return with no annotation. It takes ownership of an owned
-	// value and carries a borrow on as one, as F3's `make` and `same` show.
-	inferredReturnDest
-	// paramDest is the parameter flowDest names, whose ownership the callee's body decides.
-	paramDest
-	// calleeDest is the argument index of the call flowDest names, whose callee's
-	// signature the call could not see.
-	calleeDest
-	// captureDest is a closure capture. F3 decides it from where the closure flows.
-	captureDest
-)
-
-// flowDest describes the destination of one flow site. borrow and lt describe a
-// borrowDest. param names a paramDest's parameter, and call and index a calleeDest's
-// argument. reborrows marks a destination that borrows a borrow source again rather than
-// copying it, which F4 gives a method receiver and a pattern over a borrow. writes marks
-// a captureDest whose closure writes the captured local. callLifetime, when set on a
-// paramDest, is the lifetime a borrow into the parameter takes in place of the one the
-// parameter declares.
-type flowDest struct {
-	kind         destKind
-	borrow       borrowKind
-	lt           soltype.Lifetime
-	param        *soltype.FuncParam
-	call         *ast.CallExpr
-	index        int
-	reborrows    bool
-	writes       bool
-	callLifetime soltype.Lifetime
-}
-
 // destOfType returns the destination a flow into a slot of type t has: a borrow
 // destination when t is a borrow, and an owned one otherwise.
 func (c *checker) destOfType(t soltype.Type) flowDest {
 	if r, ok := c.borrowOf(t); ok {
-		return flowDest{kind: borrowDest, borrow: borrowKindOf(r.Mut), lt: r.Lt}
+		return &borrowDest{borrow: borrowKindOf(r.Mut), lt: r.Lt}
 	}
-	return flowDest{kind: ownedDest}
+	return &ownedDest{}
 }
 
 // borrowOf returns the borrow t is. A union is a borrow when each member that is not a
@@ -462,15 +423,15 @@ func (c *checker) classifyFlow(table *ownershipEvents, p movePlace, t soltype.Ty
 	case valueSource:
 		return useEvent, flowWait{}, true
 	case borrowSource:
-		if dest.kind == borrowDest && dest.reborrows {
-			ev.borrow, ev.lifetime = dest.borrow, dest.lt
+		if b, ok := dest.(*borrowDest); ok && b.reborrows {
+			ev.borrow, ev.lifetime = b.borrow, b.lt
 			return borrowEvent, flowWait{}, true
 		}
 		return copyEvent, flowWait{}, true
 	case ownedSource:
 	}
-	if dest.kind == borrowDest {
-		ev.borrow, ev.lifetime = dest.borrow, dest.lt
+	if b, ok := dest.(*borrowDest); ok {
+		ev.borrow, ev.lifetime = b.borrow, b.lt
 		return borrowEvent, flowWait{}, true
 	}
 	return moveEvent, flowWait{}, true
@@ -481,44 +442,44 @@ func (c *checker) classifyFlow(table *ownershipEvents, p movePlace, t soltype.Ty
 // wait then names what it waits on. force and forceCapture are the flags classifyFlow
 // describes.
 func (c *checker) settleDest(table *ownershipEvents, dest flowDest, holder eventHolder, force, forceCapture bool) (flowDest, flowWait, bool) {
-	switch dest.kind {
-	case paramDest:
-		if !force && c.unsettledParams.Contains(dest.param) {
-			return dest, flowWait{param: dest.param}, false
+	switch d := dest.(type) {
+	case *paramDest:
+		if !force && c.unsettledParams.Contains(d.param) {
+			return dest, flowWait{param: d.param}, false
 		}
-		settled := c.paramDestOf(dest.param, dest.reborrows)
-		if settled.kind == borrowDest && dest.callLifetime != nil {
-			settled.lt = dest.callLifetime
+		settled := c.paramDestOf(d.param, d.reborrows)
+		if b, ok := settled.(*borrowDest); ok && d.callLifetime != nil {
+			settled = &borrowDest{borrow: b.borrow, lt: d.callLifetime, reborrows: b.reborrows}
 		}
 		return settled, flowWait{}, true
-	case calleeDest:
-		if fn, ok := resolveFunc(c.info.TypeOf(dest.call.Callee)); ok {
-			if param, ok := argDest(dest.call, fn, dest.index); ok {
+	case *calleeDest:
+		if fn, ok := resolveFunc(c.info.TypeOf(d.call.Callee)); ok {
+			if param, ok := argDest(d.call, fn, d.index); ok {
 				return c.settleDest(table, param, holder, force, forceCapture)
 			}
 		}
 		if !force {
 			return dest, flowWait{callee: true}, false
 		}
-		return flowDest{kind: borrowDest, borrow: immutableBorrow}, flowWait{}, true
-	case captureDest:
+		return &borrowDest{borrow: immutableBorrow}, flowWait{}, true
+	case *captureDest:
 		// A closure that is returned or stored into module-level state owns what it
 		// captures, and any other closure borrows it. A closure a local holds may still be
 		// returned through that local, so it waits for the whole body.
 		switch holder.kind {
 		case returnHolder, moduleHolder:
-			return flowDest{kind: ownedDest}, flowWait{}, true
+			return &ownedDest{}, flowWait{}, true
 		case tempHolder, placeHolder:
 			if !forceCapture {
 				return dest, flowWait{capture: true}, false
 			}
 			if holder.kind == placeHolder && table.escapes(holder.place.root) {
-				return flowDest{kind: ownedDest}, flowWait{}, true
+				return &ownedDest{}, flowWait{}, true
 			}
 		case argHolder, receiverHolder:
 		}
-		return flowDest{kind: borrowDest, borrow: borrowKindOf(dest.writes), reborrows: true}, flowWait{}, true
-	case ownedDest, borrowDest, inferredReturnDest:
+		return &borrowDest{borrow: borrowKindOf(d.writes), reborrows: true}, flowWait{}, true
+	case *ownedDest, *borrowDest, *inferredReturnDest:
 	}
 	return dest, flowWait{}, true
 }
@@ -528,12 +489,12 @@ func (c *checker) settleDest(table *ownershipEvents, dest flowDest, holder event
 // one F3 settled as a borrow, since its body neither moves it nor lets it escape.
 func (c *checker) paramDestOf(fp *soltype.FuncParam, reborrows bool) flowDest {
 	if r, ok := fp.Type.(*soltype.RefType); ok && r.Lt != nil {
-		return flowDest{kind: borrowDest, borrow: borrowKindOf(r.Mut), lt: r.Lt, reborrows: reborrows}
+		return &borrowDest{borrow: borrowKindOf(r.Mut), lt: r.Lt, reborrows: reborrows}
 	}
 	if c.paramTakesOwnership(fp) {
-		return flowDest{kind: ownedDest}
+		return &ownedDest{}
 	}
-	return flowDest{kind: borrowDest, borrow: immutableBorrow, reborrows: reborrows}
+	return &borrowDest{borrow: immutableBorrow, reborrows: reborrows}
 }
 
 // paramTakesOwnership reports whether an argument passed to fp is owned by the callee. A
@@ -561,7 +522,7 @@ func (c *checker) sourceKindOf(p movePlace, t soltype.Type, force bool) (sourceK
 		if !force && c.unsettledParams.Contains(fp) {
 			return valueSource, flowWait{param: fp}, false
 		}
-		if c.paramDestOf(fp, false).kind != ownedDest {
+		if _, owned := c.paramDestOf(fp, false).(*ownedDest); !owned {
 			return borrowSource, flowWait{}, true
 		}
 		if len(p.path) == 0 {
@@ -668,9 +629,9 @@ func (c *checker) emitCaptureFlow(closure ast.Func, root liveness.VarID, t solty
 		t = fp.Type
 	}
 	holder := eventHolder{kind: tempHolder, node: closure}
-	dest := flowDest{kind: captureDest, writes: writes}
+	var dest flowDest = &captureDest{writes: writes}
 	if moves {
-		dest = flowDest{kind: ownedDest}
+		dest = &ownedDest{}
 	}
 	c.emitValueFlow(movePlace{root: root}, nil, t, closure, holder, dest, ref)
 }
@@ -722,7 +683,7 @@ func (c *checker) emitBindingFlow(vd *ast.VarDecl, id liveness.VarID, bindingT s
 	if id <= 0 || !c.firstEmit(vd, bindingRole, ref, 0) {
 		return
 	}
-	dest := flowDest{kind: ownedDest}
+	var dest flowDest = &ownedDest{}
 	if vd.TypeAnn != nil {
 		dest = c.destOfType(bindingT)
 	}
@@ -863,9 +824,11 @@ func (w *patternEmitter) leaf(node ast.Node, at movePlace, path []placeSeg) {
 	if r, ok := w.c.borrowOf(w.sourceT); ok && !w.c.holdsValueType(leafT) {
 		// The leaf binds a borrow with the source's mutability, as D14 decides.
 		sourceT = r
-		dest = flowDest{kind: borrowDest, borrow: borrowKindOf(r.Mut), lt: r.Lt}
+		dest = &borrowDest{borrow: borrowKindOf(r.Mut), lt: r.Lt}
 	}
-	dest.reborrows = true
+	if b, ok := dest.(*borrowDest); ok {
+		b.reborrows = true
+	}
 	holder := eventHolder{kind: placeHolder, place: movePlace{root: id, path: path}}
 	w.c.emitValueFlow(at, nil, sourceT, w.source, holder, dest, w.ref)
 }
@@ -911,24 +874,24 @@ func (c *checker) storeDest(target ast.Expr) flowDest {
 	switch t := target.(type) {
 	case *ast.MemberExpr:
 		if t.Prop == nil {
-			return flowDest{kind: ownedDest}
+			return &ownedDest{}
 		}
 		object, name = t.Object, t.Prop.Name
 	case *ast.IndexExpr:
 		key, ok := constStringKey(t.Index)
 		if !ok {
-			return flowDest{kind: ownedDest}
+			return &ownedDest{}
 		}
 		object, name = t.Object, key
 	}
 	recv := c.info.TypeOf(object)
 	if recv == nil {
-		return flowDest{kind: ownedDest}
+		return &ownedDest{}
 	}
 	if prop, ok := c.lookupWriteField(name, recv); ok {
 		return c.destOfType(prop.Type)
 	}
-	return flowDest{kind: ownedDest}
+	return &ownedDest{}
 }
 
 // lookupWriteField returns the property named name a write through a receiver of type recv
@@ -953,11 +916,10 @@ func (c *checker) emitCallFlows(lvl int, e *ast.CallExpr, fn *soltype.FuncType, 
 		// The method read is how the call reaches the receiver, so the receiver's flow
 		// accounts for it.
 		c.subsumePlaceChain(e.Callee)
-		dest := flowDest{kind: paramDest, param: self, reborrows: true}
 		// self is the method's declared receiver, which every call of the method shares, so
 		// its lifetime cannot tell one call's borrow from another's. Each call borrows the
 		// receiver under a lifetime of its own.
-		dest.callLifetime = c.ctx.freshLifetime(lvl)
+		dest := &paramDest{param: self, reborrows: true, callLifetime: c.ctx.freshLifetime(lvl)}
 		c.emitFlow(recv, eventHolder{kind: receiverHolder, node: e}, dest, ref)
 	}
 	for i, arg := range e.Args {
@@ -973,13 +935,13 @@ func (c *checker) emitCallFlows(lvl int, e *ast.CallExpr, fn *soltype.FuncType, 
 // every argument from its position on. ok is false for an argument no parameter receives.
 func argDest(e *ast.CallExpr, fn *soltype.FuncType, i int) (flowDest, bool) {
 	if fn == nil {
-		return flowDest{kind: calleeDest, call: e, index: i}, true
+		return &calleeDest{call: e, index: i}, true
 	}
 	fp, ok := paramForArg(fn, i)
 	if !ok {
-		return flowDest{}, false
+		return nil, false
 	}
-	return flowDest{kind: paramDest, param: fp}, true
+	return &paramDest{param: fp}, true
 }
 
 // emitReturnFlow emits the flow of the returned expression into the function's return,
@@ -989,12 +951,12 @@ func (c *checker) emitReturnFlow(expr ast.Expr, ref liveness.StmtRef) {
 	if !c.firstEmit(expr, returnRole, ref, 0) {
 		return
 	}
-	dest := flowDest{kind: ownedDest}
+	var dest flowDest = &ownedDest{}
 	switch {
 	case c.fn.returnAnn != nil:
 		dest = c.destOfType(c.fn.returnAnn)
 	case !c.fn.returnAnnotated:
-		dest = flowDest{kind: inferredReturnDest}
+		dest = &inferredReturnDest{}
 	}
 	c.emitFlow(expr, eventHolder{kind: returnHolder}, dest, ref)
 }
