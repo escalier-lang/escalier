@@ -1,6 +1,9 @@
 package solver
 
 import (
+	"slices"
+	"strings"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -83,16 +86,8 @@ func (c *checker) subsumePlaceChain(e ast.Expr) {
 		return
 	}
 
-	for e != nil {
-		t.subsumed.Add(e)
-		switch x := e.(type) {
-		case *ast.MemberExpr:
-			e = x.Object
-		case *ast.IndexExpr:
-			e = x.Object
-		default:
-			return
-		}
+	for _, x := range placeChain(e) {
+		t.subsumed.Add(x)
 	}
 }
 
@@ -434,6 +429,18 @@ func (c *checker) emitPatternFlows(pat ast.Pat, source ast.Expr, ref liveness.St
 		leaf:          func(node ast.Node, at movePlace) { w.leaf(node, at, nil, c.info.TypeOf(node)) },
 		objectRest:    w.objectRest,
 		elementPlaces: true,
+		tuple: func(at movePlace, parts []placeSeg) {
+			// Only a pattern over the source itself has a known tuple type to check against.
+			covers := len(at.path) == len(src.path) && c.coversTuple(w.sourceT, parts)
+			key := placeKey(at)
+			prev, seen := c.fn.events.tupleParts[key]
+			switch {
+			case !covers || (seen && !slices.Equal(prev, parts)):
+				c.fn.events.tupleParts[key] = nil
+			case !seen:
+				c.fn.events.tupleParts[key] = parts
+			}
+		},
 	}
 	walk.walk(pat, src)
 
@@ -441,6 +448,26 @@ func (c *checker) emitPatternFlows(pat ast.Pat, source ast.Expr, ref liveness.St
 	if w.bound {
 		c.subsumePlaceChain(source)
 	}
+}
+
+// coversTuple reports whether a tuple pattern whose elements are parts names every element
+// of a value of type t. It is false unless t is a tuple type of fixed length. A pattern with
+// no rest element covers the tuple when it has one part per element. A pattern with a rest
+// element at position i covers it when the tuple has at least i elements.
+func (c *checker) coversTuple(t soltype.Type, parts []placeSeg) bool {
+	tuple, ok := c.expandAliasChain(t).(*soltype.TupleType)
+	if !ok || tuple.Inexact || len(parts) == 0 {
+		return false
+	}
+	for _, elem := range tuple.Elems {
+		if _, spread := elem.(*soltype.RestSpreadType); spread {
+			return false
+		}
+	}
+	if last := parts[len(parts)-1].name; strings.HasSuffix(last, "...") {
+		return len(tuple.Elems) >= len(parts)-1
+	}
+	return len(tuple.Elems) == len(parts)
 }
 
 // branchEntryRef returns the CFG point on entry to branch i of the `match`, `if val`, or

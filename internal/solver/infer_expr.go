@@ -2574,6 +2574,27 @@ func (c *checker) consumeReceiver(access ast.Node) {
 	c.recordMovePlace(p, recv, ref)
 }
 
+// blameReceiver makes a use-after-move reported at the member access blame the access's
+// receiver. The access recorded its read as a use of the member it names, such as `c.take`,
+// and it does nothing when no such use was recorded.
+func (c *checker) blameReceiver(access ast.Node) {
+	var recv ast.Expr
+	switch access := access.(type) {
+	case *ast.MemberExpr:
+		recv = access.Object
+	case *ast.IndexExpr:
+		recv = access.Object
+	default:
+		return
+	}
+	if c.fn == nil {
+		return
+	}
+	if i, ok := c.fn.memberUses[access]; ok {
+		c.fn.useSites[i].blame = recv
+	}
+}
+
 // ctorOverloadArms returns the signatures of an overloaded constructor when t reads as a class
 // value carrying one, and false otherwise. A class declaring a single constructor is not an
 // overload set, so it stays on the ordinary callee <: callShape path where resolveFunc reads

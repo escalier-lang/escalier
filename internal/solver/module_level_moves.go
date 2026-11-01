@@ -398,7 +398,7 @@ func (c *checker) consumeOnceCallee(call *ast.CallExpr, ref liveness.StmtRef) {
 		return
 	}
 	p := movePlace{root: c.varIDs.Of(ident)}
-	c.fn.useSites = append(c.fn.useSites, moveUse{place: p, ref: ref, node: ident, loanSeqAt: c.fn.loanSeq + 1})
+	c.fn.useSites = append(c.fn.useSites, moveUse{place: p, ref: ref, node: ident, loanSeqAt: c.fn.loanSeq + 1, closureCall: true})
 	c.recordMovePlace(p, call, ref)
 }
 

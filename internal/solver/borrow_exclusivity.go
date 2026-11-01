@@ -93,8 +93,11 @@ type BorrowAliasError struct {
 	SecondVia  string
 	FirstRuns  bool
 	SecondRuns bool
-	node       ast.Node
-	first      ast.Span
+	// closure marks a conflict in which one of the two borrows is a closure's capture. E4
+	// counts a capture as used while the closure runs, so it checks this conflict.
+	closure bool
+	node    ast.Node
+	first   ast.Span
 }
 
 func (*BorrowAliasError) isSolverError()        {}
@@ -371,9 +374,16 @@ func (c *checker) reportBorrowConflict(first, second loan) {
 		SecondVia:  second.via,
 		FirstRuns:  first.viaRuns,
 		SecondRuns: second.viaRuns,
+		closure:    isFuncNode(first.node) || isFuncNode(second.node),
 		node:       second.node,
 		first:      first.node.Span(),
 	})
+}
+
+// isFuncNode reports whether n is a function or closure.
+func isFuncNode(n ast.Node) bool {
+	_, ok := n.(ast.Func)
+	return ok
 }
 
 // liveAt reports whether l is still usable at ref. A loan bound to a binding lasts while that
@@ -939,7 +949,7 @@ func (c *checker) checkUsesAgainstLoans(reported set.Set[ast.Node]) {
 			}
 			if moved {
 				c.report(&MoveWhileBorrowedError{
-					Place:   c.renderPlace(u.place),
+					Place:   c.renderPlace(c.movedPlaceOf(u.node, u.place, l.place)),
 					Via:     l.via,
 					ViaRuns: l.viaRuns,
 					move:    u.node,
@@ -959,14 +969,42 @@ func (c *checker) checkUsesAgainstLoans(reported set.Set[ast.Node]) {
 	}
 }
 
+// movedPlaceOf returns the place the read node moves that overlaps loanPlace. A
+// destructuring reads its source to move parts of it, so `val {f: d} = p` reads the place
+// `p` and moves `p.f`. When node moved no such place, it returns read, the place node reads.
+// Of several such places, it returns the one with the lowest lattice id, so every run
+// names the same one.
+func (c *checker) movedPlaceOf(node ast.Node, read, loanPlace movePlace) movePlace {
+	found := false
+	var bestID liveness.VarID
+	for id, p := range c.fn.movePlaces {
+		if c.fn.moveNodes[id] != node || !placesOverlap(p, loanPlace) {
+			continue
+		}
+		if !found || id < bestID {
+			found, bestID = true, id
+		}
+	}
+	if !found {
+		return read
+	}
+	return c.fn.movePlaces[bestID]
+}
+
 // renderWrittenPlace names the place a write targets for a diagnostic. It renders target,
 // the expression the write names, as written, so `xs[1].x = 3` names `xs[1].x`. When the
 // printer cannot render target, it renders place instead.
 func (c *checker) renderWrittenPlace(place movePlace, target ast.Node) string {
+	return writtenPlaceName(target, c.renderPlace(place))
+}
+
+// writtenPlaceName renders target, the expression a write names, as written. When the
+// printer cannot render target, it returns fallback.
+func writtenPlaceName(target ast.Node, fallback string) string {
 	if text, err := printer.Print(target, printer.DefaultOptions()); err == nil {
 		return text
 	}
-	return c.renderPlace(place)
+	return fallback
 }
 
 // checkExplicitBorrowArgs reports an argument that fills a borrow parameter without a borrow

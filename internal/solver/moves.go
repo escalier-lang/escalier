@@ -80,6 +80,9 @@ type UseAfterMoveError struct {
 	// ViaReads marks a closure named by Via that only reads the place. It is false for one
 	// that writes it.
 	ViaReads bool
+	// closureCall marks a read of a closure's binding by a call that runs it. The closure
+	// moves one of its captures, so a call moves the closure, and E4 checks the call.
+	closureCall bool
 	// use is the read being rejected; it self-blames from here.
 	use ast.Node
 	// moveSite is the consume that moved the binding, used for the related span. It
@@ -130,6 +133,19 @@ type moveUse struct {
 	// viaReads marks a closure named by via that only reads the place. It is false for one
 	// that writes it.
 	viaReads bool
+	// closureCall marks the read of a closure's binding by a call that runs the closure,
+	// which consumeOnceCallee records.
+	closureCall bool
+	// blame is the node a diagnostic about the read points at, when it differs from node.
+	blame ast.Node
+}
+
+// blamed returns the node a diagnostic about the read u points at.
+func (u moveUse) blamed() ast.Node {
+	if u.blame != nil {
+		return u.blame
+	}
+	return u.node
 }
 
 // isBorrowType reports whether t is a borrow — a RefType carrying a lifetime.
@@ -480,6 +496,10 @@ func (c *checker) recordMemberUse(e ast.Expr) {
 	if !ok {
 		return
 	}
+	if c.fn.memberUses == nil {
+		c.fn.memberUses = map[ast.Node]int{}
+	}
+	c.fn.memberUses[e] = len(c.fn.useSites)
 	c.fn.useSites = append(c.fn.useSites, moveUse{place: p, ref: ref, node: e, loanSeqAt: c.fn.loanSeq + 1})
 	c.emitRead(e)
 }
@@ -593,6 +613,9 @@ type patternPlaceWalk struct {
 	// When it is unset, each tuple element reads the tuple's own place, and an instance or
 	// extractor pattern binds nothing.
 	elementPlaces bool
+	// tuple receives the place of each tuple pattern's value and the segment of each of its
+	// elements, when elementPlaces is set. It may be nil.
+	tuple func(at movePlace, parts []placeSeg)
 }
 
 // walk passes each leaf pat binds the place it reads out of the place `at`.
@@ -619,6 +642,13 @@ func (w *patternPlaceWalk) walk(pat ast.Pat, at movePlace) {
 			}
 		}
 	case *ast.TuplePat:
+		if w.tuple != nil && w.elementPlaces {
+			parts := make([]placeSeg, len(pat.Elems))
+			for i, elem := range pat.Elems {
+				parts[i] = elementSeg(i, elem)
+			}
+			w.tuple(at, parts)
+		}
 		w.elements(pat.Elems, at)
 	case *ast.ExtractorPat:
 		if w.elementPlaces {
@@ -648,13 +678,24 @@ func (w *patternPlaceWalk) elements(elems []ast.Pat, at movePlace) {
 
 		if rest, ok := elem.(*ast.RestPat); ok {
 			if !w.skipRests {
-				w.walk(rest.Pattern, extendPlace(at, strconv.Itoa(i)+"..."))
+				w.walk(rest.Pattern, extendPlace(at, elementSeg(i, elem).name))
 			}
 			continue
 		}
 
-		w.walk(elem, extendPlace(at, strconv.Itoa(i)))
+		w.walk(elem, extendPlace(at, elementSeg(i, elem).name))
 	}
+}
+
+// elementSeg returns the segment that names element i of a tuple or extractor pattern, whose
+// pattern is elem. A position is `i`, and a rest element at position i is `i...`, which stands
+// for every element from i on.
+func elementSeg(i int, elem ast.Pat) placeSeg {
+	name := strconv.Itoa(i)
+	if _, ok := elem.(*ast.RestPat); ok {
+		name += "..."
+	}
+	return placeSeg{kind: namedSeg, name: name}
 }
 
 // forEachRestField passes f each part an object rest binding of type t takes out of the
@@ -944,8 +985,11 @@ func (c *checker) checkUseAfterMoves() {
 		// moved place: reading the whole `pair` after `pair.a` moved exposes the moved
 		// field. ReadName then names the read; otherwise the read is the moved place
 		// itself or a field beneath it, and Name alone is enough.
+		//
+		// A read that itself moves the moved place reads that place, not its ancestor. In a
+		// loop, `val {f: d} = p` reads p to move p.f, and the next iteration moves p.f again.
 		moved := c.fn.movePlaces[movedID]
-		partial := len(u.place.path) < len(moved.path)
+		partial := len(u.place.path) < len(moved.path) && c.fn.moveNodes[movedID] != u.node
 		readName := ""
 		if partial {
 			readName = c.renderPlace(u.place)
@@ -958,7 +1002,8 @@ func (c *checker) checkUseAfterMoves() {
 			Via:         u.via,
 			ViaRuns:     u.viaRuns,
 			ViaReads:    u.viaReads,
-			use:         u.node,
+			closureCall: u.closureCall,
+			use:         u.blamed(),
 			moveSite:    c.fn.moveNodes[movedID],
 		})
 	}
