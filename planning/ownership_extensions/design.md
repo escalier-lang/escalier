@@ -931,27 +931,48 @@ section 7 lists. Each PR runs `UPDATE_SNAPS=true go test ./...` and
 `UPDATE_FIXTURES=true go test ./cmd/...` and reviews the fixture deltas.
 
 Each issue below is one PR. The table lists them in an order that respects
-their dependencies.
+their dependencies. Five of the dependencies are open issues in the
+"Simplify ownership, lifetime, and mutability rules and implementation"
+milestone, which the rules here build on:
+
+- [#2247](https://github.com/escalier-lang/escalier/issues/2247) makes a `'static` borrow block later writes and new borrows. A2,
+  A4 and G2 each keep a borrow live past the frame and rely on it.
+- [#2289](https://github.com/escalier-lang/escalier/issues/2289) accepts a `&'static self` receiver, which the reaction
+  declarations in A2 use.
+- [#2318](https://github.com/escalier-lang/escalier/issues/2318) and [#2290](https://github.com/escalier-lang/escalier/issues/2290) bind `&mut` borrows through a pattern over a
+  `&mut` borrow and through a mutably borrowed array, which R1 relies on for
+  `for x in &mut arr`.
+- [#2300](https://github.com/escalier-lang/escalier/issues/2300) moves an owned argument passed to a type-parameter parameter,
+  which X3 relies on when an array is passed as an `Iterable<T>`.
 
 | Issue | Rules | What the PR does | Depends on |
 |---|---|---|---|
-| [#2426](https://github.com/escalier-lang/escalier/issues/2426) | A1, A2, A6 | Gives `await` its three forms and makes reactions borrow for `'static`. Changes the reaction methods in `prelude.esc` per X2, removes `SharedAwaitIntoMutError`, and removes promise from the value types in `requirements.md` | |
+| [#2426](https://github.com/escalier-lang/escalier/issues/2426) | A1, A2, A6 | Gives `await` its three forms and makes reactions borrow for `'static`. Changes the reaction methods in `prelude.esc` per X2, removes `SharedAwaitIntoMutError`, and removes promise from the value types in `requirements.md` | [#2247](https://github.com/escalier-lang/escalier/issues/2247), [#2289](https://github.com/escalier-lang/escalier/issues/2289) |
 | [#2424](https://github.com/escalier-lang/escalier/issues/2424) | | Distributes a borrow over a union, the rule A3 builds on | |
 | [#2427](https://github.com/escalier-lang/escalier/issues/2427) | A3, A7 | Normalizes a borrow of a promise to a promise of a borrow, refines the D12 warning per section 7, and adds `ReactionBorrowLifetimeError` | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2424](https://github.com/escalier-lang/escalier/issues/2424) |
-| [#2438](https://github.com/escalier-lang/escalier/issues/2438) | A4, A5 | Makes an `async fn` call hold its arguments' borrows until its promise settles, which closes the `show` hole in section 2 | [#2426](https://github.com/escalier-lang/escalier/issues/2426) |
+| [#2438](https://github.com/escalier-lang/escalier/issues/2438) | A4, A5 | Makes an `async fn` call hold its arguments' borrows until its promise settles, which closes the `show` hole in section 2 | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2247](https://github.com/escalier-lang/escalier/issues/2247) |
 | [#2439](https://github.com/escalier-lang/escalier/issues/2439) | G4 | Makes a generator hold its arguments' borrows while it is live, which closes the `each` hole in section 2 | |
-| [#2428](https://github.com/escalier-lang/escalier/issues/2428) | G1 to G3, G5 | Gives `yield` its three forms and keeps a yielded borrow live for the rest of the body | |
+| [#2428](https://github.com/escalier-lang/escalier/issues/2428) | G1 to G3, G5 | Gives `yield` its three forms and keeps a yielded borrow live for the rest of the body | [#2247](https://github.com/escalier-lang/escalier/issues/2247) |
 | [#2440](https://github.com/escalier-lang/escalier/issues/2440) | R2 | Binds a fresh loop variable on each iteration in the control-flow graph | |
 | [#2441](https://github.com/escalier-lang/escalier/issues/2441) | X3 | Restricts `fill` and `copyWithin` to element types F2 copies, and adds `DuplicatingArrayMethodError` | |
-| [#2444](https://github.com/escalier-lang/escalier/issues/2444) | R1, R3 | Gives `for` loops their three forms, adds `ImmutableIteratorLoopError` and the loop form of the moved-value message from section 8.2 | [#2428](https://github.com/escalier-lang/escalier/issues/2428), [#2440](https://github.com/escalier-lang/escalier/issues/2440), [#2441](https://github.com/escalier-lang/escalier/issues/2441) |
-| [#2442](https://github.com/escalier-lang/escalier/issues/2442) | X3, X4 | Changes the element-reading iterator methods and the `Iterable` and `Generator` declarations | [#2444](https://github.com/escalier-lang/escalier/issues/2444) |
+| [#2444](https://github.com/escalier-lang/escalier/issues/2444) | R1, R3 | Gives `for` loops their three forms, adds `ImmutableIteratorLoopError` and the loop form of the moved-value message from section 8.2 | [#2428](https://github.com/escalier-lang/escalier/issues/2428), [#2440](https://github.com/escalier-lang/escalier/issues/2440), [#2441](https://github.com/escalier-lang/escalier/issues/2441), [#2318](https://github.com/escalier-lang/escalier/issues/2318), [#2290](https://github.com/escalier-lang/escalier/issues/2290) |
+| [#2442](https://github.com/escalier-lang/escalier/issues/2442) | X3, X4 | Changes the element-reading iterator methods and the `Iterable` and `Generator` declarations | [#2444](https://github.com/escalier-lang/escalier/issues/2444), [#2300](https://github.com/escalier-lang/escalier/issues/2300) |
 | [#2443](https://github.com/escalier-lang/escalier/issues/2443) | S1 to S3 | Applies the rules to async generators, including the implicit `await` of a promise operand to `yield` | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2438](https://github.com/escalier-lang/escalier/issues/2438), [#2444](https://github.com/escalier-lang/escalier/issues/2444) |
 
 [#2439](https://github.com/escalier-lang/escalier/issues/2439), [#2440](https://github.com/escalier-lang/escalier/issues/2440) and [#2441](https://github.com/escalier-lang/escalier/issues/2441) need nothing else and can land first.
 
-Two related issues sit outside this milestone:
+Every issue that changes the move and borrow checks lands best after
+[#2269](https://github.com/escalier-lang/escalier/issues/2269), which turns on the single ownership pass. Landing earlier means
+extending the current move and loan checks, which [#2270](https://github.com/escalier-lang/escalier/issues/2270) to [#2272](https://github.com/escalier-lang/escalier/issues/2272)
+then remove. That covers every issue in the table except [#2424](https://github.com/escalier-lang/escalier/issues/2424),
+[#2440](https://github.com/escalier-lang/escalier/issues/2440), [#2441](https://github.com/escalier-lang/escalier/issues/2441) and [#2442](https://github.com/escalier-lang/escalier/issues/2442).
 
-- [#2304](https://github.com/escalier-lang/escalier/issues/2304) implements the D12 warning. It judges a promise as A7 states.
+Three related issues sit outside this milestone:
+
+- [#2304](https://github.com/escalier-lang/escalier/issues/2304) implements the D12 warning. Whichever of it and [#2427](https://github.com/escalier-lang/escalier/issues/2427)
+  lands second judges a promise as A7 states.
+- [#2308](https://github.com/escalier-lang/escalier/issues/2308) binds `val mut r = await p` for a sole local promise. A1
+  settles the same program, so [#2426](https://github.com/escalier-lang/escalier/issues/2426) supersedes it.
 - [#2445](https://github.com/escalier-lang/escalier/issues/2445) covers module-level state written by another function while a
   borrow of it is live, across a call or a suspension, as section 8.6
   describes.
