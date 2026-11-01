@@ -1,6 +1,10 @@
 package ast
 
-import "sort"
+import (
+	"cmp"
+	"slices"
+	"sort"
+)
 
 // AttachComments assigns every comment to one node in root and fills that
 // node's leading, trailing, or dangling slot. It returns the comments no node
@@ -151,17 +155,20 @@ func (a *attachment) apply() {
 
 // nodeIndex holds the nodes of one tree in the two orders the placement rules
 // search: byStart finds the node after a comment, and byEnd finds the node
-// before it. Both put an enclosing node ahead of the nodes it encloses when
-// several share the offset being searched for, so the widest node wins.
+// before it. Each order groups a source's nodes together. Both put an
+// enclosing node ahead of the nodes it encloses when several share the offset
+// being searched for, so the widest node wins.
 //
 // parent[i] is the position in byStart of the innermost node of the same
 // source enclosing byStart[i], or -1 for a top-level node. bySource lists the
-// byStart positions of each source's nodes in byStart order.
+// byStart positions of each source's nodes in byStart order, and endsBySource
+// lists the byEnd positions of each source's nodes in byEnd order.
 type nodeIndex struct {
-	byStart  []Node
-	byEnd    []Node
-	parent   []int
-	bySource map[int][]int
+	byStart      []Node
+	byEnd        []Node
+	parent       []int
+	bySource     map[int][]int
+	endsBySource map[int][]int
 }
 
 // collectNodes gathers every node in root that covers a real range of source.
@@ -171,26 +178,50 @@ func collectNodes(root Walkable) *nodeIndex {
 	c := &nodeCollector{DefaultVisitor: DefaultVisitor{}}
 	root.Accept(c)
 
-	byStart := c.nodes
-	byEnd := make([]Node, len(byStart))
-	copy(byEnd, byStart)
-
-	sort.SliceStable(byStart, func(i, j int) bool {
-		a, b := byStart[i].Span(), byStart[j].Span()
-		if a.Start.Offset != b.Start.Offset {
-			return a.Start.Offset < b.Start.Offset
-		}
-		return a.End.Offset > b.End.Offset
+	// Each sort reads spans computed once, and orders by source first. A source's
+	// nodes arrive in walk order, which is nearly start order already, so the sort
+	// keeping them together does little work.
+	starts := make([]spannedNode, len(c.nodes))
+	for i, node := range c.nodes {
+		span := node.Span()
+		starts[i] = spannedNode{node: node, source: span.SourceID, start: span.Start.Offset, end: span.End.Offset}
+	}
+	ends := slices.Clone(starts)
+	slices.SortStableFunc(starts, func(a, b spannedNode) int {
+		return cmp.Or(
+			cmp.Compare(a.source, b.source),
+			cmp.Compare(a.start, b.start),
+			cmp.Compare(b.end, a.end),
+		)
 	})
-	sort.SliceStable(byEnd, func(i, j int) bool {
-		a, b := byEnd[i].Span(), byEnd[j].Span()
-		if a.End.Offset != b.End.Offset {
-			return a.End.Offset < b.End.Offset
-		}
-		return a.Start.Offset < b.Start.Offset
+	slices.SortStableFunc(ends, func(a, b spannedNode) int {
+		return cmp.Or(
+			cmp.Compare(a.source, b.source),
+			cmp.Compare(a.end, b.end),
+			cmp.Compare(a.start, b.start),
+		)
 	})
+	byStart := make([]Node, len(starts))
+	for i, n := range starts {
+		byStart[i] = n.node
+	}
+	byEnd := make([]Node, len(ends))
+	for i, n := range ends {
+		byEnd[i] = n.node
+	}
 	parent, bySource := nestNodes(byStart)
-	return &nodeIndex{byStart: byStart, byEnd: byEnd, parent: parent, bySource: bySource}
+	endsBySource := map[int][]int{}
+	for i, n := range ends {
+		endsBySource[n.source] = append(endsBySource[n.source], i)
+	}
+	return &nodeIndex{byStart: byStart, byEnd: byEnd, parent: parent, bySource: bySource, endsBySource: endsBySource}
+}
+
+// spannedNode is a node with the parts of its span the sorts in collectNodes
+// compare, read once.
+type spannedNode struct {
+	node               Node
+	source, start, end int
 }
 
 // nestNodes returns the parent of each node in byStart and the byStart
@@ -255,47 +286,36 @@ func (x *nodeIndex) place(comment *Comment, lineMap *LineMap, slots *attachment)
 	return false
 }
 
-// after returns the first node starting at or past offset, preferring the
-// widest of the nodes that start there.
+// after returns the first node of sourceID starting at or past offset,
+// preferring the widest of the nodes that start there.
 func (x *nodeIndex) after(offset, sourceID int) Node {
-	i := sort.Search(len(x.byStart), func(i int) bool {
-		return x.byStart[i].Span().Start.Offset >= offset
+	positions := x.bySource[sourceID]
+	k := sort.Search(len(positions), func(k int) bool {
+		return x.byStart[positions[k]].Span().Start.Offset >= offset
 	})
-	for ; i < len(x.byStart); i++ {
-		if x.byStart[i].Span().SourceID == sourceID {
-			return x.byStart[i]
-		}
+	if k == len(positions) {
+		return nil
 	}
-	return nil
+	return x.byStart[positions[k]]
 }
 
 // before returns the last node of sourceID ending at or before offset,
 // preferring the widest of the nodes that end there.
-//
-// A module holds the nodes of all its files in one index. The node nearest a
-// comment by offset therefore often belongs to another file, and the one this
-// looks for lies further back. The scan walks back over every node ending at
-// or before offset until it reaches one of sourceID.
 func (x *nodeIndex) before(offset, sourceID int) Node {
-	i := sort.Search(len(x.byEnd), func(i int) bool {
-		return x.byEnd[i].Span().End.Offset > offset
-	})
-	for i--; i >= 0; i-- {
-		if x.byEnd[i].Span().SourceID != sourceID {
-			continue
-		}
-		// byEnd puts a node ahead of the nodes it encloses when they end
-		// together, so walking back to the start of the run reaches the widest.
-		end := x.byEnd[i].Span().End.Offset
-		found := x.byEnd[i]
-		for j := i - 1; j >= 0 && x.byEnd[j].Span().End.Offset == end; j-- {
-			if x.byEnd[j].Span().SourceID == sourceID {
-				found = x.byEnd[j]
-			}
-		}
-		return found
+	positions := x.endsBySource[sourceID]
+	k := sort.Search(len(positions), func(k int) bool {
+		return x.byEnd[positions[k]].Span().End.Offset > offset
+	}) - 1
+	if k < 0 {
+		return nil
 	}
-	return nil
+	// byEnd puts a node ahead of the nodes it encloses when they end together,
+	// so walking back to the start of the run reaches the widest.
+	end := x.byEnd[positions[k]].Span().End.Offset
+	for k > 0 && x.byEnd[positions[k-1]].Span().End.Offset == end {
+		k--
+	}
+	return x.byEnd[positions[k]]
 }
 
 // enclosing returns the innermost node whose span contains span. When two
