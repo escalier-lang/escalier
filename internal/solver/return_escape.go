@@ -602,8 +602,14 @@ func (c *checker) returnOutflowConflict(
 			continue
 		}
 		leaves = true
-		if ours, other, mixed := firstMixedPair(returned, others); mixed {
-			return true, &outflowConflict{id: id, other: other.node, owned: ours.owned || other.owned}
+		if first, second, mixed := firstMixedPair(returned, others); mixed {
+			// firstMixedPair orders the pair by source position, so the other site is
+			// whichever of the two is not the return.
+			other := first.node
+			if other == ret {
+				other = second.node
+			}
+			return true, &outflowConflict{id: id, other: other, owned: first.owned || second.owned}
 		}
 	}
 	return leaves, nil

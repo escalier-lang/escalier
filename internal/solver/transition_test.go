@@ -691,6 +691,9 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 			},
 		},
 		// Conditional aliasing: c aliases both branches; a is live after the transition.
+		//
+		// c's annotation is owned, so by F2 the `if` moves a into c on the branch that yields
+		// it. The dataflow pass reports the write to a as a use after that move.
 		"Conditional_IfElse_Error": {
 			src: `
 				fn test(cond: boolean) {
@@ -704,6 +707,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 			want: []string{
 				"5:6-5:51: cannot assign 'a' to immutable 'c': 'a' is still used mutably after this point",
 			},
+			wantDataflow: []string{"6:6-6:7: use of moved value 'a'"},
 		},
 		// Rule 1: safe when the immutable borrow is dead. snapshot is never read, so there
 		// is no window where the immutable view and the live mutable source overlap.

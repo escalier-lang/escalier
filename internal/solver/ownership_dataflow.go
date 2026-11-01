@@ -97,7 +97,66 @@ func (c *checker) runOwnershipDataflow() {
 	// E4's `moved` example puts the error on the move, so a move the pass rejects is
 	// reported once, there, and not again at a later call of the closure.
 	c.errs = slices.DeleteFunc(c.errs, closureMoveReported(found))
+	// L1 and E2 at the return replace the frame-exit check of a returned value's paths. A
+	// pair of paths the pass reports by E2 is reported once, by the pass. The frame-exit
+	// check keeps each pair the pass does not report.
+	c.errs = slices.DeleteFunc(c.errs, sharedPathsReported(found))
 	c.errs = append(c.errs, found...)
+}
+
+// sharedPathsReported returns a filter that matches each SharedReturnPathsError and
+// MixedOutflowPathsError of the current checks for which the dataflow pass reports an E2
+// diagnostic about the same local. found holds the pass's diagnostics. A pass diagnostic
+// matches when the root of the place it names is the local the frame-exit diagnostic names,
+// and its span lies inside the frame-exit diagnostic's span or one of its related spans.
+func sharedPathsReported(found []SolverError) func(SolverError) bool {
+	type e2Report struct {
+		local string
+		span  ast.Span
+	}
+	var reports []e2Report
+	for _, err := range found {
+		switch e := err.(type) {
+		case *BorrowAliasError:
+			reports = append(reports, e2Report{local: placeNameRoot(e.Place), span: e.Span()})
+		case *BorrowedValueWriteError:
+			reports = append(reports, e2Report{local: placeNameRoot(e.Place), span: e.Span()})
+		}
+	}
+
+	return func(err SolverError) bool {
+		var local string
+		switch e := err.(type) {
+		case *SharedReturnPathsError:
+			local = e.LocalName
+		case *MixedOutflowPathsError:
+			local = e.LocalName
+		default:
+			return false
+		}
+
+		spans := append([]ast.Span{err.Span()}, err.Related()...)
+		for _, r := range reports {
+			if r.local != local {
+				continue
+			}
+			for _, s := range spans {
+				if s.ContainsSpan(r.span) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+}
+
+// placeNameRoot returns the local a rendered place name starts with, `b` for `b`, `b.x`,
+// and `b[0]`.
+func placeNameRoot(name string) string {
+	if i := strings.IndexAny(name, ".["); i >= 0 {
+		return name[:i]
+	}
+	return name
 }
 
 // closureMoveReported returns a filter that matches each E4 diagnostic of the current checks
