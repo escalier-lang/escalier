@@ -28,11 +28,12 @@ type Options struct {
 	// CheckJsDecorators reports a pseudo-package file whose values break the `@js`
 	// rules jsDecoratorErrors lists, at the import that loads it.
 	CheckJsDecorators bool
-	// OwnershipDataflow runs the dataflow pass of ownership_dataflow.go, which checks E1, E2,
-	// and E3 of planning/ownership_rules/requirements.md over each body's control-flow graph.
-	// Its diagnostics take the place of the current checks' diagnostics of those rules. The
-	// ESCALIER_OWNERSHIP_DATAFLOW environment variable set to 1 turns it on as well.
-	OwnershipDataflow bool
+	// NoOwnershipDataflow skips the dataflow pass of ownership_dataflow.go, which checks E1,
+	// E2, and E3 of planning/ownership_rules/requirements.md over each body's control-flow
+	// graph. The run then reports the current checks' diagnostics of those rules, which the
+	// pass's diagnostics replace by default. The ESCALIER_OWNERSHIP_DATAFLOW environment
+	// variable set to 0 skips the pass as well.
+	NoOwnershipDataflow bool
 }
 
 // InferModule builds the dep graph for a single parsed module, infers every
@@ -168,7 +169,7 @@ func newRunChecker(source ModuleSource, groupSource GroupSource, groups PackageG
 	c.noAmbientNames = opts.NoAmbientNames
 	c.checkJsDecorators = opts.CheckJsDecorators
 	c.dependencies = opts.Dependencies
-	c.ownershipDataflow = c.ownershipDataflow || opts.OwnershipDataflow
+	c.ownershipDataflow = c.ownershipDataflow && !opts.NoOwnershipDataflow
 	return c
 }
 

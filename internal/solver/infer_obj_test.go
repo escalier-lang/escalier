@@ -216,9 +216,6 @@ func TestInferObjectShorthand(t *testing.T) {
 		src  string
 		want map[string]string
 		errs []string
-		// errsDataflow is what the case reports with the dataflow pass on, when that differs
-		// from errs.
-		errsDataflow []string
 	}{
 		"ValBinding": {
 			src: `
@@ -277,10 +274,9 @@ func TestInferObjectShorthand(t *testing.T) {
 					return &mut b
 				}
 			`,
-			errs: []string{"6:13-6:19: 'b' leaves the function through a mutable path and an immutable one"},
 			// `p.node.a` holds the copy of a's `&b` when f returns, so the returned `&mut b`
 			// breaks E2 against it.
-			errsDataflow: []string{"6:13-6:19: cannot borrow 'b' as mutable while it is borrowed as immutable"},
+			errs: []string{"6:13-6:19: cannot borrow 'b' as mutable while it is borrowed as immutable"},
 		},
 	}
 
@@ -289,7 +285,7 @@ func TestInferObjectShorthand(t *testing.T) {
 			t.Run(name+"/"+form, func(t *testing.T) {
 				src := strings.ReplaceAll(tc.src, "PROP", form)
 				values, _, errs := inferSource(t, src)
-				require.Equal(t, wantForPass(tc.errs, tc.errsDataflow), messagesWithSpan(t, errs))
+				require.Equal(t, tc.errs, messagesWithSpan(t, errs))
 				for binding, want := range tc.want {
 					require.Equal(t, want, values[binding])
 				}

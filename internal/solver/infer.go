@@ -90,7 +90,8 @@ type checker struct {
 	debugProv bool
 
 	// ownershipDataflow runs the dataflow pass of ownership_dataflow.go once the flows of a
-	// module or script settle. Options.OwnershipDataflow and ownershipDataflowEnv set it.
+	// module or script settle. It is set unless Options.NoOwnershipDataflow or
+	// ownershipDataflowEnv clears it.
 	ownershipDataflow bool
 
 	// varIDCounter is the module-wide running allocator for liveness VarIDs (M4 G1).

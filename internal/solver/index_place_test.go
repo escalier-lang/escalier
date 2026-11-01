@@ -84,17 +84,13 @@ func findFuncDecl(t *testing.T, module *ast.Module, name string) *ast.FuncDecl {
 // different literal indices name disjoint elements, so a borrow of one does not conflict
 // with a write or a borrow of the other. The same literal index names one element twice. An
 // index typed `number` names the whole container, which overlaps every element. A tuple
-// pattern's element and an index read of the same position name one place in the dataflow
-// pass. The current checks move or borrow a whole tuple for a tuple pattern, so they report
-// the tuple itself. Each program runs with the dataflow flag off and on, and each run
-// reports every diagnostic its want lists, with spans. wantDataflow is the flag-on result
-// when it differs from want.
+// pattern's element and an index read of the same position name one place. Each program
+// reports every diagnostic its want lists, with spans.
 func TestLiteralIndexConflicts(t *testing.T) {
 	cases := []struct {
-		name         string
-		src          string
-		want         []string
-		wantDataflow []string
+		name string
+		src  string
+		want []string
 	}{
 		{
 			name: "WriteToADifferentLiteralIndex",
@@ -206,8 +202,7 @@ func TestLiteralIndexConflicts(t *testing.T) {
 					val c = t[0]
 				}
 			`,
-			want:         []string{"5:14-5:18: use of moved value 't'"},
-			wantDataflow: []string{"5:14-5:18: use of moved value 't[0]'"},
+			want: []string{"5:14-5:18: use of moved value 't[0]'"},
 		},
 		{
 			// The pattern moves t[0], and the read names t[1].
@@ -219,8 +214,6 @@ func TestLiteralIndexConflicts(t *testing.T) {
 					val c = t[1]
 				}
 			`,
-			want:         []string{"5:14-5:18: use of moved value 't'"},
-			wantDataflow: []string{},
 		},
 		{
 			// The pattern borrows t[0] into a, so a write to t[0].x conflicts with it.
@@ -233,8 +226,7 @@ func TestLiteralIndexConflicts(t *testing.T) {
 					return a.x
 				}
 			`,
-			want:         []string{},
-			wantDataflow: []string{"5:6-5:12: cannot assign to 't[0].x' while it is borrowed as immutable"},
+			want: []string{"5:6-5:12: cannot assign to 't[0].x' while it is borrowed as immutable"},
 		},
 		{
 			// The write to t[1] reinitializes one element of the rest, so t[2] stays moved.
@@ -249,8 +241,7 @@ func TestLiteralIndexConflicts(t *testing.T) {
 					sink(t[2])
 				}
 			`,
-			want:         []string{"7:6-7:7: use of moved value 't'", "8:11-8:15: use of moved value 't'"},
-			wantDataflow: []string{"8:11-8:15: use of moved value 't[1...]'"},
+			want: []string{"8:11-8:15: use of moved value 't[1...]'"},
 		},
 		{
 			// A write through a number index blames the index, which may name the moved element.
@@ -281,23 +272,10 @@ func TestLiteralIndexConflicts(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		for _, dataflow := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/dataflow=%t", tc.name, dataflow), func(t *testing.T) {
-				want := tc.want
-				// The environment variable turns the pass on even when Options leaves it off.
-				on := dataflow || ownershipDataflowFromEnv()
-				if on && tc.wantDataflow != nil {
-					want = tc.wantDataflow
-				}
-				res := InferModuleAgainstStdlib(parseModule(t, tc.src), benchTree, Options{OwnershipDataflow: dataflow})
-				got := messagesWithSpan(t, res.Errors)
-				if len(want) == 0 {
-					require.Empty(t, got)
-					return
-				}
-				require.Equal(t, want, got)
-			})
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			res := InferModuleAgainstStdlib(parseModule(t, tc.src), benchTree, Options{})
+			require.Equal(t, tc.want, messagesWithSpan(t, res.Errors))
+		})
 	}
 }
 

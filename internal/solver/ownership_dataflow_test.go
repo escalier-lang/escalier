@@ -7,33 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// inferWithDataflow infers src against the standard library with the dataflow pass on and
-// returns the message of every diagnostic the program reports.
-func inferWithDataflow(t *testing.T, src string) []string {
-	t.Helper()
-
-	res := InferModuleAgainstStdlib(parseModule(t, src), benchTree, Options{OwnershipDataflow: true})
-	msgs := make([]string, len(res.Errors))
-	for i, e := range res.Errors {
-		msgs[i] = e.Message()
-	}
-	return msgs
-}
-
-// wantForPass returns the diagnostics a test that infers with the default options expects:
-// wantDataflow when ownershipDataflowEnv turns the dataflow pass on and wantDataflow is not
-// nil, and want otherwise. An empty wantDataflow that is not nil expects no diagnostic, and
-// comes back as nil to match messagesWithSpan.
-func wantForPass(want, wantDataflow []string) []string {
-	if ownershipDataflowFromEnv() && wantDataflow != nil {
-		if len(wantDataflow) == 0 {
-			return nil
-		}
-		return wantDataflow
-	}
-	return want
-}
-
 // TestOwnershipDataflow covers E1, E2, and E3 with the dataflow pass on: a program each rule
 // rejects, a program each rule allows, moves and borrows across joins and loops, borrows that
 // last for a statement or for the rest of the program, and a diagnostic the pass leaves to the
@@ -1202,7 +1175,7 @@ func TestOwnershipDataflow(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			errs := inferWithDataflow(t, tc.src)
+			_, errs := inferAgainstTree(t, tc.src)
 			if tc.errs == nil {
 				require.Empty(t, errs)
 				return
@@ -1775,7 +1748,7 @@ func TestOwnershipDataflowMatchesCurrentChecks(t *testing.T) {
 	for _, tc := range cases {
 		for _, dataflow := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/dataflow=%t", tc.name, dataflow), func(t *testing.T) {
-				res := InferModuleAgainstStdlib(parseModule(t, tc.src), benchTree, Options{OwnershipDataflow: dataflow})
+				res := InferModuleAgainstStdlib(parseModule(t, tc.src), benchTree, Options{NoOwnershipDataflow: !dataflow})
 				require.Equal(t, tc.want, messagesWithSpan(t, res.Errors))
 			})
 		}
