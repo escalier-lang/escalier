@@ -1031,7 +1031,7 @@ func (c *checker) escapingLocalsOf(
 			out.Add(captured.root)
 		}
 	}
-	if p, ok := c.exprPlace(e); ok && p.root > 0 {
+	if p, ok := c.exprPlace(e); ok && p.root > 0 && !c.readsPlainValue(e, p, fieldBorrowGraph) {
 		c.collectBorrowedFrom(p.root, p.path, out, set.NewSet[liveness.VarID](), fieldBorrowGraph)
 	}
 	return out
@@ -1068,12 +1068,15 @@ func (c *checker) recordBorrowEdges(root liveness.VarID, init ast.Expr) {
 	c.recordBorrowSources(root, nil, init)
 }
 
-// addCaptureEdges records a capture edge from root at base to each local of the current body
-// that closure captures, other than root itself.
+// addCaptureEdges records a capture edge from root at base to each place of the current body
+// that closure captures, other than a place under root itself.
 func (c *checker) addCaptureEdges(root liveness.VarID, base []placeSeg, closure ast.Func) {
 	for _, captured := range c.fn.capturedLocals[closure] {
-		if captured.root != root {
-			c.addEdge(root, fieldBorrow{path: base, referent: captured.root, mut: captured.mut, capture: true})
+		if captured.root == root {
+			continue
+		}
+		for _, place := range captured.places() {
+			c.addEdge(root, fieldBorrow{path: base, referent: place.root, refPath: place.path, mut: captured.mut, capture: true})
 		}
 	}
 }
@@ -1275,11 +1278,15 @@ func (c *checker) checkParamFieldStoreEscape(recv ast.Expr, field string, source
 	c.fn.escapeSites = append(c.fn.escapeSites, escapeSite{expr: source, stmtRef: stmtRef, callerOwned: true})
 }
 
-// checkParamElementStoreEscape records an element store `recv[k] = source` into a BORROW
-// parameter's element as an escape of `source`. The key names no single field, so the store
-// cannot end the loans an earlier store left in one slot. A store into a receiver that dies
-// with the frame is not tracked here.
-func (c *checker) checkParamElementStoreEscape(recv, source ast.Expr, stmtRef liveness.StmtRef) {
+// checkParamElementStoreEscape handles an element store `target = source`, where target is
+// `recv[k]` and recv names a BORROW parameter's element. It decides the store the way
+// checkParamFieldStoreEscape decides a field store. An owned aggregate source is recorded for
+// the post-pass to weigh as a component move. A bare borrow source takes a loan of each local it
+// reaches, held at the element target names. A literal key such as `0` names one element, and
+// any other key names the whole container. The store ends no earlier loan, since a key that is
+// not a literal may name any element. A store into a receiver that dies with the frame is not
+// tracked here.
+func (c *checker) checkParamElementStoreEscape(recv, target, source ast.Expr, stmtRef liveness.StmtRef) {
 	if c.fn == nil || c.fn.eagerBorrowGraph == nil {
 		return
 	}
@@ -1287,7 +1294,18 @@ func (c *checker) checkParamElementStoreEscape(recv, source ast.Expr, stmtRef li
 	if !ok || rp.root <= 0 || !c.paramReferentOutlivesFrame(rp.root) {
 		return
 	}
-	c.recordEscapeSite(source, stmtRef)
+	if c.escapesAsOwnedCarrier(source, c.fn.eagerBorrowGraph) {
+		c.recordEscapeSite(source, stmtRef)
+		return
+	}
+	base := rp.path
+	if tp, ok := c.exprPlace(target); ok && tp.root == rp.root {
+		base = tp.path
+	}
+	for _, r := range c.reachesOf(source, c.fn.eagerBorrowGraph) {
+		c.recordStoreEdgeLoan(r.place, r.mut, rp.root, base, stmtRef, source)
+	}
+	c.fn.escapeSites = append(c.fn.escapeSites, escapeSite{expr: source, stmtRef: stmtRef, callerOwned: true})
 }
 
 // recordFieldStoreEdges records a borrow edge for a field store `recv.f = source` into a

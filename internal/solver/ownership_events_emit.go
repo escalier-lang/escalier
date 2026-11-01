@@ -378,7 +378,9 @@ func (c *checker) finishOwnershipEvents() {
 			continue
 		}
 
-		if r, isRef := c.info.TypeOf(be).(*soltype.RefType); isRef {
+		// A pattern leaf over a written borrow blames that borrow too, and it already took
+		// the lifetime of the type the pattern binds against.
+		if r, isRef := c.info.TypeOf(be).(*soltype.RefType); isRef && bev.lifetime == nil {
 			bev.lifetime = r.Lt
 		}
 		c.borrowFromDest(t, bev, false)
@@ -790,9 +792,72 @@ func (c *checker) emitBindingFlow(vd *ast.VarDecl, id liveness.VarID, bindingT s
 	var dest flowDest = &ownedDest{}
 	if vd.TypeAnn != nil {
 		dest = c.destOfType(bindingT)
+		c.noteLiteralBorrowDests(vd.Init, bindingT)
 	}
 
 	c.emitFlow(vd.Init, eventHolder{target: placeTarget{root: id}}, dest, ref)
+}
+
+// noteLiteralBorrowDests gives each written borrow that the object or tuple literal value
+// holds the destination of its slot in t. t is the type the literal fills, such as a
+// binding's annotation. In `val o: {f: &'static {x: number}} = {f: &p}`, the borrow `&p`
+// takes the destination of the field f, so it lives for `'static`. A slot t does not name
+// leaves its borrow as the literal built it. It must run before the literal's events move to
+// the holder the literal flows into.
+func (c *checker) noteLiteralBorrowDests(value ast.Expr, t soltype.Type) {
+	table := c.eventTable()
+	if table == nil {
+		return
+	}
+
+	held := table.temps[value]
+	var walk func(e ast.Expr, slot soltype.Type)
+	walk = func(e ast.Expr, slot soltype.Type) {
+		switch e := e.(type) {
+		case *ast.BorrowExpr:
+			dest := c.destOfType(slot)
+			for _, i := range held {
+				if bev, ok := table.events[i].(*borrowEvent); ok && bev.node == e {
+					bev.dest = dest
+				}
+			}
+		case *ast.ObjectExpr:
+			for _, elem := range e.Elems {
+				prop, ok := elem.(*ast.PropertyExpr)
+				if !ok {
+					continue
+				}
+
+				name, ok := objKeyName(prop.Name)
+				if !ok {
+					continue
+				}
+
+				if field, ok := c.declaredField(slot, name); ok {
+					walk(prop.ValueExpr(), field.Type)
+				}
+			}
+		case *ast.TupleExpr:
+			tuple, ok := c.expandAliasChain(slot).(*soltype.TupleType)
+			if !ok {
+				return
+			}
+
+			// An element after a spread has no known position in the tuple.
+			for i, el := range e.Elems {
+				if _, spread := el.(*ast.ArraySpreadExpr); spread || i >= len(tuple.Elems) {
+					return
+				}
+
+				walk(el, tuple.Elems[i])
+			}
+		}
+	}
+
+	switch value.(type) {
+	case *ast.ObjectExpr, *ast.TupleExpr:
+		walk(value, t)
+	}
 }
 
 // emitPatternFlows emits the flow of each part pat binds out of the value of source,
@@ -803,6 +868,12 @@ func (c *checker) emitBindingFlow(vd *ast.VarDecl, id liveness.VarID, bindingT s
 // borrows. A tuple or extractor element flows out of the place extended by its position, as
 // patternPlaceWalk.elements describes.
 func (c *checker) emitPatternFlows(pat ast.Pat, source ast.Expr, ref liveness.StmtRef) {
+	c.emitPatternFlowsFrom(pat, source, nil, ref)
+}
+
+// emitPatternFlowsFrom is emitPatternFlows with the type of the value pat takes apart given
+// as sourceT. A nil sourceT stands for the type of source.
+func (c *checker) emitPatternFlowsFrom(pat ast.Pat, source ast.Expr, sourceT soltype.Type, ref liveness.StmtRef) {
 	if source == nil || !c.firstEmit(pat, patternRole, ref, 0) {
 		return
 	}
@@ -813,7 +884,11 @@ func (c *checker) emitPatternFlows(pat ast.Pat, source ast.Expr, ref liveness.St
 		return
 	}
 
-	w := &patternEmitter{c: c, source: source, sourceT: c.info.TypeOf(source), ref: ref}
+	if sourceT == nil {
+		sourceT = c.info.TypeOf(source)
+	}
+
+	w := &patternEmitter{c: c, source: source, sourceT: sourceT, ref: ref}
 	w.sourceBorrow, w.sourceIsBorrow = c.borrowOfType(w.sourceT)
 
 	// A pattern over a written borrow, as in `val {f: d} = &p`, reads the parts of the
@@ -1069,8 +1144,9 @@ func (c *checker) emitAssignFlow(scope *Scope, e *ast.BinaryExpr, ref liveness.S
 }
 
 // storeDest returns the destination a field or element store into target has. A store
-// into a field the receiver declares takes the field's ownership, and any other store is
-// owned.
+// into a field the receiver declares takes the field's ownership. A store at a key that is
+// not a string takes the ownership of the one element slot the key reaches, as elementSlots
+// finds it. Any other store is owned.
 func (c *checker) storeDest(target ast.Expr) flowDest {
 	var object ast.Expr
 	var name string
@@ -1085,7 +1161,7 @@ func (c *checker) storeDest(target ast.Expr) flowDest {
 	case *ast.IndexExpr:
 		key, ok := constStringKey(t.Index)
 		if !ok {
-			return &ownedDest{}
+			return c.elementStoreDest(t)
 		}
 
 		object, name = t.Object, key
@@ -1101,6 +1177,27 @@ func (c *checker) storeDest(target ast.Expr) flowDest {
 		return c.destOfType(prop.Type)
 	}
 	return &ownedDest{}
+}
+
+// elementStoreDest returns the destination of a store into the element target names. It is
+// the ownership of the element slot when the key reaches exactly one slot, as the array
+// element of `arr[i] = v` does, and owned otherwise.
+func (c *checker) elementStoreDest(target *ast.IndexExpr) flowDest {
+	recv := c.info.TypeOf(target.Object)
+	if recv == nil {
+		return &ownedDest{}
+	}
+
+	access, ok := c.indexAccess(target, recv)
+	if !ok {
+		return &ownedDest{}
+	}
+
+	slots, _, ok := c.elementSlots(access)
+	if !ok || len(slots) != 1 {
+		return &ownedDest{}
+	}
+	return c.destOfType(slots[0])
 }
 
 // noteCallee records that the expression e.Callee is the callee of the call e, so a

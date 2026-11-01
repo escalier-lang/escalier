@@ -231,6 +231,18 @@ type elementReach struct {
 	owned bool
 }
 
+// readsPlainValue reports whether e, a read of the place p, copies a value type that reaches
+// no local. With `r: &{x: number}`, the read `r.x` copies a number, so it hands out no path to
+// what r borrows. A closure is a value type that still reaches what it captures, so a read of
+// a binding with a capture edge in graph does not count.
+func (c *checker) readsPlainValue(e ast.Expr, p movePlace, graph map[liveness.VarID][]fieldBorrow) bool {
+	t := c.info.TypeOf(e)
+	if t == nil || !c.holdsValueType(t) {
+		return false
+	}
+	return !slices.ContainsFunc(graph[p.root], func(edge fieldBorrow) bool { return edge.capture })
+}
+
 // elementReferents returns the paths one element of a returned literal takes into locals.
 //
 // A `&mut b` element reaches b outright, with the mutability the borrow is written with, and
@@ -260,6 +272,9 @@ func (c *checker) elementReferents(
 	} else {
 		p, ok := c.exprPlace(elem)
 		if !ok || p.root <= 0 {
+			return nil
+		}
+		if c.readsPlainValue(elem, p, graph) {
 			return nil
 		}
 		pl = p

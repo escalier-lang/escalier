@@ -186,6 +186,11 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 	if isIdent && d.TypeAnn == nil && !c.checkWrittenBorrow(d.Init, nil) {
 		c.rejectModuleLevelMove(scope, d.Init)
 	}
+	// A literal an unannotated name binds has no expected type, so each of its elements is an
+	// owned destination.
+	if isIdent && d.TypeAnn == nil {
+		c.reportBorrowsIntoLiteral(d.Init)
+	}
 	// A `mut` leaf owns a writable value, so it may not share one with the module or with
 	// another await of the same promise. A destructuring pattern with a `mut` leaf takes that
 	// leaf's value out of the initializer the same way `val mut` takes all of it.
@@ -796,10 +801,13 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl, self *solt
 // capturing a leaf resolves its alias set and a mutability transition through it
 // is checked. This is the per-leaf analogue of the IdentPat path's VarID copy
 // plus trackAliasesForVarDecl.
-func (c *checker) inferDestructureDecl(scope *Scope, lvl int, d *ast.VarDecl) {
+//
+// It returns the type the pattern binds against. That is the annotation's type when the
+// declaration has one, and nil when the declaration has no initializer.
+func (c *checker) inferDestructureDecl(scope *Scope, lvl int, d *ast.VarDecl) soltype.Type {
 	initType, ok := c.inferVarDeclInit(scope, lvl, d, "")
 	if !ok {
-		return
+		return nil
 	}
 	c.bindPattern(scope, lvl, d.Pattern, initType, nil)
 	c.trackDestructureLeaves(scope, d.Pattern)
@@ -810,6 +818,7 @@ func (c *checker) inferDestructureDecl(scope *Scope, lvl int, d *ast.VarDecl) {
 	if c.fn != nil && c.fn.eagerBorrowGraph != nil && d.Init != nil {
 		c.recordDestructureBorrowEdges(d.Pattern, d.Init)
 	}
+	return initType
 }
 
 // recordDestructureBorrowEdges records the borrow edges of each destructuring leaf by

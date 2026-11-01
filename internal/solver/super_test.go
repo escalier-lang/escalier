@@ -229,7 +229,9 @@ func TestInferSuperCall(t *testing.T) {
 			},
 		},
 		{
-			// A shorthand property `{self}` reads `self` the way `{self: self}` does.
+			// A shorthand property `{self}` reads `self` the way `{self: self}` does. The
+			// annotation gives the literal a borrow field, since T6 rejects a borrow in an element
+			// of a literal with no expected type.
 			name: "SelfReadByAShorthandPropertyBeforeTheCall",
 			src: `
 				class Animal {
@@ -238,7 +240,7 @@ func TestInferSuperCall(t *testing.T) {
 				}
 				class Dog extends Animal {
 					constructor(&mut self) {
-						val o = {self}
+						val o: {self: &mut Dog} = {self}
 						super()
 					},
 				}

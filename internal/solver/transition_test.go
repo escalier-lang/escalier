@@ -244,22 +244,21 @@ func TestStaticEscapeTransition(t *testing.T) {
 }
 
 // TestStaticEscapeTransitionFromSource is the end-to-end counterpart. The current checks move
-// the borrow `p` into the module-level `sink`, so the later `val snap: &{x: number} = p` is a
-// single use-after-move. The dataflow pass copies the borrow, as D8 decides, and the copy is
-// `'static`. sink keeps a mutable path to p for the rest of the program, so the immutable path
-// `val snap: &{x: number} = p` breaks E2.
+// the borrow `p` into the module-level `sink`, so the later write `p.x = 1` is a single
+// use-after-move. The dataflow pass copies the borrow, as D8 decides, and the copy is
+// `'static`. sink keeps an immutable path to p for the rest of the program, so the write
+// through p breaks E2.
 func TestStaticEscapeTransitionFromSource(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		var sink = {x: 0}
+		var sink: &{x: number} = &{x: 0}
 		fn cache(p: &mut {x: number}) {
 			sink = p
-			val snap: &{x: number} = p
-			snap
+			p.x = 1
 		}
 	`)
 	require.Equal(t, wantForPass(
-		[]string{"5:29-5:30: use of moved value 'p'"},
-		[]string{"5:29-5:30: cannot borrow 'p' as immutable while it is borrowed as mutable"},
+		[]string{"5:4-5:5: use of moved value 'p'"},
+		[]string{"5:4-5:7: cannot assign to 'p.x' while it is borrowed as immutable"},
 	), messagesWithSpan(t, errs))
 }
 
@@ -617,24 +616,24 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 			`,
 		},
 		// `val z: &mut {x} = p` copies p's borrow into z. `sink = z` copies it into
-		// module-level state, so the global holds a `'static` mutable path to p. The current
+		// module-level state, so the global holds a `'static` immutable path to p. The current
 		// checks report that p still has mutable access to what the global holds. The
-		// dataflow pass reports where E2 breaks, at `val snap: &{x} = p`, the immutable path
-		// made while the `'static` mutable one is live.
+		// dataflow pass reports where E2 breaks, at the write through p made while the
+		// `'static` immutable path is live.
 		"Rule1_TransitiveAliasEscape_Error": {
 			src: `
-				var sink = {x: 0}
+				var sink: &{x: number} = &{x: 0}
 				fn f(p: &mut {x: number}) {
 				  val z: &mut {x: number} = p
 				  sink = z
-				  val snap: &{x: number} = p
+				  p.x = 1
 				}
 			`,
 			want: []string{
 				"5:7-5:11: cannot assign 'z' to immutable 'sink': 'p' still has mutable access to 'z' after this point",
 			},
 			wantDataflow: []string{
-				"6:32-6:33: cannot borrow 'p' as immutable while it is borrowed as mutable",
+				"6:7-6:10: cannot assign to 'p.x' while it is borrowed as immutable",
 			},
 		},
 		// G3 binds a `mut` borrow into a bare annotation by reborrowing it as a local

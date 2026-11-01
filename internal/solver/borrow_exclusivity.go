@@ -519,6 +519,21 @@ type capturedLocal struct {
 	root liveness.VarID
 	// `mut` says the closure writes the local.
 	mut bool
+	// paths are the field paths under root that the closure reads or writes, as
+	// capturedPaths finds them. An empty list means the closure captures the whole local.
+	paths [][]placeSeg
+}
+
+// places returns each place under the local that the closure captures.
+func (l capturedLocal) places() []movePlace {
+	if len(l.paths) == 0 {
+		return []movePlace{{root: l.root}}
+	}
+	out := make([]movePlace, len(l.paths))
+	for i, path := range l.paths {
+		out[i] = movePlace{root: l.root, path: path}
+	}
+	return out
 }
 
 // recordCaptureLoans records each local of the current body that `closure` captures in
@@ -574,7 +589,7 @@ func (c *checker) recordCaptureLoans(scope *Scope, closure ast.Func) {
 			c.fn.capturedTypes = map[liveness.VarID]soltype.Type{}
 		}
 		c.fn.capturedTypes[root] = bindingType(b)
-		captured = append(captured, capturedLocal{root: root, mut: capture.IsMutable})
+		captured = append(captured, capturedLocal{root: root, mut: capture.IsMutable, paths: c.capturedFieldPaths(closure, bindingDecl(b))})
 	}
 	if len(captured) > 0 {
 		if c.fn.capturedLocals == nil {
@@ -590,31 +605,66 @@ func (c *checker) recordCaptureLoans(scope *Scope, closure ast.Func) {
 	}
 }
 
+// capturedFieldPaths returns the field paths under the local declared by decl that closure
+// reads or writes, as capturedPaths finds them. It returns nil when the closure captures the
+// whole local, and when the body has no event table to find the paths with.
+func (c *checker) capturedFieldPaths(closure ast.Func, decl ast.Node) [][]placeSeg {
+	if c.eventTable() == nil {
+		return nil
+	}
+	var out [][]placeSeg
+	for _, cp := range c.capturedPaths(closure, decl) {
+		if len(cp.path) == 0 {
+			return nil
+		}
+		out = append(out, cp.path)
+	}
+	return out
+}
+
 // useClosureCaptures takes the capture loans of the closure `expr` names for the statement at
 // `ref`, and records a read of each captured local there. runs reports whether the call is
 // sure to run the closure. The closure's captures are the
 // capture edges the name holds in the borrow graph, whether it was bound to the closure or
 // copied from a name that was. A local captured through several edges is taken once, as a
-// write when any edge writes it. Any expression other than a name records nothing.
+// write when any edge writes it. The loan covers the field paths the edges reach, or the whole
+// local when any edge reaches all of it. Any expression other than a name records nothing.
 func (c *checker) useClosureCaptures(expr ast.Expr, ref liveness.StmtRef, runs bool) {
 	e, ok := expr.(*ast.IdentExpr)
 	if !ok || c.fn == nil || c.varIDs.Of(e) <= 0 {
 		return
 	}
-	writes := map[liveness.VarID]bool{}
+	captured := map[liveness.VarID]*capturedLocal{}
+	whole := set.NewSet[liveness.VarID]()
 	for _, edge := range c.fn.eagerBorrowGraph[c.varIDs.Of(e)] {
-		if edge.capture {
-			writes[edge.referent] = writes[edge.referent] || edge.mut
+		if !edge.capture {
+			continue
+		}
+		local, seen := captured[edge.referent]
+		if !seen {
+			local = &capturedLocal{root: edge.referent}
+			captured[edge.referent] = local
+		}
+		local.mut = local.mut || edge.mut
+		switch {
+		case len(edge.refPath) == 0:
+			whole.Add(edge.referent)
+		case !slices.ContainsFunc(local.paths, func(p []placeSeg) bool { return slices.Equal(p, edge.refPath) }):
+			local.paths = append(local.paths, edge.refPath)
 		}
 	}
-	roots := make([]liveness.VarID, 0, len(writes))
-	for root := range writes {
+	roots := make([]liveness.VarID, 0, len(captured))
+	for root := range captured {
 		roots = append(roots, root)
 	}
 	// Sorting keeps the order of the loans, and so of any reports, the same from run to run.
 	slices.Sort(roots)
 	for _, root := range roots {
-		c.takeCaptureLoan(capturedLocal{root: root, mut: writes[root]}, ref, e, closureVia(e.Name), runs)
+		local := *captured[root]
+		if whole.Contains(root) {
+			local.paths = nil
+		}
+		c.takeCaptureLoan(local, ref, e, closureVia(e.Name), runs)
 		c.fn.useSites = append(c.fn.useSites, moveUse{
 			place:     movePlace{root: root},
 			ref:       ref,
@@ -622,28 +672,30 @@ func (c *checker) useClosureCaptures(expr ast.Expr, ref liveness.StmtRef, runs b
 			loanSeqAt: c.fn.loanSeq + 1,
 			via:       closureVia(e.Name),
 			viaRuns:   runs,
-			viaReads:  !writes[root],
+			viaReads:  !local.mut,
 		})
 	}
 }
 
-// takeCaptureLoan records a loan of the whole captured local for the statement at `ref`,
-// after reporting any conflict with a loan already live there. The loan has no holder, so it
+// takeCaptureLoan records a loan of each place local.places names for the statement at `ref`,
+// after reporting any conflict with a loan already live there. Each loan has no holder, so it
 // lasts for that statement alone. It is mutable when the closure writes the capture. `node`
 // is what a conflict report blames, and `via` names the closure for it, or is empty when the
 // capture is not reached through a call. runs reports whether the call is sure to run it.
 func (c *checker) takeCaptureLoan(local capturedLocal, ref liveness.StmtRef, node ast.Node, via string, runs bool) {
-	fresh := loan{
-		place:   movePlace{root: local.root},
-		mut:     local.mut,
-		ref:     ref,
-		node:    node,
-		seq:     c.nextLoanSeq(),
-		via:     via,
-		viaRuns: runs,
+	for _, place := range local.places() {
+		fresh := loan{
+			place:   place,
+			mut:     local.mut,
+			ref:     ref,
+			node:    node,
+			seq:     c.nextLoanSeq(),
+			via:     via,
+			viaRuns: runs,
+		}
+		c.checkAgainstHeldLoans(fresh)
+		c.fn.loans = append(c.fn.loans, fresh)
 	}
-	c.checkAgainstHeldLoans(fresh)
-	c.fn.loans = append(c.fn.loans, fresh)
 }
 
 // dropLoansHeldBy ends the loans bound to holder, which a reassignment of that binding has made
@@ -1360,6 +1412,66 @@ func (c *checker) checkBorrowsWritten(src ast.Expr, destT soltype.Type, arg bool
 		c.fn.unwrittenBorrows.Add(src)
 	}
 	return reported
+}
+
+// reportBorrowIntoOwned reports src when the value it produces, of type srcT, is a borrow that
+// fills an owned destination of type destT, as T6 states. It returns whether it reported. The
+// flow out of a reported src reads as a plain read of its place, so the rejected borrow lends
+// nothing.
+func (c *checker) reportBorrowIntoOwned(src ast.Expr, srcT, destT soltype.Type) bool {
+	ref, ok := c.expandAliasChain(c.borrowBehindVar(srcT)).(*soltype.RefType)
+	if !ok || ref.Lt == nil {
+		return false
+	}
+	c.report(&BorrowEscapeError{Sub: ref, Super: destT, site: src})
+	if t := c.eventTable(); t != nil {
+		t.unwritten.Add(src)
+	}
+	return true
+}
+
+// reportBorrowsIntoLiteral reports each element of the object or tuple literal src whose value
+// is a borrow that src does not write, as T6 states for a literal with no expected type. Each
+// element of such a literal is an owned destination, so `{f: r}` with `r: &{x: number}` is
+// rejected. A written borrow such as `{f: &p}` makes its element a borrow destination, the way
+// F1 makes a binding initialized with `&p` one. A nested literal has its elements checked the
+// same way, and a spread is left alone.
+func (c *checker) reportBorrowsIntoLiteral(src ast.Expr) {
+	var elems []ast.Expr
+	switch lit := src.(type) {
+	case *ast.ObjectExpr:
+		for _, elem := range lit.Elems {
+			if prop, ok := elem.(*ast.PropertyExpr); ok {
+				elems = append(elems, prop.ValueExpr())
+			}
+		}
+	case *ast.TupleExpr:
+		for _, el := range lit.Elems {
+			if _, spread := el.(*ast.ArraySpreadExpr); !spread {
+				elems = append(elems, el)
+			}
+		}
+	}
+
+	for _, el := range elems {
+		switch el.(type) {
+		case *ast.BorrowExpr:
+			continue
+		case *ast.ObjectExpr, *ast.TupleExpr:
+			c.reportBorrowsIntoLiteral(el)
+			continue
+		}
+
+		// An element already reported for a borrow it left unwritten is not reported twice.
+		if t := c.eventTable(); t != nil && t.unwritten.Contains(el) {
+			continue
+		}
+
+		elT := c.info.TypeOf(el)
+		if ref, ok := c.expandAliasChain(c.borrowBehindVar(elT)).(*soltype.RefType); ok {
+			c.reportBorrowIntoOwned(el, elT, ref.Inner)
+		}
+	}
 }
 
 // checkLiteralElemBorrows checks each element of an object or tuple literal src against the
