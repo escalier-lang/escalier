@@ -344,17 +344,6 @@ func (c *checker) loanPlace(arg ast.Expr) (movePlace, bool) {
 	return p, true
 }
 
-// paramBorrowMut reports whether a parameter borrows its argument, and whether the callee can
-// write through it. A borrow parameter is a `RefType` carrying a lifetime. An owned parameter
-// carries none and is moved into the callee rather than borrowed, so it is not a loan.
-func paramBorrowMut(t soltype.Type) (bool, bool) {
-	ref, ok := t.(*soltype.RefType)
-	if !ok || ref.Lt == nil {
-		return false, false
-	}
-	return ref.Mut, true
-}
-
 // placesOverlap reports whether two places reach any of the same data. They must be rooted at
 // the same binding, and one field path must be a prefix of the other. `x.a` and `x.a.b` overlap
 // because the second sits inside the first; `x.a` and `x.b` do not.
@@ -1032,7 +1021,9 @@ func (c *checker) missingBorrow(src ast.Expr, destT soltype.Type) (string, bool)
 	}
 	var mut, isBorrow bool
 	if destT != nil {
-		mut, isBorrow = c.destBorrowMut(destT)
+		var borrow typeBorrow
+		borrow, isBorrow = c.borrowOfType(destT)
+		mut = borrow.mut
 	}
 	_, destIsVar := destT.(*soltype.TypeVarType)
 	if readMut, isRead := c.fieldReadThroughBorrow(src); isRead && (destT == nil || destIsVar || isBorrow) {
@@ -1078,7 +1069,7 @@ func (c *checker) fieldReadThroughBorrow(src ast.Expr) (bool, bool) {
 		return false, false
 	}
 	fieldT := c.expandAliasChain(prop.Type)
-	if _, fieldIsBorrow := paramBorrowMut(fieldT); fieldIsBorrow {
+	if _, fieldIsBorrow := c.borrowOfType(fieldT); fieldIsBorrow {
 		return false, false
 	}
 	// A borrowed receiver carries a lifetime, so fieldBorrow mints none and its level
@@ -1135,28 +1126,54 @@ func (c *checker) declaredRead(e ast.Expr) soltype.Type {
 	return fieldT
 }
 
-// destBorrowMut reports whether a destination of type t borrows the value that fills it, and
-// whether that borrow is `&mut`. t is a borrow, or a union of borrows with `null` or
-// `undefined`, as in `&T | undefined`. An alias naming a borrow counts as that borrow, at the
-// top of t and as a member of the union. The borrow is `&mut` only when every borrow in t is.
-func (c *checker) destBorrowMut(t soltype.Type) (bool, bool) {
+// typeBorrow is the borrow a type stands for. A borrow member is a RefType carrying a
+// lifetime, and a bare borrow is its own single member. mut marks a borrow whose borrow
+// members are all `&mut`. anyMut marks one with at least one `&mut` borrow member. lt is the
+// borrow's lifetime.
+type typeBorrow struct {
+	mut    bool
+	anyMut bool
+	lt     soltype.Lifetime
+}
+
+// borrowOfType returns the borrow a value of type t is, and false when t is not a borrow. t is
+// a borrow when it is a RefType carrying a lifetime. A union is a borrow when it has at least
+// one such member and every other member is a value type, as `&T | undefined` and
+// `&T | number` are. An alias counts as what it names, at the top of t and as a member of the
+// union. The borrow's lifetime is the first borrow member's.
+func (c *checker) borrowOfType(t soltype.Type) (typeBorrow, bool) {
 	t = c.expandAliasChain(t)
 	u, isUnion := t.(*soltype.UnionType)
 	if !isUnion {
-		return paramBorrowMut(t)
+		r, isRef := t.(*soltype.RefType)
+		if !isRef || r.Lt == nil {
+			return typeBorrow{}, false
+		}
+		return typeBorrow{mut: r.Mut, anyMut: r.Mut, lt: r.Lt}, true
 	}
-	mut, found := true, false
+
+	out := typeBorrow{mut: true}
+	found := false
 	for _, member := range u.Types {
-		if isNullishAtom(member) {
+		member = c.expandAliasChain(member)
+		if r, isRef := member.(*soltype.RefType); isRef && r.Lt != nil {
+			if !found {
+				out.lt = r.Lt
+			}
+			out.mut = out.mut && r.Mut
+			out.anyMut = out.anyMut || r.Mut
+			found = true
 			continue
 		}
-		memberMut, isBorrow := paramBorrowMut(c.expandAliasChain(member))
-		if !isBorrow {
-			return false, false
+		if !c.holdsValueType(member) {
+			return typeBorrow{}, false
 		}
-		mut, found = mut && memberMut, true
 	}
-	return mut && found, found
+
+	if !found {
+		return typeBorrow{}, false
+	}
+	return out, true
 }
 
 // isSettledOwned reports whether a value of type t is owned and its shape is known. A union
@@ -1365,7 +1382,7 @@ func (c *checker) checkCallBorrowExclusivity(e *ast.CallExpr, fn *soltype.FuncTy
 		if i >= len(fn.Params) {
 			break
 		}
-		mut, isBorrow := paramBorrowMut(fn.Params[i].Type)
+		borrow, isBorrow := c.borrowOfType(fn.Params[i].Type)
 		if !isBorrow {
 			continue
 		}
@@ -1374,7 +1391,9 @@ func (c *checker) checkCallBorrowExclusivity(e *ast.CallExpr, fn *soltype.FuncTy
 			continue
 		}
 		c.noteLoanRead(borrowOperand(arg))
-		args = append(args, loan{place: place, mut: mut, ref: ref, node: arg})
+		// The callee can narrow a union parameter to its `&mut` member and write through
+		// it, so a parameter with any `&mut` member takes a mutable loan.
+		args = append(args, loan{place: place, mut: borrow.anyMut, ref: ref, node: arg})
 	}
 	for i := range args {
 		for j := i + 1; j < len(args); j++ {

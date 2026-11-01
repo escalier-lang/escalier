@@ -470,11 +470,18 @@ func (t *ownershipEvents) renderHolder(h eventHolder) string {
 	return b.String()
 }
 
-// writePath appends each segment of path to b as `.name`.
+// writePath appends each segment of path to b the way writePlaceSeg writes it, so a field
+// whose name is not an identifier renders in bracket notation, as `obj["a.b"]` does. A
+// segment that names a tuple element renders in dot form instead. That is a position such
+// as `0`, or a rest element's `1...`, which stands for every element from 1 on.
 func writePath(b *strings.Builder, path []placeSeg) {
 	for _, seg := range path {
-		b.WriteByte('.')
-		b.WriteString(seg.name)
+		if _, isElement := canonicalIndex(strings.TrimSuffix(seg.name, "...")); isElement {
+			b.WriteByte('.')
+			b.WriteString(seg.name)
+			continue
+		}
+		writePlaceSeg(b, seg)
 	}
 }
 
