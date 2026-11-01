@@ -20,8 +20,9 @@ func inferWithDataflow(t *testing.T, src string) []string {
 }
 
 // TestOwnershipDataflow covers E1, E2, and E3 with the dataflow pass on: a program each rule
-// rejects, a program each rule allows, a move on one branch of a join, and a move in a loop.
-// errs lists every diagnostic the program reports, and is nil for a program that checks
+// rejects, a program each rule allows, moves and borrows across joins and loops, borrows that
+// last for a statement or for the rest of the program, and a diagnostic the pass leaves to the
+// other checks. errs lists every diagnostic the program reports, and is nil for a program that checks
 // clean.
 func TestOwnershipDataflow(t *testing.T) {
 	cases := []struct {
@@ -109,6 +110,48 @@ func TestOwnershipDataflow(t *testing.T) {
 					for item in items {
 						val q = p
 					}
+				}
+			`,
+			errs: []string{"use of moved value 'p'"},
+		},
+		{
+			// The loop may run zero times, so p can still be moved when the return reads it.
+			name: "E1ReassignedOnlyInLoop",
+			src: `
+				fn go(items: Array<number>) -> number {
+					var p = {x: 1}
+					val q = p
+					for item in items {
+						p = {x: item}
+					}
+					return p.x + q.x
+				}
+			`,
+			errs: []string{"use of moved value 'p'"},
+		},
+		{
+			// Writing p.a.x reads p to reach the field, so it uses the moved p.
+			name: "E1WriteUnderMovedPlace",
+			src: `
+				fn go() -> number {
+					var mut p = {a: {x: 1}}
+					val q = p
+					p.a.x = 2
+					return q.a.x
+				}
+			`,
+			errs: []string{"use of moved value 'p'"},
+		},
+		{
+			// noop's body records no ownership events. The pass still checks go after it.
+			name: "E1BesideBodyWithoutEvents",
+			src: `
+				fn noop() {}
+
+				fn go() -> number {
+					val p = {x: 1}
+					val q = p
+					return p.x + q.x
 				}
 			`,
 			errs: []string{"use of moved value 'p'"},
@@ -282,6 +325,128 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot assign to 'p.x' while it is borrowed as immutable"},
 		},
 		{
+			// d copies a on each iteration, so the loan of p gains d as a holder after the
+			// loop's first pass. a still holds the loan after the loop.
+			name: "E2WriteWhileCopiedInLoop",
+			src: `
+				fn go(items: Array<number>) -> number {
+					val mut p = {x: 0}
+					val a = &p
+					for item in items {
+						val d = a
+						val n = d.x
+					}
+					p.x = 1
+					return a.x
+				}
+			`,
+			errs: []string{"cannot assign to 'p.x' while it is borrowed as immutable"},
+		},
+		{
+			// Each branch reassigns a different holder to a copy of a, so after the join
+			// either c or d can hold the borrow of p.
+			name: "E2WriteWhileCopiedOnEitherBranch",
+			src: `
+				fn go(cond: boolean) -> number {
+					val mut p = {x: 0}
+					val q = {x: 0}
+					val a = &p
+					var c: &{x: number} = &q
+					var d: &{x: number} = &q
+					if cond {
+						c = a
+					} else {
+						d = a
+					}
+					p.x = 1
+					return c.x + d.x
+				}
+			`,
+			errs: []string{"cannot assign to 'p.x' while it is borrowed as immutable"},
+		},
+		{
+			// The branch assignment ends the loop body, so its join block has no statements.
+			// Whether c is live after the branches then comes from the blocks after the join.
+			// c is read on the next iteration after the write of a.x.
+			name: "E2WriteWhileBranchAssignedHolderLiveInLoop",
+			src: `
+				fn go(items: Array<number>, cond: boolean) -> number {
+					val mut a = {x: 0}
+					val b = {x: 0}
+					var c: &{x: number} = &b
+					for item in items {
+						a.x = item
+						val n = c.x
+						c = if cond { &a } else { &b }
+					}
+					return c.x
+				}
+			`,
+			errs: []string{"cannot assign to 'a.x' while it is borrowed as immutable"},
+		},
+		{
+			// The same loop without the reads of c. c is dead after the branch assignment,
+			// so the next iteration's write of a.x conflicts with nothing.
+			name: "E2WriteWhileBranchAssignedHolderDeadInLoop",
+			src: `
+				fn go(items: Array<number>, cond: boolean) -> number {
+					val mut a = {x: 0}
+					val b = {x: 0}
+					var c: &{x: number} = &b
+					for item in items {
+						a.x = item
+						c = if cond { &a } else { &b }
+					}
+					return a.x
+				}
+			`,
+		},
+		{
+			// A borrow passed as an argument lasts until the end of the call's statement.
+			name: "E2WriteAfterArgumentBorrow",
+			src: `
+				fn peek(r: &{x: number}) -> number {
+					return r.x
+				}
+
+				fn go() -> number {
+					val mut p = {x: 0}
+					val n = peek(&p)
+					p.x = 1
+					return n + p.x
+				}
+			`,
+		},
+		{
+			name: "E2TwoArgumentBorrowsInOneCall",
+			src: `
+				fn both(r: &{x: number}, w: &mut {x: number}) -> number {
+					return r.x
+				}
+
+				fn go() -> number {
+					val mut p = {x: 0}
+					return both(&p, &mut p)
+				}
+			`,
+			errs: []string{"cannot borrow 'p' as mutable while it is borrowed as immutable"},
+		},
+		{
+			// A borrow stored in a module-level binding stays live at every later point.
+			name: "E2WriteWhileModuleBindingHoldsBorrow",
+			src: `
+				val mut base = {x: 0}
+				var g: &{x: number} = &base
+
+				fn go() -> number {
+					g = &base
+					base.x = 1
+					return g.x
+				}
+			`,
+			errs: []string{"cannot assign to 'base.x' while it is borrowed as immutable"},
+		},
+		{
 			name: "E3MoveWhileBorrowed",
 			src: `
 				fn take(p: {x: number}) -> number {
@@ -338,6 +503,17 @@ func TestOwnershipDataflow(t *testing.T) {
 					return a + peek()
 				}
 			`,
+		},
+		{
+			// The pass replaces only the diagnostics of E1, E2, and E3, so a type error stays.
+			name: "TypeErrorStays",
+			src: `
+				fn go() -> number {
+					val x: number = "a"
+					return x
+				}
+			`,
+			errs: []string{`cannot constrain "a" <: number`},
 		},
 	}
 

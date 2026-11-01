@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"slices"
 	"strings"
@@ -19,7 +20,10 @@ const diagnosticTraceEnv = "ESCALIER_DIAG_TRACE"
 // diagnosticTracePrefix starts each line traceDiagnostics prints.
 const diagnosticTracePrefix = "ESCALIER_DIAG\t"
 
-// traceDiagnostics prints errs to standard output when diagnosticTraceEnv is set. sources
+// diagnosticTraceOut receives the lines traceDiagnostics prints. It is standard output.
+var diagnosticTraceOut io.Writer = os.Stdout
+
+// traceDiagnostics prints errs to diagnosticTraceOut when diagnosticTraceEnv is set. sources
 // holds the files of the run by SourceID, and is nil for a script. Each line holds these
 // fields, separated by tabs:
 //
@@ -58,6 +62,6 @@ func traceDiagnostics(errs []SolverError, sources map[int]*ast.Source) {
 		}
 
 		msg := strings.ReplaceAll(e.Message(), "\n", `\n`)
-		fmt.Printf("%s%s\t%T\t%s\t%s\n", diagnosticTracePrefix, program, e, at, msg)
+		fmt.Fprintf(diagnosticTraceOut, "%s%s\t%T\t%s\t%s\n", diagnosticTracePrefix, program, e, at, msg)
 	}
 }
