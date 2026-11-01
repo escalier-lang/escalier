@@ -838,6 +838,16 @@ func (c *checker) noteLiteralBorrowDests(value ast.Expr, t soltype.Type) {
 				}
 			}
 		case *ast.TupleExpr:
+			// Each element of an array literal fills the array's element slot.
+			if elem, isArray := c.ctx.arrayElem(c.expandAliasChain(slot)); isArray {
+				for _, el := range e.Elems {
+					if _, spread := el.(*ast.ArraySpreadExpr); !spread {
+						walk(el, elem)
+					}
+				}
+				return
+			}
+
 			tuple, ok := c.expandAliasChain(slot).(*soltype.TupleType)
 			if !ok {
 				return
@@ -1144,9 +1154,9 @@ func (c *checker) emitAssignFlow(scope *Scope, e *ast.BinaryExpr, ref liveness.S
 }
 
 // storeDest returns the destination a field or element store into target has. A store
-// into a field the receiver declares takes the field's ownership. A store at a key that is
-// not a string takes the ownership of the one element slot the key reaches, as elementSlots
-// finds it. Any other store is owned.
+// into a field the receiver declares takes the field's ownership. A store at a key that is not
+// a string takes the ownership of the one element slot the key reaches, as elementSlots finds
+// it. Any other store is owned.
 func (c *checker) storeDest(target ast.Expr) flowDest {
 	var object ast.Expr
 	var name string

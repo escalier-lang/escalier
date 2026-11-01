@@ -1249,12 +1249,8 @@ func (c *checker) recordCallerOwnedStore(e ast.Expr, stmtRef liveness.StmtRef, r
 // checkParamFieldStoreEscape handles a field store `recv.f = source` into a BORROW parameter's
 // field. The object that parameter names belongs to the caller and outlives the frame, so a
 // value that borrows a local leaves the frame through the store. A store into a receiver that
-// dies with the frame, a local or an owned parameter, is not tracked here.
-//
-// An owned aggregate source is recorded for the post-pass to weigh as a component move. A bare
-// borrow source, such as `&mut b` or a borrowed field, takes a loan of each local it reaches.
-// The parameter holds the loan while the body reads it, so the post-pass can accept the store
-// as the only path to those locals.
+// dies with the frame, a local or an owned parameter, is not tracked here. The store is
+// recorded as recordCallerOwnedStoreEscape describes.
 func (c *checker) checkParamFieldStoreEscape(recv ast.Expr, field string, source ast.Expr, stmtRef liveness.StmtRef) {
 	if c.fn == nil || c.fn.eagerBorrowGraph == nil {
 		return
@@ -1268,24 +1264,14 @@ func (c *checker) checkParamFieldStoreEscape(recv ast.Expr, field string, source
 	// through it once every path out of the function runs this store. A loan from a store
 	// before an `if` that holds this one still reaches the caller on the path that skips it.
 	c.endLoansAtPostDominating(rp.root, base, stmtRef)
-	if c.escapesAsOwnedCarrier(source, c.fn.eagerBorrowGraph) {
-		c.recordEscapeSite(source, stmtRef)
-		return
-	}
-	for _, r := range c.reachesOf(source, c.fn.eagerBorrowGraph) {
-		c.recordStoreEdgeLoan(r.place, r.mut, rp.root, base, stmtRef, source)
-	}
-	c.fn.escapeSites = append(c.fn.escapeSites, escapeSite{expr: source, stmtRef: stmtRef, callerOwned: true})
+	c.recordCallerOwnedStoreEscape(rp.root, base, source, stmtRef)
 }
 
 // checkParamElementStoreEscape handles an element store `target = source`, where target is
-// `recv[k]` and recv names a BORROW parameter's element. It decides the store the way
-// checkParamFieldStoreEscape decides a field store. An owned aggregate source is recorded for
-// the post-pass to weigh as a component move. A bare borrow source takes a loan of each local it
-// reaches, held at the element target names. A literal key such as `0` names one element, and
-// any other key names the whole container. The store ends no earlier loan, since a key that is
-// not a literal may name any element. A store into a receiver that dies with the frame is not
-// tracked here.
+// `recv[k]` and recv names a BORROW parameter's element. The store is recorded as
+// recordCallerOwnedStoreEscape describes, held at the element target names. A literal key such
+// as `0` names one element, and any other key names the whole container. A store into a
+// receiver that dies with the frame is not tracked here.
 func (c *checker) checkParamElementStoreEscape(recv, target, source ast.Expr, stmtRef liveness.StmtRef) {
 	if c.fn == nil || c.fn.eagerBorrowGraph == nil {
 		return
@@ -1294,16 +1280,26 @@ func (c *checker) checkParamElementStoreEscape(recv, target, source ast.Expr, st
 	if !ok || rp.root <= 0 || !c.paramReferentOutlivesFrame(rp.root) {
 		return
 	}
-	if c.escapesAsOwnedCarrier(source, c.fn.eagerBorrowGraph) {
-		c.recordEscapeSite(source, stmtRef)
-		return
-	}
 	base := rp.path
 	if tp, ok := c.exprPlace(target); ok && tp.root == rp.root {
 		base = tp.path
 	}
+	// A key that is not a literal may name any element, so the store ends no earlier loan.
+	c.recordCallerOwnedStoreEscape(rp.root, base, source, stmtRef)
+}
+
+// recordCallerOwnedStoreEscape records the store of source into the place under the
+// caller-owned parameter root at path base. An owned aggregate source is recorded for the
+// post-pass to weigh as a component move. A bare borrow source, such as `&mut b` or a borrowed
+// field, takes a loan of each local it reaches. The parameter holds the loan while the body
+// reads it, so the post-pass can accept the store as the only path to those locals.
+func (c *checker) recordCallerOwnedStoreEscape(root liveness.VarID, base []placeSeg, source ast.Expr, stmtRef liveness.StmtRef) {
+	if c.escapesAsOwnedCarrier(source, c.fn.eagerBorrowGraph) {
+		c.recordEscapeSite(source, stmtRef)
+		return
+	}
 	for _, r := range c.reachesOf(source, c.fn.eagerBorrowGraph) {
-		c.recordStoreEdgeLoan(r.place, r.mut, rp.root, base, stmtRef, source)
+		c.recordStoreEdgeLoan(r.place, r.mut, root, base, stmtRef, source)
 	}
 	c.fn.escapeSites = append(c.fn.escapeSites, escapeSite{expr: source, stmtRef: stmtRef, callerOwned: true})
 }

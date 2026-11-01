@@ -141,9 +141,9 @@ func AnalyzeMoves(cfg *CFG, moves map[StmtRef]set.Set[VarID]) *MoveInfo {
 			block := cfg.Blocks[i]
 
 			newIn := joinPreds(block, blockOut)
-			newOut := applyMoves(newIn, movesAt(moves, block.ID, -1))
+			newOut := applyStmt(newIn, declared[StmtRef{BlockID: block.ID, StmtIdx: -1}], movesAt(moves, block.ID, -1))
 			for idx := range block.Stmts {
-				newOut = applyStmt(newOut, declared[block.ID][idx], movesAt(moves, block.ID, idx))
+				newOut = applyStmt(newOut, declared[StmtRef{BlockID: block.ID, StmtIdx: idx}], movesAt(moves, block.ID, idx))
 			}
 
 			if !equalMoveMap(blockIn[i], newIn) || !equalMoveMap(blockOut[i], newOut) {
@@ -169,11 +169,11 @@ func AnalyzeMoves(cfg *CFG, moves map[StmtRef]set.Set[VarID]) *MoveInfo {
 		after[block.ID] = make([]map[VarID]MoveState, n)
 
 		// Apply any moves recorded at the synthetic -1 entry position first.
-		state := applyMoves(blockIn[block.ID], movesAt(moves, block.ID, -1))
+		state := applyStmt(blockIn[block.ID], declared[StmtRef{BlockID: block.ID, StmtIdx: -1}], movesAt(moves, block.ID, -1))
 		blockEntry[block.ID] = state
 		for idx := range n {
 			before[block.ID][idx] = state
-			state = applyStmt(state, declared[block.ID][idx], movesAt(moves, block.ID, idx))
+			state = applyStmt(state, declared[StmtRef{BlockID: block.ID, StmtIdx: idx}], movesAt(moves, block.ID, idx))
 			after[block.ID][idx] = state
 		}
 	}
@@ -181,25 +181,33 @@ func AnalyzeMoves(cfg *CFG, moves map[StmtRef]set.Set[VarID]) *MoveInfo {
 	return &MoveInfo{before: before, after: after, blockIn: blockIn, blockEntry: blockEntry}
 }
 
-// DeclaredBindings returns, for each statement of each block of cfg, the bindings a `val` or
-// `var` declaration in that statement declares.
-func DeclaredBindings(cfg *CFG) [][][]VarID {
-	out := make([][][]VarID, len(cfg.Blocks))
-	for _, block := range cfg.Blocks {
-		out[block.ID] = make([][]VarID, len(block.Stmts))
-		for idx, stmt := range block.Stmts {
-			decl, ok := stmt.(*ast.DeclStmt)
-			if !ok {
-				continue
-			}
-			vd, ok := decl.Decl.(*ast.VarDecl)
-			if !ok {
-				continue
-			}
-			c := &collector{ids: cfg.ids}
-			c.collectPatDefs(vd.Pattern)
-			out[block.ID][idx] = c.defs
+// DeclaredBindings returns the point of each `val` or `var` declaration in cfg, mapped to the
+// bindings it declares. A declaration whose initializer branches has no statement of its own,
+// so its point is StmtIdx -1 of its join block, as BuildStmtToRef maps it.
+func DeclaredBindings(cfg *CFG) map[StmtRef][]VarID {
+	out := map[StmtRef][]VarID{}
+	add := func(stmt ast.Stmt, ref StmtRef) {
+		decl, ok := stmt.(*ast.DeclStmt)
+		if !ok {
+			return
 		}
+		vd, ok := decl.Decl.(*ast.VarDecl)
+		if !ok {
+			return
+		}
+		c := &collector{ids: cfg.ids}
+		c.collectPatDefs(vd.Pattern)
+		if len(c.defs) > 0 {
+			out[ref] = append(out[ref], c.defs...)
+		}
+	}
+	for _, block := range cfg.Blocks {
+		for idx, stmt := range block.Stmts {
+			add(stmt, StmtRef{BlockID: block.ID, StmtIdx: idx})
+		}
+	}
+	for _, ds := range cfg.decomposedStmts {
+		add(ds.Stmt, StmtRef{BlockID: ds.Block.ID, StmtIdx: -1})
 	}
 	return out
 }

@@ -1454,22 +1454,28 @@ func (c *checker) reportBorrowsIntoLiteral(src ast.Expr) {
 	}
 
 	for _, el := range elems {
-		switch el.(type) {
-		case *ast.BorrowExpr:
-			continue
-		case *ast.ObjectExpr, *ast.TupleExpr:
-			c.reportBorrowsIntoLiteral(el)
-			continue
-		}
+		// A conditional, `match`, `do`, or `try` produces the value of one of its branches, so
+		// each branch's result is checked on its own.
+		for _, r := range branchResults(el) {
+			switch r := r.(type) {
+			case *ast.BorrowExpr:
+				// `&{g: r}` builds a literal the borrow lends, so its own elements are checked.
+				c.reportBorrowsIntoLiteral(r.Arg)
+				continue
+			case *ast.ObjectExpr, *ast.TupleExpr:
+				c.reportBorrowsIntoLiteral(r)
+				continue
+			}
 
-		// An element already reported for a borrow it left unwritten is not reported twice.
-		if t := c.eventTable(); t != nil && t.unwritten.Contains(el) {
-			continue
-		}
+			// An element already reported for a borrow it left unwritten is not reported twice.
+			if t := c.eventTable(); t != nil && t.unwritten.Contains(r) {
+				continue
+			}
 
-		elT := c.info.TypeOf(el)
-		if ref, ok := c.expandAliasChain(c.borrowBehindVar(elT)).(*soltype.RefType); ok {
-			c.reportBorrowIntoOwned(el, elT, ref.Inner)
+			rT := c.info.TypeOf(r)
+			if ref, ok := c.expandAliasChain(c.borrowBehindVar(rT)).(*soltype.RefType); ok {
+				c.reportBorrowIntoOwned(r, rT, ref.Inner)
+			}
 		}
 	}
 }

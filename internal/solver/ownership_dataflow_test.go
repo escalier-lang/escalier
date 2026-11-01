@@ -908,6 +908,18 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot assign to 'p.f.x' while it is borrowed as immutable"},
 		},
 		{
+			// The annotation gives each element of the array literal a `'static` borrow.
+			name: "StaticBorrowInATypedArrayLiteral",
+			src: `
+				fn go() {
+					val mut p = {x: 1}
+					val a: Array<&'static {x: number}> = [&p]
+					p.x = 2
+				}
+			`,
+			errs: []string{"cannot assign to 'p.x' while it is borrowed as immutable"},
+		},
+		{
 			// The element type is `'static`, so the stored borrow stays live after the store.
 			name: "StaticBorrowStoredIntoAnElement",
 			src: `
@@ -1695,7 +1707,20 @@ func TestOwnershipDataflowMatchesCurrentChecks(t *testing.T) {
 			`,
 		},
 		{
-			// p is declared outside the loop, so the next iteration moves it again.
+			// A declaration whose initializer branches declares a new q on each iteration too.
+			name: "MoveOfABranchingDeclarationInALoopOk",
+			src: `
+				declare fn take(q: {x: number}) -> undefined
+				fn go(c: boolean) {
+					for i in [1, 2] {
+						val q = if c { {x: 1} } else { {x: 2} }
+						take(q)
+					}
+				}
+			`,
+		},
+		{
+			// q is declared outside the loop, so the next iteration moves it again.
 			name: "MoveOfABindingDeclaredOutsideALoop",
 			src: `
 				declare fn take(q: {x: number}) -> undefined
@@ -1725,6 +1750,25 @@ func TestOwnershipDataflowMatchesCurrentChecks(t *testing.T) {
 			want: []string{
 				"4:18-4:19: cannot use borrowed &object as owned object",
 				"5:19-5:20: cannot use borrowed &mut object as owned object",
+			},
+		},
+		{
+			// Each branch of a conditional element is checked on its own, so a written borrow on
+			// each branch is accepted. A literal a written borrow lends is checked too, since its
+			// elements are owned destinations.
+			name: "BorrowIntoAnUntypedLiteralThroughABranchOrABorrow",
+			src: `
+				fn go(c: boolean, r: &{x: number}) {
+					val p = {x: 1}
+					val q = {x: 2}
+					val a = {f: if c { &p } else { &q }}
+					val b = {f: if c { &p } else { r }}
+					val d = {f: &{g: r}}
+				}
+			`,
+			want: []string{
+				"6:37-6:38: cannot use borrowed &object as owned object",
+				"7:23-7:24: cannot use borrowed &object as owned object",
 			},
 		},
 	}

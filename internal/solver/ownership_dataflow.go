@@ -111,6 +111,9 @@ func (c *checker) runOwnershipDataflow() {
 	// frame. A pair of paths the pass reports by E2 is reported once, by the pass. The
 	// frame-exit check keeps each pair the pass does not report.
 	c.errs = slices.DeleteFunc(c.errs, sharedPathsReported(found))
+	// A closure's body is checked after the body it is written in, so its diagnostics are put
+	// back in source order before the merge.
+	slices.SortStableFunc(found, func(a, b SolverError) int { return compareSpans(a.Span(), b.Span()) })
 	c.errs = mergeDataflowErrors(c.errs, found)
 }
 
@@ -441,20 +444,6 @@ func laterNode(a, b ast.Node) bool {
 	return as.SourceID != bs.SourceID || as.Start.Offset > bs.Start.Offset
 }
 
-// declarePoints returns the CFG point of each `val` or `var` declaration in cfg, with the
-// bindings it declares.
-func declarePoints(cfg *liveness.CFG) map[liveness.StmtRef][]liveness.VarID {
-	out := map[liveness.StmtRef][]liveness.VarID{}
-	for blockID, stmts := range liveness.DeclaredBindings(cfg) {
-		for idx, ids := range stmts {
-			if len(ids) > 0 {
-				out[liveness.StmtRef{BlockID: blockID, StmtIdx: idx}] = ids
-			}
-		}
-	}
-	return out
-}
-
 // bodyDataflow is the dataflow pass over one body.
 type bodyDataflow struct {
 	table *ownershipEvents
@@ -507,7 +496,7 @@ func (c *checker) checkBodyDataflow(t *ownershipEvents) []SolverError {
 		derived:      map[derivedKey]*borrowEvent{},
 		indexSegment: c.indexSegment,
 		suspends:     suspendPoints(t.cfg),
-		declares:     declarePoints(t.cfg),
+		declares:     liveness.DeclaredBindings(t.cfg),
 		reaches:      map[reachKey]bool{},
 		escapes:      map[liveness.VarID]bool{},
 	}
