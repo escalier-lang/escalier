@@ -982,6 +982,99 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot assign to 'b.value' while it is borrowed as immutable"},
 		},
 		{
+			// A rest parameter receives every argument from its position on, so each of them
+			// passes its borrow to the result.
+			name: "RestArgumentsPassTheirBorrowsToTheResult",
+			src: `
+				declare fn pickAny<'a>(...ps: Array<&'a {x: number}>) -> &'a {x: number}
+				fn go() -> number {
+					val mut p = {x: 1}
+					val mut q = {x: 1}
+					val d = pickAny(&p, &q)
+					q.x = 2
+					return d.x
+				}
+			`,
+			errs: []string{"cannot assign to 'q.x' while it is borrowed as immutable"},
+		},
+		{
+			// a borrows x, so the store through a lands in `x.peer`, which the return reads.
+			name: "StoreThroughABorrowingLocalReachesWhatItBorrows",
+			src: `
+				declare fn store<'a>(target: &mut {peer: &'a {x: number}}, item: &'a {x: number}) -> undefined
+				fn go() -> number {
+					val mut x = {peer: &{x: 0}}
+					val mut b = {x: 1}
+					val a = &mut x
+					store(a, &b)
+					b.x = 2
+					return x.peer.x
+				}
+			`,
+			errs: []string{"cannot assign to 'b.x' while it is borrowed as immutable"},
+		},
+		{
+			// A field of a call's result holds what the result borrows at that field.
+			name: "FieldOfACallResultHoldsItsBorrow",
+			src: `
+				declare fn wrap<'a>(p: &'a {x: number}) -> {inner: &'a {x: number}, n: number}
+				fn go() -> number {
+					val mut p = {x: 1}
+					val d = wrap(&p).inner
+					p.x = 2
+					return d.x
+				}
+			`,
+			errs: []string{"cannot assign to 'p.x' while it is borrowed as immutable"},
+		},
+		{
+			// A value-type field of a call's result holds no borrow.
+			name: "ValueFieldOfACallResultOk",
+			src: `
+				declare fn wrap<'a>(p: &'a {x: number}) -> {inner: &'a {x: number}, n: number}
+				fn go() -> number {
+					val mut p = {x: 1}
+					val n = wrap(&p).n
+					p.x = 2
+					return n
+				}
+			`,
+		},
+		{
+			// r is used only while the arguments are evaluated, so it is dead once the
+			// `&mut self` receiver takes effect.
+			name: "ImmutableBorrowUsedOnlyInTheArgumentsOk",
+			src: `
+				class V {
+					n: number,
+					len(&self) -> number { return self.n },
+					push(&mut self, x: number) -> undefined {},
+				}
+				fn go() {
+					val mut v = V(1)
+					val r = &v
+					v.push(r.len())
+				}
+			`,
+		},
+		{
+			// r is used after the call, so the `&mut self` receiver breaks E2 and is blamed.
+			name: "ImmutableBorrowLiveAfterAMutableReceiver",
+			src: `
+				class V {
+					n: number,
+					push(&mut self, x: number) -> undefined {},
+				}
+				fn go() -> number {
+					val mut v = V(1)
+					val r = &v
+					v.push(1)
+					return r.n
+				}
+			`,
+			errs: []string{"cannot borrow 'v' as mutable while it is borrowed as immutable"},
+		},
+		{
 			// The write comes before the `yield`, where the caller first reads `p.r`.
 			name: "WriteBeforeAYieldOk",
 			src: `

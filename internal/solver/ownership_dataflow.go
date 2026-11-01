@@ -98,13 +98,14 @@ func (c *checker) runOwnershipDataflow() {
 	// E4's `moved` example puts the error on the move, so a move the pass rejects is
 	// reported once, there, and not again at a later call of the closure.
 	c.errs = slices.DeleteFunc(c.errs, closureMoveReported(found))
+	// The current checks name the binding that still holds the other borrow when a store
+	// breaks E2, which says more than the pass's message about the same store. This runs
+	// before the next filter, so a dropped error does not stand in for a frame-exit one.
+	found = slices.DeleteFunc(found, storedAliasReported(c.errs))
 	// L1 and E2 at the return replace the frame-exit check of a value's paths out of the
 	// frame. A pair of paths the pass reports by E2 is reported once, by the pass. The
 	// frame-exit check keeps each pair the pass does not report.
 	c.errs = slices.DeleteFunc(c.errs, sharedPathsReported(found))
-	// The current checks name the binding that still holds the other borrow when a store
-	// breaks E2, which says more than the pass's message about the same store.
-	found = slices.DeleteFunc(found, storedAliasReported(c.errs))
 	c.errs = append(c.errs, found...)
 }
 
@@ -536,8 +537,8 @@ func (d *bodyDataflow) transfer(block int, s *dataflowState) {
 		// stored into a caller-owned place. So such a loan stays live from then on.
 		if d.suspends.Contains(at) {
 			for _, l := range s.loans {
-				if slices.ContainsFunc(slices.Collect(maps.Values(l.holders)), d.callerOwned) {
-					l.static = true
+				for _, h := range l.holders {
+					l.static = l.static || d.callerOwned(h)
 				}
 			}
 		}
@@ -581,11 +582,7 @@ func (d *bodyDataflow) step(ev ownershipEvent, at liveness.StmtRef, s *dataflowS
 	case *moveEvent:
 		d.move(ev, at, s)
 	case *passEvent:
-		for _, l := range s.loans {
-			if l.slots.Contains(ev.from) {
-				d.holdLoan(l, ev.holder, ev.node)
-			}
-		}
+		d.pass(ev, s)
 	case *callEvent:
 		d.callEnd(ev, at, s)
 	case *provisionalEvent:
@@ -714,14 +711,13 @@ func (d *bodyDataflow) borrow(ev *borrowEvent, at liveness.StmtRef, s *dataflowS
 	l := newLiveLoan(ev)
 	l.static = soltype.IsStaticLifetime(ev.lifetime)
 	d.holdLoan(l, ev.holder, ev.node)
-	if !l.closure() {
-		d.checkNewPath(ev.place, ev.borrow, ev.node, at, loans, l)
-	}
 
-	// A mutable receiver only reads its place until the call starts, as liveLoan.reserved
-	// describes.
+	// A mutable receiver only reads its place until the call starts, so callEnd checks it
+	// then, as liveLoan.reserved describes.
 	if rt, ok := ev.holder.target.(receiverTarget); ok && ev.borrow == mutableBorrow {
 		l.reserved = rt.call
+	} else if !l.closure() {
+		d.checkNewPath(ev.place, ev.borrow, ev.node, at, loans, l)
 	}
 	s.loans[ev] = l
 
@@ -756,12 +752,17 @@ func (d *bodyDataflow) liveInBody(l *liveLoan, at liveness.StmtRef) bool {
 // statement, since a holder the statement defines is not live on entry to it. So
 // `val t = {p: &mut b.x, q: &b.x}` breaks E2 when t is used later.
 func (d *bodyDataflow) checkNewPath(place movePlace, kind borrowKind, node ast.Node, at liveness.StmtRef, loans []*liveLoan, fresh *liveLoan) {
-	local, escapes := d.liveInBody(fresh, at), d.loanEscapes(fresh, at, false)
+	// Where fresh is live can take a walk of the CFG, so it is found once a loan needs it.
+	found := false
+	var local, escapes bool
 	for _, first := range loans {
 		if !first.checked() || first.reserved != nil || first.ev.borrow == kind || !placesOverlap(first.ev.place, place) {
 			continue
 		}
 
+		if !found {
+			local, escapes, found = d.liveInBody(fresh, at), d.loanEscapes(fresh, at, false), true
+		}
 		firstLocal := d.loanLive(first, at, true) || (first.ev.at == at && d.loanLive(first, at, false))
 		if (local && firstLocal) || (escapes && d.loanEscapes(first, at, true)) {
 			d.report(&BorrowAliasError{
@@ -782,11 +783,15 @@ func (d *bodyDataflow) checkNewPath(place movePlace, kind borrowKind, node ast.N
 // returnSpans returns the span of each return the value of a holder of one of loans flows
 // into, as returnsOf finds them.
 func (d *bodyDataflow) returnSpans(loans ...*liveLoan) []ast.Span {
+	seen := set.NewSet[ast.Span]()
 	var out []ast.Span
 	for _, l := range loans {
 		for _, h := range l.holders {
 			for _, site := range d.table.returnsOf(h.place.root) {
-				out = append(out, site.node.Span())
+				if span := site.node.Span(); !seen.Contains(span) {
+					seen.Add(span)
+					out = append(out, span)
+				}
 			}
 		}
 	}
@@ -991,10 +996,45 @@ func (d *bodyDataflow) addHolder(src movePlace, holder eventHolder, node ast.Nod
 	}
 }
 
-// callEnd applies the callEvent ev. A mutable receiver the call reserved takes effect first.
-// E2 rejects each immutable path still live then that an argument made after the receiver,
-// and blames the argument. So `p.writeRead(&p)` reports `&p`. Then each loan a slot of the
-// call holds is released, and a loan nothing else holds ends.
+// pass applies the passEvent ev. Each loan the slot ev.from holds gains ev.holder as a holder.
+// A store target place that holds a borrow, such as the `a` of `store(a, &b)` after
+// `val a = &mut x`, stands for the place it borrows, so `x.peer` holds the loan too.
+func (d *bodyDataflow) pass(ev *passEvent, s *dataflowState) {
+	holders := []eventHolder{ev.holder}
+	if pt, ok := ev.holder.target.(placeTarget); ok {
+		target := movePlace{root: pt.root, path: ev.holder.path}
+		for _, m := range d.sortedLoans(s) {
+			for _, h := range m.holders {
+				// A holder at the target itself holds a borrow the store replaces, and one
+				// above the target holds a borrow the store writes through.
+				if h.place.root != target.root || len(h.place.path) >= len(target.path) || !pathHasPrefix(target.path, h.place.path) {
+					continue
+				}
+
+				pointee := appendPath(m.ev.place.path, target.path[len(h.place.path):])
+				holders = append(holders, eventHolder{target: placeTarget{root: m.ev.place.root}, path: pointee})
+			}
+		}
+	}
+
+	for _, l := range s.loans {
+		if !l.slots.Contains(ev.from) {
+			continue
+		}
+		for _, h := range holders {
+			d.holdLoan(l, h, ev.node)
+		}
+	}
+}
+
+// callEnd applies the callEvent ev. A mutable receiver the call reserved takes effect first,
+// and E2 rejects an immutable path to an overlapping place that is still live then. A path
+// still live is one an argument of a call that has not returned holds, or one whose holder
+// is used after the statement. So `val r = &v; v.push(r.len())` checks clean, since r is
+// dead once the arguments are evaluated. A path made before the receiver blames the
+// receiver, and one an argument made after it blames the argument, so `p.writeRead(&p)`
+// reports `&p`. Then each loan a slot of the call holds is released, and a loan nothing else
+// holds ends.
 func (d *bodyDataflow) callEnd(ev *callEvent, at liveness.StmtRef, s *dataflowState) {
 	loans := d.sortedLoans(s)
 	for _, r := range loans {
@@ -1006,19 +1046,30 @@ func (d *bodyDataflow) callEnd(ev *callEvent, at liveness.StmtRef, s *dataflowSt
 		after := false
 		for _, m := range loans {
 			after = after || m == r
-			if m == r || !after || !m.checked() || m.ev.borrow == mutableBorrow ||
-				!placesOverlap(m.ev.place, r.ev.place) || !d.loanLive(m, at, true) {
+			if m == r || !m.checked() || m.ev.borrow == mutableBorrow ||
+				!placesOverlap(m.ev.place, r.ev.place) || !d.loanLive(m, at, false) {
 				continue
 			}
 
-			d.report(&BorrowAliasError{
-				Place:      d.placeName(m.ev.place),
-				FirstPlace: d.placeName(r.ev.place),
-				FirstMut:   true,
-				root:       m.ev.place.root,
-				node:       m.ev.node,
-				first:      r.ev.node.Span(),
-			})
+			e := &BorrowAliasError{
+				Place:      d.placeName(r.ev.place),
+				FirstPlace: d.placeName(m.ev.place),
+				SecondMut:  true,
+				root:       r.ev.place.root,
+				node:       r.ev.node,
+				first:      m.ev.node.Span(),
+			}
+			if after {
+				e = &BorrowAliasError{
+					Place:      d.placeName(m.ev.place),
+					FirstPlace: d.placeName(r.ev.place),
+					FirstMut:   true,
+					root:       m.ev.place.root,
+					node:       m.ev.node,
+					first:      r.ev.node.Span(),
+				}
+			}
+			d.report(e)
 			break
 		}
 	}

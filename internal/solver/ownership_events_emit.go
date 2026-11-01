@@ -191,7 +191,8 @@ func (c *checker) placeHolderOf(e ast.Expr) eventHolder {
 //     not settled the source or the destination.
 //   - A written borrow, a literal, or a closure already emitted its borrow, elements, or
 //     captures with itself as their holder, and those events move to holder. So did a call
-//     whose result holds a borrow of an argument, as emitCallEnd describes.
+//     whose result holds a borrow of an argument, as emitCallEnd describes, and a read of
+//     that result passes them on too.
 //   - A branching expression passes the value of each branch's tail.
 //
 // Any other source names no place and emits nothing here.
@@ -226,10 +227,34 @@ func (c *checker) emitFlow(source ast.Expr, holder eventHolder, dest flowDest, r
 
 	p, ok := c.exprPlace(source)
 	if !ok {
+		// A read of a call's result, as in `pick(&q).inner` or `await load(&q)`, holds what the
+		// result borrows, unless the value read is a value type.
+		if call, isCall := callResultOf(source); isCall && !c.holdsValueType(c.info.TypeOf(source)) {
+			c.retargetTemp(call, holder, ref)
+		}
 		return
 	}
 
 	c.emitValueFlow(p, source, nil, source, holder, dest, ref)
+}
+
+// callResultOf returns the call whose result e reads: an `await` of the call, or a member or
+// index chain rooted at it. ok is false for any other expression.
+func callResultOf(e ast.Expr) (*ast.CallExpr, bool) {
+	for {
+		switch x := e.(type) {
+		case *ast.CallExpr:
+			return x, true
+		case *ast.AwaitExpr:
+			e = x.Arg
+		case *ast.MemberExpr:
+			e = x.Object
+		case *ast.IndexExpr:
+			e = x.Object
+		default:
+			return nil, false
+		}
+	}
 }
 
 // emitBorrow emits the borrow a written `&` or `&mut` expression takes of its operand's
@@ -1133,33 +1158,37 @@ func (c *checker) emitCallEnd(e *ast.CallExpr, fn *soltype.FuncType, ref livenes
 		// One signature can share several lifetimes between the same two positions, and each
 		// pair passes once. A return edge keys on the root 0, which no local has.
 		seen := set.NewSet[passKey]()
-		pass := func(from int, to movePlace) {
-			key := passKey{from: from, to: placeKey(to)}
-			if _, ok := storeExprAt(e, recv, from); !ok || seen.Contains(key) {
-				return
-			}
-			seen.Add(key)
+		pass := func(param int, to movePlace) {
+			for _, from := range argsOfParam(e, fn, param) {
+				key := passKey{from: from, to: placeKey(to)}
+				if _, ok := storeExprAt(e, recv, from); !ok || seen.Contains(key) {
+					continue
+				}
+				seen.Add(key)
 
-			holder := eventHolder{target: placeTarget{root: to.root}, path: to.path}
-			if to.root == 0 {
-				holder.target = tempTarget{node: e}
+				holder := eventHolder{target: placeTarget{root: to.root}, path: to.path}
+				if to.root == 0 {
+					holder.target = tempTarget{node: e}
+				}
+				flow := flowBase{eventBase: eventBase{node: e}, holder: holder}
+				c.emitEvent(&passEvent{flowBase: flow, from: callSlot{call: e, index: from}}, ref)
 			}
-			flow := flowBase{eventBase: eventBase{node: e}, holder: holder}
-			c.emitEvent(&passEvent{flowBase: flow, from: callSlot{call: e, index: from}}, ref)
 		}
 
 		for _, edge := range callStoreEdges(c.ctx, fn, self) {
-			targetExpr, ok := storeExprAt(e, recv, edge.target)
-			if !ok {
-				continue
-			}
+			for _, i := range argsOfParam(e, fn, edge.target) {
+				targetExpr, ok := storeExprAt(e, recv, i)
+				if !ok {
+					continue
+				}
 
-			target, isPlace := c.exprPlace(borrowOperand(targetExpr))
-			if !isPlace || target.root <= 0 {
-				continue
-			}
+				target, isPlace := c.exprPlace(borrowOperand(targetExpr))
+				if !isPlace || target.root <= 0 {
+					continue
+				}
 
-			pass(edge.arg, movePlace{root: target.root, path: appendPath(target.path, edge.path)})
+				pass(edge.arg, movePlace{root: target.root, path: appendPath(target.path, edge.path)})
+			}
 		}
 
 		for _, edge := range callReturnEdges(c.ctx, fn, self) {
@@ -1168,6 +1197,21 @@ func (c *checker) emitCallEnd(e *ast.CallExpr, fn *soltype.FuncType, ref livenes
 	}
 
 	c.emitEvent(&callEvent{eventBase: eventBase{node: e}, call: e}, ref)
+}
+
+// argsOfParam returns the positions of the arguments of the call e that the parameter at
+// position param of fn receives. A rest parameter receives every argument from its own
+// position on, and selfIndex names the receiver.
+func argsOfParam(e *ast.CallExpr, fn *soltype.FuncType, param int) []int {
+	if param < 0 || param >= len(fn.Params) || !fn.Params[param].Rest {
+		return []int{param}
+	}
+
+	var out []int
+	for i := param; i < len(e.Args); i++ {
+		out = append(out, i)
+	}
+	return out
 }
 
 // passKey names one passEvent of a call for emitCallEnd: the slot it passes from, and the
