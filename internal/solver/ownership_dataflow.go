@@ -22,7 +22,8 @@ import (
 //   - E2 rejects an immutable path and a mutable path to one place that are live together.
 //   - E3 rejects a move of a place while a borrow of it is live.
 //
-// A loan is one borrow event the pass tracks: the place borrowed, its kind, and the holders
+// A holder is the destination that receives a borrow, such as the `c` of `val c = &p`. A
+// loan is one borrow event the pass tracks: the place borrowed, its kind, and the holders
 // that keep it live. A loan is live at a point while one of its holders is used again later,
 // which the body's liveness answers. A copy of a holder becomes a second holder. A loan held
 // by a module-level binding, or one whose lifetime is `'static`, is live at every later point.
@@ -350,7 +351,7 @@ func (d *bodyDataflow) endStatement(at liveness.StmtRef, s *dataflowState) {
 	}
 }
 
-// step applies one event to s, reporting what it breaks when d is reporting.
+// step applies one event to s, and reports each rule the event breaks while d.errs is set.
 func (d *bodyDataflow) step(ev ownershipEvent, at liveness.StmtRef, s *dataflowState) {
 	switch ev := ev.(type) {
 	case *useEvent:
@@ -388,10 +389,10 @@ func (d *bodyDataflow) step(ev ownershipEvent, at liveness.StmtRef, s *dataflowS
 // under its place.
 //
 // Writing a whole local, as in `c = &q`, also ends what c held before. c stops holding each
-// loan a flow written before the assignment gave it. The flows of the assigned value are
-// written after the assignment's target, so c keeps the loans they give it, such as the
-// borrow of q. A flow in a loop that runs after the assignment on an earlier iteration is
-// written after it too, so c keeps that loan, which can only report more.
+// loan that a flow earlier in the source gave it. The assigned value appears after the
+// target `c`, so c keeps the loans its flows give, such as the borrow of q. In a loop, a flow
+// later in the source can run before the assignment on an earlier iteration. c keeps the
+// loan such a flow gave it, which errs toward reporting a conflict.
 func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState) {
 	depth := len(ev.place.path)
 	dynamic := false

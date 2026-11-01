@@ -8,11 +8,10 @@
 //	go run ./tools/ownership_diff [-pkgs ./internal/solver/,./cmd/...] [-run <regexp>]
 //
 // Each run sets ESCALIER_DIAG_TRACE=1, which makes the solver print every diagnostic of a
-// top-level run to standard output, as traceDiagnostics in internal/solver/diagnostic_trace.go
-// describes.
-// `go test -json` attributes each printed line to the test that was running, and -parallel 1
-// keeps two tests of one package from running at once. A test's pass or failure does not
-// matter to the report.
+// top-level run to standard output. traceDiagnostics in internal/solver/diagnostic_trace.go
+// describes the format. `go test -json` attributes each printed line to the test that was
+// running, and -parallel 1 keeps two tests of one package from running at once. A test's
+// pass or failure does not matter to the report.
 //
 // The attribution can name the test before the one that printed a line, when a paused
 // parallel test resumes. So two diagnostics match when they come from the same program,
