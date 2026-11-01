@@ -104,12 +104,11 @@ func (c *checker) runOwnershipDataflow() {
 	c.errs = append(c.errs, found...)
 }
 
-// sharedPathsReported returns a filter that matches each frame-exit diagnostic of the current
-// checks about a mutable path and an immutable one to a local, for which the dataflow pass
-// reports E2 between two borrows of the same local. found holds the pass's diagnostics. The
-// diagnostics it matches are SharedReturnPathsError and the MixedOutflowPathsError that is not
-// Owned. A pass diagnostic matches when its local is the frame-exit diagnostic's local and its
-// span lies inside the frame-exit diagnostic's span or its related span.
+// sharedPathsReported returns a filter that matches a frame-exit diagnostic of the current
+// checks when the dataflow pass reports the same conflict. found holds the pass's diagnostics.
+// The filter matches a SharedReturnPathsError, or a MixedOutflowPathsError that is not Owned,
+// when found holds a BorrowAliasError about the same local. That error's span must lie inside
+// the frame-exit diagnostic's span or its related span.
 func sharedPathsReported(found []SolverError) func(SolverError) bool {
 	reports := map[liveness.VarID][]ast.Span{}
 	for _, err := range found {
