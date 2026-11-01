@@ -64,42 +64,39 @@ func borrowKindOf(mut bool) borrowKind {
 	return immutableBorrow
 }
 
-// classifyFlow returns the event kind F2 gives the flow of place p, whose value has type
-// t, into holder through dest. table holds the flow's event. It fills ev's borrow and
-// lifetime for a borrow. A value
-// type returns useEvent, since copying it is only a read of p. settled is false when F3
-// has not settled the source or the destination, and wait then names what the flow waits
-// on.
+// classifyFlow returns the event F2 gives flow, whose value has type t, through dest.
+// The event carries flow's place, node, and CFG node. table holds the flow's event. A
+// value type returns a read *useEvent with no holder, since copying it is only a read of
+// the place. settled is false when F3 has not settled the source or the destination. The
+// event is then nil and wait names what the flow waits on.
 //
 // force settles every such flow the way the current solver treats what it cannot see: an
 // unsettled parameter is read as it stands, a callee with no signature borrows its
 // argument, and a closure capture settles from the holder the closure has then.
 // forceCapture settles only that last case.
-func (c *checker) classifyFlow(table *ownershipEvents, p movePlace, t soltype.Type, holder eventHolder, dest flowDest, force, forceCapture bool, ev *ownershipEvent) (ownershipEventKind, flowWait, bool) {
-	dest, wait, ok := c.settleDest(table, dest, holder, force, force || forceCapture)
+func (c *checker) classifyFlow(table *ownershipEvents, flow flowBase, t soltype.Type, dest flowDest, force, forceCapture bool) (ownershipEvent, flowWait, bool) {
+	dest, wait, ok := c.settleDest(table, dest, flow.holder, force, force || forceCapture)
 	if !ok {
-		return 0, wait, false
+		return nil, wait, false
 	}
-	src, wait, ok := c.sourceKindOf(p, t, force)
+	src, wait, ok := c.sourceKindOf(flow.place, t, force)
 	if !ok {
-		return 0, wait, false
+		return nil, wait, false
 	}
 	switch src {
 	case valueSource:
-		return useEvent, flowWait{}, true
+		return &useEvent{eventBase: flow.eventBase, access: readAccess}, flowWait{}, true
 	case borrowSource:
 		if b, ok := dest.(*borrowDest); ok && b.reborrows {
-			ev.borrow, ev.lifetime = b.borrow, b.lt
-			return borrowEvent, flowWait{}, true
+			return &borrowEvent{flowBase: flow, borrow: b.borrow, lifetime: b.lt}, flowWait{}, true
 		}
-		return copyEvent, flowWait{}, true
+		return &copyEvent{flowBase: flow}, flowWait{}, true
 	case ownedSource:
 	}
 	if b, ok := dest.(*borrowDest); ok {
-		ev.borrow, ev.lifetime = b.borrow, b.lt
-		return borrowEvent, flowWait{}, true
+		return &borrowEvent{flowBase: flow, borrow: b.borrow, lifetime: b.lt}, flowWait{}, true
 	}
-	return moveEvent, flowWait{}, true
+	return &moveEvent{flowBase: flow}, flowWait{}, true
 }
 
 // settleDest resolves a destination whose ownership is decided elsewhere to an owned,
@@ -253,19 +250,15 @@ func (c *checker) settleFlowsWaitingOn(wait flowWait, force, forceCapture bool) 
 	flows := c.pendingFlows[wait]
 	delete(c.pendingFlows, wait)
 	for _, pf := range flows {
-		ev := pf.table.events[pf.index]
+		placeholder := pf.table.events[pf.index].(*provisionalEvent)
 		t := pf.sourceT
 		if pf.source != nil {
 			t = c.info.TypeOf(pf.source)
 		}
-		kind, next, settled := c.classifyFlow(pf.table, ev.place, t, ev.holder, pf.dest, force, forceCapture, &ev)
+		ev, next, settled := c.classifyFlow(pf.table, placeholder.flowBase, t, pf.dest, force, forceCapture)
 		if !settled {
 			c.addPendingFlow(pf, next)
 			continue
-		}
-		ev.kind = kind
-		if kind == useEvent {
-			ev.holder, ev.access = eventHolder{}, readAccess
 		}
 		pf.table.events[pf.index] = ev
 	}

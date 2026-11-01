@@ -57,11 +57,12 @@ func (c *checker) emitEvent(ev ownershipEvent, at liveness.StmtRef) int {
 	if t == nil {
 		return -1
 	}
-	ev.at = at
+	ev.base().at = at
 	t.events = append(t.events, ev)
 	index := len(t.events) - 1
-	if ev.holder.kind == tempHolder {
-		t.temps[ev.holder.node] = append(t.temps[ev.holder.node], index)
+	if fe, ok := ev.(flowEvent); ok && fe.flow().holder.kind == tempHolder {
+		node := fe.flow().holder.node
+		t.temps[node] = append(t.temps[node], index)
 	}
 	return index
 }
@@ -146,7 +147,7 @@ func (c *checker) emitReadAt(e ast.Expr, ref liveness.StmtRef) {
 	if !ok || !c.firstEmit(e, readRole, ref, 0) {
 		return
 	}
-	c.emitEvent(ownershipEvent{kind: useEvent, place: p, access: readAccess, node: e, fromRead: true}, ref)
+	c.emitEvent(&useEvent{eventBase: eventBase{place: p, node: e}, access: readAccess, fromRead: true}, ref)
 }
 
 // emitWrite emits a write of the assignment target e, attached to ref. The receivers the
@@ -157,7 +158,7 @@ func (c *checker) emitWrite(e ast.Expr, ref liveness.StmtRef) {
 	}
 	c.subsumePlaceChain(e)
 	if p, ok := c.exprPlace(e); ok {
-		c.emitEvent(ownershipEvent{kind: useEvent, place: p, access: writeAccess, node: e}, ref)
+		c.emitEvent(&useEvent{eventBase: eventBase{place: p, node: e}, access: writeAccess}, ref)
 	}
 }
 
@@ -224,12 +225,12 @@ func (c *checker) emitBorrow(e *ast.BorrowExpr) {
 		return
 	}
 	c.subsumePlaceChain(e.Arg)
-	c.emitEvent(ownershipEvent{
-		kind:   borrowEvent,
-		place:  p,
-		holder: eventHolder{kind: tempHolder, node: e},
+	c.emitEvent(&borrowEvent{
+		flowBase: flowBase{
+			eventBase: eventBase{place: p, node: e},
+			holder:    eventHolder{kind: tempHolder, node: e},
+		},
 		borrow: borrowKindOf(e.Mut),
-		node:   e,
 	}, ref)
 }
 
@@ -241,14 +242,17 @@ func (c *checker) finishOwnershipEvents() {
 	if t == nil {
 		return
 	}
-	events := t.events
-	for i := range events {
-		be, ok := events[i].node.(*ast.BorrowExpr)
-		if !ok || events[i].kind != borrowEvent {
+	for _, ev := range t.events {
+		bev, ok := ev.(*borrowEvent)
+		if !ok {
+			continue
+		}
+		be, ok := bev.node.(*ast.BorrowExpr)
+		if !ok {
 			continue
 		}
 		if r, isRef := c.info.TypeOf(be).(*soltype.RefType); isRef {
-			events[i].lifetime = r.Lt
+			bev.lifetime = r.Lt
 		}
 	}
 	c.settleFlowsWaitingOn(flowWait{capture: true, table: t}, false, true)
@@ -271,7 +275,13 @@ func (c *checker) retargetTemp(value ast.Expr, holder eventHolder) {
 	indices := t.temps[value]
 	delete(t.temps, value)
 	for _, i := range indices {
-		t.events[i].holder = holder.extend(t.events[i].holder.place.path)
+		// A provisional flow that settled into a use has no holder left to retarget.
+		fe, ok := t.events[i].(flowEvent)
+		if !ok {
+			continue
+		}
+		fb := fe.flow()
+		fb.holder = holder.extend(fb.holder.place.path)
 		if holder.kind == tempHolder {
 			t.temps[holder.node] = append(t.temps[holder.node], i)
 		}
@@ -299,11 +309,11 @@ func (c *checker) emitValueFlow(p movePlace, source ast.Expr, sourceT soltype.Ty
 		c.fn.events.flowsInto[p.root] = append(c.fn.events.flowsInto[p.root], holder.place.root)
 	case argHolder, receiverHolder, tempHolder:
 	}
-	ev := ownershipEvent{place: p, holder: holder, node: node}
-	kind, wait, settled := c.classifyFlow(c.fn.events, p, sourceT, holder, dest, false, false, &ev)
-	if settled && kind == useEvent {
+	flow := flowBase{eventBase: eventBase{place: p, node: node}, holder: holder}
+	ev, wait, settled := c.classifyFlow(c.fn.events, flow, sourceT, dest, false, false)
+	if use, ok := ev.(*useEvent); settled && ok {
 		if source == nil {
-			c.emitEvent(ownershipEvent{kind: useEvent, place: p, access: readAccess, node: node}, ref)
+			c.emitEvent(use, ref)
 		}
 		return
 	}
@@ -311,9 +321,8 @@ func (c *checker) emitValueFlow(p movePlace, source ast.Expr, sourceT soltype.Ty
 	if source != nil {
 		c.subsumePlaceChain(source)
 	}
-	ev.kind = kind
 	if !settled {
-		ev.kind = provisionalEvent
+		ev = &provisionalEvent{flowBase: flow}
 	}
 	index := c.emitEvent(ev, ref)
 	if !settled && index >= 0 {

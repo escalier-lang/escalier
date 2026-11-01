@@ -35,23 +35,6 @@ import (
 //     may be returned through that local later, so the capture waits until the body
 //     holding the closure is walked.
 
-// ownershipEventKind is the kind of one ownership event.
-type ownershipEventKind uint8
-
-const (
-	// copyEvent gives the holder the same value as the place, which stays usable.
-	copyEvent ownershipEventKind = iota
-	// borrowEvent gives the holder a new borrow of the place.
-	borrowEvent
-	// moveEvent gives the holder ownership of the place, which is consumed.
-	moveEvent
-	// useEvent reads or writes the place.
-	useEvent
-	// provisionalEvent holds the slot of a provisional flow until F3 settles it. No
-	// event of this kind survives settleAllFlows.
-	provisionalEvent
-)
-
 // borrowKind is the mutability of a borrow: `&` or `&mut`.
 type borrowKind uint8
 
@@ -109,24 +92,85 @@ func (h eventHolder) extend(path []placeSeg) eventHolder {
 	return h
 }
 
-// ownershipEvent is one event of the checking model. place is the place a copy,
-// borrow, or move takes its value from, or the place a use reads or writes. holder
-// receives the value of a copy, borrow, or move. borrow and lifetime describe a borrow
-// event's borrow, and lifetime is nil when the borrow's type carries none. access says
-// what a use does. node is the expression to blame for the event. at is the CFG node
-// the event is attached to. fromRead marks a use that reading the expression node emitted.
-// A later event that reads the same expression replaces such a use.
-type ownershipEvent struct {
-	kind     ownershipEventKind
-	place    movePlace
-	holder   eventHolder
-	borrow   borrowKind
+// ownershipEvent is one event of the checking model. It is one of *copyEvent,
+// *borrowEvent, *moveEvent, *useEvent, or *provisionalEvent. base returns the fields
+// every kind shares.
+type ownershipEvent interface {
+	isOwnershipEvent()
+	base() *eventBase
+}
+
+// eventBase holds the fields every ownership event has.
+type eventBase struct {
+	// place is the place a copy, borrow, or move takes its value from, or the place a use
+	// reads or writes.
+	place movePlace
+	// node is the expression to blame for the event.
+	node ast.Node
+	// at is the CFG node the event is attached to.
+	at liveness.StmtRef
+}
+
+// base returns the fields every ownership event shares.
+func (b *eventBase) base() *eventBase { return b }
+
+// flowBase holds the fields of an event that passes the value at place to a holder.
+type flowBase struct {
+	eventBase
+	// holder receives the value.
+	holder eventHolder
+}
+
+// flow returns the fields of the flow event.
+func (f *flowBase) flow() *flowBase { return f }
+
+// flowEvent is an ownership event that passes a value to a holder: a *copyEvent,
+// *borrowEvent, *moveEvent, or *provisionalEvent.
+type flowEvent interface {
+	ownershipEvent
+	flow() *flowBase
+}
+
+// copyEvent gives the holder the same value as the place, which stays usable.
+type copyEvent struct {
+	flowBase
+}
+
+// borrowEvent gives the holder a new borrow of the place.
+type borrowEvent struct {
+	flowBase
+	// borrow is the mutability of the borrow.
+	borrow borrowKind
+	// lifetime is the lifetime of the borrow, or nil when the borrow's type carries none.
 	lifetime soltype.Lifetime
-	access   useAccess
-	node     ast.Node
-	at       liveness.StmtRef
+}
+
+// moveEvent gives the holder ownership of the place, which is consumed.
+type moveEvent struct {
+	flowBase
+}
+
+// useEvent reads or writes the place.
+type useEvent struct {
+	eventBase
+	// access says whether the use reads or writes the place.
+	access useAccess
+	// fromRead marks a use that reading the expression node emitted. A later event that
+	// reads the same expression replaces such a use.
 	fromRead bool
 }
+
+// provisionalEvent holds the slot of a provisional flow until F3 settles it. No event
+// of this kind survives settleAllFlows.
+type provisionalEvent struct {
+	flowBase
+}
+
+func (*copyEvent) isOwnershipEvent()        {}
+func (*borrowEvent) isOwnershipEvent()      {}
+func (*moveEvent) isOwnershipEvent()        {}
+func (*useEvent) isOwnershipEvent()         {}
+func (*provisionalEvent) isOwnershipEvent() {}
 
 // ownershipEvents holds the ownership events of one body, in the order the walk emitted
 // them. names maps each VarID of the body to its source name, for rendering.
@@ -214,7 +258,7 @@ func newOwnershipEvents(names map[liveness.VarID]string) *ownershipEvents {
 func (t *ownershipEvents) list() []ownershipEvent {
 	out := make([]ownershipEvent, 0, len(t.events))
 	for _, ev := range t.events {
-		if ev.fromRead && t.subsumed.Contains(ev.node) {
+		if use, ok := ev.(*useEvent); ok && use.fromRead && t.subsumed.Contains(use.node) {
 			continue
 		}
 		out = append(out, ev)
@@ -227,7 +271,8 @@ func (t *ownershipEvents) list() []ownershipEvent {
 func (t *ownershipEvents) byNode() map[liveness.StmtRef][]ownershipEvent {
 	out := map[liveness.StmtRef][]ownershipEvent{}
 	for _, ev := range t.list() {
-		out[ev.at] = append(out[ev.at], ev)
+		at := ev.base().at
+		out[at] = append(out[at], ev)
 	}
 	return out
 }
@@ -246,7 +291,7 @@ func renderOwnershipEvents(t *ownershipEvents) []string {
 	ltNames := map[soltype.Lifetime]string{}
 	var out []string
 	for _, ev := range t.list() {
-		out = append(out, fmt.Sprintf("%s: %s", renderStmtRef(ev.at), t.renderEvent(ev, ltNames)))
+		out = append(out, fmt.Sprintf("%s: %s", renderStmtRef(ev.base().at), t.renderEvent(ev, ltNames)))
 	}
 	return out
 }
@@ -263,26 +308,28 @@ func renderStmtRef(at liveness.StmtRef) string {
 // renderEvent renders one event in the notation of the checking model. A name is in
 // backticks and a keyword is bare, so `val c = &p` renders as borrow(&, `p`, `c`, '1).
 func (t *ownershipEvents) renderEvent(ev ownershipEvent, ltNames map[soltype.Lifetime]string) string {
-	place := t.renderPlace(ev.place)
-	switch ev.kind {
-	case copyEvent:
+	place := t.renderPlace(ev.base().place)
+	switch ev := ev.(type) {
+	case *copyEvent:
 		return fmt.Sprintf("copy(%s, %s)", place, t.renderHolder(ev.holder))
-	case moveEvent:
+	case *moveEvent:
 		return fmt.Sprintf("move(%s, %s)", place, t.renderHolder(ev.holder))
-	case borrowEvent:
+	case *borrowEvent:
 		kind := "&"
 		if ev.borrow == mutableBorrow {
 			kind = "&mut"
 		}
 		return fmt.Sprintf("borrow(%s, %s, %s, %s)", kind, place, t.renderHolder(ev.holder), renderLifetime(ev.lifetime, ltNames))
-	case useEvent:
+	case *useEvent:
 		access := "read"
 		if ev.access == writeAccess {
 			access = "write"
 		}
 		return fmt.Sprintf("use(%s, %s)", place, access)
-	default:
+	case *provisionalEvent:
 		return fmt.Sprintf("provisional(%s, %s)", place, t.renderHolder(ev.holder))
+	default:
+		panic(fmt.Sprintf("renderEvent: unexpected event %T", ev))
 	}
 }
 
