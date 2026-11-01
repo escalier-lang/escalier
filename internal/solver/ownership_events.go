@@ -250,18 +250,23 @@ func (t *ownershipEvents) noteFlowInto(root liveness.VarID, holder eventHolder) 
 func (t *ownershipEvents) escapes(root liveness.VarID) bool {
 	seen := set.NewSet[liveness.VarID]()
 	stack := []liveness.VarID{root}
+
 	for len(stack) > 0 {
 		r := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
+
 		if t.escaping.Contains(r) {
 			return true
 		}
+
 		if seen.Contains(r) {
 			continue
 		}
+
 		seen.Add(r)
 		stack = append(stack, t.flowsInto[r]...)
 	}
+
 	return false
 }
 
@@ -308,12 +313,15 @@ func newOwnershipEvents(names map[liveness.VarID]string) *ownershipEvents {
 // subsumed reads.
 func (t *ownershipEvents) list() []ownershipEvent {
 	out := make([]ownershipEvent, 0, len(t.events))
+
 	for _, ev := range t.events {
 		if use, ok := ev.(*useEvent); ok && use.fromRead && t.subsumed.Contains(use.node) {
 			continue
 		}
+
 		out = append(out, ev)
 	}
+
 	return out
 }
 
@@ -321,10 +329,12 @@ func (t *ownershipEvents) list() []ownershipEvent {
 // node's events keep their emission order.
 func (t *ownershipEvents) byNode() map[liveness.StmtRef][]ownershipEvent {
 	out := map[liveness.StmtRef][]ownershipEvent{}
+
 	for _, ev := range t.list() {
 		at := ev.base().at
 		out[at] = append(out[at], ev)
 	}
+
 	return out
 }
 
@@ -341,9 +351,11 @@ func (i *Info) ownershipEventsOf(fn ast.Node) *ownershipEvents {
 func renderOwnershipEvents(t *ownershipEvents) []string {
 	ltNames := map[soltype.Lifetime]string{}
 	var out []string
+
 	for _, ev := range t.list() {
 		out = append(out, fmt.Sprintf("%s: %s", renderStmtRef(ev.base().at), t.renderEvent(ev, ltNames)))
 	}
+
 	return out
 }
 
@@ -360,6 +372,7 @@ func renderStmtRef(at liveness.StmtRef) string {
 // backticks and a keyword is bare, so `val c = &p` renders as borrow(&, `p`, `c`, '1).
 func (t *ownershipEvents) renderEvent(ev ownershipEvent, ltNames map[soltype.Lifetime]string) string {
 	place := t.renderPlace(ev.base().place)
+
 	switch ev := ev.(type) {
 	case *copyEvent:
 		return fmt.Sprintf("copy(%s, %s)", place, t.renderHolder(ev.holder))
@@ -370,12 +383,14 @@ func (t *ownershipEvents) renderEvent(ev ownershipEvent, ltNames map[soltype.Lif
 		if ev.borrow == mutableBorrow {
 			kind = "&mut"
 		}
+
 		return fmt.Sprintf("borrow(%s, %s, %s, %s)", kind, place, t.renderHolder(ev.holder), renderLifetime(ev.lifetime, ltNames))
 	case *useEvent:
 		access := "read"
 		if ev.access == writeAccess {
 			access = "write"
 		}
+
 		return fmt.Sprintf("use(%s, %s)", place, access)
 	case *provisionalEvent:
 		return fmt.Sprintf("provisional(%s, %s)", place, t.renderHolder(ev.holder))
@@ -390,12 +405,15 @@ func renderLifetime(lt soltype.Lifetime, ltNames map[soltype.Lifetime]string) st
 		// An AnonLifetime is the display marker for an elided lifetime, which names nothing.
 		return "'_"
 	}
+
 	if soltype.IsStaticLifetime(lt) {
 		return "'static"
 	}
+
 	if name, ok := ltNames[lt]; ok {
 		return name
 	}
+
 	name := fmt.Sprintf("'%d", len(ltNames)+1)
 	ltNames[lt] = name
 	return name
@@ -412,6 +430,7 @@ func (t *ownershipEvents) renderPlace(p movePlace) string {
 		writePath(&b, p.path)
 		return b.String()
 	}
+
 	writeQuotedPlace(&b, name, p.path)
 	return b.String()
 }
@@ -430,6 +449,7 @@ func writeQuotedPlace(b *strings.Builder, name string, path []placeSeg) {
 // backticks, as renderPlace writes it, and a keyword is bare.
 func (t *ownershipEvents) renderHolder(h eventHolder) string {
 	var b strings.Builder
+
 	switch tg := h.target.(type) {
 	case placeTarget:
 		return t.renderPlace(movePlace{root: tg.root, path: h.path})
@@ -445,6 +465,7 @@ func (t *ownershipEvents) renderHolder(h eventHolder) string {
 	case tempTarget:
 		b.WriteString("temp")
 	}
+
 	writePath(&b, h.path)
 	return b.String()
 }

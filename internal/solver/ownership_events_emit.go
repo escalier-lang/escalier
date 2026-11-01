@@ -22,10 +22,12 @@ func (c *checker) firstEmit(node ast.Node, role emitRole, at liveness.StmtRef, r
 	if t == nil {
 		return false
 	}
+
 	site := emitSite{node: node, role: role, at: at, root: root}
 	if t.emitted.Contains(site) {
 		return false
 	}
+
 	t.emitted.Add(site)
 	return true
 }
@@ -44,9 +46,11 @@ func (c *checker) eventTable() *ownershipEvents {
 func (c *checker) startOwnershipEvents(names map[liveness.VarID]string) {
 	t := newOwnershipEvents(names)
 	c.fn.events = t
+
 	if c.info.ownership == nil {
 		c.info.ownership = map[ast.Node]*ownershipEvents{}
 	}
+
 	c.info.ownership[c.fn.node] = t
 }
 
@@ -57,14 +61,17 @@ func (c *checker) emitEvent(ev ownershipEvent, at liveness.StmtRef) int {
 	if t == nil {
 		return -1
 	}
+
 	ev.base().at = at
 	t.events = append(t.events, ev)
 	index := len(t.events) - 1
+
 	if fe, ok := ev.(flowEvent); ok {
 		if th, ok := fe.flow().holder.target.(tempTarget); ok {
 			t.temps[th.node] = append(t.temps[th.node], index)
 		}
 	}
+
 	return index
 }
 
@@ -75,6 +82,7 @@ func (c *checker) subsumePlaceChain(e ast.Expr) {
 	if t == nil {
 		return
 	}
+
 	for e != nil {
 		t.subsumed.Add(e)
 		switch x := e.(type) {
@@ -92,6 +100,7 @@ func (c *checker) subsumePlaceChain(e ast.Expr) {
 // statement's CFG point.
 func exprStmtRefs(cfg *liveness.CFG) map[ast.Expr]liveness.StmtRef {
 	out := map[ast.Expr]liveness.StmtRef{}
+
 	for _, block := range cfg.Blocks {
 		for i, stmt := range block.Stmts {
 			if es, ok := stmt.(*ast.ExprStmt); ok {
@@ -99,6 +108,7 @@ func exprStmtRefs(cfg *liveness.CFG) map[ast.Expr]liveness.StmtRef {
 			}
 		}
 	}
+
 	return out
 }
 
@@ -110,12 +120,15 @@ func (c *checker) eventStmtRef() (liveness.StmtRef, bool) {
 	if c.fn == nil {
 		return liveness.StmtRef{}, false
 	}
+
 	if c.fn.exprAt.set && c.fn.exprAt.stmt == c.fn.eventStmt {
 		return c.fn.exprAt.ref, true
 	}
+
 	if c.fn.eventStmt == nil {
 		return liveness.StmtRef{}, false
 	}
+
 	ref, ok := c.fn.stmtToRef[c.fn.eventStmt]
 	return ref, ok
 }
@@ -136,6 +149,7 @@ func (c *checker) emitRead(e ast.Expr) {
 	if c.eventTable() == nil {
 		return
 	}
+
 	if ref, ok := c.eventStmtRef(); ok {
 		c.emitReadAt(e, ref)
 	}
@@ -148,6 +162,7 @@ func (c *checker) emitReadAt(e ast.Expr, ref liveness.StmtRef) {
 	if !ok || !c.firstEmit(e, readRole, ref, 0) {
 		return
 	}
+
 	c.emitEvent(&useEvent{eventBase: eventBase{place: p, node: e}, access: readAccess, fromRead: true}, ref)
 }
 
@@ -157,6 +172,7 @@ func (c *checker) emitWrite(e ast.Expr, ref liveness.StmtRef) {
 	if c.eventTable() == nil {
 		return
 	}
+
 	c.subsumePlaceChain(e)
 	if p, ok := c.exprPlace(e); ok {
 		c.emitEvent(&useEvent{eventBase: eventBase{place: p, node: e}, access: writeAccess}, ref)
@@ -186,6 +202,7 @@ func (c *checker) emitFlow(source ast.Expr, holder eventHolder, dest flowDest, r
 	if c.eventTable() == nil || source == nil {
 		return
 	}
+
 	if results, branches := liveness.BranchResults(source); branches {
 		for _, result := range results {
 			// A branch whose result is an expression statement attaches to that statement.
@@ -193,19 +210,24 @@ func (c *checker) emitFlow(source ast.Expr, holder eventHolder, dest flowDest, r
 			if r, ok := c.fn.exprRefs[result]; ok {
 				branchRef = r
 			}
+
 			c.emitFlow(result, holder, dest, branchRef)
 		}
+
 		return
 	}
+
 	switch s := source.(type) {
 	case *ast.BorrowExpr, *ast.ObjectExpr, *ast.TupleExpr, *ast.FuncExpr:
 		c.retargetTemp(s, holder)
 		return
 	}
+
 	p, ok := c.exprPlace(source)
 	if !ok {
 		return
 	}
+
 	c.emitValueFlow(p, source, nil, source, holder, dest, ref)
 }
 
@@ -217,14 +239,17 @@ func (c *checker) emitBorrow(e *ast.BorrowExpr) {
 	if c.eventTable() == nil {
 		return
 	}
+
 	ref, ok := c.eventStmtRef()
 	if !ok {
 		return
 	}
+
 	p, ok := c.exprPlace(e.Arg)
 	if !ok || !c.firstEmit(e, borrowRole, ref, 0) {
 		return
 	}
+
 	c.subsumePlaceChain(e.Arg)
 	c.emitEvent(&borrowEvent{
 		flowBase: flowBase{
@@ -243,19 +268,23 @@ func (c *checker) finishOwnershipEvents() {
 	if t == nil {
 		return
 	}
+
 	for _, ev := range t.events {
 		bev, ok := ev.(*borrowEvent)
 		if !ok {
 			continue
 		}
+
 		be, ok := bev.node.(*ast.BorrowExpr)
 		if !ok {
 			continue
 		}
+
 		if r, isRef := c.info.TypeOf(be).(*soltype.RefType); isRef {
 			bev.lifetime = r.Lt
 		}
 	}
+
 	c.settleFlowsWaitingOn(flowWait{capture: true, table: t}, false, true)
 }
 
@@ -265,6 +294,7 @@ func (c *checker) emitTempFlow(source ast.Expr, value ast.Expr, path []placeSeg,
 	if !c.firstEmit(source, elementRole, ref, 0) {
 		return
 	}
+
 	holder := eventHolder{target: tempTarget{node: value}}.extend(path)
 	c.emitFlow(source, holder, dest, ref)
 }
@@ -276,19 +306,24 @@ func (c *checker) retargetTemp(value ast.Expr, holder eventHolder) {
 	t := c.fn.events
 	roots := t.tempRoots[value]
 	delete(t.tempRoots, value)
+
 	for _, root := range roots {
 		t.noteFlowInto(root, holder)
 	}
+
 	indices := t.temps[value]
 	delete(t.temps, value)
+
 	for _, i := range indices {
 		// A provisional flow that settled into a use has no holder left to retarget.
 		fe, ok := t.events[i].(flowEvent)
 		if !ok {
 			continue
 		}
+
 		fb := fe.flow()
 		fb.holder = holder.extend(fb.holder.path)
+
 		if th, ok := holder.target.(tempTarget); ok {
 			t.temps[th.node] = append(t.temps[th.node], i)
 		}
@@ -307,9 +342,11 @@ func (c *checker) emitValueFlow(p movePlace, source ast.Expr, sourceT soltype.Ty
 	if source != nil {
 		sourceT = c.info.TypeOf(source)
 	}
+
 	// The escape check of a closure capture reads this record. A closure is a value type,
 	// so it is recorded before the value-type case below returns.
 	c.fn.events.noteFlowInto(p.root, holder)
+
 	flow := flowBase{eventBase: eventBase{place: p, node: node}, holder: holder}
 	ev, wait, settled := c.classifyFlow(c.fn.events, flow, sourceT, dest, false, false)
 	if use, ok := ev.(*useEvent); settled && ok {
@@ -318,13 +355,16 @@ func (c *checker) emitValueFlow(p movePlace, source ast.Expr, sourceT soltype.Ty
 		}
 		return
 	}
+
 	// The flow's event reads source, so the use the read emitted is dropped.
 	if source != nil {
 		c.subsumePlaceChain(source)
 	}
+
 	if !settled {
 		ev = &provisionalEvent{flowBase: flow}
 	}
+
 	index := c.emitEvent(ev, ref)
 	if !settled && index >= 0 {
 		pf := provisionalFlow{table: c.fn.events, index: index, source: source, sourceT: sourceT, dest: dest}
@@ -340,16 +380,19 @@ func (c *checker) emitCaptureFlow(closure ast.Func, root liveness.VarID, t solty
 	if !c.firstEmit(closure, captureRole, ref, root) {
 		return
 	}
+
 	// An unannotated parameter's binding renders as `never` until its body settles it, so
 	// the capture reads the parameter's own type instead.
 	if fp, ok := c.paramByVar[root]; ok {
 		t = fp.Type
 	}
+
 	holder := eventHolder{target: tempTarget{node: closure}}
 	var dest flowDest = &captureDest{writes: writes}
 	if moves {
 		dest = &ownedDest{}
 	}
+
 	c.emitValueFlow(movePlace{root: root}, nil, t, closure, holder, dest, ref)
 }
 
@@ -360,10 +403,12 @@ func (c *checker) emitBindingFlow(vd *ast.VarDecl, id liveness.VarID, bindingT s
 	if id <= 0 || !c.firstEmit(vd, bindingRole, ref, 0) {
 		return
 	}
+
 	var dest flowDest = &ownedDest{}
 	if vd.TypeAnn != nil {
 		dest = c.destOfType(bindingT)
 	}
+
 	c.emitFlow(vd.Init, eventHolder{target: placeTarget{root: id}}, dest, ref)
 }
 
@@ -377,12 +422,15 @@ func (c *checker) emitPatternFlows(pat ast.Pat, source ast.Expr, ref liveness.St
 	if source == nil || !c.firstEmit(pat, patternRole, ref, 0) {
 		return
 	}
+
 	src, ok := c.exprPlace(source)
 	if !ok {
 		return
 	}
+
 	w := &patternEmitter{c: c, source: source, sourceT: c.info.TypeOf(source), ref: ref}
 	w.walk(pat, src)
+
 	// A pattern that binds nothing, such as a literal arm, leaves the source's read alone.
 	if w.bound {
 		c.subsumePlaceChain(source)
@@ -401,11 +449,13 @@ func (c *checker) branchEntryRef(target ast.Expr, i int, siteRef liveness.StmtRe
 	if c.eventTable() == nil {
 		return liveness.StmtRef{}, false
 	}
+
 	if ref, ok := c.fn.exprRefs[target]; ok {
 		if succ := c.fn.cfg.Blocks[ref.BlockID].Successors; i < len(succ) {
 			return liveness.StmtRef{BlockID: succ[i].ID, StmtIdx: -1}, true
 		}
 	}
+
 	return siteRef, hasSite
 }
 
@@ -455,6 +505,7 @@ func (w *patternEmitter) elements(elems []ast.Pat, at movePlace) {
 			w.walk(rest.Pattern, extendPlace(at, strconv.Itoa(i)+"..."))
 			continue
 		}
+
 		w.walk(elem, extendPlace(at, strconv.Itoa(i)))
 	}
 }
@@ -469,11 +520,13 @@ func (w *patternEmitter) objectRest(pat ast.Pat, at movePlace) {
 		w.walk(pat, at)
 		return
 	}
+
 	obj, isObj := objectThroughBorrow(w.c.info.TypeOf(ident))
 	if !isObj {
 		w.leaf(ident, at, nil)
 		return
 	}
+
 	for _, elem := range obj.Elems {
 		if prop, isProp := elem.(*soltype.PropertyElem); isProp {
 			w.leaf(ident, extendPlace(at, prop.Name), appendSeg(nil, prop.Name))
@@ -492,9 +545,11 @@ func (w *patternEmitter) leaf(node ast.Node, at movePlace, path []placeSeg) {
 	if id <= 0 || leafT == nil {
 		return
 	}
+
 	if len(path) > 0 {
 		leafT = w.c.fieldType(leafT, path[0].name)
 	}
+
 	w.bound = true
 	sourceT := leafT
 	dest := w.c.destOfType(leafT)
@@ -503,9 +558,11 @@ func (w *patternEmitter) leaf(node ast.Node, at movePlace, path []placeSeg) {
 		sourceT = r
 		dest = &borrowDest{borrow: borrowKindOf(r.Mut), lt: r.Lt}
 	}
+
 	if b, ok := dest.(*borrowDest); ok {
 		b.reborrows = true
 	}
+
 	holder := eventHolder{target: placeTarget{root: id}, path: path}
 	w.c.emitValueFlow(at, nil, sourceT, w.source, holder, dest, w.ref)
 }
@@ -518,13 +575,16 @@ func (c *checker) emitAssignFlow(scope *Scope, e *ast.BinaryExpr, ref liveness.S
 	if !c.firstEmit(e, assignRole, ref, 0) {
 		return
 	}
+
 	switch left := e.Left.(type) {
 	case *ast.IdentExpr:
 		b, found := c.lookupValueBinding(scope, left.Name)
 		if !found || len(b.Schemes) == 0 {
 			return
 		}
+
 		dest := c.destOfType(bindingType(b))
+
 		// A module-level binding is a local of a function body that reaches it, but a store
 		// into it outlives every local, so its holder is a moduleTarget.
 		switch id := c.varIDs.Of(left); {
@@ -535,6 +595,7 @@ func (c *checker) emitAssignFlow(scope *Scope, e *ast.BinaryExpr, ref liveness.S
 		default:
 			return
 		}
+
 		c.emitWrite(left, ref)
 	case *ast.MemberExpr, *ast.IndexExpr:
 		c.emitFlow(e.Right, c.placeHolderOf(left), c.storeDest(left), ref)
@@ -548,23 +609,28 @@ func (c *checker) emitAssignFlow(scope *Scope, e *ast.BinaryExpr, ref liveness.S
 func (c *checker) storeDest(target ast.Expr) flowDest {
 	var object ast.Expr
 	var name string
+
 	switch t := target.(type) {
 	case *ast.MemberExpr:
 		if t.Prop == nil {
 			return &ownedDest{}
 		}
+
 		object, name = t.Object, t.Prop.Name
 	case *ast.IndexExpr:
 		key, ok := constStringKey(t.Index)
 		if !ok {
 			return &ownedDest{}
 		}
+
 		object, name = t.Object, key
 	}
+
 	recv := c.info.TypeOf(object)
 	if recv == nil {
 		return &ownedDest{}
 	}
+
 	if prop, ok := c.lookupWriteField(name, recv); ok {
 		return c.destOfType(prop.Type)
 	}
@@ -589,21 +655,25 @@ func (c *checker) emitCallFlows(lvl int, e *ast.CallExpr, fn *soltype.FuncType, 
 	if !c.firstEmit(e, callRole, ref, 0) {
 		return
 	}
+
 	if recv, self := c.calleeReceiver(e.Callee); recv != nil && self != nil {
 		// The method read is how the call reaches the receiver, so the receiver's flow
 		// accounts for it.
 		c.subsumePlaceChain(e.Callee)
+
 		// self is the method's declared receiver, which every call of the method shares, so
 		// its lifetime cannot tell one call's borrow from another's. Each call borrows the
 		// receiver under a lifetime of its own.
 		dest := &paramDest{param: self, reborrows: true, callLifetime: c.ctx.freshLifetime(lvl)}
 		c.emitFlow(recv, eventHolder{target: receiverTarget{call: e}}, dest, ref)
 	}
+
 	for i, arg := range e.Args {
 		dest, ok := argDest(e, fn, i)
 		if !ok {
 			continue
 		}
+
 		c.emitFlow(arg, eventHolder{target: argTarget{call: e, index: i}}, dest, ref)
 	}
 }
@@ -614,10 +684,12 @@ func argDest(e *ast.CallExpr, fn *soltype.FuncType, i int) (flowDest, bool) {
 	if fn == nil {
 		return &calleeDest{call: e, index: i}, true
 	}
+
 	fp, ok := paramForArg(fn, i)
 	if !ok {
 		return nil, false
 	}
+
 	return &paramDest{param: fp}, true
 }
 
@@ -628,6 +700,7 @@ func (c *checker) emitReturnFlow(expr ast.Expr, ref liveness.StmtRef) {
 	if !c.firstEmit(expr, returnRole, ref, 0) {
 		return
 	}
+
 	var dest flowDest = &ownedDest{}
 	switch {
 	case c.fn.returnAnn != nil:
@@ -635,5 +708,6 @@ func (c *checker) emitReturnFlow(expr ast.Expr, ref liveness.StmtRef) {
 	case !c.fn.returnAnnotated:
 		dest = &inferredReturnDest{}
 	}
+
 	c.emitFlow(expr, eventHolder{target: returnTarget{}}, dest, ref)
 }

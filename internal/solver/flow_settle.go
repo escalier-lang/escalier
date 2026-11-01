@@ -36,23 +36,28 @@ func (c *checker) borrowOf(t soltype.Type) (*soltype.RefType, bool) {
 	if r, ok := t.(*soltype.RefType); ok && r.Lt != nil {
 		return r, true
 	}
+
 	u, ok := c.expandAliasChain(t).(*soltype.UnionType)
 	if !ok {
 		return nil, false
 	}
+
 	var first *soltype.RefType
 	for _, member := range u.Types {
 		if c.holdsValueType(member) {
 			continue
 		}
+
 		r, isRef := member.(*soltype.RefType)
 		if !isRef || r.Lt == nil {
 			return nil, false
 		}
+
 		if first == nil {
 			first = r
 		}
 	}
+
 	return first, first != nil
 }
 
@@ -79,10 +84,12 @@ func (c *checker) classifyFlow(table *ownershipEvents, flow flowBase, t soltype.
 	if !ok {
 		return nil, wait, false
 	}
+
 	src, wait, ok := c.sourceKindOf(flow.place, t, force)
 	if !ok {
 		return nil, wait, false
 	}
+
 	switch src {
 	case valueSource:
 		return &useEvent{eventBase: flow.eventBase, access: readAccess}, flowWait{}, true
@@ -93,6 +100,7 @@ func (c *checker) classifyFlow(table *ownershipEvents, flow flowBase, t soltype.
 		return &copyEvent{flowBase: flow}, flowWait{}, true
 	case ownedSource:
 	}
+
 	if b, ok := dest.(*borrowDest); ok {
 		return &borrowEvent{flowBase: flow, borrow: b.borrow, lifetime: b.lt}, flowWait{}, true
 	}
@@ -109,6 +117,7 @@ func (c *checker) settleDest(table *ownershipEvents, dest flowDest, holder event
 		if !force && c.unsettledParams.Contains(d.param) {
 			return dest, flowWait{param: d.param}, false
 		}
+
 		settled := c.paramDestOf(d.param, d.reborrows)
 		if b, ok := settled.(*borrowDest); ok && d.callLifetime != nil {
 			settled = &borrowDest{borrow: b.borrow, lt: d.callLifetime, reborrows: b.reborrows}
@@ -120,6 +129,7 @@ func (c *checker) settleDest(table *ownershipEvents, dest flowDest, holder event
 				return c.settleDest(table, param, holder, force, forceCapture)
 			}
 		}
+
 		if !force {
 			return dest, flowWait{callee: true}, false
 		}
@@ -135,14 +145,17 @@ func (c *checker) settleDest(table *ownershipEvents, dest flowDest, holder event
 			if !forceCapture {
 				return dest, flowWait{capture: true}, false
 			}
+
 			if pt, ok := holder.target.(placeTarget); ok && table.escapes(pt.root) {
 				return &ownedDest{}, flowWait{}, true
 			}
 		case argTarget, receiverTarget:
 		}
+
 		return &borrowDest{borrow: borrowKindOf(d.writes), reborrows: true}, flowWait{}, true
 	case *ownedDest, *borrowDest, *inferredReturnDest:
 	}
+
 	return dest, flowWait{}, true
 }
 
@@ -153,6 +166,7 @@ func (c *checker) paramDestOf(fp *soltype.FuncParam, reborrows bool) flowDest {
 	if r, ok := fp.Type.(*soltype.RefType); ok && r.Lt != nil {
 		return &borrowDest{borrow: borrowKindOf(r.Mut), lt: r.Lt, reborrows: reborrows}
 	}
+
 	if c.paramTakesOwnership(fp) {
 		return &ownedDest{}
 	}
@@ -180,17 +194,21 @@ func (c *checker) sourceKindOf(p movePlace, t soltype.Type, force bool) (sourceK
 	if c.holdsValueType(t) {
 		return valueSource, flowWait{}, true
 	}
+
 	if fp, isParam := c.paramByVar[p.root]; isParam {
 		if !force && c.unsettledParams.Contains(fp) {
 			return valueSource, flowWait{param: fp}, false
 		}
+
 		if _, owned := c.paramDestOf(fp, false).(*ownedDest); !owned {
 			return borrowSource, flowWait{}, true
 		}
+
 		if len(p.path) == 0 {
 			return ownedSource, flowWait{}, true
 		}
 	}
+
 	if _, ok := c.borrowOf(t); ok {
 		return borrowSource, flowWait{}, true
 	}
@@ -216,6 +234,7 @@ func (c *checker) holdsValueType(t soltype.Type) bool {
 	if t == nil {
 		return true
 	}
+
 	if u, ok := c.expandAliasChain(t).(*soltype.UnionType); ok {
 		for _, member := range u.Types {
 			if !c.holdsValueType(member) {
@@ -224,9 +243,11 @@ func (c *checker) holdsValueType(t soltype.Type) bool {
 		}
 		return true
 	}
+
 	if !c.isReferenceShaped(t) {
 		return true
 	}
+
 	v, isVar := t.(*soltype.TypeVarType)
 	return isVar && c.holdsOnlyValueTypes(v, set.NewSet[*soltype.TypeVarType]())
 }
@@ -237,9 +258,11 @@ func (c *checker) addPendingFlow(pf provisionalFlow, wait flowWait) {
 	if wait.capture {
 		wait.table = pf.table
 	}
+
 	if c.pendingFlows == nil {
 		c.pendingFlows = map[flowWait][]provisionalFlow{}
 	}
+
 	c.pendingFlows[wait] = append(c.pendingFlows[wait], pf)
 }
 
@@ -249,17 +272,20 @@ func (c *checker) addPendingFlow(pf provisionalFlow, wait flowWait) {
 func (c *checker) settleFlowsWaitingOn(wait flowWait, force, forceCapture bool) {
 	flows := c.pendingFlows[wait]
 	delete(c.pendingFlows, wait)
+
 	for _, pf := range flows {
 		placeholder := pf.table.events[pf.index].(*provisionalEvent)
 		t := pf.sourceT
 		if pf.source != nil {
 			t = c.info.TypeOf(pf.source)
 		}
+
 		ev, next, settled := c.classifyFlow(pf.table, placeholder.flowBase, t, pf.dest, force, forceCapture)
 		if !settled {
 			c.addPendingFlow(pf, next)
 			continue
 		}
+
 		pf.table.events[pf.index] = ev
 	}
 }
@@ -282,18 +308,21 @@ func (c *checker) registerUnsettledParams(sigParams []*ast.Param, params []*solt
 		if p.TypeAnn != nil || i >= len(params) {
 			continue
 		}
+
 		// Each leaf a destructuring parameter binds takes the parameter's ownership.
 		ast.ForEachLeafBinding(p.Pattern, func(_ string, leaf ast.Node) {
 			id := c.varIDs.Of(leaf)
 			if id <= 0 {
 				return
 			}
+
 			if c.paramByVar == nil {
 				c.paramByVar = map[liveness.VarID]*soltype.FuncParam{}
 			}
 			if c.unsettledParams == nil {
 				c.unsettledParams = set.NewSet[*soltype.FuncParam]()
 			}
+
 			c.paramByVar[id] = params[i]
 			c.unsettledParams.Add(params[i])
 		})
@@ -308,6 +337,7 @@ func (c *checker) settleParams(params []*soltype.FuncParam) {
 		if !c.unsettledParams.Contains(fp) {
 			continue
 		}
+
 		c.unsettledParams.Remove(fp)
 		c.settleFlowsWaitingOn(flowWait{param: fp}, false, false)
 	}

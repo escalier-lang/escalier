@@ -13,13 +13,16 @@ import (
 // diagnostic the program reports. It asserts that every provisional flow was settled.
 func inferOwnershipEvents(t *testing.T, src, fn string) (*ownershipEvents, []string) {
 	t.Helper()
+
 	module := parseModule(t, src)
 	res := InferModuleAgainstStdlib(module, benchTree, Options{})
 	require.Empty(t, res.checker.pendingFlows)
+
 	msgs := make([]string, len(res.Errors))
 	for i, e := range res.Errors {
 		msgs[i] = e.Message()
 	}
+
 	var decl *ast.FuncDecl
 	module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
 		for _, d := range ns.Decls {
@@ -30,6 +33,7 @@ func inferOwnershipEvents(t *testing.T, src, fn string) (*ownershipEvents, []str
 		return true
 	})
 	require.NotNil(t, decl)
+
 	table := res.Info.ownershipEventsOf(decl)
 	require.NotNil(t, table)
 	return table, msgs
@@ -55,6 +59,7 @@ func runOwnershipEvents(t *testing.T, cases []ownershipEventsCase) {
 			if fn == "" {
 				fn = "go"
 			}
+
 			table, errs := inferOwnershipEvents(t, tc.src, fn)
 			require.Equal(t, tc.want, renderOwnershipEvents(table))
 			require.Empty(t, errs)
