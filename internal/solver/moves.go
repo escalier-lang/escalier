@@ -283,8 +283,9 @@ const (
 
 // movePlace identifies the storage location the move engine tracks: a root binding
 // plus a path of field segments reached from it by static member or constant-index
-// access. An element `xs[0]` is the segment `0`, the name a tuple pattern gives it too. The empty path is the whole binding, so whole-binding moves are the
-// path-length-zero case and need no interning. A move of `pair.a` is the place
+// access. An element `xs[0]` is the segment `0`, the name a tuple pattern gives it too.
+// The empty path is the whole binding, so whole-binding moves are the path-length-zero
+// case and need no interning. A move of `pair.a` is the place
 // {root: pair, path: [a]}; a later read of `pair.a.id` is {root: pair, path: [a, id]},
 // and the two conflict because one path is a prefix of the other. A read of `pair.b`
 // is {root: pair, path: [b]}, disjoint from `pair.a`, so a partial move of `pair.a`
@@ -373,9 +374,8 @@ const maxElementIndex = math.MaxInt32
 // Any other key is dynamic, such as `i: number`, `i: 0 | 1`, `xs[-1]`, or `xs[1.5]`. A key
 // with no recorded type is dynamic too.
 //
-// The first answer for a key with a recorded type is kept in Info and returned from then
-// on, so every place built from the key agrees, including one the dataflow pass builds
-// after inference has added bounds to the key's type.
+// The first answer for a key with a recorded type is kept in Info and returned for every
+// later call, so each place built from the key names the same segment.
 func (c *checker) indexSegment(index ast.Expr) (string, bool) {
 	if name, ok := constStringKey(index); ok {
 		return name, true

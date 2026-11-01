@@ -415,10 +415,11 @@ func (d *bodyDataflow) step(ev ownershipEvent, at liveness.StmtRef, s *dataflowS
 // loan such a flow gave it, which errs toward reporting a conflict.
 func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState) {
 	target, _ := ev.node.(ast.Expr)
-	dynamic := slices.ContainsFunc(placeChain(target), d.isDynamicIndex)
+	chain := placeChain(target)
+	dynamic := slices.ContainsFunc(chain, d.isDynamicIndex)
 	depth := len(ev.place.path)
 	if dynamic {
-		depth = len(placeChain(target)) - 1
+		depth = len(chain) - 1
 	}
 
 	moved := false
