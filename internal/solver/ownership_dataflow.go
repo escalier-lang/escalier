@@ -997,21 +997,19 @@ func (d *bodyDataflow) addHolder(src movePlace, holder eventHolder, node ast.Nod
 }
 
 // pass applies the passEvent ev. Each loan the slot ev.from holds gains ev.holder as a holder.
-// A store target place that holds a borrow, such as the `a` of `store(a, &b)` after
-// `val a = &mut x`, stands for the place it borrows, so `x.peer` holds the loan too.
+// A store through a target argument that names a borrow, such as the `a` of `store(a, &b)`
+// after `val a = &mut x`, lands in the place that borrow reaches, so `x.peer` holds the loan
+// too.
 func (d *bodyDataflow) pass(ev *passEvent, s *dataflowState) {
 	holders := []eventHolder{ev.holder}
-	if pt, ok := ev.holder.target.(placeTarget); ok {
-		target := movePlace{root: pt.root, path: ev.holder.path}
-		for _, m := range d.sortedLoans(s) {
+	if pt, ok := ev.holder.target.(placeTarget); ok && ev.through != nil {
+		for _, m := range s.loans {
 			for _, h := range m.holders {
-				// A holder at the target itself holds a borrow the store replaces, and one
-				// above the target holds a borrow the store writes through.
-				if h.place.root != target.root || len(h.place.path) >= len(target.path) || !pathHasPrefix(target.path, h.place.path) {
+				if h.place.root != pt.root || !pathHasPrefix(ev.through, h.place.path) {
 					continue
 				}
 
-				pointee := appendPath(m.ev.place.path, target.path[len(h.place.path):])
+				pointee := appendPath(m.ev.place.path, ev.holder.path[len(h.place.path):])
 				holders = append(holders, eventHolder{target: placeTarget{root: m.ev.place.root}, path: pointee})
 			}
 		}
@@ -1030,8 +1028,8 @@ func (d *bodyDataflow) pass(ev *passEvent, s *dataflowState) {
 // callEnd applies the callEvent ev. A mutable receiver the call reserved takes effect first,
 // and E2 rejects an immutable path to an overlapping place that is still live then. A path
 // still live is one an argument of a call that has not returned holds, or one whose holder
-// is used after the statement. So `val r = &v; v.push(r.len())` checks clean, since r is
-// dead once the arguments are evaluated. A path made before the receiver blames the
+// is used after the call, later in the statement or after it. So `val r = &v;
+// v.push(r.len())` checks clean, since r is dead once the arguments are evaluated. A path made before the receiver blames the
 // receiver, and one an argument made after it blames the argument, so `p.writeRead(&p)`
 // reports `&p`. Then each loan a slot of the call holds is released, and a loan nothing else
 // holds ends.
@@ -1046,30 +1044,25 @@ func (d *bodyDataflow) callEnd(ev *callEvent, at liveness.StmtRef, s *dataflowSt
 		after := false
 		for _, m := range loans {
 			after = after || m == r
-			if m == r || !m.checked() || m.ev.borrow == mutableBorrow ||
-				!placesOverlap(m.ev.place, r.ev.place) || !d.loanLive(m, at, false) {
+			if m == r || !m.checked() || m.ev.borrow == mutableBorrow || !placesOverlap(m.ev.place, r.ev.place) ||
+				(!d.loanLive(m, at, false) && !d.usedLaterAt(m, ev, at)) {
 				continue
 			}
 
-			e := &BorrowAliasError{
-				Place:      d.placeName(r.ev.place),
-				FirstPlace: d.placeName(m.ev.place),
-				SecondMut:  true,
-				root:       r.ev.place.root,
-				node:       r.ev.node,
-				first:      m.ev.node.Span(),
-			}
+			// The later of the two paths is the one blamed.
+			first, second := m, r
 			if after {
-				e = &BorrowAliasError{
-					Place:      d.placeName(m.ev.place),
-					FirstPlace: d.placeName(r.ev.place),
-					FirstMut:   true,
-					root:       m.ev.place.root,
-					node:       m.ev.node,
-					first:      r.ev.node.Span(),
-				}
+				first, second = r, m
 			}
-			d.report(e)
+			d.report(&BorrowAliasError{
+				Place:      d.placeName(second.ev.place),
+				FirstPlace: d.placeName(first.ev.place),
+				FirstMut:   first == r,
+				SecondMut:  second == r,
+				root:       second.ev.place.root,
+				node:       second.ev.node,
+				first:      first.ev.node.Span(),
+			})
 			break
 		}
 	}
@@ -1084,6 +1077,26 @@ func (d *bodyDataflow) callEnd(ev *callEvent, at liveness.StmtRef, s *dataflowSt
 			delete(s.loans, k)
 		}
 	}
+}
+
+// usedLaterAt reports whether an event after ev at the point at reads a place a holder of l
+// overlaps, so l is used later in the same statement.
+func (d *bodyDataflow) usedLaterAt(l *liveLoan, ev ownershipEvent, at liveness.StmtRef) bool {
+	events := d.events[at]
+	i := slices.Index(events, ev)
+	if i < 0 {
+		return false
+	}
+
+	for _, later := range events[i+1:] {
+		p := later.base().place
+		for _, h := range l.holders {
+			if placesOverlap(h.place, p) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // checkMoved reports a use of place at node when a place overlapping it is moved, and

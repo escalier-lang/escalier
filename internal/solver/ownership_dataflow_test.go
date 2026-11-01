@@ -1028,6 +1028,20 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot assign to 'p.x' while it is borrowed as immutable"},
 		},
 		{
+			// d reads only the `inner` field of the result, which holds p's borrow and not q's.
+			name: "FieldOfACallResultHoldsOnlyItsOwnBorrowOk",
+			src: `
+				declare fn wrap2<'a, 'b>(p: &'a {x: number}, q: &'b {x: number}) -> {inner: &'a {x: number}, other: &'b {x: number}}
+				fn go() -> number {
+					val mut p = {x: 1}
+					val mut q = {x: 1}
+					val d = wrap2(&p, &q).inner
+					q.x = 2
+					return d.x
+				}
+			`,
+		},
+		{
 			// A value-type field of a call's result holds no borrow.
 			name: "ValueFieldOfACallResultOk",
 			src: `
@@ -1056,6 +1070,24 @@ func TestOwnershipDataflow(t *testing.T) {
 					v.push(r.len())
 				}
 			`,
+		},
+		{
+			// r is read later in the same statement, after the `&mut self` call, so the receiver
+			// breaks E2.
+			name: "ImmutableBorrowReadLaterInTheStatement",
+			src: `
+				declare fn both(u: undefined, n: number) -> number
+				class V {
+					n: number,
+					push(&mut self, x: number) -> undefined {},
+				}
+				fn go() -> number {
+					val mut v = V(1)
+					val r = &v
+					return both(v.push(1), r.n)
+				}
+			`,
+			errs: []string{"cannot borrow 'v' as mutable while it is borrowed as immutable"},
 		},
 		{
 			// r is used after the call, so the `&mut self` receiver breaks E2 and is blamed.

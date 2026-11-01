@@ -228,9 +228,9 @@ func (c *checker) emitFlow(source ast.Expr, holder eventHolder, dest flowDest, r
 	p, ok := c.exprPlace(source)
 	if !ok {
 		// A read of a call's result, as in `pick(&q).inner` or `await load(&q)`, holds what the
-		// result borrows, unless the value read is a value type.
-		if call, isCall := callResultOf(source); isCall && !c.holdsValueType(c.info.TypeOf(source)) {
-			c.retargetTemp(call, holder, ref)
+		// result borrows at the part it reads, unless the value read is a value type.
+		if call, path, isCall := c.callResultOf(source); isCall && !c.holdsValueType(c.info.TypeOf(source)) {
+			c.retargetCallRead(call, path, holder)
 		}
 		return
 	}
@@ -238,23 +238,68 @@ func (c *checker) emitFlow(source ast.Expr, holder eventHolder, dest flowDest, r
 	c.emitValueFlow(p, source, nil, source, holder, dest, ref)
 }
 
-// callResultOf returns the call whose result e reads: an `await` of the call, or a member or
-// index chain rooted at it. ok is false for any other expression.
-func callResultOf(e ast.Expr) (*ast.CallExpr, bool) {
+// callResultOf returns the call whose result e reads, and the field path within the result
+// that e reads. e is an `await` of the call, or a member or index chain rooted at it. A
+// dynamic index ends the path, since it may read any element. ok is false for any other
+// expression.
+func (c *checker) callResultOf(e ast.Expr) (*ast.CallExpr, []placeSeg, bool) {
+	var segs []placeSeg
 	for {
 		switch x := e.(type) {
 		case *ast.CallExpr:
-			return x, true
+			slices.Reverse(segs)
+			return x, segs, true
 		case *ast.AwaitExpr:
 			e = x.Arg
 		case *ast.MemberExpr:
+			if x.Prop == nil {
+				segs = nil
+			} else {
+				segs = append(segs, placeSeg{kind: namedSeg, name: x.Prop.Name})
+			}
 			e = x.Object
 		case *ast.IndexExpr:
+			if name, ok := c.indexSegment(x.Index); ok {
+				segs = append(segs, placeSeg{kind: namedSeg, name: name})
+			} else {
+				segs = nil
+			}
 			e = x.Object
 		default:
-			return nil, false
+			return nil, nil, false
 		}
 	}
+}
+
+// retargetCallRead moves to holder each event the result of call holds at a place that
+// overlaps path, the part of the result a read takes. A borrow held under path keeps its
+// path below path, and one held above path lands at holder itself. Every other event stays
+// with the result.
+func (c *checker) retargetCallRead(call *ast.CallExpr, path []placeSeg, holder eventHolder) {
+	t := c.fn.events
+	var keep []int
+	for _, i := range t.temps[call] {
+		fe, ok := t.events[i].(flowEvent)
+		if !ok {
+			continue
+		}
+
+		fb := fe.flow()
+		switch held := fb.holder.path; {
+		case pathHasPrefix(held, path):
+			fb.holder = holder.extend(held[len(path):])
+		case pathHasPrefix(path, held):
+			fb.holder = holder
+		default:
+			keep = append(keep, i)
+			continue
+		}
+
+		if th, ok := holder.target.(tempTarget); ok {
+			t.temps[th.node] = append(t.temps[th.node], i)
+		}
+	}
+	t.temps[call] = keep
 }
 
 // emitBorrow emits the borrow a written `&` or `&mut` expression takes of its operand's
@@ -1146,8 +1191,11 @@ func (c *checker) emitArgFlows(e *ast.CallExpr, fn *soltype.FuncType, ref livene
 //
 // A store target is the place the target argument names, extended by the store's path, so
 // `store(&mut a.inner, &mut b)` storing at [peer] passes the borrow of b to `a.inner.peer`. A
-// target that names no place, such as an inline literal, takes nothing. A return edge passes
-// to a tempTarget of e, which the flow site that receives the result retargets.
+// target argument not written as a borrow names a place that holds one, and the passEvent
+// records that place in through. A target that names no place, such as an inline literal,
+// takes nothing. A return edge passes to a tempTarget of e, which the flow site that receives
+// the result retargets. Each edge from a rest parameter passes from every argument it
+// receives.
 func (c *checker) emitCallEnd(e *ast.CallExpr, fn *soltype.FuncType, ref liveness.StmtRef) {
 	if !c.firstEmit(e, callEndRole, ref, 0) {
 		return
@@ -1158,7 +1206,7 @@ func (c *checker) emitCallEnd(e *ast.CallExpr, fn *soltype.FuncType, ref livenes
 		// One signature can share several lifetimes between the same two positions, and each
 		// pair passes once. A return edge keys on the root 0, which no local has.
 		seen := set.NewSet[passKey]()
-		pass := func(param int, to movePlace) {
+		pass := func(param int, to movePlace, through []placeSeg) {
 			for _, from := range argsOfParam(e, fn, param) {
 				key := passKey{from: from, to: placeKey(to)}
 				if _, ok := storeExprAt(e, recv, from); !ok || seen.Contains(key) {
@@ -1171,28 +1219,30 @@ func (c *checker) emitCallEnd(e *ast.CallExpr, fn *soltype.FuncType, ref livenes
 					holder.target = tempTarget{node: e}
 				}
 				flow := flowBase{eventBase: eventBase{node: e}, holder: holder}
-				c.emitEvent(&passEvent{flowBase: flow, from: callSlot{call: e, index: from}}, ref)
+				c.emitEvent(&passEvent{flowBase: flow, from: callSlot{call: e, index: from}, through: through}, ref)
 			}
 		}
 
 		for _, edge := range callStoreEdges(c.ctx, fn, self) {
-			for _, i := range argsOfParam(e, fn, edge.target) {
-				targetExpr, ok := storeExprAt(e, recv, i)
-				if !ok {
-					continue
-				}
-
-				target, isPlace := c.exprPlace(borrowOperand(targetExpr))
-				if !isPlace || target.root <= 0 {
-					continue
-				}
-
-				pass(edge.arg, movePlace{root: target.root, path: appendPath(target.path, edge.path)})
+			targetExpr, ok := storeExprAt(e, recv, edge.target)
+			if !ok {
+				continue
 			}
+
+			target, isPlace := c.exprPlace(borrowOperand(targetExpr))
+			if !isPlace || target.root <= 0 {
+				continue
+			}
+
+			var through []placeSeg
+			if _, written := targetExpr.(*ast.BorrowExpr); !written {
+				through = append([]placeSeg{}, target.path...)
+			}
+			pass(edge.arg, movePlace{root: target.root, path: appendPath(target.path, edge.path)}, through)
 		}
 
 		for _, edge := range callReturnEdges(c.ctx, fn, self) {
-			pass(edge.arg, movePlace{path: edge.path})
+			pass(edge.arg, movePlace{path: edge.path}, nil)
 		}
 	}
 
@@ -1200,16 +1250,17 @@ func (c *checker) emitCallEnd(e *ast.CallExpr, fn *soltype.FuncType, ref livenes
 }
 
 // argsOfParam returns the positions of the arguments of the call e that the parameter at
-// position param of fn receives. A rest parameter receives every argument from its own
-// position on, and selfIndex names the receiver.
+// position param of fn receives, as paramForArg maps them. selfIndex names the receiver.
 func argsOfParam(e *ast.CallExpr, fn *soltype.FuncType, param int) []int {
-	if param < 0 || param >= len(fn.Params) || !fn.Params[param].Rest {
+	if param < 0 || param >= len(fn.Params) {
 		return []int{param}
 	}
 
 	var out []int
-	for i := param; i < len(e.Args); i++ {
-		out = append(out, i)
+	for i := range e.Args {
+		if fp, ok := paramForArg(fn, i); ok && fp == fn.Params[param] {
+			out = append(out, i)
+		}
 	}
 	return out
 }

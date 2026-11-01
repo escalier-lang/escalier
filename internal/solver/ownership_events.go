@@ -236,6 +236,10 @@ type callSlot struct {
 type passEvent struct {
 	flowBase
 	from callSlot
+	// through is the field path of the place a store's target argument names when the
+	// argument is not written as a borrow, such as the empty path of `a` in `store(a, &b)`,
+	// or nil otherwise. A borrow held there reaches the place the store writes into.
+	through []placeSeg
 }
 
 // callEvent marks the point where call returns. Each borrow a slot of call holds is
