@@ -64,8 +64,11 @@ func TestOwnershipDiffReport(t *testing.T) {
 	)))
 	require.NoError(t, err)
 
+	require.Empty(t, off.problems)
+	require.Empty(t, on.problems)
+
 	var out strings.Builder
-	writeReport(&out, diffRuns(off, on))
+	writeReport(&out, diffRuns(off.diags, on.diags))
 
 	require.Equal(t, strings.Join([]string{
 		"pkg TestCount",
@@ -85,4 +88,19 @@ func TestOwnershipDiffReport(t *testing.T) {
 		"     1  new *solver.UseAfterMoveError: use of moved value '…'",
 		"",
 	}, "\n"), out.String())
+}
+
+// TestOwnershipDiffProblems asserts that parseTrace reports a panic and a build failure,
+// each prefixed with the test or package that printed it.
+func TestOwnershipDiffProblems(t *testing.T) {
+	tr, err := parseTrace(strings.NewReader(traceStream(
+		[2]string{"TestCrash", `panic: runtime error: invalid memory address\n`},
+		[2]string{"", `FAIL\tpkg [build failed]\n`},
+	)))
+	require.NoError(t, err)
+	require.Empty(t, tr.diags)
+	require.Equal(t, []string{
+		"pkg TestCrash: panic: runtime error: invalid memory address",
+		"pkg: FAIL\tpkg [build failed]",
+	}, tr.problems)
 }

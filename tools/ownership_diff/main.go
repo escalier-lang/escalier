@@ -8,7 +8,8 @@
 //	go run ./tools/ownership_diff [-pkgs ./internal/solver/,./cmd/...] [-run <regexp>]
 //
 // Each run sets ESCALIER_DIAG_TRACE=1, which makes the solver print every diagnostic of a
-// top-level run to standard output, as traceDiagnostics in ownership_dataflow.go describes.
+// top-level run to standard output, as traceDiagnostics in internal/solver/diagnostic_trace.go
+// describes.
 // `go test -json` attributes each printed line to the test that was running, and -parallel 1
 // keeps two tests of one package from running at once. A test's pass or failure does not
 // matter to the report.
@@ -38,7 +39,7 @@ import (
 )
 
 // tracePrefix starts each line the solver prints for a diagnostic. It matches
-// diagnosticTracePrefix in internal/solver/ownership_dataflow.go.
+// diagnosticTracePrefix in internal/solver/diagnostic_trace.go.
 const tracePrefix = "ESCALIER_DIAG\t"
 
 func main() {
@@ -70,14 +71,26 @@ func run(args []string, out, errOut io.Writer) error {
 		return err
 	}
 
-	writeReport(out, diffRuns(off, on))
+	// A test binary that panics or does not build stops printing diagnostics, so the
+	// report would show what it never printed as differences. The problems come first so
+	// a reader sees them before the differences they explain.
+	writeProblems(out, "old", off.problems)
+	writeProblems(out, "new", on.problems)
+	writeReport(out, diffRuns(off.diags, on.diags))
 	return nil
+}
+
+// writeProblems writes each problem of the run named side to w.
+func writeProblems(w io.Writer, side string, problems []string) {
+	for _, p := range problems {
+		fmt.Fprintf(w, "warning: %s run: %s\n", side, p)
+	}
 }
 
 // traceTests runs `go test -json` over packages with ESCALIER_OWNERSHIP_DATAFLOW set to
 // flagValue and returns the diagnostics the tests printed. A failing test does not stop the
 // run, so a non-zero exit from `go test` is not an error.
-func traceTests(packages []string, runPattern, flagValue string, errOut io.Writer) ([]traced, error) {
+func traceTests(packages []string, runPattern, flagValue string, errOut io.Writer) (trace, error) {
 	args := []string{"test", "-json", "-count=1", "-parallel=1"}
 	if runPattern != "" {
 		args = append(args, "-run", runPattern)
@@ -90,25 +103,25 @@ func traceTests(packages []string, runPattern, flagValue string, errOut io.Write
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, err
+		return trace{}, err
 	}
 
 	if err := cmd.Start(); err != nil {
-		return nil, err
+		return trace{}, err
 	}
 
-	diags, parseErr := parseTrace(stdout)
+	tr, parseErr := parseTrace(stdout)
 	waitErr := cmd.Wait()
 	if parseErr != nil {
-		return nil, parseErr
+		return trace{}, parseErr
 	}
 
 	var exitErr *exec.ExitError
 	if waitErr != nil && !errors.As(waitErr, &exitErr) {
-		return nil, waitErr
+		return trace{}, waitErr
 	}
 
-	return diags, nil
+	return tr, nil
 }
 
 // diagnostic is one traced diagnostic. Two diagnostics match when they are equal.
@@ -130,6 +143,19 @@ type traced struct {
 	Diag diagnostic
 }
 
+// trace is what one run of the tests printed.
+type trace struct {
+	// diags lists the diagnostics in the order they were printed.
+	diags []traced
+	// problems lists each output line that says a test binary panicked or a package did
+	// not build, prefixed with the test or package that printed it.
+	problems []string
+}
+
+// problemMarkers are the texts `go test` prints when a test binary panics or a package
+// fails to build or set up.
+var problemMarkers = []string{"panic: ", "[build failed]", "[setup failed]"}
+
 // testEvent is the part of one `go test -json` event the harness reads.
 type testEvent struct {
 	Action  string
@@ -148,10 +174,10 @@ func normalize(s string) string {
 	return tempDir.ReplaceAllString(s, "$$TMP")
 }
 
-// parseTrace reads a `go test -json` stream and returns the diagnostics the tests printed,
-// in the order they were printed. Lines that are not traced diagnostics are skipped.
-func parseTrace(r io.Reader) ([]traced, error) {
-	var out []traced
+// parseTrace reads a `go test -json` stream and returns the diagnostics the tests printed
+// and the problems the stream reports. Other lines are skipped.
+func parseTrace(r io.Reader) (trace, error) {
+	var out trace
 
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 1<<20), 1<<26)
@@ -164,10 +190,20 @@ func parseTrace(r io.Reader) ([]traced, error) {
 
 		var ev testEvent
 		if err := json.Unmarshal(line, &ev); err != nil {
-			return nil, fmt.Errorf("parsing go test output: %w", err)
+			return trace{}, fmt.Errorf("parsing go test output: %w", err)
 		}
 
-		if ev.Action != "output" || !strings.HasPrefix(ev.Output, tracePrefix) {
+		if ev.Action != "output" {
+			continue
+		}
+
+		if !strings.HasPrefix(ev.Output, tracePrefix) {
+			for _, marker := range problemMarkers {
+				if strings.Contains(ev.Output, marker) {
+					out.problems = append(out.problems, testKey(ev.Package, ev.Test)+": "+strings.TrimSpace(ev.Output))
+					break
+				}
+			}
 			continue
 		}
 
@@ -182,7 +218,7 @@ func parseTrace(r io.Reader) ([]traced, error) {
 			program = test
 		}
 
-		out = append(out, traced{Test: test, Diag: diagnostic{
+		out.diags = append(out.diags, traced{Test: test, Diag: diagnostic{
 			Program: program,
 			Type:    fields[1],
 			Span:    normalize(fields[2]),

@@ -173,6 +173,32 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot assign to 'xs' while it is borrowed as immutable"},
 		},
 		{
+			name: "E2WriteWhileMovedHolderLive",
+			src: `
+				fn go() -> number {
+					val mut p = {x: 0}
+					val o = {f: &p}
+					val o2 = o
+					p.x = 1
+					return o2.f.x
+				}
+			`,
+			errs: []string{"cannot assign to 'p.x' while it is borrowed as immutable"},
+		},
+		{
+			name: "E2WriteAfterHolderReassigned",
+			src: `
+				fn go() -> number {
+					val mut p = {x: 0}
+					val q = {x: 0}
+					var c: &{x: number} = &p
+					c = &q
+					p.x = 1
+					return c.x
+				}
+			`,
+		},
+		{
 			name: "E2MutableBorrowWhileImmutableLive",
 			src: `
 				fn go() -> number {
@@ -266,7 +292,11 @@ func TestOwnershipDataflow(t *testing.T) {
 					return peek()
 				}
 			`,
-			errs: []string{"cannot move 'p' while it is borrowed"},
+			// The first diagnostic is E4's, which the current checks still report.
+			errs: []string{
+				"this call runs 'peek', which reads 'p' after it was moved",
+				"cannot move 'p' while it is borrowed",
+			},
 		},
 		{
 			name: "E4WriteBetweenClosureCalls",

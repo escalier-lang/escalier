@@ -3,6 +3,7 @@ package solver
 import (
 	"cmp"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -42,11 +43,18 @@ func ownershipDataflowFromEnv() bool {
 }
 
 // replacedByDataflow reports whether err is a diagnostic of E1, E2, or E3 that the dataflow
-// pass reports in place of the current checks when the ownershipDataflow flag is set.
+// pass reports in place of the current checks when the ownershipDataflow flag is set. A
+// diagnostic that names a closure a call runs is E4's, which the pass does not check, so it
+// stays.
 func replacedByDataflow(err SolverError) bool {
-	switch err.(type) {
-	case *UseAfterMoveError, *BorrowAliasError, *BorrowedValueWriteError,
-		*MoveWhileBorrowedError, *MutabilityTransitionError:
+	switch e := err.(type) {
+	case *UseAfterMoveError:
+		return e.Via == ""
+	case *BorrowAliasError:
+		return e.FirstVia == "" && e.SecondVia == ""
+	case *MoveWhileBorrowedError:
+		return e.Via == ""
+	case *BorrowedValueWriteError, *MutabilityTransitionError:
 		return true
 	}
 	return false
@@ -230,9 +238,18 @@ type bodyDataflow struct {
 	points map[int][]liveness.StmtRef
 	// order maps each borrow event of the body to its index in the table.
 	order map[*borrowEvent]int
+	// fresh holds each local the current statement made a holder of a loan. A write of the
+	// whole local in the same statement keeps those loans.
+	fresh set.Set[heldLoan]
 	// errs collects the diagnostics of the reporting sweep. It is nil while the pass is
 	// still iterating to a fixed point, and nothing is reported then.
 	errs *[]SolverError
+}
+
+// heldLoan is a loan and one local that holds it.
+type heldLoan struct {
+	ev   *borrowEvent
+	root liveness.VarID
 }
 
 // checkBodyDataflow runs the dataflow pass over the body t records and returns the
@@ -240,7 +257,7 @@ type bodyDataflow struct {
 // block stops changing, then walks each reachable block once more from its fixed-point
 // entry state to report.
 func checkBodyDataflow(t *ownershipEvents) []SolverError {
-	d := &bodyDataflow{table: t, events: t.byNode(), points: map[int][]liveness.StmtRef{}, order: map[*borrowEvent]int{}}
+	d := &bodyDataflow{table: t, events: t.byNode(), points: map[int][]liveness.StmtRef{}, order: map[*borrowEvent]int{}, fresh: set.NewSet[heldLoan]()}
 	for i, ev := range t.events {
 		if b, ok := ev.(*borrowEvent); ok {
 			d.order[b] = i
@@ -323,6 +340,8 @@ func (d *bodyDataflow) transfer(block int, s *dataflowState) {
 // endStatement drops each loan that cannot be live after the point at: a loan that lasts
 // only for its statement, and a loan no holder of which is used again.
 func (d *bodyDataflow) endStatement(at liveness.StmtRef, s *dataflowState) {
+	d.fresh.Clear()
+
 	for k, l := range s.loans {
 		if l.statement || !d.loanLive(l, at, false) {
 			delete(s.loans, k)
@@ -366,15 +385,20 @@ func (d *bodyDataflow) step(ev ownershipEvent, at liveness.StmtRef, s *dataflowS
 // A write through a dynamic index, such as `xs[i] = v`, has the container `xs` as its place.
 // It writes into the container rather than replacing it, so it counts as a write strictly
 // under its place.
+//
+// Writing a whole local, as in `c = &q`, also ends what c held before. c stops holding each
+// loan it held, except the ones this statement gave it.
 func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState) {
 	depth := len(ev.place.path)
+	dynamic := false
 	if ie, ok := ev.node.(*ast.IndexExpr); ok {
 		if _, constant := constStringKey(ie.Index); !constant {
 			depth++
+			dynamic = true
 		}
 	}
 
-	for _, k := range sortedKeys(s.moved) {
+	for _, k := range slices.Sorted(maps.Keys(s.moved)) {
 		m := s.moved[k]
 		if m.place.root != ev.place.root || !pathPrefixRelated(m.place.path, ev.place.path) {
 			continue
@@ -385,7 +409,11 @@ func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState
 			continue
 		}
 
-		delete(s.moved, k)
+		// A dynamic index may name an element other than the moved one, so the write
+		// reassigns no moved place under the container.
+		if !dynamic {
+			delete(s.moved, k)
+		}
 	}
 
 	reported := false
@@ -407,6 +435,14 @@ func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState
 
 		d.report(&BorrowedValueWriteError{Place: d.placeName(ev.place), write: ev.node, borrow: l.ev.node.Span()})
 		reported = true
+	}
+
+	if len(ev.place.path) == 0 {
+		for _, l := range s.loans {
+			if !d.fresh.Contains(heldLoan{ev: l.ev, root: ev.place.root}) {
+				l.holders.Remove(ev.place.root)
+			}
+		}
 	}
 }
 
@@ -458,6 +494,9 @@ func (d *bodyDataflow) move(ev *moveEvent, at liveness.StmtRef, s *dataflowState
 	}
 
 	s.moved[placeKey(ev.place)] = movedPlace{place: ev.place, node: ev.node, every: true}
+
+	// The holder now owns what the place held, including any borrow stored in it.
+	d.addHolder(ev.place.root, ev.holder, s)
 }
 
 // holdLoan records holder as a holder of l.
@@ -465,6 +504,7 @@ func (d *bodyDataflow) holdLoan(l *liveLoan, holder eventHolder) {
 	switch tg := holder.target.(type) {
 	case placeTarget:
 		l.holders.Add(tg.root)
+		d.fresh.Add(heldLoan{ev: l.ev, root: tg.root})
 	case moduleTarget:
 		l.static = true
 	case argTarget, receiverTarget, returnTarget, tempTarget:
@@ -487,7 +527,7 @@ func (d *bodyDataflow) addHolder(root liveness.VarID, holder eventHolder, s *dat
 // checkMoved reports a use of place at node when a place overlapping it is moved, and
 // returns whether it reported.
 func (d *bodyDataflow) checkMoved(place movePlace, node ast.Node, s *dataflowState) bool {
-	for _, k := range sortedKeys(s.moved) {
+	for _, k := range slices.Sorted(maps.Keys(s.moved)) {
 		m := s.moved[k]
 		if m.place.root == place.root && pathPrefixRelated(m.place.path, place.path) {
 			d.reportMoved(m, place, node)
@@ -533,10 +573,36 @@ func (d *bodyDataflow) holderLive(h liveness.VarID, at liveness.StmtRef, before 
 		return false
 	}
 
+	// The point before a block's first statement is live where the block's entry is.
+	if at.StmtIdx < 0 {
+		return d.liveOnEntry(at.BlockID, h, set.NewSet[int]())
+	}
+
 	if before {
 		return live.IsLiveBefore(at, h)
 	}
 	return live.IsLiveAfter(at, h)
+}
+
+// liveOnEntry reports whether the local h is live on entry to the block with ID block. A
+// block with no statements has no liveness of its own, so h is live on entry to it when it
+// is live on entry to one of its successors. seen holds the blocks already asked.
+func (d *bodyDataflow) liveOnEntry(block int, h liveness.VarID, seen set.Set[int]) bool {
+	if seen.Contains(block) {
+		return false
+	}
+	seen.Add(block)
+
+	if before := d.table.live.LiveBefore[block]; len(before) > 0 {
+		return before[0].Contains(h)
+	}
+
+	for _, succ := range d.table.cfg.Blocks[block].Successors {
+		if d.liveOnEntry(succ.ID, h, seen) {
+			return true
+		}
+	}
+	return false
 }
 
 // report records e when d is reporting.
@@ -572,15 +638,4 @@ func (d *bodyDataflow) sortedLoans(s *dataflowState) []*liveLoan {
 
 	slices.SortFunc(out, func(a, b *liveLoan) int { return cmp.Compare(d.order[a.ev], d.order[b.ev]) })
 	return out
-}
-
-// sortedKeys returns the keys of m in sorted order.
-func sortedKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-
-	slices.Sort(keys)
-	return keys
 }
