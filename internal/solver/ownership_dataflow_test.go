@@ -199,6 +199,35 @@ func TestOwnershipDataflow(t *testing.T) {
 			`,
 		},
 		{
+			name: "E2WriteWhileBranchAssignedHolderLive",
+			src: `
+				fn go(cond: boolean) -> number {
+					val mut a = {x: 0}
+					val b = {x: 0}
+					val r = {x: 0}
+					var c: &{x: number} = &r
+					c = if cond { &a } else { &b }
+					a.x = 1
+					return c.x
+				}
+			`,
+			errs: []string{"cannot assign to 'a.x' while it is borrowed as immutable"},
+		},
+		{
+			name: "E2DynamicIndexWriteKeepsOtherElements",
+			src: `
+				fn go(i: number) -> number {
+					val mut p = {x: 0}
+					val q = {x: 0}
+					var mut xs: Array<&{x: number}> = [&p]
+					xs[i] = &q
+					p.x = 1
+					return xs[0].x
+				}
+			`,
+			errs: []string{"cannot assign to 'p.x' while it is borrowed as immutable"},
+		},
+		{
 			name: "E2MutableBorrowWhileImmutableLive",
 			src: `
 				fn go() -> number {

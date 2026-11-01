@@ -119,8 +119,9 @@ type movedPlace struct {
 // liveLoan is one borrow the pass tracks.
 type liveLoan struct {
 	ev *borrowEvent
-	// holders holds the root of each local place that holds the borrow or a copy of it.
-	holders set.Set[liveness.VarID]
+	// holders maps the root of each local place that holds the borrow or a copy of it to the
+	// expression of the flow that made it a holder.
+	holders map[liveness.VarID]ast.Node
 	// static marks a loan that stays live at every later point.
 	static bool
 	// statement marks a loan that lasts only until the end of the statement that created it.
@@ -155,7 +156,7 @@ func (s *dataflowState) clone() *dataflowState {
 
 	for k, l := range s.loans {
 		cp := *l
-		cp.holders = l.holders.Clone()
+		cp.holders = maps.Clone(l.holders)
 		out.loans[k] = &cp
 	}
 
@@ -177,7 +178,7 @@ func (s *dataflowState) equals(o *dataflowState) bool {
 
 	for k, l := range s.loans {
 		ol, ok := o.loans[k]
-		if !ok || ol.static != l.static || !ol.holders.Equals(l.holders) {
+		if !ok || ol.static != l.static || !maps.Equal(ol.holders, l.holders) {
 			return false
 		}
 	}
@@ -204,13 +205,17 @@ func joinStates(states []*dataflowState) *dataflowState {
 
 		for k, l := range s.loans {
 			if prev, ok := out.loans[k]; ok {
-				prev.holders = prev.holders.Union(l.holders)
+				for h, n := range l.holders {
+					if pn, held := prev.holders[h]; !held || laterNode(n, pn) {
+						prev.holders[h] = n
+					}
+				}
 				prev.static = prev.static || l.static
 				continue
 			}
 
 			cp := *l
-			cp.holders = l.holders.Clone()
+			cp.holders = maps.Clone(l.holders)
 			out.loans[k] = &cp
 		}
 	}
@@ -229,6 +234,13 @@ func joinStates(states []*dataflowState) *dataflowState {
 	return out
 }
 
+// laterNode reports whether a starts after b in the source. A node in a different source
+// than b counts as later.
+func laterNode(a, b ast.Node) bool {
+	as, bs := a.Span(), b.Span()
+	return as.SourceID != bs.SourceID || as.Start.Offset > bs.Start.Offset
+}
+
 // bodyDataflow is the dataflow pass over one body.
 type bodyDataflow struct {
 	table *ownershipEvents
@@ -238,18 +250,9 @@ type bodyDataflow struct {
 	points map[int][]liveness.StmtRef
 	// order maps each borrow event of the body to its index in the table.
 	order map[*borrowEvent]int
-	// fresh holds each local the current statement made a holder of a loan. A write of the
-	// whole local in the same statement keeps those loans.
-	fresh set.Set[heldLoan]
 	// errs collects the diagnostics of the reporting sweep. It is nil while the pass is
 	// still iterating to a fixed point, and nothing is reported then.
 	errs *[]SolverError
-}
-
-// heldLoan is a loan and one local that holds it.
-type heldLoan struct {
-	ev   *borrowEvent
-	root liveness.VarID
 }
 
 // checkBodyDataflow runs the dataflow pass over the body t records and returns the
@@ -257,7 +260,7 @@ type heldLoan struct {
 // block stops changing, then walks each reachable block once more from its fixed-point
 // entry state to report.
 func checkBodyDataflow(t *ownershipEvents) []SolverError {
-	d := &bodyDataflow{table: t, events: t.byNode(), points: map[int][]liveness.StmtRef{}, order: map[*borrowEvent]int{}, fresh: set.NewSet[heldLoan]()}
+	d := &bodyDataflow{table: t, events: t.byNode(), points: map[int][]liveness.StmtRef{}, order: map[*borrowEvent]int{}}
 	for i, ev := range t.events {
 		if b, ok := ev.(*borrowEvent); ok {
 			d.order[b] = i
@@ -340,8 +343,6 @@ func (d *bodyDataflow) transfer(block int, s *dataflowState) {
 // endStatement drops each loan that cannot be live after the point at: a loan that lasts
 // only for its statement, and a loan no holder of which is used again.
 func (d *bodyDataflow) endStatement(at liveness.StmtRef, s *dataflowState) {
-	d.fresh.Clear()
-
 	for k, l := range s.loans {
 		if l.statement || !d.loanLive(l, at, false) {
 			delete(s.loans, k)
@@ -363,7 +364,7 @@ func (d *bodyDataflow) step(ev ownershipEvent, at liveness.StmtRef, s *dataflowS
 		d.borrow(ev, at, s)
 	case *copyEvent:
 		d.checkMoved(ev.place, ev.node, s)
-		d.addHolder(ev.place.root, ev.holder, s)
+		d.addHolder(ev.place.root, ev.holder, ev.node, s)
 	case *moveEvent:
 		d.move(ev, at, s)
 	case *provisionalEvent:
@@ -387,7 +388,10 @@ func (d *bodyDataflow) step(ev ownershipEvent, at liveness.StmtRef, s *dataflowS
 // under its place.
 //
 // Writing a whole local, as in `c = &q`, also ends what c held before. c stops holding each
-// loan it held, except the ones this statement gave it.
+// loan a flow written before the assignment gave it. The flows of the assigned value are
+// written after the assignment's target, so c keeps the loans they give it, such as the
+// borrow of q. A flow in a loop that runs after the assignment on an earlier iteration is
+// written after it too, so c keeps that loan, which can only report more.
 func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState) {
 	depth := len(ev.place.path)
 	dynamic := false
@@ -423,7 +427,10 @@ func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState
 		}
 
 		if len(l.ev.place.path) >= depth {
-			delete(s.loans, l.ev)
+			// A dynamic index may name an element the borrow does not reach.
+			if !dynamic {
+				delete(s.loans, l.ev)
+			}
 			continue
 		}
 
@@ -437,10 +444,10 @@ func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState
 		reported = true
 	}
 
-	if len(ev.place.path) == 0 {
+	if len(ev.place.path) == 0 && !dynamic {
 		for _, l := range s.loans {
-			if !d.fresh.Contains(heldLoan{ev: l.ev, root: ev.place.root}) {
-				l.holders.Remove(ev.place.root)
+			if n, held := l.holders[ev.place.root]; held && !laterNode(n, ev.node) {
+				delete(l.holders, ev.place.root)
 			}
 		}
 	}
@@ -452,7 +459,7 @@ func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState
 func (d *bodyDataflow) borrow(ev *borrowEvent, at liveness.StmtRef, s *dataflowState) {
 	d.checkMoved(ev.place, ev.node, s)
 
-	l := &liveLoan{ev: ev, holders: set.NewSet[liveness.VarID]()}
+	l := &liveLoan{ev: ev, holders: map[liveness.VarID]ast.Node{}}
 	if !l.closure() {
 		for _, first := range d.sortedLoans(s) {
 			if first.closure() || first.ev.borrow == ev.borrow || !placesOverlap(first.ev.place, ev.place) {
@@ -475,10 +482,10 @@ func (d *bodyDataflow) borrow(ev *borrowEvent, at liveness.StmtRef, s *dataflowS
 
 	l.static = ev.lifetime != nil && soltype.IsStaticLifetime(ev.lifetime)
 	s.loans[ev] = l
-	d.holdLoan(l, ev.holder)
+	d.holdLoan(l, ev.holder, ev.node)
 
 	// A borrow through a holder keeps the holder's loans live while the new borrow is.
-	d.addHolder(ev.place.root, ev.holder, s)
+	d.addHolder(ev.place.root, ev.holder, ev.node, s)
 }
 
 // move applies the move ev. E1 rejects a move of a moved place, and E3 rejects a move while
@@ -496,30 +503,29 @@ func (d *bodyDataflow) move(ev *moveEvent, at liveness.StmtRef, s *dataflowState
 	s.moved[placeKey(ev.place)] = movedPlace{place: ev.place, node: ev.node, every: true}
 
 	// The holder now owns what the place held, including any borrow stored in it.
-	d.addHolder(ev.place.root, ev.holder, s)
+	d.addHolder(ev.place.root, ev.holder, ev.node, s)
 }
 
-// holdLoan records holder as a holder of l.
-func (d *bodyDataflow) holdLoan(l *liveLoan, holder eventHolder) {
+// holdLoan records holder as a holder of l, through the flow whose expression is node.
+func (d *bodyDataflow) holdLoan(l *liveLoan, holder eventHolder, node ast.Node) {
 	switch tg := holder.target.(type) {
 	case placeTarget:
-		l.holders.Add(tg.root)
-		d.fresh.Add(heldLoan{ev: l.ev, root: tg.root})
+		l.holders[tg.root] = node
 	case moduleTarget:
 		l.static = true
 	case argTarget, receiverTarget, returnTarget, tempTarget:
-		if l.holders.Len() == 0 && !l.static {
+		if len(l.holders) == 0 && !l.static {
 			l.statement = true
 		}
 	}
 }
 
 // addHolder makes holder a holder of each loan root holds, since holder now reaches what
-// root borrows.
-func (d *bodyDataflow) addHolder(root liveness.VarID, holder eventHolder, s *dataflowState) {
+// root borrows. node is the expression of the flow.
+func (d *bodyDataflow) addHolder(root liveness.VarID, holder eventHolder, node ast.Node, s *dataflowState) {
 	for _, l := range s.loans {
-		if l.holders.Contains(root) {
-			d.holdLoan(l, holder)
+		if _, held := l.holders[root]; held {
+			d.holdLoan(l, holder, node)
 		}
 	}
 }
@@ -573,15 +579,31 @@ func (d *bodyDataflow) holderLive(h liveness.VarID, at liveness.StmtRef, before 
 		return false
 	}
 
-	// The point before a block's first statement is live where the block's entry is.
-	if at.StmtIdx < 0 {
-		return d.liveOnEntry(at.BlockID, h, set.NewSet[int]())
+	switch {
+	case at.StmtIdx < 0:
+		// The point before a block's first statement is live where the block's entry is.
+		if d.liveOnEntry(at.BlockID, h, set.NewSet[int]()) {
+			return true
+		}
+	case before:
+		return live.IsLiveBefore(at, h)
+	case live.IsLiveAfter(at, h):
+		return true
 	}
 
-	if before {
-		return live.IsLiveBefore(at, h)
+	// A branch of `c = if cond { &a } else { &b }` ends in a block of its own, and the join
+	// block after it defines c. Liveness counts c as dead at the end of the branch, but the
+	// branch's value flows into c, so c holds it while c is live after the join defines it.
+	if at.StmtIdx != len(live.LiveBefore[at.BlockID])-1 {
+		return false
 	}
-	return live.IsLiveAfter(at, h)
+
+	for _, succ := range d.table.cfg.Blocks[at.BlockID].Successors {
+		if slices.Contains(succ.ExtraDefs, h) && d.liveOnEntry(succ.ID, h, set.NewSet[int]()) {
+			return true
+		}
+	}
+	return false
 }
 
 // liveOnEntry reports whether the local h is live on entry to the block with ID block. A

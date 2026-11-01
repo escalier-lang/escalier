@@ -77,6 +77,10 @@ func run(args []string, out, errOut io.Writer) error {
 	writeProblems(out, "old", off.problems)
 	writeProblems(out, "new", on.problems)
 	writeReport(out, diffRuns(off.diags, on.diags))
+
+	if n := len(off.problems) + len(on.problems); n > 0 {
+		return fmt.Errorf("%d test binaries panicked or packages failed to build, so the report is incomplete", n)
+	}
 	return nil
 }
 
@@ -152,9 +156,25 @@ type trace struct {
 	problems []string
 }
 
-// problemMarkers are the texts `go test` prints when a test binary panics or a package
-// fails to build or set up.
-var problemMarkers = []string{"panic: ", "[build failed]", "[setup failed]"}
+// problemMarkers are the texts `go test` prints at the end of a line when a package fails to
+// build or set up.
+var problemMarkers = []string{"[build failed]", "[setup failed]"}
+
+// isProblem reports whether line says a test binary panicked or a package did not build. Go
+// prints a panic a test recovered from with a `[recovered]` suffix and then again without
+// it, so only the second line counts.
+func isProblem(line string) bool {
+	if strings.HasPrefix(line, "panic: ") {
+		return !strings.Contains(line, "[recovered]")
+	}
+
+	for _, marker := range problemMarkers {
+		if strings.HasSuffix(line, marker) {
+			return true
+		}
+	}
+	return false
+}
 
 // testEvent is the part of one `go test -json` event the harness reads.
 type testEvent struct {
@@ -198,11 +218,8 @@ func parseTrace(r io.Reader) (trace, error) {
 		}
 
 		if !strings.HasPrefix(ev.Output, tracePrefix) {
-			for _, marker := range problemMarkers {
-				if strings.Contains(ev.Output, marker) {
-					out.problems = append(out.problems, testKey(ev.Package, ev.Test)+": "+strings.TrimSpace(ev.Output))
-					break
-				}
+			if line := strings.TrimSpace(ev.Output); isProblem(line) {
+				out.problems = append(out.problems, testKey(ev.Package, ev.Test)+": "+line)
 			}
 			continue
 		}
