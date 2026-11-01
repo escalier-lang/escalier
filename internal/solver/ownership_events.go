@@ -1024,7 +1024,7 @@ func (t *ownershipEvents) renderPlace(p movePlace) string {
 }
 
 // renderHolder renders a holder: a place by name, a module-level binding by name, an
-// argument as `arg(<callee>, <index>)`, a receiver as `recv(<method>)`, a return as
+// argument as `arg(<callee>, <index>)`, a receiver as `arg(<method>, self)`, a return as
 // `return`, and a temporary as `temp`. A path within the holder follows it. A name is in
 // backticks, as renderPlace writes it, and a keyword is bare.
 func (t *ownershipEvents) renderHolder(h eventHolder) string {
@@ -1041,7 +1041,7 @@ func (t *ownershipEvents) renderHolder(h eventHolder) string {
 	case argHolder:
 		fmt.Fprintf(&b, "arg(%s, %d)", renderCallee(h.node), h.index)
 	case receiverHolder:
-		fmt.Fprintf(&b, "recv(%s)", renderCallee(h.node))
+		fmt.Fprintf(&b, "arg(%s, self)", renderCallee(h.node))
 	case returnHolder:
 		b.WriteString("return")
 	case tempHolder:

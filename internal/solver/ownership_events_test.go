@@ -314,9 +314,9 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.0: borrow(&, `c`, recv(`get`), '1)",    // `c.get()` borrows c for the `&self` receiver
-				"b0.1: borrow(&mut, `c`, recv(`set`), '1)", // `c.set()` borrows c mutably for the `&mut self` receiver
-				"b0.2: move(`c`, recv(`take`))",            // `c.take()` moves c into the owned `self` receiver
+				"b0.0: borrow(&, `c`, arg(`get`, self), '1)",    // `c.get()` borrows c for the `&self` receiver
+				"b0.1: borrow(&mut, `c`, arg(`set`, self), '1)", // `c.set()` borrows c mutably for the `&mut self` receiver
+				"b0.2: move(`c`, arg(`take`, self))",            // `c.take()` moves c into the owned `self` receiver
 			},
 		},
 		{
@@ -408,8 +408,8 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.1: borrow(&, `p`, arg(`map`, 0), '_)", // the closure passed to `xs.map` captures p and is not returned, so it borrows p
-				"b0.1: borrow(&, `xs`, recv(`map`), '1)",  // `xs.map(...)` borrows xs for the `&self` receiver of `map`
+				"b0.1: borrow(&, `p`, arg(`map`, 0), '_)",     // the closure passed to `xs.map` captures p and is not returned, so it borrows p
+				"b0.1: borrow(&, `xs`, arg(`map`, self), '1)", // `xs.map(...)` borrows xs for the `&self` receiver of `map`
 			},
 		},
 		{
