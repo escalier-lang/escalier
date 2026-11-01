@@ -361,6 +361,21 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 			},
 		},
 		{
+			// A callee typed as an object with one call signature resolves to that signature,
+			// so the argument flows by the signature's owned parameter.
+			name: "CallThroughCallSignature",
+			src: `
+				fn go(f: {(p: {x: number}) -> undefined}) {
+					val o = {x: 1}
+					f(o)
+				}
+			`,
+			want: []string{
+				"b0.1: use(`f`, read)",         // `f(o)` reads the callee f
+				"b0.1: move(`o`, arg(`f`, 0))", // `f(o)` moves o into the call signature's owned parameter p
+			},
+		},
+		{
 			// Each call of one method borrows the receiver under its own lifetime, though both
 			// calls go through the same declared `self`.
 			name: "ReceiverBorrowPerCall",
