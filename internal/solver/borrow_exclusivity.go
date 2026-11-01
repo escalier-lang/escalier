@@ -440,11 +440,16 @@ func (c *checker) recordBorrowLoan(holder liveness.VarID, holderT soltype.Type, 
 	if c.fn == nil || holder <= 0 || init == nil {
 		return
 	}
+	ident, isIdent := init.(*ast.IdentExpr)
+	if isIdent && c.varIDs.Of(ident) == holder {
+		// `a = a` leaves a holding what it held.
+		return
+	}
 	// A reassignment repoints the binding, so whatever it borrowed before is unreachable
 	// through it. `var a = &mut x` followed by `a = &mut y` leaves no loan of x behind. This
 	// is the strong update the flow-sensitive borrow graph makes for the same statement.
 	c.dropLoansHeldBy(holder)
-	if ident, isIdent := init.(*ast.IdentExpr); isIdent {
+	if isIdent {
 		c.copyHeldLoans(holder, holderT, ident, ref)
 		return
 	}
@@ -476,7 +481,7 @@ func (c *checker) recordBorrowLoan(holder liveness.VarID, holderT soltype.Type, 
 // `val c: &{x: number} = b` holds an immutable loan of a.
 func (c *checker) copyHeldLoans(holder liveness.VarID, holderT soltype.Type, source *ast.IdentExpr, ref liveness.StmtRef) {
 	from := c.varIDs.Of(source)
-	if from <= 0 || from == holder {
+	if from <= 0 {
 		return
 	}
 
@@ -485,7 +490,8 @@ func (c *checker) copyHeldLoans(holder liveness.VarID, holderT soltype.Type, sou
 		writable = b.anyMut
 	}
 
-	for _, l := range slices.Clone(c.fn.loans) {
+	// The range reads c.fn.loans once, so the copies appended below are not visited.
+	for _, l := range c.fn.loans {
 		if l.holder != from || l.endSeq != 0 || l.via != "" {
 			continue
 		}

@@ -675,6 +675,35 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot borrow 'm' as mutable while it is borrowed as immutable"},
 		},
 		{
+			// c narrows the borrow b holds and is read after the write through b.
+			name: "E2WriteThroughTheSourceOfANarrowedCopy",
+			src: `
+				fn go() -> number {
+					val mut a = {x: 1}
+					val b: &mut {x: number} = &mut a
+					val c: &{x: number} = b
+					b.x = 2
+					return c.x
+				}
+			`,
+			errs: []string{"cannot assign to 'b.x' while it is borrowed as immutable"},
+		},
+		{
+			// r borrows h's storage, and c copies the borrow the slot h.s holds, so c reaches x
+			// and not h.
+			name: "CopyOutOfAMutablyBorrowedSlotOk",
+			src: `
+				fn go() {
+					val x = {v: 1}
+					val mut h: {s: &{v: number}} = {s: &x}
+					val r = &mut h
+					val c = h.s
+					r
+					c
+				}
+			`,
+		},
+		{
 			// s is not read after the call, so its immutable path has ended.
 			name: "NarrowedCopyDeadAtAMutableUseOk",
 			src: `
@@ -1066,6 +1095,20 @@ func TestOwnershipDataflowMatchesCurrentChecks(t *testing.T) {
 				}
 			`,
 			want: []string{"9:14-9:20: cannot borrow 'x' as mutable while it is borrowed as immutable"},
+		},
+		{
+			// `a = a` leaves a holding the loan of x.
+			name: "SelfAssignmentKeepsTheLoan",
+			src: `
+				fn g() {
+					val mut x = {v: 1}
+					var a: &{v: number} = &x
+					a = a
+					x.v = 2
+					a
+				}
+			`,
+			want: []string{"6:6-6:9: cannot assign to 'x.v' while it is borrowed as immutable"},
 		},
 	}
 

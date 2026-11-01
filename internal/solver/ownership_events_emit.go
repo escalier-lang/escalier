@@ -317,7 +317,7 @@ func (c *checker) borrowFromDest(table *ownershipEvents, bev *borrowEvent) {
 	}
 
 	bev.borrow = b.narrow(bev.borrow)
-	if b.lt != nil && soltype.IsStaticLifetime(b.lt) {
+	if soltype.IsStaticLifetime(b.lt) {
 		bev.lifetime = b.lt
 	}
 }

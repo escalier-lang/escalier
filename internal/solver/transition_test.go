@@ -243,11 +243,11 @@ func TestStaticEscapeTransition(t *testing.T) {
 	})
 }
 
-// TestStaticEscapeTransitionFromSource is the end-to-end counterpart. Storing the borrow `p`
-// into the module-level `sink` copies it, as D8 decides, and the copy is `'static`. sink keeps
-// a mutable path to p for the rest of the program, so the immutable path
-// `val snap: &{x: number} = p` breaks E2. The current checks report a `'static` escape
-// transition, and the dataflow pass reports a borrow conflict.
+// TestStaticEscapeTransitionFromSource is the end-to-end counterpart. The current checks move
+// the borrow `p` into the module-level `sink`, so the later `val snap: &{x: number} = p` is a
+// single use-after-move. The dataflow pass copies the borrow, as D8 decides, and the copy is
+// `'static`. sink keeps a mutable path to p for the rest of the program, so the immutable path
+// `val snap: &{x: number} = p` breaks E2.
 func TestStaticEscapeTransitionFromSource(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		var sink = {x: 0}
@@ -258,7 +258,7 @@ func TestStaticEscapeTransitionFromSource(t *testing.T) {
 		}
 	`)
 	require.Equal(t, wantForPass(
-		[]string{"5:4-5:30: cannot assign 'p' to immutable 'snap': a `'static` escape still has mutable access to 'p' after this point"},
+		[]string{"5:29-5:30: use of moved value 'p'"},
 		[]string{"5:29-5:30: cannot borrow 'p' as immutable while it is borrowed as mutable"},
 	), messagesWithSpan(t, errs))
 }

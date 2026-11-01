@@ -138,6 +138,9 @@ type liveLoan struct {
 	// path, so no rule checks against it. A later copy of one of its holders into a `'static`
 	// destination or a destination of another kind derives a loan from it.
 	alias bool
+	// through marks a loan of a path through the borrow ev.place holds to what that borrow
+	// reaches, which a copy of the borrow derives. Any other loan is of the storage at ev.place.
+	through bool
 }
 
 // checked reports whether the rules check other operations against the loan. An alias
@@ -525,10 +528,10 @@ func (d *bodyDataflow) borrow(ev *borrowEvent, at liveness.StmtRef, s *dataflowS
 
 	l := &liveLoan{ev: ev, holders: map[liveness.VarID]ast.Node{}}
 	if !l.closure() {
-		d.checkNewPath(ev.place, ev.borrow, ev.node, at, s)
+		d.checkNewPath(ev.place, ev.borrow, ev.node, at, d.sortedLoans(s))
 	}
 
-	l.static = isStatic(ev.lifetime)
+	l.static = soltype.IsStaticLifetime(ev.lifetime)
 	s.loans[ev] = l
 	d.holdLoan(l, ev.holder, ev.node)
 
@@ -537,9 +540,10 @@ func (d *bodyDataflow) borrow(ev *borrowEvent, at liveness.StmtRef, s *dataflowS
 }
 
 // checkNewPath reports E2 when a new path of kind to place, made at node, meets a live loan
-// of the other kind of an overlapping place.
-func (d *bodyDataflow) checkNewPath(place movePlace, kind borrowKind, node ast.Node, at liveness.StmtRef, s *dataflowState) {
-	for _, first := range d.sortedLoans(s) {
+// of loans of the other kind whose place overlaps place. loans is the live loans in the order
+// sortedLoans returns them.
+func (d *bodyDataflow) checkNewPath(place movePlace, kind borrowKind, node ast.Node, at liveness.StmtRef, loans []*liveLoan) {
+	for _, first := range loans {
 		if !first.checked() || first.ev.borrow == kind || !placesOverlap(first.ev.place, place) {
 			continue
 		}
@@ -560,100 +564,106 @@ func (d *bodyDataflow) checkNewPath(place movePlace, kind borrowKind, node ast.N
 
 // copyBorrow applies the copy ev of a borrow. E1 rejects a copy of a moved place.
 //
-// The holder gets a path of kind ev.borrow to what the copied borrow reaches, so E2 checks
-// it as a new path to ev.place. In `readWrite(m, m)` with `m: &mut {v: number}` and a `&`
-// first parameter, the second argument makes a mutable path to `m` while the first holds an
-// immutable one.
+// The holder gets a path of kind ev.borrow through the borrow at ev.place, so E2 checks it
+// against the loans through that borrow, the ones liveLoan.through marks. In
+// `readWrite(m, m)` with `m: &mut {v: number}` and a `&` first parameter, the second argument
+// makes a mutable path through m while the first holds an immutable one. A loan of the
+// storage at ev.place, such as the `&mut h` of a later copy `val c = h.s`, reaches the slot
+// and not what the slot points to, so the copy is not checked against it.
 //
 // A copy that keeps the borrow's kind and lifetime makes the holder a second holder of each
 // loan ev.place's root holds, as `val c = a` does after `val a = &x`. A copy into a
-// destination of the other kind, or into a `'static` one, instead derives a loan of that
-// kind and lifetime from each of them for the holder alone. After `val b = &mut a`, the
-// copy `val c: &{x: number} = b` gives c an immutable loan of a, so a write to a while c is
-// live breaks E2. A root that holds no loan, such as a `&mut` parameter, stands for a loan
-// of ev.place itself, so `sink = m` with a module-level sink derives a `'static` mutable loan
-// of m.
+// destination of the other kind, or into a `'static` one, instead derives loans of that
+// kind and lifetime for the holder alone:
+//
+//   - one through the borrow at ev.place, so `sink = m` with a module-level sink derives a
+//     `'static` mutable loan through m, and a later `&` path through m breaks E2.
+//   - one from each loan the root holds. After `val b = &mut a`, the copy
+//     `val c: &{x: number} = b` gives c an immutable loan of a, so a write to a while c is
+//     live breaks E2.
 func (d *bodyDataflow) copyBorrow(ev *copyEvent, at liveness.StmtRef, s *dataflowState) {
 	d.checkMoved(ev.place, ev.node, s)
-	d.checkNewPath(ev.place, ev.borrow, ev.node, at, s)
 
-	var held []*liveLoan
-	for _, l := range d.sortedLoans(s) {
-		if _, ok := l.holders[ev.place.root]; ok && !l.closure() {
-			held = append(held, l)
-		}
-	}
+	loans := d.sortedLoans(s)
+	through := slices.DeleteFunc(slices.Clone(loans), func(l *liveLoan) bool { return !l.through })
+	d.checkNewPath(ev.place, ev.borrow, ev.node, at, through)
 
 	_, toModule := ev.holder.target.(moduleTarget)
-	if ev.borrow == ev.source && !isStatic(ev.lifetime) && !toModule {
+	if ev.borrow == ev.source && !soltype.IsStaticLifetime(ev.lifetime) && !toModule {
+		held := false
+		for _, l := range loans {
+			_, holds := l.holders[ev.place.root]
+			held = held || (holds && !l.closure())
+		}
+
 		d.addHolder(ev.place.root, ev.holder, ev.node, s)
-		if len(held) > 0 {
+		if held {
 			return
 		}
 
 		// The holder reaches ev.place through a borrow no loan covers. An alias loan records
 		// that, so a later narrowing or `'static` copy of the holder derives from ev.place.
-		alias := d.derivedLoan(ev, nil, s)
-		alias.alias = true
+		d.derivedLoan(ev, nil, s).alias = true
 		return
 	}
 
-	if len(held) == 0 {
-		d.derivedLoan(ev, nil, s)
-		return
-	}
+	d.derivedLoan(ev, nil, s)
+	for _, l := range loans {
+		if _, holds := l.holders[ev.place.root]; !holds {
+			continue
+		}
 
-	for _, l := range held {
-		d.derivedLoan(ev, l.ev, s)
+		// A closure's capture is used only while the closure runs, so the holder keeps it as
+		// it is rather than taking a loan of another kind.
+		if l.closure() {
+			d.holdLoan(l, ev.holder, ev.node)
+			continue
+		}
+		d.derivedLoan(ev, l, s)
 	}
 }
 
 // derivedKey names a loan a copy derives: the copy, and the borrow event of the loan it
-// derives from, or nil for a loan of the copied place itself.
+// derives from, or nil for the loan through the copied borrow.
 type derivedKey struct {
 	copied *copyEvent
 	from   *borrowEvent
 }
 
 // loanOrder is the position of a loan in the order the pass reports loans in. event is the
-// index in the table of the event that took the loan, and from orders the loans one copy
-// derives by the loans they derive from.
+// index in the table of the event that took the loan. derived is 0 for a loan a borrow event
+// takes, and counts the loans a copy derives in the order the pass first derives them.
 type loanOrder struct {
-	event int
-	from  int
+	event   int
+	derived int
 }
 
-// derivedLoan adds to s the loan the copy ev derives from the loan whose borrow event is
-// from, and returns it. The loan has from's place, or ev.place when from is nil, and the
-// kind and lifetime ev gives its holder. ev.holder holds it.
-func (d *bodyDataflow) derivedLoan(ev *copyEvent, from *borrowEvent, s *dataflowState) *liveLoan {
-	key := derivedKey{copied: ev, from: from}
+// derivedLoan adds to s the loan the copy ev derives from the loan from, and returns it. A nil
+// from derives the loan through the borrow at ev.place. The loan has from's place, or ev.place
+// when from is nil, and the kind and lifetime ev gives its holder. ev.holder holds it.
+func (d *bodyDataflow) derivedLoan(ev *copyEvent, from *liveLoan, s *dataflowState) *liveLoan {
+	key := derivedKey{copied: ev}
+	place, through := ev.place, true
+	if from != nil {
+		key.from = from.ev
+		place, through = from.ev.place, from.through
+	}
+
 	bev, ok := d.derived[key]
 	if !ok {
-		place, order := ev.place, loanOrder{event: d.copyIndex[ev]}
-		if from != nil {
-			place = from.place
-			order.from = d.order[from].event + 1
-		}
-
 		bev = &borrowEvent{
 			flowBase: flowBase{eventBase: eventBase{place: place, node: ev.node, at: ev.at}, holder: ev.holder},
 			borrow:   ev.borrow,
 			lifetime: ev.lifetime,
 		}
 		d.derived[key] = bev
-		d.order[bev] = order
+		d.order[bev] = loanOrder{event: d.copyIndex[ev], derived: len(d.derived)}
 	}
 
-	l := &liveLoan{ev: bev, holders: map[liveness.VarID]ast.Node{}, static: isStatic(bev.lifetime)}
+	l := &liveLoan{ev: bev, holders: map[liveness.VarID]ast.Node{}, static: soltype.IsStaticLifetime(bev.lifetime), through: through}
 	s.loans[bev] = l
 	d.holdLoan(l, ev.holder, ev.node)
 	return l
-}
-
-// isStatic reports whether lt is the `'static` lifetime.
-func isStatic(lt soltype.Lifetime) bool {
-	return lt != nil && soltype.IsStaticLifetime(lt)
 }
 
 // move applies the move ev. E1 rejects a move of a moved place, and E3 rejects a move while
@@ -915,7 +925,7 @@ func (d *bodyDataflow) sortedLoans(s *dataflowState) []*liveLoan {
 
 	slices.SortFunc(out, func(a, b *liveLoan) int {
 		oa, ob := d.order[a.ev], d.order[b.ev]
-		return cmp.Or(cmp.Compare(oa.event, ob.event), cmp.Compare(oa.from, ob.from))
+		return cmp.Or(cmp.Compare(oa.event, ob.event), cmp.Compare(oa.derived, ob.derived))
 	})
 	return out
 }

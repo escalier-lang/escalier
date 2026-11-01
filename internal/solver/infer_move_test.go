@@ -381,10 +381,11 @@ func TestMoveSemantics(t *testing.T) {
 				"9:7-9:10: cannot assign to 'p.x' while it is borrowed as immutable",
 			},
 		},
-		// Storing the borrow p into the global copies it, as D8 decides, and gives the copy a
-		// `'static` lifetime. The global keeps a mutable path to p for the rest of the
-		// program, so the immutable path `val snap = p` breaks E2. The current checks report
-		// it as a `'static` escape transition, and the dataflow pass as a borrow conflict.
+		// The current checks move the borrow p into the global, so the later borrow
+		// `val snap = p` is a single use-after-move. F2 copies a borrow instead, as D8
+		// decides, and the copy into the global is `'static`. The dataflow pass follows F2,
+		// so the global keeps a mutable path to p for the rest of the program, and the
+		// immutable path `val snap = p` breaks E2.
 		"GlobalEscapeReportsStaticMutablePath": {
 			src: `
 				var sink = {x: 0}
@@ -394,7 +395,7 @@ func TestMoveSemantics(t *testing.T) {
 					snap
 				}
 			`,
-			want:         []string{"5:6-5:32: cannot assign 'p' to immutable 'snap': a `'static` escape still has mutable access to 'p' after this point"},
+			want:         []string{"5:31-5:32: use of moved value 'p'"},
 			wantDataflow: []string{"5:31-5:32: cannot borrow 'p' as immutable while it is borrowed as mutable"},
 		},
 		// Moving a value while a mutable borrow of it is live is rejected: freezing p
