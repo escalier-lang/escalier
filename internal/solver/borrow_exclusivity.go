@@ -1177,8 +1177,10 @@ type typeBorrow struct {
 // a borrow when it is a RefType carrying a lifetime. A union is a borrow when it has at least
 // one such member and every other member is a value type, as `&T | undefined` and
 // `&T | number` are. An alias counts as what it names, at the top of t and as a member of the
-// union. The borrow's lifetime is the first borrow member's.
+// union. The borrow's lifetime is `'static` when any borrow member's is, and the first borrow
+// member's otherwise.
 func (c *checker) borrowOfType(t soltype.Type) (typeBorrow, bool) {
+	// A type that is not a union is a borrow only when it is a RefType with a lifetime.
 	t = c.expandAliasChain(t)
 	u, isUnion := t.(*soltype.UnionType)
 	if !isUnion {
@@ -1189,12 +1191,17 @@ func (c *checker) borrowOfType(t soltype.Type) (typeBorrow, bool) {
 		return typeBorrow{mut: r.Mut, anyMut: r.Mut, lt: r.Lt}, true
 	}
 
+	// Fold each borrow member into out. mut starts true so it stays true only while every
+	// borrow member is `&mut`.
 	out := typeBorrow{mut: true}
 	found := false
 	for _, member := range u.Types {
 		member = c.expandAliasChain(member)
 		if r, isRef := member.(*soltype.RefType); isRef && r.Lt != nil {
-			if !found {
+			// A value of the union may be any of its members, so the borrow lasts as long as
+			// its longest-lived member. `'static` outlives every other lifetime. Two lifetime
+			// variables have no known order, so the first one stands for both.
+			if !found || soltype.IsStaticLifetime(r.Lt) {
 				out.lt = r.Lt
 			}
 			out.mut = out.mut && r.Mut
@@ -1202,11 +1209,15 @@ func (c *checker) borrowOfType(t soltype.Type) (typeBorrow, bool) {
 			found = true
 			continue
 		}
+
+		// Any member other than a borrow must be a value type, such as `undefined` or
+		// `number`, which holds nothing a borrow could reach.
 		if !c.holdsValueType(member) {
 			return typeBorrow{}, false
 		}
 	}
 
+	// A union of value types alone borrows nothing.
 	if !found {
 		return typeBorrow{}, false
 	}
