@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestOwnershipDataflow covers E1, E2, and E3 with the dataflow pass on: a program each rule
+// TestOwnershipDataflow covers E1, E2, and E3 as the dataflow pass checks them: a program each rule
 // rejects, a program each rule allows, moves and borrows across joins and loops, borrows that
 // last for a statement or for the rest of the program, and a diagnostic the pass leaves to the
 // other checks. errs lists every diagnostic the program reports, and is nil for a program that checks

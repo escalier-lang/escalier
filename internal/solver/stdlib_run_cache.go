@@ -109,7 +109,9 @@ func ambientChecker(dir string, source ModuleSource, groups PackageGroups, opts 
 	}
 	run := entry.checker.fork(source, StdlibGroupSource(dir), groups)
 	run.dependencies = opts.Dependencies
-	run.ownershipDataflow = run.ownershipDataflow && !opts.NoOwnershipDataflow
+	// The cached checker read ownershipDataflowEnv when it loaded, and the cache key leaves the
+	// flag out, so each run reads the variable again.
+	run.ownershipDataflow = ownershipDataflowFromEnv() && !opts.NoOwnershipDataflow
 	return run, true
 }
 
