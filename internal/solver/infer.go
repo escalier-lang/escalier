@@ -45,6 +45,17 @@ type checker struct {
 	// consumeOnceCallee moves a binding holding the closure at each call.
 	capturesMovedBy map[ast.Func]map[string]ast.Node
 
+	// pendingFlows holds each flow whose ownership F3 has not settled yet, across every body
+	// walked so far, keyed by what it waits on. settleFlowsWaitingOn turns each into its
+	// event once what it waits on is settled. See ownership_events.go.
+	pendingFlows map[flowWait][]provisionalFlow
+	// paramByVar maps the VarID of each unannotated parameter a walked body binds to the
+	// parameter, so a flow out of it can read the ownership its body settles.
+	paramByVar map[liveness.VarID]*soltype.FuncParam
+	// unsettledParams holds each unannotated parameter whose body is still being walked.
+	// Its ownership is not settled until the walk finishes.
+	unsettledParams set.Set[*soltype.FuncParam]
+
 	// pendingRecvReads holds the member reads off inferred receivers that top-level bodies
 	// collected. A value initializer can still pass such a body to a call that types its
 	// receiver, so checkPendingRecvReads checks them once the component is constrained.
@@ -559,6 +570,26 @@ type funcCtx struct {
 	aliases    *liveness.AliasTracker
 	stmtToRef  map[ast.Stmt]liveness.StmtRef
 	varIDNames map[liveness.VarID]string
+	// events holds the ownership events this body's walk emits, attached to the nodes of
+	// cfg. runLivenessPrePass opens it. See ownership_events.go.
+	events *ownershipEvents
+	// exprRefs maps the expression of each expression statement in cfg's blocks to the
+	// statement's CFG point. The CFG builder wraps some expressions in an expression
+	// statement of its own, such as a branch's condition, a match target, or a match arm's
+	// expression body. No AST statement maps to such a statement, so this is how the event
+	// emitters find the point such an expression runs at.
+	exprRefs map[ast.Expr]liveness.StmtRef
+	// eventStmt is the innermost statement being walked that has a CFG point. The ownership
+	// events of the expression being walked attach to its point. See eventStmtRef.
+	eventStmt ast.Stmt
+	// exprAt is the CFG point of the expression attachEventsAt is attaching events for,
+	// and the eventStmt when its inference began. eventStmtRef answers it while that
+	// statement is still eventStmt.
+	exprAt struct {
+		stmt ast.Stmt
+		ref  liveness.StmtRef
+		set  bool
+	}
 	// cfg is this body's control-flow graph, retained from the pre-pass so the move
 	// engine can run AnalyzeMoves over it. liveness and stmtToRef are derived from
 	// it; the move engine's branch-merged consumed lattice joins over the same
@@ -1230,6 +1261,14 @@ func (c *checker) recordType(n ast.Node, t soltype.Type) {
 // never a panic.
 func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 	c.markLifetimes(e)
+	// The CFG builder runs some expressions in a statement of its own, such as a branch's
+	// condition, a match arm's expression body, or a guard. The ownership events such an
+	// expression emits attach to that statement.
+	if c.fn != nil {
+		if ref, ok := c.fn.exprRefs[e]; ok {
+			defer c.attachEventsAt(ref)()
+		}
+	}
 	switch e := e.(type) {
 	case *ast.ErrorExpr:
 		// The parser substitutes this for an expression it could not read and reports
