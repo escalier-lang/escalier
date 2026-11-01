@@ -240,6 +240,15 @@ type passEvent struct {
 	// argument is not written as a borrow, such as the empty path of `a` in `store(a, &b)`,
 	// or nil otherwise. A borrow held there reaches the place the store writes into.
 	through []placeSeg
+	// direct records that the signature shares the parameter's own borrow lifetime, so the
+	// holder gets the borrow the slot itself takes as well as each borrow its referent holds.
+	// When direct is false the holder gets only the borrows the referent holds, unless one of
+	// them is mutable, as bodyDataflow.pass describes. In
+	//
+	//	class Holder<'a> { peer: &'a {x: number}, get(&self) -> &'a {x: number} }
+	//
+	// the result of `h.get()` holds what h.peer borrows but not the receiver's borrow of h.
+	direct bool
 }
 
 // callEvent marks the point where call returns. Each borrow a slot of call holds is

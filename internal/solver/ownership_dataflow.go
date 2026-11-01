@@ -1003,9 +1003,10 @@ func (d *bodyDataflow) addHolder(src movePlace, holder eventHolder, node ast.Nod
 }
 
 // pass applies the passEvent ev. Each loan the slot ev.from holds gains ev.holder as a holder.
-// A store through a target argument that names a borrow, such as the `a` of `store(a, &b)`
-// after `val a = &mut x`, lands in the place that borrow reaches, so `x.peer` holds the loan
-// too.
+// A passEvent that is not direct skips the loan the slot's own borrow took, unless the slot
+// also holds a mutable loan. A store through a target argument that names a borrow, such as
+// the `a` of `store(a, &b)` after `val a = &mut x`, lands in the place that borrow reaches,
+// so `x.peer` holds the loan too.
 func (d *bodyDataflow) pass(ev *passEvent, s *dataflowState) {
 	holders := []eventHolder{ev.holder}
 	if pt, ok := ev.holder.target.(placeTarget); ok && ev.through != nil {
@@ -1021,14 +1022,39 @@ func (d *bodyDataflow) pass(ev *passEvent, s *dataflowState) {
 		}
 	}
 
+	// The signature shares only a lifetime inside the slot's referent, so the holder reaches
+	// what the referent holds and not the referent itself. A shared borrow the referent holds
+	// is copied out whole. A mutable one cannot be copied, so the callee reborrows it through
+	// the slot's own borrow, and the holder keeps that borrow too.
+	skipOwn := !ev.direct
 	for _, l := range s.loans {
-		if !l.slots.Contains(ev.from) {
+		if skipOwn && l.slots.Contains(ev.from) && !holderIsSlot(l.ev.holder, ev.from) && l.ev.borrow == mutableBorrow {
+			skipOwn = false
+		}
+	}
+
+	for _, l := range s.loans {
+		if !l.slots.Contains(ev.from) || (skipOwn && holderIsSlot(l.ev.holder, ev.from)) {
 			continue
 		}
 		for _, h := range holders {
 			d.holdLoan(l, h, ev.node)
 		}
 	}
+}
+
+// holderIsSlot reports whether h is the call slot itself, rather than a position inside it.
+func holderIsSlot(h eventHolder, slot callSlot) bool {
+	if len(h.path) > 0 {
+		return false
+	}
+	switch tg := h.target.(type) {
+	case argTarget:
+		return callSlot{call: tg.call, index: tg.index} == slot
+	case receiverTarget:
+		return callSlot{call: tg.call, index: selfIndex} == slot
+	}
+	return false
 }
 
 // callEnd applies the callEvent ev in two steps:

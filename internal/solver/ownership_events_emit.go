@@ -1204,22 +1204,29 @@ func (c *checker) emitCallEnd(e *ast.CallExpr, fn *soltype.FuncType, ref livenes
 	if fn != nil {
 		recv, self := c.calleeReceiver(e.Callee)
 		// One signature can share several lifetimes between the same two positions, and each
-		// pair passes once. A return edge keys on the root 0, which no local has.
-		seen := set.NewSet[passKey]()
-		pass := func(param int, to movePlace, through []placeSeg) {
+		// pair passes once. The pair's event is direct when any of its edges is. A return edge
+		// keys on the root 0, which no local has.
+		var passes []*passEvent
+		byKey := map[passKey]*passEvent{}
+		pass := func(param int, to movePlace, through []placeSeg, direct bool) {
 			for _, from := range argsOfParam(e, fn, param) {
-				key := passKey{from: from, to: placeKey(to)}
-				if _, ok := storeExprAt(e, recv, from); !ok || seen.Contains(key) {
+				if _, ok := storeExprAt(e, recv, from); !ok {
 					continue
 				}
-				seen.Add(key)
+				key := passKey{from: from, to: placeKey(to)}
+				if ev, ok := byKey[key]; ok {
+					ev.direct = ev.direct || direct
+					continue
+				}
 
 				holder := eventHolder{target: placeTarget{root: to.root}, path: to.path}
 				if to.root == 0 {
 					holder.target = tempTarget{node: e}
 				}
 				flow := flowBase{eventBase: eventBase{node: e}, holder: holder}
-				c.emitEvent(&passEvent{flowBase: flow, from: callSlot{call: e, index: from}, through: through}, ref)
+				ev := &passEvent{flowBase: flow, from: callSlot{call: e, index: from}, through: through, direct: direct}
+				byKey[key] = ev
+				passes = append(passes, ev)
 			}
 		}
 
@@ -1238,11 +1245,15 @@ func (c *checker) emitCallEnd(e *ast.CallExpr, fn *soltype.FuncType, ref livenes
 			if _, written := targetExpr.(*ast.BorrowExpr); !written {
 				through = append([]placeSeg{}, target.path...)
 			}
-			pass(edge.arg, movePlace{root: target.root, path: appendPath(target.path, edge.path)}, through)
+			pass(edge.arg, movePlace{root: target.root, path: appendPath(target.path, edge.path)}, through, edge.direct)
 		}
 
 		for _, edge := range callReturnEdges(c.ctx, fn, self) {
-			pass(edge.arg, movePlace{path: edge.path}, nil)
+			pass(edge.arg, movePlace{path: edge.path}, nil, edge.direct)
+		}
+
+		for _, ev := range passes {
+			c.emitEvent(ev, ref)
 		}
 	}
 
