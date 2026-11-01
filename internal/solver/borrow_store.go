@@ -150,13 +150,17 @@ type returnEdge struct {
 	// path is the field path within the result where the borrow lands. A position the walk
 	// cannot name keeps the path of its container, as storeEdge.path does.
 	path []placeSeg
+	// direct records that the shared lifetime is the argument's OWN borrow lifetime, so the
+	// result holds the argument's borrow, as storeEdge.direct describes for a store. An edge
+	// that is not direct passes only what the argument's referent holds.
+	direct bool
 }
 
 // callReturnEdges returns the edges from each argument of fn, and from the receiver self
 // when it is not nil, to the positions of the return type whose lifetime a lifetime of the
 // argument flows into, as lifetimeFlowsInto decides. Every lifetime a source position's type
 // mentions counts, the way callStoreEdges reads a source. A walk that exhausts its allowance
-// takes an edge at the whole result.
+// takes a direct edge at the whole result.
 func callReturnEdges(ctx *Context, fn *soltype.FuncType, self *soltype.FuncParam) []returnEdge {
 	if fn.Ret == nil {
 		return nil
@@ -170,17 +174,21 @@ func callReturnEdges(ctx *Context, fn *soltype.FuncType, self *soltype.FuncParam
 	// The map's order is random, so the sites are read in the order the walk reaches them.
 	retLts, _ := lifetimeVarsIn(ctx, fn.Ret)
 	var out []returnEdge
-	add := func(i int, t soltype.Type) {
+	// own is the type of one argument the position receives, whose borrow lifetime is the
+	// argument's own.
+	add := func(i int, t, own soltype.Type) {
 		lts, truncated := lifetimeVarsIn(ctx, t)
 		if truncated || retTruncated {
-			out = append(out, returnEdge{arg: i})
+			out = append(out, returnEdge{arg: i, direct: true})
 			return
 		}
+		src, isRef := own.(*soltype.RefType)
 		for _, lv := range lts {
+			direct := isRef && src.Lt == soltype.Lifetime(lv)
 			for _, site := range retLts {
 				if lifetimeFlowsInto(lv, site) {
 					for _, path := range sites[site] {
-						out = append(out, returnEdge{arg: i, path: path})
+						out = append(out, returnEdge{arg: i, path: path, direct: direct})
 					}
 				}
 			}
@@ -188,10 +196,17 @@ func callReturnEdges(ctx *Context, fn *soltype.FuncType, self *soltype.FuncParam
 	}
 
 	if self != nil {
-		add(selfIndex, self.Type)
+		add(selfIndex, self.Type, self.Type)
 	}
 	for i, p := range fn.Params {
-		add(i, p.Type)
+		own := p.Type
+		// A rest parameter receives each argument as an element of its array.
+		if p.Rest {
+			if elem, ok := ctx.restSlotElem(p.Type); ok {
+				own = elem
+			}
+		}
+		add(i, p.Type, own)
 	}
 	return out
 }

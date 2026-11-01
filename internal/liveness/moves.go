@@ -183,7 +183,8 @@ func AnalyzeMoves(cfg *CFG, moves map[StmtRef]set.Set[VarID]) *MoveInfo {
 
 // DeclaredBindings returns the point of each `val` or `var` declaration in cfg, mapped to the
 // bindings it declares. A declaration whose initializer branches has no statement of its own,
-// so its point is StmtIdx -1 of its join block, as BuildStmtToRef maps it.
+// so its point is StmtIdx -1 of its join block, as BuildStmtToRef maps it. A block's ExtraDefs,
+// such as a for-in loop's pattern bindings, are declared at StmtIdx -1 of that block too.
 func DeclaredBindings(cfg *CFG) map[StmtRef][]VarID {
 	out := map[StmtRef][]VarID{}
 	add := func(stmt ast.Stmt, ref StmtRef) {
@@ -204,6 +205,10 @@ func DeclaredBindings(cfg *CFG) map[StmtRef][]VarID {
 	for _, block := range cfg.Blocks {
 		for idx, stmt := range block.Stmts {
 			add(stmt, StmtRef{BlockID: block.ID, StmtIdx: idx})
+		}
+		if len(block.ExtraDefs) > 0 {
+			entry := StmtRef{BlockID: block.ID, StmtIdx: -1}
+			out[entry] = append(out[entry], block.ExtraDefs...)
 		}
 	}
 	for _, ds := range cfg.decomposedStmts {

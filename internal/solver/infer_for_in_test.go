@@ -311,6 +311,57 @@ func TestForInBorrowAvoidsMove(t *testing.T) {
 	}
 }
 
+// TestForInLoopBindingIsFreshEachIteration covers moving a for-in loop's pattern bindings.
+// Each iteration declares them afresh, so a move on one iteration does not reach the next.
+// A second move within one iteration still reports. Each case runs with the current checks
+// and with the dataflow pass.
+func TestForInLoopBindingIsFreshEachIteration(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want []string
+	}{
+		"MoveLoopVariable": {
+			src: `
+				declare fn take(p: {x: number}) -> number
+				fn f(xs: Array<{x: number}>) {
+					for x in xs { take(x) }
+				}
+			`,
+			want: nil,
+		},
+		"MoveDestructuredBinding": {
+			src: `
+				declare fn take(p: {x: number}) -> number
+				fn f(xs: Array<{a: {x: number}}>) {
+					for {a} in xs { take(a) }
+				}
+			`,
+			want: nil,
+		},
+		"MoveLoopVariableTwiceInOneIteration": {
+			src: `
+				declare fn take(p: {x: number}) -> number
+				fn f(xs: Array<{x: number}>) {
+					for x in xs {
+						take(x)
+						take(x)
+					}
+				}
+			`,
+			want: []string{`6:12-6:13: use of moved value 'x'`},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src)
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+
+			res := InferModuleAgainstStdlib(parseModule(t, tc.src), benchTree, Options{NoOwnershipDataflow: true})
+			require.Equal(t, tc.want, messagesWithSpan(t, res.Errors))
+		})
+	}
+}
+
 // TestForInBackEdgeBorrows confirms the flow-sensitive borrow-edge dataflow
 // (analyzeBorrows) joins across the loop back edge and clears referents correctly.
 // These are the loop analogues of the branch-merge borrow tests, exercising the
