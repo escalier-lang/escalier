@@ -113,10 +113,10 @@ func (c *checker) settleDest(table *ownershipEvents, dest flowDest, holder event
 	case *captureDest:
 		// A closure stored into module-level state may run during any later call, so it
 		// borrows what it captures for `'static`. A closure returned where it is written
-		// outlives the frame and owns what it captures. Any other closure borrows it, and
-		// captureReturnMoves moves the capture at each return of a local holding the
-		// closure. A closure a local holds may still be stored through that local, so it
-		// waits for the whole body.
+		// outlives the frame and owns what it captures. Any other closure borrows what it
+		// captures, and captureReturnMoves moves the capture at each return of a local
+		// holding the closure. A closure a local holds may still be stored through that
+		// local, so its capture waits for the whole body.
 		static := &borrowDest{borrow: borrowKindOf(d.writes), lt: soltype.Static, reborrows: true}
 		switch holder.target.(type) {
 		case returnTarget:

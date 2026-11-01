@@ -33,8 +33,8 @@ import (
 //     signature the call cannot see yet.
 //   - A closure capture. A closure stored into module-level state borrows what it
 //     captures for `'static`. A closure returned where it is written owns what it
-//     captures. Any other closure borrows it, and a return of a local that holds the
-//     closure moves the capture at that return. A closure a local holds may be stored or
+//     captures. Any other closure borrows what it captures, and a return of a local that
+//     holds the closure moves the capture at that return. A closure a local holds may be stored or
 //     returned through that local later, so the capture waits until the body holding the
 //     closure is walked.
 

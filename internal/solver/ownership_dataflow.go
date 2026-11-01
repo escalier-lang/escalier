@@ -94,16 +94,16 @@ func (c *checker) runOwnershipDataflow() {
 	}
 
 	c.errs = slices.DeleteFunc(c.errs, replacedByDataflow)
+	// E4's `moved` example puts the error on the move, so a move the pass rejects is
+	// reported once, there, and not again at a later call of the closure.
 	c.errs = slices.DeleteFunc(c.errs, closureMoveReported(found))
 	c.errs = append(c.errs, found...)
 }
 
 // closureMoveReported returns a filter that matches each E4 diagnostic of the current checks
-// about a capture whose move the dataflow pass already rejects by E3. found holds the pass's
-// diagnostics. E4's `moved` example puts that error on the move, so the move is reported
-// once, there, and not again at a later call of the closure. The filter matches a call that
-// runs a closure after a move, and a move in a call that may run a closure, when the pass
-// reports that move against a closure's borrow.
+// about a capture whose move the dataflow pass rejects by E3 against a closure's borrow.
+// found holds the pass's diagnostics. The filter matches a call that runs a closure after
+// such a move, and such a move in a call that may run a closure.
 func closureMoveReported(found []SolverError) func(SolverError) bool {
 	moves := set.NewSet[ast.Node]()
 	for _, err := range found {
