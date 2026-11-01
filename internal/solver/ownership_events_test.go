@@ -1,7 +1,6 @@
 package solver
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -353,12 +352,12 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b3.0: use(`v.x`, read)",  // the guard `v.x > 0`
-				"b4.0: use(`n`, read)",    // `{x: n}` in the second arm reads n
-				"b3.-1: move(`p.v`, `v`)", // the pattern `{v}` binds v on entry to the first arm
-				"b4.-1: use(`p.n`, read)", // the pattern `{n}` reads the `number` field n on entry to the second arm
-				"b3.1: move(`v`, `r`)",    // the first arm's tail `v` moves into r
-				"b2.0: move(`r`, return)", // `return r` after the arms join
+				"b3.0: use(`v.x`, read)",     // the guard `v.x > 0`
+				"b4.0: use(`n`, read)",       // `{x: n}` in the second arm reads n
+				"b3.entry: move(`p.v`, `v`)", // the pattern `{v}` binds v on entry to the first arm
+				"b4.entry: use(`p.n`, read)", // the pattern `{n}` reads the `number` field n on entry to the second arm
+				"b3.1: move(`v`, `r`)",       // the first arm's tail `v` moves into r
+				"b2.0: move(`r`, return)",    // `return r` after the arms join
 			},
 		},
 		{
@@ -372,8 +371,8 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b3.0: use(`v.x`, read)",  // `return v.x` in the consequent
-				"b3.-1: move(`p.v`, `v`)", // `if val {v} = p` binds v on entry to the consequent
+				"b3.0: use(`v.x`, read)",     // `return v.x` in the consequent
+				"b3.entry: move(`p.v`, `v`)", // `if val {v} = p` binds v on entry to the consequent
 			},
 		},
 	})
@@ -523,7 +522,7 @@ func TestOwnershipEventsByNode(t *testing.T) {
 	got := map[string][]string{}
 	ltNames := map[soltype.Lifetime]string{}
 	for at, events := range table.byNode() {
-		key := fmt.Sprintf("b%d.%d", at.BlockID, at.StmtIdx)
+		key := renderStmtRef(at)
 		for _, ev := range events {
 			got[key] = append(got[key], table.renderEvent(ev, ltNames))
 		}
@@ -551,8 +550,8 @@ func TestOwnershipEventsPatterns(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b2.-1: move(`p.v`, `v`)", // `val {v} = p else ...` binds v on entry to the code after the `else`
-				"b2.0: use(`v.x`, read)",  // `return v.x`
+				"b2.entry: move(`p.v`, `v`)", // `val {v} = p else ...` binds v on entry to the code after the `else`
+				"b2.0: use(`v.x`, read)",     // `return v.x`
 			},
 		},
 		{
@@ -604,9 +603,9 @@ func TestOwnershipEventsPatterns(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b3.-1: move(`o.0`, `v`)", // `Opt.Some(v)` binds the payload v on entry to the arm
-				"b3.0: move(`v`, `r`)",    // the arm body `v` moves into r
-				"b2.0: move(`r`, return)", // `return r`
+				"b3.entry: move(`o.0`, `v`)", // `Opt.Some(v)` binds the payload v on entry to the arm
+				"b3.0: move(`v`, `r`)",       // the arm body `v` moves into r
+				"b2.0: move(`r`, return)",    // `return r`
 			},
 		},
 	})
@@ -660,8 +659,8 @@ func TestOwnershipEventsMatchArmNodes(t *testing.T) {
 				"b3.0: use(`check`, read)",                  // the guard `check(&v)` reads the callee
 				"b3.0: borrow(&, `v`, arg(`check`, 0), '1)", // the guard passes the written borrow `&v` to `check`
 				"b4.0: use(`n`, read)",                      // the second arm's body `n`
-				"b3.-1: move(`p.v`, `v`)",                   // the pattern `{v}` moves the field v on entry to the first arm
-				"b4.-1: use(`p.n`, read)",                   // the pattern `{n}` reads the `number` field n on entry to the second arm
+				"b3.entry: move(`p.v`, `v`)",                // the pattern `{v}` moves the field v on entry to the first arm
+				"b4.entry: use(`p.n`, read)",                // the pattern `{n}` reads the `number` field n on entry to the second arm
 				"b2.0: use(`r`, read)",                      // `return r` reads a `number`
 			},
 		},

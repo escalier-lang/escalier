@@ -951,16 +951,25 @@ func (c *checker) emitCaptureFlow(closure ast.Func, root liveness.VarID, t solty
 }
 
 // renderOwnershipEvents renders the events of t one per line, each prefixed with the CFG
-// node it is attached to as `b<block>.<index>`. A borrow's lifetime renders as `'static`,
-// as `'_` when the borrow's type carries none, or as `'<n>` numbering the other lifetimes
-// in order of first appearance.
+// node it is attached to, as renderStmtRef writes it. A borrow's lifetime renders as
+// `'static`, as `'_` when the borrow's type carries none, or as `'<n>` numbering the other
+// lifetimes in order of first appearance.
 func renderOwnershipEvents(t *ownershipEvents) []string {
 	ltNames := map[soltype.Lifetime]string{}
 	var out []string
 	for _, ev := range t.list() {
-		out = append(out, fmt.Sprintf("b%d.%d: %s", ev.at.BlockID, ev.at.StmtIdx, t.renderEvent(ev, ltNames)))
+		out = append(out, fmt.Sprintf("%s: %s", renderStmtRef(ev.at), t.renderEvent(ev, ltNames)))
 	}
 	return out
+}
+
+// renderStmtRef renders a CFG node as `b<block>.<index>`, or as `b<block>.entry` for the
+// synthetic position before the block's first statement, which liveness numbers -1.
+func renderStmtRef(at liveness.StmtRef) string {
+	if at.StmtIdx < 0 {
+		return fmt.Sprintf("b%d.entry", at.BlockID)
+	}
+	return fmt.Sprintf("b%d.%d", at.BlockID, at.StmtIdx)
 }
 
 // renderEvent renders one event in the notation of the checking model. A name is in
