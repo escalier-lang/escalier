@@ -215,8 +215,8 @@ type provisionalEvent struct {
 	flowBase
 }
 
-// callSlot is one position a call receives a value at: argument index of call, or
-// selfIndex for the receiver of a method call.
+// callSlot names one position where a call receives a value. index is the position of an
+// argument of call, or selfIndex for the receiver of a method call.
 type callSlot struct {
 	call  *ast.CallExpr
 	index int

@@ -190,9 +190,9 @@ func (c *checker) placeHolderOf(e ast.Expr) eventHolder {
 //   - A place copies, borrows, or moves by F2, or records a provisional flow when F3 has
 //     not settled the source or the destination.
 //   - A written borrow, a literal, or a closure already emitted its borrow, elements, or
-//     captures with itself as their holder, and those events move to holder. So did a call
-//     whose result holds a borrow of an argument, as emitCallEnd describes, and a read of
-//     that result passes them on too.
+//     captures with itself as their holder, and those events move to holder. A call whose
+//     result holds a borrow of an argument did the same, as emitCallEnd describes. A read
+//     of a field of that result passes on the borrows held at that field.
 //   - A branching expression passes the value of each branch's tail.
 //
 // Any other source names no place and emits nothing here.

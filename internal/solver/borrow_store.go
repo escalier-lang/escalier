@@ -196,9 +196,9 @@ func callReturnEdges(ctx *Context, fn *soltype.FuncType, self *soltype.FuncParam
 	return out
 }
 
-// lifetimeFlowsInto reports whether data of lifetime from can reach a borrow of lifetime to:
-// the two are one variable, or from is among the lower bounds of to, directly or through other
-// lifetime variables. A body-carrying function shares no variable between a parameter and its
+// lifetimeFlowsInto reports whether data of lifetime from can reach a borrow of lifetime to.
+// It can when the two are one variable, or when from is among the lower bounds of to,
+// directly or through other lifetime variables. A body-carrying function shares no variable between a parameter and its
 // return. Instantiating it gives the return's lifetime the parameter's as a lower bound, so
 // `fn pick(p: &{x: number}) -> &{x: number} { return p }` relates p to the result.
 func lifetimeFlowsInto(from, to *soltype.LifetimeVar) bool {

@@ -31,8 +31,13 @@ import (
 // copyBorrow describes. A loan held by a module-level binding, or one whose lifetime is
 // `'static`, is live at every later point. A borrow takes its kind and its `'static` lifetime
 // from its destination, so `track(&p)` with `track(v: &'static {x: number})` is `'static`.
-// A loan held by a call argument, a receiver, a return, or a temporary value lasts until the
-// end of the statement that creates it.
+// A loan held by a call argument or a receiver lasts until the call returns. Before then, a
+// passEvent can give it to the store target or the result that the callee's signature ties
+// the argument to. A
+// loan held by a return or a temporary value lasts until the end of the statement that
+// creates it. A holder is a place, so a write to `p.r` ends what `p.r` held and leaves what
+// `p.s` holds. A place under a parameter whose referent the caller owns is read by the
+// caller once the body returns or suspends, so its loans count at those points too.
 //
 // The pass runs only when the ownershipDataflow flag is set. Its diagnostics then take the
 // place of the ones replacedByDataflow lists, so the diagnostics of the two checkers can be
@@ -240,7 +245,7 @@ type liveLoan struct {
 	returned bool
 	// reserved is the method call whose `&mut self` receiver took the loan, until that call
 	// starts. Evaluating the call's arguments only reads the receiver, so until then the loan
-	// conflicts with no new immutable path, and callEnd checks the ones still live when the
+	// conflicts with no immutable path. callEnd checks the immutable paths still live when the
 	// call starts. That lets `v.push(v.len())` read v while the outer call is pending.
 	reserved *ast.CallExpr
 	// alias marks a loan that records only that its holders reach ev.place through a copy of
@@ -614,9 +619,10 @@ func (d *bodyDataflow) step(ev ownershipEvent, at liveness.StmtRef, s *dataflowS
 // Writing a place also ends what the place and each place under it held before, so after
 // `c = &q` or `p.r = &q` the written place stops holding each loan that a flow earlier in
 // the source gave it. A sibling such as `p.s` keeps its loans. The assigned value appears
-// after the target, so the target keeps the loans its flows give, such as the borrow of q. In a loop, a flow
-// later in the source can run before the assignment on an earlier iteration. c keeps the
-// loan such a flow gave it, which errs toward reporting a conflict.
+// after the target, so the target keeps the loans its flows give, such as the borrow of q.
+// In a loop, a flow later in the source can run before the assignment on an earlier
+// iteration. The target keeps the loan such a flow gave it, which errs toward reporting a
+// conflict.
 func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState) {
 	target, _ := ev.node.(ast.Expr)
 	chain := placeChain(target)
@@ -748,8 +754,8 @@ func (d *bodyDataflow) liveInBody(l *liveLoan, at liveness.StmtRef) bool {
 // can reach both once the body returns. loans lists the loans to check in the order
 // sortedLoans returns them.
 //
-// A loan the statement at at takes is checked as live when its holders are live after the
-// statement, since a holder the statement defines is not live on entry to it. So
+// A loan taken at the point at counts as live when its holders are live after that point,
+// since a holder the statement defines is not live on entry to it. So
 // `val t = {p: &mut b.x, q: &b.x}` breaks E2 when t is used later.
 func (d *bodyDataflow) checkNewPath(place movePlace, kind borrowKind, node ast.Node, at liveness.StmtRef, loans []*liveLoan, fresh *liveLoan) {
 	// Where fresh is live can take a walk of the CFG, so it is found once a loan needs it.
@@ -808,13 +814,13 @@ func (d *bodyDataflow) returnSpans(loans ...*liveLoan) []ast.Span {
 // and not what the slot points to, so the copy is not checked against it.
 //
 // A copy that keeps the borrow's kind and lifetime makes the holder a second holder of each
-// loan ev.place's root holds, as `val c = a` does after `val a = &x`. A copy into a
-// destination of the other kind, or into a `'static` one, instead derives loans of that
-// kind and lifetime for the holder alone:
+// loan a place overlapping ev.place holds, as `val c = a` does after `val a = &x`. A copy
+// into a destination of the other kind, or into a `'static` one, instead derives loans of
+// that kind and lifetime for the holder alone:
 //
 //   - one through the borrow at ev.place, so `sink = m` with a module-level sink derives a
 //     `'static` mutable loan through m, and a later `&` path through m breaks E2.
-//   - one from each loan the root holds. After `val b = &mut a`, the copy
+//   - one from each loan such a place holds. After `val b = &mut a`, the copy
 //     `val c: &{x: number} = b` gives c an immutable loan of a, so a write to a while c is
 //     live breaks E2.
 func (d *bodyDataflow) copyBorrow(ev *copyEvent, at liveness.StmtRef, s *dataflowState) {
@@ -1025,14 +1031,15 @@ func (d *bodyDataflow) pass(ev *passEvent, s *dataflowState) {
 	}
 }
 
-// callEnd applies the callEvent ev. A mutable receiver the call reserved takes effect first,
-// and E2 rejects an immutable path to an overlapping place that is still live then. A path
-// still live is one an argument of a call that has not returned holds, or one whose holder
-// is used after the call, later in the statement or after it. So `val r = &v;
-// v.push(r.len())` checks clean, since r is dead once the arguments are evaluated. A path made before the receiver blames the
-// receiver, and one an argument made after it blames the argument, so `p.writeRead(&p)`
-// reports `&p`. Then each loan a slot of the call holds is released, and a loan nothing else
-// holds ends.
+// callEnd applies the callEvent ev in two steps:
+//
+//  1. A mutable receiver the call reserved takes effect. E2 rejects an immutable path to an
+//     overlapping place that is still live. A path is still live when an argument of a call
+//     that has not returned holds it, or when its holder is used after the call, later in
+//     the statement or after it. So `val r = &v; v.push(r.len())` checks clean, since r is
+//     dead once the arguments are evaluated. The later of the two paths is blamed, so
+//     `p.writeRead(&p)` reports `&p`.
+//  2. Each loan a slot of the call holds is released, and a loan nothing else holds ends.
 func (d *bodyDataflow) callEnd(ev *callEvent, at liveness.StmtRef, s *dataflowState) {
 	loans := d.sortedLoans(s)
 	for _, r := range loans {
@@ -1156,8 +1163,8 @@ func (d *bodyDataflow) heldPlaceLive(h heldPlace, at liveness.StmtRef, before bo
 }
 
 // loanEscapes reports whether the caller can reach l once the body returns, from the point
-// at onward. before counts the events at at itself. A 'static loan escapes, and so does one a
-// return holds. A caller-owned holder escapes when placeReaches finds a path to the exit
+// at onward. before also counts the events at the point at. A 'static loan escapes, and so
+// does one a return holds. A caller-owned holder escapes when placeReaches finds a path to the exit
 // that no write replaces it on. Any other holder escapes while it is live and its value
 // flows into a return, a module-level binding, or a caller-owned place, as rootEscapes
 // decides.

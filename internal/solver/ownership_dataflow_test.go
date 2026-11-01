@@ -1529,7 +1529,8 @@ func TestOwnershipDataflowMatchesCurrentChecks(t *testing.T) {
 			`,
 		},
 		{
-			// The same store with a later read of the target keeps the loan live at the move.
+			// The store gives `p.peer` the borrow of b, and the body reads p again after the
+			// move, so the move breaks E3.
 			name: "StoreIntoACallerOwnedTargetReadAfterAMove",
 			src: `
 				declare fn store<'a>(target: &mut {peer: &'a mut {x: number}}, item: &'a mut {x: number}) -> undefined
