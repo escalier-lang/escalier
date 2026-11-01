@@ -1198,6 +1198,144 @@ func TestOwnershipDataflow(t *testing.T) {
 				}
 			`,
 		},
+		{
+			// get returns the borrow of p that h holds through 'a, so x holds that borrow and
+			// not the receiver's own `&self` borrow of h.
+			name: "NestedReturnLeavesTheReceiverWritable",
+			src: `
+				class Holder<'a> {
+					peer: &'a {x: number},
+					n: number,
+					get(&self) -> &'a {x: number} { return self.peer },
+				}
+				fn go() -> number {
+					val p = {x: 1}
+					val mut h = Holder(&p, 0)
+					val x = h.get()
+					h.n = 5
+					return x.x
+				}
+			`,
+		},
+		{
+			name: "NestedReturnLeavesTheReceiverMovable",
+			src: `
+				class Holder<'a> {
+					peer: &'a {x: number},
+					n: number,
+					get(&self) -> &'a {x: number} { return self.peer },
+				}
+				fn go() -> number {
+					val p = {x: 1}
+					val mut h = Holder(&p, 0)
+					val x = h.get()
+					val y = h
+					return x.x
+				}
+			`,
+		},
+		{
+			// x holds the borrow of p that h holds through 'a.
+			name: "NestedReturnKeepsTheHeldBorrow",
+			src: `
+				class Holder<'a> {
+					peer: &'a {x: number},
+					n: number,
+					get(&self) -> &'a {x: number} { return self.peer },
+				}
+				fn go() -> number {
+					val p = {x: 1}
+					val h = Holder(&p, 0)
+					val x = h.get()
+					val q = p
+					return x.x
+				}
+			`,
+			errs: []string{"cannot move 'p' while it is borrowed"},
+		},
+		{
+			// h holds a mutable borrow of p through 'a. get cannot copy it out of the `&self`
+			// borrow, so x reborrows it through that borrow and keeps h borrowed.
+			name: "NestedMutableReturnKeepsTheReceiverBorrowed",
+			src: `
+				class Holder<'a> {
+					peer: &'a mut {x: number},
+					n: number,
+					get(&self) -> &'a mut {x: number} { return self.peer },
+				}
+				fn go() -> number {
+					val mut p = {x: 1}
+					val h = Holder(&mut p, 0)
+					val x = h.get()
+					val y = h
+					return x.x
+				}
+			`,
+			errs: []string{"cannot move 'h' while it is borrowed"},
+		},
+		{
+			// get shares the receiver's own borrow lifetime with its result, so x borrows h.
+			name: "DirectReturnKeepsTheReceiverBorrowed",
+			src: `
+				class Box {
+					inner: {x: number},
+					get<'h>(&'h self) -> &'h {x: number} { return &self.inner },
+				}
+				fn go() -> number {
+					val b = Box({x: 1})
+					val x = b.get()
+					val y = b
+					return x.x
+				}
+			`,
+			errs: []string{"cannot move 'b' while it is borrowed"},
+		},
+		{
+			// copyTo stores the borrow of p that h holds through 'a into out.peer, so out
+			// holds that borrow and not the receiver's own `&self` borrow of h.
+			name: "NestedStoreLeavesTheReceiverWritable",
+			src: `
+				class Holder<'a> {
+					peer: &'a {x: number},
+					n: number,
+					copyTo(&self, out: &mut {peer: &'a {x: number}}) -> undefined {
+						out.peer = self.peer
+					},
+				}
+				fn go() -> number {
+					val p = {x: 1}
+					val q = {x: 2}
+					val mut h = Holder(&p, 0)
+					val mut out = {peer: &q}
+					h.copyTo(&mut out)
+					h.n = 5
+					return out.peer.x
+				}
+			`,
+		},
+		{
+			// out.peer holds the borrow of p that h holds through 'a.
+			name: "NestedStoreKeepsTheHeldBorrow",
+			src: `
+				class Holder<'a> {
+					peer: &'a {x: number},
+					n: number,
+					copyTo(&self, out: &mut {peer: &'a {x: number}}) -> undefined {
+						out.peer = self.peer
+					},
+				}
+				fn go() -> number {
+					val p = {x: 1}
+					val q = {x: 2}
+					val h = Holder(&p, 0)
+					val mut out = {peer: &q}
+					h.copyTo(&mut out)
+					val r = p
+					return out.peer.x
+				}
+			`,
+			errs: []string{"cannot move 'p' while it is borrowed"},
+		},
 	}
 
 	for _, tc := range cases {
