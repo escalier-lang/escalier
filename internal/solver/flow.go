@@ -32,9 +32,9 @@ type borrowDest struct {
 	writable bool
 }
 
-// narrow returns the kind of the borrow a source of kind kind gives the destination. A
-// destination that cannot be written through narrows a `&mut` source to `&`, as T4 does,
-// and no destination widens a `&` source.
+// narrow returns the kind of borrow the destination receives from a source borrow of the
+// given kind. A destination that cannot be written through narrows a `&mut` source to `&`,
+// as T4 does. No destination widens a `&` source.
 func (b *borrowDest) narrow(kind borrowKind) borrowKind {
 	if b.borrow == mutableBorrow || b.writable {
 		return kind

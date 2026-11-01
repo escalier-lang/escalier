@@ -124,7 +124,7 @@ type movedPlace struct {
 // liveLoan is one borrow the pass tracks.
 type liveLoan struct {
 	// ev is the borrow event that took the loan. A loan a copy derives has an event of its
-	// own, which derivedBorrow makes.
+	// own, which derivedLoan makes.
 	ev *borrowEvent
 	// holders maps the root of each local place that holds the borrow or a copy of it to the
 	// expression of the flow that made it a holder.
@@ -269,7 +269,7 @@ type bodyDataflow struct {
 	events map[liveness.StmtRef][]ownershipEvent
 	// points lists the CFG points of each block that have events, in program order.
 	points map[int][]liveness.StmtRef
-	// order maps each borrow event of the body, and each borrow derivedBorrow makes, to its
+	// order maps each borrow event of the body, and each borrow derivedLoan makes, to its
 	// position in the order loans are reported in. A derived borrow sorts after the borrows
 	// the table emits before its copy.
 	order map[*borrowEvent]loanOrder
@@ -539,9 +539,9 @@ func (d *bodyDataflow) borrow(ev *borrowEvent, at liveness.StmtRef, s *dataflowS
 	d.addHolder(ev.place.root, ev.holder, ev.node, s)
 }
 
-// checkNewPath reports E2 when a new path of kind to place, made at node, meets a live loan
-// of loans of the other kind whose place overlaps place. loans is the live loans in the order
-// sortedLoans returns them.
+// checkNewPath reports E2 when node makes a new path of the given kind to place while one of
+// loans is live, has the other kind, and has a place that overlaps place. loans lists the
+// loans to check in the order sortedLoans returns them.
 func (d *bodyDataflow) checkNewPath(place movePlace, kind borrowKind, node ast.Node, at liveness.StmtRef, loans []*liveLoan) {
 	for _, first := range loans {
 		if !first.checked() || first.ev.borrow == kind || !placesOverlap(first.ev.place, place) {

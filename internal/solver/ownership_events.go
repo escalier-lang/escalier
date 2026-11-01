@@ -182,8 +182,8 @@ type borrowEvent struct {
 	// lifetime is the lifetime of the borrow, or nil when the borrow's type carries none.
 	lifetime soltype.Lifetime
 	// dest is the destination a written borrow flows into, or nil when no flow site
-	// receives it. finishOwnershipEvents reads it to take the borrow's mutability and
-	// lifetime from the destination.
+	// receives it. borrowFromDest reads it to take the borrow's mutability and lifetime from
+	// the destination, and clears it once the destination is settled.
 	dest flowDest
 }
 
