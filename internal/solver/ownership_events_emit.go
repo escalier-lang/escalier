@@ -41,8 +41,10 @@ func (c *checker) eventTable() *ownershipEvents {
 
 // startOwnershipEvents opens the event table of the body about to be walked and records
 // it in Info under the body's function node. names maps the body's VarIDs to their names.
-func (c *checker) startOwnershipEvents(names map[liveness.VarID]string) {
+// cfg is the body's control-flow graph and live the liveness of its locals over cfg.
+func (c *checker) startOwnershipEvents(names map[liveness.VarID]string, cfg *liveness.CFG, live *liveness.LivenessInfo) {
 	t := newOwnershipEvents(names)
+	t.cfg, t.live = cfg, live
 	c.fn.events = t
 
 	if c.info.ownership == nil {

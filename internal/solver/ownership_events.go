@@ -226,6 +226,14 @@ type ownershipEvents struct {
 	// escaping through flowsInto outlives the frame. See escapes.
 	escaping  set.Set[liveness.VarID]
 	flowsInto map[liveness.VarID][]liveness.VarID
+	// cfg is the control-flow graph of the body, and live is the liveness of each of its
+	// locals over cfg. The dataflow pass in ownership_dataflow.go walks cfg and reads live to
+	// decide whether a holder is used again.
+	cfg  *liveness.CFG
+	live *liveness.LivenessInfo
+	// checked marks a table the dataflow pass has already walked. A package loaded during a
+	// run is checked when its own declarations finish, before the module that imports it.
+	checked bool
 }
 
 // noteFlowInto records that the value of the place rooted at root flows into holder, for
