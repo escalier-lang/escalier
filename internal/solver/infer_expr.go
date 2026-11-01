@@ -2953,7 +2953,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 				c.flushBorrowDirty(ref)
 				// The reassignment repoints the binding, so the loan it held is gone and the
 				// borrow it now holds takes its place.
-				c.recordBorrowLoan(c.varIDs.Of(target), e.Right, ref)
+				c.recordBorrowLoan(c.varIDs.Of(target), bindingType(b), e.Right, ref)
 			}
 		}
 	}

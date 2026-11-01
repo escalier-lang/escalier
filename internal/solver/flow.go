@@ -26,6 +26,20 @@ type borrowDest struct {
 	// reborrows marks a destination that borrows a borrow source again rather than
 	// copying it, which F4 gives a method receiver and a pattern over a borrow.
 	reborrows bool
+	// writable marks a destination whose type has a `&mut` member, such as a parameter
+	// typed `&mut {v: number} | &{v: number}`. The callee can narrow it to that member and
+	// write through it, so it may be written through even when borrow is `&`.
+	writable bool
+}
+
+// narrow returns the kind of the borrow a source of kind kind gives the destination. A
+// destination that cannot be written through narrows a `&mut` source to `&`, as T4 does,
+// and no destination widens a `&` source.
+func (b *borrowDest) narrow(kind borrowKind) borrowKind {
+	if b.borrow == mutableBorrow || b.writable {
+		return kind
+	}
+	return immutableBorrow
 }
 
 // inferredReturnDest is a return with no annotation. It takes ownership of an owned

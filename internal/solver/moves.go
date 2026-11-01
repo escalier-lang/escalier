@@ -201,8 +201,7 @@ func (c *checker) isConcreteOwned(t soltype.Type) bool {
 // `fn dup<T>(x: T) -> [T, T]` a double move.
 //
 // A borrow is decided by borrowOfType, so an alias naming a borrow is one too. A borrow
-// moves only when it escapes to a longer-lived region, which a module-level write forces.
-// consumeAtGlobalWrite consumes that case.
+// never moves, since F2 copies it into every destination.
 //
 // A union is never movable, since isValueShaped reports true for every union.
 func (c *checker) isOwnedMovable(t soltype.Type) bool {
@@ -940,11 +939,12 @@ func (m *destructureMover) moveInto(dest liveness.VarID, destPath []placeSeg, at
 	c.fn.placeCopies = append(c.fn.placeCopies, placeCopy{dest: dest, destPath: destPath, src: at, expr: m.init})
 }
 
-// consumeAtGlobalWrite consumes the source place of a module-level store. A store
-// into a 'static global permanently transfers the value, so it consumes the source
-// whether owned or a borrow — using the source afterward could mutate what the global
-// now reads, the leak the affine rule closes. A value-type source copies and a
-// non-place source names no storage, so neither consumes.
+// consumeAtGlobalWrite consumes the source place of a module-level store. A store of an
+// owned value into a 'static global permanently transfers it, so using the source
+// afterward could mutate what the global now reads. A borrow source is copied, as D8
+// decides, and the global's `'static` path to it is what keeps a later conflicting path
+// from forming. A value-type source copies and a non-place source names no storage, so
+// neither consumes.
 func (c *checker) consumeAtGlobalWrite(source ast.Expr, sourceT soltype.Type, moveNode ast.Node, ref liveness.StmtRef) {
 	if c.fn == nil || c.fn.cfg == nil || sourceT == nil {
 		return
@@ -954,6 +954,9 @@ func (c *checker) consumeAtGlobalWrite(source ast.Expr, sourceT soltype.Type, mo
 		return
 	}
 	if !c.isReferenceShaped(sourceT) {
+		return
+	}
+	if _, isBorrow := c.borrowOfType(sourceT); isBorrow {
 		return
 	}
 	c.recordMovePlace(p, moveNode, ref)

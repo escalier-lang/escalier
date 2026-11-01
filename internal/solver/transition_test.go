@@ -243,12 +243,11 @@ func TestStaticEscapeTransition(t *testing.T) {
 	})
 }
 
-// TestStaticEscapeTransitionFromSource is the end-to-end move-engine counterpart.
-// Storing the borrow `p` into the module-level `sink` consumes p: the store transfers
-// it into the permanent 'static storage location, so the later `val snap: &{x: number} = p` reads a
-// moved value and is a use-after-move. The global-write exclusivity check skips the
-// consumed source's self-conflict, so the single UseAfterMoveError is the only
-// diagnostic.
+// TestStaticEscapeTransitionFromSource is the end-to-end counterpart. Storing the borrow `p`
+// into the module-level `sink` copies it, as D8 decides, and the copy is `'static`. sink keeps
+// a mutable path to p for the rest of the program, so the immutable path
+// `val snap: &{x: number} = p` breaks E2. The current checks report a `'static` escape
+// transition, and the dataflow pass reports a borrow conflict.
 func TestStaticEscapeTransitionFromSource(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		var sink = {x: 0}
@@ -258,9 +257,10 @@ func TestStaticEscapeTransitionFromSource(t *testing.T) {
 			snap
 		}
 	`)
-	require.ElementsMatch(t, []string{
-		"5:29-5:30: use of moved value 'p'",
-	}, messagesWithSpan(t, errs))
+	require.Equal(t, wantForPass(
+		[]string{"5:4-5:30: cannot assign 'p' to immutable 'snap': a `'static` escape still has mutable access to 'p' after this point"},
+		[]string{"5:29-5:30: cannot borrow 'p' as immutable while it is borrowed as mutable"},
+	), messagesWithSpan(t, errs))
 }
 
 // TestGlobalWriteMutTransition covers Option 1: a store into a module-level binding is a
@@ -553,11 +553,13 @@ func TestCollectOuterBindingsPreludeCache(t *testing.T) {
 // it with `&`/`&mut`, and asserts the transition verdict. The aliasing cases borrow
 // explicitly, since binding an owned value into another owned binding moves it rather
 // than aliasing it, which the move-engine tests cover separately. want is empty for the
-// safe cases.
+// safe cases. wantDataflow, when set, is what the case reports with the dataflow pass on, as
+// wantForPass picks.
 func TestMutabilityTransitionsFromSource(t *testing.T) {
 	tests := map[string]struct {
-		src  string
-		want []string
+		src          string
+		want         []string
+		wantDataflow []string
 	}{
 		// Rule 1 (mut→immutable): error when the mutable source is live after an
 		// immutable borrow of it.
@@ -614,22 +616,25 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 				}
 			`,
 		},
-		// `val z: &mut {x} = p` aliases p's borrow into z at z's lifetime. `sink =
-		// z` forces z's lifetime to 'static, and Rule 1 then reports that p still
-		// has mutable access to the same value. `val snap: &{x} = p` is a local
-		// immutable reborrow that does not extend p's region, so no further
-		// transition fires on it.
+		// `val z: &mut {x} = p` copies p's borrow into z. `sink = z` copies it into
+		// module-level state, so the global holds a `'static` mutable path to p. The current
+		// checks report that p still has mutable access to what the global holds. The
+		// dataflow pass reports where E2 breaks, at `val snap: &{x} = p`, the immutable path
+		// made while the `'static` mutable one is live.
 		"Rule1_TransitiveAliasEscape_Error": {
 			src: `
 				var sink = {x: 0}
 				fn f(p: &mut {x: number}) {
-				  val z: &mut {x: number} = p    // z aliases p, the same value
-				  sink = z                        // z's borrow escapes to 'static, mutably
-				  val snap: &{x: number} = p      // local immutable reborrow; p and z dead afterward
+				  val z: &mut {x: number} = p
+				  sink = z
+				  val snap: &{x: number} = p
 				}
 			`,
 			want: []string{
 				"5:7-5:11: cannot assign 'z' to immutable 'sink': 'p' still has mutable access to 'z' after this point",
+			},
+			wantDataflow: []string{
+				"6:32-6:33: cannot borrow 'p' as immutable while it is borrowed as mutable",
 			},
 		},
 		// G3 binds a `mut` borrow into a bare annotation by reborrowing it as a local
@@ -669,26 +674,22 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 				}
 			`,
 		},
-		// DISABLED until #1527, which follows a borrow copied into a second binding. c copies
-		// the borrow b holds, so the write to a.x while c is live conflicts with c. Today the
-		// exclusivity check does not see that c reaches a, so the program checks clean. The span
-		// below is a guess at where the check will blame the write. Confirm it when re-enabling.
-		/*
-			"ChainAlias_TargetLive_Error": {
-				src: `
-					fn test() {
-						val mut a: {x: number} = {x: 1}
-						val b: &mut {x: number} = &mut a
-						val c: &{x: number} = b
-						a.x = 2
-						c
-					}
-				`,
-				want: []string{
-					"6:7-6:10: cannot assign to 'a.x' while it is borrowed as immutable",
-				},
+		// c copies the borrow b holds, narrowed to `&`, so the write to a.x while c is live
+		// conflicts with c.
+		"ChainAlias_TargetLive_Error": {
+			src: `
+				fn test() {
+					val mut a: {x: number} = {x: 1}
+					val b: &mut {x: number} = &mut a
+					val c: &{x: number} = b
+					a.x = 2
+					c
+				}
+			`,
+			want: []string{
+				"6:6-6:9: cannot assign to 'a.x' while it is borrowed as immutable",
 			},
-		*/
+		},
 		// Conditional aliasing: c aliases both branches; a is live after the transition.
 		"Conditional_IfElse_Error": {
 			src: `
@@ -737,7 +738,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tc.src)
-			require.Equal(t, tc.want, transitionMessagesWithSpan(t, errs))
+			require.Equal(t, wantForPass(tc.want, tc.wantDataflow), transitionMessagesWithSpan(t, errs))
 		})
 	}
 }

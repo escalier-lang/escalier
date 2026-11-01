@@ -214,7 +214,11 @@ func (c *checker) emitFlow(source ast.Expr, holder eventHolder, dest flowDest, r
 	}
 
 	switch s := source.(type) {
-	case *ast.BorrowExpr, *ast.ObjectExpr, *ast.TupleExpr, *ast.FuncExpr:
+	case *ast.BorrowExpr:
+		c.noteBorrowDest(s, dest)
+		c.retargetTemp(s, holder)
+		return
+	case *ast.ObjectExpr, *ast.TupleExpr, *ast.FuncExpr:
 		c.retargetTemp(s, holder)
 		return
 	}
@@ -256,9 +260,20 @@ func (c *checker) emitBorrow(e *ast.BorrowExpr) {
 	}, ref)
 }
 
+// noteBorrowDest records dest as the destination of the borrow the written borrow e takes.
+func (c *checker) noteBorrowDest(e *ast.BorrowExpr, dest flowDest) {
+	t := c.fn.events
+	for _, i := range t.temps[e] {
+		if bev, ok := t.events[i].(*borrowEvent); ok && bev.node == e {
+			bev.dest = dest
+		}
+	}
+}
+
 // finishOwnershipEvents completes the current body's table once its body is walked. Each
-// written borrow takes the lifetime of its expression's type. Then each closure capture
-// settles, since the body is walked and every place that holds a closure is known.
+// written borrow takes the lifetime of its expression's type, then the destination
+// borrowFromDest gives it. Then each closure capture settles, since the body is walked and
+// every place that holds a closure is known.
 func (c *checker) finishOwnershipEvents() {
 	t := c.eventTable()
 	if t == nil {
@@ -279,9 +294,32 @@ func (c *checker) finishOwnershipEvents() {
 		if r, isRef := c.info.TypeOf(be).(*soltype.RefType); isRef {
 			bev.lifetime = r.Lt
 		}
+		c.borrowFromDest(t, bev)
 	}
 
 	c.settleFlowsWaitingOn(flowWait{capture: true, table: t}, false, true)
+}
+
+// borrowFromDest gives the written borrow bev the mutability and lifetime of the borrow
+// destination it flows into, when that destination is settled. A `&` destination narrows a
+// `&mut` borrow to `&`, the way a `&` parameter gives the callee a read-only view. A
+// `'static` destination makes the borrow `'static`. Any other destination, and one F3 has
+// not settled, leaves bev as written. table is the event table that holds bev.
+func (c *checker) borrowFromDest(table *ownershipEvents, bev *borrowEvent) {
+	if bev.dest == nil {
+		return
+	}
+
+	dest, _, settled := c.settleDest(table, bev.dest, bev.holder, false, false)
+	b, toBorrow := dest.(*borrowDest)
+	if !settled || !toBorrow {
+		return
+	}
+
+	bev.borrow = b.narrow(bev.borrow)
+	if b.lt != nil && soltype.IsStaticLifetime(b.lt) {
+		bev.lifetime = b.lt
+	}
 }
 
 // emitTempFlow emits the flow of source into the element at path of the literal or

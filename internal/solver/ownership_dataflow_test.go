@@ -20,6 +20,16 @@ func inferWithDataflow(t *testing.T, src string) []string {
 	return msgs
 }
 
+// wantForPass returns the diagnostics a test that infers with the default options expects:
+// wantDataflow when ownershipDataflowEnv turns the dataflow pass on and wantDataflow is not
+// nil, and want otherwise.
+func wantForPass(want, wantDataflow []string) []string {
+	if ownershipDataflowFromEnv() && wantDataflow != nil {
+		return wantDataflow
+	}
+	return want
+}
+
 // TestOwnershipDataflow covers E1, E2, and E3 with the dataflow pass on: a program each rule
 // rejects, a program each rule allows, moves and borrows across joins and loops, borrows that
 // last for a statement or for the rest of the program, and a diagnostic the pass leaves to the
@@ -574,6 +584,109 @@ func TestOwnershipDataflow(t *testing.T) {
 			`,
 			errs: []string{`cannot constrain "a" <: number`},
 		},
+		{
+			// The first program of B2. The global keeps the `'static` borrow of opts live for
+			// the rest of the program, so the write breaks E2.
+			name: "E2WriteAfterAStaticImmutableBorrow",
+			src: `
+				var cache: &{retries: number} = &{retries: 0}
+
+				export fn go() -> number {
+					val mut opts = {retries: 3}
+					cache = &opts
+					opts.retries = 4
+					return opts.retries
+				}
+			`,
+			errs: []string{"cannot assign to 'opts.retries' while it is borrowed as immutable"},
+		},
+		{
+			// The second program of B2. The `'static` parameter takes the borrow's lifetime, so
+			// the mutable borrow stays live after the call.
+			name: "E2ImmutableBorrowAfterAStaticMutableBorrow",
+			src: `
+				declare fn track(value: &'static mut {retries: number}) -> undefined
+				declare fn read(value: &{retries: number}) -> number
+
+				export fn go() -> number {
+					val mut opts = {retries: 3}
+					track(&mut opts)
+					return read(&opts)
+				}
+			`,
+			errs: []string{"cannot borrow 'opts' as immutable while it is borrowed as mutable"},
+		},
+		{
+			// Copying the borrow m into a `'static` parameter derives a `'static` loan of m.
+			name: "E2CopyIntoAStaticParameterStaysLive",
+			src: `
+				declare fn track(value: &'static mut {retries: number}) -> undefined
+				declare fn read(value: &{retries: number}) -> number
+
+				export fn go(m: &mut {retries: number}) -> number {
+					track(m)
+					return read(m)
+				}
+			`,
+			errs: []string{"cannot borrow 'm' as immutable while it is borrowed as mutable"},
+		},
+		{
+			// The store on one branch keeps the borrow live after the join.
+			name: "E2StaticBorrowOnOneBranch",
+			src: `
+				declare var sink: &{x: number}
+				fn go(c: boolean) -> number {
+					val mut p = {x: 1}
+					if c {
+						sink = &p
+					}
+					p.x = 2
+					return p.x
+				}
+			`,
+			errs: []string{"cannot assign to 'p.x' while it is borrowed as immutable"},
+		},
+		{
+			// z copies the parameter m with its own kind, which makes no new path, so passing
+			// m to a `&` parameter while z is live is allowed.
+			name: "CopyOfAParameterWithItsKindOk",
+			src: `
+				declare fn read(a: &{x: number}) -> number
+				fn go(m: &mut {x: number}) -> number {
+					val z = m
+					val n = read(m)
+					z.x = 1
+					return n
+				}
+			`,
+		},
+		{
+			// s narrows m to `&` and is read after the call, so passing m to a `&mut`
+			// parameter makes a mutable path while the immutable one is live.
+			name: "E2NarrowedCopyLiveAtAMutableUse",
+			src: `
+				declare fn write(a: &mut {x: number}) -> undefined
+				fn go(m: &mut {x: number}) -> number {
+					val s: &{x: number} = m
+					write(m)
+					return s.x
+				}
+			`,
+			errs: []string{"cannot borrow 'm' as mutable while it is borrowed as immutable"},
+		},
+		{
+			// s is not read after the call, so its immutable path has ended.
+			name: "NarrowedCopyDeadAtAMutableUseOk",
+			src: `
+				declare fn write(a: &mut {x: number}) -> undefined
+				fn go(m: &mut {x: number}) -> number {
+					val s: &{x: number} = m
+					val n = s.x
+					write(m)
+					return n
+				}
+			`,
+		},
 	}
 
 	for _, tc := range cases {
@@ -592,7 +705,8 @@ func TestOwnershipDataflow(t *testing.T) {
 // pass and the current checks report alike. Each program runs with the flag off and with it
 // on, and both runs report want, with spans. The cases cover a call that runs a closure, a
 // write through a `number`-typed index, the span a moved place is blamed at, the name of a
-// moved field or tuple, and a write that uses a moved place beside a live borrow.
+// moved field or tuple, a write that uses a moved place beside a live borrow, and a borrow
+// copied into a second binding.
 func TestOwnershipDataflowMatchesCurrentChecks(t *testing.T) {
 	cases := []struct {
 		name string
@@ -894,6 +1008,64 @@ func TestOwnershipDataflowMatchesCurrentChecks(t *testing.T) {
 				}
 			`,
 			want: []string{"10:13-10:16: use of moved value 'c'"},
+		},
+		{
+			// The program of B8. c copies the borrow a holds, so c reaches x too.
+			name: "CopiedBorrowConflictsAtTheCall",
+			src: `
+				declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
+				fn g() {
+					val mut x = {v: 1}
+					val a = &x
+					val c = a
+					val b = &mut x
+					readWrite(c, b)
+				}
+			`,
+			want: []string{"7:14-7:20: cannot borrow 'x' as mutable while it is borrowed as immutable"},
+		},
+		{
+			name: "CopiedBorrowWithNoConflictOk",
+			src: `
+				declare fn read(a: &{v: number}) -> number
+				fn g() -> number {
+					val mut x = {v: 1}
+					val a = &x
+					val c = a
+					return read(c) + read(a)
+				}
+			`,
+		},
+		{
+			// a is not read after the copy, and c still is, so the loan stays live.
+			name: "CopyKeepsTheLoanAfterTheOriginalHolderDies",
+			src: `
+				fn g() -> number {
+					val mut x = {v: 1}
+					val a = &x
+					val c = a
+					x.v = 2
+					return c.v
+				}
+			`,
+			want: []string{"6:6-6:9: cannot assign to 'x.v' while it is borrowed as immutable"},
+		},
+		{
+			// A reassignment copies the borrow the way a binding does.
+			name: "ReassignedCopyHoldsTheLoan",
+			src: `
+				declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
+				fn g() {
+					val mut x = {v: 1}
+					val mut y = {v: 2}
+					val a = &x
+					var c = &y
+					c = a
+					val b = &mut x
+					readWrite(c, b)
+				}
+			`,
+			want: []string{"9:14-9:20: cannot borrow 'x' as mutable while it is borrowed as immutable"},
 		},
 	}
 
