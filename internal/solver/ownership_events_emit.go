@@ -92,30 +92,6 @@ func borrowKindOf(mut bool) borrowKind {
 	return immutableBorrow
 }
 
-// provisionalFlow is a flow F3 has not settled yet. table holds the placeholder event at
-// index. source is the source expression, read for its type once the flow settles. A
-// closure capture and a destructured part have no source expression of their own, so
-// source is nil and sourceT holds the type of the value that flows.
-type provisionalFlow struct {
-	table   *ownershipEvents
-	index   int
-	source  ast.Expr
-	sourceT soltype.Type
-	dest    flowDest
-}
-
-// flowWait names what a provisional flow waits on. param is an unannotated parameter whose
-// body is still being walked. capture marks a closure capture that waits for the closure's
-// flow site, and table is the table of the body the closure is written in. callee marks an
-// argument whose callee's signature the call could not see, which waits for the module or
-// script to be inferred.
-type flowWait struct {
-	param   *soltype.FuncParam
-	capture bool
-	table   *ownershipEvents
-	callee  bool
-}
-
 // startOwnershipEvents opens the event table of the body about to be walked and records
 // it in Info under the body's function node. names maps the body's VarIDs to their names.
 func (c *checker) startOwnershipEvents(names map[liveness.VarID]string) {

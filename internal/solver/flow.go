@@ -5,7 +5,8 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// This file defines the destinations a flow can have, the columns of F2's table.
+// This file defines the destinations a flow can have, the columns of F2's table, and
+// the records of a flow F3 has not settled yet.
 
 // flowDest is the destination of one flow site. Each struct below is one kind of
 // destination.
@@ -62,3 +63,27 @@ func (*inferredReturnDest) isFlowDest() {}
 func (*paramDest) isFlowDest()          {}
 func (*calleeDest) isFlowDest()         {}
 func (*captureDest) isFlowDest()        {}
+
+// provisionalFlow is a flow F3 has not settled yet. table holds the placeholder event at
+// index. source is the source expression, read for its type once the flow settles. A
+// closure capture and a destructured part have no source expression of their own, so
+// source is nil and sourceT holds the type of the value that flows.
+type provisionalFlow struct {
+	table   *ownershipEvents
+	index   int
+	source  ast.Expr
+	sourceT soltype.Type
+	dest    flowDest
+}
+
+// flowWait names what a provisional flow waits on. param is an unannotated parameter whose
+// body is still being walked. capture marks a closure capture that waits for the closure's
+// flow site, and table is the table of the body the closure is written in. callee marks an
+// argument whose callee's signature the call could not see, which waits for the module or
+// script to be inferred.
+type flowWait struct {
+	param   *soltype.FuncParam
+	capture bool
+	table   *ownershipEvents
+	callee  bool
+}
