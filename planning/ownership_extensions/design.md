@@ -194,33 +194,47 @@ moves `p`, so `a` is the only owner. `val mut a = await &p` binds a borrow, and
 the existing D12 warning covers a `mut` on a borrow. The error and
 `rejectSharedAwait` are removed.
 
-### 3.2 A2. A reaction borrows its promise for `'static`
+### 3.2 A2. A reaction borrows its promise until the reaction's result settles
 
 The runtime keeps a reaction until the promise settles, and then hands it the
-same object every `await` sees. So each reaction method borrows its receiver
-immutably for `'static`, and its callback is a function the callee keeps, as
-E4 and D10 describe:
+same object every `await` sees. Dropping the promise does not cancel the
+reaction, since whoever holds its `resolve` function keeps it alive. So the
+lifetime of the promise itself does not bound how long the callback runs.
+
+The promise the reaction method returns does bound it. `q = p.then(cb)`
+settles only after `cb` has run. When `cb` returns a promise, `q` adopts it,
+so `q` also waits for an async callback's body. `catch` and `finally` settle
+their result once their callback has run, or once `p` has fulfilled and the
+`catch` callback never will. Each reaction method therefore borrows its
+receiver, and keeps its callback, for a lifetime `'a` that A4 ties to the
+returned promise:
 
 ```esc
 declare class Promise<T, E = never> {
-    then<R, F>(&'static self, onfulfilled: &'static fn (value: &'static T) -> R throws F) -> Promise<R, E | F>,
-    catch<R, G>(&'static self, onrejected: &'static fn (reason: &'static E) -> R throws G) -> Promise<&'static T | R, G>,
-    finally<F>(&'static self, onfinally: &'static fn () -> unknown throws F) -> Promise<&'static T, E | F>,
+    then<'a, R, F>(&'a self, onfulfilled: &'a fn (value: &'a T) -> R throws F) -> Promise<R, E | F>,
+    catch<'a, R, G>(&'a self, onrejected: &'a fn (reason: &'a E) -> R throws G) -> Promise<&'a T | R, G>,
+    finally<'a, F>(&'a self, onfinally: &'a fn () -> unknown throws F) -> Promise<&'a T, E | F>,
 }
 ```
 
 The declaration omits the `PromiseLike` return forms and the two-callback
-`then` overload, which follow the same pattern. Three consequences follow from
-the ordinary rules:
+`then` overload, which follow the same pattern. The reaction methods are
+bodyless and return a promise, so A4 holds `'a` until the caller awaits the
+returned promise, and keeps it for `'static` when the caller drops or stores
+that promise without awaiting it. Four consequences follow from the ordinary
+rules:
 
-- After `p.then(cb)`, `p` has a `'static` immutable borrow. `await &p` stays
-  legal. `await p` reports `cannot move 'p' while it is borrowed`, by E3.
-  `await &mut p` reports
+- While `q = p.then(cb)` is unawaited, `p` has a live immutable borrow.
+  `await &p` stays legal. `await p` reports
+  `cannot move 'p' while it is borrowed`, by E3. `await &mut p` reports
   `cannot borrow 'p' as mutable while it is borrowed as immutable`, by E2.
-- The callback receives `&'static T`. Passing the value on as owned reports
-  `cannot use borrowed &Flat as owned object`, by T6.
+- After `await q`, the borrow has ended, so `await p` and writes to the
+  callback's captures are legal again.
+- The callback receives `&'a T`. Passing the value on as owned reports
+  `cannot use borrowed &Flat as owned object`, by T6. Storing it anywhere that
+  outlives `'a` is rejected by L1.
 - `catch` and `finally` return a promise that settles to the same object `p`
-  settles to, so their results hold `&'static T`. `then` returns whatever its
+  settles to, so their results hold `&'a T`. `then` returns whatever its
   callback returns, so its result is owned when the callback returns an owned
   value.
 
@@ -232,18 +246,30 @@ async fn go() -> Promise<number> {
     val b = await p                        // error: cannot move 'p' while it is borrowed
     return a.x + (await q)
 }
+
+async fn after() -> Promise<number> {
+    val p = load()
+    val n = await p.then(fn (v) { return v.x })
+    val b = await p                        // accepted, since the reaction's result has settled
+    return b.x + n
+}
+
+fn forget() {
+    val p = load()
+    p.then(fn (v) { return v.x })          // the result is dropped, so p stays borrowed for 'static
+}
 ```
 
 A `.then` on a temporary, as in `load().then(cb)`, borrows a promise that no
 place holds, which D15 accepts. Nothing can await that promise again, so the
-`'static` borrow costs nothing.
+borrow of the receiver costs nothing however long it lasts.
 
-The `catch` result `Promise<&'static T | R, G>` mixes ownership when the
-fallback `R` is owned. Section 8.3 settles how that union is checked.
+The `catch` result `Promise<&'a T | R, G>` mixes ownership when the fallback
+`R` is owned. Section 8.3 settles how that union is checked.
 
-These `'static` borrows make a reaction on a promise held in a place costlier
-than an `await` of it. Section 8.7 explains when to prefer `await` and the
-warning that steers toward it.
+A reaction whose result is never awaited still freezes `p` and the
+callback's captures for the rest of the program. Section 8.7 explains when to
+prefer `await` and the warning that steers toward it.
 
 ### 3.3 A3. A borrow of a promise is a promise of a borrow
 
@@ -282,14 +308,21 @@ A `Promise<&'a mut T>` made from `&mut p` is exclusive in the way any `&mut p`
 is. It cannot be duplicated, since a promise moves. While it is live, `p` is
 mutably borrowed.
 
-A reaction on a promise of a borrow needs that borrow to be `'static`, by A2.
-`(&p).then(cb)` on a local `p` is accepted, since L1 lets the borrow of `p`
-reach `'static`, and it means the same as `p.then(cb)`. A reaction on a
-parameter whose borrow the signature does not make `'static` is rejected:
+A reaction on a promise of a borrow needs that borrow to outlive the
+reaction's `'a`, by A2. `(&p).then(cb)` on a local `p` is accepted, since L1
+lets the borrow of `p` reach `'a`, and it means the same as `p.then(cb)`. A
+reaction on a parameter's borrow is accepted when the function awaits the
+reaction's result, since `'a` then ends inside the call. It is rejected when
+the result is dropped, since A4 then makes `'a` `'static` and the
+signature does not make the parameter's borrow `'static`:
 
 ```esc
+async fn wait(p: Promise<&Flat>) -> Promise<number> {
+    return await p.then(fn (v) { return v.x })   // accepted
+}
+
 fn watch(p: Promise<&Flat>) {
-    p.then(fn (v) { return v.x })   // error: `then` keeps its callback until the promise settles, so it needs a promise of a 'static borrow, and 'p' holds a borrow that ends with the call; write `Promise<&'static Flat>` or `await` it instead
+    p.then(fn (v) { return v.x })   // error: the promise `then` returns is never awaited, so the runtime may keep its callback for 'static, and 'p' holds a borrow that ends with the call; await the promise `then` returns, or write `Promise<&'static Flat>`
 }
 ```
 
@@ -332,16 +365,18 @@ fn forget() {
 }
 ```
 
-The rule covers an `async fn` and an async closure. A function that is not
-`async` but returns a promise states in its signature what the promise holds,
-as in `fn later<'a>(p: &'a Flat) -> Promise<&'a Flat>`. Its body can keep a
-borrow past the call only by registering a reaction, which A2 makes `'static`.
+The rule covers every call whose result is a promise:
 
-A bodyless `declare fn` that returns a promise is checked as though it were an
-`async fn`. Its declaration cannot say how long the implementation reads its
-arguments, and I3 picks the form that rejects more programs. So
-`declare fn save(doc: &Doc) -> Promise<undefined>` holds `doc` until its
-promise settles.
+- An `async fn` or an async closure.
+- A bodyless `declare fn` or method that returns a promise. Its declaration
+  cannot say how long the implementation reads its arguments, and I3 picks
+  the form that rejects more programs. So
+  `declare fn save(doc: &Doc) -> Promise<undefined>` holds `doc` until its
+  promise settles. The reaction methods of A2 are such methods.
+- A function that is not `async` but returns a promise. Its body can keep a
+  borrow past the call only through a reaction or an async call, whose result
+  holds the borrow by this same rule. Returning that result hands the hold to
+  the caller.
 
 ### 3.5 A5. A suspension point is a call to code the checker cannot see
 
@@ -673,8 +708,9 @@ true, so the rules document keeps describing what the checker enforces.
 - **F4.** The list of places that borrow without a written `&` gains a loop
   over a borrow, which binds borrows as a pattern does. A `.then`, `.catch` or
   `.finally` receiver is already covered as a method receiver.
-- **E4.** A call to an `async fn` holds its arguments' borrows until its
-  promise settles, by A4. A generator holds them while it is live, by G4. An
+- **E4.** A call that returns a promise, including an `async fn` call and a
+  reaction, holds its arguments' borrows until that promise settles, by A2 and
+  A4. A generator holds them while it is live, by G4. An
   `await` counts as a call that may run any stored closure, by A5. These sit
   beside the closure rule, since a suspended body is a closure the runtime
   holds.
@@ -750,14 +786,14 @@ PR 5 adds that form of the message.
 ### 8.3 What `catch` returns when the fallback is owned
 
 `p.catch(fn (e) { return {x: 0} })` produces a promise that settles either to
-`p`'s value, a `&'static Flat`, or to a fresh `Flat`. That union mixes
-ownership. The options are:
+`p`'s value, a `&'a Flat`, or to a fresh `Flat`. That union mixes ownership.
+The options are:
 
 - **Reject it by T8** and ask the callback to write `&{x: 0}`. L1 lets that
-  borrow reach `'static`, since nothing else reaches the fresh value. The
-  result is then `Promise<&'static Flat>`.
+  borrow reach `'a`, since nothing else reaches the fresh value. The result is
+  then `Promise<&'a Flat>`.
 - **Join the union to a borrow implicitly.** The callback's owned value would
-  be treated as a `'static` borrow. This hides a borrow F4 says is written.
+  be treated as a borrow. This hides a borrow F4 says is written.
 
 Recommendation: reject by T8. The diagnostic is the mixed-ownership one:
 `mixed-ownership union: members disagree on ownership; make ownership uniform first`.
@@ -773,13 +809,21 @@ started, so the checker cannot pick a shorter lifetime. A caller that wants
 
 Recommendation: keep A4 as stated.
 
-### 8.5 The reaction callback's parameter is a `'static` borrow
+### 8.5 The reaction callback's parameter is a borrow
 
-A2 gives `onfulfilled` a `&'static T`. The alternative is an owned `T` for the
-first reaction only, which no type can express, since the order of reactions
-is a runtime fact. A callback that needs an owned value builds one from the
-fields it reads, and a caller that needs the value owned writes `await p`
-instead of registering a reaction.
+A2 gives `onfulfilled` a `&'a T`, where `'a` lasts until the reaction's
+result settles. The alternative is an owned `T` for the first reaction only,
+which no type can express, since the order of reactions is a runtime fact. A
+callback that needs an owned value builds one from the fields it reads, and a
+caller that needs the value owned writes `await p` instead of registering a
+reaction.
+
+A2 also considered tying `'a` to the lifetime of `p` itself. That is
+unsound, since dropping `p` does not cancel its reactions. It also considered
+ending `'a` when the caller awaits `p` rather than the reaction's result. The
+specification runs earlier reactions on `p` first, but an async callback's
+body can still be running after its own promise returns, so only the
+reaction's result covers it.
 
 Recommendation: keep A2 as stated.
 
@@ -808,16 +852,16 @@ suspensions too.
 Recommendation: file the gap against the ownership rules and leave A5 as the
 link. [#2445](https://github.com/escalier-lang/escalier/issues/2445) tracks the gap.
 
-### 8.7 Prefer `await` to a reaction on a promise held in a place
+### 8.7 Prefer `await` to a reaction whose result is dropped
 
-A2's `'static` borrows follow from what the runtime does, and they make a
-reaction costlier than an `await` of the same promise. `await &p` borrows
-`p` only until the result's last use, and a local an `async fn` body reads
-across an `await` stays free between uses. `p.then(cb)` freezes `p` and
-every capture of `cb` for the rest of the program, since E2 rejects every
-write after a `'static` immutable path.
+A reaction whose result the caller awaits costs about what an `await` of the
+same promise costs, since A2 ends its borrows when the result settles. A
+reaction whose result is dropped or stored without an `await` holds its
+borrows for `'static`. It freezes its receiver and every capture of its
+callback for the rest of the program, since E2 rejects every write after a
+`'static` immutable path.
 
-How much a reaction costs depends on its receiver:
+How much a dropped reaction costs depends on its receiver:
 
 - A temporary, as in `load().then(cb)`, costs nothing through its receiver,
   since nothing else can await that promise. Its callback's captures cost the
@@ -826,29 +870,31 @@ How much a reaction costs depends on its receiver:
 - A promise held in a place, as in `p.then(cb)`, leaves `p` awaitable only as
   `&p`. Its value can never be owned or written afterward.
 - Code that cannot `await`, such as a synchronous callback or a constructor,
-  and code that must not wait for the promise, needs a reaction. A reaction on
-  a temporary fits there.
+  and code that must not wait for the promise, needs a reaction whose result
+  it drops. A reaction on a temporary fits there.
 
 So inside an `async fn` or an async closure, a reaction whose receiver is a
-place reports a warning, `ReactionOnPlaceWarning`:
+place and whose result is never awaited reports a warning,
+`ReactionOnPlaceWarning`:
 
 ```esc
 async fn go() -> Promise<number> {
     val p = load()
-    val q = p.then(fn (v) { return v.x })   // warns: calling `then` on 'p' borrows it for 'static, so 'p' can never be moved or awaited by value again; in an `async fn`, await it with `await &p` instead
-    return (await &p).x + (await q)
+    p.then(fn (v) { return v.x })   // warns: the promise `then` returns is never awaited, so 'p' stays borrowed for 'static and can never be moved or awaited by value again; await that promise, or await 'p' with `await &p` instead
+    return (await &p).x
 }
 ```
 
-The warning does not fire on a temporary receiver, or outside an `async fn`,
-where `await` is not available. [#2447](https://github.com/escalier-lang/escalier/issues/2447) implements it.
+The warning does not fire on a temporary receiver, on a reaction whose result
+the function awaits, or outside an `async fn`, where `await` is not
+available. [#2447](https://github.com/escalier-lang/escalier/issues/2447) implements it.
 
 ## 9. Comparison with Rust
 
 | Rule | Rust behaviour | Verdict | Note |
 |---|---|---|---|
 | A1 three `await` forms | `.await` takes the future by value. A future is polled once and then consumed | Differs | Escalier adds `await &p` and `await &mut p`, since a JavaScript promise can be awaited again and returns the same object. Rust's `Shared` future from `futures` is the closest match. It hands each awaiter a clone, where `await &p` hands out a borrow |
-| A2 reactions borrow for `'static` | No reactions. A spawned task requires `'static` captures | Same | `tokio::spawn` asks the same of its future that `then` asks of its callback |
+| A2 reactions borrow until their result settles | No reactions. A spawned task requires `'static` captures, and a scoped task borrows until its scope joins | Differs | An awaited reaction acts like a scoped task, and a dropped one like `tokio::spawn`, which needs `'static` |
 | A3 borrow of a promise | `&Future` is not awaitable. `Shared<F>` yields clones | No equivalent | |
 | A4 an `async fn` holds its borrows until settled | An `async fn` returns `impl Future + 'a`, which holds its borrows until it is dropped | Differs | Rust futures are lazy, so dropping one ends the borrows. A JavaScript `async fn` runs eagerly, so only settling ends them |
 | G1 three `yield` forms | Coroutines are unstable. `gen` blocks yield owned values | Differs | |
@@ -887,7 +933,8 @@ The reaction methods in
 [prelude.esc](../../internal/interop/data/std/prelude.esc) take `&self` and a
 plain `fn` callback today. They change to the form A2 gives. The `Promise`
 entry in [mutability.go](../../internal/dts_to_esc/mutability.go) keeps them
-off `&mut self`, and its comment changes to say they borrow for `'static`.
+off `&mut self`, and its comment changes to say they borrow their receiver
+until the promise they return settles.
 
 ### 10.3 X3. `Iterable<T>`, `Iterator<T>` and `Generator<…>`
 
@@ -975,14 +1022,12 @@ section 7 lists. Each PR runs `UPDATE_SNAPS=true go test ./...` and
 `UPDATE_FIXTURES=true go test ./cmd/...` and reviews the fixture deltas.
 
 Each issue below is one PR. The table lists them in an order that respects
-their dependencies. Five of the dependencies are open issues in the
+their dependencies. Four of the dependencies are open issues in the
 "Simplify ownership, lifetime, and mutability rules and implementation"
 milestone, which the rules here build on:
 
 - [#2247](https://github.com/escalier-lang/escalier/issues/2247) makes a `'static` borrow block later writes and new borrows. A2,
   A4 and G2 each keep a borrow live past the frame and rely on it.
-- [#2289](https://github.com/escalier-lang/escalier/issues/2289) accepts a `&'static self` receiver, which the reaction
-  declarations in A2 use.
 - [#2318](https://github.com/escalier-lang/escalier/issues/2318) and [#2290](https://github.com/escalier-lang/escalier/issues/2290) bind `&mut` borrows through a pattern over a
   `&mut` borrow and through a mutably borrowed array, which R1 relies on for
   `for x in &mut arr`.
@@ -991,10 +1036,10 @@ milestone, which the rules here build on:
 
 | Issue | Rules | What the PR does | Depends on |
 |---|---|---|---|
-| [#2426](https://github.com/escalier-lang/escalier/issues/2426) | A1, A2, A6 | Gives `await` its three forms and makes reactions borrow for `'static`. Changes the reaction methods in `prelude.esc` per X2, removes `SharedAwaitIntoMutError`, and removes promise from the value types in `requirements.md` | [#2247](https://github.com/escalier-lang/escalier/issues/2247), [#2289](https://github.com/escalier-lang/escalier/issues/2289) |
+| [#2426](https://github.com/escalier-lang/escalier/issues/2426) | A1, A6 | Gives `await` its three forms, removes `SharedAwaitIntoMutError`, and removes promise from the value types in `requirements.md` | |
 | [#2424](https://github.com/escalier-lang/escalier/issues/2424) | | Distributes a borrow over a union, the rule A3 builds on | |
-| [#2427](https://github.com/escalier-lang/escalier/issues/2427) | A3, A7 | Normalizes a borrow of a promise to a promise of a borrow, refines the D12 warning per section 7, and adds `ReactionBorrowLifetimeError` | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2424](https://github.com/escalier-lang/escalier/issues/2424) |
-| [#2438](https://github.com/escalier-lang/escalier/issues/2438) | A4, A5 | Makes an `async fn` call hold its arguments' borrows until its promise settles, which closes the `show` hole in section 2 | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2247](https://github.com/escalier-lang/escalier/issues/2247) |
+| [#2438](https://github.com/escalier-lang/escalier/issues/2438) | A2, A4, A5 | Makes a call that returns a promise hold its arguments' borrows until that promise settles, which closes the `show` hole in section 2. Applies the same rule to reactions and changes the reaction methods in `prelude.esc` per X2 | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2247](https://github.com/escalier-lang/escalier/issues/2247) |
+| [#2427](https://github.com/escalier-lang/escalier/issues/2427) | A3, A7 | Normalizes a borrow of a promise to a promise of a borrow, refines the D12 warning per section 7, and adds `ReactionBorrowLifetimeError` | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2424](https://github.com/escalier-lang/escalier/issues/2424), [#2438](https://github.com/escalier-lang/escalier/issues/2438) |
 | [#2439](https://github.com/escalier-lang/escalier/issues/2439) | G4 | Makes a generator hold its arguments' borrows while it is live, which closes the `each` hole in section 2 | |
 | [#2428](https://github.com/escalier-lang/escalier/issues/2428) | G1 to G3, G5 | Gives `yield` its three forms and keeps a yielded borrow live for the rest of the body | [#2247](https://github.com/escalier-lang/escalier/issues/2247) |
 | [#2440](https://github.com/escalier-lang/escalier/issues/2440) | R2 | Binds a fresh loop variable on each iteration in the control-flow graph | |
@@ -1002,7 +1047,7 @@ milestone, which the rules here build on:
 | [#2444](https://github.com/escalier-lang/escalier/issues/2444) | R1, R3 | Gives `for` loops their three forms, adds `ImmutableIteratorLoopError` and the loop form of the moved-value message from section 8.2 | [#2428](https://github.com/escalier-lang/escalier/issues/2428), [#2440](https://github.com/escalier-lang/escalier/issues/2440), [#2441](https://github.com/escalier-lang/escalier/issues/2441), [#2318](https://github.com/escalier-lang/escalier/issues/2318), [#2290](https://github.com/escalier-lang/escalier/issues/2290) |
 | [#2442](https://github.com/escalier-lang/escalier/issues/2442) | X3, X4 | Changes the element-reading iterator methods and the `Iterable` and `Generator` declarations | [#2444](https://github.com/escalier-lang/escalier/issues/2444), [#2300](https://github.com/escalier-lang/escalier/issues/2300) |
 | [#2443](https://github.com/escalier-lang/escalier/issues/2443) | S1 to S3 | Applies the rules to async generators, including the implicit `await` of a promise operand to `yield` | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2438](https://github.com/escalier-lang/escalier/issues/2438), [#2444](https://github.com/escalier-lang/escalier/issues/2444) |
-| [#2447](https://github.com/escalier-lang/escalier/issues/2447) | A2 | Warns on a reaction to a promise held in a place inside an `async fn`, as section 8.7 describes | [#2426](https://github.com/escalier-lang/escalier/issues/2426) |
+| [#2447](https://github.com/escalier-lang/escalier/issues/2447) | A2 | Warns on a reaction to a promise held in a place whose result is never awaited inside an `async fn`, as section 8.7 describes | [#2438](https://github.com/escalier-lang/escalier/issues/2438) |
 
 [#2439](https://github.com/escalier-lang/escalier/issues/2439), [#2440](https://github.com/escalier-lang/escalier/issues/2440) and [#2441](https://github.com/escalier-lang/escalier/issues/2441) need nothing else and can land first.
 
