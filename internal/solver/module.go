@@ -1052,9 +1052,11 @@ func (c *checker) inferComponent(
 		} else {
 			// Every use of a weak binding shares its variables, so a variable whose values
 			// flow into one is shared by every use of this binding too. It is moved to lvl
-			// so that generalizing does not quantify it. Only a weak binding noted so far
-			// has variables at lvl, so the walk is skipped until the module has one.
-			if !b.weak && len(c.weakBindings) > 0 {
+			// so that generalizing does not quantify it. A variable reaches lvl only by
+			// flowing into a weak binding, so the walk is skipped until the module has one.
+			// weakBindingVars holds every weak binding var from phase 1 on, including those
+			// of later bindings in this component, which noteWeakBinding has not recorded yet.
+			if !b.weak && c.weakBindingVars.Len() > 0 {
 				c.lowerWeakInputs(b.v, lvl)
 			}
 			scheme = c.generalize(b.v, lvl)

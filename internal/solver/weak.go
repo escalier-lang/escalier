@@ -103,11 +103,13 @@ type weakReader struct {
 
 // noteWeakReader records the generalized module-level binding b for settleWeakBindings when
 // its type reaches a weak variable at or below lvl. scheme is the scheme b was bound to.
-// Only a weak binding of the module mints a variable at lvl that a later binding can
-// read, so the walk is skipped until the module has one.
+// Only a weak binding of the module mints a variable at lvl that a binding can read, so
+// the walk is skipped until the module has one. It reads weakBindingVars, which holds the
+// binding var of a weak binding later in b's own component before noteWeakBinding records
+// that binding.
 func (c *checker) noteWeakReader(b *componentBinding, scheme TypeScheme, lvl int) {
 	sc, ok := scheme.(*PolyScheme)
-	if !ok || len(c.weakBindings) == 0 {
+	if !ok || c.weakBindingVars.Len() == 0 {
 		return
 	}
 	if len(scanWeakVars(b.v, lvl)) > 0 {
@@ -501,17 +503,28 @@ func (s *weakCompanionScanner) typeOf(v *soltype.TypeVarType) soltype.Type {
 // upper bounds. When the bounds pol reads are empty, it is the type the other bounds give,
 // and with no bound of either kind it is `never`.
 func boundsType(v *soltype.TypeVarType, pol soltype.Polarity) soltype.Type {
+	side, ok := boundsSide(v, pol)
+	if !ok {
+		return &soltype.NeverType{}
+	}
+	return coalesce(v, side)
+}
+
+// boundsSide returns the polarity of the bounds boundsType reads for v at pol: positive
+// for v's lower bounds and negative for its upper bounds. It returns false when v has no
+// bound of either kind.
+func boundsSide(v *soltype.TypeVarType, pol soltype.Polarity) (soltype.Polarity, bool) {
 	lower := coalesce(v, soltype.Positive)
 	upper := coalesce(v, soltype.Negative)
 	switch {
 	case pol == soltype.Negative && !isUnknown(upper):
-		return upper
+		return soltype.Negative, true
 	case !isNeverType(lower):
-		return lower
+		return soltype.Positive, true
 	case !isUnknown(upper):
-		return upper
+		return soltype.Negative, true
 	}
-	return &soltype.NeverType{}
+	return soltype.Positive, false
 }
 
 // joinAll returns the union of ts, or its one member.
@@ -620,7 +633,9 @@ func (c *checker) lowerToLevel(v *soltype.TypeVarType, lvl int) {
 }
 
 // simplifyWeakReader returns sc's body coalesced at sc's level, with each type variable at
-// or below weakLvl replaced by the type boundsType gives it at the polarity it occurs at.
+// or below weakLvl replaced by the type boundsType gives it at the polarity it occurs at. A
+// variable at or below weakLvl inside the bounds a replacement reads is replaced the same
+// way.
 //
 // Coalescing reads a variable through the classes of variables that always occur
 // together, and drops a quantified variable that occurs at one polarity in favor of its
@@ -651,7 +666,12 @@ func simplifyWeakReader(sc *PolyScheme, weakLvl int) soltype.Type {
 		keep.Add(v)
 	}
 	simplified := coalesceSchemeKeeping(sc.Body, sc.Level, sc.declared, sc.declaredLts, keep, true)
-	return simplified.Accept(&weakReaderInliner{weak: weak}, soltype.Positive)
+	inliner := &weakReaderInliner{
+		weak: weak,
+		held: set.FromSlice(slices.Collect(maps.Values(weak))),
+		open: set.NewSet[*soltype.TypeVarType](),
+	}
+	return simplified.Accept(inliner, soltype.Positive)
 }
 
 // weakReaderInliner is the visitor behind simplifyWeakReader. weak maps the ID of each
@@ -659,17 +679,99 @@ func simplifyWeakReader(sc *PolyScheme, weakLvl int) soltype.Type {
 // variable in its place.
 type weakReaderInliner struct {
 	weak map[int]*soltype.TypeVarType
+	// held holds the variables weak maps to.
+	held set.Set[*soltype.TypeVarType]
+	// open holds each variable whose replacement is being built, so a bound that reaches
+	// one of them again is coalesced instead of replaced a second time.
+	open set.Set[*soltype.TypeVarType]
 }
 
 func (w *weakReaderInliner) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
-	v, ok := t.(*soltype.TypeVarType)
-	if !ok {
-		return soltype.EnterResult{}
-	}
-	if orig, isWeak := w.weak[v.ID]; isWeak {
-		return soltype.EnterResult{Type: boundsType(orig, pol), SkipChildren: true}
+	switch t := t.(type) {
+	case *soltype.UnionType:
+		if pol == soltype.Positive {
+			return w.enterMembers(t.Types, pol)
+		}
+	case *soltype.IntersectionType:
+		if pol == soltype.Negative {
+			return w.enterMembers(t.Types, pol)
+		}
+	case *soltype.TypeVarType:
+		if orig, isWeak := w.weak[t.ID]; isWeak {
+			return soltype.EnterResult{Type: w.replacement(orig, pol), SkipChildren: true}
+		}
 	}
 	return soltype.EnterResult{}
+}
+
+// enterMembers rewrites the members of a union at a positive position or of an
+// intersection at a negative one. A weak variable with no bound at pol adds nothing to such
+// a node, so it is dropped when another member is left to give the position a type. Only a
+// weak variable that is the node's sole content reads its other bounds, as boundsType does.
+// In
+//
+//	val mut seen = Map()
+//	fn remember(mut value) {
+//	    value.retries = 0
+//	    seen.set("last", value)
+//	}
+//
+// `value`'s upper bounds are `{retries: number}` and `seen`'s value type, which has no
+// upper bound. `value` reads `{retries: number}`, not its meet with the values passed to
+// `remember`.
+func (w *weakReaderInliner) enterMembers(members []soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	rest := make([]soltype.Type, 0, len(members))
+	for _, m := range members {
+		if v, ok := m.(*soltype.TypeVarType); ok {
+			if orig, isWeak := w.weak[v.ID]; isWeak {
+				if side, bounded := boundsSide(orig, pol); !bounded || side != pol {
+					continue
+				}
+			}
+		}
+		rest = append(rest, m)
+	}
+	if len(rest) == 0 || len(rest) == len(members) {
+		return soltype.EnterResult{}
+	}
+	var joined soltype.Type
+	if pol == soltype.Positive {
+		joined = newUnion(nil, rest)
+	} else {
+		joined = newIntersection(nil, rest)
+	}
+	return soltype.EnterResult{Type: joined.Accept(w, pol), SkipChildren: true}
+}
+
+// replacement returns the type boundsType gives the weak variable v at pol, with each other
+// weak variable in the bounds it reads replaced by its own replacement. In
+//
+//	fn pick(f) { return fn (x) { return x } }
+//	fn h(y) { return g(y) }
+//	val g = pick(h)
+//	val n = h(5)
+//	val s = h("a")
+//
+// h's binding var is weak, since h flows into pick's `f`. Its replacement is h's function
+// type, whose `y` is weak too. `y`'s upper bounds reach no type, so `y` reads its lower
+// bounds, the arguments h is called with, and h renders `fn (y: 5 | "a") -> 5 | "a"`.
+// Coalescing h's function type alone would read `y` by its upper bounds and show
+// `unknown`.
+func (w *weakReaderInliner) replacement(v *soltype.TypeVarType, pol soltype.Polarity) soltype.Type {
+	side, ok := boundsSide(v, pol)
+	if !ok {
+		return &soltype.NeverType{}
+	}
+	if w.open.Contains(v) {
+		return coalesce(v, side)
+	}
+	w.open.Add(v)
+	defer w.open.Remove(v)
+	// coalesce keeps the type parameters of each function type it reaches, so they are
+	// kept here too.
+	held := w.held.Union(funcTypeParamVars(v))
+	held.Remove(v)
+	return coalesceKeeping(v, side, held, nil, nil).Accept(w, side)
 }
 
 func (w *weakReaderInliner) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }

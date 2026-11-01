@@ -224,6 +224,26 @@ val s = h("a")
 			},
 		},
 		{
+			// h and g name each other, so they share a component, and h is finalized before
+			// g. h flows into pick's `f` and y flows into g's parameter, so h quantifies
+			// nothing. Its parameter shows the arguments of every call, as in the case
+			// above where h and g are in separate components.
+			name: "AFunctionInAWeakBindingsComponentStaysMonomorphic",
+			src: `
+fn pick(f) { return fn (x) { return x } }
+fn h(y) { return g(y) }
+val g = pick(h)
+val n = h(5)
+val s = h("a")
+`,
+			values: map[string]string{
+				"g": `fn (x: 5 | "a") -> 5 | "a"`,
+				"h": `fn (y: 5 | "a") -> 5 | "a"`,
+				"n": `5 | "a"`,
+				"s": `5 | "a"`,
+			},
+		},
+		{
 			// z flows only into the result, never into g, so h still quantifies it.
 			name: "AParameterThatSkipsTheWeakFunctionStaysGeneric",
 			src: `
