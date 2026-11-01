@@ -260,10 +260,9 @@ func (c *checker) holdsOnlyValueTypes(v *soltype.TypeVarType, seen set.Set[*solt
 }
 
 // placeSeg is one step of a movePlace path: a field reached from the place before it.
-// The kind tags how the field is named. Every segment built today is a namedSeg
-// carrying a field name, so a path models the same field chains as a plain name list.
-// The tag leaves room for a symbol-keyed segment without conflating a symbol key with a
-// string field of the same text. Adding that kind is part of the M7 computed-key work.
+// The kind tags how the field is named, so a rest element's segment never matches a
+// string field of the same text. The tag leaves room for a symbol-keyed segment too.
+// Adding that kind is part of the M7 computed-key work.
 type placeSeg struct {
 	kind placeSegKind
 	name string
@@ -276,6 +275,10 @@ const (
 	// string-literal index `obj["a"]`, or an element `xs[0]`, whose name is `0`. The
 	// segment's name holds that field name.
 	namedSeg placeSegKind = iota
+	// restSeg names every element of a tuple from a position on, the part a rest
+	// element such as the `...rest` of `[a, ...rest]` takes. Its name is the position
+	// followed by `...`, as in `1...`.
+	restSeg
 )
 
 // movePlace identifies the storage location the move engine tracks: a root binding
@@ -353,10 +356,10 @@ func (c *checker) chainPlace(e ast.Expr) (movePlace, bool, bool) {
 	return movePlace{}, false, false
 }
 
-// maxElementIndex is the largest index indexSegment gives its own place. Above it a
-// float64 no longer holds every integer, and JavaScript spells a key past 1e21 in
-// exponent form, so the decimal digits would not name the key the runtime reads.
-const maxElementIndex = 1 << 53
+// maxElementIndex is the largest index indexSegment gives its own place. canonicalIndex
+// reads an element's name back as an int, which holds every index up to this bound on
+// any platform.
+const maxElementIndex = math.MaxInt32
 
 // indexSegment returns the name of the place segment an index key names, and false for
 // a dynamic key. Two keys name a segment:
@@ -369,50 +372,73 @@ const maxElementIndex = 1 << 53
 //
 // Any other key is dynamic, such as `i: number`, `i: 0 | 1`, `xs[-1]`, or `xs[1.5]`. A key
 // with no recorded type is dynamic too.
+//
+// The first answer for a key with a recorded type is kept in Info and returned from then
+// on, so every place built from the key agrees, including one the dataflow pass builds
+// after inference has added bounds to the key's type.
 func (c *checker) indexSegment(index ast.Expr) (string, bool) {
 	if name, ok := constStringKey(index); ok {
 		return name, true
 	}
-
-	var n float64
 	if lit, ok := index.(*ast.LiteralExpr); ok {
 		num, isNum := lit.Lit.(*ast.NumLit)
 		if !isNum {
 			return "", false
 		}
-		n = num.Value
-	} else {
-		t := c.info.TypeOf(index)
-		if t == nil {
-			return "", false
-		}
-		key, ok := c.boundValueType(t)
-		if !ok {
-			return "", false
-		}
-		lit, ok := key.(*soltype.LitType)
-		if !ok {
-			return "", false
-		}
-		num, ok := lit.Lit.(*soltype.NumLit)
-		if !ok {
-			return "", false
-		}
-		n = num.Value
+		return elementName(num.Value)
 	}
 
+	t := c.info.TypeOf(index)
+	if t == nil {
+		return "", false
+	}
+	if seg, ok := c.info.indexSegments[index]; ok {
+		return seg.name, seg.ok
+	}
+
+	name, ok := "", false
+	if key, bound := c.boundValueType(t); bound {
+		if lit, isLit := key.(*soltype.LitType); isLit {
+			if num, isNum := lit.Lit.(*soltype.NumLit); isNum {
+				name, ok = elementName(num.Value)
+			}
+		}
+	}
+
+	if c.info.indexSegments == nil {
+		c.info.indexSegments = map[ast.Expr]indexSegmentAnswer{}
+	}
+	c.info.indexSegments[index] = indexSegmentAnswer{name: name, ok: ok}
+	return name, ok
+}
+
+// indexSegmentAnswer is one answer of indexSegment: the segment name, and whether the key
+// names a segment at all.
+type indexSegmentAnswer struct {
+	name string
+	ok   bool
+}
+
+// elementName returns the segment name of the element at position n, and false when n is
+// not a non-negative integer no larger than maxElementIndex.
+func elementName(n float64) (string, bool) {
 	if n < 0 || n > maxElementIndex || n != math.Trunc(n) {
 		return "", false
 	}
-	return strconv.FormatInt(int64(n), 10), true
+	return strconv.Itoa(int(n)), true
 }
 
 // extendPlace returns base with one more named field segment appended, copying the
 // path so sibling places built from the same base never share backing storage.
 func extendPlace(base movePlace, field string) movePlace {
+	return extendPlaceSeg(base, placeSeg{kind: namedSeg, name: field})
+}
+
+// extendPlaceSeg returns base with seg appended, copying the path as extendPlace does.
+func extendPlaceSeg(base movePlace, seg placeSeg) movePlace {
 	path := make([]placeSeg, len(base.path)+1)
 	copy(path, base.path)
-	path[len(base.path)] = placeSeg{kind: namedSeg, name: field}
+	path[len(base.path)] = seg
 	return movePlace{root: base.root, path: path}
 }
 
@@ -475,32 +501,28 @@ func segmentsOverlap(a, b placeSeg) bool {
 	if a == b {
 		return true
 	}
-	if a.kind != b.kind {
-		return false
-	}
-	aFrom, aRest := restSegmentStart(a.name)
-	bFrom, bRest := restSegmentStart(b.name)
+	aFrom, aRest := restSegmentStart(a)
+	bFrom, bRest := restSegmentStart(b)
 	switch {
 	case aRest && bRest:
 		return true
-	case aRest:
+	case aRest && b.kind == namedSeg:
 		j, isElement := canonicalIndex(b.name)
 		return isElement && j >= aFrom
-	case bRest:
+	case bRest && a.kind == namedSeg:
 		j, isElement := canonicalIndex(a.name)
 		return isElement && j >= bFrom
 	}
 	return false
 }
 
-// restSegmentStart returns the position a rest element's segment such as `1...` starts at,
-// and false for any other segment.
-func restSegmentStart(name string) (int, bool) {
-	pos, isRest := strings.CutSuffix(name, "...")
-	if !isRest {
+// restSegmentStart returns the position a rest segment such as `1...` starts at, and false
+// for any other segment.
+func restSegmentStart(seg placeSeg) (int, bool) {
+	if seg.kind != restSeg {
 		return 0, false
 	}
-	return canonicalIndex(pos)
+	return canonicalIndex(strings.TrimSuffix(seg.name, "..."))
 }
 
 // renderPlace names a place for a diagnostic: the root binding's name followed by
@@ -519,19 +541,19 @@ func (c *checker) renderPlace(p movePlace) string {
 
 // writePlaceSeg appends one segment of a place's path to b. A segment whose name is a valid
 // identifier renders as `.name`. An element segment renders as `[0]`, the way `xs[0]` is
-// written. Any other segment renders in bracket notation as `["name"]`.
+// written, and a rest segment renders as `[1...]`. Any other segment renders in bracket
+// notation as `["name"]`.
 func writePlaceSeg(b *strings.Builder, seg placeSeg) {
+	_, isElement := canonicalIndex(seg.name)
 	switch {
+	case seg.kind == restSeg || isElement:
+		b.WriteByte('[')
+		b.WriteString(seg.name)
+		b.WriteByte(']')
 	case isDotPlaceSegment(seg.name):
 		b.WriteByte('.')
 		b.WriteString(seg.name)
 	default:
-		if _, isElement := canonicalIndex(seg.name); isElement {
-			b.WriteByte('[')
-			b.WriteString(seg.name)
-			b.WriteByte(']')
-			return
-		}
 		b.WriteByte('[')
 		b.WriteString(strconv.Quote(seg.name))
 		b.WriteByte(']')
@@ -801,12 +823,12 @@ func (w *patternPlaceWalk) elements(elems []ast.Pat, at movePlace) {
 
 		if rest, ok := elem.(*ast.RestPat); ok {
 			if !w.skipRests {
-				w.walk(rest.Pattern, extendPlace(at, elementSeg(i, elem).name))
+				w.walk(rest.Pattern, extendPlaceSeg(at, elementSeg(i, elem)))
 			}
 			continue
 		}
 
-		w.walk(elem, extendPlace(at, elementSeg(i, elem).name))
+		w.walk(elem, extendPlaceSeg(at, elementSeg(i, elem)))
 	}
 }
 
@@ -816,7 +838,7 @@ func (w *patternPlaceWalk) elements(elems []ast.Pat, at movePlace) {
 func elementSeg(i int, elem ast.Pat) placeSeg {
 	name := strconv.Itoa(i)
 	if _, ok := elem.(*ast.RestPat); ok {
-		name += "..."
+		return placeSeg{kind: restSeg, name: name + "..."}
 	}
 	return placeSeg{kind: namedSeg, name: name}
 }

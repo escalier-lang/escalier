@@ -236,6 +236,48 @@ func TestLiteralIndexConflicts(t *testing.T) {
 			want:         []string{},
 			wantDataflow: []string{"5:6-5:12: cannot assign to 't[0].x' while it is borrowed as immutable"},
 		},
+		{
+			// The write to t[1] reinitializes one element of the rest, so t[2] stays moved.
+			name: "WriteToOneElementOfAMovedRest",
+			src: `
+				declare fn mk() -> {x: number}
+				declare fn sink(p: {x: number}) -> undefined
+				fn go() {
+					var mut t: [{x: number}, {x: number}, {x: number}] = [mk(), mk(), mk()]
+					val [_, ...rest] = t
+					t[1] = mk()
+					sink(t[2])
+				}
+			`,
+			want:         []string{"7:6-7:7: use of moved value 't'", "8:11-8:15: use of moved value 't'"},
+			wantDataflow: []string{"8:11-8:15: use of moved value 't[1...]'"},
+		},
+		{
+			// A write through a number index blames the index, which may name the moved element.
+			name: "WriteThroughANumberIndexAfterAnElementMoved",
+			src: `
+				declare fn mk() -> {x: number}
+				declare fn sink(p: {x: number}) -> undefined
+				fn go(i: number) {
+					val mut xs: Array<{x: number}> = [mk(), mk()]
+					sink(xs[0])
+					xs[i].x = 3
+				}
+			`,
+			want: []string{"7:6-7:11: use of partially moved value 'xs'; field 'xs[0]' was moved out"},
+		},
+		{
+			// A string-literal key that ends in `...` names a field, not a rest of elements.
+			name: "FieldSpelledLikeARest",
+			src: `
+				declare fn sink(p: {x: number}) -> undefined
+				fn go() {
+					val o: {"1...": {x: number}, "2": {x: number}} = {"1...": {x: 1}, "2": {x: 2}}
+					sink(o["1..."])
+					sink(o["2"])
+				}
+			`,
+		},
 	}
 
 	for _, tc := range cases {
@@ -263,6 +305,7 @@ func TestLiteralIndexConflicts(t *testing.T) {
 // such as `1` overlaps a rest segment such as `1...` that starts at or before it.
 func TestPathPrefixRelated(t *testing.T) {
 	seg := func(name string) placeSeg { return placeSeg{kind: namedSeg, name: name} }
+	rest := func(name string) placeSeg { return placeSeg{kind: restSeg, name: name} }
 	tests := []struct {
 		name string
 		a, b []placeSeg
@@ -272,11 +315,13 @@ func TestPathPrefixRelated(t *testing.T) {
 		{name: "DifferentElements", a: []placeSeg{seg("0")}, b: []placeSeg{seg("1")}, want: false},
 		{name: "ContainerAndElement", a: nil, b: []placeSeg{seg("1")}, want: true},
 		{name: "ElementAndFieldUnderIt", a: []placeSeg{seg("0")}, b: []placeSeg{seg("0"), seg("x")}, want: true},
-		{name: "RestAndAnElementItTakes", a: []placeSeg{seg("1...")}, b: []placeSeg{seg("2")}, want: true},
-		{name: "RestAndTheElementItStartsAt", a: []placeSeg{seg("1")}, b: []placeSeg{seg("1...")}, want: true},
-		{name: "RestAndAnElementBeforeIt", a: []placeSeg{seg("1...")}, b: []placeSeg{seg("0")}, want: false},
-		{name: "TwoRests", a: []placeSeg{seg("2...")}, b: []placeSeg{seg("1...")}, want: true},
-		{name: "RestAndAField", a: []placeSeg{seg("1...")}, b: []placeSeg{seg("x")}, want: false},
+		{name: "RestAndAnElementItTakes", a: []placeSeg{rest("1...")}, b: []placeSeg{seg("2")}, want: true},
+		{name: "RestAndTheElementItStartsAt", a: []placeSeg{seg("1")}, b: []placeSeg{rest("1...")}, want: true},
+		{name: "RestAndAnElementBeforeIt", a: []placeSeg{rest("1...")}, b: []placeSeg{seg("0")}, want: false},
+		{name: "TwoRests", a: []placeSeg{rest("2...")}, b: []placeSeg{rest("1...")}, want: true},
+		{name: "RestAndAField", a: []placeSeg{rest("1...")}, b: []placeSeg{seg("x")}, want: false},
+		// A string-literal index such as `o["1..."]` names a field, not a rest.
+		{name: "FieldSpelledLikeARest", a: []placeSeg{seg("1...")}, b: []placeSeg{seg("2")}, want: false},
 	}
 
 	for _, tt := range tests {

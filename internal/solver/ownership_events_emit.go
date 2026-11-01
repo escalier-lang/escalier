@@ -584,9 +584,9 @@ type chainPlace struct {
 func (c *checker) capturedChain(e ast.Expr) (chainPlace, bool) {
 	var object ast.Expr
 	var name string
-	// element marks an index whose key names one element by position, as the `0` of
-	// `xs[0]` does. The element is part of the place whether or not the receiver's type
-	// declares a property of that name.
+	// element marks an index that names one element by position, as `xs[0]` and `xs["0"]`
+	// do. The element is part of the place whether or not the receiver's type declares a
+	// property of that name.
 	element := false
 	switch e := e.(type) {
 	case *ast.IdentExpr:
@@ -600,8 +600,7 @@ func (c *checker) capturedChain(e ast.Expr) (chainPlace, bool) {
 	case *ast.IndexExpr:
 		object = e.Object
 		name, _ = c.indexSegment(e.Index)
-		_, isString := constStringKey(e.Index)
-		element = name != "" && !isString
+		_, element = canonicalIndex(name)
 	default:
 		return chainPlace{}, false
 	}

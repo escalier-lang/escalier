@@ -415,7 +415,7 @@ func (d *bodyDataflow) step(ev ownershipEvent, at liveness.StmtRef, s *dataflowS
 // loan such a flow gave it, which errs toward reporting a conflict.
 func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState) {
 	target, _ := ev.node.(ast.Expr)
-	dynamic := d.dynamicIndices(target) > 0
+	dynamic := slices.ContainsFunc(placeChain(target), d.isDynamicIndex)
 	depth := len(ev.place.path)
 	if dynamic {
 		depth = len(placeChain(target)) - 1
@@ -437,8 +437,9 @@ func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState
 		}
 
 		// A dynamic index may name an element other than the moved one, so the write
-		// reassigns no moved place under the container.
-		if !dynamic {
+		// reassigns no moved place under the container. A moved place the write only
+		// overlaps stays moved, as the rest `t[1...]` does after a write to `t[1]`.
+		if !dynamic && pathHasPrefix(m.place.path, ev.place.path) {
 			delete(s.moved, k)
 		}
 	}
@@ -450,8 +451,9 @@ func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState
 		}
 
 		if len(l.ev.place.path) >= depth {
-			// A dynamic index may name an element the borrow does not reach.
-			if !dynamic {
+			// A dynamic index may name an element the borrow does not reach, and a borrow
+			// the write only overlaps still reaches the elements the write leaves alone.
+			if !dynamic && pathHasPrefix(l.ev.place.path, ev.place.path) {
 				delete(s.loans, l.ev)
 			}
 			continue
@@ -710,44 +712,31 @@ func placeChain(e ast.Expr) []ast.Expr {
 	return chain
 }
 
-// namesSegment reports whether e adds a segment to the place its object names, as exprPlace
-// decides. A static member and a constant index such as `["a"]` or `[0]` do, and a dynamic
-// index does not.
-func (d *bodyDataflow) namesSegment(e ast.Expr) bool {
-	switch x := e.(type) {
-	case *ast.MemberExpr:
-		return x.Prop != nil && x.Prop.Name != ""
-	case *ast.IndexExpr:
-		_, constant := d.indexSegment(x.Index)
-		return constant
+// isDynamicIndex reports whether e is an index whose key exprPlace treats as dynamic, so
+// that the index stands for its whole container. `xs[i]` with `i: number` is one, and `xs[0]`
+// is not.
+func (d *bodyDataflow) isDynamicIndex(e ast.Expr) bool {
+	ix, ok := e.(*ast.IndexExpr)
+	if !ok {
+		return false
 	}
-	return false
-}
-
-// dynamicIndices returns the number of dynamic indices in the member and index chain e roots.
-// `xs[i].x` with `i: number` has one, and `xs[0].x` has none.
-func (d *bodyDataflow) dynamicIndices(e ast.Expr) int {
-	n := 0
-	for _, x := range placeChain(e) {
-		if _, ok := x.(*ast.IndexExpr); ok && !d.namesSegment(x) {
-			n++
-		}
-	}
-	return n
+	_, constant := d.indexSegment(ix.Index)
+	return !constant
 }
 
 // placeExprAt returns the outermost expression of the member and index chain e roots that
-// the root reaches through depth links that each name a segment. For depth 0 that is `p` in
-// `p.x`, and `xs[i]` in `xs[i].x` with `i: number`, since a dynamic index names no segment.
-// It returns e when no expression of the chain is that deep.
+// is depth links away from the root. A dynamic index reaches every place under its container,
+// so the walk returns the first dynamic index it meets. For depth 0 that is `p` in `p.x`, and
+// for any depth it is `xs[i]` in `xs[i].x` with `i: number`. It returns e when no expression
+// of the chain is that deep.
 func (d *bodyDataflow) placeExprAt(e ast.Expr, depth int) ast.Node {
 	chain := placeChain(e)
-	n := 0
 	var found ast.Node = e
 	for i := len(chain) - 1; i >= 0; i-- {
-		if i < len(chain)-1 && d.namesSegment(chain[i]) {
-			n++
+		if d.isDynamicIndex(chain[i]) {
+			return chain[i]
 		}
+		n := len(chain) - 1 - i
 		if n > depth {
 			break
 		}
