@@ -591,7 +591,7 @@ func TestOwnershipDataflow(t *testing.T) {
 // TestOwnershipDataflowMatchesCurrentChecks covers programs whose diagnostics the dataflow
 // pass and the current checks report alike. Each program runs with the flag off and with it
 // on, and both runs report want, with spans. The cases cover a call that runs a closure, a
-// write through a constant-number index, the span a moved place is blamed at, the name of a
+// write through a `number`-typed index, the span a moved place is blamed at, the name of a
 // moved field or tuple, and a write that uses a moved place beside a live borrow.
 func TestOwnershipDataflowMatchesCurrentChecks(t *testing.T) {
 	cases := []struct {
@@ -629,14 +629,14 @@ func TestOwnershipDataflowMatchesCurrentChecks(t *testing.T) {
 		{
 			name: "WriteThroughAnIndexNamesTheIndex",
 			src: `
-				fn go() -> number {
+				fn go(i: number) -> number {
 					val mut xs: Array<{x: number}> = [{x: 1}, {x: 2}]
 					val r = &xs[0]
-					xs[1].x = 3
+					xs[i].x = 3
 					return r.x
 				}
 			`,
-			want: []string{"5:6-5:13: cannot assign to 'xs[1].x' while it is borrowed as immutable"},
+			want: []string{"5:6-5:13: cannot assign to 'xs[i].x' while it is borrowed as immutable"},
 		},
 		{
 			name: "WriteAfterMoveBlamesTheMovedPlace",
@@ -752,7 +752,7 @@ func TestOwnershipDataflowMatchesCurrentChecks(t *testing.T) {
 			want: []string{"5:25-5:26: cannot move 'p.f' while it is borrowed"},
 		},
 		{
-			// A dynamic index adds no segment to the place, so the write blames `xs[i]`.
+			// A dynamic index names the whole container, so the write blames `xs[i]`.
 			name: "WriteThroughADynamicIndexAfterMoveBlamesTheElement",
 			src: `
 				declare fn sink(p: Array<{x: number}>) -> undefined

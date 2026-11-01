@@ -1288,7 +1288,7 @@ func TestOwnershipEventsCapturedPaths(t *testing.T) {
 			name: "DynamicIndexReadsAnotherLocal",
 			src: `
 				fn go(m: Array<{x: number}>) -> number {
-					val k = {i: 0, n: {x: 1}}
+					val k: {i: number, n: {x: number}} = {i: 0, n: {x: 1}}
 					val f = fn () { return m[k.i].x + k.n.x }
 					return f()
 				}
@@ -1297,6 +1297,34 @@ func TestOwnershipEventsCapturedPaths(t *testing.T) {
 				"b0.1: borrow(&, `m`, `f`, '_)", // the dynamic index makes the closure reach all of m
 				"b0.1: borrow(&, `k`, `f`, '_)", // `k.i` is a number read inside `m[...]`, so the closure reaches all of k
 				"b0.2: use(`f`, read)",          // `f()` in the return
+			},
+		},
+		{
+			name: "LiteralTypedIndexReadsAnotherLocal",
+			src: `
+				fn go(m: Array<{x: number}>) -> number {
+					val k = {i: 0, n: {x: 1}}
+					val f = fn () { return m[k.i].x + k.n.x }
+					return f()
+				}
+			`,
+			want: []string{
+				"b0.1: borrow(&, `m.0`, `f`, '_)", // `k.i` has the type `0`, so the closure reaches the element m[0]
+				"b0.1: borrow(&, `k`, `f`, '_)",   // the walk still visits the key `k.i`, a number, so the closure reaches all of k
+				"b0.2: use(`f`, read)",            // `f()` in the return
+			},
+		},
+		{
+			name: "LiteralIndexCapturesTheElement",
+			src: `
+				fn go(m: Array<{x: number}>) -> number {
+					val f = fn () { return m[1].x }
+					return f()
+				}
+			`,
+			want: []string{
+				"b0.0: borrow(&, `m.1`, `f`, '_)", // the closure reaches only the element m[1]
+				"b0.1: use(`f`, read)",            // `f()` in the return
 			},
 		},
 		{

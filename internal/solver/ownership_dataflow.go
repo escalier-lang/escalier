@@ -87,7 +87,7 @@ func (c *checker) runOwnershipDataflow() {
 	var found []SolverError
 	for _, t := range tables {
 		t.checked = true
-		found = append(found, checkBodyDataflow(t)...)
+		found = append(found, c.checkBodyDataflow(t)...)
 	}
 
 	c.errs = slices.DeleteFunc(c.errs, replacedByDataflow)
@@ -258,14 +258,23 @@ type bodyDataflow struct {
 	// events, such as the move of each field `val {f, g} = p` takes, and the expression is
 	// reported once.
 	blamed set.Set[ast.Span]
+	// indexSegment is the checker's indexSegment, which decides whether an index adds a
+	// segment to a place the way exprPlace decides it.
+	indexSegment func(ast.Expr) (string, bool)
 }
 
 // checkBodyDataflow runs the dataflow pass over the body t records and returns the
 // diagnostics it finds. It iterates a worklist of blocks until the state on entry to each
 // block stops changing, then walks each reachable block once more from its fixed-point
 // entry state to report.
-func checkBodyDataflow(t *ownershipEvents) []SolverError {
-	d := &bodyDataflow{table: t, events: t.byNode(), points: map[int][]liveness.StmtRef{}, order: map[*borrowEvent]int{}}
+func (c *checker) checkBodyDataflow(t *ownershipEvents) []SolverError {
+	d := &bodyDataflow{
+		table:        t,
+		events:       t.byNode(),
+		points:       map[int][]liveness.StmtRef{},
+		order:        map[*borrowEvent]int{},
+		indexSegment: c.indexSegment,
+	}
 	for i, ev := range t.events {
 		if b, ok := ev.(*borrowEvent); ok {
 			d.order[b] = i
@@ -389,11 +398,12 @@ func (d *bodyDataflow) step(ev ownershipEvent, at liveness.StmtRef, s *dataflowS
 // borrow of ev.place or of a place under it reaches a value the write detaches, and the
 // pass stops tracking it.
 //
-// A dynamic index in the target, such as the `[i]` of `xs[i] = v` or `xs[i].x = v`, names
-// no segment of the place, so `xs[i].x` has the place `xs.x`. Each one still steps one level
-// into the value, so it adds one to the depth of the write. A write through a dynamic index
-// may reach an element other than the one a moved place or a borrow names, so it neither
-// reassigns a moved place nor ends a borrow.
+// A dynamic index in the target, such as the `[i]` of `xs[i] = v` or `xs[i].x = v` with
+// `i: number`, stands for the whole container, so `xs[i].x` has the place `xs`. The depth of
+// such a write counts every link of the target, so `xs[i].x` writes two levels below `xs`
+// and conflicts with a live `&xs[0]`. A write through a dynamic index may reach an element
+// other than the one a moved place or a borrow names, so it neither reassigns a moved place
+// nor ends a borrow.
 //
 // A write that uses a moved place reports only E1, the way the use-after-move subsumes the
 // conflict in the current checks.
@@ -405,9 +415,11 @@ func (d *bodyDataflow) step(ev ownershipEvent, at liveness.StmtRef, s *dataflowS
 // loan such a flow gave it, which errs toward reporting a conflict.
 func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState) {
 	target, _ := ev.node.(ast.Expr)
-	dynamics := dynamicIndices(target)
-	depth := len(ev.place.path) + dynamics
-	dynamic := dynamics > 0
+	dynamic := d.dynamicIndices(target) > 0
+	depth := len(ev.place.path)
+	if dynamic {
+		depth = len(placeChain(target)) - 1
+	}
 
 	moved := false
 	for _, k := range slices.Sorted(maps.Keys(s.moved)) {
@@ -419,7 +431,7 @@ func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState
 		if len(m.place.path) < depth {
 			// The write blames the part of its target that names the moved place, so a write
 			// to `p.x` after p moved blames `p`.
-			d.reportMoved(m, ev.place, placeExprAt(target, len(m.place.path)))
+			d.reportMoved(m, ev.place, d.placeExprAt(target, len(m.place.path)))
 			moved = true
 			continue
 		}
@@ -451,7 +463,7 @@ func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState
 			continue
 		}
 
-		// The target names the place as written, so `xs[1].x` keeps the index its place drops.
+		// The target names the place as written, so `xs[i].x` keeps the links its place drops.
 		d.report(&BorrowedValueWriteError{
 			Place:  writtenPlaceName(ev.node, d.placeName(ev.place)),
 			write:  ev.node,
@@ -699,40 +711,41 @@ func placeChain(e ast.Expr) []ast.Expr {
 }
 
 // namesSegment reports whether e adds a segment to the place its object names, as exprPlace
-// decides. A static member and a constant-string index do, and a dynamic index does not.
-func namesSegment(e ast.Expr) bool {
+// decides. A static member and a constant index such as `["a"]` or `[0]` do, and a dynamic
+// index does not.
+func (d *bodyDataflow) namesSegment(e ast.Expr) bool {
 	switch x := e.(type) {
 	case *ast.MemberExpr:
 		return x.Prop != nil && x.Prop.Name != ""
 	case *ast.IndexExpr:
-		_, constant := constStringKey(x.Index)
+		_, constant := d.indexSegment(x.Index)
 		return constant
 	}
 	return false
 }
 
 // dynamicIndices returns the number of dynamic indices in the member and index chain e roots.
-// `xs[i].x` has one.
-func dynamicIndices(e ast.Expr) int {
+// `xs[i].x` with `i: number` has one, and `xs[0].x` has none.
+func (d *bodyDataflow) dynamicIndices(e ast.Expr) int {
 	n := 0
 	for _, x := range placeChain(e) {
-		if _, ok := x.(*ast.IndexExpr); ok && !namesSegment(x) {
+		if _, ok := x.(*ast.IndexExpr); ok && !d.namesSegment(x) {
 			n++
 		}
 	}
 	return n
 }
 
-// placeExprAt returns the outermost expression of the member and index chain e roots whose
-// place has depth segments. For depth 0 that is `p` in `p.x` and `xs[i]` in `xs[i].x`, since
-// a dynamic index adds no segment. It returns e when no expression of the chain has that
-// depth.
-func placeExprAt(e ast.Expr, depth int) ast.Node {
+// placeExprAt returns the outermost expression of the member and index chain e roots that
+// the root reaches through depth links that each name a segment. For depth 0 that is `p` in
+// `p.x`, and `xs[i]` in `xs[i].x` with `i: number`, since a dynamic index names no segment.
+// It returns e when no expression of the chain is that deep.
+func (d *bodyDataflow) placeExprAt(e ast.Expr, depth int) ast.Node {
 	chain := placeChain(e)
 	n := 0
 	var found ast.Node = e
 	for i := len(chain) - 1; i >= 0; i-- {
-		if i < len(chain)-1 && namesSegment(chain[i]) {
+		if i < len(chain)-1 && d.namesSegment(chain[i]) {
 			n++
 		}
 		if n > depth {
