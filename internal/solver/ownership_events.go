@@ -210,6 +210,11 @@ type ownershipEvents struct {
 	// for, such as the `c` of `val d = c`, whose copy event reads it. The use event that
 	// reading a subsumed expression emitted is dropped when the table is read.
 	subsumed set.Set[ast.Node]
+	// unwritten holds each expression reported for filling a borrow destination without the
+	// borrow written, such as the `p` of `val c: &{x: number} = p`. The flow out of such an
+	// expression is read as a plain read of its place, so it neither moves the place nor
+	// lends it, and the missing borrow is the one diagnostic its flow produces.
+	unwritten set.Set[ast.Node]
 	// emitted holds each expression whose events are emitted, with the CFG point they attach
 	// to. The walk types a `match` guard once per path that reaches it, and the guard's
 	// events are emitted once.
@@ -234,6 +239,9 @@ type ownershipEvents struct {
 	// destructure one place in several ways, and moves out of different arms do not add up
 	// to a move of the whole value.
 	tupleParts map[string][]placeSeg
+	// callees maps the callee expression of each call the walk has reached to the call, so
+	// a consuming receiver read at a callee knows the call whose receiver holds it.
+	callees map[ast.Expr]*ast.CallExpr
 	// cfg is the control-flow graph of the body, and live is the liveness of each of its
 	// locals over cfg. The dataflow pass in ownership_dataflow.go walks cfg and reads live to
 	// decide whether a holder is used again.
@@ -306,6 +314,7 @@ const (
 	elementRole
 	captureRole
 	callRole
+	receiverRole
 	assignRole
 	bindingRole
 	patternRole
@@ -317,23 +326,29 @@ func newOwnershipEvents(names map[liveness.VarID]string) *ownershipEvents {
 	return &ownershipEvents{
 		names:      names,
 		subsumed:   set.NewSet[ast.Node](),
+		unwritten:  set.NewSet[ast.Node](),
 		emitted:    set.NewSet[emitSite](),
 		temps:      map[ast.Node][]int{},
 		tempRoots:  map[ast.Node][]liveness.VarID{},
 		escaping:   set.NewSet[liveness.VarID](),
 		flowsInto:  map[liveness.VarID][]liveness.VarID{},
 		tupleParts: map[string][]placeSeg{},
+		callees:    map[ast.Expr]*ast.CallExpr{},
 	}
 }
 
 // list returns the table's events in emission order, without the use events of
-// subsumed reads.
+// subsumed reads. A flow out of an unwritten expression is listed as a read of its place.
 func (t *ownershipEvents) list() []ownershipEvent {
 	out := make([]ownershipEvent, 0, len(t.events))
 
 	for _, ev := range t.events {
 		if use, ok := ev.(*useEvent); ok && use.fromRead && t.subsumed.Contains(use.node) {
 			continue
+		}
+
+		if fe, ok := ev.(flowEvent); ok && t.unwritten.Contains(fe.base().node) {
+			ev = &useEvent{eventBase: *fe.base(), access: readAccess}
 		}
 
 		out = append(out, ev)

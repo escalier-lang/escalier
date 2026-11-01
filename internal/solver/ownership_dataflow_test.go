@@ -506,6 +506,64 @@ func TestOwnershipDataflow(t *testing.T) {
 			`,
 		},
 		{
+			// The receiver is evaluated before the argument, so the argument's borrow conflicts.
+			name: "ReceiverBorrowedBeforeTheArgument",
+			src: `
+				class R {
+					x: number,
+					readWith(&self, w: &mut R) -> undefined {},
+				}
+				fn go() {
+					val mut p = R(1)
+					p.readWith(&mut p)
+				}
+			`,
+			errs: []string{"cannot borrow 'p' as mutable while it is borrowed as immutable"},
+		},
+		{
+			// The leaf d borrows p.f for as long as d is used.
+			name: "PatternOverAWrittenBorrowHoldsTheBorrow",
+			src: `
+				fn go() -> number {
+					val mut p = {f: {x: 1}}
+					val {f: d} = &p
+					p.f.x = 2
+					return d.x
+				}
+			`,
+			errs: []string{"cannot assign to 'p.f.x' while it is borrowed as immutable"},
+		},
+		{
+			// The closure moves only p.a, so p.b stays usable.
+			name: "ClosureMovingAFieldLeavesTheSiblingUsable",
+			src: `
+				fn go() -> number {
+					val p = {a: {x: 1}, b: {x: 2}}
+					val f = fn () {
+						val q = p.a
+						return q.x
+					}
+					val n = f()
+					return n + p.b.x
+				}
+			`,
+		},
+		{
+			name: "ClosureMovingAFieldPartiallyMovesTheLocal",
+			src: `
+				fn go() {
+					val p = {a: {x: 1}, b: {x: 2}}
+					val f = fn () {
+						val q = p.a
+						return q.x
+					}
+					val n = f()
+					val e = p
+				}
+			`,
+			errs: []string{"use of partially moved value 'p'; field 'p.a' was moved out"},
+		},
+		{
 			// The pass replaces only the diagnostics of E1, E2, and E3, so a type error stays.
 			name: "TypeErrorStays",
 			src: `
@@ -743,6 +801,99 @@ func TestOwnershipDataflowMatchesCurrentChecks(t *testing.T) {
 				"8:36-8:37: use of moved value 'a'",
 				"9:6-9:7: use of moved value 'a'",
 			},
+		},
+		{
+			// The field c.f holds a borrow, so the pattern copies it and c stays usable.
+			name: "PatternOverABorrowFieldCopies",
+			src: `
+				fn go(c: {f: &{x: number}}) -> number {
+					val {f: d} = c
+					val {f} = c
+					return d.x + f.x + c.f.x
+				}
+			`,
+		},
+		{
+			// The missing `&` is the one report. The binding neither borrows p nor moves it,
+			// so the move into take reports nothing.
+			name: "MissingBorrowInABindingReportsOnce",
+			src: `
+				declare fn take(p: {x: number}) -> number
+				fn go() -> number {
+					val p = {x: 1}
+					val c: &{x: number} = p
+					val n = take(p)
+					return c.x + n
+				}
+			`,
+			want: []string{"5:28-5:29: this value is borrowed by its destination, so write the borrow: `&`"},
+		},
+		{
+			name: "MissingBorrowInALiteralElementReportsOnce",
+			src: `
+				declare fn hold(h: {slot: &{x: number}}) -> undefined
+				fn go() -> number {
+					val p = {x: 1}
+					hold({slot: p})
+					return p.x
+				}
+			`,
+			want: []string{"5:18-5:19: this value is borrowed by its destination, so write the borrow: `&`"},
+		},
+		{
+			name: "MissingBorrowInABranchReportsOnce",
+			src: `
+				fn go() {
+					val mut items: {x: number} = {x: 1}
+					val snapshot: &{x: number} = do { items }
+					items.x = 2
+					snapshot
+				}
+			`,
+			want: []string{"4:40-4:45: this value is borrowed by its destination, so write the borrow: `&`"},
+		},
+		{
+			// The rest element is rejected, so the pattern moves nothing out of p.
+			name: "RejectedRestPatternMovesNothing",
+			src: `
+				fn go(p: {x: number, y: string}) {
+					val {...rest, x} = p
+					return [rest, p.y]
+				}
+			`,
+			want: []string{"3:11-3:18: Unsupported: ObjRestPat"},
+		},
+		{
+			name: "OverloadedConsumingMethodMovesTheReceiver",
+			src: `
+				class D {
+					v: number,
+					take(self, x: number) -> number { return x },
+					take(self, x: string) -> string { return x },
+				}
+				fn go() -> number {
+					val d = D(1)
+					d.take(1)
+					return d.v
+				}
+			`,
+			want: []string{"10:13-10:16: use of moved value 'd'"},
+		},
+		{
+			name: "ConsumingMethodReadAsAValueMovesTheReceiver",
+			src: `
+				class C {
+					v: number,
+					take(self) -> number { return self.v },
+				}
+				fn go() -> number {
+					val c = C(1)
+					val g = c.take
+					g()
+					return c.v
+				}
+			`,
+			want: []string{"10:13-10:16: use of moved value 'c'"},
 		},
 	}
 

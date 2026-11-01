@@ -456,8 +456,8 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 				}
 			`,
 			want: []string{
+				"b0.1: borrow(&, `xs`, arg(`map`, self), '1)", // `xs.map(...)` borrows xs for the `&self` receiver of `map`, before the arguments run
 				"b0.1: borrow(&, `p`, arg(`map`, 0), '_)",     // the closure passed to `xs.map` captures p and is not returned, so it borrows p
-				"b0.1: borrow(&, `xs`, arg(`map`, self), '1)", // `xs.map(...)` borrows xs for the `&self` receiver of `map`
 			},
 		},
 		{
@@ -841,10 +841,10 @@ func TestOwnershipEventsBorrowTypes(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.0: move(`o.a`, `a`)",               // `val {a, ...rest} = o` moves the owned field a into a
-				"b0.0: borrow(&, `o.b`, `rest.b`, '1)", // `...rest` takes the field b, whose type R names a borrow, so it borrows again
-				"b0.1: move(`a`, return.0)",            // `a` in `return [a, rest]`
-				"b0.1: move(`rest`, return.1)",         // `rest` in `return [a, rest]`
+				"b0.0: move(`o.a`, `a`)",       // `val {a, ...rest} = o` moves the owned field a into a
+				"b0.0: copy(`o.b`, `rest.b`)",  // `...rest` takes the field b, whose type R names a borrow, so it copies the borrow
+				"b0.1: move(`a`, return.0)",    // `a` in `return [a, rest]`
+				"b0.1: move(`rest`, return.1)", // `rest` in `return [a, rest]`
 			},
 		},
 		{
@@ -881,8 +881,8 @@ func TestOwnershipEventsFieldWriteThroughOwnedBound(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.1: borrow(&, `q`, `h.f`, '1)", // `h.f = q` borrows q, since h declares f as a borrow
-				"b0.1: use(`h.f`, write)",         // `h.f = q` writes h.f
+				"b0.1: use(`q`, read)",    // `h.f = q` leaves the borrow h.f declares unwritten, so it only reads q
+				"b0.1: use(`h.f`, write)", // `h.f = q` writes h.f
 			},
 			errs: []string{"this value is borrowed by its destination, so write the borrow: `&`"},
 		},
@@ -993,4 +993,280 @@ func TestOwnershipEventsTupleParts(t *testing.T) {
 			require.Equal(t, tc.want, got)
 		})
 	}
+}
+
+// TestOwnershipEventsPatternSources covers the flows a destructuring pattern emits for a
+// field whose declared type is a borrow, for a pattern over a written borrow, and for a
+// pattern the checker rejects.
+func TestOwnershipEventsPatternSources(t *testing.T) {
+	runOwnershipEvents(t, []ownershipEventsCase{
+		{
+			name: "BorrowFieldOfAnOwnedSourceCopies",
+			src: `
+				fn go(c: {f: &{x: number}}) -> number {
+					val {f: d} = c
+					return d.x + c.f.x
+				}
+			`,
+			want: []string{
+				"b0.0: copy(`c.f`, `d`)",   // `val {f: d} = c` copies the borrow c.f holds
+				"b0.1: use(`d.x`, read)",   // `d.x` in the return
+				"b0.1: use(`c.f.x`, read)", // `c.f.x` in the return
+			},
+		},
+		{
+			name: "ShorthandBorrowFieldCopies",
+			src: `
+				fn go(o: {a: &{x: number}}) -> number {
+					val {a} = o
+					return a.x + o.a.x
+				}
+			`,
+			want: []string{
+				"b0.0: copy(`o.a`, `a`)",   // `val {a} = o` copies the borrow o.a holds
+				"b0.1: use(`a.x`, read)",   // `a.x` in the return
+				"b0.1: use(`o.a.x`, read)", // `o.a.x` in the return
+			},
+		},
+		{
+			name: "PatternOverAWrittenBorrowBorrowsEachPart",
+			src: `
+				fn go() -> number {
+					val mut p = {f: {x: 1}, g: 2}
+					val {f: d, g} = &mut p
+					return d.x + g
+				}
+			`,
+			want: []string{
+				"b0.1: borrow(&mut, `p`, temp, '1)",  // `&mut p` lends p to the pattern for the statement
+				"b0.1: borrow(&mut, `p.f`, `d`, '1)", // the leaf d borrows the part p.f
+				"b0.1: use(`p.g`, read)",             // the leaf g copies the number p.g
+				"b0.2: use(`d.x`, read)",             // `d.x` in the return
+				"b0.2: use(`g`, read)",               // `g` in the return
+			},
+		},
+		{
+			name: "RejectedRestEmitsNoFlow",
+			src: `
+				fn go(p: {x: number, y: string}) {
+					val {...rest, x} = p
+					return rest
+				}
+			`,
+			want: []string{
+				"b0.0: use(`p`, read)",       // the rejected pattern binds nothing out of p, so p is only read
+				"b0.1: move(`rest`, return)", // `return rest`
+			},
+			errs: []string{"Unsupported: ObjRestPat"},
+		},
+	})
+}
+
+// TestOwnershipEventsReceivers covers the receiver flow of a method call: its place among
+// the call's events and the move of a consuming receiver the call's signature does not name.
+func TestOwnershipEventsReceivers(t *testing.T) {
+	runOwnershipEvents(t, []ownershipEventsCase{
+		{
+			name: "ReceiverBorrowComesBeforeTheArguments",
+			src: `
+				class R {
+					x: number,
+					readWith(&self, w: &mut R) -> undefined {},
+				}
+				fn go() {
+					val mut p = R(1)
+					val mut q = R(2)
+					p.readWith(&mut q)
+				}
+			`,
+			want: []string{
+				"b0.2: borrow(&, `p`, arg(`readWith`, self), '1)", // `p.readWith` borrows p for `&self` first
+				"b0.2: borrow(&mut, `q`, arg(`readWith`, 0), '2)", // then `&mut q` is lent to the argument
+			},
+		},
+		{
+			name: "ConsumingMethodReadAsAValueMovesTheReceiver",
+			src: `
+				class C {
+					v: number,
+					take(self) -> number { return self.v },
+				}
+				fn go() -> number {
+					val c = C(1)
+					val g = c.take
+					return g()
+				}
+			`,
+			want: []string{
+				"b0.1: move(`c`, temp)", // `c.take` moves c into the method value it reads
+				"b0.2: use(`g`, read)",  // `g()` in the return
+			},
+		},
+		{
+			name: "OverloadedConsumingMethodMovesTheReceiver",
+			src: `
+				class D {
+					v: number,
+					take(self, x: number) -> number { return x },
+					take(self, x: string) -> string { return x },
+				}
+				fn go() -> number {
+					val d = D(1)
+					return d.take(1)
+				}
+			`,
+			want: []string{
+				"b0.1: move(`d`, arg(`take`, self))", // `d.take(1)` moves d into the consuming receiver
+			},
+		},
+	})
+}
+
+// TestOwnershipEventsUnwrittenBorrows covers flows whose source the checker reports for a
+// missing `&`. Each such flow reads its source and neither moves nor lends it.
+func TestOwnershipEventsUnwrittenBorrows(t *testing.T) {
+	runOwnershipEvents(t, []ownershipEventsCase{
+		{
+			name: "Binding",
+			src: `
+				declare fn take(p: {x: number}) -> number
+				fn go() -> number {
+					val p = {x: 1}
+					val c: &{x: number} = p
+					val n = take(p)
+					return c.x + n
+				}
+			`,
+			want: []string{
+				"b0.1: use(`p`, read)",            // `val c: &{x: number} = p` leaves the borrow unwritten
+				"b0.2: move(`p`, arg(`take`, 0))", // `take(p)` moves p
+				"b0.3: use(`c.x`, read)",          // `c.x` in the return
+				"b0.3: use(`n`, read)",            // `n` in the return
+			},
+			errs: []string{"this value is borrowed by its destination, so write the borrow: `&`"},
+		},
+		{
+			name: "LiteralElement",
+			src: `
+				declare fn hold(h: {slot: &{x: number}}) -> undefined
+				fn go() -> number {
+					val p = {x: 1}
+					hold({slot: p})
+					return p.x
+				}
+			`,
+			want: []string{
+				"b0.1: use(`p`, read)",   // `{slot: p}` leaves the borrow the slot declares unwritten
+				"b0.2: use(`p.x`, read)", // `p.x` in the return
+			},
+			errs: []string{"this value is borrowed by its destination, so write the borrow: `&`"},
+		},
+	})
+}
+
+// TestOwnershipEventsCapturedPaths covers which places under a captured local a closure
+// captures.
+func TestOwnershipEventsCapturedPaths(t *testing.T) {
+	runOwnershipEvents(t, []ownershipEventsCase{
+		{
+			name: "FieldRead",
+			src: `
+				fn go() -> number {
+					val p = {a: {x: 1}, b: {x: 2}}
+					val f = fn () { return p.a.x }
+					return f() + p.b.x
+				}
+			`,
+			want: []string{
+				"b0.1: borrow(&, `p.a`, `f`, '_)", // the closure reads the number p.a.x, so it borrows the object p.a
+				"b0.2: use(`f`, read)",            // `f()` in the return
+				"b0.2: use(`p.b.x`, read)",        // `p.b.x` in the return
+			},
+		},
+		{
+			name: "MovedField",
+			src: `
+				fn go() -> number {
+					val p = {a: {x: 1}, b: {x: 2}}
+					val f = fn () {
+						val q = p.a
+						return q.x
+					}
+					return f()
+				}
+			`,
+			want: []string{
+				"b0.1: move(`p.a`, `f`)", // the closure moves p.a and nothing else of p
+				"b0.2: use(`f`, read)",   // `f()` in the return
+			},
+		},
+		{
+			name: "MovedFieldBesideAnotherField",
+			src: `
+				fn go() -> number {
+					val p = {a: {x: 1}, b: {x: 2}}
+					val f = fn () {
+						val q = p.a
+						return q.x + p.b.x
+					}
+					return f()
+				}
+			`,
+			want: []string{
+				"b0.1: move(`p`, `f`)", // the closure moves p.a and reads p.b, so it owns all of p
+				"b0.2: use(`f`, read)", // `f()` in the return
+			},
+		},
+		{
+			name: "MethodCallCapturesTheReceiver",
+			src: `
+				class C {
+					v: number,
+					look(&self) -> number { return self.v },
+				}
+				fn go() -> number {
+					val p = {a: C(1), b: C(2)}
+					val f = fn () { return p.a.look() }
+					return f() + p.b.v
+				}
+			`,
+			want: []string{
+				"b0.1: borrow(&, `p.a`, `f`, '_)", // `p.a.look()` reads the receiver p.a
+				"b0.2: use(`f`, read)",            // `f()` in the return
+				"b0.2: use(`p.b.v`, read)",        // `p.b.v` in the return
+			},
+		},
+		{
+			name: "WholeLocal",
+			src: `
+				declare fn show(p: &{a: {x: number}}) -> number
+				fn go() -> number {
+					val p = {a: {x: 1}}
+					val f = fn () { return p.a.x + show(&p) }
+					return f()
+				}
+			`,
+			want: []string{
+				"b0.1: borrow(&, `p`, `f`, '_)", // `&p` in the body uses p itself
+				"b0.2: use(`f`, read)",          // `f()` in the return
+			},
+		},
+		{
+			name: "NestedFunctionCapturesTheWholeLocal",
+			src: `
+				fn go() -> number {
+					val p = {a: {x: 1}, b: {x: 2}}
+					val f = fn () {
+						val g = fn () { return p.a.x }
+						return g()
+					}
+					return f()
+				}
+			`,
+			want: []string{
+				"b0.1: borrow(&, `p`, `f`, '_)", // the walk names no field inside a nested function
+				"b0.2: use(`f`, read)",          // `f()` in the return
+			},
+		},
+	})
 }
