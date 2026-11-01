@@ -128,17 +128,17 @@ func (c *checker) settleDest(table *ownershipEvents, dest flowDest, holder event
 		// A closure that is returned or stored into module-level state owns what it
 		// captures, and any other closure borrows it. A closure a local holds may still be
 		// returned through that local, so it waits for the whole body.
-		switch holder.(type) {
-		case returnHolder, moduleHolder:
+		switch holder.target.(type) {
+		case returnTarget, moduleTarget:
 			return &ownedDest{}, flowWait{}, true
-		case tempHolder, placeHolder:
+		case tempTarget, placeTarget:
 			if !forceCapture {
 				return dest, flowWait{capture: true}, false
 			}
-			if ph, ok := holder.(placeHolder); ok && table.escapes(ph.place.root) {
+			if pt, ok := holder.target.(placeTarget); ok && table.escapes(pt.root) {
 				return &ownedDest{}, flowWait{}, true
 			}
-		case argHolder, receiverHolder:
+		case argTarget, receiverTarget:
 		}
 		return &borrowDest{borrow: borrowKindOf(d.writes), reborrows: true}, flowWait{}, true
 	case *ownedDest, *borrowDest, *inferredReturnDest:
