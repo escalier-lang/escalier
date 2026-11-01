@@ -241,6 +241,10 @@ place holds, which D15 accepts. Nothing can await that promise again, so the
 The `catch` result `Promise<&'static T | R, G>` mixes ownership when the
 fallback `R` is owned. Section 8.3 settles how that union is checked.
 
+These `'static` borrows make a reaction on a promise held in a place costlier
+than an `await` of it. Section 8.7 explains when to prefer `await` and the
+warning that steers toward it.
+
 ### 3.3 A3. A borrow of a promise is a promise of a borrow
 
 A promise's contents can be reached only through `await` or a reaction. A
@@ -804,6 +808,41 @@ suspensions too.
 Recommendation: file the gap against the ownership rules and leave A5 as the
 link. [#2445](https://github.com/escalier-lang/escalier/issues/2445) tracks the gap.
 
+### 8.7 Prefer `await` to a reaction on a promise held in a place
+
+A2's `'static` borrows follow from what the runtime does, and they make a
+reaction costlier than an `await` of the same promise. `await &p` borrows
+`p` only until the result's last use, and a local an `async fn` body reads
+across an `await` stays free between uses. `p.then(cb)` freezes `p` and
+every capture of `cb` for the rest of the program, since E2 rejects every
+write after a `'static` immutable path.
+
+How much a reaction costs depends on its receiver:
+
+- A temporary, as in `load().then(cb)`, costs nothing through its receiver,
+  since nothing else can await that promise. Its callback's captures cost the
+  same as those of any closure the runtime keeps, such as one passed to
+  `setTimeout`.
+- A promise held in a place, as in `p.then(cb)`, leaves `p` awaitable only as
+  `&p`. Its value can never be owned or written afterward.
+- Code that cannot `await`, such as a synchronous callback or a constructor,
+  and code that must not wait for the promise, needs a reaction. A reaction on
+  a temporary fits there.
+
+So inside an `async fn` or an async closure, a reaction whose receiver is a
+place reports a warning, `ReactionOnPlaceWarning`:
+
+```esc
+async fn go() -> Promise<number> {
+    val p = load()
+    val q = p.then(fn (v) { return v.x })   // warns: calling `then` on 'p' borrows it for 'static, so 'p' can never be moved or awaited by value again; in an `async fn`, await it with `await &p` instead
+    return (await &p).x + (await q)
+}
+```
+
+The warning does not fire on a temporary receiver, or outside an `async fn`,
+where `await` is not available. [#2447](https://github.com/escalier-lang/escalier/issues/2447) implements it.
+
 ## 9. Comparison with Rust
 
 | Rule | Rust behaviour | Verdict | Note |
@@ -963,6 +1002,7 @@ milestone, which the rules here build on:
 | [#2444](https://github.com/escalier-lang/escalier/issues/2444) | R1, R3 | Gives `for` loops their three forms, adds `ImmutableIteratorLoopError` and the loop form of the moved-value message from section 8.2 | [#2428](https://github.com/escalier-lang/escalier/issues/2428), [#2440](https://github.com/escalier-lang/escalier/issues/2440), [#2441](https://github.com/escalier-lang/escalier/issues/2441), [#2318](https://github.com/escalier-lang/escalier/issues/2318), [#2290](https://github.com/escalier-lang/escalier/issues/2290) |
 | [#2442](https://github.com/escalier-lang/escalier/issues/2442) | X3, X4 | Changes the element-reading iterator methods and the `Iterable` and `Generator` declarations | [#2444](https://github.com/escalier-lang/escalier/issues/2444), [#2300](https://github.com/escalier-lang/escalier/issues/2300) |
 | [#2443](https://github.com/escalier-lang/escalier/issues/2443) | S1 to S3 | Applies the rules to async generators, including the implicit `await` of a promise operand to `yield` | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2438](https://github.com/escalier-lang/escalier/issues/2438), [#2444](https://github.com/escalier-lang/escalier/issues/2444) |
+| [#2447](https://github.com/escalier-lang/escalier/issues/2447) | A2 | Warns on a reaction to a promise held in a place inside an `async fn`, as section 8.7 describes | [#2426](https://github.com/escalier-lang/escalier/issues/2426) |
 
 [#2439](https://github.com/escalier-lang/escalier/issues/2439), [#2440](https://github.com/escalier-lang/escalier/issues/2440) and [#2441](https://github.com/escalier-lang/escalier/issues/2441) need nothing else and can land first.
 
@@ -970,7 +1010,7 @@ Every issue that changes the move and borrow checks lands best after
 [#2269](https://github.com/escalier-lang/escalier/issues/2269), which turns on the single ownership pass. Landing earlier means
 extending the current move and loan checks, which [#2270](https://github.com/escalier-lang/escalier/issues/2270) to [#2272](https://github.com/escalier-lang/escalier/issues/2272)
 then remove. That covers every issue in the table except [#2424](https://github.com/escalier-lang/escalier/issues/2424),
-[#2440](https://github.com/escalier-lang/escalier/issues/2440), [#2441](https://github.com/escalier-lang/escalier/issues/2441) and [#2442](https://github.com/escalier-lang/escalier/issues/2442).
+[#2440](https://github.com/escalier-lang/escalier/issues/2440), [#2441](https://github.com/escalier-lang/escalier/issues/2441), [#2442](https://github.com/escalier-lang/escalier/issues/2442) and [#2447](https://github.com/escalier-lang/escalier/issues/2447).
 
 Three related issues sit outside this milestone:
 
