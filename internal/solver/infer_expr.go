@@ -2032,7 +2032,7 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 	}
 	c.recordCallArgEffects(e, fn, consumeRef, hasConsumeRef)
 	if hasEventRef {
-		c.emitCallFlows(e, fn, eventRef)
+		c.emitCallFlows(lvl, e, fn, eventRef)
 	}
 	// A module-level receiver outlives every local, so an argument its method stores there
 	// escapes. A destination typed by an inference variable has no ownership yet, so D9 decides

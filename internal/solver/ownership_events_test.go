@@ -314,7 +314,7 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 			`,
 			want: []string{
 				"b0.0: borrow(&, `c`, arg(`get`, self), '1)",    // `c.get()` borrows c for the `&self` receiver
-				"b0.1: borrow(&mut, `c`, arg(`set`, self), '1)", // `c.set()` borrows c mutably for the `&mut self` receiver
+				"b0.1: borrow(&mut, `c`, arg(`set`, self), '2)", // `c.set()` borrows c mutably for the `&mut self` receiver, under a lifetime of its own
 				"b0.2: move(`c`, arg(`take`, self))",            // `c.take()` moves c into the owned `self` receiver
 			},
 		},
@@ -358,6 +358,28 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 				"b4.entry: use(`p.n`, read)", // the pattern `{n}` reads the `number` field n on entry to the second arm
 				"b3.1: move(`v`, `r`)",       // the first arm's tail `v` moves into r
 				"b2.0: move(`r`, return)",    // `return r` after the arms join
+			},
+		},
+		{
+			// Each call of one method borrows the receiver under its own lifetime, though both
+			// calls go through the same declared `self`.
+			name: "ReceiverBorrowPerCall",
+			src: `
+				class C {
+					x: number,
+					get(&self) -> number { return self.x },
+				}
+				fn go(c: C) -> number {
+					val a = c.get()
+					val b = c.get()
+					return a + b
+				}
+			`,
+			want: []string{
+				"b0.0: borrow(&, `c`, arg(`get`, self), '1)", // the first `c.get()` borrows c
+				"b0.1: borrow(&, `c`, arg(`get`, self), '2)", // the second `c.get()` borrows c again, under a new lifetime
+				"b0.2: use(`a`, read)",                       // `a + b` reads a
+				"b0.2: use(`b`, read)",                       // `a + b` reads b
 			},
 		},
 		{

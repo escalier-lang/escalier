@@ -277,16 +277,19 @@ const (
 // borrowDest. param names a paramDest's parameter, and call and index a calleeDest's
 // argument. reborrows marks a destination that borrows a borrow source again rather than
 // copying it, which F4 gives a method receiver and a pattern over a borrow. writes marks
-// a captureDest whose closure writes the captured local.
+// a captureDest whose closure writes the captured local. callLifetime, when set on a
+// paramDest, is the lifetime a borrow into the parameter takes in place of the one the
+// parameter declares.
 type flowDest struct {
-	kind      destKind
-	borrow    borrowKind
-	lt        soltype.Lifetime
-	param     *soltype.FuncParam
-	call      *ast.CallExpr
-	index     int
-	reborrows bool
-	writes    bool
+	kind         destKind
+	borrow       borrowKind
+	lt           soltype.Lifetime
+	param        *soltype.FuncParam
+	call         *ast.CallExpr
+	index        int
+	reborrows    bool
+	writes       bool
+	callLifetime soltype.Lifetime
 }
 
 // destOfType returns the destination a flow into a slot of type t has: a borrow
@@ -734,7 +737,11 @@ func (c *checker) settleDest(table *ownershipEvents, dest flowDest, holder event
 		if !force && c.unsettledParams.Contains(dest.param) {
 			return dest, flowWait{param: dest.param}, false
 		}
-		return c.paramDestOf(dest.param, dest.reborrows), flowWait{}, true
+		settled := c.paramDestOf(dest.param, dest.reborrows)
+		if settled.kind == borrowDest && dest.callLifetime != nil {
+			settled.lt = dest.callLifetime
+		}
+		return settled, flowWait{}, true
 	case calleeDest:
 		if fn := c.resolvedCallee(dest.call); fn != nil {
 			if param, ok := argDest(dest.call, fn, dest.index); ok {
@@ -952,8 +959,8 @@ func (c *checker) emitCaptureFlow(closure ast.Func, root liveness.VarID, t solty
 
 // renderOwnershipEvents renders the events of t one per line, each prefixed with the CFG
 // node it is attached to, as renderStmtRef writes it. A borrow's lifetime renders as
-// `'static`, as `'_` when the borrow's type carries none, or as `'<n>` numbering the other
-// lifetimes in order of first appearance.
+// `'static`, as `'_` when the borrow's type carries none or an elided one, or as `'<n>`
+// numbering the other lifetimes in order of first appearance.
 func renderOwnershipEvents(t *ownershipEvents) []string {
 	ltNames := map[soltype.Lifetime]string{}
 	var out []string
@@ -1000,10 +1007,11 @@ func (t *ownershipEvents) renderEvent(ev ownershipEvent, ltNames map[soltype.Lif
 
 // renderLifetime renders lt for renderEvent, naming it in ltNames on first sight.
 func renderLifetime(lt soltype.Lifetime, ltNames map[soltype.Lifetime]string) string {
-	switch {
-	case lt == nil:
+	if _, anon := lt.(*soltype.AnonLifetime); lt == nil || anon {
+		// An AnonLifetime is the display marker for an elided lifetime, which names nothing.
 		return "'_"
-	case soltype.IsStaticLifetime(lt):
+	}
+	if soltype.IsStaticLifetime(lt) {
 		return "'static"
 	}
 	if name, ok := ltNames[lt]; ok {
@@ -1351,8 +1359,9 @@ func (c *checker) lookupWriteField(name string, recv soltype.Type) (*soltype.Pro
 // call into the method's `self`, then each argument into its parameter. fn is the
 // signature the arguments were applied to, or nil when the call could not see one. An
 // argument with no parameter to receive it, the surplus of a call with too many arguments,
-// emits no flow.
-func (c *checker) emitCallFlows(e *ast.CallExpr, fn *soltype.FuncType, ref liveness.StmtRef) {
+// emits no flow. lvl is the level of the call, at which a receiver borrow's lifetime is
+// minted.
+func (c *checker) emitCallFlows(lvl int, e *ast.CallExpr, fn *soltype.FuncType, ref liveness.StmtRef) {
 	if c.fn == nil || c.fn.events == nil || !c.firstEmit(e, callRole, ref, 0) {
 		return
 	}
@@ -1361,6 +1370,10 @@ func (c *checker) emitCallFlows(e *ast.CallExpr, fn *soltype.FuncType, ref liven
 		// accounts for it.
 		c.subsumePlaceChain(e.Callee)
 		dest := flowDest{kind: paramDest, param: self, reborrows: true}
+		// self is the method's declared receiver, which every call of the method shares, so
+		// its lifetime cannot tell one call's borrow from another's. Each call borrows the
+		// receiver under a lifetime of its own.
+		dest.callLifetime = c.ctx.freshLifetime(lvl)
 		c.emitFlow(recv, eventHolder{kind: receiverHolder, node: e}, dest, ref)
 	}
 	for i, arg := range e.Args {
