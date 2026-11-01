@@ -51,44 +51,122 @@ const (
 	writeAccess
 )
 
-// holderKind is the kind of destination that receives a flowing value.
-type holderKind uint8
+// eventHolder is the destination that receives the value of a copy, borrow, or move. It
+// is one of placeHolder, moduleHolder, argHolder, receiverHolder, returnHolder, or
+// tempHolder. fieldPath returns the field path within the holder that receives the value.
+// extend returns a new holder with the segments appended to that path and leaves the
+// receiver unchanged.
+type eventHolder interface {
+	isEventHolder()
+	fieldPath() []placeSeg
+	extend(path []placeSeg) eventHolder
+}
 
-const (
-	// placeHolder is a local binding or a field path rooted at one, such as `q` or `o.f`.
-	placeHolder holderKind = iota
-	// moduleHolder is a module-level binding, named by name.
-	moduleHolder
-	// argHolder is argument index of the call node.
-	argHolder
-	// receiverHolder is the receiver of the method call node.
-	receiverHolder
-	// returnHolder is the value the function returns.
-	returnHolder
-	// tempHolder is a value no flow site receives, such as the literal in
-	// `({f: &p}).f`. node is that value's expression. A literal element or a closure
-	// capture starts out held by the literal or closure, and the flow site that receives
-	// the literal or closure retargets it to its own holder.
-	tempHolder
-)
-
-// eventHolder is the destination that receives the value of a copy, borrow, or move.
-// place holds the binding and field path of a placeHolder. For every other kind
-// place.root is 0 and place.path is the field path within the destination, so the
+// holderPath is the field path within a destination that is not a local place. The
 // element `p` of `return {f: p}` is held at the path [f] of the return.
-type eventHolder struct {
-	kind  holderKind
+type holderPath struct {
+	path []placeSeg
+}
+
+// fieldPath returns the field path within the destination.
+func (h holderPath) fieldPath() []placeSeg { return h.path }
+
+// extended returns the path with the segments appended.
+func (h holderPath) extended(path []placeSeg) holderPath {
+	if len(path) == 0 {
+		return h
+	}
+	return holderPath{path: appendPath(h.path, path)}
+}
+
+// placeHolder is a local binding or a field path rooted at one, such as `q` or `o.f`.
+type placeHolder struct {
+	// place is the binding and field path that receives the value.
 	place movePlace
-	name  string
-	node  ast.Node
+}
+
+// moduleHolder is a module-level binding.
+type moduleHolder struct {
+	holderPath
+	// name is the name of the binding.
+	name string
+}
+
+// argHolder is an argument of a call.
+type argHolder struct {
+	holderPath
+	// call is the call that receives the argument.
+	call *ast.CallExpr
+	// index is the position of the argument in the call.
 	index int
 }
 
-// extend returns h with the path segments appended to its place's path.
-func (h eventHolder) extend(path []placeSeg) eventHolder {
+// receiverHolder is the receiver of a method call.
+type receiverHolder struct {
+	holderPath
+	// call is the method call that receives the receiver.
+	call *ast.CallExpr
+}
+
+// returnHolder is the value the function returns.
+type returnHolder struct {
+	holderPath
+}
+
+// tempHolder is a value no flow site receives, such as the literal in `({f: &p}).f`. A
+// literal element or a closure capture starts out held by the literal or closure, and the
+// flow site that receives the literal or closure retargets it to its own holder.
+type tempHolder struct {
+	holderPath
+	// node is the expression of the value.
+	node ast.Node
+}
+
+func (placeHolder) isEventHolder()    {}
+func (moduleHolder) isEventHolder()   {}
+func (argHolder) isEventHolder()      {}
+func (receiverHolder) isEventHolder() {}
+func (returnHolder) isEventHolder()   {}
+func (tempHolder) isEventHolder()     {}
+
+// fieldPath returns the field path of the place.
+func (h placeHolder) fieldPath() []placeSeg { return h.place.path }
+
+// extend returns the holder of the place with the segments appended to its path.
+func (h placeHolder) extend(path []placeSeg) eventHolder {
 	if len(path) > 0 {
 		h.place.path = appendPath(h.place.path, path)
 	}
+	return h
+}
+
+// extend returns the holder with the segments appended to its field path.
+func (h moduleHolder) extend(path []placeSeg) eventHolder {
+	h.holderPath = h.extended(path)
+	return h
+}
+
+// extend returns the holder with the segments appended to its field path.
+func (h argHolder) extend(path []placeSeg) eventHolder {
+	h.holderPath = h.extended(path)
+	return h
+}
+
+// extend returns the holder with the segments appended to its field path.
+func (h receiverHolder) extend(path []placeSeg) eventHolder {
+	h.holderPath = h.extended(path)
+	return h
+}
+
+// extend returns the holder with the segments appended to its field path.
+func (h returnHolder) extend(path []placeSeg) eventHolder {
+	h.holderPath = h.extended(path)
+	return h
+}
+
+// extend returns the holder with the segments appended to its field path.
+func (h tempHolder) extend(path []placeSeg) eventHolder {
+	h.holderPath = h.extended(path)
 	return h
 }
 
@@ -379,22 +457,22 @@ func writeQuotedPlace(b *strings.Builder, name string, path []placeSeg) {
 // backticks, as renderPlace writes it, and a keyword is bare.
 func (t *ownershipEvents) renderHolder(h eventHolder) string {
 	var b strings.Builder
-	switch h.kind {
+	switch h := h.(type) {
 	case placeHolder:
 		return t.renderPlace(h.place)
 	case moduleHolder:
-		writeQuotedPlace(&b, h.name, h.place.path)
+		writeQuotedPlace(&b, h.name, h.path)
 		return b.String()
 	case argHolder:
-		fmt.Fprintf(&b, "arg(%s, %d)", renderCallee(h.node), h.index)
+		fmt.Fprintf(&b, "arg(%s, %d)", renderCallee(h.call), h.index)
 	case receiverHolder:
-		fmt.Fprintf(&b, "arg(%s, self)", renderCallee(h.node))
+		fmt.Fprintf(&b, "arg(%s, self)", renderCallee(h.call))
 	case returnHolder:
 		b.WriteString("return")
 	case tempHolder:
 		b.WriteString("temp")
 	}
-	writePath(&b, h.place.path)
+	writePath(&b, h.fieldPath())
 	return b.String()
 }
 

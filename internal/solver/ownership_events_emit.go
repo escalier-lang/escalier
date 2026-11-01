@@ -60,9 +60,10 @@ func (c *checker) emitEvent(ev ownershipEvent, at liveness.StmtRef) int {
 	ev.base().at = at
 	t.events = append(t.events, ev)
 	index := len(t.events) - 1
-	if fe, ok := ev.(flowEvent); ok && fe.flow().holder.kind == tempHolder {
-		node := fe.flow().holder.node
-		t.temps[node] = append(t.temps[node], index)
+	if fe, ok := ev.(flowEvent); ok {
+		if th, ok := fe.flow().holder.(tempHolder); ok {
+			t.temps[th.node] = append(t.temps[th.node], index)
+		}
 	}
 	return index
 }
@@ -166,9 +167,9 @@ func (c *checker) emitWrite(e ast.Expr, ref liveness.StmtRef) {
 // names no local place.
 func (c *checker) placeHolderOf(e ast.Expr) eventHolder {
 	if p, ok := c.exprPlace(e); ok {
-		return eventHolder{kind: placeHolder, place: p}
+		return placeHolder{place: p}
 	}
-	return eventHolder{kind: tempHolder, node: e}
+	return tempHolder{node: e}
 }
 
 // emitFlow emits the events of the value source passes to holder, a destination
@@ -228,7 +229,7 @@ func (c *checker) emitBorrow(e *ast.BorrowExpr) {
 	c.emitEvent(&borrowEvent{
 		flowBase: flowBase{
 			eventBase: eventBase{place: p, node: e},
-			holder:    eventHolder{kind: tempHolder, node: e},
+			holder:    tempHolder{node: e},
 		},
 		borrow: borrowKindOf(e.Mut),
 	}, ref)
@@ -264,7 +265,7 @@ func (c *checker) emitTempFlow(source ast.Expr, value ast.Expr, path []placeSeg,
 	if !c.firstEmit(source, elementRole, ref, 0) {
 		return
 	}
-	holder := eventHolder{kind: tempHolder, node: value}.extend(path)
+	holder := tempHolder{node: value}.extend(path)
 	c.emitFlow(source, holder, dest, ref)
 }
 
@@ -281,9 +282,9 @@ func (c *checker) retargetTemp(value ast.Expr, holder eventHolder) {
 			continue
 		}
 		fb := fe.flow()
-		fb.holder = holder.extend(fb.holder.place.path)
-		if holder.kind == tempHolder {
-			t.temps[holder.node] = append(t.temps[holder.node], i)
+		fb.holder = holder.extend(fb.holder.fieldPath())
+		if th, ok := holder.(tempHolder); ok {
+			t.temps[th.node] = append(t.temps[th.node], i)
 		}
 	}
 }
@@ -302,11 +303,11 @@ func (c *checker) emitValueFlow(p movePlace, source ast.Expr, sourceT soltype.Ty
 	}
 	// The escape check of a closure capture reads these records. A closure is a value type,
 	// so they are recorded before the value-type case below returns.
-	switch holder.kind {
+	switch h := holder.(type) {
 	case returnHolder, moduleHolder:
 		c.fn.events.escaping.Add(p.root)
 	case placeHolder:
-		c.fn.events.flowsInto[p.root] = append(c.fn.events.flowsInto[p.root], holder.place.root)
+		c.fn.events.flowsInto[p.root] = append(c.fn.events.flowsInto[p.root], h.place.root)
 	case argHolder, receiverHolder, tempHolder:
 	}
 	flow := flowBase{eventBase: eventBase{place: p, node: node}, holder: holder}
@@ -344,7 +345,7 @@ func (c *checker) emitCaptureFlow(closure ast.Func, root liveness.VarID, t solty
 	if fp, ok := c.paramByVar[root]; ok {
 		t = fp.Type
 	}
-	holder := eventHolder{kind: tempHolder, node: closure}
+	holder := tempHolder{node: closure}
 	var dest flowDest = &captureDest{writes: writes}
 	if moves {
 		dest = &ownedDest{}
@@ -363,7 +364,7 @@ func (c *checker) emitBindingFlow(vd *ast.VarDecl, id liveness.VarID, bindingT s
 	if vd.TypeAnn != nil {
 		dest = c.destOfType(bindingT)
 	}
-	c.emitFlow(vd.Init, eventHolder{kind: placeHolder, place: movePlace{root: id}}, dest, ref)
+	c.emitFlow(vd.Init, placeHolder{place: movePlace{root: id}}, dest, ref)
 }
 
 // emitPatternFlows emits the flow of each part pat binds out of the value of source,
@@ -505,7 +506,7 @@ func (w *patternEmitter) leaf(node ast.Node, at movePlace, path []placeSeg) {
 	if b, ok := dest.(*borrowDest); ok {
 		b.reborrows = true
 	}
-	holder := eventHolder{kind: placeHolder, place: movePlace{root: id, path: path}}
+	holder := placeHolder{place: movePlace{root: id, path: path}}
 	w.c.emitValueFlow(at, nil, sourceT, w.source, holder, dest, w.ref)
 }
 
@@ -528,9 +529,9 @@ func (c *checker) emitAssignFlow(scope *Scope, e *ast.BinaryExpr, ref liveness.S
 		// into it outlives every local, so it is a moduleHolder.
 		switch id := c.varIDs.Of(left); {
 		case b.ModuleLevel:
-			c.emitFlow(e.Right, eventHolder{kind: moduleHolder, name: left.Name}, dest, ref)
+			c.emitFlow(e.Right, moduleHolder{name: left.Name}, dest, ref)
 		case id > 0:
-			c.emitFlow(e.Right, eventHolder{kind: placeHolder, place: movePlace{root: id}}, dest, ref)
+			c.emitFlow(e.Right, placeHolder{place: movePlace{root: id}}, dest, ref)
 		default:
 			return
 		}
@@ -596,14 +597,14 @@ func (c *checker) emitCallFlows(lvl int, e *ast.CallExpr, fn *soltype.FuncType, 
 		// its lifetime cannot tell one call's borrow from another's. Each call borrows the
 		// receiver under a lifetime of its own.
 		dest := &paramDest{param: self, reborrows: true, callLifetime: c.ctx.freshLifetime(lvl)}
-		c.emitFlow(recv, eventHolder{kind: receiverHolder, node: e}, dest, ref)
+		c.emitFlow(recv, receiverHolder{call: e}, dest, ref)
 	}
 	for i, arg := range e.Args {
 		dest, ok := argDest(e, fn, i)
 		if !ok {
 			continue
 		}
-		c.emitFlow(arg, eventHolder{kind: argHolder, node: e, index: i}, dest, ref)
+		c.emitFlow(arg, argHolder{call: e, index: i}, dest, ref)
 	}
 }
 
@@ -634,5 +635,5 @@ func (c *checker) emitReturnFlow(expr ast.Expr, ref liveness.StmtRef) {
 	case !c.fn.returnAnnotated:
 		dest = &inferredReturnDest{}
 	}
-	c.emitFlow(expr, eventHolder{kind: returnHolder}, dest, ref)
+	c.emitFlow(expr, returnHolder{}, dest, ref)
 }
