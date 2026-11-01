@@ -30,9 +30,14 @@ for [#2426](https://github.com/escalier-lang/escalier/issues/2426),
 
 Each suspension hands its consumer a value that something else still holds.
 
-Every `await` of a promise and every reaction registered with `.then`,
-`.catch` or `.finally` receives the one object the promise settled to. The checker treats each `await p` as an
-owned value and leaves `p` usable:
+A *reaction* is a callback registered on a promise with `.then`, `.catch` or
+`.finally`. The ECMAScript specification stores each one in a list on the
+pending promise, and when the promise settles it queues a job that calls the
+callback with the result.
+
+Every `await` of a promise and every reaction receives the one object the
+promise settled to. The checker treats each `await p` as an owned value and
+leaves `p` usable:
 
 ```esc
 type Flat = {x: number}
