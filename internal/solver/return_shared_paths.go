@@ -47,6 +47,8 @@ import (
 type SharedReturnPathsError struct {
 	// LocalName is the local reached twice, for the message.
 	LocalName string
+	// local is the VarID of the local LocalName names.
+	local liveness.VarID
 	// node is the returned expression, which is where both paths leave together.
 	node ast.Node
 }
@@ -146,7 +148,7 @@ func (c *checker) reportReachedTwice(reached []reachedPlace, blame ast.Expr) {
 	slices.Sort(shared)
 	for _, referent := range shared {
 		c.noteSharedPathBlame(blame)
-		c.report(&SharedReturnPathsError{LocalName: c.varIDToName(referent), node: blame})
+		c.report(&SharedReturnPathsError{LocalName: c.varIDToName(referent), local: referent, node: blame})
 	}
 }
 
@@ -200,7 +202,7 @@ func (c *checker) reportLiteralSharedPaths(
 			}
 			seen.Add(root)
 			c.noteSharedPathBlame(e)
-			c.report(&SharedReturnPathsError{LocalName: c.varIDToName(root), node: e})
+			c.report(&SharedReturnPathsError{LocalName: c.varIDToName(root), local: root, node: e})
 		}
 	}
 	return true

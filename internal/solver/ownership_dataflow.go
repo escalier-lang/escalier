@@ -97,66 +97,51 @@ func (c *checker) runOwnershipDataflow() {
 	// E4's `moved` example puts the error on the move, so a move the pass rejects is
 	// reported once, there, and not again at a later call of the closure.
 	c.errs = slices.DeleteFunc(c.errs, closureMoveReported(found))
-	// L1 and E2 at the return replace the frame-exit check of a returned value's paths. A
-	// pair of paths the pass reports by E2 is reported once, by the pass. The frame-exit
-	// check keeps each pair the pass does not report.
+	// L1 and E2 at the return replace the frame-exit check of a value's paths out of the
+	// frame. A pair of paths the pass reports by E2 is reported once, by the pass. The
+	// frame-exit check keeps each pair the pass does not report.
 	c.errs = slices.DeleteFunc(c.errs, sharedPathsReported(found))
 	c.errs = append(c.errs, found...)
 }
 
-// sharedPathsReported returns a filter that matches each SharedReturnPathsError and
-// MixedOutflowPathsError of the current checks for which the dataflow pass reports an E2
-// diagnostic about the same local. found holds the pass's diagnostics. A pass diagnostic
-// matches when the root of the place it names is the local the frame-exit diagnostic names,
-// and its span lies inside the frame-exit diagnostic's span or one of its related spans.
+// sharedPathsReported returns a filter that matches each frame-exit diagnostic of the current
+// checks about a mutable path and an immutable one to a local, for which the dataflow pass
+// reports E2 between two borrows of the same local. found holds the pass's diagnostics. The
+// diagnostics it matches are SharedReturnPathsError and the MixedOutflowPathsError that is not
+// Owned. A pass diagnostic matches when its local is the frame-exit diagnostic's local and its
+// span lies inside the frame-exit diagnostic's span or its related span.
 func sharedPathsReported(found []SolverError) func(SolverError) bool {
-	type e2Report struct {
-		local string
-		span  ast.Span
-	}
-	var reports []e2Report
+	reports := map[liveness.VarID][]ast.Span{}
 	for _, err := range found {
-		switch e := err.(type) {
-		case *BorrowAliasError:
-			reports = append(reports, e2Report{local: placeNameRoot(e.Place), span: e.Span()})
-		case *BorrowedValueWriteError:
-			reports = append(reports, e2Report{local: placeNameRoot(e.Place), span: e.Span()})
+		if e, ok := err.(*BorrowAliasError); ok && e.root != 0 {
+			reports[e.root] = append(reports[e.root], e.Span())
 		}
+	}
+	if len(reports) == 0 {
+		return func(SolverError) bool { return false }
 	}
 
 	return func(err SolverError) bool {
-		var local string
+		var local liveness.VarID
 		switch e := err.(type) {
 		case *SharedReturnPathsError:
-			local = e.LocalName
+			local = e.local
 		case *MixedOutflowPathsError:
-			local = e.LocalName
+			if e.Owned {
+				return false
+			}
+			local = e.local
 		default:
 			return false
 		}
 
-		spans := append([]ast.Span{err.Span()}, err.Related()...)
-		for _, r := range reports {
-			if r.local != local {
-				continue
-			}
-			for _, s := range spans {
-				if s.ContainsSpan(r.span) {
-					return true
-				}
+		for _, r := range reports[local] {
+			if err.Span().ContainsSpan(r) || slices.ContainsFunc(err.Related(), func(s ast.Span) bool { return s.ContainsSpan(r) }) {
+				return true
 			}
 		}
 		return false
 	}
-}
-
-// placeNameRoot returns the local a rendered place name starts with, `b` for `b`, `b.x`,
-// and `b[0]`.
-func placeNameRoot(name string) string {
-	if i := strings.IndexAny(name, ".["); i >= 0 {
-		return name[:i]
-	}
-	return name
 }
 
 // closureMoveReported returns a filter that matches each E4 diagnostic of the current checks
@@ -639,6 +624,7 @@ func (d *bodyDataflow) checkNewPath(place movePlace, kind borrowKind, node ast.N
 				FirstPlace: d.placeName(first.ev.place),
 				FirstMut:   first.ev.borrow == mutableBorrow,
 				SecondMut:  kind == mutableBorrow,
+				root:       place.root,
 				node:       node,
 				first:      first.ev.node.Span(),
 			})

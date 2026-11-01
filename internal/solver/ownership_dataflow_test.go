@@ -813,6 +813,24 @@ func TestOwnershipDataflow(t *testing.T) {
 		{
 			// The pass reports no E2 conflict for the two borrows t takes in one literal, so
 			// the frame-exit check keeps its diagnostic.
+			// The pass reports E2 at the store's `&b`. The frame-exit check reports that b
+			// leaves both owned and through a borrow, which is not a pair E2 covers, so it stays.
+			name: "AnOwnedOutflowStaysBesideE2",
+			src: `
+				fn f(p: &mut {r: &{v: number}}) -> {v: number} {
+					val mut b = {v: 1}
+					val a = &mut b
+					p.r = &b
+					a.v = 2
+					return b
+				}
+			`,
+			errs: []string{
+				"'b' leaves the function both as an owned value and through a borrow",
+				"cannot borrow 'b' as immutable while it is borrowed as mutable",
+			},
+		},
+		{
 			name: "SharedPathsTheDataflowPassMissesStayReported",
 			src: `
 				fn build() {

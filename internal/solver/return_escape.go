@@ -111,7 +111,11 @@ type MixedOutflowPathsError struct {
 	// `Owned` says one of the two paths carries the local's data by value. The message then
 	// names an owned path and a borrow rather than two borrows.
 	Owned bool
-	// `node` is the later of the two outgoing expressions, and `other` the earlier one.
+	// local is the VarID of the local LocalName names.
+	local liveness.VarID
+	// `node` is the outgoing expression the error is blamed on, and `other` the other one.
+	// node is the later of two non-return sites, and the return when one of the two is a
+	// return.
 	node  ast.Node
 	other ast.Span
 }
@@ -565,14 +569,14 @@ func (c *checker) reportMixedOutflow(conflict *outflowConflict, blame ast.Node) 
 		c.noteSharedPathBlame(e)
 	}
 	c.report(&MixedOutflowPathsError{
-		LocalName: c.varIDToName(conflict.id), Owned: conflict.owned,
+		LocalName: c.varIDToName(conflict.id), Owned: conflict.owned, local: conflict.id,
 		node: blame, other: conflict.other.Span(),
 	})
 }
 
 // outflowConflict is a local that leaves through two expressions with paths that disagree. `other`
-// is the expression the earlier path leaves through, and `owned` says either path carries the
-// local's data by value.
+// is the expression the error is not blamed on: the earlier of two non-return sites, or the site
+// that is not the return. `owned` says either path carries the local's data by value.
 type outflowConflict struct {
 	id    liveness.VarID
 	other ast.Node
