@@ -4238,25 +4238,6 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"11:17-11:23: cannot borrow 'p' as mutable while it is borrowed as immutable"},
 		},
-		// A return passes the borrow back to the caller, so the caller uses the source while the returned
-		// borrow is live. Today the borrow `pick` returns is not tied to `p`, so the write to `p.x`
-		// reports nothing.
-		{
-			column: "WriteDuringImmutableBorrow",
-			site:   "Return",
-			src: `
-				fn pick(p: &{x: number}) -> &{x: number} {
-					return p
-				}
-				fn g() -> number {
-					val mut p = {x: 1}
-					val d = pick(&p)
-					p.x = 2
-					return d.x
-				}
-			`,
-			want: []string{"8:6-8:9: cannot assign to 'p.x' while it is borrowed as immutable"},
-		},
 		// Today the element store reports
 		// `borrowed value 'p' does not live long enough to escape the function`, which the frame-exit
 		// check reports for any borrow of a local stored into an element.
@@ -4391,25 +4372,6 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"11:18-11:20: cannot borrow 'p' as immutable while it is borrowed as mutable"},
 		},
-		// A return passes the borrow back to the caller, so the caller uses the source while the returned
-		// borrow is live. Today the borrow `pickMut` returns is not tied to `p`, so `&p` reports nothing.
-		{
-			column: "ImmutableBorrowDuringMutableBorrow",
-			site:   "Return",
-			src: `
-				fn pickMut(p: &mut {x: number}) -> &mut {x: number} {
-					return p
-				}
-				fn g() -> number {
-					val mut p = {x: 1}
-					val d = pickMut(&mut p)
-					val r = &p
-					d.x = 2
-					return r.x
-				}
-			`,
-			want: []string{"8:14-8:16: cannot borrow 'p' as immutable while it is borrowed as mutable"},
-		},
 		// Today the element store reports
 		// `borrowed value 'p' does not live long enough to escape the function`, which the frame-exit
 		// check reports for any borrow of a local stored into an element.
@@ -4538,25 +4500,6 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"11:14-11:15: cannot move 'p' while it is borrowed"},
 		},
-		// A return passes the borrow back to the caller, so the caller uses the source while the returned
-		// borrow is live. Today the borrow `pick` returns is not tied to `p`, so the move reports
-		// nothing.
-		{
-			column: "MoveWhileImmutablyBorrowed",
-			site:   "Return",
-			src: `
-				fn pick(p: &{x: number}) -> &{x: number} {
-					return p
-				}
-				fn g() -> number {
-					val p = {x: 1}
-					val d = pick(&p)
-					val q = p
-					return d.x
-				}
-			`,
-			want: []string{"8:14-8:15: cannot move 'p' while it is borrowed"},
-		},
 		// Today storing `p` into module-level state while it is borrowed reports nothing.
 		{
 			column: "MoveWhileImmutablyBorrowed",
@@ -4605,25 +4548,6 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"5:12-5:13: cannot move 'p' while it is borrowed"},
 		},
-		// A return passes the borrow back to the caller, so the caller uses the source while the returned
-		// borrow is live. Today the borrow `pick` returns is not tied to `p`, so the move reports
-		// nothing.
-		{
-			column: "MoveToMutableWhileImmutablyBorrowed",
-			site:   "Return",
-			src: `
-				fn pick(p: &{x: number}) -> &{x: number} {
-					return p
-				}
-				fn g() -> number {
-					val p = {x: 1}
-					val d = pick(&p)
-					val mut q = p
-					return d.x
-				}
-			`,
-			want: []string{"8:18-8:19: cannot move 'p' while it is borrowed"},
-		},
 		// Today the alias-set transition check reports `cannot assign 'p' to mutable 'q'`, and the later
 		// call reports that `peek` reads `p` after it was moved.
 		{
@@ -4653,25 +4577,6 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 				}
 			`,
 			want: []string{"11:14-11:15: cannot move 'p' while it is borrowed"},
-		},
-		// A return passes the borrow back to the caller, so the caller uses the source while the returned
-		// borrow is live. Today the borrow `pickMut` returns is not tied to `p`, so the move reports
-		// nothing.
-		{
-			column: "MoveWhileMutablyBorrowed",
-			site:   "Return",
-			src: `
-				fn pickMut(p: &mut {x: number}) -> &mut {x: number} {
-					return p
-				}
-				fn g() {
-					val mut p = {x: 1}
-					val d = pickMut(&mut p)
-					val q = p
-					d.x = 2
-				}
-			`,
-			want: []string{"8:14-8:15: cannot move 'p' while it is borrowed"},
 		},
 		// Today storing `p` into module-level state while it is borrowed reports nothing.
 		{
@@ -4706,3 +4611,96 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 	})
 }
 */
+
+// TestFlowMatrixReturnedBorrow covers a borrow a call returns. The callee's signature ties its
+// result to the parameter, so the caller's binding of the result holds the argument's borrow,
+// and the caller uses the source while that borrow is live.
+//
+// The cells run with the ownership dataflow pass on. The current checks do not tie a call's
+// result to its arguments, so with the pass off each cell reports nothing. The pass replaces
+// those checks, so the test does not wait on a fix to them.
+func TestFlowMatrixReturnedBorrow(t *testing.T) {
+	runFlowMatrixWith(t, Options{OwnershipDataflow: true}, []flowCell{
+		{
+			column: "WriteDuringImmutableBorrow",
+			site:   "Return",
+			src: `
+				fn pick(p: &{x: number}) -> &{x: number} {
+					return p
+				}
+				fn g() -> number {
+					val mut p = {x: 1}
+					val d = pick(&p)
+					p.x = 2
+					return d.x
+				}
+			`,
+			want: []string{"8:6-8:9: cannot assign to 'p.x' while it is borrowed as immutable"},
+		},
+		{
+			column: "ImmutableBorrowDuringMutableBorrow",
+			site:   "Return",
+			src: `
+				fn pickMut(p: &mut {x: number}) -> &mut {x: number} {
+					return p
+				}
+				fn g() -> number {
+					val mut p = {x: 1}
+					val d = pickMut(&mut p)
+					val r = &p
+					d.x = 2
+					return r.x
+				}
+			`,
+			want: []string{"8:14-8:16: cannot borrow 'p' as immutable while it is borrowed as mutable"},
+		},
+		{
+			column: "MoveWhileImmutablyBorrowed",
+			site:   "Return",
+			src: `
+				fn pick(p: &{x: number}) -> &{x: number} {
+					return p
+				}
+				fn g() -> number {
+					val p = {x: 1}
+					val d = pick(&p)
+					val q = p
+					return d.x
+				}
+			`,
+			want: []string{"8:14-8:15: cannot move 'p' while it is borrowed"},
+		},
+		{
+			column: "MoveToMutableWhileImmutablyBorrowed",
+			site:   "Return",
+			src: `
+				fn pick(p: &{x: number}) -> &{x: number} {
+					return p
+				}
+				fn g() -> number {
+					val p = {x: 1}
+					val d = pick(&p)
+					val mut q = p
+					return d.x
+				}
+			`,
+			want: []string{"8:18-8:19: cannot move 'p' while it is borrowed"},
+		},
+		{
+			column: "MoveWhileMutablyBorrowed",
+			site:   "Return",
+			src: `
+				fn pickMut(p: &mut {x: number}) -> &mut {x: number} {
+					return p
+				}
+				fn g() {
+					val mut p = {x: 1}
+					val d = pickMut(&mut p)
+					val q = p
+					d.x = 2
+				}
+			`,
+			want: []string{"8:14-8:15: cannot move 'p' while it is borrowed"},
+		},
+	})
+}

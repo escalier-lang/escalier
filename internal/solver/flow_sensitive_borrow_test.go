@@ -13,9 +13,12 @@ import (
 // merge.
 func TestFlowSensitiveBorrowEdges(t *testing.T) {
 	tests := map[string]struct {
-		src   string
-		want  []string
-		types map[string]string
+		src  string
+		want []string
+		// wantDataflow is what the case expects with the dataflow pass on, when that differs
+		// from want.
+		wantDataflow []string
+		types        map[string]string
 	}{
 		// Reassigning a `var`'s borrow clears the replaced edge: `a = &mut d` after
 		// `a = &mut c` leaves only `a` → d, so storing `a` out hands d alone to the caller. The
@@ -53,6 +56,9 @@ func TestFlowSensitiveBorrowEdges(t *testing.T) {
 				}
 			`,
 			want: []string{"9:15-9:17: 'd' leaves the function through a mutable path and an immutable one"},
+			// `out.slot` and `view.r` both reach the caller, so the `&d` stored into `view.r`
+			// breaks E2 against the `&mut d` that `out.slot` holds.
+			wantDataflow: []string{"9:15-9:17: cannot borrow 'd' as immutable while it is borrowed as mutable"},
 			types: map[string]string{
 				"f": "fn (seed: &mut {value: number}, cond: boolean, out: &mut {slot: &mut {value: number}}, " +
 					"view: &mut {r: &{value: number}}) -> undefined",
@@ -87,7 +93,7 @@ func TestFlowSensitiveBorrowEdges(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tc.src)
-			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+			require.Equal(t, wantForPass(tc.want, tc.wantDataflow), messagesWithSpan(t, errs))
 			require.Equal(t, tc.types, values)
 		})
 	}

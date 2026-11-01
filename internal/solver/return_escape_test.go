@@ -28,9 +28,12 @@ import (
 // covers the same rule for a return that carries an owned aggregate holding borrows.
 func TestReturnValueBorrows(t *testing.T) {
 	tests := map[string]struct {
-		src   string
-		want  []string
-		types map[string]string
+		src  string
+		want []string
+		// wantDataflow is what the case expects with the dataflow pass on, when that differs
+		// from want.
+		wantDataflow []string
+		types        map[string]string
 	}{
 		// The first repro in #1264. The bare borrow `return &mut b` leaves as the only path to
 		// b, so the return owns what it borrowed. The owned form is immutable, and the
@@ -246,8 +249,10 @@ func TestReturnValueBorrows(t *testing.T) {
 					return &mut b
 				}
 			`,
-			want:  []string{"5:13-5:19: 'b' leaves the function through a mutable path and an immutable one"},
-			types: map[string]string{"f": "fn (p: &mut {node: {peer: &{value: number}}}) -> &mut {value: number}"},
+			want: []string{"5:13-5:19: 'b' leaves the function through a mutable path and an immutable one"},
+			// `p.node.peer` holds `&b` when f returns, so the returned `&mut b` breaks E2.
+			wantDataflow: []string{"5:13-5:19: cannot borrow 'b' as mutable while it is borrowed as immutable"},
+			types:        map[string]string{"f": "fn (p: &mut {node: {peer: &{value: number}}}) -> &mut {value: number}"},
 		},
 		// A borrow written in an `if`/`else` branch keeps the mutability it is written with.
 		// Both branches store `&mut b`, so both paths to b are mutable and the return is
@@ -275,6 +280,8 @@ func TestReturnValueBorrows(t *testing.T) {
 				}
 			`,
 			want: []string{"5:13-5:19: 'b' leaves the function through a mutable path and an immutable one"},
+			// Either branch leaves `&b` in `p.node.peer`, so the returned `&mut b` breaks E2.
+			wantDataflow: []string{"5:13-5:19: cannot borrow 'b' as mutable while it is borrowed as immutable"},
 			types: map[string]string{
 				"f": "fn (cond: boolean, p: &mut {node: {peer: &{value: number}}}) -> &mut {value: number}",
 			},
@@ -448,7 +455,7 @@ func TestReturnValueBorrows(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tc.src)
-			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+			require.Equal(t, wantForPass(tc.want, tc.wantDataflow), messagesWithSpan(t, errs))
 			require.Equal(t, tc.types, values)
 		})
 	}

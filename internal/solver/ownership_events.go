@@ -125,8 +125,8 @@ func (returnTarget) isHolderTarget()   {}
 func (tempTarget) isHolderTarget()     {}
 
 // ownershipEvent is one event of the checking model. It is one of *copyEvent,
-// *borrowEvent, *moveEvent, *useEvent, or *provisionalEvent. base returns the fields
-// every kind shares.
+// *borrowEvent, *moveEvent, *useEvent, *passEvent, *callEvent, or *provisionalEvent. base
+// returns the fields every kind shares.
 type ownershipEvent interface {
 	isOwnershipEvent()
 	base() *eventBase
@@ -157,7 +157,7 @@ type flowBase struct {
 func (f *flowBase) flow() *flowBase { return f }
 
 // flowEvent is an ownership event that passes a value to a holder: a *copyEvent,
-// *borrowEvent, *moveEvent, or *provisionalEvent.
+// *borrowEvent, *moveEvent, *passEvent, or *provisionalEvent.
 type flowEvent interface {
 	ownershipEvent
 	flow() *flowBase
@@ -215,11 +215,44 @@ type provisionalEvent struct {
 	flowBase
 }
 
+// callSlot is one position a call receives a value at: argument index of call, or
+// selfIndex for the receiver of a method call.
+type callSlot struct {
+	call  *ast.CallExpr
+	index int
+}
+
+// passEvent gives the holder each borrow the call slot `from` holds, the way the callee's
+// signature says the call passes it on. A lifetime the parameter at `from` shares with a
+// position inside another `&mut` parameter's referent stores the borrow there, so
+// `store(&mut a, &mut b)` with
+//
+//	declare fn store<'a>(target: &mut {peer: &'a mut B}, item: &'a mut B)
+//
+// passes the borrow of b from `arg(store, 1)` to `a.peer`. A lifetime the parameter shares
+// with the return type passes the borrow to the call's result, which a tempTarget of the
+// call holds until a flow site receives the result. The event's node is the call, and its
+// place names nothing.
+type passEvent struct {
+	flowBase
+	from callSlot
+}
+
+// callEvent marks the point where call returns. Each borrow a slot of call holds is
+// released there, unless a passEvent gave it to another holder first. A `&mut self`
+// receiver borrow takes effect there too, as callEnd describes.
+type callEvent struct {
+	eventBase
+	call *ast.CallExpr
+}
+
 func (*copyEvent) isOwnershipEvent()        {}
 func (*borrowEvent) isOwnershipEvent()      {}
 func (*moveEvent) isOwnershipEvent()        {}
 func (*useEvent) isOwnershipEvent()         {}
 func (*provisionalEvent) isOwnershipEvent() {}
+func (*passEvent) isOwnershipEvent()        {}
+func (*callEvent) isOwnershipEvent()        {}
 
 // ownershipEvents holds the ownership events of one body, in the order the walk emitted
 // them. names maps each VarID of the body to its source name, for rendering.
@@ -276,6 +309,10 @@ type ownershipEvents struct {
 	// checked marks a table the dataflow pass has already walked. A package loaded during a
 	// run is checked when its own declarations finish, before the module that imports it.
 	checked bool
+	// callerOwned holds each parameter, or each local a closure captures, whose referent
+	// belongs to the caller. The caller can read what the body stores into such a place
+	// after the body returns or suspends.
+	callerOwned set.Set[liveness.VarID]
 }
 
 // returnSite is a return that receives a value: the expression returned, and the CFG point
@@ -378,6 +415,7 @@ const (
 	bindingRole
 	patternRole
 	returnRole
+	callEndRole
 )
 
 // newOwnershipEvents returns an empty table whose places render through names.
@@ -395,6 +433,7 @@ func newOwnershipEvents(names map[liveness.VarID]string) *ownershipEvents {
 		tupleParts:     map[string][]placeSeg{},
 		callees:        map[ast.Expr]*ast.CallExpr{},
 		capturedPlaces: map[ast.Func]*capturedPlaceFinder{},
+		callerOwned:    set.NewSet[liveness.VarID](),
 	}
 }
 
@@ -440,12 +479,16 @@ func (i *Info) ownershipEventsOf(fn ast.Node) *ownershipEvents {
 // renderOwnershipEvents renders the events of t one per line, each prefixed with the CFG
 // node it is attached to, as renderStmtRef writes it. A borrow's lifetime renders as
 // `'static`, as `'_` when the borrow's type carries none or an elided one, or as `'<n>`
-// numbering the other lifetimes in order of first appearance.
+// numbering the other lifetimes in order of first appearance. A callEvent is left out,
+// since every call has one and it moves no value.
 func renderOwnershipEvents(t *ownershipEvents) []string {
 	ltNames := map[soltype.Lifetime]string{}
 	var out []string
 
 	for _, ev := range t.list() {
+		if _, isCall := ev.(*callEvent); isCall {
+			continue
+		}
 		out = append(out, fmt.Sprintf("%s: %s", renderStmtRef(ev.base().at), t.renderEvent(ev, ltNames)))
 	}
 
@@ -487,6 +530,8 @@ func (t *ownershipEvents) renderEvent(ev ownershipEvent, ltNames map[soltype.Lif
 		return fmt.Sprintf("use(%s, %s)", place, access)
 	case *provisionalEvent:
 		return fmt.Sprintf("provisional(%s, %s)", place, t.renderHolder(ev.holder))
+	case *passEvent:
+		return fmt.Sprintf("pass(%s, %s)", renderSlot(ev.from), t.renderHolder(ev.holder))
 	default:
 		panic(fmt.Sprintf("renderEvent: unexpected event %T", ev))
 	}
@@ -576,6 +621,15 @@ func writePath(b *strings.Builder, path []placeSeg) {
 		}
 		writePlaceSeg(b, seg)
 	}
+}
+
+// renderSlot renders a call slot the way renderHolder renders the argTarget or
+// receiverTarget for it.
+func renderSlot(s callSlot) string {
+	if s.index == selfIndex {
+		return fmt.Sprintf("arg(%s, self)", renderCallee(s.call))
+	}
+	return fmt.Sprintf("arg(%s, %d)", renderCallee(s.call), s.index)
 }
 
 // renderCallee names the callee of the call node for rendering, as calleeName does, in

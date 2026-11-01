@@ -1722,6 +1722,9 @@ func (c *checker) writtenParamType(scope *Scope, p *ast.Param, lvl int) (soltype
 func (c *checker) inferBorrow(scope *Scope, lvl int, e *ast.BorrowExpr) soltype.Type {
 	c.noteBorrowSite(e)
 	c.emitBorrow(e)
+	// The operand's events are emitted while it is inferred, so a literal operand hands its
+	// borrows to e once that is done.
+	defer c.holdLiteralBorrows(e)
 	// PR 4. An explicit borrow of a field path takes the receiver-bounded
 	// lifetime of the implicit read at field granularity. The dispatch covers
 	// both `MemberExpr` and the constant-string `IndexExpr` form, so
@@ -2040,6 +2043,7 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 	c.recordCallArgEffects(e, fn, consumeRef, hasConsumeRef)
 	if hasEventRef {
 		c.emitArgFlows(e, fn, eventRef)
+		c.emitCallEnd(e, fn, eventRef)
 	}
 	// A module-level receiver outlives every local, so an argument its method stores there
 	// escapes. A destination typed by an inference variable has no ownership yet, so D9 decides

@@ -811,27 +811,29 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot borrow 'b' as immutable while it is borrowed as mutable"},
 		},
 		{
-			// The pass reports no E2 conflict for the two borrows t takes in one literal, so
-			// the frame-exit check keeps its diagnostic.
-			// The pass reports E2 at the store's `&b`. The frame-exit check reports that b
-			// leaves both owned and through a borrow, which is not a pair E2 covers, so it stays.
+			// The body reads `p.r` while a's mutable borrow is live, so the store's `&b` breaks
+			// E2. The current checks report that store with a message naming a, which takes the
+			// place of the pass's. The frame-exit check reports that b leaves both owned and
+			// through a borrow, which is not a pair E2 covers, so it stays.
 			name: "AnOwnedOutflowStaysBesideE2",
 			src: `
 				fn f(p: &mut {r: &{v: number}}) -> {v: number} {
 					val mut b = {v: 1}
 					val a = &mut b
 					p.r = &b
-					a.v = 2
+					a.v = p.r.v + 1
 					return b
 				}
 			`,
 			errs: []string{
+				"cannot store an immutable borrow of 'b' while 'a' still borrows it as mutable",
 				"'b' leaves the function both as an owned value and through a borrow",
-				"cannot borrow 'b' as immutable while it is borrowed as mutable",
 			},
 		},
 		{
-			name: "SharedPathsTheDataflowPassMissesStayReported",
+			// t holds both borrows one literal takes, and the return uses t, so the pass reports
+			// the pair by E2. The frame-exit diagnostic at the return t flows into is dropped.
+			name: "SharedPathsInOneLiteralReportedByE2",
 			src: `
 				fn build() {
 					val mut b = {x: {n: 1}, y: {n: 2}}
@@ -839,24 +841,157 @@ func TestOwnershipDataflow(t *testing.T) {
 					return t
 				}
 			`,
-			errs: []string{"returned value reaches 'b' through a mutable path and an immutable one"},
+			errs: []string{"cannot borrow 'b.x' as immutable while it is borrowed as mutable"},
 		},
 		{
 			// The pass reports E2 for c inside the return, which replaces the frame-exit
-			// diagnostic about c. The one about b names another local, so it stays.
+			// diagnostic about c. The borrow of b that take receives ends with the call, so
+			// the pass reports nothing about b, and the frame-exit diagnostic about b stays.
 			name: "E2OnAnotherLocalKeepsTheSharedPathsCheck",
 			src: `
+				declare fn take(x: {peer: &{n: number}}) -> undefined
 				fn build() {
-					val mut b = {x: {n: 1}, y: {n: 2}}
+					val mut b = {n: 1}
 					val mut c = {n: 3}
-					val t = {p: &mut b.x, q: &b.x}
-					return [t, &c, &mut c]
+					take({peer: &b})
+					return [&mut b, &c, &mut c]
 				}
 			`,
 			errs: []string{
-				"returned value reaches 'b' through a mutable path and an immutable one",
+				"'b' leaves the function through a mutable path and an immutable one",
 				"cannot borrow 'c' as mutable while it is borrowed as immutable",
 			},
+		},
+		{
+			// The inner call's receiver borrow ends when `v.len()` returns, and the outer
+			// `&mut self` receiver only takes effect once its arguments are evaluated.
+			name: "NestedReceiverCallEndsItsBorrowOk",
+			src: `
+				class V {
+					n: number,
+					len(&self) -> number { return self.n },
+					push(&mut self, x: number) -> undefined {},
+				}
+				fn go() {
+					val mut v = V(1)
+					v.push(v.len())
+				}
+			`,
+		},
+		{
+			// The `&mut self` receiver takes effect when the call starts, while the argument
+			// `&p` is still live, so the argument is blamed.
+			name: "MutableReceiverConflictsWithAnArgument",
+			src: `
+				class R {
+					x: number,
+					writeRead(&mut self, r: &R) -> undefined {},
+				}
+				fn go() {
+					val mut p = R(1)
+					p.writeRead(&p)
+				}
+			`,
+			errs: []string{"cannot borrow 'p' as immutable while it is borrowed as mutable"},
+		},
+		{
+			// An argument's borrow ends when its call returns.
+			name: "ArgumentBorrowEndsWithItsCallOk",
+			src: `
+				declare fn bump(p: &mut {x: number}) -> number
+				declare fn look(n: number, r: &{x: number}) -> number
+				fn go() -> number {
+					val mut a = {x: 1}
+					return look(bump(&mut a), &a)
+				}
+			`,
+		},
+		{
+			// pickMut returns the borrow of its argument, which the outer call receives, so
+			// the borrow lasts until the outer call returns.
+			name: "ReturnedBorrowPassedToAnotherCall",
+			src: `
+				declare fn pickMut<'a>(p: &'a mut {x: number}) -> &'a mut {x: number}
+				declare fn both(m: &mut {x: number}, r: &{x: number}) -> undefined
+				fn go() {
+					val mut a = {x: 1}
+					both(pickMut(&mut a), &a)
+				}
+			`,
+			errs: []string{"cannot borrow 'a' as immutable while it is borrowed as mutable"},
+		},
+		{
+			// A store ties the item to the target's field, so the field holds the item's borrow
+			// while the target is used.
+			name: "StoreEdgeKeepsTheItemBorrowed",
+			src: `
+				declare fn store<'a>(target: &mut {peer: &'a mut {x: number}}, item: &'a mut {x: number}) -> undefined
+				fn go(mut q: {x: number}) -> number {
+					val mut a = {peer: &mut q}
+					val mut b = {x: 1}
+					store(&mut a, &mut b)
+					val c = b
+					return a.peer.x
+				}
+			`,
+			errs: []string{"cannot move 'b' while it is borrowed"},
+		},
+		{
+			// c takes b's borrows field by field, so writing `c.other` leaves the loan of d
+			// that `c.peer` holds.
+			name: "WritingASiblingFieldKeepsTheLoan",
+			src: `
+				fn go() {
+					val mut d = {value: 1}
+					val mut e = {value: 2}
+					val mut g = {value: 3}
+					val b = {peer: &mut d, other: &mut e}
+					var mut c = b
+					c.other = &mut g
+					val y = d
+					val z = c
+				}
+			`,
+			errs: []string{"cannot move 'd' while it is borrowed"},
+		},
+		{
+			// The caller reads `p.r` only once f returns, after the last write of b.
+			name: "WriteBeforeTheCallerReadsAStoredBorrowOk",
+			src: `
+				fn f(p: &mut {r: &{value: number}}, xs: [number]) {
+					val mut b = {value: 1}
+					for x in xs {
+						b.value = x
+						p.r = &b
+					}
+				}
+			`,
+		},
+		{
+			// The caller runs at the `yield`, and can keep a copy of `p.r`, so the stored
+			// borrow stays live after it.
+			name: "WriteAfterAYieldConflicts",
+			src: `
+				gen fn f(p: &mut {r: &{value: number}}) {
+					val mut b = {value: 1}
+					p.r = &b
+					yield 1
+					b.value = 5
+				}
+			`,
+			errs: []string{"cannot assign to 'b.value' while it is borrowed as immutable"},
+		},
+		{
+			// The write comes before the `yield`, where the caller first reads `p.r`.
+			name: "WriteBeforeAYieldOk",
+			src: `
+				gen fn f(p: &mut {r: &{value: number}}) {
+					val mut b = {value: 1}
+					p.r = &b
+					b.value = 5
+					yield 1
+				}
+			`,
 		},
 	}
 
@@ -1251,6 +1386,36 @@ func TestOwnershipDataflowMatchesCurrentChecks(t *testing.T) {
 				}
 			`,
 			want: []string{"6:6-6:9: cannot assign to 'x.v' while it is borrowed as immutable"},
+		},
+		{
+			// c takes b's borrows field by field, and writing `c.peer` ends the one it held
+			// there, so moving d is accepted.
+			name: "RepointingAFieldOfACopyEndsItsLoan",
+			src: `
+				fn go() {
+					val mut d = {value: 1}
+					val mut e = {value: 2}
+					val b = {peer: &mut d, other: &mut e}
+					var mut c = b
+					c.peer = &mut e
+					val y = d
+					val z = c
+				}
+			`,
+		},
+		{
+			// The same store with a later read of the target keeps the loan live at the move.
+			name: "StoreIntoACallerOwnedTargetReadAfterAMove",
+			src: `
+				declare fn store<'a>(target: &mut {peer: &'a mut {x: number}}, item: &'a mut {x: number}) -> undefined
+				fn go(p: &mut {peer: &mut {x: number}}) -> number {
+					val mut b = {x: 1}
+					store(p, &mut b)
+					val c = b
+					return p.peer.x
+				}
+			`,
+			want: []string{"6:14-6:15: cannot move 'b' while it is borrowed"},
 		},
 	}
 

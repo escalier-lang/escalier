@@ -98,7 +98,10 @@ type BorrowAliasError struct {
 	closure bool
 	// root is the VarID of the local Place starts with. The dataflow pass sets it, and the
 	// current checks leave it zero.
-	root  liveness.VarID
+	root liveness.VarID
+	// exits holds the span of each return a holder of either path flows into. The dataflow
+	// pass sets it, so sharedPathsReported can match a frame-exit diagnostic at that return.
+	exits []ast.Span
 	node  ast.Node
 	first ast.Span
 }
