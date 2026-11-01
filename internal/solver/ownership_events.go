@@ -242,6 +242,9 @@ type ownershipEvents struct {
 	// callees maps the callee expression of each call the walk has reached to the call, so
 	// a consuming receiver read at a callee knows the call whose receiver holds it.
 	callees map[ast.Expr]*ast.CallExpr
+	// capturedPlaces maps each closure written in the body to the places its body reaches,
+	// which capturedPaths reads for each local the closure captures.
+	capturedPlaces map[ast.Func]*capturedPlaceFinder
 	// cfg is the control-flow graph of the body, and live is the liveness of each of its
 	// locals over cfg. The dataflow pass in ownership_dataflow.go walks cfg and reads live to
 	// decide whether a holder is used again.
@@ -324,16 +327,17 @@ const (
 // newOwnershipEvents returns an empty table whose places render through names.
 func newOwnershipEvents(names map[liveness.VarID]string) *ownershipEvents {
 	return &ownershipEvents{
-		names:      names,
-		subsumed:   set.NewSet[ast.Node](),
-		unwritten:  set.NewSet[ast.Node](),
-		emitted:    set.NewSet[emitSite](),
-		temps:      map[ast.Node][]int{},
-		tempRoots:  map[ast.Node][]liveness.VarID{},
-		escaping:   set.NewSet[liveness.VarID](),
-		flowsInto:  map[liveness.VarID][]liveness.VarID{},
-		tupleParts: map[string][]placeSeg{},
-		callees:    map[ast.Expr]*ast.CallExpr{},
+		names:          names,
+		subsumed:       set.NewSet[ast.Node](),
+		unwritten:      set.NewSet[ast.Node](),
+		emitted:        set.NewSet[emitSite](),
+		temps:          map[ast.Node][]int{},
+		tempRoots:      map[ast.Node][]liveness.VarID{},
+		escaping:       set.NewSet[liveness.VarID](),
+		flowsInto:      map[liveness.VarID][]liveness.VarID{},
+		tupleParts:     map[string][]placeSeg{},
+		callees:        map[ast.Expr]*ast.CallExpr{},
+		capturedPlaces: map[ast.Func]*capturedPlaceFinder{},
 	}
 }
 

@@ -1252,6 +1252,54 @@ func TestOwnershipEventsCapturedPaths(t *testing.T) {
 			},
 		},
 		{
+			name: "GetterCapturesItsReceiver",
+			src: `
+				class Box {
+					b: {x: number},
+					get inner(&self) -> &{x: number} { return &self.b },
+				}
+				fn go() -> number {
+					val p = {a: Box({x: 1}), c: {x: 2}}
+					val f = fn () { return p.a.inner.x }
+					return f() + p.c.x
+				}
+			`,
+			want: []string{
+				"b0.1: borrow(&, `p.a`, `f`, '_)", // the getter `inner` reads the receiver p.a, not a field of it
+				"b0.2: use(`f`, read)",            // `f()` in the return
+				"b0.2: use(`p.c.x`, read)",        // `p.c.x` in the return
+			},
+		},
+		{
+			name: "ShorthandPropertyUsesTheWholeLocal",
+			src: `
+				declare fn show(o: {p: &{a: {x: number}}}) -> number
+				fn go(p: &{a: {x: number}}) -> number {
+					val f = fn () { return p.a.x + show({p}) }
+					return f()
+				}
+			`,
+			want: []string{
+				"b0.0: borrow(&, `p`, `f`, '_)", // `{p}` in the body uses p itself
+				"b0.1: use(`f`, read)",          // `f()` in the return
+			},
+		},
+		{
+			name: "DynamicIndexReadsAnotherLocal",
+			src: `
+				fn go(m: Array<{x: number}>) -> number {
+					val k = {i: 0, n: {x: 1}}
+					val f = fn () { return m[k.i].x + k.n.x }
+					return f()
+				}
+			`,
+			want: []string{
+				"b0.1: borrow(&, `m`, `f`, '_)", // the dynamic index makes the closure reach all of m
+				"b0.1: borrow(&, `k`, `f`, '_)", // `k.i` is a number read inside `m[...]`, so the closure reaches all of k
+				"b0.2: use(`f`, read)",          // `f()` in the return
+			},
+		},
+		{
 			name: "NestedFunctionCapturesTheWholeLocal",
 			src: `
 				fn go() -> number {

@@ -2005,9 +2005,10 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 	//  1. Read the enclosing statement's CFG point and note the call site.
 	//  2. Resolve the callee. A bare name bound to an overload set resolves to the set,
 	//     and any other callee is inferred.
-	//  3. Type the arguments.
-	//  4. Apply the arguments, to the arm an overload set picks or to the one signature.
-	//  5. Record the argument effects of the signature they were applied to.
+	//  3. Emit the receiver's ownership event, which comes before every argument's event.
+	//  4. Type the arguments.
+	//  5. Apply the arguments, to the arm an overload set picks or to the one signature.
+	//  6. Record the argument effects of the signature they were applied to.
 	//
 	// The CFG point comes first because inferring a child that contains statements, such
 	// as an `if` argument, overwrites c.fn.currentStmt. Reading it afterward would record

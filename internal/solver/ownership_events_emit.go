@@ -369,12 +369,12 @@ func (c *checker) emitValueFlow(p movePlace, source ast.Expr, sourceT soltype.Ty
 }
 
 // emitCaptureFlows emits the capture of the local root, of type t, by closure, attached to
-// ref. decl is the declaration of root's binding. The closure holds each capture until a flow site receives it.
-// writes marks a closure that writes the local. moveNode is the expression in the closure's
-// body that moves the local, or nil when the body does not move it.
+// ref. decl is the declaration of root's binding. writes marks a closure that writes the
+// local. moveNode is the expression in the closure's body that moves the local, or nil when
+// the body does not move it. The closure holds each capture until a flow site receives it.
 //
-// The closure captures each place capturedPaths finds under root, as a capture settleDest
-// decides. A closure that moves the local owns the place capturedMove returns instead,
+// The closure captures each place capturedPaths finds under root, as settleDest decides for
+// a capture. A closure that moves the local owns the place capturedMove returns instead,
 // wherever the closure flows. In
 //
 //	val f = fn () { val q = p.a; return q.x }
@@ -392,7 +392,6 @@ func (c *checker) emitCaptureFlows(closure ast.Func, root liveness.VarID, decl a
 	}
 
 	paths := c.capturedPaths(closure, decl)
-
 	if moveNode != nil {
 		paths = []capturedPath{c.capturedMove(paths, moveNode, decl)}
 	}
@@ -422,30 +421,33 @@ type capturedPath struct {
 	moves bool
 }
 
-// capturedPaths returns the places under the captured local declared by decl that closure's body
-// reads or writes, in the order the body first reaches them. A path that another path
-// returned is a prefix of is left out, so no two paths overlap. The whole local is the one
-// path returned when the body uses the local itself, or uses it in a way the walk cannot
-// name a field for: a dynamic index, a nested function, or JSX. A field path whose value is
-// a value type is cut back to the nearest field above it that is not one, since a
-// closure that reads `p.x` with `x: number` still sees later writes through `p`. A method
-// read such as `p.a.get` in `p.a.get()` captures the receiver `p.a`.
+// capturedPaths returns the places under the local declared by decl that closure's body
+// reads or writes, in the order the body first reaches them. No two of the places overlap,
+// since a place under another place returned is left out. The one place returned is the
+// whole local when the body uses the local in a way capturedChain names no field for, or
+// holds a nested function or JSX, whose uses of the local the walk does not name.
 func (c *checker) capturedPaths(closure ast.Func, decl ast.Node) []capturedPath {
-	v := &capturedPathFinder{c: c, decl: decl, callees: set.NewSet[ast.Expr]()}
-	if body := closure.FuncBody(); decl != nil && body != nil {
-		body.Accept(v)
+	t := c.fn.events
+	f, ok := t.capturedPlaces[closure]
+	if !ok {
+		f = &capturedPlaceFinder{c: c, paths: map[ast.Node][]capturedPath{}, whole: set.NewSet[ast.Node]()}
+		if body := closure.FuncBody(); body != nil {
+			body.Accept(f)
+		}
+		t.capturedPlaces[closure] = f
 	}
 
-	if v.whole || len(v.paths) == 0 {
+	found := f.paths[decl]
+	if f.allWhole || f.whole.Contains(decl) || len(found) == 0 {
 		return []capturedPath{{}}
 	}
 
 	var out []capturedPath
-	for i, cp := range v.paths {
-		covered := slices.ContainsFunc(v.paths, func(other capturedPath) bool {
-			return pathHasPrefix(cp.path, other.path) && len(other.path) < len(cp.path)
+	for i, cp := range found {
+		covered := slices.ContainsFunc(found, func(other capturedPath) bool {
+			return len(other.path) < len(cp.path) && pathHasPrefix(cp.path, other.path)
 		})
-		repeated := slices.ContainsFunc(v.paths[:i], func(other capturedPath) bool {
+		repeated := slices.ContainsFunc(found[:i], func(other capturedPath) bool {
 			return slices.Equal(other.path, cp.path)
 		})
 		if !covered && !repeated {
@@ -455,11 +457,11 @@ func (c *checker) capturedPaths(closure ast.Func, decl ast.Node) []capturedPath 
 	return out
 }
 
-// capturedMove returns the place a closure whose body moves the captured local declared by
-// decl owns, marked as moved. paths are the places capturedPaths found. moveNode is the
-// expression in the body that moves the local. The place moveNode names is returned when it
-// covers every path in paths. Otherwise the whole local is returned, since the body may move
-// more than the one place moveNode names.
+// capturedMove returns the place, marked as moved, that a closure owns when its body moves
+// the local declared by decl. paths are the places capturedPaths found under the local, and
+// moveNode is the expression in the body that moves it. The place moveNode names is returned
+// when it covers every place in paths. Otherwise the whole local is returned, since the body
+// may move more than the one place moveNode names.
 func (c *checker) capturedMove(paths []capturedPath, moveNode ast.Node, decl ast.Node) capturedPath {
 	whole := capturedPath{moves: true}
 
@@ -468,137 +470,156 @@ func (c *checker) capturedMove(paths []capturedPath, moveNode ast.Node, decl ast
 		return whole
 	}
 
-	segs, exprs, ok := c.capturedChain(e, decl)
-	if !ok || len(segs) == 0 {
+	cp, ok := c.capturedChain(e)
+	if !ok || cp.decl != decl || cp.whole || cp.closed || len(cp.segs) == 0 {
 		return whole
 	}
 
-	for _, cp := range paths {
-		if !pathHasPrefix(cp.path, segs) {
+	for _, p := range paths {
+		if !pathHasPrefix(p.path, cp.segs) {
 			return whole
 		}
 	}
 
-	return capturedPath{path: segs, t: c.info.TypeOf(exprs[len(exprs)-1]), moves: true}
+	return capturedPath{path: cp.segs, t: c.info.TypeOf(cp.exprs[len(cp.exprs)-1]), moves: true}
 }
 
-// capturedPathFinder walks a closure's body for capturedPaths. It records in paths each
-// place under the captured local declared by decl that the body reaches, and sets whole when the body
-// uses the local in a way that names no field. callees holds each member or index callee
-// of a call the walk has entered, whose receiver is the place the call reads.
-type capturedPathFinder struct {
+// capturedPlaceFinder walks a closure's body for capturedPaths. paths maps the declaration of
+// each local the body reaches through a field to the places it reaches. whole holds each
+// declaration of a local the body uses whole. allWhole is set when the body holds a nested
+// function or JSX, whose uses of a local the walk does not name.
+type capturedPlaceFinder struct {
 	ast.DefaultVisitor
-	c       *checker
-	decl    ast.Node
-	callees set.Set[ast.Expr]
-	paths   []capturedPath
-	whole   bool
+	c        *checker
+	paths    map[ast.Node][]capturedPath
+	whole    set.Set[ast.Node]
+	allWhole bool
 }
 
-func (v *capturedPathFinder) EnterExpr(e ast.Expr) bool {
-	if v.whole {
-		return false
-	}
-
+func (v *capturedPlaceFinder) EnterExpr(e ast.Expr) bool {
 	switch e := e.(type) {
 	case *ast.FuncExpr, *ast.JSXElementExpr, *ast.JSXFragmentExpr:
-		v.whole = true
+		v.allWhole = true
 		return false
-	case *ast.CallExpr:
-		switch e.Callee.(type) {
-		case *ast.MemberExpr, *ast.IndexExpr:
-			v.callees.Add(e.Callee)
-		}
-		return true
 	case *ast.IdentExpr, *ast.MemberExpr, *ast.IndexExpr:
-		chain := e
-		if v.callees.Contains(e) {
-			chain = placeChainObject(e)
-		}
-
-		segs, exprs, ok := v.c.capturedChain(chain, v.decl)
-		if !ok {
-			// A chain rooted elsewhere can still read the local in a dynamic index.
-			return true
-		}
-		if segs == nil {
-			v.whole = true
-			return false
-		}
-
-		// A value type copies, so the closure reaches it through the nearest field above it
-		// that holds a reference.
-		for len(segs) > 0 && v.c.holdsValueType(v.c.info.TypeOf(exprs[len(segs)-1])) {
-			segs = segs[:len(segs)-1]
-		}
-		if len(segs) == 0 {
-			v.whole = true
-			return false
-		}
-
-		v.paths = append(v.paths, capturedPath{path: segs, t: v.c.info.TypeOf(exprs[len(segs)-1])})
-
-		// Each receiver of the chain is part of the place, and only an index can read
-		// another value, so the walk stops here.
-		return false
+		return v.recordChain(e)
 	}
 
-	return true
+	return !v.allWhole
 }
 
-func (v *capturedPathFinder) EnterDecl(d ast.Decl) bool {
+// EnterObjExprElem records the key of a shorthand property such as `{p}`, which reads the
+// local p whole. ast.PropertyExpr does not visit that key as an expression.
+func (v *capturedPlaceFinder) EnterObjExprElem(elem ast.ObjExprElem) bool {
+	if prop, ok := elem.(*ast.PropertyExpr); ok && prop.Value == nil {
+		if key, isIdent := prop.Name.(*ast.IdentExpr); isIdent {
+			v.recordChain(key)
+		}
+	}
+	return !v.allWhole
+}
+
+func (v *capturedPlaceFinder) EnterDecl(d ast.Decl) bool {
 	if _, isFunc := d.(*ast.FuncDecl); isFunc {
-		v.whole = true
+		v.allWhole = true
 		return false
 	}
-	return !v.whole
+	return !v.allWhole
 }
 
-// placeChainObject returns the object a member or index expression e reads from.
-func placeChainObject(e ast.Expr) ast.Expr {
-	switch e := e.(type) {
-	case *ast.MemberExpr:
-		return e.Object
-	case *ast.IndexExpr:
-		return e.Object
+// recordChain records the place the identifier, member, or index chain e names, and
+// reports whether the walk descends into e. A chain that names a field path stops the walk,
+// since each link of it is part of the place and a constant index reads nothing else. The
+// walk descends into any other chain, whose dynamic index can read another local, as the
+// `k.s` of `m[k.s]` does.
+func (v *capturedPlaceFinder) recordChain(e ast.Expr) bool {
+	cp, ok := v.c.capturedChain(e)
+	if !ok {
+		// A chain not rooted at a local can still read one in a dynamic index.
+		return !v.allWhole
 	}
-	return e
+
+	segs := cp.segs
+	// A value type copies, so the closure reaches it through the nearest field above it
+	// that holds a reference. A closure reading `p.x` with `x: number` sees later writes
+	// through `p`.
+	for len(segs) > 0 && v.c.holdsValueType(v.c.info.TypeOf(cp.exprs[len(segs)-1])) {
+		segs = segs[:len(segs)-1]
+	}
+
+	if cp.whole || len(segs) == 0 {
+		v.whole.Add(cp.decl)
+	} else {
+		v.paths[cp.decl] = append(v.paths[cp.decl], capturedPath{path: segs, t: v.c.info.TypeOf(cp.exprs[len(segs)-1])})
+	}
+
+	return (cp.whole || cp.closed) && !v.allWhole
 }
 
-// capturedChain returns the field path the chain e names under the captured local declared
-// by decl, and the expression of each segment of that path, outermost last. A reference to
-// the local is an identifier the walk resolved to decl. ok
-// is false when e is not a chain rooted at such a reference. A chain with a dynamic index,
-// or a member read with no name, returns ok with a nil path, which stands for the whole
-// local.
-func (c *checker) capturedChain(e ast.Expr, decl ast.Node) ([]placeSeg, []ast.Expr, bool) {
+// chainPlace is the place an identifier, member, or index chain names under a local. decl is
+// the local's declaration, segs the field path, and exprs the expression of each segment of
+// segs, outermost last. whole marks a chain that names the local but no field of it, such as
+// one with a dynamic index. closed marks a chain whose next link reads something other than
+// a property, such as a getter or a method, so segs ends before that link.
+type chainPlace struct {
+	decl   ast.Node
+	segs   []placeSeg
+	exprs  []ast.Expr
+	whole  bool
+	closed bool
+}
+
+// capturedChain returns the place the chain e names. ok is false when e is not a chain
+// rooted at an identifier whose declaration the walk recorded.
+func (c *checker) capturedChain(e ast.Expr) (chainPlace, bool) {
+	var object ast.Expr
+	var name string
 	switch e := e.(type) {
 	case *ast.IdentExpr:
-		if d, ok := c.info.DeclOf(e); !ok || d != decl {
-			return nil, nil, false
-		}
-		return []placeSeg{}, nil, true
+		decl, ok := c.info.DeclOf(e)
+		return chainPlace{decl: decl}, ok
 	case *ast.MemberExpr:
-		segs, exprs, ok := c.capturedChain(e.Object, decl)
-		if !ok || segs == nil {
-			return segs, exprs, ok
+		object = e.Object
+		if e.Prop != nil {
+			name = e.Prop.Name
 		}
-		if e.Prop == nil || e.Prop.Name == "" {
-			return nil, nil, true
-		}
-		return appendPath(segs, []placeSeg{{kind: namedSeg, name: e.Prop.Name}}), append(slices.Clone(exprs), e), true
 	case *ast.IndexExpr:
-		segs, exprs, ok := c.capturedChain(e.Object, decl)
-		if !ok || segs == nil {
-			return segs, exprs, ok
-		}
-		key, isConst := constStringKey(e.Index)
-		if !isConst {
-			return nil, nil, true
-		}
-		return appendPath(segs, []placeSeg{{kind: namedSeg, name: key}}), append(slices.Clone(exprs), e), true
+		object = e.Object
+		name, _ = constStringKey(e.Index)
+	default:
+		return chainPlace{}, false
 	}
-	return nil, nil, false
+
+	cp, ok := c.capturedChain(object)
+	switch {
+	case !ok || cp.whole || cp.closed:
+	case name == "":
+		cp.whole = true
+	case !c.readsAsField(object, name):
+		cp.closed = true
+	default:
+		cp.segs = appendPath(cp.segs, []placeSeg{{kind: namedSeg, name: name}})
+		cp.exprs = append(slices.Clone(cp.exprs), e)
+	}
+	return cp, ok
+}
+
+// readsAsField reports whether a read of name off object reads a property the type of
+// object declares. The member is looked up the way a read looks it up, and then the way a
+// write does, which also finds an owned value through the variable a binding's read types
+// as.
+func (c *checker) readsAsField(object ast.Expr, name string) bool {
+	recv := c.info.TypeOf(object)
+	if recv == nil {
+		return false
+	}
+
+	member, found := c.readMember(name, readCarrier(recv))
+	if !found {
+		member, _ = c.fieldWriteMember(name, recv)
+	}
+	_, isProp := member.(*soltype.PropertyElem)
+	return isProp
 }
 
 // emitBindingFlow emits the flow of a `val` or `var` initializer into the binding whose
@@ -619,9 +640,10 @@ func (c *checker) emitBindingFlow(vd *ast.VarDecl, id liveness.VarID, bindingT s
 
 // emitPatternFlows emits the flow of each part pat binds out of the value of source,
 // attached to ref. pat is the pattern of a destructuring `val`, a `match` arm, or an
-// `if val`. Only a source that names a place passes parts of a place. A part read through a
-// borrow is borrowed again, since F4 makes a pattern over a borrow bind borrows. A tuple
-// or extractor element flows out of the place extended by its position, as
+// `if val`. Only a source that names a place, or a written borrow of one, passes parts of a
+// place. A pattern that holds an element the binding walk rejected emits nothing. A part
+// read through a borrow is borrowed again, since F4 makes a pattern over a borrow bind
+// borrows. A tuple or extractor element flows out of the place extended by its position, as
 // patternPlaceWalk.elements describes.
 func (c *checker) emitPatternFlows(pat ast.Pat, source ast.Expr, ref liveness.StmtRef) {
 	if source == nil || !c.firstEmit(pat, patternRole, ref, 0) {
@@ -634,10 +656,13 @@ func (c *checker) emitPatternFlows(pat ast.Pat, source ast.Expr, ref liveness.St
 		return
 	}
 
+	w := &patternEmitter{c: c, source: source, sourceT: c.info.TypeOf(source), ref: ref}
+	w.sourceBorrow, w.sourceIsBorrow = c.borrowOfType(w.sourceT)
+
 	// A pattern over a written borrow, as in `val {f: d} = &p`, reads the parts of the
 	// borrowed place. The source's type is the borrow, so each leaf borrows its part of `p`.
 	placeExpr := source
-	if be, isBorrow := source.(*ast.BorrowExpr); isBorrow {
+	if be, isBorrow := source.(*ast.BorrowExpr); isBorrow && w.sourceIsBorrow {
 		placeExpr = be.Arg
 	}
 
@@ -645,9 +670,6 @@ func (c *checker) emitPatternFlows(pat ast.Pat, source ast.Expr, ref liveness.St
 	if !ok {
 		return
 	}
-
-	w := &patternEmitter{c: c, source: source, sourceT: c.info.TypeOf(source), ref: ref}
-	w.sourceBorrow, w.sourceIsBorrow = c.borrowOfType(w.sourceT)
 	walk := patternPlaceWalk{
 		leaf:          func(node ast.Node, at movePlace) { w.leaf(node, at, nil, c.info.TypeOf(node)) },
 		objectRest:    w.objectRest,
@@ -807,32 +829,48 @@ func (w *patternEmitter) leaf(node ast.Node, at movePlace, path []placeSeg, leaf
 }
 
 // borrowBehindVar returns the borrow type a type variable holds when t is a variable whose
-// lower bounds, followed through other variables, settle on one borrow type. It returns t
-// for any other type. The field `a` that `val {a} = o` binds out of `o: {a: &{x: number}}`
-// types as a variable bounded below by `&{x: number}`, and this returns `&{x: number}`.
+// lower bounds, followed through other variables, are one borrow type and value types such
+// as `null`. It returns t for any other type, including a variable that also has an owned
+// lower bound. The field `a`
+// that `val {a} = o` binds out of `o: {a: &{x: number}}` types as a variable bounded below
+// by `&{x: number}`, and this returns `&{x: number}`.
 func (c *checker) borrowBehindVar(t soltype.Type) soltype.Type {
 	if _, isVar := t.(*soltype.TypeVarType); !isVar {
 		return t
 	}
 
 	seen := set.NewSet[*soltype.TypeVarType]()
-	var pick func(soltype.Type) (soltype.Type, bool)
-	pick = func(t soltype.Type) (soltype.Type, bool) {
-		if _, ok := c.borrowOfType(t); ok {
-			return t, true
+	var found soltype.Type
+	var walk func(soltype.Type) bool
+	walk = func(t soltype.Type) bool {
+		v, isVar := t.(*soltype.TypeVarType)
+		if !isVar {
+			// A value-type bound such as `null` holds no borrow and leaves the leaf a borrow.
+			if c.holdsValueType(t) {
+				return true
+			}
+			if _, ok := c.borrowOfType(t); !ok || (found != nil && !equalType(found, t)) {
+				return false
+			}
+			found = t
+			return true
 		}
 
-		v, isVar := t.(*soltype.TypeVarType)
-		if !isVar || seen.Contains(v) {
-			return nil, false
+		if seen.Contains(v) {
+			return true
 		}
 
 		seen.Add(v)
-		return soleLowerBound(v, pick)
+		for _, lb := range v.LowerBounds {
+			if !walk(lb) {
+				return false
+			}
+		}
+		return true
 	}
 
-	if ref, ok := pick(t); ok {
-		return ref
+	if walk(t) && found != nil {
+		return found
 	}
 	return t
 }
@@ -909,8 +947,8 @@ func (c *checker) storeDest(target ast.Expr) flowDest {
 }
 
 // noteCallee records that the expression e.Callee is the callee of the call e, so a
-// consuming receiver read there flows into the call's receiver. It runs before the callee
-// is inferred.
+// consuming receiver read there flows into the call's receiver. It must run before the
+// callee is inferred.
 func (c *checker) noteCallee(e *ast.CallExpr) {
 	if t := c.eventTable(); t != nil {
 		t.callees[e.Callee] = e
@@ -942,7 +980,7 @@ func (c *checker) emitReceiverFlow(lvl int, e *ast.CallExpr, ref liveness.StmtRe
 // emitConsumedReceiver emits the move of the receiver of access, a member access that
 // reaches a consuming `self` or `mut self` member, attached to the CFG point eventStmtRef
 // returns. When access is the callee of a call, the call's receiver holds the receiver.
-// Otherwise the method value access reads holds it, as in `val g = c.take`.
+// Otherwise the method value that access reads holds it, as in `val g = c.take`.
 func (c *checker) emitConsumedReceiver(access ast.Expr, recv ast.Expr) {
 	t := c.eventTable()
 	if t == nil {
