@@ -287,16 +287,19 @@ func (c *checker) trackFuncDeclCaptures(scope *Scope, decl *ast.FuncDecl, bindin
 		c.addCaptureEdges(id, nil, decl)
 	}
 
-	if ref, ok := c.fn.stmtToRef[s]; ok {
-		c.flushBorrowDirty(ref)
-		if id > 0 {
-			c.dropLoansHeldBy(id)
-		}
+	ref, ok := c.fn.stmtToRef[s]
+	if !ok {
+		return
+	}
+
+	c.flushBorrowDirty(ref)
+	if id > 0 {
+		c.dropLoansHeldBy(id)
 	}
 
 	// The declaration binds the closure to its name, as `val name = fn …` does, so the name
 	// holds the captures the closure emitted.
-	if ref, ok := c.eventStmtRef(); ok && id > 0 && c.eventTable() != nil {
+	if id > 0 && c.eventTable() != nil {
 		c.retargetTemp(decl, eventHolder{target: placeTarget{root: id}}, ref)
 	}
 }

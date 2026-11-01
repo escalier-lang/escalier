@@ -279,10 +279,11 @@ func (c *checker) settleFlowsWaitingOn(wait flowWait, force, forceCapture bool) 
 // captureReturnMoves appends to table a move of the captured place at each return of a local
 // that holds the closure. capture is the settled capture's flow, and t is the type of the
 // captured place. A capture whose place holds a borrow or a value type moves nothing, since
-// F2 copies it into the owned return.
+// F2 copies it into the owned return. Neither does the capture of a closure stored into
+// module-level state, which keeps its `'static` borrow wherever else the closure goes.
 func (c *checker) captureReturnMoves(table *ownershipEvents, capture flowBase, t soltype.Type) {
 	pt, ok := capture.holder.target.(placeTarget)
-	if !ok {
+	if !ok || table.storedFrom(pt.root) {
 		return
 	}
 

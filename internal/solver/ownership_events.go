@@ -312,11 +312,18 @@ func (t *ownershipEvents) storedFrom(root liveness.VarID) bool {
 }
 
 // returnsOf returns each return that receives the value held by the place rooted at root,
-// directly or through other local places, in source order.
+// directly or through other local places, in source order. A return that receives the value
+// twice, as `return [f, f]` does, is listed once.
 func (t *ownershipEvents) returnsOf(root liveness.VarID) []returnSite {
 	var out []returnSite
+	seen := set.NewSet[liveness.StmtRef]()
 	for _, r := range t.reachedFrom(root) {
-		out = append(out, t.returns[r]...)
+		for _, site := range t.returns[r] {
+			if !seen.Contains(site.at) {
+				seen.Add(site.at)
+				out = append(out, site)
+			}
+		}
 	}
 
 	slices.SortStableFunc(out, func(a, b returnSite) int { return compareSpans(a.node.Span(), b.node.Span()) })

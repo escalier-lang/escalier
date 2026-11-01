@@ -102,24 +102,22 @@ func (c *checker) runOwnershipDataflow() {
 // about a capture whose move the dataflow pass already rejects by E3. found holds the pass's
 // diagnostics. E4's `moved` example puts that error on the move, so the move is reported
 // once, there, and not again at a later call of the closure. The filter matches a call that
-// runs a closure after the capture moved, and a move in a call that may run a closure, when
-// the pass reports the move of the same place against a closure's borrow.
+// runs a closure after a move, and a move in a call that may run a closure, when the pass
+// reports that move against a closure's borrow.
 func closureMoveReported(found []SolverError) func(SolverError) bool {
-	moves := map[ast.Node]string{}
+	moves := set.NewSet[ast.Node]()
 	for _, err := range found {
 		if e, ok := err.(*MoveWhileBorrowedError); ok && e.closure {
-			moves[e.move] = e.Place
+			moves.Add(e.move)
 		}
 	}
 
 	return func(err SolverError) bool {
 		switch e := err.(type) {
 		case *UseAfterMoveError:
-			place, ok := moves[e.moveSite]
-			return ok && e.Via != "" && place == e.Name
+			return e.Via != "" && e.moveSite != nil && moves.Contains(e.moveSite)
 		case *MoveWhileBorrowedError:
-			place, ok := moves[e.move]
-			return ok && e.Via != "" && place == e.Place
+			return e.Via != "" && moves.Contains(e.move)
 		}
 		return false
 	}

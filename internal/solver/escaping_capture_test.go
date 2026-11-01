@@ -14,8 +14,10 @@ import (
 // closure that stays in the body borrows its captures too.
 //
 // wantDataflow is what the program reports with the dataflow pass on, when that differs from
-// want. The pass rejects a move of a local a module-level closure captures by E3, at the move,
-// and the current checks reject it only when the closure writes the local.
+// want. The pass rejects a move of a local a module-level closure captures by E3, at the move.
+// The current checks reject such a move only when the closure writes the local, and report it
+// at a later call. TestOwnershipDataflow covers the move of a local a module-level closure only
+// reads.
 func TestEscapingClosureCapture(t *testing.T) {
 	tests := map[string]struct {
 		src          string
@@ -73,22 +75,6 @@ func TestEscapingClosureCapture(t *testing.T) {
 			`,
 			want:         []string{"8:11-8:12: cannot move 'p' in a call that may run 'sink', which writes it"},
 			wantDataflow: []string{"8:11-8:12: cannot move 'p' while it is borrowed"},
-		},
-		// The closure in sink borrows p for `'static`, so p cannot move even though the
-		// closure only reads it. The closure rows of the spec's exclusivity table reject a move
-		// between calls. The current checks see a conflict only with a closure that writes p,
-		// so they accept the program.
-		"MoveAfterStoringAReadingClosureIntoAGlobalConflicts": {
-			src: `
-				var sink: fn () -> number = fn () { return 0 }
-				declare fn take(x: {x: number}) -> undefined
-				fn go() {
-					val p = {x: 1}
-					sink = fn () { return p.x }
-					take(p)
-				}
-			`,
-			wantDataflow: []string{"7:11-7:12: cannot move 'p' while it is borrowed"},
 		},
 		// readIt may call sink, which writes p while readIt reads it through `a`.
 		"BorrowAfterStoringAWritingClosureIntoAGlobalConflicts": {

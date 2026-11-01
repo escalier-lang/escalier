@@ -281,9 +281,11 @@ Each case below follows from that:
   return, so the body can use them until then. A closure that stays in the body or
   is stored into a caller-owned object borrows what it captures.
 - A closure stored into module-level state borrows what it captures for
-  `'static`. The borrow is `&mut` for a capture the closure writes and `&`
-  otherwise. By the closure rows of the exclusivity table, the captured place can
-  then never move, and E4 checks each later call against the borrow.
+  `'static`. A function is a value type, so the store copies the closure, and the
+  case above for module-level state does not make its captures owned. The borrow
+  is `&mut` for a capture the closure writes and `&` otherwise. By the closure
+  rows of the exclusivity table, the captured place can then never move, and E4
+  checks each later call against the borrow.
 
 A `val` or `var` binding of an owned value is always an owned destination, even
 when the binding's scope is shorter than the source's. A binding whose
@@ -982,9 +984,9 @@ fn setup() {
 
 There are two ways to write `setup` so that it checks. The first moves every use
 of `count` into the handler. `onClick` keeps the closure for the rest of the
-program, so the closure borrows `count` for `'static`, as a closure stored into
-module-level state does by F3. `setup` never uses `count` again, and the borrow
-`render` takes inside the closure lasts only for one call:
+program, so the closure's borrow of `count` stays live that long, as it does for
+a closure stored into module-level state. `setup` never uses `count` again, and
+the borrow `render` takes inside the closure lasts only for one call:
 
 ```esc
 fn setup() {
