@@ -797,7 +797,7 @@ a call to unknown code, so whatever rule closes the gap for calls closes it for
 suspensions too.
 
 Recommendation: file the gap against the ownership rules and leave A5 as the
-link. Section 12 files it.
+link. [#2445](https://github.com/escalier-lang/escalier/issues/2445) tracks the gap.
 
 ## 9. Comparison with Rust
 
@@ -930,61 +930,28 @@ full diagnostic for every rejection in its sections, and updates
 section 7 lists. Each PR runs `UPDATE_SNAPS=true go test ./...` and
 `UPDATE_FIXTURES=true go test ./cmd/...` and reviews the fixture deltas.
 
-The PRs:
+Each issue below is one PR. The table lists them in an order that respects
+their dependencies.
 
-1. **`await` forms and reactions.** Implements A1, A2 and A6, and removes
-   `SharedAwaitIntoMutError`. Changes the reaction methods in `prelude.esc`
-   per X2. Removes promise from the value types in `requirements.md`. Closes
-   [#2426](https://github.com/escalier-lang/escalier/issues/2426).
-2. **A borrow of a promise.** Implements A3 and A7, and the D12 refinement in
-   section 7. Adds `ReactionBorrowLifetimeError`. Closes
-   [#2427](https://github.com/escalier-lang/escalier/issues/2427).
-3. **An `async fn` call holds its arguments' borrows.** Implements A4 and A5.
-   Closes a new issue for the `show` hole in section 2.
-4. **`yield` forms and generator borrows.** Implements G1 to G5. Closes the
-   `yield` part of
-   [#2428](https://github.com/escalier-lang/escalier/issues/2428) and a new
-   issue for the `each` hole in section 2.
-5. **Loops.** Implements R1 to R3, and the R2 fix to the loop header in the
-   control-flow graph. Adds `ImmutableIteratorLoopError` and the loop form of
-   the moved-value message from section 8.2. Closes the rest of
-   [#2428](https://github.com/escalier-lang/escalier/issues/2428).
-6. **Iterable declarations.** Implements X3 and X4 in the prelude and the
-   converter, and adds `DuplicatingArrayMethodError`. PR 5 depends on its
-   `fill` and `copyWithin` change, since R1 relies on it. Closes a new issue
-   for the element-reading methods of `Array`, `Map` and `Set`, and another
-   for `fill` and `copyWithin`.
-7. **Async generators.** Implements S1 to S3, including the implicit `await`
-   of a promise operand to `yield`. Closes a new issue.
+| Issue | Rules | What the PR does | Depends on |
+|---|---|---|---|
+| [#2426](https://github.com/escalier-lang/escalier/issues/2426) | A1, A2, A6 | Gives `await` its three forms and makes reactions borrow for `'static`. Changes the reaction methods in `prelude.esc` per X2, removes `SharedAwaitIntoMutError`, and removes promise from the value types in `requirements.md` | |
+| [#2424](https://github.com/escalier-lang/escalier/issues/2424) | | Distributes a borrow over a union, the rule A3 builds on | |
+| [#2427](https://github.com/escalier-lang/escalier/issues/2427) | A3, A7 | Normalizes a borrow of a promise to a promise of a borrow, refines the D12 warning per section 7, and adds `ReactionBorrowLifetimeError` | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2424](https://github.com/escalier-lang/escalier/issues/2424) |
+| [#2438](https://github.com/escalier-lang/escalier/issues/2438) | A4, A5 | Makes an `async fn` call hold its arguments' borrows until its promise settles, which closes the `show` hole in section 2 | [#2426](https://github.com/escalier-lang/escalier/issues/2426) |
+| [#2439](https://github.com/escalier-lang/escalier/issues/2439) | G4 | Makes a generator hold its arguments' borrows while it is live, which closes the `each` hole in section 2 | |
+| [#2428](https://github.com/escalier-lang/escalier/issues/2428) | G1 to G3, G5 | Gives `yield` its three forms and keeps a yielded borrow live for the rest of the body | |
+| [#2440](https://github.com/escalier-lang/escalier/issues/2440) | R2 | Binds a fresh loop variable on each iteration in the control-flow graph | |
+| [#2441](https://github.com/escalier-lang/escalier/issues/2441) | X3 | Restricts `fill` and `copyWithin` to element types F2 copies, and adds `DuplicatingArrayMethodError` | |
+| [#2444](https://github.com/escalier-lang/escalier/issues/2444) | R1, R3 | Gives `for` loops their three forms, adds `ImmutableIteratorLoopError` and the loop form of the moved-value message from section 8.2 | [#2428](https://github.com/escalier-lang/escalier/issues/2428), [#2440](https://github.com/escalier-lang/escalier/issues/2440), [#2441](https://github.com/escalier-lang/escalier/issues/2441) |
+| [#2442](https://github.com/escalier-lang/escalier/issues/2442) | X3, X4 | Changes the element-reading iterator methods and the `Iterable` and `Generator` declarations | [#2444](https://github.com/escalier-lang/escalier/issues/2444) |
+| [#2443](https://github.com/escalier-lang/escalier/issues/2443) | S1 to S3 | Applies the rules to async generators, including the implicit `await` of a promise operand to `yield` | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2438](https://github.com/escalier-lang/escalier/issues/2438), [#2444](https://github.com/escalier-lang/escalier/issues/2444) |
 
-PRs 1 and 2 go first and in that order, since A3 builds on A1. PR 3 depends on
-1. PR 4 can land in parallel with 1 to 3. PR 5 depends on 4 and on the `fill`
-and `copyWithin` part of PR 6, and the rest of PR 6 depends on 5.
-PR 7 depends on 3 and 5.
+[#2439](https://github.com/escalier-lang/escalier/issues/2439), [#2440](https://github.com/escalier-lang/escalier/issues/2440) and [#2441](https://github.com/escalier-lang/escalier/issues/2441) need nothing else and can land first.
 
-The doc changes two outcomes the existing issues expect. Their Done-when lists
-change to match when their Plans are updated to point here:
+Two related issues sit outside this milestone:
 
-- [#2427](https://github.com/escalier-lang/escalier/issues/2427) expects
-  `(&p).then(cb)` to be rejected. By A3 it is accepted for a local `p`, and the
-  rejected case is a reaction on a parameter whose borrow is not `'static`, as
-  `watch` shows.
-- [#2428](https://github.com/escalier-lang/escalier/issues/2428) expects
-  `for f in arr { keep(f) }` to report an error. By R1 it is accepted, since
-  the loop moves `arr`. The rejected case is `for f in &arr { keep(f) }`.
-
-New issues to file in the milestone:
-
-- An `async fn` call ends its arguments' borrows at the call, so a caller can
-  write a value the body reads after an `await`. Bug. PR 3.
-- A generator call ends its arguments' borrows at the call, so a caller can
-  write a value the body reads on a later `next`. Bug. PR 4.
-- `Array`, `Map` and `Set` iterator methods hand out owned elements the
-  container still holds. Bug. PR 6.
-- `Array.prototype.fill` and `copyWithin` store one owned element in several
-  slots of an owned array. Bug. PR 6.
-- Async generators: `for await`, the implicit `await` in `yield`, and the
-  lifetime of a pending `next`. Feature. PR 7.
-- Module-level state written by another function while a borrow of it is live,
-  across a call or a suspension. Bug, against the ownership rules. Not in this
-  milestone's plan.
+- [#2304](https://github.com/escalier-lang/escalier/issues/2304) implements the D12 warning. It judges a promise as A7 states.
+- [#2445](https://github.com/escalier-lang/escalier/issues/2445) covers module-level state written by another function while a
+  borrow of it is live, across a call or a suspension, as section 8.6
+  describes.
