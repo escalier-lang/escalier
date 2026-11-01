@@ -612,10 +612,7 @@ func (m *destructureMover) rest(pat ast.Pat, at movePlace) {
 	if !ok {
 		return
 	}
-	if ref, isRef := t.(*soltype.RefType); isRef {
-		t = ref.Inner
-	}
-	obj, isObj := t.(*soltype.ObjectType)
+	obj, isObj := objectThroughBorrow(t)
 	if !isObj {
 		m.moveInto(dest, nil, at)
 		return
@@ -625,6 +622,16 @@ func (m *destructureMover) rest(pat ast.Pat, at movePlace) {
 			m.moveInto(dest, appendSeg(nil, prop.Name), extendPlace(at, prop.Name))
 		}
 	}
+}
+
+// objectThroughBorrow returns the object type t is, or the object type a RefType t wraps.
+// ok is false when neither is an ObjectType.
+func objectThroughBorrow(t soltype.Type) (*soltype.ObjectType, bool) {
+	if r, isRef := t.(*soltype.RefType); isRef {
+		t = r.Inner
+	}
+	obj, ok := t.(*soltype.ObjectType)
+	return obj, ok
 }
 
 // ownedLeaf returns the type of the leaf binding `name`, and `false` when the leaf takes

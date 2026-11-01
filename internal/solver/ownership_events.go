@@ -104,8 +104,8 @@ type eventHolder struct {
 
 // extend returns h with the path segments appended to its place's path.
 func (h eventHolder) extend(path []placeSeg) eventHolder {
-	for _, seg := range path {
-		h.place = extendPlace(h.place, seg.name)
+	if len(path) > 0 {
+		h.place.path = appendPath(h.place.path, path)
 	}
 	return h
 }
@@ -200,13 +200,28 @@ const (
 
 // firstEmit records that node emits its events in role at the CFG point at, and reports
 // whether it had not done so before. root names the captured local when node is a closure.
+// It returns false when no event table is open, so a caller that gets true can use
+// c.fn.events.
 func (c *checker) firstEmit(node ast.Node, role emitRole, at liveness.StmtRef, root liveness.VarID) bool {
-	site := emitSite{node: node, role: role, at: at, root: root}
-	if c.fn.events.emitted.Contains(site) {
+	t := c.eventTable()
+	if t == nil {
 		return false
 	}
-	c.fn.events.emitted.Add(site)
+	site := emitSite{node: node, role: role, at: at, root: root}
+	if t.emitted.Contains(site) {
+		return false
+	}
+	t.emitted.Add(site)
 	return true
+}
+
+// eventTable returns the event table of the body being walked, or nil outside a body or
+// when the body has no table.
+func (c *checker) eventTable() *ownershipEvents {
+	if c.fn == nil {
+		return nil
+	}
+	return c.fn.events
 }
 
 // newOwnershipEvents returns an empty table whose places render through names.
@@ -380,11 +395,11 @@ func (c *checker) startOwnershipEvents(names map[liveness.VarID]string) {
 // emitEvent appends ev to the current body's table, attached to the CFG node at, and
 // returns its index. It returns -1 outside a body.
 func (c *checker) emitEvent(ev ownershipEvent, at liveness.StmtRef) int {
-	if c.fn == nil || c.fn.events == nil {
+	t := c.eventTable()
+	if t == nil {
 		return -1
 	}
 	ev.at = at
-	t := c.fn.events
 	t.events = append(t.events, ev)
 	index := len(t.events) - 1
 	if ev.holder.kind == tempHolder {
@@ -396,11 +411,12 @@ func (c *checker) emitEvent(ev ownershipEvent, at liveness.StmtRef) int {
 // subsumePlaceChain marks e, and each receiver of the member and index chain e roots, as
 // read by an event other than a use.
 func (c *checker) subsumePlaceChain(e ast.Expr) {
-	if c.fn == nil || c.fn.events == nil {
+	t := c.eventTable()
+	if t == nil {
 		return
 	}
 	for e != nil {
-		c.fn.events.subsumed.Add(e)
+		t.subsumed.Add(e)
 		switch x := e.(type) {
 		case *ast.MemberExpr:
 			e = x.Object
@@ -457,7 +473,7 @@ func (c *checker) attachEventsAt(ref liveness.StmtRef) func() {
 // emitRead emits a read of the place e names, attached to the CFG point eventStmtRef
 // returns. An expression that names no local place emits nothing.
 func (c *checker) emitRead(e ast.Expr) {
-	if c.fn == nil || c.fn.events == nil {
+	if c.eventTable() == nil {
 		return
 	}
 	if ref, ok := c.eventStmtRef(); ok {
@@ -478,7 +494,7 @@ func (c *checker) emitReadAt(e ast.Expr, ref liveness.StmtRef) {
 // emitWrite emits a write of the assignment target e, attached to ref. The receivers the
 // target reads to reach the written place are part of the write.
 func (c *checker) emitWrite(e ast.Expr, ref liveness.StmtRef) {
-	if c.fn == nil || c.fn.events == nil {
+	if c.eventTable() == nil {
 		return
 	}
 	c.subsumePlaceChain(e)
@@ -507,34 +523,23 @@ func (c *checker) placeHolderOf(e ast.Expr) eventHolder {
 //
 // Any other source, such as a call result, names no place and emits nothing here.
 func (c *checker) emitFlow(source ast.Expr, holder eventHolder, dest flowDest, ref liveness.StmtRef) {
-	if c.fn == nil || c.fn.events == nil || source == nil {
+	if c.eventTable() == nil || source == nil {
+		return
+	}
+	if results, branches := liveness.BranchResults(source); branches {
+		for _, result := range results {
+			// A branch whose result is an expression statement attaches to that statement.
+			branchRef := ref
+			if r, ok := c.fn.exprRefs[result]; ok {
+				branchRef = r
+			}
+			c.emitFlow(result, holder, dest, branchRef)
+		}
 		return
 	}
 	switch s := source.(type) {
 	case *ast.BorrowExpr, *ast.ObjectExpr, *ast.TupleExpr, *ast.FuncExpr:
 		c.retargetTemp(s, holder)
-		return
-	case *ast.IfElseExpr:
-		c.emitBlockTailFlow(&s.Cons, holder, dest, ref)
-		c.emitBlockOrExprFlow(s.Alt, holder, dest, ref)
-		return
-	case *ast.IfValExpr:
-		c.emitBlockTailFlow(&s.Cons, holder, dest, ref)
-		c.emitBlockOrExprFlow(s.Alt, holder, dest, ref)
-		return
-	case *ast.MatchExpr:
-		for _, mc := range s.Cases {
-			c.emitBlockOrExprFlow(&mc.Body, holder, dest, ref)
-		}
-		return
-	case *ast.DoExpr:
-		c.emitBlockTailFlow(&s.Body, holder, dest, ref)
-		return
-	case *ast.TryCatchExpr:
-		c.emitBlockTailFlow(&s.Try, holder, dest, ref)
-		for _, mc := range s.Catch {
-			c.emitBlockOrExprFlow(&mc.Body, holder, dest, ref)
-		}
 		return
 	}
 	p, ok := c.exprPlace(source)
@@ -544,43 +549,12 @@ func (c *checker) emitFlow(source ast.Expr, holder eventHolder, dest flowDest, r
 	c.emitValueFlow(p, source, nil, source, holder, dest, ref)
 }
 
-// emitBlockTailFlow emits the flow of the value block b produces, its last statement when
-// that is an expression, into holder. The flow attaches to the CFG node of that statement
-// when it has one, and to ref otherwise.
-func (c *checker) emitBlockTailFlow(b *ast.Block, holder eventHolder, dest flowDest, ref liveness.StmtRef) {
-	if b == nil || len(b.Stmts) == 0 {
-		return
-	}
-	last, ok := b.Stmts[len(b.Stmts)-1].(*ast.ExprStmt)
-	if !ok {
-		return
-	}
-	if tailRef, found := c.fn.stmtToRef[last]; found {
-		ref = tailRef
-	}
-	c.emitFlow(last.Expr, holder, dest, ref)
-}
-
-// emitBlockOrExprFlow emits the flow of the value boe produces into holder.
-func (c *checker) emitBlockOrExprFlow(boe *ast.BlockOrExpr, holder eventHolder, dest flowDest, ref liveness.StmtRef) {
-	switch {
-	case boe == nil:
-	case boe.Block != nil:
-		c.emitBlockTailFlow(boe.Block, holder, dest, ref)
-	case boe.Expr != nil:
-		if exprRef, ok := c.fn.exprRefs[boe.Expr]; ok {
-			ref = exprRef
-		}
-		c.emitFlow(boe.Expr, holder, dest, ref)
-	}
-}
-
 // emitBorrow emits the borrow a written `&` or `&mut` expression takes of its operand's
 // place, attached to the CFG point eventStmtRef returns. The borrow expression holds the borrow
 // until a flow site retargets it. finishOwnershipEvents fills in the borrow's lifetime
 // once the expression's type is recorded.
 func (c *checker) emitBorrow(e *ast.BorrowExpr) {
-	if c.fn == nil || c.fn.events == nil {
+	if c.eventTable() == nil {
 		return
 	}
 	ref, ok := c.eventStmtRef()
@@ -605,10 +579,11 @@ func (c *checker) emitBorrow(e *ast.BorrowExpr) {
 // written borrow takes the lifetime of its expression's type. Then each closure capture
 // settles, since the body is walked and every place that holds a closure is known.
 func (c *checker) finishOwnershipEvents() {
-	if c.fn == nil || c.fn.events == nil {
+	t := c.eventTable()
+	if t == nil {
 		return
 	}
-	events := c.fn.events.events
+	events := t.events
 	for i := range events {
 		be, ok := events[i].node.(*ast.BorrowExpr)
 		if !ok || events[i].kind != borrowEvent {
@@ -618,13 +593,13 @@ func (c *checker) finishOwnershipEvents() {
 			events[i].lifetime = r.Lt
 		}
 	}
-	c.settleFlowsWaitingOn(flowWait{capture: true, table: c.fn.events}, false, true)
+	c.settleFlowsWaitingOn(flowWait{capture: true, table: t}, false, true)
 }
 
 // emitTempFlow emits the flow of source into the element at path of the literal or
 // closure value, which holds it until a flow site retargets it.
 func (c *checker) emitTempFlow(source ast.Expr, value ast.Expr, path []placeSeg, dest flowDest, ref liveness.StmtRef) {
-	if c.fn == nil || c.fn.events == nil || !c.firstEmit(source, elementRole, ref, 0) {
+	if !c.firstEmit(source, elementRole, ref, 0) {
 		return
 	}
 	holder := eventHolder{kind: tempHolder, node: value}.extend(path)
@@ -743,7 +718,7 @@ func (c *checker) settleDest(table *ownershipEvents, dest flowDest, holder event
 		}
 		return settled, flowWait{}, true
 	case calleeDest:
-		if fn := c.resolvedCallee(dest.call); fn != nil {
+		if fn, ok := resolveFunc(c.info.TypeOf(dest.call.Callee)); ok {
 			if param, ok := argDest(dest.call, fn, dest.index); ok {
 				return c.settleDest(table, param, holder, force, forceCapture)
 			}
@@ -775,53 +750,27 @@ func (c *checker) settleDest(table *ownershipEvents, dest flowDest, holder event
 }
 
 // paramDestOf returns the destination an argument passed to fp has. A borrow parameter
-// borrows. A parameter whose body moves it, or whose type is a concrete owned shape, takes
-// ownership. A rest parameter takes ownership when its element type is a concrete owned
-// shape. Any other parameter is one F3 settled as a borrow, since its body neither moves it
-// nor lets it escape.
+// borrows. A parameter paramTakesOwnership accepts takes ownership. Any other parameter is
+// one F3 settled as a borrow, since its body neither moves it nor lets it escape.
 func (c *checker) paramDestOf(fp *soltype.FuncParam, reborrows bool) flowDest {
 	if r, ok := fp.Type.(*soltype.RefType); ok && r.Lt != nil {
 		return flowDest{kind: borrowDest, borrow: borrowKindOf(r.Mut), lt: r.Lt, reborrows: reborrows}
 	}
-	if fp.Rest {
-		if elem, isArray := c.ctx.restSlotElem(fp.Type); isArray && c.isConcreteOwned(elem) {
-			return flowDest{kind: ownedDest}
-		}
-		return flowDest{kind: borrowDest, borrow: immutableBorrow, reborrows: reborrows}
-	}
-	if fp.Moved || c.isConcreteOwned(fp.Type) {
+	if c.paramTakesOwnership(fp) {
 		return flowDest{kind: ownedDest}
 	}
 	return flowDest{kind: borrowDest, borrow: immutableBorrow, reborrows: reborrows}
 }
 
-// resolvedCallee returns the signature the callee of call has once inference has run, or
-// nil when its type is not a function. A callee whose type is a variable resolves through
-// the first function among its lower bounds.
-func (c *checker) resolvedCallee(call *ast.CallExpr) *soltype.FuncType {
-	t := c.info.TypeOf(call.Callee)
-	seen := set.NewSet[*soltype.TypeVarType]()
-	for t != nil {
-		switch x := t.(type) {
-		case *soltype.FuncType:
-			return x
-		case *soltype.TypeVarType:
-			if seen.Contains(x) {
-				return nil
-			}
-			seen.Add(x)
-			t = nil
-			for _, lb := range x.LowerBounds {
-				if _, isFn := lb.(*soltype.FuncType); isFn {
-					t = lb
-					break
-				}
-			}
-		default:
-			return nil
-		}
+// paramTakesOwnership reports whether an argument passed to fp is owned by the callee. A
+// rest parameter takes ownership when its element type is a concrete owned shape. Any other
+// parameter takes ownership when its body moves it or its type is a concrete owned shape.
+func (c *checker) paramTakesOwnership(fp *soltype.FuncParam) bool {
+	if fp.Rest {
+		elem, isArray := c.ctx.restSlotElem(fp.Type)
+		return isArray && c.isConcreteOwned(elem)
 	}
-	return nil
+	return fp.Moved || c.isConcreteOwned(fp.Type)
 }
 
 // sourceKindOf classifies the value place p holds, whose type is t. ok is false when p is
@@ -854,14 +803,9 @@ func (c *checker) sourceKindOf(p movePlace, t soltype.Type, force bool) (sourceK
 // fieldType returns the type of the field name of the object type t, looking through a
 // borrow, or nil when t is not an object that lists the field.
 func (c *checker) fieldType(t soltype.Type, name string) soltype.Type {
-	if r, ok := t.(*soltype.RefType); ok {
-		t = r.Inner
-	}
-	if obj, ok := t.(*soltype.ObjectType); ok {
-		for _, elem := range obj.Elems {
-			if prop, isProp := elem.(*soltype.PropertyElem); isProp && prop.Name == name {
-				return prop.Type
-			}
+	if obj, ok := objectThroughBorrow(t); ok {
+		if prop, found := obj.Prop(name); found {
+			return prop.Type
 		}
 	}
 	return nil
@@ -941,7 +885,7 @@ func (c *checker) settleAllFlows() {
 // that writes the local. moves marks a closure whose body moves the local, which owns it
 // wherever the closure flows.
 func (c *checker) emitCaptureFlow(closure ast.Func, root liveness.VarID, t soltype.Type, writes, moves bool, ref liveness.StmtRef) {
-	if c.fn == nil || c.fn.events == nil || !c.firstEmit(closure, captureRole, ref, root) {
+	if !c.firstEmit(closure, captureRole, ref, root) {
 		return
 	}
 	// An unannotated parameter's binding renders as `never` until its body settles it, so
@@ -1033,11 +977,16 @@ func (t *ownershipEvents) renderPlace(p movePlace) string {
 		writePath(&b, p.path)
 		return b.String()
 	}
+	writeQuotedPlace(&b, name, p.path)
+	return b.String()
+}
+
+// writeQuotedPlace appends name followed by path to b, in backticks.
+func writeQuotedPlace(b *strings.Builder, name string, path []placeSeg) {
 	b.WriteByte('`')
 	b.WriteString(name)
-	writePath(&b, p.path)
+	writePath(b, path)
 	b.WriteByte('`')
-	return b.String()
 }
 
 // renderHolder renders a holder: a place by name, a module-level binding by name, an
@@ -1050,10 +999,7 @@ func (t *ownershipEvents) renderHolder(h eventHolder) string {
 	case placeHolder:
 		return t.renderPlace(h.place)
 	case moduleHolder:
-		b.WriteByte('`')
-		b.WriteString(h.name)
-		writePath(&b, h.place.path)
-		b.WriteByte('`')
+		writeQuotedPlace(&b, h.name, h.place.path)
 		return b.String()
 	case argHolder:
 		fmt.Fprintf(&b, "arg(%s, %d)", renderCallee(h.node), h.index)
@@ -1131,7 +1077,7 @@ func (c *checker) settleParams(params []*soltype.FuncParam) {
 // VarID is id, attached to ref. A binding with an annotation takes the annotation's
 // ownership. One without is owned, as F3 states.
 func (c *checker) emitBindingFlow(vd *ast.VarDecl, id liveness.VarID, bindingT soltype.Type, ref liveness.StmtRef) {
-	if id <= 0 || c.fn.events == nil || !c.firstEmit(vd, bindingRole, ref, 0) {
+	if id <= 0 || !c.firstEmit(vd, bindingRole, ref, 0) {
 		return
 	}
 	dest := flowDest{kind: ownedDest}
@@ -1148,7 +1094,7 @@ func (c *checker) emitBindingFlow(vd *ast.VarDecl, id liveness.VarID, bindingT s
 // or extractor element flows out of the place extended by its position, as elements
 // describes.
 func (c *checker) emitPatternFlows(pat ast.Pat, source ast.Expr, ref liveness.StmtRef) {
-	if c.fn == nil || c.fn.events == nil || source == nil || !c.firstEmit(pat, patternRole, ref, 0) {
+	if source == nil || !c.firstEmit(pat, patternRole, ref, 0) {
 		return
 	}
 	src, ok := c.exprPlace(source)
@@ -1172,7 +1118,7 @@ func (c *checker) emitPatternFlows(pat ast.Pat, source ast.Expr, ref liveness.St
 // as an arm of a `match` in a `return`, runs at the point of the expression holding it,
 // which siteRef names when hasSite is set. ok is false when neither point is known.
 func (c *checker) branchEntryRef(target ast.Expr, i int, siteRef liveness.StmtRef, hasSite bool) (liveness.StmtRef, bool) {
-	if c.fn == nil || c.fn.events == nil {
+	if c.eventTable() == nil {
 		return liveness.StmtRef{}, false
 	}
 	if ref, ok := c.fn.exprRefs[target]; ok {
@@ -1243,18 +1189,14 @@ func (w *patternEmitter) objectRest(pat ast.Pat, at movePlace) {
 		w.walk(pat, at)
 		return
 	}
-	restT := w.c.info.TypeOf(ident)
-	if r, isRef := restT.(*soltype.RefType); isRef {
-		restT = r.Inner
-	}
-	obj, isObj := restT.(*soltype.ObjectType)
+	obj, isObj := objectThroughBorrow(w.c.info.TypeOf(ident))
 	if !isObj {
 		w.leaf(ident, at, nil)
 		return
 	}
 	for _, elem := range obj.Elems {
 		if prop, isProp := elem.(*soltype.PropertyElem); isProp {
-			w.leaf(ident, extendPlace(at, prop.Name), []placeSeg{{kind: namedSeg, name: prop.Name}})
+			w.leaf(ident, extendPlace(at, prop.Name), appendSeg(nil, prop.Name))
 		}
 	}
 }
@@ -1291,7 +1233,7 @@ func (w *patternEmitter) leaf(node ast.Node, at movePlace, path []placeSeg) {
 // reassigned binding takes the ownership of its type. A field or element store takes the
 // ownership of the field it writes when the receiver declares one, and is owned otherwise.
 func (c *checker) emitAssignFlow(scope *Scope, e *ast.BinaryExpr, ref liveness.StmtRef) {
-	if c.fn == nil || c.fn.events == nil || !c.firstEmit(e, assignRole, ref, 0) {
+	if !c.firstEmit(e, assignRole, ref, 0) {
 		return
 	}
 	switch left := e.Left.(type) {
@@ -1362,7 +1304,7 @@ func (c *checker) lookupWriteField(name string, recv soltype.Type) (*soltype.Pro
 // emits no flow. lvl is the level of the call, at which a receiver borrow's lifetime is
 // minted.
 func (c *checker) emitCallFlows(lvl int, e *ast.CallExpr, fn *soltype.FuncType, ref liveness.StmtRef) {
-	if c.fn == nil || c.fn.events == nil || !c.firstEmit(e, callRole, ref, 0) {
+	if !c.firstEmit(e, callRole, ref, 0) {
 		return
 	}
 	if recv, self := c.calleeReceiver(e.Callee); recv != nil && self != nil {
@@ -1391,21 +1333,18 @@ func argDest(e *ast.CallExpr, fn *soltype.FuncType, i int) (flowDest, bool) {
 	if fn == nil {
 		return flowDest{kind: calleeDest, call: e, index: i}, true
 	}
-	n := len(fn.Params)
-	switch {
-	case i < n && !fn.Params[i].Rest:
-		return flowDest{kind: paramDest, param: fn.Params[i]}, true
-	case n > 0 && fn.Params[n-1].Rest && i >= n-1:
-		return flowDest{kind: paramDest, param: fn.Params[n-1]}, true
+	fp, ok := paramForArg(fn, i)
+	if !ok {
+		return flowDest{}, false
 	}
-	return flowDest{}, false
+	return flowDest{kind: paramDest, param: fp}, true
 }
 
 // emitReturnFlow emits the flow of the returned expression into the function's return,
 // attached to ref. An annotated return takes the annotation's ownership. One without an
 // annotation is an inferredReturnDest. An annotation that did not resolve is owned.
 func (c *checker) emitReturnFlow(expr ast.Expr, ref liveness.StmtRef) {
-	if c.fn.events == nil || !c.firstEmit(expr, returnRole, ref, 0) {
+	if !c.firstEmit(expr, returnRole, ref, 0) {
 		return
 	}
 	dest := flowDest{kind: ownedDest}

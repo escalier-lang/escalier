@@ -2382,8 +2382,7 @@ func (c *checker) consumeCallArgs(e *ast.CallExpr, fn *soltype.FuncType, ref liv
 			// owns, so each is carried out of the frame the way a bare owned parameter's
 			// argument is. A slot that is not an array of a concrete owned element moves
 			// nothing, the same conservative reading a fixed position takes.
-			elem, isArray := c.ctx.restSlotElem(fn.Params[i].Type)
-			if !isArray || !c.isConcreteOwned(elem) {
+			if !c.paramTakesOwnership(fn.Params[i]) {
 				return
 			}
 			for _, absorbed := range e.Args[i:] {
@@ -2392,7 +2391,7 @@ func (c *checker) consumeCallArgs(e *ast.CallExpr, fn *soltype.FuncType, ref liv
 			}
 			return
 		}
-		if !fn.Params[i].Moved && !c.isConcreteOwned(fn.Params[i].Type) {
+		if !c.paramTakesOwnership(fn.Params[i]) {
 			continue
 		}
 		c.consumeOwned(arg, c.info.TypeOf(arg), arg, ref)
