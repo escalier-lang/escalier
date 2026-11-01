@@ -152,6 +152,21 @@ func NewScope() *Scope {
 	}
 }
 
+// withOwnMaps returns a scope with s's parent, flags and bindings, held in maps of its
+// own. Defining a name in the copy leaves s unchanged. The namespaces the maps hold
+// are shared with s.
+func (s *Scope) withOwnMaps() *Scope {
+	return &Scope{
+		values:     maps.Clone(s.values),
+		types:      maps.Clone(s.types),
+		namespaces: maps.Clone(s.namespaces),
+		unprefixed: slices.Clip(s.unprefixed),
+		parent:     s.parent,
+		builtin:    s.builtin,
+		onDefine:   s.onDefine,
+	}
+}
+
 // Child returns a fresh scope whose parent is s, for entering a nested lexical
 // region (a function body, a block).
 func (s *Scope) Child() *Scope {

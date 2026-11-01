@@ -319,6 +319,9 @@ func (c *checker) fork(source ModuleSource, groupSource GroupSource, groups Pack
 	f.pendingOverrides = slices.Clip(c.pendingOverrides)
 	f.pendingImplements = slices.Clip(c.pendingImplements)
 	f.provisionalVariance = slices.Clip(c.provisionalVariance)
+	f.boundGlobalFiles = c.boundGlobalFiles.Clone()
+	// sources memoizes what c's own source returned, and the fork reads through source.
+	f.sources = nil
 
 	// Whether each held diagnostic is reported is the run's own.
 	f.heldLoadErrs = make(map[string]*heldLoadErrors, len(c.heldLoadErrs))
@@ -334,9 +337,12 @@ func (c *checker) fork(source ModuleSource, groupSource GroupSource, groups Pack
 	}
 
 	// A run that binds the globals scope itself, as one with Options.NoAmbientNames does
-	// when it loads an npm package, fills a scope of its own.
+	// when it loads an npm package, fills a scope of its own. Any other run reads the
+	// bound globals, and adds the globals of the npm packages it loads to its own copy.
 	if !c.globalsBound {
 		f.globals = nil
+	} else {
+		f.globals = c.globals.withOwnMaps()
 	}
 	return &f
 }

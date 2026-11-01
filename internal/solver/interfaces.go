@@ -44,6 +44,9 @@ type interfaceShell struct {
 	// declares, such as `i` for `declare val i: I`, and empty when no value does. See
 	// symbolOwners.
 	symbolOwner string
+	// augments is set when the interface takes the members of the type the globals
+	// scope binds under its name. See mergesWithGlobal.
+	augments bool
 }
 
 // preBindInterface resolves the group's type parameters, registers an AliasDef
@@ -113,6 +116,7 @@ func (c *checker) preBindInterface(scope *Scope, lvl int, decls []*ast.Interface
 		ns:          ns,
 		def:         def,
 		symbolOwner: c.symbolOwners[declScopeKey(ns, first.Name.Name)],
+		augments:    c.mergesWithGlobal(first.Name.Name, decls),
 	}
 }
 
@@ -137,6 +141,14 @@ func (c *checker) inferInterfaceBody(sh *interfaceShell) {
 	// the other.
 	b := newObjElemBuilder(0)
 	var parents []soltype.Type
+	// The binding this interface merges with joins as the first parent, so a member
+	// either the body or an `extends` clause declares reads ahead of it.
+	if sh.augments {
+		if prior, ok := c.globalTypeOf(sh); ok {
+			parents = append(parents, prior)
+			c.globalsMerge.merged.Add(sh.decls[0].Name.Name)
+		}
+	}
 
 	// Bind `Self` to the interface's own handle for the member bodies, so a member such as
 	// `clone(&self) -> Self` resolves. The binding sits in a child scope that the `extends`
@@ -192,6 +204,39 @@ func (c *checker) inferInterfaceBody(sh *interfaceShell) {
 	// built is named rather than read. That is what lets `interface A {b: B}` and
 	// `interface B extends A {x}` resolve each other.
 	sh.def.Body = extendedInterfaceBody(parents, own)
+}
+
+// globalTypeOf resolves the type the globals scope binds under sh's name, instantiated
+// at sh's own type parameters. A binding whose type parameters differ in number
+// reports InterfaceTypeParamMismatchError, and globalTypeOf returns false for it.
+func (c *checker) globalTypeOf(sh *interfaceShell) (soltype.Type, bool) {
+	first := sh.decls[0]
+	bound, _ := c.globalsScope().GetType(first.Name.Name)
+	arity := 0
+	if alias, isAlias := bound.Type.(*soltype.AliasType); isAlias {
+		if def, ok := c.ctx.aliasDef(alias.Name); ok {
+			arity = len(def.TypeParams)
+		}
+	}
+	if arity != len(first.TypeParams) {
+		c.report(&InterfaceTypeParamMismatchError{
+			Name:   first.Name.Name,
+			Reason: "they differ in how many it writes",
+			span:   first.Span(),
+		})
+		return nil, false
+	}
+	span := first.Name.Span()
+	scope := c.globalsScope().Child()
+	args := make([]ast.TypeAnn, 0, len(first.TypeParams))
+	for _, tp := range first.TypeParams {
+		if b, ok := sh.declScope.OwnType(tp.Name); ok {
+			scope.defineType(tp.Name, b)
+		}
+		args = append(args, ast.NewRefTypeAnn(ast.NewIdentifier(tp.Name, span), nil, span))
+	}
+	ref := ast.NewRefTypeAnn(ast.NewIdentifier(first.Name.Name, span), args, span)
+	return c.resolveTypeAnn(scope, ref, sh.lvl)
 }
 
 // extendedInterfaceBody returns the body of an interface with an `extends` clause: the meet
