@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"maps"
 	"slices"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -102,11 +103,13 @@ type weakReader struct {
 
 // noteWeakReader records the generalized module-level binding b for settleWeakBindings when
 // its type reaches a weak variable at or below lvl. scheme is the scheme b was bound to.
-// Only a weak binding of the module mints a variable at lvl that a later binding can
-// read, so the walk is skipped until the module has one.
+// Only a weak binding of the module mints a variable at lvl that a binding can read, so
+// the walk is skipped until the module has one. It reads weakBindingVars, which holds the
+// binding var of a weak binding later in b's own component before noteWeakBinding records
+// that binding.
 func (c *checker) noteWeakReader(b *componentBinding, scheme TypeScheme, lvl int) {
 	sc, ok := scheme.(*PolyScheme)
-	if !ok || len(c.weakBindings) == 0 {
+	if !ok || c.weakBindingVars.Len() == 0 {
 		return
 	}
 	if len(scanWeakVars(b.v, lvl)) > 0 {
@@ -125,9 +128,9 @@ func (c *checker) noteWeakReader(b *componentBinding, scheme TypeScheme, lvl int
 //  4. It settles each body-level weak binding the module's functions declare.
 func (c *checker) settleWeakBindings(lvl int) {
 	for _, r := range c.weakReaders {
-		// A weak variable is not one of the reader's type parameters, so it is inlined to
-		// the bounds it holds now.
-		r.scheme.coalesced = c.subsumeFinal(simplifyWithWeakVars(r.scheme, r.scheme.Level, lvl))
+		// A weak variable is not one of the reader's type parameters, so it shows the type
+		// the bounds it holds now give it.
+		r.scheme.coalesced = c.subsumeFinal(simplifyWeakReader(r.scheme, lvl))
 		if r.infoNode != nil {
 			c.recordType(r.infoNode, r.scheme.coalesced)
 		}
@@ -504,13 +507,36 @@ func (s *weakCompanionScanner) typeOf(v *soltype.TypeVarType) soltype.Type {
 		}
 		return &soltype.IntersectionType{Types: ts}
 	}
-	if lower := coalesce(v, soltype.Positive); !isNeverType(lower) {
-		return lower
+	return boundsType(v, soltype.Positive)
+}
+
+// boundsType returns the type v's bounds give it at polarity pol. At a positive position
+// that is the union of v's lower bounds, and at a negative one the intersection of its
+// upper bounds. When the bounds pol reads are empty, it is the type the other bounds give,
+// and with no bound of either kind it is `never`.
+func boundsType(v *soltype.TypeVarType, pol soltype.Polarity) soltype.Type {
+	side, ok := boundsSide(v, pol)
+	if !ok {
+		return &soltype.NeverType{}
 	}
-	if upper := coalesce(v, soltype.Negative); !isUnknown(upper) {
-		return upper
+	return coalesce(v, side)
+}
+
+// boundsSide returns the polarity of the bounds boundsType reads for v at pol: positive
+// for v's lower bounds and negative for its upper bounds. It returns false when v has no
+// bound of either kind.
+func boundsSide(v *soltype.TypeVarType, pol soltype.Polarity) (soltype.Polarity, bool) {
+	lower := coalesce(v, soltype.Positive)
+	upper := coalesce(v, soltype.Negative)
+	switch {
+	case pol == soltype.Negative && !isUnknown(upper):
+		return soltype.Negative, true
+	case !isNeverType(lower):
+		return soltype.Positive, true
+	case !isUnknown(upper):
+		return soltype.Negative, true
 	}
-	return &soltype.NeverType{}
+	return soltype.Positive, false
 }
 
 // joinAll returns the union of ts, or its one member.
@@ -551,3 +577,213 @@ func isUnknown(t soltype.Type) bool {
 	_, top := t.(*soltype.UnknownType)
 	return top
 }
+
+// lowerWeakInputs lowers to lvl each type variable above lvl that t reaches and whose
+// values flow into a variable at or below lvl, so generalizing t at lvl does not quantify
+// it. A variable's values flow into u when u is an upper bound of it, directly or through a
+// chain of variables that are each an upper bound of the one before. A variable a
+// function type quantifies itself and a rigid type parameter are left alone, and neither
+// starts a chain.
+func (c *checker) lowerWeakInputs(t soltype.Type, lvl int) {
+	vars := map[int]*soltype.TypeVarType{}
+	t.Accept(&varCollector{out: vars, seen: set.NewSet[*soltype.TypeVarType]()}, soltype.Positive)
+	binders := funcTypeParamVars(t)
+	isBinder := func(v *soltype.TypeVarType) bool { return binders.Contains(v) || v.Rigid != nil }
+	m := buildMirror(vars)
+	// The walk starts from the variables in ID order, so the extrusions lowerToLevel
+	// appends land in the same order on every run.
+	var work []*soltype.TypeVarType
+	for _, id := range slices.Sorted(maps.Keys(vars)) {
+		if v := vars[id]; v.Level <= lvl && !isBinder(v) {
+			work = append(work, v)
+		}
+	}
+	// Walk from each variable at or below lvl down its chains of variable lower bounds. A
+	// variable reached above lvl feeds one at or below it. Lowering it puts it at lvl, and
+	// the walk continues from it.
+	reached := set.NewSet[*soltype.TypeVarType]()
+	for len(work) > 0 {
+		u := work[len(work)-1]
+		work = work[:len(work)-1]
+		if reached.Contains(u) {
+			continue
+		}
+		reached.Add(u)
+		for _, lb := range m.effectiveBounds(u, soltype.Positive) {
+			lv, isVar := lb.(*soltype.TypeVarType)
+			if !isVar || isBinder(lv) {
+				continue
+			}
+			if lv.Level > lvl {
+				c.lowerToLevel(lv, lvl)
+			}
+			work = append(work, lv)
+		}
+	}
+}
+
+// lowerToLevel moves v, a variable above lvl, to lvl. Each of v's bounds that holds a type
+// or lifetime variable above lvl is replaced by its extrusion to lvl. An extrusion is a copy
+// whose inner variables are fresh variables at lvl, each linked to the variable it copies
+// in the direction the bound's polarity reads. The variables v's bounds held keep their
+// levels, so lowering v does not stop the scheme quantifying them.
+func (c *checker) lowerToLevel(v *soltype.TypeVarType, lvl int) {
+	c.ctx.checkThawed(v, "lowerToLevel")
+	v.Level = lvl
+	cache := map[extrudeKey]*soltype.TypeVarType{}
+	extrudeBounds := func(bounds []soltype.Type, pol soltype.Polarity) []soltype.Type {
+		out := slices.Clone(bounds)
+		for i, b := range out {
+			if soltype.LevelOf(b) > lvl {
+				out[i] = c.ctx.extrude(b, pol, lvl, cache)
+			}
+		}
+		return out
+	}
+	v.LowerBounds = extrudeBounds(v.LowerBounds, soltype.Positive)
+	v.UpperBounds = extrudeBounds(v.UpperBounds, soltype.Negative)
+}
+
+// simplifyWeakReader returns sc's body coalesced at sc's level, with each type variable at
+// or below weakLvl replaced by the type boundsType gives it at the polarity it occurs at. A
+// variable at or below weakLvl inside the bounds a replacement reads is replaced the same
+// way.
+//
+// Coalescing reads a variable through the classes of variables that always occur
+// together, and drops a quantified variable that occurs at one polarity in favor of its
+// bounds. A variable at or below weakLvl is held out of both and replaced afterwards.
+// In
+//
+//	val mut seen = Map()
+//	fn remember(value) { seen.set("last", value) }
+//	fn go() {
+//	    val opts = {retries: 3}
+//	    remember(&opts)
+//	}
+//
+// `value`'s only upper bound is `seen`'s value type, which has no upper bound of its own,
+// so `remember` renders `fn (value: &'static {retries: 3}) -> undefined` from the borrow
+// `go` passes.
+func simplifyWeakReader(sc *PolyScheme, weakLvl int) soltype.Type {
+	vars := map[int]*soltype.TypeVarType{}
+	sc.Body.Accept(&varCollector{out: vars, seen: set.NewSet[*soltype.TypeVarType]()}, soltype.Positive)
+	keep := schemeKeepSet(sc.Body, sc.declared)
+	weak := map[int]*soltype.TypeVarType{}
+	for id, v := range vars {
+		if v.Level <= weakLvl && !keep.Contains(v) {
+			weak[id] = v
+		}
+	}
+	for _, v := range weak {
+		keep.Add(v)
+	}
+	simplified := coalesceSchemeKeeping(sc.Body, sc.Level, sc.declared, sc.declaredLts, keep, true)
+	inliner := &weakReaderInliner{
+		weak: weak,
+		held: set.FromSlice(slices.Collect(maps.Values(weak))),
+		open: set.NewSet[*soltype.TypeVarType](),
+	}
+	return simplified.Accept(inliner, soltype.Positive)
+}
+
+// weakReaderInliner is the visitor behind simplifyWeakReader. weak maps the ID of each
+// variable it replaces to the variable, since coalescing can hand back a copy of a kept
+// variable in its place.
+type weakReaderInliner struct {
+	weak map[int]*soltype.TypeVarType
+	// held holds the variables weak maps to.
+	held set.Set[*soltype.TypeVarType]
+	// open holds each variable whose replacement is being built, so a bound that reaches
+	// one of them again is coalesced instead of replaced a second time.
+	open set.Set[*soltype.TypeVarType]
+}
+
+func (w *weakReaderInliner) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	switch t := t.(type) {
+	case *soltype.UnionType:
+		if pol == soltype.Positive {
+			return w.enterMembers(t.Types, pol)
+		}
+	case *soltype.IntersectionType:
+		if pol == soltype.Negative {
+			return w.enterMembers(t.Types, pol)
+		}
+	case *soltype.TypeVarType:
+		if orig, isWeak := w.weak[t.ID]; isWeak {
+			return soltype.EnterResult{Type: w.replacement(orig, pol), SkipChildren: true}
+		}
+	}
+	return soltype.EnterResult{}
+}
+
+// enterMembers rewrites the members of a union at a positive position or of an
+// intersection at a negative one. A weak variable with no bound at pol adds nothing to such
+// a node, so it is dropped when another member is left to give the position a type. Only a
+// weak variable that is the node's sole content reads its other bounds, as boundsType does.
+// In
+//
+//	val mut seen = Map()
+//	fn remember(mut value) {
+//	    value.retries = 0
+//	    seen.set("last", value)
+//	}
+//
+// `value`'s upper bounds are `{retries: number}` and `seen`'s value type, which has no
+// upper bound. `value` reads `{retries: number}`, not its meet with the values passed to
+// `remember`.
+func (w *weakReaderInliner) enterMembers(members []soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	rest := make([]soltype.Type, 0, len(members))
+	for _, m := range members {
+		if v, ok := m.(*soltype.TypeVarType); ok {
+			if orig, isWeak := w.weak[v.ID]; isWeak {
+				if side, bounded := boundsSide(orig, pol); !bounded || side != pol {
+					continue
+				}
+			}
+		}
+		rest = append(rest, m)
+	}
+	if len(rest) == 0 || len(rest) == len(members) {
+		return soltype.EnterResult{}
+	}
+	var joined soltype.Type
+	if pol == soltype.Positive {
+		joined = newUnion(nil, rest)
+	} else {
+		joined = newIntersection(nil, rest)
+	}
+	return soltype.EnterResult{Type: joined.Accept(w, pol), SkipChildren: true}
+}
+
+// replacement returns the type boundsType gives the weak variable v at pol, with each other
+// weak variable in the bounds it reads replaced by its own replacement. In
+//
+//	fn pick(f) { return fn (x) { return x } }
+//	fn h(y) { return g(y) }
+//	val g = pick(h)
+//	val n = h(5)
+//	val s = h("a")
+//
+// h's binding var is weak, since h flows into pick's `f`. Its replacement is h's function
+// type, whose `y` is weak too. `y`'s upper bounds reach no type, so `y` reads its lower
+// bounds, the arguments h is called with, and h renders `fn (y: 5 | "a") -> 5 | "a"`.
+// Coalescing h's function type alone would read `y` by its upper bounds and show
+// `unknown`.
+func (w *weakReaderInliner) replacement(v *soltype.TypeVarType, pol soltype.Polarity) soltype.Type {
+	side, ok := boundsSide(v, pol)
+	if !ok {
+		return &soltype.NeverType{}
+	}
+	if w.open.Contains(v) {
+		return coalesce(v, side)
+	}
+	w.open.Add(v)
+	defer w.open.Remove(v)
+	// coalesce keeps the type parameters of each function type it reaches, so they are
+	// kept here too.
+	held := w.held.Union(funcTypeParamVars(v))
+	held.Remove(v)
+	return coalesceKeeping(v, side, held, nil, nil).Accept(w, side)
+}
+
+func (w *weakReaderInliner) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
