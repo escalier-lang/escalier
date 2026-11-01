@@ -1,0 +1,88 @@
+package main
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+// traceStream renders `go test -json` output events for the package `pkg`, one per
+// [test, output] pair. The output is a JSON string body, so `\t` and `\n` are escapes.
+func traceStream(events ...[2]string) string {
+	var b strings.Builder
+	for _, ev := range events {
+		b.WriteString(`{"Action":"output","Package":"pkg","Test":"` + ev[0] + `","Output":"` + ev[1] + `"}` + "\n")
+	}
+	return b.String()
+}
+
+// TestOwnershipDiffReport asserts the report the harness writes for two tiny runs:
+//
+//   - TestSame prints one diagnostic in each run, so it does not differ.
+//   - TestOld prints a diagnostic only with the flag off, and TestNew one only with it on.
+//   - TestCount prints one diagnostic twice with the flag off and once with it on.
+//   - Program `bb` reports one diagnostic in each run, attributed to TestShiftA in one and
+//     TestShiftB in the other. It matches, since diagnostics match by program.
+//   - A script, which has no program key, reports one diagnostic in each run from different
+//     tests. It differs, since a script's diagnostics match only within one test.
+//   - TestTemp prints a diagnostic naming a different temporary directory in each run. It
+//     does not differ, since the directory is normalized.
+//
+// Output that is not a traced diagnostic is skipped.
+func TestOwnershipDiffReport(t *testing.T) {
+	moved := `ESCALIER_DIAG\taa\t*solver.UseAfterMoveError\tinput.esc:3:5-3:6\tuse of moved value 'p'\n`
+	write := `ESCALIER_DIAG\taa\t*solver.BorrowedValueWriteError\tinput.esc:4:5-4:8\tcannot assign to 'p.x' while it is borrowed as immutable\n`
+	shifted := `ESCALIER_DIAG\tbb\t*solver.UseAfterMoveError\tinput.esc:2:1-2:2\tuse of moved value 'q'\n`
+	script := `ESCALIER_DIAG\t\t*solver.UseAfterMoveError\t0:5-6\tuse of moved value 'r'\n`
+	tmp := filepath.Clean(os.TempDir())
+	temp := func(dir string) string {
+		return `ESCALIER_DIAG\tcc\t*solver.UnresolvedPackageError\t` + tmp + `/` + dir + `/001/a.esc:1:1-1:2\tcannot read ` + tmp + `/` + dir + `/001/b.esc\n`
+	}
+
+	off, err := parseTrace(strings.NewReader("not json\n" + traceStream(
+		[2]string{"TestSame", moved},
+		[2]string{"TestOld", moved},
+		[2]string{"TestOld", `=== RUN TestOld\n`},
+		[2]string{"TestCount", moved},
+		[2]string{"TestCount", moved},
+		[2]string{"TestShiftA", shifted},
+		[2]string{"TestScriptA", script},
+		[2]string{"TestTemp", temp("TestTemp123")},
+	)))
+	require.NoError(t, err)
+
+	on, err := parseTrace(strings.NewReader(traceStream(
+		[2]string{"TestSame", moved},
+		[2]string{"TestNew", write},
+		[2]string{"TestCount", moved},
+		[2]string{"TestShiftB", shifted},
+		[2]string{"TestScriptB", script},
+		[2]string{"TestTemp", temp("TestTemp456")},
+	)))
+	require.NoError(t, err)
+
+	var out strings.Builder
+	writeReport(&out, diffRuns(off, on))
+
+	require.Equal(t, strings.Join([]string{
+		"pkg TestCount",
+		"\told\tinput.esc:3:5-3:6\t*solver.UseAfterMoveError\tuse of moved value 'p'",
+		"pkg TestNew",
+		"\tnew\tinput.esc:4:5-4:8\t*solver.BorrowedValueWriteError\tcannot assign to 'p.x' while it is borrowed as immutable",
+		"pkg TestOld",
+		"\told\tinput.esc:3:5-3:6\t*solver.UseAfterMoveError\tuse of moved value 'p'",
+		"pkg TestScriptA",
+		"\told\t0:5-6\t*solver.UseAfterMoveError\tuse of moved value 'r'",
+		"pkg TestScriptB",
+		"\tnew\t0:5-6\t*solver.UseAfterMoveError\tuse of moved value 'r'",
+		"",
+		"5 tests differ: 3 diagnostics only with the flag off, 2 only with it on",
+		"     3  old *solver.UseAfterMoveError: use of moved value '…'",
+		"     1  new *solver.BorrowedValueWriteError: cannot assign to '…' while it is borrowed as immutable",
+		"     1  new *solver.UseAfterMoveError: use of moved value '…'",
+		"",
+	}, "\n"), out.String())
+}
