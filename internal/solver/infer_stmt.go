@@ -54,6 +54,13 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 	// body (c.fn == nil), where no liveness analysis ran.
 	if c.fn != nil {
 		c.fn.currentStmt = s
+		// A statement inside an expression the CFG builder did not decompose has no CFG point
+		// of its own, so the ownership events inside it attach to the enclosing statement's.
+		if _, ok := c.fn.stmtToRef[s]; ok {
+			fn, saved := c.fn, c.fn.eventStmt
+			fn.eventStmt = s
+			defer func() { fn.eventStmt = saved }()
+		}
 	}
 	switch s := s.(type) {
 	case *ast.ExprStmt:
@@ -77,8 +84,15 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 			// flows out at its own lifetime and is not consumed here.
 			if s.Expr != nil {
 				if ref, ok := c.fn.stmtToRef[s]; ok {
-					// A function declared to return a borrow hands the value out without moving it.
-					if c.fn.returnsBorrow || !c.rejectModuleLevelMove(scope, s.Expr) {
+					c.emitReturnFlow(s.Expr, ref)
+					// A value that fills a borrow return without a written borrow is reported for
+					// that alone, and records no move.
+					// With no return annotation the function returns whatever s.Expr produces, so
+					// the check runs against a nil destination type. An annotation that does not
+					// resolve, or that nests the returned type, names no destination to check.
+					checked := c.fn.returnAnn != nil || !c.fn.returnAnnotated
+					missing := checked && c.checkWrittenBorrow(s.Expr, c.fn.returnAnn)
+					if !missing && !c.rejectModuleLevelMove(scope, s.Expr) {
 						c.consumeOwned(s.Expr, t, s.Expr, ref)
 					}
 					// A returned value must not borrow a function-local, which dies when the
@@ -178,6 +192,7 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 					if !moduleLevel {
 						c.consumeDestructureLeaves(scope, vd.Pattern, vd.Init, ref)
 					}
+					c.emitPatternFlows(vd.Pattern, vd.Init, ref)
 					c.flushBorrowDirty(ref)
 				}
 			}
@@ -209,6 +224,12 @@ func (c *checker) defineLocal(scope *Scope, name string, vd *ast.VarDecl, b Valu
 	if c.fn == nil {
 		return
 	}
+	if ref, ok := c.fn.stmtToRef[s]; ok {
+		c.emitBindingFlow(vd, liveness.VarID(b.VarID), bindingType(b), ref)
+	}
+	if c.fn.unwrittenBorrows.Contains(vd.Init) {
+		return
+	}
 	c.trackAliasesForVarDecl(scope, vd, bindingType(b), s)
 	c.consumeBindingInit(vd, bindingType(b), s)
 	// Record which function-locals this binding's initializer borrows, so a later
@@ -220,4 +241,6 @@ func (c *checker) defineLocal(scope *Scope, name string, vd *ast.VarDecl, b Valu
 		// then has to stay exclusive for as long as the binding is read.
 		c.recordBorrowLoan(liveness.VarID(b.VarID), vd.Init, ref)
 	}
+	// A value that keeps a closure keeps it reachable while this binding is live.
+	c.noteRetainedHolder(liveness.VarID(b.VarID), vd.Init)
 }

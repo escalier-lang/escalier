@@ -133,9 +133,9 @@ fn f() {
 			want: []string{"4:7-4:9: cannot move module-level value 'xs' into an owned parameter. Make the parameter a borrow and pass `&xs`", "5:7-5:9: cannot move module-level value 'xs' into an owned parameter. Make the parameter a borrow and pass `&xs`"},
 		},
 		{
-			name: "a module-level val passed to an owned-mutable parameter",
+			name: "a module-level val passed to an owned parameter declared mut",
 			src: `val xs: Array<number> = [1, 2]
-fn take(x: mut Array<number>) { x.push(3) }
+fn take(mut x: Array<number>) { x.push(3) }
 fn f() { take(xs) }`,
 			want: []string{"3:15-3:17: cannot move module-level value 'xs' into an owned parameter. Make the parameter a borrow and pass `&xs`"},
 		},
@@ -228,7 +228,7 @@ func TestModuleLevelValuePassedToNpmOwnedParam(t *testing.T) {
 
 	files := map[string]string{
 		"node_modules/lod/index.d.ts": `export declare function sum(xs: number[]): number;
-export declare function wrap<T>(o: {items: T[]}): T;
+export declare function wrap<T>(items: T[]): T;
 export declare class Box {
 	constructor(items: number[]);
 	put(items: number[]): void;
@@ -244,7 +244,7 @@ export declare function make(): Coll;`,
 		{name: "a function", body: `val n = lod.sum(xs)`},
 		{name: "a function bound to a local", body: `val s = lod.sum
 	val n = s(xs)`},
-		{name: "a generic function", body: `val n = lod.wrap(o)`},
+		{name: "a generic function", body: `val n = lod.wrap(xs)`},
 		{name: "a constructor", body: `val b = lod.Box(xs)`},
 		{name: "an instance method", body: `val mut b = lod.Box([3])
 	b.put(xs)`},
@@ -260,7 +260,6 @@ export declare function make(): Coll;`,
 			t.Parallel()
 			src := `import "lod" as lod
 val xs: Array<number> = [1, 2]
-val o = {items: xs}
 fn f() {
 	` + tt.body + `
 }`

@@ -2013,15 +2013,12 @@ func receiverParam(recv *ast.MethodReceiver, lt soltype.Lifetime, self soltype.R
 
 // receiverType returns the type a receiver gives the instance inner. A borrowed receiver
 // borrows inner at lt, so `&self` is `&Self` and `&mut self` is `&mut Self`. A consuming
-// receiver owns inner, so `self` is the bare `Self` and `mut self` is the owned-mutable
-// `mut Self`, and lt is ignored. A nil receiver, which checkSelfReceiver reports, takes the
-// bare inner.
+// receiver owns inner, so `self` and `mut self` are both the bare `Self`, and lt is
+// ignored. The `mut` of `mut self` belongs to the `self` binding in the body. A nil
+// receiver, which checkSelfReceiver reports, takes the bare inner.
 func receiverType(recv *ast.MethodReceiver, lt soltype.Lifetime, inner soltype.RefInner) soltype.Type {
-	switch {
-	case recv == nil:
+	if recv == nil || recv.Consumes() {
 		return inner
-	case recv.Consumes():
-		return soltype.NewRef(recv.Mut, nil, inner)
 	}
 	return soltype.NewRef(recv.Mut, lt, inner)
 }
@@ -2037,9 +2034,9 @@ func (c *checker) receiverLifetime(recv *ast.MethodReceiver, lvl int) soltype.Li
 	return c.resolveLifetimeAnn(recv.Lifetime, lvl)
 }
 
-// selfParamMut reports whether a receiver grants mutable access to the instance. A
-// `&mut self` or `mut self` receiver is a mutable RefType over the instance. A `&self` or
-// `self` receiver and a static member's absent receiver are not.
+// selfParamMut reports whether a receiver borrows the instance mutably, as `&mut self`
+// does. A `&self`, `self`, or `mut self` receiver and a static member's absent receiver
+// do not.
 func selfParamMut(sp *soltype.FuncParam) bool {
 	if sp == nil {
 		return false
@@ -2083,6 +2080,7 @@ func (c *checker) bindSelf(scope *Scope, recv *ast.MethodReceiver, lt soltype.Li
 	scope.defineValue("self", ValueBinding{
 		Schemes: []TypeScheme{monoScheme(selfBody)},
 		Nominal: receiverType(recv, lt, class),
+		Mut:     recv != nil && recv.Consumes() && recv.Mut,
 	})
 }
 
@@ -2419,8 +2417,8 @@ func lookupTypeThroughNamespace(scope *Scope, name string) (TypeBinding, bool) {
 
 // selfTypeName is the type name a class body binds to its own instance handle, so a member
 // signature can write `-> Self` for a builder-style return. It is the name FuncType.SelfParam's
-// documentation already uses for the receiver's desugared type: `self` is `Self`, `mut self` is
-// `mut Self`, and `&self` is `&Self`.
+// documentation already uses for the receiver's desugared type: `self` and `mut self` are
+// `Self`, and `&self` is `&Self`.
 const selfTypeName = "Self"
 
 // reportSelfTypeName reports a type declaration that takes the name `Self`, and returns whether

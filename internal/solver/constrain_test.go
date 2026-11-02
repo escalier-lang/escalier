@@ -539,14 +539,11 @@ func propElem(name string, t soltype.Type) *soltype.PropertyElem {
 	return &soltype.PropertyElem{Name: name, Type: t}
 }
 
-// mutRef builds an owned-mutable borrow for the RefType constrain tests (C2). Lt is
-// always nil in C2 — the lifetime sort lands in D1 — so the owned-mutable wrapper is
-// the only meaningful borrow constructible here. A real immutable borrow needs a
-// lifetime (`Mut: false, Lt: 'a`), so its helper arrives in D2; the bare <: RefType
-// arm mints the degenerate `Mut: false, Lt: nil` view internally with a struct
-// literal, not through a helper.
+// mutRef builds a `'static` mutable borrow for the RefType constrain tests (C2). The
+// `'static` lifetime outlives itself, so two such borrows relate on their mutability and
+// pointees alone.
 func mutRef(inner soltype.RefInner) *soltype.RefType {
-	return &soltype.RefType{Mut: true, Inner: inner}
+	return &soltype.RefType{Mut: true, Lt: soltype.Static, Inner: inner}
 }
 
 // TestConstrainDescribesRefOperand covers review finding 2: describe must NAME a
@@ -1001,11 +998,12 @@ func TestConstrainRef(t *testing.T) {
 			super: inexactObj(propElem("x", num())),
 		},
 		{
-			// mut {x} <: {x}: mut-decay. A mutable source satisfies a bare (owned,
-			// immutable) target; the borrow peels and the inner is checked covariantly.
-			name:  "mut-decay: mut <: bare allowed",
+			// &mut {x} <: {x}: a borrow cannot fill an owned destination, whatever its
+			// mutability, since the destination would claim storage owned elsewhere.
+			name:  "mut borrow <: bare rejected (escape)",
 			sub:   mutRef(exactObj(propElem("x", num()))),
 			super: exactObj(propElem("x", num())),
+			want:  []string{"cannot use borrowed &mut object as owned object"},
 		},
 		{
 			// {x} <: mut {x}: the reverse is rejected. The bare source is wrapped as an

@@ -397,8 +397,8 @@ func TestBuildTypeAnnFromSource(t *testing.T) {
 		"TemplateLit":  {"", "`on${string}`", "`on${string}`"},
 		// TypeScript ships the string intrinsics as generic aliases.
 		"StringIntrinsic": {"", "Uppercase<string>", "Uppercase<string>"},
-		// Ownership has no TypeScript form, so a `mut` renders as what it wraps.
-		"Mutable": {"", "mut {x: number}", "{x: number}"},
+		// Borrows have no TypeScript form, so a `&mut` renders as what it borrows.
+		"MutableBorrow": {"", "&mut {x: number}", "{x: number}"},
 		// TypeScript has no complement type. Rendering one as `unknown` reduces the
 		// `A & ~B` a narrowed match remainder produces to `A`, dropping the
 		// refinement and keeping the type it refines.
@@ -1175,10 +1175,10 @@ func TestBuildTypeAnnFormers(t *testing.T) {
 			}},
 			"{x: number} & {y: string}",
 		},
-		// Ownership has no TypeScript form, so a `mut` reference renders as the value
-		// it wraps.
-		"Mutable": {
-			&soltype.RefType{Mut: true, Lt: nil, Inner: solObj(solProp("x", solNum()))},
+		// Borrows have no TypeScript form, so a `&mut` reference renders as the value
+		// it borrows.
+		"MutableBorrow": {
+			&soltype.RefType{Mut: true, Lt: &soltype.StaticLifetime{}, Inner: solObj(solProp("x", solNum()))},
 			"{x: number}",
 		},
 		"KeyOf": {

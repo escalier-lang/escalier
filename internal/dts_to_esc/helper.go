@@ -65,7 +65,7 @@ func convertTypeParam(tp *dts_parser.TypeParam) (*ast.TypeParam, error) {
 // hand an unchecked value back out if someone binds it.
 //
 // Only a parameter whose whole type is `any` widens. An `any` nested in
-// `mut Array<any>` stays, since widening it would change what the array
+// `Array<any>` stays, since widening it would change what the array
 // accepts rather than what the parameter does.
 //
 // A callback the caller writes the body for takes convertCallbackParam
@@ -252,6 +252,11 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 				return nil, fmt.Errorf("converting method signature parameter: %w", err)
 			}
 		}
+		// The caller writes an optional method's body, so its `Readonly<T>`
+		// parameters take no borrow, the same as a callback's.
+		if !m.Optional {
+			borrowReadonlyParams(m.Params, params)
+		}
 		returnType, err := convertReturn(m.ReturnType)
 		if err != nil {
 			return nil, fmt.Errorf("converting method signature return type: %w", err)
@@ -426,10 +431,9 @@ func convertTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
 		}
 		// Array types in TypeScript are represented as TypeRef to
 		// Array<T>. The `readonly` modifier maps to a ReadonlyArray<T>
-		// reference, which both conversion paths rename to Escalier's
-		// immutable `Array<T>` spelling. ConvertBucket does it through
-		// rewriteReadonlyTwinRefs, which also wraps the plain form in
-		// `mut`. ConvertModuleWithOverrides does it through
+		// reference, which both conversion paths rename to `Array<T>`.
+		// ConvertBucket does it through rewriteReadonlyTwinRefs, and
+		// ConvertModuleWithOverrides does it through
 		// renameLibReadonlyTwinRefs.
 		//
 		// t.Readonly is only set for the `readonly T[]` shorthand;
@@ -775,6 +779,7 @@ func convertMethodDecl(cctx *convertCtx, md *dts_parser.MethodDecl, className st
 	if err != nil {
 		return nil, fmt.Errorf("converting method parameters: %w", err)
 	}
+	borrowReadonlyParams(md.Params, params)
 
 	// Convert return type
 	var returnType ast.TypeAnn

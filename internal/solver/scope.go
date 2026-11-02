@@ -29,10 +29,19 @@ type ValueBinding struct {
 	// ValKind for everything else (a `val`, a function, a parameter, and every
 	// prelude binding — all left at the zero value, ValKind). inferAssign gates
 	// reassignment on Kind == VarKind, reporting CannotAssignToImmutableError for any
-	// other kind. This is the binding-level REASSIGNABILITY gate only — deliberately
-	// SEPARATE from type-level mutability (`mut`-field / aliasing / lifetime
-	// transitions, M4), which is a property of the TYPE, not of this binding.
+	// other kind. It decides whether the name can be pointed at another value, and Mut
+	// decides whether the value it owns can be changed.
 	Kind ast.VariableKind
+	// Mut marks a binding that may mutate the value it owns, written `val mut p`,
+	// `var mut p`, `mut p` on a parameter or a pattern leaf, or `mut self`. Every owned
+	// layer of that value is writable through the binding. A borrow inside the value keeps
+	// its own mutability. A binding that holds a borrow ignores Mut, since the borrow
+	// decides what it may write.
+	Mut bool
+	// InitVars is the range of variable IDs a body-level weak binding's initializer
+	// minted, and nil for every other binding. When it is set, a reassignment writes only
+	// into the variables in the range.
+	InitVars *varIDRange
 	// ModuleLevel marks a top-level binding — one defined directly in the module
 	// scope, as opposed to a function parameter or body-local `val`/`var`. It is set
 	// only by inferComponent's phase-3 definitions, the module's SCC bindings, and
@@ -40,6 +49,10 @@ type ValueBinding struct {
 	// WRITE: storing a value into module-level storage outlives every borrow region,
 	// so a borrowed value written there escapes to 'static (M4 D3).
 	ModuleLevel bool
+	// Weak marks a `val` or `var` that did not generalize, as generalizes decides. Its
+	// single scheme quantifies no variable, so every use shares the variables its type
+	// holds.
+	Weak bool
 	// VarID is the liveness VarID assigned to this binding's name by the function
 	// body's rename pass (M4 G1), or 0 for a binding outside any liveness-analysed
 	// body (every top-level binding, and any binding minted before its enclosing
@@ -52,6 +65,10 @@ type ValueBinding struct {
 	// Inside `class P`, the scheme holds the structural view of P's body and Nominal holds
 	// the receiver over `P`, so `return self` produces `P` while `self.x` reads the view.
 	Nominal soltype.Type
+	// Members is the namespace a member or index read off this binding looks in first,
+	// or nil when every such read is off the binding's value. bindNamespace sets it on
+	// the value it binds beside a namespace whose AsValue is set.
+	Members *Namespace
 }
 
 // IsOverloaded reports whether this binding is an overload set. Consumers MUST
@@ -86,6 +103,10 @@ type Namespace struct {
 	Values map[string]ValueBinding
 	Types  map[string]TypeBinding
 	Nested map[string]*Namespace
+	// AsValue is the value the namespace's own name stands for, or nil when the name
+	// is not a value. A package whose `.d.ts` writes `export = equal` sets it to the
+	// binding of `equal`. A member this namespace does not hold is read off this value.
+	AsValue *ValueBinding
 }
 
 // Scope is the solver's multi-sorted lexical scope. It has one map per binding sort plus
@@ -177,6 +198,17 @@ func (s *Scope) defineType(name string, b TypeBinding) {
 // defineNamespace inserts ns under name in this scope's namespace map.
 func (s *Scope) defineNamespace(name string, ns *Namespace) {
 	s.namespaces[name] = ns
+}
+
+// bindNamespace binds ns under name in this scope. When ns has an AsValue, it also
+// binds that value under name, with Members set to ns.
+func (s *Scope) bindNamespace(name string, ns *Namespace) {
+	s.defineNamespace(name, ns)
+	if ns.AsValue != nil {
+		b := *ns.AsValue
+		b.Members = ns
+		s.defineValue(name, b)
+	}
 }
 
 // defineUnprefixed binds every member ns holds, now or later, under its own name

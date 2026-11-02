@@ -157,10 +157,10 @@ func TestInferIdentityRefReturnStillRendersAfterGeneralization(t *testing.T) {
 // lifetime, linking the two borrows; freshening per instantiation keeps them
 // independent so neither call contaminates the other.
 func TestInferBorrowFnCalledAtTwoSites(t *testing.T) {
-	src := `fn use(o: mut {x: number}) -> number {
+	src := `fn use(o: &mut {x: number}) -> number {
   return o.x
 }
-fn f(a: mut {x: number}, b: mut {x: number}) {
+fn f(a: &mut {x: number}, b: &mut {x: number}) {
   val ra = use(a)
   val rb = use(b)
   return rb

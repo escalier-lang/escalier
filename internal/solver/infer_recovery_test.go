@@ -51,7 +51,9 @@ func TestInferObjectSpreadOverUnknownIdentifierRecovers(t *testing.T) {
 // The parser substitutes an ErrorExpr for an expression it could not read and
 // reports the parse error itself, so the walk recovers over that subtree without
 // reporting a second diagnostic of its own. A missing operand and a missing
-// initializer are the two shapes that reach the walk.
+// initializer are the two shapes that reach the walk. A member read with no
+// property name is a third, which the walk recovers from when it is the operand of
+// a `&mut` borrow or the receiver of a write.
 //
 // The binding the declaration introduces still gets a type. `1 +` keeps the `+`
 // signature. The walk constrains `error <: number` for the operand that is gone,
@@ -70,6 +72,10 @@ func TestInferErrorExprReportsNothing(t *testing.T) {
 			binding: "x", want: "number"},
 		{name: "MissingInitializer", src: `export val broken =`, parseErr: "19-19: Expected an expression",
 			binding: "broken", want: "error"},
+		{name: "MutBorrowOfMissingMember", src: "fn g() {\n\tval mut p = {x: {y: 1}}\n\tval r = &mut p.\n}",
+			parseErr: "49-50: expected an identifier after .", binding: "g", want: "fn () -> undefined"},
+		{name: "WriteThroughMissingMember", src: "fn g() {\n\tval mut p = {x: {y: 1}}\n\tp..y = 1\n}",
+			parseErr: "36-37: expected an identifier after .", binding: "g", want: "fn () -> undefined"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

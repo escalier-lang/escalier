@@ -129,6 +129,7 @@ type pathBinder struct {
 // `match`, `if val`, or `val … else`.
 func (c *checker) newPathBinder(lvl int, blame ast.Node, root *ucs.Scrutinee, rootType soltype.Type) *pathBinder {
 	b := &pathBinder{c: c, lvl: lvl, blame: blame, views: map[*ucs.Scrutinee]scrutineeView{}}
+	rootType = c.localScrutinee(lvl, blame, rootType)
 	carrier, mode := c.scrutineeBinding(lvl, rootType)
 	// Snapshot the scrutinee's union structure before any branch binds. A literal test
 	// adds its literal as a lower bound on the scrutinee variable, so grounding again
@@ -151,6 +152,26 @@ func (c *checker) newPathBinder(lvl int, blame ast.Node, root *ucs.Scrutinee, ro
 	}
 	b.rootShape = shape
 	return b
+}
+
+// localScrutinee returns the type a test reads the scrutinee t through. A test adds bounds
+// to a scrutinee variable, as a literal pattern adds its literal. Two kinds of variable are
+// shared with other readers, which would each see those bounds:
+//   - the binding var of a weak binding, as weakBindingVars describes, and
+//   - a variable outside lvl, such as the element of a weak module-level
+//     `val o = mk(5)` that `match o[0] { … }` reads inside a function.
+//
+// Such a t is returned as a fresh variable at lvl bounded below by t, which takes the
+// bounds instead. Any other t is returned unchanged. blame is the node the bound between
+// the two is recorded against.
+func (c *checker) localScrutinee(lvl int, blame ast.Node, t soltype.Type) soltype.Type {
+	v, isVar := t.(*soltype.TypeVarType)
+	if !isVar || (v.Level >= lvl && !c.weakBindingVars.Contains(v)) {
+		return t
+	}
+	local := c.freshAt(lvl)
+	c.constrain(blame, v, local)
+	return local
 }
 
 // narrowedBy returns a binder in which the split over s has tested it against test. The

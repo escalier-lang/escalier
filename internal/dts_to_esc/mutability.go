@@ -606,7 +606,8 @@ func identName(key dts_parser.PropertyKey) string {
 // classifyExplicitSignal applies explicit author signals (tier 3):
 //   - Getters never mutate the receiver.
 //   - Setters always mutate the receiver.
-//   - Methods with a `this: Readonly<T>` (or `this: readonly T[]`) parameter are non-mutating.
+//   - Methods with a `this: Readonly<T>` or `this: readonly T[]` parameter are
+//     non-mutating when no slot reachable through that type is writable.
 //   - Well-known symbol methods (toString, toJSON, etc.) are non-mutating.
 //
 // Property mutability is handled outside Classify (see convertPropertyDecl
@@ -627,7 +628,9 @@ func classifyExplicitSignal(ctx ClassifyContext) (ClassifyResult, bool) {
 		if isWellKnownMethod(m.Name) {
 			return nonMut, true
 		}
-		// Explicit `this: Readonly<T>` (or `this: readonly T[]`) parameter.
+		// `Readonly<T>` marks only the top-level slots of `T` readonly, so
+		// `this: Readonly<T>` is a signal for `&self` only when nothing below
+		// those slots is writable either.
 		if hasReadonlyThisParam(m.Params) {
 			return nonMut, true
 		}
@@ -674,7 +677,8 @@ func isWellKnownMethod(key dts_parser.PropertyKey) bool {
 }
 
 // hasReadonlyThisParam returns true when the parameter list starts with a
-// `this` parameter whose type is Readonly<T>, ReadonlyArray<T>, etc.
+// `this` parameter whose type is a readonly wrapper, such as `Readonly<T>` or
+// `ReadonlyArray<T>`, and no slot reachable through that type is writable.
 func hasReadonlyThisParam(params []*dts_parser.Param) bool {
 	if len(params) == 0 {
 		return false
@@ -686,7 +690,7 @@ func hasReadonlyThisParam(params []*dts_parser.Param) bool {
 	if first.Type == nil {
 		return false
 	}
-	return isReadonlyWrapperType(first.Type)
+	return isReadonlyWrapperType(first.Type) && !reachesWritableSlot(first.Type, false)
 }
 
 // isReadonlyWrapperType returns true for Readonly<T>, ReadonlyArray<T>,
@@ -699,11 +703,7 @@ func isReadonlyWrapperType(t dts_parser.TypeAnn) bool {
 	if !ok {
 		return false
 	}
-	ident, ok := typeRef.Name.(*dts_parser.Ident)
-	if !ok {
-		return false
-	}
-	switch ident.Name {
+	switch typeRefName(typeRef) {
 	case "Readonly", "ReadonlyArray", "ReadonlySet", "ReadonlyMap":
 		return true
 	}

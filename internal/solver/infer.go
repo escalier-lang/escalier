@@ -5,7 +5,6 @@ import (
 	"github.com/escalier-lang/escalier/internal/liveness"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
-	"maps"
 )
 
 // checker is the per-inference-run carrier for the M2 constraint-generating
@@ -22,7 +21,7 @@ import (
 type checker struct {
 	ctx  *Context      // M1: freshVar(level), Constrain(sub, super) []SolverError
 	info *Info         // M1: node → soltype.Type side table (unexported setType)
-	prov Prov          // M2.5: soltype.Type → Origin (leaf FromAST only), the inverse of info
+	prov *provTable    // M2.5: soltype.Type → Origin (leaf FromAST only), the inverse of info
 	errs []SolverError // accumulated; mirrors the spike's []error threading
 
 	// fn is the enclosing function context for the body currently being walked —
@@ -46,10 +45,26 @@ type checker struct {
 	// consumeOnceCallee moves a binding holding the closure at each call.
 	capturesMovedBy map[ast.Func]map[string]ast.Node
 
+	// pendingFlows holds each flow whose ownership F3 has not settled yet, across every body
+	// walked so far, keyed by what it waits on. settleFlowsWaitingOn turns each into its
+	// event once what it waits on is settled. See ownership_events.go.
+	pendingFlows map[flowWait][]provisionalFlow
+	// paramByVar maps the VarID of each unannotated parameter a walked body binds to the
+	// parameter, so a flow out of it can read the ownership its body settles.
+	paramByVar map[liveness.VarID]*soltype.FuncParam
+	// unsettledParams holds each unannotated parameter whose body is still being walked.
+	// Its ownership is not settled until the walk finishes.
+	unsettledParams set.Set[*soltype.FuncParam]
+
 	// pendingRecvReads holds the member reads off inferred receivers that top-level bodies
 	// collected. A value initializer can still pass such a body to a call that types its
 	// receiver, so checkPendingRecvReads checks them once the component is constrained.
 	pendingRecvReads []inferredRecvRead
+
+	// pendingMutations holds the unsettled mutations that top-level bodies collected, which
+	// checkPendingMutations checks once the component is constrained, for the same reason
+	// pendingRecvReads waits.
+	pendingMutations []unsettledMutation
 
 	// topThrows is the throws sink for a `try` block written at module top level, where
 	// there is no funcCtx to hold one. inferTryCatch installs it for the duration of the
@@ -113,6 +128,9 @@ type checker struct {
 	// same reason. The map is allocated lazily by namedLifetime on first use.
 	namedLifetimes map[string]*soltype.LifetimeVar
 
+	// pendingCallOnly holds a check per function parameter that has no retention lifetime, for
+	// checkCallOnlyParams to read once the enclosing component has solved.
+	pendingCallOnly []callOnlyCheck
 	// ltMarks maps a node to the lifetime counter at the start of its inference, written by
 	// markLifetimes for every expression and statement. A rigid-lifetime check sited at the
 	// node reads it to tell the lifetimes the checked value minted from the ones it shares.
@@ -216,6 +234,25 @@ type checker struct {
 	// the value that names the unique symbols the type declares. See symbolOwners in
 	// symbol_owner.go. It is nil outside a walk.
 	symbolOwners map[string]string
+
+	// weakBindings lists the module-level bindings that did not generalize, in the order
+	// the walk bound them. See settleWeakBindings. It is nil outside a walk.
+	weakBindings []weakBinding
+
+	// weakReaders lists the generalized module-level bindings whose type reads a weak
+	// variable, in the order the walk bound them. It is nil outside a walk.
+	weakReaders []weakReader
+
+	// weakLocals lists the body-level bindings that did not generalize, in the order the
+	// walk bound them. A module walk starts its own list and puts the previous one back when
+	// it ends. A script settles and clears the list once it is walked.
+	weakLocals []weakBinding
+
+	// weakBindingVars holds the type each binding that did not generalize binds, when that
+	// type is a variable. Every read of such a binding returns this one variable, where a
+	// generalized binding gives each read a fresh copy. A module walk starts its own set
+	// and puts the previous one back when it ends.
+	weakBindingVars set.Set[*soltype.TypeVarType]
 
 	// fileScopes holds one scope per file of the module being inferred, keyed by
 	// source id, each carrying that file's import bindings.
@@ -323,6 +360,14 @@ type checker struct {
 	// inferFunc reads and clears it on entry, so a lambda nested inside the body does not
 	// take the member's receiver as its own.
 	memberReceiver *ast.MethodReceiver
+	// argFunc is the function expression inferCallArgs is about to infer as a call argument,
+	// consumed by the inferFunc call that walks it. inferFunc reads and clears it on entry, so a
+	// lambda nested inside the argument's body is not taken for an argument itself.
+	argFunc *ast.FuncExpr
+	// readThroughVars holds the inner variable of each borrow inferFunc infers for an
+	// unannotated parameter, and the result variable of each field read through one of those
+	// borrows. fieldReadBorrow reads a field off such a borrow as a borrow at the same lifetime.
+	readThroughVars set.Set[*soltype.TypeVarType]
 
 	// memberSelf is set beside memberReceiver for an instance member, by inferMemberFunc, and
 	// carries what inferFunc needs to bind the member's `self` and build its SelfParam.
@@ -433,9 +478,13 @@ type funcCtx struct {
 	// immutable→mutable upgrade at a `mut` return annotation. The upgrade fires only when
 	// every returned value is uniquely owned, so the join of the returns is too.
 	returnExprs []ast.Expr
-	// returnsBorrow is true when the function's return annotation is a borrow, `&T` or
-	// `&mut T`.
-	returnsBorrow bool
+	// returnAnn is the type the function's return annotation resolves to, the destination of
+	// each `return`. It is nil when the function has no annotation, and for an async or
+	// generator function, whose `return` fills a type nested in the annotation.
+	returnAnn soltype.Type
+	// returnAnnotated says the function's signature writes a return annotation, whether or
+	// not returnAnn holds what it resolves to.
+	returnAnnotated bool
 
 	// throws is this body's exceptional SINK: the single type every `throw` and every call
 	// is constrained against, the twin of the joined return type. inferFunc seeds it from
@@ -485,6 +534,10 @@ type funcCtx struct {
 	// inferredRecvReads holds each member read in this body, or in a body it encloses, whose
 	// receiver is an identifier typed only by how the body uses it.
 	inferredRecvReads []inferredRecvRead
+	// unsettledMutations holds each mutating operation in this body, or in a body it
+	// encloses, through an immutable binding whose value had no known type yet. See
+	// unsettledMutation.
+	unsettledMutations []unsettledMutation
 	// lvl is the level this body is walked at, so throwsSink mints the sink there rather
 	// than inside a `val` initializer, which is typed one level deeper. A sink minted deep
 	// gets extruded by a later exit, and the resulting cycle renders as a μ-knot.
@@ -517,6 +570,26 @@ type funcCtx struct {
 	aliases    *liveness.AliasTracker
 	stmtToRef  map[ast.Stmt]liveness.StmtRef
 	varIDNames map[liveness.VarID]string
+	// events holds the ownership events this body's walk emits, attached to the nodes of
+	// cfg. runLivenessPrePass opens it. See ownership_events.go.
+	events *ownershipEvents
+	// exprRefs maps the expression of each expression statement in cfg's blocks to the
+	// statement's CFG point. The CFG builder wraps some expressions in an expression
+	// statement of its own, such as a branch's condition, a match target, or a match arm's
+	// expression body. No AST statement maps to such a statement, so this is how the event
+	// emitters find the point such an expression runs at.
+	exprRefs map[ast.Expr]liveness.StmtRef
+	// eventStmt is the innermost statement being walked that has a CFG point. The ownership
+	// events of the expression being walked attach to its point. See eventStmtRef.
+	eventStmt ast.Stmt
+	// exprAt is the CFG point of the expression attachEventsAt is attaching events for,
+	// and the eventStmt when its inference began. eventStmtRef answers it while that
+	// statement is still eventStmt.
+	exprAt struct {
+		stmt ast.Stmt
+		ref  liveness.StmtRef
+		set  bool
+	}
 	// cfg is this body's control-flow graph, retained from the pre-pass so the move
 	// engine can run AnalyzeMoves over it. liveness and stmtToRef are derived from
 	// it; the move engine's branch-merged consumed lattice joins over the same
@@ -528,11 +601,19 @@ type funcCtx struct {
 	// body; AnalyzeMoves(cfg, moveSites) then yields the branch-merged consumed
 	// lattice the use-after-move check reads after the body walk completes.
 	moveSites map[liveness.StmtRef]set.Set[liveness.VarID]
+	// openEscapes holds the VarID of each binding the body passes whole as a call argument
+	// into a destination that outlives the frame and whose type leaves ownership open.
+	// noteOpenEscapes records them, and markOpenEscapeParams reads them once the body is
+	// walked.
+	openEscapes set.Set[liveness.VarID]
 	// moveNodes maps a consumed binding's VarID to the node that moved it, so a
 	// UseAfterMoveError can point its "moved here" related span at the move site. A
 	// binding moved on more than one path keeps the last-recorded move node, which
 	// is a coarse but adequate blame target.
 	moveNodes map[liveness.VarID]ast.Node
+	// moveRecords maps each node recordMove blamed for a move to what it recorded, so
+	// retractMove can take the move back.
+	moveRecords map[ast.Node]moveRecord
 	// movedSources holds each expression whose owned value an assignment or argument moves,
 	// such as the b in `val y = b`. checkUsesAgainstLoans reads it to report a move of
 	// borrowed data as a move rather than as a plain use.
@@ -540,6 +621,10 @@ type funcCtx struct {
 	// moduleLevelMoves holds each expression reported as a move out of a module-level binding.
 	// The sites that record a move read it, so such a move records nothing.
 	moduleLevelMoves set.Set[ast.Node]
+	// unwrittenBorrows holds each expression reported for filling a borrow destination without
+	// a written borrow. A binding whose initializer is in it records no alias, move, borrow
+	// edge, or loan.
+	unwrittenBorrows set.Set[ast.Node]
 	// placeCopies lists each place a binding takes its value from, such as the b in `val q = b`
 	// or in `a.peer = b`. movedOrigins keeps the ones movedSources says were moved, so the
 	// escape check can follow a local into the binding that owns its data afterwards.
@@ -612,9 +697,14 @@ type funcCtx struct {
 	capturedLocals map[ast.Func][]capturedLocal
 	// capturedTypes holds the binding type of every local in capturedLocals.
 	capturedTypes map[liveness.VarID]soltype.Type
-	// globalClosureStores records each store whose value may carry a closure into a
-	// module-level binding. The post-pass takes a loan of each local those closures write.
-	globalClosureStores []globalClosureStore
+	// retainedClosureStores records each place this body hands a closure to that keeps it past
+	// the statement, a store into a module-level binding or an argument to a parameter with a
+	// retention lifetime. The post-pass takes a loan of each local those closures write.
+	retainedClosureStores []retainedClosureStore
+	// retainedResults maps a call to the indices in retainedClosureStores of the stores whose
+	// closure the call's result keeps. noteRetainedHolder adds the binding the result
+	// initializes to each store's holders.
+	retainedResults map[ast.Expr][]int
 	// callSites holds every call in this body, in source order.
 	callSites []callSite
 	// callArgLoans holds the borrows each call's arguments take for the call's parameters,
@@ -905,11 +995,12 @@ func (c *checker) popFuncCtx(saved *funcCtx) []soltype.Type {
 // method returns.
 func newChecker() *checker {
 	c := &checker{
-		ctx:          &Context{packages: NewPackageRegistry()},
-		info:         NewInfo(),
-		prov:         Prov{},
-		varIDCounter: 1,
-		varIDs:       liveness.NewVarIDs(),
+		ctx:             &Context{packages: NewPackageRegistry()},
+		info:            NewInfo(),
+		prov:            newProvTable(),
+		varIDCounter:    1,
+		varIDs:          liveness.NewVarIDs(),
+		weakBindingVars: set.NewSet[*soltype.TypeVarType](),
 	}
 	c.ctx.fusionRecorder = c.recordFusionEdge
 	c.info.ctx = c.ctx
@@ -930,15 +1021,16 @@ func newChecker() *checker {
 // definition. The prefix is stripped for display, so the class still renders as
 // `Point`.
 //
-// prov is copied rather than shared, so what the script records stays out of the
-// module's table, which a re-checked script would otherwise grow without bound. Info
-// and the diagnostics start empty, so the script's results cover the script alone.
+// prov is a layer over the module's table, so what the script records stays out of
+// the module's table, which a re-checked script would otherwise grow without bound.
+// The module's table is frozen from then on. Info and the diagnostics start empty, so
+// the script's results cover the script alone.
 func (c *checker) forScript(pkgURI string) *checker {
 	sc := &checker{
 		ctx:          c.ctx,
 		pkgURI:       pkgURI,
 		info:         NewInfo(),
-		prov:         maps.Clone(c.prov),
+		prov:         c.prov.child(),
 		varIDCounter: c.varIDCounter,
 		// A fresh table, because the script looks up only nodes in its own bodies,
 		// which its own rename pass records. Sharing the module's table would grow
@@ -949,6 +1041,7 @@ func (c *checker) forScript(pkgURI string) *checker {
 		groupSource:       c.groupSource,
 		groups:            c.groups,
 		checkJsDecorators: c.checkJsDecorators,
+		weakBindingVars:   set.NewSet[*soltype.TypeVarType](),
 	}
 	// Point the recorder at the script, so a fusion its walk records lands in the
 	// script's Prov table rather than the module's.
@@ -1168,6 +1261,14 @@ func (c *checker) recordType(n ast.Node, t soltype.Type) {
 // never a panic.
 func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 	c.markLifetimes(e)
+	// The CFG builder runs some expressions in a statement of its own, such as a branch's
+	// condition, a match arm's expression body, or a guard. The ownership events such an
+	// expression emits attach to that statement.
+	if c.fn != nil {
+		if ref, ok := c.fn.exprRefs[e]; ok {
+			defer c.attachEventsAt(ref)()
+		}
+	}
 	switch e := e.(type) {
 	case *ast.ErrorExpr:
 		// The parser substitutes this for an expression it could not read and reports

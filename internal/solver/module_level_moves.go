@@ -36,10 +36,12 @@ import (
 //	}
 
 // ModuleLevelMoveError is reported when a function body moves an owned value out of a module-level
-// binding or an import.
+// binding or an import, or when a module-level `mut` binding takes one.
 type ModuleLevelMoveError struct {
 	// Source is the source text of the moved place, such as `xs` or `cfg.items`.
 	Source string
+	// IntoMut marks a move into a module-level `mut` binding rather than one inside a body.
+	IntoMut bool
 	// IntoParam is true when the value moves into a parameter that takes ownership of it.
 	IntoParam bool
 	node      ast.Node
@@ -49,10 +51,58 @@ func (*ModuleLevelMoveError) isSolverError()      {}
 func (e *ModuleLevelMoveError) Span() ast.Span    { return e.node.Span() }
 func (*ModuleLevelMoveError) Related() []ast.Span { return nil }
 func (e *ModuleLevelMoveError) Message() string {
+	if e.IntoMut {
+		return fmt.Sprintf("cannot move module-level value '%s' into a `mut` binding, since the module keeps it. Borrow it with `&%s`", e.Source, e.Source)
+	}
 	if e.IntoParam {
 		return fmt.Sprintf("cannot move module-level value '%s' into an owned parameter. Make the parameter a borrow and pass `&%s`", e.Source, e.Source)
 	}
 	return fmt.Sprintf("cannot move module-level value '%s' inside a function. Borrow it with `&%s`", e.Source, e.Source)
+}
+
+// rejectModuleLevelMutMove reports a ModuleLevelMoveError for each place rooted at a
+// module-level binding or an import that source moves into a `mut` binding at module level.
+// Code outside a function body consumes nothing, so the place stays readable after the move,
+// and a write through the `mut` binding would change a value that place still reads. scope
+// resolves the root.
+func (c *checker) rejectModuleLevelMutMove(scope *Scope, source ast.Expr) {
+	for _, r := range movedValues(source) {
+		b, ok := c.placeRootBinding(scope, r)
+		if !ok {
+			continue
+		}
+		t := c.info.TypeOf(r)
+		if _, isIdent := r.(*ast.IdentExpr); isIdent {
+			t = bindingType(b)
+		}
+		if !c.holdsConcreteOwned(t, set.NewSet[*soltype.TypeVarType]()) {
+			continue
+		}
+		text, _ := printer.Print(r, printer.DefaultOptions())
+		c.report(&ModuleLevelMoveError{Source: text, IntoMut: true, node: r})
+	}
+}
+
+// placeRootBinding returns the value binding the place e is rooted at. e is a binding's name, or
+// a member or index chain off one. A class or enum name is not such a binding, and neither is a
+// class value.
+func (c *checker) placeRootBinding(scope *Scope, e ast.Expr) (ValueBinding, bool) {
+	for {
+		switch x := e.(type) {
+		case *ast.IdentExpr:
+			b, found := c.lookupValueBinding(scope, x.Name)
+			if !found || declaredAsClassOrEnum(b) || c.isClassValue(bindingType(b)) {
+				return ValueBinding{}, false
+			}
+			return b, true
+		case *ast.MemberExpr:
+			e = x.Object
+		case *ast.IndexExpr:
+			e = x.Object
+		default:
+			return ValueBinding{}, false
+		}
+	}
 }
 
 // moduleLevelRootInBody returns the binding the place e is rooted at, when e is read inside a
@@ -201,39 +251,61 @@ func (c *checker) rejectModuleLevelMove(scope *Scope, source ast.Expr) bool {
 	return moved
 }
 
-// branchResults returns the expressions whose value e produces. It descends through the
-// branches of a conditional, `match`, `do`, and `try`, and through a type cast. Any other
-// expression produces its own value, so it returns e alone.
-func branchResults(e ast.Expr) []ast.Expr {
-	var results []ast.Expr
-	var visit func(ast.Expr)
-	visit = func(e ast.Expr) {
-		switch e := e.(type) {
-		case nil:
-		case *ast.IfElseExpr:
-			visit(liveness.BlockResultExpr(e.Cons))
-			visit(liveness.BlockOrExprResultExpr(e.Alt))
-		case *ast.IfValExpr:
-			visit(liveness.BlockResultExpr(e.Cons))
-			visit(liveness.BlockOrExprResultExpr(e.Alt))
-		case *ast.MatchExpr:
-			for _, mc := range e.Cases {
-				visit(liveness.BlockOrExprResultExpr(&mc.Body))
+// movedValues returns the expressions whose values source moves. It starts from the results of
+// source's branches. An object or tuple literal among them contributes its property values and
+// elements instead, found the same way. A shorthand property contributes its key, which names
+// the binding it reads. A spread contributes nothing.
+func movedValues(source ast.Expr) []ast.Expr {
+	var out []ast.Expr
+	for _, r := range branchResults(source) {
+		switch lit := r.(type) {
+		case *ast.ObjectExpr:
+			for _, elem := range lit.Elems {
+				prop, ok := elem.(*ast.PropertyExpr)
+				if !ok {
+					continue
+				}
+				if prop.Value != nil {
+					out = append(out, movedValues(prop.Value)...)
+				} else if key, ok := prop.Name.(*ast.IdentExpr); ok {
+					out = append(out, key)
+				}
 			}
-		case *ast.DoExpr:
-			visit(liveness.BlockResultExpr(e.Body))
-		case *ast.TryCatchExpr:
-			visit(liveness.BlockResultExpr(e.Try))
-			for _, mc := range e.Catch {
-				visit(liveness.BlockOrExprResultExpr(&mc.Body))
+		case *ast.TupleExpr:
+			for _, elem := range lit.Elems {
+				out = append(out, movedValues(elem)...)
 			}
-		case *ast.TypeCastExpr:
-			visit(e.Expr)
 		default:
-			results = append(results, e)
+			out = append(out, r)
 		}
 	}
-	visit(e)
+	return out
+}
+
+// branchResults returns the expressions whose value e produces. It descends through the
+// branches liveness.BranchResults returns, and through a type cast, until it reaches an
+// expression that does neither.
+func branchResults(e ast.Expr) []ast.Expr {
+	return appendBranchResults(nil, e)
+}
+
+// appendBranchResults appends to results the expressions branchResults returns for e.
+func appendBranchResults(results []ast.Expr, e ast.Expr) []ast.Expr {
+	if cast, ok := e.(*ast.TypeCastExpr); ok {
+		return appendBranchResults(results, cast.Expr)
+	}
+	branches, ok := liveness.BranchResults(e)
+	if !ok {
+		// A branch with no result expression moves nothing, and the other branches still move
+		// what they produce.
+		if e == nil {
+			return results
+		}
+		return append(results, e)
+	}
+	for _, branch := range branches {
+		results = appendBranchResults(results, branch)
+	}
 	return results
 }
 
@@ -434,7 +506,8 @@ func (c *checker) calleeFromLibrary(e *ast.CallExpr, fn *soltype.FuncType) bool 
 // signature it copied. It answers false when the chain ends without a node.
 func (c *checker) originNode(t soltype.Type) (ast.Node, bool) {
 	for range maxExpandDepth {
-		switch origin := c.prov[t].(type) {
+		origin, _ := c.prov.get(t)
+		switch origin := origin.(type) {
 		case FromAST:
 			return origin.Node, true
 		case FromInstantiation:

@@ -9,38 +9,27 @@ import (
 )
 
 // rewriteReadonlyTwinRefs walks every TypeAnn slot reachable from the
-// module's top-level decls and rewrites references to the twin names
-// so the emitted output matches Escalier's mut-modifier model:
+// module's top-level decls and renames each reference to a twin's
+// readonly name, such as `ReadonlyFoo<…>`, to its mutable name `Foo<…>`.
+// A reference to the mutable name is left as written. The binding that
+// owns a value decides whether it is mutable, so an owned type never
+// carries `mut`, and TypeScript's `Foo<…>` and `ReadonlyFoo<…>` both
+// convert to `Foo<…>`.
 //
-//   - `TypeRefTypeAnn{Name: ReadonlyFoo, TypeArgs: …}` is renamed in
-//     place to `Foo` (the readonly name has no place in the converter
-//     output once references are spelled in Escalier's idiom).
-//   - `TypeRefTypeAnn{Name: Foo, TypeArgs: …}` (where Foo is a twin's
-//     mutable name) is wrapped in `MutableTypeAnn`, printing as
-//     `mut Foo<…>`.
+// The `*ast.TypeRefTypeAnn` slots ClassDecl.Extends,
+// ClassDecl.Implements, and InterfaceDecl.Extends are renamed in place.
 //
-// Both pure renames at TypeRef sites and wraps at TypeAnn-slot sites
-// happen in a single recursive pass. `*ast.TypeRefTypeAnn` slots
-// (ClassDecl.Extends, .Implements, InterfaceDecl.Extends) can only
-// participate in the rename: there is no place in those slots for a
-// `MutableTypeAnn` wrapper, and in the pinned TS lib corpus no class
-// or interface in a routed bucket extends a mutable twin directly.
-//
-// This pass runs after applyReadonlyTwinReceivers (which only touches
-// method receivers) and before appendReadonlyAliases (so the
-// synthesised `type ReadonlyFoo<…> = Foo<…>` alias's freshly built
-// `Foo<…>` RHS is not mistakenly wrapped in `mut`).
+// This pass runs after applyReadonlyTwinReceivers, which only touches
+// method receivers.
 func rewriteReadonlyTwinRefs(mod *StandaloneModule, twins []readonlyTwin) {
 	if len(twins) == 0 {
 		return
 	}
 	readonlyToMutable := make(map[string]string, len(twins))
-	mutableSet := set.NewSet[string]()
 	for _, t := range twins {
 		readonlyToMutable[t.readonlyName] = t.mutableName
-		mutableSet.Add(t.mutableName)
 	}
-	rw := &refRewriter{readonlyToMutable: readonlyToMutable, mutable: mutableSet}
+	rw := &refRewriter{readonlyToMutable: readonlyToMutable}
 	mod.Module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
 		for _, decl := range ns.Decls {
 			rw.rewriteDecl(decl)
@@ -249,7 +238,6 @@ func rewriteConsumedCtorRefsIn(decls []ast.Decl, consumedCtor map[string]string)
 
 type refRewriter struct {
 	readonlyToMutable map[string]string
-	mutable           set.Set[string]
 	// consumedCtor maps a fused constructor interface's name to the instance name it fused
 	// into. Empty when the pass is not respelling those references.
 	consumedCtor map[string]string
@@ -420,10 +408,8 @@ func (r *refRewriter) rewriteFuncSig(sig *ast.FuncSig) {
 	}
 	r.paramDepth--
 	if sig.Return != nil {
-		// A caller owns what a function returns and can bind it mutably with
-		// `val mut`, so a mutable twin keeps its bare name in this slot.
 		r.inReturnTypeAnn = r.paramDepth == 0
-		sig.Return = stripTopLevelMut(r.rewrite(sig.Return))
+		sig.Return = r.rewrite(sig.Return)
 	}
 	r.inReturnTypeAnn = false
 	if sig.Throws != nil {
@@ -516,20 +502,17 @@ func (r *refRewriter) qualifyRef(ref *ast.TypeRefTypeAnn, head *ast.Ident) bool 
 
 // renameTypeRefInPlace handles the rewrite inside an `extends` or
 // `implements` clause, whose AST slot holds a `*TypeRefTypeAnn` and
-// nothing else. It renames `ReadonlyFoo` → `Foo` and cannot wrap a
-// mutable twin in `MutableTypeAnn`, having no room for one. TypeArgs are
-// still walked, so nested refs are rewritten.
+// nothing else. It renames `ReadonlyFoo` → `Foo`. TypeArgs are still
+// walked, so nested refs are rewritten.
 //
-// A mutable twin name here is left alone, naming the whole definition
-// rather than the immutable view of it. A definition holds both `self`
-// and `&mut self` methods and extending it inherits all of them, so
-// `interface RegExpMatchArray extends Array<string>` gets every `Array`
-// member including `push`; whether a given instance may call it is
-// settled where that instance is bound. Reading the bare name as the
-// immutable view would drop the mutating half of the inherited surface.
+// A mutable twin name here names the whole definition. A definition
+// holds both `self` and `&mut self` methods and extending it inherits
+// all of them, so `interface RegExpMatchArray extends Array<string>`
+// gets every `Array` member including `push`. Whether a given instance
+// may call it is settled where that instance is bound.
 //
-// Eight declarations in the pinned lib set take this shape,
-// `RegExpMatchArray`, `FontFaceSet`, and `HighlightRegistry` among
+// Eight declarations in the pinned lib set extend a mutable twin.
+// `RegExpMatchArray`, `FontFaceSet`, and `HighlightRegistry` are among
 // them.
 func (r *refRewriter) renameTypeRefInPlace(ref *ast.TypeRefTypeAnn) {
 	for i, arg := range ref.TypeArgs {
@@ -608,9 +591,6 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		if _, bound := r.bound[id.Name]; !bound && r.readonlyAliases.contains(r.nsPath, id.Name) {
 			return r.borrowInReturnTypeAnn(tt)
 		}
-		if r.mutable.Contains(id.Name) {
-			return ast.NewMutableTypeAnn(tt, tt.Span())
-		}
 		return tt
 	case *ast.TupleTypeAnn:
 		for i, e := range tt.Elems {
@@ -648,10 +628,8 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		}
 		r.paramDepth--
 		if tt.Return != nil {
-			// A caller owns what a function returns and can bind it mutably with
-			// `val mut`, so a mutable twin keeps its bare name in this slot.
 			r.inReturnTypeAnn = r.paramDepth == 0
-			tt.Return = stripTopLevelMut(r.rewrite(tt.Return))
+			tt.Return = r.rewrite(tt.Return)
 		}
 		r.inReturnTypeAnn = false
 		if tt.Throws != nil {
@@ -740,24 +718,6 @@ func (r *refRewriter) borrowInReturnTypeAnn(ref *ast.TypeRefTypeAnn) ast.TypeAnn
 	return ast.NewBorrowTypeAnn(false, static, ref, ref.Span())
 }
 
-// stripTopLevelMut returns t with a `mut` removed from its top level and from
-// each member of a top-level union, so `mut Array<T> | null` becomes
-// `Array<T> | null`. A `mut` nested deeper, as in `Promise<mut Array<T>>`,
-// is left in place.
-func stripTopLevelMut(t ast.TypeAnn) ast.TypeAnn {
-	switch tt := t.(type) {
-	case *ast.MutableTypeAnn:
-		return tt.Target
-	case *ast.UnionTypeAnn:
-		for i, member := range tt.Types {
-			if m, ok := member.(*ast.MutableTypeAnn); ok {
-				tt.Types[i] = m.Target
-			}
-		}
-	}
-	return t
-}
-
 func (r *refRewriter) rewriteObject(obj *ast.ObjectTypeAnn) {
 	for _, elem := range obj.Elems {
 		switch e := elem.(type) {
@@ -774,14 +734,6 @@ func (r *refRewriter) rewriteObject(obj *ast.ObjectTypeAnn) {
 		case *ast.PropertyTypeAnn:
 			if e.Value != nil {
 				e.Value = r.rewrite(e.Value)
-				// A property takes its mutability from the object holding it, and
-				// a `mut` written directly on one is rejected. So a mutable twin
-				// keeps its bare name in this slot, and `pluralCategories:
-				// LDMLPluralRule[]` converts to `pluralCategories:
-				// Array<LDMLPluralRule>`.
-				if m, ok := e.Value.(*ast.MutableTypeAnn); ok {
-					e.Value = m.Target
-				}
 			}
 		case *ast.MappedTypeAnn:
 			if e.TypeParam != nil && e.TypeParam.Constraint != nil {
@@ -824,9 +776,7 @@ func (r *refRewriter) rewriteFnTypeAnn(fn *ast.FuncTypeAnn) {
 		}
 	}
 	if fn.Return != nil {
-		// A caller owns what a function returns and can bind it mutably with
-		// `val mut`, so a mutable twin keeps its bare name in this slot.
-		fn.Return = stripTopLevelMut(r.rewrite(fn.Return))
+		fn.Return = r.rewrite(fn.Return)
 	}
 	if fn.Throws != nil {
 		fn.Throws = r.rewrite(fn.Throws)

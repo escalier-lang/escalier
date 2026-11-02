@@ -82,6 +82,7 @@ func convertFuncDecl(df *dts_parser.FuncDecl) (*ast.FuncDecl, error) {
 	if err != nil {
 		return nil, fmt.Errorf("converting parameters for function %s: %w", df.Name.Name, err)
 	}
+	borrowReadonlyParams(df.Params, params)
 
 	// Convert return type
 	var returnType ast.TypeAnn
@@ -167,6 +168,8 @@ func convertClassDecl(cctx *convertCtx, dc *dts_parser.ClassDecl) (*ast.ClassDec
 	for _, member := range dc.Members {
 		switch m := member.(type) {
 		case *dts_parser.ConstructorDecl:
+			// A constructor keeps what it is given, so its `Readonly<T>`
+			// parameters take no borrow. See borrowReadonlyParams.
 			params, err := convertParams(m.Params)
 			if err != nil {
 				return nil, fmt.Errorf("converting constructor parameters for class %s: %w", dc.Name.Name, err)

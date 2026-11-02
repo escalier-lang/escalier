@@ -5,8 +5,4 @@ export function copyOfXs() {
 export function joined() {
   return xs.concat(xs);
 }
-export const point = {x: 1, y: 2};
-export function keysOfPoint() {
-  return Object.keys(point);
-}
 //# sourceMappingURL=./index.js.map

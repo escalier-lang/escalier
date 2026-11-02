@@ -8,6 +8,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
+	"github.com/escalier-lang/escalier/internal/printer"
 	"github.com/stretchr/testify/require"
 )
 
@@ -506,4 +507,69 @@ func TestDetermineAliasSource_MatchExpr_VariableAndFresh(t *testing.T) {
 
 	// Only one arm aliases a variable; the fresh arm doesn't contribute
 	require.Equal(t, "variable [a]", formatAliasSource(DetermineAliasSource(ids, expr), names))
+}
+
+// TestDetermineAliasSource_BranchingExprs covers the alias source of an `if val`, a `do`, and
+// a `try`, each of which aliases what its branches produce.
+func TestDetermineAliasSource_BranchingExprs(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{name: "an if val with an else", src: "if val x = o { a } else { b }", want: "multiple [a, b]"},
+		{name: "an if val without an else", src: "if val x = o { a }", want: "variable [a]"},
+		{name: "a do", src: "do { a }", want: "variable [a]"},
+		{name: "a do producing a fresh value", src: "do { {x: 1} }", want: "fresh"},
+		{name: "a try and its catch", src: "try { a } catch { e => b }", want: "multiple [a, b]"},
+		{name: "a try nested in a do", src: "do { try { a } catch { e => {x: 1} } }", want: "variable [a]"},
+		{name: "a do whose block ends in a declaration", src: "do { val y = a }", want: "unknown"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ids := NewVarIDs()
+			expr := parseExpr(t, tt.src)
+			setVarIDs(ids, expr, map[string]int{"a": 1, "b": 2})
+			names := map[VarID]string{1: "a", 2: "b"}
+			require.Equal(t, tt.want, formatAliasSource(DetermineAliasSource(ids, expr), names))
+		})
+	}
+}
+
+// TestBranchResults covers the branch result expressions BranchResults returns for each
+// branching expression, and that it reports false for one that does not branch.
+func TestBranchResults(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		branches bool
+		want     []string
+	}{
+		{name: "a conditional", src: "if c { a } else { b }", branches: true, want: []string{"a", "b"}},
+		{name: "a conditional without an else", src: "if c { a }", branches: true, want: []string{"a"}},
+		{name: "an if val", src: "if val x = o { a } else { b }", branches: true, want: []string{"a", "b"}},
+		{name: "a match", src: "match o { 1 => a, _ => b }", branches: true, want: []string{"a", "b"}},
+		{name: "a do", src: "do { a }", branches: true, want: []string{"a"}},
+		{name: "a try", src: "try { a } catch { e => b }", branches: true, want: []string{"a", "b"}},
+		{name: "a nested conditional", src: "if c { if d { a } else { b } } else { b }", branches: true, want: []string{"if d {\n    a\n} else {\n    b\n}", "b"}},
+		{name: "a block ending in a declaration", src: "do { val y = a }", branches: true, want: []string{"<nil>"}},
+		{name: "a name", src: "a", branches: false, want: nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results, branches := BranchResults(parseExpr(t, tt.src))
+			require.Equal(t, tt.branches, branches)
+			var got []string
+			for _, r := range results {
+				if r == nil {
+					got = append(got, "<nil>")
+					continue
+				}
+				text, err := printer.Print(r, printer.DefaultOptions())
+				require.NoError(t, err)
+				got = append(got, text)
+			}
+			require.Equal(t, tt.want, got)
+		})
+	}
 }

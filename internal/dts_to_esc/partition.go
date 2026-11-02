@@ -72,9 +72,9 @@ var stdPackages = []struct {
 		// `ReadonlyArray` travels with `Array` for the same reason.
 		// fuseReadonlyTwins pairs `Foo` with `ReadonlyFoo` within one
 		// package and folds the readonly members onto the mutable
-		// declaration, which is what makes every other `Array<T>` in the
-		// tree read as `mut Array<T>`. Separating the pair drops that
-		// rewrite tree-wide.
+		// declaration, which is what renames every `ReadonlyArray<T>` in
+		// the tree to `Array<T>`. Separating the pair drops that rewrite
+		// tree-wide.
 		"Array", "ArrayConstructor", "ReadonlyArray",
 		"Promise", "PromiseConstructor",
 		"Iterable", "AsyncIterable",

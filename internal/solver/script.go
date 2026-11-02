@@ -116,14 +116,22 @@ func (c *checker) inferScriptIn(scope *Scope, script *ast.Script) (*Scope, *Info
 	// Walk the body through inferBlock, the same source-order statement walker a
 	// function body uses, at level 0. inferVarDecl types each initializer one level
 	// deeper and generalizes back to 0, so a top-level binding is a generalized local
-	// exactly like one in a function body walked at its level. inferBlock's tail value
+	// exactly like one in a function body walked at its level. A binding that does not
+	// generalize types its initializer at 0 and binds it as it is. inferBlock's tail value
 	// and divergence flag are discarded, just as inferFunc discards them. A script,
 	// like a function body, produces no value from its last statement.
 	c.inferBlock(scope, 0, scriptBody)
+	// The whole script is walked, so a weak binding it declares, at its top level or in
+	// one of its functions, has every bound it will get.
+	c.settleWeakLocals()
 	// A script body runs with function-body semantics, so the move engine applies
 	// here too. With the whole body walked, replay the recorded reads against the
 	// consumed lattice to report use-after-move.
 	c.checkUseAfterMoves()
+	// The whole script is inferred, so every flow F3 can settle is settled, and the rest
+	// take the answer settleAllFlows gives what it cannot see.
+	c.finishOwnershipEvents()
+	c.settleAllFlows()
 	// Every class the script declares is inferred, so each superclass edge and body is
 	// final. Check the members each subclass redeclares against the ones they override.
 	c.settleQueuedVariance()
@@ -133,10 +141,13 @@ func (c *checker) inferScriptIn(scope *Scope, script *ast.Script) (*Scope, *Info
 	// final. Report each function whose return type no finite value inhabits.
 	c.checkCanReturn()
 	c.checkRigidLifetimes()
+	c.checkCallOnlyParams()
 	// The script's top level is the outermost body, so every read off an inferred receiver
 	// it or its functions made is decided here.
 	c.pendingRecvReads = append(c.pendingRecvReads, c.fn.inferredRecvReads...)
 	c.checkPendingRecvReads()
+	c.pendingMutations = append(c.pendingMutations, c.fn.unsettledMutations...)
+	c.checkPendingMutations()
 
 	return scope, c.info, c.errs
 }
