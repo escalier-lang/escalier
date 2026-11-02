@@ -704,7 +704,7 @@ func TestGeneratorAnnotationAgainstStdlib(t *testing.T) {
 			yield 1
 		}
 		fn drive() {
-			val it: mut Generator<1, undefined, unknown> = count()
+			val mut it: Generator<1, undefined, unknown> = count()
 			return it.next()
 		}
 	`)

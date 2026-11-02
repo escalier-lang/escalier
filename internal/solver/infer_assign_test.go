@@ -130,19 +130,85 @@ func TestInferAssignUnknownTarget(t *testing.T) {
 	requireBlame(t, src, errs, "1:10-1:14: Unknown identifier: nope", "nope")
 }
 
-// Reassigning a POLYMORPHIC var must not corrupt the binding. inferAssign freshens
-// the binding's coalesced type before constraining, so the source flows into
-// throwaway copies rather than the binding's retained type-parameter vars; `id`
-// keeps its generic type and a later `id("hello")` still type-checks.
-func TestInferAssignPolyVarNoCorruption(t *testing.T) {
-	values, _, errs := inferSource(t, `
+// TestInferAssignWeakVarWritesItsVariables asserts that a `var` does not generalize, so a
+// reassignment writes into the variables every use of the binding shares. Assigning a
+// `number` function to `id` settles its parameter on `number`, and the later call with a
+// string is rejected. A generalized `id` would have let each use pick its own type, so the
+// call would have returned "hello" from a function that adds to a number.
+func TestInferAssignWeakVarWritesItsVariables(t *testing.T) {
+	values, errs := inferAgainstTreeWithSpans(t, `
 		var id = fn (x) { return x }
-		fn f() { id = fn (n: number) -> number { return n } }
+		fn f() { id = fn (n: number) -> number { return n + 1 } }
 		val r = id("hello")
 	`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn <T0>(x: T0) -> T0", values["id"]) // not the corrupted fn <T0>(x: T0 & number) -> T0 | number
-	require.Equal(t, `"hello"`, values["r"])
+	require.Equal(t, []string{`4:14-4:21: cannot constrain "hello" <: number`}, errs)
+	require.Equal(t, `fn (x: number | "hello") -> number | "hello"`, values["id"])
+}
+
+// TestInferAssignBodyLevelWeakVarWritesItsVariables covers a reassignment of a `var`
+// declared in a function body. The binding does not generalize, so the reassignment
+// writes into the variables its uses share, as it does for a module-level `var`.
+func TestInferAssignBodyLevelWeakVarWritesItsVariables(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "an identical function checks",
+			src: `fn f() {
+	var k = fn (x) { return x }
+	k = fn (x) { return x }
+}`,
+			want: nil,
+		},
+		{
+			name: "an identical function with an unread parameter checks",
+			src: `fn f() {
+	var k = fn (x, y) { return x }
+	k = fn (x, y) { return x }
+}`,
+			want: nil,
+		},
+		{
+			name: "a reassignment settles the parameter for a later call",
+			src: `fn f() {
+	var k = fn (x) { return x }
+	k = fn (x: number) { return x }
+	k("s")
+}`,
+			want: []string{`4:4-4:7: cannot constrain "s" <: number`},
+		},
+		{
+			name: "an earlier call constrains the reassignment",
+			src: `fn f() {
+	var k = fn (x) { return x }
+	k(1)
+	k = fn (x: string) { return x }
+}`,
+			want: []string{`4:2-4:33: cannot constrain 1 <: string`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, errs := inferAgainstTreeWithSpans(t, tt.src)
+			require.Equal(t, tt.want, errs)
+		})
+	}
+}
+
+// TestInferAssignBodyLevelWeakVarLeavesCapturedVariables asserts that reassigning a
+// body-level `var` does not write into a variable its initializer captured. k's return is
+// p's variable, so the reassignment is rejected rather than adding 5 to p's type, and f's
+// signature stays `fn <T0>(p: T0) -> T0`.
+func TestInferAssignBodyLevelWeakVarLeavesCapturedVariables(t *testing.T) {
+	values, _, errs := inferSource(t, `fn f(p) {
+	var k = fn (x) { return p }
+	k = fn (x) { return 5 }
+	return p
+}`)
+	require.Equal(t, []string{"3:22-3:23: cannot constrain 5 <: never"}, messagesWithSpan(t, errs))
+	require.Equal(t, "fn <T0>(p: T0) -> T0", values["f"])
 }
 
 // A broken TOP-LEVEL binding recovers AS the error sentinel (Fix A), so reassigning
@@ -221,7 +287,7 @@ func TestInferAssignMemberTargetImmutable(t *testing.T) {
 	src := `val o = {x: 5}
 fn f() { o.x = 6 }`
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "2:10-2:17: cannot constrain immutable object <: mutable object", "o.x = 6")
+	requireBlame(t, src, errs, "2:10-2:17: cannot mutate 'o' because its binding is immutable; declare it as `val mut o`", "o.x = 6", "val o = {x: 5}")
 }
 
 // An index target `xs[i] = …` writes an element, which needs a mutable receiver the
@@ -231,7 +297,7 @@ func TestInferAssignIndexTargetImmutable(t *testing.T) {
 	src := `val xs = [1, 2]
 fn f() { xs[0] = 6 }`
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "2:10-2:19: cannot constrain immutable tuple <: mutable tuple", "xs[0] = 6")
+	requireBlame(t, src, errs, "2:10-2:19: cannot mutate 'xs' because its binding is immutable; declare it as `val mut xs`", "xs[0] = 6", "val xs = [1, 2]")
 }
 
 // An immutable target with an independently-broken source reports BOTH errors — they

@@ -57,11 +57,11 @@ export declare class Module {
     static prototype: Module,
     constructor(&mut self, bytes: BufferSource),
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module/customSections_static) */
-    static customSections(moduleObject: Module, sectionName: string) -> Array<typed_arrays.ArrayBuffer>,
+    static customSections(moduleObject: &mut Module, sectionName: string) -> Array<typed_arrays.ArrayBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module/exports_static) */
-    static exports(moduleObject: Module) -> Array<ModuleExportDescriptor>,
+    static exports(moduleObject: &mut Module) -> Array<ModuleExportDescriptor>,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module/imports_static) */
-    static imports(moduleObject: Module) -> Array<ModuleImportDescriptor>
+    static imports(moduleObject: &mut Module) -> Array<ModuleImportDescriptor>
 }
 
 @js("WebAssembly.RuntimeError")
@@ -155,14 +155,14 @@ export declare fn compileStreaming(source: fetch.Response | PromiseLike<fetch.Re
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/instantiate_static) */
 @js("WebAssembly.instantiate")
-export declare fn instantiate(bytes: BufferSource, importObject?: Imports) -> Promise<WebAssemblyInstantiatedSource>
+export declare fn instantiate(bytes: BufferSource, importObject?: &mut Imports) -> Promise<WebAssemblyInstantiatedSource>
 
 @js("WebAssembly.instantiate")
-export declare fn instantiate(moduleObject: Module, importObject?: Imports) -> Promise<Instance>
+export declare fn instantiate(moduleObject: &mut Module, importObject?: &mut Imports) -> Promise<Instance>
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/instantiateStreaming_static) */
 @js("WebAssembly.instantiateStreaming")
-export declare fn instantiateStreaming(source: fetch.Response | PromiseLike<fetch.Response>, importObject?: Imports) -> Promise<WebAssemblyInstantiatedSource>
+export declare fn instantiateStreaming(source: fetch.Response | PromiseLike<fetch.Response>, importObject?: &mut Imports) -> Promise<WebAssemblyInstantiatedSource>
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/validate_static) */
 @js("WebAssembly.validate")

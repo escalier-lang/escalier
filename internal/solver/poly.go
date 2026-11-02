@@ -60,7 +60,7 @@ func (*PolyScheme) isScheme() {}
 // goes stale.
 func (sc *PolyScheme) display() soltype.Type {
 	if sc.coalesced == nil {
-		sc.coalesced = coalesceScheme(sc.Body, sc.Level, sc.declared, sc.declaredLts)
+		sc.coalesced = coalesceScheme(sc.Body, sc.Level, sc.declared, sc.declaredLts, true)
 	}
 	return sc.coalesced
 }
@@ -372,22 +372,25 @@ func freshenLifetimeFormer(t soltype.Type, lf *ltFreshener) (soltype.EnterResult
 	return soltype.EnterResult{}, false
 }
 
-// rewriteFuncLifetimes rewrites a FuncType's own lifetime parameters through tf,
-// which Accept never walks. It shares tf's cache with the body's uses, so a
-// rebuilt binder and its `&'a` uses stay one lifetime. No change signals an ordinary descent.
+// rewriteFuncLifetimes rewrites a FuncType's own lifetime parameters and its retention
+// lifetime through tf, which Accept never walks. It shares tf's cache with the body's
+// uses, so a rebuilt binder and its `&'a` uses stay one lifetime. No change signals an
+// ordinary descent.
 func rewriteFuncLifetimes(
 	t *soltype.FuncType,
 	tf func(soltype.Lifetime) soltype.Lifetime,
 ) soltype.EnterResult {
-	if len(t.LifetimeParams) == 0 {
+	if len(t.LifetimeParams) == 0 && t.Lt == nil {
 		return soltype.EnterResult{}
 	}
 	nlps, changed := rewriteLtParams(t.LifetimeParams, tf)
-	if !changed {
+	nlt := tf(t.Lt)
+	if !changed && nlt == t.Lt {
 		return soltype.EnterResult{}
 	}
 	repl := *t
 	repl.LifetimeParams = nlps
+	repl.Lt = nlt
 	return soltype.EnterResult{Type: &repl}
 }
 
@@ -517,6 +520,83 @@ func (c *checker) generalize(t soltype.Type, lvl int) TypeScheme {
 	sc.coalesced = c.subsumeFinal(sc.display())
 	return sc
 }
+
+// generalizes reports whether the `val` or `var` declaration d generalizes its type. It
+// does when one of these holds:
+//   - d has a type annotation, which the binding adopts as its type, so no variable the
+//     initializer mints reaches the binding,
+//   - d has no initializer, as `declare val x: T` does, or
+//   - the binding is immutable and the initializer is a syntactic value, as
+//     isSyntacticValue defines one.
+//
+// A `var` or a binding with a `mut` leaf holds a place the program can write. Each use of a
+// generalized type instantiates fresh variables, so a write through one use would never
+// reach another, and such a binding never generalizes.
+//
+// A declaration that does not generalize infers its initializer at the binding's own
+// level. Its variables are then weak: every use shares them, and generalizing at that
+// level quantifies none of them.
+func generalizes(d *ast.VarDecl) bool {
+	if d.Init == nil || d.TypeAnn != nil {
+		return true
+	}
+	if d.Kind == ast.VarKind || hasMutLeaf(d.Pattern) {
+		return false
+	}
+	return isSyntacticValue(d.Init)
+}
+
+// isSyntacticValue reports whether evaluating e can only build a value, never run code that
+// creates one. These expressions are syntactic values:
+//   - a function expression, whatever its body does,
+//   - a literal, and a template literal whose interpolations are syntactic values,
+//   - an identifier, which reads a binding,
+//   - a member or index read whose object and index are syntactic values,
+//   - an object literal whose keys, property values, and spreads are syntactic values,
+//     where a method is a property whose value is a function expression,
+//   - a tuple literal whose elements and spreads are syntactic values, and
+//   - a unary, binary, borrow, or type-cast expression whose operands are syntactic values.
+//
+// Every other expression is not one. That covers a call, which also constructs a class
+// instance, a tagged template, `await`, `yield`, `throw`, an `if`, `match`, `do`, or `try`
+// expression, and JSX.
+func isSyntacticValue(e ast.Expr) bool {
+	v := &syntacticValueChecker{value: true}
+	e.Accept(v)
+	return v.value
+}
+
+// syntacticValueChecker clears value on reaching an expression isSyntacticValue rejects. It
+// does not descend into a function body or a type annotation, since neither runs when the
+// enclosing expression is evaluated.
+type syntacticValueChecker struct {
+	ast.DefaultVisitor
+	value bool
+}
+
+func (v *syntacticValueChecker) EnterExpr(e ast.Expr) bool {
+	switch e.(type) {
+	case *ast.FuncExpr:
+		return false
+	case *ast.LiteralExpr, *ast.TemplateLitExpr, *ast.IdentExpr, *ast.MemberExpr,
+		*ast.IndexExpr, *ast.ObjectExpr, *ast.TupleExpr, *ast.ArraySpreadExpr,
+		*ast.UnaryExpr, *ast.BinaryExpr, *ast.BorrowExpr, *ast.TypeCastExpr:
+		return v.value
+	}
+	v.value = false
+	return false
+}
+
+func (v *syntacticValueChecker) EnterObjExprElem(e ast.ObjExprElem) bool {
+	switch e.(type) {
+	case *ast.PropertyExpr, *ast.ObjSpreadExpr:
+		return v.value
+	}
+	// A call signature or a constructor is a function.
+	return false
+}
+
+func (v *syntacticValueChecker) EnterTypeAnn(ast.TypeAnn) bool { return false }
 
 // sealUsageObjects is the operative half of Policy A (B2). Body inference records a
 // member access `p.x` as an INEXACT upper bound `{x: β, ...}` on the receiver var,
@@ -657,8 +737,8 @@ func (f *methodLtFreshener) EnterType(t soltype.Type, _ soltype.Polarity) soltyp
 func (f *methodLtFreshener) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // lifetimeCollector records every LifetimeVar a type writes: a borrow's lifetime, a class or
-// alias reference's lifetime arguments, a class's borrow lifetime, and a function's own
-// lifetime parameters. It does not descend into a type variable's bounds.
+// alias reference's lifetime arguments, a class's borrow lifetime, and a function's
+// retention lifetime and own lifetime parameters. It does not descend into a type variable's bounds.
 type lifetimeCollector struct {
 	out set.Set[*soltype.LifetimeVar]
 	// order holds the same variables in first-appearance order.
@@ -686,6 +766,7 @@ func (v *lifetimeCollector) EnterType(t soltype.Type, _ soltype.Polarity) soltyp
 			v.add(a)
 		}
 	case *soltype.FuncType:
+		v.add(t.Lt)
 		for _, lp := range t.LifetimeParams {
 			v.add(lp.Var)
 		}

@@ -729,6 +729,7 @@ func singletonMethodToFuncDecl(m *dts_parser.MethodSignature) (*ast.FuncDecl, er
 	if err != nil {
 		return nil, fmt.Errorf("params: %w", err)
 	}
+	borrowReadonlyParams(m.Params, params)
 	var ret ast.TypeAnn
 	if m.ReturnType != nil {
 		ret, err = convertTypeAnn(m.ReturnType)
@@ -1509,6 +1510,7 @@ func interfaceMemberToClassElem(
 		if err != nil {
 			return nil, fmt.Errorf("method %s: params: %w", propertyKeyName(m.Name), err)
 		}
+		borrowReadonlyParams(m.Params, params)
 		var ret ast.TypeAnn
 		if m.ReturnType != nil {
 			ret, err = convertTypeAnn(m.ReturnType)
@@ -1634,6 +1636,7 @@ func interfaceMemberToClassElem(
 		if err != nil {
 			return nil, fmt.Errorf("call signature: params: %w", err)
 		}
+		borrowReadonlyParams(m.Params, params)
 		var ret ast.TypeAnn
 		if m.ReturnType != nil {
 			ret, err = convertTypeAnn(m.ReturnType)
@@ -1683,6 +1686,8 @@ func methodDeclOf(m *dts_parser.MethodSignature) *dts_parser.MethodDecl {
 // `new (...)` signature. The synthesised `&mut self` matches the receiver
 // shape that convertClassDecl produces for a real ConstructorDecl.
 func constructSignatureToCtorElem(cs *dts_parser.ConstructSignature) (*ast.ConstructorElem, error) {
+	// A constructor keeps what it is given, so its `Readonly<T>` parameters
+	// take no borrow. See borrowReadonlyParams.
 	params, err := convertParams(cs.Params)
 	if err != nil {
 		return nil, fmt.Errorf("constructor params: %w", err)

@@ -1,0 +1,16 @@
+// This file contributes a second member and never imports `web:file`.
+export interface Shape {
+    size: number,
+}
+
+export declare val s: Shape
+
+export val size: number = s.size
+
+// The merge is module-wide, so the sibling's member is readable here and its
+// type is inferred correctly even though this file cannot name `file.Blob`.
+export val payload = s.payload
+
+// The merged type is shared, but the name is not: an import binds into the
+// file's own scope, so naming `file.Blob` here is an error.
+export declare val named: file.Blob

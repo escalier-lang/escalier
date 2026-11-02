@@ -60,10 +60,10 @@ type storeEdge struct {
 
 // callStoreEdges returns the store effects fn declares, one per (argument, target, path).
 //
-// A target must be a mutable borrow. A shared borrow takes no write, and an owned-mutable
-// parameter — a `RefType` with a nil lifetime — is moved into the callee, so the caller can no
-// longer read what the callee writes there. A source must be a borrow too, since an owned
-// argument is moved and its escape belongs to the consuming-argument rule.
+// A target must be a mutable borrow. A shared borrow takes no write, and an owned parameter
+// is moved into the callee, so the caller cannot read what the callee writes there. A source
+// must be a borrow too, since an owned argument is moved and its escape belongs to the
+// consuming-argument rule.
 //
 // self is the receiver of the method being called, or nil for a plain call. A borrowed
 // receiver is classified the way a parameter is. As a target it is what a `&mut self` method

@@ -162,12 +162,12 @@ func TestInferOptionalChainErrors(t *testing.T) {
 			// JavaScript rejects an optional chain as an assignment target, even when the
 			// `?.` is not the last link.
 			name:     "AssignmentThroughAnOptionalLink",
-			src:      "fn write(a: mut {b: {c: number}}) { a?.b.c = 5 }",
+			src:      "fn write(mut a: {b: {c: number}}) { a?.b.c = 5 }",
 			wantErrs: []string{"1:37-1:43: cannot assign through an optional chain, since `?.` may short-circuit and leave no place to write"},
 		},
 		{
 			name:     "AssignmentThroughAnOptionalIndex",
-			src:      `fn write(a: mut {b: number}) { a?["b"] = 5 }`,
+			src:      `fn write(mut a: {b: number}) { a?["b"] = 5 }`,
 			wantErrs: []string{"1:32-1:39: cannot assign through an optional chain, since `?.` may short-circuit and leave no place to write"},
 		},
 		{
@@ -185,8 +185,8 @@ func TestInferOptionalChainErrors(t *testing.T) {
 }
 
 // TestInferOptionalObjectFieldRead covers a plain read of an optional field whose type is
-// an object. The read yields the field or `undefined`, and a borrowed receiver still lends
-// the field at its own lifetime.
+// an object. The read yields the field or `undefined`. A read off a borrowed receiver writes
+// the borrow, and `&a.b` yields a borrow at the receiver's lifetime or `undefined`.
 func TestInferOptionalObjectFieldRead(t *testing.T) {
 	tests := []struct {
 		name string
@@ -200,7 +200,7 @@ func TestInferOptionalObjectFieldRead(t *testing.T) {
 		},
 		{
 			name: "BorrowedReceiver",
-			src:  "fn read(a: &{b?: {c: number}}) { return a.b }",
+			src:  "fn read(a: &{b?: {c: number}}) { return &a.b }",
 			want: "fn <'a>(a: &'a {b?: {c: number}}) -> &'a {c: number} | undefined",
 		},
 	}

@@ -14,13 +14,13 @@ import (
 // The iteration methods hand the callback the receiver itself. TypeScript writes that
 // parameter as the class at its own type parameters, so `forEach` on `Array<T>` takes
 // `callbackfn: (value: T, index: number, array: T[]) => void`. Converted as written it
-// would read `array: mut Array<T>`, which gives the callback a mutable handle on an
-// instance the method only borrows immutably. `&Self` is an immutable borrow of the
-// receiver's own class instead, so the callback can read the instance but neither change
-// it nor keep it past the call.
+// would read `array: Array<T>`, which hands the callback ownership of an instance the
+// method only borrows. `&Self` is an immutable borrow of the receiver's own class
+// instead, so the callback can read the instance but neither change it nor keep it past
+// the call.
 //
-// It runs after rewriteReadonlyTwinRefs, so the `mut` that pass wraps around a twin's
-// mutable name is already in place and is replaced along with the reference.
+// It runs after rewriteReadonlyTwinRefs, so a reference spelled with a twin's readonly
+// name already carries the class's own name.
 func borrowSelfInCallbacks(mod *StandaloneModule) {
 	mod.Module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
 		for _, decl := range ns.Decls {
@@ -91,13 +91,10 @@ func typeParamNameSet(params []*ast.TypeParam) set.Set[string] {
 }
 
 // isOwnInstance reports whether t names class at exactly its own type parameters, in their
-// declared order, either directly or under `mut`. An argument naming a parameter in
-// shadowed refers to a type parameter of the method or the callback rather than the class's.
-// `Self` counts as well, which is how a TypeScript `this` type converts.
+// declared order. An argument naming a parameter in shadowed refers to a type parameter of
+// the method or the callback rather than the class's. `Self` counts as well, which is how a
+// TypeScript `this` type converts.
 func isOwnInstance(class *ast.ClassDecl, t ast.TypeAnn, shadowed set.Set[string]) bool {
-	if mutable, ok := t.(*ast.MutableTypeAnn); ok {
-		t = mutable.Target
-	}
 	ref, ok := t.(*ast.TypeRefTypeAnn)
 	if !ok || ref.Lifetime != nil || len(ref.LifetimeArgs) > 0 {
 		return false

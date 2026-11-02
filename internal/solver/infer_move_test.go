@@ -3,6 +3,7 @@ package solver
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,7 +22,7 @@ func TestMoveSemantics(t *testing.T) {
 		"ValBindingConsumesSource": {
 			src: `
 				fn test() {
-					val p: mut {x: number} = {x: 0}
+					val mut p: {x: number} = {x: 0}
 					val q = p
 					p.x
 				}
@@ -32,7 +33,7 @@ func TestMoveSemantics(t *testing.T) {
 		"OptionalLinkReadsAMovedBinding": {
 			src: `
 				fn test() {
-					val p: mut {x: number} = {x: 0}
+					val mut p: {x: number} = {x: 0}
 					val q = p
 					p?.x
 				}
@@ -99,7 +100,7 @@ func TestMoveSemantics(t *testing.T) {
 		},
 		"ValueFieldOfAParameterOk": {
 			src: `
-				fn test(b: mut {v: number}) -> undefined {
+				fn test(mut b: {v: number}) -> undefined {
 					val n = b.v
 					val m = b.v
 				}
@@ -130,18 +131,19 @@ func TestMoveSemantics(t *testing.T) {
 		"BorrowBindingKeepsSource": {
 			src: `
 				fn test() {
-					val p: mut {x: number} = {x: 0}
+					val mut p: {x: number} = {x: 0}
 					val q = &p
 					p.x
 				}
 			`,
 		},
-		// A `&` annotation borrows rather than moves, so the source stays usable.
+		// A binding annotated as a `&` borrow takes `&p` without moving p, so the source stays
+		// usable.
 		"BorrowAnnotationKeepsSource": {
 			src: `
 				fn test() {
-					val p: mut {x: number} = {x: 0}
-					val q: &{x: number} = p
+					val mut p: {x: number} = {x: 0}
+					val q: &{x: number} = &p
 					p.x
 				}
 			`,
@@ -337,7 +339,7 @@ func TestMoveSemantics(t *testing.T) {
 		"FieldStoreConsumesSource": {
 			src: `
 				fn test() {
-					val obj: mut {f: {x: number}} = {f: {x: 0}}
+					val mut obj: {f: {x: number}} = {f: {x: 0}}
 					val p = {x: 1}
 					obj.f = p
 					p.x
@@ -347,24 +349,23 @@ func TestMoveSemantics(t *testing.T) {
 		},
 		// The move reconciliation is path-sensitive. A consuming move of p on one branch
 		// does not suppress the exclusivity check for p on a sibling branch where it was
-		// not moved, so the immutable borrow of a still-mutated p is a real Rule 1
-		// conflict and is reported.
+		// not moved, so the write to p while snapshot still borrows it is reported.
 		"PathSensitiveExclusivityKept": {
 			src: `
 				fn store(p: {x: number}) {}
 				fn test(cond: boolean) {
-					val p: mut {x: number} = {x: 0}
+					val mut p: {x: number} = {x: 0}
 					if cond {
 						store(p)
 					} else {
-						val snapshot: &{x: number} = p
+						val snapshot: &{x: number} = &p
 						p.x = 5
 						snapshot
 					}
 				}
 			`,
 			want: []string{
-				"8:7-8:37: cannot assign 'p' to immutable 'snapshot': 'p' is still used mutably after this point",
+				"9:7-9:10: cannot assign to 'p.x' while it is borrowed as immutable",
 			},
 		},
 		// Storing p into the global consumes it, so the later borrow `val snap = p` is a
@@ -386,15 +387,15 @@ func TestMoveSemantics(t *testing.T) {
 		"MoveWithLiveBorrowRejected": {
 			src: `
 				fn test() {
-					val p: mut {x: number} = {x: 0}
-					val r: &mut {x: number} = p
+					val mut p: {x: number} = {x: 0}
+					val r: &mut {x: number} = &mut p
 					val q: {x: number} = p
 					r.x = 5
 					q.x
 				}
 			`,
 			want: []string{
-				"5:6-5:28: cannot assign 'p' to immutable 'q': 'r' still has mutable access to 'p' after this point",
+				"5:27-5:28: cannot move 'p' while it is borrowed",
 			},
 		},
 		// Binding a borrowed source into a bare owned annotation is a borrow-into-owned
@@ -467,7 +468,7 @@ func TestMoveSemantics(t *testing.T) {
 			src: `
 				fn test() {
 					val pair = {a: {id: 1}, b: {id: 2}}
-					val obj: mut {f: {id: number}} = {f: {id: 0}}
+					val mut obj: {f: {id: number}} = {f: {id: 0}}
 					obj.f = pair.a
 					pair.b.id
 					pair.a.id
@@ -577,7 +578,7 @@ func TestFreezeMove(t *testing.T) {
 		}
 	`)
 	require.Equal(t, []string{
-		"6:4-6:11: cannot constrain immutable object <: mutable object",
+		"6:4-6:11: cannot mutate 'q' because its binding is immutable; declare it as `val mut q`",
 		"7:4-7:7: use of moved value 'p'",
 	}, messagesWithSpan(t, errs))
 }
@@ -586,16 +587,16 @@ func TestFreezeMove(t *testing.T) {
 // owned-mutable `p` into a plain `val q` moves the value into an immutable owner and
 // consumes `p`. With `p` never used again, the move produces no error. `q` is
 // owned-immutable, so the function returns the value at the frozen type
-// `fn (p: mut {x: number}) -> {x: number}`. This is the mirror of
+// `fn (p: {x: number}) -> {x: number}`. This is the mirror of
 // TestInferValMutThawFromVariable, which thaws an owned-immutable source into an
 // owned-mutable binding.
 func TestFreezeMoveAllowed(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(p: mut {x: number}) {
+	values, _, errs := inferSource(t, `fn f(mut p: {x: number}) {
   val q = p
   return q
 }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: mut {x: number}) -> {x: number}", values["f"])
+	require.Equal(t, "fn (p: {x: number}) -> {x: number}", values["f"])
 }
 
 // An argument a rest slot gathers is carried out of the frame the way one passed to a bare
@@ -642,6 +643,100 @@ fn f() -> number {
   val p = 1
   store(p, 2)
   return p
+}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if len(tt.want) == 0 {
+				require.Empty(t, errs)
+				return
+			}
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
+		})
+	}
+}
+
+// TestUnannotatedMovedParamConsumesArgument covers calls to a parameter written with no type.
+// A call moves its argument there when the callee's body moves the whole parameter, and leaves
+// the argument usable otherwise.
+func TestUnannotatedMovedParamConsumesArgument(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "StoreIntoModuleLevelState",
+			src: `var sink = {x: 0}
+fn store(p) { sink = p }
+fn f() -> number {
+  val a = {x: 1}
+  store(a)
+  return a.x
+}`,
+			want: []string{"6:10-6:13: use of moved value 'a'"},
+		},
+		{
+			name: "ReturnTheParameter",
+			src: `fn give(p) { return p }
+fn f() -> number {
+  val a = {x: 1}
+  val b = give(a)
+  return a.x + b.x
+}`,
+			want: []string{"5:10-5:13: use of moved value 'a'"},
+		},
+		{
+			// relay moves p into store's parameter, so relay's parameter is moved too.
+			name: "PassToAnotherMovedParameter",
+			src: `var sink = {x: 0}
+fn store(p) { sink = p }
+fn relay(p) { store(p) }
+fn f() -> number {
+  val a = {x: 1}
+  relay(a)
+  return a.x
+}`,
+			want: []string{"7:10-7:13: use of moved value 'a'"},
+		},
+		{
+			// The second parameter is moved and the first is only read, so the first is a borrow
+			// and the call moves b alone.
+			name: "OnlyTheMovedPositionConsumes",
+			src: `var sink = {x: 0}
+fn pick(p, q) -> number {
+  sink = q
+  return p.x
+}
+fn f() -> number {
+  val a = {x: 1}
+  val b = {x: 2}
+  pick(&a, b)
+  return a.x + b.x
+}`,
+			want: []string{"10:16-10:19: use of moved value 'b'"},
+		},
+		{
+			// read only reads a field of p, so p is a borrow and the argument stays usable.
+			name: "ReadOnlyParameterKeepsArgument",
+			src: `fn read(p) { return p.x }
+fn f() -> number {
+  val a = {x: 1}
+  val n = read(&a)
+  return a.x + n
+}`,
+		},
+		{
+			// A number argument copies into the parameter, so moving the parameter moves nothing.
+			name: "ValueTypeArgumentCopies",
+			src: `var total = 0
+fn keep(p) { total = p }
+fn f() -> number {
+  val n = 1
+  keep(n)
+  return n
 }`,
 		},
 	}
@@ -726,4 +821,58 @@ fn f() {
 			require.Equal(t, tt.want, messagesWithSpan(t, errs))
 		})
 	}
+}
+
+// TestMeetFuncsKeepsMovedMarker asserts that meeting two arrows with equal parameter types
+// marks a parameter Moved when only the second arrow's parameter is Moved, and leaves the
+// first arrow's parameters unchanged. The returns differ so the two arrows are not equal
+// and the meet builds a new arrow.
+func TestMeetFuncsKeepsMovedMarker(t *testing.T) {
+	param := func(moved bool) *soltype.FuncParam {
+		return &soltype.FuncParam{
+			Pattern: &soltype.IdentPat{Name: "p"},
+			Type:    &soltype.ObjectType{},
+			Moved:   moved,
+		}
+	}
+	a := &soltype.FuncType{
+		Params: []*soltype.FuncParam{param(false)},
+		Ret:    &soltype.PrimType{Prim: soltype.NumPrim},
+	}
+	b := &soltype.FuncType{
+		Params: []*soltype.FuncParam{param(true)},
+		Ret:    &soltype.PrimType{Prim: soltype.StrPrim},
+	}
+
+	met, ok := (&Context{}).meetFuncs(a, b)
+	require.True(t, ok)
+	fn, isFunc := met.(*soltype.FuncType)
+	require.True(t, isFunc)
+	require.True(t, fn.Params[0].Moved)
+	require.False(t, a.Params[0].Moved)
+}
+
+// TestMovedMarkerDistinguishesArrows asserts that two arrows differing only in a parameter's
+// Moved marker compare unequal and sort apart, and that their meet keeps the marker.
+func TestMovedMarkerDistinguishesArrows(t *testing.T) {
+	arrow := func(moved bool) *soltype.FuncType {
+		return &soltype.FuncType{
+			Params: []*soltype.FuncParam{{
+				Pattern: &soltype.IdentPat{Name: "p"},
+				Type:    &soltype.ObjectType{},
+				Moved:   moved,
+			}},
+			Ret: &soltype.UndefinedType{},
+		}
+	}
+	plain, moved := arrow(false), arrow(true)
+
+	require.False(t, equalType(plain, moved))
+	require.NotZero(t, compareType(plain, moved))
+
+	met, ok := (&Context{}).meetFusedAtoms(plain, moved)
+	require.True(t, ok)
+	fn, isFunc := met.(*soltype.FuncType)
+	require.True(t, isFunc)
+	require.True(t, fn.Params[0].Moved)
 }
