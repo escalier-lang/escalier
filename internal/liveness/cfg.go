@@ -15,6 +15,10 @@ type BasicBlock struct {
 	// by Stmts — for example, loop variable bindings from ForInStmt
 	// patterns, IfValExpr pattern bindings, or MatchExpr arm patterns.
 	ExtraDefs []VarID
+	// Suspends marks a block whose entry suspends the body before any of its statements
+	// run. The header of a `for await` loop does, since the loop awaits its next element
+	// there on every iteration.
+	Suspends bool
 }
 
 // decomposedStmt records that a statement (typically a DeclStmt whose init
@@ -466,6 +470,7 @@ func (b *cfgBuilder) processForIn(s *ast.ForInStmt, current *BasicBlock) *BasicB
 
 	// Header block: loop entry point (branch: enter body or exit loop).
 	header := b.newBlock()
+	header.Suspends = s.IsAwait
 	b.addEdge(current, header)
 
 	// Body block with loop variable bindings.

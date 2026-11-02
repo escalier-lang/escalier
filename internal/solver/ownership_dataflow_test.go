@@ -1610,6 +1610,148 @@ func TestOwnershipDataflow(t *testing.T) {
 			`,
 			errs: []string{"cannot move 'p' while it is borrowed"},
 		},
+		{
+			// hr's own borrow of holder reaches get as the receiver, and get's result shares
+			// only 'a with it. So r holds what `holder.peer` borrows and not the borrow of holder.
+			name: "ReturnThroughABorrowingLocalLeavesTheReceiverWritable",
+			src: `
+				class Holder<'a> {
+					peer: &'a {x: number},
+					get(&self) -> &'a {x: number} { return self.peer },
+				}
+				fn go() -> number {
+					val p = {x: 1}
+					val y = {x: 2}
+					val mut holder = Holder(&p)
+					val hr = &holder
+					val r = hr.get()
+					holder.peer = &y
+					return r.x
+				}
+			`,
+		},
+		{
+			// r holds the borrow of p that holder holds through 'a, which hr reaches.
+			name: "ReturnThroughABorrowingLocalKeepsTheHeldBorrow",
+			src: `
+				class Holder<'a> {
+					peer: &'a {x: number},
+					get(&self) -> &'a {x: number} { return self.peer },
+				}
+				fn go() -> number {
+					val p = {x: 1}
+					val mut holder = Holder(&p)
+					val hr = &holder
+					val r = hr.get()
+					val q = p
+					return r.x
+				}
+			`,
+			errs: []string{"cannot move 'p' while it is borrowed"},
+		},
+		{
+			// The receiver narrows hr's mutable borrow, and r still holds the borrow of p.
+			name: "ReturnThroughAMutableLocalKeepsTheHeldBorrow",
+			src: `
+				class Holder<'a> {
+					peer: &'a {x: number},
+					get(&self) -> &'a {x: number} { return self.peer },
+				}
+				fn go() -> number {
+					val p = {x: 1}
+					val mut holder = Holder(&p)
+					val hr = &mut holder
+					val r = hr.get()
+					val q = p
+					return r.x
+				}
+			`,
+			errs: []string{"cannot move 'p' while it is borrowed"},
+		},
+		{
+			// A `for await` loop awaits its next element on every iteration, where the caller
+			// runs and can keep a copy of `p.r`.
+			name: "WriteInAForAwaitLoopAfterAStoreConflicts",
+			src: `
+				declare class Stream { [Symbol.asyncIterator](&self) -> AsyncIterator<number> }
+				async fn f(p: &mut {r: &{value: number}}, s: Stream) -> Promise<undefined> {
+					val mut b = {value: 1}
+					p.r = &b
+					for await x in s {
+						b.value = x
+					}
+					return undefined
+				}
+			`,
+			errs: []string{"cannot assign to 'b.value' while it is borrowed as immutable"},
+		},
+		{
+			// The store comes after the loop, so no suspension follows it.
+			name: "WriteInAForAwaitLoopBeforeAStoreOk",
+			src: `
+				declare class Stream { [Symbol.asyncIterator](&self) -> AsyncIterator<number> }
+				async fn f(p: &mut {r: &{value: number}}, s: Stream) -> Promise<undefined> {
+					val mut b = {value: 1}
+					for await x in s {
+						b.value = x
+					}
+					p.r = &b
+					return undefined
+				}
+			`,
+		},
+		{
+			// The walk of Deep<'a> runs out of its alias allowance, so the result takes a direct
+			// edge from p. n mentions no lifetime, so the result holds no borrow of q.
+			name: "TruncatedResultTakesNoEdgeFromALifetimeFreeArgument",
+			src: `
+				type Deep<'a> = {head: &'a {x: number}, tail: Deep<'a>}
+				declare fn mk<'a>(p: &'a {x: number}, n: unknown) -> Deep<'a>
+				fn go() -> number {
+					val p = {x: 1}
+					val mut q = {x: 2}
+					val d = mk(&p, {r: &q})
+					q.x = 3
+					return d.head.x
+				}
+			`,
+		},
+		{
+			name: "TruncatedResultKeepsTheArgumentBorrow",
+			src: `
+				type Deep<'a> = {head: &'a {x: number}, tail: Deep<'a>}
+				declare fn mk<'a>(p: &'a {x: number}, n: unknown) -> Deep<'a>
+				fn go() -> number {
+					val mut p = {x: 1}
+					val q = {x: 2}
+					val d = mk(&p, {r: &q})
+					p.x = 3
+					return d.head.x
+				}
+			`,
+			errs: []string{"cannot assign to 'p.x' while it is borrowed as immutable"},
+		},
+		{
+			// The current checks report the store of `&b` for c, which b reaches. The pass's
+			// E2 about b itself at the same store is a different conflict, so both are reported.
+			name: "StoredAliasAboutAnotherLocalKeepsE2",
+			src: `
+				fn f(p: &mut {r: &{peer: &mut {v: number}}}) -> number {
+					val mut c = {v: 1}
+					val m = &c
+					val mut b = {peer: &mut c}
+					val a = &mut b
+					p.r = &b
+					a.peer.v = m.v
+					return p.r.peer.v
+				}
+			`,
+			errs: []string{
+				"cannot borrow 'c' as mutable while it is borrowed as immutable",
+				"cannot store a mutable borrow of 'c' while 'm' still borrows it as immutable",
+				"cannot borrow 'b' as immutable while it is borrowed as mutable",
+			},
+		},
 	}
 
 	for _, tc := range cases {
