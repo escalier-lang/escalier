@@ -343,11 +343,11 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"b0.0: use(`v.x`, read)", // the guard `v.x > 0`
-				"b0.0: use(`v.x`, read)", // the first arm's body `v.x`
-				"b0.0: use(`n`, read)",   // the second arm's body `n`
-				"b0.0: move(`p.v`, `v`)", // the pattern `{v}` moves the field v out of p
-				"b0.0: use(`p.n`, read)", // the pattern `{n}` only reads the `number` field n
+				"b3.0: use(`v.x`, read)",     // the guard `v.x > 0`
+				"b3.1: use(`v.x`, read)",     // the first arm's body `v.x`
+				"b4.0: use(`n`, read)",       // the second arm's body `n`
+				"b3.entry: move(`p.v`, `v`)", // the pattern `{v}` moves the field v out of p on entry to the first arm
+				"b4.entry: use(`p.n`, read)", // the pattern `{n}` only reads the `number` field n on entry to the second arm
 			},
 		},
 		{
