@@ -172,8 +172,9 @@ and changes these things:
 - The four gaps in 2.4 are rejected by the same rule, with no separate checks
   for initializers or receivers.
 - A one-time handoff in an initializer, such as `val h = Holder(xs)`, checks
-  clean today and becomes an error. The author writes the value inline, as `Holder([1, 2])`, or gives
-  `Holder` a borrow parameter. This is the change developers would notice most.
+  clean today and becomes an error. The author writes the value inline, as
+  `Holder([1, 2])`, or gives `Holder` a borrow parameter. This is the change
+  developers would notice most.
 - A `var` can still be reassigned with a fresh value inside a function, since
   the module takes ownership of the new value. A `val` can still be initialized
   from a fresh value or from a function's owned result.
@@ -353,8 +354,8 @@ other readonly return stays a `'static` borrow.
 
 A return that no signal decides stays an immutable `'static` borrow. Treating a
 shared collection as owned lets the caller mutate state the package still
-reads, which is unsound. Treating a fresh one as a borrow only rejects a program that would
-have been safe.
+reads, which is unsound. Treating a fresh one as a borrow only rejects a
+program that would have been safe.
 
 ### 4.2 Signals
 
