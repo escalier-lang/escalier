@@ -508,6 +508,49 @@ func TestOwnershipDataflow(t *testing.T) {
 			`,
 		},
 		{
+			// Each branch moves a different element of b, so neither branch moves the whole
+			// tuple. The next iteration moves an element a branch moved before.
+			name: "TupleElementsMovedOnBranchesInALoop",
+			src: `
+				fn go(cond: boolean) -> number {
+					val b = [{v: 1}, {v: 2}]
+					var sum = 0
+					for i in [1, 2] {
+						if cond {
+							val [x, {v}] = b
+							sum = sum + v
+						} else {
+							val [{v}, y] = b
+							sum = sum + v
+						}
+					}
+					return sum
+				}
+			`,
+			errs: []string{
+				`use of moved value 'b["0"]'`,
+				`use of moved value 'b["0"]'`,
+			},
+		},
+		{
+			// Each path moves two of the three elements of t, so the read of t sees a partial
+			// move rather than a move of the whole tuple.
+			name: "TupleElementsMovedOnDifferentPathsArePartialMoves",
+			src: `
+				fn go(cond: boolean) {
+					val t = [{x: 1}, {x: 2}, {x: 3}]
+					if cond {
+						val [a, {}, {}] = t
+					} else {
+						val [{}, b, {}] = t
+					}
+					val [{}, {}, c] = t
+					val u = t
+				}
+			`,
+			errs: []string{`use of partially moved value 't'; field 't["0"]' was moved out`},
+		},
+		{
 			// The pass replaces only the diagnostics of E1, E2, and E3, so a type error stays.
 			name: "TypeErrorStays",
 			src: `
@@ -556,6 +599,19 @@ func TestOwnershipDataflowMatchesCurrentChecks(t *testing.T) {
 				}
 			`,
 			want: []string{"7:17-7:18: use of moved value 'f'"},
+		},
+		{
+			// Both calls are in one statement, so the second is reported as soon as it moves f.
+			name: "ClosureMovingACaptureCalledTwiceInOneStatement",
+			src: `
+				declare fn take(p: {x: number}) -> number
+				fn go() -> number {
+					val p = {x: 1}
+					val f = fn () { return take(p) }
+					return f() + f()
+				}
+			`,
+			want: []string{"6:19-6:22: use of moved value 'f'"},
 		},
 		{
 			// The closure's write to x is live for the call that receives it, beside a.
