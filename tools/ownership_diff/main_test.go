@@ -104,3 +104,58 @@ func TestOwnershipDiffProblems(t *testing.T) {
 		"pkg: FAIL\tpkg [build failed]",
 	}, tr.problems)
 }
+
+// TestOwnershipDiffFailures asserts that parseTrace counts each failed package, and reports a
+// package that failed while none of its tests did. Package `bad` fails that way, as a test
+// binary does when it rejects a -run pattern. Package `pkg` fails because TestFail failed,
+// which is not a problem.
+func TestOwnershipDiffFailures(t *testing.T) {
+	tr, err := parseTrace(strings.NewReader(strings.Join([]string{
+		`{"Action":"output","Package":"bad","Output":"testing: invalid regexp for element 0 of -test.run\n"}`,
+		`{"Action":"fail","Package":"bad"}`,
+		`{"Action":"fail","Package":"pkg","Test":"TestFail"}`,
+		`{"Action":"fail","Package":"pkg"}`,
+		`{"Action":"pass","Package":"ok"}`,
+	}, "\n")))
+	require.NoError(t, err)
+	require.Equal(t, 2, tr.failedPackages)
+	require.Equal(t, []string{"bad: the package failed but none of its tests did"}, tr.problems)
+}
+
+// TestOwnershipDiffSplitLines asserts that parseTrace joins a traced diagnostic that
+// `go test -json` split across several output events. Both runs print one long message
+// split into three events. The messages share their first 1100 bytes and differ only in
+// the last event, so the report shows both. An event of package `other` between the parts
+// does not join the line.
+func TestOwnershipDiffSplitLines(t *testing.T) {
+	head := `ESCALIER_DIAG\taa\t*solver.UseAfterMoveError\tinput.esc:3:5-3:6\tuse of moved value '` + strings.Repeat("p", 1100)
+	split := func(tail string) string {
+		return strings.Join([]string{
+			`{"Action":"output","Package":"pkg","Test":"TestLong","Output":"` + head[:600] + `"}`,
+			`{"Action":"output","Package":"other","Test":"TestOther","Output":"=== RUN TestOther\n"}`,
+			`{"Action":"output","Package":"pkg","Test":"TestLong","Output":"` + head[600:] + `"}`,
+			`{"Action":"output","Package":"pkg","Test":"TestLong","Output":"` + tail + `'\n"}`,
+		}, "\n")
+	}
+
+	off, err := parseTrace(strings.NewReader(split("old")))
+	require.NoError(t, err)
+
+	on, err := parseTrace(strings.NewReader(split("new")))
+	require.NoError(t, err)
+
+	var out strings.Builder
+	writeReport(&out, diffRuns(off.diags, on.diags))
+
+	name := strings.Repeat("p", 1100)
+	require.Equal(t, strings.Join([]string{
+		"pkg TestLong",
+		"\told\tinput.esc:3:5-3:6\t*solver.UseAfterMoveError\tuse of moved value '" + name + "old'",
+		"\tnew\tinput.esc:3:5-3:6\t*solver.UseAfterMoveError\tuse of moved value '" + name + "new'",
+		"",
+		"1 tests differ: 1 diagnostics only with the flag off, 1 only with it on",
+		"     1  new *solver.UseAfterMoveError: use of moved value '…'",
+		"     1  old *solver.UseAfterMoveError: use of moved value '…'",
+		"",
+	}, "\n"), out.String())
+}

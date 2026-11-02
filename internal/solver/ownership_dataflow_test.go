@@ -91,6 +91,65 @@ func TestOwnershipDataflow(t *testing.T) {
 			`,
 		},
 		{
+			// Only one arm runs, so the move in one arm leaves p usable in the other.
+			name: "E1MoveInEachArmOfReturnedIf",
+			src: `
+				fn go(c: boolean, p: {a: {x: number}}) {
+					return if c { p } else { p }
+				}
+			`,
+		},
+		{
+			name: "E1PartialMoveInOneArmOfReturnedIf",
+			src: `
+				fn go(c: boolean, p: {a: {x: number}}) {
+					return if c { p.a } else { p }
+				}
+			`,
+		},
+		{
+			name: "E1MoveInEachArmOfReturnedMatch",
+			src: `
+				fn go(c: boolean, p: {a: {x: number}}) {
+					return match c {
+						true => p,
+						false => p,
+					}
+				}
+			`,
+		},
+		{
+			name: "E1MoveInEachArmOfIfBoundThenReturned",
+			src: `
+				fn go(c: boolean, p: {a: {x: number}}) {
+					val r = if c { p } else { p }
+					return r
+				}
+			`,
+		},
+		{
+			name: "E1ReturnInEachArmOfIf",
+			src: `
+				fn go(c: boolean, p: {a: {x: number}}) {
+					if c {
+						return p
+					} else {
+						return p
+					}
+				}
+			`,
+		},
+		{
+			// The first arm moves p twice on one path, so E1 still rejects it.
+			name: "E1DoubleMoveInOneArmOfReturnedIf",
+			src: `
+				fn go(c: boolean, p: {a: {x: number}}) {
+					return if c { [p, p] } else { p }
+				}
+			`,
+			errs: []string{"use of moved value 'p'"},
+		},
+		{
 			name: "E1MoveInLoop",
 			src: `
 				fn go(items: Array<number>) {
@@ -696,6 +755,49 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"use of partially moved value 'p'; field 'p.a' was moved out"},
 		},
 		{
+			// Each branch moves a different element of b, so neither branch moves the whole
+			// tuple. The next iteration moves an element a branch moved before.
+			name: "TupleElementsMovedOnBranchesInALoop",
+			src: `
+				fn go(cond: boolean) -> number {
+					val b = [{v: 1}, {v: 2}]
+					var sum = 0
+					for i in [1, 2] {
+						if cond {
+							val [x, {v}] = b
+							sum = sum + v
+						} else {
+							val [{v}, y] = b
+							sum = sum + v
+						}
+					}
+					return sum
+				}
+			`,
+			errs: []string{
+				`use of moved value 'b[0]'`,
+				`use of moved value 'b[0]'`,
+			},
+		},
+		{
+			// Each path moves two of the three elements of t, so the read of t sees a partial
+			// move rather than a move of the whole tuple.
+			name: "TupleElementsMovedOnDifferentPathsArePartialMoves",
+			src: `
+				fn go(cond: boolean) {
+					val t = [{x: 1}, {x: 2}, {x: 3}]
+					if cond {
+						val [a, {}, {}] = t
+					} else {
+						val [{}, b, {}] = t
+					}
+					val [{}, {}, c] = t
+					val u = t
+				}
+			`,
+			errs: []string{`use of partially moved value 't'; field 't[0]' was moved out`},
+		},
+		{
 			// The pass replaces only the diagnostics of E1, E2, and E3, so a type error stays.
 			name: "TypeErrorStays",
 			src: `
@@ -933,6 +1035,79 @@ func TestOwnershipDataflow(t *testing.T) {
 				"'b' leaves the function through a mutable path and an immutable one",
 				"cannot borrow 'c' as mutable while it is borrowed as immutable",
 			},
+		},
+		{
+			// The first argument passes m to a `&` parameter while the second passes it to one
+			// with a `&mut` member, which the callee can narrow to and write through.
+			name: "E2MixedUnionArgumentAfterAnImmutableOne",
+			src: `
+				declare fn readWrite(a: &{x: number}, b: &mut {x: number} | &{x: number}) -> undefined
+				fn go(m: &mut {x: number} | &{x: number}) {
+					readWrite(m, m)
+				}
+			`,
+			errs: []string{"cannot borrow 'm' as mutable while it is borrowed as immutable"},
+		},
+		{
+			name: "E2MixedUnionArgumentBeforeAnImmutableOne",
+			src: `
+				declare fn writeRead(a: &mut {x: number} | &{x: number}, b: &{x: number}) -> undefined
+				fn go(m: &mut {x: number} | &{x: number}) {
+					writeRead(m, m)
+				}
+			`,
+			errs: []string{"cannot borrow 'm' as immutable while it is borrowed as mutable"},
+		},
+		{
+			// The first argument copies m with its own kind, so it is the `&mut` path the
+			// second argument's `&` path conflicts with.
+			name: "E2ImmutableArgumentAfterAMutableCopyOfAParameter",
+			src: `
+				declare fn writeRead(a: &mut {x: number}, b: &{x: number}) -> undefined
+				fn go(m: &mut {x: number}) {
+					writeRead(m, m)
+				}
+			`,
+			errs: []string{"cannot borrow 'm' as immutable while it is borrowed as mutable"},
+		},
+		{
+			name: "E2ImmutableArgumentAfterAMutableCopyOfALocalBorrow",
+			src: `
+				declare fn writeRead(a: &mut {x: number}, b: &{x: number}) -> undefined
+				fn go() {
+					val mut x = {x: 1}
+					val m = &mut x
+					writeRead(m, m)
+				}
+			`,
+			errs: []string{"cannot borrow 'm' as immutable while it is borrowed as mutable"},
+		},
+		{
+			// d is not used after the copy, but its mutable path to p is `'static`, so p never
+			// gets a new immutable path.
+			name: "E2NarrowedCopyOfAStaticMutableBorrow",
+			src: `
+				fn go() -> number {
+					val mut p = {x: 1}
+					val d: &'static mut {x: number} = &mut p
+					val r: &{x: number} = d
+					return r.x
+				}
+			`,
+			errs: []string{"cannot borrow 'p' as immutable while it is borrowed as mutable"},
+		},
+		{
+			// Each iteration copies a into a `'static` destination. The copy derives one loan
+			// from p's loan however many times the loop runs, so the pass reaches a fixed point.
+			name: "StaticSelfCopyInALoopOk",
+			src: `
+				fn go(p: &'static {x: number}, items: Array<number>) {
+					var a: &'static {x: number} = p
+					for item in items {
+						a = a
+					}
+				}
+			`,
 		},
 		{
 			// The pass reports E2 for b at `&mut b`, which lies outside both the store `q.s = c`
@@ -1447,6 +1622,19 @@ func TestOwnershipDataflowMatchesCurrentChecks(t *testing.T) {
 				}
 			`,
 			want: []string{"7:17-7:18: use of moved value 'f'"},
+		},
+		{
+			// Both calls are in one statement, so the second is reported as soon as it moves f.
+			name: "ClosureMovingACaptureCalledTwiceInOneStatement",
+			src: `
+				declare fn take(p: {x: number}) -> number
+				fn go() -> number {
+					val p = {x: 1}
+					val f = fn () { return take(p) }
+					return f() + f()
+				}
+			`,
+			want: []string{"6:19-6:22: use of moved value 'f'"},
 		},
 		{
 			// The closure's write to x is live for the call that receives it, beside a.

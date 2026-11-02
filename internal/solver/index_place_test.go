@@ -258,6 +258,71 @@ func TestLiteralIndexConflicts(t *testing.T) {
 			want: []string{"7:6-7:11: use of partially moved value 'xs'; field 'xs[0]' was moved out"},
 		},
 		{
+			// A link after a number index names the container, so the read uses the moved xs.
+			name: "MemberOfANumberIndexAfterTheContainerMoved",
+			src: `
+				fn go(xs: Array<{x: number}>, i: number) -> number {
+					val ys = xs
+					return xs[i].x + 1
+				}
+			`,
+			want: []string{"4:13-4:20: use of moved value 'xs'"},
+		},
+		{
+			name: "NumberIndexAfterTheContainerMoved",
+			src: `
+				fn go(xs: Array<{x: number}>, i: number) -> {x: number} {
+					val ys = xs
+					return xs[i]
+				}
+			`,
+			want: []string{"4:13-4:18: use of moved value 'xs'"},
+		},
+		{
+			// The second argument moves xs after the first moved xs[0] in the same statement.
+			name: "ElementAndContainerMovedInOneCall",
+			src: `
+				declare fn take(a: {x: number}, b: Array<{x: number}>) -> number
+				fn go(xs: Array<{x: number}>) -> number {
+					return take(xs[0], xs)
+				}
+			`,
+			want: []string{"4:25-4:27: use of partially moved value 'xs'; field 'xs[0]' was moved out"},
+		},
+		{
+			name: "ContainerAndElementMovedInOneCall",
+			src: `
+				declare fn take(b: Array<{x: number}>, a: {x: number}) -> number
+				fn go(xs: Array<{x: number}>) -> number {
+					return take(xs, xs[0])
+				}
+			`,
+			want: []string{"4:22-4:27: use of moved value 'xs'"},
+		},
+		{
+			// The rest's tuple pattern binds a to t[1], so the read of t[1][1] reads moved data.
+			name: "NestedRestPatternThenIndexReadUnderIt",
+			src: `
+				fn go(t: [[{x: number}, {x: number}], [{x: number}, {x: number}]]) {
+					val [_, ...[a]] = t
+					val b = t[1][1]
+					return [a, b]
+				}
+			`,
+			want: []string{"4:14-4:21: use of moved value 't[1]'"},
+		},
+		{
+			// The rest's tuple pattern moves t[1] into a, which leaves t[0] usable.
+			name: "NestedRestPatternThenIndexReadBeforeIt",
+			src: `
+				fn go(t: [[{x: number}, {x: number}], [{x: number}, {x: number}]]) {
+					val [_, ...[a]] = t
+					val b = t[0][1]
+					return [a, b]
+				}
+			`,
+		},
+		{
 			// A string-literal key that ends in `...` names a field, not a rest of elements.
 			name: "FieldSpelledLikeARest",
 			src: `
