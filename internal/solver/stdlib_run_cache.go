@@ -83,7 +83,8 @@ var ambientCheckers = struct {
 // The run loads every other package through source. groups are the run's groups from
 // BuildPackageClosure. ok is false when a file in the closure cannot be read or an
 // earlier load of the same tree panicked, and the caller then starts from
-// newRunChecker.
+// newRunChecker. opts must come from withOwnershipDataflowResolved, so the cache key and
+// the loaded checker read the same NoOwnershipDataflow.
 func ambientChecker(dir string, source ModuleSource, groups PackageGroups, opts Options) (c *checker, ok bool) {
 	key, ok := ambientKeyOf(dir, groups, opts)
 	if !ok {
@@ -104,10 +105,7 @@ func ambientChecker(dir string, source ModuleSource, groups PackageGroups, opts 
 	ambientCheckers.mu.Unlock()
 
 	entry.once.Do(func() {
-		// The key already read ownershipDataflowEnv, so the load uses the setting the key names.
-		loadOpts := opts
-		loadOpts.NoOwnershipDataflow = !key.ownershipDataflow
-		entry.checker = loadAmbientChecker(dir, groups, loadOpts)
+		entry.checker = loadAmbientChecker(dir, groups, opts)
 	})
 	// A load that panicked leaves no checker, and once does not run it again.
 	if entry.checker == nil {
@@ -115,7 +113,6 @@ func ambientChecker(dir string, source ModuleSource, groups PackageGroups, opts 
 	}
 	run := entry.checker.fork(source, StdlibGroupSource(dir), groups)
 	run.dependencies = opts.Dependencies
-	run.ownershipDataflow = key.ownershipDataflow
 	return run, true
 }
 
@@ -148,7 +145,7 @@ func ambientKeyOf(dir string, groups PackageGroups, opts Options) (ambientKey, b
 		closure:           strings.Join(uris, ","),
 		noAmbientNames:    opts.NoAmbientNames,
 		checkJsDecorators: opts.CheckJsDecorators,
-		ownershipDataflow: ownershipDataflowFromEnv() && !opts.NoOwnershipDataflow,
+		ownershipDataflow: !opts.NoOwnershipDataflow,
 	}
 	copy(key.digest[:], sum.Sum(nil))
 	return key, true

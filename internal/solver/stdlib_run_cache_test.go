@@ -182,10 +182,11 @@ func TestAmbientCheckerLoadsPerOwnershipSetting(t *testing.T) {
 			want: []string{loadErr + "this call runs 'f', which reads 'x' after it was moved"},
 		},
 	}
-	// Each setting runs twice, after a run with the other setting filled the cache.
-	for range 2 {
+	// The first round's dataflow run fills an empty cache. Every later run follows a run with
+	// the other setting, so each setting is checked after the other one filled the cache.
+	for round := range 2 {
 		for _, tt := range cases {
-			t.Run(tt.name, func(t *testing.T) {
+			t.Run(fmt.Sprintf("round%d/%s", round, tt.name), func(t *testing.T) {
 				t.Setenv(ownershipDataflowEnv, "1")
 				_, cached := inferCached(t, dir, src, tt.opts)
 				require.Equal(t, tt.want, cached)

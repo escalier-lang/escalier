@@ -44,12 +44,25 @@ import (
 // diagnostics, so the diagnostics of the two checkers can be compared program by program.
 
 // ownershipDataflowEnv is the environment variable that turns the dataflow pass off for every
-// run, whatever Options says. The value 0 turns it off, and any other value leaves it on.
+// run, whatever Options says. The values 0, false, and off turn it off, in any case and with
+// surrounding whitespace. Any other value leaves it on.
 const ownershipDataflowEnv = "ESCALIER_OWNERSHIP_DATAFLOW"
 
 // ownershipDataflowFromEnv reports whether ownershipDataflowEnv leaves the dataflow pass on.
 func ownershipDataflowFromEnv() bool {
-	return os.Getenv(ownershipDataflowEnv) != "0"
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(ownershipDataflowEnv))) {
+	case "0", "false", "off":
+		return false
+	}
+	return true
+}
+
+// withOwnershipDataflowResolved returns opts with NoOwnershipDataflow set when opts or
+// ownershipDataflowEnv turns the dataflow pass off. A checker reads only the returned
+// NoOwnershipDataflow, so the environment is read once per run.
+func withOwnershipDataflowResolved(opts Options) Options {
+	opts.NoOwnershipDataflow = opts.NoOwnershipDataflow || !ownershipDataflowFromEnv()
+	return opts
 }
 
 // replacedByDataflow reports whether err is a diagnostic of E1, E2, or E3 that the dataflow

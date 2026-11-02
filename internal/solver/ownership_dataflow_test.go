@@ -1740,8 +1740,10 @@ func TestOwnershipDataflow(t *testing.T) {
 }
 
 // TestOwnershipDataflowMatchesCurrentChecks covers programs whose diagnostics the dataflow
-// pass and the current checks report alike. Each program runs with the flag off and with it
-// on, and both runs report want, with spans. The cases cover a call that runs a closure, a
+// pass and the current checks report alike. Each program runs once with
+// Options.NoOwnershipDataflow set and once with it clear, and both runs report want, with
+// spans. When ownershipDataflowEnv turns the pass off, the run with the option clear would
+// repeat the current checks, so it is skipped. The cases cover a call that runs a closure, a
 // write through a `number`-typed index, the span a moved place is blamed at, the name of a
 // moved field or tuple, a write that uses a moved place beside a live borrow, and a borrow
 // copied into a second binding.
@@ -2344,9 +2346,36 @@ func TestOwnershipDataflowMatchesCurrentChecks(t *testing.T) {
 	for _, tc := range cases {
 		for _, dataflow := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/dataflow=%t", tc.name, dataflow), func(t *testing.T) {
+				if dataflow && !ownershipDataflowFromEnv() {
+					t.Skipf("%s turns the dataflow pass off", ownershipDataflowEnv)
+				}
 				res := InferModuleAgainstStdlib(parseModule(t, tc.src), benchTree, Options{NoOwnershipDataflow: !dataflow})
 				require.Equal(t, tc.want, messagesWithSpan(t, res.Errors))
 			})
 		}
+	}
+}
+
+// TestOwnershipDataflowFromEnv covers the values of ownershipDataflowEnv that turn the dataflow
+// pass off and a sample of those that leave it on.
+func TestOwnershipDataflowFromEnv(t *testing.T) {
+	cases := []struct {
+		value string
+		on    bool
+	}{
+		{value: "", on: true},
+		{value: "1", on: true},
+		{value: "on", on: true},
+		{value: "0", on: false},
+		{value: " 0 ", on: false},
+		{value: "false", on: false},
+		{value: "FALSE", on: false},
+		{value: "Off", on: false},
+	}
+	for _, tc := range cases {
+		t.Run(fmt.Sprintf("%q", tc.value), func(t *testing.T) {
+			t.Setenv(ownershipDataflowEnv, tc.value)
+			require.Equal(t, tc.on, ownershipDataflowFromEnv())
+		})
 	}
 }

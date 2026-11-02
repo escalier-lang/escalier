@@ -32,7 +32,7 @@ type Options struct {
 	// E2, and E3 of planning/ownership_rules/requirements.md over each body's control-flow
 	// graph. The run then reports the current checks' diagnostics of those rules, which the
 	// pass's diagnostics replace by default. The ESCALIER_OWNERSHIP_DATAFLOW environment
-	// variable set to 0 skips the pass as well.
+	// variable set to 0, false, or off skips the pass as well.
 	NoOwnershipDataflow bool
 }
 
@@ -156,11 +156,12 @@ func inferModuleWithGroups(
 	groups PackageGroups,
 	opts Options,
 ) *ModuleResult {
-	return inferModuleOn(newRunChecker(source, groupSource, groups, opts), module)
+	return inferModuleOn(newRunChecker(source, groupSource, groups, withOwnershipDataflowResolved(opts)), module)
 }
 
 // newRunChecker returns a checker for one run that loads packages through source and
-// groupSource. groups and opts are as inferModuleWithGroups takes them.
+// groupSource. groups and opts are as inferModuleWithGroups takes them. opts must come from
+// withOwnershipDataflowResolved, since the checker reads NoOwnershipDataflow alone.
 func newRunChecker(source ModuleSource, groupSource GroupSource, groups PackageGroups, opts Options) *checker {
 	c := newChecker()
 	c.source = source
@@ -169,7 +170,7 @@ func newRunChecker(source ModuleSource, groupSource GroupSource, groups PackageG
 	c.noAmbientNames = opts.NoAmbientNames
 	c.checkJsDecorators = opts.CheckJsDecorators
 	c.dependencies = opts.Dependencies
-	c.ownershipDataflow = c.ownershipDataflow && !opts.NoOwnershipDataflow
+	c.ownershipDataflow = !opts.NoOwnershipDataflow
 	return c
 }
 

@@ -249,7 +249,7 @@ func InferModuleAgainstStdlib(module *ast.Module, dir string, opts Options) *Mod
 		})
 		return result
 	}
-	if c, ok := ambientChecker(dir, source, groups, opts); ok {
+	if c, ok := ambientChecker(dir, source, groups, withOwnershipDataflowResolved(opts)); ok {
 		return inferModuleOn(c, module)
 	}
 	return inferModuleWithGroups(module, source, StdlibGroupSource(dir), groups, opts)
@@ -267,7 +267,7 @@ func InferScriptAgainstStdlib(script *ast.Script, dir string, opts Options) (*Sc
 			URI: dir, Reason: err.Error(), span: ast.Span{},
 		})
 	}
-	if c, ok := ambientChecker(dir, source, groups, opts); ok {
+	if c, ok := ambientChecker(dir, source, groups, withOwnershipDataflowResolved(opts)); ok {
 		return inferScriptOn(c, script)
 	}
 	return inferScriptWithGroups(script, source, StdlibGroupSource(dir), groups, opts)

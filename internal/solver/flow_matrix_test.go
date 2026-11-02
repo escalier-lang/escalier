@@ -3031,10 +3031,9 @@ func TestFlowMatrixModuleLevelMove(t *testing.T) {
 }
 */
 
-// DISABLED until #1269. Reassigning a `var` after a move does not clear the move, so the use
-// after the reassignment reports `use of moved value 'p'`. E1 rejects only a use of the moved
-// value, and the reassignment gives `p` a new one.
-/*
+// TestFlowMatrixReassignAfterAMove asserts that a use after a reassignment reads the new value.
+// E1 rejects only a use of the moved value, and the dataflow pass clears a move at a write of
+// the moved place. A reassignment whose right-hand side branches clears it the same way.
 func TestFlowMatrixReassignAfterAMove(t *testing.T) {
 	runFlowMatrix(t, []flowCell{
 		{
@@ -3178,12 +3177,9 @@ func TestFlowMatrixReassignAfterAMove(t *testing.T) {
 		},
 	})
 }
-*/
 
-// DISABLED until #2249. Storing a borrow into module-level state records a move of the source,
-// so the read of `r` after the store reports `use of moved value 'r'`. F2 copies a borrow, so
-// `r` stays usable.
-/*
+// TestFlowMatrixModuleLevelBorrowCopy asserts that storing a borrow into module-level state
+// leaves the source usable. F2 copies a borrow, as D8 decides, so `r` is read after the store.
 func TestFlowMatrixModuleLevelBorrowCopy(t *testing.T) {
 	runFlowMatrix(t, []flowCell{
 		{
@@ -3199,7 +3195,6 @@ func TestFlowMatrixModuleLevelBorrowCopy(t *testing.T) {
 		},
 	})
 }
-*/
 
 // DISABLED until #2249. The cell stores a `&mut` parameter into module-level state. Any store
 // into a module-level `&mut` binding reports `cannot constrain immutable object <: mutable object`,
