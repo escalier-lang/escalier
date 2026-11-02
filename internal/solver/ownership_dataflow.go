@@ -45,14 +45,15 @@ func ownershipDataflowFromEnv() bool {
 
 // replacedByDataflow reports whether err is a diagnostic of E1, E2, or E3 that the dataflow
 // pass reports in place of the current checks when the ownershipDataflow flag is set. A
-// diagnostic that names a closure a call runs is E4's, which the pass does not check, so it
-// stays.
+// diagnostic about a closure's captures during a call is E4's, which the pass does not
+// check, so it stays. That covers one that names a closure a call runs, a second call of a
+// closure that moves a capture, and a conflict with a closure's capture.
 func replacedByDataflow(err SolverError) bool {
 	switch e := err.(type) {
 	case *UseAfterMoveError:
-		return e.Via == ""
+		return e.Via == "" && !e.closureCall
 	case *BorrowAliasError:
-		return e.FirstVia == "" && e.SecondVia == ""
+		return e.FirstVia == "" && e.SecondVia == "" && !e.closure
 	case *MoveWhileBorrowedError:
 		return e.Via == ""
 	case *BorrowedValueWriteError, *MutabilityTransitionError:
@@ -132,8 +133,7 @@ type liveLoan struct {
 // closure reports whether the loan is a closure's capture. E4 makes a capture count as
 // used only while the closure runs, so between calls it conflicts only with a move.
 func (l *liveLoan) closure() bool {
-	_, ok := l.ev.node.(ast.Func)
-	return ok
+	return isFuncNode(l.ev.node)
 }
 
 // dataflowState is what the pass knows at one program point: the places moved on some path
@@ -254,6 +254,10 @@ type bodyDataflow struct {
 	// errs collects the diagnostics of the reporting sweep. It is nil while the pass is
 	// still iterating to a fixed point, and nothing is reported then.
 	errs *[]SolverError
+	// blamed holds the span of each diagnostic in errs. One expression can emit several
+	// events, such as the move of each field `val {f, g} = p` takes, and the expression is
+	// reported once.
+	blamed set.Set[ast.Span]
 }
 
 // checkBodyDataflow runs the dataflow pass over the body t records and returns the
@@ -307,6 +311,7 @@ func checkBodyDataflow(t *ownershipEvents) []SolverError {
 
 	var errs []SolverError
 	d.errs = &errs
+	d.blamed = set.NewSet[ast.Span]()
 
 	for _, b := range blocks {
 		if in[b.ID] != nil {
@@ -384,9 +389,14 @@ func (d *bodyDataflow) step(ev ownershipEvent, at liveness.StmtRef, s *dataflowS
 // borrow of ev.place or of a place under it reaches a value the write detaches, and the
 // pass stops tracking it.
 //
-// A write through a dynamic index, such as `xs[i] = v`, has the container `xs` as its place.
-// It writes into the container rather than replacing it, so it counts as a write strictly
-// under its place.
+// A dynamic index in the target, such as the `[i]` of `xs[i] = v` or `xs[i].x = v`, names
+// no segment of the place, so `xs[i].x` has the place `xs.x`. Each one still steps one level
+// into the value, so it adds one to the depth of the write. A write through a dynamic index
+// may reach an element other than the one a moved place or a borrow names, so it neither
+// reassigns a moved place nor ends a borrow.
+//
+// A write that uses a moved place reports only E1, the way the use-after-move subsumes the
+// conflict in the current checks.
 //
 // Writing a whole local, as in `c = &q`, also ends what c held before. c stops holding each
 // loan that a flow earlier in the source gave it. The assigned value appears after the
@@ -394,15 +404,12 @@ func (d *bodyDataflow) step(ev ownershipEvent, at liveness.StmtRef, s *dataflowS
 // later in the source can run before the assignment on an earlier iteration. c keeps the
 // loan such a flow gave it, which errs toward reporting a conflict.
 func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState) {
-	depth := len(ev.place.path)
-	dynamic := false
-	if ie, ok := ev.node.(*ast.IndexExpr); ok {
-		if _, constant := constStringKey(ie.Index); !constant {
-			depth++
-			dynamic = true
-		}
-	}
+	target, _ := ev.node.(ast.Expr)
+	dynamics := dynamicIndices(target)
+	depth := len(ev.place.path) + dynamics
+	dynamic := dynamics > 0
 
+	moved := false
 	for _, k := range slices.Sorted(maps.Keys(s.moved)) {
 		m := s.moved[k]
 		if m.place.root != ev.place.root || !pathPrefixRelated(m.place.path, ev.place.path) {
@@ -410,7 +417,10 @@ func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState
 		}
 
 		if len(m.place.path) < depth {
-			d.reportMoved(m, ev.place, ev.node)
+			// The write blames the part of its target that names the moved place, so a write
+			// to `p.x` after p moved blames `p`.
+			d.reportMoved(m, ev.place, placeExprAt(target, len(m.place.path)))
+			moved = true
 			continue
 		}
 
@@ -437,11 +447,16 @@ func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState
 
 		// A borrow made for one statement, such as a call argument, has ended by the time the
 		// statement writes, since an assignment writes after its source is evaluated.
-		if reported || l.statement || l.ev.borrow != immutableBorrow || !d.loanLive(l, at, false) {
+		if moved || reported || l.statement || l.ev.borrow != immutableBorrow || !d.loanLive(l, at, false) {
 			continue
 		}
 
-		d.report(&BorrowedValueWriteError{Place: d.placeName(ev.place), write: ev.node, borrow: l.ev.node.Span()})
+		// The target names the place as written, so `xs[1].x` keeps the index its place drops.
+		d.report(&BorrowedValueWriteError{
+			Place:  writtenPlaceName(ev.node, d.placeName(ev.place)),
+			write:  ev.node,
+			borrow: l.ev.node.Span(),
+		})
 		reported = true
 	}
 
@@ -458,7 +473,12 @@ func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState
 // while a borrow of the other kind of an overlapping place is live. A closure capture is
 // checked against neither, since E4 counts a capture as used only while the closure runs.
 func (d *bodyDataflow) borrow(ev *borrowEvent, at liveness.StmtRef, s *dataflowState) {
-	d.checkMoved(ev.place, ev.node, s)
+	// A written borrow `&a` of a moved place blames its operand `a`, the place it reads.
+	use := ev.node
+	if be, ok := ev.node.(*ast.BorrowExpr); ok {
+		use = be.Arg
+	}
+	d.checkMoved(ev.place, use, s)
 
 	l := &liveLoan{ev: ev, holders: map[liveness.VarID]ast.Node{}}
 	if !l.closure() {
@@ -502,9 +522,44 @@ func (d *bodyDataflow) move(ev *moveEvent, at liveness.StmtRef, s *dataflowState
 	}
 
 	s.moved[placeKey(ev.place)] = movedPlace{place: ev.place, node: ev.node, every: true}
+	d.mergeTupleMove(ev.place, ev.node, s)
 
 	// The holder now owns what the place held, including any borrow stored in it.
 	d.addHolder(ev.place.root, ev.holder, ev.node, s)
+}
+
+// mergeTupleMove replaces the moves of the elements of a tuple with one move of the whole
+// tuple once every path has moved every element a tuple pattern names over it. place is the
+// place just moved, and node is the expression that moved it. `val [x, y] = b` moves `b.0`
+// and `b.1`, and then a later use of b reads a moved value rather than a partially moved one.
+//
+// An element that only some paths moved keeps its own move. Two paths that each move a
+// different element leave the tuple partially moved on both, so merging their moves would
+// report a whole move no path made. Merging only moves made on every path also lets the
+// loop iteration in checkBodyDataflow converge. A move that only a loop's back edge carries
+// is not made on every path into the loop, so it never decides whether a path merges.
+func (d *bodyDataflow) mergeTupleMove(place movePlace, node ast.Node, s *dataflowState) {
+	for len(place.path) > 0 {
+		tuple := movePlace{root: place.root, path: place.path[:len(place.path)-1]}
+		parts := d.table.tupleParts[placeKey(tuple)]
+		if len(parts) == 0 {
+			return
+		}
+
+		keys := make([]string, len(parts))
+		for i, seg := range parts {
+			keys[i] = placeKey(movePlace{root: tuple.root, path: append(slices.Clip(tuple.path), seg)})
+			if m, moved := s.moved[keys[i]]; !moved || !m.every {
+				return
+			}
+		}
+
+		for _, k := range keys {
+			delete(s.moved, k)
+		}
+		s.moved[placeKey(tuple)] = movedPlace{place: tuple, node: node, every: true}
+		place = tuple
+	}
 }
 
 // holdLoan records holder as a holder of l, through the flow whose expression is node.
@@ -628,11 +683,77 @@ func (d *bodyDataflow) liveOnEntry(block int, h liveness.VarID, seen set.Set[int
 	return false
 }
 
-// report records e when d is reporting.
-func (d *bodyDataflow) report(e SolverError) {
-	if d.errs != nil {
-		*d.errs = append(*d.errs, e)
+// placeChain returns the member and index chain e roots, from e itself down to its root.
+func placeChain(e ast.Expr) []ast.Expr {
+	var chain []ast.Expr
+	for e != nil {
+		chain = append(chain, e)
+		switch x := e.(type) {
+		case *ast.MemberExpr:
+			e = x.Object
+		case *ast.IndexExpr:
+			e = x.Object
+		default:
+			e = nil
+		}
 	}
+	return chain
+}
+
+// namesSegment reports whether e adds a segment to the place its object names, as exprPlace
+// decides. A static member and a constant-string index do, and a dynamic index does not.
+func namesSegment(e ast.Expr) bool {
+	switch x := e.(type) {
+	case *ast.MemberExpr:
+		return x.Prop != nil && x.Prop.Name != ""
+	case *ast.IndexExpr:
+		_, constant := constStringKey(x.Index)
+		return constant
+	}
+	return false
+}
+
+// dynamicIndices returns the number of dynamic indices in the member and index chain e roots.
+// `xs[i].x` has one.
+func dynamicIndices(e ast.Expr) int {
+	n := 0
+	for _, x := range placeChain(e) {
+		if _, ok := x.(*ast.IndexExpr); ok && !namesSegment(x) {
+			n++
+		}
+	}
+	return n
+}
+
+// placeExprAt returns the outermost expression of the member and index chain e roots whose
+// place has depth segments. For depth 0 that is `p` in `p.x` and `xs[i]` in `xs[i].x`, since
+// a dynamic index adds no segment. It returns e when no expression of the chain has that
+// depth.
+func placeExprAt(e ast.Expr, depth int) ast.Node {
+	chain := placeChain(e)
+	n := 0
+	var found ast.Node = e
+	for i := len(chain) - 1; i >= 0; i-- {
+		if i < len(chain)-1 && namesSegment(chain[i]) {
+			n++
+		}
+		if n > depth {
+			break
+		}
+		if n == depth {
+			found = chain[i]
+		}
+	}
+	return found
+}
+
+// report records e when d is reporting and no diagnostic is reported at e's span yet.
+func (d *bodyDataflow) report(e SolverError) {
+	if d.errs == nil || d.blamed.Contains(e.Span()) {
+		return
+	}
+	d.blamed.Add(e.Span())
+	*d.errs = append(*d.errs, e)
 }
 
 // placeName renders p for a diagnostic as the root's name followed by its field path, the

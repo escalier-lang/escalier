@@ -1546,7 +1546,7 @@ func TestFlowMatrix(t *testing.T) {
 					}
 				}
 			`,
-			want: []string{"5:20-5:21: use of partially moved value 'p'; field 'p.f' was moved out"},
+			want: []string{"5:20-5:21: use of moved value 'p.f'"},
 		},
 		{
 			column: "MoveInALoop",
@@ -1573,7 +1573,7 @@ func TestFlowMatrix(t *testing.T) {
 					}
 				}
 			`,
-			want: []string{"11:15-11:21: use of moved value 'p'"},
+			want: []string{"11:15-11:16: use of moved value 'p'"},
 		},
 		{
 			column: "MoveInALoop",
@@ -2660,7 +2660,7 @@ func TestFlowMatrix(t *testing.T) {
 					return r.f.x
 				}
 			`,
-			want: []string{"5:19-5:20: cannot move 'p' while it is borrowed"},
+			want: []string{"5:19-5:20: cannot move 'p.f' while it is borrowed"},
 		},
 		// Moving a source into a `val mut` binding while an immutable borrow of it is live is rejected,
 		// since the new owner could write what the borrow reads. Rule E3.
@@ -2717,7 +2717,7 @@ func TestFlowMatrix(t *testing.T) {
 					return r.f.x
 				}
 			`,
-			want: []string{"5:20-5:21: cannot move 'p' while it is borrowed"},
+			want: []string{"5:20-5:21: cannot move 'p.f' while it is borrowed"},
 		},
 		// Moving a source while a mutable borrow of it is live is rejected. Rule E3.
 		{
@@ -2797,7 +2797,7 @@ func TestFlowMatrix(t *testing.T) {
 					r.f.x = 2
 				}
 			`,
-			want: []string{"5:19-5:20: cannot move 'p' while it is borrowed"},
+			want: []string{"5:19-5:20: cannot move 'p.f' while it is borrowed"},
 		},
 		{
 			column: "MoveWhileMutablyBorrowed",

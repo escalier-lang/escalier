@@ -658,6 +658,9 @@ type funcCtx struct {
 	// once the whole body, loop back edges included, has been walked, so a use that
 	// some reaching path moved is caught even when the move is textually later.
 	useSites []moveUse
+	// memberUses maps each member or index expression recordMemberUse recorded to the index
+	// of its read in useSites.
+	memberUses map[ast.Node]int
 	// eagerBorrowGraph records, per binding root VarID, the function-locals it borrows through
 	// an explicit `&`/`&mut`, each tagged with the field path holding the borrow. The
 	// initializer `val a = {peer: &mut b}` records the edge a → b at path [peer]. The

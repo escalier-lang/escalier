@@ -2397,6 +2397,9 @@ func (c *checker) checkReceiverMut(blame ast.Node, name string, recv soltype.Typ
 	if inner == nil {
 		return
 	}
+	// A method takes its receiver as `self`, so a use of a moved receiver at the access
+	// `c.take` blames `c`, the place the method takes.
+	c.blameReceiver(blame)
 	selfRef, isBorrow := self.Type.(*soltype.RefType)
 	if !isBorrow || selfRef.Lt == nil {
 		if len(heldBorrows(recv)) > 0 {
