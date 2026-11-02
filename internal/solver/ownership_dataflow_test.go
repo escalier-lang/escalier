@@ -22,9 +22,13 @@ func inferWithDataflow(t *testing.T, src string) []string {
 
 // wantForPass returns the diagnostics a test that infers with the default options expects:
 // wantDataflow when ownershipDataflowEnv turns the dataflow pass on and wantDataflow is not
-// nil, and want otherwise.
+// nil, and want otherwise. An empty wantDataflow that is not nil expects no diagnostic, and
+// comes back as nil to match messagesWithSpan.
 func wantForPass(want, wantDataflow []string) []string {
 	if ownershipDataflowFromEnv() && wantDataflow != nil {
+		if len(wantDataflow) == 0 {
+			return nil
+		}
 		return wantDataflow
 	}
 	return want
@@ -962,6 +966,100 @@ func TestOwnershipDataflow(t *testing.T) {
 					return n
 				}
 			`,
+		},
+		{
+			// a's immutable borrow of b is live through the return, so `&mut b` breaks E2.
+			// The frame-exit check finds the same pair of paths and is not reported again.
+			name: "E2AtAReturnReplacesTheSharedPathsCheck",
+			src: `
+				fn build() -> [&{value: number}, &mut {value: number}] {
+					val mut b = {value: 2}
+					val mut a = {peer: &b}
+					return [a.peer, &mut b]
+				}
+			`,
+			errs: []string{"cannot borrow 'b' as mutable while it is borrowed as immutable"},
+		},
+		{
+			// The store's `&b` breaks E2 against a's mutable borrow, which the return keeps
+			// live. The frame-exit check pairs the same store with the return.
+			name: "E2AtAStoreReplacesTheMixedOutflowCheck",
+			src: `
+				fn f(p: &mut {r: &{value: number}}) -> {peer: &mut {value: number}} {
+					val mut b = {value: 1}
+					val a = {peer: &mut b}
+					p.r = &b
+					return a
+				}
+			`,
+			errs: []string{"cannot borrow 'b' as immutable while it is borrowed as mutable"},
+		},
+		{
+			// The pass reports E2 for `&b.x` inside the store into p. The frame-exit check pairs
+			// the `&b.y` of that store with the store into q, which is another conflict, so it
+			// stays.
+			name: "E2OnAnotherFieldKeepsTheMixedOutflowCheck",
+			src: `
+				fn f(p: &mut {r: {x: &{v: number}, y: &{v: number}}}, q: &mut {r: &mut {v: number}}) {
+					val mut b = {x: {v: 1}, y: {v: 2}}
+					val a = &mut b.x
+					p.r = {x: &b.x, y: &b.y}
+					a.v = 3
+					q.r = &mut b.y
+				}
+			`,
+			errs: []string{
+				"'b' leaves the function through a mutable path and an immutable one",
+				"cannot borrow 'b.x' as immutable while it is borrowed as mutable",
+			},
+		},
+		{
+			// The pass reports no E2 conflict for the two borrows t takes in one literal, so
+			// the frame-exit check keeps its diagnostic.
+			// The pass reports E2 at the store's `&b`. The frame-exit check reports that b
+			// leaves both owned and through a borrow, which is not a pair E2 covers, so it stays.
+			name: "AnOwnedOutflowStaysBesideE2",
+			src: `
+				fn f(p: &mut {r: &{v: number}}) -> {v: number} {
+					val mut b = {v: 1}
+					val a = &mut b
+					p.r = &b
+					a.v = 2
+					return b
+				}
+			`,
+			errs: []string{
+				"'b' leaves the function both as an owned value and through a borrow",
+				"cannot borrow 'b' as immutable while it is borrowed as mutable",
+			},
+		},
+		{
+			name: "SharedPathsTheDataflowPassMissesStayReported",
+			src: `
+				fn build() {
+					val mut b = {x: {n: 1}, y: {n: 2}}
+					val t = {p: &mut b.x, q: &b.x}
+					return t
+				}
+			`,
+			errs: []string{"returned value reaches 'b' through a mutable path and an immutable one"},
+		},
+		{
+			// The pass reports E2 for c inside the return, which replaces the frame-exit
+			// diagnostic about c. The one about b names another local, so it stays.
+			name: "E2OnAnotherLocalKeepsTheSharedPathsCheck",
+			src: `
+				fn build() {
+					val mut b = {x: {n: 1}, y: {n: 2}}
+					val mut c = {n: 3}
+					val t = {p: &mut b.x, q: &b.x}
+					return [t, &c, &mut c]
+				}
+			`,
+			errs: []string{
+				"returned value reaches 'b' through a mutable path and an immutable one",
+				"cannot borrow 'c' as mutable while it is borrowed as immutable",
+			},
 		},
 		{
 			// The first argument passes m to a `&` parameter while the second passes it to one

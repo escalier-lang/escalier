@@ -23,6 +23,9 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 	tests := map[string]struct {
 		src  string
 		want []string
+		// wantDataflow is what the case expects with the dataflow pass on, when that differs
+		// from want. The pass reports a pair of paths by E2 in place of the frame-exit check.
+		wantDataflow []string
 	}{
 		// An immutable borrow stored into the caller's object with nothing after it is the
 		// only path to p once f returns.
@@ -348,6 +351,9 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 				}
 			`,
 			want: []string{"6:13-6:14: 'b' leaves the function through a mutable path and an immutable one"},
+			// a's mutable borrow of b is live until the return reads a, so the store's `&b`
+			// breaks E2.
+			wantDataflow: []string{"5:12-5:14: cannot borrow 'b' as immutable while it is borrowed as mutable"},
 		},
 		// The writes between iterations happen before the caller can read `p.r`, so it sees b's
 		// final value.
@@ -454,6 +460,8 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 				}
 			`,
 			want: []string{"6:13-6:33: returned value reaches 'e' through a mutable path and an immutable one"},
+			// `&e` lasts for the return statement, so `&mut e` beside it breaks E2.
+			wantDataflow: []string{"6:26-6:32: cannot borrow 'e' as mutable while it is borrowed as immutable"},
 		},
 		// A later store into the same field repoints it, so b is no longer reachable through
 		// `p.r` and its loan ends there. Moving b before p is read again is fine.
@@ -473,7 +481,25 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tc.src)
-			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+			require.Equal(t, wantForPass(tc.want, tc.wantDataflow), messagesWithSpan(t, errs))
 		})
 	}
+}
+
+// TestMixedOutflowAtAReturnRelatesTheOtherSite asserts that a return whose path to a local
+// disagrees with a path another site hands out is blamed on the return, with the other site
+// as the related span.
+func TestMixedOutflowAtAReturnRelatesTheOtherSite(t *testing.T) {
+	src := `
+declare fn take(x: {peer: &{value: number}}) -> undefined
+fn f(p: &mut {peer: &mut {value: number}}) {
+	val mut c = {value: 1}
+	take({peer: &c})
+	return &mut c
+}
+`
+	_, _, errs := inferSource(t, src)
+	requireBlame(t, src, errs,
+		"6:9-6:15: 'c' leaves the function through a mutable path and an immutable one",
+		"&mut c", "{peer: &c}")
 }

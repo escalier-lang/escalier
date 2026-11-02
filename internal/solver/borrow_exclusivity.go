@@ -96,8 +96,13 @@ type BorrowAliasError struct {
 	// closure marks a conflict in which one of the two borrows is a closure's capture. E4
 	// counts a capture as used while the closure runs, so it checks this conflict.
 	closure bool
-	node    ast.Node
-	first   ast.Span
+	// root is the VarID of the local Place starts with, and places holds the place of the
+	// blamed borrow and then of the live one. The dataflow pass sets both, and the current
+	// checks leave them zero.
+	root   liveness.VarID
+	places [2]movePlace
+	node   ast.Node
+	first  ast.Span
 }
 
 func (*BorrowAliasError) isSolverError()        {}
