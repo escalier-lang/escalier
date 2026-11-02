@@ -2990,6 +2990,22 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 	return c.inferFieldAssign(scope, lvl, e, m.Object, m.Prop.Name, recv, place, source, assignStmt)
 }
 
+// fieldWriteMember returns the member a write of the field name through a receiver of type
+// recv stores into, preferring the setter half of a getter/setter pair. The member is looked
+// up on the receiver's class instance, class body, or class value, or on its known object
+// shape. A binding's read is a variable bounded below by the value it holds, so an owned
+// value is looked up through that bound. It returns false when the receiver declares no such
+// member, as a receiver whose shape is still being inferred does.
+func (c *checker) fieldWriteMember(name string, recv soltype.Type) (soltype.ObjTypeElem, bool) {
+	carrier := readCarrier(recv)
+	if _, isVar := carrier.(*soltype.TypeVarType); isVar {
+		if owned := c.ownedCarrier(recv); owned != nil {
+			carrier = owned
+		}
+	}
+	return c.writeMember(name, carrier)
+}
+
 // inferFieldAssign types a write of field `name` on the receiver object, whose type
 // recv the caller has inferred. place is the place recv is an owned layer of, or nil. e is
 // the assignment and e.Left is `object.name` or a bracket form naming the same field, such
@@ -2998,17 +3014,7 @@ func (c *checker) inferFieldAssign(scope *Scope, lvl int, e *ast.BinaryExpr, obj
 	// The receiver's reads are part of this write, so the use check weighs them as a write to
 	// the target rather than as reads of the receiver.
 	c.noteFieldWrite(e.Left, object)
-	// The member is looked up once on the receiver's class instance, class body, or class
-	// value, or on its known object shape. A receiver whose shape is still being inferred
-	// declares no member. A binding's read is a variable bounded below by the value it
-	// holds, so an owned value is looked up through that bound.
-	carrier := readCarrier(recv)
-	if _, isVar := carrier.(*soltype.TypeVarType); isVar {
-		if owned := c.ownedCarrier(recv); owned != nil {
-			carrier = owned
-		}
-	}
-	member, _ := c.writeMember(name, carrier)
+	member, _ := c.fieldWriteMember(name, recv)
 	// An accessor named prop resolves here rather than through the structural requirement
 	// below, whose element is a PropertyElem. constrain's object arm matches the sub side
 	// with ObjectType.Prop, so an accessor would read there as a missing property. A getter

@@ -69,6 +69,17 @@ func TestMoveSemantics(t *testing.T) {
 				}
 			`,
 		},
+		// An alias that names a borrow is a borrow, so binding it copies the borrow and the
+		// second binding reads a source that was not moved.
+		"AliasOfBorrowBoundTwiceOk": {
+			src: `
+				type R = &{x: number}
+				fn test(r: R) {
+					val a = r
+					val b = r
+				}
+			`,
+		},
 		// A field of value type copies, so binding it moves nothing and the field and its
 		// object stay usable.
 		"ValueFieldReadTwiceOk": {

@@ -42,16 +42,18 @@ func inferOwnershipEvents(t *testing.T, src, fn string) (*ownershipEvents, []str
 // ownershipEventsCase is one program whose ownership events a test asserts. fn names the
 // function whose body's events are listed, and defaults to `go`. want lists every event of
 // that body in the order the walk emitted them, each prefixed with the CFG node it is
-// attached to.
+// attached to. errs lists every diagnostic the program reports, and is nil for a program
+// that checks clean.
 type ownershipEventsCase struct {
 	name string
 	src  string
 	fn   string
 	want []string
+	errs []string
 }
 
-// runOwnershipEvents asserts each case's events. Every program checks clean, since emitting
-// the events reports nothing.
+// runOwnershipEvents asserts each case's events and diagnostics. Emitting the events reports
+// nothing, so a diagnostic comes from the rest of the checker.
 func runOwnershipEvents(t *testing.T, cases []ownershipEventsCase) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -62,7 +64,11 @@ func runOwnershipEvents(t *testing.T, cases []ownershipEventsCase) {
 
 			table, errs := inferOwnershipEvents(t, tc.src, fn)
 			require.Equal(t, tc.want, renderOwnershipEvents(table))
-			require.Empty(t, errs)
+			if tc.errs == nil {
+				require.Empty(t, errs)
+				return
+			}
+			require.Equal(t, tc.errs, errs)
 		})
 	}
 }
@@ -800,6 +806,104 @@ func TestOwnershipEventsBranchInsideExpression(t *testing.T) {
 				"b0.3: move(`q`, `x.0`)",          // the alternative's tail `q` moves into element 0 of x
 				"b0.3: borrow(&, `r`, `x.1`, '1)", // `&r` in element 1
 				"b0.4: move(`x`, return)",         // `return x`
+			},
+		},
+	})
+}
+
+// TestOwnershipEventsBorrowTypes covers sources and destinations whose type is a borrow
+// spelled through an alias or a union. An alias stands for the borrow it expands to. A union
+// borrows `&mut` only when every borrow member is `&mut`.
+func TestOwnershipEventsBorrowTypes(t *testing.T) {
+	runOwnershipEvents(t, []ownershipEventsCase{
+		{
+			name: "AliasOfBorrowBinding",
+			src: `
+				type R = &{x: number}
+				fn go(s: R) {
+					val p: R = s
+					return p
+				}
+			`,
+			want: []string{
+				"b0.0: copy(`s`, `p`)",    // `val p: R = s` copies, since R names a borrow
+				"b0.1: copy(`p`, return)", // `return p` copies the borrow on
+			},
+		},
+		{
+			name: "AliasOfBorrowRestField",
+			src: `
+				type R = &{x: number}
+				fn go(o: {a: {x: number}, b: R}) {
+					val {a, ...rest} = o
+					return [a, rest]
+				}
+			`,
+			want: []string{
+				"b0.0: move(`o.a`, `a`)",               // `val {a, ...rest} = o` moves the owned field a into a
+				"b0.0: borrow(&, `o.b`, `rest.b`, '1)", // `...rest` takes the field b, whose type R names a borrow, so it borrows again
+				"b0.1: move(`a`, return.0)",            // `a` in `return [a, rest]`
+				"b0.1: move(`rest`, return.1)",         // `rest` in `return [a, rest]`
+			},
+		},
+		{
+			name: "MixedMutabilityUnion",
+			src: `
+				fn go(r: &mut {v: {x: number}} | &{v: {x: number}} | undefined) -> number {
+					val {v} = r else { return 0 }
+					return v.x
+				}
+			`,
+			want: []string{
+				"b2.entry: borrow(&, `r.v`, `v`, '1)", // `val {v} = r else ...` borrows immutably, since one member of r's type is `&`
+				"b2.0: use(`v.x`, read)",              // `return v.x`
+			},
+		},
+	})
+}
+
+// TestOwnershipEventsFieldWriteThroughOwnedBound asserts that a field store takes the
+// ownership of the field the receiver declares when the receiver's read is a variable bounded
+// below by an owned value. A module-level binding read inside a function is such a variable.
+// The store of the owned q into the borrow field f is a borrow, and the checker reports the
+// missing `&`.
+func TestOwnershipEventsFieldWriteThroughOwnedBound(t *testing.T) {
+	runOwnershipEvents(t, []ownershipEventsCase{
+		{
+			name: "ModuleLevelReceiver",
+			src: `
+				val base = {x: 1}
+				var mut h: {f: &{x: number}} = {f: &base}
+				fn go() {
+					val q = {x: 1}
+					h.f = q
+				}
+			`,
+			want: []string{
+				"b0.1: borrow(&, `q`, `h.f`, '1)", // `h.f = q` borrows q, since h declares f as a borrow
+				"b0.1: use(`h.f`, write)",         // `h.f = q` writes h.f
+			},
+			errs: []string{"this value is borrowed by its destination, so write the borrow: `&`"},
+		},
+	})
+}
+
+// TestOwnershipEventsBracketPlace asserts that a place segment whose name is not an
+// identifier renders in bracket notation, so `o["a.b"]` does not read as the nested `o.a.b`.
+func TestOwnershipEventsBracketPlace(t *testing.T) {
+	runOwnershipEvents(t, []ownershipEventsCase{
+		{
+			name: "DottedKey",
+			src: `
+				fn go() {
+					val o = {"a.b": {x: 1}}
+					val q = o["a.b"]
+					return q
+				}
+			`,
+			want: []string{
+				"b0.1: move(`o[\"a.b\"]`, `q`)", // `val q = o["a.b"]` moves the field named `a.b`
+				"b0.2: move(`q`, return)",       // `return q`
 			},
 		},
 	})
