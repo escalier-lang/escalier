@@ -448,9 +448,9 @@ func (c *checker) emitPatternFlows(pat ast.Pat, source ast.Expr, ref liveness.St
 // builder runs the target in a statement of its own and adds an edge from that statement's
 // block to each branch's block in order. A `match` adds its arms in source order, an
 // `if val` adds its consequent first, and a `val … else` adds its `else` block first. The
-// point is StmtIdx -1 of that branch's block. A branch the CFG builder gave no block of its own, such
-// as an arm of a `match` in a `return`, runs at the point of the expression holding it,
-// which siteRef names when hasSite is set. ok is false when neither point is known.
+// point is StmtIdx -1 of that branch's block. A branch the CFG builder gave no block of its own,
+// such as an arm of a `match` inside an array literal, runs at the point of the expression
+// holding it, which siteRef names when hasSite is set. ok is false when neither point is known.
 func (c *checker) branchEntryRef(target ast.Expr, i int, siteRef liveness.StmtRef, hasSite bool) (liveness.StmtRef, bool) {
 	if c.eventTable() == nil {
 		return liveness.StmtRef{}, false

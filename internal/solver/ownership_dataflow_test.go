@@ -103,6 +103,65 @@ func TestOwnershipDataflow(t *testing.T) {
 			`,
 		},
 		{
+			// Only one arm runs, so the move in one arm leaves p usable in the other.
+			name: "E1MoveInEachArmOfReturnedIf",
+			src: `
+				fn go(c: boolean, p: {a: {x: number}}) {
+					return if c { p } else { p }
+				}
+			`,
+		},
+		{
+			name: "E1PartialMoveInOneArmOfReturnedIf",
+			src: `
+				fn go(c: boolean, p: {a: {x: number}}) {
+					return if c { p.a } else { p }
+				}
+			`,
+		},
+		{
+			name: "E1MoveInEachArmOfReturnedMatch",
+			src: `
+				fn go(c: boolean, p: {a: {x: number}}) {
+					return match c {
+						true => p,
+						false => p,
+					}
+				}
+			`,
+		},
+		{
+			name: "E1MoveInEachArmOfIfBoundThenReturned",
+			src: `
+				fn go(c: boolean, p: {a: {x: number}}) {
+					val r = if c { p } else { p }
+					return r
+				}
+			`,
+		},
+		{
+			name: "E1ReturnInEachArmOfIf",
+			src: `
+				fn go(c: boolean, p: {a: {x: number}}) {
+					if c {
+						return p
+					} else {
+						return p
+					}
+				}
+			`,
+		},
+		{
+			// The first arm moves p twice on one path, so E1 still rejects it.
+			name: "E1DoubleMoveInOneArmOfReturnedIf",
+			src: `
+				fn go(c: boolean, p: {a: {x: number}}) {
+					return if c { [p, p] } else { p }
+				}
+			`,
+			errs: []string{"use of moved value 'p'"},
+		},
+		{
 			name: "E1MoveInLoop",
 			src: `
 				fn go(items: Array<number>) {
