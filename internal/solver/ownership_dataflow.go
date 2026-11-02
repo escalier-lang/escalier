@@ -133,15 +133,15 @@ func storedAliasReported(errs []SolverError) func(SolverError) bool {
 // sharedPathsReported returns a filter that matches a frame-exit diagnostic of the current
 // checks when the dataflow pass reports the same conflict. found holds the pass's diagnostics.
 // The filter matches a SharedReturnPathsError, or a MixedOutflowPathsError that is not Owned,
-// when found holds a BorrowAliasError about the same local. That error's span, or the span of
-// a return its paths flow into, must lie inside the frame-exit diagnostic's span or its
-// related span.
+// when found holds a BorrowAliasError about the same local whose two places overlap the
+// frame-exit diagnostic's two places, one each. The BorrowAliasError's span, or the span of a
+// return its paths flow into, must lie inside the frame-exit diagnostic's span or its related
+// span.
 func sharedPathsReported(found []SolverError) func(SolverError) bool {
-	reports := map[liveness.VarID][]ast.Span{}
+	reports := map[liveness.VarID][]*BorrowAliasError{}
 	for _, err := range found {
 		if e, ok := err.(*BorrowAliasError); ok && e.root != 0 {
-			reports[e.root] = append(reports[e.root], e.Span())
-			reports[e.root] = append(reports[e.root], e.exits...)
+			reports[e.root] = append(reports[e.root], e)
 		}
 	}
 	if len(reports) == 0 {
@@ -150,25 +150,40 @@ func sharedPathsReported(found []SolverError) func(SolverError) bool {
 
 	return func(err SolverError) bool {
 		var local liveness.VarID
+		var places [2]movePlace
 		switch e := err.(type) {
 		case *SharedReturnPathsError:
-			local = e.local
+			local, places = e.local, e.places
 		case *MixedOutflowPathsError:
 			if e.Owned {
 				return false
 			}
-			local = e.local
+			local, places = e.local, e.places
 		default:
 			return false
 		}
 
 		for _, r := range reports[local] {
-			if err.Span().ContainsSpan(r) || slices.ContainsFunc(err.Related(), func(s ast.Span) bool { return s.ContainsSpan(r) }) {
-				return true
+			// A conflict on another field of the same local, such as `b.x` beside a frame-exit
+			// pair on `b.y`, is a separate conflict, so it does not match.
+			if !pairsOverlap(r.places, places) {
+				continue
+			}
+
+			for _, span := range append([]ast.Span{r.Span()}, r.exits...) {
+				if err.Span().ContainsSpan(span) || slices.ContainsFunc(err.Related(), func(s ast.Span) bool { return s.ContainsSpan(span) }) {
+					return true
+				}
 			}
 		}
 		return false
 	}
+}
+
+// pairsOverlap reports whether each place of a overlaps a different place of b.
+func pairsOverlap(a, b [2]movePlace) bool {
+	return (placesOverlap(a[0], b[0]) && placesOverlap(a[1], b[1])) ||
+		(placesOverlap(a[0], b[1]) && placesOverlap(a[1], b[0]))
 }
 
 // closureMoveReported returns a filter that matches each E4 diagnostic of the current checks
@@ -729,6 +744,17 @@ func (d *bodyDataflow) borrow(ev *borrowEvent, at liveness.StmtRef, s *dataflowS
 
 	// A borrow through a holder keeps the holder's loans live while the new borrow is.
 	d.addHolder(ev.place, ev.holder, ev.node, s)
+	if !l.static {
+		return
+	}
+
+	// A `'static` borrow keeps them live at every later point. A closure stored into
+	// module-level state through a local borrows its captures this way.
+	for _, held := range s.loans {
+		if held.heldAt(ev.place) {
+			held.static = true
+		}
+	}
 }
 
 // liveInBody reports whether the new path l is live in the body right after the point at
@@ -777,6 +803,7 @@ func (d *bodyDataflow) checkNewPath(place movePlace, kind borrowKind, node ast.N
 				FirstMut:   first.ev.borrow == mutableBorrow,
 				SecondMut:  kind == mutableBorrow,
 				root:       place.root,
+				places:     [2]movePlace{place, first.ev.place},
 				exits:      d.returnSpans(first, fresh),
 				node:       node,
 				first:      first.ev.node.Span(),
@@ -913,15 +940,32 @@ func (d *bodyDataflow) derivedLoan(ev *copyEvent, from *liveLoan, s *dataflowSta
 
 // move applies the move ev. E1 rejects a move of a moved place, and E3 rejects a move while
 // a borrow of an overlapping place is live. A return that moves a closure's capture hands
-// over the closure's own borrow of the place too, so that borrow is no conflict.
+// over the closure's own borrow of the place too, so that borrow is no conflict. A move
+// ev.whileCaptured marks applies only while that borrow is live.
+//
+// The error blames the first conflicting borrow sortedLoans returns, and marks the move as
+// conflicting with a closure when any conflicting borrow is a closure's capture.
 func (d *bodyDataflow) move(ev *moveEvent, at liveness.StmtRef, s *dataflowState) {
+	if ev.whileCaptured && !d.capturesPlace(ev.closure, ev.place, s) {
+		return
+	}
+
 	if !d.checkMoved(ev.place, ev.node, s) {
+		var err *MoveWhileBorrowedError
 		for _, l := range d.sortedLoans(s) {
 			own := ev.closure != nil && l.ev.node == ev.closure
-			if !own && !l.alias && placesOverlap(l.ev.place, ev.place) && d.loanLive(l, at, true) {
-				d.report(&MoveWhileBorrowedError{Place: d.placeName(ev.place), move: ev.node, borrow: l.ev.node.Span(), closure: l.closure()})
-				break
+			if own || l.alias || !placesOverlap(l.ev.place, ev.place) || !d.loanLive(l, at, true) {
+				continue
 			}
+
+			if err == nil {
+				err = &MoveWhileBorrowedError{Place: d.placeName(ev.place), move: ev.node, borrow: l.ev.node.Span()}
+			}
+			err.closure = err.closure || l.closure()
+		}
+
+		if err != nil {
+			d.report(err)
 		}
 	}
 
@@ -930,6 +974,16 @@ func (d *bodyDataflow) move(ev *moveEvent, at liveness.StmtRef, s *dataflowState
 
 	// The holder now owns what the place held, including any borrow stored in it.
 	d.addHolder(ev.place, ev.holder, ev.node, s)
+}
+
+// capturesPlace reports whether s holds closure's own borrow of place.
+func (d *bodyDataflow) capturesPlace(closure ast.Func, place movePlace, s *dataflowState) bool {
+	for _, l := range s.loans {
+		if l.ev.node == closure && placeKey(l.ev.place) == placeKey(place) {
+			return true
+		}
+	}
+	return false
 }
 
 // mergeTupleMove replaces the moves of the elements of a tuple with one move of the whole

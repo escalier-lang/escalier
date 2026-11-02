@@ -96,9 +96,11 @@ type BorrowAliasError struct {
 	// closure marks a conflict in which one of the two borrows is a closure's capture. E4
 	// counts a capture as used while the closure runs, so it checks this conflict.
 	closure bool
-	// root is the VarID of the local Place starts with. The dataflow pass sets it, and the
-	// current checks leave it zero.
-	root liveness.VarID
+	// root is the VarID of the local Place starts with, and places holds the place of the
+	// blamed borrow and then of the live one. The dataflow pass sets both, and the current
+	// checks leave them zero.
+	root   liveness.VarID
+	places [2]movePlace
 	// exits holds the span of each return a holder of either path flows into. The dataflow
 	// pass sets it, so sharedPathsReported can match a frame-exit diagnostic at that return.
 	exits []ast.Span
