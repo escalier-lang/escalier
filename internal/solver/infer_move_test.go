@@ -11,11 +11,13 @@ import (
 // an owned source, so a later use of it is a use-after-move. The flow sites are a
 // binding, a reassignment, a return, an owned-parameter argument, a field store, an
 // object or tuple literal element, and a module-level write. A borrow site leaves the
-// source usable. want is nil for the cases that check cleanly.
+// source usable. want is nil for the cases that check cleanly. wantDataflow, when set, is
+// what the case reports with the dataflow pass on, as wantForPass picks.
 func TestMoveSemantics(t *testing.T) {
 	tests := map[string]struct {
-		src  string
-		want []string
+		src          string
+		want         []string
+		wantDataflow []string
 	}{
 		// Binding an owned value into another owned binding moves it, so the later use of
 		// the source is a use-after-move.
@@ -379,9 +381,12 @@ func TestMoveSemantics(t *testing.T) {
 				"9:7-9:10: cannot assign to 'p.x' while it is borrowed as immutable",
 			},
 		},
-		// Storing p into the global consumes it, so the later borrow `val snap = p` is a
-		// single use-after-move, not also a stale 'static-escape transition.
-		"GlobalEscapeReportsSingleUseAfterMove": {
+		// The current checks move the borrow p into the global, so the later borrow
+		// `val snap = p` is a single use-after-move. F2 copies a borrow instead, as D8
+		// decides, and the copy into the global is `'static`. The dataflow pass follows F2,
+		// so the global keeps a mutable path to p for the rest of the program, and the
+		// immutable path `val snap = p` breaks E2.
+		"GlobalEscapeReportsStaticMutablePath": {
 			src: `
 				var sink = {x: 0}
 				fn cache(p: &mut {x: number}) {
@@ -390,7 +395,8 @@ func TestMoveSemantics(t *testing.T) {
 					snap
 				}
 			`,
-			want: []string{"5:31-5:32: use of moved value 'p'"},
+			want:         []string{"5:31-5:32: use of moved value 'p'"},
+			wantDataflow: []string{"5:31-5:32: cannot borrow 'p' as immutable while it is borrowed as mutable"},
 		},
 		// Moving a value while a mutable borrow of it is live is rejected: freezing p
 		// into immutable q while r still holds a mutable borrow would let r mutate a
@@ -550,7 +556,7 @@ func TestMoveSemantics(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tc.src)
-			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+			require.Equal(t, wantForPass(tc.want, tc.wantDataflow), messagesWithSpan(t, errs))
 		})
 	}
 }

@@ -522,23 +522,20 @@ func TestScriptTransitionParity(t *testing.T) {
 				a.x
 			`,
 		},
-		// DISABLED until #1527, which follows a borrow copied into a second binding. c copies
-		// the borrow b holds, so the write to a.x while c is live conflicts with c. Today the
-		// exclusivity check does not see that c reaches a, so both forms check clean.
-		/*
-			"ChainAlias_TargetLive_Error": {
-				stmts: `
-					val mut a: {x: number} = {x: 1}
-					val b: &mut {x: number} = &mut a
-					val c: &{x: number} = b
-					a.x = 2
-					c
-				`,
-				want: []string{
-					"cannot assign to 'a.x' while it is borrowed as immutable",
-				},
+		// c copies the borrow b holds, narrowed to `&`, so the write to a.x while c is live
+		// conflicts with c.
+		"ChainAlias_TargetLive_Error": {
+			stmts: `
+				val mut a: {x: number} = {x: 1}
+				val b: &mut {x: number} = &mut a
+				val c: &{x: number} = b
+				a.x = 2
+				c
+			`,
+			want: []string{
+				"cannot assign to 'a.x' while it is borrowed as immutable",
 			},
-		*/
+		},
 	}
 
 	for name, tt := range tests {

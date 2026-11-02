@@ -96,6 +96,8 @@ func TestOwnershipEventsCheckingModel(t *testing.T) {
 				"b0.3: use(`p.x`, write)",       // `p.x = 1`
 				"b0.4: use(`d.x`, read)",        // `return d.x` reads a `number`
 			},
+			// d copies the borrow c holds and is read after the write, so the write breaks E2.
+			errs: []string{"cannot assign to 'p.x' while it is borrowed as immutable"},
 		},
 		{
 			name: "F2Outcomes",
@@ -597,7 +599,8 @@ func TestOwnershipEventsByNode(t *testing.T) {
 			return 0
 		}
 	`, "go")
-	require.Empty(t, errs)
+	// d copies the borrow q holds and is read after the write, so the write breaks E2.
+	require.Equal(t, []string{"cannot assign to 'p.x' while it is borrowed as immutable"}, errs)
 	got := map[string][]string{}
 	ltNames := map[soltype.Lifetime]string{}
 	for at, events := range table.byNode() {

@@ -25,10 +25,13 @@ import (
 // Two immutable borrows are fine for the mirror-image reason, since neither writes.
 //
 // A loan is one borrow the checker tracks. It records the place the borrow reaches, whether a
-// write can go through it, and how long it stays usable. Loans come from three sites:
+// write can go through it, and how long it stays usable. Loans come from four sites:
 //
 //   - A `val`/`var` initializer that borrows a place, as in `val a = &mut x`. The binding holds
 //     the loan, so the loan lasts as long as that binding is live.
+//   - A `val`/`var` initializer or a reassignment that names a binding holding loans, as in
+//     `val c = a`. The new binding holds a copy of each loan, narrowed to immutable when its
+//     type is `&`.
 //   - A call argument filling a `&` or `&mut` parameter. The callee holds it for the length of
 //     the call and no name outlives that, so the loan lasts for the one statement.
 //   - A call whose signature stores one argument into another, as in `store(&mut p, &mut b)`.
@@ -50,9 +53,6 @@ import (
 //
 // What this does NOT cover yet:
 //
-//   - #1527: a borrow copied into a second binding. A loan records the place named at the
-//     borrow site, so `val a = &x; val c = a` leaves c holding nothing and a conflict against
-//     c is missed.
 //   - #1528: a borrow stored into a container and read back out. The place a loan names is
 //     the one written at the borrow site, so `holder.slot` is not known to reach what
 //     `{slot: &x}` put there.
@@ -447,15 +447,26 @@ func (c *checker) checkAgainstHeldLoans(fresh loan) {
 
 // recordBorrowLoan records the loan a `val`/`var` initializer creates, after reporting any
 // conflict with a borrow already live. `val a = &mut x` binds a loan of x to a, which then
-// lasts as long as a is read.
-func (c *checker) recordBorrowLoan(holder liveness.VarID, init ast.Expr, ref liveness.StmtRef) {
+// lasts as long as a is read. holderT is the type of the binding holder. An initializer that
+// names another binding gives holder a copy of each loan that binding holds, as
+// copyHeldLoans describes.
+func (c *checker) recordBorrowLoan(holder liveness.VarID, holderT soltype.Type, init ast.Expr, ref liveness.StmtRef) {
 	if c.fn == nil || holder <= 0 || init == nil {
+		return
+	}
+	ident, isIdent := init.(*ast.IdentExpr)
+	if isIdent && c.varIDs.Of(ident) == holder {
+		// `a = a` leaves a holding what it held.
 		return
 	}
 	// A reassignment repoints the binding, so whatever it borrowed before is unreachable
 	// through it. `var a = &mut x` followed by `a = &mut y` leaves no loan of x behind. This
 	// is the strong update the flow-sensitive borrow graph makes for the same statement.
 	c.dropLoansHeldBy(holder)
+	if isIdent {
+		c.copyHeldLoans(holder, holderT, ident, ref)
+		return
+	}
 	borrow, ok := init.(*ast.BorrowExpr)
 	if !ok {
 		return
@@ -475,6 +486,37 @@ func (c *checker) recordBorrowLoan(holder liveness.VarID, init ast.Expr, ref liv
 	}
 	c.checkAgainstHeldLoans(fresh)
 	c.fn.loans = append(c.fn.loans, fresh)
+}
+
+// copyHeldLoans gives holder, a binding of type holderT, a copy of each loan the binding
+// source names still holds, recorded at ref. `val c = a` after `val a = &x` copies the borrow
+// a holds, so c reaches x too, and the loan lasts while either binding is read. A `&` holder
+// narrows a mutable loan to an immutable one, so after `val b = &mut a`, the copy
+// `val c: &{x: number} = b` holds an immutable loan of a.
+func (c *checker) copyHeldLoans(holder liveness.VarID, holderT soltype.Type, source *ast.IdentExpr, ref liveness.StmtRef) {
+	from := c.varIDs.Of(source)
+	if from <= 0 {
+		return
+	}
+
+	writable := true
+	if b, isBorrow := c.borrowOfType(holderT); isBorrow {
+		writable = b.anyMut
+	}
+
+	// The range reads c.fn.loans once, so the copies appended below are not visited.
+	for _, l := range c.fn.loans {
+		if l.holder != from || l.endSeq != 0 || l.via != "" {
+			continue
+		}
+
+		cp := l
+		cp.mut = l.mut && writable
+		cp.holder = holder
+		cp.ref, cp.seq = ref, c.nextLoanSeq()
+		cp.fromStore, cp.callerOwned = false, false
+		c.fn.loans = append(c.fn.loans, cp)
+	}
 }
 
 // capturedLocal is a local of the current body that a closure captures.
