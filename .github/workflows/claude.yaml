@@ -51,8 +51,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      # The skill comes from the default branch, so a PR branched before the
+      # skill landed can still be reviewed.
       - name: Check out the PR branch
-        run: gh pr checkout ${{ github.event.issue.number }}
+        run: |
+          cp .claude/skills/pr-review/SKILL.md "$RUNNER_TEMP/pr-review.md"
+          gh pr checkout ${{ github.event.issue.number }}
+          mkdir -p .claude/skills/pr-review
+          cp "$RUNNER_TEMP/pr-review.md" .claude/skills/pr-review/SKILL.md
         env:
           GH_TOKEN: ${{ github.token }}
 
