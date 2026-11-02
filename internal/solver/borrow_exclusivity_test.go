@@ -71,6 +71,32 @@ func TestBorrowExclusivity(t *testing.T) {
 			`,
 			want: []string{"6:24-6:26: cannot borrow 'x' as immutable while it is borrowed as mutable"},
 		},
+		// The callee can also narrow the mixed parameter to its `&` member and read through it
+		// while the other parameter writes, so it conflicts with a mutable parameter too.
+		"MixedMutabilityParamBesideAMutableParam": {
+			src: `
+				declare fn readWrite(a: &mut {v: number} | &{v: number}, b: &mut {v: number}) -> undefined
+
+				fn g() {
+					val mut x = {v: 1}
+					readWrite(&x, &mut x)
+				}
+			`,
+			want: []string{"6:20-6:26: cannot borrow 'x' as mutable while it is borrowed as immutable"},
+		},
+		// A union parameter that also accepts a value type copies a value-type argument, so the
+		// argument takes no loan.
+		"ValueArgumentIntoAUnionBorrowParamOk": {
+			src: `
+				declare fn readWrite(a: &{v: number} | number, b: &mut {v: number}) -> undefined
+
+				fn g() {
+					val mut x = {v: 1}
+					readWrite(x.v, &mut x)
+				}
+			`,
+			want: nil,
+		},
 		// Two writable views of one value both expect it to change, so neither is surprised by
 		// the other's write. Rule 3 of planning/lifetimes/requirements.md allows this, where Rust
 		// would not: one thread cannot observe a tear, and `&mut` is invariant in its referent, so
