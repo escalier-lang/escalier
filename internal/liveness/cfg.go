@@ -117,6 +117,16 @@ func (b *cfgBuilder) processStmts(stmts []ast.Stmt, current *BasicBlock) *BasicB
 func (b *cfgBuilder) processStmt(stmt ast.Stmt, current *BasicBlock) *BasicBlock {
 	switch s := stmt.(type) {
 	case *ast.ReturnStmt:
+		// A branching expression such as `return if c { a } else { b }` gets a block per
+		// branch, the same as a branching initializer of a `val`. The return then sits at
+		// the join, which leads to the exit.
+		if s.Expr != nil {
+			if join := b.decomposeBranch(s.Expr, nil, current); join != nil {
+				b.recordDecomposed(s, join)
+				b.addEdge(join, b.exit)
+				return nil
+			}
+		}
 		current.Stmts = append(current.Stmts, stmt)
 		b.addEdge(current, b.exit)
 		return nil
