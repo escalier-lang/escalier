@@ -101,8 +101,11 @@ type BorrowAliasError struct {
 	// checks leave them zero.
 	root   liveness.VarID
 	places [2]movePlace
-	node   ast.Node
-	first  ast.Span
+	// exits holds the span of each return a holder of either path flows into. The dataflow
+	// pass sets it, so sharedPathsReported can match a frame-exit diagnostic at that return.
+	exits []ast.Span
+	node  ast.Node
+	first ast.Span
 }
 
 func (*BorrowAliasError) isSolverError()        {}

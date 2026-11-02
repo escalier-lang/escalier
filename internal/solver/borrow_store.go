@@ -138,6 +138,106 @@ func callStoreEdges(ctx *Context, fn *soltype.FuncType, self *soltype.FuncParam)
 	return out
 }
 
+// returnEdge is one position of a call's result that holds what an argument borrows, as the
+// signature spells it by sharing a lifetime between the argument and the return type. In
+//
+//	declare fn pick<'a>(p: &'a {x: number}) -> &'a {x: number}
+//
+// the result of `pick(&q)` holds the borrow of q at the empty path.
+type returnEdge struct {
+	// arg is the position of the argument, selfIndex for a method call's receiver.
+	arg int
+	// path is the field path within the result where the borrow lands. A position the walk
+	// cannot name keeps the path of its container, as storeEdge.path does.
+	path []placeSeg
+	// direct records that the shared lifetime is the argument's OWN borrow lifetime, so the
+	// result holds the argument's borrow, as storeEdge.direct describes for a store. An edge
+	// that is not direct passes only what the argument's referent holds.
+	direct bool
+}
+
+// callReturnEdges returns the edges from each argument of fn, and from the receiver self
+// when it is not nil, to the positions of the return type whose lifetime a lifetime of the
+// argument flows into, as lifetimeFlowsInto decides. Every lifetime a source position's type
+// mentions counts, the way callStoreEdges reads a source. A walk that exhausts its allowance
+// takes a direct edge at the whole result.
+func callReturnEdges(ctx *Context, fn *soltype.FuncType, self *soltype.FuncParam) []returnEdge {
+	if fn.Ret == nil {
+		return nil
+	}
+
+	sites, retTruncated := lifetimeSites(ctx, fn.Ret)
+	if len(sites) == 0 && !retTruncated {
+		return nil
+	}
+
+	// The map's order is random, so the sites are read in the order the walk reaches them.
+	retLts, _ := lifetimeVarsIn(ctx, fn.Ret)
+	var out []returnEdge
+	// own is the type of one argument the position receives, whose borrow lifetime is the
+	// argument's own.
+	add := func(i int, t, own soltype.Type) {
+		lts, truncated := lifetimeVarsIn(ctx, t)
+		if truncated || retTruncated {
+			out = append(out, returnEdge{arg: i, direct: true})
+			return
+		}
+		src, isRef := own.(*soltype.RefType)
+		for _, lv := range lts {
+			direct := isRef && src.Lt == soltype.Lifetime(lv)
+			for _, site := range retLts {
+				if lifetimeFlowsInto(lv, site) {
+					for _, path := range sites[site] {
+						out = append(out, returnEdge{arg: i, path: path, direct: direct})
+					}
+				}
+			}
+		}
+	}
+
+	if self != nil {
+		add(selfIndex, self.Type, self.Type)
+	}
+	for i, p := range fn.Params {
+		own := p.Type
+		// A rest parameter receives each argument as an element of its array.
+		if p.Rest {
+			if elem, ok := ctx.restSlotElem(p.Type); ok {
+				own = elem
+			}
+		}
+		add(i, p.Type, own)
+	}
+	return out
+}
+
+// lifetimeFlowsInto reports whether data of lifetime from can reach a borrow of lifetime to.
+// It can when the two are one variable, or when from is among the lower bounds of to,
+// directly or through other lifetime variables. A body-carrying function shares no variable between a parameter and its
+// return. Instantiating it gives the return's lifetime the parameter's as a lower bound, so
+// `fn pick(p: &{x: number}) -> &{x: number} { return p }` relates p to the result.
+func lifetimeFlowsInto(from, to *soltype.LifetimeVar) bool {
+	seen := set.NewSet[*soltype.LifetimeVar]()
+	stack := []*soltype.LifetimeVar{to}
+	for len(stack) > 0 {
+		lv := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if lv == from {
+			return true
+		}
+		if seen.Contains(lv) {
+			continue
+		}
+		seen.Add(lv)
+		for _, lb := range lv.LowerBounds {
+			if v, ok := lb.(*soltype.LifetimeVar); ok {
+				stack = append(stack, v)
+			}
+		}
+	}
+	return false
+}
+
 // selfIndex is the store position of a method call's receiver, which sits outside the
 // argument list. Every other position indexes the arguments directly.
 const selfIndex = -1

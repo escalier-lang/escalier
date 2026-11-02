@@ -147,6 +147,7 @@ func TestOwnershipEventsCheckingModel(t *testing.T) {
 				"b0.1: move(`a`, arg(`store`, 0))",         // `store(a)` moves a, since `store` stores its parameter into `sink`
 				"b0.3: use(`read`, read)",                  // `read(&b)` reads the callee `read`
 				"b0.3: borrow(&, `b`, arg(`read`, 0), '1)", // `read(&b)` passes the written borrow `&b`
+				"b0.3: pass(arg(`read`, 0), `n`)",          // `read` returns `&'a T0` through its `&'a` parameter, so n holds the borrow
 				"b0.4: use(`b.x`, read)",                   // `b.x` in the return
 				"b0.4: use(`n`, read)",                     // `n` in the return
 			},
@@ -1431,6 +1432,103 @@ func TestOwnershipEventsCapturedPaths(t *testing.T) {
 			want: []string{
 				"b0.1: borrow(&, `p`, `f`, '_)", // the walk names no field inside a nested function
 				"b0.2: use(`f`, read)",          // `f()` in the return
+			},
+		},
+	})
+}
+
+// TestOwnershipEventsCallPasses covers the pass events a call emits from its callee's
+// signature. A lifetime an argument shares with a position inside another `&mut` argument's
+// referent passes the argument's borrows to the place the target names. A lifetime it shares
+// with the return type passes them to the call's result, which the flow site of the result
+// receives. A signature that ties no argument to another position passes nothing.
+func TestOwnershipEventsCallPasses(t *testing.T) {
+	runOwnershipEvents(t, []ownershipEventsCase{
+		{
+			name: "StoreIntoAnotherArgument",
+			src: `
+				declare fn store<'a>(target: &mut {peer: &'a mut {x: number}}, item: &'a mut {x: number}) -> undefined
+				fn go(mut q: {x: number}) -> number {
+					val mut a = {peer: &mut q}
+					val mut b = {x: 1}
+					store(&mut a, &mut b)
+					return a.peer.x
+				}
+			`,
+			want: []string{
+				"b0.0: borrow(&mut, `q`, `a.peer`, '1)",
+				"b0.2: borrow(&mut, `a`, arg(`store`, 0), '2)",
+				"b0.2: borrow(&mut, `b`, arg(`store`, 1), '3)",
+				"b0.2: pass(arg(`store`, 1), `a.peer`)", // `item`'s 'a sits at `target.peer`
+				"b0.3: use(`a.peer.x`, read)",
+			},
+		},
+		{
+			name: "ReturnedBorrows",
+			src: `
+				declare fn pick<'a>(p: &'a {x: number}) -> &'a {x: number}
+				declare fn wrap<'a>(p: &'a {x: number}) -> {held: &'a {x: number}}
+				declare fn read(p: &{x: number}) -> number
+				fn go() -> number {
+					val c = {x: 2}
+					val d = pick(&c)
+					val w = wrap(&c)
+					val n = read(pick(&c))
+					val m = read(&c)
+					return d.x + w.held.x + n + m
+				}
+			`,
+			want: []string{
+				"b0.1: borrow(&, `c`, arg(`pick`, 0), '1)",
+				"b0.1: pass(arg(`pick`, 0), `d`)", // the result's 'a is p's
+				"b0.2: borrow(&, `c`, arg(`wrap`, 0), '2)",
+				"b0.2: pass(arg(`wrap`, 0), `w.held`)", // the result holds p's 'a at `held`
+				"b0.3: borrow(&, `c`, arg(`pick`, 0), '3)",
+				"b0.3: pass(arg(`pick`, 0), arg(`read`, 0))", // the result is read's argument
+				"b0.4: borrow(&, `c`, arg(`read`, 0), '4)",   // `read`'s result shares no lifetime
+				"b0.5: use(`d.x`, read)",
+				"b0.5: use(`w.held.x`, read)",
+				"b0.5: use(`n`, read)",
+				"b0.5: use(`m`, read)",
+			},
+		},
+		{
+			name: "ReceiversAndConstructors",
+			src: `
+				class Holder<'a> {
+					peer: &'a mut {x: number},
+					put(&mut self, p: &'a mut {x: number}) -> undefined { self.peer = p },
+				}
+				fn go() -> number {
+					val mut p = {x: 1}
+					val mut b = {x: 2}
+					val mut h = Holder(&mut p)
+					h.put(&mut b)
+					return h.peer.x
+				}
+			`,
+			want: []string{
+				"b0.2: borrow(&mut, `p`, arg(`Holder`, 0), '1)",
+				"b0.2: pass(arg(`Holder`, 0), `h`)", // the instance carries the constructor's 'a
+				"b0.3: borrow(&mut, `h`, arg(`put`, self), '2)",
+				"b0.3: borrow(&mut, `b`, arg(`put`, 0), '3)",
+				"b0.3: pass(arg(`put`, 0), `h`)", // `p`'s 'a is the receiver's
+				"b0.4: use(`h.peer.x`, read)",
+			},
+		},
+		{
+			name: "BorrowOfALiteralCarriesItsBorrows",
+			src: `
+				declare fn drain<'a>(src: &{held: &'a mut {x: number}}, out: &mut {slot: &'a mut {x: number}}) -> undefined
+				fn go(o: &mut {slot: &mut {x: number}}) -> undefined {
+					val mut e = {x: 3}
+					drain(&{held: &mut e}, o)
+				}
+			`,
+			want: []string{
+				"b0.1: borrow(&mut, `e`, arg(`drain`, 0).held, '1)", // `&{…}` hands its element to the argument
+				"b0.1: copy(`o`, arg(`drain`, 1))",
+				"b0.1: pass(arg(`drain`, 0), `o.slot`)",
 			},
 		},
 	})

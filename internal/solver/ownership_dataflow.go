@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"maps"
+	"math"
 	"os"
 	"slices"
 	"strings"
@@ -30,8 +31,13 @@ import (
 // copyBorrow describes. A loan held by a module-level binding, or one whose lifetime is
 // `'static`, is live at every later point. A borrow takes its kind and its `'static` lifetime
 // from its destination, so `track(&p)` with `track(v: &'static {x: number})` is `'static`.
-// A loan held by a call argument, a receiver, a return, or a temporary value lasts until the
-// end of the statement that creates it.
+// A loan held by a call argument or a receiver lasts until the call returns. Before then, a
+// passEvent can give it to the store target or the result that the callee's signature ties
+// the argument to. A
+// loan held by a return or a temporary value lasts until the end of the statement that
+// creates it. A holder is a place, so a write to `p.r` ends what `p.r` held and leaves what
+// `p.s` holds. A place under a parameter whose referent the caller owns is read by the
+// caller once the body returns or suspends, so its loans count at those points too.
 //
 // The pass runs only when the ownershipDataflow flag is set. Its diagnostics then take the
 // place of the ones replacedByDataflow lists, so the diagnostics of the two checkers can be
@@ -97,6 +103,10 @@ func (c *checker) runOwnershipDataflow() {
 	// E4's `moved` example puts the error on the move, so a move the pass rejects is
 	// reported once, there, and not again at a later call of the closure.
 	c.errs = slices.DeleteFunc(c.errs, closureMoveReported(found))
+	// The current checks name the binding that still holds the other borrow when a store
+	// breaks E2, which says more than the pass's message about the same store. This runs
+	// before the next filter, so a dropped error does not stand in for a frame-exit one.
+	found = slices.DeleteFunc(found, storedAliasReported(c.errs))
 	// L1 and E2 at the return replace the frame-exit check of a value's paths out of the
 	// frame. A pair of paths the pass reports by E2 is reported once, by the pass. The
 	// frame-exit check keeps each pair the pass does not report.
@@ -104,12 +114,29 @@ func (c *checker) runOwnershipDataflow() {
 	c.errs = append(c.errs, found...)
 }
 
+// storedAliasReported returns a filter that matches a BorrowAliasError of the dataflow pass
+// at the span of a StoredBorrowAliasError in errs.
+func storedAliasReported(errs []SolverError) func(SolverError) bool {
+	spans := set.NewSet[ast.Span]()
+	for _, err := range errs {
+		if e, ok := err.(*StoredBorrowAliasError); ok {
+			spans.Add(e.Span())
+		}
+	}
+
+	return func(err SolverError) bool {
+		_, isAlias := err.(*BorrowAliasError)
+		return isAlias && spans.Contains(err.Span())
+	}
+}
+
 // sharedPathsReported returns a filter that matches a frame-exit diagnostic of the current
 // checks when the dataflow pass reports the same conflict. found holds the pass's diagnostics.
 // The filter matches a SharedReturnPathsError, or a MixedOutflowPathsError that is not Owned,
 // when found holds a BorrowAliasError about the same local whose two places overlap the
-// frame-exit diagnostic's two places, one each. The BorrowAliasError's span must lie inside the
-// frame-exit diagnostic's span or its related span.
+// frame-exit diagnostic's two places, one each. The BorrowAliasError's span, or the span of a
+// return its paths flow into, must lie inside the frame-exit diagnostic's span or its related
+// span.
 func sharedPathsReported(found []SolverError) func(SolverError) bool {
 	reports := map[liveness.VarID][]*BorrowAliasError{}
 	for _, err := range found {
@@ -143,8 +170,10 @@ func sharedPathsReported(found []SolverError) func(SolverError) bool {
 				continue
 			}
 
-			if err.Span().ContainsSpan(r.Span()) || slices.ContainsFunc(err.Related(), func(s ast.Span) bool { return s.ContainsSpan(r.Span()) }) {
-				return true
+			for _, span := range append([]ast.Span{r.Span()}, r.exits...) {
+				if err.Span().ContainsSpan(span) || slices.ContainsFunc(err.Related(), func(s ast.Span) bool { return s.ContainsSpan(span) }) {
+					return true
+				}
 			}
 		}
 		return false
@@ -204,18 +233,36 @@ type movedPlace struct {
 	every bool
 }
 
+// heldPlace is one local place that holds a loan, and the expression of the flow that made
+// the place a holder.
+type heldPlace struct {
+	place movePlace
+	node  ast.Node
+}
+
 // liveLoan is one borrow the pass tracks.
 type liveLoan struct {
 	// ev is the borrow event that took the loan. A loan a copy derives has an event of its
 	// own, which derivedLoan makes.
 	ev *borrowEvent
-	// holders maps the root of each local place that holds the borrow or a copy of it to the
-	// expression of the flow that made it a holder.
-	holders map[liveness.VarID]ast.Node
+	// holders maps the placeKey of each local place that holds the borrow or a copy of it to
+	// that place. `out.slot = a.peer` makes `out.slot` a holder of each loan `a.peer` holds,
+	// and a later write to `out.slot` ends what that holder held.
+	holders map[string]heldPlace
 	// static marks a loan that stays live at every later point.
 	static bool
-	// statement marks a loan that lasts only until the end of the statement that created it.
-	statement bool
+	// slots holds each argument or receiver of a call that holds the loan. The callEvent of
+	// that call releases the slot.
+	slots set.Set[callSlot]
+	// scoped marks a loan that a return or a temporary value holds. It lasts until the end of
+	// the statement. returned marks one a return holds, which the caller receives.
+	scoped   bool
+	returned bool
+	// reserved is the method call whose `&mut self` receiver took the loan, until that call
+	// starts. Evaluating the call's arguments only reads the receiver, so until then the loan
+	// conflicts with no immutable path. callEnd checks the immutable paths still live when the
+	// call starts. That lets `v.push(v.len())` read v while the outer call is pending.
+	reserved *ast.CallExpr
 	// alias marks a loan that records only that its holders reach ev.place through a copy of
 	// a borrow no loan of the body covers, such as a copy of a parameter. It creates no new
 	// path, so no rule checks against it. A later copy of one of its holders into a `'static`
@@ -239,6 +286,35 @@ func (l *liveLoan) closure() bool {
 	return isFuncNode(l.ev.node)
 }
 
+// heldAt reports whether a holder of l is a place that overlaps p, so that a read of p
+// reaches what l borrows.
+func (l *liveLoan) heldAt(p movePlace) bool {
+	for _, h := range l.holders {
+		if placesOverlap(h.place, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// newLiveLoan returns a loan of ev that nothing holds yet.
+func newLiveLoan(ev *borrowEvent) *liveLoan {
+	return &liveLoan{ev: ev, holders: map[string]heldPlace{}, slots: set.NewSet[callSlot]()}
+}
+
+// clone returns a copy of l that shares no map with it.
+func (l *liveLoan) clone() *liveLoan {
+	cp := *l
+	cp.holders = maps.Clone(l.holders)
+	cp.slots = l.slots.Clone()
+	return &cp
+}
+
+// sameHolders reports whether l and o have the same holders, each made by the same flow.
+func (l *liveLoan) sameHolders(o *liveLoan) bool {
+	return maps.EqualFunc(l.holders, o.holders, func(a, b heldPlace) bool { return a.node == b.node })
+}
+
 // dataflowState is what the pass knows at one program point: the places moved on some path
 // reaching it, keyed by placeKey, and the loans that may still be live, keyed by their
 // borrow event.
@@ -259,9 +335,7 @@ func (s *dataflowState) clone() *dataflowState {
 	}
 
 	for k, l := range s.loans {
-		cp := *l
-		cp.holders = maps.Clone(l.holders)
-		out.loans[k] = &cp
+		out.loans[k] = l.clone()
 	}
 
 	return out
@@ -282,7 +356,7 @@ func (s *dataflowState) equals(o *dataflowState) bool {
 
 	for k, l := range s.loans {
 		ol, ok := o.loans[k]
-		if !ok || ol.static != l.static || ol.alias != l.alias || !maps.Equal(ol.holders, l.holders) {
+		if !ok || ol.static != l.static || ol.alias != l.alias || !ol.sameHolders(l) {
 			return false
 		}
 	}
@@ -309,18 +383,16 @@ func joinStates(states []*dataflowState) *dataflowState {
 
 		for k, l := range s.loans {
 			if prev, ok := out.loans[k]; ok {
-				for h, n := range l.holders {
-					if pn, held := prev.holders[h]; !held || laterNode(n, pn) {
-						prev.holders[h] = n
+				for k, h := range l.holders {
+					if ph, held := prev.holders[k]; !held || laterNode(h.node, ph.node) {
+						prev.holders[k] = h
 					}
 				}
 				prev.static = prev.static || l.static
 				continue
 			}
 
-			cp := *l
-			cp.holders = maps.Clone(l.holders)
-			out.loans[k] = &cp
+			out.loans[k] = l.clone()
 		}
 	}
 
@@ -374,6 +446,13 @@ type bodyDataflow struct {
 	// indexSegment is the checker's indexSegment, which decides whether an index adds a
 	// segment to a place the way exprPlace decides it.
 	indexSegment func(ast.Expr) (string, bool)
+	// suspends holds each CFG point whose statement yields or awaits, where the caller runs
+	// and can read what the body stored into a caller-owned place.
+	suspends set.Set[liveness.StmtRef]
+	// reaches caches the answers of placeReaches.
+	reaches map[reachKey]bool
+	// escapes caches the answers of rootEscapes.
+	escapes map[liveness.VarID]bool
 }
 
 // checkBodyDataflow runs the dataflow pass over the body t records and returns the
@@ -390,6 +469,9 @@ func (c *checker) checkBodyDataflow(t *ownershipEvents) []SolverError {
 		derived:      map[derivedKey]*borrowEvent{},
 		derivedFrom:  map[*borrowEvent]*borrowEvent{},
 		indexSegment: c.indexSegment,
+		suspends:     suspendPoints(t.cfg),
+		reaches:      map[reachKey]bool{},
+		escapes:      map[liveness.VarID]bool{},
 	}
 	for i, ev := range t.events {
 		switch ev := ev.(type) {
@@ -402,6 +484,11 @@ func (c *checker) checkBodyDataflow(t *ownershipEvents) []SolverError {
 
 	for at := range d.events {
 		d.points[at.BlockID] = append(d.points[at.BlockID], at)
+	}
+	for at := range d.suspends {
+		if _, ok := d.events[at]; !ok {
+			d.points[at.BlockID] = append(d.points[at.BlockID], at)
+		}
 	}
 
 	for _, refs := range d.points {
@@ -470,18 +557,36 @@ func (d *bodyDataflow) transfer(block int, s *dataflowState) {
 			d.step(ev, at, s)
 		}
 
+		// The caller runs at a yield or an await, and can keep a copy of a borrow the body
+		// stored into a caller-owned place. So such a loan stays live from then on.
+		if d.suspends.Contains(at) {
+			for _, l := range s.loans {
+				for _, h := range l.holders {
+					l.static = l.static || d.callerOwned(h)
+				}
+			}
+		}
+
 		d.endStatement(at, s)
 	}
 }
 
-// endStatement drops each loan that cannot be live after the point at: a loan that lasts
-// only for its statement, and a loan no holder of which is used again.
+// endStatement releases what holds a loan only until the end of the statement at the point
+// at, and drops each loan that cannot be live after it. A loan stays while a holder is used
+// again later, or while a caller-owned holder still holds it when the body returns.
 func (d *bodyDataflow) endStatement(at liveness.StmtRef, s *dataflowState) {
 	for k, l := range s.loans {
-		if l.statement || !d.loanLive(l, at, false) {
+		l.slots.Clear()
+		l.scoped, l.returned, l.reserved = false, false, nil
+		if !d.loanLive(l, at, false) && !d.loanEscapes(l, at, false) {
 			delete(s.loans, k)
 		}
 	}
+}
+
+// callerOwned reports whether h is a place under a parameter whose referent the caller owns.
+func (d *bodyDataflow) callerOwned(h heldPlace) bool {
+	return d.table.callerOwned.Contains(h.place.root)
 }
 
 // step applies one event to s, and reports each rule the event breaks while d.errs is set.
@@ -500,6 +605,10 @@ func (d *bodyDataflow) step(ev ownershipEvent, at liveness.StmtRef, s *dataflowS
 		d.copyBorrow(ev, at, s)
 	case *moveEvent:
 		d.move(ev, at, s)
+	case *passEvent:
+		d.pass(ev, s)
+	case *callEvent:
+		d.callEnd(ev, at, s)
 	case *provisionalEvent:
 		// settleAllFlows replaces every provisional event before the pass runs.
 	}
@@ -526,11 +635,13 @@ func (d *bodyDataflow) step(ev ownershipEvent, at liveness.StmtRef, s *dataflowS
 // A write that uses a moved place reports only E1, the way the use-after-move subsumes the
 // conflict in the current checks.
 //
-// Writing a whole local, as in `c = &q`, also ends what c held before. c stops holding each
-// loan that a flow earlier in the source gave it. The assigned value appears after the
-// target `c`, so c keeps the loans its flows give, such as the borrow of q. In a loop, a flow
-// later in the source can run before the assignment on an earlier iteration. c keeps the
-// loan such a flow gave it, which errs toward reporting a conflict.
+// Writing a place also ends what the place and each place under it held before, so after
+// `c = &q` or `p.r = &q` the written place stops holding each loan that a flow earlier in
+// the source gave it. A sibling such as `p.s` keeps its loans. The assigned value appears
+// after the target, so the target keeps the loans its flows give, such as the borrow of q.
+// In a loop, a flow later in the source can run before the assignment on an earlier
+// iteration. The target keeps the loan such a flow gave it, which errs toward reporting a
+// conflict.
 func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState) {
 	target, _ := ev.node.(ast.Expr)
 	chain := placeChain(target)
@@ -580,7 +691,7 @@ func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState
 
 		// A borrow made for one statement, such as a call argument, has ended by the time the
 		// statement writes, since an assignment writes after its source is evaluated.
-		if moved || reported || l.alias || l.statement || l.ev.borrow != immutableBorrow || !d.loanLive(l, at, false) {
+		if moved || reported || l.alias || d.statementOnly(l) || l.ev.borrow != immutableBorrow || !d.loanLive(l, at, false) {
 			continue
 		}
 
@@ -593,13 +704,21 @@ func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState
 		reported = true
 	}
 
-	if len(ev.place.path) == 0 && !dynamic {
+	if !dynamic {
 		for _, l := range s.loans {
-			if n, held := l.holders[ev.place.root]; held && !laterNode(n, ev.node) {
-				delete(l.holders, ev.place.root)
+			for k, h := range l.holders {
+				if h.place.root == ev.place.root && pathHasPrefix(h.place.path, ev.place.path) && !laterNode(h.node, ev.node) {
+					delete(l.holders, k)
+				}
 			}
 		}
 	}
+}
+
+// statementOnly reports whether only the current statement holds l, as a call argument or
+// a temporary value does.
+func (d *bodyDataflow) statementOnly(l *liveLoan) bool {
+	return !l.static && len(l.holders) == 0
 }
 
 // borrow applies the borrow ev. E1 rejects a borrow of a moved place. E2 rejects a borrow
@@ -613,17 +732,22 @@ func (d *bodyDataflow) borrow(ev *borrowEvent, at liveness.StmtRef, s *dataflowS
 	}
 	d.checkMoved(ev.place, use, s)
 
-	l := &liveLoan{ev: ev, holders: map[liveness.VarID]ast.Node{}}
-	if !l.closure() {
-		d.checkNewPath(ev.place, ev.borrow, ev.node, at, d.sortedLoans(s))
-	}
-
+	loans := d.sortedLoans(s)
+	l := newLiveLoan(ev)
 	l.static = soltype.IsStaticLifetime(ev.lifetime)
-	s.loans[ev] = l
 	d.holdLoan(l, ev.holder, ev.node)
 
+	// A mutable receiver only reads its place until the call starts, so callEnd checks it
+	// then, as liveLoan.reserved describes.
+	if rt, ok := ev.holder.target.(receiverTarget); ok && ev.borrow == mutableBorrow {
+		l.reserved = rt.call
+	} else if !l.closure() {
+		d.checkNewPath(ev.place, ev.borrow, ev.node, at, loans, l)
+	}
+	s.loans[ev] = l
+
 	// A borrow through a holder keeps the holder's loans live while the new borrow is.
-	d.addHolder(ev.place.root, ev.holder, ev.node, s)
+	d.addHolder(ev.place, ev.holder, ev.node, s)
 	if !l.static {
 		return
 	}
@@ -631,22 +755,52 @@ func (d *bodyDataflow) borrow(ev *borrowEvent, at liveness.StmtRef, s *dataflowS
 	// A `'static` borrow keeps them live at every later point. A closure stored into
 	// module-level state through a local borrows its captures this way.
 	for _, held := range s.loans {
-		if _, holds := held.holders[ev.place.root]; holds {
+		if held.heldAt(ev.place) {
 			held.static = true
 		}
 	}
 }
 
-// checkNewPath reports E2 when node makes a new path of the given kind to place while one of
-// loans is live, has the other kind, and has a place that overlaps place. loans lists the
-// loans to check in the order sortedLoans returns them.
-func (d *bodyDataflow) checkNewPath(place movePlace, kind borrowKind, node ast.Node, at liveness.StmtRef, loans []*liveLoan) {
+// liveInBody reports whether the new path l is live in the body right after the point at
+// that makes it. A path a statement holds, or that a holder other than a caller-owned place
+// holds, counts as live. A path only caller-owned places hold is live only while
+// placeReaches finds a later read of one of them, since the caller reads such a place once
+// the body returns.
+func (d *bodyDataflow) liveInBody(l *liveLoan, at liveness.StmtRef) bool {
+	if l.static || l.scoped || len(l.slots) > 0 || len(l.holders) == 0 {
+		return true
+	}
+	for _, h := range l.holders {
+		if !d.callerOwned(h) {
+			return true
+		}
+	}
+	return d.loanLive(l, at, false)
+}
+
+// checkNewPath reports E2 when node makes the new path fresh of the given kind to place, and
+// one of loans has the other kind, has a place that overlaps place, and is live together
+// with fresh. The two are live together when both are live in the body, or when the caller
+// can reach both once the body returns. loans lists the loans to check in the order
+// sortedLoans returns them.
+//
+// A loan taken at the point at counts as live when its holders are live after that point,
+// since a holder the statement defines is not live on entry to it. So
+// `val t = {p: &mut b.x, q: &b.x}` breaks E2 when t is used later.
+func (d *bodyDataflow) checkNewPath(place movePlace, kind borrowKind, node ast.Node, at liveness.StmtRef, loans []*liveLoan, fresh *liveLoan) {
+	// Where fresh is live can take a walk of the CFG, so it is found once a loan needs it.
+	found := false
+	var local, escapes bool
 	for _, first := range loans {
-		if !first.checked() || first.ev.borrow == kind || !placesOverlap(first.ev.place, place) {
+		if !first.checked() || first.reserved != nil || first.ev.borrow == kind || !placesOverlap(first.ev.place, place) {
 			continue
 		}
 
-		if d.loanLive(first, at, true) {
+		if !found {
+			local, escapes, found = d.liveInBody(fresh, at), d.loanEscapes(fresh, at, false), true
+		}
+		firstLocal := d.loanLive(first, at, true) || (first.ev.at == at && d.loanLive(first, at, false))
+		if (local && firstLocal) || (escapes && d.loanEscapes(first, at, true)) {
 			d.report(&BorrowAliasError{
 				Place:      d.placeName(place),
 				FirstPlace: d.placeName(first.ev.place),
@@ -654,12 +808,31 @@ func (d *bodyDataflow) checkNewPath(place movePlace, kind borrowKind, node ast.N
 				SecondMut:  kind == mutableBorrow,
 				root:       place.root,
 				places:     [2]movePlace{place, first.ev.place},
+				exits:      d.returnSpans(first, fresh),
 				node:       node,
 				first:      first.ev.node.Span(),
 			})
 			return
 		}
 	}
+}
+
+// returnSpans returns the span of each return the value of a holder of one of loans flows
+// into, as returnsOf finds them.
+func (d *bodyDataflow) returnSpans(loans ...*liveLoan) []ast.Span {
+	seen := set.NewSet[ast.Span]()
+	var out []ast.Span
+	for _, l := range loans {
+		for _, h := range l.holders {
+			for _, site := range d.table.returnsOf(h.place.root) {
+				if span := site.node.Span(); !seen.Contains(span) {
+					seen.Add(span)
+					out = append(out, span)
+				}
+			}
+		}
+	}
+	return out
 }
 
 // copyBorrow applies the copy ev of a borrow. E1 rejects a copy of a moved place.
@@ -672,15 +845,14 @@ func (d *bodyDataflow) checkNewPath(place movePlace, kind borrowKind, node ast.N
 // and not what the slot points to, so the copy is not checked against it.
 //
 // A copy that keeps the borrow's kind and lifetime makes the holder a second holder of each
-// loan ev.place's root holds, as `val c = a` does after `val a = &x`. Such a copy into a
-// call argument or receiver also takes a loan through the borrow at ev.place for its
-// statement. A copy into a
-// destination of the other kind, or into a `'static` one, instead derives loans of that
-// kind and lifetime for the holder alone:
+// loan a place overlapping ev.place holds, as `val c = a` does after `val a = &x`. Such a
+// copy into a call argument or receiver also takes a loan through the borrow at ev.place for
+// its statement. A copy into a destination of the other kind, or into a `'static` one,
+// instead derives loans of that kind and lifetime for the holder alone:
 //
 //   - one through the borrow at ev.place, so `sink = m` with a module-level sink derives a
 //     `'static` mutable loan through m, and a later `&` path through m breaks E2.
-//   - one from each loan the root holds. After `val b = &mut a`, the copy
+//   - one from each loan such a place holds. After `val b = &mut a`, the copy
 //     `val c: &{x: number} = b` gives c an immutable loan of a, so a write to a while c is
 //     live breaks E2.
 func (d *bodyDataflow) copyBorrow(ev *copyEvent, at liveness.StmtRef, s *dataflowState) {
@@ -688,17 +860,19 @@ func (d *bodyDataflow) copyBorrow(ev *copyEvent, at liveness.StmtRef, s *dataflo
 
 	loans := d.sortedLoans(s)
 	through := slices.DeleteFunc(slices.Clone(loans), func(l *liveLoan) bool { return !l.through })
-	d.checkNewPath(ev.place, ev.borrow, ev.node, at, through)
+	path := newLiveLoan(nil)
+	d.holdLoan(path, ev.holder, ev.node)
+	path.static = path.static || soltype.IsStaticLifetime(ev.lifetime)
+	d.checkNewPath(ev.place, ev.borrow, ev.node, at, through, path)
 
 	_, toModule := ev.holder.target.(moduleTarget)
 	if ev.borrow == ev.source && !soltype.IsStaticLifetime(ev.lifetime) && !toModule {
 		held := false
 		for _, l := range loans {
-			_, holds := l.holders[ev.place.root]
-			held = held || (holds && !l.closure())
+			held = held || (l.heldAt(ev.place) && !l.closure())
 		}
 
-		d.addHolder(ev.place.root, ev.holder, ev.node, s)
+		d.addHolder(ev.place, ev.holder, ev.node, s)
 
 		// A call argument is a new path through ev.place for the rest of its statement. In
 		// `writeRead(m, m)` with `m: &mut {x: number}` and a `&` second parameter, the second
@@ -722,7 +896,7 @@ func (d *bodyDataflow) copyBorrow(ev *copyEvent, at liveness.StmtRef, s *dataflo
 
 	d.derivedLoan(ev, nil, s)
 	for _, l := range loans {
-		if _, holds := l.holders[ev.place.root]; !holds {
+		if !l.heldAt(ev.place) {
 			continue
 		}
 
@@ -740,7 +914,7 @@ func (d *bodyDataflow) copyBorrow(ev *copyEvent, at liveness.StmtRef, s *dataflo
 		static := slices.DeleteFunc(slices.Clone(loans), func(o *liveLoan) bool {
 			return !o.static || o.through != l.through
 		})
-		d.checkNewPath(l.ev.place, ev.borrow, ev.node, at, static)
+		d.checkNewPath(l.ev.place, ev.borrow, ev.node, at, static, path)
 		d.derivedLoan(ev, l, s)
 	}
 }
@@ -792,7 +966,8 @@ func (d *bodyDataflow) derivedLoan(ev *copyEvent, from *liveLoan, s *dataflowSta
 		d.order[bev] = loanOrder{event: d.copyIndex[ev], derived: len(d.derived)}
 	}
 
-	l := &liveLoan{ev: bev, holders: map[liveness.VarID]ast.Node{}, static: soltype.IsStaticLifetime(bev.lifetime), through: through}
+	l := newLiveLoan(bev)
+	l.static, l.through = soltype.IsStaticLifetime(bev.lifetime), through
 	s.loans[bev] = l
 	d.holdLoan(l, ev.holder, ev.node)
 	return l
@@ -833,7 +1008,7 @@ func (d *bodyDataflow) move(ev *moveEvent, at liveness.StmtRef, s *dataflowState
 	d.mergeTupleMove(ev.place, ev.node, s)
 
 	// The holder now owns what the place held, including any borrow stored in it.
-	d.addHolder(ev.place.root, ev.holder, ev.node, s)
+	d.addHolder(ev.place, ev.holder, ev.node, s)
 }
 
 // capturesPlace reports whether s holds closure's own borrow of place.
@@ -884,24 +1059,168 @@ func (d *bodyDataflow) mergeTupleMove(place movePlace, node ast.Node, s *dataflo
 func (d *bodyDataflow) holdLoan(l *liveLoan, holder eventHolder, node ast.Node) {
 	switch tg := holder.target.(type) {
 	case placeTarget:
-		l.holders[tg.root] = node
+		p := movePlace{root: tg.root, path: holder.path}
+		l.holders[placeKey(p)] = heldPlace{place: p, node: node}
 	case moduleTarget:
 		l.static = true
-	case argTarget, receiverTarget, returnTarget, tempTarget:
-		if len(l.holders) == 0 && !l.static {
-			l.statement = true
+	case argTarget:
+		l.slots.Add(callSlot{call: tg.call, index: tg.index})
+	case receiverTarget:
+		l.slots.Add(callSlot{call: tg.call, index: selfIndex})
+	case returnTarget:
+		l.scoped, l.returned = true, true
+	case tempTarget:
+		l.scoped = true
+	}
+}
+
+// addHolder makes holder a holder of each loan a place overlapping src holds, since holder
+// now reaches what src borrows. node is the expression of the flow. A loan held under src
+// lands at the same path under holder, so `val c = a` with a loan held at `a.peer` makes
+// `c.peer` its holder.
+func (d *bodyDataflow) addHolder(src movePlace, holder eventHolder, node ast.Node, s *dataflowState) {
+	for _, l := range s.loans {
+		var under [][]placeSeg
+		for _, h := range l.holders {
+			if placesOverlap(h.place, src) {
+				under = append(under, h.place.path[min(len(src.path), len(h.place.path)):])
+			}
+		}
+
+		for _, rest := range under {
+			d.holdLoan(l, holder.extend(rest), node)
 		}
 	}
 }
 
-// addHolder makes holder a holder of each loan root holds, since holder now reaches what
-// root borrows. node is the expression of the flow.
-func (d *bodyDataflow) addHolder(root liveness.VarID, holder eventHolder, node ast.Node, s *dataflowState) {
-	for _, l := range s.loans {
-		if _, held := l.holders[root]; held {
-			d.holdLoan(l, holder, node)
+// pass applies the passEvent ev. Each loan the slot ev.from holds gains ev.holder as a holder.
+// A passEvent that is not direct skips the loan the slot's own borrow took, unless the slot
+// also holds a mutable loan. A store through a target argument that names a borrow, such as
+// the `a` of `store(a, &b)` after `val a = &mut x`, lands in the place that borrow reaches,
+// so `x.peer` holds the loan too.
+func (d *bodyDataflow) pass(ev *passEvent, s *dataflowState) {
+	holders := []eventHolder{ev.holder}
+	if pt, ok := ev.holder.target.(placeTarget); ok && ev.through != nil {
+		for _, m := range s.loans {
+			for _, h := range m.holders {
+				if h.place.root != pt.root || !pathHasPrefix(ev.through, h.place.path) {
+					continue
+				}
+
+				pointee := appendPath(m.ev.place.path, ev.holder.path[len(h.place.path):])
+				holders = append(holders, eventHolder{target: placeTarget{root: m.ev.place.root}, path: pointee})
+			}
 		}
 	}
+
+	// The signature shares only a lifetime inside the slot's referent, so the holder reaches
+	// what the referent holds and not the referent itself. A shared borrow the referent holds
+	// is copied out whole. A mutable one cannot be copied, so the callee reborrows it through
+	// the slot's own borrow, and the holder keeps that borrow too.
+	skipOwn := !ev.direct
+	for _, l := range s.loans {
+		if skipOwn && l.slots.Contains(ev.from) && !holderIsSlot(l.ev.holder, ev.from) && l.ev.borrow == mutableBorrow {
+			skipOwn = false
+		}
+	}
+
+	for _, l := range s.loans {
+		if !l.slots.Contains(ev.from) || (skipOwn && holderIsSlot(l.ev.holder, ev.from)) {
+			continue
+		}
+		for _, h := range holders {
+			d.holdLoan(l, h, ev.node)
+		}
+	}
+}
+
+// holderIsSlot reports whether h is the call slot itself, rather than a position inside it.
+func holderIsSlot(h eventHolder, slot callSlot) bool {
+	if len(h.path) > 0 {
+		return false
+	}
+	switch tg := h.target.(type) {
+	case argTarget:
+		return callSlot{call: tg.call, index: tg.index} == slot
+	case receiverTarget:
+		return callSlot{call: tg.call, index: selfIndex} == slot
+	}
+	return false
+}
+
+// callEnd applies the callEvent ev in two steps:
+//
+//  1. A mutable receiver the call reserved takes effect. E2 rejects an immutable path to an
+//     overlapping place that is still live. A path is still live when an argument of a call
+//     that has not returned holds it, or when its holder is used after the call, later in
+//     the statement or after it. So `val r = &v; v.push(r.len())` checks clean, since r is
+//     dead once the arguments are evaluated. The later of the two paths is blamed, so
+//     `p.writeRead(&p)` reports `&p`.
+//  2. Each loan a slot of the call holds is released, and a loan nothing else holds ends.
+func (d *bodyDataflow) callEnd(ev *callEvent, at liveness.StmtRef, s *dataflowState) {
+	loans := d.sortedLoans(s)
+	for _, r := range loans {
+		if r.reserved != ev.call {
+			continue
+		}
+
+		r.reserved = nil
+		after := false
+		for _, m := range loans {
+			after = after || m == r
+			if m == r || !m.checked() || m.ev.borrow == mutableBorrow || !placesOverlap(m.ev.place, r.ev.place) ||
+				(!d.loanLive(m, at, false) && !d.usedLaterAt(m, ev, at)) {
+				continue
+			}
+
+			// The later of the two paths is the one blamed.
+			first, second := m, r
+			if after {
+				first, second = r, m
+			}
+			d.report(&BorrowAliasError{
+				Place:      d.placeName(second.ev.place),
+				FirstPlace: d.placeName(first.ev.place),
+				FirstMut:   first == r,
+				SecondMut:  second == r,
+				root:       second.ev.place.root,
+				node:       second.ev.node,
+				first:      first.ev.node.Span(),
+			})
+			break
+		}
+	}
+
+	for k, l := range s.loans {
+		for slot := range l.slots {
+			if slot.call == ev.call {
+				l.slots.Remove(slot)
+			}
+		}
+		if d.statementOnly(l) && !l.scoped && len(l.slots) == 0 {
+			delete(s.loans, k)
+		}
+	}
+}
+
+// usedLaterAt reports whether an event after ev at the point at reads a place a holder of l
+// overlaps, so l is used later in the same statement.
+func (d *bodyDataflow) usedLaterAt(l *liveLoan, ev ownershipEvent, at liveness.StmtRef) bool {
+	events := d.events[at]
+	i := slices.Index(events, ev)
+	if i < 0 {
+		return false
+	}
+
+	for _, later := range events[i+1:] {
+		p := later.base().place
+		for _, h := range l.holders {
+			if placesOverlap(h.place, p) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // checkMoved reports a use of place at node when a place overlapping it is moved, and
@@ -932,17 +1251,199 @@ func (d *bodyDataflow) reportMoved(m movedPlace, place movePlace, node ast.Node)
 // loanLive reports whether l is live at the point at. before asks whether it is live on
 // entry to the statement, which counts a holder the statement itself reads. Otherwise it
 // asks whether it is live after the statement.
+//
+// A loan a statement holds, as a call argument or a temporary value, is live until the end
+// of that statement. Any other loan is live while one of its holders is, as heldPlaceLive
+// decides.
 func (d *bodyDataflow) loanLive(l *liveLoan, at liveness.StmtRef, before bool) bool {
-	if l.static || l.statement {
+	if l.static || l.scoped || len(l.slots) > 0 {
 		return true
 	}
 
-	for h := range l.holders {
-		if d.holderLive(h, at, before) {
+	for _, h := range l.holders {
+		if d.heldPlaceLive(h, at, before) {
 			return true
 		}
 	}
 	return false
+}
+
+// heldPlaceLive reports whether the holder h is used again after the point at, or at it when
+// before is set. A local holds its loans while liveness says the local is live. A
+// caller-owned place holds them while placeReaches finds a later read of it, since the caller
+// reads it only once the body returns or suspends.
+func (d *bodyDataflow) heldPlaceLive(h heldPlace, at liveness.StmtRef, before bool) bool {
+	if !d.holderLive(h.place.root, at, before) {
+		return false
+	}
+	return !d.callerOwned(h) || d.placeReaches(h, at, before, false)
+}
+
+// loanEscapes reports whether the caller can reach l once the body returns, from the point
+// at onward. before also counts the events at the point at. A 'static loan escapes, and so
+// does one a return holds. A caller-owned holder escapes when placeReaches finds a path to the exit
+// that no write replaces it on. Any other holder escapes while it is live and its value
+// flows into a return, a module-level binding, or a caller-owned place, as rootEscapes
+// decides.
+func (d *bodyDataflow) loanEscapes(l *liveLoan, at liveness.StmtRef, before bool) bool {
+	if l.static || l.returned {
+		return true
+	}
+
+	for _, h := range l.holders {
+		if d.callerOwned(h) {
+			if d.placeReaches(h, at, before, true) {
+				return true
+			}
+			continue
+		}
+
+		if d.rootEscapes(h.place.root) && d.heldPlaceLive(h, at, before) {
+			return true
+		}
+	}
+	return false
+}
+
+// rootEscapes reports whether the value of the local root flows into a return, a
+// module-level binding, or a caller-owned place, directly or through other locals.
+func (d *bodyDataflow) rootEscapes(root liveness.VarID) bool {
+	if out, ok := d.escapes[root]; ok {
+		return out
+	}
+
+	t := d.table
+	out := t.storedFrom(root) || len(t.returnsOf(root)) > 0 ||
+		slices.ContainsFunc(t.reachedFrom(root), t.callerOwned.Contains)
+	d.escapes[root] = out
+	return out
+}
+
+// reachKey names one question placeReaches answers.
+type reachKey struct {
+	place  string
+	node   ast.Node
+	at     liveness.StmtRef
+	before bool
+	exit   bool
+}
+
+// placeReaches follows the CFG forward from the point at and reports what it finds for the
+// holder h. With exit unset, it reports whether some path reads a place overlapping h before
+// a write replaces h. With exit set, it reports whether some path reaches the end of the body
+// without such a write. before starts the walk at the events of at itself.
+//
+// A write replaces h when it writes h or a place above it with no dynamic index, so
+// `p.r = &e` replaces a holder at `p.r` and `p.r.x = 1` reads it. A write replaces h only
+// when the flow that made h a holder does not come after it in the source, the way write
+// ends holders. So in `p.r = if c { &b } else { &e }`, the write of `p.r` after each branch
+// keeps the borrow that branch stored.
+func (d *bodyDataflow) placeReaches(h heldPlace, at liveness.StmtRef, before, exit bool) bool {
+	key := reachKey{place: placeKey(h.place), node: h.node, at: at, before: before, exit: exit}
+	if out, ok := d.reaches[key]; ok {
+		return out
+	}
+
+	// effect returns 1 for a read of h, -1 for a write that replaces h, and 0 otherwise.
+	effect := func(ref liveness.StmtRef) int {
+		for _, ev := range d.events[ref] {
+			p := ev.base().place
+			if p.root != h.place.root || !pathPrefixRelated(p.path, h.place.path) {
+				continue
+			}
+
+			use, isUse := ev.(*useEvent)
+			if !isUse || use.access != writeAccess || !pathHasPrefix(h.place.path, p.path) {
+				return 1
+			}
+
+			target, _ := use.node.(ast.Expr)
+			if slices.ContainsFunc(placeChain(target), d.isDynamicIndex) {
+				return 1
+			}
+			if !laterNode(h.node, use.node) {
+				return -1
+			}
+		}
+		return 0
+	}
+
+	seen := set.NewSet[int]()
+	var walk func(block int, from int) bool
+	walk = func(block int, from int) bool {
+		for _, ref := range d.points[block] {
+			if ref.StmtIdx < from {
+				continue
+			}
+			switch effect(ref) {
+			case 1:
+				if !exit {
+					return true
+				}
+			case -1:
+				return false
+			}
+		}
+
+		b := d.table.cfg.Blocks[block]
+		if b == d.table.cfg.Exit {
+			return exit
+		}
+		for _, succ := range b.Successors {
+			if !seen.Contains(succ.ID) {
+				seen.Add(succ.ID)
+				if walk(succ.ID, math.MinInt) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	from := at.StmtIdx + 1
+	if before {
+		from = at.StmtIdx
+	}
+	out := walk(at.BlockID, from)
+	d.reaches[key] = out
+	return out
+}
+
+// suspendPoints returns the CFG point of each statement of cfg that yields or awaits outside
+// a nested function.
+func suspendPoints(cfg *liveness.CFG) set.Set[liveness.StmtRef] {
+	out := set.NewSet[liveness.StmtRef]()
+	for _, b := range cfg.Blocks {
+		for i, stmt := range b.Stmts {
+			v := &suspendFinder{}
+			stmt.Accept(v)
+			if v.found {
+				out.Add(liveness.StmtRef{BlockID: b.ID, StmtIdx: i})
+			}
+		}
+	}
+	return out
+}
+
+// suspendFinder walks a statement for suspendPoints and sets found at a yield or an await.
+type suspendFinder struct {
+	ast.DefaultVisitor
+	found bool
+}
+
+func (v *suspendFinder) EnterExpr(e ast.Expr) bool {
+	switch e.(type) {
+	case *ast.YieldExpr, *ast.AwaitExpr:
+		v.found = true
+	case *ast.FuncExpr:
+		return false
+	}
+	return !v.found
+}
+
+func (v *suspendFinder) EnterDecl(d ast.Decl) bool {
+	_, isFunc := d.(*ast.FuncDecl)
+	return !isFunc && !v.found
 }
 
 // holderLive reports whether the local h is used again after the point at, or at it when
