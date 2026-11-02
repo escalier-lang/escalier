@@ -893,6 +893,25 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot borrow 'b' as immutable while it is borrowed as mutable"},
 		},
 		{
+			// The pass reports E2 for `&b.x` inside the store into p. The frame-exit check pairs
+			// the `&b.y` of that store with the store into q, which is another conflict, so it
+			// stays.
+			name: "E2OnAnotherFieldKeepsTheMixedOutflowCheck",
+			src: `
+				fn f(p: &mut {r: {x: &{v: number}, y: &{v: number}}}, q: &mut {r: &mut {v: number}}) {
+					val mut b = {x: {v: 1}, y: {v: 2}}
+					val a = &mut b.x
+					p.r = {x: &b.x, y: &b.y}
+					a.v = 3
+					q.r = &mut b.y
+				}
+			`,
+			errs: []string{
+				"'b' leaves the function through a mutable path and an immutable one",
+				"cannot borrow 'b.x' as immutable while it is borrowed as mutable",
+			},
+		},
+		{
 			// The pass reports no E2 conflict for the two borrows t takes in one literal, so
 			// the frame-exit check keeps its diagnostic.
 			// The pass reports E2 at the store's `&b`. The frame-exit check reports that b

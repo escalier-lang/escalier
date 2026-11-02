@@ -107,13 +107,14 @@ func (c *checker) runOwnershipDataflow() {
 // sharedPathsReported returns a filter that matches a frame-exit diagnostic of the current
 // checks when the dataflow pass reports the same conflict. found holds the pass's diagnostics.
 // The filter matches a SharedReturnPathsError, or a MixedOutflowPathsError that is not Owned,
-// when found holds a BorrowAliasError about the same local. That error's span must lie inside
-// the frame-exit diagnostic's span or its related span.
+// when found holds a BorrowAliasError about the same local whose two places overlap the
+// frame-exit diagnostic's two places, one each. The BorrowAliasError's span must lie inside the
+// frame-exit diagnostic's span or its related span.
 func sharedPathsReported(found []SolverError) func(SolverError) bool {
-	reports := map[liveness.VarID][]ast.Span{}
+	reports := map[liveness.VarID][]*BorrowAliasError{}
 	for _, err := range found {
 		if e, ok := err.(*BorrowAliasError); ok && e.root != 0 {
-			reports[e.root] = append(reports[e.root], e.Span())
+			reports[e.root] = append(reports[e.root], e)
 		}
 	}
 	if len(reports) == 0 {
@@ -122,25 +123,38 @@ func sharedPathsReported(found []SolverError) func(SolverError) bool {
 
 	return func(err SolverError) bool {
 		var local liveness.VarID
+		var places [2]movePlace
 		switch e := err.(type) {
 		case *SharedReturnPathsError:
-			local = e.local
+			local, places = e.local, e.places
 		case *MixedOutflowPathsError:
 			if e.Owned {
 				return false
 			}
-			local = e.local
+			local, places = e.local, e.places
 		default:
 			return false
 		}
 
 		for _, r := range reports[local] {
-			if err.Span().ContainsSpan(r) || slices.ContainsFunc(err.Related(), func(s ast.Span) bool { return s.ContainsSpan(r) }) {
+			// A conflict on another field of the same local, such as `b.x` beside a frame-exit
+			// pair on `b.y`, is a separate conflict, so it does not match.
+			if !pairsOverlap(r.places, places) {
+				continue
+			}
+
+			if err.Span().ContainsSpan(r.Span()) || slices.ContainsFunc(err.Related(), func(s ast.Span) bool { return s.ContainsSpan(r.Span()) }) {
 				return true
 			}
 		}
 		return false
 	}
+}
+
+// pairsOverlap reports whether each place of a overlaps a different place of b.
+func pairsOverlap(a, b [2]movePlace) bool {
+	return (placesOverlap(a[0], b[0]) && placesOverlap(a[1], b[1])) ||
+		(placesOverlap(a[0], b[1]) && placesOverlap(a[1], b[0]))
 }
 
 // closureMoveReported returns a filter that matches each E4 diagnostic of the current checks
@@ -635,6 +649,7 @@ func (d *bodyDataflow) checkNewPath(place movePlace, kind borrowKind, node ast.N
 				FirstMut:   first.ev.borrow == mutableBorrow,
 				SecondMut:  kind == mutableBorrow,
 				root:       place.root,
+				places:     [2]movePlace{place, first.ev.place},
 				node:       node,
 				first:      first.ev.node.Span(),
 			})

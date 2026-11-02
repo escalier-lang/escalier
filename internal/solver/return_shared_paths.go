@@ -2,6 +2,7 @@ package solver
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -51,6 +52,8 @@ type SharedReturnPathsError struct {
 	local liveness.VarID
 	// node is the returned expression, which is where both paths leave together.
 	node ast.Node
+	// places holds the place each of the two disagreeing paths reaches.
+	places [2]movePlace
 }
 
 func (*SharedReturnPathsError) isSolverError()        {}
@@ -134,21 +137,23 @@ type reachedPlace struct {
 // paths reach the same data, and a path above another contains it. Disjoint fields such as
 // `b.x` and `b.y` are neither, and a write through one is invisible through the other.
 func (c *checker) reportReachedTwice(reached []reachedPlace, blame ast.Expr) {
-	var shared []liveness.VarID
+	pairs := map[liveness.VarID][2]movePlace{}
 	for i, a := range reached {
 		for _, b := range reached[i+1:] {
-			if a.referent != b.referent || slices.Contains(shared, a.referent) {
+			if _, found := pairs[a.referent]; found || a.referent != b.referent {
 				continue
 			}
 			if a.mut != b.mut && pathPrefixRelated(a.refPath, b.refPath) {
-				shared = append(shared, a.referent)
+				pairs[a.referent] = [2]movePlace{
+					{root: a.referent, path: a.refPath},
+					{root: b.referent, path: b.refPath},
+				}
 			}
 		}
 	}
-	slices.Sort(shared)
-	for _, referent := range shared {
+	for _, referent := range slices.Sorted(maps.Keys(pairs)) {
 		c.noteSharedPathBlame(blame)
-		c.report(&SharedReturnPathsError{LocalName: c.varIDToName(referent), local: referent, node: blame})
+		c.report(&SharedReturnPathsError{LocalName: c.varIDToName(referent), local: referent, node: blame, places: pairs[referent]})
 	}
 }
 
@@ -202,7 +207,10 @@ func (c *checker) reportLiteralSharedPaths(
 			}
 			seen.Add(root)
 			c.noteSharedPathBlame(e)
-			c.report(&SharedReturnPathsError{LocalName: c.varIDToName(root), local: root, node: e})
+			c.report(&SharedReturnPathsError{
+				LocalName: c.varIDToName(root), local: root, node: e,
+				places: [2]movePlace{reaches[i].place, reaches[j].place},
+			})
 		}
 	}
 	return true

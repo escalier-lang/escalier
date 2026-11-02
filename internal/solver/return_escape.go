@@ -118,6 +118,8 @@ type MixedOutflowPathsError struct {
 	// return.
 	node  ast.Node
 	other ast.Span
+	// places holds the place each of the two disagreeing paths reaches.
+	places [2]movePlace
 }
 
 func (*MixedOutflowPathsError) isSolverError()        {}
@@ -531,7 +533,10 @@ func (c *checker) reportMixedOutflows(outOfFrame map[liveness.VarID][]outflowPat
 	slices.Sort(ids)
 	for _, id := range ids {
 		if earlier, later, ok := firstMixedPair(outOfFrame[id], outOfFrame[id]); ok {
-			c.reportMixedOutflow(&outflowConflict{id: id, other: earlier.node, owned: earlier.owned || later.owned}, later.node)
+			c.reportMixedOutflow(&outflowConflict{
+				id: id, other: earlier.node, owned: earlier.owned || later.owned,
+				places: [2]movePlace{earlier.place, later.place},
+			}, later.node)
 			reported.Add(id)
 		}
 	}
@@ -570,17 +575,19 @@ func (c *checker) reportMixedOutflow(conflict *outflowConflict, blame ast.Node) 
 	}
 	c.report(&MixedOutflowPathsError{
 		LocalName: c.varIDToName(conflict.id), Owned: conflict.owned, local: conflict.id,
-		node: blame, other: conflict.other.Span(),
+		node: blame, other: conflict.other.Span(), places: conflict.places,
 	})
 }
 
 // outflowConflict is a local that leaves through two expressions with paths that disagree. `other`
 // is the expression the error is not blamed on: the earlier of two non-return sites, or the site
-// that is not the return. `owned` says either path carries the local's data by value.
+// that is not the return. `owned` says either path carries the local's data by value. `places`
+// holds the place each of the two paths reaches.
 type outflowConflict struct {
-	id    liveness.VarID
-	other ast.Node
-	owned bool
+	id     liveness.VarID
+	other  ast.Node
+	owned  bool
+	places [2]movePlace
 }
 
 // returnOutflowConflict compares the return expression `ret` against the paths outOfFrame records
@@ -613,7 +620,10 @@ func (c *checker) returnOutflowConflict(
 			if other == ret {
 				other = second.node
 			}
-			return true, &outflowConflict{id: id, other: other, owned: first.owned || second.owned}
+			return true, &outflowConflict{
+				id: id, other: other, owned: first.owned || second.owned,
+				places: [2]movePlace{first.place, second.place},
+			}
 		}
 	}
 	return leaves, nil
