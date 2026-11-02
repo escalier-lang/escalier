@@ -606,6 +606,17 @@ func (d *bodyDataflow) borrow(ev *borrowEvent, at liveness.StmtRef, s *dataflowS
 
 	// A borrow through a holder keeps the holder's loans live while the new borrow is.
 	d.addHolder(ev.place.root, ev.holder, ev.node, s)
+	if !l.static {
+		return
+	}
+
+	// A `'static` borrow keeps them live at every later point. A closure stored into
+	// module-level state through a local borrows its captures this way.
+	for _, held := range s.loans {
+		if _, holds := held.holders[ev.place.root]; holds {
+			held.static = true
+		}
+	}
 }
 
 // checkNewPath reports E2 when node makes a new path of the given kind to place while one of
@@ -738,15 +749,32 @@ func (d *bodyDataflow) derivedLoan(ev *copyEvent, from *liveLoan, s *dataflowSta
 
 // move applies the move ev. E1 rejects a move of a moved place, and E3 rejects a move while
 // a borrow of an overlapping place is live. A return that moves a closure's capture hands
-// over the closure's own borrow of the place too, so that borrow is no conflict.
+// over the closure's own borrow of the place too, so that borrow is no conflict. A move
+// ev.whileCaptured marks applies only while that borrow is live.
+//
+// The error blames the first conflicting borrow sortedLoans returns, and marks the move as
+// conflicting with a closure when any conflicting borrow is a closure's capture.
 func (d *bodyDataflow) move(ev *moveEvent, at liveness.StmtRef, s *dataflowState) {
+	if ev.whileCaptured && !d.capturesPlace(ev.closure, ev.place, s) {
+		return
+	}
+
 	if !d.checkMoved(ev.place, ev.node, s) {
+		var err *MoveWhileBorrowedError
 		for _, l := range d.sortedLoans(s) {
 			own := ev.closure != nil && l.ev.node == ev.closure
-			if !own && !l.alias && placesOverlap(l.ev.place, ev.place) && d.loanLive(l, at, true) {
-				d.report(&MoveWhileBorrowedError{Place: d.placeName(ev.place), move: ev.node, borrow: l.ev.node.Span(), closure: l.closure()})
-				break
+			if own || l.alias || !placesOverlap(l.ev.place, ev.place) || !d.loanLive(l, at, true) {
+				continue
 			}
+
+			if err == nil {
+				err = &MoveWhileBorrowedError{Place: d.placeName(ev.place), move: ev.node, borrow: l.ev.node.Span()}
+			}
+			err.closure = err.closure || l.closure()
+		}
+
+		if err != nil {
+			d.report(err)
 		}
 	}
 
@@ -755,6 +783,16 @@ func (d *bodyDataflow) move(ev *moveEvent, at liveness.StmtRef, s *dataflowState
 
 	// The holder now owns what the place held, including any borrow stored in it.
 	d.addHolder(ev.place.root, ev.holder, ev.node, s)
+}
+
+// capturesPlace reports whether s holds closure's own borrow of place.
+func (d *bodyDataflow) capturesPlace(closure ast.Func, place movePlace, s *dataflowState) bool {
+	for _, l := range s.loans {
+		if l.ev.node == closure && placeKey(l.ev.place) == placeKey(place) {
+			return true
+		}
+	}
+	return false
 }
 
 // mergeTupleMove replaces the moves of the elements of a tuple with one move of the whole

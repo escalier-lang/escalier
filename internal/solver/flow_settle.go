@@ -301,6 +301,10 @@ func (c *checker) captureReturnMoves(table *ownershipEvents, capture flowBase, t
 		ev, _, _ := c.classifyFlow(table, flow, t, &ownedDest{}, true, true)
 		if mv, isMove := ev.(*moveEvent); isMove {
 			mv.closure = closure
+			// A closure that never flows out of the local that holds it reaches a return of
+			// that local only while the local holds the closure's borrow. Reassigning the
+			// local drops that borrow, so such a return moves nothing.
+			mv.whileCaptured = len(table.reachedFrom(pt.root)) == 1
 			mv.at = site.at
 			table.events = append(table.events, mv)
 		}
