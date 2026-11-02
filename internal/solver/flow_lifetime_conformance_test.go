@@ -23,14 +23,9 @@ type flowLifetimeCase struct {
 // runFlowLifetimeCases checks each case's program against the standard library. It asserts the
 // full list of diagnostics, then the rendered type of each binding the case names.
 func runFlowLifetimeCases(t *testing.T, cases []flowLifetimeCase) {
-	runFlowLifetimeCasesWith(t, Options{}, cases)
-}
-
-// runFlowLifetimeCasesWith is runFlowLifetimeCases with the checker options opts.
-func runFlowLifetimeCasesWith(t *testing.T, opts Options, cases []flowLifetimeCase) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			res := InferModuleAgainstStdlib(parseModule(t, c.src), benchTree, opts)
+			res := InferModuleAgainstStdlib(parseModule(t, c.src), benchTree, Options{})
 			values, errs := renderedValues(res), messagesWithSpan(t, res.Errors)
 			require.Equal(t, c.want, errs)
 			for name, want := range c.values {
@@ -300,12 +295,9 @@ func TestFlowLifetimeEscapingReadOnlyParam(t *testing.T) {
 }
 */
 
-// TestFlowLifetimeStaticBorrow covers a write to a place a `'static` borrow reaches. The case runs
-// with the ownership dataflow pass on. The current exclusivity check does not keep the borrow
-// stored in `cache` live after the store, so with the pass off the write to `p.x` in `remember`
-// checks clean. The pass replaces that check, so the test does not wait on a fix to it.
+// TestFlowLifetimeStaticBorrow covers a write to a place a `'static` borrow reaches.
 func TestFlowLifetimeStaticBorrow(t *testing.T) {
-	runFlowLifetimeCasesWith(t, Options{OwnershipDataflow: true}, []flowLifetimeCase{
+	runFlowLifetimeCases(t, []flowLifetimeCase{
 		// L1. The returned borrow in `make` outlives `p`, which is accepted. The borrow stored in
 		// `cache` is `'static`, so `cache` can read `p` at any later point and E2 rejects the write.
 		{
@@ -354,14 +346,13 @@ func TestFlowLifetimeUndeclaredElidedRelation(t *testing.T) {
 }
 */
 
-// DISABLED until #2249 and #2269. Today the program reports three errors and renders `cache` as
+// DISABLED until #2249 and #2324. Today the program reports three errors and renders `cache` as
 // `fn (p: &mut {x: number}) -> undefined`:
 //
 //   - The initializer `&mut {x: 0}` reports `cannot constrain immutable object <: mutable object`
-//     and `cannot constrain number <: 0`. No issue tracks this yet.
+//     and `cannot constrain number <: 0`, which #2324 tracks.
 //   - The store `sink = p` reports `cannot constrain immutable object <: mutable object`. Any store
-//     into a module-level `&mut` binding reports it, and the store also moves `p`, which F2 rules
-//     out for a borrow.
+//     into a module-level `&mut` binding reports it, as #2249 tracks.
 /*
 func TestFlowLifetimeStaticRender(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{
@@ -391,12 +382,9 @@ func TestFlowLifetimeStaticRender(t *testing.T) {
 }
 */
 
-// TestFlowLifetimeClosureBlocksMove covers the `moved` program from E4. The case runs with the
-// ownership dataflow pass on. The current checks accept the move `val q = p` and report the later
-// call as `this call runs 'peek', which reads 'p' after it was moved`. The pass replaces them, so
-// the test does not wait on a fix to them.
+// TestFlowLifetimeClosureBlocksMove covers the `moved` program from E4.
 func TestFlowLifetimeClosureBlocksMove(t *testing.T) {
-	runFlowLifetimeCasesWith(t, Options{OwnershipDataflow: true}, []flowLifetimeCase{
+	runFlowLifetimeCases(t, []flowLifetimeCase{
 		// E4. `peek` still holds its borrow of `p` for its later call, so E3 rejects the move.
 		{
 			name: "E4/Moved",

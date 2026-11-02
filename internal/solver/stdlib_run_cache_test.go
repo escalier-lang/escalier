@@ -153,6 +153,47 @@ func TestAmbientCheckerReportsLoadErrorAtImport(t *testing.T) {
 	}
 }
 
+// TestAmbientCheckerLoadsPerOwnershipSetting asserts that a cached run reports the package
+// diagnostics its own ownership setting gives. In std:math's `bad`, f reads x after `val y = x`
+// moves it. The dataflow pass reports the move, and the current checks report the call.
+func TestAmbientCheckerLoadsPerOwnershipSetting(t *testing.T) {
+	dir := seedStdlib(t, withPreludeClasses(map[string]string{
+		"std/math.esc": `
+			export fn bad() -> number {
+				val x = {v: 1}
+				val f = fn () -> number { return x.v }
+				val y = x
+				return f() + y.v
+			}
+		`,
+	}))
+	loadErr := `1:1-1:18: package "std:math" (` + filepath.Join(dir, "std", "math.esc") + `) has 1 error(s):` + "\n  "
+	src := "import \"std:math\"\nval p = math.bad()"
+
+	cases := []struct {
+		name string
+		opts Options
+		want []string
+	}{
+		{name: "dataflow", opts: Options{}, want: []string{loadErr + "cannot move 'x' while it is borrowed"}},
+		{
+			name: "current checks",
+			opts: Options{NoOwnershipDataflow: true},
+			want: []string{loadErr + "this call runs 'f', which reads 'x' after it was moved"},
+		},
+	}
+	// Each setting runs twice, after a run with the other setting filled the cache.
+	for range 2 {
+		for _, tt := range cases {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Setenv(ownershipDataflowEnv, "1")
+				_, cached := inferCached(t, dir, src, tt.opts)
+				require.Equal(t, tt.want, cached)
+			})
+		}
+	}
+}
+
 // inferCached infers src against dir through InferModuleAgainstStdlib, which starts
 // from the cached checker. It returns the module's rendered value bindings and its
 // diagnostics with their spans.

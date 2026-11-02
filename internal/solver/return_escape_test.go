@@ -28,12 +28,9 @@ import (
 // covers the same rule for a return that carries an owned aggregate holding borrows.
 func TestReturnValueBorrows(t *testing.T) {
 	tests := map[string]struct {
-		src  string
-		want []string
-		// wantDataflow is what the case expects with the dataflow pass on, when that differs
-		// from want.
-		wantDataflow []string
-		types        map[string]string
+		src   string
+		want  []string
+		types map[string]string
 	}{
 		// The first repro in #1264. The bare borrow `return &mut b` leaves as the only path to
 		// b, so the return owns what it borrowed. The owned form is immutable, and the
@@ -251,10 +248,9 @@ func TestReturnValueBorrows(t *testing.T) {
 					return &mut b
 				}
 			`,
-			want: []string{"5:13-5:19: 'b' leaves the function through a mutable path and an immutable one"},
 			// `p.node.peer` holds `&b` when f returns, so the returned `&mut b` breaks E2.
-			wantDataflow: []string{"5:13-5:19: cannot borrow 'b' as mutable while it is borrowed as immutable"},
-			types:        map[string]string{"f": "fn (p: &mut {node: {peer: &{value: number}}}) -> &mut {value: number}"},
+			want:  []string{"5:13-5:19: cannot borrow 'b' as mutable while it is borrowed as immutable"},
+			types: map[string]string{"f": "fn (p: &mut {node: {peer: &{value: number}}}) -> &mut {value: number}"},
 		},
 		// A borrow written in an `if`/`else` branch keeps the mutability it is written with.
 		// Both branches store `&mut b`, so both paths to b are mutable and the return is
@@ -281,9 +277,8 @@ func TestReturnValueBorrows(t *testing.T) {
 					return &mut b
 				}
 			`,
-			want: []string{"5:13-5:19: 'b' leaves the function through a mutable path and an immutable one"},
 			// Either branch leaves `&b` in `p.node.peer`, so the returned `&mut b` breaks E2.
-			wantDataflow: []string{"5:13-5:19: cannot borrow 'b' as mutable while it is borrowed as immutable"},
+			want: []string{"5:13-5:19: cannot borrow 'b' as mutable while it is borrowed as immutable"},
 			types: map[string]string{
 				"f": "fn (cond: boolean, p: &mut {node: {peer: &{value: number}}}) -> &mut {value: number}",
 			},
@@ -457,7 +452,7 @@ func TestReturnValueBorrows(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tc.src)
-			require.Equal(t, wantForPass(tc.want, tc.wantDataflow), messagesWithSpan(t, errs))
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
 			require.Equal(t, tc.types, values)
 		})
 	}
@@ -491,12 +486,9 @@ func TestReturnFieldThroughWholeBorrow(t *testing.T) {
 // every function it declares.
 func TestEscapeAtStoreAndArgSites(t *testing.T) {
 	tests := map[string]struct {
-		src  string
-		want []string
-		// wantDataflow is what the case expects with the dataflow pass on, when that differs
-		// from want. An empty list expects no diagnostic.
-		wantDataflow []string
-		types        map[string]string
+		src   string
+		want  []string
+		types map[string]string
 	}{
 		// Storing a borrow of a local into a borrow parameter's field hands the local to the
 		// caller. The runtime is garbage collected, so b stays alive, and nothing in the frame
@@ -523,18 +515,11 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 			want:  nil,
 			types: map[string]string{"f": "fn (p: {peer: &mut {value: number}}, q: &mut {value: number}) -> undefined"},
 		},
-		// Storing an owned carrier that holds a local borrow into a parameter's field is a
-		// connected-component move, not an escape: the stored `{peer: &mut b}` owns a
-		// self-contained graph whose only borrowed local b is reached just through it, so the
-		// store re-anchors the component to the parameter's region and consumes b. No escape
-		// fires, and reading b afterward is a use-after-move. This is the owned-carrier twin of
-		// StoreLocalBorrowIntoParamFieldOk, where the bare borrow `&mut b` has no graph to
-		// re-anchor and takes a loan of b instead.
-		//
-		// The dataflow pass follows F2, which moves the carrier and copies the borrow it holds,
-		// so b is not moved. The loan the store takes is held by p, which the body does not
-		// read again, so moving b into y is accepted, as in
-		// TestStoreIntoCallerOwnedTarget/MovingIntoALocalAfterAnImmutableStoreOk.
+		// Storing an owned carrier that holds a local borrow into a parameter's field is not an
+		// escape. This is the owned-carrier twin of StoreLocalBorrowIntoParamFieldOk. F2 moves
+		// the carrier and copies the borrow it holds, so b is not moved. The loan the store
+		// takes is held by p, which the body does not read again, so moving b into y is
+		// accepted, as in TestStoreIntoCallerOwnedTarget/MovingIntoALocalAfterAnImmutableStoreOk.
 		"StoreCarrierIntoParamFieldMovesComponent": {
 			src: `
 				fn f(p: &mut {node: {peer: &mut {value: number}}}) {
@@ -543,9 +528,7 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 					val y = b
 				}
 			`,
-			want:         []string{"5:14-5:15: use of moved value 'b'"},
-			wantDataflow: []string{},
-			types:        map[string]string{"f": "fn (p: &mut {node: {peer: &mut {value: number}}}) -> undefined"},
+			types: map[string]string{"f": "fn (p: &mut {node: {peer: &mut {value: number}}}) -> undefined"},
 		},
 		// Auto-borrowing a local into a `&mut` parameter is sound: the parameter borrows
 		// for the call rather than consuming, so the local outlives the borrow.
@@ -604,7 +587,7 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tc.src)
-			require.Equal(t, wantForPass(tc.want, tc.wantDataflow), messagesWithSpan(t, errs))
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
 			require.Equal(t, tc.types, values)
 		})
 	}
@@ -618,9 +601,8 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 // does not apply and the ordinary escape stands.
 //
 // The dataflow pass has no component move. F2 moves the carrier and copies each borrow it
-// holds, and L1 lets a borrow outlive the binding that owns its place. So with the pass on, a
-// borrowed local stays usable after its carrier moves, and the cases that read one expect no
-// diagnostic.
+// holds, and L1 lets a borrow outlive the binding that owns its place. So a borrowed local
+// stays usable after its carrier moves, and the cases that read one expect no diagnostic.
 //
 // Two behaviours shape the returned types here. Return borrow-stripping rewrites a returned
 // `&`/`&mut` of a function-local reached exactly once into an owned field, so a tree-shaped
@@ -629,12 +611,9 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 // all-`&mut` diamond is a component move rather than a construction error.
 func TestConnectedComponentMove(t *testing.T) {
 	tests := map[string]struct {
-		src  string
-		want []string
-		// wantDataflow is what the case expects with the dataflow pass on, when that differs
-		// from want. An empty list expects no diagnostic.
-		wantDataflow []string
-		types        map[string]string
+		src   string
+		want  []string
+		types map[string]string
 	}{
 		// The canonical case: the owned binding a holds `&mut b`, and nothing outside the
 		// {a, b} component references either node, so returning a moves the whole component
@@ -727,9 +706,8 @@ func TestConnectedComponentMove(t *testing.T) {
 				"f":     "fn () -> undefined",
 			},
 		},
-		// The component move consumes the borrowed local, not just the carrier: after the
-		// graph moves into store, reading b is a use-after-move even though b was never the
-		// argument. The carrier a is consumed by the ordinary argument move.
+		// The argument moves the carrier a into store. F2 copies the borrow of b that a holds,
+		// so b is not moved, and the borrow ends with the call. Moving b into y is accepted.
 		"ComponentMoveConsumesBorrowedLocal": {
 			src: `
 				fn store(x: {peer: &mut {value: number}}) {}
@@ -740,8 +718,6 @@ func TestConnectedComponentMove(t *testing.T) {
 					val y = b
 				}
 			`,
-			want:         []string{"7:14-7:15: use of moved value 'b'"},
-			wantDataflow: []string{},
 			types: map[string]string{
 				"store": "fn (x: {peer: &mut {value: number}}) -> undefined",
 				"f":     "fn () -> undefined",
@@ -874,10 +850,9 @@ func TestConnectedComponentMove(t *testing.T) {
 			want:  nil,
 			types: map[string]string{"build": "fn () -> {l: &{peer: &mut {x: number}}, r: &{peer: &mut {x: number}}}"},
 		},
-		// The co-move consumes the shared node exactly once despite the two internal mutable
-		// paths to it: storing the graph into a callee consumes d, so reading it afterward is a
-		// single use-after-move, with no spurious double-move from reaching d through both b
-		// and c.
+		// The graph reaches d through two internal mutable paths. Passing it to store moves a
+		// and copies the borrows it holds, so d is not moved, and moving d into y after the call
+		// is accepted.
 		"InternalMutableAliasConsumesSharedNode": {
 			src: `
 				fn store(x: {l: &{peer: &mut {x: number}}, r: &{peer: &mut {x: number}}}) {}
@@ -890,16 +865,14 @@ func TestConnectedComponentMove(t *testing.T) {
 					val y = d
 				}
 			`,
-			want:         []string{"9:14-9:15: use of moved value 'd'"},
-			wantDataflow: []string{},
 			types: map[string]string{
 				"store": "fn (x: {l: &{peer: &mut {x: number}}, r: &{peer: &mut {x: number}}}) -> undefined",
 				"f":     "fn () -> undefined",
 			},
 		},
-		// The co-move reaches the deepest transitive node: storing the chain a → b → c → d
-		// into a callee consumes d, so reading it afterward is a use-after-move even though d
-		// is three borrows away from the moved binding.
+		// d is three borrows away from the moved binding a. Passing the chain a → b → c → d
+		// to store moves a and copies the borrows it holds, so d is not moved, and moving d
+		// into y after the call is accepted.
 		"ChainMoveConsumesDeepestNode": {
 			src: `
 				fn store(x: {peer: &{peer: &{peer: &{value: number}}}}) {}
@@ -912,8 +885,6 @@ func TestConnectedComponentMove(t *testing.T) {
 					val y = d
 				}
 			`,
-			want:         []string{"9:14-9:15: use of moved value 'd'"},
-			wantDataflow: []string{},
 			types: map[string]string{
 				"store": "fn (x: {peer: &{peer: &{peer: &{value: number}}}}) -> undefined",
 				"f":     "fn () -> undefined",
@@ -964,7 +935,7 @@ func TestConnectedComponentMove(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tc.src)
-			require.Equal(t, wantForPass(tc.want, tc.wantDataflow), messagesWithSpan(t, errs))
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
 			require.Equal(t, tc.types, values)
 		})
 	}

@@ -13,16 +13,12 @@ import (
 // borrows its captures, and the paths it hands the caller are weighed like a stored borrow's. A
 // closure that stays in the body borrows its captures too.
 //
-// wantDataflow is what the program reports with the dataflow pass on, when that differs from
-// want. The pass rejects a move of a local a module-level closure captures by E3, at the move.
-// The current checks reject such a move only when the closure writes the local, and report it
-// at a later call. TestOwnershipDataflow covers the move of a local a module-level closure only
-// reads.
+// A move of a local that a module-level closure captures breaks E3, and the diagnostic is at
+// the move. TestOwnershipDataflow covers the move of a local a module-level closure only reads.
 func TestEscapingClosureCapture(t *testing.T) {
 	tests := map[string]struct {
-		src          string
-		want         []string
-		wantDataflow []string
+		src  string
+		want []string
 	}{
 		// A closure stored into a module-level binding that only reads p leaves p free, so the
 		// frame can read p.
@@ -58,8 +54,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 					take(p)
 				}
 			`,
-			want:         []string{"7:11-7:12: cannot move 'p' in a call that may run 'sink', which writes it"},
-			wantDataflow: []string{"7:11-7:12: cannot move 'p' while it is borrowed"},
+			want: []string{"7:11-7:12: cannot move 'p' while it is borrowed"},
 		},
 		// A direct call to an overloaded name may run sink as much as any other call.
 		"MoveIntoAnOverloadAfterStoringAWritingClosureIntoAGlobalConflicts": {
@@ -73,8 +68,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 					take(p)
 				}
 			`,
-			want:         []string{"8:11-8:12: cannot move 'p' in a call that may run 'sink', which writes it"},
-			wantDataflow: []string{"8:11-8:12: cannot move 'p' while it is borrowed"},
+			want: []string{"8:11-8:12: cannot move 'p' while it is borrowed"},
 		},
 		// readIt may call sink, which writes p while readIt reads it through `a`.
 		"BorrowAfterStoringAWritingClosureIntoAGlobalConflicts": {
@@ -117,8 +111,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 					noop()
 				}
 			`,
-			want:         []string{"8:6-8:12: this call may run 'sink', which writes 'p' after it was moved"},
-			wantDataflow: []string{"7:14-7:15: cannot move 'p' while it is borrowed"},
+			want: []string{"7:14-7:15: cannot move 'p' while it is borrowed"},
 		},
 		"UnusedBorrowAfterStoringAWritingClosureIntoAGlobalOk": {
 			src: `
@@ -401,7 +394,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tc.src)
-			require.Equal(t, wantForPass(tc.want, tc.wantDataflow), messagesWithSpan(t, errs))
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
 		})
 	}
 }

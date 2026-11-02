@@ -243,11 +243,9 @@ func TestStaticEscapeTransition(t *testing.T) {
 	})
 }
 
-// TestStaticEscapeTransitionFromSource is the end-to-end counterpart. The current checks move
-// the borrow `p` into the module-level `sink`, so the later write `p.x = 1` is a single
-// use-after-move. The dataflow pass copies the borrow, as D8 decides, and the copy is
-// `'static`. sink keeps an immutable path to p for the rest of the program, so the write
-// through p breaks E2.
+// TestStaticEscapeTransitionFromSource is the end-to-end counterpart. The store copies the
+// borrow `p` into the module-level `sink`, as D8 decides, and the copy is `'static`. sink
+// keeps an immutable path to p for the rest of the program, so the write through p breaks E2.
 func TestStaticEscapeTransitionFromSource(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		var sink: &{x: number} = &{x: 0}
@@ -256,10 +254,9 @@ func TestStaticEscapeTransitionFromSource(t *testing.T) {
 			p.x = 1
 		}
 	`)
-	require.Equal(t, wantForPass(
-		[]string{"5:4-5:5: use of moved value 'p'"},
+	require.Equal(t,
 		[]string{"5:4-5:7: cannot assign to 'p.x' while it is borrowed as immutable"},
-	), messagesWithSpan(t, errs))
+		messagesWithSpan(t, errs))
 }
 
 // TestGlobalWriteMutTransition covers Option 1: a store into a module-level binding is a
@@ -552,13 +549,11 @@ func TestCollectOuterBindingsPreludeCache(t *testing.T) {
 // it with `&`/`&mut`, and asserts the transition verdict. The aliasing cases borrow
 // explicitly, since binding an owned value into another owned binding moves it rather
 // than aliasing it, which the move-engine tests cover separately. want is empty for the
-// safe cases. wantDataflow, when set, is what the case reports with the dataflow pass on, as
-// wantForPass picks.
+// safe cases.
 func TestMutabilityTransitionsFromSource(t *testing.T) {
 	tests := map[string]struct {
-		src          string
-		want         []string
-		wantDataflow []string
+		src  string
+		want []string
 	}{
 		// Rule 1 (mut→immutable): error when the mutable source is live after an
 		// immutable borrow of it.
@@ -630,9 +625,6 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"5:7-5:11: cannot assign 'z' to immutable 'sink': 'p' still has mutable access to 'z' after this point",
-			},
-			wantDataflow: []string{
 				"6:7-6:10: cannot assign to 'p.x' while it is borrowed as immutable",
 			},
 		},
@@ -703,10 +695,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 					c
 				}
 			`,
-			want: []string{
-				"5:6-5:51: cannot assign 'a' to immutable 'c': 'a' is still used mutably after this point",
-			},
-			wantDataflow: []string{"6:6-6:7: use of moved value 'a'"},
+			want: []string{"6:6-6:7: use of moved value 'a'"},
 		},
 		// Rule 1: safe when the immutable borrow is dead. snapshot is never read, so there
 		// is no window where the immutable view and the live mutable source overlap.
@@ -741,7 +730,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tc.src)
-			require.Equal(t, wantForPass(tc.want, tc.wantDataflow), transitionMessagesWithSpan(t, errs))
+			require.Equal(t, tc.want, transitionMessagesWithSpan(t, errs))
 		})
 	}
 }

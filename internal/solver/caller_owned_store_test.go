@@ -23,9 +23,6 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 	tests := map[string]struct {
 		src  string
 		want []string
-		// wantDataflow is what the case expects with the dataflow pass on, when that differs
-		// from want. The pass reports a pair of paths by E2 in place of the frame-exit check.
-		wantDataflow []string
 	}{
 		// An immutable borrow stored into the caller's object with nothing after it is the
 		// only path to p once f returns.
@@ -302,10 +299,9 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 					q.r = &mut b
 				}
 			`,
-			want: []string{"5:12-5:18: 'b' leaves the function through a mutable path and an immutable one"},
 			// The caller reads both `p.r` and `q.r` once f returns, so `&mut b` breaks E2
 			// against the `&b` that `p.r` still holds.
-			wantDataflow: []string{"5:12-5:18: cannot borrow 'b' as mutable while it is borrowed as immutable"},
+			want: []string{"5:12-5:18: cannot borrow 'b' as mutable while it is borrowed as immutable"},
 		},
 		// Two writers are Rule 3 of planning/lifetimes/requirements.md and are accepted.
 		"MutableStoresOk": {
@@ -353,10 +349,9 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 					return a
 				}
 			`,
-			want: []string{"6:13-6:14: 'b' leaves the function through a mutable path and an immutable one"},
 			// a's mutable borrow of b is live until the return reads a, so the store's `&b`
 			// breaks E2.
-			wantDataflow: []string{"5:12-5:14: cannot borrow 'b' as immutable while it is borrowed as mutable"},
+			want: []string{"5:12-5:14: cannot borrow 'b' as immutable while it is borrowed as mutable"},
 		},
 		// The writes between iterations happen before the caller can read `p.r`, so it sees b's
 		// final value.
@@ -462,9 +457,8 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 					return [&mut a, &e, &mut e]
 				}
 			`,
-			want: []string{"6:13-6:33: returned value reaches 'e' through a mutable path and an immutable one"},
 			// `&e` lasts for the return statement, so `&mut e` beside it breaks E2.
-			wantDataflow: []string{"6:26-6:32: cannot borrow 'e' as mutable while it is borrowed as immutable"},
+			want: []string{"6:26-6:32: cannot borrow 'e' as mutable while it is borrowed as immutable"},
 		},
 		// A later store into the same field repoints it, so b is no longer reachable through
 		// `p.r` and its loan ends there. Moving b before p is read again is fine.
@@ -484,7 +478,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tc.src)
-			require.Equal(t, wantForPass(tc.want, tc.wantDataflow), messagesWithSpan(t, errs))
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
 		})
 	}
 }
