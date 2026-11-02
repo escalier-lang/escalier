@@ -29,12 +29,15 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/escalier-lang/escalier/internal/set"
 )
 
 // tracePrefix starts each line the solver prints for a diagnostic. It matches
@@ -78,7 +81,7 @@ func run(args []string, out, errOut io.Writer) error {
 	writeReport(out, diffRuns(off.diags, on.diags))
 
 	if n := len(off.problems) + len(on.problems); n > 0 {
-		return fmt.Errorf("%d test binaries panicked or packages failed to build, so the report is incomplete", n)
+		return fmt.Errorf("%d test binaries panicked, failed to build, or failed outside any test, so the report is incomplete", n)
 	}
 	return nil
 }
@@ -92,7 +95,8 @@ func writeProblems(w io.Writer, side string, problems []string) {
 
 // traceTests runs `go test -json` over packages with ESCALIER_OWNERSHIP_DATAFLOW set to
 // flagValue and returns the diagnostics the tests printed. A failing test does not stop the
-// run, so a non-zero exit from `go test` is not an error.
+// run. A non-zero exit from `go test` is an error only when no package reported a failure,
+// as when a package pattern matches nothing.
 func traceTests(packages []string, runPattern, flagValue string, errOut io.Writer) (trace, error) {
 	args := []string{"test", "-json", "-count=1", "-parallel=1"}
 	if runPattern != "" {
@@ -124,6 +128,10 @@ func traceTests(packages []string, runPattern, flagValue string, errOut io.Write
 		return trace{}, waitErr
 	}
 
+	if exitErr != nil && tr.failedPackages == 0 {
+		return trace{}, fmt.Errorf("go test exited with %v and reported no failed package", exitErr)
+	}
+
 	return tr, nil
 }
 
@@ -151,8 +159,12 @@ type trace struct {
 	// diags lists the diagnostics in the order they were printed.
 	diags []traced
 	// problems lists each output line that says a test binary panicked or a package did
-	// not build, prefixed with the test or package that printed it.
+	// not build, prefixed with the test or package that printed it. It also lists each
+	// package that failed although none of its tests failed, such as a package whose test
+	// binary rejects a -run pattern.
 	problems []string
+	// failedPackages counts the packages that reported a failure.
+	failedPackages int
 }
 
 // problemMarkers are the texts `go test` prints at the end of a line when a package fails to
@@ -193,10 +205,60 @@ func normalize(s string) string {
 	return tempDir.ReplaceAllString(s, "$$TMP")
 }
 
+// partialLine is the start of an output line that `go test -json` split across several
+// output events, and the test the first event names.
+type partialLine struct {
+	test string
+	text strings.Builder
+}
+
 // parseTrace reads a `go test -json` stream and returns the diagnostics the tests printed
 // and the problems the stream reports. Other lines are skipped.
+//
+// `go test -json` splits an output line longer than its buffer across several output
+// events, and only the last of them ends in a newline. parseTrace joins the events of each
+// package until a newline before it reads the line.
 func parseTrace(r io.Reader) (trace, error) {
 	var out trace
+	partial := map[string]*partialLine{}
+	failedTests := set.NewSet[string]()
+	problemPkgs := set.NewSet[string]()
+
+	readLine := func(pkg, test, text string) {
+		if !strings.HasPrefix(text, tracePrefix) {
+			if line := strings.TrimSpace(text); isProblem(line) {
+				out.problems = append(out.problems, testKey(pkg, test)+": "+line)
+				problemPkgs.Add(pkg)
+			}
+			return
+		}
+
+		fields := strings.SplitN(strings.TrimSuffix(strings.TrimPrefix(text, tracePrefix), "\n"), "\t", 4)
+		if len(fields) != 4 {
+			return
+		}
+
+		key := testKey(pkg, test)
+		program := fields[0]
+		if program == "" {
+			program = key
+		}
+
+		out.diags = append(out.diags, traced{Test: key, Diag: diagnostic{
+			Program: program,
+			Type:    fields[1],
+			Span:    normalize(fields[2]),
+			Message: normalize(fields[3]),
+		}})
+	}
+
+	// flush reads the unfinished line of pkg, if any.
+	flush := func(pkg string) {
+		if p, ok := partial[pkg]; ok {
+			delete(partial, pkg)
+			readLine(pkg, p.test, p.text.String())
+		}
+	}
 
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 1<<20), 1<<26)
@@ -212,34 +274,34 @@ func parseTrace(r io.Reader) (trace, error) {
 			return trace{}, fmt.Errorf("parsing go test output: %w", err)
 		}
 
-		if ev.Action != "output" {
-			continue
-		}
-
-		if !strings.HasPrefix(ev.Output, tracePrefix) {
-			if line := strings.TrimSpace(ev.Output); isProblem(line) {
-				out.problems = append(out.problems, testKey(ev.Package, ev.Test)+": "+line)
+		switch {
+		case ev.Action == "output":
+			p, ok := partial[ev.Package]
+			if !ok {
+				p = &partialLine{test: ev.Test}
+				partial[ev.Package] = p
 			}
-			continue
-		}
 
-		fields := strings.SplitN(strings.TrimSuffix(strings.TrimPrefix(ev.Output, tracePrefix), "\n"), "\t", 4)
-		if len(fields) != 4 {
-			continue
-		}
+			p.text.WriteString(ev.Output)
+			if strings.HasSuffix(ev.Output, "\n") {
+				flush(ev.Package)
+			}
+		case ev.Action == "fail" && ev.Test != "":
+			failedTests.Add(ev.Package)
+		case ev.Action == "fail":
+			flush(ev.Package)
+			out.failedPackages++
 
-		test := testKey(ev.Package, ev.Test)
-		program := fields[0]
-		if program == "" {
-			program = test
+			if !failedTests.Contains(ev.Package) && !problemPkgs.Contains(ev.Package) {
+				out.problems = append(out.problems, ev.Package+": the package failed but none of its tests did")
+			}
+		case ev.Test == "" && (ev.Action == "pass" || ev.Action == "skip"):
+			flush(ev.Package)
 		}
+	}
 
-		out.diags = append(out.diags, traced{Test: test, Diag: diagnostic{
-			Program: program,
-			Type:    fields[1],
-			Span:    normalize(fields[2]),
-			Message: normalize(fields[3]),
-		}})
+	for _, pkg := range slices.Sorted(maps.Keys(partial)) {
+		flush(pkg)
 	}
 
 	return out, scanner.Err()

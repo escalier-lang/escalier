@@ -275,6 +275,10 @@ type loan struct {
 	// mut says a write can go through this borrow. At a call it comes from the parameter,
 	// which is what decides whether the callee may write.
 	mut bool
+	// mixed marks a call argument whose parameter has both `&mut` and `&` borrow members, as
+	// `&mut {v: number} | &{v: number}` does. mut is set for it. The callee can narrow the
+	// argument to either member, so the loan conflicts with any overlapping loan.
+	mixed bool
 	// holder is the binding the borrow is bound to, and 0 for a call argument. A held loan
 	// lasts while its binding is live; one with no holder lasts for its own statement.
 	holder liveness.VarID
@@ -358,13 +362,23 @@ func placesOverlap(a, b movePlace) bool {
 // whether the data can change, so one borrow writable and the other not. Two readers see the
 // same value and two writers both expect the value to move under them, so neither pair is a
 // conflict. Rule 3 in planning/lifetimes/requirements.md is what admits the second of those.
+// A mixed loan can be either kind, so it conflicts with any loan of overlapping data.
 func conflicts(a, b loan) bool {
-	return a.mut != b.mut && placesOverlap(a.place, b.place)
+	return (a.mut != b.mut || a.mixed || b.mixed) && placesOverlap(a.place, b.place)
 }
 
 // reportBorrowConflict reports second as the borrow that broke exclusivity, pointing back at
 // the borrow already live.
 func (c *checker) reportBorrowConflict(first, second loan) {
+	// A mixed loan conflicts through the member of the other kind, so the message names that
+	// kind.
+	if first.mixed {
+		first.mut = !second.mut
+	}
+	if second.mixed {
+		second.mut = !first.mut
+	}
+
 	c.report(&BorrowAliasError{
 		Place:      c.renderPlace(second.place),
 		FirstPlace: c.renderPlace(first.place),
@@ -1427,6 +1441,13 @@ func (c *checker) checkCallBorrowExclusivity(e *ast.CallExpr, fn *soltype.FuncTy
 		if !isBorrow {
 			continue
 		}
+
+		// A union parameter such as `&{v: number} | number` also accepts a value type,
+		// which the call copies rather than borrows.
+		if argT := c.info.TypeOf(arg); argT != nil && c.holdsValueType(argT) {
+			continue
+		}
+
 		place, ok := c.loanPlace(arg)
 		if !ok {
 			continue
@@ -1434,7 +1455,7 @@ func (c *checker) checkCallBorrowExclusivity(e *ast.CallExpr, fn *soltype.FuncTy
 		c.noteLoanRead(borrowOperand(arg))
 		// The callee can narrow a union parameter to its `&mut` member and write through
 		// it, so a parameter with any `&mut` member takes a mutable loan.
-		args = append(args, loan{place: place, mut: borrow.anyMut, ref: ref, node: arg})
+		args = append(args, loan{place: place, mut: borrow.anyMut, mixed: borrow.anyMut && !borrow.mut, ref: ref, node: arg})
 	}
 	for i := range args {
 		for j := i + 1; j < len(args); j++ {

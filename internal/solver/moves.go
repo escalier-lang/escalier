@@ -1067,7 +1067,7 @@ func (c *checker) recordMovePlace(p movePlace, moveNode ast.Node, ref liveness.S
 		})
 		return
 	}
-	c.recordMove(id, moveNode, ref)
+	c.recordMove(id, moveNode, ref, false)
 }
 
 // overlappingMoveAt returns the lattice VarID of a place other than id, moved at ref, that
@@ -1096,8 +1096,9 @@ func (c *checker) overlappingMoveAt(ref liveness.StmtRef, id liveness.VarID, p m
 // program point is an intra-statement reuse — `return [x, x]`, `f(x, x)`, the `dup`
 // double move — so it is reported immediately as a use-after-move rather than waiting
 // for the lattice, which is statement-granular and cannot order two moves within one
-// statement.
-func (c *checker) recordMove(varID liveness.VarID, moveNode ast.Node, ref liveness.StmtRef) {
+// statement. closureCall marks a move of a closure's binding by a call that runs the
+// closure, and the diagnostic of a second such move carries the mark.
+func (c *checker) recordMove(varID liveness.VarID, moveNode ast.Node, ref liveness.StmtRef, closureCall bool) {
 	if c.fn == nil || c.fn.moveSites == nil || varID <= 0 {
 		return
 	}
@@ -1108,9 +1109,10 @@ func (c *checker) recordMove(varID liveness.VarID, moveNode ast.Node, ref livene
 	}
 	if at.Contains(varID) {
 		c.report(&UseAfterMoveError{
-			Name:     c.moveNameOf(varID),
-			use:      moveNode,
-			moveSite: c.fn.moveNodes[varID],
+			Name:        c.moveNameOf(varID),
+			closureCall: closureCall,
+			use:         moveNode,
+			moveSite:    c.fn.moveNodes[varID],
 		})
 		return
 	}

@@ -544,10 +544,15 @@ func (d *bodyDataflow) move(ev *moveEvent, at liveness.StmtRef, s *dataflowState
 }
 
 // mergeTupleMove replaces the moves of the elements of a tuple with one move of the whole
-// tuple once every element a tuple pattern names over it has moved. place is the place just
-// moved, and node is the expression that moved it. `val [x, y] = b` moves `b.0` and `b.1`,
-// and then a later use of b reads a moved value rather than a partially moved one. The
-// tuple is moved on every path only when each of its elements is.
+// tuple once every path has moved every element a tuple pattern names over it. place is the
+// place just moved, and node is the expression that moved it. `val [x, y] = b` moves `b.0`
+// and `b.1`, and then a later use of b reads a moved value rather than a partially moved one.
+//
+// An element that only some paths moved keeps its own move. Two paths that each move a
+// different element leave the tuple partially moved on both, so merging their moves would
+// report a whole move no path made. Merging only moves made on every path also lets the
+// loop iteration in checkBodyDataflow converge. A move that only a loop's back edge carries
+// is not made on every path into the loop, so it never decides whether a path merges.
 func (d *bodyDataflow) mergeTupleMove(place movePlace, node ast.Node, s *dataflowState) {
 	for len(place.path) > 0 {
 		tuple := movePlace{root: place.root, path: place.path[:len(place.path)-1]}
@@ -557,20 +562,17 @@ func (d *bodyDataflow) mergeTupleMove(place movePlace, node ast.Node, s *dataflo
 		}
 
 		keys := make([]string, len(parts))
-		every := true
 		for i, seg := range parts {
 			keys[i] = placeKey(movePlace{root: tuple.root, path: append(slices.Clip(tuple.path), seg)})
-			m, moved := s.moved[keys[i]]
-			if !moved {
+			if m, moved := s.moved[keys[i]]; !moved || !m.every {
 				return
 			}
-			every = every && m.every
 		}
 
 		for _, k := range keys {
 			delete(s.moved, k)
 		}
-		s.moved[placeKey(tuple)] = movedPlace{place: tuple, node: node, every: every}
+		s.moved[placeKey(tuple)] = movedPlace{place: tuple, node: node, every: true}
 		place = tuple
 	}
 }
