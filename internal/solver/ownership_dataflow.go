@@ -361,6 +361,9 @@ type bodyDataflow struct {
 	// derived holds the borrow event of each loan a copy derives, so each fixed-point
 	// iteration derives the same loan.
 	derived map[derivedKey]*borrowEvent
+	// derivedFrom maps the borrow event of each loan a copy derives from another loan to
+	// the origin derivedKey names for it.
+	derivedFrom map[*borrowEvent]*borrowEvent
 	// errs collects the diagnostics of the reporting sweep. It is nil while the pass is
 	// still iterating to a fixed point, and nothing is reported then.
 	errs *[]SolverError
@@ -385,6 +388,7 @@ func (c *checker) checkBodyDataflow(t *ownershipEvents) []SolverError {
 		order:        map[*borrowEvent]loanOrder{},
 		copyIndex:    map[*copyEvent]int{},
 		derived:      map[derivedKey]*borrowEvent{},
+		derivedFrom:  map[*borrowEvent]*borrowEvent{},
 		indexSegment: c.indexSegment,
 	}
 	for i, ev := range t.events {
@@ -668,7 +672,9 @@ func (d *bodyDataflow) checkNewPath(place movePlace, kind borrowKind, node ast.N
 // and not what the slot points to, so the copy is not checked against it.
 //
 // A copy that keeps the borrow's kind and lifetime makes the holder a second holder of each
-// loan ev.place's root holds, as `val c = a` does after `val a = &x`. A copy into a
+// loan ev.place's root holds, as `val c = a` does after `val a = &x`. Such a copy into a
+// call argument or receiver also takes a loan through the borrow at ev.place for its
+// statement. A copy into a
 // destination of the other kind, or into a `'static` one, instead derives loans of that
 // kind and lifetime for the holder alone:
 //
@@ -693,6 +699,17 @@ func (d *bodyDataflow) copyBorrow(ev *copyEvent, at liveness.StmtRef, s *dataflo
 		}
 
 		d.addHolder(ev.place.root, ev.holder, ev.node, s)
+
+		// A call argument is a new path through ev.place for the rest of its statement. In
+		// `writeRead(m, m)` with `m: &mut {x: number}` and a `&` second parameter, the second
+		// argument's `&` path then conflicts with the first's `&mut` one, as it does when the
+		// parameters come in the other order.
+		switch ev.holder.target.(type) {
+		case argTarget, receiverTarget:
+			d.derivedLoan(ev, nil, s)
+			return
+		}
+
 		if held {
 			return
 		}
@@ -715,12 +732,25 @@ func (d *bodyDataflow) copyBorrow(ev *copyEvent, at liveness.StmtRef, s *dataflo
 			d.holdLoan(l, ev.holder, ev.node)
 			continue
 		}
+
+		// A `'static` loan of l's place stays live, so the derived path conflicts with one of
+		// the other kind even when the source never uses its own loan again. After
+		// `val d: &'static mut {x: number} = &mut p`, the copy `val r: &{x: number} = d` makes
+		// an immutable path to p while p has a `'static` mutable one.
+		static := slices.DeleteFunc(slices.Clone(loans), func(o *liveLoan) bool {
+			return !o.static || o.through != l.through
+		})
+		d.checkNewPath(l.ev.place, ev.borrow, ev.node, at, static)
 		d.derivedLoan(ev, l, s)
 	}
 }
 
-// derivedKey names a loan a copy derives: the copy, and the borrow event of the loan it
-// derives from, or nil for the loan through the copied borrow.
+// derivedKey names a loan a copy derives: the copy, and the origin of the loan it derives
+// from, or nil for the loan through the copied borrow. The origin of a loan derived from
+// another loan is that loan's origin. The origin of any other loan is its own borrow event.
+// A loan has the place of its origin, so a copy derives one loan from all loans that share
+// an origin. That keeps the loans of a copy in a loop, such as `a = a` with a `'static`
+// destination, from growing on each iteration.
 type derivedKey struct {
 	copied *copyEvent
 	from   *borrowEvent
@@ -742,6 +772,9 @@ func (d *bodyDataflow) derivedLoan(ev *copyEvent, from *liveLoan, s *dataflowSta
 	place, through := ev.place, true
 	if from != nil {
 		key.from = from.ev
+		if origin, derived := d.derivedFrom[from.ev]; derived {
+			key.from = origin
+		}
 		place, through = from.ev.place, from.through
 	}
 
@@ -753,6 +786,9 @@ func (d *bodyDataflow) derivedLoan(ev *copyEvent, from *liveLoan, s *dataflowSta
 			lifetime: ev.lifetime,
 		}
 		d.derived[key] = bev
+		if key.from != nil {
+			d.derivedFrom[bev] = key.from
+		}
 		d.order[bev] = loanOrder{event: d.copyIndex[ev], derived: len(d.derived)}
 	}
 
@@ -811,10 +847,15 @@ func (d *bodyDataflow) capturesPlace(closure ast.Func, place movePlace, s *dataf
 }
 
 // mergeTupleMove replaces the moves of the elements of a tuple with one move of the whole
-// tuple once every element a tuple pattern names over it has moved. place is the place just
-// moved, and node is the expression that moved it. `val [x, y] = b` moves `b.0` and `b.1`,
-// and then a later use of b reads a moved value rather than a partially moved one. The
-// tuple is moved on every path only when each of its elements is.
+// tuple once every path has moved every element a tuple pattern names over it. place is the
+// place just moved, and node is the expression that moved it. `val [x, y] = b` moves `b.0`
+// and `b.1`, and then a later use of b reads a moved value rather than a partially moved one.
+//
+// An element that only some paths moved keeps its own move. Two paths that each move a
+// different element leave the tuple partially moved on both, so merging their moves would
+// report a whole move no path made. Merging only moves made on every path also lets the
+// loop iteration in checkBodyDataflow converge. A move that only a loop's back edge carries
+// is not made on every path into the loop, so it never decides whether a path merges.
 func (d *bodyDataflow) mergeTupleMove(place movePlace, node ast.Node, s *dataflowState) {
 	for len(place.path) > 0 {
 		tuple := movePlace{root: place.root, path: place.path[:len(place.path)-1]}
@@ -824,20 +865,17 @@ func (d *bodyDataflow) mergeTupleMove(place movePlace, node ast.Node, s *dataflo
 		}
 
 		keys := make([]string, len(parts))
-		every := true
 		for i, seg := range parts {
 			keys[i] = placeKey(movePlace{root: tuple.root, path: append(slices.Clip(tuple.path), seg)})
-			m, moved := s.moved[keys[i]]
-			if !moved {
+			if m, moved := s.moved[keys[i]]; !moved || !m.every {
 				return
 			}
-			every = every && m.every
 		}
 
 		for _, k := range keys {
 			delete(s.moved, k)
 		}
-		s.moved[placeKey(tuple)] = movedPlace{place: tuple, node: node, every: every}
+		s.moved[placeKey(tuple)] = movedPlace{place: tuple, node: node, every: true}
 		place = tuple
 	}
 }
