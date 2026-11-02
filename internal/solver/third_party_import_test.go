@@ -21,9 +21,8 @@ func TestThirdPartyImportResolves(t *testing.T) {
 		blockedBy string
 	}{
 		{
-			name:      "a package declared with export =",
-			src:       "import \"fast-deep-equal\" as fde\nval same = fde(1, 1)",
-			blockedBy: "#2108",
+			name: "a package declared with export =",
+			src:  "import \"fast-deep-equal\" as fde\nval same = fde(1, 1)",
 		},
 		{
 			name: "a package whose types name a readonly array",
@@ -35,7 +34,7 @@ func TestThirdPartyImportResolves(t *testing.T) {
 import "react/jsx-runtime" as rt
 val f = react.Fragment
 val j = rt.jsx`,
-			blockedBy: "#2108, #2110 and #328",
+			blockedBy: "#2110 and #328",
 		},
 	}
 	for _, test := range tests {

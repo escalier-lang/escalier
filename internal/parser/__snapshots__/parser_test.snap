@@ -5443,51 +5443,51 @@
     Decl: &ast.DeclareModuleDecl{
         Name: &ast.StrLit{
             Value: "fp-ts",
-            span: 1909-1916,
+            span: 1910-1917,
         },
         Decls: []ast.Decl{
             &ast.FuncDecl{
                 Name: &ast.Ident{
                     Name: "unsafePush",
-                    span: 1934-1944,
+                    span: 1935-1945,
                 },
                 FuncSig: ast.FuncSig{
                     Params: []*ast.Param{
                         &ast.Param{
                             Pattern: &ast.IdentPat{
                                 Name: "arr",
-                                span: 1945-1948,
+                                span: 1946-1949,
                             },
                             TypeAnn: &ast.NumberTypeAnn{
-                                span: 1950-1956,
+                                span: 1951-1957,
                             },
                         },
                         &ast.Param{
                             Pattern: &ast.IdentPat{
                                 Name: "x",
-                                span: 1958-1959,
+                                span: 1959-1960,
                             },
                             TypeAnn: &ast.NumberTypeAnn{
-                                span: 1961-1967,
+                                span: 1962-1968,
                             },
                         },
                     },
                     Return: &ast.LitTypeAnn{
                         Lit: &ast.UndefinedLit{
-                            span: 1972-1981,
+                            span: 1973-1982,
                         },
-                        span: 1972-1981,
+                        span: 1973-1982,
                     },
                 },
                 declare: true,
                 override: true,
-                span: 1923-1981,
+                span: 1924-1982,
             },
         },
         override: true,
-        span: 1885-1983,
+        span: 1886-1984,
     },
-    span: 1885-1983,
+    span: 1886-1984,
     commentSlots: ast.commentSlots{
         leading: []*ast.Comment{
             &ast.Comment{
@@ -5519,12 +5519,12 @@
                 span: 1781-1799,
             },
             &ast.Comment{
-                Text: "//       export fn unsafePush(arr: mut Array<number>, x: number) -> undefined",
-                span: 1800-1877,
+                Text: "//       export fn unsafePush(arr: &mut Array<number>, x: number) -> undefined",
+                span: 1800-1878,
             },
             &ast.Comment{
                 Text: "//   }",
-                span: 1878-1884,
+                span: 1879-1885,
             },
         },
     },

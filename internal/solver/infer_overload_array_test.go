@@ -36,10 +36,10 @@ func TestInferOverloadArmKeepsItsParameterAnnotation(t *testing.T) {
 		{
 			name: "mut array",
 			src: `
-				fn g(xs: mut Array<number>) -> number { return 1 }
+				fn g(mut xs: Array<number>) -> number { return 1 }
 				fn g(a: string, b: string) -> string { return a }
 			`,
-			want: "(fn (xs: mut Array<number>) -> number) & (fn (a: string, b: string) -> string)",
+			want: "(fn (xs: Array<number>) -> number) & (fn (a: string, b: string) -> string)",
 		},
 		{
 			name: "array in a tuple",
@@ -131,22 +131,22 @@ func TestInferOverloadArmChecksItsArrayElement(t *testing.T) {
 // nothing else.
 func TestInferOverloadPathsAgreeOnAnArrayParameter(t *testing.T) {
 	annotated, _, errs := inferSource(t, `
-		fn g(...xs: mut Array<number>) -> number { return 1 }
+		fn g(...mut xs: Array<number>) -> number { return 1 }
 		fn g(a: string, b: string) -> string { return a }
 	`)
 	require.Empty(t, messagesWithSpan(t, errs))
 
 	unannotated, _, errs := inferSource(t, `
-		fn g(...xs: mut Array<number>) { return 1 }
+		fn g(...mut xs: Array<number>) { return 1 }
 		fn g(a: string, b: string) { return a }
 	`)
 	require.Empty(t, messagesWithSpan(t, errs))
 
 	require.Equal(t,
-		"(fn (...xs: mut Array<number>) -> number) & (fn (a: string, b: string) -> string)",
+		"(fn (...xs: Array<number>) -> number) & (fn (a: string, b: string) -> string)",
 		annotated["g"])
 	require.Equal(t,
-		"(fn (...xs: mut Array<number>) -> 1) & (fn (a: string, b: string) -> string)",
+		"(fn (...xs: Array<number>) -> 1) & (fn (a: string, b: string) -> string)",
 		unannotated["g"])
 }
 

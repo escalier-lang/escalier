@@ -85,7 +85,9 @@ func (c *checker) checkCanReturn() {
 	pending := c.pendingReturns
 	c.pendingReturns = nil
 	for _, p := range pending {
-		display, isFunc := coalesceScheme(p.fn, p.genLevel, nil, nil).(*soltype.FuncType)
+		// The check asks only whether a return arm is a type the caller picks. A type
+		// parameter whose name occurs once is still one, so the display keeps it.
+		display, isFunc := coalesceScheme(p.fn, p.genLevel, nil, nil, false).(*soltype.FuncType)
 		if !isFunc || finitelyInhabited(display.Ret) {
 			continue
 		}

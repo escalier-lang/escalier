@@ -499,21 +499,28 @@ func mergeDecls(stmts []dts_parser.Statement) []dts_parser.Statement {
 // method does not mutate.
 //
 // `ReadonlyFoo` itself is dropped from emission, and no alias stands in
-// for it. Escalier spells the immutable view `Foo<…>`, so once the
-// rewrite below has respelled every reference there is nothing left for
-// the readonly name to denote.
+// for it. Escalier spells an owned value `Foo<…>` whether or not it is
+// mutable, so once the rewrite below has respelled every reference there
+// is nothing left for the readonly name to denote.
 //
 // After conversion, rewriteReadonlyTwinRefs walks every TypeAnn slot
-// in the emitted module and rewrites references to the twin names so
-// they match Escalier's mut-modifier model: TS `ReadonlyFoo<…>` becomes
-// `Foo<…>` (immutable view), TS `Foo<…>` becomes `mut Foo<…>` (mutable
-// view). `T[]` is already desugared to `Array<T>` by convertTypeAnn so
-// it flows through the same rewrite; `readonly T[]` is desugared to
-// `ReadonlyArray<T>` for the same reason.
+// in the emitted module and renames TS `ReadonlyFoo<…>` to `Foo<…>`.
+// The binding that owns a value decides its mutability, so TS `Foo<…>`
+// stays `Foo<…>`. convertTypeAnn desugars `T[]` to `Array<T>` and
+// `readonly T[]` to `ReadonlyArray<T>`, so both flow through the same
+// rewrite.
 func ConvertBucket(stmts []dts_parser.Statement, facts *ReceiverFacts) (*StandaloneModule, error) {
 	stmts, twins := fuseReadonlyTwins(stmts)
 	classNames := withTwinNames(ClassNames(stmts), twins)
-	return convertFusedBucket(stmts, twins, twins, ConsumedCtorNames(stmts), classNames, facts)
+	mod, err := convertFusedBucket(stmts, twins, twins, ConsumedCtorNames(stmts), classNames, facts)
+	if err != nil {
+		return nil, err
+	}
+	// A `.d.ts` does not say whether a callee writes an argument or returns
+	// structure it shares with one. Rule I3 picks the signature that rejects
+	// more programs. The bucket is the whole input here, so it indexes itself.
+	applyBorrowDefaults(mod, newTypeIndex(mod))
+	return mod, nil
 }
 
 // withTwinNames adds each readonly twin's name to a set holding its mutable
@@ -955,6 +962,18 @@ func ConvertBuckets(result *PartitionResult, facts *ReceiverFacts) (map[string]*
 			return nil, &BucketConvertError{pkgError{uri}, err}
 		}
 		mods[uri] = mod
+	}
+	// A `.d.ts` does not say whether a callee writes an argument or returns
+	// structure it shares with one. Rule I3 picks the signature that rejects
+	// more programs. A parameter in one bucket may name a type another bucket
+	// declares, so every bucket reads one index of the whole tree.
+	modList := make([]*StandaloneModule, len(uris))
+	for i, uri := range uris {
+		modList[i] = mods[uri]
+	}
+	idx := newTypeIndex(modList...)
+	for _, mod := range modList {
+		applyBorrowDefaults(mod, idx)
 	}
 	return mods, nil
 }

@@ -303,6 +303,10 @@ type FuncParam struct {
 	// `...` marker (which is callback-only). Per-extra element-type checking (§4.2.2)
 	// needs Array types and is M4; M3 models only the arity effect.
 	Rest bool
+	// Moved marks an unannotated parameter whose whole binding the function body moves. A
+	// call moves its argument into such a parameter, as it does into one written with an
+	// owned type. The rendered type does not show it.
+	Moved bool
 }
 
 // FuncType is a (possibly multi-argument) function type. M3 (PR4) adds Inexact: a
@@ -320,8 +324,8 @@ type FuncParam struct {
 // FuncType records its receiver distinctly from its ordinary parameters. Its
 // presence marks an instance method and its absence a static method or a plain
 // function. Type is the receiver type after desugaring the Rust-style shorthand:
-// `self` is `Self`, `mut self` is `mut Self`, `&self` is `&Self`, and `&mut self`
-// is `&mut Self`. The printer reads that shape back to the shorthand, and the
+// `self` and `mut self` are `Self`, `&self` is `&Self`, and `&mut self` is
+// `&mut Self`. The `mut` of `mut self` marks the method's `self` binding, not its type. The printer reads that shape back to the shorthand, and the
 // receiver's borrow and lifetime flow through the visitor the same way a
 // parameter's do. Pattern names the receiver, always the `self` identifier.
 type FuncType struct {
@@ -339,6 +343,12 @@ type FuncType struct {
 	// LifetimeParams are the function's quantified lifetime parameters, the twin of TypeParams;
 	// LevelOf skips them too, though a body lifetime still counts through its RefType.
 	LifetimeParams []*LifetimeParam
+	// Lt is the function's retention lifetime, written `&'a fn () -> R` on a parameter. A
+	// retention lifetime bounds how long a callee may keep a function it receives. Nil
+	// means the callee only calls the function during the call. The lifetime does not make
+	// the function a borrow, and a function value is still copied. Lt is free in the
+	// function type, unlike the lifetimes in LifetimeParams.
+	Lt Lifetime
 }
 
 // ThrowsOrNever returns the type a call to t may raise, resolving the nil shorthand to the
@@ -920,23 +930,17 @@ func AsProperty(e ObjTypeElem) *PropertyElem {
 	return p
 }
 
-// RefType is the single wrapper for borrows and mutability. A bare value is owned
-// and immutable; wrapping it in a RefType marks it mutable, borrowed, or both:
-//
-//	Mut=false Lt=nil   forbidden degenerate cell — NewRef returns the bare Inner
-//	Mut=false Lt='a    immutable borrow
-//	Mut=true  Lt=nil   owned mutable
-//	Mut=true  Lt='a    mutable borrow
+// RefType is a borrow of Inner at lifetime Lt, immutable `&T` or mutable `&mut T`
+// as Mut says. A bare value is owned, and the binding that owns it decides whether it
+// is mutable, so no type marks an owned value mutable.
 //
 // The single RefType<:RefType constrain rule (M4 C2) reads Mut for inner variance
-// and Lt for the lifetime outlives check. M4 D1 lands the Lifetime sort (the
-// LifetimeVar/StaticLifetime concretes, freshLifetime, constrainLt, the probe
-// extension); D2 attaches a fresh lifetime to a borrowed parameter and activates
-// the rule's outlives step. Until D2 every minted RefType still carries Lt == nil,
-// so the immutable-borrow and lifetime forms above are only reached once D2 lands.
+// and Lt for the lifetime outlives check. Every stored RefType carries a lifetime, and
+// NewRef returns the bare Inner for a nil one. The bare<:RefType constrain arm builds a
+// transient lifetime-less view of an owned source to re-dispatch it.
 type RefType struct {
 	Mut   bool
-	Lt    Lifetime // nilable; carries a lifetime once D2 attaches one to a borrow
+	Lt    Lifetime // the borrow's lifetime; nil only on the transient owned view
 	Inner RefInner
 }
 
@@ -1591,7 +1595,7 @@ func LevelOf(t Type) int {
 		if t.Throws != nil {
 			m = max(m, LevelOf(t.Throws))
 		}
-		return m
+		return max(m, LevelOfLifetime(t.Lt))
 	case *TupleType:
 		m := 0
 		for _, e := range t.Elems {

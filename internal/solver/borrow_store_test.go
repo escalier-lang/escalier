@@ -44,7 +44,7 @@ func TestCallStoreEdge(t *testing.T) {
 					item: &'a mut {value: number},
 				) -> undefined
 
-				fn build(p: mut {value: number}, q: mut {value: number}, out: &mut {slot: &mut {value: number}}) {
+				fn build(mut p: {value: number}, mut q: {value: number}, out: &mut {slot: &mut {value: number}}) {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p, spare: &mut q}
 					store(&mut a, &mut b)
@@ -57,7 +57,7 @@ func TestCallStoreEdge(t *testing.T) {
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut {peer: &'a mut {value: number}, spare: &mut {value: number}}, " +
 					"item: &'a mut {value: number}) -> undefined",
-				"build": "fn (p: mut {value: number}, q: mut {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined",
+				"build": "fn (p: {value: number}, q: {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined",
 			},
 		},
 		// The edge lands at [peer], so returning the disjoint [spare] field follows no edge
@@ -70,7 +70,7 @@ func TestCallStoreEdge(t *testing.T) {
 					item: &'a mut {value: number},
 				) -> undefined
 
-				fn build(p: mut {value: number}, q: mut {value: number}) -> &mut {value: number} {
+				fn build(mut p: {value: number}, mut q: {value: number}) -> &mut {value: number} {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p, spare: &mut q}
 					store(&mut a, &mut b)
@@ -81,7 +81,7 @@ func TestCallStoreEdge(t *testing.T) {
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut {peer: &'a mut {value: number}, spare: &mut {value: number}}, " +
 					"item: &'a mut {value: number}) -> undefined",
-				"build": "fn (p: mut {value: number}, q: mut {value: number}) -> &mut {value: number}",
+				"build": "fn (p: {value: number}, q: {value: number}) -> &mut {value: number}",
 			},
 		},
 		// The target's own place prefixes the store's field path, so storing into a field of
@@ -94,7 +94,7 @@ func TestCallStoreEdge(t *testing.T) {
 					item: &'a mut {value: number},
 				) -> undefined
 
-				fn build(p: mut {value: number}, q: mut {value: number}, out: &mut {slot: &mut {value: number}}) {
+				fn build(mut p: {value: number}, mut q: {value: number}, out: &mut {slot: &mut {value: number}}) {
 					val mut b = {value: 2}
 					val mut a = {inner: {peer: &mut p, spare: &mut q}}
 					store(&mut a.inner, &mut b)
@@ -107,7 +107,7 @@ func TestCallStoreEdge(t *testing.T) {
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut {peer: &'a mut {value: number}, spare: &mut {value: number}}, " +
 					"item: &'a mut {value: number}) -> undefined",
-				"build": "fn (p: mut {value: number}, q: mut {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined",
+				"build": "fn (p: {value: number}, q: {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined",
 			},
 		},
 		// The edge reaches the connected-component move as well as the store loan: passing
@@ -119,9 +119,9 @@ func TestCallStoreEdge(t *testing.T) {
 					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
 					item: &'a mut {value: number},
 				) -> undefined
-				declare fn take(x: mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined
+				declare fn take(mut x: {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined
 
-				fn build(p: mut {value: number}, q: mut {value: number}) -> undefined {
+				fn build(mut p: {value: number}, mut q: {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p, spare: &mut q}
 					store(&mut a, &mut b)
@@ -133,8 +133,8 @@ func TestCallStoreEdge(t *testing.T) {
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut {peer: &'a mut {value: number}, spare: &mut {value: number}}, " +
 					"item: &'a mut {value: number}) -> undefined",
-				"take":  "fn (x: mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined",
-				"build": "fn (p: mut {value: number}, q: mut {value: number}) -> undefined",
+				"take":  "fn (x: {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined",
+				"build": "fn (p: {value: number}, q: {value: number}) -> undefined",
 			},
 		},
 		// DISABLED until #1263. The store aliases a.peer to b, so the returned tuple hands the
@@ -149,7 +149,7 @@ func TestCallStoreEdge(t *testing.T) {
 						item: &'a mut {value: number},
 					) -> undefined
 
-					fn build(p: mut {value: number}, q: mut {value: number}) -> [&mut {value: number}, &mut {value: number}] {
+					fn build(mut p: {value: number}, mut q: {value: number}) -> [&mut {value: number}, &mut {value: number}] {
 						val mut b = {value: 2}
 						val mut a = {peer: &mut p, spare: &mut q}
 						store(&mut a, &mut b)
@@ -160,7 +160,7 @@ func TestCallStoreEdge(t *testing.T) {
 				types: map[string]string{
 					"store": "fn <'a>(target: &mut {peer: &'a mut {value: number}, spare: &mut {value: number}}, " +
 						"item: &'a mut {value: number}) -> undefined",
-					"build": "fn (p: mut {value: number}, q: mut {value: number}) " +
+					"build": "fn (p: {value: number}, q: {value: number}) " +
 						"-> [&mut {value: number}, &mut {value: number}]",
 				},
 			},
@@ -174,7 +174,7 @@ func TestCallStoreEdge(t *testing.T) {
 					item: &'a mut {value: number},
 				) -> undefined
 
-				fn build(p: mut {value: number}, q: mut {value: number}, r: mut {value: number}) -> &mut {value: number} {
+				fn build(mut p: {value: number}, mut q: {value: number}, mut r: {value: number}) -> &mut {value: number} {
 					val mut a = {peer: &mut p, spare: &mut q}
 					store(&mut a, &mut r)
 					return a.peer
@@ -184,7 +184,7 @@ func TestCallStoreEdge(t *testing.T) {
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut {peer: &'a mut {value: number}, spare: &mut {value: number}}, " +
 					"item: &'a mut {value: number}) -> undefined",
-				"build": "fn (p: mut {value: number}, q: mut {value: number}, r: mut {value: number}) " +
+				"build": "fn (p: {value: number}, q: {value: number}, r: {value: number}) " +
 					"-> &mut {value: number}",
 			},
 		},
@@ -220,7 +220,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					item: &'a mut {value: number},
 				) -> undefined
 				declare fn take(x: [&mut {value: number}]) -> undefined
-				fn build(p: mut {value: number}) {
+				fn build(mut p: {value: number}) {
 					val mut b = {value: 2}
 					val mut a = [&mut p]
 					store(&mut a, &mut b)
@@ -231,7 +231,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut [&'a mut {value: number}], item: &'a mut {value: number}) -> undefined",
 				"take":  "fn (x: [&mut {value: number}]) -> undefined",
-				"build": "fn (p: mut {value: number}) -> undefined",
+				"build": "fn (p: {value: number}) -> undefined",
 			},
 		},
 		// A class type argument is not addressable as a field either, so a store into a
@@ -244,7 +244,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					target: &'c mut {box: &'d mut Box<&'a mut {value: number}>},
 					item: &'a mut {value: number},
 				) -> undefined
-				fn build(seeded: mut Box<&mut {value: number}>, out: &mut {slot: &mut Box<&mut {value: number}>}) {
+				fn build(mut seeded: Box<&mut {value: number}>, out: &mut {slot: &mut Box<&mut {value: number}>}) {
 					val mut b = {value: 2}
 					val mut a = {box: &mut seeded}
 					store(&mut a, &mut b)
@@ -257,7 +257,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 			types: map[string]string{
 				"Box":   "{new <T>(value: T) -> Box<T>}",
 				"store": "fn <'a>(target: &mut {box: &mut Box<&'a mut {value: number}>}, item: &'a mut {value: number}) -> undefined",
-				"build": "fn (seeded: mut Box<&mut {value: number}>, out: &mut {slot: &mut Box<&mut {value: number}>}) -> undefined",
+				"build": "fn (seeded: Box<&mut {value: number}>, out: &mut {slot: &mut Box<&mut {value: number}>}) -> undefined",
 			},
 		},
 		// An alias is transparent, so a target's referent written under an alias name is
@@ -266,7 +266,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 			src: `
 				type Holder<'a> = {peer: &'a mut {value: number}}
 				declare fn store<'a, 'c>(target: &'c mut Holder<'a>, item: &'a mut {value: number}) -> undefined
-				fn build(p: mut {value: number}, out: &mut {slot: &mut {value: number}}) {
+				fn build(mut p: {value: number}, out: &mut {slot: &mut {value: number}}) {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p}
 					store(&mut a, &mut b)
@@ -278,7 +278,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 			want: []string{"9:14-9:15: cannot move 'b' while it is borrowed"},
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut Holder<'a>, item: &'a mut {value: number}) -> undefined",
-				"build": "fn (p: mut {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined",
+				"build": "fn (p: {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined",
 			},
 		},
 		// The stored argument's own outer lifetime is not the only one that counts: a lifetime
@@ -290,7 +290,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					target: &'c mut {peer: &'a mut {value: number}},
 					item: &'d {inner: &'a mut {value: number}},
 				) -> undefined
-				fn build(p: mut {value: number}, q: mut {value: number}, out: &mut {slot: &mut {value: number}}) {
+				fn build(mut p: {value: number}, mut q: {value: number}, out: &mut {slot: &mut {value: number}}) {
 					val mut b = {inner: &mut q}
 					val mut a = {peer: &mut p}
 					store(&mut a, &b)
@@ -302,7 +302,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 			want: []string{"11:14-11:15: cannot move 'b' while it is borrowed"},
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut {peer: &'a mut {value: number}}, item: &{inner: &'a mut {value: number}}) -> undefined",
-				"build": "fn (p: mut {value: number}, q: mut {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined",
+				"build": "fn (p: {value: number}, q: {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined",
 			},
 		},
 		// A union member holds a borrow the whole union exposes, so a store into one is found
@@ -320,7 +320,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					target: &'c mut {peer: &'a mut {value: number} | &'a mut {other: number}},
 					item: &'a mut {value: number},
 				) -> undefined
-				fn build(p: mut {value: number}, out: &mut {slot: &mut {value: number} | &mut {other: number}}) {
+				fn build(mut p: {value: number}, out: &mut {slot: &mut {value: number} | &mut {other: number}}) {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p}
 					store(&mut a, &mut b)
@@ -333,7 +333,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut {peer: &'a mut {value: number} | &'a mut {other: number}}, " +
 					"item: &'a mut {value: number}) -> undefined",
-				"build": "fn (p: mut {value: number}, out: &mut {slot: &mut {value: number} | &mut {other: number}}) -> undefined",
+				"build": "fn (p: {value: number}, out: &mut {slot: &mut {value: number} | &mut {other: number}}) -> undefined",
 			},
 		},
 		// An argument that builds its carrier inline names no place, so the referents come
@@ -344,7 +344,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					target: &'c mut {peer: &'a mut {value: number}},
 					item: &'d {inner: &'a mut {value: number}},
 				) -> undefined
-				fn build(p: mut {value: number}, out: &mut {slot: &mut {value: number}}) {
+				fn build(mut p: {value: number}, out: &mut {slot: &mut {value: number}}) {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p}
 					store(&mut a, &{inner: &mut b})
@@ -356,7 +356,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 			want: []string{"11:14-11:15: cannot move 'b' while it is borrowed"},
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut {peer: &'a mut {value: number}}, item: &{inner: &'a mut {value: number}}) -> undefined",
-				"build": "fn (p: mut {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined",
+				"build": "fn (p: {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined",
 			},
 		},
 		// An index signature names no single field, so a store into one lands at the object
@@ -367,7 +367,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					target: &'c mut {peers: &'d mut {[key: string]?: &'a mut {value: number}}},
 					item: &'a mut {value: number},
 				) -> undefined
-				fn build(seeded: mut {[key: string]?: &mut {value: number}}, out: &mut {slot: &mut {[key: string]?: &mut {value: number}}}) {
+				fn build(mut seeded: {[key: string]?: &mut {value: number}}, out: &mut {slot: &mut {[key: string]?: &mut {value: number}}}) {
 					val mut b = {value: 2}
 					val mut a = {peers: &mut seeded}
 					store(&mut a, &mut b)
@@ -380,7 +380,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut {peers: &mut {[key: string]?: &'a mut {value: number}}}, " +
 					"item: &'a mut {value: number}) -> undefined",
-				"build": "fn (seeded: mut {[key: string]?: &mut {value: number}}, " +
+				"build": "fn (seeded: {[key: string]?: &mut {value: number}}, " +
 					"out: &mut {slot: &mut {[key: string]?: &mut {value: number}}}) -> undefined",
 			},
 		},
@@ -422,13 +422,6 @@ func TestCallStoreEdgePositions(t *testing.T) {
 // without naming a field: an array element, a promise's resolved value, and a generator's
 // yield. Each stores at the container holding it, so the store lands at the tuple slot the
 // payload sits in and passing that tuple to a consuming call follows the edge.
-//
-// Every case also reports one constrain error unrelated to the store. `&mut a` over a tuple
-// literal whose element is a bare name does not read as a mutable tuple, a pre-existing
-// limitation of the deep-mut rule rather than anything the store recorder does. The same shape
-// with a borrow element, TestCallStoreEdgePositions/StoreIntoTupleElement, reports only the
-// escape. #1270 tracks it, and the constrain error drops out of these expectations once the
-// unannotated `val mut` arm accepts a moved place inside a literal.
 func TestCallStoreEdgePayloadPositions(t *testing.T) {
 	tests := map[string]struct {
 		payload  string
@@ -455,7 +448,6 @@ func TestCallStoreEdgePayloadPositions(t *testing.T) {
 			`, tc.payload, tc.declared, tc.declared)
 			_, _, errs := inferSource(t, src)
 			require.Equal(t, []string{
-				"10:12-10:18: cannot constrain immutable tuple <: mutable tuple",
 				"11:11-11:12: borrowed value 'b' does not live long enough to escape the function",
 			}, messagesWithSpan(t, errs))
 		})
@@ -503,7 +495,7 @@ func TestMethodCallStoreEdge(t *testing.T) {
 		// the loan of b it would take for the equivalent free function.
 		"MethodStoreReachesTheCaller": {
 			src: decls + `
-				fn build(s: Store, p: mut {value: number}, out: &mut {slot: &mut {value: number}}) {
+				fn build(s: Store, mut p: {value: number}, out: &mut {slot: &mut {value: number}}) {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p}
 					s.put(&mut a, &mut b)
@@ -513,20 +505,20 @@ func TestMethodCallStoreEdge(t *testing.T) {
 				}
 			`,
 			want:  []string{"18:14-18:15: cannot move 'b' while it is borrowed"},
-			types: withTypes("fn (s: Store, p: mut {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined"),
+			types: withTypes("fn (s: Store, p: {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined"),
 		},
 		// Dropping the call isolates its effect: with no edge from a to b, the same return
 		// reports nothing.
 		"NoMethodCallNoEdge": {
 			src: decls + `
-				fn build(s: Store, p: mut {value: number}) -> &mut {value: number} {
+				fn build(s: Store, mut p: {value: number}) -> &mut {value: number} {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p}
 					return a.peer
 				}
 			`,
 			want:  nil,
-			types: withTypes("fn (s: Store, p: mut {value: number}) -> &mut {value: number}"),
+			types: withTypes("fn (s: Store, p: {value: number}) -> &mut {value: number}"),
 		},
 	}
 
@@ -553,8 +545,8 @@ func TestCallStoreEdgeNonStores(t *testing.T) {
 		"SiblingBorrowsRecordNoEdge": {
 			src: `
 				declare fn pair<'a>(x: &'a mut {value: number}, y: &'a mut {value: number}) -> undefined
-				declare fn take(x: mut {peer: &mut {value: number}}) -> undefined
-				fn build(p: mut {value: number}) -> undefined {
+				declare fn take(mut x: {peer: &mut {value: number}}) -> undefined
+				fn build(mut p: {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut c = {value: 3}
 					val mut a = {peer: &mut p}
@@ -566,8 +558,8 @@ func TestCallStoreEdgeNonStores(t *testing.T) {
 			want: nil,
 			types: map[string]string{
 				"pair":  "fn <'a>(x: &'a mut {value: number}, y: &'a mut {value: number}) -> undefined",
-				"take":  "fn (x: mut {peer: &mut {value: number}}) -> undefined",
-				"build": "fn (p: mut {value: number}) -> undefined",
+				"take":  "fn (x: {peer: &mut {value: number}}) -> undefined",
+				"build": "fn (p: {value: number}) -> undefined",
 			},
 		},
 		// A shared-borrow target takes no write, so a lifetime occurring inside it declares
@@ -578,7 +570,7 @@ func TestCallStoreEdgeNonStores(t *testing.T) {
 					target: &'b {peer: &'a mut {value: number}},
 					item: &'a mut {value: number},
 				) -> undefined
-				fn build(p: mut {value: number}) -> &mut {value: number} {
+				fn build(mut p: {value: number}) -> &mut {value: number} {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p}
 					read(&a, &mut b)
@@ -588,7 +580,7 @@ func TestCallStoreEdgeNonStores(t *testing.T) {
 			want: nil,
 			types: map[string]string{
 				"read":  "fn <'a>(target: &{peer: &'a mut {value: number}}, item: &'a mut {value: number}) -> undefined",
-				"build": "fn (p: mut {value: number}) -> &mut {value: number}",
+				"build": "fn (p: {value: number}) -> &mut {value: number}",
 			},
 		},
 		// An alias reference carries its lifetime arguments and its expansion carries them
@@ -603,7 +595,7 @@ func TestCallStoreEdgeNonStores(t *testing.T) {
 					target: &'c mut Holder<'a, 'b>,
 					item: &'a mut {value: number},
 				) -> undefined
-				fn build(p: mut {value: number}, q: mut {value: number}) -> &mut {value: number} {
+				fn build(mut p: {value: number}, mut q: {value: number}) -> &mut {value: number} {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p, spare: &mut q}
 					store(&mut a, &mut b)
@@ -613,7 +605,7 @@ func TestCallStoreEdgeNonStores(t *testing.T) {
 			want: nil,
 			types: map[string]string{
 				"store": "fn <'a, 'b>(target: &mut Holder<'a, 'b>, item: &'a mut {value: number}) -> undefined",
-				"build": "fn (p: mut {value: number}, q: mut {value: number}) -> &mut {value: number}",
+				"build": "fn (p: {value: number}, q: {value: number}) -> &mut {value: number}",
 			},
 		},
 		// An alias re-nested inside itself is two different types, so both levels expand and
@@ -628,7 +620,7 @@ func TestCallStoreEdgeNonStores(t *testing.T) {
 					target: &'c mut {deep: W<W<&'a mut {value: number}>>},
 					item: &'a mut {value: number},
 				) -> undefined
-				fn build(p: mut {value: number}) -> number {
+				fn build(mut p: {value: number}) -> number {
 					val mut b = {value: 2}
 					val mut a = {deep: {inner: {inner: &mut p, tag: 1}, tag: 0}}
 					store(&mut a, &mut b)
@@ -638,7 +630,7 @@ func TestCallStoreEdgeNonStores(t *testing.T) {
 			want: nil,
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut {deep: W<W<&'a mut {value: number}>>}, item: &'a mut {value: number}) -> undefined",
-				"build": "fn (p: mut {value: number}) -> number",
+				"build": "fn (p: {value: number}) -> number",
 			},
 		},
 		// An owned target is moved into the callee rather than written through, so a lifetime
@@ -646,10 +638,10 @@ func TestCallStoreEdgeNonStores(t *testing.T) {
 		"OwnedTargetRecordsNoEdge": {
 			src: `
 				declare fn keep<'a>(
-					target: mut {peer: &'a mut {value: number}},
+					mut target: {peer: &'a mut {value: number}},
 					item: &'a mut {value: number},
 				) -> undefined
-				fn build(p: mut {value: number}) -> undefined {
+				fn build(mut p: {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p}
 					keep(a, &mut b)
@@ -658,8 +650,8 @@ func TestCallStoreEdgeNonStores(t *testing.T) {
 			`,
 			want: nil,
 			types: map[string]string{
-				"keep":  "fn <'a>(target: mut {peer: &'a mut {value: number}}, item: &'a mut {value: number}) -> undefined",
-				"build": "fn (p: mut {value: number}) -> undefined",
+				"keep":  "fn <'a>(target: {peer: &'a mut {value: number}}, item: &'a mut {value: number}) -> undefined",
+				"build": "fn (p: {value: number}) -> undefined",
 			},
 		},
 	}

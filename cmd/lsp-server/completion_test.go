@@ -91,7 +91,7 @@ m.`
 }
 
 func TestMemberCompletionShowsMutSelfOnMutableReceiver(t *testing.T) {
-	source := `declare val m: mut Map<string, number>
+	source := `declare val mut m: Map<string, number>
 m.`
 	script, _, info := parseAndInferAllowErrors(t, source)
 
@@ -140,7 +140,7 @@ obj.`
 }
 
 func TestMemberCompletionGetterAndSetterBothVisibleOnMutableReceiver(t *testing.T) {
-	source := `declare val obj: mut {
+	source := `declare val mut obj: {
     get bar() -> boolean,
     set bar(value: boolean) -> undefined
 }
@@ -1670,7 +1670,7 @@ l.`,
 		},
 		{
 			name:     "GetterKeepsTypeInUnionOnMutReceiver",
-			src:      "declare val obj: mut ({get bar(self) -> boolean, set bar(mut self, value: boolean) -> undefined} | {bar: boolean})\nobj.",
+			src:      "declare val mut obj: ({get bar(self) -> boolean, set bar(mut self, value: boolean) -> undefined} | {bar: boolean})\nobj.",
 			line:     2,
 			col:      5,
 			expected: []string{"bar: boolean"},
@@ -1781,7 +1781,7 @@ func TestMemberCompletionFromSolverMembership(t *testing.T) {
 		},
 		{
 			name:     "MutMapShowsMutSelf",
-			files:    map[string]string{"bin/main.esc": "declare val m: mut Map<string, number>\nm."},
+			files:    map[string]string{"bin/main.esc": "declare val mut m: Map<string, number>\nm."},
 			open:     "bin/main.esc",
 			line:     2,
 			col:      3,

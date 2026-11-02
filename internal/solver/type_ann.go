@@ -587,15 +587,6 @@ func (c *checker) resolveObjectProperty(scope *Scope, prop *ast.PropertyTypeAnn,
 	var ft soltype.Type = c.freshAt(lvl)
 	if prop.Value != nil {
 		value := prop.Value
-		// An owned-mutable field `{a: mut {x}}` is rejected (#779): a `mut` cell
-		// nested inside a non-mut container is misleading, since the container's
-		// immutability already reaches into the field. Recover to the field's bare
-		// inner so the object keeps a sensible shape. A `&`/`&mut` borrow field is a
-		// reference to external storage, not an interior cell, so it stays legal.
-		if mta, ok := value.(*ast.MutableTypeAnn); ok {
-			c.report(&MutFieldError{Ann: mta})
-			value = mta.Target
-		}
 		// A `readonly` property cannot be reassigned, so it may carry a `unique symbol`, as
 		// `SymbolConstructor`'s `readonly iterator: unique symbol` does in TypeScript.
 		position := uniqueSymbolAllowed
@@ -766,14 +757,6 @@ func (c *checker) resolveTupleTypeAnn(scope *Scope, ta *ast.TupleTypeAnn, lvl in
 		if r, isRest := el.(*ast.RestSpreadTypeAnn); isRest {
 			rest = r
 			operand = r.Value
-		}
-		// An owned-mutable element `[mut {x}]` or a mutable spread operand `[...mut P]` is rejected
-		// (#779), the tuple twin of the object-property rejection: a `mut` cell nested inside a
-		// non-mut container is misleading. Recover to its bare inner. A `&`/`&mut` borrow element
-		// stays legal — it references external storage.
-		if mta, ok := operand.(*ast.MutableTypeAnn); ok {
-			c.report(&MutFieldError{Ann: mta})
-			operand = mta.Target
 		}
 		t, ok := c.resolveTypeAnn(scope, operand, lvl)
 		if !ok {
@@ -1525,59 +1508,25 @@ func (c *checker) mirrorParamPat(pat ast.Pat) soltype.Pat {
 	}
 }
 
-// resolveMutableTypeAnn lowers a `mut T` annotation to an owned-mutable borrow,
-// RefType{Mut: true, Lt: nil, Inner: T} (the C1 RefType wrapper). The lifetime
-// borrow forms (`'a T`, `mut 'a T`) still defer: a named lifetime needs the
-// lifetime sort (D1), and the parser already rejects a lifetime before a non-
-// reference inner, so only the no-lifetime `mut` form reaches here.
-//
-// `mut` over a non-borrowable inner (a primitive, function, promise — anything
-// outside RefInner) is a no-op in the value-types model: there is nothing to
-// borrow. It reports an unsupported feature rather than fabricating a borrow over
-// a type the wrapper cannot hold.
-// resolveMutableTypeAnn stores the lazy deep-mut form (PR 14): the inner is wrapped
-// in one owned-mutable RefType without rewriting its children. `mut {a: {x}}` stays
-// `mut {a: {x}}` rather than deepening to `mut {a: mut {x}}`. The deep-mut rule —
-// every nested object/tuple field is invariant and reads back mutable — is applied
-// at access and constrain time, via fieldReadBorrow's recvMut propagation and
-// constrain's mut-context flag, so the stored type matches the surface annotation.
+// resolveMutableTypeAnn reports a `mut T` annotation as an OwnedMutTypeError and resolves
+// to T. An owned value's mutability belongs to its binding, so no type carries it. The
+// annotation recovers to the type it wraps, which keeps the surrounding binding typed.
 func (c *checker) resolveMutableTypeAnn(scope *Scope, ta *ast.MutableTypeAnn, lvl int) (soltype.Type, bool) {
-	ri, ok := c.borrowInner(scope, ta.Target, lvl)
-	if !ok {
-		return c.reportUnsupportedFeature(ta, "mut on a non-borrowable type"), false
-	}
-	t := soltype.NewRef(true, nil, ri)
-	c.recordProv(t, ta, AnnotationType)
-	return t, true
-}
-
-// borrowInner resolves the pointee of a `mut` annotation to a RefInner, the
-// inner-resolution step of resolveMutableTypeAnn. resolveRefTypeAnn resolves its own
-// inner directly so it can intercept a nested borrow before the RefInner cast. An
-// unsupported inner recovers to a fresh var, which IS a RefInner, so the wrapper is
-// preserved and the binding stays cascade-safe. ok=false means the inner resolved to a
-// concrete non-borrowable type such as a primitive, function, or promise. The caller
-// reports that with a wrapper-specific message.
-func (c *checker) borrowInner(scope *Scope, ta ast.TypeAnn, lvl int) (soltype.RefInner, bool) {
-	inner, ok := c.resolveTypeAnn(scope, ta, lvl)
-	if !ok {
-		return c.freshAt(lvl), true
-	}
-	ri, isRI := inner.(soltype.RefInner)
-	return ri, isRI
+	c.report(&OwnedMutTypeError{Ann: ta})
+	return c.resolveTypeAnn(scope, ta.Target, lvl)
 }
 
 // resolveRefTypeAnn lowers a borrow annotation `&T`, `&mut T`, `&'a T`, or `&'a mut T`
 // to a soltype.RefType{Mut, Lt, Inner}. The inner must be a RefInner. A borrow of a
 // value type such as a primitive has nothing to point at and is reported as an
-// unsupported feature.
+// unsupported feature. A function type inner is the exception, and lowers through
+// retainedFuncType to a FuncType carrying the lifetime.
 //
 // resolveLifetimeAnn mints the lifetime. A bare `&` gets a fresh inferred lifetime, and
 // `&'a` resolves the named lifetime to the variable that name denotes in the current
 // function. Display naming is decided structurally at coalesce time, so a borrow that
 // reaches an output renders under a quantified name like `&'a {x}`, while one that
-// connects nothing elides. Unlike resolveMutableTypeAnn, this arm always sets Lt, so the
-// result is a genuine borrow rather than an owned value.
+// connects nothing elides. The result always carries a lifetime.
 func (c *checker) resolveRefTypeAnn(scope *Scope, ta *ast.RefTypeAnn, lvl int) (soltype.Type, bool) {
 	lt := c.resolveLifetimeAnn(ta.Lifetime, lvl)
 	inner, ok := c.resolveTypeAnn(scope, ta.Inner, lvl)
@@ -1588,6 +1537,9 @@ func (c *checker) resolveRefTypeAnn(scope *Scope, ta *ast.RefTypeAnn, lvl int) (
 	// A borrow whose pointee is itself a borrow collapses to depth one.
 	if nested, isRef := inner.(*soltype.RefType); isRef {
 		return c.normalizeNestedBorrow(ta, lt, nested)
+	}
+	if fn, isFn := inner.(*soltype.FuncType); isFn {
+		return c.retainedFuncType(ta, lt, fn)
 	}
 	ri, isRI := inner.(soltype.RefInner)
 	if !isRI {
@@ -1618,6 +1570,26 @@ func (c *checker) normalizeNestedBorrow(ta *ast.RefTypeAnn, outerLt soltype.Life
 	t := soltype.NewRef(false, outerLt, inner.Inner)
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
+}
+
+// retainedFuncType lowers `&'a fn (…) -> R` to the function type fn with its retention
+// lifetime Lt set to lt. The result is a FuncType, not a RefType, since a function is a
+// value type that is copied, and the `&'a` only bounds how long a callee keeps its copy.
+// Two forms are reported as unsupported features:
+//
+//   - `&mut fn`, since nothing can write through a function.
+//   - `&'a (&'b fn)`, since a function has one retention lifetime.
+func (c *checker) retainedFuncType(ta *ast.RefTypeAnn, lt soltype.Lifetime, fn *soltype.FuncType) (soltype.Type, bool) {
+	if ta.Mut {
+		return c.reportUnsupportedFeature(ta, "mutable borrow of a function type"), false
+	}
+	if fn.Lt != nil {
+		return c.reportUnsupportedFeature(ta, "second retention lifetime on a function type"), false
+	}
+	t := *fn
+	t.Lt = lt
+	c.recordProv(&t, ta, AnnotationType)
+	return &t, true
 }
 
 // resolveLifetimeAnn resolves the lifetime of a borrow annotation. A nil node is

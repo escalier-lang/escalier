@@ -254,3 +254,15 @@ func TestAmbientNamesOptOut(t *testing.T) {
 		})
 	}
 }
+
+// TestAmbientGlobalWriteNamesNoRedeclaration asserts that a write through a standard library
+// global the library declares without `mut` reports the immutable binding without suggesting a
+// declaration the code being checked cannot change. TypeScript accepts the same write, and
+// whether Escalier should accept it too is an open question that #2321 tracks.
+func TestAmbientGlobalWriteNamesNoRedeclaration(t *testing.T) {
+	_, errs := inferAgainstTreeWithSpans(t, "fn f() {\n\tconsole.log = fn() {}\n}\n")
+	require.Equal(t, []string{
+		"2:2-2:23: cannot mutate 'console' because its binding is immutable; the standard library declares it without `mut`",
+		"2:16-2:23: object is missing property: log",
+	}, errs)
+}

@@ -27,8 +27,8 @@ import (
 //
 // Cold adds reading the import graph, parsing the files, and inferring the packages,
 // which a process pays once per distinct tree because of the caches in
-// stdlib_closure.go, stdlib_parse_cache.go, and stdlib_run_cache.go. It is what a
-// language server pays at startup.
+// stdlib_closure.go, stdlib_parse_cache.go, stdlib_digest_cache.go, and
+// stdlib_run_cache.go. It is what a language server pays at startup.
 //
 // Run with:
 //
@@ -128,17 +128,18 @@ func benchEntryModule(b *testing.B, uris []string) *ast.Module {
 	return module
 }
 
-// emptyTheStdlibCaches swaps in a parse cache, an import graph cache, and a checker
-// cache holding nothing, and returns a function restoring the ones the process was
-// using.
+// emptyTheStdlibCaches swaps in a parse cache, an import graph cache, a file digest
+// cache, and a checker cache holding nothing, and returns a function restoring the ones
+// the process was using.
 //
 // A cold load is the first in a process. Source ids restart from the base, which
 // the swapped-in parse cache alone hands out, so no id it issues reaches an entry
 // the restored cache holds.
 func emptyTheStdlibCaches() func() {
-	prevParses, prevGraphs := stdlibParses, packageGraphs
+	prevParses, prevGraphs, prevDigests := stdlibParses, packageGraphs, fileDigests
 	stdlibParses = newParsedModuleCache(stdlibSourceIDBase)
 	packageGraphs = newPackageGraphCache()
+	fileDigests = newFileDigestCache()
 
 	ambientCheckers.mu.Lock()
 	prevEntries, prevOrder := ambientCheckers.entries, ambientCheckers.order
@@ -146,7 +147,7 @@ func emptyTheStdlibCaches() func() {
 	ambientCheckers.mu.Unlock()
 
 	return func() {
-		stdlibParses, packageGraphs = prevParses, prevGraphs
+		stdlibParses, packageGraphs, fileDigests = prevParses, prevGraphs, prevDigests
 		ambientCheckers.mu.Lock()
 		ambientCheckers.entries, ambientCheckers.order = prevEntries, prevOrder
 		ambientCheckers.mu.Unlock()

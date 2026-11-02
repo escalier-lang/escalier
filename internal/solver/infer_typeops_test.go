@@ -1925,19 +1925,19 @@ func TestInferTupleSpreadOverTypeParamStaysInert(t *testing.T) {
 	require.Equal(t, "cannot constrain tuple <: [...t8, number]", errs[0].Message())
 }
 
-// A `mut` spread operand `[...mut P]` is rejected at the annotation site the same way a positional
-// `[mut X]` element is: the enclosing tuple decides mutability, so an owned-mutable operand nested
-// in it is misleading. The annotation reports MutFieldError and recovers to the bare operand, which
-// still splices in position, so `[...mut P, boolean]` over `type P = [number]` checks against
-// `[1, true]` with only the one diagnostic.
+// A `mut` spread operand `[...mut P]` is rejected the same way a positional `[mut X]` element is,
+// since the binding that owns the tuple decides its mutability. The annotation reports
+// OwnedMutTypeError and recovers to the bare operand, which still splices in position, so
+// `[...mut P, boolean]` over `type P = [number]` checks against `[1, true]` with only the one
+// diagnostic.
 func TestInferTupleSpreadMutOperandRejected(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		type P = [number]
 		val r: [...mut P, boolean] = [1, true]
 	`)
 	require.Len(t, errs, 1)
-	require.IsType(t, &MutFieldError{}, errs[0])
-	require.Equal(t, "owned-mutable field annotation is not allowed; the enclosing context decides mutability — wrap the whole annotation in `mut` to make this field writable, or use interior mutability", errs[0].Message())
+	require.IsType(t, &OwnedMutTypeError{}, errs[0])
+	require.Equal(t, ownedMutTypeMsg, errs[0].Message())
 }
 
 // Checking a value against a tuple spread of a non-productive recursive alias terminates instead of
@@ -3927,8 +3927,8 @@ func TestInferResidualObjectSurvivesPropertyWalks(t *testing.T) {
 		name string
 		src  string
 	}{
-		{"MappedIntoOwnedMutCell", "type P = {x: number}\nvar v: mut {[K]: P[K] for K in keyof P} = {x: 1}"},
-		{"SpreadIntoOwnedMutCell", "fn f<T>(p: T) -> number { return 1 }\nvar v: mut {...T} = {x: 1}"},
+		{"MappedIntoOwnedMutCell", "type P = {x: number}\nvar mut v: {[K]: P[K] for K in keyof P} = {x: 1}"},
+		{"SpreadIntoOwnedMutCell", "fn f<T>(p: T) -> number { return 1 }\nvar mut v: {...T} = {x: 1}"},
 		{"MappedBehindBorrow", "type P = {x: number}\nfn f(a: &{[K]: P[K] for K in keyof P}) -> number { return 1 }"},
 		{"MappedInUnion", "type P = {x: number}\nfn f(a: {[K]: P[K] for K in keyof P} | number) -> number { return 1 }"},
 		{"MappedReturnPosition", "type P = {x: number}\nfn f() -> {[K]: P[K] for K in keyof P} { return {x: 1} }"},
@@ -4492,13 +4492,13 @@ func TestInferIndexSignatureConstraint(t *testing.T) {
 			wantErr: `cannot constrain 1 <: boolean`,
 		},
 		{
-			// A signature reached through a `mut` wrapper is writable, so the keys it covers are
+			// A signature reached through a `&mut` borrow is writable, so the keys it covers are
 			// invariant. A literal-typed source field would be widened by a write through the
-			// signature, the same reason a `mut` property target pins its field.
+			// signature, the same reason a `&mut` property target pins its field.
 			name: "MutableSignaturePinsASourceField",
 			src: `
-				fn f(d: mut {[K: string]?: number}) -> number { return 1 }
-				declare fn g() -> mut {a: 1}
+				fn f(d: &mut {[K: string]?: number}) -> number { return 1 }
+				declare fn g() -> &'static mut {a: 1}
 				val y = f(g())
 			`,
 			wantErr: `cannot constrain number <: 1`,
@@ -4507,14 +4507,14 @@ func TestInferIndexSignatureConstraint(t *testing.T) {
 			// A readonly source member cannot fill a writable signature, matching the property rule.
 			name: "ReadonlySourceFieldCannotFillAWritableSignature",
 			src: `
-				fn f(d: mut {[K: string]?: number}) -> number { return 1 }
-				declare fn g() -> mut {readonly a: number}
+				fn f(d: &mut {[K: string]?: number}) -> number { return 1 }
+				declare fn g() -> &'static mut {readonly a: number}
 				val y = f(g())
 			`,
 			wantErr: `readonly field 'a' cannot satisfy a writable field requirement`,
 		},
 		{
-			// Outside a `mut` wrapper the signature is read-only, so the key stays covariant.
+			// Outside a `&mut` borrow the signature is read-only, so the key stays covariant.
 			name: "ImmutableSignatureStaysCovariant",
 			src: `
 				fn f(d: {[K: string]?: number}) -> number { return 1 }

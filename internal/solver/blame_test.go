@@ -109,10 +109,21 @@ val x = o.b`
 // instantiation.
 func TestBlameMissingPropertyPolymorphicReceiverLosesRelated(t *testing.T) {
 	src := `val mk = fn (v) { return {a: v} }
+val x = mk(5).b`
+	_, _, errs := inferSource(t, src)
+	requireBlame(t, src, errs, "2:15-2:16: object is missing property: b", "b")
+}
+
+// TestBlameMissingPropertyWeakReceiver asserts that a read off a module-level binding that
+// did not generalize blames the whole member expression. `o` keeps the variable `mk(5)`
+// returned, and the read sits one level deeper, so the read's property requirement is
+// copied out to o's level. The copy has no Prov entry, so the blame falls back to the read.
+func TestBlameMissingPropertyWeakReceiver(t *testing.T) {
+	src := `val mk = fn (v) { return {a: v} }
 val o = mk(5)
 val x = o.b`
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "3:11-3:12: object is missing property: b", "b")
+	requireBlame(t, src, errs, "3:9-3:12: object is missing property: b", "o.b")
 }
 
 // An identifier-flow mismatch blames the USE, not the definition: x's type traces
@@ -220,7 +231,7 @@ val x = "hi"`
 // An assignment through an optional chain blames the whole target `o?.a` and names the
 // optional chain as the reason.
 func TestBlameOptionalChainAssignmentTarget(t *testing.T) {
-	src := `fn f(o: mut {a: number}) {
+	src := `fn f(mut o: {a: number}) {
     o?.a = 6
 }`
 	_, _, errs := inferSource(t, src)
@@ -377,7 +388,7 @@ func TestConstrainStampsObjectExactnessErrors(t *testing.T) {
 // `never`-poisoned binding. Covers each annotation position:
 //   - val: keeps the initializer's inferred type;
 //   - function return: keeps the inferred body return type;
-//   - param: recovers to a fresh var, which generalizes like an unannotated parameter.
+//   - param: recovers to a fresh var, which renders like an unannotated parameter.
 func TestUnsupportedAnnotationRecovers(t *testing.T) {
 	tests := []struct {
 		name string
@@ -386,7 +397,7 @@ func TestUnsupportedAnnotationRecovers(t *testing.T) {
 	}{
 		{"val", `val x: Foo = 5`, map[string]string{"x": "5"}},
 		{"return", `fn f() -> Foo { return 5 }`, map[string]string{"f": "fn () -> 5"}},
-		{"param", `fn g(x: Foo) -> number { return 5 }`, map[string]string{"g": "fn <T0>(x: T0) -> number"}},
+		{"param", `fn g(x: Foo) -> number { return 5 }`, map[string]string{"g": "fn (x: unknown) -> number"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -412,4 +423,46 @@ func TestNilVarDeclPatternBlamesDeclWithoutPanic(t *testing.T) {
 	require.Len(t, c.errs, 1)
 	require.Equal(t, "Unsupported: VarDecl", c.errs[0].Message())
 	require.Equal(t, testSpan(), c.errs[0].Span()) // derefs the decl node, not a nil pattern
+}
+
+// TestBlameMutabilityDiagnostics covers the primary and related spans of the diagnostics
+// that decide where a value's mutability is written. A write through an immutable parameter
+// relates the parameter that would take the `mut`. `self` has no declaration to relate, and
+// neither a `mut` type nor a shared await relates a second node.
+func TestBlameMutabilityDiagnostics(t *testing.T) {
+	tests := map[string]struct {
+		src     string
+		want    string
+		primary string
+		related []string
+	}{
+		"WriteThroughImmutableParam": {
+			src:     `fn f(p: {x: number}) { p.x = 1 }`,
+			want:    "1:24-1:31: cannot mutate 'p' because its binding is immutable; declare it as `mut p`",
+			primary: "p.x = 1",
+			related: []string{"p"},
+		},
+		"WriteThroughImmutableSelf": {
+			src:     `class C { n: number, bump(self) -> undefined { self.n = 1 } }`,
+			want:    "1:48-1:58: cannot mutate 'self' because its binding is immutable; declare it as `mut self`",
+			primary: "self.n = 1",
+		},
+		"OwnedMutType": {
+			src:     `fn f(p: mut {x: number}) {}`,
+			want:    "1:9-1:12: " + ownedMutTypeMsg,
+			primary: "mut",
+		},
+		"SharedAwaitIntoMut": {
+			src:     `async fn g(p) { val mut r = await p }`,
+			want:    "1:29-1:36: cannot bind the value 'p' settles to with `mut`, since awaiting 'p' again yields the same value; await a call that makes a new promise instead",
+			primary: "await p",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			requireBlame(t, tt.src, errs, tt.want, tt.primary, tt.related...)
+		})
+	}
 }

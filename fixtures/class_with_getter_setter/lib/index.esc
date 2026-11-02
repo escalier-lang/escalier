@@ -12,7 +12,7 @@ class Person {
     },
 }
 
-val person: mut Person = Person("John", "Doe")
+val mut person: Person = Person("John", "Doe")
 val name = person.fullName
 fn main() {
     person.fullName = "Jane Smith"

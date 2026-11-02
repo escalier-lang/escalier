@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"hash"
 	"maps"
-	"os"
 	"reflect"
 	"slices"
 	"sort"
@@ -13,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/graphcopy"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
@@ -123,14 +123,17 @@ func ambientKeyOf(dir string, groups PackageGroups, opts Options) (ambientKey, b
 	sum := sha256.New()
 	// A tree the prelude cannot be read from loads without one, so it hashes as
 	// empty rather than turning the cache off.
-	prelude, _ := readStdlibFile(dir, preludeURI)
+	prelude, err := stdlibFileDigest(dir, preludeURI)
+	if err != nil {
+		prelude = sha256.Sum256(nil)
+	}
 	writeHashedFile(sum, preludeURI, prelude)
 	for _, uri := range uris {
-		contents, err := readStdlibFile(dir, uri)
+		digest, err := stdlibFileDigest(dir, uri)
 		if err != nil {
 			return ambientKey{}, false
 		}
-		writeHashedFile(sum, uri, contents)
+		writeHashedFile(sum, uri, digest)
 	}
 
 	key := ambientKey{
@@ -143,22 +146,21 @@ func ambientKeyOf(dir string, groups PackageGroups, opts Options) (ambientKey, b
 	return key, true
 }
 
-// readStdlibFile returns the contents of the file uri names in dir.
-func readStdlibFile(dir, uri string) ([]byte, error) {
+// stdlibFileDigest returns the SHA-256 of the file uri names in dir.
+func stdlibFileDigest(dir, uri string) ([sha256.Size]byte, error) {
 	path, err := resolveStdlibPath(dir, uri)
 	if err != nil {
-		return nil, err
+		return [sha256.Size]byte{}, err
 	}
-	return os.ReadFile(path)
+	return fileDigests.digest(path)
 }
 
-// writeHashedFile writes uri and contents to digest, each behind its length, so
-// moving bytes from the end of one file to the start of the next changes the hash.
-func writeHashedFile(digest hash.Hash, uri string, contents []byte) {
-	digest.Write(binary.AppendUvarint(nil, uint64(len(uri))))
-	digest.Write([]byte(uri))
-	digest.Write(binary.AppendUvarint(nil, uint64(len(contents))))
-	digest.Write(contents)
+// writeHashedFile writes uri and the digest of its file to sum, uri behind its
+// length, so no two lists of files hash to the same key.
+func writeHashedFile(sum hash.Hash, uri string, digest [sha256.Size]byte) {
+	sum.Write(binary.AppendUvarint(nil, uint64(len(uri))))
+	sum.Write([]byte(uri))
+	sum.Write(digest[:])
 }
 
 // loadAmbientChecker returns a checker with the prelude and the ambient packages of
@@ -197,34 +199,19 @@ func loadAmbientChecker(dir string, groups PackageGroups, opts Options) *checker
 	// The copy allocates every slice with no spare capacity. An append by a run to a
 	// slice the cached checker holds then allocates, rather than writing into an array
 	// that every run sharing the checker can see.
-	g := newGraphCopier(isASTPointer)
-	c = copyPtr(g, c)
+	g := graphcopy.New(isASTPointer)
+	c = graphcopy.Copy(g, c)
+	// Every run's fork reads through this table, and forks run concurrently.
+	c.prov.freeze()
 	if frozenVarChecks {
 		// The copier's table of what it copied names every variable the cached checker
 		// reaches.
-		c.ctx.frozenVars, c.ctx.frozenLts = copiedVars(g)
+		c.ctx.frozenVars = set.FromSlice(graphcopy.Copies[soltype.TypeVarType](g))
+		c.ctx.frozenLts = set.FromSlice(graphcopy.Copies[soltype.LifetimeVar](g))
 		c.ctx.frozenClasses = set.FromSlice(slices.Collect(maps.Values(c.ctx.classes)))
 		c.ctx.frozenAliases = set.FromSlice(slices.Collect(maps.Values(c.ctx.aliases)))
 	}
 	return c
-}
-
-// copiedVars returns every type variable and every lifetime variable g has copied, as
-// they sit in the copies.
-func copiedVars(g *graphCopier) (set.Set[*soltype.TypeVarType], set.Set[*soltype.LifetimeVar]) {
-	typeVar := reflect.TypeFor[soltype.TypeVarType]()
-	lifetimeVar := reflect.TypeFor[soltype.LifetimeVar]()
-	vars := set.NewSet[*soltype.TypeVarType]()
-	lts := set.NewSet[*soltype.LifetimeVar]()
-	for key, copied := range g.pointers {
-		switch key.plan.typ {
-		case typeVar:
-			vars.Add((*soltype.TypeVarType)(copied))
-		case lifetimeVar:
-			lts.Add((*soltype.LifetimeVar)(copied))
-		}
-	}
-	return vars, lts
 }
 
 // settleLoadedDefinitions computes every fact about the classes and aliases registered so
@@ -287,7 +274,8 @@ func isASTPointer(t reflect.Type) bool {
 
 // fork returns a checker that runs with source, groupSource, and groups over what c
 // loaded. The two share every type, definition, scope, and namespace c holds, and the
-// fork gets its own copy of every container a run adds to.
+// fork gets its own copy of every container a run adds to. The fork's Prov is a layer
+// over c's, so it reads every origin c recorded and writes only its own.
 //
 // c must not be written to while it is shared. Two forks of c can run concurrently, and
 // neither reaches the other's state.
@@ -299,7 +287,7 @@ func (c *checker) fork(source ModuleSource, groupSource GroupSource, groups Pack
 	f.info.ctx = f.ctx
 	f.source, f.groupSource, f.groups = source, groupSource, groups
 
-	f.prov = maps.Clone(c.prov)
+	f.prov = c.prov.child()
 	f.varIDs = c.varIDs.Clone()
 	f.errs = slices.Clip(c.errs)
 	f.memberFuncNames = maps.Clone(c.memberFuncNames)
@@ -316,16 +304,26 @@ func (c *checker) fork(source ModuleSource, groupSource GroupSource, groups Pack
 	f.memberNamespaces = maps.Clone(c.memberNamespaces)
 	f.nsIndex = maps.Clone(c.nsIndex)
 	f.symbolOwners = maps.Clone(c.symbolOwners)
+	f.weakBindings = slices.Clip(c.weakBindings)
+	f.weakReaders = slices.Clip(c.weakReaders)
+	f.weakLocals = slices.Clip(c.weakLocals)
+	f.weakBindingVars = set.NewSet[*soltype.TypeVarType]()
 	f.fileScopes = maps.Clone(c.fileScopes)
 	f.activeGroup = maps.Clone(c.activeGroup)
 	f.moduleDeclared = declaredNames{values: maps.Clone(c.moduleDeclared.values), types: maps.Clone(c.moduleDeclared.types)}
 	f.loadStack = slices.Clip(c.loadStack)
 	f.pendingRecvReads = slices.Clip(c.pendingRecvReads)
+	f.pendingMutations = slices.Clip(c.pendingMutations)
 	f.deferredArgBounds = slices.Clip(c.deferredArgBounds)
 	f.pendingReturns = slices.Clip(c.pendingReturns)
 	f.pendingOverrides = slices.Clip(c.pendingOverrides)
 	f.pendingImplements = slices.Clip(c.pendingImplements)
 	f.provisionalVariance = slices.Clip(c.provisionalVariance)
+	// A finished load settles every flow it records, and a pending flow would point into the
+	// loaded checker's tables, so the run starts with none.
+	f.pendingFlows = nil
+	f.paramByVar = maps.Clone(c.paramByVar)
+	f.unsettledParams = maps.Clone(c.unsettledParams)
 
 	// Whether each held diagnostic is reported is the run's own.
 	f.heldLoadErrs = make(map[string]*heldLoadErrors, len(c.heldLoadErrs))

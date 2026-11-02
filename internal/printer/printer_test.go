@@ -1111,6 +1111,8 @@ func TestPrintBorrowTypeAnnotations(t *testing.T) {
 		{"borrow mut", "&mut Point", "&mut Point"},
 		{"borrow lifetime", "&'a Point", "&'a Point"},
 		{"borrow lifetime mut", "&'a mut Point", "&'a mut Point"},
+		{"borrow lifetime of function", "&'a fn () -> undefined", "&'a fn () -> undefined"},
+		{"static borrow of function", "&'static fn (x: number) -> number", "&'static fn (x: number) -> number"},
 		{"borrow of union parenthesized", "&(A | B)", "&(A | B)"},
 		{"borrow binds tighter than union", "&A | B", "&A | B"},
 		{"borrow as intersection member", "&A & B", "&A & B"},
@@ -2124,6 +2126,39 @@ func TestPatternLevelMutRoundTrip(t *testing.T) {
 						name, m1, m2)
 				}
 			}
+		})
+	}
+}
+
+// TestPrintMutParam asserts that a `mut` marker on a parameter binding prints
+// back where it was written, in every parameter form that accepts one.
+func TestPrintMutParam(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"ident", "fn f(mut p: number) {}"},
+		{"unannotated", "fn f(mut p) {}"},
+		{"optional", "fn f(mut p?: number) {}"},
+		{"default", "fn f(mut p: number = 1) {}"},
+		{"default without mut", "fn f(p: number = 1) {}"},
+		{"mixed with plain", "fn f(mut p: number, q: number) {}"},
+		{"rest", "fn f(...mut rest: Array<number>) {}"},
+		{"object shorthand leaf", "fn f({mut a, b}: Point) {}"},
+		{"object key-value leaf", "fn f({x: mut a, y: b}: Point) {}"},
+		{"tuple leaf", "fn f([mut a, b]: [number, number]) {}"},
+		{"declare", "declare fn f(mut p: number) -> number"},
+		{"function expression", "val f = fn (mut p: number) {}"},
+		{"function type", "type F = fn (mut p: number) -> number"},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			script := parseScript(t, tt.input)
+			result, err := PrintScript(script, opts)
+			require.NoError(t, err)
+			require.Equal(t, tt.input, result)
 		})
 	}
 }

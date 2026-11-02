@@ -12,7 +12,7 @@ import (
 // kind — the FromAST leaf the M2.5 population sites write (§3.3).
 func requireOrigin(t *testing.T, c *checker, ty soltype.Type, node ast.Node, kind ASTOriginKind) {
 	t.Helper()
-	o, ok := c.prov[ty]
+	o, ok := c.prov.get(ty)
 	require.True(t, ok, "expected a Prov entry for the minted type")
 	fa, ok := o.(FromAST)
 	require.True(t, ok, "expected a FromAST origin")
@@ -27,7 +27,7 @@ func requireOrigin(t *testing.T, c *checker, ty soltype.Type, node ast.Node, kin
 // M11.5.
 func requireFromNormalization(t *testing.T, c *checker, ty soltype.Type, sources ...soltype.Type) {
 	t.Helper()
-	o, ok := c.prov[ty]
+	o, ok := c.prov.get(ty)
 	require.True(t, ok, "expected a Prov entry for the fused atom")
 	fn, ok := o.(FromNormalization)
 	require.True(t, ok, "expected a FromNormalization origin")
@@ -132,7 +132,7 @@ func TestProvCallResultAndShape(t *testing.T) {
 	// the sole CallShape entry, recorded against the CallExpr.
 	var shapeNode ast.Node
 	var shapes int
-	for _, o := range c.prov {
+	for _, o := range c.prov.all() {
 		if fa, ok := o.(FromAST); ok && fa.Kind == CallShape {
 			shapeNode = fa.Node
 			shapes++
@@ -196,7 +196,7 @@ func TestProvIdentRecordsNothing(t *testing.T) {
 	scope := NewScope()
 	scope.defineValue("x", ValueBinding{Schemes: []TypeScheme{monoScheme(&soltype.PrimType{Prim: soltype.NumPrim})}})
 	c.inferExpr(scope, 0, identExpr("x"))
-	require.Empty(t, c.prov, "an ident use must record no provenance")
+	require.Zero(t, c.prov.size(), "an ident use must record no provenance")
 }
 
 // The honest absence (§3.2): a synthesized (coalesced) type has no Prov entry, so
@@ -241,7 +241,7 @@ func TestProvSharedSingletonRecordsNothing(t *testing.T) {
 			ty, ok := c.resolveTypeAnn(NewScope(), tt.ann(), 0)
 			require.True(t, ok)
 			require.True(t, sharedSingleton(ty), "result must be a shared zero-size singleton")
-			require.Empty(t, c.prov, "a shared singleton must record no provenance")
+			require.Zero(t, c.prov.size(), "a shared singleton must record no provenance")
 		})
 	}
 }

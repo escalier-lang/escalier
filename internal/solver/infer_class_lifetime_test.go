@@ -67,14 +67,14 @@ func TestInferClassLifetimeParams(t *testing.T) {
 						return self.peer
 					},
 				}
-				fn call<'x>(h: mut Holder<'x>, p: &'x mut {value: number}) -> &'x mut {value: number} {
+				fn call<'x>(mut h: Holder<'x>, p: &'x mut {value: number}) -> &'x mut {value: number} {
 					return h.swap(p)
 				}
 			`,
 			want: nil,
 			types: map[string]string{
 				"Holder": "{new <'a>(peer: &'a mut {value: number}) -> Holder<'a>}",
-				"call": "fn <'a>(h: mut Holder<'a>, p: &'a mut {value: number}) " +
+				"call": "fn <'a>(h: Holder<'a>, p: &'a mut {value: number}) " +
 					"-> &'a mut {value: number}",
 			},
 		},
@@ -379,22 +379,22 @@ func TestClassLifetimeShadowing(t *testing.T) {
 		// returned borrow to the receiver's region, which the caller never asked for.
 		"MemberBindsItsOwnBesideTheClassLifetime": {
 			src: swapClass + `
-				fn g<'x, 'y>(h: mut Holder<'x>, p: &'x mut {value: number}, q: &'y mut {value: number}) -> &'y mut {value: number} {
+				fn g<'x, 'y>(mut h: Holder<'x>, p: &'x mut {value: number}, q: &'y mut {value: number}) -> &'y mut {value: number} {
 					return h.swap(p, q)
 				}
 			`,
-			want: "fn <'a, 'b>(h: mut Holder<'a>, p: &'a mut {value: number}, " +
+			want: "fn <'a, 'b>(h: Holder<'a>, p: &'a mut {value: number}, " +
 				"q: &'b mut {value: number}) -> &'b mut {value: number}",
 		},
 		// Separate binders do not force separate arguments. One caller lifetime passed at both
 		// positions fills 'a and 'b alike, so the caller quantifies a single lifetime.
 		"ClassLifetimeFillsTheMemberBinder": {
 			src: swapClass + `
-				fn g<'x>(h: mut Holder<'x>, p: &'x mut {value: number}, q: &'x mut {value: number}) -> &'x mut {value: number} {
+				fn g<'x>(mut h: Holder<'x>, p: &'x mut {value: number}, q: &'x mut {value: number}) -> &'x mut {value: number} {
 					return h.swap(p, q)
 				}
 			`,
-			want: "fn <'a>(h: mut Holder<'a>, p: &'a mut {value: number}, " +
+			want: "fn <'a>(h: Holder<'a>, p: &'a mut {value: number}, " +
 				"q: &'a mut {value: number}) -> &'a mut {value: number}",
 		},
 	}
