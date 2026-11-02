@@ -3069,6 +3069,18 @@ func TestFlowMatrixReassignAfterAMove(t *testing.T) {
 		},
 		{
 			column: "ReassignAfterAMove",
+			site:   "BranchingReassignment",
+			src: `
+				fn g(c: boolean) -> number {
+					var p = {x: 1}
+					val d = p
+					p = if c { {x: 2} } else { {x: 3} }
+					return p.x
+				}
+			`,
+		},
+		{
+			column: "ReassignAfterAMove",
 			site:   "FieldStore",
 			src: `
 				fn g(o: &mut {f: {x: number}}) -> number {

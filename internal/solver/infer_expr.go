@@ -2882,13 +2882,17 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		// borrow itself. CarrierOf is the identity on a non-borrow source, so an ordinary
 		// global write such as `n = 5` is unaffected. The peel only looks through a
 		// top-level borrow and drops the source's mutability check. The fuller treatment
-		// of an escaped borrow's mutability rides M4 G2.
+		// of an escaped borrow's mutability rides M4 G2. A union source such as
+		// `&p | null` is not peeled, so the constraint itself rejects a borrow member that
+		// fills an owned binding.
 		//
 		// Escape runs only when the compatibility check passes, so a rejected store does
 		// not leave the source's lifetime forced to 'static.
 		errsBefore := len(c.errs)
 		c.constrain(e, soltype.CarrierOf(sourceT), checkTarget(targetT, missing))
-		// The peel above accepts a borrow in an owned slot, so T6 is checked on its own.
+		// The peel above lets a top-level borrow pass the constraint against an owned binding,
+		// so T6 rejects it here. Reporting it here blames the source. The constraint would
+		// blame the source type's provenance, such as a parameter's annotation.
 		if _, borrowSlot := c.borrowOfType(targetT); !borrowSlot && len(c.errs) == errsBefore && !missing {
 			c.reportBorrowIntoOwned(e.Right, sourceT, targetT)
 		}

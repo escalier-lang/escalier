@@ -1779,6 +1779,35 @@ func TestOwnershipDataflowMatchesCurrentChecks(t *testing.T) {
 		want []string
 	}{
 		{
+			// The second store into `arr[0]` repoints the element, so a is no longer borrowed.
+			name: "ElementStoreAtALiteralKeyEndsTheEarlierLoan",
+			src: `
+				fn f(arr: &mut Array<&{x: number}>) -> number {
+					val mut a = {x: 1}
+					val b = {x: 2}
+					arr[0] = &a
+					arr[0] = &b
+					a.x = 3
+					return arr[0].x
+				}
+			`,
+		},
+		{
+			// A store into `arr[1]` leaves the borrow `arr[0]` holds.
+			name: "ElementStoreAtAnotherKeyKeepsTheLoan",
+			src: `
+				fn f(arr: &mut Array<&{x: number}>) -> number {
+					val mut a = {x: 1}
+					val b = {x: 2}
+					arr[0] = &a
+					arr[1] = &b
+					a.x = 3
+					return arr[0].x
+				}
+			`,
+			want: []string{"7:6-7:9: cannot assign to 'a.x' while it is borrowed as immutable"},
+		},
+		{
 			// The call moves f, since f's body moves the capture p. E4 checks the second call.
 			name: "ClosureMovingACaptureCalledTwice",
 			src: `

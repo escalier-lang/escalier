@@ -1296,7 +1296,12 @@ func (c *checker) checkParamElementStoreEscape(recv, target, source ast.Expr, st
 	if tp, ok := c.exprPlace(target); ok && tp.root == rp.root {
 		base = tp.path
 	}
-	// A key that is not a literal may name any element, so the store ends no earlier loan.
+	// A literal key names one element, so the store repoints it the way
+	// checkParamFieldStoreEscape repoints a field. A key that is not a literal may name any
+	// element, so the store ends no earlier loan.
+	if len(base) > len(rp.path) {
+		c.endLoansAtPostDominating(rp.root, base, stmtRef)
+	}
 	c.recordCallerOwnedStoreEscape(rp.root, base, source, stmtRef)
 }
 

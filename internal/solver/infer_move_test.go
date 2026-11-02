@@ -385,6 +385,22 @@ func TestMoveSemantics(t *testing.T) {
 		// is a use-after-move. F2 copies a borrow instead, as D8 decides, and the copy into
 		// the global is `'static`. The dataflow pass follows F2, so the global keeps an
 		// immutable path to p for the rest of the program, and the write through p breaks E2.
+		// A reassignment whose right-hand side branches leaves p moved, the same as a plain
+		// reassignment does in the current checks. The dataflow pass clears the move at either
+		// write.
+		"BranchingReassignmentAfterAMove": {
+			src: `
+				declare fn take(p: {x: number}) -> undefined
+				fn go(c: boolean) -> number {
+					var p = {x: 1}
+					take(p)
+					p = if c { {x: 2} } else { {x: 3} }
+					return p.x
+				}
+			`,
+			want:         []string{"7:13-7:16: use of moved value 'p'"},
+			wantDataflow: []string{},
+		},
 		"GlobalEscapeReportsStaticImmutablePath": {
 			src: `
 				var sink: &{x: number} = &{x: 0}
