@@ -558,6 +558,86 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot move 'p' while it is borrowed"},
 		},
 		{
+			// f holds another closure by the return, so the return does not move p.
+			name: "ReturnOfAReassignedClosureMovesNothing",
+			src: `
+				fn go() {
+					val p = {x: 1}
+					var f: fn () -> number = fn () { return p.x }
+					f = fn () { return 0 }
+					val a = &p
+					return [f, a]
+				}
+			`,
+		},
+		{
+			// The return inside the branch returns the closure that captures nothing, so it
+			// does not move p before `p` is read.
+			name: "ReturnOfAClosureReassignedInABranchMovesNothing",
+			src: `
+				fn go(c: boolean) {
+					val p = {x: 1}
+					var f: fn () -> number = fn () { return p.x }
+					if c {
+						f = fn () { return 0 }
+						return [f, p]
+					}
+					return [f, f]
+				}
+			`,
+		},
+		{
+			// f's closure flows into g before f is reassigned, so the return of g moves p.
+			name: "E3ReturnOfAClosureCopiedBeforeItsLocalIsReassigned",
+			src: `
+				fn go() {
+					val p = {x: 1}
+					var f: fn () -> number = fn () { return p.x }
+					val g = f
+					f = fn () { return 0 }
+					val a = &p
+					return [g, a]
+				}
+			`,
+			errs: []string{"cannot move 'p' while it is borrowed"},
+		},
+		{
+			// f borrows r for `'static` once it is stored into sink, so the borrow of p that r
+			// holds lasts for `'static` as well.
+			name: "E3MoveAfterStoringAClosureThatCapturesABorrow",
+			src: `
+				declare fn take(p: {x: number}) -> number
+				var sink: fn () -> number = fn () { return 0 }
+				fn go() {
+					val p = {x: 1}
+					val r = &p
+					val f = fn () { return r.x }
+					val n = r.x
+					sink = f
+					take(p)
+				}
+			`,
+			errs: []string{"cannot move 'p' while it is borrowed"},
+		},
+		{
+			// The move conflicts with a and with f's capture. It is reported once, at the move,
+			// and the current checks' E4 report of the later call is dropped.
+			name: "E3MoveWhileABorrowAndAClosureHoldP",
+			src: `
+				declare fn take(p: {x: number}) -> number
+				declare fn read(a: &{x: number}) -> number
+				fn go() {
+					val p = {x: 1}
+					val a = &p
+					val f = fn () { return p.x }
+					take(p)
+					read(a)
+					f()
+				}
+			`,
+			errs: []string{"cannot move 'p' while it is borrowed"},
+		},
+		{
 			// The receiver is evaluated before the argument, so the argument's borrow conflicts.
 			name: "ReceiverBorrowedBeforeTheArgument",
 			src: `
@@ -784,6 +864,23 @@ func TestOwnershipDataflow(t *testing.T) {
 				}
 			`,
 			errs: []string{"cannot borrow 'b' as immutable while it is borrowed as mutable"},
+		},
+		{
+			// The caller reads p.r only after the return, when a is dead, so `&b.x` breaks no
+			// rule. The caller reaches both `b.y` borrows, so the pass reports E2 at the store
+			// into q. That pair is the one the frame-exit check reports, so the frame-exit
+			// diagnostic is dropped.
+			name: "E2OnTheSamePairReplacesTheMixedOutflowCheck",
+			src: `
+				fn f(p: &mut {r: {x: &{v: number}, y: &{v: number}}}, q: &mut {r: &mut {v: number}}) {
+					val mut b = {x: {v: 1}, y: {v: 2}}
+					val a = &mut b.x
+					p.r = {x: &b.x, y: &b.y}
+					a.v = 3
+					q.r = &mut b.y
+				}
+			`,
+			errs: []string{"cannot borrow 'b.y' as mutable while it is borrowed as immutable"},
 		},
 		{
 			// The body reads `p.r` while a's mutable borrow is live, so the store's `&b` breaks
