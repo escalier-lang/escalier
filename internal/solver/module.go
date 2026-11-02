@@ -28,6 +28,11 @@ type Options struct {
 	// CheckJsDecorators reports a pseudo-package file whose values break the `@js`
 	// rules jsDecoratorErrors lists, at the import that loads it.
 	CheckJsDecorators bool
+	// OwnershipDataflow runs the dataflow pass of ownership_dataflow.go, which checks E1, E2,
+	// and E3 of planning/ownership_rules/requirements.md over each body's control-flow graph.
+	// Its diagnostics take the place of the current checks' diagnostics of those rules. The
+	// ESCALIER_OWNERSHIP_DATAFLOW environment variable set to 1 turns it on as well.
+	OwnershipDataflow bool
 }
 
 // InferModule builds the dep graph for a single parsed module, infers every
@@ -163,6 +168,7 @@ func newRunChecker(source ModuleSource, groupSource GroupSource, groups PackageG
 	c.noAmbientNames = opts.NoAmbientNames
 	c.checkJsDecorators = opts.CheckJsDecorators
 	c.dependencies = opts.Dependencies
+	c.ownershipDataflow = c.ownershipDataflow || opts.OwnershipDataflow
 	return c
 }
 
@@ -301,6 +307,14 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 		}
 		return true
 	})
+	// Every flow is settled and every body is walked, so the dataflow pass can read the
+	// events of this module's bodies.
+	c.runOwnershipDataflow()
+	// A package's diagnostics reach the entry module's as a PackageInferenceError, so only
+	// the entry module, which has no package URI, prints them.
+	if c.pkgURI == "" {
+		traceDiagnostics(c.errs, module.Sources)
+	}
 	return soltype.ModuleSymbols{Minted: declaredSymbols(module, c.info), Owners: c.symbolOwners}
 }
 
