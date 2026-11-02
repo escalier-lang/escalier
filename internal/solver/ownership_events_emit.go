@@ -529,9 +529,10 @@ func (v *capturedPlaceFinder) EnterDecl(d ast.Decl) bool {
 
 // recordChain records the place the identifier, member, or index chain e names, and
 // reports whether the walk descends into e. A chain that names a field path stops the walk,
-// since each link of it is part of the place and a constant index reads nothing else. The
-// walk descends into any other chain, whose dynamic index can read another local, as the
-// `k.s` of `m[k.s]` does.
+// since each link of it is part of the place. The walk still visits each index key of such a
+// chain that is not a literal, as the `k.i` of `m[k.i]` with `k.i: 0` is, since the key
+// reads another local. The walk descends into any other chain, whose dynamic index can read
+// another local, as the `k.s` of `m[k.s]` does.
 func (v *capturedPlaceFinder) recordChain(e ast.Expr) bool {
 	cp, ok := v.c.capturedChain(e)
 	if !ok {
@@ -553,20 +554,29 @@ func (v *capturedPlaceFinder) recordChain(e ast.Expr) bool {
 		v.paths[cp.decl] = append(v.paths[cp.decl], capturedPath{path: segs, t: v.c.info.TypeOf(cp.exprs[len(segs)-1])})
 	}
 
-	return (cp.whole || cp.closed) && !v.allWhole
+	descend := (cp.whole || cp.closed) && !v.allWhole
+	if !descend {
+		for _, key := range cp.keys {
+			key.Accept(v)
+		}
+	}
+	return descend
 }
 
 // chainPlace is the place an identifier, member, or index chain names under a local. decl is
 // the local's declaration, segs the field path, and exprs the expression of each segment of
 // segs, outermost last. whole marks a chain that names the local but no field of it, such as
 // one with a dynamic index. closed marks a chain whose next link reads something other than
-// a property, such as a getter or a method, so segs ends before that link.
+// a property, such as a getter or a method, so segs ends before that link. keys lists each
+// index key in segs that is an expression other than a literal, such as the `i` of `xs[i]`
+// with `i: 0`.
 type chainPlace struct {
 	decl   ast.Node
 	segs   []placeSeg
 	exprs  []ast.Expr
 	whole  bool
 	closed bool
+	keys   []ast.Expr
 }
 
 // capturedChain returns the place the chain e names. ok is false when e is not a chain
@@ -574,6 +584,10 @@ type chainPlace struct {
 func (c *checker) capturedChain(e ast.Expr) (chainPlace, bool) {
 	var object ast.Expr
 	var name string
+	// element marks an index that names one element of a receiver read by position, as
+	// `xs[0]` and `xs["0"]` do off an array. The element is part of the place though the
+	// receiver's type declares no property of that name.
+	element := false
 	switch e := e.(type) {
 	case *ast.IdentExpr:
 		decl, ok := c.info.DeclOf(e)
@@ -585,7 +599,10 @@ func (c *checker) capturedChain(e ast.Expr) (chainPlace, bool) {
 		}
 	case *ast.IndexExpr:
 		object = e.Object
-		name, _ = constStringKey(e.Index)
+		name, _ = c.indexSegment(e.Index)
+		_, isIndex := canonicalIndex(name)
+		recv := c.info.TypeOf(e.Object)
+		element = isIndex && recv != nil && c.readsByPosition(recv)
 	default:
 		return chainPlace{}, false
 	}
@@ -595,11 +612,16 @@ func (c *checker) capturedChain(e ast.Expr) (chainPlace, bool) {
 	case !ok || cp.whole || cp.closed:
 	case name == "":
 		cp.whole = true
-	case !c.readsAsField(object, name):
+	case !element && !c.readsAsField(object, name):
 		cp.closed = true
 	default:
 		cp.segs = appendPath(cp.segs, []placeSeg{{kind: namedSeg, name: name}})
 		cp.exprs = append(slices.Clone(cp.exprs), e)
+		if ix, isIndex := e.(*ast.IndexExpr); isIndex {
+			if _, isLit := ix.Index.(*ast.LiteralExpr); !isLit {
+				cp.keys = append(slices.Clone(cp.keys), ix.Index)
+			}
+		}
 	}
 	return cp, ok
 }

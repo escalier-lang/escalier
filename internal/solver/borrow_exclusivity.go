@@ -831,16 +831,6 @@ func (c *checker) noteFieldWrite(target, object ast.Expr) {
 			recv = nil
 		}
 	}
-	// A dynamic index off a binding, such as the `xs[1]` in `xs[1].x = 3`, names the whole
-	// binding. Its read records no use, since every read of one element would then count
-	// as a read of the others. The write records the use here for the use check to find.
-	if ix, isIndex := object.(*ast.IndexExpr); isIndex && c.fn.cfg != nil {
-		place, ok := c.exprPlace(ix)
-		ref, hasRef := c.currentStmtRef()
-		if ok && len(place.path) == 0 && hasRef {
-			c.fn.useSites = append(c.fn.useSites, moveUse{place: place, ref: ref, node: ix, loanSeqAt: c.fn.loanSeq + 1})
-		}
-	}
 }
 
 // recordStoreEdgeLoan records the loan a call's store effect creates. `store(&mut p, &mut b)`
@@ -970,7 +960,7 @@ func (c *checker) checkUsesAgainstLoans(reported set.Set[ast.Node]) {
 				})
 			} else {
 				// The written place collapses a dynamic index into its container, so it
-				// would name `xs[1].x` as `xs.x`. The write's own target names it as written.
+				// would name `xs[i].x` as `xs`. The write's own target names it as written.
 				c.report(&BorrowedValueWriteError{
 					Place:  c.renderWrittenPlace(place, blame),
 					write:  blame,
