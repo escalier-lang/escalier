@@ -627,14 +627,16 @@ func (c *checker) recordUse(e *ast.IdentExpr, t soltype.Type) {
 // test it against a partial move of the same place or a prefix of it. The whole
 // member or index expression names the place, even when the field read yields a
 // value type, because reading `pair.a.id` still dereferences `pair.a` and is a
-// use-after-move if `pair.a` was moved. A receiver that is not a tracked place, such
-// as a namespace member, names no movable root and records nothing.
+// use-after-move if `pair.a` was moved. A chain through a dynamic index names its
+// container, so `xs[i].x` with `i: number` records a read of the whole `xs`. A receiver
+// that is not a tracked place, such as a namespace member, names no movable root and
+// records nothing.
 func (c *checker) recordMemberUse(e ast.Expr) {
 	if c.fn == nil || c.fn.cfg == nil {
 		return
 	}
 	p, ok := c.exprPlace(e)
-	if !ok || len(p.path) == 0 {
+	if !ok {
 		return
 	}
 	ref, ok := c.currentStmtRef()
@@ -758,8 +760,9 @@ type patternPlaceWalk struct {
 	// When it is unset, each tuple element reads the tuple's own place, and an instance or
 	// extractor pattern binds nothing.
 	elementPlaces bool
-	// tuple receives the place of each tuple pattern's value and the segment of each of its
-	// elements, when elementPlaces is set. It may be nil.
+	// tuple receives the place of each tuple pattern's value and the segment flatElements
+	// gives each of its elements, when elementPlaces is set. A tuple pattern nested in a rest
+	// element is not passed, since its elements belong to the enclosing tuple. It may be nil.
 	tuple func(at movePlace, parts []placeSeg)
 }
 
@@ -788,9 +791,10 @@ func (w *patternPlaceWalk) walk(pat ast.Pat, at movePlace) {
 		}
 	case *ast.TuplePat:
 		if w.tuple != nil && w.elementPlaces {
-			parts := make([]placeSeg, len(pat.Elems))
-			for i, elem := range pat.Elems {
-				parts[i] = elementSeg(i, elem)
+			flat := flatElements(pat.Elems, 0)
+			parts := make([]placeSeg, len(flat))
+			for i, elem := range flat {
+				parts[i] = elem.seg
 			}
 			w.tuple(at, parts)
 		}
@@ -811,36 +815,60 @@ func (w *patternPlaceWalk) walk(pat ast.Pat, at movePlace) {
 }
 
 // elements walks the element patterns of a tuple or extractor pattern over the place `at`.
-// With elementPlaces set, element i reads `at` extended by the segment `i`, and a rest
-// element at position i reads it extended by `i...`, which stands for every element from i
-// on. Without it, every element reads `at`.
+// With elementPlaces set, each element reads `at` extended by the segment flatElements
+// gives it. Without it, every element reads `at`.
 func (w *patternPlaceWalk) elements(elems []ast.Pat, at movePlace) {
-	for i, elem := range elems {
-		if !w.elementPlaces {
+	if !w.elementPlaces {
+		for _, elem := range elems {
 			w.walk(elem, at)
+		}
+		return
+	}
+
+	for _, elem := range flatElements(elems, 0) {
+		if elem.inRest && w.skipRests {
+			continue
+		}
+		w.walk(elem.pat, extendPlaceSeg(at, elem.seg))
+	}
+}
+
+// patElement is one element of a tuple or extractor pattern that flatElements returns. pat
+// is the pattern that binds the element, and seg is the segment naming the element's place
+// within the value the pattern destructures. inRest marks an element written inside a rest
+// element.
+type patElement struct {
+	pat    ast.Pat
+	seg    placeSeg
+	inRest bool
+}
+
+// flatElements returns the elements elems lists, the first of which sits at position from.
+// Element i is named by the segment `i`. A rest element at position i whose pattern is a
+// tuple pattern contributes that tuple's elements, from position i on, so `a` in
+// `[_, ...[a]]` is element `1`. Any other rest element at position i is named by `i...`,
+// which stands for every element from i on, and its pat is the rest's own pattern.
+func flatElements(elems []ast.Pat, from int) []patElement {
+	var out []patElement
+	for i, elem := range elems {
+		pos := from + i
+		rest, isRest := elem.(*ast.RestPat)
+		if !isRest {
+			out = append(out, patElement{pat: elem, seg: placeSeg{kind: namedSeg, name: strconv.Itoa(pos)}})
 			continue
 		}
 
-		if rest, ok := elem.(*ast.RestPat); ok {
-			if !w.skipRests {
-				w.walk(rest.Pattern, extendPlaceSeg(at, elementSeg(i, elem)))
+		if tuple, ok := rest.Pattern.(*ast.TuplePat); ok {
+			for _, inner := range flatElements(tuple.Elems, pos) {
+				inner.inRest = true
+				out = append(out, inner)
 			}
 			continue
 		}
 
-		w.walk(elem, extendPlaceSeg(at, elementSeg(i, elem)))
+		out = append(out, patElement{pat: rest.Pattern, seg: placeSeg{kind: restSeg, name: strconv.Itoa(pos) + "..."}, inRest: true})
 	}
-}
-
-// elementSeg returns the segment that names element i of a tuple or extractor pattern, whose
-// pattern is elem. A position is `i`, and a rest element at position i is `i...`, which stands
-// for every element from i on.
-func elementSeg(i int, elem ast.Pat) placeSeg {
-	name := strconv.Itoa(i)
-	if _, ok := elem.(*ast.RestPat); ok {
-		return placeSeg{kind: restSeg, name: name + "..."}
-	}
-	return placeSeg{kind: namedSeg, name: name}
+	return out
 }
 
 // forEachRestField passes f each part an object rest binding of type t takes out of the
@@ -1016,10 +1044,52 @@ func (c *checker) consumeIntoLiteral(scope *Scope, el ast.Expr, elemT soltype.Ty
 // resolves the place to its lattice VarID, registers the mapping so the
 // use-after-move scan can recover the path for the prefix test, and records the move
 // into the consumed lattice through recordMove.
+//
+// A move of a place that overlaps a different place already moved at the same program
+// point is reported as a use-after-move. In `take(xs[0], xs)` the second argument moves
+// `xs` after the first moved `xs[0]`, and the lattice cannot order the two.
 func (c *checker) recordMovePlace(p movePlace, moveNode ast.Node, ref liveness.StmtRef) {
 	id := c.placeID(p)
 	c.fn.movePlaces[id] = p
+	if prev, ok := c.overlappingMoveAt(ref, id, p); ok {
+		prevPlace := c.fn.movePlaces[prev]
+		partial := len(p.path) < len(prevPlace.path)
+		readName := ""
+		if partial {
+			readName = c.renderPlace(p)
+		}
+		c.report(&UseAfterMoveError{
+			Name:     c.moveNameOf(prev),
+			ReadName: readName,
+			Partial:  partial,
+			use:      moveNode,
+			moveSite: c.fn.moveNodes[prev],
+		})
+		return
+	}
 	c.recordMove(id, moveNode, ref)
+}
+
+// overlappingMoveAt returns the lattice VarID of a place other than id, moved at ref, that
+// overlaps the place p. Of several such places, it returns the lowest VarID. ok is false
+// when there is none.
+func (c *checker) overlappingMoveAt(ref liveness.StmtRef, id liveness.VarID, p movePlace) (liveness.VarID, bool) {
+	at := c.fn.moveSites[ref]
+	if at == nil {
+		return 0, false
+	}
+	var best liveness.VarID
+	found := false
+	for prev := range at {
+		other, ok := c.fn.movePlaces[prev]
+		if prev == id || !ok || !placesOverlap(other, p) {
+			continue
+		}
+		if !found || prev < best {
+			best, found = prev, true
+		}
+	}
+	return best, found
 }
 
 // recordMove marks varID consumed at ref. A second move of the same place at the same

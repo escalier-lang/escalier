@@ -817,17 +817,6 @@ func (c *checker) noteFieldWrite(target, object ast.Expr) {
 			recv = nil
 		}
 	}
-	// A dynamic index off a binding, such as the `xs[i]` in `xs[i].x = 3` with `i: number`,
-	// names the whole binding. Its read records no use, since every read of one element would
-	// then count as a read of the others. The write records the use here for the use check to
-	// find.
-	if ix, isIndex := object.(*ast.IndexExpr); isIndex && c.fn.cfg != nil {
-		place, ok := c.exprPlace(ix)
-		ref, hasRef := c.currentStmtRef()
-		if ok && len(place.path) == 0 && hasRef {
-			c.fn.useSites = append(c.fn.useSites, moveUse{place: place, ref: ref, node: ix, loanSeqAt: c.fn.loanSeq + 1})
-		}
-	}
 }
 
 // recordStoreEdgeLoan records the loan a call's store effect creates. `store(&mut p, &mut b)`
