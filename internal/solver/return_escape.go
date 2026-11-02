@@ -277,7 +277,7 @@ func (c *checker) resolveComponentEscapes(
 				if id == rootID {
 					continue
 				}
-				c.recordMove(id, es.expr, es.stmtRef)
+				c.recordMove(id, es.expr, es.stmtRef, false)
 			}
 			if idx, graph, root, ok := c.returnCarrier(es.expr, fieldBorrowGraph); ok {
 				// A returned value that reaches one local twice hands the caller two views of it,
