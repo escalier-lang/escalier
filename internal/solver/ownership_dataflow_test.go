@@ -718,6 +718,79 @@ func TestOwnershipDataflow(t *testing.T) {
 				}
 			`,
 		},
+		{
+			// The first argument passes m to a `&` parameter while the second passes it to one
+			// with a `&mut` member, which the callee can narrow to and write through.
+			name: "E2MixedUnionArgumentAfterAnImmutableOne",
+			src: `
+				declare fn readWrite(a: &{x: number}, b: &mut {x: number} | &{x: number}) -> undefined
+				fn go(m: &mut {x: number} | &{x: number}) {
+					readWrite(m, m)
+				}
+			`,
+			errs: []string{"cannot borrow 'm' as mutable while it is borrowed as immutable"},
+		},
+		{
+			name: "E2MixedUnionArgumentBeforeAnImmutableOne",
+			src: `
+				declare fn writeRead(a: &mut {x: number} | &{x: number}, b: &{x: number}) -> undefined
+				fn go(m: &mut {x: number} | &{x: number}) {
+					writeRead(m, m)
+				}
+			`,
+			errs: []string{"cannot borrow 'm' as immutable while it is borrowed as mutable"},
+		},
+		{
+			// The first argument copies m with its own kind, so it is the `&mut` path the
+			// second argument's `&` path conflicts with.
+			name: "E2ImmutableArgumentAfterAMutableCopyOfAParameter",
+			src: `
+				declare fn writeRead(a: &mut {x: number}, b: &{x: number}) -> undefined
+				fn go(m: &mut {x: number}) {
+					writeRead(m, m)
+				}
+			`,
+			errs: []string{"cannot borrow 'm' as immutable while it is borrowed as mutable"},
+		},
+		{
+			name: "E2ImmutableArgumentAfterAMutableCopyOfALocalBorrow",
+			src: `
+				declare fn writeRead(a: &mut {x: number}, b: &{x: number}) -> undefined
+				fn go() {
+					val mut x = {x: 1}
+					val m = &mut x
+					writeRead(m, m)
+				}
+			`,
+			errs: []string{"cannot borrow 'm' as immutable while it is borrowed as mutable"},
+		},
+		{
+			// d is not used after the copy, but its mutable path to p is `'static`, so p never
+			// gets a new immutable path.
+			name: "E2NarrowedCopyOfAStaticMutableBorrow",
+			src: `
+				fn go() -> number {
+					val mut p = {x: 1}
+					val d: &'static mut {x: number} = &mut p
+					val r: &{x: number} = d
+					return r.x
+				}
+			`,
+			errs: []string{"cannot borrow 'p' as immutable while it is borrowed as mutable"},
+		},
+		{
+			// Each iteration copies a into a `'static` destination. The copy derives one loan
+			// from p's loan however many times the loop runs, so the pass reaches a fixed point.
+			name: "StaticSelfCopyInALoopOk",
+			src: `
+				fn go(p: &'static {x: number}, items: Array<number>) {
+					var a: &'static {x: number} = p
+					for item in items {
+						a = a
+					}
+				}
+			`,
+		},
 	}
 
 	for _, tc := range cases {

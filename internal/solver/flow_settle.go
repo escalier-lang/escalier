@@ -192,11 +192,12 @@ func (c *checker) sourceKindOf(p movePlace, t soltype.Type, force bool) (sourceK
 }
 
 // sourceBorrowKind returns the mutability of the borrow place p holds, whose type is t. A
+// borrow whose type has a `&mut` member is mutable, so `&mut A | &A` is `&mut`. A
 // place whose type is not a borrow is rooted at a parameter F3 settled as a borrow, and
 // paramDestOf gives that borrow's mutability.
 func (c *checker) sourceBorrowKind(p movePlace, t soltype.Type) borrowKind {
 	if b, ok := c.borrowOfType(t); ok {
-		return borrowKindOf(b.mut)
+		return borrowKindOf(b.anyMut)
 	}
 
 	if fp, isParam := c.paramByVar[p.root]; isParam {
