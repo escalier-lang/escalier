@@ -410,6 +410,66 @@ fn cache(p: &{x: number}) {
 	require.Equal(t, "fn (p: &'static {x: number}) -> undefined", values["cache"])
 }
 
+// TestBorrowIntoAnUnannotatedLiteral covers T6 for each literal an unannotated binding's
+// initializer produces. Each element of such a literal is an owned destination.
+func TestBorrowIntoAnUnannotatedLiteral(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "LiteralInEachBranch",
+			src: `
+				fn go(c: boolean, r: &{x: number}, s: &{x: number}) {
+					val o = if c { {f: r} } else { {f: s} }
+				}
+			`,
+			want: []string{
+				"3:25-3:26: cannot use borrowed &object as owned object",
+				"3:41-3:42: cannot use borrowed &object as owned object",
+			},
+		},
+		{
+			name: "BorrowedLiteral",
+			src: `
+				fn go(r: &{x: number}) {
+					val o = &{f: r}
+				}
+			`,
+			want: []string{"3:19-3:20: cannot use borrowed &object as owned object"},
+		},
+		{
+			name: "UnionOfABorrow",
+			src: `
+				fn go(maybe: &{x: number} | null) {
+					val o = {f: maybe}
+				}
+			`,
+			want: []string{"3:18-3:23: cannot use borrowed &object as owned object"},
+		},
+		{
+			name: "WrittenBorrowElement",
+			src: `
+				fn go() {
+					val p = {x: 1}
+					val o = {f: &p}
+				}
+			`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src)
+			if tc.want == nil {
+				require.Empty(t, errs)
+				return
+			}
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+		})
+	}
+}
+
 // TestInferGlobalWriteOfABorrowIntoAnOwnedBinding asserts that T6 rejects a borrow stored into
 // an owned module-level binding, written or inferred.
 func TestInferGlobalWriteOfABorrowIntoAnOwnedBinding(t *testing.T) {

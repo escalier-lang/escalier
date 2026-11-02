@@ -182,9 +182,12 @@ func AnalyzeMoves(cfg *CFG, moves map[StmtRef]set.Set[VarID]) *MoveInfo {
 }
 
 // DeclaredBindings returns the point of each `val` or `var` declaration in cfg, mapped to the
-// bindings it declares. A declaration whose initializer branches has no statement of its own,
-// so its point is StmtIdx -1 of its join block, as BuildStmtToRef maps it. A block's ExtraDefs,
-// such as a for-in loop's pattern bindings, are declared at StmtIdx -1 of that block too.
+// bindings it declares. A declaration whose initializer branches has no statement of its own.
+// Its bindings are its join block's ExtraDefs, declared at StmtIdx -1 of that block, as
+// BuildStmtToRef maps the declaration. Any other block's ExtraDefs, such as a for-in loop's
+// pattern bindings, are declared at StmtIdx -1 of that block too. The ExtraDefs of the join of
+// a reassignment with a branching right-hand side declare nothing, since a reassignment binds
+// no new name.
 func DeclaredBindings(cfg *CFG) map[StmtRef][]VarID {
 	out := map[StmtRef][]VarID{}
 	add := func(stmt ast.Stmt, ref StmtRef) {
@@ -206,13 +209,10 @@ func DeclaredBindings(cfg *CFG) map[StmtRef][]VarID {
 		for idx, stmt := range block.Stmts {
 			add(stmt, StmtRef{BlockID: block.ID, StmtIdx: idx})
 		}
-		if len(block.ExtraDefs) > 0 {
+		if len(block.ExtraDefs) > 0 && !cfg.reassignJoins.Contains(block.ID) {
 			entry := StmtRef{BlockID: block.ID, StmtIdx: -1}
 			out[entry] = append(out[entry], block.ExtraDefs...)
 		}
-	}
-	for _, ds := range cfg.decomposedStmts {
-		add(ds.Stmt, StmtRef{BlockID: ds.Block.ID, StmtIdx: -1})
 	}
 	return out
 }
@@ -220,6 +220,11 @@ func DeclaredBindings(cfg *CFG) map[StmtRef][]VarID {
 // applyStmt returns a copy of state with each binding in declared reset to NotMoved, then
 // each binding in moved set to Moved.
 func applyStmt(state map[VarID]MoveState, declared []VarID, moved set.Set[VarID]) map[VarID]MoveState {
+	// Each map AnalyzeMoves produces is immutable once made, so a statement that changes
+	// nothing can share its input.
+	if len(declared) == 0 && len(moved) == 0 {
+		return state
+	}
 	if len(declared) == 0 {
 		return applyMoves(state, moved)
 	}
@@ -273,13 +278,10 @@ func applyMoves(state map[VarID]MoveState, moved set.Set[VarID]) map[VarID]MoveS
 	return out
 }
 
-// movesAt returns the VarIDs moved at one program point, or an empty set when the
-// point moves nothing.
+// movesAt returns the VarIDs moved at one program point, or nil when the point moves
+// nothing.
 func movesAt(moves map[StmtRef]set.Set[VarID], blockID, stmtIdx int) set.Set[VarID] {
-	if vs, ok := moves[StmtRef{BlockID: blockID, StmtIdx: stmtIdx}]; ok {
-		return vs
-	}
-	return set.NewSet[VarID]()
+	return moves[StmtRef{BlockID: blockID, StmtIdx: stmtIdx}]
 }
 
 func cloneMoveMap(m map[VarID]MoveState) map[VarID]MoveState {

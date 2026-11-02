@@ -1430,14 +1430,17 @@ func (c *checker) checkBorrowsWritten(src ast.Expr, destT soltype.Type, arg bool
 	return reported
 }
 
-// reportBorrowIntoOwned reports src when the value it produces, of type srcT, is a borrow that
-// fills an owned destination of type destT, as T6 states. It returns whether it reported. The
-// flow out of a reported src reads as a plain read of its place, so the rejected borrow lends
-// nothing.
+// reportBorrowIntoOwned reports src when the value it produces, of type srcT, may be a borrow
+// that fills an owned destination of type destT, as T6 states. A nil destT stands for the
+// borrow's referent. It returns whether it reported. The flow out of a reported src reads as
+// a plain read of its place, so the rejected borrow lends nothing.
 func (c *checker) reportBorrowIntoOwned(src ast.Expr, srcT, destT soltype.Type) bool {
-	ref, ok := c.expandAliasChain(c.borrowBehindVar(srcT)).(*soltype.RefType)
-	if !ok || ref.Lt == nil {
+	ref := c.borrowMemberOf(srcT)
+	if ref == nil {
 		return false
+	}
+	if destT == nil {
+		destT = ref.Inner
 	}
 	c.report(&BorrowEscapeError{Sub: ref, Super: destT, site: src})
 	if t := c.eventTable(); t != nil {
@@ -1446,53 +1449,69 @@ func (c *checker) reportBorrowIntoOwned(src ast.Expr, srcT, destT soltype.Type) 
 	return true
 }
 
-// reportBorrowsIntoLiteral reports each element of the object or tuple literal src whose value
-// is a borrow that src does not write, as T6 states for a literal with no expected type. Each
-// element of such a literal is an owned destination, so `{f: r}` with `r: &{x: number}` is
-// rejected. A written borrow such as `{f: &p}` makes its element a borrow destination, the way
-// F1 makes a binding initialized with `&p` one. A nested literal has its elements checked the
-// same way, and a spread is left alone.
-func (c *checker) reportBorrowsIntoLiteral(src ast.Expr) {
-	var elems []ast.Expr
-	switch lit := src.(type) {
-	case *ast.ObjectExpr:
-		for _, elem := range lit.Elems {
-			if prop, ok := elem.(*ast.PropertyExpr); ok {
-				elems = append(elems, prop.ValueExpr())
-			}
+// borrowMemberOf returns the borrow a value of type t may be, or nil when it is never one. A
+// RefType with a lifetime is its own borrow, and a union returns its first such member, so
+// `&{x: number} | null` returns `&{x: number}`.
+func (c *checker) borrowMemberOf(t soltype.Type) *soltype.RefType {
+	t = c.expandAliasChain(c.borrowBehindVar(t))
+	members := []soltype.Type{t}
+	if u, isUnion := t.(*soltype.UnionType); isUnion {
+		members = u.Types
+	}
+	for _, m := range members {
+		if ref, isRef := c.expandAliasChain(m).(*soltype.RefType); isRef && ref.Lt != nil {
+			return ref
 		}
-	case *ast.TupleExpr:
-		for _, el := range lit.Elems {
-			if _, spread := el.(*ast.ArraySpreadExpr); !spread {
-				elems = append(elems, el)
+	}
+	return nil
+}
+
+// reportBorrowsIntoLiteral reports each element of each object or tuple literal src produces
+// whose value may be a borrow that the literal does not write, as T6 states for a literal with
+// no expected type. Each element of such a literal is an owned destination, so `{f: r}` with
+// `r: &{x: number}` is rejected. A written borrow such as `{f: &p}` makes its element a
+// borrow destination, the way F1 makes a binding initialized with `&p` one.
+//
+// A conditional, `match`, `do`, or `try` produces the value of one of its branches, so each
+// branch's result is checked on its own. `&{f: r}` builds a literal the borrow lends, so its
+// elements are checked too. A nested literal has its elements checked the same way, and a
+// spread is left alone.
+func (c *checker) reportBorrowsIntoLiteral(src ast.Expr) {
+	for _, r := range branchResults(src) {
+		switch r := r.(type) {
+		case *ast.BorrowExpr:
+			c.reportBorrowsIntoLiteral(r.Arg)
+		case *ast.ObjectExpr:
+			for _, elem := range r.Elems {
+				if prop, ok := elem.(*ast.PropertyExpr); ok {
+					c.reportBorrowIntoElem(prop.ValueExpr())
+				}
+			}
+		case *ast.TupleExpr:
+			for _, el := range r.Elems {
+				if _, spread := el.(*ast.ArraySpreadExpr); !spread {
+					c.reportBorrowIntoElem(el)
+				}
 			}
 		}
 	}
+}
 
-	for _, el := range elems {
-		// A conditional, `match`, `do`, or `try` produces the value of one of its branches, so
-		// each branch's result is checked on its own.
-		for _, r := range branchResults(el) {
-			switch r := r.(type) {
-			case *ast.BorrowExpr:
-				// `&{g: r}` builds a literal the borrow lends, so its own elements are checked.
-				c.reportBorrowsIntoLiteral(r.Arg)
-				continue
-			case *ast.ObjectExpr, *ast.TupleExpr:
-				c.reportBorrowsIntoLiteral(r)
-				continue
-			}
-
-			// An element already reported for a borrow it left unwritten is not reported twice.
-			if t := c.eventTable(); t != nil && t.unwritten.Contains(r) {
-				continue
-			}
-
-			rT := c.info.TypeOf(r)
-			if ref, ok := c.expandAliasChain(c.borrowBehindVar(rT)).(*soltype.RefType); ok {
-				c.reportBorrowIntoOwned(r, rT, ref.Inner)
-			}
+// reportBorrowIntoElem reports each value the literal element el produces that may be a
+// borrow, as reportBorrowsIntoLiteral describes.
+func (c *checker) reportBorrowIntoElem(el ast.Expr) {
+	for _, r := range branchResults(el) {
+		switch r.(type) {
+		case *ast.BorrowExpr, *ast.ObjectExpr, *ast.TupleExpr:
+			c.reportBorrowsIntoLiteral(r)
+			continue
 		}
+
+		// An element already reported for a borrow it left unwritten is not reported twice.
+		if t := c.eventTable(); t != nil && t.unwritten.Contains(r) {
+			continue
+		}
+		c.reportBorrowIntoOwned(r, c.info.TypeOf(r), nil)
 	}
 }
 

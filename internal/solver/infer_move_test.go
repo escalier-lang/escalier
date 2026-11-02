@@ -379,6 +379,19 @@ func TestMoveSemantics(t *testing.T) {
 				"9:7-9:10: cannot assign to 'p.x' while it is borrowed as immutable",
 			},
 		},
+		// A reassignment whose right-hand side branches gives p a new value, so the use after it
+		// reads that value, the same as after a plain reassignment.
+		"BranchingReassignmentAfterAMove": {
+			src: `
+				declare fn take(p: {x: number}) -> undefined
+				fn go(c: boolean) -> number {
+					var p = {x: 1}
+					take(p)
+					p = if c { {x: 2} } else { {x: 3} }
+					return p.x
+				}
+			`,
+		},
 		// F2 copies the borrow p into the global, as D8 decides, and the copy is `'static`.
 		// The global keeps an immutable path to p for the rest of the program, so the write
 		// through p breaks E2.
