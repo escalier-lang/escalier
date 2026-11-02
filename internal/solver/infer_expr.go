@@ -2879,10 +2879,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		// region, so it escapes to 'static (M4 D3).
 		//
 		// The value-compatibility check runs against the source's CARRIER, not the
-		// borrow itself. A borrow forced to 'static is owned-forever, so it satisfies an
-		// owned destination. Comparing the whole borrow would instead trip the
-		// borrow-into-owned BorrowEscapeError, the rule that rejects a borrow which does
-		// NOT escape. CarrierOf is the identity on a non-borrow source, so an ordinary
+		// borrow itself. CarrierOf is the identity on a non-borrow source, so an ordinary
 		// global write such as `n = 5` is unaffected. The peel only looks through a
 		// top-level borrow and drops the source's mutability check. The fuller treatment
 		// of an escaped borrow's mutability rides M4 G2.
@@ -2891,6 +2888,10 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		// not leave the source's lifetime forced to 'static.
 		errsBefore := len(c.errs)
 		c.constrain(e, soltype.CarrierOf(sourceT), checkTarget(targetT, missing))
+		// The peel above accepts a borrow in an owned slot, so T6 is checked on its own.
+		if _, borrowSlot := c.borrowOfType(targetT); !borrowSlot && len(c.errs) == errsBefore && !missing {
+			c.reportBorrowIntoOwned(e.Right, sourceT, targetT)
+		}
 		if len(c.errs) == errsBefore && !missing {
 			// The store aliases the source into a permanent module-level storage location. If the
 			// source's mutability differs from that location's and the source stays live at
@@ -3271,7 +3272,7 @@ func (c *checker) inferElementAssign(scope *Scope, lvl int, e *ast.BinaryExpr, i
 			if !c.rejectModuleLevelMove(scope, e.Right) {
 				c.consumeOwned(e.Right, source, e.Right, ref)
 			}
-			c.checkParamElementStoreEscape(ix.Object, e.Right, ref)
+			c.checkParamElementStoreEscape(ix.Object, e.Left, e.Right, ref)
 			c.recordElementStoreEdges(ix.Object, e.Right, ref)
 		}
 	}

@@ -111,7 +111,49 @@ func (c *checker) runOwnershipDataflow() {
 	// frame. A pair of paths the pass reports by E2 is reported once, by the pass. The
 	// frame-exit check keeps each pair the pass does not report.
 	c.errs = slices.DeleteFunc(c.errs, sharedPathsReported(found))
-	c.errs = append(c.errs, found...)
+	// A closure's body is checked after the body it is written in, so its diagnostics are put
+	// back in source order before the merge.
+	slices.SortStableFunc(found, func(a, b SolverError) int { return compareSpans(a.Span(), b.Span()) })
+	c.errs = mergeDataflowErrors(c.errs, found)
+}
+
+// mergeDataflowErrors returns errs with each diagnostic of found inserted before the first
+// ownership diagnostic of the current checks that starts later in the source, as
+// keptOwnershipDiagnostic names them. A diagnostic of found that no such diagnostic follows goes
+// at the end. The current checks report these diagnostics in source order, so the pass's report
+// takes the place among them that the current checks' report of the same rule had. In
+//
+//	take(x)
+//	val f = fn () { readRead(&x, &x) }
+//	f()
+//
+// the use of the moved x in the closure comes before the call of f with the pass on or off.
+func mergeDataflowErrors(errs, found []SolverError) []SolverError {
+	out := make([]SolverError, 0, len(errs)+len(found))
+	next := 0
+	for _, err := range errs {
+		if keptOwnershipDiagnostic(err) {
+			for next < len(found) && compareSpans(found[next].Span(), err.Span()) < 0 {
+				out = append(out, found[next])
+				next++
+			}
+		}
+		out = append(out, err)
+	}
+	return append(out, found[next:]...)
+}
+
+// keptOwnershipDiagnostic reports whether err is an ownership diagnostic of the current checks
+// that stays with the dataflow pass on. That is an E4 diagnostic, which names a closure a call
+// runs, or a frame-exit diagnostic.
+func keptOwnershipDiagnostic(err SolverError) bool {
+	switch err.(type) {
+	case *UseAfterMoveError, *BorrowAliasError, *MoveWhileBorrowedError:
+		return !replacedByDataflow(err)
+	case *MixedOutflowPathsError, *SharedReturnPathsError, *EscapingBorrowError, *StoredBorrowAliasError:
+		return true
+	}
+	return false
 }
 
 // storedAliasReported returns a filter that matches a BorrowAliasError of the dataflow pass
@@ -449,6 +491,9 @@ type bodyDataflow struct {
 	// suspends holds each CFG point whose statement yields or awaits, where the caller runs
 	// and can read what the body stored into a caller-owned place.
 	suspends set.Set[liveness.StmtRef]
+	// declares maps each CFG point whose statement is a `val` or `var` declaration to the
+	// bindings it declares.
+	declares map[liveness.StmtRef][]liveness.VarID
 	// reaches caches the answers of placeReaches.
 	reaches map[reachKey]bool
 	// escapes caches the answers of rootEscapes.
@@ -470,6 +515,7 @@ func (c *checker) checkBodyDataflow(t *ownershipEvents) []SolverError {
 		derivedFrom:  map[*borrowEvent]*borrowEvent{},
 		indexSegment: c.indexSegment,
 		suspends:     suspendPoints(t.cfg),
+		declares:     liveness.DeclaredBindings(t.cfg),
 		reaches:      map[reachKey]bool{},
 		escapes:      map[liveness.VarID]bool{},
 	}
@@ -487,6 +533,11 @@ func (c *checker) checkBodyDataflow(t *ownershipEvents) []SolverError {
 	}
 	for at := range d.suspends {
 		if _, ok := d.events[at]; !ok {
+			d.points[at.BlockID] = append(d.points[at.BlockID], at)
+		}
+	}
+	for at := range d.declares {
+		if _, ok := d.events[at]; !ok && !d.suspends.Contains(at) {
 			d.points[at.BlockID] = append(d.points[at.BlockID], at)
 		}
 	}
@@ -553,6 +604,16 @@ func (d *bodyDataflow) entryState(b *liveness.BasicBlock, out []*dataflowState) 
 // transfer applies the events of block to s, point by point.
 func (d *bodyDataflow) transfer(block int, s *dataflowState) {
 	for _, at := range d.points[block] {
+		// A declaration binds a fresh value, so a move of the binding on an earlier iteration
+		// of a loop does not reach it.
+		for _, root := range d.declares[at] {
+			for k, m := range s.moved {
+				if m.place.root == root {
+					delete(s.moved, k)
+				}
+			}
+		}
+
 		for _, ev := range d.events[at] {
 			d.step(ev, at, s)
 		}

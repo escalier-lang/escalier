@@ -3,6 +3,7 @@ package liveness
 import (
 	"maps"
 
+	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
 )
 
@@ -102,7 +103,11 @@ type MoveInfo struct {
 // flows backward from uses, moves flow forward from consume sites.
 //
 //	MoveIn[b]  = ⊔ { MoveOut[p] | p ∈ predecessors(b) }
-//	MoveOut[b] = MoveIn[b] with b's moves set to Moved
+//	MoveOut[b] = MoveIn[b] with each statement of b applied in order
+//
+// A statement first resets each binding a `val` or `var` declaration in it declares to
+// NotMoved, then sets each binding it moves to Moved. A declaration binds a fresh value, so a
+// move of the binding on an earlier iteration of a loop does not reach the new one.
 //
 // MoveIn[entry] is empty (every binding NotMoved). The join at a merge block with
 // disagreeing predecessors raises a binding to MaybeMoved. A loop back edge feeds
@@ -116,18 +121,7 @@ type MoveInfo struct {
 func AnalyzeMoves(cfg *CFG, moves map[StmtRef]set.Set[VarID]) *MoveInfo {
 	numBlocks := len(cfg.Blocks)
 
-	// Per-block move set: the union of every statement's moves in the block,
-	// including the synthetic -1 entry position. Applying the block's moves means
-	// overriding each to Moved, since a value cannot be un-moved.
-	blockMoves := make([]set.Set[VarID], numBlocks)
-	for i := range numBlocks {
-		blockMoves[i] = set.NewSet[VarID]()
-	}
-	for ref, vs := range moves {
-		for v := range vs {
-			blockMoves[ref.BlockID].Add(v)
-		}
-	}
+	declared := DeclaredBindings(cfg)
 
 	blockIn := make([]map[VarID]MoveState, numBlocks)
 	blockOut := make([]map[VarID]MoveState, numBlocks)
@@ -147,7 +141,10 @@ func AnalyzeMoves(cfg *CFG, moves map[StmtRef]set.Set[VarID]) *MoveInfo {
 			block := cfg.Blocks[i]
 
 			newIn := joinPreds(block, blockOut)
-			newOut := applyMoves(newIn, blockMoves[i])
+			newOut := applyStmt(newIn, declared[StmtRef{BlockID: block.ID, StmtIdx: -1}], movesAt(moves, block.ID, -1))
+			for idx := range block.Stmts {
+				newOut = applyStmt(newOut, declared[StmtRef{BlockID: block.ID, StmtIdx: idx}], movesAt(moves, block.ID, idx))
+			}
 
 			if !equalMoveMap(blockIn[i], newIn) || !equalMoveMap(blockOut[i], newOut) {
 				changed = true
@@ -172,16 +169,65 @@ func AnalyzeMoves(cfg *CFG, moves map[StmtRef]set.Set[VarID]) *MoveInfo {
 		after[block.ID] = make([]map[VarID]MoveState, n)
 
 		// Apply any moves recorded at the synthetic -1 entry position first.
-		state := applyMoves(blockIn[block.ID], movesAt(moves, block.ID, -1))
+		state := applyStmt(blockIn[block.ID], declared[StmtRef{BlockID: block.ID, StmtIdx: -1}], movesAt(moves, block.ID, -1))
 		blockEntry[block.ID] = state
 		for idx := range n {
 			before[block.ID][idx] = state
-			state = applyMoves(state, movesAt(moves, block.ID, idx))
+			state = applyStmt(state, declared[StmtRef{BlockID: block.ID, StmtIdx: idx}], movesAt(moves, block.ID, idx))
 			after[block.ID][idx] = state
 		}
 	}
 
 	return &MoveInfo{before: before, after: after, blockIn: blockIn, blockEntry: blockEntry}
+}
+
+// DeclaredBindings returns the point of each `val` or `var` declaration in cfg, mapped to the
+// bindings it declares. A declaration whose initializer branches has no statement of its own,
+// so its point is StmtIdx -1 of its join block, as BuildStmtToRef maps it. A block's ExtraDefs,
+// such as a for-in loop's pattern bindings, are declared at StmtIdx -1 of that block too.
+func DeclaredBindings(cfg *CFG) map[StmtRef][]VarID {
+	out := map[StmtRef][]VarID{}
+	add := func(stmt ast.Stmt, ref StmtRef) {
+		decl, ok := stmt.(*ast.DeclStmt)
+		if !ok {
+			return
+		}
+		vd, ok := decl.Decl.(*ast.VarDecl)
+		if !ok {
+			return
+		}
+		c := &collector{ids: cfg.ids}
+		c.collectPatDefs(vd.Pattern)
+		if len(c.defs) > 0 {
+			out[ref] = append(out[ref], c.defs...)
+		}
+	}
+	for _, block := range cfg.Blocks {
+		for idx, stmt := range block.Stmts {
+			add(stmt, StmtRef{BlockID: block.ID, StmtIdx: idx})
+		}
+		if len(block.ExtraDefs) > 0 {
+			entry := StmtRef{BlockID: block.ID, StmtIdx: -1}
+			out[entry] = append(out[entry], block.ExtraDefs...)
+		}
+	}
+	for _, ds := range cfg.decomposedStmts {
+		add(ds.Stmt, StmtRef{BlockID: ds.Block.ID, StmtIdx: -1})
+	}
+	return out
+}
+
+// applyStmt returns a copy of state with each binding in declared reset to NotMoved, then
+// each binding in moved set to Moved.
+func applyStmt(state map[VarID]MoveState, declared []VarID, moved set.Set[VarID]) map[VarID]MoveState {
+	if len(declared) == 0 {
+		return applyMoves(state, moved)
+	}
+	out := cloneMoveMap(state)
+	for _, v := range declared {
+		delete(out, v)
+	}
+	return applyMoves(out, moved)
 }
 
 // joinPreds computes a block's entry state as the lattice join of every

@@ -396,18 +396,80 @@ func TestInferMixedBorrowAndOwnedReturnFallsBackToUnion(t *testing.T) {
 // the EscapingRefIntoStatic acceptance (M4 D3), now reachable from real source.
 // `cache` stores its borrow `p` into the module-level `var sink`, a global write. The
 // stored value outlives every borrow region, so p's lifetime is forced `<: 'static`
-// and the parameter renders `&'static mut {x: number}` rather than under a borrow
-// lifetime `'l{id}`. The store itself checks. A 'static borrow is owned-forever, so
-// it fills the owned destination instead of tripping BorrowEscapeError.
+// and the parameter renders `&'static {x: number}` rather than under a borrow
+// lifetime `'l{id}`. sink's type is a borrow, since T6 rejects a borrow stored into an
+// owned module-level binding.
 func TestInferGlobalWriteEscapesBorrowToStatic(t *testing.T) {
-	src := `var sink = {x: 0}
-fn cache(p: &mut {x: number}) {
+	src := `var sink: &{x: number} = &{x: 0}
+fn cache(p: &{x: number}) {
   sink = p
 }`
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
-	require.Equal(t, "{x: number}", values["sink"])
-	require.Equal(t, "fn (p: &'static mut {x: number}) -> undefined", values["cache"])
+	require.Equal(t, "&{x: number}", values["sink"])
+	require.Equal(t, "fn (p: &'static {x: number}) -> undefined", values["cache"])
+}
+
+// TestInferGlobalWriteOfABorrowIntoAnOwnedBinding asserts that T6 rejects a borrow stored into
+// an owned module-level binding, written or inferred.
+func TestInferGlobalWriteOfABorrowIntoAnOwnedBinding(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "InferredOwnedBinding",
+			src: `
+				var sink = {x: 0}
+				fn cache(p: &mut {x: number}) {
+					sink = p
+				}
+			`,
+			want: []string{"4:13-4:14: cannot use borrowed &mut object as owned object"},
+		},
+		{
+			name: "DeclaredOwnedBinding",
+			src: `
+				declare var sink: {x: number}
+				fn cache(p: &{x: number}) {
+					sink = p
+				}
+			`,
+			want: []string{"4:13-4:14: cannot use borrowed &object as owned object"},
+		},
+		{
+			name: "WrittenBorrowOfALocal",
+			src: `
+				declare var sink: {x: number}
+				fn cache() {
+					val p = {x: 1}
+					sink = &p
+				}
+			`,
+			want: []string{"5:13-5:15: cannot use borrowed &object as owned object"},
+		},
+		{
+			name: "OwnedValueIsAccepted",
+			src: `
+				declare var sink: {x: number}
+				fn cache() {
+					val p = {x: 1}
+					sink = p
+				}
+			`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src)
+			if tc.want == nil {
+				require.Empty(t, errs)
+				return
+			}
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+		})
+	}
 }
 
 // An ordinary global write of a NON-borrow value is unaffected by the escape rule.

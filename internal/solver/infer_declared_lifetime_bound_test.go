@@ -107,10 +107,10 @@ func TestInferDeclaredStaticBoundUnsatisfied(t *testing.T) {
 // parameter renders under 'static.
 func TestInferDeclaredStaticBoundSatisfiedByEscape(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		var sink = {x: 0}
-		fn cache<'a: 'static>(p: &'a mut {x: number}) { sink = p }`)
+		var sink: &{x: number} = &{x: 0}
+		fn cache<'a: 'static>(p: &'a {x: number}) { sink = p }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: &'static mut {x: number}) -> undefined", values["cache"])
+	require.Equal(t, "fn (p: &'static {x: number}) -> undefined", values["cache"])
 }
 
 // TestInferUndeclaredJoinBoundsReport asserts that a body joining two named borrows into a
