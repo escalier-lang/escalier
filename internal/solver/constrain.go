@@ -27,11 +27,9 @@ func hasRest(f *soltype.FuncType) bool {
 }
 
 // restSlotElem returns the element type a rest parameter's slot stands for, and false when the
-// slot is not an array. It looks through a borrow first, so `...items: mut Array<T>` binds the
+// slot is not an array. It looks through a borrow first, so `...items: &mut Array<T>` binds the
 // same arguments `...items: Array<T>` does. The borrow describes the array a call gathers its
 // surplus arguments into and says nothing about the arguments, so it must not reach the element.
-// `std/prelude.esc` writes `push(&mut self, ...items: mut Array<T>) -> number`, which is the form
-// this reads.
 func (c *Context) restSlotElem(slot soltype.Type) (soltype.Type, bool) {
 	if ref, ok := slot.(*soltype.RefType); ok {
 		return c.arrayElem(ref.Inner)
@@ -439,8 +437,8 @@ func (c *Context) Constrain(sub, super soltype.Type) []SolverError {
 // A cross-name class pair is one of those arms. The nominal walk decides `Sub <: Super` on
 // the declared `extends` edge, and checkInheritedMembers is what makes that edge stand for
 // something. For every member Super declares as writable, it requires Sub to still offer a
-// write and to accept every value Super's declaration accepts. A write through `mut Super`
-// therefore lands somewhere Sub admits it, so `mut Sub <: mut Super` needs no reverse
+// write and to accept every value Super's declaration accepts. A write through `&mut Super`
+// therefore lands somewhere Sub admits it, so `&mut Sub <: &mut Super` needs no reverse
 // constraint of its own.
 //
 // Any other inner reaches no such arm, so the whole reverse constraint pins it. That covers
@@ -475,9 +473,9 @@ func (c *Context) needsResidualWriteBack(sub, sup soltype.Type) bool {
 // which is checked by constraining P against the whole array. An inexact tuple may carry any
 // trailing element, so `unknown` must fit elemT as well.
 //
-// Under a mutable view the pair is rejected outright. A write through `mut Array<E>` can push
+// Under a mutable view the pair is rejected outright. A write through `&mut Array<E>` can push
 // an element or change the length, which no tuple type admits, so no element choice makes
-// `mut [A, B] <: mut Array<E>` sound.
+// `&mut [A, B] <: &mut Array<E>` sound.
 func (c *Context) constrainTupleIntoArray(sub *soltype.TupleType, super, elemT soltype.Type, seen *seenPairs, mutCtx bool) []SolverError {
 	if mutCtx {
 		return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
@@ -634,17 +632,14 @@ func (c *Context) readThroughBound(r borrowedRead, lb soltype.Type, seen *seenPa
 }
 
 // borrowedFieldType returns the type a field of type field reads as through borrow, or nil
-// for a field that reads as declared. An owned `mut` cell and an object, tuple, class
-// instance, alias, or generator read as a borrow bounded by borrow's lifetime. A union reads member by
+// for a field that reads as declared. An object, tuple, class instance, alias, or
+// generator reads as a borrow bounded by borrow's lifetime. A union reads member by
 // member. A field holding an immutable borrow reads as declared. A field holding a mutable
 // borrow is reborrowed immutably whatever borrow's own mutability, so an immutable borrow
 // never lends a write.
 func borrowedFieldType(field soltype.Type, borrow *soltype.RefType) soltype.Type {
 	switch f := field.(type) {
 	case *soltype.RefType:
-		if f.Lt == nil {
-			return &soltype.RefType{Mut: f.Mut, Lt: borrow.Lt, Inner: f.Inner}
-		}
 		if f.Mut {
 			return &soltype.RefType{Mut: false, Lt: f.Lt, Inner: f.Inner}
 		}
@@ -1094,6 +1089,23 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		return nil
 	}
 
+	// A value type copies out of a borrow, so a borrow of a variable fills a value-type
+	// destination when the variable does. `fn read(p) { return p.x }` returns `&'a T0`, and
+	// `read(&b) + 1` checks `T0` against `number`.
+	if ref, ok := sub.(*soltype.RefType); ok && ref.Lt != nil && copiesOutOfBorrow(super) {
+		if inner, ok := ref.Inner.(*soltype.TypeVarType); ok {
+			return c.constrain(inner, super, seen, false)
+		}
+	}
+	// A value type copies into an immutable borrow of a variable the same way, since it has no
+	// storage for the borrow to share. `fn remember(value) { seen.set("last", value) }` takes
+	// `&'static T0`, and `remember("a")` checks `"a"` against `T0`.
+	if ref, ok := super.(*soltype.RefType); ok && ref.Lt != nil && !ref.Mut && copiesOutOfBorrow(sub) {
+		if inner, ok := ref.Inner.(*soltype.TypeVarType); ok {
+			return c.constrain(sub, inner, seen, false)
+		}
+	}
+
 	// A variable constrained against itself is reflexively true, so it records
 	// nothing. Without this guard the self-edge `T <: T` lands in the variable's own
 	// upper bounds and renders as `fn <T: T>(x: T) -> T`. A generic function whose
@@ -1392,6 +1404,14 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			}
 			if quantified(sub) {
 				return c.constrain(c.instantiateFuncBinder(sub, binderLevel(sub)), sup, seen, mutCtx)
+			}
+			// A retention lifetime is covariant, like a borrow's. A function kept for the
+			// destination's lifetime has to stay valid that long, so the source's lifetime must
+			// outlive it. A source with no lifetime is a function value whose captures decide how
+			// long it stays valid, so it fills any slot. A destination with no lifetime only calls
+			// the function during the call, so it accepts any source.
+			if sub.Lt != nil && sup.Lt != nil {
+				c.constrainLt(sub.Lt, sup.Lt)
 			}
 			// A tuple-typed rest param on either side expands to one positional param per element,
 			// so a written rest param works as a value-level type and not only as a pattern. The
@@ -1892,13 +1912,13 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			//    carried by the mut-context flag, set to sup.Mut here, which the
 			//    ObjectType/TupleType arms read to add the contravariant write view. An
 			//    INEXACT target tolerates extra source fields while still pinning its
-			//    named ones, so `mut {x, y} <: mut {x, ...}` SUCCEEDS — the inexact target
-			//    names only x — while `mut {x: 5} <: mut {x: number}` still rejects (x
-			//    invariant) and an EXACT target demands an identical field set.
+			//    named ones, so `&mut {x, y} <: &mut {x, ...}` SUCCEEDS — the inexact
+			//    target names only x — while `&mut {x: 5} <: &mut {x: number}` still
+			//    rejects (x invariant) and an EXACT target demands an identical field set.
 			//
-			//    A literal-typed field like the `5` in `mut {x: 5}` only arises from an
+			//    A literal-typed field like the `5` in `&mut {x: 5}` only arises from an
 			//    ANNOTATION. inferMemberAssign builds its requirement with widen(source),
-			//    so `obj.x = 5` lowers to `mut {x: number, ...}`, not `mut {x: 5, ...}`.
+			//    so `obj.x = 5` lowers to `&mut {x: number, ...}`, not `&mut {x: 5, ...}`.
 			//
 			//    The flag passes `sup.Mut`, equivalent to `sub.Mut && sup.Mut`: the check
 			//    above already returned for `!sub.Mut && sup.Mut`, so reaching here with
@@ -2149,6 +2169,23 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	}
 
 	return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+}
+
+// copiesOutOfBorrow reports whether t is a value type a read can copy out of a borrow: a type
+// isValueType accepts, a function, or a union of these.
+func copiesOutOfBorrow(t soltype.Type) bool {
+	switch t := t.(type) {
+	case *soltype.FuncType:
+		return true
+	case *soltype.UnionType:
+		for _, member := range t.Types {
+			if !copiesOutOfBorrow(member) {
+				return false
+			}
+		}
+		return len(t.Types) > 0
+	}
+	return isValueType(t)
 }
 
 // constrainRigidParamIntoVar checks `v <: superVar` for a rigid type parameter v and a
@@ -3693,11 +3730,18 @@ func (e *extruder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Enter
 		// extrude it here in the wrapper's polarity (M4 D2.5). rewriteRefLifetime then
 		// hands back a RefType carrying the fresh lifetime for the descend path to
 		// rebuild Inner around, or signals an ordinary rebuild when no extrusion was
-		// needed. The cache is allocated on first use so a borrow-free pass pays nothing.
-		if e.ltCache == nil {
-			e.ltCache = map[ltExtrudeKey]*soltype.LifetimeVar{}
+		// needed.
+		return rewriteRefLifetime(r, e.extrudeLifetime(r.Lt, pol))
+	}
+	if ft, ok := t.(*soltype.FuncType); ok && ft.Lt != nil {
+		// A function's retention lifetime is never walked by Accept either, so it
+		// extrudes here in the function's polarity, the same way a borrow's does.
+		if lt := e.extrudeLifetime(ft.Lt, pol); lt != ft.Lt {
+			repl := *ft
+			repl.Lt = lt
+			return soltype.EnterResult{Type: &repl}
 		}
-		return rewriteRefLifetime(r, e.c.extrudeLt(r.Lt, pol, e.lvl, e.ltCache))
+		return soltype.EnterResult{}
 	}
 	v, ok := t.(*soltype.TypeVarType)
 	if !ok {
@@ -3710,6 +3754,12 @@ func (e *extruder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Enter
 	nv := e.c.freshVar(e.lvl)
 	e.c.copyParamMark(nv, v)
 	e.cache[key] = nv
+	// A default that applies to v carries over to the copy, counted against the bounds the
+	// copy holds once they are copied, so the copy takes the default for as long as no
+	// further bound reaches it. It is read before v is linked to the copy, since that link
+	// is itself a bound of v. `val ws = cb()` at module level reads a generic call's result
+	// through such a copy, and the call's `<T = number>` still settles it.
+	def, hasDefault := v.DefaultApplies()
 	// v is the original (possibly pre-probe) var — its append is the one a Discard
 	// must truncate. nv was just minted here, so journaling it is a harmless no-op
 	// (a fresh var is unreachable after a Discard); it goes through the helpers
@@ -3736,7 +3786,20 @@ func (e *extruder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Enter
 			})
 		}
 	}
+	if hasDefault {
+		nv.Default = &soltype.VarDefault{Type: def.Accept(e, pol), Lower: len(nv.LowerBounds), Upper: len(nv.UpperBounds)}
+	}
 	return soltype.EnterResult{Type: nv, SkipChildren: true}
 }
 
 func (e *extruder) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+
+// extrudeLifetime extrudes lt to the extruder's level at polarity pol through extrudeLt,
+// sharing one cache across the walk. The cache is allocated on first use, so a pass that
+// meets no lifetime allocates nothing.
+func (e *extruder) extrudeLifetime(lt soltype.Lifetime, pol soltype.Polarity) soltype.Lifetime {
+	if e.ltCache == nil {
+		e.ltCache = map[ltExtrudeKey]*soltype.LifetimeVar{}
+	}
+	return e.c.extrudeLt(lt, pol, e.lvl, e.ltCache)
+}

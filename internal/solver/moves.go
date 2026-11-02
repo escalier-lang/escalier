@@ -71,7 +71,8 @@ type UseAfterMoveError struct {
 	// path moved it (Moved).
 	Conditional bool
 	// Via names the closure the call being blamed may run, when the read is that closure's
-	// access to what it captures. It is empty otherwise.
+	// access to what it captures. It is a phrase closureVia or retainedVia returns, and is empty
+	// otherwise.
 	Via string
 	// ViaRuns marks a closure named by Via that the call is sure to run, because the call's
 	// callee names it.
@@ -103,7 +104,7 @@ func (e *UseAfterMoveError) Message() string {
 		if e.ViaReads {
 			access = "reads"
 		}
-		return fmt.Sprintf("this call %s '%s', which %s '%s' after it was moved", runsVerb(e.ViaRuns), e.Via, access, e.Name)
+		return fmt.Sprintf("this call %s %s, which %s '%s' after it was moved", runsVerb(e.ViaRuns), e.Via, access, e.Name)
 	}
 	return fmt.Sprintf("use of moved value '%s'", e.Name)
 }
@@ -158,9 +159,7 @@ func (c *checker) isReferenceShaped(t soltype.Type) bool {
 
 // isConcreteOwned reports whether t is a CONCRETE owned reference shape — an owned
 // object, tuple, class instance, or owned RefType — excluding a bare type variable. An alias
-// or interface is decided by what it names. A consuming parameter must be spelled as a
-// concrete owned shape, so a fresh inference variable for an unannotated parameter does not
-// consume its argument.
+// or interface is decided by what it names.
 //
 // Excluding the bare type variable is the opposite of isReferenceShaped, which includes
 // it, so the two are conservative in opposite directions on an unresolved variable. This
@@ -462,6 +461,7 @@ func (c *checker) recordMemberUse(e ast.Expr) {
 		return
 	}
 	c.fn.useSites = append(c.fn.useSites, moveUse{place: p, ref: ref, node: e, loanSeqAt: c.fn.loanSeq + 1})
+	c.emitRead(e)
 }
 
 // consumeOwned records a move of the owned place the source expression names, at the
@@ -512,10 +512,9 @@ func (c *checker) movesSourceInto(source ast.Expr, destT soltype.Type) bool {
 }
 
 // consumeBindingInit moves the owned source a `val`/`var` initializer names into
-// the new binding. `val q = p` for an owned p consumes p; a borrow binding leaves
-// p usable, whether the borrow comes from a `&` annotation — `val q: &{x} = p` — or
-// an explicit `&p` initializer, which is a BorrowExpr rather than a plain
-// identifier and so names no owned source to consume.
+// the new binding. `val q = p` for an owned p consumes p. A borrow binding such as
+// `val q = &p` or `val q: &{x} = &p` leaves p usable, since its initializer is a
+// BorrowExpr rather than a plain identifier and so names no owned source to consume.
 func (c *checker) consumeBindingInit(vd *ast.VarDecl, bindingT soltype.Type, stmt ast.Stmt) {
 	// inferVarDeclInit reported a move out of a module-level binding, which records no move.
 	if c.fn.moduleLevelMoves.Contains(vd.Init) {
@@ -613,10 +612,7 @@ func (m *destructureMover) rest(pat ast.Pat, at movePlace) {
 	if !ok {
 		return
 	}
-	if ref, isRef := t.(*soltype.RefType); isRef {
-		t = ref.Inner
-	}
-	obj, isObj := t.(*soltype.ObjectType)
+	obj, isObj := objectThroughBorrow(t)
 	if !isObj {
 		m.moveInto(dest, nil, at)
 		return
@@ -626,6 +622,16 @@ func (m *destructureMover) rest(pat ast.Pat, at movePlace) {
 			m.moveInto(dest, appendSeg(nil, prop.Name), extendPlace(at, prop.Name))
 		}
 	}
+}
+
+// objectThroughBorrow returns the object type t is, or the object type a RefType t wraps.
+// ok is false when neither is an ObjectType.
+func objectThroughBorrow(t soltype.Type) (*soltype.ObjectType, bool) {
+	if r, isRef := t.(*soltype.RefType); isRef {
+		t = r.Inner
+	}
+	obj, ok := t.(*soltype.ObjectType)
+	return obj, ok
 }
 
 // ownedLeaf returns the type of the leaf binding `name`, and `false` when the leaf takes
@@ -673,6 +679,31 @@ func (c *checker) consumeAtGlobalWrite(source ast.Expr, sourceT soltype.Type, mo
 		return
 	}
 	c.recordMovePlace(p, moveNode, ref)
+}
+
+// markMovedParams sets Moved on each parameter that is a bare name with no type annotation
+// and that a move in the current body consumes whole. params holds the FuncParams built from
+// sigParams, one for one. It reads the body's move sites, so it runs once the body is walked
+// and before the body's context is popped.
+func (c *checker) markMovedParams(sigParams []*ast.Param, params []*soltype.FuncParam) {
+	if c.fn == nil || len(c.fn.moveSites) == 0 {
+		return
+	}
+	moved := set.NewSet[liveness.VarID]()
+	for _, at := range c.fn.moveSites {
+		for id := range at {
+			moved.Add(id)
+		}
+	}
+	for i, p := range sigParams {
+		ip, ok := p.Pattern.(*ast.IdentPat)
+		if !ok || p.TypeAnn != nil || i >= len(params) {
+			continue
+		}
+		if moved.Contains(c.varIDs.Of(ip)) {
+			params[i].Moved = true
+		}
+	}
 }
 
 // consumeIntoLiteral moves an owned place built into a fresh object or tuple literal,
@@ -739,7 +770,41 @@ func (c *checker) recordMove(varID liveness.VarID, moveNode ast.Node, ref livene
 	if c.fn.moveNodes == nil {
 		c.fn.moveNodes = map[liveness.VarID]ast.Node{}
 	}
+	if c.fn.moveRecords == nil {
+		c.fn.moveRecords = map[ast.Node]moveRecord{}
+	}
+	c.fn.moveRecords[moveNode] = moveRecord{varID: varID, ref: ref, prevNode: c.fn.moveNodes[varID]}
 	c.fn.moveNodes[varID] = moveNode
+}
+
+// moveRecord is one move recordMove recorded: the place moved, the statement it moved at, and
+// the node moveNodes named for that place before this move.
+type moveRecord struct {
+	varID    liveness.VarID
+	ref      liveness.StmtRef
+	prevNode ast.Node
+}
+
+// retractMove removes the move recordMove recorded for moveNode, so the use-after-move check
+// does not see it. It does nothing when moveNode recorded no move.
+func (c *checker) retractMove(moveNode ast.Node) {
+	if c.fn == nil {
+		return
+	}
+	rec, ok := c.fn.moveRecords[moveNode]
+	if !ok {
+		return
+	}
+	delete(c.fn.moveRecords, moveNode)
+	c.fn.moveSites[rec.ref].Remove(rec.varID)
+	if c.fn.moveNodes[rec.varID] == moveNode {
+		if rec.prevNode != nil {
+			c.fn.moveNodes[rec.varID] = rec.prevNode
+		} else {
+			delete(c.fn.moveNodes, rec.varID)
+		}
+	}
+	c.fn.movedSources.Remove(moveNode)
 }
 
 // checkUseAfterMoves runs the consumed-lattice dataflow over the function body's
@@ -760,21 +825,21 @@ func (c *checker) checkUseAfterMoves() {
 	if c.fn == nil || c.fn.cfg == nil {
 		return
 	}
-	if len(c.fn.useSites) == 0 && len(c.fn.moveSites) == 0 && len(c.fn.pendingTransitions) == 0 && len(c.fn.escapeSites) == 0 && len(c.fn.globalClosureStores) == 0 && len(c.fn.borrowSites) == 0 {
+	if len(c.fn.useSites) == 0 && len(c.fn.moveSites) == 0 && len(c.fn.pendingTransitions) == 0 && len(c.fn.escapeSites) == 0 && len(c.fn.retainedClosureStores) == 0 && len(c.fn.borrowSites) == 0 {
 		return
 	}
 	info := liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites)
 	// Decide deferred escapes against the move lattice and the flow-sensitive borrow-edge
 	// graph, then fold any component-move consumes back into moveSites and recompute, so a
 	// use after a co-moved local is caught.
-	if len(c.fn.escapeSites) > 0 || len(c.fn.globalClosureStores) > 0 {
+	if len(c.fn.escapeSites) > 0 || len(c.fn.retainedClosureStores) > 0 {
 		flowBorrowGraph := c.analyzeBorrows()
 		if c.resolveComponentEscapes(info, flowBorrowGraph) {
 			info = liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites)
 		}
 		// These loans have to be in place before checkUsesAgainstLoans below weighs the
 		// body's writes and moves.
-		c.recordGlobalCaptureLoans(flowBorrowGraph)
+		c.recordRetainedCaptureLoans(flowBorrowGraph)
 	}
 	reported := set.NewSet[ast.Node]()
 	for _, u := range c.fn.useSites {

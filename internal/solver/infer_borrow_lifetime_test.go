@@ -86,9 +86,9 @@ func TestInferSharedParamLifetimeIsNamed(t *testing.T) {
 // Writing a field through an owned-mutable param checks. The write requirement's
 // fresh lifetime imposes no obligation, so an owned receiver satisfies it.
 func TestInferFieldWriteThroughBorrowParam(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(p: mut {x: number}) { p.x = 10 }`)
+	values, _, errs := inferSource(t, `fn f(mut p: {x: number}) { p.x = 10 }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: mut {x: number}) -> undefined", values["f"])
+	require.Equal(t, "fn (p: {x: number}) -> undefined", values["f"])
 }
 
 // Passing a borrow into a function whose parameter is an OWNED (bare) object is the
@@ -152,7 +152,7 @@ func TestInferFieldWriteToImmutableObjectRejected(t *testing.T) {
 }`
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, []string{
-		"2:3-2:10: cannot constrain immutable object <: mutable object",
+		"2:3-2:10: cannot mutate 'o' because its binding is immutable; declare it as `mut o`",
 	}, messagesWithSpan(t, errs))
 }
 
@@ -488,7 +488,7 @@ fn f(r: {x: number}) {
 func TestInferOwnedMutDecayToOwnedImmutable(t *testing.T) {
 	src := `fn acceptObj(o: {x: number}) -> number { return o.x }
 fn f() {
-  val items: mut {x: number} = {x: 1}
+  val mut items: {x: number} = {x: 1}
   val q: {x: number} = items
   return acceptObj(q)
 }`
@@ -594,11 +594,11 @@ func TestInferOwnedReceiverFieldReadIsOwned(t *testing.T) {
 	require.Equal(t, "fn () -> {id: number}", values["f"])
 }
 
-// A member read that escapes carries the receiver's borrow lifetime through.
-// Deep `mut` makes the field owned-mutable, so the read yields a mutable borrow.
+// A borrow of a field that escapes carries the receiver's borrow lifetime through.
+// The receiver is `&mut`, so the field is borrowed as `&mut p.a`.
 func TestInferMemberReadEscapingBorrowsReceiver(t *testing.T) {
 	src := `fn f(p: &mut {a: {x: number}}) {
-  return p.a
+  return &mut p.a
 }`
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
@@ -608,12 +608,12 @@ func TestInferMemberReadEscapingBorrowsReceiver(t *testing.T) {
 }
 
 // A member read consumed inside the body leaves the receiver lifetime free,
-// so D4's display-time elision drops it from the rendered signature. `obj.a`
-// reads as a borrow inside the body, but the binding `q` never escapes, so
+// so D4's display-time elision drops it from the rendered signature. `&mut p.a`
+// borrows inside the body, but the binding `q` never escapes, so
 // the param's borrow lifetime does not need to be named.
 func TestInferMemberReadLocalElidesLifetime(t *testing.T) {
 	src := `fn f(p: &mut {a: {x: number}}) {
-  val q = p.a
+  val q = &mut p.a
 }`
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)

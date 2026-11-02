@@ -5,8 +5,8 @@
 import "std:error"
 
 export declare interface AsyncGeneratorFunction {
-    new (...args: mut Array<any>) -> AsyncGenerator,
-    (...args: mut Array<any>) -> AsyncGenerator,
+    new (...args: Array<any>) -> AsyncGenerator,
+    (...args: Array<any>) -> AsyncGenerator,
     /**
      * The length of the arguments.
      */
@@ -22,8 +22,8 @@ export declare interface AsyncGeneratorFunction {
 }
 
 export declare interface AsyncGeneratorFunctionConstructor {
-    new (...args: mut Array<string>) -> AsyncGeneratorFunction,
-    (...args: mut Array<string>) -> AsyncGeneratorFunction,
+    new (...args: Array<string>) -> AsyncGeneratorFunction,
+    (...args: Array<string>) -> AsyncGeneratorFunction,
     /**
      * The length of the arguments.
      */
@@ -47,7 +47,7 @@ export declare interface AsyncIterableIterator<T, TReturn = any, TNext = any> ex
 
 @js("AggregateError")
 export declare class AggregateError extends error.Error {
-    errors: mut Array<any>,
+    errors: Array<any>,
     constructor(&mut self, errors: Iterable<any>, message?: string),
     (errors: Iterable<any>, message?: string) -> AggregateError,
     static readonly prototype: AggregateError,

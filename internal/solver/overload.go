@@ -81,7 +81,7 @@ func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, 
 		if quantified(arm) {
 			arm = c.ctx.instantiateFuncBinder(arm, lvl)
 		}
-		inst, matched, diags := c.tryArmCandidates(lvl, args, call.Args, arm)
+		inst, matched, diags := c.tryArmCandidates(lvl, args, arm)
 		c.closeProbe(p, matched)
 		if matched {
 			// tryOverloadArm runs the error-returning engine, so a warning the winning arm
@@ -119,11 +119,11 @@ func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, 
 // matches if some member matches. Every other arm yields exactly one, so the loop is the
 // single-shape case in the common form rather than a separate body.
 func (c *checker) tryArmCandidates(
-	lvl int, args []soltype.Type, argExprs []ast.Expr, arm *soltype.FuncType,
+	lvl int, args []soltype.Type, arm *soltype.FuncType,
 ) (*soltype.FuncType, bool, []SolverError) {
 	for _, cand := range c.ctx.callCandidates(arm, newSeenPairs()) {
 		p := c.openProbe()
-		matched, diags := c.tryOverloadArm(lvl, args, argExprs, cand)
+		matched, diags := c.tryOverloadArm(lvl, args, cand)
 		c.closeProbe(p, matched)
 		if matched {
 			return cand, true, diags
@@ -163,24 +163,14 @@ func (c *checker) markCallRaised(fn *soltype.FuncType) {
 // `"boom" <: never` in every trial and report "no matching overload" rather than the missing
 // clause.
 func (c *checker) tryOverloadArm(
-	lvl int, args []soltype.Type, argExprs []ast.Expr, inst *soltype.FuncType,
+	lvl int, args []soltype.Type, inst *soltype.FuncType,
 ) (bool, []SolverError) {
 	callShapeParams := make([]*soltype.FuncParam, len(args))
 	for i, arg := range args {
 		callShapeParams[i] = &soltype.FuncParam{Type: arg}
 	}
-	// The upgrade has to run inside the trial, since whether a uniquely-owned argument may fill
-	// a `mut` parameter is part of whether this arm matches at all. Its checks go through the
-	// error-returning engine so a losing arm writes nothing.
-	var upgradeErrs []SolverError
-	callShapeParams = c.upgradeCallShapeParams(argExprs, callShapeParams, inst, func(_ ast.Node, srcT, target soltype.Type) {
-		upgradeErrs = append(upgradeErrs, c.ctx.Constrain(srcT, target)...)
-	})
-	if hasHardError(upgradeErrs) {
-		return false, nil
-	}
 	shape := &soltype.FuncType{Params: callShapeParams, Ret: c.freshAt(lvl), Throws: c.freshAt(lvl)}
-	errs := append(upgradeErrs, c.ctx.Constrain(inst, shape)...)
+	errs := c.ctx.Constrain(inst, shape)
 	if hasHardError(errs) {
 		return false, nil
 	}

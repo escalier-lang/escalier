@@ -207,7 +207,6 @@ func isTreeReachable(graph map[liveness.VarID][]fieldBorrow, root liveness.VarID
 //     pointee, walked with root switched to the referent and the path reset, since the
 //     referent's own fields are keyed under it. A borrow with no local edge, such as a
 //     parameter borrow, is kept unchanged.
-//   - An owned-mutable cell is rebuilt around its walked inner at the same root and path.
 //   - An object descends each property at the path extended by the property name; a tuple
 //     descends each element at the same path, since a tuple index contributes no field segment.
 func stripBorrowTree(
@@ -230,17 +229,10 @@ func stripBorrowTree(
 			// default is immutability.
 			return stripBorrowTree(t.Inner, referent, nil, graph)
 		}
-		// An owned-mutable cell rebuilds around its walked inner. The inner is an object or
-		// tuple, so its strip stays a RefInner; keep the cell unchanged if that ever fails to
-		// hold rather than panicking.
-		inner, ok := stripBorrowTree(t.Inner, root, path, graph).(soltype.RefInner)
-		if !ok {
-			return t
-		}
-		return soltype.NewRef(t.Mut, nil, inner)
+		return t
 	case *soltype.ObjectType:
-		// A residual object has no settled property list to walk, the same guard stripOwnedMut
-		// applies. Its borrows are reached once the evaluator reduces it.
+		// A residual object has no settled property list to walk. Its borrows are reached once
+		// the evaluator reduces it.
 		if soltype.HasResidualElem(t.Elems) {
 			return t
 		}

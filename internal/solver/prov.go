@@ -79,30 +79,29 @@ func (FromExternal) isOrigin() {}
 type ASTOriginKind int
 
 const (
-	LiteralInference     ASTOriginKind = iota // a LitType from inferLiteral
-	ParamBinding                              // a fresh param var from inferFunc
-	Application                               // a fresh call-result var from inferCall
-	TupleElem                                 // a TupleType from inferTuple
-	ObjectField                               // an ObjectType from inferObject
-	FuncInference                             // a FuncType from inferFunc (the function expr/decl)
-	CallShape                                 // the synthesized FuncType{args,res} from inferCall (the CallExpr)
-	MemberAccess                              // a fresh member-result var from inferMember (recorded against the .prop ident)
-	AnnotationType                            // a fresh PrimType from resolveTypeAnn (number/string/boolean)
-	WildcardAnnotation                        // a fresh var from a `_` type annotation (resolveTypeAnn), the inner the surrounding annotation infers
-	AwaitResult                               // a fresh `await`-result var from inferAwait
-	PromiseWrap                               // a `Promise` instance minted by wrapping an async function's external return
-	GeneratorWrap                             // a GeneratorType minted by wrapping a gen function's external return
-	ReturnJoin                                // a fresh return-join var from inferFunc (the union of every return point)
-	IfElseBranch                              // a fresh branch-join var from inferIfElse (the union of cons / alt)
-	MatchBranch                               // a fresh branch-join var from inferMatch (the union of every arm body)
-	IfValBranch                               // a fresh branch-join var from inferIfVal (the union of cons / alt)
-	TryCatchBranch                            // a fresh branch-join var from inferTryCatch (the union of the try block's value and every catch arm body)
-	CaughtThrows                              // a fresh nested throws sink from inferTryCatch (what the try block raises, before the catch arms narrow it)
-	ValElseBranch                             // a fresh join var per leaf a val-else binds, the union of that leaf of the narrowed init and of a non-diverging else's fallback
-	BorrowExprOrigin                          // a RefType minted by inferBorrow from a `&p` / `&mut p` expression
-	OwnedMutConstruction                      // an owned-mutable RefType minted for `val mut q = {…}` from a fresh literal
-	OptionalChainJoin                         // a fresh join var from chainValue, the union of an optional chain's read and the `undefined` it short-circuits to
-	PatternField                              // a fresh field var from readPatternField, recorded against the pattern element that names the field
+	LiteralInference   ASTOriginKind = iota // a LitType from inferLiteral
+	ParamBinding                            // a fresh param var from inferFunc
+	Application                             // a fresh call-result var from inferCall
+	TupleElem                               // a TupleType from inferTuple
+	ObjectField                             // an ObjectType from inferObject
+	FuncInference                           // a FuncType from inferFunc (the function expr/decl)
+	CallShape                               // the synthesized FuncType{args,res} from inferCall (the CallExpr)
+	MemberAccess                            // a fresh member-result var from inferMember (recorded against the .prop ident)
+	AnnotationType                          // a fresh PrimType from resolveTypeAnn (number/string/boolean)
+	WildcardAnnotation                      // a fresh var from a `_` type annotation (resolveTypeAnn), the inner the surrounding annotation infers
+	AwaitResult                             // a fresh `await`-result var from inferAwait
+	PromiseWrap                             // a `Promise` instance minted by wrapping an async function's external return
+	GeneratorWrap                           // a GeneratorType minted by wrapping a gen function's external return
+	ReturnJoin                              // a fresh return-join var from inferFunc (the union of every return point)
+	IfElseBranch                            // a fresh branch-join var from inferIfElse (the union of cons / alt)
+	MatchBranch                             // a fresh branch-join var from inferMatch (the union of every arm body)
+	IfValBranch                             // a fresh branch-join var from inferIfVal (the union of cons / alt)
+	TryCatchBranch                          // a fresh branch-join var from inferTryCatch (the union of the try block's value and every catch arm body)
+	CaughtThrows                            // a fresh nested throws sink from inferTryCatch (what the try block raises, before the catch arms narrow it)
+	ValElseBranch                           // a fresh join var per leaf a val-else binds, the union of that leaf of the narrowed init and of a non-diverging else's fallback
+	BorrowExprOrigin                        // a RefType minted by inferBorrow from a `&p` / `&mut p` expression
+	OptionalChainJoin                       // a fresh join var from chainValue, the union of an optional chain's read and the `undefined` it short-circuits to
+	PatternField                            // a fresh field var from readPatternField, recorded against the pattern element that names the field
 )
 
 // NodeResolver resolves an operand type to the AST node that minted it. M2.5's
@@ -129,7 +128,8 @@ func (p Prov) NodeFor(t soltype.Type) (ast.Node, bool) {
 
 // hasProv reports whether t already carries a FromAST origin in the Prov table.
 func (c *checker) hasProv(t soltype.Type) bool {
-	_, ok := c.prov[t].(FromAST)
+	o, _ := c.prov.get(t)
+	_, ok := o.(FromAST)
 	return ok
 }
 
@@ -148,12 +148,13 @@ func (c *checker) hasProv(t soltype.Type) bool {
 // compiler. Re-recording the same node is idempotent and allowed.
 func (c *checker) recordProv(t soltype.Type, n ast.Node, kind ASTOriginKind) {
 	if c.debugProv {
-		if prev, ok := c.prov[t].(FromAST); ok && prev.Node != n {
+		prev, _ := c.prov.get(t)
+		if prev, ok := prev.(FromAST); ok && prev.Node != n {
 			panic(fmt.Sprintf("recordProv: type %p re-recorded against a different node (was %T, now %T) — the unique-pointer invariant is violated", t, prev.Node, n))
 		}
 	}
 	c.snapshotProv(t)
-	c.prov[t] = FromAST{Node: n, Kind: kind}
+	c.prov.set(t, FromAST{Node: n, Kind: kind})
 }
 
 // recordProvForResult records provenance for an annotation result whose smart
@@ -215,7 +216,7 @@ func sharedSingleton(t soltype.Type) bool {
 // does not consult debugProv, since a fused pointer can legitimately already carry
 // an origin through interning. A re-record is skipped rather than crashing.
 func (c *checker) recordFusionEdge(fused soltype.Type, from []soltype.Type) {
-	if _, ok := c.prov[fused]; ok {
+	if _, ok := c.prov.get(fused); ok {
 		return
 	}
 	for _, src := range from {
@@ -224,16 +225,20 @@ func (c *checker) recordFusionEdge(fused soltype.Type, from []soltype.Type) {
 		}
 	}
 	c.snapshotProv(fused)
-	c.prov[fused] = FromNormalization{From: from}
+	c.prov.set(fused, FromNormalization{From: from})
 }
 
 // snapshotProv registers a probe rollback for a pending write to t's Prov entry,
 // so a discarded speculative trial leaves Prov exactly as it was. A no-op when no
 // probe is open. recordProv, recordInstantiation, and recordFusionEdge all route
-// through it, so each speculative side-table write is reversible. It delegates to
-// the same snapshotMapEntry helper as recordType's Info write.
+// through it, so each speculative side-table write is reversible.
 func (c *checker) snapshotProv(t soltype.Type) {
-	snapshotMapEntry(c, c.prov, t)
+	if c.ctx.probe == nil {
+		return
+	}
+	prov := c.prov
+	prev, had := prov.own[t]
+	c.ctx.probe.onRollback(func() { prov.restore(t, prev, had) })
 }
 
 // recordInstantiation records the FromInstantiation interior edge minted by
@@ -244,10 +249,10 @@ func (c *checker) snapshotProv(t soltype.Type) {
 // practice — it backstops a future change that reuses a pointer.
 func (c *checker) recordInstantiation(nv *soltype.TypeVarType, from soltype.Type) {
 	if c.debugProv {
-		if prev, ok := c.prov[nv]; ok {
+		if prev, ok := c.prov.get(nv); ok {
 			panic(fmt.Sprintf("recordInstantiation: var %p already has provenance (%T) — the unique-pointer invariant is violated", nv, prev))
 		}
 	}
 	c.snapshotProv(nv)
-	c.prov[nv] = FromInstantiation{From: from}
+	c.prov.set(nv, FromInstantiation{From: from})
 }

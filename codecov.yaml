@@ -1,3 +1,19 @@
+# CI uploads coverage twice for each commit, flagged `go` by check_go and `ts` by
+# check_ts. A commit compared before one of its uploads arrives would read as
+# missing that half of the code, so each flag carries forward from the parent
+# commit until its own upload lands. Codecov also waits for both uploads before
+# it posts the status or the comment on a commit.
+codecov:
+  notify:
+    after_n_builds: 2
+
+comment:
+  after_n_builds: 2
+
+flag_management:
+  default_rules:
+    carryforward: true
+
 ignore:
   - "cmd/escalier/main.go"
   - "cmd/lsp-server/*.go"

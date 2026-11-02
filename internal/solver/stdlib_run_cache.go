@@ -201,6 +201,8 @@ func loadAmbientChecker(dir string, groups PackageGroups, opts Options) *checker
 	// that every run sharing the checker can see.
 	g := graphcopy.New(isASTPointer)
 	c = graphcopy.Copy(g, c)
+	// Every run's fork reads through this table, and forks run concurrently.
+	c.prov.freeze()
 	if frozenVarChecks {
 		// The copier's table of what it copied names every variable the cached checker
 		// reaches.
@@ -272,7 +274,8 @@ func isASTPointer(t reflect.Type) bool {
 
 // fork returns a checker that runs with source, groupSource, and groups over what c
 // loaded. The two share every type, definition, scope, and namespace c holds, and the
-// fork gets its own copy of every container a run adds to.
+// fork gets its own copy of every container a run adds to. The fork's Prov is a layer
+// over c's, so it reads every origin c recorded and writes only its own.
 //
 // c must not be written to while it is shared. Two forks of c can run concurrently, and
 // neither reaches the other's state.
@@ -284,7 +287,7 @@ func (c *checker) fork(source ModuleSource, groupSource GroupSource, groups Pack
 	f.info.ctx = f.ctx
 	f.source, f.groupSource, f.groups = source, groupSource, groups
 
-	f.prov = maps.Clone(c.prov)
+	f.prov = c.prov.child()
 	f.varIDs = c.varIDs.Clone()
 	f.errs = slices.Clip(c.errs)
 	f.memberFuncNames = maps.Clone(c.memberFuncNames)
@@ -301,11 +304,16 @@ func (c *checker) fork(source ModuleSource, groupSource GroupSource, groups Pack
 	f.memberNamespaces = maps.Clone(c.memberNamespaces)
 	f.nsIndex = maps.Clone(c.nsIndex)
 	f.symbolOwners = maps.Clone(c.symbolOwners)
+	f.weakBindings = slices.Clip(c.weakBindings)
+	f.weakReaders = slices.Clip(c.weakReaders)
+	f.weakLocals = slices.Clip(c.weakLocals)
+	f.weakBindingVars = set.NewSet[*soltype.TypeVarType]()
 	f.fileScopes = maps.Clone(c.fileScopes)
 	f.activeGroup = maps.Clone(c.activeGroup)
 	f.moduleDeclared = declaredNames{values: maps.Clone(c.moduleDeclared.values), types: maps.Clone(c.moduleDeclared.types)}
 	f.loadStack = slices.Clip(c.loadStack)
 	f.pendingRecvReads = slices.Clip(c.pendingRecvReads)
+	f.pendingMutations = slices.Clip(c.pendingMutations)
 	f.deferredArgBounds = slices.Clip(c.deferredArgBounds)
 	f.pendingReturns = slices.Clip(c.pendingReturns)
 	f.pendingOverrides = slices.Clip(c.pendingOverrides)
@@ -314,6 +322,11 @@ func (c *checker) fork(source ModuleSource, groupSource GroupSource, groups Pack
 	f.boundGlobalFiles = c.boundGlobalFiles.Clone()
 	// sources memoizes what c's own source returned, and the fork reads through source.
 	f.sources = nil
+	// A finished load settles every flow it records, and a pending flow would point into the
+	// loaded checker's tables, so the run starts with none.
+	f.pendingFlows = nil
+	f.paramByVar = maps.Clone(c.paramByVar)
+	f.unsettledParams = maps.Clone(c.unsettledParams)
 
 	// Whether each held diagnostic is reported is the run's own.
 	f.heldLoadErrs = make(map[string]*heldLoadErrors, len(c.heldLoadErrs))

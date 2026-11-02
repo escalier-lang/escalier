@@ -34,12 +34,12 @@ var declarationShapes = map[string]string{
 	// TypeScript has no `throws`, so this emits AFunction's text. It records that the
 	// emitter invents no rendering for the clause.
 	"AThrowsClause":             `declare fn f(x: number) -> string throws number`,
-	"ANoValueReturn":            "class C {\n\tv: number,\n}\nfn bump(c: mut C) {\n\tc.v = c.v + 1\n}",
-	"AnAnnotatedNoValueBody":    "class C {\n\tv: number,\n}\nfn set(c: mut C) -> undefined {\n\tc.v = 1\n}",
+	"ANoValueReturn":            "class C {\n\tv: number,\n}\nfn bump(mut c: C) {\n\tc.v = c.v + 1\n}",
+	"AnAnnotatedNoValueBody":    "class C {\n\tv: number,\n}\nfn set(mut c: C) -> undefined {\n\tc.v = 1\n}",
 	"ADeclaredUndefinedReturn":  `declare fn g() -> undefined`,
 	"AnAnnotatedUndefinedBody":  "fn h() -> undefined {\n\treturn undefined\n}",
 	"AReturnOfUndefined":        "fn k() {\n\treturn undefined\n}",
-	"AnAsyncNoValueReturn":      "class C {\n\tv: number,\n}\nasync fn bump(c: mut C) {\n\tc.v = c.v + 1\n}",
+	"AnAsyncNoValueReturn":      "class C {\n\tv: number,\n}\nasync fn bump(mut c: C) {\n\tc.v = c.v + 1\n}",
 	"AnAsyncReturnOfUndefined":  "async fn k() {\n\treturn undefined\n}",
 	"AnAsyncValueReturn":        "async fn k() {\n\treturn 5\n}",
 	"ANoValueMethod":            "class C {\n\tv: number,\n\tbump(&mut self) { self.v = 1 },\n}",

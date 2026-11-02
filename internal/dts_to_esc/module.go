@@ -271,5 +271,11 @@ func ConvertModuleWithOverrides(dtsModule *dts_parser.Module, store OverrideLook
 	// A package's declarations resolve against the committed tree, which
 	// declares `Array`, `Map` and `Set` but none of their readonly twins.
 	renameLibReadonlyTwinRefs(mod)
+	// A `.d.ts` does not say whether a callee writes an argument or returns
+	// structure it shares with one. Rule I3 picks the signature that rejects
+	// more programs. The index holds the package's own declarations, so a
+	// parameter typed by a name the committed tree declares keeps its type.
+	standalone := &StandaloneModule{Module: mod}
+	applyBorrowDefaults(standalone, newTypeIndex(standalone))
 	return mod, nil
 }

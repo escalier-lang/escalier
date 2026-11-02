@@ -850,14 +850,14 @@ func TestInferThrowsThroughASetterWrite(t *testing.T) {
 		{
 			// `throws _` on the writer infers from the write.
 			name: "WriterInfersTheSetterClause",
-			src:  raisingSetterClass + `fn f(c: mut C) throws _ { c.x = 5 }`,
-			want: "fn (c: mut C) -> undefined throws string",
+			src:  raisingSetterClass + `fn f(mut c: C) throws _ { c.x = 5 }`,
+			want: "fn (c: C) -> undefined throws string",
 		},
 		{
 			// A catch-all around the write covers it, so the writer needs no clause.
 			name: "CatchAllAroundTheWriteClearsTheClause",
-			src:  raisingSetterClass + `fn f(c: mut C) { try { c.x = 5 } catch { e => 0 } }`,
-			want: "fn (c: mut C) -> undefined",
+			src:  raisingSetterClass + `fn f(mut c: C) { try { c.x = 5 } catch { e => 0 } }`,
+			want: "fn (c: C) -> undefined",
 		},
 		{
 			// A method writes through `self` and carries the raise into its own signature,
@@ -870,9 +870,9 @@ func TestInferThrowsThroughASetterWrite(t *testing.T) {
 					set x(&mut self, n: number) throws string { if self.bad { throw "boom" } self.v = n },
 					m(&mut self) throws _ { self.x = 5 },
 				}
-				fn f(c: mut C) throws _ { c.m() }
+				fn f(mut c: C) throws _ { c.m() }
 			`,
-			want: "fn (c: mut C) -> undefined throws string",
+			want: "fn (c: C) -> undefined throws string",
 		},
 		{
 			// A setter that raises nothing leaves the writer's clause untouched, the same
@@ -880,18 +880,18 @@ func TestInferThrowsThroughASetterWrite(t *testing.T) {
 			name: "NonThrowingSetterWriteAddsNothing",
 			src: `
 				class C { v: number, set x(&mut self, n: number) { self.v = n } }
-				fn f(c: mut C) { c.x = 5 }
+				fn f(mut c: C) { c.x = 5 }
 			`,
-			want: "fn (c: mut C) -> undefined",
+			want: "fn (c: C) -> undefined",
 		},
 		{
 			// A plain field write is not an accessor call and raises nothing.
 			name: "PlainFieldWriteIsNotAnExceptionalExit",
 			src: `
 				class C { v: number }
-				fn f(c: mut C) { c.v = 5 }
+				fn f(mut c: C) { c.v = 5 }
 			`,
-			want: "fn (c: mut C) -> undefined",
+			want: "fn (c: C) -> undefined",
 		},
 	})
 	runThrowsErrCases(t, []throwsErrCase{
@@ -899,7 +899,7 @@ func TestInferThrowsThroughASetterWrite(t *testing.T) {
 			// The write is the exceptional exit, so the diagnostic blames the assignment
 			// rather than the setter's own body, which declared its raise correctly.
 			name:     "WriteThroughARaisingSetterFromAClauselessWriter",
-			src:      raisingSetterClass + `fn f(c: mut C) { c.x = 5 }`,
+			src:      raisingSetterClass + `fn f(mut c: C) { c.x = 5 }`,
 			wantErrs: []string{"7:18-7:25: `f` can throw `string`, but it doesn't declare it; add `throws string` to `f`'s signature"},
 		},
 		{

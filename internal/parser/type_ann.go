@@ -301,6 +301,7 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 	}
 
 	isMut := false
+	mutSpan := token.Span
 	if token.Type == Mut {
 		p.lexer.consume() // consume 'mut'
 		token = p.lexer.peek()
@@ -576,7 +577,9 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 	}
 
 	if isMut {
-		typeAnn = ast.NewMutableTypeAnn(typeAnn, token.Span)
+		// The checker rejects `mut` in a type and blames the keyword, so the annotation's
+		// span starts at it.
+		typeAnn = ast.NewMutableTypeAnn(typeAnn, ast.MergeSpans(mutSpan, typeAnn.Span()))
 	}
 
 	return typeAnn

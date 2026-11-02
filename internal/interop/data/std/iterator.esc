@@ -3,8 +3,8 @@
 // derived facts, and the overlay. Change one of those and re-run.
 
 export declare interface GeneratorFunction {
-    new (...args: mut Array<any>) -> Generator,
-    (...args: mut Array<any>) -> Generator,
+    new (...args: Array<any>) -> Generator,
+    (...args: Array<any>) -> Generator,
     /**
      * The length of the arguments.
      */
@@ -21,8 +21,8 @@ export declare interface GeneratorFunction {
 }
 
 export declare interface GeneratorFunctionConstructor {
-    new (...args: mut Array<string>) -> GeneratorFunction,
-    (...args: mut Array<string>) -> GeneratorFunction,
+    new (...args: Array<string>) -> GeneratorFunction,
+    (...args: Array<string>) -> GeneratorFunction,
     /**
      * The length of the arguments.
      */

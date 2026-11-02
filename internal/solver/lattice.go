@@ -605,6 +605,9 @@ func compareSameKind(a, b soltype.Type) int {
 		if a.Inexact != b.Inexact {
 			return boolOrder(a.Inexact) - boolOrder(b.Inexact)
 		}
+		if c := compareLifetime(a.Lt, b.Lt); c != 0 {
+			return c
+		}
 		if c := len(a.Params) - len(b.Params); c != 0 {
 			return c
 		}
@@ -727,8 +730,8 @@ func compareTypeSlice(a, b []soltype.Type) int {
 	return 0
 }
 
-// compareFuncParam orders parameters by surface marker first. Rest comes
-// first, then Optional, then the parameter type. Pattern is intentionally
+// compareFuncParam orders parameters by marker first. Rest comes first, then
+// Optional, then Moved, then the parameter type. Pattern is intentionally
 // ignored, since an inferred or unnamed pattern would otherwise discriminate
 // two type-equal parameters.
 func compareFuncParam(a, b *soltype.FuncParam) int {
@@ -737,6 +740,9 @@ func compareFuncParam(a, b *soltype.FuncParam) int {
 	}
 	if a.Optional != b.Optional {
 		return boolOrder(a.Optional) - boolOrder(b.Optional)
+	}
+	if a.Moved != b.Moved {
+		return boolOrder(a.Moved) - boolOrder(b.Moved)
 	}
 	return compareType(a.Type, b.Type)
 }

@@ -137,24 +137,24 @@ func TestVariadicTupleSubtyping(t *testing.T) {
 		{
 			name: "MutableFixedTupleIntoMutableVariadic",
 			src: `
-				declare val f: mut [number, number]
-				val a: mut [number, ...Array<number>] = f
+				declare val f: &mut [number, number]
+				val a: &mut [number, ...Array<number>] = f
 			`,
-			wantErrs: []string{"3:45-3:46: cannot constrain tuple <: [number, ...Array<number>]"},
+			wantErrs: []string{"3:46-3:47: cannot constrain tuple <: [number, ...Array<number>]"},
 		},
 		{
 			name: "MutableVariadicIntoAShorterMutablePrefix",
 			src: `
-				declare val v: mut [number, ...Array<number>]
-				val a: mut [...Array<number>] = v
+				declare val v: &mut [number, ...Array<number>]
+				val a: &mut [...Array<number>] = v
 			`,
-			wantErrs: []string{"3:37-3:38: cannot constrain [number, ...Array<number>] <: [...Array<number>]"},
+			wantErrs: []string{"3:38-3:39: cannot constrain [number, ...Array<number>] <: [...Array<number>]"},
 		},
 		{
 			name: "MutableVariadicIntoTheSameShape",
 			src: `
-				declare val v: mut [number, ...Array<number>]
-				val a: mut [number, ...Array<number>] = v
+				declare val v: &mut [number, ...Array<number>]
+				val a: &mut [number, ...Array<number>] = v
 			`,
 		},
 		{

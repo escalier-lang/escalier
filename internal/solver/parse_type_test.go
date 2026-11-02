@@ -18,10 +18,10 @@ import (
 // The converter handles the surface forms the lattice tests author: the prim
 // keywords number / string / boolean; the atomic keywords never / unknown /
 // null / undefined; literal types such as `5`, `"x"`, `true`; objects, tuples,
-// owned-mutable `mut T`, unions, intersections, and `fn (x: T) -> U`
-// signatures. It does not handle a generic reference such as `Array<T>`,
-// borrows with named lifetimes, or type parameters on a signature. Tests that
-// need those continue to build the soltype value directly.
+// borrows `&T` and `&mut T` at the `'static` lifetime, unions, intersections, and
+// `fn (x: T) -> U` signatures. It does not handle a generic reference such as
+// `Array<T>`, borrows with named lifetimes, or type parameters on a signature. Tests
+// that need those continue to build the soltype value directly.
 //
 // A bare name such as `T` resolves through the environment parseTypeIn takes,
 // which is how a test writes a free type variable into a source string.
@@ -101,11 +101,12 @@ func toSoltype(t *testing.T, env map[string]soltype.Type, ta ast.TypeAnn) soltyp
 			elems[i] = toSoltype(t, env, e)
 		}
 		return &soltype.TupleType{Elems: elems, Inexact: ta.Inexact}
-	case *ast.MutableTypeAnn:
-		inner := toSoltype(t, env, ta.Target)
+	case *ast.RefTypeAnn:
+		require.Nil(t, ta.Lifetime, "parseType: a borrow's lifetime is always 'static")
+		inner := toSoltype(t, env, ta.Inner)
 		ri, ok := inner.(soltype.RefInner)
-		require.True(t, ok, "parseType: `mut` over a non-borrowable type %T", inner)
-		return &soltype.RefType{Mut: true, Lt: nil, Inner: ri}
+		require.True(t, ok, "parseType: a borrow of a non-borrowable type %T", inner)
+		return &soltype.RefType{Mut: ta.Mut, Lt: soltype.Static, Inner: ri}
 	case *ast.FuncTypeAnn:
 		return funcToSoltype(t, env, ta)
 	case *ast.TypeRefTypeAnn:
@@ -372,7 +373,7 @@ func TestParseTypeHelperSmoke(t *testing.T) {
 		{"{x: number, ...}", inexactObj(propElem("x", num()))},
 		{"[number, string]", &soltype.TupleType{Elems: []soltype.Type{num(), str()}}},
 		{"[number, ...]", &soltype.TupleType{Elems: []soltype.Type{num()}, Inexact: true}},
-		{"mut {x: number}", mutRef(exactObj(propElem("x", num())))},
+		{"&mut {x: number}", mutRef(exactObj(propElem("x", num())))},
 		{"fn (x: number) -> string", exactFn(str(), identParam("x", num()))},
 		{"fn (x: number, ...) -> string", inexactFn(str(), identParam("x", num()))},
 		{"fn (x?: number) -> string", exactFn(str(), optParam("x", num()))},

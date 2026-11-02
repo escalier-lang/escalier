@@ -234,10 +234,14 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	// symbols are minted before the `val` that names them is reached.
 	prevOwners := c.symbolOwners
 	c.symbolOwners = symbolOwners(module, g)
+	prevWeak, prevReaders, prevLocals, prevWeakVars := c.weakBindings, c.weakReaders, c.weakLocals, c.weakBindingVars
+	c.weakBindings, c.weakReaders, c.weakLocals = nil, nil, nil
+	c.weakBindingVars = set.NewSet[*soltype.TypeVarType]()
 	defer func() {
 		target.onDefine = prevOnDefine
 		c.nsIndex = nil
 		c.symbolOwners = prevOwners
+		c.weakBindings, c.weakReaders, c.weakLocals, c.weakBindingVars = prevWeak, prevReaders, prevLocals, prevWeakVars
 	}()
 	// M4 E3: dep_graph fans one top-level destructuring `val {x, y} = …` across one
 	// SCC component per leaf key. Its initializer is typed and its pattern bound
@@ -267,11 +271,17 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	for _, component := range classBodiesFirst(g) {
 		c.inferComponent(scope, lvl, module, g, component, handled, destructured)
 	}
+	// Every function body is walked, so every flow F3 can settle is settled, and the rest
+	// take the answer settleAllFlows gives what it cannot see.
+	c.settleAllFlows()
 	// Every class is inferred, so each superclass edge and body is final. Check the members
 	// each subclass redeclares against the ones they override.
 	c.settleQueuedVariance()
 	c.checkQueuedInheritedMembers()
 	c.checkQueuedImplements()
+	// Every function that reads a weak binding has been inferred, so its variables have
+	// every bound the module gives them.
+	c.settleWeakBindings(lvl)
 	// Reconcile against the source: BuildDepGraph only produces binding keys for
 	// the decl kinds it models, so a kind it does not descend into — e.g. a
 	// NamespaceDecl — yields no component and would vanish without a diagnostic.
@@ -394,6 +404,8 @@ type componentBinding struct {
 	// rather than a function. It is NOT the `var`-vs-`val` distinction — that is kind.
 	isVarDecl bool
 	kind      ast.VariableKind // PR8: the primary definition's kind — VarKind ⇒ reassignable
+	// mut marks a definition written `mut`, which lets the binding mutate what it owns.
+	mut bool
 	// recovered marks that a contributing definition was WHOLLY the ErrorType recovery
 	// sentinel (e.g. `val a = <unknown ident>`). ErrorType absorbs in constrain, so it
 	// leaves no bound on the binding var; phase 3 uses this to recover the binding AS
@@ -405,6 +417,11 @@ type componentBinding struct {
 	// set, bound as a multi-scheme ValueBinding in phase 3. arms[i] lines up with the
 	// FuncDecl's entry in sources.
 	arms []overloadArm
+	// weak marks a `val` or `var` whose declaration does not generalize, as generalizes
+	// decides. Its binding var and initializer are inferred at the component's own level,
+	// so the variables they carry are weak. Every function that reads the binding shares
+	// them, and no later component quantifies them.
+	weak bool
 	// signatureBound marks an overload set whose arms are ALL fully annotated, so phase
 	// 1 could build their signatures body-free and pre-bind the whole set in scope.
 	// b.arms then holds those signature types. A reference WITHIN the component — a
@@ -414,6 +431,19 @@ type componentBinding struct {
 	// on the group-var path, where fuseOverloadArms records the whole set as one lower
 	// bound on that var. See annotatedOverloadArms.
 	signatureBound bool
+}
+
+// identVarDecl returns the `val` or `var` declaration that binds key with a plain identifier
+// pattern, or nil when no such declaration binds it.
+func identVarDecl(g *dep_graph.DepGraph, key dep_graph.BindingKey) *ast.VarDecl {
+	for _, d := range g.GetDecls(key) {
+		if vd, ok := d.(*ast.VarDecl); ok {
+			if _, isIdent := vd.Pattern.(*ast.IdentPat); isIdent {
+				return vd
+			}
+		}
+	}
+	return nil
 }
 
 // inferComponent infers one strongly connected component — a group of
@@ -505,12 +535,31 @@ func (c *checker) inferComponent(
 			scope.defineValue(key.Name(), ValueBinding{Schemes: schemes})
 			continue
 		}
-		v := c.freshAt(inner)
-		bindings[key] = &componentBinding{v: v}
+		// A weak binding's var sits at lvl with the variables its initializer mints, so
+		// no component's generalization at lvl quantifies it, this one's included.
+		weak := false
+		if vd := keyVarDecl(g, key); vd != nil {
+			weak = !generalizes(vd)
+		}
+		vLvl := inner
+		if weak {
+			vLvl = lvl
+		}
+		v := c.freshAt(vLvl)
+		if weak {
+			c.weakBindingVars.Add(v)
+		}
+		bindings[key] = &componentBinding{v: v, weak: weak}
 		// Pre-bind the binding var as a MonoScheme so a mutually-recursive reference
 		// resolves through the var itself (instantiate returns it unchanged) before
-		// generalization happens in phase 3.
-		scope.defineValue(key.Name(), ValueBinding{Schemes: []TypeScheme{monoScheme(v)}})
+		// generalization happens in phase 3. A `val mut` declaration pre-binds as mutable,
+		// so a closure in its own initializer may write the value the binding owns.
+		pre := ValueBinding{Schemes: []TypeScheme{monoScheme(v)}}
+		if vd := identVarDecl(g, key); vd != nil {
+			pre.Mut = isMutableIdentPat(vd.Pattern)
+			pre.Sources = []provenance.Provenance{&ast.NodeProvenance{Node: vd}}
+		}
+		scope.defineValue(key.Name(), pre)
 	}
 	// Every binding var in the component now exists, so a namespace holding these
 	// members can answer for them. Two functions in one namespace calling each other
@@ -779,7 +828,7 @@ func (c *checker) inferComponent(
 			// leaves and the collision reports as a duplicate rather than as an
 			// unsupported pattern.
 			if vd := asDestructureDecl(d); vd != nil {
-				c.bindModuleDestructureLeaf(c.lookupScope(scope, vd), inner, vd, g, key, b, handled, destructured)
+				c.bindModuleDestructureLeaf(c.lookupScope(scope, vd), declLevel(vd, lvl), vd, g, key, b, handled, destructured)
 				continue
 			}
 			if handled.Contains(d) {
@@ -792,7 +841,7 @@ func (c *checker) inferComponent(
 			// A class decl is keyed by its dep_graph-qualified name, so pass the key's
 			// namespace down for inferClassDecl to reconstruct it. Every other decl
 			// kind ignores it.
-			t, src, ok := c.inferDeclDef(c.lookupScope(scope, d), inner, d, g.GetNamespace(key))
+			t, src, ok := c.inferDeclDef(c.lookupScope(scope, d), declLevel(d, lvl), d, g.GetNamespace(key))
 			if !ok {
 				continue
 			}
@@ -839,6 +888,7 @@ func (c *checker) inferComponent(
 				// a `val`/`fn` is not. A FuncDecl leaves kind at its ValKind zero value.
 				if isVarDecl {
 					b.kind = vd.Kind
+					b.mut = isMutableIdentPat(vd.Pattern)
 					// M4 B3: an un-annotated `var` widens at coalesce time, so its literal
 					// initializer reads back as the primitive (`var a = 5` ⇒ number) and a
 					// later reassignment of the same primitive checks. An annotated `var`
@@ -906,10 +956,14 @@ func (c *checker) inferComponent(
 	// Every call in the component has constrained the functions passed to it, so a callback's
 	// receiver has every lower bound it will get.
 	c.checkPendingRecvReads()
+	// The same holds for a value mutated through an immutable binding before its type was
+	// known.
+	c.checkPendingMutations()
 	// Every subtype check in the component has recorded what its sub required of a super
 	// signature's quantified lifetimes, so a requirement the signature's caller cannot be
 	// held to is reported now.
 	c.checkRigidLifetimes()
+	c.checkCallOnlyParams()
 
 	// Phase 3: rebind each value name to its coalesced monomorphic type. A binding
 	// whose declarations all failed to produce a definition (missing initializer,
@@ -992,13 +1046,16 @@ func (c *checker) inferComponent(
 		// matching the body-level path (inferVarDecl) and keeping downstream uses
 		// absorbing. Guarded by an empty binding var so a binding that ALSO picked up a
 		// real type (a recovered overload arm alongside a good one) still generalizes.
+		//
+		// A weak binding's var and every variable its initializer minted sit at lvl, so
+		// generalizing it quantifies nothing and every reader shares its variables.
 		var scheme TypeScheme
 		if b.recovered && len(b.v.LowerBounds) == 0 {
 			scheme = &MonoScheme{Ty: &soltype.ErrorType{}}
 		} else {
 			scheme = c.generalize(b.v, lvl)
 		}
-		scope.defineValue(key.Name(), ValueBinding{Schemes: []TypeScheme{scheme}, Sources: b.sources, Kind: b.kind, ModuleLevel: true})
+		scope.defineValue(key.Name(), ValueBinding{Schemes: []TypeScheme{scheme}, Sources: b.sources, Kind: b.kind, Mut: b.mut, ModuleLevel: true, Weak: b.weak})
 		// Record the binding's final (coalesced) DISPLAY type in Info on infoNode, so
 		// it is queryable even for a `val` in a recursive group (where coalescing at
 		// definition time would have frozen it to `never`). infoNode is the binding's
@@ -1014,6 +1071,11 @@ func (c *checker) inferComponent(
 		display := schemeType(scheme)
 		if b.infoNode != nil {
 			c.recordType(b.infoNode, display)
+		}
+		if b.weak {
+			c.noteWeakBinding(b, scheme)
+		} else {
+			c.noteWeakReader(b, scheme, lvl)
 		}
 	}
 }
@@ -1096,6 +1158,7 @@ func (c *checker) bindModuleDestructureLeaf(
 	b.infoNode = leaf.node
 	b.isVarDecl = true
 	b.kind = d.Kind
+	b.mut = leafMutable(leaf.node)
 	b.bound = true
 	b.sources = append(b.sources, &ast.NodeProvenance{Node: d})
 	if md.recovered {

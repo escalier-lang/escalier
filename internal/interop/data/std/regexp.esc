@@ -47,7 +47,7 @@ export declare class RegExp {
      *               this regular expression will be replaced
      * @param replacer A function that returns the replacement text.
      */
-    [Symbol.replace](&mut self, string: string, replacer: fn (substring: string, ...args: mut Array<any>) -> string) -> string,
+    [Symbol.replace](&mut self, string: string, replacer: fn (substring: string, ...args: Array<any>) -> string) -> string,
     /**
      * Finds the position beginning first substring match in a regular expression search
      * using this regular expression.

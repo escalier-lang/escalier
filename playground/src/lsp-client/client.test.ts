@@ -84,6 +84,7 @@ test('initialize', async () => {
           "codeActionProvider": {
             "codeActionKinds": [
               "compile",
+              "quickfix",
             ],
           },
           "completionProvider": {

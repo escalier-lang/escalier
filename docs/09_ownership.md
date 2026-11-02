@@ -17,12 +17,14 @@ possible.
 
 At each point in the program, an object, tuple, array, or class instance is
 either owned by a binding or borrowed from an owner. The distinction is written
-in the type.
+in the type. A borrow's mutability is part of its type too. An owned value's
+mutability is not, since it belongs to the binding that owns the value, so the
+owned column below shows a binding.
 
 | | owned | borrowed |
 |---|---|---|
-| **immutable** | `{x: number}` | `&{x: number}` / `&'a {x: number}` |
-| **mutable** | `mut {x: number}` | `&mut {x: number}` / `&'a mut {x: number}` |
+| **immutable** | `val p: {x: number}` | `&{x: number}` / `&'a {x: number}` |
+| **mutable** | `val mut p: {x: number}` | `&mut {x: number}` / `&'a mut {x: number}` |
 
 - **Owned** — the binding is the value's owner and the value's lifetime is the
   binding's own region.
@@ -40,28 +42,54 @@ in a borrow, ownership does not apply to them, and they are freely duplicated.
 
 1. **Freshly produced values are owned, and immutable by default.** An object,
    tuple, or array literal and a class constructor call all yield a value the
-   binding owns. Opt into mutability at the binding pattern, `val mut p = ...`,
-   or with a `mut` annotation.
+   binding owns. Opt into mutability at the binding, as in `val mut p = ...` or
+   a `mut p` parameter. A binding is mutable only when it is written `mut`, and
+   `mut` never appears inside an owned type.
 2. **A parameter is owned or borrowed according to its annotation.** `p: &T` and
-   `p: &mut T` borrow, and the caller keeps the value. A bare `p: T` or
-   `p: mut T` is consuming: the signature declares an ownership transfer. An
+   `p: &mut T` borrow, and the caller keeps the value. A bare `p: T` is
+   consuming: the signature declares an ownership transfer. A
+   `mut p: T` parameter consumes its argument the same way and has the same type
+   as `p: T`. The `mut` lets the body write the value it now owns. An
    unannotated parameter is inferred from whether the body lets the value escape.
+   One whose members the body only returns, compares, or computes with, as in
+   `return p.x` or `p.x + 1`, does not escape, so it is a borrow. A field read
+   through it keeps the borrow, so `fn read(p) { return p.x }` infers as
+   `fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0`, and a caller cannot write through
+   what `read(&b)` returns. A use that needs a value type, as `read(&b) + 1`
+   does, copies the field out of the borrow. Any other use leaves the parameter
+   owned, unless that use needs a borrow, as passing it straight to a `&`
+   parameter in `g(p)` does. A parameter that escapes into a destination whose
+   type leaves ownership open is a `'static` borrow when the body never writes
+   it, as [What counts as escape](#what-counts-as-escape) describes. A function
+   passed straight to a call takes its parameters' types from the callee's
+   signature instead.
 3. **A bare annotation is owned; a `&` annotation borrows.** This holds in every
    annotation position — a binding, a return type, a field, a parameter. So
-   `val q: &{x: number} = p` borrows `p` and leaves it usable, while
-   `val q: {x: number} = p` moves `p` into `q` and consumes it.
-4. **Member reads borrow the receiver.** `obj.f` yields a borrow of the field for
-   a lifetime bounded by the receiver, not a fresh owned value.
+   `val q: &{x: number} = &p` borrows `p` and leaves it usable, while
+   `val q: {x: number} = p` moves `p` into `q` and consumes it. An owned value
+   fills a `&` destination only with the borrow written, so
+   `val q: &{x: number} = p` reports
+   ``this value is borrowed by its destination, so write the borrow: `&` ``.
+4. **A member read through a borrow borrows the field.** With `line: &Line`,
+   `line.start` reads a borrow of `start` that lives as long as `line` does, so
+   the read is written `&line.start`, or `&mut line.start` through a `&mut`
+   receiver. `val s = line.start` reports
+   ``this value is borrowed by its destination, so write the borrow: `&` ``.
+   A read that ends at a value type copies and needs nothing written, as
+   `line.start.x` does. A field declared as a borrow hands its borrow on, and a
+   read off an owned receiver yields the owned field. A method receiver and a
+   destructuring pattern borrow without the `&`, so `line.start.norm()` and
+   `val {start} = line` need nothing written.
 5. **Escape forces ownership and a lifetime.** A value that flows into storage
    outliving its current binding has its lifetime constrained to outlive the
    destination.
 
-A binding can also borrow with an explicit `&` on the initializer, which avoids
+A binding can also borrow with the `&` alone and no annotation, which avoids
 repeating the pointee's shape:
 
 ```esc
 val q = &p       // q: &Point — immutable borrow
-val r = &mut p   // r: &mut Point — mutable borrow; requires p to be owned-mutable
+val r = &mut p   // r: &mut Point — mutable borrow; requires `val mut p`
 ```
 
 Passing an **owned** value to a borrowing parameter takes the same `&` or `&mut`,
@@ -87,8 +115,9 @@ needs no marker — `c.read()`, never `(&c).read()` — because the receiver's
 mutability is already written on `self` in the method's own parameter list and
 there is only ever one receiver to mark.
 
-The call-site `&` is not required yet. Today the compiler inserts the borrow
-itself, so both `read(p)` and `read(&p)` are accepted.
+The call-site `&` is required. With an owned `p`, `read(&p)` is accepted and
+`read(p)` reports
+``this argument is borrowed by the callee, so write the borrow: `&` ``.
 
 ## Copy, borrow, move
 
@@ -131,8 +160,48 @@ fn go() {
 }
 ```
 
-A callee that only reads its parameter lets nothing escape, so the same call
-shape borrows and leaves the source usable.
+A callee that only reads its parameter lets nothing escape, so its parameter is
+a borrow. The call writes the borrow and leaves the source usable:
+
+```esc
+fn read(p) { return p.x }   // read: fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0
+
+fn go() {
+    val p = {x: 1}
+    val n = read(&p)
+    val m = p.x     // p is still usable
+}
+```
+
+Some destinations outlive the call but leave the ownership of what they hold
+open. One is a parameter of a method called on a module-level binding whose type
+is still being inferred, such as `set` on a `Map()` written with no type
+arguments. An unannotated parameter passed whole to such a destination escapes,
+and the body decides how:
+
+- A parameter the body never writes is a `'static` borrow. The caller writes the
+  borrow and can keep reading the value. A value-type argument such as a string
+  copies and needs nothing written.
+- A `mut` parameter, which the body may write, is owned. The call moves the
+  argument.
+
+```esc
+val mut seen = Map()
+
+fn remember(value) { seen.set("last", value) }
+// remember: fn <T0>(value: &'static T0) -> undefined
+
+fn go() -> number {
+    val opts = {retries: 3}
+    remember(&opts)
+    return opts.retries     // opts is still readable
+}
+```
+
+Where the destination's type is owned, as with
+`val mut seen: Map<string, {retries: number}> = Map()`, the parameter is owned
+and the call moves the argument. A written parameter type overrides the
+inference either way.
 
 A value does **not** escape when it flows into a strictly shorter-lived
 destination: a non-escaping argument or a local reborrow. Those are borrows, and
@@ -250,6 +319,74 @@ fn go() {
 }
 ```
 
+#### Retained callbacks
+
+A function parameter says how long the callee keeps the function it receives.
+A parameter written `f: fn () -> undefined` is only called during the call, so a
+closure passed to it borrows its captures for that call alone. A parameter
+written `f: &'a fn () -> undefined` may keep the function for `'a`. The `&'a`
+does not borrow the function. A function is still copied into the parameter, and
+the call needs no written `&`.
+
+A closure passed to a `&'static fn` parameter is checked like one stored into
+module-level state. The callee may run it during any later call, so each later
+call mutably borrows the owned values the closure writes:
+
+```esc
+declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+declare fn forEachItem(f: fn () -> undefined) -> undefined
+declare fn render(view: &{n: number}) -> undefined
+
+fn setup() {
+    val mut count = {n: 0}
+    forEachItem(fn () { count.n = count.n + 1 })
+    render(&count)    // fine, since forEachItem is done with its closure
+    onClick(fn () { count.n = count.n + 1 })
+    render(&count)    // ERROR: this call may run the 'handler' that 'onClick' retains, which writes 'count' while it is borrowed as immutable
+}
+```
+
+Two changes make `setup` check. The handler can own `count` and call
+`render(&count)` itself, or `render` can take `&mut {n: number}`, since several
+mutable paths may be live at once.
+
+A closure passed to a `&'a fn` parameter whose `'a` is not `'static` stays
+reachable while a binding that shares `'a` is live. That binding is an argument
+or receiver whose parameter type mentions `'a`, or the binding the call's result
+initializes when the return type mentions `'a`. While one of them is live, each
+call may run the closure:
+
+```esc
+class Button<'a> {
+    onClick: &'a fn () -> undefined,
+    click(&self) -> undefined { self.onClick() },
+}
+
+fn setup() {
+    val mut count = {n: 0}
+    val b = Button(fn () { count.n = count.n + 1 })
+    render(&count)    // ERROR: this call may run the 'onClick' that 'Button' retains, which writes 'count' while it is borrowed as immutable
+    b.click()
+}
+```
+
+Moving `b.click()` above `render(&count)` makes `setup` check, since `b` is no
+longer live at the render.
+
+A retention lifetime is checked like a borrow's lifetime. A function flows into a
+`&'a fn` slot only when it is kept at least as long as `'a`. A parameter with no
+retention lifetime is kept for the call alone, so its body cannot pass it on to
+a `&'static fn` parameter, store it where it outlives the call, or return it:
+
+```esc
+fn f(g: fn () -> undefined) {
+    onClick(g)    // ERROR: parameter 'g' is only called during the call, so it cannot be kept for 'static
+}
+```
+
+Writing `g: &'static fn () -> undefined` lets `f` keep it. Writing `g: &fn () ->
+undefined` with no name lets the compiler infer the lifetime the body needs.
+
 ## Partial moves
 
 Moving one field out of an owned object consumes that field's slot, not the whole
@@ -318,16 +455,6 @@ fn overlapping() {
 }
 ```
 
-Escalier catches that today only when the immutable view is created by
-annotation rather than by an explicit `&`:
-
-```esc
-val mut p = {x: 0}
-val b: &{x: number} = p   // ERROR: cannot assign 'p' to immutable 'b':
-p.x = 1                   //        'p' is still used mutably after this point
-val n = b.x
-```
-
 `overlapping` above is accepted as written; exclusivity between two `&` borrows
 of one value is specified but not yet enforced. See
 [#794](https://github.com/escalier-lang/escalier/issues/794) and
@@ -350,8 +477,8 @@ val mut thawed = frozen   // thaw: consumes frozen, mutable again
 thawed.peers[0].value = 7
 ```
 
-Neither transition costs anything at runtime. The value is unchanged and only the
-type is stricter or looser. Soundness comes from the move: the freeze requires
+Neither transition costs anything at runtime. The value is unchanged, and only the
+mutability of the binding that owns it changes. Soundness comes from the move: the freeze requires
 every mutable path to be dead, and the thaw requires no live immutable observer.
 
 The "only binding" requirement is load-bearing, and the checker enforces it by
@@ -484,12 +611,19 @@ Out of scope by design:
 
 Specified above but not yet enforced:
 
-- **Closures passed to a retaining function**
-  ([#1267](https://github.com/escalier-lang/escalier/issues/1267)). A closure
-  passed to a function that keeps it is checked like one the function only
-  calls, so its captures are borrowed for the call alone. A function-typed
-  parameter carries no lifetime, so the checker cannot tell a callee that keeps
-  the closure from one that only calls it.
+- **Call-only parameters reached indirectly.** A parameter typed plain `fn`
+  can still outlive the call in three ways. A closure that captures it can be
+  passed to a `&'static fn` parameter. It can be copied into a plain `fn` slot
+  outside a parameter, such as a module-level binding, an array element, or a
+  return annotation. Its type can be written through an alias or bound by a
+  destructuring pattern, which the check does not read.
+- **Retained closures reached indirectly.** A closure is found in a parameter
+  type only when the type is written out. One behind a type alias, such as
+  `Cb<'static>` for `type Cb<'a> = &'a fn () -> undefined`, is not. A result
+  that keeps a closure is tracked only when it initializes or is assigned to a
+  binding whole, so a result placed in an array or destructured is not. A
+  binding whose lifetime is related to the retention lifetime by a declared
+  bound, rather than equal to it, is not read as holding the closure.
 - **Element stores**
   ([#1268](https://github.com/escalier-lang/escalier/issues/1268)). `t[i] = x`
   is rejected as unsupported rather than treated as an escape.
