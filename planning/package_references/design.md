@@ -46,9 +46,12 @@ every importer. It lives for the whole program.
   parameter a borrow and pass &xs`. #2215 adds this rule.
 - A closure body counts as a function body, so a closure may borrow it but may
   not move it either.
+- A module-level `val mut` binding may not take it either. `val mut ys = xs`
+  reports ``cannot move module-level value 'xs' into a `mut` binding, since
+  the module keeps it. Borrow it with &xs``.
 
-These rules check direct uses inside function bodies. Section 2.4 lists the
-moves they miss.
+These rules check direct uses inside function bodies and in `val mut`
+initializers. Section 2.4 lists the moves they miss.
 
 ### 2.2 Functions that return reference values
 
@@ -69,10 +72,11 @@ each call, so the caller owns it. `leak` is rejected by the rule in 2.1, since
 returning `xs` as owned would move it.
 
 A package can also let callers change its state without owning it, by returning
-a mutable borrow. The module-level value has to be declared mutable for this:
+a mutable borrow. The module-level binding has to be declared `val mut` for
+this:
 
 ```esc
-export val counts: mut Array<number> = []
+export val mut counts: Array<number> = []
 
 export fn tally() { return &mut counts }                   // fn () -> &mut Array<number>
 ```
@@ -94,16 +98,20 @@ val c = stats.fresh()                      // [1, 2]
 val d = stats.copyOf()                     // Array<number>
 
 fn read() { val r = &stats.xs }            // r: &Array<number>
-fn write() { val w = &mut stats.counts }   // w: &mut Array<number>
 fn take() { val m = stats.counts }         // rejected
+fn write() { val w = &mut stats.counts }   // rejected
 ```
 
-`stats.counts` itself keeps the type it was declared with, `mut Array<number>`.
-It is not a borrow. The rule from 2.1 is what stops `take`, which reports
-`cannot move module-level value 'stats.counts' inside a function. Borrow it with
-&stats.counts`. Taking `&mut stats.xs` reports `cannot constrain immutable
-Array<number> <: mutable Array<number>`. Under the proposal in 2.5,
-`stats.counts` would itself type as `&'static mut Array<number>`.
+`stats.counts` itself has the type `Array<number>`. It is not a borrow. The
+rule from 2.1 is what stops `take`, which reports `cannot move module-level
+value 'stats.counts' inside a function. Borrow it with &stats.counts`.
+
+The `mut` belongs to the binding, and an importer reads the value without it,
+so `write` reports `cannot constrain immutable Array<number> <:
+mutable Array<number>`. Taking `&mut stats.xs` reports the same message. An
+importer changes `counts` only through a function such as `tally`. Under the
+proposal in 2.5, `stats.counts` would type as `&'static mut Array<number>`, and
+`write` would be accepted.
 
 Nothing about an Escalier package needs a heuristic. A package author who wants
 callers to own a result returns a fresh value. One who wants to share state
@@ -119,13 +127,14 @@ the value, and a later use of it is a use-after-move.
 
 ### 2.4 Gaps in the module-level rules
 
-The rules in 2.1 run only inside function bodies. Four cases slip past them:
+The rules in 2.1 run only inside function bodies and `val mut` initializers.
+Four cases slip past them:
 
-- A module-level initializer can move another module-level value. With
-  `val ys: mut Array<number> = xs`, both bindings own the same array, and a
-  function can mutate it through either one. `Holder(xs)`, `take(xs)` and
-  `{items: xs}` in an initializer hand `xs` to a new owner the same way. #2230
-  tracks this.
+- An immutable module-level initializer can move another module-level value.
+  With `val mut xs` and `val ys = xs`, both bindings own the same array, and a
+  function that mutates `xs` changes what `ys` reads. `Holder(xs)`,
+  `take(xs)` and `{items: xs}` in an initializer hand `xs` to a new owner the
+  same way. #2230 tracks this.
 - An importer's top-level initializer can move another package's module-level
   value. `val m = stats.counts` binds the array `stats` owns, while the same
   binding inside a function is rejected. #2233 tracks this.
@@ -141,12 +150,12 @@ This is a proposal, not a decision. #2234 tracks implementing it.
 
 The module owns each module-level value, and every use of the binding reads it
 through a `'static` borrow. That covers uses in other initializers as well as
-uses in function bodies. A `val` gives an immutable borrow, and a `val` declared
-`mut` gives a mutable one:
+uses in function bodies. A `val` gives an immutable borrow, and a `val mut`
+gives a mutable one:
 
 ```esc
 export val xs: Array<number> = [1, 2]          // importers see &'static Array<number>
-export val counts: mut Array<number> = []      // importers see &'static mut Array<number>
+export val mut counts: Array<number> = []      // importers see &'static mut Array<number>
 ```
 
 Rust treats a `static` the same way. Rust has no `let` at the top level of a
@@ -244,13 +253,25 @@ aliases.
 
 ### 3.3 Parameters
 
-A call into a package moves none of its arguments, because a `.d.ts` parameter
-has no ownership meaning. Passing a module-level value to a package function is
-therefore allowed. A borrow an argument carries is still checked for escaping
-the caller's frame. #2215 adds this rule.
+A `.d.ts` parameter has no ownership meaning, so the conversion picks one. The
+interop rules I1 to I3 in `planning/ownership_rules/requirements.md` decide it:
 
-That makes every package parameter act like an immutable borrow, which is
-unsound for a function that keeps or mutates its argument:
+- A primitive, function or promise parameter keeps its bare type, under I2.
+- An object parameter that may be written becomes a mutable borrow, under I3.
+  `count(o: {n: number})` converts to `fn (o: &mut {n: number}) -> number`, so a
+  caller writes `d.count(&mut o)` on a `val mut o` binding. When every slot the
+  callee could write is `readonly` or a value type, the borrow is immutable
+  instead, under I1.
+- An array parameter stays owned. `sortInPlace(xs: number[])` converts to
+  `fn (xs: Array<number>) -> undefined`, so the call moves a local array.
+
+Passing a module-level value to an owned package parameter is not reported as a
+move, because the parameter's ownership is a guess. A borrow the argument
+carries is still checked for escaping the caller's frame. #2215 adds this rule.
+Other arguments to a package call move as they would for an Escalier callee.
+
+The owned array case is unsound for a function that keeps or mutates a
+module-level value it is passed:
 
 ```ts
 export declare function register(handlers: Handler[]): void;  // keeps handlers
@@ -279,8 +300,9 @@ conversion makes these guesses today:
   `&'static mut Array<T>`, and only an override can say so.
 - A readonly return is an immutable `'static` borrow. A function that builds a
   fresh readonly array is rejected more often than it needs to be.
-- A parameter moves nothing, as 3.3 describes. A function that keeps or mutates
-  its argument is unsound to call.
+- An array parameter is owned and an object parameter is a mutable borrow, as
+  3.3 describes. A module-level value passed to an owned parameter is not
+  reported, so a function that keeps or mutates it is unsound to call.
 - Every borrowed return has the `'static` lifetime. A function whose result
   borrows from an argument, such as `first<T>(xs: readonly T[]): T`, is not
   tied to that argument.
@@ -398,7 +420,7 @@ questions.
 
 #2219 is done when the heuristics in 4.2 are implemented in
 `internal/dts_to_esc/ref_rewrite.go` and this document matches them. A return
-judged fresh must be bindable with `val m: mut Array<number> = …`, and one
+judged fresh must be bindable with `val mut m: Array<number> = …`, and one
 judged shared must still be rejected. Tests should cover both in
 `TestNodeModulesImportRejectsUpgradingAReadonlyViewCall` and
 `TestNodeModulesImportReadsAReadonlyCollection`.
@@ -442,7 +464,7 @@ run loads.
 Most standard-library functions that return a collection build a new one, such
 as `Array.prototype.map`, `Object.keys` and `Intl.getCanonicalLocales`. A
 `'static` borrow on those would reject ordinary code like
-`val mut keys: mut Array<string> = Object.keys(o)`. So the generator keeps them
+`val mut keys: Array<string> = Object.keys(&mut o)`. So the generator keeps them
 owned.
 
 The shared cases are mostly properties and live collections on the DOM:
