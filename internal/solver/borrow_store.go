@@ -159,8 +159,9 @@ type returnEdge struct {
 // callReturnEdges returns the edges from each argument of fn, and from the receiver self
 // when it is not nil, to the positions of the return type whose lifetime a lifetime of the
 // argument flows into, as lifetimeFlowsInto decides. Every lifetime a source position's type
-// mentions counts, the way callStoreEdges reads a source. A walk that exhausts its allowance
-// takes a direct edge at the whole result.
+// mentions counts, the way callStoreEdges reads a source. A position whose type mentions no
+// lifetime takes no edge. When a walk of the position or of the return type exhausts its
+// allowance, the position takes a direct edge at the whole result.
 func callReturnEdges(ctx *Context, fn *soltype.FuncType, self *soltype.FuncParam) []returnEdge {
 	if fn.Ret == nil {
 		return nil
@@ -178,6 +179,9 @@ func callReturnEdges(ctx *Context, fn *soltype.FuncType, self *soltype.FuncParam
 	// argument's own.
 	add := func(i int, t, own soltype.Type) {
 		lts, truncated := lifetimeVarsIn(ctx, t)
+		if !truncated && len(lts) == 0 {
+			return
+		}
 		if truncated || retTruncated {
 			out = append(out, returnEdge{arg: i, direct: true})
 			return
@@ -186,6 +190,10 @@ func callReturnEdges(ctx *Context, fn *soltype.FuncType, self *soltype.FuncParam
 		for _, lv := range lts {
 			direct := isRef && src.Lt == soltype.Lifetime(lv)
 			for _, site := range retLts {
+				// A body-carrying function shares no variable between a parameter and its
+				// return. Instantiating it gives the return's lifetime the parameter's as a
+				// lower bound, so the result of `fn pick(p: &{x: number}) -> &{x: number}`
+				// relates to p only through that bound.
 				if lifetimeFlowsInto(lv, site) {
 					for _, path := range sites[site] {
 						out = append(out, returnEdge{arg: i, path: path, direct: direct})
@@ -213,9 +221,7 @@ func callReturnEdges(ctx *Context, fn *soltype.FuncType, self *soltype.FuncParam
 
 // lifetimeFlowsInto reports whether data of lifetime from can reach a borrow of lifetime to.
 // It can when the two are one variable, or when from is among the lower bounds of to,
-// directly or through other lifetime variables. A body-carrying function shares no variable between a parameter and its
-// return. Instantiating it gives the return's lifetime the parameter's as a lower bound, so
-// `fn pick(p: &{x: number}) -> &{x: number} { return p }` relates p to the result.
+// directly or through other lifetime variables.
 func lifetimeFlowsInto(from, to *soltype.LifetimeVar) bool {
 	seen := set.NewSet[*soltype.LifetimeVar]()
 	stack := []*soltype.LifetimeVar{to}
