@@ -197,6 +197,9 @@ type moveEvent struct {
 	// nil for any other move. The closure's own borrow of the place passes to the return
 	// with it, so the move does not conflict with that borrow.
 	closure ast.Func
+	// whileCaptured marks a move of a closure's capture that applies only where the
+	// closure's own borrow of the place is live.
+	whileCaptured bool
 }
 
 // useEvent reads or writes the place.
