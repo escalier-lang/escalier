@@ -47,6 +47,9 @@ every importer. It lives for the whole program.
 - A closure body counts as a function body, so a closure may borrow it but may
   not move it either.
 
+These rules check direct uses inside function bodies. Section 2.4 lists the
+moves they miss.
+
 ### 2.2 Functions that return reference values
 
 The inferred return type says whether the caller owns the result:
@@ -75,7 +78,8 @@ export fn tally() { return &mut counts }                   // fn () -> &mut Arra
 ```
 
 A caller of `tally` can push to the array, but cannot move it or keep it as an
-owned value. Taking `&mut` of an immutable module-level `val` is rejected.
+owned value. Taking `&mut` of an immutable module-level `val` is rejected, with
+the message the import example below shows.
 
 An importer sees each function's inferred signature and each module-level
 value's declared type. With the declarations above in a package named `stats`,
@@ -152,8 +156,8 @@ places:
 
 - Rust requires a constant initializer. `static XS: Vec<i32> = Vec::new();`
   compiles because `Vec::new` is a `const fn`, but `vec![1, 2]` allocates and
-  is rejected. A filled vector needs `LazyLock::new(|| vec![1, 2])`, which builds
-  it on first access. An Escalier initializer can be any expression.
+  is rejected. A filled vector needs `LazyLock::new(|| vec![1, 2])`, which
+  builds it on first access. An Escalier initializer can be any expression.
 - Rust requires a `static` to be `Sync`, so shared mutable state goes in a
   `Mutex`, an `RwLock` or an atomic. `static mut` exists, but every use of it
   needs `unsafe`. Escalier would allow a plain `&'static mut` borrow, for the
@@ -167,8 +171,8 @@ and changes these things:
   module-level wording can stay as the message for that case.
 - The four gaps in 2.4 are rejected by the same rule, with no separate checks
   for initializers or receivers.
-- A one-time handoff in an initializer, such as `val h = Holder(xs)`, is
-  rejected. The author writes the value inline, as `Holder([1, 2])`, or gives
+- A one-time handoff in an initializer, such as `val h = Holder(xs)`, checks
+  clean today and becomes an error. The author writes the value inline, as `Holder([1, 2])`, or gives
   `Holder` a borrow parameter. This is the change developers would notice most.
 - A `var` can still be reassigned with a fresh value inside a function, since
   the module takes ownership of the new value. A `val` can still be initialized
@@ -214,7 +218,7 @@ A function's return type decides whether the caller owns the result.
 
 | `.d.ts` return | Converted return | Why |
 |---|---|---|
-| `number[]` | `Array<number>` | The rule assumes a mutable return is fresh, as with `map` or `slice`. A package that keeps the array breaks this, as 3.4 notes. |
+| `number[]` | `Array<number>` | The rule assumes a mutable return is fresh, as with `map` or `slice`. A package that keeps the array breaks this, as 3.5 notes. |
 | `readonly number[]`, `ReadonlyArray<number>` | `&'static Array<number>` | The package may keep its own reference. |
 | `ReadonlyMap<K, V>`, `ReadonlySet<T>` | `&'static Map<K, V>`, `&'static Set<T>` | As above. |
 | `Items`, where `type Items = readonly number[]` | `&'static Items` | An alias of a readonly collection is one too. |
@@ -222,7 +226,8 @@ A function's return type decides whether the caller owns the result.
 The borrow applies at any depth of the return type. `Promise<readonly number[]>`
 becomes `Promise<&'static Array<number>>`, and `{ items: readonly number[] }`
 becomes `{items: &'static Array<number>}`. It applies to methods, statics,
-overload arms and function-typed consts.
+overload arms and function-typed consts. Awaiting the promise keeps the borrow,
+so `await d.makeAsync()` produces `&'static Array<number>`.
 
 The borrow does not apply inside a parameter list. In
 `onItems(cb: () => readonly number[]): void`, the array is the return type of
@@ -258,10 +263,6 @@ borrow and a mutable borrow.
 
 - A readonly collection in an interface field stays owned, because the field is
   not in a return position. #2218 lists this as a case to decide on.
-- A mutable `T[]` that the package also keeps reads as owned. In Escalier terms
-  it is a `'static` mutable borrow, `&'static mut Array<T>`. TypeScript gives no
-  way to tell it apart from a fresh array, so the rule trusts the missing
-  `readonly`. Only an override can mark it, as section 4.3 describes.
 - `val mut m = d.make()` on a borrowed result has no effect, since a borrow's
   mutability belongs to its type. The first error appears at the first write.
   #2223 tracks a diagnostic at the binding itself.
@@ -273,7 +274,8 @@ answer the conversion gives is a guess, and some guesses will be wrong. The
 conversion makes these guesses today:
 
 - A mutable `T[]` return is owned, as 3.2 describes. A package that keeps the
-  array gets two owners for it.
+  array gets two owners for it. In Escalier terms the return is
+  `&'static mut Array<T>`, and only an override can say so.
 - A readonly return is an immutable `'static` borrow. A function that builds a
   fresh readonly array is rejected more often than it needs to be.
 - A parameter moves nothing, as 3.3 describes. A function that keeps or mutates
@@ -334,8 +336,8 @@ return and parameter ownership, mutability and lifetimes, as 4.3 says.
 
 ## 4. Fresh versus shared readonly returns
 
-Every readonly return is an immutable `'static` borrow today. That is sound but too strict
-for a function that builds a new collection on each call:
+Every readonly return is an immutable `'static` borrow today. That is sound but
+too strict for a function that builds a new collection on each call:
 
 ```ts
 export declare function range(n: number): readonly number[];
@@ -349,9 +351,9 @@ other readonly return stays a `'static` borrow.
 
 ### 4.1 Default
 
-A return that no signal decides stays an immutable `'static` borrow. Treating a shared
-collection as owned lets the caller mutate state the package still reads, which
-is unsound. Treating a fresh one as a borrow only rejects a program that would
+A return that no signal decides stays an immutable `'static` borrow. Treating a
+shared collection as owned lets the caller mutate state the package still
+reads, which is unsound. Treating a fresh one as a borrow only rejects a program that would
 have been safe.
 
 ### 4.2 Signals
@@ -369,14 +371,16 @@ gives an answer decides.
    collection more likely returns state it holds. One that computes from its
    arguments more likely builds a new value. This signal alone never judges a
    return fresh, since `getItemsFor(id)` reads shared state too.
-4. **The name.** A name that starts with `create`, `make`, `to`, `from`, `range`,
-   `clone` or `copy` suggests a fresh value. A name that starts with `get` or
-   names a field suggests a shared one.
+4. **The name.** A name that starts with `create`, `make`, `to`, `from`,
+   `range`, `clone` or `copy` suggests a fresh value. A name that starts with
+   `get` or names a field suggests a shared one.
 
 This document proposes how the signals combine, and #2219 settles it. A return
 is judged fresh only when signal 1 says so, or when signals 3 and 4 both point
 to a fresh value and signal 2 does not rule it out. Every other combination
-keeps the borrow.
+keeps the borrow. `createItems()` has a fresh-sounding name but no parameters,
+so signals 3 and 4 disagree and it stays a borrow. `createRange(n)` has both
+signals pointing to a fresh value, so it becomes owned.
 
 ### 4.3 Overrides
 
@@ -462,8 +466,8 @@ adopts them.
 2. **Shared standard-library values are marked by override.** A property or a
    function that returns state the runtime holds gets its borrow from an
    overlay, the override mechanism in `internal/dts_to_esc/overlay.go` that the
-   generator already applies. This covers `navigator.languages`
-   and the live DOM collections, which no type-based rule can find.
+   generator already applies. This covers `navigator.languages` and the live
+   DOM collections, which no type-based rule can find.
 3. **The heuristics in section 4 stay off for the generator.** The standard
    library is small enough to review by hand, and a heuristic that misjudges a
    standard-library function affects every Escalier program.
