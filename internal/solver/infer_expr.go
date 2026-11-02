@@ -2005,9 +2005,10 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 	//  1. Read the enclosing statement's CFG point and note the call site.
 	//  2. Resolve the callee. A bare name bound to an overload set resolves to the set,
 	//     and any other callee is inferred.
-	//  3. Type the arguments.
-	//  4. Apply the arguments, to the arm an overload set picks or to the one signature.
-	//  5. Record the argument effects of the signature they were applied to.
+	//  3. Emit the receiver's ownership event, which comes before every argument's event.
+	//  4. Type the arguments.
+	//  5. Apply the arguments, to the arm an overload set picks or to the one signature.
+	//  6. Record the argument effects of the signature they were applied to.
 	//
 	// The CFG point comes first because inferring a child that contains statements, such
 	// as an `if` argument, overwrites c.fn.currentStmt. Reading it afterward would record
@@ -2021,7 +2022,13 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 	if hasConsumeRef {
 		c.noteCallSite(e, consumeRef)
 	}
+	if hasEventRef {
+		c.noteCallee(e)
+	}
 	target := c.inferCallTarget(scope, lvl, e)
+	if hasEventRef {
+		c.emitReceiverFlow(lvl, e, eventRef)
+	}
 	args := c.inferCallArgs(scope, lvl, e, preset)
 	var ret soltype.Type
 	var fn *soltype.FuncType
@@ -2032,7 +2039,7 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 	}
 	c.recordCallArgEffects(e, fn, consumeRef, hasConsumeRef)
 	if hasEventRef {
-		c.emitCallFlows(lvl, e, fn, eventRef)
+		c.emitArgFlows(e, fn, eventRef)
 	}
 	// A module-level receiver outlives every local, so an argument its method stores there
 	// escapes. A destination typed by an inference variable has no ownership yet, so D9 decides
@@ -2550,12 +2557,12 @@ func (c *checker) recordCallArgEffects(
 // engine reads as neither. The member's signature names the consuming form, so the receiver
 // is known to be owned without that test.
 func (c *checker) consumeReceiver(access ast.Node) {
-	var recv ast.Expr
+	var accessExpr, recv ast.Expr
 	switch access := access.(type) {
 	case *ast.MemberExpr:
-		recv = access.Object
+		accessExpr, recv = access, access.Object
 	case *ast.IndexExpr:
-		recv = access.Object
+		accessExpr, recv = access, access.Object
 	default:
 		return
 	}
@@ -2572,6 +2579,7 @@ func (c *checker) consumeReceiver(access ast.Node) {
 	}
 	c.fn.movedSources.Add(recv)
 	c.recordMovePlace(p, recv, ref)
+	c.emitConsumedReceiver(accessExpr, recv)
 }
 
 // blameReceiver makes a use-after-move reported at the member access blame the access's

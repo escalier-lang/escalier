@@ -510,8 +510,7 @@ func (c *checker) recordCaptureLoans(scope *Scope, closure ast.Func) {
 			continue
 		}
 		if eventRef, ok := c.eventStmtRef(); ok {
-			_, moves := moved[capture.Name]
-			c.emitCaptureFlow(closure, root, bindingType(b), capture.IsMutable, moves, eventRef)
+			c.emitCaptureFlows(closure, root, bindingDecl(b), bindingType(b), capture.IsMutable, moved[capture.Name], eventRef)
 		}
 		if isValueType(bindingType(b)) {
 			continue
@@ -1322,6 +1321,9 @@ func (c *checker) checkBorrowsWritten(src ast.Expr, destT soltype.Type, arg bool
 		// A literal element is moved into the literal as the literal is built, before its
 		// destination is known. The element is a borrow the program left unwritten, not a move.
 		c.retractMove(r)
+		if t := c.eventTable(); t != nil {
+			t.unwritten.Add(r)
+		}
 		reported = true
 	}
 	if reported && c.fn != nil {

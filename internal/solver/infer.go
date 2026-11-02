@@ -55,6 +55,10 @@ type checker struct {
 	// unsettledParams holds each unannotated parameter whose body is still being walked.
 	// Its ownership is not settled until the walk finishes.
 	unsettledParams set.Set[*soltype.FuncParam]
+	// rejectedPatElems holds each pattern element a binding walk reported as unsupported,
+	// such as the `...rest` of `val {...rest, x} = p`. emitPatternFlows emits no flow for a
+	// pattern that holds one.
+	rejectedPatElems set.Set[ast.Node]
 
 	// pendingRecvReads holds the member reads off inferred receivers that top-level bodies
 	// collected. A value initializer can still pass such a body to a call that types its
