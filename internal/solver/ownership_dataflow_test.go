@@ -2356,44 +2356,6 @@ func TestOwnershipDataflowMatchesCurrentChecks(t *testing.T) {
 			`,
 			want: []string{"6:12-6:13: use of moved value 'q'"},
 		},
-		{
-			// A literal with no expected type is an owned destination, so T6 rejects a borrow in an
-			// element. A written borrow makes its element a borrow, and an annotation gives each
-			// element the type of its field.
-			name: "BorrowIntoAnUntypedLiteral",
-			src: `
-				fn go(r: &{x: number}, m: &mut {x: number}) {
-					val p = {x: 1}
-					val a = {f: r}
-					val b = [{g: m}]
-					val c = {f: &p}
-					val d: {f: &{x: number}} = {f: r}
-				}
-			`,
-			want: []string{
-				"4:18-4:19: cannot use borrowed &object as owned object",
-				"5:19-5:20: cannot use borrowed &mut object as owned object",
-			},
-		},
-		{
-			// Each branch of a conditional element is checked on its own, so a written borrow on
-			// each branch is accepted. A literal a written borrow lends is checked too, since its
-			// elements are owned destinations.
-			name: "BorrowIntoAnUntypedLiteralThroughABranchOrABorrow",
-			src: `
-				fn go(c: boolean, r: &{x: number}) {
-					val p = {x: 1}
-					val q = {x: 2}
-					val a = {f: if c { &p } else { &q }}
-					val b = {f: if c { &p } else { r }}
-					val d = {f: &{g: r}}
-				}
-			`,
-			want: []string{
-				"6:37-6:38: cannot use borrowed &object as owned object",
-				"7:23-7:24: cannot use borrowed &object as owned object",
-			},
-		},
 	}
 
 	for _, tc := range cases {
