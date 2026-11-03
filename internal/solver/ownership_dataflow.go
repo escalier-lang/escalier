@@ -567,9 +567,10 @@ type bodyDataflow struct {
 	// runLoans holds the borrow event of each loan a call takes for a retained closure's
 	// write, so each fixed-point iteration takes the same loan.
 	runLoans map[runLoanKey]*borrowEvent
-	// `moves` lists each move event of the body in table order, and moveIndex maps each one
-	// to its index in the table.
-	moves     []*moveEvent
+	// `moves` maps the root of each moved place to the move events of the body out of a
+	// place under it, in table order. moveIndex maps each move event to its index in the
+	// table.
+	moves     map[liveness.VarID][]*moveEvent
 	moveIndex map[*moveEvent]int
 	// `exits` caches the answers of ownedExits.
 	exits map[*moveEvent][]ast.Span
@@ -601,6 +602,7 @@ func (c *checker) checkBodyDataflow(t *ownershipEvents) []SolverError {
 		escapes:      map[liveness.VarID]bool{},
 		runIndex:     map[*runEvent]int{},
 		runLoans:     map[runLoanKey]*borrowEvent{},
+		moves:        map[liveness.VarID][]*moveEvent{},
 		moveIndex:    map[*moveEvent]int{},
 		exits:        map[*moveEvent][]ast.Span{},
 	}
@@ -615,7 +617,7 @@ func (c *checker) checkBodyDataflow(t *ownershipEvents) []SolverError {
 		case *moveEvent:
 			// The table lists a flow out of an unwritten expression as a read, so it moves nothing.
 			if !t.unwritten.Contains(ev.node) {
-				d.moves = append(d.moves, ev)
+				d.moves[ev.place.root] = append(d.moves[ev.place.root], ev)
 				d.moveIndex[ev] = i
 			}
 		}
@@ -1223,12 +1225,15 @@ func (d *bodyDataflow) move(ev *moveEvent, at liveness.StmtRef, s *dataflowState
 	d.addHolder(ev.place, ev.holder, ev.node, s)
 }
 
-// ownedExits returns the span of each site where the value the move ev gives its holder
-// leaves the body, in source order. A site is a return, a store into a module-level binding,
-// or a store into a caller-owned place. A holder that is a local is followed through each
-// later move out of a place that overlaps it, so in `val {x, ...rest} = b; return rest.z` the
-// move of b.z into `rest.z` leaves at `rest.z`, and the move of b.y into `rest.y` does not
-// leave. A later write that replaces the local does not stop the walk.
+// ownedExits returns, in source order, the span of each expression that carries the value
+// the move ev gives its holder out of the body. Such an expression is the source of a move
+// into a return, into a module-level binding, or into a caller-owned place. A holder that is
+// a local is followed through each later move out of a place that overlaps it. In
+// `val {x, ...rest} = b; return rest.z` the value moved out of b.z leaves at `rest.z`, and
+// the value moved out of b.y does not leave.
+//
+// The walk stops at a local holder that is dead after the move into it. Such a local is
+// overwritten before any read, so no later move out of it carries the moved value.
 func (d *bodyDataflow) ownedExits(ev *moveEvent) []ast.Span {
 	if out, ok := d.exits[ev]; ok {
 		return out
@@ -1251,9 +1256,13 @@ func (d *bodyDataflow) ownedExits(ev *moveEvent) []ast.Span {
 			return
 		}
 
+		if !d.holderLive(pt.root, from.at, false) {
+			return
+		}
+
 		held := movePlace{root: pt.root, path: holder.path}
-		for _, m := range d.moves {
-			if m.place.root != held.root || !pathPrefixRelated(m.place.path, held.path) || !d.moveFollows(from, m) {
+		for _, m := range d.moves[held.root] {
+			if !pathPrefixRelated(m.place.path, held.path) || !d.moveFollows(from, m) {
 				continue
 			}
 
