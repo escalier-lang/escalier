@@ -143,7 +143,7 @@ type StoredBorrowAliasError struct {
 	// StoredMut says whether a write can go through the stored borrow. The alias's borrow is
 	// the other mutability.
 	StoredMut bool
-	// local is the stored local Place names.
+	// `local` is the stored local that `Place` names.
 	local liveness.VarID
 	node  ast.Node
 }

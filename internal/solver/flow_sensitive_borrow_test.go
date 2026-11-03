@@ -16,7 +16,7 @@ func TestFlowSensitiveBorrowEdges(t *testing.T) {
 		src  string
 		want []string
 		// wantDataflow is what the case expects with the dataflow pass on, when that differs
-		// from want.
+		// from `want`.
 		wantDataflow []string
 		types        map[string]string
 	}{
