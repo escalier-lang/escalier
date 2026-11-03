@@ -553,19 +553,18 @@ type funcCtx struct {
 	lvl int
 
 	// written records the widened type stored into a receiver variable's field by a
-	// field-write `recv.prop = source` (M4 C3), keyed by the receiver var's ID and
-	// the property name. A later read of the same field returns this concrete type
-	// instead of minting a fresh var, so `obj.x = 5; obj.x` is `number`
-	// (read-after-write). It is purely a precision win: write-after-read already
-	// works through ordinary bound accumulation.
+	// field-write `recv.prop = source`, keyed by the receiver var's ID and the property
+	// name. A later read of the same field returns this concrete type instead of minting
+	// a fresh var, so `obj.x = 5; obj.x` is `number`. This read-after-write precision is
+	// the only thing it adds. Write-after-read already works through ordinary bound
+	// accumulation.
 	//
-	// It lives here, not on the checker, because read-after-write is an INTRA-BODY
-	// relation: scoping the cache to the function body it belongs to makes that
-	// correct by construction rather than relying on the global fresh-var counter to
-	// keep one body's receiver IDs from colliding with another's. Push/pop of funcCtx
-	// isolates it for free — a nested function gets its own map and the outer's is
-	// restored on exit. A field write at module top-level (c.fn == nil) simply gets
-	// no read-after-write precision, which is sound.
+	// It lives here, not on the checker, because read-after-write is a relation inside
+	// one body. Scoping the cache to its function body keeps one body's receiver IDs from
+	// colliding with another's without relying on the global fresh-var counter. Push/pop
+	// of funcCtx gives a nested function its own map and restores the outer's on exit. A
+	// field write at module top-level, where c.fn is nil, gets no read-after-write
+	// precision, which is sound.
 	written map[fieldKey]soltype.Type
 
 	// liveness, stmtToRef, and varIDNames are the liveness state for THIS function body,
@@ -721,8 +720,7 @@ type funcCtx struct {
 	// stored type is the same pointer the inference graph mutates, so a type variable
 	// that settles later is read in its settled form.
 	varIDTypes map[liveness.VarID]soltype.Type
-	// currentStmt is the enclosing statement currently being walked (M4 G1), set by
-	// inferStmt. A reassignment `a = e` lives in expression position, so a check that
+	// currentStmt is the enclosing statement currently being walked. inferStmt sets it. A reassignment `a = e` lives in expression position, so a check that
 	// needs its CFG StmtRef reads the enclosing statement from here.
 	currentStmt ast.Stmt
 	// frame holds what D16's two rules read about this body's lifetimes. See
