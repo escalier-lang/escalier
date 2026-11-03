@@ -2879,18 +2879,23 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		// region, so it escapes to 'static (M4 D3).
 		//
 		// The value-compatibility check runs against the source's CARRIER, not the
-		// borrow itself. A borrow forced to 'static is owned-forever, so it satisfies an
-		// owned destination. Comparing the whole borrow would instead trip the
-		// borrow-into-owned BorrowEscapeError, the rule that rejects a borrow which does
-		// NOT escape. CarrierOf is the identity on a non-borrow source, so an ordinary
+		// borrow itself. CarrierOf is the identity on a non-borrow source, so an ordinary
 		// global write such as `n = 5` is unaffected. The peel only looks through a
 		// top-level borrow and drops the source's mutability check. The fuller treatment
-		// of an escaped borrow's mutability rides M4 G2.
+		// of an escaped borrow's mutability rides M4 G2. A union source such as
+		// `&p | null` is not peeled, so the constraint itself rejects a borrow member that
+		// fills an owned binding.
 		//
 		// Escape runs only when the compatibility check passes, so a rejected store does
 		// not leave the source's lifetime forced to 'static.
 		errsBefore := len(c.errs)
 		c.constrain(e, soltype.CarrierOf(sourceT), checkTarget(targetT, missing))
+		// The peel above lets a top-level borrow pass the constraint against an owned binding,
+		// so T6 rejects it here. Reporting it here blames the source. The constraint would
+		// blame the source type's provenance, such as a parameter's annotation.
+		if _, borrowSlot := c.borrowOfType(targetT); !borrowSlot && len(c.errs) == errsBefore && !missing {
+			c.reportBorrowIntoOwned(e.Right, sourceT, targetT)
+		}
 		if len(c.errs) == errsBefore && !missing {
 			// The store aliases the source into a permanent module-level storage location. If the
 			// source's mutability differs from that location's and the source stays live at
@@ -3271,7 +3276,7 @@ func (c *checker) inferElementAssign(scope *Scope, lvl int, e *ast.BinaryExpr, i
 			if !c.rejectModuleLevelMove(scope, e.Right) {
 				c.consumeOwned(e.Right, source, e.Right, ref)
 			}
-			c.checkParamElementStoreEscape(ix.Object, e.Right, ref)
+			c.checkParamElementStoreEscape(ix.Object, e.Left, e.Right, ref)
 			c.recordElementStoreEdges(ix.Object, e.Right, ref)
 		}
 	}
@@ -3851,7 +3856,8 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 		operandElems = append(operandElems, []soltype.ObjTypeElem{&soltype.PropertyElem{Name: name, Type: ft}})
 		// Building an owned value into the object moves it.
 		c.consumeIntoLiteral(scope, value, ft, stmtRef, hasStmtRef)
-		// A literal with no expected type is an owned destination, as F1 states.
+		// With no expected type, the element takes its source's type, as F1 states. The flow
+		// moves an owned source and copies a borrow.
 		if hasEventRef {
 			c.emitTempFlow(value, e, []placeSeg{{kind: namedSeg, name: name}}, &ownedDest{}, eventRef)
 		}

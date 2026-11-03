@@ -185,14 +185,17 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 			// M4 E1: a destructuring `val`/`var` such as `{x, y} = …` or `[a, b] = …`.
 			// Type the initializer, then bind the pattern's leaves against it as
 			// monomorphic projections.
-			c.inferDestructureDecl(scope, lvl, vd)
+			patternT := c.inferDestructureDecl(scope, lvl, vd)
 			if c.fn != nil {
 				moduleLevel := c.rejectModuleLevelDestructure(scope, vd.Pattern, vd.Init)
 				if ref, ok := c.fn.stmtToRef[s]; ok {
 					if !moduleLevel {
 						c.consumeDestructureLeaves(scope, vd.Pattern, vd.Init, ref)
 					}
-					c.emitPatternFlows(vd.Pattern, vd.Init, ref)
+					// The pattern takes its parts from a value of the type it binds against,
+					// so a leaf of an annotated pattern over a borrow borrows for the
+					// annotation's lifetime.
+					c.emitPatternFlowsFrom(vd.Pattern, vd.Init, patternT, ref)
 					c.flushBorrowDirty(ref)
 				}
 			}

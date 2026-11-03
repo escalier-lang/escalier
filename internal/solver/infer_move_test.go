@@ -381,22 +381,36 @@ func TestMoveSemantics(t *testing.T) {
 				"9:7-9:10: cannot assign to 'p.x' while it is borrowed as immutable",
 			},
 		},
-		// The current checks move the borrow p into the global, so the later borrow
-		// `val snap = p` is a single use-after-move. F2 copies a borrow instead, as D8
-		// decides, and the copy into the global is `'static`. The dataflow pass follows F2,
-		// so the global keeps a mutable path to p for the rest of the program, and the
-		// immutable path `val snap = p` breaks E2.
-		"GlobalEscapeReportsStaticMutablePath": {
+		// The current checks move the borrow p into the global, so the later write through p
+		// is a use-after-move. F2 copies a borrow instead, as D8 decides, and the copy into
+		// the global is `'static`. The dataflow pass follows F2, so the global keeps an
+		// immutable path to p for the rest of the program, and the write through p breaks E2.
+		// A reassignment whose right-hand side branches leaves p moved, the same as a plain
+		// reassignment does in the current checks. The dataflow pass clears the move at either
+		// write.
+		"BranchingReassignmentAfterAMove": {
 			src: `
-				var sink = {x: 0}
-				fn cache(p: &mut {x: number}) {
-					sink = p
-					val snap: &{x: number} = p
-					snap
+				declare fn take(p: {x: number}) -> undefined
+				fn go(c: boolean) -> number {
+					var p = {x: 1}
+					take(p)
+					p = if c { {x: 2} } else { {x: 3} }
+					return p.x
 				}
 			`,
-			want:         []string{"5:31-5:32: use of moved value 'p'"},
-			wantDataflow: []string{"5:31-5:32: cannot borrow 'p' as immutable while it is borrowed as mutable"},
+			want:         []string{"7:13-7:16: use of moved value 'p'"},
+			wantDataflow: []string{},
+		},
+		"GlobalEscapeReportsStaticImmutablePath": {
+			src: `
+				var sink = &{x: 0}
+				fn cache(p: &mut {x: number}) {
+					sink = p
+					p.x = 1
+				}
+			`,
+			want:         []string{"5:6-5:7: use of moved value 'p'"},
+			wantDataflow: []string{"5:6-5:9: cannot assign to 'p.x' while it is borrowed as immutable"},
 		},
 		// Moving a value while a mutable borrow of it is live is rejected: freezing p
 		// into immutable q while r still holds a mutable borrow would let r mutate a

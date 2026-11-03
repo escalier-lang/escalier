@@ -127,7 +127,9 @@ reference-shaped field read through a borrow. Reading it does not move it out,
 so it cannot fill an owned destination, and F4 requires the borrow of it to be
 written as `&r.f` or `&mut r.f`. With `r: &{x: number}`, the binding
 `val q: {x: number} = r` reports `cannot use borrowed &object as owned object`,
-and `val q: &{x: number} = r` is accepted.
+and `val q: &{x: number} = r` is accepted. A literal element with no expected
+type takes its source's type by F1, so `val o = {f: r}` copies `r` into a
+borrow-typed field and T6 has no owned destination to reject.
 
 **T7. An owned value is borrowed mutably only through a `mut` binding.** A
 value in a `val mut` binding can be borrowed as `&` or `&mut`. A value in a
@@ -211,7 +213,7 @@ it. These operations are the flow sites:
 | Reassignment | `q = p` | The binding's type |
 | Field store | `o.f = p` | The field's declared type |
 | Element store | `a[i] = p` | The element type |
-| Literal element | `{f: p}`, `[p]` | The matching field or element type of the literal's expected type, as in `val o: {f: &T} = {f: &p}`. Owned when the literal has no expected type |
+| Literal element | `{f: p}`, `[p]` | The matching field or element type of the literal's expected type, as in `val o: {f: &T} = {f: &p}`. When the literal has no expected type, the source's type, so `{f: r}` with `r: &T` holds a borrow and `{f: p}` with an owned `p` is owned |
 | Spread | `{...p}` | Owned |
 | Destructuring or `match` arm | `val {f} = p` | Per part, as for a binding. A pattern over a borrow binds borrows, by F4 |
 | Argument | `f(p)` | The parameter's type. An unannotated parameter is decided by F3 |
@@ -659,7 +661,9 @@ The rules above produce each of the following. None of them is a separate rule.
 - **Partial moves.** E1 and E3 work on places, so moving `pair.a` leaves
   `pair.b` usable.
 - **Moves into literals and spreads.** A literal element with no expected type
-  fills an owned slot of the new value, so F2 moves an owned source. A spread
+  takes its source's type, so F2 moves an owned source and copies a borrow. A
+  source whose type is a union moves when the union has an owned
+  reference-shaped member, as a binding does, and is copied otherwise. A spread
   fills one slot for each field of its source, so it moves each
   reference-shaped field and copies each value-type field.
 

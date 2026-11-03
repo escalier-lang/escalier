@@ -1160,6 +1160,86 @@ func TestOwnershipDataflow(t *testing.T) {
 			`,
 		},
 		{
+			// The pass reports E2 for b at `&mut b`, which lies outside both the store `q.s = c`
+			// that the frame-exit diagnostic blames and the store `p.r = a` it relates. So the
+			// frame-exit diagnostic about b stays beside the E2.
+			name: "E2OutsideTheOutflowSpansKeepsTheSharedPathsCheck",
+			src: `
+				fn f(p: &mut {r: &{v: number}}, q: &mut {s: &mut {v: number}}) {
+					val mut b = {v: 1}
+					val a = &b
+					val c = &mut b
+					p.r = a
+					q.s = c
+				}
+			`,
+			errs: []string{
+				"cannot borrow 'b' as mutable while it is borrowed as immutable",
+				"'b' leaves the function through a mutable path and an immutable one",
+			},
+		},
+		{
+			// The annotation gives the literal's element a `'static` borrow, so it is live at the
+			// write.
+			name: "StaticBorrowInATypedLiteral",
+			src: `
+				fn go() {
+					val mut p = {x: 1}
+					val o: {f: &'static {x: number}} = {f: &p}
+					p.x = 2
+				}
+			`,
+			errs: []string{"cannot assign to 'p.x' while it is borrowed as immutable"},
+		},
+		{
+			// The pattern's annotation is `'static`, so the leaf d borrows p.f for `'static`.
+			name: "StaticBorrowInAnAnnotatedPattern",
+			src: `
+				fn go() {
+					val mut p = {f: {x: 1}}
+					val {f: d}: &'static {f: {x: number}} = &p
+					p.f.x = 2
+				}
+			`,
+			errs: []string{"cannot assign to 'p.f.x' while it is borrowed as immutable"},
+		},
+		{
+			// The annotation gives each element of the array literal a `'static` borrow.
+			name: "StaticBorrowInATypedArrayLiteral",
+			src: `
+				fn go() {
+					val mut p = {x: 1}
+					val a: Array<&'static {x: number}> = [&p]
+					p.x = 2
+				}
+			`,
+			errs: []string{"cannot assign to 'p.x' while it is borrowed as immutable"},
+		},
+		{
+			// The element type is `'static`, so the stored borrow stays live after the store.
+			name: "StaticBorrowStoredIntoAnElement",
+			src: `
+				fn go(arr: &mut Array<&'static mut {x: number}>) {
+					val mut p = {x: 1}
+					arr[0] = &mut p
+					val r = &p
+				}
+			`,
+			errs: []string{"cannot borrow 'p' as immutable while it is borrowed as mutable"},
+		},
+		{
+			// The element type is not `'static`, so the stored borrow ends where the body stops
+			// reading arr.
+			name: "BorrowStoredIntoAnElementEndsOk",
+			src: `
+				fn go(arr: &mut Array<&mut {x: number}>) {
+					val mut p = {x: 1}
+					arr[0] = &mut p
+					val r = &p
+				}
+			`,
+		},
+		{
 			// The inner call's receiver borrow ends when `v.len()` returns, and the outer
 			// `&mut self` receiver only takes effect once its arguments are evaluated.
 			name: "NestedReceiverCallEndsItsBorrowOk",
@@ -1695,8 +1775,8 @@ func TestOwnershipDataflow(t *testing.T) {
 				}
 			`,
 			errs: []string{
-				"cannot store a mutable borrow of 'c' while 'm' still borrows it as immutable",
 				"cannot borrow 'c' as mutable while it is borrowed as immutable",
+				"cannot store a mutable borrow of 'c' while 'm' still borrows it as immutable",
 				"cannot borrow 'b' as immutable while it is borrowed as mutable",
 			},
 		},
@@ -1726,6 +1806,35 @@ func TestOwnershipDataflowMatchesCurrentChecks(t *testing.T) {
 		src  string
 		want []string
 	}{
+		{
+			// The second store into `arr[0]` repoints the element, so a is no longer borrowed.
+			name: "ElementStoreAtALiteralKeyEndsTheEarlierLoan",
+			src: `
+				fn f(arr: &mut Array<&{x: number}>) -> number {
+					val mut a = {x: 1}
+					val b = {x: 2}
+					arr[0] = &a
+					arr[0] = &b
+					a.x = 3
+					return arr[0].x
+				}
+			`,
+		},
+		{
+			// A store into `arr[1]` leaves the borrow `arr[0]` holds.
+			name: "ElementStoreAtAnotherKeyKeepsTheLoan",
+			src: `
+				fn f(arr: &mut Array<&{x: number}>) -> number {
+					val mut a = {x: 1}
+					val b = {x: 2}
+					arr[0] = &a
+					arr[1] = &b
+					a.x = 3
+					return arr[0].x
+				}
+			`,
+			want: []string{"7:6-7:9: cannot assign to 'a.x' while it is borrowed as immutable"},
+		},
 		{
 			// The call moves f, since f's body moves the capture p. E4 checks the second call.
 			name: "ClosureMovingACaptureCalledTwice",
@@ -2137,6 +2246,115 @@ func TestOwnershipDataflowMatchesCurrentChecks(t *testing.T) {
 				}
 			`,
 			want: []string{"6:14-6:15: cannot move 'b' while it is borrowed"},
+		},
+		{
+			// L1 lets a borrow outlive its owner, so storing `&p` into a caller-owned element is
+			// accepted after p's block ends.
+			name: "ElementStoreOutlivesItsOwnerOk",
+			src: `
+				fn go(arr: &mut Array<&{x: number}>, c: boolean) -> number {
+					if c {
+						val p = {x: 1}
+						arr[0] = &p
+					}
+					return arr[0].x
+				}
+			`,
+		},
+		{
+			// The element store lends p to arr, and the return reads arr[0] after the write.
+			name: "WriteWhileAnElementStoreHoldsTheBorrow",
+			src: `
+				fn go(arr: &mut Array<&{x: number}>) -> number {
+					val mut p = {x: 1}
+					arr[0] = &p
+					p.x = 2
+					return arr[0].x
+				}
+			`,
+			want: []string{"5:6-5:9: cannot assign to 'p.x' while it is borrowed as immutable"},
+		},
+		{
+			// The return copies a number out of r, so it hands the caller no path to p, and the
+			// move of p into o.f is the one diagnostic.
+			name: "ReturnOfAValueReadThroughABorrowReachesNothing",
+			src: `
+				fn go(o: &mut {f: {x: number}}) -> number {
+					val p = {x: 1}
+					val r = &p
+					o.f = p
+					return r.x
+				}
+			`,
+			want: []string{"5:12-5:13: cannot move 'p' while it is borrowed"},
+		},
+		{
+			// The closure writes p.b and the borrow is of p.a, so the call is accepted.
+			name: "ClosureWritingADisjointFieldOk",
+			src: `
+				fn go() -> number {
+					val mut p = {a: {x: 1}, b: {x: 2}}
+					val r = &p.a
+					val f = fn () { p.b.x = 3 }
+					f()
+					return r.x
+				}
+			`,
+		},
+		{
+			// The closure writes p.a while r borrows it, so the call conflicts.
+			name: "ClosureWritingTheBorrowedField",
+			src: `
+				fn go() -> number {
+					val mut p = {a: {x: 1}, b: {x: 2}}
+					val r = &p.a
+					val f = fn () { p.a.x = 3 }
+					f()
+					return r.x
+				}
+			`,
+			want: []string{"6:6-6:7: this call runs 'f', which writes 'p.a' while it is borrowed as immutable"},
+		},
+		{
+			// Each iteration declares a new q, so the move on the previous iteration does not
+			// reach it.
+			name: "MoveOfABindingDeclaredInALoopOk",
+			src: `
+				declare fn take(q: {x: number}) -> undefined
+				fn go() {
+					for i in [1, 2] {
+						val q = {x: 1}
+						take(q)
+					}
+				}
+			`,
+		},
+		{
+			// A declaration whose initializer branches declares a new q on each iteration too.
+			name: "MoveOfABranchingDeclarationInALoopOk",
+			src: `
+				declare fn take(q: {x: number}) -> undefined
+				fn go(c: boolean) {
+					for i in [1, 2] {
+						val q = if c { {x: 1} } else { {x: 2} }
+						take(q)
+					}
+				}
+			`,
+		},
+		{
+			// q is declared outside the loop, so the next iteration moves it again.
+			name: "MoveOfABindingDeclaredOutsideALoop",
+			src: `
+				declare fn take(q: {x: number}) -> undefined
+				fn go() {
+					val q = {x: 1}
+					for i in [1, 2] {
+						take(q)
+					}
+				}
+			`,
+			want: []string{"6:12-6:13: use of moved value 'q'"},
 		},
 	}
 
