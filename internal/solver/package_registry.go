@@ -1,7 +1,11 @@
 package solver
 
 import (
+	"maps"
+	"strings"
+
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 )
 
 // package_registry.go holds the packages one inference run has loaded, so a
@@ -36,11 +40,30 @@ type packageEntry struct {
 // lexical lookup.
 type PackageRegistry struct {
 	packages map[string]*packageEntry
+	// librarySources holds the SourceID of every file a loaded package was read from, and
+	// libraryKeyPrefixes the prefix packageKeyPrefix builds for each loaded package's URI.
+	// markLibrary fills both.
+	librarySources     set.Set[int]
+	libraryKeyPrefixes set.Set[string]
 }
 
 // NewPackageRegistry returns an empty registry.
 func NewPackageRegistry() *PackageRegistry {
-	return &PackageRegistry{packages: map[string]*packageEntry{}}
+	return &PackageRegistry{
+		packages:           map[string]*packageEntry{},
+		librarySources:     set.NewSet[int](),
+		libraryKeyPrefixes: set.NewSet[string](),
+	}
+}
+
+// clone returns a registry holding its own copy of each of r's maps and sets, so a
+// package one of them records leaves r unchanged.
+func (r *PackageRegistry) clone() *PackageRegistry {
+	return &PackageRegistry{
+		packages:           maps.Clone(r.packages),
+		librarySources:     r.librarySources.Clone(),
+		libraryKeyPrefixes: r.libraryKeyPrefixes.Clone(),
+	}
 }
 
 // Lookup returns the exported surface of a loaded package.
@@ -102,4 +125,27 @@ func (r *PackageRegistry) publish(uri string, ns *Namespace) {
 	}
 	entry.ns = ns
 	entry.loading = false
+}
+
+// markLibrary records module as a loaded package's declarations, inferred with keyURI as the
+// URI qualifyDecl prefixes their keys with. module's SourceIDs must not be shared with any
+// file of the program being checked, or isLibrarySource answers true for that file too.
+func (r *PackageRegistry) markLibrary(keyURI string, module *ast.Module) {
+	for id := range module.Sources {
+		r.librarySources.Add(id)
+	}
+	r.libraryKeyPrefixes.Add(packageKeyPrefix(keyURI))
+}
+
+// isLibrarySource reports whether the file sourceID names was read for a loaded package.
+func (r *PackageRegistry) isLibrarySource(sourceID int) bool {
+	return r.librarySources.Contains(sourceID)
+}
+
+// isLibraryKey reports whether key is one qualifyDecl built for a loaded package's
+// declaration. Such a key is a package prefix, a `.`, and the qualified name. The prefix holds
+// no `.`, since packageKeyPrefix escapes every `.` in the URI.
+func (r *PackageRegistry) isLibraryKey(key string) bool {
+	prefix, _, found := strings.Cut(key, ".")
+	return found && r.libraryKeyPrefixes.Contains(prefix)
 }

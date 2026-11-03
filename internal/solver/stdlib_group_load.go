@@ -124,6 +124,7 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 	for _, uri := range group {
 		c.ctx.packages.markLoading(uri, paths[uri])
 	}
+	c.ctx.packages.markLibrary(c.groupKeyURI(group), module)
 	c.loadStack = append(c.loadStack, group...)
 
 	prevURI := c.pkgURI

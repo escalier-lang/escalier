@@ -18,7 +18,7 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 		src  string
 		want []string
 	}{
-		"MovedTwiceInOneFunction": {
+		"PassedTwiceToAnOwnedParameter": {
 			src: decls + `
 				val x = {v: 1}
 				fn test() {
@@ -26,9 +26,12 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 					take(x)
 				}
 			`,
-			want: []string{"8:11-8:12: use of moved value 'x'"},
+			want: []string{
+				"7:11-7:12: cannot move module-level value 'x' into an owned parameter. Make the parameter a borrow and pass `&x`",
+				"8:11-8:12: cannot move module-level value 'x' into an owned parameter. Make the parameter a borrow and pass `&x`",
+			},
 		},
-		"CallReadsAfterTheMove": {
+		"PassedToAnOwnedParameterBeforeACallReadsIt": {
 			src: decls + `
 				val x = {v: 1}
 				fn peek() { readRead(&x, &x) }
@@ -37,7 +40,7 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 					peek()
 				}
 			`,
-			want: []string{"9:6-9:10: this call runs 'peek', which reads 'x' after it was moved"},
+			want: []string{"8:11-8:12: cannot move module-level value 'x' into an owned parameter. Make the parameter a borrow and pass `&x`"},
 		},
 		"CallWritesWhileBorrowed": {
 			src: decls + `

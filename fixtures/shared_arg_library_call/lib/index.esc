@@ -1,0 +1,9 @@
+val xs: Array<number> = [1, 2]
+
+export fn copyOfXs() -> Array<number> {
+    return Array.from(xs)
+}
+
+export fn joined() -> Array<number> {
+    return xs.concat(xs)
+}

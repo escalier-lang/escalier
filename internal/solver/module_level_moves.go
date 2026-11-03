@@ -42,7 +42,9 @@ type ModuleLevelMoveError struct {
 	Source string
 	// IntoMut marks a move into a module-level `mut` binding rather than one inside a body.
 	IntoMut bool
-	node    ast.Node
+	// IntoParam is true when the value moves into a parameter that takes ownership of it.
+	IntoParam bool
+	node      ast.Node
 }
 
 func (*ModuleLevelMoveError) isSolverError()      {}
@@ -51,6 +53,9 @@ func (*ModuleLevelMoveError) Related() []ast.Span { return nil }
 func (e *ModuleLevelMoveError) Message() string {
 	if e.IntoMut {
 		return fmt.Sprintf("cannot move module-level value '%s' into a `mut` binding, since the module keeps it. Borrow it with `&%s`", e.Source, e.Source)
+	}
+	if e.IntoParam {
+		return fmt.Sprintf("cannot move module-level value '%s' into an owned parameter. Make the parameter a borrow and pass `&%s`", e.Source, e.Source)
 	}
 	return fmt.Sprintf("cannot move module-level value '%s' inside a function. Borrow it with `&%s`", e.Source, e.Source)
 }
@@ -307,6 +312,18 @@ func appendBranchResults(results []ast.Expr, e ast.Expr) []ast.Expr {
 // reportModuleLevelMove reports a ModuleLevelMoveError blaming source, the expression whose
 // value moves, and records source in moduleLevelMoves.
 func (c *checker) reportModuleLevelMove(source ast.Node) {
+	c.reportModuleLevelMoveAs(source, false)
+}
+
+// reportModuleLevelMoveIntoParam reports a ModuleLevelMoveError blaming arg, an argument moved
+// into a parameter that takes ownership of it, and records arg in moduleLevelMoves.
+func (c *checker) reportModuleLevelMoveIntoParam(arg ast.Node) {
+	c.reportModuleLevelMoveAs(arg, true)
+}
+
+// reportModuleLevelMoveAs reports a ModuleLevelMoveError blaming source with IntoParam set to
+// intoParam, and records source in moduleLevelMoves.
+func (c *checker) reportModuleLevelMoveAs(source ast.Node, intoParam bool) {
 	if c.fn.moduleLevelMoves == nil {
 		c.fn.moduleLevelMoves = set.NewSet[ast.Node]()
 	}
@@ -314,7 +331,7 @@ func (c *checker) reportModuleLevelMove(source ast.Node) {
 	// A place expression is a name, member read, or index read, all of which the printer
 	// renders.
 	text, _ := printer.Print(source, printer.DefaultOptions())
-	c.report(&ModuleLevelMoveError{Source: text, node: source})
+	c.report(&ModuleLevelMoveError{Source: text, IntoParam: intoParam, node: source})
 }
 
 // rejectModuleLevelDestructure reports whether init is a place rooted at a module-level `val` or
@@ -449,4 +466,92 @@ func (c *checker) holdsOnlyValues(t soltype.Type) bool {
 		return true
 	}
 	return false
+}
+
+// calleeFromLibrary reports whether the callee e resolved to fn is declared in a package the
+// run loaded, such as the prelude, a `std:` package, or an npm package's types. It reads the
+// first of these the call has:
+//
+//   - the declaration fn was inferred from, reached through any instantiation that copied it;
+//   - the declaration the callee names, as a namespace member or a bare identifier;
+//   - the class a static method is read off, when the receiver names one;
+//   - the named class or alias of a method call's receiver.
+//
+// A callee none of these resolves answers false.
+func (c *checker) calleeFromLibrary(e *ast.CallExpr, fn *soltype.FuncType) bool {
+	packages := c.ctx.packages
+	if node, ok := c.originNode(fn); ok {
+		return packages.isLibrarySource(node.Span().SourceID)
+	}
+	if decl, ok := c.exprDecl(e.Callee); ok {
+		return packages.isLibrarySource(decl.Span().SourceID)
+	}
+	var object ast.Expr
+	switch callee := e.Callee.(type) {
+	case *ast.MemberExpr:
+		object = callee.Object
+	case *ast.IndexExpr:
+		object = callee.Object
+	default:
+		return false
+	}
+	if decl, ok := c.exprDecl(object); ok {
+		if _, isClass := decl.(*ast.ClassDecl); isClass {
+			return packages.isLibrarySource(decl.Span().SourceID)
+		}
+	}
+	if name, ok := c.receiverTypeName(c.info.TypeOf(object)); ok {
+		return packages.isLibraryKey(name)
+	}
+	return false
+}
+
+// originNode returns the AST node t was minted from, following each instantiation back to the
+// signature it copied. It answers false when the chain ends without a node.
+func (c *checker) originNode(t soltype.Type) (ast.Node, bool) {
+	for range maxExpandDepth {
+		origin, _ := c.prov.get(t)
+		switch origin := origin.(type) {
+		case FromAST:
+			return origin.Node, true
+		case FromInstantiation:
+			t = origin.From
+		default:
+			return nil, false
+		}
+	}
+	return nil, false
+}
+
+// exprDecl returns the declaration e names when e is a bare identifier or a namespace member.
+func (c *checker) exprDecl(e ast.Expr) (ast.Node, bool) {
+	if decl, ok := c.info.NamespaceMemberDecl(e); ok {
+		return decl, true
+	}
+	if ident, ok := e.(*ast.IdentExpr); ok {
+		return c.info.DeclOf(ident)
+	}
+	return nil, false
+}
+
+// receiverTypeName returns the registry key of the class or alias a receiver of type t is an
+// instance of. A borrow is read through, and a variable answers for its sole lower bound.
+func (c *checker) receiverTypeName(t soltype.Type) (string, bool) {
+	named, ok := soleLowerBound(t, func(x soltype.Type) (soltype.Type, bool) {
+		switch x := peelBorrows(x).(type) {
+		case *soltype.ClassType, *soltype.AliasType:
+			return x, true
+		}
+		return nil, false
+	})
+	if !ok {
+		return "", false
+	}
+	switch named := named.(type) {
+	case *soltype.ClassType:
+		return named.Name, true
+	case *soltype.AliasType:
+		return named.Name, true
+	}
+	return "", false
 }
