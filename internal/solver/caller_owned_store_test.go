@@ -259,6 +259,69 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 			`,
 			want: []string{"5:25-5:26: cannot move 'b.z' while it is borrowed"},
 		},
+		// The rest element leaves inside a nested block. E3 at the destructuring and the
+		// frame-exit diagnostic at the return name the same outflow, so only E3 is reported.
+		"ReturningARestElementFromANestedBlockConflicts": {
+			src: `
+				fn f(out: &mut {r: &{v: number}}, c: boolean) -> {v: number} {
+					val b = {x: {v: 1}, y: {v: 2}, z: {v: 3}}
+					out.r = &b.z
+					val {x, ...rest} = b
+					if c {
+						if c {
+							val w = rest
+							return w.z
+						}
+					}
+					return x
+				}
+			`,
+			want: []string{"5:25-5:26: cannot move 'b.z' while it is borrowed"},
+		},
+		// q holds a new value before it is read, so the return hands the caller that value and
+		// not p. The move of p into q breaks no rule. The frame-exit check still reports the
+		// return, since it does not see the write that replaces q.
+		"ReturningALocalAfterReplacingTheMovedValue": {
+			src: `
+				fn f(out: &mut {r: &{x: number}}) -> {x: number} {
+					val p = {x: 1}
+					out.r = &p
+					var q = p
+					q = {x: 2}
+					return q
+				}
+			`,
+			want: []string{"7:13-7:14: 'p' leaves the function both as an owned value and through a borrow"},
+		},
+		// Only one branch replaces q, so the return can still hand the caller p.
+		"ReturningALocalReplacedOnOneBranchConflicts": {
+			src: `
+				fn f(out: &mut {r: &{x: number}}, c: boolean) -> {x: number} {
+					val p = {x: 1}
+					out.r = &p
+					var q = p
+					if c {
+						q = {x: 2}
+					}
+					return q
+				}
+			`,
+			want: []string{"5:14-5:15: cannot move 'p' while it is borrowed"},
+		},
+		// Storing q into module-level state hands p's data to a binding that outlives the
+		// call, beside the borrow `out.r` holds.
+		"StoringALocalTheStoredLocalMovedIntoModuleStateConflicts": {
+			src: `
+				var sink: {x: number} = {x: 0}
+				fn f(out: &mut {r: &{x: number}}) {
+					val p = {x: 1}
+					out.r = &p
+					val q = p
+					sink = q
+				}
+			`,
+			want: []string{"6:14-6:15: cannot move 'p' while it is borrowed"},
+		},
 		// A leaf that copies a borrow moves nothing, and its borrow edge says what it reaches.
 		"DestructuringABorrowLeafOk": {
 			src: `

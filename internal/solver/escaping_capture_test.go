@@ -229,6 +229,17 @@ func TestEscapingClosureCapture(t *testing.T) {
 			`,
 			want: []string{"5:12-5:14: cannot borrow 'p' as immutable while it is borrowed as mutable"},
 		},
+		// The writing closure stays in a local that the caller never reaches and that no call
+		// runs, so `&p` hands the caller the only path to p.
+		"KeepingAWritingClosureInALocalBesideAnImmutableStoreOk": {
+			src: `
+				fn go(q: &mut {r: &{x: number}}) {
+					val mut p = {x: 1}
+					val f = fn () { p.x = 2 }
+					q.r = &p
+				}
+			`,
+		},
 		// An owned parameter dies with the frame, so a closure stored into it borrows p.
 		"StoreIntoAnOwnedParameterLeavesTheCaptureOk": {
 			src: `

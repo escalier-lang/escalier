@@ -567,9 +567,10 @@ type bodyDataflow struct {
 	// runLoans holds the borrow event of each loan a call takes for a retained closure's
 	// write, so each fixed-point iteration takes the same loan.
 	runLoans map[runLoanKey]*borrowEvent
-	// `moves` lists each move event of the body in table order, and moveIndex maps each one
-	// to its index in the table.
-	moves     []*moveEvent
+	// `moves` maps the root of each moved place to the move events of the body out of a
+	// place under it, in table order. moveIndex maps each move event to its index in the
+	// table.
+	moves     map[liveness.VarID][]*moveEvent
 	moveIndex map[*moveEvent]int
 	// `exits` caches the answers of ownedExits.
 	exits map[*moveEvent][]ast.Span
@@ -601,6 +602,7 @@ func (c *checker) checkBodyDataflow(t *ownershipEvents) []SolverError {
 		escapes:      map[liveness.VarID]bool{},
 		runIndex:     map[*runEvent]int{},
 		runLoans:     map[runLoanKey]*borrowEvent{},
+		moves:        map[liveness.VarID][]*moveEvent{},
 		moveIndex:    map[*moveEvent]int{},
 		exits:        map[*moveEvent][]ast.Span{},
 	}
@@ -615,7 +617,7 @@ func (c *checker) checkBodyDataflow(t *ownershipEvents) []SolverError {
 		case *moveEvent:
 			// The table lists a flow out of an unwritten expression as a read, so it moves nothing.
 			if !t.unwritten.Contains(ev.node) {
-				d.moves = append(d.moves, ev)
+				d.moves[ev.place.root] = append(d.moves[ev.place.root], ev)
 				d.moveIndex[ev] = i
 			}
 		}
@@ -1223,12 +1225,15 @@ func (d *bodyDataflow) move(ev *moveEvent, at liveness.StmtRef, s *dataflowState
 	d.addHolder(ev.place, ev.holder, ev.node, s)
 }
 
-// ownedExits returns the span of each site where the value the move ev gives its holder
-// leaves the body, in source order. A site is a return, a store into a module-level binding,
-// or a store into a caller-owned place. A holder that is a local is followed through each
-// later move out of a place that overlaps it, so in `val {x, ...rest} = b; return rest.z` the
-// move of b.z into `rest.z` leaves at `rest.z`, and the move of b.y into `rest.y` does not
-// leave. A later write that replaces the local does not stop the walk.
+// ownedExits returns, in source order, the span of each expression that carries the value
+// the move ev gives its holder out of the body. Such an expression is the source of a move
+// into a return, into a module-level binding, or into a caller-owned place. A holder that is
+// a local is followed through each later move out of a place that overlaps it. In
+// `val {x, ...rest} = b; return rest.z` the value moved out of b.z leaves at `rest.z`, and
+// the value moved out of b.y does not leave.
+//
+// The walk stops at a local holder that is dead after the move into it. Such a local is
+// overwritten before any read, so no later move out of it carries the moved value.
 func (d *bodyDataflow) ownedExits(ev *moveEvent) []ast.Span {
 	if out, ok := d.exits[ev]; ok {
 		return out
@@ -1251,9 +1256,13 @@ func (d *bodyDataflow) ownedExits(ev *moveEvent) []ast.Span {
 			return
 		}
 
+		if !d.holderLive(pt.root, from.at, false) {
+			return
+		}
+
 		held := movePlace{root: pt.root, path: holder.path}
-		for _, m := range d.moves {
-			if m.place.root != held.root || !pathPrefixRelated(m.place.path, held.path) || !d.moveFollows(from, m) {
+		for _, m := range d.moves[held.root] {
+			if !pathPrefixRelated(m.place.path, held.path) || !d.moveFollows(from, m) {
 				continue
 			}
 
@@ -1591,19 +1600,29 @@ func (d *bodyDataflow) storeReachable(store *retainedStore, at liveness.StmtRef)
 }
 
 // useCapture checks the use of the captured local by the closure `run` during the call of
-// ev, as `run` describes. `retained` marks a closure a retainedStore keeps reachable. A
-// conflict with a borrow that one of the call's own arguments takes blames the argument when
-// the callee or an argument names the closure, and blames the call when a retainedStore keeps
-// it. Any other conflict blames the expression that names the closure.
+// ev. The method `run` describes that use. `retained` marks a closure a retainedStore keeps
+// reachable. A conflicting borrow is blamed this way:
+//
+//   - A borrow one of the call's own arguments takes blames that argument when the callee or
+//     an argument names the closure.
+//   - Such a borrow blames the whole call when a retainedStore keeps the closure.
+//   - Any other borrow blames the expression that names the closure.
 func (d *bodyDataflow) useCapture(ev *runEvent, run *closureRun, local capturedLocal, retained bool, at liveness.StmtRef, s *dataflowState) {
+	places := local.places()
 	for _, k := range slices.Sorted(maps.Keys(s.moved)) {
 		m := s.moved[k]
-		if m.called || m.place.root != local.root {
+		if m.called {
+			continue
+		}
+		// A closure that captures only `p.b` does not read a moved `p.a`, so only a captured
+		// place that overlaps the moved one counts as a use of it.
+		i := slices.IndexFunc(places, func(p movePlace) bool { return placesOverlap(m.place, p) })
+		if i < 0 {
 			continue
 		}
 
 		if !m.closureBorrowed {
-			e := d.movedError(m, movePlace{root: local.root}, run.node)
+			e := d.movedError(m, places[i], run.node)
 			e.Via, e.ViaRuns, e.ViaReads = run.via, run.runs, !local.mut
 			d.report(e)
 		}
@@ -1615,7 +1634,7 @@ func (d *bodyDataflow) useCapture(ev *runEvent, run *closureRun, local capturedL
 		kind = mutableBorrow
 	}
 
-	for _, place := range local.places() {
+	for _, place := range places {
 		for _, l := range d.sortedLoans(s) {
 			if !l.checked() || l.reserved != nil || l.ev.borrow == kind || !placesOverlap(l.ev.place, place) ||
 				!d.loanLive(l, at, true) {

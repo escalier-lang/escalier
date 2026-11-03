@@ -45,7 +45,7 @@ type BorrowAliasError struct {
 	SecondVia  string
 	FirstRuns  bool
 	SecondRuns bool
-	// root is the VarID of the local Place starts with, and places holds the place of the
+	// `root` is the VarID of the local Place starts with, and `places` holds the place of the
 	// blamed borrow and then of the live one.
 	root   liveness.VarID
 	places [2]movePlace
@@ -95,12 +95,13 @@ type MoveWhileBorrowedError struct {
 	// ViaRuns marks a closure the call is sure to run, because the call's callee names it.
 	Via     string
 	ViaRuns bool
-	// root is the VarID of the local Place starts with, and places holds the place moved and
-	// then the place of the blamed borrow.
+	// `root` is the VarID of the local Place starts with, and `places` holds the place moved
+	// and then the place of the blamed borrow.
 	root   liveness.VarID
 	places [2]movePlace
-	// `exits` holds the span of each site where the moved value leaves the body, as
-	// ownedExits finds them, so frameExitReported can match a frame-exit diagnostic there.
+	// `exits` holds the span of each expression that carries the moved value out of the
+	// body. ownedExits finds them, and frameExitReported matches a frame-exit diagnostic
+	// against them.
 	exits  []ast.Span
 	move   ast.Node
 	borrow ast.Span
