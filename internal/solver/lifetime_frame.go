@@ -105,7 +105,7 @@ func (c *checker) fromOutsideFrame(lv *soltype.LifetimeVar) bool {
 
 // noteFrameBorrow records the immutable borrow e for the two rules. It must run once e's type
 // is recorded. Only a lifetime the body minted is recorded, so a borrow that reuses a
-// parameter's lifetime, as `&p.x` does for `p: &{x: number}`, adds nothing.
+// parameter's lifetime adds nothing. `&p.x` for `p: &{x: number}` is one such borrow.
 //
 //   - A borrow of a local place joins the borrows the first rule reads. A parameter is such a
 //     place, and a borrow of one is foreign as well, since the caller may still hold the
@@ -431,7 +431,7 @@ func (v *boundLifetimeCollector) EnterType(t soltype.Type, pol soltype.Polarity)
 // frameOwnedReturn returns the owned type the second rule gives a return of type t, and false
 // when the rule does not own it. A `&` whose lifetime ends with the frame is owned as its
 // referent. A type variable is owned as the union of its referents when every type that flows
-// into it is such a `&`, as the binding `r` of `val r = same(&b); return r` is.
+// into it is such a `&`. The binding `r` in `val r = same(&b); return r` is one.
 func (c *checker) frameOwnedReturn(t soltype.Type) (soltype.Type, bool) {
 	switch t := t.(type) {
 	case *soltype.RefType:
@@ -488,8 +488,8 @@ func refLowerBounds(v *soltype.TypeVarType, seen set.Set[*soltype.TypeVarType]) 
 
 // mayBeBorrowed reports whether t could still be a borrow when the union of a function's
 // returns is built. A `RefType` carrying a lifetime is one outright. A type variable is one
-// too, since what it resolves to is not settled while the rewrites are decided, and `return
-// id(p)` records exactly that. Treating an unsettled return as owned would let a rewrite through
+// too, since what it resolves to is not settled while the rewrites are decided. `return id(p)`
+// records such a variable. Treating an unsettled return as owned would let a rewrite through
 // and build the mixed union commitOwnedReturnTypes exists to prevent.
 func mayBeBorrowed(t soltype.Type) bool {
 	switch t := t.(type) {
@@ -521,10 +521,18 @@ func (c *checker) commitOwnedReturns() {
 		}
 		// A read of a `val` copies its borrow's lifetime before the first rule ties the borrow
 		// to the one it shares a place with. Tying the copy too makes the signature render
-		// what the borrow outlives, `&'static` for a value module-level state also reads.
-		if r, ok := t.(*soltype.RefType); ok && !r.Mut {
-			if w, ok := c.outlivingWitness(r.Lt); ok {
-				c.ctx.constrainLt(r.Lt, w)
+		// what the borrow outlives, `&'static` for a value module-level state also reads. A
+		// borrow of an optional field is typed as a union with `undefined`, so each member
+		// of a union return is tied the same way.
+		members := []soltype.Type{t}
+		if u, ok := t.(*soltype.UnionType); ok {
+			members = u.Types
+		}
+		for _, m := range members {
+			if r, ok := m.(*soltype.RefType); ok && !r.Mut {
+				if w, ok := c.outlivingWitness(r.Lt); ok {
+					c.ctx.constrainLt(r.Lt, w)
+				}
 			}
 		}
 	}
@@ -543,9 +551,10 @@ func (c *checker) commitOwnedReturns() {
 //		return p
 //	}
 //
-// only the first return ownedReturns, since a parameter borrow carries no local edge. Owning that one
-// and leaving `return p` borrowed would union `mut B` with `&'a mut B` and reject the whole
-// function. Holding the rewrite back leaves both borrowed, which is uniform and checks.
+// only the first return is in ownedReturns, since a parameter borrow carries no local edge.
+// Owning that one and leaving `return p` borrowed would union `mut B` with `&'a mut B` and
+// reject the whole function. Holding the rewrite back leaves both borrowed, which is uniform
+// and checks.
 func (c *checker) commitOwnedReturnTypes(ownedReturns map[int]soltype.Type) {
 	if len(ownedReturns) == 0 {
 		return

@@ -187,6 +187,37 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 			binding: "h",
 			want:    "fn () -> &'static {x: 1}",
 		},
+		// A borrow of an optional field is typed `&T | undefined`. The read of t returns a copy
+		// of its lifetime inside that union, and the copy takes the `'static` lifetime of the
+		// borrow cache holds. The bare `&b` cases above render the same `&'static`.
+		{
+			name: "borrow of an optional field taken before module-level state reads it",
+			src: `
+				var cache: &{y: number} | undefined = undefined
+				fn h() {
+					val b: {x?: {y: number}} = {x: {y: 1}}
+					val t = &b.x
+					cache = &b.x
+					return t
+				}
+			`,
+			binding: "h",
+			want:    "fn () -> &'static {y: number} | undefined",
+		},
+		{
+			name: "borrow of an optional field module-level state reads through a copy",
+			src: `
+				var cache: &{y: number} | undefined = undefined
+				fn h() {
+					val b: {x?: {y: number}} = {x: {y: 1}}
+					val t = &b.x
+					cache = t
+					return t
+				}
+			`,
+			binding: "h",
+			want:    "fn () -> &'static {y: number} | undefined",
+		},
 		// A borrow of b.x overlaps a borrow of b, so the returned &b reads what cache reads.
 		{
 			name: "borrow of a place overlapping one module-level state reads",
