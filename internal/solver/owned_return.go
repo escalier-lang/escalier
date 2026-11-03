@@ -49,7 +49,7 @@ func (c *checker) ownedReturnType(
 	if !isTreeReachable(graph, root) {
 		return nil, false
 	}
-	owned := stripBorrowTree(c.fn.returns[idx], root, nil, graph)
+	owned := c.stripBorrowTree(c.fn.returns[idx], root, nil, graph)
 	if owned == c.fn.returns[idx] {
 		return nil, false
 	}
@@ -72,53 +72,6 @@ func (c *checker) returnCarrier(
 		return 0, nil, 0, false
 	}
 	return idx, graph, root, true
-}
-
-// mayBeBorrowed reports whether t could still be a borrow when the union of a function's
-// returns is built. A `RefType` carrying a lifetime is one outright. A type variable is one
-// too, since what it resolves to is not settled while the rewrites are decided, and `return
-// id(p)` records exactly that. Treating an unsettled return as owned would let a rewrite through
-// and build the mixed union commitOwnedReturnTypes exists to prevent.
-func mayBeBorrowed(t soltype.Type) bool {
-	switch t := t.(type) {
-	case *soltype.RefType:
-		return t.Lt != nil
-	case *soltype.TypeVarType:
-		return true
-	}
-	return false
-}
-
-// commitOwnedReturnTypes writes every collected rewrite onto the function's return types, or
-// writes none of them.
-//
-// A function's returns are unioned, and Escalier rejects a union that mixes an owned member
-// with a borrowed one. Rewriting only some of them builds exactly that. In
-//
-//	fn f(p: &mut B, cond: boolean) {
-//		val mut b = {value: 0}
-//		if cond { return &mut b }
-//		return p
-//	}
-//
-// only the first return ownedReturns, since a parameter borrow carries no local edge. Owning that one
-// and leaving `return p` borrowed would union `mut B` with `&'a mut B` and reject the whole
-// function. Holding the rewrite back leaves both borrowed, which is uniform and checks.
-func (c *checker) commitOwnedReturnTypes(ownedReturns map[int]soltype.Type) {
-	if len(ownedReturns) == 0 {
-		return
-	}
-	for i, t := range c.fn.returns {
-		if _, rewritten := ownedReturns[i]; rewritten {
-			continue
-		}
-		if mayBeBorrowed(t) {
-			return
-		}
-	}
-	for i, t := range ownedReturns {
-		c.fn.returns[i] = t
-	}
 }
 
 // returnIndexOf returns the index of the return whose operand is e, or -1 when e is not a
@@ -209,7 +162,7 @@ func isTreeReachable(graph map[liveness.VarID][]fieldBorrow, root liveness.VarID
 //     parameter borrow, is kept unchanged.
 //   - An object descends each property at the path extended by the property name; a tuple
 //     descends each element at the same path, since a tuple index contributes no field segment.
-func stripBorrowTree(
+func (c *checker) stripBorrowTree(
 	t soltype.Type,
 	root liveness.VarID,
 	path []placeSeg,
@@ -222,12 +175,17 @@ func stripBorrowTree(
 			if !ok {
 				return t
 			}
+			// D16 owns a `&` only when its lifetime ends with the frame. A `&mut` is stripped
+			// whenever the graph is a tree.
+			if !t.Mut && !c.lifetimeEndsWithFrame(t.Lt) {
+				return t
+			}
 			// The owned form carries no mutability of its own. Ownership and mutability are
 			// separate in Escalier: the binding decides, so a caller writes `val mut r = f()`
 			// to take the value mutably and a plain `val r` to keep it frozen. Stamping `mut`
 			// here would hand every caller a mutable value whether or not they asked, where the
 			// default is immutability.
-			return stripBorrowTree(t.Inner, referent, nil, graph)
+			return c.stripBorrowTree(t.Inner, referent, nil, graph)
 		}
 		return t
 	case *soltype.ObjectType:
@@ -247,7 +205,7 @@ func stripBorrowTree(
 			}
 			elems[i] = &soltype.PropertyElem{
 				Name:     p.Name,
-				Type:     stripBorrowTree(p.Type, root, propPath, graph),
+				Type:     c.stripBorrowTree(p.Type, root, propPath, graph),
 				Optional: p.Optional,
 				Readonly: p.Readonly,
 			}

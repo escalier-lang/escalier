@@ -486,6 +486,8 @@ func TestBorrowIntoAnUnannotatedLiteral(t *testing.T) {
 			fnType: "fn <'a, 'b>(c: boolean, r: &'a {x: number}, s: &'b {x: number}) -> {f: &'a {x: number}} | {f: &'b {x: number}}",
 		},
 		{
+			// The literal is built in f and nothing else reaches it, so the borrow of it ends
+			// with f's frame and D16 makes the return owned. Its field still borrows r.
 			name: "BorrowedLiteral",
 			src: `
 				fn f(r: &{x: number}) {
@@ -493,7 +495,7 @@ func TestBorrowIntoAnUnannotatedLiteral(t *testing.T) {
 					return o
 				}
 			`,
-			fnType: "fn <'a>(r: &'a {x: number}) -> &{f: &'a {x: number}}",
+			fnType: "fn <'a>(r: &'a {x: number}) -> {f: &'a {x: number}}",
 		},
 		{
 			// The union's only reference-shaped member is a borrow, so each literal copies maybe.

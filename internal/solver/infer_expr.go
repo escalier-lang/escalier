@@ -460,6 +460,7 @@ func (c *checker) resolveIdentPath(scope *Scope, lvl int, e *ast.IdentExpr, objP
 			return pathResult{ns: b.Members}
 		}
 		t := c.bindingValue(lvl, b)
+		c.noteOuterRead(e, t)
 		// A bare `self` that leaves the body, as in `return self` or `f(self)`, is an
 		// instance of the class. The structural view shares the class body's own element
 		// pointers, so letting it escape into a member's inferred signature would make the
@@ -888,6 +889,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// walking the body lands in our own returns list (a nested fn inside this
 		// body opens its own context, so its returns never leak out here).
 		saved := c.pushFuncCtx(sig.Async, node, lvl)
+		c.startFrameLifetimes()
 		c.fn.throws = declaredThrows
 		if retAnnOK {
 			c.fn.returnAnn = retAnnT
@@ -925,11 +927,15 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// produces the function's value. This mirrors the old checker's
 		// inferFuncBody.
 		c.inferBlock(fnScope, lvl, body)
+		// The first rule of D16 has to settle the borrows' lifetimes before any return is
+		// decided owned, which happens while the escapes are resolved below.
+		c.shareOutlivingBorrowLifetimes()
 		// With the whole body walked, every move site is recorded, so the consumed
 		// lattice is complete. Replay the recorded reads against it to report
 		// use-after-move. This runs before popFuncCtx restores the outer context, since
 		// it reads this body's move and use state off c.fn.
 		c.checkUseAfterMoves()
+		c.commitOwnedReturns()
 		// A body that moves an unannotated parameter takes ownership of the caller's value,
 		// so each call moves the argument it passes there.
 		c.markMovedParams(sig.Params, params)
@@ -1720,6 +1726,8 @@ func (c *checker) writtenParamType(scope *Scope, p *ast.Param, lvl int) (soltype
 func (c *checker) inferBorrow(scope *Scope, lvl int, e *ast.BorrowExpr) soltype.Type {
 	c.noteBorrowSite(e)
 	c.emitBorrow(e)
+	// D16's rules read the borrow's lifetime, which is known once its type is recorded.
+	defer c.noteFrameBorrow(scope, e)
 	// The operand's events are emitted while it is inferred, so a literal operand hands its
 	// borrows to e once that is done.
 	defer c.holdLiteralBorrows(e)
@@ -2018,6 +2026,7 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 	// In `obj.m(take(obj))` the receiver read comes before the move.
 	consumeRef, hasConsumeRef := c.currentStmtRef()
 	eventRef, hasEventRef := c.eventStmtRef()
+	ltMark := c.ctx.lifetimeCounter
 	// A closure stored into a module-level binding, or passed to a parameter that keeps it, may
 	// run during a later call.
 	if hasConsumeRef {
@@ -2039,6 +2048,8 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 		ret, fn = c.applyCallShape(lvl, e, target.callee, target.fn, target.secondInstance, args)
 	}
 	c.recordCallArgEffects(e, fn, consumeRef, hasConsumeRef)
+	recv, self := c.calleeReceiver(e.Callee)
+	c.markTiedCallLifetimes(ltMark, fn, recv, self, &soltype.TupleType{Elems: args}, ret)
 	if hasEventRef {
 		c.emitArgFlows(e, fn, eventRef)
 		c.emitCallEnd(e, fn, eventRef)
@@ -2919,6 +2930,12 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		}
 	} else {
 		c.constrain(e, c.implicitMutBorrow(e.Right, sourceT, targetT), checkTarget(targetT, missing))
+		// A captured binding belongs to an enclosing body, so what it holds outlives this
+		// body's frame. The target's own lifetimes are the anonymous ones of its rendered
+		// type, which say nothing about which frame they end with.
+		if c.fn != nil && len(c.errs) == assignErrsBefore && !missing && c.fn.captureVarIDs.Contains(c.varIDs.Of(target)) {
+			c.markOutlivesFrame(sourceT)
+		}
 	}
 	if c.fn != nil && len(c.errs) == assignErrsBefore && !missing && c.varIDs.Of(target) > 0 {
 		// A non-module reassignment that moves its source consumes it. The global-write
