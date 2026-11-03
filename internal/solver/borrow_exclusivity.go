@@ -640,16 +640,22 @@ func (c *checker) capturedFieldPaths(closure ast.Func, decl ast.Node) [][]placeS
 
 // useClosureCaptures takes the capture loans of the closure `expr` names for the statement at
 // `ref`, and records a read of each captured local there. runs reports whether the call is
-// sure to run the closure. The closure's captures are the
-// capture edges the name holds in the borrow graph, whether it was bound to the closure or
-// copied from a name that was. A local captured through several edges is taken once, as a
-// write when any edge writes it. The loan covers the field paths the edges reach, or the whole
-// local when any edge reaches all of it. Any expression other than a name records nothing.
+// sure to run the closure. The closure's captures are the capture edges the name holds in the
+// borrow graph, whether it was bound to the closure or copied from a name that was. A local
+// captured through several edges is taken once, as a write when any edge writes it. The loan
+// covers the field paths the edges reach, or the whole local when any edge reaches all of it.
+// Any expression other than a name records nothing.
 func (c *checker) useClosureCaptures(expr ast.Expr, ref liveness.StmtRef, runs bool) {
+	// Only a name that resolves to a local of this function can hold capture edges.
 	e, ok := expr.(*ast.IdentExpr)
 	if !ok || c.fn == nil || c.varIDs.Of(e) <= 0 {
 		return
 	}
+
+	// Group the name's capture edges by the local each one reaches. With
+	// `val f = fn () { p.a = 1; log(p.b) }`, f has two edges into p, a write at `.a` and a
+	// read at `.b`. They merge into one capturedLocal for p that is mutable and covers both
+	// paths. An edge with an empty path reaches the whole local, which `whole` records.
 	captured := map[liveness.VarID]*capturedLocal{}
 	whole := set.NewSet[liveness.VarID]()
 	for _, edge := range c.fn.eagerBorrowGraph[c.varIDs.Of(e)] {
@@ -669,17 +675,26 @@ func (c *checker) useClosureCaptures(expr ast.Expr, ref liveness.StmtRef, runs b
 			local.paths = append(local.paths, edge.refPath)
 		}
 	}
+
+	// Sorting keeps the order of the loans, and so of any reports, the same from run to run.
 	roots := make([]liveness.VarID, 0, len(captured))
 	for root := range captured {
 		roots = append(roots, root)
 	}
-	// Sorting keeps the order of the loans, and so of any reports, the same from run to run.
 	slices.Sort(roots)
+
 	for _, root := range roots {
+		// A capture of the whole local covers every field path, so the paths are dropped
+		// and the loan covers the local itself.
 		local := *captured[root]
 		if whole.Contains(root) {
 			local.paths = nil
 		}
+
+		// Take the loan for this statement, reporting any conflict with a live loan of an
+		// overlapping place. Then record a use of the local at this statement, so a move of it
+		// before the call is reported as a use after the move. viaReads marks a closure
+		// that only reads the local, which the message for that report says.
 		c.takeCaptureLoan(local, ref, e, closureVia(e.Name), runs)
 		c.fn.useSites = append(c.fn.useSites, moveUse{
 			place:     movePlace{root: root},
