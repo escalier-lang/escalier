@@ -303,6 +303,9 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 				}
 			`,
 			want: []string{"5:12-5:18: 'b' leaves the function through a mutable path and an immutable one"},
+			// The caller reads both `p.r` and `q.r` once f returns, so `&mut b` breaks E2
+			// against the `&b` that `p.r` still holds.
+			wantDataflow: []string{"5:12-5:18: cannot borrow 'b' as mutable while it is borrowed as immutable"},
 		},
 		// Two writers are Rule 3 of planning/lifetimes/requirements.md and are accepted.
 		"MutableStoresOk": {

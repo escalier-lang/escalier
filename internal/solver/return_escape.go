@@ -143,7 +143,9 @@ type StoredBorrowAliasError struct {
 	// StoredMut says whether a write can go through the stored borrow. The alias's borrow is
 	// the other mutability.
 	StoredMut bool
-	node      ast.Node
+	// `local` is the stored local that `Place` names.
+	local liveness.VarID
+	node  ast.Node
 }
 
 func (*StoredBorrowAliasError) isSolverError()        {}
@@ -702,7 +704,7 @@ func (c *checker) callerOwnedStoreAccepted(
 			}
 			c.report(&StoredBorrowAliasError{
 				Place: c.varIDToName(edge.referent), Alias: c.varIDToName(root),
-				StoredMut: storedMut, node: es.expr,
+				StoredMut: storedMut, local: edge.referent, node: es.expr,
 			})
 			return true
 		}
