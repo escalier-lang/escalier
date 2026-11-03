@@ -359,7 +359,7 @@ func TestMoveSemantics(t *testing.T) {
 			want: []string{"6:6-6:9: use of moved value 'p'"},
 		},
 		// The move reconciliation is path-sensitive. A consuming move of p on one branch
-		// does not suppress the exclusivity check for p on a sibling branch where it was
+		// does not suppress the E2 check for p on a sibling branch where it was
 		// not moved, so the write to p while snapshot still borrows it is reported.
 		"PathSensitiveExclusivityKept": {
 			src: `

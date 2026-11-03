@@ -213,7 +213,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 				}
 			`,
 		},
-		// A callee handed f may call it, so passing f takes the loans a call of f takes.
+		// A callee handed f may call it, so passing f uses f's captures the way a call of f does.
 		"PassingAWritingClosureBesideLiveBorrow": {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined

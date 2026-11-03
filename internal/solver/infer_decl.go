@@ -172,7 +172,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 	}
 	if closure, ok := d.Init.(*ast.FuncExpr); ok {
 		if _, isIdent := d.Pattern.(*ast.IdentPat); isIdent {
-			c.markNamedClosure(closure)
+			c.noteBoundClosure(closure)
 		}
 	}
 	initT := c.inferExpr(scope, lvl, d.Init)

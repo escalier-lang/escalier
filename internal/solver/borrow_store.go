@@ -581,7 +581,7 @@ func (c *checker) recordCallStoreEdges(
 				// The target holds the loan while the body can still read it, so a move or
 				// conflicting borrow of the local that a later read through the target would
 				// see is weighed against it.
-				c.recordStoreEdgeLoan(place, sourceMut, target.root, targetPath, ref, argExpr)
+				c.recordStoreEdgeLoan(place, sourceMut, target.root, targetPath, ref)
 			}
 			escapeBlame[edge.arg] = argExpr
 			continue
@@ -602,7 +602,7 @@ func (c *checker) recordCallStoreEdges(
 			// The target reaches the referent from here on, so it holds a borrow of it that a
 			// second borrow or a read of the referent has to respect.
 			c.recordStoreEdgeLoan(c.storeLoanPlace(argExpr, referent, edge.direct),
-				sourceMut, target.root, appendPath(target.path, edge.path), ref, argExpr)
+				sourceMut, target.root, appendPath(target.path, edge.path), ref)
 			recorded = true
 		}
 	}

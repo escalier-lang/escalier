@@ -290,7 +290,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 			want: []string{"5:6-5:13: cannot assign to 'b.value' while it is borrowed as immutable"},
 		},
 		// Two stores that hand the caller a writer and a reader of one local are reported as
-		// that pair. The loan check stays quiet about the second borrow, which the pair names.
+		// that pair. The second borrow gets no diagnostic of its own, since the pair names it.
 		"StoresOfMixedMutabilityConflict": {
 			src: `
 				fn f(p: &mut {r: &{value: number}}, q: &mut {r: &mut {value: number}}) {

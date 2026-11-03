@@ -30,8 +30,8 @@ type Options struct {
 	CheckJsDecorators bool
 	// NoOwnershipDataflow skips the dataflow pass of ownership_dataflow.go, which checks E1,
 	// E2, and E3 of planning/ownership_rules/requirements.md over each body's control-flow
-	// graph. The run then reports the current checks' diagnostics of those rules, which the
-	// pass's diagnostics replace by default. The ESCALIER_OWNERSHIP_DATAFLOW environment
+	// graph. The run then reports only the move engine's diagnostics of E1, which the pass's
+	// diagnostics replace by default. The ESCALIER_OWNERSHIP_DATAFLOW environment
 	// variable set to 0, false, or off skips the pass as well.
 	NoOwnershipDataflow bool
 }

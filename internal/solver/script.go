@@ -246,13 +246,13 @@ func (c *checker) bindScriptFuncWithBody(scope *Scope, lvl int, s ast.Stmt, decl
 	self := c.freshAt(lvl + 1)
 	scope.defineValue(name, ValueBinding{Schemes: []TypeScheme{monoScheme(self)}, Sources: sources})
 
-	// The calls of the name take the capture loans, so writing the declaration takes none.
-	c.markNamedClosure(decl)
+	// The calls of the name use the captures, so writing the declaration uses none.
+	c.noteBoundClosure(decl)
 	// A lifetime check queued while the declaration is typed reads the lifetimes minted
 	// before it, as one queued while an expression is typed does.
 	c.markLifetimes(decl)
 	t, _ := c.inferFuncDecl(scope, lvl+1, decl)
-	c.recordCaptureLoans(scope, decl)
+	c.recordClosureCaptures(scope, decl)
 	c.constrain(decl, t, self)
 
 	scheme := c.generalize(t, lvl)
@@ -260,7 +260,7 @@ func (c *checker) bindScriptFuncWithBody(scope *Scope, lvl int, s ast.Stmt, decl
 	b := ValueBinding{Schemes: []TypeScheme{scheme}, Sources: sources, Kind: ast.ValKind, VarID: int(c.varIDs.Of(decl))}
 	scope.defineValue(name, b)
 
-	// The name's capture edges let a call of it take the capture loans, the way a call of a
+	// The name's capture edges let a call of it run the closure, the way a call of a
 	// `val name = fn …` binding does.
 	c.trackFuncDeclCaptures(decl, s)
 }

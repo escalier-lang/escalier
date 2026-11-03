@@ -280,7 +280,7 @@ func (c *checker) resolveComponentEscapes(
 				if id == rootID {
 					continue
 				}
-				c.recordMove(id, es.expr, es.stmtRef, false)
+				c.recordMove(id, es.expr, es.stmtRef)
 			}
 			if idx, graph, root, ok := c.returnCarrier(es.expr, fieldBorrowGraph); ok {
 				// A returned value that reaches one local twice hands the caller two views of it,
@@ -526,7 +526,7 @@ func (c *checker) storeSuperseded(es escapeSite) bool {
 // reportMixedOutflows reports each local that two non-return sites hand out with different
 // mutability, and returns the locals it reported. Paths from one site are left to that site,
 // since a single value reaching a local twice is reportSharedReturnPaths' concern for a return
-// and the loan check's for anything else.
+// and the dataflow pass's for anything else.
 func (c *checker) reportMixedOutflows(outOfFrame map[liveness.VarID][]outflowPath) set.Set[liveness.VarID] {
 	reported := set.NewSet[liveness.VarID]()
 	ids := make([]liveness.VarID, 0, len(outOfFrame))
@@ -570,12 +570,8 @@ func firstMixedPair(as, bs []outflowPath) (outflowPath, outflowPath, bool) {
 }
 
 // reportMixedOutflow reports that local `conflict.id` leaves through `blame` and through
-// `conflict.other` with paths that disagree. A borrow inside `blame` then takes no second
-// diagnostic from the loan check.
+// `conflict.other` with paths that disagree.
 func (c *checker) reportMixedOutflow(conflict *outflowConflict, blame ast.Node) {
-	if e, ok := blame.(ast.Expr); ok {
-		c.noteSharedPathBlame(e)
-	}
 	c.report(&MixedOutflowPathsError{
 		LocalName: c.varIDToName(conflict.id), Owned: conflict.owned, local: conflict.id,
 		node: blame, other: conflict.other.Span(), places: conflict.places,
@@ -650,9 +646,7 @@ func (c *checker) returnOutflowConflict(
 //   - Every other path the local leaves through agrees with the store. reportMixedOutflows and
 //     returnOutflowConflict check that.
 //
-// A store inside a loop is accepted on the same terms. The loan check walks the body once, so a
-// write early in the loop body is not weighed against the loan the previous iteration's store
-// left behind. Every held loan shares that gap, which #1529 tracks.
+// A store inside a loop is accepted on the same terms.
 func (c *checker) callerOwnedStoreAccepted(
 	es escapeSite,
 	escaping set.Set[liveness.VarID],
@@ -1317,7 +1311,7 @@ func (c *checker) recordCallerOwnedStoreEscape(root liveness.VarID, base []place
 		return
 	}
 	for _, r := range c.reachesOf(source, c.fn.eagerBorrowGraph) {
-		c.recordStoreEdgeLoan(r.place, r.mut, root, base, stmtRef, source)
+		c.recordStoreEdgeLoan(r.place, r.mut, root, base, stmtRef)
 	}
 	c.fn.escapeSites = append(c.fn.escapeSites, escapeSite{expr: source, stmtRef: stmtRef, callerOwned: true})
 }
@@ -1357,7 +1351,7 @@ func (c *checker) recordFieldStoreEdges(
 	// recordCallStoreEdges derives from a call's store effect.
 	if borrow, ok := source.(*ast.BorrowExpr); ok {
 		if place, ok := c.loanPlace(borrow); ok {
-			c.recordStoreEdgeLoan(place, borrow.Mut, rp.root, base, stmtRef, borrow)
+			c.recordStoreEdgeLoan(place, borrow.Mut, rp.root, base, stmtRef)
 		}
 	}
 }
@@ -1379,7 +1373,7 @@ func (c *checker) recordElementStoreEdges(recv, source ast.Expr, stmtRef livenes
 	c.flushBorrowDirty(stmtRef)
 	if borrow, ok := source.(*ast.BorrowExpr); ok {
 		if place, ok := c.loanPlace(borrow); ok {
-			c.recordStoreEdgeLoan(place, borrow.Mut, rp.root, rp.path, stmtRef, borrow)
+			c.recordStoreEdgeLoan(place, borrow.Mut, rp.root, rp.path, stmtRef)
 		}
 	}
 }

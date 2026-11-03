@@ -535,8 +535,8 @@ func TestOwnershipDataflow(t *testing.T) {
 					return peek()
 				}
 			`,
-			// The move is reported once, at the move. The current checks' E4 report of the later
-			// call is dropped, since it names the same move.
+			// The move is reported once, at the move. The later call reports nothing more,
+			// since it would name the same move.
 			errs: []string{"cannot move 'p' while it is borrowed"},
 		},
 		{
@@ -680,7 +680,7 @@ func TestOwnershipDataflow(t *testing.T) {
 		},
 		{
 			// The move conflicts with a and with f's capture. It is reported once, at the move,
-			// and the current checks' E4 report of the later call is dropped.
+			// and the later call reports nothing more.
 			name: "E3MoveWhileABorrowAndAClosureHoldP",
 			src: `
 				declare fn take(p: {x: number}) -> number
@@ -1767,15 +1767,12 @@ func TestOwnershipDataflow(t *testing.T) {
 	}
 }
 
-// TestOwnershipDataflowMatchesCurrentChecks covers programs whose diagnostics the dataflow
-// pass and the current checks report alike. Each program runs once with
-// Options.NoOwnershipDataflow set and once with it clear, and both runs report want, with
-// spans. When ownershipDataflowEnv turns the pass off, the run with the option clear would
-// repeat the current checks, so it is skipped. The cases cover a call that runs a closure, a
-// write through a `number`-typed index, the span a moved place is blamed at, the name of a
-// moved field or tuple, a write that uses a moved place beside a live borrow, and a borrow
-// copied into a second binding.
-func TestOwnershipDataflowMatchesCurrentChecks(t *testing.T) {
+// TestOwnershipDataflowMessagesAndSpans covers the message and the span of each diagnostic the
+// dataflow pass reports for a program. The cases cover a call that runs a closure, a write
+// through a `number`-typed index, the span a moved place is blamed at, the name of a moved
+// field or tuple, a write that uses a moved place beside a live borrow, and a borrow copied
+// into a second binding.
+func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 	cases := []struct {
 		name string
 		src  string
@@ -2334,15 +2331,10 @@ func TestOwnershipDataflowMatchesCurrentChecks(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		for _, dataflow := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/dataflow=%t", tc.name, dataflow), func(t *testing.T) {
-				if dataflow && !ownershipDataflowFromEnv() {
-					t.Skipf("%s turns the dataflow pass off", ownershipDataflowEnv)
-				}
-				res := InferModuleAgainstStdlib(parseModule(t, tc.src), benchTree, Options{NoOwnershipDataflow: !dataflow})
-				require.Equal(t, tc.want, messagesWithSpan(t, res.Errors))
-			})
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			res := InferModuleAgainstStdlib(parseModule(t, tc.src), benchTree, Options{})
+			require.Equal(t, tc.want, messagesWithSpan(t, res.Errors))
+		})
 	}
 }
 

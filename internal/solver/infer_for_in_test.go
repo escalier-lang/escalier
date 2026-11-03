@@ -313,8 +313,8 @@ func TestForInBorrowAvoidsMove(t *testing.T) {
 
 // TestForInLoopBindingIsFreshEachIteration covers moving a for-in loop's pattern bindings.
 // Each iteration declares them afresh, so a move on one iteration does not reach the next.
-// A second move within one iteration still reports. Each case runs with the current checks
-// and with the dataflow pass.
+// A second move within one iteration still reports. Each case runs with the dataflow pass and
+// with the move engine alone.
 func TestForInLoopBindingIsFreshEachIteration(t *testing.T) {
 	tests := map[string]struct {
 		src  string

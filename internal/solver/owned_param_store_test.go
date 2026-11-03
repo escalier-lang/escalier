@@ -16,7 +16,7 @@ import (
 // written into it outlives anything.
 //
 // What remains after a store into an owned parameter is an aliasing question, not a lifetime
-// one, and the borrow-exclusivity check is what answers it. The last three cases assert that
+// one, and the exclusivity rules answer it. The last three cases assert that
 // division.
 func TestStoreIntoOwnedParameter(t *testing.T) {
 	tests := map[string]struct {
@@ -122,8 +122,8 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 			want: nil,
 		},
 		// Moving b out while p still reaches it through the store leaves p pointing at data the
-		// new owner controls. That is an aliasing hazard rather than a lifetime one, and the
-		// exclusivity check reports it.
+		// new owner controls. That is an aliasing hazard rather than a lifetime one, and E3
+		// reports it.
 		"MovingTheStoredLocalAfterAStoreConflicts": {
 			src: `
 				declare fn store<'a, 'b, 'c>(

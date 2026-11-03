@@ -152,7 +152,6 @@ func (c *checker) reportReachedTwice(reached []reachedPlace, blame ast.Expr) {
 		}
 	}
 	for _, referent := range slices.Sorted(maps.Keys(pairs)) {
-		c.noteSharedPathBlame(blame)
 		c.report(&SharedReturnPathsError{LocalName: c.varIDToName(referent), local: referent, node: blame, places: pairs[referent]})
 	}
 }
@@ -206,7 +205,6 @@ func (c *checker) reportLiteralSharedPaths(
 				continue
 			}
 			seen.Add(root)
-			c.noteSharedPathBlame(e)
 			c.report(&SharedReturnPathsError{
 				LocalName: c.varIDToName(root), local: root, node: e,
 				places: [2]movePlace{reaches[i].place, reaches[j].place},
@@ -214,18 +212,6 @@ func (c *checker) reportLiteralSharedPaths(
 		}
 	}
 	return true
-}
-
-// noteSharedPathBlame records the outgoing expression a shared-path or mixed-outflow report
-// blamed, so the use check does not add a second diagnostic naming a read or borrow this very
-// expression contains. Only one inside it is covered, since a read elsewhere in the body is a
-// separate fact.
-func (c *checker) noteSharedPathBlame(blame ast.Expr) {
-	span := blame.Span()
-	if slices.ContainsFunc(c.fn.sharedPathSpans, func(s ast.Span) bool { return s == span }) {
-		return
-	}
-	c.fn.sharedPathSpans = append(c.fn.sharedPathSpans, span)
 }
 
 // elementReach is one path an element of a returned literal takes into a local: the place it
