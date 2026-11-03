@@ -3856,7 +3856,8 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 		operandElems = append(operandElems, []soltype.ObjTypeElem{&soltype.PropertyElem{Name: name, Type: ft}})
 		// Building an owned value into the object moves it.
 		c.consumeIntoLiteral(scope, value, ft, stmtRef, hasStmtRef)
-		// A literal with no expected type is an owned destination, as F1 states.
+		// With no expected type, the element takes its source's type, as F1 states. The flow
+		// moves an owned source and copies a borrow.
 		if hasEventRef {
 			c.emitTempFlow(value, e, []placeSeg{{kind: namedSeg, name: name}}, &ownedDest{}, eventRef)
 		}

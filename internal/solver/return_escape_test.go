@@ -163,13 +163,11 @@ func TestReturnValueBorrows(t *testing.T) {
 			types: map[string]string{"pass": "fn (p: {x: number}) -> &mut {x: number}"},
 		},
 		// A local that only borrows a parameter records no edge, so the return carries nothing
-		// the escape check tracks and the parameter's lifetime reaches the result. The
-		// annotation gives the literal a borrow field, since T6 rejects a borrow in an element
-		// of a literal with no expected type.
+		// the escape check tracks and the parameter's lifetime reaches the result.
 		"LocalBorrowsParamThenReturnOk": {
 			src: `
 				fn pass(p: &mut {x: number}) {
-					val a: {peer: &mut {x: number}} = {peer: p}
+					val a = {peer: p}
 					return a
 				}
 			`,

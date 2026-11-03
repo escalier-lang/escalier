@@ -410,48 +410,149 @@ fn cache(p: &{x: number}) {
 	require.Equal(t, "fn (p: &'static {x: number}) -> undefined", values["cache"])
 }
 
-// TestBorrowIntoAnUnannotatedLiteral covers T6 for each literal an unannotated binding's
-// initializer produces. Each element of such a literal is an owned destination.
+// TestBorrowIntoAnUnannotatedLiteral covers the elements of each literal an unannotated
+// binding's initializer produces. With no expected type, an element takes its source's type,
+// as F1 states. A borrow source is copied into the literal, and an owned source is moved. A
+// union source is moved when it has an owned reference-shaped member and copied otherwise. A
+// field read through a borrow still needs its borrow written, by F4. fnType, when set, is the
+// type of `f`.
 func TestBorrowIntoAnUnannotatedLiteral(t *testing.T) {
 	tests := []struct {
-		name string
-		src  string
-		want []string
+		name   string
+		src    string
+		fnType string
+		want   []string
 	}{
+		{
+			name: "MutableBorrowElement",
+			src: `
+				fn f(p: &mut {x: number}) {
+					val a = {peer: p}
+					return a
+				}
+			`,
+			fnType: "fn <'a>(p: &'a mut {x: number}) -> {peer: &'a mut {x: number}}",
+		},
+		{
+			name: "ImmutableBorrowElement",
+			src: `
+				fn f(r: &{x: number}) {
+					val v = {at: r}
+					return v
+				}
+			`,
+			fnType: "fn <'a>(r: &'a {x: number}) -> {at: &'a {x: number}}",
+		},
+		{
+			name: "NestedElement",
+			src: `
+				fn f(p: &mut {x: number}) {
+					val w = {outer: {peer: p}}
+					return w
+				}
+			`,
+			fnType: "fn <'a>(p: &'a mut {x: number}) -> {outer: {peer: &'a mut {x: number}}}",
+		},
+		{
+			name: "TupleElement",
+			src: `
+				fn f(r: &{x: number}) {
+					val t = [r, r]
+					return t
+				}
+			`,
+			fnType: "fn <'a>(r: &'a {x: number}) -> [&'a {x: number}, &'a {x: number}]",
+		},
+		{
+			// Each literal copies p, so p is still usable after both.
+			name: "BorrowElementCopies",
+			src: `
+				fn f(p: &mut {x: number}) {
+					val a = {peer: p}
+					val b = {peer: p}
+					return p
+				}
+			`,
+			fnType: "fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number}",
+		},
 		{
 			name: "LiteralInEachBranch",
 			src: `
-				fn go(c: boolean, r: &{x: number}, s: &{x: number}) {
+				fn f(c: boolean, r: &{x: number}, s: &{x: number}) {
 					val o = if c { {f: r} } else { {f: s} }
+					return o
 				}
 			`,
-			want: []string{
-				"3:25-3:26: cannot use borrowed &object as owned object",
-				"3:41-3:42: cannot use borrowed &object as owned object",
-			},
+			fnType: "fn <'a, 'b>(c: boolean, r: &'a {x: number}, s: &'b {x: number}) -> {f: &'a {x: number}} | {f: &'b {x: number}}",
 		},
 		{
 			name: "BorrowedLiteral",
 			src: `
-				fn go(r: &{x: number}) {
+				fn f(r: &{x: number}) {
 					val o = &{f: r}
+					return o
 				}
 			`,
-			want: []string{"3:19-3:20: cannot use borrowed &object as owned object"},
+			fnType: "fn <'a>(r: &'a {x: number}) -> &{f: &'a {x: number}}",
 		},
 		{
-			name: "UnionOfABorrow",
+			// The union's only reference-shaped member is a borrow, so each literal copies maybe.
+			name: "UnionOfABorrowCopies",
 			src: `
-				fn go(maybe: &{x: number} | null) {
+				fn f(maybe: &{x: number} | null) {
 					val o = {f: maybe}
+					val q = {f: maybe}
+					return o
 				}
 			`,
-			want: []string{"3:18-3:23: cannot use borrowed &object as owned object"},
+			fnType: "fn <'a>(maybe: &'a {x: number} | null) -> {f: &'a {x: number} | null}",
+		},
+		{
+			name: "OwnedElementMoves",
+			src: `
+				fn f() {
+					val p = {x: 1}
+					val b = {inner: p}
+					return p.x
+				}
+			`,
+			want: []string{"5:13-5:16: use of moved value 'p'"},
+		},
+		{
+			name: "MixedUnionElementType",
+			src: `
+				fn f(s: {x: number} | &{x: number}) {
+					val a = {f: s}
+					return a
+				}
+			`,
+			fnType: "fn <'a>(s: {x: number} | &'a {x: number}) -> {f: {x: number} | &'a {x: number}}",
+		},
+		{
+			// The union has an owned member, so the literal moves s.
+			name: "MixedUnionElementMoves",
+			src: `
+				fn f(s: {x: number} | &{x: number}) {
+					val a = {f: s}
+					return s
+				}
+			`,
+			want: []string{"4:13-4:14: use of moved value 's'"},
+		},
+		{
+			name: "UnwrittenFieldBorrow",
+			src: `
+				fn f(r: &{g: {x: number}}) {
+					val o = {f: r.g}
+					return o
+				}
+			`,
+			want: []string{"3:18-3:21: this value is borrowed by its destination, so write the borrow: `&`"},
 		},
 		{
 			name: "WrittenBorrowElement",
 			src: `
-				fn go() {
+				fn f() {
 					val p = {x: 1}
 					val o = {f: &p}
 				}
@@ -460,12 +561,11 @@ func TestBorrowIntoAnUnannotatedLiteral(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			_, _, errs := inferSource(t, tc.src)
-			if tc.want == nil {
-				require.Empty(t, errs)
-				return
-			}
+			values, _, errs := inferSource(t, tc.src)
 			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+			if tc.fnType != "" {
+				require.Equal(t, tc.fnType, values["f"])
+			}
 		})
 	}
 }

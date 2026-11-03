@@ -3956,16 +3956,17 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"4:13-4:19: cannot mutate 'p' because its binding is immutable; declare it as `val mut p`"},
 		},
-		// A literal with no expected type is an owned destination, so T6 rejects the borrow.
+		// The annotation makes the field `f` an owned destination, so T6 rejects the borrow. With no
+		// expected type, F1 gives the element the borrow's type instead.
 		{
 			column: "ImmutableBorrowIntoOwned",
 			site:   "LiteralElement",
 			src: `
 				fn g(r: &{x: number}) {
-					val o = {f: r}
+					val o: {f: {x: number}} = {f: r}
 				}
 			`,
-			want: []string{"3:18-3:19: cannot use borrowed &object as owned object"},
+			want: []string{"2:13-2:25: cannot use borrowed &object as owned object"},
 		},
 		// T6 rejects a borrow stored into an owned module-level binding.
 		{
@@ -3979,16 +3980,17 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"4:13-4:14: cannot use borrowed &object as owned object"},
 		},
-		// A literal with no expected type is an owned destination, so T6 rejects the borrow.
+		// The annotation makes the field `f` an owned destination, so T6 rejects the borrow. With no
+		// expected type, F1 gives the element the borrow's type instead.
 		{
 			column: "MutableBorrowIntoOwned",
 			site:   "LiteralElement",
 			src: `
 				fn g(m: &mut {x: number}) {
-					val o = {f: m}
+					val o: {f: {x: number}} = {f: m}
 				}
 			`,
-			want: []string{"3:18-3:19: cannot use borrowed &mut object as owned object"},
+			want: []string{"2:13-2:29: cannot use borrowed &mut object as owned object"},
 		},
 		// T6 rejects a borrow stored into an owned module-level binding.
 		{
