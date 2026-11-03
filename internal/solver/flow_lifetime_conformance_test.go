@@ -23,9 +23,15 @@ type flowLifetimeCase struct {
 // runFlowLifetimeCases checks each case's program against the standard library. It asserts the
 // full list of diagnostics, then the rendered type of each binding the case names.
 func runFlowLifetimeCases(t *testing.T, cases []flowLifetimeCase) {
+	runFlowLifetimeCasesWith(t, Options{}, cases)
+}
+
+// runFlowLifetimeCasesWith is runFlowLifetimeCases with the checker options opts.
+func runFlowLifetimeCasesWith(t *testing.T, opts Options, cases []flowLifetimeCase) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			values, errs := inferAgainstTreeWithSpans(t, c.src)
+			res := InferModuleAgainstStdlib(parseModule(t, c.src), benchTree, opts)
+			values, errs := renderedValues(res), messagesWithSpan(t, res.Errors)
 			require.Equal(t, c.want, errs)
 			for name, want := range c.values {
 				require.Contains(t, values, name)
@@ -294,12 +300,12 @@ func TestFlowLifetimeEscapingReadOnlyParam(t *testing.T) {
 }
 */
 
-// DISABLED until #2247, which blocks writes and new immutable borrows after a `'static` borrow.
-// Today the write to `p.x` in `remember` checks clean, since the exclusivity check does not keep
-// the borrow stored in `cache` live after the store.
-/*
+// TestFlowLifetimeStaticBorrow covers a write to a place a `'static` borrow reaches. The case runs
+// with the ownership dataflow pass on. The current exclusivity check does not keep the borrow
+// stored in `cache` live after the store, so with the pass off the write to `p.x` in `remember`
+// checks clean. The pass replaces that check, so the test does not wait on a fix to it.
 func TestFlowLifetimeStaticBorrow(t *testing.T) {
-	runFlowLifetimeCases(t, []flowLifetimeCase{
+	runFlowLifetimeCasesWith(t, Options{OwnershipDataflow: true}, []flowLifetimeCase{
 		// L1. The returned borrow in `make` outlives `p`, which is accepted. The borrow stored in
 		// `cache` is `'static`, so `cache` can read `p` at any later point and E2 rejects the write.
 		{
@@ -322,7 +328,6 @@ func TestFlowLifetimeStaticBorrow(t *testing.T) {
 		},
 	})
 }
-*/
 
 // DISABLED until #2286, which rejects a body that ties its result to a lifetime the signature
 // leaves unnamed.

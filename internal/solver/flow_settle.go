@@ -24,7 +24,7 @@ const (
 // destination when t is a borrow, and an owned one otherwise.
 func (c *checker) destOfType(t soltype.Type) flowDest {
 	if b, ok := c.borrowOfType(t); ok {
-		return &borrowDest{borrow: borrowKindOf(b.mut), lt: b.lt}
+		return &borrowDest{borrow: borrowKindOf(b.mut), lt: b.lt, writable: b.anyMut}
 	}
 	return &ownedDest{}
 }
@@ -62,10 +62,18 @@ func (c *checker) classifyFlow(table *ownershipEvents, flow flowBase, t soltype.
 	case valueSource:
 		return &useEvent{eventBase: flow.eventBase, access: readAccess}, flowWait{}, true
 	case borrowSource:
-		if b, ok := dest.(*borrowDest); ok && b.reborrows {
+		b, toBorrow := dest.(*borrowDest)
+		if toBorrow && b.reborrows {
 			return &borrowEvent{flowBase: flow, borrow: b.borrow, lifetime: b.lt}, flowWait{}, true
 		}
-		return &copyEvent{flowBase: flow}, flowWait{}, true
+
+		kind := c.sourceBorrowKind(flow.place, t)
+		ev := &copyEvent{flowBase: flow, source: kind, borrow: kind}
+		if toBorrow {
+			ev.borrow = b.narrow(kind)
+			ev.lifetime = b.lt
+		}
+		return ev, flowWait{}, true
 	case ownedSource:
 	}
 
@@ -88,7 +96,7 @@ func (c *checker) settleDest(table *ownershipEvents, dest flowDest, holder event
 
 		settled := c.paramDestOf(d.param, d.reborrows)
 		if b, ok := settled.(*borrowDest); ok && d.callLifetime != nil {
-			settled = &borrowDest{borrow: b.borrow, lt: d.callLifetime, reborrows: b.reborrows}
+			settled = &borrowDest{borrow: b.borrow, lt: d.callLifetime, reborrows: b.reborrows, writable: b.writable}
 		}
 		return settled, flowWait{}, true
 	case *calleeDest:
@@ -132,7 +140,7 @@ func (c *checker) settleDest(table *ownershipEvents, dest flowDest, holder event
 // one F3 settled as a borrow, since its body neither moves it nor lets it escape.
 func (c *checker) paramDestOf(fp *soltype.FuncParam, reborrows bool) flowDest {
 	if b, ok := c.borrowOfType(fp.Type); ok {
-		return &borrowDest{borrow: borrowKindOf(b.mut), lt: b.lt, reborrows: reborrows}
+		return &borrowDest{borrow: borrowKindOf(b.mut), lt: b.lt, reborrows: reborrows, writable: b.anyMut}
 	}
 
 	if c.paramTakesOwnership(fp) {
@@ -181,6 +189,23 @@ func (c *checker) sourceKindOf(p movePlace, t soltype.Type, force bool) (sourceK
 		return borrowSource, flowWait{}, true
 	}
 	return ownedSource, flowWait{}, true
+}
+
+// sourceBorrowKind returns the mutability of the borrow place p holds, whose type is t. A
+// borrow whose type has a `&mut` member is mutable, so `&mut A | &A` is `&mut`. A
+// place whose type is not a borrow is rooted at a parameter F3 settled as a borrow, and
+// paramDestOf gives that borrow's mutability.
+func (c *checker) sourceBorrowKind(p movePlace, t soltype.Type) borrowKind {
+	if b, ok := c.borrowOfType(t); ok {
+		return borrowKindOf(b.anyMut)
+	}
+
+	if fp, isParam := c.paramByVar[p.root]; isParam {
+		if b, ok := c.paramDestOf(fp, false).(*borrowDest); ok {
+			return b.borrow
+		}
+	}
+	return immutableBorrow
 }
 
 // holdsValueType reports whether a value of type t is a value type, which a flow copies. A
@@ -243,12 +268,20 @@ func (c *checker) settleFlowsWaitingOn(wait flowWait, force, forceCapture bool) 
 	}
 }
 
-// settleAllFlows settles every provisional flow, the way classifyFlow's force flag
-// describes. It runs once a module or script is inferred, when nothing is left to settle
-// them.
+// settleAllFlows settles every provisional flow, and the destination of every written borrow
+// finishOwnershipEvents could not settle, the way classifyFlow's force flag describes. It runs
+// once a module or script is inferred, when nothing is left to settle them.
 func (c *checker) settleAllFlows() {
 	for wait := range c.pendingFlows {
 		c.settleFlowsWaitingOn(wait, true, true)
+	}
+
+	for _, t := range c.info.ownership {
+		for _, ev := range t.events {
+			if bev, ok := ev.(*borrowEvent); ok {
+				c.borrowFromDest(t, bev, true)
+			}
+		}
 	}
 }
 

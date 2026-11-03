@@ -160,9 +160,18 @@ type flowEvent interface {
 	flow() *flowBase
 }
 
-// copyEvent gives the holder the same value as the place, which stays usable.
+// copyEvent gives the holder the same value as the place, which stays usable. The place
+// holds a borrow, since a value type's flow is a read.
 type copyEvent struct {
 	flowBase
+	// source is the mutability of the borrow the place holds.
+	source borrowKind
+	// borrow is the mutability of the borrow the holder receives. A borrow destination
+	// decides it, so a `&mut` copied into a `&` destination is `&`, as T4 narrows it. Any
+	// other destination receives the source's mutability.
+	borrow borrowKind
+	// lifetime is the lifetime of the borrow destination, or nil for any other destination.
+	lifetime soltype.Lifetime
 }
 
 // borrowEvent gives the holder a new borrow of the place.
@@ -172,6 +181,10 @@ type borrowEvent struct {
 	borrow borrowKind
 	// lifetime is the lifetime of the borrow, or nil when the borrow's type carries none.
 	lifetime soltype.Lifetime
+	// dest is the destination a written borrow flows into, or nil when no flow site
+	// receives it. borrowFromDest reads it to take the borrow's mutability and lifetime from
+	// the destination, and clears it once the destination is settled.
+	dest flowDest
 }
 
 // moveEvent gives the holder ownership of the place, which is consumed.

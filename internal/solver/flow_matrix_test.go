@@ -37,6 +37,11 @@ const returnEndsFunction = "A `return` leaves the function, so nothing after it 
 // runFlowMatrix checks each cell's program against the standard library and asserts the full
 // list of diagnostics. A cell that does not apply is skipped with its reason.
 func runFlowMatrix(t *testing.T, cells []flowCell) {
+	runFlowMatrixWith(t, Options{}, cells)
+}
+
+// runFlowMatrixWith is runFlowMatrix with the checker options opts.
+func runFlowMatrixWith(t *testing.T, opts Options, cells []flowCell) {
 	for _, c := range cells {
 		t.Run(c.column+"/"+c.site, func(t *testing.T) {
 			if c.notApplicable != "" {
@@ -44,8 +49,8 @@ func runFlowMatrix(t *testing.T, cells []flowCell) {
 				require.Empty(t, c.want)
 				t.Skip(c.notApplicable)
 			}
-			_, errs := inferAgainstTreeWithSpans(t, c.src)
-			require.Equal(t, c.want, errs)
+			res := InferModuleAgainstStdlib(parseModule(t, c.src), benchTree, opts)
+			require.Equal(t, c.want, messagesWithSpan(t, res.Errors))
 		})
 	}
 }
@@ -3227,12 +3232,15 @@ func TestFlowMatrixModuleLevelMutableBorrow(t *testing.T) {
 }
 */
 
-// DISABLED until #2247. A `'static` borrow stays live for the rest of the program, since
-// module-level state can read it at any later point. Today the exclusivity check treats it as
-// ending at the store or call that takes it, so each write or borrow below reports nothing.
-/*
+// TestFlowMatrixStaticBorrow covers a `'static` borrow, which stays live for the rest of the
+// program, since module-level state can read it at any later point. Each cell takes a borrow
+// into a `'static` destination, then writes or borrows the source.
+//
+// The cells run with the ownership dataflow pass on. The current exclusivity check ends a
+// borrow at the store or call that takes it, so with the pass off each cell reports nothing.
+// The pass replaces that check, so the test does not wait on a fix to it.
 func TestFlowMatrixStaticBorrow(t *testing.T) {
-	runFlowMatrix(t, []flowCell{
+	runFlowMatrixWith(t, Options{OwnershipDataflow: true}, []flowCell{
 		{
 			column: "WriteDuringImmutableBorrow",
 			site:   "ModuleLevelStore",
@@ -3362,12 +3370,14 @@ func TestFlowMatrixStaticBorrow(t *testing.T) {
 		},
 	})
 }
-*/
 
-// DISABLED until #2247 and #2269. Each cell below takes a `'static` borrow, which today ends at
-// the store or call that takes it. The cell also fails a check that the single ownership pass
+// DISABLED until #2269. Each cell below takes a `'static` borrow, which the current checks end
+// at the store or call that takes it. The cell also fails a check that the single ownership pass
 // replaces, or holds the borrow where no current check tracks it. The comment above each cell
-// says what the solver reports today.
+// says what the solver reports today with the pass off. With the pass on, both Return cells
+// pass. The rest still fail as their comments say, and the LiteralElement and Destructuring
+// cells also report nothing with the pass on, since the pass does not give a literal element or
+// a pattern leaf the lifetime of its annotation.
 /*
 func TestFlowMatrixStaticBorrowAndOwnershipPass(t *testing.T) {
 	runFlowMatrix(t, []flowCell{
@@ -3741,12 +3751,11 @@ func TestFlowMatrixBindingMutability(t *testing.T) {
 	})
 }
 
-// DISABLED until #2247. The cell writes an element of an array owned by a `val mut` binding
-// while a `'static` borrow of another element is live. Today the exclusivity check treats the
-// borrow as ending at the store that takes it, so the write reports nothing.
-/*
+// TestFlowMatrixBindingMutabilityAndStaticBorrow writes an element of an array owned by a
+// `val mut` binding while a `'static` borrow of another element is live. The cell runs with the
+// ownership dataflow pass on, for the reason TestFlowMatrixStaticBorrow gives.
 func TestFlowMatrixBindingMutabilityAndStaticBorrow(t *testing.T) {
-	runFlowMatrix(t, []flowCell{
+	runFlowMatrixWith(t, Options{OwnershipDataflow: true}, []flowCell{
 		{
 			column: "DynamicElementBorrows",
 			site:   "ModuleLevelStore",
@@ -3763,7 +3772,6 @@ func TestFlowMatrixBindingMutabilityAndStaticBorrow(t *testing.T) {
 		},
 	})
 }
-*/
 
 // DISABLED until #2269. Each cell below writes a value that a `val mut` or `var mut` binding
 // owns. The cell fails a check that the single ownership pass replaces, or holds a borrow where no

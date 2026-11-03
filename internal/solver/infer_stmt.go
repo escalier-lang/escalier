@@ -239,7 +239,7 @@ func (c *checker) defineLocal(scope *Scope, name string, vd *ast.VarDecl, b Valu
 		c.flushBorrowDirty(ref)
 		// An initializer that borrows a place binds a loan of it to this binding, which
 		// then has to stay exclusive for as long as the binding is read.
-		c.recordBorrowLoan(liveness.VarID(b.VarID), vd.Init, ref)
+		c.recordBorrowLoan(liveness.VarID(b.VarID), bindingType(b), vd.Init, ref)
 	}
 	// A value that keeps a closure keeps it reachable while this binding is live.
 	c.noteRetainedHolder(liveness.VarID(b.VarID), vd.Init)
