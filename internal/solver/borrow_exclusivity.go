@@ -141,6 +141,9 @@ type MoveWhileBorrowedError struct {
 	ViaRuns bool
 	move    ast.Node
 	borrow  ast.Span
+	// closure marks a borrow that a closure holds for its captures between calls. Only the
+	// dataflow pass sets it.
+	closure bool
 }
 
 func (*MoveWhileBorrowedError) isSolverError()        {}

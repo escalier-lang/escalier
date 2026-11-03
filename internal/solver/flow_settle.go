@@ -111,19 +111,25 @@ func (c *checker) settleDest(table *ownershipEvents, dest flowDest, holder event
 		}
 		return &borrowDest{borrow: immutableBorrow}, flowWait{}, true
 	case *captureDest:
-		// A closure that is returned or stored into module-level state owns what it
-		// captures, and any other closure borrows it. A closure a local holds may still be
-		// returned through that local, so it waits for the whole body.
+		// A closure stored into module-level state may run during any later call, so it
+		// borrows what it captures for `'static`. A closure returned where it is written
+		// outlives the frame and owns what it captures. Any other closure borrows what it
+		// captures, and captureReturnMoves moves the capture at each return of a local
+		// holding the closure. A closure a local holds may still be stored through that
+		// local, so its capture waits for the whole body.
+		static := &borrowDest{borrow: borrowKindOf(d.writes), lt: soltype.Static, reborrows: true}
 		switch holder.target.(type) {
-		case returnTarget, moduleTarget:
+		case returnTarget:
 			return &ownedDest{}, flowWait{}, true
+		case moduleTarget:
+			return static, flowWait{}, true
 		case tempTarget, placeTarget:
 			if !forceCapture {
 				return dest, flowWait{capture: true}, false
 			}
 
-			if pt, ok := holder.target.(placeTarget); ok && table.escapes(pt.root) {
-				return &ownedDest{}, flowWait{}, true
+			if pt, ok := holder.target.(placeTarget); ok && table.storedFrom(pt.root) {
+				return static, flowWait{}, true
 			}
 		case argTarget, receiverTarget:
 		}
@@ -265,6 +271,44 @@ func (c *checker) settleFlowsWaitingOn(wait flowWait, force, forceCapture bool) 
 		}
 
 		pf.table.events[pf.index] = ev
+		if _, isCapture := pf.dest.(*captureDest); isCapture {
+			c.captureReturnMoves(pf.table, placeholder.flowBase, t)
+		}
+	}
+}
+
+// captureReturnMoves appends to table a move of the captured place at each return of a local
+// that holds the closure. capture is the settled capture's flow, and t is the type of the
+// captured place. A capture whose place holds a borrow or a value type moves nothing, since
+// F2 copies it into the owned return. Neither does the capture of a closure stored into
+// module-level state, which keeps its `'static` borrow wherever else the closure goes.
+func (c *checker) captureReturnMoves(table *ownershipEvents, capture flowBase, t soltype.Type) {
+	pt, ok := capture.holder.target.(placeTarget)
+	if !ok || table.storedFrom(pt.root) {
+		return
+	}
+
+	closure, ok := capture.node.(ast.Func)
+	if !ok {
+		return
+	}
+
+	for _, site := range table.returnsOf(pt.root) {
+		flow := flowBase{
+			eventBase: eventBase{place: capture.place, node: site.node},
+			holder:    eventHolder{target: returnTarget{}},
+		}
+
+		ev, _, _ := c.classifyFlow(table, flow, t, &ownedDest{}, true, true)
+		if mv, isMove := ev.(*moveEvent); isMove {
+			mv.closure = closure
+			// A closure that never flows out of the local that holds it reaches a return of
+			// that local only while the local holds the closure's borrow. Reassigning the
+			// local drops that borrow, so such a return moves nothing.
+			mv.whileCaptured = len(table.reachedFrom(pt.root)) == 1
+			mv.at = site.at
+			table.events = append(table.events, mv)
+		}
 	}
 }
 

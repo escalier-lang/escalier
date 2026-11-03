@@ -216,10 +216,10 @@ func (c *checker) emitFlow(source ast.Expr, holder eventHolder, dest flowDest, r
 	switch s := source.(type) {
 	case *ast.BorrowExpr:
 		c.noteBorrowDest(s, dest)
-		c.retargetTemp(s, holder)
+		c.retargetTemp(s, holder, ref)
 		return
 	case *ast.ObjectExpr, *ast.TupleExpr, *ast.FuncExpr:
-		c.retargetTemp(s, holder)
+		c.retargetTemp(s, holder, ref)
 		return
 	}
 
@@ -339,14 +339,14 @@ func (c *checker) emitTempFlow(source ast.Expr, value ast.Expr, path []placeSeg,
 
 // retargetTemp moves every event held by the temporary value to holder, keeping the
 // path within the value. It also records each place whose value flowed into the temporary
-// value as flowing into holder.
-func (c *checker) retargetTemp(value ast.Expr, holder eventHolder) {
+// value as flowing into holder at the CFG point ref.
+func (c *checker) retargetTemp(value ast.Node, holder eventHolder, ref liveness.StmtRef) {
 	t := c.fn.events
 	roots := t.tempRoots[value]
 	delete(t.tempRoots, value)
 
 	for _, root := range roots {
-		t.noteFlowInto(root, holder)
+		t.noteFlowInto(root, holder, value, ref)
 	}
 
 	indices := t.temps[value]
@@ -383,7 +383,7 @@ func (c *checker) emitValueFlow(p movePlace, source ast.Expr, sourceT soltype.Ty
 
 	// The escape check of a closure capture reads this record. A closure is a value type,
 	// so it is recorded before the value-type case below returns.
-	c.fn.events.noteFlowInto(p.root, holder)
+	c.fn.events.noteFlowInto(p.root, holder, node, ref)
 
 	flow := flowBase{eventBase: eventBase{place: p, node: node}, holder: holder}
 	ev, wait, settled := c.classifyFlow(c.fn.events, flow, sourceT, dest, false, false)

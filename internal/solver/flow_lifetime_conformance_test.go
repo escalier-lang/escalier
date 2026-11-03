@@ -391,12 +391,12 @@ func TestFlowLifetimeStaticRender(t *testing.T) {
 }
 */
 
-// DISABLED until #2269, which turns on the single ownership pass. Today the move `val q = p`
-// checks clean, and the later call reports `this call runs 'peek', which reads 'p' after it was
-// moved` instead.
-/*
+// TestFlowLifetimeClosureBlocksMove covers the `moved` program from E4. The case runs with the
+// ownership dataflow pass on. The current checks accept the move `val q = p` and report the later
+// call as `this call runs 'peek', which reads 'p' after it was moved`. The pass replaces them, so
+// the test does not wait on a fix to them.
 func TestFlowLifetimeClosureBlocksMove(t *testing.T) {
-	runFlowLifetimeCases(t, []flowLifetimeCase{
+	runFlowLifetimeCasesWith(t, Options{OwnershipDataflow: true}, []flowLifetimeCase{
 		// E4. `peek` still holds its borrow of `p` for its later call, so E3 rejects the move.
 		{
 			name: "E4/Moved",
@@ -412,7 +412,6 @@ func TestFlowLifetimeClosureBlocksMove(t *testing.T) {
 		},
 	})
 }
-*/
 
 // TestFlowLifetimeRetainedCallback covers the first `setup` program in D10, which E4 rejects.
 func TestFlowLifetimeRetainedCallback(t *testing.T) {

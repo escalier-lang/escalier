@@ -8,10 +8,15 @@ import (
 
 // TestClosureCapturedPlaces covers places reached through a closure's captured variables.
 // Each case with a plain-function counterpart reports what that counterpart reports.
+//
+// wantDataflow is what the program reports with the dataflow pass on, when that differs from
+// want. A closure holds its borrows between calls, so the pass rejects a move of a capture
+// before a later call by E3, at the move. The current checks report the later call instead.
 func TestClosureCapturedPlaces(t *testing.T) {
 	tests := map[string]struct {
-		src  string
-		want []string
+		src          string
+		want         []string
+		wantDataflow []string
 	}{
 		// Calling a closure that writes x takes a mutable loan of x for the call, which
 		// conflicts with the live immutable borrow `a`. The plain write is the same program
@@ -150,7 +155,8 @@ func TestClosureCapturedPlaces(t *testing.T) {
 					f()
 				}
 			`,
-			want: []string{"9:6-9:7: this call runs 'f', which reads 'x' after it was moved"},
+			want:         []string{"9:6-9:7: this call runs 'f', which reads 'x' after it was moved"},
+			wantDataflow: []string{"8:11-8:12: cannot move 'x' while it is borrowed"},
 		},
 		// Calling f writes x, so a call after x moves is a use after the move.
 		"CallOfAWritingClosureAfterMovingTheCapture": {
@@ -164,7 +170,8 @@ func TestClosureCapturedPlaces(t *testing.T) {
 					f()
 				}
 			`,
-			want: []string{"8:6-8:7: this call runs 'f', which writes 'x' after it was moved"},
+			want:         []string{"8:6-8:7: this call runs 'f', which writes 'x' after it was moved"},
+			wantDataflow: []string{"7:11-7:12: cannot move 'x' while it is borrowed"},
 		},
 		// f reads x only while it runs, so x can move once the last call returns.
 		"MoveAfterTheClosureIsLastCalledOk": {
@@ -363,7 +370,8 @@ func TestClosureCapturedPlaces(t *testing.T) {
 					f()
 				}
 			`,
-			want: []string{"12:6-12:7: this call runs 'f', which reads 'x' after it was moved"},
+			want:         []string{"12:6-12:7: this call runs 'f', which reads 'x' after it was moved"},
+			wantDataflow: []string{"11:11-11:12: cannot move 'x' while it is borrowed"},
 		},
 		// A `&mut` borrow of x inside the closure makes the loan a call takes mutable.
 		"MutableBorrowInClosureBesideLiveBorrow": {
@@ -404,7 +412,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tc.src)
-			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+			require.Equal(t, wantForPass(tc.want, tc.wantDataflow), messagesWithSpan(t, errs))
 		})
 	}
 }

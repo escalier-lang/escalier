@@ -558,11 +558,9 @@ func TestOwnershipDataflow(t *testing.T) {
 					return peek()
 				}
 			`,
-			// The first diagnostic is E4's, which the current checks still report.
-			errs: []string{
-				"this call runs 'peek', which reads 'p' after it was moved",
-				"cannot move 'p' while it is borrowed",
-			},
+			// The move is reported once, at the move. The current checks' E4 report of the later
+			// call is dropped, since it names the same move.
+			errs: []string{"cannot move 'p' while it is borrowed"},
 		},
 		{
 			name: "E4WriteBetweenClosureCalls",
@@ -575,6 +573,151 @@ func TestOwnershipDataflow(t *testing.T) {
 					return a + peek()
 				}
 			`,
+		},
+		{
+			// The closure in sink borrows p for `'static`, so p cannot move even though the
+			// closure only reads it. The closure rows of the exclusivity table reject a move
+			// between calls.
+			name: "E3MoveAfterStoringAReadingClosureIntoAGlobal",
+			src: `
+				var sink: fn () -> number = fn () { return 0 }
+				declare fn take(x: {x: number}) -> undefined
+				fn go() {
+					val p = {x: 1}
+					sink = fn () { return p.x }
+					take(p)
+				}
+			`,
+			errs: []string{"cannot move 'p' while it is borrowed"},
+		},
+		{
+			// A closure stored into sink and also returned keeps its `'static` borrow of p, so
+			// the return does not move p. A later move of p conflicts with that borrow. The
+			// first diagnostic is the current checks' escape check of `return f`, which the
+			// pass does not replace.
+			name: "E3MoveAfterStoringAndReturningAClosure",
+			src: `
+				var sink: fn () -> number = fn () { return 0 }
+				declare fn take(x: {x: number}) -> undefined
+				fn go(c: boolean) {
+					val p = {x: 1}
+					val f = fn () { return p.x }
+					sink = f
+					if c {
+						return f
+					}
+					take(p)
+					return fn () { return 0 }
+				}
+			`,
+			errs: []string{
+				"'p' leaves the function both as an owned value and through a borrow",
+				"cannot move 'p' while it is borrowed",
+			},
+		},
+		{
+			// One return that names the closure twice moves its capture once.
+			name: "ReturnOfAClosureTwiceInOneValue",
+			src: `
+				fn go() {
+					val p = {x: 1}
+					val f = fn () { return p.x }
+					return [f, f]
+				}
+			`,
+		},
+		{
+			// The return of f moves p while `a` still borrows it for the returned tuple.
+			name: "E3ReturnOfAClosureBesideABorrowOfItsCapture",
+			src: `
+				fn go() {
+					val p = {x: 1}
+					val f = fn () { return p.x }
+					val a = &p
+					return [f, a]
+				}
+			`,
+			errs: []string{"cannot move 'p' while it is borrowed"},
+		},
+		{
+			// f holds another closure by the return, so the return does not move p.
+			name: "ReturnOfAReassignedClosureMovesNothing",
+			src: `
+				fn go() {
+					val p = {x: 1}
+					var f: fn () -> number = fn () { return p.x }
+					f = fn () { return 0 }
+					val a = &p
+					return [f, a]
+				}
+			`,
+		},
+		{
+			// The return inside the branch returns the closure that captures nothing, so it
+			// does not move p before `p` is read.
+			name: "ReturnOfAClosureReassignedInABranchMovesNothing",
+			src: `
+				fn go(c: boolean) {
+					val p = {x: 1}
+					var f: fn () -> number = fn () { return p.x }
+					if c {
+						f = fn () { return 0 }
+						return [f, p]
+					}
+					return [f, f]
+				}
+			`,
+		},
+		{
+			// f's closure flows into g before f is reassigned, so the return of g moves p.
+			name: "E3ReturnOfAClosureCopiedBeforeItsLocalIsReassigned",
+			src: `
+				fn go() {
+					val p = {x: 1}
+					var f: fn () -> number = fn () { return p.x }
+					val g = f
+					f = fn () { return 0 }
+					val a = &p
+					return [g, a]
+				}
+			`,
+			errs: []string{"cannot move 'p' while it is borrowed"},
+		},
+		{
+			// f borrows r for `'static` once it is stored into sink, so the borrow of p that r
+			// holds lasts for `'static` as well.
+			name: "E3MoveAfterStoringAClosureThatCapturesABorrow",
+			src: `
+				declare fn take(p: {x: number}) -> number
+				var sink: fn () -> number = fn () { return 0 }
+				fn go() {
+					val p = {x: 1}
+					val r = &p
+					val f = fn () { return r.x }
+					val n = r.x
+					sink = f
+					take(p)
+				}
+			`,
+			errs: []string{"cannot move 'p' while it is borrowed"},
+		},
+		{
+			// The move conflicts with a and with f's capture. It is reported once, at the move,
+			// and the current checks' E4 report of the later call is dropped.
+			name: "E3MoveWhileABorrowAndAClosureHoldP",
+			src: `
+				declare fn take(p: {x: number}) -> number
+				declare fn read(a: &{x: number}) -> number
+				fn go() {
+					val p = {x: 1}
+					val a = &p
+					val f = fn () { return p.x }
+					take(p)
+					read(a)
+					f()
+				}
+			`,
+			errs: []string{"cannot move 'p' while it is borrowed"},
 		},
 		{
 			// The receiver is evaluated before the argument, so the argument's borrow conflicts.
