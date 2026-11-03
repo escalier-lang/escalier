@@ -4299,7 +4299,8 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"5:14-5:16: cannot borrow 'p' as immutable while it is borrowed as mutable"},
 		},
-		// Today the borrow a pattern takes from `&mut p` is not tracked, so `&p` reports nothing.
+		// The leaf `d` borrows the field `p.f` from `&mut p`, so the report names that field. The
+		// current checks do not track that borrow, so `&p` reports nothing.
 		{
 			column: "ImmutableBorrowDuringMutableBorrow",
 			site:   "Destructuring",
@@ -4312,7 +4313,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 					return r.f.x
 				}
 			`,
-			want: []string{"5:14-5:16: cannot borrow 'p' as immutable while it is borrowed as mutable"},
+			want: []string{"5:14-5:16: cannot borrow 'p' as immutable while 'p.f' is borrowed as mutable"},
 		},
 		// Today a method call's receiver borrow is not checked against its arguments, so `&p` reports
 		// nothing.
