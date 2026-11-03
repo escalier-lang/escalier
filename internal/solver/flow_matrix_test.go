@@ -37,11 +37,6 @@ const returnEndsFunction = "A `return` leaves the function, so nothing after it 
 // runFlowMatrix checks each cell's program against the standard library and asserts the full
 // list of diagnostics. A cell that does not apply is skipped with its reason.
 func runFlowMatrix(t *testing.T, cells []flowCell) {
-	runFlowMatrixWith(t, Options{}, cells)
-}
-
-// runFlowMatrixWith is runFlowMatrix with the checker options opts.
-func runFlowMatrixWith(t *testing.T, opts Options, cells []flowCell) {
 	for _, c := range cells {
 		t.Run(c.column+"/"+c.site, func(t *testing.T) {
 			if c.notApplicable != "" {
@@ -49,7 +44,7 @@ func runFlowMatrixWith(t *testing.T, opts Options, cells []flowCell) {
 				require.Empty(t, c.want)
 				t.Skip(c.notApplicable)
 			}
-			res := InferModuleAgainstStdlib(parseModule(t, c.src), benchTree, opts)
+			res := InferModuleAgainstStdlib(parseModule(t, c.src), benchTree, Options{})
 			require.Equal(t, c.want, messagesWithSpan(t, res.Errors))
 		})
 	}
@@ -3036,10 +3031,9 @@ func TestFlowMatrixModuleLevelMove(t *testing.T) {
 }
 */
 
-// DISABLED until #1269. Reassigning a `var` after a move does not clear the move, so the use
-// after the reassignment reports `use of moved value 'p'`. E1 rejects only a use of the moved
-// value, and the reassignment gives `p` a new one.
-/*
+// TestFlowMatrixReassignAfterAMove asserts that a use after a reassignment reads the new value.
+// E1 rejects only a use of the moved value, and the dataflow pass clears a move at a write of
+// the moved place. A reassignment whose right-hand side branches clears it the same way.
 func TestFlowMatrixReassignAfterAMove(t *testing.T) {
 	runFlowMatrix(t, []flowCell{
 		{
@@ -3183,12 +3177,9 @@ func TestFlowMatrixReassignAfterAMove(t *testing.T) {
 		},
 	})
 }
-*/
 
-// DISABLED until #2249. Storing a borrow into module-level state records a move of the source,
-// so the read of `r` after the store reports `use of moved value 'r'`. F2 copies a borrow, so
-// `r` stays usable.
-/*
+// TestFlowMatrixModuleLevelBorrowCopy asserts that storing a borrow into module-level state
+// leaves the source usable. F2 copies a borrow, as D8 decides, so `r` is read after the store.
 func TestFlowMatrixModuleLevelBorrowCopy(t *testing.T) {
 	runFlowMatrix(t, []flowCell{
 		{
@@ -3204,12 +3195,10 @@ func TestFlowMatrixModuleLevelBorrowCopy(t *testing.T) {
 		},
 	})
 }
-*/
 
-// DISABLED until #2249 and #2269. The cell stores a `&mut` parameter into module-level state.
-// Any store into a module-level `&mut` binding reports
-// `cannot constrain immutable object <: mutable object`, which #2249 tracks. With the ownership
-// dataflow pass off, the store also moves `m`, which F2 rules out for a borrow.
+// DISABLED until #2249. The cell stores a `&mut` parameter into module-level state. Any store
+// into a module-level `&mut` binding reports `cannot constrain immutable object <: mutable object`,
+// which #2249 tracks.
 /*
 func TestFlowMatrixModuleLevelMutableBorrow(t *testing.T) {
 	runFlowMatrix(t, []flowCell{
@@ -3229,10 +3218,8 @@ func TestFlowMatrixModuleLevelMutableBorrow(t *testing.T) {
 }
 */
 
-// DISABLED until #2269 turns the ownership dataflow pass on by default. The cell passes with
-// `ESCALIER_OWNERSHIP_DATAFLOW=1`. With the pass off, the store moves `m`, and the alias-set
-// transition check rejects the narrowing because the stored borrow is `'static`.
-/*
+// TestFlowMatrixModuleLevelNarrowedBorrow stores a `&mut` parameter into a module-level `&`
+// binding, which narrows the borrow, and reads both afterwards.
 func TestFlowMatrixModuleLevelNarrowedBorrow(t *testing.T) {
 	runFlowMatrix(t, []flowCell{
 		{
@@ -3248,17 +3235,12 @@ func TestFlowMatrixModuleLevelNarrowedBorrow(t *testing.T) {
 		},
 	})
 }
-*/
 
 // TestFlowMatrixStaticBorrow covers a `'static` borrow, which stays live for the rest of the
 // program, since module-level state can read it at any later point. Each cell takes a borrow
 // into a `'static` destination, then writes or borrows the source.
-//
-// The cells run with the ownership dataflow pass on. The current exclusivity check ends a
-// borrow at the store or call that takes it, so with the pass off each cell reports nothing.
-// The pass replaces that check, so the test does not wait on a fix to it.
 func TestFlowMatrixStaticBorrow(t *testing.T) {
-	runFlowMatrixWith(t, Options{OwnershipDataflow: true}, []flowCell{
+	runFlowMatrix(t, []flowCell{
 		{
 			column: "WriteDuringImmutableBorrow",
 			site:   "ModuleLevelStore",
@@ -3389,11 +3371,8 @@ func TestFlowMatrixStaticBorrow(t *testing.T) {
 	})
 }
 
-// DISABLED until #2269 turns the ownership dataflow pass on by default. Each cell below takes a
-// `'static` borrow and passes with `ESCALIER_OWNERSHIP_DATAFLOW=1`. With the pass off, each
-// cell reports nothing, since the current exclusivity check ends a borrow at the store or call
-// that takes it.
-/*
+// TestFlowMatrixStaticBorrowAndOwnershipPass covers more flow sites for a `'static` borrow. Each
+// cell takes a `'static` borrow, then writes or borrows the source.
 func TestFlowMatrixStaticBorrowAndOwnershipPass(t *testing.T) {
 	runFlowMatrix(t, []flowCell{
 		// The element type of `arr` is `'static`, so the stored borrow is too.
@@ -3513,11 +3492,10 @@ func TestFlowMatrixStaticBorrowAndOwnershipPass(t *testing.T) {
 		},
 	})
 }
-*/
 
-// DISABLED until #2249 and #2269. Each cell below stores a `&mut` borrow into a module-level
-// `&mut` binding, which reports `cannot constrain immutable object <: mutable object` as #2249
-// tracks. With the ownership dataflow pass on, each cell also reports its expected diagnostic.
+// DISABLED until #2249. Each cell below stores a `&mut` borrow into a module-level `&mut`
+// binding, which reports `cannot constrain immutable object <: mutable object` as #2249 tracks.
+// Each cell also reports its expected diagnostic.
 /*
 func TestFlowMatrixStaticMutableBorrowModuleLevelStore(t *testing.T) {
 	runFlowMatrix(t, []flowCell{
@@ -3598,8 +3576,7 @@ func TestFlowMatrixStaticReceiver(t *testing.T) {
 */
 
 // DISABLED until #2290. The cell writes an element of an array it borrows as `&mut`, which today
-// is immutable. With the ownership dataflow pass on or off, the cell reports its expected
-// diagnostic beside that one.
+// is immutable. The cell reports its expected diagnostic beside that one.
 /*
 func TestFlowMatrixArrayElementMutAndOwnershipPass(t *testing.T) {
 	runFlowMatrix(t, []flowCell{
@@ -3766,10 +3743,9 @@ func TestFlowMatrixBindingMutability(t *testing.T) {
 }
 
 // TestFlowMatrixBindingMutabilityAndStaticBorrow writes an element of an array owned by a
-// `val mut` binding while a `'static` borrow of another element is live. The cell runs with the
-// ownership dataflow pass on, for the reason TestFlowMatrixStaticBorrow gives.
+// `val mut` binding while a `'static` borrow of another element is live.
 func TestFlowMatrixBindingMutabilityAndStaticBorrow(t *testing.T) {
-	runFlowMatrixWith(t, Options{OwnershipDataflow: true}, []flowCell{
+	runFlowMatrix(t, []flowCell{
 		{
 			column: "DynamicElementBorrows",
 			site:   "ModuleLevelStore",
@@ -3787,11 +3763,8 @@ func TestFlowMatrixBindingMutabilityAndStaticBorrow(t *testing.T) {
 	})
 }
 
-// DISABLED until #2269 turns the ownership dataflow pass on by default. Each cell below writes a
-// value that a `val mut` or `var mut` binding owns, and passes with
-// `ESCALIER_OWNERSHIP_DATAFLOW=1`. The comment above a cell says what the current checks report
-// with the pass off, when that differs from the cell's expected result.
-/*
+// TestFlowMatrixBindingMutabilityAndOwnershipPass covers more flow sites for a value that a
+// `val mut` or `var mut` binding owns. Each cell writes the value.
 func TestFlowMatrixBindingMutabilityAndOwnershipPass(t *testing.T) {
 	runFlowMatrix(t, []flowCell{
 		{
@@ -3808,8 +3781,7 @@ func TestFlowMatrixBindingMutabilityAndOwnershipPass(t *testing.T) {
 			want: []string{"5:6-5:13: cannot assign to 'xs[i].x' while it is borrowed as immutable"},
 		},
 		// A literal with an expected type gives each element the type of the matching field, so this
-		// literal holds a borrow. Today the borrow the literal holds is not tracked, so the write to
-		// `xs[i].x` reports nothing.
+		// literal holds a borrow.
 		{
 			column: "DynamicElementBorrows",
 			site:   "LiteralElement",
@@ -3823,8 +3795,7 @@ func TestFlowMatrixBindingMutabilityAndOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"5:6-5:13: cannot assign to 'xs[i].x' while it is borrowed as immutable"},
 		},
-		// A tuple pattern destructures a tuple, so the source is a tuple literal. Today the borrow the
-		// pattern takes is not tracked, so the write to `xs[i].x` reports nothing.
+		// A tuple pattern destructures a tuple, so the source is a tuple literal.
 		{
 			column: "DynamicElementBorrows",
 			site:   "Destructuring",
@@ -3839,8 +3810,7 @@ func TestFlowMatrixBindingMutabilityAndOwnershipPass(t *testing.T) {
 			want: []string{"5:6-5:13: cannot assign to 'xs[i].x' while it is borrowed as immutable"},
 		},
 		// A return passes the borrow back to the caller, so the caller uses the source while the returned
-		// borrow is live. Today the borrow `pick` returns is not tied to `xs`, so the write to `xs[i].x`
-		// reports nothing.
+		// borrow is live.
 		{
 			column: "DynamicElementBorrows",
 			site:   "Return",
@@ -3857,8 +3827,7 @@ func TestFlowMatrixBindingMutabilityAndOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"8:6-8:13: cannot assign to 'xs[i].x' while it is borrowed as immutable"},
 		},
-		// The module-level binding is `var mut`, so it owns a mutable value. Today storing `p` into
-		// module-level state while it is borrowed reports nothing.
+		// The module-level binding is `var mut`, so it owns a mutable value.
 		{
 			column: "MoveToMutableWhileImmutablyBorrowed",
 			site:   "ModuleLevelStore",
@@ -3876,18 +3845,12 @@ func TestFlowMatrixBindingMutabilityAndOwnershipPass(t *testing.T) {
 		},
 	})
 }
-*/
 
-// DISABLED until #2269 turns the ownership dataflow pass on by default. The cell calls a
-// `mut self` method on a value a `val` binding owns, which moves the value into the method's
-// `self`. The cell passes with `ESCALIER_OWNERSHIP_DATAFLOW=1`. No current check reports that
-// move while the value is borrowed. The comment above the cell says what the solver reports
-// with the pass off.
-/*
+// TestFlowMatrixMutSelfAndOwnershipPass calls a `mut self` method on a value a `val` binding owns,
+// which moves the value into the method's `self`.
 func TestFlowMatrixMutSelfAndOwnershipPass(t *testing.T) {
 	runFlowMatrix(t, []flowCell{
-		// The method takes `mut self`, so the call moves `p` into a mutable owner. Today moving `p`
-		// through the receiver while it is borrowed reports nothing.
+		// The method takes `mut self`, so the call moves `p` into a mutable owner.
 		{
 			column: "MoveToMutableWhileImmutablyBorrowed",
 			site:   "Receiver",
@@ -3910,11 +3873,8 @@ func TestFlowMatrixMutSelfAndOwnershipPass(t *testing.T) {
 		},
 	})
 }
-*/
 
-// DISABLED until #2269 turns the ownership dataflow pass on by default. The cell writes a value
-// that a `mut` parameter owns. It passes with the pass on or off.
-/*
+// TestFlowMatrixMutParameter writes a value that a `mut` parameter owns.
 func TestFlowMatrixMutParameter(t *testing.T) {
 	runFlowMatrix(t, []flowCell{
 		{
@@ -3935,17 +3895,11 @@ func TestFlowMatrixMutParameter(t *testing.T) {
 		},
 	})
 }
-*/
 
-// DISABLED until #2269 turns the ownership dataflow pass on by default. Each cell below passes
-// with `ESCALIER_OWNERSHIP_DATAFLOW=1`. A comment that starts with "Today" says what the current
-// checks report with the pass off, when that differs from the cell's expected result.
-/*
+// TestFlowMatrixOwnershipPass covers the flow-matrix cells the dataflow pass of
+// ownership_dataflow.go decides, crossed with every flow site that F1 lists.
 func TestFlowMatrixOwnershipPass(t *testing.T) {
 	runFlowMatrix(t, []flowCell{
-		// Today the alias-set transition check reports
-		// `cannot assign 'm' to immutable 'd': 'm' is still used mutably after this point`, though the
-		// body only reads `m` afterwards.
 		{
 			column: "Narrow",
 			site:   "Binding",
@@ -3956,9 +3910,6 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 				}
 			`,
 		},
-		// Today the alias-set transition check reports
-		// `cannot assign 'm' to immutable 'd': 'm' is still used mutably after this point`, though the
-		// body only reads `m` afterwards.
 		{
 			column: "Narrow",
 			site:   "Reassignment",
@@ -4071,8 +4022,6 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"5:15-8:8: use of moved value 'p'"},
 		},
-		// Today the closure's capture moves all of `p` instead of `p.a`, so the use reports
-		// `use of moved value 'p'`.
 		{
 			column: "PartialMove",
 			site:   "ClosureCapture",
@@ -4089,8 +4038,6 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"9:14-9:15: use of partially moved value 'p'; field 'p.a' was moved out"},
 		},
-		// Today the closure's capture moves all of `p` instead of `p.a`, so the read of `p.b` reports
-		// `use of moved value 'p'`.
 		{
 			column: "DisjointField",
 			site:   "ClosureCapture",
@@ -4134,8 +4081,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			want: []string{"5:6-5:9: cannot assign to 'p.x' while it is borrowed as immutable"},
 		},
 		// A literal with an expected type gives each element the type of the matching field, so this
-		// literal holds a borrow. Today the borrow a typed literal holds is not tracked, so the write to
-		// `p.x` reports nothing.
+		// literal holds a borrow.
 		{
 			column: "WriteDuringImmutableBorrow",
 			site:   "LiteralElement",
@@ -4149,8 +4095,6 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"5:6-5:9: cannot assign to 'p.x' while it is borrowed as immutable"},
 		},
-		// Today the borrow a pattern takes from `&p` is not tracked, so the write to `p.f.x` reports
-		// nothing.
 		{
 			column: "WriteDuringImmutableBorrow",
 			site:   "Destructuring",
@@ -4164,8 +4108,6 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"5:6-5:11: cannot assign to 'p.f.x' while it is borrowed as immutable"},
 		},
-		// Today a method call's receiver borrow is not checked against its arguments, so `&mut p` reports
-		// nothing.
 		{
 			column: "WriteDuringImmutableBorrow",
 			site:   "Receiver",
@@ -4237,8 +4179,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			want: []string{"5:14-5:16: cannot borrow 'p' as immutable while it is borrowed as mutable"},
 		},
 		// A literal with an expected type gives each element the type of the matching field, so this
-		// literal holds a borrow. Today the borrow a typed literal holds is not tracked, so `&p` reports
-		// nothing.
+		// literal holds a borrow.
 		{
 			column: "ImmutableBorrowDuringMutableBorrow",
 			site:   "LiteralElement",
@@ -4253,8 +4194,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"5:14-5:16: cannot borrow 'p' as immutable while it is borrowed as mutable"},
 		},
-		// The leaf `d` borrows the field `p.f` from `&mut p`, so the report names that field. The
-		// current checks do not track that borrow, so `&p` reports nothing.
+		// The leaf `d` borrows the field `p.f` from `&mut p`, so the report names that field.
 		{
 			column: "ImmutableBorrowDuringMutableBorrow",
 			site:   "Destructuring",
@@ -4269,8 +4209,6 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"5:14-5:16: cannot borrow 'p' as immutable while 'p.f' is borrowed as mutable"},
 		},
-		// Today a method call's receiver borrow is not checked against its arguments, so `&p` reports
-		// nothing.
 		{
 			column: "ImmutableBorrowDuringMutableBorrow",
 			site:   "Receiver",
@@ -4329,8 +4267,6 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 				}
 			`,
 		},
-		// Today a method call's receiver borrow is not checked against its arguments, so `&mut xs[i]`
-		// reports nothing.
 		{
 			column: "DynamicElementBorrows",
 			site:   "Receiver",
@@ -4389,7 +4325,6 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"6:11-6:12: cannot move 'p' while it is borrowed"},
 		},
-		// Today moving `p` through an owned receiver while it is borrowed reports nothing.
 		{
 			column: "MoveWhileImmutablyBorrowed",
 			site:   "Receiver",
@@ -4403,7 +4338,6 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"11:14-11:15: cannot move 'p' while it is borrowed"},
 		},
-		// Today storing `p` into module-level state while it is borrowed reports nothing.
 		{
 			column: "MoveWhileImmutablyBorrowed",
 			site:   "ModuleLevelStore",
@@ -4418,8 +4352,6 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"6:13-6:14: cannot move 'p' while it is borrowed"},
 		},
-		// Today the move is accepted, and the later call reports
-		// `this call runs 'peek', which reads 'p' after it was moved`.
 		{
 			column: "MoveWhileImmutablyBorrowed",
 			site:   "ClosureCapture",
@@ -4449,8 +4381,6 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"5:12-5:13: cannot move 'p' while it is borrowed"},
 		},
-		// Today the alias-set transition check reports `cannot assign 'p' to mutable 'q'`, and the later
-		// call reports that `peek` reads `p` after it was moved.
 		{
 			column: "MoveToMutableWhileImmutablyBorrowed",
 			site:   "ClosureCapture",
@@ -4465,7 +4395,6 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"5:18-5:19: cannot move 'p' while it is borrowed"},
 		},
-		// Today moving `p` through an owned receiver while it is borrowed reports nothing.
 		{
 			column: "MoveWhileMutablyBorrowed",
 			site:   "Receiver",
@@ -4479,7 +4408,6 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"11:14-11:15: cannot move 'p' while it is borrowed"},
 		},
-		// Today storing `p` into module-level state while it is borrowed reports nothing.
 		{
 			column: "MoveWhileMutablyBorrowed",
 			site:   "ModuleLevelStore",
@@ -4494,8 +4422,6 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"6:13-6:14: cannot move 'p' while it is borrowed"},
 		},
-		// Today the move is accepted, and the later call reports
-		// `this call runs 'bump', which writes 'p' after it was moved`.
 		{
 			column: "MoveWhileMutablyBorrowed",
 			site:   "ClosureCapture",
@@ -4511,12 +4437,10 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 		},
 	})
 }
-*/
 
-// DISABLED until #2249 and #2269. Each cell below returns a `&mut` of a local or stores one into
-// a module-level `&mut` binding, which reports `cannot constrain immutable object <: mutable object`
-// as #2249 tracks. With the ownership dataflow pass on, that error is the only one a cell
-// reports beyond its expected result.
+// DISABLED until #2249. Each cell below returns a `&mut` of a local or stores one into a
+// module-level `&mut` binding, which reports `cannot constrain immutable object <: mutable object`
+// as #2249 tracks. That error is the only one a cell reports beyond its expected result.
 /*
 func TestFlowMatrixMutableBorrowOutOfFrame(t *testing.T) {
 	runFlowMatrix(t, []flowCell{
@@ -4586,12 +4510,8 @@ func TestFlowMatrixMutableBorrowOutOfFrame(t *testing.T) {
 // TestFlowMatrixReturnedBorrow covers a borrow a call returns. The callee's signature ties its
 // result to the parameter, so the caller's binding of the result holds the argument's borrow,
 // and the caller uses the source while that borrow is live.
-//
-// The cells run with the ownership dataflow pass on. The current checks do not tie a call's
-// result to its arguments, so with the pass off each cell reports nothing. The pass replaces
-// those checks, so the test does not wait on a fix to them.
 func TestFlowMatrixReturnedBorrow(t *testing.T) {
-	runFlowMatrixWith(t, Options{OwnershipDataflow: true}, []flowCell{
+	runFlowMatrix(t, []flowCell{
 		{
 			column: "WriteDuringImmutableBorrow",
 			site:   "Return",

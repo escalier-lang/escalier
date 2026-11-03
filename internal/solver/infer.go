@@ -90,7 +90,8 @@ type checker struct {
 	debugProv bool
 
 	// ownershipDataflow runs the dataflow pass of ownership_dataflow.go once the flows of a
-	// module or script settle. Options.OwnershipDataflow and ownershipDataflowEnv set it.
+	// module or script settle. newRunChecker sets it from Options.NoOwnershipDataflow as
+	// withOwnershipDataflowResolved returns it.
 	ownershipDataflow bool
 
 	// varIDCounter is the module-wide running allocator for liveness VarIDs (M4 G1).
@@ -1013,7 +1014,8 @@ func newChecker() *checker {
 		varIDs:          liveness.NewVarIDs(),
 		weakBindingVars: set.NewSet[*soltype.TypeVarType](),
 
-		ownershipDataflow: ownershipDataflowFromEnv(),
+		// A checker no run configures checks the way a run with no options does.
+		ownershipDataflow: !withOwnershipDataflowResolved(Options{}).NoOwnershipDataflow,
 	}
 	c.ctx.fusionRecorder = c.recordFusionEdge
 	c.info.ctx = c.ctx

@@ -11,13 +11,11 @@ import (
 // an owned source, so a later use of it is a use-after-move. The flow sites are a
 // binding, a reassignment, a return, an owned-parameter argument, a field store, an
 // object or tuple literal element, and a module-level write. A borrow site leaves the
-// source usable. want is nil for the cases that check cleanly. wantDataflow, when set, is
-// what the case reports with the dataflow pass on, as wantForPass picks.
+// source usable. want is nil for the cases that check cleanly.
 func TestMoveSemantics(t *testing.T) {
 	tests := map[string]struct {
-		src          string
-		want         []string
-		wantDataflow []string
+		src  string
+		want []string
 	}{
 		// Binding an owned value into another owned binding moves it, so the later use of
 		// the source is a use-after-move.
@@ -381,13 +379,8 @@ func TestMoveSemantics(t *testing.T) {
 				"9:7-9:10: cannot assign to 'p.x' while it is borrowed as immutable",
 			},
 		},
-		// The current checks move the borrow p into the global, so the later write through p
-		// is a use-after-move. F2 copies a borrow instead, as D8 decides, and the copy into
-		// the global is `'static`. The dataflow pass follows F2, so the global keeps an
-		// immutable path to p for the rest of the program, and the write through p breaks E2.
-		// A reassignment whose right-hand side branches leaves p moved, the same as a plain
-		// reassignment does in the current checks. The dataflow pass clears the move at either
-		// write.
+		// A reassignment whose right-hand side branches gives p a new value, so the use after it
+		// reads that value, the same as after a plain reassignment.
 		"BranchingReassignmentAfterAMove": {
 			src: `
 				declare fn take(p: {x: number}) -> undefined
@@ -398,9 +391,10 @@ func TestMoveSemantics(t *testing.T) {
 					return p.x
 				}
 			`,
-			want:         []string{"7:13-7:16: use of moved value 'p'"},
-			wantDataflow: []string{},
 		},
+		// F2 copies the borrow p into the global, as D8 decides, and the copy is `'static`.
+		// The global keeps an immutable path to p for the rest of the program, so the write
+		// through p breaks E2.
 		"GlobalEscapeReportsStaticImmutablePath": {
 			src: `
 				var sink = &{x: 0}
@@ -409,8 +403,7 @@ func TestMoveSemantics(t *testing.T) {
 					p.x = 1
 				}
 			`,
-			want:         []string{"5:6-5:7: use of moved value 'p'"},
-			wantDataflow: []string{"5:6-5:9: cannot assign to 'p.x' while it is borrowed as immutable"},
+			want: []string{"5:6-5:9: cannot assign to 'p.x' while it is borrowed as immutable"},
 		},
 		// Moving a value while a mutable borrow of it is live is rejected: freezing p
 		// into immutable q while r still holds a mutable borrow would let r mutate a
@@ -570,7 +563,7 @@ func TestMoveSemantics(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tc.src)
-			require.Equal(t, wantForPass(tc.want, tc.wantDataflow), messagesWithSpan(t, errs))
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
 		})
 	}
 }

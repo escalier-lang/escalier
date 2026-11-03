@@ -356,7 +356,7 @@ func TestForInLoopBindingIsFreshEachIteration(t *testing.T) {
 			_, _, errs := inferSource(t, tc.src)
 			require.Equal(t, tc.want, messagesWithSpan(t, errs))
 
-			res := InferModuleAgainstStdlib(parseModule(t, tc.src), benchTree, Options{OwnershipDataflow: true})
+			res := InferModuleAgainstStdlib(parseModule(t, tc.src), benchTree, Options{NoOwnershipDataflow: true})
 			require.Equal(t, tc.want, messagesWithSpan(t, res.Errors))
 		})
 	}

@@ -7,34 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// inferWithDataflow infers src against the standard library with the dataflow pass on and
-// returns the message of every diagnostic the program reports.
-func inferWithDataflow(t *testing.T, src string) []string {
-	t.Helper()
-
-	res := InferModuleAgainstStdlib(parseModule(t, src), benchTree, Options{OwnershipDataflow: true})
-	msgs := make([]string, len(res.Errors))
-	for i, e := range res.Errors {
-		msgs[i] = e.Message()
-	}
-	return msgs
-}
-
-// wantForPass returns the diagnostics a test that infers with the default options expects:
-// wantDataflow when ownershipDataflowEnv turns the dataflow pass on and wantDataflow is not
-// nil, and want otherwise. An empty wantDataflow that is not nil expects no diagnostic, and
-// comes back as nil to match messagesWithSpan.
-func wantForPass(want, wantDataflow []string) []string {
-	if ownershipDataflowFromEnv() && wantDataflow != nil {
-		if len(wantDataflow) == 0 {
-			return nil
-		}
-		return wantDataflow
-	}
-	return want
-}
-
-// TestOwnershipDataflow covers E1, E2, and E3 with the dataflow pass on: a program each rule
+// TestOwnershipDataflow covers E1, E2, and E3 as the dataflow pass checks them: a program each rule
 // rejects, a program each rule allows, moves and borrows across joins and loops, borrows that
 // last for a statement or for the rest of the program, and a diagnostic the pass leaves to the
 // other checks. errs lists every diagnostic the program reports, and is nil for a program that checks
@@ -1784,7 +1757,7 @@ func TestOwnershipDataflow(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			errs := inferWithDataflow(t, tc.src)
+			_, errs := inferAgainstTree(t, tc.src)
 			if tc.errs == nil {
 				require.Empty(t, errs)
 				return
@@ -1795,8 +1768,10 @@ func TestOwnershipDataflow(t *testing.T) {
 }
 
 // TestOwnershipDataflowMatchesCurrentChecks covers programs whose diagnostics the dataflow
-// pass and the current checks report alike. Each program runs with the flag off and with it
-// on, and both runs report want, with spans. The cases cover a call that runs a closure, a
+// pass and the current checks report alike. Each program runs once with
+// Options.NoOwnershipDataflow set and once with it clear, and both runs report want, with
+// spans. When ownershipDataflowEnv turns the pass off, the run with the option clear would
+// repeat the current checks, so it is skipped. The cases cover a call that runs a closure, a
 // write through a `number`-typed index, the span a moved place is blamed at, the name of a
 // moved field or tuple, a write that uses a moved place beside a live borrow, and a borrow
 // copied into a second binding.
@@ -2361,9 +2336,36 @@ func TestOwnershipDataflowMatchesCurrentChecks(t *testing.T) {
 	for _, tc := range cases {
 		for _, dataflow := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/dataflow=%t", tc.name, dataflow), func(t *testing.T) {
-				res := InferModuleAgainstStdlib(parseModule(t, tc.src), benchTree, Options{OwnershipDataflow: dataflow})
+				if dataflow && !ownershipDataflowFromEnv() {
+					t.Skipf("%s turns the dataflow pass off", ownershipDataflowEnv)
+				}
+				res := InferModuleAgainstStdlib(parseModule(t, tc.src), benchTree, Options{NoOwnershipDataflow: !dataflow})
 				require.Equal(t, tc.want, messagesWithSpan(t, res.Errors))
 			})
 		}
+	}
+}
+
+// TestOwnershipDataflowFromEnv covers the values of ownershipDataflowEnv that turn the dataflow
+// pass off and a sample of those that leave it on.
+func TestOwnershipDataflowFromEnv(t *testing.T) {
+	cases := []struct {
+		value string
+		on    bool
+	}{
+		{value: "", on: true},
+		{value: "1", on: true},
+		{value: "on", on: true},
+		{value: "0", on: false},
+		{value: " 0 ", on: false},
+		{value: "false", on: false},
+		{value: "FALSE", on: false},
+		{value: "Off", on: false},
+	}
+	for _, tc := range cases {
+		t.Run(fmt.Sprintf("%q", tc.value), func(t *testing.T) {
+			t.Setenv(ownershipDataflowEnv, tc.value)
+			require.Equal(t, tc.on, ownershipDataflowFromEnv())
+		})
 	}
 }

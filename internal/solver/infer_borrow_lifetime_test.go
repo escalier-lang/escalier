@@ -415,15 +415,13 @@ fn cache(p: &{x: number}) {
 // as F1 states. A borrow source is copied into the literal, and an owned source is moved. A
 // union source is moved when it has an owned reference-shaped member and copied otherwise. A
 // field read through a borrow still needs its borrow written, by F4. fnType, when set, is the
-// type of `f`. wantDataflow, when set, is what the case reports with the dataflow pass on, as
-// wantForPass picks.
+// type of `f`.
 func TestBorrowIntoAnUnannotatedLiteral(t *testing.T) {
 	tests := []struct {
-		name         string
-		src          string
-		fnType       string
-		want         []string
-		wantDataflow []string
+		name   string
+		src    string
+		fnType string
+		want   []string
 	}{
 		{
 			name: "MutableBorrowElement",
@@ -531,8 +529,7 @@ func TestBorrowIntoAnUnannotatedLiteral(t *testing.T) {
 			fnType: "fn <'a>(s: {x: number} | &'a {x: number}) -> {f: {x: number} | &'a {x: number}}",
 		},
 		{
-			// The union has an owned member, so the literal moves s. The current checks move no
-			// union-typed parameter, at a binding or at a literal element.
+			// The union has an owned member, so the literal moves s.
 			name: "MixedUnionElementMoves",
 			src: `
 				fn f(s: {x: number} | &{x: number}) {
@@ -540,7 +537,7 @@ func TestBorrowIntoAnUnannotatedLiteral(t *testing.T) {
 					return s
 				}
 			`,
-			wantDataflow: []string{"4:13-4:14: use of moved value 's'"},
+			want: []string{"4:13-4:14: use of moved value 's'"},
 		},
 		{
 			name: "UnwrittenFieldBorrow",
@@ -565,7 +562,7 @@ func TestBorrowIntoAnUnannotatedLiteral(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tc.src)
-			require.Equal(t, wantForPass(tc.want, tc.wantDataflow), messagesWithSpan(t, errs))
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
 			if tc.fnType != "" {
 				require.Equal(t, tc.fnType, values["f"])
 			}

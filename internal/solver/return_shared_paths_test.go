@@ -19,9 +19,6 @@ func TestSharedReturnPaths(t *testing.T) {
 	tests := map[string]struct {
 		src  string
 		want []string
-		// wantDataflow is what the case expects with the dataflow pass on, when that differs
-		// from want. The pass reports a pair of paths by E2 in place of the frame-exit check.
-		wantDataflow []string
 	}{
 		// Two borrows of disjoint fields of one local reach data neither can see the other
 		// write, so the pair is not a hazard. The carrier is a binding, which pairs the return
@@ -40,8 +37,8 @@ func TestSharedReturnPaths(t *testing.T) {
 		},
 		// The same field reached by a writer and a reader is the hazard the disjoint cases are
 		// measured against. Both paths reach b.x, and the write through p is visible through q,
-		// whose type says b.x does not change. With the pass on, t holds both borrows and is
-		// used by the return, so `&b.x` breaks E2 against `&mut b.x`.
+		// whose type says b.x does not change. t holds both borrows and is used by the return,
+		// so `&b.x` breaks E2 against `&mut b.x`.
 		"OneFieldWrittenAndReadReported": {
 			src: `
 				fn build() {
@@ -50,8 +47,7 @@ func TestSharedReturnPaths(t *testing.T) {
 					return t
 				}
 			`,
-			want:         []string{"5:13-5:14: returned value reaches 'b' through a mutable path and an immutable one"},
-			wantDataflow: []string{"4:31-4:35: cannot borrow 'b.x' as immutable while it is borrowed as mutable"},
+			want: []string{"4:31-4:35: cannot borrow 'b.x' as immutable while it is borrowed as mutable"},
 		},
 		// Rule 3: two mutable references to one value are allowed while their types match. Both
 		// paths reach b.x as `&mut {n: number}`, so neither can observe a type the other breaks,
@@ -77,8 +73,7 @@ func TestSharedReturnPaths(t *testing.T) {
 					return t
 				}
 			`,
-			want:         []string{"5:13-5:14: returned value reaches 'b' through a mutable path and an immutable one"},
-			wantDataflow: []string{"4:29-4:33: cannot borrow 'b.y' as immutable while 'b' is borrowed as mutable"},
+			want: []string{"4:29-4:33: cannot borrow 'b.y' as immutable while 'b' is borrowed as mutable"},
 		},
 		// The second repro in #1263. a.peer and `&mut b` both lead to b, and a holds a mutable
 		// borrow of b. The pair is two writers, and Rule 3 allows it.
@@ -113,9 +108,8 @@ func TestSharedReturnPaths(t *testing.T) {
 					return [a.peer, &mut b]
 				}
 			`,
-			want: []string{"5:13-5:29: returned value reaches 'b' through a mutable path and an immutable one"},
 			// a's immutable borrow of b is live through the return, so `&mut b` breaks E2.
-			wantDataflow: []string{"5:22-5:28: cannot borrow 'b' as mutable while it is borrowed as immutable"},
+			want: []string{"5:22-5:28: cannot borrow 'b' as mutable while it is borrowed as immutable"},
 		},
 		// Two readers see the same value, so nothing can disagree.
 		"TwoSharedPathsOk": {
@@ -199,11 +193,10 @@ func TestSharedReturnPaths(t *testing.T) {
 					return [&b, &mut b, a.peer]
 				}
 			`,
-			want: []string{"10:13-10:33: returned value reaches 'b' through a mutable path and an immutable one"},
 			// The store gives `a.peer` the `&mut b` argument, and the return reads `a.peer`, so
 			// `&b` breaks E2 against it. `&b` lasts for the return statement, so `&mut b` beside
 			// it breaks E2 too.
-			wantDataflow: []string{
+			want: []string{
 				"10:14-10:16: cannot borrow 'b' as immutable while it is borrowed as mutable",
 				"10:18-10:24: cannot borrow 'b' as mutable while it is borrowed as immutable",
 			},
@@ -224,11 +217,10 @@ func TestSharedReturnPaths(t *testing.T) {
 					return [&b, &mut b, a.peer, b.inner]
 				}
 			`,
-			want: []string{"11:13-11:42: returned value reaches 'b' through a mutable path and an immutable one"},
 			// The pass reports `&b` beside the `&mut b` that `a.peer` holds, and `&mut b` beside
 			// `&b`, by E2. It reports the move of b.inner while `&b` is live by E3. Each is a
 			// separate rule the return breaks.
-			wantDataflow: []string{
+			want: []string{
 				"11:14-11:16: cannot borrow 'b' as immutable while it is borrowed as mutable",
 				"11:18-11:24: cannot borrow 'b' as mutable while it is borrowed as immutable",
 				"11:34-11:41: cannot move 'b.inner' while it is borrowed",
@@ -260,9 +252,8 @@ func TestSharedReturnPaths(t *testing.T) {
 					return [&mut b, &b]
 				}
 			`,
-			want: []string{"8:13-8:25: returned value reaches 'b' through a mutable path and an immutable one", "6:6-6:9: cannot assign to 'b.v' while it is borrowed as immutable"},
 			// `&mut b` lasts for the return statement, so `&b` beside it breaks E2.
-			wantDataflow: []string{
+			want: []string{
 				"6:6-6:9: cannot assign to 'b.v' while it is borrowed as immutable",
 				"8:22-8:24: cannot borrow 'b' as immutable while it is borrowed as mutable",
 			},
@@ -271,7 +262,7 @@ func TestSharedReturnPaths(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tc.src)
-			require.Equal(t, wantForPass(tc.want, tc.wantDataflow), messagesWithSpan(t, errs))
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
 		})
 	}
 }

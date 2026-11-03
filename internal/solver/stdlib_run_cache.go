@@ -49,6 +49,9 @@ type ambientKey struct {
 	// loading the packages binds or reports.
 	noAmbientNames    bool
 	checkJsDecorators bool
+	// ownershipDataflow is whether the run checks with the dataflow pass, which changes the
+	// diagnostics loading a package with a function body reports.
+	ownershipDataflow bool
 }
 
 // ambientEntry holds one cached checker. once guards the load, so concurrent runs
@@ -80,7 +83,8 @@ var ambientCheckers = struct {
 // The run loads every other package through source. groups are the run's groups from
 // BuildPackageClosure. ok is false when a file in the closure cannot be read or an
 // earlier load of the same tree panicked, and the caller then starts from
-// newRunChecker.
+// newRunChecker. opts must come from withOwnershipDataflowResolved, so the cache key and
+// the loaded checker read the same NoOwnershipDataflow.
 func ambientChecker(dir string, source ModuleSource, groups PackageGroups, opts Options) (c *checker, ok bool) {
 	key, ok := ambientKeyOf(dir, groups, opts)
 	if !ok {
@@ -109,7 +113,6 @@ func ambientChecker(dir string, source ModuleSource, groups PackageGroups, opts 
 	}
 	run := entry.checker.fork(source, StdlibGroupSource(dir), groups)
 	run.dependencies = opts.Dependencies
-	run.ownershipDataflow = run.ownershipDataflow || opts.OwnershipDataflow
 	return run, true
 }
 
@@ -142,6 +145,7 @@ func ambientKeyOf(dir string, groups PackageGroups, opts Options) (ambientKey, b
 		closure:           strings.Join(uris, ","),
 		noAmbientNames:    opts.NoAmbientNames,
 		checkJsDecorators: opts.CheckJsDecorators,
+		ownershipDataflow: !opts.NoOwnershipDataflow,
 	}
 	copy(key.digest[:], sum.Sum(nil))
 	return key, true
@@ -171,8 +175,9 @@ func loadAmbientChecker(dir string, groups PackageGroups, opts Options) *checker
 	// The packages loaded here are pseudo-packages, which never reach node_modules
 	// or the project's dependency list, so the load ignores both.
 	c := newRunChecker(StdlibSource(dir), StdlibGroupSource(dir), groups, Options{
-		NoAmbientNames:    opts.NoAmbientNames,
-		CheckJsDecorators: opts.CheckJsDecorators,
+		NoAmbientNames:      opts.NoAmbientNames,
+		CheckJsDecorators:   opts.CheckJsDecorators,
+		NoOwnershipDataflow: opts.NoOwnershipDataflow,
 	})
 	c.ambientScope()
 	c.bindAmbientExports()

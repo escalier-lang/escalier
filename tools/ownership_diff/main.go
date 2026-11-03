@@ -2,8 +2,10 @@
 // diagnostics of the dataflow pass in internal/solver/ownership_dataflow.go. It runs the
 // solver tests and the fixture tests twice, once with ESCALIER_OWNERSHIP_DATAFLOW=0 and once
 // with ESCALIER_OWNERSHIP_DATAFLOW=1, and prints each diagnostic that one run reports and
-// the other does not. The report groups the differences by test, and ends with a count of
-// each kind of difference.
+// the other does not. The pass runs by default, and the value 0 turns it off. A test that
+// sets Options.NoOwnershipDataflow runs with the pass off in both runs, so it never differs.
+// The report groups the differences by test, and ends with a count of each kind of
+// difference.
 //
 //	go run ./tools/ownership_diff [-pkgs ./internal/solver/,./cmd/...] [-run <regexp>]
 //
@@ -18,7 +20,7 @@
 // which the trace names by a hash of its sources, rather than from the same test. A script
 // has no such key, and its diagnostics match only within one test.
 //
-// The `old` side is the run with the flag off, and the `new` side the run with it on.
+// The `old` side is the run with the pass off, and the `new` side the run with it on.
 package main
 
 import (

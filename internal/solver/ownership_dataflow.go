@@ -71,21 +71,34 @@ import (
 //   - The caller reads a place under a parameter whose referent the caller owns once the
 //     body returns or suspends, so the loans of such a place count at those points too.
 //
-// The pass runs only when the ownershipDataflow flag is set. Its diagnostics then take the
-// place of the ones replacedByDataflow lists, so the diagnostics of the two checkers can be
-// compared program by program.
+// The pass runs unless the ownershipDataflow flag is cleared. Its diagnostics take the place
+// of the ones replacedByDataflow lists. Clearing the flag leaves the current checks' own
+// diagnostics, so the diagnostics of the two checkers can be compared program by program.
 
-// ownershipDataflowEnv is the environment variable that turns the dataflow pass on for every
-// run, whatever Options says. The value 1 turns it on.
+// ownershipDataflowEnv is the environment variable that turns the dataflow pass off for every
+// run, whatever Options says. The values 0, false, and off turn it off, in any case and with
+// surrounding whitespace. Any other value leaves it on.
 const ownershipDataflowEnv = "ESCALIER_OWNERSHIP_DATAFLOW"
 
-// ownershipDataflowFromEnv reports whether ownershipDataflowEnv turns the dataflow pass on.
+// ownershipDataflowFromEnv reports whether ownershipDataflowEnv leaves the dataflow pass on.
 func ownershipDataflowFromEnv() bool {
-	return os.Getenv(ownershipDataflowEnv) == "1"
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(ownershipDataflowEnv))) {
+	case "0", "false", "off":
+		return false
+	}
+	return true
+}
+
+// withOwnershipDataflowResolved returns opts with NoOwnershipDataflow set when opts or
+// ownershipDataflowEnv turns the dataflow pass off. A checker reads only the returned
+// NoOwnershipDataflow, so the environment is read once per run.
+func withOwnershipDataflowResolved(opts Options) Options {
+	opts.NoOwnershipDataflow = opts.NoOwnershipDataflow || !ownershipDataflowFromEnv()
+	return opts
 }
 
 // replacedByDataflow reports whether err is a diagnostic of E1, E2, or E3 that the dataflow
-// pass reports in place of the current checks when the ownershipDataflow flag is set. A
+// pass reports in place of the current checks while the ownershipDataflow flag is set. A
 // diagnostic about a closure's captures during a call is E4's, which the pass does not
 // check, so it stays. That covers one that names a closure a call runs, a second call of a
 // closure that moves a capture, and a conflict with a closure's capture.
@@ -103,8 +116,8 @@ func replacedByDataflow(err SolverError) bool {
 	return false
 }
 
-// runOwnershipDataflow checks every event table in c.info that it has not checked yet, when
-// the ownershipDataflow flag is set. It drops each diagnostic replacedByDataflow lists from
+// runOwnershipDataflow checks every event table in c.info that it has not checked yet, unless
+// the ownershipDataflow flag is cleared. It drops each diagnostic replacedByDataflow lists from
 // c.errs and appends the pass's own. It must run after settleAllFlows, since the pass reads
 // only settled events.
 func (c *checker) runOwnershipDataflow() {
@@ -176,7 +189,7 @@ func mergeDataflowErrors(errs, found []SolverError) []SolverError {
 }
 
 // keptOwnershipDiagnostic reports whether err is an ownership diagnostic of the current checks
-// that stays with the dataflow pass on. That is an E4 diagnostic, which names a closure a call
+// that the dataflow pass keeps. That is an E4 diagnostic, which names a closure a call
 // runs, or a frame-exit diagnostic.
 func keptOwnershipDiagnostic(err SolverError) bool {
 	switch err.(type) {
