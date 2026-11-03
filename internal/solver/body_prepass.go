@@ -446,9 +446,7 @@ func recordExtraParamVarIDs(fnScope *Scope, ids map[string]liveness.VarID) {
 	}
 }
 
-// collectParamVarIDs returns the VarID of every parameter leaf binding. The escape check
-// consults it to exempt a borrow of a parameter, which carries a caller-supplied lifetime
-// that already outlives the frame, from an escaping borrow of a function-local.
+// collectParamVarIDs returns the VarID of every parameter leaf binding.
 func collectParamVarIDs(varIDs *liveness.VarIDs, astParams []*ast.Param) set.Set[liveness.VarID] {
 	ids := set.NewSet[liveness.VarID]()
 	for _, param := range astParams {

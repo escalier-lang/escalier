@@ -927,9 +927,12 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// produces the function's value. This mirrors the old checker's
 		// inferFuncBody.
 		c.inferBlock(fnScope, lvl, body)
-		// The first rule of D16 has to settle the borrows' lifetimes before any return is
-		// decided owned, which happens while the escapes are resolved below.
+		// The first rule of D16 has to settle the borrows' lifetimes before
+		// commitOwnedReturns decides which returns are owned.
 		c.shareOutlivingBorrowLifetimes()
+		// The dataflow pass reads what each retained closure writes, which needs the
+		// whole body's borrow graph.
+		c.noteRetainedClosureWrites()
 		// With the whole body walked, every move site is recorded, so the consumed
 		// lattice is complete. Replay the recorded reads against it to report
 		// use-after-move. This runs before popFuncCtx restores the outer context, since
@@ -2413,7 +2416,7 @@ func (c *checker) consumeCallArgs(e *ast.CallExpr, fn *soltype.FuncType, ref liv
 			}
 			for _, absorbed := range e.Args[i:] {
 				c.consumeOwned(absorbed, c.info.TypeOf(absorbed), absorbed, ref)
-				c.recordEscapeSite(absorbed, ref)
+				c.recordFlowOut(absorbed, ref, false)
 			}
 			return
 		}
@@ -2421,12 +2424,10 @@ func (c *checker) consumeCallArgs(e *ast.CallExpr, fn *soltype.FuncType, ref liv
 			continue
 		}
 		c.consumeOwned(arg, c.info.TypeOf(arg), arg, ref)
-		// A consuming argument carries its value out of the frame into the callee, so a
-		// borrow of a local the argument carries escapes unless the argument owns a
-		// self-contained component the move re-anchors. recordEscapeSite records the
-		// argument for the post-pass to decide. A `&`/`&mut` parameter borrows instead of
-		// consuming, so the gate above skips it.
-		c.recordEscapeSite(arg, ref)
+		// A consuming argument carries its value into the callee, so it can take the locals it
+		// borrows along with it. A `&`/`&mut` parameter borrows instead of consuming, so the
+		// gate above skips it.
+		c.recordFlowOut(arg, ref, false)
 	}
 }
 
@@ -2532,8 +2533,8 @@ func (c *checker) recordCallArgEffects(
 	c.checkExplicitBorrowArgs(e, fn)
 
 	// A borrow argument the signature stores into another argument, or into a method's
-	// receiver, aliases the two for as long as the target lives. Record that edge here rather
-	// than leaving the alias invisible to the escape check and the component move.
+	// receiver, aliases the two for as long as the target lives. Record that edge in the
+	// borrow graph, so a closure the target comes to hold is found through it.
 	recv, self := c.calleeReceiver(e.Callee)
 	c.recordCallStoreEdges(e, fn, recv, self, consumeRef)
 }
@@ -2566,10 +2567,6 @@ func (c *checker) consumeReceiver(access ast.Node) {
 	if !ok {
 		return
 	}
-	if c.fn.movedSources == nil {
-		c.fn.movedSources = set.NewSet[ast.Node]()
-	}
-	c.fn.movedSources.Add(recv)
 	c.recordMovePlace(p, recv, ref)
 	c.emitConsumedReceiver(accessExpr, recv)
 }
@@ -2928,19 +2925,16 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 				c.consumeOwned(e.Right, c.info.TypeOf(e.Right), e.Right, ref)
 			}
 		}
-		// Record any borrow of a local the reassigned value introduces, so a later
-		// flow-out of the target finds it. `a = &mut b` records a → b. Recording strong-
-		// updates the binding, clearing its prior referent, and the flush lands the new
-		// edge set at this statement's CFG point so the flow-sensitive graph joins it at
-		// later merges.
+		// Record any borrow of a local the reassigned value introduces. `a = &mut b` records
+		// a → b. Recording strong-updates the binding, clearing its prior referent, and the
+		// flush lands the new edge set at this statement's CFG point so the flow-sensitive
+		// graph joins it at later merges.
 		if !b.ModuleLevel {
 			c.recordBorrowEdges(c.varIDs.Of(target), e.Right)
 			// A value that keeps a closure keeps it reachable while the target is live.
 			c.noteRetainedHolder(c.varIDs.Of(target), e.Right)
 			if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
 				c.flushBorrowDirty(ref)
-				// The reassignment repoints the binding, so the loans it held are gone.
-				c.endLoansOnRebind(c.varIDs.Of(target), e.Right)
 			}
 		}
 	}
@@ -3120,15 +3114,11 @@ func (c *checker) inferFieldAssign(scope *Scope, lvl int, e *ast.BinaryExpr, obj
 			if !c.rejectModuleLevelMove(scope, e.Right) {
 				c.consumeOwned(e.Right, source, e.Right, ref)
 			}
-			// Storing a value that borrows a local into a borrow parameter's field hands the
-			// local to the caller, since the parameter's object outlives the frame.
-			// checkParamFieldStoreEscape applies only when the receiver is such a parameter,
-			// and records the store for the post-pass to decide. A closure in the value
-			// borrows what it captures, so it is weighed the same way and moves nothing.
-			c.checkParamFieldStoreEscape(object, name, e.Right, ref)
-			// A store into a LOCAL receiver's field records a borrow edge instead, rooted at
-			// the field. It does not escape until the receiver itself flows out, at which
-			// point the recorded edge is followed. `b.peer = &mut d` records b → d at [peer].
+			// A store into a borrow parameter's field hands the value to the caller, so it can
+			// take the locals it borrows along with it.
+			c.recordParamStoreFlowOut(object, e.Right, ref)
+			// A store into a LOCAL receiver's field records a borrow edge rooted at the field.
+			// `b.peer = &mut d` records b → d at [peer].
 			c.recordFieldStoreEdges(object, name, e.Right, ref)
 		}
 	}
@@ -3242,12 +3232,13 @@ func (c *checker) inferElementAssign(scope *Scope, lvl int, e *ast.BinaryExpr, i
 	}
 	if c.fn != nil && len(c.errs) == errsBefore && !missing {
 		if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
-			// Storing an owned value into an element moves it into the receiver, and storing
-			// a borrow of a local into a parameter's element escapes, as a field store does.
+			// Storing an owned value into an element moves it into the receiver, and a store
+			// into a borrow parameter's element hands the value to the caller, as a field store
+			// does.
 			if !c.rejectModuleLevelMove(scope, e.Right) {
 				c.consumeOwned(e.Right, source, e.Right, ref)
 			}
-			c.checkParamElementStoreEscape(ix.Object, e.Left, e.Right, ref)
+			c.recordParamStoreFlowOut(ix.Object, e.Right, ref)
 			c.recordElementStoreEdges(ix.Object, e.Right, ref)
 		}
 	}
@@ -3372,7 +3363,7 @@ func (c *checker) inferAccessorAssign(
 			if !c.rejectModuleLevelMove(scope, e.Right) {
 				c.consumeOwned(e.Right, source, e.Right, ref)
 			}
-			c.recordEscapeSite(e.Right, ref)
+			c.recordFlowOut(e.Right, ref, false)
 		}
 	}
 	// The assignment evaluates to the value just written, widened the way a field write

@@ -3,9 +3,6 @@ package solver
 import (
 	"testing"
 
-	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/liveness"
-	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/stretchr/testify/require"
 )
 
@@ -422,9 +419,9 @@ func TestReturnValueBorrows(t *testing.T) {
 			},
 		},
 		// The same shape with b holding an immutable borrow of c sends c to the callee through
-		// a read-only path. The mutable return then disagrees with it, and the report names
-		// c, the local the two paths share.
-		"ReturnOfALocalThatLeftImmutablyThroughAnotherLocal": {
+		// a read-only path. take keeps nothing, so that path ends when the call returns, and
+		// the mutable return is the only path to c left. L1 accepts it.
+		"ReturnOfALocalAfterACallReadItThroughAnotherLocal": {
 			src: `
 				declare fn take(x: {slot: &mut {peer: &{value: number}}}) -> undefined
 				fn f() -> &mut {value: number} {
@@ -434,7 +431,7 @@ func TestReturnValueBorrows(t *testing.T) {
 					return &mut c
 				}
 			`,
-			want: []string{"7:13-7:19: 'c' leaves the function through a mutable path and an immutable one"},
+			want: nil,
 			types: map[string]string{
 				"take": "fn (x: {slot: &mut {peer: &{value: number}}}) -> undefined",
 				"f":    "fn () -> &mut {value: number}",
@@ -601,9 +598,9 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 // TestConnectedComponentMove covers the connected-component move: an owned value carrying a
 // self-contained graph of borrowed locals flows out of the frame as a unit. The borrowed
 // locals are reachable only through the graph, so the move re-anchors them to the
-// destination region and consumes every binding in the component, rather than reporting an
-// escape. When a node is also reachable from a live binding outside the component, the move
-// does not apply and the ordinary escape stands.
+// destination region and consumes every binding in the component. When a node is also
+// reachable from a live binding outside the component, the move does not apply, and L1
+// accepts the borrow that leaves the frame.
 //
 // The dataflow pass has no component move. F2 moves the carrier and copies each borrow it
 // holds, and L1 lets a borrow outlive the binding that owns its place. So a borrowed local
@@ -794,7 +791,7 @@ func TestConnectedComponentMove(t *testing.T) {
 		// reached through two mutable paths, so borrow-stripping keeps the borrows and the
 		// moved type stays `{l: &mut {peer: &mut {x: number}}, r: &mut {peer: &mut {x:
 		// number}}}`. The two mutable paths to d are both internal to the moved component, the
-		// same aliasing MutableAliasRejectsMove rejects when one path is left live outside it.
+		// same aliasing MutableAliasOutsideTheComponent has with one path left live outside it.
 		"MutableDiamondMovesAsUnit": {
 			src: `
 				fn build() {
@@ -809,13 +806,12 @@ func TestConnectedComponentMove(t *testing.T) {
 			types: map[string]string{"build": "fn () -> {l: &mut {peer: &mut {x: number}}, r: &mut {peer: &mut {x: number}}}"},
 		},
 		// A node mutably aliased outside the moved component blocks the move: b and c each hold
-		// `&mut d`, and c is read after the store, so it is a live second mutable path to d when
-		// storing b tries to move it out. This is the same external-reference rejection as the
-		// shared case, and it is what keeps a mutable same-graph alias from being co-moved out
-		// from under a live writer. The escape is demonstrated at a store site, not a return,
-		// because at a return every local is dead — see DeadExternalRefAllowsMove — so a live
-		// external alias only exists where it is used after the escape.
-		"MutableAliasRejectsMove": {
+		// `&mut d`, and c is read after the call, so it is a live second mutable path to d when
+		// b moves into store. d stays with the frame, and the callee receives b's borrow of it.
+		// Two mutable paths to d agree that it can change, and nothing in the frame uses d
+		// through b afterwards, so L1 accepts the call. The case uses a consuming argument rather
+		// than a return, because at a return every local is dead. See DeadExternalRefAllowsMove.
+		"MutableAliasOutsideTheComponent": {
 			src: `
 				fn store(x: {peer: &mut {x: number}}) {}
 				fn f() {
@@ -826,7 +822,7 @@ func TestConnectedComponentMove(t *testing.T) {
 					val y = c
 				}
 			`,
-			want: []string{"7:12-7:13: borrowed value 'd' does not live long enough to escape the function"},
+			want: nil,
 			types: map[string]string{
 				"store": "fn (x: {peer: &mut {x: number}}) -> undefined",
 				"f":     "fn () -> undefined",
@@ -837,8 +833,8 @@ func TestConnectedComponentMove(t *testing.T) {
 		// reachable from a is {a, b, c, d} and both `&mut d` paths are internal to it. The
 		// model permits several `&mut` borrows live at once, so this is a legal value, and
 		// returning a re-anchors the whole graph — both internal mutable paths included — with
-		// no external observer. This is the mirror of MutableAliasRejectsMove: there the second
-		// `&mut d` was left outside the component and rejected; here a owns both, so it is not.
+		// no external observer. This is the mirror of MutableAliasOutsideTheComponent, where the
+		// second `&mut d` is left outside the component and the move does not apply.
 		// d is reached through two paths, so borrow-stripping keeps the borrows and this return
 		// type stays borrowed.
 		"InternalMutableAliasMovesAsUnit": {
@@ -914,11 +910,11 @@ func TestConnectedComponentMove(t *testing.T) {
 			types: map[string]string{"build": "fn () -> {peer: {value: number}}"},
 		},
 		// A node reachable from a LIVE binding outside the component is not self-contained: keep
-		// holds `&b` and is read after the store, so it is a live external reference to b when
-		// storing a tries to move the {a, b} component out. The move does not apply and the
-		// ordinary escape stands. Contrast DeadExternalRefAllowsMove, where the same borrow was
-		// dead at a return.
-		"LiveExternalRefRejectsMove": {
+		// holds `&b` and is read after the call, so it is a live external reference to b when a
+		// moves into store. The move does not apply, and the callee receives a's immutable borrow
+		// of b. keep reads b and nothing writes it, so L1 accepts the call. Contrast
+		// DeadExternalRefAllowsMove, where the same borrow was dead at a return.
+		"LiveExternalRefOutsideTheComponent": {
 			src: `
 				fn store(x: {peer: &{value: number}}) {}
 				fn f() {
@@ -929,7 +925,7 @@ func TestConnectedComponentMove(t *testing.T) {
 					val y = keep
 				}
 			`,
-			want: []string{"7:12-7:13: borrowed value 'b' does not live long enough to escape the function"},
+			want: nil,
 			types: map[string]string{
 				"store": "fn (x: {peer: &{value: number}}) -> undefined",
 				"f":     "fn () -> undefined",
@@ -941,70 +937,6 @@ func TestConnectedComponentMove(t *testing.T) {
 			values, _, errs := inferSource(t, tc.src)
 			require.Equal(t, tc.want, messagesWithSpan(t, errs))
 			require.Equal(t, tc.types, values)
-		})
-	}
-}
-
-// TestComponentEscapeCyclicGraph drives the component reachability walk over a cyclic
-// borrow-edge graph. A genuine cycle — a borrows b and b borrows a — is not expressible in
-// source today, since it needs a recursive type alias (M7) for the mutually-referential
-// carriers, and the `.push` form the requirements' cyclic `build()` uses does not record
-// borrow edges. So the cycle handling is exercised by building the edge graph directly and
-// asserting escapingLocalsOf terminates and returns every node, the root included.
-//
-// escapingLocalsOf reaching the root back through the cycle is the case resolveComponentEscapes
-// guards when it skips the root while consuming co-moved locals, so a cyclic component does
-// not double-move its own root.
-func TestComponentEscapeCyclicGraph(t *testing.T) {
-	edge := func(referent liveness.VarID) fieldBorrow {
-		return fieldBorrow{path: nil, referent: referent}
-	}
-	tests := map[string]struct {
-		edges map[liveness.VarID][]fieldBorrow
-		root  liveness.VarID
-		want  []liveness.VarID
-	}{
-		// A two-node cycle: a ⇄ b. Reaching b follows b's edge back to a, so the escaping
-		// set closes over both nodes and includes the root a.
-		"TwoNodeCycle": {
-			edges: map[liveness.VarID][]fieldBorrow{
-				1: {edge(2)},
-				2: {edge(1)},
-			},
-			root: 1,
-			want: []liveness.VarID{1, 2},
-		},
-		// A three-node cycle: a → b → c → a. Every node is reachable, and the walk's seen set
-		// terminates the loop at the third hop rather than recurring forever.
-		"ThreeNodeCycle": {
-			edges: map[liveness.VarID][]fieldBorrow{
-				1: {edge(2)},
-				2: {edge(3)},
-				3: {edge(1)},
-			},
-			root: 1,
-			want: []liveness.VarID{1, 2, 3},
-		},
-		// A node with a self-loop plus an onward edge: a → a and a → b. The self-edge is
-		// followed once and collapsed by the seen set, and b is still reached.
-		"SelfLoopAndOnward": {
-			edges: map[liveness.VarID][]fieldBorrow{
-				1: {edge(1), edge(2)},
-			},
-			root: 1,
-			want: []liveness.VarID{1, 2},
-		},
-	}
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			c := newTestChecker()
-			c.fn = &funcCtx{
-				paramVarIDs: set.NewSet[liveness.VarID](),
-			}
-			e := &ast.IdentExpr{Name: "root"}
-			c.varIDs.Set(e, tc.root)
-			got := c.escapingLocalsOf(e, tc.edges).ToSlice()
-			require.ElementsMatch(t, tc.want, got)
 		})
 	}
 }

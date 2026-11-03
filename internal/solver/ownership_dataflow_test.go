@@ -917,8 +917,7 @@ func TestOwnershipDataflow(t *testing.T) {
 		},
 		{
 			// a's immutable borrow of b is live through the return, so `&mut b` breaks E2.
-			// The frame-exit check finds the same pair of paths and is not reported again.
-			name: "E2AtAReturnReplacesTheSharedPathsCheck",
+			name: "E2AtAReturn",
 			src: `
 				fn build() -> [&{value: number}, &mut {value: number}] {
 					val mut b = {value: 2}
@@ -930,8 +929,8 @@ func TestOwnershipDataflow(t *testing.T) {
 		},
 		{
 			// The store's `&b` breaks E2 against a's mutable borrow, which the return keeps
-			// live. The frame-exit check pairs the same store with the return.
-			name: "E2AtAStoreReplacesTheMixedOutflowCheck",
+			// live.
+			name: "E2AtAStoreTheReturnKeepsLive",
 			src: `
 				fn f(p: &mut {r: &{value: number}}) -> {peer: &mut {value: number}} {
 					val mut b = {value: 1}
@@ -945,9 +944,8 @@ func TestOwnershipDataflow(t *testing.T) {
 		{
 			// The caller reads `p.r` only after the return, when `a` is dead, so `&b.x` breaks no
 			// rule. The caller reaches both `b.y` borrows, so the pass reports E2 at the store
-			// into q. That pair is the one the frame-exit check reports, so the frame-exit
-			// diagnostic is dropped.
-			name: "E2OnTheSamePairReplacesTheMixedOutflowCheck",
+			// into q.
+			name: "E2AtTheSecondStoreOfAPair",
 			src: `
 				fn f(p: &mut {r: {x: &{v: number}, y: &{v: number}}}, q: &mut {r: &mut {v: number}}) {
 					val mut b = {x: {v: 1}, y: {v: 2}}
@@ -961,7 +959,7 @@ func TestOwnershipDataflow(t *testing.T) {
 		},
 		{
 			// t holds both borrows one literal takes, and the return uses t, so the pass reports
-			// the pair by E2. The frame-exit diagnostic at the return t flows into is dropped.
+			// the pair by E2.
 			name: "SharedPathsInOneLiteralReportedByE2",
 			src: `
 				fn build() {
@@ -996,10 +994,10 @@ func TestOwnershipDataflow(t *testing.T) {
 			`,
 		},
 		{
-			// The pass reports E2 for c inside the return, which replaces the frame-exit
-			// diagnostic about c. The borrow of b that `take` receives ends with the call, so
-			// the pass reports nothing about b, and the frame-exit diagnostic about b stays.
-			name: "E2OnAnotherLocalKeepsTheSharedPathsCheck",
+			// The return holds an immutable and a mutable borrow of c, which breaks E2. The
+			// borrow of b that `take` receives ends with the call, so the mutable return is the
+			// only path to b left, and nothing is reported about b.
+			name: "E2InsideAReturnAfterACallReadAnotherLocal",
 			src: `
 				declare fn take(x: {peer: &{n: number}}) -> undefined
 				fn build() {
@@ -1009,10 +1007,7 @@ func TestOwnershipDataflow(t *testing.T) {
 					return [&mut b, &c, &mut c]
 				}
 			`,
-			errs: []string{
-				"'b' leaves the function through a mutable path and an immutable one",
-				"cannot borrow 'c' as mutable while it is borrowed as immutable",
-			},
+			errs: []string{"cannot borrow 'c' as mutable while it is borrowed as immutable"},
 		},
 		{
 			// The first argument passes m to a `&` parameter while the second passes it to one
@@ -1088,10 +1083,9 @@ func TestOwnershipDataflow(t *testing.T) {
 			`,
 		},
 		{
-			// The pass reports E2 for b at `&mut b`, which lies outside both the store `q.s = c`
-			// that the frame-exit diagnostic blames and the store `p.r = a` it relates. So the
-			// frame-exit diagnostic about b stays beside the E2.
-			name: "E2OutsideTheOutflowSpansKeepsTheSharedPathsCheck",
+			// `p.r` and `q.s` both reach the caller, so `&mut b` breaks E2 against the immutable
+			// borrow a holds. The pass reports the conflict once, at `&mut b`.
+			name: "E2AtABorrowBothStoresHandOut",
 			src: `
 				fn f(p: &mut {r: &{v: number}}, q: &mut {s: &mut {v: number}}) {
 					val mut b = {v: 1}
@@ -1101,10 +1095,7 @@ func TestOwnershipDataflow(t *testing.T) {
 					q.s = c
 				}
 			`,
-			errs: []string{
-				"cannot borrow 'b' as mutable while it is borrowed as immutable",
-				"'b' leaves the function through a mutable path and an immutable one",
-			},
+			errs: []string{"cannot borrow 'b' as mutable while it is borrowed as immutable"},
 		},
 		{
 			// The annotation gives the literal's element a `'static` borrow, so it is live at the
@@ -1688,9 +1679,9 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot assign to 'p.x' while it is borrowed as immutable"},
 		},
 		{
-			// The current checks report the store of `&b` for c, which b reaches. The pass's
-			// E2 about b itself at the same store is a different conflict, so both are reported.
-			name: "StoredAliasAboutAnotherLocalKeepsE2",
+			// `val mut b = {peer: &mut c}` breaks E2 against m's immutable borrow of c, and the
+			// store `p.r = &b` breaks E2 against a's mutable borrow of b.
+			name: "StoreBesideAnAliasOfAnotherLocal",
 			src: `
 				fn f(p: &mut {r: &{peer: &mut {v: number}}}) -> number {
 					val mut c = {v: 1}
@@ -1704,7 +1695,6 @@ func TestOwnershipDataflow(t *testing.T) {
 			`,
 			errs: []string{
 				"cannot borrow 'c' as mutable while it is borrowed as immutable",
-				"cannot store a mutable borrow of 'c' while 'm' still borrows it as immutable",
 				"cannot borrow 'b' as immutable while it is borrowed as mutable",
 			},
 		},
@@ -2285,9 +2275,8 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 		},
 		{
 			// A closure stored into sink and also returned keeps its `'static` borrow of p, so
-			// the return does not move p. A later move of p conflicts with that borrow. The
-			// frame-exit check pairs that move with `return f`, and E3 at the move reports the
-			// same owned outflow, so only E3 is reported.
+			// the return does not move p. A later move of p conflicts with that borrow, so E3
+			// reports the move.
 			name: "E3MoveAfterStoringAndReturningAClosure",
 			src: `
 				var sink: fn () -> number = fn () { return 0 }
@@ -2307,9 +2296,8 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 		},
 		{
 			// The body reads `p.r` while the mutable borrow `a` holds is live, so the store's `&b`
-			// breaks E2. The current checks report that store with a message naming `a`, which
-			// takes the place of the pass's. The caller reads `p.r` once f returns, and the return
-			// hands it b as an owned value, so the return breaks E3.
+			// breaks E2. The caller reads `p.r` once f returns, and the return hands it b as an
+			// owned value, so the return breaks E3.
 			name: "AnOwnedReturnBesideAStoredBorrowBreaksE3",
 			src: `
 				fn f(p: &mut {r: &{v: number}}) -> {v: number} {
@@ -2321,7 +2309,7 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"5:12-5:14: cannot store an immutable borrow of 'b' while 'a' still borrows it as mutable",
+				"5:12-5:14: cannot borrow 'b' as immutable while it is borrowed as mutable",
 				"7:13-7:14: cannot move 'b' while it is borrowed",
 			},
 		},

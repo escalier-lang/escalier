@@ -259,8 +259,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 			`,
 			want: []string{"5:25-5:26: cannot move 'b.z' while it is borrowed"},
 		},
-		// The rest element leaves inside a nested block. E3 at the destructuring and the
-		// frame-exit diagnostic at the return name the same outflow, so only E3 is reported.
+		// The rest element leaves inside a nested block, and E3 at the destructuring reports it.
 		"ReturningARestElementFromANestedBlockConflicts": {
 			src: `
 				fn f(out: &mut {r: &{v: number}}, c: boolean) -> {v: number} {
@@ -279,9 +278,8 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 			want: []string{"5:25-5:26: cannot move 'b.z' while it is borrowed"},
 		},
 		// q holds a new value before it is read, so the return hands the caller that value and
-		// not p. The move of p into q breaks no rule. The frame-exit check still reports the
-		// return, since it does not see the write that replaces q.
-		"ReturningALocalAfterReplacingTheMovedValue": {
+		// not p. The move of p into q breaks no rule.
+		"ReturningALocalAfterReplacingTheMovedValueOk": {
 			src: `
 				fn f(out: &mut {r: &{x: number}}) -> {x: number} {
 					val p = {x: 1}
@@ -291,7 +289,6 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 					return q
 				}
 			`,
-			want: []string{"7:13-7:14: 'p' leaves the function both as an owned value and through a borrow"},
 		},
 		// Only one branch replaces q, so the return can still hand the caller p.
 		"ReturningALocalReplacedOnOneBranchConflicts": {
@@ -403,7 +400,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 					return p.r.value
 				}
 			`,
-			want: []string{"5:12-5:14: cannot store an immutable borrow of 'b' while 'a' still borrows it as mutable"},
+			want: []string{"5:12-5:14: cannot borrow 'b' as immutable while it is borrowed as mutable"},
 		},
 		// Returning the alias hands the caller a writer of b beside the reader `p.r`.
 		"ReturningALiveAliasConflicts": {
@@ -496,9 +493,10 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 				}
 			`,
 		},
-		// a leaves through p.peer and the return, both mutable. c leaves immutably through take
-		// and mutably through the return, and the report names c alone.
-		"ReturnNamesTheLocalWhosePathsDisagree": {
+		// a leaves through p.peer and the return, both mutable. c leaves immutably through take,
+		// but take keeps nothing, so that path ends when the call returns and the mutable return
+		// is the only path to c left.
+		"ReturnOfALocalACallReadOk": {
 			src: `
 				declare fn take(x: {peer: &{value: number}}) -> undefined
 				fn f(p: &mut {peer: &mut {value: number}}) {
@@ -510,7 +508,6 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 					return &mut h
 				}
 			`,
-			want: []string{"9:13-9:19: 'c' leaves the function through a mutable path and an immutable one"},
 		},
 		// a's paths agree, which keeps the return's exemption, and the returned value's own two
 		// paths to e are still reported.
@@ -549,10 +546,10 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 	}
 }
 
-// TestMixedOutflowAtAReturnRelatesTheOtherSite asserts that a return whose path to a local
-// disagrees with a path another site hands out is blamed on the return, with the other site
-// as the related span.
-func TestMixedOutflowAtAReturnRelatesTheOtherSite(t *testing.T) {
+// TestReturnAfterACallReadTheLocal asserts that a mutable return of a local checks after a
+// call read it through an immutable borrow. take keeps nothing, so its path to c ends when the
+// call returns.
+func TestReturnAfterACallReadTheLocal(t *testing.T) {
 	src := `
 declare fn take(x: {peer: &{value: number}}) -> undefined
 fn f(p: &mut {peer: &mut {value: number}}) {
@@ -562,7 +559,5 @@ fn f(p: &mut {peer: &mut {value: number}}) {
 }
 `
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs,
-		"6:9-6:15: 'c' leaves the function through a mutable path and an immutable one",
-		"&mut c", "{peer: &c}")
+	require.Empty(t, messagesWithSpan(t, errs))
 }

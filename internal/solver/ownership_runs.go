@@ -388,17 +388,18 @@ func retainedVia(param, callee string) string {
 	return fmt.Sprintf("%s that '%s' retains", held, callee)
 }
 
-// noteRetainedClosureWrites fills the writes of each retained store of the body. flowGraph is
-// the body's flow-sensitive borrow graph. A store writes each owned local that a closure
-// written inside the stored value writes, and each owned local that a capture edge the value
-// reaches in the graph before the store writes. So a closure bound to a name, copied to
-// another name, or chosen on a branch counts. A local the closures only read is left out, and
-// so is a capture holding a borrow.
-func (c *checker) noteRetainedClosureWrites(flowGraph *flowBorrowGraph) {
+// noteRetainedClosureWrites fills the writes of each retained store of the body. A store
+// writes each owned local that a closure written inside the stored value writes, and each
+// owned local that a capture edge the value reaches in the flow-sensitive borrow graph before
+// the store writes. So a closure bound to a name, copied to another name, or chosen on a
+// branch counts. A local the closures only read is left out, and so is a capture holding a
+// borrow. It must run once the body is walked, so the borrow graph is complete.
+func (c *checker) noteRetainedClosureWrites() {
 	t := c.eventTable()
-	if t == nil || len(t.retained) == 0 {
+	if t == nil || len(t.retained) == 0 || c.fn == nil || c.fn.cfg == nil {
 		return
 	}
+	flowGraph := c.analyzeBorrows()
 
 	types := map[liveness.VarID]soltype.Type{}
 	for _, locals := range c.fn.capturedLocals {

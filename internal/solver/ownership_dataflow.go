@@ -141,141 +141,10 @@ func (c *checker) runOwnershipDataflow() {
 	}
 
 	c.errs = slices.DeleteFunc(c.errs, replacedByDataflow)
-	// StoredBorrowAliasError names the binding that still holds the other borrow when a store
-	// breaks E2, which says more than the pass's message about the same store. This runs
-	// before the next filter, so a dropped error does not stand in for a frame-exit one.
-	found = slices.DeleteFunc(found, storedAliasReported(c.errs))
-	// L1, E2, and E3 at the caller replace the frame-exit check of a value's paths out of the
-	// frame. A pair of paths the pass reports by E2 or E3 is reported once, by the pass. The
-	// frame-exit check keeps each pair the pass does not report.
-	c.errs = slices.DeleteFunc(c.errs, frameExitReported(found))
 	// A closure's body is checked after the body it is written in, so its diagnostics are put
-	// back in source order before the merge.
+	// back in source order.
 	slices.SortStableFunc(found, func(a, b SolverError) int { return compareSpans(a.Span(), b.Span()) })
-	c.errs = mergeDataflowErrors(c.errs, found)
-}
-
-// mergeDataflowErrors returns errs with each diagnostic of found inserted before the first
-// frame-exit diagnostic that starts later in the source, as keptOwnershipDiagnostic names
-// them. A diagnostic of found that no such diagnostic follows goes at the end. The frame-exit
-// checks report in source order, so the ownership diagnostics stay in source order.
-func mergeDataflowErrors(errs, found []SolverError) []SolverError {
-	out := make([]SolverError, 0, len(errs)+len(found))
-	next := 0
-	for _, err := range errs {
-		if keptOwnershipDiagnostic(err) {
-			for next < len(found) && compareSpans(found[next].Span(), err.Span()) < 0 {
-				out = append(out, found[next])
-				next++
-			}
-		}
-		out = append(out, err)
-	}
-	return append(out, found[next:]...)
-}
-
-// keptOwnershipDiagnostic reports whether err is an ownership diagnostic that the dataflow pass
-// keeps beside its own. That is a frame-exit diagnostic.
-func keptOwnershipDiagnostic(err SolverError) bool {
-	switch err.(type) {
-	case *MixedOutflowPathsError, *SharedReturnPathsError, *EscapingBorrowError, *StoredBorrowAliasError:
-		return true
-	}
-	return false
-}
-
-// storedAliasReported returns a filter that matches a BorrowAliasError of the dataflow pass
-// at the span of a StoredBorrowAliasError in `errs` about the same local.
-func storedAliasReported(errs []SolverError) func(SolverError) bool {
-	type storedAlias struct {
-		span  ast.Span
-		local liveness.VarID
-	}
-	stored := set.NewSet[storedAlias]()
-	for _, err := range errs {
-		if e, ok := err.(*StoredBorrowAliasError); ok {
-			stored.Add(storedAlias{span: e.Span(), local: e.local})
-		}
-	}
-
-	return func(err SolverError) bool {
-		e, isAlias := err.(*BorrowAliasError)
-		return isAlias && stored.Contains(storedAlias{span: e.Span(), local: e.root})
-	}
-}
-
-// frameExitReported returns a filter that matches a frame-exit diagnostic of the current
-// checks when the dataflow pass reports the same conflict. `found` holds the pass's diagnostics.
-// The filter matches one of these:
-//
-//   - A SharedReturnPathsError, or a MixedOutflowPathsError that is not Owned, when `found`
-//     holds a BorrowAliasError about the same local.
-//   - A MixedOutflowPathsError that is Owned, when `found` holds a MoveWhileBorrowedError about
-//     the same local.
-//
-// The pass's diagnostic must have two places that overlap the frame-exit diagnostic's two
-// places, one each. Its span, or the span of a site where its value leaves the body, must lie
-// inside the frame-exit diagnostic's span or its related span.
-func frameExitReported(found []SolverError) func(SolverError) bool {
-	type report struct {
-		places [2]movePlace
-		spans  []ast.Span
-	}
-	aliases := map[liveness.VarID][]report{}
-	moves := map[liveness.VarID][]report{}
-	for _, err := range found {
-		switch e := err.(type) {
-		case *BorrowAliasError:
-			if e.root != 0 {
-				aliases[e.root] = append(aliases[e.root], report{places: e.places, spans: append([]ast.Span{e.Span()}, e.exits...)})
-			}
-		case *MoveWhileBorrowedError:
-			if e.root != 0 {
-				moves[e.root] = append(moves[e.root], report{places: e.places, spans: append([]ast.Span{e.Span()}, e.exits...)})
-			}
-		}
-	}
-	if len(aliases) == 0 && len(moves) == 0 {
-		return func(SolverError) bool { return false }
-	}
-
-	return func(err SolverError) bool {
-		var local liveness.VarID
-		var places [2]movePlace
-		reports := aliases
-		switch e := err.(type) {
-		case *SharedReturnPathsError:
-			local, places = e.local, e.places
-		case *MixedOutflowPathsError:
-			local, places = e.local, e.places
-			if e.Owned {
-				reports = moves
-			}
-		default:
-			return false
-		}
-
-		for _, r := range reports[local] {
-			// A conflict on another field of the same local, such as `b.x` beside a frame-exit
-			// pair on `b.y`, is a separate conflict, so it does not match.
-			if !pairsOverlap(r.places, places) {
-				continue
-			}
-
-			for _, span := range r.spans {
-				if err.Span().ContainsSpan(span) || slices.ContainsFunc(err.Related(), func(s ast.Span) bool { return s.ContainsSpan(span) }) {
-					return true
-				}
-			}
-		}
-		return false
-	}
-}
-
-// pairsOverlap reports whether each place of `a` overlaps a different place of b.
-func pairsOverlap(a, b [2]movePlace) bool {
-	return (placesOverlap(a[0], b[0]) && placesOverlap(a[1], b[1])) ||
-		(placesOverlap(a[0], b[1]) && placesOverlap(a[1], b[0]))
+	c.errs = append(c.errs, found...)
 }
 
 // tableSpan returns the span of the first event of t, or the zero span when t has none.
@@ -974,9 +843,6 @@ func (d *bodyDataflow) checkNewPath(place movePlace, kind borrowKind, node ast.N
 				FirstPlace: d.placeName(first.ev.place),
 				FirstMut:   first.ev.borrow == mutableBorrow,
 				SecondMut:  kind == mutableBorrow,
-				root:       place.root,
-				places:     [2]movePlace{place, first.ev.place},
-				exits:      d.returnSpans(first, fresh),
 				node:       node,
 				first:      first.ev.node.Span(),
 			}
@@ -993,24 +859,6 @@ func (d *bodyDataflow) checkNewPath(place movePlace, kind borrowKind, node ast.N
 // That is a loan liveLoan.checked accepts, or a closure's capture where usedWhereWritten says.
 func (d *bodyDataflow) pathInBody(l *liveLoan, at liveness.StmtRef) bool {
 	return l.checked() || d.usedWhereWritten(l, at)
-}
-
-// returnSpans returns the span of each return the value of a holder of one of `loans` flows
-// into, as returnsOf finds them.
-func (d *bodyDataflow) returnSpans(loans ...*liveLoan) []ast.Span {
-	seen := set.NewSet[ast.Span]()
-	var out []ast.Span
-	for _, l := range loans {
-		for _, h := range l.holders {
-			for _, site := range d.table.returnsOf(h.place.root) {
-				if span := site.node.Span(); !seen.Contains(span) {
-					seen.Add(span)
-					out = append(out, span)
-				}
-			}
-		}
-	}
-	return out
 }
 
 // copyBorrow applies the copy ev of a borrow. E1 rejects a copy of a moved place.
@@ -1198,9 +1046,6 @@ func (d *bodyDataflow) move(ev *moveEvent, at liveness.StmtRef, s *dataflowState
 		case blamed != nil:
 			d.report(&MoveWhileBorrowedError{
 				Place:  d.placeName(ev.place),
-				root:   ev.place.root,
-				places: [2]movePlace{ev.place, blamed.ev.place},
-				exits:  d.ownedExits(ev),
 				move:   ev.node,
 				borrow: blamed.ev.node.Span(),
 			})
@@ -1209,9 +1054,6 @@ func (d *bodyDataflow) move(ev *moveEvent, at liveness.StmtRef, s *dataflowState
 				Place:   d.placeName(ev.place),
 				Via:     via.via.via,
 				ViaRuns: via.via.runs,
-				root:    ev.place.root,
-				places:  [2]movePlace{ev.place, via.ev.place},
-				exits:   d.ownedExits(ev),
 				move:    ev.node,
 				borrow:  via.ev.node.Span(),
 			})
@@ -1502,7 +1344,6 @@ func (d *bodyDataflow) callEnd(ev *callEvent, at liveness.StmtRef, s *dataflowSt
 				FirstPlace: d.placeName(first.ev.place),
 				FirstMut:   first == r,
 				SecondMut:  second == r,
-				root:       second.ev.place.root,
 				node:       second.ev.node,
 				first:      first.ev.node.Span(),
 			})
@@ -1649,8 +1490,6 @@ func (d *bodyDataflow) useCapture(ev *runEvent, run *closureRun, local capturedL
 					SecondMut:  l.ev.borrow == mutableBorrow,
 					FirstVia:   run.via,
 					FirstRuns:  run.runs,
-					root:       l.ev.place.root,
-					places:     [2]movePlace{l.ev.place, place},
 					node:       l.ev.node,
 					first:      run.node.Span(),
 				})
@@ -1664,8 +1503,6 @@ func (d *bodyDataflow) useCapture(ev *runEvent, run *closureRun, local capturedL
 				SecondMut:  local.mut,
 				SecondVia:  run.via,
 				SecondRuns: run.runs,
-				root:       place.root,
-				places:     [2]movePlace{place, l.ev.place},
 				node:       run.node,
 				first:      l.ev.node.Span(),
 			}

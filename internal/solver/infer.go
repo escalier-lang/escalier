@@ -618,10 +618,6 @@ type funcCtx struct {
 	// moveRecords maps each node recordMove blamed for a move to what it recorded, so
 	// retractMove can take the move back.
 	moveRecords map[ast.Node]moveRecord
-	// movedSources holds each expression whose owned value an assignment or argument moves,
-	// such as the b in `val y = b`. movedOrigins reads it to follow a local into the binding
-	// that owns its data afterwards.
-	movedSources set.Set[ast.Node]
 	// moduleLevelMoves holds each expression reported as a move out of a module-level binding.
 	// The sites that record a move read it, so such a move records nothing.
 	moduleLevelMoves set.Set[ast.Node]
@@ -629,10 +625,6 @@ type funcCtx struct {
 	// a written borrow. A binding whose initializer is in it records no alias, move, borrow
 	// edge, or loan.
 	unwrittenBorrows set.Set[ast.Node]
-	// placeCopies lists each place a binding takes its value from, such as the b in `val q = b`
-	// or in `a.peer = b`. movedOrigins keeps the ones movedSources says were moved, so the
-	// escape check can follow a local into the binding that owns its data afterwards.
-	placeCopies []placeCopy
 	// placeIDs assigns each field-level place one synthetic VarID (PR 7). A field-level
 	// place is a root binding plus a path of field segments, such as `pair.a`. The key is
 	// placeKey's encoding of the place, its root VarID followed by each segment's kind and
@@ -663,20 +655,18 @@ type funcCtx struct {
 	memberUses map[ast.Node]int
 	// eagerBorrowGraph records, per binding root VarID, the function-locals it borrows through
 	// an explicit `&`/`&mut`, each tagged with the field path holding the borrow. The
-	// initializer `val a = {peer: &mut b}` records the edge a → b at path [peer]. The
-	// escape check follows these edges from a value flowing out of the frame to find a
-	// borrow of a local that cannot outlive it, discriminating a field return `return
-	// a.peer` from the disjoint `return a.data`. A parameter root is never recorded, since
-	// a borrow of a parameter carries a caller lifetime that already outlives the frame.
+	// initializer `val a = {peer: &mut b}` records the edge a → b at path [peer], and
+	// `val f = fn () { b.v }` records a capture edge f → b. closureRunOf reads a name's
+	// capture edges to find the closure a call runs. A parameter root is never recorded,
+	// since a borrow of a parameter carries a caller lifetime that already outlives the frame.
 	//
 	// While the body is walked this map holds the source-order-current edge set for each
 	// binding, updated by strong subtree replacement: a `var` reassignment clears the
 	// binding's prior edges before recording its new ones, and a field store `recv.f = …`
 	// clears only the [f] subtree. copyPlaceEdges reads it to project a source binding's
 	// edges into a destructuring leaf, so it must reflect the state at the copy point. The
-	// per-program-point graph the escape check reads is the flow-sensitive one analyzeBorrows
-	// computes from borrowGens, not this eager map; resolveComponentEscapes passes that snapshot
-	// to each escape helper rather than storing it here.
+	// per-program-point graph noteRetainedClosureWrites reads is the flow-sensitive one
+	// analyzeBorrows computes from borrowGens, not this eager map.
 	eagerBorrowGraph map[liveness.VarID][]fieldBorrow
 	// borrowGens records, per CFG statement position, the borrow-edge assignments that
 	// statement makes: for each binding it re-points, the full new edge set the eager
@@ -691,7 +681,8 @@ type funcCtx struct {
 	// reset after each flush.
 	borrowDirty set.Set[liveness.VarID]
 	// paramVarIDs holds the VarID of every parameter leaf binding. A borrow of a
-	// parameter outlives the frame, so the escape check skips a referent in this set.
+	// parameter outlives the frame, so the borrow graph records no edge to a referent in
+	// this set.
 	paramVarIDs set.Set[liveness.VarID]
 	// captureVarIDs holds the VarID of every local a closure's body captures. The pre-pass
 	// defines each as a parameter of the body, so each is in paramVarIDs too.
@@ -703,18 +694,9 @@ type funcCtx struct {
 	// captures that hold a reference-shaped value. The borrow graph gives the binding that holds
 	// a closure a capture edge to each of them.
 	capturedLocals map[ast.Func][]capturedLocal
-	// escapeSites records every value flowing out of the frame that might carry a borrow
-	// of a function-local: a return value, a value stored into a parameter's field, and a
-	// consuming argument. The decision is deferred to a post-pass, resolveComponentEscapes,
-	// which runs once the whole body is walked, so the borrow-edge graph is complete and
-	// the consumed lattice is available. A self-contained connected component re-anchors
-	// and co-moves; anything else reports an EscapingBorrowError.
-	escapeSites []escapeSite
-	// loans holds every borrow a store leaves a binding holding in this body, in source order.
-	// See recordStoreEdgeLoan.
-	loans []loan
-	// loanSeq is the last sequence number nextLoanSeq handed out.
-	loanSeq int
+	// flowOuts lists each value that leaves the frame, in the order the walk meets them.
+	// recordComponentMoves reads it once the body is walked.
+	flowOuts []flowOutSite
 	// varIDTypes maps the VarID of each parameter leaf, the receiver, and each capture to
 	// that binding's soltype. runLivenessPrePass fills it before the body is walked. The
 	// stored type is the same pointer the inference graph mutates, so a type variable

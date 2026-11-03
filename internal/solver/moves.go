@@ -654,10 +654,6 @@ func (c *checker) consumeOwned(source ast.Expr, sourceT soltype.Type, moveNode a
 	if !c.isOwnedMovable(sourceT) {
 		return
 	}
-	if c.fn.movedSources == nil {
-		c.fn.movedSources = set.NewSet[ast.Node]()
-	}
-	c.fn.movedSources.Add(source)
 	c.recordMovePlace(p, moveNode, ref)
 }
 
@@ -707,9 +703,6 @@ func (c *checker) consumeBindingInit(vd *ast.VarDecl, bindingT soltype.Type, stm
 // An object rest element such as `...rest` takes the fields the pattern does not name. Its
 // binding's object type lists them, so each one moves into it. A rest binding whose type is
 // not a plain object type moves the whole place instead.
-//
-// Each moved part is also recorded as a placeCopy into its leaf, read by `init`, so the escape
-// check can trace a leaf that leaves the frame back to the data it owns.
 func (c *checker) consumeDestructureLeaves(scope *Scope, pat ast.Pat, init ast.Expr, ref liveness.StmtRef) {
 	if c.fn == nil || c.fn.cfg == nil || init == nil {
 		return
@@ -894,7 +887,7 @@ func (m *destructureMover) leaf(node ast.Node, at movePlace) {
 
 	varID := m.c.varIDs.Of(node)
 	if _, ok := m.ownedLeaf(name, varID); ok {
-		m.moveInto(varID, nil, at)
+		m.moveInto(at)
 	}
 }
 
@@ -906,8 +899,8 @@ func (m *destructureMover) rest(ident *ast.IdentPat, at movePlace) {
 	if !ok {
 		return
 	}
-	forEachRestField(t, at, func(src movePlace, destPath []placeSeg, _ soltype.Type) {
-		m.moveInto(dest, destPath, src)
+	forEachRestField(t, at, func(src movePlace, _ []placeSeg, _ soltype.Type) {
+		m.moveInto(src)
 	})
 }
 
@@ -934,19 +927,12 @@ func (m *destructureMover) ownedLeaf(name string, varID liveness.VarID) (soltype
 	return bindingType(b), true
 }
 
-// moveInto moves the place `at` into the leaf binding `dest`, landing at destPath within it.
-// It records the move once per place and a placeCopy for every call.
-func (m *destructureMover) moveInto(dest liveness.VarID, destPath []placeSeg, at movePlace) {
-	c := m.c
-	if id := c.placeID(at); !m.moved.Contains(id) {
+// moveInto moves the place `at` into a leaf binding, recording the move once per place.
+func (m *destructureMover) moveInto(at movePlace) {
+	if id := m.c.placeID(at); !m.moved.Contains(id) {
 		m.moved.Add(id)
-		c.recordMovePlace(at, m.init, m.ref)
+		m.c.recordMovePlace(at, m.init, m.ref)
 	}
-	if c.fn.movedSources == nil {
-		c.fn.movedSources = set.NewSet[ast.Node]()
-	}
-	c.fn.movedSources.Add(m.init)
-	c.fn.placeCopies = append(c.fn.placeCopies, placeCopy{dest: dest, destPath: destPath, src: at, expr: m.init})
 }
 
 // consumeAtGlobalWrite consumes the source place of a module-level store. A store
@@ -1207,7 +1193,6 @@ func (c *checker) retractMove(moveNode ast.Node) {
 			delete(c.fn.moveNodes, rec.varID)
 		}
 	}
-	c.fn.movedSources.Remove(moveNode)
 }
 
 // checkUseAfterMoves runs the consumed-lattice dataflow over the function body's
@@ -1223,21 +1208,14 @@ func (c *checker) checkUseAfterMoves() {
 	if c.fn == nil || c.fn.cfg == nil {
 		return
 	}
-	retained := c.eventTable() != nil && len(c.eventTable().retained) > 0
-	if len(c.fn.useSites) == 0 && len(c.fn.moveSites) == 0 && len(c.fn.escapeSites) == 0 && !retained {
+	if len(c.fn.useSites) == 0 && len(c.fn.moveSites) == 0 && len(c.fn.flowOuts) == 0 {
 		return
 	}
 	info := liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites)
-	// Decide deferred escapes against the move lattice and the flow-sensitive borrow-edge
-	// graph, then fold any component-move consumes back into moveSites and recompute, so a
-	// use after a co-moved local is caught.
-	if len(c.fn.escapeSites) > 0 || retained {
-		flowBorrowGraph := c.analyzeBorrows()
-		if c.resolveComponentEscapes(info, flowBorrowGraph) {
-			info = liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites)
-		}
-		// The dataflow pass reads what each retained closure writes.
-		c.noteRetainedClosureWrites(flowBorrowGraph)
+	// A value that leaves the frame can take its component along. Those moves join
+	// moveSites, so the lattice is recomputed to catch a use after one of them.
+	if c.recordComponentMoves(info) {
+		info = liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites)
 	}
 	for _, u := range c.fn.useSites {
 		state, movedID := c.movedConflict(info, u)
