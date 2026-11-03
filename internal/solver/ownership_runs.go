@@ -53,21 +53,27 @@ type closureRun struct {
 // statement. The value is stored into a module-level binding, or passed to a parameter whose
 // function type carries a retention lifetime.
 type retainedStore struct {
-	// via names the binding or parameter that keeps the closure, as closureVia or retainedVia
-	// returns it.
-	via  string
+	// via names the binding or parameter that keeps the closure. closureVia or retainedVia
+	// produces it.
+	via string
+	// expr is the stored value.
 	expr ast.Expr
-	at   liveness.StmtRef
+	// at is the CFG point of the statement that stores expr.
+	at liveness.StmtRef
 	// call is the call whose parameter keeps the closure, and nil for a store into a
 	// module-level binding.
 	call ast.Node
 	// static marks a closure kept for the rest of the program. Every call after the store may
 	// run it.
 	static bool
-	// holders are the bindings that keep the closure reachable when static is false. They are
-	// the arguments and the receiver whose parameter types share the retention lifetime, and
-	// each binding the call's result or another holder flows into. A call may run the closure
-	// only while one of them is live.
+	// holders are the bindings that keep a closure reachable that is not kept for the rest
+	// of the program. The holders are these bindings:
+	//
+	//   - each argument whose parameter type shares the retention lifetime
+	//   - the receiver, when the type of `self` shares that lifetime
+	//   - each binding the call's result or another holder flows into
+	//
+	// A call may run the closure only while one of them is live.
 	holders []liveness.VarID
 	// writes lists the owned locals the closures write, in VarID order.
 	// noteRetainedClosureWrites fills it once the body is walked.
@@ -154,8 +160,8 @@ func (c *checker) closureRunOf(expr ast.Expr, runs bool) (closureRun, bool) {
 }
 
 // noteBoundClosure records closure as one whose capture is not used where it is written.
-// One is the initializer of a local name, as in `val f = fn () { … }`, whose captures are
-// used at each call of the name and each call the name is passed to. A script's `fn`
+// One is the initializer of a local name. The captures of `val f = fn () { … }` are used
+// at each call of f and each call f is passed to. A script's `fn`
 // declaration is used the same way. Another is stored into a module-level binding, whose
 // captures are used at each call after the store.
 func (c *checker) noteBoundClosure(closure ast.Func) {
@@ -177,7 +183,7 @@ func (c *checker) noteRetainedClosureStore(store retainedStore) *retainedStore {
 }
 
 // noteRetainedClosureArgs records each argument of the call e that fills a parameter fn keeps
-// past the call, as a retainedStore at ref. Such a parameter's type holds a function type
+// past the call. Each one becomes a retainedStore at ref. Such a parameter's type holds a function type
 // with a retention lifetime, at its top or inside a union, an object field, or an array. A
 // whole argument filling it is taken as kept, so each closure written in an object literal
 // counts.

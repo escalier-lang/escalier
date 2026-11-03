@@ -403,6 +403,34 @@ func TestClosureCapturedPlaces(t *testing.T) {
 				"9:6-9:7: this call runs 'f', which reads 'x' after it was moved",
 			},
 		},
+		// Moving p.a leaves p.b in place, so a closure that reads only p.b reads nothing moved.
+		"ClosureCapturingAFieldDisjointFromAMovedField": {
+			src: `
+				fn g() {
+					val p = {a: {x: 1}, b: {x: 2}}
+					val d = p.a
+					val f = fn () { return p.b.x }
+					f()
+				}
+			`,
+			want: nil,
+		},
+		// A closure that reads p.a.x reads under the moved p.a, both where it is written and
+		// at each call.
+		"ClosureCapturingAFieldUnderAMovedField": {
+			src: `
+				fn g() {
+					val p = {a: {x: 1}, b: {x: 2}}
+					val d = p.a
+					val f = fn () { return p.a.x }
+					f()
+				}
+			`,
+			want: []string{
+				"5:14-5:36: use of moved value 'p.a'",
+				"6:6-6:7: this call runs 'f', which reads 'p.a' after it was moved",
+			},
+		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {

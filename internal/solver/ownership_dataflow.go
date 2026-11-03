@@ -1456,19 +1456,29 @@ func (d *bodyDataflow) storeReachable(store *retainedStore, at liveness.StmtRef)
 }
 
 // useCapture checks the use of the captured local by the closure `run` during the call of
-// ev, as `run` describes. `retained` marks a closure a retainedStore keeps reachable. A
-// conflict with a borrow that one of the call's own arguments takes blames the argument when
-// the callee or an argument names the closure, and blames the call when a retainedStore keeps
-// it. Any other conflict blames the expression that names the closure.
+// ev. The method `run` describes that use. `retained` marks a closure a retainedStore keeps
+// reachable. A conflicting borrow is blamed this way:
+//
+//   - A borrow one of the call's own arguments takes blames that argument when the callee or
+//     an argument names the closure.
+//   - Such a borrow blames the whole call when a retainedStore keeps the closure.
+//   - Any other borrow blames the expression that names the closure.
 func (d *bodyDataflow) useCapture(ev *runEvent, run *closureRun, local capturedLocal, retained bool, at liveness.StmtRef, s *dataflowState) {
+	places := local.places()
 	for _, k := range slices.Sorted(maps.Keys(s.moved)) {
 		m := s.moved[k]
-		if m.called || m.place.root != local.root {
+		if m.called {
+			continue
+		}
+		// A closure that captures only `p.b` does not read a moved `p.a`, so only a captured
+		// place that overlaps the moved one counts as a use of it.
+		i := slices.IndexFunc(places, func(p movePlace) bool { return placesOverlap(m.place, p) })
+		if i < 0 {
 			continue
 		}
 
 		if !m.closureBorrowed {
-			e := d.movedError(m, movePlace{root: local.root}, run.node)
+			e := d.movedError(m, places[i], run.node)
 			e.Via, e.ViaRuns, e.ViaReads = run.via, run.runs, !local.mut
 			d.report(e)
 		}
@@ -1480,7 +1490,7 @@ func (d *bodyDataflow) useCapture(ev *runEvent, run *closureRun, local capturedL
 		kind = mutableBorrow
 	}
 
-	for _, place := range local.places() {
+	for _, place := range places {
 		for _, l := range d.sortedLoans(s) {
 			if !l.checked() || l.reserved != nil || l.ev.borrow == kind || !placesOverlap(l.ev.place, place) ||
 				!d.loanLive(l, at, true) {
