@@ -44,13 +44,15 @@ func inferOwnershipEvents(t *testing.T, src, fn string) (*ownershipEvents, []str
 // function whose body's events are listed, and defaults to `go`. want lists every event of
 // that body in the order the walk emitted them, each prefixed with the CFG node it is
 // attached to. errs lists every diagnostic the program reports, and is nil for a program
-// that checks clean.
+// that checks clean. errsDataflow lists them with the dataflow pass on, when that differs
+// from errs.
 type ownershipEventsCase struct {
-	name string
-	src  string
-	fn   string
-	want []string
-	errs []string
+	name         string
+	src          string
+	fn           string
+	want         []string
+	errs         []string
+	errsDataflow []string
 }
 
 // runOwnershipEvents asserts each case's events and diagnostics. Emitting the events reports
@@ -65,11 +67,12 @@ func runOwnershipEvents(t *testing.T, cases []ownershipEventsCase) {
 
 			table, errs := inferOwnershipEvents(t, tc.src, fn)
 			require.Equal(t, tc.want, renderOwnershipEvents(table))
-			if tc.errs == nil {
+			wantErrs := wantForPass(tc.errs, tc.errsDataflow)
+			if wantErrs == nil {
 				require.Empty(t, errs)
 				return
 			}
-			require.Equal(t, tc.errs, errs)
+			require.Equal(t, wantErrs, errs)
 		})
 	}
 }
@@ -622,6 +625,9 @@ func TestOwnershipEventsProvisionalFlows(t *testing.T) {
 				"b3.0: move(`p`, arg(`go`, 1))", // `go(n - 1, p)` moves p, since `val q = p` settles p as owned
 				"b2.0: move(`p`, `q`)",          // `val q = p`
 			},
+			// The path through the recursive call moves p before `val q = p` reads it. The
+			// current checks do not move p at a call whose parameter F3 has not settled yet.
+			errsDataflow: []string{"use of moved value 'p'"},
 		},
 		{
 			name: "FlowOutOfUnannotatedParamIsProvisional",
@@ -656,6 +662,9 @@ func TestOwnershipEventsProvisionalFlows(t *testing.T) {
 				"b3.0: use(`n`, read)",            // `n - 1` in the call to `stop`
 				"b3.0: move(`p`, arg(`stop`, 1))", // `stop(n - 1, p)` moves p, since `val r = q` in `stop` settles q as owned
 			},
+			// `go(n, q)` in `stop` moves q before `val r = q` reads it. The current checks do
+			// not move q at a call whose parameter F3 has not settled yet.
+			errsDataflow: []string{"use of moved value 'q'"},
 		},
 	})
 }

@@ -22,6 +22,9 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 	tests := map[string]struct {
 		src  string
 		want []string
+		// wantDataflow is what the case expects with the dataflow pass on, when that differs
+		// from want. An empty list expects no diagnostic.
+		wantDataflow []string
 	}{
 		// The core of the rule. p is moved in and dies with the frame, and nothing reads it
 		// after the store, so b is reachable one way and nothing escapes.
@@ -161,6 +164,9 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 		},
 		// Reading b after that move reads a value the co-move consumed, which names the real
 		// mistake more precisely than an escape would.
+		//
+		// The dataflow pass follows F2, which moves p and copies the borrow of b it holds, so
+		// b stays usable and the case expects no diagnostic with the pass on.
 		"ReadingTheStoredLocalAfterTheParameterMovesOut": {
 			src: `
 				declare fn store<'a, 'b, 'c>(
@@ -176,7 +182,8 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 					val y = b
 				}
 			`,
-			want: []string{"12:14-12:15: use of moved value 'b'"},
+			want:         []string{"12:14-12:15: use of moved value 'b'"},
+			wantDataflow: []string{},
 		},
 		// An owned parameter takes borrow edges like a local, so an argument that reaches a
 		// local only through those edges still carries it into a caller-owned target. Here
@@ -237,7 +244,7 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tc.src)
-			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+			require.Equal(t, wantForPass(tc.want, tc.wantDataflow), messagesWithSpan(t, errs))
 		})
 	}
 }

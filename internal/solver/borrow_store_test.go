@@ -30,9 +30,12 @@ import (
 // store call is the sole source of any edge to a local.
 func TestCallStoreEdge(t *testing.T) {
 	tests := map[string]struct {
-		src   string
-		want  []string
-		types map[string]string
+		src  string
+		want []string
+		// wantDataflow is what the case expects with the dataflow pass on, when that differs
+		// from want. An empty list expects no diagnostic.
+		wantDataflow []string
+		types        map[string]string
 	}{
 		// The call is the only thing that aliases a to b, and storing a.peer into out carries
 		// that borrow into the caller's object. Without the store edge the store into `out` finds
@@ -113,6 +116,9 @@ func TestCallStoreEdge(t *testing.T) {
 		// The edge reaches the connected-component move as well as the store loan: passing
 		// a to a consuming parameter carries the stored borrow into the callee, so the move
 		// co-moves b and the read after it is a use-after-move.
+		//
+		// The dataflow pass follows F2, which moves a and copies the borrow of b it holds, so
+		// b stays usable and the case expects no diagnostic with the pass on.
 		"StoredBorrowIsCoMovedWithItsCarrier": {
 			src: `
 				declare fn store<'a, 'b, 'c>(
@@ -129,7 +135,8 @@ func TestCallStoreEdge(t *testing.T) {
 					val y = b
 				}
 			`,
-			want: []string{"13:14-13:15: use of moved value 'b'"},
+			want:         []string{"13:14-13:15: use of moved value 'b'"},
+			wantDataflow: []string{},
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut {peer: &'a mut {value: number}, spare: &mut {value: number}}, " +
 					"item: &'a mut {value: number}) -> undefined",
@@ -193,7 +200,7 @@ func TestCallStoreEdge(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tc.src)
-			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+			require.Equal(t, wantForPass(tc.want, tc.wantDataflow), messagesWithSpan(t, errs))
 			require.Equal(t, tc.types, values)
 		})
 	}

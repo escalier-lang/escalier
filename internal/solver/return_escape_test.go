@@ -482,9 +482,12 @@ func TestReturnFieldThroughWholeBorrow(t *testing.T) {
 // every function it declares.
 func TestEscapeAtStoreAndArgSites(t *testing.T) {
 	tests := map[string]struct {
-		src   string
-		want  []string
-		types map[string]string
+		src  string
+		want []string
+		// wantDataflow is what the case expects with the dataflow pass on, when that differs
+		// from want. An empty list expects no diagnostic.
+		wantDataflow []string
+		types        map[string]string
 	}{
 		// Storing a borrow of a local into a borrow parameter's field hands the local to the
 		// caller. The runtime is garbage collected, so b stays alive, and nothing in the frame
@@ -518,6 +521,11 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 		// fires, and reading b afterward is a use-after-move. This is the owned-carrier twin of
 		// StoreLocalBorrowIntoParamFieldOk, where the bare borrow `&mut b` has no graph to
 		// re-anchor and takes a loan of b instead.
+		//
+		// The dataflow pass follows F2, which moves the carrier and copies the borrow it holds,
+		// so b is not moved. The loan the store takes is held by p, which the body does not
+		// read again, so moving b into y is accepted, as in
+		// TestStoreIntoCallerOwnedTarget/MovingIntoALocalAfterAnImmutableStoreOk.
 		"StoreCarrierIntoParamFieldMovesComponent": {
 			src: `
 				fn f(p: &mut {node: {peer: &mut {value: number}}}) {
@@ -526,8 +534,9 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 					val y = b
 				}
 			`,
-			want:  []string{"5:14-5:15: use of moved value 'b'"},
-			types: map[string]string{"f": "fn (p: &mut {node: {peer: &mut {value: number}}}) -> undefined"},
+			want:         []string{"5:14-5:15: use of moved value 'b'"},
+			wantDataflow: []string{},
+			types:        map[string]string{"f": "fn (p: &mut {node: {peer: &mut {value: number}}}) -> undefined"},
 		},
 		// Auto-borrowing a local into a `&mut` parameter is sound: the parameter borrows
 		// for the call rather than consuming, so the local outlives the borrow.
@@ -586,7 +595,7 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tc.src)
-			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+			require.Equal(t, wantForPass(tc.want, tc.wantDataflow), messagesWithSpan(t, errs))
 			require.Equal(t, tc.types, values)
 		})
 	}
@@ -599,6 +608,11 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 // escape. When a node is also reachable from a live binding outside the component, the move
 // does not apply and the ordinary escape stands.
 //
+// The dataflow pass has no component move. F2 moves the carrier and copies each borrow it
+// holds, and L1 lets a borrow outlive the binding that owns its place. So with the pass on, a
+// borrowed local stays usable after its carrier moves, and the cases that read one expect no
+// diagnostic.
+//
 // Two behaviours shape the returned types here. Return borrow-stripping rewrites a returned
 // `&`/`&mut` of a function-local reached exactly once into an owned field, so a tree-shaped
 // component move returns an owned type while a diamond or cyclic graph keeps its borrows. The
@@ -606,9 +620,12 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 // all-`&mut` diamond is a component move rather than a construction error.
 func TestConnectedComponentMove(t *testing.T) {
 	tests := map[string]struct {
-		src   string
-		want  []string
-		types map[string]string
+		src  string
+		want []string
+		// wantDataflow is what the case expects with the dataflow pass on, when that differs
+		// from want. An empty list expects no diagnostic.
+		wantDataflow []string
+		types        map[string]string
 	}{
 		// The canonical case: the owned binding a holds `&mut b`, and nothing outside the
 		// {a, b} component references either node, so returning a moves the whole component
@@ -714,7 +731,8 @@ func TestConnectedComponentMove(t *testing.T) {
 					val y = b
 				}
 			`,
-			want: []string{"7:14-7:15: use of moved value 'b'"},
+			want:         []string{"7:14-7:15: use of moved value 'b'"},
+			wantDataflow: []string{},
 			types: map[string]string{
 				"store": "fn (x: {peer: &mut {value: number}}) -> undefined",
 				"f":     "fn () -> undefined",
@@ -863,7 +881,8 @@ func TestConnectedComponentMove(t *testing.T) {
 					val y = d
 				}
 			`,
-			want: []string{"9:14-9:15: use of moved value 'd'"},
+			want:         []string{"9:14-9:15: use of moved value 'd'"},
+			wantDataflow: []string{},
 			types: map[string]string{
 				"store": "fn (x: {l: &{peer: &mut {x: number}}, r: &{peer: &mut {x: number}}}) -> undefined",
 				"f":     "fn () -> undefined",
@@ -884,7 +903,8 @@ func TestConnectedComponentMove(t *testing.T) {
 					val y = d
 				}
 			`,
-			want: []string{"9:14-9:15: use of moved value 'd'"},
+			want:         []string{"9:14-9:15: use of moved value 'd'"},
+			wantDataflow: []string{},
 			types: map[string]string{
 				"store": "fn (x: {peer: &{peer: &{peer: &{value: number}}}}) -> undefined",
 				"f":     "fn () -> undefined",
@@ -935,7 +955,7 @@ func TestConnectedComponentMove(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tc.src)
-			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+			require.Equal(t, wantForPass(tc.want, tc.wantDataflow), messagesWithSpan(t, errs))
 			require.Equal(t, tc.types, values)
 		})
 	}

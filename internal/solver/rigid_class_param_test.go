@@ -19,6 +19,9 @@ func TestAMemberBodyIsCheckedForEveryClassArgument(t *testing.T) {
 		binding string
 		want    string
 		errs    []string
+		// errsDataflow lists the diagnostics with the dataflow pass on, when they differ
+		// from errs.
+		errsDataflow []string
 	}{
 		{
 			// Bag's contains promises to take any B, and Keyed holds a key that takes only a U.
@@ -117,6 +120,8 @@ class Keyed<U> extends Bag<U> {
 			errs: []string{"3:43-3:44: cannot constrain U <: number"},
 		},
 		{
+			// v has the owned generic type U, so `self.v = v` moves it, and the dataflow pass
+			// reports the later read of v as a use after that move.
 			name: "AConstructorBody",
 			src: `class C<U> {
 	v: U,
@@ -126,6 +131,10 @@ class Keyed<U> extends Bag<U> {
 	},
 }`,
 			errs: []string{"5:19-5:20: cannot constrain U <: number"},
+			errsDataflow: []string{
+				"5:19-5:20: cannot constrain U <: number",
+				"5:19-5:20: use of moved value 'v'",
+			},
 		},
 		{
 			name: "AReturnForcingAValueIntoTheClassParameter",
@@ -168,7 +177,7 @@ val p = Box(1).pair("s")`,
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tt.src)
-			require.Equal(t, tt.errs, messagesWithSpan(t, errs))
+			require.Equal(t, wantForPass(tt.errs, tt.errsDataflow), messagesWithSpan(t, errs))
 			if tt.binding != "" {
 				require.Equal(t, tt.want, values[tt.binding])
 			}
