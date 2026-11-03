@@ -190,6 +190,10 @@ func AnalyzeMoves(cfg *CFG, moves map[StmtRef]set.Set[VarID]) *MoveInfo {
 // no new name.
 func DeclaredBindings(cfg *CFG) map[StmtRef][]VarID {
 	out := map[StmtRef][]VarID{}
+
+	// add records the bindings a statement declares at its point. Only a `val` or `var`
+	// declaration declares anything. Its pattern may bind several names, as `val {a, b} = p`
+	// does, and each one is recorded.
 	add := func(stmt ast.Stmt, ref StmtRef) {
 		decl, ok := stmt.(*ast.DeclStmt)
 		if !ok {
@@ -205,10 +209,20 @@ func DeclaredBindings(cfg *CFG) map[StmtRef][]VarID {
 			out[ref] = append(out[ref], c.defs...)
 		}
 	}
+
 	for _, block := range cfg.Blocks {
+		// A declaration whose initializer does not branch is a statement of the block, so
+		// its bindings are declared at that statement's point.
 		for idx, stmt := range block.Stmts {
 			add(stmt, StmtRef{BlockID: block.ID, StmtIdx: idx})
 		}
+
+		// The CFG builder lists in a block's ExtraDefs the bindings it introduces without a
+		// statement. These include the bindings of a declaration whose initializer branches,
+		// on its join block, and the pattern bindings of a for-in loop body, a `match` arm, a
+		// `catch` arm, and an `if let` consequent, each on its own block. Each is declared at
+		// the block's entry. A reassignment whose right-hand side branches also lists its
+		// target on its join block, but it binds no new name, so that block is skipped.
 		if len(block.ExtraDefs) > 0 && !cfg.reassignJoins.Contains(block.ID) {
 			entry := StmtRef{BlockID: block.ID, StmtIdx: -1}
 			out[entry] = append(out[entry], block.ExtraDefs...)
