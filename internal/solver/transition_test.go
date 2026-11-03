@@ -250,7 +250,7 @@ func TestStaticEscapeTransition(t *testing.T) {
 // through p breaks E2.
 func TestStaticEscapeTransitionFromSource(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		var sink: &{x: number} = &{x: 0}
+		var sink = &{x: 0}
 		fn cache(p: &mut {x: number}) {
 			sink = p
 			p.x = 1
@@ -622,7 +622,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 		// `'static` immutable path is live.
 		"Rule1_TransitiveAliasEscape_Error": {
 			src: `
-				var sink: &{x: number} = &{x: 0}
+				var sink = &{x: 0}
 				fn f(p: &mut {x: number}) {
 				  val z: &mut {x: number} = p
 				  sink = z

@@ -107,7 +107,7 @@ func TestInferDeclaredStaticBoundUnsatisfied(t *testing.T) {
 // parameter renders under 'static.
 func TestInferDeclaredStaticBoundSatisfiedByEscape(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		var sink: &{x: number} = &{x: 0}
+		var sink = &{x: 0}
 		fn cache<'a: 'static>(p: &'a {x: number}) { sink = p }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (p: &'static {x: number}) -> undefined", values["cache"])

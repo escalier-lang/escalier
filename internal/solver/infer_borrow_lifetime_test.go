@@ -400,7 +400,7 @@ func TestInferMixedBorrowAndOwnedReturnFallsBackToUnion(t *testing.T) {
 // lifetime `'l{id}`. sink's type is a borrow, since T6 rejects a borrow stored into an
 // owned module-level binding.
 func TestInferGlobalWriteEscapesBorrowToStatic(t *testing.T) {
-	src := `var sink: &{x: number} = &{x: 0}
+	src := `var sink = &{x: 0}
 fn cache(p: &{x: number}) {
   sink = p
 }`
