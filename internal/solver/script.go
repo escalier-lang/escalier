@@ -20,22 +20,21 @@ import (
 // A module and a script differ in how their top-level declarations relate. InferModule
 // dependency-orders mutually-visible top-level declarations through the dep graph. A
 // script is instead one straight-line body. Its bindings are linear, and each
-// statement sees only the ones before it, exactly as inside a function. So liveness,
-// alias tracking, and the `mut` transition rules all apply to a script's top-level
-// statements. A module skips those at top level, where c.fn is nil and every
-// transition entry point is a no-op.
+// statement sees only the ones before it, exactly as inside a function. So liveness
+// and the ownership checks apply to a script's top-level statements. A module skips
+// those at top level, where c.fn is nil and every per-body check is a no-op.
 //
 // It runs these steps:
 //
 //  1. wrap the script's statements in an ast.Block;
-//  2. push a fresh funcCtx so c.fn is non-nil and the transition checker is live;
+//  2. push a fresh funcCtx so c.fn is non-nil and the per-body checks run;
 //  3. run runLivenessPrePass over that block to rename the body's variable nodes and
-//     seed the alias/liveness tables;
+//     build its liveness tables;
 //  4. walk the block in source order through inferBlock.
 //
-// M4 shipped every building block this uses: the pre-pass, the per-body funcCtx, the
-// alias tracker, and the transition checker. The only new code is this entry point
-// that runs them over a script body. There is no new inference.
+// Every building block this uses already exists for function bodies: the pre-pass, the
+// per-body funcCtx, and the ownership checks. This entry point runs them over a script
+// body. There is no new inference.
 //
 // The pushed funcCtx carries no async flag and a nil node. A top-level `await` is
 // rejected the same way it is at module top level. There is no enclosing function to
@@ -263,25 +262,18 @@ func (c *checker) bindScriptFuncWithBody(scope *Scope, lvl int, s ast.Stmt, decl
 
 	// The name's capture edges let a call of it take the capture loans, the way a call of a
 	// `val name = fn …` binding does.
-	c.trackFuncDeclCaptures(scope, decl, bindingType(b), s)
+	c.trackFuncDeclCaptures(decl, s)
 }
 
-// trackFuncDeclCaptures records decl's name in the current body's alias and borrow tables.
-// The name holds a fresh value, joins the alias set of each local the body captures, and
-// holds a capture edge to each one. bindingT is the name's type. s is the statement decl is
-// written as.
-func (c *checker) trackFuncDeclCaptures(scope *Scope, decl *ast.FuncDecl, bindingT soltype.Type, s ast.Stmt) {
+// trackFuncDeclCaptures records decl's name in the current body's borrow tables. The name
+// holds a capture edge to each local the body captures. s is the statement decl is written
+// as.
+func (c *checker) trackFuncDeclCaptures(decl *ast.FuncDecl, s ast.Stmt) {
 	if c.fn == nil {
 		return
 	}
 
 	id := c.varIDs.Of(decl)
-	if id > 0 && c.fn.aliases != nil {
-		c.recordVarIDType(id, bindingT)
-		c.fn.aliases.NewValue(id, aliasMutability(isMutableType(bindingT)))
-		c.trackCapturedAliases(scope, decl, id)
-	}
-
 	if id > 0 && c.fn.eagerBorrowGraph != nil {
 		c.clearEagerSubtree(id, nil)
 		c.addCaptureEdges(id, nil, decl)

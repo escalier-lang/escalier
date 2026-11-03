@@ -49,9 +49,9 @@ func (c *checker) inferBlock(scope *Scope, lvl int, b *ast.Block) (soltype.Type,
 // without constraining the old and new types together.
 func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 	c.markLifetimes(s)
-	// M4 G1: record the enclosing statement so a reassignment in expression position
-	// can find its CFG StmtRef for transition checking. A no-op outside a function
-	// body (c.fn == nil), where no liveness analysis ran.
+	// Record the enclosing statement so a reassignment in expression position can find
+	// its CFG StmtRef. A no-op outside a function body, where c.fn is nil and no liveness
+	// analysis ran.
 	if c.fn != nil {
 		c.fn.currentStmt = s
 		// A statement inside an expression the CFG builder did not decompose has no CFG point
@@ -216,9 +216,9 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 
 // defineLocal binds name to b in scope for the single-name `val`/`var` vd written at
 // statement s, overwriting any earlier binding of name. Inside a body it copies the
-// VarID the rename pass gave vd's pattern onto b, then records the aliases, consumes,
-// borrow edges, and loans the declaration creates. A later closure capture of the
-// binding resolves to its alias set through that VarID.
+// VarID the rename pass gave vd's pattern onto b, then records the consumes, borrow
+// edges, and loans the declaration creates. A later closure capture of the binding
+// resolves to the binding through that VarID.
 func (c *checker) defineLocal(scope *Scope, name string, vd *ast.VarDecl, b ValueBinding, s ast.Stmt) {
 	if ip, ok := vd.Pattern.(*ast.IdentPat); ok && c.varIDs.Of(ip) > 0 {
 		b.VarID = int(c.varIDs.Of(ip))
@@ -233,7 +233,6 @@ func (c *checker) defineLocal(scope *Scope, name string, vd *ast.VarDecl, b Valu
 	if c.fn.unwrittenBorrows.Contains(vd.Init) {
 		return
 	}
-	c.trackAliasesForVarDecl(scope, vd, bindingType(b), s)
 	c.consumeBindingInit(vd, bindingType(b), s)
 	// Record which function-locals this binding's initializer borrows, so a later
 	// flow-out of the binding can find a borrow of a local that would escape the frame.

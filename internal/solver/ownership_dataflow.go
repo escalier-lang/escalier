@@ -110,7 +110,7 @@ func replacedByDataflow(err SolverError) bool {
 		return e.FirstVia == "" && e.SecondVia == "" && !e.closure
 	case *MoveWhileBorrowedError:
 		return e.Via == ""
-	case *BorrowedValueWriteError, *MutabilityTransitionError:
+	case *BorrowedValueWriteError:
 		return true
 	}
 	return false

@@ -28,9 +28,8 @@ type CaptureInfo struct {
 //
 // Note: this analysis is purely syntactic — it does not consider types.
 // A mutable capture of a primitive (e.g. `count = count + 1`) is reported
-// as mutable even though primitives have value semantics. The caller
-// (trackCapturedAliases in the checker) is responsible for skipping alias
-// tracking for value types.
+// as mutable even though primitives have value semantics. A caller that
+// tracks only reference values skips value-typed captures itself.
 func AnalyzeCaptures(ids *VarIDs, fn ast.Func) []CaptureInfo {
 	body := fn.FuncBody()
 	if body == nil || len(body.Stmts) == 0 {

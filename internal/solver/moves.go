@@ -1166,16 +1166,11 @@ func (c *checker) retractMove(moveNode ast.Node) {
 // StateBefore reads the place's state just before the read's statement, so a move
 // recorded AT that statement — the consume in `val q = p`, where reading p and
 // moving it share one statement — does not flag its own source read.
-//
-// It also resolves the phase/exclusivity diagnostics against the same lattice:
-// resolvePhaseTransitions emits each conflict the walk recorded unless the lattice
-// finds its source moved on every path reaching the transition, where the
-// use-after-move subsumes it.
 func (c *checker) checkUseAfterMoves() {
 	if c.fn == nil || c.fn.cfg == nil {
 		return
 	}
-	if len(c.fn.useSites) == 0 && len(c.fn.moveSites) == 0 && len(c.fn.pendingTransitions) == 0 && len(c.fn.escapeSites) == 0 && len(c.fn.retainedClosureStores) == 0 && len(c.fn.borrowSites) == 0 {
+	if len(c.fn.useSites) == 0 && len(c.fn.moveSites) == 0 && len(c.fn.escapeSites) == 0 && len(c.fn.retainedClosureStores) == 0 && len(c.fn.borrowSites) == 0 {
 		return
 	}
 	info := liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites)
@@ -1230,7 +1225,6 @@ func (c *checker) checkUseAfterMoves() {
 	// its operand as the read that takes its loan, and the use check skips those reads.
 	c.checkNestedBorrows()
 	c.checkUsesAgainstLoans(reported)
-	c.resolvePhaseTransitions(info)
 }
 
 // movedConflict finds the strongest consumed state among the moved places that
@@ -1270,32 +1264,4 @@ func (c *checker) movedConflict(info *liveness.MoveInfo, u moveUse) (liveness.Mo
 		bestID = id
 	}
 	return best, bestID
-}
-
-// resolvePhaseTransitions emits the phase/exclusivity conflicts the walk recorded,
-// deciding each against the now-complete consumed lattice. A mutable owned value sits
-// in one of two phases that never overlap: an immutable phase with any number of `&`
-// borrows, or a mutable phase with any number of `&mut` borrows. A recorded conflict
-// is a borrow of the opposite phase still live across the transition.
-//
-// The lattice makes the decision path-sensitive:
-//   - Moved on every path reaching the transition: the move engine already reports a
-//     use-after-move at that point, which subsumes the conflict, so it is dropped.
-//   - MaybeMoved, moved on some reaching paths but not all: the non-moving paths are a
-//     real phase conflict, so the error is kept. The moving paths read as the
-//     conditional use-after-move the move engine reports there, so both diagnostics
-//     stand, each describing the paths it governs.
-//   - NotMoved: an ordinary phase conflict, kept.
-//
-// The query is scoped to this body for free. Module-wide VarID numbering means this
-// body's lattice never marks another body's source moved, so a conflict whose source
-// lives in a different body reads NotMoved here and is kept.
-func (c *checker) resolvePhaseTransitions(info *liveness.MoveInfo) {
-	for _, e := range c.fn.pendingTransitions {
-		if e.sourceVarID > 0 && info.StateBefore(e.ref, e.sourceVarID) == liveness.Moved {
-			continue
-		}
-		c.errs = append(c.errs, e)
-	}
-	c.fn.pendingTransitions = nil
 }

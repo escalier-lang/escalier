@@ -541,10 +541,10 @@ func TestScriptTransitionParity(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, _, scriptErrs := inferScriptSource(t, tt.stmts)
-			scriptMsgs := transitionMessages(t, scriptErrs)
+			scriptMsgs := errorMessagesOrNil(scriptErrs)
 
 			_, _, fnErrs := inferSource(t, "fn test() {"+tt.stmts+"\n}")
-			fnMsgs := transitionMessages(t, fnErrs)
+			fnMsgs := errorMessagesOrNil(fnErrs)
 
 			if len(tt.want) == 0 {
 				require.Empty(t, scriptMsgs)
@@ -714,7 +714,7 @@ func TestScriptReassignTransition(t *testing.T) {
 		`)
 		require.Equal(t, []string{
 			"5:4-5:9: use of moved value 'items'",
-		}, transitionMessagesWithSpan(t, errs))
+		}, messagesWithSpan(t, errs))
 	})
 
 	t.Run("source_dead_ok", func(t *testing.T) {
@@ -725,7 +725,7 @@ func TestScriptReassignTransition(t *testing.T) {
 			snap = items
 			snap
 		`)
-		require.Empty(t, transitionMessages(t, errs))
+		require.Empty(t, errorMessagesOrNil(errs))
 	})
 }
 
