@@ -2,7 +2,9 @@ package solver
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/resolver"
@@ -41,14 +43,14 @@ func (c *checker) bindFileImports(scope *Scope, module *ast.Module) map[int]*Sco
 	for _, file := range module.Files {
 		for _, stmt := range file.Imports {
 			if IsSchemePrefixedImport(stmt.PackageName) {
-				c.errs = append(c.errs, c.bindImport(fileScopes[file.SourceID], stmt)...)
+				c.errs = append(c.errs, c.bindImport(fileScopes[file.SourceID], stmt, isDeclarationFile(file.Path))...)
 			}
 		}
 	}
 	for _, file := range module.Files {
 		for _, stmt := range file.Imports {
 			if !IsSchemePrefixedImport(stmt.PackageName) {
-				c.errs = append(c.errs, c.bindImport(fileScopes[file.SourceID], stmt)...)
+				c.errs = append(c.errs, c.bindImport(fileScopes[file.SourceID], stmt, isDeclarationFile(file.Path))...)
 			}
 		}
 	}
@@ -61,7 +63,9 @@ func (c *checker) bindFileImports(scope *Scope, module *ast.Module) map[int]*Sco
 
 // bindImport loads the package an import names and binds it into fileScope as a
 // namespace, under the statement's alias or a name derived from the specifier.
-func (c *checker) bindImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverError {
+// An import with Names binds those members instead. inDeclarationFile reports
+// whether a `.d.ts` wrote the import.
+func (c *checker) bindImport(fileScope *Scope, stmt *ast.ImportStmt, inDeclarationFile bool) []SolverError {
 	uri := stmt.PackageName
 	if IsSchemePrefixedImport(uri) {
 		return c.bindPseudoPackageImport(fileScope, stmt)
@@ -73,6 +77,20 @@ func (c *checker) bindImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverErr
 		!listedDependency(c.dependencies, uri) {
 		return []SolverError{&UnlistedDependencyError{Package: resolver.PackageName(uri), span: stmt.Span()}}
 	}
+	// NodeModulesSource loads an absolute path as a `.d.ts` file. Only the imports
+	// a `.d.ts` writes are given such a URI, so an absolute path an Escalier file
+	// writes is rejected.
+	if filepath.IsAbs(uri) && !inDeclarationFile {
+		return []SolverError{&UnresolvedPackageError{
+			URI: uri, Reason: fmt.Sprintf("%q is a path, not a package name", uri), span: stmt.Span(),
+		}}
+	}
+	// TypeScript accepts two `.d.ts` files that import each other. The file still
+	// loading has no surface to bind yet, so the import binds nothing and reports
+	// nothing. A name read through it is reported where it is read.
+	if inDeclarationFile && c.ctx.packages.Loading(uri) {
+		return nil
+	}
 	// An npm package's declarations read the globals scope, so it has to be full
 	// before the package infers.
 	c.bindGlobals()
@@ -83,6 +101,9 @@ func (c *checker) bindImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverErr
 		return errs
 	}
 
+	if stmt.Names != nil {
+		return append(errs, c.bindImportedNames(fileScope, stmt, ns)...)
+	}
 	c.bindImportedNamespace(fileScope, stmt.LocalName(), ns)
 	return errs
 }
@@ -101,6 +122,67 @@ func (c *checker) bindImportedNamespace(fileScope *Scope, name string, ns *Names
 	// call `p(…)` as well as read `p.member`.
 	fileScope.bindNamespace(name, ns)
 }
+
+// isDeclarationFile reports whether path names a TypeScript declaration file.
+func isDeclarationFile(path string) bool {
+	return strings.HasSuffix(path, ".d.ts") || strings.HasSuffix(path, ".d.mts") || strings.HasSuffix(path, ".d.cts")
+}
+
+// bindImportedNames binds each member stmt.Names lists from ns into fileScope
+// under its local name. A member is bound in every sort ns holds it in, so a
+// class arrives as both its constructor and its instance type, and a namespace
+// arrives as a namespace.
+//
+// A `default` that ns does not export binds ns itself when ns is the surface of an
+// `export =` package. Any other name ns exports in no sort is reported and binds
+// nothing.
+func (c *checker) bindImportedNames(fileScope *Scope, stmt *ast.ImportStmt, ns *Namespace) []SolverError {
+	var errs []SolverError
+	for _, name := range stmt.Names {
+		value, isValue := ns.Values[name.Imported]
+		typ, isType := ns.Types[name.Imported]
+		nested, isNested := ns.Nested[name.Imported]
+		if !isValue && !isType && !isNested && name.Imported == defaultExport && ns.ExportAssigned {
+			// TypeScript's esModuleInterop reads a default import of an
+			// `export = X` module as X, and ns is the surface X's module exports.
+			c.bindImportedNamespace(fileScope, name.Local, ns)
+			continue
+		}
+		if !isValue && !isType && !isNested {
+			errs = append(errs, &UnexportedImportError{
+				Package: stmt.PackageName, Name: name.Imported, span: stmt.Span(),
+			})
+			continue
+		}
+		if isValue {
+			fileScope.defineValue(name.Local, value)
+		}
+		if isType {
+			fileScope.defineType(name.Local, typ)
+		}
+		if isNested {
+			fileScope.defineNamespace(name.Local, nested)
+		}
+	}
+	return errs
+}
+
+// UnexportedImportError reports a named import of a member the package does
+// not export.
+type UnexportedImportError struct {
+	// Package is the URI the import loaded.
+	Package string
+	// Name is the member the import named.
+	Name string
+	span ast.Span
+}
+
+func (e *UnexportedImportError) Message() string {
+	return fmt.Sprintf("%q has no export named %q", e.Package, e.Name)
+}
+func (e *UnexportedImportError) Span() ast.Span      { return e.span }
+func (e *UnexportedImportError) Related() []ast.Span { return nil }
+func (e *UnexportedImportError) isSolverError()      {}
 
 // bindPseudoPackageImport binds what a `std:` / `web:` / `node:` import names.
 //

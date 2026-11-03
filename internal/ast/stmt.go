@@ -69,13 +69,26 @@ func (s *ReturnStmt) Accept(v Visitor) {
 // For namespace imports: * as ns
 // ImportStmt is `import "uri"` with an optional `as name`, the one import form
 // Escalier has. It binds the package as a namespace and members are reached
-// through it. There is no named specifier: a member is never bound directly.
+// through it. Escalier source has no named specifier, so a member it imports is
+// never bound directly.
 type ImportStmt struct {
 	PackageName string   // module specifier without the `?flag` suffix, e.g. "lodash", "std:math"
 	Alias       string   // the `as name` binding, or "" to derive one from PackageName
 	Flags       []string // `?flag1&flag2` suffix parsed into a list, preserving order; nil if none
-	span        Span
+	// Names lists the members the import binds directly, each under its own local
+	// name. When Names is non-nil, the import binds those members and does not bind
+	// the package as a namespace. The parser always leaves it nil. An import read
+	// from a `.d.ts` sets it for `import { a, b as c } from "pkg"`.
+	Names []*ImportName
+	span  Span
 	commentSlots
+}
+
+// ImportName is one member a named import binds. `b as c` imports the member
+// `b` and binds it as `c`.
+type ImportName struct {
+	Imported string
+	Local    string
 }
 
 func NewImportStmt(packageName, alias string, flags []string, span Span) *ImportStmt {
