@@ -47,6 +47,9 @@ type Info struct {
 	// ownership maps the node of each function whose body was walked to the ownership events
 	// that body emitted. A script's top level is keyed by a nil node.
 	ownership map[ast.Node]*ownershipEvents
+	// indexSegments holds indexSegment's answer for each index key it read through the key's
+	// recorded type. It is nil until the first such key.
+	indexSegments map[ast.Expr]indexSegmentAnswer
 	// ctx is the Context of the run that recorded this table, or nil for a table built
 	// by NewInfo. MemberObject reads the class and alias registries it holds.
 	ctx *Context
