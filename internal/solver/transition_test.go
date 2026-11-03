@@ -610,7 +610,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 				}
 			`,
 		},
-		// `val z: &mut {x} = p` copies p's borrow into z. `sink = z` copies it into
+		// `val z = p` copies p's borrow into z. `sink = z` copies it into
 		// module-level state, so the global holds a `'static` immutable path to p. The current
 		// checks report that p still has mutable access to what the global holds. The
 		// dataflow pass reports where E2 breaks, at the write through p made while the
@@ -619,7 +619,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 			src: `
 				var sink = &{x: 0}
 				fn f(p: &mut {x: number}) {
-				  val z: &mut {x: number} = p
+				  val z = p
 				  sink = z
 				  p.x = 1
 				}
