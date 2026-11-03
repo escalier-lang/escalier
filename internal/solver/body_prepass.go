@@ -82,8 +82,8 @@ func (c *checker) varIDToName(id liveness.VarID) string {
 // consult. paramTypes maps each parameter leaf's name to its soltype, which the pre-pass
 // records into c.fn.varIDTypes.
 //
-// Must be called after parameters are bound in scope (so outer-scope names resolve)
-// but before the body is walked.
+// Must be called after parameters are bound in scope, so outer-scope names resolve, and
+// before the body is walked.
 //
 // recv is the body's receiver, nil when the body has none. A receiver is not an entry in
 // astParams, so the rename pass defines `self` as an extra parameter of the body.
@@ -493,14 +493,13 @@ func recordBindingType(scope *Scope, name string, id liveness.VarID, varIDTypes 
 // collectOuterBindings walks the scope chain and collects all value binding names,
 // assigning each a unique negative VarID so the rename pass can tell a non-local
 // reference from a local. Names within each scope are sorted before assignment so the
-// ids are deterministic across runs (Go map iteration order is randomized).
+// ids are deterministic across runs. Go randomizes map iteration order.
 //
 // The root of every chain is the shared, immutable prelude, which this would re-walk
 // and re-sort on every function body's pre-pass. preludeOuterNames memoizes the
 // prelude's sorted names so only the mutable scopes above it are re-collected each
-// time. The old checker left this re-walk as a TODO(Phase 15.1). The module scope
-// above the prelude is NOT cached. It grows as later SCC components bind, so a cached
-// snapshot would be stale for a body inferred after it.
+// time. The module scope above the prelude is NOT cached. It grows as later SCC
+// components bind, so a cached snapshot would be stale for a body inferred after it.
 func (c *checker) collectOuterBindings(scope *Scope) map[string]liveness.VarID {
 	bindings := make(map[string]liveness.VarID)
 	nextID := liveness.VarID(-1)

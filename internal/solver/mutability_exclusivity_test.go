@@ -55,7 +55,7 @@ func TestGlobalWriteMutTransition(t *testing.T) {
 	// and the CALLER may keep a live mutable alias to the same value and mutate it after
 	// the call, so the immutable `sink` observes a mutation. Catching that needs the call
 	// site to enforce the 'static borrow as unique, which is the borrow checker's job
-	// (#618, #762), not this pass. The assertion covers current behavior and is expected to
+	// tracked in #618 and #762, not this pass. The assertion covers current behavior and is expected to
 	// gain an error once the caller-side check lands.
 	t.Run("dead_in_body_source_no_inbody_conflict", func(t *testing.T) {
 		_, _, errs := inferSource(t, `

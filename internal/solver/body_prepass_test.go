@@ -25,7 +25,7 @@ func TestIsValueType(t *testing.T) {
 	}}))
 	// A union with a non-value member is not a value type.
 	require.False(t, isValueType(&soltype.UnionType{Types: []soltype.Type{numT(), objT()}}))
-	// An empty union is not a value type (len == 0).
+	// An empty union is not a value type.
 	require.False(t, isValueType(&soltype.UnionType{}))
 	require.False(t, isValueType(objT()))
 	require.False(t, isValueType(&soltype.RefType{Mut: true, Inner: objT()}))
