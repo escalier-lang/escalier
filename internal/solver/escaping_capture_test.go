@@ -205,7 +205,8 @@ func TestEscapingClosureCapture(t *testing.T) {
 				}
 			`,
 		},
-		// Returning p hands the caller p as an owned value beside the closure's borrow of it.
+		// Returning p hands the caller p as an owned value beside the closure's borrow of it, so
+		// the return breaks E3.
 		"ReturningALocalAStoredClosureCapturesConflicts": {
 			src: `
 				fn go(out: &mut {cb: fn () -> number}) -> {x: number} {
@@ -214,9 +215,10 @@ func TestEscapingClosureCapture(t *testing.T) {
 					return p
 				}
 			`,
-			want: []string{"5:13-5:14: 'p' leaves the function both as an owned value and through a borrow"},
+			want: []string{"5:13-5:14: cannot move 'p' while it is borrowed"},
 		},
-		// The stored closure writes p while `q.r` hands the caller an immutable path to it.
+		// The stored closure writes p while `q.r` hands the caller an immutable path to it. The
+		// caller can call `out.cb` while it reads `q.r`, so `&p` breaks E2.
 		"StoringAWritingClosureBesideAnImmutableStoreConflicts": {
 			src: `
 				fn go(out: &mut {cb: fn () -> undefined}, q: &mut {r: &{x: number}}) {
@@ -225,7 +227,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 					q.r = &p
 				}
 			`,
-			want: []string{"5:12-5:14: 'p' leaves the function through a mutable path and an immutable one"},
+			want: []string{"5:12-5:14: cannot borrow 'p' as immutable while it is borrowed as mutable"},
 		},
 		// An owned parameter dies with the frame, so a closure stored into it borrows p.
 		"StoreIntoAnOwnedParameterLeavesTheCaptureOk": {

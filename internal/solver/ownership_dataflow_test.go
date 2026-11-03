@@ -568,31 +568,6 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot move 'p' while it is borrowed"},
 		},
 		{
-			// A closure stored into sink and also returned keeps its `'static` borrow of p, so
-			// the return does not move p. A later move of p conflicts with that borrow. The
-			// first diagnostic is the current checks' escape check of `return f`, which the
-			// pass does not replace.
-			name: "E3MoveAfterStoringAndReturningAClosure",
-			src: `
-				var sink: fn () -> number = fn () { return 0 }
-				declare fn take(x: {x: number}) -> undefined
-				fn go(c: boolean) {
-					val p = {x: 1}
-					val f = fn () { return p.x }
-					sink = f
-					if c {
-						return f
-					}
-					take(p)
-					return fn () { return 0 }
-				}
-			`,
-			errs: []string{
-				"'p' leaves the function both as an owned value and through a borrow",
-				"cannot move 'p' while it is borrowed",
-			},
-		},
-		{
 			// One return that names the closure twice moves its capture once.
 			name: "ReturnOfAClosureTwiceInOneValue",
 			src: `
@@ -983,26 +958,6 @@ func TestOwnershipDataflow(t *testing.T) {
 				}
 			`,
 			errs: []string{"cannot borrow 'b.y' as mutable while it is borrowed as immutable"},
-		},
-		{
-			// The body reads `p.r` while the mutable borrow `a` holds is live, so the store's `&b`
-			// breaks E2. The current checks report that store with a message naming `a`, which
-			// takes the place of the pass's. The frame-exit check reports that b leaves both owned and
-			// through a borrow, which is not a pair E2 covers, so it stays.
-			name: "AnOwnedOutflowStaysBesideE2",
-			src: `
-				fn f(p: &mut {r: &{v: number}}) -> {v: number} {
-					val mut b = {v: 1}
-					val a = &mut b
-					p.r = &b
-					a.v = p.r.v + 1
-					return b
-				}
-			`,
-			errs: []string{
-				"cannot store an immutable borrow of 'b' while 'a' still borrows it as mutable",
-				"'b' leaves the function both as an owned value and through a borrow",
-			},
 		},
 		{
 			// t holds both borrows one literal takes, and the return uses t, so the pass reports
@@ -1770,8 +1725,8 @@ func TestOwnershipDataflow(t *testing.T) {
 // TestOwnershipDataflowMessagesAndSpans covers the message and the span of each diagnostic the
 // dataflow pass reports for a program. The cases cover a call that runs a closure, a write
 // through a `number`-typed index, the span a moved place is blamed at, the name of a moved
-// field or tuple, a write that uses a moved place beside a live borrow, and a borrow copied
-// into a second binding.
+// field or tuple, a write that uses a moved place beside a live borrow, a borrow copied into a
+// second binding, and a move whose value reaches the caller beside a borrow the caller reads.
 func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 	cases := []struct {
 		name string
@@ -2327,6 +2282,48 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 				}
 			`,
 			want: []string{"6:12-6:13: use of moved value 'q'"},
+		},
+		{
+			// A closure stored into sink and also returned keeps its `'static` borrow of p, so
+			// the return does not move p. A later move of p conflicts with that borrow. The
+			// frame-exit check pairs that move with `return f`, and E3 at the move reports the
+			// same owned outflow, so only E3 is reported.
+			name: "E3MoveAfterStoringAndReturningAClosure",
+			src: `
+				var sink: fn () -> number = fn () { return 0 }
+				declare fn take(x: {x: number}) -> undefined
+				fn go(c: boolean) {
+					val p = {x: 1}
+					val f = fn () { return p.x }
+					sink = f
+					if c {
+						return f
+					}
+					take(p)
+					return fn () { return 0 }
+				}
+			`,
+			want: []string{"11:11-11:12: cannot move 'p' while it is borrowed"},
+		},
+		{
+			// The body reads `p.r` while the mutable borrow `a` holds is live, so the store's `&b`
+			// breaks E2. The current checks report that store with a message naming `a`, which
+			// takes the place of the pass's. The caller reads `p.r` once f returns, and the return
+			// hands it b as an owned value, so the return breaks E3.
+			name: "AnOwnedReturnBesideAStoredBorrowBreaksE3",
+			src: `
+				fn f(p: &mut {r: &{v: number}}) -> {v: number} {
+					val mut b = {v: 1}
+					val a = &mut b
+					p.r = &b
+					a.v = p.r.v + 1
+					return b
+				}
+			`,
+			want: []string{
+				"5:12-5:14: cannot store an immutable borrow of 'b' while 'a' still borrows it as mutable",
+				"7:13-7:14: cannot move 'b' while it is borrowed",
+			},
 		},
 	}
 

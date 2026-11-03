@@ -19,6 +19,9 @@ import (
 //     The store's loan lasts while the target is read and catches that.
 //   - Another path to the local outlives the function and disagrees with the stored borrow.
 //     That path can be a second store, a return, or a binding the local moved into.
+//
+// The caller reads the target once f returns, so the store's loan is live at the caller. A move
+// of the local whose value also reaches the caller breaks E3 there, and the move is blamed.
 func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 	tests := map[string]struct {
 		src  string
@@ -69,7 +72,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 			`,
 		},
 		// q moves p's data out of f, so the caller owns it and also reads it through `out.r`. The
-		// owner could change what `out.r` expects to hold still.
+		// owner could change what `out.r` expects to hold still, so the move of p into q breaks E3.
 		"ReturningALocalTheStoredLocalMovedIntoConflicts": {
 			src: `
 				fn f(out: &mut {r: &{x: number}}) -> {x: number} {
@@ -79,7 +82,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 					return q
 				}
 			`,
-			want: []string{"6:13-6:14: 'p' leaves the function both as an owned value and through a borrow"},
+			want: []string{"5:14-5:15: cannot move 'p' while it is borrowed"},
 		},
 		// A move lands in one field of its destination. Returning a.y hands out c alone, so it
 		// does not meet the borrow of b that `p.r` holds.
@@ -108,7 +111,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 			want: []string{"6:6-6:13: cannot assign to 'b.value' while it is borrowed as immutable"},
 		},
 		// Destructuring moves b.x into x, and returning x hands the caller data `out.r` still
-		// reads.
+		// reads. E3 blames the destructuring's source b.
 		"ReturningADestructuredLeafOfTheStoredLocalConflicts": {
 			src: `
 				fn f(out: &mut {r: &{x: {v: number}}}) -> {v: number} {
@@ -118,7 +121,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 					return x
 				}
 			`,
-			want: []string{"6:13-6:14: 'b' leaves the function both as an owned value and through a borrow"},
+			want: []string{"5:16-5:17: cannot move 'b.x' while it is borrowed"},
 		},
 		// The same through a renaming pattern.
 		"ReturningARenamedDestructuredLeafConflicts": {
@@ -130,7 +133,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 					return y
 				}
 			`,
-			want: []string{"6:13-6:14: 'b' leaves the function both as an owned value and through a borrow"},
+			want: []string{"5:19-5:20: cannot move 'b.x' while it is borrowed"},
 		},
 		// A tuple leaf moves the whole tuple, so returning it reaches what `out.r` reads.
 		"ReturningATupleLeafOfTheStoredLocalConflicts": {
@@ -142,7 +145,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 					return y
 				}
 			`,
-			want: []string{"6:13-6:14: 'b' leaves the function both as an owned value and through a borrow"},
+			want: []string{"5:16-5:17: cannot move 'b[0]' while it is borrowed"},
 		},
 		// `out.r` reads b.x, and the returned y owns b.y, which `out.r` does not reach.
 		"ReturningASiblingLeafOk": {
@@ -167,7 +170,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 					return a
 				}
 			`,
-			want: []string{"7:13-7:14: 'b' leaves the function both as an owned value and through a borrow"},
+			want: []string{"5:19-5:20: cannot move 'b.x' while it is borrowed"},
 		},
 		// A rest element takes the fields the pattern does not name, here b.y, which `out.r`
 		// reads.
@@ -180,7 +183,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 					return rest
 				}
 			`,
-			want: []string{"6:13-6:17: 'b' leaves the function both as an owned value and through a borrow"},
+			want: []string{"5:25-5:26: cannot move 'b.y' while it is borrowed"},
 		},
 		// The rest element does not take b.x, which x took, so returning it does not reach
 		// what `out.r` reads.
@@ -205,7 +208,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 					return rest
 				}
 			`,
-			want: []string{"6:13-6:17: 'b' leaves the function both as an owned value and through a borrow"},
+			want: []string{"5:25-5:26: cannot move 'b.z' while it is borrowed"},
 		},
 		// `rest.z` holds the data moved out of b.z, which `out.r` reads.
 		"ReturningTheStoredFieldOfARestElementConflicts": {
@@ -217,7 +220,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 					return rest.z
 				}
 			`,
-			want: []string{"6:13-6:19: 'b' leaves the function both as an owned value and through a borrow"},
+			want: []string{"5:25-5:26: cannot move 'b.z' while it is borrowed"},
 		},
 		// `rest.y` holds the data moved out of b.y, which `out.r` does not reach.
 		"ReturningAnotherFieldOfARestElementOk": {
@@ -241,7 +244,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 					q.o = rest
 				}
 			`,
-			want: []string{"6:12-6:16: 'b' leaves the function both as an owned value and through a borrow"},
+			want: []string{"5:25-5:26: cannot move 'b.z' while it is borrowed"},
 		},
 		// Wrapping the rest element in a literal keeps the trace back to b.z.
 		"ReturningARestElementInsideALiteralConflicts": {
@@ -254,7 +257,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 					return a
 				}
 			`,
-			want: []string{"7:13-7:14: 'b' leaves the function both as an owned value and through a borrow"},
+			want: []string{"5:25-5:26: cannot move 'b.z' while it is borrowed"},
 		},
 		// A leaf that copies a borrow moves nothing, and its borrow edge says what it reaches.
 		"DestructuringABorrowLeafOk": {
