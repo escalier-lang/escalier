@@ -217,8 +217,9 @@ func TestReturnValueBorrows(t *testing.T) {
 		// A local this frame also sends out another way is not the return's alone. The store
 		// puts a borrow of b in the caller's object, so the caller reaches b through `p.node.peer`
 		// and through the return. Both paths are mutable, which Rule 3 of
-		// planning/lifetimes/requirements.md allows, so the return is accepted. It keeps its
-		// borrow type, since the caller cannot own a value it also reaches through p.
+		// planning/lifetimes/requirements.md allows, so the return is accepted. The stored
+		// `&mut b` outlives the frame, so the returned `&mut b` takes its lifetime under D16's
+		// first rule. The return stays a borrow, and the signature ties it to the field of p.
 		"ReturnOfALocalAlsoStoredIntoAParam": {
 			src: `
 				fn f(p: &mut {node: {peer: &mut {value: number}}}) {
@@ -228,7 +229,7 @@ func TestReturnValueBorrows(t *testing.T) {
 				}
 			`,
 			want:  nil,
-			types: map[string]string{"f": "fn (p: &mut {node: {peer: &mut {value: number}}}) -> &mut {value: number}"},
+			types: map[string]string{"f": "fn <'a>(p: &mut {node: {peer: &'a mut {value: number}}}) -> &'a mut {value: number}"},
 		},
 		// The same store made through an immutable borrow leaves the caller reading b through
 		// `p.node.peer` while the return writes it. A write through the return would change what
@@ -252,7 +253,8 @@ func TestReturnValueBorrows(t *testing.T) {
 		},
 		// A borrow written in an `if`/`else` branch keeps the mutability it is written with.
 		// Both branches store `&mut b`, so both paths to b are mutable and the return is
-		// accepted as it is beside a plain mutable store.
+		// accepted as it is beside a plain mutable store. The returned `&mut b` takes the stored
+		// borrows' lifetime under D16's first rule, as in ReturnOfALocalAlsoStoredIntoAParam.
 		"ReturnOfALocalAlsoStoredThroughAnIfElse": {
 			src: `
 				fn f(cond: boolean, p: &mut {node: {peer: &mut {value: number}}}) {
@@ -263,7 +265,7 @@ func TestReturnValueBorrows(t *testing.T) {
 			`,
 			want: nil,
 			types: map[string]string{
-				"f": "fn (cond: boolean, p: &mut {node: {peer: &mut {value: number}}}) -> &mut {value: number}",
+				"f": "fn <'a>(cond: boolean, p: &mut {node: {peer: &'a mut {value: number}}}) -> &'a mut {value: number}",
 			},
 		},
 		// The same branches storing `&b` leave the caller reading b while the return writes it.
@@ -282,7 +284,10 @@ func TestReturnValueBorrows(t *testing.T) {
 			},
 		},
 		// A return written as an `if`/`else` reaches b through each branch's borrow, so a mutable
-		// return beside a mutable store is accepted.
+		// return beside a mutable store is accepted. Each branch's `&mut b` takes the stored
+		// borrow's lifetime under D16's first rule. The two members keep separate lifetime
+		// variables that both render as `'a`, and the union's dedup compares lifetimes by
+		// pointer, so the signature lists both. The immutable form renders the same way.
 		"IfElseReturnOfALocalAlsoStoredIntoAParam": {
 			src: `
 				fn f(cond: boolean, p: &mut {node: {peer: &mut {value: number}}}) {
@@ -293,13 +298,15 @@ func TestReturnValueBorrows(t *testing.T) {
 			`,
 			want: nil,
 			types: map[string]string{
-				"f": "fn (cond: boolean, p: &mut {node: {peer: &mut {value: number}}}) -> &mut {value: number}",
+				"f": "fn <'a>(cond: boolean, p: &mut {node: {peer: &'a mut {value: number}}}) -> &'a mut {value: number} | &'a mut {value: number}",
 			},
 		},
 		// A consuming argument leaves a second path behind too. Here the path belongs to the
 		// callee rather than the caller: an owned parameter takes the object and everything it
 		// reaches. Both paths to b are mutable, so the return is accepted the way it is beside a
-		// mutable store, and it keeps its borrow type.
+		// mutable store. take's signature gives the borrow in x no lifetime that outlives the
+		// call, and a bodyless signature is taken at its word. Nothing reaches b once take
+		// returns, so the returned `&mut b` ends with the frame and D16 makes it owned.
 		//
 		// #1539 covers the uses this move ought to reject and does not. A read or a re-borrow
 		// of b after the call is accepted today, where the same two after a plain argument move
@@ -316,12 +323,12 @@ func TestReturnValueBorrows(t *testing.T) {
 			want: nil,
 			types: map[string]string{
 				"take": "fn (x: {peer: &mut {value: number}}) -> undefined",
-				"f":    "fn () -> &mut {value: number}",
+				"f":    "fn () -> {value: number}",
 			},
 		},
 		// A store of a DIFFERENT local leaves no path to this one, so the return keeps its
-		// exemption and owns its data. The previous cases keep their borrow type, and this one
-		// must not.
+		// exemption and owns its data. The stores above keep their borrow type, and this
+		// one must not.
 		"ReturnOfALocalWhileAnotherIsStoredOut": {
 			src: `
 				fn f(mut p: {node: {peer: &mut {value: number}}}) {
@@ -602,10 +609,11 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 // holds, and L1 lets a borrow outlive the binding that owns its place. So a borrowed local
 // stays usable after its carrier moves, and the cases that read one expect no diagnostic.
 //
-// Two behaviours shape the returned types here. Return borrow-stripping rewrites a returned
-// `&`/`&mut` of a function-local reached exactly once into an owned field, so a tree-shaped
-// component move returns an owned type while a diamond or cyclic graph keeps its borrows. The
-// borrow-field owned-mutable upgrade makes `&mut` graph carriers constructible, so an
+// Two behaviours shape the returned types here. D16 makes a borrow in a returned value owned
+// when its lifetime ends with the frame and no other borrow in the value reaches an overlapping
+// place. The cases below call that borrow-stripping. A tree-shaped component reaches each local
+// once and returns an owned type, while a diamond keeps the borrows that reach its shared node.
+// The borrow-field owned-mutable upgrade makes `&mut` graph carriers constructible, so an
 // all-`&mut` diamond is a component move rather than a construction error.
 func TestConnectedComponentMove(t *testing.T) {
 	tests := map[string]struct {
@@ -723,11 +731,9 @@ func TestConnectedComponentMove(t *testing.T) {
 		},
 		// An escape through a consuming call inside a return is a component move at the
 		// argument: the literal owning `&mut b` moves into id, b reachable only through it.
-		// No escape is reported at either the argument or the enclosing return. f's return is
-		// the call result `id(…)`, which hides its borrow behind the call boundary, so
-		// borrow-stripping leaves f's return borrowed rather than rewriting it to owned.
-		// Stripping through a consuming call needs lifetime machinery that maps the callee's
-		// returned borrow back to the moved local, deferred past this work.
+		// No escape is reported at either the argument or the enclosing return. id's signature
+		// ties the borrow in its result to the one in its argument, so the borrow in f's return
+		// is foreign under D16 and stays a borrow.
 		"ComponentMoveThroughConsumingCall": {
 			src: `
 				fn id(y: {peer: &mut {value: number}}) {

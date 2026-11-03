@@ -8,13 +8,15 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// This file applies the two rules of D16 in planning/ownership_rules/requirements.md to the
+// This file applies the rules of D16 in planning/ownership_rules/requirements.md to the
 // lifetimes of one function body:
 //
-//  1. An immutable borrow of a place that already has an immutable borrow outliving the
-//     current frame takes that borrow's lifetime.
-//  2. A returned `&` is owned when its lifetime ends with the function's frame, meaning it is
-//     not tied to a parameter, a capture, or `'static`.
+//  1. A borrow of a place that already has a borrow of the same kind outliving the current
+//     frame takes that borrow's lifetime. The kind is immutable or mutable.
+//  2. A returned borrow is owned when its lifetime ends with the function's frame, meaning it
+//     is not tied to a parameter, a capture, or `'static`.
+//  3. A borrow nested in a returned value is owned when its lifetime ends with the frame and
+//     no other borrow in the returned value reaches an overlapping place.
 //
 // The frame is one call of the function whose body is walked. The rules use these terms:
 //
@@ -47,12 +49,12 @@ import (
 //		return &b
 //	}
 
-// frameLifetimes is what the two rules read about the lifetimes of the body being walked.
+// frameLifetimes is what D16's rules read about the lifetimes of the body being walked.
 type frameLifetimes struct {
 	// mark is the lifetime counter when the walk of the body began. A lifetime with a lower
 	// ID is from outside the frame.
 	mark int
-	// borrows holds each immutable borrow of a local place the body takes, in source order.
+	// borrows holds each borrow of a local place the body takes, in source order.
 	borrows []frameBorrow
 	// foreign holds the foreign lifetimes the body minted. It is nil until the first one.
 	foreign set.Set[*soltype.LifetimeVar]
@@ -61,10 +63,12 @@ type frameLifetimes struct {
 	outliving set.Set[*soltype.LifetimeVar]
 }
 
-// frameBorrow is one immutable borrow of a local place and the lifetime its type carries.
+// frameBorrow is one borrow of a local place and the lifetime its type carries. mut is set
+// for a `&mut`.
 type frameBorrow struct {
 	place movePlace
 	lt    *soltype.LifetimeVar
+	mut   bool
 }
 
 // startFrameLifetimes marks every lifetime minted so far as from outside the frame of the
@@ -103,18 +107,20 @@ func (c *checker) fromOutsideFrame(lv *soltype.LifetimeVar) bool {
 	return lv.ID < c.fn.frame.mark || lv.Level < c.fn.lvl
 }
 
-// noteFrameBorrow records the immutable borrow e for the two rules. It must run once e's type
-// is recorded. Only a lifetime the body minted is recorded, so a borrow that reuses a
-// parameter's lifetime, as `&p.x` does for `p: &{x: number}`, adds nothing.
+// noteFrameBorrow records the borrow e for the rules. It must run once e's type is recorded.
+// Only a lifetime the body minted is recorded, so a borrow that reuses a parameter's lifetime,
+// as `&p.x` does for `p: &{x: number}`, adds nothing.
 //
-//   - A borrow of a local place joins the borrows the first rule reads. A parameter is such a
-//     place, and a borrow of one is foreign as well, since the caller may still hold the
-//     value.
-//   - A borrow of a module-level binding reads a value the module keeps for the rest of the
-//     program, so its lifetime must outlive `'static`.
+//   - A borrow of a local place joins the borrows the first and third rules read. A parameter
+//     is such a place, and a borrow of one is foreign as well, since the caller may still hold
+//     the value.
+//   - An immutable borrow of a module-level binding reads a value the module keeps for the
+//     rest of the program, so its lifetime must outlive `'static`. A `&mut` of one is foreign
+//     instead. E2 reads a `'static` mutable borrow as live at every later point, so making
+//     `&mut cfg` `'static` would reject every later `&cfg` in the body.
 //   - A borrow of a captured place is foreign.
 func (c *checker) noteFrameBorrow(scope *Scope, e *ast.BorrowExpr) {
-	if c.fn == nil || c.fn.node == nil || e.Mut {
+	if c.fn == nil || c.fn.node == nil {
 		return
 	}
 	lv, ok := borrowLifetime(c.info.TypeOf(e))
@@ -123,7 +129,7 @@ func (c *checker) noteFrameBorrow(scope *Scope, e *ast.BorrowExpr) {
 	}
 	p, isPlace := c.exprPlace(e.Arg)
 	if isPlace && !c.fn.captureVarIDs.Contains(p.root) {
-		c.fn.frame.borrows = append(c.fn.frame.borrows, frameBorrow{place: p, lt: lv})
+		c.fn.frame.borrows = append(c.fn.frame.borrows, frameBorrow{place: p, lt: lv, mut: e.Mut})
 		if c.fn.paramVarIDs.Contains(p.root) {
 			c.markForeign(lv)
 		}
@@ -137,7 +143,7 @@ func (c *checker) noteFrameBorrow(scope *Scope, e *ast.BorrowExpr) {
 	if !found {
 		return
 	}
-	if b.ModuleLevel {
+	if b.ModuleLevel && !e.Mut {
 		c.ctx.constrainLt(lv, soltype.Static)
 		return
 	}
@@ -195,10 +201,13 @@ func placeRootIdent(e ast.Expr) (*ast.IdentExpr, bool) {
 	}
 }
 
-// shareOutlivingBorrowLifetimes applies the first rule to every immutable borrow the body
-// took. Each borrow of a place that overlaps the place of a borrow outliving the frame must
-// outlive what that borrow outlives, so it outlives the frame as well. That can in turn reach a
-// borrow of a third place, so the walk continues until no borrow is added.
+// shareOutlivingBorrowLifetimes applies the first rule to every borrow the body took. Each
+// borrow of a place that overlaps the place of a borrow of the same kind outliving the frame
+// must outlive what that borrow outlives, so it outlives the frame as well. That can in turn
+// reach a borrow of a third place, so the walk continues until no borrow is added.
+//
+// A borrow of the other kind is left alone. E2 already rejects it while the outliving borrow
+// is live, so tying the two adds nothing a program can rely on.
 //
 // The order of the borrows in the source does not matter. A lifetime covers every point its
 // borrow is used at, so a `&b` taken before `cache = &b` still reads the value `cache` keeps
@@ -219,7 +228,7 @@ func (c *checker) shareOutlivingBorrowLifetimes() {
 		i := queue[0]
 		queue = queue[1:]
 		for j, b := range borrows {
-			if !placesOverlap(b.place, borrows[i].place) {
+			if b.mut != borrows[i].mut || !placesOverlap(b.place, borrows[i].place) {
 				continue
 			}
 			c.ctx.constrainLt(b.lt, witnesses[i])
@@ -428,26 +437,30 @@ func (v *boundLifetimeCollector) EnterType(t soltype.Type, pol soltype.Polarity)
 	return v.lifetimeCollector.EnterType(t, pol)
 }
 
-// frameOwnedReturn returns the owned type the second rule gives a return of type t, and false
-// when the rule does not own it. A `&` whose lifetime ends with the frame is owned as its
-// referent. A type variable is owned as the union of its referents when every type that flows
-// into it is such a `&`, as the binding `r` of `val r = same(&b); return r` is.
-func (c *checker) frameOwnedReturn(t soltype.Type) (soltype.Type, bool) {
-	switch t := t.(type) {
-	case *soltype.RefType:
-		if t.Mut || !c.lifetimeEndsWithFrame(t.Lt) {
+// frameOwnedReturn returns the owned type the second and third rules give a return of type t,
+// and false when they own none of its borrows. ann is the function's return annotation, or nil
+// when it has none.
+//
+//   - A borrow is owned as its referent when ownedBorrows decides it. Its referent is walked
+//     the same way, so `return {p: &mut b}` owns both the object and the borrow of `b`.
+//   - A type variable is owned as the union of its referents when every type that flows into
+//     it is a borrow the rules own, as the binding `r` of `val r = same(&b); return r` is.
+//   - A borrow at a position ann writes as a `&mut` is kept, since an owned value does not
+//     check against a `&mut` annotation.
+func (c *checker) frameOwnedReturn(t, ann soltype.Type) (soltype.Type, bool) {
+	if v, ok := t.(*soltype.TypeVarType); ok {
+		if annotatesMutBorrow(ann) {
 			return nil, false
 		}
-		return t.Inner, true
-	case *soltype.TypeVarType:
-		refs, ok := refLowerBounds(t, set.NewSet[*soltype.TypeVarType]())
+		refs, ok := refLowerBounds(v, set.NewSet[*soltype.TypeVarType]())
 		if !ok || len(refs) == 0 {
 			return nil, false
 		}
 		inners := make([]soltype.Type, 0, len(refs))
 		for _, r := range refs {
-			owned, ok := c.frameOwnedReturn(r)
-			if !ok {
+			owned, ok := c.frameOwnedReturn(r, ann)
+			// A borrow kept at the top comes back as itself.
+			if !ok || owned == soltype.Type(r) {
 				return nil, false
 			}
 			inners = append(inners, owned)
@@ -457,7 +470,240 @@ func (c *checker) frameOwnedReturn(t soltype.Type) (soltype.Type, bool) {
 		}
 		return newUnion(nil, inners), true
 	}
-	return nil, false
+	var found []returnedBorrow
+	var open []int
+	rewriteBorrows(t,
+		func(r *soltype.RefType) bool {
+			open = append(open, len(found))
+			found = append(found, returnedBorrow{ref: r})
+			return false
+		},
+		func() {
+			last := len(open) - 1
+			found[open[last]].end = len(found)
+			open = open[:last]
+		},
+	)
+	kept := set.NewSet[*soltype.RefType]()
+	keepMutAnnotated(t, ann, kept)
+	owned := c.ownedBorrows(found, kept)
+	// A read of a `val` copies its borrow's lifetime before the first rule ties the borrow to
+	// the one it shares a place with. Tying each kept copy too makes the signature render what
+	// the borrow outlives, `&'static` for a value module-level state also reads.
+	for i, b := range found {
+		if !owned[i] {
+			c.tieToOutlivingWitness(b.ref)
+		}
+	}
+	if !slices.Contains(owned, true) {
+		return nil, false
+	}
+	i := 0
+	return rewriteBorrows(t,
+		func(*soltype.RefType) bool {
+			i++
+			return owned[i-1]
+		},
+		func() {},
+	), true
+}
+
+// returnedBorrow is one borrow in a returned value. The borrows of the value are listed in the
+// order rewriteBorrows visits them, and those in ref's referent are the ones from ref's own
+// index up to end.
+type returnedBorrow struct {
+	ref *soltype.RefType
+	end int
+}
+
+// annotatesMutBorrow reports whether the annotation ann is a `&mut`.
+func annotatesMutBorrow(ann soltype.Type) bool {
+	r, ok := ann.(*soltype.RefType)
+	return ok && r.Mut && r.Lt != nil
+}
+
+// keepMutAnnotated adds to kept each borrow in t at a position the annotation ann writes as a
+// `&mut`. It walks t and ann together through borrows, the properties of objects matched by
+// name, and the elements of tuples matched by index, and stops where the two differ in shape.
+func keepMutAnnotated(t, ann soltype.Type, kept set.Set[*soltype.RefType]) {
+	switch t := t.(type) {
+	case *soltype.RefType:
+		a, ok := ann.(*soltype.RefType)
+		if !ok {
+			return
+		}
+		if annotatesMutBorrow(a) {
+			kept.Add(t)
+		}
+		keepMutAnnotated(t.Inner, a.Inner, kept)
+	case *soltype.ObjectType:
+		a, ok := ann.(*soltype.ObjectType)
+		if !ok {
+			return
+		}
+		for _, e := range t.Elems {
+			p, ok := e.(*soltype.PropertyElem)
+			if !ok {
+				continue
+			}
+			for _, ae := range a.Elems {
+				if ap, ok := ae.(*soltype.PropertyElem); ok && ap.Name == p.Name {
+					keepMutAnnotated(p.Type, ap.Type, kept)
+				}
+			}
+		}
+	case *soltype.TupleType:
+		a, ok := ann.(*soltype.TupleType)
+		if !ok {
+			return
+		}
+		for i, e := range t.Elems {
+			if i < len(a.Elems) {
+				keepMutAnnotated(e, a.Elems[i], kept)
+			}
+		}
+	}
+}
+
+// tieToOutlivingWitness constrains the lifetime of r to outlive a lifetime outlivingWitness
+// finds for it, and does nothing when r's lifetime does not outlive the frame.
+func (c *checker) tieToOutlivingWitness(r *soltype.RefType) {
+	if w, ok := c.outlivingWitness(r.Lt); ok {
+		c.ctx.constrainLt(r.Lt, w)
+	}
+}
+
+// ownedBorrows reports, for each borrow of one returned value, whether the rules own it. A
+// borrow in kept is never owned. Any other borrow is owned when all of these hold:
+//
+//   - Its lifetime ends with the frame.
+//   - No borrow the body took of a place it reaches outlives the frame, whatever its kind. A
+//     borrow of the other kind is an E2 error already, and keeping the return a borrow leaves
+//     that error the only one.
+//   - No other borrow in the value reaches a place overlapping one it reaches. A borrow reaches
+//     the places it borrows and those the borrows in its referent reach. A borrow and one in
+//     its referent are not compared, since the referent is reached only through the borrow.
+//
+// In `return {l: &mut b, r: &mut b}` both borrows reach `b`, so the caller gets two paths to one
+// value and both stay borrows. An owned value has one owner, so owning either would hide the
+// other path.
+func (c *checker) ownedBorrows(borrows []returnedBorrow, kept set.Set[*soltype.RefType]) []bool {
+	places := make([][]movePlace, len(borrows))
+	for i, b := range borrows {
+		places[i] = c.borrowedPlaces(b.ref.Lt)
+	}
+	reach := make([][]movePlace, len(borrows))
+	for i, b := range borrows {
+		reach[i] = slices.Concat(places[i:b.end]...)
+	}
+	owned := make([]bool, len(borrows))
+	for i, b := range borrows {
+		if kept.Contains(b.ref) || !c.lifetimeEndsWithFrame(b.ref.Lt) || c.reachesOutlivingBorrow(reach[i]) {
+			continue
+		}
+		owned[i] = true
+		for j, other := range borrows {
+			nested := (i < j && j < b.end) || (j < i && i < other.end)
+			if j != i && !nested && anyPlacesOverlap(reach[i], reach[j]) {
+				owned[i] = false
+				break
+			}
+		}
+	}
+	return owned
+}
+
+// reachesOutlivingBorrow reports whether a borrow the body took of a place overlapping one of
+// places outlives the frame.
+func (c *checker) reachesOutlivingBorrow(places []movePlace) bool {
+	for _, b := range c.fn.frame.borrows {
+		if anyPlacesOverlap([]movePlace{b.place}, places) && c.outlivesFrame(b.lt) {
+			return true
+		}
+	}
+	return false
+}
+
+// anyPlacesOverlap reports whether a place in as overlaps a place in bs.
+func anyPlacesOverlap(as, bs []movePlace) bool {
+	for _, a := range as {
+		for _, b := range bs {
+			if placesOverlap(a, b) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// borrowedPlaces returns the places of the frame borrows whose lifetimes flow into lt. The walk
+// follows lower bounds and the links between a lifetime and its copies, as
+// lifetimeEndsWithFrame does, so a read of `val t = &mut b` borrows `b`.
+func (c *checker) borrowedPlaces(lt soltype.Lifetime) []movePlace {
+	byLifetime := map[*soltype.LifetimeVar][]movePlace{}
+	for _, b := range c.fn.frame.borrows {
+		byLifetime[b.lt] = append(byLifetime[b.lt], b.place)
+	}
+	var out []movePlace
+	seen := set.NewSet[*soltype.LifetimeVar]()
+	var walk func(soltype.Lifetime)
+	walk = func(l soltype.Lifetime) {
+		lv, ok := l.(*soltype.LifetimeVar)
+		if !ok || seen.Contains(lv) {
+			return
+		}
+		seen.Add(lv)
+		out = append(out, byLifetime[lv]...)
+		for _, next := range slices.Concat(lv.LowerBounds, c.frameCopies(lv)) {
+			walk(next)
+		}
+	}
+	walk(lt)
+	return out
+}
+
+// rewriteBorrows returns t with each borrow strip accepts replaced by its referent. It visits
+// every borrow in t in one fixed order, the referent of each borrow included, and calls strip
+// once on each, so two walks of one type see the same sequence. It calls leave once the
+// borrow's referent is walked. A borrow strip rejects is kept as it is, with its referent
+// unchanged. The walk descends into objects, tuples and borrows, and keeps any other type as
+// it is.
+func rewriteBorrows(t soltype.Type, strip func(*soltype.RefType) bool, leave func()) soltype.Type {
+	return t.Accept(&borrowRewriter{strip: strip, leave: leave}, soltype.Positive)
+}
+
+// borrowRewriter is the visitor rewriteBorrows walks a type with.
+type borrowRewriter struct {
+	strip func(*soltype.RefType) bool
+	leave func()
+}
+
+func (v *borrowRewriter) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	switch t := t.(type) {
+	case *soltype.RefType:
+		// A borrow with no lifetime is an owned-mutable cell, not a borrow.
+		if t.Lt == nil {
+			return soltype.EnterResult{SkipChildren: true}
+		}
+		stripped := v.strip(t)
+		// The referent is walked even when the borrow is kept, so strip sees every borrow.
+		inner := t.Inner.Accept(v, pol)
+		v.leave()
+		if !stripped {
+			return soltype.EnterResult{SkipChildren: true}
+		}
+		return soltype.EnterResult{Type: inner, SkipChildren: true}
+	case *soltype.ObjectType:
+		// A residual object has no settled property list to walk.
+		return soltype.EnterResult{SkipChildren: soltype.HasResidualElem(t.Elems)}
+	case *soltype.TupleType:
+		return soltype.EnterResult{}
+	}
+	return soltype.EnterResult{SkipChildren: true}
+}
+
+func (v *borrowRewriter) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type {
+	return t
 }
 
 // refLowerBounds returns the borrows that flow into v, reading through the type variables
@@ -501,31 +747,17 @@ func mayBeBorrowed(t soltype.Type) bool {
 	return false
 }
 
-// commitOwnedReturns adds to the rewrites resolveComponentEscapes collected each return the
-// second rule of D16 owns, and writes them with commitOwnedReturnTypes. A return the escapes
-// already rewrote keeps that rewrite. It must run after checkUseAfterMoves, which collects
-// those rewrites.
+// commitOwnedReturns writes the owned type the rules of D16 give each return with
+// commitOwnedReturnTypes. It must run after shareOutlivingBorrowLifetimes, which settles the
+// lifetimes it reads.
 func (c *checker) commitOwnedReturns() {
-	ownedReturns := c.fn.ownedReturns
-	c.fn.ownedReturns = nil
+	var ownedReturns map[int]soltype.Type
 	for i, t := range c.fn.returns {
-		if _, rewritten := ownedReturns[i]; rewritten {
-			continue
-		}
-		if owned, ok := c.frameOwnedReturn(t); ok {
+		if owned, ok := c.frameOwnedReturn(t, c.fn.returnAnn); ok {
 			if ownedReturns == nil {
 				ownedReturns = map[int]soltype.Type{}
 			}
 			ownedReturns[i] = owned
-			continue
-		}
-		// A read of a `val` copies its borrow's lifetime before the first rule ties the borrow
-		// to the one it shares a place with. Tying the copy too makes the signature render
-		// what the borrow outlives, `&'static` for a value module-level state also reads.
-		if r, ok := t.(*soltype.RefType); ok && !r.Mut {
-			if w, ok := c.outlivingWitness(r.Lt); ok {
-				c.ctx.constrainLt(r.Lt, w)
-			}
 		}
 	}
 	c.commitOwnedReturnTypes(ownedReturns)
@@ -543,9 +775,10 @@ func (c *checker) commitOwnedReturns() {
 //		return p
 //	}
 //
-// only the first return ownedReturns, since a parameter borrow carries no local edge. Owning that one
-// and leaving `return p` borrowed would union `mut B` with `&'a mut B` and reject the whole
-// function. Holding the rewrite back leaves both borrowed, which is uniform and checks.
+// only the first return is owned, since a borrow of a parameter does not end with the frame.
+// Owning that one and leaving `return p` borrowed would union `B` with `&'a mut B` and reject
+// the whole function. Holding the rewrite back leaves both borrowed, which is uniform and
+// checks.
 func (c *checker) commitOwnedReturnTypes(ownedReturns map[int]soltype.Type) {
 	if len(ownedReturns) == 0 {
 		return

@@ -725,13 +725,9 @@ type funcCtx struct {
 	// inferStmt. A reassignment `a = e` lives in expression position, so a check that
 	// needs its CFG StmtRef reads the enclosing statement from here.
 	currentStmt ast.Stmt
-	// frame holds what D16's two rules read about this body's lifetimes. See
+	// frame holds what D16's rules read about this body's lifetimes. See
 	// lifetime_frame.go.
 	frame frameLifetimes
-	// ownedReturns maps a return's index to the owned type resolveComponentEscapes found its
-	// borrows strip to. commitOwnedReturns adds the returns D16's second rule owns and
-	// writes them all, once the body is fully walked.
-	ownedReturns map[int]soltype.Type
 }
 
 // pushFuncCtx enters the inference context for function `node` (async controls
