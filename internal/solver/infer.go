@@ -85,6 +85,10 @@ type checker struct {
 	// by tests that exercise the guard. See recordProv.
 	debugProv bool
 
+	// ownershipDataflow runs the dataflow pass of ownership_dataflow.go once the flows of a
+	// module or script settle. Options.OwnershipDataflow and ownershipDataflowEnv set it.
+	ownershipDataflow bool
+
 	// varIDCounter is the module-wide running allocator for liveness VarIDs (M4 G1).
 	// Each function body's pre-pass renames its locals starting from this counter and
 	// then advances it, so VarIDs are unique across every body in one inference run
@@ -1001,6 +1005,8 @@ func newChecker() *checker {
 		varIDCounter:    1,
 		varIDs:          liveness.NewVarIDs(),
 		weakBindingVars: set.NewSet[*soltype.TypeVarType](),
+
+		ownershipDataflow: ownershipDataflowFromEnv(),
 	}
 	c.ctx.fusionRecorder = c.recordFusionEdge
 	c.info.ctx = c.ctx
@@ -1041,6 +1047,7 @@ func (c *checker) forScript(pkgURI string) *checker {
 		groupSource:       c.groupSource,
 		groups:            c.groups,
 		checkJsDecorators: c.checkJsDecorators,
+		ownershipDataflow: c.ownershipDataflow,
 		weakBindingVars:   set.NewSet[*soltype.TypeVarType](),
 	}
 	// Point the recorder at the script, so a fusion its walk records lands in the

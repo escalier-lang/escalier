@@ -148,6 +148,10 @@ func (c *checker) inferScriptIn(scope *Scope, script *ast.Script) (*Scope, *Info
 	c.checkPendingRecvReads()
 	c.pendingMutations = append(c.pendingMutations, c.fn.unsettledMutations...)
 	c.checkPendingMutations()
+	// Every flow is settled and every body is walked, so the dataflow pass can read the
+	// events of the script's bodies.
+	c.runOwnershipDataflow()
+	traceDiagnostics(c.errs, nil)
 
 	return scope, c.info, c.errs
 }
