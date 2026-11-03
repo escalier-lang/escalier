@@ -45,9 +45,21 @@ func (c *checker) bindFileImports(scope *Scope, module *ast.Module) map[int]*Sco
 			}
 		}
 	}
+	// An npm import whose package declares globals binds before every other npm
+	// import. A global is visible to every package, so a package that names a global
+	// another package declares resolves it whichever of the two imports comes first.
+	globalsFirst := set.NewSet[*ast.ImportStmt]()
 	for _, file := range module.Files {
 		for _, stmt := range file.Imports {
-			if !IsSchemePrefixedImport(stmt.PackageName) {
+			if !IsSchemePrefixedImport(stmt.PackageName) && c.declaresGlobals(stmt.PackageName) {
+				globalsFirst.Add(stmt)
+				c.errs = append(c.errs, c.bindImport(fileScopes[file.SourceID], stmt)...)
+			}
+		}
+	}
+	for _, file := range module.Files {
+		for _, stmt := range file.Imports {
+			if !IsSchemePrefixedImport(stmt.PackageName) && !globalsFirst.Contains(stmt) {
 				c.errs = append(c.errs, c.bindImport(fileScopes[file.SourceID], stmt)...)
 			}
 		}
@@ -66,11 +78,7 @@ func (c *checker) bindImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverErr
 	if IsSchemePrefixedImport(uri) {
 		return c.bindPseudoPackageImport(fileScope, stmt)
 	}
-	// A package's own imports belong to its own package.json, so only the entry
-	// module's are checked against the project's. A specifier that names no package
-	// is left to the load, which reports why.
-	if c.pkgURI == "" && c.dependencies != nil && resolver.ValidateModuleName(uri) == nil &&
-		!listedDependency(c.dependencies, uri) {
+	if c.unlistedDependency(uri) {
 		return []SolverError{&UnlistedDependencyError{Package: resolver.PackageName(uri), span: stmt.Span()}}
 	}
 	// An npm package's declarations read the globals scope, so it has to be full
@@ -100,6 +108,31 @@ func (c *checker) bindImportedNamespace(fileScope *Scope, name string, ns *Names
 	// A package whose `.d.ts` writes `export = f` binds f's value too, so the file can
 	// call `p(…)` as well as read `p.member`.
 	fileScope.bindNamespace(name, ns)
+}
+
+// unlistedDependency reports whether uri, the specifier of an npm import, names a
+// package the run's Dependencies leave out.
+func (c *checker) unlistedDependency(uri string) bool {
+	// A package's own imports belong to its own package.json, so only the entry
+	// module's are checked against the project's. A specifier that names no package
+	// is left to the load, which reports why.
+	return c.pkgURI == "" && c.dependencies != nil && resolver.ValidateModuleName(uri) == nil &&
+		!listedDependency(c.dependencies, uri)
+}
+
+// declaresGlobals reports whether the npm package uri names loads from a module
+// with global declarations. A package this run has not loaded yet is read through
+// readSource, which the load then reuses. An unlisted package and one that does not
+// load report false, and bindImport reports why.
+func (c *checker) declaresGlobals(uri string) bool {
+	if c.source == nil || c.unlistedDependency(uri) {
+		return false
+	}
+	if _, found := c.ctx.packages.Lookup(uri); found {
+		return false
+	}
+	module, _, err := c.readSource(uri)
+	return err == nil && module.Globals != nil
 }
 
 // bindPseudoPackageImport binds what a `std:` / `web:` / `node:` import names.
