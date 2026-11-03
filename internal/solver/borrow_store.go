@@ -465,7 +465,7 @@ func (c *checker) recordCallStoreEdges(
 			} else {
 				c.collectStoredLocals(argExpr, referents, carried)
 			}
-			sourceMut := storeSourceMut(fn, self, edge.arg)
+			sourceMut := c.storeSourceMut(fn, self, edge.arg)
 			targetPath := appendPath(target.path, edge.path)
 			ids := carried.ToSlice()
 			slices.Sort(ids)
@@ -491,7 +491,7 @@ func (c *checker) recordCallStoreEdges(
 			// where a borrow lands and not whether the callee overwrites what was there.
 			// A store names the referent the callee writes, not a part of it, so the edge
 			// reaches the whole of it.
-			sourceMut := storeSourceMut(fn, self, edge.arg)
+			sourceMut := c.storeSourceMut(fn, self, edge.arg)
 			c.addBorrowEdge(target.root, appendPath(target.path, edge.path), referent, nil, sourceMut)
 			// The target reaches the referent from here on, so it holds a borrow of it that a
 			// second borrow or a read of the referent has to respect.
@@ -586,7 +586,7 @@ func (c *checker) placeReferents(arg ast.Expr) []liveness.VarID {
 // reads the SOURCE position, since that is the view the target ends up holding. A signature
 // storing a `&'a B` leaves the target able to read the item and not to write it, even though
 // the target itself is a mutable borrow.
-func storeSourceMut(fn *soltype.FuncType, self *soltype.FuncParam, arg int) bool {
+func (c *checker) storeSourceMut(fn *soltype.FuncType, self *soltype.FuncParam, arg int) bool {
 	var param *soltype.FuncParam
 	switch {
 	case arg == selfIndex:
@@ -597,8 +597,8 @@ func storeSourceMut(fn *soltype.FuncType, self *soltype.FuncParam, arg int) bool
 	if param == nil {
 		return false
 	}
-	mut, _ := paramBorrowMut(param.Type)
-	return mut
+	borrow, _ := c.borrowOfType(param.Type)
+	return borrow.anyMut
 }
 
 // storeLoanPlace returns the place the store puts in the target.

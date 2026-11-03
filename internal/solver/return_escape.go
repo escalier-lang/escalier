@@ -1168,35 +1168,24 @@ func (c *checker) copyPlaceEdges(root liveness.VarID, base []placeSeg, src moveP
 // container.
 //
 // It covers the destructuring patterns that bind a sub-place of the initializer. A rest
-// pattern and an extractor pattern record nothing today; projecting them would extend this
-// switch once they need borrow tracking.
+// element, an instance pattern, and an extractor pattern record nothing.
 func (c *checker) recordPatternPlaceEdges(pat ast.Pat, src movePlace) {
-	switch pat := pat.(type) {
-	case *ast.IdentPat:
-		if c.varIDs.Of(pat) > 0 {
-			c.copyPlaceEdges(c.varIDs.Of(pat), nil, src)
-		}
-	case *ast.ObjectPat:
-		for _, elem := range pat.Elems {
-			switch e := elem.(type) {
-			case *ast.ObjShorthandPat:
-				if c.varIDs.Of(e) > 0 {
-					c.copyPlaceEdges(c.varIDs.Of(e), nil, extendPlace(src, e.Key.Name))
-				}
-				if e.Default != nil {
-					// The property may be absent, so the leaf can take the shorthand
-					// default, such as `val {peer = &mut b} = obj`.
-					c.recordBorrowEdges(c.varIDs.Of(e), e.Default)
-				}
-			case *ast.ObjKeyValuePat:
-				c.recordPatternPlaceEdges(e.Value, extendPlace(src, e.Key.Name))
+	walk := patternPlaceWalk{
+		leaf: func(node ast.Node, at movePlace) {
+			id := c.varIDs.Of(node)
+			if id > 0 {
+				c.copyPlaceEdges(id, nil, at)
 			}
-		}
-	case *ast.TuplePat:
-		for _, elem := range pat.Elems {
-			c.recordPatternPlaceEdges(elem, src)
-		}
+
+			if e, ok := node.(*ast.ObjShorthandPat); ok && e.Default != nil {
+				// The property may be absent, so the leaf can take the shorthand
+				// default, such as `val {peer = &mut b} = obj`.
+				c.recordBorrowEdges(id, e.Default)
+			}
+		},
+		skipRests: true,
 	}
+	walk.walk(pat, src)
 }
 
 // reportEscapingLocals reports an EscapingBorrowError for each escaping local, blaming the

@@ -1,8 +1,6 @@
 package solver
 
 import (
-	"strconv"
-
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -416,8 +414,8 @@ func (c *checker) emitBindingFlow(vd *ast.VarDecl, id liveness.VarID, bindingT s
 // attached to ref. pat is the pattern of a destructuring `val`, a `match` arm, or an
 // `if val`. Only a source that names a place passes parts of a place. A part read through a
 // borrow is borrowed again, since F4 makes a pattern over a borrow bind borrows. A tuple
-// or extractor element flows out of the place extended by its position, as elements
-// describes.
+// or extractor element flows out of the place extended by its position, as
+// patternPlaceWalk.elements describes.
 func (c *checker) emitPatternFlows(pat ast.Pat, source ast.Expr, ref liveness.StmtRef) {
 	if source == nil || !c.firstEmit(pat, patternRole, ref, 0) {
 		return
@@ -429,7 +427,13 @@ func (c *checker) emitPatternFlows(pat ast.Pat, source ast.Expr, ref liveness.St
 	}
 
 	w := &patternEmitter{c: c, source: source, sourceT: c.info.TypeOf(source), ref: ref}
-	w.walk(pat, src)
+	w.sourceBorrow, w.sourceIsBorrow = c.borrowOfType(w.sourceT)
+	walk := patternPlaceWalk{
+		leaf:          func(node ast.Node, at movePlace) { w.leaf(node, at, nil, c.info.TypeOf(node)) },
+		objectRest:    w.objectRest,
+		elementPlaces: true,
+	}
+	walk.walk(pat, src)
 
 	// A pattern that binds nothing, such as a literal arm, leaves the source's read alone.
 	if w.bound {
@@ -459,104 +463,46 @@ func (c *checker) branchEntryRef(target ast.Expr, i int, siteRef liveness.StmtRe
 	return siteRef, hasSite
 }
 
-// patternEmitter walks a pattern for emitPatternFlows. sourceT is the type of the source
-// expression source. bound records whether the pattern binds any leaf.
+// patternEmitter emits the flows of the leaves a patternPlaceWalk reaches for
+// emitPatternFlows. sourceT is the type of the source expression source. bound records
+// whether the pattern binds any leaf.
 type patternEmitter struct {
 	c       *checker
 	source  ast.Expr
 	sourceT soltype.Type
-	ref     liveness.StmtRef
-	bound   bool
+	// sourceBorrow is the borrow sourceT is, when sourceIsBorrow is set.
+	sourceBorrow   typeBorrow
+	sourceIsBorrow bool
+	ref            liveness.StmtRef
+	bound          bool
 }
 
-// walk emits the flow of each part pat binds out of the place `at`.
-func (w *patternEmitter) walk(pat ast.Pat, at movePlace) {
-	switch pat := pat.(type) {
-	case *ast.IdentPat:
-		w.leaf(pat, at, nil)
-	case *ast.ObjectPat:
-		for _, elem := range pat.Elems {
-			switch e := elem.(type) {
-			case *ast.ObjShorthandPat:
-				w.leaf(e, extendPlace(at, e.Key.Name), nil)
-			case *ast.ObjKeyValuePat:
-				w.walk(e.Value, extendPlace(at, e.Key.Name))
-			case *ast.ObjRestPat:
-				w.objectRest(e.Pattern, at)
-			}
-		}
-	case *ast.InstancePat:
-		w.walk(pat.Object, at)
-	case *ast.TuplePat:
-		w.elements(pat.Elems, at)
-	case *ast.ExtractorPat:
-		w.elements(pat.Args, at)
-	case *ast.RestPat:
-		w.walk(pat.Pattern, at)
-	}
-}
-
-// elements walks the element patterns of a tuple or extractor pattern. Element i takes the
-// place `at` extended by the segment `i`. A rest element at position i takes the segment
-// `i...`, which stands for every element from i on.
-func (w *patternEmitter) elements(elems []ast.Pat, at movePlace) {
-	for i, elem := range elems {
-		if rest, ok := elem.(*ast.RestPat); ok {
-			w.walk(rest.Pattern, extendPlace(at, strconv.Itoa(i)+"..."))
-			continue
-		}
-
-		w.walk(elem, extendPlace(at, strconv.Itoa(i)))
-	}
-}
-
-// objectRest walks the rest element `...rest` of an object pattern over the place `at`. A
-// rest binding whose type is an object takes each field that type lists, so the fields the
-// pattern names flow only into their own leaves. Any other rest binding takes the whole
-// place.
-func (w *patternEmitter) objectRest(pat ast.Pat, at movePlace) {
-	ident, ok := pat.(*ast.IdentPat)
-	if !ok {
-		w.walk(pat, at)
-		return
-	}
-
-	obj, isObj := objectThroughBorrow(w.c.info.TypeOf(ident))
-	if !isObj {
-		w.leaf(ident, at, nil)
-		return
-	}
-
-	for _, elem := range obj.Elems {
-		if prop, isProp := elem.(*soltype.PropertyElem); isProp {
-			w.leaf(ident, extendPlace(at, prop.Name), appendSeg(nil, prop.Name))
-		}
-	}
+// objectRest emits the flow of each part the object rest binding ident takes out of the
+// place `at`, as forEachRestField names them for the binding's type. The fields the
+// pattern names elsewhere flow only into their own leaves.
+func (w *patternEmitter) objectRest(ident *ast.IdentPat, at movePlace) {
+	forEachRestField(w.c.info.TypeOf(ident), at, func(src movePlace, destPath []placeSeg, partT soltype.Type) {
+		w.leaf(ident, src, destPath, partT)
+	})
 }
 
 // leaf emits the flow of the place `at` into the binding the pattern leaf node binds, at
-// path within it. The leaf's type is the one the pattern walk recorded for node, or that
-// type's field when path names one. A value-type leaf is a read. Any
-// other leaf is borrowed when the source is a borrow, and takes its own type's ownership
-// otherwise.
-func (w *patternEmitter) leaf(node ast.Node, at movePlace, path []placeSeg) {
+// path within it. leafT is the type of the part the binding receives. A value-type leaf is
+// a read. Any other leaf is borrowed when the source is a borrow, and takes its own type's
+// ownership otherwise.
+func (w *patternEmitter) leaf(node ast.Node, at movePlace, path []placeSeg, leafT soltype.Type) {
 	id := w.c.varIDs.Of(node)
-	leafT := w.c.info.TypeOf(node)
 	if id <= 0 || leafT == nil {
 		return
-	}
-
-	if len(path) > 0 {
-		leafT = w.c.fieldType(leafT, path[0].name)
 	}
 
 	w.bound = true
 	sourceT := leafT
 	dest := w.c.destOfType(leafT)
-	if r, ok := w.c.borrowOf(w.sourceT); ok && !w.c.holdsValueType(leafT) {
+	if w.sourceIsBorrow && !w.c.holdsValueType(leafT) {
 		// The leaf binds a borrow with the source's mutability, as D14 decides.
-		sourceT = r
-		dest = &borrowDest{borrow: borrowKindOf(r.Mut), lt: r.Lt}
+		sourceT = w.sourceT
+		dest = &borrowDest{borrow: borrowKindOf(w.sourceBorrow.mut), lt: w.sourceBorrow.lt}
 	}
 
 	if b, ok := dest.(*borrowDest); ok {
@@ -631,18 +577,11 @@ func (c *checker) storeDest(target ast.Expr) flowDest {
 		return &ownedDest{}
 	}
 
-	if prop, ok := c.lookupWriteField(name, recv); ok {
+	member, _ := c.fieldWriteMember(name, recv)
+	if prop, ok := member.(*soltype.PropertyElem); ok {
 		return c.destOfType(prop.Type)
 	}
 	return &ownedDest{}
-}
-
-// lookupWriteField returns the property named name a write through a receiver of type recv
-// stores into, and false when the receiver declares none.
-func (c *checker) lookupWriteField(name string, recv soltype.Type) (*soltype.PropertyElem, bool) {
-	member, _ := c.writeMember(name, readCarrier(recv))
-	prop, ok := member.(*soltype.PropertyElem)
-	return prop, ok
 }
 
 // emitCallFlows emits the flows of the call e, attached to ref: the receiver of a method

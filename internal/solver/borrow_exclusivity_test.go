@@ -3,6 +3,8 @@ package solver
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -29,6 +31,71 @@ func TestBorrowExclusivity(t *testing.T) {
 				}
 			`,
 			want: []string{"6:20-6:26: cannot borrow 'x' as mutable while it is borrowed as immutable"},
+		},
+		// A parameter whose type is an alias naming a borrow borrows its argument, the same as
+		// one written `&mut {v: number}`.
+		"AliasOfBorrowParam": {
+			src: `
+				type M = &mut {v: number}
+				declare fn writeRead(a: M, b: &{v: number}) -> undefined
+
+				fn g() {
+					val mut x = {v: 1}
+					writeRead(&mut x, &x)
+				}
+			`,
+			want: []string{"7:24-7:26: cannot borrow 'x' as immutable while it is borrowed as mutable"},
+		},
+		// A parameter whose type is a borrow or `undefined` borrows its argument too.
+		"BorrowOrUndefinedParam": {
+			src: `
+				declare fn writeRead(a: &mut {v: number} | undefined, b: &{v: number}) -> undefined
+
+				fn g() {
+					val mut x = {v: 1}
+					writeRead(&mut x, &x)
+				}
+			`,
+			want: []string{"6:24-6:26: cannot borrow 'x' as immutable while it is borrowed as mutable"},
+		},
+		// The callee can narrow a parameter typed `&mut {v: number} | &{v: number}` to its
+		// `&mut` member and write through it, so the argument takes a mutable loan.
+		"MixedMutabilityParam": {
+			src: `
+				declare fn writeRead(a: &mut {v: number} | &{v: number}, b: &{v: number}) -> undefined
+
+				fn g() {
+					val mut x = {v: 1}
+					writeRead(&mut x, &x)
+				}
+			`,
+			want: []string{"6:24-6:26: cannot borrow 'x' as immutable while it is borrowed as mutable"},
+		},
+		// The callee can also narrow the mixed parameter to its `&` member and read through it
+		// while the other parameter writes, so it conflicts with a mutable parameter too.
+		"MixedMutabilityParamBesideAMutableParam": {
+			src: `
+				declare fn readWrite(a: &mut {v: number} | &{v: number}, b: &mut {v: number}) -> undefined
+
+				fn g() {
+					val mut x = {v: 1}
+					readWrite(&x, &mut x)
+				}
+			`,
+			want: []string{"6:20-6:26: cannot borrow 'x' as mutable while it is borrowed as immutable"},
+		},
+		// A union parameter that also accepts a value type copies a value-type argument, so the
+		// argument takes no loan.
+		"ValueArgumentIntoAUnionBorrowParamOk": {
+			src: `
+				declare fn readWrite(a: &{v: number} | number, b: &mut {v: number}) -> undefined
+
+				fn g() {
+					val mut x = {v: 1}
+					readWrite(x.v, &mut x)
+				}
+			`,
+			want: nil,
 		},
 		// Two writable views of one value both expect it to change, so neither is surprised by
 		// the other's write. Rule 3 of planning/lifetimes/requirements.md allows this, where Rust
@@ -448,6 +515,19 @@ func TestExplicitBorrowArgs(t *testing.T) {
 				}
 			`,
 			want: []string{"6:12-6:13: this argument is borrowed by the callee, so write the borrow: `&mut`"},
+		},
+		// A parameter typed as a borrow or a value type still borrows an owned argument, since
+		// the value-type member never holds the object.
+		"BarePlaceIntoABorrowOrNumberParam": {
+			src: `
+				declare fn read(a: &{v: number} | number) -> undefined
+
+				fn g() {
+					val x = {v: 1}
+					read(x)
+				}
+			`,
+			want: []string{"6:11-6:12: this argument is borrowed by the callee, so write the borrow: `&`"},
 		},
 		// Writing the borrow is what the rule asks for.
 		"WrittenBorrowsOk": {
@@ -1338,4 +1418,77 @@ func TestMutSelfIsAMutableStoreSource(t *testing.T) {
 	require.Equal(t, []string{
 		"11:16-11:18: cannot borrow 'h' as immutable while it is borrowed as mutable",
 	}, messagesWithSpan(t, errs))
+}
+
+// TestBorrowOfType covers the types borrowOfType reads as a borrow. Each case declares the
+// type as the parameter p of a function with the lifetime parameter 'a, and renders what
+// borrowOfType returns for p's type. A borrow renders as its operator, then `any &mut` when
+// only some of its members are `&mut`, then its lifetime. The lifetime is either `'static` or
+// a lifetime variable rendered as `'var`. Any other type renders as `not a borrow`.
+func TestBorrowOfType(t *testing.T) {
+	cases := []struct {
+		name  string
+		param string
+		want  string
+	}{
+		{name: "BareBorrow", param: "&A", want: "& 'var"},
+		{name: "BareMutBorrow", param: "&mut A", want: "&mut 'var"},
+		{name: "AliasToBorrow", param: "R", want: "& 'var"},
+		{name: "BorrowOrUndefined", param: "&A | undefined", want: "& 'var"},
+		{name: "BorrowOrNumber", param: "&A | number", want: "& 'var"},
+		{name: "AliasMemberOrNull", param: "R | null", want: "& 'var"},
+		{name: "MixedMutability", param: "&mut A | &B | undefined", want: "& any &mut 'var"},
+		{name: "AllMutable", param: "&mut A | &mut B", want: "&mut 'var"},
+		{name: "StaticLifetimeFirst", param: "&'static A | &'a B", want: "& 'static"},
+		{name: "StaticLifetimeSecond", param: "&'a A | &'static B", want: "& 'static"},
+		{name: "TwoLifetimeVars", param: "&'a A | &B", want: "& 'var"},
+		{name: "OwnedMember", param: "&A | B", want: "not a borrow"},
+		{name: "Owned", param: "A", want: "not a borrow"},
+		{name: "OnlyValueTypes", param: "number | undefined", want: "not a borrow"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			src := `
+				type A = {a: number}
+				type B = {b: number}
+				type R = &A
+				fn go<'a>(p: ` + tc.param + `, q: &'a B) {}
+			`
+			module := parseModule(t, src)
+			res := InferModuleAgainstStdlib(module, benchTree, Options{})
+			require.Empty(t, res.Errors)
+
+			var decl *ast.FuncDecl
+			module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
+				for _, d := range ns.Decls {
+					if fd, ok := d.(*ast.FuncDecl); ok && fd.Name != nil && fd.Name.Name == "go" {
+						decl = fd
+					}
+				}
+				return true
+			})
+			require.NotNil(t, decl)
+
+			b, ok := res.checker.borrowOfType(res.Info.TypeOf(decl.Params[0].Pattern))
+			require.Equal(t, tc.want, renderTypeBorrow(b, ok))
+		})
+	}
+}
+
+// renderTypeBorrow renders what borrowOfType returns, as TestBorrowOfType describes.
+func renderTypeBorrow(b typeBorrow, ok bool) string {
+	if !ok {
+		return "not a borrow"
+	}
+
+	out := borrowOperator(b.mut)
+	if b.anyMut && !b.mut {
+		out += " any &mut"
+	}
+
+	if _, isStatic := b.lt.(*soltype.StaticLifetime); isStatic {
+		return out + " 'static"
+	}
+	return out + " 'var"
 }

@@ -23,42 +23,10 @@ const (
 // destOfType returns the destination a flow into a slot of type t has: a borrow
 // destination when t is a borrow, and an owned one otherwise.
 func (c *checker) destOfType(t soltype.Type) flowDest {
-	if r, ok := c.borrowOf(t); ok {
-		return &borrowDest{borrow: borrowKindOf(r.Mut), lt: r.Lt}
+	if b, ok := c.borrowOfType(t); ok {
+		return &borrowDest{borrow: borrowKindOf(b.mut), lt: b.lt}
 	}
 	return &ownedDest{}
-}
-
-// borrowOf returns the borrow t is. A union is a borrow when each member that is not a
-// value type is a borrow, as `&{x: number} | undefined` is, and borrowOf returns its first
-// such member.
-func (c *checker) borrowOf(t soltype.Type) (*soltype.RefType, bool) {
-	if r, ok := t.(*soltype.RefType); ok && r.Lt != nil {
-		return r, true
-	}
-
-	u, ok := c.expandAliasChain(t).(*soltype.UnionType)
-	if !ok {
-		return nil, false
-	}
-
-	var first *soltype.RefType
-	for _, member := range u.Types {
-		if c.holdsValueType(member) {
-			continue
-		}
-
-		r, isRef := member.(*soltype.RefType)
-		if !isRef || r.Lt == nil {
-			return nil, false
-		}
-
-		if first == nil {
-			first = r
-		}
-	}
-
-	return first, first != nil
 }
 
 // borrowKindOf returns `&mut` for a mutable borrow and `&` otherwise.
@@ -163,8 +131,8 @@ func (c *checker) settleDest(table *ownershipEvents, dest flowDest, holder event
 // borrows. A parameter paramTakesOwnership accepts takes ownership. Any other parameter is
 // one F3 settled as a borrow, since its body neither moves it nor lets it escape.
 func (c *checker) paramDestOf(fp *soltype.FuncParam, reborrows bool) flowDest {
-	if r, ok := fp.Type.(*soltype.RefType); ok && r.Lt != nil {
-		return &borrowDest{borrow: borrowKindOf(r.Mut), lt: r.Lt, reborrows: reborrows}
+	if b, ok := c.borrowOfType(fp.Type); ok {
+		return &borrowDest{borrow: borrowKindOf(b.mut), lt: b.lt, reborrows: reborrows}
 	}
 
 	if c.paramTakesOwnership(fp) {
@@ -209,27 +177,17 @@ func (c *checker) sourceKindOf(p movePlace, t soltype.Type, force bool) (sourceK
 		}
 	}
 
-	if _, ok := c.borrowOf(t); ok {
+	if _, ok := c.borrowOfType(t); ok {
 		return borrowSource, flowWait{}, true
 	}
 	return ownedSource, flowWait{}, true
 }
 
-// fieldType returns the type of the field name of the object type t, looking through a
-// borrow, or nil when t is not an object that lists the field.
-func (c *checker) fieldType(t soltype.Type, name string) soltype.Type {
-	if obj, ok := objectThroughBorrow(t); ok {
-		if prop, found := obj.Prop(name); found {
-			return prop.Type
-		}
-	}
-	return nil
-}
-
 // holdsValueType reports whether a value of type t is a value type, which a flow copies. A
 // nil t counts as one, since it names no value a flow can move. A variable is a value type
 // when every value it can hold is one. So is a union whose members all are, such as
-// `number | undefined`, but not `{x: number} | null`.
+// `number | undefined`, but not `{x: number} | null`. Any other t is decided by
+// isValueShaped.
 func (c *checker) holdsValueType(t soltype.Type) bool {
 	if t == nil {
 		return true
@@ -244,12 +202,7 @@ func (c *checker) holdsValueType(t soltype.Type) bool {
 		return true
 	}
 
-	if !c.isReferenceShaped(t) {
-		return true
-	}
-
-	v, isVar := t.(*soltype.TypeVarType)
-	return isVar && c.holdsOnlyValueTypes(v, set.NewSet[*soltype.TypeVarType]())
+	return c.isValueShaped(t)
 }
 
 // addPendingFlow files pf under what it waits on. A capture waits under the table of the

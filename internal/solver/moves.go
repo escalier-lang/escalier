@@ -183,16 +183,29 @@ func (c *checker) isConcreteOwned(t soltype.Type) bool {
 // non-duplicable, the conservative affine assumption that makes
 // `fn dup<T>(x: T) -> [T, T]` a double move.
 //
-// A borrow moves only when it escapes to a longer-lived region, which a module-level
-// write forces; that case is consumed through consumeAtGlobalWrite, not here.
+// A borrow is decided by borrowOfType, so an alias naming a borrow is one too. A borrow
+// moves only when it escapes to a longer-lived region, which a module-level write forces.
+// consumeAtGlobalWrite consumes that case.
+//
+// A union is never movable, since isValueShaped reports true for every union.
 func (c *checker) isOwnedMovable(t soltype.Type) bool {
-	if isBorrowType(t) {
+	if _, isBorrow := c.borrowOfType(t); isBorrow {
 		return false
 	}
-	if v, ok := t.(*soltype.TypeVarType); ok && c.holdsOnlyValueTypes(v, set.NewSet[*soltype.TypeVarType]()) {
-		return false
+	return !c.isValueShaped(t)
+}
+
+// isValueShaped reports whether a value of type t copies when it flows. It holds for a type
+// isReferenceShaped rejects, and for a variable every value of which is a value type, as
+// holdsOnlyValueTypes decides. isReferenceShaped rejects every union, so isValueShaped
+// reports true for any union. A caller that decides a union by its members walks them before
+// it calls this.
+func (c *checker) isValueShaped(t soltype.Type) bool {
+	if !c.isReferenceShaped(t) {
+		return true
 	}
-	return c.isReferenceShaped(t)
+	v, isVar := t.(*soltype.TypeVarType)
+	return isVar && c.holdsOnlyValueTypes(v, set.NewSet[*soltype.TypeVarType]())
 }
 
 // holdsOnlyValueTypes reports whether every value v can hold is a value type, following
@@ -367,16 +380,23 @@ func (c *checker) renderPlace(p movePlace) string {
 	var b strings.Builder
 	b.WriteString(c.varIDToName(p.root))
 	for _, seg := range p.path {
-		if isDotPlaceSegment(seg.name) {
-			b.WriteByte('.')
-			b.WriteString(seg.name)
-		} else {
-			b.WriteByte('[')
-			b.WriteString(strconv.Quote(seg.name))
-			b.WriteByte(']')
-		}
+		writePlaceSeg(&b, seg)
 	}
 	return b.String()
+}
+
+// writePlaceSeg appends one segment of a place's path to b. A segment whose name is a valid
+// identifier renders as `.name`, and any other segment renders in bracket notation as
+// `["name"]`.
+func writePlaceSeg(b *strings.Builder, seg placeSeg) {
+	if isDotPlaceSegment(seg.name) {
+		b.WriteByte('.')
+		b.WriteString(seg.name)
+		return
+	}
+	b.WriteByte('[')
+	b.WriteString(strconv.Quote(seg.name))
+	b.WriteByte(']')
 }
 
 // isDotPlaceSegment reports whether a field name can be rendered with dot notation:
@@ -551,7 +571,107 @@ func (c *checker) consumeDestructureLeaves(scope *Scope, pat ast.Pat, init ast.E
 		return
 	}
 	m := &destructureMover{c: c, scope: scope, init: init, ref: ref, moved: set.NewSet[liveness.VarID]()}
-	m.walk(pat, src)
+	walk := patternPlaceWalk{leaf: m.leaf, objectRest: m.rest}
+	walk.walk(pat, src)
+}
+
+// patternPlaceWalk walks a pattern over the place its source value is read from, and passes
+// each binding leaf the place that leaf reads. A field pattern reads the place of the object
+// it is drawn from, extended by the field's name.
+type patternPlaceWalk struct {
+	// leaf receives each IdentPat or ObjShorthandPat that binds a name, with the place it
+	// reads.
+	leaf func(node ast.Node, at movePlace)
+	// objectRest receives the name an object rest element `...rest` binds, with the place of
+	// the object the rest is drawn from. A rest element whose pattern is not a name is walked
+	// like any other pattern. objectRest may be nil when skipRests is set.
+	objectRest func(ident *ast.IdentPat, at movePlace)
+	// skipRests skips every rest element, in an object pattern and in a tuple pattern.
+	skipRests bool
+	// elementPlaces extends the place of each tuple or extractor element by its position. It
+	// also walks the object of an instance pattern and the arguments of an extractor pattern.
+	// When it is unset, each tuple element reads the tuple's own place, and an instance or
+	// extractor pattern binds nothing.
+	elementPlaces bool
+}
+
+// walk passes each leaf pat binds the place it reads out of the place `at`.
+func (w *patternPlaceWalk) walk(pat ast.Pat, at movePlace) {
+	switch pat := pat.(type) {
+	case *ast.IdentPat:
+		w.leaf(pat, at)
+	case *ast.ObjectPat:
+		for _, elem := range pat.Elems {
+			switch e := elem.(type) {
+			case *ast.ObjShorthandPat:
+				w.leaf(e, extendPlace(at, e.Key.Name))
+			case *ast.ObjKeyValuePat:
+				w.walk(e.Value, extendPlace(at, e.Key.Name))
+			case *ast.ObjRestPat:
+				if w.skipRests {
+					continue
+				}
+				if ident, ok := e.Pattern.(*ast.IdentPat); ok {
+					w.objectRest(ident, at)
+					continue
+				}
+				w.walk(e.Pattern, at)
+			}
+		}
+	case *ast.TuplePat:
+		w.elements(pat.Elems, at)
+	case *ast.ExtractorPat:
+		if w.elementPlaces {
+			w.elements(pat.Args, at)
+		}
+	case *ast.InstancePat:
+		if w.elementPlaces {
+			w.walk(pat.Object, at)
+		}
+	case *ast.RestPat:
+		if !w.skipRests {
+			w.walk(pat.Pattern, at)
+		}
+	}
+}
+
+// elements walks the element patterns of a tuple or extractor pattern over the place `at`.
+// With elementPlaces set, element i reads `at` extended by the segment `i`, and a rest
+// element at position i reads it extended by `i...`, which stands for every element from i
+// on. Without it, every element reads `at`.
+func (w *patternPlaceWalk) elements(elems []ast.Pat, at movePlace) {
+	for i, elem := range elems {
+		if !w.elementPlaces {
+			w.walk(elem, at)
+			continue
+		}
+
+		if rest, ok := elem.(*ast.RestPat); ok {
+			if !w.skipRests {
+				w.walk(rest.Pattern, extendPlace(at, strconv.Itoa(i)+"..."))
+			}
+			continue
+		}
+
+		w.walk(elem, extendPlace(at, strconv.Itoa(i)))
+	}
+}
+
+// forEachRestField passes f each part an object rest binding of type t takes out of the
+// place `at`. When t is an object type or a borrow of one, f receives the place of each
+// field that type lists, the field's path within the binding, and the field's type.
+// Otherwise f receives `at` itself, a nil path, and t.
+func forEachRestField(t soltype.Type, at movePlace, f func(src movePlace, destPath []placeSeg, partT soltype.Type)) {
+	obj, isObj := objectThroughBorrow(t)
+	if !isObj {
+		f(at, nil, t)
+		return
+	}
+	for _, elem := range obj.Elems {
+		if prop, isProp := elem.(*soltype.PropertyElem); isProp {
+			f(extendPlace(at, prop.Name), appendSeg(nil, prop.Name), prop.Type)
+		}
+	}
 }
 
 // destructureMover moves the parts of one owned initializer that a destructuring binds by
@@ -566,62 +686,34 @@ type destructureMover struct {
 	moved set.Set[liveness.VarID]
 }
 
-// walk moves what pat binds by value out of the place `at`.
-func (m *destructureMover) walk(pat ast.Pat, at movePlace) {
-	switch pat := pat.(type) {
+// leaf moves the place `at` into the binding the pattern leaf node binds, when that binding
+// takes it by value. node is an IdentPat or an ObjShorthandPat.
+func (m *destructureMover) leaf(node ast.Node, at movePlace) {
+	var name string
+	switch n := node.(type) {
 	case *ast.IdentPat:
-		m.leaf(pat.Name, m.c.varIDs.Of(pat), at)
-	case *ast.ObjectPat:
-		for _, elem := range pat.Elems {
-			switch e := elem.(type) {
-			case *ast.ObjShorthandPat:
-				m.leaf(e.Key.Name, m.c.varIDs.Of(e), extendPlace(at, e.Key.Name))
-			case *ast.ObjKeyValuePat:
-				m.walk(e.Value, extendPlace(at, e.Key.Name))
-			case *ast.ObjRestPat:
-				m.rest(e.Pattern, at)
-			}
-		}
-	case *ast.TuplePat:
-		for _, elem := range pat.Elems {
-			m.walk(elem, at)
-		}
-	case *ast.RestPat:
-		m.walk(pat.Pattern, at)
+		name = n.Name
+	case *ast.ObjShorthandPat:
+		name = n.Key.Name
 	}
-}
 
-// leaf moves the place `at` into the leaf binding `name` when that binding takes it by value.
-func (m *destructureMover) leaf(name string, varID liveness.VarID, at movePlace) {
+	varID := m.c.varIDs.Of(node)
 	if _, ok := m.ownedLeaf(name, varID); ok {
 		m.moveInto(varID, nil, at)
 	}
 }
 
-// rest moves into an object rest element the fields of `at` its binding's object type lists.
-// A rest binding whose type is not a plain object type takes the whole place. A rest element
-// that is itself a pattern is walked like any other.
-func (m *destructureMover) rest(pat ast.Pat, at movePlace) {
-	ident, ok := pat.(*ast.IdentPat)
-	if !ok {
-		m.walk(pat, at)
-		return
-	}
+// rest moves into the object rest binding ident the parts of `at` forEachRestField names for
+// the binding's type.
+func (m *destructureMover) rest(ident *ast.IdentPat, at movePlace) {
 	dest := m.c.varIDs.Of(ident)
 	t, ok := m.ownedLeaf(ident.Name, dest)
 	if !ok {
 		return
 	}
-	obj, isObj := objectThroughBorrow(t)
-	if !isObj {
-		m.moveInto(dest, nil, at)
-		return
-	}
-	for _, elem := range obj.Elems {
-		if prop, isProp := elem.(*soltype.PropertyElem); isProp {
-			m.moveInto(dest, appendSeg(nil, prop.Name), extendPlace(at, prop.Name))
-		}
-	}
+	forEachRestField(t, at, func(src movePlace, destPath []placeSeg, _ soltype.Type) {
+		m.moveInto(dest, destPath, src)
+	})
 }
 
 // objectThroughBorrow returns the object type t is, or the object type a RefType t wraps.
