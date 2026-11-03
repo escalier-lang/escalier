@@ -995,7 +995,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot borrow 'b' as immutable while it is borrowed as mutable"},
 		},
 		{
-			// The caller reads p.r only after the return, when a is dead, so `&b.x` breaks no
+			// The caller reads `p.r` only after the return, when `a` is dead, so `&b.x` breaks no
 			// rule. The caller reaches both `b.y` borrows, so the pass reports E2 at the store
 			// into q. That pair is the one the frame-exit check reports, so the frame-exit
 			// diagnostic is dropped.
@@ -1012,9 +1012,9 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot borrow 'b.y' as mutable while it is borrowed as immutable"},
 		},
 		{
-			// The body reads `p.r` while a's mutable borrow is live, so the store's `&b` breaks
-			// E2. The current checks report that store with a message naming a, which takes the
-			// place of the pass's. The frame-exit check reports that b leaves both owned and
+			// The body reads `p.r` while the mutable borrow `a` holds is live, so the store's `&b`
+			// breaks E2. The current checks report that store with a message naming `a`, which
+			// takes the place of the pass's. The frame-exit check reports that b leaves both owned and
 			// through a borrow, which is not a pair E2 covers, so it stays.
 			name: "AnOwnedOutflowStaysBesideE2",
 			src: `
@@ -1045,8 +1045,31 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot borrow 'b.x' as immutable while it is borrowed as mutable"},
 		},
 		{
+			// A later statement reads t, so both borrows the literal takes are live after it.
+			name: "E2InOneLiteralWhenALaterStatementUsesIt",
+			src: `
+				fn f() -> number {
+					val mut b = {x: {n: 1}}
+					val t = {p: &mut b.x, q: &b.x}
+					return t.q.n
+				}
+			`,
+			errs: []string{"cannot borrow 'b.x' as immutable while it is borrowed as mutable"},
+		},
+		{
+			// No later statement uses t, so neither borrow the literal takes is live after it.
+			name: "OneLiteralUnusedLaterOk",
+			src: `
+				fn f() -> number {
+					val mut b = {x: {n: 1}}
+					val t = {p: &mut b.x, q: &b.x}
+					return 1
+				}
+			`,
+		},
+		{
 			// The pass reports E2 for c inside the return, which replaces the frame-exit
-			// diagnostic about c. The borrow of b that take receives ends with the call, so
+			// diagnostic about c. The borrow of b that `take` receives ends with the call, so
 			// the pass reports nothing about b, and the frame-exit diagnostic about b stays.
 			name: "E2OnAnotherLocalKeepsTheSharedPathsCheck",
 			src: `
@@ -1352,7 +1375,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot assign to 'q.x' while it is borrowed as immutable"},
 		},
 		{
-			// a borrows x, so the store through a lands in `x.peer`, which the return reads.
+			// `a` borrows x, so the store through `a` lands in `x.peer`, which the return reads.
 			name: "StoreThroughABorrowingLocalReachesWhatItBorrows",
 			src: `
 				declare fn store<'a>(target: &mut {peer: &'a {x: number}}, item: &'a {x: number}) -> undefined
@@ -1473,9 +1496,10 @@ func TestOwnershipDataflow(t *testing.T) {
 			`,
 		},
 		{
-			// get returns the borrow of p that h holds through 'a, so x holds that borrow and
-			// not the receiver's own `&self` borrow of h.
-			name: "NestedReturnLeavesTheReceiverWritable",
+			// h holds a borrow of p in `h.peer`. `get` returns it through 'a, a lifetime inside
+			// the type of h rather than the lifetime of the `&self` borrow. So x holds the borrow
+			// of p and not the receiver's borrow of h, and the write to `h.n` is allowed.
+			name: "ReturnOfAHeldBorrowLeavesTheReceiverWritable",
 			src: `
 				class Holder<'a> {
 					peer: &'a {x: number},
@@ -1492,7 +1516,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			`,
 		},
 		{
-			name: "NestedReturnLeavesTheReceiverMovable",
+			name: "ReturnOfAHeldBorrowLeavesTheReceiverMovable",
 			src: `
 				class Holder<'a> {
 					peer: &'a {x: number},
@@ -1509,8 +1533,8 @@ func TestOwnershipDataflow(t *testing.T) {
 			`,
 		},
 		{
-			// x holds the borrow of p that h holds through 'a.
-			name: "NestedReturnKeepsTheHeldBorrow",
+			// x holds the borrow of p that h holds through 'a, so p cannot move while x is live.
+			name: "ReturnOfAHeldBorrowKeepsItLive",
 			src: `
 				class Holder<'a> {
 					peer: &'a {x: number},
@@ -1528,9 +1552,11 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot move 'p' while it is borrowed"},
 		},
 		{
-			// h holds a mutable borrow of p through 'a. get cannot copy it out of the `&self`
-			// borrow, so x reborrows it through that borrow and keeps h borrowed.
-			name: "NestedMutableReturnKeepsTheReceiverBorrowed",
+			// h holds a mutable borrow of p through 'a. A mutable borrow cannot be copied, since
+			// the copy would be a second mutable path to p. So `get` reborrows `self.peer` through
+			// its `&self` borrow of h, and x holds that borrow of h too. Moving h while x is live
+			// breaks E3.
+			name: "ReturnOfAHeldMutableBorrowKeepsTheReceiverBorrowed",
 			src: `
 				class Holder<'a> {
 					peer: &'a mut {x: number},
@@ -1548,8 +1574,8 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot move 'h' while it is borrowed"},
 		},
 		{
-			// get shares the receiver's own borrow lifetime with its result, so x borrows h.
-			name: "DirectReturnKeepsTheReceiverBorrowed",
+			// `get` shares the lifetime of its `&self` borrow with its result, so x borrows b.
+			name: "ReturnOfTheReceiverBorrowKeepsTheReceiverBorrowed",
 			src: `
 				class Box {
 					inner: {x: number},
@@ -1565,9 +1591,9 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot move 'b' while it is borrowed"},
 		},
 		{
-			// copyTo stores the borrow of p that h holds through 'a into out.peer, so out
+			// copyTo stores the borrow of p that h holds through 'a into `out.peer`, so `out`
 			// holds that borrow and not the receiver's own `&self` borrow of h.
-			name: "NestedStoreLeavesTheReceiverWritable",
+			name: "StoreOfAHeldBorrowLeavesTheReceiverWritable",
 			src: `
 				class Holder<'a> {
 					peer: &'a {x: number},
@@ -1588,8 +1614,9 @@ func TestOwnershipDataflow(t *testing.T) {
 			`,
 		},
 		{
-			// out.peer holds the borrow of p that h holds through 'a.
-			name: "NestedStoreKeepsTheHeldBorrow",
+			// `out.peer` holds the borrow of p that h holds through 'a, so p cannot move while
+			// `out` is live.
+			name: "StoreOfAHeldBorrowKeepsItLive",
 			src: `
 				class Holder<'a> {
 					peer: &'a {x: number},
@@ -1611,8 +1638,9 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot move 'p' while it is borrowed"},
 		},
 		{
-			// hr's own borrow of holder reaches get as the receiver, and get's result shares
-			// only 'a with it. So r holds what `holder.peer` borrows and not the borrow of holder.
+			// The borrow of `holder` that hr holds reaches `get` as the receiver, and the result of
+			// `get` shares only 'a with it. So r holds what `holder.peer` borrows and not the borrow
+			// of `holder`.
 			name: "ReturnThroughABorrowingLocalLeavesTheReceiverWritable",
 			src: `
 				class Holder<'a> {
@@ -1631,7 +1659,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			`,
 		},
 		{
-			// r holds the borrow of p that holder holds through 'a, which hr reaches.
+			// r holds the borrow of p that `holder` holds through 'a, which hr reaches.
 			name: "ReturnThroughABorrowingLocalKeepsTheHeldBorrow",
 			src: `
 				class Holder<'a> {

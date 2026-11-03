@@ -217,7 +217,7 @@ func TestInferObjectShorthand(t *testing.T) {
 		want map[string]string
 		errs []string
 		// errsDataflow is what the case reports with the dataflow pass on, when that differs
-		// from errs.
+		// from `errs`.
 		errsDataflow []string
 	}{
 		"ValBinding": {
@@ -278,7 +278,7 @@ func TestInferObjectShorthand(t *testing.T) {
 				}
 			`,
 			errs: []string{"6:13-6:19: 'b' leaves the function through a mutable path and an immutable one"},
-			// `p.node.a` holds the copy of a's `&b` when f returns, so the returned `&mut b`
+			// `p.node.a` holds the copy of the `&b` that `a` holds when f returns, so the returned `&mut b`
 			// breaks E2 against it.
 			errsDataflow: []string{"6:13-6:19: cannot borrow 'b' as mutable while it is borrowed as immutable"},
 		},

@@ -125,7 +125,7 @@ func (returnTarget) isHolderTarget()   {}
 func (tempTarget) isHolderTarget()     {}
 
 // ownershipEvent is one event of the checking model. It is one of *copyEvent,
-// *borrowEvent, *moveEvent, *useEvent, *passEvent, *callEvent, or *provisionalEvent. base
+// *borrowEvent, *moveEvent, *useEvent, *passEvent, *callEvent, or *provisionalEvent. `base`
 // returns the fields every kind shares.
 type ownershipEvent interface {
 	isOwnershipEvent()
@@ -218,34 +218,52 @@ type provisionalEvent struct {
 	flowBase
 }
 
-// callSlot names one position where a call receives a value. index is the position of an
-// argument of call, or selfIndex for the receiver of a method call.
+// callSlot names one position where a call receives a value. `index` is the position of an
+// argument of `call`, or selfIndex for the receiver of a method call.
 type callSlot struct {
 	call  *ast.CallExpr
 	index int
 }
 
 // passEvent gives the holder each borrow the call slot `from` holds, the way the callee's
-// signature says the call passes it on. A lifetime the parameter at `from` shares with a
-// position inside another `&mut` parameter's referent stores the borrow there, so
-// `store(&mut a, &mut b)` with
+// signature says the call passes it on. The event's node is the call, and its place names
+// nothing.
 //
-//	declare fn store<'a>(target: &mut {peer: &'a mut B}, item: &'a mut B)
+// A lifetime the parameter at `from` shares with a position inside another `&mut`
+// parameter's referent stores the borrow there. In
 //
-// passes the borrow of b from `arg(store, 1)` to `a.peer`. A lifetime the parameter shares
-// with the return type passes the borrow to the call's result, which a tempTarget of the
-// call holds until a flow site receives the result. The event's node is the call, and its
-// place names nothing.
+//	declare fn store<'a>(target: &mut {peer: &'a mut {x: number}}, item: &'a mut {x: number}) -> undefined
+//	fn go(mut q: {x: number}) -> number {
+//		val mut a = {peer: &mut q}
+//		val mut b = {x: 1}
+//		store(&mut a, &mut b)
+//		return a.peer.x
+//	}
+//
+// the call emits a passEvent that gives the borrow of b from `arg(store, 1)` to `a.peer`.
+//
+// A lifetime the parameter shares with the return type passes the borrow to the call's
+// result, which a tempTarget of the call holds until a flow site receives the result. In
+//
+//	declare fn pick<'a>(p: &'a {x: number}) -> &'a {x: number}
+//	fn go() -> number {
+//		val c = {x: 2}
+//		val d = pick(&c)
+//		return d.x
+//	}
+//
+// the call emits a passEvent that gives the borrow of c from `arg(pick, 0)` to the result,
+// and d receives it.
 type passEvent struct {
 	flowBase
 	from callSlot
-	// through is the field path of the place a store's target argument names when the
+	// `through` is the field path of the place a store's target argument names when the
 	// argument is not written as a borrow, such as the empty path of `a` in `store(a, &b)`,
 	// or nil otherwise. A borrow held there reaches the place the store writes into.
 	through []placeSeg
-	// direct records that the signature shares the parameter's own borrow lifetime, so the
+	// `direct` records that the signature shares the parameter's own borrow lifetime, so the
 	// holder gets the borrow the slot itself takes as well as each borrow its referent holds.
-	// When direct is false the holder gets only the borrows the referent holds, unless one of
+	// When `direct` is false the holder gets only the borrows the referent holds, unless one of
 	// them is mutable, as bodyDataflow.pass describes. In
 	//
 	//	class Holder<'a> { peer: &'a {x: number}, get(&self) -> &'a {x: number} }
@@ -254,7 +272,7 @@ type passEvent struct {
 	direct bool
 }
 
-// callEvent marks the point where call returns. Each borrow a slot of call holds is
+// callEvent marks the point where `call` returns. Each borrow a slot of `call` holds is
 // released there, unless a passEvent gave it to another holder first. A `&mut self`
 // receiver borrow takes effect there too, as callEnd describes.
 type callEvent struct {
