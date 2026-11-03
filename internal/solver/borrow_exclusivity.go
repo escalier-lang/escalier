@@ -101,7 +101,7 @@ type BorrowAliasError struct {
 	// checks leave them zero.
 	root   liveness.VarID
 	places [2]movePlace
-	// exits holds the span of each return a holder of either path flows into. The dataflow
+	// `exits` holds the span of each return a holder of either path flows into. The dataflow
 	// pass sets it, so sharedPathsReported can match a frame-exit diagnostic at that return.
 	exits []ast.Span
 	node  ast.Node

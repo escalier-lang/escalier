@@ -1479,7 +1479,7 @@ func TestOwnershipEventsCallPasses(t *testing.T) {
 				"b0.2: borrow(&, `c`, arg(`wrap`, 0), '2)",
 				"b0.2: pass(arg(`wrap`, 0), `w.held`)", // the result holds p's 'a at `held`
 				"b0.3: borrow(&, `c`, arg(`pick`, 0), '3)",
-				"b0.3: pass(arg(`pick`, 0), arg(`read`, 0))", // the result is read's argument
+				"b0.3: pass(arg(`pick`, 0), arg(`read`, 0))", // the result is `read`'s argument
 				"b0.4: borrow(&, `c`, arg(`read`, 0), '4)",   // `read`'s result shares no lifetime
 				"b0.5: use(`d.x`, read)",
 				"b0.5: use(`w.held.x`, read)",

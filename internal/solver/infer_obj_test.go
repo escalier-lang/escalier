@@ -274,8 +274,8 @@ func TestInferObjectShorthand(t *testing.T) {
 					return &mut b
 				}
 			`,
-			// `p.node.a` holds the copy of a's `&b` when f returns, so the returned `&mut b`
-			// breaks E2 against it.
+			// `p.node.a` holds the copy of the `&b` that `a` holds when f returns, so the returned
+			// `&mut b` breaks E2 against it.
 			errs: []string{"6:13-6:19: cannot borrow 'b' as mutable while it is borrowed as immutable"},
 		},
 	}

@@ -40,16 +40,16 @@ import (
 // body puts its own lifetime parameters in scope for the member signatures that declare the
 // store.
 type storeEdge struct {
-	// arg is the position of the argument whose borrow the call stores.
+	// `arg` is the position of the argument whose borrow the call stores.
 	arg int
-	// target is the position the borrow is stored into.
+	// `target` is the position the borrow is stored into.
 	target int
-	// path is the field path within the target's referent where the borrow lands, so
+	// `path` is the field path within the target's referent where the borrow lands, so
 	// `&'b mut {peer: &'a mut B}` gives [peer]. A store position the walk reaches but
 	// cannot name, such as a tuple element or a class type argument, keeps the path of
 	// its container.
 	path []placeSeg
-	// direct records that the shared lifetime is the argument's OWN borrow lifetime, so what
+	// `direct` records that the shared lifetime is the argument's OWN borrow lifetime, so what
 	// lands in the target is the argument's referent. `item: &'a mut B` is direct: passing
 	// `&mut b` stores b itself. A lifetime nested inside the argument is not: a receiver
 	// typed `mut Holder<'a>` shares 'a from inside, so what lands in the target is whatever
@@ -145,23 +145,23 @@ func callStoreEdges(ctx *Context, fn *soltype.FuncType, self *soltype.FuncParam)
 //
 // the result of `pick(&q)` holds the borrow of q at the empty path.
 type returnEdge struct {
-	// arg is the position of the argument, selfIndex for a method call's receiver.
+	// `arg` is the position of the argument, selfIndex for a method call's receiver.
 	arg int
-	// path is the field path within the result where the borrow lands. A position the walk
+	// `path` is the field path within the result where the borrow lands. A position the walk
 	// cannot name keeps the path of its container, as storeEdge.path does.
 	path []placeSeg
-	// direct records that the shared lifetime is the argument's OWN borrow lifetime, so the
+	// `direct` records that the shared lifetime is the argument's OWN borrow lifetime, so the
 	// result holds the argument's borrow, as storeEdge.direct describes for a store. An edge
-	// that is not direct passes only what the argument's referent holds.
+	// whose `direct` is false passes only what the argument's referent holds.
 	direct bool
 }
 
-// callReturnEdges returns the edges from each argument of fn, and from the receiver self
+// callReturnEdges returns the edges from each argument of fn, and from the receiver `self`
 // when it is not nil, to the positions of the return type whose lifetime a lifetime of the
 // argument flows into, as lifetimeFlowsInto decides. Every lifetime a source position's type
 // mentions counts, the way callStoreEdges reads a source. A position whose type mentions no
 // lifetime takes no edge. When a walk of the position or of the return type exhausts its
-// allowance, the position takes a direct edge at the whole result.
+// allowance, the position takes a `direct` edge at the whole result.
 func callReturnEdges(ctx *Context, fn *soltype.FuncType, self *soltype.FuncParam) []returnEdge {
 	if fn.Ret == nil {
 		return nil
@@ -175,7 +175,7 @@ func callReturnEdges(ctx *Context, fn *soltype.FuncType, self *soltype.FuncParam
 	// The map's order is random, so the sites are read in the order the walk reaches them.
 	retLts, _ := lifetimeVarsIn(ctx, fn.Ret)
 	var out []returnEdge
-	// own is the type of one argument the position receives, whose borrow lifetime is the
+	// `own` is the type of one argument the position receives, whose borrow lifetime is the
 	// argument's own.
 	add := func(i int, t, own soltype.Type) {
 		lts, truncated := lifetimeVarsIn(ctx, t)
@@ -219,8 +219,8 @@ func callReturnEdges(ctx *Context, fn *soltype.FuncType, self *soltype.FuncParam
 	return out
 }
 
-// lifetimeFlowsInto reports whether data of lifetime from can reach a borrow of lifetime to.
-// It can when the two are one variable, or when from is among the lower bounds of to,
+// lifetimeFlowsInto reports whether data of lifetime `from` can reach a borrow of lifetime
+// `to`. It can when the two are one variable, or when `from` is among the lower bounds of `to`,
 // directly or through other lifetime variables.
 func lifetimeFlowsInto(from, to *soltype.LifetimeVar) bool {
 	seen := set.NewSet[*soltype.LifetimeVar]()
