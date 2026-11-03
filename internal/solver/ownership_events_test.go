@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -907,4 +908,89 @@ func TestOwnershipEventsBracketPlace(t *testing.T) {
 			},
 		},
 	})
+}
+
+// TestOwnershipEventsTupleParts covers which tuple patterns record the elements they name
+// in tupleParts. A pattern that names every element of a fixed-length tuple records its
+// parts. A pattern too short for the tuple, a pattern over an array, and two patterns that
+// split one place differently record that the place's moves never merge. want lists the
+// entry of each place, with the parts joined by spaces, or `none` for a place whose moves
+// never merge.
+func TestOwnershipEventsTupleParts(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "EveryElement",
+			src: `
+				fn go() {
+					val b = [{v: 1}, {v: 2}]
+					val [x, y] = b
+				}
+			`,
+			want: []string{"0 1"},
+		},
+		{
+			name: "RestElement",
+			src: `
+				fn go() {
+					val b = [{v: 1}, {v: 2}, {v: 3}]
+					val [x, ...rest] = b
+				}
+			`,
+			want: []string{"0 1..."},
+		},
+		{
+			name: "TooShort",
+			src: `
+				fn go() {
+					val b = [{v: 1}, {v: 2}]
+					val [x] = b
+				}
+			`,
+			want: []string{"none"},
+		},
+		{
+			name: "Array",
+			src: `
+				fn go(arr: Array<{v: number}>) {
+					val [x, y] = arr
+				}
+			`,
+			want: []string{"none"},
+		},
+		{
+			name: "MatchArmsSplitDifferently",
+			src: `
+				fn go(t: [{v: number}, {v: number}, {v: number}]) {
+					val n = match t {
+						[a, b, c] => 1,
+						[a, ...rest] => 2,
+					}
+				}
+			`,
+			want: []string{"none"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			table, _ := inferOwnershipEvents(t, tc.src, "go")
+			var got []string
+			for _, parts := range table.tupleParts {
+				if parts == nil {
+					got = append(got, "none")
+					continue
+				}
+				names := make([]string, len(parts))
+				for i, seg := range parts {
+					names[i] = seg.name
+				}
+				got = append(got, strings.Join(names, " "))
+			}
+			require.Equal(t, tc.want, got)
+		})
+	}
 }

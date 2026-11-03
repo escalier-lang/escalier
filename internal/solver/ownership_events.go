@@ -226,6 +226,14 @@ type ownershipEvents struct {
 	// escaping through flowsInto outlives the frame. See escapes.
 	escaping  set.Set[liveness.VarID]
 	flowsInto map[liveness.VarID][]liveness.VarID
+	// tupleParts maps the placeKey of each place a tuple pattern destructures to the segment
+	// of each element the pattern names. `val [x, ...rest] = b` maps `b` to `0` and `1...`.
+	// The emitter records a pattern only when it names every element of a fixed-length
+	// tuple, so a move of each part moves the whole value. A place that one pattern does not
+	// cover, or that two patterns split differently, maps to nil. The arms of a `match` can
+	// destructure one place in several ways, and moves out of different arms do not add up
+	// to a move of the whole value.
+	tupleParts map[string][]placeSeg
 	// cfg is the control-flow graph of the body, and live is the liveness of each of its
 	// locals over cfg. The dataflow pass in ownership_dataflow.go walks cfg and reads live to
 	// decide whether a holder is used again.
@@ -307,13 +315,14 @@ const (
 // newOwnershipEvents returns an empty table whose places render through names.
 func newOwnershipEvents(names map[liveness.VarID]string) *ownershipEvents {
 	return &ownershipEvents{
-		names:     names,
-		subsumed:  set.NewSet[ast.Node](),
-		emitted:   set.NewSet[emitSite](),
-		temps:     map[ast.Node][]int{},
-		tempRoots: map[ast.Node][]liveness.VarID{},
-		escaping:  set.NewSet[liveness.VarID](),
-		flowsInto: map[liveness.VarID][]liveness.VarID{},
+		names:      names,
+		subsumed:   set.NewSet[ast.Node](),
+		emitted:    set.NewSet[emitSite](),
+		temps:      map[ast.Node][]int{},
+		tempRoots:  map[ast.Node][]liveness.VarID{},
+		escaping:   set.NewSet[liveness.VarID](),
+		flowsInto:  map[liveness.VarID][]liveness.VarID{},
+		tupleParts: map[string][]placeSeg{},
 	}
 }
 

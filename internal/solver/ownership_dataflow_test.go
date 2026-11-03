@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -274,7 +275,7 @@ func TestOwnershipDataflow(t *testing.T) {
 					return q.length
 				}
 			`,
-			errs: []string{"cannot assign to 'xs' while it is borrowed as immutable"},
+			errs: []string{"cannot assign to 'xs[i]' while it is borrowed as immutable"},
 		},
 		{
 			name: "E2WriteWhileMovedHolderLive",
@@ -566,6 +567,49 @@ func TestOwnershipDataflow(t *testing.T) {
 			`,
 		},
 		{
+			// Each branch moves a different element of b, so neither branch moves the whole
+			// tuple. The next iteration moves an element a branch moved before.
+			name: "TupleElementsMovedOnBranchesInALoop",
+			src: `
+				fn go(cond: boolean) -> number {
+					val b = [{v: 1}, {v: 2}]
+					var sum = 0
+					for i in [1, 2] {
+						if cond {
+							val [x, {v}] = b
+							sum = sum + v
+						} else {
+							val [{v}, y] = b
+							sum = sum + v
+						}
+					}
+					return sum
+				}
+			`,
+			errs: []string{
+				`use of moved value 'b["0"]'`,
+				`use of moved value 'b["0"]'`,
+			},
+		},
+		{
+			// Each path moves two of the three elements of t, so the read of t sees a partial
+			// move rather than a move of the whole tuple.
+			name: "TupleElementsMovedOnDifferentPathsArePartialMoves",
+			src: `
+				fn go(cond: boolean) {
+					val t = [{x: 1}, {x: 2}, {x: 3}]
+					if cond {
+						val [a, {}, {}] = t
+					} else {
+						val [{}, b, {}] = t
+					}
+					val [{}, {}, c] = t
+					val u = t
+				}
+			`,
+			errs: []string{`use of partially moved value 't'; field 't["0"]' was moved out`},
+		},
+		{
 			// The pass replaces only the diagnostics of E1, E2, and E3, so a type error stays.
 			name: "TypeErrorStays",
 			src: `
@@ -587,5 +631,244 @@ func TestOwnershipDataflow(t *testing.T) {
 			}
 			require.Equal(t, tc.errs, errs)
 		})
+	}
+}
+
+// TestOwnershipDataflowMatchesCurrentChecks covers programs whose diagnostics the dataflow
+// pass and the current checks report alike. Each program runs with the flag off and with it
+// on, and both runs report want, with spans. The cases cover a call that runs a closure, a
+// write through a constant-number index, the span a moved place is blamed at, the name of a
+// moved field or tuple, and a write that uses a moved place beside a live borrow.
+func TestOwnershipDataflowMatchesCurrentChecks(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			// The call moves f, since f's body moves the capture p. E4 checks the second call.
+			name: "ClosureMovingACaptureCalledTwice",
+			src: `
+				declare fn take(p: {x: number}) -> number
+				fn go() -> number {
+					val p = {x: 1}
+					val f = fn () { return take(p) }
+					val a = f()
+					return a + f()
+				}
+			`,
+			want: []string{"7:17-7:18: use of moved value 'f'"},
+		},
+		{
+			// Both calls are in one statement, so the second is reported as soon as it moves f.
+			name: "ClosureMovingACaptureCalledTwiceInOneStatement",
+			src: `
+				declare fn take(p: {x: number}) -> number
+				fn go() -> number {
+					val p = {x: 1}
+					val f = fn () { return take(p) }
+					return f() + f()
+				}
+			`,
+			want: []string{"6:19-6:22: use of moved value 'f'"},
+		},
+		{
+			// The closure's write to x is live for the call that receives it, beside a.
+			name: "ClosureArgumentBesideAnImmutableBorrow",
+			src: `
+				declare fn run(a: &{v: number}, f: fn () -> undefined) -> undefined
+				fn go() {
+					val mut x = {v: 1}
+					val a = &x
+					run(a, fn () { x.v = 5 })
+				}
+			`,
+			want: []string{"6:13-6:30: cannot borrow 'x' as mutable while it is borrowed as immutable"},
+		},
+		{
+			name: "WriteThroughAnIndexNamesTheIndex",
+			src: `
+				fn go() -> number {
+					val mut xs: Array<{x: number}> = [{x: 1}, {x: 2}]
+					val r = &xs[0]
+					xs[1].x = 3
+					return r.x
+				}
+			`,
+			want: []string{"5:6-5:13: cannot assign to 'xs[1].x' while it is borrowed as immutable"},
+		},
+		{
+			name: "WriteAfterMoveBlamesTheMovedPlace",
+			src: `
+				fn go(mut p: {x: number}) {
+					val q: {x: number} = p
+					p.x = 5
+					q.x
+				}
+			`,
+			want: []string{"4:6-4:7: use of moved value 'p'"},
+		},
+		{
+			name: "BorrowAfterMoveBlamesTheOperand",
+			src: `
+				declare fn sink(p: {x: number}) -> undefined
+				fn go() {
+					val a = {x: 1}
+					sink(a)
+					val r = &a
+					r.x
+				}
+			`,
+			want: []string{"6:15-6:16: use of moved value 'a'"},
+		},
+		{
+			name: "MethodCallAfterMoveBlamesTheReceiver",
+			src: `
+				class C {
+					v: number,
+					look(&self) -> number { return self.v },
+					take(self) -> number { return self.v },
+				}
+				fn go() -> number {
+					val c = C(1)
+					c.take()
+					return c.look()
+				}
+			`,
+			want: []string{"10:13-10:14: use of moved value 'c'"},
+		},
+		{
+			name: "DestructuringWhileBorrowedNamesTheMovedField",
+			src: `
+				fn go() -> number {
+					val p = {f: {x: 1}}
+					val r = &p
+					val {f: d} = p
+					return r.f.x
+				}
+			`,
+			want: []string{"5:19-5:20: cannot move 'p.f' while it is borrowed"},
+		},
+		{
+			name: "DestructuringInALoopNamesTheMovedField",
+			src: `
+				fn go() {
+					val p = {f: {x: 1}}
+					for i in [1, 2] {
+						val {f: d} = p
+					}
+				}
+			`,
+			want: []string{"5:20-5:21: use of moved value 'p.f'"},
+		},
+		{
+			name: "TupleWithEveryElementMovedIsMoved",
+			src: `
+				fn go() {
+					val b = [{v: 1}, {v: 2}]
+					val [x, y] = b
+					val z = b
+				}
+			`,
+			want: []string{"5:14-5:15: use of moved value 'b'"},
+		},
+		{
+			name: "TupleRestMovesTheTuple",
+			src: `
+				fn go() {
+					val b = [{v: 1}, {v: 2}]
+					val [x, ...rest] = b
+					val z = b
+				}
+			`,
+			want: []string{"5:14-5:15: use of moved value 'b'"},
+		},
+		{
+			// Each element moves again on the next iteration, and the destructuring is
+			// reported once.
+			name: "TupleDestructuredInALoopReportsOnce",
+			src: `
+				fn go() {
+					val b = [{x: 1}, {x: 2}]
+					for i in [1, 2] {
+						val [x, y] = b
+					}
+				}
+			`,
+			want: []string{"5:20-5:21: use of moved value 'b'"},
+		},
+		{
+			// The destructuring moves p.f and p.g, and is reported once.
+			name: "DestructuringTwoFieldsWhileBorrowedReportsOnce",
+			src: `
+				fn go() -> number {
+					val p = {f: {x: 1}, g: {x: 2}}
+					val r = &p
+					val {f: d, g: e} = p
+					return r.f.x
+				}
+			`,
+			want: []string{"5:25-5:26: cannot move 'p.f' while it is borrowed"},
+		},
+		{
+			// A dynamic index adds no segment to the place, so the write blames `xs[i]`.
+			name: "WriteThroughADynamicIndexAfterMoveBlamesTheElement",
+			src: `
+				declare fn sink(p: Array<{x: number}>) -> undefined
+				fn go(i: number) {
+					val mut xs: Array<{x: number}> = [{x: 1}]
+					sink(xs)
+					xs[i].x = 2
+				}
+			`,
+			want: []string{"6:6-6:11: use of moved value 'xs'"},
+		},
+		{
+			// The write uses a moved a, so it reports E1 and not E2 beside the live snapshot.
+			name: "WriteToAMovedPlaceReportsOnlyTheMove",
+			src: `
+				declare fn sink(p: {x: number}) -> undefined
+				fn go() {
+					val mut a: {x: number} = {x: 1}
+					sink(a)
+					val snapshot: &{x: number} = &a
+					a.x = 2
+					snapshot
+				}
+			`,
+			want: []string{
+				"6:36-6:37: use of moved value 'a'",
+				"7:6-7:7: use of moved value 'a'",
+			},
+		},
+		{
+			// a moves on one branch only. The write still reports only the move.
+			name: "WriteToAPlaceMovedOnOneBranchReportsOnlyTheMove",
+			src: `
+				declare fn sink(p: {x: number}) -> undefined
+				fn go(cond: boolean) {
+					val mut a: {x: number} = {x: 1}
+					if cond {
+						sink(a)
+					}
+					val snapshot: &{x: number} = &a
+					a.x = 2
+					snapshot
+				}
+			`,
+			want: []string{
+				"8:36-8:37: use of moved value 'a'",
+				"9:6-9:7: use of moved value 'a'",
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		for _, dataflow := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/dataflow=%t", tc.name, dataflow), func(t *testing.T) {
+				res := InferModuleAgainstStdlib(parseModule(t, tc.src), benchTree, Options{OwnershipDataflow: dataflow})
+				require.Equal(t, tc.want, messagesWithSpan(t, res.Errors))
+			})
+		}
 	}
 }

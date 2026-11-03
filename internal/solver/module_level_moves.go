@@ -398,8 +398,12 @@ func (c *checker) consumeOnceCallee(call *ast.CallExpr, ref liveness.StmtRef) {
 		return
 	}
 	p := movePlace{root: c.varIDs.Of(ident)}
-	c.fn.useSites = append(c.fn.useSites, moveUse{place: p, ref: ref, node: ident, loanSeqAt: c.fn.loanSeq + 1})
-	c.recordMovePlace(p, call, ref)
+	c.fn.useSites = append(c.fn.useSites, moveUse{place: p, ref: ref, node: ident, loanSeqAt: c.fn.loanSeq + 1, closureCall: true})
+	id := c.placeID(p)
+	c.fn.movePlaces[id] = p
+	// E4 checks a call that runs a closure, so a second call of it in one statement, as in
+	// `f() + f()`, keeps its diagnostic when the dataflow pass runs.
+	c.recordMove(id, call, ref, true)
 }
 
 // consumeSpreadIntoLiteral is consumeIntoLiteral for the operand src of a spread, whose type is
