@@ -41,8 +41,8 @@ type checker struct {
 
 	// capturesMovedBy maps each closure whose body moves a local it captures to the names of
 	// those locals, each mapped to the expression in the closure that moves it.
-	// recordClosureCaptures moves them out of the enclosing body where the closure is written,
-	// and consumeOnceCallee moves a binding holding the closure at each call.
+	// recordClosureCaptures reads it where the closure is written, and funcMovesCaptures
+	// reads it at each call of a binding holding the closure.
 	capturesMovedBy map[ast.Func]map[string]ast.Node
 
 	// pendingFlows holds each flow whose ownership F3 has not settled yet, across every body
@@ -594,65 +594,21 @@ type funcCtx struct {
 		ref  liveness.StmtRef
 		set  bool
 	}
-	// cfg is this body's control-flow graph, retained from the pre-pass so the move
-	// engine can run AnalyzeMoves over it. liveness and stmtToRef are derived from
-	// it; the move engine's branch-merged consumed lattice joins over the same
-	// blocks (PR 5). nil at module top-level, where no pre-pass runs.
+	// cfg is this body's control-flow graph, retained from the pre-pass. liveness and
+	// stmtToRef are derived from it. It is nil at module top-level, where no pre-pass runs.
 	cfg *liveness.CFG
-	// moveSites records, per CFG statement position, the VarIDs the ordered walk
-	// has consumed there — a binding moved by a return, a store, a consuming
-	// argument, or an escaping capture. The walk records into it while walking the
-	// body; AnalyzeMoves(cfg, moveSites) then yields the branch-merged consumed
-	// lattice the use-after-move check reads after the body walk completes.
-	moveSites map[liveness.StmtRef]set.Set[liveness.VarID]
 	// openEscapes holds the VarID of each binding the body passes whole as a call argument
 	// into a destination that outlives the frame and whose type leaves ownership open.
 	// noteOpenEscapes records them, and markOpenEscapeParams reads them once the body is
 	// walked.
 	openEscapes set.Set[liveness.VarID]
-	// moveNodes maps a consumed binding's VarID to the node that moved it, so a
-	// UseAfterMoveError can point its "moved here" related span at the move site. A
-	// binding moved on more than one path keeps the last-recorded move node, which
-	// is a coarse but adequate blame target.
-	moveNodes map[liveness.VarID]ast.Node
-	// moveRecords maps each node recordMove blamed for a move to what it recorded, so
-	// retractMove can take the move back.
-	moveRecords map[ast.Node]moveRecord
-	// moduleLevelMoves holds each expression reported as a move out of a module-level binding.
-	// The sites that record a move read it, so such a move records nothing.
-	moduleLevelMoves set.Set[ast.Node]
+	// destructureInits holds the initializer of each `val` or `var` destructuring in this
+	// body that takes its parts out of the initializer's place. markMovedParams reads it.
+	destructureInits set.Set[ast.Node]
 	// unwrittenBorrows holds each expression reported for filling a borrow destination without
-	// a written borrow. A binding whose initializer is in it records no alias, move, borrow
-	// edge, or loan.
+	// a written borrow. A binding whose initializer is in it records no borrow edges and keeps
+	// no closure reachable.
 	unwrittenBorrows set.Set[ast.Node]
-	// placeIDs assigns each field-level place one synthetic VarID (PR 7). A field-level
-	// place is a root binding plus a path of field segments, such as `pair.a`. The key is
-	// placeKey's encoding of the place, its root VarID followed by each segment's kind and
-	// length-prefixed name, so two places with distinct roots or paths never share a key.
-	// The value is the synthetic VarID the consumed lattice uses to track moves of that
-	// place. Looking up the same place at its move site and at its use site returns one
-	// stable VarID, so the use-after-move check can match them. Whole-binding places are
-	// not stored here; they reuse their root VarID directly. The synthetic VarIDs come
-	// from the module-wide varIDCounter, so they never collide with a real binding's VarID.
-	placeIDs map[string]liveness.VarID
-	// movePlaces records, for every VarID the move engine has consumed, the place it
-	// stands for: a whole binding maps its root VarID to the path-empty place, and a
-	// field move maps its synthetic VarID to the field place. A field place's synthetic
-	// VarID is the one placeIDs assigned it, so the two maps agree on which VarID names
-	// the place. checkUseAfterMoves scans it to find a moved place whose path is a prefix
-	// of, or extends, the place a use reads — the partial-move conflict test that keeps a
-	// moved `pair.a` from blocking a read of the sibling `pair.b`.
-	movePlaces map[liveness.VarID]movePlace
-	// useSites records every read of a reference-shaped place while walking the body,
-	// each with the place read, the CFG point of the read, and the node to blame. The
-	// place carries the field path, so a read of `pair.a` is distinguished from the
-	// sibling `pair.b`. checkUseAfterMoves replays them against the consumed lattice
-	// once the whole body, loop back edges included, has been walked, so a use that
-	// some reaching path moved is caught even when the move is textually later.
-	useSites []moveUse
-	// memberUses maps each member or index expression recordMemberUse recorded to the index
-	// of its read in useSites.
-	memberUses map[ast.Node]int
 	// eagerBorrowGraph records, per binding root VarID, the function-locals it borrows through
 	// an explicit `&`/`&mut`, each tagged with the field path holding the borrow. The
 	// initializer `val a = {peer: &mut b}` records the edge a → b at path [peer], and
@@ -673,7 +629,7 @@ type funcCtx struct {
 	// walk computed. analyzeBorrows folds these forward over the CFG, joining edge sets at
 	// branch merges by union so a borrow set on one branch reaches the merge, and replacing
 	// a binding's whole edge set at each assignment so a reassignment clears the prior
-	// referent. It is the flow-sensitive counterpart of moveSites.
+	// referent.
 	borrowGens map[liveness.StmtRef][]borrowAssign
 	// borrowDirty accumulates the roots whose eager edge set changed while recording the
 	// current statement's borrows. The recording sites flush it into borrowGens once the
@@ -694,9 +650,6 @@ type funcCtx struct {
 	// captures that hold a reference-shaped value. The borrow graph gives the binding that holds
 	// a closure a capture edge to each of them.
 	capturedLocals map[ast.Func][]capturedLocal
-	// flowOuts lists each value that leaves the frame, in the order the walk meets them.
-	// recordComponentMoves reads it once the body is walked.
-	flowOuts []flowOutSite
 	// varIDTypes maps the VarID of each parameter leaf, the receiver, and each capture to
 	// that binding's soltype. runLivenessPrePass fills it before the body is walked. The
 	// stored type is the same pointer the inference graph mutates, so a type variable

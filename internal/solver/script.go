@@ -126,10 +126,6 @@ func (c *checker) inferScriptIn(scope *Scope, script *ast.Script) (*Scope, *Info
 	// The dataflow pass reads what each retained closure writes, which needs the whole
 	// script's borrow graph.
 	c.noteRetainedClosureWrites()
-	// A script body runs with function-body semantics, so the move engine applies
-	// here too. With the whole body walked, replay the recorded reads against the
-	// consumed lattice to report use-after-move.
-	c.checkUseAfterMoves()
 	// The whole script is inferred, so every flow F3 can settle is settled, and the rest
 	// take the answer settleAllFlows gives what it cannot see.
 	c.finishOwnershipEvents()

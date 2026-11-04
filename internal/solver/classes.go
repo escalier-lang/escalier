@@ -2383,7 +2383,7 @@ func (c *checker) recordMethodSelfParam(blame ast.Node, self *soltype.FuncParam)
 // `immutable C <: mutable C`.
 //
 // A consuming `self` or `mut self` member moves the instance, so the receiver must own it and
-// needs no other access. An owned receiver is moved at the access, through consumeReceiver. A
+// needs no other access. An owned receiver is moved at the access, through emitReceiverMove. A
 // borrowed receiver has nothing to move, so it is reported as a ConsumingReceiverBorrowedError
 // naming the member.
 //
@@ -2397,16 +2397,13 @@ func (c *checker) checkReceiverMut(blame ast.Node, name string, recv soltype.Typ
 	if inner == nil {
 		return
 	}
-	// A method takes its receiver as `self`, so a use of a moved receiver at the access
-	// `c.take` blames `c`, the place the method takes.
-	c.blameReceiver(blame)
 	selfRef, isBorrow := self.Type.(*soltype.RefType)
 	if !isBorrow || selfRef.Lt == nil {
 		if len(heldBorrows(recv)) > 0 {
 			c.report(&ConsumingReceiverBorrowedError{Name: name, Site: blame})
 			return
 		}
-		c.consumeReceiver(blame)
+		c.emitReceiverMove(blame)
 		return
 	}
 	// The receiver lends its access at the member's own lifetime, so the constraint below

@@ -12,10 +12,9 @@ import (
 )
 
 // A move takes an owned value out of the place holding it and leaves the destination its sole
-// owner. Inside a function body the move engine tracks moves out of the body's own locals. A
-// module-level binding or an import lives outside every call frame, so a move out of one would
-// leave two owners of the same object. ModuleLevelMoveError rejects that move, and a borrow reads the
-// value instead.
+// owner. A module-level binding or an import lives outside every call frame, so a move out of
+// one would leave two owners of the same object. ModuleLevelMoveError rejects that move, and a
+// borrow reads the value instead.
 //
 //	val xs: Array<number> = [1]
 //	fn f() {
@@ -23,17 +22,10 @@ import (
 //		val b = &xs  // borrows it
 //	}
 //
-// A closure that moves a local it captures takes that local when the closure is written, as a
-// Rust `move` closure does. The enclosing body records the move at the statement that writes the
-// closure, so a later use of the local there is a use-after-move. The closure owns the value from then on, and its body
-// moves it out on the first call, so a call of the closure moves the binding it is stored in.
-//
-//	fn f() {
-//		val a: Array<number> = [1]
-//		val g = fn() -> Array<number> { return a }  // moves `a` into `g`
-//		val m = g()                                 // moves `g`
-//		val n = g()                                 // ERROR: use of moved value 'g'
-//	}
+// The function may run again, and other code may read the binding later, so the move is
+// rejected wherever it happens. The rule is about the binding rather than a path through the
+// body, so each flow site that moves a value checks it as the site is walked, and the
+// dataflow pass does not.
 
 // ModuleLevelMoveError is reported when a function body moves an owned value out of a module-level
 // binding or an import, or when a module-level `mut` binding takes one.
@@ -107,8 +99,8 @@ func (c *checker) placeRootBinding(scope *Scope, e ast.Expr) (ValueBinding, bool
 // member chain off a namespace is rooted at the namespace's value it reads first. A class or enum
 // name is not such a binding, and neither is a class value. scope resolves the root.
 //
-// It answers false for code outside a function body, since that code moves nothing the move
-// engine tracks.
+// It answers false for code outside a function body, which consumes nothing.
+// rejectModuleLevelMutMove checks a move into a module-level `mut` binding instead.
 func (c *checker) moduleLevelRootInBody(scope *Scope, e ast.Expr) (ValueBinding, bool) {
 	if c.fn == nil || c.fn.cfg == nil || scope == nil {
 		return ValueBinding{}, false
@@ -230,20 +222,16 @@ func (c *checker) holdsConcreteOwned(t soltype.Type, seen set.Set[*soltype.TypeV
 	})
 }
 
-// rejectModuleLevelMove reports whether moving source moves a value out of a place rooted at a
-// module-level `val` or `var` or an import. The value moved is source itself, or a result of
-// one of its branches when source is a conditional, `match`, `do`, or `try`. It reports a
-// ModuleLevelMoveError for each such place. The caller records no move for source when it
-// answers true. scope resolves the root.
-func (c *checker) rejectModuleLevelMove(scope *Scope, source ast.Expr) bool {
-	moved := false
+// rejectModuleLevelMove reports a ModuleLevelMoveError for each value that moving source moves
+// out of a place rooted at a module-level `val` or `var` or an import. The value moved is
+// source itself, or a result of one of its branches when source is a conditional, `match`,
+// `do`, or `try`. scope resolves the root.
+func (c *checker) rejectModuleLevelMove(scope *Scope, source ast.Expr) {
 	for _, r := range branchResults(source) {
 		if c.movesModuleLevelPlace(scope, r, c.info.TypeOf(r)) {
 			c.reportModuleLevelMove(r)
-			moved = true
 		}
 	}
-	return moved
 }
 
 // movedValues returns the expressions whose values source moves. It starts from the results of
@@ -305,12 +293,8 @@ func appendBranchResults(results []ast.Expr, e ast.Expr) []ast.Expr {
 }
 
 // reportModuleLevelMove reports a ModuleLevelMoveError blaming source, the expression whose
-// value moves, and records source in moduleLevelMoves.
+// value moves.
 func (c *checker) reportModuleLevelMove(source ast.Node) {
-	if c.fn.moduleLevelMoves == nil {
-		c.fn.moduleLevelMoves = set.NewSet[ast.Node]()
-	}
-	c.fn.moduleLevelMoves.Add(source)
 	// A place expression is a name, member read, or index read, all of which the printer
 	// renders.
 	text, _ := printer.Print(source, printer.DefaultOptions())
@@ -319,8 +303,7 @@ func (c *checker) reportModuleLevelMove(source ast.Node) {
 
 // rejectModuleLevelDestructure reports whether init is a place rooted at a module-level `val` or
 // `var` or an import. It reports a ModuleLevelMoveError when the destructuring of init into pat
-// takes some leaf of it by value. scope resolves the root and the leaf bindings. The caller
-// records no move for such an init.
+// takes some leaf of it by value. scope resolves the root and the leaf bindings.
 func (c *checker) rejectModuleLevelDestructure(scope *Scope, pat ast.Pat, init ast.Expr) bool {
 	if _, ok := c.moduleLevelRootInBody(scope, init); !ok {
 		return false
@@ -337,83 +320,12 @@ func (c *checker) rejectModuleLevelDestructure(scope *Scope, pat ast.Pat, init a
 	return true
 }
 
-// movedCaptures maps the name of each local of the enclosing body that the current closure
-// moves, wholly or in part, to the expression that moves it. A closure's captures are
-// parameters of its body, so the closure moves one where its body's settled events move a
-// place under it. Only a capture of a concrete owned type counts. The first move of a capture
-// in the order the walk emitted them is the one returned. The current body must be a closure
-// whose events are settled, since its captures are locals of the body that encloses it.
-func (c *checker) movedCaptures() map[string]ast.Node {
-	t := c.eventTable()
-	if t == nil {
-		return nil
-	}
-
-	var moved map[string]ast.Node
-	for _, ev := range t.list() {
-		mv, ok := ev.(*moveEvent)
-		if !ok {
-			continue
-		}
-		root := mv.place.root
-		// A capture whose type is a bare type variable may hold a value type, so the closure
-		// is not taken to move it.
-		if !c.fn.captureVarIDs.Contains(root) || !c.isConcreteOwned(c.fn.varIDTypes[root]) {
-			continue
-		}
-		name := c.fn.varIDNames[root]
-		if _, seen := moved[name]; seen {
-			continue
-		}
-		if moved == nil {
-			moved = map[string]ast.Node{}
-		}
-		moved[name] = mv.node
-	}
-	return moved
-}
-
-// funcMovesCaptures reports whether decl declares a closure whose body moves a local it
-// captures. decl is a script's `fn` declaration, or a `val`/`var` declaration whose initializer
-// is the function expression.
-func (c *checker) funcMovesCaptures(decl ast.Node) bool {
-	if vd, ok := decl.(*ast.VarDecl); ok {
-		decl = vd.Init
-	}
-	fn, ok := decl.(ast.Func)
-	return ok && len(c.capturesMovedBy[fn]) > 0
-}
-
-// consumeOnceCallee moves the local binding call's callee names when that binding holds a
-// closure whose body moves a local it captures. ref is the call's statement.
-//
-// The read of the callee is recorded as a use, so a second call is a use-after-move. The read
-// is recorded here because recordUse records only a read of a reference-shaped value, and a
-// function value is not one, so the walk records no use of the callee by itself.
-// The use blames the callee name rather than the whole call, so in a second `g()` the
-// use-after-move error points at `g`, the binding that moved.
-func (c *checker) consumeOnceCallee(call *ast.CallExpr, ref liveness.StmtRef) {
-	ident, ok := call.Callee.(*ast.IdentExpr)
-	if !ok || c.varIDs.Of(ident) <= 0 {
-		return
-	}
-	decl, ok := c.info.DeclOf(ident)
-	if !ok || !c.funcMovesCaptures(decl) {
-		return
-	}
-	p := movePlace{root: c.varIDs.Of(ident)}
-	c.fn.useSites = append(c.fn.useSites, moveUse{place: p, ref: ref, node: ident})
-	id := c.placeID(p)
-	c.fn.movePlaces[id] = p
-	c.recordMove(id, call, ref)
-}
-
-// consumeSpreadIntoLiteral is consumeIntoLiteral for the operand src of a spread, whose type is
-// t. A spread copies the elements or fields of src into the new literal. When src is rooted at a
-// module-level binding and every element or field of it is a value type, the
-// spread copies values only and moves nothing. A bare name's type is read from the binding scope
-// resolves it to.
-func (c *checker) consumeSpreadIntoLiteral(scope *Scope, src ast.Expr, t soltype.Type, ref liveness.StmtRef, hasRef bool) {
+// rejectModuleLevelSpread reports a ModuleLevelMoveError when the spread operand src, whose type
+// is t, moves a value out of a place rooted at a module-level binding or an import. A spread
+// copies the elements or fields of src into the new literal. When every element or field of src
+// is a value type, the spread copies values only and moves nothing. A bare name's type is read
+// from the binding scope resolves it to.
+func (c *checker) rejectModuleLevelSpread(scope *Scope, src ast.Expr, t soltype.Type) {
 	if b, ok := c.moduleLevelRootInBody(scope, src); ok {
 		srcT := t
 		if _, isIdent := src.(*ast.IdentExpr); isIdent {
@@ -423,7 +335,7 @@ func (c *checker) consumeSpreadIntoLiteral(scope *Scope, src ast.Expr, t soltype
 			return
 		}
 	}
-	c.consumeIntoLiteral(scope, src, t, ref, hasRef)
+	c.rejectModuleLevelMove(scope, src)
 }
 
 // holdsOnlyValues reports whether every element or field of t is a value type. It answers for

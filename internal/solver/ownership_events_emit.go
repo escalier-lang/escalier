@@ -151,6 +151,18 @@ func (c *checker) emitRead(e ast.Expr) {
 	}
 }
 
+// emitMemberRead emits a read of the place the member or index chain e names, as emitRead
+// does. A read inside a statement with no CFG point of its own emits nothing.
+func (c *checker) emitMemberRead(e ast.Expr) {
+	if c.fn == nil || c.fn.cfg == nil {
+		return
+	}
+	if _, ok := c.currentStmtRef(); !ok {
+		return
+	}
+	c.emitRead(e)
+}
+
 // emitReadAt emits a read of the place e names, attached to ref. A read of e already
 // emitted at ref emits nothing more.
 func (c *checker) emitReadAt(e ast.Expr, ref liveness.StmtRef) {

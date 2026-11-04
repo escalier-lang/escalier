@@ -912,7 +912,7 @@ Decided: accepted. F4 states it.
 ### D8. A global write moves a borrow
 
 `consumeAtGlobalWrite` records a move for any reference-shaped source, including
-a borrow ([moves.go](../../internal/solver/moves.go)). This contradicts F2, under
+a borrow (`moves.go`). This contradicts F2, under
 which a borrow is copied and never consumed.
 
 Recommendation: drop the special case. A borrow stored into module-level state
@@ -2016,7 +2016,7 @@ The steps:
      the code action kinds the server advertises in
      [main.go](../../cmd/lsp-server/main.go), and tests in
      `text_document_test.go` cover `&`, `&mut`, and the parenthesized case.
-   - Drops the move that `consumeAtGlobalWrite` in [moves.go](../../internal/solver/moves.go)
+   - Drops the move that `consumeAtGlobalWrite` in `moves.go`
      records for a borrow, as D8 decides.
 4. Change parameter inference to follow F3 and D9. An unannotated parameter
    that does not escape becomes a borrow. A call to an escaping one moves its
@@ -2038,25 +2038,28 @@ The steps:
    rules.
 8. Remove the old checks one at a time once the new pass matches them. The
    checking model replaces these groups:
-   - The per-site `consume*` functions in [moves.go](../../internal/solver/moves.go) and
+   - The per-site `consume*` functions in `moves.go` and
      [module_level_moves.go](../../internal/solver/module_level_moves.go), replaced by F2 and
-     F3. This includes `consumeOnceCallee`, replaced by E4, and the separate
-     pass behind `ModuleLevelMoveError`, replaced by E1.
-   - The alias-set transition check in [transitions.go](../../internal/solver/transitions.go),
-     the alias tracker in [alias.go](../../internal/liveness/alias.go) and
-     [alias_analysis.go](../../internal/liveness/alias_analysis.go), and the
-     loan check in [borrow_exclusivity.go](../../internal/solver/borrow_exclusivity.go), all
+     F3. This includes `consumeOnceCallee`, replaced by E4.
+   - The alias-set transition check in `transitions.go`, the alias tracker in
+     `alias.go` and `alias_analysis.go` in `internal/liveness`, and the loan check
+     in [borrow_exclusivity.go](../../internal/solver/borrow_exclusivity.go), all
      replaced by E2 and E3.
-   - The frame-exit checks in [return_escape.go](../../internal/solver/return_escape.go) and
-     [return_shared_paths.go](../../internal/solver/return_shared_paths.go), replaced by L1 and
-     E2 at the return.
-   - The separate escape logic in [return_escape.go](../../internal/solver/return_escape.go) and
+   - The frame-exit checks in `return_escape.go` and `return_shared_paths.go`,
+     replaced by L1 and E2 at the return.
+   - The separate escape logic in `return_escape.go` and
      [borrow_flow.go](../../internal/solver/borrow_flow.go), replaced by the lifetime solver
      answering F3.
    - The plumbing that keeps the engines from reporting one error twice, such
      as `resolvePhaseTransitions` and `reportedMixedOwnership`.
 
-   These stay, since they enforce rules the checking model does not cover:
+   These stay, since they enforce rules the dataflow pass does not check:
+   - The per-site checks behind `ModuleLevelMoveError` in
+     [module_level_moves.go](../../internal/solver/module_level_moves.go). A move out
+     of module-level state is rejected wherever it happens, since the function may
+     run again or other code may read the binding later. That is a
+     flow-insensitive rule about the binding, so each site checks it rather than
+     the pass finding an E1 use-after-move on a path.
    - T8's `MixedOwnershipError` in [infer_expr.go](../../internal/solver/infer_expr.go).
    - The L2 checks in [lifetime_signature.go](../../internal/solver/lifetime_signature.go),
      [lifetime_rigid.go](../../internal/solver/lifetime_rigid.go), and

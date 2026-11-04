@@ -168,13 +168,8 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 	c.startOwnershipEvents(renameResult.VarIDNames, cfg, livenessInfo)
 	c.fn.exprRefs = exprStmtRefs(cfg)
 
-	// Retain the CFG and the move-engine state. The body walk records consume sites
-	// into moveSites, which liveness.AnalyzeMoves folds into the branch-merged consumed
-	// lattice over these same blocks once the whole body is walked.
 	c.fn.cfg = cfg
-	c.fn.moveSites = map[liveness.StmtRef]set.Set[liveness.VarID]{}
-	c.fn.placeIDs = map[string]liveness.VarID{}
-	c.fn.movePlaces = map[liveness.VarID]movePlace{}
+	c.fn.destructureInits = set.NewSet[ast.Node]()
 	c.fn.eagerBorrowGraph = map[liveness.VarID][]fieldBorrow{}
 	c.fn.borrowGens = map[liveness.StmtRef][]borrowAssign{}
 	c.fn.borrowDirty = set.NewSet[liveness.VarID]()

@@ -567,9 +567,6 @@ func (c *checker) checkBorrowsWritten(src ast.Expr, destT soltype.Type, arg bool
 		default:
 			c.report(&ImplicitBorrowError{Written: written, node: r})
 		}
-		// A literal element is moved into the literal as the literal is built, before its
-		// destination is known. The element is a borrow the program left unwritten, not a move.
-		c.retractMove(r)
 		if t := c.eventTable(); t != nil {
 			t.unwritten.Add(r)
 		}

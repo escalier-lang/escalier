@@ -79,24 +79,21 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 		if c.fn != nil {
 			c.fn.returns = append(c.fn.returns, t)
 			c.fn.returnExprs = append(c.fn.returnExprs, s.Expr)
-			// Returning an owned value moves it out of the call frame, so the source
-			// binding is consumed and a later use is a use-after-move. A returned borrow
-			// flows out at its own lifetime and is not consumed here.
+			// Returning an owned value moves it out of the call frame. A returned borrow
+			// flows out at its own lifetime.
 			if s.Expr != nil {
 				if ref, ok := c.fn.stmtToRef[s]; ok {
 					c.emitReturnFlow(s.Expr, ref)
 					// A value that fills a borrow return without a written borrow is reported for
-					// that alone, and records no move.
+					// that alone, and is not checked for a module-level move.
 					// With no return annotation the function returns whatever s.Expr produces, so
 					// the check runs against a nil destination type. An annotation that does not
 					// resolve, or that nests the returned type, names no destination to check.
 					checked := c.fn.returnAnn != nil || !c.fn.returnAnnotated
 					missing := checked && c.checkWrittenBorrow(s.Expr, c.fn.returnAnn)
-					if !missing && !c.rejectModuleLevelMove(scope, s.Expr) {
-						c.consumeOwned(s.Expr, t, s.Expr, ref)
+					if !missing {
+						c.rejectModuleLevelMove(scope, s.Expr)
 					}
-					// The returned value can take the locals it borrows along with it.
-					c.recordFlowOut(s.Expr, ref, true)
 				}
 			}
 		} else {
@@ -186,8 +183,10 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 			if c.fn != nil {
 				moduleLevel := c.rejectModuleLevelDestructure(scope, vd.Pattern, vd.Init)
 				if ref, ok := c.fn.stmtToRef[s]; ok {
+					// The pattern takes its parts out of the initializer's place, which
+					// markMovedParams reads for a parameter.
 					if !moduleLevel {
-						c.consumeDestructureLeaves(scope, vd.Pattern, vd.Init, ref)
+						c.fn.destructureInits.Add(vd.Init)
 					}
 					// The pattern takes its parts from a value of the type it binds against,
 					// so a leaf of an annotated pattern over a borrow borrows for the
@@ -213,9 +212,9 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 
 // defineLocal binds name to b in scope for the single-name `val`/`var` vd written at
 // statement s, overwriting any earlier binding of name. Inside a body it copies the
-// VarID the rename pass gave vd's pattern onto b, then records the consumes and borrow
-// edges the declaration creates. A later closure capture of the binding
-// resolves to the binding through that VarID.
+// VarID the rename pass gave vd's pattern onto b, then emits the flow into it and records
+// the borrow edges the declaration creates. A later closure capture of the binding resolves
+// to the binding through that VarID.
 func (c *checker) defineLocal(scope *Scope, name string, vd *ast.VarDecl, b ValueBinding, s ast.Stmt) {
 	if ip, ok := vd.Pattern.(*ast.IdentPat); ok && c.varIDs.Of(ip) > 0 {
 		b.VarID = int(c.varIDs.Of(ip))
@@ -230,7 +229,6 @@ func (c *checker) defineLocal(scope *Scope, name string, vd *ast.VarDecl, b Valu
 	if c.fn.unwrittenBorrows.Contains(vd.Init) {
 		return
 	}
-	c.consumeBindingInit(vd, bindingType(b), s)
 	// Record which function-locals this binding's initializer borrows, and which locals a
 	// closure it holds captures.
 	c.recordBorrowEdges(liveness.VarID(b.VarID), vd.Init)
@@ -239,4 +237,14 @@ func (c *checker) defineLocal(scope *Scope, name string, vd *ast.VarDecl, b Valu
 	}
 	// A value that keeps a closure keeps it reachable while this binding is live.
 	c.noteRetainedHolder(liveness.VarID(b.VarID), vd.Init)
+}
+
+// currentStmtRef resolves the statement currently being walked to its CFG point. ok is false
+// outside a function body or when the statement has no CFG point of its own.
+func (c *checker) currentStmtRef() (liveness.StmtRef, bool) {
+	if c.fn == nil || c.fn.stmtToRef == nil || c.fn.currentStmt == nil {
+		return liveness.StmtRef{}, false
+	}
+	ref, ok := c.fn.stmtToRef[c.fn.currentStmt]
+	return ref, ok
 }

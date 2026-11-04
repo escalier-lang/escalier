@@ -32,8 +32,7 @@ import (
 //     borrow sets.
 //   - borrowGens (map[StmtRef][]borrowAssign) is the flow-sensitive input to the dataflow,
 //     recording per CFG statement position the new edge set the eager walk computed for each
-//     binding that statement re-points. It is the "gen" set of the analysis, the borrow
-//     counterpart of moveSites.
+//     binding that statement re-points. It is the "gen" set of the analysis.
 //
 // How they relate:
 //

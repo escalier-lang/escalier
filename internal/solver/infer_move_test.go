@@ -7,11 +7,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Move and use-after-move tests for the affine move engine. Each flow site consumes
-// an owned source, so a later use of it is a use-after-move. The flow sites are a
-// binding, a reassignment, a return, an owned-parameter argument, a field store, an
-// object or tuple literal element, and a module-level write. A borrow site leaves the
-// source usable. want is nil for the cases that check cleanly.
+// Move and use-after-move tests. Each flow site moves an owned source, so a later use of
+// it is a use-after-move. The flow sites are a binding, a reassignment, a return, an
+// owned-parameter argument, a field store, an object or tuple literal element, and a
+// module-level write. A borrow site leaves the source usable. want is nil for the cases
+// that check cleanly.
 func TestMoveSemantics(t *testing.T) {
 	tests := map[string]struct {
 		src  string
