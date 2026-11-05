@@ -379,9 +379,14 @@ func edgesAt(graph map[liveness.VarID][]fieldBorrow, root liveness.VarID, path [
 	return out
 }
 
-// returnCarrier locates the return e is the value of, together with the borrow-edge graph and
-// root its borrows hang off. ok is false when e is not a return value or names no carrier the
-// graph describes.
+// returnCarrier finds the return whose value is e, and the borrow-edge graph of e's borrows.
+// When ok is true, it returns:
+//
+//   - the index of that return in c.fn.returnExprs,
+//   - the graph carrierGraph builds for e from snapshot,
+//   - the root in that graph that e's own type starts at.
+//
+// ok is false when e is not a return value, or when carrierGraph has no graph for e.
 func (c *checker) returnCarrier(
 	e ast.Expr,
 	snapshot map[liveness.VarID][]fieldBorrow,
