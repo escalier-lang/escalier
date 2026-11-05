@@ -1129,6 +1129,17 @@ func (d *bodyDataflow) move(ev *moveEvent, at liveness.StmtRef, s *dataflowState
 				continue
 			}
 
+			// Pick the borrow to blame. A loan whose `via` is set stands for the write that a
+			// closure the call may run makes during the call. Such a loan is kept in `via` and is
+			// blamed only when no ordinary borrow conflicts. An ordinary borrow is blamed first
+			// because it points at the expression that took it. In
+			//
+			//	onClick(fn () { count.n = count.n + 1 })
+			//	take(count)
+			//
+			// the only conflict is the closure's write, and the error reads "cannot move 'count'
+			// in a call that may run the 'handler' that 'onClick' retains, which writes it".
+			// Each case keeps the first loan of its kind in sortedLoans order.
 			closureBorrowed = closureBorrowed || l.closure()
 			switch {
 			case l.via == nil && blamed == nil:
@@ -1138,6 +1149,8 @@ func (d *bodyDataflow) move(ev *moveEvent, at liveness.StmtRef, s *dataflowState
 			}
 		}
 
+		// Report at most one error for the move. The error for a closure's write names the
+		// closure and says whether the call surely runs it.
 		switch {
 		case blamed != nil:
 			d.report(&MoveWhileBorrowedError{Place: d.placeName(ev.place), move: ev.node, borrow: blamed.ev.node.Span()})
