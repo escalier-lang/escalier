@@ -75,7 +75,8 @@ import (
 //   - A local place holds a loan until a write replaces it. A write to `p.r` ends what `p.r`
 //     held and leaves what `p.s` holds.
 //   - The caller reads a place under a parameter whose referent the caller owns once the
-//     body returns or suspends, so the loans of such a place count at those points too.
+//     body returns or suspends. Such a place holds a loan from the point it takes it to the
+//     end of the body, unless a write replaces it.
 //
 // The pass runs unless the ownershipDataflow flag is cleared. Its diagnostics take the place
 // of the ones replacedByDataflow lists.
@@ -633,7 +634,8 @@ func (d *bodyDataflow) step(ev ownershipEvent, at liveness.StmtRef, s *dataflowS
 // A write replaces the value at ev.place, so only a borrow of a place that holds ev.place
 // observes it. In `p.x = 1`, a borrow of `p` sees the change. In `p = {x: 1}`, a borrow of
 // `p` still reaches the old value, which nothing writes. So E2 rejects a write while an
-// immutable borrow of a place strictly above ev.place is used again after the write. A
+// immutable borrow of a place strictly above ev.place is used again after the write, or
+// while the caller can reach such a borrow once the body returns. A
 // borrow of ev.place or of a place under it reaches a value the write detaches, and the
 // pass stops tracking it.
 //
@@ -702,7 +704,7 @@ func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState
 
 		// A borrow made for one statement, such as a call argument, has ended by the time the
 		// statement writes, since an assignment writes after its source is evaluated.
-		if moved || reported || l.alias || d.statementOnly(l) || l.ev.borrow != immutableBorrow || !d.loanLive(l, at, false) {
+		if moved || reported || l.alias || d.statementOnly(l) || l.ev.borrow != immutableBorrow || (!d.loanLive(l, at, false) && !d.loanEscapes(l, at, false)) {
 			continue
 		}
 
@@ -772,23 +774,6 @@ func (d *bodyDataflow) borrow(ev *borrowEvent, at liveness.StmtRef, s *dataflowS
 	}
 }
 
-// liveInBody reports whether the new path l is live in the body right after the point `at`
-// that makes it. A path a statement holds, or that a holder other than a caller-owned place
-// holds, counts as live. A path only caller-owned places hold is live only while
-// placeReaches finds a later read of one of them, since the caller reads such a place once
-// the body returns.
-func (d *bodyDataflow) liveInBody(l *liveLoan, at liveness.StmtRef) bool {
-	if l.static || l.scoped || len(l.slots) > 0 || len(l.holders) == 0 {
-		return true
-	}
-	for _, h := range l.holders {
-		if !d.callerOwned(h) {
-			return true
-		}
-	}
-	return d.loanLive(l, at, false)
-}
-
 // checkNewPath reports E2 when `node` makes the new path `fresh` of the given `kind` to
 // `place`, and one of `loans` has the other kind, has a place that overlaps `place`, and is
 // live together with `fresh`. The two are live together when both are live in the body, or
@@ -800,6 +785,9 @@ func (d *bodyDataflow) liveInBody(l *liveLoan, at liveness.StmtRef) bool {
 // any point after the body returns, so a capture of such a closure is a path at the caller.
 // In `out.cb = fn () { p.x = 2 }; q.r = &p` with caller-owned `out` and q, the caller can
 // call `out.cb` while it reads `q.r`, so `&p` breaks E2.
+//
+// A path a caller-owned place holds counts as live for the rest of the body, since the caller
+// reads such a place once the body returns.
 //
 // A loan taken at the point `at` counts as live when its holders are live after that point,
 // since a holder the statement defines is not live on entry to it. So
@@ -818,7 +806,7 @@ func (d *bodyDataflow) checkNewPath(place movePlace, kind borrowKind, node ast.N
 		}
 
 		if !found {
-			local, escapes, found = freshInBody && d.liveInBody(fresh, at), d.loanEscapes(fresh, at, false), true
+			local, escapes, found = freshInBody, d.loanEscapes(fresh, at, false), true
 		}
 		firstLocal := firstInBody && (d.loanLive(first, at, true) || (first.ev.at == at && d.loanLive(first, at, false)))
 		if (local && firstLocal) || (escapes && d.loanEscapes(first, at, true)) {
