@@ -747,7 +747,7 @@ func (d *bodyDataflow) borrow(ev *borrowEvent, at liveness.StmtRef, s *dataflowS
 
 	loans := d.sortedLoans(s)
 	l := newLiveLoan(ev)
-	l.static = soltype.IsStaticLifetime(ev.lifetime)
+	l.static = lifetimeEscapedToStatic(ev.lifetime)
 	d.holdLoan(l, ev.holder, ev.node, true)
 
 	// A mutable receiver only reads its place until the call starts, so callEnd checks it

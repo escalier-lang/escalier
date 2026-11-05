@@ -1298,6 +1298,20 @@ func TestOwnershipDataflow(t *testing.T) {
 			`,
 		},
 		{
+			// take's parameter makes the element `'static`, so the borrow of b in the literal
+			// stays live after the call.
+			name: "BorrowAfterAStaticBorrowInALiteralArgumentConflicts",
+			src: `
+				declare fn take(x: [&'static mut {value: number}]) -> undefined
+				fn f() {
+					val mut b = {value: 2}
+					take([&mut b])
+					val c = &b
+				}
+			`,
+			errs: []string{"cannot borrow 'b' as immutable while it is borrowed as mutable"},
+		},
+		{
 			// The caller runs at the `yield`, and can keep a copy of `p.r`, so the stored
 			// borrow stays live after it.
 			name: "WriteAfterAYieldConflicts",

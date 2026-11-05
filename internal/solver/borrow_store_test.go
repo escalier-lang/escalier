@@ -209,7 +209,9 @@ func TestCallStoreEdgePositions(t *testing.T) {
 	}{
 		// A tuple element contributes no field segment, so a store into one lands at the tuple
 		// itself. Passing the whole tuple to a consuming call carries the borrow of b into the
-		// callee, which L1 accepts, since nothing in the frame uses b afterwards.
+		// callee, which L1 accepts, since nothing in the frame uses b afterwards. a is a tuple of
+		// one element, so neither store nor build can add a second borrow to it. take's signature
+		// gives the element no `'static` lifetime, so take cannot keep the borrow past the call.
 		"StoreIntoTupleElement": {
 			src: `
 				declare fn store<'a, 'c>(
@@ -228,6 +230,30 @@ func TestCallStoreEdgePositions(t *testing.T) {
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut [&'a mut {value: number}], item: &'a mut {value: number}) -> undefined",
 				"take":  "fn (x: [&mut {value: number}]) -> undefined",
+				"build": "fn (p: {value: number}) -> undefined",
+			},
+		},
+		// A take whose element is `'static` keeps the borrow of b that the store put in a. That
+		// borrow is live for the rest of build, so the later immutable borrow of b breaks E2.
+		"StoreIntoTupleElementTheCalleeKeeps": {
+			src: `
+				declare fn store<'a, 'c>(
+					target: &'c mut [&'a mut {value: number}],
+					item: &'a mut {value: number},
+				) -> undefined
+				declare fn take(x: [&'static mut {value: number}]) -> undefined
+				fn build(mut p: {value: number}) {
+					val mut b = {value: 2}
+					val mut a = [&mut p]
+					store(&mut a, &mut b)
+					take(a)
+					val c = &b
+				}
+			`,
+			want: []string{"12:14-12:16: cannot borrow 'b' as immutable while it is borrowed as mutable"},
+			types: map[string]string{
+				"store": "fn <'a>(target: &mut [&'a mut {value: number}], item: &'a mut {value: number}) -> undefined",
+				"take":  "fn (x: [&'static mut {value: number}]) -> undefined",
 				"build": "fn (p: {value: number}) -> undefined",
 			},
 		},
