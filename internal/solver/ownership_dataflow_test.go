@@ -943,10 +943,9 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot borrow 'b' as immutable while it is borrowed as mutable"},
 		},
 		{
-			// The caller reads `p.r` only after the return, when `a` is dead, so `&b.x` breaks no
-			// rule. The caller reaches both `b.y` borrows, so the pass reports E2 at the store
-			// into q. That pair is the one the frame-exit check reports, so the frame-exit
-			// diagnostic is dropped.
+			// `a` is used after the store into p, so `&b.x` breaks E2. The caller reaches both
+			// `b.y` borrows, so the pass also reports E2 at the store into q. That pair is the one
+			// the frame-exit check reports, so the frame-exit diagnostic is dropped.
 			name: "E2OnTheSamePairReplacesTheMixedOutflowCheck",
 			src: `
 				fn f(p: &mut {r: {x: &{v: number}, y: &{v: number}}}, q: &mut {r: &mut {v: number}}) {
@@ -957,7 +956,10 @@ func TestOwnershipDataflow(t *testing.T) {
 					q.r = &mut b.y
 				}
 			`,
-			errs: []string{"cannot borrow 'b.y' as mutable while it is borrowed as immutable"},
+			errs: []string{
+				"cannot borrow 'b.x' as immutable while it is borrowed as mutable",
+				"cannot borrow 'b.y' as mutable while it is borrowed as immutable",
+			},
 		},
 		{
 			// t holds both borrows one literal takes, and the return uses t, so the pass reports
@@ -1260,8 +1262,9 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot move 'd' while it is borrowed"},
 		},
 		{
-			// The caller reads `p.r` only once f returns, after the last write of b.
-			name: "WriteBeforeTheCallerReadsAStoredBorrowOk",
+			// The write on a later iteration runs while `p.r` holds the borrow of b the earlier
+			// iteration stored, and the caller reads `p.r` once f returns.
+			name: "WriteAfterAStoreOnAnEarlierIterationConflicts",
 			src: `
 				fn f(p: &mut {r: &{value: number}}, xs: [number]) {
 					val mut b = {value: 1}
@@ -1271,6 +1274,7 @@ func TestOwnershipDataflow(t *testing.T) {
 					}
 				}
 			`,
+			errs: []string{"cannot assign to 'b.value' while it is borrowed as immutable"},
 		},
 		{
 			// The caller runs at the `yield`, and can keep a copy of `p.r`, so the stored
@@ -1412,8 +1416,9 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot borrow 'v' as mutable while it is borrowed as immutable"},
 		},
 		{
-			// The write comes before the `yield`, where the caller first reads `p.r`.
-			name: "WriteBeforeAYieldOk",
+			// The caller can read `p.r` once f returns, so the stored borrow is live at the write
+			// even though the write comes before the `yield`.
+			name: "WriteBeforeAYieldConflicts",
 			src: `
 				gen fn f(p: &mut {r: &{value: number}}) {
 					val mut b = {value: 1}
@@ -1422,6 +1427,7 @@ func TestOwnershipDataflow(t *testing.T) {
 					yield 1
 				}
 			`,
+			errs: []string{"cannot assign to 'b.value' while it is borrowed as immutable"},
 		},
 		{
 			// h holds a borrow of p in `h.peer`. `get` returns it through 'a, a lifetime inside
