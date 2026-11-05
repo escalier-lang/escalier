@@ -126,7 +126,8 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 			want:    "fn (p: &{x: number}) -> &'static {x: 1}",
 		},
 		// Inside the closure, cfg is a capture, so the result borrows a value outer still
-		// holds.
+		// holds. Every call of getCfg returns a borrow of that one value, so no caller can own
+		// it.
 		{
 			name: "closure returning a borrow of a capture",
 			src: `
@@ -142,7 +143,9 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 			want:    "fn () -> fn (p: &{x: number}) -> &{x: 0}",
 		},
 		// Inside the closure, cache belongs to outer, so the borrow stored there outlives the
-		// closure's frame and the returned &q takes its lifetime.
+		// closure's frame and the returned &q takes its lifetime. Each call builds a new q, but
+		// cache keeps reading it after the call returns. The first rule does not ask whether
+		// anything reads cache later, so the result stays a borrow.
 		{
 			name: "closure returning a borrow a capture also holds",
 			src: `
@@ -249,7 +252,10 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 			binding: "h",
 			want:    "fn () -> {f: &{x: 1}}",
 		},
-		// The caller may still hold the value of a parameter.
+		// Every borrow of a parameter is foreign, so the return stays a borrow. A call to an
+		// unannotated parameter inferred as owned records no move, as B5 and B6 in
+		// requirements.md describe, so the caller may still hold that argument. An annotated
+		// owned parameter such as f moves its argument, so here the borrow is conservative.
 		{
 			name: "borrow of a parameter",
 			src: `
@@ -261,7 +267,9 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 			binding: "h",
 			want:    "fn (f: {v: number}) -> &{v: number}",
 		},
-		// The module keeps the value gref borrows.
+		// The module keeps the value gref borrows, so the read of gref is foreign and the
+		// return stays a borrow. A module-level initializer does not constrain its borrow to
+		// `'static`, so gref renders `&{x: 1}`, and the copy h returns renders the same.
 		{
 			name: "read of a module-level borrow",
 			src: `
@@ -326,7 +334,11 @@ func TestFrameOwnedReturnWrites(t *testing.T) {
 				}
 			`,
 			want: []string{
+				// r holds h's `&'static {x: 1}`. `val b = {x: 1}` keeps the literal type of x,
+				// and T9 does not widen a type behind a borrow, so 5 does not fit x's type 1.
 				"12:12-12:13: cannot constrain 5 <: 1",
+				// The write needs a mutable object, and r is an immutable borrow. This is the
+				// write D16's first rule rejects by keeping h's result a borrow.
 				"12:6-12:13: cannot constrain immutable object <: mutable object",
 			},
 		},
@@ -350,7 +362,11 @@ func TestFrameOwnedReturnWrites(t *testing.T) {
 				}
 			`,
 			want: []string{
+				// r holds stash's `&{x: 1}`. `val q = {x: 1}` keeps the literal type of x, and
+				// T9 does not widen a type behind a borrow, so 5 does not fit x's type 1.
 				"13:12-13:13: cannot constrain 5 <: 1",
+				// The write needs a mutable object, and r is an immutable borrow. The first rule
+				// keeps stash's result a borrow, since cache still reads q inside outer.
 				"13:6-13:13: cannot constrain immutable object <: mutable object",
 			},
 		},
