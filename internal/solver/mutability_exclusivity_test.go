@@ -174,7 +174,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 			src: `
 				fn test() {
 					val mut items: {x: number} = {x: 1}
-					val snapshot: &{x: number} = &items
+					val snapshot = &items
 					items.x = 2
 					snapshot
 				}
@@ -183,8 +183,8 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 				"5:6-5:13: cannot assign to 'items.x' while it is borrowed as immutable",
 			},
 		},
-		// A `do` or a `try` produces what its branches produce, so each branch that yields
-		// items has to write the borrow.
+		// The `&` annotation makes snapshot a borrow. A `do` or a `try` produces what its
+		// branches produce, so each branch that yields items has to write the borrow.
 		"Rule1_SourceLiveThroughDo_Error": {
 			src: `
 				fn test() {
@@ -218,7 +218,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 				fn test() {
 					val mut items: {x: number} = {x: 1}
 					items.x = 2
-					val snapshot: &{x: number} = &items
+					val snapshot = &items
 					snapshot
 				}
 			`,
@@ -270,7 +270,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 			src: `
 				fn test() {
 					val mut a: {x: number} = {x: 1}
-					val b: &mut {x: number} = &mut a
+					val b = &mut a
 					b.x = 2
 					a.x
 				}
@@ -282,7 +282,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 			src: `
 				fn test() {
 					val mut a: {x: number} = {x: 1}
-					val b: &mut {x: number} = &mut a
+					val b = &mut a
 					val c: &{x: number} = b
 					a.x = 2
 					c
@@ -312,7 +312,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 			src: `
 				fn test() {
 					val mut items: {x: number} = {x: 1}
-					val snapshot: &{x: number} = &items
+					val snapshot = &items
 					items.x = 2
 				}
 			`,
@@ -325,7 +325,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 					val mut a: {x: number} = {x: 0}
 					val mut b: {x: number} = {x: 1}
 					val mut c: {x: number} = if cond { a } else { b }
-					val frozen: &{x: number} = &c
+					val frozen = &c
 					c.x = 3
 					frozen
 				}
@@ -419,7 +419,7 @@ func TestBorrowPhaseExclusion(t *testing.T) {
 			src: `
 				fn test() {
 					val mut a: {x: number} = {x: 1}
-					val s: &{x: number} = &a
+					val s = &a
 					s
 				}
 			`,
@@ -431,14 +431,14 @@ func TestBorrowPhaseExclusion(t *testing.T) {
 			src: `
 				fn test() {
 					val mut a: {x: number} = {x: 1}
-					val m: &mut {x: number} = &mut a
-					val s: &{x: number} = &a
+					val m = &mut a
+					val s = &a
 					m.x = 2
 					s
 				}
 			`,
 			want: []string{
-				"5:28-5:30: cannot borrow 'a' as immutable while it is borrowed as mutable",
+				"5:14-5:16: cannot borrow 'a' as immutable while it is borrowed as mutable",
 			},
 		},
 		// Two mutable borrows of one value stay within the mutable phase, so both are
@@ -448,8 +448,8 @@ func TestBorrowPhaseExclusion(t *testing.T) {
 			src: `
 				fn test() {
 					val mut a: {x: number} = {x: 1}
-					val b: &mut {x: number} = &mut a
-					val c: &mut {x: number} = &mut a
+					val b = &mut a
+					val c = &mut a
 					b.x = 2
 					c.x = 3
 					a.x
@@ -489,13 +489,13 @@ func TestPhaseConflictUnderConditionalMove(t *testing.T) {
 					} else {
 						a.x = 1
 					}
-					val snapshot: &{x: number} = &a
+					val snapshot = &a
 					a.x = 2
 					snapshot
 				}
 			`,
 			want: []string{
-				"10:36-10:37: use of moved value 'a'",
+				"10:22-10:23: use of moved value 'a'",
 				"11:6-11:7: use of moved value 'a'",
 			},
 		},
@@ -508,13 +508,13 @@ func TestPhaseConflictUnderConditionalMove(t *testing.T) {
 				fn test() {
 					val mut a: {x: number} = {x: 1}
 					sink(a)
-					val snapshot: &{x: number} = &a
+					val snapshot = &a
 					a.x = 2
 					snapshot
 				}
 			`,
 			want: []string{
-				"6:36-6:37: use of moved value 'a'",
+				"6:22-6:23: use of moved value 'a'",
 				"7:6-7:7: use of moved value 'a'",
 			},
 		},
