@@ -1064,7 +1064,7 @@ func (c *checker) recordClosureCaptures(scope *Scope, closure ast.Func) {
 	}
 }
 
-// capturedFieldPaths returns the field paths under the local declared by decl that closure
+// capturedFieldPaths returns the field paths under the local declared by `decl` that `closure`
 // reads or writes, as capturedPaths finds them. It returns nil when the closure captures the
 // whole local, and when the body has no event table to find the paths with.
 func (c *checker) capturedFieldPaths(closure ast.Func, decl ast.Node) [][]placeSeg {
