@@ -1,0 +1,51 @@
+// A Functor abstraction over a type-constructor parameter, as F in `<F<_>>`.
+type Functor<F<_>> = {
+	map: fn <A, B>(fa: F<A>, f: fn (a: A) -> B) -> F<B>,
+}
+
+// Each instance passes a constructor, so `F<A>` in the body becomes the concrete instance.
+val arrayFunctor: Functor<Array> = {
+	map: fn (fa, f) { return fa.map(fn (a, ...) { return f(a) }) },
+}
+
+class Box<T> { value: T }
+val boxFunctor: Functor<Box> = {
+	map: fn (fa, f) { return Box(f(fa.value)) },
+}
+
+// `Tagged<string, _>` fixes the tag and leaves the value as the constructor's one argument.
+class Tagged<E, A> { tag: E, value: A }
+val taggedFunctor: Functor<Tagged<string, _>> = {
+	map: fn (fa, f) { return Tagged(fa.tag, f(fa.value)) },
+}
+
+enum MyOption<T> {
+	Some(value: T),
+	None,
+}
+val optionFunctor: Functor<MyOption> = {
+	map: fn (fa, f) {
+		return match fa {
+			MyOption.Some(value) => MyOption.Some(f(value)),
+			MyOption.None() => MyOption.None(),
+		}
+	},
+}
+
+// F stays rigid inside the body, so the body can only reach `fa` through the instance.
+fn double<F<_>>(functor: Functor<F>, fa: F<number>) -> F<number> {
+	return functor.map(fa, fn (n) { return n * 2 })
+}
+
+// Each call infers F from the instance and from the head of the value passed.
+val xs: Array<number> = [1, 2, 3]
+val doubledArray = double(arrayFunctor, xs)
+
+val box: Box<number> = Box(5)
+val doubledBox = double(boxFunctor, box)
+
+val tagged: Tagged<string, number> = Tagged("n", 5)
+val doubledTagged = double(taggedFunctor, tagged)
+
+val opt: MyOption<number> = MyOption.Some(5)
+val doubledOpt = double(optionFunctor, opt)
