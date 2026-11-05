@@ -59,9 +59,10 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 			`,
 			want: []string{"5:6-5:13: cannot assign to 'b.value' while it is borrowed as immutable"},
 		},
-		// q takes p's data and dies with the frame, so `out.r` is the only path to it once f
-		// returns. The write through q happens before the caller can read `out.r`.
-		"MovingIntoALocalAfterAnImmutableStoreOk": {
+		// `out.r` is live for the rest of f, since the caller reads it once f returns. Moving p
+		// into q breaks E3 even though q dies with the frame, since q may write what `out.r`
+		// expects to hold still.
+		"MovingIntoALocalAfterAnImmutableStoreConflicts": {
 			src: `
 				fn f(out: &mut {r: &{x: number}}) {
 					val p = {x: 1}
@@ -70,9 +71,9 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 					q.x = 2
 				}
 			`,
+			want: []string{"5:18-5:19: cannot move 'p' while it is borrowed"},
 		},
-		// q moves p's data out of f, so the caller owns it and also reads it through `out.r`. The
-		// owner could change what `out.r` expects to hold still, so the move of p into q breaks E3.
+		// Returning q hands the caller an owner of the data it also reads through `out.r`.
 		"ReturningALocalTheStoredLocalMovedIntoConflicts": {
 			src: `
 				fn f(out: &mut {r: &{x: number}}) -> {x: number} {
@@ -110,8 +111,8 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 			`,
 			want: []string{"6:6-6:13: cannot assign to 'b.value' while it is borrowed as immutable"},
 		},
-		// Destructuring moves b.x into x, and returning x hands the caller data `out.r` still
-		// reads. E3 blames the destructuring's source b.
+		// Destructuring moves b.x into x while `out.r` borrows b. E3 blames the destructuring's
+		// source b.
 		"ReturningADestructuredLeafOfTheStoredLocalConflicts": {
 			src: `
 				fn f(out: &mut {r: &{x: {v: number}}}) -> {v: number} {
@@ -135,7 +136,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 			`,
 			want: []string{"5:19-5:20: cannot move 'b.x' while it is borrowed"},
 		},
-		// A tuple leaf moves the whole tuple, so returning it reaches what `out.r` reads.
+		// A tuple leaf moves the whole tuple, which `out.r` borrows.
 		"ReturningATupleLeafOfTheStoredLocalConflicts": {
 			src: `
 				fn f(out: &mut {r: &[{v: number}]}) -> {v: number} {
@@ -147,8 +148,9 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 			`,
 			want: []string{"5:16-5:17: cannot move 'b[0]' while it is borrowed"},
 		},
-		// `out.r` reads b.x, and the returned y owns b.y, which `out.r` does not reach.
-		"ReturningASiblingLeafOk": {
+		// The destructuring moves b.x, which `out.r` borrows, even though the returned y owns
+		// b.y alone.
+		"ReturningASiblingLeafConflicts": {
 			src: `
 				fn f(out: &mut {r: &{v: number}}) -> {v: number} {
 					val b = {x: {v: 1}, y: {v: 2}}
@@ -157,9 +159,9 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 					return y
 				}
 			`,
+			want: []string{"5:19-5:20: cannot move 'b.x' while it is borrowed"},
 		},
-		// Both leaves of one destructuring are traced, so gathering them into a returned
-		// literal still reaches the b.x that `out.r` reads.
+		// Gathering both leaves into a returned literal reports the same move of b.x.
 		"ReturningEveryLeafOfADestructuringConflicts": {
 			src: `
 				fn f(out: &mut {r: &{v: number}}) -> {p: {v: number}, q: {v: number}} {
@@ -185,9 +187,8 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 			`,
 			want: []string{"5:25-5:26: cannot move 'b.y' while it is borrowed"},
 		},
-		// The rest element does not take b.x, which x took, so returning it does not reach
-		// what `out.r` reads.
-		"ReturningARestElementWithoutTheStoredFieldOk": {
+		// x takes b.x, which `out.r` borrows, even though the returned rest element does not.
+		"ReturningARestElementWithoutTheStoredFieldConflicts": {
 			src: `
 				fn f(out: &mut {r: &{v: number}}) -> {y: {v: number}} {
 					val b = {x: {v: 1}, y: {v: 2}}
@@ -196,9 +197,10 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 					return rest
 				}
 			`,
+			want: []string{"5:25-5:26: cannot move 'b.x' while it is borrowed"},
 		},
-		// A rest element that takes several fields traces each one back to b on its own.
-		// Here `rest` takes b.y and b.z, and `out.r` reads b.z.
+		// A rest element that takes several fields moves each one. Here `rest` takes b.y and b.z,
+		// and `out.r` reads b.z.
 		"ReturningARestElementOfSeveralFieldsConflicts": {
 			src: `
 				fn f(out: &mut {r: &{v: number}}) -> {y: {v: number}, z: {v: number}} {
@@ -222,8 +224,9 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 			`,
 			want: []string{"5:25-5:26: cannot move 'b.z' while it is borrowed"},
 		},
-		// `rest.y` holds the data moved out of b.y, which `out.r` does not reach.
-		"ReturningAnotherFieldOfARestElementOk": {
+		// The rest element takes b.z, which `out.r` borrows, even though the return hands out
+		// `rest.y` alone.
+		"ReturningAnotherFieldOfARestElementConflicts": {
 			src: `
 				fn f(out: &mut {r: &{v: number}}) -> {v: number} {
 					val b = {x: {v: 1}, y: {v: 2}, z: {v: 3}}
@@ -232,6 +235,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 					return rest.y
 				}
 			`,
+			want: []string{"5:25-5:26: cannot move 'b.z' while it is borrowed"},
 		},
 		// Storing the rest element into a second caller-owned object hands the caller b.z
 		// as owned data beside the borrow `out.r` holds.
@@ -246,7 +250,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 			`,
 			want: []string{"5:25-5:26: cannot move 'b.z' while it is borrowed"},
 		},
-		// Wrapping the rest element in a literal keeps the trace back to b.z.
+		// Wrapping the rest element in a returned literal reports the same move of b.z.
 		"ReturningARestElementInsideALiteralConflicts": {
 			src: `
 				fn f(out: &mut {r: &{v: number}}) -> {w: {y: {v: number}, z: {v: number}}} {
@@ -277,9 +281,9 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 			`,
 			want: []string{"5:25-5:26: cannot move 'b.z' while it is borrowed"},
 		},
-		// q holds a new value before it is read, so the return hands the caller that value and
-		// not p. The move of p into q breaks no rule.
-		"ReturningALocalAfterReplacingTheMovedValueOk": {
+		// q holds a new value before the return, but the move of p into q happens while `out.r`
+		// borrows p.
+		"ReturningALocalAfterReplacingTheMovedValueConflicts": {
 			src: `
 				fn f(out: &mut {r: &{x: number}}) -> {x: number} {
 					val p = {x: 1}
@@ -289,8 +293,9 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 					return q
 				}
 			`,
+			want: []string{"5:14-5:15: cannot move 'p' while it is borrowed"},
 		},
-		// Only one branch replaces q, so the return can still hand the caller p.
+		// Only one branch replaces q. The move of p into q is reported as above.
 		"ReturningALocalReplacedOnOneBranchConflicts": {
 			src: `
 				fn f(out: &mut {r: &{x: number}}, c: boolean) -> {x: number} {

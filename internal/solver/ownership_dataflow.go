@@ -493,13 +493,6 @@ type bodyDataflow struct {
 	// runLoans holds the borrow event of each loan a call takes for a retained closure's
 	// write, so each fixed-point iteration takes the same loan.
 	runLoans map[runLoanKey]*borrowEvent
-	// `moves` maps the root of each moved place to the move events of the body out of a
-	// place under it, in table order. moveIndex maps each move event to its index in the
-	// table.
-	moves     map[liveness.VarID][]*moveEvent
-	moveIndex map[*moveEvent]int
-	// `exits` caches the answers of ownedExits.
-	exits map[*moveEvent][]ast.Span
 }
 
 // runLoanKey names the loan a call takes for a retained closure's write of one local.
@@ -528,9 +521,6 @@ func (c *checker) checkBodyDataflow(t *ownershipEvents) []SolverError {
 		escapes:      map[liveness.VarID]bool{},
 		runIndex:     map[*runEvent]int{},
 		runLoans:     map[runLoanKey]*borrowEvent{},
-		moves:        map[liveness.VarID][]*moveEvent{},
-		moveIndex:    map[*moveEvent]int{},
-		exits:        map[*moveEvent][]ast.Span{},
 	}
 	for i, ev := range t.events {
 		switch ev := ev.(type) {
@@ -540,12 +530,6 @@ func (c *checker) checkBodyDataflow(t *ownershipEvents) []SolverError {
 			d.copyIndex[ev] = i
 		case *runEvent:
 			d.runIndex[ev] = i
-		case *moveEvent:
-			// The table lists a flow out of an unwritten expression as a read, so it moves nothing.
-			if !t.unwritten.Contains(ev.node) {
-				d.moves[ev.place.root] = append(d.moves[ev.place.root], ev)
-				d.moveIndex[ev] = i
-			}
 		}
 	}
 
@@ -1064,10 +1048,9 @@ func (d *bodyDataflow) derivedLoan(ev *copyEvent, from *liveLoan, s *dataflowSta
 // ev.whileCaptured marks applies only while that borrow is live.
 //
 // A borrow the caller can reach once the body returns, such as one stored into a caller-owned
-// place, is live at the caller. When the moved value reaches the caller too, as ownedExits
-// finds, the caller holds an owner and a live borrow of the same data, so E3 rejects the move.
-// In `out.r = &p; val q = p; return q`, the move of p into q is rejected. Without the return,
-// q dies with the frame and the move is accepted.
+// place, is live at the caller and so for the rest of the body. E3 rejects every move of an
+// overlapping place after such a borrow is taken. In `out.r = &p; val q = p`, the move of p
+// into q is rejected whether or not q leaves the body.
 //
 // The error blames the first conflicting borrow sortedLoans returns that is not a retained
 // closure's write during a call. Such a write is blamed only when nothing else conflicts, and
@@ -1086,7 +1069,7 @@ func (d *bodyDataflow) move(ev *moveEvent, at liveness.StmtRef, s *dataflowState
 			if own || l.alias || !placesOverlap(l.ev.place, ev.place) {
 				continue
 			}
-			if !d.loanLive(l, at, true) && (!d.loanEscapes(l, at, false) || len(d.ownedExits(ev)) == 0) {
+			if !d.loanLive(l, at, true) && !d.loanEscapes(l, at, false) {
 				continue
 			}
 
@@ -1135,84 +1118,6 @@ func (d *bodyDataflow) move(ev *moveEvent, at liveness.StmtRef, s *dataflowState
 
 	// The holder now owns what the place held, including any borrow stored in it.
 	d.addHolder(ev.place, ev.holder, ev.node, s)
-}
-
-// ownedExits returns, in source order, the span of each expression that carries the value
-// the move ev gives its holder out of the body. Such an expression is the source of a move
-// into a return, into a module-level binding, or into a caller-owned place. A holder that is
-// a local is followed through each later move out of a place that overlaps it. In
-// `val {x, ...rest} = b; return rest.z` the value moved out of b.z leaves at `rest.z`, and
-// the value moved out of b.y does not leave.
-//
-// The walk stops at a local holder that is dead after the move into it. Such a local is
-// overwritten before any read, so no later move out of it carries the moved value.
-func (d *bodyDataflow) ownedExits(ev *moveEvent) []ast.Span {
-	if out, ok := d.exits[ev]; ok {
-		return out
-	}
-
-	seen := set.NewSet[ownedStep]()
-	spans := set.NewSet[ast.Span]()
-	var walk func(from *moveEvent, holder eventHolder)
-	walk = func(from *moveEvent, holder eventHolder) {
-		pt, isPlace := holder.target.(placeTarget)
-		switch {
-		case !isPlace:
-			switch holder.target.(type) {
-			case returnTarget, moduleTarget:
-				spans.Add(from.node.Span())
-			}
-			return
-		case d.table.callerOwned.Contains(pt.root):
-			spans.Add(from.node.Span())
-			return
-		}
-
-		if !d.holderLive(pt.root, from.at, false) {
-			return
-		}
-
-		held := movePlace{root: pt.root, path: holder.path}
-		for _, m := range d.moves[held.root] {
-			if !pathPrefixRelated(m.place.path, held.path) || !d.moveFollows(from, m) {
-				continue
-			}
-
-			step := ownedStep{move: m, place: placeKey(held)}
-			if seen.Contains(step) {
-				continue
-			}
-			seen.Add(step)
-
-			// A move of a place above the holder carries the holder along at the same path
-			// under the move's own holder, so `val a = {w: rest}` takes `rest.z` to `a.w.z`.
-			next := m.holder
-			if len(m.place.path) < len(held.path) {
-				next = next.extend(held.path[len(m.place.path):])
-			}
-			walk(m, next)
-		}
-	}
-	walk(ev, ev.holder)
-
-	out := slices.SortedFunc(maps.Keys(spans), compareSpans)
-	d.exits[ev] = out
-	return out
-}
-
-// ownedStep is one move ownedExits follows, and the placeKey of the holder it follows it from.
-type ownedStep struct {
-	move  *moveEvent
-	place string
-}
-
-// moveFollows reports whether the move m can run after the move `from`. At the same CFG
-// point, m must come later in the table.
-func (d *bodyDataflow) moveFollows(from, m *moveEvent) bool {
-	if from.at == m.at {
-		return d.moveIndex[m] > d.moveIndex[from]
-	}
-	return stmtReaches(d.table.cfg, from.at, m.at)
 }
 
 // capturesPlace reports whether s holds closure's own borrow of place.
