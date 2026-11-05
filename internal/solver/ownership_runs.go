@@ -193,21 +193,34 @@ func (c *checker) noteRetainedClosureStore(store retainedStore) *retainedStore {
 // the lifetime is live. When no binding shares it, the callee can keep the closure no longer
 // than the call, and nothing is recorded.
 func (c *checker) noteRetainedClosureArgs(e *ast.CallExpr, fn *soltype.FuncType, ref liveness.StmtRef) {
+	// A body with no event table runs no dataflow pass, so nothing would read a store.
 	t := c.eventTable()
 	if t == nil {
 		return
 	}
 
+	// recv is the receiver of a method call, and self is the method's `self` parameter. Both
+	// are nil for a plain call. The receiver can be a holder of a kept closure.
 	recv, self := c.calleeReceiver(e.Callee)
+
 	for i, arg := range e.Args {
+		// Find the parameter this argument fills. An argument past the last parameter fills
+		// none, and neither does any argument after it.
 		param, ok := paramForArg(fn, i)
 		if !ok {
 			break
 		}
+
+		// A parameter whose type has no retention lifetime does not keep the argument past
+		// the call. A retention lifetime is the lifetime written on a function type, such as
+		// `'a` in `handler: &'a fn () -> undefined`.
 		lts := retentionLifetimes(param.Type)
 		if len(lts) == 0 {
 			continue
 		}
+
+		// Build the store. via is the phrase a diagnostic names the closure by, such as
+		// `the 'handler' that 'onClick' retains`.
 		paramName := ""
 		if ip, isIdent := param.Pattern.(*soltype.IdentPat); isIdent {
 			paramName = ip.Name
@@ -218,6 +231,10 @@ func (c *checker) noteRetainedClosureArgs(e *ast.CallExpr, fn *soltype.FuncType,
 			at:   ref,
 			call: e,
 		}
+
+		// Split the retention lifetimes. One that is `'static` or outlives `'static` keeps the
+		// closure for the rest of the program. A lifetime variable such as `'a` keeps it only
+		// while some binding that shares `'a` is live, so it goes in shared.
 		var shared []*soltype.LifetimeVar
 		for _, lt := range lts {
 			if lifetimeEscapedToStatic(lt) {
@@ -226,6 +243,13 @@ func (c *checker) noteRetainedClosureArgs(e *ast.CallExpr, fn *soltype.FuncType,
 				shared = append(shared, lv)
 			}
 		}
+
+		// Find what keeps a closure that is not kept for the rest of the program. In
+		// `subscribe(e, fn () { … })` with `subscribe<'a>(emitter: &'a mut Emitter, handler:
+		// &'a fn () -> undefined)`, the binding `e` shares `'a` and is a holder. A result type
+		// that mentions `'a` keeps the closure too, so the binding the result flows into
+		// becomes a holder later. With neither, the closure cannot outlive the call, and the
+		// argument records no store.
 		returned := false
 		if !store.static {
 			store.holders = c.retentionHolders(e, fn, recv, self, i, shared)
@@ -234,6 +258,10 @@ func (c *checker) noteRetainedClosureArgs(e *ast.CallExpr, fn *soltype.FuncType,
 				continue
 			}
 		}
+
+		// Record the store. When the result keeps the closure, also map the call to the store
+		// in retainedResults. noteRetainedHolder reads that map to add the binding the result
+		// flows into as a holder.
 		if s := c.noteRetainedClosureStore(store); s != nil && returned {
 			t.retainedResults[e] = append(t.retainedResults[e], s)
 		}
@@ -260,6 +288,8 @@ func paramForArg(fn *soltype.FuncType, i int) (*soltype.FuncParam, bool) {
 func (c *checker) retentionHolders(
 	e *ast.CallExpr, fn *soltype.FuncType, recv ast.Expr, self *soltype.FuncParam, skip int, shared []*soltype.LifetimeVar,
 ) []liveness.VarID {
+	// add records the binding expr names as a holder when the type t of the parameter it
+	// fills mentions one of the shared lifetimes. Each binding is added once.
 	var holders []liveness.VarID
 	add := func(expr ast.Expr, t soltype.Type) {
 		// A borrow written at the call ends with the statement, so only its referent can keep
@@ -271,16 +301,27 @@ func (c *checker) retentionHolders(
 			}
 			expr, t = borrow.Arg, ref.Inner
 		}
+
+		// A parameter whose type does not mention a shared lifetime cannot keep the closure.
 		if !typeMentionsLifetime(c.ctx, t, shared) {
 			return
 		}
+
+		// Only an argument that names a binding, such as `e` or `e.inner`, has a root to
+		// record. An argument such as a literal or a call result is not a holder.
 		if p, ok := c.exprPlace(expr); ok && p.root > 0 && !slices.Contains(holders, p.root) {
 			holders = append(holders, p.root)
 		}
 	}
+
+	// The receiver of a method call is a holder when the method's `self` type shares the
+	// lifetime. In `em.on(h)` the receiver `em` can keep `h`.
 	if recv != nil && self != nil {
 		add(recv, self.Type)
 	}
+
+	// Check every other argument. The argument at skip is the kept closure itself, so it
+	// does not hold itself.
 	for j, arg := range e.Args {
 		if j == skip {
 			continue
@@ -395,11 +436,14 @@ func retainedVia(param, callee string) string {
 // another name, or chosen on a branch counts. A local the closures only read is left out, and
 // so is a capture holding a borrow.
 func (c *checker) noteRetainedClosureWrites(flowGraph *flowBorrowGraph) {
+	// A body with no retained store has nothing to fill.
 	t := c.eventTable()
 	if t == nil || len(t.retained) == 0 {
 		return
 	}
 
+	// Map each captured local to the type of its binding. The last step reads it to decide
+	// whether a written local is owned.
 	types := map[liveness.VarID]soltype.Type{}
 	for _, locals := range c.fn.capturedLocals {
 		for _, local := range locals {
@@ -408,8 +452,15 @@ func (c *checker) noteRetainedClosureWrites(flowGraph *flowBorrowGraph) {
 	}
 
 	for _, store := range t.retained {
+		// Read the borrow graph as it stands just before the store. writes maps each local the
+		// stored closures capture to whether some closure writes it.
 		graph := flowGraph.fieldBorrowGraphBefore(store.at)
 		writes := map[liveness.VarID]bool{}
+
+		// Collect the captures of each closure written inside the stored value. In
+		// `onClick(fn () { count.n = count.n + 1 })` the closure writes `count`. Also collect
+		// every edge reachable from each captured local. A captured local may itself hold a
+		// closure, and running the stored closure can run that one.
 		var edges []fieldBorrow
 		for _, closure := range closuresIn(store.expr) {
 			for _, local := range c.fn.capturedLocals[closure] {
@@ -417,15 +468,25 @@ func (c *checker) noteRetainedClosureWrites(flowGraph *flowBorrowGraph) {
 				collectAllEdgesFrom(local.root, set.NewSet[liveness.VarID](), graph, &edges)
 			}
 		}
+
+		// A stored value that names a binding reaches its closures through the graph. In
+		// `val f = fn () { … }; onClick(f)` the binding `f` has a capture edge to each local
+		// the closure captures. Following the edges also covers a copy such as `val g = f`,
+		// and a closure chosen on a branch.
 		if p, ok := c.exprPlace(store.expr); ok && p.root > 0 {
 			collectEdgesFrom(p.root, p.path, set.NewSet[liveness.VarID](), graph, &edges)
 		}
+
+		// Of the edges collected, only a capture edge stands for a closure's use of a local.
+		// Its `mut` flag says whether the closure writes the local.
 		for _, edge := range edges {
 			if edge.capture {
 				writes[edge.referent] = writes[edge.referent] || edge.mut
 			}
 		}
 
+		// Keep each written local that is owned, in VarID order. A capture holding a borrow is
+		// left out.
 		store.writes = nil
 		for root, written := range writes {
 			// A closure that only reads the local needs it unchanged only while the closure
