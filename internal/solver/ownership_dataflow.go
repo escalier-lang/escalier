@@ -155,9 +155,9 @@ func (c *checker) runOwnershipDataflow() {
 	c.errs = mergeDataflowErrors(c.errs, found)
 }
 
-// mergeDataflowErrors returns errs with each diagnostic of found inserted before the first
+// mergeDataflowErrors returns `errs` with each diagnostic of `found` inserted before the first
 // frame-exit diagnostic that starts later in the source, as keptOwnershipDiagnostic names
-// them. A diagnostic of found that no such diagnostic follows goes at the end. The frame-exit
+// them. A diagnostic of `found` that no such diagnostic follows goes at the end. The frame-exit
 // checks report in source order, so the ownership diagnostics stay in source order.
 func mergeDataflowErrors(errs, found []SolverError) []SolverError {
 	out := make([]SolverError, 0, len(errs)+len(found))
@@ -174,7 +174,7 @@ func mergeDataflowErrors(errs, found []SolverError) []SolverError {
 	return append(out, found[next:]...)
 }
 
-// keptOwnershipDiagnostic reports whether err is an ownership diagnostic that the dataflow pass
+// keptOwnershipDiagnostic reports whether `err` is an ownership diagnostic that the dataflow pass
 // keeps beside its own. That is a frame-exit diagnostic.
 func keptOwnershipDiagnostic(err SolverError) bool {
 	switch err.(type) {
@@ -1381,7 +1381,7 @@ func (d *bodyDataflow) callEnd(ev *callEvent, at liveness.StmtRef, s *dataflowSt
 	}
 }
 
-// run applies the runEvent ev. The call uses each capture of each closure it runs or may
+// `run` applies the runEvent `ev`. The call uses each capture of each closure it runs or may
 // run, as E4 states. A capture the closure writes is used as a mutable path, and one it only
 // reads as an immutable path:
 //
@@ -1443,7 +1443,7 @@ func (d *bodyDataflow) run(ev *runEvent, at liveness.StmtRef, s *dataflowState) 
 	s.moved[k] = movedPlace{place: ev.callee, node: ev.call, every: true, called: true}
 }
 
-// storeReachable reports whether a call at the point `at` may run the closure store keeps.
+// storeReachable reports whether a call at the point `at` may run the closure `store` keeps.
 // The call must come after the store. A closure kept for the rest of the program is reachable
 // from every such call, and any other closure only while one of the store's holders is live.
 func (d *bodyDataflow) storeReachable(store *retainedStore, at liveness.StmtRef) bool {
@@ -1456,7 +1456,7 @@ func (d *bodyDataflow) storeReachable(store *retainedStore, at liveness.StmtRef)
 }
 
 // useCapture checks the use of the captured local by the closure `run` during the call of
-// ev. The method `run` describes that use. `retained` marks a closure a retainedStore keeps
+// `ev`. The method `run` describes that use. `retained` marks a closure a retainedStore keeps
 // reachable. A conflicting borrow is blamed this way:
 //
 //   - A borrow one of the call's own arguments takes blames that argument when the callee or
@@ -1533,7 +1533,7 @@ func (d *bodyDataflow) useCapture(ev *runEvent, run *closureRun, local capturedL
 	}
 }
 
-// runLoan returns the loan the call of ev takes for the write of the local root by the
+// runLoan returns the loan the call of `ev` takes for the write of the local `root` by the
 // retained closure `run`. It lasts until the end of the statement.
 func (d *bodyDataflow) runLoan(ev *runEvent, root liveness.VarID, run *closureRun) *liveLoan {
 	key := runLoanKey{run: ev, root: root}
@@ -1552,7 +1552,7 @@ func (d *bodyDataflow) runLoan(ev *runEvent, root liveness.VarID, run *closureRu
 	return l
 }
 
-// usedWhereWritten reports whether the closure's capture l counts as a path at the point
+// usedWhereWritten reports whether the closure's capture `l` counts as a path at the point
 // `at`. Writing a closure that noteBoundClosure did not record uses its captures for the
 // statement it is written in, since the expression it sits in may call it there.
 func (d *bodyDataflow) usedWhereWritten(l *liveLoan, at liveness.StmtRef) bool {

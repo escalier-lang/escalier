@@ -25,10 +25,10 @@ import (
 type runEvent struct {
 	eventBase
 	call *ast.CallExpr
-	// runs lists the closure the callee names, then each closure an argument names, in
+	// `runs` lists the closure the callee names, then each closure an argument names, in
 	// argument order.
 	runs []closureRun
-	// callee is the place of the binding the callee names, when that binding holds a
+	// `callee` is the place of the binding the callee names, when that binding holds a
 	// closure whose body moves one of its captures. Each call of such a closure moves it, as
 	// D2 decides, so a second call uses a moved binding. `consumes` is false for any other
 	// call.
@@ -38,14 +38,14 @@ type runEvent struct {
 
 // closureRun is one closure a call runs, or may run.
 type closureRun struct {
-	// node is the expression that names the closure, which a diagnostic blames.
+	// `node` is the expression that names the closure, which a diagnostic blames.
 	node ast.Node
-	// via names the closure in a diagnostic. It is a phrase closureVia or retainedVia
+	// `via` names the closure in a diagnostic. It is a phrase closureVia or retainedVia
 	// returns.
 	via string
 	// `runs` marks a closure the call is sure to run, because the call's callee names it.
 	runs bool
-	// captures lists each local the closure captures, in VarID order.
+	// `captures` lists each local the closure captures, in VarID order.
 	captures []capturedLocal
 }
 
@@ -53,20 +53,20 @@ type closureRun struct {
 // statement. The value is stored into a module-level binding, or passed to a parameter whose
 // function type carries a retention lifetime.
 type retainedStore struct {
-	// via names the binding or parameter that keeps the closure. closureVia or retainedVia
+	// `via` names the binding or parameter that keeps the closure. closureVia or retainedVia
 	// produces it.
 	via string
-	// expr is the stored value.
+	// `expr` is the stored value.
 	expr ast.Expr
-	// at is the CFG point of the statement that stores expr.
+	// `at` is the CFG point of the statement that stores `expr`.
 	at liveness.StmtRef
-	// call is the call whose parameter keeps the closure, and nil for a store into a
+	// `call` is the call whose parameter keeps the closure, and nil for a store into a
 	// module-level binding.
 	call ast.Node
-	// static marks a closure kept for the rest of the program. Every call after the store may
+	// `static` marks a closure kept for the rest of the program. Every call after the store may
 	// run it.
 	static bool
-	// holders are the bindings that keep a closure reachable that is not kept for the rest
+	// `holders` are the bindings that keep a closure reachable that is not kept for the rest
 	// of the program. The holders are these bindings:
 	//
 	//   - each argument whose parameter type shares the retention lifetime
@@ -75,12 +75,12 @@ type retainedStore struct {
 	//
 	// A call may run the closure only while one of them is live.
 	holders []liveness.VarID
-	// writes lists the owned locals the closures write, in VarID order.
+	// `writes` lists the owned locals the closures write, in VarID order.
 	// noteRetainedClosureWrites fills it once the body is walked.
 	writes []liveness.VarID
 }
 
-// emitClosureRuns emits the runEvent of the call e, attached to ref. It must run once the
+// emitClosureRuns emits the runEvent of the call `e`, attached to `ref`. It must run once the
 // arguments are inferred and before their flows are emitted.
 func (c *checker) emitClosureRuns(e *ast.CallExpr, ref liveness.StmtRef) {
 	if !c.firstEmit(e, runRole, ref, 0) {
@@ -106,9 +106,9 @@ func (c *checker) emitClosureRuns(e *ast.CallExpr, ref liveness.StmtRef) {
 	c.emitEvent(ev, ref)
 }
 
-// closureRunOf returns the run of the closure expr names, with the locals the closure
-// captures. ok is false when expr is not a name, or when the name holds no closure that
-// captures a local of the body. runs marks a call that is sure to run the closure.
+// closureRunOf returns the run of the closure `expr` names, with the locals the closure
+// captures. `ok` is false when `expr` is not a name, or when the name holds no closure that
+// captures a local of the body. `runs` marks a call that is sure to run the closure.
 //
 // The closure's captures are the capture edges the name holds in the borrow graph, whether
 // the name was bound to the closure or copied from a name that was. A local captured through
@@ -121,8 +121,8 @@ func (c *checker) closureRunOf(expr ast.Expr, runs bool) (closureRun, bool) {
 	}
 
 	// Group the name's capture edges by the local each one reaches. With
-	// `val f = fn () { p.a = 1; log(p.b) }`, f has two edges into p, a write at `.a` and a
-	// read at `.b`. They merge into one capturedLocal for p that is mutable and covers both
+	// `val f = fn () { p.a = 1; log(p.b) }`, `f` has two edges into `p`, a write at `.a` and a
+	// read at `.b`. They merge into one capturedLocal for `p` that is mutable and covers both
 	// paths. An edge with an empty path reaches the whole local, which `whole` records.
 	captured := map[liveness.VarID]*capturedLocal{}
 	whole := set.NewSet[liveness.VarID]()
@@ -159,9 +159,9 @@ func (c *checker) closureRunOf(expr ast.Expr, runs bool) (closureRun, bool) {
 	return run, true
 }
 
-// noteBoundClosure records closure as one whose capture is not used where it is written.
+// noteBoundClosure records `closure` as one whose capture is not used where it is written.
 // One is the initializer of a local name. The captures of `val f = fn () { … }` are used
-// at each call of f and each call f is passed to. A script's `fn`
+// at each call of `f` and each call `f` is passed to. A script's `fn`
 // declaration is used the same way. Another is stored into a module-level binding, whose
 // captures are used at each call after the store.
 func (c *checker) noteBoundClosure(closure ast.Func) {
@@ -170,7 +170,7 @@ func (c *checker) noteBoundClosure(closure ast.Func) {
 	}
 }
 
-// noteRetainedClosureStore adds store to the body's retained stores and returns it. It
+// noteRetainedClosureStore adds `store` to the body's retained stores and returns it. It
 // returns nil when the body has no event table.
 func (c *checker) noteRetainedClosureStore(store retainedStore) *retainedStore {
 	t := c.eventTable()
@@ -182,13 +182,13 @@ func (c *checker) noteRetainedClosureStore(store retainedStore) *retainedStore {
 	return s
 }
 
-// noteRetainedClosureArgs records each argument of the call e that fills a parameter fn keeps
-// past the call. Each one becomes a retainedStore at ref. Such a parameter's type holds a function type
+// noteRetainedClosureArgs records each argument of the call `e` that fills a parameter `fn` keeps
+// past the call. Each one becomes a retainedStore at `ref`. Such a parameter's type holds a function type
 // with a retention lifetime, at its top or inside a union, an object field, or an array. A
 // whole argument filling it is taken as kept, so each closure written in an object literal
 // counts.
 //
-// A retention lifetime that is 'static, or bound to outlive 'static, keeps the closure for the
+// A retention lifetime that is `'static`, or bound to outlive `'static`, keeps the closure for the
 // rest of the program. Any other retention lifetime keeps it as long as a binding that shares
 // the lifetime is live. When no binding shares it, the callee can keep the closure no longer
 // than the call, and nothing is recorded.
@@ -240,8 +240,8 @@ func (c *checker) noteRetainedClosureArgs(e *ast.CallExpr, fn *soltype.FuncType,
 	}
 }
 
-// paramForArg returns the parameter of fn the argument at index i fills. Every argument past a
-// trailing rest parameter fills that parameter. ok is false when no parameter takes the argument.
+// paramForArg returns the parameter of `fn` the argument at index `i` fills. Every argument past a
+// trailing rest parameter fills that parameter. `ok` is false when no parameter takes the argument.
 func paramForArg(fn *soltype.FuncType, i int) (*soltype.FuncParam, bool) {
 	if i < len(fn.Params) {
 		return fn.Params[i], true
@@ -252,9 +252,9 @@ func paramForArg(fn *soltype.FuncType, i int) (*soltype.FuncParam, bool) {
 	return nil, false
 }
 
-// retentionHolders returns the bindings that share one of the lifetimes in shared with the
-// parameter at index skip of the call e. They are the arguments, and the receiver recv whose
-// parameter is self, that name a binding and whose parameter types mention one of those
+// retentionHolders returns the bindings that share one of the lifetimes in `shared` with the
+// parameter at index `skip` of the call `e`. They are the arguments, and the receiver `recv` whose
+// parameter is `self`, that name a binding and whose parameter types mention one of those
 // lifetimes. For an argument written as a borrow, such as `&mut em`, the holder is the borrowed
 // binding, and only when the borrowed type mentions one of those lifetimes.
 func (c *checker) retentionHolders(
@@ -292,9 +292,9 @@ func (c *checker) retentionHolders(
 	return holders
 }
 
-// noteRetainedHolder adds holder to the holders of each retained store whose closure the
-// value init carries. init carries it when init is a call whose result keeps the closure, or
-// a name that is already one of the store's holders. It must run once the binding init flows
+// noteRetainedHolder adds `holder` to the holders of each retained store whose closure the
+// value `init` carries. `init` carries it when `init` is a call whose result keeps the closure, or
+// a name that is already one of the store's holders. It must run once the binding `init` flows
 // into is known.
 func (c *checker) noteRetainedHolder(holder liveness.VarID, init ast.Expr) {
 	t := c.eventTable()
@@ -315,7 +315,7 @@ func (c *checker) noteRetainedHolder(holder liveness.VarID, init ast.Expr) {
 	}
 }
 
-// typeMentionsLifetime reports whether one of the lifetimes in lts occurs in t, as a borrow's
+// typeMentionsLifetime reports whether one of the lifetimes in `lts` occurs in `t`, as a borrow's
 // lifetime, a function's retention lifetime, or a class or alias lifetime argument.
 func typeMentionsLifetime(ctx *Context, t soltype.Type, lts []*soltype.LifetimeVar) bool {
 	if t == nil || len(lts) == 0 {
@@ -376,7 +376,7 @@ func closureVia(name string) string {
 
 // retainedVia returns the phrase a message names a closure by when the callee `callee` keeps
 // it through its parameter `param`, as in `the 'handler' that 'onClick' retains`. An empty
-// callee or param leaves that name out.
+// `callee` or `param` leaves that name out.
 func retainedVia(param, callee string) string {
 	held := "the function"
 	if param != "" {
@@ -388,7 +388,7 @@ func retainedVia(param, callee string) string {
 	return fmt.Sprintf("%s that '%s' retains", held, callee)
 }
 
-// noteRetainedClosureWrites fills the writes of each retained store of the body. flowGraph is
+// noteRetainedClosureWrites fills the `writes` of each retained store of the body. flowGraph is
 // the body's flow-sensitive borrow graph. A store writes each owned local that a closure
 // written inside the stored value writes, and each owned local that a capture edge the value
 // reaches in the graph before the store writes. So a closure bound to a name, copied to
