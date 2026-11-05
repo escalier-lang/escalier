@@ -30,27 +30,49 @@ import (
 // holding a primitive cannot see a later change to the binding it copied. A capture from a
 // body further out records nothing, since this body's tables do not track it.
 func (c *checker) recordClosureCaptures(scope *Scope, closure ast.Func) {
+	// A closure written at module top level has no enclosing body. No body tables exist to
+	// record its captures in.
 	if c.fn == nil {
 		return
 	}
+
+	// hasRef says whether the statement that writes the closure has a CFG point. moved maps
+	// each captured name the closure's body moves to the expression that moves it.
 	_, hasRef := c.currentStmtRef()
 	moved := c.capturesMovedBy[closure]
+
 	for _, capture := range c.closureCaptures(closure) {
+		// Resolve the captured name to its binding in the scope the closure is written in. A
+		// name with no VarID is not a local the liveness pass tracks.
 		b, found := scope.GetValue(capture.Name)
 		if !found || b.VarID <= 0 {
 			continue
 		}
+
+		// Skip a capture declared in a body further out. Each body numbers its own locals, so
+		// the VarID of an outer local either is missing from this body's names or names a
+		// different local here.
 		root := liveness.VarID(b.VarID)
 		if name, ok := c.fn.varIDNames[root]; !ok || name != capture.Name {
 			continue
 		}
+
+		// Emit the ownership events for the capture. The dataflow pass reads them to check
+		// the closure's borrow of the local against other uses of it, and to apply the move
+		// of a local the closure's body moves.
 		if eventRef, ok := c.eventStmtRef(); ok {
 			c.emitCaptureFlows(closure, root, bindingDecl(b), bindingType(b), capture.IsMutable, moved[capture.Name], eventRef)
 		}
+
+		// A closure that captures a value such as a `number` holds its own copy. A later
+		// change to the local cannot reach it, so nothing more is recorded.
 		if isValueType(bindingType(b)) {
 			continue
 		}
-		// The error blames the expression in the closure that moves the local.
+
+		// A closure whose body moves the local takes it when the closure is written. A
+		// module's function cannot move a module-level name, so that case is an error. The
+		// error blames the expression in the closure that moves the local.
 		if moveNode, ok := moved[capture.Name]; ok {
 			if c.fn.capturesModule && c.fn.captureVarIDs.Contains(root) {
 				c.reportModuleLevelMove(moveNode)
@@ -63,6 +85,11 @@ func (c *checker) recordClosureCaptures(scope *Scope, closure ast.Func) {
 				continue
 			}
 		}
+
+		// Record every other capture in capturedLocals. The borrow graph reads it to give a
+		// binding that holds the closure a capture edge to the local. paths lists the field
+		// paths under the local that the closure reads or writes. It is empty when the closure
+		// uses the whole local.
 		if c.fn.capturedLocals == nil {
 			c.fn.capturedLocals = map[ast.Func][]capturedLocal{}
 		}
