@@ -1713,10 +1713,15 @@ func (d *bodyDataflow) reachAfterBlock(block int, fromEntry []bool, exit bool) b
 // on, for the walk placeReaches makes for h. `decided` reports whether a point settles the
 // answer, and `found` is that answer. A read of a place overlapping h settles it as found when
 // `exit` is unset. A write that replaces h, as placeReaches describes, settles it as not found.
+// A yield or an await settles it as found when h is caller-owned, since the caller runs there
+// and can read h.
 func (d *bodyDataflow) scanForHolder(h heldPlace, block, from int, exit bool) (found, decided bool) {
 	for _, ref := range d.points[block] {
 		if ref.StmtIdx < from {
 			continue
+		}
+		if d.suspends.Contains(ref) && d.callerOwned(h) {
+			return true, true
 		}
 		switch d.holderEffect(h, ref) {
 		case 1:
