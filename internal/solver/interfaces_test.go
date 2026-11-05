@@ -108,12 +108,12 @@ func TestInterfaceExtendsLeavesTheParentAlone(t *testing.T) {
 			m(a: number) -> number,
 		}
 		declare interface Child extends Base {
-			m(a: string) -> string,
+			m(a: number | string) -> number,
 		}
 	`)
 	require.Empty(t, errorMessagesOf(errs))
 	require.Equal(t, "{m(a: number) -> number, ...}", types["Base"])
-	require.Equal(t, "Base & {m(a: string) -> string, ...}", types["Child"])
+	require.Equal(t, "Base & {m(a: number | string) -> number, ...}", types["Child"])
 }
 
 // One name declared both as an interface and as another kind of type has two

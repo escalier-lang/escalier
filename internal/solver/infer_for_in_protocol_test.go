@@ -200,10 +200,10 @@ func TestForInOverAnIntersection(t *testing.T) {
 		},
 		{
 			// Both halves declare the member, and the interface's own declaration
-			// replaces the one it inherits.
+			// is read over the wider one it inherits.
 			name: "TheOwnMemberWinsOverTheInheritedOne",
 			src: `
-				interface Base { [Symbol.iterator]() -> Iterator<number> }
+				interface Base { [Symbol.iterator]() -> Iterator<number | string> }
 				interface Seq extends Base { [Symbol.iterator]() -> Iterator<string> }
 				fn use(s: Seq) { for x in s { return x } }
 			`,

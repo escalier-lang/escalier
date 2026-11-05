@@ -372,6 +372,8 @@ func acceptsNoArguments(sig *soltype.FuncType) bool {
 // That order serves an interface with an `extends` clause, so a member the interface declares
 // is read over the one a parent supplies. `IterableIterator<T>` expands to
 // `Iterator<T> & {[Symbol.iterator]() -> IterableIterator<T>}` and reads its own declaration.
+// checkInterfaceOverrides requires that member to be assignable to the parent's, so either
+// answer is sound and the order picks the more precise one.
 // For an intersection written in source, every arm's member applies to the value, so the
 // element any one arm reports is a supertype of what the value yields.
 //
