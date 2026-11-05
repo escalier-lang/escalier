@@ -11,17 +11,10 @@ import (
 // local stays alive after the frame ends. What matters is whether the frame still holds a second
 // path to it.
 //
-// The caller reads the target only after the function returns, so it sees the local as the body
-// leaves it. A write or move in the body before then is invisible to it. Two things can still
-// go wrong, and each is reported:
-//
-//   - The body reads through the target after changing the local, so its own view changes.
-//     The store's loan lasts while the target is read and catches that.
-//   - Another path to the local outlives the function and disagrees with the stored borrow.
-//     That path can be a second store, a return, or a binding the local moved into.
-//
-// The caller reads the target once f returns, so the store's loan is live at the caller. A move
-// of the local whose value also reaches the caller breaks E3 there, and the move is blamed.
+// The caller reads the target once the function returns, so the store's loan is live from the
+// store to the end of the body, unless a later write to the target replaces the borrow. While
+// it is live, E2 rejects a write to the local or a mutable path to it, and E3 rejects a move
+// of it.
 func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 	tests := map[string]struct {
 		src  string
@@ -386,9 +379,9 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 				}
 			`,
 		},
-		// a still reaches b after the store, but a dies with the frame and f never reads `p.r`
-		// again. The write through a happens before the caller can read `p.r`.
-		"WritingThroughALiveAliasOk": {
+		// a still reaches b mutably when the store hands the caller an immutable borrow of b, so
+		// the store breaks E2 even though f never reads `p.r` again.
+		"WritingThroughALiveAliasConflicts": {
 			src: `
 				fn f(p: &mut {r: &{value: number}}) {
 					val mut b = {value: 1}
@@ -397,6 +390,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 					a.peer.value = 5
 				}
 			`,
+			want: []string{"5:12-5:14: cannot borrow 'b' as immutable while it is borrowed as mutable"},
 		},
 		// The same alias with a later read through `p.r`. a's mutable borrow of b can change what
 		// the stored immutable borrow reads.
@@ -426,9 +420,9 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 			// breaks E2.
 			want: []string{"5:12-5:14: cannot borrow 'b' as immutable while it is borrowed as mutable"},
 		},
-		// The writes between iterations happen before the caller can read `p.r`, so it sees b's
-		// final value.
-		"StoreInsideALoopOk": {
+		// The write on a later iteration runs while `p.r` holds the borrow of b the earlier
+		// iteration stored.
+		"StoreInsideALoopConflicts": {
 			src: `
 				fn f(p: &mut {r: &{value: number}}, xs: [number]) {
 					val mut b = {value: 1}
@@ -438,6 +432,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 					}
 				}
 			`,
+			want: []string{"5:7-5:14: cannot assign to 'b.value' while it is borrowed as immutable"},
 		},
 		// A repoint on one branch leaves the earlier store in place on the other, so `p.r` may
 		// still reach b when b is written. The read of p afterwards keeps the earlier loan live.
