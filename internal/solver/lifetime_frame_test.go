@@ -52,23 +52,25 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 		{
 			name: "call whose signature ties the result to the argument",
 			src: `
-				declare fn same<'a>(p: &'a {x: number}) -> &'a {x: number}
+				declare fn lookup<'a>(p: &'a {x: number}) -> &'a {x: number}
 				fn h() {
 					val b = {x: 1}
-					return same(&b)
+					return lookup(&b)
 				}
 			`,
 			binding: "h",
 			want:    "fn () -> &{x: number}",
 		},
-		// The result's lifetime ties to nothing in the signature, so it ends with h's frame.
+		// The result's lifetime ties to nothing in the signature. L2 rejects a body that returns
+		// p under this signature, so make returns a value nothing outside the call reaches. D16's
+		// second rule then makes h's return owned.
 		{
 			name: "call whose signature ties the result to nothing",
 			src: `
-				declare fn same(p: &{x: number}) -> &{x: number}
+				declare fn make(p: &{x: number}) -> &{x: number}
 				fn h() {
 					val b = {x: 1}
-					return same(&b)
+					return make(&b)
 				}
 			`,
 			binding: "h",
@@ -83,16 +85,16 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 					val cfg = {x: 0}
 					var cache: &{x: number} = &{x: 0}
 
-					val same1 = fn (p: &{x: number}) {
+					val getCfg = fn (p: &{x: number}) {
 						return &cfg
 					}
-					val same2 = fn (p: &{x: number}) {
+					val stash = fn (p: &{x: number}) {
 						val q = {x: 1}
 						cache = &q
 						return &q
 					}
 
-					val r = same2(&cfg)
+					val r = stash(&cfg)
 					return r
 				}
 			`,
@@ -103,24 +105,24 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 			name: "borrow of module-level state",
 			src: `
 				var cfg = {x: 0}
-				fn same1(p: &{x: number}) {
+				fn getCfg(p: &{x: number}) {
 					return &cfg
 				}
 			`,
-			binding: "same1",
+			binding: "getCfg",
 			want:    "fn (p: &{x: number}) -> &'static {x: number}",
 		},
 		{
 			name: "borrow of a local module-level state also reads, beside a parameter",
 			src: `
 				var cache: &{x: number} = &{x: 0}
-				fn same2(p: &{x: number}) {
+				fn stash(p: &{x: number}) {
 					val q = {x: 1}
 					cache = &q
 					return &q
 				}
 			`,
-			binding: "same2",
+			binding: "stash",
 			want:    "fn (p: &{x: number}) -> &'static {x: 1}",
 		},
 		// Inside the closure, cfg is a capture, so the result borrows a value outer still
@@ -130,10 +132,10 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 			src: `
 				fn outer() {
 					val cfg = {x: 0}
-					val same1 = fn (p: &{x: number}) {
+					val getCfg = fn (p: &{x: number}) {
 						return &cfg
 					}
-					return same1
+					return getCfg
 				}
 			`,
 			binding: "outer",
@@ -146,12 +148,12 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 			src: `
 				fn outer() {
 					var cache: &{x: number} = &{x: 0}
-					val same2 = fn (p: &{x: number}) {
+					val stash = fn (p: &{x: number}) {
 						val q = {x: 1}
 						cache = &q
 						return &q
 					}
-					return same2
+					return stash
 				}
 			`,
 			binding: "outer",
@@ -330,7 +332,7 @@ func TestFrameOwnedReturnWrites(t *testing.T) {
 				"12:6-12:13: cannot constrain immutable object <: mutable object",
 			},
 		},
-		// Inside outer, cache still reads the value same2 returns.
+		// Inside outer, cache still reads the value stash returns.
 		{
 			name: "write through the result of a closure a local of the frame also reads",
 			src: `
@@ -338,13 +340,13 @@ func TestFrameOwnedReturnWrites(t *testing.T) {
 					val cfg = {x: 0}
 					var cache: &{x: number} = &{x: 0}
 
-					val same2 = fn (p: &{x: number}) {
+					val stash = fn (p: &{x: number}) {
 						val q = {x: 1}
 						cache = &q
 						return &q
 					}
 
-					val mut r = same2(&cfg)
+					val mut r = stash(&cfg)
 					r.x = 5
 					return r
 				}
