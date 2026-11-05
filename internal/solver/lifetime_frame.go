@@ -325,10 +325,11 @@ func (c *checker) lifetimeEndsWithFrame(lt soltype.Lifetime) bool {
 //
 // A lifetime is tied when it occurs in one of fn's parameters, `self`, the arguments, or the
 // receiver, or reaches one through the bounds of lifetimes the call minted. With
-// `declare fn same<'a>(p: &'a {x: number}) -> &'a {x: number}`, the result of `same(&b)`
+// `declare fn lookup<'a>(p: &'a {x: number}) -> &'a {x: number}`, the result of `lookup(&b)`
 // carries the copy of `'a` the parameter carries, so it is tied. With
-// `declare fn same(p: &{x: number}) -> &{x: number}` the result's lifetime reaches nothing,
-// so the callee built the value and the result is not foreign.
+// `declare fn make(p: &{x: number}) -> &{x: number}` the result's lifetime reaches nothing.
+// L2 keeps a body under that signature from returning `p`, so nothing outside the call
+// reaches the result and it is not foreign.
 func (c *checker) markTiedCallLifetimes(mark int, fn *soltype.FuncType, recv ast.Expr, self *soltype.FuncParam, args, ret soltype.Type) {
 	if c.fn == nil || c.fn.node == nil || fn == nil {
 		return
@@ -444,7 +445,8 @@ func (v *boundLifetimeCollector) EnterType(t soltype.Type, pol soltype.Polarity)
 //   - A borrow is owned as its referent when ownedBorrows decides it. Its referent is walked
 //     the same way, so `return {p: &mut b}` owns both the object and the borrow of `b`.
 //   - A type variable is owned as the union of its referents when every type that flows into
-//     it is a borrow the rules own. The binding `r` in `val r = same(&b); return r` is one.
+//     it is a borrow the rules own. With `declare fn make(p: &{x: number}) -> &{x: number}`,
+//     the binding `r` in `val r = make(&b); return r` is one.
 //   - A borrow at a position ann writes as a `&mut` is kept, since an owned value does not
 //     check against a `&mut` annotation.
 //   - A borrow that is a member of a union return is kept.
