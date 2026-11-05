@@ -1268,6 +1268,36 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot assign to 'b.value' while it is borrowed as immutable"},
 		},
 		{
+			// The caller can copy `p.r` at the `yield`, so repointing `p.r` afterward does not end
+			// the borrow of b.
+			name: "WriteAfterAYieldAndARepointConflicts",
+			src: `
+				gen fn f(p: &mut {r: &{value: number}}) {
+					val mut b = {value: 1}
+					val c = {value: 2}
+					p.r = &b
+					yield 1
+					p.r = &c
+					b.value = 5
+				}
+			`,
+			errs: []string{"cannot assign to 'b.value' while it is borrowed as immutable"},
+		},
+		{
+			// Without a `yield`, the repoint ends the borrow of b before the write.
+			name: "WriteAfterARepointOk",
+			src: `
+				gen fn f(p: &mut {r: &{value: number}}) {
+					val mut b = {value: 1}
+					val c = {value: 2}
+					p.r = &b
+					p.r = &c
+					b.value = 5
+					yield 1
+				}
+			`,
+		},
+		{
 			// The caller runs at the `yield`, and can keep a copy of `p.r`, so the stored
 			// borrow stays live after it.
 			name: "WriteAfterAYieldConflicts",
