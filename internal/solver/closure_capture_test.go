@@ -213,7 +213,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 				}
 			`,
 		},
-		// A callee handed f may call it, so passing f uses f's captures the way a call of f does.
+		// A callee handed `f` may call it, so passing `f` uses `f`'s captures the way a call of `f` does.
 		"PassingAWritingClosureBesideLiveBorrow": {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
@@ -403,7 +403,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 				"9:6-9:7: this call runs 'f', which reads 'x' after it was moved",
 			},
 		},
-		// Moving p.a leaves p.b in place, so a closure that reads only p.b reads nothing moved.
+		// Moving `p.a` leaves `p.b` in place, so a closure that reads only `p.b` reads nothing moved.
 		"ClosureCapturingAFieldDisjointFromAMovedField": {
 			src: `
 				fn g() {
@@ -415,7 +415,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 			`,
 			want: nil,
 		},
-		// A closure that reads p.a.x reads under the moved p.a, both where it is written and
+		// A closure that reads `p.a.x` reads under the moved `p.a`, both where it is written and
 		// at each call.
 		"ClosureCapturingAFieldUnderAMovedField": {
 			src: `

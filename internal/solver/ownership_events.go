@@ -352,7 +352,7 @@ type ownershipEvents struct {
 	// uses its captures for the statement it is written in, since the expression it sits in
 	// may call it there.
 	boundClosures set.Set[ast.Func]
-	// retained lists each store of a closure into a place that keeps it past its statement,
+	// `retained` lists each store of a closure into a place that keeps it past its statement,
 	// in the order the walk meets them. retainedResults maps a call to the stores whose
 	// closure the call's result keeps, for noteRetainedHolder.
 	retained        []*retainedStore
