@@ -212,22 +212,22 @@ func (e *OptionalChainBorrowError) Message() string {
 		"so bind the receiver with `if val` and borrow the field through it"
 }
 
-// loan is one borrow a call's store effect or a store into a field leaves a binding holding.
+// `loan` is one borrow a call's store effect or a store into a field leaves a binding holding.
 // The frame-exit checks in return_escape.go read the loans to tell which stores still reach
 // the caller.
 type loan struct {
 	// place is the data the borrow reaches.
 	place movePlace
-	// mut says a write can go through this borrow.
+	// `mut` says a write can go through this borrow.
 	mut bool
-	// holder is the binding the borrow is stored in. The loan lasts while that binding is live.
+	// `holder` is the binding the borrow is stored in. The loan lasts while that binding is live.
 	holder liveness.VarID
 	// holderPath is the field path within holder the borrow landed at, empty when the whole
 	// binding took it. `b.peer = &mut d` lands at [peer]. Repointing that field ends the loan
 	// there and leaves a sibling field's loan alone, which is the strong update the borrow
 	// graph makes for the same statement.
 	holderPath []placeSeg
-	// ref is the statement the borrow is stored at.
+	// `ref` is the statement the borrow is stored at.
 	ref liveness.StmtRef
 	// callerOwned marks a loan held by a caller-owned target, a borrow parameter or a borrowing
 	// receiver. The caller can read such a target once the function returns.
@@ -277,7 +277,7 @@ type capturedLocal struct {
 	// paths are the field paths under root that the closure reads or writes, as
 	// capturedPaths finds them. An empty list means the closure captures the whole local.
 	paths [][]placeSeg
-	// t is the type of the local's binding.
+	// `t` is the type of the local's binding.
 	t soltype.Type
 }
 
@@ -293,8 +293,8 @@ func (l capturedLocal) places() []movePlace {
 	return out
 }
 
-// endLoansOnRebind ends the loans holder holds when init gives it a new value, since the
-// binding no longer reaches what it stored before. `a = a` leaves a holding what it held.
+// endLoansOnRebind ends the loans `holder` holds when `init` gives it a new value, since the
+// binding no longer reaches what it stored before. `a = a` leaves `a` holding what it held.
 func (c *checker) endLoansOnRebind(holder liveness.VarID, init ast.Expr) {
 	if c.fn == nil || holder <= 0 || init == nil {
 		return
@@ -336,7 +336,7 @@ func (c *checker) endLoansAtPostDominating(holder liveness.VarID, base []placeSe
 }
 
 // stmtReaches reports whether the statement at `to` can run after the statement at `from` in
-// cfg. That holds for a later statement of the same block, and for any statement of a block the
+// `cfg`. That holds for a later statement of the same block, and for any statement of a block the
 // CFG reaches from `from`'s block.
 func stmtReaches(cfg *liveness.CFG, from, to liveness.StmtRef) bool {
 	if from.BlockID == to.BlockID && from.StmtIdx <= to.StmtIdx {

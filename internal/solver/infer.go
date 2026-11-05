@@ -619,7 +619,7 @@ type funcCtx struct {
 	// retractMove can take the move back.
 	moveRecords map[ast.Node]moveRecord
 	// movedSources holds each expression whose owned value an assignment or argument moves,
-	// such as the b in `val y = b`. movedOrigins reads it to follow a local into the binding
+	// such as the `b` in `val y = b`. movedOrigins reads it to follow a local into the binding
 	// that owns its data afterwards.
 	movedSources set.Set[ast.Node]
 	// moduleLevelMoves holds each expression reported as a move out of a module-level binding.
@@ -710,7 +710,7 @@ type funcCtx struct {
 	// the consumed lattice is available. A self-contained connected component re-anchors
 	// and co-moves; anything else reports an EscapingBorrowError.
 	escapeSites []escapeSite
-	// loans holds every borrow a store leaves a binding holding in this body, in source order.
+	// `loans` holds every borrow a store leaves a binding holding in this body, in source order.
 	// See recordStoreEdgeLoan.
 	loans []loan
 	// loanSeq is the last sequence number nextLoanSeq handed out.
