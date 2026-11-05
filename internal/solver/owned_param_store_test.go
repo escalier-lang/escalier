@@ -57,25 +57,8 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 			`,
 			want: nil,
 		},
-		// f never reads p after the store, so the caller is the next to see b. Moving b into a
-		// binding that dies with the frame changes nothing the caller can observe.
-		"MovingAfterAStoreIntoABorrowParameterOk": {
-			src: `
-				declare fn store<'a, 'b, 'c>(
-					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
-					item: &'a mut {value: number},
-				) -> undefined
-
-				fn f(p: &mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined {
-					val mut b = {value: 2}
-					store(&mut p, &mut b)
-					val y = b
-				}
-			`,
-			want: nil,
-		},
-		// The contrast. p holds the loan the store takes while f reads p, so moving b out
-		// before the read of p conflicts with it.
+		// The store leaves a borrow of b in p, which the caller reads once f returns. That loan
+		// is live for the rest of f, so moving b into y breaks E3 even though f never reads p.
 		"MovingAfterAStoreIntoABorrowParameterConflicts": {
 			src: `
 				declare fn store<'a, 'b, 'c>(
@@ -87,7 +70,6 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 					val mut b = {value: 2}
 					store(&mut p, &mut b)
 					val y = b
-					val z = p
 				}
 			`,
 			want: []string{"10:14-10:15: cannot move 'b' while it is borrowed"},

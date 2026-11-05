@@ -1159,10 +1159,9 @@ func (d *bodyDataflow) derivedLoan(ev *copyEvent, from *liveLoan, s *dataflowSta
 // ev.whileCaptured marks applies only while that borrow is live.
 //
 // A borrow the caller can reach once the body returns, such as one stored into a caller-owned
-// place, is live at the caller. When the moved value reaches the caller too, as ownedExits
-// finds, the caller holds an owner and a live borrow of the same data, so E3 rejects the move.
-// In `out.r = &p; val q = p; return q`, the move of p into q is rejected. Without the return,
-// q dies with the frame and the move is accepted.
+// place, is live at the caller and so for the rest of the body. E3 rejects every move of an
+// overlapping place after such a borrow is taken. In `out.r = &p; val q = p`, the move of p
+// into q is rejected whether or not q leaves the body.
 //
 // The error blames the first conflicting borrow sortedLoans returns that is not a retained
 // closure's write during a call. Such a write is blamed only when nothing else conflicts, and
@@ -1181,7 +1180,7 @@ func (d *bodyDataflow) move(ev *moveEvent, at liveness.StmtRef, s *dataflowState
 			if own || l.alias || !placesOverlap(l.ev.place, ev.place) {
 				continue
 			}
-			if !d.loanLive(l, at, true) && (!d.loanEscapes(l, at, false) || len(d.ownedExits(ev)) == 0) {
+			if !d.loanLive(l, at, true) && !d.loanEscapes(l, at, false) {
 				continue
 			}
 
