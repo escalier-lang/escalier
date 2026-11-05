@@ -217,7 +217,7 @@ type capturedLocal struct {
 	// paths are the field paths under root that the closure reads or writes, as
 	// capturedPaths finds them. An empty list means the closure captures the whole local.
 	paths [][]placeSeg
-	// t is the type of the local's binding.
+	// `t` is the type of the local's binding.
 	t soltype.Type
 }
 
@@ -234,7 +234,7 @@ func (l capturedLocal) places() []movePlace {
 }
 
 // stmtReaches reports whether the statement at `to` can run after the statement at `from` in
-// cfg. That holds for a later statement of the same block, and for any statement of a block the
+// `cfg`. That holds for a later statement of the same block, and for any statement of a block the
 // CFG reaches from `from`'s block.
 func stmtReaches(cfg *liveness.CFG, from, to liveness.StmtRef) bool {
 	if from.BlockID == to.BlockID && from.StmtIdx <= to.StmtIdx {
