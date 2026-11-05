@@ -386,7 +386,6 @@ func TestFrameOwnedReturnWrites(t *testing.T) {
 // function's frame and no other borrow in the returned value reaches an overlapping place. Each
 // case checks without errors.
 func TestFrameOwnedMutReturnSignatures(t *testing.T) {
-	const keep = "declare fn keep(x: &'static mut {x: number}) -> undefined\n"
 	tests := []struct {
 		name string
 		src  string
@@ -396,7 +395,9 @@ func TestFrameOwnedMutReturnSignatures(t *testing.T) {
 		// first rule and stays a borrow.
 		{
 			name: "mutable borrow of a local a static mutable borrow also reaches",
-			src: keep + `
+			src: `
+				declare fn keep(x: &'static mut {x: number}) -> undefined
+
 				fn h() {
 					val mut b = {x: 1}
 					keep(&mut b)
@@ -408,7 +409,9 @@ func TestFrameOwnedMutReturnSignatures(t *testing.T) {
 		// The borrow nested in the returned literal takes the same lifetime.
 		{
 			name: "nested mutable borrow of a local a static mutable borrow also reaches",
-			src: keep + `
+			src: `
+				declare fn keep(x: &'static mut {x: number}) -> undefined
+
 				fn h() {
 					val mut b = {x: 1}
 					keep(&mut b)
@@ -421,7 +424,9 @@ func TestFrameOwnedMutReturnSignatures(t *testing.T) {
 		// borrow to the one keep holds, and the copy is tied too.
 		{
 			name: "copy of a mutable borrow taken after a static one",
-			src: keep + `
+			src: `
+				declare fn keep(x: &'static mut {x: number}) -> undefined
+
 				fn h() {
 					val mut b = {x: 1}
 					keep(&mut b)
@@ -435,7 +440,9 @@ func TestFrameOwnedMutReturnSignatures(t *testing.T) {
 		// to it too.
 		{
 			name: "copy of a mutable borrow taken before a static one",
-			src: keep + `
+			src: `
+				declare fn keep(x: &'static mut {x: number}) -> undefined
+
 				fn h() {
 					val mut b = {x: 1}
 					val r = &mut b
@@ -448,7 +455,9 @@ func TestFrameOwnedMutReturnSignatures(t *testing.T) {
 		// Tying r to keep's borrow adds no rejection. Writes to b and through r stay accepted.
 		{
 			name: "writes after a mutable borrow tied to a static one",
-			src: keep + `
+			src: `
+				declare fn keep(x: &'static mut {x: number}) -> undefined
+
 				fn h() {
 					val mut b = {x: 1}
 					keep(&mut b)
