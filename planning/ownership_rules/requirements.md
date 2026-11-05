@@ -1351,10 +1351,10 @@ The options are:
 
 Under the second option, the answer for a call follows the callee's signature:
 
-- `return same(&b)` with `same<'a>(p: &'a {x: number}) -> &'a {x: number}`
+- `return lookup(&b)` with `lookup<'a>(p: &'a {x: number}) -> &'a {x: number}`
   stays a borrow. The `'a` result may be a `'static` value rather than `b`, and
   owning it would alias that value.
-- `return same(&b)` with `same(p: &{x: number}) -> &{x: number}` is owned. The
+- `return make(&b)` with `make(p: &{x: number}) -> &{x: number}` is owned. The
   result ties to nothing in the signature, so its lifetime ends with the
   caller's frame. A body that returns `p` under that signature is rejected by
   L2.
@@ -1370,12 +1370,12 @@ signature:
 var cfg = {x: 0}
 var cache: &{x: number} = &{x: 0}
 
-fn same1(p: &{x: number}) {
+fn getCfg(p: &{x: number}) {
     return &cfg
 }
 // fn (p: &{x: number}) -> &'static {x: number}, since cfg is module-level
 
-fn same2(p: &{x: number}) {
+fn stash(p: &{x: number}) {
     val q = {x: 1}
     cache = &q
     return &q
@@ -1384,8 +1384,8 @@ fn same2(p: &{x: number}) {
 ```
 
 In both functions, something else still reads the returned value after the
-call. In `same1` it is `cfg` itself, and in `same2` it is `cache`. Without the
-first rule, the `&q` that `same2` returns would carry its own lifetime, because
+call. In `getCfg` it is `cfg` itself, and in `stash` it is `cache`. Without the
+first rule, the `&q` that `stash` returns would carry its own lifetime, because
 only the `&q` stored in `cache` flows into module-level state. The second rule
 would then make the result owned, and a caller could write the value `cache`
 reads. The first rule gives the returned `&q` the lifetime of the borrow in
@@ -1400,25 +1400,25 @@ fn outer() {
     val cfg = {x: 0}
     var cache: &{x: number} = &{x: 0}
 
-    val same1 = fn (p: &{x: number}) {
+    val getCfg = fn (p: &{x: number}) {
         return &cfg
     }
-    val same2 = fn (p: &{x: number}) {
+    val stash = fn (p: &{x: number}) {
         val q = {x: 1}
         cache = &q
         return &q
     }
 
-    val r = same2(&cfg)
+    val r = stash(&cfg)
     return r
 }
 // fn () -> {x: number}
 ```
 
-- `same1` returns a borrow tied to its capture of `cfg`, so its result is a
+- `getCfg` returns a borrow tied to its capture of `cfg`, so its result is a
   borrow. The lifetime belongs to `outer`'s frame, which outlives the closure's
   call.
-- `same2` returns a borrow that takes the lifetime of the borrow in `cache`
+- `stash` returns a borrow that takes the lifetime of the borrow in `cache`
   under the first rule. That lifetime belongs to `outer`'s frame, so `r` is a
   borrow inside `outer`, and a write through `r` is rejected.
 - `outer` returns `r`, whose lifetime ends with `outer`'s frame. Once `outer`
