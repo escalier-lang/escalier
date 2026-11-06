@@ -298,6 +298,53 @@ fn h() {
 	}
 }
 
+// TestMissingBorrowOfModuleLevelValue asserts that a module-level value written where a borrow
+// is expected reports only that the borrow is missing. The fix is to write `&`, which also stops
+// the move, so a ModuleLevelMoveError on the same expression would blame one fault twice.
+func TestMissingBorrowOfModuleLevelValue(t *testing.T) {
+	t.Parallel()
+
+	const borrow = "this value is borrowed by its destination, so write the borrow: `&`"
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "a declaration",
+			src: `val xs: Array<number> = [1]
+fn f() { val b: &Array<number> = xs }`,
+			want: []string{"2:34-2:36: " + borrow},
+		},
+		{
+			name: "a return",
+			src: `val xs: Array<number> = [1]
+fn f() -> &Array<number> { return xs }`,
+			want: []string{"2:35-2:37: " + borrow},
+		},
+		{
+			name: "a field store",
+			src: `val xs: Array<number> = [1]
+fn f(o: &mut {r: &Array<number>}) { o.r = xs }`,
+			want: []string{"2:43-2:45: " + borrow},
+		},
+		{
+			name: "a call argument",
+			src: `val xs: Array<number> = [1]
+declare fn take(x: &Array<number>) -> undefined
+fn f() { take(xs) }`,
+			want: []string{"3:15-3:17: this argument is borrowed by the callee, so write the borrow: `&`"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
+		})
+	}
+}
+
 // TestMoveOutOfModuleLevelValueIntoCall covers calls inside a function body that pass a
 // module-level binding as an argument or as a method's receiver. A parameter or receiver that
 // takes ownership moves the binding, which #2284 and #2232 report. One that borrows reads it.
