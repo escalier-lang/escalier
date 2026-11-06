@@ -68,7 +68,7 @@ func TestOwnershipDiffReport(t *testing.T) {
 	require.Empty(t, on.problems)
 
 	var out strings.Builder
-	writeReport(&out, diffRuns(off.diags, on.diags))
+	writeReport(&out, diffRuns(off.diags, on.diags), sideLabels{oldRun: "with the flag off", newRun: "with it on"})
 
 	require.Equal(t, strings.Join([]string{
 		"pkg TestCount",
@@ -145,7 +145,7 @@ func TestOwnershipDiffSplitLines(t *testing.T) {
 	require.NoError(t, err)
 
 	var out strings.Builder
-	writeReport(&out, diffRuns(off.diags, on.diags))
+	writeReport(&out, diffRuns(off.diags, on.diags), sideLabels{oldRun: "with the flag off", newRun: "with it on"})
 
 	name := strings.Repeat("p", 1100)
 	require.Equal(t, strings.Join([]string{

@@ -910,12 +910,10 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// A default runs when the function is called, so it is inferred inside this context,
 		// where a raise reaches this function's throws sink.
 		c.inferParamDefaults(lvl, defaults)
-		// M4 G1: run the liveness pre-pass before walking the body so mutability
-		// transitions are checked. It renames the body's variable nodes (writing the
-		// VarIDs DetermineAliasSource and the alias tracker read) and seeds the
-		// parameter alias sets onto c.fn. recordParamVarIDs then copies each param's
-		// freshly-assigned VarID onto its binding so a closure capturing the param
-		// resolves to its alias set.
+		// Run the liveness pre-pass before walking the body. It renames the body's
+		// variable nodes and records each parameter leaf's type onto c.fn.
+		// recordParamVarIDs then copies each param's freshly-assigned VarID onto its
+		// binding, so a closure capturing the param resolves to it.
 		extraVarIDs := c.runLivenessPrePass(fnScope, sig.Params, recv, closure, enclosed, paramTypes, body)
 		recordParamVarIDs(c.varIDs, fnScope, sig.Params)
 		recordExtraParamVarIDs(fnScope, extraVarIDs)
@@ -2749,9 +2747,9 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	if e.Left == nil || e.Right == nil {
 		return c.reportUnsupported(e)
 	}
-	// M4 G1: snapshot the enclosing statement BEFORE walking the RHS. Reassignment
-	// transition checking needs this assignment's statement to find its CFG StmtRef,
-	// but walking an RHS that contains statements re-enters inferStmt and overwrites
+	// Snapshot the enclosing statement BEFORE walking the RHS. The consume, borrow, and
+	// loan records below need this assignment's statement to find its CFG StmtRef, but
+	// walking an RHS that contains statements re-enters inferStmt and overwrites
 	// c.fn.currentStmt. A `b = if c { … } else { … }`, a match, or a block expression
 	// all do this. Capturing the statement here keeps the reassignment path on the
 	// right program point, the way the var-decl path threads its statement explicitly.
@@ -2897,20 +2895,10 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 			c.reportBorrowIntoOwned(e.Right, sourceT, targetT)
 		}
 		if len(c.errs) == errsBefore && !missing {
-			// The store aliases the source into a permanent module-level storage location. If the
-			// source's mutability differs from that location's and the source stays live at
-			// the conflicting mutability, that is a mut↔immutable transition the local
-			// reassignment path cannot see, since the global target is not a tracked
-			// local. Check it before forcing the escape so the source's own escape is
-			// not double-counted as a prior permanent alias.
-			c.checkGlobalWriteTransition(target, e.Right, bindingMutable(b), assignStmt)
 			c.constrainEscape(sourceT)
 			// The store transfers the value into a permanent 'static storage location, so it consumes
 			// the source binding. A later use of the source is then a use-after-move, the
 			// affine rule that closes the leak the global write otherwise allowed.
-			// checkGlobalWriteTransition above skips the source's own self-conflict,
-			// leaving the consume to govern the source and the exclusivity rule to govern
-			// any OTHER live alias of the same value.
 			if c.fn != nil {
 				if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
 					if !c.rejectModuleLevelMove(scope, e.Right) {
@@ -2922,8 +2910,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 				}
 			}
 			// KNOWN GAP (#762): this store is accepted even though it is not sound in
-			// general. checkGlobalWriteTransition is an in-body check only. The store
-			// escapes the source to 'static, but nothing forces the CALLER to pass a
+			// general. The store escapes the source to 'static, but nothing forces the CALLER to pass a
 			// unique 'static borrow, so the caller may retain a live mutable alias to the
 			// same value and mutate it after the call, which the immutable global then
 			// observes. Closing this needs the call site to enforce the 'static borrow as
@@ -2934,12 +2921,6 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		c.constrain(e, c.implicitMutBorrow(e.Right, sourceT, targetT), checkTarget(targetT, missing))
 	}
 	if c.fn != nil && len(c.errs) == assignErrsBefore && !missing && c.varIDs.Of(target) > 0 {
-		// Track against the binding's own type, not the freshened targetT. The G2
-		// escape query reads the recorded type, and a later global write forces the
-		// lifetime on the binding's shared pointer. The freshened copy carries an
-		// independent lifetime var that the escape never touches. isMutableType reads
-		// the same top-level Mut from either, so the alias mutability is unchanged.
-		c.trackAliasesForAssignment(target, e.Right, bindingType(b), bindingMutable(b), assignStmt)
 		// A non-module reassignment that moves its source consumes it. The global-write
 		// branch above runs its own consume, so this covers only the local-binding
 		// reassignment.
@@ -3133,11 +3114,9 @@ func (c *checker) inferFieldAssign(scope *Scope, lvl int, e *ast.BinaryExpr, obj
 		})
 	}
 	c.recordWritten(recv, name, w)
-	// M4 G1: when the written value aliases a variable, merge the receiver's and the
-	// source's alias sets so a later transition off either sees the shared value. Only
-	// when the write type-checked, so a rejected write does not record a bogus alias.
+	// Only a write that type-checked records a move, so a rejected write does not consume
+	// its source.
 	if c.fn != nil && len(c.errs) == errsBefore && !missing {
-		c.trackAliasesForPropAssignment(e.Left, e.Right)
 		// Storing an owned value into a field transfers ownership into the receiver, so
 		// the source binding is consumed and a later use of it is a use-after-move. The
 		// move records against the assignment's statement, resolved from assignStmt
@@ -3269,7 +3248,6 @@ func (c *checker) inferElementAssign(scope *Scope, lvl int, e *ast.BinaryExpr, i
 		c.constrain(e.Right, source, checkTarget(slot, missing))
 	}
 	if c.fn != nil && len(c.errs) == errsBefore && !missing {
-		c.trackAliasesForPropAssignment(e.Left, e.Right)
 		if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
 			// Storing an owned value into an element moves it into the receiver, and storing
 			// a borrow of a local into a parameter's element escapes, as a field store does.

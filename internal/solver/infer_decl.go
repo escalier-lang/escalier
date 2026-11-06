@@ -792,10 +792,8 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl, self *solt
 // several names from one decl, so this path is body-level only and inferDeclDef
 // reports a top-level destructuring decl as unsupported.
 //
-// After binding, the leaves are wired into the liveness machinery so a closure
-// capturing a leaf resolves its alias set and a mutability transition through it
-// is checked. This is the per-leaf analogue of the IdentPat path's VarID copy
-// plus trackAliasesForVarDecl.
+// After binding, each leaf's binding takes the VarID the rename gave it, as the IdentPat
+// path's binding does, so a closure that captures a leaf resolves it.
 //
 // It returns the type the pattern binds against. That is the annotation's type when the
 // declaration has one, and nil when the declaration has no initializer.
@@ -805,7 +803,7 @@ func (c *checker) inferDestructureDecl(scope *Scope, lvl int, d *ast.VarDecl) so
 		return nil
 	}
 	c.bindPattern(scope, lvl, d.Pattern, initType, nil)
-	c.trackDestructureLeaves(scope, d.Pattern)
+	recordLeafVarIDs(c.varIDs, scope, d.Pattern)
 	// Record each leaf's borrow edges from the initializer sub-expression it binds, so a
 	// return of a leaf that projects a borrow of a local is caught. `val {peer} = {peer:
 	// &mut b}` records peer → b. The correspondence is structural, so it tracks a leaf

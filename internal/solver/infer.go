@@ -553,30 +553,25 @@ type funcCtx struct {
 	lvl int
 
 	// written records the widened type stored into a receiver variable's field by a
-	// field-write `recv.prop = source` (M4 C3), keyed by the receiver var's ID and
-	// the property name. A later read of the same field returns this concrete type
-	// instead of minting a fresh var, so `obj.x = 5; obj.x` is `number`
-	// (read-after-write). It is purely a precision win: write-after-read already
-	// works through ordinary bound accumulation.
+	// field-write `recv.prop = source`, keyed by the receiver var's ID and the property
+	// name. A later read of the same field returns this concrete type instead of minting
+	// a fresh var, so `obj.x = 5; obj.x` is `number`. This read-after-write precision is
+	// the only thing it adds. Write-after-read already works through ordinary bound
+	// accumulation.
 	//
-	// It lives here, not on the checker, because read-after-write is an INTRA-BODY
-	// relation: scoping the cache to the function body it belongs to makes that
-	// correct by construction rather than relying on the global fresh-var counter to
-	// keep one body's receiver IDs from colliding with another's. Push/pop of funcCtx
-	// isolates it for free — a nested function gets its own map and the outer's is
-	// restored on exit. A field write at module top-level (c.fn == nil) simply gets
-	// no read-after-write precision, which is sound.
+	// It lives here, not on the checker, because read-after-write is a relation inside
+	// one body. Scoping the cache to its function body keeps one body's receiver IDs from
+	// colliding with another's without relying on the global fresh-var counter. Push/pop
+	// of funcCtx gives a nested function its own map and restores the outer's on exit. A
+	// field write at module top-level, where c.fn is nil, gets no read-after-write
+	// precision, which is sound.
 	written map[fieldKey]soltype.Type
 
-	// liveness, aliases, stmtToRef, and varIDNames are the mutability-transition
-	// checking state for THIS function body (M4 G1), populated by runLivenessPrePass
-	// before the body is walked. They are the new-checker analogue of the old
-	// checker's Context.Liveness/Aliases/StmtToRef/VarIDNames. Scoping them to funcCtx
-	// gives a nested function its own liveness analysis for free. Push/pop isolates them
-	// exactly like `written`. They stay nil at module top-level (c.fn == nil), where the
-	// transition checker is a no-op.
+	// liveness, stmtToRef, and varIDNames are the liveness state for THIS function body,
+	// populated by runLivenessPrePass before the body is walked. Scoping them to funcCtx
+	// gives a nested function its own liveness analysis. Push/pop isolates them exactly
+	// like `written`. They stay nil at module top-level, where c.fn is nil.
 	liveness   *liveness.LivenessInfo
-	aliases    *liveness.AliasTracker
 	stmtToRef  map[ast.Stmt]liveness.StmtRef
 	varIDNames map[liveness.VarID]string
 	// events holds the ownership events this body's walk emits, attached to the nodes of
@@ -760,38 +755,14 @@ type funcCtx struct {
 	// a read can name the loans that existed when it was walked without depending on their
 	// positions, which dropLoansHeldBy shifts.
 	loanSeq int
-	// varIDTypes maps each tracked variable's VarID to its soltype. It is the bridge
-	// the transition checker uses to query the lifetime sort for a `'static` escape in
-	// M4 G2. It replaces the dropped HasStatic{Mut,Imm}Alias bits. A value whose borrow
-	// lifetime D3 forced `<: 'static` has a permanent outside alias, and that borrow's
-	// Mut supplies its mutability. The stored type is the SAME pointer the inference
-	// graph mutates. So a lifetime that a later global write `sink = p` forces to
-	// 'static after the binding is recorded is visible here through the shared
-	// LifetimeVar. Populated at the same sites that seed alias mutability: parameter
-	// leaves, decl bindings, and reassignment targets.
+	// varIDTypes maps the VarID of each parameter leaf, the receiver, and each capture to
+	// that binding's soltype. runLivenessPrePass fills it before the body is walked. The
+	// stored type is the same pointer the inference graph mutates, so a type variable
+	// that settles later is read in its settled form.
 	varIDTypes map[liveness.VarID]soltype.Type
-	// currentStmt is the enclosing statement currently being walked (M4 G1), set by
-	// inferStmt. A reassignment `a = e` lives in expression position, so the transition
-	// checker reads the enclosing statement from here to find its CFG StmtRef.
+	// currentStmt is the enclosing statement currently being walked. inferStmt sets it. A reassignment `a = e` lives in expression position, so a check that
+	// needs its CFG StmtRef reads the enclosing statement from here.
 	currentStmt ast.Stmt
-	// pendingTransitions holds the phase/exclusivity conflicts the walk found, deferred
-	// for emission until the consumed lattice is complete. checkMutabilityTransition
-	// computes each conflict against the alias and liveness state at the transition's
-	// program point and records it here rather than reporting it inline. After the body
-	// walk, resolvePhaseTransitions emits each one unless the consumed lattice finds its
-	// source moved on every reaching path, in which case the move engine's
-	// use-after-move subsumes it. Deferring the emission lets the phase decision read
-	// the complete post-walk lattice, so each conflict's path-sensitivity is decided in
-	// one pass.
-	//
-	// INVARIANT: this slice must not be mutated under a discardable probe. The conflicts
-	// here bypass openProbe's errs snapshot, since they reach c.errs only later through
-	// resolvePhaseTransitions, so a discarded trial would not roll them back. It holds
-	// today because checkMutabilityTransition runs only on the non-speculative statement
-	// walk, never inside a probe. A probe opened around a statement walk that can reach
-	// checkMutabilityTransition would have to journal this slice's length in openProbe,
-	// the way errs is journaled.
-	pendingTransitions []*MutabilityTransitionError
 }
 
 // pushFuncCtx enters the inference context for function `node` (async controls
