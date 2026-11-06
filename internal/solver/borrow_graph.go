@@ -33,11 +33,11 @@ import (
 type fieldBorrow struct {
 	path     []placeSeg
 	referent liveness.VarID
-	// refPath is the field path INSIDE referent the borrow reaches, empty for a borrow of the
-	// whole binding. `val t = {p: &mut b.x}` records refPath [x] beside path [p]. It is what
+	// refPath is the field path INSIDE `referent` the borrow reaches, empty for a borrow of the
+	// whole binding. `val t = {p: &mut b.x}` records refPath [x] beside `path` [p]. It is what
 	// separates a borrow of one field of a local from a borrow of a disjoint field.
 	refPath []placeSeg
-	// mut says a write can go through the borrow. `val a = {peer: &mut b}` records a mutable
+	// `mut` says a write can go through the borrow. `val a = {peer: &mut b}` records a mutable
 	// edge and `val a = {peer: &b}` an immutable one. A borrow field carries its own
 	// mutability, so an edge reached through another edge keeps its own answer.
 	mut bool
@@ -46,8 +46,8 @@ type fieldBorrow struct {
 	capture bool
 }
 
-// pathHasPrefix reports whether prefix is a prefix of full: every segment of prefix matches
-// full at the same index, so an empty prefix matches any path and equal paths match.
+// pathHasPrefix reports whether `prefix` is a prefix of `full`: every segment of `prefix` matches
+// `full` at the same index, so an empty prefix matches any path and equal paths match.
 func pathHasPrefix(full, prefix []placeSeg) bool {
 	if len(prefix) > len(full) {
 		return false
@@ -174,8 +174,8 @@ func (c *checker) localReferentPlace(arg ast.Expr) (movePlace, bool) {
 	return p, true
 }
 
-// addBorrowEdge records that the binding root borrows the function-local referent at the
-// given field path, allocating the root's edge list on first use. mut says a write can go
+// addBorrowEdge records that the binding `root` borrows the function-local `referent` at the
+// given field path, allocating the `root`'s edge list on first use. `mut` says a write can go
 // through the borrow. A duplicate edge with the same paths, referent and mutability is
 // ignored, so repeated walks keep one copy rather than accumulating identical edges.
 func (c *checker) addBorrowEdge(root liveness.VarID, path []placeSeg, referent liveness.VarID, refPath []placeSeg, mut bool) {
@@ -191,7 +191,7 @@ func (c *checker) addEdge(root liveness.VarID, fb fieldBorrow) {
 	c.markBorrowDirty(root)
 }
 
-// recordBorrowEdges records which function-locals the binding root borrows and at
+// recordBorrowEdges records which function-locals the binding `root` borrows and at
 // which field. `val a = {peer: &mut b}` records a → b at path [peer], and a whole-binding
 // move `val a2 = a` carries a's edges into a2 at the same paths. A `var` reassignment reuses
 // the same VarID, so recording clears the binding's prior edges first: `a = &mut e` after `a =
@@ -205,8 +205,8 @@ func (c *checker) recordBorrowEdges(root liveness.VarID, init ast.Expr) {
 	c.recordBorrowSources(root, nil, init)
 }
 
-// addCaptureEdges records a capture edge from root at base to each place of the current body
-// that closure captures, other than a place under root itself.
+// addCaptureEdges records a capture edge from `root` at `base` to each place of the current body
+// that `closure` captures, other than a place under `root` itself.
 func (c *checker) addCaptureEdges(root liveness.VarID, base []placeSeg, closure ast.Func) {
 	for _, captured := range c.fn.capturedLocals[closure] {
 		if captured.root == root {
@@ -248,7 +248,7 @@ func (c *checker) recordBorrowSources(root liveness.VarID, base []placeSeg, e as
 					c.recordBorrowSources(root, appendSeg(base, name), el.ValueExpr())
 				} else {
 					// A computed key names no static field segment, so the borrow can't
-					// be addressed by a field path. Keep base, attributing the value to the
+					// be addressed by a field path. Keep `base`, attributing the value to the
 					// enclosing object conservatively.
 					c.recordBorrowSources(root, base, el.ValueExpr())
 				}
@@ -268,12 +268,12 @@ func (c *checker) recordBorrowSources(root liveness.VarID, base []placeSeg, e as
 		return
 	default:
 		// A place names another binding whose value e copies, as in `val a2 = a` or `val c =
-		// a.peer`. copyPlaceEdges transfers that binding's edges to root, re-rooted at base.
+		// a.peer`. copyPlaceEdges transfers that binding's edges to `root`, re-rooted at `base`.
 		if p, ok := c.exprPlace(e); ok && p.root > 0 {
 			c.copyPlaceEdges(root, base, p)
 			return
 		}
-		// Any other carrier expression contributes its inline borrows of locals at base, as
+		// Any other carrier expression contributes its inline borrows of locals at `base`, as
 		// in the `if cond { &mut b } else { … }` of `val a = if cond { &mut b } else { … }`.
 		// The walk descends through it but stops at call and nested-function boundaries.
 		for _, b := range borrowsIn(e) {
@@ -287,16 +287,16 @@ func (c *checker) recordBorrowSources(root liveness.VarID, base []placeSeg, e as
 	}
 }
 
-// copyPlaceEdges transfers to the binding root the borrow edges of the source place src,
-// re-rooted at base. Each of src's edges on src's field path — at it, beneath it, or above
+// copyPlaceEdges transfers to the binding `root` the borrow edges of the source place src,
+// re-rooted at `base`. Each of src's edges on src's field path — at it, beneath it, or above
 // it where the source binding wholly borrows a local — transfers, re-rooted at base plus
 // the part of the edge path below the read place. An edge above the read place reaches the
 // whole binding, so the read projects entirely within it and the suffix is empty. It backs
 // both a place initializer `val c = a.peer` and a shorthand property `{peer}`.
 func (c *checker) copyPlaceEdges(root liveness.VarID, base []placeSeg, src movePlace) {
 	for _, edge := range c.fn.eagerBorrowGraph[src.root] {
-		// Skip an edge off the read place's field path, and one pointing back at root. The
-		// self-edge guard matters because src's referent can be root: reassigning `b = a`
+		// Skip an edge off the read place's field path, and one pointing back at `root`. The
+		// self-edge guard matters because src's referent can be `root`: reassigning `b = a`
 		// where a holds a borrow of b would otherwise copy a → b into b as a b → b loop.
 		if !pathPrefixRelated(edge.path, src.path) || edge.referent == root {
 			continue
@@ -381,11 +381,11 @@ func (c *checker) recordElementStoreEdges(recv, source ast.Expr, stmtRef livenes
 	c.flushBorrowDirty(stmtRef)
 }
 
-// collectEdgesFrom appends to out every edge reachable from root, starting with root's edges
-// on filter's field path and then following every edge of each referent reached. The first
-// hop keeps an edge at the filter, beneath it, or above it where root wholly borrows a local,
+// collectEdgesFrom appends to `out` every edge reachable from `root`, starting with `root`'s edges
+// on `filter`'s field path and then following every edge of each referent reached. The first
+// hop keeps an edge at the `filter`, beneath it, or above it where `root` wholly borrows a local,
 // so a read of a.peer follows a → b at [peer] but not a → c at [data]. A local reached
-// through a borrow exposes all of it, so every later hop follows every edge. The seen set
+// through a borrow exposes all of it, so every later hop follows every edge. The `seen` set
 // terminates borrow cycles.
 func collectEdgesFrom(
 	root liveness.VarID,
@@ -403,7 +403,7 @@ func collectEdgesFrom(
 	}
 }
 
-// collectAllEdgesFrom appends to out every edge reachable from node, following every edge
+// collectAllEdgesFrom appends to `out` every edge reachable from `node`, following every edge
 // regardless of field path.
 func collectAllEdgesFrom(
 	node liveness.VarID,
@@ -421,7 +421,7 @@ func collectAllEdgesFrom(
 	}
 }
 
-// appendSeg returns base with one more named field segment appended, copying the path so
+// appendSeg returns `base` with one more named field segment appended, copying the path so
 // sibling places built from the same base never share backing storage.
 func appendSeg(base []placeSeg, name string) []placeSeg {
 	out := make([]placeSeg, len(base)+1)
@@ -430,7 +430,7 @@ func appendSeg(base []placeSeg, name string) []placeSeg {
 	return out
 }
 
-// appendPath returns base with the segments of suffix appended, copying so the result
+// appendPath returns `base` with the segments of `suffix` appended, copying so the result
 // shares no backing storage with either input.
 func appendPath(base, suffix []placeSeg) []placeSeg {
 	out := make([]placeSeg, len(base)+len(suffix))

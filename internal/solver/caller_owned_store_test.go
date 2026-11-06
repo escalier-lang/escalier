@@ -493,8 +493,8 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 				}
 			`,
 		},
-		// a leaves through p.peer and the return, both mutable. c leaves immutably through take,
-		// but take keeps nothing, so that path ends when the call returns and the mutable return
+		// a leaves through p.peer and the return, both mutable. c leaves immutably through `take`,
+		// but `take` keeps nothing, so that path ends when the call returns and the mutable return
 		// is the only path to c left.
 		"ReturnOfALocalACallReadOk": {
 			src: `
@@ -547,7 +547,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 }
 
 // TestReturnAfterACallReadTheLocal asserts that a mutable return of a local checks after a
-// call read it through an immutable borrow. take keeps nothing, so its path to c ends when the
+// call read it through an immutable borrow. `take` keeps nothing, so its path to c ends when the
 // call returns.
 func TestReturnAfterACallReadTheLocal(t *testing.T) {
 	src := `

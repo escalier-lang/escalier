@@ -117,7 +117,7 @@ func TestFieldStoreBorrowEdges(t *testing.T) {
 			types: map[string]string{"f": "fn () -> {peer: {x: number}}"},
 		},
 		// Storing a local borrow into a field, then aliasing the carrier from a live binding:
-		// keep holds `&b` and is read after b moves into store, so the move of b breaks E3.
+		// `keep` holds `&b` and is read after b moves into `store`, so the move of b breaks E3.
 		// Passing b hands the callee its borrow of d, which L1 accepts, since nothing in the
 		// frame uses d afterwards.
 		"FieldStoreMoveWhileExternallyAliased": {

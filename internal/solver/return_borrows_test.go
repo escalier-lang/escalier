@@ -419,7 +419,7 @@ func TestReturnValueBorrows(t *testing.T) {
 			},
 		},
 		// The same shape with b holding an immutable borrow of c sends c to the callee through
-		// a read-only path. take keeps nothing, so that path ends when the call returns, and
+		// a read-only path. `take` keeps nothing, so that path ends when the call returns, and
 		// the mutable return is the only path to c left. L1 accepts it.
 		"ReturnOfALocalAfterACallReadItThroughAnotherLocal": {
 			src: `
@@ -808,7 +808,7 @@ func TestConnectedComponentMove(t *testing.T) {
 		},
 		// A node mutably aliased outside the moved component blocks the move: b and c each hold
 		// `&mut d`, and c is read after the call, so it is a live second mutable path to d when
-		// b moves into store. d stays with the frame, and the callee receives b's borrow of it.
+		// b moves into `store`. d stays with the frame, and the callee receives b's borrow of it.
 		// Two mutable paths to d agree that it can change, and nothing in the frame uses d
 		// through b afterwards, so L1 accepts the call. The case uses a consuming argument rather
 		// than a return, because at a return every local is dead. See DeadExternalRefAllowsMove.
@@ -912,8 +912,8 @@ func TestConnectedComponentMove(t *testing.T) {
 		},
 		// A node reachable from a LIVE binding outside the component is not self-contained: keep
 		// holds `&b` and is read after the call, so it is a live external reference to b when a
-		// moves into store. The move does not apply, and the callee receives a's immutable borrow
-		// of b. keep reads b and nothing writes it, so L1 accepts the call. Contrast
+		// moves into `store`. The move does not apply, and the callee receives a's immutable borrow
+		// of b. `keep` reads b and nothing writes it, so L1 accepts the call. Contrast
 		// DeadExternalRefAllowsMove, where the same borrow was dead at a return.
 		"LiveExternalRefOutsideTheComponent": {
 			src: `
