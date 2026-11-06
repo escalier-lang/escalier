@@ -516,8 +516,8 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 		// Storing an owned carrier that holds a local borrow into a parameter's field is not an
 		// escape. This is the owned-carrier twin of StoreLocalBorrowIntoParamFieldOk. F2 moves
 		// the carrier and copies the borrow it holds, so b is not moved. The loan the store
-		// takes is held by p, which the body does not read again, so moving b into y is
-		// accepted, as in TestStoreIntoCallerOwnedTarget/MovingIntoALocalAfterAnImmutableStoreOk.
+		// takes is held by p, which the caller reads once f returns, so moving b into y breaks
+		// E3, as in TestStoreIntoCallerOwnedTarget/MovingIntoALocalAfterAnImmutableStoreConflicts.
 		"StoreCarrierIntoParamFieldMovesComponent": {
 			src: `
 				fn f(p: &mut {node: {peer: &mut {value: number}}}) {
@@ -526,6 +526,7 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 					val y = b
 				}
 			`,
+			want:  []string{"5:14-5:15: cannot move 'b' while it is borrowed"},
 			types: map[string]string{"f": "fn (p: &mut {node: {peer: &mut {value: number}}}) -> undefined"},
 		},
 		// Auto-borrowing a local into a `&mut` parameter is sound: the parameter borrows
