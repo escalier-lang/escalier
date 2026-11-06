@@ -2108,7 +2108,10 @@ type NotConstructibleError struct {
 func (e *NotConstructibleError) Span() ast.Span      { return e.Node.Span() }
 func (e *NotConstructibleError) Related() []ast.Span { return nil }
 func (e *NotConstructibleError) Message() string {
-	return fmt.Sprintf("`%s` cannot be constructed because it declares no public constructor", e.Class)
+	// The class renders the way a type naming it does, so a package class reads `ImageBitmap`
+	// rather than under its registry name.
+	name := soltype.Print(&soltype.ClassType{Name: e.Class})
+	return fmt.Sprintf("`%s` cannot be constructed because it declares no public constructor", name)
 }
 
 // SubclassConstructorRequiredError fires when a class with an `extends` clause

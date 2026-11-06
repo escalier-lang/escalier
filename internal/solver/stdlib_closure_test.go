@@ -952,3 +952,65 @@ func mustScanPackageFiles(t *testing.T, dir string) []packageFileStamp {
 	require.NoError(t, err)
 	return stamps
 }
+
+// TestTheCommittedTreeConstructsOnlyWhatWebIDLDoes covers the constructors the committed
+// `web:dom` keeps and the ones it makes private. WebIDL gives `ImageBitmap` and
+// `MessagePort` no constructor, so building one is reported, while the platform's own ways
+// of producing them still check and the classes still narrow.
+//
+// Loading `web:dom` reports errors of its own until #2378 is fixed, so the test reads only
+// the errors the source raises and leaves the package's to that issue.
+func TestTheCommittedTreeConstructsOnlyWhatWebIDLDoes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		src  string
+		errs []string
+	}{
+		{
+			name: "an ImageBitmap cannot be constructed",
+			src:  `val b = dom.ImageBitmap()`,
+			errs: []string{"`ImageBitmap` cannot be constructed because it declares no public constructor"},
+		},
+		{
+			name: "a MessagePort cannot be constructed",
+			src:  `val p = dom.MessagePort()`,
+			errs: []string{"`MessagePort` cannot be constructed because it declares no public constructor"},
+		},
+		{
+			name: "a MessageChannel is constructed and hands out its ports",
+			src: `val channel = dom.MessageChannel()
+				val port: dom.MessagePort = channel.port1`,
+		},
+		{
+			name: "createImageBitmap produces an ImageBitmap",
+			src: `fn width(source: dom.ImageBitmapSource) -> Promise<number> {
+				return dom.createImageBitmap(source).then(fn (b: dom.ImageBitmap) -> number { return b.width })
+			}`,
+		},
+		{
+			name: "an ImageBitmap still narrows",
+			src: `fn widthOf(value: dom.ImageBitmap | string) -> number {
+				return match value { dom.ImageBitmap {width} => width, _ => 0 }
+			}`,
+		},
+		{
+			name: "a constructor WebIDL declares is kept",
+			src:  `val path = dom.Path2D()`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			res := InferModuleAgainstStdlib(parseModule(t, "import \"web:dom\"\n"+tt.src), committedTree, Options{})
+			var errs []string
+			for _, e := range res.Errors {
+				if _, inPackage := e.(*PackageInferenceError); !inPackage {
+					errs = append(errs, e.Message())
+				}
+			}
+			require.Equal(t, tt.errs, errs)
+		})
+	}
+}

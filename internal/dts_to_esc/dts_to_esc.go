@@ -19,6 +19,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/dts_parser"
 	"github.com/escalier-lang/escalier/internal/printer"
 	"github.com/escalier-lang/escalier/internal/set"
+	"github.com/escalier-lang/escalier/internal/webidl"
 	"github.com/tidwall/btree"
 )
 
@@ -94,7 +95,7 @@ type DemotedBase struct {
 //   - Records every singleton member it skipped because the member's
 //     key has no plain-name form (see StandaloneModule.KeyDrops).
 func ConvertToStandaloneModule(dtsModule *dts_parser.Module, facts *ReceiverFacts) (*StandaloneModule, error) {
-	return convertStandaloneModule(dtsModule, facts, nil, nil)
+	return convertStandaloneModule(dtsModule, facts, nil, nil, nil)
 }
 
 // convertStandaloneModule is ConvertToStandaloneModule with the constructor interfaces fused
@@ -107,6 +108,7 @@ func convertStandaloneModule(
 	facts *ReceiverFacts,
 	treeConsumedCtor map[string]string,
 	treeClassNames set.Set[string],
+	webIDL map[string]webidl.Definition,
 ) (*StandaloneModule, error) {
 	// TypeScript merges same-named declarations, and every rule below reads one
 	// declaration per name. detectTrios resolves `FooConstructor` through a single
@@ -121,7 +123,8 @@ func convertStandaloneModule(
 	stmts := mergeDecls(liftGlobals(dtsModule.Statements))
 	trios := detectTrios(stmts)
 	cctx := &convertCtx{
-		facts: facts,
+		facts:  facts,
+		webIDL: webIDL,
 		// A bucket may extend a class another bucket declares, so this reads
 		// every name the tree turns into a class, not only its own.
 		classNames: classNamesFrom(stmts, trios).Union(treeClassNames),
@@ -1375,8 +1378,16 @@ func fuseTrio(
 		span, nameSpan = convertSpan(info.instance.Span()), convertSpan(info.instance.Name.Span())
 	}
 
+	// TypeScript gives nearly every web interface a construct signature, and most of them
+	// throw `TypeError: Illegal constructor` at runtime. WebIDL says which are real. One that
+	// is not keeps its class value for `instanceof` and gets a private constructor instead,
+	// which makes the class non-constructible.
+	privateCtor := cctx.unconstructible(qualifiedName(nsPath, className))
 	for _, m := range info.ctorMembers {
 		if cs, ok := m.(*dts_parser.ConstructSignature); ok {
+			if privateCtor {
+				continue
+			}
 			ctor, err := constructSignatureToCtorElem(cs)
 			if err != nil {
 				return nil, err
@@ -1391,6 +1402,9 @@ func fuseTrio(
 		if elem != nil {
 			body = append(body, elem)
 		}
+	}
+	if privateCtor {
+		body = append(body, privateConstructorElem(nameSpan))
 	}
 
 	// An Escalier class extends a class and implements interfaces, so the
@@ -1704,6 +1718,18 @@ func constructSignatureToCtorElem(cs *dts_parser.ConstructSignature) (*ast.Const
 	}
 	elem.SetDoc(cs.Doc())
 	return elem, nil
+}
+
+// privateConstructorElem returns `private constructor(&mut self)` spanning span.
+func privateConstructorElem(span ast.Span) *ast.ConstructorElem {
+	selfPat := ast.NewIdentPat("self", true, nil, nil, span)
+	selfParam := &ast.Param{Pattern: selfPat}
+	return &ast.ConstructorElem{
+		Fn:       ast.NewFuncExpr(nil, nil, []*ast.Param{selfParam}, nil, nil, false, nil, span),
+		Receiver: &ast.MethodReceiver{Mut: true, Span_: span},
+		Private:  true,
+		Span_:    span,
+	}
 }
 
 // propertyKeyName extracts the textual name from a dts PropertyKey,

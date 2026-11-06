@@ -14,6 +14,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/dts_parser"
 	"github.com/escalier-lang/escalier/internal/printer"
 	"github.com/escalier-lang/escalier/internal/set"
+	"github.com/escalier-lang/escalier/internal/webidl"
 	"github.com/tidwall/btree"
 )
 
@@ -512,7 +513,7 @@ func mergeDecls(stmts []dts_parser.Statement) []dts_parser.Statement {
 func ConvertBucket(stmts []dts_parser.Statement, facts *ReceiverFacts) (*StandaloneModule, error) {
 	stmts, twins := fuseReadonlyTwins(stmts)
 	classNames := withTwinNames(ClassNames(stmts), twins)
-	mod, err := convertFusedBucket(stmts, twins, twins, ConsumedCtorNames(stmts), classNames, facts)
+	mod, err := convertFusedBucket(stmts, twins, twins, ConsumedCtorNames(stmts), classNames, facts, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -551,8 +552,9 @@ func convertFusedBucket(
 	consumedCtor map[string]string,
 	classNames set.Set[string],
 	facts *ReceiverFacts,
+	webIDL map[string]webidl.Definition,
 ) (*StandaloneModule, error) {
-	mod, err := convertStandaloneModule(&dts_parser.Module{Statements: stmts}, facts, consumedCtor, classNames)
+	mod, err := convertStandaloneModule(&dts_parser.Module{Statements: stmts}, facts, consumedCtor, classNames, webIDL)
 	if err != nil {
 		return nil, err
 	}
@@ -957,7 +959,13 @@ func ConvertBuckets(result *PartitionResult, facts *ReceiverFacts) (map[string]*
 
 	mods := make(map[string]*StandaloneModule, len(result.Buckets))
 	for _, uri := range uris {
-		mod, err := convertFusedBucket(fused[uri], own[uri], all, consumedCtor, classNames, facts)
+		// A `web:*` package declares the web platform's interfaces, whose WebIDL says
+		// which ones a program may construct. No other package's names are WebIDL's.
+		var webIDL map[string]webidl.Definition
+		if strings.HasPrefix(uri, "web:") {
+			webIDL = webidl.Definitions
+		}
+		mod, err := convertFusedBucket(fused[uri], own[uri], all, consumedCtor, classNames, facts, webIDL)
 		if err != nil {
 			return nil, &BucketConvertError{pkgError{uri}, err}
 		}

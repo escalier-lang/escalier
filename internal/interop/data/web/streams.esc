@@ -173,7 +173,7 @@ export declare class ReadableByteStreamController {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableByteStreamController/error) */
     error(&mut self, e?: unknown) -> undefined,
     static prototype: ReadableByteStreamController,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -230,7 +230,7 @@ export declare class ReadableStreamBYOBRequest {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBRequest/respondWithNewView) */
     respondWithNewView(&mut self, view: &mut typed_arrays.ArrayBufferView) -> undefined,
     static prototype: ReadableStreamBYOBRequest,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultController) */
@@ -245,7 +245,7 @@ export declare class ReadableStreamDefaultController<R = any> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultController/error) */
     error(&mut self, e?: unknown) -> undefined,
     static prototype: ReadableStreamDefaultController,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultReader) */
@@ -307,7 +307,7 @@ export declare class TransformStreamDefaultController<O = any> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TransformStreamDefaultController/terminate) */
     terminate(&mut self) -> undefined,
     static prototype: TransformStreamDefaultController,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -341,7 +341,7 @@ export declare class WritableStreamDefaultController {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultController/error) */
     error(&mut self, e?: unknown) -> undefined,
     static prototype: WritableStreamDefaultController,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
