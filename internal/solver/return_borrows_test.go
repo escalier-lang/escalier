@@ -301,8 +301,8 @@ func TestReturnValueBorrows(t *testing.T) {
 		// A consuming argument leaves a second path behind too. Here the path belongs to the
 		// callee rather than the caller: an owned parameter takes the object and everything it
 		// reaches. Both paths to b are mutable, so the return is accepted the way it is beside a
-		// mutable store. take's signature gives the borrow in x no lifetime that outlives the
-		// call, and a bodyless signature is taken at its word. Nothing reaches b once take
+		// mutable store. `take`'s signature gives the borrow in x no lifetime that outlives the
+		// call, and a bodyless signature is taken at its word. Nothing reaches b once `take`
 		// returns, so the returned `&mut b` ends with the frame and D16 makes it owned.
 		//
 		// #1539 covers the uses this move ought to reject and does not. A read or a re-borrow
@@ -729,7 +729,7 @@ func TestConnectedComponentMove(t *testing.T) {
 		},
 		// An escape through a consuming call inside a return is a component move at the
 		// argument: the literal owning `&mut b` moves into id, b reachable only through it.
-		// No escape is reported at either the argument or the enclosing return. id's signature
+		// No escape is reported at either the argument or the enclosing return. `id`'s signature
 		// ties the borrow in its result to the one in its argument, so the borrow in f's return
 		// is foreign under D16 and stays a borrow.
 		"ComponentMoveThroughConsumingCall": {
