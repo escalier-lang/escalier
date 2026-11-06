@@ -82,6 +82,14 @@ For each one, record the file and a one-line statement of what a human reviewer 
    - **Findings:** each finding of this run on one line with its file and line, including the ones skipped in item 1. Mark a skipped one as already posted. When nothing survives, say that the review found no issues.
    - **Moved code:** each trivial move from step 4 on one line. Leave the section out when there are none.
    - **Needs human review:** each high-risk change from step 5 on one line. Leave the section out when there are none.
+
+   Write each file a line names as a link to that file's changes in the PR. GitHub's anchor for a file is `diff-` followed by the SHA-256 of its path. Get the hash with `printf '%s' '<path>' | sha256sum`, then write the link as:
+
+   ```markdown
+   [`<path>:<line>`](https://github.com/<repo>/pull/<number>/files#diff-<hash>R<line>)
+   ```
+
+   `R<line>` points at a line of the new file. Leave off `R<line>` when the entry names no line, and use `L<line>` for a line that exists only in the old file, such as the old location of a moved function.
 5. Post the summary in place of any earlier one. List the ids of the comments that carry the marker, oldest first:
 
    ```bash
@@ -91,18 +99,18 @@ For each one, record the file and a one-line statement of what a human reviewer 
 
    The earlier summary is the last id it prints. The lookup matches on the marker alone, so it finds the summary whichever account posted it.
 
-   Pipe the summary in on standard input, as below. The job refuses a multi-line summary passed as a command argument, and it refuses writes to a file outside the working directory.
+   Write the summary with the Write tool to `.pr-review-summary.md` in the working directory, then pass that file to `gh`. Keep the summary text out of the command line. The job refuses a command whose arguments contain text that looks like shell syntax, and a summary that quotes code often does. It also refuses writes outside the working directory.
 
    When that prints an id, replace that comment's body:
 
    ```bash
-   printf '%s\n' '<!-- pr-review-summary -->' '...' | gh api -X PATCH repos/<repo>/issues/comments/<id> -F body=@-
+   gh api -X PATCH repos/<repo>/issues/comments/<id> -F body=@.pr-review-summary.md
    ```
 
    When it prints nothing, or the edit fails because another account owns that comment, post a new comment:
 
    ```bash
-   printf '%s\n' '<!-- pr-review-summary -->' '...' | gh pr comment <number> --body-file -
+   gh pr comment <number> --body-file .pr-review-summary.md
    ```
 
 Write every comment by the prose rules in `CLAUDE.md`. Don't send the review as a chat message, since only GitHub comments reach the PR.
