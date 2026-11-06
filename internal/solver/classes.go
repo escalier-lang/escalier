@@ -109,6 +109,10 @@ type ClassDef struct {
 	// rule read it.
 	Body *soltype.ObjectType
 
+	// NotConstructible is true for a `declare` class whose every constructor is
+	// private. Its value carries no constructor, and constructing it is reported.
+	NotConstructible bool
+
 	// Static is the constructor-plus-static-member view — the value side of the dual
 	// binding. B1 stores static members here for later phases; the callable
 	// constructor itself is the value binding's FuncType.
@@ -2570,6 +2574,16 @@ func (c *checker) classValueMember(lvl int, blame ast.Node, name string, carrier
 	return c.memberValue(lvl, blame, c.instantiateMethodLifetimes(lvl, blame, nil, member)), true
 }
 
+// notConstructible reports whether obj is the value of a class whose definition is
+// NotConstructible.
+func (c *checker) notConstructible(obj *soltype.ObjectType) bool {
+	if obj.Class == "" {
+		return false
+	}
+	def, ok := c.ctx.classDef(obj.Class)
+	return ok && def.NotConstructible
+}
+
 // classValueCarrier resolves a receiver to the class-value object it reads as: an object
 // carrying a ConstructorElem directly, or a binding var whose lower bounds carry one, the
 // same look-through classCarrier uses for an instance. A var with two different class-value
@@ -2580,6 +2594,12 @@ func (c *checker) classValueCarrier(t soltype.Type) (*soltype.ObjectType, bool) 
 		obj, ok := c.memberCarrier(x).(*soltype.ObjectType)
 		if !ok {
 			return nil, false
+		}
+		// A `declare` class whose constructors are all private carries neither unnamed
+		// callable member, so its definition is what marks its value as one. Its statics
+		// are still read through it.
+		if c.notConstructible(obj) {
+			return obj, true
 		}
 		// Either unnamed callable member marks the object as a class value. A class
 		// declaring a call signature and no constructor carries only the former, which is

@@ -1169,7 +1169,7 @@ export declare class AbstractRange {
      */
     readonly startOffset: number,
     static prototype: AbstractRange,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface AbstractWorkerEventMap {
@@ -1254,7 +1254,7 @@ export declare class AnimationEffect {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AnimationEffect/updateTiming) */
     updateTiming(&mut self, timing?: &mut OptionalEffectTiming) -> undefined,
     static prototype: AnimationEffect,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -1298,7 +1298,7 @@ export declare class AnimationTimeline {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AnimationTimeline/currentTime) */
     readonly currentTime: CSSNumberish | null,
     static prototype: AnimationTimeline,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -1328,7 +1328,7 @@ export declare class Attr extends Node {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Attr/value) */
     value: string,
     static prototype: Attr,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BarProp) */
@@ -1337,7 +1337,7 @@ export declare class BarProp {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BarProp/visible) */
     readonly visible: boolean,
     static prototype: BarProp,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -1354,7 +1354,7 @@ export declare class BeforeUnloadEvent extends Event {
      */
     returnValue: any,
     static prototype: BeforeUnloadEvent,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BlobEvent) */
@@ -1414,7 +1414,7 @@ export declare class BroadcastChannel extends EventTarget {
 @js("CDATASection")
 export declare class CDATASection extends Text {
     static prototype: CDATASection,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSAnimation) */
@@ -1427,7 +1427,7 @@ export declare class CSSAnimation extends Animation {
     removeEventListener<K: keyof AnimationEventMap>(&mut self, type: K, listener: fn (this: CSSAnimation, ev: AnimationEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: CSSAnimation,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -1440,7 +1440,7 @@ export declare class CSSConditionRule extends CSSGroupingRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSConditionRule/conditionText) */
     readonly conditionText: string,
     static prototype: CSSConditionRule,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSContainerRule) */
@@ -1451,7 +1451,7 @@ export declare class CSSContainerRule extends CSSConditionRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSContainerRule/containerQuery) */
     readonly containerQuery: string,
     static prototype: CSSContainerRule,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSCounterStyleRule) */
@@ -1480,7 +1480,7 @@ export declare class CSSCounterStyleRule extends CSSRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSCounterStyleRule/system) */
     system: string,
     static prototype: CSSCounterStyleRule,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSFontFaceRule) */
@@ -1490,7 +1490,7 @@ export declare class CSSFontFaceRule extends CSSRule {
     get style(&self) -> CSSStyleDeclaration,
     set style(&mut self, cssText: string),
     static prototype: CSSFontFaceRule,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSFontFeatureValuesRule) */
@@ -1499,7 +1499,7 @@ export declare class CSSFontFeatureValuesRule extends CSSRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSFontFeatureValuesRule/fontFamily) */
     fontFamily: string,
     static prototype: CSSFontFeatureValuesRule,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSFontPaletteValuesRule) */
@@ -1514,7 +1514,7 @@ export declare class CSSFontPaletteValuesRule extends CSSRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSFontPaletteValuesRule/overrideColors) */
     readonly overrideColors: string,
     static prototype: CSSFontPaletteValuesRule,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -1531,14 +1531,14 @@ export declare class CSSGroupingRule extends CSSRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSGroupingRule/insertRule) */
     insertRule(&mut self, rule: string, index?: number) -> number,
     static prototype: CSSGroupingRule,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSImageValue) */
 @js("CSSImageValue")
 export declare class CSSImageValue extends CSSStyleValue {
     static prototype: CSSImageValue,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSImportRule) */
@@ -1556,7 +1556,7 @@ export declare class CSSImportRule extends CSSRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSImportRule/supportsText) */
     readonly supportsText: string | null,
     static prototype: CSSImportRule,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -1572,7 +1572,7 @@ export declare class CSSKeyframeRule extends CSSRule {
     get style(&self) -> CSSStyleDeclaration,
     set style(&mut self, cssText: string),
     static prototype: CSSKeyframeRule,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -1596,7 +1596,7 @@ export declare class CSSKeyframesRule extends CSSRule {
     findRule(&self, select: string) -> CSSKeyframeRule | null,
     [Symbol.iterator](&self) -> ArrayIterator<CSSKeyframeRule>,
     static prototype: CSSKeyframesRule,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSKeywordValue) */
@@ -1614,7 +1614,7 @@ export declare class CSSLayerBlockRule extends CSSGroupingRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSLayerBlockRule/name) */
     readonly name: string,
     static prototype: CSSLayerBlockRule,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSLayerStatementRule) */
@@ -1623,7 +1623,7 @@ export declare class CSSLayerStatementRule extends CSSRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSLayerStatementRule/nameList) */
     readonly nameList: Array<string>,
     static prototype: CSSLayerStatementRule,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 @js("CSSMathClamp")
@@ -1695,7 +1695,7 @@ export declare class CSSMathValue extends CSSNumericValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathValue/operator) */
     readonly operator: CSSMathOperator,
     static prototype: CSSMathValue,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMatrixComponent) */
@@ -1718,7 +1718,7 @@ export declare class CSSMediaRule extends CSSConditionRule {
     get media(&self) -> MediaList,
     set media(&mut self, mediaText: string),
     static prototype: CSSMediaRule,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -1733,7 +1733,7 @@ export declare class CSSNamespaceRule extends CSSRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNamespaceRule/prefix) */
     readonly prefix: string,
     static prototype: CSSNamespaceRule,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNestedDeclarations) */
@@ -1743,7 +1743,7 @@ export declare class CSSNestedDeclarations extends CSSRule {
     get style(&self) -> CSSStyleDeclaration,
     set style(&mut self, cssText: string),
     static prototype: CSSNestedDeclarations,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNumericArray) */
@@ -1757,7 +1757,7 @@ export declare class CSSNumericArray {
     keys(&self) -> ArrayIterator<number>,
     values(&self) -> ArrayIterator<CSSNumericValue>,
     static prototype: CSSNumericArray,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNumericValue) */
@@ -1784,9 +1784,9 @@ export declare class CSSNumericValue extends CSSStyleValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNumericValue/type) */
     type(&mut self) -> CSSNumericType,
     static prototype: CSSNumericValue,
-    constructor(&mut self),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNumericValue/parse_static) */
-    static parse(cssText: string) -> CSSNumericValue
+    static parse(cssText: string) -> CSSNumericValue,
+    private constructor(&mut self)
 }
 
 /**
@@ -1802,7 +1802,7 @@ export declare class CSSPageRule extends CSSGroupingRule {
     get style(&self) -> CSSStyleDeclaration,
     set style(&mut self, cssText: string),
     static prototype: CSSPageRule,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSPerspective) */
@@ -1826,7 +1826,7 @@ export declare class CSSPropertyRule extends CSSRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSPropertyRule/syntax) */
     readonly syntax: string,
     static prototype: CSSPropertyRule,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSRotate) */
@@ -1877,7 +1877,6 @@ export declare class CSSRule {
     readonly COUNTER_STYLE_RULE: 11,
     readonly FONT_FEATURE_VALUES_RULE: 14,
     static prototype: CSSRule,
-    constructor(&mut self),
     static readonly STYLE_RULE: 1,
     static readonly CHARSET_RULE: 2,
     static readonly IMPORT_RULE: 3,
@@ -1889,7 +1888,8 @@ export declare class CSSRule {
     static readonly KEYFRAME_RULE: 8,
     static readonly SUPPORTS_RULE: 12,
     static readonly COUNTER_STYLE_RULE: 11,
-    static readonly FONT_FEATURE_VALUES_RULE: 14
+    static readonly FONT_FEATURE_VALUES_RULE: 14,
+    private constructor(&mut self)
 }
 
 /**
@@ -1905,7 +1905,7 @@ export declare class CSSRuleList {
     item(&mut self, index: number) -> CSSRule | null,
     [Symbol.iterator](&self) -> ArrayIterator<CSSRule>,
     static prototype: CSSRuleList,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSScale) */
@@ -1929,7 +1929,7 @@ export declare class CSSScopeRule extends CSSGroupingRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSScopeRule/start) */
     readonly start: string | null,
     static prototype: CSSScopeRule,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSSkew) */
@@ -1965,7 +1965,7 @@ export declare class CSSSkewY extends CSSTransformComponent {
 @js("CSSStartingStyleRule")
 export declare class CSSStartingStyleRule extends CSSGroupingRule {
     static prototype: CSSStartingStyleRule,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -3277,7 +3277,7 @@ export declare class CSSStyleDeclaration {
     setProperty(&mut self, property: string, value: string | null, priority?: string) -> undefined,
     [Symbol.iterator](&self) -> ArrayIterator<string>,
     static prototype: CSSStyleDeclaration,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -3295,7 +3295,7 @@ export declare class CSSStyleRule extends CSSGroupingRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSStyleRule/styleMap) */
     readonly styleMap: StylePropertyMap,
     static prototype: CSSStyleRule,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -3344,11 +3344,11 @@ export declare class CSSStyleSheet extends StyleSheet {
 export declare class CSSStyleValue {
     toString(&self) -> string,
     static prototype: CSSStyleValue,
-    constructor(&mut self),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSStyleValue/parse_static) */
     static parse(property: string, cssText: string) -> CSSStyleValue,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSStyleValue/parseAll_static) */
-    static parseAll(property: string, cssText: string) -> Array<CSSStyleValue>
+    static parseAll(property: string, cssText: string) -> Array<CSSStyleValue>,
+    private constructor(&mut self)
 }
 
 /**
@@ -3359,7 +3359,7 @@ export declare class CSSStyleValue {
 @js("CSSSupportsRule")
 export declare class CSSSupportsRule extends CSSConditionRule {
     static prototype: CSSSupportsRule,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSTransformComponent) */
@@ -3371,7 +3371,7 @@ export declare class CSSTransformComponent {
     toMatrix(&self) -> DOMMatrix,
     toString(&self) -> string,
     static prototype: CSSTransformComponent,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSTransformValue) */
@@ -3402,7 +3402,7 @@ export declare class CSSTransition extends Animation {
     removeEventListener<K: keyof AnimationEventMap>(&mut self, type: K, listener: fn (this: CSSTransition, ev: AnimationEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: CSSTransition,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSTranslate) */
@@ -3459,7 +3459,7 @@ export declare class CSSViewTransitionRule extends CSSRule {
     readonly navigation: string,
     readonly types: Array<string>,
     static prototype: CSSViewTransitionRule,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasCaptureMediaStreamTrack) */
@@ -3474,7 +3474,7 @@ export declare class CanvasCaptureMediaStreamTrack extends MediaStreamTrack {
     removeEventListener<K: keyof MediaStreamTrackEventMap>(&mut self, type: K, listener: fn (this: CanvasCaptureMediaStreamTrack, ev: MediaStreamTrackEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: CanvasCaptureMediaStreamTrack,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface CanvasCompositing {
@@ -3547,7 +3547,7 @@ export declare class CanvasGradient {
      */
     addColorStop(&mut self, offset: number, color: string) -> undefined,
     static prototype: CanvasGradient,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface CanvasImageData {
@@ -3626,7 +3626,7 @@ export declare class CanvasPattern {
      */
     setTransform(&mut self, transform?: &mut DOMMatrix2DInit) -> undefined,
     static prototype: CanvasPattern,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface CanvasRect {
@@ -3648,7 +3648,7 @@ export declare class CanvasRenderingContext2D implements CanvasCompositing, Canv
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/canvas) */
     readonly canvas: HTMLCanvasElement,
     static prototype: CanvasRenderingContext2D,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface CanvasSettings {
@@ -3741,7 +3741,7 @@ export declare class CaretPosition {
     readonly offsetNode: Node,
     getClientRect(&self) -> DOMRect | null,
     static prototype: CaretPosition,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -3767,7 +3767,7 @@ export declare class CharacterData extends Node implements ChildNode, NonDocumen
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CharacterData/substringData) */
     substringData(&mut self, offset: number, count: number) -> string,
     static prototype: CharacterData,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface ChildNode extends Node {
@@ -3822,7 +3822,7 @@ export declare class Clipboard extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Clipboard/writeText) */
     writeText(&mut self, data: string) -> Promise<undefined>,
     static prototype: Clipboard,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -3937,7 +3937,7 @@ export declare class CustomEvent<T = any> extends Event {
 export declare class CustomStateSet extends set.Set<string> {
     forEach(&self, callbackfn: fn (value: string, key: string, parent: &Self) -> unknown, thisArg?: unknown) -> undefined,
     static prototype: CustomStateSet,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -3960,7 +3960,7 @@ export declare class DOMImplementation {
      */
     hasFeature(&self, ...args: Array<any>) -> true,
     static prototype: DOMImplementation,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMMatrix) */
@@ -4252,7 +4252,7 @@ export declare class DOMRectList {
     item(&mut self, index: number) -> DOMRect | null,
     [Symbol.iterator](&self) -> ArrayIterator<DOMRect>,
     static prototype: DOMRectList,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMRectReadOnly) */
@@ -4309,7 +4309,7 @@ export declare class DOMStringList {
     item(&mut self, index: number) -> string | null,
     [Symbol.iterator](&self) -> ArrayIterator<string>,
     static prototype: DOMStringList,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -4320,7 +4320,7 @@ export declare class DOMStringList {
 @js("DOMStringMap")
 export declare class DOMStringMap {
     static prototype: DOMStringMap,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -4415,7 +4415,7 @@ export declare class DOMTokenList {
     keys(&self) -> ArrayIterator<number>,
     values(&self) -> ArrayIterator<string>,
     static prototype: DOMTokenList,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -4525,7 +4525,7 @@ export declare class DataTransferItem {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DataTransferItem/webkitGetAsEntry) */
     webkitGetAsEntry(&mut self) -> FileSystemEntry | null,
     static prototype: DataTransferItem,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -4562,7 +4562,7 @@ export declare class DataTransferItemList {
     remove(&mut self, index: number) -> undefined,
     [Symbol.iterator](&self) -> ArrayIterator<DataTransferItem>,
     static prototype: DataTransferItemList,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -5373,7 +5373,7 @@ export declare class DocumentType extends Node implements ChildNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DocumentType/systemId) */
     readonly systemId: string,
     static prototype: DocumentType,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -5665,7 +5665,7 @@ export declare class Element extends Node implements ARIAMixin, Animatable, Chil
     removeEventListener<K: keyof ElementEventMap>(&mut self, type: K, listener: fn (this: Element, ev: ElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: Element,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface ElementCSSInlineStyle {
@@ -5755,7 +5755,7 @@ export declare class ElementInternals implements ARIAMixin {
      */
     setValidity(&mut self, flags?: &mut ValidityStateFlags, message?: string, anchor?: &mut HTMLElement) -> undefined,
     static prototype: ElementInternals,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -5842,7 +5842,7 @@ export declare class External {
     /** @deprecated */
     IsSearchProviderInstalled(&mut self) -> undefined,
     static prototype: External,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -5858,7 +5858,7 @@ export declare class FileList {
     item(&mut self, index: number) -> file.File | null,
     [Symbol.iterator](&self) -> ArrayIterator<file.File>,
     static prototype: FileList,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface FileReaderEventMap {
@@ -5931,7 +5931,7 @@ export declare class FileSystem {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystem/root) */
     readonly root: FileSystemDirectoryEntry,
     static prototype: FileSystem,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemDirectoryEntry) */
@@ -5944,7 +5944,7 @@ export declare class FileSystemDirectoryEntry extends FileSystemEntry {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemDirectoryEntry/getFile) */
     getFile(&self, path?: string | null, options?: &mut FileSystemFlags, successCallback?: FileSystemEntryCallback, errorCallback?: ErrorCallback) -> undefined,
     static prototype: FileSystemDirectoryEntry,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -5968,7 +5968,7 @@ export declare class FileSystemDirectoryHandle extends FileSystemHandle {
     keys(&self) -> FileSystemDirectoryHandleAsyncIterator<string>,
     values(&self) -> FileSystemDirectoryHandleAsyncIterator<FileSystemHandle>,
     static prototype: FileSystemDirectoryHandle,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemDirectoryReader) */
@@ -5977,7 +5977,7 @@ export declare class FileSystemDirectoryReader {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemDirectoryReader/readEntries) */
     readEntries(&mut self, successCallback: FileSystemEntriesCallback, errorCallback?: ErrorCallback) -> undefined,
     static prototype: FileSystemDirectoryReader,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemEntry) */
@@ -5996,7 +5996,7 @@ export declare class FileSystemEntry {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemEntry/getParent) */
     getParent(&self, successCallback?: FileSystemEntryCallback, errorCallback?: ErrorCallback) -> undefined,
     static prototype: FileSystemEntry,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemFileEntry) */
@@ -6005,7 +6005,7 @@ export declare class FileSystemFileEntry extends FileSystemEntry {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemFileEntry/file) */
     file(&mut self, successCallback: FileCallback, errorCallback?: ErrorCallback) -> undefined,
     static prototype: FileSystemFileEntry,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -6021,7 +6021,7 @@ export declare class FileSystemFileHandle extends FileSystemHandle {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemFileHandle/getFile) */
     getFile(&self) -> Promise<file.File>,
     static prototype: FileSystemFileHandle,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -6038,7 +6038,7 @@ export declare class FileSystemHandle {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemHandle/isSameEntry) */
     isSameEntry(&self, other: &mut FileSystemHandle) -> Promise<boolean>,
     static prototype: FileSystemHandle,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -6055,7 +6055,7 @@ export declare class FileSystemWritableFileStream extends streams.WritableStream
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemWritableFileStream/write) */
     write(&mut self, data: FileSystemWriteChunkType) -> Promise<undefined>,
     static prototype: FileSystemWritableFileStream,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -6133,7 +6133,7 @@ export declare class FontFaceSet extends EventTarget implements set.Set<FontFace
     removeEventListener<K: keyof FontFaceSetEventMap>(&mut self, type: K, listener: fn (this: FontFaceSet, ev: FontFaceSetEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: FontFaceSet,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FontFaceSetLoadEvent) */
@@ -6167,7 +6167,7 @@ export declare class FormDataEvent extends Event {
 @js("FragmentDirective")
 export declare class FragmentDirective {
     static prototype: FragmentDirective,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -6204,7 +6204,7 @@ export declare class Gamepad {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Gamepad/vibrationActuator) */
     readonly vibrationActuator: GamepadHapticActuator,
     static prototype: Gamepad,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -6221,7 +6221,7 @@ export declare class GamepadButton {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/GamepadButton/value) */
     readonly value: number,
     static prototype: GamepadButton,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -6249,7 +6249,7 @@ export declare class GamepadHapticActuator {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/GamepadHapticActuator/reset) */
     reset(&mut self) -> Promise<GamepadHapticsResult>,
     static prototype: GamepadHapticActuator,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -6266,7 +6266,7 @@ export declare class Geolocation {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Geolocation/watchPosition) */
     watchPosition(&mut self, successCallback: PositionCallback, errorCallback?: PositionErrorCallback | null, options?: &mut PositionOptions) -> number,
     static prototype: Geolocation,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -6293,7 +6293,7 @@ export declare class GeolocationCoordinates {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/GeolocationCoordinates/toJSON) */
     toJSON(&self) -> any,
     static prototype: GeolocationCoordinates,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -6310,7 +6310,7 @@ export declare class GeolocationPosition {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/GeolocationPosition/toJSON) */
     toJSON(&self) -> any,
     static prototype: GeolocationPosition,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/GeolocationPositionError) */
@@ -6324,10 +6324,10 @@ export declare class GeolocationPositionError {
     readonly POSITION_UNAVAILABLE: 2,
     readonly TIMEOUT: 3,
     static prototype: GeolocationPositionError,
-    constructor(&mut self),
     static readonly PERMISSION_DENIED: 1,
     static readonly POSITION_UNAVAILABLE: 2,
-    static readonly TIMEOUT: 3
+    static readonly TIMEOUT: 3,
+    private constructor(&mut self)
 }
 
 export declare interface GlobalEventHandlersEventMap {
@@ -6908,7 +6908,7 @@ export declare class HTMLAllCollection {
     namedItem(&mut self, name: string) -> HTMLCollection | Element | null,
     [Symbol.iterator](&self) -> ArrayIterator<Element>,
     static prototype: HTMLAllCollection,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -7319,7 +7319,7 @@ export declare class HTMLCollection implements HTMLCollectionBase {
      */
     namedItem(&mut self, name: string) -> Element | null,
     static prototype: HTMLCollection,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface HTMLCollectionOf<T: Element> extends HTMLCollectionBase {
@@ -7705,7 +7705,7 @@ export declare class HTMLFormControlsCollection implements HTMLCollectionBase {
      */
     namedItem(&mut self, name: string) -> RadioNodeList | Element | null,
     static prototype: HTMLFormControlsCollection,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -9082,7 +9082,6 @@ export declare class HTMLMediaElement extends HTMLElement {
     removeEventListener<K: keyof HTMLMediaElementEventMap>(&mut self, type: K, listener: fn (this: HTMLMediaElement, ev: HTMLMediaElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: HTMLMediaElement,
-    constructor(&mut self),
     static readonly NETWORK_EMPTY: 0,
     static readonly NETWORK_IDLE: 1,
     static readonly NETWORK_LOADING: 2,
@@ -9091,7 +9090,8 @@ export declare class HTMLMediaElement extends HTMLElement {
     static readonly HAVE_METADATA: 1,
     static readonly HAVE_CURRENT_DATA: 2,
     static readonly HAVE_FUTURE_DATA: 3,
-    static readonly HAVE_ENOUGH_DATA: 4
+    static readonly HAVE_ENOUGH_DATA: 4,
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLMenuElement) */
@@ -9494,7 +9494,7 @@ export declare class HTMLOptionsCollection implements HTMLCollectionOf<HTMLOptio
      */
     remove(&mut self, index: number) -> undefined,
     static prototype: HTMLOptionsCollection,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface HTMLOrSVGElement {
@@ -10840,7 +10840,7 @@ export declare class HTMLUnknownElement extends HTMLElement {
     removeEventListener<K: keyof HTMLElementEventMap>(&mut self, type: K, listener: fn (this: HTMLUnknownElement, ev: HTMLElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: HTMLUnknownElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface HTMLVideoElementEventMap extends HTMLMediaElementEventMap {
@@ -10949,7 +10949,7 @@ export declare class Highlight extends set.Set<AbstractRange> {
 export declare class HighlightRegistry extends map.Map<string, Highlight> {
     forEach(&self, callbackfn: fn (value: Highlight, key: string, parent: &Self) -> unknown, thisArg?: unknown) -> undefined,
     static prototype: HighlightRegistry,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -10976,7 +10976,7 @@ export declare class History {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/History/replaceState) */
     replaceState(&mut self, data: unknown, unused: string, url?: string | url.URL | null) -> undefined,
     static prototype: History,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IdleDeadline) */
@@ -10987,7 +10987,7 @@ export declare class IdleDeadline {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IdleDeadline/timeRemaining) */
     timeRemaining(&mut self) -> DOMHighResTimeStamp,
     static prototype: IdleDeadline,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageBitmap) */
@@ -11012,7 +11012,7 @@ export declare class ImageBitmap {
      */
     close(&mut self) -> undefined,
     static prototype: ImageBitmap,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageBitmapRenderingContext) */
@@ -11031,7 +11031,7 @@ export declare class ImageBitmapRenderingContext {
      */
     transferFromImageBitmap(&mut self, bitmap: ImageBitmap | null) -> undefined,
     static prototype: ImageBitmapRenderingContext,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -11076,7 +11076,7 @@ export declare class InputDeviceInfo extends MediaDeviceInfo {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/InputDeviceInfo/getCapabilities) */
     getCapabilities(&self) -> MediaTrackCapabilities,
     static prototype: InputDeviceInfo,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/InputEvent) */
@@ -11241,7 +11241,7 @@ export declare class LargestContentfulPaint extends performance.PerformanceEntry
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/LargestContentfulPaint/toJSON) */
     toJSON(&self) -> any,
     static prototype: LargestContentfulPaint,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface LinkStyle {
@@ -11352,7 +11352,7 @@ export declare class Location {
      */
     replace(&mut self, url: string | url.URL) -> undefined,
     static prototype: Location,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -11367,7 +11367,7 @@ export declare class Lock {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Lock/name) */
     readonly name: string,
     static prototype: Lock,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -11383,7 +11383,7 @@ export declare class LockManager {
     request(&mut self, name: string, callback: LockGrantedCallback) -> Promise<any>,
     request(&mut self, name: string, options: &mut LockOptions, callback: LockGrantedCallback) -> Promise<any>,
     static prototype: LockManager,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface MIDIAccessEventMap {
@@ -11410,7 +11410,7 @@ export declare class MIDIAccess extends EventTarget {
     removeEventListener<K: keyof MIDIAccessEventMap>(&mut self, type: K, listener: fn (this: MIDIAccess, ev: MIDIAccessEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: MIDIAccess,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -11444,7 +11444,7 @@ export declare class MIDIInput extends MIDIPort {
     removeEventListener<K: keyof MIDIInputEventMap>(&mut self, type: K, listener: fn (this: MIDIInput, ev: MIDIInputEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: MIDIInput,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -11456,7 +11456,7 @@ export declare class MIDIInput extends MIDIPort {
 export declare class MIDIInputMap extends map.Map<string, MIDIInput> {
     forEach(&self, callbackfn: fn (value: MIDIInput, key: string, parent: &Self) -> unknown, thisArg?: unknown) -> undefined,
     static prototype: MIDIInputMap,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -11488,7 +11488,7 @@ export declare class MIDIOutput extends MIDIPort {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MIDIOutput/send) */
     send(&mut self, data: &mut Iterable<number>, timestamp?: DOMHighResTimeStamp) -> undefined,
     static prototype: MIDIOutput,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -11500,7 +11500,7 @@ export declare class MIDIOutput extends MIDIPort {
 export declare class MIDIOutputMap extends map.Map<string, MIDIOutput> {
     forEach(&self, callbackfn: fn (value: MIDIOutput, key: string, parent: &Self) -> unknown, thisArg?: unknown) -> undefined,
     static prototype: MIDIOutputMap,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface MIDIPortEventMap {
@@ -11539,7 +11539,7 @@ export declare class MIDIPort extends EventTarget {
     removeEventListener<K: keyof MIDIPortEventMap>(&mut self, type: K, listener: fn (this: MIDIPort, ev: MIDIPortEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: MIDIPort,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface MathMLElementEventMap extends ElementEventMap, GlobalEventHandlersEventMap {}
@@ -11552,7 +11552,7 @@ export declare class MathMLElement extends Element implements ElementCSSInlineSt
     removeEventListener<K: keyof MathMLElementEventMap>(&mut self, type: K, listener: fn (this: MathMLElement, ev: MathMLElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: MathMLElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaCapabilities) */
@@ -11563,7 +11563,7 @@ export declare class MediaCapabilities {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaCapabilities/encodingInfo) */
     encodingInfo(&mut self, configuration: &mut MediaEncodingConfiguration) -> Promise<MediaCapabilitiesEncodingInfo>,
     static prototype: MediaCapabilities,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -11585,7 +11585,7 @@ export declare class MediaDeviceInfo {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaDeviceInfo/toJSON) */
     toJSON(&self) -> any,
     static prototype: MediaDeviceInfo,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface MediaDevicesEventMap {
@@ -11615,7 +11615,7 @@ export declare class MediaDevices extends EventTarget {
     removeEventListener<K: keyof MediaDevicesEventMap>(&mut self, type: K, listener: fn (this: MediaDevices, ev: MediaDevicesEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: MediaDevices,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaEncryptedEvent) */
@@ -11645,11 +11645,11 @@ export declare class MediaError {
     readonly MEDIA_ERR_DECODE: 3,
     readonly MEDIA_ERR_SRC_NOT_SUPPORTED: 4,
     static prototype: MediaError,
-    constructor(&mut self),
     static readonly MEDIA_ERR_ABORTED: 1,
     static readonly MEDIA_ERR_NETWORK: 2,
     static readonly MEDIA_ERR_DECODE: 3,
-    static readonly MEDIA_ERR_SRC_NOT_SUPPORTED: 4
+    static readonly MEDIA_ERR_SRC_NOT_SUPPORTED: 4,
+    private constructor(&mut self)
 }
 
 /**
@@ -11708,7 +11708,7 @@ export declare class MediaKeySession extends EventTarget {
     removeEventListener<K: keyof MediaKeySessionEventMap>(&mut self, type: K, listener: fn (this: MediaKeySession, ev: MediaKeySessionEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: MediaKeySession,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -11731,7 +11731,7 @@ export declare class MediaKeyStatusMap {
     keys(&self) -> MediaKeyStatusMapIterator<BufferSource>,
     values(&self) -> MediaKeyStatusMapIterator<MediaKeyStatus>,
     static prototype: MediaKeyStatusMap,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -11749,7 +11749,7 @@ export declare class MediaKeySystemAccess {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaKeySystemAccess/getConfiguration) */
     getConfiguration(&self) -> MediaKeySystemConfiguration,
     static prototype: MediaKeySystemAccess,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -11767,7 +11767,7 @@ export declare class MediaKeys {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaKeys/setServerCertificate) */
     setServerCertificate(&mut self, serverCertificate: BufferSource) -> Promise<boolean>,
     static prototype: MediaKeys,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaList) */
@@ -11786,7 +11786,7 @@ export declare class MediaList {
     item(&mut self, index: number) -> string | null,
     [Symbol.iterator](&self) -> ArrayIterator<string>,
     static prototype: MediaList,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaMetadata) */
@@ -11838,7 +11838,7 @@ export declare class MediaQueryList extends EventTarget {
     removeEventListener<K: keyof MediaQueryListEventMap>(&mut self, type: K, listener: fn (this: MediaQueryList, ev: MediaQueryListEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: MediaQueryList,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaQueryListEvent) */
@@ -11918,7 +11918,7 @@ export declare class MediaSession {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaSession/setPositionState) */
     setPositionState(&mut self, state?: &mut MediaPositionState) -> undefined,
     static prototype: MediaSession,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface MediaSourceEventMap {
@@ -11971,7 +11971,7 @@ export declare class MediaSource extends EventTarget {
 @js("MediaSourceHandle")
 export declare class MediaSourceHandle {
     static prototype: MediaSourceHandle,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface MediaStreamEventMap {
@@ -12068,7 +12068,7 @@ export declare class MediaStreamTrack extends EventTarget {
     removeEventListener<K: keyof MediaStreamTrackEventMap>(&mut self, type: K, listener: fn (this: MediaStreamTrack, ev: MediaStreamTrackEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: MediaStreamTrack,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -12161,7 +12161,7 @@ export declare class MessagePort extends EventTarget implements MessageEventTarg
     removeEventListener<K: keyof MessagePortEventMap>(&mut self, type: K, listener: fn (this: MessagePort, ev: MessagePortEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: MessagePort,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -12193,7 +12193,7 @@ export declare class MimeType {
      */
     readonly type: string,
     static prototype: MimeType,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -12212,7 +12212,7 @@ export declare class MimeTypeArray {
     namedItem(&mut self, name: string) -> MimeType | null,
     [Symbol.iterator](&self) -> ArrayIterator<MimeType>,
     static prototype: MimeTypeArray,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -12369,7 +12369,7 @@ export declare class MutationRecord {
      */
     readonly type: MutationRecordType,
     static prototype: MutationRecord,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -12397,7 +12397,7 @@ export declare class NamedNodeMap {
     setNamedItemNS<'a>(&mut self, attr: &'a mut Attr) -> &'a mut Attr | null,
     [Symbol.iterator](&self) -> ArrayIterator<Attr>,
     static prototype: NamedNodeMap,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NavigationActivation) */
@@ -12410,7 +12410,7 @@ export declare class NavigationActivation {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NavigationActivation/navigationType) */
     readonly navigationType: NavigationType,
     static prototype: NavigationActivation,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface NavigationHistoryEntryEventMap {
@@ -12439,7 +12439,7 @@ export declare class NavigationHistoryEntry extends EventTarget {
     removeEventListener<K: keyof NavigationHistoryEntryEventMap>(&mut self, type: K, listener: fn (this: NavigationHistoryEntry, ev: NavigationHistoryEntryEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: NavigationHistoryEntry,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -12527,7 +12527,7 @@ export declare class Navigator implements NavigatorAutomationInformation, Naviga
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/vibrate) */
     vibrate(&mut self, pattern: &mut Iterable<number>) -> boolean,
     static prototype: Navigator,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface NavigatorAutomationInformation {
@@ -12835,7 +12835,6 @@ export declare class Node extends EventTarget {
     readonly DOCUMENT_POSITION_CONTAINED_BY: 16,
     readonly DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC: 32,
     static prototype: Node,
-    constructor(&mut self),
     /** node is an element. */
     static readonly ELEMENT_NODE: 1,
     static readonly ATTRIBUTE_NODE: 2,
@@ -12866,7 +12865,8 @@ export declare class Node extends EventTarget {
     static readonly DOCUMENT_POSITION_CONTAINS: 8,
     /** Set when other is a descendant of node. */
     static readonly DOCUMENT_POSITION_CONTAINED_BY: 16,
-    static readonly DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC: 32
+    static readonly DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC: 32,
+    private constructor(&mut self)
 }
 
 /**
@@ -12897,7 +12897,7 @@ export declare class NodeIterator {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NodeIterator/previousNode) */
     previousNode(&mut self) -> Node | null,
     static prototype: NodeIterator,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -12933,7 +12933,7 @@ export declare class NodeList {
     /** Returns an list of values in the list. */
     values(&self) -> ArrayIterator<Node>,
     static prototype: NodeList,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface NodeListOf<TNode: Node> extends NodeList {
@@ -13103,7 +13103,7 @@ export declare class OffscreenCanvasRenderingContext2D implements CanvasComposit
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/canvas) */
     readonly canvas: OffscreenCanvas,
     static prototype: OffscreenCanvasRenderingContext2D,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OverconstrainedError) */
@@ -13261,7 +13261,7 @@ export declare class PerformanceEventTiming extends performance.PerformanceEntry
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceEventTiming/toJSON) */
     toJSON(&self) -> any,
     static prototype: PerformanceEventTiming,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface PermissionStatusEventMap {
@@ -13282,7 +13282,7 @@ export declare class PermissionStatus extends EventTarget {
     removeEventListener<K: keyof PermissionStatusEventMap>(&mut self, type: K, listener: fn (this: PermissionStatus, ev: PermissionStatusEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: PermissionStatus,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Permissions) */
@@ -13291,7 +13291,7 @@ export declare class Permissions {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Permissions/query) */
     query(&mut self, permissionDesc: &mut PermissionDescriptor) -> Promise<PermissionStatus>,
     static prototype: Permissions,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PictureInPictureEvent) */
@@ -13321,7 +13321,7 @@ export declare class PictureInPictureWindow extends EventTarget {
     removeEventListener<K: keyof PictureInPictureWindowEventMap>(&mut self, type: K, listener: fn (this: PictureInPictureWindow, ev: PictureInPictureWindowEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: PictureInPictureWindow,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -13361,7 +13361,7 @@ export declare class Plugin {
     namedItem(&mut self, name: string) -> MimeType | null,
     [Symbol.iterator](&self) -> ArrayIterator<MimeType>,
     static prototype: Plugin,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -13382,7 +13382,7 @@ export declare class PluginArray {
     refresh(&mut self) -> undefined,
     [Symbol.iterator](&self) -> ArrayIterator<Plugin>,
     static prototype: PluginArray,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -13503,7 +13503,7 @@ export declare class RadioNodeList extends NodeList {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RadioNodeList/value) */
     value: string,
     static prototype: RadioNodeList,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -13614,7 +13614,7 @@ export declare class RemotePlayback extends EventTarget {
     removeEventListener<K: keyof RemotePlaybackEventMap>(&mut self, type: K, listener: fn (this: RemotePlayback, ev: RemotePlaybackEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: RemotePlayback,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Report) */
@@ -13680,7 +13680,7 @@ export declare class ResizeObserverEntry {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ResizeObserverEntry/target) */
     readonly target: Element,
     static prototype: ResizeObserverEntry,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ResizeObserverSize) */
@@ -13691,7 +13691,7 @@ export declare class ResizeObserverSize {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ResizeObserverSize/inlineSize) */
     readonly inlineSize: number,
     static prototype: ResizeObserverSize,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -13711,7 +13711,7 @@ export declare class SVGAElement extends SVGGraphicsElement implements SVGURIRef
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGAElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGAElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -13739,12 +13739,12 @@ export declare class SVGAngle {
     readonly SVG_ANGLETYPE_RAD: 3,
     readonly SVG_ANGLETYPE_GRAD: 4,
     static prototype: SVGAngle,
-    constructor(&mut self),
     static readonly SVG_ANGLETYPE_UNKNOWN: 0,
     static readonly SVG_ANGLETYPE_UNSPECIFIED: 1,
     static readonly SVG_ANGLETYPE_DEG: 2,
     static readonly SVG_ANGLETYPE_RAD: 3,
-    static readonly SVG_ANGLETYPE_GRAD: 4
+    static readonly SVG_ANGLETYPE_GRAD: 4,
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGAnimateElement) */
@@ -13755,7 +13755,7 @@ export declare class SVGAnimateElement extends SVGAnimationElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGAnimateElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGAnimateElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGAnimateMotionElement) */
@@ -13766,7 +13766,7 @@ export declare class SVGAnimateMotionElement extends SVGAnimationElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGAnimateMotionElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGAnimateMotionElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGAnimateTransformElement) */
@@ -13777,7 +13777,7 @@ export declare class SVGAnimateTransformElement extends SVGAnimationElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGAnimateTransformElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGAnimateTransformElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -13792,7 +13792,7 @@ export declare class SVGAnimatedAngle {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGAnimatedAngle/baseVal) */
     readonly baseVal: SVGAngle,
     static prototype: SVGAnimatedAngle,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -13807,7 +13807,7 @@ export declare class SVGAnimatedBoolean {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGAnimatedBoolean/baseVal) */
     baseVal: boolean,
     static prototype: SVGAnimatedBoolean,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -13822,7 +13822,7 @@ export declare class SVGAnimatedEnumeration {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGAnimatedEnumeration/baseVal) */
     baseVal: number,
     static prototype: SVGAnimatedEnumeration,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -13837,7 +13837,7 @@ export declare class SVGAnimatedInteger {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGAnimatedInteger/baseVal) */
     baseVal: number,
     static prototype: SVGAnimatedInteger,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -13852,7 +13852,7 @@ export declare class SVGAnimatedLength {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGAnimatedLength/baseVal) */
     readonly baseVal: SVGLength,
     static prototype: SVGAnimatedLength,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -13867,7 +13867,7 @@ export declare class SVGAnimatedLengthList {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGAnimatedLengthList/baseVal) */
     readonly baseVal: SVGLengthList,
     static prototype: SVGAnimatedLengthList,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -13882,7 +13882,7 @@ export declare class SVGAnimatedNumber {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGAnimatedNumber/baseVal) */
     baseVal: number,
     static prototype: SVGAnimatedNumber,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -13897,7 +13897,7 @@ export declare class SVGAnimatedNumberList {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGAnimatedNumberList/baseVal) */
     readonly baseVal: SVGNumberList,
     static prototype: SVGAnimatedNumberList,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface SVGAnimatedPoints {
@@ -13919,7 +13919,7 @@ export declare class SVGAnimatedPreserveAspectRatio {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGAnimatedPreserveAspectRatio/baseVal) */
     readonly baseVal: SVGPreserveAspectRatio,
     static prototype: SVGAnimatedPreserveAspectRatio,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -13934,7 +13934,7 @@ export declare class SVGAnimatedRect {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGAnimatedRect/baseVal) */
     readonly baseVal: DOMRect,
     static prototype: SVGAnimatedRect,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -13949,7 +13949,7 @@ export declare class SVGAnimatedString {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGAnimatedString/baseVal) */
     baseVal: string,
     static prototype: SVGAnimatedString,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -13964,7 +13964,7 @@ export declare class SVGAnimatedTransformList {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGAnimatedTransformList/baseVal) */
     readonly baseVal: SVGTransformList,
     static prototype: SVGAnimatedTransformList,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGAnimationElement) */
@@ -13991,7 +13991,7 @@ export declare class SVGAnimationElement extends SVGElement implements SVGTests 
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGAnimationElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGAnimationElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -14012,7 +14012,7 @@ export declare class SVGCircleElement extends SVGGeometryElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGCircleElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGCircleElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -14031,7 +14031,7 @@ export declare class SVGClipPathElement extends SVGElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGClipPathElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGClipPathElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -14066,13 +14066,13 @@ export declare class SVGComponentTransferFunctionElement extends SVGElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGComponentTransferFunctionElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGComponentTransferFunctionElement,
-    constructor(&mut self),
     static readonly SVG_FECOMPONENTTRANSFER_TYPE_UNKNOWN: 0,
     static readonly SVG_FECOMPONENTTRANSFER_TYPE_IDENTITY: 1,
     static readonly SVG_FECOMPONENTTRANSFER_TYPE_TABLE: 2,
     static readonly SVG_FECOMPONENTTRANSFER_TYPE_DISCRETE: 3,
     static readonly SVG_FECOMPONENTTRANSFER_TYPE_LINEAR: 4,
-    static readonly SVG_FECOMPONENTTRANSFER_TYPE_GAMMA: 5
+    static readonly SVG_FECOMPONENTTRANSFER_TYPE_GAMMA: 5,
+    private constructor(&mut self)
 }
 
 /**
@@ -14087,7 +14087,7 @@ export declare class SVGDefsElement extends SVGGraphicsElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGDefsElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGDefsElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -14102,7 +14102,7 @@ export declare class SVGDescElement extends SVGElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGDescElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGDescElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface SVGElementEventMap extends ElementEventMap, GlobalEventHandlersEventMap {}
@@ -14125,7 +14125,7 @@ export declare class SVGElement extends Element implements ElementCSSInlineStyle
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -14144,7 +14144,7 @@ export declare class SVGEllipseElement extends SVGGeometryElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGEllipseElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGEllipseElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -14179,7 +14179,6 @@ export declare class SVGFEBlendElement extends SVGElement implements SVGFilterPr
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGFEBlendElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGFEBlendElement,
-    constructor(&mut self),
     static readonly SVG_FEBLEND_MODE_UNKNOWN: 0,
     static readonly SVG_FEBLEND_MODE_NORMAL: 1,
     static readonly SVG_FEBLEND_MODE_MULTIPLY: 2,
@@ -14196,7 +14195,8 @@ export declare class SVGFEBlendElement extends SVGElement implements SVGFilterPr
     static readonly SVG_FEBLEND_MODE_HUE: 13,
     static readonly SVG_FEBLEND_MODE_SATURATION: 14,
     static readonly SVG_FEBLEND_MODE_COLOR: 15,
-    static readonly SVG_FEBLEND_MODE_LUMINOSITY: 16
+    static readonly SVG_FEBLEND_MODE_LUMINOSITY: 16,
+    private constructor(&mut self)
 }
 
 /**
@@ -14222,12 +14222,12 @@ export declare class SVGFEColorMatrixElement extends SVGElement implements SVGFi
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGFEColorMatrixElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGFEColorMatrixElement,
-    constructor(&mut self),
     static readonly SVG_FECOLORMATRIX_TYPE_UNKNOWN: 0,
     static readonly SVG_FECOLORMATRIX_TYPE_MATRIX: 1,
     static readonly SVG_FECOLORMATRIX_TYPE_SATURATE: 2,
     static readonly SVG_FECOLORMATRIX_TYPE_HUEROTATE: 3,
-    static readonly SVG_FECOLORMATRIX_TYPE_LUMINANCETOALPHA: 4
+    static readonly SVG_FECOLORMATRIX_TYPE_LUMINANCETOALPHA: 4,
+    private constructor(&mut self)
 }
 
 /**
@@ -14243,7 +14243,7 @@ export declare class SVGFEComponentTransferElement extends SVGElement implements
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGFEComponentTransferElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGFEComponentTransferElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -14272,14 +14272,14 @@ export declare class SVGFECompositeElement extends SVGElement implements SVGFilt
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGFECompositeElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGFECompositeElement,
-    constructor(&mut self),
     static readonly SVG_FECOMPOSITE_OPERATOR_UNKNOWN: 0,
     static readonly SVG_FECOMPOSITE_OPERATOR_OVER: 1,
     static readonly SVG_FECOMPOSITE_OPERATOR_IN: 2,
     static readonly SVG_FECOMPOSITE_OPERATOR_OUT: 3,
     static readonly SVG_FECOMPOSITE_OPERATOR_ATOP: 4,
     static readonly SVG_FECOMPOSITE_OPERATOR_XOR: 5,
-    static readonly SVG_FECOMPOSITE_OPERATOR_ARITHMETIC: 6
+    static readonly SVG_FECOMPOSITE_OPERATOR_ARITHMETIC: 6,
+    private constructor(&mut self)
 }
 
 /**
@@ -14310,11 +14310,11 @@ export declare class SVGFEConvolveMatrixElement extends SVGElement implements SV
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGFEConvolveMatrixElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGFEConvolveMatrixElement,
-    constructor(&mut self),
     static readonly SVG_EDGEMODE_UNKNOWN: 0,
     static readonly SVG_EDGEMODE_DUPLICATE: 1,
     static readonly SVG_EDGEMODE_WRAP: 2,
-    static readonly SVG_EDGEMODE_NONE: 3
+    static readonly SVG_EDGEMODE_NONE: 3,
+    private constructor(&mut self)
 }
 
 /**
@@ -14339,7 +14339,7 @@ export declare class SVGFEDiffuseLightingElement extends SVGElement implements S
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGFEDiffuseLightingElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGFEDiffuseLightingElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -14364,12 +14364,12 @@ export declare class SVGFEDisplacementMapElement extends SVGElement implements S
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGFEDisplacementMapElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGFEDisplacementMapElement,
-    constructor(&mut self),
     static readonly SVG_CHANNEL_UNKNOWN: 0,
     static readonly SVG_CHANNEL_R: 1,
     static readonly SVG_CHANNEL_G: 2,
     static readonly SVG_CHANNEL_B: 3,
-    static readonly SVG_CHANNEL_A: 4
+    static readonly SVG_CHANNEL_A: 4,
+    private constructor(&mut self)
 }
 
 /**
@@ -14388,7 +14388,7 @@ export declare class SVGFEDistantLightElement extends SVGElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGFEDistantLightElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGFEDistantLightElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEDropShadowElement) */
@@ -14405,7 +14405,7 @@ export declare class SVGFEDropShadowElement extends SVGElement implements SVGFil
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGFEDropShadowElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGFEDropShadowElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -14420,7 +14420,7 @@ export declare class SVGFEFloodElement extends SVGElement implements SVGFilterPr
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGFEFloodElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGFEFloodElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -14435,7 +14435,7 @@ export declare class SVGFEFuncAElement extends SVGComponentTransferFunctionEleme
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGFEFuncAElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGFEFuncAElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -14450,7 +14450,7 @@ export declare class SVGFEFuncBElement extends SVGComponentTransferFunctionEleme
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGFEFuncBElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGFEFuncBElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -14465,7 +14465,7 @@ export declare class SVGFEFuncGElement extends SVGComponentTransferFunctionEleme
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGFEFuncGElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGFEFuncGElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -14480,7 +14480,7 @@ export declare class SVGFEFuncRElement extends SVGComponentTransferFunctionEleme
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGFEFuncRElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGFEFuncRElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -14503,7 +14503,7 @@ export declare class SVGFEGaussianBlurElement extends SVGElement implements SVGF
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGFEGaussianBlurElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGFEGaussianBlurElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -14519,7 +14519,7 @@ export declare class SVGFEImageElement extends SVGElement implements SVGFilterPr
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGFEImageElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGFEImageElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -14534,7 +14534,7 @@ export declare class SVGFEMergeElement extends SVGElement implements SVGFilterPr
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGFEMergeElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGFEMergeElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -14551,7 +14551,7 @@ export declare class SVGFEMergeNodeElement extends SVGElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGFEMergeNodeElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGFEMergeNodeElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -14577,10 +14577,10 @@ export declare class SVGFEMorphologyElement extends SVGElement implements SVGFil
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGFEMorphologyElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGFEMorphologyElement,
-    constructor(&mut self),
     static readonly SVG_MORPHOLOGY_OPERATOR_UNKNOWN: 0,
     static readonly SVG_MORPHOLOGY_OPERATOR_ERODE: 1,
-    static readonly SVG_MORPHOLOGY_OPERATOR_DILATE: 2
+    static readonly SVG_MORPHOLOGY_OPERATOR_DILATE: 2,
+    private constructor(&mut self)
 }
 
 /**
@@ -14598,7 +14598,7 @@ export declare class SVGFEOffsetElement extends SVGElement implements SVGFilterP
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGFEOffsetElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGFEOffsetElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -14619,7 +14619,7 @@ export declare class SVGFEPointLightElement extends SVGElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGFEPointLightElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGFEPointLightElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -14644,7 +14644,7 @@ export declare class SVGFESpecularLightingElement extends SVGElement implements 
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGFESpecularLightingElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGFESpecularLightingElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -14670,7 +14670,7 @@ export declare class SVGFESpotLightElement extends SVGElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGFESpotLightElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGFESpotLightElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -14686,7 +14686,7 @@ export declare class SVGFETileElement extends SVGElement implements SVGFilterPri
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGFETileElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGFETileElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -14713,13 +14713,13 @@ export declare class SVGFETurbulenceElement extends SVGElement implements SVGFil
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGFETurbulenceElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGFETurbulenceElement,
-    constructor(&mut self),
     static readonly SVG_TURBULENCE_TYPE_UNKNOWN: 0,
     static readonly SVG_TURBULENCE_TYPE_FRACTALNOISE: 1,
     static readonly SVG_TURBULENCE_TYPE_TURBULENCE: 2,
     static readonly SVG_STITCHTYPE_UNKNOWN: 0,
     static readonly SVG_STITCHTYPE_STITCH: 1,
-    static readonly SVG_STITCHTYPE_NOSTITCH: 2
+    static readonly SVG_STITCHTYPE_NOSTITCH: 2,
+    private constructor(&mut self)
 }
 
 /**
@@ -14746,7 +14746,7 @@ export declare class SVGFilterElement extends SVGElement implements SVGURIRefere
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGFilterElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGFilterElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface SVGFilterPrimitiveStandardAttributes {
@@ -14780,7 +14780,7 @@ export declare class SVGForeignObjectElement extends SVGGraphicsElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGForeignObjectElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGForeignObjectElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -14795,7 +14795,7 @@ export declare class SVGGElement extends SVGGraphicsElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGGElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGGElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGGeometryElement) */
@@ -14816,7 +14816,7 @@ export declare class SVGGeometryElement extends SVGGraphicsElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGGeometryElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGGeometryElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -14841,11 +14841,11 @@ export declare class SVGGradientElement extends SVGElement implements SVGURIRefe
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGGradientElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGGradientElement,
-    constructor(&mut self),
     static readonly SVG_SPREADMETHOD_UNKNOWN: 0,
     static readonly SVG_SPREADMETHOD_PAD: 1,
     static readonly SVG_SPREADMETHOD_REFLECT: 2,
-    static readonly SVG_SPREADMETHOD_REPEAT: 3
+    static readonly SVG_SPREADMETHOD_REPEAT: 3,
+    private constructor(&mut self)
 }
 
 /**
@@ -14865,7 +14865,7 @@ export declare class SVGGraphicsElement extends SVGElement implements SVGTests {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGGraphicsElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGGraphicsElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -14891,7 +14891,7 @@ export declare class SVGImageElement extends SVGGraphicsElement implements SVGUR
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGImageElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGImageElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -14919,7 +14919,6 @@ export declare class SVGLength {
     readonly SVG_LENGTHTYPE_PT: 9,
     readonly SVG_LENGTHTYPE_PC: 10,
     static prototype: SVGLength,
-    constructor(&mut self),
     static readonly SVG_LENGTHTYPE_UNKNOWN: 0,
     static readonly SVG_LENGTHTYPE_NUMBER: 1,
     static readonly SVG_LENGTHTYPE_PERCENTAGE: 2,
@@ -14930,7 +14929,8 @@ export declare class SVGLength {
     static readonly SVG_LENGTHTYPE_MM: 7,
     static readonly SVG_LENGTHTYPE_IN: 8,
     static readonly SVG_LENGTHTYPE_PT: 9,
-    static readonly SVG_LENGTHTYPE_PC: 10
+    static readonly SVG_LENGTHTYPE_PC: 10,
+    private constructor(&mut self)
 }
 
 /**
@@ -14960,7 +14960,7 @@ export declare class SVGLengthList {
     replaceItem<'a>(&mut self, newItem: &'a mut SVGLength, index: number) -> &'a mut SVGLength,
     [Symbol.iterator](&self) -> ArrayIterator<SVGLength>,
     static prototype: SVGLengthList,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -14983,7 +14983,7 @@ export declare class SVGLineElement extends SVGGeometryElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGLineElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGLineElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -15006,7 +15006,7 @@ export declare class SVGLinearGradientElement extends SVGGradientElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGLinearGradientElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGLinearGradientElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGMPathElement) */
@@ -15017,7 +15017,7 @@ export declare class SVGMPathElement extends SVGElement implements SVGURIReferen
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGMPathElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGMPathElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGMarkerElement) */
@@ -15052,13 +15052,13 @@ export declare class SVGMarkerElement extends SVGElement implements SVGFitToView
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGMarkerElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGMarkerElement,
-    constructor(&mut self),
     static readonly SVG_MARKERUNITS_UNKNOWN: 0,
     static readonly SVG_MARKERUNITS_USERSPACEONUSE: 1,
     static readonly SVG_MARKERUNITS_STROKEWIDTH: 2,
     static readonly SVG_MARKER_ORIENT_UNKNOWN: 0,
     static readonly SVG_MARKER_ORIENT_AUTO: 1,
-    static readonly SVG_MARKER_ORIENT_ANGLE: 2
+    static readonly SVG_MARKER_ORIENT_ANGLE: 2,
+    private constructor(&mut self)
 }
 
 /**
@@ -15085,7 +15085,7 @@ export declare class SVGMaskElement extends SVGElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGMaskElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGMaskElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -15100,7 +15100,7 @@ export declare class SVGMetadataElement extends SVGElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGMetadataElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGMetadataElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -15112,7 +15112,7 @@ export declare class SVGMetadataElement extends SVGElement {
 export declare class SVGNumber {
     value: number,
     static prototype: SVGNumber,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -15142,7 +15142,7 @@ export declare class SVGNumberList {
     replaceItem<'a>(&mut self, newItem: &'a mut SVGNumber, index: number) -> &'a mut SVGNumber,
     [Symbol.iterator](&self) -> ArrayIterator<SVGNumber>,
     static prototype: SVGNumberList,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -15157,7 +15157,7 @@ export declare class SVGPathElement extends SVGGeometryElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGPathElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGPathElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -15182,7 +15182,7 @@ export declare class SVGPatternElement extends SVGElement implements SVGFitToVie
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGPatternElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGPatternElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGPointList) */
@@ -15208,7 +15208,7 @@ export declare class SVGPointList {
     replaceItem<'a>(&mut self, newItem: &'a mut DOMPoint, index: number) -> &'a mut DOMPoint,
     [Symbol.iterator](&self) -> ArrayIterator<DOMPoint>,
     static prototype: SVGPointList,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -15223,7 +15223,7 @@ export declare class SVGPolygonElement extends SVGGeometryElement implements SVG
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGPolygonElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGPolygonElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -15238,7 +15238,7 @@ export declare class SVGPolylineElement extends SVGGeometryElement implements SV
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGPolylineElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGPolylineElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -15265,7 +15265,6 @@ export declare class SVGPreserveAspectRatio {
     readonly SVG_MEETORSLICE_MEET: 1,
     readonly SVG_MEETORSLICE_SLICE: 2,
     static prototype: SVGPreserveAspectRatio,
-    constructor(&mut self),
     static readonly SVG_PRESERVEASPECTRATIO_UNKNOWN: 0,
     static readonly SVG_PRESERVEASPECTRATIO_NONE: 1,
     static readonly SVG_PRESERVEASPECTRATIO_XMINYMIN: 2,
@@ -15279,7 +15278,8 @@ export declare class SVGPreserveAspectRatio {
     static readonly SVG_PRESERVEASPECTRATIO_XMAXYMAX: 10,
     static readonly SVG_MEETORSLICE_UNKNOWN: 0,
     static readonly SVG_MEETORSLICE_MEET: 1,
-    static readonly SVG_MEETORSLICE_SLICE: 2
+    static readonly SVG_MEETORSLICE_SLICE: 2,
+    private constructor(&mut self)
 }
 
 /**
@@ -15305,7 +15305,7 @@ export declare class SVGRadialGradientElement extends SVGGradientElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGRadialGradientElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGRadialGradientElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -15332,7 +15332,7 @@ export declare class SVGRectElement extends SVGGeometryElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGRectElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGRectElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface SVGSVGElementEventMap extends SVGElementEventMap, WindowEventHandlersEventMap {}
@@ -15382,7 +15382,7 @@ export declare class SVGSVGElement extends SVGGraphicsElement implements SVGFitT
     removeEventListener<K: keyof SVGSVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGSVGElement, ev: SVGSVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGSVGElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -15398,7 +15398,7 @@ export declare class SVGScriptElement extends SVGElement implements SVGURIRefere
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGScriptElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGScriptElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGSetElement) */
@@ -15409,7 +15409,7 @@ export declare class SVGSetElement extends SVGAnimationElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGSetElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGSetElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -15426,7 +15426,7 @@ export declare class SVGStopElement extends SVGElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGStopElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGStopElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -15447,7 +15447,7 @@ export declare class SVGStringList {
     replaceItem(&mut self, newItem: string, index: number) -> string,
     [Symbol.iterator](&self) -> ArrayIterator<string>,
     static prototype: SVGStringList,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -15473,7 +15473,7 @@ export declare class SVGStyleElement extends SVGElement implements LinkStyle {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGStyleElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGStyleElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -15488,7 +15488,7 @@ export declare class SVGSwitchElement extends SVGGraphicsElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGSwitchElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGSwitchElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -15503,7 +15503,7 @@ export declare class SVGSymbolElement extends SVGElement implements SVGFitToView
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGSymbolElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGSymbolElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -15518,7 +15518,7 @@ export declare class SVGTSpanElement extends SVGTextPositioningElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGTSpanElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGTSpanElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface SVGTests {
@@ -15565,10 +15565,10 @@ export declare class SVGTextContentElement extends SVGGraphicsElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGTextContentElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGTextContentElement,
-    constructor(&mut self),
     static readonly LENGTHADJUST_UNKNOWN: 0,
     static readonly LENGTHADJUST_SPACING: 1,
-    static readonly LENGTHADJUST_SPACINGANDGLYPHS: 2
+    static readonly LENGTHADJUST_SPACINGANDGLYPHS: 2,
+    private constructor(&mut self)
 }
 
 /**
@@ -15583,7 +15583,7 @@ export declare class SVGTextElement extends SVGTextPositioningElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGTextElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGTextElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -15610,13 +15610,13 @@ export declare class SVGTextPathElement extends SVGTextContentElement implements
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGTextPathElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGTextPathElement,
-    constructor(&mut self),
     static readonly TEXTPATH_METHODTYPE_UNKNOWN: 0,
     static readonly TEXTPATH_METHODTYPE_ALIGN: 1,
     static readonly TEXTPATH_METHODTYPE_STRETCH: 2,
     static readonly TEXTPATH_SPACINGTYPE_UNKNOWN: 0,
     static readonly TEXTPATH_SPACINGTYPE_AUTO: 1,
-    static readonly TEXTPATH_SPACINGTYPE_EXACT: 2
+    static readonly TEXTPATH_SPACINGTYPE_EXACT: 2,
+    private constructor(&mut self)
 }
 
 /**
@@ -15636,7 +15636,7 @@ export declare class SVGTextPositioningElement extends SVGTextContentElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGTextPositioningElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGTextPositioningElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -15651,7 +15651,7 @@ export declare class SVGTitleElement extends SVGElement {
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGTitleElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGTitleElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -15687,14 +15687,14 @@ export declare class SVGTransform {
     readonly SVG_TRANSFORM_SKEWX: 5,
     readonly SVG_TRANSFORM_SKEWY: 6,
     static prototype: SVGTransform,
-    constructor(&mut self),
     static readonly SVG_TRANSFORM_UNKNOWN: 0,
     static readonly SVG_TRANSFORM_MATRIX: 1,
     static readonly SVG_TRANSFORM_TRANSLATE: 2,
     static readonly SVG_TRANSFORM_SCALE: 3,
     static readonly SVG_TRANSFORM_ROTATE: 4,
     static readonly SVG_TRANSFORM_SKEWX: 5,
-    static readonly SVG_TRANSFORM_SKEWY: 6
+    static readonly SVG_TRANSFORM_SKEWY: 6,
+    private constructor(&mut self)
 }
 
 /**
@@ -15728,7 +15728,7 @@ export declare class SVGTransformList {
     replaceItem<'a>(&mut self, newItem: &'a mut SVGTransform, index: number) -> &'a mut SVGTransform,
     [Symbol.iterator](&self) -> ArrayIterator<SVGTransform>,
     static prototype: SVGTransformList,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface SVGURIReference {
@@ -15747,10 +15747,10 @@ export declare class SVGUnitTypes {
     readonly SVG_UNIT_TYPE_USERSPACEONUSE: 1,
     readonly SVG_UNIT_TYPE_OBJECTBOUNDINGBOX: 2,
     static prototype: SVGUnitTypes,
-    constructor(&mut self),
     static readonly SVG_UNIT_TYPE_UNKNOWN: 0,
     static readonly SVG_UNIT_TYPE_USERSPACEONUSE: 1,
-    static readonly SVG_UNIT_TYPE_OBJECTBOUNDINGBOX: 2
+    static readonly SVG_UNIT_TYPE_OBJECTBOUNDINGBOX: 2,
+    private constructor(&mut self)
 }
 
 /**
@@ -15769,7 +15769,7 @@ export declare class SVGUseElement extends SVGGraphicsElement implements SVGURIR
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGUseElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGUseElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -15784,7 +15784,7 @@ export declare class SVGViewElement extends SVGElement implements SVGFitToViewBo
     removeEventListener<K: keyof SVGElementEventMap>(&mut self, type: K, listener: fn (this: SVGViewElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SVGViewElement,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -15809,7 +15809,7 @@ export declare class Screen {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Screen/width) */
     readonly width: number,
     static prototype: Screen,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface ScreenOrientationEventMap {
@@ -15832,7 +15832,7 @@ export declare class ScreenOrientation extends EventTarget {
     removeEventListener<K: keyof ScreenOrientationEventMap>(&mut self, type: K, listener: fn (this: ScreenOrientation, ev: ScreenOrientationEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: ScreenOrientation,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -15925,7 +15925,7 @@ export declare class Selection {
     setPosition(&mut self, node: Node | null, offset?: number) -> undefined,
     toString(&self) -> string,
     static prototype: Selection,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface ShadowRootEventMap {
@@ -15960,7 +15960,7 @@ export declare class ShadowRoot extends DocumentFragment implements DocumentOrSh
     removeEventListener<K: keyof ShadowRootEventMap>(&mut self, type: K, listener: fn (this: ShadowRoot, ev: ShadowRootEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: ShadowRoot,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface Slottable {
@@ -16013,7 +16013,7 @@ export declare class SourceBuffer extends EventTarget {
     removeEventListener<K: keyof SourceBufferEventMap>(&mut self, type: K, listener: fn (this: SourceBuffer, ev: SourceBufferEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SourceBuffer,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface SourceBufferListEventMap {
@@ -16038,7 +16038,7 @@ export declare class SourceBufferList extends EventTarget {
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     [Symbol.iterator](&self) -> ArrayIterator<SourceBuffer>,
     static prototype: SourceBufferList,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechRecognitionAlternative) */
@@ -16049,7 +16049,7 @@ export declare class SpeechRecognitionAlternative {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechRecognitionAlternative/transcript) */
     readonly transcript: string,
     static prototype: SpeechRecognitionAlternative,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechRecognitionResult) */
@@ -16063,7 +16063,7 @@ export declare class SpeechRecognitionResult {
     item(&mut self, index: number) -> SpeechRecognitionAlternative,
     [Symbol.iterator](&self) -> ArrayIterator<SpeechRecognitionAlternative>,
     static prototype: SpeechRecognitionResult,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechRecognitionResultList) */
@@ -16075,7 +16075,7 @@ export declare class SpeechRecognitionResultList {
     item(&mut self, index: number) -> SpeechRecognitionResult,
     [Symbol.iterator](&self) -> ArrayIterator<SpeechRecognitionResult>,
     static prototype: SpeechRecognitionResultList,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface SpeechSynthesisEventMap {
@@ -16112,7 +16112,7 @@ export declare class SpeechSynthesis extends EventTarget {
     removeEventListener<K: keyof SpeechSynthesisEventMap>(&mut self, type: K, listener: fn (this: SpeechSynthesis, ev: SpeechSynthesisEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: SpeechSynthesis,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechSynthesisErrorEvent) */
@@ -16214,7 +16214,7 @@ export declare class SpeechSynthesisVoice {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechSynthesisVoice/voiceURI) */
     readonly voiceURI: string,
     static prototype: SpeechSynthesisVoice,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StaticRange) */
@@ -16240,7 +16240,7 @@ export declare class StorageManager {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StorageManager/persisted) */
     persisted(&mut self) -> Promise<boolean>,
     static prototype: StorageManager,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** @deprecated */
@@ -16261,7 +16261,7 @@ export declare class StylePropertyMap extends StylePropertyMapReadOnly {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StylePropertyMap/set) */
     set(&mut self, property: string, ...values: Array<CSSStyleValue | string>) -> undefined,
     static prototype: StylePropertyMap,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StylePropertyMapReadOnly) */
@@ -16281,7 +16281,7 @@ export declare class StylePropertyMapReadOnly {
     keys(&self) -> StylePropertyMapReadOnlyIterator<string>,
     values(&self) -> StylePropertyMapReadOnlyIterator<Iterable<CSSStyleValue>>,
     static prototype: StylePropertyMapReadOnly,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -16307,7 +16307,7 @@ export declare class StyleSheet {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StyleSheet/type) */
     readonly type: string,
     static prototype: StyleSheet,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -16323,7 +16323,7 @@ export declare class StyleSheetList {
     item(&mut self, index: number) -> CSSStyleSheet | null,
     [Symbol.iterator](&self) -> ArrayIterator<CSSStyleSheet>,
     static prototype: StyleSheetList,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubmitEvent) */
@@ -16382,7 +16382,7 @@ export declare class TextEvent extends UIEvent {
      */
     initTextEvent(&mut self, type: string, bubbles?: boolean, cancelable?: boolean, view?: Window | null, data?: string) -> undefined,
     static prototype: TextEvent,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -16465,7 +16465,7 @@ export declare class TextMetrics {
      */
     readonly width: number,
     static prototype: TextMetrics,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface TextTrackEventMap {
@@ -16552,7 +16552,7 @@ export declare class TextTrack extends EventTarget {
     removeEventListener<K: keyof TextTrackEventMap>(&mut self, type: K, listener: fn (this: TextTrack, ev: TextTrackEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: TextTrack,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface TextTrackCueEventMap {
@@ -16614,7 +16614,7 @@ export declare class TextTrackCue extends EventTarget {
     removeEventListener<K: keyof TextTrackCueEventMap>(&mut self, type: K, listener: fn (this: TextTrackCue, ev: TextTrackCueEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: TextTrackCue,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextTrackCueList) */
@@ -16636,7 +16636,7 @@ export declare class TextTrackCueList {
     getCueById(&self, id: string) -> TextTrackCue | null,
     [Symbol.iterator](&self) -> ArrayIterator<TextTrackCue>,
     static prototype: TextTrackCueList,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface TextTrackListEventMap {
@@ -16664,7 +16664,7 @@ export declare class TextTrackList extends EventTarget {
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     [Symbol.iterator](&self) -> ArrayIterator<TextTrack>,
     static prototype: TextTrackList,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -16697,7 +16697,7 @@ export declare class TimeRanges {
      */
     start(&mut self, index: number) -> number,
     static prototype: TimeRanges,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ToggleEvent) */
@@ -16784,7 +16784,7 @@ export declare class TouchList {
     item(&mut self, index: number) -> Touch | null,
     [Symbol.iterator](&self) -> ArrayIterator<Touch>,
     static prototype: TouchList,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -16851,7 +16851,7 @@ export declare class TreeWalker {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TreeWalker/previousSibling) */
     previousSibling(&mut self) -> Node | null,
     static prototype: TreeWalker,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -16894,7 +16894,7 @@ export declare class UserActivation {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/UserActivation/isActive) */
     readonly isActive: boolean,
     static prototype: UserActivation,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VTTCue) */
@@ -16975,7 +16975,7 @@ export declare class ValidityState {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ValidityState/valueMissing) */
     readonly valueMissing: boolean,
     static prototype: ValidityState,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -16998,7 +16998,7 @@ export declare class VideoPlaybackQuality {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoPlaybackQuality/totalVideoFrames) */
     readonly totalVideoFrames: number,
     static prototype: VideoPlaybackQuality,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ViewTransition) */
@@ -17014,14 +17014,14 @@ export declare class ViewTransition {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ViewTransition/skipTransition) */
     skipTransition(&mut self) -> undefined,
     static prototype: ViewTransition,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 @js("ViewTransitionTypeSet")
 export declare class ViewTransitionTypeSet extends set.Set<string> {
     forEach(&self, callbackfn: fn (value: string, key: string, parent: &Self) -> unknown, thisArg?: unknown) -> undefined,
     static prototype: ViewTransitionTypeSet,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface VisualViewportEventMap {
@@ -17055,7 +17055,7 @@ export declare class VisualViewport extends EventTarget {
     removeEventListener<K: keyof VisualViewportEventMap>(&mut self, type: K, listener: fn (this: VisualViewport, ev: VisualViewportEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: VisualViewport,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -17068,7 +17068,7 @@ export declare class WakeLock {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WakeLock/request) */
     request(&mut self, type?: WakeLockType) -> Promise<WakeLockSentinel>,
     static prototype: WakeLock,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface WakeLockSentinelEventMap {
@@ -17095,7 +17095,7 @@ export declare class WakeLockSentinel extends EventTarget {
     removeEventListener<K: keyof WakeLockSentinelEventMap>(&mut self, type: K, listener: fn (this: WakeLockSentinel, ev: WakeLockSentinelEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: WakeLockSentinel,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -17137,7 +17137,7 @@ export declare class WebTransportBidirectionalStream {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransportBidirectionalStream/writable) */
     readonly writable: streams.WritableStream,
     static prototype: WebTransportBidirectionalStream,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -17162,7 +17162,7 @@ export declare class WebTransportDatagramDuplexStream {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransportDatagramDuplexStream/writable) */
     readonly writable: streams.WritableStream,
     static prototype: WebTransportDatagramDuplexStream,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -17482,7 +17482,7 @@ export declare class Window extends EventTarget implements AnimationFrameProvide
     removeEventListener<K: keyof WindowEventMap>(&mut self, type: K, listener: fn (this: Window, ev: WindowEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: Window,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface WindowEventHandlersEventMap {
@@ -17631,7 +17631,7 @@ export declare class Worklet {
      */
     addModule(&mut self, moduleURL: string | url.URL, options?: &mut WorkletOptions) -> Promise<undefined>,
     static prototype: Worklet,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -17646,7 +17646,7 @@ export declare class XMLDocument extends Document {
     removeEventListener<K: keyof DocumentEventMap>(&mut self, type: K, listener: fn (this: XMLDocument, ev: DocumentEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: XMLDocument,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface XMLHttpRequestEventMap extends XMLHttpRequestEventTargetEventMap {
@@ -17824,7 +17824,7 @@ export declare class XMLHttpRequestEventTarget extends EventTarget {
     removeEventListener<K: keyof XMLHttpRequestEventTargetEventMap>(&mut self, type: K, listener: fn (this: XMLHttpRequestEventTarget, ev: XMLHttpRequestEventTargetEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: XMLHttpRequestEventTarget,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/XMLHttpRequestUpload) */
@@ -17835,7 +17835,7 @@ export declare class XMLHttpRequestUpload extends XMLHttpRequestEventTarget {
     removeEventListener<K: keyof XMLHttpRequestEventTargetEventMap>(&mut self, type: K, listener: fn (this: XMLHttpRequestUpload, ev: XMLHttpRequestEventTargetEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: XMLHttpRequestUpload,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -17885,7 +17885,7 @@ export declare class XPathExpression {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/XPathExpression/evaluate) */
     evaluate<'a>(&mut self, contextNode: &'a mut Node, type?: number, result?: XPathResult | null) -> &'a mut XPathResult,
     static prototype: XPathExpression,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -17924,7 +17924,6 @@ export declare class XPathResult {
     readonly ANY_UNORDERED_NODE_TYPE: 8,
     readonly FIRST_ORDERED_NODE_TYPE: 9,
     static prototype: XPathResult,
-    constructor(&mut self),
     static readonly ANY_TYPE: 0,
     static readonly NUMBER_TYPE: 1,
     static readonly STRING_TYPE: 2,
@@ -17934,7 +17933,8 @@ export declare class XPathResult {
     static readonly UNORDERED_NODE_SNAPSHOT_TYPE: 6,
     static readonly ORDERED_NODE_SNAPSHOT_TYPE: 7,
     static readonly ANY_UNORDERED_NODE_TYPE: 8,
-    static readonly FIRST_ORDERED_NODE_TYPE: 9
+    static readonly FIRST_ORDERED_NODE_TYPE: 9,
+    private constructor(&mut self)
 }
 
 /**
