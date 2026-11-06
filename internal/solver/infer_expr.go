@@ -471,13 +471,9 @@ func (c *checker) resolveIdentPath(scope *Scope, lvl int, e *ast.IdentExpr, objP
 		c.recordType(e, t)
 		// An editor jumps from a read to the binding it resolved to.
 		c.recordDecl(e, b)
-		// Record this read so the post-walk use-after-move pass can test it against the
-		// consumed lattice. The binding's coalesced type drives the reference-shape
-		// decision, since a fresh instantiation can hide a mono owned shape behind a
-		// variable. A spine step of a member chain records nothing here; the outermost
-		// member read records the full place instead.
+		// A spine step of a member chain emits no read here, since the outermost member read
+		// emits one of the full place instead.
 		if !objPos {
-			c.recordUse(e, bindingType(b))
 			c.emitRead(e)
 		}
 		place := placeOf(e.Name, b, t)
@@ -933,14 +929,10 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// The dataflow pass reads what each retained closure writes, which needs the
 		// whole body's borrow graph.
 		c.noteRetainedClosureWrites()
-		// With the whole body walked, every move site is recorded, so the consumed
-		// lattice is complete. Replay the recorded reads against it to report
-		// use-after-move. This runs before popFuncCtx restores the outer context, since
-		// it reads this body's move and use state off c.fn.
-		c.checkUseAfterMoves()
 		c.commitOwnedReturns()
 		// A body that moves an unannotated parameter takes ownership of the caller's value,
-		// so each call moves the argument it passes there.
+		// so each call moves the argument it passes there. It reads the flows that wait on
+		// the parameters, so it runs before settleParams settles them.
 		c.markMovedParams(sig.Params, params)
 		// D9 decides an unannotated parameter that escapes where the destination's type
 		// leaves ownership open. A parameter the body cannot write is a `'static` borrow, so
@@ -1872,10 +1864,10 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 		c.recordType(e, recv)
 		return recv
 	}
-	// Borrowing a field reads its place, so a use-after-move test sees `&obj.f` as a
-	// use of `obj.f`. The receiver resolved with objPos set, so it recorded no
-	// whole-receiver use that would collide with a partial move of a sibling.
-	c.recordMemberUse(accessNode)
+	// Borrowing a field reads its place, so `&obj.f` emits a read of `obj.f`. The receiver
+	// resolved with objPos set, so it emitted no read of the whole receiver that would
+	// collide with a partial move of a sibling.
+	c.emitMemberRead(accessNode)
 	// A `&mut` borrow of a field mutates the receiver's value. An owned layer of a binding
 	// needs a `mut` binding, which ownedMutation checks, and then asks the receiver only to
 	// hold the field.
@@ -2023,10 +2015,10 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 	//
 	// The CFG point comes first because inferring a child that contains statements, such
 	// as an `if` argument, overwrites c.fn.currentStmt. Reading it afterward would record
-	// an argument move against an inner branch instead of this call's statement. The
-	// callee comes before the arguments so moves and borrows record in evaluation order.
-	// In `obj.m(take(obj))` the receiver read comes before the move.
-	consumeRef, hasConsumeRef := c.currentStmtRef()
+	// an argument's borrow edges against an inner branch instead of this call's statement.
+	// The callee comes before the arguments so moves and borrows record in evaluation
+	// order. In `obj.m(take(obj))` the receiver read comes before the move.
+	callRef, hasCallRef := c.currentStmtRef()
 	eventRef, hasEventRef := c.eventStmtRef()
 	ltMark := c.ctx.lifetimeCounter
 	if hasEventRef {
@@ -2044,7 +2036,7 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 	} else {
 		ret, fn = c.applyCallShape(lvl, e, target.callee, target.fn, target.secondInstance, args)
 	}
-	c.recordCallArgEffects(e, fn, consumeRef, hasConsumeRef)
+	c.recordCallArgEffects(e, fn, callRef, hasCallRef)
 	if hasEventRef {
 		// Calling a closure runs its body, and a callee handed a closure may call it during
 		// the call. Neither depends on the signature, so a callee whose signature is still a
@@ -2067,9 +2059,6 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 	// escapes. A destination typed by an inference variable has no ownership yet, so D9 decides
 	// it from the enclosing function's parameter once the body is walked.
 	c.noteOpenEscapes(scope, e, fn)
-	if hasConsumeRef {
-		c.consumeOnceCallee(e, consumeRef)
-	}
 	c.recordType(e, ret)
 	return pathResult{value: ret, shortCircuits: target.shortCircuits}
 }
@@ -2391,46 +2380,6 @@ func (c *checker) calleeReceiver(callee ast.Expr) (ast.Expr, *soltype.FuncParam)
 	return object, self
 }
 
-// consumeCallArgs consumes each owned argument passed to a bare owned parameter of
-// the resolved callee, recording the move at ref, the call's statement. A `&`/`&mut`
-// parameter borrows, so it leaves the argument usable. A parameter consumes its argument
-// when its type is a concrete owned object, tuple, or owned RefType. An unannotated
-// parameter's type is a fresh inference variable, so it consumes its argument when it is
-// marked Moved instead. An extra argument beyond the declared parameters, the surplus of
-// a too-many-arguments call, has no parameter to move into, so it is skipped.
-//
-// A rest slot is read through its element type, since each argument it gathers fills one
-// element of the array the callee owns rather than the array itself.
-func (c *checker) consumeCallArgs(e *ast.CallExpr, fn *soltype.FuncType, ref liveness.StmtRef) {
-	for i, arg := range e.Args {
-		if i >= len(fn.Params) {
-			break
-		}
-		if fn.Params[i].Rest {
-			// The slot gathers this argument and every later one into an array the callee
-			// owns, so each is carried out of the frame the way a bare owned parameter's
-			// argument is. A slot that is not an array of a concrete owned element moves
-			// nothing, the same conservative reading a fixed position takes.
-			if !c.paramTakesOwnership(fn.Params[i]) {
-				return
-			}
-			for _, absorbed := range e.Args[i:] {
-				c.consumeOwned(absorbed, c.info.TypeOf(absorbed), absorbed, ref)
-				c.recordFlowOut(absorbed, ref, false)
-			}
-			return
-		}
-		if !c.paramTakesOwnership(fn.Params[i]) {
-			continue
-		}
-		c.consumeOwned(arg, c.info.TypeOf(arg), arg, ref)
-		// A consuming argument carries its value into the callee, so it can take the locals it
-		// borrows along with it. A `&`/`&mut` parameter borrows instead of consuming, so the
-		// gate above skips it.
-		c.recordFlowOut(arg, ref, false)
-	}
-}
-
 // isWholeSignature reports whether fn is every signature callee carries. That holds when
 // callee is fn itself, a type variable whose one lower bound is fn, or a class value with a
 // constructor and no call signature, whose constructor fn was read from.
@@ -2510,23 +2459,22 @@ func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr, preset m
 	return args
 }
 
-// recordCallArgEffects moves the arguments a call consumes, checks that each borrow argument is
-// written, and records the borrow edges its signature stores, through consumeCallArgs,
-// checkExplicitBorrowArgs and recordCallStoreEdges. It is the ONE place both call paths run
-// those three, against whichever signature the call resolved to. That is the single signature
-// inferCallTarget read off the callee, or the arm resolveOverload picked. Keeping them here is what stops one path from
-// forgetting them, which is how #1508 came about.
+// recordCallArgEffects checks that each borrow argument of a call is written, and records the
+// borrow edges its signature stores, through checkExplicitBorrowArgs and recordCallStoreEdges.
+// It is the ONE place both call paths run those two, against whichever signature the call
+// resolved to. That is the single signature inferCallTarget read off the callee, or the arm
+// resolveOverload picked. Keeping them here is what stops one path from forgetting them, which
+// is how #1508 came about. ref is the CFG point of the call's statement, and hasRef is false
+// when the statement has none.
 //
-// fn is nil when no arm accepted the call or the callee's signature is still a variable. Nothing
-// is moved then, since no signature says which arguments the call consumes.
+// fn is nil when no arm accepted the call or the callee's signature is still a variable.
+// Nothing is checked or recorded then, since no signature says which arguments borrow.
 func (c *checker) recordCallArgEffects(
-	e *ast.CallExpr, fn *soltype.FuncType, consumeRef liveness.StmtRef, hasConsumeRef bool,
+	e *ast.CallExpr, fn *soltype.FuncType, ref liveness.StmtRef, hasRef bool,
 ) {
-	if !hasConsumeRef || fn == nil {
+	if !hasRef || fn == nil {
 		return
 	}
-
-	c.consumeCallArgs(e, fn, consumeRef)
 
 	// A borrow parameter takes a borrow, so the call has to write one. The receiver of a
 	// method call is not an argument and keeps auto-borrowing.
@@ -2536,20 +2484,15 @@ func (c *checker) recordCallArgEffects(
 	// receiver, aliases the two for as long as the target lives. Record that edge in the
 	// borrow graph, so a closure the target comes to hold is found through it.
 	recv, self := c.calleeReceiver(e.Callee)
-	c.recordCallStoreEdges(e, fn, recv, self, consumeRef)
+	c.recordCallStoreEdges(e, fn, recv, self, ref)
 }
 
-// consumeReceiver moves the receiver of a member access that reaches a consuming `self` or
-// `mut self` member, recording the move at the access's statement. `c.finish()` on a local
-// `c` leaves `c` unusable afterwards, and so does reading `val f = c.finish`, since the bound
-// method holds the instance. A receiver that names no place, such as `make().finish()`, has
-// nothing to record.
-//
-// The move is recorded directly rather than through consumeOwned. consumeOwned moves only
-// an object, tuple, or owned RefType, and a receiver is a class instance, which the move
-// engine reads as neither. The member's signature names the consuming form, so the receiver
-// is known to be owned without that test.
-func (c *checker) consumeReceiver(access ast.Node) {
+// emitReceiverMove emits the move of the receiver of a member access that reaches a
+// consuming `self` or `mut self` member. `c.finish()` on a local `c` leaves `c` unusable
+// afterwards, and so does reading `val f = c.finish`, since the bound method holds the
+// instance. A receiver that names no place, such as `make().finish()`, emits nothing, and so
+// does an access inside a statement with no CFG point of its own.
+func (c *checker) emitReceiverMove(access ast.Node) {
 	var accessExpr, recv ast.Expr
 	switch access := access.(type) {
 	case *ast.MemberExpr:
@@ -2559,37 +2502,13 @@ func (c *checker) consumeReceiver(access ast.Node) {
 	default:
 		return
 	}
-	ref, ok := c.currentStmtRef()
-	if !ok || c.fn.cfg == nil {
+	if _, ok := c.currentStmtRef(); !ok || c.fn.cfg == nil {
 		return
 	}
-	p, ok := c.exprPlace(recv)
-	if !ok {
+	if _, ok := c.exprPlace(recv); !ok {
 		return
 	}
-	c.recordMovePlace(p, recv, ref)
 	c.emitConsumedReceiver(accessExpr, recv)
-}
-
-// blameReceiver makes a use-after-move reported at the member access blame the access's
-// receiver. The access recorded its read as a use of the member it names, such as `c.take`,
-// and it does nothing when no such use was recorded.
-func (c *checker) blameReceiver(access ast.Node) {
-	var recv ast.Expr
-	switch access := access.(type) {
-	case *ast.MemberExpr:
-		recv = access.Object
-	case *ast.IndexExpr:
-		recv = access.Object
-	default:
-		return
-	}
-	if c.fn == nil {
-		return
-	}
-	if i, ok := c.fn.memberUses[access]; ok {
-		c.fn.useSites[i].blame = recv
-	}
 }
 
 // ctorOverloadArms returns the signatures of an overloaded constructor when t reads as a class
@@ -2734,8 +2653,8 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	if e.Left == nil || e.Right == nil {
 		return c.reportUnsupported(e)
 	}
-	// Snapshot the enclosing statement BEFORE walking the RHS. The consume, borrow, and
-	// loan records below need this assignment's statement to find its CFG StmtRef, but
+	// Snapshot the enclosing statement BEFORE walking the RHS. The borrow and loan records
+	// below need this assignment's statement to find its CFG StmtRef, but
 	// walking an RHS that contains statements re-enters inferStmt and overwrites
 	// c.fn.currentStmt. A `b = if c { … } else { … }`, a match, or a block expression
 	// all do this. Capturing the statement here keeps the reassignment path on the
@@ -2883,14 +2802,11 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		}
 		if len(c.errs) == errsBefore && !missing {
 			c.constrainEscape(sourceT)
-			// The store transfers the value into a permanent 'static storage location, so it consumes
-			// the source binding. A later use of the source is then a use-after-move, the
-			// affine rule that closes the leak the global write otherwise allowed.
 			if c.fn != nil {
-				if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
-					if !c.rejectModuleLevelMove(scope, e.Right) {
-						c.consumeAtGlobalWrite(e.Right, sourceT, e.Right, ref)
-					}
+				if _, ok := c.fn.stmtToRef[assignStmt]; ok {
+					// The module keeps the value, so a source that is itself module-level
+					// state cannot move into it.
+					c.rejectModuleLevelMove(scope, e.Right)
 					// Anything can call a closure in a module-level binding from here on, so each
 					// later call may run it.
 					if hasEventRef {
@@ -2916,14 +2832,10 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		}
 	}
 	if c.fn != nil && len(c.errs) == assignErrsBefore && !missing && c.varIDs.Of(target) > 0 {
-		// A non-module reassignment that moves its source consumes it. The global-write
-		// branch above runs its own consume, so this covers only the local-binding
-		// reassignment.
-		moduleLevel := !b.ModuleLevel && c.rejectModuleLevelMove(scope, e.Right)
-		if !b.ModuleLevel && !moduleLevel && c.movesSourceInto(e.Right, bindingType(b)) {
-			if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
-				c.consumeOwned(e.Right, c.info.TypeOf(e.Right), e.Right, ref)
-			}
+		// A local binding takes its source's value, so a source that is module-level state
+		// cannot move into it. The global-write branch above checks its own source.
+		if !b.ModuleLevel {
+			c.rejectModuleLevelMove(scope, e.Right)
 		}
 		// Record any borrow of a local the reassigned value introduces. `a = &mut b` records
 		// a → b. Recording strong-updates the binding, clearing its prior referent, and the
@@ -3102,21 +3014,16 @@ func (c *checker) inferFieldAssign(scope *Scope, lvl int, e *ast.BinaryExpr, obj
 		})
 	}
 	c.recordWritten(recv, name, w)
-	// Only a write that type-checked records a move, so a rejected write does not consume
-	// its source.
+	// Only a write that type-checked is checked for a module-level move and records borrow
+	// edges.
 	if c.fn != nil && len(c.errs) == errsBefore && !missing {
-		// Storing an owned value into a field transfers ownership into the receiver, so
-		// the source binding is consumed and a later use of it is a use-after-move. The
-		// move records against the assignment's statement, resolved from assignStmt
+		// The edges record against the assignment's statement, resolved from assignStmt
 		// rather than c.fn.currentStmt, which inferring the receiver and source may have
 		// overwritten with an inner branch statement.
 		if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
-			if !c.rejectModuleLevelMove(scope, e.Right) {
-				c.consumeOwned(e.Right, source, e.Right, ref)
-			}
-			// A store into a borrow parameter's field hands the value to the caller, so it can
-			// take the locals it borrows along with it.
-			c.recordParamStoreFlowOut(object, e.Right, ref)
+			// Storing a value into a field moves it into the receiver, so a source that is
+			// module-level state cannot be stored.
+			c.rejectModuleLevelMove(scope, e.Right)
 			// A store into a LOCAL receiver's field records a borrow edge rooted at the field.
 			// `b.peer = &mut d` records b → d at [peer].
 			c.recordFieldStoreEdges(object, name, e.Right, ref)
@@ -3232,13 +3139,9 @@ func (c *checker) inferElementAssign(scope *Scope, lvl int, e *ast.BinaryExpr, i
 	}
 	if c.fn != nil && len(c.errs) == errsBefore && !missing {
 		if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
-			// Storing an owned value into an element moves it into the receiver, and a store
-			// into a borrow parameter's element hands the value to the caller, as a field store
+			// Storing a value into an element moves it into the receiver, as a field store
 			// does.
-			if !c.rejectModuleLevelMove(scope, e.Right) {
-				c.consumeOwned(e.Right, source, e.Right, ref)
-			}
-			c.recordParamStoreFlowOut(ix.Object, e.Right, ref)
+			c.rejectModuleLevelMove(scope, e.Right)
 			c.recordElementStoreEdges(ix.Object, e.Right, ref)
 		}
 	}
@@ -3352,18 +3255,11 @@ func (c *checker) inferAccessorAssign(
 	}
 	missing := c.checkWrittenBorrow(e.Right, setter.Param.Type)
 	c.constrain(e.Right, source, checkTarget(setter.Param.Type, missing))
-	// A concretely owned parameter takes the value out of this frame, so the source
-	// binding is consumed and a later use of it is a use-after-move. This mirrors
-	// consumeCallArgs, since a setter write is a call on the argument side. The move
-	// records against the assignment's statement, resolved from assignStmt rather than
-	// c.fn.currentStmt, which inferring the receiver and source may have overwritten with
-	// an inner branch statement. A rejected write records no move.
+	// A concretely owned parameter takes the value out of this frame, so a source that is
+	// module-level state cannot be passed. A rejected write is not checked.
 	if c.fn != nil && len(c.errs) == errsBefore && c.isConcreteOwned(setter.Param.Type) {
-		if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
-			if !c.rejectModuleLevelMove(scope, e.Right) {
-				c.consumeOwned(e.Right, source, e.Right, ref)
-			}
-			c.recordFlowOut(e.Right, ref, false)
+		if _, ok := c.fn.stmtToRef[assignStmt]; ok {
+			c.rejectModuleLevelMove(scope, e.Right)
 		}
 	}
 	// The assignment evaluates to the value just written, widened the way a field write
@@ -3547,9 +3443,6 @@ func (c *checker) recordNamespaceMember(node ast.Node, b ValueBinding) {
 // already errored is absorbed silently, so the recovery sentinel does not cascade a second
 // diagnostic.
 func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Type {
-	// Resolve the enclosing statement's CFG point before inferring elements, which can
-	// overwrite c.fn.currentStmt with an inner branch statement.
-	stmtRef, hasStmtRef := c.currentStmtRef()
 	eventRef, hasEventRef := c.eventStmtRef()
 	pieces := make([]tuplePiece, 0, len(e.Elems))
 	variadic := false
@@ -3561,8 +3454,8 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 		if !ok {
 			elemT := c.inferExpr(scope, lvl, el)
 			pieces = append(pieces, tuplePiece{fixed: []soltype.Type{elemT}})
-			// Building an owned value into the tuple moves it.
-			c.consumeIntoLiteral(scope, el, elemT, stmtRef, hasStmtRef)
+			// Building a value into the tuple moves it, so it cannot be module-level state.
+			c.rejectModuleLevelMove(scope, el)
 			// The element is held at its position, the segment a tuple pattern reads it at. An
 			// element after a spread is held by the whole tuple.
 			if hasEventRef {
@@ -3597,11 +3490,10 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 				variadic = true
 			}
 			// An inexact tuple before the last element has no place in a tuple result, so
-			// it is consumed below only once the literal is known to hold it.
+			// it is checked below only once the literal is known to hold it.
 			if piece.inexact == nil || piece.last {
-				// Spreading an owned tuple moves its elements into the new tuple, so the
-				// spread operand is consumed.
-				c.consumeSpreadIntoLiteral(scope, spread.Value, op, stmtRef, hasStmtRef)
+				// Spreading a tuple moves its elements into the new tuple.
+				c.rejectModuleLevelSpread(scope, spread.Value, op)
 			}
 			pieces = append(pieces, piece)
 		case *soltype.ErrorType:
@@ -3615,12 +3507,12 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 			}
 			pieces = append(pieces, tuplePiece{shape: &tupleShape{rest: elem}})
 			variadic = true
-			c.consumeSpreadIntoLiteral(scope, spread.Value, op, stmtRef, hasStmtRef)
+			c.rejectModuleLevelSpread(scope, spread.Value, op)
 		}
 	}
 	var t soltype.Type
 	if variadic {
-		t = c.variadicLiteral(scope, pieces, stmtRef, hasStmtRef)
+		t = c.variadicLiteral(scope, pieces)
 	} else {
 		t = c.fixedLiteral(pieces)
 	}
@@ -3675,7 +3567,7 @@ func (c *checker) fixedLiteral(pieces []tuplePiece) *soltype.TupleType {
 // minimum length of one. A literal with no fixed value on either side is the `Array`
 // itself, so `[...xs]` is `Array<number>`. scope resolves the root of a spread operand
 // the literal moves.
-func (c *checker) variadicLiteral(scope *Scope, pieces []tuplePiece, stmtRef liveness.StmtRef, hasStmtRef bool) soltype.Type {
+func (c *checker) variadicLiteral(scope *Scope, pieces []tuplePiece) soltype.Type {
 	var prefix, middle, suffix []soltype.Type
 	inMiddle := false
 	addVariadic := func(shape tupleShape) {
@@ -3696,7 +3588,7 @@ func (c *checker) variadicLiteral(scope *Scope, pieces []tuplePiece, stmtRef liv
 			addVariadic(*piece.shape)
 		case piece.inexact != nil:
 			if !piece.last {
-				c.consumeSpreadIntoLiteral(scope, piece.spread.Value, piece.inexact, stmtRef, hasStmtRef)
+				c.rejectModuleLevelSpread(scope, piece.spread.Value, piece.inexact)
 			}
 			addVariadic(tupleShape{prefix: piece.inexactPrefix, rest: &soltype.UnknownType{}})
 		case inMiddle:
@@ -3734,9 +3626,6 @@ func (c *checker) variadicLiteral(scope *Scope, pieces []tuplePiece, stmtRef liv
 // property at its first position ({a: 1, b: 2, a: 3} ⇒ {a: 3, b: 2}). This keeps
 // property names unique, the invariant ObjectType.Prop / equalType rely on.
 func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.Type {
-	// Resolve the enclosing statement's CFG point before inferring property values,
-	// which can overwrite c.fn.currentStmt with an inner branch statement.
-	stmtRef, hasStmtRef := c.currentStmtRef()
 	eventRef, hasEventRef := c.eventStmtRef()
 	// Each element contributes one field list, folded left to right by mergeSpreadOperands so a
 	// later element wins over an earlier key. A property contributes its single field; a spread
@@ -3765,9 +3654,9 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 			}
 			operandElems = append(operandElems, obj.Elems)
 			inexact = inexact || obj.Inexact
-			// Spreading an owned object moves it into the new object, the object twin of the
-			// array-spread move.
-			c.consumeSpreadIntoLiteral(scope, spread.Value, op, stmtRef, hasStmtRef)
+			// Spreading an object moves its fields into the new object, the object twin of
+			// the array spread.
+			c.rejectModuleLevelSpread(scope, spread.Value, op)
 			continue
 		}
 		prop, ok := elem.(*ast.PropertyExpr)
@@ -3793,7 +3682,7 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 			// JavaScript evaluates a computed key before the value it labels.
 			keyT := c.inferExpr(scope, lvl, computed.Expr)
 			ft := c.inferExpr(scope, lvl, value)
-			c.consumeIntoLiteral(scope, value, ft, stmtRef, hasStmtRef)
+			c.rejectModuleLevelMove(scope, value)
 			// A computed key names no field segment, so the value is held by the whole object.
 			if hasEventRef {
 				c.emitTempFlow(value, e, nil, &ownedDest{}, eventRef)
@@ -3816,8 +3705,8 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 		ft := c.inferExpr(scope, lvl, value)
 		// A literal property is never optional or readonly.
 		operandElems = append(operandElems, []soltype.ObjTypeElem{&soltype.PropertyElem{Name: name, Type: ft}})
-		// Building an owned value into the object moves it.
-		c.consumeIntoLiteral(scope, value, ft, stmtRef, hasStmtRef)
+		// Building a value into the object moves it, so it cannot be module-level state.
+		c.rejectModuleLevelMove(scope, value)
 		// With no expected type, the element takes its source's type, as F1 states. The flow
 		// moves an owned source and copies a borrow.
 		if hasEventRef {
@@ -4130,12 +4019,11 @@ func (c *checker) resolveMemberPath(scope *Scope, lvl int, e *ast.MemberExpr, ob
 	if obj.ns != nil {
 		return c.resolveNamespaceMember(lvl, e, e.Prop, obj.ns, e.Prop.Name)
 	}
-	// Record the read of this place as the outermost read of the chain, so a later
-	// use-after-move test sees the full path `pair.a` rather than the spine's bare
-	// root. A spine step has objPos true and records nothing; the full place subsumes
-	// it.
+	// The outermost read of the chain emits a read of the full path `pair.a` rather than
+	// the spine's bare root. A spine step has objPos true and emits nothing, since the full
+	// place subsumes it.
 	if !objPos {
-		c.recordMemberUse(e)
+		c.emitMemberRead(e)
 	}
 	r := c.valueMember(lvl, e, obj.value, obj.place)
 	r.shortCircuits = obj.shortCircuits
@@ -4394,9 +4282,8 @@ func (c *checker) fieldBorrow(fieldType soltype.Type, readVar soltype.RefInner, 
 			// An owned receiver yields the field's owned value, not a borrow, so a
 			// field read can be moved out of it. `pair.a` off an owned `pair` is the
 			// owned field `{x}` and flows into an owned binding, argument, return, or
-			// store as a move that consumes `pair.a`. The move engine keys the consume
-			// on the field's place (PR 7). Whether the field may be mutated is decided
-			// by the binding the receiver is an owned layer of.
+			// store as a move of `pair.a`, whose place is the field's. Whether the field
+			// may be mutated is decided by the binding the receiver is an owned layer of.
 			return fieldType, true
 		}
 		if recvMut {
@@ -4447,7 +4334,7 @@ func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr, objP
 	var r pathResult
 	if name, ok := c.indexKeyName(scope, lvl, e, obj.value); ok {
 		if !objPos {
-			c.recordMemberUse(e)
+			c.emitMemberRead(e)
 		}
 		r = c.valueProp(lvl, e, e.Index, name, obj.value, obj.place)
 	} else if _, isNever := obj.value.(*soltype.NeverType); isNever && obj.shortCircuits {
@@ -4537,7 +4424,7 @@ func (c *checker) dynamicIndexRead(e *ast.IndexExpr, recv soltype.Type, objPos b
 		if shape, ok := c.ctx.variadicShape(recv); ok {
 			if i, inPrefix := prefixPosition(key, len(shape.prefix)); inPrefix {
 				if !objPos {
-					c.recordMemberUse(e)
+					c.emitMemberRead(e)
 				}
 				elem := shape.prefix[i]
 				c.recordType(e, elem)
@@ -4563,7 +4450,7 @@ func (c *checker) dynamicIndexRead(e *ast.IndexExpr, recv soltype.Type, objPos b
 		return pathResult{err: true}
 	}
 	if !objPos {
-		c.recordMemberUse(e)
+		c.emitMemberRead(e)
 	}
 	c.recordType(e, reduced)
 	return pathResult{value: reduced}

@@ -103,8 +103,65 @@ func withOwnershipDataflowResolved(opts Options) Options {
 	return opts
 }
 
-// replacedByDataflow reports whether err is a diagnostic of E1, E2, or E3 that the dataflow
-// pass reports in place of the move engine while the ownershipDataflow flag is set.
+// UseAfterMoveError is reported when a binding is read after an owned value has
+// moved out of it. It blames the read and points its related span at the move site.
+// Conditional records whether only some paths reaching the read moved the binding, so a
+// diagnostic consumer can distinguish a definite use-after-move from a possible one.
+type UseAfterMoveError struct {
+	// Name is the moved place's source name, for the message — `pair.a` when the
+	// field `pair.a` was consumed.
+	Name string
+	// ReadName is the read place's source name, set only for a partial-move read where
+	// it differs from Name — `pair` when the whole object is read after `pair.a` moved.
+	ReadName string
+	// Partial is true when the read place is a strict ancestor of the moved place, so
+	// the read exposes a field that moved out rather than the moved place itself. It
+	// selects the partially-moved wording and pairs with ReadName.
+	Partial bool
+	// Conditional is true when the binding is moved on some but not all paths
+	// reaching the use, and false when every reaching path moved it.
+	Conditional bool
+	// Via names the closure the call being blamed may run, when the read is that closure's
+	// access to what it captures. It is a phrase closureVia or retainedVia returns, and is empty
+	// otherwise.
+	Via string
+	// ViaRuns marks a closure named by Via that the call is sure to run, because the call's
+	// callee names it.
+	ViaRuns bool
+	// ViaReads marks a closure named by Via that only reads the place. It is false for one
+	// that writes it.
+	ViaReads bool
+	// use is the read being rejected; it self-blames from here.
+	use ast.Node
+	// moveSite is the expression that moved the binding, used for the related span. It
+	// may be nil when the move names no expression.
+	moveSite ast.Node
+}
+
+func (*UseAfterMoveError) isSolverError()   {}
+func (e *UseAfterMoveError) Span() ast.Span { return e.use.Span() }
+func (e *UseAfterMoveError) Related() []ast.Span {
+	if e.moveSite == nil {
+		return nil
+	}
+	return []ast.Span{e.moveSite.Span()}
+}
+func (e *UseAfterMoveError) Message() string {
+	if e.Partial {
+		return fmt.Sprintf("use of partially moved value '%s'; field '%s' was moved out", e.ReadName, e.Name)
+	}
+	if e.Via != "" {
+		access := "writes"
+		if e.ViaReads {
+			access = "reads"
+		}
+		return fmt.Sprintf("this call %s %s, which %s '%s' after it was moved", runsVerb(e.ViaRuns), e.Via, access, e.Name)
+	}
+	return fmt.Sprintf("use of moved value '%s'", e.Name)
+}
+
+// replacedByDataflow reports whether err is a diagnostic of E1, E2, or E3, the rules the
+// dataflow pass checks while the ownershipDataflow flag is set.
 func replacedByDataflow(err SolverError) bool {
 	switch err.(type) {
 	case *UseAfterMoveError, *BorrowAliasError, *MoveWhileBorrowedError, *BorrowedValueWriteError:
@@ -1861,8 +1918,7 @@ func (d *bodyDataflow) report(e SolverError) {
 	*d.errs = append(*d.errs, e)
 }
 
-// placeName renders p for a diagnostic as the root's name followed by its field path, the
-// way the checker's renderPlace does.
+// placeName renders p for a diagnostic as the root's name followed by its field path.
 func (d *bodyDataflow) placeName(p movePlace) string {
 	var b strings.Builder
 	if name, ok := d.table.names[p.root]; ok {

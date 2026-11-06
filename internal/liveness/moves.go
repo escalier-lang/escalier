@@ -7,11 +7,9 @@ import (
 	"github.com/escalier-lang/escalier/internal/set"
 )
 
-// MoveState is one binding's position in the consumed lattice — the per-binding
-// move tracking the affine move engine joins at every CFG merge. A binding moves
-// when an owned value flows out of it at a consume site (a return, a store, a
-// consuming argument, an escaping capture). The three states answer "has this
-// binding been moved on the paths that reach here":
+// MoveState is one binding's position in the consumed lattice that AnalyzeMoves joins at
+// every CFG merge. A binding moves at each statement the caller lists for it. The three
+// states answer "has this binding been moved on the paths that reach here":
 //
 //		            MaybeMoved
 //		           /          \
@@ -22,9 +20,6 @@ import (
 //	    use-after-move.
 //	  - MaybeMoved: some but not all reaching paths moved it, so a use is a
 //	    conditional use-after-move.
-//
-// PR 6 reads these at each use, passing NotMoved and rejecting Moved and
-// MaybeMoved. PR 5 only builds the analysis; it reports no user-facing errors.
 type MoveState int
 
 const (
@@ -96,8 +91,8 @@ type MoveInfo struct {
 }
 
 // AnalyzeMoves runs the forward move-state dataflow over a CFG. The moves map
-// records, for each statement, the VarIDs that statement moves — the consume sites
-// PR 6 collects while walking the body. A statement absent from the map moves nothing.
+// records, for each statement, the VarIDs that statement moves. A statement absent from the
+// map moves nothing.
 //
 // The dataflow mirrors AnalyzeFunction's structure but runs FORWARD: liveness
 // flows backward from uses, moves flow forward from consume sites.
@@ -282,8 +277,7 @@ func joinPreds(block *BasicBlock, blockOut []map[VarID]MoveState) map[VarID]Move
 
 // applyMoves returns a copy of state with each VarID in moved overridden to
 // Moved. A move sets the binding to Moved regardless of its prior state, since a
-// value cannot be un-moved; a double move along one path lands on Moved, the case
-// PR 6 reads as an unconditional use-after-move.
+// value cannot be un-moved, so a double move along one path lands on Moved.
 func applyMoves(state map[VarID]MoveState, moved set.Set[VarID]) map[VarID]MoveState {
 	out := cloneMoveMap(state)
 	for v := range moved {

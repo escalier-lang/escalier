@@ -214,12 +214,9 @@ func TestInferForInErrors(t *testing.T) {
 	}
 }
 
-// TestForInBackEdgeMoves confirms the affine move engine sees the loop back edge: a
-// value moved in the loop body is a use-after-move on the next iteration, which the
-// engine catches because it replays every use against the branch-merged consumed
-// lattice, loop back edges included. A `for` loop is the first inferable source that
-// gives the CFG a back edge, so this is where AnalyzeMoves first meets one from real
-// code.
+// TestForInBackEdgeMoves asserts that a move follows the loop back edge: a value moved in
+// the loop body is a use-after-move on the next iteration. The dataflow pass walks the CFG,
+// back edges included, so the move reaches the next iteration's read.
 func TestForInBackEdgeMoves(t *testing.T) {
 	// `val q = p` moves p out on the first iteration; the back edge re-enters the body
 	// with p already moved, so the same statement on the next iteration reads a moved
@@ -313,8 +310,7 @@ func TestForInBorrowAvoidsMove(t *testing.T) {
 
 // TestForInLoopBindingIsFreshEachIteration covers moving a for-in loop's pattern bindings.
 // Each iteration declares them afresh, so a move on one iteration does not reach the next.
-// A second move within one iteration still reports. Each case runs with the dataflow pass and
-// with the move engine alone.
+// A second move within one iteration still reports.
 func TestForInLoopBindingIsFreshEachIteration(t *testing.T) {
 	tests := map[string]struct {
 		src  string
@@ -355,9 +351,6 @@ func TestForInLoopBindingIsFreshEachIteration(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tc.src)
 			require.Equal(t, tc.want, messagesWithSpan(t, errs))
-
-			res := InferModuleAgainstStdlib(parseModule(t, tc.src), benchTree, Options{NoOwnershipDataflow: true})
-			require.Equal(t, tc.want, messagesWithSpan(t, res.Errors))
 		})
 	}
 }
