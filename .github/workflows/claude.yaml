@@ -80,6 +80,9 @@ jobs:
           # from the default branch's copy, so the label trigger uses the job's
           # own token. Remove before merging.
           github_token: ${{ github.event_name == 'pull_request' && github.token || '' }}
+          # TEMPORARY: shows which tool calls --allowedTools refuses. Remove
+          # before merging.
+          show_full_output: true
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
