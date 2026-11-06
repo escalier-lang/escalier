@@ -489,77 +489,104 @@ func TestStdlibImportAliasRenamesTheOnlyBinding(t *testing.T) {
 	require.False(t, bare, "the class is not lifted out of its package")
 }
 
-// `web:core` binds its exports under their own names, so an importer writes
-// `Event` rather than `core.Event`. It is the one package on that footing, and
-// it still takes an import, which is what separates it from the prelude.
-func TestCoreImportBindsItsExportsUnprefixed(t *testing.T) {
+// TestWebPreludeBindsWithoutAnImport covers how a project's own file reaches
+// `web:prelude`. Its exports bind under their own names with no import, an import
+// still binds the package as a namespace, and a declaration of the module's own
+// wins over a prelude name without a diagnostic.
+func TestWebPreludeBindsWithoutAnImport(t *testing.T) {
 	t.Parallel()
 
 	files := map[string]string{
-		"web/core.esc": `
+		"web/prelude.esc": `
 			export declare class Event { readonly type: string }
 			export type EventInit = { bubbles?: boolean }
 		`,
 	}
 
-	t.Run("AClassReadsWithoutAPrefix", func(t *testing.T) {
-		res := inferAgainstStdlib(t, `
-			import "web:core"
-			declare val e: Event
-			val t = e.type
-		`, files)
+	tests := []struct {
+		name  string
+		src   string
+		value string
+		want  string
+	}{
+		{
+			name:  "a class reads without a prefix",
+			src:   "declare val e: Event\nval t = e.type",
+			value: "t",
+			want:  "string",
+		},
+		{
+			name:  "a type reads without a prefix",
+			src:   "declare val init: EventInit\nval b = init.bubbles",
+			value: "b",
+			want:  "boolean | undefined",
+		},
+		{
+			name:  "an import binds the qualified spelling",
+			src:   "import \"web:prelude\"\ndeclare val e: prelude.Event\nval t = e.type",
+			value: "t",
+			want:  "string",
+		},
+		{
+			name:  "a module declaration wins",
+			src:   "export declare class Event { readonly mine: number }\ndeclare val e: Event\nval n = e.mine",
+			value: "n",
+			want:  "number",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			res := inferAgainstStdlib(t, tt.src, files)
+			require.Empty(t, errorMessagesOf(res.Errors))
+			require.Equal(t, tt.want, soltype.Print(inferredValueType(t, res.Scope, tt.value)))
+		})
+	}
+}
 
+// TestWebPackageReachesWebPreludeBare asserts that a `web:*` package names a
+// `web:prelude` export without importing it, whether the package loads alone or in a
+// group with the prelude, and that a `std:*` package does not.
+func TestWebPackageReachesWebPreludeBare(t *testing.T) {
+	t.Parallel()
+
+	files := map[string]string{
+		"web/prelude.esc": `export declare class Event { readonly type: string }`,
+		"web/file.esc":    `export declare class Blob { readonly event: Event }`,
+		"std/tagged.esc":  `export declare class Tagged { readonly event: Event }`,
+	}
+	src := `
+		import "web:file"
+		declare val b: file.Blob
+		val t = b.event.type
+	`
+
+	t.Run("in a group", func(t *testing.T) {
+		t.Parallel()
+		res := inferAgainstStdlib(t, src, files)
 		require.Empty(t, errorMessagesOf(res.Errors))
 		require.Equal(t, "string", soltype.Print(inferredValueType(t, res.Scope, "t")))
 	})
 
-	t.Run("ATypeReadsWithoutAPrefix", func(t *testing.T) {
-		res := inferAgainstStdlib(t, `
-			import "web:core"
-			declare val init: EventInit
-			val b = init.bubbles
-		`, files)
-
-		require.Empty(t, errorMessagesOf(res.Errors))
-		require.Equal(t, "boolean | undefined", soltype.Print(inferredValueType(t, res.Scope, "b")))
-	})
-
-	t.Run("TheQualifiedSpellingStillWorks", func(t *testing.T) {
-		res := inferAgainstStdlib(t, `
-			import "web:core"
-			declare val e: core.Event
-			val t = e.type
-		`, files)
-
-		require.Empty(t, errorMessagesOf(res.Errors))
-		require.Equal(t, "string", soltype.Print(inferredValueType(t, res.Scope, "t")))
-	})
-
-	t.Run("WithoutTheImportTheAmbientScopeBindsIt", func(t *testing.T) {
-		res := inferAgainstStdlib(t, `
-			declare val e: Event
-			val t = e.type
-		`, files)
-
-		require.Empty(t, errorMessagesOf(res.Errors))
-		require.Equal(t, "string", soltype.Print(inferredValueType(t, res.Scope, "t")))
-	})
-
-	t.Run("WithoutTheImportOrTheAmbientScopeTheBareNameIsUnbound", func(t *testing.T) {
-		module := parseModule(t, `
-			declare val e: Event
-			val t = e.type
-		`)
+	t.Run("alone", func(t *testing.T) {
+		t.Parallel()
 		source := StdlibSource(seedStdlib(t, withPreludeClasses(files)))
-		res := inferModuleWithGroups(module, source, nil, nil, Options{NoAmbientNames: true})
+		res := inferModuleWithGroups(parseModule(t, src), source, nil, nil, Options{})
+		require.Empty(t, errorMessagesOf(res.Errors))
+		require.Equal(t, "string", soltype.Print(inferredValueType(t, res.Scope, "t")))
+	})
 
-		require.Equal(t, []string{"cannot find type `Event`"}, errorMessagesOf(res.Errors))
+	t.Run("a std package does not", func(t *testing.T) {
+		t.Parallel()
+		res := inferAgainstStdlib(t, "import \"std:tagged\"\ndeclare val x: tagged.Tagged", files)
+		require.Len(t, res.Errors, 1)
+		require.Contains(t, res.Errors[0].Message(), "cannot find type `Event`")
 	})
 }
 
-// Every other package keeps its prefix. Only `web:core` binds unprefixed, so a
-// sibling's export is unreachable by its bare name.
-func TestOnlyCoreBindsUnprefixed(t *testing.T) {
+// TestOnlyPreludesBindUnprefixed asserts that a package other than a `*:prelude` one
+// keeps its prefix, so a sibling's export is unreachable by its bare name.
+func TestOnlyPreludesBindUnprefixed(t *testing.T) {
 	t.Parallel()
 
 	res := inferAgainstStdlib(t, `
@@ -570,70 +597,6 @@ func TestOnlyCoreBindsUnprefixed(t *testing.T) {
 	})
 
 	require.Equal(t, []string{"cannot find type `Blob`"}, errorMessagesOf(res.Errors))
-}
-
-// A name the importing module declares itself is not displaced. An import binds
-// into the file scope, a CHILD of the module scope, so binding it unguarded
-// would shadow the module's own declaration.
-func TestCoreImportDoesNotShadowAModuleDeclaration(t *testing.T) {
-	t.Parallel()
-
-	res := inferAgainstStdlib(t, `
-		import "web:core"
-		export declare class Event { readonly mine: number }
-		declare val e: Event
-		val n = e.mine
-	`, map[string]string{
-		"web/core.esc": `export declare class Event { readonly type: string }`,
-	})
-
-	require.Equal(t, []string{
-		"importing \"web:core\" binds Event, which this module already declares; " +
-			"reach the imported one as `core.Event` or rename the declaration",
-	}, errorMessagesOf(res.Errors))
-
-	// The module's own declaration is what the bare name resolves to.
-	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "n")))
-}
-
-// A value and a type of one name are two bindings, so a value the module
-// declares leaves the imported type reachable unprefixed.
-//
-// `web:core` exports `EventInit` as a type alone. A module declaring
-// `val EventInit` occupies the value namespace and nothing else, so the type
-// binds and no collision is reported.
-func TestCoreImportBindsATypeBesideADeclaredValueOfThatName(t *testing.T) {
-	t.Parallel()
-
-	res := inferAgainstStdlib(t, `
-		import "web:core"
-		export declare val EventInit: number
-		declare val init: EventInit
-		val b = init.bubbles
-	`, map[string]string{
-		"web/core.esc": `export declare interface EventInit { bubbles: boolean }`,
-	})
-
-	require.Empty(t, errorMessagesOf(res.Errors))
-	require.Equal(t, "boolean", soltype.Print(inferredValueType(t, res.Scope, "b")))
-}
-
-// The remediation names the binding the import actually made, so an aliased
-// import is told to write the alias rather than `core`.
-func TestCoreImportShadowingNamesTheAliasItBound(t *testing.T) {
-	t.Parallel()
-
-	res := inferAgainstStdlib(t, `
-		import "web:core" as dom
-		export declare class Event { readonly mine: number }
-	`, map[string]string{
-		"web/core.esc": `export declare class Event { readonly type: string }`,
-	})
-
-	require.Equal(t, []string{
-		"importing \"web:core\" binds Event, which this module already declares; " +
-			"reach the imported one as `dom.Event` or rename the declaration",
-	}, errorMessagesOf(res.Errors))
 }
 
 // withJsPreludeClasses is withPreludeClasses with a `@js` decorator on each prelude class, so

@@ -45,9 +45,8 @@ type ambientKey struct {
 	// closure, so an edit to the tree misses the cache rather than reading a stale
 	// load. The prelude loads alone, outside any group, so closure does not name it.
 	digest [sha256.Size]byte
-	// noAmbientNames and checkJsDecorators are the Options fields that change what
-	// loading the packages binds or reports.
-	noAmbientNames    bool
+	// checkJsDecorators is the Options field that changes what loading the packages
+	// reports.
 	checkJsDecorators bool
 	// ownershipDataflow is whether the run checks with the dataflow pass, which changes the
 	// diagnostics loading a package with a function body reports.
@@ -144,7 +143,6 @@ func ambientKeyOf(dir string, groups PackageGroups, opts Options) (ambientKey, b
 	key := ambientKey{
 		dir:               dir,
 		closure:           strings.Join(uris, ","),
-		noAmbientNames:    opts.NoAmbientNames,
 		checkJsDecorators: opts.CheckJsDecorators,
 		ownershipDataflow: !opts.NoOwnershipDataflow,
 	}
@@ -176,7 +174,6 @@ func loadAmbientChecker(dir string, groups PackageGroups, opts Options) *checker
 	// The packages loaded here are pseudo-packages, which never reach node_modules
 	// or the project's dependency list, so the load ignores both.
 	c := newRunChecker(StdlibSource(dir), StdlibGroupSource(dir), groups, Options{
-		NoAmbientNames:      opts.NoAmbientNames,
 		CheckJsDecorators:   opts.CheckJsDecorators,
 		NoOwnershipDataflow: opts.NoOwnershipDataflow,
 	})
@@ -345,8 +342,8 @@ func (c *checker) fork(source ModuleSource, groupSource GroupSource, groups Pack
 		f.heldLoadErrs[uri] = copies[held]
 	}
 
-	// A run that binds the globals scope itself, as one with Options.NoAmbientNames does
-	// when it loads an npm package, fills a scope of its own.
+	// A run that binds the globals scope itself, as one does when it loads an npm
+	// package, fills a scope of its own.
 	if !c.globalsBound {
 		f.globals = nil
 	}

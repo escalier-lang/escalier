@@ -42,7 +42,7 @@ func TestMemberAccess(t *testing.T) {
 	source := &ast.Source{
 		ID:       0,
 		Path:     "input.esc",
-		Contents: "console.log(\"hello, world\")\n",
+		Contents: "import \"std:console\"\nconsole.log(\"hello, world\")\n",
 	}
 	output := Compile(source)
 	snaps.MatchSnapshot(t, snapshot.String(output))
@@ -102,7 +102,7 @@ func TestForInIterator(t *testing.T) {
 	source := &ast.Source{
 		ID:       0,
 		Path:     "input.esc",
-		Contents: "declare val items: IterableIterator<number>\nfor x in items {\n  val y = x\n}\n",
+		Contents: "import \"std:iterator\"\ndeclare val items: iterator.IterableIterator<number>\nfor x in items {\n  val y = x\n}\n",
 	}
 	output := Compile(source)
 	snaps.MatchSnapshot(t, snapshot.String(output))
@@ -122,7 +122,7 @@ func TestForAwaitInAsyncIterator(t *testing.T) {
 	source := &ast.Source{
 		ID:       0,
 		Path:     "input.esc",
-		Contents: "async fn processItems() {\n  declare val items: AsyncIterableIterator<number>\n  for await x in items {\n    val y = x\n  }\n}\n",
+		Contents: "import \"std:async\"\nasync fn processItems() {\n  declare val items: async.AsyncIterableIterator<number>\n  for await x in items {\n    val y = x\n  }\n}\n",
 	}
 	output := Compile(source)
 	snaps.MatchSnapshot(t, snapshot.String(output))

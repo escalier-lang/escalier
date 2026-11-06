@@ -1,0 +1,6 @@
+// `web:prelude` is ambient in a project's own file, so its names need no import.
+export fn kind(e: Event) -> string {
+    return e.type
+}
+export val controller = AbortController()
+export val signal: AbortSignal = controller.signal

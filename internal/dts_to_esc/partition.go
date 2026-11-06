@@ -431,9 +431,9 @@ var webPackages = []struct {
 		"TextDecoder", "TextDecoderCommon", "TextDecoderOptions",
 		"TextDecodeOptions",
 		// The message event, which the WinterTC minimum common API lists.
-		// `source` and `ports` name the browser and web/core.replace.esc
+		// `source` and `ports` name the browser and web/prelude.replace.esc
 		// retypes them; the deprecated `initMessageEvent` does too and
-		// web/core.drop.esc removes it.
+		// web/prelude.drop.esc removes it.
 		"MessageEvent", "MessageEventInit",
 	}},
 	{"web:fetch", "web/fetch.esc", []string{
@@ -1020,9 +1020,9 @@ var UnreferencedDOMTypes = set.FromSlice([]string{
 var OverlayRetypedSoleReferrers = map[string]string{
 	// `web:prelude` declares `MessageEvent` and `MessageEventInit`, and their
 	// four references to the name are all answered there. The `source`
-	// member of each is retyped to `null` in overlay/web/core.replace.esc,
+	// member of each is retyped to `null` in overlay/web/prelude.replace.esc,
 	// and the two `initMessageEvent` overloads that name it are removed in
-	// overlay/web/core.drop.esc.
+	// overlay/web/prelude.drop.esc.
 	"MessageEventSource": "web:prelude",
 }
 

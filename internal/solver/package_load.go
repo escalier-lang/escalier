@@ -207,11 +207,9 @@ func (c *checker) inferPackage(uri string, module *ast.Module) (*Namespace, []So
 	prevErrs := c.errs
 	c.errs = nil
 
-	scope := c.preludeScope().Child()
+	scope := c.packageParentScope([]string{uri}).Child()
 	// A `.d.ts` is written against TypeScript's global library, which the globals
-	// scope holds. `Console` is one such name. The globals scope is used even when
-	// the run sets Options.NoAmbientNames, since that option governs the names the
-	// project's own files reach.
+	// scope holds. `Console` is one such name.
 	if !IsSchemePrefixedImport(uri) {
 		scope = c.globalsScope().Child()
 	}

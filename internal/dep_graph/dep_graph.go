@@ -111,9 +111,10 @@ type DepGraph struct {
 	ImportNamespaces map[int]map[string]string
 }
 
-// UnprefixedImport is the ImportNamespaces key for an import that binds its
-// package's members bare, the way `import "web:core"` binds `AbortSignal`. No
-// import binds a package under the empty name, so the key cannot collide.
+// UnprefixedImport is the ImportNamespaces key for a package whose members a file
+// reads bare, the way a `web:*` member of a group reads `web:prelude`'s
+// `AbortSignal`. No import binds a package under the empty name, so the key cannot
+// collide.
 const UnprefixedImport = ""
 
 // NewDepGraph creates a new DepGraph with initialized empty maps.
@@ -361,7 +362,7 @@ type DependencyVisitor struct {
 // `weak_ref.WeakKey` becomes `std__weak_ref.WeakKey` when the file's
 // `import "std:weak_ref"` stands for the `std__weak_ref` namespace. A bare name
 // is rewritten under the UnprefixedImport entry, so `AbortSignal` becomes
-// `web__core.AbortSignal`. It returns false for any other name.
+// `web__prelude.AbortSignal`. It returns false for any other name.
 func (v *DependencyVisitor) importedName(name string) (string, bool) {
 	head, rest, dotted := strings.Cut(name, ".")
 	if !dotted {

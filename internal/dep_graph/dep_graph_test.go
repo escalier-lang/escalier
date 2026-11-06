@@ -411,10 +411,10 @@ func TestBuildDepGraphV2_Dependencies(t *testing.T) {
 // namespace through what its own file imports. `fetch/index.esc` lands its
 // declarations in the `fetch` namespace, so `streams.Stream` written there means
 // `web__streams.Stream` only through the alias, and a bare `Signal` means
-// `web__core.Signal` only through the UnprefixedImport entry.
+// `web__prelude.Signal` only through the UnprefixedImport entry.
 func TestBuildDepGraphWithImports(t *testing.T) {
 	imports := map[int]map[string]string{
-		0: {"streams": "web__streams", "core": "web__core", UnprefixedImport: "web__core"},
+		0: {"streams": "web__streams", "prelude": "web__prelude", UnprefixedImport: "web__prelude"},
 	}
 	tests := map[string]struct {
 		contents string
@@ -429,17 +429,17 @@ func TestBuildDepGraphWithImports(t *testing.T) {
 		"AnUnprefixedBareType": {
 			contents: `declare type Init = {signal: Signal}`,
 			key:      TypeBindingKey("fetch.Init"),
-			want:     []BindingKey{TypeBindingKey("web__core.Signal")},
+			want:     []BindingKey{TypeBindingKey("web__prelude.Signal")},
 		},
 		"AnUnprefixedSuperclass": {
 			contents: `declare class Request extends Signal {}`,
 			key:      ValueBindingKey("fetch.Request"),
-			want:     []BindingKey{TypeBindingKey("web__core.Signal"), ValueBindingKey("web__core.Signal")},
+			want:     []BindingKey{TypeBindingKey("web__prelude.Signal"), ValueBindingKey("web__prelude.Signal")},
 		},
 		"AnUnprefixedValue": {
 			contents: `val s = Signal`,
 			key:      ValueBindingKey("fetch.s"),
-			want:     []BindingKey{ValueBindingKey("web__core.Signal")},
+			want:     []BindingKey{ValueBindingKey("web__prelude.Signal")},
 		},
 		"AnOwnSiblingOutranksTheUnprefixedImport": {
 			contents: "declare type Signal = number\ndeclare type Init = {signal: Signal}",
@@ -454,7 +454,7 @@ func TestBuildDepGraphWithImports(t *testing.T) {
 			ctx := context.Background()
 			module, errs := parser.ParseLibFiles(ctx, []*ast.Source{
 				{ID: 0, Path: "fetch/index.esc", Contents: test.contents},
-				{ID: 1, Path: "web__core/index.esc", Contents: `declare class Signal {}`},
+				{ID: 1, Path: "web__prelude/index.esc", Contents: `declare class Signal {}`},
 				{ID: 2, Path: "web__streams/index.esc", Contents: `declare class Stream {}`},
 			})
 			require.Empty(t, errs)

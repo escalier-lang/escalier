@@ -1,0 +1,15 @@
+lib/index.esc:7:18: Unknown identifier: Error
+
+7:  export val err = Error("boom")
+                     ^^^^^
+
+lib/index.esc:5:5: Unknown identifier: console
+
+5:      console.log(msg)
+        ^^^^^^^
+
+lib/index.esc:3:17: Unknown identifier: Math
+
+3:  export val pi = Math.PI
+                    ^^^^
+

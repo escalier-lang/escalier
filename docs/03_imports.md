@@ -10,9 +10,10 @@ Two things follow. `globalThis` does not exist — it was the union of every
 ambient name, and there is nothing left to take its union over. Neither does
 `eval`.
 
-Until that model is complete, the compiler binds the builtins ambiently as a
-compatibility surface. [Ambient builtins](#ambient-builtins) describes it and
-how a package turns it off.
+Two packages are the exception, `std:prelude` and `web:prelude`, and
+[The preludes](#the-preludes) describes them. An npm package's `.d.ts` is written
+against TypeScript's global library, so it reaches more, as
+[What a `.d.ts` reaches](#what-a-dts-reaches) describes.
 
 ## The two kinds of import
 
@@ -80,9 +81,8 @@ val d: date.Date = date.Date()   // construct — no `new` keyword
 val start = date.Date.now()      // a class static
 ```
 
-That is how an import reaches a class. While the [ambient builtins](#ambient-builtins)
-are on, `Date()` and `Date.now()` also resolve with no import. A package that turns
-them off reaches the class only through the import, as `date.Date`.
+That is how an import reaches a class. Without the import, `Date()` and
+`Date.now()` resolve nothing.
 
 Every export is a member of that one binding, whatever kind it is. A class, a
 function, a value, a type, and a nested namespace are all read the same way, so
@@ -155,9 +155,9 @@ it lowers to. `math.sin(x)` lowers to `Math.sin(x)`, and `parseInt` from
 Construction is not carried by the decorator: codegen inserts `new` at the call
 site from the callee's type, so `Date()` lowers to `new Date()`.
 
-### The prelude
+### The preludes
 
-One package needs no import. `std:prelude` declares the types the language's own
+Two packages need no import. `std:prelude` declares the types the language's own
 rules name — `Array`, `Promise`, `Iterable`, `AsyncIterable`, `Generator`, and
 `AsyncGenerator` — and every file starts with its exports in scope. It also
 declares what those six name in their own members, such as `ArrayLike`,
@@ -176,7 +176,21 @@ These are part of the language rather than a library a program opts into.
 `Iterable<T>`, so a program cannot express those forms without them, and
 requiring an import for a type the desugaring already named would be busywork.
 
-The prelude does not shadow your own code. A declaration in the module wins over
+`web:prelude` holds what the event model and the WinterTC minimum common API need
+on every runtime: `Event`, `EventTarget`, `AbortController`, `AbortSignal`,
+`DOMException`, `TextEncoder` and `TextDecoder`, with the types their members
+name. Every file starts with its exports in scope too, and so does every `web:*`
+package, which reaches them with no import and no qualifier.
+
+```escalier
+val controller = AbortController()   // no import
+fn kind(e: Event) -> string { return e.type }
+```
+
+No other package is ambient. A package's URI says whether it is: a `*:prelude`
+package is, and every other package takes an import.
+
+A prelude does not shadow your own code. A declaration in the module wins over
 a prelude export of the same name, and a file's import wins over both, so
 `class Array` in your own `lib/` is the `Array` that file sees.
 
@@ -188,8 +202,11 @@ in one of two modes.
 
 - **Shape-loaded.** The checker loads a package's contents to satisfy needs that
   arise from the language itself: method dispatch on a string or number literal,
-  the regex shape behind a regex literal. No identifier enters scope. This is the
-  checker knowing what the language guarantees about its own values.
+  the regex shape behind a regex literal, and the `call` and `apply` members of a
+  function. No identifier enters scope. This is the checker knowing what the
+  language guarantees about its own values. The packages shape-loaded this way
+  are the ones declaring each primitive's wrapper class, `std:regexp` and
+  `std:function`.
 - **Named.** Naming a class, type, or value — `Error`, `parseInt`, `Partial` —
   requires the explicit import. The bindings exposed are exactly the package's
   top-level declarations.
@@ -198,32 +215,22 @@ Shape-loading is per-file and additive, and it never satisfies an explicit
 reference. `"ab".toUpperCase()` works without an import; `String.raw(…)` needs
 `import "std:string"`.
 
-### Ambient builtins
+### What a `.d.ts` reaches
 
-The compiler binds the exports of every `std:*` package, plus `web:core` and
-`web:fetch`, without an import. `Math.PI`, `console.log`, `parseInt`, `Error`,
-and `fetch` all resolve with no import statement. An `@js` path decides where a
-name binds, so `@js("Math.clz32")` puts `clz32` in an ambient `Math`. A module's
-own declaration and a file's import both shadow an ambient name.
+A `.d.ts` file in an npm package is written against TypeScript's global library
+and names `Console`, `Blob` or `ReadableStream` without importing them. It cannot
+be rewritten to add imports, so an npm package's declarations read a wider scope
+than a project's own files do. That scope binds the exports of every `std:*`
+package plus `web:fetch`, `web:file`, `web:streams` and `web:url`, over the two
+preludes. An `@js` path decides where a name binds, so `@js("Math.clz32")` puts
+`clz32` in a namespace `Math`.
 
-A builtin class binds the same way, so `Date()` and `Date.now()` need no import.
-Importing its package still binds the package as a namespace, so after
-`import "std:date"` the class is also `date.Date`, as
-[A class is reached through its package](#a-class-is-reached-through-its-package)
-describes.
+`web:dom` is not in that scope while it loads with errors of its own, which
+[#2377](https://github.com/escalier-lang/escalier/issues/2377) tracks. A `.d.ts`
+naming `HTMLElement` or `Document` reports it until then.
 
-A package turns the ambient names off in its `package.json`:
-
-```json
-{
-  "name": "my-lib",
-  "escalier": { "ambient": false }
-}
-```
-
-Every file in that package then sees only `std:prelude` and its own imports, so
-`Math.PI` is spelled `import "std:math"` and `math.PI`. Shape-loading is not
-affected, so `"ab".toUpperCase()` and a regex literal still type without an import.
+The wider scope reaches only the package's own declarations. The project's files
+that import the package still see only the preludes and their own imports.
 
 ### The Web surface
 
@@ -349,7 +356,7 @@ packages are not.
 
 ## Shadowing
 
-A local declaration shadows an imported one, and both shadow an ambient builtin.
+A local declaration shadows an imported one, and both shadow a prelude name.
 There is no `globalThis` escape hatch for reaching a shadowed name.
 
 Two imports whose last segments collide need one of them renamed. The syntax is
@@ -367,9 +374,8 @@ partition are implemented.
 Three pieces are still in progress. The committed `.esc` source for the `std:*`
 and `web:*` packages is generated from the pinned TypeScript `.d.ts` set by a
 bootstrap converter and then hand-edited, and that generation is not finished.
-The per-file shape loader that makes the shape-loaded mode work is not built, so
-until it is, the compiler resolves the previously-ambient names through the older
-prelude. Two editor features are planned on top: **auto-import**, a quick fix that
+The shape loader loads its fixed set of packages for every run rather than
+per file. Two editor features are planned on top: **auto-import**, a quick fix that
 adds the namespace import for a name the file references but has not imported, and
 **adaptive diagnostic rendering**, which prints a type name in the shortest form
 that is unambiguous given the bindings in the file the diagnostic came from.

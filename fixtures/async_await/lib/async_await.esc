@@ -1,3 +1,5 @@
+import "web:fetch"
+
 // Basic async function
 export async fn fetchData(url: string) {
     return "data from " ++ url

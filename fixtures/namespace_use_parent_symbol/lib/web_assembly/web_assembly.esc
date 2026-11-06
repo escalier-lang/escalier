@@ -1,10 +1,12 @@
+import "std:function"
+
 interface GlobalDescriptor<T: ValueType = ValueType> {
     mutable?: boolean,
     value: T,
 }
 
 interface ValueTypeMap {
-    anyfunc: Function,
+    anyfunc: function.Function,
     externref: any,
     f32: number,
     f64: number,

@@ -1,3 +1,5 @@
+import "std:date"
+
 // Test cases exercising the resolution-order tiers from
 // planning/interop_mutability/requirements.md. Each section labels which
 // tier(s) it covers. Where a call is expected to error once the
@@ -47,15 +49,15 @@ fn string_methods_on_immutable() -> string {
 // Tier 4 (shipped overrides) — Date.setHours mutates; getHours does not
 // ---------------------------------------------------------------------------
 
-fn read_immutable_date(d: Date) -> number {
+fn read_immutable_date(d: date.Date) -> number {
     return d.getHours()     // OK: getHours non-mutating
 }
 
-fn cannot_mutate_immutable_date(d: Date) {
+fn cannot_mutate_immutable_date(d: date.Date) {
     d.setHours(12)          // EXPECTED-ERROR (tier 4: Date.setHours mutates)
 }
 
-fn mutate_mutable_date(mut d: Date) {
+fn mutate_mutable_date(mut d: date.Date) {
     d.setHours(12)          // OK: receiver is mutable
 }
 

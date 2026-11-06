@@ -10,17 +10,29 @@ import (
 	"github.com/escalier-lang/escalier/internal/set"
 )
 
-// ambient.go binds the builtins a program reaches without an import, such as
-// `Math.PI`, `console.log`, `parseInt`, and `Error`.
+// ambient.go binds the names a scope reaches without an import.
 //
-// The ambient scope sits between the prelude scope and a module's own scope, so a
-// module's declaration and a file's import both shadow an ambient name. It is a
-// compatibility surface over the packages ambientPackages lists. Importing one of
-// them still works, and binds the package as a namespace the way any import does.
+// Two layers sit above the prelude scope:
+//
+//  1. The web prelude scope holds the exports of `web:prelude`, such as `Event`
+//     and `AbortSignal`. It is the ambient scope of a project's own files and of
+//     every `web:*` package but `web:prelude` itself, so in a project's own file
+//     the `*:prelude` packages are the whole ambient layer.
+//  2. The globals scope is a child of the web prelude scope and holds the exports
+//     of every package ambientPackages lists. An npm package's scope is its child,
+//     because a `.d.ts` is written against TypeScript's global library and names
+//     `Console`, `Blob` or `HTMLElement` without importing them.
 
-// ambientPackages lists the packages whose exports the ambient scope binds. The
+// webPreludeURI is the web platform's prelude.
+const webPreludeURI = "web:prelude"
+
+// ambientPackages lists the packages whose exports the globals scope binds. The
 // first package to claim a name keeps it, so a later package never replaces an
 // earlier one's binding.
+//
+// `web:dom` is left out while it loads with errors of its own, which #2377 tracks.
+// A package listed here loads in every run that imports an npm package, and the
+// errors it reports would land in each of those runs.
 var ambientPackages = []string{
 	"std:async",
 	"std:bigint",
@@ -46,45 +58,63 @@ var ambientPackages = []string{
 	"std:typed_arrays",
 	"std:url",
 	"std:weak_ref",
-	"web:core",
 	"web:fetch",
+	"web:file",
+	"web:streams",
+	"web:url",
+}
+
+// webPreludeScope returns the per-run scope that holds the exports of
+// `web:prelude`, a child of the prelude scope. The first call loads the package
+// and binds its exports, and every later call returns the same scope.
+func (c *checker) webPreludeScope() *Scope {
+	if c.webPrelude != nil {
+		return c.webPrelude
+	}
+	c.webPrelude = c.preludeScope().Child()
+	c.webPrelude.builtin = true
+	c.loadLibraryPackages([]string{webPreludeURI}, &ambientBinder{scope: c.webPrelude, namespaces: map[string]*Namespace{}})
+	return c.webPrelude
+}
+
+// packageParentScope returns the scope a pseudo-package group's scope is a child
+// of. A group holding a `web:*` package other than `web:prelude` reaches the web
+// prelude's exports without an import. Every other group reaches the prelude's
+// alone.
+func (c *checker) packageParentScope(group []string) *Scope {
+	if slices.Contains(group, webPreludeURI) {
+		return c.preludeScope()
+	}
+	for _, uri := range group {
+		if strings.HasPrefix(uri, "web:") {
+			return c.webPreludeScope()
+		}
+	}
+	return c.preludeScope()
 }
 
 // globalsScope returns the per-run scope that holds the exports of every package in
-// ambientPackages, creating it empty as a child of the prelude scope on the first
-// request and returning the same scope on every later one. bindGlobals fills it.
+// ambientPackages, creating it empty as a child of the web prelude scope on the
+// first request and returning the same scope on every later one. bindGlobals fills
+// it.
 func (c *checker) globalsScope() *Scope {
 	if c.globals == nil {
-		c.globals = c.preludeScope().Child()
+		c.globals = c.webPreludeScope().Child()
 		c.globals.builtin = true
 	}
 	return c.globals
 }
 
-// ambientScope returns the per-run scope that holds the ambient builtins. It is
-// globalsScope, except in a run with Options.NoAmbientNames set, where it is an
-// empty child of the prelude scope created on the first request.
-// bindAmbientExports fills it.
+// ambientScope returns the scope a project's own module or script is a child of,
+// which is the web prelude scope.
 func (c *checker) ambientScope() *Scope {
-	if !c.noAmbientNames {
-		return c.globalsScope()
-	}
-	if c.ambient == nil {
-		c.ambient = c.preludeScope().Child()
-		c.ambient.builtin = true
-	}
-	return c.ambient
+	return c.webPreludeScope()
 }
 
-// bindAmbientExports fills the ambient scope. It calls bindGlobals, except in a run
-// with Options.NoAmbientNames set. That run binds nothing and loads only the
-// packages literalClassPackages lists. A run binds the ambient scope once, and a
-// later call returns without loading anything.
+// bindAmbientExports loads the packages literalClassPackages lists, so a literal's
+// members resolve with no import, and binds none of their names. A run loads them
+// once, and a later call returns without loading anything.
 func (c *checker) bindAmbientExports() {
-	if !c.noAmbientNames {
-		c.bindGlobals()
-		return
-	}
 	if c.ambientBound {
 		return
 	}
@@ -222,10 +252,11 @@ func (c *checker) reportHeldLoadErrors() {
 }
 
 // literalClassPackages returns, sorted, the packages that declare the classes a literal's
-// value reads through. Those are each primitive's wrapper, such as `String` for `"ab"`, and
-// `RegExp` for a regex literal. The prelude is left out, since every run loads it first.
+// value reads through. Those are each primitive's wrapper, such as `String` for `"ab"`,
+// `RegExp` for a regex literal, and `Function` for a function. The prelude is left out,
+// since every run loads it first.
 func literalClassPackages() []string {
-	uris := set.FromSlice([]string{regexpClass.uri})
+	uris := set.FromSlice([]string{regexpClass.uri, functionClass.uri})
 	for _, wrapper := range primitiveWrappers {
 		if wrapper.uri != preludeURI {
 			uris.Add(wrapper.uri)
@@ -243,7 +274,7 @@ type ambientBinder struct {
 	namespaces map[string]*Namespace
 }
 
-// bindPackage binds every export of ns by the rules bindAmbientExports lists.
+// bindPackage binds every export of ns by the rules bindGlobals lists.
 // Names are visited in sorted order so a run does not depend on map iteration.
 func (b *ambientBinder) bindPackage(ns *Namespace) {
 	// boundWithValue holds the names of this package's types that share a name with

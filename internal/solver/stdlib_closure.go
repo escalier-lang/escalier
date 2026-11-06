@@ -121,6 +121,11 @@ func buildPackageGraph(dir string) (map[string][]string, error) {
 		if err != nil {
 			return nil, err
 		}
+		// A `web:*` package reaches `web:prelude`'s exports without importing it, so
+		// it depends on the prelude the way an import would make it.
+		if strings.HasPrefix(stamp.uri, "web:") && stamp.uri != webPreludeURI {
+			imports = append(slices.Clip(imports), webPreludeURI)
+		}
 		edges[stamp.uri] = imports
 	}
 	packageGraphs.put(key, stamps, edges)

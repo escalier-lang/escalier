@@ -13,10 +13,6 @@ import (
 
 // Options adjusts one inference run. The zero value is the default run.
 type Options struct {
-	// NoAmbientNames leaves the ambient scope empty, so a module reaches a builtin only
-	// through `std:prelude` or its own imports. The ambient packages still load, since
-	// a primitive's members and a regex literal's type are read from them.
-	NoAmbientNames bool
 	// PackageDir is the directory an import with no URI scheme resolves from, through
 	// the `node_modules` directories at and above it. An empty PackageDir resolves no
 	// such import.
@@ -173,7 +169,6 @@ func newRunChecker(source ModuleSource, groupSource GroupSource, groups PackageG
 	c.source = source
 	c.groupSource = groupSource
 	c.groups = groups
-	c.noAmbientNames = opts.NoAmbientNames
 	c.checkJsDecorators = opts.CheckJsDecorators
 	c.dependencies = opts.Dependencies
 	c.ownershipDataflow = !opts.NoOwnershipDataflow
