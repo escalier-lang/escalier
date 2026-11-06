@@ -2097,9 +2097,8 @@ func (e *FieldInitializerNotAllowedError) Message() string {
 }
 
 // NotConstructibleError fires on a construction, either `Bitmap()` or a subclass's
-// `super()`, of a class whose value carries no constructor. A `declare` class whose every
-// constructor is private has that value. Class is the class's registry name and Node is the
-// call.
+// `super()`, of a `declare` class whose every constructor is private. Class is the class's
+// registry name and Node is the call.
 type NotConstructibleError struct {
 	Node  ast.Node
 	Class string

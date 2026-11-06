@@ -405,6 +405,7 @@ func (c *checker) inferClassBodies(
 		// throws when constructed is written, such as `ImageBitmap`. Each constructor is
 		// still walked above, so its signature is checked.
 		ctorFns = publicConstructors(ctors, ctorFns)
+		sigs.def.NotConstructible = len(ctorFns) == 0
 	case len(ctorFns) == 0:
 		// A subclass must declare its own constructor to call `super`, so a missing one is
 		// reported here and the synthesis below stands in for recovery.

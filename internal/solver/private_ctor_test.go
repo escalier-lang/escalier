@@ -78,6 +78,14 @@ func TestDeclarePrivateConstructor(t *testing.T) {
 			errs: []string{"Not enough arguments: expected at least 1, but got 0"},
 		},
 		{
+			// A class declaring a call signature and no constructor is not one whose
+			// constructors are private, so `super()` on it is not reported as such.
+			name: "a subclass of a callable-only class is not reported as non-constructible",
+			src: `declare class Tag { (x: number) -> number }
+				class Sub extends Tag { constructor(&mut self) { super() } }`,
+			errs: []string{},
+		},
+		{
 			name:  "a public constructor beside a private one renders alone",
 			src:   `declare class P { private constructor(&mut self), constructor(&mut self, x: number) }`,
 			value: "P",

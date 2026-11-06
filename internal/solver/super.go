@@ -48,7 +48,7 @@ func (c *checker) inferSuperCall(scope *Scope, lvl int, e *ast.SuperCallExpr) so
 		}
 		if ctor, hasCtor := obj.Constructor(); hasCtor {
 			c.constrain(e, overloadReadType(ctor.Signatures), &soltype.FuncType{Params: args, Ret: c.superCtx.super})
-		} else if obj.Class != "" {
+		} else if c.notConstructible(obj) {
 			c.report(&NotConstructibleError{Node: e, Class: obj.Class})
 		}
 	}
