@@ -497,7 +497,7 @@ func (w *lifetimeWalk) walkObjElem(elem soltype.ObjTypeElem, base []placeSeg) {
 	}
 }
 
-// recordCallStoreEdges records a borrow edge for each store fn declares at the call e into a
+// recordCallStoreEdges records a borrow edge for each store `fn` declares at the call e into a
 // target that dies with the frame, a local or an owned parameter. A store into a BORROW
 // parameter records nothing, since the parameter's referent belongs to the caller. It is the
 // call-site twin of recordFieldStoreEdges.

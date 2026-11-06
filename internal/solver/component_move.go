@@ -31,7 +31,7 @@ import (
 type flowOutSite struct {
 	// expr is the value that leaves.
 	expr ast.Expr
-	// at is the statement it leaves at.
+	// `at` is the statement it leaves at.
 	at liveness.StmtRef
 	// isReturn marks a `return`. The frame is gone after it, so the value need not be an
 	// owned aggregate for its component to move. See componentMoveCovers.
@@ -47,7 +47,7 @@ func (c *checker) recordFlowOut(e ast.Expr, at liveness.StmtRef, isReturn bool) 
 	c.fn.flowOuts = append(c.fn.flowOuts, flowOutSite{expr: e, at: at, isReturn: isReturn})
 }
 
-// recordParamStoreFlowOut records the value source a store into the place under recv leaves
+// recordParamStoreFlowOut records the value `source` a store into the place under recv leaves
 // the frame through, when recv names a borrow parameter. A store into a receiver that dies with
 // the frame records nothing.
 func (c *checker) recordParamStoreFlowOut(recv, source ast.Expr, at liveness.StmtRef) {
@@ -128,7 +128,7 @@ func (c *checker) carriedLocals(e ast.Expr, graph map[liveness.VarID][]fieldBorr
 
 // readsPlainValue reports whether e, a read of the place p, copies a value type that reaches
 // no local. With `r: &{x: number}`, the read `r.x` copies a number. A closure is a value type
-// that still reaches what it captures, so a read of a binding with a capture edge in graph
+// that still reaches what it captures, so a read of a binding with a capture edge in `graph`
 // does not count.
 func (c *checker) readsPlainValue(e ast.Expr, p movePlace, graph map[liveness.VarID][]fieldBorrow) bool {
 	t := c.info.TypeOf(e)
@@ -138,7 +138,7 @@ func (c *checker) readsPlainValue(e ast.Expr, p movePlace, graph map[liveness.Va
 	return !slices.ContainsFunc(graph[p.root], func(edge fieldBorrow) bool { return edge.capture })
 }
 
-// componentMoveCovers reports whether the value of site takes its component along. The
+// componentMoveCovers reports whether the value of `site` takes its component along. The
 // component is the value's root together with the locals in `carried`. Two conditions must
 // hold:
 //

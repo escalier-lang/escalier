@@ -210,8 +210,9 @@ func TestCallStoreEdgePositions(t *testing.T) {
 		// A tuple element contributes no field segment, so a store into one lands at the tuple
 		// itself. Passing the whole tuple to a consuming call carries the borrow of b into the
 		// callee, which L1 accepts, since nothing in the frame uses b afterwards. a is a tuple of
-		// one element, so neither store nor build can add a second borrow to it. take's signature
-		// gives the element no `'static` lifetime, so take cannot keep the borrow past the call.
+		// one element, so neither `store` nor `build` can add a second borrow to it. `take`'s
+		// signature gives the element no `'static` lifetime, so `take` cannot keep the borrow past
+		// the call.
 		"StoreIntoTupleElement": {
 			src: `
 				declare fn store<'a, 'c>(
@@ -233,8 +234,8 @@ func TestCallStoreEdgePositions(t *testing.T) {
 				"build": "fn (p: {value: number}) -> undefined",
 			},
 		},
-		// A take whose element is `'static` keeps the borrow of b that the store put in a. That
-		// borrow is live for the rest of build, so the later immutable borrow of b breaks E2.
+		// A `take` whose element is `'static` keeps the borrow of b that the `store` put in a. That
+		// borrow is live for the rest of `build`, so the later immutable borrow of b breaks E2.
 		"StoreIntoTupleElementTheCalleeKeeps": {
 			src: `
 				declare fn store<'a, 'c>(

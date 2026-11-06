@@ -1298,7 +1298,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			`,
 		},
 		{
-			// take's parameter makes the element `'static`, so the borrow of b in the literal
+			// `take`'s parameter makes the element `'static`, so the borrow of b in the literal
 			// stays live after the call.
 			name: "BorrowAfterAStaticBorrowInALiteralArgumentConflicts",
 			src: `

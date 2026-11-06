@@ -30,7 +30,7 @@ func TestCollectEdgesFromCyclicGraph(t *testing.T) {
 			root: 1,
 			want: []liveness.VarID{1, 2},
 		},
-		// a → b → c → a. The seen set stops the walk at the third hop.
+		// a → b → c → a. The `seen` set stops the walk at the third hop.
 		"ThreeNodeCycle": {
 			graph: map[liveness.VarID][]fieldBorrow{
 				1: {edge(2)},
