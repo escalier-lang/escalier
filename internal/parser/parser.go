@@ -128,16 +128,21 @@ func (p *Parser) ParseScript() (*ast.Script, []*Error) {
 
 // splitScriptImports returns the imports that open stmts and the statements after
 // them. An import after the first other statement is reported and dropped, since a
-// script's imports bind before it runs.
+// script's imports bind before it runs. A statement the parser could not read does
+// not count as the first one, so a syntax error above an import reports once.
 func (p *Parser) splitScriptImports(stmts []ast.Stmt) ([]*ast.ImportStmt, []ast.Stmt) {
 	var imports []*ast.ImportStmt
 	body := make([]ast.Stmt, 0, len(stmts))
+	started := false
 	for _, stmt := range stmts {
 		imp, isImport := stmt.(*ast.ImportStmt)
 		switch {
 		case !isImport:
 			body = append(body, stmt)
-		case len(body) == 0:
+			if _, isErr := stmt.(*ast.ErrorStmt); !isErr {
+				started = true
+			}
+		case !started:
 			imports = append(imports, imp)
 		default:
 			p.reportError(imp.Span(), "An import must come before the script's first statement")

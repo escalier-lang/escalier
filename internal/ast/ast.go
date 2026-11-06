@@ -168,7 +168,11 @@ func (s *Script) Span() Span {
 	return s.span
 }
 
+// Accept visits the script's imports and then its statements, in source order.
 func (s *Script) Accept(v Visitor) {
+	for _, imp := range s.Imports {
+		imp.Accept(v)
+	}
 	for _, stmt := range s.Stmts {
 		stmt.Accept(v)
 	}

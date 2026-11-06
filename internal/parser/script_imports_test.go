@@ -39,6 +39,13 @@ func TestParseScriptImports(t *testing.T) {
 			stmts:   1,
 			errs:    []string{"An import must come before the script's first statement"},
 		},
+		{
+			name:    "an import after a statement the parser could not read",
+			src:     ")\nimport \"std:console\"\nval x = 1",
+			imports: []string{"std:console"},
+			stmts:   2,
+			errs:    []string{"Unexpected token"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

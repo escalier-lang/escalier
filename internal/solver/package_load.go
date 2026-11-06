@@ -2,6 +2,7 @@ package solver
 
 import (
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 
@@ -52,7 +53,11 @@ func (c *checker) loadPackage(uri string, span ast.Span) (*Namespace, []SolverEr
 	// A package whose group has more than one member cannot load alone: whichever
 	// went first would reach a name its sibling has not declared yet. The whole
 	// group loads as one module and publishes a namespace each.
-	if group, held := c.groups.GroupOf(uri); held && len(group) > 1 {
+	group, held := c.groups.GroupOf(uri)
+	if !held {
+		group, held = c.groupUncovered(uri)
+	}
+	if held && len(group) > 1 {
 		errs := c.loadPackageGroup(sortedGroup(group), span)
 		// The surface comes back whether or not the group reported. A package that
 		// inferred with a diagnostic still declares its names, and binding nothing
@@ -96,6 +101,46 @@ func (c *checker) loadPackage(uri string, span ast.Span) (*Namespace, []SolverEr
 		})
 	}
 	return ns, loaderErrs
+}
+
+// groupUncovered returns the group uri loads with when the run's groups do not name
+// it, and adds that group to the run's groups. The group is everything uri's closure
+// in the run's stdlib tree reaches that the run has not loaded or started loading. ok
+// is false for a run with no stdlib tree, for a URI with no scheme, and when the tree
+// cannot be read.
+//
+// A script checked against a library shares the library run's groups, which were
+// built from the library's imports. A package only the script imports is reached
+// here, so a package in a cycle still loads with the rest of its cycle.
+func (c *checker) groupUncovered(uri string) ([]string, bool) {
+	if c.stdlibDir == "" || !IsSchemePrefixedImport(uri) {
+		return nil, false
+	}
+	closure, err := BuildPackageClosure(c.stdlibDir, []string{uri})
+	if err != nil {
+		return nil, false
+	}
+	reached, ok := closure.GroupOf(uri)
+	if !ok {
+		return nil, false
+	}
+	var group []string
+	for _, member := range reached {
+		if _, loaded := c.ctx.packages.Lookup(member); !loaded {
+			group = append(group, member)
+		}
+	}
+	// The groups may be shared with the run that built them, so the addition goes
+	// into a copy.
+	grown := maps.Clone(c.groups)
+	if grown == nil {
+		grown = PackageGroups{}
+	}
+	for _, member := range group {
+		grown[member] = group
+	}
+	c.groups = grown
+	return group, true
 }
 
 // cycleChain returns the packages the cycle runs through, starting and ending at
