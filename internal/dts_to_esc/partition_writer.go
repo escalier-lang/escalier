@@ -932,7 +932,6 @@ func ConvertBuckets(result *PartitionResult, facts *ReceiverFacts) (map[string]*
 	// Fuse every bucket before converting any of it, so the reference
 	// rewrite below knows every twin name the tree declares and not
 	// just the ones its own bucket does. See convertFusedBucket.
-
 	uris := make([]string, 0, len(buckets))
 	for uri := range buckets {
 		uris = append(uris, uri)

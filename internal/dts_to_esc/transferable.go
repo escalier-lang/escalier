@@ -48,7 +48,7 @@ func deriveTransferable(
 				continue
 			}
 			derived := *union
-			derived.Types = transferableArms(union.Types, declared, defs)
+			derived.Types = transferableArms(union.Types, union.Span(), declared, defs)
 			alias := *td
 			alias.TypeAnn = &derived
 			replaced := make([]dts_parser.Statement, len(stmts))
@@ -61,9 +61,11 @@ func deriveTransferable(
 }
 
 // transferableArms returns the arms deriveTransferable gives the union whose
-// TypeScript arms are tsArms.
+// TypeScript arms are tsArms. An arm TypeScript does not write takes span, the
+// union's own, so a diagnostic about it points at the union it joined.
 func transferableArms(
 	tsArms []dts_parser.TypeAnn,
+	span ast.Span,
 	declared set.Set[string],
 	defs map[string]webidl.Definition,
 ) []dts_parser.TypeAnn {
@@ -84,7 +86,7 @@ func transferableArms(
 			arms = append(arms, arm)
 			continue
 		}
-		arms = append(arms, &dts_parser.TypeReference{Name: dts_parser.NewIdent(name, firstArmSpan(tsArms))})
+		arms = append(arms, &dts_parser.TypeReference{Name: dts_parser.NewIdent(name, span)})
 	}
 	for _, arm := range tsArms {
 		ref, ok := arm.(*dts_parser.TypeReference)
@@ -127,13 +129,4 @@ func declaredNames(buckets map[string][]dts_parser.Statement) set.Set[string] {
 		}
 	}
 	return names
-}
-
-// firstArmSpan returns the span of the first arm, which an added arm takes so a
-// diagnostic about it points at the union it joined.
-func firstArmSpan(arms []dts_parser.TypeAnn) ast.Span {
-	if len(arms) == 0 {
-		return ast.Span{}
-	}
-	return arms[0].Span()
 }
