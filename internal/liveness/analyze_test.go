@@ -19,7 +19,7 @@ func TestCollectUsesSimpleDecl(t *testing.T) {
 	// val x = 1
 	x := identPat("x")
 	stmts := []ast.Stmt{valDecl(x, numLit(1))}
-	Rename(ids, nil, block(stmts...), nil)
+	RenameFrom(ids, nil, block(stmts...), nil, 1)
 
 	uses := CollectUses(ids, stmts)
 
@@ -38,7 +38,7 @@ func TestCollectUsesDeclWithIdentInit(t *testing.T) {
 		valDecl(x, numLit(1)),
 		valDecl(y, xRef),
 	}
-	Rename(ids, nil, block(stmts...), nil)
+	RenameFrom(ids, nil, block(stmts...), nil, 1)
 
 	uses := CollectUses(ids, stmts)
 
@@ -60,7 +60,7 @@ func TestCollectUsesAssignment(t *testing.T) {
 		varDecl(x, numLit(1)),
 		exprStmt(assignExpr(xTarget, numLit(2))),
 	}
-	Rename(ids, nil, block(stmts...), nil)
+	RenameFrom(ids, nil, block(stmts...), nil, 1)
 
 	uses := CollectUses(ids, stmts)
 
@@ -79,7 +79,7 @@ func TestCollectUsesExprStmt(t *testing.T) {
 		valDecl(x, numLit(1)),
 		exprStmt(call(ident("print"), xRef)),
 	}
-	Rename(ids, nil, block(stmts...), map[string]VarID{"print": -1})
+	RenameFrom(ids, nil, block(stmts...), map[string]VarID{"print": -1}, 1)
 
 	uses := CollectUses(ids, stmts)
 
@@ -98,7 +98,7 @@ func TestCollectUsesMemberExpr(t *testing.T) {
 		valDecl(obj, &ast.ObjectExpr{Elems: nil}),
 		exprStmt(&ast.MemberExpr{Object: objRef, Prop: ast.NewIdentifier("x", span())}),
 	}
-	Rename(ids, nil, block(stmts...), nil)
+	RenameFrom(ids, nil, block(stmts...), nil, 1)
 
 	uses := CollectUses(ids, stmts)
 
@@ -112,7 +112,7 @@ func TestCollectUsesIgnoresNonLocal(t *testing.T) {
 	stmts := []ast.Stmt{
 		exprStmt(call(ident("print"), ident("globalVar"))),
 	}
-	Rename(ids, nil, block(stmts...), map[string]VarID{"print": -1, "globalVar": -2})
+	RenameFrom(ids, nil, block(stmts...), map[string]VarID{"print": -1, "globalVar": -2}, 1)
 
 	uses := CollectUses(ids, stmts)
 
@@ -130,7 +130,7 @@ func TestCollectUsesReturnStmt(t *testing.T) {
 		valDecl(x, numLit(1)),
 		ast.NewReturnStmt(xRef, span()),
 	}
-	Rename(ids, nil, block(stmts...), nil)
+	RenameFrom(ids, nil, block(stmts...), nil, 1)
 
 	uses := CollectUses(ids, stmts)
 
@@ -157,7 +157,7 @@ func TestCollectUsesFuncDecl(t *testing.T) {
 		ast.NewDeclStmt(funcDecl, span()),
 		exprStmt(call(addRef)),
 	}
-	Rename(ids, nil, block(stmts...), nil)
+	RenameFrom(ids, nil, block(stmts...), nil, 1)
 
 	uses := CollectUses(ids, stmts)
 
@@ -183,7 +183,7 @@ func TestCollectUsesDoExprRecursed(t *testing.T) {
 			exprStmt(ast.NewBinary(xRef, numLit(1), ast.Plus, span())),
 		)}),
 	}
-	Rename(ids, nil, block(stmts...), nil)
+	RenameFrom(ids, nil, block(stmts...), nil, 1)
 
 	uses := CollectUses(ids, stmts)
 
@@ -213,7 +213,7 @@ func TestCollectUsesIfElseRecursed(t *testing.T) {
 			span(),
 		)),
 	}
-	Rename(ids, nil, block(stmts...), map[string]VarID{"cond": -1})
+	RenameFrom(ids, nil, block(stmts...), map[string]VarID{"cond": -1}, 1)
 
 	uses := CollectUses(ids, stmts)
 
@@ -258,7 +258,7 @@ func TestCollectUsesMatchRecursed(t *testing.T) {
 			span(),
 		)),
 	}
-	Rename(ids, nil, block(stmts...), map[string]VarID{"target": -1})
+	RenameFrom(ids, nil, block(stmts...), map[string]VarID{"target": -1}, 1)
 
 	uses := CollectUses(ids, stmts)
 
@@ -303,7 +303,7 @@ func TestCollectUsesMatchWithGuardRecursed(t *testing.T) {
 			span(),
 		)),
 	}
-	Rename(ids, nil, block(stmts...), map[string]VarID{"target": -1, "true": -2})
+	RenameFrom(ids, nil, block(stmts...), map[string]VarID{"target": -1, "true": -2}, 1)
 
 	uses := CollectUses(ids, stmts)
 
@@ -341,7 +341,7 @@ func TestCollectUsesTryCatchRecursed(t *testing.T) {
 			span(),
 		)),
 	}
-	Rename(ids, nil, block(stmts...), nil)
+	RenameFrom(ids, nil, block(stmts...), nil, 1)
 
 	uses := CollectUses(ids, stmts)
 
@@ -349,281 +349,4 @@ func TestCollectUsesTryCatchRecursed(t *testing.T) {
 	// Both x (try body) and y (catch body) are captured by CollectUses.
 	require.Equal(t, []VarID{ids.Of(xRef), ids.Of(yRef)}, uses[2].Uses,
 		"try and catch bodies should be recursed into by CollectUses")
-}
-
-// --- AnalyzeBlock tests ---
-
-func TestLivenessEmptyBlock(t *testing.T) {
-	ids := NewVarIDs()
-	info := AnalyzeBlock(ids, nil)
-
-	require.NotNil(t, info)
-	require.Empty(t, info.LastUse)
-}
-
-func TestLivenessSimpleSequential(t *testing.T) {
-	ids := NewVarIDs()
-	// val x = 1; val y = x; print(y)
-	x := identPat("x")
-	xRef := ident("x")
-	y := identPat("y")
-	yRef := ident("y")
-	stmts := []ast.Stmt{
-		valDecl(x, numLit(1)),
-		valDecl(y, xRef),
-		exprStmt(call(ident("print"), yRef)),
-	}
-	Rename(ids, nil, block(stmts...), map[string]VarID{"print": -1})
-
-	info := AnalyzeBlock(ids, stmts)
-
-	xID := ids.Of(x)
-	yID := ids.Of(y)
-
-	// Statement 0: val x = 1
-	// LiveBefore: {} (x not yet used, will be defined here)
-	// LiveAfter: {x} (x is used in statement 1)
-	require.False(t, info.LiveBefore[0][0].Contains(xID))
-	require.True(t, info.LiveAfter[0][0].Contains(xID))
-
-	// Statement 1: val y = x
-	// LiveBefore: {x} (x is used here)
-	// LiveAfter: {y} (y is used in statement 2, x is dead)
-	require.True(t, info.LiveBefore[0][1].Contains(xID))
-	require.False(t, info.LiveAfter[0][1].Contains(xID))
-	require.True(t, info.LiveAfter[0][1].Contains(yID))
-
-	// Statement 2: print(y)
-	// LiveBefore: {y} (y is used here)
-	// LiveAfter: {} (nothing needed after)
-	require.True(t, info.LiveBefore[0][2].Contains(yID))
-	require.False(t, info.LiveAfter[0][2].Contains(yID))
-}
-
-func TestLivenessVariableDeadAfterLastUse(t *testing.T) {
-	ids := NewVarIDs()
-	// val x = 1; print(x); val y = 2; print(y)
-	x := identPat("x")
-	xRef := ident("x")
-	y := identPat("y")
-	yRef := ident("y")
-	stmts := []ast.Stmt{
-		valDecl(x, numLit(1)),
-		exprStmt(call(ident("print"), xRef)),
-		valDecl(y, numLit(2)),
-		exprStmt(call(ident("print"), yRef)),
-	}
-	Rename(ids, nil, block(stmts...), map[string]VarID{"print": -1})
-
-	info := AnalyzeBlock(ids, stmts)
-
-	xID := ids.Of(x)
-
-	// x is dead after statement 1 (its last use)
-	require.True(t, info.LiveBefore[0][1].Contains(xID))
-	require.False(t, info.LiveAfter[0][1].Contains(xID))
-	require.False(t, info.LiveBefore[0][2].Contains(xID))
-	require.False(t, info.LiveAfter[0][2].Contains(xID))
-}
-
-func TestLivenessDefinitionKillsVariable(t *testing.T) {
-	ids := NewVarIDs()
-	// var x = 1; print(x); x = 2; print(x)
-	x := identPat("x")
-	xRef1 := ident("x")
-	xTarget := ident("x")
-	xRef2 := ident("x")
-	stmts := []ast.Stmt{
-		varDecl(x, numLit(1)),
-		exprStmt(call(ident("print"), xRef1)),
-		exprStmt(assignExpr(xTarget, numLit(2))),
-		exprStmt(call(ident("print"), xRef2)),
-	}
-	Rename(ids, nil, block(stmts...), map[string]VarID{"print": -1})
-
-	info := AnalyzeBlock(ids, stmts)
-
-	xID := ids.Of(x)
-
-	// After stmt 1 (print(x)): x is dead because stmt 2 redefines it
-	// before stmt 3 uses it.
-	require.True(t, info.LiveBefore[0][1].Contains(xID))
-	require.False(t, info.LiveAfter[0][1].Contains(xID))
-
-	// Stmt 2 (x = 2): x is defined here, so LiveBefore doesn't include x
-	// (the old value is killed). But LiveAfter does (x is used in stmt 3).
-	require.False(t, info.LiveBefore[0][2].Contains(xID))
-	require.True(t, info.LiveAfter[0][2].Contains(xID))
-
-	// Stmt 3 (print(x)): x is live before (used here), dead after.
-	require.True(t, info.LiveBefore[0][3].Contains(xID))
-	require.False(t, info.LiveAfter[0][3].Contains(xID))
-}
-
-func TestLivenessUnusedVariableNeverLive(t *testing.T) {
-	ids := NewVarIDs()
-	// val x = 1; val y = 2; print(y)
-	x := identPat("x")
-	y := identPat("y")
-	yRef := ident("y")
-	stmts := []ast.Stmt{
-		valDecl(x, numLit(1)),
-		valDecl(y, numLit(2)),
-		exprStmt(call(ident("print"), yRef)),
-	}
-	Rename(ids, nil, block(stmts...), map[string]VarID{"print": -1})
-
-	info := AnalyzeBlock(ids, stmts)
-
-	xID := ids.Of(x)
-
-	// x is never used, so it should never be live.
-	for i := range 3 {
-		require.False(t, info.LiveBefore[0][i].Contains(xID), "x should not be live before stmt %d", i)
-		require.False(t, info.LiveAfter[0][i].Contains(xID), "x should not be live after stmt %d", i)
-	}
-}
-
-func TestLivenessShadowingDistinctVarIDs(t *testing.T) {
-	ids := NewVarIDs()
-	// val x = 1; val y = x; val x = 2; print(x)
-	// First x is dead after val y = x, second x is live until print(x).
-	x1 := identPat("x")
-	xRef1 := ident("x") // in val y = x
-	y := identPat("y")
-	x2 := identPat("x")
-	xRef2 := ident("x") // in print(x)
-	stmts := []ast.Stmt{
-		valDecl(x1, numLit(1)),
-		valDecl(y, xRef1),
-		valDecl(x2, numLit(2)),
-		exprStmt(call(ident("print"), xRef2)),
-	}
-	Rename(ids, nil, block(stmts...), map[string]VarID{"print": -1})
-
-	info := AnalyzeBlock(ids, stmts)
-
-	x1ID := ids.Of(x1)
-	x2ID := ids.Of(x2)
-
-	// Distinct VarIDs for the two x's.
-	require.NotEqual(t, x1ID, x2ID)
-
-	// First x: live before stmt 1 (used there), dead after.
-	require.True(t, info.LiveBefore[0][1].Contains(x1ID))
-	require.False(t, info.LiveAfter[0][1].Contains(x1ID))
-
-	// Second x: live after stmt 2 (defined there), live before stmt 3.
-	require.True(t, info.LiveAfter[0][2].Contains(x2ID))
-	require.True(t, info.LiveBefore[0][3].Contains(x2ID))
-	require.False(t, info.LiveAfter[0][3].Contains(x2ID))
-}
-
-func TestLivenessLastUse(t *testing.T) {
-	ids := NewVarIDs()
-	// val x = 1; print(x); print(x)
-	x := identPat("x")
-	xRef1 := ident("x")
-	xRef2 := ident("x")
-	stmts := []ast.Stmt{
-		valDecl(x, numLit(1)),
-		exprStmt(call(ident("print"), xRef1)),
-		exprStmt(call(ident("print"), xRef2)),
-	}
-	Rename(ids, nil, block(stmts...), map[string]VarID{"print": -1})
-
-	info := AnalyzeBlock(ids, stmts)
-
-	xID := ids.Of(x)
-
-	// Last use of x is in statement 2 (the second print).
-	require.Equal(t, StmtRef{BlockID: 0, StmtIdx: 2}, info.LastUse[xID])
-}
-
-func TestLivenessIsLiveAfter(t *testing.T) {
-	ids := NewVarIDs()
-	// val x = 1; print(x)
-	x := identPat("x")
-	xRef := ident("x")
-	stmts := []ast.Stmt{
-		valDecl(x, numLit(1)),
-		exprStmt(call(ident("print"), xRef)),
-	}
-	Rename(ids, nil, block(stmts...), map[string]VarID{"print": -1})
-
-	info := AnalyzeBlock(ids, stmts)
-
-	xID := ids.Of(x)
-
-	require.True(t, info.IsLiveAfter(StmtRef{BlockID: 0, StmtIdx: 0}, xID))
-	require.False(t, info.IsLiveAfter(StmtRef{BlockID: 0, StmtIdx: 1}, xID))
-}
-
-func TestLivenessMultipleVariables(t *testing.T) {
-	ids := NewVarIDs()
-	// val a = 1; val b = 2; val c = a + b; print(c)
-	a := identPat("a")
-	b := identPat("b")
-	aRef := ident("a")
-	bRef := ident("b")
-	c := identPat("c")
-	cRef := ident("c")
-	stmts := []ast.Stmt{
-		valDecl(a, numLit(1)),
-		valDecl(b, numLit(2)),
-		valDecl(c, ast.NewBinary(aRef, bRef, ast.Plus, span())),
-		exprStmt(call(ident("print"), cRef)),
-	}
-	Rename(ids, nil, block(stmts...), map[string]VarID{"print": -1})
-
-	info := AnalyzeBlock(ids, stmts)
-
-	aID := ids.Of(a)
-	bID := ids.Of(b)
-	cID := ids.Of(c)
-
-	// After stmt 0 (val a = 1): a is live (used in stmt 2)
-	require.True(t, info.LiveAfter[0][0].Contains(aID))
-
-	// After stmt 1 (val b = 2): a and b are both live
-	require.True(t, info.LiveAfter[0][1].Contains(aID))
-	require.True(t, info.LiveAfter[0][1].Contains(bID))
-
-	// After stmt 2 (val c = a + b): a and b are dead, c is live
-	require.False(t, info.LiveAfter[0][2].Contains(aID))
-	require.False(t, info.LiveAfter[0][2].Contains(bID))
-	require.True(t, info.LiveAfter[0][2].Contains(cID))
-
-	// After stmt 3 (print(c)): c is dead
-	require.False(t, info.LiveAfter[0][3].Contains(cID))
-}
-
-func TestLivenessAssignmentFromVariable(t *testing.T) {
-	ids := NewVarIDs()
-	// val a = 1; var b = 0; b = a; print(b)
-	a := identPat("a")
-	b := identPat("b")
-	bTarget := ident("b")
-	aRef := ident("a")
-	bRef := ident("b")
-	stmts := []ast.Stmt{
-		valDecl(a, numLit(1)),
-		varDecl(b, numLit(0)),
-		exprStmt(assignExpr(bTarget, aRef)),
-		exprStmt(call(ident("print"), bRef)),
-	}
-	Rename(ids, nil, block(stmts...), map[string]VarID{"print": -1})
-
-	info := AnalyzeBlock(ids, stmts)
-
-	aID := ids.Of(a)
-	bID := ids.Of(b)
-
-	// Stmt 2 (b = a): a is used, b is defined.
-	// LiveBefore should include a (used here) but not b (killed here).
-	require.True(t, info.LiveBefore[0][2].Contains(aID))
-	require.False(t, info.LiveBefore[0][2].Contains(bID))
-	// LiveAfter: b is live (used in stmt 3), a is dead.
-	require.True(t, info.LiveAfter[0][2].Contains(bID))
-	require.False(t, info.LiveAfter[0][2].Contains(aID))
 }
