@@ -20,7 +20,7 @@ import (
 // A borrow of a parameter is a separate exemption and predates this one: its lifetime comes
 // from the caller and already outlives the return, so nothing is re-typed.
 //
-// Re-typing needs the borrow graph reachable from the return to be a tree, meaning no local is
+// Re-typing needs the borrows reachable from the return to form a tree, meaning no local is
 // reached twice. A case that reaches one twice keeps its borrow in the type. TestConnectedComponentMove
 // covers the same rule for a return that carries an owned aggregate holding borrows.
 func TestReturnValueBorrows(t *testing.T) {

@@ -355,10 +355,10 @@ func TestForInLoopBindingIsFreshEachIteration(t *testing.T) {
 	}
 }
 
-// TestForInBackEdgeBorrows confirms the flow-sensitive borrow-edge dataflow
-// (analyzeBorrows) joins across the loop back edge and clears referents correctly.
-// These are the loop analogues of the branch-merge borrow tests, exercising the
-// back-edge join, the whole-binding kill, and the field-store subtree kill.
+// TestForInBackEdgeBorrows covers the loans the dataflow pass carries across a loop's back
+// edge. These are the loop analogues of the branch-merge borrow tests. They cover the join at
+// the back edge, a reassignment that replaces what a binding holds, and a field store that
+// replaces what one field holds.
 func TestForInBackEdgeBorrows(t *testing.T) {
 	tests := map[string]struct {
 		src   string

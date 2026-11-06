@@ -1252,8 +1252,7 @@ func TestStoreEffectLoans(t *testing.T) {
 			want: []string{"12:14-12:15: cannot move 'b' while it is borrowed"},
 		},
 		// Repointing the field the store wrote to ends the loan there, so the item is reachable
-		// one way again. This is the loan side of the strong update the borrow graph makes on
-		// the same subtree.
+		// one way again.
 		"RepointingTheStoredFieldReleasesTheItemOk": {
 			src: `
 				declare fn store<'a, 'b, 'c>(
