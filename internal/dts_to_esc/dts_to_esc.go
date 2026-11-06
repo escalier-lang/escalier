@@ -1404,7 +1404,9 @@ func fuseTrio(
 		}
 	}
 	if privateCtor {
-		body = append(body, privateConstructorElem(nameSpan))
+		ctor := mutSelfConstructorElem(nil, nameSpan)
+		ctor.Private = true
+		body = append(body, ctor)
 	}
 
 	// An Escalier class extends a class and implements interfaces, so the
@@ -1706,28 +1708,20 @@ func constructSignatureToCtorElem(cs *dts_parser.ConstructSignature) (*ast.Const
 	if err != nil {
 		return nil, fmt.Errorf("constructor params: %w", err)
 	}
-	span := convertSpan(cs.Span())
-	selfPat := ast.NewIdentPat("self", true, nil, nil, span)
-	selfParam := &ast.Param{Pattern: selfPat, TypeAnn: nil, Optional: false}
-	allParams := append([]*ast.Param{selfParam}, params...)
-	fn := ast.NewFuncExpr(nil, nil, allParams, nil, nil, false, nil, span)
-	elem := &ast.ConstructorElem{
-		Fn:       fn,
-		Receiver: &ast.MethodReceiver{Mut: true, Span_: span},
-		Span_:    span,
-	}
+	elem := mutSelfConstructorElem(params, convertSpan(cs.Span()))
 	elem.SetDoc(cs.Doc())
 	return elem, nil
 }
 
-// privateConstructorElem returns `private constructor(&mut self)` spanning span.
-func privateConstructorElem(span ast.Span) *ast.ConstructorElem {
+// mutSelfConstructorElem returns a bodiless `constructor(&mut self, ...params)`
+// spanning span.
+func mutSelfConstructorElem(params []*ast.Param, span ast.Span) *ast.ConstructorElem {
 	selfPat := ast.NewIdentPat("self", true, nil, nil, span)
 	selfParam := &ast.Param{Pattern: selfPat}
+	allParams := append([]*ast.Param{selfParam}, params...)
 	return &ast.ConstructorElem{
-		Fn:       ast.NewFuncExpr(nil, nil, []*ast.Param{selfParam}, nil, nil, false, nil, span),
+		Fn:       ast.NewFuncExpr(nil, nil, allParams, nil, nil, false, nil, span),
 		Receiver: &ast.MethodReceiver{Mut: true, Span_: span},
-		Private:  true,
 		Span_:    span,
 	}
 }

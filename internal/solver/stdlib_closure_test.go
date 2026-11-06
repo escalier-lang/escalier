@@ -958,8 +958,8 @@ func mustScanPackageFiles(t *testing.T, dir string) []packageFileStamp {
 // `MessagePort` no constructor, so building one is reported, while the platform's own ways
 // of producing them still check and the classes still narrow.
 //
-// Loading `web:dom` reports errors of its own until #2378 is fixed, so the test reads only
-// the errors the source raises and leaves the package's to that issue.
+// Loading `web:dom` reports errors inside the package itself, so the test reads only the
+// errors the source raises.
 func TestTheCommittedTreeConstructsOnlyWhatWebIDLDoes(t *testing.T) {
 	t.Parallel()
 
