@@ -1,7 +1,8 @@
 name: Claude
 
-# Runs only when k4b7 mentions @claude in a PR or issue comment. Pushes to a PR
-# branch do not start a run.
+# Runs only on comments by k4b7. A comment that mentions @claude starts the
+# claude job, and a PR comment that starts with /code-review starts the
+# code-review job. Pushes to a PR branch do not start a run.
 on:
   issue_comment:
     types: [created]
@@ -29,3 +30,52 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+  # Runs the pr-review skill when k4b7 comments `/code-review [low|medium|high]`
+  # on a PR, and posts each finding as an inline comment.
+  code-review:
+    if: |
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request &&
+      (github.event.comment.body == '/code-review' ||
+        startsWith(github.event.comment.body, '/code-review ') ||
+        startsWith(github.event.comment.body, format('/code-review{0}', fromJSON('"\n"'))) ||
+        startsWith(github.event.comment.body, format('/code-review{0}', fromJSON('"\r"')))) &&
+      github.event.comment.user.login == 'k4b7'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # The skill comes from the default branch, so a PR branched before the
+      # skill landed can still be reviewed.
+      - name: Check out the PR branch
+        run: |
+          cp .claude/skills/pr-review/SKILL.md "$RUNNER_TEMP/pr-review.md"
+          gh pr checkout ${{ github.event.issue.number }}
+          mkdir -p .claude/skills/pr-review
+          cp "$RUNNER_TEMP/pr-review.md" .claude/skills/pr-review/SKILL.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Run Claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.issue.number }}
+            COMMAND: ${{ github.event.comment.body }}
+
+            Read .claude/skills/pr-review/SKILL.md and follow it to review this PR.
+            The level is the word after /code-review in COMMAND, or medium when none is given.
+            The PR branch is checked out in the working directory.
+          claude_args: |
+            --allowedTools "Read,Grep,Glob,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh api repos/escalier-lang/escalier/pulls/*/comments *),Bash(gh api repos/escalier-lang/escalier/issues/*/comments *),Bash(gh api -X PATCH repos/escalier-lang/escalier/issues/comments/* *),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git diff:*),Bash(git log:*)"
