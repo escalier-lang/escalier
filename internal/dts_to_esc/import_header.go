@@ -23,15 +23,24 @@ import (
 // that scope is still empty.
 const preludeURI = "std:prelude"
 
-// webPreludeURI is the web platform's prelude. Like preludeURI, every web
-// package's scope already holds its exports, so a reference to one needs no
-// import and no qualifier.
-const webPreludeURI = "web:prelude"
+// WebPreludeURI is the web platform's prelude.
+const WebPreludeURI = "web:prelude"
 
-// isPreludeURI reports whether uri names a `*:prelude` package, whose exports a
-// scope holds without an import.
-func isPreludeURI(uri string) bool {
-	return uri == preludeURI || uri == webPreludeURI
+// ReadsPreludeBare reports whether a declaration in the package importer reaches
+// the exports of the package prelude with no import and no qualifier. Every package
+// reads `std:prelude` that way, and a `web:*` package other than `web:prelude` reads
+// `web:prelude` too. It is false for every other pair.
+//
+// The generator writes no import for such a reference, and the solver gives such a
+// package a scope that holds those exports, so the two have to agree.
+func ReadsPreludeBare(importer, prelude string) bool {
+	switch prelude {
+	case preludeURI:
+		return true
+	case WebPreludeURI:
+		return strings.HasPrefix(importer, "web:") && importer != WebPreludeURI
+	}
+	return false
 }
 
 // declaringPackages maps each top-level name in the converted tree to the URI
@@ -83,7 +92,7 @@ func ImportGraph(mods map[string]*StandaloneModule) (map[string][]string, error)
 		}
 		for _, name := range TypeRefNames(mod.Module).ToSlice() {
 			declaredIn, known := owner[name]
-			if !known || declaredIn == uri || isPreludeURI(declaredIn) {
+			if !known || declaredIn == uri || ReadsPreludeBare(uri, declaredIn) {
 				continue
 			}
 			needed.Add(declaredIn)
@@ -213,13 +222,13 @@ func setImportHeader(mod *StandaloneModule, targets []string) {
 // `file.Blob`. A reference already written qualified has its head qualified
 // instead, and the member rides along.
 //
-// The `*:prelude` packages are skipped, since each binds its exports
-// unprefixed and a qualifier on one would name nothing.
+// A reference to a prelude the package reads bare is skipped, since
+// ReadsPreludeBare says a qualifier on it would name nothing.
 func qualifyCrossPackageRefs(mod *StandaloneModule, uri string, owner map[string]string) {
 	qualifiers := map[string]string{}
 	for _, name := range TypeRefNames(mod.Module).ToSlice() {
 		declaredIn, known := owner[name]
-		if !known || declaredIn == uri || isPreludeURI(declaredIn) {
+		if !known || declaredIn == uri || ReadsPreludeBare(uri, declaredIn) {
 			continue
 		}
 		qualifiers[name] = ast.DeriveImportName(declaredIn)

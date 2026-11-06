@@ -207,12 +207,16 @@ func (c *checker) inferPackage(uri string, module *ast.Module) (*Namespace, []So
 	prevErrs := c.errs
 	c.errs = nil
 
-	scope := c.packageParentScope([]string{uri}).Child()
 	// A `.d.ts` is written against TypeScript's global library, which the globals
-	// scope holds. `Console` is one such name.
-	if !IsSchemePrefixedImport(uri) {
-		scope = c.globalsScope().Child()
+	// scope holds. `Console` is one such name. Only the scope the package needs is
+	// asked for, since asking for one can load the packages it holds.
+	var parent *Scope
+	if IsSchemePrefixedImport(uri) {
+		parent = c.packageParentScope([]string{uri})
+	} else {
+		parent = c.globalsScope()
 	}
+	scope := parent.Child()
 	c.bindFileImports(scope, module)
 	// Inference only reads the graph, and a package's graph depends on its module
 	// alone, so every run loading the same cached module shares one graph.

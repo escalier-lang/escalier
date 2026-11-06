@@ -578,9 +578,11 @@ func TestWebPackageReachesWebPreludeBare(t *testing.T) {
 
 	t.Run("a std package does not", func(t *testing.T) {
 		t.Parallel()
-		res := inferAgainstStdlib(t, "import \"std:tagged\"\ndeclare val x: tagged.Tagged", files)
-		require.Len(t, res.Errors, 1)
-		require.Contains(t, res.Errors[0].Message(), "cannot find type `Event`")
+		dir := seedStdlib(t, withPreludeClasses(files))
+		res := InferModuleWithSource(parseModule(t, "import \"std:tagged\"\ndeclare val x: tagged.Tagged"), StdlibSource(dir))
+		require.Equal(t, []string{
+			`package "std:tagged" (` + filepath.Join(dir, "std", "tagged.esc") + ") has 1 error(s):\n  cannot find type `Event`",
+		}, errorMessagesOf(res.Errors))
 	})
 }
 

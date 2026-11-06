@@ -916,8 +916,16 @@ func (c *checker) forScript(pkgURI string) *checker {
 		// A fresh table, because the script looks up only nodes in its own bodies,
 		// which its own rename pass records. Sharing the module's table would grow
 		// it on every re-check of the script.
-		varIDs:            liveness.NewVarIDs(),
-		prelude:           c.prelude,
+		varIDs:  liveness.NewVarIDs(),
+		prelude: c.prelude,
+		// The library run built these scopes and loaded their packages on the library
+		// counters, so the script reads them rather than building its own copies.
+		webPrelude:        c.webPrelude,
+		globals:           c.globals,
+		globalsBound:      c.globalsBound,
+		ambientBound:      c.ambientBound,
+		libVarCounter:     c.libVarCounter,
+		libSymbolCounter:  c.libSymbolCounter,
 		source:            c.source,
 		groupSource:       c.groupSource,
 		groups:            c.groups,

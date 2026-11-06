@@ -11,6 +11,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dep_graph"
+	"github.com/escalier-lang/escalier/internal/dts_to_esc"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/set"
 )
@@ -156,17 +157,16 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 	// reads them through the prelude member's namespace, which the walk fills.
 	// memberImportNamespaces gives the dep graph the same edges, so a prelude
 	// declaration is defined before a reader needs it.
+	readers := webPreludeReaders(module, group)
 	if preludeNS, held := c.memberNamespaces[groupNamespace(webPreludeURI)]; held {
-		for _, file := range module.Files {
-			if readsWebPreludeBare(file, c.activeGroup) {
-				fileScopes[file.SourceID].defineUnprefixed(preludeNS)
-			}
+		for sourceID := range readers {
+			fileScopes[sourceID].defineUnprefixed(preludeNS)
 		}
 	}
 	// Inference only reads the graph, and a group's graph depends on its module and
 	// members alone, so every run loading the same cached group shares one graph.
 	g := stdlibParses.depGraph(module, group, func() *dep_graph.DepGraph {
-		return dep_graph.BuildDepGraphWithImports(module, memberImportNamespaces(module, c.activeGroup))
+		return dep_graph.BuildDepGraphWithImports(module, memberImportNamespaces(module, c.activeGroup, readers))
 	})
 	c.inferDepGraph(scope, 0, module, g)
 
@@ -211,13 +211,13 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 // writes for other members, each naming the namespace that member's
 // declarations bind under. `import "std:weak_ref"` in `std:map` maps `weak_ref`
 // to `std__weak_ref`. An import of a package outside the group is left out,
-// since its declarations are not in the module. A `web:*` member's file also maps
-// dep_graph.UnprefixedImport to `web:prelude`'s namespace when the group holds
-// it, matching the bare bindings loadPackageGroup makes for it.
-func memberImportNamespaces(module *ast.Module, group set.Set[string]) map[int]map[string]string {
+// since its declarations are not in the module. Each file in preludeReaders also
+// maps dep_graph.UnprefixedImport to `web:prelude`'s namespace, matching the bare
+// bindings loadPackageGroup makes for it.
+func memberImportNamespaces(module *ast.Module, group set.Set[string], preludeReaders set.Set[int]) map[int]map[string]string {
 	out := map[int]map[string]string{}
 	for _, file := range module.Files {
-		if readsWebPreludeBare(file, group) {
+		if preludeReaders.Contains(file.SourceID) {
 			out[file.SourceID] = map[string]string{dep_graph.UnprefixedImport: groupNamespace(webPreludeURI)}
 		}
 		for _, stmt := range file.Imports {
@@ -233,19 +233,25 @@ func memberImportNamespaces(module *ast.Module, group set.Set[string]) map[int]m
 	return out
 }
 
-// readsWebPreludeBare reports whether file belongs to a `web:*` member of group
-// other than `web:prelude`, while group also holds `web:prelude`. Such a file
-// names `web:prelude`'s exports without an import or a qualifier.
-func readsWebPreludeBare(file *ast.File, group set.Set[string]) bool {
-	if !group.Contains(webPreludeURI) || file.Namespace == groupNamespace(webPreludeURI) {
-		return false
+// webPreludeReaders returns the source IDs of the files of module, a merged group's
+// module, that read `web:prelude`'s exports bare, as dts_to_esc.ReadsPreludeBare
+// decides. It is empty when group does not hold `web:prelude`, since its exports are
+// then not in the module.
+func webPreludeReaders(module *ast.Module, group []string) set.Set[int] {
+	readers := set.NewSet[int]()
+	if !slices.Contains(group, webPreludeURI) {
+		return readers
 	}
-	for uri := range group {
-		if groupNamespace(uri) == file.Namespace {
-			return strings.HasPrefix(uri, "web:")
+	memberOf := make(map[string]string, len(group))
+	for _, uri := range group {
+		memberOf[groupNamespace(uri)] = uri
+	}
+	for _, file := range module.Files {
+		if dts_to_esc.ReadsPreludeBare(memberOf[file.Namespace], webPreludeURI) {
+			readers.Add(file.SourceID)
 		}
 	}
-	return false
+	return readers
 }
 
 // sortedGroup returns a copy of group in sorted order, so a diagnostic and a

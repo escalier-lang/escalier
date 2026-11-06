@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/dts_to_esc"
 	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/set"
 )
@@ -15,16 +16,21 @@ import (
 // Two layers sit above the prelude scope:
 //
 //  1. The web prelude scope holds the exports of `web:prelude`, such as `Event`
-//     and `AbortSignal`. It is the ambient scope of a project's own files and of
-//     every `web:*` package but `web:prelude` itself, so in a project's own file
-//     the `*:prelude` packages are the whole ambient layer.
+//     and `AbortSignal`. It is the ambient scope of a project's own files, so in
+//     a project's own file the `*:prelude` packages are the whole ambient layer.
 //  2. The globals scope is a child of the web prelude scope and holds the exports
 //     of every package ambientPackages lists. An npm package's scope is its child,
 //     because a `.d.ts` is written against TypeScript's global library and names
-//     `Console`, `Blob` or `HTMLElement` without importing them.
+//     `Console` or `Blob` without importing them.
+//
+// A `web:*` package other than `web:prelude` reads the prelude's exports bare too,
+// as dts_to_esc.ReadsPreludeBare decides. A package loaded alone gets the web
+// prelude scope as its parent. A package loaded in a group with `web:prelude`, which
+// the closure makes the usual case, reads the prelude member's namespace through its
+// file scope instead, since that group's declarations are all in one module.
 
 // webPreludeURI is the web platform's prelude.
-const webPreludeURI = "web:prelude"
+const webPreludeURI = dts_to_esc.WebPreludeURI
 
 // ambientPackages lists the packages whose exports the globals scope binds. The
 // first package to claim a name keeps it, so a later package never replaces an
@@ -86,7 +92,7 @@ func (c *checker) packageParentScope(group []string) *Scope {
 		return c.preludeScope()
 	}
 	for _, uri := range group {
-		if strings.HasPrefix(uri, "web:") {
+		if dts_to_esc.ReadsPreludeBare(uri, webPreludeURI) {
 			return c.webPreludeScope()
 		}
 	}
