@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"maps"
 	"math"
-	"os"
 	"slices"
 	"strings"
 
@@ -77,31 +76,6 @@ import (
 //   - The caller reads a place under a parameter whose referent the caller owns once the
 //     body returns or suspends. Such a place holds a loan from the point it takes it to the
 //     end of the body, unless a write replaces it.
-//
-// The pass runs unless the ownershipDataflow flag is cleared. Its diagnostics take the place
-// of the ones replacedByDataflow lists.
-
-// ownershipDataflowEnv is the environment variable that turns the dataflow pass off for every
-// run, whatever Options says. The values 0, false, and off turn it off, in any case and with
-// surrounding whitespace. Any other value leaves it on.
-const ownershipDataflowEnv = "ESCALIER_OWNERSHIP_DATAFLOW"
-
-// ownershipDataflowFromEnv reports whether ownershipDataflowEnv leaves the dataflow pass on.
-func ownershipDataflowFromEnv() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(ownershipDataflowEnv))) {
-	case "0", "false", "off":
-		return false
-	}
-	return true
-}
-
-// withOwnershipDataflowResolved returns opts with NoOwnershipDataflow set when opts or
-// ownershipDataflowEnv turns the dataflow pass off. A checker reads only the returned
-// NoOwnershipDataflow, so the environment is read once per run.
-func withOwnershipDataflowResolved(opts Options) Options {
-	opts.NoOwnershipDataflow = opts.NoOwnershipDataflow || !ownershipDataflowFromEnv()
-	return opts
-}
 
 // UseAfterMoveError is reported when a binding is read after an owned value has
 // moved out of it. It blames the read and points its related span at the move site.
@@ -160,25 +134,10 @@ func (e *UseAfterMoveError) Message() string {
 	return fmt.Sprintf("use of moved value '%s'", e.Name)
 }
 
-// replacedByDataflow reports whether err is a diagnostic of E1, E2, or E3, the rules the
-// dataflow pass checks while the ownershipDataflow flag is set.
-func replacedByDataflow(err SolverError) bool {
-	switch err.(type) {
-	case *UseAfterMoveError, *BorrowAliasError, *MoveWhileBorrowedError, *BorrowedValueWriteError:
-		return true
-	}
-	return false
-}
-
-// runOwnershipDataflow checks every event table in c.info that it has not checked yet, unless
-// the ownershipDataflow flag is cleared. It drops each diagnostic replacedByDataflow lists from
-// c.errs and appends the pass's own. It must run after settleAllFlows, since the pass reads
-// only settled events.
+// runOwnershipDataflow checks every event table in c.info that it has not checked yet and
+// appends the pass's diagnostics to c.errs. It must run after settleAllFlows, since the pass
+// reads only settled events.
 func (c *checker) runOwnershipDataflow() {
-	if !c.ownershipDataflow {
-		return
-	}
-
 	var tables []*ownershipEvents
 	for _, t := range c.info.ownership {
 		if !t.checked && t.cfg != nil && t.live != nil {
@@ -198,7 +157,6 @@ func (c *checker) runOwnershipDataflow() {
 		found = append(found, c.checkBodyDataflow(t)...)
 	}
 
-	c.errs = slices.DeleteFunc(c.errs, replacedByDataflow)
 	// A closure's body is checked after the body it is written in, so its diagnostics are put
 	// back in source order.
 	slices.SortStableFunc(found, func(a, b SolverError) int { return compareSpans(a.Span(), b.Span()) })
