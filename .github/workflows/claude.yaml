@@ -37,7 +37,10 @@ jobs:
     if: |
       github.event_name == 'issue_comment' &&
       github.event.issue.pull_request &&
-      startsWith(github.event.comment.body, '/code-review') &&
+      (github.event.comment.body == '/code-review' ||
+        startsWith(github.event.comment.body, '/code-review ') ||
+        startsWith(github.event.comment.body, format('/code-review{0}', fromJSON('"\n"'))) ||
+        startsWith(github.event.comment.body, format('/code-review{0}', fromJSON('"\r"')))) &&
       github.event.comment.user.login == 'k4b7'
     runs-on: ubuntu-latest
     permissions:
