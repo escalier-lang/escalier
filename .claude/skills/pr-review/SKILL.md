@@ -68,11 +68,27 @@ For each one, record the file and a one-line statement of what a human reviewer 
 
 ## 6. Post
 
-1. For each finding, check that its line falls inside a diff hunk on the new side. Post it with `mcp__github_inline_comment__create_inline_comment` and `confirmed: true`. The body starts with a bold one-line summary and its category, then gives the failure scenario.
-2. When a finding's line is outside every hunk, attach it to the nearest changed line it concerns and name the real line in the body.
-3. Last, post one summary with `gh pr comment <number> --body ...`. It has three sections, each with a sentence-case heading:
-   - **Findings:** each finding on one line with its file and line. When nothing survives, say that the review found no issues.
+1. List the inline comments an earlier review already posted:
+
+   ```bash
+   gh api repos/<repo>/pulls/<number>/comments --paginate \
+     --jq '.[] | select(.user.login == "claude[bot]") | {path, line, body}'
+   ```
+
+   Skip a finding when one of these comments is on the same file and describes the same defect. Its line may have moved since then, so match by the defect, not the line number.
+2. For each remaining finding, check that its line falls inside a diff hunk on the new side. Post it with `mcp__github_inline_comment__create_inline_comment` and `confirmed: true`. The body starts with a bold one-line summary and its category, then gives the failure scenario.
+3. When a finding's line is outside every hunk, attach it to the nearest changed line it concerns and name the real line in the body.
+4. Last, write the summary. Its first line is the marker `<!-- pr-review-summary -->`, and the next line names the head commit reviewed. After that come three sections, each with a sentence-case heading:
+   - **Findings:** each finding of this run on one line with its file and line, including the ones skipped in item 1. Mark a skipped one as already posted. When nothing survives, say that the review found no issues.
    - **Moved code:** each trivial move from step 4 on one line. Leave the section out when there are none.
    - **Needs human review:** each high-risk change from step 5 on one line. Leave the section out when there are none.
+5. Post the summary in place of any earlier one. Find the earlier summary's id:
+
+   ```bash
+   gh api repos/<repo>/issues/<number>/comments --paginate \
+     --jq '.[] | select(.user.login == "claude[bot]" and (.body | contains("<!-- pr-review-summary -->"))) | .id'
+   ```
+
+   When that prints an id, replace that comment's body with `gh api -X PATCH repos/<repo>/issues/comments/<id> -f body=...`. When it prints nothing, post a new comment with `gh pr comment <number> --body ...`.
 
 Write every comment by the prose rules in `CLAUDE.md`. Don't send the review as a chat message, since only GitHub comments reach the PR.
