@@ -225,7 +225,8 @@ func (c *checker) resolveComponentEscapes(
 	// reported once here. Every site carrying it is left to that report rather than adding an
 	// escape on top.
 	mixed := c.reportMixedOutflows(outOfFrame)
-	// Return index to the owned type its borrows strip to. Committed after every site is decided.
+	// Return index to the owned type its borrows strip to. commitOwnedReturns writes them once
+	// the body is fully walked.
 	ownedReturns := map[int]soltype.Type{}
 	for _, es := range c.fn.escapeSites {
 		// The flow-sensitive borrow-edge graph at this site's program point. A borrow cleared by an
@@ -305,7 +306,7 @@ func (c *checker) resolveComponentEscapes(
 		}
 		c.reportEscapingLocals(escaping, es.expr)
 	}
-	c.commitOwnedReturnTypes(ownedReturns)
+	c.fn.ownedReturns = ownedReturns
 	c.fn.escapeSites = nil
 	return consumed
 }
