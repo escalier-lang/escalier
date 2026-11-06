@@ -89,6 +89,18 @@ For each one, record the file and a one-line statement of what a human reviewer 
      --jq '.[] | select(.user.login == "claude[bot]" and (.body | contains("<!-- pr-review-summary -->"))) | .id'
    ```
 
-   When that prints an id, replace that comment's body with `gh api -X PATCH repos/<repo>/issues/comments/<id> -f body=...`. When it prints nothing, post a new comment with `gh pr comment <number> --body ...`.
+   Pipe the summary in on standard input, as below. The job refuses a multi-line summary passed as a command argument, and it refuses writes to a file outside the working directory.
+
+   When that prints an id, replace that comment's body:
+
+   ```bash
+   printf '%s\n' '<!-- pr-review-summary -->' '...' | gh api -X PATCH repos/<repo>/issues/comments/<id> -F body=@-
+   ```
+
+   When it prints nothing, post a new comment:
+
+   ```bash
+   printf '%s\n' '<!-- pr-review-summary -->' '...' | gh pr comment <number> --body-file -
+   ```
 
 Write every comment by the prose rules in `CLAUDE.md`. Don't send the review as a chat message, since only GitHub comments reach the PR.
