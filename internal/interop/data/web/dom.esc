@@ -19871,7 +19871,7 @@ export declare type ReportList = Array<Report>
 
 export declare type TimerHandler = string | function.Function
 
-export declare type Transferable = OffscreenCanvas | ImageBitmap | MessagePort | MediaSourceHandle | streams.ReadableStream | streams.WritableStream | streams.TransformStream | web_codecs.AudioData | web_codecs.VideoFrame | web_rtc.RTCDataChannel | typed_arrays.ArrayBuffer
+export declare type Transferable = web_codecs.AudioData | ImageBitmap | MIDIAccess | MediaSourceHandle | MediaStreamTrack | MessagePort | OffscreenCanvas | web_rtc.RTCDataChannel | streams.ReadableStream | streams.TransformStream | web_codecs.VideoFrame | streams.WritableStream | typed_arrays.ArrayBuffer
 
 export declare type VibratePattern = number | Array<number>
 
