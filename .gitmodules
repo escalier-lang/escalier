@@ -3,3 +3,8 @@
 	url = https://github.com/es-meta/esmeta.git
 	update = none
 	ignore = untracked
+[submodule "tools/spec-extract/ecma402"]
+	path = tools/spec-extract/ecma402
+	url = https://github.com/tc39/ecma402.git
+	update = none
+	ignore = untracked

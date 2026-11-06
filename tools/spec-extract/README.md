@@ -25,15 +25,26 @@ picks them up.
 | ------------------------ | ---------------------------------------------------- | ----------------------------------- |
 | ESMeta                   | `7d237fd1680f473e674320cc97932702d950fa98`           | the `esmeta` submodule              |
 | ECMA-262 spec            | `84b38ad852ff426795fa29cebc06949027336c64`, `es2025` | ESMeta's own `ecma262` submodule    |
+| ECMA-402 spec            | `4a2dae4c04e7fdc9e9de5946fbcdb31b073e4040`, `es2025-candidate-2025-04-01` | the `ecma402` submodule |
 | sbt that compiles ESMeta | 1.10.11                                              | ESMeta's `project/build.properties` |
 | JDK and sbt launcher     | see `mise.toml`                                      | `mise.toml`                         |
 
-Pinning the ESMeta revision pins the spec revision with it, because ESMeta
-tracks ECMA-262 as a submodule of its own. The pin sits one commit past
-ESMeta's `v0.7.3` tag, on `main`. That is the revision the §1 spike ran, so the
-control-flow-graph dumps committed under
+Pinning the ESMeta revision pins the ECMA-262 revision with it, because ESMeta
+tracks that specification as a submodule of its own. The pin sits one commit
+past ESMeta's `v0.7.3` tag, on `main`. That is the revision the §1 spike ran, so
+the control-flow-graph dumps committed under
 [planning/ecma-262/spike_evidence/](../../planning/ecma-262/spike_evidence/)
 describe the build this directory produces.
+
+ECMA-402 is pinned separately, because nothing tracks it for us. **The two
+specification pins move together.** They describe one language, and a document
+merged from two editions holds algorithms written against different definitions
+of the operations they call. ECMA-402 tags an edition as
+`esYYYY-candidate-<date>` where ECMA-262 tags it `esYYYY`, so the tag names do
+not match on their face. `MergedSpec` catches the coarsest form of a mismatch
+and reports it as a pin problem: a clause ECMA-402 supersedes that the pinned
+ECMA-262 does not define. It cannot catch two editions that agree on clause
+names, so a bump is where someone checks the pair by hand.
 
 ## Setup
 
@@ -54,6 +65,13 @@ describe the build this directory produces.
 
    ```sh
    git -C tools/spec-extract/esmeta submodule update --init ecma262
+   ```
+
+   Check out ECMA-402 beside it. It carries the same `update = none`, so it
+   needs naming the same way:
+
+   ```sh
+   git submodule update --init --checkout tools/spec-extract/ecma402
    ```
 
 4. Install the JVM toolchain:
@@ -109,6 +127,48 @@ mise install
 mise lock --platform linux-x64,macos-arm64
 ```
 
+## The merged document
+
+`MergedSpec` builds the document the extractor reads: ECMA-262's `spec.html`
+with ECMA-402's clauses spliced into it. The two have to be extracted together.
+ECMA-402 is built against ECMA-262 as an external bibliography, so its own
+document holds none of the abstract operations it calls, and a graph built from
+it alone would reach no body for any of them.
+
+ESMeta extracts from ecmarkup source rather than built output. ECMA-402's
+source is that same form, split across the files `spec/index.html` names in
+`emu-import` elements. The merge resolves those imports and appends the result,
+so no `ecmarkup` run is involved. Every element ECMA-402 contributes
+carries an `esc-spec-source` attribute naming the file it came from, which is
+how a report says which clause a function belongs to.
+
+ECMA-402 replaces ten ECMA-262 clauses, nine locale-sensitive functions and
+`AvailableNamedTimeZoneIdentifiers`. The merge removes each one before
+appending, since leaving it in gives two functions under one name. Which
+clauses those are is read out of the sentence ECMA-402 writes above each
+replacement rather than listed in the source. A revision that supersedes one
+more clause is then handled rather than silently half-merged. The count is
+pinned the way the recognized phrasings are, so a rewording fails the run
+instead of quietly dropping a removal.
+
+Run the merge and its checks on their own with:
+
+```sh
+mise run check-merge
+```
+
+It reports what was imported, appended, and replaced. To read a clause as the
+extractor sees it, run the entry point directly with the spec directory and an
+output path, and it writes the merged document out:
+
+```sh
+sbt 'runMain escalier.specextract.MergeCheck ecma402/spec merged.html'
+```
+
+`Main` serializes ECMA-262 alone. Extracting from the merged document
+needs the two ECMA-402 abstract-operation heads whose type wording ends the run,
+which is [#1451](https://github.com/escalier-lang/escalier/issues/1451).
+
 ## The serializer
 
 `build.sbt` names the vendored checkout as a source dependency, so `sbt` builds
@@ -161,7 +221,7 @@ fact again. Re-read the step against the new wording before changing a count.
 
 ## Bumping the spec
 
-Bump the ESMeta submodule, which carries the spec revision with it, then
+Bump the ESMeta submodule, which carries the ECMA-262 revision with it, then
 rebuild:
 
 ```sh
@@ -169,6 +229,15 @@ git -C tools/spec-extract/esmeta fetch origin
 git -C tools/spec-extract/esmeta checkout <new-esmeta-revision>
 git -C tools/spec-extract/esmeta submodule update --init ecma262
 git add tools/spec-extract/esmeta
+```
+
+Move ECMA-402 to the edition that new ECMA-262 revision belongs to. Its tags
+read `esYYYY-candidate-<date>`:
+
+```sh
+git -C tools/spec-extract/ecma402 fetch origin --tags
+git -C tools/spec-extract/ecma402 checkout <matching-ecma402-tag>
+git add tools/spec-extract/ecma402
 ```
 
 Update the revision table above, then re-run the steps under "Setup" from
