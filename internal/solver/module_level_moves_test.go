@@ -278,6 +278,129 @@ fn h() {
 	}
 }
 
+// TestMoveOutOfModuleLevelValueIntoCall covers calls inside a function body that pass a
+// module-level binding as an argument or as a method's receiver. A parameter or receiver that
+// takes ownership moves the binding, which #2284 and #2232 report. One that borrows reads it.
+func TestMoveOutOfModuleLevelValueIntoCall(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			// #2284
+			name: "passed to an owned parameter",
+			src: `val cfg = {x: 1}
+declare fn take(d: {x: number}) -> undefined
+fn g() {
+	take(cfg)
+}`,
+			want: []string{"4:7-4:10: cannot move module-level value 'cfg' inside a function. Borrow it with `&cfg`"},
+		},
+		{
+			// #2284
+			name: "a field passed to an owned parameter",
+			src: `val cfg: {items: Array<number>} = {items: [1]}
+declare fn take(xs: Array<number>) -> undefined
+fn g() {
+	take(cfg.items)
+}`,
+			want: []string{"4:7-4:16: cannot move module-level value 'cfg.items' inside a function. Borrow it with `&cfg.items`"},
+		},
+		{
+			// #2284
+			name: "a branch result passed to an owned parameter",
+			src: `val xs: Array<number> = [1]
+declare fn take(xs: Array<number>) -> undefined
+fn g(c: boolean) {
+	take(if c { xs } else { [2] })
+}`,
+			want: []string{"4:14-4:16: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
+		},
+		{
+			// #2284
+			name: "passed to a method's owned parameter",
+			src: `val xs: Array<number> = [1]
+class Box {
+	items: Array<number>,
+	constructor(&mut self) { self.items = [] },
+	put(&mut self, v: Array<number>) -> undefined { self.items = v },
+}
+fn g() {
+	val mut b = Box()
+	b.put(xs)
+}`,
+			want: []string{"9:8-9:10: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
+		},
+		{
+			// #2284. The argument's flow waits until g's body settles p as owned.
+			name: "passed to a recursive call's unannotated parameter",
+			src: `val xs: Array<number> = [1]
+fn g(p, c: boolean) -> number {
+	val q = p
+	if c { return g(xs, false) }
+	return 1
+}`,
+			want: []string{"4:18-4:20: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
+		},
+		{
+			// #2284
+			name: "passed to a closure's unannotated parameter",
+			src: `val xs: Array<number> = [1]
+fn g() {
+	val h = fn(p) { val q = p }
+	h(xs)
+}`,
+			want: []string{"4:4-4:6: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
+		},
+		{
+			// #2232
+			name: "the receiver of a method that takes self",
+			src: `class Token {
+	constructor(&mut self) {},
+	consume(self) -> number { return 1 },
+}
+val tok = Token()
+fn f() -> number { return tok.consume() }`,
+			want: []string{"6:27-6:30: cannot move module-level value 'tok' inside a function. Borrow it with `&tok`"},
+		},
+		{
+			name: "passed to a borrow parameter",
+			src: `val cfg = {x: 1}
+declare fn peek(d: &{x: number}) -> undefined
+fn g() {
+	peek(&cfg)
+}`,
+		},
+		{
+			name: "a number field passed to an owned parameter",
+			src: `val cfg = {x: 1}
+declare fn take(n: number) -> undefined
+fn g() {
+	take(cfg.x)
+}`,
+		},
+		{
+			name: "the receiver of a method that borrows self",
+			src: `class Token {
+	constructor(&mut self) {},
+	peek(&self) -> number { return 1 },
+}
+val tok = Token()
+fn f() -> number { return tok.peek() }`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
+		})
+	}
+}
+
 // TestClosureMovesCapture covers closures that move a local they capture. The closure takes the
 // local where it is written, and a call of the closure moves the binding holding it.
 func TestClosureMovesCapture(t *testing.T) {

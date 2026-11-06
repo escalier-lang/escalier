@@ -2996,13 +2996,10 @@ func TestFlowMatrixMissingFieldBorrow(t *testing.T) {
 	})
 }
 
-// DISABLED until #2284. The module-level move check looks at bindings, stores, literals, and
-// returns, but not at a call argument or an owned receiver, so each move of `cfg` below goes
-// unreported.
-/*
+// TestFlowMatrixModuleLevelMove asserts that a function moving a module-level value into an
+// owned parameter or an owned receiver reports a ModuleLevelMoveError, as #2284 and #2232 ask.
 func TestFlowMatrixModuleLevelMove(t *testing.T) {
 	runFlowMatrix(t, []flowCell{
-		// Today the call moves `cfg` with no diagnostic.
 		{
 			column: "MoveOutOfModuleLevelState",
 			site:   "Argument",
@@ -3015,7 +3012,6 @@ func TestFlowMatrixModuleLevelMove(t *testing.T) {
 			`,
 			want: []string{"5:11-5:14: cannot move module-level value 'cfg' inside a function. Borrow it with `&cfg`"},
 		},
-		// Today `take` moves `cfg` with no diagnostic.
 		{
 			column: "MoveOutOfModuleLevelState",
 			site:   "Receiver",
@@ -3029,7 +3025,6 @@ func TestFlowMatrixModuleLevelMove(t *testing.T) {
 		},
 	})
 }
-*/
 
 // TestFlowMatrixReassignAfterAMove asserts that a use after a reassignment reads the new value.
 // E1 rejects only a use of the moved value, and the dataflow pass clears a move at a write of

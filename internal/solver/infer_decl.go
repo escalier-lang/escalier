@@ -176,15 +176,11 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 		}
 	}
 	initT := c.inferExpr(scope, lvl, d.Init)
-	// A binding that takes its initializer by value moves it. A move out of a module-level
-	// binding is reported here. An annotated binding reports it once the annotation has
-	// resolved.
-	_, isIdent := d.Pattern.(*ast.IdentPat)
 	// An unannotated name binds whatever its initializer produces, so a field read through a
 	// borrow binds a borrow and needs the borrow written. A destructuring pattern reads
 	// through the borrow itself and needs nothing written.
-	if isIdent && d.TypeAnn == nil && !c.checkWrittenBorrow(d.Init, nil) {
-		c.rejectModuleLevelMove(scope, d.Init)
+	if _, isIdent := d.Pattern.(*ast.IdentPat); isIdent && d.TypeAnn == nil {
+		c.checkWrittenBorrow(d.Init, nil)
 	}
 	// A `mut` leaf owns a writable value, so it may not share one with the module or with
 	// another await of the same promise. A destructuring pattern with a `mut` leaf takes that
@@ -239,13 +235,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 		// error and adopting `never` would poison the binding. Keep the inferred
 		// initializer type instead (error recovery).
 		annT, ok := c.resolveDeclaredTypeAnn(scope, d.TypeAnn, lvl, symName, varDeclSymbolPosition(d))
-		// An initializer that fills a borrow annotation without a written borrow is reported
-		// for that alone. Reporting it as a move out of a module-level binding as well would
-		// blame one fault twice.
 		missing := ok && c.checkWrittenBorrow(d.Init, annT)
-		if _, borrowAnn := d.TypeAnn.(*ast.RefTypeAnn); isIdent && !borrowAnn && !missing {
-			c.rejectModuleLevelMove(scope, d.Init)
-		}
 		if ok {
 			// A `val mut p: T` binding may write any writable field of `T`, so a readonly
 			// field in the value it moves in cannot fill one, as T5 states. A borrowed

@@ -84,15 +84,11 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 			if s.Expr != nil {
 				if ref, ok := c.fn.stmtToRef[s]; ok {
 					c.emitReturnFlow(s.Expr, ref)
-					// A value that fills a borrow return without a written borrow is reported for
-					// that alone, and is not checked for a module-level move.
 					// With no return annotation the function returns whatever s.Expr produces, so
 					// the check runs against a nil destination type. An annotation that does not
 					// resolve, or that nests the returned type, names no destination to check.
-					checked := c.fn.returnAnn != nil || !c.fn.returnAnnotated
-					missing := checked && c.checkWrittenBorrow(s.Expr, c.fn.returnAnn)
-					if !missing {
-						c.rejectModuleLevelMove(scope, s.Expr)
+					if c.fn.returnAnn != nil || !c.fn.returnAnnotated {
+						c.checkWrittenBorrow(s.Expr, c.fn.returnAnn)
 					}
 				}
 			}
@@ -181,13 +177,10 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 			// monomorphic projections.
 			patternT := c.inferDestructureDecl(scope, lvl, vd)
 			if c.fn != nil {
-				moduleLevel := c.rejectModuleLevelDestructure(scope, vd.Pattern, vd.Init)
 				if ref, ok := c.fn.stmtToRef[s]; ok {
 					// The pattern takes its parts out of the initializer's place, which
 					// markMovedParams reads for a parameter.
-					if !moduleLevel {
-						c.fn.destructureInits.Add(vd.Init)
-					}
+					c.fn.destructureInits.Add(vd.Init)
 					// The pattern takes its parts from a value of the type it binds against,
 					// so a leaf of an annotated pattern over a borrow borrows for the
 					// annotation's lifetime.

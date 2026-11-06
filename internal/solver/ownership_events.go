@@ -371,6 +371,14 @@ type ownershipEvents struct {
 	// `seeds` lists the closure captures the body holds on entry, as seedCaptureLoans makes
 	// them.
 	seeds []*borrowEvent
+	// moduleRoots maps the VarID of each module-level binding a module's function captures
+	// to that binding. A move out of a place rooted at one is a ModuleLevelMoveError.
+	moduleRoots map[liveness.VarID]ValueBinding
+	// spreads holds the operand of each spread in an array or object literal of the body.
+	spreads set.Set[ast.Node]
+	// moduleMoves holds each expression a ModuleLevelMoveError has blamed, so a pattern
+	// whose leaves each move a part of one source reports that source once.
+	moduleMoves set.Set[ast.Node]
 }
 
 // returnSite is a return that receives a value: the expression returned, and the CFG point
@@ -496,6 +504,9 @@ func newOwnershipEvents(names map[liveness.VarID]string) *ownershipEvents {
 		boundClosures:   set.NewSet[ast.Func](),
 		retainedResults: map[ast.Expr][]*retainedStore{},
 		captureTypes:    map[liveness.VarID]soltype.Type{},
+		moduleRoots:     map[liveness.VarID]ValueBinding{},
+		spreads:         set.NewSet[ast.Node](),
+		moduleMoves:     set.NewSet[ast.Node](),
 	}
 }
 

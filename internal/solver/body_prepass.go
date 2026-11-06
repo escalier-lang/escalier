@@ -166,6 +166,14 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 	c.fn.paramVarIDs = c.fn.paramVarIDs.Union(captureVarIDs)
 	c.fn.captureVarIDs = captureVarIDs
 	c.fn.capturesModule = closure != nil && !enclosed
+	c.fn.scope = scope
+	if c.fn.capturesModule {
+		for _, name := range captured {
+			if b, found := c.lookupValueBinding(scope, name); found {
+				c.fn.events.moduleRoots[renameResult.ExtraParamVarIDs[name]] = b
+			}
+		}
+	}
 
 	// A call of a recursive closure's own name inside its body runs the closure, the way a call
 	// of the closure's name outside it does. So the name holds a loan of each local the closure

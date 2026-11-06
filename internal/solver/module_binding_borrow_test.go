@@ -26,7 +26,11 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 					take(x)
 				}
 			`,
-			want: []string{"8:11-8:12: use of moved value 'x'"},
+			want: []string{
+				"7:11-7:12: cannot move module-level value 'x' inside a function. Borrow it with `&x`",
+				"8:11-8:12: cannot move module-level value 'x' inside a function. Borrow it with `&x`",
+				"8:11-8:12: use of moved value 'x'",
+			},
 		},
 		"CallReadsAfterTheMove": {
 			src: decls + `
@@ -37,7 +41,10 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 					peek()
 				}
 			`,
-			want: []string{"9:6-9:10: this call runs 'peek', which reads 'x' after it was moved"},
+			want: []string{
+				"8:11-8:12: cannot move module-level value 'x' inside a function. Borrow it with `&x`",
+				"9:6-9:10: this call runs 'peek', which reads 'x' after it was moved",
+			},
 		},
 		"CallWritesWhileBorrowed": {
 			src: decls + `

@@ -271,6 +271,7 @@ func (c *checker) settleFlowsWaitingOn(wait flowWait, force, forceCapture bool) 
 		}
 
 		pf.table.events[pf.index] = ev
+		c.reportModuleLevelMove(pf.table, ev, pf.dest, t)
 		if _, isCapture := pf.dest.(*captureDest); isCapture {
 			c.captureReturnMoves(pf.table, placeholder.flowBase, t)
 		}
