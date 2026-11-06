@@ -78,7 +78,8 @@ func (c *checker) exprPlace(e ast.Expr) (movePlace, bool) {
 // chainPlace returns the place exprPlace names for e, whether the chain e roots holds a
 // dynamic index, and whether e names a place at all. A link after a dynamic index adds no
 // segment, since it reaches into an element the place does not name. So `xs[i].x` with
-// `i: number` is the place `xs`.
+// `i: number` is the place `xs`. An index whose type is one integer literal is not dynamic,
+// so `xs[i].x` with `i: 0` is the place `xs[0].x`. A `val i = 0` gives i that type.
 func (c *checker) chainPlace(e ast.Expr) (movePlace, bool, bool) {
 	switch e := e.(type) {
 	case *ast.IdentExpr:
