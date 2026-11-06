@@ -115,7 +115,9 @@ fn first(res: fetch.Response) { ... }   // another type in the package
 The name decides, not how many values the package exports. `web:fetch` also
 exports the classes `Headers`, `Request` and `Response`, and those stay members.
 A value the importing module declares under the same name keeps the name, and
-the package is reached through the namespace alone.
+the package is reached through the namespace alone. An `as` clause renames both
+at once, so after `import "std:console" as c` the call is `c.log("hi")` and the
+type is `c.Console`.
 
 An earlier revision did lift a matching class out, so `std:date` bound `Date`
 directly. It was dropped for three reasons. `Array`, `Iterator`, `Promise` and
