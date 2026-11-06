@@ -82,12 +82,14 @@ For each one, record the file and a one-line statement of what a human reviewer 
    - **Findings:** each finding of this run on one line with its file and line, including the ones skipped in item 1. Mark a skipped one as already posted. When nothing survives, say that the review found no issues.
    - **Moved code:** each trivial move from step 4 on one line. Leave the section out when there are none.
    - **Needs human review:** each high-risk change from step 5 on one line. Leave the section out when there are none.
-5. Post the summary in place of any earlier one. Find the earlier summary's id:
+5. Post the summary in place of any earlier one. List the ids of the comments that carry the marker, oldest first:
 
    ```bash
    gh api repos/<repo>/issues/<number>/comments --paginate \
-     --jq '.[] | select(.user.login == "claude[bot]" and (.body | contains("<!-- pr-review-summary -->"))) | .id'
+     --jq '.[] | select(.body | contains("<!-- pr-review-summary -->")) | .id'
    ```
+
+   The earlier summary is the last id it prints. The lookup matches on the marker alone, so it finds the summary whichever account posted it.
 
    Pipe the summary in on standard input, as below. The job refuses a multi-line summary passed as a command argument, and it refuses writes to a file outside the working directory.
 
@@ -97,7 +99,7 @@ For each one, record the file and a one-line statement of what a human reviewer 
    printf '%s\n' '<!-- pr-review-summary -->' '...' | gh api -X PATCH repos/<repo>/issues/comments/<id> -F body=@-
    ```
 
-   When it prints nothing, post a new comment:
+   When it prints nothing, or the edit fails because another account owns that comment, post a new comment:
 
    ```bash
    printf '%s\n' '<!-- pr-review-summary -->' '...' | gh pr comment <number> --body-file -
