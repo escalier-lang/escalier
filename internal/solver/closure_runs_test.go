@@ -147,6 +147,210 @@ func TestClosureRunsFollowHolders(t *testing.T) {
 	}
 }
 
+// TestClosureRunsAtPlaces covers a call whose callee or argument is a member or index place,
+// which runs or may run the closures held at that place. Each rejected program pairs with an
+// accepted twin where no conflicting borrow is live at the call.
+func TestClosureRunsAtPlaces(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want []string
+	}{
+		"MemberCalleeWritesCaptureBesideLiveBorrow": {
+			src: `
+				fn go() -> number {
+					val mut p = {x: 1}
+					val f = fn () { p.x = 2 }
+					val o = {cb: f}
+					val r = &p
+					o.cb()
+					return r.x
+				}
+			`,
+			want: []string{"7:6-7:10: this call runs 'o.cb', which writes 'p' while it is borrowed as immutable"},
+		},
+		"MemberCalleeCalledBeforeTheBorrowOk": {
+			src: `
+				fn go() -> number {
+					val mut p = {x: 1}
+					val f = fn () { p.x = 2 }
+					val o = {cb: f}
+					o.cb()
+					val r = &p
+					return r.x
+				}
+			`,
+			want: nil,
+		},
+		"MemberCalleeOfASiblingFieldOk": {
+			src: `
+				fn go() -> number {
+					val mut p = {x: 1}
+					val f = fn () { p.x = 2 }
+					val o = {cb: f, other: fn () {}}
+					val r = &p
+					o.other()
+					return r.x
+				}
+			`,
+			want: nil,
+		},
+		"MemberArgumentWritesCaptureBesideLiveBorrow": {
+			src: `
+				declare fn run(cb: fn () -> undefined) -> undefined
+				fn go() -> number {
+					val mut p = {x: 1}
+					val f = fn () { p.x = 2 }
+					val o = {cb: f}
+					val r = &p
+					run(o.cb)
+					return r.x
+				}
+			`,
+			want: []string{"8:10-8:14: this call may run 'o.cb', which writes 'p' while it is borrowed as immutable"},
+		},
+		"MemberArgumentPassedBeforeTheBorrowOk": {
+			src: `
+				declare fn run(cb: fn () -> undefined) -> undefined
+				fn go() -> number {
+					val mut p = {x: 1}
+					val f = fn () { p.x = 2 }
+					val o = {cb: f}
+					run(o.cb)
+					val r = &p
+					return r.x
+				}
+			`,
+			want: nil,
+		},
+		"IndexCalleeWritesCaptureBesideLiveBorrow": {
+			src: `
+				fn go() -> number {
+					val mut p = {x: 1}
+					val f = fn () { p.x = 2 }
+					val o = {list: [f]}
+					val r = &p
+					o.list[0]()
+					return r.x
+				}
+			`,
+			want: []string{"7:6-7:15: this call runs 'o.list[0]', which writes 'p' while it is borrowed as immutable"},
+		},
+		"IndexCalleeCalledBeforeTheBorrowOk": {
+			src: `
+				fn go() -> number {
+					val mut p = {x: 1}
+					val f = fn () { p.x = 2 }
+					val o = {list: [f]}
+					o.list[0]()
+					val r = &p
+					return r.x
+				}
+			`,
+			want: nil,
+		},
+		// A dynamic index makes the place the list, so the call may run any closure the list
+		// holds.
+		"DynamicIndexCalleeWritesCaptureBesideLiveBorrow": {
+			src: `
+				fn go(i: number) -> number {
+					val mut p = {x: 1}
+					val f = fn () { p.x = 2 }
+					val o = {list: [f]}
+					val r = &p
+					o.list[i]()
+					return r.x
+				}
+			`,
+			want: []string{"7:6-7:15: this call may run 'o.list', which writes 'p' while it is borrowed as immutable"},
+		},
+		"DynamicIndexCalleeCalledBeforeTheBorrowOk": {
+			src: `
+				fn go(i: number) -> number {
+					val mut p = {x: 1}
+					val f = fn () { p.x = 2 }
+					val o = {list: [f]}
+					o.list[i]()
+					val r = &p
+					return r.x
+				}
+			`,
+			want: nil,
+		},
+		// Writing the field replaces the closure it held, so the call runs only the new one.
+		"FieldReassignedToAClosureThatDoesNotWriteOk": {
+			src: `
+				fn go() -> number {
+					val mut p = {x: 1}
+					val f = fn () { p.x = 2 }
+					val mut o = {cb: f}
+					o.cb = fn () {}
+					val r = &p
+					o.cb()
+					return r.x
+				}
+			`,
+			want: nil,
+		},
+		"FieldReassignedToAClosureThatWrites": {
+			src: `
+				fn go() -> number {
+					val mut p = {x: 1}
+					val f = fn () { p.x = 2 }
+					val mut o = {cb: fn () {}}
+					o.cb = f
+					val r = &p
+					o.cb()
+					return r.x
+				}
+			`,
+			want: []string{"8:6-8:10: this call runs 'o.cb', which writes 'p' while it is borrowed as immutable"},
+		},
+		"InstanceFieldCalleeWritesCaptureBesideLiveBorrow": {
+			src: `
+				class Box {
+					cb: fn () -> undefined,
+					size(&self) -> number { return 0 },
+				}
+				fn go() -> number {
+					val mut p = {x: 1}
+					val f = fn () { p.x = 2 }
+					val mut b = Box(fn () {})
+					b.cb = f
+					val r = &p
+					b.cb()
+					return r.x
+				}
+			`,
+			want: []string{"12:6-12:10: this call runs 'b.cb', which writes 'p' while it is borrowed as immutable"},
+		},
+		// The method's place `b.size` is disjoint from `b.cb`, which holds the closure.
+		"InstanceMethodCalleeBesideAFieldHoldingAClosureOk": {
+			src: `
+				class Box {
+					cb: fn () -> undefined,
+					size(&self) -> number { return 0 },
+				}
+				fn go() -> number {
+					val mut p = {x: 1}
+					val f = fn () { p.x = 2 }
+					val mut b = Box(fn () {})
+					b.cb = f
+					val r = &p
+					b.size()
+					return r.x
+				}
+			`,
+			want: nil,
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src)
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+		})
+	}
+}
+
 // TestRetainedClosureWritesFollowCaptures covers a retained closure that writes a local
 // through a closure it captures. The capture is the only use of the captured binding, so
 // the stored closure reaches the inner closure's loans only through the capture.

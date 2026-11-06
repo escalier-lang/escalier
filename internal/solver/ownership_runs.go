@@ -26,8 +26,8 @@ import (
 type runEvent struct {
 	eventBase
 	call *ast.CallExpr
-	// `names` lists the callee when it names a local, then each argument that names a local,
-	// in argument order. The dataflow pass finds the closures each local holds.
+	// `names` lists the callee when it names a place under a local, then each argument that
+	// names one, in argument order. The dataflow pass finds the closures each place holds.
 	names []closureName
 	// `callee` is the place of the binding the callee names, when that binding holds a
 	// closure whose body moves one of its captures. Each call of such a closure moves it, as
@@ -37,13 +37,13 @@ type runEvent struct {
 	consumes bool
 }
 
-// closureName is the callee or an argument of a call, written as the name of a local. The
-// call runs each closure the callee's local holds, and may run each closure an argument's
-// local holds.
+// closureName is the callee or an argument of a call, written as a place under a local, such
+// as `f`, `o.cb`, or `o.list[0]`. The call runs each closure the callee's place holds, and
+// may run each closure an argument's place holds.
 type closureName struct {
-	node *ast.IdentExpr
-	root liveness.VarID
-	// `runs` marks the callee, which the call is sure to run.
+	node  ast.Expr
+	place movePlace
+	// `runs` marks a callee whose place names one closure, which the call is sure to run.
 	runs bool
 }
 
@@ -104,10 +104,15 @@ func (c *checker) emitClosureRuns(e *ast.CallExpr, ref liveness.StmtRef) {
 	}
 
 	ev := &runEvent{eventBase: eventBase{node: e}, call: e}
+	// The call runs the closure the callee's place holds. A callee read through a dynamic
+	// index, such as `o.list[i]`, names the whole list. The call runs only one of the closures
+	// the list holds, so it may run each of them.
 	if name, ok := c.closureNameOf(e.Callee, true); ok {
 		ev.names = append(ev.names, name)
 	}
 	for _, arg := range e.Args {
+		// The callee may call an argument, or a closure the argument reaches, so the call may
+		// run each closure the argument's place holds.
 		if name, ok := c.closureNameOf(arg, false); ok {
 			ev.names = append(ev.names, name)
 		}
@@ -122,37 +127,39 @@ func (c *checker) emitClosureRuns(e *ast.CallExpr, ref liveness.StmtRef) {
 	c.emitEvent(ev, ref)
 }
 
-// closureNameOf returns `expr` as a closureName when it is the name of a local. `runs` marks
-// the callee of the call.
-func (c *checker) closureNameOf(expr ast.Expr, runs bool) (closureName, bool) {
-	e, ok := expr.(*ast.IdentExpr)
-	if !ok || c.varIDs.Of(e) <= 0 {
+// closureNameOf returns `expr` as a closureName when it names a place under a local, as
+// exprPlace finds it. `callee` marks the callee of the call. The closureName runs when
+// `callee` is set and the chain holds no dynamic index. A dynamic index makes the place the
+// container the index reads from, as in `o.list[i]`, whose place is `o.list`.
+func (c *checker) closureNameOf(expr ast.Expr, callee bool) (closureName, bool) {
+	place, dynamic, ok := c.chainPlace(expr)
+	if !ok {
 		return closureName{}, false
 	}
-	return closureName{node: e, root: c.varIDs.Of(e), runs: runs}, true
+	return closureName{node: expr, place: place, runs: callee && !dynamic}, true
 }
 
-// closureRunOf returns the run of the closures that the local `name` refers to holds in s,
-// with the locals those closures capture. `ok` is false when the local holds no closure that
+// closureRunOf returns the run of the closures that the place `name` names holds in s, with
+// the locals those closures capture. `ok` is false when the place holds no closure that
 // captures a local of the body.
 //
-// A closure's loan of each capture is held at the local, or at a place under it, whether the
-// local was bound to the closure or copied from one that was. A local captured through several
-// loans is listed once, as a write when any loan writes it. It covers the field paths the
-// loans reach, or the whole local when any loan reaches all of it. A loan of a place under
-// the local itself is left out.
+// A closure's loan of each capture is held at a place that overlaps the named one, whether
+// that place was bound to the closure or copied from one that was. A local captured through
+// several loans is listed once, as a write when any loan writes it. It covers the field paths
+// the loans reach, or the whole local when any loan reaches all of it. A loan of a place
+// under the named place's own local is left out.
 func (d *bodyDataflow) closureRunOf(name closureName, s *dataflowState) (*closureRun, bool) {
 	// Group the closure loans by the local each one reaches. With
 	// `val f = fn () { p.a = 1; log(p.b) }`, `f` holds two loans of `p`, a mutable one of `p.a`
 	// and an immutable one of `p.b`. They merge into one capturedLocal for `p` that is mutable
 	// and covers both paths. A loan with an empty path reaches the whole local, which `whole`
 	// records.
-	held := movePlace{root: name.root}
+	held := name.place
 	captured := map[liveness.VarID]*capturedLocal{}
 	whole := set.NewSet[liveness.VarID]()
 	for _, l := range d.sortedLoans(s) {
 		root := l.ev.place.root
-		if !l.closure() || root == name.root || !l.heldAt(held) {
+		if !l.closure() || root == held.root || !l.heldAt(held) {
 			continue
 		}
 		local, seen := captured[root]
@@ -173,7 +180,7 @@ func (d *bodyDataflow) closureRunOf(name closureName, s *dataflowState) (*closur
 		return nil, false
 	}
 
-	run := &closureRun{node: name.node, via: closureVia(name.node.Name), runs: name.runs}
+	run := &closureRun{node: name.node, via: closureVia(d.placeName(held)), runs: name.runs}
 	for _, root := range slices.Sorted(maps.Keys(captured)) {
 		// A capture of the whole local covers every field path, so the paths are dropped.
 		local := *captured[root]
