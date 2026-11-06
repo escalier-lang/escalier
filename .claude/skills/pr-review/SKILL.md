@@ -64,7 +64,7 @@ Run this step at every level. A high-risk change is one where a mistake is costl
 - It changes `.github/workflows/`, permissions, secrets, or anything else that runs with repository credentials.
 - It replaces generated data, such as files under `internal/interop/data/`, in bulk.
 
-For each one, record the file and a one-line statement of what a human reviewer should confirm. Keep the list to the changes that most need a second look, at most 5.
+For each one, record the file, the range of changed lines that makes it risky, and a one-line statement of what a human reviewer should confirm. Take the range from the diff hunk that holds the change. Use new-file line numbers for added or changed lines, and old-file numbers for lines the PR only deletes. When a change spans several hunks of one file, record the hunk that matters most and name the others in the statement. Keep the list to the changes that most need a second look, at most 5.
 
 ## 6. Post
 
@@ -81,7 +81,7 @@ For each one, record the file and a one-line statement of what a human reviewer 
 4. Last, write the summary. Its first line is the marker `<!-- pr-review-summary -->`, and the next line names the head commit reviewed. After that come three sections, each with a sentence-case heading:
    - **Findings:** each finding of this run on one line with its file and line, including the ones skipped in item 1. Mark a skipped one as already posted. When nothing survives, say that the review found no issues.
    - **Moved code:** each trivial move from step 4 on one line. Leave the section out when there are none.
-   - **Needs human review:** each high-risk change from step 5 on one line. Leave the section out when there are none.
+   - **Needs human review:** each high-risk change from step 5 on one line, linked to its range of lines. Leave the section out when there are none.
 
    Write each file a line names as a link to that file's changes in the PR. GitHub's anchor for a file is `diff-` followed by the SHA-256 of its path. Get the hash with `printf '%s' '<path>' | sha256sum`, then write the link as:
 
@@ -90,6 +90,14 @@ For each one, record the file and a one-line statement of what a human reviewer 
    ```
 
    `R<line>` points at a line of the new file. Leave off `R<line>` when the entry names no line, and use `L<line>` for a line that exists only in the old file, such as the old location of a moved function.
+
+   An entry that names a range of lines links to the whole range, which GitHub highlights. Give both ends the same side:
+
+   ```markdown
+   [`<path>:<start>-<end>`](https://github.com/<repo>/pull/<number>/files#diff-<hash>R<start>-R<end>)
+   ```
+
+   Use `L<start>-L<end>` for a range of deleted lines.
 5. Post the summary in place of any earlier one. List the ids of the comments that carry the marker, oldest first:
 
    ```bash
