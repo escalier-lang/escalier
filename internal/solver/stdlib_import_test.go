@@ -415,16 +415,16 @@ func TestStdlibSourceRejectsADirectory(t *testing.T) {
 		`unknown package "shaped" in std: scheme (no std/shaped.esc under `+dir+`)`)
 }
 
-// A package binds as a namespace and nothing else, so an export sharing the
-// package's own name never displaces it. A package exporting `fn array` beside
-// `type array` used to be the case the single-class shortcut had to rule out;
-// with one binding shape there is nothing to rule out.
-func TestStdlibImportBindsNoValueUnderThePackageName(t *testing.T) {
+// TestStdlibImportBindsTheValueUnderThePackageName asserts that a package exporting
+// a value under the name its import binds reads as that value and as the
+// package's namespace from the one binding.
+func TestStdlibImportBindsTheValueUnderThePackageName(t *testing.T) {
 	t.Parallel()
 
 	res := inferAgainstStdlib(t, `
 		import "std:array"
 		val n = array.helper
+		val m = array(2)
 	`, map[string]string{
 		"std/array.esc": `
 			export type array = number
@@ -435,11 +435,12 @@ func TestStdlibImportBindsNoValueUnderThePackageName(t *testing.T) {
 
 	require.Empty(t, errorMessagesOf(res.Errors))
 	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "n")))
+	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "m")))
 
 	_, boundNamespace := res.FileScopes[0].GetNamespace("array")
 	require.True(t, boundNamespace)
 	_, boundValue := res.FileScopes[0].values["array"]
-	require.False(t, boundValue, "an import binds a namespace, never a value")
+	require.True(t, boundValue)
 }
 
 // An `as` clause names the namespace a pseudo-package binds under, the same way

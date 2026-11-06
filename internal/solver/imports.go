@@ -110,7 +110,8 @@ func (c *checker) bindImportedNamespace(fileScope *Scope, name string, ns *Names
 // The binding is the shape an npm import gets: a namespace, so `import
 // "std:date"` reads `date.Date`. A class is not lifted out of its package,
 // since a binding mixing a class with its package's other exports would answer
-// to no declaration.
+// to no declaration. A value the package exports under the binding's own name is
+// the binding's value as well, the way an npm package's `export =` value is.
 func (c *checker) bindPseudoPackageImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverError {
 	if errs := validateStdlibImport(stmt); len(errs) > 0 {
 		return errs
@@ -145,8 +146,9 @@ func (c *checker) bindPseudoPackageImport(fileScope *Scope, stmt *ast.ImportStmt
 
 	// The statement's name, so `as` reaches a pseudo-package the way it reaches an
 	// npm one. A package name is already lowercase, so a bare import binds what
-	// the URI spells.
-	fileScope.defineNamespace(stmt.LocalName(), ns)
+	// the URI spells. A package exporting a value under that name binds it too, so
+	// `import "std:console"` reads `console.log(…)` as well as `console.Console`.
+	c.bindImportedNamespace(fileScope, stmt.LocalName(), ns)
 
 	if uri == coreURI {
 		errs = append(errs, c.bindCoreExports(fileScope, ns, stmt)...)

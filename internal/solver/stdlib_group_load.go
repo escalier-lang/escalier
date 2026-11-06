@@ -177,6 +177,9 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 			member = newNamespace(uri)
 		}
 		member.Name = uri
+		// The merged surface was built under the group's key, so each member's own
+		// value is found here, against the member's URI.
+		setOwnNameValue(uri, member)
 		c.ctx.packages.publish(uri, member)
 	}
 
