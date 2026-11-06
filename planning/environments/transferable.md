@@ -91,7 +91,8 @@ and 4 above are done for the types the pinned libs declare. The union carries
 13 arms: the 12 `[Transferable]` interfaces some pinned `lib.*.d.ts` declares,
 plus `typed_arrays.ArrayBuffer`, which ECMAScript makes transferable.
 
-Four of the sixteen rows are still unreachable:
+Four of the sixteen rows are still unreachable, and
+[#2534](https://github.com/escalier-lang/escalier/issues/2534) tracks adding them:
 
 | interface | why |
 | --- | --- |
@@ -100,8 +101,8 @@ Four of the sixteen rows are still unreachable:
 | `WebTransportReceiveStream` | no pinned `lib.*.d.ts` declares it |
 | `WebTransportSendStream` | no pinned `lib.*.d.ts` declares it |
 
-The union can name only a type the tree declares, so the four join it when a
-later phase widens the conversion input past TypeScript's libs.
+The union can name only a type the tree declares, so the four join it once #2534
+widens the conversion input past TypeScript's libs.
 `TestDeriveTransferable_PinnedLibSet` asserts both lists, so a lib or WebIDL
 bump that changes either one fails by name.
 
