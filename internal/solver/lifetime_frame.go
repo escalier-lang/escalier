@@ -54,7 +54,7 @@ type frameLifetimes struct {
 	// mark is the lifetime counter when the walk of the body began. A lifetime with a lower
 	// ID is from outside the frame.
 	mark int
-	// borrows holds each borrow of a local place the body takes, in source order.
+	// `borrows` holds each borrow of a local place the body takes, in source order.
 	borrows []frameBorrow
 	// foreign holds the foreign lifetimes the body minted. It is nil until the first one.
 	foreign set.Set[*soltype.LifetimeVar]
@@ -63,7 +63,7 @@ type frameLifetimes struct {
 	outliving set.Set[*soltype.LifetimeVar]
 }
 
-// frameBorrow is one borrow of a local place and the lifetime its type carries. mut is set
+// frameBorrow is one borrow of a local place and the lifetime its type carries. `mut` is set
 // for a `&mut`.
 type frameBorrow struct {
 	place movePlace
@@ -455,10 +455,12 @@ func (c *checker) frameOwnedReturn(t, ann soltype.Type) (soltype.Type, bool) {
 		if annotatesMutBorrow(ann) {
 			return nil, false
 		}
+
 		refs, ok := refLowerBounds(v, set.NewSet[*soltype.TypeVarType]())
 		if !ok || len(refs) == 0 {
 			return nil, false
 		}
+
 		inners := make([]soltype.Type, 0, len(refs))
 		for _, r := range refs {
 			owned, ok := c.frameOwnedReturn(r, ann)
@@ -468,11 +470,13 @@ func (c *checker) frameOwnedReturn(t, ann soltype.Type) (soltype.Type, bool) {
 			}
 			inners = append(inners, owned)
 		}
+
 		if len(inners) == 1 {
 			return inners[0], true
 		}
 		return newUnion(nil, inners), true
 	}
+
 	var found []returnedBorrow
 	var open []int
 	rewriteBorrows(t,
@@ -487,9 +491,11 @@ func (c *checker) frameOwnedReturn(t, ann soltype.Type) (soltype.Type, bool) {
 			open = open[:last]
 		},
 	)
+
 	kept := set.NewSet[*soltype.RefType]()
 	keepMutAnnotated(t, ann, kept)
 	owned := c.ownedBorrows(found, kept)
+
 	// A read of a `val` copies its borrow's lifetime before the first rule ties the borrow to
 	// the one it shares a place with. Tying each kept copy too makes the signature render what
 	// the borrow outlives, `&'static` for a value module-level state also reads.
@@ -498,6 +504,7 @@ func (c *checker) frameOwnedReturn(t, ann soltype.Type) (soltype.Type, bool) {
 			c.tieToOutlivingWitness(b.ref)
 		}
 	}
+
 	// A borrow of an optional field is typed as a union with `undefined`, and rewriteBorrows
 	// does not enter a union. Each borrow member of a union return is kept, so it is tied the
 	// same way.
@@ -508,9 +515,11 @@ func (c *checker) frameOwnedReturn(t, ann soltype.Type) (soltype.Type, bool) {
 			}
 		}
 	}
+
 	if !slices.Contains(owned, true) {
 		return nil, false
 	}
+
 	i := 0
 	return rewriteBorrows(t,
 		func(*soltype.RefType) bool {
@@ -522,8 +531,8 @@ func (c *checker) frameOwnedReturn(t, ann soltype.Type) (soltype.Type, bool) {
 }
 
 // returnedBorrow is one borrow in a returned value. The borrows of the value are listed in the
-// order rewriteBorrows visits them, and those in ref's referent are the ones from ref's own
-// index up to end.
+// order rewriteBorrows visits them, and those in `ref`'s referent are the ones from `ref`'s
+// own index up to `end`.
 type returnedBorrow struct {
 	ref *soltype.RefType
 	end int
@@ -535,7 +544,7 @@ func annotatesMutBorrow(ann soltype.Type) bool {
 	return ok && r.Mut && r.Lt != nil
 }
 
-// keepMutAnnotated adds to kept each borrow in t at a position the annotation ann writes as a
+// keepMutAnnotated adds to `kept` each borrow in t at a position the annotation ann writes as a
 // `&mut`. It walks t and ann together through borrows, the properties of objects matched by
 // name, and the elements of tuples matched by index, and stops where the two differ in shape.
 func keepMutAnnotated(t, ann soltype.Type, kept set.Set[*soltype.RefType]) {
@@ -587,7 +596,7 @@ func (c *checker) tieToOutlivingWitness(r *soltype.RefType) {
 }
 
 // ownedBorrows reports, for each borrow of one returned value, whether the rules own it. A
-// borrow in kept is never owned. Any other borrow is owned when all of these hold:
+// borrow in `kept` is never owned. Any other borrow is owned when all of these hold:
 //
 //   - Its lifetime ends with the frame.
 //   - No borrow the body took of a place it reaches outlives the frame, whatever its kind. A
@@ -627,7 +636,7 @@ func (c *checker) ownedBorrows(borrows []returnedBorrow, kept set.Set[*soltype.R
 }
 
 // reachesOutlivingBorrow reports whether a borrow the body took of a place overlapping one of
-// places outlives the frame.
+// `places` outlives the frame.
 func (c *checker) reachesOutlivingBorrow(places []movePlace) bool {
 	for _, b := range c.fn.frame.borrows {
 		if anyPlacesOverlap([]movePlace{b.place}, places) && c.outlivesFrame(b.lt) {
@@ -637,7 +646,7 @@ func (c *checker) reachesOutlivingBorrow(places []movePlace) bool {
 	return false
 }
 
-// anyPlacesOverlap reports whether a place in as overlaps a place in bs.
+// anyPlacesOverlap reports whether a place in `as` overlaps a place in `bs`.
 func anyPlacesOverlap(as, bs []movePlace) bool {
 	for _, a := range as {
 		for _, b := range bs {
@@ -675,10 +684,10 @@ func (c *checker) borrowedPlaces(lt soltype.Lifetime) []movePlace {
 	return out
 }
 
-// rewriteBorrows returns t with each borrow strip accepts replaced by its referent. It visits
-// every borrow in t in one fixed order, the referent of each borrow included, and calls strip
-// once on each, so two walks of one type see the same sequence. It calls leave once the
-// borrow's referent is walked. A borrow strip rejects is kept as it is, with its referent
+// rewriteBorrows returns t with each borrow `strip` accepts replaced by its referent. It
+// visits every borrow in t in one fixed order, the referent of each borrow included, and calls
+// `strip` once on each, so two walks of one type see the same sequence. It calls `leave` once
+// the borrow's referent is walked. A borrow `strip` rejects is kept as it is, with its referent
 // unchanged. The walk descends into objects, tuples and borrows, and keeps any other type as
 // it is.
 func rewriteBorrows(t soltype.Type, strip func(*soltype.RefType) bool, leave func()) soltype.Type {
@@ -699,7 +708,7 @@ func (v *borrowRewriter) EnterType(t soltype.Type, pol soltype.Polarity) soltype
 			return soltype.EnterResult{SkipChildren: true}
 		}
 		stripped := v.strip(t)
-		// The referent is walked even when the borrow is kept, so strip sees every borrow.
+		// The referent is walked even when the borrow is kept, so `strip` sees every borrow.
 		inner := t.Inner.Accept(v, pol)
 		v.leave()
 		if !stripped {

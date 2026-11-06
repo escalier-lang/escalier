@@ -705,7 +705,7 @@ type funcCtx struct {
 	// currentStmt is the enclosing statement currently being walked. inferStmt sets it. A reassignment `a = e` lives in expression position, so a check that
 	// needs its CFG StmtRef reads the enclosing statement from here.
 	currentStmt ast.Stmt
-	// frame holds what D16's rules read about this body's lifetimes. See
+	// `frame` holds what D16's rules read about this body's lifetimes. See
 	// lifetime_frame.go.
 	frame frameLifetimes
 }

@@ -238,7 +238,7 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 			want:    "fn () -> &'static {x: {y: 1}}",
 		},
 		// The literal's borrow of b stays a borrow when module-level state also reads b. It
-		// reads a copy of the borrow's lifetime, which is tied to the one in cache, so it renders
+		// reads a copy of the borrow's lifetime, which is tied to the one in `cache`, so it renders
 		// `&'static`.
 		{
 			name: "borrow inside a returned literal module-level state also reads",
@@ -391,7 +391,7 @@ func TestFrameOwnedMutReturnSignatures(t *testing.T) {
 		src  string
 		want string
 	}{
-		// keep holds a `'static` `&mut b`, so the returned `&mut b` takes its lifetime under the
+		// `keep` holds a `'static` `&mut b`, so the returned `&mut b` takes its lifetime under the
 		// first rule and stays a borrow.
 		{
 			name: "mutable borrow of a local a static mutable borrow also reaches",
@@ -421,7 +421,7 @@ func TestFrameOwnedMutReturnSignatures(t *testing.T) {
 			want: "fn () -> {p: &'static mut {x: number}}",
 		},
 		// r reads a copy of the lifetime of the `&mut b` it holds. The first rule ties that
-		// borrow to the one keep holds, and the copy is tied too.
+		// borrow to the one `keep` holds, and the copy is tied too.
 		{
 			name: "copy of a mutable borrow taken after a static one",
 			src: `
@@ -436,7 +436,7 @@ func TestFrameOwnedMutReturnSignatures(t *testing.T) {
 			`,
 			want: "fn () -> &'static mut {x: number}",
 		},
-		// A lifetime covers every use of its borrow, so a borrow taken before keep's is tied
+		// A lifetime covers every use of its borrow, so a borrow taken before `keep`'s is tied
 		// to it too.
 		{
 			name: "copy of a mutable borrow taken before a static one",
@@ -452,7 +452,7 @@ func TestFrameOwnedMutReturnSignatures(t *testing.T) {
 			`,
 			want: "fn () -> &'static mut {x: number}",
 		},
-		// Tying r to keep's borrow adds no rejection. Writes to b and through r stay accepted.
+		// Tying r to `keep`'s borrow adds no rejection. Writes to b and through r stay accepted.
 		{
 			name: "writes after a mutable borrow tied to a static one",
 			src: `
@@ -470,7 +470,7 @@ func TestFrameOwnedMutReturnSignatures(t *testing.T) {
 			want: "fn () -> &'static mut {x: number}",
 		},
 		// The store puts a borrow of b in the caller's object, so the returned `&mut b` takes
-		// its lifetime and the signature ties the result to the field of out.
+		// its lifetime and the signature ties the result to the field of `out`.
 		{
 			name: "mutable borrow of a local stored into a parameter",
 			src: `
