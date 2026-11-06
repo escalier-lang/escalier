@@ -629,7 +629,7 @@ func (t *ownershipEvents) renderPlace(p movePlace) string {
 	name, ok := t.names[p.root]
 	if !ok {
 		fmt.Fprintf(&b, "var#%d", p.root)
-		writePath(&b, p.path)
+		writePath(&b, p.path, dotElements)
 		return b.String()
 	}
 
@@ -641,7 +641,7 @@ func (t *ownershipEvents) renderPlace(p movePlace) string {
 func writeQuotedPlace(b *strings.Builder, name string, path []placeSeg) {
 	b.WriteByte('`')
 	b.WriteString(name)
-	writePath(b, path)
+	writePath(b, path, dotElements)
 	b.WriteByte('`')
 }
 
@@ -668,23 +668,8 @@ func (t *ownershipEvents) renderHolder(h eventHolder) string {
 		b.WriteString("temp")
 	}
 
-	writePath(&b, h.path)
+	writePath(&b, h.path, dotElements)
 	return b.String()
-}
-
-// writePath appends each segment of path to b the way writePlaceSeg writes it, so a field
-// whose name is not an identifier renders in bracket notation, as `obj["a.b"]` does. A
-// segment that names a tuple element renders in dot form instead. That is a position such
-// as `0`, or a rest element's `1...`, which stands for every element from 1 on.
-func writePath(b *strings.Builder, path []placeSeg) {
-	for _, seg := range path {
-		if _, isElement := canonicalIndex(strings.TrimSuffix(seg.name, "...")); isElement {
-			b.WriteByte('.')
-			b.WriteString(seg.name)
-			continue
-		}
-		writePlaceSeg(b, seg)
-	}
 }
 
 // renderSlot renders a call slot the way renderHolder renders the argTarget or

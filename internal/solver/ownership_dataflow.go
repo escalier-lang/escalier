@@ -769,11 +769,11 @@ func (d *bodyDataflow) step(ev ownershipEvent, at liveness.StmtRef, s *dataflowS
 // conflict.
 func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState) {
 	target, _ := ev.node.(ast.Expr)
-	chain := placeChain(target)
-	dynamic := slices.ContainsFunc(chain, d.isDynamicIndex)
+	chain := chainOf(target, d.indexSegment)
+	dynamic := chain.firstDynamic() >= 0
 	depth := len(ev.place.path)
 	if dynamic {
-		depth = len(chain) - 1
+		depth = len(chain.links)
 	}
 
 	moved := false
@@ -1832,7 +1832,7 @@ func (d *bodyDataflow) holderEffect(h heldPlace, ref liveness.StmtRef) int {
 		}
 
 		target, _ := use.node.(ast.Expr)
-		if slices.ContainsFunc(placeChain(target), d.isDynamicIndex) {
+		if chainOf(target, d.indexSegment).firstDynamic() >= 0 {
 			return 1
 		}
 		if !laterNode(h.node, use.node) {
@@ -1939,56 +1939,23 @@ func (d *bodyDataflow) liveOnEntry(block int, h liveness.VarID, seen set.Set[int
 	return false
 }
 
-// placeChain returns the member and index chain e roots, from e itself down to its root.
-func placeChain(e ast.Expr) []ast.Expr {
-	var chain []ast.Expr
-	for e != nil {
-		chain = append(chain, e)
-		switch x := e.(type) {
-		case *ast.MemberExpr:
-			e = x.Object
-		case *ast.IndexExpr:
-			e = x.Object
-		default:
-			e = nil
-		}
-	}
-	return chain
-}
-
-// isDynamicIndex reports whether e is an index whose key exprPlace treats as dynamic, so
-// that the index stands for its whole container. `xs[i]` with `i: number` is one, and `xs[0]`
-// is not.
-func (d *bodyDataflow) isDynamicIndex(e ast.Expr) bool {
-	ix, ok := e.(*ast.IndexExpr)
-	if !ok {
-		return false
-	}
-	_, constant := d.indexSegment(ix.Index)
-	return !constant
-}
-
 // placeExprAt returns the outermost expression of the member and index chain e roots that
 // is depth links away from the root. A dynamic index reaches every place under its container,
 // so the walk returns the first dynamic index it meets. For depth 0 that is `p` in `p.x`, and
 // for any depth it is `xs[i]` in `xs[i].x` with `i: number`. It returns e when no expression
 // of the chain is that deep.
 func (d *bodyDataflow) placeExprAt(e ast.Expr, depth int) ast.Node {
-	chain := placeChain(e)
-	var found ast.Node = e
-	for i := len(chain) - 1; i >= 0; i-- {
-		if d.isDynamicIndex(chain[i]) {
-			return chain[i]
-		}
-		n := len(chain) - 1 - i
-		if n > depth {
-			break
-		}
-		if n == depth {
-			found = chain[i]
-		}
+	chain := chainOf(e, d.indexSegment)
+	if i := chain.firstDynamic(); i >= 0 && i <= depth {
+		return chain.links[i].expr
 	}
-	return found
+	switch {
+	case depth == 0:
+		return chain.root
+	case depth <= len(chain.links):
+		return chain.links[depth-1].expr
+	}
+	return e
 }
 
 // report records e when d is reporting and no diagnostic is reported at e's span yet.
@@ -2008,10 +1975,7 @@ func (d *bodyDataflow) placeName(p movePlace) string {
 	} else {
 		fmt.Fprintf(&b, "var#%d", p.root)
 	}
-
-	for _, seg := range p.path {
-		writePlaceSeg(&b, seg)
-	}
+	writePath(&b, p.path, bracketElements)
 	return b.String()
 }
 

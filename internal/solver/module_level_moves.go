@@ -74,22 +74,15 @@ func (c *checker) rejectModuleLevelMutMove(scope *Scope, source ast.Expr) {
 // a member or index chain off one. A class or enum name is not such a binding, and neither is a
 // class value.
 func (c *checker) placeRootBinding(scope *Scope, e ast.Expr) (ValueBinding, bool) {
-	for {
-		switch x := e.(type) {
-		case *ast.IdentExpr:
-			b, found := c.lookupValueBinding(scope, x.Name)
-			if !found || declaredAsClassOrEnum(b) || c.isClassValue(bindingType(b)) {
-				return ValueBinding{}, false
-			}
-			return b, true
-		case *ast.MemberExpr:
-			e = x.Object
-		case *ast.IndexExpr:
-			e = x.Object
-		default:
-			return ValueBinding{}, false
-		}
+	root, isIdent := chainOf(e, nil).root.(*ast.IdentExpr)
+	if !isIdent {
+		return ValueBinding{}, false
 	}
+	b, found := c.lookupValueBinding(scope, root.Name)
+	if !found || declaredAsClassOrEnum(b) || c.isClassValue(bindingType(b)) {
+		return ValueBinding{}, false
+	}
+	return b, true
 }
 
 // moduleLevelRootInBody returns the binding the place e is rooted at, when e is read inside a
@@ -105,42 +98,44 @@ func (c *checker) moduleLevelRootInBody(scope *Scope, e ast.Expr) (ValueBinding,
 	if c.fn == nil || c.fn.cfg == nil || scope == nil {
 		return ValueBinding{}, false
 	}
-	// members holds the static member names read off the root, in order from the root.
+	chain := chainOf(e, nil)
+	root, isIdent := chain.root.(*ast.IdentExpr)
+	if !isIdent {
+		return ValueBinding{}, false
+	}
+
+	// members holds the static member names read off the root before the first index, in
+	// order from the root.
 	var members []string
-	for {
-		switch x := e.(type) {
-		case *ast.IdentExpr:
-			id := c.varIDs.Of(x)
-			if id > 0 && !(c.fn.capturesModule && c.fn.captureVarIDs.Contains(id)) {
-				return ValueBinding{}, false
-			}
-			b, found := c.lookupValueBinding(scope, x.Name)
-			if !found {
-				ns, isNamespace := scope.GetNamespace(x.Name)
-				if !isNamespace {
-					return ValueBinding{}, false
-				}
-				// A path that reaches no value leaves b the zero binding, whose type is
-				// nil and so holds nothing that moves.
-				b, _ = namespaceMember(ns, members)
-			}
-			if declaredAsClassOrEnum(b) || c.isClassValue(bindingType(b)) {
-				return ValueBinding{}, false
-			}
-			return b, true
-		case *ast.MemberExpr:
-			if x.Prop == nil {
-				return ValueBinding{}, false
-			}
-			members = append([]string{x.Prop.Name}, members...)
-			e = x.Object
-		case *ast.IndexExpr:
-			members = nil
-			e = x.Object
-		default:
+	indexed := false
+	for _, link := range chain.links {
+		if link.key == nil && link.dynamic {
 			return ValueBinding{}, false
 		}
+		indexed = indexed || link.key != nil
+		if !indexed {
+			members = append(members, link.seg.name)
+		}
 	}
+
+	id := c.varIDs.Of(root)
+	if id > 0 && !(c.fn.capturesModule && c.fn.captureVarIDs.Contains(id)) {
+		return ValueBinding{}, false
+	}
+	b, found := c.lookupValueBinding(scope, root.Name)
+	if !found {
+		ns, isNamespace := scope.GetNamespace(root.Name)
+		if !isNamespace {
+			return ValueBinding{}, false
+		}
+		// A path that reaches no value leaves b the zero binding, whose type is nil and so
+		// holds nothing that moves.
+		b, _ = namespaceMember(ns, members)
+	}
+	if declaredAsClassOrEnum(b) || c.isClassValue(bindingType(b)) {
+		return ValueBinding{}, false
+	}
+	return b, true
 }
 
 // namespaceMember returns the value binding the member names in path read off ns, descending

@@ -135,7 +135,7 @@ func (c *checker) noteFrameBorrow(scope *Scope, e *ast.BorrowExpr) {
 		}
 		return
 	}
-	root, ok := placeRootIdent(e.Arg)
+	root, ok := chainOf(e.Arg, nil).root.(*ast.IdentExpr)
 	if !ok || (!isPlace && c.varIDs.Of(root) >= 0) {
 		return
 	}
@@ -182,23 +182,6 @@ func borrowLifetime(t soltype.Type) (*soltype.LifetimeVar, bool) {
 		}
 	}
 	return nil, false
-}
-
-// placeRootIdent returns the identifier a chain of member and index reads starts from, `a`
-// for `a.b[0].c`. ok is false when the chain starts from anything else, such as a call.
-func placeRootIdent(e ast.Expr) (*ast.IdentExpr, bool) {
-	for {
-		switch x := e.(type) {
-		case *ast.IdentExpr:
-			return x, true
-		case *ast.MemberExpr:
-			e = x.Object
-		case *ast.IndexExpr:
-			e = x.Object
-		default:
-			return nil, false
-		}
-	}
 }
 
 // shareOutlivingBorrowLifetimes applies the first rule to every borrow the body took. Each
