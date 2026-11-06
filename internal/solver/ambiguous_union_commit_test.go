@@ -86,7 +86,7 @@ func TestAmbiguousUnionCommitInGenericCode(t *testing.T) {
 			`,
 			wantValues: map[string]string{"r": "never"},
 			wantMsgs: []string{
-				"ambiguous match against t8 | number: committed number, but t8 would also match; annotate to disambiguate",
+				"ambiguous match against t4 | number: committed number, but t4 would also match; annotate to disambiguate",
 			},
 		},
 		{

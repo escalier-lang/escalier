@@ -28,7 +28,7 @@ func TestABodyIsCheckedForEveryInstantiation(t *testing.T) {
 fn g<U: number | string>(u: U) { return f(u) }`,
 			binding: "g",
 			want:    "fn <U: number | string>(u: U) -> U",
-			errs:    []string{"2:41-2:45: cannot constrain number <: string"},
+			errs:    []string{"2:43-2:44: cannot constrain number <: string"},
 		},
 		{
 			// The body's use is reported once, at the use. A caller is checked against the
@@ -37,13 +37,13 @@ fn g<U: number | string>(u: U) { return f(u) }`,
 			src: `fn f<A: string>(a: A) -> A { return a }
 fn g<U: number | string>(u: U) { return f(u) }
 val r = g(5)`,
-			errs: []string{"2:41-2:45: cannot constrain number <: string"},
+			errs: []string{"2:43-2:44: cannot constrain number <: string"},
 		},
 		{
 			name: "AnUnboundedParameterPassedOn",
 			src: `fn f<A: string>(a: A) -> A { return a }
 fn g<U>(u: U) -> U { return f(u) }`,
-			errs: []string{"2:29-2:33: cannot constrain U <: string"},
+			errs: []string{"2:31-2:32: cannot constrain U <: string"},
 		},
 		{
 			name:    "AnOperatorNarrowingTheBound",
@@ -74,7 +74,7 @@ fn g<U>(u: U) -> U { return f(u) }`,
 class C {
 	g<U: number | string>(&self, u: U) -> U { return f(u) },
 }`,
-			errs: []string{"3:51-3:55: cannot constrain number <: string"},
+			errs: []string{"3:53-3:54: cannot constrain number <: string"},
 		},
 		{
 			// The inner function's parameter is rigid from its body on, and the outer one's is
