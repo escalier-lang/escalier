@@ -95,11 +95,8 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 					if !missing && !c.rejectModuleLevelMove(scope, s.Expr) {
 						c.consumeOwned(s.Expr, t, s.Expr, ref)
 					}
-					// A returned value must not borrow a function-local, which dies when the
-					// frame returns and would leave the borrow dangling, unless it owns a
-					// self-contained component the move re-anchors. checkReturnEscape records
-					// the return for the post-pass to decide.
-					c.checkReturnEscape(s.Expr, ref)
+					// The returned value can take the locals it borrows along with it.
+					c.recordFlowOut(s.Expr, ref, true)
 				}
 			}
 		} else {
@@ -216,8 +213,8 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 
 // defineLocal binds name to b in scope for the single-name `val`/`var` vd written at
 // statement s, overwriting any earlier binding of name. Inside a body it copies the
-// VarID the rename pass gave vd's pattern onto b, then records the consumes, borrow
-// edges, and loans the declaration creates. A later closure capture of the binding
+// VarID the rename pass gave vd's pattern onto b, then records the consumes and borrow
+// edges the declaration creates. A later closure capture of the binding
 // resolves to the binding through that VarID.
 func (c *checker) defineLocal(scope *Scope, name string, vd *ast.VarDecl, b ValueBinding, s ast.Stmt) {
 	if ip, ok := vd.Pattern.(*ast.IdentPat); ok && c.varIDs.Of(ip) > 0 {
@@ -234,12 +231,11 @@ func (c *checker) defineLocal(scope *Scope, name string, vd *ast.VarDecl, b Valu
 		return
 	}
 	c.consumeBindingInit(vd, bindingType(b), s)
-	// Record which function-locals this binding's initializer borrows, so a later
-	// flow-out of the binding can find a borrow of a local that would escape the frame.
+	// Record which function-locals this binding's initializer borrows, and which locals a
+	// closure it holds captures.
 	c.recordBorrowEdges(liveness.VarID(b.VarID), vd.Init)
 	if ref, ok := c.fn.stmtToRef[s]; ok {
 		c.flushBorrowDirty(ref)
-		c.endLoansOnRebind(liveness.VarID(b.VarID), vd.Init)
 	}
 	// A value that keeps a closure keeps it reachable while this binding is live.
 	c.noteRetainedHolder(liveness.VarID(b.VarID), vd.Init)

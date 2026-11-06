@@ -13,8 +13,7 @@ import (
 
 // This file holds the diagnostics of the exclusivity rules E2 and E3 in
 // planning/ownership_rules/requirements.md, which the dataflow pass in ownership_dataflow.go
-// reports, and the check that each borrow is written, as F4 states. It also records the loans
-// a store leaves a binding holding, which the frame-exit checks in return_escape.go read.
+// reports, and the check that each borrow is written, as F4 states.
 //
 // Data a borrow can write through may not be reachable at the same time through a borrow that
 // expects it to hold still. A mutable borrow beside an immutable one is the pair that breaks.
@@ -45,15 +44,8 @@ type BorrowAliasError struct {
 	SecondVia  string
 	FirstRuns  bool
 	SecondRuns bool
-	// `root` is the VarID of the local Place starts with, and `places` holds the place of the
-	// blamed borrow and then of the live one.
-	root   liveness.VarID
-	places [2]movePlace
-	// `exits` holds the span of each return a holder of either path flows into, so
-	// frameExitReported can match a frame-exit diagnostic at that return.
-	exits []ast.Span
-	node  ast.Node
-	first ast.Span
+	node       ast.Node
+	first      ast.Span
 }
 
 func (*BorrowAliasError) isSolverError()        {}
@@ -95,16 +87,8 @@ type MoveWhileBorrowedError struct {
 	// ViaRuns marks a closure the call is sure to run, because the call's callee names it.
 	Via     string
 	ViaRuns bool
-	// `root` is the VarID of the local Place starts with, and `places` holds the place moved
-	// and then the place of the blamed borrow.
-	root   liveness.VarID
-	places [2]movePlace
-	// `exits` holds the span of each expression that carries the moved value out of the
-	// body. ownedExits finds them, and frameExitReported matches a frame-exit diagnostic
-	// against them.
-	exits  []ast.Span
-	move   ast.Node
-	borrow ast.Span
+	move    ast.Node
+	borrow  ast.Span
 }
 
 func (*MoveWhileBorrowedError) isSolverError()        {}
@@ -212,50 +196,6 @@ func (e *OptionalChainBorrowError) Message() string {
 		"so bind the receiver with `if val` and borrow the field through it"
 }
 
-// `loan` is one borrow a call's store effect or a store into a field leaves a binding holding.
-// The frame-exit checks in return_escape.go read the loans to tell which stores still reach
-// the caller.
-type loan struct {
-	// place is the data the borrow reaches.
-	place movePlace
-	// `mut` says a write can go through this borrow.
-	mut bool
-	// `holder` is the binding the borrow is stored in. The loan lasts while that binding is live.
-	holder liveness.VarID
-	// holderPath is the field path within holder the borrow landed at, empty when the whole
-	// binding took it. `b.peer = &mut d` lands at [peer]. Repointing that field ends the loan
-	// there and leaves a sibling field's loan alone, which is the strong update the borrow
-	// graph makes for the same statement.
-	holderPath []placeSeg
-	// `ref` is the statement the borrow is stored at.
-	ref liveness.StmtRef
-	// callerOwned marks a loan held by a caller-owned target, a borrow parameter or a borrowing
-	// receiver. The caller can read such a target once the function returns.
-	callerOwned bool
-	// endSeq is the sequence at which a store into the holder ended this loan, and 0 while it
-	// still holds. The loan stays in the list, so a check can tell an ended store from one that
-	// was never recorded.
-	endSeq int
-}
-
-// nextLoanSeq returns the sequence number the next ended loan takes. It counts up across the
-// whole body, so a number handed out once is never handed out again.
-func (c *checker) nextLoanSeq() int {
-	c.fn.loanSeq++
-	return c.fn.loanSeq
-}
-
-// loanPlace returns the place a borrow argument reaches. `&mut x.a` reaches x.a, and a bare
-// name already holding a borrow reaches whatever that name reaches, which for now is the name
-// itself. ok is false when the operand is not a place, such as a call result.
-func (c *checker) loanPlace(arg ast.Expr) (movePlace, bool) {
-	p, ok := c.exprPlace(borrowOperand(arg))
-	if !ok || p.root <= 0 {
-		return movePlace{}, false
-	}
-	return p, true
-}
-
 // placesOverlap reports whether two places reach any of the same data. They must be rooted at
 // the same binding, and one field path must be a prefix of the other. `x.a` and `x.a.b` overlap
 // because the second sits inside the first; `x.a` and `x.b` do not.
@@ -293,48 +233,6 @@ func (l capturedLocal) places() []movePlace {
 	return out
 }
 
-// endLoansOnRebind ends the loans `holder` holds when `init` gives it a new value, since the
-// binding no longer reaches what it stored before. `a = a` leaves `a` holding what it held.
-func (c *checker) endLoansOnRebind(holder liveness.VarID, init ast.Expr) {
-	if c.fn == nil || holder <= 0 || init == nil {
-		return
-	}
-	if ident, isIdent := init.(*ast.IdentExpr); isIdent && c.varIDs.Of(ident) == holder {
-		return
-	}
-	c.dropLoansHeldBy(holder)
-}
-
-// dropLoansHeldBy ends the loans bound to holder, which a reassignment of that binding has made
-// unreachable from here on. They stay in the list carrying the sequence they ended at, so a read
-// walked before the reassignment is still weighed against them.
-func (c *checker) dropLoansHeldBy(holder liveness.VarID) {
-	ended := c.nextLoanSeq()
-	for i := range c.fn.loans {
-		if c.fn.loans[i].holder == holder && c.fn.loans[i].endSeq == 0 {
-			c.fn.loans[i].endSeq = ended
-		}
-	}
-}
-
-// endLoansAt ends the loans stored in `holder`'s field `base`, or in a field nested inside it. A
-// store into that field replaces what it held, so those loans reach nothing from here on.
-// `b.peer = &mut e` after `b.peer = &mut d` ends the loan of d. A loan stored in `b.peer.next`
-// ends too, while one stored in the sibling field `b.data` keeps holding. Like dropLoansHeldBy,
-// it marks each loan with the sequence it ended at rather than erasing it, so a read walked
-// before the store is still weighed against what the field held then.
-func (c *checker) endLoansAt(holder liveness.VarID, base []placeSeg) {
-	c.endLoansWhere(holder, base, func(loan) bool { return true })
-}
-
-// endLoansAtPostDominating is endLoansAt limited to the loans whose statement every path to the
-// end of the function leads through `ref`. That holds when `ref`'s block post-dominates the loan's
-// block, meaning every path from the loan's block to the CFG exit passes through `ref`'s block. A
-// loan with a path to the exit that skips `ref` keeps holding.
-func (c *checker) endLoansAtPostDominating(holder liveness.VarID, base []placeSeg, ref liveness.StmtRef) {
-	c.endLoansWhere(holder, base, func(l loan) bool { return c.blockPostDominates(ref.BlockID, l.ref.BlockID) })
-}
-
 // stmtReaches reports whether the statement at `to` can run after the statement at `from` in
 // `cfg`. That holds for a later statement of the same block, and for any statement of a block the
 // CFG reaches from `from`'s block.
@@ -360,93 +258,6 @@ func stmtReaches(cfg *liveness.CFG, from, to liveness.StmtRef) bool {
 		pending = append(pending, b.Successors...)
 	}
 	return false
-}
-
-// blockPostDominates reports whether every path from block `from` to the CFG exit passes through
-// block `by`. A block post-dominates itself.
-func (c *checker) blockPostDominates(by, from int) bool {
-	if by == from {
-		return true
-	}
-	// Without a CFG, or with a block ID outside it, nothing is known about the paths, so the
-	// answer is the safe one. A caller then keeps the loan holding.
-	cfg := c.fn.cfg
-	if cfg == nil || by < 0 || by >= len(cfg.Blocks) || from < 0 || from >= len(cfg.Blocks) {
-		return false
-	}
-	// Walk forward from `from` depth-first and treat `by` as a wall. The walk never steps into
-	// `by` or past it, so any block it does reach has a path from `from` that avoids `by`.
-	seen := set.NewSet[int]()
-	pending := []*liveness.BasicBlock{cfg.Blocks[from]}
-	for len(pending) > 0 {
-		b := pending[len(pending)-1]
-		pending = pending[:len(pending)-1]
-		// A path into `by` passes through it, so it is no counterexample. A block already
-		// visited has had its successors queued once, which also stops the walk on a loop.
-		if b.ID == by || seen.Contains(b.ID) {
-			continue
-		}
-		// Reaching the exit means some path from `from` gets there without passing `by`.
-		if b == cfg.Exit {
-			return false
-		}
-		seen.Add(b.ID)
-		pending = append(pending, b.Successors...)
-	}
-	// The walk ran out of blocks without reaching the exit, so every path to it runs into `by`.
-	return true
-}
-
-// endLoansWhere ends each loan stored in `holder`'s field `base`, or in a field nested inside it,
-// for which `selects` returns `true`. It marks each one with the sequence it ended at rather than
-// erasing it, so a read walked before that point is still weighed against the loan.
-func (c *checker) endLoansWhere(holder liveness.VarID, base []placeSeg, selects func(loan) bool) {
-	ended := c.nextLoanSeq()
-	for i := range c.fn.loans {
-		l := &c.fn.loans[i]
-		if l.holder == holder && l.endSeq == 0 && pathHasPrefix(l.holderPath, base) && selects(*l) {
-			l.endSeq = ended
-		}
-	}
-}
-
-// recordStoreEdgeLoan records the loan a call's store effect creates. `store(&mut p, &mut b)`
-// against a signature that writes its second argument into the first leaves p reaching b, so
-// from that point p holds a mutable borrow of b. An immutable borrow of b then conflicts with
-// it. A second mutable borrow does not, since two mutable borrows of one value are allowed.
-//
-// Whether a write can go through the loan comes from the SOURCE parameter, since that is the
-// view the target ends up holding. A signature storing a `&'a B` leaves the target able to read
-// the item and not to write it, even though the target itself is a mutable borrow.
-//
-// `place` is the data the stored borrow reaches and `target` is the binding it lands in, so the
-// loan is a borrow of `place` held by `target`. It lasts as long as `target` is live, the same rule a
-// borrow bound to a name follows, and that holds for a target whose referent belongs to the
-// caller as well. targetPath is the field of `target` the borrow lands at, so a later store into
-// that field can end this loan and leave a sibling field's alone.
-func (c *checker) recordStoreEdgeLoan(place movePlace, mut bool, target liveness.VarID, targetPath []placeSeg, ref liveness.StmtRef) {
-	if c.fn == nil || target <= 0 || place.root <= 0 {
-		return
-	}
-	fresh := loan{
-		place: place, mut: mut, holder: target, holderPath: targetPath, ref: ref,
-		callerOwned: c.paramReferentOutlivesFrame(target),
-	}
-	// One signature can write an argument into several positions of the target, so the same
-	// loan reaches here once per position, and it is recorded once.
-	for _, l := range c.fn.loans {
-		if l.holder == fresh.holder && l.ref == fresh.ref &&
-			l.mut == fresh.mut && placesEqual(l.place, fresh.place) &&
-			slices.Equal(l.holderPath, fresh.holderPath) {
-			return
-		}
-	}
-	c.fn.loans = append(c.fn.loans, fresh)
-}
-
-// placesEqual reports whether two places name the same data, root and full field path alike.
-func placesEqual(a, b movePlace) bool {
-	return a.root == b.root && slices.Equal(a.path, b.path)
 }
 
 // writtenPlaceName renders target, the expression a write names, as written. When the

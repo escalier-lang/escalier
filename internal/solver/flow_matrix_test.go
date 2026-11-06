@@ -3459,8 +3459,7 @@ func TestFlowMatrixStaticBorrowAndOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"5:14-5:16: cannot borrow 'p' as immutable while it is borrowed as mutable"},
 		},
-		// The leaf `d` borrows the field `p.f` from `&mut p` for `'static`, so the report names that
-		// field.
+		// The annotation makes `&mut p` itself a `'static` borrow of p, so the report names p.
 		{
 			column: "ImmutableBorrowAfterStaticMutableBorrow",
 			site:   "Destructuring",
@@ -3471,7 +3470,7 @@ func TestFlowMatrixStaticBorrowAndOwnershipPass(t *testing.T) {
 					val r = &p
 				}
 			`,
-			want: []string{"5:14-5:16: cannot borrow 'p' as immutable while 'p.f' is borrowed as mutable"},
+			want: []string{"5:14-5:16: cannot borrow 'p' as immutable while it is borrowed as mutable"},
 		},
 		// A return passes the borrow back to the caller, so the caller uses the source while the returned
 		// borrow is live.

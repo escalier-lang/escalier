@@ -9,8 +9,7 @@ import (
 // TestFlowSensitiveBorrowEdges covers the flow-sensitive borrow-edge graph: a binding's
 // borrow edges are set where a borrow flows in, cleared at a reassignment, and joined by
 // union at CFG branch merges. A reassignment away from a borrow drops the replaced referent,
-// so it no longer over-reports as escaping, while a borrow set on one branch still reaches the
-// merge.
+// while a borrow set on one branch still reaches the merge.
 func TestFlowSensitiveBorrowEdges(t *testing.T) {
 	tests := map[string]struct {
 		src   string
@@ -18,9 +17,7 @@ func TestFlowSensitiveBorrowEdges(t *testing.T) {
 		types map[string]string
 	}{
 		// Reassigning a `var`'s borrow clears the replaced edge: `a = &mut d` after
-		// `a = &mut c` leaves only `a` → d, so storing `a` out hands d alone to the caller. The
-		// store takes a loan of d alone, so a stale c edge carried forward would take c out with
-		// no loan and report it as escaping. The strong update clears it, so nothing reports.
+		// `a = &mut c` leaves only `a` → d, so storing `a` out hands d alone to the caller.
 		"VarReassignClearsReplacedEdge": {
 			src: `
 				fn f(out: &mut {slot: &mut {value: number}}) {
@@ -61,10 +58,9 @@ func TestFlowSensitiveBorrowEdges(t *testing.T) {
 			},
 		},
 		// Disagreeing branches union their referents: the then-branch repoints `a` to d and the
-		// `else` branch back to c, so the merge carries both `a` → c and `a` → d. The store into
-		// `out` takes its loans from the edges recorded when the walk reaches it, which follow
-		// the last branch walked and reach c alone. d has no loan to keep the stored borrow the
-		// only path to it, so storing `a` out reports both locals as escaping.
+		// `else` branch back to c, so the merge carries both `a` → c and `a` → d. Storing `a` out
+		// hands the caller a mutable path to c or d. Nothing in the frame uses either local
+		// afterwards, so L1 accepts the store.
 		"BranchesUnionReferents": {
 			src: `
 				fn f(cond: boolean, out: &mut {slot: &mut {value: number}}) {
@@ -79,10 +75,7 @@ func TestFlowSensitiveBorrowEdges(t *testing.T) {
 					out.slot = a
 				}
 			`,
-			want: []string{
-				"11:17-11:18: borrowed value 'c' does not live long enough to escape the function",
-				"11:17-11:18: borrowed value 'd' does not live long enough to escape the function",
-			},
+			want:  nil,
 			types: map[string]string{"f": "fn (cond: boolean, out: &mut {slot: &mut {value: number}}) -> undefined"},
 		},
 	}
@@ -96,7 +89,7 @@ func TestFlowSensitiveBorrowEdges(t *testing.T) {
 }
 
 // TestFieldStoreBorrowEdges covers borrow edges recorded at a field store into a local
-// receiver: `b.peer = &mut d` records b → d at [peer], so a later flow-out of b finds the
+// receiver: `b.peer = &mut d` records b → d at [peer], so a later flow-out of b carries the
 // borrow. The store is a strong update on the stored field's subtree, so a repoint replaces
 // the field's referent rather than accumulating a stale one.
 func TestFieldStoreBorrowEdges(t *testing.T) {
@@ -123,11 +116,11 @@ func TestFieldStoreBorrowEdges(t *testing.T) {
 			want:  nil,
 			types: map[string]string{"f": "fn () -> {peer: {x: number}}"},
 		},
-		// Storing a local borrow into a field, then aliasing the carrier from a live binding
-		// outside the moved component, blocks the move and escapes: keep holds `&b` and is read
-		// after the store, so b's node is externally referenced when storing b tries to move it.
-		// The same live borrow makes the move of b itself a conflict.
-		"FieldStoreEscapesWhenExternallyAliased": {
+		// Storing a local borrow into a field, then aliasing the carrier from a live binding:
+		// `keep` holds `&b` and is read after b moves into `store`, so the move of b breaks E3.
+		// Passing b hands the callee its borrow of d, which L1 accepts, since nothing in the
+		// frame uses d afterwards.
+		"FieldStoreMoveWhileExternallyAliased": {
 			src: `
 				fn store(x: {peer: &mut {x: number}}) {}
 				fn f() {
@@ -138,10 +131,7 @@ func TestFieldStoreBorrowEdges(t *testing.T) {
 					val y = keep
 				}
 			`,
-			want: []string{
-				"7:12-7:13: borrowed value 'd' does not live long enough to escape the function",
-				"7:12-7:13: cannot move 'b' while it is borrowed",
-			},
+			want: []string{"7:12-7:13: cannot move 'b' while it is borrowed"},
 			types: map[string]string{
 				"store": "fn (x: {peer: &mut {x: number}}) -> undefined",
 				"f":     "fn () -> undefined",

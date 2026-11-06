@@ -429,18 +429,23 @@ func retainedVia(param, callee string) string {
 	return fmt.Sprintf("%s that '%s' retains", held, callee)
 }
 
-// noteRetainedClosureWrites fills the `writes` of each retained store of the body. flowGraph is
-// the body's flow-sensitive borrow graph. A store writes each owned local that a closure
-// written inside the stored value writes, and each owned local that a capture edge the value
-// reaches in the graph before the store writes. So a closure bound to a name, copied to
-// another name, or chosen on a branch counts. A local the closures only read is left out, and
-// so is a capture holding a borrow.
-func (c *checker) noteRetainedClosureWrites(flowGraph *flowBorrowGraph) {
-	// A body with no retained store has nothing to fill.
+// noteRetainedClosureWrites fills the `writes` of each retained store of the body. A store
+// writes each owned local that a closure written inside the stored value writes, and each
+// owned local that a capture edge the value reaches in the flow-sensitive borrow graph before
+// the store writes. So a closure bound to a name, copied to another name, or chosen on a
+// branch counts. A local the closures only read is left out, and so is a capture holding a
+// borrow. It must run once the body is walked, so the borrow graph is complete.
+func (c *checker) noteRetainedClosureWrites() {
+	// A body with no retained store has nothing to fill. Building the borrow graph needs the
+	// body's CFG, so a body without one is skipped too.
 	t := c.eventTable()
-	if t == nil || len(t.retained) == 0 {
+	if t == nil || len(t.retained) == 0 || c.fn == nil || c.fn.cfg == nil {
 		return
 	}
+
+	// Build the body's flow-sensitive borrow graph. It gives the borrow edges that hold at
+	// each CFG point, so a store reads only edges written before it.
+	flowGraph := c.analyzeBorrows()
 
 	// Map each captured local to the type of its binding. The last step reads it to decide
 	// whether a written local is owned.

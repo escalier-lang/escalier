@@ -199,8 +199,8 @@ func TestCallStoreEdge(t *testing.T) {
 
 // TestCallStoreEdgePositions covers the store positions inside a target's referent that are
 // not a named object field, and the argument forms the recorder reads a place off. Each
-// records an edge a later flow-out then follows. A flow-out into a parameter's field takes a
-// loan of the local the edge reaches, so a move of that local afterwards reports.
+// records an edge in the borrow graph. A store into a parameter's field holds a loan of the
+// local it reaches, so a move of that local afterwards reports.
 func TestCallStoreEdgePositions(t *testing.T) {
 	tests := map[string]struct {
 		src   string
@@ -208,9 +208,11 @@ func TestCallStoreEdgePositions(t *testing.T) {
 		types map[string]string
 	}{
 		// A tuple element contributes no field segment, so a store into one lands at the tuple
-		// itself and passing the whole tuple to a consuming call follows the edge. The probe is
-		// a consuming argument rather than a parameter store, because assigning a tuple into a
-		// parameter's field trips the deep-mut limitation #1270 describes.
+		// itself. Passing the whole tuple to a consuming call carries the borrow of b into the
+		// callee, which L1 accepts, since nothing in the frame uses b afterwards. a is a tuple of
+		// one element, so neither `store` nor `build` can add a second borrow to it. `take`'s
+		// signature gives the element no `'static` lifetime, so `take` cannot keep the borrow past
+		// the call.
 		"StoreIntoTupleElement": {
 			src: `
 				declare fn store<'a, 'c>(
@@ -225,10 +227,34 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					take(a)
 				}
 			`,
-			want: []string{"11:11-11:12: borrowed value 'b' does not live long enough to escape the function"},
+			want: nil,
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut [&'a mut {value: number}], item: &'a mut {value: number}) -> undefined",
 				"take":  "fn (x: [&mut {value: number}]) -> undefined",
+				"build": "fn (p: {value: number}) -> undefined",
+			},
+		},
+		// A `take` whose element is `'static` keeps the borrow of b that the `store` put in a. That
+		// borrow is live for the rest of `build`, so the later immutable borrow of b breaks E2.
+		"StoreIntoTupleElementTheCalleeKeeps": {
+			src: `
+				declare fn store<'a, 'c>(
+					target: &'c mut [&'a mut {value: number}],
+					item: &'a mut {value: number},
+				) -> undefined
+				declare fn take(x: [&'static mut {value: number}]) -> undefined
+				fn build(mut p: {value: number}) {
+					val mut b = {value: 2}
+					val mut a = [&mut p]
+					store(&mut a, &mut b)
+					take(a)
+					val c = &b
+				}
+			`,
+			want: []string{"12:14-12:16: cannot borrow 'b' as immutable while it is borrowed as mutable"},
+			types: map[string]string{
+				"store": "fn <'a>(target: &mut [&'a mut {value: number}], item: &'a mut {value: number}) -> undefined",
+				"take":  "fn (x: [&'static mut {value: number}]) -> undefined",
 				"build": "fn (p: {value: number}) -> undefined",
 			},
 		},
@@ -419,7 +445,8 @@ func TestCallStoreEdgePositions(t *testing.T) {
 // TestCallStoreEdgePayloadPositions covers the three payload positions that hold a borrow
 // without naming a field: an array element, a promise's resolved value, and a generator's
 // yield. Each stores at the container holding it, so the store lands at the tuple slot the
-// payload sits in and passing that tuple to a consuming call follows the edge.
+// payload sits in. Passing that tuple to a consuming call carries the borrow of b into the
+// callee, which L1 accepts, since nothing in the frame uses b afterwards.
 func TestCallStoreEdgePayloadPositions(t *testing.T) {
 	tests := map[string]struct {
 		payload  string
@@ -445,9 +472,7 @@ func TestCallStoreEdgePayloadPositions(t *testing.T) {
 				}
 			`, tc.payload, tc.declared, tc.declared)
 			_, _, errs := inferSource(t, src)
-			require.Equal(t, []string{
-				"11:11-11:12: borrowed value 'b' does not live long enough to escape the function",
-			}, messagesWithSpan(t, errs))
+			require.Empty(t, messagesWithSpan(t, errs))
 		})
 	}
 }

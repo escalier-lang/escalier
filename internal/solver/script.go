@@ -123,6 +123,9 @@ func (c *checker) inferScriptIn(scope *Scope, script *ast.Script) (*Scope, *Info
 	// The whole script is walked, so a weak binding it declares, at its top level or in
 	// one of its functions, has every bound it will get.
 	c.settleWeakLocals()
+	// The dataflow pass reads what each retained closure writes, which needs the whole
+	// script's borrow graph.
+	c.noteRetainedClosureWrites()
 	// A script body runs with function-body semantics, so the move engine applies
 	// here too. With the whole body walked, replay the recorded reads against the
 	// consumed lattice to report use-after-move.
@@ -285,9 +288,6 @@ func (c *checker) trackFuncDeclCaptures(decl *ast.FuncDecl, s ast.Stmt) {
 	}
 
 	c.flushBorrowDirty(ref)
-	if id > 0 {
-		c.dropLoansHeldBy(id)
-	}
 
 	// The declaration binds the closure to its name, as `val name = fn …` does, so the name
 	// holds the captures the closure emitted.

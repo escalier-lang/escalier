@@ -42,9 +42,9 @@ import (
 //   - After the walk, analyzeBorrows folds borrowGens forward over the CFG to a fixed point,
 //     producing the per-program-point graph. Each assignment replaces a root's whole edge set,
 //     so a reassignment clears the prior referent.
-//   - At each escape/flow-out site, resolveComponentEscapes reads that point's snapshot from the
-//     flow-sensitive result and passes it to each escape helper, so they see the flow-sensitive
-//     graph rather than the whole-body eager one.
+//   - At each retained closure store, noteRetainedClosureWrites reads that point's snapshot from
+//     the flow-sensitive result, so it sees the flow-sensitive graph rather than the whole-body
+//     eager one.
 //
 // Branch handling. The eager walk is a source-order AST traversal, so it is not branch-scoped.
 // inferIfElse and inferMatch walk each arm in order, and both arms mutate the one eagerBorrowGraph
@@ -64,9 +64,8 @@ import (
 //     with the else-arm's a → c. The same rule covers a borrow that reaches a reassignment only
 //     through a loop back edge.
 //   - Straight-line-only reads. The eager map's cross-branch value is read only by copyPlaceEdges
-//     within straight-line code. At an escape or flow-out site the escape check reads the
-//     flow-sensitive snapshot resolveComponentEscapes passes it, so a merge never relies on the
-//     last-writer-wins eager state.
+//     within straight-line code. At a retained closure store noteRetainedClosureWrites reads
+//     the flow-sensitive snapshot, so a merge never relies on the last-writer-wins eager state.
 
 // borrowAssign is one statement's replacement of a binding's borrow edges: the binding root
 // and the full edge set the eager walk computed for it at that statement. The dataflow
@@ -106,8 +105,7 @@ func (c *checker) markBorrowDirty(root liveness.VarID) {
 //
 // A field-store subtree update (non-empty base) marks root dirty only when it pruned an edge.
 // Its dataflow assignment replaces root's WHOLE edge set with the source-order eager set, so an
-// unconditional whole-root emit could drop a sibling field's back-edge borrow and miss a real
-// escape. A store that adds a borrow is marked dirty separately by addBorrowEdge, and one that
+// unconditional whole-root emit could drop a sibling field's back-edge borrow. A store that adds a borrow is marked dirty separately by addBorrowEdge, and one that
 // prunes a prior borrow is caught by `removed`; a store that changes no borrow emits nothing.
 func (c *checker) clearEagerSubtree(root liveness.VarID, base []placeSeg) {
 	if c.fn == nil || c.fn.eagerBorrowGraph == nil || root <= 0 {
