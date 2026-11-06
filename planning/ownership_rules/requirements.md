@@ -404,10 +404,11 @@ collector keeps the value alive while any path reaches it, so outliving the owne
 is never an error on its own. The lifetime matters only to E2, which reads it to
 decide how long the path is live. A borrow that flows into module-level state
 gets the lifetime `'static`, so its path stays live for the rest of the program.
-An immutable borrow of a place that already has an immutable borrow outliving
-the current frame takes that borrow's lifetime, as D16 decides. E2 rejects
-every write to the place while the first borrow is live, so the second borrow
-reads a value that does not change for as long as either can read it.
+A borrow of a place that already has a borrow of the same kind outliving the
+current frame takes that borrow's lifetime, as D16 decides. For two immutable
+borrows, E2 rejects every write to the place while the first borrow is live, so
+the second borrow reads a value that does not change for as long as either can
+read it. Two mutable borrows may be live together under E2 already.
 
 In `make` below, the returned borrow outlives `p`, which is accepted. In
 `remember`, the borrow stored in `cache` is `'static`, so `cache` can read `p`
@@ -471,7 +472,7 @@ lifetime that relates an input to an output, or that is `'static`, is rendered.
 Any other lifetime is elided. The rendered signature is always a valid
 annotation that produces the same type when written back.
 
-An unannotated function whose returned `&` has a lifetime that ends with the
+An unannotated function whose returned borrow has a lifetime that ends with the
 function's frame gets an owned return, as D16 decides. Such a lifetime is not
 tied to a parameter, a capture, or `'static`. Only a value that nothing outside
 the call can reach fits that description, so the caller may own it.
@@ -1427,14 +1428,75 @@ fn outer() {
   would reach past `outer` and the return would stay a borrow.
 
 A bodyless signature is taken at its word, so the declaration converter must
-render `'static` for any returned borrow it cannot vouch for. This entry covers
-`&` returns only. A `&mut` return keeps its current behaviour.
+render `'static` for any returned borrow it cannot vouch for.
+
+The same reasoning covers a returned `&mut` and a borrow nested in a returned
+value, given three more rules:
+
+3. A `&mut` of a place that already has a `&mut` outliving the current frame
+   takes that borrow's lifetime.
+4. A returned `&mut` is owned when its lifetime ends with the callee's frame, as
+   the second rule states for a returned `&`.
+5. A borrow nested in a returned value is owned when its lifetime ends with the
+   callee's frame and no other borrow in the returned value reaches an
+   overlapping place. A borrow reaches the place it borrows and every place
+   the borrows in its referent reach.
+
+The third rule adds no rejection. While a `&mut` of a place outlives the frame,
+E2 already rejects every `&` of the place, and several `&mut` paths may be
+live together. An outliving `&` of the place makes the `&mut` itself an E2
+error, so no rule ties a borrow to one of the other kind.
+
+Each comment below gives the rendered signature:
+
+```esc
+declare fn keep(x: &'static mut {x: number}) -> undefined
+
+fn kept() {
+    val mut b = {x: 1}
+    keep(&mut b)
+    return &mut b
+}
+// fn () -> &'static mut {x: number}, since keep also writes b
+
+fn keptField() {
+    val mut b = {x: 1}
+    keep(&mut b)
+    return {p: &mut b}
+}
+// fn () -> {p: &'static mut {x: number}}, since keep also writes b
+
+fn fresh() {
+    val mut b = {x: 1}
+    return {p: &mut b}
+}
+// fn () -> {p: {x: number}}, since nothing outside the call reaches b
+
+fn twice() {
+    val mut b = {x: 1}
+    return {l: &mut b, r: &mut b}
+}
+// fn () -> {l: &mut {x: number}, r: &mut {x: number}}, since both fields reach b
+```
+
+- In `kept`, the third rule gives the returned `&mut b` the `'static` lifetime
+  of the borrow `keep` holds. The fourth rule then leaves the return a borrow,
+  so a caller cannot own a value `keep` can still write.
+- In `keptField`, the borrow sits inside the returned literal. The literal
+  itself is owned, and the fifth rule leaves its field a borrow for the same
+  reason.
+- In `fresh`, the field's lifetime ends with the frame and no other borrow
+  reaches `b`, so the caller owns both the literal and the value in `p`.
+- In `twice`, both fields reach `b`. An owned value has one owner, so owning
+  either field would hide the path through the other. Both stay borrows.
 
 Recommendation: infer an owned return only when nothing outside the call reaches
-the value, using the two rules above.
+the value, using the rules above.
 
 Decided: accepted. L1 and L3 state it. The checker change is tracked by
-[#2330](https://github.com/escalier-lang/escalier/issues/2330).
+[#2330](https://github.com/escalier-lang/escalier/issues/2330) for the first
+two rules and [#2489](https://github.com/escalier-lang/escalier/issues/2489)
+for the other three.
 
 ### D17. The retention lifetime of a `fn` type outside a parameter
 
@@ -1989,8 +2051,7 @@ The steps:
      [return_shared_paths.go](../../internal/solver/return_shared_paths.go), replaced by L1 and
      E2 at the return.
    - The separate escape logic in [return_escape.go](../../internal/solver/return_escape.go) and
-     [borrow_flow.go](../../internal/solver/borrow_flow.go), and the owned-return rewriting in
-     [owned_return.go](../../internal/solver/owned_return.go), replaced by the lifetime solver
+     [borrow_flow.go](../../internal/solver/borrow_flow.go), replaced by the lifetime solver
      answering F3.
    - The plumbing that keeps the engines from reporting one error twice, such
      as `resolvePhaseTransitions` and `reportedMixedOwnership`.

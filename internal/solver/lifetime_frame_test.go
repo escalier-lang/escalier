@@ -237,7 +237,9 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 			binding: "h",
 			want:    "fn () -> &'static {x: {y: 1}}",
 		},
-		// The literal's borrow of b keeps its type when module-level state also reads b.
+		// The literal's borrow of b stays a borrow when module-level state also reads b. It
+		// reads a copy of the borrow's lifetime, which is tied to the one in `cache`, so it renders
+		// `&'static`.
 		{
 			name: "borrow inside a returned literal module-level state also reads",
 			src: `
@@ -250,7 +252,7 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 				}
 			`,
 			binding: "h",
-			want:    "fn () -> {f: &{x: 1}}",
+			want:    "fn () -> {f: &'static {x: 1}}",
 		},
 		// Every borrow of a parameter is foreign, so the return stays a borrow. A call to an
 		// unannotated parameter inferred as owned records no move, as B5 and B6 in
@@ -375,6 +377,175 @@ func TestFrameOwnedReturnWrites(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
 			require.Equal(t, tt.want, messagesWithSpan(t, errs))
+		})
+	}
+}
+
+// TestFrameOwnedMutReturnSignatures covers the signatures D16 gives a function that returns a
+// `&mut` or a value holding borrows. A borrow is owned exactly when its lifetime ends with the
+// function's frame and no other borrow in the returned value reaches an overlapping place. Each
+// case checks without errors.
+func TestFrameOwnedMutReturnSignatures(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		// `keep` holds a `'static` `&mut b`, so the returned `&mut b` takes its lifetime under the
+		// first rule and stays a borrow.
+		{
+			name: "mutable borrow of a local a static mutable borrow also reaches",
+			src: `
+				declare fn keep(x: &'static mut {x: number}) -> undefined
+
+				fn h() {
+					val mut b = {x: 1}
+					keep(&mut b)
+					return &mut b
+				}
+			`,
+			want: "fn () -> &'static mut {x: number}",
+		},
+		// The borrow nested in the returned literal takes the same lifetime.
+		{
+			name: "nested mutable borrow of a local a static mutable borrow also reaches",
+			src: `
+				declare fn keep(x: &'static mut {x: number}) -> undefined
+
+				fn h() {
+					val mut b = {x: 1}
+					keep(&mut b)
+					return {p: &mut b}
+				}
+			`,
+			want: "fn () -> {p: &'static mut {x: number}}",
+		},
+		// r reads a copy of the lifetime of the `&mut b` it holds. The first rule ties that
+		// borrow to the one `keep` holds, and the copy is tied too.
+		{
+			name: "copy of a mutable borrow taken after a static one",
+			src: `
+				declare fn keep(x: &'static mut {x: number}) -> undefined
+
+				fn h() {
+					val mut b = {x: 1}
+					keep(&mut b)
+					val r = &mut b
+					return r
+				}
+			`,
+			want: "fn () -> &'static mut {x: number}",
+		},
+		// A lifetime covers every use of its borrow, so a borrow taken before `keep`'s is tied
+		// to it too.
+		{
+			name: "copy of a mutable borrow taken before a static one",
+			src: `
+				declare fn keep(x: &'static mut {x: number}) -> undefined
+
+				fn h() {
+					val mut b = {x: 1}
+					val r = &mut b
+					keep(&mut b)
+					return r
+				}
+			`,
+			want: "fn () -> &'static mut {x: number}",
+		},
+		// Tying r to `keep`'s borrow adds no rejection. Writes to b and through r stay accepted.
+		{
+			name: "writes after a mutable borrow tied to a static one",
+			src: `
+				declare fn keep(x: &'static mut {x: number}) -> undefined
+
+				fn h() {
+					val mut b = {x: 1}
+					keep(&mut b)
+					val r = &mut b
+					r.x = 2
+					b.x = 3
+					return r
+				}
+			`,
+			want: "fn () -> &'static mut {x: number}",
+		},
+		// The store puts a borrow of b in the caller's object, so the returned `&mut b` takes
+		// its lifetime and the signature ties the result to the field of `out`.
+		{
+			name: "mutable borrow of a local stored into a parameter",
+			src: `
+				fn h(out: &mut {s: &mut {x: number}}) {
+					val mut b = {x: 1}
+					out.s = &mut b
+					return &mut b
+				}
+			`,
+			want: "fn <'a>(out: &mut {s: &'a mut {x: number}}) -> &'a mut {x: number}",
+		},
+		// Nothing outside the call reaches b, so the caller owns the field.
+		{
+			name: "nested mutable borrow of a local nothing else reaches",
+			src: `
+				fn h() {
+					val mut b = {x: 1}
+					return {p: &mut b}
+				}
+			`,
+			want: "fn () -> {p: {x: number}}",
+		},
+		// Both borrows reach b, so owning either would hide the other path.
+		{
+			name: "two mutable borrows of one local in a returned literal",
+			src: `
+				fn h() {
+					val mut b = {x: 1}
+					return {l: &mut b, r: &mut b}
+				}
+			`,
+			want: "fn () -> {l: &mut {x: number}, r: &mut {x: number}}",
+		},
+		// The borrows reach different locals, so the caller owns both.
+		{
+			name: "mutable borrows of two locals in a returned literal",
+			src: `
+				fn h() {
+					val mut b = {x: 1}
+					val mut c = {x: 2}
+					return {l: &mut b, r: &mut c}
+				}
+			`,
+			want: "fn () -> {l: {x: number}, r: {x: number}}",
+		},
+		// The returned `&mut d` is the only path to d, so the caller owns d. The two borrows
+		// inside d both reach b, so they stay borrows.
+		{
+			name: "mutable borrow of a local holding two borrows of one local",
+			src: `
+				fn h() {
+					val mut b = {x: 1}
+					val mut d = {l: &mut b, r: &mut b}
+					return &mut d
+				}
+			`,
+			want: "fn () -> {l: &mut {x: number}, r: &mut {x: number}}",
+		},
+		// A tuple element is owned the way an object field is.
+		{
+			name: "mutable borrow of a local in a returned tuple",
+			src: `
+				fn h() {
+					val mut b = {x: 1}
+					return [&mut b]
+				}
+			`,
+			want: "fn () -> [{x: number}]",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["h"])
 		})
 	}
 }

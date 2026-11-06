@@ -225,9 +225,6 @@ func (c *checker) resolveComponentEscapes(
 	// reported once here. Every site carrying it is left to that report rather than adding an
 	// escape on top.
 	mixed := c.reportMixedOutflows(outOfFrame)
-	// Return index to the owned type its borrows strip to. commitOwnedReturns writes them once
-	// the body is fully walked.
-	ownedReturns := map[int]soltype.Type{}
 	for _, es := range c.fn.escapeSites {
 		// The flow-sensitive borrow-edge graph at this site's program point. A borrow cleared by an
 		// earlier reassignment is gone here, and one set on a reaching branch is joined in. Passed
@@ -252,15 +249,13 @@ func (c *checker) resolveComponentEscapes(
 		// local. A local that also leaves through another site keeps that exemption as long as
 		// both paths agree about whether it can change.
 		exemptAsReturn := false
-		alsoLeaves := false
 		if es.isReturn {
-			leaves, conflict := c.returnOutflowConflict(es.expr, returned, reached, outOfFrame)
+			conflict := c.returnOutflowConflict(es.expr, returned, reached, outOfFrame)
 			if conflict != nil {
 				c.reportMixedOutflow(conflict, es.expr)
 				continue
 			}
 			exemptAsReturn = true
-			alsoLeaves = leaves
 		}
 		if escaping.Len() == 0 {
 			continue
@@ -286,17 +281,6 @@ func (c *checker) resolveComponentEscapes(
 				// A returned value that reaches one local twice hands the caller two views of it,
 				// which is a hazard as soon as a write can go through either.
 				c.reportSharedReturnPaths(c.fn.returns[idx], root, graph, es.expr)
-				// When the moved graph is a tree — every borrowed local reached exactly once with
-				// no cycle — the return value is the sole owner of each node, so owning them in
-				// the type is honest. The rewrites are collected here and committed together,
-				// since one return left borrowed holds back the rest. A local that also leaves
-				// through another site is not the return's alone, so the return keeps its
-				// borrow type.
-				if !alsoLeaves {
-					if owned, ok := c.ownedReturnType(es.expr, idx, graph, root); ok {
-						ownedReturns[idx] = owned
-					}
-				}
 			}
 			consumed = true
 			continue
@@ -306,7 +290,6 @@ func (c *checker) resolveComponentEscapes(
 		}
 		c.reportEscapingLocals(escaping, es.expr)
 	}
-	c.fn.ownedReturns = ownedReturns
 	c.fn.escapeSites = nil
 	return consumed
 }
@@ -590,28 +573,25 @@ type outflowConflict struct {
 }
 
 // returnOutflowConflict compares the return expression `ret` against the paths outOfFrame records
-// for the locals it reaches. `reaches` is what `ret` hands out. `leaves` says some reached local
-// also leaves through another site. `conflict` names the local and the other site when one of
-// those paths disagrees with the return, and is `nil` otherwise.
+// for the locals it reaches. `reaches` is what `ret` hands out. It returns the local and the other
+// site when one of those paths disagrees with the return, and `nil` otherwise.
 func (c *checker) returnOutflowConflict(
 	ret ast.Expr,
 	reaches []elementReach,
 	reached set.Set[liveness.VarID],
 	outOfFrame map[liveness.VarID][]outflowPath,
-) (bool, *outflowConflict) {
+) *outflowConflict {
 	var returned []outflowPath
 	for _, r := range reaches {
 		returned = append(returned, outflowPath{place: r.place, mut: r.mut, owned: r.owned, node: ret})
 	}
 	ids := reached.ToSlice()
 	slices.Sort(ids)
-	leaves := false
 	for _, id := range ids {
 		others, ok := outOfFrame[id]
 		if !ok {
 			continue
 		}
-		leaves = true
 		if first, second, mixed := firstMixedPair(returned, others); mixed {
 			// firstMixedPair orders the pair by source position, so the other site is
 			// whichever of the two is not the return.
@@ -619,13 +599,13 @@ func (c *checker) returnOutflowConflict(
 			if other == ret {
 				other = second.node
 			}
-			return true, &outflowConflict{
+			return &outflowConflict{
 				id: id, other: other, owned: first.owned || second.owned,
 				places: [2]movePlace{first.place, second.place},
 			}
 		}
 	}
-	return leaves, nil
+	return nil
 }
 
 // callerOwnedStoreAccepted reports whether a store into a caller-owned target leaves the stored
@@ -772,7 +752,7 @@ func reachableLocals(
 // on the strength of its loan, which callerOwnedStoreAccepted decides.
 //
 // Two borrows of one local CAN leave together in a single returned value. The move accepts it,
-// and ownedReturnType then declines to re-type it, so both stay borrowed. Two writers are Rule
+// and D16 keeps both borrows, since each reaches the place the other does. Two writers are Rule
 // 3 and check. A writer beside a reader is what reportSharedReturnPaths reports.
 //
 // The external-reference scan reads the same borrow-edge graph the escape check is built on,
