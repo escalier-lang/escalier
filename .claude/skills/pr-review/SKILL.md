@@ -99,18 +99,18 @@ For each one, record the file and a one-line statement of what a human reviewer 
 
    The earlier summary is the last id it prints. The lookup matches on the marker alone, so it finds the summary whichever account posted it.
 
-   Pipe the summary in on standard input, as below. The job refuses a multi-line summary passed as a command argument, and it refuses writes to a file outside the working directory.
+   Write the summary with the Write tool to `.pr-review-summary.md` in the working directory, then pass that file to `gh`. Keep the summary text out of the command line. The job refuses a command whose arguments contain text that looks like shell syntax, and a summary that quotes code often does. It also refuses writes outside the working directory.
 
    When that prints an id, replace that comment's body:
 
    ```bash
-   printf '%s\n' '<!-- pr-review-summary -->' '...' | gh api -X PATCH repos/<repo>/issues/comments/<id> -F body=@-
+   gh api -X PATCH repos/<repo>/issues/comments/<id> -F body=@.pr-review-summary.md
    ```
 
    When it prints nothing, or the edit fails because another account owns that comment, post a new comment:
 
    ```bash
-   printf '%s\n' '<!-- pr-review-summary -->' '...' | gh pr comment <number> --body-file -
+   gh pr comment <number> --body-file .pr-review-summary.md
    ```
 
 Write every comment by the prose rules in `CLAUDE.md`. Don't send the review as a chat message, since only GitHub comments reach the PR.
