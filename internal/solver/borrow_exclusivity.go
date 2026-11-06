@@ -615,10 +615,11 @@ func (c *checker) borrowMemberOf(t soltype.Type) *soltype.RefType {
 }
 
 // checkLiteralElemBorrows checks each element of an object or tuple literal src against the
-// slot of destT it fills, through checkWrittenBorrow, and returns whether any element was
-// reported. `{f: p}` filling `{f: &T}` reports p. A borrow `&{f: p}` filling `&{f: &T}` is
-// checked against the borrow's inner type. A nil destT gives every element a nil slot. Any
-// other src, and an element whose slot destT does not name, is left alone.
+// slot of destT that literalSlots matches it to, through checkWrittenBorrow, and returns
+// whether any element was reported. `{f: p}` filling `{f: &T}` reports p. A borrow
+// `&{f: p}` filling `&{f: &T}` is checked against the borrow's inner type. A nil destT gives
+// every element a nil slot. Any other src, and an element whose slot destT does not name, is
+// left alone.
 func (c *checker) checkLiteralElemBorrows(src ast.Expr, destT soltype.Type) bool {
 	if destT != nil {
 		destT = c.expandAliasChain(destT)
@@ -633,79 +634,110 @@ func (c *checker) checkLiteralElemBorrows(src ast.Expr, destT soltype.Type) bool
 		return false
 	}
 	reported := false
-	check := func(el ast.Expr, slotT soltype.Type) {
-		if c.checkWrittenBorrow(el, slotT) {
+	for _, el := range c.literalSlots(src, destT) {
+		from := len(c.errs)
+		if c.checkWrittenBorrow(el.value, el.slot) {
 			reported = true
 		}
+		if !el.shorthand {
+			continue
+		}
+		// A shorthand property `{f}` has no Value, so its key is the expression checked. The
+		// error on that key records the property name for ShorthandKey.
+		key := el.value.(*ast.IdentExpr)
+		for _, e := range c.errs[from:] {
+			if missing, ok := e.(*ImplicitBorrowError); ok && missing.node == ast.Expr(key) {
+				missing.shorthandKey = key.Name
+			}
+		}
 	}
-	switch lit := src.(type) {
+	return reported
+}
+
+// literalSlot is one element of an object or tuple literal and the slot of a destination type
+// it fills.
+type literalSlot struct {
+	// value is the expression the element produces. For a shorthand property `{f}` it is the
+	// key f.
+	value ast.Expr
+	// slot is the type of the slot `value` fills. It is nil when the destination type is nil.
+	slot soltype.Type
+	// shorthand says the element is a shorthand property such as `{f}`.
+	shorthand bool
+}
+
+// literalSlots returns the elements of the object or tuple literal lit, one level deep, each
+// paired with the slot of destT it fills. Any other lit returns nil. An element whose slot
+// destT does not name is left out, and a nil destT gives every element a nil slot. These rules
+// match an element to its slot:
+//
+//   - A property whose key objKeyName names fills the field of that name, which declaredField
+//     finds on destT.
+//   - When destT is an `Array`, each element that is not a spread fills its element type.
+//   - When destT is a tuple, each element fills the tuple slot at its position. The list stops
+//     at the first spread, since no later element has a known slot.
+func (c *checker) literalSlots(lit ast.Expr, destT soltype.Type) []literalSlot {
+	switch lit := lit.(type) {
 	case *ast.ObjectExpr:
-		var obj *soltype.ObjectType
+		return c.objectLiteralSlots(lit, destT)
+	case *ast.TupleExpr:
+		return c.tupleLiteralSlots(lit, destT)
+	}
+	return nil
+}
+
+// objectLiteralSlots is literalSlots for an object literal.
+func (c *checker) objectLiteralSlots(lit *ast.ObjectExpr, destT soltype.Type) []literalSlot {
+	var out []literalSlot
+	for _, elem := range lit.Elems {
+		prop, isProp := elem.(*ast.PropertyExpr)
+		if !isProp {
+			continue
+		}
+		var slot soltype.Type
 		if destT != nil {
-			var isObj bool
-			if obj, isObj = soltype.CarrierOf(destT).(*soltype.ObjectType); !isObj {
-				return false
-			}
-		}
-		checkProp := func(prop *ast.PropertyExpr, slotT soltype.Type) {
-			from := len(c.errs)
-			check(prop.ValueExpr(), slotT)
-			key, isIdent := prop.Name.(*ast.IdentExpr)
-			if prop.Value != nil || !isIdent {
-				return
-			}
-			// A shorthand property `{f}` has no Value, so its key is the expression checked. The
-			// error on that key records the property name for ShorthandKey.
-			for _, e := range c.errs[from:] {
-				if missing, ok := e.(*ImplicitBorrowError); ok && missing.node == ast.Expr(key) {
-					missing.shorthandKey = key.Name
-				}
-			}
-		}
-		for _, elem := range lit.Elems {
-			prop, isProp := elem.(*ast.PropertyExpr)
-			if !isProp {
-				continue
-			}
-			if obj == nil {
-				checkProp(prop, nil)
-				continue
-			}
 			name, named := objKeyName(prop.Name)
 			if !named {
 				continue
 			}
-			if slot, found := obj.Prop(name); found {
-				checkProp(prop, slot.Type)
+			field, found := c.declaredField(destT, name)
+			if !found {
+				continue
 			}
+			slot = field.Type
 		}
-	case *ast.TupleExpr:
-		var elemT, target soltype.Type
-		uniform := destT == nil
-		if !uniform {
-			target = soltype.CarrierOf(destT)
-			elemT, uniform = c.ctx.arrayElem(target)
-		}
-		if uniform {
-			for _, el := range lit.Elems {
-				if _, spread := el.(*ast.ArraySpreadExpr); !spread {
-					check(el, elemT)
-				}
-			}
-			return reported
-		}
-		tuple, isTuple := target.(*soltype.TupleType)
-		if !isTuple {
-			return false
-		}
-		for i, el := range lit.Elems {
-			// A spread fills a run of slots whose length the literal does not show, so no later
-			// element has a known slot.
-			if _, spread := el.(*ast.ArraySpreadExpr); spread || i >= len(tuple.Elems) {
-				break
-			}
-			check(el, tuple.Elems[i])
-		}
+		_, isIdent := prop.Name.(*ast.IdentExpr)
+		out = append(out, literalSlot{value: prop.ValueExpr(), slot: slot, shorthand: prop.Value == nil && isIdent})
 	}
-	return reported
+	return out
+}
+
+// tupleLiteralSlots is literalSlots for a tuple or array literal.
+func (c *checker) tupleLiteralSlots(lit *ast.TupleExpr, destT soltype.Type) []literalSlot {
+	var elemT, target soltype.Type
+	uniform := destT == nil
+	if !uniform {
+		target = soltype.CarrierOf(c.expandAliasChain(destT))
+		elemT, uniform = c.ctx.arrayElem(target)
+	}
+	var out []literalSlot
+	if uniform {
+		for _, el := range lit.Elems {
+			if _, spread := el.(*ast.ArraySpreadExpr); !spread {
+				out = append(out, literalSlot{value: el, slot: elemT})
+			}
+		}
+		return out
+	}
+	tuple, isTuple := target.(*soltype.TupleType)
+	if !isTuple {
+		return nil
+	}
+	for i, el := range lit.Elems {
+		if _, spread := el.(*ast.ArraySpreadExpr); spread || i >= len(tuple.Elems) {
+			break
+		}
+		out = append(out, literalSlot{value: el, slot: tuple.Elems[i]})
+	}
+	return out
 }

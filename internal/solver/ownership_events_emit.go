@@ -825,60 +825,28 @@ func (c *checker) noteLiteralBorrowDests(value ast.Expr, t soltype.Type) {
 	held := table.temps[value]
 	var walk func(e ast.Expr, slot soltype.Type)
 	walk = func(e ast.Expr, slot soltype.Type) {
-		switch e := e.(type) {
-		case *ast.BorrowExpr:
-			dest := c.destOfType(slot)
-			for _, i := range held {
-				if bev, ok := table.events[i].(*borrowEvent); ok && bev.node == e {
-					bev.dest = dest
-				}
+		b, isBorrow := e.(*ast.BorrowExpr)
+		if !isBorrow {
+			for _, el := range c.literalSlots(e, slot) {
+				walk(el.value, el.slot)
 			}
-		case *ast.ObjectExpr:
-			for _, elem := range e.Elems {
-				prop, ok := elem.(*ast.PropertyExpr)
-				if !ok {
-					continue
-				}
-
-				name, ok := objKeyName(prop.Name)
-				if !ok {
-					continue
-				}
-
-				if field, ok := c.declaredField(slot, name); ok {
-					walk(prop.ValueExpr(), field.Type)
-				}
-			}
-		case *ast.TupleExpr:
-			// Each element of an array literal fills the array's element slot.
-			if elem, isArray := c.ctx.arrayElem(c.expandAliasChain(slot)); isArray {
-				for _, el := range e.Elems {
-					if _, spread := el.(*ast.ArraySpreadExpr); !spread {
-						walk(el, elem)
-					}
-				}
-				return
-			}
-
-			tuple, ok := c.expandAliasChain(slot).(*soltype.TupleType)
-			if !ok {
-				return
-			}
-
-			// An element after a spread has no known position in the tuple.
-			for i, el := range e.Elems {
-				if _, spread := el.(*ast.ArraySpreadExpr); spread || i >= len(tuple.Elems) {
-					return
-				}
-
-				walk(el, tuple.Elems[i])
+			return
+		}
+		dest := c.destOfType(slot)
+		for _, i := range held {
+			if bev, ok := table.events[i].(*borrowEvent); ok && bev.node == b {
+				bev.dest = dest
 			}
 		}
 	}
 
-	switch value.(type) {
-	case *ast.ObjectExpr, *ast.TupleExpr:
-		walk(value, t)
+	// A nil t names no slot. literalSlots would pair each element with a nil slot, so the walk
+	// stops here instead.
+	if t == nil {
+		return
+	}
+	for _, el := range c.literalSlots(value, t) {
+		walk(el.value, el.slot)
 	}
 }
 
