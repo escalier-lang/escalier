@@ -239,9 +239,7 @@ func (c *checker) defineLocal(scope *Scope, name string, vd *ast.VarDecl, b Valu
 	c.recordBorrowEdges(liveness.VarID(b.VarID), vd.Init)
 	if ref, ok := c.fn.stmtToRef[s]; ok {
 		c.flushBorrowDirty(ref)
-		// An initializer that borrows a place binds a loan of it to this binding, which
-		// then has to stay exclusive for as long as the binding is read.
-		c.recordBorrowLoan(liveness.VarID(b.VarID), bindingType(b), vd.Init, ref)
+		c.endLoansOnRebind(liveness.VarID(b.VarID), vd.Init)
 	}
 	// A value that keeps a closure keeps it reachable while this binding is live.
 	c.noteRetainedHolder(liveness.VarID(b.VarID), vd.Init)

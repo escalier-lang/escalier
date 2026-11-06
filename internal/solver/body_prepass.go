@@ -214,9 +214,9 @@ func paramsBind(params []*ast.Param, name string) bool {
 
 // seedSelfCaptureEdges gives selfID, the VarID a recursive closure's body reads its own
 // name by, a capture edge to each local the closure captures. ids maps each captured name
-// to the VarID the body's rename gave it. A call of selfID inside the body then takes the
-// loans of the closure's captures, the way a call of the closure's name outside it does.
-// A capture with value semantics gets no edge, matching recordCaptureLoans.
+// to the VarID the body's rename gave it. A call of selfID inside the body then runs the
+// closure, the way a call of the closure's name outside it does. A capture with value
+// semantics gets no edge, matching recordClosureCaptures.
 func (c *checker) seedSelfCaptureEdges(scope *Scope, closure ast.Func, selfID liveness.VarID, ids map[string]liveness.VarID) {
 	for _, capture := range c.closureCaptures(closure) {
 		id, ok := ids[capture.Name]

@@ -338,33 +338,37 @@ func (c *checker) rejectModuleLevelDestructure(scope *Scope, pat ast.Pat, init a
 }
 
 // movedCaptures maps the name of each local of the enclosing body that the current closure
-// moves, wholly or in part, to the expression that moves it. Only a capture of a concrete owned
-// type counts. The current body must be a closure, whose captures are locals of the body that
-// encloses it.
+// moves, wholly or in part, to the expression that moves it. A closure's captures are
+// parameters of its body, so the closure moves one where its body's settled events move a
+// place under it. Only a capture of a concrete owned type counts. The first move of a capture
+// in the order the walk emitted them is the one returned. The current body must be a closure
+// whose events are settled, since its captures are locals of the body that encloses it.
 func (c *checker) movedCaptures() map[string]ast.Node {
-	// Places are visited in VarID order, so a capture moved through several places blames
-	// the same one on every run.
-	ids := make([]liveness.VarID, 0, len(c.fn.movePlaces))
-	for id := range c.fn.movePlaces {
-		ids = append(ids, id)
+	t := c.eventTable()
+	if t == nil {
+		return nil
 	}
-	slices.Sort(ids)
+
 	var moved map[string]ast.Node
-	for _, id := range ids {
-		p := c.fn.movePlaces[id]
-		// A capture whose type is a bare type variable may hold a value type, so the closure
-		// is not taken to move it.
-		if !c.fn.captureVarIDs.Contains(p.root) || !c.isConcreteOwned(c.fn.varIDTypes[p.root]) {
+	for _, ev := range t.list() {
+		mv, ok := ev.(*moveEvent)
+		if !ok {
 			continue
 		}
-		name := c.fn.varIDNames[p.root]
+		root := mv.place.root
+		// A capture whose type is a bare type variable may hold a value type, so the closure
+		// is not taken to move it.
+		if !c.fn.captureVarIDs.Contains(root) || !c.isConcreteOwned(c.fn.varIDTypes[root]) {
+			continue
+		}
+		name := c.fn.varIDNames[root]
 		if _, seen := moved[name]; seen {
 			continue
 		}
 		if moved == nil {
 			moved = map[string]ast.Node{}
 		}
-		moved[name] = c.fn.moveNodes[id]
+		moved[name] = mv.node
 	}
 	return moved
 }
@@ -398,12 +402,10 @@ func (c *checker) consumeOnceCallee(call *ast.CallExpr, ref liveness.StmtRef) {
 		return
 	}
 	p := movePlace{root: c.varIDs.Of(ident)}
-	c.fn.useSites = append(c.fn.useSites, moveUse{place: p, ref: ref, node: ident, loanSeqAt: c.fn.loanSeq + 1, closureCall: true})
+	c.fn.useSites = append(c.fn.useSites, moveUse{place: p, ref: ref, node: ident})
 	id := c.placeID(p)
 	c.fn.movePlaces[id] = p
-	// E4 checks a call that runs a closure, so a second call of it in one statement, as in
-	// `f() + f()`, keeps its diagnostic when the dataflow pass runs.
-	c.recordMove(id, call, ref, true)
+	c.recordMove(id, call, ref)
 }
 
 // consumeSpreadIntoLiteral is consumeIntoLiteral for the operand src of a spread, whose type is

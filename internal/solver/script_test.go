@@ -289,7 +289,9 @@ func TestInferScriptTypeAndFuncDecls(t *testing.T) {
 			},
 		},
 		{
-			// The recursive call writes x through the capture while `a` still borrows x.
+			// The recursive call writes `x` through the capture while `a` still borrows `x`. The
+			// call is walked before `f`'s signature is settled, so the call has no resolved
+			// signature and emitClosureRuns still records that it runs `f`.
 			name: "RecursiveCallWritesACaptureBesideLiveBorrow",
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined

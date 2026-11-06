@@ -41,8 +41,8 @@ type checker struct {
 
 	// capturesMovedBy maps each closure whose body moves a local it captures to the names of
 	// those locals, each mapped to the expression in the closure that moves it.
-	// recordCaptureLoans moves them out of the enclosing body where the closure is written, and
-	// consumeOnceCallee moves a binding holding the closure at each call.
+	// recordClosureCaptures moves them out of the enclosing body where the closure is written,
+	// and consumeOnceCallee moves a binding holding the closure at each call.
 	capturesMovedBy map[ast.Func]map[string]ast.Node
 
 	// pendingFlows holds each flow whose ownership F3 has not settled yet, across every body
@@ -619,8 +619,8 @@ type funcCtx struct {
 	// retractMove can take the move back.
 	moveRecords map[ast.Node]moveRecord
 	// movedSources holds each expression whose owned value an assignment or argument moves,
-	// such as the b in `val y = b`. checkUsesAgainstLoans reads it to report a move of
-	// borrowed data as a move rather than as a plain use.
+	// such as the `b` in `val y = b`. movedOrigins reads it to follow a local into the binding
+	// that owns its data afterwards.
 	movedSources set.Set[ast.Node]
 	// moduleLevelMoves holds each expression reported as a move out of a module-level binding.
 	// The sites that record a move read it, so such a move records nothing.
@@ -700,23 +700,9 @@ type funcCtx struct {
 	// module-level names it reads rather than locals of an enclosing body.
 	capturesModule bool
 	// capturedLocals holds, for each closure written in this body, the locals of this body it
-	// captures that hold a reference-shaped value.
+	// captures that hold a reference-shaped value. The borrow graph gives the binding that holds
+	// a closure a capture edge to each of them.
 	capturedLocals map[ast.Func][]capturedLocal
-	// capturedTypes holds the binding type of every local in capturedLocals.
-	capturedTypes map[liveness.VarID]soltype.Type
-	// retainedClosureStores records each place this body hands a closure to that keeps it past
-	// the statement, a store into a module-level binding or an argument to a parameter with a
-	// retention lifetime. The post-pass takes a loan of each local those closures write.
-	retainedClosureStores []retainedClosureStore
-	// retainedResults maps a call to the indices in retainedClosureStores of the stores whose
-	// closure the call's result keeps. noteRetainedHolder adds the binding the result
-	// initializes to each store's holders.
-	retainedResults map[ast.Expr][]int
-	// callSites holds every call in this body, in source order.
-	callSites []callSite
-	// callArgLoans holds the borrows each call's arguments take for the call's parameters,
-	// keyed by the call. They last for the call's statement and are not in loans.
-	callArgLoans map[ast.Node][]loan
 	// escapeSites records every value flowing out of the frame that might carry a borrow
 	// of a function-local: a return value, a value stored into a parameter's field, and a
 	// consuming argument. The decision is deferred to a post-pass, resolveComponentEscapes,
@@ -724,36 +710,10 @@ type funcCtx struct {
 	// the consumed lattice is available. A self-contained connected component re-anchors
 	// and co-moves; anything else reports an EscapingBorrowError.
 	escapeSites []escapeSite
-	// namedClosures holds each closure that takes no loan where it is written. One is the
-	// initializer of a local name, as in `val f = fn () { … }`, whose captures are weighed at
-	// each call of the name and each call the name is passed to. A script's `fn` declaration
-	// is weighed the same way. Another is stored into a module-level binding, whose captures
-	// are weighed at each call after the store.
-	namedClosures set.Set[ast.Func]
-	// loans holds every borrow bound to a name in this body, in source order. The exclusivity
-	// check compares each new borrow against the ones still live. See borrow_exclusivity.go.
+	// `loans` holds every borrow a store leaves a binding holding in this body, in source order.
+	// See recordStoreEdgeLoan.
 	loans []loan
-	// fieldWrites maps each receiver expression of a member assignment to the place the
-	// assignment writes. checkUsesAgainstLoans reads it to tell a write through the owner from
-	// a read.
-	fieldWrites map[ast.Node]fieldWrite
-	// loanReads holds the expressions a borrow reads to take its loan. That read creates the
-	// borrow rather than being a second path to the data, so the use check skips it.
-	loanReads set.Set[ast.Node]
-	// borrowSites holds every borrow expression the walk infers, in source order. Most take
-	// their loan where they are bound or passed. checkNestedBorrows reads this list to take
-	// the loan of each one that is neither, such as a borrow inside a literal or a return.
-	borrowSites []borrowSite
-	// sharedPathSpans holds the spans of the outgoing expressions reported for handing out a
-	// mutable and an immutable path to one local, whether inside one returned value or across
-	// two sites. The use check skips a read INSIDE one of them, and checkNestedBorrows skips a
-	// borrow inside one. Such an expression then yields the diagnostic naming where the paths
-	// leave rather than a second one naming the read or borrow it contains. A read or borrow
-	// elsewhere in the body is unrelated and keeps its own diagnostic.
-	sharedPathSpans []ast.Span
-	// loanSeq is the last sequence number handed to a loan. Each loan takes the next one, so
-	// a read can name the loans that existed when it was walked without depending on their
-	// positions, which dropLoansHeldBy shifts.
+	// loanSeq is the last sequence number nextLoanSeq handed out.
 	loanSeq int
 	// varIDTypes maps the VarID of each parameter leaf, the receiver, and each capture to
 	// that binding's soltype. runLivenessPrePass fills it before the body is walked. The

@@ -81,9 +81,6 @@ type UseAfterMoveError struct {
 	// ViaReads marks a closure named by Via that only reads the place. It is false for one
 	// that writes it.
 	ViaReads bool
-	// closureCall marks a read of a closure's binding by a call that runs it. The closure
-	// moves one of its captures, so a call moves the closure, and E4 checks the call.
-	closureCall bool
 	// use is the read being rejected; it self-blames from here.
 	use ast.Node
 	// moveSite is the consume that moved the binding, used for the related span. It
@@ -121,22 +118,6 @@ type moveUse struct {
 	place movePlace
 	ref   liveness.StmtRef
 	node  ast.Node
-	// loanSeqAt is the sequence the next loan would have taken when this read was walked. The
-	// borrow exclusivity check weighs the read against the loans below it, so a borrow written
-	// later in the source, on the other arm of an `if` among others, does not reach back to it.
-	loanSeqAt int
-	// via names the closure a call may run, for a read standing for that closure's access to
-	// what it captures during the call. It is empty for a read the program writes.
-	via string
-	// viaRuns marks a closure named by via that the call is sure to run, because the call's
-	// callee names it.
-	viaRuns bool
-	// viaReads marks a closure named by via that only reads the place. It is false for one
-	// that writes it.
-	viaReads bool
-	// closureCall marks the read of a closure's binding by a call that runs the closure,
-	// which consumeOnceCallee records.
-	closureCall bool
 	// blame is the node a diagnostic about the read points at, when it differs from node.
 	blame ast.Node
 }
@@ -620,7 +601,7 @@ func (c *checker) recordUse(e *ast.IdentExpr, t soltype.Type) {
 		return
 	}
 	p := movePlace{root: c.varIDs.Of(e)}
-	c.fn.useSites = append(c.fn.useSites, moveUse{place: p, ref: ref, node: e, loanSeqAt: c.fn.loanSeq + 1})
+	c.fn.useSites = append(c.fn.useSites, moveUse{place: p, ref: ref, node: e})
 }
 
 // recordMemberUse records a read of a field place so the use-after-move scan can
@@ -647,7 +628,7 @@ func (c *checker) recordMemberUse(e ast.Expr) {
 		c.fn.memberUses = map[ast.Node]int{}
 	}
 	c.fn.memberUses[e] = len(c.fn.useSites)
-	c.fn.useSites = append(c.fn.useSites, moveUse{place: p, ref: ref, node: e, loanSeqAt: c.fn.loanSeq + 1})
+	c.fn.useSites = append(c.fn.useSites, moveUse{place: p, ref: ref, node: e})
 	c.emitRead(e)
 }
 
@@ -1040,6 +1021,111 @@ func (c *checker) consumeIntoLiteral(scope *Scope, el ast.Expr, elemT soltype.Ty
 	c.consumeOwned(el, elemT, el, ref)
 }
 
+// recordClosureCaptures records each local of the current body that `closure` captures, for
+// the scope the closure is written in:
+//
+//   - It emits the capture's ownership events.
+//   - It records writing the closure as a read of the local, so capturing one that has moved
+//     is a use after the move.
+//   - A closure that moves the local takes it there and owns it from then on, so the local
+//     is moved. A module-level name a module's function captures cannot move at all.
+//   - Any other capture joins capturedLocals. A binding that holds the closure takes a
+//     capture edge to the local in the borrow graph from there.
+//
+// A capture whose type has value semantics records no more than its events, since a closure
+// holding a primitive cannot see a later change to the binding it copied. A capture from a
+// body further out records nothing, since this body's tables do not track it.
+func (c *checker) recordClosureCaptures(scope *Scope, closure ast.Func) {
+	// A closure written at module top level has no enclosing body. No body tables exist to
+	// record its captures in.
+	if c.fn == nil {
+		return
+	}
+
+	// ref is the CFG point of the statement that writes the closure. A use or a move of a
+	// capture is recorded there. moved maps each captured name the closure's body moves to
+	// the expression that moves it.
+	ref, hasRef := c.currentStmtRef()
+	moved := c.capturesMovedBy[closure]
+
+	for _, capture := range c.closureCaptures(closure) {
+		// Resolve the captured name to its binding in the scope the closure is written in. A
+		// name with no VarID is not a local the liveness pass tracks.
+		b, found := scope.GetValue(capture.Name)
+		if !found || b.VarID <= 0 {
+			continue
+		}
+
+		// Skip a capture declared in a body further out. Each body numbers its own locals, so
+		// the VarID of an outer local either is missing from this body's names or names a
+		// different local here.
+		root := liveness.VarID(b.VarID)
+		if name, ok := c.fn.varIDNames[root]; !ok || name != capture.Name {
+			continue
+		}
+
+		// Emit the ownership events for the capture. The dataflow pass reads them to check
+		// the closure's borrow of the local against other uses of it.
+		if eventRef, ok := c.eventStmtRef(); ok {
+			c.emitCaptureFlows(closure, root, bindingDecl(b), bindingType(b), capture.IsMutable, moved[capture.Name], eventRef)
+		}
+
+		// A closure that captures a value such as a `number` holds its own copy. A later
+		// change to the local cannot reach it, so nothing more is recorded.
+		if isValueType(bindingType(b)) {
+			continue
+		}
+
+		// Writing the closure reads the local. In `take(p); val f = fn () { p.x }` this read
+		// is a use of `p` after the move.
+		if hasRef {
+			c.fn.useSites = append(c.fn.useSites, moveUse{place: movePlace{root: root}, ref: ref, node: closure})
+		}
+
+		// A closure whose body moves the local takes ownership of it when the closure is
+		// written. The move blames the expression in the closure that moves the local. A
+		// module's function cannot move a module-level name, so that case is an error. Once
+		// moved, the local is owned by the closure and is not also tracked as a capture.
+		if moveNode, ok := moved[capture.Name]; ok {
+			if c.fn.capturesModule && c.fn.captureVarIDs.Contains(root) {
+				c.reportModuleLevelMove(moveNode)
+				continue
+			}
+			if hasRef {
+				c.recordMovePlace(movePlace{root: root}, moveNode, ref)
+				continue
+			}
+		}
+
+		// Record every other capture in capturedLocals. The borrow graph reads it to give a
+		// binding that holds the closure a capture edge to the local. paths lists the field
+		// paths under the local that the closure reads or writes. It is empty when the closure
+		// uses the whole local.
+		if c.fn.capturedLocals == nil {
+			c.fn.capturedLocals = map[ast.Func][]capturedLocal{}
+		}
+		local := capturedLocal{root: root, mut: capture.IsMutable, t: bindingType(b), paths: c.capturedFieldPaths(closure, bindingDecl(b))}
+		c.fn.capturedLocals[closure] = append(c.fn.capturedLocals[closure], local)
+	}
+}
+
+// capturedFieldPaths returns the field paths under the local declared by `decl` that `closure`
+// reads or writes, as capturedPaths finds them. It returns nil when the closure captures the
+// whole local, and when the body has no event table to find the paths with.
+func (c *checker) capturedFieldPaths(closure ast.Func, decl ast.Node) [][]placeSeg {
+	if c.eventTable() == nil {
+		return nil
+	}
+	var out [][]placeSeg
+	for _, cp := range c.capturedPaths(closure, decl) {
+		if len(cp.path) == 0 {
+			return nil
+		}
+		out = append(out, cp.path)
+	}
+	return out
+}
+
 // recordMovePlace consumes the place at the given program point, blaming moveNode. It
 // resolves the place to its lattice VarID, registers the mapping so the
 // use-after-move scan can recover the path for the prefix test, and records the move
@@ -1067,7 +1153,7 @@ func (c *checker) recordMovePlace(p movePlace, moveNode ast.Node, ref liveness.S
 		})
 		return
 	}
-	c.recordMove(id, moveNode, ref, false)
+	c.recordMove(id, moveNode, ref)
 }
 
 // overlappingMoveAt returns the lattice VarID of a place other than id, moved at ref, that
@@ -1096,9 +1182,8 @@ func (c *checker) overlappingMoveAt(ref liveness.StmtRef, id liveness.VarID, p m
 // program point is an intra-statement reuse — `return [x, x]`, `f(x, x)`, the `dup`
 // double move — so it is reported immediately as a use-after-move rather than waiting
 // for the lattice, which is statement-granular and cannot order two moves within one
-// statement. closureCall marks a move of a closure's binding by a call that runs the
-// closure, and the diagnostic of a second such move carries the mark.
-func (c *checker) recordMove(varID liveness.VarID, moveNode ast.Node, ref liveness.StmtRef, closureCall bool) {
+// statement.
+func (c *checker) recordMove(varID liveness.VarID, moveNode ast.Node, ref liveness.StmtRef) {
 	if c.fn == nil || c.fn.moveSites == nil || varID <= 0 {
 		return
 	}
@@ -1109,10 +1194,9 @@ func (c *checker) recordMove(varID liveness.VarID, moveNode ast.Node, ref livene
 	}
 	if at.Contains(varID) {
 		c.report(&UseAfterMoveError{
-			Name:        c.moveNameOf(varID),
-			closureCall: closureCall,
-			use:         moveNode,
-			moveSite:    c.fn.moveNodes[varID],
+			Name:     c.moveNameOf(varID),
+			use:      moveNode,
+			moveSite: c.fn.moveNodes[varID],
 		})
 		return
 	}
@@ -1170,29 +1254,27 @@ func (c *checker) checkUseAfterMoves() {
 	if c.fn == nil || c.fn.cfg == nil {
 		return
 	}
-	if len(c.fn.useSites) == 0 && len(c.fn.moveSites) == 0 && len(c.fn.escapeSites) == 0 && len(c.fn.retainedClosureStores) == 0 && len(c.fn.borrowSites) == 0 {
+	retained := c.eventTable() != nil && len(c.eventTable().retained) > 0
+	if len(c.fn.useSites) == 0 && len(c.fn.moveSites) == 0 && len(c.fn.escapeSites) == 0 && !retained {
 		return
 	}
 	info := liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites)
 	// Decide deferred escapes against the move lattice and the flow-sensitive borrow-edge
 	// graph, then fold any component-move consumes back into moveSites and recompute, so a
 	// use after a co-moved local is caught.
-	if len(c.fn.escapeSites) > 0 || len(c.fn.retainedClosureStores) > 0 {
+	if len(c.fn.escapeSites) > 0 || retained {
 		flowBorrowGraph := c.analyzeBorrows()
 		if c.resolveComponentEscapes(info, flowBorrowGraph) {
 			info = liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites)
 		}
-		// These loans have to be in place before checkUsesAgainstLoans below weighs the
-		// body's writes and moves.
-		c.recordRetainedCaptureLoans(flowBorrowGraph)
+		// The dataflow pass reads what each retained closure writes.
+		c.noteRetainedClosureWrites(flowBorrowGraph)
 	}
-	reported := set.NewSet[ast.Node]()
 	for _, u := range c.fn.useSites {
 		state, movedID := c.movedConflict(info, u)
 		if state == liveness.NotMoved {
 			continue
 		}
-		reported.Add(u.node)
 		// The read place is a partial-move read when it is a strict ancestor of the
 		// moved place: reading the whole `pair` after `pair.a` moved exposes the moved
 		// field. ReadName then names the read; otherwise the read is the moved place
@@ -1211,20 +1293,10 @@ func (c *checker) checkUseAfterMoves() {
 			ReadName:    readName,
 			Partial:     partial,
 			Conditional: state == liveness.MaybeMoved,
-			Via:         u.via,
-			ViaRuns:     u.viaRuns,
-			ViaReads:    u.viaReads,
-			closureCall: u.closureCall,
 			use:         u.blamed(),
 			moveSite:    c.fn.moveNodes[movedID],
 		})
 	}
-	// Every loan is recorded by now, so a write or move through the owner beside a live borrow
-	// is decided here rather than mid-walk. A use the loop above already reported is skipped, so
-	// one bad use yields one diagnostic. The nested borrows go first, because each one notes
-	// its operand as the read that takes its loan, and the use check skips those reads.
-	c.checkNestedBorrows()
-	c.checkUsesAgainstLoans(reported)
 }
 
 // movedConflict finds the strongest consumed state among the moved places that

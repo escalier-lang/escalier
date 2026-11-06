@@ -1102,8 +1102,7 @@ func TestStoreEffectLoans(t *testing.T) {
 			want: []string{"13:20-13:22: cannot borrow 'b' as immutable while it is borrowed as mutable"},
 		},
 		// Moving the item out while the target still reaches it leaves the target pointing at
-		// data the new owner controls. The loan-against-loan check does not see this, because a
-		// move is not a borrow.
+		// data the new owner controls.
 		"MoveAfterAStore": {
 			src: `
 				declare fn store<'a, 'b, 'c>(

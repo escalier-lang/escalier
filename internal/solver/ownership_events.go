@@ -125,8 +125,8 @@ func (returnTarget) isHolderTarget()   {}
 func (tempTarget) isHolderTarget()     {}
 
 // ownershipEvent is one event of the checking model. It is one of *copyEvent,
-// *borrowEvent, *moveEvent, *useEvent, *passEvent, *callEvent, or *provisionalEvent. `base`
-// returns the fields every kind shares.
+// *borrowEvent, *moveEvent, *useEvent, *passEvent, *callEvent, *runEvent, or
+// *provisionalEvent. `base` returns the fields every kind shares.
 type ownershipEvent interface {
 	isOwnershipEvent()
 	base() *eventBase
@@ -287,6 +287,7 @@ func (*useEvent) isOwnershipEvent()         {}
 func (*provisionalEvent) isOwnershipEvent() {}
 func (*passEvent) isOwnershipEvent()        {}
 func (*callEvent) isOwnershipEvent()        {}
+func (*runEvent) isOwnershipEvent()         {}
 
 // ownershipEvents holds the ownership events of one body, in the order the walk emitted
 // them. names maps each VarID of the body to its source name, for rendering.
@@ -347,6 +348,15 @@ type ownershipEvents struct {
 	// belongs to the caller. The caller can read what the body stores into such a place
 	// after the body returns or suspends.
 	callerOwned set.Set[liveness.VarID]
+	// boundClosures holds each closure noteBoundClosure records. Writing any other closure
+	// uses its captures for the statement it is written in, since the expression it sits in
+	// may call it there.
+	boundClosures set.Set[ast.Func]
+	// `retained` lists each store of a closure into a place that keeps it past its statement,
+	// in the order the walk meets them. retainedResults maps a call to the stores whose
+	// closure the call's result keeps, for noteRetainedHolder.
+	retained        []*retainedStore
+	retainedResults map[ast.Expr][]*retainedStore
 }
 
 // returnSite is a return that receives a value: the expression returned, and the CFG point
@@ -450,24 +460,27 @@ const (
 	patternRole
 	returnRole
 	callEndRole
+	runRole
 )
 
 // newOwnershipEvents returns an empty table whose places render through names.
 func newOwnershipEvents(names map[liveness.VarID]string) *ownershipEvents {
 	return &ownershipEvents{
-		names:          names,
-		subsumed:       set.NewSet[ast.Node](),
-		unwritten:      set.NewSet[ast.Node](),
-		emitted:        set.NewSet[emitSite](),
-		temps:          map[ast.Node][]int{},
-		tempRoots:      map[ast.Node][]liveness.VarID{},
-		stored:         set.NewSet[liveness.VarID](),
-		returns:        map[liveness.VarID][]returnSite{},
-		flowsInto:      map[liveness.VarID][]liveness.VarID{},
-		tupleParts:     map[string][]placeSeg{},
-		callees:        map[ast.Expr]*ast.CallExpr{},
-		capturedPlaces: map[ast.Func]*capturedPlaceFinder{},
-		callerOwned:    set.NewSet[liveness.VarID](),
+		names:           names,
+		subsumed:        set.NewSet[ast.Node](),
+		unwritten:       set.NewSet[ast.Node](),
+		emitted:         set.NewSet[emitSite](),
+		temps:           map[ast.Node][]int{},
+		tempRoots:       map[ast.Node][]liveness.VarID{},
+		stored:          set.NewSet[liveness.VarID](),
+		returns:         map[liveness.VarID][]returnSite{},
+		flowsInto:       map[liveness.VarID][]liveness.VarID{},
+		tupleParts:      map[string][]placeSeg{},
+		callees:         map[ast.Expr]*ast.CallExpr{},
+		capturedPlaces:  map[ast.Func]*capturedPlaceFinder{},
+		callerOwned:     set.NewSet[liveness.VarID](),
+		boundClosures:   set.NewSet[ast.Func](),
+		retainedResults: map[ast.Expr][]*retainedStore{},
 	}
 }
 
@@ -513,14 +526,15 @@ func (i *Info) ownershipEventsOf(fn ast.Node) *ownershipEvents {
 // renderOwnershipEvents renders the events of t one per line, each prefixed with the CFG
 // node it is attached to, as renderStmtRef writes it. A borrow's lifetime renders as
 // `'static`, as `'_` when the borrow's type carries none or an elided one, or as `'<n>`
-// numbering the other lifetimes in order of first appearance. A callEvent is left out,
-// since every call has one and it moves no value.
+// numbering the other lifetimes in order of first appearance. A callEvent and a runEvent are
+// left out, since every call has one of each and neither moves a value.
 func renderOwnershipEvents(t *ownershipEvents) []string {
 	ltNames := map[soltype.Lifetime]string{}
 	var out []string
 
 	for _, ev := range t.list() {
-		if _, isCall := ev.(*callEvent); isCall {
+		switch ev.(type) {
+		case *callEvent, *runEvent:
 			continue
 		}
 		out = append(out, fmt.Sprintf("%s: %s", renderStmtRef(ev.base().at), t.renderEvent(ev, ltNames)))

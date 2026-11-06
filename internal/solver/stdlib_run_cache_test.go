@@ -154,8 +154,9 @@ func TestAmbientCheckerReportsLoadErrorAtImport(t *testing.T) {
 }
 
 // TestAmbientCheckerLoadsPerOwnershipSetting asserts that a cached run reports the package
-// diagnostics its own ownership setting gives. In std:math's `bad`, f reads x after `val y = x`
-// moves it. The dataflow pass reports the move, and the current checks report the call.
+// diagnostics its own ownership setting gives. In `std:math`'s `bad`, `val y = x` moves `x` while
+// `f` still holds its borrow of `x`. The dataflow pass reports the move, and a run without the
+// pass reports nothing.
 func TestAmbientCheckerLoadsPerOwnershipSetting(t *testing.T) {
 	dir := seedStdlib(t, withPreludeClasses(map[string]string{
 		"std/math.esc": `
@@ -176,11 +177,7 @@ func TestAmbientCheckerLoadsPerOwnershipSetting(t *testing.T) {
 		want []string
 	}{
 		{name: "dataflow", opts: Options{}, want: []string{loadErr + "cannot move 'x' while it is borrowed"}},
-		{
-			name: "current checks",
-			opts: Options{NoOwnershipDataflow: true},
-			want: []string{loadErr + "this call runs 'f', which reads 'x' after it was moved"},
-		},
+		{name: "no dataflow", opts: Options{NoOwnershipDataflow: true}, want: nil},
 	}
 	// The first round's dataflow run fills an empty cache. Every later run follows a run with
 	// the other setting, so each setting is checked after the other one filled the cache.

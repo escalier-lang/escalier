@@ -525,7 +525,7 @@ func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.
 	t := c.inferFunc(scope, lvl, e.FuncSig, e.Body, e, true, false)
 	c.recordType(e, t)
 	// The closure reads or writes what it captures from the body it is written in.
-	c.recordCaptureLoans(scope, e)
+	c.recordClosureCaptures(scope, e)
 	return t
 }
 
@@ -963,7 +963,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		recvReads := c.fn.inferredRecvReads
 		mutations := c.fn.unsettledMutations
 		// A closure that moves a local it captures takes the local from the body it is
-		// written in. recordCaptureLoans reads these names there.
+		// written in. recordClosureCaptures reads these names there.
 		if fn, ok := node.(ast.Func); ok && saved != nil {
 			if moved := c.movedCaptures(); len(moved) > 0 {
 				if c.capturesMovedBy == nil {
@@ -1724,7 +1724,6 @@ func (c *checker) writtenParamType(scope *Scope, p *ast.Param, lvl int) (soltype
 // them to choose "borrow" over "move", as in `val q = &p` and `val q = &mut p`, so
 // the borrow leaves the source usable where a bare `val q = p` would consume it.
 func (c *checker) inferBorrow(scope *Scope, lvl int, e *ast.BorrowExpr) soltype.Type {
-	c.noteBorrowSite(e)
 	c.emitBorrow(e)
 	// D16's rules read the borrow's lifetime, which is known once its type is recorded.
 	defer c.noteFrameBorrow(scope, e)
@@ -2027,11 +2026,6 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 	consumeRef, hasConsumeRef := c.currentStmtRef()
 	eventRef, hasEventRef := c.eventStmtRef()
 	ltMark := c.ctx.lifetimeCounter
-	// A closure stored into a module-level binding, or passed to a parameter that keeps it, may
-	// run during a later call.
-	if hasConsumeRef {
-		c.noteCallSite(e, consumeRef)
-	}
 	if hasEventRef {
 		c.noteCallee(e)
 	}
@@ -2048,6 +2042,18 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 		ret, fn = c.applyCallShape(lvl, e, target.callee, target.fn, target.secondInstance, args)
 	}
 	c.recordCallArgEffects(e, fn, consumeRef, hasConsumeRef)
+	if hasEventRef {
+		// Calling a closure runs its body, and a callee handed a closure may call it during
+		// the call. Neither depends on the signature, so a callee whose signature is still a
+		// variable runs its closures too. A recursive call of a script `fn` inside its own
+		// body has such a callee.
+		c.emitClosureRuns(e, eventRef)
+		if fn != nil {
+			// A closure passed to a parameter that keeps it may run during a later call, the
+			// same as one stored into a module-level binding.
+			c.noteRetainedClosureArgs(e, fn, eventRef)
+		}
+	}
 	recv, self := c.calleeReceiver(e.Callee)
 	c.markTiedCallLifetimes(ltMark, fn, recv, self, &soltype.TupleType{Elems: args}, ret)
 	if hasEventRef {
@@ -2503,54 +2509,27 @@ func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr, preset m
 	return args
 }
 
-// recordCallArgEffects moves the arguments a call consumes, records the borrow edges its
-// signature stores, and checks its borrow arguments against each other, through consumeCallArgs,
-// recordCallStoreEdges and checkCallBorrowExclusivity. It is the ONE place both call paths run
+// recordCallArgEffects moves the arguments a call consumes, checks that each borrow argument is
+// written, and records the borrow edges its signature stores, through consumeCallArgs,
+// checkExplicitBorrowArgs and recordCallStoreEdges. It is the ONE place both call paths run
 // those three, against whichever signature the call resolved to. That is the single signature
 // inferCallTarget read off the callee, or the arm resolveOverload picked. Keeping them here is what stops one path from
 // forgetting them, which is how #1508 came about.
 //
 // fn is nil when no arm accepted the call or the callee's signature is still a variable. Nothing
-// is moved then, since no signature says which arguments the call consumes. The call still takes
-// the loans of the closures it runs.
+// is moved then, since no signature says which arguments the call consumes.
 func (c *checker) recordCallArgEffects(
 	e *ast.CallExpr, fn *soltype.FuncType, consumeRef liveness.StmtRef, hasConsumeRef bool,
 ) {
-	if !hasConsumeRef {
+	if !hasConsumeRef || fn == nil {
 		return
 	}
 
-	if fn != nil {
-		c.consumeCallArgs(e, fn, consumeRef)
-	}
-
-	// Calling a closure runs its body, and a callee handed a closure may call it during the
-	// call. So the callee and each argument that names a closure access what it captures.
-	// Neither depends on the signature, so a callee whose signature is still a variable
-	// takes these loans too. A recursive call of a script `fn` inside its own body has
-	// such a callee.
-	c.useClosureCaptures(e.Callee, consumeRef, true)
-	for _, arg := range e.Args {
-		c.useClosureCaptures(arg, consumeRef, false)
-	}
-
-	if fn == nil {
-		return
-	}
+	c.consumeCallArgs(e, fn, consumeRef)
 
 	// A borrow parameter takes a borrow, so the call has to write one. The receiver of a
 	// method call is not an argument and keeps auto-borrowing.
 	c.checkExplicitBorrowArgs(e, fn)
-
-	// Every argument of a call is live at once, so two that borrow overlapping data break
-	// exclusivity when the two parameters disagree about whether the data can change. This runs
-	// before the store edges are recorded, so an argument is compared against the loans that
-	// existed before the call rather than against the one its own store creates.
-	c.checkCallBorrowExclusivity(e, fn, consumeRef)
-
-	// A closure passed to a parameter that keeps it may run during a later call, the same as
-	// one stored into a module-level binding.
-	c.noteRetainedClosureArgs(e, fn, consumeRef)
 
 	// A borrow argument the signature stores into another argument, or into a method's
 	// receiver, aliases the two for as long as the target lives. Record that edge here rather
@@ -2774,13 +2753,13 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	if target, ok := e.Left.(*ast.IdentExpr); ok {
 		if b, found := c.lookupValueBinding(scope, target.Name); found {
 			if closure, ok := e.Right.(*ast.FuncExpr); ok && !b.ModuleLevel {
-				c.markNamedClosure(closure)
+				c.noteBoundClosure(closure)
 			}
 			// A closure stored into a module-level binding runs only when something calls it,
-			// so its loans are taken at the calls after the store.
+			// so its captures are used at the calls after the store.
 			if b.ModuleLevel {
 				for _, closure := range closuresIn(e.Right) {
-					c.markNamedClosure(closure)
+					c.noteBoundClosure(closure)
 				}
 			}
 		}
@@ -2915,9 +2894,11 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 					if !c.rejectModuleLevelMove(scope, e.Right) {
 						c.consumeAtGlobalWrite(e.Right, sourceT, e.Right, ref)
 					}
-					// Anything can call a closure in a module-level binding from here on, so what
-					// it writes has to stay borrowed for the rest of the body.
-					c.noteRetainedClosureStore(retainedClosureStore{via: closureVia(target.Name), expr: e.Right, ref: ref, static: true})
+					// Anything can call a closure in a module-level binding from here on, so each
+					// later call may run it.
+					if hasEventRef {
+						c.noteRetainedClosureStore(retainedStore{via: closureVia(target.Name), expr: e.Right, at: eventRef, static: true})
+					}
 				}
 			}
 			// KNOWN GAP (#762): this store is accepted even though it is not sound in
@@ -2958,9 +2939,8 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 			c.noteRetainedHolder(c.varIDs.Of(target), e.Right)
 			if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
 				c.flushBorrowDirty(ref)
-				// The reassignment repoints the binding, so the loan it held is gone and the
-				// borrow it now holds takes its place.
-				c.recordBorrowLoan(c.varIDs.Of(target), bindingType(b), e.Right, ref)
+				// The reassignment repoints the binding, so the loans it held are gone.
+				c.endLoansOnRebind(c.varIDs.Of(target), e.Right)
 			}
 		}
 	}
@@ -3047,9 +3027,6 @@ func (c *checker) fieldWriteMember(name string, recv soltype.Type) (soltype.ObjT
 // the assignment and e.Left is `object.name` or a bracket form naming the same field, such
 // as `object["name"]`. The rules are the ones inferMemberAssign documents.
 func (c *checker) inferFieldAssign(scope *Scope, lvl int, e *ast.BinaryExpr, object ast.Expr, name string, recv soltype.Type, place *ownedPlace, source soltype.Type, assignStmt ast.Stmt) soltype.Type {
-	// The receiver's reads are part of this write, so the use check weighs them as a write to
-	// the target rather than as reads of the receiver.
-	c.noteFieldWrite(e.Left, object)
 	member, _ := c.fieldWriteMember(name, recv)
 	// An accessor named prop resolves here rather than through the structural requirement
 	// below, whose element is a PropertyElem. constrain's object arm matches the sub side
@@ -3213,7 +3190,6 @@ func (c *checker) inferIndexAssign(scope *Scope, lvl int, e *ast.BinaryExpr, ix 
 // widens it.
 func (c *checker) inferElementAssign(scope *Scope, lvl int, e *ast.BinaryExpr, ix *ast.IndexExpr, recv soltype.Type, place *ownedPlace, source soltype.Type, assignStmt ast.Stmt) soltype.Type {
 	undefinedT := soltype.Type(&soltype.UndefinedType{})
-	c.noteFieldWrite(e.Left, ix.Object)
 	if _, failed := c.info.TypeOf(ix.Index).(*soltype.ErrorType); failed {
 		return undefinedT
 	}
