@@ -95,26 +95,3 @@ func (s Set[T]) Difference(other Set[T]) Set[T] {
 	}
 	return result
 }
-
-// IsSubset checks if s is a subset of other.
-func (s Set[T]) IsSubset(other Set[T]) bool {
-	for item := range s {
-		if !other.Contains(item) {
-			return false
-		}
-	}
-	return true
-}
-
-// Equals checks if two sets are equal.
-func (s Set[T]) Equals(other Set[T]) bool {
-	if s.Len() != other.Len() {
-		return false
-	}
-	for item := range s {
-		if !other.Contains(item) {
-			return false
-		}
-	}
-	return true
-}
