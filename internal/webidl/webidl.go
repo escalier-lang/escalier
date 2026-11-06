@@ -46,6 +46,18 @@ func (k Kind) String() string {
 	return fmt.Sprintf("Kind(%d)", int(k))
 }
 
+// keyword returns the WebIDL keyword that introduces a definition of kind k,
+// for error messages.
+func (k Kind) keyword() string {
+	switch k {
+	case KindCallbackInterface:
+		return "callback interface"
+	case KindNamespace:
+		return "namespace"
+	}
+	return "interface"
+}
+
 // Definition is what WebIDL states about one interface, callback interface or
 // namespace.
 type Definition struct {

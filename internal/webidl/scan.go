@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-
-	"github.com/escalier-lang/escalier/internal/set"
 )
 
 // scan.go reads the four facts of the table out of a directory of WebIDL
@@ -72,15 +70,14 @@ func Scan(sources map[string]string) (map[string]Definition, error) {
 	// declaredIn records the file of each non-partial definition, for the
 	// duplicate error.
 	declaredIn := map[string]string{}
-	// partialIn records the first file holding a partial definition of a
-	// name, for the error on a name no non-partial definition declares.
-	partialIn := map[string]string{}
-	// partialCtors and partialTransferable hold the names that a partial
-	// definition gives a constructor or `[Transferable]` to. They are applied
-	// after every file is read, because the partial can come before the
-	// definition it extends.
-	partialCtors := set.NewSet[string]()
-	partialTransferable := set.NewSet[string]()
+	// partials are merged after every file is read, because a partial can
+	// come before the definition it extends. They keep file and source order,
+	// so the first bad partial is the one an error names.
+	type partialIn struct {
+		file string
+		scanned
+	}
+	var partials []partialIn
 
 	for _, file := range files {
 		parsed, err := scanFile(sources[file])
@@ -89,15 +86,7 @@ func Scan(sources map[string]string) (map[string]Definition, error) {
 		}
 		for _, p := range parsed {
 			if p.partial {
-				if _, seen := partialIn[p.name]; !seen {
-					partialIn[p.name] = file
-				}
-				if p.def.Constructible {
-					partialCtors.Add(p.name)
-				}
-				if p.def.Transferable {
-					partialTransferable.Add(p.name)
-				}
+				partials = append(partials, partialIn{file: file, scanned: p})
 				continue
 			}
 			if prev, dup := declaredIn[p.name]; dup {
@@ -108,20 +97,18 @@ func Scan(sources map[string]string) (map[string]Definition, error) {
 		}
 	}
 
-	for name, file := range partialIn {
-		if _, ok := defs[name]; !ok {
-			return nil, fmt.Errorf("%s: partial %s extends no definition", file, name)
+	for _, p := range partials {
+		def, ok := defs[p.name]
+		if !ok {
+			return nil, fmt.Errorf("%s: partial %s extends no definition", p.file, p.name)
 		}
-	}
-	for name := range partialCtors {
-		def := defs[name]
-		def.Constructible = true
-		defs[name] = def
-	}
-	for name := range partialTransferable {
-		def := defs[name]
-		def.Transferable = true
-		defs[name] = def
+		if def.Kind != p.def.Kind {
+			return nil, fmt.Errorf("%s: partial %s %s extends %s %s in %s",
+				p.file, p.def.Kind.keyword(), p.name, def.Kind.keyword(), p.name, declaredIn[p.name])
+		}
+		def.Constructible = def.Constructible || p.def.Constructible
+		def.Transferable = def.Transferable || p.def.Transferable
+		defs[p.name] = def
 	}
 	return defs, nil
 }
@@ -403,9 +390,16 @@ func tokenize(src string) ([]string, error) {
 			}
 			toks = append(toks, src[i:i+1+end+1])
 			i += 1 + end + 1
-		case isIdentStart(c) || isDigit(c):
+		case isIdentStart(c):
 			j := i + 1
-			for j < len(src) && (isIdentStart(src[j]) || isDigit(src[j]) || src[j] == '-' || src[j] == '.') {
+			for j < len(src) && (isIdentStart(src[j]) || isDigit(src[j]) || src[j] == '-') {
+				j++
+			}
+			toks = append(toks, src[i:j])
+			i = j
+		case isDigit(c):
+			j := i + 1
+			for j < len(src) && (isIdentStart(src[j]) || isDigit(src[j]) || src[j] == '.') {
 				j++
 			}
 			toks = append(toks, src[i:j])

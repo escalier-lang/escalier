@@ -185,6 +185,22 @@ func TestScanErrors(t *testing.T) {
 			want:    "a.idl: partial Missing extends no definition",
 		},
 		{
+			name: "first of several partials without a definition",
+			sources: map[string]string{
+				"a.idl": `partial interface Second {};`,
+				"b.idl": `partial interface First {};`,
+			},
+			want: "a.idl: partial Second extends no definition",
+		},
+		{
+			name: "partial of a different kind",
+			sources: map[string]string{
+				"a.idl": `partial namespace Node { undefined f(); };`,
+				"b.idl": `[Exposed=Window] interface Node {};`,
+			},
+			want: "a.idl: partial namespace Node extends interface Node in b.idl",
+		},
+		{
 			name:    "unterminated body",
 			sources: map[string]string{"a.idl": `[Exposed=Window] interface Node { undefined f();`},
 			want:    "a.idl: Node: unterminated body",
