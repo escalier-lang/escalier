@@ -1379,9 +1379,10 @@ func fuseTrio(
 	}
 
 	// TypeScript gives nearly every web interface a construct signature, and most of them
-	// throw `TypeError: Illegal constructor` at runtime. WebIDL says which are real. One that
-	// is not keeps its class value for `instanceof` and gets a private constructor instead,
-	// which makes the class non-constructible.
+	// throw `TypeError: Illegal constructor` at runtime. WebIDL says which are real. An
+	// interface WebIDL gives no constructor keeps its class value for `instanceof`, and its
+	// construct signatures are replaced by a private constructor, which makes the class
+	// non-constructible.
 	privateCtor := cctx.unconstructible(qualifiedName(nsPath, className))
 	for _, m := range info.ctorMembers {
 		if cs, ok := m.(*dts_parser.ConstructSignature); ok {
