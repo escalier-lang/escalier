@@ -15,7 +15,7 @@ func (s Set[T]) IsSuperset(rhs Set[T]) bool {
 	return s.IsSubset(rhs)
 }
 
-// Equals checks if two sets are equal.
+// Equals checks if s and rhs hold the same items.
 func (s Set[T]) Equals(rhs Set[T]) bool {
 	if s.Len() != rhs.Len() {
 		return false
