@@ -1,6 +1,9 @@
 package webidl
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -87,6 +90,16 @@ func TestScan(t *testing.T) {
 			want: map[string]Definition{
 				"HTMLImageElement": {Kind: KindInterface, Exposed: []string{"Window"}, Constructible: true},
 				"HTMLAudioElement": {Kind: KindInterface, Exposed: []string{"Window"}},
+			},
+		},
+		{
+			name: "an argument list after an extended attribute name and a trailing line comment",
+			sources: map[string]string{"a.idl": `
+				[Exposed=Window, Constructor(DOMString type)]
+				interface Legacy {};
+				// A trailing comment with no newline`},
+			want: map[string]Definition{
+				"Legacy": {Kind: KindInterface, Exposed: []string{"Window"}},
 			},
 		},
 		{
@@ -217,6 +230,66 @@ func TestScanErrors(t *testing.T) {
 			want:    "a.idl: Node: unterminated body",
 		},
 		{
+			name:    "unterminated block comment",
+			sources: map[string]string{"a.idl": `/* never closed`},
+			want:    "a.idl: unterminated comment",
+		},
+		{
+			name:    "unterminated string",
+			sources: map[string]string{"a.idl": `enum E { "a };`},
+			want:    "a.idl: unterminated string",
+		},
+		{
+			name:    "a definition name that is not an identifier",
+			sources: map[string]string{"a.idl": `interface { };`},
+			want:    `a.idl: expected a definition name, found "{"`,
+		},
+		{
+			name:    "an interface with no body",
+			sources: map[string]string{"a.idl": `interface Node : Base`},
+			want:    "a.idl: Node: expected a body",
+		},
+		{
+			name:    "a body with no closing semicolon",
+			sources: map[string]string{"a.idl": `interface Node {} interface Other {};`},
+			want:    `a.idl: Node: expected ; after the body, found "interface"`,
+		},
+		{
+			name:    "an extended attribute name that is not an identifier",
+			sources: map[string]string{"a.idl": `[=Window] interface Node {};`},
+			want:    `a.idl: expected an extended attribute name, found "="`,
+		},
+		{
+			name:    "an unterminated extended attribute value list",
+			sources: map[string]string{"a.idl": `[Exposed=(Window`},
+			want:    "a.idl: unterminated value list for Exposed",
+		},
+		{
+			name:    "an unbalanced argument list after an extended attribute name",
+			sources: map[string]string{"a.idl": `[Constructor(long x interface Node {};`},
+			want:    "a.idl: unbalanced brackets",
+		},
+		{
+			name:    "an unbalanced argument list after an extended attribute value",
+			sources: map[string]string{"a.idl": `[LegacyFactoryFunction=Image(long x interface Node {};`},
+			want:    "a.idl: unbalanced brackets",
+		},
+		{
+			name:    "an unterminated mixin",
+			sources: map[string]string{"a.idl": `interface mixin M { undefined f();`},
+			want:    "a.idl: unbalanced brackets",
+		},
+		{
+			name:    "an unterminated callback function",
+			sources: map[string]string{"a.idl": `callback F = any (any x`},
+			want:    "a.idl: unbalanced brackets",
+		},
+		{
+			name:    "an unterminated typedef",
+			sources: map[string]string{"a.idl": `typedef long Count`},
+			want:    "a.idl: unterminated definition",
+		},
+		{
 			name:    "malformed extended attributes",
 			sources: map[string]string{"a.idl": `[Exposed=Window; interface Node {};`},
 			want:    `a.idl: expected , or ] in extended attributes, found ";"`,
@@ -229,5 +302,86 @@ func TestScanErrors(t *testing.T) {
 			_, err := Scan(tt.sources)
 			require.EqualError(t, err, tt.want)
 		})
+	}
+}
+
+func TestScanDir(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.idl"), []byte(`[Exposed=Window] interface Node {};`), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "README.md"), []byte(`interface Ignored {};`), 0o644))
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "sub.idl"), 0o755))
+
+	got, err := ScanDir(dir)
+	require.NoError(t, err)
+	require.Equal(t, map[string]Definition{"Node": {Kind: KindInterface, Exposed: []string{"Window"}}}, got)
+
+	_, err = ScanDir(filepath.Join(dir, "missing"))
+	require.Error(t, err)
+}
+
+func TestPackageVersion(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		manifest string
+		want     string
+		wantErr  string
+	}{
+		{name: "a version", manifest: `{"version": "1.2.3"}`, want: "1.2.3"},
+		{name: "no version", manifest: `{}`, wantErr: "%s has no version"},
+		{name: "malformed JSON", manifest: `{`, wantErr: "%s: unexpected end of JSON input"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			path := filepath.Join(dir, "package.json")
+			require.NoError(t, os.WriteFile(path, []byte(tt.manifest), 0o644))
+			got, err := PackageVersion(dir)
+			if tt.wantErr != "" {
+				require.EqualError(t, err, fmt.Sprintf(tt.wantErr, path))
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+
+	_, err := PackageVersion(t.TempDir())
+	require.Error(t, err)
+}
+
+func TestGenerateErrors(t *testing.T) {
+	t.Parallel()
+
+	_, err := Generate(t.TempDir())
+	require.Error(t, err)
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"version": "1.0.0"}`), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.idl"), []byte(`/* never closed`), 0o644))
+	_, err = Generate(dir)
+	require.EqualError(t, err, "a.idl: unterminated comment")
+}
+
+func TestKindNames(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		kind    Kind
+		name    string
+		keyword string
+	}{
+		{KindInterface, "KindInterface", "interface"},
+		{KindCallbackInterface, "KindCallbackInterface", "callback interface"},
+		{KindNamespace, "KindNamespace", "namespace"},
+		{Kind(7), "Kind(7)", "interface"},
+	}
+	for _, tt := range tests {
+		require.Equal(t, tt.name, tt.kind.String())
+		require.Equal(t, tt.keyword, tt.kind.keyword())
 	}
 }
