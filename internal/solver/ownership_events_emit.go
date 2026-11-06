@@ -480,9 +480,9 @@ func (c *checker) retargetTemp(value ast.Node, holder eventHolder, ref liveness.
 // when sourceT holds that type. A flow F3 has not settled appends a provisional
 // placeholder and waits in c.pendingFlows.
 //
-// A value type creates no holder of a borrow, so its flow is only a read of p. A source
-// expression already emitted that read, and the flow emits nothing more. A flow with no
-// source expression emits the read itself.
+// A value type creates no holder of a borrow, so its flow is a read of p and a valueCopyEvent.
+// A source expression already emitted that read. A flow with no source expression emits the
+// read itself.
 func (c *checker) emitValueFlow(p movePlace, source ast.Expr, sourceT soltype.Type, node ast.Node, holder eventHolder, dest flowDest, ref liveness.StmtRef) {
 	if source != nil {
 		sourceT = c.info.TypeOf(source)
@@ -494,9 +494,17 @@ func (c *checker) emitValueFlow(p movePlace, source ast.Expr, sourceT soltype.Ty
 
 	flow := flowBase{eventBase: eventBase{place: p, node: node}, holder: holder}
 	ev, wait, settled := c.classifyFlow(c.fn.events, flow, sourceT, dest, false, false)
+
+	// The holder of a flow of a function value reaches each closure the place holds. A
+	// capture may wait for its destination, but a function's capture settles as a read
+	// wherever the closure goes, so its valueCopyEvent is emitted here too.
+	copied := c.holdsValueType(sourceT) && c.holdsFunc(sourceT, set.NewSet[*soltype.TypeVarType]())
 	if use, ok := ev.(*useEvent); settled && ok {
 		if source == nil {
 			c.emitEvent(use, ref)
+		}
+		if copied {
+			c.emitEvent(&valueCopyEvent{flowBase: flow}, ref)
 		}
 		return
 	}
@@ -514,6 +522,9 @@ func (c *checker) emitValueFlow(p movePlace, source ast.Expr, sourceT soltype.Ty
 	if !settled && index >= 0 {
 		pf := provisionalFlow{table: c.fn.events, index: index, source: source, sourceT: sourceT, dest: dest}
 		c.addPendingFlow(pf, wait)
+	}
+	if copied {
+		c.emitEvent(&valueCopyEvent{flowBase: flow}, ref)
 	}
 }
 
@@ -1422,4 +1433,47 @@ func (c *checker) emitReturnFlow(expr ast.Expr, ref liveness.StmtRef) {
 	}
 
 	c.emitFlow(expr, eventHolder{target: returnTarget{}}, dest, ref)
+}
+
+// paramReferentOutlivesFrame reports whether `root` names a parameter whose referent belongs to
+// the caller and so survives the call.
+//
+// Only a BORROW parameter does. `&T` and `&mut T` name data the caller still holds, so a borrow
+// of a local written into one reaches the caller after the frame ends. An owned parameter,
+// `p: T` or `mut p: T`, is MOVED into the frame. The caller gave up every handle at the call,
+// and the value dies with the frame, so nothing written into it can outlive anything.
+//
+// A settled type answers directly. A `RefType` carrying a lifetime is a borrow. Anything else
+// settled is owned: owned-immutable collapses to the bare inner, so a plain `T` parameter is
+// recorded as its concrete type rather than wrapped, and owned-mutable is a `RefType` with no
+// lifetime.
+//
+// An unsettled type keeps the stricter caller-owned answer. That covers a leaf the seed did not
+// reach and an UNANNOTATED parameter, whose recorded type is an inference variable this reads
+// as a leaf rather than following its bounds. So an unannotated owned parameter counts as
+// caller-owned, where the same parameter written `mut T` does not.
+func (c *checker) paramReferentOutlivesFrame(root liveness.VarID) bool {
+	if c.fn == nil || !c.fn.paramVarIDs.Contains(root) {
+		return false
+	}
+	// A closure borrows what it captures, so the enclosing body owns it.
+	if c.fn.captureVarIDs.Contains(root) {
+		return true
+	}
+	if c.fn.varIDTypes == nil {
+		return true
+	}
+	t, ok := c.fn.varIDTypes[root]
+	if !ok {
+		return true
+	}
+	switch t := t.(type) {
+	case *soltype.RefType:
+		return t.Lt != nil
+	case *soltype.TypeVarType:
+		// Unsettled, so which kind it becomes is not known here. The stricter answer treats
+		// its referent as the caller's.
+		return true
+	}
+	return false
 }

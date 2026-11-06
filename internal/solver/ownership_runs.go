@@ -16,8 +16,9 @@ import (
 // argument names one, or when module-level state or a retaining parameter keeps one reachable
 // at the call. A call that runs a closure uses each capture of it. It uses a capture the
 // closure writes as a mutable path, and one the closure only reads as an immutable path. The
-// walk records the runs, and the dataflow pass in ownership_dataflow.go checks E1, E2, and E3
-// against them.
+// walk records the names each call passes and the closures each retaining store keeps. The
+// dataflow pass in ownership_dataflow.go finds the closures from the loans each name holds,
+// and checks E1, E2, and E3 against the captures they use.
 
 // runEvent marks the point of a call at which the call runs the closures its callee and
 // arguments name. The dataflow pass also finds there each closure a retainedStore keeps
@@ -25,15 +26,25 @@ import (
 type runEvent struct {
 	eventBase
 	call *ast.CallExpr
-	// `runs` lists the closure the callee names, then each closure an argument names, in
-	// argument order.
-	runs []closureRun
+	// `names` lists the callee when it names a local, then each argument that names a local,
+	// in argument order. The dataflow pass finds the closures each local holds.
+	names []closureName
 	// `callee` is the place of the binding the callee names, when that binding holds a
 	// closure whose body moves one of its captures. Each call of such a closure moves it, as
 	// D2 decides, so a second call uses a moved binding. `consumes` is false for any other
 	// call.
 	callee   movePlace
 	consumes bool
+}
+
+// closureName is the callee or an argument of a call, written as the name of a local. The
+// call runs each closure the callee's local holds, and may run each closure an argument's
+// local holds.
+type closureName struct {
+	node *ast.IdentExpr
+	root liveness.VarID
+	// `runs` marks the callee, which the call is sure to run.
+	runs bool
 }
 
 // closureRun is one closure a call runs, or may run.
@@ -58,6 +69,11 @@ type retainedStore struct {
 	via string
 	// `expr` is the stored value.
 	expr ast.Expr
+	// `place` is the place `expr` names, and `named` reports whether it names one.
+	place movePlace
+	named bool
+	// `closures` lists each closure written inside `expr`, as closuresIn returns them.
+	closures []*ast.FuncExpr
 	// `at` is the CFG point of the statement that stores `expr`.
 	at liveness.StmtRef
 	// `call` is the call whose parameter keeps the closure, and nil for a store into a
@@ -75,8 +91,8 @@ type retainedStore struct {
 	//
 	// A call may run the closure only while one of them is live.
 	holders []liveness.VarID
-	// `writes` lists the owned locals the closures write, in VarID order.
-	// noteRetainedClosureWrites fills it once the body is walked.
+	// `writes` lists the owned locals the closures write, in VarID order. The dataflow pass
+	// fills it at `at`, as noteStoreWrites describes.
 	writes []liveness.VarID
 }
 
@@ -88,12 +104,12 @@ func (c *checker) emitClosureRuns(e *ast.CallExpr, ref liveness.StmtRef) {
 	}
 
 	ev := &runEvent{eventBase: eventBase{node: e}, call: e}
-	if run, ok := c.closureRunOf(e.Callee, true); ok {
-		ev.runs = append(ev.runs, run)
+	if name, ok := c.closureNameOf(e.Callee, true); ok {
+		ev.names = append(ev.names, name)
 	}
 	for _, arg := range e.Args {
-		if run, ok := c.closureRunOf(arg, false); ok {
-			ev.runs = append(ev.runs, run)
+		if name, ok := c.closureNameOf(arg, false); ok {
+			ev.names = append(ev.names, name)
 		}
 	}
 
@@ -106,48 +122,58 @@ func (c *checker) emitClosureRuns(e *ast.CallExpr, ref liveness.StmtRef) {
 	c.emitEvent(ev, ref)
 }
 
-// closureRunOf returns the run of the closure `expr` names, with the locals the closure
-// captures. `ok` is false when `expr` is not a name, or when the name holds no closure that
-// captures a local of the body. `runs` marks a call that is sure to run the closure.
-//
-// The closure's captures are the capture edges the name holds in the borrow graph, whether
-// the name was bound to the closure or copied from a name that was. A local captured through
-// several edges is listed once, as a write when any edge writes it. It covers the field paths
-// the edges reach, or the whole local when any edge reaches all of it.
-func (c *checker) closureRunOf(expr ast.Expr, runs bool) (closureRun, bool) {
+// closureNameOf returns `expr` as a closureName when it is the name of a local. `runs` marks
+// the callee of the call.
+func (c *checker) closureNameOf(expr ast.Expr, runs bool) (closureName, bool) {
 	e, ok := expr.(*ast.IdentExpr)
-	if !ok || c.fn == nil || c.varIDs.Of(e) <= 0 {
-		return closureRun{}, false
+	if !ok || c.varIDs.Of(e) <= 0 {
+		return closureName{}, false
 	}
+	return closureName{node: e, root: c.varIDs.Of(e), runs: runs}, true
+}
 
-	// Group the name's capture edges by the local each one reaches. With
-	// `val f = fn () { p.a = 1; log(p.b) }`, `f` has two edges into `p`, a write at `.a` and a
-	// read at `.b`. They merge into one capturedLocal for `p` that is mutable and covers both
-	// paths. An edge with an empty path reaches the whole local, which `whole` records.
+// closureRunOf returns the run of the closures that the local `name` refers to holds in s,
+// with the locals those closures capture. `ok` is false when the local holds no closure that
+// captures a local of the body.
+//
+// A closure's loan of each capture is held at the local, or at a place under it, whether the
+// local was bound to the closure or copied from one that was. A local captured through several
+// loans is listed once, as a write when any loan writes it. It covers the field paths the
+// loans reach, or the whole local when any loan reaches all of it. A loan of a place under
+// the local itself is left out.
+func (d *bodyDataflow) closureRunOf(name closureName, s *dataflowState) (*closureRun, bool) {
+	// Group the closure loans by the local each one reaches. With
+	// `val f = fn () { p.a = 1; log(p.b) }`, `f` holds two loans of `p`, a mutable one of `p.a`
+	// and an immutable one of `p.b`. They merge into one capturedLocal for `p` that is mutable
+	// and covers both paths. A loan with an empty path reaches the whole local, which `whole`
+	// records.
+	held := movePlace{root: name.root}
 	captured := map[liveness.VarID]*capturedLocal{}
 	whole := set.NewSet[liveness.VarID]()
-	for _, edge := range c.fn.eagerBorrowGraph[c.varIDs.Of(e)] {
-		if !edge.capture {
+	for _, l := range d.sortedLoans(s) {
+		root := l.ev.place.root
+		if !l.closure() || root == name.root || !l.heldAt(held) {
 			continue
 		}
-		local, seen := captured[edge.referent]
+		local, seen := captured[root]
 		if !seen {
-			local = &capturedLocal{root: edge.referent}
-			captured[edge.referent] = local
+			local = &capturedLocal{root: root}
+			captured[root] = local
 		}
-		local.mut = local.mut || edge.mut
+		local.mut = local.mut || l.ev.borrow == mutableBorrow
+		path := l.ev.place.path
 		switch {
-		case len(edge.refPath) == 0:
-			whole.Add(edge.referent)
-		case !slices.ContainsFunc(local.paths, func(p []placeSeg) bool { return slices.Equal(p, edge.refPath) }):
-			local.paths = append(local.paths, edge.refPath)
+		case len(path) == 0:
+			whole.Add(root)
+		case !slices.ContainsFunc(local.paths, func(p []placeSeg) bool { return slices.Equal(p, path) }):
+			local.paths = append(local.paths, path)
 		}
 	}
 	if len(captured) == 0 {
-		return closureRun{}, false
+		return nil, false
 	}
 
-	run := closureRun{node: e, via: closureVia(e.Name), runs: runs}
+	run := &closureRun{node: name.node, via: closureVia(name.node.Name), runs: name.runs}
 	for _, root := range slices.Sorted(maps.Keys(captured)) {
 		// A capture of the whole local covers every field path, so the paths are dropped.
 		local := *captured[root]
@@ -170,14 +196,19 @@ func (c *checker) noteBoundClosure(closure ast.Func) {
 	}
 }
 
-// noteRetainedClosureStore adds `store` to the body's retained stores and returns it. It
-// returns nil when the body has no event table.
+// noteRetainedClosureStore adds `store` to the body's retained stores and returns it, with
+// the place and the closures of its value filled in. It returns nil when the body has no event
+// table.
 func (c *checker) noteRetainedClosureStore(store retainedStore) *retainedStore {
 	t := c.eventTable()
 	if t == nil || t.cfg == nil {
 		return nil
 	}
 	s := &store
+	if p, ok := c.exprPlace(s.expr); ok && p.root > 0 {
+		s.place, s.named = p, true
+	}
+	s.closures = closuresIn(s.expr)
 	t.retained = append(t.retained, s)
 	return s
 }
@@ -429,77 +460,97 @@ func retainedVia(param, callee string) string {
 	return fmt.Sprintf("%s that '%s' retains", held, callee)
 }
 
-// noteRetainedClosureWrites fills the `writes` of each retained store of the body. A store
-// writes each owned local that a closure written inside the stored value writes, and each
-// owned local that a capture edge the value reaches in the flow-sensitive borrow graph before
-// the store writes. So a closure bound to a name, copied to another name, or chosen on a
-// branch counts. A local the closures only read is left out, and so is a capture holding a
-// borrow. It must run once the body is walked, so the borrow graph is complete.
-func (c *checker) noteRetainedClosureWrites() {
-	// A body with no retained store has nothing to fill. Building the borrow graph needs the
-	// body's CFG, so a body without one is skipped too.
-	t := c.eventTable()
-	if t == nil || len(t.retained) == 0 || c.fn == nil || c.fn.cfg == nil {
-		return
+// noteStoreWrites adds to the `writes` of `store` each owned local that a closure the stored
+// value reaches in s writes, and sets writesGrew when one is new. s is the state before the
+// statement that makes the store. The value reaches these closures:
+//
+//   - each closure written inside it, as in `onClick(fn () { count.n = count.n + 1 })`
+//   - each closure the place it names holds, as in `val f = fn () { … }; onClick(f)`, which
+//     also covers a copy such as `val g = f` and a closure chosen on a branch
+//   - each closure a place those closures capture, or a place a loan held there borrows,
+//     holds in turn, since running the stored closure can run that one
+//
+// A local the closures only read is left out, and so is a capture holding a borrow. The
+// writes only grow, so the fixed-point iteration in checkBodyDataflow ends.
+func (d *bodyDataflow) noteStoreWrites(store *retainedStore, s *dataflowState) {
+	// `written` holds each local some closure writes. `next` lists the places whose loans
+	// are still to be read, and `seen` the locals already read whole.
+	written := set.NewSet[liveness.VarID]()
+	var next []movePlace
+	for _, closure := range store.closures {
+		for _, capture := range d.captures[closure] {
+			root := capture.base().place.root
+			if b, ok := capture.(*borrowEvent); ok && b.borrow == mutableBorrow {
+				written.Add(root)
+			}
+			next = append(next, movePlace{root: root})
+		}
+	}
+	if store.named {
+		next = append(next, store.place)
 	}
 
-	// Build the body's flow-sensitive borrow graph. It gives the borrow edges that hold at
-	// each CFG point, so a store reads only edges written before it.
-	flowGraph := c.analyzeBorrows()
+	seen := set.NewSet[liveness.VarID]()
+	for len(next) > 0 {
+		p := next[len(next)-1]
+		next = next[:len(next)-1]
+		if len(p.path) == 0 {
+			if seen.Contains(p.root) {
+				continue
+			}
+			seen.Add(p.root)
+		}
 
-	// Map each captured local to the type of its binding. The last step reads it to decide
-	// whether a written local is owned.
-	types := map[liveness.VarID]soltype.Type{}
-	for _, locals := range c.fn.capturedLocals {
-		for _, local := range locals {
-			types[local.root] = local.t
+		// A loan held at p reaches its place. A closure's loan also says whether the closure
+		// writes that place.
+		for _, l := range s.loans {
+			if !l.heldAt(p) {
+				continue
+			}
+			if l.closure() && l.ev.borrow == mutableBorrow {
+				written.Add(l.ev.place.root)
+			}
+			next = append(next, movePlace{root: l.ev.place.root})
 		}
 	}
 
-	for _, store := range t.retained {
-		// Read the borrow graph as it stands just before the store. writes maps each local the
-		// stored closures capture to whether some closure writes it.
-		graph := flowGraph.fieldBorrowGraphBefore(store.at)
-		writes := map[liveness.VarID]bool{}
-
-		// Collect the captures of each closure written inside the stored value. In
-		// `onClick(fn () { count.n = count.n + 1 })` the closure writes `count`. Also collect
-		// every edge reachable from each captured local. A captured local may itself hold a
-		// closure, and running the stored closure can run that one.
-		var edges []fieldBorrow
-		for _, closure := range closuresIn(store.expr) {
-			for _, local := range c.fn.capturedLocals[closure] {
-				writes[local.root] = writes[local.root] || local.mut
-				collectAllEdgesFrom(local.root, set.NewSet[liveness.VarID](), graph, &edges)
-			}
+	for root := range written {
+		// A closure that only reads the local needs it unchanged only while the closure runs,
+		// and the frame cannot write it then. A capture holding a borrow is not owned.
+		if slices.Contains(store.writes, root) || !d.ownedMovable(d.table.captureTypes[root]) {
+			continue
 		}
-
-		// A stored value that names a binding reaches its closures through the graph. In
-		// `val f = fn () { … }; onClick(f)` the binding `f` has a capture edge to each local
-		// the closure captures. Following the edges also covers a copy such as `val g = f`,
-		// and a closure chosen on a branch.
-		if p, ok := c.exprPlace(store.expr); ok && p.root > 0 {
-			collectEdgesFrom(p.root, p.path, set.NewSet[liveness.VarID](), graph, &edges)
-		}
-
-		// Of the edges collected, only a capture edge stands for a closure's use of a local.
-		// Its `mut` flag says whether the closure writes the local.
-		for _, edge := range edges {
-			if edge.capture {
-				writes[edge.referent] = writes[edge.referent] || edge.mut
-			}
-		}
-
-		// Keep each written local that is owned, in VarID order. A capture holding a borrow is
-		// left out.
-		store.writes = nil
-		for root, written := range writes {
-			// A closure that only reads the local needs it unchanged only while the closure
-			// runs, and the frame cannot write it then.
-			if written && c.isOwnedMovable(types[root]) {
-				store.writes = append(store.writes, root)
-			}
-		}
-		slices.Sort(store.writes)
+		store.writes = append(store.writes, root)
+		d.writesGrew = true
 	}
+	slices.Sort(store.writes)
+}
+
+// closureCollector gathers the closures an expression carries by value, riding the shared AST
+// visitor so it reaches a closure nested in an object or tuple literal, a spread, or a
+// control-flow carrier such as an if/else branch. It stops at a call boundary, where a closure
+// is not part of the value the scanned expression yields, and does not enter a closure's body.
+type closureCollector struct {
+	*ast.DefaultVisitor
+	found []*ast.FuncExpr
+}
+
+func (v *closureCollector) EnterExpr(e ast.Expr) bool {
+	switch e := e.(type) {
+	case *ast.FuncExpr:
+		v.found = append(v.found, e)
+		return false
+	case *ast.CallExpr, *ast.TaggedTemplateLitExpr:
+		// A closure written as a call argument goes to that call, and the call's result does
+		// not carry it, so `store(wrap(fn () { … }))` carries no closure.
+		return false
+	}
+	return true
+}
+
+// closuresIn returns every closure the expression e carries by value.
+func closuresIn(e ast.Expr) []*ast.FuncExpr {
+	v := &closureCollector{DefaultVisitor: &ast.DefaultVisitor{}}
+	e.Accept(v)
+	return v.found
 }

@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"slices"
+
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
@@ -113,4 +115,28 @@ func (c *checker) holdsOnlyValueTypes(v *soltype.TypeVarType, seen set.Set[*solt
 		}
 	}
 	return true
+}
+
+// holdsFunc reports whether a value of type t can be a function. An alias is expanded first.
+// A union or an intersection can be one when a member can. A variable can be one when one of
+// its lower bounds, followed through other variables, can. `seen` holds the variables on the
+// current path, so a cycle in the bound graph answers false.
+func (c *checker) holdsFunc(t soltype.Type, seen set.Set[*soltype.TypeVarType]) bool {
+	member := func(m soltype.Type) bool { return c.holdsFunc(m, seen) }
+	switch t := c.expandAliasChain(t).(type) {
+	case *soltype.FuncType:
+		return true
+	case *soltype.UnionType:
+		return slices.ContainsFunc(t.Types, member)
+	case *soltype.IntersectionType:
+		return slices.ContainsFunc(t.Types, member)
+	case *soltype.TypeVarType:
+		if seen.Contains(t) {
+			return false
+		}
+		seen.Add(t)
+		defer seen.Remove(t)
+		return slices.ContainsFunc(t.LowerBounds, member)
+	}
+	return false
 }

@@ -192,7 +192,6 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 					// so a leaf of an annotated pattern over a borrow borrows for the
 					// annotation's lifetime.
 					c.emitPatternFlowsFrom(vd.Pattern, vd.Init, patternT, ref)
-					c.flushBorrowDirty(ref)
 				}
 			}
 			return &soltype.UndefinedType{}
@@ -212,9 +211,8 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 
 // defineLocal binds name to b in scope for the single-name `val`/`var` vd written at
 // statement s, overwriting any earlier binding of name. Inside a body it copies the
-// VarID the rename pass gave vd's pattern onto b, then emits the flow into it and records
-// the borrow edges the declaration creates. A later closure capture of the binding resolves
-// to the binding through that VarID.
+// VarID the rename pass gave vd's pattern onto b, then emits the flow into it. A later
+// closure capture of the binding resolves to the binding through that VarID.
 func (c *checker) defineLocal(scope *Scope, name string, vd *ast.VarDecl, b ValueBinding, s ast.Stmt) {
 	if ip, ok := vd.Pattern.(*ast.IdentPat); ok && c.varIDs.Of(ip) > 0 {
 		b.VarID = int(c.varIDs.Of(ip))
@@ -228,12 +226,6 @@ func (c *checker) defineLocal(scope *Scope, name string, vd *ast.VarDecl, b Valu
 	}
 	if c.fn.unwrittenBorrows.Contains(vd.Init) {
 		return
-	}
-	// Record which function-locals this binding's initializer borrows, and which locals a
-	// closure it holds captures.
-	c.recordBorrowEdges(liveness.VarID(b.VarID), vd.Init)
-	if ref, ok := c.fn.stmtToRef[s]; ok {
-		c.flushBorrowDirty(ref)
 	}
 	// A value that keeps a closure keeps it reachable while this binding is live.
 	c.noteRetainedHolder(liveness.VarID(b.VarID), vd.Init)

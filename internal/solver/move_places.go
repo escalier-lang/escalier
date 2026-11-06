@@ -462,3 +462,35 @@ func objectThroughBorrow(t soltype.Type) (*soltype.ObjectType, bool) {
 	obj, ok := t.(*soltype.ObjectType)
 	return obj, ok
 }
+
+// pathHasPrefix reports whether `prefix` is a prefix of `full`: every segment of `prefix` matches
+// `full` at the same index, so an empty prefix matches any path and equal paths match.
+func pathHasPrefix(full, prefix []placeSeg) bool {
+	if len(prefix) > len(full) {
+		return false
+	}
+	for i := range prefix {
+		if prefix[i] != full[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// appendSeg returns `base` with one more named field segment appended, copying the path so
+// sibling places built from the same base never share backing storage.
+func appendSeg(base []placeSeg, name string) []placeSeg {
+	out := make([]placeSeg, len(base)+1)
+	copy(out, base)
+	out[len(base)] = placeSeg{kind: namedSeg, name: name}
+	return out
+}
+
+// appendPath returns `base` with the segments of `suffix` appended, copying so the result
+// shares no backing storage with either input.
+func appendPath(base, suffix []placeSeg) []placeSeg {
+	out := make([]placeSeg, len(base)+len(suffix))
+	copy(out, base)
+	copy(out[len(base):], suffix)
+	return out
+}

@@ -217,8 +217,6 @@ type capturedLocal struct {
 	// paths are the field paths under root that the closure reads or writes, as
 	// capturedPaths finds them. An empty list means the closure captures the whole local.
 	paths [][]placeSeg
-	// `t` is the type of the local's binding.
-	t soltype.Type
 }
 
 // places returns each place under the local that the closure captures.
