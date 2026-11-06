@@ -83,6 +83,31 @@ families has a worker-visible part sitting in a window-only package.
 4. **Derive the attribute rather than hand-listing it.** `[Transferable]` is
    machine-readable, so the union should be generated. That is N3.
 
+## What the derived union covers
+
+`Transferable` in `web/dom.esc` is generated from the `[Transferable]` rows of
+`internal/webidl/table.go`, which is read from the pinned `@webref/idl`. Items 3
+and 4 above are done for the types the pinned libs declare. The union carries
+13 arms: the 12 `[Transferable]` interfaces some pinned `lib.*.d.ts` declares,
+plus `typed_arrays.ArrayBuffer`, which ECMAScript makes transferable.
+
+Four of the sixteen rows are still unreachable:
+
+| interface | why |
+| --- | --- |
+| `MediaStreamTrackHandle` | no pinned `lib.*.d.ts` declares it |
+| `WebTransportDatagramsWritable` | no pinned `lib.*.d.ts` declares it |
+| `WebTransportReceiveStream` | no pinned `lib.*.d.ts` declares it |
+| `WebTransportSendStream` | no pinned `lib.*.d.ts` declares it |
+
+The union can name only a type the tree declares, so the four join it when a
+later phase widens the conversion input past TypeScript's libs.
+`TestDeriveTransferable_PinnedLibSet` asserts both lists, so a lib or WebIDL
+bump that changes either one fails by name.
+
+The union is still one type for every environment. Splitting it, item 2, stays
+with this workstream.
+
 ## The environment vocabulary is short
 
 `@env` names four environments. The curated IDL names twelve globals, by count
