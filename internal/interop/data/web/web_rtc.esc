@@ -4,7 +4,6 @@
 
 import "std:map"
 import "std:typed_arrays"
-import "web:core"
 import "web:crypto"
 import "web:dom"
 import "web:file"

@@ -106,6 +106,18 @@ func TestAmbientCheckerReportsLoadErrorAtImport(t *testing.T) {
 	jsErr := `exported value "PI" in pseudo-package file ` + filepath.Join(jsDir, "std", "math.esc") +
 		" is missing an `@js(\"...\")` decorator"
 	jsOpts := Options{CheckJsDecorators: true}
+	// Nothing imports `web:prelude`, and every run loads it, so its diagnostics have no
+	// import to land on.
+	preludeInferDir := seedStdlib(t, withPreludeClasses(map[string]string{
+		"web/prelude.esc": `export val Tag: number = "pi"`,
+	}))
+	preludeInferErr := `package "web:prelude" (` + filepath.Join(preludeInferDir, "web", "prelude.esc") +
+		`) has 1 error(s):` + "\n" + `  cannot constrain "pi" <: number`
+	preludeJsDir := seedStdlib(t, withJsPreludeClasses(map[string]string{
+		"web/prelude.esc": `export declare val Tag: number`,
+	}))
+	preludeJsErr := `exported value "Tag" in pseudo-package file ` + filepath.Join(preludeJsDir, "web", "prelude.esc") +
+		" is missing an `@js(\"...\")` decorator"
 
 	cases := []struct {
 		name string
@@ -122,9 +134,9 @@ func TestAmbientCheckerReportsLoadErrorAtImport(t *testing.T) {
 		},
 		{
 			name: "inference error not imported",
-			dir:  inferDir,
+			dir:  preludeInferDir,
 			src:  `val p = 1`,
-			want: []string{"1:1-1:1: " + inferErr},
+			want: []string{"1:1-1:1: " + preludeInferErr},
 		},
 		{
 			name: "loader rule imported",
@@ -135,10 +147,10 @@ func TestAmbientCheckerReportsLoadErrorAtImport(t *testing.T) {
 		},
 		{
 			name: "loader rule not imported",
-			dir:  jsDir,
+			dir:  preludeJsDir,
 			opts: jsOpts,
 			src:  `val p = 1`,
-			want: []string{"1:1-1:1: " + jsErr},
+			want: []string{"1:1-1:1: " + preludeJsErr},
 		},
 	}
 	for _, tt := range cases {
@@ -206,9 +218,7 @@ func inferCached(t *testing.T, dir, src string, opts Options) (map[string]string
 func inferFresh(t *testing.T, dir, src string, opts Options) (map[string]string, []string) {
 	t.Helper()
 	module := parseModule(t, src)
-	roots := append(pseudoPackageImports(moduleImports(module)), ambientPackages...)
-	sort.Strings(roots)
-	groups, err := BuildPackageClosure(dir, roots)
+	groups, err := BuildPackageClosure(dir, closureRoots(moduleImports(module)))
 	require.NoError(t, err)
 	res := inferModuleWithGroups(module, StdlibSource(dir), StdlibGroupSource(dir), groups, opts)
 	return renderedValues(res), messagesWithSpan(t, res.Errors)
@@ -261,20 +271,18 @@ func TestFixturesLeaveStdlibVarsUntouched(t *testing.T) {
 func TestForkLeavesCachedCheckerUnchanged(t *testing.T) {
 	groups, err := BuildPackageClosure(benchTree, ambientPackages)
 	require.NoError(t, err)
-	for _, opts := range []Options{{}, {NoAmbientNames: true}} {
-		loaded := loadAmbientChecker(benchTree, groups, opts)
-		g := graphcopy.New(isASTPointer)
-		graphcopy.Copy(g, loaded)
-		for _, fixture := range fixtureLibraries(t) {
-			t.Run(fmt.Sprintf("%s/NoAmbientNames=%t", fixture.name, opts.NoAmbientNames), func(t *testing.T) {
-				module := fixture.parse(t)
-				if !loadsGroups(t, module, groups) {
-					t.Skip("the fixture imports a package outside the ambient packages' closure")
-				}
-				inferModuleOn(loaded.fork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups), module)
-				require.Empty(t, g.Diff())
-			})
-		}
+	loaded := loadAmbientChecker(benchTree, groups, Options{})
+	g := graphcopy.New(isASTPointer)
+	graphcopy.Copy(g, loaded)
+	for _, fixture := range fixtureLibraries(t) {
+		t.Run(fixture.name, func(t *testing.T) {
+			module := fixture.parse(t)
+			if !loadsGroups(t, module, groups) {
+				t.Skip("the fixture imports a package outside the ambient packages' closure")
+			}
+			inferModuleOn(loaded.fork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups), module)
+			require.Empty(t, g.Diff())
+		})
 	}
 }
 
@@ -350,7 +358,7 @@ func TestForkCopiesEveryContainer(t *testing.T) {
 // packages groups names and no others.
 func loadsGroups(t *testing.T, module *ast.Module, groups PackageGroups) bool {
 	t.Helper()
-	roots := set.FromSlice(append(pseudoPackageImports(moduleImports(module)), ambientPackages...)).ToSlice()
+	roots := set.FromSlice(append(closureRoots(moduleImports(module)), ambientPackages...)).ToSlice()
 	sort.Strings(roots)
 	own, err := BuildPackageClosure(benchTree, roots)
 	require.NoError(t, err)

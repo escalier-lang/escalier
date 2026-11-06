@@ -1,0 +1,6 @@
+{
+    "name": "std_names_need_imports",
+    "version": "0.0.1",
+    "type": "module",
+    "main": "build/lib/index.js"
+}

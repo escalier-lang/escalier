@@ -319,8 +319,8 @@ func TestInferOpenEscapeParam(t *testing.T) {
 		{
 			// remember's rendering waits on #2352, so TestInferOpenEscapeParamRendering holds it.
 			name: "ReadOnlyIsStaticBorrow",
-			src: `
-				val mut seen = Map()
+			src: `import "std:map"
+				val mut seen = map.Map()
 				fn remember(value) { seen.set("last", value) }
 				fn go() -> number {
 					val opts = {retries: 3}
@@ -333,8 +333,8 @@ func TestInferOpenEscapeParam(t *testing.T) {
 		{
 			// remember's rendering waits on #2352, so TestInferOpenEscapeParamRendering holds it.
 			name: "ReadOnlyNeedsWrittenBorrow",
-			src: `
-				val mut seen = Map()
+			src: `import "std:map"
+				val mut seen = map.Map()
 				fn remember(value) { seen.set("last", value) }
 				fn go() -> number {
 					val opts = {retries: 3}
@@ -347,8 +347,8 @@ func TestInferOpenEscapeParam(t *testing.T) {
 		},
 		{
 			name: "WrittenIsOwned",
-			src: `
-				val mut seen = Map()
+			src: `import "std:map"
+				val mut seen = map.Map()
 				fn remember(mut value) {
 					value.retries = 0
 					seen.set("last", value)
@@ -364,8 +364,8 @@ func TestInferOpenEscapeParam(t *testing.T) {
 		},
 		{
 			name: "OwnedDestinationIsOwned",
-			src: `
-				val mut seen: Map<string, {retries: number}> = Map()
+			src: `import "std:map"
+				val mut seen: map.Map<string, {retries: number}> = map.Map()
 				fn remember(value) { seen.set("last", value) }
 				fn go() -> number {
 					val opts = {retries: 3}
@@ -378,8 +378,8 @@ func TestInferOpenEscapeParam(t *testing.T) {
 		},
 		{
 			name: "AnnotationOverrides",
-			src: `
-				val mut seen = Map()
+			src: `import "std:map"
+				val mut seen = map.Map()
 				fn remember(value: {retries: number}) { seen.set("last", value) }
 				fn go() -> number {
 					val opts = {retries: 3}
@@ -392,8 +392,8 @@ func TestInferOpenEscapeParam(t *testing.T) {
 		},
 		{
 			name: "AlsoReturnedIsOwned",
-			src: `
-				val mut seen = Map()
+			src: `import "std:map"
+				val mut seen = map.Map()
 				fn remember(value) {
 					seen.set("last", value)
 					return value
@@ -409,9 +409,9 @@ func TestInferOpenEscapeParam(t *testing.T) {
 		},
 		{
 			name: "LocalReceiverDoesNotEscape",
-			src: `
+			src: `import "std:map"
 				fn remember(value) {
-					val mut seen = Map()
+					val mut seen = map.Map()
 					seen.set("last", value)
 				}
 				fn go() -> number {
@@ -426,7 +426,7 @@ func TestInferOpenEscapeParam(t *testing.T) {
 			// id's parameter is a fresh variable for each call, which m's own type does not
 			// reach, so the call stores nothing in m.
 			name: "GenericMethodDoesNotEscape",
-			src: `
+			src: `import "std:map"
 				val m = {id: fn <T>(x: T) -> T { return x }}
 				fn remember(value) { m.id(value) }
 				fn go() -> number {
@@ -441,8 +441,8 @@ func TestInferOpenEscapeParam(t *testing.T) {
 			// A callback's parameter takes its type from the callee, so the callee decides its
 			// ownership and storing it in seen leaves it owned.
 			name: "CallbackArgumentKeepsTheCalleeType",
-			src: `
-				val mut seen = Map()
+			src: `import "std:map"
+				val mut seen = map.Map()
 				declare fn each<T>(x: T, f: fn (v: T) -> undefined) -> undefined
 				fn go() -> number {
 					val opts = {retries: 3}
@@ -459,8 +459,8 @@ func TestInferOpenEscapeParam(t *testing.T) {
 			// writable slots that widen it, so seen holds strings and numbers. remember's
 			// rendering waits on #2352, so TestInferOpenEscapeParamRendering holds it.
 			name: "ValueTypeArgumentsCopy",
-			src: `
-				val mut seen = Map()
+			src: `import "std:map"
+				val mut seen = map.Map()
 				fn remember(key, value) { seen.set(key, value) }
 				fn go() -> number {
 					val k = "a"
@@ -498,8 +498,8 @@ func TestInferOpenEscapeParamRendering(t *testing.T) {
 	}{
 		{
 			name: "ReadOnlyIsStaticBorrow",
-			src: `
-				val mut seen = Map()
+			src: `import "std:map"
+				val mut seen = map.Map()
 				fn remember(value) { seen.set("last", value) }
 				fn go() -> number {
 					val opts = {retries: 3}
@@ -511,8 +511,8 @@ func TestInferOpenEscapeParamRendering(t *testing.T) {
 		},
 		{
 			name: "ValueTypeArgumentsCopy",
-			src: `
-				val mut seen = Map()
+			src: `import "std:map"
+				val mut seen = map.Map()
 				fn remember(key, value) { seen.set(key, value) }
 				fn go() -> number {
 					val k = "a"

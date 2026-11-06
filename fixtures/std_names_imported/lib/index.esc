@@ -1,0 +1,10 @@
+import "std:console"
+import "std:error"
+import "std:math"
+
+// The same names as std_names_need_imports, each reached through its import.
+export val pi = math.PI
+export fn log(msg: string) {
+    console.log(msg)
+}
+export val err = error.Error("boom")

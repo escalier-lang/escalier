@@ -5,7 +5,6 @@
 import "std:error"
 import "std:function"
 import "std:typed_arrays"
-import "web:core"
 import "web:fetch"
 
 @js("WebAssembly.CompileError")

@@ -178,7 +178,7 @@ type BinScriptOutput struct {
 
 // CheckBinScript parses and type-checks a single bin/ script with the given
 // library surface in scope. If lib is nil, the script is checked as config says with only
-// the prelude and the ambient builtins in scope.
+// the two preludes and its own imports in scope.
 func CheckBinScript(ctx context.Context, lib LibScope, src *ast.Source, config PackageConfig) BinScriptOutput {
 	p := parser.NewParser(ctx, src)
 	script, parseErrors := p.ParseScript()

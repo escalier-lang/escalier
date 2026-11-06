@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dep_graph"
+	"github.com/escalier-lang/escalier/internal/dts_to_esc"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/set"
 )
@@ -134,7 +136,7 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 	prevGroup := c.activeGroup
 	c.activeGroup = set.FromSlice(group)
 
-	scope := c.preludeScope().Child()
+	scope := c.packageParentScope(group).Child()
 	// Minted before the imports bind, so a member importing a sibling binds the
 	// object the walk then fills. preBindPathNamespaces reuses these rather than
 	// minting its own for the same prefixes.
@@ -149,11 +151,22 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 	}
 	defer func() { c.memberNamespaces = prevMembers }()
 
-	c.bindFileImports(scope, module)
+	fileScopes := c.bindFileImports(scope, module)
+	// A `web:*` member reaches `web:prelude`'s exports bare. When the group holds
+	// `web:prelude` its declarations are in this module, so the member's file scope
+	// reads them through the prelude member's namespace, which the walk fills.
+	// memberImportNamespaces gives the dep graph the same edges, so a prelude
+	// declaration is defined before a reader needs it.
+	readers := webPreludeReaders(module, group)
+	if preludeNS, held := c.memberNamespaces[groupNamespace(webPreludeURI)]; held {
+		for sourceID := range readers {
+			fileScopes[sourceID].defineUnprefixed(preludeNS)
+		}
+	}
 	// Inference only reads the graph, and a group's graph depends on its module and
 	// members alone, so every run loading the same cached group shares one graph.
 	g := stdlibParses.depGraph(module, group, func() *dep_graph.DepGraph {
-		return dep_graph.BuildDepGraphWithImports(module, memberImportNamespaces(module, c.activeGroup))
+		return dep_graph.BuildDepGraphWithImports(module, memberImportNamespaces(module, c.activeGroup, readers))
 	})
 	c.inferDepGraph(scope, 0, module, g)
 
@@ -198,12 +211,15 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 // writes for other members, each naming the namespace that member's
 // declarations bind under. `import "std:weak_ref"` in `std:map` maps `weak_ref`
 // to `std__weak_ref`. An import of a package outside the group is left out,
-// since its declarations are not in the module. An import of `web:core` also
-// maps dep_graph.UnprefixedImport, matching the bare bindings
-// bindPseudoPackageImport makes for it.
-func memberImportNamespaces(module *ast.Module, group set.Set[string]) map[int]map[string]string {
+// since its declarations are not in the module. Each file in preludeReaders also
+// maps dep_graph.UnprefixedImport to `web:prelude`'s namespace, matching the bare
+// bindings loadPackageGroup makes for it.
+func memberImportNamespaces(module *ast.Module, group set.Set[string], preludeReaders set.Set[int]) map[int]map[string]string {
 	out := map[int]map[string]string{}
 	for _, file := range module.Files {
+		if preludeReaders.Contains(file.SourceID) {
+			out[file.SourceID] = map[string]string{dep_graph.UnprefixedImport: groupNamespace(webPreludeURI)}
+		}
 		for _, stmt := range file.Imports {
 			if !group.Contains(stmt.PackageName) {
 				continue
@@ -212,12 +228,30 @@ func memberImportNamespaces(module *ast.Module, group set.Set[string]) map[int]m
 				out[file.SourceID] = map[string]string{}
 			}
 			out[file.SourceID][stmt.LocalName()] = groupNamespace(stmt.PackageName)
-			if stmt.PackageName == coreURI {
-				out[file.SourceID][dep_graph.UnprefixedImport] = groupNamespace(stmt.PackageName)
-			}
 		}
 	}
 	return out
+}
+
+// webPreludeReaders returns the source IDs of the files of module, a merged group's
+// module, that read `web:prelude`'s exports bare, as dts_to_esc.ReadsPreludeBare
+// decides. It is empty when group does not hold `web:prelude`, since its exports are
+// then not in the module.
+func webPreludeReaders(module *ast.Module, group []string) set.Set[int] {
+	readers := set.NewSet[int]()
+	if !slices.Contains(group, webPreludeURI) {
+		return readers
+	}
+	memberOf := make(map[string]string, len(group))
+	for _, uri := range group {
+		memberOf[groupNamespace(uri)] = uri
+	}
+	for _, file := range module.Files {
+		if dts_to_esc.ReadsPreludeBare(memberOf[file.Namespace], webPreludeURI) {
+			readers.Add(file.SourceID)
+		}
+	}
+	return readers
 }
 
 // sortedGroup returns a copy of group in sorted order, so a diagnostic and a
@@ -235,11 +269,7 @@ func sortedGroup(group []string) []string {
 // ModuleSource cannot supply: the closure a module's imports reach, and a
 // reader for the whole closure at once. opts adjusts the run.
 func InferModuleAgainstStdlib(module *ast.Module, dir string, opts Options) *ModuleResult {
-	// Every run loads the ambient packages, so they root the closure beside the
-	// module's own imports. Left out, they would load one at a time and miss the
-	// groups their imports form.
-	roots := set.FromSlice(append(pseudoPackageImports(moduleImports(module)), ambientPackages...)).ToSlice()
-	sort.Strings(roots)
+	roots := closureRoots(moduleImports(module))
 	source := packageSource(dir, opts)
 	groups, err := BuildPackageClosure(dir, roots)
 	if err != nil {
@@ -260,13 +290,11 @@ func InferModuleAgainstStdlib(module *ast.Module, dir string, opts Options) *Mod
 }
 
 // InferScriptAgainstStdlib infers script against the pseudo-packages in dir. It is
-// the script counterpart to InferModuleAgainstStdlib, and the closure grows from the
-// ambient packages and the script's own imports. opts adjusts the run.
+// the script counterpart to InferModuleAgainstStdlib, and its closure grows from the
+// roots closureRoots gives the script's imports. opts adjusts the run.
 func InferScriptAgainstStdlib(script *ast.Script, dir string, opts Options) (*Scope, *Info, []SolverError) {
 	source := packageSource(dir, opts)
-	roots := set.FromSlice(append(pseudoPackageImports(script.Imports), ambientPackages...)).ToSlice()
-	sort.Strings(roots)
-	groups, err := BuildPackageClosure(dir, roots)
+	groups, err := BuildPackageClosure(dir, closureRoots(script.Imports))
 	if err != nil {
 		scope, info, errs := inferScriptWithGroups(script, source, nil, nil, opts)
 		return scope, info, append(errs, &UnresolvedPackageError{
@@ -278,6 +306,36 @@ func InferScriptAgainstStdlib(script *ast.Script, dir string, opts Options) (*Sc
 	}
 	opts.stdlibDir = dir
 	return inferScriptWithGroups(script, source, StdlibGroupSource(dir), groups, opts)
+}
+
+// closureRoots returns, sorted, the packages a run whose imports are imports roots
+// its closure at.
+//
+// Every run loads `web:prelude` and the packages literalClassPackages lists, so they
+// root the closure beside the pseudo-packages imports names. A run importing an npm
+// package also loads the globals scope that package's `.d.ts` reads, so
+// ambientPackages root it too. A package the closure leaves out would load alone and
+// miss the group its imports form.
+func closureRoots(imports []*ast.ImportStmt) []string {
+	roots := set.FromSlice(append(literalClassPackages(), webPreludeURI))
+	for _, uri := range pseudoPackageImports(imports) {
+		roots.Add(uri)
+	}
+	if slices.ContainsFunc(imports, func(stmt *ast.ImportStmt) bool {
+		return !IsSchemePrefixedImport(stmt.PackageName)
+	}) {
+		for _, uri := range ambientPackages {
+			roots.Add(uri)
+		}
+	}
+	return sortedSet(roots)
+}
+
+// sortedSet returns the members of s, sorted.
+func sortedSet(s set.Set[string]) []string {
+	out := s.ToSlice()
+	sort.Strings(out)
+	return out
 }
 
 // packageSource returns the ModuleSource a run against the pseudo-packages in dir

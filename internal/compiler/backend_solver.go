@@ -43,7 +43,7 @@ func (b solverBackend) checkLib(_ context.Context, module *ast.Module) libResult
 }
 
 // checkScript infers script against the standard library tree on disk, which supplies
-// the prelude and the ambient builtins.
+// the two preludes and every package the script imports.
 func (b solverBackend) checkScript(_ context.Context, script *ast.Script) scriptResult {
 	dir, dirErrs := solverStdlibDir(scriptSpan(script))
 	scope, info, errs := solver.InferScriptAgainstStdlib(script, dir, b.options)

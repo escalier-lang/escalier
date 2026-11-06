@@ -23,14 +23,25 @@ import (
 // that scope is still empty.
 const preludeURI = "std:prelude"
 
-// coreURI is the package whose exports an importer binds unprefixed. It still
-// takes an import, which is the whole difference between it and the prelude.
+// WebPreludeURI is the web platform's prelude.
+const WebPreludeURI = "web:prelude"
+
+// ReadsPreludeBare reports whether a declaration in the package importer reaches
+// the exports of the package prelude with no import and no qualifier. Every package
+// reads `std:prelude` that way, and a `web:*` package other than `web:prelude` reads
+// `web:prelude` too. It is false for every other pair.
 //
-// The qualifier is dropped because `core` names no domain: it names what the
-// portable tier needs from the DOM, and `core.Event` says less than `Event`. A
-// package whose name does say something keeps its prefix, `error.RangeError`
-// being the shape that reads well.
-const coreURI = "web:core"
+// The generator writes no import for such a reference, and the solver gives such a
+// package a scope that holds those exports, so the two have to agree.
+func ReadsPreludeBare(importer, prelude string) bool {
+	switch prelude {
+	case preludeURI:
+		return true
+	case WebPreludeURI:
+		return strings.HasPrefix(importer, "web:") && importer != WebPreludeURI
+	}
+	return false
+}
 
 // declaringPackages maps each top-level name in the converted tree to the URI
 // of the package declaring it.
@@ -81,11 +92,9 @@ func ImportGraph(mods map[string]*StandaloneModule) (map[string][]string, error)
 		}
 		for _, name := range TypeRefNames(mod.Module).ToSlice() {
 			declaredIn, known := owner[name]
-			if !known || declaredIn == uri || declaredIn == preludeURI {
+			if !known || declaredIn == uri || ReadsPreludeBare(uri, declaredIn) {
 				continue
 			}
-			// web:core is imported like any other package. Only its qualifier is
-			// dropped, so it is not skipped the way the prelude is.
 			needed.Add(declaredIn)
 		}
 		targets := needed.ToSlice()
@@ -213,13 +222,13 @@ func setImportHeader(mod *StandaloneModule, targets []string) {
 // `file.Blob`. A reference already written qualified has its head qualified
 // instead, and the member rides along.
 //
-// The prelude and `web:core` are skipped, since both bind their exports
-// unprefixed and a qualifier on one would name nothing.
+// A reference to a prelude the package reads bare is skipped, since
+// ReadsPreludeBare says a qualifier on it would name nothing.
 func qualifyCrossPackageRefs(mod *StandaloneModule, uri string, owner map[string]string) {
 	qualifiers := map[string]string{}
 	for _, name := range TypeRefNames(mod.Module).ToSlice() {
 		declaredIn, known := owner[name]
-		if !known || declaredIn == uri || declaredIn == preludeURI || declaredIn == coreURI {
+		if !known || declaredIn == uri || ReadsPreludeBare(uri, declaredIn) {
 			continue
 		}
 		qualifiers[name] = ast.DeriveImportName(declaredIn)

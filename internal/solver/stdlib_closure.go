@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/dts_to_esc"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/set"
 )
@@ -120,6 +121,11 @@ func buildPackageGraph(dir string) (map[string][]string, error) {
 		imports, err := readPackageImports(stamp.path)
 		if err != nil {
 			return nil, err
+		}
+		// A `web:*` package reaches `web:prelude`'s exports without importing it, so
+		// it depends on the prelude the way an import would make it.
+		if dts_to_esc.ReadsPreludeBare(stamp.uri, webPreludeURI) {
+			imports = append(slices.Clip(imports), webPreludeURI)
 		}
 		edges[stamp.uri] = imports
 	}

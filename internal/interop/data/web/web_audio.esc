@@ -4,7 +4,6 @@
 
 import "std:map"
 import "std:typed_arrays"
-import "web:core"
 import "web:dom"
 
 export declare interface AnalyserOptions extends AudioNodeOptions {

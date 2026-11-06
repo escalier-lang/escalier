@@ -300,10 +300,17 @@ func (c *checker) reportImmutableBinding(site ast.Node, place *ownedPlace) {
 	if ip, ok := decl.(*ast.IdentPat); ok && ip.Mutable {
 		err.Unmovable = true
 	}
-	// A global the standard library declares, such as `console`, is not one this code can
-	// rewrite, so the message suggests no new declaration.
-	if g, ok := c.globalsScope().GetValue(place.name); ok && decl != nil && bindingDecl(g) == decl {
+	// A global the standard library declares is not one this code can rewrite, so the
+	// message suggests no new declaration. It reaches the code as a pseudo-package's
+	// own-name value, such as `console` from `import "std:console"`, or from the globals
+	// scope an npm package's `.d.ts` reads. The globals scope is read only when the run
+	// has built it.
+	if place.b.Members != nil && IsSchemePrefixedImport(place.b.Members.Name) {
 		err.Foreign = true
+	} else if c.globals != nil {
+		if g, ok := c.globals.GetValue(place.name); ok && decl != nil && bindingDecl(g) == decl {
+			err.Foreign = true
+		}
 	}
 	c.report(err)
 }

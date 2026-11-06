@@ -1,5 +1,5 @@
-lib/exception_handling.esc:37:43: this `throw` can throw `Error`, which `throwTypeIsWrong`'s `throws string` does not admit
+lib/exception_handling.esc:39:43: this `throw` can throw `Error`, which `throwTypeIsWrong`'s `throws string` does not admit
 
-37:     if value != "" { value } else { throw Error("value is empty") }
-                                              ^^^^^^^^^^^^^^^^^^^^^^^
+39:     if value != "" { value } else { throw error.Error("value is empty") }
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

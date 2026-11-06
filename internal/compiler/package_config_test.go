@@ -22,8 +22,6 @@ func TestReadPackageConfig(t *testing.T) {
 	}{
 		{name: "NoFile", want: PackageConfig{}},
 		{name: "NoEscalierField", packageJSON: `{"name": "p"}`, want: PackageConfig{}},
-		{name: "AmbientTrue", packageJSON: `{"escalier": {"ambient": true}}`, want: PackageConfig{}},
-		{name: "AmbientFalse", packageJSON: `{"escalier": {"ambient": false}}`, want: PackageConfig{NoAmbientNames: true}},
 		{
 			name: "Dependencies",
 			packageJSON: `{
@@ -63,27 +61,25 @@ func TestReadPackageConfig(t *testing.T) {
 	}
 }
 
-// TestCheckPackageAmbientNames covers a package with and without the ambient names. One
-// that opts out leaves them unbound in lib/ and in a bin/ script with no library, and a
-// lib/ file still reaches a builtin through its import.
+// TestCheckPackageAmbientNames covers what a lib/ file and a bin/ script reach with no
+// import. A builtin such as `Math` needs its package's import, and a `web:prelude` name
+// such as `Event` needs none.
 func TestCheckPackageAmbientNames(t *testing.T) {
-	optOut := PackageConfig{NoAmbientNames: true}
 	tests := []struct {
 		name     string
 		path     string
 		src      string
-		config   PackageConfig
 		wantErrs []string
 	}{
-		{name: "LibOptedOut", path: "lib/index.esc", src: "val pi = Math.PI\n", config: optOut, wantErrs: []string{"Unknown identifier: Math"}},
-		{name: "LibOptedOutImports", path: "lib/index.esc", src: "import \"std:math\"\nval pi = math.PI\n", config: optOut, wantErrs: []string{}},
-		{name: "LibAmbient", path: "lib/index.esc", src: "val pi = Math.PI\n", wantErrs: []string{}},
-		{name: "BinOptedOut", path: "bin/index.esc", src: "val pi = Math.PI\n", config: optOut, wantErrs: []string{"Unknown identifier: Math"}},
-		{name: "BinAmbient", path: "bin/index.esc", src: "val pi = Math.PI\n", wantErrs: []string{}},
+		{name: "LibWithoutImport", path: "lib/index.esc", src: "val pi = Math.PI\n", wantErrs: []string{"Unknown identifier: Math"}},
+		{name: "LibImports", path: "lib/index.esc", src: "import \"std:math\"\nval pi = math.PI\n", wantErrs: []string{}},
+		{name: "LibWebPrelude", path: "lib/index.esc", src: "declare val e: Event\nval t = e.type\n", wantErrs: []string{}},
+		{name: "BinWithoutImport", path: "bin/index.esc", src: "val pi = Math.PI\n", wantErrs: []string{"Unknown identifier: Math"}},
+		{name: "BinImports", path: "bin/index.esc", src: "import \"std:math\"\nval pi = math.PI\n", wantErrs: []string{}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			out := CheckPackage([]*ast.Source{{ID: 1, Path: test.path, Contents: test.src}}, test.config)
+			out := CheckPackage([]*ast.Source{{ID: 1, Path: test.path, Contents: test.src}}, PackageConfig{})
 			require.Empty(t, out.ParseErrors)
 			require.Equal(t, test.wantErrs, messages(out.TypeErrors))
 		})

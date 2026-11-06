@@ -3,7 +3,6 @@
 // derived facts, and the overlay. Change one of those and re-run.
 
 import "std:typed_arrays"
-import "web:core"
 import "web:streams"
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CompressionStream) */

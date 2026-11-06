@@ -1,0 +1,7 @@
+// A project's own file reaches only the `*:prelude` packages without an import,
+// so each of these names is unbound.
+export val pi = Math.PI
+export fn log(msg: string) {
+    console.log(msg)
+}
+export val err = Error("boom")

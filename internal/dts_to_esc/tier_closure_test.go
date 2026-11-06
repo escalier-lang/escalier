@@ -219,10 +219,9 @@ func TestEveryCrossPackageReferenceIsImported(t *testing.T) {
 		bindings := importBindings(module)
 		for _, name := range TypeRefNames(module).ToSlice() {
 			declaredIn, known := owner[name]
-			// A prelude name is ambient. The solver copies the prelude's exports
-			// into the scope every package's inference descends from, so reaching
-			// one takes no import and no qualifier.
-			if !known || declaredIn == uri || declaredIn == preludeURI ||
+			// A prelude name the package reads bare takes no import and no qualifier,
+			// since the solver gives the package a scope holding the prelude's exports.
+			if !known || declaredIn == uri || ReadsPreludeBare(uri, declaredIn) ||
 				imported.Contains(declaredIn) || bindings.Contains(name) {
 				continue
 			}

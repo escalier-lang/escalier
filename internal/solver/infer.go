@@ -286,30 +286,25 @@ type checker struct {
 	// moduleDeclared holds the top-level names of the module whose imports are
 	// being bound, split by the namespace each occupies. Imports bind before the
 	// declarations are inferred, so the module scope cannot answer the question
-	// and the AST is what does. The unprefixed `web:core` binding reads it, to
-	// leave a name the module declares alone rather than shadow it from the
-	// nearer file scope.
+	// and the AST is what does. bindImportedNamespace reads it, to leave a value
+	// the module declares alone rather than shadow it from the nearer file scope.
 	moduleDeclared declaredNames
 
 	// prelude is the per-run scope holding the prelude package's exports, built
 	// on first request by preludeScope and shared by the entry module and every
-	// package this run loads. It sits between the process-wide operator table and
-	// the ambient scope, so an ambient name shadows a prelude export.
+	// package this run loads. It sits under the process-wide operator table.
 	prelude *Scope
-	// globals is the per-run scope globalsScope builds over the prelude, holding the
-	// exports of every package in ambientPackages. An npm package's scope is its
-	// child. It is nil until a run asks for it.
+	// webPrelude is the per-run scope webPreludeScope builds over the prelude,
+	// holding the exports of `web:prelude`. The entry module's scope is its child,
+	// so a module declaration shadows a web prelude name and a file's import
+	// shadows both. It is nil until a run asks for it.
+	webPrelude *Scope
+	// globals is the per-run scope globalsScope builds over the web prelude,
+	// holding the exports of every package in ambientPackages. An npm package's
+	// scope is its child. It is nil until a run asks for it.
 	globals *Scope
 	// globalsBound is set once bindGlobals has filled the globals scope.
 	globalsBound bool
-	// ambient is the empty scope ambientScope builds over the prelude in a run with
-	// Options.NoAmbientNames set. Every other run uses globals as its ambient scope.
-	// The entry module's scope is a child of the ambient scope, so a module
-	// declaration shadows an ambient name and a file's import shadows both. A
-	// pseudo-package parents its scope at the prelude and never sees either one.
-	ambient *Scope
-	// noAmbientNames is Options.NoAmbientNames for this run.
-	noAmbientNames bool
 	// stdlibDir is Options.stdlibDir for this run.
 	stdlibDir string
 	// dependencies is Options.Dependencies for this run.
@@ -318,8 +313,8 @@ type checker struct {
 	checkJsDecorators bool
 	// definitionsSettled is set once settleLoadedDefinitions has run.
 	definitionsSettled bool
-	// ambientBound is set once bindAmbientExports has loaded the literal classes' packages
-	// in a run with Options.NoAmbientNames set.
+	// ambientBound is set once bindAmbientExports has loaded the literal classes'
+	// packages.
 	ambientBound bool
 	// heldLoadErrs maps a package URI to the diagnostics its library load returned,
 	// and heldLoadOrder lists each of those once, in load order. holdLoadErrors fills
@@ -921,8 +916,16 @@ func (c *checker) forScript(pkgURI string) *checker {
 		// A fresh table, because the script looks up only nodes in its own bodies,
 		// which its own rename pass records. Sharing the module's table would grow
 		// it on every re-check of the script.
-		varIDs:            liveness.NewVarIDs(),
-		prelude:           c.prelude,
+		varIDs:  liveness.NewVarIDs(),
+		prelude: c.prelude,
+		// The library run built these scopes and loaded their packages on the library
+		// counters, so the script reads them rather than building its own copies.
+		webPrelude:        c.webPrelude,
+		globals:           c.globals,
+		globalsBound:      c.globalsBound,
+		ambientBound:      c.ambientBound,
+		libVarCounter:     c.libVarCounter,
+		libSymbolCounter:  c.libSymbolCounter,
 		source:            c.source,
 		groupSource:       c.groupSource,
 		groups:            c.groups,

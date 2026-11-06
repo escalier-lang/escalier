@@ -2,8 +2,6 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-import "web:core"
-
 export declare interface AddressErrors {
     addressLine?: string,
     city?: string,

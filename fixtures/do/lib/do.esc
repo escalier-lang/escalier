@@ -1,3 +1,5 @@
+import "std:console"
+
 // Basic do-expression that returns a value
 export val sum = do {
     val a = 5
