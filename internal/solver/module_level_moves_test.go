@@ -112,6 +112,13 @@ fn f() { val a = [...xss] }`,
 			want: []string{"2:22-2:25: cannot move module-level value 'xss' inside a function. Borrow it with `&xss`"},
 		},
 		{
+			// Two leaves move out of one source, which is reported once.
+			name: "destructured into two owned leaves",
+			src: `val t: [Array<number>, Array<number>] = [[1], [2]]
+fn f() { val [a, b] = t }`,
+			want: []string{"2:23-2:24: cannot move module-level value 't' inside a function. Borrow it with `&t`"},
+		},
+		{
 			name: "returned",
 			src: `val xs: Array<number> = [1]
 fn g() -> Array<number> { return xs }`,
@@ -239,6 +246,19 @@ fn f() {
 			src: `val t: [number, number] = [1, 2]
 fn f() { val a = [...t] }`,
 			want: nil,
+		},
+		{
+			// A class name reads the class, which is no value the module owns.
+			name: "a class read in a function",
+			src: `class Box { x: number }
+fn f() { val b = Box }`,
+		},
+		{
+			// B holds the class itself, so reading it moves no value the module owns.
+			name: "a module-level alias of a class read in a function",
+			src: `class Box { x: number }
+val B = Box
+fn f() { val c = B }`,
 		},
 		{
 			name: "destructured into a copied leaf",
