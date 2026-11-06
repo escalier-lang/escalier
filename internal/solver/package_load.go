@@ -203,7 +203,24 @@ func exportedSurface(uri string, module *ast.Module, scope *Scope) *Namespace {
 		publishExportedDecls(target, nsPath, ns, scope)
 		return true
 	})
+	setOwnNameValue(uri, surface)
 	return surface
+}
+
+// setOwnNameValue sets ns.AsValue to the value ns exports under the name an import
+// of uri binds, when uri names a pseudo-package and ns exports such a value. It
+// leaves ns alone otherwise.
+//
+// The name decides, not a count of value exports. A class's value sits beside the
+// type it declares, so `web:fetch` exports the values `Headers`, `Request`,
+// `Response` and `fetch`, and `fetch` is the one an import of it binds as.
+func setOwnNameValue(uri string, ns *Namespace) {
+	if !IsSchemePrefixedImport(uri) {
+		return
+	}
+	if b, found := ns.Values[ast.DeriveImportName(uri)]; found {
+		ns.AsValue = &b
+	}
 }
 
 // rootDecl returns the first declaration of type T at module's top level, and

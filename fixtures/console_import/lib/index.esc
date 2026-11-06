@@ -1,0 +1,9 @@
+import "std:console"
+
+// `std:console` exports a `console` value, so the import binds `console` as that
+// value and as the package's namespace at once.
+export val logger: console.Console = console
+
+export fn greet(name: string) {
+    console.log(`hello, ${name}`)
+}
