@@ -8,6 +8,10 @@ on:
     types: [created]
   pull_request_review_comment:
     types: [created]
+  # TEMPORARY: lets the code-review job run from this PR's copy of the
+  # workflow when k4b7 adds the code-review label. Remove before merging.
+  pull_request:
+    types: [labeled]
 
 jobs:
   claude:
@@ -35,13 +39,16 @@ jobs:
   # on a PR, and posts each finding as an inline comment.
   code-review:
     if: |
-      github.event_name == 'issue_comment' &&
-      github.event.issue.pull_request &&
-      (github.event.comment.body == '/code-review' ||
-        startsWith(github.event.comment.body, '/code-review ') ||
-        startsWith(github.event.comment.body, format('/code-review{0}', fromJSON('"\n"'))) ||
-        startsWith(github.event.comment.body, format('/code-review{0}', fromJSON('"\r"')))) &&
-      github.event.comment.user.login == 'k4b7'
+      (github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request &&
+        (github.event.comment.body == '/code-review' ||
+          startsWith(github.event.comment.body, '/code-review ') ||
+          startsWith(github.event.comment.body, format('/code-review{0}', fromJSON('"\n"'))) ||
+          startsWith(github.event.comment.body, format('/code-review{0}', fromJSON('"\r"')))) &&
+        github.event.comment.user.login == 'k4b7') ||
+      (github.event_name == 'pull_request' &&
+        github.event.label.name == 'code-review' &&
+        github.event.sender.login == 'k4b7')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -59,7 +66,7 @@ jobs:
       - name: Check out the PR branch
         run: |
           cp .claude/skills/pr-review/SKILL.md "$RUNNER_TEMP/pr-review.md"
-          gh pr checkout ${{ github.event.issue.number }}
+          gh pr checkout ${{ github.event.issue.number || github.event.pull_request.number }}
           mkdir -p .claude/skills/pr-review
           cp "$RUNNER_TEMP/pr-review.md" .claude/skills/pr-review/SKILL.md
         env:
@@ -69,10 +76,14 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # TEMPORARY: the Claude app token is refused for a workflow that differs
+          # from the default branch's copy, so the label trigger uses the job's
+          # own token. Remove before merging.
+          github_token: ${{ github.event_name == 'pull_request' && github.token || '' }}
           prompt: |
             REPO: ${{ github.repository }}
-            PR NUMBER: ${{ github.event.issue.number }}
-            COMMAND: ${{ github.event.comment.body }}
+            PR NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+            COMMAND: ${{ github.event.comment.body || '/code-review' }}
 
             Read .claude/skills/pr-review/SKILL.md and follow it to review this PR.
             The level is the word after /code-review in COMMAND, or medium when none is given.
