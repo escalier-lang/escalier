@@ -1,6 +1,6 @@
 ---
 name: pr-review
-description: Review a pull request's diff for correctness bugs, cleanup, and CLAUDE.md violations, and post each finding as an inline comment on the PR. The `code-review` job in .github/workflows/claude.yaml runs it when k4b7 comments `/code-review [low|medium|high]` on a PR. Use it in any session that is asked to review a PR and post the findings on GitHub.
+description: Review a pull request's diff for correctness bugs, cleanup, and CLAUDE.md violations, and post each finding as an inline comment on the PR. The summary also lists functions moved with trivial changes and the high-risk changes a human should check. The `code-review` job in .github/workflows/claude.yaml runs it when k4b7 comments `/code-review [low|medium|high]` on a PR. Use it in any session that is asked to review a PR and post the findings on GitHub.
 ---
 
 # pr-review
@@ -42,10 +42,37 @@ For cleanup, altitude, and conventions findings, the failure scenario states the
 
 Merge candidates that describe the same defect at the same place. Rank correctness bugs first. When the cap forces a cut, drop cleanup findings before correctness ones.
 
-## 4. Post
+## 4. Map moved code
+
+Run this step at every level. A moved function is one the diff deletes from one place and adds in another, in the same file or a different one. Find candidates with `git diff --color-moved=plain --color-moved-ws=allow-indentation-change origin/<base>...HEAD`, then compare each deleted body with its added counterpart.
+
+A move is trivial when the only differences are these:
+
+- Parameters, locals, or the function itself are renamed.
+- A method becomes a function, or a function becomes a method, with the receiver moved to or from the parameter list.
+- Imports, package qualifiers, comments, or formatting change.
+
+Record each trivial move as the old location, the new location, and the changes in one short phrase, such as "renamed `t` to `table`" or "method on `checker` became a function taking `c *checker`". A move that changes behavior is not trivial. Leave it out of this list and review its differences like any other change. Don't post findings about code a trivial move carries over unchanged, since the move did not introduce it.
+
+## 5. Flag high-risk changes
+
+Run this step at every level. A high-risk change is one where a mistake is costly or easy to miss, whether or not you found a bug in it. Flag a change when it does one of these:
+
+- It loosens a check in `internal/solver/`, so the compiler accepts a program it rejected before. Removing a diagnostic, narrowing when a rule fires, or adding an early return before a check all count.
+- It deletes or disables a test, or changes an expected snapshot, fixture, or error message so that an error becomes success.
+- It changes shared infrastructure that many passes read, such as the visitors in `internal/ast/visitor.go` and `internal/soltype/visitor.go`, `internal/soltype/`, or caches.
+- It changes `.github/workflows/`, permissions, secrets, or anything else that runs with repository credentials.
+- It replaces generated data, such as files under `internal/interop/data/`, in bulk.
+
+For each one, record the file and a one-line statement of what a human reviewer should confirm. Keep the list to the changes that most need a second look, at most 5.
+
+## 6. Post
 
 1. For each finding, check that its line falls inside a diff hunk on the new side. Post it with `mcp__github_inline_comment__create_inline_comment` and `confirmed: true`. The body starts with a bold one-line summary and its category, then gives the failure scenario.
 2. When a finding's line is outside every hunk, attach it to the nearest changed line it concerns and name the real line in the body.
-3. Last, post one summary with `gh pr comment <number> --body ...`. List each finding on one line with its file and line. When nothing survives, say that the review found no issues.
+3. Last, post one summary with `gh pr comment <number> --body ...`. It has three sections, each with a sentence-case heading:
+   - **Findings:** each finding on one line with its file and line. When nothing survives, say that the review found no issues.
+   - **Moved code:** each trivial move from step 4 on one line. Leave the section out when there are none.
+   - **Needs human review:** each high-risk change from step 5 on one line. Leave the section out when there are none.
 
 Write every comment by the prose rules in `CLAUDE.md`. Don't send the review as a chat message, since only GitHub comments reach the PR.
