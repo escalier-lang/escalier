@@ -380,13 +380,13 @@ func edgesAt(graph map[liveness.VarID][]fieldBorrow, root liveness.VarID, path [
 }
 
 // returnCarrier finds the return whose value is e, and the borrow-edge graph of e's borrows.
-// When ok is true, it returns:
+// When `ok` is true, it returns:
 //
 //   - the index of that return in c.fn.returnExprs,
-//   - the graph carrierGraph builds for e from snapshot,
+//   - the graph carrierGraph builds for e from `snapshot`,
 //   - the root in that graph that e's own type starts at.
 //
-// ok is false when e is not a return value, or when carrierGraph has no graph for e.
+// `ok` is false when e is not a return value, or when carrierGraph has no graph for e.
 func (c *checker) returnCarrier(
 	e ast.Expr,
 	snapshot map[liveness.VarID][]fieldBorrow,
@@ -403,7 +403,7 @@ func (c *checker) returnCarrier(
 }
 
 // returnIndexOf returns the index of the return whose operand is e, or -1 when e is not a
-// recorded return value. The returns and returnExprs slices are parallel, so the index into
+// recorded return value. The `returns` and returnExprs slices are parallel, so the index into
 // returnExprs selects the return type to rewrite.
 func (c *checker) returnIndexOf(e ast.Expr) int {
 	for i, re := range c.fn.returnExprs {
@@ -415,14 +415,14 @@ func (c *checker) returnIndexOf(e ast.Expr) int {
 }
 
 // carrierGraph returns the borrow-edge graph for e's borrows and the root its edges hang off,
-// drawing from snapshot, the per-program-point graph. e's own type starts at that root, so a
+// drawing from `snapshot`, the per-program-point graph. e's own type starts at that root, so a
 // walk of the type starts at the root path.
 //
-//   - A whole-binding place is already a node in snapshot, so it returns snapshot and the
+//   - A whole-binding place is already a node in `snapshot`, so it returns `snapshot` and the
 //     binding's own VarID, no cloning needed.
 //   - An object literal, a tuple literal, and a `&mut b` borrow have no binding node, so each is
-//     walked into a private clone of snapshot under a synthetic root.
-//   - Any other carrier reports ok=false, a field read among them. `return a.peer` records the
+//     walked into a private clone of `snapshot` under a synthetic root.
+//   - Any other carrier reports `ok=false`, a field read among them. `return a.peer` records the
 //     property's type as a variable the evaluator settles later, so there is no RefType here to
 //     walk. The component move still consumes the borrowed local.
 func (c *checker) carrierGraph(e ast.Expr, snapshot map[liveness.VarID][]fieldBorrow) (map[liveness.VarID][]fieldBorrow, liveness.VarID, bool) {
@@ -431,10 +431,10 @@ func (c *checker) carrierGraph(e ast.Expr, snapshot map[liveness.VarID][]fieldBo
 	}
 	switch e.(type) {
 	case *ast.ObjectExpr, *ast.TupleExpr, *ast.BorrowExpr:
-		// Walk the literal into a private clone of snapshot under a synthetic root drawn from the
+		// Walk the literal into a private clone of `snapshot` under a synthetic root drawn from the
 		// module-wide counter so it never collides with a binding. The clone goes through the
 		// eagerBorrowGraph field because recordBorrowSources and addBorrowEdge write there; the
-		// field is saved and restored so nothing outside sees the mutation. snapshot is non-nil
+		// field is saved and restored so nothing outside sees the mutation. `snapshot` is non-nil
 		// (fieldBorrowGraphBefore returns a non-nil map), so the clone is non-nil and those writes
 		// cannot panic on a nil map.
 		saved := c.fn.eagerBorrowGraph
