@@ -114,6 +114,21 @@ func TestScan(t *testing.T) {
 			},
 		},
 		{
+			name: "a partial of a legacy namespace interface merges into its qualified key",
+			sources: map[string]string{
+				"a.idl": `
+					partial interface Module {
+					  constructor(BufferSource bytes);
+					};`,
+				"b.idl": `
+					[LegacyNamespace=WebAssembly, Exposed=*]
+					interface Module {};`,
+			},
+			want: map[string]Definition{
+				"WebAssembly.Module": {Kind: KindInterface, Exposed: []string{"*"}, Constructible: true},
+			},
+		},
+		{
 			name: "callback interfaces with and without an interface object",
 			sources: map[string]string{"a.idl": `
 				callback interface EventListener {

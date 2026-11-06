@@ -27,11 +27,12 @@ import (
 // can add a constructor, and it can add `[Transferable]`, which describes the
 // interface wherever it is written. `mediacapture-extensions.idl` makes
 // `MediaStreamTrack` transferable that way. A partial's `[Exposed]` limits only
-// the members it declares, so it leaves the interface's Exposed alone. A name
-// that only partial
-// definitions mention, or that two non-partial definitions declare, is an
-// error. Interface mixins are left out because a mixin has no interface object
-// of its own.
+// the members it declares, so it leaves the interface's Exposed alone. A
+// partial names the identifier it extends, so a partial of an interface keyed
+// under its `[LegacyNamespace]` path merges into that key. A name that only
+// partial definitions mention, or that two non-partial definitions declare, is
+// an error. Interface mixins are left out because a mixin has no interface
+// object of its own.
 func ScanDir(dir string) (map[string]Definition, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -70,6 +71,9 @@ func Scan(sources map[string]string) (map[string]Definition, error) {
 	// declaredIn records the file of each non-partial definition, for the
 	// duplicate error.
 	declaredIn := map[string]string{}
+	// keyOf maps each non-partial definition's identifier to the key the table
+	// holds it under, which differs for an interface with `[LegacyNamespace]`.
+	keyOf := map[string]string{}
 	// partials are merged after every file is read, because a partial can
 	// come before the definition it extends. They keep file and source order,
 	// so the first bad partial is the one an error names.
@@ -93,22 +97,24 @@ func Scan(sources map[string]string) (map[string]Definition, error) {
 				return nil, fmt.Errorf("%s: %s is also defined in %s", file, p.name, prev)
 			}
 			declaredIn[p.name] = file
+			keyOf[p.ident] = p.name
 			defs[p.name] = p.def
 		}
 	}
 
 	for _, p := range partials {
-		def, ok := defs[p.name]
+		key, ok := keyOf[p.ident]
 		if !ok {
-			return nil, fmt.Errorf("%s: partial %s extends no definition", p.file, p.name)
+			return nil, fmt.Errorf("%s: partial %s extends no definition", p.file, p.ident)
 		}
+		def := defs[key]
 		if def.Kind != p.def.Kind {
 			return nil, fmt.Errorf("%s: partial %s %s extends %s %s in %s",
-				p.file, p.def.Kind.keyword(), p.name, def.Kind.keyword(), p.name, declaredIn[p.name])
+				p.file, p.def.Kind.keyword(), p.ident, def.Kind.keyword(), key, declaredIn[key])
 		}
 		def.Constructible = def.Constructible || p.def.Constructible
 		def.Transferable = def.Transferable || p.def.Transferable
-		defs[p.name] = def
+		defs[key] = def
 	}
 	return defs, nil
 }
@@ -116,6 +122,9 @@ func Scan(sources map[string]string) (map[string]Definition, error) {
 // scanned is one top-level definition as scanFile read it, before partials
 // are merged.
 type scanned struct {
+	// ident is the identifier the source writes, and name is the key the table
+	// holds the definition under.
+	ident   string
 	name    string
 	partial bool
 	def     Definition
@@ -169,10 +178,11 @@ func scanFile(src string) ([]scanned, error) {
 			continue
 		}
 
-		name := s.next()
-		if !isIdent(name) {
-			return nil, fmt.Errorf("expected a definition name, found %q", name)
+		ident := s.next()
+		if !isIdent(ident) {
+			return nil, fmt.Errorf("expected a definition name, found %q", ident)
 		}
+		name := ident
 		ctor, err := s.body()
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", name, err)
@@ -195,7 +205,7 @@ func scanFile(src string) ([]scanned, error) {
 				def.Transferable = true
 			}
 		}
-		out = append(out, scanned{name: name, partial: partial, def: def})
+		out = append(out, scanned{ident: ident, name: name, partial: partial, def: def})
 	}
 	return out, nil
 }

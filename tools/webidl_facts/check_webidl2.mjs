@@ -30,6 +30,10 @@ function valuesOf(attr) {
 
 const want = {};
 const partials = [];
+// keyOf maps each non-partial definition's identifier to its key in want, which
+// differs for an interface with `[LegacyNamespace]`. A partial names the
+// identifier it extends.
+const keyOf = {};
 for (const ast of Object.values(await idl.parseAll())) {
     for (const def of ast) {
         if (!kinds.includes(def.type)) continue;
@@ -39,7 +43,9 @@ for (const ast of Object.values(await idl.parseAll())) {
         }
         const attr = (name) => def.extAttrs.find((a) => a.name === name);
         const ns = attr('LegacyNamespace');
-        want[ns ? `${ns.rhs.value}.${def.name}` : def.name] = {
+        const key = ns ? `${ns.rhs.value}.${def.name}` : def.name;
+        keyOf[def.name] = key;
+        want[key] = {
             kind: def.type,
             exposed: valuesOf(attr('Exposed')),
             global: valuesOf(attr('Global')),
@@ -48,8 +54,14 @@ for (const ast of Object.values(await idl.parseAll())) {
         };
     }
 }
+let mismatches = 0;
 for (const def of partials) {
-    const entry = want[def.name];
+    const entry = want[keyOf[def.name]];
+    if (!entry) {
+        mismatches++;
+        console.log(`partial ${def.name} extends no definition`);
+        continue;
+    }
     if (def.extAttrs.some((a) => a.name === 'Transferable'))
         entry.transferable = true;
     if (def.members.some((m) => m.type === 'constructor'))
@@ -82,7 +94,6 @@ for (const [, name, body] of table.matchAll(/^\t"([^"]+)":\s+\{(.*)\},$/gm)) {
     };
 }
 
-let mismatches = 0;
 for (const name of new Set([...Object.keys(want), ...Object.keys(got)])) {
     if (JSON.stringify(want[name]) !== JSON.stringify(got[name])) {
         mismatches++;
