@@ -63,13 +63,13 @@ func TestTableFacts(t *testing.T) {
 		name string
 		want Definition
 	}{
-		// §5.3: TypeScript declares `new()` on these, and WebIDL declares no
-		// constructor.
+		// TypeScript declares `new()` on these, and WebIDL declares no
+		// constructor. §5.3 drops the construct signatures.
 		{"ImageBitmap", Definition{Kind: KindInterface, Exposed: []string{"Window", "Worker"}, Transferable: true}},
 		{"MessagePort", Definition{Kind: KindInterface, Exposed: []string{"Window", "Worker", "AudioWorklet"}, Transferable: true}},
 		{"Navigator", Definition{Kind: KindInterface, Exposed: []string{"Window"}}},
 		{"Element", Definition{Kind: KindInterface, Exposed: []string{"Window"}}},
-		// §5.3: the redirections a worker reaches instead.
+		// A worker reaches a MessagePort through this constructor instead.
 		{"MessageChannel", Definition{Kind: KindInterface, Exposed: []string{"Window", "Worker"}, Constructible: true}},
 		// Global scopes.
 		{"Window", Definition{Kind: KindInterface, Exposed: []string{"Window"}, Global: []string{"Window"}}},

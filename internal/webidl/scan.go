@@ -248,8 +248,8 @@ func (s *scanner) extAttrs() ([]extAttr, error) {
 		}
 		attr := extAttr{name: name}
 		if s.peek() == "(" {
-			// An argument list, as in `LegacyFactoryFunction=Image(...)`'s
-			// tail or `Constructor(...)`.
+			// An argument list directly after the name, as in
+			// `[Constructor(DOMString type)]`.
 			if err := s.skipBalanced(); err != nil {
 				return nil, err
 			}
@@ -267,6 +267,8 @@ func (s *scanner) extAttrs() ([]extAttr, error) {
 				}
 			} else {
 				attr.values = []string{s.next()}
+				// An argument list after the value, as in
+				// `[LegacyFactoryFunction=Image(optional unsigned long width)]`.
 				if s.peek() == "(" {
 					if err := s.skipBalanced(); err != nil {
 						return nil, err
