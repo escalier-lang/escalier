@@ -259,11 +259,19 @@ func InferModuleAgainstStdlib(module *ast.Module, dir string, opts Options) *Mod
 }
 
 // InferScriptAgainstStdlib infers script against the pseudo-packages in dir. It is
-// the script counterpart to InferModuleAgainstStdlib. A script binds no imports, so
-// the closure grows from the ambient packages alone. opts adjusts the run.
+// the script counterpart to InferModuleAgainstStdlib, and the closure grows from the
+// ambient packages and the script's own imports. opts adjusts the run.
 func InferScriptAgainstStdlib(script *ast.Script, dir string, opts Options) (*Scope, *Info, []SolverError) {
 	source := packageSource(dir, opts)
-	groups, err := BuildPackageClosure(dir, ambientPackages)
+	roots := set.FromSlice(ambientPackages)
+	for _, stmt := range script.Imports {
+		if IsSchemePrefixedImport(stmt.PackageName) {
+			roots.Add(stmt.PackageName)
+		}
+	}
+	sortedRoots := roots.ToSlice()
+	sort.Strings(sortedRoots)
+	groups, err := BuildPackageClosure(dir, sortedRoots)
 	if err != nil {
 		scope, info, errs := inferScriptWithGroups(script, source, nil, nil, opts)
 		return scope, info, append(errs, &UnresolvedPackageError{

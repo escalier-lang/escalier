@@ -118,10 +118,32 @@ func (p *Parser) ParseScript() (*ast.Script, []*Error) {
 		}
 	}
 
-	script := ast.NewScript(*stmts, span)
+	imports, body := p.splitScriptImports(*stmts)
+	script := ast.NewScript(body, span)
+	script.Imports = imports
 	script.Comments = p.Comments()
 	ast.AttachComments(script, script.Comments, p.lexer.source.LineMap())
 	return script, p.errors
+}
+
+// splitScriptImports returns the imports that open stmts and the statements after
+// them. An import after the first other statement is reported and dropped, since a
+// script's imports bind before it runs.
+func (p *Parser) splitScriptImports(stmts []ast.Stmt) ([]*ast.ImportStmt, []ast.Stmt) {
+	var imports []*ast.ImportStmt
+	body := make([]ast.Stmt, 0, len(stmts))
+	for _, stmt := range stmts {
+		imp, isImport := stmt.(*ast.ImportStmt)
+		switch {
+		case !isImport:
+			body = append(body, stmt)
+		case len(body) == 0:
+			imports = append(imports, imp)
+		default:
+			p.reportError(imp.Span(), "An import must come before the script's first statement")
+		}
+	}
+	return imports, body
 }
 
 // ParseDecls parses `source` as a stream of top-level declarations and

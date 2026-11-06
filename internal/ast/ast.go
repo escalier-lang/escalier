@@ -145,7 +145,10 @@ func (m *Module) Accept(v Visitor) {
 }
 
 type Script struct {
-	Stmts []Stmt
+	// Imports holds the imports at the top of the script, in source order. They bind
+	// before any statement runs, the way a module file's do, so Stmts holds none of them.
+	Imports []*ImportStmt
+	Stmts   []Stmt
 	// Comments holds every comment the script's source contains, sorted by
 	// start offset. See Module.Comments.
 	Comments []*Comment

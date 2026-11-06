@@ -311,6 +311,20 @@ move without breaking its imports, and give tooling an exact answer for what is
 in scope where. See [Code Organization](10_code_organization.md) for how files
 map onto modules and namespaces.
 
+A script, such as a package's `bin/index.esc`, imports the same way. Its imports
+come before its first statement, and they bind before any statement runs:
+
+```escalier
+// bin/index.esc
+import "std:console"
+
+console.log("hello")
+```
+
+An import after a statement is an error. A statement later in the script may
+redeclare a name an import bound, the way any later script binding replaces an
+earlier one.
+
 ## Cyclic dependencies
 
 Types may reference each other across files within a module:
