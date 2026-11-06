@@ -113,6 +113,7 @@ func ambientChecker(dir string, source ModuleSource, groups PackageGroups, opts 
 	}
 	run := entry.checker.fork(source, StdlibGroupSource(dir), groups)
 	run.dependencies = opts.Dependencies
+	run.stdlibDir = dir
 	return run, true
 }
 

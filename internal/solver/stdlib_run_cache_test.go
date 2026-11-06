@@ -206,7 +206,7 @@ func inferCached(t *testing.T, dir, src string, opts Options) (map[string]string
 func inferFresh(t *testing.T, dir, src string, opts Options) (map[string]string, []string) {
 	t.Helper()
 	module := parseModule(t, src)
-	roots := append(pseudoPackageImportsOf(module), ambientPackages...)
+	roots := append(pseudoPackageImports(moduleImports(module)), ambientPackages...)
 	sort.Strings(roots)
 	groups, err := BuildPackageClosure(dir, roots)
 	require.NoError(t, err)
@@ -350,7 +350,7 @@ func TestForkCopiesEveryContainer(t *testing.T) {
 // packages groups names and no others.
 func loadsGroups(t *testing.T, module *ast.Module, groups PackageGroups) bool {
 	t.Helper()
-	roots := set.FromSlice(append(pseudoPackageImportsOf(module), ambientPackages...)).ToSlice()
+	roots := set.FromSlice(append(pseudoPackageImports(moduleImports(module)), ambientPackages...)).ToSlice()
 	sort.Strings(roots)
 	own, err := BuildPackageClosure(benchTree, roots)
 	require.NoError(t, err)

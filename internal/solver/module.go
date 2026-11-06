@@ -34,6 +34,12 @@ type Options struct {
 	// ESCALIER_OWNERSHIP_DATAFLOW environment variable set to 0, false, or off skips the pass
 	// as well.
 	NoOwnershipDataflow bool
+
+	// stdlibDir is the pseudo-package tree the run's groups were built from, or "" for a
+	// run given its groups some other way. InferModuleAgainstStdlib and
+	// InferScriptAgainstStdlib set it. A load of a package the groups do not cover reads
+	// the tree to group it.
+	stdlibDir string
 }
 
 // InferModule builds the dep graph for a single parsed module, infers every
@@ -171,6 +177,7 @@ func newRunChecker(source ModuleSource, groupSource GroupSource, groups PackageG
 	c.checkJsDecorators = opts.CheckJsDecorators
 	c.dependencies = opts.Dependencies
 	c.ownershipDataflow = !opts.NoOwnershipDataflow
+	c.stdlibDir = opts.stdlibDir
 	return c
 }
 

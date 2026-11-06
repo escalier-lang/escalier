@@ -310,6 +310,8 @@ type checker struct {
 	ambient *Scope
 	// noAmbientNames is Options.NoAmbientNames for this run.
 	noAmbientNames bool
+	// stdlibDir is Options.stdlibDir for this run.
+	stdlibDir string
 	// dependencies is Options.Dependencies for this run.
 	dependencies set.Set[string]
 	// checkJsDecorators is Options.CheckJsDecorators for this run.
@@ -924,6 +926,7 @@ func (c *checker) forScript(pkgURI string) *checker {
 		source:            c.source,
 		groupSource:       c.groupSource,
 		groups:            c.groups,
+		stdlibDir:         c.stdlibDir,
 		checkJsDecorators: c.checkJsDecorators,
 		ownershipDataflow: c.ownershipDataflow,
 		weakBindingVars:   set.NewSet[*soltype.TypeVarType](),

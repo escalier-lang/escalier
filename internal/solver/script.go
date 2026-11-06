@@ -67,8 +67,6 @@ func inferScriptOn(c *checker, script *ast.Script) (*Scope, *Info, []SolverError
 	// A run that loaded the ambient packages itself settles them the way a cached
 	// checker's are settled, so the two read the same answers.
 	c.settleLoadedDefinitions()
-	// A script binds no imports, so nothing claims a held diagnostic.
-	c.reportHeldLoadErrors()
 	return c.inferScriptIn(c.ambientScope().Child(), script)
 }
 
@@ -89,6 +87,26 @@ func InferScriptInLib(script *ast.Script, lib *ModuleResult) (*Scope, *Info, []S
 	return c.inferScriptIn(lib.Scope.Child(), script)
 }
 
+// bindScriptImports binds each of script's imports into scope, through the path a
+// module file's imports take, and records what binding them reports. Every
+// pseudo-package import binds before any npm import, for the reason bindFileImports
+// gives.
+//
+// A script's statements may redeclare a name an import bound, since a later script
+// binding overwrites an earlier one, so no name is held back from the imports.
+func (c *checker) bindScriptImports(scope *Scope, script *ast.Script) {
+	prevDeclared := c.moduleDeclared
+	c.moduleDeclared = declaredNames{values: set.NewSet[string](), types: set.NewSet[string]()}
+	defer func() { c.moduleDeclared = prevDeclared }()
+	for _, pseudo := range []bool{true, false} {
+		for _, stmt := range script.Imports {
+			if IsSchemePrefixedImport(stmt.PackageName) == pseudo {
+				c.errs = append(c.errs, c.bindImport(scope, stmt)...)
+			}
+		}
+	}
+}
+
 // scriptPkgURI is the prefix the nominal registries key one script's declarations
 // under. Scripts checked against one library share that run's registries, so each
 // needs a prefix of its own for two of them to declare the same class name. The
@@ -107,6 +125,10 @@ func (c *checker) inferScriptIn(scope *Scope, script *ast.Script) (*Scope, *Info
 	// onto it. The node is nil because a script has no enclosing function. scope's
 	// parent chain is what the pre-pass resolves outer names against. There is no
 	// enclosing context to restore, so the returned previous one is discarded.
+	c.bindScriptImports(scope, script)
+	// After the imports, so a failure in a package the script imports is reported at its
+	// import statement.
+	c.reportHeldLoadErrors()
 	scriptBody := &ast.Block{Stmts: script.Stmts, Span: script.Span()}
 	c.scriptScope = scope
 	c.pushFuncCtx(false, nil, 0)
