@@ -126,6 +126,11 @@ func (c *checker) bindPseudoPackageImport(fileScope *Scope, stmt *ast.ImportStmt
 	//
 	// The namespace is empty at this point and the walk fills it through the same
 	// pointer, the way a `namespace` block's is filled.
+	//
+	// The binding is the namespace alone, without the own-name value the path below
+	// binds, since that value is not inferred yet. A pseudo-package holds declarations
+	// with no bodies, so a member reads a sibling only in a type, which the namespace
+	// answers. `console.Console` resolves here, and `console.log(…)` would not.
 	if c.activeGroup.Contains(uri) {
 		if ns, held := c.memberNamespaces[groupNamespace(uri)]; held {
 			fileScope.defineNamespace(stmt.LocalName(), ns)

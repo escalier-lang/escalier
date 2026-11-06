@@ -39,6 +39,15 @@ func TestPseudoPackageBindsAsItsOwnNameValue(t *testing.T) {
 			want: map[string]string{"p": "number"},
 		},
 		{
+			// The value is chosen by the name the URI derives and bound under the name
+			// the import writes, the way an npm package's `export =` value is.
+			name: "an alias binds the value under the alias",
+			src: `import "std:console" as c
+				fn log() { c.log("x") }
+				val k: c.Console = c`,
+			want: map[string]string{"log": "fn () -> undefined", "k": "Console"},
+		},
+		{
 			name: "a value the module declares keeps the name",
 			src: `import "std:console"
 				val console = 5
