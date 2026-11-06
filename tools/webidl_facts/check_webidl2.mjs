@@ -38,7 +38,8 @@ for (const ast of Object.values(await idl.parseAll())) {
             continue;
         }
         const attr = (name) => def.extAttrs.find((a) => a.name === name);
-        want[def.name] = {
+        const ns = attr('LegacyNamespace');
+        want[ns ? `${ns.rhs.value}.${def.name}` : def.name] = {
             kind: def.type,
             exposed: valuesOf(attr('Exposed')),
             global: valuesOf(attr('Global')),

@@ -59,7 +59,9 @@ func (k Kind) keyword() string {
 }
 
 // Definition is what WebIDL states about one interface, callback interface or
-// namespace.
+// namespace. The table keys it by the path a program reaches it through, which
+// is the bare name except for an interface carrying `[LegacyNamespace]`.
+// `[LegacyNamespace=WebAssembly] interface Module` is keyed `WebAssembly.Module`.
 type Definition struct {
 	Kind Kind
 

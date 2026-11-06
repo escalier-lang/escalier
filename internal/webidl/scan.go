@@ -181,6 +181,12 @@ func scanFile(src string) ([]scanned, error) {
 		def := Definition{Kind: kind, Constructible: ctor}
 		for _, attr := range attrs {
 			switch attr.name {
+			case "LegacyNamespace":
+				// `[LegacyNamespace=WebAssembly] interface Module` is reached as
+				// `WebAssembly.Module`, so that path is its name.
+				if len(attr.values) == 1 {
+					name = attr.values[0] + "." + name
+				}
 			case "Exposed":
 				def.Exposed = attr.values
 			case "Global":

@@ -90,6 +90,17 @@ func TestScan(t *testing.T) {
 			},
 		},
 		{
+			name: "a legacy namespace qualifies the name",
+			sources: map[string]string{"a.idl": `
+				[LegacyNamespace=WebAssembly, Exposed=*]
+				interface Module {
+				  constructor(BufferSource bytes);
+				};`},
+			want: map[string]Definition{
+				"WebAssembly.Module": {Kind: KindInterface, Exposed: []string{"*"}, Constructible: true},
+			},
+		},
+		{
 			name: "callback interfaces with and without an interface object",
 			sources: map[string]string{"a.idl": `
 				callback interface EventListener {
