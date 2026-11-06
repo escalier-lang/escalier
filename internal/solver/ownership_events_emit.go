@@ -211,7 +211,9 @@ func (c *checker) placeHolderOf(e ast.Expr) eventHolder {
 //     of a field of that result passes on the borrows held at that field.
 //   - A branching expression passes the value of each branch's tail.
 //
-// Any other source names no place and emits nothing here.
+// Any other source names no place and emits nothing here. A flow that settles as a move out
+// of a module-level binding reports a ModuleLevelMoveError, as reportModuleLevelMove and
+// reportUnplacedModuleMove describe.
 func (c *checker) emitFlow(source ast.Expr, holder eventHolder, dest flowDest, ref liveness.StmtRef) {
 	if c.eventTable() == nil || source == nil {
 		return
