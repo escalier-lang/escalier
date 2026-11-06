@@ -42,24 +42,28 @@ func (c *checker) inferSuperCall(scope *Scope, lvl int, e *ast.SuperCallExpr) so
 	case c.superCtx.super == nil:
 		c.report(&SuperWithoutSuperclassError{Node: e})
 	default:
-		if ctor, ok := c.superConstructor(lvl, c.superCtx); ok {
-			c.constrain(e, ctor, &soltype.FuncType{Params: args, Ret: c.superCtx.super})
+		obj, ok := c.superClassValue(lvl, c.superCtx)
+		if !ok {
+			break
+		}
+		if ctor, hasCtor := obj.Constructor(); hasCtor {
+			c.constrain(e, overloadReadType(ctor.Signatures), &soltype.FuncType{Params: args, Ret: c.superCtx.super})
+		} else if obj.Class != "" {
+			c.report(&NotConstructibleError{Node: e, Class: obj.Class})
 		}
 	}
 	return &soltype.UndefinedType{}
 }
 
-// superConstructor returns the callable a superclass's constructor stands for, read off the
-// class's value binding, which is the object `Animal(…)` calls through. An overloaded
-// superclass constructor reads as the intersection of its arms, so the constraint below weighs
-// them together rather than picking one. It returns ok=false when the binding is absent or
-// carries no constructor, which leaves the arguments unchecked rather than reported against a
+// superClassValue returns the superclass's value, read off the class's value binding, which
+// is the object `Animal(…)` calls through. It returns ok=false when the binding is absent or
+// is not a class value, which leaves the arguments unchecked rather than reported against a
 // signature that was never found.
 //
 // The name is looked up in the scope the subclass is declared in, not the constructor's own
 // scope. A parameter named after the superclass would shadow the class binding there, and the
 // arguments would go unchecked against a signature the lookup never found.
-func (c *checker) superConstructor(lvl int, ctx *superCtx) (soltype.Type, bool) {
+func (c *checker) superClassValue(lvl int, ctx *superCtx) (*soltype.ObjectType, bool) {
 	if ctx.declScope == nil {
 		return nil, false
 	}
@@ -73,15 +77,7 @@ func (c *checker) superConstructor(lvl int, ctx *superCtx) (soltype.Type, bool) 
 	if !found || len(binding.Schemes) == 0 {
 		return nil, false
 	}
-	obj, ok := c.classValueCarrier(c.instantiate(binding.Schemes[0], lvl))
-	if !ok {
-		return nil, false
-	}
-	ctor, ok := obj.Constructor()
-	if !ok {
-		return nil, false
-	}
-	return overloadReadType(ctor.Signatures), true
+	return c.classValueCarrier(c.instantiate(binding.Schemes[0], lvl))
 }
 
 // superVarID is the synthetic binding the move dataflow tracks in place of "the superclass

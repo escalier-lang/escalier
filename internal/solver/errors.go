@@ -1442,6 +1442,7 @@ func (*DuplicateObjectMemberError) isSolverError()          {}
 func (*DuplicateConstructorSignatureError) isSolverError()  {}
 func (*FieldInitializerNotAllowedError) isSolverError()     {}
 func (*SubclassConstructorRequiredError) isSolverError()    {}
+func (*NotConstructibleError) isSolverError()               {}
 func (*CallSignatureRequiresDeclareError) isSolverError()   {}
 func (*WriteOnlyPropertyError) isSolverError()              {}
 func (*ReadOnlyPropertyError) isSolverError()               {}
@@ -2093,6 +2094,21 @@ func (e *FieldInitializerNotAllowedError) Span() ast.Span      { return e.Field.
 func (e *FieldInitializerNotAllowedError) Related() []ast.Span { return nil }
 func (e *FieldInitializerNotAllowedError) Message() string {
 	return "Field '" + soltype.DisplayMemberName(e.Name) + "' cannot have a `= expr` initializer; only static fields may use this form. Initialize instance fields in the constructor body."
+}
+
+// NotConstructibleError fires on a construction, either `Bitmap()` or a subclass's
+// `super()`, of a class whose value carries no constructor. A `declare` class whose every
+// constructor is private has that value. Class is the class's registry name and Node is the
+// call.
+type NotConstructibleError struct {
+	Node  ast.Node
+	Class string
+}
+
+func (e *NotConstructibleError) Span() ast.Span      { return e.Node.Span() }
+func (e *NotConstructibleError) Related() []ast.Span { return nil }
+func (e *NotConstructibleError) Message() string {
+	return fmt.Sprintf("`%s` cannot be constructed because it declares no public constructor", e.Class)
 }
 
 // SubclassConstructorRequiredError fires when a class with an `extends` clause

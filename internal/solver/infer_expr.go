@@ -2145,6 +2145,17 @@ func (c *checker) calleeFreshlyInstantiated(scope *Scope, e *ast.CallExpr) bool 
 // calleeTarget returns what a call applies its arguments to, given the callee value
 // inferCallee returned. fresh is calleeFreshlyInstantiated's answer for e.
 func (c *checker) calleeTarget(lvl int, e *ast.CallExpr, callee soltype.Type, fresh bool) callTarget {
+	// A class value carrying neither a constructor nor a call signature is a `declare` class
+	// whose every constructor is private. The call is reported here, by name, and the error
+	// sentinel stands in for the callee so nothing else reports the same call.
+	if obj, ok := c.classValueCarrier(callee); ok && obj.Class != "" {
+		_, hasCtor := obj.Constructor()
+		_, hasCall := obj.Callable()
+		if !hasCtor && !hasCall {
+			c.report(&NotConstructibleError{Node: e, Class: obj.Class})
+			return callTarget{callee: &soltype.ErrorType{}}
+		}
+	}
 	// A member callee whose type is an intersection of function arms is an overloaded
 	// method, since memberValue gathers a multi-signature method's arms into an
 	// IntersectionType. Resolving one arm here through resolveOverload, the method analogue

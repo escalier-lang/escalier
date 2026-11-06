@@ -2581,6 +2581,12 @@ func (c *checker) classValueCarrier(t soltype.Type) (*soltype.ObjectType, bool) 
 		if !ok {
 			return nil, false
 		}
+		// An object naming its class is that class's value whatever members it carries. A
+		// `declare` class whose constructors are all private carries neither unnamed
+		// callable member, and its statics are still read through it.
+		if obj.Class != "" {
+			return obj, true
+		}
 		// Either unnamed callable member marks the object as a class value. A class
 		// declaring a call signature and no constructor carries only the former, which is
 		// the shape `Symbol` has, and its statics are read the same way.
