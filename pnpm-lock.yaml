@@ -129,6 +129,8 @@ importers:
 
   fixtures/comments: {}
 
+  fixtures/console_import: {}
+
   fixtures/destructuring: {}
 
   fixtures/do: {}
@@ -231,6 +233,10 @@ importers:
 
   fixtures/regex_match: {}
 
+  fixtures/std_names_imported: {}
+
+  fixtures/std_names_need_imports: {}
+
   fixtures/stdlib_import_class_via_namespace: {}
 
   fixtures/stdlib_import_local: {}
@@ -248,6 +254,8 @@ importers:
   fixtures/type_ann_computed_keys: {}
 
   fixtures/unique_symbol_keys: {}
+
+  fixtures/web_prelude_no_import: {}
 
   packages/cli: {}
 
