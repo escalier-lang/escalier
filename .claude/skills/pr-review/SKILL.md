@@ -82,6 +82,14 @@ For each one, record the file and a one-line statement of what a human reviewer 
    - **Findings:** each finding of this run on one line with its file and line, including the ones skipped in item 1. Mark a skipped one as already posted. When nothing survives, say that the review found no issues.
    - **Moved code:** each trivial move from step 4 on one line. Leave the section out when there are none.
    - **Needs human review:** each high-risk change from step 5 on one line. Leave the section out when there are none.
+
+   Write each file a line names as a link to that file's changes in the PR. GitHub's anchor for a file is `diff-` followed by the SHA-256 of its path. Get the hash with `printf '%s' '<path>' | sha256sum`, then write the link as:
+
+   ```markdown
+   [`<path>:<line>`](https://github.com/<repo>/pull/<number>/files#diff-<hash>R<line>)
+   ```
+
+   `R<line>` points at a line of the new file. Leave off `R<line>` when the entry names no line, and use `L<line>` for a line that exists only in the old file, such as the old location of a moved function.
 5. Post the summary in place of any earlier one. List the ids of the comments that carry the marker, oldest first:
 
    ```bash
