@@ -88,7 +88,7 @@ func (*captureDest) isFlowDest()        {}
 //   - An argument whose callee's signature the call could not see waits until the module or
 //     script is inferred.
 //
-// movedParamRoots also reads the flows that wait on a parameter, to find the parameters the
+// movedParams also reads the flows that wait on a parameter, to find the parameters the
 // body moves. table holds the placeholder event at index. source is the source expression, read for its type once the flow settles. A
 // closure capture and a destructured part have no source expression of their own, so
 // source is nil and sourceT holds the type of the value that flows.
