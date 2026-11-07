@@ -750,6 +750,7 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl, self *solt
 	}
 	scheme := c.generalize(bound, lvl)
 	if initLvl == lvl {
+		c.noteWeakVars(bound, lvl, initVars)
 		c.noteWeakLocal(d, scheme)
 	}
 	// The recorded display type retains any quantified type-parameter vars (it is

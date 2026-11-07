@@ -258,6 +258,11 @@ type checker struct {
 	// and puts the previous one back when it ends.
 	weakBindingVars set.Set[*soltype.TypeVarType]
 
+	// weakVars holds every weak variable: each variable a binding that did not generalize
+	// minted for its type, and each variable lowerWeakBoundVars lowered to the level of
+	// one. A module walk starts its own set and puts the previous one back when it ends.
+	weakVars set.Set[*soltype.TypeVarType]
+
 	// fileScopes holds one scope per file of the module being inferred, keyed by
 	// source id, each carrying that file's import bindings.
 	fileScopes map[int]*Scope
@@ -849,6 +854,7 @@ func newChecker() *checker {
 		varIDCounter:    1,
 		varIDs:          liveness.NewVarIDs(),
 		weakBindingVars: set.NewSet[*soltype.TypeVarType](),
+		weakVars:        set.NewSet[*soltype.TypeVarType](),
 	}
 	c.ctx.fusionRecorder = c.recordFusionEdge
 	c.info.ctx = c.ctx
@@ -891,6 +897,7 @@ func (c *checker) forScript(pkgURI string) *checker {
 		stdlibDir:         c.stdlibDir,
 		checkJsDecorators: c.checkJsDecorators,
 		weakBindingVars:   set.NewSet[*soltype.TypeVarType](),
+		weakVars:          set.NewSet[*soltype.TypeVarType](),
 	}
 	// Point the recorder at the script, so a fusion its walk records lands in the
 	// script's Prov table rather than the module's.

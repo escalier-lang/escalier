@@ -258,6 +258,42 @@ fn outer() {
 			},
 		},
 		{
+			// inner's result is tied to outer's parameter a, which is not weak, so inner still
+			// generalizes. Each call of inner gets its own result, and the two calls keep
+			// their own literals.
+			name: "ALocalFunctionTiedToAnOuterParameterStaysPolymorphic",
+			src: `
+fn outer(a, c: boolean) {
+	val inner = fn (b) { return if c { a } else { b } }
+	val x = inner(1)
+	val y = inner("s")
+	return [x, y]
+}
+`,
+			values: map[string]string{
+				"outer": `fn <T0>(a: T0, c: boolean) -> [T0 | 1, T0 | "s"]`,
+			},
+		},
+		{
+			// inner's parameter is tied to outer's parameter a. a is not weak, so inner keeps
+			// its parameter polymorphic and each call returns the literal it passed.
+			name: "ALocalFunctionPassingToAnOuterParameterStaysPolymorphic",
+			src: `
+fn outer(a) {
+	val inner = fn (b) {
+		a(b)
+		return b
+	}
+	val x = inner(1)
+	val y = inner("s")
+	return [x, y]
+}
+`,
+			values: map[string]string{
+				"outer": `fn (a: fn (arg0: 1 | "s") -> unknown) -> [1, "s"]`,
+			},
+		},
+		{
 			// h passes an object holding its parameter, so the object's field variable is tied
 			// to g's weak variable through the object. Lowering h's object lowers the field's
 			// variable with it, so each call of h settles g's field.

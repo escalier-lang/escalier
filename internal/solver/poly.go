@@ -513,7 +513,7 @@ func (f *freshener) freshenBounds(bounds []soltype.Type) []soltype.Type {
 // finalize point where a non-escaping usage-inferred object closes to exact in the
 // OPERATIVE body, so callers cannot pass extra fields (Policy A / B2). See its doc.
 func (c *checker) generalize(t soltype.Type, lvl int) TypeScheme {
-	c.lowerCapturedVars(t, lvl)
+	c.lowerWeakBoundVars(t, lvl)
 	c.sealUsageObjects(t, lvl)
 	// The declaration's own parameters are read from the raw body, where a class value's
 	// constructor return still names the class. Reading them before the display is sealed is
@@ -525,20 +525,27 @@ func (c *checker) generalize(t soltype.Type, lvl int) TypeScheme {
 	return sc
 }
 
-// lowerCapturedVars lowers each variable of t above lvl that a bound ties directly to a
-// variable at or below lvl. The variable takes the lowest such level, so generalizing t at
-// lvl leaves it unquantified. Every use of the binding then shares it, as every use shares
-// the variable it is tied to. It repeats until no variable changes, so a variable tied to
-// a lowered one is lowered too.
+// lowerWeakBoundVars lowers each variable of t above lvl that a bound ties directly to a
+// weak variable, one in c.weakVars. The variable takes the lowest such level, so
+// generalizing t at lvl leaves it unquantified, and it joins c.weakVars. Every use of the
+// binding then shares it, as every use shares the weak variable it is tied to. It repeats
+// until no variable changes, so a variable tied to a lowered one is lowered too.
 //
 // Given a weak binding `g` whose parameter and result are one weak variable W,
 // `fn h(y) { return g(y) }` gives y's variable the upper bound W and the result's variable
 // the lower bound W. Both are lowered to W's level, so h is `fn (y: W) -> W` and a call
 // `h(5)` reaches W.
 //
+// A variable tied to an enclosing variable that is not weak, such as an outer function's
+// parameter, keeps its level and is quantified. Each instance copies the bound, so every
+// use still reaches the outer variable.
+//
 // Lowering a variable also lowers every variable and lifetime its bounds hold above the
 // new level, which keeps each variable's level at or above the levels in its bounds.
-func (c *checker) lowerCapturedVars(t soltype.Type, lvl int) {
+func (c *checker) lowerWeakBoundVars(t soltype.Type, lvl int) {
+	if c.weakVars.Len() == 0 {
+		return
+	}
 	vars := map[int]*soltype.TypeVarType{}
 	t.Accept(&varCollector{out: vars, seen: set.NewSet[*soltype.TypeVarType]()}, soltype.Positive)
 	ids := slices.Sorted(maps.Keys(vars))
@@ -549,7 +556,7 @@ func (c *checker) lowerCapturedVars(t soltype.Type, lvl int) {
 			if v.Level <= lvl || v.Rigid != nil {
 				continue
 			}
-			if target, ok := capturedLevel(v, lvl); ok {
+			if target, ok := c.weakBoundLevel(v, lvl); ok {
 				c.lowerVar(v, target)
 				changed = true
 			}
@@ -557,23 +564,39 @@ func (c *checker) lowerCapturedVars(t soltype.Type, lvl int) {
 	}
 }
 
-// capturedLevel returns the lowest level among the variables at or below lvl that are
-// bounds of v, and false when no bound of v is such a variable.
-func capturedLevel(v *soltype.TypeVarType, lvl int) (int, bool) {
+// weakBoundLevel returns the lowest level among the weak variables at or below lvl that are
+// bounds of v, and false when no bound of v is such a variable. A weak variable above lvl
+// belongs to a binding inside the one being generalized, which quantifies it with the rest.
+func (c *checker) weakBoundLevel(v *soltype.TypeVarType, lvl int) (int, bool) {
 	target, found := lvl, false
 	for _, b := range slices.Concat(v.LowerBounds, v.UpperBounds) {
-		if bv, ok := b.(*soltype.TypeVarType); ok && bv.Level <= lvl {
+		if bv, ok := b.(*soltype.TypeVarType); ok && bv.Level <= lvl && c.weakVars.Contains(bv) {
 			target, found = min(target, bv.Level), true
 		}
 	}
 	return target, found
 }
 
+// noteWeakVars adds to c.weakVars each variable at or below lvl that t reaches. When
+// minted is set, only the variables in that range are added.
+func (c *checker) noteWeakVars(t soltype.Type, lvl int, minted *varIDRange) {
+	vars := map[int]*soltype.TypeVarType{}
+	t.Accept(&varCollector{out: vars, seen: set.NewSet[*soltype.TypeVarType]()}, soltype.Positive)
+	for _, v := range vars {
+		if v.Level <= lvl && (minted == nil || minted.contains(v)) {
+			c.weakVars.Add(v)
+		}
+	}
+}
+
 // lowerVar sets v's level to lvl and lowers every variable and lifetime above lvl that v's
-// bounds hold, along with the ones their bounds hold.
+// bounds hold, along with the ones their bounds hold. Each variable it lowers joins
+// c.weakVars. A rigid variable is a declared type parameter, which its declaration
+// quantifies, so it keeps its level.
 func (c *checker) lowerVar(v *soltype.TypeVarType, lvl int) {
 	lowerer := &levelLowerer{
 		ctx:       c.ctx,
+		weakVars:  c.weakVars,
 		lvl:       lvl,
 		binders:   set.NewSet[*soltype.TypeVarType](),
 		ltBinders: set.NewSet[*soltype.LifetimeVar](),
@@ -586,6 +609,8 @@ func (c *checker) lowerVar(v *soltype.TypeVarType, lvl int) {
 type levelLowerer struct {
 	ctx *Context
 	lvl int
+	// weakVars is the checker's set of weak variables, which each lowered variable joins.
+	weakVars set.Set[*soltype.TypeVarType]
 	// binders holds the type-parameter variables of each function type the walk entered.
 	// ltBinders holds the lifetime parameters of the same function types. A function
 	// quantifies both kinds itself, so they keep their level.
@@ -594,11 +619,12 @@ type levelLowerer struct {
 }
 
 func (l *levelLowerer) lowerVar(v *soltype.TypeVarType) {
-	if v.Level <= l.lvl || l.binders.Contains(v) {
+	if v.Level <= l.lvl || v.Rigid != nil || l.binders.Contains(v) {
 		return
 	}
 	l.ctx.checkThawed(v, "lowerVar")
 	v.Level = l.lvl
+	l.weakVars.Add(v)
 	for _, b := range slices.Concat(v.LowerBounds, v.UpperBounds) {
 		b.Accept(l, soltype.Positive)
 	}
