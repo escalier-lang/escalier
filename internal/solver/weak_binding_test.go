@@ -58,9 +58,9 @@ fn b() { seen.set("k", {a: 2}) }
 			},
 		},
 		{
-			// Nothing calls `remember`, so nothing decides what `value` holds. The map's value
-			// type settles at `never` and the parameter at `unknown`, with no error. #2352 keeps
-			// remember monomorphic over the map's value type, so `value` becomes `never` too.
+			// Nothing calls `remember`, so nothing decides what `value` holds. remember is
+			// monomorphic over the map's value type, so the map's value type and the parameter
+			// both settle at `never`, with no error.
 			name: "AStoreOfAParameterNothingCalls",
 			src: `
 val mut seen = Map()
@@ -68,7 +68,7 @@ fn remember(value) { seen.set("last", value) }
 `,
 			values: map[string]string{
 				"seen":     "Map<string, never>",
-				"remember": "fn (value: unknown) -> undefined",
+				"remember": "fn (value: never) -> undefined",
 			},
 		},
 		{
@@ -190,6 +190,72 @@ val n = g(5)
 val s = g("a")
 `,
 			values: map[string]string{"g": `fn (x: 5 | "a") -> 5 | "a"`},
+		},
+		{
+			// g's parameter and result are one weak variable, which h's parameter and result
+			// are tied to. h is monomorphic over that variable, so nothing decides it and both
+			// functions show `never` in every position.
+			name: "AFunctionThatCallsAWeakFunctionNothingCalls",
+			src: `
+fn makeId() { return fn (x) { return x } }
+val g = makeId()
+fn h(y) { return g(y) }
+`,
+			values: map[string]string{
+				"g": "fn (x: never) -> never",
+				"h": "fn (y: never) -> never",
+			},
+		},
+		{
+			// Each call of h reaches g's weak variable, so g and h settle on both values.
+			name: "AFunctionThatCallsAWeakFunctionCalledTwice",
+			src: `
+fn makeId() { return fn (x) { return x } }
+val g = makeId()
+fn h(y) { return g(y) }
+val n = h(5)
+val s = h("a")
+`,
+			values: map[string]string{
+				"g": `fn (x: 5 | "a") -> 5 | "a"`,
+				"h": `fn (y: 5 | "a") -> 5 | "a"`,
+				"n": `5 | "a"`,
+				"s": `5 | "a"`,
+			},
+		},
+		{
+			// k reaches g's weak variable through h, so k is monomorphic over it as well.
+			name: "AFunctionThatReachesAWeakFunctionThroughAnother",
+			src: `
+fn makeId() { return fn (x) { return x } }
+val g = makeId()
+fn h(y) { return g(y) }
+fn k(z) { return h(z) }
+val n = k(5)
+val s = k("a")
+`,
+			values: map[string]string{
+				"g": `fn (x: 5 | "a") -> 5 | "a"`,
+				"h": `fn (y: 5 | "a") -> 5 | "a"`,
+				"k": `fn (z: 5 | "a") -> 5 | "a"`,
+			},
+		},
+		{
+			// A local function's parameter reaches g's weak variable through the binding
+			// that holds it, so a call of the local function settles g.
+			name: "ALocalFunctionThatCallsAWeakFunction",
+			src: `
+fn makeId() { return fn (x) { return x } }
+val g = makeId()
+fn outer() {
+	val h = fn (y) { return g(y) }
+	return h(5)
+}
+`,
+			values: map[string]string{
+				"g":     "fn (x: 5) -> 5",
+				"outer": "fn () -> 5",
+			},
 		},
 		{
 			// No value but `never` flows into T, so its type is what its uses require. Each

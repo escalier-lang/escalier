@@ -1,7 +1,9 @@
 package solver
 
 import (
+	"maps"
 	"math"
+	"slices"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
@@ -511,6 +513,7 @@ func (f *freshener) freshenBounds(bounds []soltype.Type) []soltype.Type {
 // finalize point where a non-escaping usage-inferred object closes to exact in the
 // OPERATIVE body, so callers cannot pass extra fields (Policy A / B2). See its doc.
 func (c *checker) generalize(t soltype.Type, lvl int) TypeScheme {
+	c.lowerCapturedVars(t, lvl)
 	c.sealUsageObjects(t, lvl)
 	// The declaration's own parameters are read from the raw body, where a class value's
 	// constructor return still names the class. Reading them before the display is sealed is
@@ -521,6 +524,133 @@ func (c *checker) generalize(t soltype.Type, lvl int) TypeScheme {
 	sc.coalesced = c.subsumeFinal(sc.display())
 	return sc
 }
+
+// lowerCapturedVars lowers each variable of t above lvl that a bound ties directly to a
+// variable at or below lvl. The variable takes the lowest such level, so generalizing t at
+// lvl leaves it unquantified. Every use of the binding then shares it, as every use shares
+// the variable it is tied to. It repeats until no variable changes, so a variable tied to
+// a lowered one is lowered too.
+//
+// Given a weak binding `g` whose parameter and result are one weak variable W,
+// `fn h(y) { return g(y) }` gives y's variable the upper bound W and the result's variable
+// the lower bound W. Both are lowered to W's level, so h is `fn (y: W) -> W` and a call
+// `h(5)` reaches W.
+//
+// Lowering a variable also lowers every variable and lifetime its bounds hold above the
+// new level, which keeps each variable's level at or above the levels in its bounds.
+func (c *checker) lowerCapturedVars(t soltype.Type, lvl int) {
+	vars := map[int]*soltype.TypeVarType{}
+	t.Accept(&varCollector{out: vars, seen: set.NewSet[*soltype.TypeVarType]()}, soltype.Positive)
+	ids := slices.Sorted(maps.Keys(vars))
+	for changed := true; changed; {
+		changed = false
+		for _, id := range ids {
+			v := vars[id]
+			if v.Level <= lvl || v.Rigid != nil {
+				continue
+			}
+			if target, ok := capturedLevel(v, lvl); ok {
+				c.lowerVar(v, target)
+				changed = true
+			}
+		}
+	}
+}
+
+// capturedLevel returns the lowest level among the variables at or below lvl that are
+// bounds of v, and false when no bound of v is such a variable.
+func capturedLevel(v *soltype.TypeVarType, lvl int) (int, bool) {
+	target, found := lvl, false
+	for _, b := range slices.Concat(v.LowerBounds, v.UpperBounds) {
+		if bv, ok := b.(*soltype.TypeVarType); ok && bv.Level <= lvl {
+			target, found = min(target, bv.Level), true
+		}
+	}
+	return target, found
+}
+
+// lowerVar sets v's level to lvl and lowers every variable and lifetime above lvl that v's
+// bounds hold, along with the ones their bounds hold.
+func (c *checker) lowerVar(v *soltype.TypeVarType, lvl int) {
+	lowerer := &levelLowerer{
+		ctx:       c.ctx,
+		lvl:       lvl,
+		binders:   set.NewSet[*soltype.TypeVarType](),
+		ltBinders: set.NewSet[*soltype.LifetimeVar](),
+	}
+	lowerer.lowerVar(v)
+}
+
+// levelLowerer is the visitor behind lowerVar. It walks a type and lowers each variable
+// and lifetime above lvl that the type holds.
+type levelLowerer struct {
+	ctx *Context
+	lvl int
+	// binders holds the type-parameter variables of each function type the walk entered.
+	// ltBinders holds the lifetime parameters of the same function types. A function
+	// quantifies both kinds itself, so they keep their level.
+	binders   set.Set[*soltype.TypeVarType]
+	ltBinders set.Set[*soltype.LifetimeVar]
+}
+
+func (l *levelLowerer) lowerVar(v *soltype.TypeVarType) {
+	if v.Level <= l.lvl || l.binders.Contains(v) {
+		return
+	}
+	l.ctx.checkThawed(v, "lowerVar")
+	v.Level = l.lvl
+	for _, b := range slices.Concat(v.LowerBounds, v.UpperBounds) {
+		b.Accept(l, soltype.Positive)
+	}
+	if v.Default != nil {
+		v.Default.Type.Accept(l, soltype.Positive)
+	}
+}
+
+func (l *levelLowerer) lowerLifetime(lt soltype.Lifetime) {
+	lv, ok := lt.(*soltype.LifetimeVar)
+	if !ok || lv.Level <= l.lvl || l.ltBinders.Contains(lv) {
+		return
+	}
+	l.ctx.checkThawedLt(lv, "lowerVar")
+	lv.Level = l.lvl
+	for _, b := range slices.Concat(lv.LowerBounds, lv.UpperBounds) {
+		l.lowerLifetime(b)
+	}
+}
+
+func (l *levelLowerer) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	if soltype.LevelOf(t) <= l.lvl {
+		return soltype.EnterResult{SkipChildren: true}
+	}
+	switch t := t.(type) {
+	case *soltype.TypeVarType:
+		l.lowerVar(t)
+		return soltype.EnterResult{SkipChildren: true}
+	case *soltype.RefType:
+		l.lowerLifetime(t.Lt)
+	case *soltype.ClassType:
+		l.lowerLifetime(t.Lt)
+		for _, a := range t.LifetimeArgs {
+			l.lowerLifetime(a)
+		}
+	case *soltype.AliasType:
+		for _, a := range t.LifetimeArgs {
+			l.lowerLifetime(a)
+		}
+	case *soltype.FuncType:
+		for _, tp := range t.TypeParams {
+			l.binders.Add(tp.Var)
+		}
+		for _, lp := range t.LifetimeParams {
+			l.ltBinders.Add(lp.Var)
+		}
+		l.lowerLifetime(t.Lt)
+	}
+	return soltype.EnterResult{}
+}
+
+func (l *levelLowerer) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // generalizes reports whether the `val` or `var` declaration d generalizes its type. It
 // does when one of these holds:

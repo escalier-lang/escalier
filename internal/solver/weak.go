@@ -16,7 +16,9 @@ import (
 //
 // A weak variable sits at the level of the scope that declares the binding. For a
 // module-level binding that is the module's level, the level every component generalizes
-// at, so no later component quantifies it.
+// at, so no later component quantifies it. A later binding's variable that a bound ties to a
+// weak variable is lowered to the weak variable's level when that binding generalizes, as
+// lowerCapturedVars describes, so it is weak too.
 
 // keyVarDecl returns the declaration that key's binding var stands for when that is a
 // `val` or `var`, or nil when it is another kind of declaration.
@@ -125,9 +127,7 @@ func (c *checker) noteWeakReader(b *componentBinding, scheme TypeScheme, lvl int
 //  4. It settles each body-level weak binding the module's functions declare.
 func (c *checker) settleWeakBindings(lvl int) {
 	for _, r := range c.weakReaders {
-		// A weak variable is not one of the reader's type parameters, so it is inlined to
-		// the bounds it holds now.
-		r.scheme.coalesced = c.subsumeFinal(simplifyWithWeakVars(r.scheme, r.scheme.Level, lvl))
+		r.scheme.coalesced = c.subsumeFinal(settleReaderDisplay(r.scheme, lvl))
 		if r.infoNode != nil {
 			c.recordType(r.infoNode, r.scheme.coalesced)
 		}
@@ -445,6 +445,61 @@ func simplifyWithWeakVars(sc *PolyScheme, lvl, weakLvl int) soltype.Type {
 	simplified.Accept(s, soltype.Positive)
 	return simplified.Accept(&weakVarInliner{lvl: weakLvl, binders: s.binders, scan: s}, soltype.Positive)
 }
+
+// settleReaderDisplay returns sc's body coalesced at its own level, with each weak variable
+// replaced by the type it settled on. A weak variable is a variable at or below lvl that is
+// not a function's own type parameter. It is not a type parameter of the reader, so it
+// stands for one type wherever it occurs, and settledWeakType gives that type.
+//
+// A reader's parameter can itself be weak. Given a weak binding `g` whose parameter and
+// result are one weak variable,
+//
+//	fn h(y) { return g(y) }
+//	val a = h(5)
+//
+// gives y's variable the lower bound 5, and h settles to `fn (y: 5) -> 5`.
+func settleReaderDisplay(sc *PolyScheme, lvl int) soltype.Type {
+	keep := schemeBinders(sc.Body, sc.declared)
+	vars := map[int]*soltype.TypeVarType{}
+	sc.Body.Accept(&varCollector{out: vars, seen: set.NewSet[*soltype.TypeVarType]()}, soltype.Positive)
+	for _, v := range vars {
+		if v.Level <= lvl {
+			keep.Add(v)
+		}
+	}
+	coalesced := coalesceSchemeKeeping(sc.Body, sc.Level, sc.declared, sc.declaredLts, keep, true)
+	settler := &weakVarSettler{lvl: lvl, binders: funcTypeParamVars(coalesced)}
+	return coalesced.Accept(settler, soltype.Positive)
+}
+
+// settledWeakType returns the one type the weak variable v stands for. It is the union of
+// the values that flowed into v. When no value flowed into v, it is the intersection of what
+// v's uses require, and it is `never` when v has neither.
+func settledWeakType(v *soltype.TypeVarType) soltype.Type {
+	if lower := coalesce(v, soltype.Positive); !isNeverType(lower) {
+		return lower
+	}
+	if upper := coalesce(v, soltype.Negative); !isUnknown(upper) {
+		return upper
+	}
+	return &soltype.NeverType{}
+}
+
+// weakVarSettler is the visitor behind settleReaderDisplay. It replaces each variable at or
+// below lvl that binders does not hold with the type settledWeakType gives it.
+type weakVarSettler struct {
+	lvl     int
+	binders set.Set[*soltype.TypeVarType]
+}
+
+func (w *weakVarSettler) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	if v, ok := t.(*soltype.TypeVarType); ok && v.Level <= w.lvl && !w.binders.Contains(v) {
+		return soltype.EnterResult{Type: settledWeakType(v), SkipChildren: true}
+	}
+	return soltype.EnterResult{}
+}
+
+func (w *weakVarSettler) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // weakCompanionScanner records, for each type variable at or below lvl, the other members of
 // each union it is produced in and of each intersection it is consumed in.

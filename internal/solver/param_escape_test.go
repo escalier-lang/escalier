@@ -317,7 +317,6 @@ func TestInferOpenEscapeParam(t *testing.T) {
 		errs []string
 	}{
 		{
-			// remember's rendering waits on #2352, so TestInferOpenEscapeParamRendering holds it.
 			name: "ReadOnlyIsStaticBorrow",
 			src: `
 				val mut seen = Map()
@@ -328,10 +327,10 @@ func TestInferOpenEscapeParam(t *testing.T) {
 					return opts.retries
 				}
 			`,
+			want: "fn (value: &'static {retries: 3}) -> undefined",
 			seen: "Map<string, &'static {retries: number}>",
 		},
 		{
-			// remember's rendering waits on #2352, so TestInferOpenEscapeParamRendering holds it.
 			name: "ReadOnlyNeedsWrittenBorrow",
 			src: `
 				val mut seen = Map()
@@ -342,10 +341,14 @@ func TestInferOpenEscapeParam(t *testing.T) {
 					return opts.retries
 				}
 			`,
+			want: "fn (value: &'static {retries: 3}) -> undefined",
 			seen: "Map<string, &'static {retries: number}>",
 			errs: []string{"6:15-6:19: this argument is borrowed by the callee, so write the borrow: `&`"},
 		},
 		{
+			// value's variable is lowered to seen's level, so remember shows the value go
+			// passed. The parameter becomes `{retries: number}` once that variable widens
+			// where it is checked, as #2348 plans.
 			name: "WrittenIsOwned",
 			src: `
 				val mut seen = Map()
@@ -359,7 +362,7 @@ func TestInferOpenEscapeParam(t *testing.T) {
 					return opts.retries
 				}
 			`,
-			want: "fn (value: {retries: number}) -> undefined",
+			want: "fn (value: {retries: 3}) -> undefined",
 			errs: []string{"10:13-10:25: use of moved value 'opts'"},
 		},
 		{
@@ -404,7 +407,7 @@ func TestInferOpenEscapeParam(t *testing.T) {
 					return opts.retries
 				}
 			`,
-			want: "fn <T0>(value: T0) -> T0",
+			want: "fn (value: {retries: 3}) -> {retries: 3}",
 			errs: []string{"10:13-10:25: use of moved value 'opts'"},
 		},
 		{
@@ -476,8 +479,7 @@ func TestInferOpenEscapeParam(t *testing.T) {
 			// A value type has no storage to borrow, so it copies into the borrow without a
 			// written `&`. The key escapes into seen too, so it is a `'static` borrow as well.
 			// A `&'static` of a value type stands for the value type, and seen's values are
-			// writable slots that widen it, so seen holds strings and numbers. remember's
-			// rendering waits on #2352, so TestInferOpenEscapeParamRendering holds it.
+			// writable slots that widen it, so seen holds strings and numbers.
 			name: "ValueTypeArgumentsCopy",
 			src: `
 				val mut seen = Map()
@@ -489,6 +491,7 @@ func TestInferOpenEscapeParam(t *testing.T) {
 					return 1
 				}
 			`,
+			want: `fn (key: &'static ("a" | "b"), value: &'static (3 | 4)) -> undefined`,
 			seen: "Map<string, number>",
 		},
 	}
@@ -505,51 +508,3 @@ func TestInferOpenEscapeParam(t *testing.T) {
 		})
 	}
 }
-
-// DISABLED until #2352, which keeps a function monomorphic when its parameter flows into a weak
-// binding. Today remember renders each such parameter as `unknown`, since seen's weak variable
-// holds the type the parameter's borrow points to and remember is coalesced as if it were generic.
-/*
-func TestInferOpenEscapeParamRendering(t *testing.T) {
-	tests := []struct {
-		name string
-		src  string
-		want string
-	}{
-		{
-			name: "ReadOnlyIsStaticBorrow",
-			src: `
-				val mut seen = Map()
-				fn remember(value) { seen.set("last", value) }
-				fn go() -> number {
-					val opts = {retries: 3}
-					remember(&opts)
-					return opts.retries
-				}
-			`,
-			want: "fn (value: &'static {retries: 3}) -> undefined",
-		},
-		{
-			name: "ValueTypeArgumentsCopy",
-			src: `
-				val mut seen = Map()
-				fn remember(key, value) { seen.set(key, value) }
-				fn go() -> number {
-					val k = "a"
-					remember(k, 3)
-					remember("b", 4)
-					return 1
-				}
-			`,
-			want: `fn (key: &'static ("a" | "b"), value: &'static (3 | 4)) -> undefined`,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			values, errs := inferAgainstTreeWithSpans(t, tt.src)
-			require.Empty(t, errs)
-			require.Equal(t, tt.want, values["remember"])
-		})
-	}
-}
-*/
