@@ -276,6 +276,45 @@ func TestClosureRunsAtPlaces(t *testing.T) {
 			`,
 			want: nil,
 		},
+		// A method read after a dynamic index reads no closure the element holds.
+		"MethodCalleeAfterADynamicIndexOk": {
+			src: `
+				class Box {
+					cb: fn () -> undefined,
+					size(&self) -> number { return 0 },
+				}
+				fn go(i: number) -> number {
+					val mut p = {x: 1}
+					val f = fn () { p.x = 2 }
+					val mut b = Box(fn () {})
+					b.cb = f
+					val o = {list: [b]}
+					val r = &p
+					o.list[i].size()
+					return r.x
+				}
+			`,
+			want: nil,
+		},
+		"FieldCalleeAfterADynamicIndex": {
+			src: `
+				class Box {
+					cb: fn () -> undefined,
+					size(&self) -> number { return 0 },
+				}
+				fn go(i: number) -> number {
+					val mut p = {x: 1}
+					val f = fn () { p.x = 2 }
+					val mut b = Box(fn () {})
+					b.cb = f
+					val o = {list: [b]}
+					val r = &p
+					o.list[i].cb()
+					return r.x
+				}
+			`,
+			want: []string{"13:6-13:18: this call may run 'o.list', which writes 'p' while it is borrowed as immutable"},
+		},
 		// Writing the field replaces the closure it held, so the call runs only the new one.
 		"FieldReassignedToAClosureThatDoesNotWriteOk": {
 			src: `

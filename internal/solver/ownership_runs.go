@@ -131,11 +131,15 @@ func (c *checker) emitClosureRuns(e *ast.CallExpr, ref liveness.StmtRef) {
 // exprPlace finds it. `callee` marks the callee of the call. The closureName runs when
 // `callee` is set and the chain holds no dynamic index. A dynamic index makes the place the
 // container the index reads from, as in `o.list[i]`, whose place is `o.list`. ok is false
-// when a link of the chain reads a method or a getter, as `xs.push` does, since such a link
-// reads no closure that the receiver holds.
+// when a link of the chain reads a method or a getter, as `xs.push` and `xs[i].size` do,
+// since such a link reads no closure that the receiver holds.
 func (c *checker) closureNameOf(expr ast.Expr, callee bool) (closureName, bool) {
-	if slices.ContainsFunc(c.fieldChain(expr).links, func(link placeLink) bool { return link.closes }) {
-		return closureName{}, false
+	// A link after a dynamic index still reads a method or a field of the element, so each
+	// named link is checked, not only those fieldChain reaches.
+	for _, link := range chainOf(expr, c.indexSegment).links {
+		if !link.dynamic && link.seg.name != "" && c.linkCloses(link) {
+			return closureName{}, false
+		}
 	}
 	place, dynamic, ok := c.chainPlace(expr)
 	if !ok {

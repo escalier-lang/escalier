@@ -161,13 +161,9 @@ func chainOf(e ast.Expr, indexSegment func(ast.Expr) (string, bool)) placeChain 
 }
 
 // fieldChain returns the chain chainOf returns for e, with each index link's segment
-// resolved and each closing link marked. It checks links from the root outward and stops at
-// the first link that ends the place the chain names. That is a link that is dynamic, has
-// an empty name, or closes.
-//
-// An index that names one element of a receiver read by position does not close, as
-// `xs[0]` and `xs["0"]` do not off an array. The element is part of the place though the
-// receiver's type declares no property of that name.
+// resolved and each closing link marked, as linkCloses decides. It checks links from the
+// root outward and stops at the first link that ends the place the chain names. That is a
+// link that is dynamic, has an empty name, or closes.
 func (c *checker) fieldChain(e ast.Expr) placeChain {
 	chain := chainOf(e, c.indexSegment)
 	for i := range chain.links {
@@ -176,15 +172,25 @@ func (c *checker) fieldChain(e ast.Expr) placeChain {
 			break
 		}
 
-		_, isIndex := canonicalIndex(link.seg.name)
-		recv := c.info.TypeOf(link.object)
-		element := link.key != nil && isIndex && recv != nil && c.readsByPosition(recv)
-		link.closes = !element && !c.readsAsField(link.object, link.seg.name)
+		link.closes = c.linkCloses(*link)
 		if link.closes {
 			break
 		}
 	}
 	return chain
+}
+
+// linkCloses reports whether link, a link with a segment name, reads something other than a
+// property its receiver declares, such as a getter or a method.
+//
+// An index that names one element of a receiver read by position does not close, as
+// `xs[0]` and `xs["0"]` do not off an array. The element is part of the place though the
+// receiver's type declares no property of that name.
+func (c *checker) linkCloses(link placeLink) bool {
+	_, isIndex := canonicalIndex(link.seg.name)
+	recv := c.info.TypeOf(link.object)
+	element := link.key != nil && isIndex && recv != nil && c.readsByPosition(recv)
+	return !element && !c.readsAsField(link.object, link.seg.name)
 }
 
 // firstDynamic returns the position in links of the first link marked dynamic, and -1 when
