@@ -239,10 +239,14 @@ func TestFactsSampleMethods(t *testing.T) {
 		"NoReturnToRead": {"String.prototype.localeCompare", "receiver:borrow returns:unknown"},
 		// An iterator is its own iterable, so @@iterator returns the receiver.
 		"SymbolKeyedMethod": {"Iterator.prototype [ @@iterator ]", "receiver:borrow returns:receiver"},
-		// setTime writes `dateObject.[[DateValue]]` and returns the same value
-		// it stored, which reaches the return through `TimeClip`, an operation
-		// §4.2 does not resolve.
-		"MutatingMethodWithAnUnresolvedReturn": {"Date.prototype.setTime", "receiver:mutBorrow returns:unknown"},
+		// pop removes the receiver's last element and returns it. The element
+		// is read out of the receiver, so the return is interior to it, which
+		// no member of the alias lattice spells.
+		"MutatingMethodWithAnUnresolvedReturn": {"Array.prototype.pop", "receiver:mutBorrow returns:unknown"},
+		// setTime writes `dateObject.[[DateValue]]` and returns what `TimeClip`
+		// computed. Every return in TimeClip is a fresh number, and the call
+		// takes its origin from them.
+		"ReturnThroughAnOperationsOwnReturns": {"Date.prototype.setTime", "receiver:mutBorrow returns:fresh"},
 		// delete empties its entry with `Set p.[[Key]] to EMPTY`, a write to a
 		// Map Entry Record read out of `M.[[MapData]]`. §4.1 charges it to the
 		// Map, so the receiver claim is mutBorrow. The return is the boolean
@@ -251,8 +255,9 @@ func TestFactsSampleMethods(t *testing.T) {
 		// A caller of an algorithm the analysis could not read every step of is
 		// classified all the same, since §4.1 charges `Unattributable` up the
 		// call graph and `Incomplete` not at all. next resumes the generator
-		// through `GeneratorResume`, which carries the warning.
-		"CallerOfAnIncompleteAlgorithm": {"GeneratorPrototype.next", "receiver:borrow returns:unknown"},
+		// through `GeneratorResume`, which carries the warning. Every return
+		// GeneratorResume reaches is an iterator result it allocates.
+		"CallerOfAnIncompleteAlgorithm": {"GeneratorPrototype.next", "receiver:borrow returns:fresh"},
 		// A method carrying either warning keeps its return alias and loses only
 		// its receiver claim. TypedArray.prototype.slice reaches a prose step
 		// that could have written the receiver for all the analysis can tell.
@@ -260,9 +265,9 @@ func TestFactsSampleMethods(t *testing.T) {
 		// allocated.
 		"IncompleteMethodReturningAFreshValue": {"TypedArray.prototype.slice", "returns:fresh"},
 		// The same withheld receiver over a return the walk could not resolve.
-		// toLowerCase returns what a prose step reaching the Unicode case-mapping
-		// table produced.
-		"IncompleteMethodReturningAnUnresolvedValue": {"String.prototype.toLowerCase", "returns:unknown"},
+		// toUpperCase returns what a prose step reaching the Unicode
+		// case-mapping table produced.
+		"IncompleteMethodReturningAnUnresolvedValue": {"String.prototype.toUpperCase", "returns:unknown"},
 		// A static keeps its receiver claim through either warning, since having
 		// none follows from `Func.Kind` rather than from a step. Array.of builds
 		// its array through `Construct(C, ...)`, whose result the origin map
@@ -504,7 +509,7 @@ func TestFactsUnclassifiedReturnsAreListed(t *testing.T) {
 	require.NotContains(t, unresolved, "Date.prototype.getTime")
 	require.NotContains(t, unresolved, "Date.prototype.valueOf")
 	// The same count the tallies below record as `returns unknown`.
-	require.Len(t, unresolved, 247)
+	require.Len(t, unresolved, 149)
 }
 
 // demoCFG is a two-method graph standing in for the shapes the committed one
@@ -577,11 +582,11 @@ func TestUnclassifiedReadsAnUnwiredAxisAsOpen(t *testing.T) {
 
 // Every published fact carries a value on every axis, which is the invariant
 // that lets facts.json omit coverage flags entirely. The analysis alone does
-// not hold it — it withholds 24 receivers — and the curated layer is what
+// not hold it — it withholds 23 receivers — and the curated layer is what
 // closes the gap.
 func TestFactsCarryEveryAxis(t *testing.T) {
 	require.Empty(t, testFacts(t).Incomplete())
-	require.Len(t, testAnalyzedFacts(t).Incomplete(), 24)
+	require.Len(t, testAnalyzedFacts(t).Incomplete(), 23)
 }
 
 // A hole is named with the axis that has it, so the operator knows which
@@ -680,11 +685,11 @@ func TestFactsTallies(t *testing.T) {
 	snaps.MatchInlineSnapshot(t, strings.Join(lines, "\n"), snaps.Inline(`receiver borrow: 245
 receiver mutBorrow: 68
 receiver none: 188
-returns fresh: 232
-returns param: 6
+returns fresh: 328
+returns param: 7
 returns receiver: 15
-returns union: 1
-returns unknown: 247
+returns union: 2
+returns unknown: 149
 total: 501`))
 }
 

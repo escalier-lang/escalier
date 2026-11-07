@@ -12,7 +12,6 @@ Number.prototype.toFixed receiver: fill-in borrow
 Number.prototype.toLocaleString receiver: fill-in borrow
 Number.prototype.toPrecision receiver: fill-in borrow
 RegExp.prototype [ @@matchAll ] receiver: fill-in borrow
-RegExp.prototype [ @@replace ] receiver: fill-in mutBorrow
 RegExp.prototype [ @@split ] receiver: fill-in borrow
 RegExpStringIteratorPrototype.next receiver: fill-in mutBorrow
 SharedArrayBuffer.prototype.grow receiver: fill-in mutBorrow

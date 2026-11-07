@@ -1,0 +1,298 @@
+visible: src/index.ts:2355 -> src/index.ts:2602
+visible: src/index.ts:3180 -> src/index.ts:2602
+unmatched: src/index.ts:1513 -> src/index.ts:86  (Jelly: src/index.ts:86)
+unmatched: src/index.ts:90 -> src/index.ts:94  (Jelly: src/index.ts:79)
+unmatched: src/index.ts:1729 -> src/index.ts:70  (Jelly: src/index.ts:69)
+unmatched: src/index.ts:1600 -> src/index.ts:70  (Jelly: src/index.ts:69)
+unmatched: src/index.ts:1601 -> src/index.ts:70  (Jelly: src/index.ts:69)
+unmatched: src/immer.ts:29 -> src/core/immerClass.ts:52  (Jelly: src/core/immerClass.ts:47)
+visible: express/lib/utils.js:29 -> express/lib/utils.js:29
+visible: express/lib/application.js:471 -> express/lib/application.js:471
+visible: express/lib/application.js:219 -> express/lib/application.js:219
+silent: date-fns/constructFrom.js:39 -> drivers/datefns.mjs:55  (Jelly: drivers/datefns.mjs:21, drivers/datefns.mjs:235, drivers/datefns.mjs:191, drivers/datefns.mjs:253, ...)
+silent: date-fns/constructFrom.js:39 -> drivers/datefns.mjs:127  (Jelly: drivers/datefns.mjs:21, drivers/datefns.mjs:235, drivers/datefns.mjs:191, drivers/datefns.mjs:253, ...)
+silent: date-fns/constructFrom.js:39 -> drivers/datefns.mjs:155  (Jelly: drivers/datefns.mjs:21, drivers/datefns.mjs:235, drivers/datefns.mjs:191, drivers/datefns.mjs:253, ...)
+silent: date-fns/constructFrom.js:39 -> drivers/datefns.mjs:228  (Jelly: drivers/datefns.mjs:21, drivers/datefns.mjs:235, drivers/datefns.mjs:191, drivers/datefns.mjs:253, ...)
+visible: date-fns/formatDuration.js:89 -> date-fns/formatDuration.js:89
+visible: date-fns/parse.js:377 -> date-fns/parse.js:379
+unmatched: date-fns/parse.js:375 -> date-fns/parse/_lib/Setter.js:47  (Jelly: date-fns/parse/_lib/Setter.js:43)
+silent: lodash-es/_stringToPath.js:21 -> lodash-es/_stringToPath.js:21  (Jelly: lodash-es/replace.js:22)
+silent: lodash-es/replace.js:26 -> drivers/lodashes.mjs:234  (Jelly: lodash-es/replace.js:22)
+silent: lodash-es/template.js:207 -> lodash-es/template.js:207  (Jelly: lodash-es/replace.js:22)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:56  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:56  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:56  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:56  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:103  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:103  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:103  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:103  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:185  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:185  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:185  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:185  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:283  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:283  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:233 -> drivers/zod.mjs:283  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:283  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:283  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/schemas.js:2614 -> drivers/zod.mjs:241  (Jelly: zod/v4/classic/schemas.js:1496, zod/v4/classic/schemas.js:1472, zod/v4/core/api.js:1099, drivers/zod.mjs:1947, ...)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:367  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:367  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:233 -> drivers/zod.mjs:367  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:367  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:367  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:414  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:414  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:233 -> drivers/zod.mjs:414  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:414  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:414  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:458  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:458  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:233 -> drivers/zod.mjs:458  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:458  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:458  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:503  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:503  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:233 -> drivers/zod.mjs:503  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:503  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:503  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:547  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:547  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:233 -> drivers/zod.mjs:547  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:547  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:547  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:592  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:592  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:233 -> drivers/zod.mjs:592  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:592  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:592  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:636  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:636  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:233 -> drivers/zod.mjs:636  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:636  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:636  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:681  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:681  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:233 -> drivers/zod.mjs:681  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:681  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:681  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:725  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:725  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:233 -> drivers/zod.mjs:725  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:725  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:725  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:771  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:771  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:233 -> drivers/zod.mjs:771  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:771  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:771  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:816  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:816  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:233 -> drivers/zod.mjs:816  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:816  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:816  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:862  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:862  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:233 -> drivers/zod.mjs:862  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:862  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:862  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:906  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:906  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:233 -> drivers/zod.mjs:906  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:906  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:906  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:955  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:955  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:233 -> drivers/zod.mjs:955  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:955  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:955  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:1003  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:1003  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:233 -> drivers/zod.mjs:1003  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:1003  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:1003  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:1047  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:1090  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:1134  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:1177  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:1221  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:1221  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:233 -> drivers/zod.mjs:1221  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:1221  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:1221  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/classic/schemas.js:1218 -> drivers/zod.mjs:1220  (Jelly: zod/v4/core/api.js:1055, drivers/zod.mjs:2079, drivers/zod.mjs:2133, drivers/zod.mjs:1647, ...)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:1264  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:1264  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:233 -> drivers/zod.mjs:1264  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:1264  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:1264  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:1309  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/json-schema-processors.js:722 -> zod/v4/core/util.js:870  (Jelly: drivers/zod.mjs:1312, drivers/zod.mjs:1357)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:1309  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:233 -> drivers/zod.mjs:1309  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:1309  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:1309  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/schemas.js:2255 -> zod/v4/core/util.js:870  (Jelly: drivers/zod.mjs:1312, drivers/zod.mjs:1357)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:1354  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:1354  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:233 -> drivers/zod.mjs:1354  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:1354  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:1354  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:1401  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:1401  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:233 -> drivers/zod.mjs:1401  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:1401  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:1401  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:1445  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:1445  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:233 -> drivers/zod.mjs:1445  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:1445  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:1445  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/classic/schemas.js:119 -> drivers/zod.mjs:1492  (Jelly: drivers/zod.mjs:2086, drivers/zod.mjs:2140, drivers/zod.mjs:1654, drivers/zod.mjs:1710, ...)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:1534  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:1534  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:1534  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:1534  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/classic/schemas.js:119 -> drivers/zod.mjs:1576  (Jelly: drivers/zod.mjs:2086, drivers/zod.mjs:2140, drivers/zod.mjs:1654, drivers/zod.mjs:1710, ...)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:1593  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:1593  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:1593  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:1593  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:1614  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:1614  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:1614  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:1614  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:1670  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:1670  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:1670  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:1670  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:1742  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:1742  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:233 -> drivers/zod.mjs:1742  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:1742  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:1742  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/schemas.js:2614 -> drivers/zod.mjs:1726  (Jelly: zod/v4/classic/schemas.js:1496, zod/v4/classic/schemas.js:1472, zod/v4/core/api.js:1099, drivers/zod.mjs:1947, ...)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:1800  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:1800  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:233 -> drivers/zod.mjs:1800  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:1800  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:1800  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/classic/schemas.js:119 -> drivers/zod.mjs:1863  (Jelly: drivers/zod.mjs:2086, drivers/zod.mjs:2140, drivers/zod.mjs:1654, drivers/zod.mjs:1710, ...)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:1879  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:1879  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:1879  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:1879  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/classic/schemas.js:119 -> drivers/zod.mjs:1921  (Jelly: drivers/zod.mjs:2086, drivers/zod.mjs:2140, drivers/zod.mjs:1654, drivers/zod.mjs:1710, ...)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:1926  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:1926  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:1926  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:1926  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:1971  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:1971  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:1971  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:1971  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:2027  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:2027  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:2027  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:2027  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:2047  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:2047  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:2047  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:2047  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:2101  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:2101  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:2101  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:2101  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:2171  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:2171  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:233 -> drivers/zod.mjs:2171  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:2171  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:2171  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/schemas.js:2614 -> drivers/zod.mjs:2156  (Jelly: zod/v4/classic/schemas.js:1496, zod/v4/classic/schemas.js:1472, zod/v4/core/api.js:1099, drivers/zod.mjs:1947, ...)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:2228  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:2228  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:233 -> drivers/zod.mjs:2228  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:2228  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:2228  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/classic/schemas.js:119 -> drivers/zod.mjs:2291  (Jelly: drivers/zod.mjs:2086, drivers/zod.mjs:2140, drivers/zod.mjs:1654, drivers/zod.mjs:1710, ...)
+silent: zod/v4/core/to-json-schema.js:114 -> drivers/zod.mjs:2306  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:149 -> drivers/zod.mjs:2306  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/core/to-json-schema.js:461 -> drivers/zod.mjs:2306  (Jelly: zod/v4/core/to-json-schema.js:33)
+silent: zod/v4/core/to-json-schema.js:525 -> drivers/zod.mjs:2306  (Jelly: zod/v4/core/registries.js:30)
+silent: zod/v4/classic/schemas.js:119 -> drivers/zod.mjs:2348  (Jelly: drivers/zod.mjs:2086, drivers/zod.mjs:2140, drivers/zod.mjs:1654, drivers/zod.mjs:1710, ...)
+visible: zod/v4/classic/schemas.js:201 -> zod/v4/core/util.js:753
+visible: zod/v4/classic/schemas.js:591 -> zod/v4/core/util.js:753
+visible: zod/v4/classic/schemas.js:687 -> zod/v4/core/util.js:753
+visible: zod/v4/classic/schemas.js:805 -> zod/v4/core/util.js:753
+visible: zod/v4/classic/schemas.js:28 -> zod/v4/core/util.js:168
+visible: zod/v4/classic/schemas.js:123 -> zod/v4/core/util.js:749
+visible: zod/v4/classic/schemas.js:45 -> zod/v4/core/util.js:773
+visible: zod/v4/classic/schemas.js:1316 -> zod/v4/core/util.js:339
+visible: zod/v4/classic/schemas.js:936 -> zod/v4/core/util.js:339
+visible: zod/v4/classic/schemas.js:1342 -> zod/v4/core/util.js:869
+visible: zod/v4/classic/schemas.js:1287 -> zod/v4/core/util.js:255
+visible: zod/v4/core/json-schema-processors.js:684 -> zod/v4/core/json-schema-processors.js:684
+visible: zod/v4/core/to-json-schema.js:557 -> zod/v4/classic/schemas.js:1286
+visible: zod/v4/core/to-json-schema.js:557 -> zod/v4/classic/schemas.js:1301
+visible: zod/v4/classic/schemas.js:826 -> zod/v4/classic/schemas.js:26
+visible: zod/v4/classic/schemas.js:829 -> zod/v4/classic/schemas.js:26
+visible: zod/v4/classic/schemas.js:832 -> zod/v4/classic/schemas.js:26
+visible: zod/v4/classic/schemas.js:835 -> zod/v4/classic/schemas.js:26
+visible: zod/v4/core/util.js:589 -> drivers/zod.mjs:961
+visible: zod/v4/core/util.js:589 -> drivers/zod.mjs:963
+visible: zod/v4/core/util.js:589 -> drivers/zod.mjs:1009
+visible: zod/v4/core/util.js:589 -> drivers/zod.mjs:1011
+visible: zod/v4/core/to-json-schema.js:53 -> drivers/zod.mjs:1221
+visible: zod/v4/core/to-json-schema.js:53 -> drivers/zod.mjs:1264
+visible: zod/v4/classic/schemas.js:45 -> zod/v4/classic/schemas.js:147
+visible: zod/v4/classic/schemas.js:607 -> zod/v4/classic/schemas.js:26
+visible: zod/v4/classic/schemas.js:610 -> zod/v4/classic/schemas.js:26
+visible: zod/v4/classic/schemas.js:613 -> zod/v4/classic/schemas.js:26
+visible: zod/v4/classic/schemas.js:616 -> zod/v4/classic/schemas.js:26
+visible: zod/v4/classic/schemas.js:619 -> zod/v4/classic/schemas.js:26
+visible: zod/v4/classic/schemas.js:622 -> zod/v4/classic/schemas.js:26
+visible: zod/v4/classic/schemas.js:625 -> zod/v4/classic/schemas.js:26
+visible: zod/v4/classic/schemas.js:628 -> zod/v4/classic/schemas.js:26
+visible: zod/v4/classic/schemas.js:631 -> zod/v4/classic/schemas.js:26
+visible: zod/v4/classic/schemas.js:634 -> zod/v4/classic/schemas.js:26
+visible: zod/v4/classic/schemas.js:637 -> zod/v4/classic/schemas.js:26
+visible: zod/v4/classic/schemas.js:640 -> zod/v4/classic/schemas.js:26
+visible: zod/v4/classic/schemas.js:643 -> zod/v4/classic/schemas.js:26
+visible: zod/v4/classic/schemas.js:646 -> zod/v4/classic/schemas.js:26
+visible: zod/v4/classic/schemas.js:904 -> zod/v4/core/util.js:339
+visible: zod/v4/classic/schemas.js:854 -> zod/v4/core/util.js:846
+visible: zod/v4/classic/schemas.js:1142 -> zod/v4/core/util.js:339
+visible: zod/v4/core/util.js:589 -> drivers/zod.mjs:1932
+visible: zod/v4/core/util.js:589 -> drivers/zod.mjs:1934
+visible: zod/v4/core/util.js:589 -> drivers/zod.mjs:1939
+visible: zod/v4/core/util.js:589 -> drivers/zod.mjs:1940
+visible: zod/v4/core/util.js:589 -> drivers/zod.mjs:1941
+visible: zod/v4/core/util.js:589 -> drivers/zod.mjs:1942
+visible: zod/v4/core/util.js:589 -> drivers/zod.mjs:1977
+visible: zod/v4/core/util.js:589 -> drivers/zod.mjs:1979
+visible: zod/v4/core/util.js:589 -> drivers/zod.mjs:1984
+visible: zod/v4/core/util.js:589 -> drivers/zod.mjs:1985
+visible: zod/v4/core/util.js:589 -> drivers/zod.mjs:1986
+visible: zod/v4/core/util.js:589 -> drivers/zod.mjs:1987
+visible: zod/v4/classic/schemas.js:861 -> zod/v4/core/util.js:168
+visible: zod/v4/classic/schemas.js:861 -> zod/v4/classic/schemas.js:38
+visible: zod/v4/classic/schemas.js:864 -> zod/v4/core/util.js:168
+visible: zod/v4/classic/schemas.js:864 -> zod/v4/classic/schemas.js:38
+visible: zod/v4/classic/schemas.js:867 -> zod/v4/core/util.js:168
+visible: zod/v4/classic/schemas.js:867 -> zod/v4/classic/schemas.js:38
+visible: zod/v4/classic/schemas.js:870 -> zod/v4/core/util.js:168
+visible: zod/v4/classic/schemas.js:870 -> zod/v4/classic/schemas.js:38
+visible: zod/v4/classic/schemas.js:873 -> zod/v4/core/util.js:168
+visible: zod/v4/classic/schemas.js:873 -> zod/v4/classic/schemas.js:38
+visible: zod/v4/classic/schemas.js:876 -> zod/v4/core/util.js:449
+visible: zod/v4/classic/schemas.js:879 -> zod/v4/core/util.js:473
+visible: zod/v4/classic/schemas.js:882 -> zod/v4/core/util.js:479
+visible: zod/v4/classic/schemas.js:885 -> zod/v4/core/util.js:412
+visible: zod/v4/classic/schemas.js:888 -> zod/v4/core/util.js:437
+visible: zod/v4/classic/schemas.js:891 -> zod/v4/core/util.js:498
+visible: zod/v4/classic/schemas.js:894 -> zod/v4/core/util.js:498
+visible: zod/v4/classic/schemas.js:897 -> zod/v4/core/util.js:511
+unmatched: zod/v4/core/util.js:48 -> zod/v4/core/util.js:34  (Jelly: zod/v4/core/util.js:33)
+unmatched: zod/v4/core/registries.js:48 -> zod/v4/core/registries.js:5  (Jelly: zod/v4/core/registries.js:4)
+unmatched: zod/v4/classic/schemas.js:1199 -> zod/v4/core/core.js:130  (Jelly: zod/v4/core/core.js:129)

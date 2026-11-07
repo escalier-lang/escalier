@@ -31,6 +31,11 @@ const (
 	// OriginFresh is a value the algorithm itself allocated. Mutating it is not
 	// observable to the caller.
 	OriginFresh
+	// OriginGlobal is a module-level value, named by a GlobalExpr. The caller
+	// never passed it, so writing it charges neither the receiver nor a
+	// parameter. ECMA-262 has no such values. A front end lowering a library's
+	// own source names its module-level bindings this way.
+	OriginGlobal
 	// OriginUnknown is a value the analysis could not tie to any of the above.
 	// It is the top of the lattice, so joining it with anything yields it.
 	OriginUnknown
@@ -39,29 +44,33 @@ const (
 // Origin is where a value came from. Index is the parameter position and is
 // meaningful only when Kind is OriginParam.
 //
-// Interior marks a value read out of the backing store of the value Kind names,
-// rather than that value itself. `view.[[ViewedArrayBuffer]]` in `SetViewValue`
-// is the interior of parameter 0. Writing an interior value writes the object
-// holding it, which is what lets §4.1 charge a DataView setter's byte store to
-// its receiver. It is not the object itself, so it never stands in where
-// identity matters, such as §4.3's return alias.
+// Interior marks a value reachable from the value Kind names, rather than that
+// value itself. `view.[[ViewedArrayBuffer]]` in `SetViewValue` is the interior
+// of parameter 0, and so is `options.status` read off a parameter named
+// `options`. Writing an interior value writes the object holding it, which is
+// what lets §4.1 charge a DataView setter's byte store to its receiver. It is
+// not the object itself, so it never stands in where identity matters, such as
+// §4.3's return alias.
 //
-// An interior value is part of its holder's own state, which is what separates
-// a backing-store slot from an ordinary property. The List in `M.[[MapData]]`
-// is reachable only through the Map's own methods, so emptying one of its
-// entries changes what `Map.prototype.get` returns. A property instead holds a
-// separate object that the owner only references. Writing that object leaves
-// every method of the owner returning what it did before, and the read itself
-// may run a getter that returns anything. Interior therefore means "inside this
-// object's state" rather than "one read below it", which is why a further read
-// off an interior value keeps the marker.
+// A backing-store slot and an ordinary property both reach interior values.
+// Escalier's `mut` is deep, as docs/08_mutability.md states, so an immutable
+// reference must not observe a write anywhere in the structure it reaches. A
+// write through a property of the receiver is therefore a write to the
+// receiver, even though the receiver's own methods may return what they did
+// before. A further read off an interior value keeps the marker.
 //
-// Shallow marks a value that is fresh only at the top. The algorithm allocated
-// the value itself but not what it holds, so writing it stays invisible to the
-// caller while reading inside it can reach a value the caller owns. An
-// allocator that stores one of its arguments into the value it returns builds
-// one, and so does the call that builds a rest parameter's List out of the
-// caller's arguments. See shallowAllocators and paramOrigin.
+// Shallow on a fresh value marks one that is fresh only at the top. The
+// algorithm allocated the value itself but not what it holds, so writing it
+// stays invisible to the caller while reading inside it can reach a value the
+// caller owns. An allocator that stores one of its arguments into the value it
+// returns builds one, and so does the call that builds a rest parameter's List
+// out of the caller's arguments. See shallowAllocators and paramOrigin.
+//
+// Shallow on the receiver or a parameter marks a value that is either that
+// value or a fresh one, the join of the two. `options = options || {}` binds
+// one. A write to it is charged to the parameter, which is sound because
+// writing the fresh half is invisible. What it holds may come from either half,
+// so a read inside it is `Unknown`.
 type Origin struct {
 	Kind     OriginKind
 	Index    int
@@ -69,13 +78,14 @@ type Origin struct {
 	Shallow  bool
 }
 
-// Receiver, Fresh, ShallowFresh and Unknown are the origins that carry no
-// index. ShallowFresh is the value that is fresh while its contents are not,
+// Receiver, Fresh, ShallowFresh, Global and Unknown are the origins that carry
+// no index. ShallowFresh is the value that is fresh while its contents are not,
 // which is what a shallow allocator returns and what a rest parameter names.
 var (
 	Receiver     = Origin{Kind: OriginReceiver}
 	Fresh        = Origin{Kind: OriginFresh}
 	ShallowFresh = Origin{Kind: OriginFresh, Shallow: true}
+	Global       = Origin{Kind: OriginGlobal}
 	Unknown      = Origin{Kind: OriginUnknown}
 )
 
@@ -113,6 +123,10 @@ func interiorOf(o Origin) Origin {
 		// See originUnset.
 		return o
 	case OriginReceiver, OriginParam:
+		// A value that may be a fresh one holds whatever the fresh half holds.
+		if o.Shallow {
+			return Unknown
+		}
 		o.Interior = true
 		return o
 	case OriginFresh:
@@ -122,27 +136,35 @@ func interiorOf(o Origin) Origin {
 			return Unknown
 		}
 		return Fresh
+	case OriginGlobal:
+		return Global
 	default:
 		return Unknown
 	}
 }
 
 // insideOf returns the origin of a value read out of o by a property read, such
-// as one entry of a List an object keeps in a backing-store slot.
+// as one entry of a List an object keeps in a backing-store slot, or a field of
+// an options object.
 //
-// An interior value's contents are still inside the object holding it, so
-// writing one of them writes that object. `Map.prototype.delete` reaches the
+// A value read off the receiver or a parameter is reachable from it, so writing
+// it writes that holder, as Origin describes. `Map.prototype.delete` reaches the
 // entry it empties through `M.[[MapData]]`, and the write to that entry is
-// charged to `M`. Reading a property off anything else breaks the chain,
-// because the value read out of a container is a different object from the
-// container.
+// charged to `M`. A value read off a fresh allocation may be one of the values
+// stored into it, which can be the caller's own, so that read breaks the chain.
 func insideOf(o Origin) Origin {
 	switch {
 	case o.Kind == originUnset:
 		// The walk has not reached the definition of the object being read.
 		// See originUnset.
 		return o
-	case o.Interior:
+	case o.Shallow && (o.Kind == OriginReceiver || o.Kind == OriginParam):
+		// The fresh half's contents are unknown. See Origin.
+		return Unknown
+	case o.Interior, o.Kind == OriginGlobal:
+		return o
+	case o.Kind == OriginReceiver, o.Kind == OriginParam:
+		o.Interior = true
 		return o
 	default:
 		return Unknown
@@ -160,6 +182,8 @@ func (o Origin) String() string {
 		name = fmt.Sprintf("Param(%d)", o.Index)
 	case OriginFresh:
 		name = "Fresh"
+	case OriginGlobal:
+		name = "Global"
 	case OriginUnknown:
 		name = "Unknown"
 	default:
@@ -178,17 +202,49 @@ func (o Origin) String() string {
 // their origin and two that disagree collapse to `Unknown`. That collapse is
 // what makes the analysis path-insensitive. A name assigned on two branches
 // takes the join of both rather than whichever the walk reached last.
+//
+// Two origins agree when they name the same value, whatever their Shallow
+// marks, and the join is shallow when either side is. A fresh value also agrees
+// with the receiver or a parameter, and the join is that value marked shallow.
+// See Origin for why charging a write to it is sound.
 func (o Origin) join(other Origin) Origin {
 	switch {
 	case o.Kind == originUnset:
 		return other
 	case other.Kind == originUnset:
 		return o
-	case o == other:
+	case o.sameValue(other):
+		o.Shallow = o.Shallow || other.Shallow
+		return o
+	case o.Kind == OriginFresh && other.names():
+		other.Shallow = true
+		return other
+	case other.Kind == OriginFresh && o.names():
+		o.Shallow = true
 		return o
 	default:
 		return Unknown
 	}
+}
+
+// sameValue reports whether two origins name the same value, ignoring Shallow.
+func (o Origin) sameValue(other Origin) bool {
+	o.Shallow, other.Shallow = false, false
+	return o == other
+}
+
+// names reports whether o is the receiver or a parameter, or a value reachable
+// from one.
+func (o Origin) names() bool {
+	return o.Kind == OriginReceiver || o.Kind == OriginParam
+}
+
+// Exact reports whether o is the receiver or a parameter itself: not a value
+// reachable from it, and not a join of it with a fresh value. Only an exact
+// origin stands in where identity matters, such as a raised value the throw
+// analysis threads back to the caller.
+func (o Origin) Exact() bool {
+	return o.names() && !o.Interior && !o.Shallow
 }
 
 // identityCoercions are the abstract operations that hand back the value they
@@ -373,10 +429,20 @@ var shallowAllocators = set.FromSlice([]string{
 })
 
 // OriginMap holds the origin of every value name in one function.
+//
+// returns, when set, answers what a call to a function in the same graph hands
+// back, as NewOriginMaps describes. A map built without it treats every call
+// outside the tables below as `Unknown`.
 type OriginMap struct {
 	fn      *Func
 	origins map[string]Origin
 	free    set.Set[string]
+	returns func(m *OriginMap, callee string) (Origin, bool)
+
+	// stored, when set, answers what the graph's functions that implement a
+	// declared function type return, one origin each in the implementer's
+	// terms. It reports false when any of them is not known yet.
+	stored func(via string) ([]Origin, bool)
 }
 
 // freeNames returns fn's free names, the value names it reads but never binds.
@@ -460,10 +526,16 @@ func freeNames(fn *Func) set.Set[string] {
 // loop's back edge redefines still reaches its uses. It terminates because an
 // origin only climbs the lattice, from unset to one origin to `Unknown`.
 func NewOriginMap(fn *Func) *OriginMap {
+	return newOriginMap(fn, nil, nil)
+}
+
+func newOriginMap(fn *Func, returns func(m *OriginMap, callee string) (Origin, bool), stored func(via string) ([]Origin, bool)) *OriginMap {
 	m := &OriginMap{
 		fn:      fn,
 		origins: make(map[string]Origin, len(fn.Params)+len(fn.Nodes)),
 		free:    freeNames(fn),
+		returns: returns,
+		stored:  stored,
 	}
 	for {
 		changed := false
@@ -476,7 +548,7 @@ func NewOriginMap(fn *Func) *OriginMap {
 				changed = m.bind(node.Target, m.eval(node.Source)) || changed
 			case *CallNode:
 				if node.Target != "" {
-					changed = m.bind(node.Target, m.evalCall(node.Callee, node.Args)) || changed
+					changed = m.bind(node.Target, m.evalCallNode(node)) || changed
 				}
 			default:
 				// No other node shape binds a name.
@@ -485,6 +557,109 @@ func NewOriginMap(fn *Func) *OriginMap {
 		if !changed {
 			return m
 		}
+	}
+}
+
+// NewOriginMaps computes the origin map of every function in cfg, letting a
+// call to an abstract operation take its result's origin from what that
+// operation returns. `ToDate(x)` comes out fresh when every return in `ToDate`
+// is, and a helper that returns its argument hands the caller that argument's
+// origin.
+//
+// What each operation returns depends on the maps of the operations it calls,
+// so the maps are computed in rounds. The first round answers every call
+// `Unknown`, the lattice top, which is sound. Each later round reads the
+// returns the round before computed. Those only move down the lattice, since a
+// more precise callee makes its caller more precise, so the rounds stop.
+func NewOriginMaps(cfg *CFG) map[*Func]*OriginMap {
+	summaries := make(map[*Func]Origin)
+	implementers := implementersOf(cfg)
+	stored := func(via string) ([]Origin, bool) {
+		var rs []Origin
+		for _, target := range implementers[via] {
+			r, ok := summaries[target]
+			if !ok {
+				return nil, false
+			}
+			rs = append(rs, r)
+		}
+		return rs, true
+	}
+	for {
+		maps := make(map[*Func]*OriginMap, len(cfg.Funcs))
+		for _, fn := range cfg.Funcs {
+			maps[fn] = newOriginMap(fn, func(m *OriginMap, callee string) (Origin, bool) {
+				target := resolveCallee(cfg, m, callee)
+				if target == nil {
+					return Origin{}, false
+				}
+				r, ok := summaries[target]
+				return r, ok
+			}, stored)
+		}
+		changed := false
+		for _, fn := range cfg.Funcs {
+			if fn.Kind != AbstractOp {
+				continue
+			}
+			r := returnOrigin(maps[fn])
+			if prev, ok := summaries[fn]; !ok || prev != r {
+				summaries[fn] = r
+				changed = true
+			}
+		}
+		if !changed {
+			return maps
+		}
+	}
+}
+
+// implementersOf maps each declared function type to the graph's functions
+// that implement it, in graph order.
+func implementersOf(cfg *CFG) map[string][]*Func {
+	implementers := map[string][]*Func{}
+	for _, fn := range cfg.Funcs {
+		for _, via := range fn.Implements {
+			implementers[via] = append(implementers[via], fn)
+		}
+	}
+	return implementers
+}
+
+// returnOrigin joins the origins of every value fn returns, in fn's own terms.
+// A function with no return reads as unset.
+func returnOrigin(m *OriginMap) Origin {
+	var acc Origin
+	for _, node := range m.fn.Nodes {
+		if ret, ok := node.(*ReturnNode); ok {
+			acc = acc.join(m.eval(ret.Value))
+		}
+	}
+	return acc
+}
+
+// instantiate reads a callee's return origin, r, against the arguments one call
+// passes. A returned parameter becomes whatever the call passed there.
+func (m *OriginMap) instantiate(r Origin, args []Expr) Origin {
+	switch r.Kind {
+	case OriginFresh, OriginGlobal:
+		return r
+	case OriginParam:
+		if r.Index >= len(args) {
+			return Unknown
+		}
+		o := m.eval(args[r.Index])
+		if r.Interior {
+			o = insideOf(o)
+		}
+		if r.Shallow && o.Kind != originUnset {
+			o = o.join(Fresh)
+		}
+		return o
+	default:
+		// No return at all, an unknown one, or the receiver, which an abstract
+		// operation does not have.
+		return Unknown
 	}
 }
 
@@ -539,6 +714,8 @@ func (m *OriginMap) eval(e Expr) Origin {
 			return Unknown
 		}
 		return m.origins[e.Var]
+	case *GlobalExpr:
+		return Global
 	case *ThisExpr:
 		// Only a prototype method has a `this` value to track. A static or
 		// namespace function's `this` is the constructor or the namespace
@@ -563,16 +740,39 @@ func (m *OriginMap) eval(e Expr) Origin {
 		// a different object from the container itself.
 		return Unknown
 	case *PropExpr:
-		// A property read off an interior value stays interior. `p` in
-		// `Map.prototype.delete` is one entry of the List in the receiver's
-		// `[[MapData]]`, so a write to `p` writes the Map. Reading a property
-		// off anything else breaks the chain the way a slot read outside the
-		// backing-store list does.
+		// A property read off the receiver, a parameter, or an interior value
+		// is interior to it. `p` in `Map.prototype.delete` is one entry of the
+		// List in the receiver's `[[MapData]]`, so a write to `p` writes the
+		// Map. See insideOf for the reads that break the chain.
 		return insideOf(m.eval(e.Object))
 	default:
 		// An operand the graph left out, which reaches Eval as a nil Expr.
 		return Unknown
 	}
+}
+
+// evalCallNode returns the origin of the result of a call node.
+//
+// A call through a stored function returns what the callback contract
+// promises, an owned value, or what one of the graph's own implementers of its
+// type returns. A callee bound to a parameter is a callback whatever its Via
+// says, which evalCall answers.
+func (m *OriginMap) evalCallNode(node *CallNode) Origin {
+	if node.Via == "" || m.Of(node.Callee).Kind == OriginParam {
+		return m.evalCall(node.Callee, node.Args)
+	}
+	if m.stored == nil {
+		return Unknown
+	}
+	rs, ok := m.stored(node.Via)
+	if !ok {
+		return Unknown
+	}
+	acc := Fresh
+	for _, r := range rs {
+		acc = acc.join(resolved(m.instantiate(r, node.Args)))
+	}
+	return acc
 }
 
 // evalCall returns the origin of a call's result.
@@ -588,11 +788,19 @@ func (m *OriginMap) evalCall(callee string, args []Expr) Origin {
 		return Fresh
 	case identityCoercions.Contains(callee) && len(args) > 0:
 		return m.eval(args[0])
+	case m.Of(callee).Kind == OriginParam:
+		// A function the caller supplied. A callback returns an owned value,
+		// so its result aliases nothing the function was given.
+		return Fresh
 	default:
-		// Everything else breaks the chain. Get reads a value out of a
-		// container, and that value is a different object from the container.
-		// A predicate such as IsArray returns a boolean standing for none of
-		// its arguments.
+		if m.returns != nil {
+			if r, ok := m.returns(m, callee); ok {
+				return m.instantiate(r, args)
+			}
+		}
+		// Everything else breaks the chain. That covers a call into a
+		// function whose returns the map was not given and an operation with
+		// no body, such as an internal method.
 		return Unknown
 	}
 }

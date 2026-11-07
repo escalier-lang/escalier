@@ -115,6 +115,12 @@ func TestParseCFGRejects(t *testing.T) {
 				`"nodes":[{"kind":"let","target":"O","source":{"kind":"this"},"slot":"MapData"}]}]}`,
 			err: `decoding cfg: node 0 of ToObject: a let node carries "slot"`,
 		},
+		// Only a call has a callee whose declared type Via can name.
+		"StrayVia": {
+			json: `{"specTarget":"abc","funcs":[{"name":"ToObject","kind":"abstract-op",` +
+				`"nodes":[{"kind":"return","value":{"kind":"this"},"via":"Handler"}]}]}`,
+			err: `decoding cfg: node 0 of ToObject: a return node carries "via"`,
+		},
 		"StrayExprField": {
 			json: `{"specTarget":"abc","funcs":[{"name":"ToObject","kind":"abstract-op",` +
 				`"nodes":[{"kind":"return","value":{"kind":"var","var":"O","args":[]}}]}]}`,

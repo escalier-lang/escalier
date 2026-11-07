@@ -486,7 +486,7 @@ type ThrowSummary struct {
 // rejections are worked out.
 func NewThrowSummary(cfg *CFG) *ThrowSummary {
 	rejecting := rejecters(cfg)
-	origins := make(map[*Func]*OriginMap, len(cfg.Funcs))
+	origins := NewOriginMaps(cfg)
 	a := &throwAnalysis{
 		summary: &ThrowSummary{
 			facts:   make(map[*Func]*throwFacts, len(cfg.Funcs)),
@@ -503,7 +503,6 @@ func NewThrowSummary(cfg *CFG) *ThrowSummary {
 			rejected: set.NewSet[Exception](),
 			modeled:  set.NewSet[Exception](),
 		}
-		a.origins[fn] = NewOriginMap(fn)
 		a.plans[fn] = newRejectPlan(fn, rejecting)
 	}
 	for _, fn := range cfg.Funcs {
@@ -707,13 +706,15 @@ func raisedAt(origin *OriginMap, node *ThrowNode) Exception {
 // parameter names the value, and anything else is a value the analysis could
 // not trace.
 //
-// An interior value is left untraced. It was read out of the backing store of
-// the receiver or a parameter and is a different value from the one that names
-// it, so reporting it as that parameter would name the wrong type at the join.
+// An interior value is left untraced. It was read out of the receiver or a
+// parameter and is a different value from the one that names it, so reporting
+// it as that parameter would name the wrong type at the join. A parameter
+// joined with a fresh value is left untraced for the same reason, since on one
+// path the raised value is not the parameter.
 func raisedOf(origin *OriginMap, e Expr) Exception {
 	switch o := origin.Eval(e); o.Kind {
 	case OriginReceiver, OriginParam:
-		if o.Interior {
+		if !o.Exact() {
 			return Untraced
 		}
 		return Propagated(o)
@@ -796,7 +797,7 @@ func (a *throwAnalysis) propagateInvoked(f *throwFacts, origin *OriginMap, node 
 	}
 	switch o := origin.Eval(node.Args[position]); o.Kind {
 	case OriginReceiver, OriginParam:
-		if o.Interior {
+		if !o.Exact() {
 			return f.markIncomplete()
 		}
 		return f.add(CallbackThrows(o), Root{}, node, index, sink)
@@ -826,7 +827,7 @@ func remap(origin *OriginMap, args []Expr, r Exception) Exception {
 	}
 	switch caller := origin.Eval(args[r.Origin.Index]); caller.Kind {
 	case OriginReceiver, OriginParam:
-		if caller.Interior {
+		if !caller.Exact() {
 			return Untraced
 		}
 		return r.at(caller)
