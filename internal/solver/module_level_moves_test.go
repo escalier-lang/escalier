@@ -347,7 +347,8 @@ fn f() { take(xs) }`,
 
 // TestMoveOutOfModuleLevelValueIntoCall covers calls inside a function body that pass a
 // module-level binding as an argument or as a method's receiver. A parameter or receiver that
-// takes ownership moves the binding, which #2284 and #2232 report. One that borrows reads it.
+// takes ownership moves the binding, which reports a ModuleLevelMoveError. One that borrows
+// reads it.
 func TestMoveOutOfModuleLevelValueIntoCall(t *testing.T) {
 	t.Parallel()
 
@@ -357,7 +358,7 @@ func TestMoveOutOfModuleLevelValueIntoCall(t *testing.T) {
 		want []string
 	}{
 		{
-			// #2284
+			// `take` owns its parameter, so the call moves `cfg`.
 			name: "passed to an owned parameter",
 			src: `val cfg = {x: 1}
 declare fn take(d: {x: number}) -> undefined
@@ -367,7 +368,7 @@ fn g() {
 			want: []string{"4:7-4:10: cannot move module-level value 'cfg' inside a function. Borrow it with `&cfg`"},
 		},
 		{
-			// #2284
+			// Only the field moves, so the error names `cfg.items`.
 			name: "a field passed to an owned parameter",
 			src: `val cfg: {items: Array<number>} = {items: [1]}
 declare fn take(xs: Array<number>) -> undefined
@@ -377,7 +378,7 @@ fn g() {
 			want: []string{"4:7-4:16: cannot move module-level value 'cfg.items' inside a function. Borrow it with `&cfg.items`"},
 		},
 		{
-			// #2284
+			// The call moves the result of each branch, so the error blames `xs` inside the `if`.
 			name: "a branch result passed to an owned parameter",
 			src: `val xs: Array<number> = [1]
 declare fn take(xs: Array<number>) -> undefined
@@ -387,7 +388,7 @@ fn g(c: boolean) {
 			want: []string{"4:14-4:16: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
 		},
 		{
-			// #2284
+			// A method's owned parameter moves its argument the way a function's does.
 			name: "passed to a method's owned parameter",
 			src: `val xs: Array<number> = [1]
 class Box {
@@ -402,7 +403,8 @@ fn g() {
 			want: []string{"9:8-9:10: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
 		},
 		{
-			// #2284. The argument's flow waits until g's body settles p as owned.
+			// `g`'s parameter type is not settled at the recursive call, so the argument's flow waits
+			// until `g`'s body settles `p` as owned.
 			name: "passed to a recursive call's unannotated parameter",
 			src: `val xs: Array<number> = [1]
 fn g(p, c: boolean) -> number {
@@ -413,7 +415,7 @@ fn g(p, c: boolean) -> number {
 			want: []string{"4:18-4:20: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
 		},
 		{
-			// #2284
+			// The closure's body moves `p`, which settles `h`'s parameter as owned.
 			name: "passed to a closure's unannotated parameter",
 			src: `val xs: Array<number> = [1]
 fn g() {
@@ -423,7 +425,7 @@ fn g() {
 			want: []string{"4:4-4:6: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
 		},
 		{
-			// #2232
+			// `consume` takes `self` by value, so the call moves `tok`.
 			name: "the receiver of a method that takes self",
 			src: `class Token {
 	constructor(&mut self) {},

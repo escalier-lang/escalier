@@ -2997,7 +2997,7 @@ func TestFlowMatrixMissingFieldBorrow(t *testing.T) {
 }
 
 // TestFlowMatrixModuleLevelMove asserts that a function moving a module-level value into an
-// owned parameter or an owned receiver reports a ModuleLevelMoveError, as #2284 and #2232 ask.
+// owned parameter or an owned receiver reports a ModuleLevelMoveError.
 func TestFlowMatrixModuleLevelMove(t *testing.T) {
 	runFlowMatrix(t, []flowCell{
 		{
