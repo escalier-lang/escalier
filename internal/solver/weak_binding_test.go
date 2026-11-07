@@ -32,8 +32,6 @@ fn b() { seen.set("j", "s") }
 			values: map[string]string{"seen": "Map<string, number | string>"},
 		},
 		{
-			// #2348 widens the weak variable in the checked type as well as in seen's display,
-			// so get becomes `fn () -> number | undefined`.
 			name: "AReadSeesTheWritesOfALaterFunction",
 			src: `
 val mut seen = Map()
@@ -42,8 +40,101 @@ fn put() { seen.set("k", 1) }
 `,
 			values: map[string]string{
 				"seen": "Map<string, number>",
-				"get":  "fn () -> 1 | undefined",
+				"get":  "fn () -> number | undefined",
 			},
+		},
+		{
+			// A read sees the widened value type, so it cannot claim the literal a write
+			// stored.
+			name: "AReadCannotNarrowAWidenedSlot",
+			src: `
+val mut seen = Map()
+fn put() { seen.set("k", 1) }
+fn get() { return seen.get("k") }
+fn read() {
+	val one: 1 | undefined = seen.get("k")
+}
+`,
+			values: map[string]string{
+				"seen": "Map<string, number>",
+				"get":  "fn () -> number | undefined",
+			},
+			want: []string{
+				"6:27-6:40: cannot constrain number <: 1 | undefined",
+			},
+		},
+		{
+			// The module checks `one` before `put`, so the read's annotation is already a
+			// bound on the map's value type when the write reaches it, and the write is the
+			// site of the error.
+			name: "AWriteCannotWidenPastAnEarlierRead",
+			src: `
+val mut seen = Map()
+fn put() { seen.set("k", 1) }
+val one: 1 | undefined = seen.get("k")
+`,
+			want: []string{
+				"3:26-3:27: cannot constrain number <: 1 | undefined",
+			},
+		},
+		{
+			// The `5` the initializer stored in `b` widens before any function reads it. `c`
+			// cannot write its box, so a read keeps the literal.
+			name: "AReadOfAnInitializerLiteralSeesTheWidenedSlot",
+			src: `
+class Box<T> { value: T }
+val mut b = Box(5)
+val c = Box(5)
+fn f() {
+	val n: 5 = b.value
+	val m: 5 = c.value
+}
+`,
+			values: map[string]string{"b": "Box<number>", "c": "Box<5>"},
+			want: []string{
+				"6:13-6:20: cannot constrain number <: 5",
+			},
+		},
+		{
+			// A body-level binding widens the same way, so the read later in the body sees
+			// `number`.
+			name: "AReadOfALocalContainerSeesTheWidenedSlot",
+			src: `
+fn f() {
+	val mut m = Map()
+	m.set("k", 1)
+	val one: 1 | undefined = m.get("k")
+}
+`,
+			want: []string{
+				"5:27-5:37: cannot constrain number <: 1 | undefined",
+			},
+		},
+		{
+			// The value a function stores widens in the map, and the function's own
+			// parameter keeps the literal it was called with.
+			name: "AStoredParameterWidensOnlyInTheMap",
+			src: `
+val mut seen = Map()
+fn put(x) {
+	seen.set("k", [x])
+	return x
+}
+val one = put(1)
+`,
+			values: map[string]string{
+				"seen": "Map<string, [number]>",
+				"one":  "1",
+			},
+		},
+		{
+			// `b` is not `mut`, so it keeps the literal its sibling's `mut` widens.
+			name: "ADestructuredLeafWidensOnlyWhenItIsMutable",
+			src: `
+declare fn id<T>(x: T) -> T
+val {mut a, b} = id({a: {x: 1}, b: {x: 2}})
+`,
+			values: map[string]string{"a": "{x: number}", "b": "{x: 2}"},
 		},
 		{
 			name: "AnOwnedValueAndABorrowInOneMap",
@@ -221,8 +312,8 @@ fn u() {
 			values: map[string]string{"h": "fn () -> never"},
 		},
 		{
-			// make's type comes from the bounds the checker uses for m, which keep the literals.
-			// #2348 widens those bounds, so make becomes `fn () -> Map<string, number | string>`.
+			// make's type comes from the bounds the checker uses for m, which hold the
+			// widened values.
 			name: "ALocalContainerGeneralizesWithItsFunction",
 			src: `
 fn make() {
@@ -232,7 +323,7 @@ fn make() {
 	return m
 }
 `,
-			values: map[string]string{"make": `fn () -> Map<"k", 1 | "s">`},
+			values: map[string]string{"make": `fn () -> Map<string, number | string>`},
 		},
 		{
 			name: "AGenericFunctionKeepsItsOwnTypeParameter",
@@ -362,6 +453,18 @@ fn f() { seen.set("k", &p) }
 			values: map[string]string{"seen": "Map<string, &{x: number}>"},
 		},
 		{
+			// A read of the map sees the borrow its writable slot holds, with the referent's
+			// literals widened in the checked type as well as in the display.
+			name: "AReadOfAnImmutableBorrowInAWritableSlotSeesItWidened",
+			src: `
+val p = {x: 1}
+val mut seen = Map()
+fn f() { seen.set("k", &p) }
+fn g() { return seen.get("k") }
+`,
+			values: map[string]string{"g": "fn () -> &{x: number} | undefined"},
+		},
+		{
 			// A `var` binding can be rebound to a borrow of any `{x: number}`. A `val` binding
 			// of the same borrow cannot, so it keeps the literal that belongs to p.
 			name: "AnImmutableBorrowInAReassignableBindingWidens",
@@ -435,9 +538,7 @@ fn put() { seen.set("k", 1) }
 	get, ok := ns.Decls[1].(*ast.FuncDecl)
 	require.True(t, ok)
 	require.Equal(t, "Map<string, number>", soltype.Print(res.Info.DisplayTypeOf(seen.Pattern)))
-	// #2348 widens the weak variable in the checked type as well, so get becomes
-	// `fn () -> number | undefined`.
-	require.Equal(t, "fn () -> 1 | undefined", soltype.Print(res.Info.DisplayTypeOf(get.Name)))
+	require.Equal(t, "fn () -> number | undefined", soltype.Print(res.Info.DisplayTypeOf(get.Name)))
 }
 
 // TestWeakLocalInfoShowsTheSettledType covers the type Info records for a body-level

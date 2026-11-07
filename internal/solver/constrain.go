@@ -2155,8 +2155,11 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	// super is a variable: symmetric — record sub as a lower bound, propagate uppers.
 	if superVar, ok := super.(*soltype.TypeVarType); ok {
 		if soltype.LevelOf(sub) <= superVar.Level {
-			c.addLowerBound(superVar, sub)
 			var errs []SolverError
+			if mode, isSlot := c.slotModes[superVar]; isSlot {
+				sub, errs = c.widenSlotBound(sub, mode, seen)
+			}
+			c.addLowerBound(superVar, sub)
 			for _, ub := range superVar.UpperBounds {
 				errs = append(errs, c.constrain(sub, ub, seen, false)...)
 			}
@@ -3773,6 +3776,10 @@ func (e *extruder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Enter
 		e.c.addLowerBound(v, nv)
 		for _, ub := range v.UpperBounds {
 			e.c.addUpperBound(nv, ub.Accept(e, pol))
+		}
+		// A value that reaches nv reaches v only through nv, so nv widens it as v would.
+		if mode, isSlot := e.c.slotModes[v]; isSlot {
+			e.c.setSlotMode(nv, mode)
 		}
 		// nv is a lower bound of v, but v is not an upper bound of nv. A concrete bound that
 		// later reaches nv therefore never reaches v, so nv takes v's pending borrowed reads
