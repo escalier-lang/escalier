@@ -334,6 +334,18 @@ func (c *checker) reportOwnedModuleMove(table *ownershipEvents, b ValueBinding, 
 	c.report(&ModuleLevelMoveError{Source: text, node: node})
 }
 
+// removeModuleLevelMoveErrors removes from c.errs each ModuleLevelMoveError that blames one of
+// nodes. The errors left keep their order.
+func (c *checker) removeModuleLevelMoveErrors(nodes set.Set[ast.Node]) {
+	if nodes.Len() == 0 {
+		return
+	}
+	c.errs = slices.DeleteFunc(c.errs, func(e SolverError) bool {
+		m, ok := e.(*ModuleLevelMoveError)
+		return ok && nodes.Contains(m.node)
+	})
+}
+
 // spreadCopiesValues reports whether a spread of a value of type t copies only value types
 // into the literal that holds it. An iterable copies the elements syncElemType finds, and an
 // object copies its fields.

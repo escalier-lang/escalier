@@ -162,6 +162,16 @@ func (c *checker) runOwnershipDataflow() {
 	// A closure's body is checked after the body it is written in, so its diagnostics are put
 	// back in source order.
 	slices.SortStableFunc(found, func(a, b SolverError) int { return compareSpans(a.Span(), b.Span()) })
+
+	// A move of a module-level value an earlier move already took is reported once, as the
+	// use after the move. In `take(x); take(x)`, the second `x` reports only that x was moved.
+	movedAgain := set.NewSet[ast.Node]()
+	for _, e := range found {
+		if u, ok := e.(*UseAfterMoveError); ok {
+			movedAgain.Add(u.use)
+		}
+	}
+	c.removeModuleLevelMoveErrors(movedAgain)
 	c.errs = append(c.errs, found...)
 }
 
