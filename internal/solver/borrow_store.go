@@ -413,7 +413,7 @@ func (w *lifetimeWalk) walk(t soltype.Type, base []placeSeg) {
 				w.walkObjElem(elem, base)
 				continue
 			}
-			w.walk(prop.Type, appendSeg(base, prop.Name))
+			w.walk(prop.Type, appendPath(base, []placeSeg{fieldSeg(prop.Name)}))
 		}
 	case *soltype.TupleType:
 		for _, elem := range t.Elems {

@@ -87,8 +87,12 @@ func (c *checker) subsumePlaceChain(e ast.Expr) {
 		return
 	}
 
-	for _, x := range placeChain(e) {
-		t.subsumed.Add(x)
+	chain := chainOf(e, nil)
+	for _, link := range chain.links {
+		t.subsumed.Add(link.expr)
+	}
+	if chain.root != nil {
+		t.subsumed.Add(chain.root)
 	}
 }
 
@@ -255,28 +259,24 @@ func (c *checker) emitFlow(source ast.Expr, holder eventHolder, dest flowDest, r
 // dynamic index ends the path, since it may read any element. ok is false for any other
 // expression.
 func (c *checker) callResultOf(e ast.Expr) (*ast.CallExpr, []placeSeg, bool) {
-	var segs []placeSeg
+	// links holds the links from the call outward. Each await ends a chain, and the links of
+	// the chain inside it come first.
+	var links []placeLink
 	for {
-		switch x := e.(type) {
-		case *ast.CallExpr:
-			slices.Reverse(segs)
-			return x, segs, true
+		chain := chainOf(e, c.indexSegment)
+		links = append(chain.links, links...)
+		switch root := chain.root.(type) {
 		case *ast.AwaitExpr:
-			e = x.Arg
-		case *ast.MemberExpr:
-			if x.Prop == nil {
-				segs = nil
-			} else {
-				segs = append(segs, placeSeg{kind: namedSeg, name: x.Prop.Name})
+			e = root.Arg
+		case *ast.CallExpr:
+			var segs []placeSeg
+			for _, link := range links {
+				if link.dynamic {
+					break
+				}
+				segs = append(segs, link.seg)
 			}
-			e = x.Object
-		case *ast.IndexExpr:
-			if name, ok := c.indexSegment(x.Index); ok {
-				segs = append(segs, placeSeg{kind: namedSeg, name: name})
-			} else {
-				segs = nil
-			}
-			e = x.Object
+			return root, segs, true
 		default:
 			return nil, nil, false
 		}
@@ -742,45 +742,28 @@ type chainPlace struct {
 // capturedChain returns the place the chain e names. ok is false when e is not a chain
 // rooted at an identifier whose declaration the walk recorded.
 func (c *checker) capturedChain(e ast.Expr) (chainPlace, bool) {
-	var object ast.Expr
-	var name string
-	// element marks an index that names one element of a receiver read by position, as
-	// `xs[0]` and `xs["0"]` do off an array. The element is part of the place though the
-	// receiver's type declares no property of that name.
-	element := false
-	switch e := e.(type) {
-	case *ast.IdentExpr:
-		decl, ok := c.info.DeclOf(e)
-		return chainPlace{decl: decl}, ok
-	case *ast.MemberExpr:
-		object = e.Object
-		if e.Prop != nil {
-			name = e.Prop.Name
-		}
-	case *ast.IndexExpr:
-		object = e.Object
-		name, _ = c.indexSegment(e.Index)
-		_, isIndex := canonicalIndex(name)
-		recv := c.info.TypeOf(e.Object)
-		element = isIndex && recv != nil && c.readsByPosition(recv)
-	default:
+	chain := c.fieldChain(e)
+	root, isIdent := chain.root.(*ast.IdentExpr)
+	if !isIdent {
 		return chainPlace{}, false
 	}
 
-	cp, ok := c.capturedChain(object)
-	switch {
-	case !ok || cp.whole || cp.closed:
-	case name == "":
-		cp.whole = true
-	case !element && !c.readsAsField(object, name):
-		cp.closed = true
-	default:
-		cp.segs = appendPath(cp.segs, []placeSeg{{kind: namedSeg, name: name}})
-		cp.exprs = append(slices.Clone(cp.exprs), e)
-		if ix, isIndex := e.(*ast.IndexExpr); isIndex {
-			if _, isLit := ix.Index.(*ast.LiteralExpr); !isLit {
-				cp.keys = append(slices.Clone(cp.keys), ix.Index)
-			}
+	decl, ok := c.info.DeclOf(root)
+	cp := chainPlace{decl: decl}
+	for _, link := range chain.links {
+		if link.dynamic || link.seg.name == "" {
+			cp.whole = true
+			break
+		}
+		if link.closes {
+			cp.closed = true
+			break
+		}
+
+		cp.segs = append(cp.segs, link.seg)
+		cp.exprs = append(cp.exprs, link.expr)
+		if _, isLit := link.key.(*ast.LiteralExpr); link.key != nil && !isLit {
+			cp.keys = append(cp.keys, link.key)
 		}
 	}
 	return cp, ok

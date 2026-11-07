@@ -196,13 +196,6 @@ func (e *OptionalChainBorrowError) Message() string {
 		"so bind the receiver with `if val` and borrow the field through it"
 }
 
-// placesOverlap reports whether two places reach any of the same data. They must be rooted at
-// the same binding, and one field path must be a prefix of the other. `x.a` and `x.a.b` overlap
-// because the second sits inside the first; `x.a` and `x.b` do not.
-func placesOverlap(a, b movePlace) bool {
-	return a.root == b.root && pathPrefixRelated(a.path, b.path)
-}
-
 // isFuncNode reports whether n is a function or closure.
 func isFuncNode(n ast.Node) bool {
 	_, ok := n.(ast.Func)
