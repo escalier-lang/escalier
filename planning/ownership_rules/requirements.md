@@ -596,6 +596,14 @@ is used as an immutable path. A closure stored into module-level state may run
 during any later call, so every later call uses its borrows. A closure that moves
 one of its captures moves it at each call, so by E1 a second call is rejected.
 
+A module-level function captures each module-level binding its body reads or
+writes, and each one that a module-level function it calls reaches. A call of it
+uses those bindings the way a closure call uses its captures. With
+`var mut cfg = {x: 0}` and `fn bump() { cfg.x = cfg.x + 1 }`, the call in
+`val r = &cfg; bump(); return r.x` writes `cfg` while `r` is live, so E2 rejects
+it. An `await` of the call runs it before the body resumes, so `await bump()`
+is rejected the same way.
+
 A function parameter says how long the callee keeps the function it receives.
 A parameter written `f: fn () -> undefined` is only called during the call, so a
 closure passed to it holds its borrows for that call alone. A parameter written
