@@ -14,6 +14,9 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 		src  string
 		want []string
 	}{
+		// Moving x out of the module-level binding would leave test callable only once, and an
+		// exported test gives no way to tell whether it already ran. So the first move is an
+		// error. The second reports only that x was already moved.
 		"MovedTwiceInOneFunction": {
 			src: `
 				declare fn take(x: {v: number}) -> undefined
