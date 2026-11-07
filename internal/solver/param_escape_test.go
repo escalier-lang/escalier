@@ -317,7 +317,7 @@ func TestInferOpenEscapeParam(t *testing.T) {
 		errs []string
 	}{
 		{
-			// remember's rendering waits on #2352, so TestInferOpenEscapeParamRendering holds it.
+			// TestInferOpenEscapeParamRendering asserts remember's rendered type.
 			name: "ReadOnlyIsStaticBorrow",
 			src: `
 				val mut seen = Map()
@@ -331,7 +331,6 @@ func TestInferOpenEscapeParam(t *testing.T) {
 			seen: "Map<string, &'static {retries: number}>",
 		},
 		{
-			// remember's rendering waits on #2352, so TestInferOpenEscapeParamRendering holds it.
 			name: "ReadOnlyNeedsWrittenBorrow",
 			src: `
 				val mut seen = Map()
@@ -391,6 +390,8 @@ func TestInferOpenEscapeParam(t *testing.T) {
 			errs: []string{"7:13-7:25: use of moved value 'opts'"},
 		},
 		{
+			// `value` flows into `seen`'s value type, so `remember` does not quantify it and
+			// shows the object `go` passes.
 			name: "AlsoReturnedIsOwned",
 			src: `
 				val mut seen = Map()
@@ -404,7 +405,7 @@ func TestInferOpenEscapeParam(t *testing.T) {
 					return opts.retries
 				}
 			`,
-			want: "fn <T0>(value: T0) -> T0",
+			want: "fn (value: {retries: 3}) -> {retries: 3}",
 			errs: []string{"10:13-10:25: use of moved value 'opts'"},
 		},
 		{
@@ -456,8 +457,8 @@ func TestInferOpenEscapeParam(t *testing.T) {
 			// A value type has no storage to borrow, so it copies into the borrow without a
 			// written `&`. The key escapes into seen too, so it is a `'static` borrow as well.
 			// A `&'static` of a value type stands for the value type, and seen's values are
-			// writable slots that widen it, so seen holds strings and numbers. remember's
-			// rendering waits on #2352, so TestInferOpenEscapeParamRendering holds it.
+			// writable slots that widen it, so seen holds strings and numbers.
+			// TestInferOpenEscapeParamRendering asserts remember's rendered type.
 			name: "ValueTypeArgumentsCopy",
 			src: `
 				val mut seen = Map()
@@ -486,10 +487,9 @@ func TestInferOpenEscapeParam(t *testing.T) {
 	}
 }
 
-// DISABLED until #2352, which keeps a function monomorphic when its parameter flows into a weak
-// binding. Today remember renders each such parameter as `unknown`, since seen's weak variable
-// holds the type the parameter's borrow points to and remember is coalesced as if it were generic.
-/*
+// TestInferOpenEscapeParamRendering asserts `remember`'s rendered type when its parameter is
+// stored in `seen`. `remember` does not quantify that parameter, so it shows the values
+// `go` passes, which are the values `seen` holds.
 func TestInferOpenEscapeParamRendering(t *testing.T) {
 	tests := []struct {
 		name string
@@ -532,4 +532,3 @@ func TestInferOpenEscapeParamRendering(t *testing.T) {
 		})
 	}
 }
-*/

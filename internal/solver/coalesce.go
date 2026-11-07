@@ -388,6 +388,13 @@ func coalesceScheme(
 	declaredLts []*soltype.LifetimeParam,
 	inlineSingleUse bool,
 ) soltype.Type {
+	return coalesceSchemeKeeping(t, genLevel, declared, declaredLts, schemeKeepSet(t, declared), inlineSingleUse)
+}
+
+// schemeKeepSet returns the variables coalesceScheme holds symbolic in the scheme body t:
+// the type parameters of each function type t reaches, and each parameter in declared that
+// has a bound.
+func schemeKeepSet(t soltype.Type, declared []*soltype.TypeParam) set.Set[*soltype.TypeVarType] {
 	keep := funcTypeParamVars(t)
 	// A class carries its parameters on its constructor and call signatures, so
 	// funcTypeParamVars finds them there. An alias or enum keeps its parameters in the
@@ -402,7 +409,7 @@ func coalesceScheme(
 			keep.Add(tp.Var)
 		}
 	}
-	return coalesceSchemeKeeping(t, genLevel, declared, declaredLts, keep, inlineSingleUse)
+	return keep
 }
 
 // coalesceSchemeKeeping is the body of coalesceScheme. keep names the variables held
