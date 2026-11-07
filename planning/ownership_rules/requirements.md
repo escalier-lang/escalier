@@ -1536,8 +1536,18 @@ inferred lifetime the way it renders a borrow's, so `sink` shows as
 Recommendation: infer the retention lifetime of a `fn` type outside a parameter
 the way an elided `&` lifetime is inferred.
 
-Decided: accepted. E4 states it. The checker change is tracked by
-[#2342](https://github.com/escalier-lang/escalier/issues/2342).
+Decided: accepted. E4 states it. The checker applies it this way:
+
+- A module-level `var` and a `mut` binding are `'static`. A module-level `val`
+  keeps a plain `fn` type. It holds only its initializer, which runs at module
+  scope, where no plain `fn` parameter is in scope.
+- A local binding gets a lifetime of its own.
+- A return type on a function with a body gets a lifetime the signature names,
+  and renders as `&fn`. A declared signature has no body to infer from, so its
+  plain `fn` result reads as `'static`.
+- A `fn` type named through a type alias, and a `fn` type in a class field, get
+  no lifetime yet. [#2553](https://github.com/escalier-lang/escalier/issues/2553)
+  and [#2554](https://github.com/escalier-lang/escalier/issues/2554) track them.
 
 ### D18. A module-level binding whose type its uses decide
 

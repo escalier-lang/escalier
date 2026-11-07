@@ -3,6 +3,7 @@ package solver
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
+	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
 // This file records what a closure captures from the body it is written in. A closure that
@@ -70,6 +71,36 @@ func (c *checker) recordClosureCaptures(scope *Scope, closure ast.Func) {
 		// owned local.
 		if t := c.eventTable(); t != nil {
 			t.captureTypes[root] = bindingType(b)
+		}
+	}
+}
+
+// setRetentionFromCaptures gives ft, the type of `closure`, a retention lifetime when the closure
+// captures a value that holds a function with one. The value is a function, or holds one in a
+// union, an object property, or a type argument, as retentionLifetimes finds. The lifetime is
+// fresh at lvl, and each such function's retention lifetime must outlive it. ft must be the
+// closure's own type, not yet shared with any other type.
+func (c *checker) setRetentionFromCaptures(scope *Scope, lvl int, closure ast.Func, ft *soltype.FuncType) {
+	for _, capture := range c.closureCaptures(closure) {
+		b, found := scope.GetValue(capture.Name)
+		if !found || len(b.Schemes) != 1 {
+			continue
+		}
+		// Instantiating a generalized binding mints fresh variables, so a binding whose type
+		// holds no retained function is skipped before that. Instantiation keeps the shape of
+		// the type, so it cannot add one.
+		if body := schemeBody(b.Schemes[0]); body == nil || len(retentionLifetimes(body)) == 0 {
+			continue
+		}
+		for _, lt := range retentionLifetimes(c.bindingValue(lvl, b)) {
+			// A function kept for 'static outlives any closure that captures it.
+			if lt == soltype.Static {
+				continue
+			}
+			if ft.Lt == nil {
+				ft.Lt = c.ctx.freshLifetime(lvl)
+			}
+			c.ctx.constrainLt(lt, ft.Lt)
 		}
 	}
 }

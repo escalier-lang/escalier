@@ -304,15 +304,20 @@ func isUnconstrainedVar(t soltype.Type) bool {
 // specificity comparator uses it to rank the signatures directly rather than
 // instantiating them, so ranking mints no fresh vars and writes no Prov entries.
 func schemeFunc(s TypeScheme) *soltype.FuncType {
-	var body soltype.Type
+	ft, _ := schemeBody(s).(*soltype.FuncType)
+	return ft
+}
+
+// schemeBody returns the raw, variable-carrying type of a scheme without instantiating it, so
+// it mints no fresh vars. It returns nil for an unknown scheme.
+func schemeBody(s TypeScheme) soltype.Type {
 	switch sc := s.(type) {
 	case *MonoScheme:
-		body = sc.Ty
+		return sc.Ty
 	case *PolyScheme:
-		body = sc.Body
+		return sc.Body
 	}
-	ft, _ := body.(*soltype.FuncType)
-	return ft
+	return nil
 }
 
 // moreSpecific compares two overload arms by specificity. It returns -1 when a is

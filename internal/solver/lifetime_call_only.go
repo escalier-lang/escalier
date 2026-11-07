@@ -20,6 +20,47 @@ type callOnlyParam struct {
 	outerMark int
 }
 
+// deferredBody returns the phrase an error names a function by when its body can run after the
+// call that starts it returns, such as "a generator". It returns "" for any other function.
+func deferredBody(sig ast.FuncSig) string {
+	switch {
+	case sig.Gen:
+		return "a generator"
+	case sig.Async:
+		return "an async function"
+	}
+	return ""
+}
+
+// watchCallOnlyReads makes noteCallOnlyRead record a read of ft, the body type of a call-only
+// parameter, made inside an `async` or `gen` body entered after this call. It must run when the
+// parameter is bound, before its function's body is walked.
+func (c *checker) watchCallOnlyReads(ft *soltype.FuncType) {
+	if c.callOnlyDepth == nil {
+		c.callOnlyDepth = map[*soltype.FuncType]int{}
+	}
+	c.callOnlyDepth[ft] = len(c.deferredBodies)
+}
+
+// noteCallOnlyRead records t, the value a name read resolved to, when watchCallOnlyReads watches
+// it and the read is inside an `async` or `gen` body entered after the parameter was bound.
+func (c *checker) noteCallOnlyRead(t soltype.Type) {
+	ft, isFn := t.(*soltype.FuncType)
+	if !isFn {
+		return
+	}
+	depth, watched := c.callOnlyDepth[ft]
+	if !watched || depth >= len(c.deferredBodies) {
+		return
+	}
+	if c.callOnlyDeferredRead == nil {
+		c.callOnlyDeferredRead = map[*soltype.FuncType]string{}
+	}
+	if _, recorded := c.callOnlyDeferredRead[ft]; !recorded {
+		c.callOnlyDeferredRead[ft] = c.deferredBodies[depth]
+	}
+}
+
 // callOnlyCheck is one parameter waiting for checkCallOnlyParams. sig is the type of the
 // function that declares it.
 type callOnlyCheck struct {
@@ -55,6 +96,11 @@ func (c *checker) queueCallOnlyChecks(params []callOnlyParam, sig *soltype.FuncT
 // Any other lifetime is one the body mints itself, or a parameter lifetime of a function
 // inferred together with this one. The call lifetime may outlive those.
 //
+// The body of an `async` or `gen` function can run after the call that starts it returns. So
+// such a body keeps past the call each parameter it reads, whether the parameter is its own or
+// one of an enclosing function. See "read by a generator", "read by an async function", and
+// "read by an async closure".
+//
 // It runs once the enclosing component has solved, since a constraint a sibling's body records
 // can reach the call lifetime after this function's body is walked.
 func (c *checker) checkCallOnlyParams() {
@@ -87,7 +133,87 @@ func (c *checker) checkCallOnlyParams() {
 		}
 		if static || outside {
 			c.report(&CallOnlyFuncKeptError{Name: p.name, Static: static, Param: p.node})
+		} else if deferred, read := c.callOnlyDeferredRead[p.ft]; read {
+			c.report(&CallOnlyFuncKeptError{Name: p.name, Deferred: deferred, Param: p.node})
 		}
+	}
+}
+
+// withRetentionLifetimes returns t with a retention lifetime on each function type that has
+// none. mint returns the lifetime for one function type. The walk reaches function types through
+// unions, intersections, tuple elements, object properties, and type arguments. It does not
+// enter a function type, so a callback parameter inside one stays call-only. It skips an
+// object's method signatures, since a method is not a value the object holds. t is not
+// modified, and each copied node takes the provenance of the node it copies.
+func (c *checker) withRetentionLifetimes(t soltype.Type, mint func() soltype.Lifetime) soltype.Type {
+	return t.Accept(&retentionMinter{c: c, mint: mint, methods: set.NewSet[*soltype.FuncType]()}, soltype.Positive)
+}
+
+// bindingLifetime returns a function that mints the lifetime of a binding declared at lvl. A
+// module-level binding lives for the rest of the program, so its lifetime is 'static. A binding
+// in a body gets a fresh lifetime at lvl on each call.
+func (c *checker) bindingLifetime(lvl int) func() soltype.Lifetime {
+	if c.fn == nil {
+		return func() soltype.Lifetime { return soltype.Static }
+	}
+	return func() soltype.Lifetime { return c.ctx.freshLifetime(lvl) }
+}
+
+// retentionMinter is the visitor withRetentionLifetimes runs.
+type retentionMinter struct {
+	c    *checker
+	mint func() soltype.Lifetime
+	// methods holds the signatures of each object's methods, constructors, and call
+	// signatures, which the walk leaves unchanged.
+	methods set.Set[*soltype.FuncType]
+	// entered holds each node the walk is inside, innermost last, so ExitType can copy the
+	// provenance of the node it rebuilt.
+	entered []soltype.Type
+}
+
+func (m *retentionMinter) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	m.entered = append(m.entered, t)
+	switch t := t.(type) {
+	case *soltype.FuncType:
+		if t.Lt != nil || m.methods.Contains(t) {
+			return soltype.EnterResult{SkipChildren: true}
+		}
+		retained := *t
+		retained.Lt = m.mint()
+		return soltype.EnterResult{Type: &retained, SkipChildren: true}
+	case *soltype.ObjectType:
+		for _, elem := range t.Elems {
+			switch elem := elem.(type) {
+			case *soltype.MethodElem:
+				m.skipSignatures(elem.Signatures)
+			case *soltype.ConstructorElem:
+				m.skipSignatures(elem.Signatures)
+			case *soltype.CallableElem:
+				m.skipSignatures(elem.Signatures)
+			}
+		}
+	}
+	return soltype.EnterResult{}
+}
+
+func (m *retentionMinter) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type {
+	original := m.entered[len(m.entered)-1]
+	m.entered = m.entered[:len(m.entered)-1]
+	if t == original {
+		return t
+	}
+	if origin, ok := m.c.prov.get(original); ok {
+		if fromAST, isAST := origin.(FromAST); isAST {
+			m.c.recordProv(t, fromAST.Node, fromAST.Kind)
+		}
+	}
+	return t
+}
+
+// skipSignatures adds sigs to the signatures the walk leaves unchanged.
+func (m *retentionMinter) skipSignatures(sigs []*soltype.FuncType) {
+	for _, sig := range sigs {
+		m.methods.Add(sig)
 	}
 }
 

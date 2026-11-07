@@ -76,6 +76,48 @@ func TestInferRetainedFuncParam(t *testing.T) {
 			binding: "h",
 			want:    "&'static fn () -> undefined",
 		},
+		// A module-level slot that can be written keeps what it holds for the rest of the
+		// program.
+		{
+			name:    "plain function in a module-level var",
+			src:     `var sink: fn () -> undefined = fn () {}`,
+			binding: "sink",
+			want:    "&'static fn () -> undefined",
+		},
+		{
+			name:    "plain function in a module-level array",
+			src:     `var mut handlers: Array<fn () -> undefined> = []`,
+			binding: "handlers",
+			want:    "Array<&'static fn () -> undefined>",
+		},
+		{
+			name:    "plain function in a module-level object field",
+			src:     `var mut registry: {cb: fn () -> undefined} = {cb: fn () {}}`,
+			binding: "registry",
+			want:    "{cb: &'static fn () -> undefined}",
+		},
+		// A method is not a value the object holds, so its signature keeps no lifetime.
+		{
+			name: "method in a module-level object annotation",
+			src: `declare fn mk() -> {run(self) -> undefined}
+var mut registry: {run(self) -> undefined} = mk()`,
+			binding: "registry",
+			want:    "{run() -> undefined}",
+		},
+		// Only the initializer fills a module-level `val`, so its annotation keeps no lifetime.
+		{
+			name:    "plain function in a module-level val",
+			src:     `val h: fn () -> undefined = fn () {}`,
+			binding: "h",
+			want:    "fn () -> undefined",
+		},
+		// The return's retention lifetime connects nothing, so it renders as a bare `&`.
+		{
+			name:    "plain function in a return annotation",
+			src:     `fn mk() -> fn () -> undefined { return fn () {} }`,
+			binding: "mk",
+			want:    "fn () -> &fn () -> undefined",
+		},
 		// An alias whose body is a retained function substitutes its lifetime argument
 		// into the retention lifetime.
 		{
@@ -350,6 +392,202 @@ fn h(x: &fn () -> undefined, n: number) {
 }`,
 			want: []string{"2:21-2:22: parameter 'g' is only called during the call, so it cannot outlive the call"},
 		},
+		// A closure that calls g may be kept no longer than g.
+		{
+			name: "captured by a closure that is only called",
+			src: `fn f(g: fn () -> undefined) {
+    val h = fn () { g() }
+    h()
+}`,
+		},
+		{
+			name: "captured by a closure passed to a parameter that only calls it",
+			src: `declare fn each(f: fn () -> undefined) -> undefined
+fn f(g: fn () -> undefined) { each(fn () { g() }) }`,
+		},
+		{
+			name: "captured by a closure passed to a static parameter",
+			src: `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+fn f(g: fn () -> undefined) { onClick(fn () { g() }) }`,
+			want: []string{"2:6-2:7: parameter 'g' is only called during the call, so it cannot be kept for 'static"},
+		},
+		{
+			name: "captured by a named closure passed to a static parameter",
+			src: `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+fn f(g: fn () -> undefined) {
+    val h = fn () { g() }
+    onClick(h)
+}`,
+			want: []string{"2:6-2:7: parameter 'g' is only called during the call, so it cannot be kept for 'static"},
+		},
+		{
+			name: "captured through a second closure passed to a static parameter",
+			src: `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+fn f(g: fn () -> undefined) {
+    val h = fn () { g() }
+    onClick(fn () { h() })
+}`,
+			want: []string{"2:6-2:7: parameter 'g' is only called during the call, so it cannot be kept for 'static"},
+		},
+		{
+			name: "captured in an object by a closure passed to a static parameter",
+			src: `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+fn f(g: fn () -> undefined) {
+    val o = {cb: g}
+    onClick(fn () { o.cb() })
+}`,
+			want: []string{"2:6-2:7: parameter 'g' is only called during the call, so it cannot be kept for 'static"},
+		},
+		{
+			name: "captured by a returned closure",
+			src:  `fn f(g: fn () -> undefined) { return fn () { g() } }`,
+			want: []string{"1:6-1:7: parameter 'g' is only called during the call, so it cannot outlive the call"},
+		},
+		// A `fn` type outside a parameter keeps the function for as long as the slot that
+		// holds it lives.
+		{
+			name: "bound to an unannotated local",
+			src: `fn f(g: fn () -> undefined) {
+    val k = g
+    k()
+}`,
+		},
+		{
+			name: "bound to an annotated local",
+			src: `fn f(g: fn () -> undefined) {
+    val k: fn () -> undefined = g
+    k()
+}`,
+		},
+		{
+			name: "stored into a module-level var",
+			src: `var sink: fn () -> undefined = fn () {}
+fn f(g: fn () -> undefined) { sink = g }`,
+			want: []string{"2:6-2:7: parameter 'g' is only called during the call, so it cannot be kept for 'static"},
+		},
+		{
+			name: "stored into a module-level var through an annotated local",
+			src: `var sink: fn () -> undefined = fn () {}
+fn f(g: fn () -> undefined) {
+    val k: fn () -> undefined = g
+    sink = k
+}`,
+			want: []string{"2:6-2:7: parameter 'g' is only called during the call, so it cannot be kept for 'static"},
+		},
+		{
+			name: "stored into an annotated binding of the enclosing body",
+			src: `fn outer() {
+    var keep: fn () -> undefined = fn () {}
+    val inner = fn (g: fn () -> undefined) { keep = g }
+    keep()
+}`,
+			want: []string{"3:21-3:22: parameter 'g' is only called during the call, so it cannot outlive the call"},
+		},
+		{
+			name: "pushed onto a module-level array",
+			src: `var mut handlers: Array<fn () -> undefined> = []
+fn f(g: fn () -> undefined) { handlers.push(g) }`,
+			want: []string{"2:6-2:7: parameter 'g' is only called during the call, so it cannot be kept for 'static"},
+		},
+		{
+			name: "stored into a field of a module-level object",
+			src: `var mut registry: {cb: fn () -> undefined} = {cb: fn () {}}
+fn f(g: fn () -> undefined) { registry.cb = g }`,
+			want: []string{"2:6-2:7: parameter 'g' is only called during the call, so it cannot be kept for 'static"},
+		},
+		{
+			name: "returned through a return annotation",
+			src:  `fn f(g: fn () -> undefined) -> fn () -> undefined { return g }`,
+			want: []string{"1:6-1:7: parameter 'g' is only called during the call, so it cannot outlive the call"},
+		},
+		{
+			name: "returned in an array through a return annotation",
+			src:  `fn f(g: fn () -> undefined) -> Array<fn () -> undefined> { return [g] }`,
+			want: []string{"1:6-1:7: parameter 'g' is only called during the call, so it cannot outlive the call"},
+		},
+		// A generator's body starts on the first `next()`, after the call that made it returns.
+		{
+			name: "read by a generator",
+			src: `gen fn f(g: fn () -> undefined) {
+    g()
+    yield 1
+}`,
+			want: []string{"1:10-1:11: parameter 'g' is only called during the call, but the body of a generator can run after the call returns"},
+		},
+		// An async body resumes after each `await`, once the call has returned.
+		{
+			name: "read by an async function",
+			src: `declare fn tick() -> Promise<undefined>
+async fn f(g: fn () -> undefined) {
+    await tick()
+    g()
+}`,
+			want: []string{"2:12-2:13: parameter 'g' is only called during the call, but the body of an async function can run after the call returns"},
+		},
+		{
+			name: "read by a closure in an async function",
+			src: `declare fn tick() -> Promise<undefined>
+async fn f(g: fn () -> undefined) {
+    val h = fn () { g() }
+    await tick()
+    h()
+}`,
+			want: []string{"2:12-2:13: parameter 'g' is only called during the call, but the body of an async function can run after the call returns"},
+		},
+		{
+			name: "read by an async closure",
+			src: `declare fn tick() -> Promise<undefined>
+fn f(g: fn () -> undefined) {
+    val h = async fn () {
+        await tick()
+        g()
+    }
+    h()
+}`,
+			want: []string{"2:6-2:7: parameter 'g' is only called during the call, but the body of an async function can run after the call returns"},
+		},
+		// The message names the first deferred body that reads g, here the async closure.
+		{
+			name: "read by an async closure and then a generator closure",
+			src: `fn f(g: fn () -> undefined) {
+    val h = async fn () { g() }
+    val k = gen fn () {
+        g()
+        yield 1
+    }
+}`,
+			want: []string{"1:6-1:7: parameter 'g' is only called during the call, but the body of an async function can run after the call returns"},
+		},
+		// A closure's own parameter is bound inside the async body, so the async body does not
+		// outlive the closure's call.
+		{
+			name: "read by a closure's own parameter inside an async function",
+			src: `declare fn tick() -> Promise<undefined>
+async fn f() {
+    val run = fn (g: fn () -> undefined) { g() }
+    await tick()
+    run(fn () {})
+}`,
+		},
+		{
+			name: "unread by an async function",
+			src: `declare fn tick() -> Promise<undefined>
+async fn f(g: fn () -> undefined) { await tick() }`,
+		},
+		{
+			name: "named retention read by an async function",
+			src: `declare fn tick() -> Promise<undefined>
+async fn f(g: &fn () -> undefined) {
+    await tick()
+    g()
+}`,
+		},
+		{
+			name: "named retention captured by a closure passed to a static parameter",
+			src: `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+fn f<'a>(g: &'a fn () -> undefined) { onClick(fn () { g() }) }`,
+			want: []string{"2:6-2:8: the body requires 'a to outlive 'static, but the signature does not declare it; add the bound 'a: 'static"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -357,6 +595,23 @@ fn h(x: &fn () -> undefined, n: number) {
 			require.Equal(t, tt.want, errs)
 		})
 	}
+}
+
+// A top-level function and a module-level closure capture only module-level bindings, which
+// live for 'static, so a slot that keeps a function for 'static accepts either one.
+// TestStaticFuncKept covers each such slot and asserts that none reports an error.
+func TestStaticFuncKept(t *testing.T) {
+	src := `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+var sink: fn () -> undefined = fn () {}
+fn handle() {}
+val handleExpr = fn () {}
+fn setup() {
+    onClick(handle)
+    sink = handle
+    onClick(handleExpr)
+}`
+	_, errs := inferAgainstTreeWithSpans(t, src)
+	require.Empty(t, errs)
 }
 
 // A closure passed to a `&'static fn` parameter may run during any later call, so each later

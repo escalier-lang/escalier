@@ -460,6 +460,7 @@ func (c *checker) resolveIdentPath(scope *Scope, lvl int, e *ast.IdentExpr, objP
 		}
 		t := c.bindingValue(lvl, b)
 		c.noteOuterRead(e, t)
+		c.noteCallOnlyRead(t)
 		// A bare `self` that leaves the body, as in `return self` or `f(self)`, is an
 		// instance of the class. The structural view shares the class body's own element
 		// pointers, so letting it escape into a member's inferred signature would make the
@@ -518,6 +519,7 @@ func astKind(n any) string {
 // render time.
 func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.Type {
 	t := c.inferFunc(scope, lvl, e.FuncSig, e.Body, e, true, false)
+	c.setRetentionFromCaptures(scope, lvl, e, t)
 	c.recordType(e, t)
 	// The closure reads or writes what it captures from the body it is written in.
 	c.recordClosureCaptures(scope, e)
@@ -696,6 +698,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 				callOnly := *ft
 				callOnly.Lt = c.ctx.freshLifetime(lvl)
 				bodyT = &callOnly
+				c.watchCallOnlyReads(&callOnly)
 				callOnlyParams = append(callOnlyParams, callOnlyParam{name: name, node: pat, ft: &callOnly, outerMark: outerMark})
 			}
 			// A parameter binding never generalizes — its var is fixed for the body — so
@@ -838,6 +841,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	retAnnOK := false
 	if sig.Return != nil && !sig.Async && !sig.Gen {
 		retAnnT, retAnnOK = c.resolveTypeAnn(declScope, sig.Return, lvl)
+		// A caller can keep the function a body returns past the call, so a function type in
+		// the return annotation takes a lifetime of the signature as its retention.
+		if retAnnOK && hasBody {
+			retAnnT = c.withRetentionLifetimes(retAnnT, func() soltype.Lifetime { return c.ctx.freshLifetime(lvl) })
+		}
 	}
 	// The body has to work for every instantiation its type parameters' bounds allow, so
 	// those parameters are rigid from the walk of the body on. They stay rigid after it,
@@ -921,7 +929,14 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// last expression is NOT an implicit return — only an explicit `return`
 		// produces the function's value. This mirrors the old checker's
 		// inferFuncBody.
+		deferred := deferredBody(sig)
+		if deferred != "" {
+			c.deferredBodies = append(c.deferredBodies, deferred)
+		}
 		c.inferBlock(fnScope, lvl, body)
+		if deferred != "" {
+			c.deferredBodies = c.deferredBodies[:len(c.deferredBodies)-1]
+		}
 		// The first rule of D16 has to settle the borrows' lifetimes before
 		// commitOwnedReturns decides which returns are owned.
 		c.shareOutlivingBorrowLifetimes()
