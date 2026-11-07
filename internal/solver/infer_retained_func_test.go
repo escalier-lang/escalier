@@ -411,6 +411,17 @@ fn f(g: fn () -> undefined) { each(fn () { g() }) }`,
 fn f(g: fn () -> undefined) { onClick(fn () { g() }) }`,
 			want: []string{"2:6-2:7: parameter 'g' is only called during the call, so it cannot be kept for 'static"},
 		},
+		// A `'static` parameter may be kept forever, so a closure that captures it may be too.
+		{
+			name: "static parameter captured by a closure passed to a static parameter",
+			src: `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+var sink: fn () -> undefined = fn () {}
+fn f(g: &'static fn () -> undefined) {
+    onClick(fn () { g() })
+    onClick(g)
+    sink = fn () { g() }
+}`,
+		},
 		{
 			name: "captured by a named closure passed to a static parameter",
 			src: `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
