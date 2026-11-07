@@ -10,16 +10,13 @@ import (
 // module's top level. A function's body tracks each module-level binding it reaches, and a
 // call of a module function takes a loan of each module-level binding that function reaches.
 func TestModuleBindingMovesAndBorrows(t *testing.T) {
-	const decls = `
-		declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
-		declare fn take(x: {v: number}) -> undefined
-	`
 	tests := map[string]struct {
 		src  string
 		want []string
 	}{
 		"MovedTwiceInOneFunction": {
-			src: decls + `
+			src: `
+				declare fn take(x: {v: number}) -> undefined
 				val x = {v: 1}
 				fn test() {
 					take(x)
@@ -27,12 +24,14 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"7:11-7:12: cannot move module-level value 'x' inside a function. Borrow it with `&x`",
-				"8:11-8:12: use of moved value 'x'",
+				"5:11-5:12: cannot move module-level value 'x' inside a function. Borrow it with `&x`",
+				"6:11-6:12: use of moved value 'x'",
 			},
 		},
 		"CallReadsAfterTheMove": {
-			src: decls + `
+			src: `
+				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
+				declare fn take(x: {v: number}) -> undefined
 				val x = {v: 1}
 				fn peek() { readRead(&x, &x) }
 				fn test() {
@@ -41,12 +40,13 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"8:11-8:12: cannot move module-level value 'x' inside a function. Borrow it with `&x`",
-				"9:6-9:10: this call runs 'peek', which reads 'x' after it was moved",
+				"7:11-7:12: cannot move module-level value 'x' inside a function. Borrow it with `&x`",
+				"8:6-8:10: this call runs 'peek', which reads 'x' after it was moved",
 			},
 		},
 		"CallWritesWhileBorrowed": {
-			src: decls + `
+			src: `
+				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 				val mut x = {v: 1}
 				fn bump() { x.v = 5 }
 				fn test() {
@@ -55,10 +55,11 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 					readRead(a, a)
 				}
 			`,
-			want: []string{"9:6-9:10: this call runs 'bump', which writes 'x' while it is borrowed as immutable"},
+			want: []string{"7:6-7:10: this call runs 'bump', which writes 'x' while it is borrowed as immutable"},
 		},
 		"CallReadsWhileBorrowed": {
-			src: decls + `
+			src: `
+				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 				val mut x = {v: 1}
 				fn look() { readRead(&x, &x) }
 				fn test() {
@@ -70,7 +71,8 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 			want: nil,
 		},
 		"CallWritesThroughAnotherModuleFunction": {
-			src: decls + `
+			src: `
+				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 				val mut x = {v: 1}
 				fn bump() { x.v = 5 }
 				fn bumpTwice() {
@@ -83,10 +85,11 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 					readRead(a, a)
 				}
 			`,
-			want: []string{"13:6-13:15: this call runs 'bumpTwice', which writes 'x' while it is borrowed as immutable"},
+			want: []string{"11:6-11:15: this call runs 'bumpTwice', which writes 'x' while it is borrowed as immutable"},
 		},
 		"ParameterShadowsAModuleBindingACalleeWrites": {
-			src: decls + `
+			src: `
+				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 				val mut x = {v: 1}
 				fn bump() { x.v = 5 }
 				fn test(x: {v: number}) {
@@ -98,7 +101,8 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 			want: nil,
 		},
 		"ClosureCallsAModuleFunctionThatWrites": {
-			src: decls + `
+			src: `
+				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 				val mut x = {v: 1}
 				fn bump() { x.v = 5 }
 				fn test() {
@@ -108,10 +112,11 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 					readRead(a, a)
 				}
 			`,
-			want: []string{"10:6-10:7: this call runs 'g', which writes 'x' while it is borrowed as immutable"},
+			want: []string{"8:6-8:7: this call runs 'g', which writes 'x' while it is borrowed as immutable"},
 		},
 		"ClosureCallsAModuleFunctionBesideALocalOfTheSameName": {
-			src: decls + `
+			src: `
+				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 				val mut x = {v: 1}
 				fn bump() { x.v = 5 }
 				fn test() {
@@ -125,7 +130,7 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 			want: nil,
 		},
 		"ClassValueReadTwice": {
-			src: decls + `
+			src: `
 				class Foo { v: number }
 				fn test() {
 					val a = Foo
