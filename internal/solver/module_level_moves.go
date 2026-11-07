@@ -34,7 +34,10 @@ type ModuleLevelMoveError struct {
 	Source string
 	// IntoMut marks a move into a module-level `mut` binding rather than one inside a body.
 	IntoMut bool
-	node    ast.Node
+	// Method names the method whose `self` parameter takes ownership, when the moved value is
+	// the receiver of a call of that method. It is empty for any other move.
+	Method string
+	node   ast.Node
 }
 
 func (*ModuleLevelMoveError) isSolverError()      {}
@@ -43,6 +46,11 @@ func (*ModuleLevelMoveError) Related() []ast.Span { return nil }
 func (e *ModuleLevelMoveError) Message() string {
 	if e.IntoMut {
 		return fmt.Sprintf("cannot move module-level value '%s' into a `mut` binding, since the module keeps it. Borrow it with `&%s`", e.Source, e.Source)
+	}
+	// A borrow written before the receiver, as in `&tok.consume()`, borrows the call's result,
+	// so the message names the method instead of suggesting one.
+	if e.Method != "" {
+		return fmt.Sprintf("cannot move module-level value '%s' inside a function. The method '%s' takes `self` by value, so calling it moves '%s'", e.Source, e.Method, e.Source)
 	}
 	return fmt.Sprintf("cannot move module-level value '%s' inside a function. Borrow it with `&%s`", e.Source, e.Source)
 }
@@ -285,7 +293,7 @@ func (c *checker) reportModuleLevelMove(table *ownershipEvents, ev ownershipEven
 	if closure, isClosure := blame.(ast.Func); isClosure {
 		blame = c.capturesMovedBy[closure][table.names[mv.place.root]]
 	}
-	c.reportOwnedModuleMove(table, b, blame, t)
+	c.reportOwnedModuleMove(table, b, blame, t, mv.holder)
 }
 
 // reportUnplacedModuleMove reports a ModuleLevelMoveError when the flow of source into holder
@@ -305,7 +313,7 @@ func (c *checker) reportUnplacedModuleMove(source ast.Expr, holder eventHolder, 
 	flow := flowBase{eventBase: eventBase{node: source}, holder: holder}
 	ev, _, settled := c.classifyFlow(c.fn.events, flow, t, dest, false, false)
 	if _, moves := ev.(*moveEvent); settled && moves {
-		c.reportOwnedModuleMove(c.fn.events, b, source, t)
+		c.reportOwnedModuleMove(c.fn.events, b, source, t, holder)
 	}
 }
 
@@ -314,7 +322,7 @@ func (c *checker) reportUnplacedModuleMove(source ast.Expr, holder eventHolder, 
 // t is not known to be owned, or when b is a class, an enum, or a class value. A spread whose
 // elements or fields are all value types copies them and moves nothing. table holds the flow's
 // event, and each node is blamed at most once in it.
-func (c *checker) reportOwnedModuleMove(table *ownershipEvents, b ValueBinding, node ast.Node, t soltype.Type) {
+func (c *checker) reportOwnedModuleMove(table *ownershipEvents, b ValueBinding, node ast.Node, t soltype.Type, holder eventHolder) {
 	if node == nil || declaredAsClassOrEnum(b) || c.isClassValue(bindingType(b)) {
 		return
 	}
@@ -331,7 +339,22 @@ func (c *checker) reportOwnedModuleMove(table *ownershipEvents, b ValueBinding, 
 
 	// A moved place is a name, member read, or index read, all of which the printer renders.
 	text, _ := printer.Print(node, printer.DefaultOptions())
-	c.report(&ModuleLevelMoveError{Source: text, node: node})
+	c.report(&ModuleLevelMoveError{Source: text, Method: receiverMethod(holder), node: node})
+}
+
+// receiverMethod returns the name of the method whose call receives the value holder holds,
+// when holder is the receiver of a method call written as `recv.name(...)`. It returns "" for
+// any other holder.
+func receiverMethod(holder eventHolder) string {
+	rt, ok := holder.target.(receiverTarget)
+	if !ok || len(holder.path) > 0 || rt.call == nil {
+		return ""
+	}
+	member, ok := rt.call.Callee.(*ast.MemberExpr)
+	if !ok || member.Prop == nil {
+		return ""
+	}
+	return member.Prop.Name
 }
 
 // removeModuleLevelMoveErrors removes from c.errs each ModuleLevelMoveError that blames one of
