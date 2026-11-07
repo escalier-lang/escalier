@@ -777,6 +777,138 @@ fn f() -> number {
 	}
 }
 
+// TestTypeParamConsumesArgument covers calls to a parameter typed by one of the callee's own
+// type parameters, either bare or as a union member. An owned argument moves there. The
+// caller cannot keep reading it while a mutable binding of the result writes through it. A
+// borrow argument and a value-type argument move nothing. The cases run against the stdlib
+// so `xs.length` and `r.push` resolve.
+func TestTypeParamConsumesArgument(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "WrittenTypeParameter",
+			src: `fn id<T>(t: T) -> T { return t }
+fn g() -> number {
+	val xs: Array<number> = [1]
+	val mut r = id(xs)
+	r.push(2)
+	return xs.length
+}`,
+			want: []string{"6:9-6:18: use of moved value 'xs'"},
+		},
+		{
+			name: "InferredTypeParameter",
+			src: `fn id(x) { return x }
+fn g() -> number {
+	val xs: Array<number> = [1]
+	val mut r = id(xs)
+	r.push(2)
+	return xs.length
+}`,
+			want: []string{"6:9-6:18: use of moved value 'xs'"},
+		},
+		{
+			name: "AwaitedAsyncTypeParameter",
+			src: `async fn idA<T>(t: T) -> Promise<T> { return t }
+async fn g() -> Promise<number> {
+	val xs: Array<number> = [1]
+	val mut r = await idA(xs)
+	r.push(2)
+	return xs.length
+}`,
+			want: []string{"6:9-6:18: use of moved value 'xs'"},
+		},
+		{
+			name: "GenericMethod",
+			src: `val m = {id: fn <T>(x: T) -> T { return x }}
+fn g() -> number {
+	val xs: Array<number> = [1]
+	m.id(xs)
+	return xs.length
+}`,
+			want: []string{"5:9-5:18: use of moved value 'xs'"},
+		},
+		{
+			// A union with a type-parameter member takes ownership as the bare parameter does.
+			name: "UnionWithTypeParameter",
+			src: `fn orNull<T>(t: T | null) -> T | null { return t }
+fn g() -> number {
+	val xs: Array<number> = [1]
+	orNull(xs)
+	return xs.length
+}`,
+			want: []string{"5:9-5:18: use of moved value 'xs'"},
+		},
+		{
+			// Promise.resolve takes `T | PromiseLike<T>` and resolves to the value it was given.
+			name: "PromiseResolve",
+			src: `fn g() -> number {
+	val xs: Array<number> = [1]
+	val p = Promise.resolve(xs)
+	return xs.length
+}`,
+			want: []string{"4:9-4:18: use of moved value 'xs'"},
+		},
+		{
+			name: "GenericOverloadArm",
+			src: `fn pick<T>(a: T) -> T { return a }
+fn pick<T>(a: T, b: number) -> T { return a }
+fn g() -> number {
+	val xs: Array<number> = [1]
+	pick(xs)
+	return xs.length
+}`,
+			want: []string{"6:9-6:18: use of moved value 'xs'"},
+		},
+		{
+			// Every argument a rest parameter typed by a type parameter receives moves.
+			// `count(xs)` passes the whole array as one argument, not its elements. T is
+			// inferred as `Array<number>`, so `items` is `Array<Array<number>>` and holds
+			// xs itself. A non-generic `...items: Array<number>` would reject the call.
+			name: "RestTypeParameter",
+			src: `fn count<T>(...items: Array<T>) -> number { return items.length }
+fn g() -> number {
+	val xs: Array<number> = [1]
+	count(xs)
+	return xs.length
+}`,
+			want: []string{"5:9-5:18: use of moved value 'xs'"},
+		},
+		{
+			name: "BorrowArgument",
+			src: `fn id<T>(t: T) -> T { return t }
+fn g() -> number {
+	val xs: Array<number> = [1]
+	val r = id(&xs)
+	return xs.length + r.length
+}`,
+		},
+		{
+			// A number, a string, and a function copy into the parameter.
+			name: "ValueTypeArguments",
+			src: `fn id<T>(t: T) -> T { return t }
+fn g() -> number {
+	val n = 1
+	val s = "a"
+	val f = fn () { return 1 }
+	id(n)
+	id(s)
+	id(f)
+	return n + s.length + f()
+}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, errs := inferAgainstTreeWithSpans(t, tt.src)
+			require.Equal(t, tt.want, errs)
+		})
+	}
+}
+
 // TestUnannotatedDestructuredParamConsumesArgument covers calls to a parameter written as a
 // destructuring pattern with no type. A call moves its whole argument there when the callee's
 // body moves any leaf the pattern binds, and leaves the argument usable otherwise.
