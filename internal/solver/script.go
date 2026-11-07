@@ -144,7 +144,7 @@ func (c *checker) inferScriptIn(scope *Scope, script *ast.Script) (*Scope, *Info
 	c.inferBlock(scope, 0, scriptBody)
 	// The whole script is walked, so a weak binding it declares, at its top level or in
 	// one of its functions, has every bound it will get.
-	c.settleWeakLocals()
+	c.settleWeakLocals(newWeakSettler())
 	// The whole script is inferred, so every flow F3 can settle is settled, and the rest
 	// take the answer settleAllFlows gives what it cannot see.
 	c.finishOwnershipEvents()

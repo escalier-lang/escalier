@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"math"
 	"slices"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -18,7 +19,7 @@ import (
 // module-level binding that is the module's level, the level every component generalizes
 // at, so no later component quantifies it. A later binding's variable that a bound ties to a
 // weak variable is lowered to the weak variable's level when that binding generalizes, as
-// lowerCapturedVars describes, so it is weak too.
+// lowerWeakBoundVars describes, so it is weak too.
 
 // keyVarDecl returns the declaration that key's binding var stands for when that is a
 // `val` or `var`, or nil when it is another kind of declaration.
@@ -126,14 +127,15 @@ func (c *checker) noteWeakReader(b *componentBinding, scheme TypeScheme, lvl int
 //     borrow.
 //  4. It settles each body-level weak binding the module's functions declare.
 func (c *checker) settleWeakBindings(lvl int) {
+	settler := newWeakSettler()
 	for _, r := range c.weakReaders {
-		r.scheme.coalesced = c.subsumeFinal(settleReaderDisplay(r.scheme, lvl))
+		r.scheme.coalesced = c.subsumeFinal(settler.display(r.scheme, lvl))
 		if r.infoNode != nil {
 			c.recordType(r.infoNode, r.scheme.coalesced)
 		}
 	}
 	for _, w := range c.weakBindings {
-		c.settleWeakDisplay(w)
+		c.settleWeakDisplay(w, settler)
 		root, isVar := w.scheme.Body.(*soltype.TypeVarType)
 		if !isVar || w.infoNode == nil {
 			continue
@@ -146,16 +148,16 @@ func (c *checker) settleWeakBindings(lvl int) {
 			c.report(&MixedOwnershipError{Node: w.infoNode})
 		}
 	}
-	c.settleWeakLocals()
+	c.settleWeakLocals(settler)
 }
 
-// settleWeakLocals settles each body-level weak binding noteWeakLocal recorded, as
-// settleWeakDisplay does, and clears the list. It runs once the whole module or script is
-// walked. A local's type can read a variable an enclosing scope settles, such as a weak
-// module-level binding's, so the body that declares the local ending is not enough.
-func (c *checker) settleWeakLocals() {
+// settleWeakLocals settles each body-level weak binding noteWeakLocal recorded through
+// settler, as settleWeakDisplay does, and clears the list. It runs once the whole module or
+// script is walked. A local's type can read a variable an enclosing scope settles, such as a
+// weak module-level binding's, so the body that declares the local ending is not enough.
+func (c *checker) settleWeakLocals(settler *weakSettler) {
 	for _, w := range c.weakLocals {
-		c.settleWeakDisplay(w)
+		c.settleWeakDisplay(w, settler)
 	}
 	c.weakLocals = nil
 }
@@ -164,21 +166,16 @@ func (c *checker) settleWeakLocals() {
 // records it on w's node. generalize sealed the display while the weak variables had only
 // the initializer's bounds, so it showed none of the writes that followed.
 //
-// No use is left to add a bound, so the body is first coalesced as if its weak variables
-// were quantified, which simplifies them the way a generalized binding's variables are. A
-// variable that only receives values reads as `never`, and a recursive type folds to its
-// smallest μ form. A weak variable that survives that pass occurs in both polarities. It
-// is not a type parameter of the binding, so it is replaced by the one type it stands for
-// in both, as simplifyWithWeakVars describes. `fn (x) { return x }` called with `1`
-// settles to `fn (x: 1) -> 1`.
+// Each weak variable reads as the one type settler gives it, so `fn (x) { return x }`
+// called with `1` settles to `fn (x: 1) -> 1`.
 //
 // The settled type widens the literals in each slot the binding can write, the way T9
 // widens a literal initializer. widenLiterals says which slots those are.
 // `val mut seen = Map()` written with `seen.set("k", 1)` settles to `Map<string, number>`,
 // `val b = Box(5)` keeps `Box<5>`, and `val mut p = fetchNum()` keeps `Promise<5>`.
-func (c *checker) settleWeakDisplay(w weakBinding) {
+func (c *checker) settleWeakDisplay(w weakBinding, settler *weakSettler) {
 	sc := w.scheme
-	display := simplifyWithWeakVars(sc, sc.Level-1, sc.Level)
+	display := settler.display(sc, sc.Level)
 	if w.reassignable || w.mutable {
 		display = c.widenLiterals(display, w.reassignable, w.mutable)
 	}
@@ -425,173 +422,259 @@ func collectPassThrough(v *soltype.TypeVarType, out set.Set[*soltype.TypeVarType
 	}
 }
 
-// simplifyWithWeakVars returns sc's body coalesced above lvl, with each type variable at or
-// below weakLvl replaced by the one type it stands for, the same in every position.
+// weakSettler gives each weak variable the one type it stands for, the same in every
+// position. A weak variable is not a type parameter of anything that reads it, so a weak
+// binding and every function that reads it show it as that one type. One weakSettler serves
+// a whole module or script, so a weak variable is settled once and each display that reaches
+// it reuses the result.
 //
-// Coalescing rebuilds such a variable as a fresh one with no bounds and puts the types that
-// flowed into it beside it, so `fn (x: T) -> T` with `T` written 1 coalesces to
-// `fn (x: t) -> t | 1`. The variable's type is read from there. It is the union of the types
-// beside it where it is produced, or the intersection of those beside it where it is
-// consumed when it is never produced. A variable with neither reads its own bounds the same
-// way, and is `never` when it has no bound either.
-func simplifyWithWeakVars(sc *PolyScheme, lvl, weakLvl int) soltype.Type {
-	simplified := coalesceScheme(sc.Body, lvl, sc.declared, sc.declaredLts, true)
-	s := &weakCompanionScanner{
-		lvl:      weakLvl,
-		binders:  funcTypeParamVars(simplified),
-		produced: map[*soltype.TypeVarType][]soltype.Type{},
-		consumed: map[*soltype.TypeVarType][]soltype.Type{},
-	}
-	simplified.Accept(s, soltype.Positive)
-	return simplified.Accept(&weakVarInliner{lvl: weakLvl, binders: s.binders, scan: s}, soltype.Positive)
+// A weak variable's type is the union of the values that flowed into it. When no value
+// flowed into it, the type is the intersection of what its uses require, and it is `never`
+// when it has neither. Each bound is coalesced with the weak variables it holds kept as
+// variables, and each of those is then settled the same way. Given
+// `declare fn mk<T>() -> fn (x: T) -> T` and `val g = mk()`, g's variable has the lower
+// bound `fn (x: T) -> T`, and a call `g(5)` gives T the lower bound 5. g and a function that
+// returns g both settle to `fn (x: 5) -> 5`.
+//
+// A weak variable that reaches itself through its bounds settles to a μ type in its smallest
+// form. Given `fn f() { return {next: f()} }` and `fn id(x) { return x }`, the weak binding
+// `val d = id(f())` reads as `μX0.{next: X0}`.
+type weakSettler struct {
+	settled map[*soltype.TypeVarType]soltype.Type
+	// open holds each variable whose settled type is being built, with its depth on the walk.
+	open map[*soltype.TypeVarType]*openWeakVar
+	// depth is the number of open variables.
+	depth int
+	// minRef is the lowest depth of an open variable the type being built refers back to.
+	// A type that refers to an enclosing open variable is not complete on its own, so it is
+	// not saved in settled.
+	minRef int
+	// muCount numbers the μ-variables minted since the walk last had no open variable.
+	muCount int
+	// empty holds each weak variable that settled on no type, since its bounds hold none.
+	empty set.Set[*soltype.TypeVarType]
 }
 
-// settleReaderDisplay returns sc's body coalesced at its own level, with each weak variable
-// replaced by the type it settled on. A weak variable is a variable at or below lvl that is
-// not a function's own type parameter. It is not a type parameter of the reader, so it
-// stands for one type wherever it occurs, and settledWeakType gives that type.
-//
-// A reader's parameter can itself be weak. Given a weak binding `g` whose parameter and
-// result are one weak variable,
-//
-//	fn h(y) { return g(y) }
-//	val a = h(5)
-//
-// gives y's variable the lower bound 5, and h settles to `fn (y: 5) -> 5`.
-func settleReaderDisplay(sc *PolyScheme, lvl int) soltype.Type {
-	keep := schemeBinders(sc.Body, sc.declared)
+// openWeakVar is a weak variable whose settled type is being built.
+type openWeakVar struct {
+	depth int
+	// ref is the μ-variable a reference back to the variable renders as. It is nil until a
+	// bound reaches the variable again.
+	ref *soltype.RecursiveVarType
+}
+
+func newWeakSettler() *weakSettler {
+	return &weakSettler{
+		settled: map[*soltype.TypeVarType]soltype.Type{},
+		open:    map[*soltype.TypeVarType]*openWeakVar{},
+		minRef:  math.MaxInt,
+		empty:   set.NewSet[*soltype.TypeVarType](),
+	}
+}
+
+// display returns sc's body coalesced at sc's own level, with each weak variable replaced by
+// its settled type. A weak variable is a variable at or below lvl that is not a function's own
+// type parameter.
+func (s *weakSettler) display(sc *PolyScheme, lvl int) soltype.Type {
+	// A class value's type names the class's own parameters, which coalescing shows with the
+	// bounds the class wrote. A weak variable in that place stands for its settled type
+	// instead, so it is not treated as one of them.
+	declared := slices.DeleteFunc(slices.Clone(sc.declared), func(tp *soltype.TypeParam) bool {
+		return tp.Var.Level <= lvl
+	})
+	keep := schemeBinders(sc.Body, declared)
+	addWeakVars(keep, sc.Body, lvl)
+	coalesced := coalesceSchemeKeeping(sc.Body, sc.Level, declared, sc.declaredLts, keep, true)
+	return coalesceLifetimes(s.replace(coalesced, lvl), soltype.Positive, classKeepLifetimes(sc.declaredLts))
+}
+
+// addWeakVars adds to keep each variable at or below lvl that t reaches.
+func addWeakVars(keep set.Set[*soltype.TypeVarType], t soltype.Type, lvl int) {
 	vars := map[int]*soltype.TypeVarType{}
-	sc.Body.Accept(&varCollector{out: vars, seen: set.NewSet[*soltype.TypeVarType]()}, soltype.Positive)
+	t.Accept(&varCollector{out: vars, seen: set.NewSet[*soltype.TypeVarType]()}, soltype.Positive)
 	for _, v := range vars {
 		if v.Level <= lvl {
 			keep.Add(v)
 		}
 	}
-	coalesced := coalesceSchemeKeeping(sc.Body, sc.Level, sc.declared, sc.declaredLts, keep, true)
-	settler := &weakVarSettler{lvl: lvl, binders: funcTypeParamVars(coalesced)}
-	return coalesced.Accept(settler, soltype.Positive)
 }
 
-// settledWeakType returns the one type the weak variable v stands for. It is the union of
-// the values that flowed into v. When no value flowed into v, it is the intersection of what
-// v's uses require, and it is `never` when v has neither.
-func settledWeakType(v *soltype.TypeVarType) soltype.Type {
-	if lower := coalesce(v, soltype.Positive); !isNeverType(lower) {
-		return lower
+// replace returns t with each weak variable replaced by its settled type. A function's own
+// type parameters stay variables, since the function binds them.
+func (s *weakSettler) replace(t soltype.Type, lvl int) soltype.Type {
+	return t.Accept(&weakVarReplacer{s: s, lvl: lvl, binders: funcTypeParamVars(t)}, soltype.Positive)
+}
+
+// settle returns the type the weak variable v stands for, as weakSettler describes.
+func (s *weakSettler) settle(v *soltype.TypeVarType, lvl int) soltype.Type {
+	if t, ok := s.settled[v]; ok {
+		return t
 	}
-	if upper := coalesce(v, soltype.Negative); !isUnknown(upper) {
-		return upper
+	if o, ok := s.open[v]; ok {
+		if o.ref == nil {
+			o.ref = &soltype.RecursiveVarType{ID: s.muCount, Name: muBinderName(s.muCount)}
+			s.muCount++
+		}
+		s.minRef = min(s.minRef, o.depth)
+		return o.ref
 	}
-	return &soltype.NeverType{}
-}
+	o := &openWeakVar{depth: s.depth}
+	s.open[v] = o
+	s.depth++
+	outerRef := s.minRef
+	s.minRef = math.MaxInt
 
-// weakVarSettler is the visitor behind settleReaderDisplay. It replaces each variable at or
-// below lvl that binders does not hold with the type settledWeakType gives it.
-type weakVarSettler struct {
-	lvl     int
-	binders set.Set[*soltype.TypeVarType]
-}
-
-func (w *weakVarSettler) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
-	if v, ok := t.(*soltype.TypeVarType); ok && v.Level <= w.lvl && !w.binders.Contains(v) {
-		return soltype.EnterResult{Type: settledWeakType(v), SkipChildren: true}
+	body := s.settleAt(v, soltype.Positive, lvl)
+	if isEmptyAt(body, soltype.Positive) {
+		body = s.settleAt(v, soltype.Negative, lvl)
+		if isEmptyAt(body, soltype.Negative) {
+			body = &soltype.NeverType{}
+			s.empty.Add(v)
+		}
 	}
-	return soltype.EnterResult{}
+	if o.ref != nil {
+		body = (&muBinder{pol: soltype.Positive, v: o.ref}).tie(soltype.Positive, body)
+	} else {
+		body = foldUnrolledKnot(body)
+	}
+
+	delete(s.open, v)
+	s.depth--
+	innerRef := s.minRef
+	if innerRef >= o.depth {
+		s.settled[v] = body
+		innerRef = math.MaxInt
+	}
+	s.minRef = min(outerRef, innerRef)
+	if s.depth == 0 {
+		s.muCount = 0
+	}
+	return body
 }
 
-func (w *weakVarSettler) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
-
-// weakCompanionScanner records, for each type variable at or below lvl, the other members of
-// each union it is produced in and of each intersection it is consumed in.
-type weakCompanionScanner struct {
-	lvl      int
-	binders  set.Set[*soltype.TypeVarType]
-	produced map[*soltype.TypeVarType][]soltype.Type
-	consumed map[*soltype.TypeVarType][]soltype.Type
+// settleAt returns v coalesced at pol, with each other weak variable its bounds reach
+// settled. It is `never` at a positive position when v has no lower bound, and `unknown` at
+// a negative one when v has no upper bound.
+//
+// Inside an upper bound, a weak variable that settled on no type reads as the identity of
+// its position, `never` where it is produced and `unknown` where it is consumed. Such a
+// variable places no requirement on v, so `fn (x: R) -> R` with R unsettled reads as
+// `fn (x: never) -> unknown`, the function type every function is a subtype of.
+func (s *weakSettler) settleAt(v *soltype.TypeVarType, pol soltype.Polarity, lvl int) soltype.Type {
+	keep := funcTypeParamVars(v)
+	addWeakVars(keep, v, lvl)
+	keep.Remove(v)
+	coalesced := coalesceStructure(v, pol, keep, nil)
+	return coalesced.Accept(&weakVarReplacer{
+		s:       s,
+		lvl:     lvl,
+		binders: funcTypeParamVars(coalesced),
+		inUpper: pol == soltype.Negative,
+	}, pol)
 }
 
-func (s *weakCompanionScanner) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
-	var members []soltype.Type
-	into := s.produced
+// isEmptyAt reports whether t is the identity of a position at pol: `never`, or a union of
+// `never`s, at a positive position, and `unknown`, or an intersection of `unknown`s, at a
+// negative one.
+func isEmptyAt(t soltype.Type, pol soltype.Polarity) bool {
 	switch t := t.(type) {
 	case *soltype.UnionType:
-		if pol != soltype.Positive {
-			return soltype.EnterResult{}
-		}
-		members = t.Types
+		return pol == soltype.Positive && !slices.ContainsFunc(t.Types, func(m soltype.Type) bool { return !isEmptyAt(m, pol) })
 	case *soltype.IntersectionType:
-		if pol != soltype.Negative {
-			return soltype.EnterResult{}
-		}
-		members, into = t.Types, s.consumed
-	default:
-		return soltype.EnterResult{}
+		return pol == soltype.Negative && !slices.ContainsFunc(t.Types, func(m soltype.Type) bool { return !isEmptyAt(m, pol) })
 	}
-	for i, m := range members {
-		v, ok := m.(*soltype.TypeVarType)
-		if !ok || !s.isWeak(v) {
-			continue
+	if pol == soltype.Positive {
+		return isNeverType(t)
+	}
+	return isUnknown(t)
+}
+
+// foldUnrolledKnot returns the μ type t is one unfolding of, or t when it is none.
+// `{next: μX0.{next: X0}}` folds to `μX0.{next: X0}`.
+func foldUnrolledKnot(t soltype.Type) soltype.Type {
+	if _, isKnot := t.(*soltype.RecursiveType); isKnot {
+		return t
+	}
+	finder := &outerKnotCollector{}
+	t.Accept(finder, soltype.Positive)
+	for _, knot := range finder.knots {
+		if equalType(unfoldRecursive(knot), t) {
+			return knot
 		}
-		for j, other := range members {
-			if j != i {
-				into[v] = append(into[v], other)
-			}
-		}
+	}
+	return t
+}
+
+// outerKnotCollector collects the outermost μ types a type holds.
+type outerKnotCollector struct {
+	knots []*soltype.RecursiveType
+}
+
+func (f *outerKnotCollector) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	if knot, ok := t.(*soltype.RecursiveType); ok {
+		f.knots = append(f.knots, knot)
+		return soltype.EnterResult{SkipChildren: true}
 	}
 	return soltype.EnterResult{}
 }
 
-func (s *weakCompanionScanner) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+func (f *outerKnotCollector) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
-func (s *weakCompanionScanner) isWeak(v *soltype.TypeVarType) bool {
-	return v.Level <= s.lvl && !s.binders.Contains(v)
-}
-
-// typeOf returns the one type the weak variable v stands for, as simplifyWithWeakVars
-// describes.
-func (s *weakCompanionScanner) typeOf(v *soltype.TypeVarType) soltype.Type {
-	if ts := s.produced[v]; len(ts) > 0 {
-		return joinAll(ts)
-	}
-	if ts := s.consumed[v]; len(ts) > 0 {
-		if len(ts) == 1 {
-			return ts[0]
-		}
-		return &soltype.IntersectionType{Types: ts}
-	}
-	if lower := coalesce(v, soltype.Positive); !isNeverType(lower) {
-		return lower
-	}
-	if upper := coalesce(v, soltype.Negative); !isUnknown(upper) {
-		return upper
-	}
-	return &soltype.NeverType{}
-}
-
-// joinAll returns the union of ts, or its one member.
-func joinAll(ts []soltype.Type) soltype.Type {
-	if len(ts) == 1 {
-		return ts[0]
-	}
-	return &soltype.UnionType{Types: ts}
-}
-
-// weakVarInliner is the visitor behind simplifyWithWeakVars. It replaces each weak variable
-// with the type scan gives it.
-type weakVarInliner struct {
+// weakVarReplacer is the visitor behind weakSettler.replace and weakSettler.settleAt. It
+// replaces each weak variable with its settled type. With inUpper set, a weak variable that
+// settled on no type reads as the identity of its position, as settleAt describes.
+type weakVarReplacer struct {
+	s       *weakSettler
 	lvl     int
 	binders set.Set[*soltype.TypeVarType]
-	scan    *weakCompanionScanner
+	inUpper bool
 }
 
-func (w *weakVarInliner) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
-	if v, ok := t.(*soltype.TypeVarType); ok && w.scan.isWeak(v) {
-		return soltype.EnterResult{Type: w.scan.typeOf(v), SkipChildren: true}
+func (w *weakVarReplacer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	v, ok := t.(*soltype.TypeVarType)
+	if !ok || v.Level > w.lvl || w.binders.Contains(v) {
+		return soltype.EnterResult{}
 	}
-	return soltype.EnterResult{}
+	settled := w.s.settle(v, w.lvl)
+	if w.inUpper && w.s.empty.Contains(v) {
+		settled = emptyOf(pol)
+	}
+	return soltype.EnterResult{Type: settled, SkipChildren: true}
 }
 
-func (w *weakVarInliner) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+// ExitType drops the identity members a replacement leaves in a union or intersection, so
+// `{set: fn () -> number} & unknown` reads as `{set: fn () -> number}`.
+func (w *weakVarReplacer) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type {
+	switch t := t.(type) {
+	case *soltype.UnionType:
+		return withoutMembers(t.Types, isNeverType, func(ts []soltype.Type) soltype.Type { return &soltype.UnionType{Types: ts} }, &soltype.NeverType{}, t)
+	case *soltype.IntersectionType:
+		return withoutMembers(t.Types, isUnknown, func(ts []soltype.Type) soltype.Type { return &soltype.IntersectionType{Types: ts} }, &soltype.UnknownType{}, t)
+	}
+	return t
+}
+
+// withoutMembers returns the type members makes from ts with each member drop reports
+// removed. It returns orig when nothing is removed, the one member left when one is, and
+// empty when none is.
+func withoutMembers(
+	ts []soltype.Type,
+	drop func(soltype.Type) bool,
+	members func([]soltype.Type) soltype.Type,
+	empty soltype.Type,
+	orig soltype.Type,
+) soltype.Type {
+	kept := slices.DeleteFunc(slices.Clone(ts), drop)
+	switch len(kept) {
+	case len(ts):
+		return orig
+	case 0:
+		return empty
+	case 1:
+		return kept[0]
+	}
+	return members(kept)
+}
 
 // mixesOwnership reports whether the values that flow into v are some owned and some
 // borrowed, by the rule checkUniformOwnership applies to the branches of a join.

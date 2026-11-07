@@ -330,7 +330,8 @@ fn h(y) {
 		{
 			// h passes g a closure that returns h's parameter. The closure flows into g's weak
 			// variable, so y's variable is tied to it through the closure's result and h stays
-			// monomorphic.
+			// monomorphic. The closure's parameter is weak too, and nothing reaches it, so it
+			// is `never` like y.
 			name: "AFunctionThatPassesAClosureToAWeakFunction",
 			src: `
 fn makeId() { return fn (x) { return x } }
@@ -338,8 +339,8 @@ val g = makeId()
 fn h(y) { return g(fn (z) { return y }) }
 `,
 			values: map[string]string{
-				"g": "fn (x: fn (z: unknown) -> never) -> fn (z: unknown) -> never",
-				"h": "fn (y: never) -> fn (z: unknown) -> never",
+				"g": "fn (x: fn (z: never) -> never) -> fn (z: never) -> never",
+				"h": "fn (y: never) -> fn (z: never) -> never",
 			},
 		},
 		{
@@ -396,7 +397,8 @@ fn h(y) {
 		},
 		{
 			// h's result is an alias with a lifetime argument. h stays monomorphic over g's weak
-			// variable and keeps 'a as its own lifetime parameter.
+			// variable and keeps 'a as its own lifetime parameter. y's `set` receives p, so its
+			// argument is a borrow at 'a.
 			name: "AWeakFunctionsCallerReturnsAnAliasWithALifetime",
 			src: `
 fn makeId() { return fn (x) { return x } }
@@ -410,7 +412,7 @@ fn h<'a>(y, p: &'a {n: number}) -> Ref<'a, {n: number}> {
 `,
 			values: map[string]string{
 				"g": "fn (x: never) -> never",
-				"h": "fn <'a>(y: {set: fn (arg0: &{n: number}) -> unknown}, p: &'a {n: number}) -> Ref<'a, {n: number}>",
+				"h": "fn <'a>(y: {set: fn (arg0: &'a {n: number}) -> unknown}, p: &'a {n: number}) -> Ref<'a, {n: number}>",
 			},
 		},
 		{
@@ -429,8 +431,8 @@ fn u() {
 			values: map[string]string{"g": "fn (x: {x: number} & {y: string}) -> {x: number} & {y: string}"},
 		},
 		{
-			// T appears only where h produces a value, so coalescing drops it before its uses
-			// are read. #2351 keeps it, so h becomes `fn () -> {x: number} & {y: string}`.
+			// No value flows into T, so its type is what its uses require, though T appears
+			// only where h produces a value.
 			name: "AWeakVariableInOnePositionOnlyUsesDecide",
 			src: `
 declare fn mk<T>() -> fn () -> T
@@ -440,7 +442,44 @@ fn u() {
 	val b: {y: string} = h()
 }
 `,
-			values: map[string]string{"h": "fn () -> never"},
+			values: map[string]string{"h": "fn () -> {x: number} & {y: string}"},
+		},
+		{
+			// T appears only where sink consumes a value, and `1` is the only value that
+			// reached it.
+			name: "AWeakVariableOnlyAParameterReads",
+			src: `
+declare fn mk<T>() -> fn (x: T) -> undefined
+val sink = mk()
+fn use() { sink(1) }
+`,
+			values: map[string]string{"sink": "fn (x: 1) -> undefined"},
+		},
+		{
+			// T appears only where each produces a value to its callback, and `number` is
+			// the only type a use required of it.
+			name: "AWeakVariableOnlyACallbackParameterReads",
+			src: `
+declare fn mk<T>() -> fn (f: fn (x: T) -> undefined) -> undefined
+val each = mk()
+fn use() { each(fn (x: number) {}) }
+`,
+			values: map[string]string{"each": "fn (f: fn (x: number) -> undefined) -> undefined"},
+		},
+		{
+			// w returns g, so w's result reaches g's weak variable through g's own type. T
+			// settles once, so w shows g's type.
+			name: "AFunctionThatReturnsAWeakFunction",
+			src: `
+declare fn mk<T>() -> fn (x: T) -> T
+val g = mk()
+fn u(n: number) { return g(n) }
+fn w() { return g }
+`,
+			values: map[string]string{
+				"g": "fn (x: number) -> number",
+				"w": "fn () -> fn (x: number) -> number",
+			},
 		},
 		{
 			// make's type comes from the bounds the checker uses for m, which keep the literals.

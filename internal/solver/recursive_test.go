@@ -274,8 +274,9 @@ func TestInferRecursiveThroughSourcePaths(t *testing.T) {
 				fn id(x) { return x }
 				val d = id(f())
 			`,
+			// d is a weak binding, whose settled type folds to the smallest μ form.
 			binding:  "d",
-			want:     "{next: μX0.{next: X0}}",
+			want:     "μX0.{next: X0}",
 			wantErrs: []string{nonReturningMsg("2:8-2:9", "f", "fn () -> {next: μX0.{next: X0}}")},
 		},
 		{
