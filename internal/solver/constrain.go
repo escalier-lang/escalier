@@ -3374,8 +3374,9 @@ func (c *Context) instantiateFuncBinder(ft *soltype.FuncType, lvl int) *soltype.
 }
 
 // markTypeArgParams records in typeArgParams each parameter of ft whose type is one of
-// typeArgs, and each rest parameter whose element type is one. typeArgs are the types an
-// instantiation of ft's binder substituted for its type parameters.
+// typeArgs or a union with a member that is one, such as `T | null`. A rest parameter is
+// recorded when its element type is such a type. typeArgs are the types an instantiation of
+// ft's binder substituted for its type parameters.
 func (c *Context) markTypeArgParams(ft *soltype.FuncType, typeArgs []soltype.Type) {
 	for _, p := range ft.Params {
 		t := p.Type
@@ -3386,7 +3387,11 @@ func (c *Context) markTypeArgParams(ft *soltype.FuncType, typeArgs []soltype.Typ
 			}
 			t = elem
 		}
-		if !slices.Contains(typeArgs, t) {
+		members := []soltype.Type{t}
+		if u, ok := t.(*soltype.UnionType); ok {
+			members = u.Types
+		}
+		if !slices.ContainsFunc(members, func(m soltype.Type) bool { return slices.Contains(typeArgs, m) }) {
 			continue
 		}
 		if c.typeArgParams == nil {
@@ -3439,6 +3444,12 @@ func (c *Context) bindFuncBinderInPlace(ft *soltype.FuncType) *soltype.FuncType 
 	}
 	cp := *ft
 	cp.TypeParams = nil
+	// The marks belong to this use alone, so they go on copies of ft's parameters.
+	cp.Params = make([]*soltype.FuncParam, len(ft.Params))
+	for i, p := range ft.Params {
+		np := *p
+		cp.Params[i] = &np
+	}
 	typeArgs := make([]soltype.Type, len(ft.TypeParams))
 	for i, tp := range ft.TypeParams {
 		typeArgs[i] = tp.Var

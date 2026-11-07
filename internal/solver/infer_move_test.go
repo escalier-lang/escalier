@@ -830,6 +830,27 @@ fn g() -> number {
 			want: []string{"5:9-5:18: use of moved value 'xs'"},
 		},
 		{
+			// A union with a type-parameter member takes ownership as the bare parameter does.
+			name: "UnionWithTypeParameter",
+			src: `fn orNull<T>(t: T | null) -> T | null { return t }
+fn g() -> number {
+	val xs: Array<number> = [1]
+	orNull(xs)
+	return xs.length
+}`,
+			want: []string{"5:9-5:18: use of moved value 'xs'"},
+		},
+		{
+			// Promise.resolve takes `T | PromiseLike<T>` and resolves to the value it was given.
+			name: "PromiseResolve",
+			src: `fn g() -> number {
+	val xs: Array<number> = [1]
+	val p = Promise.resolve(xs)
+	return xs.length
+}`,
+			want: []string{"4:9-4:18: use of moved value 'xs'"},
+		},
+		{
 			name: "GenericOverloadArm",
 			src: `fn pick<T>(a: T) -> T { return a }
 fn pick<T>(a: T, b: number) -> T { return a }
