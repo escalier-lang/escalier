@@ -561,10 +561,16 @@ func (c *checker) emitCaptureFlows(closure ast.Func, root liveness.VarID, decl a
 		return
 	}
 
-	// An unannotated parameter's binding renders as `never` until its body settles it, so
-	// the capture reads the parameter's own type instead.
+	// The binding of an unannotated parameter renders as `never` until its body settles it,
+	// so the capture reads the type the parameter was given instead. A bare name reads the
+	// parameter's type. A leaf of a destructuring pattern reads its own type, since a
+	// `number` leaf such as `n` in `{n}` copies where the whole object would move.
 	if fp, ok := c.paramByVar[root]; ok {
-		t = fp.Type
+		if _, bare := fp.Pattern.(*soltype.IdentPat); bare {
+			t = fp.Type
+		} else if leafT, found := c.fn.varIDTypes[root]; found {
+			t = leafT
+		}
 	}
 
 	paths := c.capturedPaths(closure, decl)

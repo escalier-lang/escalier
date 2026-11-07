@@ -776,6 +776,151 @@ fn f() -> number {
 	}
 }
 
+// TestUnannotatedDestructuredParamConsumesArgument covers calls to a parameter written as a
+// destructuring pattern with no type. A call moves its whole argument there when the callee's
+// body moves any leaf the pattern binds, and leaves the argument usable otherwise.
+func TestUnannotatedDestructuredParamConsumesArgument(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "ObjectPatternLeafReturned",
+			src: `fn take({x}) { return x }
+fn h() {
+  val o = {x: {v: 1}}
+  val r = take(o)
+  val s = o
+}`,
+			want: []string{"5:11-5:12: use of moved value 'o'"},
+		},
+		{
+			name: "TuplePatternLeafReturned",
+			src: `fn take2([x, y]) { return x }
+fn h() {
+  val t = [{v: 1}, {v: 2}]
+  val u = take2(t)
+  val w = t
+}`,
+			want: []string{"5:11-5:12: use of moved value 't'"},
+		},
+		{
+			name: "BareNameReturned",
+			src: `fn whole(p) { return p }
+fn h() {
+  val o2 = {x: {v: 1}}
+  val z = whole(o2)
+  val q = o2
+}`,
+			want: []string{"5:11-5:13: use of moved value 'o2'"},
+		},
+		{
+			name: "NestedPatternLeafReturned",
+			src: `fn deep({a: {b}}) { return b }
+fn h() {
+  val o = {a: {b: {v: 1}}}
+  val r = deep(o)
+  val s = o
+}`,
+			want: []string{"5:11-5:12: use of moved value 'o'"},
+		},
+		{
+			name: "TupleRestReturned",
+			src: `fn tail([x, ...rest]) { return rest }
+fn h() {
+  val t = [{v: 1}, {v: 2}]
+  val u = tail(t)
+  val w = t
+}`,
+			want: []string{"5:11-5:12: use of moved value 't'"},
+		},
+		{
+			name: "ObjectRestReturned",
+			src: `fn others({x, ...rest}) { return rest }
+fn h() {
+  val o = {x: {v: 1}, y: {v: 2}}
+  val r = others(o)
+  val s = o
+}`,
+			want: []string{"5:11-5:12: use of moved value 'o'"},
+		},
+		{
+			// The body of `read` reads a field of its leaf without moving it, so the parameter is
+			// a borrow and the argument stays usable.
+			name: "LeafOnlyReadKeepsArgument",
+			src: `fn read({x}) -> number { return x.v }
+fn h() {
+  val o = {x: {v: 1}}
+  val n = read(o)
+  val s = o
+}`,
+		},
+		{
+			// A `number` leaf copies out of the parameter, so storing it moves nothing.
+			name: "ValueTypeLeafKeepsArgument",
+			src: `var total = 0
+fn keep({n}) { total = n }
+fn h() {
+  val o = {n: 1}
+  keep(o)
+  val s = o
+}`,
+		},
+		{
+			// A leaf bounded above by `number | undefined` holds only primitives, so returning it
+			// copies.
+			name: "OptionalNumberLeafKeepsArgument",
+			src: `fn f({n}) {
+  val m: number | undefined = n
+  return n
+}
+fn h() {
+  val o = {n: 1}
+  val r = f(o)
+  val s = o
+}`,
+		},
+		{
+			// A returned closure that captures a `number` leaf copies it, so the argument stays
+			// usable.
+			name: "ReturnedClosureCapturesValueTypeLeaf",
+			src: `fn f({n}) {
+  val m: number = n
+  return fn () { return n }
+}
+fn h() {
+  val o = {n: 1}
+  val r = f(o)
+  val s = o
+}`,
+		},
+		{
+			// A returned closure that captures an object leaf takes it out of the parameter.
+			name: "ReturnedClosureCapturesObjectLeaf",
+			src: `fn f({x}) {
+  return fn () { return x }
+}
+fn h() {
+  val o = {x: {v: 1}}
+  val r = f(o)
+  val s = o
+}`,
+			want: []string{"7:11-7:12: use of moved value 'o'"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if len(tt.want) == 0 {
+				require.Empty(t, messagesWithSpan(t, errs))
+				return
+			}
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
+		})
+	}
+}
+
 // A call resolved through an overload set moves the arguments the winning arm consumes, the
 // way a call to a single signature does. Resolution owns the argument checking and leaves
 // inferCall before its move recording runs, so the arm it picks has to drive that separately.
