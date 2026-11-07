@@ -56,7 +56,9 @@ func (c *checker) noteCallOnlyRead(t soltype.Type) {
 	if c.callOnlyDeferredRead == nil {
 		c.callOnlyDeferredRead = map[*soltype.FuncType]string{}
 	}
-	c.callOnlyDeferredRead[ft] = c.deferredBodies[depth]
+	if _, recorded := c.callOnlyDeferredRead[ft]; !recorded {
+		c.callOnlyDeferredRead[ft] = c.deferredBodies[depth]
+	}
 }
 
 // callOnlyCheck is one parameter waiting for checkCallOnlyParams. sig is the type of the
