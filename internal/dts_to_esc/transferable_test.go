@@ -62,8 +62,12 @@ type Transferable = Port | Canvas | ArrayBuffer;
 
 	got := deriveTransferable(buckets, defs)
 
+	// The `web:*` bucket's union is derived. It gains `Bitmap`, loses `Canvas`, and
+	// keeps `ArrayBuffer`, which WebIDL does not define.
 	require.Equal(t, []string{"Bitmap", "Port", "ArrayBuffer"}, transferableArmNames(t, got["web:dom"]))
+	// A bucket outside `web:*` keeps TypeScript's union as written.
 	require.Equal(t, []string{"Port", "Canvas", "ArrayBuffer"}, transferableArmNames(t, got["std:x"]))
+	// The input the `web:*` bucket came from is not modified.
 	require.Equal(t, []string{"Port", "Canvas", "ArrayBuffer"}, transferableArmNames(t, web))
 }
 
