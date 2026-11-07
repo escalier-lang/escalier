@@ -364,6 +364,8 @@ func TestClosureRunsAtPlaces(t *testing.T) {
 			`,
 			want: nil,
 		},
+		// q holds b's closures at the whole place q, so a call of the field q.cb may run each
+		// closure q holds rather than surely running one.
 		"FieldCalleeOfAViewHoldingAClosure": {
 			src: `
 				class Box {
@@ -382,7 +384,32 @@ func TestClosureRunsAtPlaces(t *testing.T) {
 					return r.x
 				}
 			`,
-			want: []string{"14:6-14:10: this call runs 'q.cb', which writes 'p' while it is borrowed as immutable"},
+			want: []string{"14:6-14:10: this call may run 'q.cb', which writes 'p' while it is borrowed as immutable"},
+		},
+		// v holds the closures of both b.cb and b.other at the whole place v. So `v.cb()` may
+		// run g, which writes q, though the call never runs it when v.cb holds f.
+		"FieldCalleeOfAViewMayRunASiblingsClosure": {
+			src: `
+				class Box {
+					cb: fn () -> undefined,
+					other: fn () -> undefined,
+				}
+				declare fn view<'a>(b: &'a mut Box) -> &'a mut Box
+				fn go() -> number {
+					val mut p = {x: 1}
+					val mut q = {x: 1}
+					val f = fn () { p.x = 2 }
+					val g = fn () { q.x = 2 }
+					val mut b = Box(fn () {}, fn () {})
+					b.cb = f
+					b.other = g
+					val v = view(&mut b)
+					val r = &q
+					v.cb()
+					return r.x
+				}
+			`,
+			want: []string{"17:6-17:10: this call may run 'v.cb', which writes 'q' while it is borrowed as immutable"},
 		},
 	}
 	for name, tc := range tests {

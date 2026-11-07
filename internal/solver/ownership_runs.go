@@ -153,6 +153,11 @@ func (c *checker) closureNameOf(expr ast.Expr, callee bool) (closureName, bool) 
 // several loans is listed once, as a write when any loan writes it. It covers the field paths
 // the loans reach, or the whole local when any loan reaches all of it. A loan of a place
 // under the named place's own local is left out.
+//
+// The run is sure only when the name is and each loan is held at the named place or under
+// it. A loan held only at a place that encloses the named one may belong to a sibling of it.
+// After `val v = view(&mut b)`, v holds the closures of both b.cb and b.other, so `v.cb()`
+// may run each of them.
 func (d *bodyDataflow) closureRunOf(name closureName, s *dataflowState) (*closureRun, bool) {
 	// Group the closure loans by the local each one reaches. With
 	// `val f = fn () { p.a = 1; log(p.b) }`, `f` holds two loans of `p`, a mutable one of `p.a`
@@ -162,11 +167,13 @@ func (d *bodyDataflow) closureRunOf(name closureName, s *dataflowState) (*closur
 	held := name.place
 	captured := map[liveness.VarID]*capturedLocal{}
 	whole := set.NewSet[liveness.VarID]()
+	sure := name.runs
 	for _, l := range d.sortedLoans(s) {
 		root := l.ev.place.root
 		if !l.closure() || root == held.root || !l.heldAt(held) {
 			continue
 		}
+		sure = sure && l.heldWithin(held)
 		local, seen := captured[root]
 		if !seen {
 			local = &capturedLocal{root: root}
@@ -185,7 +192,7 @@ func (d *bodyDataflow) closureRunOf(name closureName, s *dataflowState) (*closur
 		return nil, false
 	}
 
-	run := &closureRun{node: name.node, via: closureVia(d.placeName(held)), runs: name.runs}
+	run := &closureRun{node: name.node, via: closureVia(d.placeName(held)), runs: sure}
 	for _, root := range slices.Sorted(maps.Keys(captured)) {
 		// A capture of the whole local covers every field path, so the paths are dropped.
 		local := *captured[root]
