@@ -156,9 +156,14 @@ func (c *checker) paramDestOf(fp *soltype.FuncParam, reborrows bool) flowDest {
 }
 
 // paramTakesOwnership reports whether an argument passed to fp is owned by the callee. A
-// rest parameter takes ownership when its element type is a concrete owned shape. Any other
-// parameter takes ownership when its body moves it or its type is a concrete owned shape.
+// parameter isTypeArgParam accepts takes ownership, as the parameter of `fn id<T>(t: T) -> T`
+// does in the call `id(xs)`. A rest parameter takes ownership when its element type is a
+// concrete owned shape. Any other parameter takes ownership when its body moves it or its
+// type is a concrete owned shape.
 func (c *checker) paramTakesOwnership(fp *soltype.FuncParam) bool {
+	if c.ctx.isTypeArgParam(fp) {
+		return true
+	}
 	if fp.Rest {
 		elem, isArray := c.ctx.restSlotElem(fp.Type)
 		return isArray && c.isConcreteOwned(elem)

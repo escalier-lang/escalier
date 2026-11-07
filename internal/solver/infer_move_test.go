@@ -776,6 +776,113 @@ fn f() -> number {
 	}
 }
 
+// TestTypeParamConsumesArgument covers calls to a parameter whose type is one of the callee's
+// own type parameters. An owned argument moves there, so the caller cannot keep reading it
+// while a mutable binding of the result writes through it. A borrow argument and a value-type
+// argument move nothing. The cases run against the stdlib so `xs.length` and `r.push` resolve.
+func TestTypeParamConsumesArgument(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "WrittenTypeParameter",
+			src: `fn id<T>(t: T) -> T { return t }
+fn g() -> number {
+	val xs: Array<number> = [1]
+	val mut r = id(xs)
+	r.push(2)
+	return xs.length
+}`,
+			want: []string{"6:9-6:18: use of moved value 'xs'"},
+		},
+		{
+			name: "InferredTypeParameter",
+			src: `fn id(x) { return x }
+fn g() -> number {
+	val xs: Array<number> = [1]
+	val mut r = id(xs)
+	r.push(2)
+	return xs.length
+}`,
+			want: []string{"6:9-6:18: use of moved value 'xs'"},
+		},
+		{
+			name: "AwaitedAsyncTypeParameter",
+			src: `async fn idA<T>(t: T) -> Promise<T> { return t }
+async fn g() -> Promise<number> {
+	val xs: Array<number> = [1]
+	val mut r = await idA(xs)
+	r.push(2)
+	return xs.length
+}`,
+			want: []string{"6:9-6:18: use of moved value 'xs'"},
+		},
+		{
+			name: "GenericMethod",
+			src: `val m = {id: fn <T>(x: T) -> T { return x }}
+fn g() -> number {
+	val xs: Array<number> = [1]
+	m.id(xs)
+	return xs.length
+}`,
+			want: []string{"5:9-5:18: use of moved value 'xs'"},
+		},
+		{
+			name: "GenericOverloadArm",
+			src: `fn pick<T>(a: T) -> T { return a }
+fn pick<T>(a: T, b: number) -> T { return a }
+fn g() -> number {
+	val xs: Array<number> = [1]
+	pick(xs)
+	return xs.length
+}`,
+			want: []string{"6:9-6:18: use of moved value 'xs'"},
+		},
+		{
+			// Every argument a rest parameter typed by a type parameter receives moves.
+			name: "RestTypeParameter",
+			src: `fn count<T>(...items: Array<T>) -> number { return items.length }
+fn g() -> number {
+	val xs: Array<number> = [1]
+	count(xs)
+	return xs.length
+}`,
+			want: []string{"5:9-5:18: use of moved value 'xs'"},
+		},
+		{
+			name: "BorrowArgument",
+			src: `fn id<T>(t: T) -> T { return t }
+fn g() -> number {
+	val xs: Array<number> = [1]
+	val r = id(&xs)
+	return xs.length + r.length
+}`,
+		},
+		{
+			// A number, a string, and a function copy into the parameter.
+			name: "ValueTypeArguments",
+			src: `fn id<T>(t: T) -> T { return t }
+fn g() -> number {
+	val n = 1
+	val s = "a"
+	val f = fn () { return 1 }
+	id(n)
+	id(s)
+	id(f)
+	return n + s.length + f()
+}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, errs := inferAgainstTreeWithSpans(t, tt.src)
+			require.Equal(t, tt.want, errs)
+		})
+	}
+}
+
 // A call resolved through an overload set moves the arguments the winning arm consumes, the
 // way a call to a single signature does. Resolution owns the argument checking and leaves
 // inferCall before its move recording runs, so the arm it picks has to drive that separately.
