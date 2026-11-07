@@ -258,6 +258,55 @@ fn outer() {
 			},
 		},
 		{
+			// h passes an object holding its parameter, so the object's field variable is tied
+			// to g's weak variable through the object. Lowering h's object lowers the field's
+			// variable with it, so each call of h settles g's field.
+			name: "AFunctionThatWrapsItsParameterForAWeakFunction",
+			src: `
+fn makeId() { return fn (x) { return x } }
+val g = makeId()
+fn h(y) { return g({a: y}) }
+val n = h(5)
+val s = h("a")
+`,
+			values: map[string]string{
+				"g": `fn (x: {a: 5 | "a"}) -> {a: 5 | "a"}`,
+				"h": `fn (y: 5 | "a") -> {a: 5 | "a"}`,
+			},
+		},
+		{
+			// No value flows into g's weak variable, but h adds g's result to a number. So the
+			// variable settles at what that use requires, in g and in h alike.
+			name: "AFunctionThatOnlyUsesAWeakFunctionsResult",
+			src: `
+fn makeId() { return fn (x) { return x } }
+val g = makeId()
+fn h(y) {
+	val r = g(y)
+	return r + 1
+}
+`,
+			values: map[string]string{
+				"g": "fn (x: number) -> number",
+				"h": "fn (y: number) -> number",
+			},
+		},
+		{
+			// h passes g a closure that returns h's parameter. The closure flows into g's weak
+			// variable, so y's variable is tied to it through the closure's result and h stays
+			// monomorphic.
+			name: "AFunctionThatPassesAClosureToAWeakFunction",
+			src: `
+fn makeId() { return fn (x) { return x } }
+val g = makeId()
+fn h(y) { return g(fn (z) { return y }) }
+`,
+			values: map[string]string{
+				"g": "fn (x: fn (z: unknown) -> never) -> fn (z: unknown) -> never",
+				"h": "fn (y: never) -> fn (z: unknown) -> never",
+			},
+		},
+		{
 			// No value but `never` flows into T, so its type is what its uses require. Each
 			// call needs a different object, and g settles to their intersection.
 			name: "AWeakVariableOnlyUsesDecideIsTheirIntersection",
