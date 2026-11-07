@@ -380,7 +380,10 @@ a `&'static fn` parameter, store it where it outlives the call, or return it:
 
 ```esc
 fn f(g: fn () -> undefined) {
-    onClick(g)    // ERROR: parameter 'g' is only called during the call, so it cannot be kept for 'static
+    // ERROR: 'g' is stored where it lives for the whole program, but its type
+    // `fn () -> undefined` only allows calling it during the call; write
+    // `&'static fn () -> undefined`
+    onClick(g)
 }
 ```
 

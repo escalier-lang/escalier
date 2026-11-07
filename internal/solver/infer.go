@@ -141,10 +141,11 @@ type checker struct {
 	// callOnlyDepth maps the body type of each call-only parameter to the length of
 	// deferredBodies when the parameter was bound. watchCallOnlyReads fills it.
 	callOnlyDepth map[*soltype.FuncType]int
-	// callOnlyDeferredRead maps the body type of a call-only parameter to a phrase from
-	// deferredBodies. The phrase names the first `async` or `gen` body entered after the
-	// parameter was bound, among those that enclose a read of it. noteCallOnlyRead fills it.
-	callOnlyDeferredRead map[*soltype.FuncType]string
+	// callOnlyDeferredRead maps the body type of a call-only parameter to its first read
+	// inside an `async` or `gen` body entered after the parameter was bound. The read's
+	// phrase from deferredBodies names the first such body among those that enclose the read.
+	// noteCallOnlyRead fills it.
+	callOnlyDeferredRead map[*soltype.FuncType]deferredRead
 	// ltMarks maps a node to the lifetime counter at the start of its inference, written by
 	// markLifetimes for every expression and statement. A rigid-lifetime check sited at the
 	// node reads it to tell the lifetimes the checked value minted from the ones it shares.

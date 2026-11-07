@@ -2526,28 +2526,47 @@ func (e *LifetimeRelationUndeclaredError) Message() string {
 // lifetime past the call. Such a parameter, as `g` in `fn f(g: fn () -> undefined)`, is only
 // called during the call, so a caller lends it a closure's captures for that call alone.
 // `onClick(g)` against `declare fn onClick(handler: &'static fn () -> undefined)` keeps it for
-// 'static. Name is the parameter's name, and Static says the body keeps it for 'static.
-// Deferred names the kind of function whose body reads the parameter and can run after the call
-// returns, as in "a generator", and is "" otherwise. Param is the parameter's pattern, which the
-// error blames.
+// 'static. Name is the parameter's name, and Written is the type the parameter is written with.
+// Static says the body keeps it for 'static. Deferred names the kind of function whose body
+// reads the parameter and can run after the call returns, as in "a generator", and is ""
+// otherwise. Param is the parameter's pattern. Read is the first read of the parameter in that
+// body when Deferred is set, and nil otherwise. The error blames Read when it is set and Param
+// otherwise, and relates Param when it blames Read.
 type CallOnlyFuncKeptError struct {
 	Name     string
+	Written  *soltype.FuncType
 	Static   bool
 	Deferred string
 	Param    ast.Node
+	Read     ast.Node
 }
 
-func (*CallOnlyFuncKeptError) isSolverError()        {}
-func (e *CallOnlyFuncKeptError) Span() ast.Span      { return e.Param.Span() }
-func (e *CallOnlyFuncKeptError) Related() []ast.Span { return nil }
+func (*CallOnlyFuncKeptError) isSolverError() {}
+func (e *CallOnlyFuncKeptError) Span() ast.Span {
+	if e.Read != nil {
+		return e.Read.Span()
+	}
+	return e.Param.Span()
+}
+func (e *CallOnlyFuncKeptError) Related() []ast.Span {
+	if e.Read != nil {
+		return []ast.Span{e.Param.Span()}
+	}
+	return nil
+}
 func (e *CallOnlyFuncKeptError) Message() string {
+	written := soltype.Print(e.Written)
+	const callOnly = "only allows calling it during the call"
 	if e.Static {
-		return fmt.Sprintf("parameter '%s' is only called during the call, so it cannot be kept for 'static", e.Name)
+		return fmt.Sprintf("'%s' is stored where it lives for the whole program, but its type `%s` %s; write `&'static %s`",
+			e.Name, written, callOnly, written)
 	}
 	if e.Deferred != "" {
-		return fmt.Sprintf("parameter '%s' is only called during the call, but the body of %s can run after the call returns", e.Name, e.Deferred)
+		return fmt.Sprintf("'%s' is read by %s, which can run after the call returns, but its type `%s` %s; write `&%s` to keep it",
+			e.Name, e.Deferred, written, callOnly, written)
 	}
-	return fmt.Sprintf("parameter '%s' is only called during the call, so it cannot outlive the call", e.Name)
+	return fmt.Sprintf("'%s' is kept after the call returns, but its type `%s` %s; write `&%s` to keep it",
+		e.Name, written, callOnly, written)
 }
 
 // LifetimeBinderNotSatisfiedError fires when a value is checked against a signature that
