@@ -776,8 +776,8 @@ fn f() -> number {
 	}
 }
 
-// TestTypeParamConsumesArgument covers calls to a parameter whose type is one of the callee's
-// own type parameters. An owned argument moves there, so the caller cannot keep reading it
+// TestTypeParamConsumesArgument covers calls to a parameter typed by one of the callee's own
+// type parameters, either bare or as a union member. An owned argument moves there, so the caller cannot keep reading it
 // while a mutable binding of the result writes through it. A borrow argument and a value-type
 // argument move nothing. The cases run against the stdlib so `xs.length` and `r.push` resolve.
 func TestTypeParamConsumesArgument(t *testing.T) {

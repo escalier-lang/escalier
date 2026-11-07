@@ -3444,7 +3444,8 @@ func (c *Context) bindFuncBinderInPlace(ft *soltype.FuncType) *soltype.FuncType 
 	}
 	cp := *ft
 	cp.TypeParams = nil
-	// The marks belong to this use alone, so they go on copies of ft's parameters.
+	// markTypeArgParams records parameters by pointer. Copying them first keeps the record
+	// to this use, so another reader of ft does not see it.
 	cp.Params = make([]*soltype.FuncParam, len(ft.Params))
 	for i, p := range ft.Params {
 		np := *p
