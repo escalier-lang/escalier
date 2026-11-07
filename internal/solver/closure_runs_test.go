@@ -342,6 +342,48 @@ func TestClosureRunsAtPlaces(t *testing.T) {
 			`,
 			want: nil,
 		},
+		// `view` returns a borrow that holds every closure b holds, at the whole place q. A
+		// method read off q reads none of them.
+		"MethodCalleeOfAViewHoldingAClosureOk": {
+			src: `
+				class Box {
+					cb: fn () -> undefined,
+					size(&self) -> number { return 0 },
+				}
+				declare fn view<'a>(b: &'a mut Box) -> &'a mut Box
+				fn go() -> number {
+					val mut p = {x: 1}
+					val f = fn () { p.x = 2 }
+					val mut b = Box(fn () {})
+					b.cb = f
+					val q = view(&mut b)
+					val r = &p
+					q.size()
+					return r.x
+				}
+			`,
+			want: nil,
+		},
+		"FieldCalleeOfAViewHoldingAClosure": {
+			src: `
+				class Box {
+					cb: fn () -> undefined,
+					size(&self) -> number { return 0 },
+				}
+				declare fn view<'a>(b: &'a mut Box) -> &'a mut Box
+				fn go() -> number {
+					val mut p = {x: 1}
+					val f = fn () { p.x = 2 }
+					val mut b = Box(fn () {})
+					b.cb = f
+					val q = view(&mut b)
+					val r = &p
+					q.cb()
+					return r.x
+				}
+			`,
+			want: []string{"14:6-14:10: this call runs 'q.cb', which writes 'p' while it is borrowed as immutable"},
+		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
