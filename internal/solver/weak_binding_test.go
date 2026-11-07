@@ -307,6 +307,58 @@ fn h(y) { return g(fn (z) { return y }) }
 			},
 		},
 		{
+			// y's variable is tied to g's weak variable and also has to be an object with a
+			// `set` method. Lowering it lowers the method's type with it. The generic callback
+			// quantifies T itself, so T keeps its level.
+			name: "AWeakFunctionsArgumentAlsoTakesAGenericCallback",
+			src: `
+fn makeId() { return fn (x) { return x } }
+val g = makeId()
+fn h(y) {
+	y.set(fn <T>(z: T) -> T { return z })
+	return g(y)
+}
+`,
+			values: map[string]string{
+				"g": "fn (x: never) -> never",
+				"h": "fn (y: {set: fn (arg0: fn <T>(z: T) -> T) -> unknown}) -> never",
+			},
+		},
+		{
+			// y's `set` method takes h's borrowed parameter, so lowering y's variable lowers the
+			// borrow's lifetime with it.
+			name: "AWeakFunctionsArgumentAlsoTakesABorrow",
+			src: `
+fn makeId() { return fn (x) { return x } }
+val g = makeId()
+fn h(y, p: &{n: number}) {
+	y.set(p)
+	return g(y)
+}
+`,
+			values: map[string]string{
+				"g": "fn (x: never) -> never",
+				"h": "fn (y: {set: fn (arg0: &{n: number}) -> unknown}, p: &{n: number}) -> never",
+			},
+		},
+		{
+			// y's `set` method takes a Map, so lowering y's variable lowers the Map's type
+			// arguments with it.
+			name: "AWeakFunctionsArgumentAlsoTakesAClassInstance",
+			src: `
+fn makeId() { return fn (x) { return x } }
+val g = makeId()
+fn h(y) {
+	y.set(Map())
+	return g(y)
+}
+`,
+			values: map[string]string{
+				"g": "fn (x: never) -> never",
+				"h": "fn (y: {set: fn (arg0: Map<never, never>) -> unknown}) -> never",
+			},
+		},
+		{
 			// No value but `never` flows into T, so its type is what its uses require. Each
 			// call needs a different object, and g settles to their intersection.
 			name: "AWeakVariableOnlyUsesDecideIsTheirIntersection",
