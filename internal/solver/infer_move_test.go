@@ -777,9 +777,10 @@ fn f() -> number {
 }
 
 // TestTypeParamConsumesArgument covers calls to a parameter typed by one of the callee's own
-// type parameters, either bare or as a union member. An owned argument moves there, so the caller cannot keep reading it
-// while a mutable binding of the result writes through it. A borrow argument and a value-type
-// argument move nothing. The cases run against the stdlib so `xs.length` and `r.push` resolve.
+// type parameters, either bare or as a union member. An owned argument moves there. The
+// caller cannot keep reading it while a mutable binding of the result writes through it. A
+// borrow argument and a value-type argument move nothing. The cases run against the stdlib
+// so `xs.length` and `r.push` resolve.
 func TestTypeParamConsumesArgument(t *testing.T) {
 	tests := []struct {
 		name string
@@ -863,6 +864,9 @@ fn g() -> number {
 		},
 		{
 			// Every argument a rest parameter typed by a type parameter receives moves.
+			// `count(xs)` passes the whole array as one argument, not its elements. T is
+			// inferred as `Array<number>`, so `items` is `Array<Array<number>>` and holds
+			// xs itself. A non-generic `...items: Array<number>` would reject the call.
 			name: "RestTypeParameter",
 			src: `fn count<T>(...items: Array<T>) -> number { return items.length }
 fn g() -> number {
