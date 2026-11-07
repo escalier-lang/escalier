@@ -698,11 +698,8 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 				callOnly := *ft
 				callOnly.Lt = c.ctx.freshLifetime(lvl)
 				bodyT = &callOnly
-				deferred := deferredBody(sig)
-				if deferred != "" {
-					c.watchCallOnlyReads(&callOnly)
-				}
-				callOnlyParams = append(callOnlyParams, callOnlyParam{name: name, node: pat, ft: &callOnly, outerMark: outerMark, deferred: deferred})
+				c.watchCallOnlyReads(&callOnly)
+				callOnlyParams = append(callOnlyParams, callOnlyParam{name: name, node: pat, ft: &callOnly, outerMark: outerMark})
 			}
 			// A parameter binding never generalizes — its var is fixed for the body — so
 			// it is a MonoScheme; instantiate returns bodyT unchanged at every use.
@@ -844,8 +841,8 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	retAnnOK := false
 	if sig.Return != nil && !sig.Async && !sig.Gen {
 		retAnnT, retAnnOK = c.resolveTypeAnn(declScope, sig.Return, lvl)
-		// A caller keeps the function a body returns for as long as it likes, so a function
-		// type in the return annotation takes a lifetime of the signature as its retention.
+		// A caller can keep the function a body returns past the call, so a function type in
+		// the return annotation takes a lifetime of the signature as its retention.
 		if retAnnOK && hasBody {
 			retAnnT = c.withRetentionLifetimes(retAnnT, func() soltype.Lifetime { return c.ctx.freshLifetime(lvl) })
 		}
@@ -932,7 +929,14 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// last expression is NOT an implicit return — only an explicit `return`
 		// produces the function's value. This mirrors the old checker's
 		// inferFuncBody.
+		deferred := deferredBody(sig)
+		if deferred != "" {
+			c.deferredBodies = append(c.deferredBodies, deferred)
+		}
 		c.inferBlock(fnScope, lvl, body)
+		if deferred != "" {
+			c.deferredBodies = c.deferredBodies[:len(c.deferredBodies)-1]
+		}
 		// The first rule of D16 has to settle the borrows' lifetimes before
 		// commitOwnedReturns decides which returns are owned.
 		c.shareOutlivingBorrowLifetimes()
