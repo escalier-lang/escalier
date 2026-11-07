@@ -546,6 +546,18 @@ fn f(g: fn () -> undefined) {
 }`,
 			want: []string{"2:6-2:7: parameter 'g' is only called during the call, but the body of an async function can run after the call returns"},
 		},
+		// The message names the first deferred body that reads g, here the async closure.
+		{
+			name: "read by an async closure and then a generator closure",
+			src: `fn f(g: fn () -> undefined) {
+    val h = async fn () { g() }
+    val k = gen fn () {
+        g()
+        yield 1
+    }
+}`,
+			want: []string{"1:6-1:7: parameter 'g' is only called during the call, but the body of an async function can run after the call returns"},
+		},
 		// A closure's own parameter is bound inside the async body, so the async body does not
 		// outlive the closure's call.
 		{
