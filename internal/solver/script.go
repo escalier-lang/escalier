@@ -145,9 +145,6 @@ func (c *checker) inferScriptIn(scope *Scope, script *ast.Script) (*Scope, *Info
 	// The whole script is walked, so a weak binding it declares, at its top level or in
 	// one of its functions, has every bound it will get.
 	c.settleWeakLocals()
-	// The dataflow pass reads what each retained closure writes, which needs the whole
-	// script's borrow graph.
-	c.noteRetainedClosureWrites()
 	// The whole script is inferred, so every flow F3 can settle is settled, and the rest
 	// take the answer settleAllFlows gives what it cannot see.
 	c.finishOwnershipEvents()
@@ -263,7 +260,7 @@ func (c *checker) bindScriptFuncWithBody(scope *Scope, lvl int, s ast.Stmt, decl
 	sources := []provenance.Provenance{&ast.NodeProvenance{Node: decl}}
 	// The recursive binding carries no VarID, so the body's capture analysis does not count
 	// the name as a capture of a script local. The body's pre-pass gives the name a VarID of
-	// its own inside the body instead, which seedSelfCaptureEdges reads.
+	// its own inside the body instead, which seedCaptureLoans reads.
 	self := c.freshAt(lvl + 1)
 	scope.defineValue(name, ValueBinding{Schemes: []TypeScheme{monoScheme(self)}, Sources: sources})
 
@@ -281,23 +278,16 @@ func (c *checker) bindScriptFuncWithBody(scope *Scope, lvl int, s ast.Stmt, decl
 	b := ValueBinding{Schemes: []TypeScheme{scheme}, Sources: sources, Kind: ast.ValKind, VarID: int(c.varIDs.Of(decl))}
 	scope.defineValue(name, b)
 
-	// The name's capture edges let a call of it run the closure, the way a call of a
+	// The name's loans of the captures let a call of it run the closure, the way a call of a
 	// `val name = fn …` binding does.
 	c.trackFuncDeclCaptures(decl, s)
 }
 
-// trackFuncDeclCaptures records decl's name in the current body's borrow tables. The name
-// holds a capture edge to each local the body captures. s is the statement decl is written
-// as.
+// trackFuncDeclCaptures makes decl's name hold the captures decl emitted, the way the binding
+// of `val name = fn …` holds them. s is the statement decl is written as.
 func (c *checker) trackFuncDeclCaptures(decl *ast.FuncDecl, s ast.Stmt) {
 	if c.fn == nil {
 		return
-	}
-
-	id := c.varIDs.Of(decl)
-	if id > 0 && c.fn.eagerBorrowGraph != nil {
-		c.clearEagerSubtree(id, nil)
-		c.addCaptureEdges(id, nil, decl)
 	}
 
 	ref, ok := c.fn.stmtToRef[s]
@@ -305,11 +295,7 @@ func (c *checker) trackFuncDeclCaptures(decl *ast.FuncDecl, s ast.Stmt) {
 		return
 	}
 
-	c.flushBorrowDirty(ref)
-
-	// The declaration binds the closure to its name, as `val name = fn …` does, so the name
-	// holds the captures the closure emitted.
-	if id > 0 && c.eventTable() != nil {
+	if id := c.varIDs.Of(decl); id > 0 && c.eventTable() != nil {
 		c.retargetTemp(decl, eventHolder{target: placeTarget{root: id}}, ref)
 	}
 }

@@ -2048,7 +2048,7 @@ The steps:
    - The frame-exit checks in `return_escape.go` and `return_shared_paths.go`,
      replaced by L1 and E2 at the return.
    - The separate escape logic in `return_escape.go` and
-     [borrow_flow.go](../../internal/solver/borrow_flow.go), replaced by the lifetime solver
+     `borrow_flow.go`, replaced by the lifetime solver
      answering F3.
    - The plumbing that keeps the engines from reporting one error twice, such
      as `resolvePhaseTransitions`, and the flag step 7 puts the pass behind. The

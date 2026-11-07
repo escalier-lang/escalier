@@ -15,19 +15,19 @@ import (
 //
 //	declare fn store<'a, 'b>(target: &'b mut {peer: &'a mut B}, item: &'a mut B)
 //
-// says item lands at target.peer. `store(&mut a, &mut b)` then aliases a to b at [peer],
-// the same edge `val a = {peer: &mut b}` records at its initializer.
+// says item lands at target.peer. `store(&mut a, &mut b)` then puts the borrow of b at
+// `a.peer`, the same place `val a = {peer: &mut b}` puts it.
 //
 // Each case declares its own `store`. 'a ties item to target's peer field, 'b is the spare
 // field's own lifetime, and 'c is target's own borrow lifetime, so only peer takes the
 // stored borrow and spare is a sibling position the store must miss.
 //
-// The edge is observed by storing the target's borrowed field into a parameter's field, moving
+// The store is observed by storing the target's borrowed field into a parameter's field, moving
 // the local, and then reading the parameter. The store takes a loan of every local the stored
 // value borrows, held by the parameter while the body reads it. The move happens before that
 // read, so it conflicts with the loan and the diagnostic names what the call aliased.
-// Each case builds its target's fields from parameter borrows, which the graph exempts, so the
-// store call is the sole source of any edge to a local.
+// Each case builds its target's fields from parameter borrows, so the store call is the only
+// source of a loan of a local.
 func TestCallStoreEdge(t *testing.T) {
 	tests := map[string]struct {
 		src   string
@@ -198,9 +198,9 @@ func TestCallStoreEdge(t *testing.T) {
 }
 
 // TestCallStoreEdgePositions covers the store positions inside a target's referent that are
-// not a named object field, and the argument forms the recorder reads a place off. Each
-// records an edge in the borrow graph. A store into a parameter's field holds a loan of the
-// local it reaches, so a move of that local afterwards reports.
+// not a named object field, and the argument forms a place is read off. A store into a
+// parameter's field holds a loan of the local it reaches, so a move of that local afterwards
+// reports.
 func TestCallStoreEdgePositions(t *testing.T) {
 	tests := map[string]struct {
 		src   string

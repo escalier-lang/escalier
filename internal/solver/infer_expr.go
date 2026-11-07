@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/liveness"
 	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -926,9 +925,6 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// The first rule of D16 has to settle the borrows' lifetimes before
 		// commitOwnedReturns decides which returns are owned.
 		c.shareOutlivingBorrowLifetimes()
-		// The dataflow pass reads what each retained closure writes, which needs the
-		// whole body's borrow graph.
-		c.noteRetainedClosureWrites()
 		c.commitOwnedReturns()
 		// A body that moves an unannotated parameter takes ownership of the caller's value,
 		// so each call moves the argument it passes there. It reads the flows that wait on
@@ -2005,11 +2001,11 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 	//  6. Record the argument effects of the signature they were applied to.
 	//
 	// The CFG point comes first because inferring a child that contains statements, such
-	// as an `if` argument, overwrites c.fn.currentStmt. Reading it afterward would record
-	// an argument's borrow edges against an inner branch instead of this call's statement.
-	// The callee comes before the arguments so moves and borrows record in evaluation
-	// order. In `obj.m(take(obj))` the receiver read comes before the move.
-	callRef, hasCallRef := c.currentStmtRef()
+	// as an `if` argument, overwrites c.fn.currentStmt. Reading it afterward would find an
+	// inner branch instead of this call's statement. The callee comes before the arguments
+	// so moves and borrows record in evaluation order. In `obj.m(take(obj))` the receiver
+	// read comes before the move.
+	_, hasCallRef := c.currentStmtRef()
 	eventRef, hasEventRef := c.eventStmtRef()
 	ltMark := c.ctx.lifetimeCounter
 	if hasEventRef {
@@ -2027,7 +2023,7 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 	} else {
 		ret, fn = c.applyCallShape(lvl, e, target.callee, target.fn, target.secondInstance, args)
 	}
-	c.recordCallArgEffects(e, fn, callRef, hasCallRef)
+	c.recordCallArgEffects(e, fn, hasCallRef)
 	if hasEventRef {
 		// Calling a closure runs its body, and a callee handed a closure may call it during
 		// the call. Neither depends on the signature, so a callee whose signature is still a
@@ -2450,19 +2446,16 @@ func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr, preset m
 	return args
 }
 
-// recordCallArgEffects checks that each borrow argument of a call is written, and records the
-// borrow edges its signature stores, through checkExplicitBorrowArgs and recordCallStoreEdges.
-// It is the ONE place both call paths run those two, against whichever signature the call
-// resolved to. That is the single signature inferCallTarget read off the callee, or the arm
-// resolveOverload picked. Keeping them here is what stops one path from forgetting them, which
-// is how #1508 came about. ref is the CFG point of the call's statement, and hasRef is false
-// when the statement has none.
+// recordCallArgEffects checks that each borrow argument of a call is written, through
+// checkExplicitBorrowArgs. It is the ONE place both call paths run that check, against
+// whichever signature the call resolved to. That is the single signature inferCallTarget read
+// off the callee, or the arm resolveOverload picked. Keeping it here is what stops one path
+// from forgetting it, which is how #1508 came about. hasRef is false when the call's statement
+// has no CFG point.
 //
 // fn is nil when no arm accepted the call or the callee's signature is still a variable.
-// Nothing is checked or recorded then, since no signature says which arguments borrow.
-func (c *checker) recordCallArgEffects(
-	e *ast.CallExpr, fn *soltype.FuncType, ref liveness.StmtRef, hasRef bool,
-) {
+// Nothing is checked then, since no signature says which arguments borrow.
+func (c *checker) recordCallArgEffects(e *ast.CallExpr, fn *soltype.FuncType, hasRef bool) {
 	if !hasRef || fn == nil {
 		return
 	}
@@ -2470,12 +2463,6 @@ func (c *checker) recordCallArgEffects(
 	// A borrow parameter takes a borrow, so the call has to write one. The receiver of a
 	// method call is not an argument and keeps auto-borrowing.
 	c.checkExplicitBorrowArgs(e, fn)
-
-	// A borrow argument the signature stores into another argument, or into a method's
-	// receiver, aliases the two for as long as the target lives. Record that edge in the
-	// borrow graph, so a closure the target comes to hold is found through it.
-	recv, self := c.calleeReceiver(e.Callee)
-	c.recordCallStoreEdges(e, fn, recv, self, ref)
 }
 
 // emitReceiverMove emits the move of the receiver of a member access that reaches a
@@ -2828,17 +2815,9 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		if !b.ModuleLevel {
 			c.rejectModuleLevelMove(scope, e.Right)
 		}
-		// Record any borrow of a local the reassigned value introduces. `a = &mut b` records
-		// a → b. Recording strong-updates the binding, clearing its prior referent, and the
-		// flush lands the new edge set at this statement's CFG point so the flow-sensitive
-		// graph joins it at later merges.
+		// A value that keeps a closure keeps it reachable while the target is live.
 		if !b.ModuleLevel {
-			c.recordBorrowEdges(c.varIDs.Of(target), e.Right)
-			// A value that keeps a closure keeps it reachable while the target is live.
 			c.noteRetainedHolder(c.varIDs.Of(target), e.Right)
-			if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
-				c.flushBorrowDirty(ref)
-			}
 		}
 	}
 	// The assignment evaluates to the value just stored — the SAME read face as
@@ -3005,19 +2984,15 @@ func (c *checker) inferFieldAssign(scope *Scope, lvl int, e *ast.BinaryExpr, obj
 		})
 	}
 	c.recordWritten(recv, name, w)
-	// Only a write that type-checked is checked for a module-level move and records borrow
-	// edges.
+	// Only a write that type-checked is checked for a module-level move.
 	if c.fn != nil && len(c.errs) == errsBefore && !missing {
-		// The edges record against the assignment's statement, resolved from assignStmt
-		// rather than c.fn.currentStmt, which inferring the receiver and source may have
-		// overwritten with an inner branch statement.
-		if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
+		// The check reads the assignment's statement from assignStmt rather than
+		// c.fn.currentStmt, which inferring the receiver and source may have overwritten with
+		// an inner branch statement.
+		if _, ok := c.fn.stmtToRef[assignStmt]; ok {
 			// Storing a value into a field moves it into the receiver, so a source that is
 			// module-level state cannot be stored.
 			c.rejectModuleLevelMove(scope, e.Right)
-			// A store into a LOCAL receiver's field records a borrow edge rooted at the field.
-			// `b.peer = &mut d` records b → d at [peer].
-			c.recordFieldStoreEdges(object, name, e.Right, ref)
 		}
 	}
 	// The assignment evaluates to the value just stored. recordType overwrites the
@@ -3129,11 +3104,10 @@ func (c *checker) inferElementAssign(scope *Scope, lvl int, e *ast.BinaryExpr, i
 		c.constrain(e.Right, source, checkTarget(slot, missing))
 	}
 	if c.fn != nil && len(c.errs) == errsBefore && !missing {
-		if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
+		if _, ok := c.fn.stmtToRef[assignStmt]; ok {
 			// Storing a value into an element moves it into the receiver, as a field store
 			// does.
 			c.rejectModuleLevelMove(scope, e.Right)
-			c.recordElementStoreEdges(ix.Object, e.Right, ref)
 		}
 	}
 	c.recordType(e, w)
