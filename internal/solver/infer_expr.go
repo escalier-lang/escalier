@@ -460,6 +460,7 @@ func (c *checker) resolveIdentPath(scope *Scope, lvl int, e *ast.IdentExpr, objP
 		}
 		t := c.bindingValue(lvl, b)
 		c.noteOuterRead(e, t)
+		c.noteCallOnlyRead(t)
 		// A bare `self` that leaves the body, as in `return self` or `f(self)`, is an
 		// instance of the class. The structural view shares the class body's own element
 		// pointers, so letting it escape into a member's inferred signature would make the
@@ -697,7 +698,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 				callOnly := *ft
 				callOnly.Lt = c.ctx.freshLifetime(lvl)
 				bodyT = &callOnly
-				callOnlyParams = append(callOnlyParams, callOnlyParam{name: name, node: pat, ft: &callOnly, outerMark: outerMark})
+				deferred := deferredBody(sig)
+				if deferred != "" {
+					c.watchCallOnlyReads(&callOnly)
+				}
+				callOnlyParams = append(callOnlyParams, callOnlyParam{name: name, node: pat, ft: &callOnly, outerMark: outerMark, deferred: deferred})
 			}
 			// A parameter binding never generalizes — its var is fixed for the body — so
 			// it is a MonoScheme; instantiate returns bodyT unchanged at every use.

@@ -18,6 +18,43 @@ type callOnlyParam struct {
 	// function written inside another body. Every lifetime minted before it belongs to the enclosing body
 	// or to the module. It is -1 for a function with no enclosing body.
 	outerMark int
+	// deferred is the phrase deferredBody returns for the declaring function. It is "" for a
+	// function whose body runs only during the call.
+	deferred string
+}
+
+// deferredBody returns the phrase an error names a function by when its body can run after the
+// call that starts it returns, such as "a generator". It returns "" for any other function.
+func deferredBody(sig ast.FuncSig) string {
+	switch {
+	case sig.Gen:
+		return "a generator"
+	case sig.Async:
+		return "an async function"
+	}
+	return ""
+}
+
+// watchCallOnlyReads makes noteCallOnlyRead record each read of ft, the body type of a
+// call-only parameter.
+func (c *checker) watchCallOnlyReads(ft *soltype.FuncType) {
+	if c.watchedCallOnly == nil {
+		c.watchedCallOnly = set.NewSet[*soltype.FuncType]()
+	}
+	c.watchedCallOnly.Add(ft)
+}
+
+// noteCallOnlyRead records t, the value a name read resolved to, when watchCallOnlyReads
+// watches it.
+func (c *checker) noteCallOnlyRead(t soltype.Type) {
+	ft, isFn := t.(*soltype.FuncType)
+	if !isFn || !c.watchedCallOnly.Contains(ft) {
+		return
+	}
+	if c.readCallOnly == nil {
+		c.readCallOnly = set.NewSet[*soltype.FuncType]()
+	}
+	c.readCallOnly.Add(ft)
 }
 
 // callOnlyCheck is one parameter waiting for checkCallOnlyParams. sig is the type of the
@@ -55,6 +92,10 @@ func (c *checker) queueCallOnlyChecks(params []callOnlyParam, sig *soltype.FuncT
 // Any other lifetime is one the body mints itself, or a parameter lifetime of a function
 // inferred together with this one. The call lifetime may outlive those.
 //
+// The body of an `async` or `gen` function can run after the call returns, so such a body
+// keeps each parameter it reads past the call. See "read by a generator" and "read by an async
+// function".
+//
 // It runs once the enclosing component has solved, since a constraint a sibling's body records
 // can reach the call lifetime after this function's body is walked.
 func (c *checker) checkCallOnlyParams() {
@@ -85,8 +126,11 @@ func (c *checker) checkCallOnlyParams() {
 				outside = outside || inSig || kept.Level < lt.Level || kept.ID < p.outerMark
 			}
 		}
-		if static || outside {
+		switch {
+		case static || outside:
 			c.report(&CallOnlyFuncKeptError{Name: p.name, Static: static, Param: p.node})
+		case p.deferred != "" && c.readCallOnly.Contains(p.ft):
+			c.report(&CallOnlyFuncKeptError{Name: p.name, Deferred: p.deferred, Param: p.node})
 		}
 	}
 }

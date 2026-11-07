@@ -392,6 +392,48 @@ fn f(g: fn () -> undefined) {
 			src:  `fn f(g: fn () -> undefined) { return fn () { g() } }`,
 			want: []string{"1:6-1:7: parameter 'g' is only called during the call, so it cannot outlive the call"},
 		},
+		// A generator's body starts on the first `next()`, after the call that made it returns.
+		{
+			name: "read by a generator",
+			src: `gen fn f(g: fn () -> undefined) {
+    g()
+    yield 1
+}`,
+			want: []string{"1:10-1:11: parameter 'g' is only called during the call, but the body of a generator can run after the call returns"},
+		},
+		// An async body resumes after each `await`, once the call has returned.
+		{
+			name: "read by an async function",
+			src: `declare fn tick() -> Promise<undefined>
+async fn f(g: fn () -> undefined) {
+    await tick()
+    g()
+}`,
+			want: []string{"2:12-2:13: parameter 'g' is only called during the call, but the body of an async function can run after the call returns"},
+		},
+		{
+			name: "read by a closure in an async function",
+			src: `declare fn tick() -> Promise<undefined>
+async fn f(g: fn () -> undefined) {
+    val h = fn () { g() }
+    await tick()
+    h()
+}`,
+			want: []string{"2:12-2:13: parameter 'g' is only called during the call, but the body of an async function can run after the call returns"},
+		},
+		{
+			name: "unread by an async function",
+			src: `declare fn tick() -> Promise<undefined>
+async fn f(g: fn () -> undefined) { await tick() }`,
+		},
+		{
+			name: "named retention read by an async function",
+			src: `declare fn tick() -> Promise<undefined>
+async fn f(g: &fn () -> undefined) {
+    await tick()
+    g()
+}`,
+		},
 		{
 			name: "named retention captured by a closure passed to a static parameter",
 			src: `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
