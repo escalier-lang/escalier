@@ -3,6 +3,7 @@ package solver
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
+	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
 // This file records what a closure captures from the body it is written in. A closure that
@@ -71,6 +72,27 @@ func (c *checker) recordClosureCaptures(scope *Scope, closure ast.Func) {
 		if t := c.eventTable(); t != nil {
 			t.captureTypes[root] = bindingType(b)
 		}
+	}
+}
+
+// setRetentionFromCaptures gives ft, the type of `closure`, a retention lifetime when the closure
+// captures a function that has one. The lifetime is fresh at lvl, and each captured function's
+// retention lifetime must outlive it. ft must be the closure's own type, not yet shared with any
+// other type.
+func (c *checker) setRetentionFromCaptures(scope *Scope, lvl int, closure ast.Func, ft *soltype.FuncType) {
+	for _, capture := range c.closureCaptures(closure) {
+		b, found := scope.GetValue(capture.Name)
+		if !found {
+			continue
+		}
+		captured, isFn := c.bindingValue(lvl, b).(*soltype.FuncType)
+		if !isFn || captured.Lt == nil {
+			continue
+		}
+		if ft.Lt == nil {
+			ft.Lt = c.ctx.freshLifetime(lvl)
+		}
+		c.ctx.constrainLt(captured.Lt, ft.Lt)
 	}
 }
 
