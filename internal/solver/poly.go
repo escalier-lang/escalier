@@ -165,9 +165,9 @@ func (f *freshener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterR
 	nv.Open = v.Open // carry the `open` param marker onto the instantiated copy
 	f.c.ctx.copyParamMark(nv, v)
 	// A local bound to a read through a borrowed parameter, as `q` is in `val q = p.x`,
-	// instantiates its borrow's inner at each use. The copy stays in readThroughVars, so a
-	// read through the local keeps the borrow as a read through the parameter does.
-	if f.c.readThroughVars.Contains(v) {
+	// instantiates its borrow's inner at each use. The copy joins readThroughVars, so a read
+	// through the local keeps the borrow as a read through the parameter does.
+	if f.c.readThroughLocals.Contains(v) {
 		f.c.addReadThroughVar(nv)
 	}
 	// Carry `var` widenability onto the copy, mirroring Open. DEFENSIVE: no current

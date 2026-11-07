@@ -1040,6 +1040,75 @@ fn keep({n}) { total = n }`,
 	}
 }
 
+// TestCallToInferredDestructuredParam covers calls to a callee whose destructuring parameter
+// has no written type, so the call reads the ownership and the Moved mark the callee infers.
+func TestCallToInferredDestructuredParam(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "BorrowedPatternLends",
+			src: `fn take({x}) { return x }
+fn h() {
+  val o = {x: {v: 1}}
+  val r = take(&o)
+  return o.x.v + r.v
+}`,
+		},
+		{
+			name: "BorrowedPatternNeedsWrittenBorrow",
+			src: `fn take({x}) { return x }
+fn h() {
+  val o = {x: {v: 1}}
+  val r = take(o)
+  val s = o
+}`,
+			want: []string{"4:16-4:17: this argument is borrowed by the callee, so write the borrow: `&`"},
+		},
+		{
+			name: "ReturnedLeafHoldsBorrow",
+			src: `fn take({x}) { return x }
+fn h() {
+  val o = {x: {v: 1}}
+  val r = take(&o)
+  val s = o
+  return r.v
+}`,
+			want: []string{"5:11-5:12: cannot move 'o' while it is borrowed"},
+		},
+		{
+			name: "CapturedObjectLeafMoves",
+			src: `fn f({x}) {
+  return fn () { return x }
+}
+fn h() {
+  val o = {x: {v: 1}}
+  val r = f(o)
+  val s = o
+}`,
+			want: []string{"7:11-7:12: use of moved value 'o'"},
+		},
+		{
+			name: "StoredValueTypeLeafKeepsArgument",
+			src: `var total = 0
+fn keep({n}) { total = n }
+fn h() {
+  val o = {n: 1}
+  keep(o)
+  val s = o
+}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, errs := inferAgainstTreeWithSpans(t, tt.src)
+			require.Equal(t, tt.want, errs)
+		})
+	}
+}
+
 // TestCallToDestructuredParamSignature covers calls to a callee whose parameter type is written
 // out, in the shapes TestInferUnannotatedDestructuredParam infers. A call moves its argument
 // into an owned parameter. It lends the argument to a borrowed parameter through a written `&`,

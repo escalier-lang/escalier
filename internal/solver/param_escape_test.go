@@ -286,6 +286,32 @@ func TestInferUnannotatedParamOwnership(t *testing.T) {
 			}`,
 			want: "fn <T0, 'a>(p: &'a {y: T0}) -> &'a T0",
 		},
+		{
+			// The rest holds what is left of the whole parameter, so returning it lets the
+			// parameter escape, as `return p` does.
+			name: "ParamObjectRestInBody",
+			src: `fn f(p) {
+				val {a, ...r} = p
+				return r
+			}`,
+			want: "fn (p: {a: unknown}) -> {...}",
+		},
+		{
+			name: "ParamTupleRestInBody",
+			src: `fn f(p) {
+				val [...r] = p
+				return r
+			}`,
+			want: "fn (p: [...]) -> [...]",
+		},
+		{
+			name: "BoundReadRestInBody",
+			src: `fn f(p) {
+				val {a, ...r} = p.x
+				return r
+			}`,
+			want: "fn <'a>(p: &'a {x: {a: unknown}}) -> &'a {...}",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
