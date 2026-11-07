@@ -518,6 +518,7 @@ func astKind(n any) string {
 // render time.
 func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.Type {
 	t := c.inferFunc(scope, lvl, e.FuncSig, e.Body, e, true, false)
+	c.setRetentionFromCaptures(scope, lvl, e, t)
 	c.recordType(e, t)
 	// The closure reads or writes what it captures from the body it is written in.
 	c.recordClosureCaptures(scope, e)

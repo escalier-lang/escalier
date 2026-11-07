@@ -350,6 +350,54 @@ fn h(x: &fn () -> undefined, n: number) {
 }`,
 			want: []string{"2:21-2:22: parameter 'g' is only called during the call, so it cannot outlive the call"},
 		},
+		// A closure that calls g is kept no longer than g is.
+		{
+			name: "captured by a closure that is only called",
+			src: `fn f(g: fn () -> undefined) {
+    val h = fn () { g() }
+    h()
+}`,
+		},
+		{
+			name: "captured by a closure passed to a parameter that only calls it",
+			src: `declare fn each(f: fn () -> undefined) -> undefined
+fn f(g: fn () -> undefined) { each(fn () { g() }) }`,
+		},
+		{
+			name: "captured by a closure passed to a static parameter",
+			src: `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+fn f(g: fn () -> undefined) { onClick(fn () { g() }) }`,
+			want: []string{"2:6-2:7: parameter 'g' is only called during the call, so it cannot be kept for 'static"},
+		},
+		{
+			name: "captured by a named closure passed to a static parameter",
+			src: `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+fn f(g: fn () -> undefined) {
+    val h = fn () { g() }
+    onClick(h)
+}`,
+			want: []string{"2:6-2:7: parameter 'g' is only called during the call, so it cannot be kept for 'static"},
+		},
+		{
+			name: "captured through a second closure passed to a static parameter",
+			src: `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+fn f(g: fn () -> undefined) {
+    val h = fn () { g() }
+    onClick(fn () { h() })
+}`,
+			want: []string{"2:6-2:7: parameter 'g' is only called during the call, so it cannot be kept for 'static"},
+		},
+		{
+			name: "captured by a returned closure",
+			src:  `fn f(g: fn () -> undefined) { return fn () { g() } }`,
+			want: []string{"1:6-1:7: parameter 'g' is only called during the call, so it cannot outlive the call"},
+		},
+		{
+			name: "named retention captured by a closure passed to a static parameter",
+			src: `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+fn f<'a>(g: &'a fn () -> undefined) { onClick(fn () { g() }) }`,
+			want: []string{"2:6-2:8: the body requires 'a to outlive 'static, but the signature does not declare it; add the bound 'a: 'static"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -357,6 +405,23 @@ fn h(x: &fn () -> undefined, n: number) {
 			require.Equal(t, tt.want, errs)
 		})
 	}
+}
+
+// A top-level function and a module-level closure capture only module-level bindings, which
+// live for 'static, so a slot that keeps a function for 'static accepts either one.
+// TestStaticFuncKept covers each such slot and asserts that none reports an error.
+func TestStaticFuncKept(t *testing.T) {
+	src := `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+var sink: fn () -> undefined = fn () {}
+fn handle() {}
+val handleExpr = fn () {}
+fn setup() {
+    onClick(handle)
+    sink = handle
+    onClick(handleExpr)
+}`
+	_, errs := inferAgainstTreeWithSpans(t, src)
+	require.Empty(t, errs)
 }
 
 // A closure passed to a `&'static fn` parameter may run during any later call, so each later
