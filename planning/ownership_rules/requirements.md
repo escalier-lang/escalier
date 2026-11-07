@@ -329,6 +329,39 @@ fn go() -> number {
 }
 ```
 
+Functions that read the same parts of a parameter infer the same signature. It
+does not matter whether the body reads a field directly, binds it to a local
+first, or destructures the parameter in the parameter list. A `val` bound to a
+read through the parameter, and each leaf of a destructuring pattern over it, is
+an alias of the parameter. A use of an alias that returns it, reads through it,
+or passes it to an operator keeps the parameter a borrow:
+
+```esc
+fn take({x}) { return x }                // fn <T0, 'a>({x}: &'a {x: T0}) -> &'a T0
+fn take2(p) { return p.x }               // fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0
+fn take3(p) {                            // fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0
+    val x = p.x
+    return x
+}
+fn first([x, y]) { return x }            // fn <T0, 'a>([x, y]: &'a [T0, unknown]) -> &'a T0
+fn read({x}) -> number { return x.v }    // fn ({x}: &{x: {v: number}}) -> number
+fn readWhole(p) -> number { return p.v } // fn (p: &{v: number}) -> number
+```
+
+The equivalence ends where an alias escapes. A leaf that is stored, passed to a
+call, or captured by a closure that escapes lets the parameter escape, so the
+parameter stays owned. A `var` bound to a read through the parameter can be
+reassigned, so it is not an alias and the parameter stays owned too:
+
+```esc
+var sink = {y: 0}
+
+fn keep({x}) { sink = x }                // fn ({x}: {x: {y: number}}) -> undefined
+fn later({x}) {                          // fn <T0>({x}: {x: T0}) -> fn () -> T0
+    return fn () { return x }
+}
+```
+
 A closure that stays in the body borrows its captures, and one that is returned
 owns them:
 

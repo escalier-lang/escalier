@@ -909,31 +909,150 @@ fn g() -> number {
 	}
 }
 
-// TestUnannotatedDestructuredParamConsumesArgument covers calls to a parameter written as a
-// destructuring pattern with no type. A call moves its whole argument there when the callee's
-// body moves any leaf the pattern binds, and leaves the argument usable otherwise.
+// TestInferUnannotatedDestructuredParam covers the signature a function infers for a parameter
+// written as a destructuring pattern with no type. A pattern whose leaves the body only returns
+// or reads through infers as a borrow, the same signature a body that reads each field off a
+// named parameter infers. A leaf that is stored or captured by a returned closure keeps the
+// parameter owned.
 //
-// Each case also asserts what the callee infers. sig is its rendered signature, and moved lists
-// the positions of the parameters its body moves. The rendered signature does not show
-// FuncParam.Moved, which decides whether a call moves its argument, so both are needed to see
-// which half of a failing case is wrong.
-func TestUnannotatedDestructuredParamConsumesArgument(t *testing.T) {
+// sig is the callee's rendered signature, and moved lists the positions of the parameters its
+// body moves. The rendered signature does not show FuncParam.Moved, which decides whether a
+// call moves its argument into an owned parameter, so both are needed.
+func TestInferUnannotatedDestructuredParam(t *testing.T) {
 	tests := []struct {
 		name   string
 		src    string
 		callee string
 		sig    string
 		moved  []int
-		want   []string
 	}{
 		{
-			// Once #2333 lands, the parameter becomes a borrow, since its leaf is only returned.
-			// The call then reports that the argument needs `&` instead of a use of a moved value.
 			name:   "ObjectPatternLeafReturned",
 			callee: "take",
-			sig:    "fn <T0>({x}: {x: T0}) -> T0",
+			src:    `fn take({x}) { return x }`,
+			sig:    "fn <T0, 'a>({x}: &'a {x: T0}) -> &'a T0",
+		},
+		{
+			name:   "FieldReturned",
+			callee: "take2",
+			src:    `fn take2(p) { return p.x }`,
+			sig:    "fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0",
+		},
+		{
+			name:   "BoundFieldReturned",
+			callee: "take3",
+			src: `fn take3(p) {
+	val x = p.x
+	return x
+}`,
+			sig: "fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0",
+		},
+		{
+			name:   "TuplePatternLeafReturned",
+			callee: "first",
+			src:    `fn first([x, y]) { return x }`,
+			sig:    "fn <T0, 'a>([x, y]: &'a [T0, unknown]) -> &'a T0",
+		},
+		{
+			name:   "BareNameReturned",
+			callee: "whole",
+			src:    `fn whole(p) { return p }`,
+			sig:    "fn <T0>(p: T0) -> T0",
 			moved:  []int{0},
-			src: `fn take({x}) { return x }
+		},
+		{
+			name:   "NestedPatternLeafReturned",
+			callee: "deep",
+			src:    `fn deep({a: {b}}) { return b }`,
+			sig:    "fn <T0, 'a>({a: {b}}: &'a {a: {b: T0}}) -> &'a T0",
+		},
+		{
+			name:   "TupleRestReturned",
+			callee: "tail",
+			src:    `fn tail([x, ...rest]) { return rest }`,
+			sig:    "fn <'a>([x, ...rest]: &'a [unknown, ...]) -> &'a [...]",
+		},
+		{
+			name:   "ObjectRestReturned",
+			callee: "others",
+			src:    `fn others({x, ...rest}) { return rest }`,
+			sig:    "fn <'a>({x, ...rest}: &'a {x: unknown, ...}) -> &'a {...}",
+		},
+		{
+			name:   "LeafOnlyRead",
+			callee: "read",
+			src:    `fn read({x}) -> number { return x.v }`,
+			sig:    "fn ({x}: &{x: {v: number}}) -> number",
+		},
+		{
+			name:   "FieldOnlyRead",
+			callee: "readWhole",
+			src:    `fn readWhole(p) -> number { return p.v }`,
+			sig:    "fn (p: &{v: number}) -> number",
+		},
+		{
+			// A `number` leaf copies out of the parameter, so storing it moves nothing.
+			name:   "ValueTypeLeafStored",
+			callee: "keep",
+			src: `var total = 0
+fn keep({n}) { total = n }`,
+			sig: "fn ({n}: {n: number}) -> undefined",
+		},
+		{
+			// A leaf bounded above by `number | undefined` holds only primitives, so binding it
+			// to an annotated local copies it.
+			name:   "OptionalNumberLeafCopied",
+			callee: "f",
+			src: `fn f({n}) {
+  val m: number | undefined = n
+  return n
+}`,
+			sig: "fn <T0: number | undefined>({n}: {n: T0}) -> T0",
+		},
+		{
+			// A returned closure that captures a `number` leaf copies it.
+			name:   "ReturnedClosureCapturesValueTypeLeaf",
+			callee: "f",
+			src: `fn f({n}) {
+  val m: number = n
+  return fn () { return n }
+}`,
+			sig: "fn <T0: number>({n}: {n: T0}) -> fn () -> T0",
+		},
+		{
+			// A returned closure that captures an object leaf takes it out of the parameter.
+			name:   "ReturnedClosureCapturesObjectLeaf",
+			callee: "f",
+			src: `fn f({x}) {
+  return fn () { return x }
+}`,
+			sig:   "fn <T0>({x}: {x: T0}) -> fn () -> T0",
+			moved: []int{0},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, messagesWithSpan(t, errs))
+			require.Equal(t, tt.sig, values[tt.callee])
+			require.Equal(t, tt.moved, inferMovedParams(t, tt.src)[tt.callee])
+		})
+	}
+}
+
+// TestCallToDestructuredParamSignature covers calls to a callee whose parameter type is written
+// out, in the shapes TestInferUnannotatedDestructuredParam infers. A call moves its argument
+// into an owned parameter. It lends the argument to a borrowed parameter through a written `&`,
+// and reports the missing `&` when the call omits it.
+func TestCallToDestructuredParamSignature(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "OwnedObjectMoves",
+			src: `declare fn take(p: {x: {v: number}}) -> {v: number}
 fn h() {
   val o = {x: {v: 1}}
   val r = take(o)
@@ -942,177 +1061,58 @@ fn h() {
 			want: []string{"5:11-5:12: use of moved value 'o'"},
 		},
 		{
-			// Once #2333 lands, the parameter becomes a borrow, since its leaf is only returned.
-			// The call then reports that the argument needs `&` instead of a use of a moved value.
-			name:   "TuplePatternLeafReturned",
-			callee: "take2",
-			sig:    "fn <T0>([x, y]: [T0, unknown]) -> T0",
-			moved:  []int{0},
-			src: `fn take2([x, y]) { return x }
+			name: "BorrowedObjectLends",
+			src: `declare fn read(p: &{x: {v: number}}) -> number
 fn h() {
-  val t = [{v: 1}, {v: 2}]
-  val u = take2(t)
-  val w = t
-}`,
-			want: []string{"5:11-5:12: use of moved value 't'"},
-		},
-		{
-			// This case stays as it is once #2333 lands, since the body returns the parameter itself.
-			name:   "BareNameReturned",
-			callee: "whole",
-			sig:    "fn <T0>(p: T0) -> T0",
-			moved:  []int{0},
-			src: `fn whole(p) { return p }
-fn h() {
-  val o2 = {x: {v: 1}}
-  val z = whole(o2)
-  val q = o2
-}`,
-			want: []string{"5:11-5:13: use of moved value 'o2'"},
-		},
-		{
-			// Once #2333 lands, the parameter becomes a borrow, since its leaf is only returned.
-			// The call then reports that the argument needs `&` instead of a use of a moved value.
-			name:   "NestedPatternLeafReturned",
-			callee: "deep",
-			sig:    "fn <T0>({a: {b}}: {a: {b: T0}}) -> T0",
-			moved:  []int{0},
-			src: `fn deep({a: {b}}) { return b }
-fn h() {
-  val o = {a: {b: {v: 1}}}
-  val r = deep(o)
+  val o = {x: {v: 1}}
+  val n = read(&o)
   val s = o
 }`,
-			want: []string{"5:11-5:12: use of moved value 'o'"},
 		},
 		{
-			// Once #2333 lands, the parameter becomes a borrow, since its leaf is only returned.
-			// The call then reports that the argument needs `&` instead of a use of a moved value.
-			name:   "TupleRestReturned",
-			callee: "tail",
-			sig:    "fn ([x, ...rest]: [unknown, ...]) -> [...]",
-			moved:  []int{0},
-			src: `fn tail([x, ...rest]) { return rest }
-fn h() {
-  val t = [{v: 1}, {v: 2}]
-  val u = tail(t)
-  val w = t
-}`,
-			want: []string{"5:11-5:12: use of moved value 't'"},
-		},
-		{
-			// Once #2333 lands, the parameter becomes a borrow, since its leaf is only returned.
-			// The call then reports that the argument needs `&` instead of a use of a moved value.
-			name:   "ObjectRestReturned",
-			callee: "others",
-			sig:    "fn ({x, ...rest}: {x: unknown, ...}) -> {...}",
-			moved:  []int{0},
-			src: `fn others({x, ...rest}) { return rest }
-fn h() {
-  val o = {x: {v: 1}, y: {v: 2}}
-  val r = others(o)
-  val s = o
-}`,
-			want: []string{"5:11-5:12: use of moved value 'o'"},
-		},
-		{
-			// The body of `read` reads a field of its leaf without moving it, so the argument stays
-			// usable. Once #2333 lands, the parameter becomes a borrow, and the call reports that
-			// the argument needs `&`.
-			name:   "LeafOnlyReadKeepsArgument",
-			callee: "read",
-			sig:    "fn ({x}: {x: {v: number}}) -> number",
-			moved:  nil,
-			src: `fn read({x}) -> number { return x.v }
+			name: "BorrowedObjectNeedsWrittenBorrow",
+			src: `declare fn read(p: &{x: {v: number}}) -> number
 fn h() {
   val o = {x: {v: 1}}
   val n = read(o)
   val s = o
 }`,
+			want: []string{"4:16-4:17: this argument is borrowed by the callee, so write the borrow: `&`"},
 		},
 		{
-			// A `number` leaf copies out of the parameter, so storing it moves nothing.
-			// This case may change once #2333 lands, if it makes a parameter whose value-type leaf
-			// is copied out a borrow.
-			name:   "ValueTypeLeafKeepsArgument",
-			callee: "keep",
-			sig:    "fn ({n}: {n: number}) -> undefined",
-			moved:  nil,
-			src: `var total = 0
-fn keep({n}) { total = n }
+			name: "OwnedTupleMoves",
+			src: `declare fn first(t: [{v: number}, {v: number}]) -> {v: number}
 fn h() {
-  val o = {n: 1}
-  keep(o)
-  val s = o
+  val t = [{v: 1}, {v: 2}]
+  val u = first(t)
+  val w = t
+}`,
+			want: []string{"5:11-5:12: use of moved value 't'"},
+		},
+		{
+			name: "BorrowedTupleLends",
+			src: `declare fn first<'a>(t: &'a [{v: number}, {v: number}]) -> &'a {v: number}
+fn h() {
+  val t = [{v: 1}, {v: 2}]
+  val u = first(&t)
+  val w = t
 }`,
 		},
 		{
-			// A leaf bounded above by `number | undefined` holds only primitives, so returning it
-			// copies.
-			// This case may change once #2333 lands, if it makes a parameter whose value-type leaf
-			// is copied out a borrow.
-			name:   "OptionalNumberLeafKeepsArgument",
-			callee: "f",
-			sig:    "fn <T0: number | undefined>({n}: {n: T0}) -> T0",
-			moved:  nil,
-			src: `fn f({n}) {
-  val m: number | undefined = n
-  return n
-}
+			name: "BorrowedTupleNeedsWrittenBorrow",
+			src: `declare fn first<'a>(t: &'a [{v: number}, {v: number}]) -> &'a {v: number}
 fn h() {
-  val o = {n: 1}
-  val r = f(o)
-  val s = o
+  val t = [{v: 1}, {v: 2}]
+  val u = first(t)
+  val w = t
 }`,
-		},
-		{
-			// A returned closure that captures a `number` leaf copies it, so the argument stays
-			// usable.
-			// This case may change once #2333 lands, if it makes a parameter whose value-type leaf
-			// is copied out a borrow.
-			name:   "ReturnedClosureCapturesValueTypeLeaf",
-			callee: "f",
-			sig:    "fn <T0: number>({n}: {n: T0}) -> fn () -> T0",
-			moved:  nil,
-			src: `fn f({n}) {
-  val m: number = n
-  return fn () { return n }
-}
-fn h() {
-  val o = {n: 1}
-  val r = f(o)
-  val s = o
-}`,
-		},
-		{
-			// A returned closure that captures an object leaf takes it out of the parameter. This
-			// case stays as it is once #2333 lands, since a closure that escapes keeps the parameter
-			// owned.
-			name:   "ReturnedClosureCapturesObjectLeaf",
-			callee: "f",
-			sig:    "fn <T0>({x}: {x: T0}) -> fn () -> T0",
-			moved:  []int{0},
-			src: `fn f({x}) {
-  return fn () { return x }
-}
-fn h() {
-  val o = {x: {v: 1}}
-  val r = f(o)
-  val s = o
-}`,
-			want: []string{"7:11-7:12: use of moved value 'o'"},
+			want: []string{"4:17-4:18: this argument is borrowed by the callee, so write the borrow: `&`"},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			values, _, errs := inferSource(t, tt.src)
-			require.Equal(t, tt.sig, values[tt.callee])
-			require.Equal(t, tt.moved, inferMovedParams(t, tt.src)[tt.callee])
-			if len(tt.want) == 0 {
-				require.Empty(t, messagesWithSpan(t, errs))
-				return
-			}
-			require.Equal(t, tt.want, messagesWithSpan(t, errs))
+			_, errs := inferAgainstTreeWithSpans(t, tt.src)
+			require.Equal(t, tt.want, errs)
 		})
 	}
 }

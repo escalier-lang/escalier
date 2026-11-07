@@ -63,7 +63,79 @@ func TestInferUnannotatedParamOwnership(t *testing.T) {
 				val q = p.x
 				return q
 			}`,
+			want: "fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0",
+		},
+		{
+			name: "BoundReadChained",
+			src: `fn f(p) {
+				val q = p.x
+				val r = q.y
+				return r
+			}`,
+			want: "fn <T0, 'a>(p: &'a {x: {y: T0}}) -> &'a T0",
+		},
+		{
+			name: "BoundReadInArithmetic",
+			src: `fn f(p) {
+				val q = p.x
+				return q + 1
+			}`,
+			want: "fn (p: &{x: number}) -> number",
+		},
+		{
+			name: "BoundReadStoredInModuleState",
+			src: `
+				var sink = {y: 0}
+				fn f(p) {
+					val q = p.x
+					sink = q
+				}
+			`,
+			want: "fn (p: {x: {y: number}}) -> undefined",
+		},
+		{
+			name: "BoundReadPassedToCall",
+			src: `
+				declare fn own(q: {y: number}) -> number
+				fn f(p) {
+					val q = p.x
+					return own(q)
+				}
+			`,
+			want: "fn (p: {x: {y: number}}) -> number",
+		},
+		{
+			name: "BoundReadCapturedByClosure",
+			src: `fn f(p) {
+				val q = p.x
+				return fn () { return q }
+			}`,
+			want: "fn <T0>(p: {x: T0}) -> fn () -> T0",
+		},
+		{
+			name: "BoundReadInVar",
+			src: `fn f(p) {
+				var q = p.x
+				return q
+			}`,
 			want: "fn <T0>(p: {x: T0}) -> T0",
+		},
+		{
+			name: "BoundReadNameRebound",
+			src: `fn f(p) {
+				val q = p.x
+				val q = {y: 1}
+				return q
+			}`,
+			want: "fn (p: {x: unknown}) -> {y: 1}",
+		},
+		{
+			name: "BoundReadDestructured",
+			src: `fn f(p) {
+				val {y} = p.x
+				return y
+			}`,
+			want: "fn <T0, 'a>(p: &'a {x: {y: T0}}) -> &'a T0",
 		},
 		{
 			name: "MemberReadAsBlockValue",
@@ -169,9 +241,50 @@ func TestInferUnannotatedParamOwnership(t *testing.T) {
 			want: "fn (p: unknown) -> 1",
 		},
 		{
-			name: "Destructured",
+			name: "ObjectPattern",
 			src:  `fn f({x}) { return x }`,
+			want: "fn <T0, 'a>({x}: &'a {x: T0}) -> &'a T0",
+		},
+		{
+			name: "TuplePattern",
+			src:  `fn f([x, y]) { return x }`,
+			want: "fn <T0, 'a>([x, y]: &'a [T0, unknown]) -> &'a T0",
+		},
+		{
+			name: "NestedPattern",
+			src:  `fn f({a: {b}}) { return b }`,
+			want: "fn <T0, 'a>({a: {b}}: &'a {a: {b: T0}}) -> &'a T0",
+		},
+		{
+			name: "RestElement",
+			src:  `fn f([x, ...rest]) { return rest }`,
+			want: "fn <'a>([x, ...rest]: &'a [unknown, ...]) -> &'a [...]",
+		},
+		{
+			name: "PatternLeafReadThrough",
+			src:  `fn f({x}) -> number { return x.v }`,
+			want: "fn ({x}: &{x: {v: number}}) -> number",
+		},
+		{
+			name: "PatternLeafStoredInModuleState",
+			src: `
+				var sink = {y: 0}
+				fn f({x}) { sink = x }
+			`,
+			want: "fn ({x}: {x: {y: number}}) -> undefined",
+		},
+		{
+			name: "MutPatternLeaf",
+			src:  `fn f({mut x}) { return x }`,
 			want: "fn <T0>({x}: {x: T0}) -> T0",
+		},
+		{
+			name: "ParamDestructuredInBody",
+			src: `fn f(p) {
+				val {y} = p
+				return y
+			}`,
+			want: "fn <T0, 'a>(p: &'a {y: T0}) -> &'a T0",
 		},
 	}
 	for _, tt := range tests {

@@ -389,6 +389,11 @@ func (c *checker) markMovedParams(sigParams []*ast.Param, params []*soltype.Func
 		if p.TypeAnn != nil || i >= len(params) {
 			continue
 		}
+		// A parameter that infers as a borrow lends its argument, so a leaf the body returns
+		// copies the borrow and moves nothing.
+		if _, isBorrow := params[i].Type.(*soltype.RefType); isBorrow {
+			continue
+		}
 		if moved.Contains(params[i]) {
 			params[i].Moved = true
 		}

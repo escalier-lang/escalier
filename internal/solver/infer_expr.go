@@ -651,9 +651,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		}
 		// F3 makes an unannotated parameter that does not escape a borrow. A parameter the body
 		// only reads through does not escape, so it borrows immutably, as `p` in
-		// `fn read(p) { return p.x }` does. A function passed as a call argument keeps a plain
+		// `fn read(p) { return p.x }` does. A destructuring parameter whose leaves the body only
+		// reads through borrows the same way, as `{x}` in `fn take({x}) { return x }` does. Its
+		// leaves then bind as borrows too. A function passed as a call argument keeps a plain
 		// variable for each parameter, since the callee's signature gives each one its type.
-		if v, ok := pt.(*soltype.TypeVarType); ok && !written && !isArg && body != nil && identParamOnlyReadThrough(pat, rest, optional, body) {
+		if v, ok := pt.(*soltype.TypeVarType); ok && !written && !isArg && body != nil && paramOnlyReadThrough(pat, rest, optional, body) {
 			pt = soltype.NewRef(false, c.ctx.freshLifetime(lvl), v)
 			c.addReadThroughVar(v)
 		}
@@ -726,7 +728,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 				// would infer the parameter `{x: T0}` and reject `f({x: 1, y: 2})` for the
 				// extra y. Marking the var open keeps the folded object inexact, the same
 				// row-polymorphic shape the written `open` marker produces.
-				if v, ok := pt.(*soltype.TypeVarType); ok && objectPatNamesRest(pat) {
+				if v, ok := soltype.CarrierOf(pt).(*soltype.TypeVarType); ok && objectPatNamesRest(pat) {
 					v.Open = true
 				}
 			}

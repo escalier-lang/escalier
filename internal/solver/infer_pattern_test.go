@@ -664,7 +664,7 @@ func TestInferRestPatternUnknownScrutineeShape(t *testing.T) {
 				fn f([a, ...rest]) {
 					return rest
 				}`,
-			want: "fn ([a, ...rest]: [unknown, ...]) -> [...]",
+			want: "fn <'a>([a, ...rest]: &'a [unknown, ...]) -> &'a [...]",
 		},
 		{
 			// The parameter is inexact because the pattern names a rest. See
@@ -674,7 +674,7 @@ func TestInferRestPatternUnknownScrutineeShape(t *testing.T) {
 				fn f({x, ...rest}) {
 					return rest
 				}`,
-			want: "fn ({x, ...rest}: {x: unknown, ...}) -> {...}",
+			want: "fn <'a>({x, ...rest}: &'a {x: unknown, ...}) -> &'a {...}",
 		},
 	}
 	for _, tt := range tests {
@@ -751,7 +751,7 @@ func TestInferRestPatternParamAdmitsExtraFields(t *testing.T) {
 			val r = f({x: 1, y: 2})
 		`)
 		require.Empty(t, errs)
-		require.Equal(t, "fn <T0>({x, ...rest}: {x: T0, ...}) -> T0", values["f"])
+		require.Equal(t, "fn <T0, 'a>({x, ...rest}: &'a {x: T0, ...}) -> &'a T0", values["f"])
 	})
 
 	t.Run("no rest still closes to exact", func(t *testing.T) {
@@ -769,7 +769,7 @@ func TestInferRestPatternParamAdmitsExtraFields(t *testing.T) {
 			val r = f([1, 2, 3])
 		`)
 		require.Empty(t, errs)
-		require.Equal(t, "fn <T0>([a, ...rest]: [T0, ...]) -> T0", values["f"])
+		require.Equal(t, "fn <T0, 'a>([a, ...rest]: &'a [T0, ...]) -> &'a T0", values["f"])
 	})
 }
 

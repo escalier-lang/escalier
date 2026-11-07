@@ -96,10 +96,13 @@ func defineLeafMono(scope *Scope, name string, t soltype.Type, node ast.Node) {
 // following Rust's match ergonomics. An owned scrutinee moves each leaf out. A
 // borrowed scrutinee projects a receiver-bounded borrow of each leaf and never moves.
 // lt is the scrutinee's borrow lifetime. Every projected leaf borrow shares it, so a
-// leaf cannot outlive the scrutinee.
+// leaf cannot outlive the scrutinee. readThrough is true for an immutable borrow whose
+// inner is a variable in readThroughVars, such as the type of a destructuring parameter
+// the body only reads through.
 type bindMode struct {
-	borrow borrowMode
-	lt     soltype.Lifetime
+	borrow      borrowMode
+	lt          soltype.Lifetime
+	readThrough bool
 }
 
 type borrowMode byte
@@ -147,7 +150,11 @@ func (c *checker) scrutineeBinding(lvl int, scrutinee soltype.Type) (soltype.Typ
 	if inner, mode, ok := c.peelBorrowUnion(lvl, carrier); ok {
 		return inner, mode
 	}
-	return carrier, bindModeOf(scrutinee)
+	mode := bindModeOf(scrutinee)
+	if v, isVar := carrier.(*soltype.TypeVarType); isVar && mode.borrow == bmImm {
+		mode.readThrough = c.readThroughVars.Contains(v)
+	}
+	return carrier, mode
 }
 
 // peelBorrowUnion peels a union whose every member is a borrow into the union of the
@@ -1451,7 +1458,10 @@ func (c *checker) definedMembers(t soltype.Type) (soltype.Type, bool) {
 // fieldReadBorrow. A primitive or function element is copied, not borrowed, so it is
 // returned unchanged. A leaf whose element shape is not statically known has a nil
 // concrete and is also returned unchanged. This is the same conservative choice
-// fieldReadBorrow makes for an unknown receiver.
+// fieldReadBorrow makes for an unknown receiver. The exception is a read-through
+// scrutinee. A leaf of unknown shape binds through it as a borrow at the scrutinee's
+// lifetime, as fieldReadBorrow reads a field of unknown shape through a read-through
+// receiver.
 func (c *checker) applyBindMode(lvl int, node ast.Node, mut bool, leafType, concrete soltype.Type, scrutineeMode bindMode) soltype.Type {
 	switch scrutineeMode.borrow {
 	case bmImm:
@@ -1460,6 +1470,10 @@ func (c *checker) applyBindMode(lvl int, node ast.Node, mut bool, leafType, conc
 		}
 		if ri, ok := leafType.(soltype.RefInner); ok && soltype.BorrowableType(concrete) {
 			return soltype.NewRef(false, scrutineeMode.lt, ri)
+		}
+		if v, isVar := leafType.(*soltype.TypeVarType); isVar && concrete == nil && scrutineeMode.readThrough {
+			c.addReadThroughVar(v)
+			return soltype.NewRef(false, scrutineeMode.lt, v)
 		}
 		return leafType
 	case bmMut:
