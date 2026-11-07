@@ -162,10 +162,14 @@ jobs:
             else
               since=""
             fi
-            # The summary names the reviewed commit before anything else.
+            # The summary names the reviewed commit before anything else. Only a
+            # comment claude[bot] posted counts, since anyone who can comment on
+            # the PR could post one that carries the marker.
             reviewed=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
               | jq -rs --arg since "$since" 'add
-                | map(select((.body | contains("<!-- pr-review-summary -->")) and .updated_at >= $since))
+                | map(select(.user.login == "claude[bot]"
+                  and (.body | contains("<!-- pr-review-summary -->"))
+                  and .updated_at >= $since))
                 | last | .body // ""' \
               | grep -m 1 -oE '\b[0-9a-f]{40}\b' || true)
             if [ "$MODE" = review ] && [ "$reviewed" != "$head" ]; then
