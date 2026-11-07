@@ -433,7 +433,7 @@ fn g() {
 }
 val tok = Token()
 fn f() -> number { return tok.consume() }`,
-			want: []string{"6:27-6:30: cannot move module-level value 'tok' inside a function. Borrow it with `&tok`"},
+			want: []string{"6:27-6:30: cannot move module-level value 'tok' inside a function. The method 'consume' takes `self` by value, so calling it moves 'tok'"},
 		},
 		{
 			name: "passed to a borrow parameter",

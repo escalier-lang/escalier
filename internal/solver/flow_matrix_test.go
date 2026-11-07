@@ -3021,7 +3021,7 @@ func TestFlowMatrixModuleLevelMove(t *testing.T) {
 					return cfg.take()
 				}
 			`,
-			want: []string{"10:13-10:16: cannot move module-level value 'cfg' inside a function. Borrow it with `&cfg`"},
+			want: []string{"10:13-10:16: cannot move module-level value 'cfg' inside a function. The method 'take' takes `self` by value, so calling it moves 'cfg'"},
 		},
 	})
 }
