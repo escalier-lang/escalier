@@ -2,7 +2,6 @@ package solver
 
 import (
 	"cmp"
-	"fmt"
 	"slices"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -63,17 +62,6 @@ func bindingType(b ValueBinding) soltype.Type {
 		return nil
 	}
 	return schemeType(b.Schemes[0])
-}
-
-// varIDToName resolves a VarID back to a variable name for error messages, reading
-// the current body's rename-pass mapping.
-func (c *checker) varIDToName(id liveness.VarID) string {
-	if c.fn != nil && c.fn.varIDNames != nil {
-		if name, ok := c.fn.varIDNames[id]; ok {
-			return name
-		}
-	}
-	return fmt.Sprintf("var#%d", id)
 }
 
 // runLivenessPrePass runs name resolution, CFG construction, and liveness analysis
@@ -161,7 +149,6 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 		captureVarIDs.Add(id)
 	}
 
-	c.fn.liveness = livenessInfo
 	c.fn.stmtToRef = stmtToRef
 	c.fn.varIDNames = renameResult.VarIDNames
 	c.fn.varIDTypes = varIDTypes

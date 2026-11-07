@@ -58,7 +58,7 @@ func inferScriptWithGroups(
 	groups PackageGroups,
 	opts Options,
 ) (*Scope, *Info, []SolverError) {
-	return inferScriptOn(newRunChecker(source, groupSource, groups, withOwnershipDataflowResolved(opts)), script)
+	return inferScriptOn(newRunChecker(source, groupSource, groups, opts), script)
 }
 
 // inferScriptOn infers script on c, a checker from newRunChecker or ambientChecker.

@@ -2051,7 +2051,8 @@ The steps:
      [borrow_flow.go](../../internal/solver/borrow_flow.go), replaced by the lifetime solver
      answering F3.
    - The plumbing that keeps the engines from reporting one error twice, such
-     as `resolvePhaseTransitions` and `reportedMixedOwnership`.
+     as `resolvePhaseTransitions`, and the flag step 7 puts the pass behind. The
+     pass then runs on every check.
 
    These stay, since they enforce rules the dataflow pass does not check:
    - The per-site checks behind `ModuleLevelMoveError` in
@@ -2089,7 +2090,15 @@ The migration is finished when every conformance test is enabled and passing,
 and the groups step 8 lists are gone. The point of the work is a simpler
 solver, so record two measurements before step 1 and after step 8:
 
-- The line count of the ownership, lifetime, and mutability files. It is about
-  12,000 lines across about 25 files today.
-- The `gocognit` cognitive complexity total for `internal/solver`. It is
-  about 10,800 today.
+- The line count of the ownership, lifetime, and mutability files. The baseline
+  counts the non-test files of `internal/liveness` and these files of
+  `internal/solver`: `aliases`, `borrow_exclusivity`, `borrow_flow`,
+  `borrow_store`, `lifetime_bounds`, `lifetime_coalesce`, `lifetime_rigid`,
+  `lifetime_signature`, `lifetime_undeclared`, `module_level_moves`, `moves`,
+  `owned_return`, `return_escape`, `return_shared_paths`, `symbol_owner`, and
+  `transitions`. That is 26 files and 12,336 lines.
+- The `gocognit` cognitive complexity total for the non-test files of
+  `internal/solver`. It is 10,802 at the baseline.
+
+The tracking issue, #2277, records both measurements at the baseline and after
+step 8.

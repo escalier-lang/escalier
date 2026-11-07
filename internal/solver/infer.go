@@ -89,11 +89,6 @@ type checker struct {
 	// by tests that exercise the guard. See recordProv.
 	debugProv bool
 
-	// ownershipDataflow runs the dataflow pass of ownership_dataflow.go once the flows of a
-	// module or script settle. newRunChecker sets it from Options.NoOwnershipDataflow as
-	// withOwnershipDataflowResolved returns it.
-	ownershipDataflow bool
-
 	// varIDCounter is the module-wide running allocator for liveness VarIDs (M4 G1).
 	// Each function body's pre-pass renames its locals starting from this counter and
 	// then advances it, so VarIDs are unique across every body in one inference run
@@ -569,11 +564,10 @@ type funcCtx struct {
 	// precision, which is sound.
 	written map[fieldKey]soltype.Type
 
-	// liveness, stmtToRef, and varIDNames are the liveness state for THIS function body,
+	// stmtToRef and varIDNames are the liveness state for THIS function body,
 	// populated by runLivenessPrePass before the body is walked. Scoping them to funcCtx
 	// gives a nested function its own liveness analysis. Push/pop isolates them exactly
 	// like `written`. They stay nil at module top-level, where c.fn is nil.
-	liveness   *liveness.LivenessInfo
 	stmtToRef  map[ast.Stmt]liveness.StmtRef
 	varIDNames map[liveness.VarID]string
 	// events holds the ownership events this body's walk emits, attached to the nodes of
@@ -884,9 +878,6 @@ func newChecker() *checker {
 		varIDCounter:    1,
 		varIDs:          liveness.NewVarIDs(),
 		weakBindingVars: set.NewSet[*soltype.TypeVarType](),
-
-		// A checker no run configures checks the way a run with no options does.
-		ownershipDataflow: !withOwnershipDataflowResolved(Options{}).NoOwnershipDataflow,
 	}
 	c.ctx.fusionRecorder = c.recordFusionEdge
 	c.info.ctx = c.ctx
@@ -928,7 +919,6 @@ func (c *checker) forScript(pkgURI string) *checker {
 		groups:            c.groups,
 		stdlibDir:         c.stdlibDir,
 		checkJsDecorators: c.checkJsDecorators,
-		ownershipDataflow: c.ownershipDataflow,
 		weakBindingVars:   set.NewSet[*soltype.TypeVarType](),
 	}
 	// Point the recorder at the script, so a fusion its walk records lands in the

@@ -1308,32 +1308,23 @@ func collectBranchOwnership(t soltype.Type, sawOwned, sawBorrowed *bool) {
 	}
 }
 
-// checkUniformOwnership reports a MixedOwnershipError against node when the branches a
-// join is about to union are some owned and some borrowed. Each branch is coalesced
-// first so an inference variable resolves to the shape that flowed into it.
-//
-// A node reports the fault once. A `val … else` runs a separate join per leaf its pattern
-// binds, and every one of those joins blames the whole declaration, so a pattern with two
-// mixed leaves would otherwise underline the declaration twice.
+// checkUniformOwnership reports a MixedOwnershipError against node when branchesMixOwnership
+// holds for the branches a join is about to union.
 func (c *checker) checkUniformOwnership(node ast.Node, branches []soltype.Type) {
+	if branchesMixOwnership(branches) {
+		c.report(&MixedOwnershipError{Node: node})
+	}
+}
+
+// branchesMixOwnership reports whether some of branches are owned and some borrowed. Each
+// branch is coalesced first so an inference variable resolves to the shape that flowed into
+// it.
+func branchesMixOwnership(branches []soltype.Type) bool {
 	sawOwned, sawBorrowed := false, false
 	for _, b := range branches {
 		collectBranchOwnership(coalesce(b, soltype.Positive), &sawOwned, &sawBorrowed)
 	}
-	if !sawOwned || !sawBorrowed || c.reportedMixedOwnership(node) {
-		return
-	}
-	c.report(&MixedOwnershipError{Node: node})
-}
-
-// reportedMixedOwnership reports whether node already carries a MixedOwnershipError.
-func (c *checker) reportedMixedOwnership(node ast.Node) bool {
-	for _, e := range c.errs {
-		if prev, ok := e.(*MixedOwnershipError); ok && prev.Node == node {
-			return true
-		}
-	}
-	return false
+	return sawOwned && sawBorrowed
 }
 
 // joinBorrows joins several mutable borrows of objects. It applies only when EVERY
@@ -5344,10 +5335,15 @@ func (c *checker) joinFallbackLeaves(scope *Scope, lvl int, d *ast.VarDecl, esca
 	// took it off the fallback's binding mode.
 	carrier, _ := c.scrutineeBinding(lvl, fallback)
 	c.constrain(d, carrier, produced)
+	// Every leaf's join blames the whole declaration, so a pattern with two leaves that mix
+	// ownership reports d once, at the first of them.
+	mixed := false
 	for s := escaped; s != nil && s != scope; s = s.parent {
 		for name, binding := range s.bindings() {
 			if leaf, projected := leaves[name]; projected {
-				c.joinLeaf(s, lvl, d, name, binding, leaf)
+				if c.joinLeaf(s, lvl, d, name, binding, leaf, !mixed) {
+					mixed = true
+				}
 			}
 		}
 	}
@@ -5356,7 +5352,8 @@ func (c *checker) joinFallbackLeaves(scope *Scope, lvl int, d *ast.VarDecl, esca
 // joinLeaf folds what the fallback supplies for one name into what the success path bound
 // it to. binding is that success-path binding and leaf the fallback's projection. scope is
 // where the name was bound, which is where a rebind lands. Every constraint is anchored to
-// d, the whole declaration.
+// d, the whole declaration. It returns whether the two halves mix ownership, and reports
+// that only when reportMixed is set.
 //
 // A leaf whose type is already settled takes no join, and the fallback flows into that type
 // instead. leafFixedType decides which leaves those are.
@@ -5372,24 +5369,28 @@ func (c *checker) joinFallbackLeaves(scope *Scope, lvl int, d *ast.VarDecl, esca
 // rather than binds, so it never reaches applyBindMode and never wraps a leaf in a borrow.
 // Two borrowed leaves therefore stay un-joined, as `&'c {a: number} | &'d {a: number}`.
 func (c *checker) joinLeaf(
-	scope *Scope, lvl int, d *ast.VarDecl, name string, binding ValueBinding, leaf fallbackLeaf,
-) {
+	scope *Scope, lvl int, d *ast.VarDecl, name string, binding ValueBinding, leaf fallbackLeaf, reportMixed bool,
+) bool {
 	matched, mono := monoTypeOf(binding)
 	if !mono {
-		return
+		return false
 	}
 	if fixed, ok := leafFixedType(matched, leaf.node); ok {
 		c.constrain(d, leaf.ty, fixed)
-		return
+		return false
 	}
 	// The two sources the name binds from have to agree on ownership.
-	c.checkUniformOwnership(d, []soltype.Type{matched, leaf.ty})
+	mixed := branchesMixOwnership([]soltype.Type{matched, leaf.ty})
+	if mixed && reportMixed {
+		c.report(&MixedOwnershipError{Node: d})
+	}
 	join := c.joinBranches(d, lvl, ValElseBranch, []soltype.Type{matched, leaf.ty})
 	binding.Schemes = []TypeScheme{monoScheme(join)}
 	scope.defineValue(name, binding)
 	// The join replaces what the binding walk recorded, the leaf projected off the
 	// initializer alone, so an editor reads the type the name really binds at.
 	c.recordType(leaf.node, join)
+	return mixed
 }
 
 // leafFixedType returns the type a leaf's fallback has to fit when the leaf takes no join,
