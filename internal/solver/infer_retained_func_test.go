@@ -111,7 +111,9 @@ var mut registry: {run(self) -> undefined} = mk()`,
 			binding: "h",
 			want:    "fn () -> undefined",
 		},
-		// The return's retention lifetime connects nothing, so it renders as a bare `&`.
+		// The return's retention lifetime connects nothing, so it renders as a bare `&`. A caller
+		// can still keep the result for 'static. The expected rendering changes to the plain
+		// `fn () -> undefined` once #2558 lands.
 		{
 			name:    "plain function in a return annotation",
 			src:     `fn mk() -> fn () -> undefined { return fn () {} }`,
