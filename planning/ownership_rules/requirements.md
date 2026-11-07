@@ -120,6 +120,31 @@ rejected after the field's one initialization. A `readonly` field does not
 satisfy a writable field, because a holder of the writable type could reassign
 it. A getter with no setter counts as a `readonly` field.
 
+The rule applies to every owned destination, whatever its binding's
+mutability. That covers a binding, a reassignment, a parameter, and a return
+value. A `val` binding or an immutable parameter can move its value on into a
+`val mut` binding, which then writes the field. A caller can do the same with a
+returned value. A parameter's binding mutability is not part of the signature
+either, so a call through a function value could not see it. In the program
+below, both calls report
+`readonly field 'a' cannot satisfy a writable field requirement`:
+
+```esc
+fn sink(mut o: {a: number}) { o.a = 5 }
+fn move(o: {a: number}) {
+    val mut m = o
+    m.a = 5
+}
+fn f(obj: {readonly a: number}, other: {readonly a: number}) {
+    sink(obj)
+    move(other)
+}
+```
+
+A `&` borrow can neither write the field nor move the value, so a `readonly`
+field still satisfies a writable field behind one. With `obj` above,
+`read(&obj)` is accepted for `fn read(o: &{a: number})`.
+
 **T6. A borrow cannot fill an owned destination.** A value of type `&T` or
 `&mut T` does not satisfy an owned `T`, since the destination would
 claim ownership of storage owned elsewhere. The same holds for a
@@ -595,6 +620,14 @@ capture the closure writes is used as a mutable path, and a capture it only read
 is used as an immutable path. A closure stored into module-level state may run
 during any later call, so every later call uses its borrows. A closure that moves
 one of its captures moves it at each call, so by E1 a second call is rejected.
+
+A module-level function captures each module-level binding its body reads or
+writes, and each one that a module-level function it calls reaches. A call of it
+uses those bindings the way a closure call uses its captures. With
+`var mut cfg = {x: 0}` and `fn bump() { cfg.x = cfg.x + 1 }`, the call in
+`val r = &cfg; bump(); return r.x` writes `cfg` while `r` is live, so E2 rejects
+it. An `await` of the call runs it before the body resumes, so `await bump()`
+is rejected the same way.
 
 A function parameter says how long the callee keeps the function it receives.
 A parameter written `f: fn () -> undefined` is only called during the call, so a
@@ -1788,6 +1821,33 @@ The checking model closes it by recording the copy as a `copy(place, holder)`
 event, which makes `c` a second holder of the borrow.
 [#1527](https://github.com/escalier-lang/escalier/issues/1527) tracks the gap.
 
+**B9. T5 misses a readonly field some owned destinations hide.**
+`reportReadonlyIntoWritable` in
+[infer_decl.go](../../internal/solver/infer_decl.go) applies T5 to an owned
+destination whose type is an object or tuple. It reports nothing for a
+destination typed by a type parameter, a union, or a rest parameter, or for a
+readonly field inside a class's type argument. Each call below checks clean
+today, and each should report
+`readonly field 'a' cannot satisfy a writable field requirement`:
+
+```esc
+fn bounded<T: {a: number}>(o: T) -> T { return o }
+fn nullable(o: {a: number} | null) {}
+fn rest(...o: Array<{a: number}>) {}
+fn list(o: Array<{a: number}>) {}
+
+fn f(p: {readonly a: number}, q: {readonly a: number},
+     r: {readonly a: number}, xs: Array<{readonly a: number}>) {
+    bounded(p)
+    nullable(q)
+    rest(r)
+    list(xs)
+}
+```
+
+The class case holds behind a `&mut` borrow too, so a
+`&mut Array<{readonly a: number}>` fills a `&mut Array<{a: number}>`.
+
 ## Divergences from the docs
 
 These came from reading the code and need confirming with a fixture each before
@@ -1939,6 +1999,14 @@ the solver.
 | T3 | Annotate `{a: mut {b: number}}` or `Array<mut Point>` | Rejected |
 | T5 | Write a `readonly` field after its initialization | Rejected |
 | T5 | A `{readonly a: number}` value into a `{a: number}` slot of a `val mut` binding | Rejected |
+| T5 | A `{readonly a: number}` value into a `{a: number}` slot of a `val` binding | Rejected |
+| T5 | A `{readonly a: number}` argument for a `mut o: {a: number}` parameter | Rejected |
+| T5 | A `{readonly a: number}` argument for an `o: {a: number}` parameter | Rejected |
+| T5 | A `{readonly a: number}` argument through a function value | Rejected |
+| T5 | A `{readonly a: number}` call result for a `mut o: {a: number}` parameter | Rejected |
+| T5 | Reassign a `var o: {a: number}` binding to a `{readonly a: number}` value | Rejected |
+| T5 | Return a `{readonly a: number}` value from a function that returns `{a: number}` | Rejected |
+| T5 | A `&{readonly a: number}` argument for an `o: &{a: number}` parameter | Accepted |
 | T5 | Assign to a getter with no setter | Rejected |
 | T5 | Write a `readonly` field twice in a constructor | Rejected |
 | T8 | `if c { p } else { q }` with `p` owned and `q` a borrow | Rejected |
@@ -2048,10 +2116,11 @@ The steps:
    - The frame-exit checks in `return_escape.go` and `return_shared_paths.go`,
      replaced by L1 and E2 at the return.
    - The separate escape logic in `return_escape.go` and
-     [borrow_flow.go](../../internal/solver/borrow_flow.go), replaced by the lifetime solver
+     `borrow_flow.go`, replaced by the lifetime solver
      answering F3.
    - The plumbing that keeps the engines from reporting one error twice, such
-     as `resolvePhaseTransitions` and `reportedMixedOwnership`.
+     as `resolvePhaseTransitions`, and the flag step 7 puts the pass behind. The
+     pass then runs on every check.
 
    These stay, since they enforce rules the dataflow pass does not check:
    - The per-site checks behind `ModuleLevelMoveError` in
@@ -2089,7 +2158,15 @@ The migration is finished when every conformance test is enabled and passing,
 and the groups step 8 lists are gone. The point of the work is a simpler
 solver, so record two measurements before step 1 and after step 8:
 
-- The line count of the ownership, lifetime, and mutability files. It is about
-  12,000 lines across about 25 files today.
-- The `gocognit` cognitive complexity total for `internal/solver`. It is
-  about 10,800 today.
+- The line count of the ownership, lifetime, and mutability files. The baseline
+  counts the non-test files of `internal/liveness` and these files of
+  `internal/solver`: `aliases`, `borrow_exclusivity`, `borrow_flow`,
+  `borrow_store`, `lifetime_bounds`, `lifetime_coalesce`, `lifetime_rigid`,
+  `lifetime_signature`, `lifetime_undeclared`, `module_level_moves`, `moves`,
+  `owned_return`, `return_escape`, `return_shared_paths`, `symbol_owner`, and
+  `transitions`. That is 26 files and 12,336 lines.
+- The `gocognit` cognitive complexity total for the non-test files of
+  `internal/solver`. It is 10,802 at the baseline.
+
+The tracking issue, #2277, records both measurements at the baseline and after
+step 8.

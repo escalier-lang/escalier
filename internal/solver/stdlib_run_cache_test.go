@@ -165,11 +165,11 @@ func TestAmbientCheckerReportsLoadErrorAtImport(t *testing.T) {
 	}
 }
 
-// TestAmbientCheckerLoadsPerOwnershipSetting asserts that a cached run reports the package
-// diagnostics its own ownership setting gives. In `std:math`'s `bad`, `val y = x` moves `x` while
-// `f` still holds its borrow of `x`. The dataflow pass reports the move, and a run without the
-// pass reports nothing.
-func TestAmbientCheckerLoadsPerOwnershipSetting(t *testing.T) {
+// TestAmbientCheckerReportsPackageOwnershipErrors asserts that a cached run reports the
+// ownership diagnostics of a package body it loads, on the run that fills the cache and on a
+// later run that reads it. In `std:math`'s `bad`, `val y = x` moves `x` while `f` still holds its
+// borrow of `x`.
+func TestAmbientCheckerReportsPackageOwnershipErrors(t *testing.T) {
 	dir := seedStdlib(t, withPreludeClasses(map[string]string{
 		"std/math.esc": `
 			export fn bad() -> number {
@@ -183,24 +183,10 @@ func TestAmbientCheckerLoadsPerOwnershipSetting(t *testing.T) {
 	loadErr := `1:1-1:18: package "std:math" (` + filepath.Join(dir, "std", "math.esc") + `) has 1 error(s):` + "\n  "
 	src := "import \"std:math\"\nval p = math.bad()"
 
-	cases := []struct {
-		name string
-		opts Options
-		want []string
-	}{
-		{name: "dataflow", opts: Options{}, want: []string{loadErr + "cannot move 'x' while it is borrowed"}},
-		{name: "no dataflow", opts: Options{NoOwnershipDataflow: true}, want: nil},
-	}
-	// The first round's dataflow run fills an empty cache. Every later run follows a run with
-	// the other setting, so each setting is checked after the other one filled the cache.
-	for round := range 2 {
-		for _, tt := range cases {
-			t.Run(fmt.Sprintf("round%d/%s", round, tt.name), func(t *testing.T) {
-				t.Setenv(ownershipDataflowEnv, "1")
-				_, cached := inferCached(t, dir, src, tt.opts)
-				require.Equal(t, tt.want, cached)
-			})
-		}
+	want := []string{loadErr + "cannot move 'x' while it is borrowed"}
+	for range 2 {
+		_, cached := inferCached(t, dir, src, Options{})
+		require.Equal(t, want, cached)
 	}
 }
 

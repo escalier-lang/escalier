@@ -89,11 +89,6 @@ type checker struct {
 	// by tests that exercise the guard. See recordProv.
 	debugProv bool
 
-	// ownershipDataflow runs the dataflow pass of ownership_dataflow.go once the flows of a
-	// module or script settle. newRunChecker sets it from Options.NoOwnershipDataflow as
-	// withOwnershipDataflowResolved returns it.
-	ownershipDataflow bool
-
 	// varIDCounter is the module-wide running allocator for liveness VarIDs (M4 G1).
 	// Each function body's pre-pass renames its locals starting from this counter and
 	// then advances it, so VarIDs are unique across every body in one inference run
@@ -564,11 +559,10 @@ type funcCtx struct {
 	// precision, which is sound.
 	written map[fieldKey]soltype.Type
 
-	// liveness, stmtToRef, and varIDNames are the liveness state for THIS function body,
+	// stmtToRef and varIDNames are the liveness state for THIS function body,
 	// populated by runLivenessPrePass before the body is walked. Scoping them to funcCtx
 	// gives a nested function its own liveness analysis. Push/pop isolates them exactly
 	// like `written`. They stay nil at module top-level, where c.fn is nil.
-	liveness   *liveness.LivenessInfo
 	stmtToRef  map[ast.Stmt]liveness.StmtRef
 	varIDNames map[liveness.VarID]string
 	// events holds the ownership events this body's walk emits, attached to the nodes of
@@ -603,39 +597,10 @@ type funcCtx struct {
 	// body that takes its parts out of the initializer's place. markMovedParams reads it.
 	destructureInits set.Set[ast.Node]
 	// unwrittenBorrows holds each expression reported for filling a borrow destination without
-	// a written borrow. A binding whose initializer is in it records no borrow edges and keeps
-	// no closure reachable.
+	// a written borrow. A binding whose initializer is in it keeps no closure reachable.
 	unwrittenBorrows set.Set[ast.Node]
-	// eagerBorrowGraph records, per binding root VarID, the function-locals it borrows through
-	// an explicit `&`/`&mut`, each tagged with the field path holding the borrow. The
-	// initializer `val a = {peer: &mut b}` records the edge a → b at path [peer], and
-	// `val f = fn () { b.v }` records a capture edge f → b. closureRunOf reads a name's
-	// capture edges to find the closure a call runs. A parameter root is never recorded,
-	// since a borrow of a parameter carries a caller lifetime that already outlives the frame.
-	//
-	// While the body is walked this map holds the source-order-current edge set for each
-	// binding, updated by strong subtree replacement: a `var` reassignment clears the
-	// binding's prior edges before recording its new ones, and a field store `recv.f = …`
-	// clears only the [f] subtree. copyPlaceEdges reads it to project a source binding's
-	// edges into a destructuring leaf, so it must reflect the state at the copy point. The
-	// per-program-point graph noteRetainedClosureWrites reads is the flow-sensitive one
-	// analyzeBorrows computes from borrowGens, not this eager map.
-	eagerBorrowGraph map[liveness.VarID][]fieldBorrow
-	// borrowGens records, per CFG statement position, the borrow-edge assignments that
-	// statement makes: for each binding it re-points, the full new edge set the eager
-	// walk computed. analyzeBorrows folds these forward over the CFG, joining edge sets at
-	// branch merges by union so a borrow set on one branch reaches the merge, and replacing
-	// a binding's whole edge set at each assignment so a reassignment clears the prior
-	// referent.
-	borrowGens map[liveness.StmtRef][]borrowAssign
-	// borrowDirty accumulates the roots whose eager edge set changed while recording the
-	// current statement's borrows. The recording sites flush it into borrowGens once the
-	// statement's borrows are recorded, emitting one assignment per dirtied root. It is
-	// reset after each flush.
-	borrowDirty set.Set[liveness.VarID]
-	// paramVarIDs holds the VarID of every parameter leaf binding. A borrow of a
-	// parameter outlives the frame, so the borrow graph records no edge to a referent in
-	// this set.
+	// paramVarIDs holds the VarID of every parameter leaf binding, the receiver, and each
+	// capture.
 	paramVarIDs set.Set[liveness.VarID]
 	// captureVarIDs holds the VarID of every local a closure's body captures. The pre-pass
 	// defines each as a parameter of the body, so each is in paramVarIDs too.
@@ -643,10 +608,10 @@ type funcCtx struct {
 	// capturesModule is true when this body is a module's function, whose captures are the
 	// module-level names it reads rather than locals of an enclosing body.
 	capturesModule bool
-	// capturedLocals holds, for each closure written in this body, the locals of this body it
-	// captures that hold a reference-shaped value. The borrow graph gives the binding that holds
-	// a closure a capture edge to each of them.
-	capturedLocals map[ast.Func][]capturedLocal
+	// scope is the scope the body's parameters are bound in. A name the rename pass left
+	// unnumbered binds no local of the body, so it resolves the same way from here as from
+	// any scope inside the body.
+	scope *Scope
 	// varIDTypes maps the VarID of each parameter leaf, the receiver, and each capture to
 	// that binding's soltype. runLivenessPrePass fills it before the body is walked. The
 	// stored type is the same pointer the inference graph mutates, so a type variable
@@ -879,9 +844,6 @@ func newChecker() *checker {
 		varIDCounter:    1,
 		varIDs:          liveness.NewVarIDs(),
 		weakBindingVars: set.NewSet[*soltype.TypeVarType](),
-
-		// A checker no run configures checks the way a run with no options does.
-		ownershipDataflow: !withOwnershipDataflowResolved(Options{}).NoOwnershipDataflow,
 	}
 	c.ctx.fusionRecorder = c.recordFusionEdge
 	c.info.ctx = c.ctx
@@ -931,7 +893,6 @@ func (c *checker) forScript(pkgURI string) *checker {
 		groups:            c.groups,
 		stdlibDir:         c.stdlibDir,
 		checkJsDecorators: c.checkJsDecorators,
-		ownershipDataflow: c.ownershipDataflow,
 		weakBindingVars:   set.NewSet[*soltype.TypeVarType](),
 	}
 	// Point the recorder at the script, so a fusion its walk records lands in the

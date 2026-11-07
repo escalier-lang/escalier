@@ -1,7 +1,6 @@
 package solver
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -2369,30 +2368,6 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			res := InferModuleAgainstStdlib(parseModule(t, tc.src), benchTree, Options{})
 			require.Equal(t, tc.want, messagesWithSpan(t, res.Errors))
-		})
-	}
-}
-
-// TestOwnershipDataflowFromEnv covers the values of ownershipDataflowEnv that turn the dataflow
-// pass off and a sample of those that leave it on.
-func TestOwnershipDataflowFromEnv(t *testing.T) {
-	cases := []struct {
-		value string
-		on    bool
-	}{
-		{value: "", on: true},
-		{value: "1", on: true},
-		{value: "on", on: true},
-		{value: "0", on: false},
-		{value: " 0 ", on: false},
-		{value: "false", on: false},
-		{value: "FALSE", on: false},
-		{value: "Off", on: false},
-	}
-	for _, tc := range cases {
-		t.Run(fmt.Sprintf("%q", tc.value), func(t *testing.T) {
-			t.Setenv(ownershipDataflowEnv, tc.value)
-			require.Equal(t, tc.on, ownershipDataflowFromEnv())
 		})
 	}
 }

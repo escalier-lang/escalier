@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"maps"
 	"math"
-	"os"
 	"slices"
 	"strings"
 
@@ -59,6 +58,8 @@ import (
 //   - A copy of a borrow makes its destination a second holder of each loan the source holds.
 //     A copy into a destination of the other kind, or into a `'static` one, derives a loan
 //     of its own instead, as copyBorrow describes.
+//   - A copy of a function value makes its destination a holder of each closure's capture
+//     the source holds, as copyValue describes.
 //   - A passEvent gives the loans of a call argument to the store target or the result that
 //     the callee's signature ties the argument to. A callEvent releases what the call's
 //     arguments and receiver held.
@@ -77,31 +78,6 @@ import (
 //   - The caller reads a place under a parameter whose referent the caller owns once the
 //     body returns or suspends. Such a place holds a loan from the point it takes it to the
 //     end of the body, unless a write replaces it.
-//
-// The pass runs unless the ownershipDataflow flag is cleared. Its diagnostics take the place
-// of the ones replacedByDataflow lists.
-
-// ownershipDataflowEnv is the environment variable that turns the dataflow pass off for every
-// run, whatever Options says. The values 0, false, and off turn it off, in any case and with
-// surrounding whitespace. Any other value leaves it on.
-const ownershipDataflowEnv = "ESCALIER_OWNERSHIP_DATAFLOW"
-
-// ownershipDataflowFromEnv reports whether ownershipDataflowEnv leaves the dataflow pass on.
-func ownershipDataflowFromEnv() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(ownershipDataflowEnv))) {
-	case "0", "false", "off":
-		return false
-	}
-	return true
-}
-
-// withOwnershipDataflowResolved returns opts with NoOwnershipDataflow set when opts or
-// ownershipDataflowEnv turns the dataflow pass off. A checker reads only the returned
-// NoOwnershipDataflow, so the environment is read once per run.
-func withOwnershipDataflowResolved(opts Options) Options {
-	opts.NoOwnershipDataflow = opts.NoOwnershipDataflow || !ownershipDataflowFromEnv()
-	return opts
-}
 
 // UseAfterMoveError is reported when a binding is read after an owned value has
 // moved out of it. It blames the read and points its related span at the move site.
@@ -160,25 +136,10 @@ func (e *UseAfterMoveError) Message() string {
 	return fmt.Sprintf("use of moved value '%s'", e.Name)
 }
 
-// replacedByDataflow reports whether err is a diagnostic of E1, E2, or E3, the rules the
-// dataflow pass checks while the ownershipDataflow flag is set.
-func replacedByDataflow(err SolverError) bool {
-	switch err.(type) {
-	case *UseAfterMoveError, *BorrowAliasError, *MoveWhileBorrowedError, *BorrowedValueWriteError:
-		return true
-	}
-	return false
-}
-
-// runOwnershipDataflow checks every event table in c.info that it has not checked yet, unless
-// the ownershipDataflow flag is cleared. It drops each diagnostic replacedByDataflow lists from
-// c.errs and appends the pass's own. It must run after settleAllFlows, since the pass reads
-// only settled events.
+// runOwnershipDataflow checks every event table in c.info that it has not checked yet and
+// appends the pass's diagnostics to c.errs. It must run after settleAllFlows, since the pass
+// reads only settled events.
 func (c *checker) runOwnershipDataflow() {
-	if !c.ownershipDataflow {
-		return
-	}
-
 	var tables []*ownershipEvents
 	for _, t := range c.info.ownership {
 		if !t.checked && t.cfg != nil && t.live != nil {
@@ -198,10 +159,19 @@ func (c *checker) runOwnershipDataflow() {
 		found = append(found, c.checkBodyDataflow(t)...)
 	}
 
-	c.errs = slices.DeleteFunc(c.errs, replacedByDataflow)
 	// A closure's body is checked after the body it is written in, so its diagnostics are put
 	// back in source order.
 	slices.SortStableFunc(found, func(a, b SolverError) int { return compareSpans(a.Span(), b.Span()) })
+
+	// A move of a module-level value an earlier move already took is reported once, as the
+	// use after the move. In `take(x); take(x)`, the second `x` reports only that x was moved.
+	movedAgain := set.NewSet[ast.Node]()
+	for _, e := range found {
+		if u, ok := e.(*UseAfterMoveError); ok {
+			movedAgain.Add(u.use)
+		}
+	}
+	c.removeModuleLevelMoveErrors(movedAgain)
 	c.errs = append(c.errs, found...)
 }
 
@@ -285,6 +255,9 @@ type liveLoan struct {
 	// `via` is the closure a call may run, for a loan that stands for that closure's write of
 	// a capture during the call. It is nil for any other loan.
 	via *closureRun
+	// `seed` marks a closure's capture the body holds on entry, which seedCaptureLoans makes.
+	// It records only what a call of the closure uses, so no rule checks against it.
+	seed bool
 }
 
 // checked reports whether the rules check other operations against the loan. An alias
@@ -305,6 +278,16 @@ func (l *liveLoan) closure() bool {
 func (l *liveLoan) heldAt(p movePlace) bool {
 	for _, h := range l.holders {
 		if placesOverlap(h.place, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// heldWithin reports whether a holder of l is p or a place under p.
+func (l *liveLoan) heldWithin(p movePlace) bool {
+	for _, h := range l.holders {
+		if h.place.root == p.root && pathHasPrefix(h.place.path, p.path) {
 			return true
 		}
 	}
@@ -494,6 +477,20 @@ type bodyDataflow struct {
 	// runLoans holds the borrow event of each loan a call takes for a retained closure's
 	// write, so each fixed-point iteration takes the same loan.
 	runLoans map[runLoanKey]*borrowEvent
+	// `captures` maps each closure written in the body to the events of its captures that
+	// give it a value to hold. Each is a borrowEvent, or a valueCopyEvent of a captured local
+	// whose value is a value type, such as another closure.
+	captures map[ast.Func][]flowEvent
+	// storesAt maps each CFG point to the retained stores made there.
+	storesAt map[liveness.StmtRef][]*retainedStore
+	// ownedMovable is the checker's isOwnedMovable, which decides whether a local a retained
+	// closure writes is owned.
+	ownedMovable func(soltype.Type) bool
+	// writesGrew is set when noteStoreWrites adds a local to the `writes` of a retained store.
+	writesGrew bool
+	// capturedAt maps each local a closure of the body captures to the CFG points where a
+	// closure captures it. Liveness does not count a capture as a use of the local.
+	capturedAt map[liveness.VarID][]liveness.StmtRef
 }
 
 // runLoanKey names the loan a call takes for a retained closure's write of one local.
@@ -522,30 +519,53 @@ func (c *checker) checkBodyDataflow(t *ownershipEvents) []SolverError {
 		escapes:      map[liveness.VarID]bool{},
 		runIndex:     map[*runEvent]int{},
 		runLoans:     map[runLoanKey]*borrowEvent{},
+		captures:     map[ast.Func][]flowEvent{},
+		storesAt:     map[liveness.StmtRef][]*retainedStore{},
+		ownedMovable: c.isOwnedMovable,
+		capturedAt:   map[liveness.VarID][]liveness.StmtRef{},
 	}
 	for i, ev := range t.events {
 		switch ev := ev.(type) {
 		case *borrowEvent:
 			d.order[ev] = loanOrder{event: i}
+			if closure, ok := ev.node.(ast.Func); ok {
+				d.captures[closure] = append(d.captures[closure], ev)
+				d.capturedAt[ev.place.root] = append(d.capturedAt[ev.place.root], ev.at)
+			}
+		case *valueCopyEvent:
+			if closure, ok := ev.node.(ast.Func); ok {
+				d.captures[closure] = append(d.captures[closure], ev)
+				d.capturedAt[ev.place.root] = append(d.capturedAt[ev.place.root], ev.at)
+			}
 		case *copyEvent:
 			d.copyIndex[ev] = i
 		case *runEvent:
 			d.runIndex[ev] = i
 		}
 	}
+	// A seed sorts before every loan the body's events take.
+	for i, seed := range t.seeds {
+		d.order[seed] = loanOrder{event: -1, derived: i}
+	}
+	for _, store := range t.retained {
+		d.storesAt[store.at] = append(d.storesAt[store.at], store)
+	}
 
+	pointSet := set.NewSet[liveness.StmtRef]()
 	for at := range d.events {
-		d.points[at.BlockID] = append(d.points[at.BlockID], at)
+		pointSet.Add(at)
 	}
 	for at := range d.suspends {
-		if _, ok := d.events[at]; !ok {
-			d.points[at.BlockID] = append(d.points[at.BlockID], at)
-		}
+		pointSet.Add(at)
 	}
 	for at := range d.declares {
-		if _, ok := d.events[at]; !ok && !d.suspends.Contains(at) {
-			d.points[at.BlockID] = append(d.points[at.BlockID], at)
-		}
+		pointSet.Add(at)
+	}
+	for at := range d.storesAt {
+		pointSet.Add(at)
+	}
+	for at := range pointSet {
+		d.points[at.BlockID] = append(d.points[at.BlockID], at)
 	}
 
 	for _, refs := range d.points {
@@ -568,15 +588,26 @@ func (c *checker) checkBodyDataflow(t *ownershipEvents) []SolverError {
 		s := in[b.ID].clone()
 		d.transfer(b.ID, s)
 
-		if out[b.ID] != nil && out[b.ID].equals(s) {
-			continue
+		if out[b.ID] == nil || !out[b.ID].equals(s) {
+			out[b.ID] = s
+			for _, succ := range b.Successors {
+				if !queued.Contains(succ.ID) {
+					queued.Add(succ.ID)
+					worklist = append(worklist, succ)
+				}
+			}
 		}
 
-		out[b.ID] = s
-		for _, succ := range b.Successors {
-			if !queued.Contains(succ.ID) {
-				queued.Add(succ.ID)
-				worklist = append(worklist, succ)
+		// A call reads the `writes` of each retained store it may run. When a store's writes
+		// grew, each block the walk reached is walked again, so a call that ran before the
+		// store's writes were known sees them.
+		if len(worklist) == 0 && d.writesGrew {
+			d.writesGrew = false
+			for _, rb := range blocks {
+				if in[rb.ID] != nil {
+					queued.Add(rb.ID)
+					worklist = append(worklist, rb)
+				}
 			}
 		}
 	}
@@ -595,7 +626,8 @@ func (c *checker) checkBodyDataflow(t *ownershipEvents) []SolverError {
 }
 
 // entryState returns the state on entry to b, the join of the states its predecessors end
-// in. A predecessor the worklist has not reached yet contributes nothing.
+// in. A predecessor the worklist has not reached yet contributes nothing. The body's entry
+// block also starts with a loan of each seed.
 func (d *bodyDataflow) entryState(b *liveness.BasicBlock, out []*dataflowState) *dataflowState {
 	var preds []*dataflowState
 	for _, p := range b.Predecessors {
@@ -604,12 +636,30 @@ func (d *bodyDataflow) entryState(b *liveness.BasicBlock, out []*dataflowState) 
 		}
 	}
 
-	return joinStates(preds)
+	s := joinStates(preds)
+	if b != d.table.cfg.Entry {
+		return s
+	}
+
+	for _, seed := range d.table.seeds {
+		if _, ok := s.loans[seed]; !ok {
+			l := newLiveLoan(seed)
+			l.seed = true
+			d.holdLoan(l, seed.holder, seed.node, true)
+			s.loans[seed] = l
+		}
+	}
+	return s
 }
 
 // transfer applies the events of `block` to s, point by point.
 func (d *bodyDataflow) transfer(block int, s *dataflowState) {
 	for _, at := range d.points[block] {
+		// A store reads what its value holds before the statement runs.
+		for _, store := range d.storesAt[at] {
+			d.noteStoreWrites(store, s)
+		}
+
 		// A declaration binds a fresh value, so a move of the binding on an earlier iteration
 		// of a loop does not reach it.
 		for _, root := range d.declares[at] {
@@ -640,16 +690,39 @@ func (d *bodyDataflow) transfer(block int, s *dataflowState) {
 
 // endStatement releases what holds a loan only until the end of the statement at the point
 // `at`, and drops each loan that cannot be live after it. A loan stays while a holder is used
-// again later, or while a caller-owned holder still holds it when the body returns.
+// again later, or while a caller-owned holder still holds it when the body returns. A
+// closure's capture also stays while a later closure captures a holder, as capturedLater
+// decides.
 func (d *bodyDataflow) endStatement(at liveness.StmtRef, s *dataflowState) {
 	for k, l := range s.loans {
 		l.slots.Clear()
 		l.ownSlots.Clear()
 		l.scoped, l.returned, l.reserved = false, false, nil
-		if !d.loanLive(l, at, false) && !d.loanEscapes(l, at, false) {
+		if !d.loanLive(l, at, false) && !d.loanEscapes(l, at, false) && !d.capturedLater(l, at) {
 			delete(s.loans, k)
 		}
 	}
+}
+
+// capturedLater reports whether l is a closure's capture with a holder that a closure written
+// at a point after `at` captures. That closure reaches the holder's closures. In
+//
+//	val f = fn () { p.x = 2 }
+//	val g = fn () { f() }
+//
+// liveness counts f as dead after its declaration, and f's loan of p stays until g captures f.
+func (d *bodyDataflow) capturedLater(l *liveLoan, at liveness.StmtRef) bool {
+	if !l.closure() {
+		return false
+	}
+	for _, h := range l.holders {
+		for _, cp := range d.capturedAt[h.place.root] {
+			if cp != at && stmtReaches(d.table.cfg, at, cp) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // callerOwned reports whether h is a place under a parameter whose referent the caller owns.
@@ -671,6 +744,8 @@ func (d *bodyDataflow) step(ev ownershipEvent, at liveness.StmtRef, s *dataflowS
 		d.borrow(ev, at, s)
 	case *copyEvent:
 		d.copyBorrow(ev, at, s)
+	case *valueCopyEvent:
+		d.copyValue(ev, s)
 	case *moveEvent:
 		d.move(ev, at, s)
 	case *passEvent:
@@ -714,11 +789,11 @@ func (d *bodyDataflow) step(ev ownershipEvent, at liveness.StmtRef, s *dataflowS
 // conflict.
 func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState) {
 	target, _ := ev.node.(ast.Expr)
-	chain := placeChain(target)
-	dynamic := slices.ContainsFunc(chain, d.isDynamicIndex)
+	chain := chainOf(target, d.indexSegment)
+	dynamic := chain.firstDynamic() >= 0
 	depth := len(ev.place.path)
 	if dynamic {
-		depth = len(chain) - 1
+		depth = len(chain.links)
 	}
 
 	moved := false
@@ -857,7 +932,7 @@ func (d *bodyDataflow) checkNewPath(place movePlace, kind borrowKind, node ast.N
 	freshInBody := fresh.ev == nil || d.pathInBody(fresh, at)
 	for _, first := range loans {
 		firstInBody := d.pathInBody(first, at)
-		if !(firstInBody || first.closure()) || first.reserved != nil || first.ev.borrow == kind ||
+		if !(firstInBody || first.closure()) || first.seed || first.reserved != nil || first.ev.borrow == kind ||
 			!placesOverlap(first.ev.place, place) {
 			continue
 		}
@@ -1030,6 +1105,30 @@ func (d *bodyDataflow) derivedLoan(ev *copyEvent, from *liveLoan, s *dataflowSta
 	return l
 }
 
+// copyValue applies the valueCopyEvent ev. The holder becomes a holder of each closure's
+// capture held at ev.place or under it, at the same path under the holder. After
+// `val g = f`, a call of g runs the closure f holds. A loan held above ev.place belongs to a
+// value that ev.place lies inside, which the copy does not take.
+func (d *bodyDataflow) copyValue(ev *valueCopyEvent, s *dataflowState) {
+	for _, l := range s.loans {
+		if !l.closure() {
+			continue
+		}
+
+		// The loop below adds holders to l, so the holders under ev.place are found first.
+		var under []heldPlace
+		for _, h := range l.holders {
+			if h.place.root == ev.place.root && pathHasPrefix(h.place.path, ev.place.path) {
+				under = append(under, h)
+			}
+		}
+
+		for _, h := range under {
+			d.holdLoan(l, ev.holder.extend(h.place.path[len(ev.place.path):]), ev.node, h.own)
+		}
+	}
+}
+
 // move applies the move ev. E1 rejects a move of a moved place, and E3 rejects a move while
 // a borrow of an overlapping place is live. A return that moves a closure's capture hands
 // over the closure's own borrow of the place too, so that borrow is no conflict. A move
@@ -1054,7 +1153,7 @@ func (d *bodyDataflow) move(ev *moveEvent, at liveness.StmtRef, s *dataflowState
 		var blamed, via *liveLoan
 		for _, l := range d.sortedLoans(s) {
 			own := ev.closure != nil && l.ev.node == ev.closure
-			if own || l.alias || !placesOverlap(l.ev.place, ev.place) {
+			if own || l.alias || l.seed || !placesOverlap(l.ev.place, ev.place) {
 				continue
 			}
 			if !d.loanLive(l, at, true) && !d.loanEscapes(l, at, false) {
@@ -1366,8 +1465,11 @@ func (d *bodyDataflow) run(ev *runEvent, at liveness.StmtRef, s *dataflowState) 
 		}
 	}
 
-	for i := range ev.runs {
-		run := &ev.runs[i]
+	for _, name := range ev.names {
+		run, ok := d.closureRunOf(name, s)
+		if !ok {
+			continue
+		}
 		for _, local := range run.captures {
 			d.useCapture(ev, run, local, false, at, s)
 		}
@@ -1750,7 +1852,7 @@ func (d *bodyDataflow) holderEffect(h heldPlace, ref liveness.StmtRef) int {
 		}
 
 		target, _ := use.node.(ast.Expr)
-		if slices.ContainsFunc(placeChain(target), d.isDynamicIndex) {
+		if chainOf(target, d.indexSegment).firstDynamic() >= 0 {
 			return 1
 		}
 		if !laterNode(h.node, use.node) {
@@ -1857,56 +1959,23 @@ func (d *bodyDataflow) liveOnEntry(block int, h liveness.VarID, seen set.Set[int
 	return false
 }
 
-// placeChain returns the member and index chain e roots, from e itself down to its root.
-func placeChain(e ast.Expr) []ast.Expr {
-	var chain []ast.Expr
-	for e != nil {
-		chain = append(chain, e)
-		switch x := e.(type) {
-		case *ast.MemberExpr:
-			e = x.Object
-		case *ast.IndexExpr:
-			e = x.Object
-		default:
-			e = nil
-		}
-	}
-	return chain
-}
-
-// isDynamicIndex reports whether e is an index whose key exprPlace treats as dynamic, so
-// that the index stands for its whole container. `xs[i]` with `i: number` is one, and `xs[0]`
-// is not.
-func (d *bodyDataflow) isDynamicIndex(e ast.Expr) bool {
-	ix, ok := e.(*ast.IndexExpr)
-	if !ok {
-		return false
-	}
-	_, constant := d.indexSegment(ix.Index)
-	return !constant
-}
-
 // placeExprAt returns the outermost expression of the member and index chain e roots that
 // is depth links away from the root. A dynamic index reaches every place under its container,
 // so the walk returns the first dynamic index it meets. For depth 0 that is `p` in `p.x`, and
 // for any depth it is `xs[i]` in `xs[i].x` with `i: number`. It returns e when no expression
 // of the chain is that deep.
 func (d *bodyDataflow) placeExprAt(e ast.Expr, depth int) ast.Node {
-	chain := placeChain(e)
-	var found ast.Node = e
-	for i := len(chain) - 1; i >= 0; i-- {
-		if d.isDynamicIndex(chain[i]) {
-			return chain[i]
-		}
-		n := len(chain) - 1 - i
-		if n > depth {
-			break
-		}
-		if n == depth {
-			found = chain[i]
-		}
+	chain := chainOf(e, d.indexSegment)
+	if i := chain.firstDynamic(); i >= 0 && i <= depth {
+		return chain.links[i].expr
 	}
-	return found
+	switch {
+	case depth == 0:
+		return chain.root
+	case depth <= len(chain.links):
+		return chain.links[depth-1].expr
+	}
+	return e
 }
 
 // report records e when d is reporting and no diagnostic is reported at e's span yet.
@@ -1926,10 +1995,7 @@ func (d *bodyDataflow) placeName(p movePlace) string {
 	} else {
 		fmt.Fprintf(&b, "var#%d", p.root)
 	}
-
-	for _, seg := range p.path {
-		writePlaceSeg(&b, seg)
-	}
+	writePath(&b, p.path, bracketElements)
 	return b.String()
 }
 

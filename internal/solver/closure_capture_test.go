@@ -259,8 +259,8 @@ func TestClosureCapturedPlaces(t *testing.T) {
 			`,
 			want: []string{"9:6-9:7: this call runs 'h', which writes 'x' while it is borrowed as immutable"},
 		},
-		// Calling h reads x through f's closure, so a call after x moves is a use after the
-		// move.
+		// h holds f's closure, which borrows x until h's last call, so moving x before that
+		// call breaks E3. The move is blamed, and the call reports nothing more.
 		"CallOfACopiedClosureAfterMovingTheCapture": {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
@@ -274,7 +274,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 					h()
 				}
 			`,
-			want: []string{"10:6-10:7: this call runs 'h', which reads 'x' after it was moved"},
+			want: []string{"9:11-9:12: cannot move 'x' while it is borrowed"},
 		},
 		// A closure passed straight to a call holds its loans for the call's statement.
 		"ClosureArgumentHoldsItsLoanForTheCall": {

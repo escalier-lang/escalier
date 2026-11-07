@@ -20,11 +20,9 @@ import (
 // recordClosureCaptures records each local of the current body that `closure` captures, for
 // the scope the closure is written in:
 //
-//   - It emits the capture's ownership events.
-//   - A module-level name a module's function captures cannot move, so a closure that moves
-//     one is a ModuleLevelMoveError.
-//   - A capture the closure does not move joins capturedLocals. A binding that holds the
-//     closure takes a capture edge to the local in the borrow graph from there.
+//   - It emits the capture's ownership events. A closure that moves a module-level name its
+//     module's function captures is a ModuleLevelMoveError, which the move event reports.
+//   - It records the type of the local's binding in the event table's captureTypes.
 //
 // A capture whose type has value semantics records no more than its events, since a closure
 // holding a primitive cannot see a later change to the binding it copied. A capture from a
@@ -36,9 +34,7 @@ func (c *checker) recordClosureCaptures(scope *Scope, closure ast.Func) {
 		return
 	}
 
-	// hasRef says whether the statement that writes the closure has a CFG point. moved maps
-	// each captured name the closure's body moves to the expression that moves it.
-	_, hasRef := c.currentStmtRef()
+	// moved maps each captured name the closure's body moves to the expression that moves it.
 	moved := c.capturesMovedBy[closure]
 
 	for _, capture := range c.closureCaptures(closure) {
@@ -70,49 +66,12 @@ func (c *checker) recordClosureCaptures(scope *Scope, closure ast.Func) {
 			continue
 		}
 
-		// A closure whose body moves the local takes it when the closure is written. A
-		// module's function cannot move a module-level name, so that case is an error. The
-		// error blames the expression in the closure that moves the local.
-		if moveNode, ok := moved[capture.Name]; ok {
-			if c.fn.capturesModule && c.fn.captureVarIDs.Contains(root) {
-				c.reportModuleLevelMove(moveNode)
-				continue
-			}
-			// The closure takes the local where it is written, so no binding that holds the
-			// closure reaches the local afterward. A closure inside a statement with no CFG
-			// point of its own keeps the edge.
-			if hasRef {
-				continue
-			}
+		// The dataflow pass reads the type to decide whether a retained closure writes an
+		// owned local.
+		if t := c.eventTable(); t != nil {
+			t.captureTypes[root] = bindingType(b)
 		}
-
-		// Record every other capture in capturedLocals. The borrow graph reads it to give a
-		// binding that holds the closure a capture edge to the local. paths lists the field
-		// paths under the local that the closure reads or writes. It is empty when the closure
-		// uses the whole local.
-		if c.fn.capturedLocals == nil {
-			c.fn.capturedLocals = map[ast.Func][]capturedLocal{}
-		}
-		local := capturedLocal{root: root, mut: capture.IsMutable, t: bindingType(b), paths: c.capturedFieldPaths(closure, bindingDecl(b))}
-		c.fn.capturedLocals[closure] = append(c.fn.capturedLocals[closure], local)
 	}
-}
-
-// capturedFieldPaths returns the field paths under the local declared by `decl` that `closure`
-// reads or writes, as capturedPaths finds them. It returns nil when the closure captures the
-// whole local, and when the body has no event table to find the paths with.
-func (c *checker) capturedFieldPaths(closure ast.Func, decl ast.Node) [][]placeSeg {
-	if c.eventTable() == nil {
-		return nil
-	}
-	var out [][]placeSeg
-	for _, cp := range c.capturedPaths(closure, decl) {
-		if len(cp.path) == 0 {
-			return nil
-		}
-		out = append(out, cp.path)
-	}
-	return out
 }
 
 // movedCaptures maps the name of each local of the enclosing body that the current closure

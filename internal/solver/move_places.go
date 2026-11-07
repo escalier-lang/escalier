@@ -3,6 +3,7 @@ package solver
 import (
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -81,39 +82,121 @@ func (c *checker) exprPlace(e ast.Expr) (movePlace, bool) {
 // `i: number` is the place `xs`. An index whose type is one integer literal is not dynamic,
 // so `xs[i].x` with `i: 0` is the place `xs[0].x`. A `val i = 0` gives i that type.
 func (c *checker) chainPlace(e ast.Expr) (movePlace, bool, bool) {
-	switch e := e.(type) {
-	case *ast.IdentExpr:
-		if c.varIDs.Of(e) <= 0 {
+	chain := chainOf(e, c.indexSegment)
+	root, isIdent := chain.root.(*ast.IdentExpr)
+	if !isIdent || c.varIDs.Of(root) <= 0 {
+		return movePlace{}, false, false
+	}
+
+	var path []placeSeg
+	dynamic := false
+	for _, link := range chain.links {
+		if link.key == nil && link.seg.name == "" {
 			return movePlace{}, false, false
-		}
-		return movePlace{root: c.varIDs.Of(e)}, false, true
-	case *ast.MemberExpr:
-		if e.Prop == nil || e.Prop.Name == "" {
-			return movePlace{}, false, false
-		}
-		base, dynamic, ok := c.chainPlace(e.Object)
-		if !ok {
-			return movePlace{}, false, false
-		}
-		if dynamic {
-			return base, true, true
-		}
-		return extendPlace(base, e.Prop.Name), false, true
-	case *ast.IndexExpr:
-		base, dynamic, ok := c.chainPlace(e.Object)
-		if !ok {
-			return movePlace{}, false, false
-		}
-		if dynamic {
-			return base, true, true
-		}
-		if name, ok := c.indexSegment(e.Index); ok {
-			return extendPlace(base, name), false, true
 		}
 		// A dynamic index is approximated by its container.
-		return base, true, true
+		dynamic = dynamic || link.dynamic
+		if !dynamic {
+			path = append(path, link.seg)
+		}
 	}
-	return movePlace{}, false, false
+	return movePlace{root: c.varIDs.Of(root), path: slices.Clip(path)}, dynamic, true
+}
+
+// placeChain is a member and index chain such as `a.b[0].c`. root is the expression the
+// chain starts from, which is `a` here. links lists the chain's member and index reads from
+// the root outward, so `.b` comes first and `.c` last. Any expression other than a member
+// or index read is a chain with no links whose root is the expression itself.
+type placeChain struct {
+	root  ast.Expr
+	links []placeLink
+}
+
+// placeLink is one member or index read of a placeChain.
+type placeLink struct {
+	// expr is the MemberExpr or IndexExpr of the link, and object is the receiver it reads.
+	expr   ast.Expr
+	object ast.Expr
+	// key is the index key of an IndexExpr link, and nil for a MemberExpr link.
+	key ast.Expr
+	// seg is the segment the link names. A member link names its property. An index link
+	// names the segment indexSegment gives its key.
+	seg placeSeg
+	// dynamic marks a link that names no segment. That is a member with no property, or an
+	// index whose key names no segment, such as `xs[i]` with `i: number`.
+	dynamic bool
+	// closes marks a link that reads something other than a property its receiver declares,
+	// such as a getter or a method. The place a chain names ends before such a link.
+	closes bool
+}
+
+// chainOf returns the member and index chain e roots. indexSegment names the segment of
+// each index key the way checker.indexSegment does. When it is nil, each index link keeps
+// an empty segment and is not marked dynamic. No link is marked as closing. A nil e is a
+// chain with a nil root.
+func chainOf(e ast.Expr, indexSegment func(ast.Expr) (string, bool)) placeChain {
+	var links []placeLink
+	for {
+		switch x := e.(type) {
+		case *ast.MemberExpr:
+			link := placeLink{expr: x, object: x.Object, dynamic: x.Prop == nil}
+			if x.Prop != nil {
+				link.seg = fieldSeg(x.Prop.Name)
+			}
+			links = append(links, link)
+			e = x.Object
+		case *ast.IndexExpr:
+			link := placeLink{expr: x, object: x.Object, key: x.Index}
+			if indexSegment != nil {
+				name, ok := indexSegment(x.Index)
+				link.seg, link.dynamic = fieldSeg(name), !ok
+			}
+			links = append(links, link)
+			e = x.Object
+		default:
+			slices.Reverse(links)
+			return placeChain{root: e, links: links}
+		}
+	}
+}
+
+// fieldChain returns the chain chainOf returns for e, with each index link's segment
+// resolved and each closing link marked, as linkCloses decides. It checks links from the
+// root outward and stops at the first link that ends the place the chain names. That is a
+// link that is dynamic, has an empty name, or closes.
+func (c *checker) fieldChain(e ast.Expr) placeChain {
+	chain := chainOf(e, c.indexSegment)
+	for i := range chain.links {
+		link := &chain.links[i]
+		if link.dynamic || link.seg.name == "" {
+			break
+		}
+
+		link.closes = c.linkCloses(*link)
+		if link.closes {
+			break
+		}
+	}
+	return chain
+}
+
+// linkCloses reports whether link, a link with a segment name, reads something other than a
+// property its receiver declares, such as a getter or a method.
+//
+// An index that names one element of a receiver read by position does not close, as
+// `xs[0]` and `xs["0"]` do not off an array. The element is part of the place though the
+// receiver's type declares no property of that name.
+func (c *checker) linkCloses(link placeLink) bool {
+	_, isIndex := canonicalIndex(link.seg.name)
+	recv := c.info.TypeOf(link.object)
+	element := link.key != nil && isIndex && recv != nil && c.readsByPosition(recv)
+	return !element && !c.readsAsField(link.object, link.seg.name)
+}
+
+// firstDynamic returns the position in links of the first link marked dynamic, and -1 when
+// no link is.
+func (ch placeChain) firstDynamic() int {
+	return slices.IndexFunc(ch.links, func(link placeLink) bool { return link.dynamic })
 }
 
 // maxElementIndex is the largest index indexSegment gives its own place. canonicalIndex
@@ -187,18 +270,27 @@ func elementName(n float64) (string, bool) {
 	return strconv.Itoa(int(n)), true
 }
 
+// fieldSeg returns the named segment for the field or element name.
+func fieldSeg(name string) placeSeg {
+	return placeSeg{kind: namedSeg, name: name}
+}
+
 // extendPlace returns base with one more named field segment appended, copying the
 // path so sibling places built from the same base never share backing storage.
 func extendPlace(base movePlace, field string) movePlace {
-	return extendPlaceSeg(base, placeSeg{kind: namedSeg, name: field})
+	return extendPlaceSeg(base, fieldSeg(field))
 }
 
 // extendPlaceSeg returns base with seg appended, copying the path as extendPlace does.
 func extendPlaceSeg(base movePlace, seg placeSeg) movePlace {
-	path := make([]placeSeg, len(base.path)+1)
-	copy(path, base.path)
-	path[len(base.path)] = seg
-	return movePlace{root: base.root, path: path}
+	return movePlace{root: base.root, path: appendPath(base.path, []placeSeg{seg})}
+}
+
+// placesOverlap reports whether two places reach any of the same data. They must be rooted at
+// the same binding, and one field path must be a prefix of the other. `x.a` and `x.a.b` overlap
+// because the second sits inside the first. `x.a` and `x.b` do not.
+func placesOverlap(a, b movePlace) bool {
+	return a.root == b.root && pathPrefixRelated(a.path, b.path)
 }
 
 // placeKey returns a string that identifies the place p. Each segment is encoded as its
@@ -282,6 +374,32 @@ func writePlaceSeg(b *strings.Builder, seg placeSeg) {
 		b.WriteByte('[')
 		b.WriteString(strconv.Quote(seg.name))
 		b.WriteByte(']')
+	}
+}
+
+// elementStyle says how writePath renders a segment that names a tuple element.
+type elementStyle uint8
+
+const (
+	// bracketElements renders an element the way writePlaceSeg does, as `[0]` or `[1...]`.
+	bracketElements elementStyle = iota
+	// dotElements renders an element in dot form, as `.0` or `.1...`.
+	dotElements
+)
+
+// writePath appends each segment of path to b the way writePlaceSeg writes it, so a field
+// whose name is not an identifier renders in bracket notation, as `obj["a.b"]` does. style
+// says how a segment that names a tuple element renders. That is a position such as `0`, or
+// a rest element's `1...`, which stands for every element from 1 on.
+func writePath(b *strings.Builder, path []placeSeg, style elementStyle) {
+	for _, seg := range path {
+		_, isElement := canonicalIndex(strings.TrimSuffix(seg.name, "..."))
+		if style == dotElements && isElement {
+			b.WriteByte('.')
+			b.WriteString(seg.name)
+			continue
+		}
+		writePlaceSeg(b, seg)
 	}
 }
 
@@ -419,7 +537,7 @@ func flatElements(elems []ast.Pat, from int) []patElement {
 		pos := from + i
 		rest, isRest := elem.(*ast.RestPat)
 		if !isRest {
-			out = append(out, patElement{pat: elem, seg: placeSeg{kind: namedSeg, name: strconv.Itoa(pos)}})
+			out = append(out, patElement{pat: elem, seg: fieldSeg(strconv.Itoa(pos))})
 			continue
 		}
 
@@ -448,7 +566,7 @@ func forEachRestField(t soltype.Type, at movePlace, f func(src movePlace, destPa
 	}
 	for _, elem := range obj.Elems {
 		if prop, isProp := elem.(*soltype.PropertyElem); isProp {
-			f(extendPlace(at, prop.Name), appendSeg(nil, prop.Name), prop.Type)
+			f(extendPlace(at, prop.Name), []placeSeg{fieldSeg(prop.Name)}, prop.Type)
 		}
 	}
 }
@@ -461,4 +579,27 @@ func objectThroughBorrow(t soltype.Type) (*soltype.ObjectType, bool) {
 	}
 	obj, ok := t.(*soltype.ObjectType)
 	return obj, ok
+}
+
+// pathHasPrefix reports whether `prefix` is a prefix of `full`: every segment of `prefix` matches
+// `full` at the same index, so an empty prefix matches any path and equal paths match.
+func pathHasPrefix(full, prefix []placeSeg) bool {
+	if len(prefix) > len(full) {
+		return false
+	}
+	for i := range prefix {
+		if prefix[i] != full[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// appendPath returns `base` with the segments of `suffix` appended, copying so the result
+// shares no backing storage with either input.
+func appendPath(base, suffix []placeSeg) []placeSeg {
+	out := make([]placeSeg, len(base)+len(suffix))
+	copy(out, base)
+	copy(out[len(base):], suffix)
+	return out
 }

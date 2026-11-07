@@ -125,8 +125,8 @@ func (returnTarget) isHolderTarget()   {}
 func (tempTarget) isHolderTarget()     {}
 
 // ownershipEvent is one event of the checking model. It is one of *copyEvent,
-// *borrowEvent, *moveEvent, *useEvent, *passEvent, *callEvent, *runEvent, or
-// *provisionalEvent. `base` returns the fields every kind shares.
+// *valueCopyEvent, *borrowEvent, *moveEvent, *useEvent, *passEvent, *callEvent, *runEvent,
+// or *provisionalEvent. `base` returns the fields every kind shares.
 type ownershipEvent interface {
 	isOwnershipEvent()
 	base() *eventBase
@@ -157,7 +157,7 @@ type flowBase struct {
 func (f *flowBase) flow() *flowBase { return f }
 
 // flowEvent is an ownership event that passes a value to a holder: a *copyEvent,
-// *borrowEvent, *moveEvent, *passEvent, or *provisionalEvent.
+// *valueCopyEvent, *borrowEvent, *moveEvent, *passEvent, or *provisionalEvent.
 type flowEvent interface {
 	ownershipEvent
 	flow() *flowBase
@@ -175,6 +175,13 @@ type copyEvent struct {
 	borrow borrowKind
 	// lifetime is the lifetime of the borrow destination, or nil for any other destination.
 	lifetime soltype.Lifetime
+}
+
+// valueCopyEvent gives the holder a copy of the value-type value at the place, which stays
+// usable. The read of the place is a use event of its own. A closure is a value type, so
+// after `val g = f` the binding g holds each closure f holds, and a call of g runs them.
+type valueCopyEvent struct {
+	flowBase
 }
 
 // borrowEvent gives the holder a new borrow of the place.
@@ -281,6 +288,7 @@ type callEvent struct {
 }
 
 func (*copyEvent) isOwnershipEvent()        {}
+func (*valueCopyEvent) isOwnershipEvent()   {}
 func (*borrowEvent) isOwnershipEvent()      {}
 func (*moveEvent) isOwnershipEvent()        {}
 func (*useEvent) isOwnershipEvent()         {}
@@ -357,6 +365,20 @@ type ownershipEvents struct {
 	// closure the call's result keeps, for noteRetainedHolder.
 	retained        []*retainedStore
 	retainedResults map[ast.Expr][]*retainedStore
+	// captureTypes maps each local a closure of the body captures to the type of its binding.
+	// A local whose type is a value type is left out, since a closure holds its own copy.
+	captureTypes map[liveness.VarID]soltype.Type
+	// `seeds` lists the closure captures the body holds on entry, as seedCaptureLoans makes
+	// them.
+	seeds []*borrowEvent
+	// moduleRoots maps the VarID of each module-level binding a module's function captures
+	// to that binding. A move out of a place rooted at one is a ModuleLevelMoveError.
+	moduleRoots map[liveness.VarID]ValueBinding
+	// spreads holds the operand of each spread in an array or object literal of the body.
+	spreads set.Set[ast.Node]
+	// moduleMoves holds each expression a ModuleLevelMoveError has blamed, so a pattern
+	// whose leaves each move a part of one source reports that source once.
+	moduleMoves set.Set[ast.Node]
 }
 
 // returnSite is a return that receives a value: the expression returned, and the CFG point
@@ -481,6 +503,10 @@ func newOwnershipEvents(names map[liveness.VarID]string) *ownershipEvents {
 		callerOwned:     set.NewSet[liveness.VarID](),
 		boundClosures:   set.NewSet[ast.Func](),
 		retainedResults: map[ast.Expr][]*retainedStore{},
+		captureTypes:    map[liveness.VarID]soltype.Type{},
+		moduleRoots:     map[liveness.VarID]ValueBinding{},
+		spreads:         set.NewSet[ast.Node](),
+		moduleMoves:     set.NewSet[ast.Node](),
 	}
 }
 
@@ -527,14 +553,15 @@ func (i *Info) ownershipEventsOf(fn ast.Node) *ownershipEvents {
 // node it is attached to, as renderStmtRef writes it. A borrow's lifetime renders as
 // `'static`, as `'_` when the borrow's type carries none or an elided one, or as `'<n>`
 // numbering the other lifetimes in order of first appearance. A callEvent and a runEvent are
-// left out, since every call has one of each and neither moves a value.
+// left out, since every call has one of each and neither moves a value. A valueCopyEvent is
+// left out too, since the use event of its read renders already.
 func renderOwnershipEvents(t *ownershipEvents) []string {
 	ltNames := map[soltype.Lifetime]string{}
 	var out []string
 
 	for _, ev := range t.list() {
 		switch ev.(type) {
-		case *callEvent, *runEvent:
+		case *callEvent, *runEvent, *valueCopyEvent:
 			continue
 		}
 		out = append(out, fmt.Sprintf("%s: %s", renderStmtRef(ev.base().at), t.renderEvent(ev, ltNames)))
@@ -613,7 +640,7 @@ func (t *ownershipEvents) renderPlace(p movePlace) string {
 	name, ok := t.names[p.root]
 	if !ok {
 		fmt.Fprintf(&b, "var#%d", p.root)
-		writePath(&b, p.path)
+		writePath(&b, p.path, dotElements)
 		return b.String()
 	}
 
@@ -625,7 +652,7 @@ func (t *ownershipEvents) renderPlace(p movePlace) string {
 func writeQuotedPlace(b *strings.Builder, name string, path []placeSeg) {
 	b.WriteByte('`')
 	b.WriteString(name)
-	writePath(b, path)
+	writePath(b, path, dotElements)
 	b.WriteByte('`')
 }
 
@@ -652,23 +679,8 @@ func (t *ownershipEvents) renderHolder(h eventHolder) string {
 		b.WriteString("temp")
 	}
 
-	writePath(&b, h.path)
+	writePath(&b, h.path, dotElements)
 	return b.String()
-}
-
-// writePath appends each segment of path to b the way writePlaceSeg writes it, so a field
-// whose name is not an identifier renders in bracket notation, as `obj["a.b"]` does. A
-// segment that names a tuple element renders in dot form instead. That is a position such
-// as `0`, or a rest element's `1...`, which stands for every element from 1 on.
-func writePath(b *strings.Builder, path []placeSeg) {
-	for _, seg := range path {
-		if _, isElement := canonicalIndex(strings.TrimSuffix(seg.name, "...")); isElement {
-			b.WriteByte('.')
-			b.WriteString(seg.name)
-			continue
-		}
-		writePlaceSeg(b, seg)
-	}
 }
 
 // renderSlot renders a call slot the way renderHolder renders the argTarget or

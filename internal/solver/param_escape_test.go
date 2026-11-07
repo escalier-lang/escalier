@@ -424,11 +424,13 @@ func TestInferOpenEscapeParam(t *testing.T) {
 		},
 		{
 			// id's parameter is a fresh variable for each call, which m's own type does not
-			// reach, so the call stores nothing in m.
+			// reach, so the call stores nothing in m. The argument is written as a borrow,
+			// since id's parameter is typed by a type parameter and an owned argument would
+			// move. GenericMethodMovesParameter covers the owned argument.
 			name: "GenericMethodDoesNotEscape",
 			src: `import "std:map"
 				val m = {id: fn <T>(x: T) -> T { return x }}
-				fn remember(value) { m.id(value) }
+				fn remember(value) { m.id(&value) }
 				fn go() -> number {
 					val opts = {retries: 3}
 					remember(opts)
@@ -438,8 +440,25 @@ func TestInferOpenEscapeParam(t *testing.T) {
 			want: "fn (value: unknown) -> undefined",
 		},
 		{
+			// Passing value to id's type-parameter parameter moves it, so remember moves the
+			// caller's argument too.
+			name: "GenericMethodMovesParameter",
+			src: `
+				val m = {id: fn <T>(x: T) -> T { return x }}
+				fn remember(value) { m.id(value) }
+				fn go() -> number {
+					val opts = {retries: 3}
+					remember(opts)
+					return opts.retries
+				}
+			`,
+			want: "fn (value: unknown) -> undefined",
+			errs: []string{"7:13-7:25: use of moved value 'opts'"},
+		},
+		{
 			// A callback's parameter takes its type from the callee, so the callee decides its
-			// ownership and storing it in seen leaves it owned.
+			// ownership and storing it in seen leaves it owned. each's `x` is typed by a type
+			// parameter, so the call moves opts.
 			name: "CallbackArgumentKeepsTheCalleeType",
 			src: `import "std:map"
 				val mut seen = map.Map()
@@ -451,6 +470,7 @@ func TestInferOpenEscapeParam(t *testing.T) {
 				}
 			`,
 			seen: "Map<string, {retries: number}>",
+			errs: []string{"7:13-7:25: use of moved value 'opts'"},
 		},
 		{
 			// A value type has no storage to borrow, so it copies into the borrow without a
