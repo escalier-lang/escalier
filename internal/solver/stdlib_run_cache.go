@@ -354,6 +354,7 @@ func (c *Context) fork() *Context {
 	f := *c
 	f.probe = nil
 	f.paramVars = maps.Clone(c.paramVars)
+	f.typeArgParams = maps.Clone(c.typeArgParams)
 	f.readRaises = clipValues(c.readRaises)
 	f.pendingRigidLts = slices.Clip(c.pendingRigidLts)
 	f.packages = &PackageRegistry{packages: maps.Clone(c.packages.packages)}
