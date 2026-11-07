@@ -1542,9 +1542,17 @@ Decided: accepted. E4 states it. The checker applies it this way:
   keeps a plain `fn` type. It holds only its initializer, which runs at module
   scope, where no plain `fn` parameter is in scope.
 - A local binding gets a lifetime of its own.
-- A return type on a function with a body gets a lifetime the signature names,
-  and renders as `&fn`. A declared signature has no body to infer from, so its
-  plain `fn` result reads as `'static`.
+- A return type on a function with a body gets a lifetime the signature names.
+  When the body ties that lifetime to a parameter's, the result renders as
+  `&'a fn`, as in `fn <'a>(g: &'a fn () -> undefined) -> &'a fn () -> undefined`.
+  When it connects to no other lifetime, a caller may keep the result for
+  `'static`, so it renders as a plain `fn`, as in
+  `fn () -> fn () -> undefined` for `fn mk() -> fn () -> undefined { return fn () {} }`.
+- A declared signature has no body to infer from, and an overload's signature
+  is bound without its body, so a plain `fn` result there is `'static`. It
+  renders as `&'static fn`, so
+  `declare fn mk() -> fn () -> undefined` shows as
+  `fn () -> &'static fn () -> undefined`.
 - A `fn` type named through a type alias, and a `fn` type in a class field, get
   no lifetime yet. [#2553](https://github.com/escalier-lang/escalier/issues/2553)
   and [#2554](https://github.com/escalier-lang/escalier/issues/2554) track them.

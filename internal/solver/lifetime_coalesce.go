@@ -534,10 +534,16 @@ type ltRewriter struct {
 	bindRoot bool
 	// depth counts the nodes enclosing the one being visited, so ExitType can tell the root.
 	depth int
+	// funcDepth counts the function types enclosing the node being visited, the node itself
+	// included.
+	funcDepth int
 }
 
 func (r *ltRewriter) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
 	r.depth++
+	if _, isFn := t.(*soltype.FuncType); isFn {
+		r.funcDepth++
+	}
 	return soltype.EnterResult{}
 }
 
@@ -546,13 +552,17 @@ func (r *ltRewriter) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type {
 	root := r.depth == 0
 	switch t := t.(type) {
 	case *soltype.FuncType:
+		r.funcDepth--
 		out := t
 		if lps, changed := r.resolveLtParams(t); changed {
 			cp := *t
 			cp.LifetimeParams = lps
 			out = &cp
 		}
-		if lt := r.resolveBorrowLt(out.Lt); lt != out.Lt {
+		// A function type outside any signature is a binding's own type. checkCallOnlyParams
+		// reads its elided `&` as a lifetime outside the call, so only a function type inside
+		// a signature may drop it.
+		if lt := r.resolveRetentionLt(out.Lt, r.funcDepth > 0); lt != out.Lt {
 			cp := *out
 			cp.Lt = lt
 			out = &cp
@@ -612,6 +622,22 @@ func (r *ltRewriter) resolveBorrowLt(lt soltype.Lifetime) soltype.Lifetime {
 		return soltype.Anon
 	}
 	return resolved
+}
+
+// resolveRetentionLt returns the display form of a function type's retention lifetime.
+// inSignature says another function type's signature holds the function type. There, a
+// variable that reaches no parameter and connects nothing resolves to nil, so the function
+// type renders as a plain `fn`. Any other lifetime resolves as resolveBorrowLt resolves it, so
+// an unconnected parameter lifetime keeps its bare `&`.
+func (r *ltRewriter) resolveRetentionLt(lt soltype.Lifetime, inSignature bool) soltype.Lifetime {
+	lv, ok := lt.(*soltype.LifetimeVar)
+	if !ok || !inSignature || r.a.isParam(lv) {
+		return r.resolveBorrowLt(lt)
+	}
+	if _, elide := r.a.resolveLt(lv); elide {
+		return nil
+	}
+	return r.resolveBorrowLt(lt)
 }
 
 // resolveArgs rewrites a class or alias reference's lifetime arguments to their display

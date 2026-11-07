@@ -842,9 +842,13 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	if sig.Return != nil && !sig.Async && !sig.Gen {
 		retAnnT, retAnnOK = c.resolveTypeAnn(declScope, sig.Return, lvl)
 		// A caller can keep the function a body returns past the call, so a function type in
-		// the return annotation takes a lifetime of the signature as its retention.
+		// the return annotation takes a lifetime of the signature as its retention. A declared
+		// signature, or an overload's signature bound without its body, has no body to tie
+		// that lifetime to a parameter's, so its result is 'static.
 		if retAnnOK && hasBody {
 			retAnnT = c.withRetentionLifetimes(retAnnT, func() soltype.Lifetime { return c.ctx.freshLifetime(lvl) })
+		} else if retAnnOK {
+			retAnnT = c.withRetentionLifetimes(retAnnT, func() soltype.Lifetime { return soltype.Static })
 		}
 	}
 	// The body has to work for every instantiation its type parameters' bounds allow, so

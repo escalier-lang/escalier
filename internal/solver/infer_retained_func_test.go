@@ -111,14 +111,41 @@ var mut registry: {run(self) -> undefined} = mk()`,
 			binding: "h",
 			want:    "fn () -> undefined",
 		},
-		// The return's retention lifetime connects nothing, so it renders as a bare `&`. A caller
-		// can still keep the result for 'static. The expected rendering changes to the plain
-		// `fn () -> undefined` once #2558 lands.
+		// The return's retention lifetime connects nothing, so a caller may keep the result for
+		// 'static and it renders as a plain `fn`.
 		{
 			name:    "plain function in a return annotation",
 			src:     `fn mk() -> fn () -> undefined { return fn () {} }`,
 			binding: "mk",
-			want:    "fn () -> &fn () -> undefined",
+			want:    "fn () -> fn () -> undefined",
+		},
+		// The returned closure calls g, so a caller may keep the result no longer than g.
+		{
+			name:    "plain function in a return annotation capturing a parameter",
+			src:     `fn mk(g: &fn () -> undefined) -> fn () -> undefined { return fn () { g() } }`,
+			binding: "mk",
+			want:    "fn <'a>(g: &'a fn () -> undefined) -> &'a fn () -> undefined",
+		},
+		{
+			name:    "plain function in a return annotation returning a parameter",
+			src:     `fn mk(g: &fn () -> undefined) -> fn () -> undefined { return g }`,
+			binding: "mk",
+			want:    "fn <'a>(g: &'a fn () -> undefined) -> &'a fn () -> undefined",
+		},
+		// A declared signature has no body to tie its result to a parameter, so the result is
+		// 'static.
+		{
+			name:    "plain function in a declared return annotation",
+			src:     `declare fn mk() -> fn () -> undefined`,
+			binding: "mk",
+			want:    "fn () -> &'static fn () -> undefined",
+		},
+		{
+			name: "plain function in an overload's return annotation",
+			src: `fn mk() -> fn () -> undefined { return fn () {} }
+fn mk(x: number) -> fn () -> undefined { return fn () {} }`,
+			binding: "mk",
+			want:    "(fn () -> &'static fn () -> undefined) & (fn (x: number) -> &'static fn () -> undefined)",
 		},
 		// An alias whose body is a retained function substitutes its lifetime argument
 		// into the retention lifetime.
