@@ -69,25 +69,16 @@ type MoveInfo struct {
 	// before[blockID][stmtIdx][v] is v's move state just before that statement,
 	// joined across every path reaching the statement.
 	before [][]map[VarID]MoveState
-	// after[blockID][stmtIdx][v] is v's move state just after that statement —
-	// before with the statement's own moves applied.
-	after [][]map[VarID]MoveState
 	// A DeclStmt whose initializer branches is decomposed during CFG construction,
 	// so it occupies no real index in any block's statement list. BuildStmtToRef
 	// instead assigns its StmtRef the index -1, a synthetic position meaning "block
-	// entry, just before statement 0". A StateBefore or StateAfter call whose
-	// ref.StmtIdx is -1 — a "-1 query" — asks for v's move state at that entry
-	// position. blockIn and blockEntry hold the two answers such a query returns.
+	// entry, just before statement 0". A StateBefore call whose ref.StmtIdx is -1
+	// asks for v's move state at that entry position.
 	//
 	// blockIn[blockID][v] is v's state on entry to the block: the join of every
 	// predecessor's blockOut, taken before any move recorded at the -1 position is
 	// applied. StateBefore returns it for a -1 query.
 	blockIn []map[VarID]MoveState
-	// blockEntry[blockID][v] is blockIn after the moves recorded at the block's -1
-	// position are applied, so it is the state just after that position. For a
-	// non-empty block it equals before[blockID][0], the state before statement 0.
-	// StateAfter returns it for a -1 query.
-	blockEntry []map[VarID]MoveState
 }
 
 // AnalyzeMoves runs the forward move-state dataflow over a CFG. The moves map
@@ -152,28 +143,21 @@ func AnalyzeMoves(cfg *CFG, moves map[StmtRef]set.Set[VarID]) *MoveInfo {
 	// Per-statement state within each block: start from blockIn and walk forward,
 	// applying each statement's moves in order. applyMoves returns a fresh map and
 	// never mutates its input, so each map the cursor produces is immutable once
-	// created. The slots can therefore store the reference directly — logically equal
-	// points such as after[idx] and before[idx+1] share one map, which is safe because
-	// nothing writes to these maps after AnalyzeMoves returns.
+	// created, so a slot can store the reference directly.
 	before := make([][]map[VarID]MoveState, numBlocks)
-	after := make([][]map[VarID]MoveState, numBlocks)
-	blockEntry := make([]map[VarID]MoveState, numBlocks)
 	for _, block := range cfg.Blocks {
 		n := len(block.Stmts)
 		before[block.ID] = make([]map[VarID]MoveState, n)
-		after[block.ID] = make([]map[VarID]MoveState, n)
 
 		// Apply any moves recorded at the synthetic -1 entry position first.
 		state := applyStmt(blockIn[block.ID], declared[StmtRef{BlockID: block.ID, StmtIdx: -1}], movesAt(moves, block.ID, -1))
-		blockEntry[block.ID] = state
 		for idx := range n {
 			before[block.ID][idx] = state
 			state = applyStmt(state, declared[StmtRef{BlockID: block.ID, StmtIdx: idx}], movesAt(moves, block.ID, idx))
-			after[block.ID][idx] = state
 		}
 	}
 
-	return &MoveInfo{before: before, after: after, blockIn: blockIn, blockEntry: blockEntry}
+	return &MoveInfo{before: before, blockIn: blockIn}
 }
 
 // DeclaredBindings returns the point of each `val` or `var` declaration in cfg, mapped to the
@@ -324,19 +308,6 @@ func (m *MoveInfo) StateBefore(ref StmtRef, v VarID) MoveState {
 		return lookupMoveState(m.blockIn, ref.BlockID, v)
 	}
 	return lookupStmtState(m.before, ref, v)
-}
-
-// StateAfter returns v's move state just after the statement at ref — StateBefore
-// with that statement's own moves applied. A StmtIdx of -1 reads block-entry
-// semantics: the block's joined entry state with any synthetic -1 entry-position
-// moves applied, the state just after that synthetic position. It does NOT equal
-// StateBefore at -1 when an entry-position move is recorded, since StateBefore reads
-// the entry state before that move.
-func (m *MoveInfo) StateAfter(ref StmtRef, v VarID) MoveState {
-	if ref.StmtIdx < 0 {
-		return lookupMoveState(m.blockEntry, ref.BlockID, v)
-	}
-	return lookupStmtState(m.after, ref, v)
 }
 
 func lookupMoveState(blockMaps []map[VarID]MoveState, blockID int, v VarID) MoveState {
