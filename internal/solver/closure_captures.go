@@ -76,24 +76,32 @@ func (c *checker) recordClosureCaptures(scope *Scope, closure ast.Func) {
 }
 
 // setRetentionFromCaptures gives ft, the type of `closure`, a retention lifetime when the closure
-// captures a function that has one. The lifetime is fresh at lvl, and each captured function's
-// retention lifetime must outlive it. ft must be the closure's own type, not yet shared with any
-// other type.
+// captures a value that holds a function with one. The value is a function, or holds one in a
+// union, an object property, or a type argument, as retentionLifetimes finds. The lifetime is
+// fresh at lvl, and each such function's retention lifetime must outlive it. ft must be the
+// closure's own type, not yet shared with any other type.
 func (c *checker) setRetentionFromCaptures(scope *Scope, lvl int, closure ast.Func, ft *soltype.FuncType) {
 	for _, capture := range c.closureCaptures(closure) {
 		b, found := scope.GetValue(capture.Name)
-		if !found {
+		if !found || len(b.Schemes) != 1 {
 			continue
 		}
-		captured, isFn := c.bindingValue(lvl, b).(*soltype.FuncType)
-		// A function kept for 'static outlives any closure that captures it.
-		if !isFn || captured.Lt == nil || captured.Lt == soltype.Static {
+		// Instantiating a generalized binding mints fresh variables, so a binding whose type
+		// holds no retained function is skipped before that. Instantiation keeps the shape of
+		// the type, so it cannot add one.
+		if body := schemeBody(b.Schemes[0]); body == nil || len(retentionLifetimes(body)) == 0 {
 			continue
 		}
-		if ft.Lt == nil {
-			ft.Lt = c.ctx.freshLifetime(lvl)
+		for _, lt := range retentionLifetimes(c.bindingValue(lvl, b)) {
+			// A function kept for 'static outlives any closure that captures it.
+			if lt == soltype.Static {
+				continue
+			}
+			if ft.Lt == nil {
+				ft.Lt = c.ctx.freshLifetime(lvl)
+			}
+			c.ctx.constrainLt(lt, ft.Lt)
 		}
-		c.ctx.constrainLt(captured.Lt, ft.Lt)
 	}
 }
 

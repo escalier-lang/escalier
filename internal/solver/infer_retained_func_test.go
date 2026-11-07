@@ -96,6 +96,14 @@ func TestInferRetainedFuncParam(t *testing.T) {
 			binding: "registry",
 			want:    "{cb: &'static fn () -> undefined}",
 		},
+		// A method is not a value the object holds, so its signature keeps no lifetime.
+		{
+			name: "method in a module-level object annotation",
+			src: `declare fn mk() -> {run(self) -> undefined}
+var mut registry: {run(self) -> undefined} = mk()`,
+			binding: "registry",
+			want:    "{run() -> undefined}",
+		},
 		// Only the initializer fills a module-level `val`, so its annotation keeps no lifetime.
 		{
 			name:    "plain function in a module-level val",
@@ -103,8 +111,7 @@ func TestInferRetainedFuncParam(t *testing.T) {
 			binding: "h",
 			want:    "fn () -> undefined",
 		},
-		// The caller keeps the returned function for a lifetime that connects nothing, so it
-		// elides.
+		// The return's retention lifetime connects nothing, so it renders as a bare `&`.
 		{
 			name:    "plain function in a return annotation",
 			src:     `fn mk() -> fn () -> undefined { return fn () {} }`,
@@ -385,7 +392,7 @@ fn h(x: &fn () -> undefined, n: number) {
 }`,
 			want: []string{"2:21-2:22: parameter 'g' is only called during the call, so it cannot outlive the call"},
 		},
-		// A closure that calls g is kept no longer than g is.
+		// A closure that calls g may be kept no longer than g.
 		{
 			name: "captured by a closure that is only called",
 			src: `fn f(g: fn () -> undefined) {
@@ -419,6 +426,15 @@ fn f(g: fn () -> undefined) {
 fn f(g: fn () -> undefined) {
     val h = fn () { g() }
     onClick(fn () { h() })
+}`,
+			want: []string{"2:6-2:7: parameter 'g' is only called during the call, so it cannot be kept for 'static"},
+		},
+		{
+			name: "captured in an object by a closure passed to a static parameter",
+			src: `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+fn f(g: fn () -> undefined) {
+    val o = {cb: g}
+    onClick(fn () { o.cb() })
 }`,
 			want: []string{"2:6-2:7: parameter 'g' is only called during the call, so it cannot be kept for 'static"},
 		},
@@ -517,6 +533,29 @@ async fn f(g: fn () -> undefined) {
     h()
 }`,
 			want: []string{"2:12-2:13: parameter 'g' is only called during the call, but the body of an async function can run after the call returns"},
+		},
+		{
+			name: "read by an async closure",
+			src: `declare fn tick() -> Promise<undefined>
+fn f(g: fn () -> undefined) {
+    val h = async fn () {
+        await tick()
+        g()
+    }
+    h()
+}`,
+			want: []string{"2:6-2:7: parameter 'g' is only called during the call, but the body of an async function can run after the call returns"},
+		},
+		// A closure's own parameter is bound inside the async body, so the async body does not
+		// outlive the closure's call.
+		{
+			name: "read by a closure's own parameter inside an async function",
+			src: `declare fn tick() -> Promise<undefined>
+async fn f() {
+    val run = fn (g: fn () -> undefined) { g() }
+    await tick()
+    run(fn () {})
+}`,
 		},
 		{
 			name: "unread by an async function",
