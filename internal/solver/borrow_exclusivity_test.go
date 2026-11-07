@@ -834,6 +834,136 @@ func TestExplicitBorrowFlowSites(t *testing.T) {
 	}
 }
 
+// TestLiteralSlotOfMappedType covers a literal that fills a destination written through a
+// mapped type. `RO<{f: &{x: number}}>` declares the field f only once the mapped type is
+// reduced, so each element of the literal finds its slot through the reduced fields.
+func TestLiteralSlotOfMappedType(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want []string
+	}{
+		// The slot f is a borrow, so the element p reports the borrow it leaves unwritten.
+		"MissingBorrowInField": {
+			src: `
+				type RO<T> = {readonly [K]: T[K] for K in keyof T}
+				fn g() {
+					val p = {x: 1}
+					val o: RO<{f: &{x: number}}> = {f: p}
+				}
+			`,
+			want: []string{"5:41-5:42: this value is borrowed by its destination, so write the borrow: `&`"},
+		},
+		// The slot f is a `'static` borrow, so the borrow `&p` lives for `'static` and the later
+		// write to p conflicts with it.
+		"StaticBorrowInField": {
+			src: `
+				type RO<T> = {readonly [K]: T[K] for K in keyof T}
+				fn g() {
+					val mut p = {x: 1}
+					val o: RO<{f: &'static {x: number}}> = {f: &p}
+					p.x = 2
+				}
+			`,
+			want: []string{"6:6-6:9: cannot assign to 'p.x' while it is borrowed as immutable"},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src)
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+		})
+	}
+}
+
+// TestLiteralSlotOfNamedDestination covers literal elements filling a destination named by an
+// alias, a class, or an object with an unreduced member. literalSlots finds each field with
+// declaredField, which resolves an alias and a class to the fields they declare and finds no
+// field on an object with an unreduced member.
+func TestLiteralSlotOfNamedDestination(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want []string
+	}{
+		// The alias names the object type it stands for, so the element p fills a borrow slot.
+		"MissingBorrowInAliasField": {
+			src: `
+				type D = {f: &{x: number}}
+				fn g() {
+					val p = {x: 1}
+					val o: D = {f: p}
+				}
+			`,
+			want: []string{"5:21-5:22: this value is borrowed by its destination, so write the borrow: `&`"},
+		},
+		"StaticBorrowInAliasField": {
+			src: `
+				type D = {f: &'static {x: number}}
+				fn g() {
+					val mut p = {x: 1}
+					val o: D = {f: &p}
+					p.x = 2
+				}
+			`,
+			want: []string{"6:6-6:9: cannot assign to 'p.x' while it is borrowed as immutable"},
+		},
+		// A literal does not build a class instance, so the assignment fails. The class still
+		// declares the slot value, so p also reports the borrow it leaves unwritten.
+		"MissingBorrowInClassField": {
+			src: `
+				class Box<T> { value: T }
+				fn g() {
+					val p = {x: 1}
+					val o: Box<&{x: number}> = {value: p}
+				}
+			`,
+			want: []string{
+				"5:41-5:42: this value is borrowed by its destination, so write the borrow: `&`",
+				"5:33-5:43: cannot constrain object <: class Box<&{x: number}>",
+			},
+		},
+		"StaticBorrowInClassField": {
+			src: `
+				class Box<T> { value: T }
+				fn g() {
+					val mut p = {x: 1}
+					val o: Box<&'static {x: number}> = {value: &p}
+					p.x = 2
+				}
+			`,
+			want: []string{
+				"5:41-5:52: cannot constrain object <: class Box<&'static {x: number}>",
+				"6:6-6:9: cannot assign to 'p.x' while it is borrowed as immutable",
+			},
+		},
+		// The spread of T may hold any field, so the destination names no slot for f and p
+		// reports only the failed assignment.
+		"FieldBesideASpreadOfATypeParameter": {
+			src: `
+				fn g<T>(t: T) {
+					val p = {x: 1}
+					val o: {...T, f: &{x: number}} = {f: p}
+				}
+			`,
+			want: []string{"4:39-4:45: cannot constrain object <: {...T, f: object}"},
+		},
+		"FieldOfAMappedTypeOverATypeParameter": {
+			src: `
+				fn g<T>(t: T) {
+					val p = {x: 1}
+					val o: {[K]: &{x: number} for K in keyof T} = {f: p}
+				}
+			`,
+			want: []string{"4:52-4:58: cannot constrain object <: {[K: keyof T]: object}"},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src)
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+		})
+	}
+}
+
 // TestFieldReadThroughBorrow covers rule F4 for a field read through a borrow. A read that
 // yields a borrow of an object field has the borrow written, or the site reports the borrow it
 // needs. The cases that need nothing written check clean.
