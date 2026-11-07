@@ -235,6 +235,15 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 		// error and adopting `never` would poison the binding. Keep the inferred
 		// initializer type instead (error recovery).
 		annT, ok := c.resolveDeclaredTypeAnn(scope, d.TypeAnn, lvl, symName, varDeclSymbolPosition(d))
+		// The binding keeps a function it holds for as long as the binding lives, so a
+		// function type in its annotation takes the binding's lifetime as its retention.
+		// The initializer is the only value a module-level binding that cannot be written
+		// ever holds, and no call-only parameter is in scope at module level, so such a
+		// binding keeps its annotation as written.
+		writable := d.Kind == ast.VarKind || hasMutLeaf(d.Pattern)
+		if ok && (c.fn != nil || writable) {
+			annT = c.withRetentionLifetimes(annT, c.bindingLifetime(lvl))
+		}
 		missing := ok && c.checkWrittenBorrow(d.Init, annT)
 		if ok {
 			// A `val mut p: T` binding may write any writable field of `T`, so a readonly
