@@ -2024,6 +2024,7 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 		ret, fn = c.applyCallShape(lvl, e, target.callee, target.fn, target.secondInstance, args)
 	}
 	c.recordCallArgEffects(e, fn, hasCallRef)
+	c.reportReadonlyArgs(e, fn, args)
 	if hasEventRef {
 		// Calling a closure runs its body, and a callee handed a closure may call it during
 		// the call. Neither depends on the signature, so a callee whose signature is still a
@@ -2463,6 +2464,25 @@ func (c *checker) recordCallArgEffects(e *ast.CallExpr, fn *soltype.FuncType, ha
 	// A borrow parameter takes a borrow, so the call has to write one. The receiver of a
 	// method call is not an argument and keeps auto-borrowing.
 	c.checkExplicitBorrowArgs(e, fn)
+}
+
+// reportReadonlyArgs reports ReadonlyFieldSubtypeError for each readonly field of an argument
+// in args that fills a writable field of fn's parameter at the same position. args is
+// index-aligned with e.Args. fn is nil when no signature was resolved, and then nothing is
+// checked. A rest parameter's slot is left alone.
+func (c *checker) reportReadonlyArgs(e *ast.CallExpr, fn *soltype.FuncType, args []soltype.Type) {
+	if fn == nil {
+		return
+	}
+	for i := 0; i < len(e.Args) && i < len(args) && i < len(fn.Params); i++ {
+		if fn.Params[i].Rest {
+			continue
+		}
+		// T5 applies whatever the parameter's binding mutability. The signature does not
+		// carry that mutability, and a callee that takes `o: {a: number}` can still move `o`
+		// into a `val mut` binding and write `a`.
+		c.reportReadonlyIntoWritable(e.Args[i], args[i], fn.Params[i].Type)
+	}
 }
 
 // emitReceiverMove emits the move of the receiver of a member access that reaches a

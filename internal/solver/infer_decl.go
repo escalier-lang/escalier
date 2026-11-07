@@ -237,11 +237,12 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 		annT, ok := c.resolveDeclaredTypeAnn(scope, d.TypeAnn, lvl, symName, varDeclSymbolPosition(d))
 		missing := ok && c.checkWrittenBorrow(d.Init, annT)
 		if ok {
-			// A `val mut p: T` binding may write any writable field of `T`, so a readonly
-			// field in the value it moves in cannot fill one, as T5 states. A borrowed
-			// initializer cannot fill the owned binding at all, and that is the fault to
-			// report rather than its fields.
-			if isMutableIdentPat(d.Pattern) && len(heldBorrows(initT)) == 0 {
+			// A readonly field in the value the binding moves in cannot fill a writable field
+			// of `T`, as T5 states. That holds for a `val` binding too, since the value can
+			// move on into a `val mut` binding that writes the field. A borrowed initializer
+			// cannot fill the owned binding at all, and that is the fault to report rather
+			// than its fields.
+			if len(heldBorrows(initT)) == 0 {
 				c.reportReadonlyIntoWritable(d.Init, initT, annT)
 			}
 			annT = c.constrainInitAgainstAnnotation(d.Init, initT, annT, missing)

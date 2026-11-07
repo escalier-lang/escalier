@@ -120,6 +120,29 @@ rejected after the field's one initialization. A `readonly` field does not
 satisfy a writable field, because a holder of the writable type could reassign
 it. A getter with no setter counts as a `readonly` field.
 
+The rule applies to every owned destination, whatever its binding's
+mutability. A `val` binding or an immutable parameter can move its value on
+into a `val mut` binding, which then writes the field. A parameter's binding
+mutability is not part of the signature either, so a call through a function
+value could not see it. In the program below, both calls report
+`readonly field 'a' cannot satisfy a writable field requirement`:
+
+```esc
+fn sink(mut o: {a: number}) { o.a = 5 }
+fn move(o: {a: number}) {
+    val mut m = o
+    m.a = 5
+}
+fn f(obj: {readonly a: number}, other: {readonly a: number}) {
+    sink(obj)
+    move(other)
+}
+```
+
+A `&` borrow can neither write the field nor move the value, so a `readonly`
+field still satisfies a writable field behind one. With `obj` above,
+`read(&obj)` is accepted for `fn read(o: &{a: number})`.
+
 **T6. A borrow cannot fill an owned destination.** A value of type `&T` or
 `&mut T` does not satisfy an owned `T`, since the destination would
 claim ownership of storage owned elsewhere. The same holds for a
@@ -1939,6 +1962,11 @@ the solver.
 | T3 | Annotate `{a: mut {b: number}}` or `Array<mut Point>` | Rejected |
 | T5 | Write a `readonly` field after its initialization | Rejected |
 | T5 | A `{readonly a: number}` value into a `{a: number}` slot of a `val mut` binding | Rejected |
+| T5 | A `{readonly a: number}` value into a `{a: number}` slot of a `val` binding | Rejected |
+| T5 | A `{readonly a: number}` argument for a `mut o: {a: number}` parameter | Rejected |
+| T5 | A `{readonly a: number}` argument for an `o: {a: number}` parameter | Rejected |
+| T5 | A `{readonly a: number}` argument through a function value | Rejected |
+| T5 | A `&{readonly a: number}` argument for an `o: &{a: number}` parameter | Accepted |
 | T5 | Assign to a getter with no setter | Rejected |
 | T5 | Write a `readonly` field twice in a constructor | Rejected |
 | T8 | `if c { p } else { q }` with `p` owned and `q` a borrow | Rejected |
