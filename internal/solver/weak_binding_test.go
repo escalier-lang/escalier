@@ -359,6 +359,25 @@ fn h(y) {
 			},
 		},
 		{
+			// h's result is an alias with a lifetime argument. h stays monomorphic over g's weak
+			// variable and keeps 'a as its own lifetime parameter.
+			name: "AWeakFunctionsCallerReturnsAnAliasWithALifetime",
+			src: `
+fn makeId() { return fn (x) { return x } }
+val g = makeId()
+type Ref<'a, T> = &'a T
+fn h<'a>(y, p: &'a {n: number}) -> Ref<'a, {n: number}> {
+	y.set(p)
+	g(y)
+	return p
+}
+`,
+			values: map[string]string{
+				"g": "fn (x: never) -> never",
+				"h": "fn <'a>(y: {set: fn (arg0: &{n: number}) -> unknown}, p: &'a {n: number}) -> Ref<'a, {n: number}>",
+			},
+		},
+		{
 			// No value but `never` flows into T, so its type is what its uses require. Each
 			// call needs a different object, and g settles to their intersection.
 			name: "AWeakVariableOnlyUsesDecideIsTheirIntersection",
