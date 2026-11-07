@@ -62,6 +62,8 @@ A move is trivial when the only differences are these:
 
 Record each trivial move as the old location, the new location, and the changes in one short phrase, such as "renamed `t` to `table`" or "method on `checker` became a function taking `c *checker`". A move that changes behavior is not trivial. Leave it out of this list and review its differences like any other change. Don't post findings about code a trivial move carries over unchanged, since the move did not introduce it.
 
+Also record each moved block of 15 or more lines for a move note, whether or not the move is trivial. A move note is an inline comment that tells a reviewer where the block came from, so they don't read it as new code. Record the block's new range, its old file and range, and what changed in the move. For a move that is not trivial, name the differences that change behavior, and review them like any other change.
+
 ## 5. Flag high-risk changes
 
 Run this step at every level. A high-risk change is one where a mistake is costly or easy to miss, whether or not you found a bug in it. Flag a change when it does one of these:
@@ -83,10 +85,19 @@ For each one, record the file, the range of changed lines that makes it risky, a
      --jq '.[] | select(.user.login == "claude[bot]") | {path, line, body}'
    ```
 
-   Skip a finding when one of these comments is on the same file and describes the same defect. Its line may have moved since then, so match by the defect, not the line number.
-2. For each remaining finding, check that its line falls inside a diff hunk on the new side. Post it with `mcp__github_inline_comment__create_inline_comment` and `confirmed: true`. The body starts with the severity marker, then a bold one-line summary and its category, then gives the failure scenario. For example: `🔴 **IsSuperset tests the subset relation** (correctness)`.
-3. When a finding's line is outside every hunk, attach it to the nearest changed line it concerns and name the real line in the body.
-4. Last, write the summary. Its first line is the marker `<!-- pr-review-summary -->`, and the next line names the head commit reviewed. After that come three sections, each with a sentence-case heading:
+   Skip a finding when one of these comments is on the same file and describes the same defect. Its line may have moved since then, so match by the defect, not the line number. Skip a move note the same way when one of these comments is a move note for the same block.
+2. Post a move note for each block step 4 recorded. Attach it to the block's first line on the new side with `mcp__github_inline_comment__create_inline_comment` and `confirmed: true`. It carries no severity marker, since it reports no defect. For example:
+
+   ```markdown
+   ↪️ **Moved from [`internal/set/set.go:99-120`](<link to that range>)** (move)
+
+   Only change: the parameter `other` is renamed to `rhs`.
+   ```
+
+   Link the old range with `L<start>-L<end>`, as item 5 describes for links.
+3. For each remaining finding, check that its line falls inside a diff hunk on the new side. Post it with `mcp__github_inline_comment__create_inline_comment` and `confirmed: true`. The body starts with the severity marker, then a bold one-line summary and its category, then gives the failure scenario. For example: `🔴 **IsSuperset tests the subset relation** (correctness)`.
+4. When a finding's line is outside every hunk, attach it to the nearest changed line it concerns and name the real line in the body.
+5. Last, write the summary. Its first line is the marker `<!-- pr-review-summary -->`, and the next line names the head commit reviewed. After that come three sections, each with a sentence-case heading:
    - **Findings:** each finding of this run on one line, starting with its severity marker, with its file and line, including the ones skipped in item 1. Mark a skipped one as already posted. When nothing survives, say that the review found no issues.
    - **Moved code:** each trivial move from step 4 on one line. Leave the section out when there are none.
    - **Needs human review:** each high-risk change from step 5 on one line, linked to its range of lines. Leave the section out when there are none.
@@ -106,7 +117,7 @@ For each one, record the file, the range of changed lines that makes it risky, a
    ```
 
    Use `L<start>-L<end>` for a range of deleted lines.
-5. Post the summary in place of any earlier one. List the ids of the comments that carry the marker, oldest first:
+6. Post the summary in place of any earlier one. List the ids of the comments that carry the marker, oldest first:
 
    ```bash
    gh api repos/<repo>/issues/<number>/comments --paginate \
