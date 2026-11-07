@@ -19,5 +19,10 @@ the target against a hand-written annotation set and switches over when the
 table lands. `[Exposed]` answers nothing about the runtimes, which is why their
 source is still open.
 
+**`ownership_extensions/`** extends the rules in
+`ownership_rules/requirements.md` to `await`, `yield`, async generators and
+`for … in` loops. Its `design.md` is the design for the Ownership Extensions
+milestone, and section 7 of it lists what the ownership rules change.
+
 Each folder's `design.md` is the whole of it: the problem, the requirements and
 the plan.
