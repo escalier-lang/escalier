@@ -351,9 +351,40 @@ func (s *skolemizer) skolemizeBound(bounds []soltype.Type) soltype.Type {
 
 // reportReadonlyIntoWritable reports ReadonlyFieldSubtypeError for each readonly field of
 // srcT that fills a writable field of target, blamed at site. It reports no other fault and
-// records no bound. A borrow keeps the mutability its referent has, so it has no readonly
-// field to report here.
+// records no bound. A type variable in srcT is read through its lower bounds, and each field
+// is reported once however many bounds carry it. A borrow keeps the mutability its referent
+// has, so it has no readonly field to report here.
 func (c *checker) reportReadonlyIntoWritable(site ast.Node, srcT, target soltype.Type) {
+	targetInner, ok := target.(soltype.RefInner)
+	if !ok {
+		return
+	}
+	// A type variable declares no field of its own to write.
+	if _, isVar := target.(*soltype.TypeVarType); isVar {
+		return
+	}
+	var readonly []SolverError
+	fields := set.NewSet[string]()
+	c.collectReadonlyIntoWritable(srcT, targetInner, fields, &readonly, set.NewSet[*soltype.TypeVarType]())
+	c.blameConstraintErrors(site, readonly)
+}
+
+// collectReadonlyIntoWritable appends to out a ReadonlyFieldSubtypeError for each readonly
+// field of srcT that fills a writable field of target and is not yet in fields, and adds
+// that field to fields. seen holds the type variables already read.
+func (c *checker) collectReadonlyIntoWritable(
+	srcT soltype.Type, target soltype.RefInner, fields set.Set[string], out *[]SolverError, seen set.Set[*soltype.TypeVarType],
+) {
+	if v, isVar := srcT.(*soltype.TypeVarType); isVar {
+		if seen.Contains(v) {
+			return
+		}
+		seen.Add(v)
+		for _, lb := range v.LowerBounds {
+			c.collectReadonlyIntoWritable(lb, target, fields, out, seen)
+		}
+		return
+	}
 	if isBorrowType(srcT) {
 		return
 	}
@@ -361,23 +392,20 @@ func (c *checker) reportReadonlyIntoWritable(site ast.Node, srcT, target soltype
 	if !ok {
 		return
 	}
-	targetInner, ok := target.(soltype.RefInner)
-	if !ok {
-		return
-	}
 	// The trial compares two mutable borrows, which makes every field the target can write
 	// invariant. That is where constrain compares readonly-ness. A literal field such as the
 	// `1` in `{a: 1}` fails the invariant check against `number` too, so every other fault
 	// the trial finds is dropped.
-	var readonly []SolverError
 	sub := &soltype.RefType{Mut: true, Lt: soltype.Static, Inner: inner}
-	super := &soltype.RefType{Mut: true, Lt: soltype.Static, Inner: targetInner}
+	super := &soltype.RefType{Mut: true, Lt: soltype.Static, Inner: target}
 	for _, e := range c.ctx.trialUnderProbe(sub, super) {
-		if _, ok := e.(*ReadonlyFieldSubtypeError); ok {
-			readonly = append(readonly, e)
+		ro, ok := e.(*ReadonlyFieldSubtypeError)
+		if !ok || fields.Contains(ro.Field) {
+			continue
 		}
+		fields.Add(ro.Field)
+		*out = append(*out, ro)
 	}
-	c.blameConstraintErrors(site, readonly)
 }
 
 // rejectSharedAwait reports SharedAwaitIntoMutError when init, the initializer of a `mut`

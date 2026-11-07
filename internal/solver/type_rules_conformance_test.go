@@ -354,8 +354,40 @@ func TestTypeRulesBindingMutability(t *testing.T) {
 			`,
 			want: []string{"3:27-3:30: readonly field 'a' cannot satisfy a writable field requirement"},
 		},
+		// A reassignment moves its value into the binding the same way an initializer does.
+		{
+			name: "T5/ReadonlyFieldIntoReassignedVar",
+			src: `
+				fn f(obj: {readonly a: number}) {
+					var o: {a: number} = {a: 1}
+					o = obj
+				}
+			`,
+			want: []string{"4:10-4:13: readonly field 'a' cannot satisfy a writable field requirement"},
+		},
+		// The caller can move an owned return value into a `val mut` binding.
+		{
+			name: "T5/ReadonlyFieldIntoReturn",
+			src: `
+				fn f(obj: {readonly a: number}) -> {a: number} {
+					return obj
+				}
+			`,
+			want: []string{"3:13-3:16: readonly field 'a' cannot satisfy a writable field requirement"},
+		},
+		// A call's result reaches the argument as a type variable bounded by the callee's
+		// return type, so the check reads the variable's lower bounds.
+		{
+			name: "T5/ReadonlyFieldFromCallResultIntoParam",
+			src: `
+				fn mk() -> {readonly a: number} { return {a: 1} }
+				fn sink(mut o: {a: number}) { o.a = 5 }
+				fn f() { sink(mk()) }
+			`,
+			want: []string{"4:19-4:23: readonly field 'a' cannot satisfy a writable field requirement"},
+		},
 		// An immutable borrow can neither write `a` nor move the value, so a readonly field
-		// fills its writable field.
+		// fills the parameter's writable field.
 		{
 			name: "T5/ReadonlyFieldThroughImmutableBorrow",
 			src: `

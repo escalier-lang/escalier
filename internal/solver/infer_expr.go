@@ -2023,8 +2023,7 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 	} else {
 		ret, fn = c.applyCallShape(lvl, e, target.callee, target.fn, target.secondInstance, args)
 	}
-	c.recordCallArgEffects(e, fn, hasCallRef)
-	c.reportReadonlyArgs(e, fn, args)
+	c.recordCallArgEffects(e, fn, args, hasCallRef)
 	if hasEventRef {
 		// Calling a closure runs its body, and a callee handed a closure may call it during
 		// the call. Neither depends on the signature, so a callee whose signature is still a
@@ -2447,17 +2446,23 @@ func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr, preset m
 	return args
 }
 
-// recordCallArgEffects checks that each borrow argument of a call is written, through
-// checkExplicitBorrowArgs. It is the ONE place both call paths run that check, against
-// whichever signature the call resolved to. That is the single signature inferCallTarget read
-// off the callee, or the arm resolveOverload picked. Keeping it here is what stops one path
-// from forgetting it, which is how #1508 came about. hasRef is false when the call's statement
-// has no CFG point.
+// recordCallArgEffects checks a call's arguments against the signature it resolved to.
+// reportReadonlyArgs checks the readonly fields of every argument. checkExplicitBorrowArgs
+// checks that each borrow argument is written, and runs only when hasRef is set. This is the
+// ONE place both call paths run these checks, against whichever signature the call resolved
+// to. That is the single signature inferCallTarget read off the callee, or the arm
+// resolveOverload picked. Keeping them here is what stops one path from forgetting one,
+// which is how #1508 came about. hasRef is false when the call's statement has no CFG point.
 //
 // fn is nil when no arm accepted the call or the callee's signature is still a variable.
-// Nothing is checked then, since no signature says which arguments borrow.
-func (c *checker) recordCallArgEffects(e *ast.CallExpr, fn *soltype.FuncType, hasRef bool) {
-	if !hasRef || fn == nil {
+// Nothing is checked then, since no signature names the parameters. args holds the argument
+// types, index-aligned with e.Args.
+func (c *checker) recordCallArgEffects(e *ast.CallExpr, fn *soltype.FuncType, args []soltype.Type, hasRef bool) {
+	if fn == nil {
+		return
+	}
+	c.reportReadonlyArgs(e, fn, args)
+	if !hasRef {
 		return
 	}
 
@@ -2468,12 +2473,8 @@ func (c *checker) recordCallArgEffects(e *ast.CallExpr, fn *soltype.FuncType, ha
 
 // reportReadonlyArgs reports ReadonlyFieldSubtypeError for each readonly field of an argument
 // in args that fills a writable field of fn's parameter at the same position. args is
-// index-aligned with e.Args. fn is nil when no signature was resolved, and then nothing is
-// checked. A rest parameter's slot is left alone.
+// index-aligned with e.Args. A rest parameter's slot is left alone.
 func (c *checker) reportReadonlyArgs(e *ast.CallExpr, fn *soltype.FuncType, args []soltype.Type) {
-	if fn == nil {
-		return
-	}
 	for i := 0; i < len(e.Args) && i < len(args) && i < len(fn.Params); i++ {
 		if fn.Params[i].Rest {
 			continue
@@ -2770,6 +2771,9 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	// alone. The reassignment records no alias, borrow edge, or move for it, as for one that
 	// fails to type-check.
 	missing := c.checkWrittenBorrow(e.Right, targetT)
+	// The reassignment moves the source into the binding, which can move it on into a
+	// `val mut` binding, so a readonly field cannot fill a writable field of the binding.
+	c.reportReadonlyIntoWritable(e.Right, sourceT, targetT)
 	// M4 G1: track the alias this reassignment creates and check its mutability
 	// transition, but only when the constraint below succeeds — an ill-typed
 	// reassignment must not seed a false-positive transition error off types that
