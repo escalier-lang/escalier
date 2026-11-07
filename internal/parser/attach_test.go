@@ -245,9 +245,6 @@ func TestAttachModuleCommentsKeepsFilesApart(t *testing.T) {
 	}
 }
 
-// A comment at the end of a block belongs to the block. Without the check that
-// a neighbour lies inside the node enclosing the comment, it would lead the
-// statement after the closing brace instead.
 // TestAttachModuleCommentsLeadsAcrossFiles asserts that a comment leads the next
 // declaration in its own file. The comment ends at offset 7 and the second file's
 // declaration starts at 11, while the first file's literal `1` starts at 8. The
@@ -285,6 +282,9 @@ func TestAttachModuleCommentsEnclosesInEachFile(t *testing.T) {
 	}, c.lines)
 }
 
+// A comment at the end of a block belongs to the block. Without the check that
+// a neighbour lies inside the node enclosing the comment, it would lead the
+// statement after the closing brace instead.
 func TestAttachCommentsKeepsTheLastCommentInABlock(t *testing.T) {
 	t.Parallel()
 	require.Equal(t, []string{"dangling *ast.FuncDecl // nothing here"},
