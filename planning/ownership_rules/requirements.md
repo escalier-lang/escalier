@@ -1545,14 +1545,14 @@ Decided: accepted. E4 states it. The checker applies it this way:
 - A return type on a function with a body gets a lifetime the signature names.
   When the body ties that lifetime to a parameter's, the result renders as
   `&'a fn`, as in `fn <'a>(g: &'a fn () -> undefined) -> &'a fn () -> undefined`.
-  When it connects to no other lifetime, a caller may keep the result for
-  `'static`, so it renders as a plain `fn`, as in
+  When it connects to no other lifetime, it renders as a plain `fn`, as in
   `fn () -> fn () -> undefined` for `fn mk() -> fn () -> undefined { return fn () {} }`.
 - A declared signature has no body to infer from, and an overload's signature
-  is bound without its body, so a plain `fn` result there is `'static`. It
-  renders as `&'static fn`, so
-  `declare fn mk() -> fn () -> undefined` shows as
-  `fn () -> &'static fn () -> undefined`.
+  is bound without its body. A plain `fn` result there stays plain, so
+  `declare fn mk() -> fn () -> undefined` shows as `fn () -> fn () -> undefined`.
+- A plain `fn` in a result means a caller may keep the result for `'static`.
+  This holds whether the signature is declared or inferred with no connection
+  to a parameter, so both render the same way.
 - A `fn` type named through a type alias, and a `fn` type in a class field, get
   no lifetime yet. [#2553](https://github.com/escalier-lang/escalier/issues/2553)
   and [#2554](https://github.com/escalier-lang/escalier/issues/2554) track them.

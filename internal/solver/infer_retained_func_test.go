@@ -132,20 +132,20 @@ var mut registry: {run(self) -> undefined} = mk()`,
 			binding: "mk",
 			want:    "fn <'a>(g: &'a fn () -> undefined) -> &'a fn () -> undefined",
 		},
-		// A declared signature has no body to tie its result to a parameter, so the result is
-		// 'static.
+		// A declared signature has no body to tie its result to a parameter, so a caller may
+		// keep the result for 'static and it renders as a plain `fn`.
 		{
 			name:    "plain function in a declared return annotation",
 			src:     `declare fn mk() -> fn () -> undefined`,
 			binding: "mk",
-			want:    "fn () -> &'static fn () -> undefined",
+			want:    "fn () -> fn () -> undefined",
 		},
 		{
 			name: "plain function in an overload's return annotation",
 			src: `fn mk() -> fn () -> undefined { return fn () {} }
 fn mk(x: number) -> fn () -> undefined { return fn () {} }`,
 			binding: "mk",
-			want:    "(fn () -> &'static fn () -> undefined) & (fn (x: number) -> &'static fn () -> undefined)",
+			want:    "(fn () -> fn () -> undefined) & (fn (x: number) -> fn () -> undefined)",
 		},
 		// An alias whose body is a retained function substitutes its lifetime argument
 		// into the retention lifetime.
@@ -638,17 +638,21 @@ fn f<'a>(g: &'a fn () -> undefined) { onClick(fn () { g() }) }`,
 }
 
 // A top-level function and a module-level closure capture only module-level bindings, which
-// live for 'static, so a slot that keeps a function for 'static accepts either one.
-// TestStaticFuncKept covers each such slot and asserts that none reports an error.
+// live for 'static, so a slot that keeps a function for 'static accepts either one. It accepts
+// the plain `fn` result of a declared function too. TestStaticFuncKept covers each such slot
+// and asserts that none reports an error.
 func TestStaticFuncKept(t *testing.T) {
 	src := `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
 var sink: fn () -> undefined = fn () {}
 fn handle() {}
 val handleExpr = fn () {}
+declare fn mk() -> fn () -> undefined
 fn setup() {
     onClick(handle)
     sink = handle
     onClick(handleExpr)
+    onClick(mk())
+    sink = mk()
 }`
 	_, errs := inferAgainstTreeWithSpans(t, src)
 	require.Empty(t, errs)

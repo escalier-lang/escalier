@@ -204,11 +204,11 @@ fn u() {
 	val b: {y: string} = g(z)
 }
 `,
-			values: map[string]string{"g": "&'static fn (x: {x: number} & {y: string}) -> {x: number} & {y: string}"},
+			values: map[string]string{"g": "fn (x: {x: number} & {y: string}) -> {x: number} & {y: string}"},
 		},
 		{
 			// T appears only where h produces a value, so coalescing drops it before its uses
-			// are read. #2351 keeps it, so h becomes `&'static fn () -> {x: number} & {y: string}`.
+			// are read. #2351 keeps it, so h becomes `fn () -> {x: number} & {y: string}`.
 			name: "AWeakVariableInOnePositionOnlyUsesDecide",
 			src: `
 declare fn mk<T>() -> fn () -> T
@@ -218,7 +218,7 @@ fn u() {
 	val b: {y: string} = h()
 }
 `,
-			values: map[string]string{"h": "&'static fn () -> never"},
+			values: map[string]string{"h": "fn () -> never"},
 		},
 		{
 			// make's type comes from the bounds the checker uses for m, which keep the literals.
@@ -243,7 +243,7 @@ val made = mk()
 `,
 			values: map[string]string{
 				"id":   "fn <T>(x: T) -> T",
-				"made": "&'static fn <T>(x: T) -> T",
+				"made": "fn <T>(x: T) -> T",
 			},
 		},
 		{
@@ -252,7 +252,7 @@ val made = mk()
 declare fn twice<T>(f: fn (x: T) -> T) -> fn (x: T) -> T
 export val inc2 = twice(fn (x: number) -> number { return x + 1 })
 `,
-			values: map[string]string{"inc2": "&'static fn (x: number) -> number"},
+			values: map[string]string{"inc2": "fn (x: number) -> number"},
 		},
 		{
 			// The `6` the pattern tests is not part of `o`'s type, which keeps the `5` it

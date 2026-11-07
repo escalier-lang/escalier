@@ -59,7 +59,7 @@ func TestInferTypeParamDefaultAtCall(t *testing.T) {
 			name:    "CallbackCandidate",
 			src:     "declare fn take<T = number>(f: fn (x: T) -> undefined) -> fn (x: T) -> undefined\nval r = take(fn (s: string) {})",
 			binding: "r",
-			want:    "&'static fn (x: string) -> undefined",
+			want:    "fn (x: string) -> undefined",
 		},
 		{
 			// `g` generalizes over the call, and each use instantiates the default again.
