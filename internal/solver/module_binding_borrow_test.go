@@ -60,6 +60,20 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 			`,
 			want: []string{"7:6-7:10: this call runs 'bump', which writes 'x' while it is borrowed as immutable"},
 		},
+		// The awaited call runs bump before test resumes, so a reads x across the write.
+		"AwaitedCallWritesWhileBorrowed": {
+			src: `
+				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
+				val mut x = {v: 1}
+				async fn bump() -> Promise<undefined> { x.v = 5 }
+				async fn test() -> Promise<undefined> {
+					val a = &x
+					await bump()
+					readRead(a, a)
+				}
+			`,
+			want: []string{"7:12-7:16: this call runs 'bump', which writes 'x' while it is borrowed as immutable"},
+		},
 		"CallReadsWhileBorrowed": {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
