@@ -284,6 +284,16 @@ func (l *liveLoan) heldAt(p movePlace) bool {
 	return false
 }
 
+// heldWithin reports whether a holder of l is p or a place under p.
+func (l *liveLoan) heldWithin(p movePlace) bool {
+	for _, h := range l.holders {
+		if h.place.root == p.root && pathHasPrefix(h.place.path, p.path) {
+			return true
+		}
+	}
+	return false
+}
+
 // newLiveLoan returns a loan of ev that nothing holds yet.
 func newLiveLoan(ev *borrowEvent) *liveLoan {
 	return &liveLoan{ev: ev, holders: map[string]heldPlace{}, slots: set.NewSet[callSlot](), ownSlots: set.NewSet[callSlot]()}
