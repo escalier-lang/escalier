@@ -413,14 +413,15 @@ type ReadonlyFieldError struct {
 }
 
 // ReadonlyFieldSubtypeError fires when a readonly source field flows into a
-// non-readonly target field through structural subtyping under a mutable borrow:
-// a `&mut {readonly a: T}` cannot fill a `&mut {a: T}` target, since the target view
-// would otherwise let a holder write through and break the source's readonly
-// contract. The check sits in the ObjectType <: ObjectType arm under the
-// mut-context flag, the contravariant write view of a mutable borrow, and blames
-// whatever site triggered the constraint, typically the call argument or return
-// that flows the value out. A direct write to a declared readonly field reports
-// ReadonlyFieldError instead.
+// non-readonly target field. A `&mut {readonly a: T}` cannot fill a `&mut {a: T}`
+// target, since a holder of the target could write the field. An owned
+// `{readonly a: T}` cannot fill an owned `{a: T}` destination either, since the
+// value could move on into a `val mut` binding that writes the field. The check sits
+// in the ObjectType <: ObjectType arm under the mut-context flag, the contravariant
+// write view of a mutable borrow. reportReadonlyIntoWritable reaches it for an owned
+// destination. The error blames the site that flows the value out, such as a call
+// argument, an initializer, or a return. A direct write to a declared readonly field
+// reports ReadonlyFieldError instead.
 type ReadonlyFieldSubtypeError struct {
 	Field string
 	site  ast.Node

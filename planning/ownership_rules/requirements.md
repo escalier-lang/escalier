@@ -120,6 +120,31 @@ rejected after the field's one initialization. A `readonly` field does not
 satisfy a writable field, because a holder of the writable type could reassign
 it. A getter with no setter counts as a `readonly` field.
 
+The rule applies to every owned destination, whatever its binding's
+mutability. That covers a binding, a reassignment, a parameter, and a return
+value. A `val` binding or an immutable parameter can move its value on into a
+`val mut` binding, which then writes the field. A caller can do the same with a
+returned value. A parameter's binding mutability is not part of the signature
+either, so a call through a function value could not see it. In the program
+below, both calls report
+`readonly field 'a' cannot satisfy a writable field requirement`:
+
+```esc
+fn sink(mut o: {a: number}) { o.a = 5 }
+fn move(o: {a: number}) {
+    val mut m = o
+    m.a = 5
+}
+fn f(obj: {readonly a: number}, other: {readonly a: number}) {
+    sink(obj)
+    move(other)
+}
+```
+
+A `&` borrow can neither write the field nor move the value, so a `readonly`
+field still satisfies a writable field behind one. With `obj` above,
+`read(&obj)` is accepted for `fn read(o: &{a: number})`.
+
 **T6. A borrow cannot fill an owned destination.** A value of type `&T` or
 `&mut T` does not satisfy an owned `T`, since the destination would
 claim ownership of storage owned elsewhere. The same holds for a
@@ -1788,6 +1813,33 @@ The checking model closes it by recording the copy as a `copy(place, holder)`
 event, which makes `c` a second holder of the borrow.
 [#1527](https://github.com/escalier-lang/escalier/issues/1527) tracks the gap.
 
+**B9. T5 misses a readonly field some owned destinations hide.**
+`reportReadonlyIntoWritable` in
+[infer_decl.go](../../internal/solver/infer_decl.go) applies T5 to an owned
+destination whose type is an object or tuple. It reports nothing for a
+destination typed by a type parameter, a union, or a rest parameter, or for a
+readonly field inside a class's type argument. Each call below checks clean
+today, and each should report
+`readonly field 'a' cannot satisfy a writable field requirement`:
+
+```esc
+fn bounded<T: {a: number}>(o: T) -> T { return o }
+fn nullable(o: {a: number} | null) {}
+fn rest(...o: Array<{a: number}>) {}
+fn list(o: Array<{a: number}>) {}
+
+fn f(p: {readonly a: number}, q: {readonly a: number},
+     r: {readonly a: number}, xs: Array<{readonly a: number}>) {
+    bounded(p)
+    nullable(q)
+    rest(r)
+    list(xs)
+}
+```
+
+The class case holds behind a `&mut` borrow too, so a
+`&mut Array<{readonly a: number}>` fills a `&mut Array<{a: number}>`.
+
 ## Divergences from the docs
 
 These came from reading the code and need confirming with a fixture each before
@@ -1939,6 +1991,14 @@ the solver.
 | T3 | Annotate `{a: mut {b: number}}` or `Array<mut Point>` | Rejected |
 | T5 | Write a `readonly` field after its initialization | Rejected |
 | T5 | A `{readonly a: number}` value into a `{a: number}` slot of a `val mut` binding | Rejected |
+| T5 | A `{readonly a: number}` value into a `{a: number}` slot of a `val` binding | Rejected |
+| T5 | A `{readonly a: number}` argument for a `mut o: {a: number}` parameter | Rejected |
+| T5 | A `{readonly a: number}` argument for an `o: {a: number}` parameter | Rejected |
+| T5 | A `{readonly a: number}` argument through a function value | Rejected |
+| T5 | A `{readonly a: number}` call result for a `mut o: {a: number}` parameter | Rejected |
+| T5 | Reassign a `var o: {a: number}` binding to a `{readonly a: number}` value | Rejected |
+| T5 | Return a `{readonly a: number}` value from a function that returns `{a: number}` | Rejected |
+| T5 | A `&{readonly a: number}` argument for an `o: &{a: number}` parameter | Accepted |
 | T5 | Assign to a getter with no setter | Rejected |
 | T5 | Write a `readonly` field twice in a constructor | Rejected |
 | T8 | `if c { p } else { q }` with `p` owned and `q` a borrow | Rejected |

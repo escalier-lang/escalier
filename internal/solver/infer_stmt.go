@@ -79,6 +79,11 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 		if c.fn != nil {
 			c.fn.returns = append(c.fn.returns, t)
 			c.fn.returnExprs = append(c.fn.returnExprs, s.Expr)
+			// The caller can move an owned return value into a `val mut` binding, so a
+			// readonly field cannot fill a writable field of the return annotation.
+			if s.Expr != nil && c.fn.returnAnn != nil {
+				c.reportReadonlyIntoWritable(s.Expr, t, c.fn.returnAnn)
+			}
 			// Returning an owned value moves it out of the call frame. A returned borrow
 			// flows out at its own lifetime.
 			if s.Expr != nil {
