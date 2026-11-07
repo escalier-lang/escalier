@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"slices"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -134,6 +136,74 @@ func (c *checker) checkCallOnlyParams() {
 		}
 	}
 }
+
+// withRetentionLifetimes returns t with a retention lifetime on each function type that has
+// none. mint returns the lifetime for one function type. The walk reaches function types through
+// unions, intersections, tuple elements, object properties, and type arguments. It does not
+// enter a function type, so a callback parameter inside one keeps its own meaning. t is not
+// modified, and each copied function type takes the provenance of the one it copies.
+func (c *checker) withRetentionLifetimes(t soltype.Type, mint func() soltype.Lifetime) soltype.Type {
+	return t.Accept(&retentionMinter{c: c, mint: mint}, soltype.Positive)
+}
+
+// bindingLifetime returns a function that mints the lifetime of a binding declared at lvl. A
+// module-level binding lives for the rest of the program, so its lifetime is 'static. A binding
+// in a body gets a fresh lifetime at lvl on each call.
+func (c *checker) bindingLifetime(lvl int) func() soltype.Lifetime {
+	if c.fn == nil {
+		return func() soltype.Lifetime { return soltype.Static }
+	}
+	return func() soltype.Lifetime { return c.ctx.freshLifetime(lvl) }
+}
+
+// retentionMinter is the visitor withRetentionLifetimes runs.
+type retentionMinter struct {
+	c    *checker
+	mint func() soltype.Lifetime
+}
+
+func (m *retentionMinter) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	switch t := t.(type) {
+	case *soltype.FuncType:
+		if t.Lt != nil {
+			return soltype.EnterResult{SkipChildren: true}
+		}
+		retained := *t
+		retained.Lt = m.mint()
+		if origin, ok := m.c.prov.get(t); ok {
+			if fromAST, isAST := origin.(FromAST); isAST {
+				m.c.recordProv(&retained, fromAST.Node, fromAST.Kind)
+			}
+		}
+		return soltype.EnterResult{Type: &retained, SkipChildren: true}
+	case *soltype.ObjectType:
+		// A method is not a value the object holds, so only a property's type is walked.
+		elems := t.Elems
+		changed := false
+		for i, elem := range t.Elems {
+			prop, isProp := elem.(*soltype.PropertyElem)
+			if !isProp {
+				continue
+			}
+			pt := prop.Type.Accept(m, pol)
+			if pt == prop.Type {
+				continue
+			}
+			if !changed {
+				elems = slices.Clone(t.Elems)
+				changed = true
+			}
+			elems[i] = &soltype.PropertyElem{Name: prop.Name, Type: pt, Optional: prop.Optional, Readonly: prop.Readonly}
+		}
+		if !changed {
+			return soltype.EnterResult{SkipChildren: true}
+		}
+		return soltype.EnterResult{Type: &soltype.ObjectType{Elems: elems, Inexact: t.Inexact, Class: t.Class}, SkipChildren: true}
+	}
+	return soltype.EnterResult{}
+}
+
+func (*retentionMinter) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // outlivedBy returns every lifetime lt is required to outlive, read through the upper bounds of
 // lt and of each variable reached. lt itself is not included.

@@ -86,7 +86,8 @@ func (c *checker) setRetentionFromCaptures(scope *Scope, lvl int, closure ast.Fu
 			continue
 		}
 		captured, isFn := c.bindingValue(lvl, b).(*soltype.FuncType)
-		if !isFn || captured.Lt == nil {
+		// A function kept for 'static outlives any closure that captures it.
+		if !isFn || captured.Lt == nil || captured.Lt == soltype.Static {
 			continue
 		}
 		if ft.Lt == nil {

@@ -844,6 +844,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	retAnnOK := false
 	if sig.Return != nil && !sig.Async && !sig.Gen {
 		retAnnT, retAnnOK = c.resolveTypeAnn(declScope, sig.Return, lvl)
+		// A caller keeps the function a body returns for as long as it likes, so a function
+		// type in the return annotation takes a lifetime of the signature as its retention.
+		if retAnnOK && hasBody {
+			retAnnT = c.withRetentionLifetimes(retAnnT, func() soltype.Lifetime { return c.ctx.freshLifetime(lvl) })
+		}
 	}
 	// The body has to work for every instantiation its type parameters' bounds allow, so
 	// those parameters are rigid from the walk of the body on. They stay rigid after it,

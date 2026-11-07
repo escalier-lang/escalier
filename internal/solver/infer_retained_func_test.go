@@ -76,6 +76,41 @@ func TestInferRetainedFuncParam(t *testing.T) {
 			binding: "h",
 			want:    "&'static fn () -> undefined",
 		},
+		// A module-level slot that can be written keeps what it holds for the rest of the
+		// program.
+		{
+			name:    "plain function in a module-level var",
+			src:     `var sink: fn () -> undefined = fn () {}`,
+			binding: "sink",
+			want:    "&'static fn () -> undefined",
+		},
+		{
+			name:    "plain function in a module-level array",
+			src:     `var mut handlers: Array<fn () -> undefined> = []`,
+			binding: "handlers",
+			want:    "Array<&'static fn () -> undefined>",
+		},
+		{
+			name:    "plain function in a module-level object field",
+			src:     `var mut registry: {cb: fn () -> undefined} = {cb: fn () {}}`,
+			binding: "registry",
+			want:    "{cb: &'static fn () -> undefined}",
+		},
+		// Only the initializer fills a module-level `val`, so its annotation keeps no lifetime.
+		{
+			name:    "plain function in a module-level val",
+			src:     `val h: fn () -> undefined = fn () {}`,
+			binding: "h",
+			want:    "fn () -> undefined",
+		},
+		// The caller keeps the returned function for a lifetime that connects nothing, so it
+		// elides.
+		{
+			name:    "plain function in a return annotation",
+			src:     `fn mk() -> fn () -> undefined { return fn () {} }`,
+			binding: "mk",
+			want:    "fn () -> &fn () -> undefined",
+		},
 		// An alias whose body is a retained function substitutes its lifetime argument
 		// into the retention lifetime.
 		{
@@ -390,6 +425,68 @@ fn f(g: fn () -> undefined) {
 		{
 			name: "captured by a returned closure",
 			src:  `fn f(g: fn () -> undefined) { return fn () { g() } }`,
+			want: []string{"1:6-1:7: parameter 'g' is only called during the call, so it cannot outlive the call"},
+		},
+		// A `fn` type outside a parameter keeps the function for as long as the slot that
+		// holds it lives.
+		{
+			name: "bound to an unannotated local",
+			src: `fn f(g: fn () -> undefined) {
+    val k = g
+    k()
+}`,
+		},
+		{
+			name: "bound to an annotated local",
+			src: `fn f(g: fn () -> undefined) {
+    val k: fn () -> undefined = g
+    k()
+}`,
+		},
+		{
+			name: "stored into a module-level var",
+			src: `var sink: fn () -> undefined = fn () {}
+fn f(g: fn () -> undefined) { sink = g }`,
+			want: []string{"2:6-2:7: parameter 'g' is only called during the call, so it cannot be kept for 'static"},
+		},
+		{
+			name: "stored into a module-level var through an annotated local",
+			src: `var sink: fn () -> undefined = fn () {}
+fn f(g: fn () -> undefined) {
+    val k: fn () -> undefined = g
+    sink = k
+}`,
+			want: []string{"2:6-2:7: parameter 'g' is only called during the call, so it cannot be kept for 'static"},
+		},
+		{
+			name: "stored into an annotated binding of the enclosing body",
+			src: `fn outer() {
+    var keep: fn () -> undefined = fn () {}
+    val inner = fn (g: fn () -> undefined) { keep = g }
+    keep()
+}`,
+			want: []string{"3:21-3:22: parameter 'g' is only called during the call, so it cannot outlive the call"},
+		},
+		{
+			name: "pushed onto a module-level array",
+			src: `var mut handlers: Array<fn () -> undefined> = []
+fn f(g: fn () -> undefined) { handlers.push(g) }`,
+			want: []string{"2:6-2:7: parameter 'g' is only called during the call, so it cannot be kept for 'static"},
+		},
+		{
+			name: "stored into a field of a module-level object",
+			src: `var mut registry: {cb: fn () -> undefined} = {cb: fn () {}}
+fn f(g: fn () -> undefined) { registry.cb = g }`,
+			want: []string{"2:6-2:7: parameter 'g' is only called during the call, so it cannot be kept for 'static"},
+		},
+		{
+			name: "returned through a return annotation",
+			src:  `fn f(g: fn () -> undefined) -> fn () -> undefined { return g }`,
+			want: []string{"1:6-1:7: parameter 'g' is only called during the call, so it cannot outlive the call"},
+		},
+		{
+			name: "returned in an array through a return annotation",
+			src:  `fn f(g: fn () -> undefined) -> Array<fn () -> undefined> { return [g] }`,
 			want: []string{"1:6-1:7: parameter 'g' is only called during the call, so it cannot outlive the call"},
 		},
 		// A generator's body starts on the first `next()`, after the call that made it returns.
