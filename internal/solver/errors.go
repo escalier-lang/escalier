@@ -2507,12 +2507,15 @@ func (e *LifetimeRelationUndeclaredError) Message() string {
 // lifetime past the call. Such a parameter, as `g` in `fn f(g: fn () -> undefined)`, is only
 // called during the call, so a caller lends it a closure's captures for that call alone.
 // `onClick(g)` against `declare fn onClick(handler: &'static fn () -> undefined)` keeps it for
-// 'static. Name is the parameter's name, Static says the body keeps it for 'static, and Param
-// is the parameter's pattern, which the error blames.
+// 'static. Name is the parameter's name, and Static says the body keeps it for 'static.
+// Deferred names the kind of function whose body reads the parameter and can run after the call
+// returns, as in "a generator", and is "" otherwise. Param is the parameter's pattern, which the
+// error blames.
 type CallOnlyFuncKeptError struct {
-	Name   string
-	Static bool
-	Param  ast.Node
+	Name     string
+	Static   bool
+	Deferred string
+	Param    ast.Node
 }
 
 func (*CallOnlyFuncKeptError) isSolverError()        {}
@@ -2521,6 +2524,9 @@ func (e *CallOnlyFuncKeptError) Related() []ast.Span { return nil }
 func (e *CallOnlyFuncKeptError) Message() string {
 	if e.Static {
 		return fmt.Sprintf("parameter '%s' is only called during the call, so it cannot be kept for 'static", e.Name)
+	}
+	if e.Deferred != "" {
+		return fmt.Sprintf("parameter '%s' is only called during the call, but the body of %s can run after the call returns", e.Name, e.Deferred)
 	}
 	return fmt.Sprintf("parameter '%s' is only called during the call, so it cannot outlive the call", e.Name)
 }

@@ -135,6 +135,11 @@ type checker struct {
 	// pendingCallOnly holds a check per function parameter that has no retention lifetime, for
 	// checkCallOnlyParams to read once the enclosing component has solved.
 	pendingCallOnly []callOnlyCheck
+	// watchedCallOnly holds the body type of each call-only parameter of an `async` or `gen`
+	// function, and readCallOnly holds each of those the walk has read. watchCallOnlyReads and
+	// noteCallOnlyRead fill them.
+	watchedCallOnly set.Set[*soltype.FuncType]
+	readCallOnly    set.Set[*soltype.FuncType]
 	// ltMarks maps a node to the lifetime counter at the start of its inference, written by
 	// markLifetimes for every expression and statement. A rigid-lifetime check sited at the
 	// node reads it to tell the lifetimes the checked value minted from the ones it shares.
