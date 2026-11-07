@@ -20,10 +20,9 @@ import (
 // recordClosureCaptures records each local of the current body that `closure` captures, for
 // the scope the closure is written in:
 //
-//   - It emits the capture's ownership events.
+//   - It emits the capture's ownership events. A closure that moves a module-level name its
+//     module's function captures is a ModuleLevelMoveError, which the move event reports.
 //   - It records the type of the local's binding in the event table's captureTypes.
-//   - A module-level name a module's function captures cannot move, so a closure that moves
-//     one is a ModuleLevelMoveError.
 //
 // A capture whose type has value semantics records no more than its events, since a closure
 // holding a primitive cannot see a later change to the binding it copied. A capture from a
@@ -71,13 +70,6 @@ func (c *checker) recordClosureCaptures(scope *Scope, closure ast.Func) {
 		// owned local.
 		if t := c.eventTable(); t != nil {
 			t.captureTypes[root] = bindingType(b)
-		}
-
-		// A closure whose body moves the local takes it when the closure is written. A
-		// module's function cannot move a module-level name, so that case is an error. The
-		// error blames the expression in the closure that moves the local.
-		if moveNode, ok := moved[capture.Name]; ok && c.fn.capturesModule && c.fn.captureVarIDs.Contains(root) {
-			c.reportModuleLevelMove(moveNode)
 		}
 	}
 }

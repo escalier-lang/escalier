@@ -211,7 +211,9 @@ func (c *checker) placeHolderOf(e ast.Expr) eventHolder {
 //     of a field of that result passes on the borrows held at that field.
 //   - A branching expression passes the value of each branch's tail.
 //
-// Any other source names no place and emits nothing here.
+// Any other source names no place and emits nothing here. A flow that settles as a move out
+// of a module-level binding reports a ModuleLevelMoveError, as reportModuleLevelMove and
+// reportUnplacedModuleMove describe.
 func (c *checker) emitFlow(source ast.Expr, holder eventHolder, dest flowDest, ref liveness.StmtRef) {
 	if c.eventTable() == nil || source == nil {
 		return
@@ -243,6 +245,7 @@ func (c *checker) emitFlow(source ast.Expr, holder eventHolder, dest flowDest, r
 
 	p, ok := c.exprPlace(source)
 	if !ok {
+		c.reportUnplacedModuleMove(source, holder, dest)
 		// A read of a call's result, as in `pick(&q).inner` or `await load(&q)`, holds what the
 		// result borrows at the part it reads, unless the value read is a value type.
 		if call, path, isCall := c.callResultOf(source); isCall && !c.holdsValueType(c.info.TypeOf(source)) {
@@ -444,6 +447,16 @@ func (c *checker) emitTempFlow(source ast.Expr, value ast.Expr, path []placeSeg,
 	c.emitFlow(source, holder, dest, ref)
 }
 
+// emitSpreadFlow emits the flow of source, the operand of a spread in the array or object
+// literal value, as emitTempFlow does for an element the whole literal holds. A spread is an
+// owned destination, as F1 states.
+func (c *checker) emitSpreadFlow(source ast.Expr, value ast.Expr, ref liveness.StmtRef) {
+	if t := c.eventTable(); t != nil {
+		t.spreads.Add(source)
+	}
+	c.emitTempFlow(source, value, nil, &ownedDest{}, ref)
+}
+
 // retargetTemp moves every event held by the temporary value to holder, keeping the
 // path within the value. It also records each place whose value flowed into the temporary
 // value as flowing into holder at the CFG point ref.
@@ -494,6 +507,9 @@ func (c *checker) emitValueFlow(p movePlace, source ast.Expr, sourceT soltype.Ty
 
 	flow := flowBase{eventBase: eventBase{place: p, node: node}, holder: holder}
 	ev, wait, settled := c.classifyFlow(c.fn.events, flow, sourceT, dest, false, false)
+	if settled {
+		c.reportModuleLevelMove(c.fn.events, ev, dest, sourceT)
+	}
 
 	// The holder of a flow of a function value reaches each closure the place holds. A
 	// capture may wait for its destination, but a function's capture settles as a read

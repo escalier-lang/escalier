@@ -2678,9 +2678,9 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		// InvalidAssignmentTargetError.
 		switch left := e.Left.(type) {
 		case *ast.MemberExpr:
-			return c.inferMemberAssign(scope, lvl, e, left, sourceT, assignStmt)
+			return c.inferMemberAssign(scope, lvl, e, left, sourceT)
 		case *ast.IndexExpr:
-			return c.inferIndexAssign(scope, lvl, e, left, sourceT, assignStmt)
+			return c.inferIndexAssign(scope, lvl, e, left, sourceT)
 		default:
 			c.report(&InvalidAssignmentTargetError{Target: e.Left})
 		}
@@ -2780,16 +2780,11 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		}
 		if len(c.errs) == errsBefore && !missing {
 			c.constrainEscape(sourceT)
-			if c.fn != nil {
+			// Anything can call a closure in a module-level binding from here on, so each
+			// later call may run it.
+			if c.fn != nil && hasEventRef {
 				if _, ok := c.fn.stmtToRef[assignStmt]; ok {
-					// The module keeps the value, so a source that is itself module-level
-					// state cannot move into it.
-					c.rejectModuleLevelMove(scope, e.Right)
-					// Anything can call a closure in a module-level binding from here on, so each
-					// later call may run it.
-					if hasEventRef {
-						c.noteRetainedClosureStore(retainedStore{via: closureVia(target.Name), expr: e.Right, at: eventRef, static: true})
-					}
+					c.noteRetainedClosureStore(retainedStore{via: closureVia(target.Name), expr: e.Right, at: eventRef, static: true})
 				}
 			}
 			// KNOWN GAP (#762): this store is accepted even though it is not sound in
@@ -2810,11 +2805,6 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		}
 	}
 	if c.fn != nil && len(c.errs) == assignErrsBefore && !missing && c.varIDs.Of(target) > 0 {
-		// A local binding takes its source's value, so a source that is module-level state
-		// cannot move into it. The global-write branch above checks its own source.
-		if !b.ModuleLevel {
-			c.rejectModuleLevelMove(scope, e.Right)
-		}
 		// A value that keeps a closure keeps it reachable while the target is live.
 		if !b.ModuleLevel {
 			c.noteRetainedHolder(c.varIDs.Of(target), e.Right)
@@ -2864,7 +2854,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 // When the receiver is a variable, the widened type is recorded in `written` so a
 // later read of the same field returns it (read-after-write; see valueProp). The
 // assignment evaluates to the value just stored, so its type is the widened source.
-func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m *ast.MemberExpr, source soltype.Type, assignStmt ast.Stmt) soltype.Type {
+func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m *ast.MemberExpr, source soltype.Type) soltype.Type {
 	undefinedT := soltype.Type(&soltype.UndefinedType{})
 	if hasOptionalLink(m) {
 		// A target holding an optional link, such as `recv?.prop = …` or `a?.b.c = …`, is not a
@@ -2879,7 +2869,7 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 		return undefinedT
 	}
 	recv, place := c.inferWriteReceiver(scope, lvl, m.Object)
-	return c.inferFieldAssign(scope, lvl, e, m.Object, m.Prop.Name, recv, place, source, assignStmt)
+	return c.inferFieldAssign(lvl, e, m.Object, m.Prop.Name, recv, place, source)
 }
 
 // fieldWriteMember returns the member a write of the field name through a receiver of type
@@ -2902,7 +2892,7 @@ func (c *checker) fieldWriteMember(name string, recv soltype.Type) (soltype.ObjT
 // recv the caller has inferred. place is the place recv is an owned layer of, or nil. e is
 // the assignment and e.Left is `object.name` or a bracket form naming the same field, such
 // as `object["name"]`. The rules are the ones inferMemberAssign documents.
-func (c *checker) inferFieldAssign(scope *Scope, lvl int, e *ast.BinaryExpr, object ast.Expr, name string, recv soltype.Type, place *ownedPlace, source soltype.Type, assignStmt ast.Stmt) soltype.Type {
+func (c *checker) inferFieldAssign(lvl int, e *ast.BinaryExpr, object ast.Expr, name string, recv soltype.Type, place *ownedPlace, source soltype.Type) soltype.Type {
 	member, _ := c.fieldWriteMember(name, recv)
 	// An accessor named prop resolves here rather than through the structural requirement
 	// below, whose element is a PropertyElem. constrain's object arm matches the sub side
@@ -2911,7 +2901,7 @@ func (c *checker) inferFieldAssign(scope *Scope, lvl int, e *ast.BinaryExpr, obj
 	// no setter to call.
 	switch member.(type) {
 	case *soltype.SetterElem, *soltype.GetterElem:
-		return c.inferAccessorAssign(scope, lvl, e, name, recv, place, source, member, assignStmt)
+		return c.inferAccessorAssign(lvl, e, name, recv, place, source, member)
 	}
 	w := widen(source)
 	// A write to a declared readonly field is reported here, blamed on the target, so every
@@ -2933,7 +2923,6 @@ func (c *checker) inferFieldAssign(scope *Scope, lvl int, e *ast.BinaryExpr, obj
 	// A source that fills a borrow field without a written borrow is reported for that alone,
 	// and the store records no alias or move for it.
 	missing := hasDeclared && c.checkWrittenBorrow(e.Right, declared.Type)
-	errsBefore := len(c.errs)
 	// An owned layer of a binding is writable when the binding is `mut`. An immutable binding
 	// is reported here, and the checks below that a known shape would fail are skipped, since
 	// each would report the same write again.
@@ -2984,17 +2973,6 @@ func (c *checker) inferFieldAssign(scope *Scope, lvl int, e *ast.BinaryExpr, obj
 		})
 	}
 	c.recordWritten(recv, name, w)
-	// Only a write that type-checked is checked for a module-level move.
-	if c.fn != nil && len(c.errs) == errsBefore && !missing {
-		// The check reads the assignment's statement from assignStmt rather than
-		// c.fn.currentStmt, which inferring the receiver and source may have overwritten with
-		// an inner branch statement.
-		if _, ok := c.fn.stmtToRef[assignStmt]; ok {
-			// Storing a value into a field moves it into the receiver, so a source that is
-			// module-level state cannot be stored.
-			c.rejectModuleLevelMove(scope, e.Right)
-		}
-	}
 	// The assignment evaluates to the value just stored. recordType overwrites the
 	// `undefined` recovery type inferAssign recorded on e before dispatching here.
 	c.recordType(e, w)
@@ -3014,7 +2992,7 @@ func writableFieldType(prop *soltype.PropertyElem) soltype.Type {
 // indexKeyName decides the same way for a read, writes that field through
 // inferFieldAssign, so `self[k] = v` with `val k = "x"` checks as `self.x = v`. Any other
 // key writes an element, which inferElementAssign checks.
-func (c *checker) inferIndexAssign(scope *Scope, lvl int, e *ast.BinaryExpr, ix *ast.IndexExpr, source soltype.Type, assignStmt ast.Stmt) soltype.Type {
+func (c *checker) inferIndexAssign(scope *Scope, lvl int, e *ast.BinaryExpr, ix *ast.IndexExpr, source soltype.Type) soltype.Type {
 	if hasOptionalLink(ix) {
 		// A target holding an optional link, such as `recv?[k] = …`, is not a valid JavaScript
 		// assignment target, the same as the member form.
@@ -3024,9 +3002,9 @@ func (c *checker) inferIndexAssign(scope *Scope, lvl int, e *ast.BinaryExpr, ix 
 	// JavaScript evaluates the receiver before the key.
 	recv, place := c.inferWriteReceiver(scope, lvl, ix.Object)
 	if name, ok := c.indexKeyName(scope, lvl, ix, recv); ok {
-		return c.inferFieldAssign(scope, lvl, e, ix.Object, name, recv, place, source, assignStmt)
+		return c.inferFieldAssign(lvl, e, ix.Object, name, recv, place, source)
 	}
-	return c.inferElementAssign(scope, lvl, e, ix, recv, place, source, assignStmt)
+	return c.inferElementAssign(lvl, e, ix, recv, place, source)
 }
 
 // inferElementAssign types a write `recv[k] = source` whose key names no single property,
@@ -3051,7 +3029,7 @@ func (c *checker) inferIndexAssign(scope *Scope, lvl int, e *ast.BinaryExpr, ix 
 //
 // The assignment evaluates to the value just stored, widened the way a field write
 // widens it.
-func (c *checker) inferElementAssign(scope *Scope, lvl int, e *ast.BinaryExpr, ix *ast.IndexExpr, recv soltype.Type, place *ownedPlace, source soltype.Type, assignStmt ast.Stmt) soltype.Type {
+func (c *checker) inferElementAssign(lvl int, e *ast.BinaryExpr, ix *ast.IndexExpr, recv soltype.Type, place *ownedPlace, source soltype.Type) soltype.Type {
 	undefinedT := soltype.Type(&soltype.UndefinedType{})
 	if _, failed := c.info.TypeOf(ix.Index).(*soltype.ErrorType); failed {
 		return undefinedT
@@ -3102,13 +3080,6 @@ func (c *checker) inferElementAssign(scope *Scope, lvl int, e *ast.BinaryExpr, i
 	})
 	for _, slot := range slots {
 		c.constrain(e.Right, source, checkTarget(slot, missing))
-	}
-	if c.fn != nil && len(c.errs) == errsBefore && !missing {
-		if _, ok := c.fn.stmtToRef[assignStmt]; ok {
-			// Storing a value into an element moves it into the receiver, as a field store
-			// does.
-			c.rejectModuleLevelMove(scope, e.Right)
-		}
 	}
 	c.recordType(e, w)
 	return w
@@ -3190,7 +3161,6 @@ func (c *Context) keyReaches(key soltype.Type, name string) bool {
 // its `self`, and it raises whatever the setter declares. It records nothing in `written`,
 // since a setter has no cell a later read could shortcut to.
 func (c *checker) inferAccessorAssign(
-	scope *Scope,
 	lvl int,
 	e *ast.BinaryExpr,
 	name string,
@@ -3198,7 +3168,6 @@ func (c *checker) inferAccessorAssign(
 	place *ownedPlace,
 	source soltype.Type,
 	accessor soltype.ObjTypeElem,
-	assignStmt ast.Stmt,
 ) soltype.Type {
 	setter, ok := accessor.(*soltype.SetterElem)
 	if !ok {
@@ -3207,11 +3176,8 @@ func (c *checker) inferAccessorAssign(
 		return out
 	}
 	// Writing through a setter runs its body, so the write is an exceptional exit of the
-	// enclosing body exactly as a getter read is. This runs before errsBefore is captured,
-	// so an undeclared raise does not suppress the move the write records below — the two
-	// checks are independent.
+	// enclosing body exactly as a getter read is.
 	c.raiseAccessorThrows(lvl, e, describeSite("assigning", "this assignment", e.Left), setter.ThrowsOrNever())
-	errsBefore := len(c.errs)
 	c.checkReceiverMut(e.Left, name, recv, place, setter.SelfParam)
 	// A setter an object type declares names no receiver, and running it still writes the
 	// object, so an owned receiver needs a `mut` binding.
@@ -3220,13 +3186,6 @@ func (c *checker) inferAccessorAssign(
 	}
 	missing := c.checkWrittenBorrow(e.Right, setter.Param.Type)
 	c.constrain(e.Right, source, checkTarget(setter.Param.Type, missing))
-	// A concretely owned parameter takes the value out of this frame, so a source that is
-	// module-level state cannot be passed. A rejected write is not checked.
-	if c.fn != nil && len(c.errs) == errsBefore && c.isConcreteOwned(setter.Param.Type) {
-		if _, ok := c.fn.stmtToRef[assignStmt]; ok {
-			c.rejectModuleLevelMove(scope, e.Right)
-		}
-	}
 	// The assignment evaluates to the value just written, widened the way a field write
 	// widens it, so `val b = (c.x = 5)` reads `number` whether `x` is a field or a setter.
 	// recordType overwrites the `undefined` recovery type inferAssign recorded on e before
@@ -3419,8 +3378,6 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 		if !ok {
 			elemT := c.inferExpr(scope, lvl, el)
 			pieces = append(pieces, tuplePiece{fixed: []soltype.Type{elemT}})
-			// Building a value into the tuple moves it, so it cannot be module-level state.
-			c.rejectModuleLevelMove(scope, el)
 			// The element is held at its position, the segment a tuple pattern reads it at. An
 			// element after a spread is held by the whole tuple.
 			if hasEventRef {
@@ -3434,9 +3391,8 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 		}
 		spreadSeen = true
 		spreadT := c.inferExpr(scope, lvl, spread.Value)
-		// A spread is an owned destination, as F1 states.
 		if hasEventRef {
-			c.emitTempFlow(spread.Value, e, nil, &ownedDest{}, eventRef)
+			c.emitSpreadFlow(spread.Value, e, eventRef)
 		}
 		switch op := spreadT.(type) {
 		case *soltype.TupleType:
@@ -3454,12 +3410,6 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 				piece = tuplePiece{shape: &shape}
 				variadic = true
 			}
-			// An inexact tuple before the last element has no place in a tuple result, so
-			// it is checked below only once the literal is known to hold it.
-			if piece.inexact == nil || piece.last {
-				// Spreading a tuple moves its elements into the new tuple.
-				c.rejectModuleLevelSpread(scope, spread.Value, op)
-			}
 			pieces = append(pieces, piece)
 		case *soltype.ErrorType:
 			// The operand already reported its own failure; absorb it rather than
@@ -3472,12 +3422,11 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 			}
 			pieces = append(pieces, tuplePiece{shape: &tupleShape{rest: elem}})
 			variadic = true
-			c.rejectModuleLevelSpread(scope, spread.Value, op)
 		}
 	}
 	var t soltype.Type
 	if variadic {
-		t = c.variadicLiteral(scope, pieces)
+		t = c.variadicLiteral(pieces)
 	} else {
 		t = c.fixedLiteral(pieces)
 	}
@@ -3530,9 +3479,8 @@ func (c *checker) fixedLiteral(pieces []tuplePiece) *soltype.TupleType {
 //
 // `[0, ...xs]` over `xs: Array<number>` is `[0, ...Array<number>]`, which keeps the
 // minimum length of one. A literal with no fixed value on either side is the `Array`
-// itself, so `[...xs]` is `Array<number>`. scope resolves the root of a spread operand
-// the literal moves.
-func (c *checker) variadicLiteral(scope *Scope, pieces []tuplePiece) soltype.Type {
+// itself, so `[...xs]` is `Array<number>`.
+func (c *checker) variadicLiteral(pieces []tuplePiece) soltype.Type {
 	var prefix, middle, suffix []soltype.Type
 	inMiddle := false
 	addVariadic := func(shape tupleShape) {
@@ -3552,9 +3500,6 @@ func (c *checker) variadicLiteral(scope *Scope, pieces []tuplePiece) soltype.Typ
 		case piece.shape != nil:
 			addVariadic(*piece.shape)
 		case piece.inexact != nil:
-			if !piece.last {
-				c.rejectModuleLevelSpread(scope, piece.spread.Value, piece.inexact)
-			}
 			addVariadic(tupleShape{prefix: piece.inexactPrefix, rest: &soltype.UnknownType{}})
 		case inMiddle:
 			suffix = append(suffix, piece.fixed...)
@@ -3601,9 +3546,8 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 	for _, elem := range e.Elems {
 		if spread, ok := elem.(*ast.ObjSpreadExpr); ok {
 			op := c.inferExpr(scope, lvl, spread.Value)
-			// A spread is an owned destination, as F1 states.
 			if hasEventRef {
-				c.emitTempFlow(spread.Value, e, nil, &ownedDest{}, eventRef)
+				c.emitSpreadFlow(spread.Value, e, eventRef)
 			}
 			if _, errored := op.(*soltype.ErrorType); errored {
 				// The operand already reported its own failure; absorb it rather than layering a
@@ -3619,9 +3563,6 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 			}
 			operandElems = append(operandElems, obj.Elems)
 			inexact = inexact || obj.Inexact
-			// Spreading an object moves its fields into the new object, the object twin of
-			// the array spread.
-			c.rejectModuleLevelSpread(scope, spread.Value, op)
 			continue
 		}
 		prop, ok := elem.(*ast.PropertyExpr)
@@ -3647,7 +3588,6 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 			// JavaScript evaluates a computed key before the value it labels.
 			keyT := c.inferExpr(scope, lvl, computed.Expr)
 			ft := c.inferExpr(scope, lvl, value)
-			c.rejectModuleLevelMove(scope, value)
 			// A computed key names no field segment, so the value is held by the whole object.
 			if hasEventRef {
 				c.emitTempFlow(value, e, nil, &ownedDest{}, eventRef)
@@ -3670,8 +3610,6 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 		ft := c.inferExpr(scope, lvl, value)
 		// A literal property is never optional or readonly.
 		operandElems = append(operandElems, []soltype.ObjTypeElem{&soltype.PropertyElem{Name: name, Type: ft}})
-		// Building a value into the object moves it, so it cannot be module-level state.
-		c.rejectModuleLevelMove(scope, value)
 		// With no expected type, the element takes its source's type, as F1 states. The flow
 		// moves an owned source and copies a borrow.
 		if hasEventRef {

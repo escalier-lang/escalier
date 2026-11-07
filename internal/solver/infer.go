@@ -613,6 +613,10 @@ type funcCtx struct {
 	// capturesModule is true when this body is a module's function, whose captures are the
 	// module-level names it reads rather than locals of an enclosing body.
 	capturesModule bool
+	// scope is the scope the body's parameters are bound in. A name the rename pass left
+	// unnumbered binds no local of the body, so it resolves the same way from here as from
+	// any scope inside the body.
+	scope *Scope
 	// varIDTypes maps the VarID of each parameter leaf, the receiver, and each capture to
 	// that binding's soltype. runLivenessPrePass fills it before the body is walked. The
 	// stored type is the same pointer the inference graph mutates, so a type variable
