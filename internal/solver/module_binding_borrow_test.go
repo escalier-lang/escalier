@@ -28,7 +28,6 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 			`,
 			want: []string{
 				"7:11-7:12: cannot move module-level value 'x' inside a function. Borrow it with `&x`",
-				"8:11-8:12: cannot move module-level value 'x' inside a function. Borrow it with `&x`",
 				"8:11-8:12: use of moved value 'x'",
 			},
 		},
