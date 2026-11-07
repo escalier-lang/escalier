@@ -786,6 +786,8 @@ func TestUnannotatedDestructuredParamConsumesArgument(t *testing.T) {
 		want []string
 	}{
 		{
+			// Once #2333 lands, the parameter becomes a borrow, since its leaf is only returned.
+			// The call then reports that the argument needs `&` instead of a use of a moved value.
 			name: "ObjectPatternLeafReturned",
 			src: `fn take({x}) { return x }
 fn h() {
@@ -796,6 +798,8 @@ fn h() {
 			want: []string{"5:11-5:12: use of moved value 'o'"},
 		},
 		{
+			// Once #2333 lands, the parameter becomes a borrow, since its leaf is only returned.
+			// The call then reports that the argument needs `&` instead of a use of a moved value.
 			name: "TuplePatternLeafReturned",
 			src: `fn take2([x, y]) { return x }
 fn h() {
@@ -806,6 +810,7 @@ fn h() {
 			want: []string{"5:11-5:12: use of moved value 't'"},
 		},
 		{
+			// This case stays as it is once #2333 lands, since the body returns the parameter itself.
 			name: "BareNameReturned",
 			src: `fn whole(p) { return p }
 fn h() {
@@ -816,6 +821,8 @@ fn h() {
 			want: []string{"5:11-5:13: use of moved value 'o2'"},
 		},
 		{
+			// Once #2333 lands, the parameter becomes a borrow, since its leaf is only returned.
+			// The call then reports that the argument needs `&` instead of a use of a moved value.
 			name: "NestedPatternLeafReturned",
 			src: `fn deep({a: {b}}) { return b }
 fn h() {
@@ -826,6 +833,8 @@ fn h() {
 			want: []string{"5:11-5:12: use of moved value 'o'"},
 		},
 		{
+			// Once #2333 lands, the parameter becomes a borrow, since its leaf is only returned.
+			// The call then reports that the argument needs `&` instead of a use of a moved value.
 			name: "TupleRestReturned",
 			src: `fn tail([x, ...rest]) { return rest }
 fn h() {
@@ -836,6 +845,8 @@ fn h() {
 			want: []string{"5:11-5:12: use of moved value 't'"},
 		},
 		{
+			// Once #2333 lands, the parameter becomes a borrow, since its leaf is only returned.
+			// The call then reports that the argument needs `&` instead of a use of a moved value.
 			name: "ObjectRestReturned",
 			src: `fn others({x, ...rest}) { return rest }
 fn h() {
@@ -846,8 +857,9 @@ fn h() {
 			want: []string{"5:11-5:12: use of moved value 'o'"},
 		},
 		{
-			// The body of `read` reads a field of its leaf without moving it, so the parameter is
-			// a borrow and the argument stays usable.
+			// The body of `read` reads a field of its leaf without moving it, so the argument stays
+			// usable. Once #2333 lands, the parameter becomes a borrow, and the call reports that
+			// the argument needs `&`.
 			name: "LeafOnlyReadKeepsArgument",
 			src: `fn read({x}) -> number { return x.v }
 fn h() {
@@ -858,6 +870,8 @@ fn h() {
 		},
 		{
 			// A `number` leaf copies out of the parameter, so storing it moves nothing.
+			// This case may change once #2333 lands, if it makes a parameter whose value-type leaf
+			// is copied out a borrow.
 			name: "ValueTypeLeafKeepsArgument",
 			src: `var total = 0
 fn keep({n}) { total = n }
@@ -870,6 +884,8 @@ fn h() {
 		{
 			// A leaf bounded above by `number | undefined` holds only primitives, so returning it
 			// copies.
+			// This case may change once #2333 lands, if it makes a parameter whose value-type leaf
+			// is copied out a borrow.
 			name: "OptionalNumberLeafKeepsArgument",
 			src: `fn f({n}) {
   val m: number | undefined = n
@@ -884,6 +900,8 @@ fn h() {
 		{
 			// A returned closure that captures a `number` leaf copies it, so the argument stays
 			// usable.
+			// This case may change once #2333 lands, if it makes a parameter whose value-type leaf
+			// is copied out a borrow.
 			name: "ReturnedClosureCapturesValueTypeLeaf",
 			src: `fn f({n}) {
   val m: number = n
@@ -896,7 +914,9 @@ fn h() {
 }`,
 		},
 		{
-			// A returned closure that captures an object leaf takes it out of the parameter.
+			// A returned closure that captures an object leaf takes it out of the parameter. This
+			// case stays as it is once #2333 lands, since a closure that escapes keeps the parameter
+			// owned.
 			name: "ReturnedClosureCapturesObjectLeaf",
 			src: `fn f({x}) {
   return fn () { return x }
