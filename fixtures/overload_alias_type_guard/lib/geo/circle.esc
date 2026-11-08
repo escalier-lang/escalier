@@ -1,0 +1,11 @@
+class Circle {
+  radius: number,
+}
+
+type CircleAlias = Circle
+
+fn describe(v: CircleAlias) -> string { return "circle" }
+fn describe(v: string) -> string { return v }
+
+fn describeDirect(v: Circle) -> string { return "circle" }
+fn describeDirect(v: string) -> string { return v }

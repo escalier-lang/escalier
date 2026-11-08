@@ -1,0 +1,55 @@
+class Shape {
+  area: number,
+}
+
+class Other {
+  tag: string,
+}
+
+class Holder<T> {
+  value: T,
+}
+
+type ShapeAlias = Shape
+type ShapeAliasAlias = ShapeAlias
+type Box<T> = Shape
+type NumberHolder = Holder<number>
+type GeoCircle = geo.Circle
+type ShapeOrOther = Shape | Other
+
+fn direct(v: Shape) -> number { return v.area }
+fn direct(v: Other) -> number { return 0 }
+
+fn aliased(v: ShapeAlias) -> number { return v.area }
+fn aliased(v: Other) -> number { return 1 }
+
+fn aliasOfAlias(v: ShapeAliasAlias) -> number { return v.area }
+fn aliasOfAlias(v: Other) -> number { return 2 }
+
+fn genericAlias(v: Box<string>) -> number { return v.area }
+fn genericAlias(v: Other) -> number { return 3 }
+
+fn aliasWithTypeArgs(v: NumberHolder) -> number { return v.value }
+fn aliasWithTypeArgs(v: Other) -> number { return 4 }
+
+fn namespacedAlias(v: GeoCircle) -> number { return v.radius }
+fn namespacedAlias(v: Other) -> number { return 5 }
+
+fn unionAlias(v: ShapeOrOther) -> number { return 6 }
+fn unionAlias(v: string) -> number { return 7 }
+
+fn directNs(v: geo.Circle) -> number { return v.radius }
+fn directNs(v: Other) -> number { return 8 }
+
+enum Color {
+  RGB(r: number, g: number, b: number),
+  Hex(code: string),
+}
+
+type HexColor = Color.Hex
+
+fn variantAlias(v: HexColor) -> number { return 9 }
+fn variantAlias(v: Other) -> number { return 10 }
+
+fn variantDirect(v: Color.Hex) -> number { return 11 }
+fn variantDirect(v: Other) -> number { return 12 }
