@@ -1,0 +1,22 @@
+name: Label ownership issues
+
+# Adds the ownership label to an issue opened in or moved into an ownership
+# milestone. The label adds the issue to the Ownership project board.
+on:
+  issues:
+    types: [opened, milestoned]
+
+jobs:
+  label:
+    # Milestone 9 is "Simplify ownership, lifetime, and mutability rules and
+    # implementation" and milestone 19 is "Ownership Extensions".
+    if: contains(fromJSON('[9, 19]'), github.event.issue.milestone.number)
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Add the ownership label
+        run: gh issue edit "$NUMBER" --repo "$GITHUB_REPOSITORY" --add-label ownership
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.issue.number }}
