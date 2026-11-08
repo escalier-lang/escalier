@@ -191,10 +191,12 @@ func (v *paramReadScanner) bindAliases(d *ast.VarDecl) {
 	if d.Kind != ast.ValKind || d.TypeAnn != nil || d.Else != nil || d.Init == nil {
 		return
 	}
-	root, isRead := readRoot(d.Init)
-	if root == nil || !v.tracked.Contains(root.Name) {
+	chain := chainOf(d.Init, nil)
+	root, isIdent := chain.root.(*ast.IdentExpr)
+	if !isIdent || !v.tracked.Contains(root.Name) {
 		return
 	}
+	isRead := len(chain.links) > 0
 	if _, single := d.Pattern.(*ast.IdentPat); single && !isRead {
 		return
 	}
@@ -234,26 +236,6 @@ func (v *paramReadScanner) readObject(read, obj ast.Expr) {
 	v.consume(obj)
 	if id, ok := obj.(*ast.IdentExpr); ok && v.tracked.Contains(id.Name) {
 		v.readThrough.Add(id)
-	}
-}
-
-// readRoot returns the identifier at the root of e and whether e reads through it. For a chain
-// of member and element reads such as `p.x[0].y`, it returns `p` and true. For a bare
-// identifier, it returns the identifier and false. For any other expression, it returns nil.
-func readRoot(e ast.Expr) (*ast.IdentExpr, bool) {
-	isRead := false
-	for {
-		switch ex := e.(type) {
-		case *ast.MemberExpr:
-			e = ex.Object
-		case *ast.IndexExpr:
-			e = ex.Object
-		case *ast.IdentExpr:
-			return ex, isRead
-		default:
-			return nil, false
-		}
-		isRead = true
 	}
 }
 
