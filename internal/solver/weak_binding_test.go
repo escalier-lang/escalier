@@ -112,11 +112,13 @@ fn f() {
 		},
 		{
 			// The value a function stores widens in the map, and the function's own
-			// parameter keeps the literal it was called with.
+			// parameter keeps the literal it was called with. The `number` annotation on `n`
+			// makes x a value type, so storing `[x]` copies x and the return can read it.
 			name: "AStoredParameterWidensOnlyInTheMap",
 			src: `
 val mut seen = Map()
 fn put(x) {
+	val n: number = x
 	seen.set("k", [x])
 	return x
 }
@@ -125,6 +127,21 @@ val one = put(1)
 			values: map[string]string{
 				"seen": "Map<string, [number]>",
 				"one":  "1",
+			},
+		},
+		{
+			// f's result holds `{next: f()}`, so the variable for it reaches itself through
+			// the field. Storing it in the map widens that variable as a slot, and the
+			// widened copy is one knot that holds itself.
+			name: "ARecursiveValueStoredInAMapStaysOneKnot",
+			src: `
+fn f() { return {next: f()} }
+val mut seen = Map()
+fn put() { seen.set("k", f()) }
+`,
+			values: map[string]string{"seen": "Map<string, {next: μX0.{next: X0}}>"},
+			want: []string{
+				"2:4-2:5: `f` has type `fn () -> {next: μX0.{next: X0}}`, and no finite value inhabits its return type, so a call to it never returns; give the recursion a base case, make the recursive property optional, or defer the recursive call behind a function or a Promise",
 			},
 		},
 		{
