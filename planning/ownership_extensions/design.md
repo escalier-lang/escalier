@@ -206,22 +206,21 @@ settles only after `cb` has run. When `cb` returns a promise, `q` adopts it,
 so `q` also waits for an async callback's body. `catch` and `finally` settle
 their result once their callback has run, or once `p` has fulfilled and the
 `catch` callback never will. Each reaction method therefore borrows its
-receiver, and keeps its callback, for a lifetime `'a` that A4 ties to the
-returned promise:
+receiver, and keeps its callback, for the lifetime `'a` of the promise it
+returns. A4 defines that lifetime:
 
 ```esc
 declare class Promise<T, E = never> {
-    then<'a, R, F>(&'a self, onfulfilled: 'a fn (value: &'a T) -> R throws F) -> Promise<R, E | F>,
-    catch<'a, R, G>(&'a self, onrejected: 'a fn (reason: &'a E) -> R throws G) -> Promise<&'a T | R, G>,
-    finally<'a, F>(&'a self, onfinally: 'a fn () -> unknown throws F) -> Promise<&'a T, E | F>,
+    then<'a, R, F>(&'a self, onfulfilled: 'a fn (value: &'a T) -> R throws F) -> 'a Promise<R, E | F>,
+    catch<'a, R, G>(&'a self, onrejected: 'a fn (reason: &'a E) -> R throws G) -> 'a Promise<&'a T | R, G>,
+    finally<'a, F>(&'a self, onfinally: 'a fn () -> unknown throws F) -> 'a Promise<&'a T, E | F>,
 }
 ```
 
 The declaration omits the `PromiseLike` return forms and the two-callback
-`then` overload, which follow the same pattern. The reaction methods are
-bodyless and return a promise, so A4 holds `'a` until the caller awaits the
-returned promise, and keeps it for `'static` when the caller drops or stores
-that promise without awaiting it. Four consequences follow from the ordinary
+`then` overload, which follow the same pattern. The returned promise is an
+`'a Promise`, so by A4 `'a` lasts until the caller awaits it, and for
+`'static` when the caller drops or stores it without awaiting it. Four consequences follow from the ordinary
 rules:
 
 - While `q = p.then(cb)` is unawaited, `p` has a live immutable borrow.
@@ -329,21 +328,34 @@ fn watch(p: Promise<&Flat>) {
 This is a new diagnostic, `ReactionBorrowLifetimeError`. The method name in it
 is `then`, `catch` or `finally`, whichever was called.
 
-### 3.4 A4. An `async fn` call lends its arguments until its promise settles
+### 3.4 A4. A promise holds the borrows its pending computation reads
 
-An `async fn` body runs past its first `await` after the call has returned. The
-promise the call returns is the only thing the caller can observe the body
-through. So the returned promise holds every borrow the call's arguments carry,
-the way E4 says a closure holds its captures. The borrows stay live until the
-promise settles.
+A promise stands for a computation that may still be running, and that
+computation can read its caller's data after the call has returned. An
+`async fn` body runs past its first `await` after the call returns, and
+JavaScript runs it to completion whether or not anyone awaits its promise.
 
-The checker knows the promise has settled once the caller has awaited it in any
-of A1's forms. A promise the caller moves elsewhere, stores, or drops without
-awaiting may settle at any later point, so its borrows stay live for `'static`.
-JavaScript runs an `async fn` body to completion whether or not anyone awaits
-its promise, so dropping the promise does not end the body.
+A promise type therefore takes a lifetime prefix, written the way D17 writes a
+function type's, as in `'a Promise<T, E>`. The lifetime bounds the borrows the
+pending computation holds, so a slot keeps the promise only while `'a` is live.
+`'static` means the promise may be kept for the whole program, which is the
+case for one that holds nothing. The prefix is a different thing from A3's
+`Promise<&'a T>`. `'a Promise<T>` holds borrows while it is pending.
+`Promise<&'a T>` settles to a borrow.
+
+An `'a Promise` keeps `'a` live until it settles. The checker knows it has
+settled once the caller has awaited it in any of A1's forms. A promise the
+caller moves elsewhere, stores, or drops without awaiting may settle at any
+later point, so its `'a` lasts for `'static`. Dropping the promise does not
+end the computation.
 
 ```esc
+async fn show(p: &Flat) -> Promise<number> {
+    await tick()
+    return p.x
+}
+// show: fn <'a>(p: &'a Flat) -> 'a Promise<number>
+
 async fn go() -> Promise<number> {
     val mut f: Flat = {x: 1}
     val pr = show(&f)
@@ -365,17 +377,44 @@ fn forget() {
 }
 ```
 
-The borrows an argument carries include those of a function argument. D17
-makes a parameter written as a plain `fn` type call-only, with a lifetime that
-ends with the call. In an `async fn`, that lifetime instead lasts until the
-promise settles, so the body may call the parameter after an `await`, and a
-closure passed to it keeps its captures borrowed until then:
+The lifetime comes from three places:
+
+- **Inference, for an `async fn` or an async closure.** The promise holds what
+  the body reads after its first suspension, the way D17 rule 4 derives a
+  closure's lifetime from its captures. A borrowed parameter or a call-only
+  `fn` parameter read after an `await` ties its lifetime to the promise's. A
+  body that reads its parameters only before it suspends holds nothing, so its
+  promise is `'static`. `show` reads `p` after `await tick()`, so its
+  promise is `'a Promise`.
+- **Elision, for a written or declared signature.** An elided prefix follows
+  D17 rule 2. In a return type it is tied to the signature's input lifetimes,
+  so `declare fn save(doc: &Doc) -> Promise<undefined>` reads as
+  `fn <'a>(doc: &'a Doc) -> 'a Promise<undefined>`. That is the form that
+  rejects more programs, as I3 asks. It covers a callback parameter too, so a
+  closure passed to a promise-returning library function stays borrowed until
+  the caller awaits the result.
+- **A written prefix.** A declaration states the other two cases:
+
+| How long the implementation uses an argument | Parameter | Returned promise |
+|---|---|---|
+| Only before it returns | `cb: fn () -> R` | `'static Promise<T>`, written so elision does not tie it to `cb` |
+| Until the promise settles | `cb: 'a fn () -> R` | `'a Promise<T>`, which elision also gives |
+| Past the promise | `cb: 'static fn () -> R` | `'static Promise<T>`, which elision also gives |
+
+A call-only `fn` parameter keeps D17 rule 2's meaning in a body whose promise
+does not hold it. An async body that reads one after an `await`, or a plain
+function that captures one into a reaction or an async call it returns, ties
+the parameter's lifetime to the returned promise. D17 rule 2 already lets a
+call-only parameter reach a result whose lifetime the signature ties to it, so
+no new exception is needed. The caller's closure then stays borrowed until it
+awaits the result:
 
 ```esc
 async fn later(cb: fn () -> undefined) -> Promise<undefined> {
     await tick()
-    cb()                 // accepted, since cb's lifetime lasts until later's promise settles
+    cb()
 }
+// later: fn <'a>(cb: 'a fn () -> undefined) -> 'a Promise<undefined>
 
 async fn useLater() -> Promise<number> {
     val mut count = {n: 0}
@@ -386,21 +425,26 @@ async fn useLater() -> Promise<number> {
 }
 ```
 
-The rule covers every call whose result is a promise:
+A written `'static` on a body's promise is checked against what the body
+holds:
 
-- An `async fn` or an async closure.
-- A bodyless `declare fn` or method that returns a promise. Its declaration
-  cannot say how long the implementation reads a borrowed argument, and I3
-  picks the form that rejects more programs. So
-  `declare fn save(doc: &Doc) -> Promise<undefined>` holds `doc` until its
-  promise settles. A callback parameter is the exception. I2 converts it as
-  call-only and takes the declaration at its word, so its lifetime still ends
-  with the call. A declaration that keeps its callback writes a lifetime, as
-  the reaction methods of A2 do.
-- A function that is not `async` but returns a promise. Its body can keep a
-  borrow past the call only through a reaction or an async call, whose result
-  holds the borrow by this same rule. Returning that result hands the hold to
-  the caller.
+```esc
+async fn load(pick: fn () -> string) -> 'static Promise<number> {
+    val key = pick()     // accepted, since pick is read before the first await
+    await tick()
+    return key.length
+}
+
+async fn alsoBad(cb: fn () -> undefined) -> 'static Promise<undefined> {
+    await tick()
+    cb()                 // error: the written 'static promise may be kept for the whole program, but 'cb' is read after the first await; write `-> Promise<undefined>` to let the promise hold it
+}
+```
+
+A rendered prefix follows L3 and D17's rendering. A lifetime that connects an
+input to the result is named. A `'static` returned promise is rendered when the
+signature has input lifetimes, since a bare one would read back as tied to
+them. [#2601](https://github.com/escalier-lang/escalier/issues/2601) adds the type, and [#2438](https://github.com/escalier-lang/escalier/issues/2438) adds the checks.
 
 ### 3.5 A5. A suspension point is a call to code the checker cannot see
 
@@ -566,18 +610,22 @@ Inside the body, `yield` evaluates to the value `next` sent, at type `TNext`.
 `val first = yield 0` binds an owned `Flat`. `it` is a `val mut` binding
 because `next` takes `&mut self`, by X3.
 
-### 4.4 G4. A generator holds its arguments' borrows while it is live
+### 4.4 G4. A generator holds the borrows its body reads while it is live
 
-A `gen fn` body runs only when the consumer calls `next`. A generator that is
-never advanced again never reads its arguments again. So the generator value
-holds each borrow its call's arguments carry, and the borrows stay live while
-the generator value is live, by L1. As in A4, those include the borrows of a
-call-only `fn` argument, so the body may call such a parameter on any later
-`next`. This is lazier than A4. An `async fn` body
-keeps running after its promise is dropped, and a generator body stops when the
-generator is.
+A `gen fn` body runs only when the consumer calls `next`, so every read in
+the body happens after the call has returned. A generator type takes a lifetime
+prefix the way A4's promise does, as in `'a Generator<Y, R, N, E>`. Its
+lifetime bounds the borrows the generator's body reads, and inference gives it
+the lifetime of each borrowed or call-only `fn` parameter the body reads.
+
+An `'a Generator` keeps `'a` live while the generator value is live, by L1.
+This is lazier than A4. An `async fn` body keeps running after its promise is
+dropped, and a generator body stops when the generator does.
 
 ```esc
+gen fn each(p: &Flat) { yield p.x }
+// each: fn <'a>(p: &'a Flat) -> 'a Generator<number, undefined, unknown>
+
 fn run() {
     val mut f: Flat = {x: 1}
     val it = each(&f)
@@ -591,6 +639,10 @@ fn ok() {
     f.x = 2      // accepted, since the generator is dead
 }
 ```
+
+A call-only `fn` parameter the body calls ties its lifetime to the
+generator's, so `gen fn each2(cb: fn () -> number) { yield cb() }` renders
+as `fn <'a>(cb: 'a fn () -> number) -> 'a Generator<number, undefined, unknown>`.
 
 ### 4.5 G5. `yield from g` iterates `g`
 
@@ -681,10 +733,11 @@ and what `x` binds, exactly as for a sync loop. Each `next` returns a fresh
 promise that no place holds, so the loop's implicit `await` yields an owned
 step, by A1.
 
-The borrow lifetimes combine the two laziness rules. The body runs from a
-`next` until its next `yield`, even if the consumer drops the promise `next`
-returned. So the async generator holds its arguments' borrows while it is live
-and until the promise of its last `next` settles.
+The borrow lifetimes combine the two laziness rules. An async generator's type
+takes a lifetime prefix, as in `'a AsyncGenerator<Y, R, N, E>`. The body runs
+from a `next` until its next `yield`, even if the consumer drops the promise
+`next` returned. So `'a` stays live while the generator is live and until the
+promise of its last `next` settles.
 
 A yielded borrow lives as long as the generator, by G2, so an `await` inside
 the body cannot let the body write a value the consumer still holds. The
@@ -740,18 +793,21 @@ true, so the rules document keeps describing what the checker enforces.
 - **F4.** The list of places that borrow without a written `&` gains a loop
   over a borrow, which binds borrows as a pattern does. A `.then`, `.catch` or
   `.finally` receiver is already covered as a method receiver.
-- **E4.** A call that returns a promise, including an `async fn` call and a
-  reaction, holds its arguments' borrows until that promise settles, by A2 and
-  A4. E4 already makes a call to a module-level function, and an `await` of
-  one, use the module-level bindings it reaches. A5 extends that to every
-  `await` and `yield`, which may let other code run.
-- **D17.** Rule 2 makes a call-only `fn` parameter unreadable in an `async`
-  or generator body after the call returns. A4 and G4 replace that clause: the
-  parameter's lifetime lasts until the promise settles or while the generator
-  is live, and the caller's closure keeps its captures borrowed for as long. A generator holds them while it is live, by G4. An
-  `await` counts as a call that may run any stored closure, by A5. These sit
-  beside the closure rule, since a suspended body is a closure the runtime
-  holds.
+- **E4.** A pending promise or generator holds the borrows its lifetime
+  prefix names, the way a kept closure holds its captures. An `'a Promise`
+  holds them until it settles and an `'a Generator` while it is live, by A2,
+  A4 and G4. E4 already makes a call to a module-level function, and an
+  `await` of one, use the module-level bindings it reaches. A5 extends that to
+  every `await` and `yield`, which may let other code run.
+- **D17.** Its lifetime prefix extends from function types to promise and
+  generator types, by A4 and G4. Rules 2 and 4 then apply to them as written:
+  rule 2 elides a returned promise's lifetime, and rule 4's capture inference
+  becomes the inference of what an async or generator body holds. Rule 2's
+  clause that a call-only parameter may not be read in an `async` or
+  generator body after the call returns is replaced. Such a read ties the
+  parameter's lifetime to the returned promise or generator, which the rule's
+  existing exception for a result tied to the parameter allows. Its rendering
+  bullets gain the case of a `'static` returned promise or generator.
 - **D12.** The example `val mut p = fetchNum()` keeps its warning, since
   `Promise<number>` still has no writable slot. The sentence "A `Promise<T>` is
   one, since nothing can write the value inside it" changes to say a promise is
@@ -765,8 +821,10 @@ true, so the rules document keeps describing what the checker enforces.
   since a number has no owned layer. A promise of an object widens the object's
   writable fields.
 - **I2.** A promise leaves the value-type parameters. The converter writes a
-  promise parameter as X1 states. I2 names `Promise.then` among the APIs that
-  need a `'static fn` callback. A2 gives the reaction methods `'a fn`
+  promise parameter as X1 states. A callback parameter of a function that
+  returns a promise is not call-only by default, since the elided promise
+  lifetime holds it until the promise settles. I2 names `Promise.then` among
+  the APIs that need a `'static fn` callback. A2 gives the reaction methods `'a fn`
   callbacks tied to the promise they return instead, so
   [#2573](https://github.com/escalier-lang/escalier/issues/2573) leaves `then`, `catch` and `finally` to [#2438](https://github.com/escalier-lang/escalier/issues/2438).
 - **Comparison with Rust.** The table gains rows for A1, A2, A3, A4, G2 and
@@ -840,13 +898,15 @@ Recommendation: reject by T8. The diagnostic is the mixed-ownership one:
 `mixed-ownership union: members disagree on ownership; make ownership uniform first`.
 A callback that returns a value type, or a promise of one, is not affected.
 
-### 8.4 A dropped `async fn` promise keeps its borrows for `'static`
+### 8.4 A dropped promise keeps the borrows it holds for `'static`
 
-A4 keeps an unawaited promise's borrows live for `'static`. A fire-and-forget
-call such as `void save(&doc)` then freezes `doc` for the rest of the program.
-The alternatives are unsound. Nothing ends an `async fn` body once it has
-started, so the checker cannot pick a shorter lifetime. A caller that wants
-`doc` back writes `await save(&doc)`, or passes an owned copy.
+A4 keeps an unawaited `'a Promise`'s `'a` live for `'static`. A
+fire-and-forget call such as `void save(&doc)` then freezes `doc` for the
+rest of the program, when `save`'s promise holds `doc`. A shorter lifetime
+would be unsound, since nothing ends a running async body. A caller that wants
+`doc` back writes `await save(&doc)`, or passes an owned copy. A callee whose
+promise holds nothing, such as `load` in A4, costs a fire-and-forget caller
+nothing.
 
 Recommendation: keep A4 as stated.
 
@@ -942,10 +1002,10 @@ available. [#2447](https://github.com/escalier-lang/escalier/issues/2447) implem
 | A1 three `await` forms | `.await` takes the future by value. A future is polled once and then consumed | Differs | Escalier adds `await &p` and `await &mut p`, since a JavaScript promise can be awaited again and returns the same object. Rust's `Shared` future from `futures` is the closest match. It hands each awaiter a clone, where `await &p` hands out a borrow |
 | A2 reactions borrow until their result settles | No reactions. A spawned task requires `'static` captures, and a scoped task borrows until its scope joins | Differs | An awaited reaction acts like a scoped task, and a dropped one like `tokio::spawn`, which needs `'static` |
 | A3 borrow of a promise | `&Future` is not awaitable. `Shared<F>` yields clones | No equivalent | |
-| A4 an `async fn` holds its borrows until settled | An `async fn` returns `impl Future + 'a`, which holds its borrows until it is dropped | Differs | Rust futures are lazy, so dropping one ends the borrows. A JavaScript `async fn` runs eagerly, so only settling ends them |
+| A4 a promise holds the borrows its pending computation reads | An `async fn` returns `impl Future + 'a`, which holds its borrows until it is dropped | Differs | `'a Promise<T>` is the same shape as `impl Future + 'a`. Rust futures are lazy, so dropping one ends the borrows. A JavaScript `async fn` runs eagerly, so only settling ends them |
 | G1 three `yield` forms | Coroutines are unstable. `gen` blocks yield owned values | Differs | |
 | G2 a yielded borrow lives as long as the generator | `Iterator::Item` cannot borrow the iterator. A lending iterator needs generic associated types | Differs | Escalier ties the borrow to the generator, not to each `next` |
-| G4 a generator holds its arguments' borrows while live | An iterator holding `&'a T` is bounded by `'a` | Same | |
+| G4 a generator holds the borrows its body reads while live | An iterator holding `&'a T` is bounded by `'a` | Same | |
 | R1 a loop moves or borrows its source | `for x in v` moves `v` through `IntoIterator`. `&v` and `&mut v` borrow | Same | |
 | R2 a fresh loop variable each iteration | Each iteration binds a fresh pattern | Same | |
 
@@ -965,8 +1025,11 @@ reference-shaped type:
   also keeps the promise it returns, as a cached `fetch` does. The converter
   writes an owned return, and a hand-written override in the declaration data
   marks each known exception as `Promise<&'static T>`.
-- A function that returns a promise holds its arguments' borrows until the
-  promise settles, by A4.
+- A returned promise's lifetime prefix is elided, so by A4 it holds every
+  argument until it settles. [#2602](https://github.com/escalier-lang/escalier/issues/2602) classifies built-in and Web API
+  functions from ECMA-262 and WebIDL, and writes `'static Promise<T>` for a
+  function that uses its arguments only before it returns, such as the
+  `Promise` constructor, whose executor runs synchronously.
 - `Promise.all`, `Promise.race`, `Promise.any` and `Promise.allSettled` take
   an iterable of promises. An owned array of owned promises moves them, and an
   array of `&p` borrows them, so the result holds borrows for the second.
@@ -1049,13 +1112,7 @@ Each question lists the options and a recommendation. None blocks the first PR.
    value-type promise as `await &p`. Recommendation: keep the move. One rule is
    easier to read than one that depends on `T`, and the error message names
    the fix.
-2. **Whether a bodyless promise-returning function can opt out of A4.** A4
-   makes `declare fn save(doc: &Doc) -> Promise<undefined>` hold `doc` until
-   the promise settles, even when the implementation reads `doc` only before
-   its first `await`. Options: accept the cost, or add a marker the declaration
-   data can set on a function whose implementation is known. Recommendation:
-   accept the cost until a library shows up where it matters.
-3. **Whether a lending generator is worth adding later.** G2 rejects a body
+2. **Whether a lending generator is worth adding later.** G2 rejects a body
    that reuses a buffer across yields. Recommendation: wait for a real program
    that needs it.
 
@@ -1076,12 +1133,13 @@ for `for x in &mut arr`.
 
 | Issue | Rules | What the PR does | Depends on |
 |---|---|---|---|
+| [#2601](https://github.com/escalier-lang/escalier/issues/2601) | A4, G4 | Adds the lifetime prefix on promise and generator types, with its elision and rendering | |
 | [#2426](https://github.com/escalier-lang/escalier/issues/2426) | A1, A6 | Gives `await` its three forms, removes `SharedAwaitIntoMutError`, and removes promise from the value types in `requirements.md` |  |
 | [#2424](https://github.com/escalier-lang/escalier/issues/2424) |  | Distributes a borrow over a union, the rule A3 builds on |  |
-| [#2438](https://github.com/escalier-lang/escalier/issues/2438) | A2, A4, A5 | Makes a call that returns a promise hold its arguments' borrows until that promise settles, which closes the `show` hole in section 2. Covers call-only `fn` arguments, applies the same rule to reactions, and changes the reaction methods in `prelude.esc` per X2 | [#2426](https://github.com/escalier-lang/escalier/issues/2426) |
+| [#2438](https://github.com/escalier-lang/escalier/issues/2438) | A2, A4, A5 | Infers an async body's promise lifetime and keeps an `'a Promise`'s `'a` live until it settles, which closes the `show` hole in section 2. Gives the reaction methods `'a Promise` results in `prelude.esc` per X2 | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2601](https://github.com/escalier-lang/escalier/issues/2601) |
 | [#2600](https://github.com/escalier-lang/escalier/issues/2600) | A5 | Makes an `await` or a `yield` use each module-level binding some module-level function writes, as section 8.6 describes |  |
 | [#2427](https://github.com/escalier-lang/escalier/issues/2427) | A3, A7 | Normalizes a borrow of a promise to a promise of a borrow, refines the D12 warning per section 7, and adds `ReactionBorrowLifetimeError` | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2424](https://github.com/escalier-lang/escalier/issues/2424), [#2438](https://github.com/escalier-lang/escalier/issues/2438) |
-| [#2439](https://github.com/escalier-lang/escalier/issues/2439) | G4 | Makes a generator hold its arguments' borrows while it is live, including call-only `fn` arguments, which closes the `each` hole in section 2 |  |
+| [#2439](https://github.com/escalier-lang/escalier/issues/2439) | G4 | Infers a generator body's lifetime and keeps it live while the generator is, which closes the `each` hole in section 2 | [#2601](https://github.com/escalier-lang/escalier/issues/2601) |
 | [#2428](https://github.com/escalier-lang/escalier/issues/2428) | G1 to G3, G5 | Gives `yield` its three forms and keeps a yielded borrow live for the rest of the body |  |
 | [#2440](https://github.com/escalier-lang/escalier/issues/2440) | R2 | Binds a fresh loop variable on each iteration in the control-flow graph |  |
 | [#2441](https://github.com/escalier-lang/escalier/issues/2441) | X3 | Restricts `fill` and `copyWithin` to element types F2 copies, and adds `DuplicatingArrayMethodError` |  |
@@ -1089,8 +1147,9 @@ for `for x in &mut arr`.
 | [#2442](https://github.com/escalier-lang/escalier/issues/2442) | X3, X4 | Changes the element-reading iterator methods and the `Iterable` and `Generator` declarations | [#2444](https://github.com/escalier-lang/escalier/issues/2444) |
 | [#2443](https://github.com/escalier-lang/escalier/issues/2443) | S1 to S3 | Applies the rules to async generators, including the implicit `await` of a promise operand to `yield` | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2438](https://github.com/escalier-lang/escalier/issues/2438), [#2444](https://github.com/escalier-lang/escalier/issues/2444) |
 | [#2447](https://github.com/escalier-lang/escalier/issues/2447) | A2 | Warns on a reaction to a promise held in a place whose result is never awaited inside an `async fn`, as section 8.7 describes | [#2438](https://github.com/escalier-lang/escalier/issues/2438) |
+| [#2602](https://github.com/escalier-lang/escalier/issues/2602) | X1 | Classifies how long each promise-returning built-in and Web API function keeps its arguments, and writes the declarations to match | [#2601](https://github.com/escalier-lang/escalier/issues/2601) |
 
-[#2439](https://github.com/escalier-lang/escalier/issues/2439), [#2600](https://github.com/escalier-lang/escalier/issues/2600), [#2428](https://github.com/escalier-lang/escalier/issues/2428), [#2440](https://github.com/escalier-lang/escalier/issues/2440) and [#2441](https://github.com/escalier-lang/escalier/issues/2441) need nothing else
+[#2601](https://github.com/escalier-lang/escalier/issues/2601), [#2600](https://github.com/escalier-lang/escalier/issues/2600), [#2428](https://github.com/escalier-lang/escalier/issues/2428), [#2440](https://github.com/escalier-lang/escalier/issues/2440) and [#2441](https://github.com/escalier-lang/escalier/issues/2441) need nothing else
 and can land first.
 
 Three related issues sit outside this milestone:
