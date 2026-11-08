@@ -123,7 +123,7 @@ func TestSimpleBindingAndUse(t *testing.T) {
 		exprStmt(call(ident("print"), xRef)),
 	)
 
-	result := Rename(ids, nil, body, map[string]VarID{"print": -1})
+	result := RenameFrom(ids, nil, body, map[string]VarID{"print": -1}, 1)
 
 	require.Empty(t, result.Errors)
 	require.Equal(t, 1, result.UniqueVarCount) // one local variable
@@ -148,7 +148,7 @@ func TestCrossScopeShadowing(t *testing.T) {
 		exprStmt(call(ident("print"), outerRef)),
 	)
 
-	result := Rename(ids, nil, body, map[string]VarID{"print": -1})
+	result := RenameFrom(ids, nil, body, map[string]VarID{"print": -1}, 1)
 
 	require.Empty(t, result.Errors)
 	require.Equal(t, 2, result.UniqueVarCount) // two distinct local variables
@@ -173,7 +173,7 @@ func TestSameScopeShadowing(t *testing.T) {
 		exprStmt(call(ident("print"), xRef2)),
 	)
 
-	result := Rename(ids, nil, body, map[string]VarID{"print": -1})
+	result := RenameFrom(ids, nil, body, map[string]VarID{"print": -1}, 1)
 
 	require.Empty(t, result.Errors)
 	require.Equal(t, 3, result.UniqueVarCount) // x1, y, x2
@@ -197,7 +197,7 @@ func TestFunctionParameters(t *testing.T) {
 		exprStmt(call(ident("print"), aRef)),
 	)
 
-	result := Rename(ids, params, body, map[string]VarID{"print": -1})
+	result := RenameFrom(ids, params, body, map[string]VarID{"print": -1}, 1)
 
 	require.Empty(t, result.Errors)
 	require.Equal(t, 2, result.UniqueVarCount) // a, b
@@ -216,7 +216,7 @@ func TestDestructuring(t *testing.T) {
 		valDecl(objPat, ident("obj")),
 	)
 
-	result := Rename(ids, nil, body, map[string]VarID{"obj": -1})
+	result := RenameFrom(ids, nil, body, map[string]VarID{"obj": -1}, 1)
 
 	require.Empty(t, result.Errors)
 	require.Equal(t, 2, result.UniqueVarCount)
@@ -232,7 +232,7 @@ func TestUnresolvedLocalName(t *testing.T) {
 		exprStmt(call(ident("print"), ident("unknown"))),
 	)
 
-	result := Rename(ids, nil, body, map[string]VarID{"print": -1})
+	result := RenameFrom(ids, nil, body, map[string]VarID{"print": -1}, 1)
 
 	require.Equal(t, []RenameError{
 		{Name: "unknown", Span: span()},
@@ -248,7 +248,7 @@ func TestModuleLevelName(t *testing.T) {
 		exprStmt(call(ident("print"), gRef)),
 	)
 
-	result := Rename(ids, nil, body, map[string]VarID{"print": -1, "globalVar": -2})
+	result := RenameFrom(ids, nil, body, map[string]VarID{"print": -1, "globalVar": -2}, 1)
 
 	require.Empty(t, result.Errors)
 	require.Equal(t, VarID(-2), ids.Of(gRef)) // resolved to outer binding
@@ -269,7 +269,7 @@ func TestScopeRestorationAfterBlock(t *testing.T) {
 		exprStmt(call(ident("print"), xRef)),
 	)
 
-	result := Rename(ids, nil, body, map[string]VarID{"print": -1})
+	result := RenameFrom(ids, nil, body, map[string]VarID{"print": -1}, 1)
 
 	require.Empty(t, result.Errors)
 	require.Equal(t, ids.Of(outerX), ids.Of(xRef)) // print(x) → outer x
@@ -288,7 +288,7 @@ func TestForInLoop(t *testing.T) {
 		), false, span()),
 	)
 
-	result := Rename(ids, nil, body, map[string]VarID{"print": -1, "items": -2})
+	result := RenameFrom(ids, nil, body, map[string]VarID{"print": -1, "items": -2}, 1)
 
 	require.Empty(t, result.Errors)
 	require.Equal(t, ids.Of(item), ids.Of(itemRef))
@@ -309,7 +309,7 @@ func TestForInLoopScopeIsolation(t *testing.T) {
 		exprStmt(call(ident("print"), itemRefOutside)),
 	)
 
-	result := Rename(ids, nil, body, map[string]VarID{"print": -1, "items": -2})
+	result := RenameFrom(ids, nil, body, map[string]VarID{"print": -1, "items": -2}, 1)
 
 	require.Equal(t, []RenameError{
 		{Name: "item", Span: span()},
@@ -344,7 +344,7 @@ func TestMatchExpr(t *testing.T) {
 
 	body := block(exprStmt(matchExpr))
 
-	result := Rename(ids, nil, body, map[string]VarID{"x": -1, "print": -2})
+	result := RenameFrom(ids, nil, body, map[string]VarID{"x": -1, "print": -2}, 1)
 
 	require.Empty(t, result.Errors)
 	require.Equal(t, ids.Of(v), ids.Of(vRef))
@@ -361,7 +361,7 @@ func TestTupleDestructuring(t *testing.T) {
 		valDecl(tuplePat, ident("pair")),
 	)
 
-	result := Rename(ids, nil, body, map[string]VarID{"pair": -1})
+	result := RenameFrom(ids, nil, body, map[string]VarID{"pair": -1}, 1)
 
 	require.Empty(t, result.Errors)
 	require.Equal(t, 2, result.UniqueVarCount)
@@ -395,7 +395,7 @@ func TestFuncDeclBindsName(t *testing.T) {
 		exprStmt(call(addRef, numLit(1), numLit(2))),
 	)
 
-	result := Rename(ids, nil, body, map[string]VarID{})
+	result := RenameFrom(ids, nil, body, map[string]VarID{}, 1)
 
 	require.Empty(t, result.Errors)
 	require.NotEqual(t, VarID(0), ids.Of(addRef))      // add is resolved
@@ -418,7 +418,7 @@ func TestIfValPattern(t *testing.T) {
 
 	body := block(exprStmt(ifLetExpr))
 
-	result := Rename(ids, nil, body, map[string]VarID{"x": -1, "print": -2})
+	result := RenameFrom(ids, nil, body, map[string]VarID{"x": -1, "print": -2}, 1)
 
 	require.Empty(t, result.Errors)
 	require.Equal(t, ids.Of(v), ids.Of(vRef))
@@ -437,7 +437,7 @@ func TestAssignmentResolvesExistingBinding(t *testing.T) {
 		exprStmt(assignExpr),
 	)
 
-	result := Rename(ids, nil, body, map[string]VarID{})
+	result := RenameFrom(ids, nil, body, map[string]VarID{}, 1)
 
 	require.Empty(t, result.Errors)
 	require.Equal(t, ids.Of(x), ids.Of(xAssignTarget))
@@ -456,7 +456,7 @@ func TestObjKeyValueDestructuring(t *testing.T) {
 		valDecl(objPat, ident("obj")),
 	)
 
-	result := Rename(ids, nil, body, map[string]VarID{"obj": -1})
+	result := RenameFrom(ids, nil, body, map[string]VarID{"obj": -1}, 1)
 
 	require.Empty(t, result.Errors)
 	require.NotEqual(t, VarID(0), ids.Of(value))
@@ -500,7 +500,7 @@ func TestNestedFuncExprNotWalked(t *testing.T) {
 		exprStmt(call(fRef, xRef)),
 	)
 
-	result := Rename(ids, nil, body, map[string]VarID{})
+	result := RenameFrom(ids, nil, body, map[string]VarID{}, 1)
 
 	require.Empty(t, result.Errors)
 	require.Equal(t, 2, result.UniqueVarCount) // x, f (not y)
@@ -556,7 +556,7 @@ func TestNestedFuncDeclNotWalked(t *testing.T) {
 		exprStmt(call(innerRef, xRef)),
 	)
 
-	result := Rename(ids, nil, body, map[string]VarID{})
+	result := RenameFrom(ids, nil, body, map[string]VarID{}, 1)
 
 	require.Empty(t, result.Errors)
 	require.Equal(t, 2, result.UniqueVarCount)      // x, inner (not y)
@@ -610,7 +610,7 @@ func TestIfElseShadowing(t *testing.T) {
 		exprStmt(call(ident("print"), outerXRef)),
 	)
 
-	result := Rename(ids, nil, body, map[string]VarID{"cond": -1, "print": -2})
+	result := RenameFrom(ids, nil, body, map[string]VarID{"cond": -1, "print": -2}, 1)
 
 	require.Empty(t, result.Errors)
 	// outerX, consX, altX, y = 4 unique local variables
@@ -646,7 +646,7 @@ func TestExtraParamNames(t *testing.T) {
 		exprStmt(call(ident("print"), aRef)),
 	)
 
-	result := Rename(ids, params, body, map[string]VarID{"print": -1}, "self")
+	result := RenameFrom(ids, params, body, map[string]VarID{"print": -1}, 1, "self")
 
 	require.Empty(t, result.Errors)
 	require.Equal(t, 2, result.UniqueVarCount) // a, self
@@ -674,7 +674,7 @@ func TestExtraParamNamesEmpty(t *testing.T) {
 		exprStmt(numLit(1)),
 	)
 
-	result := Rename(ids, nil, body, map[string]VarID{})
+	result := RenameFrom(ids, nil, body, map[string]VarID{}, 1)
 
 	require.Nil(t, result.ExtraParamVarIDs)
 }
@@ -709,7 +709,7 @@ func TestJSXExpressions(t *testing.T) {
 		valDecl(identPat("el"), jsxExpr),
 	)
 
-	result := Rename(ids, nil, body, map[string]VarID{})
+	result := RenameFrom(ids, nil, body, map[string]VarID{}, 1)
 
 	require.Empty(t, result.Errors)
 	require.Equal(t, ids.Of(name), ids.Of(attrRef))  // attribute expression

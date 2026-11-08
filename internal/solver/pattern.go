@@ -1587,10 +1587,14 @@ func (c *checker) reportPat(purpose bindPurpose, e SolverError) {
 }
 
 // reportPatUnsupported is reportPat for a pattern form the walk cannot type at all.
-// reportUnsupported words that message.
+// reportUnsupported words that message. It also adds n to c.rejectedPatElems.
 func (c *checker) reportPatUnsupported(purpose bindPurpose, n ast.Node) {
 	if purpose == forBinding {
 		c.reportUnsupported(n)
+		if c.rejectedPatElems == nil {
+			c.rejectedPatElems = set.NewSet[ast.Node]()
+		}
+		c.rejectedPatElems.Add(n)
 	}
 }
 

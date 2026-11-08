@@ -2228,6 +2228,8 @@ func TestPrintImportStmt(t *testing.T) {
 		{"a pseudo-package", `import "std:math"`},
 		{"with a flag", `import "std:math?nested"`},
 		{"with flags", `import "std:math?flag1&flag2"`},
+		{"two imports", "import \"std:console\"\nimport \"std:math\" as m"},
+		{"an import before a statement", "import \"std:math\"\nval pi = math.PI"},
 	}
 
 	opts := DefaultOptions()

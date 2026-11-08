@@ -36,6 +36,11 @@ type Context struct {
 	// variable, and the copiers add each copy through copyParamMark. isParamVar reads it.
 	paramVars set.Set[*soltype.TypeVarType]
 
+	// typeArgParams holds the parameters of instantiated signatures that are typed by a type
+	// argument of that instantiation, as markTypeArgParams defines them. isTypeArgParam
+	// reads it.
+	typeArgParams set.Set[*soltype.FuncParam]
+
 	// symbolCounter mints the id a `unique symbol` annotation carries. Each written
 	// annotation is its own symbol, so the counter advances per annotation rather than
 	// per name, and two references to one declaration share an id because they share the
@@ -95,6 +100,13 @@ type Context struct {
 	// removed from its bound list is simply never matched, since findLtProxy scans
 	// only bounds currently present.
 	ltProxyOrigin map[*soltype.LifetimeVar]soltype.Lifetime
+
+	// ltCopies links each lifetime an instantiation copied to the copy, and each copy back to
+	// the lifetime it copies. Every read of a generalized `val` holding a borrow copies the
+	// borrow's lifetime, so the copies stand for one borrow of one value. The rules in
+	// lifetime_frame.go read a lifetime and its copies together. It is metadata only and is
+	// never rolled back. A copy a discarded trial minted is unreachable from any type.
+	ltCopies map[*soltype.LifetimeVar][]*soltype.LifetimeVar
 
 	// methodLifetimes holds every lifetime variable a frozen class method's signature
 	// quantifies on its own: the lifetimes it declares in its `<…>` list and the ones its
@@ -604,6 +616,16 @@ func (c *Context) freshLifetime(level int) *soltype.LifetimeVar {
 	lv := &soltype.LifetimeVar{ID: c.lifetimeCounter, Level: level}
 	c.lifetimeCounter++
 	return lv
+}
+
+// noteLifetimeCopy links origin and the lifetime copy an instantiation minted for it, in
+// ltCopies.
+func (c *Context) noteLifetimeCopy(origin, copied *soltype.LifetimeVar) {
+	if c.ltCopies == nil {
+		c.ltCopies = map[*soltype.LifetimeVar][]*soltype.LifetimeVar{}
+	}
+	c.ltCopies[origin] = append(c.ltCopies[origin], copied)
+	c.ltCopies[copied] = append(c.ltCopies[copied], origin)
 }
 
 // freshJoinLifetime allocates a lifetime variable for a multi-source join site

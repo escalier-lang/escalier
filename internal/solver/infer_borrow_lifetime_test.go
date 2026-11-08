@@ -396,18 +396,242 @@ func TestInferMixedBorrowAndOwnedReturnFallsBackToUnion(t *testing.T) {
 // the EscapingRefIntoStatic acceptance (M4 D3), now reachable from real source.
 // `cache` stores its borrow `p` into the module-level `var sink`, a global write. The
 // stored value outlives every borrow region, so p's lifetime is forced `<: 'static`
-// and the parameter renders `&'static mut {x: number}` rather than under a borrow
-// lifetime `'l{id}`. The store itself checks. A 'static borrow is owned-forever, so
-// it fills the owned destination instead of tripping BorrowEscapeError.
+// and the parameter renders `&'static {x: number}` rather than under a borrow
+// lifetime `'l{id}`. sink's type is a borrow, since T6 rejects a borrow stored into an
+// owned module-level binding.
 func TestInferGlobalWriteEscapesBorrowToStatic(t *testing.T) {
-	src := `var sink = {x: 0}
-fn cache(p: &mut {x: number}) {
+	src := `var sink = &{x: 0}
+fn cache(p: &{x: number}) {
   sink = p
 }`
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
-	require.Equal(t, "{x: number}", values["sink"])
-	require.Equal(t, "fn (p: &'static mut {x: number}) -> undefined", values["cache"])
+	require.Equal(t, "&{x: number}", values["sink"])
+	require.Equal(t, "fn (p: &'static {x: number}) -> undefined", values["cache"])
+}
+
+// TestBorrowIntoAnUnannotatedLiteral covers the elements of each literal an unannotated
+// binding's initializer produces. With no expected type, an element takes its source's type,
+// as F1 states. A borrow source is copied into the literal, and an owned source is moved. A
+// union source is moved when it has an owned reference-shaped member and copied otherwise. A
+// field read through a borrow still needs its borrow written, by F4. fnType, when set, is the
+// type of `f`.
+func TestBorrowIntoAnUnannotatedLiteral(t *testing.T) {
+	tests := []struct {
+		name   string
+		src    string
+		fnType string
+		want   []string
+	}{
+		{
+			name: "MutableBorrowElement",
+			src: `
+				fn f(p: &mut {x: number}) {
+					val a = {peer: p}
+					return a
+				}
+			`,
+			fnType: "fn <'a>(p: &'a mut {x: number}) -> {peer: &'a mut {x: number}}",
+		},
+		{
+			name: "ImmutableBorrowElement",
+			src: `
+				fn f(r: &{x: number}) {
+					val v = {at: r}
+					return v
+				}
+			`,
+			fnType: "fn <'a>(r: &'a {x: number}) -> {at: &'a {x: number}}",
+		},
+		{
+			name: "NestedElement",
+			src: `
+				fn f(p: &mut {x: number}) {
+					val w = {outer: {peer: p}}
+					return w
+				}
+			`,
+			fnType: "fn <'a>(p: &'a mut {x: number}) -> {outer: {peer: &'a mut {x: number}}}",
+		},
+		{
+			name: "TupleElement",
+			src: `
+				fn f(r: &{x: number}) {
+					val t = [r, r]
+					return t
+				}
+			`,
+			fnType: "fn <'a>(r: &'a {x: number}) -> [&'a {x: number}, &'a {x: number}]",
+		},
+		{
+			// Each literal copies p, so p is still usable after both.
+			name: "BorrowElementCopies",
+			src: `
+				fn f(p: &mut {x: number}) {
+					val a = {peer: p}
+					val b = {peer: p}
+					return p
+				}
+			`,
+			fnType: "fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number}",
+		},
+		{
+			name: "LiteralInEachBranch",
+			src: `
+				fn f(c: boolean, r: &{x: number}, s: &{x: number}) {
+					val o = if c { {f: r} } else { {f: s} }
+					return o
+				}
+			`,
+			fnType: "fn <'a, 'b>(c: boolean, r: &'a {x: number}, s: &'b {x: number}) -> {f: &'a {x: number}} | {f: &'b {x: number}}",
+		},
+		{
+			// The literal is built in f and nothing else reaches it, so the borrow of it ends
+			// with f's frame and D16 makes the return owned. Its field still borrows r.
+			name: "BorrowedLiteral",
+			src: `
+				fn f(r: &{x: number}) {
+					val o = &{f: r}
+					return o
+				}
+			`,
+			fnType: "fn <'a>(r: &'a {x: number}) -> {f: &'a {x: number}}",
+		},
+		{
+			// The union's only reference-shaped member is a borrow, so each literal copies maybe.
+			name: "UnionOfABorrowCopies",
+			src: `
+				fn f(maybe: &{x: number} | null) {
+					val o = {f: maybe}
+					val q = {f: maybe}
+					return o
+				}
+			`,
+			fnType: "fn <'a>(maybe: &'a {x: number} | null) -> {f: &'a {x: number} | null}",
+		},
+		{
+			name: "OwnedElementMoves",
+			src: `
+				fn f() {
+					val p = {x: 1}
+					val b = {inner: p}
+					return p.x
+				}
+			`,
+			want: []string{"5:13-5:16: use of moved value 'p'"},
+		},
+		{
+			name: "MixedUnionElementType",
+			src: `
+				fn f(s: {x: number} | &{x: number}) {
+					val a = {f: s}
+					return a
+				}
+			`,
+			fnType: "fn <'a>(s: {x: number} | &'a {x: number}) -> {f: {x: number} | &'a {x: number}}",
+		},
+		{
+			// The union has an owned member, so the literal moves s.
+			name: "MixedUnionElementMoves",
+			src: `
+				fn f(s: {x: number} | &{x: number}) {
+					val a = {f: s}
+					return s
+				}
+			`,
+			want: []string{"4:13-4:14: use of moved value 's'"},
+		},
+		{
+			name: "UnwrittenFieldBorrow",
+			src: `
+				fn f(r: &{g: {x: number}}) {
+					val o = {f: r.g}
+					return o
+				}
+			`,
+			want: []string{"3:18-3:21: this value is borrowed by its destination, so write the borrow: `&`"},
+		},
+		{
+			name: "WrittenBorrowElement",
+			src: `
+				fn f() {
+					val p = {x: 1}
+					val o = {f: &p}
+				}
+			`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tc.src)
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+			if tc.fnType != "" {
+				require.Equal(t, tc.fnType, values["f"])
+			}
+		})
+	}
+}
+
+// TestInferGlobalWriteOfABorrowIntoAnOwnedBinding asserts that T6 rejects a borrow stored into
+// an owned module-level binding, written or inferred.
+func TestInferGlobalWriteOfABorrowIntoAnOwnedBinding(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "InferredOwnedBinding",
+			src: `
+				var sink = {x: 0}
+				fn cache(p: &mut {x: number}) {
+					sink = p
+				}
+			`,
+			want: []string{"4:13-4:14: cannot use borrowed &mut object as owned object"},
+		},
+		{
+			name: "DeclaredOwnedBinding",
+			src: `
+				declare var sink: {x: number}
+				fn cache(p: &{x: number}) {
+					sink = p
+				}
+			`,
+			want: []string{"4:13-4:14: cannot use borrowed &object as owned object"},
+		},
+		{
+			name: "WrittenBorrowOfALocal",
+			src: `
+				declare var sink: {x: number}
+				fn cache() {
+					val p = {x: 1}
+					sink = &p
+				}
+			`,
+			want: []string{"5:13-5:15: cannot use borrowed &object as owned object"},
+		},
+		{
+			name: "OwnedValueIsAccepted",
+			src: `
+				declare var sink: {x: number}
+				fn cache() {
+					val p = {x: 1}
+					sink = p
+				}
+			`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src)
+			if tc.want == nil {
+				require.Empty(t, errs)
+				return
+			}
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+		})
+	}
 }
 
 // An ordinary global write of a NON-borrow value is unaffected by the escape rule.

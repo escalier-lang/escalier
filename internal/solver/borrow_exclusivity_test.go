@@ -3,6 +3,8 @@ package solver
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -29,6 +31,71 @@ func TestBorrowExclusivity(t *testing.T) {
 				}
 			`,
 			want: []string{"6:20-6:26: cannot borrow 'x' as mutable while it is borrowed as immutable"},
+		},
+		// A parameter whose type is an alias naming a borrow borrows its argument, the same as
+		// one written `&mut {v: number}`.
+		"AliasOfBorrowParam": {
+			src: `
+				type M = &mut {v: number}
+				declare fn writeRead(a: M, b: &{v: number}) -> undefined
+
+				fn g() {
+					val mut x = {v: 1}
+					writeRead(&mut x, &x)
+				}
+			`,
+			want: []string{"7:24-7:26: cannot borrow 'x' as immutable while it is borrowed as mutable"},
+		},
+		// A parameter whose type is a borrow or `undefined` borrows its argument too.
+		"BorrowOrUndefinedParam": {
+			src: `
+				declare fn writeRead(a: &mut {v: number} | undefined, b: &{v: number}) -> undefined
+
+				fn g() {
+					val mut x = {v: 1}
+					writeRead(&mut x, &x)
+				}
+			`,
+			want: []string{"6:24-6:26: cannot borrow 'x' as immutable while it is borrowed as mutable"},
+		},
+		// The callee can narrow a parameter typed `&mut {v: number} | &{v: number}` to its
+		// `&mut` member and write through it, so the argument takes a mutable loan.
+		"MixedMutabilityParam": {
+			src: `
+				declare fn writeRead(a: &mut {v: number} | &{v: number}, b: &{v: number}) -> undefined
+
+				fn g() {
+					val mut x = {v: 1}
+					writeRead(&mut x, &x)
+				}
+			`,
+			want: []string{"6:24-6:26: cannot borrow 'x' as immutable while it is borrowed as mutable"},
+		},
+		// The callee can also narrow the mixed parameter to its `&` member and read through it
+		// while the other parameter writes, so it conflicts with a mutable parameter too.
+		"MixedMutabilityParamBesideAMutableParam": {
+			src: `
+				declare fn readWrite(a: &mut {v: number} | &{v: number}, b: &mut {v: number}) -> undefined
+
+				fn g() {
+					val mut x = {v: 1}
+					readWrite(&x, &mut x)
+				}
+			`,
+			want: []string{"6:20-6:26: cannot borrow 'x' as mutable while it is borrowed as immutable"},
+		},
+		// A union parameter that also accepts a value type copies a value-type argument, so the
+		// argument takes no loan.
+		"ValueArgumentIntoAUnionBorrowParamOk": {
+			src: `
+				declare fn readWrite(a: &{v: number} | number, b: &mut {v: number}) -> undefined
+
+				fn g() {
+					val mut x = {v: 1}
+					readWrite(x.v, &mut x)
+				}
+			`,
+			want: nil,
 		},
 		// Two writable views of one value both expect it to change, so neither is surprised by
 		// the other's write. Rule 3 of planning/lifetimes/requirements.md allows this, where Rust
@@ -449,6 +516,19 @@ func TestExplicitBorrowArgs(t *testing.T) {
 			`,
 			want: []string{"6:12-6:13: this argument is borrowed by the callee, so write the borrow: `&mut`"},
 		},
+		// A parameter typed as a borrow or a value type still borrows an owned argument, since
+		// the value-type member never holds the object.
+		"BarePlaceIntoABorrowOrNumberParam": {
+			src: `
+				declare fn read(a: &{v: number} | number) -> undefined
+
+				fn g() {
+					val x = {v: 1}
+					read(x)
+				}
+			`,
+			want: []string{"6:11-6:12: this argument is borrowed by the callee, so write the borrow: `&`"},
+		},
 		// Writing the borrow is what the rule asks for.
 		"WrittenBorrowsOk": {
 			src: `
@@ -535,11 +615,9 @@ func TestExplicitBorrowFlowSites(t *testing.T) {
 		src  string
 		want []string
 	}{
-		// B1 in planning/ownership_rules/requirements.md. The store into the `&` field reports
-		// the missing `&` and does not move p, so the later read of p.x reports nothing. B1
-		// writes `val mut h: {slot: …}`, which #2251 makes mutable. Until then the binding is
-		// written with a `mut` annotation instead.
-		"StoreIntoABorrowFieldB1": {
+		// The store into the `&` field reports the missing `&` and does not move p, so the later
+		// read of p.x reports nothing.
+		"StoreIntoABorrowField": {
 			src: `
 				export fn go() -> number {
 					val p = {x: 1}
@@ -551,9 +629,9 @@ func TestExplicitBorrowFlowSites(t *testing.T) {
 			`,
 			want: []string{"6:15-6:16: this value is borrowed by its destination, so write the borrow: `&`"},
 		},
-		// B3 in planning/ownership_rules/requirements.md. The annotated binding reports the
-		// missing `&`. The next case writes it, and the move check then sees the borrow.
-		"AnnotationOnlyBorrowB3": {
+		// The annotated binding reports the missing `&`. The next case writes it, and the move
+		// check then sees the borrow.
+		"AnnotationOnlyBorrow": {
 			src: `
 				fn take(p: {x: number}) -> number {
 					val mut q = p
@@ -744,6 +822,136 @@ func TestExplicitBorrowFlowSites(t *testing.T) {
 				}
 			`,
 			want: nil,
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src)
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+		})
+	}
+}
+
+// TestLiteralSlotOfMappedType covers a literal that fills a destination written through a
+// mapped type. `RO<{f: &{x: number}}>` declares the field f only once the mapped type is
+// reduced, so each element of the literal finds its slot through the reduced fields.
+func TestLiteralSlotOfMappedType(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want []string
+	}{
+		// The slot f is a borrow, so the element p reports the borrow it leaves unwritten.
+		"MissingBorrowInField": {
+			src: `
+				type RO<T> = {readonly [K]: T[K] for K in keyof T}
+				fn g() {
+					val p = {x: 1}
+					val o: RO<{f: &{x: number}}> = {f: p}
+				}
+			`,
+			want: []string{"5:41-5:42: this value is borrowed by its destination, so write the borrow: `&`"},
+		},
+		// The slot f is a `'static` borrow, so the borrow `&p` lives for `'static` and the later
+		// write to p conflicts with it.
+		"StaticBorrowInField": {
+			src: `
+				type RO<T> = {readonly [K]: T[K] for K in keyof T}
+				fn g() {
+					val mut p = {x: 1}
+					val o: RO<{f: &'static {x: number}}> = {f: &p}
+					p.x = 2
+				}
+			`,
+			want: []string{"6:6-6:9: cannot assign to 'p.x' while it is borrowed as immutable"},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src)
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+		})
+	}
+}
+
+// TestLiteralSlotOfNamedDestination covers literal elements filling a destination named by an
+// alias, a class, or an object with an unreduced member. literalSlots finds each field with
+// declaredField, which resolves an alias and a class to the fields they declare and finds no
+// field on an object with an unreduced member.
+func TestLiteralSlotOfNamedDestination(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want []string
+	}{
+		// The alias names the object type it stands for, so the element p fills a borrow slot.
+		"MissingBorrowInAliasField": {
+			src: `
+				type D = {f: &{x: number}}
+				fn g() {
+					val p = {x: 1}
+					val o: D = {f: p}
+				}
+			`,
+			want: []string{"5:21-5:22: this value is borrowed by its destination, so write the borrow: `&`"},
+		},
+		"StaticBorrowInAliasField": {
+			src: `
+				type D = {f: &'static {x: number}}
+				fn g() {
+					val mut p = {x: 1}
+					val o: D = {f: &p}
+					p.x = 2
+				}
+			`,
+			want: []string{"6:6-6:9: cannot assign to 'p.x' while it is borrowed as immutable"},
+		},
+		// A literal does not build a class instance, so the assignment fails. The class still
+		// declares the slot value, so p also reports the borrow it leaves unwritten.
+		"MissingBorrowInClassField": {
+			src: `
+				class Box<T> { value: T }
+				fn g() {
+					val p = {x: 1}
+					val o: Box<&{x: number}> = {value: p}
+				}
+			`,
+			want: []string{
+				"5:41-5:42: this value is borrowed by its destination, so write the borrow: `&`",
+				"5:33-5:43: cannot constrain object <: class Box<&{x: number}>",
+			},
+		},
+		"StaticBorrowInClassField": {
+			src: `
+				class Box<T> { value: T }
+				fn g() {
+					val mut p = {x: 1}
+					val o: Box<&'static {x: number}> = {value: &p}
+					p.x = 2
+				}
+			`,
+			want: []string{
+				"5:41-5:52: cannot constrain object <: class Box<&'static {x: number}>",
+				"6:6-6:9: cannot assign to 'p.x' while it is borrowed as immutable",
+			},
+		},
+		// The spread of T may hold any field, so the destination names no slot for f and p
+		// reports only the failed assignment.
+		"FieldBesideASpreadOfATypeParameter": {
+			src: `
+				fn g<T>(t: T) {
+					val p = {x: 1}
+					val o: {...T, f: &{x: number}} = {f: p}
+				}
+			`,
+			want: []string{"4:39-4:45: cannot constrain object <: {...T, f: object}"},
+		},
+		"FieldOfAMappedTypeOverATypeParameter": {
+			src: `
+				fn g<T>(t: T) {
+					val p = {x: 1}
+					val o: {[K]: &{x: number} for K in keyof T} = {f: p}
+				}
+			`,
+			want: []string{"4:52-4:58: cannot constrain object <: {[K: keyof T]: object}"},
 		},
 	}
 	for name, tc := range tests {
@@ -1022,8 +1230,7 @@ func TestStoreEffectLoans(t *testing.T) {
 			want: []string{"13:20-13:22: cannot borrow 'b' as immutable while it is borrowed as mutable"},
 		},
 		// Moving the item out while the target still reaches it leaves the target pointing at
-		// data the new owner controls. The loan-against-loan check does not see this, because a
-		// move is not a borrow.
+		// data the new owner controls.
 		"MoveAfterAStore": {
 			src: `
 				declare fn store<'a, 'b, 'c>(
@@ -1043,8 +1250,7 @@ func TestStoreEffectLoans(t *testing.T) {
 			want: []string{"12:14-12:15: cannot move 'b' while it is borrowed"},
 		},
 		// Repointing the field the store wrote to ends the loan there, so the item is reachable
-		// one way again. This is the loan side of the strong update the borrow graph makes on
-		// the same subtree.
+		// one way again.
 		"RepointingTheStoredFieldReleasesTheItemOk": {
 			src: `
 				declare fn store<'a, 'b, 'c>(
@@ -1338,4 +1544,77 @@ func TestMutSelfIsAMutableStoreSource(t *testing.T) {
 	require.Equal(t, []string{
 		"11:16-11:18: cannot borrow 'h' as immutable while it is borrowed as mutable",
 	}, messagesWithSpan(t, errs))
+}
+
+// TestBorrowOfType covers the types borrowOfType reads as a borrow. Each case declares the
+// type as the parameter p of a function with the lifetime parameter 'a, and renders what
+// borrowOfType returns for p's type. A borrow renders as its operator, then `any &mut` when
+// only some of its members are `&mut`, then its lifetime. The lifetime is either `'static` or
+// a lifetime variable rendered as `'var`. Any other type renders as `not a borrow`.
+func TestBorrowOfType(t *testing.T) {
+	cases := []struct {
+		name  string
+		param string
+		want  string
+	}{
+		{name: "BareBorrow", param: "&A", want: "& 'var"},
+		{name: "BareMutBorrow", param: "&mut A", want: "&mut 'var"},
+		{name: "AliasToBorrow", param: "R", want: "& 'var"},
+		{name: "BorrowOrUndefined", param: "&A | undefined", want: "& 'var"},
+		{name: "BorrowOrNumber", param: "&A | number", want: "& 'var"},
+		{name: "AliasMemberOrNull", param: "R | null", want: "& 'var"},
+		{name: "MixedMutability", param: "&mut A | &B | undefined", want: "& any &mut 'var"},
+		{name: "AllMutable", param: "&mut A | &mut B", want: "&mut 'var"},
+		{name: "StaticLifetimeFirst", param: "&'static A | &'a B", want: "& 'static"},
+		{name: "StaticLifetimeSecond", param: "&'a A | &'static B", want: "& 'static"},
+		{name: "TwoLifetimeVars", param: "&'a A | &B", want: "& 'var"},
+		{name: "OwnedMember", param: "&A | B", want: "not a borrow"},
+		{name: "Owned", param: "A", want: "not a borrow"},
+		{name: "OnlyValueTypes", param: "number | undefined", want: "not a borrow"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			src := `
+				type A = {a: number}
+				type B = {b: number}
+				type R = &A
+				fn go<'a>(p: ` + tc.param + `, q: &'a B) {}
+			`
+			module := parseModule(t, src)
+			res := InferModuleAgainstStdlib(module, benchTree, Options{})
+			require.Empty(t, res.Errors)
+
+			var decl *ast.FuncDecl
+			module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
+				for _, d := range ns.Decls {
+					if fd, ok := d.(*ast.FuncDecl); ok && fd.Name != nil && fd.Name.Name == "go" {
+						decl = fd
+					}
+				}
+				return true
+			})
+			require.NotNil(t, decl)
+
+			b, ok := res.checker.borrowOfType(res.Info.TypeOf(decl.Params[0].Pattern))
+			require.Equal(t, tc.want, renderTypeBorrow(b, ok))
+		})
+	}
+}
+
+// renderTypeBorrow renders what borrowOfType returns, as TestBorrowOfType describes.
+func renderTypeBorrow(b typeBorrow, ok bool) string {
+	if !ok {
+		return "not a borrow"
+	}
+
+	out := borrowOperator(b.mut)
+	if b.anyMut && !b.mut {
+		out += " any &mut"
+	}
+
+	if _, isStatic := b.lt.(*soltype.StaticLifetime); isStatic {
+		return out + " 'static"
+	}
+	return out + " 'var"
 }

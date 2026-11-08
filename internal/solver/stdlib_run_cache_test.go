@@ -153,6 +153,31 @@ func TestAmbientCheckerReportsLoadErrorAtImport(t *testing.T) {
 	}
 }
 
+// TestAmbientCheckerReportsPackageOwnershipErrors asserts that a cached run reports the
+// ownership diagnostics of a package body it loads, on the run that fills the cache and on a
+// later run that reads it. In `std:math`'s `bad`, `val y = x` moves `x` while `f` still holds its
+// borrow of `x`.
+func TestAmbientCheckerReportsPackageOwnershipErrors(t *testing.T) {
+	dir := seedStdlib(t, withPreludeClasses(map[string]string{
+		"std/math.esc": `
+			export fn bad() -> number {
+				val x = {v: 1}
+				val f = fn () -> number { return x.v }
+				val y = x
+				return f() + y.v
+			}
+		`,
+	}))
+	loadErr := `1:1-1:18: package "std:math" (` + filepath.Join(dir, "std", "math.esc") + `) has 1 error(s):` + "\n  "
+	src := "import \"std:math\"\nval p = math.bad()"
+
+	want := []string{loadErr + "cannot move 'x' while it is borrowed"}
+	for range 2 {
+		_, cached := inferCached(t, dir, src, Options{})
+		require.Equal(t, want, cached)
+	}
+}
+
 // inferCached infers src against dir through InferModuleAgainstStdlib, which starts
 // from the cached checker. It returns the module's rendered value bindings and its
 // diagnostics with their spans.
@@ -167,7 +192,7 @@ func inferCached(t *testing.T, dir, src string, opts Options) (map[string]string
 func inferFresh(t *testing.T, dir, src string, opts Options) (map[string]string, []string) {
 	t.Helper()
 	module := parseModule(t, src)
-	roots := append(pseudoPackageImportsOf(module), ambientPackages...)
+	roots := append(pseudoPackageImports(moduleImports(module)), ambientPackages...)
 	sort.Strings(roots)
 	groups, err := BuildPackageClosure(dir, roots)
 	require.NoError(t, err)
@@ -311,7 +336,7 @@ func TestForkCopiesEveryContainer(t *testing.T) {
 // packages groups names and no others.
 func loadsGroups(t *testing.T, module *ast.Module, groups PackageGroups) bool {
 	t.Helper()
-	roots := set.FromSlice(append(pseudoPackageImportsOf(module), ambientPackages...)).ToSlice()
+	roots := set.FromSlice(append(pseudoPackageImports(moduleImports(module)), ambientPackages...)).ToSlice()
 	sort.Strings(roots)
 	own, err := BuildPackageClosure(benchTree, roots)
 	require.NoError(t, err)

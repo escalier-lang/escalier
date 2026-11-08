@@ -15,19 +15,19 @@ import (
 //
 //	declare fn store<'a, 'b>(target: &'b mut {peer: &'a mut B}, item: &'a mut B)
 //
-// says item lands at target.peer. `store(&mut a, &mut b)` then aliases a to b at [peer],
-// the same edge `val a = {peer: &mut b}` records at its initializer.
+// says item lands at target.peer. `store(&mut a, &mut b)` then puts the borrow of b at
+// `a.peer`, the same place `val a = {peer: &mut b}` puts it.
 //
 // Each case declares its own `store`. 'a ties item to target's peer field, 'b is the spare
 // field's own lifetime, and 'c is target's own borrow lifetime, so only peer takes the
 // stored borrow and spare is a sibling position the store must miss.
 //
-// The edge is observed by storing the target's borrowed field into a parameter's field, moving
+// The store is observed by storing the target's borrowed field into a parameter's field, moving
 // the local, and then reading the parameter. The store takes a loan of every local the stored
 // value borrows, held by the parameter while the body reads it. The move happens before that
 // read, so it conflicts with the loan and the diagnostic names what the call aliased.
-// Each case builds its target's fields from parameter borrows, which the graph exempts, so the
-// store call is the sole source of any edge to a local.
+// Each case builds its target's fields from parameter borrows, so the store call is the only
+// source of a loan of a local.
 func TestCallStoreEdge(t *testing.T) {
 	tests := map[string]struct {
 		src   string
@@ -110,9 +110,8 @@ func TestCallStoreEdge(t *testing.T) {
 				"build": "fn (p: {value: number}, q: {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined",
 			},
 		},
-		// The edge reaches the connected-component move as well as the store loan: passing
-		// a to a consuming parameter carries the stored borrow into the callee, so the move
-		// co-moves b and the read after it is a use-after-move.
+		// Passing a to a consuming parameter carries the stored borrow into the callee. F2
+		// moves a and copies the borrow of b it holds, so b stays usable after the move.
 		"StoredBorrowIsCoMovedWithItsCarrier": {
 			src: `
 				declare fn store<'a, 'b, 'c>(
@@ -129,7 +128,6 @@ func TestCallStoreEdge(t *testing.T) {
 					val y = b
 				}
 			`,
-			want: []string{"13:14-13:15: use of moved value 'b'"},
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut {peer: &'a mut {value: number}, spare: &mut {value: number}}, " +
 					"item: &'a mut {value: number}) -> undefined",
@@ -200,9 +198,9 @@ func TestCallStoreEdge(t *testing.T) {
 }
 
 // TestCallStoreEdgePositions covers the store positions inside a target's referent that are
-// not a named object field, and the argument forms the recorder reads a place off. Each
-// records an edge a later flow-out then follows. A flow-out into a parameter's field takes a
-// loan of the local the edge reaches, so a move of that local afterwards reports.
+// not a named object field, and the argument forms a place is read off. A store into a
+// parameter's field holds a loan of the local it reaches, so a move of that local afterwards
+// reports.
 func TestCallStoreEdgePositions(t *testing.T) {
 	tests := map[string]struct {
 		src   string
@@ -210,9 +208,11 @@ func TestCallStoreEdgePositions(t *testing.T) {
 		types map[string]string
 	}{
 		// A tuple element contributes no field segment, so a store into one lands at the tuple
-		// itself and passing the whole tuple to a consuming call follows the edge. The probe is
-		// a consuming argument rather than a parameter store, because assigning a tuple into a
-		// parameter's field trips the deep-mut limitation #1270 describes.
+		// itself. Passing the whole tuple to a consuming call carries the borrow of b into the
+		// callee, which L1 accepts, since nothing in the frame uses b afterwards. a is a tuple of
+		// one element, so neither `store` nor `build` can add a second borrow to it. `take`'s
+		// signature gives the element no `'static` lifetime, so `take` cannot keep the borrow past
+		// the call.
 		"StoreIntoTupleElement": {
 			src: `
 				declare fn store<'a, 'c>(
@@ -227,10 +227,34 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					take(a)
 				}
 			`,
-			want: []string{"11:11-11:12: borrowed value 'b' does not live long enough to escape the function"},
+			want: nil,
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut [&'a mut {value: number}], item: &'a mut {value: number}) -> undefined",
 				"take":  "fn (x: [&mut {value: number}]) -> undefined",
+				"build": "fn (p: {value: number}) -> undefined",
+			},
+		},
+		// A `take` whose element is `'static` keeps the borrow of b that the `store` put in a. That
+		// borrow is live for the rest of `build`, so the later immutable borrow of b breaks E2.
+		"StoreIntoTupleElementTheCalleeKeeps": {
+			src: `
+				declare fn store<'a, 'c>(
+					target: &'c mut [&'a mut {value: number}],
+					item: &'a mut {value: number},
+				) -> undefined
+				declare fn take(x: [&'static mut {value: number}]) -> undefined
+				fn build(mut p: {value: number}) {
+					val mut b = {value: 2}
+					val mut a = [&mut p]
+					store(&mut a, &mut b)
+					take(a)
+					val c = &b
+				}
+			`,
+			want: []string{"12:14-12:16: cannot borrow 'b' as immutable while it is borrowed as mutable"},
+			types: map[string]string{
+				"store": "fn <'a>(target: &mut [&'a mut {value: number}], item: &'a mut {value: number}) -> undefined",
+				"take":  "fn (x: [&'static mut {value: number}]) -> undefined",
 				"build": "fn (p: {value: number}) -> undefined",
 			},
 		},
@@ -421,7 +445,8 @@ func TestCallStoreEdgePositions(t *testing.T) {
 // TestCallStoreEdgePayloadPositions covers the three payload positions that hold a borrow
 // without naming a field: an array element, a promise's resolved value, and a generator's
 // yield. Each stores at the container holding it, so the store lands at the tuple slot the
-// payload sits in and passing that tuple to a consuming call follows the edge.
+// payload sits in. Passing that tuple to a consuming call carries the borrow of b into the
+// callee, which L1 accepts, since nothing in the frame uses b afterwards.
 func TestCallStoreEdgePayloadPositions(t *testing.T) {
 	tests := map[string]struct {
 		payload  string
@@ -447,9 +472,7 @@ func TestCallStoreEdgePayloadPositions(t *testing.T) {
 				}
 			`, tc.payload, tc.declared, tc.declared)
 			_, _, errs := inferSource(t, src)
-			require.Equal(t, []string{
-				"11:11-11:12: borrowed value 'b' does not live long enough to escape the function",
-			}, messagesWithSpan(t, errs))
+			require.Empty(t, messagesWithSpan(t, errs))
 		})
 	}
 }

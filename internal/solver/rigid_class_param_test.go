@@ -117,6 +117,8 @@ class Keyed<U> extends Bag<U> {
 			errs: []string{"3:43-3:44: cannot constrain U <: number"},
 		},
 		{
+			// v has the owned generic type U, so `self.v = v` moves it, and the dataflow pass
+			// reports the later read of v as a use after that move.
 			name: "AConstructorBody",
 			src: `class C<U> {
 	v: U,
@@ -125,7 +127,10 @@ class Keyed<U> extends Bag<U> {
 		val n: number = v
 	},
 }`,
-			errs: []string{"5:19-5:20: cannot constrain U <: number"},
+			errs: []string{
+				"5:19-5:20: cannot constrain U <: number",
+				"5:19-5:20: use of moved value 'v'",
+			},
 		},
 		{
 			name: "AReturnForcingAValueIntoTheClassParameter",

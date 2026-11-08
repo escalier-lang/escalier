@@ -109,6 +109,7 @@ func ambientChecker(dir string, source ModuleSource, groups PackageGroups, opts 
 	}
 	run := entry.checker.fork(source, StdlibGroupSource(dir), groups)
 	run.dependencies = opts.Dependencies
+	run.stdlibDir = dir
 	return run, true
 }
 
@@ -353,6 +354,7 @@ func (c *Context) fork() *Context {
 	f := *c
 	f.probe = nil
 	f.paramVars = maps.Clone(c.paramVars)
+	f.typeArgParams = maps.Clone(c.typeArgParams)
 	f.readRaises = clipValues(c.readRaises)
 	f.pendingRigidLts = slices.Clip(c.pendingRigidLts)
 	f.packages = &PackageRegistry{packages: maps.Clone(c.packages.packages)}

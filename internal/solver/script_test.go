@@ -289,7 +289,9 @@ func TestInferScriptTypeAndFuncDecls(t *testing.T) {
 			},
 		},
 		{
-			// The recursive call writes x through the capture while `a` still borrows x.
+			// The recursive call writes `x` through the capture while `a` still borrows `x`. The
+			// call is walked before `f`'s signature is settled, so the call has no resolved
+			// signature and emitClosureRuns still records that it runs `f`.
 			name: "RecursiveCallWritesACaptureBesideLiveBorrow",
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
@@ -522,32 +524,29 @@ func TestScriptTransitionParity(t *testing.T) {
 				a.x
 			`,
 		},
-		// DISABLED until #1527, which follows a borrow copied into a second binding. c copies
-		// the borrow b holds, so the write to a.x while c is live conflicts with c. Today the
-		// exclusivity check does not see that c reaches a, so both forms check clean.
-		/*
-			"ChainAlias_TargetLive_Error": {
-				stmts: `
-					val mut a: {x: number} = {x: 1}
-					val b: &mut {x: number} = &mut a
-					val c: &{x: number} = b
-					a.x = 2
-					c
-				`,
-				want: []string{
-					"cannot assign to 'a.x' while it is borrowed as immutable",
-				},
+		// c copies the borrow b holds, narrowed to `&`, so the write to a.x while c is live
+		// conflicts with c.
+		"ChainAlias_TargetLive_Error": {
+			stmts: `
+				val mut a: {x: number} = {x: 1}
+				val b: &mut {x: number} = &mut a
+				val c: &{x: number} = b
+				a.x = 2
+				c
+			`,
+			want: []string{
+				"cannot assign to 'a.x' while it is borrowed as immutable",
 			},
-		*/
+		},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, _, scriptErrs := inferScriptSource(t, tt.stmts)
-			scriptMsgs := transitionMessages(t, scriptErrs)
+			scriptMsgs := errorMessagesOrNil(scriptErrs)
 
 			_, _, fnErrs := inferSource(t, "fn test() {"+tt.stmts+"\n}")
-			fnMsgs := transitionMessages(t, fnErrs)
+			fnMsgs := errorMessagesOrNil(fnErrs)
 
 			if len(tt.want) == 0 {
 				require.Empty(t, scriptMsgs)
@@ -593,7 +592,8 @@ func TestScriptFnCaptureParity(t *testing.T) {
 				take(x)
 				f()
 			`,
-			want: []string{"8:5-8:6: this call runs 'f', which reads 'x' after it was moved"},
+			// The pass rejects the move, since f holds its borrow of x until its last call.
+			want: []string{"7:10-7:11: cannot move 'x' while it is borrowed"},
 		},
 		// f reads x only while it runs, so x can move once the last call returns.
 		"MoveAfterTheLastCall": {
@@ -619,9 +619,12 @@ func TestScriptFnCaptureParity(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
+			// Each form runs as its own subtest, so a failure in one still infers the other.
 			for _, form := range []string{"fn f()", "val f = fn ()"} {
-				_, _, errs := inferScriptSource(t, strings.ReplaceAll(tt.src, "FN", form))
-				require.Equal(t, tt.want, messagesWithSpan(t, errs), form)
+				t.Run(form, func(t *testing.T) {
+					_, _, errs := inferScriptSource(t, strings.ReplaceAll(tt.src, "FN", form))
+					require.Equal(t, tt.want, messagesWithSpan(t, errs))
+				})
 			}
 		})
 	}
@@ -713,7 +716,7 @@ func TestScriptReassignTransition(t *testing.T) {
 		`)
 		require.Equal(t, []string{
 			"5:4-5:9: use of moved value 'items'",
-		}, transitionMessagesWithSpan(t, errs))
+		}, messagesWithSpan(t, errs))
 	})
 
 	t.Run("source_dead_ok", func(t *testing.T) {
@@ -724,7 +727,7 @@ func TestScriptReassignTransition(t *testing.T) {
 			snap = items
 			snap
 		`)
-		require.Empty(t, transitionMessages(t, errs))
+		require.Empty(t, errorMessagesOrNil(errs))
 	})
 }
 
