@@ -107,18 +107,23 @@ func (c *checker) recordClosureCaptures(scope *Scope, closure ast.Func) {
 func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, ft *soltype.FuncType) {
 	// borrowed is the first capture that holds a borrow.
 	var borrowed closureBorrow
+	// allLocal says each capture that holds a borrow could be declared at module level
+	// instead, as closureBorrow's local describes. Moving only some of them leaves the
+	// closure borrowing the rest.
+	allLocal := true
 	retain := func(name string, b ValueBinding) {
+		// Declaring the binding at module level ends the borrow only when its value is
+		// neither a borrow nor a function that borrows, and holds no borrow from outside
+		// the body.
+		_, isLocal := bindingDecl(b).(*ast.VarDecl)
+		value := schemeBody(b.Schemes[0])
+		_, isRef := value.(*soltype.RefType)
+		local := isLocal && !c.inScript() && c.fn != nil && !isRef &&
+			len(shortFuncLifetimes(value)) == 0 && c.holdsOnlyFrameBorrows(value)
+		allLocal = allLocal && local
 		if ft.Lt == nil {
 			ft.Lt = c.ctx.freshLifetime(lvl)
-			// Declaring the binding at module level ends the borrow only when its value is
-			// neither a borrow nor a function that borrows, and holds no borrow from outside
-			// the body.
-			_, isLocal := bindingDecl(b).(*ast.VarDecl)
-			value := schemeBody(b.Schemes[0])
-			_, isRef := value.(*soltype.RefType)
-			local := isLocal && !c.inScript() && c.fn != nil && !isRef &&
-				len(shortFuncLifetimes(value)) == 0 && c.holdsOnlyFrameBorrows(value)
-			borrowed = closureBorrow{name: name, local: local}
+			borrowed = closureBorrow{name: name}
 		}
 	}
 	framed := c.fn != nil
@@ -199,6 +204,7 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 	}
 	if borrowed.name != "" {
 		borrowed.viaFuncs = !direct
+		borrowed.local = allLocal
 		borrowed.keepable = keepable && framed
 		borrowed.locals = locals
 		if c.closureBorrows == nil {
@@ -221,13 +227,13 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 }
 
 // closureBorrow is the capture that makes a closure hold a borrow. name is the captured
-// binding's name. local says the binding is a `val` or `var` of a function body, which could be
-// declared at module level instead. viaFuncs says the closure holds a borrow only through
-// functions it captures, whose lifetimes bound the closure's from below. keepable says every
-// capture the closure borrows is a `val` or `var` of the body it is written in that holds no
-// borrow from outside that body, so a slot can keep the closure for 'static by keeping those
-// borrows for the rest of the program, as keepCaptureLoans describes. locals lists the locals
-// the closure borrows, including those a closure it captures borrows.
+// binding's name. local says every binding the closure borrows is a `val` or `var` of a function
+// body, which could be declared at module level instead. viaFuncs says the closure holds a
+// borrow only through functions it captures, whose lifetimes bound the closure's from below.
+// keepable says every capture the closure borrows is a `val` or `var` of the body it is written
+// in that holds no borrow from outside that body, so a slot can keep the closure for 'static by
+// keeping those borrows for the rest of the program, as keepCaptureLoans describes. locals lists
+// the locals the closure borrows, including those a closure it captures borrows.
 type closureBorrow struct {
 	name     string
 	local    bool
@@ -551,7 +557,7 @@ func (c *checker) sortFuncKeptForStatic(err *FuncKeptForStaticError) bool {
 	if len(src.closures) == 0 && !src.other {
 		return false
 	}
-	err.source, err.keeper = c.funcKeptNames(err)
+	err.source, err.keeper, err.site = c.funcKeptNames(err)
 	if n, ok := c.prov.NodeFor(err.Super); ok {
 		_, err.inferred = n.(*ast.FuncExpr)
 	}
@@ -666,8 +672,10 @@ func (c *checker) noteKeeper(value ast.Expr, keeper ast.Node) {
 // The keeper is the callee of a call, the target of an assignment, or the binding a
 // declaration initializes, and "" otherwise.
 //
-// A site that assigns is replaced by the value it assigns, so the error blames the value.
-func (c *checker) funcKeptNames(err *FuncKeptForStaticError) (source, keeper string) {
+// blamedSite is the site err should blame. It is err's site, or the value an assigning site
+// assigns, so the error blames the value.
+func (c *checker) funcKeptNames(err *FuncKeptForStaticError) (source, keeper string, blamedSite ast.Node) {
+	blamedSite = err.site
 	site := err.site
 	// An argument or an assigned value is checked with the value as the site, so the call
 	// or the assignment it belongs to keeps it.
@@ -682,15 +690,15 @@ func (c *checker) funcKeptNames(err *FuncKeptForStaticError) (source, keeper str
 	case *ast.BinaryExpr:
 		if site.Op == ast.Assign {
 			keeper = placeText(site.Left)
-			err.site = site.Right
+			blamedSite = site.Right
 		}
 	case *ast.VarDecl:
 		if ip, isIdent := site.Pattern.(*ast.IdentPat); isIdent {
 			keeper = "`" + ip.Name + "`"
 		}
 	}
-	blamed := err.site
-	if n, ok := c.prov.NodeFor(err.Sub); ok && (err.site == nil || n.Span().SourceID == err.site.Span().SourceID) {
+	blamed := blamedSite
+	if n, ok := c.prov.NodeFor(err.Sub); ok && (blamedSite == nil || n.Span().SourceID == blamedSite.Span().SourceID) {
 		blamed = n
 	}
 	source = "this function"
@@ -700,7 +708,7 @@ func (c *checker) funcKeptNames(err *FuncKeptForStaticError) (source, keeper str
 	case *ast.FuncExpr:
 		source = "this closure"
 	}
-	return source, keeper
+	return source, keeper, blamedSite
 }
 
 // nodeOfType returns the node t's provenance names, or nil when it names none.
