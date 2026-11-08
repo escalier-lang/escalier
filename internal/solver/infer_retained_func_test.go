@@ -1208,6 +1208,16 @@ fn setup() {
     cfg.msg = "bye"
 }`,
 		},
+		// The closure borrows the local `z` and the parameter `b`. Declaring `z` at module level
+		// would leave the borrow of `b`, so the error does not suggest it.
+		{
+			name: "closure over a local and a parameter",
+			src: decls + `fn setup(b: {x: number}) {
+    val z = {x: 1}
+    keep(fn () { console.log(z.x + b.x) })
+}`,
+			want: []string{"6:10-6:42: this closure borrows `z`, but `keep` keeps it for 'static; pass a function that borrows nothing"},
+		},
 		// A union member that keeps its function for 'static reports a closure over a parameter
 		// with the message a lone 'static slot gives, and accepts a function that borrows
 		// nothing, as the lone slot does.
