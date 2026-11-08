@@ -351,8 +351,8 @@ type FuncType struct {
 	Lt Lifetime
 	// Pure marks a function that holds no state a call can change. The checker sets it on
 	// a function it inferred from a body when that body captures no `var`, no `mut`
-	// binding, and no mutable value, and writes no captured place, directly or through a
-	// function it captures. A written or declared function type leaves it false, so such a
+	// binding, and no value that may hold state, and writes no captured place, directly or
+	// through a function it captures. A written or declared function type leaves it false, so such a
 	// function counts as possibly holding state. Subtyping ignores it.
 	Pure bool
 }

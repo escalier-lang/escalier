@@ -1002,8 +1002,8 @@ func (c *checker) inferComponent(
 	c.checkCallOnlyParams()
 
 	// Every definition in the component is inferred, so a relaxed binding's type has every
-	// bound its initializer gives it. Its storing variables move to lvl before any binding
-	// of the component generalizes, so none of them quantifies one.
+	// bound its initializer gives it. The variables a value of that type can store move to
+	// lvl before any binding of the component generalizes, so none of them quantifies one.
 	for _, key := range component {
 		if b, isValue := bindings[key]; isValue && b.relaxed && b.bound && c.lowerStoringVars(b.v, lvl) {
 			b.weak = true

@@ -13,8 +13,8 @@ import (
 
 // A weak variable is a type variable of a binding that the binding does not quantify. A
 // binding weakAtDecl reports quantifies none of its variables, and a relaxed binding leaves
-// out the ones lowerStoringVars moves. `val mut seen = Map()` binds `seen` to `Map<K, V>`, where K and V
-// are weak. Every function that reads `seen` constrains the same K and V, so
+// out the ones lowerStoringVars moves. `val mut seen = Map()` binds `seen` to `Map<K, V>`,
+// where K and V are weak. Every function that reads `seen` constrains the same K and V, so
 // `seen.set("k", 1)` in one function and `seen.set("k", "s")` in another both reach V.
 //
 // A weak variable sits at the level of the scope that declares the binding. For a
@@ -410,8 +410,8 @@ func reachesAnyVar(t soltype.Type, vars map[int]*soltype.TypeVarType) bool {
 }
 
 // weakAnnotationExample returns the declaration of the weak binding w with a written type
-// that has no type variable. A weak variable no value has reached yet is
-// shown as `number`, and every other variable as its bounds, so `val g = makeCell()` with
+// that has no type variable. A weak variable no value has reached yet is shown as
+// `number`, and every other variable as its bounds, so `val g = makeCell()` with
 // `fn makeCell() { val mut m = Map(); return fn (x) { … } }` gives
 // `val g: fn (x: number) -> number | undefined = makeCell()`. It returns "" when w's
 // declaration binds no single name or has no initializer.
