@@ -1662,6 +1662,77 @@ fn setup() {
     render(&count)
 }`,
 		},
+		// The constructor's parameter shares the class's 'a, so the instance holds the handler
+		// the constructor stores.
+		{
+			name: "explicit constructor that stores a handler",
+			src: `declare fn render(view: &{n: number}) -> undefined
+class Keyed<'a> {
+    key: 'a fn () -> undefined,
+    constructor(&mut self, key: 'a fn () -> undefined) { self.key = key },
+    run(&self) -> undefined { self.key() },
+}
+fn setup() {
+    val mut count = {n: 0}
+    val k = Keyed(fn () { count.n = count.n + 1 })
+    render(&count)
+    k.run()
+}`,
+			want: []string{"10:5-10:19: this call may run the 'key' that 'Keyed' retains, which writes 'count' while it is borrowed as immutable"},
+		},
+		{
+			name: "explicit constructor that stores a handler, run before the borrow",
+			src: `declare fn render(view: &{n: number}) -> undefined
+class Keyed<'a> {
+    key: 'a fn () -> undefined,
+    constructor(&mut self, key: 'a fn () -> undefined) { self.key = key },
+    run(&self) -> undefined { self.key() },
+}
+fn setup() {
+    val mut count = {n: 0}
+    val k = Keyed(fn () { count.n = count.n + 1 })
+    k.run()
+    render(&count)
+}`,
+		},
+		// The constructor's parameter has no lifetime written, so it gets its own, 'b, bounded by
+		// 'b: 'a. Keyed renders as `new <'a, 'b: 'a>(key: 'b fn () -> undefined) -> Keyed<'a>`.
+		//
+		// DISABLED until #2565. The check that a call runs a retained function compares
+		// lifetimes by identity, so it does not follow 'b: 'a to the instance, and this program
+		// reports nothing. Section 2 of #2565 follows outlives bounds there.
+		/*
+			{
+				name: "explicit constructor that stores a handler with no written lifetime",
+				src: "declare fn render(view: &{n: number}) -> undefined\n" +
+					"class Keyed<'a> {\n" +
+					"    key: 'a fn () -> undefined,\n" +
+					"    constructor(&mut self, key: fn () -> undefined) { self.key = key },\n" +
+					"    run(&self) -> undefined { self.key() },\n" +
+					"}\n" +
+					"fn setup() {\n" +
+					"    val mut count = {n: 0}\n" +
+					"    val k = Keyed(fn () { count.n = count.n + 1 })\n" +
+					"    render(&count)\n" +
+					"    k.run()\n" +
+					"}",
+				want: []string{"10:5-10:19: this call may run the 'key' that 'Keyed' retains, which writes 'count' while it is borrowed as immutable"},
+			},
+		*/
+		// A field with no lifetime of its own is 'static, so the constructor's parameter has
+		// to be 'static too, and a closure that borrows a local can't fill it.
+		{
+			name: "explicit constructor that stores a handler in a static field",
+			src: `class Keyed {
+    key: fn () -> undefined,
+    constructor(&mut self, key: 'static fn () -> undefined) { self.key = key },
+}
+fn setup() {
+    val mut count = {n: 0}
+    val k = Keyed(fn () { count.n = count.n + 1 })
+}`,
+			want: []string{"7:19-7:50: this closure borrows `count`, but `Keyed` keeps it for 'static; pass a function that borrows nothing, or declare `count` at module level"},
+		},
 		// The receiver's type is Button<'a>, so b holds the handler on() stores.
 		{
 			name: "class method that stores a handler",
