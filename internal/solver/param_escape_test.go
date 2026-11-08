@@ -124,9 +124,9 @@ func TestInferUnannotatedParamOwnership(t *testing.T) {
 						val q = p.x
 						return fn () { return q }
 					}`,
-						want: "fn <T0, 'a>(p: &'a {x: T0}) -> &'a fn () -> &'a T0",
+						want: "fn <T0, 'a>(p: &'a {x: T0}) -> 'a fn () -> &'a T0",
 					},
-					{src: `fn f(p) { return fn () { return p.x } }`, want: "fn <T0, 'a>(p: &'a {x: T0}) -> &'a fn () -> &'a T0"},
+					{src: `fn f(p) { return fn () { return p.x } }`, want: "fn <T0, 'a>(p: &'a {x: T0}) -> 'a fn () -> &'a T0"},
 				},
 			},
 		*/

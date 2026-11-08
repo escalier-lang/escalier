@@ -591,6 +591,13 @@ fn f(g: fn () -> undefined) {
 			name: "returned",
 			src:  `fn f(g: fn () -> undefined) { return g }`,
 		},
+		// p's field takes a lifetime of its own, which the caller reads after the call, so g
+		// must outlive the call.
+		{
+			name: "stored into an elided field of a borrowed parameter",
+			src:  `fn f(g: fn () -> undefined, p: &mut {cb: fn () -> undefined}) { p.cb = g }`,
+			want: []string{"1:6-1:7: " + kept},
+		},
 		{
 			name: "returned through an elided return annotation",
 			src:  `fn f(g: fn () -> undefined) -> fn () -> undefined { return g }`,
@@ -853,6 +860,26 @@ fn f(g: fn () -> undefined) {
 }`,
 			want: []string{"3:27-3:28: " + fmt.Sprintf(deferred, "an async function")},
 		},
+		// g reaches h only after the async closure reads h, and the error still reports g, since
+		// the `var` keeps it past the call.
+		{
+			name: "assigned to a local an async closure read earlier",
+			src: `fn f(g: fn () -> undefined) {
+    var h: fn () -> undefined = fn () {}
+    val p = async fn () { h() }
+    h = g
+}`,
+			want: []string{"1:6-1:7: " + kept},
+		},
+		// h's annotation gives it a lifetime of its own, which g's bounds from below.
+		{
+			name: "read through an annotated local by an async closure",
+			src: `fn f(g: fn () -> undefined) {
+    val h: fn () -> undefined = g
+    val p = async fn () { h() }
+}`,
+			want: []string{"3:27-3:28: " + fmt.Sprintf(deferred, "an async function")},
+		},
 		// The fix keeps the parameter's `?`.
 		{
 			name: "optional parameter stored into a module-level slot",
@@ -909,18 +936,40 @@ fn f<'a>(g: 'a fn () -> undefined) { onClick(fn () { g() }) }`,
 	}
 }
 
-// A deferred read of a call-only parameter blames the read. TestCallOnlyFuncDeferredRelated
-// asserts that the error relates the parameter.
+// A deferred read of a call-only parameter blames the read, and any other kept parameter blames
+// the parameter. TestCallOnlyFuncDeferredRelated asserts that the first error relates the
+// parameter and that the second relates nothing.
 func TestCallOnlyFuncDeferredRelated(t *testing.T) {
-	src := `gen fn f(g: fn () -> undefined) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "read by a generator",
+			src: `gen fn f(g: fn () -> undefined) {
     g()
     yield 1
-}`
-	res := InferModuleAgainstStdlib(parseModule(t, src), benchTree, Options{})
-	require.Len(t, res.Errors, 1)
-	related := res.Errors[0].Related()
-	require.Len(t, related, 1)
-	require.Equal(t, "1:10-1:11", spanWithSpanSource(t, related[0]))
+}`,
+			want: []string{"1:10-1:11"},
+		},
+		{
+			name: "stored into a module-level slot",
+			src: `var sink: fn () -> undefined = fn () {}
+fn f(g: fn () -> undefined) { sink = g }`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := InferModuleAgainstStdlib(parseModule(t, tt.src), benchTree, Options{})
+			require.Len(t, res.Errors, 1)
+			var related []string
+			for _, span := range res.Errors[0].Related() {
+				related = append(related, spanWithSpanSource(t, span))
+			}
+			require.Equal(t, tt.want, related)
+		})
+	}
 }
 
 // A function type written with no lifetime in a module-level binding's annotation is 'static,
