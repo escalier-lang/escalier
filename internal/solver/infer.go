@@ -861,6 +861,7 @@ func newChecker() *checker {
 	c.ctx.fusionRecorder = c.recordFusionEdge
 	c.info.ctx = c.ctx
 	registerIteratorResultAliases(c.ctx)
+	registerValueTypeAlias(c.ctx)
 	return c
 }
 

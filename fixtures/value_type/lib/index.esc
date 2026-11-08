@@ -1,0 +1,9 @@
+export fn steal<T: ValueType>(p: &T) -> T {
+    return p
+}
+
+export fn first<T: ValueType>(xs: &Array<T>) -> T | undefined {
+    return xs[0]
+}
+
+export val v: ValueType = 5

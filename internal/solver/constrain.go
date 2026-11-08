@@ -1092,7 +1092,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	// A value type copies out of a borrow, so a borrow of a variable fills a value-type
 	// destination when the variable does. `fn read(p) { return p.x }` returns `&'a T0`, and
 	// `read(&b) + 1` checks `T0` against `number`.
-	if ref, ok := sub.(*soltype.RefType); ok && ref.Lt != nil && copiesOutOfBorrow(super) {
+	if ref, ok := sub.(*soltype.RefType); ok && ref.Lt != nil && c.copiesOutOfBorrow(super) {
 		if inner, ok := ref.Inner.(*soltype.TypeVarType); ok {
 			return c.constrain(inner, super, seen, false)
 		}
@@ -1100,7 +1100,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	// A value type copies into an immutable borrow of a variable the same way, since it has no
 	// storage for the borrow to share. `fn remember(value) { seen.set("last", value) }` takes
 	// `&'static T0`, and `remember("a")` checks `"a"` against `T0`.
-	if ref, ok := super.(*soltype.RefType); ok && ref.Lt != nil && !ref.Mut && copiesOutOfBorrow(sub) {
+	if ref, ok := super.(*soltype.RefType); ok && ref.Lt != nil && !ref.Mut && c.copiesOutOfBorrow(sub) {
 		if inner, ok := ref.Inner.(*soltype.TypeVarType); ok {
 			return c.constrain(sub, inner, seen, false)
 		}
@@ -1195,6 +1195,16 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			if ref, isAlias := super.(*soltype.AliasType); isAlias {
 				c.pushUnfoldingAlias(ref)
 				defer c.popUnfoldingAlias(ref)
+				// ValueType names a category of types, so a failure reads better against the
+				// name than against the eight-member union it expands to.
+				// `cannot constrain object <: ValueType` says what went wrong.
+				if ref.Name == soltype.ValueTypeName {
+					errs := c.constrainUnwrapped(sub, evaluated, seen, mutCtx)
+					if hasHardError(errs) {
+						return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+					}
+					return errs
+				}
 			}
 			return c.constrainUnwrapped(sub, evaluated, seen, mutCtx)
 		}
@@ -1313,6 +1323,14 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 					}
 				}
 				return diags
+			}
+			// No member admits a skolem on its own, but its declared bound may fit the union
+			// as a whole. `T <: number | string` holds for `T: number | string`, although
+			// `T` is neither a `number` nor a `string`.
+			if sk, ok := sub.(*soltype.SkolemType); ok && sk.Upper != nil {
+				if !hasHardError(c.trialUnderProbeSeen(sk.Upper, super, seen.Clone())) {
+					return c.constrain(sk.Upper, super, seen, mutCtx)
+				}
 			}
 			// No candidate holds, the var members included, and the decomposition's own
 			// diagnostics are dropped for one that names the union the user wrote. Promote
@@ -2198,18 +2216,47 @@ func isCallableShape(t soltype.Type) bool {
 }
 
 // copiesOutOfBorrow reports whether t is a value type a read can copy out of a borrow: a type
-// isValueType accepts, a function, or a union of these.
-func copiesOutOfBorrow(t soltype.Type) bool {
+// isValueType accepts, a function, a union of these, or a type parameter whose declared bound
+// is one of them. An alias is read as the type it expands to.
+func (c *Context) copiesOutOfBorrow(t soltype.Type) bool {
+	return c.copiesOutOfBorrowSeen(t, set.NewSet[soltype.Type]())
+}
+
+// copiesOutOfBorrowSeen is copiesOutOfBorrow with the alias references and type parameters
+// already entered, so a cycle through either answers false.
+func (c *Context) copiesOutOfBorrowSeen(t soltype.Type, seen set.Set[soltype.Type]) bool {
 	switch t := t.(type) {
 	case *soltype.FuncType, *soltype.FunctionTopType:
 		return true
 	case *soltype.UnionType:
 		for _, member := range t.Types {
-			if !copiesOutOfBorrow(member) {
+			if !c.copiesOutOfBorrowSeen(member, seen) {
 				return false
 			}
 		}
 		return len(t.Types) > 0
+	case *soltype.AliasType:
+		if seen.Contains(t) {
+			return false
+		}
+		seen.Add(t)
+		return c.copiesOutOfBorrowSeen(c.expandAlias(t), seen)
+	case *soltype.TypeVarType:
+		// Only a declared parameter has a bound that says what every instantiation is. An
+		// inference variable's upper bounds record what its uses demanded so far.
+		if t.Rigid == nil || seen.Contains(t) {
+			return false
+		}
+		seen.Add(t)
+		bound, ok := paramUpperBound(t)
+		return ok && c.copiesOutOfBorrowSeen(bound, seen)
+	case *soltype.SkolemType:
+		if seen.Contains(t) {
+			return false
+		}
+		seen.Add(t)
+		bound, ok := paramUpperBound(t)
+		return ok && c.copiesOutOfBorrowSeen(bound, seen)
 	}
 	return isValueType(t)
 }
