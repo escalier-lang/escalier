@@ -41,9 +41,24 @@ type checker struct {
 
 	// capturesMovedBy maps each closure whose body moves a local it captures to the names of
 	// those locals, each mapped to the expression in the closure that moves it.
-	// recordCaptureLoans moves them out of the enclosing body where the closure is written, and
-	// consumeOnceCallee moves a binding holding the closure at each call.
+	// recordClosureCaptures reads it where the closure is written, and funcMovesCaptures
+	// reads it at each call of a binding holding the closure.
 	capturesMovedBy map[ast.Func]map[string]ast.Node
+
+	// pendingFlows holds each flow whose ownership F3 has not settled yet, across every body
+	// walked so far, keyed by what it waits on. settleFlowsWaitingOn turns each into its
+	// event once what it waits on is settled. See ownership_events.go.
+	pendingFlows map[flowWait][]provisionalFlow
+	// paramByVar maps the VarID of each unannotated parameter a walked body binds to the
+	// parameter, so a flow out of it can read the ownership its body settles.
+	paramByVar map[liveness.VarID]*soltype.FuncParam
+	// unsettledParams holds each unannotated parameter whose body is still being walked.
+	// Its ownership is not settled until the walk finishes.
+	unsettledParams set.Set[*soltype.FuncParam]
+	// rejectedPatElems holds each pattern element a binding walk reported as unsupported,
+	// such as the `...rest` of `val {...rest, x} = p`. emitPatternFlows emits no flow for a
+	// pattern that holds one.
+	rejectedPatElems set.Set[ast.Node]
 
 	// pendingRecvReads holds the member reads off inferred receivers that top-level bodies
 	// collected. A value initializer can still pass such a body to a call that types its
@@ -290,6 +305,8 @@ type checker struct {
 	ambient *Scope
 	// noAmbientNames is Options.NoAmbientNames for this run.
 	noAmbientNames bool
+	// stdlibDir is Options.stdlibDir for this run.
+	stdlibDir string
 	// dependencies is Options.Dependencies for this run.
 	dependencies set.Set[string]
 	// checkJsDecorators is Options.CheckJsDecorators for this run.
@@ -357,6 +374,14 @@ type checker struct {
 	// unannotated parameter, and the result variable of each field read through one of those
 	// borrows. fieldReadBorrow reads a field off such a borrow as a borrow at the same lifetime.
 	readThroughVars set.Set[*soltype.TypeVarType]
+	// readThroughLocals holds the inner variable of each read-through borrow a body-level
+	// `val` binds, as `q` binds one in `val q = p.x`. The binding generalizes, so each use of
+	// it instantiates a copy of the variable, and the freshener adds that copy to
+	// readThroughVars.
+	readThroughLocals set.Set[*soltype.TypeVarType]
+	// unannotatedParamVars holds the variable inferFunc mints for each parameter with no
+	// written type.
+	unannotatedParamVars set.Set[*soltype.TypeVarType]
 
 	// memberSelf is set beside memberReceiver for an instance member, by inferMemberFunc, and
 	// carries what inferFunc needs to bind the member's `self` and build its SelfParam.
@@ -533,127 +558,62 @@ type funcCtx struct {
 	lvl int
 
 	// written records the widened type stored into a receiver variable's field by a
-	// field-write `recv.prop = source` (M4 C3), keyed by the receiver var's ID and
-	// the property name. A later read of the same field returns this concrete type
-	// instead of minting a fresh var, so `obj.x = 5; obj.x` is `number`
-	// (read-after-write). It is purely a precision win: write-after-read already
-	// works through ordinary bound accumulation.
+	// field-write `recv.prop = source`, keyed by the receiver var's ID and the property
+	// name. A later read of the same field returns this concrete type instead of minting
+	// a fresh var, so `obj.x = 5; obj.x` is `number`. This read-after-write precision is
+	// the only thing it adds. Write-after-read already works through ordinary bound
+	// accumulation.
 	//
-	// It lives here, not on the checker, because read-after-write is an INTRA-BODY
-	// relation: scoping the cache to the function body it belongs to makes that
-	// correct by construction rather than relying on the global fresh-var counter to
-	// keep one body's receiver IDs from colliding with another's. Push/pop of funcCtx
-	// isolates it for free — a nested function gets its own map and the outer's is
-	// restored on exit. A field write at module top-level (c.fn == nil) simply gets
-	// no read-after-write precision, which is sound.
+	// It lives here, not on the checker, because read-after-write is a relation inside
+	// one body. Scoping the cache to its function body keeps one body's receiver IDs from
+	// colliding with another's without relying on the global fresh-var counter. Push/pop
+	// of funcCtx gives a nested function its own map and restores the outer's on exit. A
+	// field write at module top-level, where c.fn is nil, gets no read-after-write
+	// precision, which is sound.
 	written map[fieldKey]soltype.Type
 
-	// liveness, aliases, stmtToRef, and varIDNames are the mutability-transition
-	// checking state for THIS function body (M4 G1), populated by runLivenessPrePass
-	// before the body is walked. They are the new-checker analogue of the old
-	// checker's Context.Liveness/Aliases/StmtToRef/VarIDNames. Scoping them to funcCtx
-	// gives a nested function its own liveness analysis for free. Push/pop isolates them
-	// exactly like `written`. They stay nil at module top-level (c.fn == nil), where the
-	// transition checker is a no-op.
-	liveness   *liveness.LivenessInfo
-	aliases    *liveness.AliasTracker
+	// stmtToRef and varIDNames are the liveness state for THIS function body,
+	// populated by runLivenessPrePass before the body is walked. Scoping them to funcCtx
+	// gives a nested function its own liveness analysis. Push/pop isolates them exactly
+	// like `written`. They stay nil at module top-level, where c.fn is nil.
 	stmtToRef  map[ast.Stmt]liveness.StmtRef
 	varIDNames map[liveness.VarID]string
-	// cfg is this body's control-flow graph, retained from the pre-pass so the move
-	// engine can run AnalyzeMoves over it. liveness and stmtToRef are derived from
-	// it; the move engine's branch-merged consumed lattice joins over the same
-	// blocks (PR 5). nil at module top-level, where no pre-pass runs.
+	// events holds the ownership events this body's walk emits, attached to the nodes of
+	// cfg. runLivenessPrePass opens it. See ownership_events.go.
+	events *ownershipEvents
+	// exprRefs maps the expression of each expression statement in cfg's blocks to the
+	// statement's CFG point. The CFG builder wraps some expressions in an expression
+	// statement of its own, such as a branch's condition, a match target, or a match arm's
+	// expression body. No AST statement maps to such a statement, so this is how the event
+	// emitters find the point such an expression runs at.
+	exprRefs map[ast.Expr]liveness.StmtRef
+	// eventStmt is the innermost statement being walked that has a CFG point. The ownership
+	// events of the expression being walked attach to its point. See eventStmtRef.
+	eventStmt ast.Stmt
+	// exprAt is the CFG point of the expression attachEventsAt is attaching events for,
+	// and the eventStmt when its inference began. eventStmtRef answers it while that
+	// statement is still eventStmt.
+	exprAt struct {
+		stmt ast.Stmt
+		ref  liveness.StmtRef
+		set  bool
+	}
+	// cfg is this body's control-flow graph, retained from the pre-pass. liveness and
+	// stmtToRef are derived from it. It is nil at module top-level, where no pre-pass runs.
 	cfg *liveness.CFG
-	// moveSites records, per CFG statement position, the VarIDs the ordered walk
-	// has consumed there — a binding moved by a return, a store, a consuming
-	// argument, or an escaping capture. The walk records into it while walking the
-	// body; AnalyzeMoves(cfg, moveSites) then yields the branch-merged consumed
-	// lattice the use-after-move check reads after the body walk completes.
-	moveSites map[liveness.StmtRef]set.Set[liveness.VarID]
 	// openEscapes holds the VarID of each binding the body passes whole as a call argument
 	// into a destination that outlives the frame and whose type leaves ownership open.
 	// noteOpenEscapes records them, and markOpenEscapeParams reads them once the body is
 	// walked.
 	openEscapes set.Set[liveness.VarID]
-	// moveNodes maps a consumed binding's VarID to the node that moved it, so a
-	// UseAfterMoveError can point its "moved here" related span at the move site. A
-	// binding moved on more than one path keeps the last-recorded move node, which
-	// is a coarse but adequate blame target.
-	moveNodes map[liveness.VarID]ast.Node
-	// moveRecords maps each node recordMove blamed for a move to what it recorded, so
-	// retractMove can take the move back.
-	moveRecords map[ast.Node]moveRecord
-	// movedSources holds each expression whose owned value an assignment or argument moves,
-	// such as the b in `val y = b`. checkUsesAgainstLoans reads it to report a move of
-	// borrowed data as a move rather than as a plain use.
-	movedSources set.Set[ast.Node]
-	// moduleLevelMoves holds each expression reported as a move out of a module-level binding.
-	// The sites that record a move read it, so such a move records nothing.
-	moduleLevelMoves set.Set[ast.Node]
+	// destructureInits holds the initializer of each `val` or `var` destructuring in this
+	// body that takes its parts out of the initializer's place. markMovedParams reads it.
+	destructureInits set.Set[ast.Node]
 	// unwrittenBorrows holds each expression reported for filling a borrow destination without
-	// a written borrow. A binding whose initializer is in it records no alias, move, borrow
-	// edge, or loan.
+	// a written borrow. A binding whose initializer is in it keeps no closure reachable.
 	unwrittenBorrows set.Set[ast.Node]
-	// placeCopies lists each place a binding takes its value from, such as the b in `val q = b`
-	// or in `a.peer = b`. movedOrigins keeps the ones movedSources says were moved, so the
-	// escape check can follow a local into the binding that owns its data afterwards.
-	placeCopies []placeCopy
-	// placeIDs assigns each field-level place one synthetic VarID (PR 7). A field-level
-	// place is a root binding plus a path of field segments, such as `pair.a`. The key is
-	// placeKey's encoding of the place, its root VarID followed by each segment's kind and
-	// length-prefixed name, so two places with distinct roots or paths never share a key.
-	// The value is the synthetic VarID the consumed lattice uses to track moves of that
-	// place. Looking up the same place at its move site and at its use site returns one
-	// stable VarID, so the use-after-move check can match them. Whole-binding places are
-	// not stored here; they reuse their root VarID directly. The synthetic VarIDs come
-	// from the module-wide varIDCounter, so they never collide with a real binding's VarID.
-	placeIDs map[string]liveness.VarID
-	// movePlaces records, for every VarID the move engine has consumed, the place it
-	// stands for: a whole binding maps its root VarID to the path-empty place, and a
-	// field move maps its synthetic VarID to the field place. A field place's synthetic
-	// VarID is the one placeIDs assigned it, so the two maps agree on which VarID names
-	// the place. checkUseAfterMoves scans it to find a moved place whose path is a prefix
-	// of, or extends, the place a use reads — the partial-move conflict test that keeps a
-	// moved `pair.a` from blocking a read of the sibling `pair.b`.
-	movePlaces map[liveness.VarID]movePlace
-	// useSites records every read of a reference-shaped place while walking the body,
-	// each with the place read, the CFG point of the read, and the node to blame. The
-	// place carries the field path, so a read of `pair.a` is distinguished from the
-	// sibling `pair.b`. checkUseAfterMoves replays them against the consumed lattice
-	// once the whole body, loop back edges included, has been walked, so a use that
-	// some reaching path moved is caught even when the move is textually later.
-	useSites []moveUse
-	// eagerBorrowGraph records, per binding root VarID, the function-locals it borrows through
-	// an explicit `&`/`&mut`, each tagged with the field path holding the borrow. The
-	// initializer `val a = {peer: &mut b}` records the edge a → b at path [peer]. The
-	// escape check follows these edges from a value flowing out of the frame to find a
-	// borrow of a local that cannot outlive it, discriminating a field return `return
-	// a.peer` from the disjoint `return a.data`. A parameter root is never recorded, since
-	// a borrow of a parameter carries a caller lifetime that already outlives the frame.
-	//
-	// While the body is walked this map holds the source-order-current edge set for each
-	// binding, updated by strong subtree replacement: a `var` reassignment clears the
-	// binding's prior edges before recording its new ones, and a field store `recv.f = …`
-	// clears only the [f] subtree. copyPlaceEdges reads it to project a source binding's
-	// edges into a destructuring leaf, so it must reflect the state at the copy point. The
-	// per-program-point graph the escape check reads is the flow-sensitive one analyzeBorrows
-	// computes from borrowGens, not this eager map; resolveComponentEscapes passes that snapshot
-	// to each escape helper rather than storing it here.
-	eagerBorrowGraph map[liveness.VarID][]fieldBorrow
-	// borrowGens records, per CFG statement position, the borrow-edge assignments that
-	// statement makes: for each binding it re-points, the full new edge set the eager
-	// walk computed. analyzeBorrows folds these forward over the CFG, joining edge sets at
-	// branch merges by union so a borrow set on one branch reaches the merge, and replacing
-	// a binding's whole edge set at each assignment so a reassignment clears the prior
-	// referent. It is the flow-sensitive counterpart of moveSites.
-	borrowGens map[liveness.StmtRef][]borrowAssign
-	// borrowDirty accumulates the roots whose eager edge set changed while recording the
-	// current statement's borrows. The recording sites flush it into borrowGens once the
-	// statement's borrows are recorded, emitting one assignment per dirtied root. It is
-	// reset after each flush.
-	borrowDirty set.Set[liveness.VarID]
-	// paramVarIDs holds the VarID of every parameter leaf binding. A borrow of a
-	// parameter outlives the frame, so the escape check skips a referent in this set.
+	// paramVarIDs holds the VarID of every parameter leaf binding, the receiver, and each
+	// capture.
 	paramVarIDs set.Set[liveness.VarID]
 	// captureVarIDs holds the VarID of every local a closure's body captures. The pre-pass
 	// defines each as a parameter of the body, so each is in paramVarIDs too.
@@ -661,94 +621,21 @@ type funcCtx struct {
 	// capturesModule is true when this body is a module's function, whose captures are the
 	// module-level names it reads rather than locals of an enclosing body.
 	capturesModule bool
-	// capturedLocals holds, for each closure written in this body, the locals of this body it
-	// captures that hold a reference-shaped value.
-	capturedLocals map[ast.Func][]capturedLocal
-	// capturedTypes holds the binding type of every local in capturedLocals.
-	capturedTypes map[liveness.VarID]soltype.Type
-	// retainedClosureStores records each place this body hands a closure to that keeps it past
-	// the statement, a store into a module-level binding or an argument to a parameter with a
-	// retention lifetime. The post-pass takes a loan of each local those closures write.
-	retainedClosureStores []retainedClosureStore
-	// retainedResults maps a call to the indices in retainedClosureStores of the stores whose
-	// closure the call's result keeps. noteRetainedHolder adds the binding the result
-	// initializes to each store's holders.
-	retainedResults map[ast.Expr][]int
-	// callSites holds every call in this body, in source order.
-	callSites []callSite
-	// callArgLoans holds the borrows each call's arguments take for the call's parameters,
-	// keyed by the call. They last for the call's statement and are not in loans.
-	callArgLoans map[ast.Node][]loan
-	// escapeSites records every value flowing out of the frame that might carry a borrow
-	// of a function-local: a return value, a value stored into a parameter's field, and a
-	// consuming argument. The decision is deferred to a post-pass, resolveComponentEscapes,
-	// which runs once the whole body is walked, so the borrow-edge graph is complete and
-	// the consumed lattice is available. A self-contained connected component re-anchors
-	// and co-moves; anything else reports an EscapingBorrowError.
-	escapeSites []escapeSite
-	// namedClosures holds each closure that takes no loan where it is written. One is the
-	// initializer of a local name, as in `val f = fn () { … }`, whose captures are weighed at
-	// each call of the name and each call the name is passed to. A script's `fn` declaration
-	// is weighed the same way. Another is stored into a module-level binding, whose captures
-	// are weighed at each call after the store.
-	namedClosures set.Set[ast.Func]
-	// loans holds every borrow bound to a name in this body, in source order. The exclusivity
-	// check compares each new borrow against the ones still live. See borrow_exclusivity.go.
-	loans []loan
-	// fieldWrites maps each receiver expression of a member assignment to the place the
-	// assignment writes. checkUsesAgainstLoans reads it to tell a write through the owner from
-	// a read.
-	fieldWrites map[ast.Node]fieldWrite
-	// loanReads holds the expressions a borrow reads to take its loan. That read creates the
-	// borrow rather than being a second path to the data, so the use check skips it.
-	loanReads set.Set[ast.Node]
-	// borrowSites holds every borrow expression the walk infers, in source order. Most take
-	// their loan where they are bound or passed. checkNestedBorrows reads this list to take
-	// the loan of each one that is neither, such as a borrow inside a literal or a return.
-	borrowSites []borrowSite
-	// sharedPathSpans holds the spans of the outgoing expressions reported for handing out a
-	// mutable and an immutable path to one local, whether inside one returned value or across
-	// two sites. The use check skips a read INSIDE one of them, and checkNestedBorrows skips a
-	// borrow inside one. Such an expression then yields the diagnostic naming where the paths
-	// leave rather than a second one naming the read or borrow it contains. A read or borrow
-	// elsewhere in the body is unrelated and keeps its own diagnostic.
-	sharedPathSpans []ast.Span
-	// loanSeq is the last sequence number handed to a loan. Each loan takes the next one, so
-	// a read can name the loans that existed when it was walked without depending on their
-	// positions, which dropLoansHeldBy shifts.
-	loanSeq int
-	// varIDTypes maps each tracked variable's VarID to its soltype. It is the bridge
-	// the transition checker uses to query the lifetime sort for a `'static` escape in
-	// M4 G2. It replaces the dropped HasStatic{Mut,Imm}Alias bits. A value whose borrow
-	// lifetime D3 forced `<: 'static` has a permanent outside alias, and that borrow's
-	// Mut supplies its mutability. The stored type is the SAME pointer the inference
-	// graph mutates. So a lifetime that a later global write `sink = p` forces to
-	// 'static after the binding is recorded is visible here through the shared
-	// LifetimeVar. Populated at the same sites that seed alias mutability: parameter
-	// leaves, decl bindings, and reassignment targets.
+	// scope is the scope the body's parameters are bound in. A name the rename pass left
+	// unnumbered binds no local of the body, so it resolves the same way from here as from
+	// any scope inside the body.
+	scope *Scope
+	// varIDTypes maps the VarID of each parameter leaf, the receiver, and each capture to
+	// that binding's soltype. runLivenessPrePass fills it before the body is walked. The
+	// stored type is the same pointer the inference graph mutates, so a type variable
+	// that settles later is read in its settled form.
 	varIDTypes map[liveness.VarID]soltype.Type
-	// currentStmt is the enclosing statement currently being walked (M4 G1), set by
-	// inferStmt. A reassignment `a = e` lives in expression position, so the transition
-	// checker reads the enclosing statement from here to find its CFG StmtRef.
+	// currentStmt is the enclosing statement currently being walked. inferStmt sets it. A reassignment `a = e` lives in expression position, so a check that
+	// needs its CFG StmtRef reads the enclosing statement from here.
 	currentStmt ast.Stmt
-	// pendingTransitions holds the phase/exclusivity conflicts the walk found, deferred
-	// for emission until the consumed lattice is complete. checkMutabilityTransition
-	// computes each conflict against the alias and liveness state at the transition's
-	// program point and records it here rather than reporting it inline. After the body
-	// walk, resolvePhaseTransitions emits each one unless the consumed lattice finds its
-	// source moved on every reaching path, in which case the move engine's
-	// use-after-move subsumes it. Deferring the emission lets the phase decision read
-	// the complete post-walk lattice, so each conflict's path-sensitivity is decided in
-	// one pass.
-	//
-	// INVARIANT: this slice must not be mutated under a discardable probe. The conflicts
-	// here bypass openProbe's errs snapshot, since they reach c.errs only later through
-	// resolvePhaseTransitions, so a discarded trial would not roll them back. It holds
-	// today because checkMutabilityTransition runs only on the non-speculative statement
-	// walk, never inside a probe. A probe opened around a statement walk that can reach
-	// checkMutabilityTransition would have to journal this slice's length in openProbe,
-	// the way errs is journaled.
-	pendingTransitions []*MutabilityTransitionError
+	// `frame` holds what D16's rules read about this body's lifetimes. See
+	// lifetime_frame.go.
+	frame frameLifetimes
 }
 
 // pushFuncCtx enters the inference context for function `node` (async controls
@@ -1009,6 +896,7 @@ func (c *checker) forScript(pkgURI string) *checker {
 		source:            c.source,
 		groupSource:       c.groupSource,
 		groups:            c.groups,
+		stdlibDir:         c.stdlibDir,
 		checkJsDecorators: c.checkJsDecorators,
 		weakBindingVars:   set.NewSet[*soltype.TypeVarType](),
 	}
@@ -1230,6 +1118,14 @@ func (c *checker) recordType(n ast.Node, t soltype.Type) {
 // never a panic.
 func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 	c.markLifetimes(e)
+	// The CFG builder runs some expressions in a statement of its own, such as a branch's
+	// condition, a match arm's expression body, or a guard. The ownership events such an
+	// expression emits attach to that statement.
+	if c.fn != nil {
+		if ref, ok := c.fn.exprRefs[e]; ok {
+			defer c.attachEventsAt(ref)()
+		}
+	}
 	switch e := e.(type) {
 	case *ast.ErrorExpr:
 		// The parser substitutes this for an expression it could not read and reports

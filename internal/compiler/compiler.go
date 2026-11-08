@@ -366,9 +366,7 @@ func collectUsedLibSymbols(script *ast.Script, lib LibScope) []string {
 	}
 
 	// Walk the AST
-	for _, stmt := range script.Stmts {
-		stmt.Accept(visitor)
-	}
+	script.Accept(visitor)
 
 	// Convert map to sorted slice
 	result := make([]string, 0, len(visitor.usedSymbols))

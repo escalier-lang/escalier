@@ -164,6 +164,12 @@ func (f *freshener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterR
 	nv := f.c.freshAt(f.lvl)
 	nv.Open = v.Open // carry the `open` param marker onto the instantiated copy
 	f.c.ctx.copyParamMark(nv, v)
+	// A local bound to a read through a borrowed parameter, as `q` is in `val q = p.x`,
+	// instantiates its borrow's inner at each use. The copy joins readThroughVars, so a read
+	// through the local keeps the borrow as a read through the parameter does.
+	if f.c.readThroughLocals.Contains(v) {
+		f.c.addReadThroughVar(nv)
+	}
 	// Carry `var` widenability onto the copy, mirroring Open. DEFENSIVE: no current
 	// path observes it — a read of a widened binding gets the literal propagated
 	// concretely through the bound graph (constrain copies a var's concrete bounds
@@ -320,6 +326,7 @@ func (lf *ltFreshener) fresh(lt soltype.Lifetime) soltype.Lifetime {
 	}
 	nlv := lf.ctx.freshLifetime(lf.lvl)
 	nlv.Join = lv.Join // a freshened copy keeps the origin's join-vs-param nature
+	lf.ctx.noteLifetimeCopy(lv, nlv)
 	lf.cache[lv] = nlv
 	nlv.LowerBounds = lf.freshBounds(lv.LowerBounds)
 	nlv.UpperBounds = lf.freshBounds(lv.UpperBounds)

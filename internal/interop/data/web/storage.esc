@@ -65,7 +65,7 @@ export declare class Storage {
      */
     setItem(&mut self, key: string, value: string) -> undefined,
     static prototype: Storage,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**

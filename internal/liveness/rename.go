@@ -109,33 +109,28 @@ func (r *renamer) resolve(name string, span ast.Span) VarID {
 	return 0
 }
 
-// Rename walks a function body, assigns VarIDs to all local binding and
+// RenameFrom walks a function body, assigns VarIDs to all local binding and
 // use sites, and validates that all variable uses resolve to in-scope
-// bindings. It records each VarID in ids, keyed by the node it names. Module-level and prelude bindings are supplied
-// via outerBindings so that free variables can be distinguished from
-// truly unresolved names.
+// bindings. It records each VarID in ids, keyed by the node it names. Module-level and
+// prelude bindings are supplied via outerBindings so that free variables can be
+// distinguished from truly unresolved names.
 //
 // Only variable bindings and uses are processed. Type annotations are
 // skipped — they contain type names (resolved via the checker's type
 // namespace), not variable references, and are irrelevant to liveness
-// and alias analysis.
+// analysis.
 //
 // params are the function's parameters — they are assigned local VarIDs
 // and are in scope for the entire body.
 //
+// firstID is the first positive local VarID. The solver passes a module-wide running
+// counter so VarIDs are unique across every function body in a single inference run. A
+// binding's VarID then names the same variable in any frame, so feeding one body's id
+// into another body's liveness or ownership tables cannot collide with an unrelated
+// local. firstID must be >= 1. The id 0 is the unset sentinel, and negative ids mark
+// non-local bindings. The next free id is firstID + the returned UniqueVarCount.
+//
 // Downstream phases read the VarIDs back from ids.
-func Rename(ids *VarIDs, params []*ast.Param, body ast.Block, outerBindings map[string]VarID, extraParamNames ...string) *RenameResult {
-	return RenameFrom(ids, params, body, outerBindings, 1, extraParamNames...)
-}
-
-// RenameFrom is Rename with an explicit starting id for the positive local VarIDs.
-// Plain Rename starts at 1, giving each body its own 1-based numbering. The solver
-// instead passes a module-wide running counter so VarIDs are unique across every
-// function body in a single inference run. A binding's VarID then names the same
-// variable in any frame, so feeding one body's id into another body's alias/liveness
-// tables can no longer collide with an unrelated local. firstID must be >= 1. The id 0
-// is the unset sentinel, and negative ids mark non-local bindings. The next free id is
-// firstID + the returned UniqueVarCount.
 func RenameFrom(ids *VarIDs, params []*ast.Param, body ast.Block, outerBindings map[string]VarID, firstID VarID, extraParamNames ...string) *RenameResult {
 	r := newRenamer(ids, outerBindings, firstID)
 

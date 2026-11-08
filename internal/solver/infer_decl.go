@@ -172,19 +172,15 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 	}
 	if closure, ok := d.Init.(*ast.FuncExpr); ok {
 		if _, isIdent := d.Pattern.(*ast.IdentPat); isIdent {
-			c.markNamedClosure(closure)
+			c.noteBoundClosure(closure)
 		}
 	}
 	initT := c.inferExpr(scope, lvl, d.Init)
-	// A binding that takes its initializer by value moves it. A move out of a module-level
-	// binding is reported here. An annotated binding reports it once the annotation has
-	// resolved.
-	_, isIdent := d.Pattern.(*ast.IdentPat)
 	// An unannotated name binds whatever its initializer produces, so a field read through a
 	// borrow binds a borrow and needs the borrow written. A destructuring pattern reads
 	// through the borrow itself and needs nothing written.
-	if isIdent && d.TypeAnn == nil && !c.checkWrittenBorrow(d.Init, nil) {
-		c.rejectModuleLevelMove(scope, d.Init)
+	if _, isIdent := d.Pattern.(*ast.IdentPat); isIdent && d.TypeAnn == nil {
+		c.checkWrittenBorrow(d.Init, nil)
 	}
 	// A `mut` leaf owns a writable value, so it may not share one with the module or with
 	// another await of the same promise. A destructuring pattern with a `mut` leaf takes that
@@ -239,19 +235,14 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 		// error and adopting `never` would poison the binding. Keep the inferred
 		// initializer type instead (error recovery).
 		annT, ok := c.resolveDeclaredTypeAnn(scope, d.TypeAnn, lvl, symName, varDeclSymbolPosition(d))
-		// An initializer that fills a borrow annotation without a written borrow is reported
-		// for that alone. Reporting it as a move out of a module-level binding as well would
-		// blame one fault twice.
 		missing := ok && c.checkWrittenBorrow(d.Init, annT)
-		if _, borrowAnn := d.TypeAnn.(*ast.RefTypeAnn); isIdent && !borrowAnn && !missing {
-			c.rejectModuleLevelMove(scope, d.Init)
-		}
 		if ok {
-			// A `val mut p: T` binding may write any writable field of `T`, so a readonly
-			// field in the value it moves in cannot fill one, as T5 states. A borrowed
-			// initializer cannot fill the owned binding at all, and that is the fault to
-			// report rather than its fields.
-			if isMutableIdentPat(d.Pattern) && len(heldBorrows(initT)) == 0 {
+			// A readonly field in the value the binding moves in cannot fill a writable field
+			// of `T`, as T5 states. That holds for a `val` binding too, since the value can
+			// move on into a `val mut` binding that writes the field. A borrowed initializer
+			// cannot fill the owned binding at all, and that is the fault to report rather
+			// than its fields.
+			if len(heldBorrows(initT)) == 0 {
 				c.reportReadonlyIntoWritable(d.Init, initT, annT)
 			}
 			annT = c.constrainInitAgainstAnnotation(d.Init, initT, annT, missing)
@@ -360,9 +351,40 @@ func (s *skolemizer) skolemizeBound(bounds []soltype.Type) soltype.Type {
 
 // reportReadonlyIntoWritable reports ReadonlyFieldSubtypeError for each readonly field of
 // srcT that fills a writable field of target, blamed at site. It reports no other fault and
-// records no bound. A borrow keeps the mutability its referent has, so it has no readonly
-// field to report here.
+// records no bound. A type variable in srcT is read through its lower bounds, and each field
+// is reported once however many bounds carry it. A borrow keeps the mutability its referent
+// has, so it has no readonly field to report here.
 func (c *checker) reportReadonlyIntoWritable(site ast.Node, srcT, target soltype.Type) {
+	targetInner, ok := target.(soltype.RefInner)
+	if !ok {
+		return
+	}
+	// A type variable declares no field of its own to write.
+	if _, isVar := target.(*soltype.TypeVarType); isVar {
+		return
+	}
+	var readonly []SolverError
+	fields := set.NewSet[string]()
+	c.collectReadonlyIntoWritable(srcT, targetInner, fields, &readonly, set.NewSet[*soltype.TypeVarType]())
+	c.blameConstraintErrors(site, readonly)
+}
+
+// collectReadonlyIntoWritable appends to out a ReadonlyFieldSubtypeError for each readonly
+// field of srcT that fills a writable field of target and is not yet in fields, and adds
+// that field to fields. seen holds the type variables already read.
+func (c *checker) collectReadonlyIntoWritable(
+	srcT soltype.Type, target soltype.RefInner, fields set.Set[string], out *[]SolverError, seen set.Set[*soltype.TypeVarType],
+) {
+	if v, isVar := srcT.(*soltype.TypeVarType); isVar {
+		if seen.Contains(v) {
+			return
+		}
+		seen.Add(v)
+		for _, lb := range v.LowerBounds {
+			c.collectReadonlyIntoWritable(lb, target, fields, out, seen)
+		}
+		return
+	}
 	if isBorrowType(srcT) {
 		return
 	}
@@ -370,23 +392,20 @@ func (c *checker) reportReadonlyIntoWritable(site ast.Node, srcT, target soltype
 	if !ok {
 		return
 	}
-	targetInner, ok := target.(soltype.RefInner)
-	if !ok {
-		return
-	}
 	// The trial compares two mutable borrows, which makes every field the target can write
 	// invariant. That is where constrain compares readonly-ness. A literal field such as the
 	// `1` in `{a: 1}` fails the invariant check against `number` too, so every other fault
 	// the trial finds is dropped.
-	var readonly []SolverError
 	sub := &soltype.RefType{Mut: true, Lt: soltype.Static, Inner: inner}
-	super := &soltype.RefType{Mut: true, Lt: soltype.Static, Inner: targetInner}
+	super := &soltype.RefType{Mut: true, Lt: soltype.Static, Inner: target}
 	for _, e := range c.ctx.trialUnderProbe(sub, super) {
-		if _, ok := e.(*ReadonlyFieldSubtypeError); ok {
-			readonly = append(readonly, e)
+		ro, ok := e.(*ReadonlyFieldSubtypeError)
+		if !ok || fields.Contains(ro.Field) {
+			continue
 		}
+		fields.Add(ro.Field)
+		*out = append(*out, ro)
 	}
-	c.blameConstraintErrors(site, readonly)
 }
 
 // rejectSharedAwait reports SharedAwaitIntoMutError when init, the initializer of a `mut`
@@ -727,6 +746,17 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl, self *solt
 	if self != nil {
 		c.constrain(d.Init, initType, self)
 	}
+	// A `val q = p.x` through a borrowed parameter binds a read-through borrow. Each use of q
+	// instantiates the borrow's inner, and the copy has to stay read-through, so a read such
+	// as `q.y` keeps the borrow.
+	if ref, isRef := initType.(*soltype.RefType); isRef && !ref.Mut && d.Kind == ast.ValKind {
+		if v, isVar := ref.Inner.(*soltype.TypeVarType); isVar && c.readThroughVars.Contains(v) {
+			if c.readThroughLocals == nil {
+				c.readThroughLocals = set.NewSet[*soltype.TypeVarType]()
+			}
+			c.readThroughLocals.Add(v)
+		}
+	}
 	bound := initType
 	// M4 B3: an un-annotated body-level `var` widens at coalesce time like its
 	// top-level peer. The top-level SCC path flags the binding var it already
@@ -760,7 +790,7 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl, self *solt
 	}
 	scheme := c.generalize(bound, lvl)
 	if initLvl == lvl {
-		c.noteWeakLocal(d, scheme)
+		c.noteWeakLocal(d, scheme, varRange{from: firstVar, to: c.ctx.varCounter})
 	}
 	// The recorded display type retains any quantified type-parameter vars (it is
 	// not var-free), so Info consumers must render it with renderScheme, which threads
@@ -792,82 +822,19 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl, self *solt
 // several names from one decl, so this path is body-level only and inferDeclDef
 // reports a top-level destructuring decl as unsupported.
 //
-// After binding, the leaves are wired into the liveness machinery so a closure
-// capturing a leaf resolves its alias set and a mutability transition through it
-// is checked. This is the per-leaf analogue of the IdentPat path's VarID copy
-// plus trackAliasesForVarDecl.
-func (c *checker) inferDestructureDecl(scope *Scope, lvl int, d *ast.VarDecl) {
+// After binding, each leaf's binding takes the VarID the rename gave it, as the IdentPat
+// path's binding does, so a closure that captures a leaf resolves it.
+//
+// It returns the type the pattern binds against. That is the annotation's type when the
+// declaration has one, and nil when the declaration has no initializer.
+func (c *checker) inferDestructureDecl(scope *Scope, lvl int, d *ast.VarDecl) soltype.Type {
 	initType, ok := c.inferVarDeclInit(scope, lvl, d, "")
 	if !ok {
-		return
+		return nil
 	}
 	c.bindPattern(scope, lvl, d.Pattern, initType, nil)
-	c.trackDestructureLeaves(scope, d.Pattern)
-	// Record each leaf's borrow edges from the initializer sub-expression it binds, so a
-	// return of a leaf that projects a borrow of a local is caught. `val {peer} = {peer:
-	// &mut b}` records peer → b. The correspondence is structural, so it tracks a leaf
-	// only when the initializer's shape mirrors the pattern's.
-	if c.fn != nil && c.fn.eagerBorrowGraph != nil && d.Init != nil {
-		c.recordDestructureBorrowEdges(d.Pattern, d.Init)
-	}
-}
-
-// recordDestructureBorrowEdges records the borrow edges of each destructuring leaf by
-// matching the pattern against the initializer structurally. When the initializer is a
-// place, recordPatternPlaceEdges projects the pattern over it, so `val {peer} = a` carries
-// a's edges into peer. Otherwise an identifier leaf records edges from the sub-expression
-// bound to it, an object pattern matches each element to the initializer property of the
-// same name, and a tuple pattern matches by position. A leaf whose initializer
-// sub-expression is not statically present, such as a property supplied by a spread,
-// records nothing.
-func (c *checker) recordDestructureBorrowEdges(pat ast.Pat, init ast.Expr) {
-	if p, ok := c.exprPlace(init); ok && p.root > 0 {
-		c.recordPatternPlaceEdges(pat, p)
-		return
-	}
-	switch pat := pat.(type) {
-	case *ast.IdentPat:
-		c.recordBorrowEdges(c.varIDs.Of(pat), init)
-	case *ast.ObjectPat:
-		obj, ok := init.(*ast.ObjectExpr)
-		if !ok {
-			return
-		}
-		props := map[string]ast.Expr{}
-		for _, elem := range obj.Elems {
-			if p, ok := elem.(*ast.PropertyExpr); ok {
-				if name, ok := objKeyName(p.Name); ok {
-					props[name] = p.ValueExpr()
-				}
-			}
-		}
-		for _, elem := range pat.Elems {
-			switch e := elem.(type) {
-			case *ast.ObjShorthandPat:
-				if v, ok := props[e.Key.Name]; ok {
-					c.recordBorrowEdges(c.varIDs.Of(e), v)
-				} else if e.Default != nil {
-					// The property is absent from the initializer, so the leaf takes the
-					// shorthand default, such as `val {peer = &mut b} = obj`.
-					c.recordBorrowEdges(c.varIDs.Of(e), e.Default)
-				}
-			case *ast.ObjKeyValuePat:
-				if v, ok := props[e.Key.Name]; ok {
-					c.recordDestructureBorrowEdges(e.Value, v)
-				}
-			}
-		}
-	case *ast.TuplePat:
-		tup, ok := init.(*ast.TupleExpr)
-		if !ok {
-			return
-		}
-		for i, elem := range pat.Elems {
-			if i < len(tup.Elems) {
-				c.recordDestructureBorrowEdges(elem, tup.Elems[i])
-			}
-		}
-	}
+	recordLeafVarIDs(c.varIDs, scope, d.Pattern)
+	return initType
 }
 
 // varName returns the bound name of a VarDecl whose pattern is an IdentPat, with

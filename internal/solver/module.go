@@ -28,6 +28,11 @@ type Options struct {
 	// CheckJsDecorators reports a pseudo-package file whose values break the `@js`
 	// rules jsDecoratorErrors lists, at the import that loads it.
 	CheckJsDecorators bool
+	// stdlibDir is the pseudo-package tree the run's groups were built from, or "" for a
+	// run given its groups some other way. InferModuleAgainstStdlib and
+	// InferScriptAgainstStdlib set it. A load of a package the groups do not cover reads
+	// the tree to group it.
+	stdlibDir string
 }
 
 // InferModule builds the dep graph for a single parsed module, infers every
@@ -163,6 +168,7 @@ func newRunChecker(source ModuleSource, groupSource GroupSource, groups PackageG
 	c.noAmbientNames = opts.NoAmbientNames
 	c.checkJsDecorators = opts.CheckJsDecorators
 	c.dependencies = opts.Dependencies
+	c.stdlibDir = opts.stdlibDir
 	return c
 }
 
@@ -271,6 +277,9 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	for _, component := range classBodiesFirst(g) {
 		c.inferComponent(scope, lvl, module, g, component, handled, destructured)
 	}
+	// Every function body is walked, so every flow F3 can settle is settled, and the rest
+	// take the answer settleAllFlows gives what it cannot see.
+	c.settleAllFlows()
 	// Every class is inferred, so each superclass edge and body is final. Check the members
 	// each subclass redeclares against the ones they override.
 	c.settleQueuedVariance()
@@ -298,6 +307,14 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 		}
 		return true
 	})
+	// Every flow is settled and every body is walked, so the dataflow pass can read the
+	// events of this module's bodies.
+	c.runOwnershipDataflow()
+	// A package's diagnostics reach the entry module's as a PackageInferenceError, so only
+	// the entry module, which has no package URI, prints them.
+	if c.pkgURI == "" {
+		traceDiagnostics(c.errs, module.Sources)
+	}
 	return soltype.ModuleSymbols{Minted: declaredSymbols(module, c.info), Owners: c.symbolOwners}
 }
 
@@ -414,6 +431,8 @@ type componentBinding struct {
 	// set, bound as a multi-scheme ValueBinding in phase 3. arms[i] lines up with the
 	// FuncDecl's entry in sources.
 	arms []overloadArm
+	// initVars is the range of ids of the variables the binding's initializer minted.
+	initVars varRange
 	// weak marks a `val` or `var` whose declaration does not generalize, as generalizes
 	// decides. Its binding var and initializer are inferred at the component's own level,
 	// so the variables they carry are weak. Every function that reads the binding shares
@@ -838,9 +857,13 @@ func (c *checker) inferComponent(
 			// A class decl is keyed by its dep_graph-qualified name, so pass the key's
 			// namespace down for inferClassDecl to reconstruct it. Every other decl
 			// kind ignores it.
+			firstVar := c.ctx.varCounter
 			t, src, ok := c.inferDeclDef(c.lookupScope(scope, d), declLevel(d, lvl), d, g.GetNamespace(key))
 			if !ok {
 				continue
+			}
+			if !b.bound {
+				b.initVars = varRange{from: firstVar, to: c.ctx.varCounter}
 			}
 			// Accumulate every contributing decl's provenance in encounter order: the
 			// primary, every overload arm, and every decl later rejected as a duplicate.
@@ -1092,7 +1115,10 @@ func (c *checker) inferComponent(
 // already reported. recovered marks an initializer that fell back to the ErrorType
 // sentinel, so each leaf recovers AS the sentinel rather than freezing to `never`.
 type moduleDestructure struct {
-	leaves    map[string]destructureLeaf
+	leaves map[string]destructureLeaf
+	// initVars is the range of ids of the variables minted while the initializer was typed
+	// and the pattern bound.
+	initVars  varRange
 	recovered bool
 	ok        bool
 }
@@ -1156,6 +1182,7 @@ func (c *checker) bindModuleDestructureLeaf(
 	b.isVarDecl = true
 	b.kind = d.Kind
 	b.mut = leafMutable(leaf.node)
+	b.initVars = md.initVars
 	b.bound = true
 	b.sources = append(b.sources, &ast.NodeProvenance{Node: d})
 	if md.recovered {
@@ -1189,6 +1216,8 @@ func (c *checker) destructurePattern(
 	handled.Add(d)
 	md := &moduleDestructure{leaves: map[string]destructureLeaf{}}
 	destructured[d] = md
+	firstVar := c.ctx.varCounter
+	defer func() { md.initVars = varRange{from: firstVar, to: c.ctx.varCounter} }()
 	initType, ok := c.inferVarDeclInit(scope, lvl, d, "")
 	if !ok {
 		return md // MissingInitializerError already reported, so md.ok stays false

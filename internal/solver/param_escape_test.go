@@ -1,186 +1,454 @@
 package solver
 
 import (
+	"strconv"
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
 // TestInferUnannotatedParamOwnership covers which unannotated parameters infer as a borrow. A
 // parameter the body only reads through infers as `&`. Every other use in the table leaves it
-// owned.
+// owned. A case with several variants is a group that reads the same parts of the parameter.
+// Each variant's want is the same signature, apart from the parameter's own pattern, which the
+// signature shows as the variant writes it.
+//
+// TestInferUnannotatedDestructuredParam holds the groups that return or read through a leaf of
+// the parameter, since it also asserts which parameters each variant moves.
 func TestInferUnannotatedParamOwnership(t *testing.T) {
 	tests := []struct {
-		name string
-		src  string
-		want string
-		errs []string
+		name     string
+		variants []sigVariant
+		errs     []string
 	}{
 		{
-			name: "MemberRead",
-			src:  `fn f(p) { return p.x }`,
-			want: "fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0",
-		},
-		{
-			name: "NestedMemberRead",
-			src:  `fn f(p) { return p.x.y }`,
-			want: "fn <T0, 'a>(p: &'a {x: {y: T0}}) -> &'a T0",
-		},
-		{
 			name: "MemberReadIntoArithmetic",
-			src:  `fn f(p) { return p.x + p.y }`,
-			want: "fn (p: &{x: number, y: number}) -> number",
+			variants: []sigVariant{
+				{src: `fn f(p) { return p.x + p.y }`, want: "fn (p: &{x: number, y: number}) -> number"},
+			},
+		},
+		{
+			name: "LeafIntoArithmetic",
+			variants: []sigVariant{
+				{src: `fn f(p) { return p.x + 1 }`, want: "fn (p: &{x: number}) -> number"},
+				{
+					src: `fn f(p) {
+					val q = p.x
+					return q + 1
+				}`,
+					want: "fn (p: &{x: number}) -> number",
+				},
+				{src: `fn f({x}) { return x + 1 }`, want: "fn ({x}: &{x: number}) -> number"},
+			},
 		},
 		{
 			name: "MemberReadInCondition",
-			src:  `fn f(p) { return if p.ok { 1 } else { 2 } }`,
-			want: "fn (p: &{ok: boolean}) -> 1 | 2",
+			variants: []sigVariant{
+				{src: `fn f(p) { return if p.ok { 1 } else { 2 } }`, want: "fn (p: &{ok: boolean}) -> 1 | 2"},
+			},
 		},
 		{
 			name: "MemberReadBorrowed",
-			src:  `fn f(p) { return &p.x }`,
-			want: "fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0",
+			variants: []sigVariant{
+				{src: `fn f(p) { return &p.x }`, want: "fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0"},
+			},
 		},
 		{
 			name: "MemberReadStoredInModuleState",
-			src: `
+			variants: []sigVariant{
+				{
+					src: `
 				var sink = {y: 0}
 				fn f(p) { sink = p.x }
 			`,
-			want: "fn (p: {x: {y: number}}) -> undefined",
+					want: "fn (p: {x: {y: number}}) -> undefined",
+				},
+			},
 		},
 		{
 			name: "MemberReadPassedToCall",
-			src: `
+			variants: []sigVariant{
+				{
+					src: `
 				declare fn own(q: {y: number}) -> number
 				fn f(p) { return own(p.x) }
 			`,
-			want: "fn (p: {x: {y: number}}) -> number",
+					want: "fn (p: {x: {y: number}}) -> number",
+				},
+			},
 		},
 		{
-			name: "MemberReadBound",
-			src: `fn f(p) {
-				val q = p.x
+			name: "BoundReadStoredInModuleState",
+			variants: []sigVariant{
+				{
+					src: `
+				var sink = {y: 0}
+				fn f(p) {
+					val q = p.x
+					sink = q
+				}
+			`,
+					want: "fn (p: {x: {y: number}}) -> undefined",
+				},
+			},
+		},
+		{
+			name: "BoundReadPassedToCall",
+			variants: []sigVariant{
+				{
+					src: `
+				declare fn own(q: {y: number}) -> number
+				fn f(p) {
+					val q = p.x
+					return own(q)
+				}
+			`,
+					want: "fn (p: {x: {y: number}}) -> number",
+				},
+			},
+		},
+		// A closure that reads the parameter through a capture borrows it for as long as the
+		// closure lives, so the closure can be called more than once.
+		//
+		// DISABLED until #2565. Today the capture counts as an escape, so the parameter stays
+		// owned and each variant infers `fn <T0>(p: {x: T0}) -> fn () -> T0`. That closure
+		// returns its owned capture on every call. Section 1 of #2565 ties a returned closure's
+		// lifetime to its captures, which lets the capture read through the borrow.
+		/*
+			{
+				name: "ReadCapturedByClosure",
+				variants: []sigVariant{
+					{
+						src: `fn f(p) {
+						val q = p.x
+						return fn () { return q }
+					}`,
+						want: "fn <T0, 'a>(p: &'a {x: T0}) -> &'a fn () -> &'a T0",
+					},
+					{src: `fn f(p) { return fn () { return p.x } }`, want: "fn <T0, 'a>(p: &'a {x: T0}) -> &'a fn () -> &'a T0"},
+				},
+			},
+		*/
+		{
+			name: "BoundReadInVar",
+			variants: []sigVariant{
+				{
+					src: `fn f(p) {
+				var q = p.x
 				return q
 			}`,
-			want: "fn <T0>(p: {x: T0}) -> T0",
+					want: "fn <T0>(p: {x: T0}) -> T0",
+				},
+			},
+		},
+		{
+			name: "BoundReadNameRebound",
+			variants: []sigVariant{
+				{
+					src: `fn f(p) {
+				val q = p.x
+				val q = {y: 1}
+				return q
+			}`,
+					want: "fn (p: {x: unknown}) -> {y: 1}",
+				},
+			},
+		},
+		{
+			// The second `val` binds q again while reading through it, so a later use of q may
+			// name either binding.
+			name: "BoundReadNameReboundByAlias",
+			variants: []sigVariant{
+				{
+					src: `fn f(p) {
+				val q = p.x
+				val {q} = q
+				return q
+			}`,
+					want: "fn <T0>(p: {x: {q: T0}}) -> T0",
+				},
+			},
+		},
+		{
+			// A literal pattern binds no alias, so the read in its initializer goes nowhere the
+			// scanner accepts.
+			name: "MemberReadIntoLiteralPattern",
+			variants: []sigVariant{
+				{
+					src: `fn f(p) {
+				val 1 = p.x
+				return 1
+			}`,
+					want: "fn (p: {x: unknown}) -> 1",
+				},
+			},
+		},
+		{
+			// A defaulted parameter stays owned, since the default fills it when the caller
+			// passes nothing.
+			name: "DefaultedParam",
+			variants: []sigVariant{
+				{src: `fn f(p = {x: 1}) { return p.x }`, want: "fn <T0>(p?: {x: T0}) -> T0 | 1"},
+			},
 		},
 		{
 			name: "MemberReadAsBlockValue",
-			src: `
+			variants: []sigVariant{
+				{
+					src: `
 				var sink = {y: 0}
 				fn f(p) { sink = do { p.x } }
 			`,
-			want: "fn (p: {x: {y: number}}) -> undefined",
+					want: "fn (p: {x: {y: number}}) -> undefined",
+				},
+			},
 		},
 		{
 			name: "MemberReadDiscardedInNestedBlock",
-			src: `fn f(p) {
+			variants: []sigVariant{
+				{
+					src: `fn f(p) {
 				if p.ok {
 					p.x
 					return 1
 				}
 				return 2
 			}`,
-			want: "fn (p: &{ok: boolean, x: unknown}) -> 1 | 2",
+					want: "fn (p: &{ok: boolean, x: unknown}) -> 1 | 2",
+				},
+			},
 		},
 		{
 			name: "MemberReadInLogicalOperand",
-			src:  `fn f(p) { return p.a || p.b }`,
-			want: "fn (p: &{a: boolean, b: boolean}) -> boolean",
+			variants: []sigVariant{
+				{src: `fn f(p) { return p.a || p.b }`, want: "fn (p: &{a: boolean, b: boolean}) -> boolean"},
+			},
 		},
 		{
 			name: "MemberReadInTemplate",
-			src:  "fn f(p) { return `${p.x}` }",
-			want: "fn (p: &{x: string | number | boolean | bigint}) -> string",
+			variants: []sigVariant{
+				{src: "fn f(p) { return `${p.x}` }", want: "fn (p: &{x: string | number | boolean | bigint}) -> string"},
+			},
 		},
 		{
 			name: "MutBindingOnlyRead",
-			src:  `fn f(mut p) { return p.x }`,
-			want: "fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0",
+			variants: []sigVariant{
+				{src: `fn f(mut p) { return p.x }`, want: "fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0"},
+			},
 		},
 		{
 			name: "Returned",
-			src:  `fn f(p) { return p }`,
-			want: "fn <T0>(p: T0) -> T0",
+			variants: []sigVariant{
+				{src: `fn f(p) { return p }`, want: "fn <T0>(p: T0) -> T0"},
+			},
 		},
 		{
 			name: "StoredInModuleState",
-			src: `
+			variants: []sigVariant{
+				{
+					src: `
 				var sink = {x: 0}
 				fn f(p) { sink = p }
 			`,
-			want: "fn (p: {x: number}) -> undefined",
+					want: "fn (p: {x: number}) -> undefined",
+				},
+			},
 		},
 		{
 			name: "ValueTypeOperand",
-			src:  `fn f(a) { return a + 1 }`,
-			want: "fn (a: number) -> number",
+			variants: []sigVariant{
+				{src: `fn f(a) { return a + 1 }`, want: "fn (a: number) -> number"},
+			},
 		},
 		{
 			name: "ShorthandProperty",
-			src:  `fn f(p) { return {p} }`,
-			want: "fn <T0>(p: T0) -> {p: T0}",
+			variants: []sigVariant{
+				{src: `fn f(p) { return {p} }`, want: "fn <T0>(p: T0) -> {p: T0}"},
+			},
 		},
 		{
 			name: "MethodCall",
-			src:  `fn f(o) { return o.m() }`,
-			want: "fn <T0>(o: {m: fn () -> T0}) -> T0",
+			variants: []sigVariant{
+				{src: `fn f(o) { return o.m() }`, want: "fn <T0>(o: {m: fn () -> T0}) -> T0"},
+			},
 		},
 		{
 			name: "WriteThroughMember",
-			src:  `fn f(mut p) { p.x = 1 }`,
-			want: "fn (p: {x: number}) -> undefined",
-		},
-		{
-			name: "CapturedByClosure",
-			src:  `fn f(p) { return fn () { return p.x } }`,
-			want: "fn <T0>(p: {x: T0}) -> fn () -> T0",
+			variants: []sigVariant{
+				{src: `fn f(mut p) { p.x = 1 }`, want: "fn (p: {x: number}) -> undefined"},
+			},
 		},
 		{
 			// The nested function reads p through a shorthand property, which counts as a use of p.
 			name: "CapturedByShorthandInClosure",
-			src: `fn f(p) {
+			variants: []sigVariant{
+				{
+					src: `fn f(p) {
 				val g = fn () { return {p} }
 				return p.x
 			}`,
-			want: "fn <T0>(p: {x: T0}) -> T0",
+					want: "fn <T0>(p: {x: T0}) -> T0",
+				},
+			},
 		},
 		{
 			name: "NameRebound",
-			src: `fn f(p) {
+			variants: []sigVariant{
+				{
+					src: `fn f(p) {
 				val q = p.x
 				val p = {x: q}
 				return p.x
 			}`,
-			want: "fn <T0>(p: {x: T0}) -> T0",
+					want: "fn <T0>(p: {x: T0}) -> T0",
+				},
+			},
 		},
 		{
 			name: "NameReboundByShorthandPattern",
-			src: `fn f(p) {
+			variants: []sigVariant{
+				{
+					src: `fn f(p) {
 				val {p} = {p: {x: 1}}
 				return p.x
 			}`,
-			want: "fn (p: unknown) -> 1",
+					want: "fn (p: unknown) -> 1",
+				},
+			},
 		},
 		{
 			name: "Unused",
-			src:  `fn f(p) { return 1 }`,
-			want: "fn (p: unknown) -> 1",
+			variants: []sigVariant{
+				{src: `fn f(p) { return 1 }`, want: "fn (p: unknown) -> 1"},
+			},
 		},
 		{
-			name: "Destructured",
-			src:  `fn f({x}) { return x }`,
-			want: "fn <T0>({x}: {x: T0}) -> T0",
+			name: "PatternLeafStoredInModuleState",
+			variants: []sigVariant{
+				{
+					src: `
+				var sink = {y: 0}
+				fn f({x}) { sink = x }
+			`,
+					want: "fn ({x}: {x: {y: number}}) -> undefined",
+				},
+			},
+		},
+		{
+			// A read stored into a `&'static` sink requires the field itself to hold a
+			// `'static` borrow, so the parameter stays owned around it.
+			name: "LeafStoredInStaticBorrow",
+			variants: []sigVariant{
+				{
+					src: `declare var sink: &'static {y: number}
+				fn f(p) { sink = p.x }`,
+					want: "fn (p: {x: &'static {y: number}}) -> undefined",
+				},
+				{
+					src: `declare var sink: &'static {y: number}
+				fn f(p) {
+					val q = p.x
+					sink = q
+				}`,
+					want: "fn (p: {x: &'static {y: number}}) -> undefined",
+				},
+				{
+					src: `declare var sink: &'static {y: number}
+				fn f(p) { sink = do { p.x } }`,
+					want: "fn (p: {x: &'static {y: number}}) -> undefined",
+				},
+				{
+					src: `declare var sink: &'static {y: number}
+				fn f({x}) { sink = x }`,
+					want: "fn ({x}: {x: &'static {y: number}}) -> undefined",
+				},
+			},
+		},
+		{
+			name: "MemberBorrowStoredInStaticBorrow",
+			variants: []sigVariant{
+				{
+					src: `
+				declare var sink: &'static {y: number}
+				fn f(p) { sink = &p.x }
+			`,
+					want: "fn (p: &'static {x: &'static {y: number}}) -> undefined",
+				},
+			},
+		},
+		{
+			name: "StoredInStaticBorrow",
+			variants: []sigVariant{
+				{
+					src: `
+				declare var sink: &'static {x: number}
+				fn f(p) { sink = p }
+			`,
+					want: "fn (p: &'static {x: number}) -> undefined",
+				},
+			},
+		},
+		{
+			name: "MutPatternLeaf",
+			variants: []sigVariant{
+				{src: `fn f({mut x}) { return x }`, want: "fn <T0>({x}: {x: T0}) -> T0"},
+			},
+		},
+		{
+			name: "BoundReadRestInBody",
+			variants: []sigVariant{
+				{
+					src: `fn f(p) {
+				val {a, ...r} = p.x
+				return r
+			}`,
+					want: "fn <'a>(p: &'a {x: {a: unknown}}) -> &'a {...}",
+				},
+			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			values, errs := inferAgainstTreeWithSpans(t, tt.src)
-			require.Equal(t, tt.errs, errs)
-			require.Equal(t, tt.want, values["f"])
+			for i, variant := range tt.variants {
+				t.Run(strconv.Itoa(i), func(t *testing.T) {
+					sig, _, errs := inferSignature(t, variant.src)
+					require.Equal(t, tt.errs, errs)
+					require.Equal(t, variant.want, sig)
+				})
+			}
 		})
 	}
+}
+
+// sigVariant is one source of a group of functions that read the same parts of a parameter,
+// and the signature its `f` infers.
+type sigVariant struct {
+	src  string
+	want string
+}
+
+// inferSignature infers src against the standard library and returns three things about the
+// function the module binds to `f`:
+//   - its rendered signature
+//   - the positions of the parameters whose FuncParam.Moved is set, or nil when none is
+//   - the inference errors, rendered with their spans
+func inferSignature(t *testing.T, src string) (string, []int, []string) {
+	t.Helper()
+	res := InferModuleAgainstStdlib(parseModule(t, src), benchTree, Options{})
+	b, ok := res.Scope.values["f"]
+	require.True(t, ok, "the source binds no `f`")
+	require.Len(t, b.Schemes, 1)
+
+	var moved []int
+	if fn, isFunc := schemeType(b.Schemes[0]).(*soltype.FuncType); isFunc {
+		for i, p := range fn.Params {
+			if p.Moved {
+				moved = append(moved, i)
+			}
+		}
+	}
+	return res.checker.renderValueBinding(b.Schemes[0]), moved, messagesWithSpan(t, res.Errors)
 }
 
 // TestInferCallbackParamTakesCalleeType asserts that an unannotated parameter of a function
@@ -424,8 +692,25 @@ func TestInferOpenEscapeParam(t *testing.T) {
 		},
 		{
 			// id's parameter is a fresh variable for each call, which m's own type does not
-			// reach, so the call stores nothing in m.
+			// reach, so the call stores nothing in m. The argument is written as a borrow,
+			// since id's parameter is typed by a type parameter and an owned argument would
+			// move. GenericMethodMovesParameter covers the owned argument.
 			name: "GenericMethodDoesNotEscape",
+			src: `
+				val m = {id: fn <T>(x: T) -> T { return x }}
+				fn remember(value) { m.id(&value) }
+				fn go() -> number {
+					val opts = {retries: 3}
+					remember(opts)
+					return opts.retries
+				}
+			`,
+			want: "fn (value: unknown) -> undefined",
+		},
+		{
+			// Passing value to id's type-parameter parameter moves it, so remember moves the
+			// caller's argument too.
+			name: "GenericMethodMovesParameter",
 			src: `
 				val m = {id: fn <T>(x: T) -> T { return x }}
 				fn remember(value) { m.id(value) }
@@ -436,10 +721,12 @@ func TestInferOpenEscapeParam(t *testing.T) {
 				}
 			`,
 			want: "fn (value: unknown) -> undefined",
+			errs: []string{"7:13-7:25: use of moved value 'opts'"},
 		},
 		{
 			// A callback's parameter takes its type from the callee, so the callee decides its
-			// ownership and storing it in seen leaves it owned.
+			// ownership and storing it in seen leaves it owned. each's `x` is typed by a type
+			// parameter, so the call moves opts.
 			name: "CallbackArgumentKeepsTheCalleeType",
 			src: `
 				val mut seen = Map()
@@ -451,6 +738,7 @@ func TestInferOpenEscapeParam(t *testing.T) {
 				}
 			`,
 			seen: "Map<string, {retries: number}>",
+			errs: []string{"7:13-7:25: use of moved value 'opts'"},
 		},
 		{
 			// A value type has no storage to borrow, so it copies into the borrow without a

@@ -153,9 +153,15 @@ func (a *attachment) apply() {
 // search: byStart finds the node after a comment, and byEnd finds the node
 // before it. Both put an enclosing node ahead of the nodes it encloses when
 // several share the offset being searched for, so the widest node wins.
+//
+// parent[i] is the position in byStart of the innermost node of the same
+// source enclosing byStart[i], or -1 for a top-level node. bySource lists the
+// byStart positions of each source's nodes in byStart order.
 type nodeIndex struct {
-	byStart []Node
-	byEnd   []Node
+	byStart  []Node
+	byEnd    []Node
+	parent   []int
+	bySource map[int][]int
 }
 
 // collectNodes gathers every node in root that covers a real range of source.
@@ -183,7 +189,34 @@ func collectNodes(root Walkable) *nodeIndex {
 		}
 		return a.Start.Offset < b.Start.Offset
 	})
-	return &nodeIndex{byStart: byStart, byEnd: byEnd}
+	parent, bySource := nestNodes(byStart)
+	return &nodeIndex{byStart: byStart, byEnd: byEnd, parent: parent, bySource: bySource}
+}
+
+// nestNodes returns the parent of each node in byStart and the byStart
+// positions of each source's nodes. byStart must be sorted the way
+// collectNodes sorts it. Each source keeps a stack of the nodes enclosing the
+// one being visited. A node takes the top of its source's stack as its parent
+// once every node ending before it has been popped. Two nodes with the same
+// span nest in byStart order, so the later one is the child.
+func nestNodes(byStart []Node) ([]int, map[int][]int) {
+	parent := make([]int, len(byStart))
+	bySource := map[int][]int{}
+	stacks := map[int][]int{}
+	for i, node := range byStart {
+		span := node.Span()
+		stack := stacks[span.SourceID]
+		for len(stack) > 0 && byStart[stack[len(stack)-1]].Span().End.Offset < span.End.Offset {
+			stack = stack[:len(stack)-1]
+		}
+		parent[i] = -1
+		if len(stack) > 0 {
+			parent[i] = stack[len(stack)-1]
+		}
+		stacks[span.SourceID] = append(stack, i)
+		bySource[span.SourceID] = append(bySource[span.SourceID], i)
+	}
+	return parent, bySource
 }
 
 // place gives comment to a node and reports whether one took it. It applies
@@ -265,29 +298,28 @@ func (x *nodeIndex) before(offset, sourceID int) Node {
 	return nil
 }
 
-// enclosing returns the innermost node whose span contains span.
+// enclosing returns the innermost node whose span contains span. When two
+// nodes cover the same range, as a statement does with the declaration inside
+// it, the deeper one is returned.
+//
+// The nodes of one source nest, so every node containing span is an ancestor
+// of the last node starting at or before span. The search finds that node and
+// walks up its parents to the first one that reaches past span's end.
 func (x *nodeIndex) enclosing(span Span) Node {
-	var found Node
-	for _, node := range x.byStart {
-		outer := node.Span()
-		if outer.Start.Offset > span.Start.Offset {
-			break
-		}
-		if outer.SourceID != span.SourceID || outer.End.Offset < span.End.Offset {
-			continue
-		}
-		// Two nodes can cover the same range, as a statement does with the
-		// declaration inside it. byStart lists an enclosing node before the
-		// nodes it encloses, so taking the last of an equal-width run reaches
-		// the deepest of them.
-		if found == nil || spanWidth(outer) <= spanWidth(found.Span()) {
-			found = node
+	positions := x.bySource[span.SourceID]
+	k := sort.Search(len(positions), func(k int) bool {
+		return x.byStart[positions[k]].Span().Start.Offset > span.Start.Offset
+	})
+	if k == 0 {
+		return nil
+	}
+	for i := positions[k-1]; i >= 0; i = x.parent[i] {
+		if x.byStart[i].Span().End.Offset >= span.End.Offset {
+			return x.byStart[i]
 		}
 	}
-	return found
+	return nil
 }
-
-func spanWidth(s Span) int { return s.End.Offset - s.Start.Offset }
 
 // enclosedBy reports whether candidate lies inside inner. A nil inner means no
 // node encloses the comment being placed, which leaves every candidate open.

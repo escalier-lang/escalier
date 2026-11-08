@@ -25,7 +25,8 @@ import (
 // the probe snapshot with the append. A bare `v.LowerBounds = append(...)` must
 // never appear — routing every append through the two helpers is what makes
 // "forgot to journal the mutation" structurally impossible (an un-journaled
-// append would silently survive a Discard and corrupt committed state).
+// append would silently survive a Discard and corrupt committed state). The one
+// in-place write to a bound list is replaceLowerBound, which journals its own undo.
 type Context struct {
 	varCounter int
 
@@ -35,6 +36,11 @@ type Context struct {
 	// the bounds a body recorded on the parameter. resolveTypeParams adds each parameter's
 	// variable, and the copiers add each copy through copyParamMark. isParamVar reads it.
 	paramVars set.Set[*soltype.TypeVarType]
+
+	// typeArgParams holds the parameters of instantiated signatures that are typed by a type
+	// argument of that instantiation, as markTypeArgParams defines them. isTypeArgParam
+	// reads it.
+	typeArgParams set.Set[*soltype.FuncParam]
 
 	// symbolCounter mints the id a `unique symbol` annotation carries. Each written
 	// annotation is its own symbol, so the counter advances per annotation rather than
@@ -95,6 +101,13 @@ type Context struct {
 	// removed from its bound list is simply never matched, since findLtProxy scans
 	// only bounds currently present.
 	ltProxyOrigin map[*soltype.LifetimeVar]soltype.Lifetime
+
+	// ltCopies links each lifetime an instantiation copied to the copy, and each copy back to
+	// the lifetime it copies. Every read of a generalized `val` holding a borrow copies the
+	// borrow's lifetime, so the copies stand for one borrow of one value. The rules in
+	// lifetime_frame.go read a lifetime and its copies together. It is metadata only and is
+	// never rolled back. A copy a discarded trial minted is unreachable from any type.
+	ltCopies map[*soltype.LifetimeVar][]*soltype.LifetimeVar
 
 	// methodLifetimes holds every lifetime variable a frozen class method's signature
 	// quantifies on its own: the lifetimes it declares in its `<…>` list and the ones its
@@ -168,6 +181,16 @@ type Context struct {
 	// entry's borrow. addBorrowedRead appends to it and constrainBorrowedVarFieldRead
 	// explains the rule.
 	borrowedReads map[*soltype.TypeVarType][]borrowedRead
+
+	// slotModes holds, per type variable, the writable slot of a weak binding the variable
+	// stands for. Each lower bound the variable gains is widened as that slot widens it.
+	// slotMarker.mark fills it for a weak binding's own variables, and slotVarFor for the
+	// variables it mints. widenSlotBound explains the rule.
+	slotModes map[*soltype.TypeVarType]slotMode
+
+	// slotVars holds, per variable and slot mode, the variable slotVarFor minted to receive
+	// that variable's values widened as a slot of the mode widens them.
+	slotVars map[slotVarKey]*soltype.TypeVarType
 
 	// muBinderCount numbers the μ-variables the regular-tree check has minted, so two aliases whose
 	// knots are composed into one type carry distinct binders. coalesce numbers its own binders per
@@ -606,6 +629,16 @@ func (c *Context) freshLifetime(level int) *soltype.LifetimeVar {
 	return lv
 }
 
+// noteLifetimeCopy links origin and the lifetime copy an instantiation minted for it, in
+// ltCopies.
+func (c *Context) noteLifetimeCopy(origin, copied *soltype.LifetimeVar) {
+	if c.ltCopies == nil {
+		c.ltCopies = map[*soltype.LifetimeVar][]*soltype.LifetimeVar{}
+	}
+	c.ltCopies[origin] = append(c.ltCopies[origin], copied)
+	c.ltCopies[copied] = append(c.ltCopies[copied], origin)
+}
+
 // freshJoinLifetime allocates a lifetime variable for a multi-source join site
 // (M4 D3). A join site is a return or branch uniting several borrows. It is
 // identical to freshLifetime but sets Join, so coalesceLifetime expands it to the
@@ -705,6 +738,27 @@ func (c *Context) addUpperBound(v *soltype.TypeVarType, t soltype.Type) {
 	v.UpperBounds = append(v.UpperBounds, t)
 }
 
+// replaceLowerBound replaces v's lower bound at index i with t and returns the errors that
+// checking t against v's upper bounds and borrowed reads reports, as adding t would. A
+// discarded probe puts the replaced bound back.
+func (c *Context) replaceLowerBound(v *soltype.TypeVarType, i int, t soltype.Type) []SolverError {
+	c.recordMutation(v)
+	prev := v.LowerBounds[i]
+	v.LowerBounds[i] = t
+	if c.probe != nil {
+		c.probe.onRollback(func() { v.LowerBounds[i] = prev })
+	}
+	seen := newSeenPairs()
+	var errs []SolverError
+	for _, ub := range v.UpperBounds {
+		errs = append(errs, c.constrain(t, ub, seen, false)...)
+	}
+	for _, r := range c.borrowedReads[v] {
+		errs = append(errs, c.readThroughLowerBound(r, v, t, seen)...)
+	}
+	return c.breadcrumbUnionCommit(errs, v)
+}
+
 // borrowedRead is a field-read requirement made through a borrow whose pointee is a type
 // variable. borrow carries the mutability and lifetime the read is bounded by. shape is the
 // requirement the variable itself is constrained against. It names the same properties as
@@ -733,7 +787,9 @@ func (c *Context) addBorrowedRead(v *soltype.TypeVarType, r borrowedRead) {
 // dedups (only the first touch of v in a probe snapshots), so calling this at
 // every append site is cheap and correct: append-only bound lists mean the first
 // snapshot already covers every later append to v under the same probe. Reached
-// only through addLowerBound/addUpperBound.
+// only through addLowerBound, addUpperBound, and replaceLowerBound. A replacement
+// keeps the list's length, so replaceLowerBound registers its own rollback to put
+// the replaced bound back.
 func (c *Context) recordMutation(v *soltype.TypeVarType) {
 	c.checkThawed(v, "a type bound")
 	if c.probe != nil {

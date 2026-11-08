@@ -109,6 +109,7 @@ func ambientChecker(dir string, source ModuleSource, groups PackageGroups, opts 
 	}
 	run := entry.checker.fork(source, StdlibGroupSource(dir), groups)
 	run.dependencies = opts.Dependencies
+	run.stdlibDir = dir
 	return run, true
 }
 
@@ -319,6 +320,11 @@ func (c *checker) fork(source ModuleSource, groupSource GroupSource, groups Pack
 	f.pendingOverrides = slices.Clip(c.pendingOverrides)
 	f.pendingImplements = slices.Clip(c.pendingImplements)
 	f.provisionalVariance = slices.Clip(c.provisionalVariance)
+	// A finished load settles every flow it records, and a pending flow would point into the
+	// loaded checker's tables, so the run starts with none.
+	f.pendingFlows = nil
+	f.paramByVar = maps.Clone(c.paramByVar)
+	f.unsettledParams = maps.Clone(c.unsettledParams)
 
 	// Whether each held diagnostic is reported is the run's own.
 	f.heldLoadErrs = make(map[string]*heldLoadErrors, len(c.heldLoadErrs))
@@ -348,6 +354,7 @@ func (c *Context) fork() *Context {
 	f := *c
 	f.probe = nil
 	f.paramVars = maps.Clone(c.paramVars)
+	f.typeArgParams = maps.Clone(c.typeArgParams)
 	f.readRaises = clipValues(c.readRaises)
 	f.pendingRigidLts = slices.Clip(c.pendingRigidLts)
 	f.packages = &PackageRegistry{packages: maps.Clone(c.packages.packages)}
@@ -360,6 +367,8 @@ func (c *Context) fork() *Context {
 	f.unfoldingAliases = maps.Clone(c.unfoldingAliases)
 	f.buildingAliases = maps.Clone(c.buildingAliases)
 	f.borrowedReads = clipValues(c.borrowedReads)
+	f.slotModes = maps.Clone(c.slotModes)
+	f.slotVars = maps.Clone(c.slotVars)
 	f.unionCommits = maps.Clone(c.unionCommits)
 	f.holeVars = maps.Clone(c.holeVars)
 	return &f

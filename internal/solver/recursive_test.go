@@ -63,11 +63,18 @@ func TestInferRecursiveRendersMuKnot(t *testing.T) {
 		{
 			// The diagnostic renders the same display type this case asserts, quantifier and all, since
 			// checkCanReturn reads the whole signature through coalesceScheme.
-			name:     "knot beside a retained type parameter",
-			src:      `fn f(x) { return {next: f(x), value: x} }`,
-			binding:  "f",
-			want:     "fn <T0>(x: T0) -> {next: μX0.{next: X0, value: T0}, value: T0}",
-			wantErrs: []string{nonReturningMsg("1:4-1:5", "f", "fn <T0>(x: T0) -> {next: μX0.{next: X0, value: T0}, value: T0}")},
+			//
+			// The return makes x owned by F3, so `f(x)` moves x before `value: x` reads it.
+			//
+			// This case infers `f` and calls it in one source, since `f` calls itself.
+			name:    "knot beside a retained type parameter",
+			src:     `fn f(x) { return {next: f(x), value: x} }`,
+			binding: "f",
+			want:    "fn <T0>(x: T0) -> {next: μX0.{next: X0, value: T0}, value: T0}",
+			wantErrs: []string{
+				nonReturningMsg("1:4-1:5", "f", "fn <T0>(x: T0) -> {next: μX0.{next: X0, value: T0}, value: T0}"),
+				"1:38-1:39: use of moved value 'x'",
+			},
 		},
 		{
 			// Mutual recursion runs the same cycle through two bindings, so the knot closes one lap

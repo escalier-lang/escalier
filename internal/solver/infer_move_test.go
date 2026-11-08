@@ -1,17 +1,18 @@
 package solver
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
-// Move and use-after-move tests for the affine move engine. Each flow site consumes
-// an owned source, so a later use of it is a use-after-move. The flow sites are a
-// binding, a reassignment, a return, an owned-parameter argument, a field store, an
-// object or tuple literal element, and a module-level write. A borrow site leaves the
-// source usable. want is nil for the cases that check cleanly.
+// Move and use-after-move tests. Each flow site moves an owned source, so a later use of
+// it is a use-after-move. The flow sites are a binding, a reassignment, a return, an
+// owned-parameter argument, a field store, an object or tuple literal element, and a
+// module-level write. A borrow site leaves the source usable. want is nil for the cases
+// that check cleanly.
 func TestMoveSemantics(t *testing.T) {
 	tests := map[string]struct {
 		src  string
@@ -66,6 +67,17 @@ func TestMoveSemantics(t *testing.T) {
 					val mut b = {v: {x: 1}, w: {x: 2}}
 					val n = b.v
 					b?.w.x
+				}
+			`,
+		},
+		// An alias that names a borrow is a borrow, so binding it copies the borrow and the
+		// second binding reads a source that was not moved.
+		"AliasOfBorrowBoundTwiceOk": {
+			src: `
+				type R = &{x: number}
+				fn test(r: R) {
+					val a = r
+					val b = r
 				}
 			`,
 		},
@@ -347,8 +359,8 @@ func TestMoveSemantics(t *testing.T) {
 			`,
 			want: []string{"6:6-6:9: use of moved value 'p'"},
 		},
-		// The move reconciliation is path-sensitive. A consuming move of p on one branch
-		// does not suppress the exclusivity check for p on a sibling branch where it was
+		// The move reconciliation is path-sensitive. A consuming move of `p` on one branch
+		// does not suppress the E2 check for `p` on a sibling branch where it was
 		// not moved, so the write to p while snapshot still borrows it is reported.
 		"PathSensitiveExclusivityKept": {
 			src: `
@@ -368,18 +380,31 @@ func TestMoveSemantics(t *testing.T) {
 				"9:7-9:10: cannot assign to 'p.x' while it is borrowed as immutable",
 			},
 		},
-		// Storing p into the global consumes it, so the later borrow `val snap = p` is a
-		// single use-after-move, not also a stale 'static-escape transition.
-		"GlobalEscapeReportsSingleUseAfterMove": {
+		// A reassignment whose right-hand side branches gives p a new value, so the use after it
+		// reads that value, the same as after a plain reassignment.
+		"BranchingReassignmentAfterAMove": {
 			src: `
-				var sink = {x: 0}
-				fn cache(p: &mut {x: number}) {
-					sink = p
-					val snap: &{x: number} = p
-					snap
+				declare fn take(p: {x: number}) -> undefined
+				fn go(c: boolean) -> number {
+					var p = {x: 1}
+					take(p)
+					p = if c { {x: 2} } else { {x: 3} }
+					return p.x
 				}
 			`,
-			want: []string{"5:31-5:32: use of moved value 'p'"},
+		},
+		// F2 copies the borrow p into the global, as D8 decides, and the copy is `'static`.
+		// The global keeps an immutable path to p for the rest of the program, so the write
+		// through p breaks E2.
+		"GlobalEscapeReportsStaticImmutablePath": {
+			src: `
+				var sink = &{x: 0}
+				fn cache(p: &mut {x: number}) {
+					sink = p
+					p.x = 1
+				}
+			`,
+			want: []string{"5:6-5:9: cannot assign to 'p.x' while it is borrowed as immutable"},
 		},
 		// Moving a value while a mutable borrow of it is live is rejected: freezing p
 		// into immutable q while r still holds a mutable borrow would let r mutate a
@@ -748,6 +773,519 @@ fn f() -> number {
 				return
 			}
 			require.Equal(t, tt.want, messagesWithSpan(t, errs))
+		})
+	}
+}
+
+// TestTypeParamConsumesArgument covers calls to a parameter typed by one of the callee's own
+// type parameters, either bare or as a union member. An owned argument moves there. The
+// caller cannot keep reading it while a mutable binding of the result writes through it. A
+// borrow argument and a value-type argument move nothing. The cases run against the stdlib
+// so `xs.length` and `r.push` resolve.
+func TestTypeParamConsumesArgument(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "WrittenTypeParameter",
+			src: `fn id<T>(t: T) -> T { return t }
+fn g() -> number {
+	val xs: Array<number> = [1]
+	val mut r = id(xs)
+	r.push(2)
+	return xs.length
+}`,
+			want: []string{"6:9-6:18: use of moved value 'xs'"},
+		},
+		{
+			name: "InferredTypeParameter",
+			src: `fn id(x) { return x }
+fn g() -> number {
+	val xs: Array<number> = [1]
+	val mut r = id(xs)
+	r.push(2)
+	return xs.length
+}`,
+			want: []string{"6:9-6:18: use of moved value 'xs'"},
+		},
+		{
+			name: "AwaitedAsyncTypeParameter",
+			src: `async fn idA<T>(t: T) -> Promise<T> { return t }
+async fn g() -> Promise<number> {
+	val xs: Array<number> = [1]
+	val mut r = await idA(xs)
+	r.push(2)
+	return xs.length
+}`,
+			want: []string{"6:9-6:18: use of moved value 'xs'"},
+		},
+		{
+			name: "GenericMethod",
+			src: `val m = {id: fn <T>(x: T) -> T { return x }}
+fn g() -> number {
+	val xs: Array<number> = [1]
+	m.id(xs)
+	return xs.length
+}`,
+			want: []string{"5:9-5:18: use of moved value 'xs'"},
+		},
+		{
+			// A union with a type-parameter member takes ownership as the bare parameter does.
+			name: "UnionWithTypeParameter",
+			src: `fn orNull<T>(t: T | null) -> T | null { return t }
+fn g() -> number {
+	val xs: Array<number> = [1]
+	orNull(xs)
+	return xs.length
+}`,
+			want: []string{"5:9-5:18: use of moved value 'xs'"},
+		},
+		{
+			// Promise.resolve takes `T | PromiseLike<T>` and resolves to the value it was given.
+			name: "PromiseResolve",
+			src: `fn g() -> number {
+	val xs: Array<number> = [1]
+	val p = Promise.resolve(xs)
+	return xs.length
+}`,
+			want: []string{"4:9-4:18: use of moved value 'xs'"},
+		},
+		{
+			name: "GenericOverloadArm",
+			src: `fn pick<T>(a: T) -> T { return a }
+fn pick<T>(a: T, b: number) -> T { return a }
+fn g() -> number {
+	val xs: Array<number> = [1]
+	pick(xs)
+	return xs.length
+}`,
+			want: []string{"6:9-6:18: use of moved value 'xs'"},
+		},
+		{
+			// Every argument a rest parameter typed by a type parameter receives moves.
+			// `count(xs)` passes the whole array as one argument, not its elements. T is
+			// inferred as `Array<number>`, so `items` is `Array<Array<number>>` and holds
+			// xs itself. A non-generic `...items: Array<number>` would reject the call.
+			name: "RestTypeParameter",
+			src: `fn count<T>(...items: Array<T>) -> number { return items.length }
+fn g() -> number {
+	val xs: Array<number> = [1]
+	count(xs)
+	return xs.length
+}`,
+			want: []string{"5:9-5:18: use of moved value 'xs'"},
+		},
+		{
+			name: "BorrowArgument",
+			src: `fn id<T>(t: T) -> T { return t }
+fn g() -> number {
+	val xs: Array<number> = [1]
+	val r = id(&xs)
+	return xs.length + r.length
+}`,
+		},
+		{
+			// A number, a string, and a function copy into the parameter.
+			name: "ValueTypeArguments",
+			src: `fn id<T>(t: T) -> T { return t }
+fn g() -> number {
+	val n = 1
+	val s = "a"
+	val f = fn () { return 1 }
+	id(n)
+	id(s)
+	id(f)
+	return n + s.length + f()
+}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, errs := inferAgainstTreeWithSpans(t, tt.src)
+			require.Equal(t, tt.want, errs)
+		})
+	}
+}
+
+// TestInferUnannotatedDestructuredParam covers the signature a function infers for a parameter
+// that it reads directly, binds to a local first, or destructures. Each case is a group of
+// variants that read the same parts of the parameter. Each variant's want is the same signature,
+// apart from the parameter's own pattern, which the signature shows as the variant writes it. A
+// group whose leaves the body only returns or reads through infers a borrow. A leaf that is
+// stored or captured by a returned closure keeps the parameter owned.
+//
+// moved lists the positions of the parameters each variant's body moves. The rendered signature
+// does not show FuncParam.Moved, which decides whether a call moves its argument into an owned
+// parameter, so both are needed.
+//
+// gap holds a reason for each variant that does not infer its want yet. Its subtest is skipped
+// with that reason, so the variant stays in the group it belongs to.
+func TestInferUnannotatedDestructuredParam(t *testing.T) {
+	tests := []struct {
+		name     string
+		variants []sigVariant
+		moved    []int
+		gap      map[int]string
+	}{
+		{
+			name: "ObjectLeafReturned",
+			variants: []sigVariant{
+				{src: `fn f({x}) { return x }`, want: "fn <T0, 'a>({x}: &'a {x: T0}) -> &'a T0"},
+				{src: `fn f(p) { return p.x }`, want: "fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0"},
+				{
+					src: `fn f(p) {
+	val x = p.x
+	return x
+}`,
+					want: "fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0",
+				},
+				{
+					src: `fn f(p) {
+	val {x} = p
+	return x
+}`,
+					want: "fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0",
+				},
+			},
+		},
+		{
+			name: "NestedLeafReturned",
+			variants: []sigVariant{
+				{src: `fn f({x: {y}}) { return y }`, want: "fn <T0, 'a>({x: {y}}: &'a {x: {y: T0}}) -> &'a T0"},
+				{src: `fn f(p) { return p.x.y }`, want: "fn <T0, 'a>(p: &'a {x: {y: T0}}) -> &'a T0"},
+				{
+					src: `fn f(p) {
+	val q = p.x
+	val r = q.y
+	return r
+}`,
+					want: "fn <T0, 'a>(p: &'a {x: {y: T0}}) -> &'a T0",
+				},
+				{
+					src: `fn f(p) {
+	val {y} = p.x
+	return y
+}`,
+					want: "fn <T0, 'a>(p: &'a {x: {y: T0}}) -> &'a T0",
+				},
+				{
+					src: `fn f(p) {
+	val {x: {y}} = p
+	return y
+}`,
+					want: "fn <T0, 'a>(p: &'a {x: {y: T0}}) -> &'a T0",
+				},
+			},
+		},
+		{
+			// Each variant returns the second element, so the first stays `unknown` in all of
+			// them.
+			name: "TupleLeafReturned",
+			variants: []sigVariant{
+				{src: `fn f([x, y]) { return y }`, want: "fn <T0, 'a>([x, y]: &'a [unknown, T0]) -> &'a T0"},
+				{src: `fn f(p) { return p[1] }`, want: "fn <T0, 'a>(p: &'a [unknown, T0]) -> &'a T0"},
+				{
+					src: `fn f(p) {
+	val [x, y] = p
+	return y
+}`,
+					want: "fn <T0, 'a>(p: &'a [unknown, T0]) -> &'a T0",
+				},
+			},
+			gap: map[int]string{
+				1: "`p[1]` on an unannotated parameter reports `Unsupported: IndexExpr`. Tracked by #2579.",
+			},
+		},
+		{
+			name: "LeafReadThrough",
+			variants: []sigVariant{
+				{src: `fn f({x}) -> number { return x.v }`, want: "fn ({x}: &{x: {v: number}}) -> number"},
+				{src: `fn f(p) -> number { return p.x.v }`, want: "fn (p: &{x: {v: number}}) -> number"},
+				{
+					src: `fn f(p) -> number {
+	val q = p.x
+	return q.v
+}`,
+					want: "fn (p: &{x: {v: number}}) -> number",
+				},
+			},
+		},
+		{
+			name: "BareNameReturned",
+			variants: []sigVariant{
+				{src: `fn f(p) { return p }`, want: "fn <T0>(p: T0) -> T0"},
+			},
+			moved: []int{0},
+		},
+		{
+			// A rest builds a new tuple whose elements are shared with the parameter, so
+			// returning it reads parts of the parameter, as returning a leaf does.
+			name: "TupleRestReturned",
+			variants: []sigVariant{
+				{src: `fn f([x, ...rest]) { return rest }`, want: "fn <'a>([x, ...rest]: &'a [unknown, ...]) -> &'a [...]"},
+				{
+					src: `fn f(p) {
+	val [x, ...rest] = p
+	return rest
+}`,
+					want: "fn <'a>(p: &'a [unknown, ...]) -> &'a [...]",
+				},
+			},
+		},
+		{
+			name: "TupleRestOnlyReturned",
+			variants: []sigVariant{
+				{src: `fn f([...rest]) { return rest }`, want: "fn <'a>([...rest]: &'a [...]) -> &'a [...]"},
+				{
+					src: `fn f(p) {
+	val [...rest] = p
+	return rest
+}`,
+					want: "fn <'a>(p: &'a [...]) -> &'a [...]",
+				},
+			},
+		},
+		{
+			// The parameter is inexact in both variants, since a rest admits the properties
+			// its fields do not name.
+			name: "ObjectRestReturned",
+			variants: []sigVariant{
+				{src: `fn f({x, ...rest}) { return rest }`, want: "fn <'a>({x, ...rest}: &'a {x: unknown, ...}) -> &'a {...}"},
+				{
+					src: `fn f(p) {
+	val {x, ...rest} = p
+	return rest
+}`,
+					want: "fn <'a>(p: &'a {x: unknown, ...}) -> &'a {...}",
+				},
+			},
+		},
+		{
+			name: "ObjectRestOnlyReturned",
+			variants: []sigVariant{
+				{src: `fn f({...rest}) { return rest }`, want: "fn <'a>({...rest}: &'a {...}) -> &'a {...}"},
+				{
+					src: `fn f(p) {
+	val {...rest} = p
+	return rest
+}`,
+					want: "fn <'a>(p: &'a {...}) -> &'a {...}",
+				},
+			},
+		},
+		{
+			// A `number` leaf copies out of the parameter, so storing it moves nothing.
+			name: "ValueTypeLeafStored",
+			variants: []sigVariant{
+				{
+					src: `var total = 0
+fn f({n}) { total = n }`,
+					want: "fn ({n}: {n: number}) -> undefined",
+				},
+			},
+		},
+		{
+			// A leaf bounded above by `number | undefined` holds only primitives, so binding it
+			// to an annotated local copies it.
+			name: "OptionalNumberLeafCopied",
+			variants: []sigVariant{
+				{
+					src: `fn f({n}) {
+  val m: number | undefined = n
+  return n
+}`,
+					want: "fn <T0: number | undefined>({n}: {n: T0}) -> T0",
+				},
+			},
+		},
+		{
+			// A returned closure that captures a `number` leaf copies it.
+			name: "ReturnedClosureCapturesValueTypeLeaf",
+			variants: []sigVariant{
+				{
+					src: `fn f({n}) {
+  val m: number = n
+  return fn () { return n }
+}`,
+					want: "fn <T0: number>({n}: {n: T0}) -> fn () -> T0",
+				},
+			},
+		},
+		{
+			// A returned closure that captures an object leaf takes it out of the parameter.
+			name: "ReturnedClosureCapturesObjectLeaf",
+			variants: []sigVariant{
+				{
+					src: `fn f({x}) {
+  return fn () { return x }
+}`,
+					want: "fn <T0>({x}: {x: T0}) -> fn () -> T0",
+				},
+			},
+			moved: []int{0},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for i, variant := range tt.variants {
+				t.Run(strconv.Itoa(i), func(t *testing.T) {
+					if reason, ok := tt.gap[i]; ok {
+						t.Skip(reason)
+					}
+					sig, moved, errs := inferSignature(t, variant.src)
+					require.Empty(t, errs)
+					require.Equal(t, variant.want, sig)
+					require.Equal(t, tt.moved, moved)
+				})
+			}
+		})
+	}
+}
+
+// TestCallToInferredDestructuredParam covers calls to a callee whose destructuring parameter
+// has no written type, so the call reads the ownership and the Moved mark the callee infers.
+func TestCallToInferredDestructuredParam(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "BorrowedPatternLends",
+			src: `fn take({x}) { return x }
+fn h() {
+  val o = {x: {v: 1}}
+  val r = take(&o)
+  return o.x.v + r.v
+}`,
+		},
+		{
+			name: "BorrowedPatternNeedsWrittenBorrow",
+			src: `fn take({x}) { return x }
+fn h() {
+  val o = {x: {v: 1}}
+  val r = take(o)
+  val s = o
+}`,
+			want: []string{"4:16-4:17: this argument is borrowed by the callee, so write the borrow: `&`"},
+		},
+		{
+			name: "ReturnedLeafHoldsBorrow",
+			src: `fn take({x}) { return x }
+fn h() {
+  val o = {x: {v: 1}}
+  val r = take(&o)
+  val s = o
+  return r.v
+}`,
+			want: []string{"5:11-5:12: cannot move 'o' while it is borrowed"},
+		},
+		{
+			name: "CapturedObjectLeafMoves",
+			src: `fn f({x}) {
+  return fn () { return x }
+}
+fn h() {
+  val o = {x: {v: 1}}
+  val r = f(o)
+  val s = o
+}`,
+			want: []string{"7:11-7:12: use of moved value 'o'"},
+		},
+		{
+			name: "StoredValueTypeLeafKeepsArgument",
+			src: `var total = 0
+fn keep({n}) { total = n }
+fn h() {
+  val o = {n: 1}
+  keep(o)
+  val s = o
+}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, errs := inferAgainstTreeWithSpans(t, tt.src)
+			require.Equal(t, tt.want, errs)
+		})
+	}
+}
+
+// TestCallToDestructuredParamSignature covers calls to a callee whose parameter type is written
+// out, in the shapes TestInferUnannotatedDestructuredParam infers. A call moves its argument
+// into an owned parameter. It lends the argument to a borrowed parameter through a written `&`,
+// and reports the missing `&` when the call omits it.
+func TestCallToDestructuredParamSignature(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "OwnedObjectMoves",
+			src: `declare fn take(p: {x: {v: number}}) -> {v: number}
+fn h() {
+  val o = {x: {v: 1}}
+  val r = take(o)
+  val s = o
+}`,
+			want: []string{"5:11-5:12: use of moved value 'o'"},
+		},
+		{
+			name: "BorrowedObjectLends",
+			src: `declare fn read(p: &{x: {v: number}}) -> number
+fn h() {
+  val o = {x: {v: 1}}
+  val n = read(&o)
+  val s = o
+}`,
+		},
+		{
+			name: "BorrowedObjectNeedsWrittenBorrow",
+			src: `declare fn read(p: &{x: {v: number}}) -> number
+fn h() {
+  val o = {x: {v: 1}}
+  val n = read(o)
+  val s = o
+}`,
+			want: []string{"4:16-4:17: this argument is borrowed by the callee, so write the borrow: `&`"},
+		},
+		{
+			name: "OwnedTupleMoves",
+			src: `declare fn first(t: [{v: number}, {v: number}]) -> {v: number}
+fn h() {
+  val t = [{v: 1}, {v: 2}]
+  val u = first(t)
+  val w = t
+}`,
+			want: []string{"5:11-5:12: use of moved value 't'"},
+		},
+		{
+			name: "BorrowedTupleLends",
+			src: `declare fn first<'a>(t: &'a [{v: number}, {v: number}]) -> &'a {v: number}
+fn h() {
+  val t = [{v: 1}, {v: 2}]
+  val u = first(&t)
+  val w = t
+}`,
+		},
+		{
+			name: "BorrowedTupleNeedsWrittenBorrow",
+			src: `declare fn first<'a>(t: &'a [{v: number}, {v: number}]) -> &'a {v: number}
+fn h() {
+  val t = [{v: 1}, {v: 2}]
+  val u = first(t)
+  val w = t
+}`,
+			want: []string{"4:17-4:18: this argument is borrowed by the callee, so write the borrow: `&`"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, errs := inferAgainstTreeWithSpans(t, tt.src)
+			require.Equal(t, tt.want, errs)
 		})
 	}
 }

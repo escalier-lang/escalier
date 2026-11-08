@@ -8,6 +8,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
 	"github.com/escalier-lang/escalier/internal/set"
+	"github.com/escalier-lang/escalier/internal/webidl"
 	"github.com/tidwall/btree"
 )
 
@@ -40,6 +41,11 @@ type convertCtx struct {
 	// reads to fill the single `extends` slot. Empty leaves every supertype
 	// in `implements`.
 	classNames set.Set[string]
+
+	// webIDL is the WebIDL table for the package being converted, keyed by
+	// runtime path. It is nil for a package whose names are not WebIDL's, which
+	// leaves every constructor as the `.d.ts` declares it.
+	webIDL map[string]webidl.Definition
 
 	// demotedBases accumulates every extra class supertype fuseTrio moved
 	// to `implements`. ReportDemotedBases names them.
@@ -271,5 +277,19 @@ func ConvertModuleWithOverrides(dtsModule *dts_parser.Module, store OverrideLook
 	// A package's declarations resolve against the committed tree, which
 	// declares `Array`, `Map` and `Set` but none of their readonly twins.
 	renameLibReadonlyTwinRefs(mod)
+	// A `.d.ts` does not say whether a callee writes an argument or returns
+	// structure it shares with one. Rule I3 picks the signature that rejects
+	// more programs. The index holds the package's own declarations, so a
+	// parameter typed by a name the committed tree declares keeps its type.
+	standalone := &StandaloneModule{Module: mod}
+	applyBorrowDefaults(standalone, newTypeIndex(standalone))
 	return mod, nil
+}
+
+// unconstructible reports whether WebIDL declares the interface at path and
+// gives it no `constructor()` operation. It is false for a path the table does
+// not hold.
+func (c *convertCtx) unconstructible(path string) bool {
+	def, ok := c.webIDL[path]
+	return ok && def.Kind == webidl.KindInterface && !def.Constructible
 }

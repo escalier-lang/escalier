@@ -56,9 +56,9 @@ type ValueBinding struct {
 	// VarID is the liveness VarID assigned to this binding's name by the function
 	// body's rename pass (M4 G1), or 0 for a binding outside any liveness-analysed
 	// body (every top-level binding, and any binding minted before its enclosing
-	// body's prepass runs). The mutability-transition checker reads it to resolve a
-	// captured outer variable back to its alias set. It is metadata for transition checking
-	// only and never participates in type inference.
+	// body's prepass runs). The capture analysis reads it to tell a captured local of the
+	// enclosing body from a name the body does not track. It is metadata for the ownership
+	// checks only and never participates in type inference.
 	VarID int
 	// Nominal is the type a read of the binding has when it is not the root of a member
 	// or index chain, or nil when every read has the scheme's type. Only `self` sets it.

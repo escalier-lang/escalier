@@ -8,6 +8,9 @@ import (
 
 // TestClosureCapturedPlaces covers places reached through a closure's captured variables.
 // Each case with a plain-function counterpart reports what that counterpart reports.
+//
+// A closure holds its borrows between calls, so a move of a capture before a later call breaks
+// E3, and the diagnostic is at the move.
 func TestClosureCapturedPlaces(t *testing.T) {
 	tests := map[string]struct {
 		src  string
@@ -150,7 +153,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 					f()
 				}
 			`,
-			want: []string{"9:6-9:7: this call runs 'f', which reads 'x' after it was moved"},
+			want: []string{"8:11-8:12: cannot move 'x' while it is borrowed"},
 		},
 		// Calling f writes x, so a call after x moves is a use after the move.
 		"CallOfAWritingClosureAfterMovingTheCapture": {
@@ -164,7 +167,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 					f()
 				}
 			`,
-			want: []string{"8:6-8:7: this call runs 'f', which writes 'x' after it was moved"},
+			want: []string{"7:11-7:12: cannot move 'x' while it is borrowed"},
 		},
 		// f reads x only while it runs, so x can move once the last call returns.
 		"MoveAfterTheClosureIsLastCalledOk": {
@@ -210,7 +213,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 				}
 			`,
 		},
-		// A callee handed f may call it, so passing f takes the loans a call of f takes.
+		// A callee handed `f` may call it, so passing `f` uses `f`'s captures the way a call of `f` does.
 		"PassingAWritingClosureBesideLiveBorrow": {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
@@ -256,8 +259,8 @@ func TestClosureCapturedPlaces(t *testing.T) {
 			`,
 			want: []string{"9:6-9:7: this call runs 'h', which writes 'x' while it is borrowed as immutable"},
 		},
-		// Calling h reads x through f's closure, so a call after x moves is a use after the
-		// move.
+		// h holds f's closure, which borrows x until h's last call, so moving x before that
+		// call breaks E3. The move is blamed, and the call reports nothing more.
 		"CallOfACopiedClosureAfterMovingTheCapture": {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
@@ -271,7 +274,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 					h()
 				}
 			`,
-			want: []string{"10:6-10:7: this call runs 'h', which reads 'x' after it was moved"},
+			want: []string{"9:11-9:12: cannot move 'x' while it is borrowed"},
 		},
 		// A closure passed straight to a call holds its loans for the call's statement.
 		"ClosureArgumentHoldsItsLoanForTheCall": {
@@ -363,7 +366,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 					f()
 				}
 			`,
-			want: []string{"12:6-12:7: this call runs 'f', which reads 'x' after it was moved"},
+			want: []string{"11:11-11:12: cannot move 'x' while it is borrowed"},
 		},
 		// A `&mut` borrow of x inside the closure makes the loan a call takes mutable.
 		"MutableBorrowInClosureBesideLiveBorrow": {
@@ -398,6 +401,34 @@ func TestClosureCapturedPlaces(t *testing.T) {
 			want: []string{
 				"8:14-8:40: use of moved value 'x'",
 				"9:6-9:7: this call runs 'f', which reads 'x' after it was moved",
+			},
+		},
+		// Moving `p.a` leaves `p.b` in place, so a closure that reads only `p.b` reads nothing moved.
+		"ClosureCapturingAFieldDisjointFromAMovedField": {
+			src: `
+				fn g() {
+					val p = {a: {x: 1}, b: {x: 2}}
+					val d = p.a
+					val f = fn () { return p.b.x }
+					f()
+				}
+			`,
+			want: nil,
+		},
+		// A closure that reads `p.a.x` reads under the moved `p.a`, both where it is written and
+		// at each call.
+		"ClosureCapturingAFieldUnderAMovedField": {
+			src: `
+				fn g() {
+					val p = {a: {x: 1}, b: {x: 2}}
+					val d = p.a
+					val f = fn () { return p.a.x }
+					f()
+				}
+			`,
+			want: []string{
+				"5:14-5:36: use of moved value 'p.a'",
+				"6:6-6:7: this call runs 'f', which reads 'p.a' after it was moved",
 			},
 		},
 	}

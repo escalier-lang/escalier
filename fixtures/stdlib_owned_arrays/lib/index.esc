@@ -21,8 +21,10 @@ export fn largest(a: number, b: number) -> number {
     return Math.max(a, b, 0)
 }
 
-export async fn settle(ps: Array<Promise<number>>) -> Promise<number> {
-    val mut results = await Promise.all(ps)
+// `Promise.all` takes `values: &mut Iterable<…>`. Its declaration does not say
+// whether it writes the iterable, so the converter borrows it as `&mut`.
+export async fn settle(mut ps: Array<Promise<number>>) -> Promise<number> {
+    val mut results = await Promise.all(&mut ps)
     results.reverse()
     return results.length
 }

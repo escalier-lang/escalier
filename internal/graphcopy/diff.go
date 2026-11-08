@@ -3,6 +3,8 @@ package graphcopy
 import (
 	"fmt"
 	"reflect"
+	"runtime"
+	"sync"
 	"unsafe"
 )
 
@@ -13,17 +15,67 @@ import (
 type graphDiff struct {
 	g     *Copier
 	diffs map[string]string
+	// planMu guards g.plans, which planFor writes when it meets a type for the
+	// first time. Every graphDiff of one Diff call shares it.
+	planMu *sync.RWMutex
 }
 
 // Diff returns each change made since the copy to an object of the graph g copied. A key
 // names the changed object's type, and for a struct, the field of it the change sits in,
 // as `solver.Context.classes`. Its value describes the first change found there.
+//
+// The objects are split across one goroutine per available CPU. Each goroutine
+// records its own differences, and the results are merged once all have finished.
 func (g *Copier) Diff() map[string]string {
-	d := &graphDiff{g: g, diffs: map[string]string{}}
-	for key, snap := range g.pointers {
-		d.compare(key.plan, key.addr, snap, diffPath{owner: key.plan})
+	type entry struct {
+		key  pointerKey
+		snap unsafe.Pointer
 	}
-	return d.diffs
+	entries := make([]entry, 0, len(g.pointers))
+	for key, snap := range g.pointers {
+		entries = append(entries, entry{key, snap})
+	}
+
+	workers := min(runtime.GOMAXPROCS(0), max(1, len(entries)))
+	chunk := (len(entries) + workers - 1) / workers
+	planMu := &sync.RWMutex{}
+	results := make([]map[string]string, workers)
+	var wg sync.WaitGroup
+	for w := range workers {
+		part := entries[min(w*chunk, len(entries)):min((w+1)*chunk, len(entries))]
+		wg.Go(func() {
+			d := &graphDiff{g: g, diffs: map[string]string{}, planMu: planMu}
+			for _, e := range part {
+				d.compare(e.key.plan, e.key.addr, e.snap, diffPath{owner: e.key.plan})
+			}
+			results[w] = d.diffs
+		})
+	}
+	wg.Wait()
+
+	diffs := map[string]string{}
+	for _, result := range results {
+		for key, change := range result {
+			if _, seen := diffs[key]; !seen {
+				diffs[key] = change
+			}
+		}
+	}
+	return diffs
+}
+
+// planFor returns g's plan for t. It holds planMu, since the goroutines of one Diff
+// call share g.plans.
+func (d *graphDiff) planFor(t reflect.Type) *typePlan {
+	d.planMu.RLock()
+	plan, done := d.g.plans[t]
+	d.planMu.RUnlock()
+	if done {
+		return plan
+	}
+	d.planMu.Lock()
+	defer d.planMu.Unlock()
+	return d.g.planFor(t)
 }
 
 // diffPath names where a difference sits: the object it was found in, and the field of
@@ -165,7 +217,7 @@ func (d *graphDiff) compareRun(plan *typePlan, run byteRun, live, snap unsafe.Po
 		if field.Offset < run.offset || field.Offset >= run.offset+run.size {
 			continue
 		}
-		d.compare(d.g.planFor(field.Type), unsafe.Add(live, field.Offset), unsafe.Add(snap, field.Offset), path.into(field.Offset))
+		d.compare(d.planFor(field.Type), unsafe.Add(live, field.Offset), unsafe.Add(snap, field.Offset), path.into(field.Offset))
 	}
 }
 
@@ -197,23 +249,26 @@ func (d *graphDiff) compareMap(plan *typePlan, live, snap unsafe.Pointer, path d
 	if plan.key == nil {
 		return
 	}
+	// The loop reuses one addressable value for each of the live key, the
+	// snapshot key, and the two values, so an entry allocates nothing for them.
 	liveKey := reflect.New(plan.key.typ).Elem()
+	snapKey := reflect.New(plan.key.typ).Elem()
+	a := reflect.New(plan.value.typ).Elem()
+	b := reflect.New(plan.value.typ).Elem()
 	iter := lm.MapRange()
 	for iter.Next() {
 		liveKey.SetIterKey(iter)
-		snapKey, ok := d.snapshotKey(plan.key, liveKey)
+		key, ok := d.snapshotKey(plan.key, liveKey, snapKey)
 		if !ok {
 			d.note(path, "holds a key the snapshot lacks")
 			continue
 		}
-		snapValue := sm.MapIndex(snapKey)
+		snapValue := sm.MapIndex(key)
 		if !snapValue.IsValid() {
 			d.note(path, "holds a key the snapshot lacks")
 			continue
 		}
-		a := reflect.New(plan.value.typ).Elem()
-		a.Set(iter.Value())
-		b := reflect.New(plan.value.typ).Elem()
+		a.SetIterValue(iter)
 		b.Set(snapValue)
 		d.compare(plan.value, a.Addr().UnsafePointer(), b.Addr().UnsafePointer(), path)
 	}
@@ -222,7 +277,10 @@ func (d *graphDiff) compareMap(plan *typePlan, live, snap unsafe.Pointer, path d
 // snapshotKey returns the snapshot's counterpart of a live map key. A key holding no
 // pointer is its own counterpart, and a pointer key's is its copy. ok is false for any
 // other key, and for a pointer the snapshot did not copy.
-func (d *graphDiff) snapshotKey(plan *typePlan, key reflect.Value) (reflect.Value, bool) {
+//
+// out is an addressable value of the key's type that a pointer key's counterpart is
+// written into and returned as. It is overwritten by the next call.
+func (d *graphDiff) snapshotKey(plan *typePlan, key, out reflect.Value) (reflect.Value, bool) {
 	if d.pointerFree(plan) {
 		return key, true
 	}
@@ -232,12 +290,13 @@ func (d *graphDiff) snapshotKey(plan *typePlan, key reflect.Value) (reflect.Valu
 		if !ok {
 			return reflect.Value{}, false
 		}
-		return reflect.NewAt(plan.typ.Elem(), snap), true
+		*(*unsafe.Pointer)(out.Addr().UnsafePointer()) = snap
+		return out, true
 	case copyInterface:
 		if key.IsNil() {
 			return key, true
 		}
-		dynamic := d.g.planFor(key.Elem().Type())
+		dynamic := d.planFor(key.Elem().Type())
 		if dynamic.kind != copyPointer {
 			return key, d.pointerFree(dynamic)
 		}
@@ -245,7 +304,6 @@ func (d *graphDiff) snapshotKey(plan *typePlan, key reflect.Value) (reflect.Valu
 		if !ok {
 			return reflect.Value{}, false
 		}
-		out := reflect.New(plan.typ).Elem()
 		out.Set(reflect.NewAt(dynamic.typ.Elem(), snap))
 		return out, true
 	default:

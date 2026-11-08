@@ -25,7 +25,8 @@ type flowLifetimeCase struct {
 func runFlowLifetimeCases(t *testing.T, cases []flowLifetimeCase) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			values, errs := inferAgainstTreeWithSpans(t, c.src)
+			res := InferModuleAgainstStdlib(parseModule(t, c.src), benchTree, Options{})
+			values, errs := renderedValues(res), messagesWithSpan(t, res.Errors)
 			require.Equal(t, c.want, errs)
 			for name, want := range c.values {
 				require.Contains(t, values, name)
@@ -242,13 +243,24 @@ func TestFlowLifetimeNonEscapingParam(t *testing.T) {
 
 func TestFlowLifetimeEscapingParamMoves(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{
-		// F3. The call to `store` moves `a`, so the later read of `a.x` uses a moved value.
+		// F3. `store` lets `p` escape into module-level state, so its parameter is owned.
 		{
-			name: "F3/StoreMovesArgument",
+			name: "F3/StoreOwnsItsParam",
 			src: `
 				var sink = {x: 0}
 
 				fn store(p) { sink = p }
+			`,
+			values: map[string]string{
+				"store": "fn (p: {x: number}) -> undefined",
+			},
+		},
+		// F3. The call to `store` moves `a`, so the later read of `a.x` uses a moved value.
+		// `store` is declared with the signature F3/StoreOwnsItsParam asserts.
+		{
+			name: "F3/StoreMovesArgument",
+			src: `
+				declare fn store(p: {x: number}) -> undefined
 
 				fn go() -> number {
 					val a = {x: 1}
@@ -256,16 +268,15 @@ func TestFlowLifetimeEscapingParamMoves(t *testing.T) {
 					return a.x
 				}
 			`,
-			want: []string{"9:13-9:16: use of moved value 'a'"},
+			want: []string{"7:13-7:16: use of moved value 'a'"},
 		},
 	})
 }
 
-// DISABLED until #2352 and #2348. `seen` does not generalize, so its value type is one weak
-// variable that `remember` and every caller share. `seen` already shows
-// `&'static {retries: number}`, since its values are writable slots. `remember` renders as
-// `fn (value: unknown) -> undefined`. #2352 keeps it monomorphic over the same variable, and
-// #2348 widens that variable where it is checked, so `remember` shows the type `seen` holds.
+// DISABLED until #2352. `seen` does not generalize, so its value type is one weak variable that
+// `remember` and every caller share. `seen` holds `&'static {retries: number}`, since its values
+// are writable slots. `remember` renders as `fn (value: unknown) -> undefined`. #2352 keeps it
+// monomorphic over the same variable, so `remember` shows the type `seen` holds.
 /*
 func TestFlowLifetimeEscapingReadOnlyParam(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{
@@ -294,10 +305,7 @@ func TestFlowLifetimeEscapingReadOnlyParam(t *testing.T) {
 }
 */
 
-// DISABLED until #2247, which blocks writes and new immutable borrows after a `'static` borrow.
-// Today the write to `p.x` in `remember` checks clean, since the exclusivity check does not keep
-// the borrow stored in `cache` live after the store.
-/*
+// TestFlowLifetimeStaticBorrow covers a write to a place a `'static` borrow reaches.
 func TestFlowLifetimeStaticBorrow(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{
 		// L1. The returned borrow in `make` outlives `p`, which is accepted. The borrow stored in
@@ -322,7 +330,6 @@ func TestFlowLifetimeStaticBorrow(t *testing.T) {
 		},
 	})
 }
-*/
 
 // DISABLED until #2286, which rejects a body that ties its result to a lifetime the signature
 // leaves unnamed.
@@ -349,14 +356,13 @@ func TestFlowLifetimeUndeclaredElidedRelation(t *testing.T) {
 }
 */
 
-// DISABLED until #2249 and #2269. Today the program reports three errors and renders `cache` as
+// DISABLED until #2249 and #2324. Today the program reports three errors and renders `cache` as
 // `fn (p: &mut {x: number}) -> undefined`:
 //
 //   - The initializer `&mut {x: 0}` reports `cannot constrain immutable object <: mutable object`
-//     and `cannot constrain number <: 0`. No issue tracks this yet.
+//     and `cannot constrain number <: 0`, which #2324 tracks.
 //   - The store `sink = p` reports `cannot constrain immutable object <: mutable object`. Any store
-//     into a module-level `&mut` binding reports it, and the store also moves `p`, which F2 rules
-//     out for a borrow.
+//     into a module-level `&mut` binding reports it, as #2249 tracks.
 /*
 func TestFlowLifetimeStaticRender(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{
@@ -386,10 +392,7 @@ func TestFlowLifetimeStaticRender(t *testing.T) {
 }
 */
 
-// DISABLED until #2269, which turns on the single ownership pass. Today the move `val q = p`
-// checks clean, and the later call reports `this call runs 'peek', which reads 'p' after it was
-// moved` instead.
-/*
+// TestFlowLifetimeClosureBlocksMove covers the `moved` program from E4.
 func TestFlowLifetimeClosureBlocksMove(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{
 		// E4. `peek` still holds its borrow of `p` for its later call, so E3 rejects the move.
@@ -407,7 +410,6 @@ func TestFlowLifetimeClosureBlocksMove(t *testing.T) {
 		},
 	})
 }
-*/
 
 // TestFlowLifetimeRetainedCallback covers the first `setup` program in D10, which E4 rejects.
 func TestFlowLifetimeRetainedCallback(t *testing.T) {
