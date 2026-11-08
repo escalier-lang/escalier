@@ -830,8 +830,8 @@ Rust has no matching feature.
 | D2 a moving closure is called once | `FnOnce` | Same | |
 | T8 branches agree on ownership | `if` branches must have one type, so `T` and `&T` do not join | Same | |
 | D4 declared bounds are obligations | Declared bounds are assumptions | Differs | Follows from L3 |
-| D17 function lifetimes | A closure's lifetime is a bound on its trait object, as in `Box<dyn Fn() + 'a>`, and a boxed `dyn Fn()` defaults to `'static`. A closure kept past its locals' scope must be written `move` | Differs | Escalier writes the lifetime on the `fn` type and elides it by position, as it does for `&`. It moves a dead local into a kept closure without a written `move` |
 | D5 `readonly` initialized once | A struct literal initializes every field at once | No equivalent | |
+| D17 function lifetimes | A closure's lifetime is a bound on its trait object, as in `Box<dyn Fn() + 'a>`, and a boxed `dyn Fn()` defaults to `'static`. A closure kept past its locals' scope must be written `move` | Differs | Escalier writes the lifetime on the `fn` type and elides it by position, as it does for `&`. It moves a dead local into a kept closure without a written `move` |
 | T10 getter and setter receivers | No getters or setters | No equivalent | |
 | Move to immutable and move to mutable | `let settled = v; let mut editable = settled;` moves between bindings of different mutability | Same | `docs/09_ownership.md` says Rust has no equivalent. The moves are the same, but interior mutability keeps Rust's move to immutable from being deep |
 
@@ -912,8 +912,7 @@ in between.
 ## Decisions
 
 Each entry records a design question the rules left open and how it was
-decided. All 18 are decided, and D17 also lists the points about function
-lifetimes that are still open. An entry the checker implements states its rule
+decided. All 18 are decided. An entry the checker implements states its rule
 first, then shows it in an example. An entry the checker does not implement
 keeps its problem statement and options. When checker work remains for an
 entry, the entry ends with a note on that work and the issue that tracks it.
@@ -1744,8 +1743,7 @@ Each error follows the shape of Rust's. It names the value, what the value
 borrows, what keeps the value and for how long, and the fix. Two examples:
 
 - `` 'g' may borrow values that live only during the call, but it is kept after the call returns; write `g: 'static fn () -> undefined` to keep it ``
-- `` `show` borrows `cfg`, but `keep` keeps it for 'static; `` followed by the
-  fix.
+- `` 'count' is used after the 'cb' that 'keep' retains took it over for 'static ``
 
 The wording of each fix may change. The shape stays.
 
