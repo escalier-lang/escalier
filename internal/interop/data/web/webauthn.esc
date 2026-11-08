@@ -142,7 +142,7 @@ export declare class AuthenticatorAssertionResponse extends AuthenticatorRespons
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAssertionResponse/userHandle) */
     readonly userHandle: typed_arrays.ArrayBuffer | null,
     static prototype: AuthenticatorAssertionResponse,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -163,7 +163,7 @@ export declare class AuthenticatorAttestationResponse extends AuthenticatorRespo
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAttestationResponse/getTransports) */
     getTransports(&self) -> Array<string>,
     static prototype: AuthenticatorAttestationResponse,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -176,7 +176,7 @@ export declare class AuthenticatorResponse {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorResponse/clientDataJSON) */
     readonly clientDataJSON: typed_arrays.ArrayBuffer,
     static prototype: AuthenticatorResponse,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -197,7 +197,6 @@ export declare class PublicKeyCredential extends credentials.Credential {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/toJSON) */
     toJSON(&self) -> PublicKeyCredentialJSON,
     static prototype: PublicKeyCredential,
-    constructor(&mut self),
     static getClientCapabilities() -> Promise<PublicKeyCredentialClientCapabilities>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/isConditionalMediationAvailable_static) */
     static isConditionalMediationAvailable() -> Promise<boolean>,
@@ -206,7 +205,8 @@ export declare class PublicKeyCredential extends credentials.Credential {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/parseCreationOptionsFromJSON_static) */
     static parseCreationOptionsFromJSON<'a>(options: &'a mut PublicKeyCredentialCreationOptionsJSON) -> &'a mut PublicKeyCredentialCreationOptions,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/parseRequestOptionsFromJSON_static) */
-    static parseRequestOptionsFromJSON<'a>(options: &'a mut PublicKeyCredentialRequestOptionsJSON) -> &'a mut PublicKeyCredentialRequestOptions
+    static parseRequestOptionsFromJSON<'a>(options: &'a mut PublicKeyCredentialRequestOptionsJSON) -> &'a mut PublicKeyCredentialRequestOptions,
+    private constructor(&mut self)
 }
 
 export declare type Base64URLString = string

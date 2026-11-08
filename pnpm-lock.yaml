@@ -77,6 +77,9 @@ importers:
       '@vitest/ui':
         specifier: ^4.1.10
         version: 4.1.10(vitest@4.1.10)
+      '@webref/idl':
+        specifier: 3.86.0
+        version: 3.86.0(webidl2@24.5.0)
       playwright:
         specifier: ^1.58.2
         version: 1.58.2
@@ -1443,6 +1446,11 @@ packages:
     resolution: {integrity: sha512-Gc6EdaLANdktQ1t+zozoBVRynfIsMKMc94Svu1QreOBC8y76x4tvaK32TljrLi1LI2+PK58sDVbL7ALdqf3VRQ==}
     engines: {node: '>=16'}
 
+  '@webref/idl@3.86.0':
+    resolution: {integrity: sha512-cfBKahe5RlvgVnOII8XxoPJ/rZ8B9bYaVaewOt9L9IwbDmJOQ7dSNAA5AXM7BQaiQ+/FbqqrE1bGVUm3HBUFYw==}
+    peerDependencies:
+      webidl2: ^24.5.0
+
   acorn-jsx@5.3.2:
     resolution: {integrity: sha512-rq9s+JNhf0IChjtDXxllJ7g41oZk5SlXtp0LHwyA5cejwn7vKmKp4pPri6YEePv2PU65sAsegbXtIinmDFDXgQ==}
     peerDependencies:
@@ -2587,6 +2595,10 @@ packages:
     resolution: {integrity: sha512-BMhLD/Sw+GbJC21C/UgyaZX41nPt8bUTg+jWyDeg7e7YN4xOM05YPSIXceACnXVtqyEw/LMClUQMtMZ+PGGpqQ==}
     engines: {node: '>=20'}
 
+  webidl2@24.5.0:
+    resolution: {integrity: sha512-fxOigKkIem1iAgQ9t4cFOP+kWEA8y6Be/uh50FpJh0FijoeeT/VMrOyJzNLUgjy0rGMEcHeReKDCqj0g9dIe9A==}
+    engines: {node: '>= 18'}
+
   webpack-virtual-modules@0.6.2:
     resolution: {integrity: sha512-66/V2i5hQanC51vBQKPH4aI8NMAcBW59FVBs+rC7eGHupMyfn34q7rZIE+ETlJ+XTevqfUhVVBgSUNSW2flEUQ==}
 
@@ -3701,6 +3713,10 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  '@webref/idl@3.86.0(webidl2@24.5.0)':
+    dependencies:
+      webidl2: 24.5.0
+
   acorn-jsx@5.3.2(acorn@8.16.0):
     dependencies:
       acorn: 8.16.0
@@ -4779,6 +4795,8 @@ snapshots:
       xml-name-validator: 5.0.0
 
   webidl-conversions@8.0.1: {}
+
+  webidl2@24.5.0: {}
 
   webpack-virtual-modules@0.6.2: {}
 

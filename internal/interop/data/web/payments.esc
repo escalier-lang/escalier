@@ -251,7 +251,7 @@ export declare class PaymentResponse extends EventTarget {
     removeEventListener<K: keyof PaymentResponseEventMap>(&mut self, type: K, listener: fn (this: PaymentResponse, ev: PaymentResponseEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: PaymentResponse,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare type PaymentComplete = "fail" | "success" | "unknown"

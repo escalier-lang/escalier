@@ -388,7 +388,7 @@ export declare class ImageTrack {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageTrack/selected) */
     selected: boolean,
     static prototype: ImageTrack,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageTrackList) */
@@ -404,7 +404,7 @@ export declare class ImageTrackList {
     readonly selectedTrack: ImageTrack | null,
     [Symbol.iterator](&self) -> ArrayIterator<ImageTrack>,
     static prototype: ImageTrackList,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoColorSpace) */

@@ -615,11 +615,9 @@ func TestExplicitBorrowFlowSites(t *testing.T) {
 		src  string
 		want []string
 	}{
-		// B1 in planning/ownership_rules/requirements.md. The store into the `&` field reports
-		// the missing `&` and does not move p, so the later read of p.x reports nothing. B1
-		// writes `val mut h: {slot: …}`, which #2251 makes mutable. Until then the binding is
-		// written with a `mut` annotation instead.
-		"StoreIntoABorrowFieldB1": {
+		// The store into the `&` field reports the missing `&` and does not move p, so the later
+		// read of p.x reports nothing.
+		"StoreIntoABorrowField": {
 			src: `
 				export fn go() -> number {
 					val p = {x: 1}
@@ -631,9 +629,9 @@ func TestExplicitBorrowFlowSites(t *testing.T) {
 			`,
 			want: []string{"6:15-6:16: this value is borrowed by its destination, so write the borrow: `&`"},
 		},
-		// B3 in planning/ownership_rules/requirements.md. The annotated binding reports the
-		// missing `&`. The next case writes it, and the move check then sees the borrow.
-		"AnnotationOnlyBorrowB3": {
+		// The annotated binding reports the missing `&`. The next case writes it, and the move
+		// check then sees the borrow.
+		"AnnotationOnlyBorrow": {
 			src: `
 				fn take(p: {x: number}) -> number {
 					val mut q = p

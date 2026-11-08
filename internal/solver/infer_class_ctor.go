@@ -30,6 +30,19 @@ func (c *checker) walkConstructorBodies(
 	return out
 }
 
+// publicConstructors returns the signatures in fns whose constructor in ctors is not
+// `private`, in order. fns holds one signature per entry of ctors, as walkConstructorBodies
+// returns them. The result is nil when every constructor is private.
+func publicConstructors(ctors []*ast.ConstructorElem, fns []*soltype.FuncType) []*soltype.FuncType {
+	var out []*soltype.FuncType
+	for i, ctor := range ctors {
+		if !ctor.Private {
+			out = append(out, fns[i])
+		}
+	}
+	return out
+}
+
 // synthesizeConstructor builds the implicit constructor of a class that declares no explicit
 // one and no call signature: a function taking one parameter per required instance field, in
 // declaration order, and returning the instance. An optional field is omitted, matching its
