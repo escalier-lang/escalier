@@ -7,7 +7,7 @@ class Fix<A, B> {
 }
 
 val fix = fn<A, B>(
-    f: fn(f: fn(arg: A) -> B) -> fn(arg: A) -> B
+    f: 'static fn(f: fn(arg: A) -> B) -> fn(arg: A) -> B
 ) {
     return Fix(f).recurse
 }
