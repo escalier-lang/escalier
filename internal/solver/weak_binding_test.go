@@ -153,7 +153,7 @@ fn f() { return {next: f()} }
 val mut seen = Map()
 fn put() { seen.set("k", f()) }
 `,
-			values: map[string]string{"seen": "Map<string, {next: μX0.{next: X0}}>"},
+			values: map[string]string{"seen": "Map<string, μX0.{next: X0}>"},
 			want: []string{
 				"2:4-2:5: `f` has type `fn () -> {next: μX0.{next: X0}}`, and no finite value inhabits its return type, so a call to it never returns; give the recursion a base case, make the recursive property optional, or defer the recursive call behind a function or a Promise",
 			},
