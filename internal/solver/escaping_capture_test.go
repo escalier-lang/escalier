@@ -493,6 +493,21 @@ func TestEscapingClosureCapture(t *testing.T) {
 			`,
 			want: []string{"8:14-8:16: cannot borrow 'p' as immutable while 'p.x' is borrowed as mutable by 'sink'"},
 		},
+		// A closure that calls a closure an object holds carries what that closure captures, so
+		// sink keeps its borrow of p, and moving p breaks E3.
+		"StoreOfAClosureCallingAClosureInAnObjectKeepsTheCapture": {
+			src: `
+				var sink: 'static fn () -> undefined = fn () {}
+				declare fn take(a: {x: number}) -> undefined
+				fn go() {
+					val mut p = {x: 1}
+					val o = {cb: fn () { p.x = 2 }}
+					sink = fn () { o.cb() }
+					take(p)
+				}
+			`,
+			want: []string{"8:11-8:12: cannot move 'p' while it is borrowed by 'sink'"},
+		},
 		// E2 allows two mutable paths, so sink and sink2 may both keep a mutable borrow of p.x.
 		"TwoGlobalClosuresWritingOneLocalOk": {
 			src: `

@@ -128,7 +128,8 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 	}
 	framed := c.fn != nil
 	// keepable says each capture the closure borrows is a `val` or `var` of the body it is
-	// written in, rather than a parameter or a binding of a script's top level.
+	// written in, rather than a parameter or a binding of a script's top level, and has a VarID
+	// for keepCaptureLoans to find its loans by.
 	keepable := c.fn != nil && !c.inScript()
 	// direct says some capture is borrowed by the closure itself, rather than only through a
 	// function the capture holds.
@@ -170,7 +171,7 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 			// inside the local borrows from outside the body.
 			framed = framed && c.isFrameLocal(capture.Name, b) && c.holdsOnlyFrameBorrows(held)
 			_, isVarDecl := bindingDecl(b).(*ast.VarDecl)
-			keepable = keepable && isVarDecl
+			keepable = keepable && isVarDecl && b.VarID > 0
 			if b.VarID > 0 {
 				locals.roots = append(locals.roots, liveness.VarID(b.VarID))
 				if b.Kind == ast.VarKind {
