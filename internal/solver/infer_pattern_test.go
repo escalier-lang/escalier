@@ -759,13 +759,13 @@ func TestInferRestPatternParamAdmitsExtraFields(t *testing.T) {
 	t.Run("no rest still closes to exact", func(t *testing.T) {
 		values, _, errs := inferSource(t, `fn f({x}) { return x }`)
 		require.Empty(t, errs)
-		require.Equal(t, "fn <T0>({x}: {x: T0}) -> T0", values["f"])
+		require.Equal(t, "fn <T0, 'a>({x}: &'a {x: T0}) -> &'a T0", values["f"])
 	})
 
 	// `f` is declared with the signature "no rest still closes to exact" asserts.
 	t.Run("an exact param rejects extra fields", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
-			declare fn f<T0>(p: {x: T0}) -> T0
+			declare fn f<T0, 'a>(p: &'a {x: T0}) -> &'a T0
 			val r = f({x: 1, y: 2})
 		`)
 		require.Len(t, errs, 1)
