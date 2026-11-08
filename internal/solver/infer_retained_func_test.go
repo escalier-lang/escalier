@@ -443,6 +443,12 @@ func TestInferRetainedFuncErrors(t *testing.T) {
 	}
 }
 
+// TestShortFuncLifetimesOfNoType asserts that shortFuncLifetimes finds no lifetime in a nil type
+// rather than walking it.
+func TestShortFuncLifetimesOfNoType(t *testing.T) {
+	require.Empty(t, shortFuncLifetimes(nil))
+}
+
 // TestRetainedFuncAtom asserts that a function type's retention lifetime keeps it apart from
 // the same function type without one. The two compare unequal, sort apart, and do not fuse
 // into one arrow.
