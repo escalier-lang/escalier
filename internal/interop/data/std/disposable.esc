@@ -25,11 +25,11 @@ export declare class DisposableStack {
      * as the first parameter.
      * @returns The provided {@link value}.
      */
-    adopt<T>(&mut self, value: T, onDispose: fn (value: T) -> unknown) -> T,
+    adopt<T>(&mut self, value: T, onDispose: &fn (value: T) -> unknown) -> T,
     /**
      * Adds a callback to be invoked when the stack is disposed.
      */
-    defer(&mut self, onDispose: fn () -> unknown) -> undefined,
+    defer(&mut self, onDispose: &fn () -> unknown) -> undefined,
     /**
      * Move all resources out of this stack and into a new `DisposableStack`, and marks this stack as disposed.
      * @example
@@ -89,11 +89,11 @@ export declare class AsyncDisposableStack {
      * as the first parameter.
      * @returns The provided {@link value}.
      */
-    adopt<T>(&mut self, value: T, onDisposeAsync: fn (value: T) -> PromiseLike<undefined> | undefined) -> T,
+    adopt<T>(&mut self, value: T, onDisposeAsync: &fn (value: T) -> PromiseLike<undefined> | undefined) -> T,
     /**
      * Adds a callback to be invoked when the stack is disposed.
      */
-    defer(&mut self, onDisposeAsync: fn () -> PromiseLike<undefined> | undefined) -> undefined,
+    defer(&mut self, onDisposeAsync: &fn () -> PromiseLike<undefined> | undefined) -> undefined,
     /**
      * Move all resources out of this stack and into a new `DisposableStack`, and marks this stack as disposed.
      * @example

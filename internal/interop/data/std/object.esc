@@ -141,7 +141,7 @@ export declare class Object {
      * @param items An iterable.
      * @param keySelector A callback which will be invoked for each item in items.
      */
-    static groupBy<'a, K: PropertyKey, T>(items: &'a mut Iterable<T>, keySelector: fn (item: T, index: number) -> K) -> &'a mut Partial<Record<K, Array<T>>>,
+    static groupBy<'a, K: PropertyKey, T>(items: &'a mut Iterable<T>, keySelector: &fn (item: T, index: number) -> K) -> &'a mut Partial<Record<K, Array<T>>>,
     constructor(&mut self, value?: unknown),
     () -> any,
     (value: unknown) -> any,

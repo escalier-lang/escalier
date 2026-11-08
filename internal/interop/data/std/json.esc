@@ -9,7 +9,7 @@
  * If a member contains nested objects, the nested objects are transformed before the parent object is.
  */
 @js("JSON.parse")
-export declare fn parse(text: string, reviver?: fn (this: any, key: string, value: any) -> any) -> any
+export declare fn parse(text: string, reviver?: &fn (this: any, key: string, value: any) -> any) -> any
 
 /**
  * Converts a JavaScript value to a JavaScript Object Notation (JSON) string.
@@ -18,7 +18,7 @@ export declare fn parse(text: string, reviver?: fn (this: any, key: string, valu
  * @param space Adds indentation, white space, and line break characters to the return-value JSON text to make it easier to read.
  */
 @js("JSON.stringify")
-export declare fn stringify(value: unknown, replacer?: fn (this: any, key: string, value: any) -> any, space?: string | number) -> string
+export declare fn stringify(value: unknown, replacer?: &fn (this: any, key: string, value: any) -> any, space?: string | number) -> string
 
 /**
  * Converts a JavaScript value to a JavaScript Object Notation (JSON) string.

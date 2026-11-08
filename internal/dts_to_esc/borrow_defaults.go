@@ -76,9 +76,12 @@ func indexUnder[T any](m map[string]T, decl T, names ...string) {
 // make every library call give up its arguments.
 //
 //   - A parameter whose type is an object type becomes a `&mut` borrow.
+//   - A parameter whose type is a function type becomes `&fn`, which the callee only calls
+//     during the call. So does each function type in a union, as in a callback that may be
+//     `null`. The callback's own parameters keep their types.
 //   - Every other parameter keeps its type as written. That covers a primitive, a
-//     function, a promise, a type parameter, `unknown`, a name idx does not declare, and
-//     every union.
+//     promise, a type parameter, `unknown`, a name idx does not declare, a callback
+//     written as an interface, and every other union.
 //   - A return whose type is an object type, or a union of object types and value types,
 //     becomes a `&'a mut` borrow of each object type when it may share structure with a
 //     borrowed parameter. Each such parameter takes the lifetime `'a`.
@@ -129,7 +132,16 @@ func (idx *typeIndex) borrowSigDefaults(sig *ast.FuncSig, outerTypeParams set.Se
 			continue
 		}
 		pat, ok := param.Pattern.(*ast.IdentPat)
-		if !ok || pat.Name == "this" || !idx.isObjectType(param.TypeAnn, typeParams) {
+		if !ok || pat.Name == "this" {
+			continue
+		}
+		// A `.d.ts` cannot say whether the callee keeps a callback, so the callback is only
+		// called during the call, as I2 states.
+		if callback, isCallback := callOnlyCallback(param.TypeAnn); isCallback {
+			param.TypeAnn = callback
+			continue
+		}
+		if !idx.isObjectType(param.TypeAnn, typeParams) {
 			continue
 		}
 		ref := ast.NewBorrowTypeAnn(true, nil, param.TypeAnn, param.TypeAnn.Span())
@@ -170,6 +182,34 @@ func (idx *typeIndex) borrowSigDefaults(sig *ast.FuncSig, outerTypeParams set.Se
 		ref.Lifetime = ast.NewLifetimeAnn(name, ref.Span())
 	}
 	sig.Return = ret
+}
+
+// callOnlyCallback returns t with each function type in it written `&fn`, and whether it
+// wrote any. t is rewritten whole when it is a function type. In a union, each member that is
+// a function type is rewritten, so `((ev: Event) => void) | null` becomes
+// `(&fn (ev: Event) -> undefined) | null`. Any other t comes back unchanged. t itself is not
+// modified.
+func callOnlyCallback(t ast.TypeAnn) (ast.TypeAnn, bool) {
+	if fn, isFn := t.(*ast.FuncTypeAnn); isFn {
+		return ast.NewBorrowTypeAnn(false, nil, fn, fn.Span()), true
+	}
+	union, ok := t.(*ast.UnionTypeAnn)
+	if !ok {
+		return t, false
+	}
+	members := make([]ast.TypeAnn, len(union.Types))
+	rewrote := false
+	for i, member := range union.Types {
+		members[i] = member
+		if fn, isFn := member.(*ast.FuncTypeAnn); isFn {
+			members[i] = ast.NewBorrowTypeAnn(false, nil, fn, fn.Span())
+			rewrote = true
+		}
+	}
+	if !rewrote {
+		return t, false
+	}
+	return ast.NewUnionTypeAnn(members, union.Span()), true
 }
 
 // borrowObjectTypes returns t with each object type in it wrapped in a `&mut` borrow,
