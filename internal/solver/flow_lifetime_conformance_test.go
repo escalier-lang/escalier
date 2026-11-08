@@ -243,13 +243,24 @@ func TestFlowLifetimeNonEscapingParam(t *testing.T) {
 
 func TestFlowLifetimeEscapingParamMoves(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{
-		// F3. The call to `store` moves `a`, so the later read of `a.x` uses a moved value.
+		// F3. `store` lets `p` escape into module-level state, so its parameter is owned.
 		{
-			name: "F3/StoreMovesArgument",
+			name: "F3/StoreOwnsItsParam",
 			src: `
 				var sink = {x: 0}
 
 				fn store(p) { sink = p }
+			`,
+			values: map[string]string{
+				"store": "fn (p: {x: number}) -> undefined",
+			},
+		},
+		// F3. The call to `store` moves `a`, so the later read of `a.x` uses a moved value.
+		// `store` is declared with the signature F3/StoreOwnsItsParam asserts.
+		{
+			name: "F3/StoreMovesArgument",
+			src: `
+				declare fn store(p: {x: number}) -> undefined
 
 				fn go() -> number {
 					val a = {x: 1}
@@ -257,16 +268,16 @@ func TestFlowLifetimeEscapingParamMoves(t *testing.T) {
 					return a.x
 				}
 			`,
-			want: []string{"9:13-9:16: use of moved value 'a'"},
+			want: []string{"7:13-7:16: use of moved value 'a'"},
 		},
 	})
 }
 
-// DISABLED until #2348. `seen` does not generalize, so its value type is one weak variable
-// that `remember` and every caller share. `seen` shows `&'static {retries: number}`, since its
-// values are writable slots. `remember` is monomorphic over the same variable and renders as
-// `fn (value: &'static {retries: 3}) -> undefined`, the literal its caller passed. Once that
-// variable widens where it is checked, as #2348 plans, `remember` shows the type `seen` holds.
+// DISABLED until `remember` shows the widened type `seen` holds. `seen` does not generalize, so
+// `remember` stays monomorphic over the variable it writes into `seen`. `seen` holds
+// `&'static {retries: number}`, since its values are writable slots. The slot widens through a
+// fresh variable that only receives `remember`'s values, so `remember` keeps the literal its
+// caller passed and renders as `fn (value: &'static {retries: 3}) -> undefined`.
 /*
 func TestFlowLifetimeEscapingReadOnlyParam(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{

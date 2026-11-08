@@ -268,8 +268,8 @@ func TestTypeRuleLiteralWidening(t *testing.T) {
 	})
 }
 
-// TestTypeRulesBindingMutability covers the T3 and T5 cases where a `val mut` binding with a type
-// annotation owns a mutable value of the annotated type.
+// TestTypeRulesBindingMutability covers the T3 and T5 cases where a binding or parameter with a
+// type annotation owns a value of the annotated type.
 func TestTypeRulesBindingMutability(t *testing.T) {
 	runTypeRuleCases(t, []typeRuleCase{
 		// A `val mut` binding makes every owned layer of its annotated value writable.
@@ -307,6 +307,93 @@ func TestTypeRulesBindingMutability(t *testing.T) {
 				}
 			`,
 			want: []string{"4:31-4:32: readonly field 'a' cannot satisfy a writable field requirement"},
+		},
+		// A `mut` parameter is the call-site form of the `val mut` binding above.
+		{
+			name: "T5/ReadonlyFieldIntoMutParam",
+			src: `
+				fn sink(mut o: {a: number}) { o.a = 5 }
+				fn f(obj: {readonly a: number}) { sink(obj) }
+			`,
+			want: []string{"3:44-3:47: readonly field 'a' cannot satisfy a writable field requirement"},
+		},
+		// The signature does not carry the parameter's binding mutability, so T5 applies to an
+		// immutable parameter too. `move` writes `a` after it moves `o` into a `val mut` binding.
+		{
+			name: "T5/ReadonlyFieldIntoImmutableParam",
+			src: `
+				fn move(o: {a: number}) {
+					val mut m = o
+					m.a = 5
+				}
+				fn f(obj: {readonly a: number}) { move(obj) }
+			`,
+			want: []string{"6:44-6:47: readonly field 'a' cannot satisfy a writable field requirement"},
+		},
+		// A call through a function value sees only the callee's type, which has no `mut`.
+		{
+			name: "T5/ReadonlyFieldIntoParamThroughFunctionValue",
+			src: `
+				fn sink(mut o: {a: number}) { o.a = 5 }
+				fn f(obj: {readonly a: number}) {
+					val s = sink
+					s(obj)
+				}
+			`,
+			want: []string{"5:8-5:11: readonly field 'a' cannot satisfy a writable field requirement"},
+		},
+		// A `val` binding can move its value on into a `val mut` binding, so T5 applies to it too.
+		{
+			name: "T5/ReadonlyFieldIntoValBinding",
+			src: `
+				fn f(obj: {readonly a: number}) {
+					val o: {a: number} = obj
+					val mut m = o
+					m.a = 5
+				}
+			`,
+			want: []string{"3:27-3:30: readonly field 'a' cannot satisfy a writable field requirement"},
+		},
+		// A reassignment moves its value into the binding the same way an initializer does.
+		{
+			name: "T5/ReadonlyFieldIntoReassignedVar",
+			src: `
+				fn f(obj: {readonly a: number}) {
+					var o: {a: number} = {a: 1}
+					o = obj
+				}
+			`,
+			want: []string{"4:10-4:13: readonly field 'a' cannot satisfy a writable field requirement"},
+		},
+		// The caller can move an owned return value into a `val mut` binding.
+		{
+			name: "T5/ReadonlyFieldIntoReturn",
+			src: `
+				fn f(obj: {readonly a: number}) -> {a: number} {
+					return obj
+				}
+			`,
+			want: []string{"3:13-3:16: readonly field 'a' cannot satisfy a writable field requirement"},
+		},
+		// A call's result reaches the argument as a type variable bounded by the callee's
+		// return type, so the check reads the variable's lower bounds.
+		{
+			name: "T5/ReadonlyFieldFromCallResultIntoParam",
+			src: `
+				fn mk() -> {readonly a: number} { return {a: 1} }
+				fn sink(mut o: {a: number}) { o.a = 5 }
+				fn f() { sink(mk()) }
+			`,
+			want: []string{"4:19-4:23: readonly field 'a' cannot satisfy a writable field requirement"},
+		},
+		// An immutable borrow can neither write `a` nor move the value, so a readonly field
+		// fills the parameter's writable field.
+		{
+			name: "T5/ReadonlyFieldThroughImmutableBorrow",
+			src: `
+				fn read(o: &{a: number}) -> number { return o.a }
+				fn f(obj: {readonly a: number}) -> number { return read(&obj) }
+			`,
 		},
 	})
 }

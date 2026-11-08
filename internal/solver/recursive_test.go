@@ -65,6 +65,8 @@ func TestInferRecursiveRendersMuKnot(t *testing.T) {
 			// checkCanReturn reads the whole signature through coalesceScheme.
 			//
 			// The return makes x owned by F3, so `f(x)` moves x before `value: x` reads it.
+			//
+			// This case infers `f` and calls it in one source, since `f` calls itself.
 			name:    "knot beside a retained type parameter",
 			src:     `fn f(x) { return {next: f(x), value: x} }`,
 			binding: "f",

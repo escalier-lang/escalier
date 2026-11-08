@@ -41,7 +41,7 @@ type ValueBinding struct {
 	// InitVars is the range of variable IDs a body-level weak binding's initializer
 	// minted, and nil for every other binding. When it is set, a reassignment writes only
 	// into the variables in the range.
-	InitVars *varIDRange
+	InitVars *varRange
 	// ModuleLevel marks a top-level binding — one defined directly in the module
 	// scope, as opposed to a function parameter or body-local `val`/`var`. It is set
 	// only by inferComponent's phase-3 definitions, the module's SCC bindings, and

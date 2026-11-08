@@ -291,7 +291,9 @@ func TestNestedWriteInfersMutContainerAndRoundTrips(t *testing.T) {
 	}
 
 	// Re-feeding the displayed type as a caller's annotation type-checks, so the
-	// signature genuinely round-trips.
+	// signature genuinely round-trips. This case infers `foo` and calls it in one source,
+	// since the property it tests is that the inferred `foo` accepts its own displayed type.
+	// A declared `foo` would accept that type by construction.
 	t.Run("round-trip caller", func(t *testing.T) {
 		src := `fn foo(mut obj) { obj.p.x = 5 }
 fn caller(a: {p: {x: number}}) { foo(a) }`
@@ -771,10 +773,6 @@ func TestOwnedCallResultFlowsIntoAMutDestination(t *testing.T) {
 			src:  counter + "fn make() -> Counter { return shared() }",
 		},
 		{
-			name: "a callee with an inferred return type",
-			src:  "fn make() { return {p: 1} }\nval mut d: {p: number} = make()",
-		},
-		{
 			name:    "a borrow return into an annotated binding",
 			src:     counter + "declare fn peek() -> &Counter\nval mut d: Counter = peek()",
 			wantErr: "cannot use borrowed &Counter as owned Counter",
@@ -786,7 +784,8 @@ func TestOwnedCallResultFlowsIntoAMutDestination(t *testing.T) {
 		},
 		{
 			// The binding owns the value it moves in, so a field the callee typed narrower
-			// widens to the annotation like any other owned flow.
+			// widens to the annotation like any other owned flow. `g`'s signature has the form
+			// TestInferReturnOfLiteralIsOwned asserts for an unannotated callee.
 			name: "a narrower field from a call widens into the annotation",
 			src:  "declare fn g() -> {a: 1}\nval mut d: {a: number} = g()",
 		},
@@ -799,6 +798,30 @@ func TestOwnedCallResultFlowsIntoAMutDestination(t *testing.T) {
 				return
 			}
 			require.Equal(t, []string{tt.wantErr}, errorMessagesOf(errs))
+		})
+	}
+}
+
+// TestInferReturnOfLiteralIsOwned asserts that a function returning an object literal, with no
+// written return type, infers an owned return. TestOwnedCallResultFlowsIntoAMutDestination
+// moves a call to a callee with that signature into a `mut` binding.
+func TestInferReturnOfLiteralIsOwned(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "an object literal",
+			src:  "fn make() { return {p: 1} }",
+			want: "fn () -> {p: 1}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["make"])
 		})
 	}
 }

@@ -413,14 +413,15 @@ type ReadonlyFieldError struct {
 }
 
 // ReadonlyFieldSubtypeError fires when a readonly source field flows into a
-// non-readonly target field through structural subtyping under a mutable borrow:
-// a `&mut {readonly a: T}` cannot fill a `&mut {a: T}` target, since the target view
-// would otherwise let a holder write through and break the source's readonly
-// contract. The check sits in the ObjectType <: ObjectType arm under the
-// mut-context flag, the contravariant write view of a mutable borrow, and blames
-// whatever site triggered the constraint, typically the call argument or return
-// that flows the value out. A direct write to a declared readonly field reports
-// ReadonlyFieldError instead.
+// non-readonly target field. A `&mut {readonly a: T}` cannot fill a `&mut {a: T}`
+// target, since a holder of the target could write the field. An owned
+// `{readonly a: T}` cannot fill an owned `{a: T}` destination either, since the
+// value could move on into a `val mut` binding that writes the field. The check sits
+// in the ObjectType <: ObjectType arm under the mut-context flag, the contravariant
+// write view of a mutable borrow. reportReadonlyIntoWritable reaches it for an owned
+// destination. The error blames the site that flows the value out, such as a call
+// argument, an initializer, or a return. A direct write to a declared readonly field
+// reports ReadonlyFieldError instead.
 type ReadonlyFieldSubtypeError struct {
 	Field string
 	site  ast.Node
@@ -1442,6 +1443,7 @@ func (*DuplicateObjectMemberError) isSolverError()          {}
 func (*DuplicateConstructorSignatureError) isSolverError()  {}
 func (*FieldInitializerNotAllowedError) isSolverError()     {}
 func (*SubclassConstructorRequiredError) isSolverError()    {}
+func (*NotConstructibleError) isSolverError()               {}
 func (*CallSignatureRequiresDeclareError) isSolverError()   {}
 func (*WriteOnlyPropertyError) isSolverError()              {}
 func (*ReadOnlyPropertyError) isSolverError()               {}
@@ -2093,6 +2095,23 @@ func (e *FieldInitializerNotAllowedError) Span() ast.Span      { return e.Field.
 func (e *FieldInitializerNotAllowedError) Related() []ast.Span { return nil }
 func (e *FieldInitializerNotAllowedError) Message() string {
 	return "Field '" + soltype.DisplayMemberName(e.Name) + "' cannot have a `= expr` initializer; only static fields may use this form. Initialize instance fields in the constructor body."
+}
+
+// NotConstructibleError fires on a construction, either `Bitmap()` or a subclass's
+// `super()`, of a `declare` class whose every constructor is private. Class is the class's
+// registry name and Node is the call.
+type NotConstructibleError struct {
+	Node  ast.Node
+	Class string
+}
+
+func (e *NotConstructibleError) Span() ast.Span      { return e.Node.Span() }
+func (e *NotConstructibleError) Related() []ast.Span { return nil }
+func (e *NotConstructibleError) Message() string {
+	// The class renders the way a type naming it does, so a package class reads `ImageBitmap`
+	// rather than under its registry name.
+	name := soltype.Print(&soltype.ClassType{Name: e.Class})
+	return fmt.Sprintf("`%s` cannot be constructed because it declares no public constructor", name)
 }
 
 // SubclassConstructorRequiredError fires when a class with an `extends` clause

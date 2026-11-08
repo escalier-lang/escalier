@@ -579,7 +579,7 @@ func (c *checker) weakBoundLevel(v *soltype.TypeVarType, lvl int) (int, bool) {
 
 // noteWeakVars adds to c.weakVars each variable at or below lvl that t reaches. When
 // minted is set, only the variables in that range are added.
-func (c *checker) noteWeakVars(t soltype.Type, lvl int, minted *varIDRange) {
+func (c *checker) noteWeakVars(t soltype.Type, lvl int, minted *varRange) {
 	vars := map[int]*soltype.TypeVarType{}
 	t.Accept(&varCollector{out: vars, seen: set.NewSet[*soltype.TypeVarType]()}, soltype.Positive)
 	for _, v := range vars {

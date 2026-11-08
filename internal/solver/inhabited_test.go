@@ -188,6 +188,7 @@ func TestNonReturningRecursionAccepts(t *testing.T) {
 			// plain coalesce would render that arm `never`, the union constructor would drop it,
 			// and the base case would vanish. Annotating `x` gives the arm a concrete type, so
 			// only the unannotated form exercises the retention checkCanReturn depends on.
+			// This case infers `f` and calls it in one source, since `f` calls itself.
 			name: "an unannotated parameter reaching the return is a base case",
 			src: `
 				declare fn cond() -> boolean
