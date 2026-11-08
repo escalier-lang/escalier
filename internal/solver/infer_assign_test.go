@@ -227,12 +227,13 @@ func TestInferAssignTopLevelBrokenBindingNoCascade(t *testing.T) {
 
 // Reassigning a union-typed var applies the union-super exists rule in constrain: a
 // member assigns, a non-member is rejected once. constrain trials each member under a
-// probe so a legal member assignment isn't wrongly rejected.
+// probe so a legal member assignment isn't wrongly rejected. The union is annotated,
+// since T9 widens an un-annotated `var a = if c { 1 } else { 2 }` to `number`.
 func TestInferAssignUnionTarget(t *testing.T) {
 	t.Run("member assigns", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			fn f(c: boolean) {
-				var a = if c { 1 } else { 2 }
+				var a: 1 | 2 = if c { 1 } else { 2 }
 				a = 1
 			}
 		`)
@@ -240,7 +241,7 @@ func TestInferAssignUnionTarget(t *testing.T) {
 	})
 	t.Run("non-member rejected once", func(t *testing.T) {
 		src := `fn f(c: boolean) {
-  var a = if c { 1 } else { 2 }
+  var a: 1 | 2 = if c { 1 } else { 2 }
   a = 3
 }`
 		_, _, errs := inferSource(t, src)
@@ -251,13 +252,13 @@ func TestInferAssignUnionTarget(t *testing.T) {
 
 // Assigning an inference-variable source into a union target records the WHOLE union as
 // the variable's upper bound rather than committing to one member. `a = x` for an
-// un-annotated param `x` and `a: 1 | 2` defers, because the union-super exists rule is
-// gated to a concrete sub. The variable falls through to the subVar arm, which records
+// un-annotated param `x` and `var a: 1 | 2` defers, because the union-super exists rule
+// is gated to a concrete sub. The variable falls through to the subVar arm, which records
 // the whole union, so `x` coalesces as the sound and complete `1 | 2`.
 func TestInferAssignUnionTargetVarRHSWidensToUnion(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(c: boolean, x) {
-			var a = if c { 1 } else { 2 }
+			var a: 1 | 2 = if c { 1 } else { 2 }
 			a = x
 		}
 	`)

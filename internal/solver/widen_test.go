@@ -213,6 +213,17 @@ func TestInferVarWideningBodyLevel(t *testing.T) {
 		require.Empty(t, errs)
 		require.Equal(t, "fn () -> number", values["f"])
 	})
+	// A `var` binding's whole value is a writable slot, so a join of literals widens as a
+	// single literal does. `a = 3` checks against `number`, and `a = x` gives x `number`.
+	t.Run("join of literals widens and reassigns", func(t *testing.T) {
+		values, _, errs := inferSource(t, `fn f(c: boolean, x) {
+  var a = if c { 1 } else { 2 }
+  a = 3
+  a = x
+  return a }`)
+		require.Empty(t, errs)
+		require.Equal(t, "fn (c: boolean, x: number) -> number", values["f"])
+	})
 	// A body-level `var` initialized from a REFERENCE widens via the wrapper var's
 	// Widenable flag, so the reassignment target is the primitive and `y = 6` checks
 	// — the body-level twin of TestInferVarWideningThroughReference.
