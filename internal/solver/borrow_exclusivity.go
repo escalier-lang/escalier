@@ -142,10 +142,8 @@ type BorrowedValueWriteError struct {
 	Place string
 	// Kept names the slot that keeps the borrow for the rest of the program, when the borrow is
 	// a kept closure's capture, and is empty otherwise. It is a phrase closureVia or
-	// retainedVia returns. Mut says that borrow is mutable. Any other borrow this error reports
-	// is immutable.
+	// retainedVia returns.
 	Kept   string
-	Mut    bool
 	write  ast.Node
 	borrow ast.Span
 }
@@ -155,28 +153,9 @@ func (e *BorrowedValueWriteError) Span() ast.Span      { return e.write.Span() }
 func (e *BorrowedValueWriteError) Related() []ast.Span { return []ast.Span{e.borrow} }
 func (e *BorrowedValueWriteError) Message() string {
 	if e.Kept != "" {
-		return fmt.Sprintf("cannot assign to '%s' while it is borrowed as %s by %s", e.Place, kindName(e.Mut), e.Kept)
+		return fmt.Sprintf("cannot assign to '%s' while it is borrowed as immutable by %s", e.Place, e.Kept)
 	}
 	return fmt.Sprintf("cannot assign to '%s' while it is borrowed as immutable", e.Place)
-}
-
-// KeptBorrowReadError reports a read of data that a kept closure borrows as mutable. A slot keeps
-// the closure for the rest of the program and may run its write at any later point.
-type KeptBorrowReadError struct {
-	// Place names the data read, `x` for a whole binding and `x.a` for a field.
-	Place string
-	// Kept names the slot that keeps the closure. It is a phrase closureVia or retainedVia
-	// returns.
-	Kept   string
-	read   ast.Node
-	borrow ast.Span
-}
-
-func (*KeptBorrowReadError) isSolverError()        {}
-func (e *KeptBorrowReadError) Span() ast.Span      { return e.read.Span() }
-func (e *KeptBorrowReadError) Related() []ast.Span { return []ast.Span{e.borrow} }
-func (e *KeptBorrowReadError) Message() string {
-	return fmt.Sprintf("cannot read '%s' while it is borrowed as mutable by %s", e.Place, e.Kept)
 }
 
 // MissingBorrowError is an error whose fix writes a borrow before the expression it reports.

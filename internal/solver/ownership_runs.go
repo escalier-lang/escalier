@@ -58,9 +58,9 @@ type closureRun struct {
 	runs bool
 	// `captures` lists each local the closure captures, in VarID order.
 	captures []capturedLocal
-	// `own` holds the borrow event of each loan the closure holds of its captures. Running the
-	// closure uses those loans, so none of them conflicts with the run.
-	own set.Set[*borrowEvent]
+	// `own` holds each closure the run reaches. Running a closure uses its own loans, including
+	// those a slot keeps for it, so none of them conflicts with the run.
+	own set.Set[ast.Node]
 }
 
 // retainedStore records a value that may carry a closure and stays reachable after its
@@ -181,14 +181,14 @@ func (d *bodyDataflow) closureRunOf(name closureName, s *dataflowState) (*closur
 	held := name.place
 	captured := map[liveness.VarID]*capturedLocal{}
 	whole := set.NewSet[liveness.VarID]()
-	own := set.NewSet[*borrowEvent]()
+	own := set.NewSet[ast.Node]()
 	sure := name.runs
 	for _, l := range d.sortedLoans(s) {
 		root := l.ev.place.root
 		if !l.closure() || root == held.root || !l.heldAt(held) {
 			continue
 		}
-		own.Add(l.ev)
+		own.Add(l.ev.node)
 		sure = sure && l.heldWithin(held)
 		local, seen := captured[root]
 		if !seen {

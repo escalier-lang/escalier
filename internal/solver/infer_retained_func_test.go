@@ -929,8 +929,8 @@ func TestCallOnlyFuncDeferredRelated(t *testing.T) {
 // reads value types from `val` bindings, holds no borrow. One that captures an object local, or
 // reads or writes a captured `var`, borrows it. When every local it borrows is a `val` or `var`
 // of the body it is written in, the slot keeps those borrows for the rest of the program from the
-// store on. A later use of such a local is checked against the kept borrow, so a read beside a
-// closure that only reads checks, and any other later use is rejected.
+// store on. A later use of such a local is checked against the kept borrow the way it is checked
+// against a 'static borrow of the same kind.
 // TestModuleLevelFuncHoldsNoBorrow covers the E4 example, the captures that decide whether a
 // closure fits such a slot, and each kind of slot, and asserts the full message, with its span,
 // of each error.
@@ -1228,34 +1228,34 @@ fn f() {
 }`,
 		},
 		{
-			name: "closure pushed onto a module-level array before a later read",
+			name: "closure pushed onto a module-level array before a later write",
 			src: `var mut handlers: Array<fn () -> undefined> = []
-fn f() -> number {
+fn f() {
     val mut p = {x: 1}
-    handlers.push(fn () { p.x = 2 })
-    return p.x
+    handlers.push(fn () { console.log(p.x) })
+    p.x = 3
 }`,
-			want: []string{"5:12-5:15: cannot read 'p.x' while it is borrowed as mutable by the 'items' that 'push' retains"},
+			want: []string{"5:5-5:8: cannot assign to 'p.x' while it is borrowed as immutable by the 'items' that 'push' retains"},
 		},
 		{
-			name: "closure stored into a module-level object field before a later read",
+			name: "closure stored into a module-level object field before a later write",
 			src: `var mut registry: {cb: fn () -> undefined} = {cb: fn () {}}
-fn f() -> number {
+fn f() {
     val mut p = {x: 1}
-    registry.cb = fn () { p.x = 2 }
-    return p.x
+    registry.cb = fn () { console.log(p.x) }
+    p.x = 3
 }`,
-			want: []string{"5:12-5:15: cannot read 'p.x' while it is borrowed as mutable by 'registry.cb'"},
+			want: []string{"5:5-5:8: cannot assign to 'p.x' while it is borrowed as immutable by 'registry.cb'"},
 		},
 		{
-			name: "closure stored into a module-level var written static before a later read",
+			name: "closure stored into a module-level var written static before a later write",
 			src: `var sink: 'static fn () -> undefined = fn () {}
-fn f() -> number {
+fn f() {
     val mut p = {x: 1}
-    sink = fn () { p.x = 2 }
-    return p.x
+    sink = fn () { console.log(p.x) }
+    p.x = 3
 }`,
-			want: []string{"5:12-5:15: cannot read 'p.x' while it is borrowed as mutable by 'sink'"},
+			want: []string{"5:5-5:8: cannot assign to 'p.x' while it is borrowed as immutable by 'sink'"},
 		},
 		// A signature's own lifetime is reported by the signature's lifetime check, which names
 		// the bound to declare.
@@ -1304,10 +1304,10 @@ class Button<'a> {
 declare fn id(n: number) -> number
 fn f() {
     val mut p = {a: 1}
-    id(on(fn () { p.a = 2 }))
-    console.log(p.a)
+    id(on(fn () { console.log(p.a) }))
+    p.a = 2
 }`,
-			want: []string{"6:17-6:20: cannot read 'p.a' while it is borrowed as mutable by the 'hs' that 'on' retains"},
+			want: []string{"6:5-6:8: cannot assign to 'p.a' while it is borrowed as immutable by the 'hs' that 'on' retains"},
 		},
 		// A type parameter's bound is elided as a parameter's type is, so apply only calls f
 		// during the call and keeps none of cfg.
@@ -1586,7 +1586,7 @@ fn setup() {
     onClick(fn () { count.n = count.n + 1 })
     render(&count)
 }`,
-			want: []string{"6:12-6:18: cannot borrow 'count' as immutable while it is borrowed as mutable by the 'handler' that 'onClick' retains"},
+			want: []string{"6:12-6:18: cannot borrow 'count' as immutable while 'count.n' is borrowed as mutable by the 'handler' that 'onClick' retains"},
 		},
 		{
 			name: "closure bound to a name",
@@ -1598,7 +1598,7 @@ fn setup() {
     onClick(h)
     render(&count)
 }`,
-			want: []string{"7:12-7:18: cannot borrow 'count' as immutable while it is borrowed as mutable by the 'handler' that 'onClick' retains"},
+			want: []string{"7:12-7:18: cannot borrow 'count' as immutable while 'count.n' is borrowed as mutable by the 'handler' that 'onClick' retains"},
 		},
 		{
 			name: "method that retains its argument",
@@ -1610,7 +1610,7 @@ fn setup(b: Button) {
     b.on(fn () { count.n = count.n + 1 })
     render(&count)
 }`,
-			want: []string{"7:12-7:18: cannot borrow 'count' as immutable while it is borrowed as mutable by the 'handler' that 'on' retains"},
+			want: []string{"7:12-7:18: cannot borrow 'count' as immutable while 'count.n' is borrowed as mutable by the 'handler' that 'on' retains"},
 		},
 		{
 			name: "retention lifetime bound to outlive static",
@@ -1634,7 +1634,7 @@ fn setup() {
     }
     render(&count)
 }`,
-			want: []string{"8:12-8:18: cannot borrow 'count' as immutable while it is borrowed as mutable by the 'handler' that 'onClick' retains"},
+			want: []string{"8:12-8:18: cannot borrow 'count' as immutable while 'count.n' is borrowed as mutable by the 'handler' that 'onClick' retains"},
 		},
 		{
 			name: "moved into a later call",
@@ -1656,7 +1656,7 @@ fn setup() {
     onAll(fn () { count.n = count.n + 1 })
     render(&count)
 }`,
-			want: []string{"6:12-6:18: cannot borrow 'count' as immutable while it is borrowed as mutable by the 'hs' that 'onAll' retains"},
+			want: []string{"6:12-6:18: cannot borrow 'count' as immutable while 'count.n' is borrowed as mutable by the 'hs' that 'onAll' retains"},
 		},
 		{
 			name: "union with null",
@@ -1667,7 +1667,7 @@ fn setup() {
     onClick(fn () { count.n = count.n + 1 })
     render(&count)
 }`,
-			want: []string{"6:12-6:18: cannot borrow 'count' as immutable while it is borrowed as mutable by the 'handler' that 'onClick' retains"},
+			want: []string{"6:12-6:18: cannot borrow 'count' as immutable while 'count.n' is borrowed as mutable by the 'handler' that 'onClick' retains"},
 		},
 		{
 			name: "object field",
@@ -1678,7 +1678,7 @@ fn setup() {
     mount({onClick: fn () { count.n = count.n + 1 }})
     render(&count)
 }`,
-			want: []string{"6:12-6:18: cannot borrow 'count' as immutable while it is borrowed as mutable by the 'props' that 'mount' retains"},
+			want: []string{"6:12-6:18: cannot borrow 'count' as immutable while 'count.n' is borrowed as mutable by the 'props' that 'mount' retains"},
 		},
 		// A closure that only reads count keeps an immutable borrow, so `&mut count` conflicts
 		// with it.
@@ -1691,7 +1691,7 @@ fn setup() {
     onClick(fn () { val x = count.n })
     bump(&mut count)
 }`,
-			want: []string{"6:10-6:20: cannot borrow 'count' as mutable while it is borrowed as immutable by the 'handler' that 'onClick' retains"},
+			want: []string{"6:10-6:20: cannot borrow 'count' as mutable while 'count.n' is borrowed as immutable by the 'handler' that 'onClick' retains"},
 		},
 		// The kept immutable borrow of count allows a later immutable one.
 		{
@@ -1921,7 +1921,7 @@ fn setup() {
     val k = Keyed(fn () { count.n = count.n + 1 })
     render(&count)
 }`,
-			want: []string{"9:12-9:18: cannot borrow 'count' as immutable while it is borrowed as mutable by the 'key' that 'Keyed' retains"},
+			want: []string{"9:12-9:18: cannot borrow 'count' as immutable while 'count.n' is borrowed as mutable by the 'key' that 'Keyed' retains"},
 		},
 		// The receiver's type is Button<'a>, so b holds the handler on() stores.
 		{

@@ -309,15 +309,19 @@ closure goes decides how its captures are checked:
   the rest of the program too. Escalier compiles to JavaScript, so a local the
   closure borrows lives as long as the closure does.
 
-Each kept borrow has the kind the closure's use gives it. A capture the closure
-only reads is borrowed immutably, and one it writes or assigns to is borrowed
-mutably. The slot may run the closure at any later point, so each later use of
-the local in the body is checked against the kept borrow:
+The slot keeps a borrow of each place the closure names, such as `p.x`, and a
+borrow of the whole local when the closure uses the local itself, as in
+`see(&p)`. A place the closure only reads is borrowed immutably, and one it
+writes or assigns to is borrowed mutably. A kept borrow is live at every later
+point, like a `'static` borrow, so each later use in the body is checked
+against it by the borrow rules:
 
-- After a closure that only reads a local, a later read of it or `&` borrow
-  of it is fine. A later write, `&mut` borrow, or move of it is reported.
-- After a closure that writes a local, every later use of it is reported.
-- With no later use, the store is fine.
+- Beside a kept immutable borrow, a read or `&` borrow of an overlapping place
+  is fine. A write, `&mut` borrow, or move of it is reported.
+- Beside a kept mutable borrow, a read, write, or `&mut` borrow of an
+  overlapping place is fine. An `&` borrow or a move of it is reported.
+- A place that overlaps no kept borrow is unaffected. After a closure that
+  reads only `p.y`, a write of `p.x` is fine.
 
 ```esc
 var sink: fn () -> undefined = fn () {}
@@ -325,15 +329,18 @@ declare fn readIt(a: &{x: number}) -> undefined
 declare fn log(n: number) -> undefined
 
 fn reads() {
-    val p = {x: 1}
+    val mut p = {x: 1}
     sink = fn () { log(p.x) }
     readIt(&p)    // fine, since both borrows of p are immutable
+    p.x = 2       // ERROR: cannot assign to 'p.x' while it is borrowed as immutable by 'sink'
 }
 
 fn writes() {
     val mut p = {x: 1}
     sink = fn () { p.x = 2 }
-    readIt(&p)    // ERROR: cannot borrow 'p' as immutable while it is borrowed as mutable by 'sink'
+    p.x = 3       // fine, since the owner may write beside a mutable borrow
+    // ERROR: cannot borrow 'p' as immutable while 'p.x' is borrowed as mutable by 'sink'
+    readIt(&p)
 }
 ```
 
@@ -421,15 +428,16 @@ fn setup() {
     forEachItem(fn () { count.n = count.n + 1 })
     render(&count)    // fine, since forEachItem is done with its closure
     onClick(fn () { count.n = count.n + 1 })
-    // ERROR: cannot borrow 'count' as immutable while it is borrowed as mutable
-    // by the 'handler' that 'onClick' retains
+    // ERROR: cannot borrow 'count' as immutable while 'count.n' is borrowed as
+    // mutable by the 'handler' that 'onClick' retains
     render(&count)
 }
 ```
 
 Moving the last `render(&count)` into the handler makes `setup` check, since
 nothing in `setup` uses `count` after `onClick` keeps the handler. A handler
-that only reads `count` checks beside the last `render(&count)` too. `move fn`
+that only reads `count` checks beside the last `render(&count)` too, and so does
+a `render` that takes `&mut` instead. `move fn`
 ([#2585](https://github.com/escalier-lang/escalier/issues/2585)) will spell that
 ownership out at the closure.
 

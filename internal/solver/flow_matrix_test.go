@@ -2499,7 +2499,7 @@ func TestFlowMatrix(t *testing.T) {
 					readIt(&p)
 				}
 			`,
-			want: []string{"7:13-7:15: cannot borrow 'p' as immutable while it is borrowed as mutable by 'sink'"},
+			want: []string{"7:13-7:15: cannot borrow 'p' as immutable while 'p.x' is borrowed as mutable by 'sink'"},
 		},
 		// Borrows of different fields reach different values, so a write to one field while another is
 		// borrowed is accepted. Rule E2.

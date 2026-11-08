@@ -481,7 +481,7 @@ func TestRetainedClosureWritesFollowCaptures(t *testing.T) {
 					render(&count)
 				}
 			`,
-			want: []string{"8:13-8:19: cannot borrow 'count' as immutable while it is borrowed as mutable by the 'handler' that 'onClick' retains"},
+			want: []string{"8:13-8:19: cannot borrow 'count' as immutable while 'count.n' is borrowed as mutable by the 'handler' that 'onClick' retains"},
 		},
 		"CapturedObjectHoldingAClosure": {
 			src: `
@@ -494,7 +494,7 @@ func TestRetainedClosureWritesFollowCaptures(t *testing.T) {
 					render(&count)
 				}
 			`,
-			want: []string{"8:13-8:19: cannot borrow 'count' as immutable while it is borrowed as mutable by the 'handler' that 'onClick' retains"},
+			want: []string{"8:13-8:19: cannot borrow 'count' as immutable while 'count.n' is borrowed as mutable by the 'handler' that 'onClick' retains"},
 		},
 		"CapturedClosureThatOnlyReadsOk": {
 			src: `
