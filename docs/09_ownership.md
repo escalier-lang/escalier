@@ -303,23 +303,21 @@ closure goes decides how its captures are checked:
   parameter, borrows its captures. The caller can only call it after the
   function returns. The paths it hands the caller are checked like any stored
   borrow, so a second path out that disagrees with it is reported.
-- A closure stored into module-level state can run during any later call. Each
-  call after the store mutably borrows the owned values the closure writes. A
-  value the closure only reads stays free.
-
-The closure below borrows `p`. A module-level `fn` slot written with no lifetime
-holds only functions that borrow nothing, so `sink` is written `'static fn` to
-hold it:
+- A closure stored into module-level state, or passed to a `'static fn`
+  parameter, is kept for the whole program. Such a slot holds only a function
+  that borrows nothing shorter than the program, so a closure that borrows a
+  local is rejected there. `move fn`, which captures by value, will let such a
+  closure own its captures instead
+  ([#2585](https://github.com/escalier-lang/escalier/issues/2585)).
 
 ```esc
-var sink: 'static fn () -> undefined = fn () {}
-declare fn readIt(a: &{x: number}) -> undefined
+var sink: fn () -> undefined = fn () {}
 
 fn go() {
     val mut p = {x: 1}
+    // ERROR: this closure borrows `p`, but `sink` keeps it for 'static; pass a
+    // function that borrows nothing, or declare `p` at module level
     sink = fn () { p.x = 2 }
-    val a = &p
-    readIt(a)   // ERROR: this call may run 'sink', which writes 'p' while it is borrowed as immutable
 }
 ```
 
@@ -377,30 +375,29 @@ since the declaration cannot say whether the callee keeps the callback. So
 `forEach(callbackfn: fn (value: T) -> unknown)`, and a closure over locals
 passes to it.
 
-A slot written `'static fn` keeps its function for the whole program too, but
-the checker does not yet reject a closure there that borrows a local
-([#2584](https://github.com/escalier-lang/escalier/issues/2584)). A closure
-passed to a `'static fn` parameter is checked like one stored into module-level
-state instead. The callee may run it during any later call, so each later call
-mutably borrows the owned values the closure writes:
+A slot written `'static fn` is the same as a module-level `fn` slot written
+with no lifetime. It holds only a function that borrows nothing shorter than
+the program:
 
 ```esc
 declare fn onClick(handler: 'static fn () -> undefined) -> undefined
 declare fn forEachItem(f: fn () -> undefined) -> undefined
-declare fn render(view: &{n: number}) -> undefined
+
+val mut clicks = {n: 0}
 
 fn setup() {
     val mut count = {n: 0}
-    forEachItem(fn () { count.n = count.n + 1 })
-    render(&count)    // fine, since forEachItem is done with its closure
+    forEachItem(fn () { count.n = count.n + 1 })   // fine, since forEachItem only calls it during the call
+    onClick(fn () { clicks.n = clicks.n + 1 })      // fine, since clicks lives for the whole program
+    // ERROR: this closure borrows `count`, but `onClick` keeps it for 'static;
+    // pass a function that borrows nothing, or declare `count` at module level
     onClick(fn () { count.n = count.n + 1 })
-    render(&count)    // ERROR: this call may run the 'handler' that 'onClick' retains, which writes 'count' while it is borrowed as immutable
 }
 ```
 
-Two changes make `setup` check. The handler can own `count` and call
-`render(&count)` itself, or `render` can take `&mut {n: number}`, since several
-mutable paths may be live at once.
+A kept handler that should own its state needs `move fn`, which captures by
+value ([#2585](https://github.com/escalier-lang/escalier/issues/2585)). Until it
+lands, state that a kept handler writes lives at module level.
 
 A closure passed to a `'a fn` parameter whose `'a` is not `'static` stays
 reachable while a binding that shares `'a` is live. That binding is an argument
@@ -672,10 +669,11 @@ Out of scope by design:
 
 Specified above but not yet enforced:
 
-- **Borrowing closures in a `'static fn` slot**
-  ([#2584](https://github.com/escalier-lang/escalier/issues/2584)). A closure
-  that borrows a local is accepted by a slot written `'static fn`, though the
-  local does not live that long. A slot written `fn` at module level rejects it.
+- **Borrows of a local passed to a `'static` parameter**
+  ([#2584](https://github.com/escalier-lang/escalier/issues/2584)). A `&local`
+  argument to a `&'static` parameter is accepted, though the local does not live
+  that long. A closure that borrows a local is rejected by a `'static fn` slot,
+  which covers the closure half of the issue.
 - **Call-only parameters reached indirectly.** A parameter whose function type
   is written with no lifetime is checked only when the type is written on the
   parameter itself. One bound by a destructuring pattern is not.
