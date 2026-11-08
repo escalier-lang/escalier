@@ -1694,9 +1694,11 @@ how the lifetime is written, elided, inferred, and checked:
    - A borrow of one that is still live at the store reports `cannot move 'p'
      while it is borrowed`.
    - A parameter, or a borrow of something outside the body, is not the
-     body's to give away. A closure that borrows one is rejected at the store,
-     with a message such as `` this closure borrows `p`, but `keep` keeps it
-     for 'static; pass a function that borrows nothing ``.
+     body's to give away, so the closure keeps borrowing it. At a `return`,
+     the borrow ties the result to the parameter's lifetime, as F3 and `wrap`
+     below show. A `'static` slot rejects such a closure at the store, with a
+     message such as `` this closure borrows `p`, but `keep` keeps it for
+     'static; pass a function that borrows nothing ``.
 6. `move fn` makes a closure own its captures from where it is written. A
    captured value type is still copied, and a captured borrow stays a borrow.
 
