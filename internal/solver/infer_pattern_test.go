@@ -927,6 +927,52 @@ func TestInferRestPatternRejectedPositions(t *testing.T) {
 	}
 }
 
+// TestInferRestOnlyObjectPatternMatchesNamedField covers an object pattern made only of a
+// rest against the same scrutinee as a pattern with one named field. Both require an
+// object, so each pair accepts and rejects the same values. Only the span differs, since
+// the rest-only pattern underlines the whole pattern and the named field underlines the
+// field.
+func TestInferRestOnlyObjectPatternMatchesNamedField(t *testing.T) {
+	tests := []struct {
+		name      string
+		restSrc   string
+		fieldSrc  string
+		wantRest  []string
+		wantField []string
+	}{
+		{
+			name:     "MatchArmOverUnion",
+			restSrc:  "declare val x: number | {a: number}\nval r = match x { {...q} => 1, _ => 2 }",
+			fieldSrc: "declare val x: number | {a: number}\nval r = match x { {a} => 1, _ => 2 }",
+		},
+		{
+			name:     "IfValOverUnion",
+			restSrc:  "fn f(x: number | {a: number}) -> number { if val {...q} = x { return 1 }\n return 2 }",
+			fieldSrc: "fn f(x: number | {a: number}) -> number { if val {a} = x { return 1 }\n return 2 }",
+		},
+		{
+			name:     "ValElseOverUnion",
+			restSrc:  "fn f(x: number | {a: number}) -> number { val {...q} = x else { return 1 }\n return 2 }",
+			fieldSrc: "fn f(x: number | {a: number}) -> number { val {a} = x else { return 1 }\n return 2 }",
+		},
+		{
+			name:      "ValOverNumber",
+			restSrc:   "val {...q} = 5",
+			fieldSrc:  "val {a} = 5",
+			wantRest:  []string{"1:5-1:11: cannot constrain 5 <: object"},
+			wantField: []string{"1:6-1:7: cannot constrain 5 <: object"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, restErrs := inferSource(t, tt.restSrc)
+			require.Equal(t, tt.wantRest, messagesWithSpan(t, restErrs))
+			_, _, fieldErrs := inferSource(t, tt.fieldSrc)
+			require.Equal(t, tt.wantField, messagesWithSpan(t, fieldErrs))
+		})
+	}
+}
+
 // A function-type annotation mirrors its parameter patterns into soltype so the type
 // reads back the way the source wrote it. A rest element survives that round trip in both
 // the tuple and the object form, and a rest whose sub-pattern has no soltype counterpart

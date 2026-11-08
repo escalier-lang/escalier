@@ -365,6 +365,8 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 			// Each named field requires the scrutinee to be an object. A pattern made only of
 			// a rest names none, so it states the requirement itself. Without it, the
 			// scrutinee of `fn f({...r})` is left with no upper bound and renders `unknown`.
+			// The requirement applies for every purpose, as readPatternField's does, so
+			// `{...r}` accepts and rejects the same scrutinees as `{a}`.
 			c.constrain(p, scrutinee, &soltype.ObjectType{Inexact: true})
 		}
 		if rest != nil {
