@@ -4115,6 +4115,9 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 // keep their pre-PR-4 behaviour, so only annotated reference shapes pick up
 // the new borrow. The exception is an immutable borrow whose inner is in
 // readThroughVars, which reads as `fieldVar` borrowed at the receiver's lifetime.
+//
+// A field typed by a rigid type parameter `T` reads off an immutable borrow at
+// lifetime `'a` as `&'a T`.
 func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Type, name string, lvl int) soltype.Type {
 	recvInner, recvMut, recvLt := soltype.UnwrapRef(recv)
 	prop, ok := c.declaredField(recv, name)
@@ -4129,7 +4132,19 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 		return fieldVar
 	}
 	if !prop.Optional {
+		// A rigid type parameter has no shape the body may rely on, the same as a field
+		// whose type inference has not settled, so the read keeps the receiver's borrow as
+		// the readThroughVars branch above does. `p.x` off `p: &'a {x: T0}` reads as
+		// `&'a T0`, the type `fn read(p) { return p.x }` infers for the same read.
+		if tp, isRigid := prop.Type.(*soltype.TypeVarType); isRigid && tp.Rigid != nil && recvLt != nil && !recvMut {
+			return soltype.NewRef(false, recvLt, tp)
+		}
 		if borrow, ok := c.fieldBorrow(prop.Type, fieldVar, recvMut, recvLt, lvl); ok {
+			// The borrow wraps fieldVar rather than the declared field type. A read off
+			// the borrow, as `.y` in `p.x.y`, still reads the declared field type.
+			if ref, isRef := borrow.(*soltype.RefType); isRef && ref.Inner == soltype.RefInner(fieldVar) {
+				c.addDeclaredReadShape(fieldVar, prop.Type)
+			}
 			return borrow
 		}
 		return fieldVar
@@ -4151,15 +4166,31 @@ func (c *checker) addReadThroughVar(v *soltype.TypeVarType) {
 	c.readThroughVars.Add(v)
 }
 
+// addDeclaredReadShape records shape as the declared type of the field read whose result
+// variable is v.
+func (c *checker) addDeclaredReadShape(v *soltype.TypeVarType, shape soltype.Type) {
+	if c.declaredReadShapes == nil {
+		c.declaredReadShapes = map[*soltype.TypeVarType]soltype.Type{}
+	}
+	c.declaredReadShapes[v] = shape
+}
+
 // declaredField returns the property named name on the field list a receiver of type recv
 // carries. It returns false when recv's shape is not statically known or declares no such
-// property.
+// property. A receiver that borrows the result variable of an earlier field read carries
+// the field list of that field's declared type.
 func (c *checker) declaredField(recv soltype.Type, name string) (*soltype.PropertyElem, bool) {
 	// An alias and a class name the same field list an object type writes inline, so each
 	// resolves to that list before the read. Without this a receiver annotated `&mut Config`
 	// or `&mut Box` would declare no fields and its reads would lose their mutability, while
 	// the inline `&mut {…}` spelling of the same type kept it.
-	carrier := c.memberCarrier(soltype.CarrierOf(recv))
+	carrier := soltype.CarrierOf(recv)
+	if v, isVar := carrier.(*soltype.TypeVarType); isVar {
+		if shape, found := c.declaredReadShapes[v]; found {
+			carrier = shape
+		}
+	}
+	carrier = c.memberCarrier(carrier)
 	if ct, isClass := c.classCarrier(carrier); isClass {
 		// Projected at the instance's arguments, so a field typed `T` reads as the
 		// argument `Box<number>` supplies rather than as the declared parameter.

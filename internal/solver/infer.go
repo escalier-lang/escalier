@@ -374,6 +374,11 @@ type checker struct {
 	// unannotated parameter, and the result variable of each field read through one of those
 	// borrows. fieldReadBorrow reads a field off such a borrow as a borrow at the same lifetime.
 	readThroughVars set.Set[*soltype.TypeVarType]
+	// declaredReadShapes maps the result variable of a field read through an immutable
+	// borrow to the field's declared type. Only a field declared as an object, tuple, class
+	// instance, or alias reads through such a variable. declaredField reads the fields of
+	// the variable off the declared type.
+	declaredReadShapes map[*soltype.TypeVarType]soltype.Type
 
 	// memberSelf is set beside memberReceiver for an instance member, by inferMemberFunc, and
 	// carries what inferFunc needs to bind the member's `self` and build its SelfParam.

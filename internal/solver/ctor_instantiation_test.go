@@ -13,6 +13,10 @@ import (
 // variable for `T`. The class value's constructor binder, the class type the call returns,
 // and the union the copied `getValue` link reaches all name that one variable.
 //
+// `getValue` takes an owned `self`, so `self.value` reads through a field variable that
+// links `T` to the return's union. Through `&self` the read is `&'a T`, which fills the
+// union without that link.
+//
 // The test reads the solver's variables rather than an inferred type or a diagnostic,
 // because a second copy of `T` changes neither. The one visible symptom a second copy
 // caused is a false ambiguous-union warning. ambiguousAlternate skips every variable in
@@ -21,7 +25,7 @@ func TestACtorCallBindsOneCopyOfEachClassParameter(t *testing.T) {
 	module := parseModule(t, `
 		class Box<T> {
 			value: T,
-			getValue<U>(&self, d: U) -> T | U {
+			getValue<U>(self, d: U) -> T | U {
 				if self.value != 0 { return self.value } else { return d }
 			},
 		}

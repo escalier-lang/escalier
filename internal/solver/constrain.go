@@ -1097,6 +1097,17 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			return c.constrain(inner, super, seen, false)
 		}
 	}
+	// A borrow of a rigid parameter fills a destination typed by a rigid parameter when the
+	// borrowed parameter does, as a borrow of a variable fills a value-type destination
+	// above. A read through `&'a {v: T}` yields `&'a T`, so
+	// `read(&self) -> T { return self.v }` checks `T` against `T`.
+	if ref, ok := sub.(*soltype.RefType); ok && ref.Lt != nil && !ref.Mut {
+		inner, innerIsVar := ref.Inner.(*soltype.TypeVarType)
+		superVar, superIsVar := super.(*soltype.TypeVarType)
+		if innerIsVar && inner.Rigid != nil && superIsVar && superVar.Rigid != nil {
+			return c.constrain(inner, super, seen, false)
+		}
+	}
 	// A value type copies into an immutable borrow of a variable the same way, since it has no
 	// storage for the borrow to share. `fn remember(value) { seen.set("last", value) }` takes
 	// `&'static T0`, and `remember("a")` checks `"a"` against `T0`.
