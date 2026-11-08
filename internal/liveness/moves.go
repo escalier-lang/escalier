@@ -3,14 +3,13 @@ package liveness
 import (
 	"maps"
 
+	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
 )
 
-// MoveState is one binding's position in the consumed lattice — the per-binding
-// move tracking the affine move engine joins at every CFG merge. A binding moves
-// when an owned value flows out of it at a consume site (a return, a store, a
-// consuming argument, an escaping capture). The three states answer "has this
-// binding been moved on the paths that reach here":
+// MoveState is one binding's position in the consumed lattice that AnalyzeMoves joins at
+// every CFG merge. A binding moves at each statement the caller lists for it. The three
+// states answer "has this binding been moved on the paths that reach here":
 //
 //		            MaybeMoved
 //		           /          \
@@ -21,9 +20,6 @@ import (
 //	    use-after-move.
 //	  - MaybeMoved: some but not all reaching paths moved it, so a use is a
 //	    conditional use-after-move.
-//
-// PR 6 reads these at each use, passing NotMoved and rejecting Moved and
-// MaybeMoved. PR 5 only builds the analysis; it reports no user-facing errors.
 type MoveState int
 
 const (
@@ -73,36 +69,31 @@ type MoveInfo struct {
 	// before[blockID][stmtIdx][v] is v's move state just before that statement,
 	// joined across every path reaching the statement.
 	before [][]map[VarID]MoveState
-	// after[blockID][stmtIdx][v] is v's move state just after that statement —
-	// before with the statement's own moves applied.
-	after [][]map[VarID]MoveState
 	// A DeclStmt whose initializer branches is decomposed during CFG construction,
 	// so it occupies no real index in any block's statement list. BuildStmtToRef
 	// instead assigns its StmtRef the index -1, a synthetic position meaning "block
-	// entry, just before statement 0". A StateBefore or StateAfter call whose
-	// ref.StmtIdx is -1 — a "-1 query" — asks for v's move state at that entry
-	// position. blockIn and blockEntry hold the two answers such a query returns.
+	// entry, just before statement 0". A StateBefore call whose ref.StmtIdx is -1
+	// asks for v's move state at that entry position.
 	//
 	// blockIn[blockID][v] is v's state on entry to the block: the join of every
 	// predecessor's blockOut, taken before any move recorded at the -1 position is
 	// applied. StateBefore returns it for a -1 query.
 	blockIn []map[VarID]MoveState
-	// blockEntry[blockID][v] is blockIn after the moves recorded at the block's -1
-	// position are applied, so it is the state just after that position. For a
-	// non-empty block it equals before[blockID][0], the state before statement 0.
-	// StateAfter returns it for a -1 query.
-	blockEntry []map[VarID]MoveState
 }
 
 // AnalyzeMoves runs the forward move-state dataflow over a CFG. The moves map
-// records, for each statement, the VarIDs that statement moves — the consume sites
-// PR 6 collects while walking the body. A statement absent from the map moves nothing.
+// records, for each statement, the VarIDs that statement moves. A statement absent from the
+// map moves nothing.
 //
 // The dataflow mirrors AnalyzeFunction's structure but runs FORWARD: liveness
 // flows backward from uses, moves flow forward from consume sites.
 //
 //	MoveIn[b]  = ⊔ { MoveOut[p] | p ∈ predecessors(b) }
-//	MoveOut[b] = MoveIn[b] with b's moves set to Moved
+//	MoveOut[b] = MoveIn[b] with each statement of b applied in order
+//
+// A statement first resets each binding a `val` or `var` declaration in it declares to
+// NotMoved, then sets each binding it moves to Moved. A declaration binds a fresh value, so a
+// move of the binding on an earlier iteration of a loop does not reach the new one.
 //
 // MoveIn[entry] is empty (every binding NotMoved). The join at a merge block with
 // disagreeing predecessors raises a binding to MaybeMoved. A loop back edge feeds
@@ -116,18 +107,7 @@ type MoveInfo struct {
 func AnalyzeMoves(cfg *CFG, moves map[StmtRef]set.Set[VarID]) *MoveInfo {
 	numBlocks := len(cfg.Blocks)
 
-	// Per-block move set: the union of every statement's moves in the block,
-	// including the synthetic -1 entry position. Applying the block's moves means
-	// overriding each to Moved, since a value cannot be un-moved.
-	blockMoves := make([]set.Set[VarID], numBlocks)
-	for i := range numBlocks {
-		blockMoves[i] = set.NewSet[VarID]()
-	}
-	for ref, vs := range moves {
-		for v := range vs {
-			blockMoves[ref.BlockID].Add(v)
-		}
-	}
+	declared := DeclaredBindings(cfg)
 
 	blockIn := make([]map[VarID]MoveState, numBlocks)
 	blockOut := make([]map[VarID]MoveState, numBlocks)
@@ -147,7 +127,10 @@ func AnalyzeMoves(cfg *CFG, moves map[StmtRef]set.Set[VarID]) *MoveInfo {
 			block := cfg.Blocks[i]
 
 			newIn := joinPreds(block, blockOut)
-			newOut := applyMoves(newIn, blockMoves[i])
+			newOut := applyStmt(newIn, declared[StmtRef{BlockID: block.ID, StmtIdx: -1}], movesAt(moves, block.ID, -1))
+			for idx := range block.Stmts {
+				newOut = applyStmt(newOut, declared[StmtRef{BlockID: block.ID, StmtIdx: idx}], movesAt(moves, block.ID, idx))
+			}
 
 			if !equalMoveMap(blockIn[i], newIn) || !equalMoveMap(blockOut[i], newOut) {
 				changed = true
@@ -160,28 +143,89 @@ func AnalyzeMoves(cfg *CFG, moves map[StmtRef]set.Set[VarID]) *MoveInfo {
 	// Per-statement state within each block: start from blockIn and walk forward,
 	// applying each statement's moves in order. applyMoves returns a fresh map and
 	// never mutates its input, so each map the cursor produces is immutable once
-	// created. The slots can therefore store the reference directly — logically equal
-	// points such as after[idx] and before[idx+1] share one map, which is safe because
-	// nothing writes to these maps after AnalyzeMoves returns.
+	// created, so a slot can store the reference directly.
 	before := make([][]map[VarID]MoveState, numBlocks)
-	after := make([][]map[VarID]MoveState, numBlocks)
-	blockEntry := make([]map[VarID]MoveState, numBlocks)
 	for _, block := range cfg.Blocks {
 		n := len(block.Stmts)
 		before[block.ID] = make([]map[VarID]MoveState, n)
-		after[block.ID] = make([]map[VarID]MoveState, n)
 
 		// Apply any moves recorded at the synthetic -1 entry position first.
-		state := applyMoves(blockIn[block.ID], movesAt(moves, block.ID, -1))
-		blockEntry[block.ID] = state
+		state := applyStmt(blockIn[block.ID], declared[StmtRef{BlockID: block.ID, StmtIdx: -1}], movesAt(moves, block.ID, -1))
 		for idx := range n {
 			before[block.ID][idx] = state
-			state = applyMoves(state, movesAt(moves, block.ID, idx))
-			after[block.ID][idx] = state
+			state = applyStmt(state, declared[StmtRef{BlockID: block.ID, StmtIdx: idx}], movesAt(moves, block.ID, idx))
 		}
 	}
 
-	return &MoveInfo{before: before, after: after, blockIn: blockIn, blockEntry: blockEntry}
+	return &MoveInfo{before: before, blockIn: blockIn}
+}
+
+// DeclaredBindings returns the point of each `val` or `var` declaration in cfg, mapped to the
+// bindings it declares. A declaration whose initializer branches has no statement of its own.
+// Its bindings are its join block's ExtraDefs, declared at StmtIdx -1 of that block, as
+// BuildStmtToRef maps the declaration. Any other block's ExtraDefs, such as a for-in loop's
+// pattern bindings, are declared at StmtIdx -1 of that block too. The ExtraDefs of the join of
+// a reassignment with a branching right-hand side declare nothing, since a reassignment binds
+// no new name.
+func DeclaredBindings(cfg *CFG) map[StmtRef][]VarID {
+	out := map[StmtRef][]VarID{}
+
+	// add records the bindings a statement declares at its point. Only a `val` or `var`
+	// declaration declares anything. Its pattern may bind several names, as `val {a, b} = p`
+	// does, and each one is recorded.
+	add := func(stmt ast.Stmt, ref StmtRef) {
+		decl, ok := stmt.(*ast.DeclStmt)
+		if !ok {
+			return
+		}
+		vd, ok := decl.Decl.(*ast.VarDecl)
+		if !ok {
+			return
+		}
+		c := &collector{ids: cfg.ids}
+		c.collectPatDefs(vd.Pattern)
+		if len(c.defs) > 0 {
+			out[ref] = append(out[ref], c.defs...)
+		}
+	}
+
+	for _, block := range cfg.Blocks {
+		// A declaration whose initializer does not branch is a statement of the block, so
+		// its bindings are declared at that statement's point.
+		for idx, stmt := range block.Stmts {
+			add(stmt, StmtRef{BlockID: block.ID, StmtIdx: idx})
+		}
+
+		// The CFG builder lists in a block's ExtraDefs the bindings it introduces without a
+		// statement. These include the bindings of a declaration whose initializer branches,
+		// on its join block, and the pattern bindings of a for-in loop body, a `match` arm, a
+		// `catch` arm, and an `if let` consequent, each on its own block. Each is declared at
+		// the block's entry. A reassignment whose right-hand side branches also lists its
+		// target on its join block, but it binds no new name, so that block is skipped.
+		if len(block.ExtraDefs) > 0 && !cfg.reassignJoins.Contains(block.ID) {
+			entry := StmtRef{BlockID: block.ID, StmtIdx: -1}
+			out[entry] = append(out[entry], block.ExtraDefs...)
+		}
+	}
+	return out
+}
+
+// applyStmt returns a copy of state with each binding in declared reset to NotMoved, then
+// each binding in moved set to Moved.
+func applyStmt(state map[VarID]MoveState, declared []VarID, moved set.Set[VarID]) map[VarID]MoveState {
+	// Each map AnalyzeMoves produces is immutable once made, so a statement that changes
+	// nothing can share its input.
+	if len(declared) == 0 && len(moved) == 0 {
+		return state
+	}
+	if len(declared) == 0 {
+		return applyMoves(state, moved)
+	}
+	out := cloneMoveMap(state)
+	for _, v := range declared {
+		delete(out, v)
+	}
+	return applyMoves(out, moved)
 }
 
 // joinPreds computes a block's entry state as the lattice join of every
@@ -217,8 +261,7 @@ func joinPreds(block *BasicBlock, blockOut []map[VarID]MoveState) map[VarID]Move
 
 // applyMoves returns a copy of state with each VarID in moved overridden to
 // Moved. A move sets the binding to Moved regardless of its prior state, since a
-// value cannot be un-moved; a double move along one path lands on Moved, the case
-// PR 6 reads as an unconditional use-after-move.
+// value cannot be un-moved, so a double move along one path lands on Moved.
 func applyMoves(state map[VarID]MoveState, moved set.Set[VarID]) map[VarID]MoveState {
 	out := cloneMoveMap(state)
 	for v := range moved {
@@ -227,13 +270,10 @@ func applyMoves(state map[VarID]MoveState, moved set.Set[VarID]) map[VarID]MoveS
 	return out
 }
 
-// movesAt returns the VarIDs moved at one program point, or an empty set when the
-// point moves nothing.
+// movesAt returns the VarIDs moved at one program point, or nil when the point moves
+// nothing.
 func movesAt(moves map[StmtRef]set.Set[VarID], blockID, stmtIdx int) set.Set[VarID] {
-	if vs, ok := moves[StmtRef{BlockID: blockID, StmtIdx: stmtIdx}]; ok {
-		return vs
-	}
-	return set.NewSet[VarID]()
+	return moves[StmtRef{BlockID: blockID, StmtIdx: stmtIdx}]
 }
 
 func cloneMoveMap(m map[VarID]MoveState) map[VarID]MoveState {
@@ -268,19 +308,6 @@ func (m *MoveInfo) StateBefore(ref StmtRef, v VarID) MoveState {
 		return lookupMoveState(m.blockIn, ref.BlockID, v)
 	}
 	return lookupStmtState(m.before, ref, v)
-}
-
-// StateAfter returns v's move state just after the statement at ref — StateBefore
-// with that statement's own moves applied. A StmtIdx of -1 reads block-entry
-// semantics: the block's joined entry state with any synthetic -1 entry-position
-// moves applied, the state just after that synthetic position. It does NOT equal
-// StateBefore at -1 when an entry-position move is recorded, since StateBefore reads
-// the entry state before that move.
-func (m *MoveInfo) StateAfter(ref StmtRef, v VarID) MoveState {
-	if ref.StmtIdx < 0 {
-		return lookupMoveState(m.blockEntry, ref.BlockID, v)
-	}
-	return lookupStmtState(m.after, ref, v)
 }
 
 func lookupMoveState(blockMaps []map[VarID]MoveState, blockID int, v VarID) MoveState {

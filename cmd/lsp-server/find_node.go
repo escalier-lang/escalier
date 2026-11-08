@@ -67,9 +67,7 @@ func findNodeInScript(script *ast.Script, loc ast.Location) ast.Node {
 		Cursor:         loc,
 		Node:           nil,
 	}
-	for _, stmt := range script.Stmts {
-		stmt.Accept(visitor)
-	}
+	script.Accept(visitor)
 	return visitor.Node
 }
 
@@ -155,9 +153,7 @@ func findNodeAndParent(script *ast.Script, loc ast.Location) (ast.Node, ast.Node
 		DefaultVisitor: ast.DefaultVisitor{},
 		Cursor:         loc,
 	}
-	for _, stmt := range script.Stmts {
-		stmt.Accept(visitor)
-	}
+	script.Accept(visitor)
 	return visitor.Node, visitor.Parent
 }
 
@@ -168,9 +164,7 @@ func findNodeWithAncestors(script *ast.Script, loc ast.Location) (ast.Node, []as
 		DefaultVisitor: ast.DefaultVisitor{},
 		Cursor:         loc,
 	}
-	for _, stmt := range script.Stmts {
-		stmt.Accept(visitor)
-	}
+	script.Accept(visitor)
 	return visitor.Node, visitor.Ancestors
 }
 

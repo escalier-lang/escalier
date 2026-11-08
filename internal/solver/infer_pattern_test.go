@@ -976,7 +976,7 @@ func TestMirrorParamPatRestRoundTrip(t *testing.T) {
 
 // A closure capturing a destructured leaf resolves the leaf's binding. This
 // exercises the liveness wiring: the leaf's rename-assigned VarID is copied onto
-// its binding, so trackCapturedAliases finds it instead of skipping a VarID-0
+// its binding, so the capture analysis counts it instead of skipping a VarID-0
 // binding.
 func TestInferDestructuredLeafClosureCapture(t *testing.T) {
 	values, _, errs := inferSource(t, `

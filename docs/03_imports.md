@@ -96,6 +96,29 @@ val i = number.parseInt("42")   // a free function beside it
 val inf = number.Infinity       // a value
 ```
 
+### A package that exports a value of its own name
+
+A package can export a value under the name its import binds. `std:console`
+exports `console`, and `web:fetch` exports `fetch`. That value is the binding's
+value as well as the package's namespace, so it reads directly:
+
+```escalier
+import "std:console"
+import "web:fetch"
+
+console.log("hi")                       // the value
+val c: console.Console = console        // a type in the package
+val r = fetch("https://example.com")    // a call
+fn first(res: fetch.Response) { ... }   // another type in the package
+```
+
+The name decides, not how many values the package exports. `web:fetch` also
+exports the classes `Headers`, `Request` and `Response`, and those stay members.
+A value the importing module declares under the same name keeps the name, and
+the package is reached through the namespace alone. An `as` clause renames both
+at once, so after `import "std:console" as c` the call is `c.log("hi")` and the
+type is `c.Console`.
+
 An earlier revision did lift a matching class out, so `std:date` bound `Date`
 directly. It was dropped for three reasons. `Array`, `Iterator`, `Promise` and
 `Symbol` moved to the prelude and need no import at all, which covered the cases
@@ -289,6 +312,20 @@ File-scoped imports keep each file's external dependencies visible, let a file
 move without breaking its imports, and give tooling an exact answer for what is
 in scope where. See [Code Organization](10_code_organization.md) for how files
 map onto modules and namespaces.
+
+A script, such as a package's `bin/index.esc`, imports the same way. Its imports
+come before its first statement, and they bind before any statement runs:
+
+```escalier
+// bin/index.esc
+import "std:console"
+
+console.log("hello")
+```
+
+An import after a statement is an error. A statement later in the script may
+redeclare a name an import bound, the way any later script binding replaces an
+earlier one.
 
 ## Cyclic dependencies
 

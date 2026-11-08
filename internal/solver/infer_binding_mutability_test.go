@@ -266,9 +266,11 @@ func TestValMutCallResultWidens(t *testing.T) {
 	require.Equal(t, "number", values["n"])
 }
 
-// TestDynamicIndexPlace covers how a dynamic index off a binding names the whole binding.
-// A write through `xs[1]` is a write to `xs`, so it conflicts with a live borrow of
-// another element. A read of one element moves nothing the next read needs.
+// TestDynamicIndexPlace covers how an index off a binding names a place. An index typed
+// `number` names the whole binding, so a write through `xs[i]` is a write to `xs` and
+// conflicts with a live borrow of any element. A literal index names its own element, so a
+// write through `xs[1]` leaves a borrow of `xs[0]` alone, and a read of one element moves
+// nothing the next read needs.
 func TestDynamicIndexPlace(t *testing.T) {
 	tests := []struct {
 		name string
@@ -277,13 +279,22 @@ func TestDynamicIndexPlace(t *testing.T) {
 	}{
 		{
 			name: "WriteWhileElementBorrowed",
+			src: `fn g(i: number) -> number {
+	val mut xs: Array<{x: number}> = [{x: 1}, {x: 2}]
+	val r = &xs[0]
+	xs[i].x = 3
+	return r.x
+}`,
+			want: []string{"4:2-4:9: cannot assign to 'xs[i].x' while it is borrowed as immutable"},
+		},
+		{
+			name: "WriteToAnotherElementWhileElementBorrowed",
 			src: `fn g() -> number {
 	val mut xs: Array<{x: number}> = [{x: 1}, {x: 2}]
 	val r = &xs[0]
 	xs[1].x = 3
 	return r.x
 }`,
-			want: []string{"4:2-4:9: cannot assign to 'xs[1].x' while it is borrowed as immutable"},
 		},
 		{
 			name: "ReadTwoElements",

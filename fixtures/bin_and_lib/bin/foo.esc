@@ -1,3 +1,5 @@
+import "std:console"
+
 val color = Color.Hex("#FF0000")
 val result = match color {
 	Color.RGB(r, g, b) => r + g + b,

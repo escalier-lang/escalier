@@ -177,6 +177,9 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 			member = newNamespace(uri)
 		}
 		member.Name = uri
+		// The merged surface was built under the group's key, so each member's own
+		// value is found here, against the member's URI.
+		setOwnNameValue(uri, member)
 		c.ctx.packages.publish(uri, member)
 	}
 
@@ -235,7 +238,7 @@ func InferModuleAgainstStdlib(module *ast.Module, dir string, opts Options) *Mod
 	// Every run loads the ambient packages, so they root the closure beside the
 	// module's own imports. Left out, they would load one at a time and miss the
 	// groups their imports form.
-	roots := set.FromSlice(append(pseudoPackageImportsOf(module), ambientPackages...)).ToSlice()
+	roots := set.FromSlice(append(pseudoPackageImports(moduleImports(module)), ambientPackages...)).ToSlice()
 	sort.Strings(roots)
 	source := packageSource(dir, opts)
 	groups, err := BuildPackageClosure(dir, roots)
@@ -252,15 +255,18 @@ func InferModuleAgainstStdlib(module *ast.Module, dir string, opts Options) *Mod
 	if c, ok := ambientChecker(dir, source, groups, opts); ok {
 		return inferModuleOn(c, module)
 	}
+	opts.stdlibDir = dir
 	return inferModuleWithGroups(module, source, StdlibGroupSource(dir), groups, opts)
 }
 
 // InferScriptAgainstStdlib infers script against the pseudo-packages in dir. It is
-// the script counterpart to InferModuleAgainstStdlib. A script binds no imports, so
-// the closure grows from the ambient packages alone. opts adjusts the run.
+// the script counterpart to InferModuleAgainstStdlib, and the closure grows from the
+// ambient packages and the script's own imports. opts adjusts the run.
 func InferScriptAgainstStdlib(script *ast.Script, dir string, opts Options) (*Scope, *Info, []SolverError) {
 	source := packageSource(dir, opts)
-	groups, err := BuildPackageClosure(dir, ambientPackages)
+	roots := set.FromSlice(append(pseudoPackageImports(script.Imports), ambientPackages...)).ToSlice()
+	sort.Strings(roots)
+	groups, err := BuildPackageClosure(dir, roots)
 	if err != nil {
 		scope, info, errs := inferScriptWithGroups(script, source, nil, nil, opts)
 		return scope, info, append(errs, &UnresolvedPackageError{
@@ -270,6 +276,7 @@ func InferScriptAgainstStdlib(script *ast.Script, dir string, opts Options) (*Sc
 	if c, ok := ambientChecker(dir, source, groups, opts); ok {
 		return inferScriptOn(c, script)
 	}
+	opts.stdlibDir = dir
 	return inferScriptWithGroups(script, source, StdlibGroupSource(dir), groups, opts)
 }
 
@@ -291,23 +298,30 @@ func packageSource(dir string, opts Options) ModuleSource {
 	}
 }
 
-// pseudoPackageImportsOf returns the pseudo-package URIs a module's files import,
-// sorted. These are the roots the closure grows from.
+// pseudoPackageImports returns the pseudo-package URIs imports names, sorted. These
+// are the roots the closure grows from.
 //
 // Every scheme counts, not `std:` alone. A file importing `web:dom` roots the
 // closure there the same way, and `node:` will when it is populated.
-func pseudoPackageImportsOf(module *ast.Module) []string {
+func pseudoPackageImports(imports []*ast.ImportStmt) []string {
 	roots := set.NewSet[string]()
-	for _, file := range module.Files {
-		for _, stmt := range file.Imports {
-			if IsSchemePrefixedImport(stmt.PackageName) {
-				roots.Add(stmt.PackageName)
-			}
+	for _, stmt := range imports {
+		if IsSchemePrefixedImport(stmt.PackageName) {
+			roots.Add(stmt.PackageName)
 		}
 	}
 	out := roots.ToSlice()
 	sort.Strings(out)
 	return out
+}
+
+// moduleImports returns every import the files of module write, in file order.
+func moduleImports(module *ast.Module) []*ast.ImportStmt {
+	var imports []*ast.ImportStmt
+	for _, file := range module.Files {
+		imports = append(imports, file.Imports...)
+	}
+	return imports
 }
 
 // groupKeyURI is the URI a group's declarations register their type keys under.

@@ -53,7 +53,7 @@ func TestCFGStraightLine(t *testing.T) {
 		valDecl(x, numLit(1)),
 		exprStmt(call(ident("print"), xRef)),
 	)
-	Rename(ids, nil, body, map[string]VarID{"print": -1})
+	RenameFrom(ids, nil, body, map[string]VarID{"print": -1}, 1)
 
 	cfg := BuildCFG(ids, body)
 
@@ -81,7 +81,7 @@ func TestCFGIfElse(t *testing.T) {
 			span(),
 		)),
 	)
-	Rename(ids, nil, body, map[string]VarID{"cond": -1, "print": -1, "a": -2, "b": -3})
+	RenameFrom(ids, nil, body, map[string]VarID{"cond": -1, "print": -1, "a": -2, "b": -3}, 1)
 
 	cfg := BuildCFG(ids, body)
 
@@ -114,7 +114,7 @@ func TestCFGValElse(t *testing.T) {
 		valElse,
 		exprStmt(call(ident("print"), xRef)),
 	)
-	Rename(ids, nil, body, map[string]VarID{"u": -1, "d": -2, "print": -3})
+	RenameFrom(ids, nil, body, map[string]VarID{"u": -1, "d": -2, "print": -3}, 1)
 
 	cfg := BuildCFG(ids, body)
 
@@ -153,7 +153,7 @@ func TestCFGValElseNonDivergingFallback(t *testing.T) {
 		valElse,
 		exprStmt(call(ident("print"), xRef)),
 	)
-	Rename(ids, nil, body, map[string]VarID{"u": -1, "d": -2, "print": -3})
+	RenameFrom(ids, nil, body, map[string]VarID{"u": -1, "d": -2, "print": -3}, 1)
 
 	cfg := BuildCFG(ids, body)
 
@@ -194,7 +194,7 @@ func TestCFGValElseBranchyInit(t *testing.T) {
 		Span:  span(),
 	}
 	body := block(ast.NewDeclStmt(vd, span()))
-	Rename(ids, nil, body, map[string]VarID{"u": -1, "a": -2, "b": -3, "d": -4})
+	RenameFrom(ids, nil, body, map[string]VarID{"u": -1, "a": -2, "b": -3, "d": -4}, 1)
 
 	cfg := BuildCFG(ids, body)
 
@@ -214,7 +214,7 @@ func TestCFGReturn(t *testing.T) {
 		ast.NewReturnStmt(xRef1, span()),
 		exprStmt(call(ident("print"), xRef2)),
 	)
-	Rename(ids, nil, body, map[string]VarID{"print": -1})
+	RenameFrom(ids, nil, body, map[string]VarID{"print": -1}, 1)
 
 	cfg := BuildCFG(ids, body)
 
@@ -238,7 +238,7 @@ func TestCFGForIn(t *testing.T) {
 			false, span(),
 		),
 	)
-	Rename(ids, nil, body, map[string]VarID{"items": -1, "print": -2})
+	RenameFrom(ids, nil, body, map[string]VarID{"items": -1, "print": -2}, 1)
 
 	cfg := BuildCFG(ids, body)
 
@@ -278,7 +278,7 @@ func TestLivenessIfElseOneBranchUse(t *testing.T) {
 			span(),
 		)),
 	)
-	Rename(ids, nil, body, map[string]VarID{"cond": -1})
+	RenameFrom(ids, nil, body, map[string]VarID{"cond": -1}, 1)
 
 	cfg := BuildCFG(ids, body)
 	info := AnalyzeFunction(cfg)
@@ -318,7 +318,7 @@ func TestLivenessIfWithoutElse(t *testing.T) {
 		)),
 		exprStmt(call(ident("print"), xRef2)),
 	)
-	Rename(ids, nil, body, map[string]VarID{"cond": -1, "print": -2})
+	RenameFrom(ids, nil, body, map[string]VarID{"cond": -1, "print": -2}, 1)
 
 	cfg := BuildCFG(ids, body)
 	info := AnalyzeFunction(cfg)
@@ -353,7 +353,7 @@ func TestLivenessForLoop(t *testing.T) {
 			false, span(),
 		),
 	)
-	Rename(ids, nil, body, map[string]VarID{"items": -1, "print": -2})
+	RenameFrom(ids, nil, body, map[string]VarID{"items": -1, "print": -2}, 1)
 
 	cfg := BuildCFG(ids, body)
 	info := AnalyzeFunction(cfg)
@@ -392,7 +392,7 @@ func TestLivenessEarlyReturn(t *testing.T) {
 		)),
 		exprStmt(call(ident("print"), yRef)),
 	)
-	Rename(ids, nil, body, map[string]VarID{"cond": -1, "print": -2})
+	RenameFrom(ids, nil, body, map[string]VarID{"cond": -1, "print": -2}, 1)
 
 	cfg := BuildCFG(ids, body)
 	info := AnalyzeFunction(cfg)
@@ -438,7 +438,7 @@ func TestLivenessThrow(t *testing.T) {
 		)),
 		exprStmt(call(ident("print"), yRef)),
 	)
-	Rename(ids, nil, body, map[string]VarID{"cond": -1, "print": -2})
+	RenameFrom(ids, nil, body, map[string]VarID{"cond": -1, "print": -2}, 1)
 
 	cfg := BuildCFG(ids, body)
 	info := AnalyzeFunction(cfg)
@@ -494,7 +494,7 @@ func TestLivenessMatchExpr(t *testing.T) {
 		)),
 		exprStmt(call(ident("print"), rRef)),
 	)
-	Rename(ids, nil, body, map[string]VarID{"target": -1, "print": -2})
+	RenameFrom(ids, nil, body, map[string]VarID{"target": -1, "print": -2}, 1)
 
 	cfg := BuildCFG(ids, body)
 	info := AnalyzeFunction(cfg)
@@ -544,7 +544,7 @@ func TestLivenessNestedControlFlow(t *testing.T) {
 			false, span(),
 		),
 	)
-	Rename(ids, nil, body, map[string]VarID{"items": -1, "cond": -2, "print": -3})
+	RenameFrom(ids, nil, body, map[string]VarID{"items": -1, "cond": -2, "print": -3}, 1)
 
 	cfg := BuildCFG(ids, body)
 	info := AnalyzeFunction(cfg)
@@ -606,7 +606,7 @@ func TestLivenessDoExpr(t *testing.T) {
 		)),
 		exprStmt(call(ident("print"), yRef)),
 	)
-	Rename(ids, nil, body, map[string]VarID{"print": -1})
+	RenameFrom(ids, nil, body, map[string]VarID{"print": -1}, 1)
 
 	cfg := BuildCFG(ids, body)
 	info := AnalyzeFunction(cfg)
@@ -649,7 +649,7 @@ func TestLivenessIfElseVarUsedInBranch(t *testing.T) {
 			span(),
 		)),
 	)
-	Rename(ids, nil, body, map[string]VarID{"cond": -1})
+	RenameFrom(ids, nil, body, map[string]VarID{"cond": -1}, 1)
 
 	cfg := BuildCFG(ids, body)
 	info := AnalyzeFunction(cfg)
@@ -675,7 +675,7 @@ func TestLivenessForLoopVarDef(t *testing.T) {
 			false, span(),
 		),
 	)
-	Rename(ids, nil, body, map[string]VarID{"items": -1, "print": -2})
+	RenameFrom(ids, nil, body, map[string]VarID{"items": -1, "print": -2}, 1)
 
 	cfg := BuildCFG(ids, body)
 	info := AnalyzeFunction(cfg)
@@ -722,7 +722,7 @@ func TestLivenessAllBranchesReturn(t *testing.T) {
 		)),
 		valDecl(y, numLit(2)),
 	)
-	Rename(ids, nil, body, map[string]VarID{"cond": -1})
+	RenameFrom(ids, nil, body, map[string]VarID{"cond": -1}, 1)
 
 	cfg := BuildCFG(ids, body)
 	info := AnalyzeFunction(cfg)
@@ -775,7 +775,7 @@ func TestLivenessMatchWithGuard(t *testing.T) {
 			span(),
 		)),
 	)
-	Rename(ids, nil, body, map[string]VarID{"target": -1, "true": -2})
+	RenameFrom(ids, nil, body, map[string]VarID{"target": -1, "true": -2}, 1)
 
 	cfg := BuildCFG(ids, body)
 	info := AnalyzeFunction(cfg)
@@ -832,7 +832,7 @@ func TestLivenessTryCatch(t *testing.T) {
 		)),
 		exprStmt(call(ident("print"), rRef)),
 	)
-	Rename(ids, nil, body, map[string]VarID{"print": -1})
+	RenameFrom(ids, nil, body, map[string]VarID{"print": -1}, 1)
 
 	cfg := BuildCFG(ids, body)
 	info := AnalyzeFunction(cfg)

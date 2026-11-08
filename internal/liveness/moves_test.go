@@ -73,7 +73,6 @@ func TestMovesIfElseOneBranch(t *testing.T) {
 		{BlockID: 1, StmtIdx: 0}: {x},
 	}))
 
-	require.Equal(t, Moved, info.StateAfter(StmtRef{BlockID: 1, StmtIdx: 0}, x))
 	// The else block has no statements, so query its entry position (StmtIdx -1).
 	// StmtIdx 0 would hit the out-of-range fallback and pass without reading the
 	// block's real joined entry state.
@@ -184,7 +183,6 @@ func TestMovesSequentialWithinBlock(t *testing.T) {
 
 	require.Equal(t, NotMoved, info.StateBefore(StmtRef{BlockID: 0, StmtIdx: 0}, x))
 	require.Equal(t, NotMoved, info.StateBefore(StmtRef{BlockID: 0, StmtIdx: 1}, x))
-	require.Equal(t, Moved, info.StateAfter(StmtRef{BlockID: 0, StmtIdx: 1}, x))
 	require.Equal(t, Moved, info.StateBefore(StmtRef{BlockID: 0, StmtIdx: 2}, x))
 }
 
@@ -192,7 +190,7 @@ func TestMovesSequentialWithinBlock(t *testing.T) {
 // analysis: the state stays Moved, the unconditional use-after-move PR 6 reports.
 func TestMovesDoubleMoveStaysMoved(t *testing.T) {
 	const x VarID = 1
-	b := newBlock(0, 2)
+	b := newBlock(0, 3) // s0: move x, s1: move x, s2: use x
 	cfg := newCFG(b)
 
 	info := AnalyzeMoves(cfg, moves(map[StmtRef][]VarID{
@@ -200,8 +198,8 @@ func TestMovesDoubleMoveStaysMoved(t *testing.T) {
 		{BlockID: 0, StmtIdx: 1}: {x},
 	}))
 
-	require.Equal(t, Moved, info.StateAfter(StmtRef{BlockID: 0, StmtIdx: 0}, x))
-	require.Equal(t, Moved, info.StateAfter(StmtRef{BlockID: 0, StmtIdx: 1}, x))
+	require.Equal(t, Moved, info.StateBefore(StmtRef{BlockID: 0, StmtIdx: 1}, x))
+	require.Equal(t, Moved, info.StateBefore(StmtRef{BlockID: 0, StmtIdx: 2}, x))
 }
 
 // Independent bindings keep independent state: moving x along one branch does not
@@ -237,9 +235,8 @@ func TestMovesSyntheticEntryPosition(t *testing.T) {
 		{BlockID: 0, StmtIdx: -1}: {x},
 	}))
 
-	// Before the -1 position the entry move has not yet applied; after it, and
-	// before statement 0, it has.
+	// Before the -1 position the entry move has not yet applied. Before statement 0 it
+	// has.
 	require.Equal(t, NotMoved, info.StateBefore(StmtRef{BlockID: 0, StmtIdx: -1}, x))
-	require.Equal(t, Moved, info.StateAfter(StmtRef{BlockID: 0, StmtIdx: -1}, x))
 	require.Equal(t, Moved, info.StateBefore(StmtRef{BlockID: 0, StmtIdx: 0}, x))
 }

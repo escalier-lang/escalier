@@ -214,12 +214,9 @@ func TestInferForInErrors(t *testing.T) {
 	}
 }
 
-// TestForInBackEdgeMoves confirms the affine move engine sees the loop back edge: a
-// value moved in the loop body is a use-after-move on the next iteration, which the
-// engine catches because it replays every use against the branch-merged consumed
-// lattice, loop back edges included. A `for` loop is the first inferable source that
-// gives the CFG a back edge, so this is where AnalyzeMoves first meets one from real
-// code.
+// TestForInBackEdgeMoves asserts that a move follows the loop back edge: a value moved in
+// the loop body is a use-after-move on the next iteration. The dataflow pass walks the CFG,
+// back edges included, so the move reaches the next iteration's read.
 func TestForInBackEdgeMoves(t *testing.T) {
 	// `val q = p` moves p out on the first iteration; the back edge re-enters the body
 	// with p already moved, so the same statement on the next iteration reads a moved
@@ -311,10 +308,57 @@ func TestForInBorrowAvoidsMove(t *testing.T) {
 	}
 }
 
-// TestForInBackEdgeBorrows confirms the flow-sensitive borrow-edge dataflow
-// (analyzeBorrows) joins across the loop back edge and clears referents correctly.
-// These are the loop analogues of the branch-merge borrow tests, exercising the
-// back-edge join, the whole-binding kill, and the field-store subtree kill.
+// TestForInLoopBindingIsFreshEachIteration covers moving a for-in loop's pattern bindings.
+// Each iteration declares them afresh, so a move on one iteration does not reach the next.
+// A second move within one iteration still reports.
+func TestForInLoopBindingIsFreshEachIteration(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want []string
+	}{
+		"MoveLoopVariable": {
+			src: `
+				declare fn take(p: {x: number}) -> number
+				fn f(xs: Array<{x: number}>) {
+					for x in xs { take(x) }
+				}
+			`,
+			want: nil,
+		},
+		"MoveDestructuredBinding": {
+			src: `
+				declare fn take(p: {x: number}) -> number
+				fn f(xs: Array<{a: {x: number}}>) {
+					for {a} in xs { take(a) }
+				}
+			`,
+			want: nil,
+		},
+		"MoveLoopVariableTwiceInOneIteration": {
+			src: `
+				declare fn take(p: {x: number}) -> number
+				fn f(xs: Array<{x: number}>) {
+					for x in xs {
+						take(x)
+						take(x)
+					}
+				}
+			`,
+			want: []string{`6:12-6:13: use of moved value 'x'`},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src)
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+		})
+	}
+}
+
+// TestForInBackEdgeBorrows covers the loans the dataflow pass carries across a loop's back
+// edge. These are the loop analogues of the branch-merge borrow tests. They cover the join at
+// the back edge, a reassignment that replaces what a binding holds, and a field store that
+// replaces what one field holds.
 func TestForInBackEdgeBorrows(t *testing.T) {
 	tests := map[string]struct {
 		src   string
@@ -323,7 +367,8 @@ func TestForInBackEdgeBorrows(t *testing.T) {
 	}{
 		// A borrow repointed inside the loop reaches the loop merge alongside the
 		// pre-loop referent: with zero iterations a still borrows c, and after the body a
-		// borrows d, so the union at the exit escapes both locals.
+		// borrows d. Storing `a` out hands the caller a mutable path to either local, which L1
+		// accepts, since nothing in the frame uses them afterwards.
 		"ReassignInLoopUnionsAtMerge": {
 			src: `
 				fn f(xs: [number], out: &mut {slot: &mut {value: number}}) {
@@ -336,18 +381,14 @@ func TestForInBackEdgeBorrows(t *testing.T) {
 					out.slot = a
 				}
 			`,
-			want: []string{
-				`9:17-9:18: borrowed value 'c' does not live long enough to escape the function`,
-				`9:17-9:18: borrowed value 'd' does not live long enough to escape the function`,
-			},
+			want:  nil,
 			types: map[string]string{"f": "fn (xs: [number], out: &mut {slot: &mut {value: number}}) -> undefined"},
 		},
 		// A whole-binding reassignment after the loop clears every referent the loop
 		// carried into it: `a = &mut d` replaces `a`'s whole edge set, so storing `a` out hands
-		// only d to the caller, not the c the loop body kept repointing to. The store takes a
-		// loan of d alone, so a c edge left behind would carry c out with no loan and report
-		// it as escaping. This is clearEagerSubtree's unconditional kill clearing a referent
-		// that reaches the reassignment through the back edge.
+		// only d to the caller, not the c the loop body kept repointing to. This is
+		// clearEagerSubtree's unconditional kill clearing a referent that reaches the
+		// reassignment through the back edge.
 		"PostLoopReassignClearsLoopEdges": {
 			src: `
 				fn f(xs: [number], out: &mut {slot: &mut {value: number}}) {
