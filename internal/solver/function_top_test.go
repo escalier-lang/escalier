@@ -146,3 +146,14 @@ func TestMatchNarrowsToFunction(t *testing.T) {
 	require.Empty(t, errorMessagesOf(errs))
 	require.Equal(t, `"callable" | number`, values["r"])
 }
+
+// A borrow of a value read out of a parameter fills a `function` slot by copying, as it fills
+// a function type's.
+func TestABorrowCopiesIntoFunction(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		declare fn pick<T>(p: &{f: T}) -> &T
+		declare val o: {f: fn () -> number}
+		val g: function = pick(&o)
+	`)
+	require.Empty(t, errorMessagesOf(errs))
+}

@@ -2201,7 +2201,7 @@ func isCallableShape(t soltype.Type) bool {
 
 func copiesOutOfBorrow(t soltype.Type) bool {
 	switch t := t.(type) {
-	case *soltype.FuncType:
+	case *soltype.FuncType, *soltype.FunctionTopType:
 		return true
 	case *soltype.UnionType:
 		for _, member := range t.Types {
