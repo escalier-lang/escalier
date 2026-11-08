@@ -597,6 +597,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		c.reportUnsupportedFeature(node, "LifetimeParam")
 	}
 	fnScope := declScope.Child()
+	// A function type written with no lifetime in a parameter gets a fresh one. returnElision
+	// reads the lifetimes the receiver and parameters mint after inputMark to decide the
+	// return type's.
+	defer c.elideFuncsAs(elideFresh)()
+	inputMark := c.ctx.lifetimeCounter
 	// An instance member binds `self` in its own scope and carries the receiver as its
 	// SelfParam. Both borrow at one lifetime, which a written `&'a self` resolves here in
 	// the member's named-lifetime scope, so the body's `self` and the signature agree with
@@ -616,7 +621,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// defaults holds each parameter default until the body's context is open, so a raise
 	// or a use inside one belongs to this function.
 	var defaults []paramDefaultSite
-	// callOnlyParams holds the parameters written `&fn` with an elided lifetime.
+	// callOnlyParams holds the parameters whose function type is written with no lifetime.
 	var callOnlyParams []callOnlyParam
 	// A lifetime the enclosing body minted can sit at the level of this function's parameters,
 	// so the counter tells those lifetimes apart. outerMark is -1 for a function with no
@@ -691,16 +696,17 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			if isIdent && ip.Mutable && !mutable {
 				c.info.inertMut.Add(ip)
 			}
-			// A parameter written `&fn` with an elided lifetime is only called during the call,
-			// unless the signature ties the lifetime to the result. The body's binding holds a
-			// copy of the written type that shares its lifetime, so noteCallOnlyRead can tell a
-			// read of the binding from another value of the same type.
+			// A parameter whose function type is written with no lifetime is only called during
+			// the call, unless the signature ties the lifetime to the result. The body's binding
+			// holds a copy of the written type that shares its lifetime, so noteCallOnlyRead can
+			// tell a read of the binding from another value of the same type.
 			bodyT := pt
-			if ft, isFn := pt.(*soltype.FuncType); isFn && body != nil && elidedFuncBorrow(p.TypeAnn) && ft.Lt != nil {
+			if ft, isFn := pt.(*soltype.FuncType); isFn && body != nil && isElidedFuncType(p.TypeAnn) && ft.Lt != nil {
 				callOnly := *ft
 				bodyT = &callOnly
 				c.watchCallOnlyReads(&callOnly)
-				callOnlyParams = append(callOnlyParams, callOnlyParam{name: name, node: pat, param: i, written: ft, ft: &callOnly, outerMark: outerMark})
+				c.noteCallOnlyLifetime(&callOnly)
+				callOnlyParams = append(callOnlyParams, callOnlyParam{name: name, node: pat, param: i, ann: p.TypeAnn.(*ast.FuncTypeAnn), ft: &callOnly, outerMark: outerMark})
 			}
 			// A parameter binding never generalizes — its var is fixed for the body — so
 			// it is a MonoScheme; instantiate returns bodyT unchanged at every use.
@@ -749,6 +755,8 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		}
 	}
 
+	c.fnElision = c.returnElision(inputMark, sig.LifetimeParams)
+	c.noteSignatureLifetimes(sig.LifetimeParams)
 	// The clause is the sink every throw and call is checked against, so it resolves
 	// before the body: `never` for no clause, which is how omitting it declares that the
 	// function raises nothing; T for `throws T`; a fresh var for `throws _` or a bad one.
@@ -930,6 +938,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			c.deferredBodies = append(c.deferredBodies, deferred)
 		}
 		c.fn.bodyLtMark = c.ctx.lifetimeCounter
+		// A function type written with no lifetime in the body gets a fresh one, as an elided
+		// `&` does there.
+		c.fnElision = elideFresh
 		c.inferBlock(fnScope, lvl, body)
 		if deferred != "" {
 			c.deferredBodies = c.deferredBodies[:len(c.deferredBodies)-1]
@@ -2336,8 +2347,8 @@ func (c *checker) applyCallShape(lvl int, e *ast.CallExpr, callee soltype.Type, 
 	// `Throws` slot, callThrows. A non-throwing `never` records nothing. callThrows is raised
 	// into this body's sink below.
 	callThrows := c.freshThrowsSink(lvl)
-	// A call only runs the callee, so the shape carries a retention lifetime of its own. A
-	// callee that may hold borrows then fits the shape, as a `&fn` parameter accepts it.
+	// A call only runs the callee, so the shape carries a lifetime of its own. A callee that
+	// may hold borrows then fits the shape, as a `fn` parameter accepts it.
 	callShape := &soltype.FuncType{Params: callShapeParams, Ret: res, Throws: callThrows, Lt: c.ctx.freshLifetime(lvl)}
 	// A resolved callee that declares nothing raises nothing, so it leaves the enclosing
 	// clause unused. Any other callee counts as raising, since its throws may still be an
@@ -2456,6 +2467,7 @@ func (c *checker) implicitMutBorrow(src ast.Expr, srcT, dest soltype.Type) solty
 func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr, preset map[ast.Expr]soltype.Type) []soltype.Type {
 	args := make([]soltype.Type, len(e.Args))
 	for i, a := range e.Args {
+		c.noteKeeper(a, e)
 		if t, ok := preset[a]; ok {
 			args[i] = t
 			continue
@@ -2666,6 +2678,7 @@ func soleCallableSignature(t *soltype.ObjectType) (*soltype.FuncType, bool) {
 // `b: number`. On an error path (invalid / immutable / unknown target) no value is
 // stored, so it recovers to `undefined`.
 func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.Type {
+	c.noteKeeper(e.Right, e)
 	undefinedT := soltype.Type(&soltype.UndefinedType{})
 	// Guard a malformed assignment node (the real parser substitutes ast.NewError for
 	// a missing operand, so this is unreachable from source — but a hand-built AST

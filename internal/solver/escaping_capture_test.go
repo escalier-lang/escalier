@@ -24,7 +24,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// frame can read p.
 		"ReadAfterStoringAReadingClosureIntoAGlobalOk": {
 			src: `
-				var sink: &'static fn () -> number = fn () { return 0 }
+				var sink: 'static fn () -> number = fn () { return 0 }
 				fn go() {
 					val p = {x: 1}
 					sink = fn () { return p.x }
@@ -35,7 +35,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// The closure needs p unchanged only while it runs, and the frame cannot write p then.
 		"WriteAfterStoringAReadingClosureIntoAGlobalOk": {
 			src: `
-				var sink: &'static fn () -> number = fn () { return 0 }
+				var sink: 'static fn () -> number = fn () { return 0 }
 				fn go() {
 					val mut p = {x: 1}
 					sink = fn () { return p.x }
@@ -46,7 +46,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// take receives p as its owner, and may call sink, which writes p.
 		"MoveAfterStoringAWritingClosureIntoAGlobalConflicts": {
 			src: `
-				var sink: &'static fn () -> undefined = fn () {}
+				var sink: 'static fn () -> undefined = fn () {}
 				declare fn take(x: {x: number}) -> undefined
 				fn go() {
 					val mut p = {x: 1}
@@ -59,7 +59,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// A direct call to an overloaded name may run sink as much as any other call.
 		"MoveIntoAnOverloadAfterStoringAWritingClosureIntoAGlobalConflicts": {
 			src: `
-				var sink: &'static fn () -> undefined = fn () {}
+				var sink: 'static fn () -> undefined = fn () {}
 				declare fn take(x: {x: number}) -> undefined
 				declare fn take(x: string) -> undefined
 				fn go() {
@@ -73,7 +73,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// readIt may call sink, which writes p while readIt reads it through `a`.
 		"BorrowAfterStoringAWritingClosureIntoAGlobalConflicts": {
 			src: `
-				var sink: &'static fn () -> undefined = fn () {}
+				var sink: 'static fn () -> undefined = fn () {}
 				declare fn readIt(a: &{x: number}) -> undefined
 				fn go() {
 					val mut p = {x: 1}
@@ -88,7 +88,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// A borrow written in the call's own arguments is live while the call may run sink.
 		"BorrowInACallAfterStoringAWritingClosureIntoAGlobalConflicts": {
 			src: `
-				var sink: &'static fn () -> undefined = fn () {}
+				var sink: 'static fn () -> undefined = fn () {}
 				declare fn readIt(a: &{x: number}) -> undefined
 				fn go() {
 					val mut p = {x: 1}
@@ -102,7 +102,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// move itself, since sink holds its borrow of p between calls.
 		"CallAfterMovingALocalAGlobalClosureWritesConflicts": {
 			src: `
-				var sink: &'static fn () -> undefined = fn () {}
+				var sink: 'static fn () -> undefined = fn () {}
 				declare fn noop() -> undefined
 				fn go() {
 					val mut p = {x: 1}
@@ -115,7 +115,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		},
 		"UnusedBorrowAfterStoringAWritingClosureIntoAGlobalOk": {
 			src: `
-				var sink: &'static fn () -> undefined = fn () {}
+				var sink: 'static fn () -> undefined = fn () {}
 				fn go() {
 					val mut p = {x: 1}
 					sink = fn () { p.x = 2 }
@@ -126,7 +126,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// `a` is taken before the store and still in use at readIt, which may call sink.
 		"StoringAWritingClosureBesideALiveBorrowConflicts": {
 			src: `
-				var sink: &'static fn () -> undefined = fn () {}
+				var sink: 'static fn () -> undefined = fn () {}
 				declare fn readIt(a: &{x: number}) -> undefined
 				fn go() {
 					val mut p = {x: 1}
@@ -141,7 +141,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// A name bound to a closure carries the closure's captures to the store.
 		"StoreOfABoundClosureIntoAGlobalBorrowsTheCapture": {
 			src: `
-				var sink: &'static fn () -> undefined = fn () {}
+				var sink: 'static fn () -> undefined = fn () {}
 				declare fn readIt(a: &{x: number}) -> undefined
 				fn go() {
 					val mut p = {x: 1}
@@ -187,7 +187,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// A closure stored into `out` borrows p, so the frame can still read p.
 		"StoreIntoABorrowParameterBorrowsTheCaptureOk": {
 			src: `
-				fn go(out: &mut {cb: &fn () -> number}) {
+				fn go(out: &mut {cb: fn () -> number}) {
 					val p = {x: 1}
 					out.cb = fn () { return p.x }
 					val n = p.x
@@ -198,7 +198,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// write to p in the frame is no conflict.
 		"WriteAfterStoringAReadingClosureOk": {
 			src: `
-				fn go(out: &mut {cb: &fn () -> number}) {
+				fn go(out: &mut {cb: fn () -> number}) {
 					val mut p = {x: 1}
 					out.cb = fn () { return p.x }
 					p.x = 2
@@ -209,7 +209,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// the return breaks E3.
 		"ReturningALocalAStoredClosureCapturesConflicts": {
 			src: `
-				fn go(out: &mut {cb: &fn () -> number}) -> {x: number} {
+				fn go(out: &mut {cb: fn () -> number}) -> {x: number} {
 					val p = {x: 1}
 					out.cb = fn () { return p.x }
 					return p
@@ -221,7 +221,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// caller can call `out.cb` while it reads `q.r`, so `&p` breaks E2.
 		"StoringAWritingClosureBesideAnImmutableStoreConflicts": {
 			src: `
-				fn go(out: &mut {cb: &fn () -> undefined}, q: &mut {r: &{x: number}}) {
+				fn go(out: &mut {cb: fn () -> undefined}, q: &mut {r: &{x: number}}) {
 					val mut p = {x: 1}
 					out.cb = fn () { p.x = 2 }
 					q.r = &p
@@ -243,7 +243,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// An owned parameter dies with the frame, so a closure stored into it borrows p.
 		"StoreIntoAnOwnedParameterLeavesTheCaptureOk": {
 			src: `
-				fn go(mut box: {cb: &fn () -> number}) {
+				fn go(mut box: {cb: fn () -> number}) {
 					val p = {x: 1}
 					box.cb = fn () { return p.x }
 					val n = p.x
@@ -266,7 +266,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// A captured primitive is copied rather than borrowed.
 		"PrimitiveCaptureIsCopiedOk": {
 			src: `
-				var sink: &'static fn () -> number = fn () { return 0 }
+				var sink: 'static fn () -> number = fn () { return 0 }
 				fn go() {
 					val n = 1
 					sink = fn () { return n }
@@ -291,7 +291,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 			src: `
 				fn go() {
 					val p = {x: 1}
-					var f: &fn () -> number = fn () { return p.x }
+					var f: fn () -> number = fn () { return p.x }
 					f = fn () { return 0 }
 					val n = p.x
 					return f
@@ -302,11 +302,11 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// f holds the capturing closure on one branch, so storing f may borrow p.
 		"StoreOfAClosureChosenOnABranchMayBorrowTheCapture": {
 			src: `
-				var sink: &'static fn () -> undefined = fn () {}
+				var sink: 'static fn () -> undefined = fn () {}
 				declare fn readIt(a: &{x: number}) -> undefined
 				fn go(c: boolean) {
 					val mut p = {x: 1}
-					var f: &fn () -> undefined = fn () {}
+					var f: fn () -> undefined = fn () {}
 					if c {
 						f = fn () { p.x = 2 }
 					}
@@ -320,7 +320,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// A copy of the closure's name carries its captures.
 		"StoreOfACopiedClosureBorrowsTheCapture": {
 			src: `
-				var sink: &'static fn () -> undefined = fn () {}
+				var sink: 'static fn () -> undefined = fn () {}
 				declare fn readIt(a: &{x: number}) -> undefined
 				fn go() {
 					val mut p = {x: 1}
@@ -336,7 +336,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// A closure inside an object literal is part of the stored value.
 		"StoreOfAClosureInALiteralBorrowsTheCapture": {
 			src: `
-				var sink: {cb: &'static fn () -> undefined} = {cb: fn () {}}
+				var sink: {cb: 'static fn () -> undefined} = {cb: fn () {}}
 				declare fn readIt(a: &{x: number}) -> undefined
 				fn go() {
 					val mut p = {x: 1}
@@ -350,7 +350,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// A closure that calls another closure carries what that closure captures.
 		"StoreOfAClosureCallingACapturingClosureBorrowsTheCapture": {
 			src: `
-				var sink: &'static fn () -> undefined = fn () {}
+				var sink: 'static fn () -> undefined = fn () {}
 				declare fn readIt(a: &{x: number}) -> undefined
 				fn go() {
 					val mut p = {x: 1}
@@ -366,8 +366,8 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// planning/lifetimes/requirements.md allows.
 		"TwoGlobalClosuresWritingOneLocalOk": {
 			src: `
-				var sink: &'static fn () -> undefined = fn () {}
-				var sink2: &'static fn () -> undefined = fn () {}
+				var sink: 'static fn () -> undefined = fn () {}
+				var sink2: 'static fn () -> undefined = fn () {}
 				fn go() {
 					val mut p = {x: 1}
 					sink = fn () { p.x = 2 }
@@ -379,7 +379,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// conflict.
 		"StoreIntoAGlobalInALoopOk": {
 			src: `
-				var sink: &'static fn () -> number = fn () { return 0 }
+				var sink: 'static fn () -> number = fn () { return 0 }
 				fn go(xs: Array<number>) {
 					val p = {x: 1}
 					for x in xs {
@@ -391,7 +391,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// A closure chosen by an `if`/`else` expression carries its captures to the store.
 		"StoreOfAClosureFromAnIfElseBorrowsTheCapture": {
 			src: `
-				var sink: &'static fn () -> undefined = fn () {}
+				var sink: 'static fn () -> undefined = fn () {}
 				declare fn readIt(a: &{x: number}) -> undefined
 				fn go(c: boolean) {
 					val mut p = {x: 1}

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/printer"
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/escalier-lang/escalier/internal/solver/ucs"
 )
@@ -2522,11 +2523,11 @@ func (e *LifetimeRelationUndeclaredError) Message() string {
 		e.Sub, e.Super, e.Sub, e.Super)
 }
 
-// CallOnlyFuncKeptError fires when a body keeps a function parameter written `&fn` with an elided
-// lifetime past the call. Such a parameter, as `g` in `fn f(g: &fn () -> undefined)`, is only
+// CallOnlyFuncKeptError fires when a body keeps a function parameter whose type is written with
+// no lifetime past the call. Such a parameter, as `g` in `fn f(g: fn () -> undefined)`, is only
 // called during the call, so a caller lends it a closure's captures for that call alone.
-// `onClick(g)` against `declare fn onClick(handler: &'static fn () -> undefined)` keeps it for
-// 'static. Name is the parameter's name, and Written is the type the parameter is written with.
+// `onClick(g)` against `declare fn onClick(handler: 'static fn () -> undefined)` keeps it for
+// 'static. Name is the parameter's name, and Written is the parameter's annotation.
 // Static says the body keeps it for 'static. Deferred names the kind of function whose body
 // reads the parameter and can run after the call returns, as in "a generator", and is ""
 // otherwise. Param is the parameter's pattern. Read is the first read of the parameter in that
@@ -2534,7 +2535,7 @@ func (e *LifetimeRelationUndeclaredError) Message() string {
 // otherwise, and relates Param when it blames Read.
 type CallOnlyFuncKeptError struct {
 	Name     string
-	Written  *soltype.FuncType
+	Written  *ast.FuncTypeAnn
 	Static   bool
 	Deferred string
 	Param    ast.Node
@@ -2555,50 +2556,81 @@ func (e *CallOnlyFuncKeptError) Related() []ast.Span {
 	return nil
 }
 func (e *CallOnlyFuncKeptError) Message() string {
-	plain := plainFuncText(e.Written)
-	const callOnly = "only allows calling it during the call"
-	if e.Static {
-		return fmt.Sprintf("'%s' is stored where it lives for the whole program, but its type `&%s` %s; write `&'static %s`",
-			e.Name, plain, callOnly, plain)
+	var kept string
+	switch {
+	case e.Static:
+		kept = "it is stored where it lives for the whole program"
+	case e.Deferred != "":
+		kept = fmt.Sprintf("it is read by %s, which can run after the call returns", e.Deferred)
+	default:
+		kept = "it is kept after the call returns"
 	}
-	if e.Deferred != "" {
-		return fmt.Sprintf("'%s' is read by %s, which can run after the call returns, but its type `&%s` %s; write `&'static %s` to keep it",
-			e.Name, e.Deferred, plain, callOnly, plain)
-	}
-	return fmt.Sprintf("'%s' is kept after the call returns, but its type `&%s` %s; write `&'static %s` to keep it",
-		e.Name, plain, callOnly, plain)
+	written, _ := printer.Print(e.Written, printer.DefaultOptions())
+	return fmt.Sprintf("'%s' may borrow values that live only during the call, but %s; write `%s: 'static %s` to keep it",
+		e.Name, kept, e.Name, written)
 }
 
-// FuncBorrowEscapeError fires when a function that may hold borrows flows into a slot written
-// as a plain `fn`, which holds only functions with no borrows. Sub is the source, a FuncType
-// whose Lt is set. Super is the destination, a FuncType whose Lt is nil. It is the function
-// form of BorrowEscapeError, so it is reported whatever Sub's lifetime is.
-type FuncBorrowEscapeError struct {
+// FuncKeptForStaticError fires when a function that may hold a borrow shorter than 'static flows
+// into a slot that holds only functions that borrow nothing, such as a module-level binding
+// annotated `fn () -> undefined`. Sub is the source, a FuncType whose Lt is a lifetime other
+// than 'static. Super is the destination, a FuncType whose Lt is nil. It is the function form of
+// BorrowEscapeError.
+//
+// blameConstraintErrors fills the rest from what the checker knows about the source and the
+// site. source names the source, as "`show`" or "this closure". borrowed is the name of a
+// binding the source borrows, as `cfg`, and "" when the checker does not know one. local says
+// borrowed is a `val` or `var` local, which could move to module level. keeper names what keeps
+// the function, as "`sink`". inferred says Super is the type of a closure that borrows nothing,
+// which an unannotated binding took from its initializer, rather than a written type.
+type FuncKeptForStaticError struct {
 	Sub   *soltype.FuncType
 	Super *soltype.FuncType
 	prov  NodeResolver
 	site  ast.Node
+
+	source   string
+	borrowed string
+	local    bool
+	keeper   string
+	inferred bool
 }
 
-func (*FuncBorrowEscapeError) isSolverError() {}
-func (e *FuncBorrowEscapeError) Span() ast.Span {
+func (*FuncKeptForStaticError) isSolverError() {}
+func (e *FuncKeptForStaticError) Span() ast.Span {
 	// The source is blamed. A source with no node of its own, such as a binding's
 	// instantiated type, falls back to the site rather than to the destination.
 	return spanOfFirst(e.prov, e.site, e.Sub)
 }
-func (e *FuncBorrowEscapeError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
-func (e *FuncBorrowEscapeError) Message() string {
-	plain := plainFuncText(e.Super)
-	return fmt.Sprintf("this function may hold borrows, so it cannot be used as `%s`, which holds none; write `&%s` to accept it",
-		plain, plain)
-}
-
-// plainFuncText renders ft without its retention lifetime, as in `fn () -> undefined` for
-// `&'a fn () -> undefined`.
-func plainFuncText(ft *soltype.FuncType) string {
-	plain := *ft
-	plain.Lt = nil
-	return soltype.Print(&plain)
+func (e *FuncKeptForStaticError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
+func (e *FuncKeptForStaticError) Message() string {
+	source, keeper := e.source, e.keeper
+	if source == "" {
+		source = "this function"
+	}
+	if keeper == "" {
+		keeper = "its destination"
+	}
+	if e.inferred {
+		holds := "may hold borrows"
+		if e.borrowed != "" {
+			holds = fmt.Sprintf("borrows `%s`", e.borrowed)
+		}
+		target := e.keeper
+		if target == "" {
+			target = "it"
+		}
+		return fmt.Sprintf("%s %s, but %s has the type of a closure that borrows nothing; annotate %s with a function type to let it hold one that borrows",
+			source, holds, keeper, target)
+	}
+	if e.borrowed == "" {
+		return fmt.Sprintf("%s may hold borrows that do not live for 'static, but %s keeps it for 'static; pass a function that borrows nothing",
+			source, keeper)
+	}
+	fix := "pass a function that borrows nothing"
+	if e.local {
+		fix += fmt.Sprintf(", or declare `%s` at module level", e.borrowed)
+	}
+	return fmt.Sprintf("%s borrows `%s`, but %s keeps it for 'static; %s", source, e.borrowed, keeper, fix)
 }
 
 // LifetimeBinderNotSatisfiedError fires when a value is checked against a signature that

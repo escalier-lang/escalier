@@ -98,7 +98,7 @@ func TestInferTryCatchBindsTheKnownThrows(t *testing.T) {
 			// throws are still open when the arms are walked, so the arms see them only later.
 			name: "AnArmMatchesAValueACallbackThrows",
 			src:  `fn f(cb) { return try { cb() } catch { "x" => 1, _ => 2 } }`,
-			want: "fn <T0>(cb: &fn () -> T0 throws unknown) -> T0 | 1 | 2",
+			want: "fn <T0>(cb: fn () -> T0 throws unknown) -> T0 | 1 | 2",
 		},
 		{
 			// A value outside the known throws can still reach the `catch` at runtime, so an

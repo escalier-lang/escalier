@@ -284,7 +284,7 @@ func TestInferScriptTypeAndFuncDecls(t *testing.T) {
 				val r = total.v
 			`,
 			wantValues: map[string]string{
-				"sum": "&fn (n: number) -> undefined",
+				"sum": "fn (n: number) -> undefined",
 				"r":   "number",
 			},
 		},
@@ -353,7 +353,7 @@ func TestInferScriptTypeAndFuncDecls(t *testing.T) {
 				val r = bump()
 			`,
 			wantValues: map[string]string{
-				"bump": "&fn () -> number",
+				"bump": "fn () -> number",
 				"r":    "number",
 			},
 		},

@@ -132,15 +132,31 @@ type checker struct {
 	// same reason. The map is allocated lazily by namedLifetime on first use.
 	namedLifetimes map[string]*soltype.LifetimeVar
 
-	// pendingCallOnly holds a check per parameter written `&fn` with an elided lifetime, for
-	// checkCallOnlyParams to read once the enclosing component has solved.
+	// fnElision is the lifetime a function type written with no lifetime gets at the current
+	// position. elideFuncsAs sets it, and elidedFuncLifetime reads it.
+	fnElision funcElision
+	// pendingCallOnly holds a check per parameter whose function type is written with no
+	// lifetime, for checkCallOnlyParams to read once the enclosing component has solved.
 	pendingCallOnly []callOnlyCheck
-	// tentativeClosures maps the retention lifetime of each closure that holds a borrow only if
-	// a captured binding's type settles to something other than a value type, to the type
+	// callOnlyLts holds the lifetime of each call-only parameter, the ones pendingCallOnly
+	// checks. noteCallOnlyLifetime fills it, and funcLtSources reads it.
+	callOnlyLts set.Set[*soltype.LifetimeVar]
+	// signatureLts holds each lifetime a function's `<'a>` list declares, as `'a` in
+	// `fn f<'a>(…)`. noteSignatureLifetimes fills it, and funcLtSources reads it.
+	signatureLts set.Set[*soltype.LifetimeVar]
+	// keeperOf maps each argument of a call to the call, and the value of each assignment to
+	// the assignment. inferCallArgs and inferAssign fill it, and funcKeptNames reads it to name
+	// what keeps a value checked with the value as the site.
+	keeperOf map[ast.Expr]ast.Expr
+	// closureBorrows maps the lifetime of each closure that holds a borrow to the capture
+	// that makes it hold one. setClosureRetention fills it, and funcLtSources reads it.
+	closureBorrows map[*soltype.LifetimeVar]closureBorrow
+	// tentativeClosures maps the lifetime of each closure that holds a borrow only if a
+	// captured binding's type settles to something other than a value type, to the type
 	// variables of those bindings. setClosureRetention fills it, and
 	// settleTentativeFuncEscapes reads it.
 	tentativeClosures map[*soltype.LifetimeVar][]*soltype.TypeVarType
-	// heldFuncEscapes holds each FuncBorrowEscapeError holdTentativeFuncEscape kept back, for
+	// heldFuncEscapes holds each FuncKeptForStaticError sortFuncKeptForStatic kept back, for
 	// settleTentativeFuncEscapes to decide.
 	heldFuncEscapes []heldFuncEscape
 	// deferredBodies holds, for each `async` or `gen` body being walked, the phrase
@@ -1052,9 +1068,9 @@ func (c *checker) blameConstraintErrors(n ast.Node, errs []SolverError) {
 			err.prov, err.site = c.prov, n
 		case *BorrowEscapeError:
 			err.prov, err.site = c.prov, n
-		case *FuncBorrowEscapeError:
+		case *FuncKeptForStaticError:
 			err.prov, err.site = c.prov, n
-			if c.holdTentativeFuncEscape(err) {
+			if !c.sortFuncKeptForStatic(err) {
 				continue
 			}
 		case *ClassIntoExactObjectError:

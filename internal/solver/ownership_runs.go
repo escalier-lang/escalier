@@ -265,10 +265,10 @@ func (c *checker) noteRetainedClosureArgs(e *ast.CallExpr, fn *soltype.FuncType,
 			break
 		}
 
-		// A parameter whose type has no retention lifetime accepts only a function that holds
-		// no borrow, so keeping the argument keeps none of the caller's locals. A retention
-		// lifetime is the lifetime written on a function type, such as `'a` in
-		// `handler: &'a fn () -> undefined`.
+		// A parameter whose type holds no function with a lifetime accepts only a function
+		// that holds no borrow, so keeping the argument keeps none of the caller's locals. A
+		// function's lifetime is the one written ahead of `fn`, such as `'a` in
+		// `handler: 'a fn () -> undefined`.
 		lts := retentionLifetimes(param.Type)
 		if len(lts) == 0 {
 			continue
@@ -301,7 +301,7 @@ func (c *checker) noteRetainedClosureArgs(e *ast.CallExpr, fn *soltype.FuncType,
 
 		// Find what keeps a closure that is not kept for the rest of the program. In
 		// `subscribe(e, fn () { … })` with `subscribe<'a>(emitter: &'a mut Emitter, handler:
-		// &'a fn () -> undefined)`, the binding `e` shares `'a` and is a holder. A result type
+		// 'a fn () -> undefined)`, the binding `e` shares `'a` and is a holder. A result type
 		// that mentions `'a` keeps the closure too, so the binding the result flows into
 		// becomes a holder later. With neither, the closure cannot outlive the call, and the
 		// argument records no store.

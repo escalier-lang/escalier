@@ -7,32 +7,28 @@ import (
 )
 
 // callOnlyParam is a parameter of a body-carrying function whose written type is a function
-// written `&fn` with an elided lifetime, as `g` in `fn f(g: &fn () -> undefined)`. Such a
-// parameter is only called during the call, unless the signature ties its lifetime to the
-// result. param is the parameter's index in the signature. written is its type as the
-// signature holds it. ft is the copy of that type the body's binding holds, which shares its
-// lifetime.
+// type with no lifetime, as `g` in `fn f(g: fn () -> undefined)`. Such a parameter is only
+// called during the call, unless the signature ties its lifetime to the result. param is the
+// parameter's index in the signature. ann is the parameter's annotation. ft is the copy of the
+// parameter's type the body's binding holds, which shares the lifetime of the type the
+// signature holds.
 type callOnlyParam struct {
-	name    string
-	node    ast.Node
-	param   int
-	written *soltype.FuncType
-	ft      *soltype.FuncType
+	name  string
+	node  ast.Node
+	param int
+	ann   *ast.FuncTypeAnn
+	ft    *soltype.FuncType
 	// outerMark is the lifetime counter before the function's parameters resolved, for a
 	// function written inside another body. Every lifetime minted before it belongs to the enclosing body
 	// or to the module. It is -1 for a function with no enclosing body.
 	outerMark int
 }
 
-// elidedFuncBorrow reports whether ann is written `&fn …` with no lifetime, the form whose
-// lifetime ends with the call.
-func elidedFuncBorrow(ann ast.TypeAnn) bool {
-	ref, isRef := ann.(*ast.RefTypeAnn)
-	if !isRef || ref.Mut || ref.Lifetime != nil {
-		return false
-	}
-	_, isFn := ref.Inner.(*ast.FuncTypeAnn)
-	return isFn
+// isElidedFuncType reports whether ann is a function type written with no lifetime, as
+// `fn () -> undefined` is. On a parameter, that form's lifetime ends with the call.
+func isElidedFuncType(ann ast.TypeAnn) bool {
+	fn, isFn := ann.(*ast.FuncTypeAnn)
+	return isFn && fn.Lifetime == nil
 }
 
 // deferredBody returns the phrase an error names a function by when its body can run after the
@@ -55,6 +51,19 @@ func (c *checker) watchCallOnlyReads(ft *soltype.FuncType) {
 		c.callOnlyDepth = map[*soltype.FuncType]int{}
 	}
 	c.callOnlyDepth[ft] = len(c.deferredBodies)
+}
+
+// noteCallOnlyLifetime adds the lifetime of ft, the body type of a call-only parameter, to
+// callOnlyLts. It must run when the parameter is bound, before its function's body is walked.
+func (c *checker) noteCallOnlyLifetime(ft *soltype.FuncType) {
+	lt, isVar := ft.Lt.(*soltype.LifetimeVar)
+	if !isVar {
+		return
+	}
+	if c.callOnlyLts == nil {
+		c.callOnlyLts = set.NewSet[*soltype.LifetimeVar]()
+	}
+	c.callOnlyLts.Add(lt)
 }
 
 // deferredRead is the first read of a call-only parameter inside an `async` or `gen` body
@@ -209,9 +218,9 @@ func (c *checker) checkCallOnlyParams() {
 		if static || outside {
 			// The lifetime bounds do not record where the body added them, so the error
 			// blames the parameter.
-			c.report(&CallOnlyFuncKeptError{Name: p.name, Written: p.written, Static: static, Param: p.node})
+			c.report(&CallOnlyFuncKeptError{Name: p.name, Written: p.ann, Static: static, Param: p.node})
 		} else if read, isRead := c.callOnlyDeferredRead[p.ft]; isRead {
-			c.report(&CallOnlyFuncKeptError{Name: p.name, Written: p.written, Deferred: read.body, Param: p.node, Read: read.node})
+			c.report(&CallOnlyFuncKeptError{Name: p.name, Written: p.ann, Deferred: read.body, Param: p.node, Read: read.node})
 		}
 	}
 }

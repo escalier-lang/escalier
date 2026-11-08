@@ -100,7 +100,7 @@ func TestNonReturningRecursionReported(t *testing.T) {
 					grow(&self) { return {go: fn () { return {next: self.grow().go()} }} },
 				}
 			`,
-			want: []string{nonReturningMsg("3:32-3:73", "", "&fn () -> {next: μX0.{next: X0}}")},
+			want: []string{nonReturningMsg("3:32-3:73", "", "fn () -> {next: μX0.{next: X0}}")},
 		},
 	}
 	for _, tt := range tests {

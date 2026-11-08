@@ -377,7 +377,7 @@ func (c *Context) trialBindsWatched(sub, super soltype.Type, watch []*soltype.Ty
 func (c *Context) trialCaptures(sub, super soltype.Type, vars []*soltype.TypeVarType, seen *seenPairs) ([]soltype.Type, bool) {
 	p := newProbe(c, c.probe)
 	c.probe = p
-	errs := c.constrain(sub, super, seen, false)
+	errs := withoutFuncLifetimeErrs(c.constrain(sub, super, seen, false))
 	ok := !hasHardError(errs)
 	var captured []soltype.Type
 	if ok {

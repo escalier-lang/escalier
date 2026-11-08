@@ -343,9 +343,9 @@ type FuncType struct {
 	// LifetimeParams are the function's quantified lifetime parameters, the twin of TypeParams;
 	// LevelOf skips them too, though a body lifetime still counts through its RefType.
 	LifetimeParams []*LifetimeParam
-	// Lt is the function's retention lifetime, written `&'a fn () -> R`. A retention
-	// lifetime bounds the borrows the function may hold, so a slot keeps the function only
-	// while Lt is live. Nil means the function holds no borrow, so any slot may keep it. The
+	// Lt is the function's lifetime, written `'a fn () -> R`. It bounds the borrows the
+	// function may hold, so a slot keeps the function only while Lt is live. Nil means the
+	// function holds no borrow that ends before 'static, the same as soltype.Static. The
 	// lifetime does not make the function a borrow, and a function value is still copied. Lt
 	// is free in the function type, unlike the lifetimes in LifetimeParams.
 	Lt Lifetime

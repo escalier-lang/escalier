@@ -1405,18 +1405,24 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			if quantified(sub) {
 				return c.constrain(c.instantiateFuncBinder(sub, binderLevel(sub)), sup, seen, mutCtx)
 			}
-			// A retention lifetime is covariant, like a borrow's. A function whose borrows live
+			// A function's lifetime is covariant, like a borrow's. A function whose borrows live
 			// for the destination's lifetime has to stay valid that long, so the source's
-			// lifetime must outlive it. A source with no lifetime holds no borrow, so it fills
-			// any slot. A destination with no lifetime holds only functions with no borrows, so
-			// a source with a lifetime escapes into it, the way a borrow escapes into an owned
-			// slot.
+			// lifetime must outlive it. A source whose lifetime is nil or 'static fills any slot.
+			//
+			// A destination with a nil lifetime is a `fn` written with no lifetime outside a
+			// signature or a body, which holds no borrow. A source that may hold one is
+			// reported there, the way a borrow escapes into an owned slot. The source's lifetime
+			// is still bounded by 'static, so a call-only parameter or a signature's lifetime
+			// reaching the slot is reported by its own check. A destination written
+			// `'static fn` only bounds the source's lifetime by 'static.
 			var funcErrs []SolverError
 			switch {
-			case sub.Lt != nil && sup.Lt != nil:
+			case isStaticFuncLt(sub.Lt):
+			case sup.Lt == nil:
+				c.constrainLt(sub.Lt, soltype.Static)
+				funcErrs = append(funcErrs, &FuncKeptForStaticError{Sub: sub, Super: sup})
+			default:
 				c.constrainLt(sub.Lt, sup.Lt)
-			case sub.Lt != nil:
-				funcErrs = append(funcErrs, &FuncBorrowEscapeError{Sub: sub, Super: sup})
 			}
 			// A tuple-typed rest param on either side expands to one positional param per element,
 			// so a written rest param works as a value-level type and not only as a pattern. The

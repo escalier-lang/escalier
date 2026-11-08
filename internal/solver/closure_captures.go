@@ -2,6 +2,7 @@ package solver
 
 import (
 	"slices"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
@@ -78,20 +79,23 @@ func (c *checker) recordClosureCaptures(scope *Scope, closure ast.Func) {
 	}
 }
 
-// setClosureRetention gives ft, the type of `closure`, a retention lifetime when the closure
-// holds a borrow, so its type reads `&'a fn`. The closure holds a borrow when it captures one
-// of these from a body it is written in:
+// setClosureRetention gives ft, the type of `closure`, a lifetime when the closure holds a
+// borrow, so its type reads `'a fn`. The closure holds a borrow when it captures one of these
+// from a body it is written in:
 //
 //   - A `var` binding, or a binding it writes. Each call reads or writes the binding itself.
 //   - A binding whose value is not a value type, such as an object. The closure reads it
 //     through a borrow.
-//   - A value that holds a function with a retention lifetime, in a union, an object property,
-//     or a type argument, as retentionLifetimes finds. That function's lifetime must outlive
-//     the closure's.
+//   - A value that holds a function with a lifetime other than 'static, in a union, an object
+//     property, or a type argument, as shortFuncLifetimes finds. That function's lifetime must
+//     outlive the closure's.
 //
 // A binding of a value type in a `val` is copied into the closure, and a module-level binding
 // lives for the whole program, so neither makes the closure hold a borrow. The lifetime is
 // fresh at lvl. ft must be the closure's own type, not yet shared with any other type.
+//
+// The lifetime joins closureBorrows with the first capture that holds a borrow, for a
+// FuncKeptForStaticError to name.
 //
 // A `val` binding whose type is still a type variable, such as an unannotated parameter, may
 // turn out to hold a value type or an object. The closure takes a lifetime for it, and the
@@ -101,9 +105,16 @@ func (c *checker) recordClosureCaptures(scope *Scope, closure ast.Func) {
 // When each borrow the closure holds is of a local of the body it is written in, the lifetime
 // joins that body's frameClosures, for ownReturnedClosures to read.
 func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, ft *soltype.FuncType) {
-	retain := func() {
+	// borrowed is the first capture that holds a borrow.
+	var borrowed closureBorrow
+	retain := func(name string, b ValueBinding) {
 		if ft.Lt == nil {
 			ft.Lt = c.ctx.freshLifetime(lvl)
+			// Declaring the binding at module level ends the borrow only when its value
+			// borrows nothing else.
+			_, isLocal := bindingDecl(b).(*ast.VarDecl)
+			local := isLocal && !c.inScript() && c.fn != nil && c.holdsOnlyFrameBorrows(schemeBody(b.Schemes[0]))
+			borrowed = closureBorrow{name: name, local: local}
 		}
 	}
 	framed := c.fn != nil
@@ -126,9 +137,9 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 		} else if !readOnly || c.capturesByBorrow(held) {
 			definite = true
 		}
-		retained := held != nil && len(retentionLifetimes(held)) > 0
+		retained := held != nil && len(shortFuncLifetimes(held)) > 0
 		if !readOnly || isVar || retained || c.capturesByBorrow(held) {
-			retain()
+			retain(capture.Name, b)
 			// A returned closure takes a local it captures, but not what a borrow or a closure
 			// inside the local borrows from outside the body.
 			framed = framed && c.isFrameLocal(capture.Name, b) && c.holdsOnlyFrameBorrows(held)
@@ -139,11 +150,17 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 		if !retained {
 			continue
 		}
-		for _, lt := range retentionLifetimes(c.bindingValue(lvl, b)) {
-			retain()
+		for _, lt := range shortFuncLifetimes(c.bindingValue(lvl, b)) {
+			retain(capture.Name, b)
 			c.ctx.constrainLt(lt, ft.Lt)
 			definite = true
 		}
+	}
+	if lt, isVar := ft.Lt.(*soltype.LifetimeVar); isVar && borrowed.name != "" {
+		if c.closureBorrows == nil {
+			c.closureBorrows = map[*soltype.LifetimeVar]closureBorrow{}
+		}
+		c.closureBorrows[lt] = borrowed
 	}
 	if lt, isVar := ft.Lt.(*soltype.LifetimeVar); isVar && !definite && len(undecided) > 0 {
 		if c.tentativeClosures == nil {
@@ -157,6 +174,20 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 		}
 		c.fn.frameClosures.Add(lt)
 	}
+}
+
+// closureBorrow is the capture that makes a closure hold a borrow. name is the captured
+// binding's name. local says the binding is a `val` or `var` of a function body, which could be
+// declared at module level instead.
+type closureBorrow struct {
+	name  string
+	local bool
+}
+
+// shortFuncLifetimes returns the lifetimes retentionLifetimes finds in t other than 'static. A
+// function whose lifetime is 'static outlives any closure that captures it.
+func shortFuncLifetimes(t soltype.Type) []soltype.Lifetime {
+	return slices.DeleteFunc(retentionLifetimes(t), isStaticFuncLt)
 }
 
 // isFrameLocal reports whether b, the binding name resolves to, is a local of the body being
@@ -438,29 +469,129 @@ func (c *checker) funcMovesCaptures(decl ast.Node) bool {
 	return ok && len(c.capturesMovedBy[fn]) > 0
 }
 
-// holdTentativeFuncEscape keeps err back from the diagnostics when its source holds a borrow
-// only through closures in tentativeClosures, and reports whether it did. Whether such a
-// closure holds a borrow is known only once its type variables settle, so
-// settleTentativeFuncEscapes decides err then. err is held before the diagnostics of one
-// constraint are deduplicated, since a held escape and a reported one can share a message and
-// a span.
-func (c *checker) holdTentativeFuncEscape(err *FuncBorrowEscapeError) bool {
-	closures, tentative := c.tentativeSources(err.Sub.Lt)
-	if !tentative {
+// sortFuncKeptForStatic decides err, a FuncKeptForStaticError whose prov and site are set, by
+// reading where the lifetime of its source comes from, as funcLtSources finds:
+//
+//   - A source reaching only call-only parameters and signature lifetimes is reported by
+//     checkCallOnlyParams or the signature's lifetime checks, so err is dropped.
+//   - A source reaching a closure names the closure's first borrowing capture in err.
+//   - A source reaching only closures in tentativeClosures holds a borrow only if a captured
+//     binding settles to something other than a value type. err is held back for
+//     settleTentativeFuncEscapes to decide once those settle.
+//
+// It returns whether err is reported now.
+func (c *checker) sortFuncKeptForStatic(err *FuncKeptForStaticError) bool {
+	src := c.funcLtSources(err.Sub.Lt)
+	if len(src.closures) == 0 && !src.other {
 		return false
 	}
-	c.heldFuncEscapes = append(c.heldFuncEscapes, heldFuncEscape{err: err, closures: closures})
+	err.source, err.keeper = c.funcKeptNames(err)
+	if n, ok := c.prov.NodeFor(err.Super); ok {
+		_, err.inferred = n.(*ast.FuncExpr)
+	}
+	for _, lt := range src.closures {
+		if b, found := c.closureBorrows[lt]; found {
+			err.borrowed, err.local = b.name, b.local
+			break
+		}
+	}
+	tentative := !src.other && len(src.closures) > 0
+	for _, lt := range src.closures {
+		if _, found := c.tentativeClosures[lt]; !found {
+			tentative = false
+		}
+	}
+	if tentative {
+		c.heldFuncEscapes = append(c.heldFuncEscapes, heldFuncEscape{err: err, closures: src.closures})
+		return false
+	}
 	return true
 }
 
-// heldFuncEscape is one FuncBorrowEscapeError holdTentativeFuncEscape kept back. closures holds
-// the retention lifetimes of the tentative closures its source holds a borrow through.
+// noteKeeper records keeper, a call or an assignment, as what keeps value, one of its
+// arguments or the value it assigns, in keeperOf.
+func (c *checker) noteKeeper(value, keeper ast.Expr) {
+	if value == nil {
+		return
+	}
+	if c.keeperOf == nil {
+		c.keeperOf = map[ast.Expr]ast.Expr{}
+	}
+	c.keeperOf[value] = keeper
+}
+
+// funcKeptNames returns the phrases err names its source and the slot that keeps it by. The
+// source is "`show`" when the blamed expression reads the binding `show`, "this closure" when
+// it is a closure, and "this function" otherwise. The blamed expression is the node of the
+// source's type, or the site when that node is missing or in another source, as Span blames.
+// The keeper is the callee of a call, the target of an assignment, or the binding a
+// declaration initializes, and "" otherwise.
+//
+// A site that assigns is replaced by the value it assigns, so the error blames the value.
+func (c *checker) funcKeptNames(err *FuncKeptForStaticError) (source, keeper string) {
+	site := err.site
+	// An argument or an assigned value is checked with the value as the site, so the call
+	// or the assignment it belongs to keeps it.
+	if value, isExpr := site.(ast.Expr); isExpr {
+		if k, found := c.keeperOf[value]; found {
+			site = k
+		}
+	}
+	switch site := site.(type) {
+	case *ast.CallExpr:
+		if name := calleeName(site.Callee); name != "" {
+			keeper = "`" + name + "`"
+		}
+	case *ast.BinaryExpr:
+		if site.Op == ast.Assign {
+			keeper = placeText(site.Left)
+			err.site = site.Right
+		}
+	case *ast.VarDecl:
+		if ip, isIdent := site.Pattern.(*ast.IdentPat); isIdent {
+			keeper = "`" + ip.Name + "`"
+		}
+	}
+	blamed := err.site
+	if n, ok := c.prov.NodeFor(err.Sub); ok && (err.site == nil || n.Span().SourceID == err.site.Span().SourceID) {
+		blamed = n
+	}
+	source = "this function"
+	switch n := blamed.(type) {
+	case *ast.IdentExpr:
+		source = "`" + n.Name + "`"
+	case *ast.FuncExpr:
+		source = "this closure"
+	}
+	return source, keeper
+}
+
+// placeText renders a place written as a name or a chain of property reads, as "`registry.cb`",
+// and returns "" for any other expression.
+func placeText(e ast.Expr) string {
+	var parts []string
+	for {
+		switch cur := e.(type) {
+		case *ast.IdentExpr:
+			parts = append([]string{cur.Name}, parts...)
+			return "`" + strings.Join(parts, ".") + "`"
+		case *ast.MemberExpr:
+			parts = append([]string{cur.Prop.Name}, parts...)
+			e = cur.Object
+		default:
+			return ""
+		}
+	}
+}
+
+// heldFuncEscape is one FuncKeptForStaticError sortFuncKeptForStatic kept back. closures holds
+// the lifetimes of the tentative closures its source holds a borrow through.
 type heldFuncEscape struct {
-	err      *FuncBorrowEscapeError
+	err      *FuncKeptForStaticError
 	closures []*soltype.LifetimeVar
 }
 
-// settleTentativeFuncEscapes reports each held FuncBorrowEscapeError unless every closure its
+// settleTentativeFuncEscapes reports each held FuncKeptForStaticError unless every closure its
 // source holds a borrow through has type variables that all settled to value types. Such a
 // closure copies what it captures, so it holds no borrow. An error that repeats the message
 // and span of one already reported is dropped. It must run once the enclosing component has
@@ -500,31 +631,46 @@ func (c *checker) alreadyReported(e SolverError) bool {
 	return false
 }
 
-// tentativeSources returns the closures in tentativeClosures that the retention lifetime lt
-// holds a borrow through, and whether those are its only sources. The walk follows the
-// lifetime an instantiation copied, the lifetime an extrusion proxied, and each lower bound.
-// A lifetime it reaches with none of those, such as a `&fn` parameter's or 'static, is a
-// source that holds a borrow whatever the closures settle to, so the result is false.
-func (c *checker) tentativeSources(lt soltype.Lifetime) ([]*soltype.LifetimeVar, bool) {
-	if len(c.tentativeClosures) == 0 {
-		return nil, false
-	}
+// funcLtSourceSet is what funcLtSources found a function lifetime to come from.
+type funcLtSourceSet struct {
+	// closures holds the lifetimes of the closures reached, the ones closureBorrows or
+	// tentativeClosures holds.
+	closures []*soltype.LifetimeVar
+	// other says a source was reached that is neither a closure, a call-only parameter, nor a
+	// lifetime a signature names, such as the lifetime of a declared function's result.
+	other bool
+}
+
+// funcLtSources reads where the function lifetime lt comes from. The walk follows the lifetime
+// an instantiation copied, the lifetime an extrusion proxied, and each lower bound. It stops at
+// a closure's lifetime, at a call-only parameter's lifetime, at a lifetime a signature names,
+// and at a lifetime with none of those to follow that it has not read, which counts as other.
+// 'static is no source.
+func (c *checker) funcLtSources(lt soltype.Lifetime) funcLtSourceSet {
+	var out funcLtSourceSet
 	seen := set.NewSet[*soltype.LifetimeVar]()
 	pending := []soltype.Lifetime{lt}
-	var closures []*soltype.LifetimeVar
 	for len(pending) > 0 {
 		cur := pending[len(pending)-1]
 		pending = pending[:len(pending)-1]
 		v, isVar := cur.(*soltype.LifetimeVar)
 		if !isVar {
-			return nil, false
+			if !isStaticFuncLt(cur) {
+				out.other = true
+			}
+			continue
 		}
 		if seen.Contains(v) {
 			continue
 		}
 		seen.Add(v)
-		if _, tentative := c.tentativeClosures[v]; tentative {
-			closures = append(closures, v)
+		_, borrows := c.closureBorrows[v]
+		_, tentative := c.tentativeClosures[v]
+		if borrows || tentative {
+			out.closures = append(out.closures, v)
+			continue
+		}
+		if c.callOnlyLts.Contains(v) || c.signatureLts.Contains(v) {
 			continue
 		}
 		next := slices.Clone(v.LowerBounds)
@@ -534,12 +680,18 @@ func (c *checker) tentativeSources(lt soltype.Lifetime) ([]*soltype.LifetimeVar,
 		for _, copied := range c.ctx.ltCopies[v] {
 			next = append(next, copied)
 		}
-		if len(next) == 0 {
-			return nil, false
+		// A lifetime whose every link leads back to one already read has no source of its own,
+		// such as a declared function's result lifetime and the copy a call made of it.
+		unread := slices.DeleteFunc(next, func(lt soltype.Lifetime) bool {
+			lv, isVar := lt.(*soltype.LifetimeVar)
+			return isVar && seen.Contains(lv)
+		})
+		if len(unread) == 0 {
+			out.other = true
 		}
-		pending = append(pending, next...)
+		pending = append(pending, unread...)
 	}
-	return closures, len(closures) > 0
+	return out
 }
 
 // settlesToValueType reports whether every value v can hold is a value type, because one of

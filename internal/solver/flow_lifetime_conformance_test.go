@@ -181,7 +181,7 @@ func TestFlowLifetimeRules(t *testing.T) {
 		{
 			name: "E4/Stored",
 			src: `
-				var sink: &'static fn () -> undefined = fn () {}
+				var sink: 'static fn () -> undefined = fn () {}
 				declare fn readIt(a: &{x: number}) -> undefined
 
 				fn stored() {
@@ -410,7 +410,7 @@ func TestFlowLifetimeRetainedCallback(t *testing.T) {
 		{
 			name: "D10/RetainedHandlerConflicts",
 			src: `
-				declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+				declare fn onClick(handler: 'static fn () -> undefined) -> undefined
 				declare fn render(view: &{n: number}) -> undefined
 
 				fn setup() {
@@ -433,7 +433,7 @@ func TestFlowLifetimeRetainedCallbackAccepted(t *testing.T) {
 		{
 			name: "D10/HandlerOwnsState",
 			src: `
-				declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+				declare fn onClick(handler: 'static fn () -> undefined) -> undefined
 				declare fn render(view: &{n: number}) -> undefined
 
 				fn setup() {
@@ -450,7 +450,7 @@ func TestFlowLifetimeRetainedCallbackAccepted(t *testing.T) {
 		{
 			name: "D10/MutableView",
 			src: `
-				declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+				declare fn onClick(handler: 'static fn () -> undefined) -> undefined
 				declare fn render(view: &mut {n: number}) -> undefined
 
 				fn setup() {
@@ -465,7 +465,7 @@ func TestFlowLifetimeRetainedCallbackAccepted(t *testing.T) {
 		{
 			name: "D10/CalledOnlyDuringCall",
 			src: `
-				declare fn forEachItem(f: &fn () -> undefined) -> undefined
+				declare fn forEachItem(f: fn () -> undefined) -> undefined
 				declare fn render(view: &{n: number}) -> undefined
 
 				fn setup() {

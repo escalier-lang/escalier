@@ -124,10 +124,10 @@ func (c *checker) checkLifetimeDeclarations(lifetimeParams []*ast.LifetimeParam,
 }
 
 // lifetimeUseCollector walks a signature's type annotations and records each `&'x`
-// borrow's lifetime as a use, keeping the LifetimeAnn node so the check reads its name
-// and blames its span. It descends through nested borrows and object, tuple, and union
-// annotations, but stops at a nested function annotation, which owns its own lifetime
-// scope.
+// borrow's lifetime and each `'x fn` function type's lifetime as a use, keeping the
+// LifetimeAnn node so the check reads its name and blames its span. It descends through
+// nested borrows and object, tuple, and union annotations, but stops inside a nested function
+// annotation, which owns its own lifetime scope.
 //
 // A borrow's `&'x` lifetime lands in uses, which drives both the undeclared and unused scans.
 // A `'a` lifetime argument on a referenced type, the `'a` in `Ref<'a, T>`, lands in refArgs
@@ -156,8 +156,11 @@ func (v *lifetimeUseCollector) EnterTypeAnn(t ast.TypeAnn) bool {
 		}
 		return true
 	case *ast.FuncTypeAnn:
-		// A nested function type is its own quantifier scope. Its inner borrows are not
-		// uses of this signature's clause, and its own pass checks them.
+		// The `'a` in `'a fn () -> R` sits outside the function type, so it is a use of this
+		// signature's clause. A nested function type is its own quantifier scope otherwise.
+		// Its inner borrows are not uses of this signature's clause, and its own pass checks
+		// them.
+		v.addLifetime(n.Lifetime)
 		return false
 	default:
 		return true

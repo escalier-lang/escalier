@@ -125,7 +125,7 @@ func TestInferUnannotatedParamOwnership(t *testing.T) {
 		{
 			name: "MethodCall",
 			src:  `fn f(o) { return o.m() }`,
-			want: "fn <T0>(o: {m: &fn () -> T0}) -> T0",
+			want: "fn <T0>(o: {m: fn () -> T0}) -> T0",
 		},
 		{
 			name: "WriteThroughMember",

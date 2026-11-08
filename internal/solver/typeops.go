@@ -499,7 +499,18 @@ func (f *inferFinder) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Typ
 // through the same seen-set the caller built up, while the clone keeps the probe's own keys out of
 // the caller's set. An empty result means the subtype check held, selecting the Then branch.
 func (c *Context) condExtends(check, extends soltype.Type, seen *seenPairs) bool {
-	return !hasHardError(c.trialUnderProbeSeen(check, extends, seen.Clone()))
+	return !hasHardError(withoutFuncLifetimeErrs(c.trialUnderProbeSeen(check, extends, seen.Clone())))
+}
+
+// withoutFuncLifetimeErrs returns errs without any FuncKeptForStaticError. A function's lifetime
+// does not decide a conditional's branch, so a branch test drops those errors.
+// `if F : fn (value: infer V) -> any` in a type alias keeps its function type for 'static, and a
+// callback a method takes for the call alone still matches it.
+func withoutFuncLifetimeErrs(errs []SolverError) []SolverError {
+	return slices.DeleteFunc(errs, func(e SolverError) bool {
+		_, lifetimeOnly := e.(*FuncKeptForStaticError)
+		return lifetimeOnly
+	})
 }
 
 // condOperandGround reports whether a conditional's Check or Extends operand is ground enough to

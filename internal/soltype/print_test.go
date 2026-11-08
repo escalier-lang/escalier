@@ -300,13 +300,14 @@ func TestPrintGenericFunc(t *testing.T) {
 		{
 			// A generic higher-order signature: the parameter appears inside a nested
 			// function and the return, so its name must render at every use. A tuple
-			// stands in for Array<U>, which lands with ClassType in A1.
+			// stands in for Array<U>, which lands with ClassType in A1. The callback's
+			// lifetime is the fresh one an elided parameter gets.
 			name: "map-shaped generic",
 			in: func() Type {
 				u := &TypeVarType{ID: 10, Level: 1}
 				return &FuncType{
 					TypeParams: []*TypeParam{{Name: "U", Var: u}},
-					Params:     []*FuncParam{identP("f", &FuncType{Params: []*FuncParam{identP("n", numP())}, Ret: u})},
+					Params:     []*FuncParam{identP("f", &FuncType{Params: []*FuncParam{identP("n", numP())}, Ret: u, Lt: &LifetimeVar{ID: 0}})},
 					Ret:        &TupleType{Elems: []Type{u}},
 				}
 			},
@@ -1040,4 +1041,39 @@ func TestPrintElidedZeroMatchesPrint(t *testing.T) {
 		&TupleType{Elems: []Type{strP(), boolP()}},
 	}}
 	require.Equal(t, Print(ty), PrintElided(ty, 0))
+}
+
+// A function type's lifetime renders as a prefix. TestPrintFuncLifetime covers a named
+// lifetime, 'static, an elided lifetime, and no lifetime, which holds no borrow and so renders
+// `'static fn` inside a parameter list, where a bare `fn` would read as an elided lifetime.
+func TestPrintFuncLifetime(t *testing.T) {
+	fnWith := func(lt Lifetime) *FuncType {
+		return &FuncType{Ret: &UndefinedType{}, Lt: lt}
+	}
+	takes := func(param Type) *FuncType {
+		return &FuncType{Params: []*FuncParam{identP("g", param)}, Ret: &UndefinedType{}}
+	}
+	named := &LifetimeVar{ID: 0}
+	tests := []struct {
+		name string
+		ty   Type
+		want string
+	}{
+		{name: "static lifetime", ty: fnWith(Static), want: "'static fn () -> undefined"},
+		{name: "elided lifetime", ty: fnWith(&LifetimeVar{ID: 1}), want: "fn () -> undefined"},
+		{name: "no lifetime", ty: fnWith(nil), want: "fn () -> undefined"},
+		{name: "no lifetime in a parameter", ty: takes(fnWith(nil)), want: "fn (g: 'static fn () -> undefined) -> undefined"},
+		{name: "elided lifetime in a parameter", ty: takes(fnWith(&LifetimeVar{ID: 2})), want: "fn (g: fn () -> undefined) -> undefined"},
+		{name: "no lifetime in a returned function's parameter", ty: &FuncType{Ret: takes(fnWith(nil))}, want: "fn () -> fn (g: 'static fn () -> undefined) -> undefined"},
+		{name: "static lifetime in a union", ty: &UnionType{Types: []Type{fnWith(Static), &NullType{}}}, want: "('static fn () -> undefined) | null"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, Print(tt.ty))
+		})
+	}
+	t.Run("named lifetime", func(t *testing.T) {
+		p := &namedPrinter{ltNames: map[*LifetimeVar]string{named: "'a"}}
+		require.Equal(t, "'a fn () -> undefined", p.printType(fnWith(named)))
+	})
 }
