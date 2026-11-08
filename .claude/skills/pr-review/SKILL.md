@@ -17,6 +17,10 @@ The prompt that runs this skill gives the repository, the PR number, and a level
 
 At `low`, post only findings you are confident are real. At `high`, aim for recall. Post a finding whenever you can name a concrete failure scenario, even when you are not sure it is real.
 
+## Running commands
+
+The job allows only the commands this skill names, and it checks each shell call as a whole. Run one command per Bash call. Don't join commands with `;`, `&&`, or `||`, and don't use `for` or `while` loops, because the job refuses such a call even when every command in it is allowed. A pipe into `sha256sum` is fine, as the link instructions under Post show. To hash several paths, make one call per path. To fix a file you wrote, such as `.pr-review-summary.md`, use the Edit tool or rewrite it with the Write tool, not `sed`.
+
 ## 1. Gather the diff
 
 1. Run `gh pr view <number> --json baseRefName,headRefOid,files` to find the base branch and head commit. The base may be another stacked PR branch, not `main`.
