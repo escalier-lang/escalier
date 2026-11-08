@@ -305,39 +305,47 @@ closure goes decides how its captures are checked:
   borrow, so a second path out that disagrees with it is reported.
 - A closure stored into module-level state, or into any slot written
   `'static fn` such as a parameter, a field, or a binding, is kept for the whole
-  program. It takes over the locals it
-  captures at the store, the way a returned closure takes them at the return,
-  so the body cannot use them after the store. Escalier compiles to JavaScript,
-  so a local the closure owns lives as long as the closure does.
+  program. The slot keeps the closure's borrows of the locals it captures for
+  the rest of the program too. Escalier compiles to JavaScript, so a local the
+  closure borrows lives as long as the closure does.
+
+Each kept borrow has the kind the closure's use gives it. A capture the closure
+only reads is borrowed immutably, and one it writes or assigns to is borrowed
+mutably. The slot may run the closure at any later point, so each later use of
+the local in the body is checked against the kept borrow:
+
+- After a closure that only reads a local, a later read of it or `&` borrow
+  of it is fine. A later write, `&mut` borrow, or move of it is reported.
+- After a closure that writes a local, every later use of it is reported.
+- With no later use, the store is fine.
 
 ```esc
 var sink: fn () -> undefined = fn () {}
 declare fn readIt(a: &{x: number}) -> undefined
+declare fn log(n: number) -> undefined
 
-fn go() {
-    val mut p = {x: 1}
-    sink = fn () { p.x = 2 }    // the closure takes p over
+fn reads() {
+    val p = {x: 1}
+    sink = fn () { log(p.x) }
+    readIt(&p)    // fine, since both borrows of p are immutable
 }
 
-fn later() {
+fn writes() {
     val mut p = {x: 1}
     sink = fn () { p.x = 2 }
-    readIt(&p)    // ERROR: 'p' is used after 'sink' took it over for 'static
+    readIt(&p)    // ERROR: cannot borrow 'p' as immutable while it is borrowed as mutable by 'sink'
 }
 ```
 
-The closure takes a local over when every local it borrows meets these
-conditions. Otherwise the store is rejected as a closure that borrows what the
-slot cannot keep:
+The slot keeps the closure's borrows when every local the closure borrows is a
+`val` or a `var` of the body the closure is written in. A parameter belongs to
+the caller, and a local holding a borrow from outside the body holds what the
+body cannot keep for the rest of the program. A closure over either is rejected
+at the store as a closure that borrows what the slot cannot keep.
 
-- It is a `val` or a `var` of the body the closure is written in. A parameter
-  belongs to the caller, and a local holding a borrow from outside the body
-  holds what the body cannot give away.
-- No borrow of it is live at the store. That includes another closure that
-  captures it and is used later.
-- The body does not use it after the store. A later read, write, move, or
-  borrow of it is reported as a use of a value the closure took over. For a
-  `var`, a later write counts too, since the closure reads the binding itself.
+A kept borrow is checked against the borrows live at the store as well. A
+closure that writes `p`, stored while a `&p` that is used later is live, is
+reported at the store.
 
 #### Function lifetimes
 
@@ -377,8 +385,8 @@ fn setup() {
     val cfg = {msg: "hello"}
     val show = fn () { console.log(cfg.msg) }
     run(show)                           // fine, since run only calls show during the call
-    sink = show                         // fine, since show takes cfg over
-    console.log(cfg.msg)                // ERROR: 'cfg' is used after 'sink' took it over for 'static
+    sink = show                         // fine, since sink keeps show's borrow of cfg
+    console.log(cfg.msg)                // fine, since show only reads cfg
 }
 
 fn record(p: {x: number}) {
@@ -400,7 +408,8 @@ passes to it.
 
 A slot written `'static fn` is the same as a module-level `fn` slot written
 with no lifetime. It holds only a function that borrows nothing shorter than
-the program, so a closure passed to it takes over the locals it borrows:
+the program, so a closure passed to it keeps its borrows of the locals it
+captures for the rest of the program:
 
 ```esc
 declare fn onClick(handler: 'static fn () -> undefined) -> undefined
@@ -412,12 +421,15 @@ fn setup() {
     forEachItem(fn () { count.n = count.n + 1 })
     render(&count)    // fine, since forEachItem is done with its closure
     onClick(fn () { count.n = count.n + 1 })
-    render(&count)    // ERROR: 'count' is used after the 'handler' that 'onClick' retains took it over for 'static
+    // ERROR: cannot borrow 'count' as immutable while it is borrowed as mutable
+    // by the 'handler' that 'onClick' retains
+    render(&count)
 }
 ```
 
 Moving the last `render(&count)` into the handler makes `setup` check, since
-the handler owns `count`. `move fn`
+nothing in `setup` uses `count` after `onClick` keeps the handler. A handler
+that only reads `count` checks beside the last `render(&count)` too. `move fn`
 ([#2585](https://github.com/escalier-lang/escalier/issues/2585)) will spell that
 ownership out at the closure.
 
@@ -695,7 +707,8 @@ Specified above but not yet enforced:
   ([#2584](https://github.com/escalier-lang/escalier/issues/2584)). A `&local`
   argument to a `&'static` parameter is accepted, though nothing checks the
   local's later uses. A closure that borrows a local and fills a `'static fn`
-  slot takes the local over, which covers the closure half of the issue.
+  slot keeps its borrow of the local for the rest of the program, which covers
+  the closure half of the issue.
 - **Call-only parameters reached indirectly.** A parameter whose function type
   is written with no lifetime is checked only when the type is the parameter's
   whole annotation. A function type inside one, such as the `cb` field of
