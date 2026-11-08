@@ -22,7 +22,7 @@ import (
 // caused is a false ambiguous-union warning. ambiguousAlternate skips every variable in
 // Context.paramVars, so that warning stays hidden with or without the second copy.
 func TestACtorCallBindsOneCopyOfEachClassParameter(t *testing.T) {
-	module := parseModule(t, `
+	param := ctorCallBindsOneParam(t, `
 		class Box<T> {
 			value: T,
 			getValue<U>(self, d: U) -> T | U {
@@ -31,6 +31,44 @@ func TestACtorCallBindsOneCopyOfEachClassParameter(t *testing.T) {
 		}
 		val box = Box(5:number)
 	`)
+
+	var linked *soltype.UnionType
+	for _, ub := range param.UpperBounds {
+		if link, ok := ub.(*soltype.TypeVarType); ok {
+			for _, linkUb := range link.UpperBounds {
+				if u, ok := linkUb.(*soltype.UnionType); ok {
+					linked = u
+				}
+			}
+		}
+	}
+	require.NotNil(t, linked)
+	require.Contains(t, linked.Types, soltype.Type(param))
+}
+
+// TestACtorCallBindsOneCopyThroughABorrowedReceiver asserts that a constructor call binds one
+// variable for `T` when `getValue` takes `&self`. The constructor binder and the class type
+// the call returns name that one variable. The read through `&self` is `&'a T`, so there is
+// no field-variable link to follow as TestACtorCallBindsOneCopyOfEachClassParameter does.
+func TestACtorCallBindsOneCopyThroughABorrowedReceiver(t *testing.T) {
+	ctorCallBindsOneParam(t, `
+		class Box<T> {
+			value: T,
+			getValue<U>(&self, d: U) -> T | U {
+				if self.value != 0 { return self.value } else { return d }
+			},
+		}
+		val box = Box(5:number)
+	`)
+}
+
+// ctorCallBindsOneParam infers src, whose last declaration is `val box = Box(...)`, and
+// asserts that the constructor's binder for the class's first type parameter is the same
+// variable as the first type argument of the class type the call returns. It returns that
+// variable.
+func ctorCallBindsOneParam(t *testing.T, src string) *soltype.TypeVarType {
+	t.Helper()
+	module := parseModule(t, src)
 	c := newTestChecker()
 	scope := c.preludeScope().Child()
 	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
@@ -67,17 +105,5 @@ func TestACtorCallBindsOneCopyOfEachClassParameter(t *testing.T) {
 		require.True(t, ok)
 		require.Same(t, param, ct.TypeArgs[0])
 	}
-
-	var linked *soltype.UnionType
-	for _, ub := range param.UpperBounds {
-		if link, ok := ub.(*soltype.TypeVarType); ok {
-			for _, linkUb := range link.UpperBounds {
-				if u, ok := linkUb.(*soltype.UnionType); ok {
-					linked = u
-				}
-			}
-		}
-	}
-	require.NotNil(t, linked)
-	require.Contains(t, linked.Types, soltype.Type(param))
+	return param
 }
