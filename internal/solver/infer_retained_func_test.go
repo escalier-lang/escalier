@@ -584,6 +584,13 @@ fn f(g: fn () -> undefined) {
 			name: "returned",
 			src:  `fn f(g: fn () -> undefined) { return g }`,
 		},
+		// p's field takes a lifetime of its own, which the caller reads after the call, so g
+		// must outlive the call.
+		{
+			name: "stored into an elided field of a borrowed parameter",
+			src:  `fn f(g: fn () -> undefined, p: &mut {cb: fn () -> undefined}) { p.cb = g }`,
+			want: []string{"1:6-1:7: parameter 'g' is only called during the call, so it cannot outlive the call"},
+		},
 		{
 			name: "returned through an elided return annotation",
 			src:  `fn f(g: fn () -> undefined) -> fn () -> undefined { return g }`,
