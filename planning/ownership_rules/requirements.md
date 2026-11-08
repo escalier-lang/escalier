@@ -1643,10 +1643,14 @@ how the lifetime is written, elided, inferred, and checked:
    type, so F2 copies it into a slot, and passing one needs no written `&`.
 2. A `fn` type written with no lifetime takes one by its position, the way an
    elided `&T` borrow does:
-   - In a parameter, the lifetime is fresh and ends with the call. Such a
-     parameter is *call-only*: the body may call it during the call, but may
-     not store it where it outlives the call, pass it to a `'static` slot, or
-     read it in an `async` or generator body that runs after the call returns.
+   - In a parameter, the lifetime is fresh and ends with the call, unless the
+     signature ties it to the result. Such a parameter is *call-only*: the
+     body may call it during the call, but may not store it where it outlives
+     the call, pass it to a `'static` slot, or read it in an `async` or
+     generator body that runs after the call returns. The one exception is a
+     result whose lifetime the signature ties to the parameter's, as the next
+     bullet's elision does. The body may return the parameter, or a closure
+     that holds it, there.
    - In a return type, the lifetime depends on the signature's input
      lifetimes. An input lifetime is one that the receiver, a parameter, or a
      `<'a>` list introduces. When the signature has one, the return lifetime
@@ -1712,7 +1716,7 @@ lifetime of the `fn` type on its line or the line below:
 // 'static, since sink is a module-level binding
 var sink: fn () -> undefined = fn () {}
 
-// g is call-only, and the elided return lifetime is tied to g's
+// the elided return lifetime is tied to g's, so the closure may hold g
 fn wrap(g: fn () -> undefined) -> fn () -> undefined {
     // fresh, so the local may hold g during the call
     val k: fn () -> undefined = g
