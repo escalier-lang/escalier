@@ -783,7 +783,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{`cannot constrain "a" <: number`},
 		},
 		{
-			// The first program of B2. The global keeps the `'static` borrow of opts live for
+			// The global keeps the `'static` borrow of opts live for
 			// the rest of the program, so the write breaks E2.
 			name: "E2WriteAfterAStaticImmutableBorrow",
 			src: `
@@ -799,7 +799,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot assign to 'opts.retries' while it is borrowed as immutable"},
 		},
 		{
-			// The second program of B2. The `'static` parameter takes the borrow's lifetime, so
+			// The `'static` parameter takes the borrow's lifetime, so
 			// the mutable borrow stays live after the call.
 			name: "E2ImmutableBorrowAfterAStaticMutableBorrow",
 			src: `
@@ -2111,7 +2111,7 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 			want: []string{"10:13-10:16: use of moved value 'c'"},
 		},
 		{
-			// The program of B8. c copies the borrow a holds, so c reaches x too.
+			// c copies the borrow a holds, so c reaches x too.
 			name: "CopiedBorrowConflictsAtTheCall",
 			src: `
 				declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
