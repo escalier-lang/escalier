@@ -273,10 +273,10 @@ func (l *liveLoan) checked() bool {
 	return !l.alias && (!l.closure() || l.kept != "")
 }
 
-// conflictsWith reports whether a path of the given kind to a place l's place overlaps breaks
-// E2 while l is live. A mutable path conflicts with an immutable one. A kept mutable loan also
-// conflicts with another mutable path, since the slot that keeps it may run its closure's
-// write at any later point.
+// conflictsWith reports whether a new path of the given kind breaks E2 against l, when the two
+// reach overlapping places and l is live. A mutable path conflicts with an immutable one. A kept
+// mutable loan also conflicts with another mutable path, since the slot that keeps it may run
+// its closure's write at any later point.
 func (l *liveLoan) conflictsWith(kind borrowKind) bool {
 	return l.ev.borrow != kind || (l.kept != "" && kind == mutableBorrow)
 }
@@ -1586,10 +1586,10 @@ func (d *bodyDataflow) run(ev *runEvent, at liveness.StmtRef, s *dataflowState) 
 	s.moved[k] = movedPlace{place: ev.callee, node: ev.call, every: true, called: true}
 }
 
-// keepCaptureLoans keeps for the rest of the program each loan a closure that store keeps holds
-// of its captures, at the point `at` of the store, when the loan's place is rooted at one of the
-// locals store.locals lists. recordKeptCaptures accepted each of those locals. The closures are
-// those noteStoreWrites reads:
+// keepCaptureLoans runs at the point `at` of store. Each closure the store keeps holds loans of
+// the locals it captures. keepCaptureLoans keeps each such loan rooted at a local that
+// store.locals lists for the rest of the program. recordKeptCaptures accepted each of those
+// locals. The closures are those noteStoreWrites reads:
 //
 //   - each closure written in the stored value;
 //   - each closure the place the value names holds;

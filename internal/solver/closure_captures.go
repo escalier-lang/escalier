@@ -749,9 +749,12 @@ func (c *checker) settleTentativeFuncEscapes() {
 		span ast.Span
 		msg  string
 	}
+	// A held error can only repeat another FuncKeptForStaticError, so only those are rendered.
 	reported := set.NewSet[diagnostic]()
 	for _, e := range c.errs {
-		reported.Add(diagnostic{e.Span(), e.Message()})
+		if kept, ok := e.(*FuncKeptForStaticError); ok {
+			reported.Add(diagnostic{kept.Span(), kept.Message()})
+		}
 	}
 	for _, h := range held {
 		if c.closuresSettled(h.closures) {
@@ -823,7 +826,7 @@ func (c *checker) funcLtSources(lt soltype.Lifetime) funcLtSourceSet {
 			out.closures = append(out.closures, v)
 			continue
 		}
-		if c.callOnlyLts.Contains(v) || c.isSignatureLt(v) {
+		if _, callOnly := c.callOnlyDepth[v]; callOnly || c.isSignatureLt(v) {
 			continue
 		}
 		next := slices.Clone(v.LowerBounds)

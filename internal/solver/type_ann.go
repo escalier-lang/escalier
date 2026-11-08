@@ -1388,7 +1388,11 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, recv *as
 	var typeParams []*soltype.TypeParam
 	if len(ta.TypeParams) > 0 {
 		annScope = scope.Child()
+		// A type parameter's bound constrains a parameter's type, so a function type in it
+		// gets a fresh lifetime as one written in the parameter would.
+		restore := c.elideFuncsAs(elideFresh)
 		typeParams = c.resolveTypeParams(annScope, lvl, ta.TypeParams)
+		restore()
 	}
 
 	// Report any named lifetime this annotation uses without binding it in its own `<…>`

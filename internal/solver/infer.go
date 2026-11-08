@@ -138,9 +138,6 @@ type checker struct {
 	// pendingCallOnly holds a check per parameter whose function type is written with no
 	// lifetime, for checkCallOnlyParams to read once the enclosing component has solved.
 	pendingCallOnly []callOnlyCheck
-	// callOnlyLts holds the lifetime of each call-only parameter, the ones pendingCallOnly
-	// checks. noteCallOnlyLifetime fills it, and funcLtSources reads it.
-	callOnlyLts set.Set[*soltype.LifetimeVar]
 	// signatureLts maps each lifetime a function's `<'a>` list declares, as `'a` in
 	// `fn f<'a>(…)`, to its name. noteSignatureLifetimes fills it, and funcLtSources and
 	// checkCallOnlyParams read it.
@@ -165,14 +162,15 @@ type checker struct {
 	// deferredBodies holds, for each `async` or `gen` body being walked, the phrase
 	// deferredBody returns for it, outermost first.
 	deferredBodies []string
-	// callOnlyDepth maps the body type of each call-only parameter to the length of
-	// deferredBodies when the parameter was bound. watchCallOnlyReads fills it.
-	callOnlyDepth map[*soltype.FuncType]int
-	// callOnlyDeferredRead maps the body type of a call-only parameter to its first read
-	// inside an `async` or `gen` body entered after the parameter was bound. The read's
-	// phrase from deferredBodies names the first such body among those that enclose the read.
-	// noteCallOnlyRead fills it.
-	callOnlyDeferredRead map[*soltype.FuncType]deferredRead
+	// callOnlyDepth maps the lifetime of each call-only parameter, the ones pendingCallOnly
+	// checks, to the length of deferredBodies when the parameter was bound.
+	// noteCallOnlyParam fills it, and funcLtSources and noteCallOnlyRead read it.
+	callOnlyDepth map[*soltype.LifetimeVar]int
+	// callOnlyDeferredRead maps the lifetime of a call-only parameter to the first read of a
+	// value holding it inside an `async` or `gen` body entered after the parameter was bound.
+	// The read's phrase from deferredBodies names the first such body among those that
+	// enclose the read. noteCallOnlyRead fills it.
+	callOnlyDeferredRead map[*soltype.LifetimeVar]deferredRead
 	// ltMarks maps a node to the lifetime counter at the start of its inference, written by
 	// markLifetimes for every expression and statement. A rigid-lifetime check sited at the
 	// node reads it to tell the lifetimes the checked value minted from the ones it shares.

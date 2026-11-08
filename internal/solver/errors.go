@@ -2527,15 +2527,17 @@ func (e *LifetimeRelationUndeclaredError) Message() string {
 // lifetime past the call. Such a parameter, as `g` in `fn f(g: fn () -> undefined)`, is only called
 // during the call, so a caller lends it a closure's captures for that call alone. `onClick(g)`
 // against `declare fn onClick(handler: 'static fn () -> undefined)` keeps it for 'static. Name is
-// the parameter's name, and Written is the parameter's annotation. Static says the body keeps it
-// for 'static. Keeper is the name of a lifetime of the signature, as "'a", that the body keeps the
-// parameter for when it does not keep it for 'static, and "" when the signature names none.
-// Deferred names the kind of function whose body reads the parameter and can run after the call
-// returns, as in "a generator", and is "" otherwise. Param is the parameter's pattern. Read is the
-// first read of the parameter in that body when Deferred is set, and nil otherwise. The error
-// blames Read when it is set and Param otherwise, and relates Param when it blames Read.
+// the parameter's name, and Optional marks one written `g?`. Written is the parameter's
+// annotation. Static says the body keeps it for 'static. Keeper is the name of a lifetime of the
+// signature, as "'a", that the body keeps the parameter for when it does not keep it for
+// 'static, and "" when the signature names none. Deferred names the kind of function whose body
+// reads the parameter and can run after the call returns, as in "a generator", and is ""
+// otherwise. Param is the parameter's pattern. Read is the first read of the parameter in that
+// body when Deferred is set, and nil otherwise. The error blames Read when it is set and Param
+// otherwise, and relates Param when it blames Read.
 type CallOnlyFuncKeptError struct {
 	Name     string
+	Optional bool
 	Written  *ast.FuncTypeAnn
 	Static   bool
 	Keeper   string
@@ -2572,8 +2574,13 @@ func (e *CallOnlyFuncKeptError) Message() string {
 	if e.Keeper != "" {
 		lifetime = e.Keeper
 	}
-	return fmt.Sprintf("'%s' may borrow values that live only during the call, but %s; write `%s: %s %s` to keep it",
-		e.Name, kept, e.Name, lifetime, written)
+	// The fix keeps the parameter's `?`, so a caller that omits the argument still checks.
+	marker := ""
+	if e.Optional {
+		marker = "?"
+	}
+	return fmt.Sprintf("'%s' may borrow values that live only during the call, but %s; write `%s%s: %s %s` to keep it",
+		e.Name, kept, e.Name, marker, lifetime, written)
 }
 
 // FuncKeptForStaticError fires when a function that may hold a borrow shorter than 'static flows

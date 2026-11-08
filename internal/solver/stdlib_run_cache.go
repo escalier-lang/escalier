@@ -299,7 +299,6 @@ func (c *checker) fork(source ModuleSource, groupSource GroupSource, groups Pack
 	f.namedLifetimes = maps.Clone(c.namedLifetimes)
 	f.ltMarks = maps.Clone(c.ltMarks)
 	f.signatureLts = maps.Clone(c.signatureLts)
-	f.callOnlyLts = maps.Clone(c.callOnlyLts)
 	f.closureBorrows = maps.Clone(c.closureBorrows)
 	f.keeperOf = maps.Clone(c.keeperOf)
 	f.tentativeClosures = maps.Clone(c.tentativeClosures)

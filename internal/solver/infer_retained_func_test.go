@@ -828,6 +828,38 @@ fn f(g: fn () -> undefined) {
 }`,
 			want: []string{"2:27-2:28: " + fmt.Sprintf(deferred, "an async function")},
 		},
+		// An object, an array, and a closure that hold g each carry g into the async body.
+		{
+			name: "read through an object field by an async closure",
+			src: `fn f(g: fn () -> undefined) {
+    val o = {cb: g}
+    val p = async fn () { o.cb() }
+}`,
+			want: []string{"3:27-3:28: " + fmt.Sprintf(deferred, "an async function")},
+		},
+		{
+			name: "read through an array element by an async closure",
+			src: `fn f(g: fn () -> undefined) {
+    val arr = [g]
+    val p = async fn () { arr[0]() }
+}`,
+			want: []string{"3:27-3:30: " + fmt.Sprintf(deferred, "an async function")},
+		},
+		{
+			name: "read through a wrapping closure by an async closure",
+			src: `fn f(g: fn () -> undefined) {
+    val h = fn () { g() }
+    val p = async fn () { h() }
+}`,
+			want: []string{"3:27-3:28: " + fmt.Sprintf(deferred, "an async function")},
+		},
+		// The fix keeps the parameter's `?`.
+		{
+			name: "optional parameter stored into a module-level slot",
+			src: `var sink: fn () -> undefined = fn () {}
+fn f(g?: fn () -> undefined) { if g != undefined { sink = g } }`,
+			want: []string{"2:6-2:7: 'g' may borrow values that live only during the call, but it is stored where it lives for the whole program; write `g?: 'static fn () -> undefined` to keep it"},
+		},
 		// A closure's own parameter is bound inside the async body, so the async body does not
 		// outlive the closure's call.
 		{
@@ -1276,6 +1308,39 @@ fn f() {
     console.log(p.a)
 }`,
 			want: []string{"6:17-6:20: cannot read 'p.a' while it is borrowed as mutable by the 'hs' that 'on' retains"},
+		},
+		// A type parameter's bound is elided as a parameter's type is, so apply only calls f
+		// during the call and keeps none of cfg.
+		{
+			name: "closure passed to a parameter typed by a function-bounded type parameter",
+			src: `fn apply<F: fn () -> undefined>(f: F) { f() }
+fn setup() {
+    val mut cfg = {msg: "hello"}
+    apply(fn () { console.log(cfg.msg) })
+    cfg.msg = "bye"
+}`,
+		},
+		// A function's lifetime does not decide which overload matches, so the `'static fn` arm
+		// is chosen and keeps the closure's borrow of p.
+		{
+			name: "closure passed to an overload with a static parameter",
+			src: `declare fn keep(cb: 'static fn () -> undefined) -> undefined
+declare fn keep(cb: number) -> undefined
+fn setup() {
+    val p = {a: 1}
+    keep(fn () { console.log(p.a) })
+}`,
+		},
+		{
+			name: "closure passed to an overload with a static parameter before a later write",
+			src: `declare fn keep(cb: 'static fn () -> undefined) -> undefined
+declare fn keep(cb: number) -> undefined
+fn setup() {
+    val mut p = {a: 1}
+    keep(fn () { console.log(p.a) })
+    p.a = 2
+}`,
+			want: []string{"6:5-6:8: cannot assign to 'p.a' while it is borrowed as immutable by the 'cb' that 'keep' retains"},
 		},
 		// An interface method's `&self` is an input lifetime, so its elided result may borrow
 		// what the receiver does, as the class's method does.

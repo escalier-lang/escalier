@@ -160,8 +160,8 @@ func (e *BorrowedValueWriteError) Message() string {
 	return fmt.Sprintf("cannot assign to '%s' while it is borrowed as immutable", e.Place)
 }
 
-// KeptBorrowReadError reports a read of data that a closure a slot keeps for the rest of the
-// program borrows as mutable. The slot may run the closure's write at any later point.
+// KeptBorrowReadError reports a read of data that a kept closure borrows as mutable. A slot keeps
+// the closure for the rest of the program and may run its write at any later point.
 type KeptBorrowReadError struct {
 	// Place names the data read, `x` for a whole binding and `x.a` for a field.
 	Place string

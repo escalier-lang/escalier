@@ -586,7 +586,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	if len(sig.TypeParams) > 0 {
 		if allowTypeParams {
 			declScope = scope.Child()
+			// A type parameter's bound constrains a parameter's type, so a function type in it
+			// gets a fresh lifetime as one written in the parameter would.
+			restore := c.elideFuncsAs(elideFresh)
 			typeParams = c.resolveTypeParams(declScope, lvl, sig.TypeParams)
+			restore()
 		} else {
 			c.reportUnsupportedFeature(node, "TypeParam")
 		}
@@ -697,16 +701,13 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 				c.info.inertMut.Add(ip)
 			}
 			// A parameter whose function type is written with no lifetime is only called during
-			// the call, unless the signature ties the lifetime to the result. The body's binding
-			// holds a copy of the written type that shares its lifetime, so noteCallOnlyRead can
-			// tell a read of the binding from another value of the same type.
+			// the call, unless the signature ties the lifetime to the result.
 			bodyT := pt
-			if ft, isFn := pt.(*soltype.FuncType); isFn && body != nil && isElidedFuncType(p.TypeAnn) && ft.Lt != nil {
-				callOnly := *ft
-				bodyT = &callOnly
-				c.watchCallOnlyReads(&callOnly)
-				c.noteCallOnlyLifetime(&callOnly)
-				callOnlyParams = append(callOnlyParams, callOnlyParam{name: name, node: pat, param: i, ann: p.TypeAnn.(*ast.FuncTypeAnn), ft: &callOnly, outerMark: outerMark})
+			if ft, isFn := pt.(*soltype.FuncType); isFn && body != nil && isElidedFuncType(p.TypeAnn) {
+				if lt, isVar := ft.Lt.(*soltype.LifetimeVar); isVar {
+					c.noteCallOnlyParam(lt)
+					callOnlyParams = append(callOnlyParams, callOnlyParam{name: name, node: pat, param: i, optional: p.Optional, ann: p.TypeAnn.(*ast.FuncTypeAnn), lt: lt, outerMark: outerMark})
+				}
 			}
 			// A parameter binding never generalizes — its var is fixed for the body — so
 			// it is a MonoScheme; instantiate returns bodyT unchanged at every use.

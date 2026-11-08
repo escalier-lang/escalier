@@ -173,7 +173,9 @@ func (c *checker) tryOverloadArm(
 	// call shape applyCallShape builds does.
 	shape := &soltype.FuncType{Params: callShapeParams, Ret: c.freshAt(lvl), Throws: c.freshAt(lvl), Lt: c.ctx.freshLifetime(lvl)}
 	errs := c.ctx.Constrain(inst, shape)
-	if hasHardError(errs) {
+	// A function's lifetime does not decide which arm matches. The winning arm's errors still
+	// carry each FuncKeptForStaticError, which sortFuncKeptForStatic settles when it is reported.
+	if hasHardError(withoutFuncLifetimeErrs(slices.Clone(errs))) {
 		return false, nil
 	}
 	return true, errs
