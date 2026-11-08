@@ -304,22 +304,39 @@ closure goes decides how its captures are checked:
   function returns. The paths it hands the caller are checked like any stored
   borrow, so a second path out that disagrees with it is reported.
 - A closure stored into module-level state, or passed to a `'static fn`
-  parameter, is kept for the whole program. Such a slot holds only a function
-  that borrows nothing shorter than the program, so a closure that borrows a
-  local is rejected there. `move fn`, which captures by value, will let such a
-  closure own its captures instead
-  ([#2585](https://github.com/escalier-lang/escalier/issues/2585)).
+  parameter, is kept for the whole program. It takes over the locals it
+  captures at the store, the way a returned closure takes them at the return,
+  so the body cannot use them after the store. Escalier compiles to JavaScript,
+  so a local the closure owns lives as long as the closure does.
 
 ```esc
 var sink: fn () -> undefined = fn () {}
+declare fn readIt(a: &{x: number}) -> undefined
 
 fn go() {
     val mut p = {x: 1}
-    // ERROR: this closure borrows `p`, but `sink` keeps it for 'static; pass a
-    // function that borrows nothing, or declare `p` at module level
+    sink = fn () { p.x = 2 }    // the closure takes p over
+}
+
+fn later() {
+    val mut p = {x: 1}
     sink = fn () { p.x = 2 }
+    readIt(&p)    // ERROR: 'p' is used after 'sink' took it over for 'static
 }
 ```
+
+The closure takes a local over when every local it borrows meets these
+conditions. Otherwise the store is rejected as a closure that borrows what the
+slot cannot keep:
+
+- It is a `val` or a `var` of the body the closure is written in. A parameter
+  belongs to the caller, and a local holding a borrow from outside the body
+  holds what the body cannot give away.
+- No borrow of it is live at the store. That includes another closure that
+  captures it and is used later.
+- The body does not use it after the store. A later read, write, move, or
+  borrow of it is reported as a use of a value the closure took over. For a
+  `var`, a later write counts too, since the closure reads the binding itself.
 
 #### Function lifetimes
 
@@ -359,9 +376,14 @@ fn setup() {
     val cfg = {msg: "hello"}
     val show = fn () { console.log(cfg.msg) }
     run(show)                           // fine, since run only calls show during the call
-    // ERROR: `show` borrows `cfg`, but `sink` keeps it for 'static; pass a
-    // function that borrows nothing, or declare `cfg` at module level
-    sink = show
+    sink = show                         // fine, since show takes cfg over
+    console.log(cfg.msg)                // ERROR: 'cfg' is used after 'sink' took it over for 'static
+}
+
+fn record(p: {x: number}) {
+    // ERROR: this closure borrows `p`, but `sink` keeps it for 'static; pass a
+    // function that borrows nothing
+    sink = fn () { console.log(p.x) }
 }
 ```
 
@@ -377,27 +399,26 @@ passes to it.
 
 A slot written `'static fn` is the same as a module-level `fn` slot written
 with no lifetime. It holds only a function that borrows nothing shorter than
-the program:
+the program, so a closure passed to it takes over the locals it borrows:
 
 ```esc
 declare fn onClick(handler: 'static fn () -> undefined) -> undefined
 declare fn forEachItem(f: fn () -> undefined) -> undefined
-
-val mut clicks = {n: 0}
+declare fn render(view: &{n: number}) -> undefined
 
 fn setup() {
     val mut count = {n: 0}
-    forEachItem(fn () { count.n = count.n + 1 })   // fine, since forEachItem only calls it during the call
-    onClick(fn () { clicks.n = clicks.n + 1 })      // fine, since clicks lives for the whole program
-    // ERROR: this closure borrows `count`, but `onClick` keeps it for 'static;
-    // pass a function that borrows nothing, or declare `count` at module level
+    forEachItem(fn () { count.n = count.n + 1 })
+    render(&count)    // fine, since forEachItem is done with its closure
     onClick(fn () { count.n = count.n + 1 })
+    render(&count)    // ERROR: 'count' is used after the 'handler' that 'onClick' retains took it over for 'static
 }
 ```
 
-A kept handler that should own its state needs `move fn`, which captures by
-value ([#2585](https://github.com/escalier-lang/escalier/issues/2585)). Until it
-lands, state that a kept handler writes lives at module level.
+Moving the last `render(&count)` into the handler makes `setup` check, since
+the handler owns `count`. `move fn`
+([#2585](https://github.com/escalier-lang/escalier/issues/2585)) will spell that
+ownership out at the closure.
 
 A closure passed to a `'a fn` parameter whose `'a` is not `'static` stays
 reachable while a binding that shares `'a` is live. That binding is an argument
@@ -671,9 +692,9 @@ Specified above but not yet enforced:
 
 - **Borrows of a local passed to a `'static` parameter**
   ([#2584](https://github.com/escalier-lang/escalier/issues/2584)). A `&local`
-  argument to a `&'static` parameter is accepted, though the local does not live
-  that long. A closure that borrows a local is rejected by a `'static fn` slot,
-  which covers the closure half of the issue.
+  argument to a `&'static` parameter is accepted, though nothing checks the
+  local's later uses. A closure that borrows a local and fills a `'static fn`
+  slot takes the local over, which covers the closure half of the issue.
 - **Call-only parameters reached indirectly.** A parameter whose function type
   is written with no lifetime is checked only when the type is the parameter's
   whole annotation. A function type inside one, such as the `cb` field of
