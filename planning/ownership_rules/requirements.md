@@ -656,11 +656,11 @@ parameter into a module-level `fn` slot is rejected, the same way storing a
 
 In the program below, `keep` may hold on to its callback forever and `run`
 only calls its callback during the call. A closure that captures nothing, or
-captures only value types, holds no borrow, so it is a plain `fn` and both
-accept it. `msg` is a `string`, so the closure copies it. A closure that
-captures an object local holds a borrow of it, so its type is `&'a fn`, and
-only `run` accepts it. None of the calls writes a `&`, since a function is a
-value type.
+only reads value types from `val` bindings, holds no borrow, so it is a plain
+`fn` and both accept it. `msg` is a `string` in a `val`, so the closure copies
+it. A closure that captures an object local, or writes a binding it captures,
+holds a borrow of it, as F3 states. Its type is then `&'a fn`, and only `run`
+accepts it. None of the calls writes a `&`, since a function is a value type.
 
 ```esc
 declare fn keep(cb: fn () -> undefined) -> undefined
@@ -675,6 +675,10 @@ fn setup() {
     val show = fn () { console.log(cfg.msg) }
     run(show)                                // accepted, since run only calls show during the call
     keep(show)                               // error: show borrows 'cfg', so it cannot be kept as a plain `fn`
+    var n = 0
+    val inc = fn () { n = n + 1 }
+    run(inc)                                 // accepted
+    keep(inc)                                // error: inc borrows 'n' to write it, so it cannot be kept as a plain `fn`
 }
 ```
 
