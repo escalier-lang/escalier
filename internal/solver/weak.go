@@ -440,12 +440,12 @@ func collectPassThrough(v *soltype.TypeVarType, out set.Set[*soltype.TypeVarType
 // form. Given `fn f() { return {next: f()} }` and `fn id(x) { return x }`, the weak binding
 // `val d = id(f())` reads as `μX0.{next: X0}`.
 type weakSettler struct {
-	// settled holds each weak variable's settled type. It is keyed by the variable alone,
-	// though each call names the level at or below which a variable is weak. A variable's
-	// bounds hold only variables at or below its own level, apart from a function's own
-	// type parameters, which binders excludes. So every variable a settle reaches is weak
-	// at any level the variable itself is weak at, and the settled type is the same.
-	settled map[*soltype.TypeVarType]soltype.Type
+	// settled holds each weak variable's settled type, keyed by the variable and the level
+	// at or below which the settle counted variables as weak. A variable's bounds hold only
+	// variables at or below its own level, apart from a function's own type parameters, which
+	// binders excludes, so two levels give the same type. The level is part of the key so a
+	// display never reuses a type settled under a different level.
+	settled map[settledKey]soltype.Type
 	// binders holds the type parameters of each function type a display or a bound reaches.
 	// A function binds them, so they stay variables wherever they occur. A type parameter
 	// can also occur in a bound a settle reads apart from its function type, as the
@@ -465,6 +465,12 @@ type weakSettler struct {
 	empty set.Set[*soltype.TypeVarType]
 }
 
+// settledKey names a weak variable and the level a settle of it ran at.
+type settledKey struct {
+	v   *soltype.TypeVarType
+	lvl int
+}
+
 // openWeakVar is a weak variable whose settled type is being built.
 type openWeakVar struct {
 	depth int
@@ -475,7 +481,7 @@ type openWeakVar struct {
 
 func newWeakSettler() *weakSettler {
 	return &weakSettler{
-		settled: map[*soltype.TypeVarType]soltype.Type{},
+		settled: map[settledKey]soltype.Type{},
 		open:    map[*soltype.TypeVarType]*openWeakVar{},
 		minRef:  math.MaxInt,
 		empty:   set.NewSet[*soltype.TypeVarType](),
@@ -527,7 +533,7 @@ func (s *weakSettler) replace(t soltype.Type, lvl int) soltype.Type {
 
 // settle returns the type the weak variable v stands for, as weakSettler describes.
 func (s *weakSettler) settle(v *soltype.TypeVarType, lvl int) soltype.Type {
-	if t, ok := s.settled[v]; ok {
+	if t, ok := s.settled[settledKey{v, lvl}]; ok {
 		return t
 	}
 	if o, ok := s.open[v]; ok {
@@ -562,7 +568,7 @@ func (s *weakSettler) settle(v *soltype.TypeVarType, lvl int) soltype.Type {
 	s.depth--
 	innerRef := s.minRef
 	if innerRef >= o.depth {
-		s.settled[v] = body
+		s.settled[settledKey{v, lvl}] = body
 		innerRef = math.MaxInt
 	}
 	s.minRef = min(outerRef, innerRef)
