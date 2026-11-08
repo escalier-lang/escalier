@@ -94,7 +94,6 @@ jobs:
       # script makes the call rather than Claude, so PR content can't talk the
       # model into an approval.
       - name: Approve or request changes
-        id: verdict
         run: |
           query='query($owner: String!, $repo: String!, $number: Int!, $endCursor: String) {
             repository(owner: $owner, name: $repo) {
@@ -158,71 +157,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.issue.number }}
           TRIGGERED_AT: ${{ github.event.comment.created_at }}
-
-      # The bot's review is posted with GITHUB_TOKEN, and GitHub starts no
-      # workflow for an event that token creates. A separate workflow on
-      # pull_request_review would never run, so this job moves the issues itself.
-      # Only issues already in the project move. An issue the PR closes that
-      # isn't ownership work stays out of it.
-      - name: Move the issues this PR closes to In review
-        if: steps.verdict.outcome == 'success'
-        run: |
-          if [ -z "$GH_TOKEN" ]; then
-            echo "::warning::The PROJECT_TOKEN secret is not set, so no project status was changed."
-            exit 0
-          fi
-
-          query='query($owner: String!, $repo: String!, $number: Int!, $projectNumber: Int!) {
-            organization(login: $owner) {
-              projectV2(number: $projectNumber) {
-                id
-                field(name: "Status") {
-                  ... on ProjectV2SingleSelectField { id options { id name } }
-                }
-              }
-            }
-            repository(owner: $owner, name: $repo) {
-              pullRequest(number: $number) {
-                closingIssuesReferences(first: 50) {
-                  nodes { number projectItems(first: 20) { nodes { id project { id } } } }
-                }
-              }
-            }
-          }'
-          gh api graphql \
-            -F owner="${GITHUB_REPOSITORY%/*}" -F repo="${GITHUB_REPOSITORY#*/}" \
-            -F number="$PR_NUMBER" -F projectNumber="$PROJECT_NUMBER" -f query="$query" \
-            > "$RUNNER_TEMP/project.json"
-
-          project_id=$(jq -r '.data.organization.projectV2.id' "$RUNNER_TEMP/project.json")
-          field_id=$(jq -r '.data.organization.projectV2.field.id' "$RUNNER_TEMP/project.json")
-          # The option name is matched case-insensitively.
-          option_id=$(jq -r --arg name "$STATUS_NAME" '.data.organization.projectV2.field.options[]
-            | select((.name | ascii_downcase) == ($name | ascii_downcase)) | .id' "$RUNNER_TEMP/project.json")
-          if [ -z "$option_id" ]; then
-            echo "::error::Project $PROJECT_NUMBER has no Status option named \"$STATUS_NAME\"."
-            exit 1
-          fi
-
-          mutation='mutation($project: ID!, $item: ID!, $field: ID!, $option: String!) {
-            updateProjectV2ItemFieldValue(input: {
-              projectId: $project, itemId: $item, fieldId: $field,
-              value: { singleSelectOptionId: $option }
-            }) { projectV2Item { id } }
-          }'
-          jq -r --arg project "$project_id" '.data.repository.pullRequest.closingIssuesReferences.nodes[]
-            | .number as $n | .projectItems.nodes[] | select(.project.id == $project)
-            | "\($n) \(.id)"' "$RUNNER_TEMP/project.json" \
-          | while read -r issue item_id; do
-              gh api graphql -f project="$project_id" -f item="$item_id" \
-                -f field="$field_id" -f option="$option_id" -f query="$mutation" --silent
-              echo "Moved #$issue to $STATUS_NAME."
-            done
-        env:
-          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
-          PR_NUMBER: ${{ github.event.issue.number }}
-          PROJECT_NUMBER: 2
-          STATUS_NAME: In review
 
       # The cost is the API-price equivalent the action reports. A subscription
       # run counts against usage limits instead of being billed this amount.
