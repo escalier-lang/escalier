@@ -3363,11 +3363,47 @@ func (c *Context) skolemizeParams(params []*soltype.TypeParam) *typeSubst {
 // fresh var carries its bounds. For example a call `cb(5)` instantiates `cb: <T>(x: T) -> T`
 // to `(x: T0) -> T0` for a fresh var T0, which `5` then binds, so a later `cb("hi")` gets its
 // own T1 rather than reusing T0. A lifetime parameter is instantiated the same way, so two
-// calls of one `<'a>(x: &'a T) -> &'a T` relate each argument to its own result.
+// calls of one `<'a>(x: &'a T) -> &'a T` relate each argument to its own result. Each
+// parameter of the result typed by one of the fresh vars counts for isTypeArgParam.
 func (c *Context) instantiateFuncBinder(ft *soltype.FuncType, lvl int) *soltype.FuncType {
 	lts := c.freshLifetimeArgs(ft, lvl)
 	args := c.freshTypeArgs(ft, lvl, lts)
-	return substFuncBinder(ft, newTypeSubst(ft.TypeParams, args, ft.LifetimeParams, lts))
+	inst := substFuncBinder(ft, newTypeSubst(ft.TypeParams, args, ft.LifetimeParams, lts))
+	c.markTypeArgParams(inst, args)
+	return inst
+}
+
+// markTypeArgParams records in typeArgParams each parameter of ft whose type is one of
+// typeArgs or a union with a member that is one, such as `T | null`. A rest parameter is
+// recorded when its element type is such a type. typeArgs are the types an instantiation of
+// ft's binder substituted for its type parameters.
+func (c *Context) markTypeArgParams(ft *soltype.FuncType, typeArgs []soltype.Type) {
+	for _, p := range ft.Params {
+		t := p.Type
+		if p.Rest {
+			elem, isArray := c.restSlotElem(t)
+			if !isArray {
+				continue
+			}
+			t = elem
+		}
+		members := []soltype.Type{t}
+		if u, ok := t.(*soltype.UnionType); ok {
+			members = u.Types
+		}
+		if !slices.ContainsFunc(members, func(m soltype.Type) bool { return slices.Contains(typeArgs, m) }) {
+			continue
+		}
+		if c.typeArgParams == nil {
+			c.typeArgParams = set.NewSet[*soltype.FuncParam]()
+		}
+		c.typeArgParams.Add(p)
+	}
+}
+
+// isTypeArgParam reports whether markTypeArgParams recorded p.
+func (c *Context) isTypeArgParam(p *soltype.FuncParam) bool {
+	return c.typeArgParams.Contains(p)
 }
 
 // binderMintedAt reports whether ft has no lifetime parameters and each of its type
@@ -3388,7 +3424,8 @@ func (c *Context) binderMintedAt(ft *soltype.FuncType, lvl int) bool {
 // bindFuncBinderInPlace returns ft instantiated at its own type-parameter variables. Its type
 // binder is dropped, so each variable stands for the one choice a single use makes. Each
 // parameter's default moves onto its variable the way freshTypeArgs attaches one, and the
-// variable stops counting as a type parameter's copy for isParamVar. ft's type-parameter
+// variable stops counting as a type parameter's copy for isParamVar. Each parameter typed by
+// one of those variables counts for isTypeArgParam. ft's type-parameter
 // variables must be read by this use alone, and binderMintedAt must hold for ft. A lifetime
 // parameter can appear in a type parameter's bounds, and this function rewrites no bound.
 func (c *Context) bindFuncBinderInPlace(ft *soltype.FuncType) *soltype.FuncType {
@@ -3407,6 +3444,18 @@ func (c *Context) bindFuncBinderInPlace(ft *soltype.FuncType) *soltype.FuncType 
 	}
 	cp := *ft
 	cp.TypeParams = nil
+	// markTypeArgParams records parameters by pointer. Copying them first keeps the record
+	// to this use, so another reader of ft does not see it.
+	cp.Params = make([]*soltype.FuncParam, len(ft.Params))
+	for i, p := range ft.Params {
+		np := *p
+		cp.Params[i] = &np
+	}
+	typeArgs := make([]soltype.Type, len(ft.TypeParams))
+	for i, tp := range ft.TypeParams {
+		typeArgs[i] = tp.Var
+	}
+	c.markTypeArgParams(&cp, typeArgs)
 	return &cp
 }
 

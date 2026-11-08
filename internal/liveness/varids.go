@@ -37,24 +37,3 @@ func (t *VarIDs) Of(node ast.Node) VarID {
 func (t *VarIDs) Set(node ast.Node, id VarID) {
 	t.ids[node] = id
 }
-
-// RootObject walks a member or index chain such as `a.b.c` or `a[b][c]` to its
-// root identifier and returns that identifier's VarID. It returns 0 when the
-// root is not a local variable.
-func (t *VarIDs) RootObject(expr ast.Expr) VarID {
-	for {
-		switch e := expr.(type) {
-		case *ast.MemberExpr:
-			expr = e.Object
-		case *ast.IndexExpr:
-			expr = e.Object
-		case *ast.IdentExpr:
-			if id := t.Of(e); id > 0 {
-				return id
-			}
-			return 0
-		default:
-			return 0
-		}
-	}
-}

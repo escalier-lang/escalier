@@ -4,14 +4,14 @@ import "github.com/escalier-lang/escalier/internal/set"
 
 // VarID uniquely identifies a variable within a function body.
 // The rename pass assigns sequential integer IDs and records them in a
-// VarIDs table keyed by AST node. Liveness and alias analysis read them
-// from that table.
+// VarIDs table keyed by AST node. Liveness analysis and the solver's
+// ownership checks read them from that table.
 //
 // A VarID of 0 indicates an unresolved or unset ID. Local variable IDs
 // start at 1. Non-local variables (module-level, prelude) are assigned
 // IDs starting at -1 and counting down, so downstream phases can
 // distinguish them: any VarID < 0 is non-local and should be ignored
-// by liveness and alias analysis.
+// by liveness analysis.
 type VarID int
 
 // StmtRef identifies a statement by its position in the CFG: the basic
@@ -51,7 +51,7 @@ type LivenessInfo struct {
 //
 // The DeclStmt for c is decomposed by the CFG builder into separate
 // branches. Its StmtRef points to the join block with StmtIdx -1,
-// so alias tracking checks liveness just before `a.x = 5`.
+// so a query there reads liveness just before `a.x = 5`.
 func (l *LivenessInfo) IsLiveAfter(ref StmtRef, v VarID) bool {
 	if ref.StmtIdx < 0 {
 		// Synthetic position before the block's first statement.

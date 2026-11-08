@@ -2,10 +2,8 @@ package solver
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/liveness"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
-	"slices"
 )
 
 // A call stores one argument's borrow into another when the two share a lifetime and that
@@ -14,8 +12,8 @@ import (
 //	declare fn store<'a, 'b>(target: &'b mut {peer: &'a mut B}, item: &'a mut B)
 //
 // item's 'a reappears at target's peer field, so whatever item borrows must outlive
-// target.peer. At `store(&mut a, &mut b)` that is the edge a → b at [peer], the same edge
-// `val a = {peer: &mut b}` records at its initializer.
+// target.peer. At `store(&mut a, &mut b)` the call passes the borrow of b to `a.peer`, the
+// same place `val a = {peer: &mut b}` puts it.
 //
 // Sharing a lifetime at both parameters' outermost position is not a store. In
 // `fn f<'a>(x: &'a mut B, y: &'a mut B)` neither referent is reachable through the other. So
@@ -23,20 +21,18 @@ import (
 // side has no such exemption. Any lifetime its type mentions names data the callee holds.
 //
 // A signature that only reads through the shared lifetime is treated as one that writes,
-// since the two are spelled alike. That can record an alias the call never forms, reporting an
-// escape the program does not have. The opposite reading would miss a real dangling borrow.
+// since the two are spelled alike. That can record an alias the call never forms. The opposite
+// reading would miss an alias the call does form.
 //
-// A method call reaches this recorder through its explicit parameters and through its `self`
-// receiver. freezeClassBody coalesces each member's signature into the class body, and a
-// lifetime written at two borrows survives that pass, so the two sides still share a variable
-// at the call site. memberValue strips the receiver off the signature it hands the call, so
-// the receiver's own type comes from the side table memberValue fills. An overloaded method
-// call reaches no store, since inferMethodOverloadCall resolves its arm and returns before the
-// recorder runs.
+// A method call stores through its explicit parameters and through its `self` receiver.
+// freezeClassBody coalesces each member's signature into the class body, and a lifetime
+// written at two borrows survives that pass, so the two sides still share a variable at the
+// call site. memberValue strips the receiver off the signature it hands the call, so the
+// receiver's own type comes from the side table memberValue fills.
 //
 // `a.peers.push(&mut b)`, the container case this exists for, needs one more piece: an `Array`
 // type with a method surface, which the stdlib ingestion milestone brings. The same call
-// against a hand-written class records the edge today. Only a class works, since only a class
+// against a hand-written class records the store today. Only a class works, since only a class
 // body puts its own lifetime parameters in scope for the member signatures that declare the
 // store.
 type storeEdge struct {
@@ -53,8 +49,8 @@ type storeEdge struct {
 	// lands in the target is the argument's referent. `item: &'a mut B` is direct: passing
 	// `&mut b` stores b itself. A lifetime nested inside the argument is not: a receiver
 	// typed `mut Holder<'a>` shares 'a from inside, so what lands in the target is whatever
-	// the receiver holds rather than the receiver. The two are reported differently when the
-	// target is a parameter — see recordCallStoreEdges.
+	// the receiver holds rather than the receiver. The passEvent a store emits carries it to the
+	// dataflow pass.
 	direct bool
 }
 
@@ -62,8 +58,7 @@ type storeEdge struct {
 //
 // A target must be a mutable borrow. A shared borrow takes no write, and an owned parameter
 // is moved into the callee, so the caller cannot read what the callee writes there. A source
-// must be a borrow too, since an owned argument is moved and its escape belongs to the
-// consuming-argument rule.
+// must be a borrow too, since an owned argument is moved, which the move rules check.
 //
 // self is the receiver of the method being called, or nil for a plain call. A borrowed
 // receiver is classified the way a parameter is. As a target it is what a `&mut self` method
@@ -78,7 +73,7 @@ type storeEdge struct {
 //
 // A walk that exhausts either allowance saw only part of its type, so a shared lifetime may
 // sit past where it stopped. Such a pair takes a store at the whole target rather than
-// none, since dropping the edge would drop the escape a borrow written there raises.
+// none, since dropping the edge would drop the alias a borrow written there forms.
 func callStoreEdges(ctx *Context, fn *soltype.FuncType, self *soltype.FuncParam) []storeEdge {
 	var sources, targets []int
 	classify := func(i int, t soltype.Type) {
@@ -346,7 +341,7 @@ const maxAliasExpansionDepth = 8
 // lifetimeWalk reports where each lifetime variable occurs in a type, as a field path from
 // the type's root. The soltype visitor cannot drive it. That visitor rewrites a type bottom-up
 // and hands each node no record of the fields traversed to reach it, and the path is the whole
-// point here. recordBorrowSources walks the AST by hand for the same reason.
+// point here.
 //
 // Three limits keep the walk finite and cheap:
 //
@@ -418,7 +413,7 @@ func (w *lifetimeWalk) walk(t soltype.Type, base []placeSeg) {
 				w.walkObjElem(elem, base)
 				continue
 			}
-			w.walk(prop.Type, appendSeg(base, prop.Name))
+			w.walk(prop.Type, appendPath(base, []placeSeg{fieldSeg(prop.Name)}))
 		}
 	case *soltype.TupleType:
 		for _, elem := range t.Elems {
@@ -496,236 +491,6 @@ func (w *lifetimeWalk) walkObjElem(elem soltype.ObjTypeElem, base []placeSeg) {
 	case *soltype.MappedElem:
 		w.walk(elem.Value, base)
 	}
-}
-
-// recordCallStoreEdges records the stores fn declares at the call e. A store into a local
-// records a borrow edge, so a later flow-out of that local finds the borrow. A store into a
-// parameter escapes instead, since the parameter's referent belongs to the caller. It is the
-// call-site twin of the split recordFieldStoreEdges and checkParamFieldStoreEscape make for a
-// field store.
-//
-// recv is the receiver expression of a method call and nil for a plain call, so
-// `a.peers.push(&mut b)` roots an edge at a.peers the way `push(&mut a.peers, &mut b)` does.
-func (c *checker) recordCallStoreEdges(
-	e *ast.CallExpr,
-	fn *soltype.FuncType,
-	recv ast.Expr,
-	self *soltype.FuncParam,
-	ref liveness.StmtRef,
-) {
-	if c.fn == nil || c.fn.eagerBorrowGraph == nil {
-		return
-	}
-	recorded := false
-	// A signature can write one argument into several positions of the target, so an argument
-	// stored into a caller-owned target reaches the loop once per position. Collecting what it
-	// carries per argument and recording one escape site after the loop keeps that to one
-	// decision, blamed on the argument carrying the local.
-	escaping := map[int][]elementReach{}
-	// The expression each escaping position blames. A position is not always an argument index,
-	// so the blame node is captured alongside rather than looked up afterward.
-	escapeBlame := map[int]ast.Expr{}
-	for _, edge := range callStoreEdges(c.ctx, fn, self) {
-		// A position is the receiver or an argument. It resolves to neither when the call passes
-		// fewer arguments than the signature declares, which is reported elsewhere.
-		argExpr, hasArg := storeExprAt(e, recv, edge.arg)
-		targetExpr, hasTarget := storeExprAt(e, recv, edge.target)
-		if !hasArg || !hasTarget {
-			continue
-		}
-		// Only a borrow of a function-local can leave the frame. An argument carrying none of
-		// those stores nothing the graph needs to know about.
-		referents := c.storedReferents(argExpr)
-		if len(referents) == 0 {
-			// An argument that borrows no local outright may still REACH one through its own
-			// edges. `p.peer` over a parameter p holding p → b carries b into the target, and
-			// isLocalReferent skips a param-rooted place by design, so the edges find b.
-			referents = c.placeReferents(argExpr)
-		}
-		if len(referents) == 0 {
-			continue
-		}
-		// An edge hangs off a binding, so the target has to name one. An argument built inline
-		// names no place and leaves nothing to root the edge at.
-		target, isPlace := c.exprPlace(borrowOperand(targetExpr))
-		if !isPlace || target.root <= 0 {
-			continue
-		}
-		// A BORROW parameter's referent belongs to the caller and outlives the frame, so a
-		// borrow of a local written into it leaves the frame. An owned parameter is moved into
-		// the frame and dies with it, so it takes an edge like a local does. The caller-owned
-		// target records no edge, which keeps the post-pass from weighing this argument as a
-		// connected-component move. The callee borrows the argument instead of taking it, so
-		// consuming the locals it borrows would be wrong.
-		if c.paramReferentOutlivesFrame(target.root) {
-			// Which local leaves depends on the store. A direct store puts the argument's own
-			// referent into the target, so the argument's locals leave. An indirect store puts
-			// what the argument HOLDS there, so the locals its borrow edges reach leave and its
-			// own root does not. A receiver holding only a parameter borrow writes nothing that
-			// can leave.
-			carried := set.NewSet[liveness.VarID]()
-			if edge.direct {
-				for _, referent := range referents {
-					carried.Add(referent)
-				}
-			} else {
-				c.collectStoredLocals(argExpr, referents, carried)
-			}
-			sourceMut := c.storeSourceMut(fn, self, edge.arg)
-			targetPath := appendPath(target.path, edge.path)
-			ids := carried.ToSlice()
-			slices.Sort(ids)
-			for _, referent := range ids {
-				place := c.storeLoanPlace(argExpr, referent, edge.direct)
-				escaping[edge.arg] = append(escaping[edge.arg], elementReach{place: place, mut: sourceMut})
-				// The target holds the loan while the body can still read it, so a move or
-				// conflicting borrow of the local that a later read through the target would
-				// see is weighed against it.
-				c.recordStoreEdgeLoan(place, sourceMut, target.root, targetPath, ref, argExpr)
-			}
-			escapeBlame[edge.arg] = argExpr
-			continue
-		}
-		for _, referent := range referents {
-			// An edge from a binding to itself tells no reader of the graph anything.
-			if target.root == referent {
-				continue
-			}
-			// The target's own place prefixes the store's path, so `store(&mut a.slot, &mut b)`
-			// against a signature storing at [peer] records at [slot, peer]. The edge is added
-			// to what the target already holds rather than replacing it, since a signature says
-			// where a borrow lands and not whether the callee overwrites what was there.
-			// A store names the referent the callee writes, not a part of it, so the edge
-			// reaches the whole of it.
-			sourceMut := c.storeSourceMut(fn, self, edge.arg)
-			c.addBorrowEdge(target.root, appendPath(target.path, edge.path), referent, nil, sourceMut)
-			// The target reaches the referent from here on, so it holds a borrow of it that a
-			// second borrow or a read of the referent has to respect.
-			c.recordStoreEdgeLoan(c.storeLoanPlace(argExpr, referent, edge.direct),
-				sourceMut, target.root, appendPath(target.path, edge.path), ref, argExpr)
-			recorded = true
-		}
-	}
-	// Record in position order so a call with two escaping arguments reports left to right.
-	// selfIndex leads, since a receiver precedes the arguments in the source. The post-pass
-	// decides each one once the whole body's borrow edges are known.
-	for arg := selfIndex; arg < len(e.Args); arg++ {
-		if reaches, ok := escaping[arg]; ok && len(reaches) > 0 {
-			c.recordCallerOwnedStore(escapeBlame[arg], ref, reaches)
-		}
-	}
-	// The escape check reads the per-program-point graph rather than the eager one, so the
-	// roots this call dirtied have to reach the statement's borrowGens. A `val` initializer
-	// makes the same handoff.
-	if recorded {
-		c.flushBorrowDirty(ref)
-	}
-}
-
-// collectStoredLocals adds to `out` the function-locals an indirectly stored argument exposes,
-// which is what the argument holds rather than its own root. `h.drain(out)` on a receiver
-// holding a borrow of a local writes that local into the caller's object, while a receiver
-// holding only a parameter borrow writes nothing that can leave the frame.
-//
-// An argument that names a place holds what its borrow edges reach. It reads the eager graph,
-// which is current for everything recorded ahead of this call in source order, so a borrow
-// the argument took earlier in the body is already there.
-//
-// An argument that builds its carrier inline, such as `&{held: &mut b}`, names no place and
-// so has no edges. It holds the borrows written into the carrier, which `referents` already
-// carries — storedReferents falls back to the same scan for a non-place argument.
-//
-// A carrier the graph cannot see through holds nothing as far as this can tell, so nothing is
-// reported. `val s = wrap(&mut b)` is the case: a borrow passed to a call is not recorded as
-// an edge to the call's result, so s reaches b through no edge. That is the same gap
-// `return s` has, and every other reader of the graph shares it — escapingLocalsOf answers
-// the same way. Reporting the argument's own root instead would close it at the cost of a
-// false positive on `val s = {held: &mut q}` for a parameter q, which carries nothing that
-// can leave the frame.
-func (c *checker) collectStoredLocals(arg ast.Expr, referents []liveness.VarID, out set.Set[liveness.VarID]) {
-	if p, isPlace := c.exprPlace(borrowOperand(arg)); isPlace && p.root > 0 {
-		c.collectBorrowedFrom(p.root, p.path, out, set.NewSet[liveness.VarID](), c.fn.eagerBorrowGraph)
-		return
-	}
-	for _, referent := range referents {
-		out.Add(referent)
-	}
-}
-
-// storedReferents returns the function-locals a stored argument carries. A borrow of a place
-// names one. Both `&mut b` and a bare `b` passed to a shared-borrow parameter carry b. An
-// argument that builds its carrier inline, such as `&{inner: &mut b}`, names one per borrow
-// the carrier holds, found by the same scan escapingLocalsOf runs over a returned value.
-func (c *checker) storedReferents(arg ast.Expr) []liveness.VarID {
-	if referent, ok := c.isLocalReferent(borrowOperand(arg)); ok {
-		return []liveness.VarID{referent}
-	}
-	var out []liveness.VarID
-	seen := set.NewSet[liveness.VarID]()
-	for _, b := range borrowsIn(arg) {
-		referent, ok := c.isLocalReferent(b.Arg)
-		if !ok || seen.Contains(referent) {
-			continue
-		}
-		seen.Add(referent)
-		out = append(out, referent)
-	}
-	return out
-}
-
-// placeReferents returns the function-locals the place an argument names reaches through the
-// borrow-edge graph, which is how a borrow that arrived by an earlier store is found. It reads
-// the whole-body graph, since the per-point one belongs to the escape post-pass.
-func (c *checker) placeReferents(arg ast.Expr) []liveness.VarID {
-	pl, ok := c.exprPlace(borrowOperand(arg))
-	if !ok || pl.root <= 0 {
-		return nil
-	}
-	out := set.NewSet[liveness.VarID]()
-	c.collectBorrowedFrom(pl.root, pl.path, out, set.NewSet[liveness.VarID](), c.fn.eagerBorrowGraph)
-	ids := out.ToSlice()
-	slices.Sort(ids)
-	return ids
-}
-
-// storeSourceMut reports whether a write can go through what the store puts in the target. It
-// reads the SOURCE position, since that is the view the target ends up holding. A signature
-// storing a `&'a B` leaves the target able to read the item and not to write it, even though
-// the target itself is a mutable borrow.
-func (c *checker) storeSourceMut(fn *soltype.FuncType, self *soltype.FuncParam, arg int) bool {
-	var param *soltype.FuncParam
-	switch {
-	case arg == selfIndex:
-		param = self
-	case arg >= 0 && arg < len(fn.Params):
-		param = fn.Params[arg]
-	}
-	if param == nil {
-		return false
-	}
-	borrow, _ := c.borrowOfType(param.Type)
-	return borrow.anyMut
-}
-
-// storeLoanPlace returns the place the store puts in the target.
-//
-// A DIRECT store puts the argument's own referent there, so `store(&mut a, &mut b.inner)`
-// leaves the target reaching b.inner and nothing else of b. Reading the argument's place keeps
-// that field path, which a later borrow of the disjoint b.other is then compared against.
-//
-// An INDIRECT store puts what the argument HOLDS there, which the argument's own place does not
-// name, so the whole referent is the answer. The same applies when the argument names no place,
-// such as an inline carrier.
-func (c *checker) storeLoanPlace(argExpr ast.Expr, referent liveness.VarID, direct bool) movePlace {
-	whole := movePlace{root: referent}
-	if !direct {
-		return whole
-	}
-	p, ok := c.loanPlace(argExpr)
-	if !ok || p.root != referent {
-		return whole
-	}
-	return p
 }
 
 // storeExprAt returns the expression at store position i: the receiver at selfIndex, and the

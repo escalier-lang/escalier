@@ -87,8 +87,12 @@ func (c *checker) subsumePlaceChain(e ast.Expr) {
 		return
 	}
 
-	for _, x := range placeChain(e) {
-		t.subsumed.Add(x)
+	chain := chainOf(e, nil)
+	for _, link := range chain.links {
+		t.subsumed.Add(link.expr)
+	}
+	if chain.root != nil {
+		t.subsumed.Add(chain.root)
 	}
 }
 
@@ -151,6 +155,18 @@ func (c *checker) emitRead(e ast.Expr) {
 	}
 }
 
+// emitMemberRead emits a read of the place the member or index chain e names, as emitRead
+// does. A read inside a statement with no CFG point of its own emits nothing.
+func (c *checker) emitMemberRead(e ast.Expr) {
+	if c.fn == nil || c.fn.cfg == nil {
+		return
+	}
+	if _, ok := c.currentStmtRef(); !ok {
+		return
+	}
+	c.emitRead(e)
+}
+
 // emitReadAt emits a read of the place e names, attached to ref. A read of e already
 // emitted at ref emits nothing more.
 func (c *checker) emitReadAt(e ast.Expr, ref liveness.StmtRef) {
@@ -195,7 +211,9 @@ func (c *checker) placeHolderOf(e ast.Expr) eventHolder {
 //     of a field of that result passes on the borrows held at that field.
 //   - A branching expression passes the value of each branch's tail.
 //
-// Any other source names no place and emits nothing here.
+// Any other source names no place and emits nothing here. A flow that settles as a move out
+// of a module-level binding reports a ModuleLevelMoveError, as reportModuleLevelMove and
+// reportUnplacedModuleMove describe.
 func (c *checker) emitFlow(source ast.Expr, holder eventHolder, dest flowDest, ref liveness.StmtRef) {
 	if c.eventTable() == nil || source == nil {
 		return
@@ -227,6 +245,7 @@ func (c *checker) emitFlow(source ast.Expr, holder eventHolder, dest flowDest, r
 
 	p, ok := c.exprPlace(source)
 	if !ok {
+		c.reportUnplacedModuleMove(source, holder, dest)
 		// A read of a call's result, as in `pick(&q).inner` or `await load(&q)`, holds what the
 		// result borrows at the part it reads, unless the value read is a value type.
 		if call, path, isCall := c.callResultOf(source); isCall && !c.holdsValueType(c.info.TypeOf(source)) {
@@ -243,28 +262,24 @@ func (c *checker) emitFlow(source ast.Expr, holder eventHolder, dest flowDest, r
 // dynamic index ends the path, since it may read any element. ok is false for any other
 // expression.
 func (c *checker) callResultOf(e ast.Expr) (*ast.CallExpr, []placeSeg, bool) {
-	var segs []placeSeg
+	// links holds the links from the call outward. Each await ends a chain, and the links of
+	// the chain inside it come first.
+	var links []placeLink
 	for {
-		switch x := e.(type) {
-		case *ast.CallExpr:
-			slices.Reverse(segs)
-			return x, segs, true
+		chain := chainOf(e, c.indexSegment)
+		links = append(chain.links, links...)
+		switch root := chain.root.(type) {
 		case *ast.AwaitExpr:
-			e = x.Arg
-		case *ast.MemberExpr:
-			if x.Prop == nil {
-				segs = nil
-			} else {
-				segs = append(segs, placeSeg{kind: namedSeg, name: x.Prop.Name})
+			e = root.Arg
+		case *ast.CallExpr:
+			var segs []placeSeg
+			for _, link := range links {
+				if link.dynamic {
+					break
+				}
+				segs = append(segs, link.seg)
 			}
-			e = x.Object
-		case *ast.IndexExpr:
-			if name, ok := c.indexSegment(x.Index); ok {
-				segs = append(segs, placeSeg{kind: namedSeg, name: name})
-			} else {
-				segs = nil
-			}
-			e = x.Object
+			return root, segs, true
 		default:
 			return nil, nil, false
 		}
@@ -432,6 +447,16 @@ func (c *checker) emitTempFlow(source ast.Expr, value ast.Expr, path []placeSeg,
 	c.emitFlow(source, holder, dest, ref)
 }
 
+// emitSpreadFlow emits the flow of source, the operand of a spread in the array or object
+// literal value, as emitTempFlow does for an element the whole literal holds. A spread is an
+// owned destination, as F1 states.
+func (c *checker) emitSpreadFlow(source ast.Expr, value ast.Expr, ref liveness.StmtRef) {
+	if t := c.eventTable(); t != nil {
+		t.spreads.Add(source)
+	}
+	c.emitTempFlow(source, value, nil, &ownedDest{}, ref)
+}
+
 // retargetTemp moves every event held by the temporary value to holder, keeping the
 // path within the value. It also records each place whose value flowed into the temporary
 // value as flowing into holder at the CFG point ref.
@@ -468,9 +493,9 @@ func (c *checker) retargetTemp(value ast.Node, holder eventHolder, ref liveness.
 // when sourceT holds that type. A flow F3 has not settled appends a provisional
 // placeholder and waits in c.pendingFlows.
 //
-// A value type creates no holder of a borrow, so its flow is only a read of p. A source
-// expression already emitted that read, and the flow emits nothing more. A flow with no
-// source expression emits the read itself.
+// A value type creates no holder of a borrow, so its flow is a read of p and a valueCopyEvent.
+// A source expression already emitted that read. A flow with no source expression emits the
+// read itself.
 func (c *checker) emitValueFlow(p movePlace, source ast.Expr, sourceT soltype.Type, node ast.Node, holder eventHolder, dest flowDest, ref liveness.StmtRef) {
 	if source != nil {
 		sourceT = c.info.TypeOf(source)
@@ -482,9 +507,20 @@ func (c *checker) emitValueFlow(p movePlace, source ast.Expr, sourceT soltype.Ty
 
 	flow := flowBase{eventBase: eventBase{place: p, node: node}, holder: holder}
 	ev, wait, settled := c.classifyFlow(c.fn.events, flow, sourceT, dest, false, false)
+	if settled {
+		c.reportModuleLevelMove(c.fn.events, ev, dest, sourceT)
+	}
+
+	// The holder of a flow of a function value reaches each closure the place holds. A
+	// capture may wait for its destination, but a function's capture settles as a read
+	// wherever the closure goes, so its valueCopyEvent is emitted here too.
+	copied := c.holdsValueType(sourceT) && c.holdsFunc(sourceT, set.NewSet[*soltype.TypeVarType]())
 	if use, ok := ev.(*useEvent); settled && ok {
 		if source == nil {
 			c.emitEvent(use, ref)
+		}
+		if copied {
+			c.emitEvent(&valueCopyEvent{flowBase: flow}, ref)
 		}
 		return
 	}
@@ -502,6 +538,9 @@ func (c *checker) emitValueFlow(p movePlace, source ast.Expr, sourceT soltype.Ty
 	if !settled && index >= 0 {
 		pf := provisionalFlow{table: c.fn.events, index: index, source: source, sourceT: sourceT, dest: dest}
 		c.addPendingFlow(pf, wait)
+	}
+	if copied {
+		c.emitEvent(&valueCopyEvent{flowBase: flow}, ref)
 	}
 }
 
@@ -522,10 +561,16 @@ func (c *checker) emitCaptureFlows(closure ast.Func, root liveness.VarID, decl a
 		return
 	}
 
-	// An unannotated parameter's binding renders as `never` until its body settles it, so
-	// the capture reads the parameter's own type instead.
+	// The binding of an unannotated parameter renders as `never` until its body settles it,
+	// so the capture reads the type the parameter was given instead. A bare name reads the
+	// parameter's type. A leaf of a destructuring pattern reads its own type, since a
+	// `number` leaf such as `n` in `{n}` copies where the whole object would move.
 	if fp, ok := c.paramByVar[root]; ok {
-		t = fp.Type
+		if _, bare := fp.Pattern.(*soltype.IdentPat); bare {
+			t = fp.Type
+		} else if leafT, found := c.fn.varIDTypes[root]; found {
+			t = leafT
+		}
 	}
 
 	paths := c.capturedPaths(closure, decl)
@@ -719,45 +764,28 @@ type chainPlace struct {
 // capturedChain returns the place the chain e names. ok is false when e is not a chain
 // rooted at an identifier whose declaration the walk recorded.
 func (c *checker) capturedChain(e ast.Expr) (chainPlace, bool) {
-	var object ast.Expr
-	var name string
-	// element marks an index that names one element of a receiver read by position, as
-	// `xs[0]` and `xs["0"]` do off an array. The element is part of the place though the
-	// receiver's type declares no property of that name.
-	element := false
-	switch e := e.(type) {
-	case *ast.IdentExpr:
-		decl, ok := c.info.DeclOf(e)
-		return chainPlace{decl: decl}, ok
-	case *ast.MemberExpr:
-		object = e.Object
-		if e.Prop != nil {
-			name = e.Prop.Name
-		}
-	case *ast.IndexExpr:
-		object = e.Object
-		name, _ = c.indexSegment(e.Index)
-		_, isIndex := canonicalIndex(name)
-		recv := c.info.TypeOf(e.Object)
-		element = isIndex && recv != nil && c.readsByPosition(recv)
-	default:
+	chain := c.fieldChain(e)
+	root, isIdent := chain.root.(*ast.IdentExpr)
+	if !isIdent {
 		return chainPlace{}, false
 	}
 
-	cp, ok := c.capturedChain(object)
-	switch {
-	case !ok || cp.whole || cp.closed:
-	case name == "":
-		cp.whole = true
-	case !element && !c.readsAsField(object, name):
-		cp.closed = true
-	default:
-		cp.segs = appendPath(cp.segs, []placeSeg{{kind: namedSeg, name: name}})
-		cp.exprs = append(slices.Clone(cp.exprs), e)
-		if ix, isIndex := e.(*ast.IndexExpr); isIndex {
-			if _, isLit := ix.Index.(*ast.LiteralExpr); !isLit {
-				cp.keys = append(slices.Clone(cp.keys), ix.Index)
-			}
+	decl, ok := c.info.DeclOf(root)
+	cp := chainPlace{decl: decl}
+	for _, link := range chain.links {
+		if link.dynamic || link.seg.name == "" {
+			cp.whole = true
+			break
+		}
+		if link.closes {
+			cp.closed = true
+			break
+		}
+
+		cp.segs = append(cp.segs, link.seg)
+		cp.exprs = append(cp.exprs, link.expr)
+		if _, isLit := link.key.(*ast.LiteralExpr); link.key != nil && !isLit {
+			cp.keys = append(cp.keys, link.key)
 		}
 	}
 	return cp, ok
@@ -813,60 +841,28 @@ func (c *checker) noteLiteralBorrowDests(value ast.Expr, t soltype.Type) {
 	held := table.temps[value]
 	var walk func(e ast.Expr, slot soltype.Type)
 	walk = func(e ast.Expr, slot soltype.Type) {
-		switch e := e.(type) {
-		case *ast.BorrowExpr:
-			dest := c.destOfType(slot)
-			for _, i := range held {
-				if bev, ok := table.events[i].(*borrowEvent); ok && bev.node == e {
-					bev.dest = dest
-				}
+		b, isBorrow := e.(*ast.BorrowExpr)
+		if !isBorrow {
+			for _, el := range c.literalSlots(e, slot) {
+				walk(el.value, el.slot)
 			}
-		case *ast.ObjectExpr:
-			for _, elem := range e.Elems {
-				prop, ok := elem.(*ast.PropertyExpr)
-				if !ok {
-					continue
-				}
-
-				name, ok := objKeyName(prop.Name)
-				if !ok {
-					continue
-				}
-
-				if field, ok := c.declaredField(slot, name); ok {
-					walk(prop.ValueExpr(), field.Type)
-				}
-			}
-		case *ast.TupleExpr:
-			// Each element of an array literal fills the array's element slot.
-			if elem, isArray := c.ctx.arrayElem(c.expandAliasChain(slot)); isArray {
-				for _, el := range e.Elems {
-					if _, spread := el.(*ast.ArraySpreadExpr); !spread {
-						walk(el, elem)
-					}
-				}
-				return
-			}
-
-			tuple, ok := c.expandAliasChain(slot).(*soltype.TupleType)
-			if !ok {
-				return
-			}
-
-			// An element after a spread has no known position in the tuple.
-			for i, el := range e.Elems {
-				if _, spread := el.(*ast.ArraySpreadExpr); spread || i >= len(tuple.Elems) {
-					return
-				}
-
-				walk(el, tuple.Elems[i])
+			return
+		}
+		dest := c.destOfType(slot)
+		for _, i := range held {
+			if bev, ok := table.events[i].(*borrowEvent); ok && bev.node == b {
+				bev.dest = dest
 			}
 		}
 	}
 
-	switch value.(type) {
-	case *ast.ObjectExpr, *ast.TupleExpr:
-		walk(value, t)
+	// A nil t names no slot. literalSlots would pair each element with a nil slot, so the walk
+	// stops here instead.
+	if t == nil {
+		return
+	}
+	for _, el := range c.literalSlots(value, t) {
+		walk(el.value, el.slot)
 	}
 }
 
@@ -1442,4 +1438,47 @@ func (c *checker) emitReturnFlow(expr ast.Expr, ref liveness.StmtRef) {
 	}
 
 	c.emitFlow(expr, eventHolder{target: returnTarget{}}, dest, ref)
+}
+
+// paramReferentOutlivesFrame reports whether `root` names a parameter whose referent belongs to
+// the caller and so survives the call.
+//
+// Only a BORROW parameter does. `&T` and `&mut T` name data the caller still holds, so a borrow
+// of a local written into one reaches the caller after the frame ends. An owned parameter,
+// `p: T` or `mut p: T`, is MOVED into the frame. The caller gave up every handle at the call,
+// and the value dies with the frame, so nothing written into it can outlive anything.
+//
+// A settled type answers directly. A `RefType` carrying a lifetime is a borrow. Anything else
+// settled is owned: owned-immutable collapses to the bare inner, so a plain `T` parameter is
+// recorded as its concrete type rather than wrapped, and owned-mutable is a `RefType` with no
+// lifetime.
+//
+// An unsettled type keeps the stricter caller-owned answer. That covers a leaf the seed did not
+// reach and an UNANNOTATED parameter, whose recorded type is an inference variable this reads
+// as a leaf rather than following its bounds. So an unannotated owned parameter counts as
+// caller-owned, where the same parameter written `mut T` does not.
+func (c *checker) paramReferentOutlivesFrame(root liveness.VarID) bool {
+	if c.fn == nil || !c.fn.paramVarIDs.Contains(root) {
+		return false
+	}
+	// A closure borrows what it captures, so the enclosing body owns it.
+	if c.fn.captureVarIDs.Contains(root) {
+		return true
+	}
+	if c.fn.varIDTypes == nil {
+		return true
+	}
+	t, ok := c.fn.varIDTypes[root]
+	if !ok {
+		return true
+	}
+	switch t := t.(type) {
+	case *soltype.RefType:
+		return t.Lt != nil
+	case *soltype.TypeVarType:
+		// Unsettled, so which kind it becomes is not known here. The stricter answer treats
+		// its referent as the caller's.
+		return true
+	}
+	return false
 }

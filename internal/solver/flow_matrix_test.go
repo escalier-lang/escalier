@@ -2996,13 +2996,10 @@ func TestFlowMatrixMissingFieldBorrow(t *testing.T) {
 	})
 }
 
-// DISABLED until #2284. The module-level move check looks at bindings, stores, literals, and
-// returns, but not at a call argument or an owned receiver, so each move of `cfg` below goes
-// unreported.
-/*
+// TestFlowMatrixModuleLevelMove asserts that a function moving a module-level value into an
+// owned parameter or an owned receiver reports a ModuleLevelMoveError.
 func TestFlowMatrixModuleLevelMove(t *testing.T) {
 	runFlowMatrix(t, []flowCell{
-		// Today the call moves `cfg` with no diagnostic.
 		{
 			column: "MoveOutOfModuleLevelState",
 			site:   "Argument",
@@ -3015,7 +3012,6 @@ func TestFlowMatrixModuleLevelMove(t *testing.T) {
 			`,
 			want: []string{"5:11-5:14: cannot move module-level value 'cfg' inside a function. Borrow it with `&cfg`"},
 		},
-		// Today `take` moves `cfg` with no diagnostic.
 		{
 			column: "MoveOutOfModuleLevelState",
 			site:   "Receiver",
@@ -3025,11 +3021,10 @@ func TestFlowMatrixModuleLevelMove(t *testing.T) {
 					return cfg.take()
 				}
 			`,
-			want: []string{"10:13-10:16: cannot move module-level value 'cfg' inside a function. Borrow it with `&cfg`"},
+			want: []string{"10:13-10:16: cannot move module-level value 'cfg' inside a function. The method 'take' takes `self` by value, so calling it moves 'cfg'"},
 		},
 	})
 }
-*/
 
 // TestFlowMatrixReassignAfterAMove asserts that a use after a reassignment reads the new value.
 // E1 rejects only a use of the moved value, and the dataflow pass clears a move at a write of
@@ -3459,8 +3454,7 @@ func TestFlowMatrixStaticBorrowAndOwnershipPass(t *testing.T) {
 			`,
 			want: []string{"5:14-5:16: cannot borrow 'p' as immutable while it is borrowed as mutable"},
 		},
-		// The leaf `d` borrows the field `p.f` from `&mut p` for `'static`, so the report names that
-		// field.
+		// The annotation makes `&mut p` itself a `'static` borrow of p, so the report names p.
 		{
 			column: "ImmutableBorrowAfterStaticMutableBorrow",
 			site:   "Destructuring",
@@ -3471,7 +3465,7 @@ func TestFlowMatrixStaticBorrowAndOwnershipPass(t *testing.T) {
 					val r = &p
 				}
 			`,
-			want: []string{"5:14-5:16: cannot borrow 'p' as immutable while 'p.f' is borrowed as mutable"},
+			want: []string{"5:14-5:16: cannot borrow 'p' as immutable while it is borrowed as mutable"},
 		},
 		// A return passes the borrow back to the caller, so the caller uses the source while the returned
 		// borrow is live.

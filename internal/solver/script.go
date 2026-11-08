@@ -20,22 +20,21 @@ import (
 // A module and a script differ in how their top-level declarations relate. InferModule
 // dependency-orders mutually-visible top-level declarations through the dep graph. A
 // script is instead one straight-line body. Its bindings are linear, and each
-// statement sees only the ones before it, exactly as inside a function. So liveness,
-// alias tracking, and the `mut` transition rules all apply to a script's top-level
-// statements. A module skips those at top level, where c.fn is nil and every
-// transition entry point is a no-op.
+// statement sees only the ones before it, exactly as inside a function. So liveness
+// and the ownership checks apply to a script's top-level statements. A module skips
+// those at top level, where c.fn is nil and every per-body check is a no-op.
 //
 // It runs these steps:
 //
 //  1. wrap the script's statements in an ast.Block;
-//  2. push a fresh funcCtx so c.fn is non-nil and the transition checker is live;
+//  2. push a fresh funcCtx so c.fn is non-nil and the per-body checks run;
 //  3. run runLivenessPrePass over that block to rename the body's variable nodes and
-//     seed the alias/liveness tables;
+//     build its liveness tables;
 //  4. walk the block in source order through inferBlock.
 //
-// M4 shipped every building block this uses: the pre-pass, the per-body funcCtx, the
-// alias tracker, and the transition checker. The only new code is this entry point
-// that runs them over a script body. There is no new inference.
+// Every building block this uses already exists for function bodies: the pre-pass, the
+// per-body funcCtx, and the ownership checks. This entry point runs them over a script
+// body. There is no new inference.
 //
 // The pushed funcCtx carries no async flag and a nil node. A top-level `await` is
 // rejected the same way it is at module top level. There is no enclosing function to
@@ -59,7 +58,7 @@ func inferScriptWithGroups(
 	groups PackageGroups,
 	opts Options,
 ) (*Scope, *Info, []SolverError) {
-	return inferScriptOn(newRunChecker(source, groupSource, groups, withOwnershipDataflowResolved(opts)), script)
+	return inferScriptOn(newRunChecker(source, groupSource, groups, opts), script)
 }
 
 // inferScriptOn infers script on c, a checker from newRunChecker or ambientChecker.
@@ -68,8 +67,6 @@ func inferScriptOn(c *checker, script *ast.Script) (*Scope, *Info, []SolverError
 	// A run that loaded the ambient packages itself settles them the way a cached
 	// checker's are settled, so the two read the same answers.
 	c.settleLoadedDefinitions()
-	// A script binds no imports, so nothing claims a held diagnostic.
-	c.reportHeldLoadErrors()
 	return c.inferScriptIn(c.ambientScope().Child(), script)
 }
 
@@ -90,6 +87,26 @@ func InferScriptInLib(script *ast.Script, lib *ModuleResult) (*Scope, *Info, []S
 	return c.inferScriptIn(lib.Scope.Child(), script)
 }
 
+// bindScriptImports binds each of script's imports into scope, through the path a
+// module file's imports take, and records what binding them reports. Every
+// pseudo-package import binds before any npm import, for the reason bindFileImports
+// gives.
+//
+// A script's statements may redeclare a name an import bound, since a later script
+// binding overwrites an earlier one, so no name is held back from the imports.
+func (c *checker) bindScriptImports(scope *Scope, script *ast.Script) {
+	prevDeclared := c.moduleDeclared
+	c.moduleDeclared = declaredNames{values: set.NewSet[string](), types: set.NewSet[string]()}
+	defer func() { c.moduleDeclared = prevDeclared }()
+	for _, pseudo := range []bool{true, false} {
+		for _, stmt := range script.Imports {
+			if IsSchemePrefixedImport(stmt.PackageName) == pseudo {
+				c.errs = append(c.errs, c.bindImport(scope, stmt)...)
+			}
+		}
+	}
+}
+
 // scriptPkgURI is the prefix the nominal registries key one script's declarations
 // under. Scripts checked against one library share that run's registries, so each
 // needs a prefix of its own for two of them to declare the same class name. The
@@ -108,6 +125,10 @@ func (c *checker) inferScriptIn(scope *Scope, script *ast.Script) (*Scope, *Info
 	// onto it. The node is nil because a script has no enclosing function. scope's
 	// parent chain is what the pre-pass resolves outer names against. There is no
 	// enclosing context to restore, so the returned previous one is discarded.
+	c.bindScriptImports(scope, script)
+	// After the imports, so a failure in a package the script imports is reported at its
+	// import statement.
+	c.reportHeldLoadErrors()
 	scriptBody := &ast.Block{Stmts: script.Stmts, Span: script.Span()}
 	c.scriptScope = scope
 	c.pushFuncCtx(false, nil, 0)
@@ -124,10 +145,6 @@ func (c *checker) inferScriptIn(scope *Scope, script *ast.Script) (*Scope, *Info
 	// The whole script is walked, so a weak binding it declares, at its top level or in
 	// one of its functions, has every bound it will get.
 	c.settleWeakLocals()
-	// A script body runs with function-body semantics, so the move engine applies
-	// here too. With the whole body walked, replay the recorded reads against the
-	// consumed lattice to report use-after-move.
-	c.checkUseAfterMoves()
 	// The whole script is inferred, so every flow F3 can settle is settled, and the rest
 	// take the answer settleAllFlows gives what it cannot see.
 	c.finishOwnershipEvents()
@@ -243,17 +260,17 @@ func (c *checker) bindScriptFuncWithBody(scope *Scope, lvl int, s ast.Stmt, decl
 	sources := []provenance.Provenance{&ast.NodeProvenance{Node: decl}}
 	// The recursive binding carries no VarID, so the body's capture analysis does not count
 	// the name as a capture of a script local. The body's pre-pass gives the name a VarID of
-	// its own inside the body instead, which seedSelfCaptureEdges reads.
+	// its own inside the body instead, which seedCaptureLoans reads.
 	self := c.freshAt(lvl + 1)
 	scope.defineValue(name, ValueBinding{Schemes: []TypeScheme{monoScheme(self)}, Sources: sources})
 
-	// The calls of the name take the capture loans, so writing the declaration takes none.
-	c.markNamedClosure(decl)
+	// The calls of the name use the captures, so writing the declaration uses none.
+	c.noteBoundClosure(decl)
 	// A lifetime check queued while the declaration is typed reads the lifetimes minted
 	// before it, as one queued while an expression is typed does.
 	c.markLifetimes(decl)
 	t, _ := c.inferFuncDecl(scope, lvl+1, decl)
-	c.recordCaptureLoans(scope, decl)
+	c.recordClosureCaptures(scope, decl)
 	c.constrain(decl, t, self)
 
 	scheme := c.generalize(t, lvl)
@@ -261,30 +278,16 @@ func (c *checker) bindScriptFuncWithBody(scope *Scope, lvl int, s ast.Stmt, decl
 	b := ValueBinding{Schemes: []TypeScheme{scheme}, Sources: sources, Kind: ast.ValKind, VarID: int(c.varIDs.Of(decl))}
 	scope.defineValue(name, b)
 
-	// The name's capture edges let a call of it take the capture loans, the way a call of a
+	// The name's loans of the captures let a call of it run the closure, the way a call of a
 	// `val name = fn …` binding does.
-	c.trackFuncDeclCaptures(scope, decl, bindingType(b), s)
+	c.trackFuncDeclCaptures(decl, s)
 }
 
-// trackFuncDeclCaptures records decl's name in the current body's alias and borrow tables.
-// The name holds a fresh value, joins the alias set of each local the body captures, and
-// holds a capture edge to each one. bindingT is the name's type. s is the statement decl is
-// written as.
-func (c *checker) trackFuncDeclCaptures(scope *Scope, decl *ast.FuncDecl, bindingT soltype.Type, s ast.Stmt) {
+// trackFuncDeclCaptures makes decl's name hold the captures decl emitted, the way the binding
+// of `val name = fn …` holds them. s is the statement decl is written as.
+func (c *checker) trackFuncDeclCaptures(decl *ast.FuncDecl, s ast.Stmt) {
 	if c.fn == nil {
 		return
-	}
-
-	id := c.varIDs.Of(decl)
-	if id > 0 && c.fn.aliases != nil {
-		c.recordVarIDType(id, bindingT)
-		c.fn.aliases.NewValue(id, aliasMutability(isMutableType(bindingT)))
-		c.trackCapturedAliases(scope, decl, id)
-	}
-
-	if id > 0 && c.fn.eagerBorrowGraph != nil {
-		c.clearEagerSubtree(id, nil)
-		c.addCaptureEdges(id, nil, decl)
 	}
 
 	ref, ok := c.fn.stmtToRef[s]
@@ -292,14 +295,7 @@ func (c *checker) trackFuncDeclCaptures(scope *Scope, decl *ast.FuncDecl, bindin
 		return
 	}
 
-	c.flushBorrowDirty(ref)
-	if id > 0 {
-		c.dropLoansHeldBy(id)
-	}
-
-	// The declaration binds the closure to its name, as `val name = fn …` does, so the name
-	// holds the captures the closure emitted.
-	if id > 0 && c.eventTable() != nil {
+	if id := c.varIDs.Of(decl); id > 0 && c.eventTable() != nil {
 		c.retargetTemp(decl, eventHolder{target: placeTarget{root: id}}, ref)
 	}
 }

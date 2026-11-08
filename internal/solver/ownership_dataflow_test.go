@@ -1,7 +1,6 @@
 package solver
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -535,8 +534,8 @@ func TestOwnershipDataflow(t *testing.T) {
 					return peek()
 				}
 			`,
-			// The move is reported once, at the move. The current checks' E4 report of the later
-			// call is dropped, since it names the same move.
+			// The move is reported once, at the move. The later call reports nothing more,
+			// since it would name the same move.
 			errs: []string{"cannot move 'p' while it is borrowed"},
 		},
 		{
@@ -566,31 +565,6 @@ func TestOwnershipDataflow(t *testing.T) {
 				}
 			`,
 			errs: []string{"cannot move 'p' while it is borrowed"},
-		},
-		{
-			// A closure stored into sink and also returned keeps its `'static` borrow of p, so
-			// the return does not move p. A later move of p conflicts with that borrow. The
-			// first diagnostic is the current checks' escape check of `return f`, which the
-			// pass does not replace.
-			name: "E3MoveAfterStoringAndReturningAClosure",
-			src: `
-				var sink: fn () -> number = fn () { return 0 }
-				declare fn take(x: {x: number}) -> undefined
-				fn go(c: boolean) {
-					val p = {x: 1}
-					val f = fn () { return p.x }
-					sink = f
-					if c {
-						return f
-					}
-					take(p)
-					return fn () { return 0 }
-				}
-			`,
-			errs: []string{
-				"'p' leaves the function both as an owned value and through a borrow",
-				"cannot move 'p' while it is borrowed",
-			},
 		},
 		{
 			// One return that names the closure twice moves its capture once.
@@ -680,7 +654,7 @@ func TestOwnershipDataflow(t *testing.T) {
 		},
 		{
 			// The move conflicts with a and with f's capture. It is reported once, at the move,
-			// and the current checks' E4 report of the later call is dropped.
+			// and the later call reports nothing more.
 			name: "E3MoveWhileABorrowAndAClosureHoldP",
 			src: `
 				declare fn take(p: {x: number}) -> number
@@ -942,8 +916,7 @@ func TestOwnershipDataflow(t *testing.T) {
 		},
 		{
 			// a's immutable borrow of b is live through the return, so `&mut b` breaks E2.
-			// The frame-exit check finds the same pair of paths and is not reported again.
-			name: "E2AtAReturnReplacesTheSharedPathsCheck",
+			name: "E2AtAReturn",
 			src: `
 				fn build() -> [&{value: number}, &mut {value: number}] {
 					val mut b = {value: 2}
@@ -955,8 +928,8 @@ func TestOwnershipDataflow(t *testing.T) {
 		},
 		{
 			// The store's `&b` breaks E2 against a's mutable borrow, which the return keeps
-			// live. The frame-exit check pairs the same store with the return.
-			name: "E2AtAStoreReplacesTheMixedOutflowCheck",
+			// live.
+			name: "E2AtAStoreTheReturnKeepsLive",
 			src: `
 				fn f(p: &mut {r: &{value: number}}) -> {peer: &mut {value: number}} {
 					val mut b = {value: 1}
@@ -968,11 +941,9 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot borrow 'b' as immutable while it is borrowed as mutable"},
 		},
 		{
-			// The caller reads `p.r` only after the return, when `a` is dead, so `&b.x` breaks no
-			// rule. The caller reaches both `b.y` borrows, so the pass reports E2 at the store
-			// into q. That pair is the one the frame-exit check reports, so the frame-exit
-			// diagnostic is dropped.
-			name: "E2OnTheSamePairReplacesTheMixedOutflowCheck",
+			// `a` is used after the store into p, so `&b.x` breaks E2. The caller reaches both `b.y`
+			// borrows, so the pass also reports E2 at the store into q.
+			name: "E2AtEachStoreOfAPair",
 			src: `
 				fn f(p: &mut {r: {x: &{v: number}, y: &{v: number}}}, q: &mut {r: &mut {v: number}}) {
 					val mut b = {x: {v: 1}, y: {v: 2}}
@@ -982,31 +953,14 @@ func TestOwnershipDataflow(t *testing.T) {
 					q.r = &mut b.y
 				}
 			`,
-			errs: []string{"cannot borrow 'b.y' as mutable while it is borrowed as immutable"},
-		},
-		{
-			// The body reads `p.r` while the mutable borrow `a` holds is live, so the store's `&b`
-			// breaks E2. The current checks report that store with a message naming `a`, which
-			// takes the place of the pass's. The frame-exit check reports that b leaves both owned and
-			// through a borrow, which is not a pair E2 covers, so it stays.
-			name: "AnOwnedOutflowStaysBesideE2",
-			src: `
-				fn f(p: &mut {r: &{v: number}}) -> {v: number} {
-					val mut b = {v: 1}
-					val a = &mut b
-					p.r = &b
-					a.v = p.r.v + 1
-					return b
-				}
-			`,
 			errs: []string{
-				"cannot store an immutable borrow of 'b' while 'a' still borrows it as mutable",
-				"'b' leaves the function both as an owned value and through a borrow",
+				"cannot borrow 'b.x' as immutable while it is borrowed as mutable",
+				"cannot borrow 'b.y' as mutable while it is borrowed as immutable",
 			},
 		},
 		{
 			// t holds both borrows one literal takes, and the return uses t, so the pass reports
-			// the pair by E2. The frame-exit diagnostic at the return t flows into is dropped.
+			// the pair by E2.
 			name: "SharedPathsInOneLiteralReportedByE2",
 			src: `
 				fn build() {
@@ -1041,10 +995,10 @@ func TestOwnershipDataflow(t *testing.T) {
 			`,
 		},
 		{
-			// The pass reports E2 for c inside the return, which replaces the frame-exit
-			// diagnostic about c. The borrow of b that `take` receives ends with the call, so
-			// the pass reports nothing about b, and the frame-exit diagnostic about b stays.
-			name: "E2OnAnotherLocalKeepsTheSharedPathsCheck",
+			// The return holds an immutable and a mutable borrow of c, which breaks E2. The
+			// borrow of b that `take` receives ends with the call, so the mutable return is the
+			// only path to b left, and nothing is reported about b.
+			name: "E2InsideAReturnAfterACallReadAnotherLocal",
 			src: `
 				declare fn take(x: {peer: &{n: number}}) -> undefined
 				fn build() {
@@ -1054,10 +1008,7 @@ func TestOwnershipDataflow(t *testing.T) {
 					return [&mut b, &c, &mut c]
 				}
 			`,
-			errs: []string{
-				"'b' leaves the function through a mutable path and an immutable one",
-				"cannot borrow 'c' as mutable while it is borrowed as immutable",
-			},
+			errs: []string{"cannot borrow 'c' as mutable while it is borrowed as immutable"},
 		},
 		{
 			// The first argument passes m to a `&` parameter while the second passes it to one
@@ -1133,10 +1084,9 @@ func TestOwnershipDataflow(t *testing.T) {
 			`,
 		},
 		{
-			// The pass reports E2 for b at `&mut b`, which lies outside both the store `q.s = c`
-			// that the frame-exit diagnostic blames and the store `p.r = a` it relates. So the
-			// frame-exit diagnostic about b stays beside the E2.
-			name: "E2OutsideTheOutflowSpansKeepsTheSharedPathsCheck",
+			// `p.r` and `q.s` both reach the caller, so `&mut b` breaks E2 against the immutable
+			// borrow a holds. The pass reports the conflict once, at `&mut b`.
+			name: "E2AtABorrowBothStoresHandOut",
 			src: `
 				fn f(p: &mut {r: &{v: number}}, q: &mut {s: &mut {v: number}}) {
 					val mut b = {v: 1}
@@ -1146,10 +1096,7 @@ func TestOwnershipDataflow(t *testing.T) {
 					q.s = c
 				}
 			`,
-			errs: []string{
-				"cannot borrow 'b' as mutable while it is borrowed as immutable",
-				"'b' leaves the function through a mutable path and an immutable one",
-			},
+			errs: []string{"cannot borrow 'b' as mutable while it is borrowed as immutable"},
 		},
 		{
 			// The annotation gives the literal's element a `'static` borrow, so it is live at the
@@ -1305,8 +1252,9 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot move 'd' while it is borrowed"},
 		},
 		{
-			// The caller reads `p.r` only once f returns, after the last write of b.
-			name: "WriteBeforeTheCallerReadsAStoredBorrowOk",
+			// The write on a later iteration runs while `p.r` holds the borrow of b the earlier
+			// iteration stored, and the caller reads `p.r` once f returns.
+			name: "WriteAfterAStoreOnAnEarlierIterationConflicts",
 			src: `
 				fn f(p: &mut {r: &{value: number}}, xs: [number]) {
 					val mut b = {value: 1}
@@ -1316,6 +1264,51 @@ func TestOwnershipDataflow(t *testing.T) {
 					}
 				}
 			`,
+			errs: []string{"cannot assign to 'b.value' while it is borrowed as immutable"},
+		},
+		{
+			// The caller can copy `p.r` at the `yield`, so repointing `p.r` afterward does not end
+			// the borrow of b.
+			name: "WriteAfterAYieldAndARepointConflicts",
+			src: `
+				gen fn f(p: &mut {r: &{value: number}}) {
+					val mut b = {value: 1}
+					val c = {value: 2}
+					p.r = &b
+					yield 1
+					p.r = &c
+					b.value = 5
+				}
+			`,
+			errs: []string{"cannot assign to 'b.value' while it is borrowed as immutable"},
+		},
+		{
+			// Without a `yield`, the repoint ends the borrow of b before the write.
+			name: "WriteAfterARepointOk",
+			src: `
+				gen fn f(p: &mut {r: &{value: number}}) {
+					val mut b = {value: 1}
+					val c = {value: 2}
+					p.r = &b
+					p.r = &c
+					b.value = 5
+					yield 1
+				}
+			`,
+		},
+		{
+			// `take`'s parameter makes the element `'static`, so the borrow of b in the literal
+			// stays live after the call.
+			name: "BorrowAfterAStaticBorrowInALiteralArgumentConflicts",
+			src: `
+				declare fn take(x: [&'static mut {value: number}]) -> undefined
+				fn f() {
+					val mut b = {value: 2}
+					take([&mut b])
+					val c = &b
+				}
+			`,
+			errs: []string{"cannot borrow 'b' as immutable while it is borrowed as mutable"},
 		},
 		{
 			// The caller runs at the `yield`, and can keep a copy of `p.r`, so the stored
@@ -1457,8 +1450,9 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot borrow 'v' as mutable while it is borrowed as immutable"},
 		},
 		{
-			// The write comes before the `yield`, where the caller first reads `p.r`.
-			name: "WriteBeforeAYieldOk",
+			// The caller can read `p.r` once f returns, so the stored borrow is live at the write
+			// even though the write comes before the `yield`.
+			name: "WriteBeforeAYieldConflicts",
 			src: `
 				gen fn f(p: &mut {r: &{value: number}}) {
 					val mut b = {value: 1}
@@ -1467,6 +1461,7 @@ func TestOwnershipDataflow(t *testing.T) {
 					yield 1
 				}
 			`,
+			errs: []string{"cannot assign to 'b.value' while it is borrowed as immutable"},
 		},
 		{
 			// h holds a borrow of p in `h.peer`. `get` returns it through 'a, a lifetime inside
@@ -1733,9 +1728,9 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot assign to 'p.x' while it is borrowed as immutable"},
 		},
 		{
-			// The current checks report the store of `&b` for c, which b reaches. The pass's
-			// E2 about b itself at the same store is a different conflict, so both are reported.
-			name: "StoredAliasAboutAnotherLocalKeepsE2",
+			// `val mut b = {peer: &mut c}` breaks E2 against m's immutable borrow of c, and the
+			// store `p.r = &b` breaks E2 against a's mutable borrow of b.
+			name: "StoreBesideAnAliasOfAnotherLocal",
 			src: `
 				fn f(p: &mut {r: &{peer: &mut {v: number}}}) -> number {
 					val mut c = {v: 1}
@@ -1749,7 +1744,6 @@ func TestOwnershipDataflow(t *testing.T) {
 			`,
 			errs: []string{
 				"cannot borrow 'c' as mutable while it is borrowed as immutable",
-				"cannot store a mutable borrow of 'c' while 'm' still borrows it as immutable",
 				"cannot borrow 'b' as immutable while it is borrowed as mutable",
 			},
 		},
@@ -1767,15 +1761,12 @@ func TestOwnershipDataflow(t *testing.T) {
 	}
 }
 
-// TestOwnershipDataflowMatchesCurrentChecks covers programs whose diagnostics the dataflow
-// pass and the current checks report alike. Each program runs once with
-// Options.NoOwnershipDataflow set and once with it clear, and both runs report want, with
-// spans. When ownershipDataflowEnv turns the pass off, the run with the option clear would
-// repeat the current checks, so it is skipped. The cases cover a call that runs a closure, a
-// write through a `number`-typed index, the span a moved place is blamed at, the name of a
-// moved field or tuple, a write that uses a moved place beside a live borrow, and a borrow
-// copied into a second binding.
-func TestOwnershipDataflowMatchesCurrentChecks(t *testing.T) {
+// TestOwnershipDataflowMessagesAndSpans covers the message and the span of each diagnostic the
+// dataflow pass reports for a program. The cases cover a call that runs a closure, a write
+// through a `number`-typed index, the span a moved place is blamed at, the name of a moved
+// field or tuple, a write that uses a moved place beside a live borrow, a borrow copied into a
+// second binding, and a move whose value reaches the caller beside a borrow the caller reads.
+func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 	cases := []struct {
 		name string
 		src  string
@@ -2331,41 +2322,52 @@ func TestOwnershipDataflowMatchesCurrentChecks(t *testing.T) {
 			`,
 			want: []string{"6:12-6:13: use of moved value 'q'"},
 		},
-	}
-
-	for _, tc := range cases {
-		for _, dataflow := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/dataflow=%t", tc.name, dataflow), func(t *testing.T) {
-				if dataflow && !ownershipDataflowFromEnv() {
-					t.Skipf("%s turns the dataflow pass off", ownershipDataflowEnv)
+		{
+			// A closure stored into sink and also returned keeps its `'static` borrow of p, so
+			// the return does not move p. A later move of p conflicts with that borrow, so E3
+			// reports the move.
+			name: "E3MoveAfterStoringAndReturningAClosure",
+			src: `
+				var sink: fn () -> number = fn () { return 0 }
+				declare fn take(x: {x: number}) -> undefined
+				fn go(c: boolean) {
+					val p = {x: 1}
+					val f = fn () { return p.x }
+					sink = f
+					if c {
+						return f
+					}
+					take(p)
+					return fn () { return 0 }
 				}
-				res := InferModuleAgainstStdlib(parseModule(t, tc.src), benchTree, Options{NoOwnershipDataflow: !dataflow})
-				require.Equal(t, tc.want, messagesWithSpan(t, res.Errors))
-			})
-		}
+			`,
+			want: []string{"11:11-11:12: cannot move 'p' while it is borrowed"},
+		},
+		{
+			// The body reads `p.r` while the mutable borrow `a` holds is live, so the store's `&b`
+			// breaks E2. The caller reads `p.r` once f returns, and the return hands it b as an
+			// owned value, so the return breaks E3.
+			name: "AnOwnedReturnBesideAStoredBorrowBreaksE3",
+			src: `
+				fn f(p: &mut {r: &{v: number}}) -> {v: number} {
+					val mut b = {v: 1}
+					val a = &mut b
+					p.r = &b
+					a.v = p.r.v + 1
+					return b
+				}
+			`,
+			want: []string{
+				"5:12-5:14: cannot borrow 'b' as immutable while it is borrowed as mutable",
+				"7:13-7:14: cannot move 'b' while it is borrowed",
+			},
+		},
 	}
-}
 
-// TestOwnershipDataflowFromEnv covers the values of ownershipDataflowEnv that turn the dataflow
-// pass off and a sample of those that leave it on.
-func TestOwnershipDataflowFromEnv(t *testing.T) {
-	cases := []struct {
-		value string
-		on    bool
-	}{
-		{value: "", on: true},
-		{value: "1", on: true},
-		{value: "on", on: true},
-		{value: "0", on: false},
-		{value: " 0 ", on: false},
-		{value: "false", on: false},
-		{value: "FALSE", on: false},
-		{value: "Off", on: false},
-	}
 	for _, tc := range cases {
-		t.Run(fmt.Sprintf("%q", tc.value), func(t *testing.T) {
-			t.Setenv(ownershipDataflowEnv, tc.value)
-			require.Equal(t, tc.on, ownershipDataflowFromEnv())
+		t.Run(tc.name, func(t *testing.T) {
+			res := InferModuleAgainstStdlib(parseModule(t, tc.src), benchTree, Options{})
+			require.Equal(t, tc.want, messagesWithSpan(t, res.Errors))
 		})
 	}
 }

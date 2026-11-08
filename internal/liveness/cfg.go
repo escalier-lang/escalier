@@ -25,7 +25,7 @@ type BasicBlock struct {
 // decomposedStmt records that a statement (typically a DeclStmt whose init
 // was a branching expression) was decomposed by the CFG builder. The stmt
 // itself doesn't appear in any block's Stmts, but it needs a StmtRef so
-// that alias tracking can look up liveness at the join point.
+// that a check made at the statement can look up liveness at the join point.
 type decomposedStmt struct {
 	Stmt  ast.Stmt
 	Block *BasicBlock
@@ -182,8 +182,8 @@ func (b *cfgBuilder) processExprStmt(s *ast.ExprStmt, current *BasicBlock) *Basi
 }
 
 // recordDecomposed tracks a decomposed statement → join block mapping so that
-// BuildStmtToRef can create a StmtRef for the statement. This enables alias
-// tracking and transition checking to look up liveness at the join point.
+// BuildStmtToRef can create a StmtRef for the statement. A check made at the
+// statement then looks up liveness at the join point.
 func (b *cfgBuilder) recordDecomposed(s ast.Stmt, join *BasicBlock) {
 	b.decomposedStmts = append(b.decomposedStmts, decomposedStmt{
 		Stmt:  s,

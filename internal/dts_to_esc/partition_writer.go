@@ -926,17 +926,21 @@ func astExprDottedName(e ast.Expr) string {
 // them — the ECMA-262 join reads them for the members each package declares —
 // go through this instead of converting a second time.
 func ConvertBuckets(result *PartitionResult, facts *ReceiverFacts) (map[string]*StandaloneModule, error) {
+	// WebIDL states which interfaces are transferable, so the union is derived
+	// from it rather than copied from TypeScript's.
+	buckets := deriveTransferable(result.Buckets, webidl.Definitions)
+
 	// Fuse every bucket before converting any of it, so the reference
 	// rewrite below knows every twin name the tree declares and not
 	// just the ones its own bucket does. See convertFusedBucket.
-	uris := make([]string, 0, len(result.Buckets))
-	for uri := range result.Buckets {
+	uris := make([]string, 0, len(buckets))
+	for uri := range buckets {
 		uris = append(uris, uri)
 	}
 	sort.Strings(uris)
 
-	fused := make(map[string][]dts_parser.Statement, len(result.Buckets))
-	own := make(map[string][]readonlyTwin, len(result.Buckets))
+	fused := make(map[string][]dts_parser.Statement, len(buckets))
+	own := make(map[string][]readonlyTwin, len(buckets))
 	var all []readonlyTwin
 	// consumedCtor is every constructor interface the tree fuses away, and classNames every
 	// name it turns into a class. Both span the tree for the same reason `all` holds every
@@ -944,7 +948,7 @@ func ConvertBuckets(result *PartitionResult, facts *ReceiverFacts) (map[string]*
 	consumedCtor := make(map[string]string)
 	classNames := set.NewSet[string]()
 	for _, uri := range uris {
-		stmts, twins := fuseReadonlyTwins(result.Buckets[uri])
+		stmts, twins := fuseReadonlyTwins(buckets[uri])
 		fused[uri] = stmts
 		own[uri] = twins
 		all = append(all, twins...)
@@ -957,7 +961,7 @@ func ConvertBuckets(result *PartitionResult, facts *ReceiverFacts) (map[string]*
 	}
 	classNames = withTwinNames(classNames, all)
 
-	mods := make(map[string]*StandaloneModule, len(result.Buckets))
+	mods := make(map[string]*StandaloneModule, len(buckets))
 	for _, uri := range uris {
 		// A `web:*` package declares the web platform's interfaces, whose WebIDL says
 		// which ones a program may construct. No other package's names are WebIDL's.

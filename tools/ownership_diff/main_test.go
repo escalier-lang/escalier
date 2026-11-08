@@ -22,8 +22,9 @@ func traceStream(events ...[2]string) string {
 // TestOwnershipDiffReport asserts the report the harness writes for two tiny runs:
 //
 //   - TestSame prints one diagnostic in each run, so it does not differ.
-//   - TestOld prints a diagnostic only with the flag off, and TestNew one only with it on.
-//   - TestCount prints one diagnostic twice with the flag off and once with it on.
+//   - TestOld prints a diagnostic only in the base checkout, and TestNew one only in this
+//     checkout.
+//   - TestCount prints one diagnostic twice in the base checkout and once in this checkout.
 //   - Program `bb` reports one diagnostic in each run, attributed to TestShiftA in one and
 //     TestShiftB in the other. It matches, since diagnostics match by program.
 //   - A script, which has no program key, reports one diagnostic in each run from different
@@ -42,7 +43,7 @@ func TestOwnershipDiffReport(t *testing.T) {
 		return `ESCALIER_DIAG\tcc\t*solver.UnresolvedPackageError\t` + tmp + `/` + dir + `/001/a.esc:1:1-1:2\tcannot read ` + tmp + `/` + dir + `/001/b.esc\n`
 	}
 
-	off, err := parseTrace(strings.NewReader("not json\n" + traceStream(
+	old, err := parseTrace(strings.NewReader("not json\n" + traceStream(
 		[2]string{"TestSame", moved},
 		[2]string{"TestOld", moved},
 		[2]string{"TestOld", `=== RUN TestOld\n`},
@@ -54,7 +55,7 @@ func TestOwnershipDiffReport(t *testing.T) {
 	)))
 	require.NoError(t, err)
 
-	on, err := parseTrace(strings.NewReader(traceStream(
+	cur, err := parseTrace(strings.NewReader(traceStream(
 		[2]string{"TestSame", moved},
 		[2]string{"TestNew", write},
 		[2]string{"TestCount", moved},
@@ -64,11 +65,11 @@ func TestOwnershipDiffReport(t *testing.T) {
 	)))
 	require.NoError(t, err)
 
-	require.Empty(t, off.problems)
-	require.Empty(t, on.problems)
+	require.Empty(t, old.problems)
+	require.Empty(t, cur.problems)
 
 	var out strings.Builder
-	writeReport(&out, diffRuns(off.diags, on.diags))
+	writeReport(&out, diffRuns(old.diags, cur.diags))
 
 	require.Equal(t, strings.Join([]string{
 		"pkg TestCount",
@@ -82,7 +83,7 @@ func TestOwnershipDiffReport(t *testing.T) {
 		"pkg TestScriptB",
 		"\tnew\t0:5-6\t*solver.UseAfterMoveError\tuse of moved value 'r'",
 		"",
-		"5 tests differ: 3 diagnostics only with the flag off, 2 only with it on",
+		"5 tests differ: 3 diagnostics only in the base checkout, 2 only in this checkout",
 		"     3  old *solver.UseAfterMoveError: use of moved value '…'",
 		"     1  new *solver.BorrowedValueWriteError: cannot assign to '…' while it is borrowed as immutable",
 		"     1  new *solver.UseAfterMoveError: use of moved value '…'",
@@ -138,14 +139,14 @@ func TestOwnershipDiffSplitLines(t *testing.T) {
 		}, "\n")
 	}
 
-	off, err := parseTrace(strings.NewReader(split("old")))
+	old, err := parseTrace(strings.NewReader(split("old")))
 	require.NoError(t, err)
 
-	on, err := parseTrace(strings.NewReader(split("new")))
+	cur, err := parseTrace(strings.NewReader(split("new")))
 	require.NoError(t, err)
 
 	var out strings.Builder
-	writeReport(&out, diffRuns(off.diags, on.diags))
+	writeReport(&out, diffRuns(old.diags, cur.diags))
 
 	name := strings.Repeat("p", 1100)
 	require.Equal(t, strings.Join([]string{
@@ -153,7 +154,7 @@ func TestOwnershipDiffSplitLines(t *testing.T) {
 		"\told\tinput.esc:3:5-3:6\t*solver.UseAfterMoveError\tuse of moved value '" + name + "old'",
 		"\tnew\tinput.esc:3:5-3:6\t*solver.UseAfterMoveError\tuse of moved value '" + name + "new'",
 		"",
-		"1 tests differ: 1 diagnostics only with the flag off, 1 only with it on",
+		"1 tests differ: 1 diagnostics only in the base checkout, 1 only in this checkout",
 		"     1  new *solver.UseAfterMoveError: use of moved value '…'",
 		"     1  old *solver.UseAfterMoveError: use of moved value '…'",
 		"",

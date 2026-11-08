@@ -156,9 +156,14 @@ func (c *checker) paramDestOf(fp *soltype.FuncParam, reborrows bool) flowDest {
 }
 
 // paramTakesOwnership reports whether an argument passed to fp is owned by the callee. A
-// rest parameter takes ownership when its element type is a concrete owned shape. Any other
-// parameter takes ownership when its body moves it or its type is a concrete owned shape.
+// parameter isTypeArgParam accepts takes ownership, as the parameter of `fn id<T>(t: T) -> T`
+// does in the call `id(xs)`. A rest parameter takes ownership when its element type is a
+// concrete owned shape. Any other parameter takes ownership when its body moves it or its
+// type is a concrete owned shape.
 func (c *checker) paramTakesOwnership(fp *soltype.FuncParam) bool {
+	if c.ctx.isTypeArgParam(fp) {
+		return true
+	}
 	if fp.Rest {
 		elem, isArray := c.ctx.restSlotElem(fp.Type)
 		return isArray && c.isConcreteOwned(elem)
@@ -259,11 +264,7 @@ func (c *checker) settleFlowsWaitingOn(wait flowWait, force, forceCapture bool) 
 
 	for _, pf := range flows {
 		placeholder := pf.table.events[pf.index].(*provisionalEvent)
-		t := pf.sourceT
-		if pf.source != nil {
-			t = c.info.TypeOf(pf.source)
-		}
-
+		t := c.flowSourceType(pf)
 		ev, next, settled := c.classifyFlow(pf.table, placeholder.flowBase, t, pf.dest, force, forceCapture)
 		if !settled {
 			c.addPendingFlow(pf, next)
@@ -271,6 +272,7 @@ func (c *checker) settleFlowsWaitingOn(wait flowWait, force, forceCapture bool) 
 		}
 
 		pf.table.events[pf.index] = ev
+		c.reportModuleLevelMove(pf.table, ev, pf.dest, t)
 		if _, isCapture := pf.dest.(*captureDest); isCapture {
 			c.captureReturnMoves(pf.table, placeholder.flowBase, t)
 		}
@@ -371,4 +373,155 @@ func (c *checker) settleParams(params []*soltype.FuncParam) {
 		c.unsettledParams.Remove(fp)
 		c.settleFlowsWaitingOn(flowWait{param: fp}, false, false)
 	}
+}
+
+// markMovedParams sets Moved on each parameter with no type annotation that the current body
+// moves. A bare name is moved when the body moves it whole. A destructuring pattern is moved
+// when the body moves any leaf it binds whole. params holds the FuncParams built from
+// sigParams, one for one. It reads the flows that wait on those parameters, so it runs once
+// the body is walked and before settleParams settles them.
+func (c *checker) markMovedParams(sigParams []*ast.Param, params []*soltype.FuncParam) {
+	if c.fn == nil {
+		return
+	}
+	moved := c.movedParams()
+	for i, p := range sigParams {
+		if p.TypeAnn != nil || i >= len(params) {
+			continue
+		}
+		if moved.Contains(params[i]) {
+			params[i].Moved = true
+		}
+	}
+}
+
+// movedParams returns each unannotated parameter of the current body that a flow of the body
+// moves, once the parameter is taken to be owned. A binding of a parameter is its bare name or
+// a leaf its destructuring pattern binds. It reads the provisional flows of the body's event
+// table, since a flow out of a place under such a binding waits until settleParams settles
+// the parameter. A flow moves the parameter when:
+//
+//   - it takes a whole binding into a destination that settles as owned, such as `return p`,
+//     `val q = p`, or `return x` for a parameter written `{x}`;
+//   - a tuple pattern of a `val` or `var` destructuring binds an element of a binding into an
+//     owned leaf, as `val [a, b] = p` does;
+//   - it is a closure's capture of a place under a binding, and the closure is returned where
+//     it is written or through a local, as captureReturnMoves finds it.
+//
+// The last case covers
+//
+//	fn go(p) {
+//		val f = fn () { return p.x }
+//		return f
+//	}
+//
+// where the return of f moves the capture of `p.x`, so go moves p and `go(o)` moves o.
+func (c *checker) movedParams() set.Set[*soltype.FuncParam] {
+	moved := set.NewSet[*soltype.FuncParam]()
+	t := c.eventTable()
+	if t == nil {
+		return moved
+	}
+
+	for _, flows := range c.pendingFlows {
+		for _, pf := range flows {
+			if pf.table != t {
+				continue
+			}
+
+			placeholder := t.events[pf.index].(*provisionalEvent)
+			root := placeholder.place.root
+			fp, ok := c.paramByVar[root]
+			if !ok || !c.unsettledParams.Contains(fp) {
+				continue
+			}
+
+			if c.flowMovesParam(t, pf, placeholder.flowBase) {
+				moved.Add(fp)
+			}
+		}
+	}
+
+	return moved
+}
+
+// flowSourceType returns the type of the value the provisional flow pf passes. It is the type
+// of pf's source expression, or sourceT when pf has none.
+func (c *checker) flowSourceType(pf provisionalFlow) soltype.Type {
+	if pf.source != nil {
+		return c.info.TypeOf(pf.source)
+	}
+	return pf.sourceT
+}
+
+// flowMovesParam reports whether the provisional flow pf moves the parameter its place is
+// rooted at, by one of the cases movedParams lists. flow is the flow pf's placeholder
+// carries, and table holds that placeholder. A flow of a value type copies, so it moves
+// nothing.
+func (c *checker) flowMovesParam(table *ownershipEvents, pf provisionalFlow, flow flowBase) bool {
+	// The body has resolved the type a leaf such as `n` in `{n}` holds. A `number` leaf
+	// copies out of the parameter even though the object argument would move.
+	t := c.flowSourceType(pf)
+	if c.holdsValueType(t) {
+		return false
+	}
+
+	if _, isCapture := pf.dest.(*captureDest); isCapture {
+		return c.captureLeavesWithReturn(table, flow, t)
+	}
+
+	if isPatternFlow(pf, flow) {
+		if !c.fn.destructureInits.Contains(flow.node) || !onlyElementSegments(flow.place.path) {
+			return false
+		}
+	} else if len(flow.place.path) > 0 {
+		return false
+	}
+
+	dest, _, settled := c.settleDest(table, pf.dest, flow.holder, false, false)
+	if !settled {
+		return false
+	}
+	_, toBorrow := dest.(*borrowDest)
+	return !toBorrow
+}
+
+// captureLeavesWithReturn reports whether the closure capture flow, whose captured place has
+// type t, leaves the frame with a return of the closure. That holds for a closure returned
+// where it is written, and for one held by a local that a return hands out and that no
+// module-level binding receives. A captured place holding a borrow is copied into the return,
+// so it does not leave this way. table holds the capture's placeholder.
+func (c *checker) captureLeavesWithReturn(table *ownershipEvents, flow flowBase, t soltype.Type) bool {
+	if _, isBorrow := c.borrowOfType(t); isBorrow && len(flow.place.path) > 0 {
+		return false
+	}
+
+	switch target := flow.holder.target.(type) {
+	case returnTarget:
+		return true
+	case placeTarget:
+		return !table.storedFrom(target.root) && len(table.returnsOf(target.root)) > 0
+	}
+	return false
+}
+
+// isPatternFlow reports whether pf, whose placeholder carries flow, passes a part of a
+// pattern's source to the leaf that binds it.
+func isPatternFlow(pf provisionalFlow, flow flowBase) bool {
+	_, isPlace := flow.holder.target.(placeTarget)
+	return pf.source == nil && isPlace
+}
+
+// onlyElementSegments reports whether path is not empty and each of its segments names a
+// tuple element or a rest of the elements.
+func onlyElementSegments(path []placeSeg) bool {
+	if len(path) == 0 {
+		return false
+	}
+	for _, seg := range path {
+		if _, isElement := canonicalIndex(seg.name); seg.kind != restSeg && !isElement {
+			return false
+		}
+	}
+	return true
 }

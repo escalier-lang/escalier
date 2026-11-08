@@ -28,12 +28,11 @@ type Options struct {
 	// CheckJsDecorators reports a pseudo-package file whose values break the `@js`
 	// rules jsDecoratorErrors lists, at the import that loads it.
 	CheckJsDecorators bool
-	// NoOwnershipDataflow skips the dataflow pass of ownership_dataflow.go, which checks E1,
-	// E2, and E3 of planning/ownership_rules/requirements.md over each body's control-flow
-	// graph. The run then reports the current checks' diagnostics of those rules, which the
-	// pass's diagnostics replace by default. The ESCALIER_OWNERSHIP_DATAFLOW environment
-	// variable set to 0, false, or off skips the pass as well.
-	NoOwnershipDataflow bool
+	// stdlibDir is the pseudo-package tree the run's groups were built from, or "" for a
+	// run given its groups some other way. InferModuleAgainstStdlib and
+	// InferScriptAgainstStdlib set it. A load of a package the groups do not cover reads
+	// the tree to group it.
+	stdlibDir string
 }
 
 // InferModule builds the dep graph for a single parsed module, infers every
@@ -156,12 +155,11 @@ func inferModuleWithGroups(
 	groups PackageGroups,
 	opts Options,
 ) *ModuleResult {
-	return inferModuleOn(newRunChecker(source, groupSource, groups, withOwnershipDataflowResolved(opts)), module)
+	return inferModuleOn(newRunChecker(source, groupSource, groups, opts), module)
 }
 
 // newRunChecker returns a checker for one run that loads packages through source and
-// groupSource. groups and opts are as inferModuleWithGroups takes them. opts must come from
-// withOwnershipDataflowResolved, since the checker reads NoOwnershipDataflow alone.
+// groupSource. groups and opts are as inferModuleWithGroups takes them.
 func newRunChecker(source ModuleSource, groupSource GroupSource, groups PackageGroups, opts Options) *checker {
 	c := newChecker()
 	c.source = source
@@ -170,7 +168,7 @@ func newRunChecker(source ModuleSource, groupSource GroupSource, groups PackageG
 	c.noAmbientNames = opts.NoAmbientNames
 	c.checkJsDecorators = opts.CheckJsDecorators
 	c.dependencies = opts.Dependencies
-	c.ownershipDataflow = !opts.NoOwnershipDataflow
+	c.stdlibDir = opts.stdlibDir
 	return c
 }
 

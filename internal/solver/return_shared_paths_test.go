@@ -10,11 +10,8 @@ import (
 //
 // Two paths to one object hand the caller two views of it, and that is a hazard when one view
 // writes and the other reads. Two paths of the same mutability are fine. Two readers see one
-// unchanging value, and two writers are what Rule 3 allows.
-//
-// A returned literal is counted from its own elements rather than from its type, because an
-// element that is a field read records its type as a variable the evaluator settles after this
-// pass runs. `a.peer` would otherwise look like no borrow at all.
+// unchanging value, and two writers are what Rule 3 allows. The dataflow pass reports a writer
+// beside a reader by E2.
 func TestSharedReturnPaths(t *testing.T) {
 	tests := map[string]struct {
 		src  string
