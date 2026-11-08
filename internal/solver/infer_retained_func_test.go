@@ -746,6 +746,63 @@ fn setup() {
     keep(fn () { console.log(cfg.msg) })
 }`,
 		},
+		// An unannotated parameter's type settles after the closure is written, so whether the
+		// closure copies it or borrows it is decided once the body is checked.
+		{
+			name: "closure that captures an unannotated parameter later used as a number",
+			src: keepAndRun + `fn setup(n) {
+    keep(fn () { console.log(n) })
+    return n + 1
+}`,
+		},
+		{
+			name: "closure that captures an unannotated parameter already used as a number",
+			src: keepAndRun + `fn setup(n) {
+    val m: number = n
+    keep(fn () { console.log(n) })
+}`,
+		},
+		{
+			name: "bound closure that captures an unannotated parameter used as a number",
+			src: keepAndRun + `fn setup(n) {
+    val show = fn () { console.log(n) }
+    keep(show)
+    return n * 2
+}`,
+		},
+		{
+			name: "closure that captures an unannotated parameter later used as an object",
+			src: keepAndRun + `fn setup(n) {
+    keep(fn () { console.log(n) })
+    return n.x
+}`,
+			want: []string{"4:10-4:34: " + intoPlain},
+		},
+		{
+			name: "bound closure that captures an unannotated parameter used as an object",
+			src: keepAndRun + `fn setup(n) {
+    val show = fn () { console.log(n) }
+    keep(show)
+    return n.x
+}`,
+			want: []string{"5:10-5:14: " + intoPlain},
+		},
+		// A parameter nothing constrains may hold an object, so the closure may borrow it.
+		{
+			name: "closure that captures an unconstrained unannotated parameter",
+			src: keepAndRun + `fn setup(n) {
+    keep(fn () { console.log(n) })
+}`,
+			want: []string{"4:10-4:34: " + intoPlain},
+		},
+		{
+			name: "closure that captures an unannotated parameter and an object parameter",
+			src: keepAndRun + `fn setup(n, p: {x: number}) {
+    keep(fn () { console.log(n + p.x) })
+    return n + 1
+}`,
+			want: []string{"4:10-4:40: " + intoPlain},
+		},
 		{
 			name: "plain parameter kept in every position",
 			src: `declare fn onClick(handler: &'static fn () -> undefined) -> undefined

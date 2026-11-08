@@ -978,6 +978,7 @@ func (c *checker) inferComponent(
 	// held to is reported now.
 	c.checkRigidLifetimes()
 	c.checkCallOnlyParams()
+	c.dropSettledFuncEscapes()
 
 	// Phase 3: rebind each value name to its coalesced monomorphic type. A binding
 	// whose declarations all failed to produce a definition (missing initializer,

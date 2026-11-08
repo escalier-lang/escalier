@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"slices"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
 	"github.com/escalier-lang/escalier/internal/set"
@@ -91,6 +93,11 @@ func (c *checker) recordClosureCaptures(scope *Scope, closure ast.Func) {
 // lives for the whole program, so neither makes the closure hold a borrow. The lifetime is
 // fresh at lvl. ft must be the closure's own type, not yet shared with any other type.
 //
+// A `val` binding whose type is still a type variable, such as an unannotated parameter, may
+// turn out to hold a value type or an object. The closure takes a lifetime for it, and the
+// lifetime joins tentativeClosures with the variables still undecided, for
+// dropSettledFuncEscapes to read once they settle.
+//
 // When each borrow the closure holds is of a local of the body it is written in, the lifetime
 // joins that body's frameClosures, for ownReturnedClosures to read.
 func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, ft *soltype.FuncType) {
@@ -100,16 +107,30 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 		}
 	}
 	framed := c.fn != nil
+	// definite says some capture holds a borrow whatever its type settles to, and undecided
+	// holds the type variables of the other captures that may hold one.
+	definite := false
+	var undecided []*soltype.TypeVarType
 	for _, capture := range c.closureCaptures(closure) {
 		b, found := scope.GetValue(capture.Name)
 		if !found || len(b.Schemes) != 1 || b.ModuleLevel || b.VarID <= 0 {
 			continue
 		}
-		if b.Kind == ast.VarKind || capture.IsMutable || c.capturesByBorrow(bindingType(b)) {
+		// The scheme's own type keeps an unsolved variable as a variable, where the binding's
+		// display type would render it as `never`.
+		held := schemeBody(b.Schemes[0])
+		v, isVar := held.(*soltype.TypeVarType)
+		readOnly := b.Kind != ast.VarKind && !capture.IsMutable
+		if readOnly && isVar {
+			undecided = append(undecided, v)
+		} else if !readOnly || c.capturesByBorrow(held) {
+			definite = true
+		}
+		if !readOnly || isVar || c.capturesByBorrow(held) {
 			retain()
 			// A returned closure takes a local it captures, but not the referent of a borrow
 			// the local holds.
-			_, borrowed := bindingType(b).(*soltype.RefType)
+			_, borrowed := held.(*soltype.RefType)
 			framed = framed && !borrowed && c.isFrameLocal(capture.Name, b)
 		}
 		// Instantiating a generalized binding mints fresh variables, so a binding whose type
@@ -122,7 +143,14 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 			retain()
 			c.ctx.constrainLt(lt, ft.Lt)
 			framed = false
+			definite = true
 		}
+	}
+	if lt, isVar := ft.Lt.(*soltype.LifetimeVar); isVar && !definite && len(undecided) > 0 {
+		if c.tentativeClosures == nil {
+			c.tentativeClosures = map[*soltype.LifetimeVar][]*soltype.TypeVarType{}
+		}
+		c.tentativeClosures[lt] = undecided
 	}
 	if lt, isVar := ft.Lt.(*soltype.LifetimeVar); isVar && framed {
 		if c.fn.frameClosures == nil {
@@ -163,51 +191,93 @@ func (c *checker) noteFrameClosureRead(b ValueBinding, t soltype.Type) {
 	}
 }
 
-// ownReturnedClosures drops the retention lifetime of each closure the current body returns
-// whose lifetime is in the body's frameClosures. Such a closure borrows only locals of the
-// body, and a returned closure takes what it captures, as F3 states, so it holds no borrow
-// once it is returned. A closure returned through a local, as in `return f` after
-// `val f = fn () { … }`, is reached through the lower bounds of the local's type. It must run
-// before the returns are joined into the function's result.
+// ownReturnedClosures replaces each return of the current body with a copy in which every
+// closure whose lifetime is in the body's frameClosures has no lifetime. Such a closure borrows
+// only locals of the body, and a returned closure takes what it captures, as F3 states, so it
+// holds no borrow once it is returned. A closure returned through a local, as in `return f`
+// after `val f = fn () { … }`, is reached through the lower bounds of the local's type, and
+// that return becomes the copies of those bounds. The closure's own type is left as it is,
+// since the binding and the expression that made it still hold it. It must run before the
+// returns are joined into the function's result.
 func (c *checker) ownReturnedClosures() {
 	if c.fn.frameClosures == nil {
 		return
 	}
-	v := &returnedClosureOwner{frame: c.fn.frameClosures, vars: set.NewSet[*soltype.TypeVarType]()}
-	for _, t := range c.fn.returns {
+	v := &returnedClosureOwner{frame: c.fn.frameClosures}
+	for i, t := range c.fn.returns {
 		if t != nil {
-			t.Accept(v, soltype.Positive)
+			c.fn.returns[i] = t.Accept(v, soltype.Positive)
 		}
 	}
 }
 
-// returnedClosureOwner is the visitor ownReturnedClosures runs. It clears the retention
-// lifetime of each closure type it reaches in place, since the closure's own type is the one
-// the return holds.
+// returnedClosureOwner is the visitor ownReturnedClosures runs.
 type returnedClosureOwner struct {
 	frame set.Set[*soltype.LifetimeVar]
-	vars  set.Set[*soltype.TypeVarType]
 }
 
-func (v *returnedClosureOwner) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+func (v *returnedClosureOwner) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
 	switch t := t.(type) {
 	case *soltype.TypeVarType:
-		if !v.vars.Contains(t) {
-			v.vars.Add(t)
-			for _, b := range t.LowerBounds {
-				b.Accept(v, pol)
-			}
+		if owned, ok := v.ownedLowerBounds(t); ok {
+			return soltype.EnterResult{Type: owned, SkipChildren: true}
 		}
 	case *soltype.FuncType:
-		if lt, isVar := t.Lt.(*soltype.LifetimeVar); isVar && v.frame.Contains(lt) {
-			t.Lt = nil
-		}
-		return soltype.EnterResult{SkipChildren: true}
+		return soltype.EnterResult{Type: v.owned(t), SkipChildren: true}
 	}
 	return soltype.EnterResult{}
 }
 
 func (*returnedClosureOwner) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+
+// owned returns a copy of ft with no lifetime when its lifetime is in the frame, and ft
+// otherwise.
+func (v *returnedClosureOwner) owned(ft *soltype.FuncType) soltype.Type {
+	lt, isVar := ft.Lt.(*soltype.LifetimeVar)
+	if !isVar || !v.frame.Contains(lt) {
+		return ft
+	}
+	copied := *ft
+	copied.Lt = nil
+	return &copied
+}
+
+// ownedLowerBounds returns the union of the owned copies of the functions that flow into tv,
+// read through any variables among its lower bounds. It returns false when a lower bound is not
+// a function, or when no lower bound is a closure in the frame, so tv stays as it is.
+func (v *returnedClosureOwner) ownedLowerBounds(tv *soltype.TypeVarType) (soltype.Type, bool) {
+	seen := set.NewSet[*soltype.TypeVarType]()
+	pending := []*soltype.TypeVarType{tv}
+	var parts []soltype.Type
+	changed := false
+	for len(pending) > 0 {
+		cur := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		if seen.Contains(cur) {
+			continue
+		}
+		seen.Add(cur)
+		for _, lb := range cur.LowerBounds {
+			switch lb := lb.(type) {
+			case *soltype.TypeVarType:
+				pending = append(pending, lb)
+			case *soltype.FuncType:
+				owned := v.owned(lb)
+				changed = changed || owned != soltype.Type(lb)
+				parts = append(parts, owned)
+			default:
+				return nil, false
+			}
+		}
+	}
+	if !changed {
+		return nil, false
+	}
+	if len(parts) == 1 {
+		return parts[0], true
+	}
+	return newUnion(nil, parts), true
+}
 
 // capturesByBorrow reports whether a closure reads a captured `val` binding of type t through a
 // borrow. A value type such as a primitive or a promise is copied into the closure instead. A
@@ -268,4 +338,91 @@ func (c *checker) funcMovesCaptures(decl ast.Node) bool {
 	}
 	fn, ok := decl.(ast.Func)
 	return ok && len(c.capturesMovedBy[fn]) > 0
+}
+
+// dropSettledFuncEscapes removes each FuncBorrowEscapeError whose source holds a borrow only
+// through closures in tentativeClosures whose type variables all settled to value types. Such a
+// closure copies what it captures, so it holds no borrow. It must run once the enclosing
+// component has solved, since a use later in the body can settle a variable.
+func (c *checker) dropSettledFuncEscapes() {
+	if len(c.tentativeClosures) == 0 {
+		return
+	}
+	kept := c.errs[:0]
+	for _, e := range c.errs {
+		escape, isEscape := e.(*FuncBorrowEscapeError)
+		if !isEscape || !c.holdsOnlySettledCopies(escape.Sub.Lt) {
+			kept = append(kept, e)
+		}
+	}
+	c.errs = kept
+}
+
+// holdsOnlySettledCopies reports whether every source of the retention lifetime lt is a closure
+// in tentativeClosures whose type variables all settled to value types. The walk follows the
+// lifetime an instantiation copied, the lifetime an extrusion proxied, and each lower bound. A
+// lifetime it reaches with none of those, such as a `&fn` parameter's or 'static, is a source
+// that may hold a borrow.
+func (c *checker) holdsOnlySettledCopies(lt soltype.Lifetime) bool {
+	seen := set.NewSet[*soltype.LifetimeVar]()
+	pending := []soltype.Lifetime{lt}
+	foundClosure := false
+	for len(pending) > 0 {
+		cur := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		v, isVar := cur.(*soltype.LifetimeVar)
+		if !isVar {
+			return false
+		}
+		if seen.Contains(v) {
+			continue
+		}
+		seen.Add(v)
+		if vars, tentative := c.tentativeClosures[v]; tentative {
+			for _, tv := range vars {
+				if !settlesToValueType(tv) {
+					return false
+				}
+			}
+			foundClosure = true
+			continue
+		}
+		next := slices.Clone(v.LowerBounds)
+		if origin, proxied := c.ctx.ltProxyOrigin[v]; proxied {
+			next = append(next, origin)
+		}
+		for _, copied := range c.ctx.ltCopies[v] {
+			next = append(next, copied)
+		}
+		if len(next) == 0 {
+			return false
+		}
+		pending = append(pending, next...)
+	}
+	return foundClosure
+}
+
+// settlesToValueType reports whether every value v can hold is a value type, because one of
+// its upper bounds, read through any variables they name, is a value type. A subtype of a
+// primitive is a primitive, so the bound decides it. A lower bound does not, since a caller
+// may still pass a value the body never saw.
+func settlesToValueType(v *soltype.TypeVarType) bool {
+	seen := set.NewSet[*soltype.TypeVarType]()
+	pending := []*soltype.TypeVarType{v}
+	for len(pending) > 0 {
+		cur := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		if seen.Contains(cur) {
+			continue
+		}
+		seen.Add(cur)
+		for _, ub := range cur.UpperBounds {
+			if next, isVar := ub.(*soltype.TypeVarType); isVar {
+				pending = append(pending, next)
+			} else if isValueType(ub) {
+				return true
+			}
+		}
+	}
+	return false
 }

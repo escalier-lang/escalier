@@ -135,6 +135,11 @@ type checker struct {
 	// pendingCallOnly holds a check per parameter written `&fn` with an elided lifetime, for
 	// checkCallOnlyParams to read once the enclosing component has solved.
 	pendingCallOnly []callOnlyCheck
+	// tentativeClosures maps the retention lifetime of each closure that holds a borrow only if
+	// a captured binding's type settles to something other than a value type, to the type
+	// variables of those bindings. setClosureRetention fills it, and dropSettledFuncEscapes
+	// reads it.
+	tentativeClosures map[*soltype.LifetimeVar][]*soltype.TypeVarType
 	// deferredBodies holds, for each `async` or `gen` body being walked, the phrase
 	// deferredBody returns for it, outermost first.
 	deferredBodies []string
