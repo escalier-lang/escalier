@@ -1,13 +1,16 @@
 name: Claude
 
-# Runs only on comments by k4b7. A comment that mentions @claude starts the
-# claude job, and a PR comment that starts with /code-review starts the
-# code-review job. Pushes to a PR branch do not start a run.
+# Runs only for k4b7. A comment that mentions @claude starts the claude job,
+# and a PR comment that starts with /code-review starts the code-review job.
+# Opening a PR also starts a high-level review. Pushes to a PR branch do not
+# start a run.
 on:
   issue_comment:
     types: [created]
   pull_request_review_comment:
     types: [created]
+  pull_request:
+    types: [opened]
 
 jobs:
   claude:
@@ -36,13 +39,15 @@ jobs:
   # requests changes depending on whether medium or high findings are unresolved.
   code-review:
     if: |
-      github.event_name == 'issue_comment' &&
-      github.event.issue.pull_request &&
-      (github.event.comment.body == '/code-review' ||
-        startsWith(github.event.comment.body, '/code-review ') ||
-        startsWith(github.event.comment.body, format('/code-review{0}', fromJSON('"\n"'))) ||
-        startsWith(github.event.comment.body, format('/code-review{0}', fromJSON('"\r"')))) &&
-      github.event.comment.user.login == 'k4b7'
+      (github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request &&
+        (github.event.comment.body == '/code-review' ||
+          startsWith(github.event.comment.body, '/code-review ') ||
+          startsWith(github.event.comment.body, format('/code-review{0}', fromJSON('"\n"'))) ||
+          startsWith(github.event.comment.body, format('/code-review{0}', fromJSON('"\r"')))) &&
+        github.event.comment.user.login == 'k4b7') ||
+      (github.event_name == 'pull_request' &&
+        github.event.pull_request.user.login == 'k4b7')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -52,6 +57,7 @@ jobs:
     steps:
       # The 👀 reaction tells the commenter the review has started.
       - name: React to the command
+        if: github.event_name == 'issue_comment'
         run: gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions -f content=eyes --silent
         env:
           GH_TOKEN: ${{ github.token }}
@@ -66,7 +72,7 @@ jobs:
       - name: Check out the PR branch
         run: |
           cp .claude/skills/pr-review/SKILL.md "$RUNNER_TEMP/pr-review.md"
-          gh pr checkout ${{ github.event.issue.number }}
+          gh pr checkout ${{ github.event.issue.number || github.event.pull_request.number }}
           mkdir -p .claude/skills/pr-review
           cp "$RUNNER_TEMP/pr-review.md" .claude/skills/pr-review/SKILL.md
         env:
@@ -79,8 +85,8 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
             REPO: ${{ github.repository }}
-            PR NUMBER: ${{ github.event.issue.number }}
-            COMMAND: ${{ github.event.comment.body }}
+            PR NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+            COMMAND: ${{ github.event.comment.body || '/code-review high' }}
 
             Read .claude/skills/pr-review/SKILL.md and follow it to review this PR.
             The level is the word after /code-review in COMMAND, or medium when none is given.
@@ -155,8 +161,8 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.issue.number }}
-          TRIGGERED_AT: ${{ github.event.comment.created_at }}
+          PR_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+          TRIGGERED_AT: ${{ github.event.comment.created_at || github.event.pull_request.created_at }}
 
       # The cost is the API-price equivalent the action reports. A subscription
       # run counts against usage limits instead of being billed this amount.
@@ -183,5 +189,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
-          COMMAND: ${{ github.event.comment.body }}
-          PR_NUMBER: ${{ github.event.issue.number }}
+          COMMAND: ${{ github.event.comment.body || '/code-review high' }}
+          PR_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
