@@ -46,6 +46,10 @@ every importer. It lives for the whole program.
   parameter a borrow and pass &xs`. #2215 adds this rule.
 - A closure body counts as a function body, so a closure may borrow it but may
   not move it either.
+- Calling a method that takes `self` by value moves the receiver. In
+  `fn f() { return tok.consume() }`, the call reports `cannot move module-level
+  value 'tok' inside a function. The method 'consume' takes self by value, so
+  calling it moves 'tok'`. #2232 added this rule.
 - A module-level `val mut` binding may not take it either. `val mut ys = xs`
   reports ``cannot move module-level value 'xs' into a `mut` binding, since
   the module keeps it. Borrow it with &xs``.
@@ -128,7 +132,7 @@ the value, and a later use of it is a use-after-move.
 ### 2.4 Gaps in the module-level rules
 
 The rules in 2.1 run only inside function bodies and `val mut` initializers.
-Four cases slip past them:
+Three cases slip past them:
 
 - An immutable module-level initializer can move another module-level value.
   With `val mut xs` and `val ys = xs`, both bindings own the same array, and a
@@ -140,9 +144,6 @@ Four cases slip past them:
   binding inside a function is rejected. #2233 tracks this.
 - Two initializers can move the same value, as in `val ys = xs` followed by
   `val zs = xs`. #2231 tracks this.
-- A method that takes owned `self` moves a module-level receiver inside a
-  function. `fn f() { return tok.consume() }` checks clean, and each call of
-  `f` consumes `tok` again. #2232 tracks this.
 
 ### 2.5 Proposal: module-level bindings as `'static` borrows
 
@@ -178,7 +179,7 @@ and changes these things:
 - The special errors from 2.1 become the ordinary borrow error,
   `cannot use borrowed &Array<number> as owned Array<number>`. The friendlier
   module-level wording can stay as the message for that case.
-- The four gaps in 2.4 are rejected by the same rule, with no separate checks
+- The three gaps in 2.4 are rejected by the same rule, with no separate checks
   for initializers or receivers.
 - A one-time handoff in an initializer, such as `val h = Holder(xs)`, checks
   clean today and becomes an error. The author writes the value inline, as
@@ -522,7 +523,8 @@ adopts them.
 - #2223: a diagnostic for `val mut` on a borrow.
 - #2230: a module-level initializer can give one mutable value two owners.
 - #2231: a module-level value can be moved twice by module-level initializers.
-- #2232: a consuming method can move a module-level instance inside a function.
+- #2232: a consuming method could move a module-level instance inside a
+  function. Fixed on `main`.
 - #2233: an importer's top-level initializer can move another package's
   module-level value.
 - #2234: read every module-level reference value through a `'static` borrow.
