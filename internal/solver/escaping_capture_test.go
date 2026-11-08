@@ -7,22 +7,22 @@ import (
 )
 
 // TestEscapingClosureCapture covers a closure that outlives the body it is written in. A returned
-// closure moves each owned local it captures at the return. One stored into a module-level
-// binding borrows its captures for `'static`, and may run during any call after the store, so
-// each such call borrows the owned locals it writes. One stored into a caller-owned object
+// closure moves each owned local it captures at the return. One stored into a caller-owned object
 // borrows its captures, and the paths it hands the caller are weighed like a stored borrow's. A
 // closure that stays in the body borrows its captures too.
 //
-// A move of a local that a module-level closure captures breaks E3, and the diagnostic is at
-// the move. TestOwnershipDataflow covers the move of a local a module-level closure only reads.
+// A module-level binding holds only a function that borrows nothing shorter than the program, so
+// each case that stores a closure over a local into `sink` asserts that the store is rejected.
+// The dataflow pass still reads the store as a 'static borrow of the captures, so a case also
+// asserts each conflict that borrow causes later in the body, such as a move of a captured local.
 func TestEscapingClosureCapture(t *testing.T) {
 	tests := map[string]struct {
 		src  string
 		want []string
 	}{
-		// A closure stored into a module-level binding that only reads p leaves p free, so the
-		// frame can read p.
-		"ReadAfterStoringAReadingClosureIntoAGlobalOk": {
+		// The closure only reads p, so the frame's later read of p conflicts with nothing. The
+		// store is rejected, and nothing later in the body is reported.
+		"ReadAfterStoringAReadingClosureIntoAGlobalRejected": {
 			src: `
 				var sink: 'static fn () -> number = fn () { return 0 }
 				fn go() {
@@ -31,9 +31,11 @@ func TestEscapingClosureCapture(t *testing.T) {
 					val n = p.x
 				}
 			`,
+			want: []string{"5:13-5:33: this closure borrows `p`, but `sink` keeps it for 'static; pass a function that borrows nothing, or declare `p` at module level"},
 		},
-		// The closure needs p unchanged only while it runs, and the frame cannot write p then.
-		"WriteAfterStoringAReadingClosureIntoAGlobalOk": {
+		// The closure needs p unchanged only while it runs, so the frame's write of p conflicts
+		// with nothing. The store is rejected, and nothing later in the body is reported.
+		"WriteAfterStoringAReadingClosureIntoAGlobalRejected": {
 			src: `
 				var sink: 'static fn () -> number = fn () { return 0 }
 				fn go() {
@@ -42,8 +44,10 @@ func TestEscapingClosureCapture(t *testing.T) {
 					p.x = 2
 				}
 			`,
+			want: []string{"5:13-5:33: this closure borrows `p`, but `sink` keeps it for 'static; pass a function that borrows nothing, or declare `p` at module level"},
 		},
 		// take receives p as its owner, and may call sink, which writes p.
+		// The store is rejected, and the dataflow pass still reports the later conflict.
 		"MoveAfterStoringAWritingClosureIntoAGlobalConflicts": {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
@@ -54,9 +58,10 @@ func TestEscapingClosureCapture(t *testing.T) {
 					take(p)
 				}
 			`,
-			want: []string{"7:11-7:12: cannot move 'p' while it is borrowed"},
+			want: []string{"6:13-6:30: this closure borrows `p`, but `sink` keeps it for 'static; pass a function that borrows nothing, or declare `p` at module level", "7:11-7:12: cannot move 'p' while it is borrowed"},
 		},
 		// A direct call to an overloaded name may run sink as much as any other call.
+		// The store is rejected, and the dataflow pass still reports the later conflict.
 		"MoveIntoAnOverloadAfterStoringAWritingClosureIntoAGlobalConflicts": {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
@@ -68,9 +73,10 @@ func TestEscapingClosureCapture(t *testing.T) {
 					take(p)
 				}
 			`,
-			want: []string{"8:11-8:12: cannot move 'p' while it is borrowed"},
+			want: []string{"7:13-7:30: this closure borrows `p`, but `sink` keeps it for 'static; pass a function that borrows nothing, or declare `p` at module level", "8:11-8:12: cannot move 'p' while it is borrowed"},
 		},
 		// readIt may call sink, which writes p while readIt reads it through `a`.
+		// The store is rejected, and nothing later in the body is reported.
 		"BorrowAfterStoringAWritingClosureIntoAGlobalConflicts": {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
@@ -82,10 +88,10 @@ func TestEscapingClosureCapture(t *testing.T) {
 					readIt(a)
 				}
 			`,
-			want: []string{"8:6-8:15: this call may run 'sink', which writes 'p' while it is borrowed as immutable"},
+			want: []string{"6:13-6:30: this closure borrows `p`, but `sink` keeps it for 'static; pass a function that borrows nothing, or declare `p` at module level"},
 		},
-		// Nothing can call sink while `a` is in use, so the borrow is no conflict.
-		// A borrow written in the call's own arguments is live while the call may run sink.
+		// A borrow written in the call's own arguments is live while the call may run sink. The
+		// store is rejected, and nothing later in the body is reported.
 		"BorrowInACallAfterStoringAWritingClosureIntoAGlobalConflicts": {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
@@ -96,10 +102,11 @@ func TestEscapingClosureCapture(t *testing.T) {
 					readIt(&p)
 				}
 			`,
-			want: []string{"7:6-7:16: this call may run 'sink', which writes 'p' while it is borrowed as immutable"},
+			want: []string{"6:13-6:30: this closure borrows `p`, but `sink` keeps it for 'static; pass a function that borrows nothing, or declare `p` at module level"},
 		},
 		// noop may run sink, which writes p after the move gave it to q. The pass rejects the
 		// move itself, since sink holds its borrow of p between calls.
+		// The store is rejected, and the dataflow pass still reports the later conflict.
 		"CallAfterMovingALocalAGlobalClosureWritesConflicts": {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
@@ -111,9 +118,10 @@ func TestEscapingClosureCapture(t *testing.T) {
 					noop()
 				}
 			`,
-			want: []string{"7:14-7:15: cannot move 'p' while it is borrowed"},
+			want: []string{"6:13-6:30: this closure borrows `p`, but `sink` keeps it for 'static; pass a function that borrows nothing, or declare `p` at module level", "7:14-7:15: cannot move 'p' while it is borrowed"},
 		},
-		"UnusedBorrowAfterStoringAWritingClosureIntoAGlobalOk": {
+		// The store is rejected, and nothing later in the body is reported.
+		"UnusedBorrowAfterStoringAWritingClosureIntoAGlobalRejected": {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
 				fn go() {
@@ -122,8 +130,10 @@ func TestEscapingClosureCapture(t *testing.T) {
 					val a = &p
 				}
 			`,
+			want: []string{"5:13-5:30: this closure borrows `p`, but `sink` keeps it for 'static; pass a function that borrows nothing, or declare `p` at module level"},
 		},
 		// `a` is taken before the store and still in use at readIt, which may call sink.
+		// The store is rejected, and nothing later in the body is reported.
 		"StoringAWritingClosureBesideALiveBorrowConflicts": {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
@@ -136,9 +146,10 @@ func TestEscapingClosureCapture(t *testing.T) {
 					readIt(a)
 				}
 			`,
-			want: []string{"9:6-9:15: this call may run 'sink', which writes 'p' while it is borrowed as immutable"},
+			want: []string{"8:13-8:14: `f` borrows `p`, but `sink` keeps it for 'static; pass a function that borrows nothing, or declare `p` at module level"},
 		},
 		// A name bound to a closure carries the closure's captures to the store.
+		// The store is rejected, and nothing later in the body is reported.
 		"StoreOfABoundClosureIntoAGlobalBorrowsTheCapture": {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
@@ -151,7 +162,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 					readIt(a)
 				}
 			`,
-			want: []string{"9:6-9:15: this call may run 'sink', which writes 'p' while it is borrowed as immutable"},
+			want: []string{"7:13-7:14: `f` borrows `p`, but `sink` keeps it for 'static; pass a function that borrows nothing, or declare `p` at module level"},
 		},
 		// A returned closure moves p as the frame ends, so nothing reads p afterwards.
 		"ReturnOfAClosureLastInTheBodyOk": {
@@ -300,6 +311,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 			want: nil,
 		},
 		// f holds the capturing closure on one branch, so storing f may borrow p.
+		// The store is rejected, and nothing later in the body is reported.
 		"StoreOfAClosureChosenOnABranchMayBorrowTheCapture": {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
@@ -315,9 +327,10 @@ func TestEscapingClosureCapture(t *testing.T) {
 					readIt(a)
 				}
 			`,
-			want: []string{"12:6-12:15: this call may run 'sink', which writes 'p' while it is borrowed as immutable"},
+			want: []string{"10:13-10:14: `f` may hold borrows that do not live for 'static, but `sink` keeps it for 'static; pass a function that borrows nothing"},
 		},
 		// A copy of the closure's name carries its captures.
+		// The store is rejected, and nothing later in the body is reported.
 		"StoreOfACopiedClosureBorrowsTheCapture": {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
@@ -331,9 +344,10 @@ func TestEscapingClosureCapture(t *testing.T) {
 					readIt(a)
 				}
 			`,
-			want: []string{"10:6-10:15: this call may run 'sink', which writes 'p' while it is borrowed as immutable"},
+			want: []string{"8:13-8:14: `g` borrows `p`, but `sink` keeps it for 'static; pass a function that borrows nothing, or declare `p` at module level"},
 		},
 		// A closure inside an object literal is part of the stored value.
+		// The store is rejected, and nothing later in the body is reported.
 		"StoreOfAClosureInALiteralBorrowsTheCapture": {
 			src: `
 				var sink: {cb: 'static fn () -> undefined} = {cb: fn () {}}
@@ -345,9 +359,10 @@ func TestEscapingClosureCapture(t *testing.T) {
 					readIt(a)
 				}
 			`,
-			want: []string{"8:6-8:15: this call may run 'sink', which writes 'p' while it is borrowed as immutable"},
+			want: []string{"6:18-6:35: this closure borrows `p`, but `sink` keeps it for 'static; pass a function that borrows nothing, or declare `p` at module level"},
 		},
 		// A closure that calls another closure carries what that closure captures.
+		// The store is rejected, and nothing later in the body is reported.
 		"StoreOfAClosureCallingACapturingClosureBorrowsTheCapture": {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
@@ -360,11 +375,12 @@ func TestEscapingClosureCapture(t *testing.T) {
 					readIt(a)
 				}
 			`,
-			want: []string{"9:6-9:15: this call may run 'sink', which writes 'p' while it is borrowed as immutable"},
+			want: []string{"7:13-7:26: this closure borrows `p`, but `sink` keeps it for 'static; pass a function that borrows nothing, or declare `p` at module level"},
 		},
 		// Two stored closures that both write p are two writers, which Rule 3 of
-		// planning/lifetimes/requirements.md allows.
-		"TwoGlobalClosuresWritingOneLocalOk": {
+		// planning/lifetimes/requirements.md allows. Each store is rejected, and nothing later in
+		// the body is reported.
+		"TwoGlobalClosuresWritingOneLocalRejected": {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
 				var sink2: 'static fn () -> undefined = fn () {}
@@ -374,10 +390,12 @@ func TestEscapingClosureCapture(t *testing.T) {
 					sink2 = fn () { p.x = 3 }
 				}
 			`,
+			want: []string{"6:13-6:30: this closure borrows `p`, but `sink` keeps it for 'static; pass a function that borrows nothing, or declare `p` at module level", "7:14-7:31: this closure borrows `p`, but `sink2` keeps it for 'static; pass a function that borrows nothing, or declare `p` at module level"},
 		},
 		// A closure that only reads p takes no loan, so storing one on every iteration is no
-		// conflict.
-		"StoreIntoAGlobalInALoopOk": {
+		// conflict between iterations. The store is rejected, and nothing later in the body is
+		// reported.
+		"StoreIntoAGlobalInALoopRejected": {
 			src: `
 				var sink: 'static fn () -> number = fn () { return 0 }
 				fn go(xs: Array<number>) {
@@ -387,8 +405,10 @@ func TestEscapingClosureCapture(t *testing.T) {
 					}
 				}
 			`,
+			want: []string{"6:14-6:34: this closure borrows `p`, but `sink` keeps it for 'static; pass a function that borrows nothing, or declare `p` at module level"},
 		},
 		// A closure chosen by an `if`/`else` expression carries its captures to the store.
+		// The store is rejected, and nothing later in the body is reported.
 		"StoreOfAClosureFromAnIfElseBorrowsTheCapture": {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
@@ -401,7 +421,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 					readIt(a)
 				}
 			`,
-			want: []string{"9:6-9:15: this call may run 'sink', which writes 'p' while it is borrowed as immutable"},
+			want: []string{"6:22-6:39: this closure borrows `p`, but `sink` keeps it for 'static; pass a function that borrows nothing, or declare `p` at module level"},
 		},
 	}
 	for name, tc := range tests {

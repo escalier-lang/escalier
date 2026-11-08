@@ -279,8 +279,8 @@ func TestClosureRunsAtPlaces(t *testing.T) {
 		// A method read after a dynamic index reads no closure the element holds.
 		"MethodCalleeAfterADynamicIndexOk": {
 			src: `
-				class Box {
-					cb: 'static fn () -> undefined,
+				class Box<'a> {
+					cb: 'a fn () -> undefined,
 					size(&self) -> number { return 0 },
 				}
 				fn go(i: number) -> number {
@@ -298,8 +298,8 @@ func TestClosureRunsAtPlaces(t *testing.T) {
 		},
 		"FieldCalleeAfterADynamicIndex": {
 			src: `
-				class Box {
-					cb: 'static fn () -> undefined,
+				class Box<'a> {
+					cb: 'a fn () -> undefined,
 					size(&self) -> number { return 0 },
 				}
 				fn go(i: number) -> number {
@@ -346,8 +346,8 @@ func TestClosureRunsAtPlaces(t *testing.T) {
 		},
 		"InstanceFieldCalleeWritesCaptureBesideLiveBorrow": {
 			src: `
-				class Box {
-					cb: 'static fn () -> undefined,
+				class Box<'a> {
+					cb: 'a fn () -> undefined,
 					size(&self) -> number { return 0 },
 				}
 				fn go() -> number {
@@ -365,8 +365,8 @@ func TestClosureRunsAtPlaces(t *testing.T) {
 		// The method's place `b.size` is disjoint from `b.cb`, which holds the closure.
 		"InstanceMethodCalleeBesideAFieldHoldingAClosureOk": {
 			src: `
-				class Box {
-					cb: 'static fn () -> undefined,
+				class Box<'a> {
+					cb: 'a fn () -> undefined,
 					size(&self) -> number { return 0 },
 				}
 				fn go() -> number {
@@ -385,11 +385,11 @@ func TestClosureRunsAtPlaces(t *testing.T) {
 		// method read off q reads none of them.
 		"MethodCalleeOfAViewHoldingAClosureOk": {
 			src: `
-				class Box {
-					cb: 'static fn () -> undefined,
+				class Box<'a> {
+					cb: 'a fn () -> undefined,
 					size(&self) -> number { return 0 },
 				}
-				declare fn view<'a>(b: &'a mut Box) -> &'a mut Box
+				declare fn view<'a, 'b>(b: &'a mut Box<'b>) -> &'a mut Box<'b>
 				fn go() -> number {
 					val mut p = {x: 1}
 					val f = fn () { p.x = 2 }
@@ -407,11 +407,11 @@ func TestClosureRunsAtPlaces(t *testing.T) {
 		// closure q holds rather than surely running one.
 		"FieldCalleeOfAViewHoldingAClosure": {
 			src: `
-				class Box {
-					cb: 'static fn () -> undefined,
+				class Box<'a> {
+					cb: 'a fn () -> undefined,
 					size(&self) -> number { return 0 },
 				}
-				declare fn view<'a>(b: &'a mut Box) -> &'a mut Box
+				declare fn view<'a, 'b>(b: &'a mut Box<'b>) -> &'a mut Box<'b>
 				fn go() -> number {
 					val mut p = {x: 1}
 					val f = fn () { p.x = 2 }
@@ -429,11 +429,11 @@ func TestClosureRunsAtPlaces(t *testing.T) {
 		// run g, which writes q, though the call never runs it when v.cb holds f.
 		"FieldCalleeOfAViewMayRunASiblingsClosure": {
 			src: `
-				class Box {
-					cb: 'static fn () -> undefined,
-					other: 'static fn () -> undefined,
+				class Box<'a> {
+					cb: 'a fn () -> undefined,
+					other: 'a fn () -> undefined,
 				}
-				declare fn view<'a>(b: &'a mut Box) -> &'a mut Box
+				declare fn view<'a, 'b>(b: &'a mut Box<'b>) -> &'a mut Box<'b>
 				fn go() -> number {
 					val mut p = {x: 1}
 					val mut q = {x: 1}
@@ -461,7 +461,9 @@ func TestClosureRunsAtPlaces(t *testing.T) {
 
 // TestRetainedClosureWritesFollowCaptures covers a retained closure that writes a local
 // through a closure it captures. The capture is the only use of the captured binding, so
-// the stored closure reaches the inner closure's loans only through the capture.
+// the stored closure reaches the inner closure's loans only through the capture. The retained
+// closure borrows the local through what it captures, so `onClick` rejects it. Each case
+// asserts that rejection and the conflict the dataflow pass still reports after it.
 func TestRetainedClosureWritesFollowCaptures(t *testing.T) {
 	tests := map[string]struct {
 		src  string
@@ -478,7 +480,7 @@ func TestRetainedClosureWritesFollowCaptures(t *testing.T) {
 					render(&count)
 				}
 			`,
-			want: []string{"8:6-8:20: this call may run the 'handler' that 'onClick' retains, which writes 'count' while it is borrowed as immutable"},
+			want: []string{"7:14-7:27: this closure borrows `count`, but `onClick` keeps it for 'static; pass a function that borrows nothing, or declare `count` at module level", "8:6-8:20: this call may run the 'handler' that 'onClick' retains, which writes 'count' while it is borrowed as immutable"},
 		},
 		"CapturedObjectHoldingAClosure": {
 			src: `
@@ -491,9 +493,9 @@ func TestRetainedClosureWritesFollowCaptures(t *testing.T) {
 					render(&count)
 				}
 			`,
-			want: []string{"8:6-8:20: this call may run the 'handler' that 'onClick' retains, which writes 'count' while it is borrowed as immutable"},
+			want: []string{"7:14-7:30: this closure borrows `o`, but `onClick` keeps it for 'static; pass a function that borrows nothing", "8:6-8:20: this call may run the 'handler' that 'onClick' retains, which writes 'count' while it is borrowed as immutable"},
 		},
-		"CapturedClosureThatOnlyReadsOk": {
+		"CapturedClosureThatOnlyReads": {
 			src: `
 				declare fn onClick(handler: 'static fn () -> undefined) -> undefined
 				declare fn render(view: &{n: number}) -> undefined
@@ -505,7 +507,7 @@ func TestRetainedClosureWritesFollowCaptures(t *testing.T) {
 					render(&count)
 				}
 			`,
-			want: nil,
+			want: []string{"8:14-8:27: this closure borrows `count`, but `onClick` keeps it for 'static; pass a function that borrows nothing, or declare `count` at module level"},
 		},
 	}
 	for name, tc := range tests {

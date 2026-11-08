@@ -476,6 +476,8 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 				"b0.1: borrow(&, `p`, `handler`, 'static)", // `handler = fn ...` stores the closure in a module binding, so it borrows p for 'static
 				"b0.1: use(`handler`, write)",              // `handler = fn ...` writes the module binding
 			},
+			// A 'static slot holds only a function that borrows nothing shorter than the program.
+			errs: []string{"this closure borrows `p`, but `handler` keeps it for 'static; pass a function that borrows nothing, or declare `p` at module level"},
 		},
 		{
 			name: "WritingClosureStoredInModuleBorrowsCaptureMutably",
@@ -490,6 +492,7 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 				"b0.1: borrow(&mut, `p`, `handler`, 'static)", // the stored closure writes p, so its 'static borrow is mutable
 				"b0.1: use(`handler`, write)",                 // `handler = fn ...` writes the module binding
 			},
+			errs: []string{"this closure borrows `p`, but `handler` keeps it for 'static; pass a function that borrows nothing, or declare `p` at module level"},
 		},
 		{
 			name: "ClosureStoredInModuleThroughLocalBorrowsCaptureForStatic",
@@ -506,6 +509,7 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 				"b0.2: use(`f`, read)",               // `handler = f` reads f, since a closure is a value type
 				"b0.2: use(`handler`, write)",        // `handler = f` writes the module binding
 			},
+			errs: []string{"`f` borrows `p`, but `handler` keeps it for 'static; pass a function that borrows nothing, or declare `p` at module level"},
 		},
 		{
 			name: "ClosureReturnedWhereWrittenOwnsCapture",

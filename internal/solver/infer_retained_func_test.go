@@ -363,8 +363,8 @@ declare fn onClick(handler: Cb<'static>) -> undefined`,
 // written `&`. TestInferRetainedFuncArgNeedsNoBorrow covers calls that pass a function
 // literal or a function-typed binding to such a parameter and asserts each is accepted.
 //
-// A closure that borrows a local and is passed to a `'static fn` parameter is accepted too.
-// #2584 tracks rejecting it.
+// A `'static fn` parameter accepts a closure that borrows nothing shorter than the program,
+// such as one over a module-level binding.
 func TestInferRetainedFuncArgNeedsNoBorrow(t *testing.T) {
 	tests := []struct {
 		name string
@@ -373,8 +373,8 @@ func TestInferRetainedFuncArgNeedsNoBorrow(t *testing.T) {
 		{
 			name: "closure passed to a static parameter",
 			src: `declare fn onClick(handler: 'static fn () -> undefined) -> undefined
+val mut count = {n: 0}
 fn setup() {
-    val mut count = {n: 0}
     onClick(fn () { count.n = count.n + 1 })
 }`,
 		},
@@ -711,7 +711,7 @@ fn f(g: fn () -> undefined) {
     val o = {cb: g}
     onClick(fn () { o.cb() })
 }`,
-			want: []string{"2:6-2:7: " + static},
+			want: []string{"4:13-4:29: this closure borrows `o`, but `onClick` keeps it for 'static; pass a function that borrows nothing", "2:6-2:7: 'g' may borrow values that live only during the call, but it is stored where it lives for the whole program; write `g: 'static fn () -> undefined` to keep it"},
 		},
 		{
 			name: "stored into a static module-level var",
@@ -897,8 +897,8 @@ func TestCallOnlyFuncDeferredRelated(t *testing.T) {
 // TestModuleLevelFuncHoldsNoBorrow covers the E4 example and the captures that decide whether a
 // closure fits such a slot, and asserts the full message, with its span, of each error.
 //
-// A `'static fn` parameter accepts a closure that borrows a local, as the "E4 example kept by a
-// static parameter" case shows. #2584 tracks rejecting it.
+// A slot written `'static fn` holds the same functions, so the E4 example's `keep` rejects
+// `show` too.
 func TestModuleLevelFuncHoldsNoBorrow(t *testing.T) {
 	const decls = `var sink: fn () -> undefined = fn () {}
 declare fn run(cb: fn () -> undefined) -> undefined
@@ -941,7 +941,24 @@ declare fn keep(cb: 'static fn () -> undefined) -> undefined
 			src: decls + `fn setup() {
     val cfg = {msg: "hello"}
     val show = fn () { console.log(cfg.msg) }
+    run(show)
     keep(show)
+}`,
+			want: []string{"8:10-8:14: `show` borrows `cfg`, but `keep` keeps it for 'static; " + fix + ", or declare `cfg` at module level"},
+		},
+		{
+			name: "closure written in the call to a static parameter",
+			src: decls + `fn setup() {
+    val mut count = {n: 0}
+    keep(fn () { count.n = count.n + 1 })
+}`,
+			want: []string{"6:10-6:41: this closure borrows `count`, but `keep` keeps it for 'static; " + fix + ", or declare `count` at module level"},
+		},
+		{
+			name: "closure over a module-level object passed to a static parameter",
+			src: decls + `val mut count = {n: 0}
+fn setup() {
+    keep(fn () { count.n = count.n + 1 })
 }`,
 		},
 		{
@@ -1052,7 +1069,8 @@ fn setup() {
 				"7:12-7:13: `h` borrows `n`, but `sink` keeps it for 'static; " + fix,
 			},
 		},
-		// hold's result is 'static, so it fits the slot whatever the closure passed to it holds.
+		// hold keeps its argument for 'static, so the closure is rejected there, and its 'static
+		// result fits the slot.
 		{
 			name: "closure that captures an unannotated parameter kept through a static result",
 			src: decls + `declare fn hold(cb: 'static fn () -> undefined) -> 'static fn () -> undefined
@@ -1060,6 +1078,7 @@ fn setup(n) {
     sink = hold(fn () { console.log(n) })
     return n.x
 }`,
+			want: []string{"6:17-6:41: this closure borrows `n`, but `hold` keeps it for 'static; " + fix},
 		},
 		// A closure takes only the locals of the body that returns it. One returned from mk
 		// still borrows o, which belongs to setup.
@@ -1122,6 +1141,7 @@ fn f() {
     val mut p = {x: 1}
     sink = fn () { p.x = 2 }
 }`,
+			want: []string{"4:12-4:29: this closure borrows `p`, but `sink` keeps it for 'static; " + fix + ", or declare `p` at module level"},
 		},
 		{
 			name: "closure pushed onto a module-level array",
@@ -1348,8 +1368,12 @@ fn setup() {
 }
 
 // A closure passed to a `'static fn` parameter may run during any later call, so each later
-// call writes what the closure writes. TestRetainedClosureBorrows covers the ways a call reaches
-// such a parameter and asserts the full message, with its span, of each conflict reported.
+// call writes what the closure writes. A `'static fn` parameter holds only a function that
+// borrows nothing shorter than the program, so each closure below, which borrows the local
+// `count`, is rejected at the call. The dataflow pass still reads the call as keeping the
+// closure. TestRetainedClosureBorrows covers the ways a call reaches such a parameter and
+// asserts the full message, with its span, of the rejection and of each conflict reported after
+// it.
 func TestRetainedClosureBorrows(t *testing.T) {
 	tests := []struct {
 		name string
@@ -1378,7 +1402,7 @@ fn setup() {
     onClick(fn () { count.n = count.n + 1 })
     render(&count)
 }`,
-			want: []string{"6:5-6:19: this call may run the 'handler' that 'onClick' retains, which writes 'count' while it is borrowed as immutable"},
+			want: []string{"5:13-5:44: this closure borrows `count`, but `onClick` keeps it for 'static; pass a function that borrows nothing, or declare `count` at module level", "6:5-6:19: this call may run the 'handler' that 'onClick' retains, which writes 'count' while it is borrowed as immutable"},
 		},
 		{
 			name: "closure bound to a name",
@@ -1390,7 +1414,7 @@ fn setup() {
     onClick(h)
     render(&count)
 }`,
-			want: []string{"7:5-7:19: this call may run the 'handler' that 'onClick' retains, which writes 'count' while it is borrowed as immutable"},
+			want: []string{"6:13-6:14: `h` borrows `count`, but `onClick` keeps it for 'static; pass a function that borrows nothing, or declare `count` at module level", "7:5-7:19: this call may run the 'handler' that 'onClick' retains, which writes 'count' while it is borrowed as immutable"},
 		},
 		{
 			name: "method that retains its argument",
@@ -1402,7 +1426,7 @@ fn setup(b: Button) {
     b.on(fn () { count.n = count.n + 1 })
     render(&count)
 }`,
-			want: []string{"7:5-7:19: this call may run the 'handler' that 'on' retains, which writes 'count' while it is borrowed as immutable"},
+			want: []string{"6:10-6:41: this closure borrows `count`, but `on` keeps it for 'static; pass a function that borrows nothing, or declare `count` at module level", "7:5-7:19: this call may run the 'handler' that 'on' retains, which writes 'count' while it is borrowed as immutable"},
 		},
 		{
 			name: "retention lifetime bound to outlive static",
@@ -1426,7 +1450,7 @@ fn setup() {
     }
     render(&count)
 }`,
-			want: []string{"8:5-8:19: this call may run the 'handler' that 'onClick' retains, which writes 'count' while it is borrowed as immutable"},
+			want: []string{"6:17-6:48: this closure borrows `count`, but `onClick` keeps it for 'static; pass a function that borrows nothing, or declare `count` at module level", "8:5-8:19: this call may run the 'handler' that 'onClick' retains, which writes 'count' while it is borrowed as immutable"},
 		},
 		{
 			name: "moved into a later call",
@@ -1437,7 +1461,7 @@ fn setup() {
     onClick(fn () { count.n = count.n + 1 })
     take(count)
 }`,
-			want: []string{"6:10-6:15: cannot move 'count' in a call that may run the 'handler' that 'onClick' retains, which writes it"},
+			want: []string{"5:13-5:44: this closure borrows `count`, but `onClick` keeps it for 'static; pass a function that borrows nothing, or declare `count` at module level", "6:10-6:15: cannot move 'count' in a call that may run the 'handler' that 'onClick' retains, which writes it"},
 		},
 		{
 			name: "rest parameter",
@@ -1448,7 +1472,7 @@ fn setup() {
     onAll(fn () { count.n = count.n + 1 })
     render(&count)
 }`,
-			want: []string{"6:5-6:19: this call may run the 'hs' that 'onAll' retains, which writes 'count' while it is borrowed as immutable"},
+			want: []string{"5:11-5:42: this closure borrows `count`, but `onAll` keeps it for 'static; pass a function that borrows nothing, or declare `count` at module level", "6:5-6:19: this call may run the 'hs' that 'onAll' retains, which writes 'count' while it is borrowed as immutable"},
 		},
 		{
 			name: "union with null",
@@ -1459,7 +1483,7 @@ fn setup() {
     onClick(fn () { count.n = count.n + 1 })
     render(&count)
 }`,
-			want: []string{"6:5-6:19: this call may run the 'handler' that 'onClick' retains, which writes 'count' while it is borrowed as immutable"},
+			want: []string{"5:13-5:44: this closure borrows `count`, but `onClick` keeps it for 'static; pass a function that borrows nothing, or declare `count` at module level", "6:5-6:19: this call may run the 'handler' that 'onClick' retains, which writes 'count' while it is borrowed as immutable"},
 		},
 		{
 			name: "object field",
@@ -1470,10 +1494,10 @@ fn setup() {
     mount({onClick: fn () { count.n = count.n + 1 }})
     render(&count)
 }`,
-			want: []string{"6:5-6:19: this call may run the 'props' that 'mount' retains, which writes 'count' while it is borrowed as immutable"},
+			want: []string{"5:21-5:52: this closure borrows `count`, but `mount` keeps it for 'static; pass a function that borrows nothing, or declare `count` at module level", "6:5-6:19: this call may run the 'props' that 'mount' retains, which writes 'count' while it is borrowed as immutable"},
 		},
 		// A closure that only reads its capture needs it unchanged only while the closure runs,
-		// and the frame cannot write it then.
+		// and the frame cannot write it then, so only the rejection is reported.
 		{
 			name: "closure that only reads",
 			src: `declare fn onClick(handler: 'static fn () -> undefined) -> undefined
@@ -1483,6 +1507,7 @@ fn setup() {
     onClick(fn () { val x = count.n })
     bump(&mut count)
 }`,
+			want: []string{"5:13-5:38: this closure borrows `count`, but `onClick` keeps it for 'static; pass a function that borrows nothing, or declare `count` at module level"},
 		},
 	}
 	for _, tt := range tests {

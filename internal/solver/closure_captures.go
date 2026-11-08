@@ -110,14 +110,21 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 	retain := func(name string, b ValueBinding) {
 		if ft.Lt == nil {
 			ft.Lt = c.ctx.freshLifetime(lvl)
-			// Declaring the binding at module level ends the borrow only when its value
-			// borrows nothing else.
+			// Declaring the binding at module level ends the borrow only when its value is
+			// neither a borrow nor a function that borrows, and holds no borrow from outside
+			// the body.
 			_, isLocal := bindingDecl(b).(*ast.VarDecl)
-			local := isLocal && !c.inScript() && c.fn != nil && c.holdsOnlyFrameBorrows(schemeBody(b.Schemes[0]))
+			value := schemeBody(b.Schemes[0])
+			_, isRef := value.(*soltype.RefType)
+			local := isLocal && !c.inScript() && c.fn != nil && !isRef &&
+				len(shortFuncLifetimes(value)) == 0 && c.holdsOnlyFrameBorrows(value)
 			borrowed = closureBorrow{name: name, local: local}
 		}
 	}
 	framed := c.fn != nil
+	// direct says some capture is borrowed by the closure itself, rather than only through a
+	// function the capture holds.
+	direct := false
 	// definite says some capture holds a borrow whatever its type settles to, and undecided
 	// holds the type variables of the other captures that may hold one.
 	definite := false
@@ -132,6 +139,7 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 		held := schemeBody(b.Schemes[0])
 		v, isVar := held.(*soltype.TypeVarType)
 		readOnly := b.Kind != ast.VarKind && !capture.IsMutable
+		direct = direct || !readOnly || isVar || c.capturesByBorrow(held)
 		if readOnly && isVar {
 			undecided = append(undecided, v)
 		} else if !readOnly || c.capturesByBorrow(held) {
@@ -157,6 +165,7 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 		}
 	}
 	if lt, isVar := ft.Lt.(*soltype.LifetimeVar); isVar && borrowed.name != "" {
+		borrowed.viaFuncs = !direct
 		if c.closureBorrows == nil {
 			c.closureBorrows = map[*soltype.LifetimeVar]closureBorrow{}
 		}
@@ -178,10 +187,12 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 
 // closureBorrow is the capture that makes a closure hold a borrow. name is the captured
 // binding's name. local says the binding is a `val` or `var` of a function body, which could be
-// declared at module level instead.
+// declared at module level instead. viaFuncs says the closure holds a borrow only through
+// functions it captures, whose lifetimes bound the closure's from below.
 type closureBorrow struct {
-	name  string
-	local bool
+	name     string
+	local    bool
+	viaFuncs bool
 }
 
 // shortFuncLifetimes returns the lifetimes retentionLifetimes finds in t other than 'static. A
@@ -643,9 +654,9 @@ type funcLtSourceSet struct {
 
 // funcLtSources reads where the function lifetime lt comes from. The walk follows the lifetime
 // an instantiation copied, the lifetime an extrusion proxied, and each lower bound. It stops at
-// a closure's lifetime, at a call-only parameter's lifetime, at a lifetime a signature names,
-// and at a lifetime with none of those to follow that it has not read, which counts as other.
-// 'static is no source.
+// the lifetime of a closure that borrows a capture itself, at a call-only parameter's lifetime,
+// and at a lifetime a signature names. A lifetime with no lower bound, no proxied origin, and no
+// copy left to read counts as other. 'static is no source.
 func (c *checker) funcLtSources(lt soltype.Lifetime) funcLtSourceSet {
 	var out funcLtSourceSet
 	seen := set.NewSet[*soltype.LifetimeVar]()
@@ -664,9 +675,11 @@ func (c *checker) funcLtSources(lt soltype.Lifetime) funcLtSourceSet {
 			continue
 		}
 		seen.Add(v)
-		_, borrows := c.closureBorrows[v]
+		// A closure that borrows only through functions it captures is read through to those
+		// functions, so a call-only parameter it captures is reported by the parameter's check.
+		cb, borrows := c.closureBorrows[v]
 		_, tentative := c.tentativeClosures[v]
-		if borrows || tentative {
+		if (borrows && !cb.viaFuncs) || tentative {
 			out.closures = append(out.closures, v)
 			continue
 		}
@@ -674,22 +687,25 @@ func (c *checker) funcLtSources(lt soltype.Lifetime) funcLtSourceSet {
 			continue
 		}
 		next := slices.Clone(v.LowerBounds)
-		if origin, proxied := c.ctx.ltProxyOrigin[v]; proxied {
+		origin, proxied := c.ctx.ltProxyOrigin[v]
+		if proxied {
 			next = append(next, origin)
 		}
+		// A copy an instantiation made is the same lifetime as the one it copies, so only a
+		// copy not yet read leads anywhere new.
+		copies := 0
 		for _, copied := range c.ctx.ltCopies[v] {
-			next = append(next, copied)
+			if !seen.Contains(copied) {
+				next = append(next, copied)
+				copies++
+			}
 		}
-		// A lifetime whose every link leads back to one already read has no source of its own,
-		// such as a declared function's result lifetime and the copy a call made of it.
-		unread := slices.DeleteFunc(next, func(lt soltype.Lifetime) bool {
-			lv, isVar := lt.(*soltype.LifetimeVar)
-			return isVar && seen.Contains(lv)
-		})
-		if len(unread) == 0 {
+		// A lifetime with no lower bound and no proxied origin is a source of its own, such as
+		// a declared function's result lifetime, once its copies are read.
+		if len(v.LowerBounds) == 0 && !proxied && copies == 0 {
 			out.other = true
 		}
-		pending = append(pending, unread...)
+		pending = append(pending, next...)
 	}
 	return out
 }

@@ -1323,6 +1323,20 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 					return []SolverError{&BorrowEscapeError{Sub: ref, Super: super}}
 				}
 			}
+			// A function that fits a member except for its lifetime fails only on the
+			// lifetime, so it is checked against the union as if it held no borrow and
+			// reported as kept for 'static, the way a lone 'static slot reports it.
+			if ft, ok := sub.(*soltype.FuncType); ok && !isStaticFuncLt(ft.Lt) {
+				if member := staticFuncMember(supU); member != nil {
+					freed := *ft
+					freed.Lt = nil
+					if !hasHardError(c.trialUnderProbe(&freed, super)) {
+						errs := c.constrain(&freed, super, seen, mutCtx)
+						c.constrainLt(ft.Lt, soltype.Static)
+						return append(errs, &FuncKeptForStaticError{Sub: ft, Super: member})
+					}
+				}
+			}
 			return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
 		}
 	}
@@ -1409,16 +1423,16 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			// for the destination's lifetime has to stay valid that long, so the source's
 			// lifetime must outlive it. A source whose lifetime is nil or 'static fills any slot.
 			//
-			// A destination with a nil lifetime is a `fn` written with no lifetime outside a
-			// signature or a body, which holds no borrow. A source that may hold one is
-			// reported there, the way a borrow escapes into an owned slot. The source's lifetime
-			// is still bounded by 'static, so a call-only parameter or a signature's lifetime
-			// reaching the slot is reported by its own check. A destination written
-			// `'static fn` only bounds the source's lifetime by 'static.
+			// A 'static destination, written `'static fn` or a `fn` with no lifetime outside a
+			// signature or a body, holds only a function that borrows nothing shorter than the
+			// program. A source that may hold such a borrow is reported there, the way a borrow
+			// escapes into an owned slot. The source's lifetime is still bounded by 'static, so
+			// a call-only parameter or a signature's lifetime reaching the slot is reported by
+			// its own check.
 			var funcErrs []SolverError
 			switch {
 			case isStaticFuncLt(sub.Lt):
-			case sup.Lt == nil:
+			case isStaticFuncLt(sup.Lt):
 				c.constrainLt(sub.Lt, soltype.Static)
 				funcErrs = append(funcErrs, &FuncKeptForStaticError{Sub: sub, Super: sup})
 			default:
@@ -3862,4 +3876,15 @@ func (e *extruder) extrudeLifetime(lt soltype.Lifetime, pol soltype.Polarity) so
 		e.ltCache = map[ltExtrudeKey]*soltype.LifetimeVar{}
 	}
 	return e.c.extrudeLt(lt, pol, e.lvl, e.ltCache)
+}
+
+// staticFuncMember returns the first member of u that is a function type whose lifetime is
+// 'static, or nil when u has none.
+func staticFuncMember(u *soltype.UnionType) *soltype.FuncType {
+	for _, member := range u.Types {
+		if ft, ok := member.(*soltype.FuncType); ok && isStaticFuncLt(ft.Lt) {
+			return ft
+		}
+	}
+	return nil
 }

@@ -2571,10 +2571,10 @@ func (e *CallOnlyFuncKeptError) Message() string {
 }
 
 // FuncKeptForStaticError fires when a function that may hold a borrow shorter than 'static flows
-// into a slot that holds only functions that borrow nothing, such as a module-level binding
-// annotated `fn () -> undefined`. Sub is the source, a FuncType whose Lt is a lifetime other
-// than 'static. Super is the destination, a FuncType whose Lt is nil. It is the function form of
-// BorrowEscapeError.
+// into a slot that keeps it for 'static, such as a `'static fn` parameter or a module-level
+// binding annotated `fn () -> undefined`. Sub is the source, a FuncType whose Lt is a lifetime
+// other than 'static. Super is the destination, a FuncType whose Lt is nil or 'static. It is the
+// function form of BorrowEscapeError.
 //
 // blameConstraintErrors fills the rest from what the checker knows about the source and the
 // site. source names the source, as "`show`" or "this closure". borrowed is the name of a
