@@ -2569,6 +2569,8 @@ func (e *CallOnlyFuncKeptError) Message() string {
 	default:
 		kept = "it is kept after the call returns"
 	}
+	// Print fails only for a node that is not a script, expression, statement, declaration,
+	// pattern, or type annotation, and Written is always a type annotation.
 	written, _ := printer.Print(e.Written, printer.DefaultOptions())
 	lifetime := "'static"
 	if e.Keeper != "" {

@@ -69,12 +69,6 @@ func (c *checker) noteSignatureLifetimes(params []*ast.LifetimeParam) {
 	}
 }
 
-// isSignatureLt reports whether lt is a lifetime a function's `<'a>` list declares.
-func (c *checker) isSignatureLt(lt *soltype.LifetimeVar) bool {
-	_, found := c.signatureLts[lt]
-	return found
-}
-
 // isStaticFuncLt reports whether lt, a function type's lifetime, is 'static. A nil lifetime
 // reads as 'static, since a function with none holds no borrow.
 func isStaticFuncLt(lt soltype.Lifetime) bool {
