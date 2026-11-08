@@ -1062,8 +1062,8 @@ fn setup() {
 The options are:
 
 - Give function types an optional lifetime, as in `&'a fn () -> undefined`.
-  The lifetime bounds how long the callee may keep the function, and E4 reads it
-  to decide how long the captures stay borrowed.
+  The lifetime bounds how long the callee may keep the function, and so how long
+  the closure's captures stay borrowed, as E4 reads it.
 - Add a marker on the parameter that says the callee does not keep it, and treat
   every unmarked function parameter as retained.
 
@@ -1592,9 +1592,13 @@ Decided: accepted. E4 states it, and the rule reads this way in each position:
 - `fn (…) -> R` holds no borrow. A module-level function has this type, and so
   does a closure whose captures it owns or that captures nothing. Any slot may
   keep it for as long as the slot lives.
-- `&'a fn (…) -> R` may hold borrows that live for `'a`. A closure that captures
-  a borrow has this type, with `'a` the shortest lifetime among the borrows it
-  captures. A slot keeps it only while `'a` is live.
+- `&'a fn (…) -> R` may hold borrows that live for `'a`. A slot keeps it only
+  while `'a` is live. A closure that captures a borrow has this type, and its
+  `'a` is inferred from where the closure flows. A captured local is borrowed
+  for that `'a`, so passing the closure to a `&'static fn` parameter holds the
+  borrow for the rest of the program, as F3 states for module-level state. A
+  captured borrowed parameter `p: &'p T` limits `'a`, since the closure cannot
+  keep `p` longer than `'p`.
 - An elided `&fn` takes its lifetime the way an elided `&` does. In a
   parameter, the lifetime ends with the call unless the signature ties it to
   the result, so `g: &fn () -> undefined` is only called during the call. In a
