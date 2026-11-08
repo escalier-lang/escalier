@@ -4005,13 +4005,8 @@ type WeakBindingInflowError struct {
 
 func (*WeakBindingInflowError) isSolverError() {}
 
-func (e *WeakBindingInflowError) Span() ast.Span { return e.Use.Span() }
-func (e *WeakBindingInflowError) Related() []ast.Span {
-	if e.Decl == nil {
-		return nil
-	}
-	return []ast.Span{e.Decl.Span()}
-}
+func (e *WeakBindingInflowError) Span() ast.Span      { return e.Use.Span() }
+func (e *WeakBindingInflowError) Related() []ast.Span { return []ast.Span{e.Decl.Span()} }
 func (e *WeakBindingInflowError) Message() string {
 	msg := fmt.Sprintf("a parameter of '%s' flows into '%s', whose type is not known yet. Write the type of '%s'", e.Func, e.Binding, e.Binding)
 	if e.Example == "" {

@@ -31,11 +31,13 @@ func weakAtDecl(d *ast.VarDecl) bool {
 	return !generalizes(d) && !relaxes(d)
 }
 
-// lowerStoringVars moves to lvl each variable of t above lvl that a value of t can store,
-// along with every variable reachable from such a variable's bounds. It moves each
-// lifetime variable such a position reaches as well. A variable at lvl is weak, so the
-// binding that generalizes t at lvl does not quantify it. It reports whether any variable
-// moved.
+// lowerStoringVars makes weak each variable of t that a value of t can store. t was inferred
+// at lvl+1, one level above the binding that generalizes it at lvl. Each such variable moves
+// down one level, along with every variable and lifetime variable above lvl that its bounds
+// reach. A variable minted at lvl+1 then sits at lvl and is weak, so the binding does not
+// quantify it. A variable minted deeper, such as a type parameter of a generic function the
+// value holds, keeps its place one level above the variables around it, as it would had t
+// been inferred at lvl. It reports whether any variable moved.
 //
 // A value of t can store a value of a variable when one of these mentions the variable:
 //   - a function that may hold state, which is any function type not marked Pure,
@@ -50,20 +52,23 @@ func weakAtDecl(d *ast.VarDecl) bool {
 // can store a value.
 func (c *checker) lowerStoringVars(t soltype.Type, lvl int) bool {
 	s := &storingVarScanner{
-		ctx:       c.ctx,
-		lvl:       lvl,
-		seen:      set.NewSet[storingVisit](),
-		expanded:  set.NewSet[storingAlias](),
-		binders:   set.NewSet[*soltype.TypeVarType](),
-		ltBinders: set.NewSet[*soltype.LifetimeVar](),
-		out:       set.NewSet[*soltype.TypeVarType](),
-		lts:       set.NewSet[*soltype.LifetimeVar](),
+		ctx:      c.ctx,
+		lvl:      lvl,
+		seen:     set.NewSet[storingVisit](),
+		expanded: set.NewSet[storingAlias](),
+		out:      set.NewSet[*soltype.TypeVarType](),
+		lts:      set.NewSet[*soltype.LifetimeVar](),
 	}
 	t.Accept(s, soltype.Positive)
 	if s.out.Len() == 0 && s.lts.Len() == 0 {
 		return false
 	}
-	l := &varLowerer{ctx: c.ctx, lvl: lvl, binders: s.binders, ltBinders: s.ltBinders}
+	l := &varLowerer{
+		ctx:      c.ctx,
+		lvl:      lvl,
+		lowered:  set.NewSet[*soltype.TypeVarType](),
+		loweredL: set.NewSet[*soltype.LifetimeVar](),
+	}
 	for _, v := range s.out.ToSlice() {
 		l.lower(v)
 	}
@@ -99,11 +104,7 @@ type storingVarScanner struct {
 	// expanded holds each alias whose body the walk has read, so a recursive alias is read
 	// once.
 	expanded set.Set[storingAlias]
-	// binders and ltBinders hold the type and lifetime parameters of each function type the
-	// walk entered. The function quantifies them, so they are never moved.
-	binders   set.Set[*soltype.TypeVarType]
-	ltBinders set.Set[*soltype.LifetimeVar]
-	out       set.Set[*soltype.TypeVarType]
+	out      set.Set[*soltype.TypeVarType]
 	// lts holds each lifetime variable above lvl that a position that can store a value
 	// reaches.
 	lts set.Set[*soltype.LifetimeVar]
@@ -120,7 +121,7 @@ func (s *storingVarScanner) EnterType(t soltype.Type, pol soltype.Polarity) solt
 	switch t := t.(type) {
 	case *soltype.TypeVarType:
 		key := storingVisit{v: t, pol: pol, storing: s.storing}
-		if t.Level <= s.lvl || s.binders.Contains(t) || s.seen.Contains(key) {
+		if t.Level <= s.lvl || s.seen.Contains(key) {
 			return soltype.EnterResult{SkipChildren: true}
 		}
 		s.seen.Add(key)
@@ -136,12 +137,6 @@ func (s *storingVarScanner) EnterType(t soltype.Type, pol soltype.Polarity) solt
 		}
 		return soltype.EnterResult{SkipChildren: true}
 	case *soltype.FuncType:
-		for _, tp := range t.TypeParams {
-			s.binders.Add(tp.Var)
-		}
-		for _, lp := range t.LifetimeParams {
-			s.ltBinders.Add(lp.Var)
-		}
 		s.addLts(t.Lt)
 		if !s.storing && pol == soltype.Positive && !t.Pure {
 			s.storingFrom(t, pol)
@@ -190,14 +185,14 @@ func (s *storingVarScanner) EnterType(t soltype.Type, pol soltype.Polarity) solt
 
 func (s *storingVarScanner) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
-// addLts adds each lifetime variable in lts to s.lts when the walk is inside a position that
-// can store a value.
+// addLts adds each lifetime variable above lvl in lts to s.lts when the walk is inside a
+// position that can store a value.
 func (s *storingVarScanner) addLts(lts ...soltype.Lifetime) {
 	if !s.storing {
 		return
 	}
 	for _, lt := range lts {
-		if lv, isVar := lt.(*soltype.LifetimeVar); isVar && lv.Level > s.lvl && !s.ltBinders.Contains(lv) {
+		if lv, isVar := lt.(*soltype.LifetimeVar); isVar && lv.Level > s.lvl {
 			s.lts.Add(lv)
 		}
 	}
@@ -234,23 +229,25 @@ func hasAccessor(obj *soltype.ObjectType) bool {
 	return false
 }
 
-// varLowerer moves variables to lvl. A variable at lvl may only have bounds that mention
-// variables at lvl or below, so moving one also moves every variable its bounds reach.
+// varLowerer moves variables above lvl down one level each. A variable may only have bounds
+// that mention variables at its own level or below, so moving one also moves every
+// variable above lvl its bounds reach. lowered and loweredL hold the variables and lifetime
+// variables already moved, so none moves twice.
 type varLowerer struct {
-	ctx *Context
-	lvl int
-	// binders and ltBinders hold the type and lifetime parameters of the function types
-	// lowerStoringVars walked. A function quantifies its own, so they are never moved.
-	binders   set.Set[*soltype.TypeVarType]
-	ltBinders set.Set[*soltype.LifetimeVar]
+	ctx      *Context
+	lvl      int
+	lowered  set.Set[*soltype.TypeVarType]
+	loweredL set.Set[*soltype.LifetimeVar]
 }
 
-// lower moves v to lvl, and every variable above lvl that v's bounds reach.
+// lower moves v down one level when it is above lvl, and every variable above lvl that v's
+// bounds reach.
 func (l *varLowerer) lower(v *soltype.TypeVarType) {
-	if v.Level <= l.lvl || l.binders.Contains(v) {
+	if v.Level <= l.lvl || l.lowered.Contains(v) {
 		return
 	}
-	l.ctx.lowerLevel(v, l.lvl)
+	l.lowered.Add(v)
+	l.ctx.lowerLevel(v, v.Level-1)
 	for _, b := range v.LowerBounds {
 		b.Accept(l, soltype.Positive)
 	}
@@ -259,15 +256,16 @@ func (l *varLowerer) lower(v *soltype.TypeVarType) {
 	}
 }
 
-// lowerLt moves the lifetime variable in lt to lvl when it is above lvl, and every lifetime
-// variable above lvl that its bounds reach.
+// lowerLt moves the lifetime variable in lt down one level when it is above lvl, and every
+// lifetime variable above lvl that its bounds reach.
 func (l *varLowerer) lowerLt(lt soltype.Lifetime) {
 	lv, isVar := lt.(*soltype.LifetimeVar)
-	if !isVar || lv.Level <= l.lvl || l.ltBinders.Contains(lv) {
+	if !isVar || lv.Level <= l.lvl || l.loweredL.Contains(lv) {
 		return
 	}
+	l.loweredL.Add(lv)
 	l.ctx.checkThawedLt(lv, "lowerStoringVars")
-	lv.Level = l.lvl
+	lv.Level--
 	for _, b := range lv.LowerBounds {
 		l.lowerLt(b)
 	}
@@ -283,10 +281,10 @@ func (l *varLowerer) EnterType(t soltype.Type, _ soltype.Polarity) soltype.Enter
 		return soltype.EnterResult{SkipChildren: true}
 	case *soltype.FuncType:
 		for _, tp := range t.TypeParams {
-			l.binders.Add(tp.Var)
+			l.lower(tp.Var)
 		}
 		for _, lp := range t.LifetimeParams {
-			l.ltBinders.Add(lp.Var)
+			l.lowerLt(lp.Var)
 		}
 		l.lowerLt(t.Lt)
 	case *soltype.RefType:
@@ -351,13 +349,10 @@ func (c *checker) capturesNoState(scope *Scope, fn ast.Func) bool {
 // alias reaches what its body reaches.
 func (c *checker) mayHoldState(sc TypeScheme) bool {
 	var t soltype.Type
-	switch sc := sc.(type) {
-	case *MonoScheme:
-		t = sc.Ty
-	case *PolyScheme:
-		t = sc.Body
-	default:
-		return true
+	if mono, isMono := sc.(*MonoScheme); isMono {
+		t = mono.Ty
+	} else {
+		t = sc.(*PolyScheme).Body
 	}
 	f := &stateFinder{
 		ctx:      c.ctx,

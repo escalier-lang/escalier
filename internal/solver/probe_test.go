@@ -388,3 +388,42 @@ func TestTrialBindsWatched(t *testing.T) {
 		require.False(t, bound)
 	})
 }
+
+// TestProbeRollsBackWeakBindingEdits asserts that a discarded probe undoes dropUpperBound and
+// lowerLevel, the two edits the relaxed value restriction makes to a variable that already
+// has bounds, and that a committed probe keeps them.
+func TestProbeRollsBackWeakBindingEdits(t *testing.T) {
+	tests := []struct {
+		name   string
+		commit bool
+	}{
+		{name: "Discard", commit: false},
+		{name: "Commit", commit: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newTestChecker()
+			weak := c.freshAt(0)
+			v := c.freshAt(2)
+			require.Empty(t, c.ctx.Constrain(v, weak))
+			require.Equal(t, []soltype.Type{weak}, v.UpperBounds)
+
+			p := c.openProbe()
+			c.ctx.dropUpperBound(v, weak)
+			c.ctx.lowerLevel(v, 1)
+			require.Len(t, v.UpperBounds, 1)
+			require.NotSame(t, weak, v.UpperBounds[0])
+			require.Equal(t, 1, v.Level)
+			c.closeProbe(p, tt.commit)
+
+			require.Len(t, v.UpperBounds, 1)
+			if tt.commit {
+				require.NotSame(t, weak, v.UpperBounds[0])
+				require.Equal(t, 1, v.Level)
+			} else {
+				require.Same(t, weak, v.UpperBounds[0])
+				require.Equal(t, 2, v.Level)
+			}
+		})
+	}
+}

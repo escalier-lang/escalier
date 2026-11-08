@@ -864,6 +864,150 @@ fn put(x) { cache.set("k", x) }
 				"4:13-4:18: a parameter of 'put' flows into 'cache', whose type is not known yet. Write the type of 'cache'.",
 			},
 		},
+		{
+			// hold is declared, so the function it returns may hold state and the value it
+			// returns is weak. That value is a generic function, which keeps its own type
+			// parameter.
+			name: "AWeakBindingThatHoldsAGenericFunction",
+			src: `
+declare fn hold<T>(init: T) -> fn () -> T
+val g = hold(fn <U>(y: U) -> U { return y })
+fn u() { return g() }
+`,
+			values: map[string]string{
+				"g": "fn () -> fn <U>(y: U) -> U",
+				"u": "fn () -> fn <U>(y: U) -> U",
+			},
+		},
+		{
+			// The function `f` keeps its own lifetime parameter.
+			name: "AWeakBindingThatHoldsAFunctionWithALifetimeParameter",
+			src: `
+declare fn hold<T>(init: T) -> fn () -> T
+declare val f: fn <'a>(p: &'a {x: number}) -> &'a {x: number}
+val g = hold(f)
+fn u() { return g() }
+`,
+			values: map[string]string{
+				"g": "fn () -> fn <'a>(p: &'a {x: number}) -> &'a {x: number}",
+				"u": "fn () -> fn <'a>(p: &'a {x: number}) -> &'a {x: number}",
+			},
+		},
+		{
+			name: "AWeakBindingThatHoldsABorrow",
+			src: `
+declare fn hold<T>(init: T) -> fn () -> T
+val p = {x: 1}
+val g = hold(&p)
+fn u() { return g() }
+`,
+			values: map[string]string{"g": "fn () -> &{x: 1}", "u": "fn () -> &{x: 1}"},
+		},
+		{
+			name: "AWeakBindingThatHoldsAClassInstanceWithALifetime",
+			src: `
+declare fn hold<T>(init: T) -> fn () -> T
+class Holder<'a> { peer: &'a {value: number} }
+val p = {value: 1}
+val g = hold(Holder(&p))
+fn u() { return g() }
+`,
+			values: map[string]string{"g": "fn <'a>() -> Holder<'a>", "u": "fn <'a>() -> Holder<'a>"},
+		},
+		{
+			name: "AWeakBindingThatHoldsAnAliasWithALifetime",
+			src: `
+declare fn hold<T>(init: T) -> fn () -> T
+type Ref<'a> = &'a {value: number}
+declare fn mkRef<'a>(p: &'a {value: number}) -> Ref<'a>
+val p = {value: 1}
+val g = hold(mkRef(&p))
+fn u() { return g() }
+`,
+			values: map[string]string{"g": "fn <'a>() -> Ref<'a>", "u": "fn <'a>() -> Ref<'a>"},
+		},
+		{
+			// `T` appears only in a parameter of `put`, so a `Sink` can accept a value of it
+			// but never hand one back. Each use of `s` gets its own `T`, so the two calls do not
+			// conflict.
+			name: "AContravariantClassArgumentGeneralizes",
+			src: `
+class Sink<T> { put(&self, x: T) -> undefined { return undefined } }
+declare fn mkSink<T>() -> Sink<T>
+val s = mkSink()
+fn a() { s.put(1) }
+fn b() { s.put("x") }
+`,
+			values: map[string]string{"s": "Sink<never>"},
+		},
+		{
+			// A setter can store what a getter hands back, so `T` is weak and the `1` the
+			// setter receives reaches the read in `c`.
+			name: "AnObjectWithAnAccessorStaysWeak",
+			src: `
+declare fn mkBox<T>() -> {get value() -> T, set value(v: T)}
+val b = mkBox()
+fn a() { b.value = 1 }
+fn c() { val s: string = b.value }
+`,
+			want: []string{
+				"4:10-4:21: cannot mutate 'b' because its binding is immutable; declare it as `val mut b`",
+				"5:26-5:33: cannot constrain 1 <: string",
+			},
+		},
+		{
+			// The closure captures two borrows of one value, so the walk reaches that value's
+			// type twice. Neither borrow can change it.
+			name: "AClosureThatCapturesTwoBorrowsOfOneValueGeneralizes",
+			src: `
+fn mk(p) {
+	val q = [&p, &p]
+	return fn (x) {
+		val t = q
+		return x
+	}
+}
+val g = mk({a: 1})
+`,
+			values: map[string]string{"g": "fn <T0>(x: T0) -> T0"},
+		},
+		{
+			// The captured pair names the alias twice.
+			name: "AClosureThatCapturesAnAliasTwiceGeneralizes",
+			src: `
+type Pt = {x: number}
+fn mk(pair: [Pt, Pt]) {
+	return fn (x) {
+		val t = pair
+		return x
+	}
+}
+val g = mk([{x: 1}, {x: 2}])
+`,
+			values: map[string]string{"g": "fn <T0>(x: T0) -> T0"},
+		},
+		{
+			// put's parameter flows into seen, not into the weak binding declared before it.
+			name: "AParameterThatFlowsIntoTheSecondOfTwoWeakBindings",
+			src: `
+val mut other = Map()
+val mut seen = Map()
+fn put(x) { seen.set("k", x) }
+`,
+			want: []string{
+				"4:13-4:17: a parameter of 'put' flows into 'seen', whose type is not known yet. Write the type of 'seen', as in `val mut seen: Map<string, number> = Map()`.",
+			},
+		},
+		{
+			name: "AnExampleForAWeakVarBinding",
+			src: makeCellSrc + `
+var cell = makeCell()
+fn h(y) { return cell(y) }
+`,
+			want: []string{
+				"12:18-12:22: a parameter of 'h' flows into 'cell', whose type is not known yet. Write the type of 'cell', as in `var cell: fn (x: number) -> number | undefined = makeCell()`.",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -873,6 +1017,49 @@ fn put(x) { cache.set("k", x) }
 				require.Contains(t, values, name)
 				require.Equal(t, want, values[name], name)
 			}
+		})
+	}
+}
+
+// TestWeakBindingInflowBlame covers where the error for a parameter that flows into a weak
+// binding points: the source each span covers, primary first and then the related span on
+// the weak binding's declaration.
+func TestWeakBindingInflowBlame(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+		// spans lists the source text of the primary span and then of each related span.
+		spans []string
+	}{
+		{
+			name: "ADirectRead",
+			src: `declare fn mk<T>() -> fn (x: T) -> T
+val g = mk()
+fn h(y) { return g(y) }`,
+			want:  "3:18-3:19: a parameter of 'h' flows into 'g', whose type is not known yet. Write the type of 'g', as in `val g: fn (x: number) -> number = mk()`.",
+			spans: []string{"g", "val g = mk()"},
+		},
+		{
+			// h has no read of g, so the error points at h's name.
+			name: "AReadThroughAnotherFunction",
+			src: `declare fn mk<T>() -> fn (x: T) -> T
+val g = mk()
+fn getG() { return g }
+fn h(y) { return getG()(y) }`,
+			want:  "4:4-4:5: a parameter of 'h' flows into 'g', whose type is not known yet. Write the type of 'g', as in `val g: fn (x: number) -> number = mk()`.",
+			spans: []string{"h", "val g = mk()"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, []string{tt.want}, messagesWithSpan(t, errs))
+			spans := []string{spanText(tt.src, errs[0].Span())}
+			for _, s := range errs[0].Related() {
+				spans = append(spans, spanText(tt.src, s))
+			}
+			require.Equal(t, tt.spans, spans)
 		})
 	}
 }
