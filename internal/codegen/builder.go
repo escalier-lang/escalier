@@ -1376,8 +1376,7 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 		return buildArrayIsArrayCheck(valueExpr, nil)
 	case *ast.TypeRefTypeAnn:
 		// A reference to a nominal type is tested with `instanceof` against the class.
-		// An alias to a class gets the same test, so an overload arm annotated with the
-		// alias stops accepting every value.
+		// An alias to a class gets the same test, under the class's own name.
 		//
 		// TODO(#289): handle non-object types
 		// TODO(#289): handle structural object types

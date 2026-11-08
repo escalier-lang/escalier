@@ -1,5 +1,0 @@
-lib/index.esc:15:10: type parameter T is declared but never used
-
-15: type Box<T> = Shape
-             ^
-

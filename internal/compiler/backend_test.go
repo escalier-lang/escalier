@@ -315,9 +315,9 @@ func TestTheSolverEmitsAnInstanceOfTestForAClassAlias(t *testing.T) {
 			want: `if (arguments.length === 1 && param0 instanceof Point) {`,
 		},
 		{
-			name: "AGenericAliasOfAClass",
-			src:  classes + "type Box<T> = Point\nexport fn f(v: Box<string>) -> number { return 1 }\nexport fn f(v: Other) -> number { return 2 }",
-			want: `if (arguments.length === 1 && param0 instanceof Point) {`,
+			name: "AGenericAliasOfAGenericClass",
+			src:  classes + "class Holder<T> { value: T }\ntype Box<T> = Holder<T>\nexport fn f(v: Box<string>) -> number { return 1 }\nexport fn f(v: Other) -> number { return 2 }",
+			want: `if (arguments.length === 1 && param0 instanceof Holder) {`,
 		},
 		{
 			name: "AnAliasOfAGenericClassInstance",

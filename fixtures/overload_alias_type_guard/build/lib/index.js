@@ -88,9 +88,9 @@ export function directNs(param0) {
   } else throw new TypeError("No overload matches the provided arguments for function 'directNs'");
 }
 export function genericAlias(param0) {
-  if (arguments.length === 1 && param0 instanceof Shape) {
+  if (arguments.length === 1 && param0 instanceof Holder) {
     const v = param0;
-    return v.area;
+    return v.value;
   } else if (arguments.length === 1 && param0 instanceof Other) {
     const v = param0;
     return 3;

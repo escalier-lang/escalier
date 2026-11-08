@@ -12,7 +12,7 @@ class Holder<T> {
 
 type ShapeAlias = Shape
 type ShapeAliasAlias = ShapeAlias
-type Box<T> = Shape
+type Box<T> = Holder<T>
 type NumberHolder = Holder<number>
 type GeoCircle = geo.Circle
 type ShapeOrOther = Shape | Other
@@ -26,7 +26,7 @@ fn aliased(v: Other) -> number { return 1 }
 fn aliasOfAlias(v: ShapeAliasAlias) -> number { return v.area }
 fn aliasOfAlias(v: Other) -> number { return 2 }
 
-fn genericAlias(v: Box<string>) -> number { return v.area }
+fn genericAlias(v: Box<number>) -> number { return v.value }
 fn genericAlias(v: Other) -> number { return 3 }
 
 fn aliasWithTypeArgs(v: NumberHolder) -> number { return v.value }
