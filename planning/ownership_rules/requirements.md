@@ -668,9 +668,11 @@ declare fn run(cb: &fn () -> undefined) -> undefined
 
 fn setup() {
     keep(fn () { console.log("hello") })    // accepted, since the closure captures nothing
+    run(fn () { console.log("hello") })     // accepted, since a plain `fn` passes wherever a `&fn` is expected
     val msg = "hello"
     val greet = fn () { console.log(msg) }
     keep(greet)                              // accepted, since greet copies msg
+    run(greet)                               // accepted
     val cfg = {msg: "hello"}
     val show = fn () { console.log(cfg.msg) }
     run(show)                                // accepted, since run only calls show during the call
