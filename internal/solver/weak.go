@@ -440,7 +440,17 @@ func collectPassThrough(v *soltype.TypeVarType, out set.Set[*soltype.TypeVarType
 // form. Given `fn f() { return {next: f()} }` and `fn id(x) { return x }`, the weak binding
 // `val d = id(f())` reads as `μX0.{next: X0}`.
 type weakSettler struct {
+	// settled holds each weak variable's settled type. It is keyed by the variable alone,
+	// though each call names the level at or below which a variable is weak. A variable's
+	// bounds hold only variables at or below its own level, apart from a function's own
+	// type parameters, which binders excludes. So every variable a settle reaches is weak
+	// at any level the variable itself is weak at, and the settled type is the same.
 	settled map[*soltype.TypeVarType]soltype.Type
+	// binders holds the type parameters of each function type a display or a bound reaches.
+	// A function binds them, so they stay variables wherever they occur. A type parameter
+	// can also occur in a bound a settle reads apart from its function type, as the
+	// parameter of `fn <T>(x: T) -> T` stored in a weak map does.
+	binders set.Set[*soltype.TypeVarType]
 	// open holds each variable whose settled type is being built, with its depth on the walk.
 	open map[*soltype.TypeVarType]*openWeakVar
 	// depth is the number of open variables.
@@ -469,6 +479,7 @@ func newWeakSettler() *weakSettler {
 		open:    map[*soltype.TypeVarType]*openWeakVar{},
 		minRef:  math.MaxInt,
 		empty:   set.NewSet[*soltype.TypeVarType](),
+		binders: set.NewSet[*soltype.TypeVarType](),
 	}
 }
 
@@ -482,10 +493,18 @@ func (s *weakSettler) display(sc *PolyScheme, lvl int) soltype.Type {
 	declared := slices.DeleteFunc(slices.Clone(sc.declared), func(tp *soltype.TypeParam) bool {
 		return tp.Var.Level <= lvl
 	})
+	s.addBinders(funcTypeParamVars(sc.Body))
 	keep := schemeBinders(sc.Body, declared)
 	addWeakVars(keep, sc.Body, lvl)
 	coalesced := coalesceSchemeKeeping(sc.Body, sc.Level, declared, sc.declaredLts, keep, true)
 	return coalesceLifetimes(s.replace(coalesced, lvl), soltype.Positive, classKeepLifetimes(sc.declaredLts))
+}
+
+// addBinders adds each variable in vars to s.binders.
+func (s *weakSettler) addBinders(vars set.Set[*soltype.TypeVarType]) {
+	for v := range vars {
+		s.binders.Add(v)
+	}
 }
 
 // addWeakVars adds to keep each variable at or below lvl that t reaches.
@@ -502,7 +521,8 @@ func addWeakVars(keep set.Set[*soltype.TypeVarType], t soltype.Type, lvl int) {
 // replace returns t with each weak variable replaced by its settled type. A function's own
 // type parameters stay variables, since the function binds them.
 func (s *weakSettler) replace(t soltype.Type, lvl int) soltype.Type {
-	return t.Accept(&weakVarReplacer{s: s, lvl: lvl, binders: funcTypeParamVars(t)}, soltype.Positive)
+	s.addBinders(funcTypeParamVars(t))
+	return t.Accept(&weakVarReplacer{s: s, lvl: lvl}, soltype.Positive)
 }
 
 // settle returns the type the weak variable v stands for, as weakSettler describes.
@@ -562,15 +582,12 @@ func (s *weakSettler) settle(v *soltype.TypeVarType, lvl int) soltype.Type {
 // `fn (x: never) -> unknown`, the function type every function is a subtype of.
 func (s *weakSettler) settleAt(v *soltype.TypeVarType, pol soltype.Polarity, lvl int) soltype.Type {
 	keep := funcTypeParamVars(v)
+	s.addBinders(keep)
 	addWeakVars(keep, v, lvl)
 	keep.Remove(v)
 	coalesced := coalesceStructure(v, pol, keep, nil)
-	return coalesced.Accept(&weakVarReplacer{
-		s:       s,
-		lvl:     lvl,
-		binders: funcTypeParamVars(coalesced),
-		inUpper: pol == soltype.Negative,
-	}, pol)
+	s.addBinders(funcTypeParamVars(coalesced))
+	return coalesced.Accept(&weakVarReplacer{s: s, lvl: lvl, inUpper: pol == soltype.Negative}, pol)
 }
 
 // isEmptyAt reports whether t is the identity of a position at pol: `never`, or a union of
@@ -621,18 +638,18 @@ func (f *outerKnotCollector) EnterType(t soltype.Type, _ soltype.Polarity) solty
 func (f *outerKnotCollector) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // weakVarReplacer is the visitor behind weakSettler.replace and weakSettler.settleAt. It
-// replaces each weak variable with its settled type. With inUpper set, a weak variable that
-// settled on no type reads as the identity of its position, as settleAt describes.
+// replaces each weak variable with its settled type. A variable in the settler's binders is
+// not weak. With inUpper set, a weak variable that settled on no type reads as the identity of
+// its position, as settleAt describes.
 type weakVarReplacer struct {
 	s       *weakSettler
 	lvl     int
-	binders set.Set[*soltype.TypeVarType]
 	inUpper bool
 }
 
 func (w *weakVarReplacer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
 	v, ok := t.(*soltype.TypeVarType)
-	if !ok || v.Level > w.lvl || w.binders.Contains(v) {
+	if !ok || v.Level > w.lvl || w.s.binders.Contains(v) {
 		return soltype.EnterResult{}
 	}
 	settled := w.s.settle(v, w.lvl)

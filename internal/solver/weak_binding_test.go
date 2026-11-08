@@ -496,6 +496,20 @@ fn make() {
 			values: map[string]string{"make": `fn () -> Map<"k", 1 | "s">`},
 		},
 		{
+			// The stored function's parameter is a variable whose bound is T. T is the
+			// function's own type parameter, so it stays T in the map and in get.
+			name: "AGenericFunctionStoredInAWeakMapKeepsItsTypeParameter",
+			src: `
+val mut fs = Map()
+fn get() { return fs.get("k") }
+fn put() { fs.set("k", fn <T>(x: T) -> T { return x }) }
+`,
+			values: map[string]string{
+				"fs":  "Map<string, fn <T>(x: T) -> T>",
+				"get": "fn () -> (fn <T>(x: T) -> T) | undefined",
+			},
+		},
+		{
 			name: "AGenericFunctionKeepsItsOwnTypeParameter",
 			src: `
 var id = fn <T>(x: T) -> T { return x }
@@ -725,6 +739,22 @@ fn f() -> number {
 			name: "AWeakModuleBindingALaterFunctionWrites",
 			src: `
 val mut seen = Map()
+fn f() -> number {
+	val mut m = Map()
+	m.set("a", seen.get("k"))
+	return m.size
+}
+fn put() { seen.set("k", 1) }
+`,
+			want: "Map<string, number | undefined>",
+		},
+		{
+			// get settles seen's value type at the module's level before m settles at the
+			// level of f's body, and m reuses that settled type.
+			name: "AWeakVariableAModuleReaderSettledFirst",
+			src: `
+val mut seen = Map()
+fn get() { return seen.get("k") }
 fn f() -> number {
 	val mut m = Map()
 	m.set("a", seen.get("k"))
