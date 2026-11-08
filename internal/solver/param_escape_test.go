@@ -88,14 +88,26 @@ func TestInferUnannotatedParamOwnership(t *testing.T) {
 			`},
 			want: "fn (arg0: {x: {y: number}}) -> number",
 		},
-		{
-			name: "BoundReadCapturedByClosure",
-			srcs: []string{`fn f(p) {
-				val q = p.x
-				return fn () { return q }
-			}`},
-			want: "fn <T0>(arg0: {x: T0}) -> fn () -> T0",
-		},
+		// A closure that reads the parameter through a capture borrows it for as long as the
+		// closure lives, so the closure can be called more than once.
+		//
+		// DISABLED until #2565. Today the capture counts as an escape, so the parameter stays
+		// owned and each variant infers `fn <T0>(arg0: {x: T0}) -> fn () -> T0`. That closure
+		// returns its owned capture on every call. Section 1 of #2565 ties a returned closure's
+		// lifetime to its captures, which lets the capture read through the borrow.
+		/*
+			{
+				name: "ReadCapturedByClosure",
+				srcs: []string{
+					`fn f(p) {
+						val q = p.x
+						return fn () { return q }
+					}`,
+					`fn f(p) { return fn () { return p.x } }`,
+				},
+				want: "fn <T0, 'a>(arg0: &'a {x: T0}) -> &'a fn () -> &'a T0",
+			},
+		*/
 		{
 			name: "BoundReadInVar",
 			srcs: []string{`fn f(p) {
@@ -179,11 +191,6 @@ func TestInferUnannotatedParamOwnership(t *testing.T) {
 			name: "WriteThroughMember",
 			srcs: []string{`fn f(mut p) { p.x = 1 }`},
 			want: "fn (arg0: {x: number}) -> undefined",
-		},
-		{
-			name: "CapturedByClosure",
-			srcs: []string{`fn f(p) { return fn () { return p.x } }`},
-			want: "fn <T0>(arg0: {x: T0}) -> fn () -> T0",
 		},
 		{
 			// The nested function reads p through a shorthand property, which counts as a use of p.
