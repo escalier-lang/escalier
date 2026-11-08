@@ -305,7 +305,9 @@ func TestReadThroughBorrowParamKeepsBorrow(t *testing.T) {
 // TestInferOpenEscapeParam covers D9's rule for an unannotated parameter stored where the
 // destination's type leaves ownership open. Each case declares `remember` and a caller `go`.
 // A parameter the body never writes infers as a `'static` borrow, and one the body writes, or
-// one the destination's type makes owned, stays owned and moves the caller's argument.
+// one the destination's type makes owned, stays owned and moves the caller's argument. A
+// parameter stored in the weak `val mut seen = Map()` also reports that seen needs a written
+// type, and remember's calls then leave seen's types undecided.
 func TestInferOpenEscapeParam(t *testing.T) {
 	tests := []struct {
 		name string
@@ -317,7 +319,6 @@ func TestInferOpenEscapeParam(t *testing.T) {
 		errs []string
 	}{
 		{
-			// remember's rendering waits on #2352, so TestInferOpenEscapeParamRendering holds it.
 			name: "ReadOnlyIsStaticBorrow",
 			src: `
 				val mut seen = Map()
@@ -328,10 +329,10 @@ func TestInferOpenEscapeParam(t *testing.T) {
 					return opts.retries
 				}
 			`,
-			seen: "Map<string, &'static {retries: number}>",
+			seen: "Map<string, never>",
+			errs: []string{rememberIntoSeen("3:26-3:30", "string")},
 		},
 		{
-			// remember's rendering waits on #2352, so TestInferOpenEscapeParamRendering holds it.
 			name: "ReadOnlyNeedsWrittenBorrow",
 			src: `
 				val mut seen = Map()
@@ -342,8 +343,11 @@ func TestInferOpenEscapeParam(t *testing.T) {
 					return opts.retries
 				}
 			`,
-			seen: "Map<string, &'static {retries: number}>",
-			errs: []string{"6:15-6:19: this argument is borrowed by the callee, so write the borrow: `&`"},
+			seen: "Map<string, never>",
+			errs: []string{
+				rememberIntoSeen("3:26-3:30", "string"),
+				"6:15-6:19: this argument is borrowed by the callee, so write the borrow: `&`",
+			},
 		},
 		{
 			name: "WrittenIsOwned",
@@ -360,7 +364,10 @@ func TestInferOpenEscapeParam(t *testing.T) {
 				}
 			`,
 			want: "fn (value: {retries: number}) -> undefined",
-			errs: []string{"10:13-10:25: use of moved value 'opts'"},
+			errs: []string{
+				rememberIntoSeen("5:6-5:10", "string"),
+				"10:13-10:25: use of moved value 'opts'",
+			},
 		},
 		{
 			name: "OwnedDestinationIsOwned",
@@ -405,7 +412,10 @@ func TestInferOpenEscapeParam(t *testing.T) {
 				}
 			`,
 			want: "fn <T0>(value: T0) -> T0",
-			errs: []string{"10:13-10:25: use of moved value 'opts'"},
+			errs: []string{
+				rememberIntoSeen("4:6-4:10", "string"),
+				"10:13-10:25: use of moved value 'opts'",
+			},
 		},
 		{
 			name: "LocalReceiverDoesNotEscape",
@@ -474,10 +484,9 @@ func TestInferOpenEscapeParam(t *testing.T) {
 		},
 		{
 			// A value type has no storage to borrow, so it copies into the borrow without a
-			// written `&`. The key escapes into seen too, so it is a `'static` borrow as well.
-			// A `&'static` of a value type stands for the value type, and seen's values are
-			// writable slots that widen it, so seen holds strings and numbers. remember's
-			// rendering waits on #2352, so TestInferOpenEscapeParamRendering holds it.
+			// written `&`, and go reports nothing. Both parameters flow into seen's types, so
+			// the checker asks for a written type on seen, and remember's calls do not decide
+			// them.
 			name: "ValueTypeArgumentsCopy",
 			src: `
 				val mut seen = Map()
@@ -489,7 +498,8 @@ func TestInferOpenEscapeParam(t *testing.T) {
 					return 1
 				}
 			`,
-			seen: "Map<string, number>",
+			seen: "Map<never, never>",
+			errs: []string{rememberIntoSeen("3:31-3:35", "number")},
 		},
 	}
 	for _, tt := range tests {
@@ -506,50 +516,9 @@ func TestInferOpenEscapeParam(t *testing.T) {
 	}
 }
 
-// DISABLED until #2352, which keeps a function monomorphic when its parameter flows into a weak
-// binding. Today remember renders each such parameter as `unknown`, since seen's weak variable
-// holds the type the parameter's borrow points to and remember is coalesced as if it were generic.
-/*
-func TestInferOpenEscapeParamRendering(t *testing.T) {
-	tests := []struct {
-		name string
-		src  string
-		want string
-	}{
-		{
-			name: "ReadOnlyIsStaticBorrow",
-			src: `
-				val mut seen = Map()
-				fn remember(value) { seen.set("last", value) }
-				fn go() -> number {
-					val opts = {retries: 3}
-					remember(&opts)
-					return opts.retries
-				}
-			`,
-			want: "fn (value: &'static {retries: 3}) -> undefined",
-		},
-		{
-			name: "ValueTypeArgumentsCopy",
-			src: `
-				val mut seen = Map()
-				fn remember(key, value) { seen.set(key, value) }
-				fn go() -> number {
-					val k = "a"
-					remember(k, 3)
-					remember("b", 4)
-					return 1
-				}
-			`,
-			want: `fn (key: &'static ("a" | "b"), value: &'static (3 | 4)) -> undefined`,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			values, errs := inferAgainstTreeWithSpans(t, tt.src)
-			require.Empty(t, errs)
-			require.Equal(t, tt.want, values["remember"])
-		})
-	}
+// rememberIntoSeen returns the error that remember's parameter flowing into `seen` reports at
+// span. key is the key type the error's example annotation shows.
+func rememberIntoSeen(span, key string) string {
+	return span + ": a parameter of 'remember' flows into 'seen', whose type is not known yet. " +
+		"Write the type of 'seen', as in `val mut seen: Map<" + key + ", number> = Map()`."
 }
-*/

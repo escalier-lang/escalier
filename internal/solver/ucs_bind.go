@@ -158,8 +158,8 @@ func (c *checker) newPathBinder(lvl int, blame ast.Node, root *ucs.Scrutinee, ro
 // to a scrutinee variable, as a literal pattern adds its literal. Two kinds of variable are
 // shared with other readers, which would each see those bounds:
 //   - the binding var of a weak binding, as weakBindingVars describes, and
-//   - a variable outside lvl, such as the element of a weak module-level
-//     `val o = mk(5)` that `match o[0] { … }` reads inside a function.
+//   - a variable outside lvl, such as the argument of a weak module-level
+//     `val o = Box(5)` that `match o.value { … }` reads inside a function.
 //
 // Such a t is returned as a fresh variable at lvl bounded below by t, which takes the
 // bounds instead. Any other t is returned unchanged. blame is the node the bound between

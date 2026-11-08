@@ -273,38 +273,6 @@ func TestFlowLifetimeEscapingParamMoves(t *testing.T) {
 	})
 }
 
-// DISABLED until #2352. `seen` does not generalize, so its value type is one weak variable that
-// `remember` and every caller share. `seen` holds `&'static {retries: number}`, since its values
-// are writable slots. `remember` renders as `fn (value: unknown) -> undefined`. #2352 keeps it
-// monomorphic over the same variable, so `remember` shows the type `seen` holds.
-/*
-func TestFlowLifetimeEscapingReadOnlyParam(t *testing.T) {
-	runFlowLifetimeCases(t, []flowLifetimeCase{
-		// F3 and D9. `seen` is a `Map` whose value type is inferred, so its type leaves the
-		// ownership of `value` open. The body never writes `value`, so the parameter is a
-		// `'static` borrow and `opts` stays readable after the call.
-		{
-			name: "D9/ReadOnlyEscapeIsStaticBorrow",
-			src: `
-				val mut seen = Map()
-
-				fn remember(value) { seen.set("last", value) }
-
-				fn go() -> number {
-					val opts = {retries: 3}
-					remember(&opts)
-					return opts.retries
-				}
-			`,
-			values: map[string]string{
-				"remember": "fn (value: &'static {retries: number}) -> undefined",
-				"seen":     "Map<string, &'static {retries: number}>",
-			},
-		},
-	})
-}
-*/
-
 // TestFlowLifetimeStaticBorrow covers a write to a place a `'static` borrow reaches.
 func TestFlowLifetimeStaticBorrow(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{

@@ -460,6 +460,9 @@ func (c *checker) resolveIdentPath(scope *Scope, lvl int, e *ast.IdentExpr, objP
 		}
 		t := c.bindingValue(lvl, b)
 		c.noteOuterRead(e, t)
+		if b.Weak && b.ModuleLevel {
+			c.weakRefs = append(c.weakRefs, weakRef{use: e, binding: b})
+		}
 		// A bare `self` that leaves the body, as in `return self` or `f(self)`, is an
 		// instance of the class. The structural view shares the class body's own element
 		// pointers, so letting it escape into a member's inferred signature would make the
@@ -1110,6 +1113,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// with no body to recurse through, so only a body-carrying function is queued. The check itself
 	// waits until the enclosing group's bound graph is complete, since a mutually-recursive knot is
 	// not tied until every body in the group has been walked.
+	if fn, isFunc := node.(ast.Func); isFunc && hasBody {
+		ft.Pure = c.capturesNoState(scope, fn)
+	}
 	if hasBody {
 		c.queueReturnCheck(node, ft, lvl-1, memberName)
 		c.queueCallOnlyChecks(callOnlyParams, ft)

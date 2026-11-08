@@ -724,10 +724,11 @@ func (c *checker) checkExcessLiteralMembers(e ast.Expr, sub, annT soltype.Type) 
 // owns the recursive top-level path of a module (see inferDeclDef). ok=false when there
 // is no initializer.
 //
-// A declaration that does not generalize, as generalizes decides, infers its initializer
-// at lvl instead. Its variables are then weak, so generalizing at lvl quantifies none of
-// them. Each use of the binding shares them, and the enclosing function quantifies them
-// when it generalizes.
+// A declaration weakAtDecl reports infers its initializer at lvl instead. Its variables are
+// then weak, so generalizing at lvl quantifies none of them. Each use of the binding shares
+// them, and the enclosing function quantifies them when it generalizes. A relaxed
+// declaration, as relaxes reports, infers its initializer at lvl+1, and lowerStoringVars
+// then makes weak only the variables its value can store.
 //
 // self is the variable a recursive reference in the initializer reads, or nil when the
 // initializer cannot name the binding. The caller binds self in scope at level lvl+1
@@ -735,7 +736,7 @@ func (c *checker) checkExcessLiteralMembers(e ast.Expr, sub, annT soltype.Type) 
 // each recursive use constrains the binding's own type.
 func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl, self *soltype.TypeVarType) (ValueBinding, bool) {
 	initLvl := lvl + 1
-	if !generalizes(d) {
+	if weakAtDecl(d) {
 		initLvl = lvl
 	}
 	firstVar := c.ctx.varCounter
@@ -777,8 +778,13 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl, self *solt
 		// captured. A reassignment of k that wrote into it would change f's signature.
 		initVars = &varIDRange{lo: firstVar, hi: c.ctx.varCounter}
 	}
+	weak := initLvl == lvl
+	// A relaxed binding is weak only in the variables its value can store.
+	if relaxes(d) && c.lowerStoringVars(bound, lvl) {
+		weak = true
+	}
 	scheme := c.generalize(bound, lvl)
-	if initLvl == lvl {
+	if weak {
 		c.noteWeakLocal(d, scheme, varRange{from: firstVar, to: c.ctx.varCounter})
 	}
 	// The recorded display type retains any quantified type-parameter vars (it is
@@ -793,7 +799,7 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl, self *solt
 		Sources:  []provenance.Provenance{&ast.NodeProvenance{Node: d}},
 		Kind:     d.Kind,
 		Mut:      isMutableIdentPat(d.Pattern),
-		Weak:     initLvl == lvl,
+		Weak:     weak,
 		InitVars: initVars,
 	}, true
 }

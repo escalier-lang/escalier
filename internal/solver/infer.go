@@ -102,9 +102,11 @@ type checker struct {
 	// node it names.
 	varIDs *liveness.VarIDs
 
-	// closureCaptureInfo holds the captures each closure's pre-pass found, keyed by the
-	// closure. The pre-pass defines a captured local as a parameter of the closure's body, so
-	// the closure's AST no longer marks it as captured once the pre-pass has run.
+	// closureCaptureInfo holds the captures each function's pre-pass found, keyed by the
+	// function. The pre-pass defines a captured local as a parameter of the closure's body, so
+	// the closure's AST no longer marks it as captured once the pre-pass has run. For a
+	// function written outside any body, it holds every module-level or prelude name the
+	// function and the functions nested in it read or write.
 	closureCaptureInfo map[ast.Func][]liveness.CaptureInfo
 
 	// moduleCaptures holds the module-level bindings each function written outside any body
@@ -257,6 +259,10 @@ type checker struct {
 	// generalized binding gives each read a fresh copy. A module walk starts its own set
 	// and puts the previous one back when it ends.
 	weakBindingVars set.Set[*soltype.TypeVarType]
+
+	// weakRefs lists each read of a weak module-level binding, in the order the walk made
+	// them. A module walk starts its own list and puts the previous one back when it ends.
+	weakRefs []weakRef
 
 	// fileScopes holds one scope per file of the module being inferred, keyed by
 	// source id, each carrying that file's import bindings.
