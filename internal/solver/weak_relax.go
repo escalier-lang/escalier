@@ -44,20 +44,23 @@ func weakAtDecl(d *ast.VarDecl) bool {
 //   - a generator.
 //
 // Only a position that produces a value counts. A function the value accepts as an
-// argument is not held by the value, so its own state does not matter.
+// argument is not held by the value, so its own state does not matter. A type alias is
+// read through its body. An alias whose body is not resolved yet counts as a position that
+// can store a value.
 func (c *checker) lowerStoringVars(t soltype.Type, lvl int) bool {
 	s := &storingVarScanner{
-		ctx:     c.ctx,
-		lvl:     lvl,
-		seen:    set.NewSet[storingVisit](),
-		binders: set.NewSet[*soltype.TypeVarType](),
-		out:     set.NewSet[*soltype.TypeVarType](),
+		ctx:      c.ctx,
+		lvl:      lvl,
+		seen:     set.NewSet[storingVisit](),
+		expanded: set.NewSet[storingAlias](),
+		binders:  set.NewSet[*soltype.TypeVarType](),
+		out:      set.NewSet[*soltype.TypeVarType](),
 	}
 	t.Accept(s, soltype.Positive)
 	if s.out.Len() == 0 {
 		return false
 	}
-	l := &varLowerer{lvl: lvl, binders: s.binders}
+	l := &varLowerer{ctx: c.ctx, lvl: lvl, binders: s.binders}
 	for _, v := range s.out.ToSlice() {
 		l.lower(v)
 	}
@@ -72,6 +75,14 @@ type storingVisit struct {
 	storing bool
 }
 
+// storingAlias is an alias reached at one polarity, inside or outside a position that can
+// store a value.
+type storingAlias struct {
+	name    string
+	pol     soltype.Polarity
+	storing bool
+}
+
 // storingVarScanner is the visitor behind lowerStoringVars. storing marks a walk inside a
 // position that can store a value, where every variable above lvl it reaches goes in out.
 type storingVarScanner struct {
@@ -79,6 +90,9 @@ type storingVarScanner struct {
 	lvl     int
 	storing bool
 	seen    set.Set[storingVisit]
+	// expanded holds each alias whose body the walk has read, so a recursive alias is read
+	// once.
+	expanded set.Set[storingAlias]
 	// binders holds the type-parameter variables of each function type the walk entered.
 	// The function quantifies them, so they are never moved.
 	binders set.Set[*soltype.TypeVarType]
@@ -137,6 +151,22 @@ func (s *storingVarScanner) EnterType(t soltype.Type, pol soltype.Polarity) solt
 	case *soltype.ClassType:
 		s.classArgs(t, pol)
 		return soltype.EnterResult{SkipChildren: true}
+	case *soltype.AliasType:
+		key := storingAlias{name: t.Name, pol: pol, storing: s.storing}
+		if s.expanded.Contains(key) {
+			return soltype.EnterResult{SkipChildren: true}
+		}
+		s.expanded.Add(key)
+		body, ok := s.ctx.aliasBody(t)
+		if !ok {
+			for _, arg := range t.TypeArgs {
+				s.storingFrom(arg, pol)
+				s.storingFrom(arg, pol.Flip())
+			}
+			return soltype.EnterResult{SkipChildren: true}
+		}
+		body.Accept(s, pol)
+		return soltype.EnterResult{SkipChildren: true}
 	}
 	return soltype.EnterResult{}
 }
@@ -145,9 +175,10 @@ func (s *storingVarScanner) ExitType(t soltype.Type, _ soltype.Polarity) soltype
 
 // classArgs walks each type argument of ct at the polarity the class's variance gives it.
 // An argument MutVariance makes invariant is walked as a position that can store a value,
-// at both polarities.
+// at both polarities. A class whose variance is not settled yet reads as invariant in every
+// argument.
 func (s *storingVarScanner) classArgs(ct *soltype.ClassType, pol soltype.Polarity) {
-	def, _ := s.ctx.classDef(ct.Name)
+	def, _ := s.ctx.settledClassDef(ct.Name)
 	for i, arg := range ct.TypeArgs {
 		switch {
 		case def.varianceAt(i, true) == Invariant:
@@ -176,6 +207,7 @@ func hasAccessor(obj *soltype.ObjectType) bool {
 // varLowerer moves variables to lvl. A variable at lvl may only have bounds that mention
 // variables at lvl or below, so moving one also moves every variable its bounds reach.
 type varLowerer struct {
+	ctx *Context
 	lvl int
 	// binders holds the type-parameter variables of the function types lowerStoringVars
 	// walked. A function quantifies its own, so they are never moved.
@@ -187,6 +219,7 @@ func (l *varLowerer) lower(v *soltype.TypeVarType) {
 	if v.Level <= l.lvl || l.binders.Contains(v) {
 		return
 	}
+	l.ctx.checkThawed(v, "lowerStoringVars")
 	v.Level = l.lvl
 	for _, b := range v.LowerBounds {
 		b.Accept(l, soltype.Positive)
@@ -215,7 +248,8 @@ func (l *varLowerer) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type {
 // can change. It holds none when it captures no `var`, no `mut` binding, and no value that
 // may hold state, as mayHoldState decides, and writes no place it captures. The captures
 // count those of the functions nested in fn. A function whose captures the pre-pass did
-// not record counts as holding state.
+// not record counts as holding state, and so does one that captures a binding of the
+// module component being inferred, since that binding's type is not known yet.
 func (c *checker) capturesNoState(scope *Scope, fn ast.Func) bool {
 	captures, ok := c.closureCaptureInfo[fn]
 	if !ok {
@@ -237,8 +271,11 @@ func (c *checker) capturesNoState(scope *Scope, fn ast.Func) bool {
 		if !found || b.Kind == ast.VarKind || b.Mut {
 			return false
 		}
+		if c.isPendingBinding(b) {
+			return false
+		}
 		for _, sc := range b.Schemes {
-			if c.mayHoldState(b, sc) {
+			if c.mayHoldState(sc) {
 				return false
 			}
 		}
@@ -246,13 +283,12 @@ func (c *checker) capturesNoState(scope *Scope, fn ast.Func) bool {
 	return true
 }
 
-// mayHoldState reports whether a value of sc, one scheme of the binding b, may hold state
-// a call can change. A value does when it reaches a function type not marked Pure, a
-// `&mut` borrow, a getter, a setter, or a generator. A variable reaches what its lower and
-// upper bounds reach, since either side can say what the value is. A function in the
-// component being inferred is still a bare variable with no lower bound, so a binding a
-// `fn` declaration made counts as holding state until it has a lower bound.
-func (c *checker) mayHoldState(b ValueBinding, sc TypeScheme) bool {
+// mayHoldState reports whether a value of sc, one scheme of a binding, may hold state a
+// call can change. A value does when it reaches a function type not marked Pure, a `&mut`
+// borrow, a class instance, a getter, a setter, or a generator. A variable reaches what
+// its lower and upper bounds reach, since either side can say what the value is, and an
+// alias reaches what its body reaches.
+func (c *checker) mayHoldState(sc TypeScheme) bool {
 	var t soltype.Type
 	switch sc := sc.(type) {
 	case *MonoScheme:
@@ -262,21 +298,38 @@ func (c *checker) mayHoldState(b ValueBinding, sc TypeScheme) bool {
 	default:
 		return true
 	}
-	if v, isVar := t.(*soltype.TypeVarType); isVar && len(v.LowerBounds) == 0 {
-		if _, isFunc := bindingDecl(b).(*ast.FuncDecl); isFunc {
-			return true
-		}
+	f := &stateFinder{
+		ctx:      c.ctx,
+		seen:     set.NewSet[*soltype.TypeVarType](),
+		expanded: set.NewSet[string](),
 	}
-	f := &stateFinder{seen: set.NewSet[*soltype.TypeVarType]()}
 	t.Accept(f, soltype.Positive)
 	return f.found
+}
+
+// isPendingBinding reports whether b is a binding of the module component being inferred,
+// which reads as its bare binding var until the component is.
+func (c *checker) isPendingBinding(b ValueBinding) bool {
+	if len(b.Schemes) != 1 {
+		return false
+	}
+	mono, isMono := b.Schemes[0].(*MonoScheme)
+	if !isMono {
+		return false
+	}
+	v, isVar := mono.Ty.(*soltype.TypeVarType)
+	return isVar && c.pendingBindingVars.Contains(v)
 }
 
 // stateFinder is the visitor behind mayHoldState. It sets found on reaching a type that may
 // hold state.
 type stateFinder struct {
-	seen  set.Set[*soltype.TypeVarType]
-	found bool
+	ctx  *Context
+	seen set.Set[*soltype.TypeVarType]
+	// expanded holds the name of each alias whose body the walk has read, so a recursive
+	// alias is read once.
+	expanded set.Set[string]
+	found    bool
 }
 
 func (f *stateFinder) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
@@ -306,8 +359,20 @@ func (f *stateFinder) EnterType(t soltype.Type, _ soltype.Polarity) soltype.Ente
 			f.found = true
 			return soltype.EnterResult{SkipChildren: true}
 		}
-	case *soltype.GeneratorType:
+	case *soltype.GeneratorType, *soltype.ClassType:
+		// A class instance's fields and methods are not in its type, so it may hold state.
 		f.found = true
+		return soltype.EnterResult{SkipChildren: true}
+	case *soltype.AliasType:
+		if f.expanded.Contains(t.Name) {
+			return soltype.EnterResult{SkipChildren: true}
+		}
+		f.expanded.Add(t.Name)
+		body, ok := f.ctx.aliasBody(t)
+		f.found = !ok
+		if ok {
+			body.Accept(f, soltype.Positive)
+		}
 		return soltype.EnterResult{SkipChildren: true}
 	case *soltype.ObjectType:
 		if hasAccessor(t) {

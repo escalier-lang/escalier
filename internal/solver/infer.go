@@ -260,9 +260,15 @@ type checker struct {
 	// and puts the previous one back when it ends.
 	weakBindingVars set.Set[*soltype.TypeVarType]
 
-	// weakRefs lists each read of a weak module-level binding, in the order the walk made
-	// them. A module walk starts its own list and puts the previous one back when it ends.
-	weakRefs []weakRef
+	// weakReads lists each read of a module-level binding that is weak or that belongs to the
+	// component being inferred, in the order the walk made them. A module walk starts its own
+	// list and puts the previous one back when it ends.
+	weakReads []*ast.IdentExpr
+
+	// pendingBindingVars holds the binding var of each value binding of the module component
+	// being inferred. The binding reads as that bare variable until the component's phase 3
+	// binds it to its scheme.
+	pendingBindingVars set.Set[*soltype.TypeVarType]
 
 	// fileScopes holds one scope per file of the module being inferred, keyed by
 	// source id, each carrying that file's import bindings.

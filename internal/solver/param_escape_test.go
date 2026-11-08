@@ -516,6 +516,55 @@ func TestInferOpenEscapeParam(t *testing.T) {
 	}
 }
 
+// TestInferOpenEscapeParamRendering covers how remember renders when its parameters flow
+// into the weak `seen`. D18 reports that seen needs a written type, and remember's calls
+// then decide nothing about its parameters, so each renders as `unknown`.
+func TestInferOpenEscapeParamRendering(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+		errs []string
+	}{
+		{
+			name: "ReadOnlyIsStaticBorrow",
+			src: `
+				val mut seen = Map()
+				fn remember(value) { seen.set("last", value) }
+				fn go() -> number {
+					val opts = {retries: 3}
+					remember(&opts)
+					return opts.retries
+				}
+			`,
+			want: "fn (value: unknown) -> undefined",
+			errs: []string{rememberIntoSeen("3:26-3:30", "string")},
+		},
+		{
+			name: "ValueTypeArgumentsCopy",
+			src: `
+				val mut seen = Map()
+				fn remember(key, value) { seen.set(key, value) }
+				fn go() -> number {
+					val k = "a"
+					remember(k, 3)
+					remember("b", 4)
+					return 1
+				}
+			`,
+			want: "fn (key: unknown, value: unknown) -> undefined",
+			errs: []string{rememberIntoSeen("3:31-3:35", "number")},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, errs := inferAgainstTreeWithSpans(t, tt.src)
+			require.Equal(t, tt.errs, errs)
+			require.Equal(t, tt.want, values["remember"])
+		})
+	}
+}
+
 // rememberIntoSeen returns the error that remember's parameter flowing into `seen` reports at
 // span. key is the key type the error's example annotation shows.
 func rememberIntoSeen(span, key string) string {

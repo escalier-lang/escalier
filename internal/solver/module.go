@@ -241,15 +241,15 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	prevOwners := c.symbolOwners
 	c.symbolOwners = symbolOwners(module, g)
 	prevWeak, prevReaders, prevLocals, prevWeakVars := c.weakBindings, c.weakReaders, c.weakLocals, c.weakBindingVars
-	prevRefs := c.weakRefs
-	c.weakBindings, c.weakReaders, c.weakLocals, c.weakRefs = nil, nil, nil, nil
+	prevReads := c.weakReads
+	c.weakBindings, c.weakReaders, c.weakLocals, c.weakReads = nil, nil, nil, nil
 	c.weakBindingVars = set.NewSet[*soltype.TypeVarType]()
 	defer func() {
 		target.onDefine = prevOnDefine
 		c.nsIndex = nil
 		c.symbolOwners = prevOwners
 		c.weakBindings, c.weakReaders, c.weakLocals, c.weakBindingVars = prevWeak, prevReaders, prevLocals, prevWeakVars
-		c.weakRefs = prevRefs
+		c.weakReads = prevReads
 	}()
 	// M4 E3: dep_graph fans one top-level destructuring `val {x, y} = …` across one
 	// SCC component per leaf key. Its initializer is typed and its pattern bound
@@ -444,9 +444,8 @@ type componentBinding struct {
 	// relaxed marks a `val` that relaxes reports. Phase 3 decides which of its variables
 	// are weak.
 	relaxed bool
-	// weakRefs lists each read of a weak module-level binding that the binding's
-	// definitions make.
-	weakRefs []weakRef
+	// weakReads lists the reads the binding's definitions make that c.weakReads lists.
+	weakReads []*ast.IdentExpr
 	// signatureBound marks an overload set whose arms are ALL fully annotated, so phase
 	// 1 could build their signatures body-free and pre-bind the whole set in scope.
 	// b.arms then holds those signature types. A reference WITHIN the component — a
@@ -574,6 +573,10 @@ func (c *checker) inferComponent(
 		if weak {
 			c.weakBindingVars.Add(v)
 		}
+		if c.pendingBindingVars == nil {
+			c.pendingBindingVars = set.NewSet[*soltype.TypeVarType]()
+		}
+		c.pendingBindingVars.Add(v)
 		bindings[key] = &componentBinding{v: v, weak: weak, relaxed: relaxed}
 		// Pre-bind the binding var as a MonoScheme so a mutually-recursive reference
 		// resolves through the var itself (instantiate returns it unchanged) before
@@ -867,9 +870,9 @@ func (c *checker) inferComponent(
 			// namespace down for inferClassDecl to reconstruct it. Every other decl
 			// kind ignores it.
 			firstVar := c.ctx.varCounter
-			firstRef := len(c.weakRefs)
+			firstRead := len(c.weakReads)
 			t, src, ok := c.inferDeclDef(c.lookupScope(scope, d), declLevel(d, lvl), d, g.GetNamespace(key))
-			b.weakRefs = append(b.weakRefs, c.weakRefs[firstRef:]...)
+			b.weakReads = append(b.weakReads, c.weakReads[firstRead:]...)
 			if !ok {
 				continue
 			}
@@ -1010,6 +1013,9 @@ func (c *checker) inferComponent(
 	// destructuring, unsupported kind) is removed rather than left as a `never`
 	// placeholder, matching PR-2: a later reference to it is then a genuine
 	// unknown-identifier error instead of resolving to a stray binding.
+	//
+	// generalized holds the scheme each binding that is not an overload set generalized to.
+	generalized := map[dep_graph.BindingKey]TypeScheme{}
 	for _, key := range component {
 		b, isValue := bindings[key]
 		if !isValue {
@@ -1093,11 +1099,9 @@ func (c *checker) inferComponent(
 		if b.recovered && len(b.v.LowerBounds) == 0 {
 			scheme = &MonoScheme{Ty: &soltype.ErrorType{}}
 		} else {
-			if !b.weak {
-				c.checkWeakInflow(b, key.Name(), lvl)
-			}
 			scheme = c.generalize(b.v, lvl)
 		}
+		generalized[key] = scheme
 		scope.defineValue(key.Name(), ValueBinding{Schemes: []TypeScheme{scheme}, Sources: b.sources, Kind: b.kind, Mut: b.mut, ModuleLevel: true, Weak: b.weak})
 		// Record the binding's final (coalesced) DISPLAY type in Info on infoNode, so
 		// it is queryable even for a `val` in a recursive group (where coalescing at
@@ -1119,6 +1123,18 @@ func (c *checker) inferComponent(
 			c.noteWeakBinding(b, scheme)
 		} else {
 			c.noteWeakReader(b, scheme, lvl)
+		}
+	}
+	// Every weak binding of the component is noted now, so the check also finds a parameter
+	// that flows into a weak binding of the same component.
+	for _, key := range component {
+		b, isValue := bindings[key]
+		if !isValue {
+			continue
+		}
+		c.pendingBindingVars.Remove(b.v)
+		if sc, isPoly := generalized[key].(*PolyScheme); isPoly && !b.weak {
+			c.checkWeakInflow(b, key.Name(), sc, lvl)
 		}
 	}
 }

@@ -1841,7 +1841,9 @@ A weak binding used directly settles from that use, as `seen` does from
 different. The function generalizes, so each of its calls would pick a type for
 the parameter, and unrelated calls would decide the weak binding's type. The
 checker reports an error that asks for a written type on the weak binding
-instead, pointing at the binding's use inside the function:
+instead. It points at the binding's use inside the function, or at the
+function's name when the function reaches the binding only through another
+one:
 
 ```esc
 val g = makeCell()

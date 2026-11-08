@@ -771,6 +771,61 @@ fn f() {
 `,
 			values: map[string]string{"f": `fn () -> [1 | "a" | undefined, 1 | "a" | undefined]`},
 		},
+		{
+			// The alias names a function type, which may hold state like the one it stands
+			// for.
+			name: "AFunctionTypeBehindAnAliasStaysWeak",
+			src: `
+type Cell<T> = fn (x: T) -> T
+declare fn mk<T>() -> Cell<T>
+val g = mk()
+fn h() { return g(1) }
+`,
+			values: map[string]string{"g": "Cell<1>"},
+		},
+		{
+			// A class instance's fields are not in its type, so a closure that captures one
+			// may hold state.
+			name: "AClosureThatCapturesAClassInstanceStaysWeak",
+			src: `
+class Holder { tag: string }
+fn makeHeld() {
+	val held = Holder("t")
+	return fn (x) {
+		val t = held.tag
+		return x
+	}
+}
+val g = makeHeld()
+fn h() { return g(1) }
+`,
+			values: map[string]string{"g": "fn (x: 1) -> 1"},
+		},
+		{
+			// h reads g only through getG, so the error points at h's name.
+			name: "AParameterThatReachesAWeakBindingThroughAnotherFunction",
+			src: makeCellSrc + `
+val g = makeCell()
+fn getG() { return g }
+fn h(y) { return getG()(y) }
+`,
+			want: []string{
+				"13:4-13:5: a parameter of 'h' flows into 'g', whose type is not known yet. Write the type of 'g', as in `val g: fn (x: number) -> number | undefined = makeCell()`.",
+			},
+		},
+		{
+			// g and h read each other, so they are inferred together, and g's variables
+			// become weak only once both are.
+			name: "AParameterThatFlowsIntoAWeakBindingOfTheSameComponent",
+			src: makeCellSrc + `
+fn makeCellFor(f) { return makeCell() }
+val g = makeCellFor(h)
+fn h(y) { return g(y) }
+`,
+			want: []string{
+				"13:18-13:19: a parameter of 'h' flows into 'g', whose type is not known yet. Write the type of 'g', as in `val g: fn (x: number) -> number | undefined = makeCellFor(h)`.",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
