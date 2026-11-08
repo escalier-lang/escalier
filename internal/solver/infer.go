@@ -137,9 +137,12 @@ type checker struct {
 	pendingCallOnly []callOnlyCheck
 	// tentativeClosures maps the retention lifetime of each closure that holds a borrow only if
 	// a captured binding's type settles to something other than a value type, to the type
-	// variables of those bindings. setClosureRetention fills it, and dropSettledFuncEscapes
-	// reads it.
+	// variables of those bindings. setClosureRetention fills it, and
+	// settleTentativeFuncEscapes reads it.
 	tentativeClosures map[*soltype.LifetimeVar][]*soltype.TypeVarType
+	// heldFuncEscapes holds each FuncBorrowEscapeError holdTentativeFuncEscape kept back, for
+	// settleTentativeFuncEscapes to decide.
+	heldFuncEscapes []heldFuncEscape
 	// deferredBodies holds, for each `async` or `gen` body being walked, the phrase
 	// deferredBody returns for it, outermost first.
 	deferredBodies []string
@@ -1047,6 +1050,9 @@ func (c *checker) blameConstraintErrors(n ast.Node, errs []SolverError) {
 			err.prov, err.site = c.prov, n
 		case *FuncBorrowEscapeError:
 			err.prov, err.site = c.prov, n
+			if c.holdTentativeFuncEscape(err) {
+				continue
+			}
 		case *ClassIntoExactObjectError:
 			err.prov, err.site = c.prov, n
 		case *StructuralIntoClassError:

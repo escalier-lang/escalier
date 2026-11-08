@@ -163,6 +163,73 @@ fn mk(x: number) -> fn () -> undefined { return fn () {} }`,
 			binding: "counter",
 			want:    "fn () -> fn () -> number",
 		},
+		// A closure returned from a returned closure borrows what the returned closure took, which
+		// every call of it shares, so it keeps its lifetime.
+		{
+			name: "closure returned from a returned closure",
+			src: `fn outer() {
+    val x = {n: 1}
+    return fn () { return fn () { return x.n } }
+}`,
+			binding: "outer",
+			want:    "fn () -> fn () -> &fn () -> 1",
+		},
+		// A returned closure takes a local closure it captures, along with what that closure
+		// borrows.
+		{
+			name: "returned closure that captures a local closure",
+			src: `fn outer() {
+    val x = {n: 1}
+    val inner = fn () { return x.n }
+    return fn () { return inner }
+}`,
+			binding: "outer",
+			want:    "fn () -> fn () -> &fn () -> 1",
+		},
+		{
+			name: "returned local that joins two closures",
+			src: `fn mk(c: boolean) {
+    val o = {x: 1}
+    val a = fn () { return o.x }
+    val b = fn () { return 2 }
+    val h = if c { a } else { b }
+    return h
+}`,
+			binding: "mk",
+			want:    "fn (c: boolean) -> (fn () -> 1) | (fn () -> 2)",
+		},
+		{
+			name: "returned local that joins a closure and a value",
+			src: `fn mk(c: boolean) {
+    val o = {x: 1}
+    val a = fn () { return o.x }
+    val h = if c { a } else { 5 }
+    return h
+}`,
+			binding: "mk",
+			want:    "fn (c: boolean) -> (&fn () -> 1) | 5",
+		},
+		{
+			name: "returned local that joins a closure and a retained parameter",
+			src: `fn mk(c: boolean, g: &fn () -> number) {
+    val o = {x: 1}
+    val a = fn () { return o.x }
+    val h = if c { a } else { g }
+    return h
+}`,
+			binding: "mk",
+			want:    "fn <'a>(c: boolean, g: &'a fn () -> number) -> (fn () -> 1) | (&'a fn () -> number)",
+		},
+		{
+			name: "returned object that holds a closure",
+			src: `fn mk() {
+    val o = {x: 1}
+    val f = fn () { return o.x }
+    return {cb: f, n: 1}
+}`,
+			binding: "mk",
+			want:    "fn () -> {cb: fn () -> 1, n: 1}",
+		},
 		// A call only runs its callee, so an unannotated parameter that is only called takes a
 		// function that may hold borrows.
 		{
@@ -825,6 +892,61 @@ fn setup() {
     return n + 1
 }`,
 			want: []string{"4:10-4:40: " + intoPlain},
+		},
+		{
+			name: "local joining an unannotated parameter's closure and a retained parameter",
+			src: keepAndRun + `fn setup(c: boolean, n, g: &fn () -> undefined) {
+    val a = fn () { console.log(n) }
+    val h = if c { a } else { g }
+    keep(h)
+    return n + 1
+}`,
+			want: []string{"6:10-6:11: " + intoPlain},
+		},
+		// Both sources fail at the same span, and the message is reported once.
+		{
+			name: "local joining an object parameter's closure and a retained parameter",
+			src: keepAndRun + `fn setup(c: boolean, n, g: &fn () -> undefined) {
+    val a = fn () { console.log(n) }
+    val h = if c { a } else { g }
+    keep(h)
+    return n.x
+}`,
+			want: []string{"6:10-6:11: " + intoPlain},
+		},
+		{
+			name: "closure that captures an unannotated parameter kept through a static result",
+			src: keepAndRun + `declare fn hold(cb: &'static fn () -> undefined) -> &'static fn () -> undefined
+fn setup(n) {
+    keep(hold(fn () { console.log(n) }))
+    return n + 1
+}`,
+			want: []string{"3:53-3:80: " + intoPlain},
+		},
+		// A closure takes only the locals of the body that returns it. One returned from mk
+		// still borrows o, which belongs to setup.
+		{
+			name: "closure returned from a local closure",
+			src: keepAndRun + `fn setup() {
+    val mut o = {x: 1}
+    val mk = fn () { return fn () { o.x = 2 } }
+    keep(mk())
+}`,
+			want: []string{"6:10-6:14: " + intoPlain},
+		},
+		{
+			name: "returned closure and the closure it returns",
+			src: `declare fn keepAny(cb: fn () -> unknown) -> undefined
+fn outer() {
+    val x = {n: 1}
+    val inner = fn () { console.log(x.n) }
+    return fn () { return inner }
+}
+fn setup() {
+    keepAny(outer())
+    keepAny(outer()())
+}`,
+			want: []string{"9:13-9:22: this function may hold borrows, so it cannot be used as `fn () -> unknown`, which holds none; write `&fn () -> unknown` to accept it"},
 		},
 		{
 			name: "plain parameter kept in every position",

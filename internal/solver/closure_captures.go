@@ -96,7 +96,7 @@ func (c *checker) recordClosureCaptures(scope *Scope, closure ast.Func) {
 // A `val` binding whose type is still a type variable, such as an unannotated parameter, may
 // turn out to hold a value type or an object. The closure takes a lifetime for it, and the
 // lifetime joins tentativeClosures with the variables still undecided, for
-// dropSettledFuncEscapes to read once they settle.
+// settleTentativeFuncEscapes to read once they settle.
 //
 // When each borrow the closure holds is of a local of the body it is written in, the lifetime
 // joins that body's frameClosures, for ownReturnedClosures to read.
@@ -136,13 +136,16 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 		// Instantiating a generalized binding mints fresh variables, so a binding whose type
 		// holds no retained function is skipped before that. Instantiation keeps the shape of
 		// the type, so it cannot add one.
-		if body := schemeBody(b.Schemes[0]); body == nil || len(retentionLifetimes(body)) == 0 {
+		body := schemeBody(b.Schemes[0])
+		if body == nil || len(retentionLifetimes(body)) == 0 {
 			continue
 		}
+		// A returned closure takes a local closure of its body that it captures, along with
+		// what that closure borrows, so capturing one keeps the outer closure framed.
+		framed = framed && c.isFrameLocal(capture.Name, b) && c.holdsOnlyFrameClosures(body)
 		for _, lt := range retentionLifetimes(c.bindingValue(lvl, b)) {
 			retain()
 			c.ctx.constrainLt(lt, ft.Lt)
-			framed = false
 			definite = true
 		}
 	}
@@ -162,10 +165,29 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 
 // isFrameLocal reports whether b, the binding name resolves to, is a local of the body being
 // walked rather than of a body further out. Each body numbers its own locals, so the VarID of
-// an outer local either is missing from this body's names or names a different local here.
+// an outer local either is missing from this body's names or names a different local here. A
+// closure's body defines each of its captures as a parameter, so a capture is excluded too. A
+// capture belongs to the body the closure is written in, and every call of the closure shares
+// it.
 func (c *checker) isFrameLocal(name string, b ValueBinding) bool {
-	local, ok := c.fn.varIDNames[liveness.VarID(b.VarID)]
-	return ok && local == name
+	id := liveness.VarID(b.VarID)
+	local, ok := c.fn.varIDNames[id]
+	return ok && local == name && !c.fn.captureVarIDs.Contains(id)
+}
+
+// holdsOnlyFrameClosures reports whether every retention lifetime in t belongs to a closure in
+// the current body's frameClosures.
+func (c *checker) holdsOnlyFrameClosures(t soltype.Type) bool {
+	if c.fn.frameClosures == nil {
+		return false
+	}
+	for _, lt := range retentionLifetimes(t) {
+		v, isVar := lt.(*soltype.LifetimeVar)
+		if !isVar || !c.fn.frameClosures.Contains(v) {
+			return false
+		}
+	}
+	return true
 }
 
 // noteFrameClosureRead adds the retention lifetime of t, the value a read of b resolved to, to
@@ -223,6 +245,8 @@ func (v *returnedClosureOwner) EnterType(t soltype.Type, _ soltype.Polarity) sol
 			return soltype.EnterResult{Type: owned, SkipChildren: true}
 		}
 	case *soltype.FuncType:
+		// A function's result is left as it is. A closure that a returned closure returns
+		// borrows what the returned closure took, and every call of that closure shares it.
 		return soltype.EnterResult{Type: v.owned(t), SkipChildren: true}
 	}
 	return soltype.EnterResult{}
@@ -340,51 +364,93 @@ func (c *checker) funcMovesCaptures(decl ast.Node) bool {
 	return ok && len(c.capturesMovedBy[fn]) > 0
 }
 
-// dropSettledFuncEscapes removes each FuncBorrowEscapeError whose source holds a borrow only
-// through closures in tentativeClosures whose type variables all settled to value types. Such a
-// closure copies what it captures, so it holds no borrow. It must run once the enclosing
-// component has solved, since a use later in the body can settle a variable.
-func (c *checker) dropSettledFuncEscapes() {
-	if len(c.tentativeClosures) == 0 {
-		return
+// holdTentativeFuncEscape keeps err back from the diagnostics when its source holds a borrow
+// only through closures in tentativeClosures, and reports whether it did. Whether such a
+// closure holds a borrow is known only once its type variables settle, so
+// settleTentativeFuncEscapes decides err then. err is held before the diagnostics of one
+// constraint are deduplicated, since a held escape and a reported one can share a message and
+// a span.
+func (c *checker) holdTentativeFuncEscape(err *FuncBorrowEscapeError) bool {
+	closures, tentative := c.tentativeSources(err.Sub.Lt)
+	if !tentative {
+		return false
 	}
-	kept := c.errs[:0]
-	for _, e := range c.errs {
-		escape, isEscape := e.(*FuncBorrowEscapeError)
-		if !isEscape || !c.holdsOnlySettledCopies(escape.Sub.Lt) {
-			kept = append(kept, e)
-		}
-	}
-	c.errs = kept
+	c.heldFuncEscapes = append(c.heldFuncEscapes, heldFuncEscape{err: err, closures: closures})
+	return true
 }
 
-// holdsOnlySettledCopies reports whether every source of the retention lifetime lt is a closure
-// in tentativeClosures whose type variables all settled to value types. The walk follows the
-// lifetime an instantiation copied, the lifetime an extrusion proxied, and each lower bound. A
-// lifetime it reaches with none of those, such as a `&fn` parameter's or 'static, is a source
-// that may hold a borrow.
-func (c *checker) holdsOnlySettledCopies(lt soltype.Lifetime) bool {
+// heldFuncEscape is one FuncBorrowEscapeError holdTentativeFuncEscape kept back. closures holds
+// the retention lifetimes of the tentative closures its source holds a borrow through.
+type heldFuncEscape struct {
+	err      *FuncBorrowEscapeError
+	closures []*soltype.LifetimeVar
+}
+
+// settleTentativeFuncEscapes reports each held FuncBorrowEscapeError unless every closure its
+// source holds a borrow through has type variables that all settled to value types. Such a
+// closure copies what it captures, so it holds no borrow. An error that repeats the message
+// and span of one already reported is dropped. It must run once the enclosing component has
+// solved, since a use later in the body can settle a variable.
+func (c *checker) settleTentativeFuncEscapes() {
+	held := c.heldFuncEscapes
+	c.heldFuncEscapes = nil
+	for _, h := range held {
+		if c.closuresSettled(h.closures) || c.alreadyReported(h.err) {
+			continue
+		}
+		c.errs = append(c.errs, h.err)
+	}
+}
+
+// closuresSettled reports whether every type variable of each closure in closures settled to a
+// value type.
+func (c *checker) closuresSettled(closures []*soltype.LifetimeVar) bool {
+	for _, lt := range closures {
+		for _, v := range c.tentativeClosures[lt] {
+			if !settlesToValueType(v) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// alreadyReported reports whether a diagnostic with e's message and span is already reported.
+func (c *checker) alreadyReported(e SolverError) bool {
+	span, msg := e.Span(), e.Message()
+	for _, reported := range c.errs {
+		if reported.Span() == span && reported.Message() == msg {
+			return true
+		}
+	}
+	return false
+}
+
+// tentativeSources returns the closures in tentativeClosures that the retention lifetime lt
+// holds a borrow through, and whether those are its only sources. The walk follows the
+// lifetime an instantiation copied, the lifetime an extrusion proxied, and each lower bound.
+// A lifetime it reaches with none of those, such as a `&fn` parameter's or 'static, is a
+// source that holds a borrow whatever the closures settle to, so the result is false.
+func (c *checker) tentativeSources(lt soltype.Lifetime) ([]*soltype.LifetimeVar, bool) {
+	if len(c.tentativeClosures) == 0 {
+		return nil, false
+	}
 	seen := set.NewSet[*soltype.LifetimeVar]()
 	pending := []soltype.Lifetime{lt}
-	foundClosure := false
+	var closures []*soltype.LifetimeVar
 	for len(pending) > 0 {
 		cur := pending[len(pending)-1]
 		pending = pending[:len(pending)-1]
 		v, isVar := cur.(*soltype.LifetimeVar)
 		if !isVar {
-			return false
+			return nil, false
 		}
 		if seen.Contains(v) {
 			continue
 		}
 		seen.Add(v)
-		if vars, tentative := c.tentativeClosures[v]; tentative {
-			for _, tv := range vars {
-				if !settlesToValueType(tv) {
-					return false
-				}
-			}
-			foundClosure = true
+		if _, tentative := c.tentativeClosures[v]; tentative {
+			closures = append(closures, v)
 			continue
 		}
 		next := slices.Clone(v.LowerBounds)
@@ -395,11 +461,11 @@ func (c *checker) holdsOnlySettledCopies(lt soltype.Lifetime) bool {
 			next = append(next, copied)
 		}
 		if len(next) == 0 {
-			return false
+			return nil, false
 		}
 		pending = append(pending, next...)
 	}
-	return foundClosure
+	return closures, len(closures) > 0
 }
 
 // settlesToValueType reports whether every value v can hold is a value type, because one of

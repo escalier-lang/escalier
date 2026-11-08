@@ -159,7 +159,7 @@ func (c *checker) inferScriptIn(scope *Scope, script *ast.Script) (*Scope, *Info
 	c.checkCanReturn()
 	c.checkRigidLifetimes()
 	c.checkCallOnlyParams()
-	c.dropSettledFuncEscapes()
+	c.settleTentativeFuncEscapes()
 	// The script's top level is the outermost body, so every read off an inferred receiver
 	// it or its functions made is decided here.
 	c.pendingRecvReads = append(c.pendingRecvReads, c.fn.inferredRecvReads...)
