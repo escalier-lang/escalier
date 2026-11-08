@@ -379,6 +379,9 @@ type checker struct {
 	// it instantiates a copy of the variable, and the freshener adds that copy to
 	// readThroughVars.
 	readThroughLocals set.Set[*soltype.TypeVarType]
+	// unannotatedParamVars holds the variable inferFunc mints for each parameter with no
+	// written type.
+	unannotatedParamVars set.Set[*soltype.TypeVarType]
 
 	// memberSelf is set beside memberReceiver for an instance member, by inferMemberFunc, and
 	// carries what inferFunc needs to bind the member's `self` and build its SelfParam.

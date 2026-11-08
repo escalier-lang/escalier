@@ -982,7 +982,7 @@ func TestInferUnannotatedDestructuredParam(t *testing.T) {
 			},
 			sig: "fn <T0, 'a>(arg0: &'a [unknown, T0]) -> &'a T0",
 			gap: map[int]string{
-				1: "`p.1` lexes as `p` followed by the number literal `.1`, so the body returns p",
+				1: "`p.1` lexes as `p` followed by the number literal `.1`, so the body returns p. Tracked by #2579.",
 			},
 		},
 		{
@@ -1004,14 +1004,52 @@ func TestInferUnannotatedDestructuredParam(t *testing.T) {
 			moved: []int{0},
 		},
 		{
+			// A rest builds a new tuple whose elements are shared with the parameter, so
+			// returning it reads parts of the parameter, as returning a leaf does.
 			name: "TupleRestReturned",
-			srcs: []string{`fn f([x, ...rest]) { return rest }`},
-			sig:  "fn <'a>(arg0: &'a [unknown, ...]) -> &'a [...]",
+			srcs: []string{
+				`fn f([x, ...rest]) { return rest }`,
+				`fn f(p) {
+	val [x, ...rest] = p
+	return rest
+}`,
+			},
+			sig: "fn <'a>(arg0: &'a [unknown, ...]) -> &'a [...]",
 		},
 		{
+			name: "TupleRestOnlyReturned",
+			srcs: []string{
+				`fn f([...rest]) { return rest }`,
+				`fn f(p) {
+	val [...rest] = p
+	return rest
+}`,
+			},
+			sig: "fn <'a>(arg0: &'a [...]) -> &'a [...]",
+		},
+		{
+			// The parameter is inexact in both variants, since a rest admits the properties
+			// its fields do not name.
 			name: "ObjectRestReturned",
-			srcs: []string{`fn f({x, ...rest}) { return rest }`},
-			sig:  "fn <'a>(arg0: &'a {x: unknown, ...}) -> &'a {...}",
+			srcs: []string{
+				`fn f({x, ...rest}) { return rest }`,
+				`fn f(p) {
+	val {x, ...rest} = p
+	return rest
+}`,
+			},
+			sig: "fn <'a>(arg0: &'a {x: unknown, ...}) -> &'a {...}",
+		},
+		{
+			name: "ObjectRestOnlyReturned",
+			srcs: []string{
+				`fn f({...rest}) { return rest }`,
+				`fn f(p) {
+	val {...rest} = p
+	return rest
+}`,
+			},
+			sig: "fn <'a>(arg0: &'a {...}) -> &'a {...}",
 		},
 		{
 			// A `number` leaf copies out of the parameter, so storing it moves nothing.

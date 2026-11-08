@@ -25,10 +25,10 @@ import (
 // through either binds each leaf of its pattern as an alias, as `y` does in `val {y} = p`. Each
 // leaf of a destructuring parameter pattern is an alias too, as `x` is in `fn f({x})`. A `var`,
 // a binding with a type annotation, a `mut` leaf, and a leaf with a default bind no alias. A
-// destructuring `val` with a rest element binds no alias when its initializer is the parameter
-// or an alias itself, since the rest then holds what is left of the whole value. A use of an
-// alias is either a read through it, which goes to one of the places above, or a
-// bare use whose own value goes to one of those places, as in `return q` or `q + 1`.
+// rest element binds an alias like any other leaf. The rest is a new tuple or object whose
+// elements are shared with the parameter, so returning it reads parts of the parameter. A use
+// of an alias is either a read through it, which goes to one of the places above, or a bare
+// use whose own value goes to one of those places, as in `return q` or `q + 1`.
 //
 // It returns false for a rest, optional, or defaulted parameter. It returns false when the body
 // never uses the parameter, and when the body binds the name of the parameter or of an alias
@@ -199,9 +199,7 @@ func (v *paramReadScanner) bindAliases(d *ast.VarDecl) {
 		return
 	}
 	leaves, ok := aliasLeaves(d.Pattern)
-	// A rest element over a bare tracked name binds what is left of the whole value, so
-	// returning it hands out the parameter itself, as `return p` does.
-	if !ok || (leaves.hasRest && !isRead) {
+	if !ok {
 		return
 	}
 	for _, name := range leaves.names.ToSlice() {
@@ -260,11 +258,10 @@ func readRoot(e ast.Expr) (*ast.IdentExpr, bool) {
 }
 
 // patLeaves holds the names a pattern binds and the pattern node that binds each one, which is
-// an IdentPat or an ObjShorthandPat. hasRest is true when the pattern holds a rest element.
+// an IdentPat or an ObjShorthandPat.
 type patLeaves struct {
-	names   set.Set[string]
-	nodes   set.Set[ast.Node]
-	hasRest bool
+	names set.Set[string]
+	nodes set.Set[ast.Node]
 }
 
 // aliasLeaves returns the leaves pat binds. It reports false when pat holds a `mut` leaf, a leaf
@@ -295,16 +292,12 @@ func (v *aliasLeafCollector) EnterPat(p ast.Pat) bool {
 			switch elem := elem.(type) {
 			case *ast.ObjShorthandPat:
 				v.add(elem.Key.Name, elem, elem.Mutable || elem.TypeAnn != nil || elem.Default != nil)
-			case *ast.ObjRestPat:
-				v.leaves.hasRest = true
-			case *ast.ObjKeyValuePat:
+			case *ast.ObjKeyValuePat, *ast.ObjRestPat:
 			default:
 				v.ok = false
 			}
 		}
-	case *ast.RestPat:
-		v.leaves.hasRest = true
-	case *ast.TuplePat, *ast.WildcardPat:
+	case *ast.TuplePat, *ast.RestPat, *ast.WildcardPat:
 	default:
 		v.ok = false
 	}

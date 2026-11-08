@@ -348,6 +348,20 @@ fn read({x}) -> number { return x.v }    // fn ({x}: &{x: {v: number}}) -> numbe
 fn readWhole(p) -> number { return p.v } // fn (p: &{v: number}) -> number
 ```
 
+A rest element is a leaf like any other, in the parameter list and in a `val`
+over the parameter. The rest is a new tuple or object, but its elements are
+shared with the parameter, so returning it reads parts of the parameter. A rest
+in an object pattern also leaves the parameter inexact in both positions, since
+the rest collects the properties the other fields do not name:
+
+```esc
+fn others({x, ...rest}) { return rest }  // fn <'a>({x, ...rest}: &'a {x: unknown, ...}) -> &'a {...}
+fn others2(p) {                          // fn <'a>(p: &'a {x: unknown, ...}) -> &'a {...}
+    val {x, ...rest} = p
+    return rest
+}
+```
+
 The equivalence ends where an alias escapes. A leaf that is stored, passed to a
 call, or captured by a closure that escapes lets the parameter escape, so the
 parameter stays owned. A `var` bound to a read through the parameter can be

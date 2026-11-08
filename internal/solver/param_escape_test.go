@@ -230,24 +230,6 @@ func TestInferUnannotatedParamOwnership(t *testing.T) {
 			want: "fn <T0>(arg0: {x: T0}) -> T0",
 		},
 		{
-			// The rest holds what is left of the whole parameter, so returning it lets the
-			// parameter escape, as `return p` does.
-			name: "ParamObjectRestInBody",
-			srcs: []string{`fn f(p) {
-				val {a, ...r} = p
-				return r
-			}`},
-			want: "fn (arg0: {a: unknown}) -> {...}",
-		},
-		{
-			name: "ParamTupleRestInBody",
-			srcs: []string{`fn f(p) {
-				val [...r] = p
-				return r
-			}`},
-			want: "fn (arg0: [...]) -> [...]",
-		},
-		{
 			name: "BoundReadRestInBody",
 			srcs: []string{`fn f(p) {
 				val {a, ...r} = p.x
