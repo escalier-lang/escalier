@@ -76,12 +76,9 @@ func indexUnder[T any](m map[string]T, decl T, names ...string) {
 // make every library call give up its arguments.
 //
 //   - A parameter whose type is an object type becomes a `&mut` borrow.
-//   - A parameter whose type is a function type becomes `&fn`, which the callee only calls
-//     during the call. So does each function type in a union, as in a callback that may be
-//     `null`. The callback's own parameters keep their types.
 //   - Every other parameter keeps its type as written. That covers a primitive, a
-//     promise, a type parameter, `unknown`, a name idx does not declare, a callback
-//     written as an interface, and every other union.
+//     function, a promise, a type parameter, `unknown`, a name idx does not declare, and
+//     every union.
 //   - A return whose type is an object type, or a union of object types and value types,
 //     becomes a `&'a mut` borrow of each object type when it may share structure with a
 //     borrowed parameter. Each such parameter takes the lifetime `'a`.
@@ -132,16 +129,7 @@ func (idx *typeIndex) borrowSigDefaults(sig *ast.FuncSig, outerTypeParams set.Se
 			continue
 		}
 		pat, ok := param.Pattern.(*ast.IdentPat)
-		if !ok || pat.Name == "this" {
-			continue
-		}
-		// A `.d.ts` cannot say whether the callee keeps a callback, so the callback is only
-		// called during the call, as I2 states.
-		if callback, isCallback := callOnlyCallback(param.TypeAnn); isCallback {
-			param.TypeAnn = callback
-			continue
-		}
-		if !idx.isObjectType(param.TypeAnn, typeParams) {
+		if !ok || pat.Name == "this" || !idx.isObjectType(param.TypeAnn, typeParams) {
 			continue
 		}
 		ref := ast.NewBorrowTypeAnn(true, nil, param.TypeAnn, param.TypeAnn.Span())
@@ -184,27 +172,14 @@ func (idx *typeIndex) borrowSigDefaults(sig *ast.FuncSig, outerTypeParams set.Se
 	sig.Return = ret
 }
 
-// memberRewrite is what borrowMembers does with one annotation.
-type memberRewrite int
-
-const (
-	// keepMember leaves the annotation as written.
-	keepMember memberRewrite = iota
-	// borrowMember wraps the annotation in a borrow.
-	borrowMember
-	// abortRewrite leaves the whole annotation borrowMembers was given unchanged.
-	abortRewrite
-)
-
-// borrowMembers returns t with each annotation classify marks borrowMember wrapped in a
-// borrow, which is `&mut` when mut is set, along with the borrows it wrote. t is wrapped whole
-// when classify marks t itself. Otherwise, in a union, each member is wrapped or kept as
-// classify marks it, and a member marked abortRewrite leaves t unchanged. Any other t comes
-// back unchanged with no borrows, and so does a union with no member wrapped. t itself is not
-// modified.
-func borrowMembers(t ast.TypeAnn, mut bool, classify func(ast.TypeAnn) memberRewrite) (ast.TypeAnn, []*ast.RefTypeAnn) {
-	if classify(t) == borrowMember {
-		ref := ast.NewBorrowTypeAnn(mut, nil, t, t.Span())
+// borrowObjectTypes returns t with each object type in it wrapped in a `&mut` borrow,
+// along with the borrows it wrote. t is wrapped whole when it is an object type. In a
+// union, each member that is an object type is wrapped and each value type is left
+// alone. Any other t comes back unchanged with no borrows, and so does a union with a
+// member that is neither. t itself is not modified.
+func (idx *typeIndex) borrowObjectTypes(t ast.TypeAnn, typeParams set.Set[string]) (ast.TypeAnn, []*ast.RefTypeAnn) {
+	if idx.isObjectType(t, typeParams) {
+		ref := ast.NewBorrowTypeAnn(true, nil, t, t.Span())
 		return ref, []*ast.RefTypeAnn{ref}
 	}
 	union, ok := t.(*ast.UnionTypeAnn)
@@ -214,12 +189,12 @@ func borrowMembers(t ast.TypeAnn, mut bool, classify func(ast.TypeAnn) memberRew
 	members := make([]ast.TypeAnn, len(union.Types))
 	var refs []*ast.RefTypeAnn
 	for i, member := range union.Types {
-		switch classify(member) {
-		case borrowMember:
-			ref := ast.NewBorrowTypeAnn(mut, nil, member, member.Span())
+		switch {
+		case idx.isObjectType(member, typeParams):
+			ref := ast.NewBorrowTypeAnn(true, nil, member, member.Span())
 			members[i] = ref
 			refs = append(refs, ref)
-		case keepMember:
+		case idx.isValueType(member, typeParams, set.NewSet[string]()):
 			members[i] = member
 		default:
 			return t, nil
@@ -229,38 +204,6 @@ func borrowMembers(t ast.TypeAnn, mut bool, classify func(ast.TypeAnn) memberRew
 		return t, nil
 	}
 	return ast.NewUnionTypeAnn(members, union.Span()), refs
-}
-
-// callOnlyCallback returns t with each function type in it written `&fn`, and whether it
-// wrote any. t is rewritten whole when it is a function type. In a union, each member that is
-// a function type is rewritten, so `((ev: Event) => void) | null` becomes
-// `(&fn (ev: Event) -> undefined) | null`. Any other t comes back unchanged. t itself is not
-// modified.
-func callOnlyCallback(t ast.TypeAnn) (ast.TypeAnn, bool) {
-	rewritten, refs := borrowMembers(t, false, func(member ast.TypeAnn) memberRewrite {
-		if _, isFn := member.(*ast.FuncTypeAnn); isFn {
-			return borrowMember
-		}
-		return keepMember
-	})
-	return rewritten, len(refs) > 0
-}
-
-// borrowObjectTypes returns t with each object type in it wrapped in a `&mut` borrow,
-// along with the borrows it wrote. t is wrapped whole when it is an object type. In a
-// union, each member that is an object type is wrapped and each value type is left
-// alone. Any other t comes back unchanged with no borrows, and so does a union with a
-// member that is neither. t itself is not modified.
-func (idx *typeIndex) borrowObjectTypes(t ast.TypeAnn, typeParams set.Set[string]) (ast.TypeAnn, []*ast.RefTypeAnn) {
-	return borrowMembers(t, true, func(member ast.TypeAnn) memberRewrite {
-		switch {
-		case idx.isObjectType(member, typeParams):
-			return borrowMember
-		case idx.isValueType(member, typeParams, set.NewSet[string]()):
-			return keepMember
-		}
-		return abortRewrite
-	})
 }
 
 // mayShareWithAny reports whether an argument of type param may share structure with the

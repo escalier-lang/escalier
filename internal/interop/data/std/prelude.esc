@@ -13,8 +13,8 @@ export declare class Array<T> {
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    find(&self, predicate: &fn (value: T, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> T | undefined,
-    find(&self, predicate: &fn (value: T, index: number, obj: &Self) -> unknown, thisArg?: unknown) -> T | undefined,
+    find(&self, predicate: fn (value: T, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> T | undefined,
+    find(&self, predicate: fn (value: T, index: number, obj: &Self) -> unknown, thisArg?: unknown) -> T | undefined,
     /**
      * Returns the index of the first element in the array where predicate is true, and -1
      * otherwise.
@@ -24,7 +24,7 @@ export declare class Array<T> {
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findIndex(&self, predicate: &fn (value: T, index: number, obj: &Self) -> unknown, thisArg?: unknown) -> number,
+    findIndex(&self, predicate: fn (value: T, index: number, obj: &Self) -> unknown, thisArg?: unknown) -> number,
     /**
      * Changes all array elements from `start` to `end` index to a static `value` and returns the modified array
      * @param value value to fill array section with
@@ -98,7 +98,7 @@ export declare class Array<T> {
      * @param thisArg An object to which the this keyword can refer in the callback function. If
      * thisArg is omitted, undefined is used as the this value.
      */
-    flatMap<U, This = undefined>(&self, callback: &fn (this: This, value: T, index: number, array: &Self) -> U | Array<U>, thisArg?: This) -> Array<U>,
+    flatMap<U, This = undefined>(&self, callback: fn (this: This, value: T, index: number, array: &Self) -> U | Array<U>, thisArg?: This) -> Array<U>,
     /**
      * Returns a new array with all sub-array elements concatenated into it recursively up to the
      * specified depth.
@@ -120,8 +120,8 @@ export declare class Array<T> {
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLast(&self, predicate: &fn (value: T, index: number, array: &Self) -> boolean, thisArg?: unknown) -> T | undefined,
-    findLast(&self, predicate: &fn (value: T, index: number, array: &Self) -> unknown, thisArg?: unknown) -> T | undefined,
+    findLast(&self, predicate: fn (value: T, index: number, array: &Self) -> boolean, thisArg?: unknown) -> T | undefined,
+    findLast(&self, predicate: fn (value: T, index: number, array: &Self) -> unknown, thisArg?: unknown) -> T | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1
      * otherwise.
@@ -131,7 +131,7 @@ export declare class Array<T> {
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLastIndex(&self, predicate: &fn (value: T, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number,
+    findLastIndex(&self, predicate: fn (value: T, index: number, array: &Self) -> unknown, thisArg?: unknown) -> number,
     /**
      * Returns a copy of an array with its elements reversed.
      */
@@ -145,7 +145,7 @@ export declare class Array<T> {
      * [11, 2, 22, 1].toSorted((a, b) => a - b) // [1, 2, 11, 22]
      * ```
      */
-    toSorted(&self, compareFn?: &fn (a: T, b: T) -> number) -> Array<T>,
+    toSorted(&self, compareFn?: fn (a: T, b: T) -> number) -> Array<T>,
     /**
      * Copies an array and removes elements and, if necessary, inserts new elements in their place. Returns the copied array.
      * @param start The zero-based location in the array from which to start removing elements.
@@ -236,7 +236,7 @@ export declare class Array<T> {
      * [11,2,22,1].sort((a, b) => a - b)
      * ```
      */
-    sort(&mut self, compareFn?: &fn (a: T, b: T) -> number) -> Self,
+    sort(&mut self, compareFn?: fn (a: T, b: T) -> number) -> Self,
     /**
      * Removes elements from an array and, if necessary, inserts new elements in their place, returning the deleted elements.
      * @param start The zero-based location in the array from which to start removing elements.
@@ -277,7 +277,7 @@ export declare class Array<T> {
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    every(&self, predicate: &fn (value: T, index: number, array: &Self) -> boolean, thisArg?: unknown) -> boolean,
+    every(&self, predicate: fn (value: T, index: number, array: &Self) -> boolean, thisArg?: unknown) -> boolean,
     /**
      * Determines whether all the members of an array satisfy the specified test.
      * @param predicate A function that accepts up to three arguments. The every method calls
@@ -286,7 +286,7 @@ export declare class Array<T> {
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    every(&self, predicate: &fn (value: T, index: number, array: &Self) -> unknown, thisArg?: unknown) -> boolean,
+    every(&self, predicate: fn (value: T, index: number, array: &Self) -> unknown, thisArg?: unknown) -> boolean,
     /**
      * Determines whether the specified callback function returns true for any element of an array.
      * @param predicate A function that accepts up to three arguments. The some method calls
@@ -295,57 +295,57 @@ export declare class Array<T> {
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    some(&self, predicate: &fn (value: T, index: number, array: &Self) -> unknown, thisArg?: unknown) -> boolean,
+    some(&self, predicate: fn (value: T, index: number, array: &Self) -> unknown, thisArg?: unknown) -> boolean,
     /**
      * Performs the specified action for each element in an array.
      * @param callbackfn A function that accepts up to three arguments. forEach calls the callbackfn function one time for each element in the array.
      * @param thisArg An object to which the this keyword can refer in the callbackfn function. If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(&self, callbackfn: &fn (value: T, index: number, array: &Self) -> unknown, thisArg?: unknown) -> undefined,
+    forEach(&self, callbackfn: fn (value: T, index: number, array: &Self) -> unknown, thisArg?: unknown) -> undefined,
     /**
      * Calls a defined callback function on each element of an array, and returns an array that contains the results.
      * @param callbackfn A function that accepts up to three arguments. The map method calls the callbackfn function one time for each element in the array.
      * @param thisArg An object to which the this keyword can refer in the callbackfn function. If thisArg is omitted, undefined is used as the this value.
      */
-    map<U>(&self, callbackfn: &fn (value: T, index: number, array: &Self) -> U, thisArg?: unknown) -> Array<U>,
+    map<U>(&self, callbackfn: fn (value: T, index: number, array: &Self) -> U, thisArg?: unknown) -> Array<U>,
     /**
      * Returns the elements of an array that meet the condition specified in a callback function.
      * @param predicate A function that accepts up to three arguments. The filter method calls the predicate function one time for each element in the array.
      * @param thisArg An object to which the this keyword can refer in the predicate function. If thisArg is omitted, undefined is used as the this value.
      */
-    filter(&self, predicate: &fn (value: T, index: number, array: &Self) -> boolean, thisArg?: unknown) -> Array<T>,
+    filter(&self, predicate: fn (value: T, index: number, array: &Self) -> boolean, thisArg?: unknown) -> Array<T>,
     /**
      * Returns the elements of an array that meet the condition specified in a callback function.
      * @param predicate A function that accepts up to three arguments. The filter method calls the predicate function one time for each element in the array.
      * @param thisArg An object to which the this keyword can refer in the predicate function. If thisArg is omitted, undefined is used as the this value.
      */
-    filter(&self, predicate: &fn (value: T, index: number, array: &Self) -> unknown, thisArg?: unknown) -> Array<T>,
+    filter(&self, predicate: fn (value: T, index: number, array: &Self) -> unknown, thisArg?: unknown) -> Array<T>,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of the callback function is the accumulated result, and is provided as an argument in the next call to the callback function.
      * @param callbackfn A function that accepts up to four arguments. The reduce method calls the callbackfn function one time for each element in the array.
      * @param initialValue If initialValue is specified, it is used as the initial value to start the accumulation. The first call to the callbackfn function provides this value as an argument instead of an array value.
      */
-    reduce<B>(&self, callbackfn: &fn (previousValue: B, currentValue: T, currentIndex: number, array: &Self) -> B) -> B where T: B,
-    reduce<U>(&self, callbackfn: &fn (previousValue: U, currentValue: T, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
+    reduce<B>(&self, callbackfn: fn (previousValue: B, currentValue: T, currentIndex: number, array: &Self) -> B) -> B where T: B,
+    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: T, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of the callback function is the accumulated result, and is provided as an argument in the next call to the callback function.
      * @param callbackfn A function that accepts up to four arguments. The reduce method calls the callbackfn function one time for each element in the array.
      * @param initialValue If initialValue is specified, it is used as the initial value to start the accumulation. The first call to the callbackfn function provides this value as an argument instead of an array value.
      */
-    reduce<B>(&self, callbackfn: &fn (previousValue: B, currentValue: T, currentIndex: number, array: &Self) -> B, initialValue: B) -> B where T: B,
+    reduce<B>(&self, callbackfn: fn (previousValue: B, currentValue: T, currentIndex: number, array: &Self) -> B, initialValue: B) -> B where T: B,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order. The return value of the callback function is the accumulated result, and is provided as an argument in the next call to the callback function.
      * @param callbackfn A function that accepts up to four arguments. The reduceRight method calls the callbackfn function one time for each element in the array.
      * @param initialValue If initialValue is specified, it is used as the initial value to start the accumulation. The first call to the callbackfn function provides this value as an argument instead of an array value.
      */
-    reduceRight<B>(&self, callbackfn: &fn (previousValue: B, currentValue: T, currentIndex: number, array: &Self) -> B) -> B where T: B,
-    reduceRight<U>(&self, callbackfn: &fn (previousValue: U, currentValue: T, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
+    reduceRight<B>(&self, callbackfn: fn (previousValue: B, currentValue: T, currentIndex: number, array: &Self) -> B) -> B where T: B,
+    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: T, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
     /**
      * Calls the specified callback function for all the elements in an array, in descending order. The return value of the callback function is the accumulated result, and is provided as an argument in the next call to the callback function.
      * @param callbackfn A function that accepts up to four arguments. The reduceRight method calls the callbackfn function one time for each element in the array.
      * @param initialValue If initialValue is specified, it is used as the initial value to start the accumulation. The first call to the callbackfn function provides this value as an argument instead of an array value.
      */
-    reduceRight<B>(&self, callbackfn: &fn (previousValue: B, currentValue: T, currentIndex: number, array: &Self) -> B, initialValue: B) -> B where T: B,
+    reduceRight<B>(&self, callbackfn: fn (previousValue: B, currentValue: T, currentIndex: number, array: &Self) -> B, initialValue: B) -> B where T: B,
     /**
      * Creates an array from an array-like object.
      * @param arrayLike An array-like object to convert to an array.
@@ -357,7 +357,7 @@ export declare class Array<T> {
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T, U>(arrayLike: &mut ArrayLike<T>, mapfn: &fn (v: T, k: number) -> U, thisArg?: unknown) -> Array<U>,
+    static from<T, U>(arrayLike: &mut ArrayLike<T>, mapfn: fn (v: T, k: number) -> U, thisArg?: unknown) -> Array<U>,
     /**
      * Returns a new array from a set of elements.
      * @param items A set of elements to include in the new array object.
@@ -374,7 +374,7 @@ export declare class Array<T> {
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T, U>(iterable: Iterable<T> | ArrayLike<T>, mapfn: &fn (v: T, k: number) -> U, thisArg?: unknown) -> Array<U>,
+    static from<T, U>(iterable: Iterable<T> | ArrayLike<T>, mapfn: fn (v: T, k: number) -> U, thisArg?: unknown) -> Array<U>,
     static readonly [Symbol.species]: typeof Array,
     constructor(&mut self, arrayLength?: number),
     constructor(&mut self, arrayLength: number),
@@ -397,7 +397,7 @@ export declare class Array<T> {
      *      Each return value is awaited before being added to result array.
      * @param thisArg Value of 'this' used when executing mapfn.
      */
-    static fromAsync<T, U>(iterableOrArrayLike: AsyncIterable<T> | Iterable<T> | ArrayLike<T>, mapFn: &fn (value: Awaited<T>, index: number) -> U, thisArg?: unknown) -> Promise<Array<Awaited<U>>>
+    static fromAsync<T, U>(iterableOrArrayLike: AsyncIterable<T> | Iterable<T> | ArrayLike<T>, mapFn: fn (value: Awaited<T>, index: number) -> U, thisArg?: unknown) -> Promise<Array<Awaited<U>>>
 }
 
 export declare interface Generator<T = unknown, TReturn = any, TNext = any, E = never> extends IteratorObject<T, TReturn, TNext> {
@@ -454,12 +454,12 @@ export declare interface IteratorObject<T, TReturn = unknown, TNext = unknown> e
      * Creates an iterator whose values are those from this iterator for which the provided predicate returns true.
      * @param predicate A function that accepts up to two arguments to be used to test values from the underlying iterator.
      */
-    filter(predicate: &fn (value: T, index: number) -> boolean) -> IteratorObject<T, undefined, unknown>,
+    filter(predicate: fn (value: T, index: number) -> boolean) -> IteratorObject<T, undefined, unknown>,
     /**
      * Creates an iterator whose values are those from this iterator for which the provided predicate returns true.
      * @param predicate A function that accepts up to two arguments to be used to test values from the underlying iterator.
      */
-    filter(predicate: &fn (value: T, index: number) -> unknown) -> IteratorObject<T, undefined, unknown>,
+    filter(predicate: fn (value: T, index: number) -> unknown) -> IteratorObject<T, undefined, unknown>,
     /**
      * Creates an iterator whose values are the values from this iterator, stopping once the provided limit is reached.
      * @param limit The maximum number of values to yield.
@@ -480,14 +480,14 @@ export declare interface IteratorObject<T, TReturn = unknown, TNext = unknown> e
      * @param callbackfn A function that accepts up to three arguments. The reduce method calls the callbackfn function one time for each element in the iterator.
      * @param initialValue If initialValue is specified, it is used as the initial value to start the accumulation. The first call to the callbackfn function provides this value as an argument instead of a value from the iterator.
      */
-    reduce<B>(callbackfn: &fn (previousValue: B, currentValue: T, currentIndex: number) -> B) -> B where T: B,
-    reduce<U>(callbackfn: &fn (previousValue: U, currentValue: T, currentIndex: number) -> U, initialValue: U) -> U,
+    reduce<B>(callbackfn: fn (previousValue: B, currentValue: T, currentIndex: number) -> B) -> B where T: B,
+    reduce<U>(callbackfn: fn (previousValue: U, currentValue: T, currentIndex: number) -> U, initialValue: U) -> U,
     /**
      * Calls the specified callback function for all the elements in this iterator. The return value of the callback function is the accumulated result, and is provided as an argument in the next call to the callback function.
      * @param callbackfn A function that accepts up to three arguments. The reduce method calls the callbackfn function one time for each element in the iterator.
      * @param initialValue If initialValue is specified, it is used as the initial value to start the accumulation. The first call to the callbackfn function provides this value as an argument instead of a value from the iterator.
      */
-    reduce<B>(callbackfn: &fn (previousValue: B, currentValue: T, currentIndex: number) -> B, initialValue: B) -> B where T: B,
+    reduce<B>(callbackfn: fn (previousValue: B, currentValue: T, currentIndex: number) -> B, initialValue: B) -> B where T: B,
     /**
      * Creates a new array from the values yielded by this iterator.
      */
@@ -518,8 +518,8 @@ export declare interface IteratorObject<T, TReturn = unknown, TNext = unknown> e
      * order, until it finds one where predicate returns true. If such an element is found, find
      * immediately returns that element value. Otherwise, find returns undefined.
      */
-    find(predicate: &fn (value: T, index: number) -> boolean) -> T | undefined,
-    find(predicate: &fn (value: T, index: number) -> unknown) -> T | undefined,
+    find(predicate: fn (value: T, index: number) -> boolean) -> T | undefined,
+    find(predicate: fn (value: T, index: number) -> unknown) -> T | undefined,
     readonly [Symbol.toStringTag]: string
 }
 
@@ -542,21 +542,21 @@ export declare class Promise<T, E = never> {
      * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
      * @returns A Promise for the completion of the callback.
      */
-    finally<F = never>(&self, onfinally: &fn () -> unknown throws F) -> Promise<T, E | F>,
+    finally<F = never>(&self, onfinally: fn () -> unknown throws F) -> Promise<T, E | F>,
     /**
      * Attaches callbacks for the resolution and/or rejection of the Promise.
      * @param onfulfilled The callback to execute when the Promise is resolved.
      * @param onrejected The callback to execute when the Promise is rejected.
      * @returns A Promise for the completion of which ever callback is executed.
      */
-    then<TResult1 = T, F = never>(&self, onfulfilled: &fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F) -> Promise<TResult1, E | F>,
-    then<TResult1 = T, TResult2 = never, F = never, G = never>(&self, onfulfilled: &fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F, onrejected: &fn (reason: E) -> TResult2 | PromiseLike<TResult2, G> throws G) -> Promise<TResult1 | TResult2, F | G>,
+    then<TResult1 = T, F = never>(&self, onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F) -> Promise<TResult1, E | F>,
+    then<TResult1 = T, TResult2 = never, F = never, G = never>(&self, onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F, onrejected: fn (reason: E) -> TResult2 | PromiseLike<TResult2, G> throws G) -> Promise<TResult1 | TResult2, F | G>,
     /**
      * Attaches a callback for only the rejection of the Promise.
      * @param onrejected The callback to execute when the Promise is rejected.
      * @returns A Promise for the completion of the callback.
      */
-    catch<TResult = never, G = never>(&self, onrejected: &fn (reason: E) -> TResult | PromiseLike<TResult, G> throws G) -> Promise<T | TResult, G>,
+    catch<TResult = never, G = never>(&self, onrejected: fn (reason: E) -> TResult | PromiseLike<TResult, G> throws G) -> Promise<T | TResult, G>,
     /**
      * Creates a Promise that is resolved with an array of results when all of the provided Promises
      * resolve, or rejected when any Promise is rejected.
@@ -581,7 +581,7 @@ export declare class Promise<T, E = never> {
      * a resolve callback used to resolve the promise with a value or the result of another promise,
      * and a reject callback used to reject the promise with a provided reason or error.
      */
-    constructor(&mut self, executor: &fn (resolve: fn (value: T | PromiseLike<T>) -> unknown, reject: fn (reason?: E) -> unknown) -> unknown),
+    constructor(&mut self, executor: fn (resolve: fn (value: T | PromiseLike<T>) -> unknown, reject: fn (reason?: E) -> unknown) -> unknown),
     /**
      * Creates a Promise that is resolved with an array of results when all of the provided Promises
      * resolve, or rejected when any Promise is rejected.
@@ -672,7 +672,7 @@ export declare class Promise<T, E = never> {
      * - Already rejected, if the callback synchronously throws an error.
      * - Asynchronously fulfilled or rejected, if the callback returns a promise.
      */
-    static try<T, U: Array<unknown>>(callbackFn: &fn (...args: U) -> T | PromiseLike<T>, ...args: U) -> Promise<Awaited<T>>
+    static try<T, U: Array<unknown>>(callbackFn: fn (...args: U) -> T | PromiseLike<T>, ...args: U) -> Promise<Awaited<T>>
 }
 
 @js("Symbol")
@@ -859,8 +859,8 @@ export declare interface PromiseLike<T, E = never> {
      * @param onrejected The callback to execute when the Promise is rejected.
      * @returns A Promise for the completion of which ever callback is executed.
      */
-    then<TResult1 = T, F = never>(onfulfilled: &fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F) -> PromiseLike<TResult1, E | F>,
-    then<TResult1 = T, TResult2 = never, F = never, G = never>(onfulfilled: &fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F, onrejected: &fn (reason: E) -> TResult2 | PromiseLike<TResult2, G> throws G) -> PromiseLike<TResult1 | TResult2, F | G>
+    then<TResult1 = T, F = never>(onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F) -> PromiseLike<TResult1, E | F>,
+    then<TResult1 = T, TResult2 = never, F = never, G = never>(onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F, onrejected: fn (reason: E) -> TResult2 | PromiseLike<TResult2, G> throws G) -> PromiseLike<TResult1 | TResult2, F | G>
 }
 
 /**

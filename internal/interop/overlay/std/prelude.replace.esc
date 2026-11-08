@@ -41,11 +41,11 @@
 // `PromiseLike` below carries the same two rules.
 export declare class Promise<T, E = never> {
     static reject<T = never, E = undefined>(reason?: E) -> Promise<T, E>,
-    finally<F = never>(&self, onfinally: &fn () -> unknown throws F) -> Promise<T, E | F>,
-    then<TResult1 = T, F = never>(&self, onfulfilled: &fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F) -> Promise<TResult1, E | F>,
-    then<TResult1 = T, TResult2 = never, F = never, G = never>(&self, onfulfilled: &fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F, onrejected: &fn (reason: E) -> TResult2 | PromiseLike<TResult2, G> throws G) -> Promise<TResult1 | TResult2, F | G>,
-    catch<TResult = never, G = never>(&self, onrejected: &fn (reason: E) -> TResult | PromiseLike<TResult, G> throws G) -> Promise<T | TResult, G>,
-    constructor(&mut self, executor: &fn (resolve: fn (value: T | PromiseLike<T>) -> unknown, reject: fn (reason?: E) -> unknown) -> unknown),
+    finally<F = never>(&self, onfinally: fn () -> unknown throws F) -> Promise<T, E | F>,
+    then<TResult1 = T, F = never>(&self, onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F) -> Promise<TResult1, E | F>,
+    then<TResult1 = T, TResult2 = never, F = never, G = never>(&self, onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F, onrejected: fn (reason: E) -> TResult2 | PromiseLike<TResult2, G> throws G) -> Promise<TResult1 | TResult2, F | G>,
+    catch<TResult = never, G = never>(&self, onrejected: fn (reason: E) -> TResult | PromiseLike<TResult, G> throws G) -> Promise<T | TResult, G>,
+    constructor(&mut self, executor: fn (resolve: fn (value: T | PromiseLike<T>) -> unknown, reject: fn (reason?: E) -> unknown) -> unknown),
 }
 
 // `throw` injects an exception at the generator's suspended yield. A
@@ -65,8 +65,8 @@ export declare interface AsyncGenerator<T = unknown, TReturn = any, TNext = any,
 // `PromiseLike.then` states the same two rules its `Promise`
 // counterpart does.
 export declare interface PromiseLike<T, E = never> {
-    then<TResult1 = T, F = never>(onfulfilled: &fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F) -> PromiseLike<TResult1, E | F>,
-    then<TResult1 = T, TResult2 = never, F = never, G = never>(onfulfilled: &fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F, onrejected: &fn (reason: E) -> TResult2 | PromiseLike<TResult2, G> throws G) -> PromiseLike<TResult1 | TResult2, F | G>,
+    then<TResult1 = T, F = never>(onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F) -> PromiseLike<TResult1, E | F>,
+    then<TResult1 = T, TResult2 = never, F = never, G = never>(onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F, onrejected: fn (reason: E) -> TResult2 | PromiseLike<TResult2, G> throws G) -> PromiseLike<TResult1 | TResult2, F | G>,
 }
 
 // The `then` operand has to be inexact. TypeScript's `{ then(…): any }` is
@@ -193,11 +193,11 @@ export declare interface Disposable {
 // tried first it would widen a `string` accumulator over `Array<number>` to
 // `number | string`.
 export declare class Array<T> {
-    find(&self, predicate: &fn (value: T, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> T | undefined,
-    find(&self, predicate: &fn (value: T, index: number, obj: &Self) -> unknown, thisArg?: unknown) -> T | undefined,
+    find(&self, predicate: fn (value: T, index: number, obj: &Self) -> boolean, thisArg?: unknown) -> T | undefined,
+    find(&self, predicate: fn (value: T, index: number, obj: &Self) -> unknown, thisArg?: unknown) -> T | undefined,
     includes<B>(&self, searchElement: B, fromIndex?: number) -> boolean where T: B,
-    findLast(&self, predicate: &fn (value: T, index: number, array: &Self) -> boolean, thisArg?: unknown) -> T | undefined,
-    findLast(&self, predicate: &fn (value: T, index: number, array: &Self) -> unknown, thisArg?: unknown) -> T | undefined,
+    findLast(&self, predicate: fn (value: T, index: number, array: &Self) -> boolean, thisArg?: unknown) -> T | undefined,
+    findLast(&self, predicate: fn (value: T, index: number, array: &Self) -> unknown, thisArg?: unknown) -> T | undefined,
     toSpliced<B>(&self, start: number, deleteCount: number, ...items: Array<B>) -> Array<B> where T: B,
     toSpliced(&self, start: number, deleteCount?: number) -> Array<T>,
     with<B>(&self, index: number, value: B) -> Array<B> where T: B,
@@ -205,14 +205,14 @@ export declare class Array<T> {
     concat<B>(&self, ...items: Array<B | ConcatArray<B>>) -> Array<B> where T: B,
     indexOf<B>(&self, searchElement: B, fromIndex?: number) -> number where T: B,
     lastIndexOf<B>(&self, searchElement: B, fromIndex?: number) -> number where T: B,
-    filter(&self, predicate: &fn (value: T, index: number, array: &Self) -> boolean, thisArg?: unknown) -> Array<T>,
-    filter(&self, predicate: &fn (value: T, index: number, array: &Self) -> unknown, thisArg?: unknown) -> Array<T>,
-    reduce<B>(&self, callbackfn: &fn (previousValue: B, currentValue: T, currentIndex: number, array: &Self) -> B) -> B where T: B,
-    reduce<U>(&self, callbackfn: &fn (previousValue: U, currentValue: T, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
-    reduce<B>(&self, callbackfn: &fn (previousValue: B, currentValue: T, currentIndex: number, array: &Self) -> B, initialValue: B) -> B where T: B,
-    reduceRight<B>(&self, callbackfn: &fn (previousValue: B, currentValue: T, currentIndex: number, array: &Self) -> B) -> B where T: B,
-    reduceRight<U>(&self, callbackfn: &fn (previousValue: U, currentValue: T, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
-    reduceRight<B>(&self, callbackfn: &fn (previousValue: B, currentValue: T, currentIndex: number, array: &Self) -> B, initialValue: B) -> B where T: B,
+    filter(&self, predicate: fn (value: T, index: number, array: &Self) -> boolean, thisArg?: unknown) -> Array<T>,
+    filter(&self, predicate: fn (value: T, index: number, array: &Self) -> unknown, thisArg?: unknown) -> Array<T>,
+    reduce<B>(&self, callbackfn: fn (previousValue: B, currentValue: T, currentIndex: number, array: &Self) -> B) -> B where T: B,
+    reduce<U>(&self, callbackfn: fn (previousValue: U, currentValue: T, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
+    reduce<B>(&self, callbackfn: fn (previousValue: B, currentValue: T, currentIndex: number, array: &Self) -> B, initialValue: B) -> B where T: B,
+    reduceRight<B>(&self, callbackfn: fn (previousValue: B, currentValue: T, currentIndex: number, array: &Self) -> B) -> B where T: B,
+    reduceRight<U>(&self, callbackfn: fn (previousValue: U, currentValue: T, currentIndex: number, array: &Self) -> U, initialValue: U) -> U,
+    reduceRight<B>(&self, callbackfn: fn (previousValue: B, currentValue: T, currentIndex: number, array: &Self) -> B, initialValue: B) -> B where T: B,
 }
 
 // The iterator's own `reduce` and its two guard overloads are written as `Array`'s are,
@@ -220,11 +220,11 @@ export declare class Array<T> {
 // body, so an arm here that put `T` in an input position would make each of those
 // collections invariant through its iterator.
 export declare interface IteratorObject<T, TReturn = unknown, TNext = unknown> {
-    filter(predicate: &fn (value: T, index: number) -> boolean) -> IteratorObject<T, undefined, unknown>,
-    filter(predicate: &fn (value: T, index: number) -> unknown) -> IteratorObject<T, undefined, unknown>,
-    reduce<B>(callbackfn: &fn (previousValue: B, currentValue: T, currentIndex: number) -> B) -> B where T: B,
-    reduce<U>(callbackfn: &fn (previousValue: U, currentValue: T, currentIndex: number) -> U, initialValue: U) -> U,
-    reduce<B>(callbackfn: &fn (previousValue: B, currentValue: T, currentIndex: number) -> B, initialValue: B) -> B where T: B,
-    find(predicate: &fn (value: T, index: number) -> boolean) -> T | undefined,
-    find(predicate: &fn (value: T, index: number) -> unknown) -> T | undefined,
+    filter(predicate: fn (value: T, index: number) -> boolean) -> IteratorObject<T, undefined, unknown>,
+    filter(predicate: fn (value: T, index: number) -> unknown) -> IteratorObject<T, undefined, unknown>,
+    reduce<B>(callbackfn: fn (previousValue: B, currentValue: T, currentIndex: number) -> B) -> B where T: B,
+    reduce<U>(callbackfn: fn (previousValue: U, currentValue: T, currentIndex: number) -> U, initialValue: U) -> U,
+    reduce<B>(callbackfn: fn (previousValue: B, currentValue: T, currentIndex: number) -> B, initialValue: B) -> B where T: B,
+    find(predicate: fn (value: T, index: number) -> boolean) -> T | undefined,
+    find(predicate: fn (value: T, index: number) -> unknown) -> T | undefined,
 }

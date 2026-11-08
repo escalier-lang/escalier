@@ -387,9 +387,9 @@ export declare class RTCDTMFSender extends EventTarget {
     readonly toneBuffer: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDTMFSender/insertDTMF) */
     insertDTMF(&mut self, tones: string, duration?: number, interToneGap?: number) -> undefined,
-    addEventListener<K: keyof RTCDTMFSenderEventMap>(&mut self, type: K, listener: &fn (this: RTCDTMFSender, ev: RTCDTMFSenderEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,
+    addEventListener<K: keyof RTCDTMFSenderEventMap>(&mut self, type: K, listener: fn (this: RTCDTMFSender, ev: RTCDTMFSenderEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> undefined,
-    removeEventListener<K: keyof RTCDTMFSenderEventMap>(&mut self, type: K, listener: &fn (this: RTCDTMFSender, ev: RTCDTMFSenderEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
+    removeEventListener<K: keyof RTCDTMFSenderEventMap>(&mut self, type: K, listener: fn (this: RTCDTMFSender, ev: RTCDTMFSenderEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: RTCDTMFSender,
     private constructor(&mut self)
@@ -461,9 +461,9 @@ export declare class RTCDataChannel extends EventTarget {
     send(&mut self, data: &mut file.Blob) -> undefined,
     send(&mut self, data: &mut typed_arrays.ArrayBuffer) -> undefined,
     send(&mut self, data: &mut typed_arrays.ArrayBufferView) -> undefined,
-    addEventListener<K: keyof RTCDataChannelEventMap>(&mut self, type: K, listener: &fn (this: RTCDataChannel, ev: RTCDataChannelEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,
+    addEventListener<K: keyof RTCDataChannelEventMap>(&mut self, type: K, listener: fn (this: RTCDataChannel, ev: RTCDataChannelEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> undefined,
-    removeEventListener<K: keyof RTCDataChannelEventMap>(&mut self, type: K, listener: &fn (this: RTCDataChannel, ev: RTCDataChannelEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
+    removeEventListener<K: keyof RTCDataChannelEventMap>(&mut self, type: K, listener: fn (this: RTCDataChannel, ev: RTCDataChannelEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: RTCDataChannel,
     private constructor(&mut self)
@@ -494,9 +494,9 @@ export declare class RTCDtlsTransport extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDtlsTransport/state) */
     readonly state: RTCDtlsTransportState,
     getRemoteCertificates(&self) -> Array<typed_arrays.ArrayBuffer>,
-    addEventListener<K: keyof RTCDtlsTransportEventMap>(&mut self, type: K, listener: &fn (this: RTCDtlsTransport, ev: RTCDtlsTransportEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,
+    addEventListener<K: keyof RTCDtlsTransportEventMap>(&mut self, type: K, listener: fn (this: RTCDtlsTransport, ev: RTCDtlsTransportEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> undefined,
-    removeEventListener<K: keyof RTCDtlsTransportEventMap>(&mut self, type: K, listener: &fn (this: RTCDtlsTransport, ev: RTCDtlsTransportEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
+    removeEventListener<K: keyof RTCDtlsTransportEventMap>(&mut self, type: K, listener: fn (this: RTCDtlsTransport, ev: RTCDtlsTransportEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: RTCDtlsTransport,
     private constructor(&mut self)
@@ -627,9 +627,9 @@ export declare class RTCIceTransport extends EventTarget {
     readonly state: RTCIceTransportState,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCIceTransport/getSelectedCandidatePair) */
     getSelectedCandidatePair(&self) -> RTCIceCandidatePair | null,
-    addEventListener<K: keyof RTCIceTransportEventMap>(&mut self, type: K, listener: &fn (this: RTCIceTransport, ev: RTCIceTransportEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,
+    addEventListener<K: keyof RTCIceTransportEventMap>(&mut self, type: K, listener: fn (this: RTCIceTransport, ev: RTCIceTransportEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> undefined,
-    removeEventListener<K: keyof RTCIceTransportEventMap>(&mut self, type: K, listener: &fn (this: RTCIceTransport, ev: RTCIceTransportEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
+    removeEventListener<K: keyof RTCIceTransportEventMap>(&mut self, type: K, listener: fn (this: RTCIceTransport, ev: RTCIceTransportEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: RTCIceTransport,
     constructor(&mut self)
@@ -740,9 +740,9 @@ export declare class RTCPeerConnection extends EventTarget {
     setRemoteDescription(&mut self, description: &mut RTCSessionDescriptionInit) -> Promise<undefined>,
     /** @deprecated */
     setRemoteDescription(&mut self, description: &mut RTCSessionDescriptionInit, successCallback: dom.VoidFunction, failureCallback: RTCPeerConnectionErrorCallback) -> Promise<undefined>,
-    addEventListener<K: keyof RTCPeerConnectionEventMap>(&mut self, type: K, listener: &fn (this: RTCPeerConnection, ev: RTCPeerConnectionEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,
+    addEventListener<K: keyof RTCPeerConnectionEventMap>(&mut self, type: K, listener: fn (this: RTCPeerConnection, ev: RTCPeerConnectionEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> undefined,
-    removeEventListener<K: keyof RTCPeerConnectionEventMap>(&mut self, type: K, listener: &fn (this: RTCPeerConnection, ev: RTCPeerConnectionEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
+    removeEventListener<K: keyof RTCPeerConnectionEventMap>(&mut self, type: K, listener: fn (this: RTCPeerConnection, ev: RTCPeerConnectionEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: RTCPeerConnection,
     constructor(&mut self, configuration?: RTCConfiguration),
@@ -883,9 +883,9 @@ export declare class RTCSctpTransport extends EventTarget {
     readonly state: RTCSctpTransportState,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCSctpTransport/transport) */
     readonly transport: RTCDtlsTransport,
-    addEventListener<K: keyof RTCSctpTransportEventMap>(&mut self, type: K, listener: &fn (this: RTCSctpTransport, ev: RTCSctpTransportEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,
+    addEventListener<K: keyof RTCSctpTransportEventMap>(&mut self, type: K, listener: fn (this: RTCSctpTransport, ev: RTCSctpTransportEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> undefined,
     addEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> undefined,
-    removeEventListener<K: keyof RTCSctpTransportEventMap>(&mut self, type: K, listener: &fn (this: RTCSctpTransport, ev: RTCSctpTransportEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
+    removeEventListener<K: keyof RTCSctpTransportEventMap>(&mut self, type: K, listener: fn (this: RTCSctpTransport, ev: RTCSctpTransportEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: RTCSctpTransport,
     private constructor(&mut self)
@@ -911,7 +911,7 @@ export declare class RTCSessionDescription {
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCStatsReport) */
 @js("RTCStatsReport")
 export declare class RTCStatsReport extends map.Map<string, any> {
-    forEach(&self, callbackfn: &fn (value: any, key: string, parent: &Self) -> unknown, thisArg?: unknown) -> undefined,
+    forEach(&self, callbackfn: fn (value: any, key: string, parent: &Self) -> unknown, thisArg?: unknown) -> undefined,
     static prototype: RTCStatsReport,
     private constructor(&mut self)
 }

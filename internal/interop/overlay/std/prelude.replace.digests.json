@@ -9,19 +9,19 @@
     "decl": "Array",
     "member": "filter",
     "kind": "method",
-    "digest": "c25baf13cd87d0c8"
+    "digest": "5d426bf530e7035b"
   },
   {
     "decl": "Array",
     "member": "find",
     "kind": "method",
-    "digest": "c6911a4b06624726"
+    "digest": "db258c4fff199328"
   },
   {
     "decl": "Array",
     "member": "findLast",
     "kind": "method",
-    "digest": "7ed59d82d80695ae"
+    "digest": "48a69cb39bb58349"
   },
   {
     "decl": "Array",
@@ -45,13 +45,13 @@
     "decl": "Array",
     "member": "reduce",
     "kind": "method",
-    "digest": "e57fcd85356a7557"
+    "digest": "5ed253cf4fa63daa"
   },
   {
     "decl": "Array",
     "member": "reduceRight",
     "kind": "method",
-    "digest": "12eb646e322c61d5"
+    "digest": "ed8a80c1b39c50f2"
   },
   {
     "decl": "Array",
@@ -135,7 +135,7 @@
     "decl": "Promise",
     "member": "catch",
     "kind": "method",
-    "digest": "2d02ff8d048d26f5"
+    "digest": "55fe62bae3417007"
   },
   {
     "decl": "Promise",
@@ -147,13 +147,13 @@
     "decl": "Promise",
     "member": "finally",
     "kind": "method",
-    "digest": "4059c3d6da772704"
+    "digest": "424891642fc4509d"
   },
   {
     "decl": "Promise",
     "member": "then",
     "kind": "method",
-    "digest": "075d5b7c0d5659c6"
+    "digest": "9bac5ab2a622d1d9"
   },
   {
     "decl": "Promise",

@@ -151,7 +151,7 @@ export declare class String {
      */
     replace(&self, searchValue: &mut {
         [Symbol.replace](string: string, replacer: fn (substring: string, ...args: Array<any>) -> string) -> string
-    }, replacer: &fn (substring: string, ...args: Array<any>) -> string) -> string,
+    }, replacer: fn (substring: string, ...args: Array<any>) -> string) -> string,
     /**
      * Finds the first substring match in a regular expression search.
      * @param searcher An object which supports searching within a string.
@@ -233,7 +233,7 @@ export declare class String {
      * @param searchValue A string to search for.
      * @param replacer A function that returns the replacement text.
      */
-    replaceAll(&self, searchValue: string | regexp.RegExp, replacer: &fn (substring: string, ...args: Array<any>) -> string) -> string,
+    replaceAll(&self, searchValue: string | regexp.RegExp, replacer: fn (substring: string, ...args: Array<any>) -> string) -> string,
     /**
      * Returns a new String consisting of the single UTF-16 code unit located at the specified index.
      * @param index The zero-based index of the desired code unit. A negative index will count back from the last item.
@@ -297,7 +297,7 @@ export declare class String {
      * @param searchValue A string to search for.
      * @param replacer A function that returns the replacement text.
      */
-    replace(&self, searchValue: string | regexp.RegExp, replacer: &fn (substring: string, ...args: Array<any>) -> string) -> string,
+    replace(&self, searchValue: string | regexp.RegExp, replacer: fn (substring: string, ...args: Array<any>) -> string) -> string,
     /**
      * Finds the first substring match in a regular expression search.
      * @param regexp The regular expression pattern and applicable flags.

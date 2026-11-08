@@ -25,10 +25,9 @@ type Pair = { left: Nested; right: Nested };
 `
 
 // TestApplyBorrowDefaults covers which parameters and returns applyBorrowDefaults
-// rewrites in a declared function. A parameter of an object type becomes `&mut`, a
-// parameter of a function type becomes `&fn`, and every other parameter keeps the type it
-// converts to. A return of an object type borrows each borrowed parameter it may share
-// structure with.
+// rewrites in a declared function. A parameter of an object type becomes `&mut`, and
+// every other parameter keeps the type it converts to. A return of an object type
+// borrows each borrowed parameter it may share structure with.
 func TestApplyBorrowDefaults(t *testing.T) {
 	t.Parallel()
 
@@ -36,14 +35,16 @@ func TestApplyBorrowDefaults(t *testing.T) {
 		"ValueTypeParams": {
 			src: `declare function f(a: string, b: (x: number) => void, c: Promise<Flat>, d: Callback, e: Mode): void;`,
 			want: []string{
-				"@js(\"f\")\nexport declare fn f(a: string, b: &fn (x: number) -> unknown, c: Promise<Flat>, d: Callback, e: Mode) -> undefined",
+				"@js(\"f\")\nexport declare fn f(a: string, b: fn (x: number) -> unknown, c: Promise<Flat>, d: Callback, e: Mode) -> undefined",
 			},
 		},
-		// A callback's own parameters are filled by the callee, so they keep the plain type.
+		// A callback parameter is written `fn` with no lifetime, so the callee only calls it
+		// during the call, as I2 states. So is one in a union, one that is optional, and the
+		// callback's own parameters.
 		"CallbackParams": {
 			src: `declare function f(cb: (done: () => void) => void, onEv: ((ev: number) => void) | null, opt?: () => void): () => void;`,
 			want: []string{
-				"@js(\"f\")\nexport declare fn f(cb: &fn (done: fn () -> unknown) -> unknown, onEv: (&fn (ev: number) -> unknown) | null, opt?: &fn () -> unknown) -> fn () -> unknown",
+				"@js(\"f\")\nexport declare fn f(cb: fn (done: fn () -> unknown) -> unknown, onEv: (fn (ev: number) -> unknown) | null, opt?: fn () -> unknown) -> fn () -> unknown",
 			},
 		},
 		"UncertainParamsStayOwned": {
