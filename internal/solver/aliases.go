@@ -19,6 +19,10 @@ type AliasDef struct {
 	// slice stays empty until a `type` declaration parses a lifetime parameter binder.
 	LifetimeParams []*soltype.LifetimeParam
 
+	// ReportsByName marks an alias whose failed constraint is reported against the alias
+	// itself rather than against the body it expands to.
+	ReportsByName bool
+
 	// Body is the type the alias expands to, the right-hand side of `type Name = Body`.
 	// No variance is stored: a transparent alias expands, so variance follows the body.
 	Body soltype.Type

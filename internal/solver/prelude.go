@@ -302,5 +302,8 @@ func addValueTypeAlias(s *Scope) {
 // registerValueTypeAlias registers the body of ValueType on ctx, the union of
 // soltype.ValueTypeMembers.
 func registerValueTypeAlias(ctx *Context) {
-	ctx.registerAlias(soltype.ValueTypeName, &AliasDef{Body: newUnion(ctx, soltype.ValueTypeMembers())})
+	ctx.registerAlias(soltype.ValueTypeName, &AliasDef{
+		Body:          newUnion(ctx, soltype.ValueTypeMembers()),
+		ReportsByName: true,
+	})
 }
