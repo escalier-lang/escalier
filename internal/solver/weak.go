@@ -745,21 +745,27 @@ func (s *weakSettler) display(sc *PolyScheme, lvl int) soltype.Type {
 	return coalesceLifetimes(s.replace(coalesced, lvl), soltype.Positive, classKeepLifetimes(sc.declaredLts))
 }
 
-// addBinders adds each variable in vars to s.binders.
+// addBinders adds each variable in vars to s.binders. A settled type treats every variable
+// outside binders as weak, so adding a binder clears the settled types and the empty set, and
+// the next settle of each weak variable reads the new binders.
 func (s *weakSettler) addBinders(vars set.Set[*soltype.TypeVarType]) {
+	added := false
 	for v := range vars {
-		s.binders.Add(v)
+		if !s.binders.Contains(v) {
+			s.binders.Add(v)
+			added = true
+		}
+	}
+	if added {
+		clear(s.settled)
+		s.empty.Clear()
 	}
 }
 
 // addWeakVars adds to keep each variable at or below lvl that t reaches.
 func addWeakVars(keep set.Set[*soltype.TypeVarType], t soltype.Type, lvl int) {
-	vars := map[int]*soltype.TypeVarType{}
-	t.Accept(&varCollector{out: vars, seen: set.NewSet[*soltype.TypeVarType]()}, soltype.Positive)
-	for _, v := range vars {
-		if v.Level <= lvl {
-			keep.Add(v)
-		}
+	for _, v := range varsAtOrBelow(t, lvl) {
+		keep.Add(v)
 	}
 }
 

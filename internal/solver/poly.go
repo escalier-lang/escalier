@@ -546,8 +546,7 @@ func (c *checker) lowerWeakBoundVars(t soltype.Type, lvl int) {
 	if c.weakVars.Len() == 0 {
 		return
 	}
-	vars := map[int]*soltype.TypeVarType{}
-	t.Accept(&varCollector{out: vars, seen: set.NewSet[*soltype.TypeVarType]()}, soltype.Positive)
+	vars := collectTypeVars(t)
 	ids := slices.Sorted(maps.Keys(vars))
 	for changed := true; changed; {
 		changed = false
@@ -580,13 +579,29 @@ func (c *checker) weakBoundLevel(v *soltype.TypeVarType, lvl int) (int, bool) {
 // noteWeakVars adds to c.weakVars each variable at or below lvl that t reaches. When
 // minted is set, only the variables in that range are added.
 func (c *checker) noteWeakVars(t soltype.Type, lvl int, minted *varRange) {
-	vars := map[int]*soltype.TypeVarType{}
-	t.Accept(&varCollector{out: vars, seen: set.NewSet[*soltype.TypeVarType]()}, soltype.Positive)
-	for _, v := range vars {
-		if v.Level <= lvl && (minted == nil || minted.contains(v)) {
+	for _, v := range varsAtOrBelow(t, lvl) {
+		if minted == nil || minted.contains(v) {
 			c.weakVars.Add(v)
 		}
 	}
+}
+
+// collectTypeVars returns each type variable t reaches, keyed by its ID.
+func collectTypeVars(t soltype.Type) map[int]*soltype.TypeVarType {
+	vars := map[int]*soltype.TypeVarType{}
+	t.Accept(&varCollector{out: vars, seen: set.NewSet[*soltype.TypeVarType]()}, soltype.Positive)
+	return vars
+}
+
+// varsAtOrBelow returns each type variable t reaches whose level is at or below lvl.
+func varsAtOrBelow(t soltype.Type, lvl int) []*soltype.TypeVarType {
+	var out []*soltype.TypeVarType
+	for _, v := range collectTypeVars(t) {
+		if v.Level <= lvl {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // lowerVar sets v's level to lvl and lowers every variable and lifetime above lvl that v's
