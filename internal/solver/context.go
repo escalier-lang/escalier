@@ -184,9 +184,13 @@ type Context struct {
 
 	// slotModes holds, per type variable, the writable slot of a weak binding the variable
 	// stands for. Each lower bound the variable gains is widened as that slot widens it.
-	// markSlot fills it for a weak binding's own variables, and widenSlotBound for the
+	// slotMarker.mark fills it for a weak binding's own variables, and slotVarFor for the
 	// variables it mints. widenSlotBound explains the rule.
 	slotModes map[*soltype.TypeVarType]slotMode
+
+	// slotVars holds, per variable and slot mode, the variable slotVarFor minted to receive
+	// that variable's values widened as a slot of the mode widens them.
+	slotVars map[slotVarKey]*soltype.TypeVarType
 
 	// muBinderCount numbers the μ-variables the regular-tree check has minted, so two aliases whose
 	// knots are composed into one type carry distinct binders. coalesce numbers its own binders per
