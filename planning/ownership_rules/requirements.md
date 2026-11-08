@@ -1156,7 +1156,10 @@ The alternative was a marker on a parameter saying the callee does not keep it,
 with every unmarked function parameter read as retained. The lifetime form
 reuses L1 and E4 instead of adding a rule.
 
-A `fn` type named through a type alias, and one in a class field, are tracked by
+Keeping an `&fn` parameter from outliving the call is tracked by
+[#2342](https://github.com/escalier-lang/escalier/issues/2342). The checker
+accepts storing one into a module-level `fn` binding. A `fn` type named through
+a type alias, and one in a class field, are tracked by
 [#2553](https://github.com/escalier-lang/escalier/issues/2553) and
 [#2554](https://github.com/escalier-lang/escalier/issues/2554).
 
@@ -1685,6 +1688,12 @@ Decided: accepted. E4 states it, and the rule reads this way in each position:
   follow the same rule. [#2553](https://github.com/escalier-lang/escalier/issues/2553)
   and [#2554](https://github.com/escalier-lang/escalier/issues/2554) track them.
 
+The checker accepts a closure that holds a borrow where a plain `fn` is
+expected, so the `keep(show)`, `keep(inc)`, and `keep(peek)` calls in E4's
+example check clean. It also accepts storing an `&fn` parameter into a `fn`
+slot. The checker change is tracked by
+[#2342](https://github.com/escalier-lang/escalier/issues/2342).
+
 ### D18. A module-level binding whose type its uses decide
 
 A binding *generalizes* when each use of it gets fresh copies of its type
@@ -1778,6 +1787,15 @@ since `&mut T` accepts only a borrow of exactly `T`. With
 `val mut p: {x: 1} = {x: 1}`, widening `val r = borrowMut(&mut p)` to
 `&mut {x: number}` would claim that `r.x = 2` is allowed, which the type of `p`
 rejects.
+
+The widening applies to the type the checker uses, not only to the type it
+displays. A value widens as it reaches a writable slot, so every read of the
+binding sees the settled type, whichever function writes it and in whatever
+order. With `seen` written by `seen.set("k", 1)`, `fn get() { return seen.get("k") }`
+infers as `fn () -> number | undefined`, and `val one: 1 | undefined = seen.get("k")`
+is rejected. A value keeps its literals everywhere else it flows. A `put(x)`
+that stores `[x]` in `seen` and returns `x` returns `1` from `put(1)` and
+stores `[number]`.
 
 The checker requires no annotation. A weak variable no use decides settles
 silently. A container that is never written settles at `never`, so
