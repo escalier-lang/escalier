@@ -193,7 +193,11 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 			definite = true
 		}
 	}
-	if lt, isVar := ft.Lt.(*soltype.LifetimeVar); isVar && borrowed.name != "" {
+	lt, isVar := ft.Lt.(*soltype.LifetimeVar)
+	if !isVar {
+		return
+	}
+	if borrowed.name != "" {
 		borrowed.viaFuncs = !direct
 		borrowed.keepable = keepable && framed
 		borrowed.locals = locals
@@ -202,13 +206,13 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 		}
 		c.closureBorrows[lt] = borrowed
 	}
-	if lt, isVar := ft.Lt.(*soltype.LifetimeVar); isVar && !definite && len(undecided) > 0 {
+	if !definite && len(undecided) > 0 {
 		if c.tentativeClosures == nil {
 			c.tentativeClosures = map[*soltype.LifetimeVar][]*soltype.TypeVarType{}
 		}
 		c.tentativeClosures[lt] = undecided
 	}
-	if lt, isVar := ft.Lt.(*soltype.LifetimeVar); isVar && framed {
+	if framed {
 		if c.fn.frameClosures == nil {
 			c.fn.frameClosures = set.NewSet[*soltype.LifetimeVar]()
 		}
@@ -836,21 +840,46 @@ func (c *checker) funcLtSources(lt soltype.Lifetime) funcLtSourceSet {
 		}
 		// A copy an instantiation made is the same lifetime as the one it copies, so only a
 		// copy not yet read leads anywhere new.
-		copies := 0
-		for _, copied := range c.ctx.ltCopies[v] {
+		copies := c.ctx.ltCopies[v]
+		for _, copied := range copies {
 			if !seen.Contains(copied) {
 				next = append(next, copied)
-				copies++
 			}
 		}
-		// A lifetime with no lower bound and no proxied origin is a source of its own, such as
-		// a declared function's result lifetime, once its copies are read.
-		if len(v.LowerBounds) == 0 && !proxied && copies == 0 {
+		// A lifetime with no lower bound and no proxied origin is a source of its own, such as a
+		// declared function's result lifetime, unless a copy of it has a source. The walk reads
+		// that copy's sources, even when an earlier step already read the copy.
+		if len(v.LowerBounds) == 0 && !proxied && !c.copyHasSource(v) {
 			out.other = true
 		}
 		pending = append(pending, next...)
 	}
 	return out
+}
+
+// copyHasSource reports whether a lifetime that v is a copy of, or that is a copy of v, read
+// through further copies, has a lower bound, a proxied origin, or is a lifetime funcLtSources
+// classifies: a closure's, a call-only parameter's, or a signature's.
+func (c *checker) copyHasSource(v *soltype.LifetimeVar) bool {
+	seen := set.FromSlice([]*soltype.LifetimeVar{v})
+	pending := slices.Clone(c.ctx.ltCopies[v])
+	for len(pending) > 0 {
+		cur := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		if seen.Contains(cur) {
+			continue
+		}
+		seen.Add(cur)
+		_, proxied := c.ctx.ltProxyOrigin[cur]
+		_, borrows := c.closureBorrows[cur]
+		_, tentative := c.tentativeClosures[cur]
+		_, callOnly := c.callOnlyDepth[cur]
+		if len(cur.LowerBounds) > 0 || proxied || borrows || tentative || callOnly || c.isSignatureLt(cur) {
+			return true
+		}
+		pending = append(pending, c.ctx.ltCopies[cur]...)
+	}
+	return false
 }
 
 // settlesToValueType reports whether every value v can hold is a value type, because one of

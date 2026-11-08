@@ -1331,6 +1331,43 @@ fn setup() {
     keep(fn () { console.log(p.a) })
 }`,
 		},
+		// A union member that keeps its function for 'static reports a closure over a parameter
+		// with the message a lone 'static slot gives, and accepts a function that borrows
+		// nothing, as the lone slot does.
+		{
+			name: "closure over a parameter passed to a static parameter",
+			src: `declare fn on(cb: 'static fn () -> undefined) -> undefined
+fn setup(p: {a: number}) {
+    on(fn () { console.log(p.a) })
+}`,
+			want: []string{"3:8-3:34: this closure borrows `p`, but `on` keeps it for 'static; pass a function that borrows nothing"},
+		},
+		{
+			name: "closure over a parameter passed to a static union member",
+			src: `declare fn on(cb: ('static fn () -> undefined) | null) -> undefined
+fn setup(p: {a: number}) {
+    on(fn () { console.log(p.a) })
+}`,
+			want: []string{"3:8-3:34: this closure borrows `p`, but `on` keeps it for 'static; pass a function that borrows nothing"},
+		},
+		{
+			name: "function that borrows nothing passed to a static union member",
+			src: `declare fn on(cb: ('static fn () -> undefined) | null) -> undefined
+fn setup() {
+    on(fn () { console.log("hello") })
+}`,
+		},
+		// The lifetime does not decide the arm, but the chosen arm still reports a closure over a
+		// parameter, which the slot cannot keep.
+		{
+			name: "closure over a parameter passed to an overload with a static parameter",
+			src: `declare fn keep(cb: 'static fn () -> undefined) -> undefined
+declare fn keep(cb: number) -> undefined
+fn setup(p: {a: number}) {
+    keep(fn () { console.log(p.a) })
+}`,
+			want: []string{"4:10-4:36: this closure borrows `p`, but `keep` keeps it for 'static; pass a function that borrows nothing"},
+		},
 		{
 			name: "closure passed to an overload with a static parameter before a later write",
 			src: `declare fn keep(cb: 'static fn () -> undefined) -> undefined

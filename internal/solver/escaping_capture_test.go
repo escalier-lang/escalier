@@ -505,6 +505,24 @@ func TestEscapingClosureCapture(t *testing.T) {
 				}
 			`,
 		},
+		// g borrows only through f, and each read of g copies g's lifetime. Each copy leads back to
+		// f's borrow of p, so both stores keep it rather than reporting g, and `&p` conflicts with the kept borrow.
+		"StoreOfABoundClosureCallingACapturingClosureTwiceKeepsTheCapture": {
+			src: `
+				var sink: 'static fn () -> undefined = fn () {}
+				var sink2: 'static fn () -> undefined = fn () {}
+				declare fn readIt(a: &{x: number}) -> undefined
+				fn go() {
+					val mut p = {x: 1}
+					val f = fn () { p.x = 2 }
+					val g = fn () { f() }
+					sink = g
+					sink2 = g
+					readIt(&p)
+				}
+			`,
+			want: []string{"11:13-11:15: cannot borrow 'p' as immutable while 'p.x' is borrowed as mutable by 'sink'"},
+		},
 		// Both stores keep the same closure, so they share its kept borrows, and its own mutable
 		// borrow of p.a.n and immutable borrow of p.a do not conflict across the two stores.
 		"StoreOfOneClosureIntoTwoGlobalsOk": {
