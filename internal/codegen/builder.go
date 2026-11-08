@@ -1559,11 +1559,7 @@ func (b *Builder) moduleClassName(ct *soltype.ClassType) (string, bool) {
 	// A variant binds no value of its own. The enum declaring it does, and its name is
 	// the variant's name minus the last segment.
 	declName := ct.Name
-	if ct.Variant {
-		lastDot := strings.LastIndex(declName, ".")
-		if lastDot < 0 {
-			return "", false
-		}
+	if lastDot := strings.LastIndex(declName, "."); ct.Variant && lastDot >= 0 {
 		declName = declName[:lastDot]
 	}
 	if !b.depGraph.HasBinding(dep_graph.ValueBindingKey(declName)) {

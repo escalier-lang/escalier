@@ -325,6 +325,13 @@ func TestTheSolverEmitsAnInstanceOfTestForAClassAlias(t *testing.T) {
 			want: `if (arguments.length === 1 && param0 instanceof Holder) {`,
 		},
 		{
+			// A class declared outside the module has no binding in its dep graph, so
+			// the guard falls back to the name as written.
+			name: "ADirectReferenceToAnOutsideClass",
+			src:  classes + "export fn f(v: Date) -> number { return 1 }\nexport fn f(v: Other) -> number { return 2 }",
+			want: `if (arguments.length === 1 && param0 instanceof Date) {`,
+		},
+		{
 			name: "AUnionAliasOfClasses",
 			src:  classes + "type Either = Point | Other\nexport fn f(v: Either) -> number { return 1 }\nexport fn f(v: string) -> number { return 2 }",
 			want: `if (arguments.length === 1 && (param0 instanceof Point || param0 instanceof Other)) {`,
