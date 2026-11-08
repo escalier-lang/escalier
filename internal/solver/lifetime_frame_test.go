@@ -254,10 +254,8 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 			binding: "h",
 			want:    "fn () -> {f: &'static {x: 1}}",
 		},
-		// Every borrow of a parameter is foreign, so the return stays a borrow. A call to an
-		// unannotated parameter inferred as owned records no move, as B5 and B6 in
-		// requirements.md describe, so the caller may still hold that argument. An annotated
-		// owned parameter such as f moves its argument, so here the borrow is conservative.
+		// Every borrow of a parameter is foreign, so the return stays a borrow. An owned
+		// parameter such as f moves its argument, so here the borrow is conservative.
 		{
 			name: "borrow of a parameter",
 			src: `

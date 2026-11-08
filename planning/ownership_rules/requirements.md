@@ -2,7 +2,7 @@
 
 ## Status and scope
 
-This document is a draft. It states the rules that decide which programs the
+This document states the rules that decide which programs the
 ownership, borrowing, lifetime, and mutability checks accept. The goal is a rule
 set small enough that every check in the solver is an instance of one of these
 rules. A check that maps to no rule is either a bug or a rule this document is
@@ -18,13 +18,14 @@ It builds on three earlier documents and does not replace their rationale:
 - [planning/lifetimes/requirements.md](../lifetimes/requirements.md) introduces
   liveness-based mutability transitions.
 
-Where this document and those disagree, this document is the proposal. The
-section [Divergences from the docs](#divergences-from-the-docs) lists the
-disagreements found so far.
+Where this document and those disagree, this document wins. The section
+[Divergences from the docs](#divergences-from-the-docs) lists the places where
+the docs still disagree with the checker.
 
-The section [Decisions](#decisions) records behaviour the solver has today that
-no document stated, and design questions the rules left open. Most are decided,
-and the rest need a decision before the rules are final.
+The section [Decisions](#decisions) records the design questions the rules left
+open and how each was decided. All of them are decided, and the checker
+implements most of them. Each entry with checker work left says what remains.
+D17 also lists the points about function lifetimes that are still open.
 
 ## The invariant
 
@@ -46,8 +47,9 @@ change.
 
 A *value type* is a primitive, a function, or a promise. Value types are copied
 freely, and the rules below do not apply to them. The one exception is a
-function parameter, which may carry a lifetime saying how long the callee keeps
-the function, as E4 states.
+function type. A function may hold borrows, and its type's lifetime bounds them.
+The lifetime is written as a prefix, as in `'a fn () -> undefined`, and E4 and
+D17 state how it is checked.
 
 A *reference-shaped* value is an object, tuple, array, or class instance. The
 rules below govern reference-shaped values only.
@@ -119,6 +121,31 @@ object`.
 rejected after the field's one initialization. A `readonly` field does not
 satisfy a writable field, because a holder of the writable type could reassign
 it. A getter with no setter counts as a `readonly` field.
+
+The rule applies to every owned destination, whatever its binding's
+mutability. That covers a binding, a reassignment, a parameter, and a return
+value. A `val` binding or an immutable parameter can move its value on into a
+`val mut` binding, which then writes the field. A caller can do the same with a
+returned value. A parameter's binding mutability is not part of the signature
+either, so a call through a function value could not see it. In the program
+below, both calls report
+`readonly field 'a' cannot satisfy a writable field requirement`:
+
+```esc
+fn sink(mut o: {a: number}) { o.a = 5 }
+fn move(o: {a: number}) {
+    val mut m = o
+    m.a = 5
+}
+fn f(obj: {readonly a: number}, other: {readonly a: number}) {
+    sink(obj)
+    move(other)
+}
+```
+
+A `&` borrow can neither write the field nor move the value, so a `readonly`
+field still satisfies a writable field behind one. With `obj` above,
+`read(&obj)` is accepted for `fn read(o: &{a: number})`.
 
 **T6. A borrow cannot fill an owned destination.** A value of type `&T` or
 `&mut T` does not satisfy an owned `T`, since the destination would
@@ -220,7 +247,7 @@ it. These operations are the flow sites:
 | Receiver | `p.m()` | The method's `self` type |
 | `return` | `return p` | Owned, unless the return type is a borrow |
 | Module-level store | `cache = p` | Owned, with a `'static` region |
-| Closure capture | `fn () { return p.x }` | Decided by where the closure flows, by F3 |
+| Closure capture | `fn () { return p.x }` | Decided by where the closure flows, by F3 and D17 |
 
 **F2. What happens to a value depends on its kind and the destination's kind.**
 There are three outcomes:
@@ -247,12 +274,14 @@ operation that passes the value does not change it.
 | Immutable borrow, `&T` | Rejected by T6 | Copy | Rejected by T4 |
 | Mutable borrow, `&mut T` | Rejected by T6 | Copy, narrowed to `&` by T4 | Copy |
 
-A value type has no borrow form, so its destination is always bare. A generic
-`&T` whose `T` is a value type stands for `T`. With `fn f<T>(x: &T)`, the call
-`f(5)` copies `5` into `x`, and a read of a value-type field through a `&` copies
-the field out. Each binding
-in the function below shows one outcome, and the read of `q.x` shows the error a
-use after a move reports.
+A primitive or a promise has no borrow form, so its destination is always bare.
+A function has no borrow form either. Its type's lifetime, written as in
+`'a fn`, bounds the borrows the function holds, and E4 states how it passes.
+A generic `&T` whose `T` is a primitive or a promise stands for `T`. With
+`fn f<T>(x: &T)`, the call `f(5)` copies `5` into `x`, and a read of a
+value-type field through a `&` copies the field out. Each binding in the function below
+shows one outcome, and the read of `q.x` shows the error a use after a move
+reports.
 
 ```esc
 fn go(r: &{x: number}) -> number {
@@ -278,16 +307,21 @@ Each case below follows from that:
 - An unannotated parameter is owned when the body lets the parameter escape, and
   a borrow otherwise. When the destination's type leaves the ownership open,
   [D9](#d9-whether-an-escaping-value-moves-or-borrows) decides.
-- A closure that is returned owns what it captures. A closure returned through a
-  local, such as `return f` after `val f = fn () { … }`, takes its captures at the
-  return, so the body can use them until then. A closure that stays in the body or
-  is stored into a caller-owned object borrows what it captures.
-- A closure stored into module-level state borrows what it captures for
-  `'static`. A function is a value type, so the store copies the closure, and the
-  case above for module-level state does not make its captures owned. The borrow
-  is `&mut` for a capture the closure writes and `&` otherwise. By the closure
-  rows of the exclusivity table, the captured place can then never move, and E4
-  checks each later call against the borrow.
+- A closure that is returned owns the locals of the returning body that it
+  captures. A closure returned through a local, such as `return f` after
+  `val f = fn () { … }`, takes its captures at the return, so the body can use
+  them until then. A parameter, or a borrow of something outside the body, is
+  not the body's to give away, so the closure still borrows it. A closure that
+  stays in the body or is stored into a caller-owned object borrows what it
+  captures.
+- A closure stored into module-level state, or passed to any other `'static`
+  slot, is kept for the rest of the program. Such a slot holds no borrow of a
+  local, so the closure owns the locals of the body it captures, as it does
+  when it is returned. A later use of one of those locals is an error. A
+  closure that captures a parameter or an outside borrow is rejected at the
+  store. D17 decides both cases. A function is a value type, so the store
+  copies the closure, and the case above for module-level state does not by
+  itself make its captures owned.
 
 A `val` or `var` binding of an owned value is always an owned destination, even
 when the binding's scope is shorter than the source's. A binding whose
@@ -639,9 +673,10 @@ fn go() -> number {
 **E4. A closure call is a use of each borrow the closure holds.** A call to a
 closure, or a call that may run a closure, uses each borrow the closure holds. A
 capture the closure writes is used as a mutable path, and a capture it only reads
-is used as an immutable path. A closure stored into module-level state may run
-during any later call, so every later call uses its borrows. A closure that moves
-one of its captures moves it at each call, so by E1 a second call is rejected.
+is used as an immutable path. A closure kept in a slot with lifetime `'a` may
+run during any later call while `'a` is live, so each such call uses its
+borrows. A closure that moves one of its captures moves it at each call, so by
+E1 a second call is rejected.
 
 A module-level function captures each module-level binding its body reads or
 writes, and each one that a module-level function it calls reaches. A call of it
@@ -651,22 +686,86 @@ uses those bindings the way a closure call uses its captures. With
 it. An `await` of the call runs it before the body resumes, so `await bump()`
 is rejected the same way.
 
-A function parameter says how long the callee keeps the function it receives.
-A parameter written `f: fn () -> undefined` is only called during the call, so a
+A function type's lifetime bounds the borrows the function holds, the same way
+a `&'a T` borrow's lifetime bounds how long the borrow lives. It is written as a
+prefix, as in `'a fn () -> undefined`, and a slot keeps the function only while
+`'a` is live. A parameter written `f: fn () -> undefined` has an elided lifetime
+that ends with the call, so the callee only calls `f` during the call, and a
 closure passed to it holds its borrows for that call alone. A parameter written
-`f: &'a fn () -> undefined` may keep the function for `'a`, so a closure passed
-to it holds its borrows for `'a`, and `&'static` keeps them for the rest of the
+`f: 'static fn () -> undefined` keeps the function for the rest of the program,
+so it accepts only a function that borrows nothing shorter-lived than the
 program. A function is still a value type, so F2 copies it into either kind of
-parameter, and the call needs no written `&`. The `&'a` on a function
-parameter does not borrow the function. It only says how long the callee keeps
-its copy. [D10](#d10-recording-that-a-callback-is-not-retained) shows an
-example.
+parameter, and the call needs no written `&`. The lifetime does not borrow the
+function itself. It bounds the borrows the function holds. D17 decides the rule,
+including how an unwritten lifetime is elided in each position.
 
-A `fn` type outside a parameter, such as in a binding, a field, an array element,
-or a return type, keeps the function for a lifetime inferred from where the
-value flows, the same way an elided `&` lifetime is inferred, as D17 decides. A
-module-level slot keeps it for `'static`, so storing a plain `fn` parameter
-there is rejected.
+A closure's lifetime comes from what it captures. A closure that captures
+nothing, or only reads value types from `val` bindings, copies what it reads and
+borrows nothing, so its lifetime is `'static`. A closure that captures an object
+local, or reads or writes a captured `var`, borrows it, as F3 states. It
+borrows a `var` it only reads, since it must see the binding's later writes.
+
+In the program below, `keep` may hold on to its callback forever and `run` only
+calls its callback during the call. `handlers` is a module-level binding, so its
+elided element lifetime is `'static`, and it keeps what it holds as `keep` does.
+None of the calls writes a `&`, since a function is a value type.
+
+```esc
+declare fn keep(cb: 'static fn () -> undefined) -> undefined
+declare fn run(cb: fn () -> undefined) -> undefined
+declare fn render(view: &{n: number}) -> undefined
+
+var mut handlers: Array<fn () -> undefined> = []
+
+fn setup() {
+    val msg = "hello"
+    val greet = fn () { console.log(msg) }
+    keep(greet)                 // accepted, since greet copies msg and borrows nothing
+
+    val cfg = {msg: "hello"}
+    val show = fn () { console.log(cfg.msg) }
+    run(show)                   // accepted, since run only calls show during the call
+    keep(show)                  // accepted, and keep holds show's immutable borrow of cfg
+    console.log(cfg.msg)        // accepted, since show only reads cfg
+
+    val mut count = {n: 0}
+    val inc = fn () { count.n = count.n + 1 }
+    run(inc)                    // accepted
+    keep(inc)                   // accepted, and keep holds inc's mutable borrow of count
+    render(&count)              // error: cannot borrow 'count' as immutable while 'count.n' is borrowed as mutable by the 'cb' that 'keep' retains
+
+    var n = 0
+    handlers.push(fn () { n = n + 1 })    // accepted, since n has no later use
+}
+```
+
+`keep(show)` is accepted, and `keep` holds `show`'s borrow of `cfg` for the
+rest of the program. `show` only reads `cfg`, so that borrow is immutable, and
+the later read of `cfg.msg` is accepted. `inc` writes `count.n`, so `keep(inc)`
+holds a mutable borrow of it. The error is at `render(&count)`, an immutable
+view of a value the kept closure may change at any time. D17 states the rule.
+
+To keep a closure that borrows a live local, give the slot a lifetime that the
+local outlives. A class with a lifetime parameter does this. A `Button<'a>`
+holds its handler for `'a`, which lasts while the binding that holds the
+`Button` is live. `page` below uses the `render` declared above:
+
+```esc
+class Button<'a> {
+    handler: 'a fn () -> undefined,
+    click(&self) -> undefined { self.handler() },
+}
+
+fn page() {
+    val mut count = {n: 0}
+    val b = Button(fn () { count.n = count.n + 1 })
+    render(&count)    // error: this call may run the 'handler' that 'Button' retains, which writes 'count' while it is borrowed as immutable
+    b.click()
+}
+```
+
+Moving `b.click()` above `render(&count)` makes `page` check, since `b` is dead
+at the render.
 
 E4 adds no column to the exclusivity table, because it does not decide whether
 an operation on `p` is allowed. It decides when a closure's captures count as
@@ -677,13 +776,11 @@ capture's kind applies for that statement.
 
 In `local` below, the write to `p` between the two calls is allowed. In
 `moved`, `get` still holds its borrow of `p` for its later call, so the move
-is rejected. In `stored`, the closure in `sink` may run during any later call,
-so `readIt(&p)` conflicts with the write it may perform.
+is rejected. In `page` above, `b` holds the closure for `'a`, so any call while
+`b` is live may run it, and `render(&count)` conflicts with the write the
+closure may perform.
 
 ```esc
-var sink: fn () -> undefined = fn () {}
-declare fn readIt(a: &{x: number}) -> undefined
-
 fn local() -> number {
     val mut p = {x: 1}
     val get = fn () { return p.x }
@@ -697,12 +794,6 @@ fn moved() -> number {
     val get = fn () { return p.x }
     val q = p     // error: cannot move 'p' while it is borrowed
     return get()
-}
-
-fn stored() {
-    val mut p = {x: 1}
-    sink = fn () { p.x = 2 }
-    readIt(&p)    // error: this call may run 'sink', which writes 'p' while it is borrowed as immutable
 }
 ```
 
@@ -772,7 +863,7 @@ Rust has no matching feature.
 | T7 mutable borrows need a `mut` binding | `&mut x` requires `let mut x` | Same | |
 | T9 writable slots widen literals | No literal types. An integer literal's type is inferred from how it is used | No equivalent | Inherited from TypeScript, which widens a `let` binding's literal type the same way |
 | F2 copy, borrow, or move | `Copy` types copy, `&T` copies, and an owned value moves into an owned destination | Differs | A `&mut` source copies, because Escalier allows aliased `&mut` |
-| F3 owned when it escapes | Every parameter type is written. A closure captures by reference unless it is marked `move` | Differs | Escalier infers an unannotated parameter's ownership and a returned closure's moves. Rust requires both to be written |
+| F3 owned when it escapes | Every parameter type is written. A closure captures by reference unless it is marked `move` | Differs | Escalier infers an unannotated parameter's ownership, and a kept closure's moves of locals with no later use. Rust requires both to be written |
 | F3 binding always moves | `let q = p` moves `p` whatever `q`'s scope | Same | |
 | F4 borrows are written | `&` and `&mut` are written to borrow, except on a method receiver, which auto-borrows. Pattern binding modes bind borrows when a pattern destructures a borrow | Same | |
 | L1 lifetime is liveness | A borrow cannot outlive its referent, and storing one in a `static` requires `'static` | Differs | A borrow may outlive its owner, because the garbage collector keeps the value alive. Lifetimes only bound how long a path is live for E2 |
@@ -781,12 +872,13 @@ Rust has no matching feature.
 | E1 no use after move | Flow-sensitive per branch, with partial moves, and reassignment re-initializes | Same | Reassignment does not yet re-initialize in Escalier. See [#1269](https://github.com/escalier-lang/escalier/issues/1269) |
 | E2 no immutable and mutable path live together | Aliasing XOR mutability over non-lexical lifetimes: one `&mut`, or any number of `&` | Differs | Escalier allows several live mutable paths at once. The target is single-threaded and garbage collected, so the only hazard left is an immutable path observing a write |
 | E3 no move while borrowed | Rejected with E0505 | Same | |
-| E4 closure calls use its borrows | A closure holds its captured borrows from creation to its last use | Differs | Escalier counts the borrows only at each call, so a write to a captured value between two calls is accepted. Rust rejects it. A closure stored into module-level state needs `move` and `'static` captures in Rust |
+| E4 closure calls use its borrows | A closure holds its captured borrows from creation to its last use | Differs | Escalier counts the borrows only at each call, so a write to a captured value between two calls is accepted. Rust rejects it |
 | D1 no move out of module-level state | Moving out of a `static` is rejected with E0507 | Same | |
 | D2 a moving closure is called once | `FnOnce` | Same | |
 | T8 branches agree on ownership | `if` branches must have one type, so `T` and `&T` do not join | Same | |
 | D4 declared bounds are obligations | Declared bounds are assumptions | Differs | Follows from L3 |
 | D5 `readonly` initialized once | A struct literal initializes every field at once | No equivalent | |
+| D17 function lifetimes | A closure's lifetime is a bound on its trait object, as in `Box<dyn Fn() + 'a>`, and a boxed `dyn Fn()` defaults to `'static`. A closure kept past its locals' scope must be written `move` | Differs | Escalier writes the lifetime on the `fn` type and elides it by position, as it does for `&`. It moves a dead local into a kept closure without a written `move` |
 | T10 getter and setter receivers | No getters or setters | No equivalent | |
 | Move to immutable and move to mutable | `let settled = v; let mut editable = settled;` moves between bindings of different mutability | Same | `docs/09_ownership.md` says Rust has no equivalent. The moves are the same, but interior mutability keeps Rust's move to immutable from being deep |
 
@@ -794,7 +886,8 @@ The differences come from four sources:
 
 - **The runtime.** Single-threaded JavaScript with a garbage collector removes
   data races and dangling pointers. That permits aliased `&mut` in F2 and E2,
-  borrows that outlive their owner in L1, and the per-call closure borrows in E4.
+  borrows that outlive their owner in L1, the per-call closure borrows in E4,
+  and the inferred move of dead locals into a kept closure in D17.
 - **A deep immutability guarantee.** Escalier's invariant promises that an
   immutable value never changes. Rust's interior mutability would break that
   promise, so T3 has no escape hatch.
@@ -865,132 +958,207 @@ in between.
 
 ## Decisions
 
-D1 through D8 record behaviour the solver enforces today that no document
-stated. D9 through D18 are design questions the rules left open. Each decided
-entry says where its outcome now lives. All of them are now decided. The current
-behaviour comes from reading the code, and the file references point at where
-it lives.
+Each entry records a design question the rules left open and how it was
+decided. All 18 are decided. An entry the checker implements states its rule
+first, then shows it in an example. An entry the checker does not implement
+keeps its problem statement and options. When checker work remains for an
+entry, the entry ends with a note on that work and the issue that tracks it.
 
 ### D1. Moving out of a module-level binding
 
-`ModuleLevelMoveError` rejects moving a module-level binding or an import
-([module_level_moves.go](../../internal/solver/module_level_moves.go)). The rule
-is sound. A module-level binding outlives every call, so a move would consume it
-for every later caller.
+A move out of a module-level binding or an import is rejected, as E1 states. A
+module-level binding's region is `'static`, so it outlives every call. A move
+would consume it for every later caller.
 
-Recommendation: keep the behaviour and state it as part of E1. A place whose
-region is `'static` is never consumed, so a move out of it is rejected.
+```esc
+val cfg = {x: 1}
 
-Decided: accepted. E1 states it.
+fn take(p: {x: number}) -> number { return p.x }
+
+fn go() -> number {
+    return take(cfg)    // error: cannot move module-level value 'cfg' inside a function. Borrow it with `&cfg`
+}
+```
+
+`ModuleLevelMoveError` in
+[module_level_moves.go](../../internal/solver/module_level_moves.go) reports it.
 
 ### D2. Closures that move a capture can be called once
 
-`consumeOnceCallee` consumes a closure that moves one of its captures when the
-closure is called
-([module_level_moves.go](../../internal/solver/module_level_moves.go)).
+A closure that moves one of its captures moves it at each call, as E4 states.
+By E1, a second call would use a moved place, so the first call consumes the
+closure and the second is rejected:
 
-Recommendation: keep it and derive it. The call moves the capture, so by E1 a
-second call would use a moved place. No separate rule is needed once E4 treats a
-moved capture as a move event.
+```esc
+fn f() {
+    val p = {x: 1}
+    val g = fn () {
+        val q = p
+        return q.x
+    }
+    g()
+    g()    // error: use of moved value 'g'
+}
+```
 
-Decided: accepted. E4 states it.
+The checker enforces this only inside the body that creates the closure. A
+function type cannot say that a function may be called once, so a caller of a
+returned closure, or a callee it is passed to, may call it twice.
+[#2581](https://github.com/escalier-lang/escalier/issues/2581) tracks the gap.
 
 ### D3. Branches that mix owned and borrowed values
 
-`MixedOwnershipError` rejects a conditional whose branches produce an owned value
-on one side and a borrow on the other
-([infer_expr.go](../../internal/solver/infer_expr.go)).
+The branches of a conditional produce all owned values or all borrows, as T8
+states. A branch with an owned value borrows it to match the others. Joining the
+branches to a borrow instead would need an owner for the owned branch that
+outlives the expression, and a fresh value has none.
 
-The options are:
+```esc
+fn pick(cond: boolean, q: &{x: number}) -> number {
+    val p = {x: 1}
+    val r = if cond { p } else { q }
+    return r.x
+}
+```
 
-- Keep the error. It is simple and the user can add `&` to the owned branch.
-- Join the branches to a borrow. The owned branch would then need an owner that
-  outlives the expression, and no such owner exists for a fresh value.
-
-Recommendation: keep the error and add it as a type rule, T8.
-
-Decided: accepted. T8 states it. A branch with an owned value can borrow it to
-match the others.
+The `if` reports
+`a union or intersection mixes owned and borrowed members. Make ownership uniform first. Clone the borrowed member to own it, or borrow the owned member.`
+Writing the first branch as `&p` is accepted. The check reports
+`MixedOwnershipError` from [infer_expr.go](../../internal/solver/infer_expr.go).
 
 ### D4. Declared lifetime bounds are obligations
 
-`checkDeclaredLifetimeBounds` requires the body to establish each declared bound
-`'a: 'b`
-([infer_expr.go](../../internal/solver/infer_expr.go)). Rust works the other
-way. There a declared bound is an assumption the body may rely on and the caller
-must prove.
-
+A declared lifetime bound `'a: 'b` is an obligation on the body, as L2 states.
+The body must establish each bound it declares. Rust reads a declared bound the
+other way, as an assumption the body may rely on and the caller must prove.
 Escalier's choice follows from L3. A rendered signature has to match the
-inferred one, so a declared bound the body does not establish would render a
-signature the inference does not produce.
+inferred one, so a bound the body does not establish would render a signature
+that inference does not produce.
 
-Recommendation: keep the behaviour, as L2 states it, and document it in
-`docs/09_ownership.md`.
+```esc
+fn f<'a: 'b, 'b>(x: &'a {x: number}, y: &'b {x: number}) -> &'b {x: number} {
+    return y
+}
+```
 
-Decided: accepted. L2 states it, and the docs change in the migration.
+Nothing in the body makes `'a` outlive `'b`, so the declaration reports
+`declared lifetime bound 'a: 'b is not satisfied; the body does not make 'a outlive 'b`.
+`checkDeclaredLifetimeBounds` in
+[infer_expr.go](../../internal/solver/infer_expr.go) runs the check.
 
 ### D5. A `readonly` field is initialized once in a constructor
 
-A second write to a `readonly` field inside a constructor is rejected, using the
-definite-initialization lattice
-([infer_class_ctor.go](../../internal/solver/infer_class_ctor.go)).
+A `readonly` field is initialized once, by its constructor, as T5 states. A
+second write to it inside the constructor is rejected:
 
-Recommendation: keep it. T5 already says one initialization, so this needs no
-new rule, only the docs.
+```esc
+class C {
+    readonly a: number,
+    constructor(&mut self, a: number) {
+        self.a = a
+        self.a = a + 1    // error: cannot assign to 'a' because it is a readonly property
+    },
+}
+```
 
-Decided: accepted. T5 states it.
+The check lives in
+[infer_class_ctor.go](../../internal/solver/infer_class_ctor.go).
 
 ### D6. Getter and setter receivers
 
-A getter must take `&self` and a setter must take `&mut self`
-(`GetterReceiverError` and `SetterReceiverError`).
+A getter takes `&self` and a setter takes `&mut self`, as T10 states. A getter
+only reads its instance, and a setter writes one field of it. Both are
+declaration rules and do not interact with flow.
 
-Recommendation: keep both as declaration well-formedness rules alongside the type
-rules. They do not interact with flow.
+```esc
+class C {
+    x: number,
+    get y(self) -> number { return self.x },
+    set y(&self, v: number) {},
+}
+```
 
-Decided: accepted. T10 states it.
+The getter reports
+``Getter 'y' must borrow its receiver with `&self` or `&mut self`; reading through it leaves the instance in place.``
+The setter reports
+``Setter 'y' must declare a `&mut self` receiver; writing through it mutates the instance.``
+
+The checker accepts a getter that takes `&mut self`. Rejecting it is tracked by
+[#2287](https://github.com/escalier-lang/escalier/issues/2287).
 
 ### D7. Explicit `&` at a call site
 
-`ImplicitBorrowArgError` requires an owned argument passed to a borrow parameter
-to be written `&p` or `&mut p`
-([borrow_exclusivity.go](../../internal/solver/borrow_exclusivity.go)). The docs
-say the compiler still inserts the borrow. Other flow sites still borrow without
-the `&`. The compiler accepts `val c: &{x: number} = p`, and a store into a
-`&` field without the `&` moves the source, as B1 describes.
+Every borrow is written, at every flow site, as F4 states. An owned value that
+fills a borrow destination is written `&p` or `&mut p`, whether the destination
+is a parameter, a binding, a field, or a return. Each borrow and its mutability
+are then visible where the borrow is taken.
 
-Recommendation: adopt F4, which extends the call-site requirement to every flow
-site, and update the docs to match.
+```esc
+fn read(p: &{x: number}) -> number { return p.x }
 
-Decided: accepted. F4 states it.
+fn go() -> number {
+    val p = {x: 1}
+    val c: &{x: number} = p    // error: this value is borrowed by its destination, so write the borrow: `&`
+    return read(p) + c.x       // error: this argument is borrowed by the callee, so write the borrow: `&`
+}
+```
+
+`ImplicitBorrowArgError` and `ImplicitBorrowError` in
+[borrow_exclusivity.go](../../internal/solver/borrow_exclusivity.go) report the
+two errors. The LSP server offers a quick fix that inserts the borrow.
 
 ### D8. A global write moves a borrow
 
-`consumeAtGlobalWrite` records a move for any reference-shaped source, including
-a borrow (`moves.go`). This contradicts F2, under
-which a borrow is copied and never consumed.
+A borrow stored into module-level state is copied, as F2 states, so the source
+stays usable. The stored borrow gets a `'static` lifetime by L1, and E2 then
+keeps any conflicting path from forming for the rest of the program.
 
-Recommendation: drop the special case. A borrow stored into module-level state
-is copied by F2 and gets a `'static` lifetime by L1. E2 then keeps any
-conflicting path from forming for the rest of the program.
+```esc
+var cache: &{x: number} = &{x: 0}
 
-Decided: accepted. Step 3 of the migration drops the move that
-`consumeAtGlobalWrite` records for a borrow.
+fn keepIt(b: &{x: number}) -> number {
+    cache = b
+    return b.x       // accepted, since the store copied b
+}
+
+fn go() -> number {
+    val mut opts = {x: 3}
+    cache = &opts
+    opts.x = 4       // error: cannot assign to 'opts.x' while it is borrowed as immutable
+    return opts.x
+}
+```
+
+A store of a `&mut` borrow into a module-level `&mut` binding reports
+`cannot constrain immutable object <: mutable object`. The fix is tracked by
+[#2249](https://github.com/escalier-lang/escalier/issues/2249).
 
 ### D9. Whether an escaping value moves or borrows
 
-F3 makes a destination with no written type owned when the value escapes, so an
-escape always moves the source. L1 allows a second answer. The destination could
-be a `'static` borrow instead, and the source would stay usable under E2.
+An escaping parameter that the body never writes is inferred as a `'static &`
+borrow, and one the body writes is owned. The rule applies only where the
+destination's type leaves the ownership open, such as a `Map` whose value type
+is inferred, or a function the converter declares from JavaScript source. Where
+the destination's type is owned, T6 already makes the parameter owned, as for
+`store` in F3. A written annotation overrides the inference.
 
-Take a library that memoizes its argument into module-level state:
+```esc
+val mut seen = Map()
 
-```js
-const seen = new Map();
-export function remember(value) { seen.set("last", value); }
+fn remember(value) { seen.set("last", value) }
+
+fn go() -> number {
+    val opts = {retries: 3}
+    remember(&opts)
+    return opts.retries    // accepted, since remember only borrows opts
+}
 ```
 
-The converter can declare the parameter three ways:
+`seen` settles to `Map<string, &'static {retries: number}>`.
+
+L1 allows either answer for an escaping value. The destination can own it, or
+it can be a `'static` borrow that leaves the source usable under E2. A converter
+declaring `remember` from JavaScript has three choices:
 
 | Declaration | Caller after `remember(...)` |
 |---|---|
@@ -998,55 +1166,42 @@ The converter can declare the parameter three ways:
 | `value: &'static {retries: number}` | `opts` can still be read, but never written again |
 | `value: &'static mut {retries: number}` | `opts` can still be written, but never borrowed as `&` again |
 
-The owned form works for every caller that does not use the value afterward. The
-`'static &` form fits a caller that keeps reading the value, which is the common
-case for a memoization key or a configuration object. A function whose body
-writes the stored value needs one of the other two forms.
+The `'static &` form fits a caller that keeps reading the value, which is the
+common case for a memoization key or a configuration object. A body that writes
+the stored value needs one of the other two forms.
 
-Recommendation: infer a `'static &` borrow for an escaping parameter that the
-body never writes, and an owned parameter otherwise. A written annotation
-overrides the inference either way.
-
-Decided: accepted. An escaping parameter that the body never writes is inferred
-as a `'static &` borrow, and one the body writes is owned. The rule applies only
-where the destination's type leaves the ownership open, such as a `Map` whose
-value type is inferred, or a function the converter declares from JavaScript
-source. Where the destination's type is owned, T6 already makes the parameter
-owned, as for `store` in F3. A written annotation overrides the inference.
+`markOpenEscapeParams` in [param_escape.go](../../internal/solver/param_escape.go)
+applies the rule. Rendering `remember` with its `'static &` parameter is tracked
+by [#2352](https://github.com/escalier-lang/escalier/issues/2352).
 
 ### D10. Recording that a callback is not retained
 
-A function value is a value type, so it carries no lifetime, and nothing in the
-rules distinguishes a callee that only calls a callback from one that stores it.
-The source-analysis plan for third-party packages expects to record exactly that
-fact. [#1267](https://github.com/escalier-lang/escalier/issues/1267) tracks the
-same gap for Escalier's own functions.
+A function type's lifetime records how long the callee may keep the function,
+and so how long the closure's captures stay borrowed. E4 states how a call
+reads it. A parameter whose `fn` type has no written lifetime is only called
+during the call, as D17 decides. A parameter written `'static fn` may be kept
+for the rest of the program.
 
-The program below shows the gap. It writes the parameters in the lifetime form
-recommended below. `onClick` keeps its handler for the rest of the program, so
-the handler's mutable borrow of `count` stays live after the call, as for a
-closure stored into module-level state under E4. `render` then takes an
-immutable view of `count` that a click could change. Today the two parameter
-types are the same `fn () -> undefined`, so the checker treats `onClick` like a
-callee that only calls its argument and accepts the program.
+`onClick` below keeps its handler for the rest of the program, so it holds the
+handler's mutable borrow of `count.n` for that long. `render` takes an
+immutable view of `count` after the call, and the handler may change it on any
+click, so the view is rejected:
 
 ```esc
-declare fn onClick(handler: &'static fn () -> undefined) -> undefined
-declare fn forEachItem(f: fn () -> undefined) -> undefined
+declare fn onClick(handler: 'static fn () -> undefined) -> undefined
 declare fn render(view: &{n: number}) -> undefined
 
 fn setup() {
     val mut count = {n: 0}
     onClick(fn () { count.n = count.n + 1 })
-    render(&count)    // error: a click may run the handler, which writes 'count' while it is borrowed as immutable
+    render(&count)    // error: cannot borrow 'count' as immutable while 'count.n' is borrowed as mutable by the 'handler' that 'onClick' retains
 }
 ```
 
 There are two ways to write `setup` so that it checks. The first moves every use
-of `count` into the handler. `onClick` keeps the closure for the rest of the
-program, so the closure's borrow of `count` stays live that long, as it does for
-a closure stored into module-level state. `setup` never uses `count` again, and
-the borrow `render` takes inside the closure lasts only for one call:
+of `count` into the handler. `setup` never uses `count` again, so nothing
+conflicts with the handler's kept borrow, and the borrow `render` takes inside
+the closure lasts only for one call:
 
 ```esc
 fn setup() {
@@ -1058,34 +1213,13 @@ fn setup() {
 }
 ```
 
-The second gives `render` a mutable view. An immutable view promises that the
-value does not change while it is held, which a stored handler makes
-impossible. A mutable view makes no such promise, and E2 allows several mutable
-paths at once:
+The second keeps the handler for a shorter lifetime. A callee that keeps its
+handler only while some holder is live declares that lifetime, as `Button<'a>`
+in E4 does. `setup` may then borrow `count` once the holder is dead.
 
-```esc
-declare fn render(view: &mut {n: number}) -> undefined
-
-fn setup() {
-    val mut count = {n: 0}
-    onClick(fn () { count.n = count.n + 1 })
-    render(&mut count)    // accepted
-}
-```
-
-The options are:
-
-- Give function types an optional lifetime, as in `&'a fn () -> undefined`.
-  The lifetime bounds how long the callee may keep the function, and E4 reads it
-  to decide how long the captures stay borrowed.
-- Add a marker on the parameter that says the callee does not keep it, and treat
-  every unmarked function parameter as retained.
-
-Recommendation: the lifetime form. It reuses L1 and E4 instead of adding a rule.
-
-Decided: accepted. A function type takes an optional lifetime, as in
-`&'a fn () -> undefined`, and E4 states how a call reads it. A function
-parameter with no lifetime is only called during the call.
+The alternative was a marker on a parameter saying the callee does not keep it,
+with every unmarked function parameter read as retained. The lifetime form
+reuses L1 and E4 instead of adding a rule.
 
 ### D11. Interior mutability for state no reader can observe
 
@@ -1098,8 +1232,8 @@ field puts one mutable part inside an immutable value, as T3 allows.
 Three cases still push against the rule:
 
 - A cache or a lazy field. A `&self` method that computes an expensive result
-  once and keeps it, such as a memoized hash, must be `&mut self` today, and
-  that requirement spreads to every caller.
+  once and keeps it, such as a memoized hash, must be `&mut self`, and that
+  requirement spreads to every caller.
 - Bookkeeping that is not part of the value, such as a counter, an id
   generator, or debug statistics on an otherwise immutable object.
 - JavaScript methods that change internal state while reading. Examples are
@@ -1117,8 +1251,8 @@ contents. From the smallest change to the largest:
 - A general `RefCell`, which holds any value and checks its borrows at runtime.
 - No cell, which keeps the invariant as written.
 
-The cache case looks like this today. `wordCount` writes its cache, so it needs
-`&mut self`, and a caller holding only `&Document` cannot call it:
+Without a cell, the cache case looks like this. `wordCount` writes its cache,
+so it needs `&mut self`, and a caller holding only `&Document` cannot call it:
 
 ```esc
 class Document {
@@ -1162,7 +1296,11 @@ fields with the smallest exception. Keep counters and the interop methods on
 
 Decided: accepted. Escalier adds a write-once cell, and the invariant states
 the exception it makes. The cell's name, syntax, and API are still to be
-designed. Counters and the interop methods stay on `&mut self` for now.
+designed. Counters and the interop methods stay on `&mut self`.
+
+The cell's design is tracked by
+[#2275](https://github.com/escalier-lang/escalier/issues/2275), and its
+implementation by [#2276](https://github.com/escalier-lang/escalier/issues/2276).
 
 ### D12. A `mut` that grants nothing
 
@@ -1218,7 +1356,7 @@ fn k() {
 
 The options are:
 
-- Accept it silently, as the checker does today.
+- Accept it silently.
 - Warn when the binding's type has no writable slot, meaning a value type, a
   `&` borrow, a `&mut` borrow, or an owned value whose layers hold nothing a
   write can replace. Warn the same way on a `&mut` type or a `&mut`
@@ -1228,58 +1366,51 @@ The options are:
   Rust's `unused_mut` lint does. This covers the value-type case and also an
   owned binding the body only reads, but it needs the body's write analysis.
 
-Recommendation: warn on a type with no writable slot now and add the
+Recommendation: warn on a type with no writable slot first and add the
 unused-binding warning later. Both are warnings rather than errors, since the
 program means the same with or without the `mut`.
 
 Decided: accepted. A `mut` binding whose type has no writable slot reports a
-warning, and so does a `&mut` type or expression whose referent has none. Both
-are tracked by
-[#2304](https://github.com/escalier-lang/escalier/issues/2304).
-A warning on any `mut` binding the body never writes or borrows as `&mut` is a
-later addition, tracked by
-[#2305](https://github.com/escalier-lang/escalier/issues/2305).
+warning, and so does a `&mut` type or expression whose referent has none. A
+warning on any `mut` binding the body never writes or borrows as `&mut` is a
+later addition.
+
+The checker reports neither warning. The first is tracked by
+[#2304](https://github.com/escalier-lang/escalier/issues/2304), and the second
+by [#2305](https://github.com/escalier-lang/escalier/issues/2305).
 
 ### D13. Binding mutability is written, not inferred
 
-T2 makes every binding immutable unless it is written `mut`, and T1 lets a
-parameter declare a mutable binding as `fn f(mut p: T)`. F3 infers an
-unannotated parameter's ownership from the body, but says nothing about its
-binding's mutability. The checker infers that too. A write in the body makes an
-unannotated parameter's binding mutable:
+A binding is mutable only when it is written `mut`, parameters included, as T2
+states. Inference never makes a binding mutable. A write through an immutable
+binding is rejected, and the message names the `mut` to write:
 
 ```esc
 var sink = {x: 0}
 
 fn f(p) {
-    p.x = 1
+    p.x = 1    // error: cannot mutate 'p' because its binding is immutable; declare it as `mut p`
     sink = p
 }
 ```
 
-The options are:
-
-- Infer the binding's mutability from writes in the body, as the checker does
-  today.
-- Require `mut` to be written, as T2 states, and report a write through an
-  immutable binding with a message that says to write `mut p`.
+Written as `fn f(mut p)`, the same function is accepted and infers
+`fn (p: {x: number}) -> undefined`.
 
 A binding's mutability is not part of the signature, since `fn f(mut p: T)`
-has the same type as `fn f(p: T)`. Inferring it gives the caller nothing, and
-it hides from a reader of the signature whether the body changes its own value.
+has the same type as `fn f(p: T)`. Inferring it would give the caller nothing,
+and it would hide from a reader of the signature whether the body changes its
+own value.
 
-The parameter's type is different. Whether an unannotated parameter is owned,
+A parameter's type is different. Whether an unannotated parameter is owned,
 `&T`, or `&mut T` decides what the caller writes, so it stays inferred. F3
-says a parameter that does not escape is a borrow. A body that writes through
+makes a parameter that does not escape a borrow. A body that writes through
 such a parameter makes it `&mut`, and one that only reads it makes it `&`.
+`fn r(p) { return p.x }` infers `fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0`.
 
-Recommendation: require `mut` on every mutable binding, parameters included,
-and keep inferring an unannotated parameter's type.
-
-Decided: accepted. `fn f(p)` above reports the write to `p.x` and asks for
-`mut p`. Step 2 of the migration removes the inference of binding mutability.
-Step 4 infers `&` or `&mut` for an unannotated parameter that does not
-escape, from whether the body writes through it.
+The checker infers the `&` case only. A parameter that does not escape and that
+the body writes through is inferred as owned, so `fn w(p) { p.x = 1 }` asks for
+`mut p`. [#2570](https://github.com/escalier-lang/escalier/issues/2570) tracks the `&mut` case.
 
 ### D14. The mutability of a borrow a pattern binds
 
@@ -1297,9 +1428,10 @@ fn f(line: &mut Line) {
 }
 ```
 
-The checker binds `start` as an immutable `Point`, so the write reports
-`cannot constrain immutable Point <: mutable object`. Writing `line.start.x = 1`
-is accepted, so the pattern takes away a write the borrow allows.
+The checker reports the write as
+``cannot mutate 'start' because its binding is immutable; declare it as `mut start` ``.
+Writing `line.start.x = 1` is accepted, so the pattern takes away a write the
+borrow allows.
 
 The options are:
 
@@ -1317,7 +1449,9 @@ Recommendation: bind borrows with the scrutinee's mutability. The scrutinee's
 type already shows the `&mut`, and T4 lets a caller narrow `start` to `&Point`
 wherever it needs only reads.
 
-Decided: accepted. F4 states it. The checker change is tracked by
+Decided: accepted. F4 states it.
+
+The checker change is tracked by
 [#2318](https://github.com/escalier-lang/escalier/issues/2318).
 
 ### D15. A mutable borrow of a value no binding holds
@@ -1361,15 +1495,32 @@ borrowed value lives as long as the borrow does.
 
 Recommendation: check `&mut e` as the binding it stands for.
 
-Decided: accepted. T7 states it. The checker change is tracked by
+Decided: accepted. T7 states it.
+
+The checker change is tracked by
 [#2324](https://github.com/escalier-lang/escalier/issues/2324).
 
 ### D16. A returned borrow of a value nothing else reaches
 
-L1 lets a borrow outlive the binding that owns its place, so a function may
-return `&b` for a local `b`. The rules do not say what type the caller receives.
-The checker infers an owned return, which is unsound when module-level state
-still reads `b`:
+A returned borrow is owned when nothing outside the call reaches the value, as
+L1 and L3 state. The returned borrow's lifetime records whether anything else
+reaches the value, given five rules:
+
+1. An immutable borrow of a place that already has an immutable borrow
+   outliving the current frame takes that borrow's lifetime.
+2. A returned `&` is owned when its lifetime ends with the callee's frame,
+   meaning it is not tied to a parameter, a capture, or `'static`.
+3. A `&mut` of a place that already has a `&mut` outliving the current frame
+   takes that borrow's lifetime.
+4. A returned `&mut` is owned when its lifetime ends with the callee's frame, as
+   the second rule states for a returned `&`.
+5. A borrow nested in a returned value is owned when its lifetime ends with the
+   callee's frame and no other borrow in the returned value reaches an
+   overlapping place. A borrow reaches the place it borrows and every place
+   the borrows in its referent reach.
+
+Without the first rule, `h` below would return an owned value that `cache`
+still reads, and `k` could write it:
 
 ```esc
 var cache: &{x: number} = &{x: 0}
@@ -1377,34 +1528,32 @@ var cache: &{x: number} = &{x: 0}
 fn h() {
     val b = {x: 1}
     cache = &b
-    return &b        // h infers fn () -> {x: 1}
+    return &b        // h: fn () -> &'static {x: 1}
 }
 
 fn k() {
     val mut r = h()
-    r.x = 5          // writes the value cache still reads
+    r.x = 5          // rejected, since r is a borrow of the value cache reads
 }
 ```
 
 A lifetime says how long one borrow stays usable. It does not say whether
-another path reaches the same value, so the two borrows of `b` above can carry
+another path reaches the same value, so the two borrows of `b` could carry
 different lifetimes. E2 closes that gap. While one immutable borrow of `b` is
-live, no write to `b` can follow, so any other immutable borrow of `b` can
-live as long as that one does.
+live, no write to `b` can follow, so any other immutable borrow of `b` can live
+as long as that one does. The first rule gives the returned `&b` the `'static`
+lifetime of the borrow in `cache`.
 
-The options are:
+The third rule adds no rejection. While a `&mut` of a place outlives the frame,
+E2 already rejects every `&` of the place, and several `&mut` paths may be
+live together. An outliving `&` of the place makes the `&mut` itself an E2
+error, so no rule ties a borrow to one of the other kind.
 
-- Infer every returned `&` as a borrow. This is always sound, but `return &b`
-  for a local that nothing else reaches hands the caller a borrow it could
-  safely own.
-- Infer an owned return only when nothing outside the call reaches the value.
-  The returned borrow's lifetime records that, given two rules:
-  1. An immutable borrow of a place that already has an immutable borrow
-     outliving the current frame takes that borrow's lifetime.
-  2. A returned `&` is owned when its lifetime ends with the callee's frame,
-     meaning it is not tied to a parameter, a capture, or `'static`.
+Inferring every returned `&` as a borrow would also be sound. But `return &b`
+for a local that nothing else reaches would then hand the caller a borrow it
+could safely own.
 
-Under the second option, the answer for a call follows the callee's signature:
+For a returned call result, the answer follows the callee's signature:
 
 - `return lookup(&b)` with `lookup<'a>(p: &'a {x: number}) -> &'a {x: number}`
   stays a borrow. The `'a` result may be a `'static` value rather than `b`, and
@@ -1416,10 +1565,9 @@ Under the second option, the answer for a call follows the callee's signature:
 - A function that returns a borrow of module-level state renders its result as
   `&'static`, since L3 always renders `'static`.
 
-The two rules work together. A result that ties to no parameter comes from
-somewhere else. Either the function built it, or the result borrows something
-that already exists outside the call. Each comment below gives the rendered
-signature:
+A result that ties to no parameter comes from somewhere else. Either the
+function built it, or the result borrows something that already exists outside
+the call. Each comment below gives the rendered signature:
 
 ```esc
 var cfg = {x: 0}
@@ -1435,16 +1583,11 @@ fn stash(p: &{x: number}) {
     cache = &q
     return &q
 }
-// fn (p: &{x: number}) -> &'static {x: number}, since cache also reads q
+// fn (p: &{x: number}) -> &'static {x: 1}, since cache also reads q
 ```
 
 In both functions, something else still reads the returned value after the
-call. In `getCfg` it is `cfg` itself, and in `stash` it is `cache`. Without the
-first rule, the `&q` that `stash` returns would carry its own lifetime, because
-only the `&q` stored in `cache` flows into module-level state. The second rule
-would then make the result owned, and a caller could write the value `cache`
-reads. The first rule gives the returned `&q` the lifetime of the borrow in
-`cache`, so the result stays a borrow.
+call. In `getCfg` it is `cfg` itself, and in `stash` it is `cache`.
 
 The rules read the frame rather than the module, so they hold when the same
 functions are closures. Here `cfg` and `cache` are locals of `outer`, and
@@ -1467,7 +1610,7 @@ fn outer() {
     val r = stash(&cfg)
     return r
 }
-// fn () -> {x: number}
+// fn () -> {x: 1}
 ```
 
 - `getCfg` returns a borrow tied to its capture of `cfg`, so its result is a
@@ -1482,27 +1625,8 @@ fn outer() {
   for instance by being returned or stored in module-level state, the lifetime
   would reach past `outer` and the return would stay a borrow.
 
-A bodyless signature is taken at its word, so the declaration converter must
-render `'static` for any returned borrow it cannot vouch for.
-
-The same reasoning covers a returned `&mut` and a borrow nested in a returned
-value, given three more rules:
-
-3. A `&mut` of a place that already has a `&mut` outliving the current frame
-   takes that borrow's lifetime.
-4. A returned `&mut` is owned when its lifetime ends with the callee's frame, as
-   the second rule states for a returned `&`.
-5. A borrow nested in a returned value is owned when its lifetime ends with the
-   callee's frame and no other borrow in the returned value reaches an
-   overlapping place. A borrow reaches the place it borrows and every place
-   the borrows in its referent reach.
-
-The third rule adds no rejection. While a `&mut` of a place outlives the frame,
-E2 already rejects every `&` of the place, and several `&mut` paths may be
-live together. An outliving `&` of the place makes the `&mut` itself an E2
-error, so no rule ties a borrow to one of the other kind.
-
-Each comment below gives the rendered signature:
+The last three rules cover a returned `&mut` and a borrow nested in a returned
+value. Each comment below gives the rendered signature:
 
 ```esc
 declare fn keep(x: &'static mut {x: number}) -> undefined
@@ -1545,60 +1669,215 @@ fn twice() {
 - In `twice`, both fields reach `b`. An owned value has one owner, so owning
   either field would hide the path through the other. Both stay borrows.
 
-Recommendation: infer an owned return only when nothing outside the call reaches
-the value, using the rules above.
+A bodyless signature is taken at its word, so the declaration converter must
+render `'static` for any returned borrow it cannot vouch for.
 
-Decided: accepted. L1 and L3 state it. The checker change is tracked by
-[#2330](https://github.com/escalier-lang/escalier/issues/2330) for the first
-two rules and [#2489](https://github.com/escalier-lang/escalier/issues/2489)
-for the other three.
+[lifetime_frame.go](../../internal/solver/lifetime_frame.go) applies the rules.
 
-### D17. The retention lifetime of a `fn` type outside a parameter
+### D17. Function lifetimes
 
-E4 and D10 give a plain `fn` parameter a meaning: the callee only calls the
-function during the call. A `fn` type also appears in a binding, a field, an
-array element, and a return type, and the rules do not say how long those keep
-the function. The checker accepts any plain `fn` there, which lets a body keep
-a call-only parameter past the call:
+A function type's lifetime bounds the borrows the function holds, the way a
+`&'a T` borrow's lifetime bounds how long the borrow lives. Six rules decide
+how the lifetime is written, elided, inferred, and checked:
+
+1. Any `fn` type may hold borrows, in every position. Its lifetime is written
+   as a prefix, as in `'a fn () -> undefined` or `'static fn () -> undefined`.
+   It needs writing only where the elided one is not the one wanted. A function
+   type takes no `&`, so `&fn () -> undefined` is rejected with
+   `Unsupported: borrow of a non-borrowable type`. A function is still a value
+   type, so F2 copies it into a slot, and passing one needs no written `&`.
+2. A `fn` type written with no lifetime takes one by its position, the way an
+   elided `&T` borrow does:
+   - In a parameter, the lifetime is fresh and ends with the call, unless the
+     signature ties it to the result. Such a parameter is *call-only*: the
+     body may call it during the call, but may not store it where it outlives
+     the call, pass it to a `'static` slot, or read it in an `async` or
+     generator body that runs after the call returns. The one exception is a
+     result whose lifetime the signature ties to the parameter's, as the next
+     bullet's elision does. The body may return the parameter, or a closure
+     that holds it, there.
+   - In a return type, the lifetime depends on the signature's input
+     lifetimes. An input lifetime is one that the receiver, a parameter, or a
+     `<'a>` list introduces. When the signature has one, the return lifetime
+     is fresh and tied to the input lifetimes, and the body's returns bound
+     it. A signature with no input lifetime has nothing a returned function
+     could borrow from, so its elided return lifetime is `'static`.
+   - In a module-level binding's annotation, a class field, an interface, or a
+     type alias, the lifetime is `'static`. So is a field or an element type
+     inside one of those. A script's top level counts as module level.
+   - In a binding annotation inside a body, the lifetime is fresh, as an elided
+     `&` is there.
+3. A `'static fn` slot holds only a function that borrows nothing shorter-lived
+   than the program. A written `'static` and one that rule 2 elides mean the
+   same. A module-level function fits, and so does a closure that
+   captures only module-level bindings. A closure that borrows a local is
+   rejected, unless rule 5 applies.
+4. A closure's lifetime comes from what it captures. The checker infers each
+   captured variable's capture mode from the body:
+   - A value type read from a `val` binding or a parameter is copied, and adds
+     no borrow.
+   - A read of any other capture borrows it immutably. A captured `var` is
+     borrowed even when it holds a value type, since the closure must see the
+     binding's later writes.
+   - A write through a capture, or an assignment to a captured `var`, borrows it
+     mutably.
+   - A call of a captured function holds that function's borrows.
+
+   A closure that borrows nothing is `'static`. There is no capture syntax
+   other than `move fn` in rule 6.
+5. A kept closure keeps its borrows of the body's locals. This rule extends
+   F3's returned closure to every destination that keeps a closure past the
+   body. Such a destination is a `return` or a `'static` slot. A `'static`
+   slot is a `'static fn` parameter, a module-level binding, a `'static`
+   field, or an element of a module-level array. When a closure flows into
+   one of them, each borrow it holds of a `val` or `var` local of the
+   enclosing body lasts for the rest of the program, as a `'static` borrow
+   does:
+   - Each borrow covers the place the closure names, such as `p.x`. It
+     covers the whole local when the closure uses `p` itself, as in
+     `see(&p)`.
+   - A place the closure assigns or takes `&mut` of is borrowed mutably.
+     Any other place it uses is borrowed immutably.
+   - Later uses follow E2's table. Beside a kept mutable borrow, a read, a
+     write and `&mut` of an overlapping place are accepted, and `&` is
+     rejected, as in `cannot borrow 'count' as immutable while 'count.n' is
+     borrowed as mutable by the 'handler' that 'onClick' retains`. Beside a
+     kept immutable borrow, a read and `&` are accepted, and a write or
+     `&mut` is rejected, as in `cannot assign to 'p.x' while it is borrowed
+     as immutable by 'sink'`. A move is rejected by E3 beside either.
+   - Calling the kept closure through its own local name is accepted.
+   - A parameter, or a borrow of something outside the body, outlives the
+     body by an amount the body can't know. At a `return`, the borrow ties
+     the result to the parameter's lifetime, as F3 and `wrap` below show. A
+     `'static` slot rejects such a closure at the store, with a message
+     such as `` this closure borrows `p`, but `keep` keeps it for
+     'static; pass a function that borrows nothing ``.
+6. `move fn` makes a closure own its captures from where it is written. A
+   captured value type is still copied, and a captured borrow stays a borrow.
+
+Rule 5 is where Escalier departs from Rust. Rust frees a local at the end of
+its scope, so a closure that outlives the scope must be written `move` to own
+what it captures. Escalier compiles to JavaScript, where a captured local is
+never freed while a closure can reach it. The borrow rules here protect
+against aliasing, not against deallocation. So a kept closure can go on
+borrowing a local after the body returns. Only a later use that E2 rejects
+beside a `'static` borrow of the same kind is rejected.
+
+The program below shows rule 2 in three positions. Each comment names the
+lifetime of the `fn` type on its line or the line below:
 
 ```esc
+// 'static, since sink is a module-level binding
 var sink: fn () -> undefined = fn () {}
 
-fn keep(g: fn () -> undefined) {
+// the elided return lifetime is tied to g's, so the closure may hold g
+fn wrap(g: fn () -> undefined) -> fn () -> undefined {
+    // fresh, so the local may hold g during the call
     val k: fn () -> undefined = g
-    k()            // harmless, since k lives only in the body
-    sink = g       // keeps g for the rest of the program
+    k()
+    return fn () { g() }
+}
+// wrap: fn <'a>(g: 'a fn () -> undefined) -> 'a fn () -> undefined
+
+fn stash(g: fn () -> undefined) {
+    sink = g    // error: 'g' may borrow values that live only during the call, but it is stored where it lives for the whole program; write `g: 'static fn () -> undefined` to keep it
 }
 ```
 
-The options are:
+E4's `setup` example shows rules 3 through 5. `keep(show)` and `keep(inc)` are
+both accepted by rule 5. The later `render(&count)` is rejected because
+`keep` holds `inc`'s mutable borrow of `count.n`.
 
-- Read a plain `fn` outside a parameter as `&'static fn`. This is always sound,
-  but it rejects `val k: fn () -> undefined = g`, which keeps `g` no longer
-  than the call does.
-- Infer the retention lifetime from where the value flows, the same way an
-  elided `&` lifetime is inferred. A module-level slot such as `sink` lives for
-  the rest of the program, so its lifetime is `'static`. A local such as `k`
-  keeps the function only while `k` is live. A return type or a class field
-  takes the lifetime of the caller's result or the instance, which the
-  signature or the class names.
+An unannotated parameter that the body only calls is call-only, so
+`fn f(g) { return g() }` infers `fn <T0>(g: fn () -> T0) -> T0`. One the body
+stores into a `'static` slot infers a `'static fn` parameter.
 
-Under the second option, `sink = g` is rejected, since `g` is kept only for the
-call and `sink` needs `'static`. `val k = g; k()` is accepted. L3 renders the
-inferred lifetime the way it renders a borrow's, so `sink` shows as
-`&'static fn () -> undefined` and an unconnected local lifetime is elided.
+Each error follows the shape of Rust's. It names the value, what the value
+borrows, what keeps the value and for how long, and the fix. Two examples:
 
-Recommendation: infer the retention lifetime of a `fn` type outside a parameter
-the way an elided `&` lifetime is inferred.
+- `` 'g' may borrow values that live only during the call, but it is kept after the call returns; write `g: 'static fn () -> undefined` to keep it ``
+- `cannot borrow 'count' as immutable while 'count.n' is borrowed as mutable by the 'cb' that 'keep' retains`
 
-Decided: accepted. E4 states it. The checker change is tracked by
-[#2342](https://github.com/escalier-lang/escalier/issues/2342).
+The wording of each fix may change. The shape stays.
+
+A rendered function type shows its lifetime the way L3 renders a borrow's:
+
+- A function with no lifetime renders as `'static fn` inside a parameter list,
+  since a bare `fn` there reads back as call-only. Elsewhere it renders bare.
+- A lifetime that connects an input to an output is named, as a `&T` borrow's
+  is. `wrap` above renders as
+  `fn <'a>(g: 'a fn () -> undefined) -> 'a fn () -> undefined`.
+- A lifetime that connects nothing is elided.
+
+Whether to also drop a connected output lifetime that rule 2 would recover is
+open. Under rule 2, `fn (g: fn () -> undefined) -> fn () -> undefined` reads
+back as the same type as `wrap`'s rendered signature above.
+
+The rules above do not settle three cases. The checker behaves as follows in
+each, and each item says whether that behaviour is decided or open:
+
+- A function type in an object type written inline in a parameter is
+  call-only, since it takes the parameter's elision. The same field in a named
+  interface is `'static`. So `mount(opts: {cb: fn () -> undefined})` accepts a
+  closure that borrows a local, and `mount(opts: Opts)` with
+  `interface Opts { cb: fn () -> undefined }` rejects it. The difference is
+  surprising, and whether to keep it is open.
+- An unannotated `var` inside a body that starts with a closure that borrows
+  nothing gets a `'static` function type. With `var g = fn () {}` in a body,
+  a later `g = fn () { p.x = 2 }` over a local `p` is then rejected with
+  `` this closure borrows `p`, but `g` has the type of a closure that borrows nothing; annotate `g` with a function type to let it hold one that borrows ``.
+  A written type such as `var g: fn () -> undefined` in the same body is fresh
+  by rule 2, so it holds either closure. At module level the written type is
+  `'static` by rule 2, so it rejects the borrowing closure too. This is decided.
+  The binding's type comes from its initializer, as it does for any binding with
+  no written type.
+- A conditional type's `extends` test and its `infer` patterns ignore function
+  lifetimes. Whether they should compare them is open.
+
+The checker change is tracked by
+[#2342](https://github.com/escalier-lang/escalier/issues/2342),
+[#2553](https://github.com/escalier-lang/escalier/issues/2553), and
+[#2554](https://github.com/escalier-lang/escalier/issues/2554). Its
+implementation is in [#2550](https://github.com/escalier-lang/escalier/pull/2550),
+in `func_elision.go`, `closure_captures.go`, and `lifetime_call_only.go` under
+`internal/solver`. These parts are not implemented:
+
+- `move fn` from rule 6, tracked by
+  [#2585](https://github.com/escalier-lang/escalier/issues/2585).
+- Marking the `.d.ts` callbacks a callee keeps as `'static fn`, as I2 states.
+
+These gaps remain:
+
+- A borrow of a local passed directly to a `'static` parameter, as
+  `keepRef(&cfg)` with `keepRef(p: &'static {msg: string})`, is accepted.
+  [#2584](https://github.com/escalier-lang/escalier/issues/2584) tracks it.
+- A function value's lifetime ignores a `&` borrow it holds.
+  [#2565](https://github.com/escalier-lang/escalier/issues/2565) tracks the
+  cases. A returned closure that captures a `&` parameter is not tied to that
+  parameter. A method value read off a borrowed receiver has no lifetime, so
+  with `v: &View`, `sink = v.get` is accepted where
+  `sink = fn () { return v.get() }` is rejected. Section 4 of the issue covers
+  this case.
+- A constructor parameter written with no lifetime that the constructor stores
+  into an `'a` field gets its own lifetime `'b`, with the bound `'b: 'a`. So
+  `Keyed<'a>` with `constructor(&mut self, key: fn () -> undefined)` renders
+  as `new <'a, 'b: 'a>(key: 'b fn () -> undefined) -> Keyed<'a>`. A caller's
+  check that a call may run the retained function compares lifetimes by
+  identity and does not follow `'b: 'a`, so it misses the conflict. Section 2
+  of #2565 covers it.
+- A closure that moves out a capture can be called twice once it crosses a
+  function boundary, as D2 states.
+  [#2581](https://github.com/escalier-lang/escalier/issues/2581) tracks it.
 
 ### D18. A module-level binding whose type its uses decide
 
-The checker generalizes every binding. Each use of a generalized binding gets
-fresh copies of its type variables, which is right for a function and wrong for
-a container a call creates:
+A binding *generalizes* when each use of it gets fresh copies of its type
+variables, as a polymorphic function does. A `val` or `var` generalizes only
+when it has a type annotation, or when it is an immutable binding whose
+initializer is a syntactic value. Any other binding's type variables are
+*weak*. A weak variable is shared by every use of its binding, so the uses
+decide its type together. OCaml calls this the value restriction, and prints
+such a variable as `'_weak1`.
 
 ```esc
 val mut seen = Map()
@@ -1606,31 +1885,13 @@ fn a() { seen.set("k", 1) }
 fn b() { seen.set("k", "s") }
 ```
 
-`a` and `b` each write into their own copy of `seen`'s key and value types, so
-both calls check and `seen` renders as `Map<never, never>`. A function that
-stores a `'static` borrow and another that stores an owned value also both
-check, which D9 relies on not happening.
+`seen`'s initializer is a call, so `a` and `b` write the same key and value
+types, and `seen` settles to `Map<string, number | string>`. If `seen`
+generalized, `a` and `b` would each write their own copy of its type
+variables. Both calls would check, and `seen` would render as
+`Map<never, never>`.
 
-The options are:
-
-- Generalize every binding, as the checker does today.
-- Generalize only a binding whose initializer is a syntactic value, and leave
-  the variables of any other binding weak. A weak variable is shared by every
-  use of its binding, so the uses decide its type together. OCaml calls this
-  the value restriction, and prints such a variable as `'_weak1`.
-- Require an annotation on every module-level binding, as Rust requires one on
-  every `static`.
-
-An annotation on every binding gives up inference for the common case of a
-call whose result needs none, such as `val five = id(5)`. Weak variables keep
-that case and still give `seen` one type.
-
-Recommendation: adopt weak variables, as OCaml does, and require no
-annotation.
-
-Decided: accepted. A `val` or `var` generalizes when it has a type annotation,
-or when it is an immutable binding whose initializer is a syntactic value. These
-initializers are syntactic values:
+These initializers are syntactic values:
 
 - a function expression,
 - a literal, and a template literal whose interpolations are syntactic values,
@@ -1646,6 +1907,11 @@ template, `await`, `yield`, `throw`, or an `if`, `match`, `do`, or `try`
 expression. A `var` and a binding written `mut` never generalize, whatever
 their initializer, since a write through one use would not reach another. So
 `val f = fn (x) { return x }` stays `fn <T0>(x: T0) -> T0`.
+
+Requiring an annotation on every module-level binding, as Rust requires one on
+every `static`, would also give `seen` one type. It would give up inference for
+the common case of a call whose result needs none, such as `val five = id(5)`.
+Weak variables keep that case.
 
 A weak binding's type settles once everything that can write it is inferred.
 For a module-level binding that is the end of the module, and for a binding in
@@ -1697,6 +1963,15 @@ since `&mut T` accepts only a borrow of exactly `T`. With
 `&mut {x: number}` would claim that `r.x = 2` is allowed, which the type of `p`
 rejects.
 
+The widening applies to the type the checker uses, not only to the type it
+displays. A value widens as it reaches a writable slot, so every read of the
+binding sees the settled type, whichever function writes it and in whatever
+order. With `seen` written by `seen.set("k", 1)`, `fn get() { return seen.get("k") }`
+infers as `fn () -> number | undefined`, and `val one: 1 | undefined = seen.get("k")`
+is rejected. A value keeps its literals everywhere else it flows. A `put(x)`
+that stores `[x]` in `seen` and returns `x` returns `1` from `put(1)` and
+stores `[number]`.
+
 The checker requires no annotation. A weak variable no use decides settles
 silently. A container that is never written settles at `never`, so
 `val mut seen = Map()` with no `seen.set` reads as `Map<never, never>`. A
@@ -1712,158 +1987,66 @@ another reports the error T8 gives a join of such branches, against the
 module-level binding.
 
 The rule lives in `generalizes` in [poly.go](../../internal/solver/poly.go),
-and the settling in [weak.go](../../internal/solver/weak.go).
+and the settling in [weak.go](../../internal/solver/weak.go). Two follow-ups
+are open. Keeping a function monomorphic when its parameter flows into a weak
+binding is tracked by
+[#2352](https://github.com/escalier-lang/escalier/issues/2352). Widening the
+literals in the checked type, and not only in the displayed one, is tracked by
+[#2348](https://github.com/escalier-lang/escalier/issues/2348).
 
 ## Known bugs
 
-**B1. A store into a `&` field without `&` moves the source.** The field and
-element store paths in `inferFieldAssign` call `consumeOwned` even when the
-destination is declared as a borrow
-([infer_expr.go](../../internal/solver/infer_expr.go)). The program below
-reports `use of moved value 'p'` on its last line. Under F4 it should instead
-reject `h.slot = p` for the missing `&`. Written as `h.slot = &p`, it checks
-clean today.
+**B9. T5 misses a readonly field some owned destinations hide.**
+`reportReadonlyIntoWritable` in
+[infer_decl.go](../../internal/solver/infer_decl.go) applies T5 to an owned
+destination whose type is an object or tuple. It reports nothing for a
+destination typed by a type parameter, a union, or a rest parameter, or for a
+readonly field inside a class's type argument. Each call below checks clean,
+and each should report
+`readonly field 'a' cannot satisfy a writable field requirement`:
 
 ```esc
-export fn go() -> number {
-    val p = {x: 1}
-    val q = {x: 2}
-    val mut h: {slot: &{x: number}} = {slot: &q}
-    h.slot = p
-    return p.x + h.slot.x
+fn bounded<T: {a: number}>(o: T) -> T { return o }
+fn nullable(o: {a: number} | null) {}
+fn rest(...o: Array<{a: number}>) {}
+fn list(o: Array<{a: number}>) {}
+
+fn f(p: {readonly a: number}, q: {readonly a: number},
+     r: {readonly a: number}, xs: Array<{readonly a: number}>) {
+    bounded(p)
+    nullable(q)
+    rest(r)
+    list(xs)
 }
 ```
 
-**B2. A `'static` immutable path does not block a later write.** Each program
-below checks clean, and each should report an E2 error on its last write or
-borrow:
-
-```esc
-var cache: &{retries: number} = &{retries: 0}
-
-export fn go() -> number {
-    val mut opts = {retries: 3}
-    cache = &opts
-    opts.retries = 4
-    return opts.retries
-}
-```
-
-```esc
-declare fn track(value: &'static mut {retries: number}) -> undefined
-declare fn read(value: &{retries: number}) -> number
-
-export fn go() -> number {
-    val mut opts = {retries: 3}
-    track(&mut opts)
-    return read(&opts)
-}
-```
-
-The store and the call themselves are fine under L1. The bug is that E2 does not
-treat the `'static` path as live afterward.
-
-**B3. A borrow taken by an annotation alone escapes E3.** The binding `val c:
-&{x: number} = p` borrows `p`, but the move check does not see that borrow. The
-program below checks clean, and `take` changes the value `c` reads. Written with
-`val c = &p`, the same program reports `cannot move 'p' while it is borrowed`.
-F4 rejects the annotation-only form, which closes the hole.
-
-```esc
-fn take(p: {x: number}) -> number {
-    val mut q = p
-    q.x = 5
-    return q.x
-}
-
-export fn go() -> number {
-    val p = {x: 1}
-    val c: &{x: number} = p    // no error today. F4 rejects it for the missing &
-    val n = take(p)            // no error today, and take changes what c reads
-    return c.x + n
-}
-```
-
-**B5. A call to an unannotated escaping parameter does not move its argument.**
-The compiler infers `store` below as `fn (p: {x: number}) -> undefined`, an
-owned parameter, yet `store(a)` records no move and `a.x` checks clean. With
-the parameter written as `p: {x: number}`, the same call reports
-`use of moved value 'a'`. The unannotated form leaves `a` usable while
-`sink` holds the same value, so a later move of `a` to mutable could write what
-`sink` reads.
-
-```esc
-var sink = {x: 0}
-
-fn store(p) { sink = p }
-
-fn go() -> number {
-    val a = {x: 1}
-    store(a)
-    return a.x
-}
-```
-
-**B6. An unannotated parameter that does not escape is inferred as owned.** The
-compiler infers `fn read(p) { return p.x }` as
-`fn <T0>(p: {x: T0}) -> T0`. F3 makes that parameter a borrow, so the
-signature should be `fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0`. Today `read(&b)` reports
-`cannot use borrowed &object as owned object`, and `read(b)` is accepted
-without moving `b`.
-
-**B7. A retained callback's captures are borrowed only for the call.** The
-checker treats every function parameter as one the callee only calls, so a
-closure passed to a callee that keeps it holds its borrows for the call alone.
-The first program in [D10](#d10-recording-that-a-callback-is-not-retained)
-checks clean today and should report the error marked there.
-[#1267](https://github.com/escalier-lang/escalier/issues/1267) tracks the gap.
-
-**B8. A borrow copied into a second binding is not tracked.** A loan records
-only the binding that a written `&` or `&mut` fills. `recordBorrowLoan` in
-[borrow_exclusivity.go](../../internal/solver/borrow_exclusivity.go) ignores an
-initializer that names an existing borrow, so the copy holds no loan. A
-conflict through the copy is not reported. The loan also ends when the
-original holder is last used, even while the copy is still read. The program
-below checks clean today and should report the shared and mutable pair at the
-call:
-
-```esc
-declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
-
-fn g() {
-    val mut x = {v: 1}
-    val a = &x
-    val c = a
-    val b = &mut x
-    readWrite(c, b)
-}
-```
-
-The checking model closes it by recording the copy as a `copy(place, holder)`
-event, which makes `c` a second holder of the borrow.
-[#1527](https://github.com/escalier-lang/escalier/issues/1527) tracks the gap.
+The class case holds behind a `&mut` borrow too, so a
+`&mut Array<{readonly a: number}>` fills a `&mut Array<{a: number}>`. The class
+case is tracked by
+[#2552](https://github.com/escalier-lang/escalier/issues/2552).
 
 ## Divergences from the docs
 
-These came from reading the code and need confirming with a fixture each before
-the docs change.
+[docs/08_mutability.md](../../docs/08_mutability.md) and
+[docs/09_ownership.md](../../docs/09_ownership.md) disagree with the checker in
+these places:
 
 - Exclusivity between two explicit borrows, such as `&p` and `&mut p`, is
-  enforced by the loan check in
-  [borrow_exclusivity.go](../../internal/solver/borrow_exclusivity.go). Both docs
+  enforced. Taking `val b = &p` and then `val a = &mut p` while `b` is still
+  used reports
+  `cannot borrow 'p' as mutable while it is borrowed as immutable`. Both docs
   say it is not yet enforced and cite
   [#794](https://github.com/escalier-lang/escalier/issues/794).
-- An owned argument to a borrow parameter needs a written `&`. The docs say the
-  borrow is still inserted for the user. See D7.
-- An element store `t[i] = x` is typed and moves its source. `docs/09_ownership.md`
-  says it is rejected as unsupported and cites
+- An element store `t[i] = x` is typed and moves its source.
+  `docs/09_ownership.md` says it is rejected as unsupported and cites
   [#1268](https://github.com/escalier-lang/escalier/issues/1268).
 - The docs say a field store moves only when the container outlives the source.
-  The solver moves on every store into an owned field. F2 agrees with the solver.
+  The checker moves on every store into an owned field, and F2 agrees with it.
   The container owns the value afterward, so the source cannot keep it.
-- `docs/09_ownership.md` says a move is read off lifetime constraints. The solver
-  decides moves separately at each flow site with its own conditions. The checking
-  model above is the proposal to make the docs true.
+- Reassigning a `var` after a move gives it a fresh value, and a later use is
+  accepted. `docs/09_ownership.md` says the use is reported as a use after a
+  move and cites
+  [#1269](https://github.com/escalier-lang/escalier/issues/1269).
 
 ## Interop
 
@@ -1899,10 +2082,27 @@ Readonly<T>` to `&self` only when no slot reachable through `T` is writable.
 elements are fixed while their contents stay writable, so that case is still
 open.
 
-**I2. A value-type parameter is written as its bare type.** A primitive,
-function, or promise parameter is copied, so the converter writes the bare type
-and no borrow marker. A function parameter the callee keeps is the one
-exception, written `&'a fn …` as E4 states.
+**I2. A value-type parameter is written as its bare type.** A primitive or
+promise parameter is copied, so the converter writes the bare type and no
+borrow marker. A callback parameter is written as a bare `fn` type too. Its
+lifetime is elided, so by D17 the callee only calls it during the call.
+`forEach(callbackfn: (value: T) => void)` converts to
+`forEach(callbackfn: fn (value: T) -> unknown)`, and a closure that borrows a
+local passes to it.
+
+An API that keeps its callback, such as `addEventListener`, `setTimeout`, or
+`Promise.then`, needs `'static fn` on that parameter. Marking those parameters
+is not implemented. [#2573](https://github.com/escalier-lang/escalier/issues/2573)
+tracks marking the Web APIs, and
+[#2574](https://github.com/escalier-lang/escalier/issues/2574) tracks analysing
+third-party JavaScript to find the rest. Until a parameter is marked, a closure
+that borrows a local passes to it, and the checker misses any conflict with a
+later call of that closure.
+
+A callback is the one parameter for which the converter does not follow I3.
+The `'static fn` form would reject more programs. It would reject each closure
+passed to `forEach` that borrows a local the caller uses afterwards, and a
+callback that is only called, as `forEach`'s is, is the common case.
 
 **I3. An uncertain answer takes the form that rejects more programs.** When the
 converter or an analysis cannot settle a fact, it picks the form under which the
@@ -1913,6 +2113,8 @@ rules reject every program the true answer would reject:
 - A borrow of the inputs over an owned value for a return that may share
   structure with an input. A shallow copy such as `{...opts}` shares everything
   below its top level, so it returns a borrow of `opts`.
+
+A callback parameter is the exception, as I2 states.
 
 ## Conformance tests
 
@@ -1994,6 +2196,14 @@ the solver.
 | T3 | Annotate `{a: mut {b: number}}` or `Array<mut Point>` | Rejected |
 | T5 | Write a `readonly` field after its initialization | Rejected |
 | T5 | A `{readonly a: number}` value into a `{a: number}` slot of a `val mut` binding | Rejected |
+| T5 | A `{readonly a: number}` value into a `{a: number}` slot of a `val` binding | Rejected |
+| T5 | A `{readonly a: number}` argument for a `mut o: {a: number}` parameter | Rejected |
+| T5 | A `{readonly a: number}` argument for an `o: {a: number}` parameter | Rejected |
+| T5 | A `{readonly a: number}` argument through a function value | Rejected |
+| T5 | A `{readonly a: number}` call result for a `mut o: {a: number}` parameter | Rejected |
+| T5 | Reassign a `var o: {a: number}` binding to a `{readonly a: number}` value | Rejected |
+| T5 | Return a `{readonly a: number}` value from a function that returns `{a: number}` | Rejected |
+| T5 | A `&{readonly a: number}` argument for an `o: &{a: number}` parameter | Accepted |
 | T5 | Assign to a getter with no setter | Rejected |
 | T5 | Write a `readonly` field twice in a constructor | Rejected |
 | T8 | `if c { p } else { q }` with `p` owned and `q` a borrow | Rejected |
@@ -2009,13 +2219,22 @@ the solver.
 | L1 | `make` and `remember` from L1 | `make` accepted, and the write in `remember` rejected |
 | L2 | `pick`, `wrong`, `either`, `unproven`, and `trusted` | As marked in L2 |
 | L3 | `read`, `same`, and `cache` | The rendered signatures L3 lists |
-| E4 | `local`, `moved`, and `stored` from E4 | As marked in E4 |
+| E4 | `local` and `moved` from E4 | As marked in E4 |
+| E4 | `setup` and `page` from E4 | As marked in E4 |
+| E4, D17 | `page` with `b.click()` moved above `render(&count)` | Accepted |
 | E4 | A closure that moves a capture, called twice | The second call reports a moved value |
-| E4, D10 | The three `setup` programs from D10 | The first rejected, the other two accepted |
+| E4, D10 | The two `setup` programs from D10 | The first rejected, the second accepted |
+| D17 | `wrap` and `stash` from D17 | The signature and the error D17 lists |
+| D17 | `&fn () -> undefined` in an annotation | `Unsupported: borrow of a non-borrowable type` |
+| D17 | A closure over a local passed to a `'static fn` parameter, then the local read, written, moved or borrowed | After a reading closure, a read or `&` is accepted, and a write or `&mut` of a place it reads is rejected by E2. After a writing closure, a read, a write or `&mut` is accepted, and `&` of a place it writes is rejected by E2. A move is rejected by E3 |
+| D17 | A closure over a local passed to a `'static fn` parameter, with no later use of the local | Accepted |
+| D17 | A closure over a parameter passed to a `'static fn` parameter | Rejected at the call |
+| D17 | An unannotated `var` started with a closure that borrows nothing, then assigned one that borrows a local | Rejected |
 | I1 | Convert `reset(x: Readonly<{a: {b: number}}>)` | `reset(x: &mut Readonly<{a: {b: number}}>)` |
 | I1 | Convert a parameter typed `Readonly<{a: number}>` | `&Readonly<{a: number}>` |
 | I1 | Convert `this: Readonly<T>` where `T` has a writable nested slot | Not `&self` |
 | I2 | Convert a `number` parameter | `number`, with no borrow |
+| I2 | Convert `forEach(callbackfn: (value: T) => void)` | `forEach(callbackfn: fn (value: T) -> unknown)` |
 | I3 | Convert a method the analysis cannot settle | `&mut self` |
 | I3 | Convert a function returning `{...opts}` | A borrow of `opts` |
 
@@ -2023,137 +2242,61 @@ D11's write-once cell gets its tests once its API is designed.
 
 ## Migration
 
-The checking model replaces several passes the solver runs today. Each step
-below is a separate PR. Every step also does two things for its own change:
+The migration replaced the solver's separate ownership passes with the checking
+model above. The events live in
+[ownership_events.go](../../internal/solver/ownership_events.go), and the
+dataflow pass in
+[ownership_dataflow.go](../../internal/solver/ownership_dataflow.go).
+[#2277](https://github.com/escalier-lang/escalier/issues/2277) tracks the steps.
+Each step was one or more PRs.
 
-- It updates the parts of `docs/08_mutability.md` and `docs/09_ownership.md`
-  that its change makes true. `docs/README.md` says the pages describe the
-  checker as it is, so the docs change with the code rather than ahead of it.
-- It rewrites the tests, fixtures, and stdlib declarations its change breaks.
-  The fixture-delta classifier in CI rates the resulting fixture changes for
-  review.
+Steps 1 through 8 are done:
 
-The steps:
+1. The conformance tests above were written against the solver. A test the
+   solver fails is disabled the way `CLAUDE.md` describes, under a
+   `DISABLED until` comment that names the issue which enables it.
+2. Owned mutability moved from types to bindings, as T1 states. A parameter's
+   binding is mutable only when written `mut`, as D13 decides.
+3. Every borrow is written, as F4 states, and the LSP server offers a quick fix
+   that inserts the missing `&` or `&mut`.
+4. Parameter inference follows F3 and D9. An unannotated parameter the body
+   only reads is a borrow, and a call to an escaping one moves its argument.
+5. Function types take lifetimes, as D10 decides, and E4 holds a passed
+   closure's borrows for that lifetime.
+6. The declaration converter follows I1 through I3.
+7. The event lowering and the single dataflow pass were built, brought to
+   parity with the earlier checks, and turned on.
+8. The earlier checks the pass replaces were removed.
 
-1. Write the conformance tests above against the current solver. A test the
-   current solver fails is still written with its expected result, then
-   disabled the way `CLAUDE.md` describes. A Go test body is wrapped in
-   `/* */` under a `DISABLED until <step>` comment that names the step which
-   enables it, and a fixture gets a `DISABLED` marker file. A failing test that
-   no step below fixes becomes a known-bug entry, or a reason to change a rule.
-2. Move owned mutability from types to bindings, as T1 states:
-   - The parser accepts `mut` on a parameter binding, as in `fn f(mut p: T)`,
-     and rejects `mut` in an owned type annotation, as T3 states.
-   - The `mut T` annotations in tests, fixtures, and the stdlib become binding
-     annotations. There are about 600 in the solver tests and 174 in the stdlib,
-     most of them `...items: mut Array<T>` rest parameters.
-   - The owned-mutable `RefType` with no lifetime leaves
-     [soltype](../../internal/soltype/ref.go).
-   - The owned-to-`mut` upgrade around `isUniquelyOwned` in
-     [infer_decl.go](../../internal/solver/infer_decl.go) becomes an ordinary move checked by E3.
-   - The printer and the LSP hover show a binding's mutability on its name, as
-     `mut p: {x: number}`.
-   - T9's widening reads the binding's mutability instead of the type's.
-   - A parameter's binding is mutable only when written `mut`, as D13 decides.
-     The checker stops inferring it from writes in the body.
-3. Require every borrow to be written, as F4 states. The missing-`&` check
-   extends from call arguments to every flow site and to field reads through a
-   borrow. Each error carries the borrow its destination needs, `&` or
-   `&mut`, the way `ImplicitBorrowArgError` in
-   [borrow_exclusivity.go](../../internal/solver/borrow_exclusivity.go) does today. The same PR:
-   - Adds an LSP quick fix that inserts that borrow. The published diagnostic
-     carries the borrow and the range of the expression in its `data` field.
-     `textDocumentCodeAction` in
-     [text_document.go](../../cmd/lsp-server/text_document.go) returns a
-     `quickfix` action whose edit inserts `&`, or `&mut` and a space, before the
-     expression. It wraps the expression in parentheses unless the expression
-     is an identifier, a field access, an index, or a call. `quickfix` joins
-     the code action kinds the server advertises in
-     [main.go](../../cmd/lsp-server/main.go), and tests in
-     `text_document_test.go` cover `&`, `&mut`, and the parenthesized case.
-   - Drops the move that `consumeAtGlobalWrite` in `moves.go`
-     records for a borrow, as D8 decides.
-4. Change parameter inference to follow F3 and D9. An unannotated parameter
-   that does not escape becomes a borrow. A call to an escaping one moves its
-   argument. An escaping parameter that the body only reads becomes a
-   `'static &` borrow where the destination's type leaves the ownership open.
-   A parameter that does not escape becomes `&mut` when the body writes through
-   it and `&` otherwise, as D13 decides.
-5. Add function-type lifetimes, as D10 decides. The parser and the type system
-   accept `&'a fn …` in a parameter, and E4 holds a passed closure's borrows
-   for `'a`. A function parameter without a lifetime keeps its current
-   meaning, so existing code keeps checking.
-6. Update the declaration converter to follow I1 through I3. It keeps
-   `Readonly<T>` as written, emits `&T` only when no slot reachable through
-   `T` is writable, and fixes `classifyExplicitSignal` in
-   [mutability.go](../../internal/dts_to_esc/mutability.go) to match.
-7. Build the event lowering and the single control-flow pass behind a flag. Run
-   it alongside the current checks and compare diagnostics across every test and
-   fixture. Resolve each difference as a bug in the old checks or a change to the
-   rules.
-8. Remove the old checks one at a time once the new pass matches them. The
-   checking model replaces these groups:
-   - The per-site `consume*` functions in `moves.go` and
-     [module_level_moves.go](../../internal/solver/module_level_moves.go), replaced by F2 and
-     F3. This includes `consumeOnceCallee`, replaced by E4.
-   - The alias-set transition check in `transitions.go`, the alias tracker in
-     `alias.go` and `alias_analysis.go` in `internal/liveness`, and the loan check
-     in [borrow_exclusivity.go](../../internal/solver/borrow_exclusivity.go), all
-     replaced by E2 and E3.
-   - The frame-exit checks in `return_escape.go` and `return_shared_paths.go`,
-     replaced by L1 and E2 at the return.
-   - The separate escape logic in `return_escape.go` and
-     `borrow_flow.go`, replaced by the lifetime solver
-     answering F3.
-   - The plumbing that keeps the engines from reporting one error twice, such
-     as `resolvePhaseTransitions`, and the flag step 7 puts the pass behind. The
-     pass then runs on every check.
+Step 9 is open. It designs and adds the write-once cell from D11, as
+[#2275](https://github.com/escalier-lang/escalier/issues/2275) and
+[#2276](https://github.com/escalier-lang/escalier/issues/2276) track. The
+decisions above name the other checker work that remains.
 
-   These stay, since they enforce rules the dataflow pass does not check:
-   - The per-site checks behind `ModuleLevelMoveError` in
-     [module_level_moves.go](../../internal/solver/module_level_moves.go). A move out
-     of module-level state is rejected wherever it happens, since the function may
-     run again or other code may read the binding later. That is a
-     flow-insensitive rule about the binding, so each site checks it rather than
-     the pass finding an E1 use-after-move on a path.
-   - T8's `MixedOwnershipError` in [infer_expr.go](../../internal/solver/infer_expr.go).
-   - The L2 checks in [lifetime_signature.go](../../internal/solver/lifetime_signature.go),
-     [lifetime_rigid.go](../../internal/solver/lifetime_rigid.go), and
-     [lifetime_undeclared.go](../../internal/solver/lifetime_undeclared.go), and the L3
-     rendering in [lifetime_coalesce.go](../../internal/solver/lifetime_coalesce.go).
-   - The type rules in [constrain.go](../../internal/solver/constrain.go).
-9. Design and add the write-once cell from D11. It does not depend on the steps
-   above and can land any time after step 2.
+These checks stay outside the dataflow pass, since they enforce rules the pass
+does not check:
 
-Each known bug closes at a step:
+- The per-site checks behind `ModuleLevelMoveError` in
+  [module_level_moves.go](../../internal/solver/module_level_moves.go). A move
+  out of module-level state is rejected wherever it happens, since the function
+  may run again or other code may read the binding later. That is a
+  flow-insensitive rule about the binding, so each site checks it rather than
+  the pass finding an E1 use-after-move on a path.
+- T8's `MixedOwnershipError` in [infer_expr.go](../../internal/solver/infer_expr.go).
+- The L2 checks in [lifetime_signature.go](../../internal/solver/lifetime_signature.go),
+  [lifetime_rigid.go](../../internal/solver/lifetime_rigid.go), and
+  [lifetime_undeclared.go](../../internal/solver/lifetime_undeclared.go), and the L3
+  rendering in [lifetime_coalesce.go](../../internal/solver/lifetime_coalesce.go).
+- The type rules in [constrain.go](../../internal/solver/constrain.go).
 
-| Bug | Closed by | Soundness hole |
-|---|---|---|
-| B1 | Step 3, since F4 rejects the unwritten borrow | No |
-| B2 | Step 7, or sooner by its own fix to the current checker | Yes |
-| B3 | Step 3, since F4 rejects the annotation-only borrow | Yes |
-| B5 | Step 4 | Yes |
-| B6 | Step 4 | No |
-| B7 | Step 5 | Yes |
-| B8 | Step 7, since the dataflow pass records a copied borrow as a holder | Yes |
+The point of the work was a simpler solver, so #2277 records two measurements
+from before step 1 and after step 8:
 
-Steps 3 through 5 close B3, B5, and B7 in the current checker, so those holes
-close before the rewrite in step 7. B2 already has its own fix queued, so it
-does not need to wait for step 7 either.
-
-The migration is finished when every conformance test is enabled and passing,
-and the groups step 8 lists are gone. The point of the work is a simpler
-solver, so record two measurements before step 1 and after step 8:
-
-- The line count of the ownership, lifetime, and mutability files. The baseline
-  counts the non-test files of `internal/liveness` and these files of
-  `internal/solver`: `aliases`, `borrow_exclusivity`, `borrow_flow`,
-  `borrow_store`, `lifetime_bounds`, `lifetime_coalesce`, `lifetime_rigid`,
-  `lifetime_signature`, `lifetime_undeclared`, `module_level_moves`, `moves`,
-  `owned_return`, `return_escape`, `return_shared_paths`, `symbol_owner`, and
-  `transitions`. That is 26 files and 12,336 lines.
+- The line count of the 26 ownership, lifetime, and mutability files the
+  baseline counted went from 12,336 to 6,902. The files the migration added for
+  the dataflow pass hold another 8,163 lines.
 - The `gocognit` cognitive complexity total for the non-test files of
-  `internal/solver`. It is 10,802 at the baseline.
+  `internal/solver` went from 10,802 to 11,880.
 
-The tracking issue, #2277, records both measurements at the baseline and after
-step 8.
+Both final numbers include unrelated work that landed between the two
+measurements.

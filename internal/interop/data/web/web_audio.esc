@@ -292,7 +292,7 @@ export declare class AudioDestinationNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDestinationNode/maxChannelCount) */
     readonly maxChannelCount: number,
     static prototype: AudioDestinationNode,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -333,7 +333,7 @@ export declare class AudioListener {
      */
     setPosition(&mut self, x: number, y: number, z: number) -> undefined,
     static prototype: AudioListener,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -367,7 +367,7 @@ export declare class AudioNode extends EventTarget {
     disconnect(&mut self, destinationParam: &mut AudioParam) -> undefined,
     disconnect(&mut self, destinationParam: &mut AudioParam, output: number) -> undefined,
     static prototype: AudioNode,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -403,7 +403,7 @@ export declare class AudioParam {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioParam/setValueCurveAtTime) */
     setValueCurveAtTime(&mut self, values: &mut Iterable<number>, startTime: number, duration: number) -> AudioParam,
     static prototype: AudioParam,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioParamMap) */
@@ -411,7 +411,7 @@ export declare class AudioParam {
 export declare class AudioParamMap extends map.Map<string, AudioParam> {
     forEach(&self, callbackfn: fn (value: AudioParam, key: string, parent: &Self) -> unknown, thisArg?: unknown) -> undefined,
     static prototype: AudioParamMap,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -462,7 +462,7 @@ export declare class AudioScheduledSourceNode extends AudioNode {
     removeEventListener<K: keyof AudioScheduledSourceNodeEventMap>(&mut self, type: K, listener: fn (this: AudioScheduledSourceNode, ev: AudioScheduledSourceNodeEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: AudioScheduledSourceNode,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -473,7 +473,7 @@ export declare class AudioScheduledSourceNode extends AudioNode {
 @js("AudioWorklet")
 export declare class AudioWorklet extends dom.Worklet {
     static prototype: AudioWorklet,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 export declare interface AudioWorkletNodeEventMap {
@@ -577,7 +577,7 @@ export declare class BaseAudioContext extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createPeriodicWave) */
     createPeriodicWave<'a>(&mut self, real: &'a mut Iterable<number>, imag: &'a mut Iterable<number>, constraints?: &'a mut PeriodicWaveConstraints) -> &'a mut PeriodicWave,
     static prototype: BaseAudioContext,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -907,7 +907,7 @@ export declare class ScriptProcessorNode extends AudioNode {
     removeEventListener<K: keyof ScriptProcessorNodeEventMap>(&mut self, type: K, listener: fn (this: ScriptProcessorNode, ev: ScriptProcessorNodeEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> undefined,
     removeEventListener(&mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> undefined,
     static prototype: ScriptProcessorNode,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**

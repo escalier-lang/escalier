@@ -163,6 +163,34 @@ class when they share inherited behavior.
 Escalier's `sealed` is not C#'s. C# spells `final` as `sealed` and forbids
 subclassing outright, which is the opposite of the concept here.
 
+### Classes that cannot be constructed
+
+A `declare` class describes a class the runtime provides, and some of those
+exist only to be tested against. `ImageBitmap` is one. A program gets one from
+`createImageBitmap()`, and `new ImageBitmap()` throws `TypeError: Illegal
+constructor`. A `declare` class says so by making every constructor `private`:
+
+```esc
+declare class ImageBitmap {
+    readonly width: number,
+    private constructor(&mut self),
+}
+
+val b = ImageBitmap()   // error: `ImageBitmap` cannot be constructed
+fn width(v: ImageBitmap | string) -> number {
+    return match v { ImageBitmap {width} => width, _ => 0 }
+}
+```
+
+The class value carries only the public constructors. One with none still has
+its statics and still works in a pattern, and a subclass's `super()` call to it
+is reported. The `web:*` packages mark every interface this way when WebIDL
+declares no `constructor()` for it.
+
+The rule covers `declare` classes only. Access checks for `private` members, and
+for a private constructor on a class with a body, are
+[#2508](https://github.com/escalier-lang/escalier/issues/2508).
+
 ## Enums
 
 Enums are variant types with their own namespace. An enum name binds both a type

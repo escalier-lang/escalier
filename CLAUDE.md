@@ -39,7 +39,7 @@ Escalier is a programming language with a Go-based compiler. The compiler pipeli
 - Put the reason at the CALL SITE, not in the docstring. A docstring says what the function returns and what its parameters mean, so a reader deciding whether to call it needs nothing else. Why THIS call is the right one belongs in a comment above it, where the surrounding code gives it meaning. Two callers of one function usually have two different reasons, and neither fits in the one docstring they share.
 - Keep in the docstring only what every caller needs: the contract, the shape of the return, and any ordering a caller has to respect. A constraint like "this must run before X" is contract, not rationale, so it stays.
 - Avoid parentheticals in comments — they make comments hard to read, especially when nested or combined with em-dashes. Rewrite the aside as a plain sentence, fold it into the main clause, or drop it. Reserve parentheses for short, essential clarifications like a code reference or a concrete example. Prefer several short sentences over one sentence carrying multiple asides.
-- Write comments about what the code does now, not what it did before a change. Drop phrasing like "previously", "used to", "is now", "no longer", and "the old behavior", and don't make a PR number or milestone the subject of a sentence. A comment that narrates the diff goes stale the moment the next change lands. Describe the current behavior and its rationale instead, and leave the history to git.
+- Write comments about what the code does now, not what it did before a change. Drop phrasing like "previously", "used to", "is now", "no longer", and "the old behaviour", and don't make a PR number or milestone the subject of a sentence. A comment that narrates the diff goes stale the moment the next change lands. Describe the current behaviour and its rationale instead, and leave the history to git.
 
 ## Writing tests
 
@@ -49,7 +49,7 @@ Escalier is a programming language with a Go-based compiler. The compiler pipeli
 - Test what an unannotated function infers apart from how its callers use it. Assert its full signature in an inference test, and test call-site behaviour against a callee written with explicit types or as a `declare fn`. A test that infers a function and calls it in one source leaves a failure ambiguous about which half is wrong. Infer several unannotated functions together only when they can't be split, as in mutual recursion.
 - Use `github.com/stretchr/testify` for assertions instead of hand-rolled `if x != y { t.Fatalf(...) }` blocks. Prefer `require.*` (stops on first failure, matching the `t.Fatalf` pattern) over `assert.*`. Common conversions: `require.Equal(t, expected, actual)`, `require.Same(t, expected, actual)` for pointer identity, `require.NotNil(t, x)`, `require.Contains(t, m, k)`, `require.NotContains(t, m, k)`, `require.Empty(t, s)`, `require.Error(t, err)`, `require.NoError(t, err)`. Split compound conditions (`x == nil || x.Type != fn`) into separate `require` calls so failures point at the actual problem.
 - When a test would otherwise need many drill-down assertions about an AST or type tree (walking children, checking field after field, type-asserting through wrappers), render the subtree to a string and use `snaps.MatchInlineSnapshot` instead. Use `printer.Print(node, printer.DefaultOptions())` for AST nodes that the printer supports (Escalier-source form, best for review) or `snapshot.String(node)` from [internal/snapshot/](internal/snapshot/) for raw struct dumps. First-run flow: pass `nil` as the expected value and run with `UPDATE_SNAPS=true` — go-snaps writes the literal back into the test file. Reserve targeted `require.*` checks for the one or two facts that aren't visible in the printed form.
-- Disable a test that asserts behavior a later milestone will flip rather than deleting it or letting it pin under-checked behavior. Update the assertions in place to the expected future error, wrap the function body in `/* */`, and add a `DISABLED until <milestone>` comment above it that names the milestone and what changes. Re-enable by removing the wrapper when the milestone lands. Use this for two cases: an assertion that locks in behavior a planned PR will reject, and an assertion that succeeds today only because the current checker under-checks a case the planned PRs will catch.
+- Disable a test that asserts behaviour a later milestone will flip rather than deleting it or letting it pin under-checked behaviour. Update the assertions in place to the expected future error, wrap the function body in `/* */`, and add a `DISABLED until <milestone>` comment above it that names the milestone and what changes. Re-enable by removing the wrapper when the milestone lands. Use this for two cases: an assertion that locks in behaviour a planned PR will reject, and an assertion that succeeds today only because the current checker under-checks a case the planned PRs will catch.
 
 ## Ephemeral scripts
 
@@ -94,7 +94,7 @@ what the agent does.
 
 - State each rule once. When another section needs the same rule, link to the one
   place that states it. A rule copied into two spots drifts when one copy changes.
-- Cut instructions that only restate a default. Spelling out behavior the agent
+- Cut instructions that only restate a default. Spelling out behaviour the agent
   already does spends tokens without changing the outcome.
 - Inline what every task needs and push branch-specific detail into a separate
   file, then point to that file. The repo-layout list does this: it names each
@@ -151,6 +151,10 @@ Those apply wherever they make sense and are simply irrelevant elsewhere.
 
 ## Word choice and explaining code
 
+- Use Canadian spelling in prose. Write "behaviour", "colour" and "centre", "licence"
+  for the noun and "license" for the verb, and doubled consonants such as "labelled"
+  and "modelling". Keep "-ize" endings such as "organize" and "analyze". Leave
+  identifiers, code, and quoted compiler messages as they are spelled.
 - Define a technical or coined term the first time you use it. Terms like
   "co-occurrence", "representative", or "closure" mean nothing to a reader who
   lacks your context. Give a one-line plain-language definition before you rely
@@ -182,7 +186,7 @@ Those apply wherever they make sense and are simply irrelevant elsewhere.
       "in most cases", when the code always does the thing.
 - Don't inject personality to compensate for cutting those phrases. A comment or
   doc wants flat, precise description, not a lively voice, editorial opinions, or
-  first-person asides. Cut the tell and stop. Plain is the goal, not colorful.
+  first-person asides. Cut the tell and stop. Plain is the goal, not colourful.
 - Name the value, not the technique that produced it. Don't write "union-find"
   when you mean the merge classes it computed, or "the visitor" when you mean
   the walk's result. Refer to the thing the code hands around.

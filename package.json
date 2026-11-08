@@ -32,6 +32,7 @@
         "@vitest/browser-playwright": "^4.1.10",
         "@vitest/coverage-v8": "^4.1.10",
         "@vitest/ui": "^4.1.10",
+        "@webref/idl": "3.86.0",
         "playwright": "^1.58.2",
         "react": "catalog:",
         "react-dom": "catalog:",

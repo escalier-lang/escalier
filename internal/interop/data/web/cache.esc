@@ -40,7 +40,7 @@ export declare class Cache {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Cache/addAll) */
     addAll(&mut self, requests: &mut Iterable<fetch.RequestInfo>) -> Promise<undefined>,
     static prototype: Cache,
-    constructor(&mut self)
+    private constructor(&mut self)
 }
 
 /**
@@ -62,5 +62,5 @@ export declare class CacheStorage {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CacheStorage/open) */
     open(&mut self, cacheName: string) -> Promise<Cache>,
     static prototype: CacheStorage,
-    constructor(&mut self)
+    private constructor(&mut self)
 }

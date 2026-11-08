@@ -941,18 +941,24 @@ func TestInferExplicitMutBorrowOfMemberOnImmutableRejected(t *testing.T) {
 	}, messagesWithSpan(t, errs))
 }
 
-// A usage-inferred receiver keeps its pre-PR-4 read behaviour. A
-// usage-inferred receiver is an un-annotated param whose shape the body's
-// uses determine. The wrap fires only off a concrete ObjectType carrier, so
-// a TypeVar carrier returns the field's result var directly. The param
-// closes to its inferred object shape, and the function returns the field's
-// primitive type rather than a borrow.
+// TestInferMemberReadInferredReceiverUnchanged covers a member read off a usage-inferred
+// receiver. A usage-inferred receiver is an un-annotated param whose shape the body's uses
+// determine. The wrap fires only off a concrete ObjectType carrier, so a TypeVar carrier
+// returns the field's result var directly. The param closes to its inferred object shape. A
+// call passing `{x: 5}` gets the field's primitive type `5` back rather than a borrow.
 func TestInferMemberReadInferredReceiverUnchanged(t *testing.T) {
-	src := `fn f(p) { return p.x }
-val r = f({x: 5})`
-	values, _, errs := inferSource(t, src)
-	require.Empty(t, errs)
-	require.Equal(t, "5", values["r"])
+	t.Run("the read borrows through the param", func(t *testing.T) {
+		values, _, errs := inferSource(t, "fn f(p) { return p.x }")
+		require.Empty(t, errs)
+		require.Equal(t, "fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0", values["f"])
+	})
+
+	// `f` is declared with the signature "the read borrows through the param" asserts.
+	t.Run("a call returns the field's primitive type", func(t *testing.T) {
+		values, _, errs := inferSource(t, "declare fn f<T0, 'a>(p: &'a {x: T0}) -> &'a T0\nval r = f({x: 5})")
+		require.Empty(t, errs)
+		require.Equal(t, "5", values["r"])
+	})
 }
 
 // `&mut obj["foo"]` for a reference-shaped field matches the dot form. The
