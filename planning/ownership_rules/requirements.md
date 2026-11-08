@@ -46,8 +46,8 @@ change.
 
 A *value type* is a primitive, a function, or a promise. Value types are copied
 freely, and the rules below do not apply to them. The one exception is a
-function parameter, which may carry a lifetime saying how long the callee keeps
-the function, as E4 states.
+function type, which may be written `&'a fn` to say that the function holds
+borrows that live for `'a`, as E4 states.
 
 A *reference-shaped* value is an object, tuple, array, or class instance. The
 rules below govern reference-shaped values only.
@@ -272,8 +272,10 @@ operation that passes the value does not change it.
 | Immutable borrow, `&T` | Rejected by T6 | Copy | Rejected by T4 |
 | Mutable borrow, `&mut T` | Rejected by T6 | Copy, narrowed to `&` by T4 | Copy |
 
-A value type has no borrow form, so its destination is always bare. A generic
-`&T` whose `T` is a value type stands for `T`. With `fn f<T>(x: &T)`, the call
+A primitive or a promise has no borrow form, so its destination is always
+bare. A function's `&fn` form bounds the borrows the function holds, and E4
+states how it passes. A generic `&T` whose `T` is a primitive or a promise
+stands for `T`. With `fn f<T>(x: &T)`, the call
 `f(5)` copies `5` into `x`, and a read of a value-type field through a `&` copies
 the field out. Each binding
 in the function below shows one outcome, and the read of `q.x` shows the error a
@@ -312,7 +314,9 @@ Each case below follows from that:
   case above for module-level state does not make its captures owned. The borrow
   is `&mut` for a capture the closure writes and `&` otherwise. By the closure
   rows of the exclusivity table, the captured place can then never move, and E4
-  checks each later call against the borrow.
+  checks each later call against the borrow. The closure's type is
+  `&'static fn`, so the state's type must be `&'static fn` to hold it, as E4
+  states.
 
 A `val` or `var` binding of an owned value is always an owned destination, even
 when the binding's scope is shorter than the source's. A binding whose
@@ -629,22 +633,60 @@ uses those bindings the way a closure call uses its captures. With
 it. An `await` of the call runs it before the body resumes, so `await bump()`
 is rejected the same way.
 
-A function parameter says how long the callee keeps the function it receives.
-A parameter written `f: fn () -> undefined` is only called during the call, so a
-closure passed to it holds its borrows for that call alone. A parameter written
-`f: &'a fn () -> undefined` may keep the function for `'a`, so a closure passed
-to it holds its borrows for `'a`, and `&'static` keeps them for the rest of the
-program. A function is still a value type, so F2 copies it into either kind of
-parameter, and the call needs no written `&`. The `&'a` on a function
-parameter does not borrow the function. It only says how long the callee keeps
-its copy. [D10](#d10-recording-that-a-callback-is-not-retained) shows an
-example.
+A function type says whether the function holds borrows, the same way an object
+type says whether it is owned or borrowed. A plain `fn () -> undefined` holds no
+borrow, so any slot may keep it for as long as the slot lives. A
+`&'a fn () -> undefined` may hold borrows that live for `'a`, so a slot keeps it
+only while `'a` is live. An elided `&fn` takes its lifetime the way an elided
+`&` does. A parameter written `f: &fn () -> undefined` therefore keeps the
+function only for the call, so a closure passed to it holds its borrows for
+that call alone. A parameter written `f: &'static fn () -> undefined` keeps it
+for the rest of the program, and so does `f: fn () -> undefined`, which accepts
+only a function that holds no borrow. A function is still a value type, so F2
+copies it into either kind of parameter, and the call needs no written `&`. The
+`&'a` does not borrow the function itself. It bounds the borrows the function
+holds. [D10](#d10-recording-that-a-callback-is-not-retained) shows an example,
+and D17 decides the rule.
 
-A `fn` type outside a parameter, such as in a binding, a field, an array element,
-or a return type, keeps the function for a lifetime inferred from where the
-value flows, the same way an elided `&` lifetime is inferred, as D17 decides. A
-module-level slot keeps it for `'static`, so storing a plain `fn` parameter
-there is rejected.
+The rule is the same in every position. A binding, a field, an array element,
+and a return type written `fn` hold only functions with no borrows, and one
+written `&'a fn` holds functions whose borrows live for `'a`. Storing an `&fn`
+parameter into a module-level `fn` slot is rejected, the same way storing a
+`&{x: number}` parameter into a `{x: number}` slot is.
+
+In the program below, `keep` may hold on to its callback forever and `run`
+only calls its callback during the call. A closure that captures nothing, or
+only reads value types from `val` bindings, holds no borrow, so it is a plain
+`fn` and both accept it. `msg` is a `string` in a `val`, so the closure copies
+it. A closure that captures an object local, or writes a binding it captures,
+holds a borrow of it, as F3 states. Its type is then `&'a fn`, and only `run`
+accepts it. None of the calls writes a `&`, since a function is a value type.
+
+```esc
+declare fn keep(cb: fn () -> undefined) -> undefined
+declare fn run(cb: &fn () -> undefined) -> undefined
+
+fn setup() {
+    keep(fn () { console.log("hello") })    // accepted, since the closure captures nothing
+    run(fn () { console.log("hello") })     // accepted, since a plain `fn` passes wherever a `&fn` is expected
+    val msg = "hello"
+    val greet = fn () { console.log(msg) }
+    keep(greet)                              // accepted, since greet copies msg
+    run(greet)                               // accepted
+    val cfg = {msg: "hello"}
+    val show = fn () { console.log(cfg.msg) }
+    run(show)                                // accepted, since run only calls show during the call
+    keep(show)                               // error: show borrows 'cfg', so it cannot be kept as a plain `fn`
+    var n = 0
+    val inc = fn () { n = n + 1 }
+    run(inc)                                 // accepted
+    keep(inc)                                // error: inc borrows 'n' to write it, so it cannot be kept as a plain `fn`
+}
+```
+
+Writing `keep`'s parameter as `&'static fn () -> undefined` accepts `show`
+too. `cfg` then stays borrowed for the rest of the program, as the
+[D10](#d10-recording-that-a-callback-is-not-retained) example shows.
 
 E4 adds no column to the exclusivity table, because it does not decide whether
 an operation on `p` is allowed. It decides when a closure's captures count as
@@ -659,7 +701,7 @@ is rejected. In `stored`, the closure in `sink` may run during any later call,
 so `readIt(&p)` conflicts with the write it may perform.
 
 ```esc
-var sink: fn () -> undefined = fn () {}
+var sink: &'static fn () -> undefined = fn () {}
 declare fn readIt(a: &{x: number}) -> undefined
 
 fn local() -> number {
@@ -994,7 +1036,7 @@ owned, as for `store` in F3. A written annotation overrides the inference.
 
 ### D10. Recording that a callback is not retained
 
-A function value is a value type, so it carries no lifetime, and nothing in the
+A function value is a value type. Without a lifetime on its type, nothing in the
 rules distinguishes a callee that only calls a callback from one that stores it.
 The source-analysis plan for third-party packages expects to record exactly that
 fact. [#1267](https://github.com/escalier-lang/escalier/issues/1267) tracks the
@@ -1004,13 +1046,13 @@ The program below shows the gap. It writes the parameters in the lifetime form
 recommended below. `onClick` keeps its handler for the rest of the program, so
 the handler's mutable borrow of `count` stays live after the call, as for a
 closure stored into module-level state under E4. `render` then takes an
-immutable view of `count` that a click could change. Today the two parameter
-types are the same `fn () -> undefined`, so the checker treats `onClick` like a
-callee that only calls its argument and accepts the program.
+immutable view of `count` that a click could change. The checker reads both
+parameter types as `fn () -> undefined` and ignores the lifetime, so it treats
+`onClick` like a callee that only calls its argument and accepts the program.
 
 ```esc
 declare fn onClick(handler: &'static fn () -> undefined) -> undefined
-declare fn forEachItem(f: fn () -> undefined) -> undefined
+declare fn forEachItem(f: &fn () -> undefined) -> undefined
 declare fn render(view: &{n: number}) -> undefined
 
 fn setup() {
@@ -1054,16 +1096,16 @@ fn setup() {
 The options are:
 
 - Give function types an optional lifetime, as in `&'a fn () -> undefined`.
-  The lifetime bounds how long the callee may keep the function, and E4 reads it
-  to decide how long the captures stay borrowed.
+  The lifetime bounds how long the callee may keep the function, and so how long
+  the closure's captures stay borrowed, as E4 reads it.
 - Add a marker on the parameter that says the callee does not keep it, and treat
   every unmarked function parameter as retained.
 
 Recommendation: the lifetime form. It reuses L1 and E4 instead of adding a rule.
 
 Decided: accepted. A function type takes an optional lifetime, as in
-`&'a fn () -> undefined`, and E4 states how a call reads it. A function
-parameter with no lifetime is only called during the call.
+`&'a fn () -> undefined`, and E4 states how a call reads it. A parameter
+written `&fn` with no lifetime is only called during the call, as D17 decides.
 
 ### D11. Interior mutability for state no reader can observe
 
@@ -1531,45 +1573,79 @@ Decided: accepted. L1 and L3 state it. The checker change is tracked by
 two rules and [#2489](https://github.com/escalier-lang/escalier/issues/2489)
 for the other three.
 
-### D17. The retention lifetime of a `fn` type outside a parameter
+### D17. What a plain `fn` type means
 
-E4 and D10 give a plain `fn` parameter a meaning: the callee only calls the
-function during the call. A `fn` type also appears in a binding, a field, an
-array element, and a return type, and the rules do not say how long those keep
-the function. The checker accepts any plain `fn` there, which lets a body keep
-a call-only parameter past the call:
+D10 gives a function type an optional lifetime, as in `&'a fn () -> undefined`.
+That leaves the plain `fn` type, with no `&`, to be defined. A plain `fn` can
+appear in a parameter, a binding, a field, an array element, and a return type.
+The program below uses it in three of them:
 
 ```esc
 var sink: fn () -> undefined = fn () {}
 
-fn keep(g: fn () -> undefined) {
+fn keep(g: fn () -> undefined) -> fn () -> undefined {
     val k: fn () -> undefined = g
-    k()            // harmless, since k lives only in the body
-    sink = g       // keeps g for the rest of the program
+    k()
+    sink = g
+    return g
 }
 ```
 
+A caller may pass `keep` a closure that borrows its own locals. Whether
+`sink = g` and `return g` are sound depends on what `fn () -> undefined`
+promises about the borrows such a closure holds.
+
 The options are:
 
-- Read a plain `fn` outside a parameter as `&'static fn`. This is always sound,
-  but it rejects `val k: fn () -> undefined = g`, which keeps `g` no longer
-  than the call does.
-- Infer the retention lifetime from where the value flows, the same way an
-  elided `&` lifetime is inferred. A module-level slot such as `sink` lives for
-  the rest of the program, so its lifetime is `'static`. A local such as `k`
-  keeps the function only while `k` is live. A return type or a class field
-  takes the lifetime of the caller's result or the instance, which the
-  signature or the class names.
+- Read a plain `fn` by position. In a parameter it is only called during the
+  call. In a module-level slot it is kept for `'static`. In a local or a return
+  type it keeps the function for a lifetime inferred from where the value
+  flows. `sink = g` and `return g` are rejected. The same written type then
+  means three things, so a reader has to know where it is written to know what
+  it promises.
+- Read a plain `fn` as a function that holds no borrow, in every position. A
+  function that may hold borrows is written `&fn`, and its lifetime bounds
+  those borrows, as `&` does for an object. `keep` accepts only functions with
+  no borrows, so all three uses are sound. A callback that the callee only
+  calls is written `g: &fn () -> undefined`. Storing that `g` into `sink` is
+  then rejected, the same way storing a `&{x: number}` parameter into a
+  `{x: number}` slot is.
+- Read a plain `fn` as only called during the call, in every position, and
+  require every slot that keeps a function to write its lifetime, as in
+  `var sink: &'static fn () -> undefined`. This is consistent too, but a plain
+  `fn` in a binding, a field, or a return type keeps nothing, so most uses
+  outside a parameter have to spell a lifetime.
 
-Under the second option, `sink = g` is rejected, since `g` is kept only for the
-call and `sink` needs `'static`. `val k = g; k()` is accepted. L3 renders the
-inferred lifetime the way it renders a borrow's, so `sink` shows as
-`&'static fn () -> undefined` and an unconnected local lifetime is elided.
+Recommendation: read a plain `fn` as a function that holds no borrow, in every
+position. It reuses the owned and borrowed distinction that T1 already draws
+for objects, and the common case of a callback that is only called stays one
+`&` long.
 
-Recommendation: infer the retention lifetime of a `fn` type outside a parameter
-the way an elided `&` lifetime is inferred.
+Decided: accepted. E4 states it, and the rule reads this way in each position:
 
-Decided: accepted. E4 states it. The checker change is tracked by
+- `fn (…) -> R` holds no borrow. A module-level function has this type, and so
+  does a closure whose captures it owns or that captures nothing. Any slot may
+  keep it for as long as the slot lives.
+- `&'a fn (…) -> R` may hold borrows that live for `'a`. A slot keeps it only
+  while `'a` is live. A closure that captures a borrow has this type, and its
+  `'a` is inferred from where the closure flows. A captured local is borrowed
+  for that `'a`, so passing the closure to a `&'static fn` parameter holds the
+  borrow for the rest of the program, as F3 states for module-level state. A
+  captured borrowed parameter `p: &'p T` limits `'a`, since the closure cannot
+  keep `p` longer than `'p`.
+- An elided `&fn` takes its lifetime the way an elided `&` does. In a
+  parameter, the lifetime ends with the call unless the signature ties it to
+  the result, so `g: &fn () -> undefined` is only called during the call. In a
+  local binding, the lifetime is inferred from where the value flows. In a
+  return type, the lifetime is the one the body ties the result to.
+- A function is a value type, so passing either form needs no written `&` at
+  the call. Passing a function that holds a borrow where a plain `fn` is
+  expected is rejected, and the error names `&fn` as the type to write instead.
+- A `fn` type named through a type alias, and a `fn` type in a class field,
+  follow the same rule. [#2553](https://github.com/escalier-lang/escalier/issues/2553)
+  and [#2554](https://github.com/escalier-lang/escalier/issues/2554) track them.
+
+The checker change is tracked by
 [#2342](https://github.com/escalier-lang/escalier/issues/2342).
 
 ### D18. A module-level binding whose type its uses decide
@@ -1904,10 +1980,13 @@ Readonly<T>` to `&self` only when no slot reachable through `T` is writable.
 elements are fixed while their contents stay writable, so that case is still
 open.
 
-**I2. A value-type parameter is written as its bare type.** A primitive,
-function, or promise parameter is copied, so the converter writes the bare type
-and no borrow marker. A function parameter the callee keeps is the one
-exception, written `&'a fn …` as E4 states.
+**I2. A value-type parameter is written as its bare type.** A primitive or
+promise parameter is copied, so the converter writes the bare type and no
+borrow marker. A function parameter is the exception, because its type says
+which borrows the function may hold, as E4 states. The converter writes a
+callback parameter as `&fn …`, which the callee only calls during the call. A
+parameter the source analysis finds the callee keeps is written
+`&'static fn …`.
 
 **I3. An uncertain answer takes the form that rejects more programs.** When the
 converter or an analysis cannot settle a fact, it picks the form under which the
@@ -2092,10 +2171,12 @@ The steps:
    `'static &` borrow where the destination's type leaves the ownership open.
    A parameter that does not escape becomes `&mut` when the body writes through
    it and `&` otherwise, as D13 decides.
-5. Add function-type lifetimes, as D10 decides. The parser and the type system
-   accept `&'a fn …` in a parameter, and E4 holds a passed closure's borrows
-   for `'a`. A function parameter without a lifetime keeps its current
-   meaning, so existing code keeps checking.
+5. Add function-type lifetimes, as D10 and D17 decide. The parser and the type
+   system accept `&'a fn …` in every position, and E4 holds a passed closure's
+   borrows for `'a`. A plain `fn` parameter then accepts only a function that
+   holds no borrow, so a callback parameter that receives closures over locals
+   changes to `&fn`. The declaration converter writes `&fn` for callback
+   parameters, as I2 states, so imported callbacks keep checking.
 6. Update the declaration converter to follow I1 through I3. It keeps
    `Readonly<T>` as written, emits `&T` only when no slot reachable through
    `T` is writable, and fixes `classifyExplicitSignal` in
