@@ -219,6 +219,14 @@ func TestScanErrors(t *testing.T) {
 			want: "b.idl: Node is also defined in a.idl",
 		},
 		{
+			name: "one identifier under two legacy namespaces",
+			sources: map[string]string{
+				"a.idl": `[LegacyNamespace=WebAssembly, Exposed=*] interface Module {};`,
+				"b.idl": `[LegacyNamespace=Other, Exposed=*] interface Module {};`,
+			},
+			want: "b.idl: Module is defined as both WebAssembly.Module in a.idl and Other.Module",
+		},
+		{
 			name:    "partial without a definition",
 			sources: map[string]string{"a.idl": `partial interface Missing { constructor(); };`},
 			want:    "a.idl: partial Missing extends no definition",
