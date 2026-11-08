@@ -911,192 +911,232 @@ fn g() -> number {
 
 // TestInferUnannotatedDestructuredParam covers the signature a function infers for a parameter
 // that it reads directly, binds to a local first, or destructures. Each case is a group of
-// variants that read the same parts of the parameter, and every variant has to infer the same
-// signature. A variant names or destructures its parameter in its own way, so sig is written
-// with positional parameter names, as positionalSignature renders it. A group whose leaves the
-// body only returns or reads through infers a borrow. A leaf that is stored or captured by a
-// returned closure keeps the parameter owned.
+// variants that read the same parts of the parameter. Each variant's want is the same signature,
+// apart from the parameter's own pattern, which the signature shows as the variant writes it. A
+// group whose leaves the body only returns or reads through infers a borrow. A leaf that is
+// stored or captured by a returned closure keeps the parameter owned.
 //
 // moved lists the positions of the parameters each variant's body moves. The rendered signature
 // does not show FuncParam.Moved, which decides whether a call moves its argument into an owned
 // parameter, so both are needed.
 //
-// gap holds a reason for each variant that does not infer sig yet. Its subtest is skipped with
-// that reason, so the variant stays in the group it belongs to.
+// gap holds a reason for each variant that does not infer its want yet. Its subtest is skipped
+// with that reason, so the variant stays in the group it belongs to.
 func TestInferUnannotatedDestructuredParam(t *testing.T) {
 	tests := []struct {
-		name  string
-		srcs  []string
-		sig   string
-		moved []int
-		gap   map[int]string
+		name     string
+		variants []sigVariant
+		moved    []int
+		gap      map[int]string
 	}{
 		{
 			name: "ObjectLeafReturned",
-			srcs: []string{
-				`fn f({x}) { return x }`,
-				`fn f(p) { return p.x }`,
-				`fn f(p) {
+			variants: []sigVariant{
+				{src: `fn f({x}) { return x }`, want: "fn <T0, 'a>({x}: &'a {x: T0}) -> &'a T0"},
+				{src: `fn f(p) { return p.x }`, want: "fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0"},
+				{
+					src: `fn f(p) {
 	val x = p.x
 	return x
 }`,
-				`fn f(p) {
+					want: "fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0",
+				},
+				{
+					src: `fn f(p) {
 	val {x} = p
 	return x
 }`,
+					want: "fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0",
+				},
 			},
-			sig: "fn <T0, 'a>(arg0: &'a {x: T0}) -> &'a T0",
 		},
 		{
 			name: "NestedLeafReturned",
-			srcs: []string{
-				`fn f({x: {y}}) { return y }`,
-				`fn f(p) { return p.x.y }`,
-				`fn f(p) {
+			variants: []sigVariant{
+				{src: `fn f({x: {y}}) { return y }`, want: "fn <T0, 'a>({x: {y}}: &'a {x: {y: T0}}) -> &'a T0"},
+				{src: `fn f(p) { return p.x.y }`, want: "fn <T0, 'a>(p: &'a {x: {y: T0}}) -> &'a T0"},
+				{
+					src: `fn f(p) {
 	val q = p.x
 	val r = q.y
 	return r
 }`,
-				`fn f(p) {
+					want: "fn <T0, 'a>(p: &'a {x: {y: T0}}) -> &'a T0",
+				},
+				{
+					src: `fn f(p) {
 	val {y} = p.x
 	return y
 }`,
-				`fn f(p) {
+					want: "fn <T0, 'a>(p: &'a {x: {y: T0}}) -> &'a T0",
+				},
+				{
+					src: `fn f(p) {
 	val {x: {y}} = p
 	return y
 }`,
+					want: "fn <T0, 'a>(p: &'a {x: {y: T0}}) -> &'a T0",
+				},
 			},
-			sig: "fn <T0, 'a>(arg0: &'a {x: {y: T0}}) -> &'a T0",
 		},
 		{
 			// Each variant returns the second element, so the first stays `unknown` in all of
 			// them.
 			name: "TupleLeafReturned",
-			srcs: []string{
-				`fn f([x, y]) { return y }`,
-				`fn f(p) { return p[1] }`,
-				`fn f(p) {
+			variants: []sigVariant{
+				{src: `fn f([x, y]) { return y }`, want: "fn <T0, 'a>([x, y]: &'a [unknown, T0]) -> &'a T0"},
+				{src: `fn f(p) { return p[1] }`, want: "fn <T0, 'a>(p: &'a [unknown, T0]) -> &'a T0"},
+				{
+					src: `fn f(p) {
 	val [x, y] = p
 	return y
 }`,
+					want: "fn <T0, 'a>(p: &'a [unknown, T0]) -> &'a T0",
+				},
 			},
-			sig: "fn <T0, 'a>(arg0: &'a [unknown, T0]) -> &'a T0",
 			gap: map[int]string{
 				1: "`p[1]` on an unannotated parameter reports `Unsupported: IndexExpr`. Tracked by #2579.",
 			},
 		},
 		{
 			name: "LeafReadThrough",
-			srcs: []string{
-				`fn f({x}) -> number { return x.v }`,
-				`fn f(p) -> number { return p.x.v }`,
-				`fn f(p) -> number {
+			variants: []sigVariant{
+				{src: `fn f({x}) -> number { return x.v }`, want: "fn ({x}: &{x: {v: number}}) -> number"},
+				{src: `fn f(p) -> number { return p.x.v }`, want: "fn (p: &{x: {v: number}}) -> number"},
+				{
+					src: `fn f(p) -> number {
 	val q = p.x
 	return q.v
 }`,
+					want: "fn (p: &{x: {v: number}}) -> number",
+				},
 			},
-			sig: "fn (arg0: &{x: {v: number}}) -> number",
 		},
 		{
-			name:  "BareNameReturned",
-			srcs:  []string{`fn f(p) { return p }`},
-			sig:   "fn <T0>(arg0: T0) -> T0",
+			name: "BareNameReturned",
+			variants: []sigVariant{
+				{src: `fn f(p) { return p }`, want: "fn <T0>(p: T0) -> T0"},
+			},
 			moved: []int{0},
 		},
 		{
 			// A rest builds a new tuple whose elements are shared with the parameter, so
 			// returning it reads parts of the parameter, as returning a leaf does.
 			name: "TupleRestReturned",
-			srcs: []string{
-				`fn f([x, ...rest]) { return rest }`,
-				`fn f(p) {
+			variants: []sigVariant{
+				{src: `fn f([x, ...rest]) { return rest }`, want: "fn <'a>([x, ...rest]: &'a [unknown, ...]) -> &'a [...]"},
+				{
+					src: `fn f(p) {
 	val [x, ...rest] = p
 	return rest
 }`,
+					want: "fn <'a>(p: &'a [unknown, ...]) -> &'a [...]",
+				},
 			},
-			sig: "fn <'a>(arg0: &'a [unknown, ...]) -> &'a [...]",
 		},
 		{
 			name: "TupleRestOnlyReturned",
-			srcs: []string{
-				`fn f([...rest]) { return rest }`,
-				`fn f(p) {
+			variants: []sigVariant{
+				{src: `fn f([...rest]) { return rest }`, want: "fn <'a>([...rest]: &'a [...]) -> &'a [...]"},
+				{
+					src: `fn f(p) {
 	val [...rest] = p
 	return rest
 }`,
+					want: "fn <'a>(p: &'a [...]) -> &'a [...]",
+				},
 			},
-			sig: "fn <'a>(arg0: &'a [...]) -> &'a [...]",
 		},
 		{
 			// The parameter is inexact in both variants, since a rest admits the properties
 			// its fields do not name.
 			name: "ObjectRestReturned",
-			srcs: []string{
-				`fn f({x, ...rest}) { return rest }`,
-				`fn f(p) {
+			variants: []sigVariant{
+				{src: `fn f({x, ...rest}) { return rest }`, want: "fn <'a>({x, ...rest}: &'a {x: unknown, ...}) -> &'a {...}"},
+				{
+					src: `fn f(p) {
 	val {x, ...rest} = p
 	return rest
 }`,
+					want: "fn <'a>(p: &'a {x: unknown, ...}) -> &'a {...}",
+				},
 			},
-			sig: "fn <'a>(arg0: &'a {x: unknown, ...}) -> &'a {...}",
 		},
 		{
 			name: "ObjectRestOnlyReturned",
-			srcs: []string{
-				`fn f({...rest}) { return rest }`,
-				`fn f(p) {
+			variants: []sigVariant{
+				{src: `fn f({...rest}) { return rest }`, want: "fn <'a>({...rest}: &'a {...}) -> &'a {...}"},
+				{
+					src: `fn f(p) {
 	val {...rest} = p
 	return rest
 }`,
+					want: "fn <'a>(p: &'a {...}) -> &'a {...}",
+				},
 			},
-			sig: "fn <'a>(arg0: &'a {...}) -> &'a {...}",
 		},
 		{
 			// A `number` leaf copies out of the parameter, so storing it moves nothing.
 			name: "ValueTypeLeafStored",
-			srcs: []string{`var total = 0
-fn f({n}) { total = n }`},
-			sig: "fn (arg0: {n: number}) -> undefined",
+			variants: []sigVariant{
+				{
+					src: `var total = 0
+fn f({n}) { total = n }`,
+					want: "fn ({n}: {n: number}) -> undefined",
+				},
+			},
 		},
 		{
 			// A leaf bounded above by `number | undefined` holds only primitives, so binding it
 			// to an annotated local copies it.
 			name: "OptionalNumberLeafCopied",
-			srcs: []string{`fn f({n}) {
+			variants: []sigVariant{
+				{
+					src: `fn f({n}) {
   val m: number | undefined = n
   return n
-}`},
-			sig: "fn <T0: number | undefined>(arg0: {n: T0}) -> T0",
+}`,
+					want: "fn <T0: number | undefined>({n}: {n: T0}) -> T0",
+				},
+			},
 		},
 		{
 			// A returned closure that captures a `number` leaf copies it.
 			name: "ReturnedClosureCapturesValueTypeLeaf",
-			srcs: []string{`fn f({n}) {
+			variants: []sigVariant{
+				{
+					src: `fn f({n}) {
   val m: number = n
   return fn () { return n }
-}`},
-			sig: "fn <T0: number>(arg0: {n: T0}) -> fn () -> T0",
+}`,
+					want: "fn <T0: number>({n}: {n: T0}) -> fn () -> T0",
+				},
+			},
 		},
 		{
 			// A returned closure that captures an object leaf takes it out of the parameter.
 			name: "ReturnedClosureCapturesObjectLeaf",
-			srcs: []string{`fn f({x}) {
+			variants: []sigVariant{
+				{
+					src: `fn f({x}) {
   return fn () { return x }
-}`},
-			sig:   "fn <T0>(arg0: {x: T0}) -> fn () -> T0",
+}`,
+					want: "fn <T0>({x}: {x: T0}) -> fn () -> T0",
+				},
+			},
 			moved: []int{0},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			for i, src := range tt.srcs {
+			for i, variant := range tt.variants {
 				t.Run(strconv.Itoa(i), func(t *testing.T) {
 					if reason, ok := tt.gap[i]; ok {
 						t.Skip(reason)
 					}
-					sig, moved, errs := positionalSignature(t, src)
+					sig, moved, errs := inferSignature(t, variant.src)
 					require.Empty(t, errs)
-					require.Equal(t, tt.sig, sig)
+					require.Equal(t, variant.want, sig)
 					require.Equal(t, tt.moved, moved)
 				})
 			}
