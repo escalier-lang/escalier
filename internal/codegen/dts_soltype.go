@@ -213,6 +213,10 @@ func (b *solTypeAnnBuilder) typeAnn(t soltype.Type) TypeAnn {
 		return NewNeverTypeAnn(nil)
 	case *soltype.UnknownType:
 		return NewUnknownTypeAnn(nil)
+	case *soltype.FunctionTopType:
+		// TypeScript's `Function` admits a class and a callable object as well as a plain
+		// function, which is the set `function` admits.
+		return NewRefTypeAnn("Function", nil)
 	case *soltype.ErrorType:
 		// The recovery sentinel absorbs in both directions, as `any` does, so a
 		// declaration built after a reported error cascades no second one.

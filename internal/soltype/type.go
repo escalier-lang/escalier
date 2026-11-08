@@ -1051,6 +1051,12 @@ type UndefinedType struct{}
 type NeverType struct{}
 type UnknownType struct{}
 
+// FunctionTopType is the `function` type, the supertype of every value that can be
+// called. Three shapes fall under it: a FuncType, an object with a call signature, and
+// an object with a constructor signature, which is how a class value is represented.
+// A value of this type cannot be called, since nothing is known about its parameters.
+type FunctionTopType struct{}
+
 // UnionType / IntersectionType are coalesced-output nodes for multi-bound
 // single-polarity variables (positive ⇒ union of lowers, negative ⇒ intersection
 // of uppers). soltype carries them natively so coalescing returns
@@ -1566,6 +1572,7 @@ func (*NullType) isType()            {}
 func (*UndefinedType) isType()       {}
 func (*NeverType) isType()           {}
 func (*UnknownType) isType()         {}
+func (*FunctionTopType) isType()     {}
 func (*UnionType) isType()           {}
 func (*IntersectionType) isType()    {}
 func (*NegationType) isType()        {}
@@ -1733,7 +1740,7 @@ func LevelOf(t Type) int {
 		// freshener/extruder prune descends to freshen that variable.
 		return LevelOf(t.Inner)
 	default:
-		// PrimType, LitType, NullType, UndefinedType, NeverType, UnknownType,
+		// PrimType, LitType, NullType, UndefinedType, NeverType, UnknownType, FunctionTopType,
 		// ErrorType, InferType, MappedKeyType, RecursiveVarType: childless leaves. ErrorType is a
 		// sentinel at level 0. An InferType names a capture, a MappedKeyType names a mapped type's key,
 		// and a RecursiveVarType names an enclosing μ-knot's binder; each is substituted by the

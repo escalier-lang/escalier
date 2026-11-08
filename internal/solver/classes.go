@@ -1613,8 +1613,9 @@ func (c *Context) memberObject(t soltype.Type) (*soltype.ObjectType, bool) {
 	if wrapper, ok := c.ownPrimitiveWrapper(carrier); ok {
 		carrier = wrapper
 	}
-	// A function reads as an instance of the `Function` class.
-	if _, ok := carrier.(*soltype.FuncType); ok {
+	// A function, and `function` itself, read as an instance of the `Function` class.
+	switch carrier.(type) {
+	case *soltype.FuncType, *soltype.FunctionTopType:
 		if fn, _, ok := c.loadedClass(functionClass); ok {
 			carrier = fn
 		}

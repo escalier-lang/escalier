@@ -1027,10 +1027,12 @@ func typeKindOrder(t soltype.Type) int {
 		return 19
 	case *soltype.RegexType:
 		return 20
+	case *soltype.FunctionTopType:
+		return 21
 	}
 	// Every residual shares the last rank. compareSameKind asserts b to a's own type,
 	// so a kind reaching that function needs a rank of its own here: two kinds sharing
 	// one rank and both carrying a branch there would assert across them. The residuals
 	// are safe because none of them has a branch.
-	return 21
+	return 22
 }

@@ -1,0 +1,14 @@
+class Box<T> { value: T }
+
+export fn describe<T: function>(f: T) -> string {
+    return "callable"
+}
+
+export val fs: Array<function> = [fn (x: number) { return x }, fn () {}, Box]
+
+export fn kind(u: number | fn (x: number) -> number) -> string {
+    return match u {
+        f: function => "function",
+        n: number => "number",
+    }
+}

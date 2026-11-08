@@ -98,6 +98,7 @@ const (
 	Undefined
 	Underscore
 	Unknown
+	Function
 	Val
 	Var
 	Class // <-- add this for 'class' keyword
