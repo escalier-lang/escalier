@@ -47,9 +47,6 @@ func paramOnlyReadThrough(pat ast.Pat, rest, optional bool, body *ast.Block) boo
 	}
 	switch p := pat.(type) {
 	case *ast.IdentPat:
-		if p.Default != nil {
-			return false
-		}
 		v.param = p.Name
 		v.tracked.Add(p.Name)
 	case *ast.ObjectPat, *ast.TuplePat:
