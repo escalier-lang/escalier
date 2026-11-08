@@ -100,11 +100,14 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"BorrowTypeRef": {
 			input: "&Point",
 		},
-		"BorrowLifetimeFuncType": {
-			input: "&'a fn () -> undefined",
+		"LifetimeFuncType": {
+			input: "'a fn () -> undefined",
 		},
-		"BorrowStaticFuncType": {
-			input: "&'static fn (x: number) -> number",
+		"StaticFuncType": {
+			input: "'static fn (x: number) -> number",
+		},
+		"LifetimeFuncTypeInUnion": {
+			input: "('static fn () -> undefined) | null",
 		},
 		"BorrowBindsTighterThanUnion": {
 			input: "&A | B", // parses as (&A) | B
@@ -477,6 +480,24 @@ func TestAMinusWithoutANumberIsNotAType(t *testing.T) {
 		require.NotEmpty(t, errors)
 		require.Equal(t, "expected a type annotation after lifetime", errors[0].Message)
 	})
+}
+
+// A lifetime written ahead of a type binds to a type reference or a function type.
+// TestParseMisplacedLifetime asserts the full message for one ahead of any other type.
+func TestParseMisplacedLifetime(t *testing.T) {
+	t.Parallel()
+	tests := map[string]string{
+		"ObjectType": "'a {x: number}",
+		"TupleType":  "'static [number]",
+	}
+	for name, input := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			_, errors := parseTypeAnnSrc(t, input)
+			require.Len(t, errors, 1)
+			require.Equal(t, "lifetime annotation must precede a type reference or a function type", errors[0].Message)
+		})
+	}
 }
 
 // The mapped-type modifiers that open with `-` keep working, since each requires

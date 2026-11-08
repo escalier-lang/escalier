@@ -1859,6 +1859,10 @@ func (p *Printer) printLifetimeAnn(lt ast.LifetimeAnnNode) {
 }
 
 func (p *Printer) printFuncTypeAnn(typ *ast.FuncTypeAnn) {
+	if typ.Lifetime != nil {
+		p.printLifetimeAnn(typ.Lifetime)
+		p.writeString(" ")
+	}
 	p.writeString("fn")
 	p.printFuncTypeAnnTail(typ)
 }
