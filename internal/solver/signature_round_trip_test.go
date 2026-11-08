@@ -122,3 +122,38 @@ func TestInferredSignatureRoundTrips(t *testing.T) {
 		})
 	}
 }
+
+// TestBorrowOfTypeParamIntoOwned covers a borrow of a type parameter flowing into an owned
+// slot. A borrow of a rigid parameter can't fill an unrelated type parameter.
+func TestBorrowOfTypeParamIntoOwned(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "into an unrelated type parameter",
+			src:  `fn f<T, U>(p: &T) -> U { return p }`,
+			want: []string{"1:33-1:34: cannot constrain T <: U"},
+		},
+		// A borrow of T fills an owned T without a copy, so a caller could write through an
+		// object it only lent. A concrete type such as `&{x: number}` into `{x: number}` is
+		// already rejected by T6.
+		//
+		// DISABLED until #2589, which applies T6 to a type parameter. Until then `steal`
+		// checks clean.
+		/*
+			{
+				name: "into the same type parameter",
+				src:  `fn steal<T>(p: &T) -> T { return p }`,
+				want: []string{"1:16-1:18: cannot use borrowed &T as owned T"},
+			},
+		*/
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
+		})
+	}
+}
