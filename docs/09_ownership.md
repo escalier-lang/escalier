@@ -307,11 +307,12 @@ closure goes decides how its captures are checked:
   call after the store mutably borrows the owned values the closure writes. A
   value the closure only reads stays free.
 
-The closure below borrows `p`, so its type is `&'static fn`, and `sink` is
-written with that type to hold it:
+The closure below borrows `p`. A module-level `fn` slot written with no lifetime
+holds only functions that borrow nothing, so `sink` is written `'static fn` to
+hold it:
 
 ```esc
-var sink: &'static fn () -> undefined = fn () {}
+var sink: 'static fn () -> undefined = fn () {}
 declare fn readIt(a: &{x: number}) -> undefined
 
 fn go() {
@@ -322,60 +323,70 @@ fn go() {
 }
 ```
 
-#### Retained callbacks
+#### Function lifetimes
 
-A function type says whether the function holds borrows, the same way an object
-type says whether it is owned or borrowed. The rule is the same in a parameter,
-a binding, a field, an array element, and a return type:
+A function type may hold borrows. Its lifetime bounds them and is written ahead
+of `fn`, as in `'a fn () -> undefined` or `'static fn () -> undefined`. A
+function is still a value: it is copied into a slot, and passing one needs no
+written `&`. A function type takes no `&` at all, so `&fn () -> undefined` is
+reported as a borrow of a type that cannot be borrowed.
 
-- A plain `fn () -> undefined` holds no borrow, so any slot may keep it for as
-  long as the slot lives. A module-level function has this type. So does a
-  closure that captures nothing, or that only reads value types from `val`
-  bindings, which it copies.
-- A `&'a fn () -> undefined` may hold borrows that live for `'a`. A closure that
-  captures an object local, or reads or writes a captured `var`, has this type.
-- A `&fn` with no lifetime takes its lifetime the way a `&` does. A parameter
-  written `f: &fn () -> undefined` is only called during the call, so a closure
-  passed to it borrows its captures for that call alone.
+A closure's lifetime comes from what it captures. A closure that captures
+nothing, or only reads value types from `val` bindings, which it copies, holds
+no borrow and fits any `fn` slot. So does a module-level function. A closure
+that captures an object local, or reads or writes a captured `var`, borrows it,
+and its lifetime is how long that local lives.
 
-The `&'a` does not borrow the function. A function is still copied into the
-parameter, and the call needs no written `&`. A plain `fn` passes wherever a
-`&fn` is expected. A function that may hold borrows does not fit a plain `fn`
-slot:
+A `fn` written with no lifetime takes one by where it is written, the way an
+elided `&` does:
+
+- In a parameter, the lifetime is fresh and ends with the call. The body may
+  call the function during the call but not keep it past the call.
+- In a return type, the lifetime is fresh when the signature has an input
+  lifetime, and the body's returns bound it, so a returned parameter ties the
+  result to the argument. A signature with no input lifetime has nothing to
+  borrow from, so its elided return type is `'static`.
+- In a module-level binding's annotation, a class field, an interface, or a type
+  alias, the lifetime is `'static`, and the slot holds only functions that borrow
+  nothing. A field or an element type inside one of those is `'static` too.
+- In an annotation inside a body, the lifetime is fresh, as an elided `&` is.
 
 ```esc
-declare fn keep(cb: fn () -> undefined) -> undefined
-declare fn run(cb: &fn () -> undefined) -> undefined
+declare fn run(cb: fn () -> undefined) -> undefined
+var sink: fn () -> undefined = fn () {}
 
 fn setup() {
     val msg = "hello"
-    keep(fn () { console.log(msg) })    // fine, since the closure copies msg
+    sink = fn () { console.log(msg) }   // fine, since the closure copies msg
     val cfg = {msg: "hello"}
     val show = fn () { console.log(cfg.msg) }
     run(show)                           // fine, since run only calls show during the call
-    // ERROR: this function may hold borrows, so it cannot be used as
-    // `fn () -> undefined`, which holds none; write `&fn () -> undefined` to accept it
-    keep(show)
+    // ERROR: `show` borrows `cfg`, but `sink` keeps it for 'static; pass a
+    // function that borrows nothing, or declare `cfg` at module level
+    sink = show
 }
 ```
 
 A returned closure takes the locals it captures, so it holds no borrow once it
 is returned. `fn mk() { val o = {x: 1}; return fn () { return o.x } }` returns a
-plain `fn () -> 1`.
+`fn () -> 1` that fits a `'static` slot.
 
-Callback parameters of a `.d.ts` declaration convert to `&fn`, since the
-declaration cannot say whether the callee keeps the callback. So
+Callback parameters of a `.d.ts` declaration convert to `fn` with no lifetime,
+since the declaration cannot say whether the callee keeps the callback. So
 `forEach(callbackfn: (value: T) => void)` reads as
-`forEach(callbackfn: &fn (value: T) -> unknown)`, and a closure over locals
+`forEach(callbackfn: fn (value: T) -> unknown)`, and a closure over locals
 passes to it.
 
-A closure passed to a `&'static fn` parameter is checked like one stored into
-module-level state. The callee may run it during any later call, so each later
-call mutably borrows the owned values the closure writes:
+A slot written `'static fn` keeps its function for the whole program too, but
+the checker does not yet reject a closure there that borrows a local
+([#2584](https://github.com/escalier-lang/escalier/issues/2584)). A closure
+passed to a `'static fn` parameter is checked like one stored into module-level
+state instead. The callee may run it during any later call, so each later call
+mutably borrows the owned values the closure writes:
 
 ```esc
-declare fn onClick(handler: &'static fn () -> undefined) -> undefined
-declare fn forEachItem(f: &fn () -> undefined) -> undefined
+declare fn onClick(handler: 'static fn () -> undefined) -> undefined
+declare fn forEachItem(f: fn () -> undefined) -> undefined
 declare fn render(view: &{n: number}) -> undefined
 
 fn setup() {
@@ -391,7 +402,7 @@ Two changes make `setup` check. The handler can own `count` and call
 `render(&count)` itself, or `render` can take `&mut {n: number}`, since several
 mutable paths may be live at once.
 
-A closure passed to a `&'a fn` parameter whose `'a` is not `'static` stays
+A closure passed to a `'a fn` parameter whose `'a` is not `'static` stays
 reachable while a binding that shares `'a` is live. That binding is an argument
 or receiver whose parameter type mentions `'a`, or the binding the call's result
 initializes when the return type mentions `'a`. While one of them is live, each
@@ -399,7 +410,7 @@ call may run the closure:
 
 ```esc
 class Button<'a> {
-    onClick: &'a fn () -> undefined,
+    onClick: 'a fn () -> undefined,
     click(&self) -> undefined { self.onClick() },
 }
 
@@ -414,24 +425,28 @@ fn setup() {
 Moving `b.click()` above `render(&count)` makes `setup` check, since `b` is no
 longer live at the render.
 
-A retention lifetime is checked like a borrow's lifetime. A function flows into a
-`&'a fn` slot only when its borrows live at least as long as `'a`. A parameter
-written `&fn` with no lifetime is kept for the call alone, so its body cannot
-pass it on to a `&'static fn` parameter or store it where it outlives the call:
+A function's lifetime is checked like a borrow's lifetime. A function flows into
+a `'a fn` slot only when its borrows live at least as long as `'a`. A parameter
+written `fn` with no lifetime is kept for the call alone, so its body cannot pass
+it on to a `'static` slot, store it where it outlives the call, or read it in an
+`async` or generator body:
 
 ```esc
-fn f(g: &fn () -> undefined) {
-    // ERROR: 'g' is stored where it lives for the whole program, but its type
-    // `&fn () -> undefined` only allows calling it during the call; write
-    // `&'static fn () -> undefined`
+declare fn onClick(handler: 'static fn () -> undefined) -> undefined
+
+fn f(g: fn () -> undefined) {
+    // ERROR: 'g' may borrow values that live only during the call, but it is
+    // stored where it lives for the whole program; write
+    // `g: 'static fn () -> undefined` to keep it
     onClick(g)
 }
 ```
 
-Writing `g: &'static fn () -> undefined` lets `f` keep it. Returning `g`, or a
+Writing `g: 'static fn () -> undefined` lets `f` keep it. Returning `g`, or a
 closure that calls it, ties its lifetime to the result, so `f` reads as
-`fn <'a>(g: &'a fn () -> undefined) -> &'a fn () -> undefined`. A plain `fn`
-parameter holds no borrow, so the body may keep it anywhere.
+`fn <'a>(g: 'a fn () -> undefined) -> 'a fn () -> undefined`. Two parameters
+that share a lifetime name it, as in
+`fn runWith<'a>(f: 'a fn (x: number) -> number, p: &'a {x: number})`.
 
 ## Partial moves
 
@@ -657,23 +672,29 @@ Out of scope by design:
 
 Specified above but not yet enforced:
 
-- **Call-only parameters reached indirectly.** A parameter typed `&fn` with no
-  lifetime is checked only when the `&fn` is written on the parameter itself.
-  One written through an alias or bound by a destructuring pattern is not.
+- **Borrowing closures in a `'static fn` slot**
+  ([#2584](https://github.com/escalier-lang/escalier/issues/2584)). A closure
+  that borrows a local is accepted by a slot written `'static fn`, though the
+  local does not live that long. A slot written `fn` at module level rejects it.
+- **Call-only parameters reached indirectly.** A parameter whose function type
+  is written with no lifetime is checked only when the type is written on the
+  parameter itself. One bound by a destructuring pattern is not.
 - **Closures over a borrowed parameter**
   ([#2565](https://github.com/escalier-lang/escalier/issues/2565)). A closure
-  that captures `p: &'p T` is a `&fn`, but its lifetime is not tied to `'p`, so
+  that captures `p: &'p T` borrows it, but its lifetime is not tied to `'p`, so
   a returned one does not keep `p` borrowed.
-- **Function slots inferred from a plain closure.** An unannotated `var`, or an
-  object literal's field, that starts with a closure holding no borrow keeps the
-  plain `fn` type. Assigning a closure that holds a borrow to it later is
-  rejected until the slot is written `&fn`.
-- **Callbacks inside a `.d.ts` object type.** Only a callback parameter
-  converts to `&fn`. A callback field of an options object keeps the plain `fn`
+- **Function slots inferred from a closure that borrows nothing.** An
+  unannotated `var`, or an object literal's field, that starts with such a
+  closure takes its type, which holds no borrow. Assigning a closure that
+  borrows to it later is rejected until the slot is annotated with a function
   type.
+- **Callbacks inside a `.d.ts` interface.** A callback property of an interface
+  converts to `fn` with no lifetime, which an interface reads as `'static`. A
+  closure that borrows a local is rejected there even when the callee only
+  calls it during the call.
 - **Retained closures reached indirectly.** A closure is found in a parameter
   type only when the type is written out. One behind a type alias, such as
-  `Cb<'static>` for `type Cb<'a> = &'a fn () -> undefined`, is not. A result
+  `Cb<'static>` for `type Cb<'a> = 'a fn () -> undefined`, is not. A result
   that keeps a closure is tracked only when it initializes or is assigned to a
   binding whole, so a result placed in an array or destructured is not. A
   binding whose lifetime is related to the retention lifetime by a declared
