@@ -331,6 +331,27 @@ func TestInferOpenEscapeParam(t *testing.T) {
 			seen: "Map<string, &'static {retries: number}>",
 		},
 		{
+			// A second caller with another literal is accepted. The parameter shows each
+			// caller's literal, and #2587 widens it to the type seen holds.
+			name: "ReadOnlyFromTwoCallers",
+			src: `
+				val mut seen = Map()
+				fn remember(value) { seen.set("last", value) }
+				fn go() -> number {
+					val opts = {retries: 3}
+					remember(&opts)
+					return opts.retries
+				}
+				fn go2() -> number {
+					val o2 = {retries: 4}
+					remember(&o2)
+					return o2.retries
+				}
+			`,
+			want: "fn (value: &'static ({retries: 3} | {retries: 4})) -> undefined",
+			seen: "Map<string, &'static {retries: number}>",
+		},
+		{
 			name: "ReadOnlyNeedsWrittenBorrow",
 			src: `
 				val mut seen = Map()
