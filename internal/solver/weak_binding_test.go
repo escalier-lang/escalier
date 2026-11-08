@@ -182,7 +182,8 @@ fn b() { seen.set("k", {a: 2}) }
 		{
 			// Nothing calls `remember`, so nothing decides what `value` holds. remember is
 			// monomorphic over the map's value type, so the map's value type and the parameter
-			// both settle at `never`, with no error.
+			// both settle at `never`, with no error. An exported remember would take no argument
+			// an importer can supply, so #2354 decides what that reports.
 			name: "AStoreOfAParameterNothingCalls",
 			src: `
 val mut seen = Map()
@@ -316,7 +317,8 @@ val s = g("a")
 		{
 			// g's parameter and result are one weak variable, which h's parameter and result
 			// are tied to. h is monomorphic over that variable, so nothing decides it and both
-			// functions show `never` in every position.
+			// functions show `never` in every position. An importer could call neither if they
+			// were exported, so #2354 decides what that reports.
 			name: "AFunctionThatCallsAWeakFunctionNothingCalls",
 			src: `
 fn makeId() { return fn (x) { return x } }
@@ -453,7 +455,9 @@ fn h(y) {
 			// h passes g a closure that returns h's parameter. The closure flows into g's weak
 			// variable, so y's variable is tied to it through the closure's result and h stays
 			// monomorphic. The closure's parameter is weak too, and nothing reaches it, so it
-			// is `never` like y.
+			// is `never` like y. An exported h would hold `never` inside a closure's parameter as
+			// well as at the top level, so the check #2354 decides on has to look through the
+			// whole signature.
 			name: "AFunctionThatPassesAClosureToAWeakFunction",
 			src: `
 fn makeId() { return fn (x) { return x } }
@@ -468,7 +472,8 @@ fn h(y) { return g(fn (z) { return y }) }
 		{
 			// y's variable is tied to g's weak variable and also has to be an object with a
 			// `set` method. Lowering it lowers the method's type with it. The generic callback
-			// quantifies T itself, so T keeps its level.
+			// quantifies T itself, so T keeps its level. An exported h would return `never` and
+			// pass y to g's `never` parameter, so #2354 decides what that reports.
 			name: "AWeakFunctionsArgumentAlsoTakesAGenericCallback",
 			src: `
 fn makeId() { return fn (x) { return x } }
@@ -485,7 +490,8 @@ fn h(y) {
 		},
 		{
 			// y's `set` method takes h's borrowed parameter, so lowering y's variable lowers the
-			// borrow's lifetime with it.
+			// borrow's lifetime with it. An exported h would return `never`, so #2354 decides
+			// what that reports.
 			name: "AWeakFunctionsArgumentAlsoTakesABorrow",
 			src: `
 fn makeId() { return fn (x) { return x } }
@@ -502,7 +508,8 @@ fn h(y, p: &{n: number}) {
 		},
 		{
 			// y's `set` method takes a Map, so lowering y's variable lowers the Map's type
-			// arguments with it.
+			// arguments with it. An exported h would also take `Map<never, never>`, a second weak
+			// variable nothing decides, so #2354 decides what that reports.
 			name: "AWeakFunctionsArgumentAlsoTakesAClassInstance",
 			src: `
 fn makeId() { return fn (x) { return x } }
@@ -520,7 +527,8 @@ fn h(y) {
 		{
 			// h's result is an alias with a lifetime argument. h stays monomorphic over g's weak
 			// variable and keeps 'a as its own lifetime parameter. y's `set` receives p, so its
-			// argument is a borrow at 'a.
+			// argument is a borrow at 'a. An exported h would still pass y to g's `never`
+			// parameter, so #2354 decides what that reports.
 			name: "AWeakFunctionsCallerReturnsAnAliasWithALifetime",
 			src: `
 fn makeId() { return fn (x) { return x } }
