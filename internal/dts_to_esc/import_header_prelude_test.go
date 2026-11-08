@@ -27,22 +27,30 @@ func TestReadsPreludeBare(t *testing.T) {
 	}
 }
 
-// TestImportGraphImportsWebPreludeOnlyOutsideTheWeb asserts that a `web:*` package
-// naming a `web:prelude` export takes no import edge for it, while a `std:*` package
-// naming one does, since only a `web:*` package's scope holds the web prelude.
-func TestImportGraphImportsWebPreludeOnlyOutsideTheWeb(t *testing.T) {
+// TestStdPackageCannotNameWebPrelude asserts that a `web:*` package naming a
+// `web:prelude` export takes no import edge for it, and that a `std:*` package
+// naming one fails the tier check. Every `std:*` package is in the language
+// tier, which sits below `web:prelude`.
+func TestStdPackageCannotNameWebPrelude(t *testing.T) {
 	t.Parallel()
 
 	prelude, _ := convertSlice(t, "declare class Event { readonly type: string; }")
 	web, _ := convertSlice(t, "declare function fire(e: Event): void;")
 	std, _ := convertSlice(t, "declare function dispatch(e: Event): void;")
-
-	graph, err := ImportGraph(map[string]*StandaloneModule{
+	mods := map[string]*StandaloneModule{
 		"web:prelude": prelude,
 		"web:dom":     web,
-		"std:events":  std,
-	})
+		"std:object":  std,
+	}
+
+	graph, err := ImportGraph(mods)
 	require.NoError(t, err)
 	require.Empty(t, graph["web:dom"])
-	require.Equal(t, []string{"web:prelude"}, graph["std:events"])
+
+	violations, err := CheckTiers(mods, graph)
+	require.NoError(t, err)
+	require.Len(t, violations, 1)
+	require.Equal(t,
+		"std:object (language tier) imports web:prelude (core tier) for Event",
+		violations[0].String())
 }
