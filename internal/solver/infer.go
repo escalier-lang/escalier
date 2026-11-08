@@ -374,6 +374,14 @@ type checker struct {
 	// unannotated parameter, and the result variable of each field read through one of those
 	// borrows. fieldReadBorrow reads a field off such a borrow as a borrow at the same lifetime.
 	readThroughVars set.Set[*soltype.TypeVarType]
+	// readThroughLocals holds the inner variable of each read-through borrow a body-level
+	// `val` binds, as `q` binds one in `val q = p.x`. The binding generalizes, so each use of
+	// it instantiates a copy of the variable, and the freshener adds that copy to
+	// readThroughVars.
+	readThroughLocals set.Set[*soltype.TypeVarType]
+	// unannotatedParamVars holds the variable inferFunc mints for each parameter with no
+	// written type.
+	unannotatedParamVars set.Set[*soltype.TypeVarType]
 
 	// memberSelf is set beside memberReceiver for an instance member, by inferMemberFunc, and
 	// carries what inferFunc needs to bind the member's `self` and build its SelfParam.

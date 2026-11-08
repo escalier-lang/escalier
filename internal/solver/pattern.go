@@ -96,10 +96,13 @@ func defineLeafMono(scope *Scope, name string, t soltype.Type, node ast.Node) {
 // following Rust's match ergonomics. An owned scrutinee moves each leaf out. A
 // borrowed scrutinee projects a receiver-bounded borrow of each leaf and never moves.
 // lt is the scrutinee's borrow lifetime. Every projected leaf borrow shares it, so a
-// leaf cannot outlive the scrutinee.
+// leaf cannot outlive the scrutinee. readThrough is true for an immutable borrow whose
+// inner is a variable in readThroughVars, such as the type of a destructuring parameter
+// the body only reads through.
 type bindMode struct {
-	borrow borrowMode
-	lt     soltype.Lifetime
+	borrow      borrowMode
+	lt          soltype.Lifetime
+	readThrough bool
 }
 
 type borrowMode byte
@@ -147,7 +150,11 @@ func (c *checker) scrutineeBinding(lvl int, scrutinee soltype.Type) (soltype.Typ
 	if inner, mode, ok := c.peelBorrowUnion(lvl, carrier); ok {
 		return inner, mode
 	}
-	return carrier, bindModeOf(scrutinee)
+	mode := bindModeOf(scrutinee)
+	if v, isVar := carrier.(*soltype.TypeVarType); isVar && mode.borrow == bmImm {
+		mode.readThrough = c.readThroughVars.Contains(v)
+	}
+	return carrier, mode
 }
 
 // peelBorrowUnion peels a union whose every member is a borrow into the union of the
@@ -342,6 +349,26 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 			}
 		}
 		var restPat soltype.Pat
+		// A rest binds the properties the fields do not, so a parameter it destructures has to
+		// admit an argument that carries them. Policy A would otherwise close the
+		// usage-inferred object to exact and reject every such argument. `fn f({x, ...rest})`
+		// would infer the parameter `{x: T0}` and reject `f({x: 1, y: 2})` for the extra y.
+		// Marking the parameter's variable open keeps the folded object inexact, the same
+		// shape the written `open` marker produces. The rule is the same whether the pattern
+		// sits in the parameter list or in a `val` over the parameter in the body. A tuple
+		// pattern needs no marking, since the requirement its fixed prefix emits is already
+		// inexact.
+		if v, isVar := scrutinee.(*soltype.TypeVarType); isVar && rest != nil && purpose == forBinding && c.unannotatedParamVars.Contains(v) {
+			v.Open = true
+		}
+		if rest != nil && named.Len() == 0 {
+			// Each named field requires the scrutinee to be an object. A pattern made only of
+			// a rest names none, so it states the requirement itself. Without it, the
+			// scrutinee of `fn f({...r})` is left with no upper bound and renders `unknown`.
+			// The requirement applies for every purpose, as readPatternField's does, so
+			// `{...r}` accepts and rejects the same scrutinees as `{a}`.
+			c.constrain(p, scrutinee, &soltype.ObjectType{Inexact: true})
+		}
 		if rest != nil {
 			// The rest binds through the same walk a field does, so it inherits the
 			// scrutinee's borrow.
@@ -488,23 +515,6 @@ func (c *checker) projectTuple(
 		}
 	}
 	return elems, scrutTup, concreteTup
-}
-
-// objectPatNamesRest reports whether pat is an object pattern carrying a `...rest`. Only
-// an object pattern is asked about: a tuple pattern's rest already reaches the parameter
-// type through the inexact requirement its fixed prefix emits, so `fn f([a, ...rest])`
-// infers `[unknown, ...]` and accepts a longer tuple with no further marking.
-func objectPatNamesRest(pat ast.Pat) bool {
-	obj, ok := pat.(*ast.ObjectPat)
-	if !ok {
-		return false
-	}
-	for _, elem := range obj.Elems {
-		if _, isRest := elem.(*ast.ObjRestPat); isRest {
-			return true
-		}
-	}
-	return false
 }
 
 // splitTupleRest splits a tuple pattern's elements at its first `...rest`. fixed holds the
@@ -1451,7 +1461,10 @@ func (c *checker) definedMembers(t soltype.Type) (soltype.Type, bool) {
 // fieldReadBorrow. A primitive or function element is copied, not borrowed, so it is
 // returned unchanged. A leaf whose element shape is not statically known has a nil
 // concrete and is also returned unchanged. This is the same conservative choice
-// fieldReadBorrow makes for an unknown receiver.
+// fieldReadBorrow makes for an unknown receiver. The exception is a read-through
+// scrutinee. A leaf of unknown shape binds through it as a borrow at the scrutinee's
+// lifetime, as fieldReadBorrow reads a field of unknown shape through a read-through
+// receiver.
 func (c *checker) applyBindMode(lvl int, node ast.Node, mut bool, leafType, concrete soltype.Type, scrutineeMode bindMode) soltype.Type {
 	switch scrutineeMode.borrow {
 	case bmImm:
@@ -1460,6 +1473,10 @@ func (c *checker) applyBindMode(lvl int, node ast.Node, mut bool, leafType, conc
 		}
 		if ri, ok := leafType.(soltype.RefInner); ok && soltype.BorrowableType(concrete) {
 			return soltype.NewRef(false, scrutineeMode.lt, ri)
+		}
+		if v, isVar := leafType.(*soltype.TypeVarType); isVar && concrete == nil && scrutineeMode.readThrough {
+			c.addReadThroughVar(v)
+			return soltype.NewRef(false, scrutineeMode.lt, v)
 		}
 		return leafType
 	case bmMut:

@@ -916,7 +916,7 @@ func TestInferWarnsAboutAFunctionReadOffAnInferredReceiver(t *testing.T) {
 			name: "AReadNeverUsedAsAFunction",
 			src: `fn f(o) { val g = o.m
 				return g }`,
-			types: map[string]string{"f": "fn <T0>(o: {m: T0}) -> T0"},
+			types: map[string]string{"f": "fn <T0, 'a>(o: &'a {m: T0}) -> &'a T0"},
 		},
 		{
 			// The closure reads `o.m` and the enclosing body calls what it returns.
