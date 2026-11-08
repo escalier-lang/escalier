@@ -168,6 +168,13 @@ func (p *Printer) dedent() {
 // PrintScript prints a Script node
 func (p *Printer) PrintScript(script *ast.Script) error {
 	first := true
+	for _, imp := range script.Imports {
+		if !first {
+			p.newline()
+		}
+		p.printImportStmt(imp)
+		first = false
+	}
 	for _, stmt := range script.Stmts {
 		if _, isErr := stmt.(*ast.ErrorStmt); isErr {
 			continue

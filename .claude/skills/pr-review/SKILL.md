@@ -40,7 +40,15 @@ For cleanup, altitude, and conventions findings, the failure scenario states the
 
 ## 3. Dedup and rank
 
-Merge candidates that describe the same defect at the same place. Rank correctness bugs first. When the cap forces a cut, drop cleanup findings before correctness ones.
+Merge candidates that describe the same defect at the same place. Then give each finding a severity:
+
+| Severity | Marker | Meaning |
+|---|---|---|
+| High | 🔴 | Fix before merging. The failure scenario is likely on real input, or the defect is unsound, crashes, or loses data. |
+| Medium | 🟠 | A real bug, but its failure needs an unusual input or ordering. |
+| Low | 🟡 | Cleanup that is optional: reuse, simplification, efficiency, altitude, or conventions. |
+
+Rank by severity, then correctness bugs before cleanup within the same severity. When the cap forces a cut, drop the lowest severity first.
 
 ## 4. Map moved code
 
@@ -107,10 +115,10 @@ Record each thread you answer for the summary.
    ```
 
    Skip a finding when one of these comments is on the same file and describes the same defect. Its line may have moved since then, so match by the defect, not the line number.
-2. For each remaining finding, check that its line falls inside a diff hunk on the new side. Post it with `mcp__github_inline_comment__create_inline_comment` and `confirmed: true`. The body starts with a bold one-line summary and its category, then gives the failure scenario.
+2. For each remaining finding, check that its line falls inside a diff hunk on the new side. Post it with `mcp__github_inline_comment__create_inline_comment` and `confirmed: true`. The body starts with the severity marker, then a bold one-line summary and its category, then gives the failure scenario. For example: `🔴 **IsSuperset tests the subset relation** (correctness)`.
 3. When a finding's line is outside every hunk, attach it to the nearest changed line it concerns and name the real line in the body.
 4. Last, write the summary. Its first line is the marker `<!-- pr-review-summary -->`, and the next line names the head commit reviewed. After that come four sections, each with a sentence-case heading:
-   - **Findings:** each finding of this run on one line with its file and line, including the ones skipped in item 1. Mark a skipped one as already posted. When nothing survives, say that the review found no issues.
+   - **Findings:** each finding of this run on one line, starting with its severity marker, with its file and line, including the ones skipped in item 1. Mark a skipped one as already posted. When nothing survives, say that the review found no issues.
    - **Moved code:** each trivial move from step 4 on one line. Leave the section out when there are none.
    - **Needs human review:** each high-risk change from step 5 on one line, linked to its range of lines. Leave the section out when there are none.
    - **Replies:** each thread step 6 answered on one line, with a link to the thread and the kind of answer, such as fixed or pushed back. Leave the section out when there are none.

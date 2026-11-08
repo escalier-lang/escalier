@@ -1,18 +1,10 @@
-// Command ownership_diff compares the diagnostics of the current ownership checks with the
-// diagnostics of the dataflow pass in internal/solver/ownership_dataflow.go. It runs the
-// solver tests and the fixture tests twice, once with ESCALIER_OWNERSHIP_DATAFLOW=0 and once
-// with ESCALIER_OWNERSHIP_DATAFLOW=1, and prints each diagnostic that one run reports and
-// the other does not. The pass runs by default, and the value 0 turns it off. A test that
-// sets Options.NoOwnershipDataflow runs with the pass off in both runs, so it never differs.
-// The report groups the differences by test, and ends with a count of each kind of
-// difference.
+// Command ownership_diff compares the diagnostics of two checkouts. It runs the solver tests
+// and the fixture tests in the checkout at <dir> and in the current directory, and prints each
+// diagnostic that one checkout reports and the other does not. A change that should leave
+// every diagnostic as it was is checked this way against its base commit. The report groups
+// the differences by test, and ends with a count of each kind of difference.
 //
-//	go run ./tools/ownership_diff [-pkgs ./internal/solver/,./cmd/...] [-run <regexp>] [-base <dir>]
-//
-// With -base, the tool compares two checkouts instead of two settings of the flag. It runs
-// the tests with the pass on in the checkout at <dir> and in the current directory, and
-// prints each diagnostic that one checkout reports and the other does not. A change that
-// should leave every diagnostic as it was is checked this way against its base commit.
+//	go run ./tools/ownership_diff -base <dir> [-pkgs ./internal/solver/,./cmd/...] [-run <regexp>]
 //
 // Each run sets ESCALIER_DIAG_TRACE=1, which makes the solver print every diagnostic of a
 // top-level run to standard output. traceDiagnostics in internal/solver/diagnostic_trace.go
@@ -25,8 +17,7 @@
 // which the trace names by a hash of its sources, rather than from the same test. A script
 // has no such key, and its diagnostics match only within one test.
 //
-// The `old` side is the run with the pass off, and the `new` side the run with it on. With
-// -base, the `old` side is the base checkout and the `new` side the current directory.
+// The `old` side is the base checkout and the `new` side the current directory.
 package main
 
 import (
@@ -59,33 +50,28 @@ func main() {
 	}
 }
 
-// run parses args, runs the tests with the flag off and on, and writes the report to out.
-// The output of `go test` other than its JSON stream goes to errOut.
+// run parses args, runs the tests in the base checkout and in the current directory, and
+// writes the report to out. The output of `go test` other than its JSON stream goes to errOut.
 func run(args []string, out, errOut io.Writer) error {
 	fs := flag.NewFlagSet("ownership_diff", flag.ContinueOnError)
 	pkgs := fs.String("pkgs", "./internal/solver/,./cmd/...", "comma-separated packages to test")
 	runPattern := fs.String("run", "", "only run tests matching this regexp, as go test -run")
-	base := fs.String("base", "", "compare against the checkout in this directory, with the pass on in both")
+	base := fs.String("base", "", "compare against the checkout in this directory")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if *base == "" {
+		return errors.New("-base <dir> is required")
 	}
 
 	packages := strings.Split(*pkgs, ",")
 
-	// The old run is the pass off in this checkout, or the pass on in the base checkout.
-	oldDir, oldFlag := "", "0"
-	labels := sideLabels{oldRun: "with the flag off", newRun: "with it on"}
-	if *base != "" {
-		oldDir, oldFlag = *base, "1"
-		labels = sideLabels{oldRun: "in the base checkout", newRun: "in this checkout"}
-	}
-
-	off, err := traceTests(oldDir, packages, *runPattern, oldFlag, errOut)
+	old, err := traceTests(*base, packages, *runPattern, errOut)
 	if err != nil {
 		return err
 	}
 
-	on, err := traceTests("", packages, *runPattern, "1", errOut)
+	cur, err := traceTests("", packages, *runPattern, errOut)
 	if err != nil {
 		return err
 	}
@@ -93,11 +79,11 @@ func run(args []string, out, errOut io.Writer) error {
 	// A test binary that panics or does not build stops printing diagnostics, so the
 	// report would show what it never printed as differences. The problems come first so
 	// a reader sees them before the differences they explain.
-	writeProblems(out, "old", off.problems)
-	writeProblems(out, "new", on.problems)
-	writeReport(out, diffRuns(off.diags, on.diags), labels)
+	writeProblems(out, "old", old.problems)
+	writeProblems(out, "new", cur.problems)
+	writeReport(out, diffRuns(old.diags, cur.diags))
 
-	if n := len(off.problems) + len(on.problems); n > 0 {
+	if n := len(old.problems) + len(cur.problems); n > 0 {
 		return fmt.Errorf("%d test binaries panicked, failed to build, or failed outside any test, so the report is incomplete", n)
 	}
 	return nil
@@ -110,12 +96,11 @@ func writeProblems(w io.Writer, side string, problems []string) {
 	}
 }
 
-// traceTests runs `go test -json` over packages in dir with ESCALIER_OWNERSHIP_DATAFLOW set
-// to flagValue and returns the diagnostics the tests printed. An empty dir is the current
-// directory. A failing test does not stop the
-// run. A non-zero exit from `go test` is an error only when no package reported a failure,
-// as when a package pattern matches nothing.
-func traceTests(dir string, packages []string, runPattern, flagValue string, errOut io.Writer) (trace, error) {
+// traceTests runs `go test -json` over packages in dir and returns the diagnostics the tests
+// printed. An empty dir is the current directory. A failing test does not stop the run. A
+// non-zero exit from `go test` is an error only when no package reported a failure, as when
+// a package pattern matches nothing.
+func traceTests(dir string, packages []string, runPattern string, errOut io.Writer) (trace, error) {
 	args := []string{"test", "-json", "-count=1", "-parallel=1"}
 	if runPattern != "" {
 		args = append(args, "-run", runPattern)
@@ -124,7 +109,7 @@ func traceTests(dir string, packages []string, runPattern, flagValue string, err
 
 	cmd := exec.Command("go", args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "ESCALIER_DIAG_TRACE=1", "ESCALIER_OWNERSHIP_DATAFLOW="+flagValue)
+	cmd.Env = append(os.Environ(), "ESCALIER_DIAG_TRACE=1")
 	cmd.Stderr = errOut
 
 	stdout, err := cmd.StdoutPipe()
@@ -339,22 +324,22 @@ func testKey(pkg, test string) string {
 // does not.
 type testDiff struct {
 	Test string
-	// Old lists the diagnostics only the run with the flag off reported.
+	// Old lists the diagnostics only the base checkout reported.
 	Old []diagnostic
-	// New lists the diagnostics only the run with the flag on reported.
+	// New lists the diagnostics only the current directory reported.
 	New []diagnostic
 }
 
-// diffRuns returns the diagnostics only one of off and on reported, grouped by the test
+// diffRuns returns the diagnostics only one of old and cur reported, grouped by the test
 // each is attributed to and sorted by test. A diagnostic reported twice in one run and once
 // in the other differs once. Diagnostics attributed to the same test are matched first, and
 // what is left is matched across tests.
-func diffRuns(off, on []traced) []testDiff {
+func diffRuns(old, cur []traced) []testDiff {
 	sameTest := func(t traced) any { return t }
 	anyTest := func(t traced) any { return t.Diag }
 
-	oldOnly := unmatched(unmatched(off, on, sameTest), unmatched(on, off, sameTest), anyTest)
-	newOnly := unmatched(unmatched(on, off, sameTest), unmatched(off, on, sameTest), anyTest)
+	oldOnly := unmatched(unmatched(old, cur, sameTest), unmatched(cur, old, sameTest), anyTest)
+	newOnly := unmatched(unmatched(cur, old, sameTest), unmatched(old, cur, sameTest), anyTest)
 
 	byTest := map[string]*testDiff{}
 	entry := func(test string) *testDiff {
@@ -416,16 +401,10 @@ func category(side string, d diagnostic) string {
 	return fmt.Sprintf("%s %s: %s", side, d.Type, quotedName.ReplaceAllString(d.Message, "'…'"))
 }
 
-// sideLabels names the old and new runs in the report's summary line.
-type sideLabels struct {
-	oldRun string
-	newRun string
-}
-
 // writeReport writes diffs to w: each test with its differing diagnostics, then the number
 // of tests that differ, the number of differences on each side, and the number of
-// differences in each category, most frequent first. labels names the two runs.
-func writeReport(w io.Writer, diffs []testDiff, labels sideLabels) {
+// differences in each category, most frequent first.
+func writeReport(w io.Writer, diffs []testDiff) {
 	counts := map[string]int{}
 	oldTotal, newTotal := 0, 0
 
@@ -443,7 +422,7 @@ func writeReport(w io.Writer, diffs []testDiff, labels sideLabels) {
 		}
 	}
 
-	fmt.Fprintf(w, "\n%d tests differ: %d diagnostics only %s, %d only %s\n", len(diffs), oldTotal, labels.oldRun, newTotal, labels.newRun)
+	fmt.Fprintf(w, "\n%d tests differ: %d diagnostics only in the base checkout, %d only in this checkout\n", len(diffs), oldTotal, newTotal)
 
 	cats := make([]string, 0, len(counts))
 	for c := range counts {

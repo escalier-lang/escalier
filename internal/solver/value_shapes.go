@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"slices"
+
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
@@ -91,11 +93,25 @@ func (c *checker) isValueShaped(t soltype.Type) bool {
 // the type of `b.v` is a variable bounded below by `1`. Reading it copies the number and
 // moves nothing.
 //
-// A variable with no lower bound holds no known value. That is the case for a type
+// A variable bounded above by a type that isPrimitiveType accepts, such as `number` or
+// `number | undefined`, holds only primitives. It is a value type whatever its lower bounds.
+// In
+//
+//	fn f({n}) {
+//		val m: number = n
+//		return n
+//	}
+//
+// the type of `n` is a variable bounded above by `number`, so returning it copies.
+//
+// Any other variable with no lower bound holds no known value. That is the case for a type
 // parameter's variable, so it keeps the conservative answer and stays movable. A variable
 // reached again on the same path is a cycle in the bound graph, and it answers false for
 // the same reason.
 func (c *checker) holdsOnlyValueTypes(v *soltype.TypeVarType, seen set.Set[*soltype.TypeVarType]) bool {
+	if slices.ContainsFunc(v.UpperBounds, c.isPrimitiveType) {
+		return true
+	}
 	if len(v.LowerBounds) == 0 || seen.Contains(v) {
 		return false
 	}
@@ -113,4 +129,42 @@ func (c *checker) holdsOnlyValueTypes(v *soltype.TypeVarType, seen set.Set[*solt
 		}
 	}
 	return true
+}
+
+// holdsFunc reports whether a value of type t can be a function. An alias is expanded first.
+// A union or an intersection can be one when a member can. A variable can be one when one of
+// its lower bounds, followed through other variables, can. `seen` holds the variables on the
+// current path, so a cycle in the bound graph answers false.
+func (c *checker) holdsFunc(t soltype.Type, seen set.Set[*soltype.TypeVarType]) bool {
+	member := func(m soltype.Type) bool { return c.holdsFunc(m, seen) }
+	switch t := c.expandAliasChain(t).(type) {
+	case *soltype.FuncType:
+		return true
+	case *soltype.UnionType:
+		return slices.ContainsFunc(t.Types, member)
+	case *soltype.IntersectionType:
+		return slices.ContainsFunc(t.Types, member)
+	case *soltype.TypeVarType:
+		if seen.Contains(t) {
+			return false
+		}
+		seen.Add(t)
+		defer seen.Remove(t)
+		return slices.ContainsFunc(t.LowerBounds, member)
+	}
+	return false
+}
+
+// isPrimitiveType reports whether every value of t is a primitive. That holds for a primitive
+// or literal type, `null`, `undefined`, and a union of those such as `number | undefined`.
+func (c *checker) isPrimitiveType(t soltype.Type) bool {
+	switch t := c.expandAliasChain(t).(type) {
+	case *soltype.PrimType, *soltype.LitType, *soltype.NullType, *soltype.UndefinedType:
+		return true
+	case *soltype.UnionType:
+		return len(t.Types) > 0 && !slices.ContainsFunc(t.Types, func(m soltype.Type) bool {
+			return !c.isPrimitiveType(m)
+		})
+	}
+	return false
 }

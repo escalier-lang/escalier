@@ -397,7 +397,16 @@ func (c *checker) inferClassBodies(
 
 	callFns = c.inferCallSignatures(scope, lvl, decl)
 	ctorFns = c.walkConstructorBodies(scope, lvl, self, body, decl.Extends, ctors)
-	if len(ctorFns) == 0 {
+	switch {
+	case decl.Declare() && len(ctors) > 0:
+		// A `declare` class has no body to call a private constructor from, so its value
+		// carries the public constructors alone. One whose every constructor is private
+		// carries none, which is how a runtime class that exists for `instanceof` and
+		// throws when constructed is written, such as `ImageBitmap`. Each constructor is
+		// still walked above, so its signature is checked.
+		ctorFns = publicConstructors(ctors, ctorFns)
+		sigs.def.NotConstructible = len(ctorFns) == 0
+	case len(ctorFns) == 0:
 		// A subclass must declare its own constructor to call `super`, so a missing one is
 		// reported here and the synthesis below stands in for recovery.
 		if decl.Extends != nil {

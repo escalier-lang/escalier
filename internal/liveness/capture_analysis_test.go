@@ -18,7 +18,7 @@ func findFuncExpr(t *testing.T, ids *VarIDs, input string) *ast.FuncExpr {
 
 	// Run rename on the outer scope to assign VarIDs to outer vars.
 	outerBindings := make(map[string]VarID)
-	Rename(ids, nil, ast.Block{Stmts: script.Stmts}, outerBindings)
+	RenameFrom(ids, nil, ast.Block{Stmts: script.Stmts}, outerBindings, 1)
 
 	// Find the first FuncExpr in a variable declaration.
 	for _, stmt := range script.Stmts {
@@ -39,7 +39,7 @@ func findFuncExpr(t *testing.T, ids *VarIDs, input string) *ast.FuncExpr {
 							}
 						}
 					}
-					Rename(ids, funcExpr.FuncSig.Params, *funcExpr.Body, innerOuter)
+					RenameFrom(ids, funcExpr.FuncSig.Params, *funcExpr.Body, innerOuter, 1)
 					return funcExpr
 				}
 			}

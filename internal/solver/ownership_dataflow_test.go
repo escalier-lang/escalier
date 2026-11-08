@@ -1,7 +1,6 @@
 package solver
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -784,7 +783,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{`cannot constrain "a" <: number`},
 		},
 		{
-			// The first program of B2. The global keeps the `'static` borrow of opts live for
+			// The global keeps the `'static` borrow of opts live for
 			// the rest of the program, so the write breaks E2.
 			name: "E2WriteAfterAStaticImmutableBorrow",
 			src: `
@@ -800,7 +799,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot assign to 'opts.retries' while it is borrowed as immutable"},
 		},
 		{
-			// The second program of B2. The `'static` parameter takes the borrow's lifetime, so
+			// The `'static` parameter takes the borrow's lifetime, so
 			// the mutable borrow stays live after the call.
 			name: "E2ImmutableBorrowAfterAStaticMutableBorrow",
 			src: `
@@ -2112,7 +2111,7 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 			want: []string{"10:13-10:16: use of moved value 'c'"},
 		},
 		{
-			// The program of B8. c copies the borrow a holds, so c reaches x too.
+			// c copies the borrow a holds, so c reaches x too.
 			name: "CopiedBorrowConflictsAtTheCall",
 			src: `
 				declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
@@ -2369,30 +2368,6 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			res := InferModuleAgainstStdlib(parseModule(t, tc.src), benchTree, Options{})
 			require.Equal(t, tc.want, messagesWithSpan(t, res.Errors))
-		})
-	}
-}
-
-// TestOwnershipDataflowFromEnv covers the values of ownershipDataflowEnv that turn the dataflow
-// pass off and a sample of those that leave it on.
-func TestOwnershipDataflowFromEnv(t *testing.T) {
-	cases := []struct {
-		value string
-		on    bool
-	}{
-		{value: "", on: true},
-		{value: "1", on: true},
-		{value: "on", on: true},
-		{value: "0", on: false},
-		{value: " 0 ", on: false},
-		{value: "false", on: false},
-		{value: "FALSE", on: false},
-		{value: "Off", on: false},
-	}
-	for _, tc := range cases {
-		t.Run(fmt.Sprintf("%q", tc.value), func(t *testing.T) {
-			t.Setenv(ownershipDataflowEnv, tc.value)
-			require.Equal(t, tc.on, ownershipDataflowFromEnv())
 		})
 	}
 }

@@ -2,7 +2,7 @@ package solver
 
 import (
 	"cmp"
-	"fmt"
+	"maps"
 	"slices"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -63,17 +63,6 @@ func bindingType(b ValueBinding) soltype.Type {
 		return nil
 	}
 	return schemeType(b.Schemes[0])
-}
-
-// varIDToName resolves a VarID back to a variable name for error messages, reading
-// the current body's rename-pass mapping.
-func (c *checker) varIDToName(id liveness.VarID) string {
-	if c.fn != nil && c.fn.varIDNames != nil {
-		if name, ok := c.fn.varIDNames[id]; ok {
-			return name
-		}
-	}
-	return fmt.Sprintf("var#%d", id)
 }
 
 // runLivenessPrePass runs name resolution, CFG construction, and liveness analysis
@@ -161,7 +150,6 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 		captureVarIDs.Add(id)
 	}
 
-	c.fn.liveness = livenessInfo
 	c.fn.stmtToRef = stmtToRef
 	c.fn.varIDNames = renameResult.VarIDNames
 	c.fn.varIDTypes = varIDTypes
@@ -170,9 +158,6 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 
 	c.fn.cfg = cfg
 	c.fn.destructureInits = set.NewSet[ast.Node]()
-	c.fn.eagerBorrowGraph = map[liveness.VarID][]fieldBorrow{}
-	c.fn.borrowGens = map[liveness.StmtRef][]borrowAssign{}
-	c.fn.borrowDirty = set.NewSet[liveness.VarID]()
 
 	c.fn.paramVarIDs = collectParamVarIDs(c.varIDs, astParams)
 	if selfVarID > 0 {
@@ -181,19 +166,65 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 	c.fn.paramVarIDs = c.fn.paramVarIDs.Union(captureVarIDs)
 	c.fn.captureVarIDs = captureVarIDs
 	c.fn.capturesModule = closure != nil && !enclosed
+	c.fn.scope = scope
+	if c.fn.capturesModule {
+		for _, name := range captured {
+			if b, found := c.lookupValueBinding(scope, name); found {
+				c.fn.events.moduleRoots[renameResult.ExtraParamVarIDs[name]] = b
+			}
+		}
+	}
 
+	// A call of a recursive closure's own name inside its body runs the closure, the way a call
+	// of the closure's name outside it does. So the name holds a loan of each local the closure
+	// captures. A capture with value semantics holds its own copy, as recordClosureCaptures
+	// decides.
 	if selfName != "" {
-		c.seedSelfCaptureEdges(scope, closure, renameResult.ExtraParamVarIDs[selfName], renameResult.ExtraParamVarIDs)
+		var captures []liveness.CaptureInfo
+		for _, capture := range c.closureCaptures(closure) {
+			if b, found := scope.GetValue(capture.Name); found && !isValueType(bindingType(b)) {
+				captures = append(captures, capture)
+			}
+		}
+		c.seedCaptureLoans(closure, captures, renameResult.ExtraParamVarIDs[selfName], renameResult.ExtraParamVarIDs)
 	}
 	// A call of a module function in this body runs what that function reaches, so the
-	// function's name holds a capture edge to each module-level binding it reaches.
-	for name, fns := range moduleFuncs {
-		for _, fn := range fns {
-			c.seedModuleFuncEdges(fn, renameResult.ExtraParamVarIDs[name], renameResult.ExtraParamVarIDs)
+	// function's name holds a loan of each module-level binding it reaches. Each name is
+	// seeded in sorted order, so the seeds are in the same order on every run.
+	for _, name := range slices.Sorted(maps.Keys(moduleFuncs)) {
+		for _, fn := range moduleFuncs[name] {
+			c.seedCaptureLoans(fn, c.moduleCaptures[fn], renameResult.ExtraParamVarIDs[name], renameResult.ExtraParamVarIDs)
 		}
 	}
 
 	return renameResult.ExtraParamVarIDs
+}
+
+// seedCaptureLoans adds to the body's event table a seed for each capture in `captures` of
+// the function `closure`. The local `holder` holds each seed. ids maps each name the body
+// defined as an extra parameter to its VarID. A capture with no VarID in ids, or with the
+// VarID of `holder`, gets no seed. A seed is a borrow of the whole captured local, mutable when
+// the function writes it.
+func (c *checker) seedCaptureLoans(closure ast.Func, captures []liveness.CaptureInfo, holder liveness.VarID, ids map[string]liveness.VarID) {
+	t := c.eventTable()
+	if t == nil || holder <= 0 {
+		return
+	}
+	for _, capture := range captures {
+		id, ok := ids[capture.Name]
+		if !ok || id == holder {
+			continue
+		}
+		// The seed is in the state before the body's first statement, so it attaches to no
+		// CFG point.
+		t.seeds = append(t.seeds, &borrowEvent{
+			flowBase: flowBase{
+				eventBase: eventBase{place: movePlace{root: id}, node: closure, at: liveness.StmtRef{BlockID: -1, StmtIdx: -1}},
+				holder:    eventHolder{target: placeTarget{root: holder}},
+			},
+			borrow: borrowKindOf(capture.IsMutable),
+		})
+	}
 }
 
 // paramsBind reports whether a leaf of one of params binds name.
@@ -205,25 +236,6 @@ func paramsBind(params []*ast.Param, name string) bool {
 		})
 	}
 	return found
-}
-
-// seedSelfCaptureEdges gives selfID, the VarID a recursive closure's body reads its own
-// name by, a capture edge to each local the closure captures. ids maps each captured name
-// to the VarID the body's rename gave it. A call of selfID inside the body then runs the
-// closure, the way a call of the closure's name outside it does. A capture with value
-// semantics gets no edge, matching recordClosureCaptures.
-func (c *checker) seedSelfCaptureEdges(scope *Scope, closure ast.Func, selfID liveness.VarID, ids map[string]liveness.VarID) {
-	for _, capture := range c.closureCaptures(closure) {
-		id, ok := ids[capture.Name]
-		if !ok || id == selfID {
-			continue
-		}
-		b, found := scope.GetValue(capture.Name)
-		if !found || isValueType(bindingType(b)) {
-			continue
-		}
-		c.addEdge(selfID, fieldBorrow{referent: id, mut: capture.IsMutable, capture: true})
-	}
 }
 
 // collectModuleCaptures returns the names of the module-level bindings fn reaches, sorted,
@@ -343,19 +355,6 @@ func moduleFuncsOf(b ValueBinding) []ast.Func {
 		}
 	}
 	return fns
-}
-
-// seedModuleFuncEdges gives fnID, the VarID the body's rename gave a module function fn, a
-// capture edge to each module-level binding fn reaches. ids maps each name the body defined
-// as an extra parameter to its VarID.
-func (c *checker) seedModuleFuncEdges(fn ast.Func, fnID liveness.VarID, ids map[string]liveness.VarID) {
-	for _, capture := range c.moduleCaptures[fn] {
-		id, ok := ids[capture.Name]
-		if !ok || id == fnID {
-			continue
-		}
-		c.addEdge(fnID, fieldBorrow{referent: id, mut: capture.IsMutable, capture: true})
-	}
 }
 
 // collectClosureCaptures returns the names of the variables `closure` captures from an

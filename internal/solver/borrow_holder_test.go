@@ -6,18 +6,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestFlowSensitiveBorrowEdges covers the flow-sensitive borrow-edge graph: a binding's
-// borrow edges are set where a borrow flows in, cleared at a reassignment, and joined by
-// union at CFG branch merges. A reassignment away from a borrow drops the replaced referent,
-// while a borrow set on one branch still reaches the merge.
-func TestFlowSensitiveBorrowEdges(t *testing.T) {
+// TestBorrowHoldersAcrossReassignment covers how the dataflow pass tracks which loans a
+// binding holds. A binding holds a loan from where the borrow flows in until a reassignment
+// replaces it, and the holders of a loan on each branch reach the merge after the branches.
+func TestBorrowHoldersAcrossReassignment(t *testing.T) {
 	tests := map[string]struct {
 		src   string
 		want  []string
 		types map[string]string
 	}{
-		// Reassigning a `var`'s borrow clears the replaced edge: `a = &mut d` after
-		// `a = &mut c` leaves only `a` → d, so storing `a` out hands d alone to the caller.
+		// `a = &mut d` replaces the loan of c that `a` held, so storing `a` out hands d alone
+		// to the caller.
 		"VarReassignClearsReplacedEdge": {
 			src: `
 				fn f(out: &mut {slot: &mut {value: number}}) {
@@ -31,12 +30,10 @@ func TestFlowSensitiveBorrowEdges(t *testing.T) {
 			want:  nil,
 			types: map[string]string{"f": "fn (out: &mut {slot: &mut {value: number}}) -> undefined"},
 		},
-		// A borrow set on only one branch reaches the merge: `a = &mut d` runs only when `cond`
-		// holds, but the union at the merge keeps `a` → d, so storing `a` out hands d to the
-		// caller through a mutable path. Storing `&d` into `view` hands it out through an
-		// immutable one too, and the pair is reported. Without the merged edge only the `view`
-		// store would carry d, and nothing would pair with it. `seed` is a parameter, so the
-		// fall-through path carries no local edge and only d is reported.
+		// `a = &mut d` runs only when `cond` holds, and `a` still holds the loan of d after
+		// the merge. So storing `a` out hands d to the caller through a mutable path, and
+		// storing `&d` into `view` hands it out through an immutable one, which E2 rejects.
+		// `seed` is a parameter, so the fall-through path holds no loan of a local.
 		"BorrowSetOnOneBranchReachesMerge": {
 			src: `
 				fn f(seed: &mut {value: number}, cond: boolean, out: &mut {slot: &mut {value: number}}, view: &mut {r: &{value: number}}) {
@@ -57,10 +54,9 @@ func TestFlowSensitiveBorrowEdges(t *testing.T) {
 					"view: &mut {r: &{value: number}}) -> undefined",
 			},
 		},
-		// Disagreeing branches union their referents: the then-branch repoints `a` to d and the
-		// `else` branch back to c, so the merge carries both `a` → c and `a` → d. Storing `a` out
-		// hands the caller a mutable path to c or d. Nothing in the frame uses either local
-		// afterwards, so L1 accepts the store.
+		// One branch points `a` at d and the other back at c, so after the merge `a` holds a
+		// loan of each. Storing `a` out hands the caller a mutable path to c or d. Nothing in
+		// the frame uses either local afterwards, so L1 accepts the store.
 		"BranchesUnionReferents": {
 			src: `
 				fn f(cond: boolean, out: &mut {slot: &mut {value: number}}) {
@@ -88,21 +84,18 @@ func TestFlowSensitiveBorrowEdges(t *testing.T) {
 	}
 }
 
-// TestFieldStoreBorrowEdges covers borrow edges recorded at a field store into a local
-// receiver: `b.peer = &mut d` records b → d at [peer], so a later flow-out of b carries the
-// borrow. The store is a strong update on the stored field's subtree, so a repoint replaces
-// the field's referent rather than accumulating a stale one.
-func TestFieldStoreBorrowEdges(t *testing.T) {
+// TestFieldStoreBorrowHolders covers a field store of a borrow into a local receiver.
+// After `b.peer = &mut d`, the place `b.peer` holds the loan of d, so a later flow out of b
+// carries the borrow. The store replaces what `b.peer` held before.
+func TestFieldStoreBorrowHolders(t *testing.T) {
 	tests := map[string]struct {
 		src   string
 		want  []string
 		types map[string]string
 	}{
-		// Repointing a field to a local then returning the carrier carries the stored borrow
-		// out: `b.peer = &mut d` records b → d, so returning b is a component move of d, the
-		// falsified-lifetime case the field-store edge catches. The store is a strong update
-		// that clears the [peer] subtree before recording, so the replaced referent c is
-		// dropped and only d is co-moved, and stripping owns d in the returned tree.
+		// After `b.peer = &mut d`, returning b carries the borrow of d out. The store replaces
+		// the loan of c that `b.peer` held, so only d goes with b, and stripping owns d in the
+		// returned tree.
 		"FieldStoreRepointThenReturn": {
 			src: `
 				fn f() {
@@ -147,17 +140,17 @@ func TestFieldStoreBorrowEdges(t *testing.T) {
 	}
 }
 
-// TestMutableGraphNode covers the borrow-field owned-mutable upgrade: an unannotated `val mut
-// b = {peer: &mut d}` builds the owned-mutable `mut {peer: &mut {x: number}}`, so b is
-// `&mut`-borrowable, its field is writable through, and its borrow field is repointable. This
-// is the natural way to construct a mutable graph node holding a borrow.
-func TestMutableGraphNode(t *testing.T) {
+// TestMutableBorrowCarrier covers the borrow-field owned-mutable upgrade: an unannotated
+// `val mut b = {peer: &mut d}` builds the owned-mutable `mut {peer: &mut {x: number}}`, so b
+// is `&mut`-borrowable, its field is writable through, and its borrow field is repointable.
+// This is the natural way to build a mutable object that holds a borrow.
+func TestMutableBorrowCarrier(t *testing.T) {
 	tests := map[string]struct {
 		src   string
 		want  []string
 		types map[string]string
 	}{
-		// The owned-mutable graph node is `&mut`-borrowable: passing `&mut b` to a parameter of
+		// The owned-mutable carrier is `&mut`-borrowable: passing `&mut b` to a parameter of
 		// type `&mut {peer: &mut {x: number}}` checks, which requires b to be owned-mutable with
 		// a `&mut` field.
 		"BorrowableAsMut": {

@@ -10,13 +10,8 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// outlivesRelation is a single "'from outlives 'to" assertion in raw lifetime-ID
-// space, the coordinate system implies and subsumes both speak. from and to are raw
-// IDs, not representatives; implies maps them into a set's own representative space.
-type outlivesRelation struct{ from, to int }
-
 // ltBoundSet is a directed outlives graph over lifetime-variable IDs, condensed over
-// outlives-equivalent lifetimes and then transitively reduced. An edge a -> b reads
+// outlives-equivalent lifetimes. An edge a -> b reads
 // "'a outlives 'b", written 'a: 'b. That is the direction constrainLt records as a in
 // b.LowerBounds and b in a.UpperBounds.
 //
@@ -25,22 +20,20 @@ type outlivesRelation struct{ from, to int }
 // representative. Every edge, query, and rendering is keyed by representative ID, not
 // raw lifetime ID.
 type ltBoundSet struct {
-	edges      map[int]set.Set[int]         // rep -> reps it outlives, condensed then reduced
-	rep        map[int]int                  // lifetime ID -> its SCC representative ID
-	equalities []outlivesRelation           // both directions of each mutual-outlives equality a component condensed away
-	vars       map[int]*soltype.LifetimeVar // representative ID -> a member var, for rendering
-	static     set.Set[int]                 // representative IDs forced to 'static, the absorbing bottom
+	edges  map[int]set.Set[int]         // rep -> reps it outlives, condensed
+	rep    map[int]int                  // lifetime ID -> its SCC representative ID
+	vars   map[int]*soltype.LifetimeVar // representative ID -> a member var, for rendering
+	static set.Set[int]                 // representative IDs forced to 'static, the absorbing bottom
 }
 
 // buildLtBoundSet walks the occurring lifetime variables' bound lists directionally
 // and returns the condensed outlives graph over them. It records an edge per real
 // outlives relation rather than the symmetric merge newLtAnalysis's union-find does,
 // then condenses each strongly connected component to one representative so the result
-// is a DAG that reduce can act on.
+// is a DAG.
 //
 // The occurrence map's keys seed the walk. The polarity values are unused here, since
-// the outlives edges live entirely in the bound lists. The result is not yet reduced;
-// call reduce for the transitively-reduced canonical form.
+// the outlives edges live entirely in the bound lists.
 func buildLtBoundSet(occ map[*soltype.LifetimeVar]occPolarity) *ltBoundSet {
 	vars := map[int]*soltype.LifetimeVar{}
 	rawEdges := map[int]set.Set[int]{}
@@ -134,28 +127,7 @@ func buildLtBoundSet(occ map[*soltype.LifetimeVar]occPolarity) *ltBoundSet {
 		}
 	}
 
-	// Recover the mutual-outlives equalities the condensation dropped. A multi-member
-	// SCC is a set of lifetimes that outlive each other, hence are equal; its
-	// intra-component edges were collapsed, so record both directions of each member
-	// against its representative. subsumes replays these. reduce never touches rep, so
-	// these pairs stay valid after it runs. A singleton SCC asserts no equality.
-	grouped := map[int][]int{}
-	for id, r := range rep {
-		grouped[r] = append(grouped[r], id)
-	}
-	var equalities []outlivesRelation
-	for _, r := range slices.Sorted(maps.Keys(grouped)) {
-		members := grouped[r]
-		slices.Sort(members)
-		for _, m := range members {
-			if m == r {
-				continue
-			}
-			equalities = append(equalities, outlivesRelation{m, r}, outlivesRelation{r, m})
-		}
-	}
-
-	return &ltBoundSet{edges: edges, rep: rep, equalities: equalities, vars: repVars, static: static}
+	return &ltBoundSet{edges: edges, rep: rep, vars: repVars, static: static}
 }
 
 // condenseSCCs finds the strongly connected components of the directed graph given by
@@ -231,55 +203,6 @@ func (s *ltBoundSet) repOf(id int) int {
 	return id
 }
 
-// reduce transitively reduces the condensed graph in place, so 'a: 'b, 'b: 'c, 'a: 'c
-// keeps only 'a: 'b and 'b: 'c. An edge a -> c drops when a longer path a -> … -> c
-// already proves the same reachability. The reduction is well-defined only because
-// buildLtBoundSet condensed every cycle, leaving a DAG.
-//
-// Every edge incident to a 'static-forced node is dropped first. 'static is the
-// absorbing bottom of the outlives order. An edge into such a node is subsumed by the
-// node's own staticness, and an edge out of one is trivially true, so neither is a
-// bound worth rendering or comparing.
-func (s *ltBoundSet) reduce() {
-	for from, tos := range s.edges {
-		if s.static.Contains(from) {
-			delete(s.edges, from)
-			continue
-		}
-		for to := range tos {
-			if s.static.Contains(to) {
-				tos.Remove(to)
-			}
-		}
-		if tos.Len() == 0 {
-			delete(s.edges, from)
-		}
-	}
-
-	type edge struct{ from, to int }
-	var redundant []edge
-	for from, tos := range s.edges {
-		for to := range tos {
-			// from -> to is redundant when some other successor of from already reaches
-			// to. Reachability is read from the pre-reduction graph. On a DAG, dropping a
-			// shortcut edge never removes the longer path that made it redundant, so
-			// collecting first and deleting after is safe.
-			for mid := range tos {
-				if mid != to && s.reaches(mid, to) {
-					redundant = append(redundant, edge{from, to})
-					break
-				}
-			}
-		}
-	}
-	for _, e := range redundant {
-		s.edges[e.from].Remove(e.to)
-		if s.edges[e.from].Len() == 0 {
-			delete(s.edges, e.from)
-		}
-	}
-}
-
 // reaches reports whether to is reachable from from over the condensed edges.
 func (s *ltBoundSet) reaches(from, to int) bool {
 	if from == to {
@@ -318,46 +241,6 @@ func (s *ltBoundSet) implies(a, b int) bool {
 		return true
 	}
 	return s.reaches(ra, rb)
-}
-
-// assertedOutlives returns every outlives relation this set asserts, as raw-ID pairs.
-// Two kinds contribute:
-//
-//   - each kept edge, keyed by representative;
-//   - both directions of every mutual-outlives equality a multi-member component
-//     condensed away, precomputed into equalities.
-//
-// 'static forcings are not returned, since a forcing is not a pairwise outlives
-// relation; subsumes checks those against static directly.
-func (s *ltBoundSet) assertedOutlives() []outlivesRelation {
-	rels := make([]outlivesRelation, 0, len(s.equalities))
-	for from, tos := range s.edges {
-		for to := range tos {
-			rels = append(rels, outlivesRelation{from, to})
-		}
-	}
-	return append(rels, s.equalities...)
-}
-
-// subsumes reports whether this set proves every relation the other set asserts, so
-// "the inferred bound set satisfies the declared one" is inferred.subsumes(declared).
-// other.assertedOutlives enumerates the outlives relations — kept edges plus the
-// mutual-outlives equalities its components condensed away — and each must hold here
-// via implies. A 'static forcing is the one kind that is not a pairwise outlives
-// relation, so it is checked separately: this set must force to 'static every lifetime
-// other does.
-func (s *ltBoundSet) subsumes(other *ltBoundSet) bool {
-	for _, r := range other.assertedOutlives() {
-		if !s.implies(r.from, r.to) {
-			return false
-		}
-	}
-	for id := range other.static {
-		if !s.static.Contains(s.repOf(id)) {
-			return false
-		}
-	}
-	return true
 }
 
 // alphaEqualTypes reports whether a and b are equal up to a consistent renaming of their
@@ -430,23 +313,4 @@ func occOf(vars []*soltype.LifetimeVar) map[*soltype.LifetimeVar]occPolarity {
 		occ[v] = occNeg
 	}
 	return occ
-}
-
-// canonicalEdges returns the condensed edges as (from, to) representative-ID pairs
-// sorted ascending, giving stable rendering and order-insensitive equality. This is the
-// lifetime-sort analogue of a canonical union member order.
-func (s *ltBoundSet) canonicalEdges() [][2]int {
-	var out [][2]int
-	for from, tos := range s.edges {
-		for to := range tos {
-			out = append(out, [2]int{from, to})
-		}
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i][0] != out[j][0] {
-			return out[i][0] < out[j][0]
-		}
-		return out[i][1] < out[j][1]
-	})
-	return out
 }

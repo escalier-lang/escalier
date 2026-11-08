@@ -36,6 +36,11 @@ type Context struct {
 	// variable, and the copiers add each copy through copyParamMark. isParamVar reads it.
 	paramVars set.Set[*soltype.TypeVarType]
 
+	// typeArgParams holds the parameters of instantiated signatures that are typed by a type
+	// argument of that instantiation, as markTypeArgParams defines them. isTypeArgParam
+	// reads it.
+	typeArgParams set.Set[*soltype.FuncParam]
+
 	// symbolCounter mints the id a `unique symbol` annotation carries. Each written
 	// annotation is its own symbol, so the counter advances per annotation rather than
 	// per name, and two references to one declaration share an id because they share the
