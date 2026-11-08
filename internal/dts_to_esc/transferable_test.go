@@ -67,7 +67,10 @@ type Transferable = Port | Canvas | ArrayBuffer;
 	require.Equal(t, []string{"Bitmap", "Port", "ArrayBuffer"}, transferableArmNames(t, got["web:dom"]))
 	// A bucket outside `web:*` keeps TypeScript's union as written.
 	require.Equal(t, []string{"Port", "Canvas", "ArrayBuffer"}, transferableArmNames(t, got["std:x"]))
-	// The input the `web:*` bucket came from is not modified.
+	// deriveTransferable copies the alias it rewrites rather than editing it, so the
+	// statements the test passed in as the `web:dom` bucket still hold TypeScript's
+	// union. ConvertBuckets reads its buckets from the PartitionResult that Generate
+	// also returns, and a reader of that result sees what the partition produced.
 	require.Equal(t, []string{"Port", "Canvas", "ArrayBuffer"}, transferableArmNames(t, web))
 }
 
