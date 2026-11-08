@@ -72,6 +72,15 @@ When a one-off task needs more logic than a short shell pipeline (parsing JSON, 
 - When a PR addresses a specific GitHub issue, say so in the PR body. Put a line such as `Fixes #123` near the top of the summary, before the details of the change. Use `Fixes` when merging the PR resolves the issue and `Refs` when the PR is only part of the work.
 - Name every issue the PR touches on its own line when there is more than one.
 
+### Review before ready
+
+Opening a PR starts a `/code-review high` run. Get the PR through that review before a person sees it:
+
+1. Open the PR as a draft, then subscribe to its activity so the review's comments reach you.
+2. For each finding, fix it or reply in its thread with why it stays. Resolve the thread of each finding you fixed.
+3. Push the fixes and comment `/code-review` on the PR. This loop is an exception to [Git cadence](#git-cadence), so push without asking.
+4. Mark the PR ready for review once a run leaves no unresolved 🔴 or 🟠 finding, or after the second review run. When findings remain after the second run, list them in a PR comment first.
+
 ## Responding to CodeRabbit
 
 - After addressing a CodeRabbit review comment, reply to that comment saying how it was addressed. Reply in the thread the comment started so the response stays attached to the code it refers to.
