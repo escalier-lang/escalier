@@ -193,8 +193,10 @@ func (s sigLifetimes) inOtherParam(lt *soltype.LifetimeVar, skip int) bool {
 //   - An elided lifetime, which a binding of the enclosing body holds in its display type. See
 //     "stored into a binding of the enclosing body".
 //
-// A lifetime the result's type holds ties the parameter to the result, which the signature
-// shows, so it is not reported. See "returned" and "captured by a returned closure". Any other
+// A lifetime only the result's type holds ties the parameter to the result, which the signature
+// shows, so it is not reported. See "returned" and "captured by a returned closure". A lifetime
+// the result shares with another parameter is reported, since that parameter's argument holds
+// it too. See "stored into a named-lifetime field of a parameter the result returns". Any other
 // lifetime is one the body mints itself, or a parameter lifetime of a function inferred
 // together with this one. The parameter's lifetime may outlive those.
 //
@@ -232,10 +234,10 @@ func (c *checker) checkCallOnlyParams() {
 				// lifetime outside the call.
 				outside = true
 			case *soltype.LifetimeVar:
-				if _, inResult := lts.result[kept]; inResult {
+				inOther := lts.inOtherParam(kept, p.param)
+				if _, inResult := lts.result[kept]; inResult && !inOther {
 					continue
 				}
-				inOther := lts.inOtherParam(kept, p.param)
 				if name, named := c.signatureLts[kept]; named && inOther && keeper == "" {
 					keeper = name
 				}
