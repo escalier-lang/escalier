@@ -675,8 +675,11 @@ Specified above but not yet enforced:
   that long. A closure that borrows a local is rejected by a `'static fn` slot,
   which covers the closure half of the issue.
 - **Call-only parameters reached indirectly.** A parameter whose function type
-  is written with no lifetime is checked only when the type is written on the
-  parameter itself. One bound by a destructuring pattern is not.
+  is written with no lifetime is checked only when the type is the parameter's
+  whole annotation. A function type inside one, such as the `cb` field of
+  `o: {cb: fn () -> undefined}` or a member of a union, gets a lifetime that ends
+  with the call, but the body may keep it past the call unreported. So may a
+  parameter bound by a destructuring pattern.
 - **Closures over a borrowed parameter**
   ([#2565](https://github.com/escalier-lang/escalier/issues/2565)). A closure
   that captures `p: &'p T` borrows it, but its lifetime is not tied to `'p`, so
