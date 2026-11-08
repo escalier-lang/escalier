@@ -1933,3 +1933,42 @@ fn setup() {
 		})
 	}
 }
+
+// TestBodilessSignatureFuncKeptForStatic covers a function whose lifetime comes from a
+// signature with no body, a declared function or an interface method, stored into a 'static
+// slot. Each store reports that the function may hold borrows.
+func TestBodilessSignatureFuncKeptForStatic(t *testing.T) {
+	const decls = `var sink: fn () -> undefined = fn () {}
+declare fn id(g: fn () -> undefined) -> fn () -> undefined
+interface Reg { add(g: fn () -> undefined) -> fn () -> undefined }
+`
+	const kept = "this function may hold borrows that do not live for 'static, but `sink` keeps it for 'static; pass a function that borrows nothing"
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "declared function returns its parameter",
+			src:  decls + `fn h(g: fn () -> undefined) { sink = id(g) }`,
+			want: []string{"4:38-4:43: " + kept},
+		},
+		// The error underlines the interface method's return type rather than the call.
+		{
+			name: "interface method returns its parameter",
+			src:  decls + `fn h(g: fn () -> undefined, r: Reg) { sink = r.add(g) }`,
+			want: []string{"3:47-3:65: " + kept},
+		},
+		{
+			name: "declared function returns a named lifetime parameter",
+			src:  decls + `fn h<'a>(g: 'a fn () -> undefined) { sink = id(g) }`,
+			want: []string{"4:45-4:50: " + kept},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
+		})
+	}
+}

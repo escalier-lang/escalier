@@ -433,8 +433,7 @@ func TestFlowLifetimeRetainedCallback(t *testing.T) {
 			want: []string{"8:14-8:19: 'count' is used after the 'handler' that 'onClick' retains took it over for 'static"},
 		},
 		// E4 and D10. A mutable view makes no promise that the value holds still, but `onClick`
-		// has taken `count` over, so the view borrows a value the handler owns. D10 accepts this
-		// program.
+		// has taken `count` over, so the view borrows a value the handler owns.
 		{
 			name: "D10/MutableView",
 			src: `
