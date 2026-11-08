@@ -243,13 +243,24 @@ func TestFlowLifetimeNonEscapingParam(t *testing.T) {
 
 func TestFlowLifetimeEscapingParamMoves(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{
-		// F3. The call to `store` moves `a`, so the later read of `a.x` uses a moved value.
+		// F3. `store` lets `p` escape into module-level state, so its parameter is owned.
 		{
-			name: "F3/StoreMovesArgument",
+			name: "F3/StoreOwnsItsParam",
 			src: `
 				var sink = {x: 0}
 
 				fn store(p) { sink = p }
+			`,
+			values: map[string]string{
+				"store": "fn (p: {x: number}) -> undefined",
+			},
+		},
+		// F3. The call to `store` moves `a`, so the later read of `a.x` uses a moved value.
+		// `store` is declared with the signature F3/StoreOwnsItsParam asserts.
+		{
+			name: "F3/StoreMovesArgument",
+			src: `
+				declare fn store(p: {x: number}) -> undefined
 
 				fn go() -> number {
 					val a = {x: 1}
@@ -257,16 +268,15 @@ func TestFlowLifetimeEscapingParamMoves(t *testing.T) {
 					return a.x
 				}
 			`,
-			want: []string{"9:13-9:16: use of moved value 'a'"},
+			want: []string{"7:13-7:16: use of moved value 'a'"},
 		},
 	})
 }
 
-// DISABLED until #2352 and #2348. `seen` does not generalize, so its value type is one weak
-// variable that `remember` and every caller share. `seen` already shows
-// `&'static {retries: number}`, since its values are writable slots. `remember` renders as
-// `fn (value: unknown) -> undefined`. #2352 keeps it monomorphic over the same variable, and
-// #2348 widens that variable where it is checked, so `remember` shows the type `seen` holds.
+// DISABLED until #2352. `seen` does not generalize, so its value type is one weak variable that
+// `remember` and every caller share. `seen` holds `&'static {retries: number}`, since its values
+// are writable slots. `remember` renders as `fn (value: unknown) -> undefined`. #2352 keeps it
+// monomorphic over the same variable, so `remember` shows the type `seen` holds.
 /*
 func TestFlowLifetimeEscapingReadOnlyParam(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{

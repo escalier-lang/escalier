@@ -106,20 +106,46 @@ val x = o.b`
 // entry, so the missing-property error carries no related receiver span — unlike
 // the direct var-free literal in TestBlameMissingProperty. Documents that the
 // improvement holds for var-free callees/receivers, not values that flowed through
-// instantiation.
+// instantiation. `mk` is declared with the signature TestInferRecordBuilderIsPolymorphic
+// asserts, and instantiating its declared return type rebuilds the record the same way.
 func TestBlameMissingPropertyPolymorphicReceiverLosesRelated(t *testing.T) {
-	src := `val mk = fn (v) { return {a: v} }
+	src := `declare fn mk<T0>(v: T0) -> {a: T0}
 val x = mk(5).b`
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs, "2:15-2:16: object is missing property: b", "b")
+}
+
+// TestInferRecordBuilderIsPolymorphic asserts that a closure wrapping its parameter in a
+// record generalizes over the parameter's type. The blame tests above and below call a
+// callee declared with this signature.
+func TestInferRecordBuilderIsPolymorphic(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "a closure bound at module level",
+			src:  "val mk = fn (v) { return {a: v} }",
+			want: "fn <T0>(v: T0) -> {a: T0}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["mk"])
+		})
+	}
 }
 
 // TestBlameMissingPropertyWeakReceiver asserts that a read off a module-level binding that
 // did not generalize blames the whole member expression. `o` keeps the variable `mk(5)`
 // returned, and the read sits one level deeper, so the read's property requirement is
 // copied out to o's level. The copy has no Prov entry, so the blame falls back to the read.
+// `mk` is declared with the signature TestInferRecordBuilderIsPolymorphic asserts.
 func TestBlameMissingPropertyWeakReceiver(t *testing.T) {
-	src := `val mk = fn (v) { return {a: v} }
+	src := `declare fn mk<T0>(v: T0) -> {a: T0}
 val o = mk(5)
 val x = o.b`
 	_, _, errs := inferSource(t, src)

@@ -187,16 +187,10 @@ val r = match p {
 		},
 		{
 			// The parameter's type is still being inferred, so a caller may pass a value
-			// no arm above names.
+			// no arm above names. TestInferMatchOverUnannotatedParam asserts that `x` infers
+			// as `unknown`, which admits such a value.
 			name: "a catch-all over an unannotated parameter",
-			src: `fn f(x) {
-	return match x {
-		a: string => 1,
-		b: number => 2,
-		_ => 3,
-	}
-}
-val r = f(true)`,
+			src:  matchOverUnannotatedParam,
 		},
 		{
 			// The `{x}` arm names an optional key, so the three arms together are not shown
@@ -238,4 +232,30 @@ val r = try {
 			require.Equal(t, test.wantErrs, messagesWithSpan(t, errs))
 		})
 	}
+}
+
+// matchOverUnannotatedParam matches an unannotated parameter against a `string` arm, a
+// `number` arm and a catch-all.
+const matchOverUnannotatedParam = `fn f(x) {
+	return match x {
+		a: string => 1,
+		b: number => 2,
+		_ => 3,
+	}
+}`
+
+// TestInferMatchOverUnannotatedParam asserts the signature a `match` over an unannotated
+// parameter infers, and covers a call to a callee declared with that signature.
+func TestInferMatchOverUnannotatedParam(t *testing.T) {
+	t.Run("the parameter infers as unknown", func(t *testing.T) {
+		values, _, errs := inferSource(t, matchOverUnannotatedParam)
+		require.Empty(t, errs)
+		require.Equal(t, "fn (x: unknown) -> 1 | 2 | 3", values["f"])
+	})
+
+	// `true` is neither a `string` nor a `number`, and the `unknown` parameter accepts it.
+	t.Run("a value no arm names is accepted", func(t *testing.T) {
+		_, _, errs := inferSource(t, "declare fn f(x: unknown) -> 1 | 2 | 3\nval r = f(true)")
+		require.Empty(t, errs)
+	})
 }
