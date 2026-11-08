@@ -436,8 +436,8 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 
 // TestOwnershipEventsClosureCaptures covers closure captures, which F3 decides from where the
 // closure flows. A closure stored into a module-level binding records a 'static borrow of each
-// capture. The dataflow pass then takes a local the closure borrows over at the store, which
-// the events do not show.
+// capture. The dataflow pass then keeps each such borrow of a local for the rest of the program
+// from the store on, which the events do not show.
 func TestOwnershipEventsClosureCaptures(t *testing.T) {
 	runOwnershipEvents(t, []ownershipEventsCase{
 		{

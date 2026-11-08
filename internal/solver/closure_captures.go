@@ -122,14 +122,14 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 		}
 	}
 	framed := c.fn != nil
-	// takeable says each capture the closure borrows is a `val` or `var` of the body it is
+	// keepable says each capture the closure borrows is a `val` or `var` of the body it is
 	// written in, rather than a parameter or a binding of a script's top level.
-	takeable := c.fn != nil && !c.inScript()
+	keepable := c.fn != nil && !c.inScript()
 	// direct says some capture is borrowed by the closure itself, rather than only through a
 	// function the capture holds.
 	direct := false
-	// taken holds the locals the closure borrows, as closureBorrow describes.
-	var taken takenLocals
+	// locals holds the locals the closure borrows, as closureBorrow describes.
+	var locals borrowedLocals
 	// definite says some capture holds a borrow whatever its type settles to, and undecided
 	// holds the type variables of the other captures that may hold one.
 	definite := false
@@ -165,19 +165,19 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 			// inside the local borrows from outside the body.
 			framed = framed && c.isFrameLocal(capture.Name, b) && c.holdsOnlyFrameBorrows(held)
 			_, isVarDecl := bindingDecl(b).(*ast.VarDecl)
-			takeable = takeable && isVarDecl
+			keepable = keepable && isVarDecl
 			if b.VarID > 0 {
-				taken.roots = append(taken.roots, liveness.VarID(b.VarID))
+				locals.roots = append(locals.roots, liveness.VarID(b.VarID))
 				if b.Kind == ast.VarKind {
-					taken.vars = append(taken.vars, liveness.VarID(b.VarID))
+					locals.vars = append(locals.vars, borrowedVar{root: liveness.VarID(b.VarID), writes: capture.IsMutable})
 				}
 			}
 			// A closure the capture holds borrows its own locals, which go with it.
 			for _, lt := range heldLts {
 				if lv, isLtVar := lt.(*soltype.LifetimeVar); isLtVar {
-					inner := c.closureBorrows[lv].taken
-					taken.roots = append(taken.roots, inner.roots...)
-					taken.vars = append(taken.vars, inner.vars...)
+					inner := c.closureBorrows[lv].locals
+					locals.roots = append(locals.roots, inner.roots...)
+					locals.vars = append(locals.vars, inner.vars...)
 				}
 			}
 		}
@@ -195,8 +195,8 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 	}
 	if lt, isVar := ft.Lt.(*soltype.LifetimeVar); isVar && borrowed.name != "" {
 		borrowed.viaFuncs = !direct
-		borrowed.takeable = takeable && framed
-		borrowed.taken = taken
+		borrowed.keepable = keepable && framed
+		borrowed.locals = locals
 		if c.closureBorrows == nil {
 			c.closureBorrows = map[*soltype.LifetimeVar]closureBorrow{}
 		}
@@ -219,26 +219,31 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 // closureBorrow is the capture that makes a closure hold a borrow. name is the captured
 // binding's name. local says the binding is a `val` or `var` of a function body, which could be
 // declared at module level instead. viaFuncs says the closure holds a borrow only through
-// functions it captures, whose lifetimes bound the closure's from below. takeable says every
+// functions it captures, whose lifetimes bound the closure's from below. keepable says every
 // capture the closure borrows is a `val` or `var` of the body it is written in that holds no
-// borrow from outside that body, so a slot that keeps the closure for 'static can take those
-// locals over, as moveTakenCaptures describes.
-// taken lists the locals the closure borrows, including those a closure it captures borrows.
+// borrow from outside that body, so a slot can keep the closure for 'static by keeping those
+// borrows for the rest of the program, as keepCaptureLoans describes. locals lists the locals
+// the closure borrows, including those a closure it captures borrows.
 type closureBorrow struct {
 	name     string
 	local    bool
 	viaFuncs bool
-	takeable bool
-	taken    takenLocals
+	keepable bool
+	locals   borrowedLocals
 }
 
-// takenLocals lists the locals a closure borrows, which a slot that keeps the closure for
-// 'static takes over. roots holds each one. vars holds the `var` bindings among them, which the
-// closure reads or writes as bindings. Such a binding may hold a value type no loan tracks, so a
-// takeover marks each one moved directly.
-type takenLocals struct {
+// borrowedLocals lists the locals a closure borrows. roots holds each one. vars holds the `var`
+// bindings among them, which the closure reads or writes as bindings. Such a binding may hold a
+// value type that no loan tracks.
+type borrowedLocals struct {
 	roots []liveness.VarID
-	vars  []liveness.VarID
+	vars  []borrowedVar
+}
+
+// borrowedVar is a `var` binding a closure borrows. writes says the closure assigns to it.
+type borrowedVar struct {
+	root   liveness.VarID
+	writes bool
 }
 
 // shortFuncLifetimes returns the lifetimes retentionLifetimes finds in t other than 'static. A
@@ -562,43 +567,43 @@ func (c *checker) sortFuncKeptForStatic(err *FuncKeptForStaticError) bool {
 		c.heldFuncEscapes = append(c.heldFuncEscapes, heldFuncEscape{err: err, closures: src.closures})
 		return false
 	}
-	if c.recordCaptureTakeover(err, src) {
+	if c.recordKeptCaptures(err, src) {
 		return false
 	}
 	return true
 }
 
-// recordCaptureTakeover reports whether the slot err names takes over the captures of each closure
-// its source holds a borrow through, and records the takeover when it does. It does when the
+// recordKeptCaptures reports whether the slot err names can keep the borrows of each closure its
+// source holds a borrow through, and records the value it keeps when it can. It can when the
 // source holds a borrow only through closures written in the current body whose captures are
-// all takeable, as closureBorrow describes, and the slot is a written type that an argument or
+// all keepable, as closureBorrow describes, and the slot is a written type that an argument or
 // an assigned value fills. err.inferred must be set.
 //
-// The value is added to the body's takeovers, and a store into a field gets its retainedStore
-// here. The dataflow pass then moves each captured local into the closure at the store, so a
-// later use of the local is a use of a moved value.
-func (c *checker) recordCaptureTakeover(err *FuncKeptForStaticError, src funcLtSourceSet) bool {
+// The value is added to the body's keptCaptures, and an assignment or a declaration gets its
+// retainedStore here. The dataflow pass then keeps each loan the closures hold of those locals
+// for the rest of the program, as keepCaptureLoans describes.
+func (c *checker) recordKeptCaptures(err *FuncKeptForStaticError, src funcLtSourceSet) bool {
 	// A slot whose type an unannotated binding took from a closure keeps nothing for 'static.
 	if c.fn == nil || err.inferred || src.other || len(src.closures) == 0 {
 		return false
 	}
-	var taken takenLocals
+	var locals borrowedLocals
 	for _, lt := range src.closures {
 		b, found := c.closureBorrows[lt]
-		if !found || !b.takeable || c.fn.frameClosures == nil || !c.fn.frameClosures.Contains(lt) {
+		if !found || !b.keepable || c.fn.frameClosures == nil || !c.fn.frameClosures.Contains(lt) {
 			return false
 		}
-		taken.roots = append(taken.roots, b.taken.roots...)
-		taken.vars = append(taken.vars, b.taken.vars...)
+		locals.roots = append(locals.roots, b.locals.roots...)
+		locals.vars = append(locals.vars, b.locals.vars...)
 	}
 	value, keeper := c.keptValue(err)
 	if keeper == nil {
 		return false
 	}
-	if c.fn.takeovers == nil {
-		c.fn.takeovers = map[ast.Expr]takenLocals{}
+	if c.fn.keptCaptures == nil {
+		c.fn.keptCaptures = map[ast.Expr]borrowedLocals{}
 	}
-	c.fn.takeovers[value] = taken
+	c.fn.keptCaptures[value] = locals
 	// A call records a store for each argument its parameters keep. An assignment or a
 	// declaration gets its store here, since a slot it fills keeps the closure from then on.
 	var via string

@@ -58,6 +58,9 @@ type closureRun struct {
 	runs bool
 	// `captures` lists each local the closure captures, in VarID order.
 	captures []capturedLocal
+	// `own` holds the borrow event of each loan the closure holds of its captures. Running the
+	// closure uses those loans, so none of them conflicts with the run.
+	own set.Set[*borrowEvent]
 }
 
 // retainedStore records a value that may carry a closure and stays reachable after its
@@ -94,11 +97,13 @@ type retainedStore struct {
 	// `writes` lists the owned locals the closures write, in VarID order. The dataflow pass
 	// fills it at `at`, as noteStoreWrites describes.
 	writes []liveness.VarID
-	// `takeover` marks a store whose closures take over the locals they capture, as
-	// recordCaptureTakeover decides. The dataflow pass moves those locals at `at`, and no later
-	// call runs the closures against them. taken lists those locals.
-	takeover bool
-	taken    takenLocals
+	// `keeps` marks a store that keeps its closures' borrows of the locals they capture for the
+	// rest of the program, as recordKeptCaptures decides. The dataflow pass keeps those loans
+	// from `at` on, as keepCaptureLoans describes, and checks each later use of the locals
+	// against them rather than against a call that may run the closures. `locals` lists the
+	// locals.
+	keeps  bool
+	locals borrowedLocals
 }
 
 // emitClosureRuns emits the runEvent of the call `e`, attached to `ref`. It must run once the
@@ -176,12 +181,14 @@ func (d *bodyDataflow) closureRunOf(name closureName, s *dataflowState) (*closur
 	held := name.place
 	captured := map[liveness.VarID]*capturedLocal{}
 	whole := set.NewSet[liveness.VarID]()
+	own := set.NewSet[*borrowEvent]()
 	sure := name.runs
 	for _, l := range d.sortedLoans(s) {
 		root := l.ev.place.root
 		if !l.closure() || root == held.root || !l.heldAt(held) {
 			continue
 		}
+		own.Add(l.ev)
 		sure = sure && l.heldWithin(held)
 		local, seen := captured[root]
 		if !seen {
@@ -201,7 +208,7 @@ func (d *bodyDataflow) closureRunOf(name closureName, s *dataflowState) (*closur
 		return nil, false
 	}
 
-	run := &closureRun{node: name.node, via: closureVia(d.placeName(held)), runs: sure}
+	run := &closureRun{node: name.node, via: closureVia(d.placeName(held)), runs: sure, own: own}
 	for _, root := range slices.Sorted(maps.Keys(captured)) {
 		// A capture of the whole local covers every field path, so the paths are dropped.
 		local := *captured[root]
@@ -224,13 +231,13 @@ func (c *checker) noteBoundClosure(closure ast.Func) {
 	}
 }
 
-// isTakeover reports whether value is one whose closures take over the locals they capture, as
-// recordCaptureTakeover decides.
-func (c *checker) isTakeover(value ast.Expr) bool {
+// keepsCaptures reports whether value is one whose closures' borrows a slot keeps for the rest of
+// the program, as recordKeptCaptures decides.
+func (c *checker) keepsCaptures(value ast.Expr) bool {
 	if c.fn == nil {
 		return false
 	}
-	_, found := c.fn.takeovers[value]
+	_, found := c.fn.keptCaptures[value]
 	return found
 }
 
@@ -243,7 +250,7 @@ func (c *checker) noteRetainedClosureStore(store retainedStore) *retainedStore {
 		return nil
 	}
 	s := &store
-	s.taken, s.takeover = c.fn.takeovers[s.expr]
+	s.locals, s.keeps = c.fn.keptCaptures[s.expr]
 	if p, ok := c.exprPlace(s.expr); ok && p.root > 0 {
 		s.place, s.named = p, true
 	}
@@ -285,12 +292,12 @@ func (c *checker) noteRetainedClosureArgs(e *ast.CallExpr, fn *soltype.FuncType,
 		// that holds no borrow, so keeping the argument keeps none of the caller's locals. A
 		// function's lifetime is the one written ahead of `fn`, such as `'a` in
 		// `handler: 'a fn () -> undefined`.
-		// A slot that keeps the closure for 'static takes over the locals it captures, which
-		// recordCaptureTakeover decided when the argument was checked. Such a slot may hold a
-		// function with no lifetime, which retentionLifetimes does not list.
-		_, takeover := c.fn.takeovers[arg]
+		// A slot that keeps the closure for 'static keeps its borrows of the locals it
+		// captures, which recordKeptCaptures decided when the argument was checked. Such a slot
+		// may hold a function with no lifetime, which retentionLifetimes does not list.
+		_, keeps := c.fn.keptCaptures[arg]
 		lts := retentionLifetimes(param.Type)
-		if len(lts) == 0 && !takeover {
+		if len(lts) == 0 && !keeps {
 			continue
 		}
 
@@ -318,7 +325,7 @@ func (c *checker) noteRetainedClosureArgs(e *ast.CallExpr, fn *soltype.FuncType,
 				shared = append(shared, lv)
 			}
 		}
-		store.static = store.static || takeover
+		store.static = store.static || keeps
 
 		// Find what keeps a closure that is not kept for the rest of the program. In
 		// `subscribe(e, fn () { … })` with `subscribe<'a>(emitter: &'a mut Emitter, handler:

@@ -107,9 +107,6 @@ type UseAfterMoveError struct {
 	// ViaReads marks a closure named by Via that only reads the place. It is false for one
 	// that writes it.
 	ViaReads bool
-	// Taken names the slot that keeps the closure that took the place over, as
-	// moveTakenCaptures does, and is empty for any other move.
-	Taken string
 	// use is the read being rejected; it self-blames from here.
 	use ast.Node
 	// moveSite is the expression that moved the binding, used for the related span. It
@@ -135,9 +132,6 @@ func (e *UseAfterMoveError) Message() string {
 			access = "reads"
 		}
 		return fmt.Sprintf("this call %s %s, which %s '%s' after it was moved", runsVerb(e.ViaRuns), e.Via, access, e.Name)
-	}
-	if e.Taken != "" {
-		return fmt.Sprintf("'%s' is used after %s took it over for 'static", e.Name, e.Taken)
 	}
 	return fmt.Sprintf("use of moved value '%s'", e.Name)
 }
@@ -210,10 +204,6 @@ type movedPlace struct {
 	// `called` marks the binding of a closure that a call of it moved, as D2 decides. Only a
 	// later call of the closure uses the binding.
 	called bool
-	// `taken` names the slot whose closure took the place over, as moveTakenCaptures does, and
-	// is empty for any other move. A write to such a place is a use of it, since the closure
-	// still reads the binding the write would change.
-	taken string
 }
 
 // heldPlace is one local place that holds a loan, and the expression of the flow that made
@@ -268,13 +258,27 @@ type liveLoan struct {
 	// `seed` marks a closure's capture the body holds on entry, which seedCaptureLoans makes.
 	// It records only what a call of the closure uses, so no rule checks against it.
 	seed bool
+	// `kept` names the slot that keeps the loan for the rest of the program, for a closure's
+	// capture that keepCaptureLoans keeps. It is a phrase closureVia or retainedVia returns, and
+	// is empty for any other loan. Such a loan is `static`, and the rules check every later use
+	// of its place against it, as conflictsWith describes.
+	kept string
 }
 
 // checked reports whether the rules check other operations against the loan. An alias
 // loan creates no path, and E4 makes a closure's capture count as used only while the
-// closure runs, so between calls it conflicts only with a move.
+// closure runs, so between calls it conflicts only with a move. A kept capture is checked
+// like any other loan.
 func (l *liveLoan) checked() bool {
-	return !l.alias && !l.closure()
+	return !l.alias && (!l.closure() || l.kept != "")
+}
+
+// conflictsWith reports whether a path of the given kind to a place l's place overlaps breaks
+// E2 while l is live. A mutable path conflicts with an immutable one. A kept mutable loan also
+// conflicts with another mutable path, since the slot that keeps it may run its closure's
+// write at any later point.
+func (l *liveLoan) conflictsWith(kind borrowKind) bool {
+	return l.ev.borrow != kind || (l.kept != "" && kind == mutableBorrow)
 }
 
 // closure reports whether the loan is a closure's capture. E4 makes a capture count as
@@ -371,7 +375,7 @@ func (s *dataflowState) equals(o *dataflowState) bool {
 
 	for k, l := range s.loans {
 		ol, ok := o.loans[k]
-		if !ok || ol.static != l.static || ol.alias != l.alias || !ol.sameHolders(l) {
+		if !ok || ol.static != l.static || ol.alias != l.alias || ol.kept != l.kept || !ol.sameHolders(l) {
 			return false
 		}
 	}
@@ -414,6 +418,7 @@ func joinStates(states []*dataflowState) *dataflowState {
 					prev.holders[k] = ph
 				}
 				prev.static = prev.static || l.static
+				prev.kept = cmp.Or(prev.kept, l.kept)
 				continue
 			}
 
@@ -493,6 +498,9 @@ type bodyDataflow struct {
 	captures map[ast.Func][]flowEvent
 	// storesAt maps each CFG point to the retained stores made there.
 	storesAt map[liveness.StmtRef][]*retainedStore
+	// varLoans holds the borrow event of each loan keepCaptureLoans takes of a `var` binding a
+	// kept closure reads or writes, so each fixed-point iteration takes the same loan.
+	varLoans map[varLoanKey]*borrowEvent
 	// ownedMovable is the checker's isOwnedMovable, which decides whether a local a retained
 	// closure writes is owned.
 	ownedMovable func(soltype.Type) bool
@@ -501,6 +509,12 @@ type bodyDataflow struct {
 	// capturedAt maps each local a closure of the body captures to the CFG points where a
 	// closure captures it. Liveness does not count a capture as a use of the local.
 	capturedAt map[liveness.VarID][]liveness.StmtRef
+}
+
+// varLoanKey names the loan a store takes of one `var` binding its closures borrow.
+type varLoanKey struct {
+	store *retainedStore
+	root  liveness.VarID
 }
 
 // runLoanKey names the loan a call takes for a retained closure's write of one local.
@@ -531,6 +545,7 @@ func (c *checker) checkBodyDataflow(t *ownershipEvents) []SolverError {
 		runLoans:     map[runLoanKey]*borrowEvent{},
 		captures:     map[ast.Func][]flowEvent{},
 		storesAt:     map[liveness.StmtRef][]*retainedStore{},
+		varLoans:     map[varLoanKey]*borrowEvent{},
 		ownedMovable: c.isOwnedMovable,
 		capturedAt:   map[liveness.VarID][]liveness.StmtRef{},
 	}
@@ -665,10 +680,11 @@ func (d *bodyDataflow) entryState(b *liveness.BasicBlock, out []*dataflowState) 
 // transfer applies the events of `block` to s, point by point.
 func (d *bodyDataflow) transfer(block int, s *dataflowState) {
 	for _, at := range d.points[block] {
-		// A store reads what its value holds before the statement runs. A store that takes
-		// over its closures' captures leaves no write for a later call to run.
+		// A store reads what its value holds before the statement runs. A store that keeps its
+		// closures' borrows checks each later use against those loans instead of against a
+		// call that may run the closures.
 		for _, store := range d.storesAt[at] {
-			if !store.takeover {
+			if !store.keeps {
 				d.noteStoreWrites(store, s)
 			}
 		}
@@ -687,11 +703,11 @@ func (d *bodyDataflow) transfer(block int, s *dataflowState) {
 			d.step(ev, at, s)
 		}
 
-		// A call takes over its arguments' captures when it ends, as callEnd does. Any other
-		// store takes them over once its statement has run.
+		// A call keeps its arguments' captures when it ends, as callEnd does. Any other store
+		// keeps them once its statement has run.
 		for _, store := range d.storesAt[at] {
-			if store.takeover && store.call == nil {
-				d.moveTakenCaptures(store, at, s)
+			if store.keeps && store.call == nil {
+				d.keepCaptureLoans(store, at, s)
 			}
 		}
 
@@ -760,7 +776,9 @@ func (d *bodyDataflow) step(ev ownershipEvent, at liveness.StmtRef, s *dataflowS
 			return
 		}
 
-		d.checkMoved(ev.place, ev.node, s)
+		if !d.checkMoved(ev.place, ev.node, s) {
+			d.checkKeptRead(ev, s)
+		}
 	case *borrowEvent:
 		d.borrow(ev, at, s)
 	case *copyEvent:
@@ -824,7 +842,7 @@ func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState
 			continue
 		}
 
-		if (len(m.place.path) < depth || m.taken != "") && !m.called {
+		if len(m.place.path) < depth && !m.called {
 			// The write blames the part of its target that names the moved place, so a write
 			// to `p.x` after p moved blames `p`.
 			d.reportMoved(m, ev.place, d.placeExprAt(target, len(m.place.path)))
@@ -842,7 +860,27 @@ func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState
 
 	reported := false
 	for _, l := range d.sortedLoans(s) {
-		if l.closure() || !placesOverlap(l.ev.place, ev.place) {
+		if !placesOverlap(l.ev.place, ev.place) {
+			continue
+		}
+
+		// A kept capture's closure reads the place, and may write it, at any later point, so
+		// any write that overlaps it breaks E2. A `var` binding the closure reads is such a
+		// place too, and a write that replaces it changes what the closure reads.
+		if l.kept != "" {
+			if !moved && !reported {
+				d.report(&BorrowedValueWriteError{
+					Place:  writtenPlaceName(ev.node, d.placeName(ev.place)),
+					Mut:    l.ev.borrow == mutableBorrow,
+					Kept:   l.kept,
+					write:  ev.node,
+					borrow: l.ev.node.Span(),
+				})
+				reported = true
+			}
+			continue
+		}
+		if l.closure() {
 			continue
 		}
 
@@ -903,6 +941,24 @@ func (d *bodyDataflow) borrow(ev *borrowEvent, at liveness.StmtRef, s *dataflowS
 	l.static = lifetimeEscapedToStatic(ev.lifetime)
 	d.holdLoan(l, ev.holder, ev.node, true)
 
+	// In a loop, a closure kept on an earlier iteration still holds the loan this capture took
+	// then, so the new capture keeps it too. A capture that writes conflicts with that earlier
+	// closure's loan.
+	if prev, ok := s.loans[ev]; ok && prev.kept != "" {
+		if prev.conflictsWith(ev.borrow) {
+			d.report(&BorrowAliasError{
+				Place:      d.placeName(ev.place),
+				FirstPlace: d.placeName(ev.place),
+				FirstMut:   true,
+				SecondMut:  true,
+				FirstKept:  prev.kept,
+				node:       ev.node,
+				first:      ev.node.Span(),
+			})
+		}
+		l.static, l.kept = true, prev.kept
+	}
+
 	// A mutable receiver only reads its place until the call starts, so callEnd checks it
 	// then, as liveLoan.reserved describes.
 	if rt, ok := ev.holder.target.(receiverTarget); ok && ev.borrow == mutableBorrow {
@@ -953,7 +1009,8 @@ func (d *bodyDataflow) checkNewPath(place movePlace, kind borrowKind, node ast.N
 	freshInBody := fresh.ev == nil || d.pathInBody(fresh, at)
 	for _, first := range loans {
 		firstInBody := d.pathInBody(first, at)
-		if !(firstInBody || first.closure()) || first.seed || first.reserved != nil || first.ev.borrow == kind ||
+		if !(firstInBody || first.closure()) || first.seed || first.reserved != nil ||
+			!(first.conflictsWith(kind) || (fresh.kept != "" && first.ev.borrow == mutableBorrow)) ||
 			!placesOverlap(first.ev.place, place) {
 			continue
 		}
@@ -968,6 +1025,8 @@ func (d *bodyDataflow) checkNewPath(place movePlace, kind borrowKind, node ast.N
 				FirstPlace: d.placeName(first.ev.place),
 				FirstMut:   first.ev.borrow == mutableBorrow,
 				SecondMut:  kind == mutableBorrow,
+				FirstKept:  first.kept,
+				SecondKept: fresh.kept,
 				node:       node,
 				first:      first.ev.node.Span(),
 			}
@@ -1207,6 +1266,7 @@ func (d *bodyDataflow) move(ev *moveEvent, at liveness.StmtRef, s *dataflowState
 		case blamed != nil:
 			d.report(&MoveWhileBorrowedError{
 				Place:  d.placeName(ev.place),
+				Kept:   blamed.kept,
 				move:   ev.node,
 				borrow: blamed.ev.node.Span(),
 			})
@@ -1383,8 +1443,8 @@ func (d *bodyDataflow) pass(ev *passEvent, s *dataflowState) {
 //     `p.writeRead(&p)` reports `&p`.
 //  2. Each loan a slot of the call holds is released, and a loan nothing else holds ends.
 //
-// Between the two, each argument a parameter keeps for 'static takes over its closures'
-// captures, as moveTakenCaptures does.
+// Between the two, each argument a parameter keeps for 'static keeps its closures' loans of
+// their captures, as keepCaptureLoans does.
 func (d *bodyDataflow) callEnd(ev *callEvent, at liveness.StmtRef, s *dataflowState) {
 	// Step 1 checks each receiver this call reserved, scanning the loans in sorted order.
 	// Most calls reserve no receiver, and those skip the sort.
@@ -1415,7 +1475,7 @@ func (d *bodyDataflow) callEnd(ev *callEvent, at liveness.StmtRef, s *dataflowSt
 			// Only a live immutable loan of an overlapping place conflicts, and an `alias` loan or
 			// a closure's capture never does. A loan is live here when a call that has not
 			// returned holds it, or when a holder is used later in the statement or after it.
-			if m == r || !m.checked() || m.ev.borrow == mutableBorrow || !placesOverlap(m.ev.place, r.ev.place) ||
+			if m == r || !m.checked() || !m.conflictsWith(mutableBorrow) || !placesOverlap(m.ev.place, r.ev.place) ||
 				(!d.loanLive(m, at, false) && !d.usedLaterAt(m, ev, at)) {
 				continue
 			}
@@ -1428,8 +1488,9 @@ func (d *bodyDataflow) callEnd(ev *callEvent, at liveness.StmtRef, s *dataflowSt
 			d.report(&BorrowAliasError{
 				Place:      d.placeName(second.ev.place),
 				FirstPlace: d.placeName(first.ev.place),
-				FirstMut:   first == r,
-				SecondMut:  second == r,
+				FirstMut:   first == r || first.ev.borrow == mutableBorrow,
+				SecondMut:  second == r || second.ev.borrow == mutableBorrow,
+				FirstKept:  first.kept,
 				node:       second.ev.node,
 				first:      first.ev.node.Span(),
 			})
@@ -1437,11 +1498,11 @@ func (d *bodyDataflow) callEnd(ev *callEvent, at liveness.StmtRef, s *dataflowSt
 		}
 	}
 
-	// A parameter that keeps a closure for 'static takes over the closure's captures before
-	// the call releases the loans its arguments hold.
+	// A parameter that keeps a closure for 'static keeps the closure's loans of its captures
+	// before the call releases the loans its arguments hold.
 	for _, store := range d.storesAt[at] {
-		if store.takeover && store.call == ast.Node(ev.call) {
-			d.moveTakenCaptures(store, at, s)
+		if store.keeps && store.call == ast.Node(ev.call) {
+			d.keepCaptureLoans(store, at, s)
 		}
 	}
 
@@ -1480,7 +1541,7 @@ func (d *bodyDataflow) callEnd(ev *callEvent, at liveness.StmtRef, s *dataflowSt
 func (d *bodyDataflow) run(ev *runEvent, at liveness.StmtRef, s *dataflowState) {
 	taken := set.NewSet[liveness.VarID]()
 	for _, store := range d.table.retained {
-		if store.takeover || store.call == ast.Node(ev.call) || !d.storeReachable(store, at) {
+		if store.keeps || store.call == ast.Node(ev.call) || !d.storeReachable(store, at) {
 			continue
 		}
 
@@ -1525,17 +1586,24 @@ func (d *bodyDataflow) run(ev *runEvent, at liveness.StmtRef, s *dataflowState) 
 	s.moved[k] = movedPlace{place: ev.callee, node: ev.call, every: true, called: true}
 }
 
-// moveTakenCaptures moves each place a closure that store keeps captures into that closure,
-// at the point `at` of the store, when the place is rooted at one of the locals store.taken
-// lists. recordCaptureTakeover accepted each of those, so the closure owns them from the store on
-// instead of borrowing them. The closures are those noteStoreWrites reads:
-// each closure written in the stored value, each closure the place the value names holds, and
-// each closure a place those closures capture holds in turn.
+// keepCaptureLoans keeps for the rest of the program each loan a closure that store keeps holds
+// of its captures, at the point `at` of the store, when the loan's place is rooted at one of the
+// locals store.locals lists. recordKeptCaptures accepted each of those locals. The closures are
+// those noteStoreWrites reads:
 //
-// The move is checked as any move is, so a live borrow of the local, including another
-// closure's capture of it, conflicts with it, and a later use of the local is a use of a moved
-// value. The closure's own loans of the place end, since it owns the place now.
-func (d *bodyDataflow) moveTakenCaptures(store *retainedStore, at liveness.StmtRef, s *dataflowState) {
+//   - each closure written in the stored value;
+//   - each closure the place the value names holds;
+//   - each closure a place those closures capture holds in turn.
+//
+// A kept loan keeps the kind the closure's capture has, mutable for a write and immutable for a
+// read, and the rules check each later use of its place against it, as conflictsWith describes.
+// A `var` binding the closures borrow that no loan covers, such as one holding a number, gets a
+// loan of its own here, mutable when a closure assigns to it.
+//
+// Each loan the store keeps is checked against the loans live at the store, so a live borrow of
+// the other kind breaks E2. A kept loan does not conflict with another loan the same store
+// keeps, since one slot holds both.
+func (d *bodyDataflow) keepCaptureLoans(store *retainedStore, at liveness.StmtRef, s *dataflowState) {
 	written := set.NewSet[ast.Node]()
 	var next []movePlace
 	for _, closure := range store.closures {
@@ -1548,11 +1616,11 @@ func (d *bodyDataflow) moveTakenCaptures(store *retainedStore, at liveness.StmtR
 		next = append(next, store.place)
 	}
 
-	taken := map[*borrowEvent]*liveLoan{}
+	reached := map[*borrowEvent]*liveLoan{}
 	seen := set.NewSet[liveness.VarID]()
 	for _, l := range s.loans {
 		if l.closure() && written.Contains(l.ev.node) {
-			taken[l.ev] = l
+			reached[l.ev] = l
 		}
 	}
 	for len(next) > 0 {
@@ -1569,36 +1637,93 @@ func (d *bodyDataflow) moveTakenCaptures(store *retainedStore, at liveness.StmtR
 				continue
 			}
 			if l.closure() && !(store.named && l.ev.place.root == store.place.root) {
-				taken[l.ev] = l
+				reached[l.ev] = l
 			}
 			next = append(next, movePlace{root: l.ev.place.root})
 		}
 	}
 
-	roots := set.FromSlice(store.taken.roots)
-	for _, l := range d.sortedLoans(s) {
-		if taken[l.ev] != l || !roots.Contains(l.ev.place.root) {
-			continue
+	roots := set.FromSlice(store.locals.roots)
+	kept := set.NewSet[*borrowEvent]()
+	covered := set.NewSet[liveness.VarID]()
+	for _, l := range s.loans {
+		if reached[l.ev] == l && roots.Contains(l.ev.place.root) {
+			kept.Add(l.ev)
+			covered.Add(l.ev.place.root)
 		}
-		closure, _ := l.ev.node.(ast.Func)
-		delete(s.loans, l.ev)
-		mv := &moveEvent{
-			flowBase: flowBase{eventBase: eventBase{place: l.ev.place, node: store.expr}, holder: eventHolder{target: moduleTarget{}}},
-			closure:  closure,
-		}
-		d.move(mv, at, s)
-		k := placeKey(l.ev.place)
-		m := s.moved[k]
-		m.taken = store.via
-		s.moved[k] = m
 	}
 
-	// A `var` holding a value type has no loan to take, so its binding is marked moved here.
-	for _, root := range store.taken.vars {
-		p := movePlace{root: root}
-		k := placeKey(p)
-		if _, moved := s.moved[k]; !moved {
-			s.moved[k] = movedPlace{place: p, node: store.expr, every: true, taken: store.via}
+	for _, v := range store.locals.vars {
+		if covered.Contains(v.root) {
+			continue
+		}
+		covered.Add(v.root)
+		bev := d.varLoan(store, v)
+		if prev, ok := s.loans[bev]; ok && prev.conflictsWith(bev.borrow) {
+			// A store in a loop keeps the binding again while the closure an earlier iteration
+			// stored still writes it.
+			d.report(&BorrowAliasError{
+				Place:      d.placeName(bev.place),
+				FirstPlace: d.placeName(bev.place),
+				FirstMut:   true,
+				SecondMut:  true,
+				FirstKept:  prev.kept,
+				node:       store.expr,
+				first:      store.expr.Span(),
+			})
+		}
+		s.loans[bev] = newLiveLoan(bev)
+		kept.Add(bev)
+	}
+
+	for _, l := range d.sortedLoans(s) {
+		if !kept.Contains(l.ev) {
+			continue
+		}
+		l.static = true
+		l.kept = cmp.Or(l.kept, store.via)
+	}
+
+	others := slices.DeleteFunc(d.sortedLoans(s), func(l *liveLoan) bool { return kept.Contains(l.ev) })
+	for _, l := range d.sortedLoans(s) {
+		if kept.Contains(l.ev) {
+			d.checkNewPath(l.ev.place, l.ev.borrow, store.expr, at, others, l)
+		}
+	}
+}
+
+// varLoan returns the borrow event of the loan store keeps of the `var` binding v, mutable when
+// a closure assigns to v.
+func (d *bodyDataflow) varLoan(store *retainedStore, v borrowedVar) *borrowEvent {
+	key := varLoanKey{store: store, root: v.root}
+	bev, ok := d.varLoans[key]
+	if !ok {
+		kind := immutableBorrow
+		if v.writes {
+			kind = mutableBorrow
+		}
+		bev = &borrowEvent{
+			flowBase: flowBase{eventBase: eventBase{place: movePlace{root: v.root}, node: store.expr, at: store.at}, holder: eventHolder{target: moduleTarget{}}},
+			borrow:   kind,
+		}
+		d.varLoans[key] = bev
+		d.order[bev] = loanOrder{event: len(d.table.events), derived: len(d.varLoans)}
+	}
+	return bev
+}
+
+// checkKeptRead reports the read ev when a mutable loan a slot keeps overlaps the place it
+// reads. The slot may run the closure's write at any later point, so the read breaks E2.
+func (d *bodyDataflow) checkKeptRead(ev *useEvent, s *dataflowState) {
+	for _, l := range d.sortedLoans(s) {
+		if l.kept != "" && l.ev.borrow == mutableBorrow && placesOverlap(l.ev.place, ev.place) {
+			d.report(&KeptBorrowReadError{
+				Place:  d.placeName(ev.place),
+				Kept:   l.kept,
+				read:   ev.node,
+				borrow: l.ev.node.Span(),
+			})
+			return
 		}
 	}
 }
@@ -1652,8 +1777,8 @@ func (d *bodyDataflow) useCapture(ev *runEvent, run *closureRun, local capturedL
 
 	for _, place := range places {
 		for _, l := range d.sortedLoans(s) {
-			if !l.checked() || l.reserved != nil || l.ev.borrow == kind || !placesOverlap(l.ev.place, place) ||
-				!d.loanLive(l, at, true) {
+			if !l.checked() || l.reserved != nil || !l.conflictsWith(kind) || !placesOverlap(l.ev.place, place) ||
+				!d.loanLive(l, at, true) || run.own.Contains(l.ev) {
 				continue
 			}
 
@@ -1678,6 +1803,7 @@ func (d *bodyDataflow) useCapture(ev *runEvent, run *closureRun, local capturedL
 				SecondMut:  local.mut,
 				SecondVia:  run.via,
 				SecondRuns: run.runs,
+				FirstKept:  l.kept,
 				node:       run.node,
 				first:      l.ev.node.Span(),
 			}
@@ -1758,7 +1884,7 @@ func (d *bodyDataflow) reportMoved(m movedPlace, place movePlace, node ast.Node)
 
 // movedError returns the error reportMoved reports.
 func (d *bodyDataflow) movedError(m movedPlace, place movePlace, node ast.Node) *UseAfterMoveError {
-	e := &UseAfterMoveError{Name: d.placeName(m.place), Conditional: !m.every, Taken: m.taken, use: node, moveSite: m.node}
+	e := &UseAfterMoveError{Name: d.placeName(m.place), Conditional: !m.every, use: node, moveSite: m.node}
 	if len(place.path) < len(m.place.path) {
 		e.ReadName = d.placeName(place)
 		e.Partial = true

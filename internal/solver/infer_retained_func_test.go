@@ -896,8 +896,9 @@ func TestCallOnlyFuncDeferredRelated(t *testing.T) {
 // slot written `'static fn` holds the same functions. A closure that captures nothing, or only
 // reads value types from `val` bindings, holds no borrow. One that captures an object local, or
 // reads or writes a captured `var`, borrows it. When every local it borrows is a `val` or `var`
-// of the body it is written in, the slot takes those locals over at the store, so the closure
-// holds no borrow and a later use of a local is a use of a value the closure owns.
+// of the body it is written in, the slot keeps those borrows for the rest of the program from the
+// store on. A later use of such a local is checked against the kept borrow, so a read beside a
+// closure that only reads checks, and any other later use is rejected.
 // TestModuleLevelFuncHoldsNoBorrow covers the E4 example, the captures that decide whether a
 // closure fits such a slot, and each kind of slot, and asserts the full message, with its span,
 // of each error.
@@ -928,7 +929,7 @@ declare fn keep(cb: 'static fn () -> undefined) -> undefined
     run(greet)
 }`,
 		},
-		// Nothing in setup uses cfg after the store, so sink takes it over.
+		// Nothing in setup uses cfg after the store, so sink's kept borrow conflicts with nothing.
 		{
 			name: "E4 example",
 			src: decls + `fn setup() {
@@ -947,26 +948,26 @@ declare fn keep(cb: 'static fn () -> undefined) -> undefined
     keep(show)
 }`,
 		},
-		// cfg is read after keep takes it over.
+		// show only reads cfg, so keep keeps an immutable borrow of it and a later read checks.
 		{
-			name: "E4 example with a later use of the captured local",
+			name: "E4 example with a later read of the captured local",
 			src: decls + `fn setup() {
     val cfg = {msg: "hello"}
     val show = fn () { console.log(cfg.msg) }
     keep(show)
     console.log(cfg.msg)
 }`,
-			want: []string{"8:17-8:24: 'cfg' is used after the 'cb' that 'keep' retains took it over for 'static"},
 		},
+		// sink keeps show's immutable borrow of cfg, so a later write conflicts with it.
 		{
-			name: "E4 example with a later use of the captured local stored into a module-level slot",
+			name: "E4 example with a later write of the captured local stored into a module-level slot",
 			src: decls + `fn setup() {
-    val cfg = {msg: "hello"}
+    val mut cfg = {msg: "hello"}
     val show = fn () { console.log(cfg.msg) }
     sink = show
-    console.log(cfg.msg)
+    cfg.msg = "bye"
 }`,
-			want: []string{"8:17-8:24: 'cfg' is used after 'sink' took it over for 'static"},
+			want: []string{"8:5-8:12: cannot assign to 'cfg.msg' while it is borrowed as immutable by 'sink'"},
 		},
 		{
 			name: "closure written in the call to a static parameter",
@@ -1195,34 +1196,34 @@ fn f() {
 }`,
 		},
 		{
-			name: "closure pushed onto a module-level array before a later use",
+			name: "closure pushed onto a module-level array before a later read",
 			src: `var mut handlers: Array<fn () -> undefined> = []
 fn f() -> number {
     val mut p = {x: 1}
     handlers.push(fn () { p.x = 2 })
     return p.x
 }`,
-			want: []string{"5:12-5:15: 'p' is used after the 'items' that 'push' retains took it over for 'static"},
+			want: []string{"5:12-5:15: cannot read 'p.x' while it is borrowed as mutable by the 'items' that 'push' retains"},
 		},
 		{
-			name: "closure stored into a module-level object field before a later use",
+			name: "closure stored into a module-level object field before a later read",
 			src: `var mut registry: {cb: fn () -> undefined} = {cb: fn () {}}
 fn f() -> number {
     val mut p = {x: 1}
     registry.cb = fn () { p.x = 2 }
     return p.x
 }`,
-			want: []string{"5:12-5:15: 'p' is used after 'registry.cb' took it over for 'static"},
+			want: []string{"5:12-5:15: cannot read 'p.x' while it is borrowed as mutable by 'registry.cb'"},
 		},
 		{
-			name: "closure stored into a module-level var written static before a later use",
+			name: "closure stored into a module-level var written static before a later read",
 			src: `var sink: 'static fn () -> undefined = fn () {}
 fn f() -> number {
     val mut p = {x: 1}
     sink = fn () { p.x = 2 }
     return p.x
 }`,
-			want: []string{"5:12-5:15: 'p' is used after 'sink' took it over for 'static"},
+			want: []string{"5:12-5:15: cannot read 'p.x' while it is borrowed as mutable by 'sink'"},
 		},
 		// A signature's own lifetime is reported by the signature's lifetime check, which names
 		// the bound to declare.
@@ -1246,23 +1247,23 @@ class Button<'a> {
 		// A local annotated `'static fn` keeps its function for 'static too, whether the closure
 		// fills it at the declaration or by an assignment.
 		{
-			name: "closure declared into a local written static before a later use",
+			name: "closure declared into a local written static before a later write",
 			src: `fn f() {
     val mut obj = {a: 1}
     val h: 'static fn () -> undefined = fn () { console.log(obj.a) }
     obj.a = 5
 }`,
-			want: []string{"4:5-4:8: 'obj' is used after 'h' took it over for 'static"},
+			want: []string{"4:5-4:10: cannot assign to 'obj.a' while it is borrowed as immutable by 'h'"},
 		},
 		{
-			name: "closure assigned to a local written static before a later use",
+			name: "closure assigned to a local written static before a later write",
 			src: `fn f() {
     val mut obj = {a: 1}
     var h: 'static fn () -> undefined = fn () {}
     h = fn () { console.log(obj.a) }
     obj.a = 5
 }`,
-			want: []string{"5:5-5:8: 'obj' is used after 'h' took it over for 'static"},
+			want: []string{"5:5-5:10: cannot assign to 'obj.a' while it is borrowed as immutable by 'h'"},
 		},
 		// The rest argument is checked against the inner call, which is itself an argument.
 		{
@@ -1270,11 +1271,11 @@ class Button<'a> {
 			src: `declare fn on(...hs: Array<'static fn () -> undefined>) -> number
 declare fn id(n: number) -> number
 fn f() {
-    val p = {a: 1}
-    id(on(fn () { console.log(p.a) }))
+    val mut p = {a: 1}
+    id(on(fn () { p.a = 2 }))
     console.log(p.a)
 }`,
-			want: []string{"6:17-6:20: 'p' is used after the 'hs' that 'on' retains took it over for 'static"},
+			want: []string{"6:17-6:20: cannot read 'p.a' while it is borrowed as mutable by the 'hs' that 'on' retains"},
 		},
 		// An interface method's `&self` is an input lifetime, so its elided result may borrow
 		// what the receiver does, as the class's method does.
@@ -1474,14 +1475,14 @@ fn setup() {
 }
 
 // A closure passed to a `'static fn` parameter may run during any later call. The parameter
-// holds only a function that borrows nothing shorter than the program, so the call takes over
-// the locals the closure borrows, and a later use of one of them uses a value the closure owns.
-// TestRetainedClosureBorrows covers the ways a call reaches such a parameter and asserts the
-// full message, with its span, of each error.
+// holds only a function that borrows nothing shorter than the program, so the call keeps the
+// closure's borrows of the locals it captures for the rest of the program. A later use of one of
+// those locals is checked against the kept borrow. TestRetainedClosureBorrows covers the ways a
+// call reaches such a parameter and asserts the full message, with its span, of each error.
 //
 // A parameter whose lifetime is only bounded by 'static, as `'a: 'static` bounds it, keeps the
-// closure without taking its captures over, so a later call may run the closure while `count`
-// is borrowed.
+// closure without keeping its borrows, so a later call may run the closure while `count` is
+// borrowed.
 func TestRetainedClosureBorrows(t *testing.T) {
 	tests := []struct {
 		name string
@@ -1500,7 +1501,7 @@ fn setup() {
     render(&count)
 }`,
 		},
-		// Nothing uses count after onClick takes it over, so setup checks.
+		// Nothing uses count after onClick keeps the handler, so setup checks.
 		{
 			name: "closure retained with no later use of its capture",
 			src: `declare fn onClick(handler: 'static fn () -> undefined) -> undefined
@@ -1509,7 +1510,8 @@ fn setup() {
     onClick(fn () { count.n = count.n + 1 })
 }`,
 		},
-		// onClick takes count over with its handler, so render borrows a value the handler owns.
+		// onClick keeps the handler's mutable borrow of count, so render's immutable borrow
+		// conflicts with it.
 		{
 			name: "closure retained before the borrow",
 			src: `declare fn onClick(handler: 'static fn () -> undefined) -> undefined
@@ -1519,7 +1521,7 @@ fn setup() {
     onClick(fn () { count.n = count.n + 1 })
     render(&count)
 }`,
-			want: []string{"6:13-6:18: 'count' is used after the 'handler' that 'onClick' retains took it over for 'static"},
+			want: []string{"6:12-6:18: cannot borrow 'count' as immutable while it is borrowed as mutable by the 'handler' that 'onClick' retains"},
 		},
 		{
 			name: "closure bound to a name",
@@ -1531,7 +1533,7 @@ fn setup() {
     onClick(h)
     render(&count)
 }`,
-			want: []string{"7:13-7:18: 'count' is used after the 'handler' that 'onClick' retains took it over for 'static"},
+			want: []string{"7:12-7:18: cannot borrow 'count' as immutable while it is borrowed as mutable by the 'handler' that 'onClick' retains"},
 		},
 		{
 			name: "method that retains its argument",
@@ -1543,7 +1545,7 @@ fn setup(b: Button) {
     b.on(fn () { count.n = count.n + 1 })
     render(&count)
 }`,
-			want: []string{"7:13-7:18: 'count' is used after the 'handler' that 'on' retains took it over for 'static"},
+			want: []string{"7:12-7:18: cannot borrow 'count' as immutable while it is borrowed as mutable by the 'handler' that 'on' retains"},
 		},
 		{
 			name: "retention lifetime bound to outlive static",
@@ -1567,7 +1569,7 @@ fn setup() {
     }
     render(&count)
 }`,
-			want: []string{"8:13-8:18: 'count' is used after the 'handler' that 'onClick' retains took it over for 'static"},
+			want: []string{"8:12-8:18: cannot borrow 'count' as immutable while it is borrowed as mutable by the 'handler' that 'onClick' retains"},
 		},
 		{
 			name: "moved into a later call",
@@ -1578,7 +1580,7 @@ fn setup() {
     onClick(fn () { count.n = count.n + 1 })
     take(count)
 }`,
-			want: []string{"6:10-6:15: 'count' is used after the 'handler' that 'onClick' retains took it over for 'static"},
+			want: []string{"6:10-6:15: cannot move 'count' while it is borrowed by the 'handler' that 'onClick' retains"},
 		},
 		{
 			name: "rest parameter",
@@ -1589,7 +1591,7 @@ fn setup() {
     onAll(fn () { count.n = count.n + 1 })
     render(&count)
 }`,
-			want: []string{"6:13-6:18: 'count' is used after the 'hs' that 'onAll' retains took it over for 'static"},
+			want: []string{"6:12-6:18: cannot borrow 'count' as immutable while it is borrowed as mutable by the 'hs' that 'onAll' retains"},
 		},
 		{
 			name: "union with null",
@@ -1600,7 +1602,7 @@ fn setup() {
     onClick(fn () { count.n = count.n + 1 })
     render(&count)
 }`,
-			want: []string{"6:13-6:18: 'count' is used after the 'handler' that 'onClick' retains took it over for 'static"},
+			want: []string{"6:12-6:18: cannot borrow 'count' as immutable while it is borrowed as mutable by the 'handler' that 'onClick' retains"},
 		},
 		{
 			name: "object field",
@@ -1611,9 +1613,10 @@ fn setup() {
     mount({onClick: fn () { count.n = count.n + 1 }})
     render(&count)
 }`,
-			want: []string{"6:13-6:18: 'count' is used after the 'props' that 'mount' retains took it over for 'static"},
+			want: []string{"6:12-6:18: cannot borrow 'count' as immutable while it is borrowed as mutable by the 'props' that 'mount' retains"},
 		},
-		// A closure that only reads its capture takes it over all the same.
+		// A closure that only reads count keeps an immutable borrow, so `&mut count` conflicts
+		// with it.
 		{
 			name: "closure that only reads",
 			src: `declare fn onClick(handler: 'static fn () -> undefined) -> undefined
@@ -1623,7 +1626,18 @@ fn setup() {
     onClick(fn () { val x = count.n })
     bump(&mut count)
 }`,
-			want: []string{"6:15-6:20: 'count' is used after the 'handler' that 'onClick' retains took it over for 'static"},
+			want: []string{"6:10-6:20: cannot borrow 'count' as mutable while it is borrowed as immutable by the 'handler' that 'onClick' retains"},
+		},
+		// The kept immutable borrow of count allows a later immutable one.
+		{
+			name: "closure that only reads beside a later view",
+			src: `declare fn onClick(handler: 'static fn () -> undefined) -> undefined
+declare fn render(view: &{n: number}) -> undefined
+fn setup() {
+    val mut count = {n: 0}
+    onClick(fn () { val x = count.n })
+    render(&count)
+}`,
 		},
 	}
 	for _, tt := range tests {
@@ -1817,8 +1831,8 @@ fn setup() {
 			},
 		*/
 		// A field with no lifetime of its own is 'static, so the constructor's parameter has
-		// to be 'static too. The call takes over the local the closure borrows, which nothing
-		// uses afterwards.
+		// to be 'static too. The call keeps the closure's borrow of count for the rest of the
+		// program, and nothing uses count afterwards.
 		{
 			name: "explicit constructor that stores a handler in a static field",
 			src: `class Keyed {
@@ -1842,7 +1856,7 @@ fn setup() {
     val k = Keyed(fn () { count.n = count.n + 1 })
     render(&count)
 }`,
-			want: []string{"9:13-9:18: 'count' is used after the 'key' that 'Keyed' retains took it over for 'static"},
+			want: []string{"9:12-9:18: cannot borrow 'count' as immutable while it is borrowed as mutable by the 'key' that 'Keyed' retains"},
 		},
 		// The receiver's type is Button<'a>, so b holds the handler on() stores.
 		{

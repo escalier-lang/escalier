@@ -462,8 +462,9 @@ func TestClosureRunsAtPlaces(t *testing.T) {
 // TestRetainedClosureWritesFollowCaptures covers a retained closure that writes a local
 // through a closure it captures. The capture is the only use of the captured binding, so
 // the stored closure reaches the inner closure's loans only through the capture. `onClick`
-// keeps its handler for 'static, so it takes over the local the inner closure writes, and the
-// later `render(&count)` borrows a value the handler owns.
+// keeps its handler for 'static, so it keeps the inner closure's borrow of count for the rest of
+// the program. The later `render(&count)` conflicts with that borrow when the inner closure
+// writes count, and checks when it only reads count.
 func TestRetainedClosureWritesFollowCaptures(t *testing.T) {
 	tests := map[string]struct {
 		src  string
@@ -480,7 +481,7 @@ func TestRetainedClosureWritesFollowCaptures(t *testing.T) {
 					render(&count)
 				}
 			`,
-			want: []string{"8:14-8:19: 'count' is used after the 'handler' that 'onClick' retains took it over for 'static"},
+			want: []string{"8:13-8:19: cannot borrow 'count' as immutable while it is borrowed as mutable by the 'handler' that 'onClick' retains"},
 		},
 		"CapturedObjectHoldingAClosure": {
 			src: `
@@ -493,9 +494,9 @@ func TestRetainedClosureWritesFollowCaptures(t *testing.T) {
 					render(&count)
 				}
 			`,
-			want: []string{"8:14-8:19: 'count' is used after the 'handler' that 'onClick' retains took it over for 'static"},
+			want: []string{"8:13-8:19: cannot borrow 'count' as immutable while it is borrowed as mutable by the 'handler' that 'onClick' retains"},
 		},
-		"CapturedClosureThatOnlyReads": {
+		"CapturedClosureThatOnlyReadsOk": {
 			src: `
 				declare fn onClick(handler: 'static fn () -> undefined) -> undefined
 				declare fn render(view: &{n: number}) -> undefined
@@ -507,7 +508,6 @@ func TestRetainedClosureWritesFollowCaptures(t *testing.T) {
 					render(&count)
 				}
 			`,
-			want: []string{"9:14-9:19: 'count' is used after the 'handler' that 'onClick' retains took it over for 'static"},
 		},
 	}
 	for name, tc := range tests {

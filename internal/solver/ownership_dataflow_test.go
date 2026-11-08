@@ -551,8 +551,9 @@ func TestOwnershipDataflow(t *testing.T) {
 			`,
 		},
 		{
-			// sink keeps its function for 'static and p is a local of go, so the store moves p
-			// into the closure. Nothing uses p after the store, so go checks.
+			// sink keeps its function for 'static and p is a local of go, so sink keeps the
+			// closure's borrow of p for the rest of the program. Nothing uses p after the store, so
+			// go checks.
 			name: "E3StoreOfAReadingClosureIntoAGlobal",
 			src: `
 				var sink: 'static fn () -> number = fn () { return 0 }
@@ -563,7 +564,8 @@ func TestOwnershipDataflow(t *testing.T) {
 			`,
 		},
 		{
-			// The store moves p into the closure, so take receives a value the closure owns.
+			// sink keeps the closure's immutable borrow of p for the rest of the program, so moving
+			// p breaks E3.
 			name: "E3MoveAfterStoringAReadingClosureIntoAGlobal",
 			src: `
 				var sink: 'static fn () -> number = fn () { return 0 }
@@ -574,7 +576,7 @@ func TestOwnershipDataflow(t *testing.T) {
 					take(p)
 				}
 			`,
-			errs: []string{"'p' is used after 'sink' took it over for 'static"},
+			errs: []string{"cannot move 'p' while it is borrowed by 'sink'"},
 		},
 		{
 			// One return that names the closure twice moves its capture once.
@@ -2333,8 +2335,8 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 			want: []string{"6:12-6:13: use of moved value 'q'"},
 		},
 		{
-			// The store moves p into f before the branch, so the later move of p on the path that
-			// does not return moves a value f owns.
+			// sink keeps f's borrow of p from before the branch, so the later move of p on the path
+			// that does not return breaks E3.
 			name: "E3MoveAfterStoringAndReturningAClosure",
 			src: `
 				var sink: 'static fn () -> number = fn () { return 0 }
@@ -2350,7 +2352,7 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 					return fn () { return 0 }
 				}
 			`,
-			want: []string{"11:11-11:12: 'p' is used after 'sink' took it over for 'static"},
+			want: []string{"11:11-11:12: cannot move 'p' while it is borrowed by 'sink'"},
 		},
 		{
 			// The body reads `p.r` while the mutable borrow `a` holds is live, so the store's `&b`

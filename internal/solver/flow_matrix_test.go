@@ -2468,8 +2468,8 @@ func TestFlowMatrix(t *testing.T) {
 		},
 		// A `'static` immutable borrow stays live for the rest of the program, so a later write to its
 		// source is rejected. Rules L1 and E2.
-		// The store takes `p` over into the closure `sink` keeps, so the later write uses a value
-		// the closure owns.
+		// `sink` keeps the closure's immutable borrow of `p` for the rest of the program, so the
+		// later write conflicts with it.
 		{
 			column: "WriteAfterStaticImmutableBorrow",
 			site:   "ClosureCapture",
@@ -2481,12 +2481,12 @@ func TestFlowMatrix(t *testing.T) {
 					p.x = 2
 				}
 			`,
-			want: []string{"6:6-6:7: 'p' is used after 'sink' took it over for 'static"},
+			want: []string{"6:6-6:9: cannot assign to 'p.x' while it is borrowed as immutable by 'sink'"},
 		},
 		// A `'static` mutable borrow stays live for the rest of the program, so a later immutable borrow
 		// of its source is rejected. Rules L1 and E2.
-		// The store takes `p` over into the closure `sink` keeps, so the later borrow uses a value
-		// the closure owns.
+		// `sink` keeps the closure's mutable borrow of `p` for the rest of the program, so the
+		// later immutable borrow conflicts with it.
 		{
 			column: "ImmutableBorrowAfterStaticMutableBorrow",
 			site:   "ClosureCapture",
@@ -2499,7 +2499,7 @@ func TestFlowMatrix(t *testing.T) {
 					readIt(&p)
 				}
 			`,
-			want: []string{"7:14-7:15: 'p' is used after 'sink' took it over for 'static"},
+			want: []string{"7:13-7:15: cannot borrow 'p' as immutable while it is borrowed as mutable by 'sink'"},
 		},
 		// Borrows of different fields reach different values, so a write to one field while another is
 		// borrowed is accepted. Rule E2.

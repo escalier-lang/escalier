@@ -176,8 +176,8 @@ func TestFlowLifetimeRules(t *testing.T) {
 				}
 			`,
 		},
-		// E4. `sink` keeps its function for the whole program, so it rejects a closure that borrows
-		// the local `p`, and the rejection is all the body reports.
+		// E4. `sink` keeps its function for the whole program, so it keeps the closure's mutable
+		// borrow of `p` for the rest of the program, and `&p` conflicts with it.
 		{
 			name: "E4/Stored",
 			src: `
@@ -186,11 +186,11 @@ func TestFlowLifetimeRules(t *testing.T) {
 
 				fn stored() {
 					val mut p = {x: 1}
-					sink = fn () { p.x = 2 }    // error: the closure borrows 'p', which does not live for 'static
-					readIt(&p)
+					sink = fn () { p.x = 2 }
+					readIt(&p)    // error: cannot borrow 'p' as immutable while it is borrowed as mutable by 'sink'
 				}
 			`,
-			want: []string{"8:14-8:15: 'p' is used after 'sink' took it over for 'static"},
+			want: []string{"8:13-8:15: cannot borrow 'p' as immutable while it is borrowed as mutable by 'sink'"},
 		},
 		// E4. A closure that moves a capture moves it at each call, so the second call uses a
 		// moved value.
@@ -412,12 +412,13 @@ func TestFlowLifetimeClosureBlocksMove(t *testing.T) {
 }
 
 // TestFlowLifetimeRetainedCallback covers the `setup` programs in D10 that use `count` after
-// `onClick` keeps its handler. `onClick` keeps the handler for 'static and takes `count` over, so
-// a later use of `count` uses a value the handler owns.
+// `onClick` keeps its handler. `onClick` keeps the handler for 'static, so it keeps the handler's
+// mutable borrow of `count` for the rest of the program, and a later use of `count` conflicts
+// with it.
 func TestFlowLifetimeRetainedCallback(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{
-		// E4 and D10. `onClick` keeps its handler for the rest of the program and takes `count`
-		// over, so `render` borrows a value the handler owns.
+		// E4 and D10. `onClick` keeps its handler and the handler's mutable borrow of `count` for
+		// the rest of the program, so `render`'s immutable borrow conflicts with it.
 		{
 			name: "D10/RetainedHandlerConflicts",
 			src: `
@@ -427,13 +428,14 @@ func TestFlowLifetimeRetainedCallback(t *testing.T) {
 				fn setup() {
 					val mut count = {n: 0}
 					onClick(fn () { count.n = count.n + 1 })
-					render(&count)    // error: 'count' is used after the handler took it over
+					render(&count)    // error: cannot borrow 'count' as immutable while it is borrowed as mutable
 				}
 			`,
-			want: []string{"8:14-8:19: 'count' is used after the 'handler' that 'onClick' retains took it over for 'static"},
+			want: []string{"8:13-8:19: cannot borrow 'count' as immutable while it is borrowed as mutable by the 'handler' that 'onClick' retains"},
 		},
-		// E4 and D10. A mutable view makes no promise that the value holds still, but `onClick`
-		// has taken `count` over, so the view borrows a value the handler owns.
+		// E4 and D10. A mutable view makes no promise that the value holds still, but the handler
+		// `onClick` keeps may write `count` at any later point, so a second mutable path to it
+		// conflicts with the handler's.
 		{
 			name: "D10/MutableView",
 			src: `
@@ -443,20 +445,22 @@ func TestFlowLifetimeRetainedCallback(t *testing.T) {
 				fn setup() {
 					val mut count = {n: 0}
 					onClick(fn () { count.n = count.n + 1 })
-					render(&mut count)    // error: 'count' is used after the handler took it over
+					render(&mut count)    // error: cannot borrow 'count' as mutable while it is borrowed as mutable
 				}
 			`,
-			want: []string{"8:18-8:23: 'count' is used after the 'handler' that 'onClick' retains took it over for 'static"},
+			want: []string{"8:13-8:23: cannot borrow 'count' as mutable while it is borrowed as mutable by the 'handler' that 'onClick' retains"},
 		},
 	})
 }
 
-// TestFlowLifetimeRetainedCallbackAccepted covers the D10 program whose handler owns `count` and
-// a closure passed to a parameter that only calls it, each of which E4 accepts.
+// TestFlowLifetimeRetainedCallbackAccepted covers the D10 programs E4 accepts: a handler that is
+// the only use of `count` after `onClick` keeps it, a handler that only reads `count` beside a
+// later immutable view, and a closure passed to a parameter that only calls it.
 func TestFlowLifetimeRetainedCallbackAccepted(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{
-		// E4 and D10. The handler owns `count`, since `onClick` keeps it past the frame and takes
-		// `count` over, so the borrow inside the handler lasts for one call.
+		// E4 and D10. `onClick` keeps the handler's borrow of `count` for the rest of the program,
+		// and nothing in `setup` uses `count` after it. The borrow inside the handler lasts for one
+		// call.
 		{
 			name: "D10/HandlerOwnsState",
 			src: `
@@ -469,6 +473,22 @@ func TestFlowLifetimeRetainedCallbackAccepted(t *testing.T) {
 						count.n = count.n + 1
 						render(&count)    // accepted
 					})
+				}
+			`,
+		},
+		// E4 and D10. The handler only reads `count`, so `onClick` keeps an immutable borrow of it,
+		// and `render`'s immutable borrow beside it checks.
+		{
+			name: "D10/ReadingHandlerBesideAView",
+			src: `
+				declare fn onClick(handler: 'static fn () -> undefined) -> undefined
+				declare fn render(view: &{n: number}) -> undefined
+				declare fn log(n: number) -> undefined
+
+				fn setup() {
+					val mut count = {n: 0}
+					onClick(fn () { log(count.n) })
+					render(&count)    // accepted
 				}
 			`,
 		},
