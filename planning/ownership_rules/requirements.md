@@ -1838,8 +1838,9 @@ The checker change is tracked by
 [#2342](https://github.com/escalier-lang/escalier/issues/2342),
 [#2553](https://github.com/escalier-lang/escalier/issues/2553), and
 [#2554](https://github.com/escalier-lang/escalier/issues/2554). Its
-implementation is in [#2550](https://github.com/escalier-lang/escalier/pull/2550),
-in `func_elision.go`, `closure_captures.go`, and `lifetime_call_only.go` under
+implementation is in [#2595](https://github.com/escalier-lang/escalier/pull/2595)
+through [#2598](https://github.com/escalier-lang/escalier/pull/2598), in
+`func_elision.go`, `closure_captures.go`, and `lifetime_call_only.go` under
 `internal/solver`. These parts are not implemented:
 
 - `move fn` from rule 6, tracked by
