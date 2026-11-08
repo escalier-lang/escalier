@@ -466,7 +466,7 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 		{
 			name: "ClosureStoredInModuleBorrowsCaptureForStatic",
 			src: `
-				var handler: fn () -> number = fn () { return 0 }
+				var handler: &'static fn () -> number = fn () { return 0 }
 				fn go() {
 					val p = {x: 1}
 					handler = fn () { return p.x }
@@ -480,7 +480,7 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 		{
 			name: "WritingClosureStoredInModuleBorrowsCaptureMutably",
 			src: `
-				var handler: fn () -> undefined = fn () {}
+				var handler: &'static fn () -> undefined = fn () {}
 				fn go() {
 					val mut p = {x: 1}
 					handler = fn () { p.x = 2 }
@@ -494,7 +494,7 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 		{
 			name: "ClosureStoredInModuleThroughLocalBorrowsCaptureForStatic",
 			src: `
-				var handler: fn () -> number = fn () { return 0 }
+				var handler: &'static fn () -> number = fn () { return 0 }
 				fn go() {
 					val p = {x: 1}
 					val f = fn () { return p.x }

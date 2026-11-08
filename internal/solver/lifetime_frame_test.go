@@ -160,7 +160,7 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 				}
 			`,
 			binding: "outer",
-			want:    "fn () -> fn (p: &{x: number}) -> &{x: 1}",
+			want:    "fn () -> &fn (p: &{x: number}) -> &{x: 1}",
 		},
 		// Each read of t copies its borrow's lifetime, and cache holds one of the copies.
 		{

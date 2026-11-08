@@ -895,7 +895,7 @@ func TestInferWarnsAboutAFunctionReadOffAnInferredReceiver(t *testing.T) {
 					return g()
 				}
 			`,
-			types:    map[string]string{"f": "fn <T0>(o: {m: fn () -> T0}) -> T0"},
+			types:    map[string]string{"f": "fn <T0>(o: {m: &fn () -> T0}) -> T0"},
 			wantErrs: []string{"3:14-3:17: " + warning},
 		},
 		{
@@ -904,7 +904,7 @@ func TestInferWarnsAboutAFunctionReadOffAnInferredReceiver(t *testing.T) {
 			// draws no warning. The receiver is still inferred as a field holding a function.
 			name:  "AReadCalledOnTheSpot",
 			src:   `fn f(o) { return o.m() }`,
-			types: map[string]string{"f": "fn <T0>(o: {m: fn () -> T0}) -> T0"},
+			types: map[string]string{"f": "fn <T0>(o: {m: &fn () -> T0}) -> T0"},
 		},
 		{
 			name:  "ADataRead",
@@ -927,7 +927,7 @@ func TestInferWarnsAboutAFunctionReadOffAnInferredReceiver(t *testing.T) {
 					return h()()
 				}
 			`,
-			types:    map[string]string{"f": "fn <T0>(o: {m: fn () -> T0}) -> T0"},
+			types:    map[string]string{"f": "fn <T0>(o: {m: &fn () -> T0}) -> T0"},
 			wantErrs: []string{"3:29-3:32: " + warning},
 		},
 		{

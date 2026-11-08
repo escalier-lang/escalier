@@ -3,6 +3,7 @@ package solver
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -75,16 +76,41 @@ func (c *checker) recordClosureCaptures(scope *Scope, closure ast.Func) {
 	}
 }
 
-// setRetentionFromCaptures gives ft, the type of `closure`, a retention lifetime when the closure
-// captures a value that holds a function with one. The value is a function, or holds one in a
-// union, an object property, or a type argument, as retentionLifetimes finds. The lifetime is
-// fresh at lvl, and each such function's retention lifetime must outlive it. ft must be the
-// closure's own type, not yet shared with any other type.
-func (c *checker) setRetentionFromCaptures(scope *Scope, lvl int, closure ast.Func, ft *soltype.FuncType) {
+// setClosureRetention gives ft, the type of `closure`, a retention lifetime when the closure
+// holds a borrow, so its type reads `&'a fn`. The closure holds a borrow when it captures one
+// of these from a body it is written in:
+//
+//   - A `var` binding, or a binding it writes. Each call reads or writes the binding itself.
+//   - A binding whose value is not a value type, such as an object. The closure reads it
+//     through a borrow.
+//   - A value that holds a function with a retention lifetime, in a union, an object property,
+//     or a type argument, as retentionLifetimes finds. That function's lifetime must outlive
+//     the closure's.
+//
+// A binding of a value type in a `val` is copied into the closure, and a module-level binding
+// lives for the whole program, so neither makes the closure hold a borrow. The lifetime is
+// fresh at lvl. ft must be the closure's own type, not yet shared with any other type.
+//
+// When each borrow the closure holds is of a local of the body it is written in, the lifetime
+// joins that body's frameClosures, for ownReturnedClosures to read.
+func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, ft *soltype.FuncType) {
+	retain := func() {
+		if ft.Lt == nil {
+			ft.Lt = c.ctx.freshLifetime(lvl)
+		}
+	}
+	framed := c.fn != nil
 	for _, capture := range c.closureCaptures(closure) {
 		b, found := scope.GetValue(capture.Name)
-		if !found || len(b.Schemes) != 1 {
+		if !found || len(b.Schemes) != 1 || b.ModuleLevel || b.VarID <= 0 {
 			continue
+		}
+		if b.Kind == ast.VarKind || capture.IsMutable || c.capturesByBorrow(bindingType(b)) {
+			retain()
+			// A returned closure takes a local it captures, but not the referent of a borrow
+			// the local holds.
+			_, borrowed := bindingType(b).(*soltype.RefType)
+			framed = framed && !borrowed && c.isFrameLocal(capture.Name, b)
 		}
 		// Instantiating a generalized binding mints fresh variables, so a binding whose type
 		// holds no retained function is skipped before that. Instantiation keeps the shape of
@@ -93,16 +119,108 @@ func (c *checker) setRetentionFromCaptures(scope *Scope, lvl int, closure ast.Fu
 			continue
 		}
 		for _, lt := range retentionLifetimes(c.bindingValue(lvl, b)) {
-			// A function kept for 'static outlives any closure that captures it.
-			if lt == soltype.Static {
-				continue
-			}
-			if ft.Lt == nil {
-				ft.Lt = c.ctx.freshLifetime(lvl)
-			}
+			retain()
 			c.ctx.constrainLt(lt, ft.Lt)
+			framed = false
 		}
 	}
+	if lt, isVar := ft.Lt.(*soltype.LifetimeVar); isVar && framed {
+		if c.fn.frameClosures == nil {
+			c.fn.frameClosures = set.NewSet[*soltype.LifetimeVar]()
+		}
+		c.fn.frameClosures.Add(lt)
+	}
+}
+
+// isFrameLocal reports whether b, the binding name resolves to, is a local of the body being
+// walked rather than of a body further out. Each body numbers its own locals, so the VarID of
+// an outer local either is missing from this body's names or names a different local here.
+func (c *checker) isFrameLocal(name string, b ValueBinding) bool {
+	local, ok := c.fn.varIDNames[liveness.VarID(b.VarID)]
+	return ok && local == name
+}
+
+// noteFrameClosureRead adds the retention lifetime of t, the value a read of b resolved to, to
+// the current body's frameClosures when b holds a closure whose lifetime is already there.
+// Reading a generalized binding copies its type with fresh lifetimes, and the copy is the same
+// closure.
+func (c *checker) noteFrameClosureRead(b ValueBinding, t soltype.Type) {
+	if c.fn == nil || c.fn.frameClosures == nil || len(b.Schemes) != 1 {
+		return
+	}
+	held, isFn := schemeBody(b.Schemes[0]).(*soltype.FuncType)
+	if !isFn {
+		return
+	}
+	heldLt, isVar := held.Lt.(*soltype.LifetimeVar)
+	if !isVar || !c.fn.frameClosures.Contains(heldLt) {
+		return
+	}
+	if read, isFn := t.(*soltype.FuncType); isFn {
+		if readLt, isVar := read.Lt.(*soltype.LifetimeVar); isVar {
+			c.fn.frameClosures.Add(readLt)
+		}
+	}
+}
+
+// ownReturnedClosures drops the retention lifetime of each closure the current body returns
+// whose lifetime is in the body's frameClosures. Such a closure borrows only locals of the
+// body, and a returned closure takes what it captures, as F3 states, so it holds no borrow
+// once it is returned. A closure returned through a local, as in `return f` after
+// `val f = fn () { … }`, is reached through the lower bounds of the local's type. It must run
+// before the returns are joined into the function's result.
+func (c *checker) ownReturnedClosures() {
+	if c.fn.frameClosures == nil {
+		return
+	}
+	v := &returnedClosureOwner{frame: c.fn.frameClosures, vars: set.NewSet[*soltype.TypeVarType]()}
+	for _, t := range c.fn.returns {
+		if t != nil {
+			t.Accept(v, soltype.Positive)
+		}
+	}
+}
+
+// returnedClosureOwner is the visitor ownReturnedClosures runs. It clears the retention
+// lifetime of each closure type it reaches in place, since the closure's own type is the one
+// the return holds.
+type returnedClosureOwner struct {
+	frame set.Set[*soltype.LifetimeVar]
+	vars  set.Set[*soltype.TypeVarType]
+}
+
+func (v *returnedClosureOwner) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	switch t := t.(type) {
+	case *soltype.TypeVarType:
+		if !v.vars.Contains(t) {
+			v.vars.Add(t)
+			for _, b := range t.LowerBounds {
+				b.Accept(v, pol)
+			}
+		}
+	case *soltype.FuncType:
+		if lt, isVar := t.Lt.(*soltype.LifetimeVar); isVar && v.frame.Contains(lt) {
+			t.Lt = nil
+		}
+		return soltype.EnterResult{SkipChildren: true}
+	}
+	return soltype.EnterResult{}
+}
+
+func (*returnedClosureOwner) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+
+// capturesByBorrow reports whether a closure reads a captured `val` binding of type t through a
+// borrow. A value type such as a primitive or a promise is copied into the closure instead. A
+// function is a value type too, and a retention lifetime on its type decides whether it holds a
+// borrow.
+func (c *checker) capturesByBorrow(t soltype.Type) bool {
+	switch t := t.(type) {
+	case nil, *soltype.FuncType:
+		return false
+	case *soltype.ClassType:
+		return t.Name != c.ctx.promiseClass
+	}
+	return !isValueType(t)
 }
 
 // movedCaptures maps the name of each local of the enclosing body that the current closure

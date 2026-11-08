@@ -2522,8 +2522,8 @@ func (e *LifetimeRelationUndeclaredError) Message() string {
 		e.Sub, e.Super, e.Sub, e.Super)
 }
 
-// CallOnlyFuncKeptError fires when a body keeps a function parameter that has no retention
-// lifetime past the call. Such a parameter, as `g` in `fn f(g: fn () -> undefined)`, is only
+// CallOnlyFuncKeptError fires when a body keeps a function parameter written `&fn` with an elided
+// lifetime past the call. Such a parameter, as `g` in `fn f(g: &fn () -> undefined)`, is only
 // called during the call, so a caller lends it a closure's captures for that call alone.
 // `onClick(g)` against `declare fn onClick(handler: &'static fn () -> undefined)` keeps it for
 // 'static. Name is the parameter's name, and Written is the type the parameter is written with.
@@ -2555,18 +2555,50 @@ func (e *CallOnlyFuncKeptError) Related() []ast.Span {
 	return nil
 }
 func (e *CallOnlyFuncKeptError) Message() string {
-	written := soltype.Print(e.Written)
+	plain := plainFuncText(e.Written)
 	const callOnly = "only allows calling it during the call"
 	if e.Static {
-		return fmt.Sprintf("'%s' is stored where it lives for the whole program, but its type `%s` %s; write `&'static %s`",
-			e.Name, written, callOnly, written)
+		return fmt.Sprintf("'%s' is stored where it lives for the whole program, but its type `&%s` %s; write `&'static %s`",
+			e.Name, plain, callOnly, plain)
 	}
 	if e.Deferred != "" {
-		return fmt.Sprintf("'%s' is read by %s, which can run after the call returns, but its type `%s` %s; write `&%s` to keep it",
-			e.Name, e.Deferred, written, callOnly, written)
+		return fmt.Sprintf("'%s' is read by %s, which can run after the call returns, but its type `&%s` %s; write `&'static %s` to keep it",
+			e.Name, e.Deferred, plain, callOnly, plain)
 	}
-	return fmt.Sprintf("'%s' is kept after the call returns, but its type `%s` %s; write `&%s` to keep it",
-		e.Name, written, callOnly, written)
+	return fmt.Sprintf("'%s' is kept after the call returns, but its type `&%s` %s; write `&'static %s` to keep it",
+		e.Name, plain, callOnly, plain)
+}
+
+// FuncBorrowEscapeError fires when a function that may hold borrows flows into a slot written
+// as a plain `fn`, which holds only functions with no borrows. Sub is the source, a FuncType
+// whose Lt is set. Super is the destination, a FuncType whose Lt is nil. It is the function
+// form of BorrowEscapeError, so it is reported whatever Sub's lifetime is.
+type FuncBorrowEscapeError struct {
+	Sub   *soltype.FuncType
+	Super *soltype.FuncType
+	prov  NodeResolver
+	site  ast.Node
+}
+
+func (*FuncBorrowEscapeError) isSolverError() {}
+func (e *FuncBorrowEscapeError) Span() ast.Span {
+	// The source is blamed. A source with no node of its own, such as a binding's
+	// instantiated type, falls back to the site rather than to the destination.
+	return spanOfFirst(e.prov, e.site, e.Sub)
+}
+func (e *FuncBorrowEscapeError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
+func (e *FuncBorrowEscapeError) Message() string {
+	plain := plainFuncText(e.Super)
+	return fmt.Sprintf("this function may hold borrows, so it cannot be used as `%s`, which holds none; write `&%s` to accept it",
+		plain, plain)
+}
+
+// plainFuncText renders ft without its retention lifetime, as in `fn () -> undefined` for
+// `&'a fn () -> undefined`.
+func plainFuncText(ft *soltype.FuncType) string {
+	plain := *ft
+	plain.Lt = nil
+	return soltype.Print(&plain)
 }
 
 // LifetimeBinderNotSatisfiedError fires when a value is checked against a signature that

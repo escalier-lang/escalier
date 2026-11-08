@@ -14,7 +14,8 @@ import (
 func TestASuperLifetimeBinderIsHeldRigid(t *testing.T) {
 	t.Parallel()
 
-	const cb = "type Cb = fn <'a>(q: &'a {x: number}) -> &'a {x: number}\n"
+	// Several closures below capture a borrow, so Cb is written `&fn` to accept them.
+	const cb = "type Cb = &fn <'a>(q: &'a {x: number}) -> &'a {x: number}\n"
 	tests := []struct {
 		name string
 		src  string

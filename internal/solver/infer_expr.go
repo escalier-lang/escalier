@@ -461,6 +461,7 @@ func (c *checker) resolveIdentPath(scope *Scope, lvl int, e *ast.IdentExpr, objP
 		t := c.bindingValue(lvl, b)
 		c.noteOuterRead(e, t)
 		c.noteCallOnlyRead(e, t)
+		c.noteFrameClosureRead(b, t)
 		// A bare `self` that leaves the body, as in `return self` or `f(self)`, is an
 		// instance of the class. The structural view shares the class body's own element
 		// pointers, so letting it escape into a member's inferred signature would make the
@@ -519,7 +520,7 @@ func astKind(n any) string {
 // render time.
 func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.Type {
 	t := c.inferFunc(scope, lvl, e.FuncSig, e.Body, e, true, false)
-	c.setRetentionFromCaptures(scope, lvl, e, t)
+	c.setClosureRetention(scope, lvl, e, t)
 	c.recordType(e, t)
 	// The closure reads or writes what it captures from the body it is written in.
 	c.recordClosureCaptures(scope, e)
@@ -615,7 +616,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// defaults holds each parameter default until the body's context is open, so a raise
 	// or a use inside one belongs to this function.
 	var defaults []paramDefaultSite
-	// callOnlyParams holds the parameters typed as a function with no retention lifetime.
+	// callOnlyParams holds the parameters written `&fn` with an elided lifetime.
 	var callOnlyParams []callOnlyParam
 	// A lifetime the enclosing body minted can sit at the level of this function's parameters,
 	// so the counter tells those lifetimes apart. outerMark is -1 for a function with no
@@ -690,16 +691,16 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			if isIdent && ip.Mutable && !mutable {
 				c.info.inertMut.Add(ip)
 			}
-			// A function parameter with no retention lifetime is only called during the call,
-			// so the body sees it at a fresh lifetime that ends with the call. The signature
-			// keeps the plain type, which is what a caller reads.
+			// A parameter written `&fn` with an elided lifetime is only called during the call,
+			// unless the signature ties the lifetime to the result. The body's binding holds a
+			// copy of the written type that shares its lifetime, so noteCallOnlyRead can tell a
+			// read of the binding from another value of the same type.
 			bodyT := pt
-			if ft, isFn := pt.(*soltype.FuncType); isFn && written && body != nil && ft.Lt == nil {
+			if ft, isFn := pt.(*soltype.FuncType); isFn && body != nil && elidedFuncBorrow(p.TypeAnn) && ft.Lt != nil {
 				callOnly := *ft
-				callOnly.Lt = c.ctx.freshLifetime(lvl)
 				bodyT = &callOnly
 				c.watchCallOnlyReads(&callOnly)
-				callOnlyParams = append(callOnlyParams, callOnlyParam{name: name, node: pat, written: ft, ft: &callOnly, outerMark: outerMark})
+				callOnlyParams = append(callOnlyParams, callOnlyParam{name: name, node: pat, param: i, written: ft, ft: &callOnly, outerMark: outerMark})
 			}
 			// A parameter binding never generalizes — its var is fixed for the body — so
 			// it is a MonoScheme; instantiate returns bodyT unchanged at every use.
@@ -841,11 +842,6 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	retAnnOK := false
 	if sig.Return != nil && !sig.Async && !sig.Gen {
 		retAnnT, retAnnOK = c.resolveTypeAnn(declScope, sig.Return, lvl)
-		// A caller can keep the function a body returns past the call, so a function type in
-		// the return annotation takes a lifetime of the signature as its retention.
-		if retAnnOK && hasBody {
-			retAnnT = c.withRetentionLifetimes(retAnnT, func() soltype.Lifetime { return c.ctx.freshLifetime(lvl) })
-		}
 	}
 	// The body has to work for every instantiation its type parameters' bounds allow, so
 	// those parameters are rigid from the walk of the body on. They stay rigid after it,
@@ -941,6 +937,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// commitOwnedReturns decides which returns are owned.
 		c.shareOutlivingBorrowLifetimes()
 		c.commitOwnedReturns()
+		c.ownReturnedClosures()
 		// A body that moves an unannotated parameter takes ownership of the caller's value,
 		// so each call moves the argument it passes there. It reads the flows that wait on
 		// the parameters, so it runs before settleParams settles them.
@@ -2338,7 +2335,9 @@ func (c *checker) applyCallShape(lvl int, e *ast.CallExpr, callee soltype.Type, 
 	// `Throws` slot, callThrows. A non-throwing `never` records nothing. callThrows is raised
 	// into this body's sink below.
 	callThrows := c.freshThrowsSink(lvl)
-	callShape := &soltype.FuncType{Params: callShapeParams, Ret: res, Throws: callThrows}
+	// A call only runs the callee, so the shape carries a retention lifetime of its own. A
+	// callee that may hold borrows then fits the shape, as a `&fn` parameter accepts it.
+	callShape := &soltype.FuncType{Params: callShapeParams, Ret: res, Throws: callThrows, Lt: c.ctx.freshLifetime(lvl)}
 	// A resolved callee that declares nothing raises nothing, so it leaves the enclosing
 	// clause unused. Any other callee counts as raising, since its throws may still be an
 	// unsolved variable at this point. resolveOverload reaches the same rule through the same

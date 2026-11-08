@@ -3509,14 +3509,14 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 
 	const coll = `
 		declare class Coll<T> {
-			each(&self, cb: fn (v: T, arr: &Self) -> unknown) -> unknown,
+			each(&self, cb: &fn (v: T, arr: &Self) -> unknown) -> unknown,
 			push(&mut self, v: T) -> number,
 			readonly length: number,
 		}
 	`
 	const named = `
 		declare class Named<T> {
-			each(&self, cb: fn (v: T, arr: &Named<T>) -> unknown) -> unknown,
+			each(&self, cb: &fn (v: T, arr: &Named<T>) -> unknown) -> unknown,
 			push(&mut self, v: T) -> number,
 			readonly length: number,
 		}
@@ -3565,7 +3565,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 				class Box { v: number }
 				class C {
 					readonly inner: Box,
-					each(&self, cb: fn (c: &C) -> undefined) -> undefined { return undefined },
+					each(&self, cb: &fn (c: &C) -> undefined) -> undefined { return undefined },
 				}
 				fn f(c: &C, keep: &mut Array<Box>) {
 					c.each(fn (x) {
@@ -3583,7 +3583,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 				class C {
 					readonly inner: Box,
 					readonly n: number,
-					each(&self, cb: fn (c: &C) -> undefined) -> undefined { return undefined },
+					each(&self, cb: &fn (c: &C) -> undefined) -> undefined { return undefined },
 				}
 				fn f(c: &C) -> number {
 					var total = 0
@@ -3600,7 +3600,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 			src: `
 				class A { readonly n: number }
 				class B { readonly n: number }
-				declare fn each(cb: fn (x: &(A | B)) -> unknown) -> unknown
+				declare fn each(cb: &fn (x: &(A | B)) -> unknown) -> unknown
 				fn f() { each(fn (x) { return x.n }) }
 			`,
 		},
@@ -3610,7 +3610,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 				class Box { v: number }
 				class C {
 					readonly inner: Box | null,
-					each(&self, cb: fn (c: &C) -> undefined) -> undefined { return undefined },
+					each(&self, cb: &fn (c: &C) -> undefined) -> undefined { return undefined },
 				}
 				fn f(c: &C, keep: &mut Array<Box | null>) {
 					c.each(fn (x) {
@@ -3628,7 +3628,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 			src: `
 				class Box { v: number }
 				class C { readonly inner: Box }
-				declare fn each<T>(v: &T, cb: fn (x: &T) -> undefined) -> undefined
+				declare fn each<T>(v: &T, cb: &fn (x: &T) -> undefined) -> undefined
 				fn f(c: &C, keep: &mut Array<Box>) {
 					each(c, fn (x) {
 						keep.push(x.inner)
@@ -3643,7 +3643,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 			src: `
 				class Box { v: number }
 				class C { readonly inner: Box }
-				declare fn each<T>(v: &T, cb: fn (x: &T) -> undefined) -> undefined
+				declare fn each<T>(v: &T, cb: &fn (x: &T) -> undefined) -> undefined
 				fn f(c: &C) -> number {
 					var total = 0
 					each(c, fn (x) {
@@ -3661,7 +3661,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 			src: `
 				class Box { v: number }
 				class C { readonly inner: Box }
-				declare fn each<T>(cb: fn (x: &T) -> undefined, v: &T) -> undefined
+				declare fn each<T>(cb: &fn (x: &T) -> undefined, v: &T) -> undefined
 				fn f(c: &C) -> number {
 					var total = 0
 					each(fn (x) {
@@ -3677,7 +3677,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 			src: `
 				class Box { v: number }
 				class C { readonly inner: Box }
-				declare fn each<T>(cb: fn (x: &T) -> undefined, v: &T) -> undefined
+				declare fn each<T>(cb: &fn (x: &T) -> undefined, v: &T) -> undefined
 				fn f(c: &C, keep: &mut Array<Box>) {
 					each(fn (x) {
 						keep.push(x.inner)
@@ -3694,7 +3694,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 			src: `
 				class A { readonly n: number }
 				class B { readonly n: string }
-				declare fn each<T>(a: &T, cb: fn (x: &T) -> undefined, b: &T) -> undefined
+				declare fn each<T>(a: &T, cb: &fn (x: &T) -> undefined, b: &T) -> undefined
 				fn f(a: &A, b: &B) -> number {
 					var total = 0
 					each(a, fn (x) {
@@ -3711,7 +3711,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 			name: "a read through a borrowed variable whose lower bound is a borrow",
 			src: `
 				class C { readonly n: number }
-				declare fn each<T>(v: T, cb: fn (x: &T) -> undefined) -> undefined
+				declare fn each<T>(v: T, cb: &fn (x: &T) -> undefined) -> undefined
 				fn f(c: &C) {
 					each(c, fn (x) {
 						val b: boolean = x.n
@@ -3725,7 +3725,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 			name: "a read through a borrowed variable whose lower bound may be null",
 			src: `
 				class C { readonly n: number }
-				declare fn each<T>(v: &T, cb: fn (x: &T) -> undefined) -> undefined
+				declare fn each<T>(v: &T, cb: &fn (x: &T) -> undefined) -> undefined
 				fn f(c: &(C | null)) {
 					each(c, fn (x) {
 						val b: number = x.n
@@ -3740,7 +3740,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 			name: "a callback reads a missing field through a borrowed variable",
 			src: `
 				class C { readonly n: number }
-				declare fn each<T>(v: &T, cb: fn (x: &T) -> undefined) -> undefined
+				declare fn each<T>(v: &T, cb: &fn (x: &T) -> undefined) -> undefined
 				fn f(c: &C) {
 					each(c, fn (x) {
 						val m = x.missing
@@ -3756,7 +3756,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 			src: `
 				class Box { v: number }
 				class C<'a> { readonly m: &'a mut Box }
-				declare fn each<'a>(c: &C<'a>, cb: fn (x: &C<'a>) -> undefined) -> undefined
+				declare fn each<'a>(c: &C<'a>, cb: &fn (x: &C<'a>) -> undefined) -> undefined
 				fn f(c: &C<'static>) {
 					each(c, fn (x) {
 						val p = x.m

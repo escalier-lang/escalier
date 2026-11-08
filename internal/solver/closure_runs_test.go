@@ -45,7 +45,7 @@ func TestClosureRunsFollowHolders(t *testing.T) {
 			src: `
 				fn go(c: boolean) -> number {
 					val mut p = {x: 1}
-					var g = fn () {}
+					var g: &fn () -> undefined = fn () {}
 					if c {
 						g = fn () { p.x = 2 }
 					}
@@ -71,7 +71,7 @@ func TestClosureRunsFollowHolders(t *testing.T) {
 		},
 		"ClosureInAFieldPassedToACall": {
 			src: `
-				declare fn run(o: {cb: fn () -> undefined}) -> undefined
+				declare fn run(o: {cb: &fn () -> undefined}) -> undefined
 				fn go() -> number {
 					val mut p = {x: 1}
 					val f = fn () { p.x = 2 }
@@ -196,7 +196,7 @@ func TestClosureRunsAtPlaces(t *testing.T) {
 		},
 		"MemberArgumentWritesCaptureBesideLiveBorrow": {
 			src: `
-				declare fn run(cb: fn () -> undefined) -> undefined
+				declare fn run(cb: &fn () -> undefined) -> undefined
 				fn go() -> number {
 					val mut p = {x: 1}
 					val f = fn () { p.x = 2 }
@@ -210,7 +210,7 @@ func TestClosureRunsAtPlaces(t *testing.T) {
 		},
 		"MemberArgumentPassedBeforeTheBorrowOk": {
 			src: `
-				declare fn run(cb: fn () -> undefined) -> undefined
+				declare fn run(cb: &fn () -> undefined) -> undefined
 				fn go() -> number {
 					val mut p = {x: 1}
 					val f = fn () { p.x = 2 }
@@ -280,7 +280,7 @@ func TestClosureRunsAtPlaces(t *testing.T) {
 		"MethodCalleeAfterADynamicIndexOk": {
 			src: `
 				class Box {
-					cb: fn () -> undefined,
+					cb: &fn () -> undefined,
 					size(&self) -> number { return 0 },
 				}
 				fn go(i: number) -> number {
@@ -299,7 +299,7 @@ func TestClosureRunsAtPlaces(t *testing.T) {
 		"FieldCalleeAfterADynamicIndex": {
 			src: `
 				class Box {
-					cb: fn () -> undefined,
+					cb: &fn () -> undefined,
 					size(&self) -> number { return 0 },
 				}
 				fn go(i: number) -> number {
@@ -335,7 +335,7 @@ func TestClosureRunsAtPlaces(t *testing.T) {
 				fn go() -> number {
 					val mut p = {x: 1}
 					val f = fn () { p.x = 2 }
-					val mut o = {cb: fn () {}}
+					val mut o: {cb: &fn () -> undefined} = {cb: fn () {}}
 					o.cb = f
 					val r = &p
 					o.cb()
@@ -347,7 +347,7 @@ func TestClosureRunsAtPlaces(t *testing.T) {
 		"InstanceFieldCalleeWritesCaptureBesideLiveBorrow": {
 			src: `
 				class Box {
-					cb: fn () -> undefined,
+					cb: &fn () -> undefined,
 					size(&self) -> number { return 0 },
 				}
 				fn go() -> number {
@@ -366,7 +366,7 @@ func TestClosureRunsAtPlaces(t *testing.T) {
 		"InstanceMethodCalleeBesideAFieldHoldingAClosureOk": {
 			src: `
 				class Box {
-					cb: fn () -> undefined,
+					cb: &fn () -> undefined,
 					size(&self) -> number { return 0 },
 				}
 				fn go() -> number {
@@ -386,7 +386,7 @@ func TestClosureRunsAtPlaces(t *testing.T) {
 		"MethodCalleeOfAViewHoldingAClosureOk": {
 			src: `
 				class Box {
-					cb: fn () -> undefined,
+					cb: &fn () -> undefined,
 					size(&self) -> number { return 0 },
 				}
 				declare fn view<'a>(b: &'a mut Box) -> &'a mut Box
@@ -408,7 +408,7 @@ func TestClosureRunsAtPlaces(t *testing.T) {
 		"FieldCalleeOfAViewHoldingAClosure": {
 			src: `
 				class Box {
-					cb: fn () -> undefined,
+					cb: &fn () -> undefined,
 					size(&self) -> number { return 0 },
 				}
 				declare fn view<'a>(b: &'a mut Box) -> &'a mut Box
@@ -430,8 +430,8 @@ func TestClosureRunsAtPlaces(t *testing.T) {
 		"FieldCalleeOfAViewMayRunASiblingsClosure": {
 			src: `
 				class Box {
-					cb: fn () -> undefined,
-					other: fn () -> undefined,
+					cb: &fn () -> undefined,
+					other: &fn () -> undefined,
 				}
 				declare fn view<'a>(b: &'a mut Box) -> &'a mut Box
 				fn go() -> number {

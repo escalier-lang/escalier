@@ -1405,13 +1405,18 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			if quantified(sub) {
 				return c.constrain(c.instantiateFuncBinder(sub, binderLevel(sub)), sup, seen, mutCtx)
 			}
-			// A retention lifetime is covariant, like a borrow's. A function kept for the
-			// destination's lifetime has to stay valid that long, so the source's lifetime must
-			// outlive it. A source with no lifetime is a function value whose captures decide how
-			// long it stays valid, so it fills any slot. A destination with no lifetime only calls
-			// the function during the call, so it accepts any source.
-			if sub.Lt != nil && sup.Lt != nil {
+			// A retention lifetime is covariant, like a borrow's. A function whose borrows live
+			// for the destination's lifetime has to stay valid that long, so the source's
+			// lifetime must outlive it. A source with no lifetime holds no borrow, so it fills
+			// any slot. A destination with no lifetime holds only functions with no borrows, so
+			// a source with a lifetime escapes into it, the way a borrow escapes into an owned
+			// slot.
+			var funcErrs []SolverError
+			switch {
+			case sub.Lt != nil && sup.Lt != nil:
 				c.constrainLt(sub.Lt, sup.Lt)
+			case sub.Lt != nil:
+				funcErrs = append(funcErrs, &FuncBorrowEscapeError{Sub: sub, Super: sup})
 			}
 			// A tuple-typed rest param on either side expands to one positional param per element,
 			// so a written rest param works as a value-level type and not only as a pattern. The
@@ -1431,7 +1436,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 					absorbAt, absorbElem = k, elem
 				}
 			}
-			var errs []SolverError
+			errs := funcErrs
 			if absorbAt >= 0 {
 				if absorbElem != nil {
 					for _, p := range subX.Params[absorbAt:] {

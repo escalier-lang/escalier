@@ -2474,7 +2474,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "WriteAfterStaticImmutableBorrow",
 			site:   "ClosureCapture",
 			src: `
-				var sink: fn () -> number = fn () { return 0 }
+				var sink: &'static fn () -> number = fn () { return 0 }
 				fn g() {
 					val mut p = {x: 1}
 					sink = fn () { return p.x }
@@ -2490,7 +2490,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "ImmutableBorrowAfterStaticMutableBorrow",
 			site:   "ClosureCapture",
 			src: `
-				var sink: fn () -> undefined = fn () {}
+				var sink: &'static fn () -> undefined = fn () {}
 				declare fn readIt(a: &{x: number}) -> undefined
 				fn g() {
 					val mut p = {x: 1}

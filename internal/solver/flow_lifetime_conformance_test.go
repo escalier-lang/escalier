@@ -181,7 +181,7 @@ func TestFlowLifetimeRules(t *testing.T) {
 		{
 			name: "E4/Stored",
 			src: `
-				var sink: fn () -> undefined = fn () {}
+				var sink: &'static fn () -> undefined = fn () {}
 				declare fn readIt(a: &{x: number}) -> undefined
 
 				fn stored() {
@@ -465,7 +465,7 @@ func TestFlowLifetimeRetainedCallbackAccepted(t *testing.T) {
 		{
 			name: "D10/CalledOnlyDuringCall",
 			src: `
-				declare fn forEachItem(f: fn () -> undefined) -> undefined
+				declare fn forEachItem(f: &fn () -> undefined) -> undefined
 				declare fn render(view: &{n: number}) -> undefined
 
 				fn setup() {

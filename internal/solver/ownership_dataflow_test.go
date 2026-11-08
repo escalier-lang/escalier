@@ -556,7 +556,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			// between calls.
 			name: "E3MoveAfterStoringAReadingClosureIntoAGlobal",
 			src: `
-				var sink: fn () -> number = fn () { return 0 }
+				var sink: &'static fn () -> number = fn () { return 0 }
 				declare fn take(x: {x: number}) -> undefined
 				fn go() {
 					val p = {x: 1}
@@ -596,7 +596,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			src: `
 				fn go() {
 					val p = {x: 1}
-					var f: fn () -> number = fn () { return p.x }
+					var f: &fn () -> number = fn () { return p.x }
 					f = fn () { return 0 }
 					val a = &p
 					return [f, a]
@@ -610,7 +610,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			src: `
 				fn go(c: boolean) {
 					val p = {x: 1}
-					var f: fn () -> number = fn () { return p.x }
+					var f: &fn () -> number = fn () { return p.x }
 					if c {
 						f = fn () { return 0 }
 						return [f, p]
@@ -625,7 +625,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			src: `
 				fn go() {
 					val p = {x: 1}
-					var f: fn () -> number = fn () { return p.x }
+					var f: &fn () -> number = fn () { return p.x }
 					val g = f
 					f = fn () { return 0 }
 					val a = &p
@@ -640,7 +640,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			name: "E3MoveAfterStoringAClosureThatCapturesABorrow",
 			src: `
 				declare fn take(p: {x: number}) -> number
-				var sink: fn () -> number = fn () { return 0 }
+				var sink: &'static fn () -> number = fn () { return 0 }
 				fn go() {
 					val p = {x: 1}
 					val r = &p
@@ -1832,7 +1832,7 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 			// The closure's write to x is live for the call that receives it, beside a.
 			name: "ClosureArgumentBesideAnImmutableBorrow",
 			src: `
-				declare fn run(a: &{v: number}, f: fn () -> undefined) -> undefined
+				declare fn run(a: &{v: number}, f: &fn () -> undefined) -> undefined
 				fn go() {
 					val mut x = {v: 1}
 					val a = &x
@@ -2328,7 +2328,7 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 			// reports the move.
 			name: "E3MoveAfterStoringAndReturningAClosure",
 			src: `
-				var sink: fn () -> number = fn () { return 0 }
+				var sink: &'static fn () -> number = fn () { return 0 }
 				declare fn take(x: {x: number}) -> undefined
 				fn go(c: boolean) {
 					val p = {x: 1}

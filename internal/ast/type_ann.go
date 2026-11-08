@@ -869,7 +869,7 @@ func (t *MutableTypeAnn) Accept(v Visitor) {
 //
 // The same node carries a function parameter's retention lifetime, as in
 // `&'a fn () -> undefined`. That form does not borrow the function. The checker
-// lowers it to a function type whose lifetime bounds how long a callee keeps it.
+// lowers it to a function type whose lifetime bounds the borrows the function holds.
 type RefTypeAnn struct {
 	Mut      bool
 	Lifetime LifetimeAnnNode // optional

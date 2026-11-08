@@ -132,7 +132,7 @@ type checker struct {
 	// same reason. The map is allocated lazily by namedLifetime on first use.
 	namedLifetimes map[string]*soltype.LifetimeVar
 
-	// pendingCallOnly holds a check per function parameter that has no retention lifetime, for
+	// pendingCallOnly holds a check per parameter written `&fn` with an elided lifetime, for
 	// checkCallOnlyParams to read once the enclosing component has solved.
 	pendingCallOnly []callOnlyCheck
 	// deferredBodies holds, for each `async` or `gen` body being walked, the phrase
@@ -490,6 +490,10 @@ type funcCtx struct {
 	async   bool
 	node    ast.Node
 	returns []soltype.Type
+	// frameClosures holds the retention lifetime of each closure written in this body whose
+	// every borrow is of a local of this body. setClosureRetention fills it, and
+	// ownReturnedClosures reads it.
+	frameClosures set.Set[*soltype.LifetimeVar]
 	// returnExprs holds each ReturnStmt's operand expression in the same source order as
 	// returns, with a nil entry for a bare `return`. inferFunc reads it to decide the
 	// immutable→mutable upgrade at a `mut` return annotation. The upgrade fires only when
@@ -1035,6 +1039,8 @@ func (c *checker) blameConstraintErrors(n ast.Node, errs []SolverError) {
 		case *MutabilityMismatchError:
 			err.prov, err.site = c.prov, n
 		case *BorrowEscapeError:
+			err.prov, err.site = c.prov, n
+		case *FuncBorrowEscapeError:
 			err.prov, err.site = c.prov, n
 		case *ClassIntoExactObjectError:
 			err.prov, err.site = c.prov, n

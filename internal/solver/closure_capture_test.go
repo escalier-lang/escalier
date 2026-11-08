@@ -218,7 +218,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 
-				declare fn call(f: fn () -> undefined) -> undefined
+				declare fn call(f: &fn () -> undefined) -> undefined
 				fn g() {
 					val mut x = {v: 1}
 					val a = &x
@@ -279,7 +279,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 		// A closure passed straight to a call holds its loans for the call's statement.
 		"ClosureArgumentHoldsItsLoanForTheCall": {
 			src: `
-				declare fn run(a: &{v: number}, f: fn () -> undefined) -> undefined
+				declare fn run(a: &{v: number}, f: &fn () -> undefined) -> undefined
 				fn g() {
 					val mut x = {v: 1}
 					val a = &x
@@ -293,7 +293,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 
-				declare fn run(f: fn () -> undefined) -> undefined
+				declare fn run(f: &fn () -> undefined) -> undefined
 				fn g() {
 					val mut x = {v: 1}
 					run(fn () { x.v = 5 })

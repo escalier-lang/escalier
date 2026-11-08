@@ -1574,7 +1574,7 @@ func (c *checker) normalizeNestedBorrow(ta *ast.RefTypeAnn, outerLt soltype.Life
 
 // retainedFuncType lowers `&'a fn (…) -> R` to the function type fn with its retention
 // lifetime Lt set to lt. The result is a FuncType, not a RefType, since a function is a
-// value type that is copied, and the `&'a` only bounds how long a callee keeps its copy.
+// value type that is copied, and the `&'a` only bounds the borrows the function holds.
 // Two forms are reported as unsupported features:
 //
 //   - `&mut fn`, since nothing can write through a function.
