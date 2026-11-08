@@ -199,6 +199,9 @@ func (c *checker) checkCallOnlyParams() {
 		}
 		outside := false
 		static := false
+		// keeper names a lifetime of this signature that another parameter holds and the
+		// parameter must outlive, which the parameter could take instead of 'static.
+		keeper := ""
 		for _, kept := range outlivedBy(lt) {
 			switch kept := kept.(type) {
 			case *soltype.StaticLifetime:
@@ -212,13 +215,20 @@ func (c *checker) checkCallOnlyParams() {
 				if _, inResult := lts.result[kept]; inResult {
 					continue
 				}
-				outside = outside || lts.inOtherParam(kept, p.param) || kept.Level < lt.Level || kept.ID < p.outerMark
+				inOther := lts.inOtherParam(kept, p.param)
+				if name, named := c.signatureLts[kept]; named && inOther && keeper == "" {
+					keeper = name
+				}
+				outside = outside || inOther || kept.Level < lt.Level || kept.ID < p.outerMark
 			}
 		}
 		if static || outside {
 			// The lifetime bounds do not record where the body added them, so the error
 			// blames the parameter.
-			c.report(&CallOnlyFuncKeptError{Name: p.name, Written: p.ann, Static: static, Param: p.node})
+			if static {
+				keeper = ""
+			}
+			c.report(&CallOnlyFuncKeptError{Name: p.name, Written: p.ann, Static: static, Keeper: keeper, Param: p.node})
 		} else if read, isRead := c.callOnlyDeferredRead[p.ft]; isRead {
 			c.report(&CallOnlyFuncKeptError{Name: p.name, Written: p.ann, Deferred: read.body, Param: p.node, Read: read.node})
 		}

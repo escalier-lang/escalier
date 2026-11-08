@@ -131,7 +131,7 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 	var undecided []*soltype.TypeVarType
 	for _, capture := range c.closureCaptures(closure) {
 		b, found := scope.GetValue(capture.Name)
-		if !found || len(b.Schemes) != 1 || b.ModuleLevel || b.VarID <= 0 {
+		if !found || len(b.Schemes) != 1 || b.ModuleLevel {
 			continue
 		}
 		// The scheme's own type keeps an unsolved variable as a variable, where the binding's
@@ -605,15 +605,33 @@ type heldFuncEscape struct {
 // settleTentativeFuncEscapes reports each held FuncKeptForStaticError unless every closure its
 // source holds a borrow through has type variables that all settled to value types. Such a
 // closure copies what it captures, so it holds no borrow. An error that repeats the message
-// and span of one already reported is dropped. It must run once the enclosing component has
-// solved, since a use later in the body can settle a variable.
+// and span of one already reported is dropped. It also clears keeperOf. It must run once the
+// enclosing component has solved, since a use later in the body can settle a variable.
 func (c *checker) settleTentativeFuncEscapes() {
 	held := c.heldFuncEscapes
 	c.heldFuncEscapes = nil
+	// Every FuncKeptForStaticError of the component named its keeper when it was reported.
+	c.keeperOf = nil
+	if len(held) == 0 {
+		return
+	}
+	type diagnostic struct {
+		span ast.Span
+		msg  string
+	}
+	reported := set.NewSet[diagnostic]()
+	for _, e := range c.errs {
+		reported.Add(diagnostic{e.Span(), e.Message()})
+	}
 	for _, h := range held {
-		if c.closuresSettled(h.closures) || c.alreadyReported(h.err) {
+		if c.closuresSettled(h.closures) {
 			continue
 		}
+		d := diagnostic{h.err.Span(), h.err.Message()}
+		if reported.Contains(d) {
+			continue
+		}
+		reported.Add(d)
 		c.errs = append(c.errs, h.err)
 	}
 }
@@ -623,23 +641,15 @@ func (c *checker) settleTentativeFuncEscapes() {
 func (c *checker) closuresSettled(closures []*soltype.LifetimeVar) bool {
 	for _, lt := range closures {
 		for _, v := range c.tentativeClosures[lt] {
-			if !settlesToValueType(v) {
+			// A variable no caller fills, as `val n = count()` holds, holds only the values
+			// that flow into it, so its lower bounds decide it too.
+			heldValues := !c.openVars.Contains(v) && c.holdsOnlyValueTypes(v, set.NewSet[*soltype.TypeVarType]())
+			if !settlesToValueType(v) && !heldValues {
 				return false
 			}
 		}
 	}
 	return true
-}
-
-// alreadyReported reports whether a diagnostic with e's message and span is already reported.
-func (c *checker) alreadyReported(e SolverError) bool {
-	span, msg := e.Span(), e.Message()
-	for _, reported := range c.errs {
-		if reported.Span() == span && reported.Message() == msg {
-			return true
-		}
-	}
-	return false
 }
 
 // funcLtSourceSet is what funcLtSources found a function lifetime to come from.
@@ -683,7 +693,7 @@ func (c *checker) funcLtSources(lt soltype.Lifetime) funcLtSourceSet {
 			out.closures = append(out.closures, v)
 			continue
 		}
-		if c.callOnlyLts.Contains(v) || c.signatureLts.Contains(v) {
+		if c.callOnlyLts.Contains(v) || c.isSignatureLt(v) {
 			continue
 		}
 		next := slices.Clone(v.LowerBounds)

@@ -2527,16 +2527,18 @@ func (e *LifetimeRelationUndeclaredError) Message() string {
 // no lifetime past the call. Such a parameter, as `g` in `fn f(g: fn () -> undefined)`, is only
 // called during the call, so a caller lends it a closure's captures for that call alone.
 // `onClick(g)` against `declare fn onClick(handler: 'static fn () -> undefined)` keeps it for
-// 'static. Name is the parameter's name, and Written is the parameter's annotation.
-// Static says the body keeps it for 'static. Deferred names the kind of function whose body
-// reads the parameter and can run after the call returns, as in "a generator", and is ""
-// otherwise. Param is the parameter's pattern. Read is the first read of the parameter in that
+// 'static. Name is the parameter's name, and Written is the parameter's annotation. Static says
+// the body keeps it for 'static. Keeper is the name of a lifetime of the signature, as "'a",
+// that the body keeps the parameter for when it does not keep it for 'static, and "" when the
+// signature names none. Deferred names the kind of function whose body reads the parameter and
+// can run after the call returns, as in "a generator", and is "" otherwise. Param is the parameter's pattern. Read is the first read of the parameter in that
 // body when Deferred is set, and nil otherwise. The error blames Read when it is set and Param
 // otherwise, and relates Param when it blames Read.
 type CallOnlyFuncKeptError struct {
 	Name     string
 	Written  *ast.FuncTypeAnn
 	Static   bool
+	Keeper   string
 	Deferred string
 	Param    ast.Node
 	Read     ast.Node
@@ -2566,8 +2568,12 @@ func (e *CallOnlyFuncKeptError) Message() string {
 		kept = "it is kept after the call returns"
 	}
 	written, _ := printer.Print(e.Written, printer.DefaultOptions())
-	return fmt.Sprintf("'%s' may borrow values that live only during the call, but %s; write `%s: 'static %s` to keep it",
-		e.Name, kept, e.Name, written)
+	lifetime := "'static"
+	if e.Keeper != "" {
+		lifetime = e.Keeper
+	}
+	return fmt.Sprintf("'%s' may borrow values that live only during the call, but %s; write `%s: %s %s` to keep it",
+		e.Name, kept, e.Name, lifetime, written)
 }
 
 // FuncKeptForStaticError fires when a function that may hold a borrow shorter than 'static flows

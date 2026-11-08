@@ -2,7 +2,6 @@ package solver
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -14,7 +13,8 @@ type funcElision int
 const (
 	// elideStatic gives the function type no lifetime, so it holds no borrow that ends before
 	// 'static. It applies outside function signatures and bodies: in a module-level binding's
-	// annotation, a class field, a type alias, and the fields and elements inside those.
+	// annotation, a class field, an interface, a type alias, and the fields and elements inside
+	// those.
 	elideStatic funcElision = iota
 	// elideFresh gives the function type a fresh lifetime, the way an elided `&` gets one. It
 	// applies in a parameter, in a return type whose signature has an input lifetime, and in
@@ -53,9 +53,9 @@ func (c *checker) returnElision(inputMark int, lifetimeParams []*ast.LifetimePar
 	return elideStatic
 }
 
-// noteSignatureLifetimes adds the variable each of params names in the current named-lifetime
-// scope to signatureLts. params is the `<'a>` list of a function with a body, whose lifetimes
-// the rigid-lifetime checks hold to the bounds the list declares.
+// noteSignatureLifetimes maps the variable each of params names in the current named-lifetime
+// scope to its name in signatureLts. params is the `<'a>` list of a function with a body, whose
+// lifetimes the rigid-lifetime checks hold to the bounds the list declares.
 func (c *checker) noteSignatureLifetimes(params []*ast.LifetimeParam) {
 	for _, p := range params {
 		lt, found := c.namedLifetimes[p.Name]
@@ -63,10 +63,16 @@ func (c *checker) noteSignatureLifetimes(params []*ast.LifetimeParam) {
 			continue
 		}
 		if c.signatureLts == nil {
-			c.signatureLts = set.NewSet[*soltype.LifetimeVar]()
+			c.signatureLts = map[*soltype.LifetimeVar]string{}
 		}
-		c.signatureLts.Add(lt)
+		c.signatureLts[lt] = "'" + p.Name
 	}
+}
+
+// isSignatureLt reports whether lt is a lifetime a function's `<'a>` list declares.
+func (c *checker) isSignatureLt(lt *soltype.LifetimeVar) bool {
+	_, found := c.signatureLts[lt]
+	return found
 }
 
 // isStaticFuncLt reports whether lt, a function type's lifetime, is 'static. A nil lifetime

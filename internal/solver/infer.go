@@ -141,12 +141,14 @@ type checker struct {
 	// callOnlyLts holds the lifetime of each call-only parameter, the ones pendingCallOnly
 	// checks. noteCallOnlyLifetime fills it, and funcLtSources reads it.
 	callOnlyLts set.Set[*soltype.LifetimeVar]
-	// signatureLts holds each lifetime a function's `<'a>` list declares, as `'a` in
-	// `fn f<'a>(…)`. noteSignatureLifetimes fills it, and funcLtSources reads it.
-	signatureLts set.Set[*soltype.LifetimeVar]
+	// signatureLts maps each lifetime a function's `<'a>` list declares, as `'a` in
+	// `fn f<'a>(…)`, to its name. noteSignatureLifetimes fills it, and funcLtSources and
+	// checkCallOnlyParams read it.
+	signatureLts map[*soltype.LifetimeVar]string
 	// keeperOf maps each argument of a call to the call, and the value of each assignment to
-	// the assignment. inferCallArgs and inferAssign fill it, and funcKeptNames reads it to name
-	// what keeps a value checked with the value as the site.
+	// the assignment. inferCallArgs and inferAssign fill it, funcKeptNames reads it to name
+	// what keeps a value checked with the value as the site, and settleTentativeFuncEscapes
+	// clears it once the component has solved.
 	keeperOf map[ast.Expr]ast.Expr
 	// closureBorrows maps the lifetime of each closure that holds a borrow to the capture
 	// that makes it hold one. setClosureRetention fills it, and funcLtSources reads it.

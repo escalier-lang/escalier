@@ -623,10 +623,11 @@ fn f<'a>(g: 'a fn () -> undefined) { onClick(g) }`,
 			src:  `fn f(g: fn () -> undefined, p: &mut {cb: 'static fn () -> undefined}) { p.cb = g }`,
 			want: []string{"1:6-1:7: " + static},
 		},
+		// p holds g for 'a, which the signature names, so the fix names 'a too.
 		{
 			name: "stored into a named-lifetime field of a borrowed parameter",
 			src:  `fn f<'a>(g: fn () -> undefined, p: &mut {cb: 'a fn () -> undefined}) { p.cb = g }`,
-			want: []string{"1:10-1:11: " + kept},
+			want: []string{"1:10-1:11: 'g' may borrow values that live only during the call, but it is kept after the call returns; write `g: 'a fn () -> undefined` to keep it"},
 		},
 		// h is inferred together with f, so its parameter's lifetime is no longer than the call
 		// of f.
@@ -978,6 +979,24 @@ fn setup() {
     sink = fn () { console.log(n) }
 }`,
 			want: []string{"6:12-6:36: this closure borrows `n`, but `sink` keeps it for 'static; " + fix + ", or declare `n` at module level"},
+		},
+		// A local initialized from a call holds only the value the call returns, which here is
+		// a number the closure copies.
+		{
+			name: "closure that copies a value type returned by a call",
+			src: decls + `declare fn count() -> number
+fn setup() {
+    val n = count()
+    keep(fn () { console.log(n) })
+}`,
+		},
+		// A parameter's default is a closure over the parameters before it.
+		{
+			name: "closure in a parameter default that reads a borrowed parameter",
+			src: decls + `fn setup(x: &{n: number}, g = fn () { console.log(x.n) }) {
+    keep(g)
+}`,
+			want: []string{"4:31-4:57: this closure borrows `x`, but `keep` keeps it for 'static; " + fix},
 		},
 		// A module-level binding lives for the whole program, so reading one holds no borrow.
 		{
