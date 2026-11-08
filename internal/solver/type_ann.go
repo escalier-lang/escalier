@@ -1426,6 +1426,10 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, recv *as
 	}
 
 	c.fnElision = c.returnElision(inputMark, ta.LifetimeParams)
+	// A member's `&self` is an input lifetime, though the receiver is lowered elsewhere.
+	if recv != nil && !recv.Consumes() {
+		c.fnElision = elideFresh
+	}
 	// The parser requires `-> R`, so ta.Return is normally non-nil. Guard
 	// defensively and recover an unsupported or absent return to a fresh var,
 	// keeping the function shape.

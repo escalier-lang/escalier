@@ -1327,14 +1327,12 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			// lifetime, so it is checked against the union as if it held no borrow and
 			// reported as kept for 'static, the way a lone 'static slot reports it.
 			if ft, ok := sub.(*soltype.FuncType); ok && !isStaticFuncLt(ft.Lt) {
-				if member := staticFuncMember(supU); member != nil {
-					freed := *ft
-					freed.Lt = nil
-					if !hasHardError(c.trialUnderProbe(&freed, super)) {
-						errs := c.constrain(&freed, super, seen, mutCtx)
-						c.constrainLt(ft.Lt, soltype.Static)
-						return append(errs, &FuncKeptForStaticError{Sub: ft, Super: member})
-					}
+				freed := *ft
+				freed.Lt = nil
+				if member := c.staticFuncMember(&freed, supU); member != nil {
+					errs := c.constrain(&freed, super, seen, mutCtx)
+					c.constrainLt(ft.Lt, soltype.Static)
+					return append(errs, &FuncKeptForStaticError{Sub: ft, Super: member})
 				}
 			}
 			return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
@@ -3886,10 +3884,10 @@ func (e *extruder) extrudeLifetime(lt soltype.Lifetime, pol soltype.Polarity) so
 }
 
 // staticFuncMember returns the first member of u that is a function type whose lifetime is
-// 'static, or nil when u has none.
-func staticFuncMember(u *soltype.UnionType) *soltype.FuncType {
+// 'static and that freed fits, or nil when no member is. freed is a function with no lifetime.
+func (c *Context) staticFuncMember(freed *soltype.FuncType, u *soltype.UnionType) *soltype.FuncType {
 	for _, member := range u.Types {
-		if ft, ok := member.(*soltype.FuncType); ok && isStaticFuncLt(ft.Lt) {
+		if ft, ok := member.(*soltype.FuncType); ok && isStaticFuncLt(ft.Lt) && !hasHardError(c.trialUnderProbe(freed, ft)) {
 			return ft
 		}
 	}

@@ -169,7 +169,7 @@ func (c *checker) tryOverloadArm(
 	for i, arg := range args {
 		callShapeParams[i] = &soltype.FuncParam{Type: arg}
 	}
-	// The arm is only called, so the shape carries a retention lifetime of its own, as the
+	// The arm is only called, so the shape carries a lifetime of its own, as the
 	// call shape applyCallShape builds does.
 	shape := &soltype.FuncType{Params: callShapeParams, Ret: c.freshAt(lvl), Throws: c.freshAt(lvl), Lt: c.ctx.freshLifetime(lvl)}
 	errs := c.ctx.Constrain(inst, shape)

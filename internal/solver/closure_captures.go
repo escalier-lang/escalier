@@ -147,14 +147,19 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 		held := schemeBody(b.Schemes[0])
 		v, isVar := held.(*soltype.TypeVarType)
 		readOnly := b.Kind != ast.VarKind && !capture.IsMutable
-		direct = direct || !readOnly || isVar || c.capturesByBorrow(held)
+		byBorrow := c.capturesByBorrow(held)
+		var heldLts []soltype.Lifetime
+		if held != nil {
+			heldLts = shortFuncLifetimes(held)
+		}
+		direct = direct || !readOnly || isVar || byBorrow
 		if readOnly && isVar {
 			undecided = append(undecided, v)
-		} else if !readOnly || c.capturesByBorrow(held) {
+		} else if !readOnly || byBorrow {
 			definite = true
 		}
-		retained := held != nil && len(shortFuncLifetimes(held)) > 0
-		if !readOnly || isVar || retained || c.capturesByBorrow(held) {
+		retained := len(heldLts) > 0
+		if !readOnly || isVar || retained || byBorrow {
 			retain(capture.Name, b)
 			// A returned closure takes a local it captures, but not what a borrow or a closure
 			// inside the local borrows from outside the body.
@@ -168,7 +173,7 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 				}
 			}
 			// A closure the capture holds borrows its own locals, which go with it.
-			for _, lt := range shortFuncLifetimes(held) {
+			for _, lt := range heldLts {
 				if lv, isLtVar := lt.(*soltype.LifetimeVar); isLtVar {
 					inner := c.closureBorrows[lv].taken
 					taken.roots = append(taken.roots, inner.roots...)
@@ -177,7 +182,7 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 			}
 		}
 		// Instantiating a generalized binding mints fresh variables, so a binding whose type
-		// holds no retained function is skipped before that. Instantiation keeps the shape of
+		// holds no function with a lifetime is skipped before that. Instantiation keeps the shape of
 		// the type, so it cannot add one.
 		if !retained {
 			continue
@@ -217,7 +222,7 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 // functions it captures, whose lifetimes bound the closure's from below. takeable says every
 // capture the closure borrows is a `val` or `var` of the body it is written in that holds no
 // borrow from outside that body, so a slot that keeps the closure for 'static can take those
-// locals over, as takeOverCaptures describes.
+// locals over, as moveTakenCaptures describes.
 // taken lists the locals the closure borrows, including those a closure it captures borrows.
 type closureBorrow struct {
 	name     string
@@ -255,10 +260,10 @@ func (c *checker) isFrameLocal(name string, b ValueBinding) bool {
 }
 
 // holdsOnlyFrameBorrows reports whether every borrow a value of type t holds is of a local of
-// the current body. The walk reads each borrow, each function with a retention lifetime, and
+// the current body. The walk reads each borrow, each function with a lifetime, and
 // each class or alias lifetime argument in t, and the bounds of each type variable it reaches.
 // It does not enter a function type, since a function's parameters and result are not values
-// it holds. A function's retention lifetime must belong to a closure in the body's
+// it holds. A function's lifetime must belong to a closure in the body's
 // frameClosures, since a closure's lifetime does not record what it captures. Any other
 // lifetime must satisfy isFrameLifetime. A borrow in a variable's upper bound says the value a
 // caller supplies is a borrow, so it is never a borrow of a local.
@@ -347,7 +352,7 @@ func (c *checker) isFrameLifetime(lt soltype.Lifetime) bool {
 	return true
 }
 
-// noteFrameClosureRead adds the retention lifetime of t, the value a read of b resolved to, to
+// noteFrameClosureRead adds the lifetime of t, the value a read of b resolved to, to
 // the current body's frameClosures when b holds a closure whose lifetime is already there.
 // Reading a generalized binding copies its type with fresh lifetimes, and the copy is the same
 // closure.
@@ -462,7 +467,7 @@ func (v *returnedClosureOwner) ownedLowerBounds(tv *soltype.TypeVarType) (soltyp
 
 // capturesByBorrow reports whether a closure reads a captured `val` binding of type t through a
 // borrow. A value type such as a primitive or a promise is copied into the closure instead. A
-// function is a value type too, and a retention lifetime on its type decides whether it holds a
+// function is a value type too, and the lifetime on its type decides whether it holds a
 // borrow.
 func (c *checker) capturesByBorrow(t soltype.Type) bool {
 	switch t := t.(type) {
@@ -557,13 +562,13 @@ func (c *checker) sortFuncKeptForStatic(err *FuncKeptForStaticError) bool {
 		c.heldFuncEscapes = append(c.heldFuncEscapes, heldFuncEscape{err: err, closures: src.closures})
 		return false
 	}
-	if c.takesOverCaptures(err, src) {
+	if c.recordCaptureTakeover(err, src) {
 		return false
 	}
 	return true
 }
 
-// takesOverCaptures reports whether the slot err names takes over the captures of each closure
+// recordCaptureTakeover reports whether the slot err names takes over the captures of each closure
 // its source holds a borrow through, and records the takeover when it does. It does when the
 // source holds a borrow only through closures written in the current body whose captures are
 // all takeable, as closureBorrow describes, and the slot is a written type that an argument or
@@ -572,7 +577,7 @@ func (c *checker) sortFuncKeptForStatic(err *FuncKeptForStaticError) bool {
 // The value is added to the body's takeovers, and a store into a field gets its retainedStore
 // here. The dataflow pass then moves each captured local into the closure at the store, so a
 // later use of the local is a use of a moved value.
-func (c *checker) takesOverCaptures(err *FuncKeptForStaticError, src funcLtSourceSet) bool {
+func (c *checker) recordCaptureTakeover(err *FuncKeptForStaticError, src funcLtSourceSet) bool {
 	// A slot whose type an unannotated binding took from a closure keeps nothing for 'static.
 	if c.fn == nil || err.inferred || src.other || len(src.closures) == 0 {
 		return false
@@ -586,18 +591,7 @@ func (c *checker) takesOverCaptures(err *FuncKeptForStaticError, src funcLtSourc
 		taken.roots = append(taken.roots, b.taken.roots...)
 		taken.vars = append(taken.vars, b.taken.vars...)
 	}
-	// A rest argument is checked against the call as a whole, so the source's own node names
-	// the argument then.
-	var value ast.Expr
-	var keeper ast.Expr
-	for _, n := range []ast.Node{err.site, c.nodeOfType(err.Sub)} {
-		if e, isExpr := n.(ast.Expr); isExpr {
-			if k, found := c.keeperOf[e]; found {
-				value, keeper = e, k
-				break
-			}
-		}
-	}
+	value, keeper := c.keptValue(err)
 	if keeper == nil {
 		return false
 	}
@@ -605,27 +599,53 @@ func (c *checker) takesOverCaptures(err *FuncKeptForStaticError, src funcLtSourc
 		c.fn.takeovers = map[ast.Expr]takenLocals{}
 	}
 	c.fn.takeovers[value] = taken
-	// An assignment to a module-level name records its own store once the assignment checks,
-	// and a call records one for each argument its parameters keep. A store into a field has
-	// no store of its own, so it gets one here.
-	if assign, isAssign := keeper.(*ast.BinaryExpr); isAssign {
-		if _, isMember := assign.Left.(*ast.MemberExpr); isMember {
-			if at, ok := c.eventStmtRef(); ok {
-				c.noteRetainedClosureStore(retainedStore{via: closureVia(strings.Trim(placeText(assign.Left), "`")), expr: value, at: at, static: true})
-			}
+	// A call records a store for each argument its parameters keep. An assignment or a
+	// declaration gets its store here, since a slot it fills keeps the closure from then on.
+	var via string
+	switch keeper := keeper.(type) {
+	case *ast.BinaryExpr:
+		via = "the slot"
+		if text := placeText(keeper.Left); text != "" {
+			via = closureVia(strings.Trim(text, "`"))
+		}
+	case *ast.VarDecl:
+		via = "the slot"
+		if ip, isIdent := keeper.Pattern.(*ast.IdentPat); isIdent {
+			via = closureVia(ip.Name)
+		}
+	}
+	if via != "" {
+		if at, ok := c.eventStmtRef(); ok {
+			c.noteRetainedClosureStore(retainedStore{via: via, expr: value, at: at, static: true})
 		}
 	}
 	return true
 }
 
-// noteKeeper records keeper, a call or an assignment, as what keeps value, one of its
-// arguments or the value it assigns, in keeperOf.
-func (c *checker) noteKeeper(value, keeper ast.Expr) {
+// keptValue returns the value err's slot receives, an argument or an assigned or declared
+// value, and the call, assignment, or declaration that receives it. It returns nil for both
+// when keeperOf names neither the source's own node nor err's site. The source's node comes
+// first, since a rest argument is checked with the whole call as the site, and that call can
+// itself be an argument of another call.
+func (c *checker) keptValue(err *FuncKeptForStaticError) (ast.Expr, ast.Node) {
+	for _, n := range []ast.Node{c.nodeOfType(err.Sub), err.site} {
+		if e, isExpr := n.(ast.Expr); isExpr {
+			if k, found := c.keeperOf[e]; found {
+				return e, k
+			}
+		}
+	}
+	return nil, nil
+}
+
+// noteKeeper records keeper, a call, an assignment, or a declaration, as what keeps value,
+// one of its arguments, the value it assigns, or the value it initializes, in keeperOf.
+func (c *checker) noteKeeper(value ast.Expr, keeper ast.Node) {
 	if value == nil {
 		return
 	}
 	if c.keeperOf == nil {
-		c.keeperOf = map[ast.Expr]ast.Expr{}
+		c.keeperOf = map[ast.Expr]ast.Node{}
 	}
 	c.keeperOf[value] = keeper
 }
@@ -642,10 +662,8 @@ func (c *checker) funcKeptNames(err *FuncKeptForStaticError) (source, keeper str
 	site := err.site
 	// An argument or an assigned value is checked with the value as the site, so the call
 	// or the assignment it belongs to keeps it.
-	if value, isExpr := site.(ast.Expr); isExpr {
-		if k, found := c.keeperOf[value]; found {
-			site = k
-		}
+	if _, k := c.keptValue(err); k != nil {
+		site = k
 	}
 	switch site := site.(type) {
 	case *ast.CallExpr:

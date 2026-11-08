@@ -108,7 +108,7 @@ type UseAfterMoveError struct {
 	// that writes it.
 	ViaReads bool
 	// Taken names the slot that keeps the closure that took the place over, as
-	// takeOverCaptures does, and is empty for any other move.
+	// moveTakenCaptures does, and is empty for any other move.
 	Taken string
 	// use is the read being rejected; it self-blames from here.
 	use ast.Node
@@ -210,7 +210,7 @@ type movedPlace struct {
 	// `called` marks the binding of a closure that a call of it moved, as D2 decides. Only a
 	// later call of the closure uses the binding.
 	called bool
-	// `taken` names the slot whose closure took the place over, as takeOverCaptures does, and
+	// `taken` names the slot whose closure took the place over, as moveTakenCaptures does, and
 	// is empty for any other move. A write to such a place is a use of it, since the closure
 	// still reads the binding the write would change.
 	taken string
@@ -691,7 +691,7 @@ func (d *bodyDataflow) transfer(block int, s *dataflowState) {
 		// store takes them over once its statement has run.
 		for _, store := range d.storesAt[at] {
 			if store.takeover && store.call == nil {
-				d.takeOverCaptures(store, at, s)
+				d.moveTakenCaptures(store, at, s)
 			}
 		}
 
@@ -1384,7 +1384,7 @@ func (d *bodyDataflow) pass(ev *passEvent, s *dataflowState) {
 //  2. Each loan a slot of the call holds is released, and a loan nothing else holds ends.
 //
 // Between the two, each argument a parameter keeps for 'static takes over its closures'
-// captures, as takeOverCaptures does.
+// captures, as moveTakenCaptures does.
 func (d *bodyDataflow) callEnd(ev *callEvent, at liveness.StmtRef, s *dataflowState) {
 	// Step 1 checks each receiver this call reserved, scanning the loans in sorted order.
 	// Most calls reserve no receiver, and those skip the sort.
@@ -1441,7 +1441,7 @@ func (d *bodyDataflow) callEnd(ev *callEvent, at liveness.StmtRef, s *dataflowSt
 	// the call releases the loans its arguments hold.
 	for _, store := range d.storesAt[at] {
 		if store.takeover && store.call == ast.Node(ev.call) {
-			d.takeOverCaptures(store, at, s)
+			d.moveTakenCaptures(store, at, s)
 		}
 	}
 
@@ -1525,9 +1525,9 @@ func (d *bodyDataflow) run(ev *runEvent, at liveness.StmtRef, s *dataflowState) 
 	s.moved[k] = movedPlace{place: ev.callee, node: ev.call, every: true, called: true}
 }
 
-// takeOverCaptures moves each place a closure that store keeps captures into that closure,
+// moveTakenCaptures moves each place a closure that store keeps captures into that closure,
 // at the point `at` of the store, when the place is rooted at one of the locals store.taken
-// lists. takesOverCaptures accepted each of those, so the closure owns them from the store on
+// lists. recordCaptureTakeover accepted each of those, so the closure owns them from the store on
 // instead of borrowing them. The closures are those noteStoreWrites reads:
 // each closure written in the stored value, each closure the place the value names holds, and
 // each closure a place those closures capture holds in turn.
@@ -1535,7 +1535,7 @@ func (d *bodyDataflow) run(ev *runEvent, at liveness.StmtRef, s *dataflowState) 
 // The move is checked as any move is, so a live borrow of the local, including another
 // closure's capture of it, conflicts with it, and a later use of the local is a use of a moved
 // value. The closure's own loans of the place end, since it owns the place now.
-func (d *bodyDataflow) takeOverCaptures(store *retainedStore, at liveness.StmtRef, s *dataflowState) {
+func (d *bodyDataflow) moveTakenCaptures(store *retainedStore, at liveness.StmtRef, s *dataflowState) {
 	written := set.NewSet[ast.Node]()
 	var next []movePlace
 	for _, closure := range store.closures {

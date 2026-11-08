@@ -1243,6 +1243,50 @@ class Button<'a> {
 }`,
 			want: []string{"3:14-3:35: this function may hold borrows that do not live for 'static, but `sink` keeps it for 'static; " + fix},
 		},
+		// A local annotated `'static fn` keeps its function for 'static too, whether the closure
+		// fills it at the declaration or by an assignment.
+		{
+			name: "closure declared into a local written static before a later use",
+			src: `fn f() {
+    val mut obj = {a: 1}
+    val h: 'static fn () -> undefined = fn () { console.log(obj.a) }
+    obj.a = 5
+}`,
+			want: []string{"4:5-4:8: 'obj' is used after 'h' took it over for 'static"},
+		},
+		{
+			name: "closure assigned to a local written static before a later use",
+			src: `fn f() {
+    val mut obj = {a: 1}
+    var h: 'static fn () -> undefined = fn () {}
+    h = fn () { console.log(obj.a) }
+    obj.a = 5
+}`,
+			want: []string{"5:5-5:8: 'obj' is used after 'h' took it over for 'static"},
+		},
+		// The rest argument is checked against the inner call, which is itself an argument.
+		{
+			name: "closure passed as a rest argument of a call that is an argument",
+			src: `declare fn on(...hs: Array<'static fn () -> undefined>) -> number
+declare fn id(n: number) -> number
+fn f() {
+    val p = {a: 1}
+    id(on(fn () { console.log(p.a) }))
+    console.log(p.a)
+}`,
+			want: []string{"6:17-6:20: 'p' is used after the 'hs' that 'on' retains took it over for 'static"},
+		},
+		// An interface method's `&self` is an input lifetime, so its elided result may borrow
+		// what the receiver does, as the class's method does.
+		{
+			name: "class method returning a closure matched against an interface",
+			src: `interface I { fetch(&self) -> fn () -> number }
+class C { x: number, fetch(&self) -> fn () -> number {
+    val s = self
+    return fn () { return s.x }
+} }
+val i: I = C(1)`,
+		},
 		// An interface describes values that may live for the whole program, so a function
 		// type written with no lifetime in one of its properties is 'static.
 		{

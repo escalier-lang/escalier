@@ -303,8 +303,9 @@ closure goes decides how its captures are checked:
   parameter, borrows its captures. The caller can only call it after the
   function returns. The paths it hands the caller are checked like any stored
   borrow, so a second path out that disagrees with it is reported.
-- A closure stored into module-level state, or passed to a `'static fn`
-  parameter, is kept for the whole program. It takes over the locals it
+- A closure stored into module-level state, or into any slot written
+  `'static fn` such as a parameter, a field, or a binding, is kept for the whole
+  program. It takes over the locals it
   captures at the store, the way a returned closure takes them at the return,
   so the body cannot use them after the store. Escalier compiles to JavaScript,
   so a local the closure owns lives as long as the closure does.

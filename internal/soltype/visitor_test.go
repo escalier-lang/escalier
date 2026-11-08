@@ -344,7 +344,7 @@ func TestAcceptObjectIdentityPreservation(t *testing.T) {
 }
 
 // TestAcceptFuncCarriesRetentionLifetime asserts that rewriting a parameter of a
-// `'static fn` rebuilds the FuncType with its retention lifetime intact.
+// `'static fn` rebuilds the FuncType with its lifetime intact.
 func TestAcceptFuncCarriesRetentionLifetime(t *testing.T) {
 	str := &PrimType{Prim: StrPrim}
 	a := &TypeVarType{ID: 1}

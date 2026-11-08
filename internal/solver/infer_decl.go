@@ -235,6 +235,9 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 		// error and adopting `never` would poison the binding. Keep the inferred
 		// initializer type instead (error recovery).
 		annT, ok := c.resolveDeclaredTypeAnn(scope, d.TypeAnn, lvl, symName, varDeclSymbolPosition(d))
+		// The binding keeps its initializer, which names the slot a FuncKeptForStaticError
+		// reports.
+		c.noteKeeper(d.Init, d)
 		missing := ok && c.checkWrittenBorrow(d.Init, annT)
 		if ok {
 			// A readonly field in the value the binding moves in cannot fill a writable field

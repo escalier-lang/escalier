@@ -145,11 +145,12 @@ type checker struct {
 	// `fn f<'a>(…)`, to its name. noteSignatureLifetimes fills it, and funcLtSources and
 	// checkCallOnlyParams read it.
 	signatureLts map[*soltype.LifetimeVar]string
-	// keeperOf maps each argument of a call to the call, and the value of each assignment to
-	// the assignment. inferCallArgs and inferAssign fill it, funcKeptNames reads it to name
+	// keeperOf maps each argument of a call to the call, the value of each assignment to the
+	// assignment, and the initializer of each annotated declaration to the declaration.
+	// inferCallArgs, inferAssign, and inferVarDeclInit fill it, funcKeptNames reads it to name
 	// what keeps a value checked with the value as the site, and settleTentativeFuncEscapes
 	// clears it once the component has solved.
-	keeperOf map[ast.Expr]ast.Expr
+	keeperOf map[ast.Expr]ast.Node
 	// closureBorrows maps the lifetime of each closure that holds a borrow to the capture
 	// that makes it hold one. setClosureRetention fills it, and funcLtSources reads it.
 	closureBorrows map[*soltype.LifetimeVar]closureBorrow
@@ -516,12 +517,12 @@ type funcCtx struct {
 	async   bool
 	node    ast.Node
 	returns []soltype.Type
-	// frameClosures holds the retention lifetime of each closure written in this body whose
+	// frameClosures holds the lifetime of each closure written in this body whose
 	// every borrow is of a local of this body. setClosureRetention fills it, and
 	// ownReturnedClosures reads it.
 	frameClosures set.Set[*soltype.LifetimeVar]
 	// takeovers maps each value a slot keeps for 'static whose closures take over the locals
-	// they capture to those locals. takesOverCaptures fills it, and noteRetainedClosureStore
+	// they capture to those locals. recordCaptureTakeover fills it, and noteRetainedClosureStore
 	// and noteRetainedClosureArgs read it.
 	takeovers map[ast.Expr]takenLocals
 	// bodyLtMark is the lifetime counter when the walk of this body began, after its

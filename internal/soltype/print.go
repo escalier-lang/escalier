@@ -1118,7 +1118,7 @@ func (p *namedPrinter) printType(t Type) string {
 		parts = append(parts, args...)
 		return name + "<" + strings.Join(parts, ", ") + ">"
 	case *FuncType:
-		return p.funcRetentionPrefix(t) + "fn " + p.printFuncTail(t)
+		return p.funcLifetimePrefix(t) + "fn " + p.printFuncTail(t)
 	case *KeyofType:
 		// `keyof T`. The operand prints at
 		// precPrefix so a looser operand such as a union gets parenthesized: `keyof (A | B)`.
@@ -1345,7 +1345,12 @@ func (p *namedPrinter) printObjElem(e ObjTypeElem) string {
 		if !ok {
 			name = "value"
 		}
-		return "set " + p.printObjectKey(e.Name) + "(" + recv + name + ": " + p.printType(e.Param.Type) + ")" +
+		// The value is a parameter, so a function type with no lifetime renders as it does in
+		// a parameter list.
+		p.inParams++
+		param := p.printType(e.Param.Type)
+		p.inParams--
+		return "set " + p.printObjectKey(e.Name) + "(" + recv + name + ": " + param + ")" +
 			p.printThrowsClause(e.ThrowsOrNever())
 	case *ConstructorElem:
 		// A class value's constructor renders as the unnamed call signature
@@ -1416,11 +1421,11 @@ func (p *namedPrinter) refBorrowPrefix(t *RefType) string {
 	return prefix
 }
 
-// funcRetentionPrefix renders the lifetime of a function type. It returns "'a " for
+// funcLifetimePrefix renders the lifetime of a function type. It returns "'a " for
 // `'a fn () -> R`, and the empty string when the lifetime elides. A function with no
 // lifetime holds no borrow, so it renders "'static " inside a parameter list and the empty
 // string elsewhere.
-func (p *namedPrinter) funcRetentionPrefix(t *FuncType) string {
+func (p *namedPrinter) funcLifetimePrefix(t *FuncType) string {
 	if t.Lt == nil {
 		if p.inParams > 0 {
 			return "'static "
