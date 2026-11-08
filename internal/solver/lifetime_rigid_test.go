@@ -15,6 +15,9 @@ func TestASuperLifetimeBinderIsHeldRigid(t *testing.T) {
 	t.Parallel()
 
 	const cb = "type Cb = fn <'a>(q: &'a {x: number}) -> &'a {x: number}\n"
+	// A closure that captures a borrow does not fit Cb, which is 'static, so the cases that
+	// capture `seed` return a CbIn that lives as long as `seed`.
+	const cbIn = "type CbIn<'c> = 'c fn <'a>(q: &'a {x: number}) -> &'a {x: number}\n"
 	tests := []struct {
 		name string
 		src  string
@@ -26,8 +29,8 @@ func TestASuperLifetimeBinderIsHeldRigid(t *testing.T) {
 		},
 		{
 			name: "a closure returning a captured borrow is rejected",
-			src:  cb + `fn mk(seed: &{x: number}) -> Cb { return fn (q) { return seed } }`,
-			want: []string{"2:42-2:64: the caller of this signature chooses 'a, but the value requires 'a to be outlived by a lifetime the signature does not quantify"},
+			src:  cbIn + `fn mk<'s>(seed: &'s {x: number}) -> CbIn<'s> { return fn (q) { return seed } }`,
+			want: []string{"2:55-2:77: the caller of this signature chooses 'a, but the value requires 'a to be outlived by a lifetime the signature does not quantify"},
 		},
 		{
 			name: "a closure demanding a static argument is rejected",
@@ -72,7 +75,7 @@ func TestASuperLifetimeBinderIsHeldRigid(t *testing.T) {
 		},
 		{
 			name: "a bound closure returning a captured borrow is rejected",
-			src: cb + `fn mk(seed: &{x: number}) -> Cb {
+			src: cbIn + `fn mk<'s>(seed: &'s {x: number}) -> CbIn<'s> {
 				val g = fn (q) { return seed }
 				return g
 			}`,
@@ -86,21 +89,21 @@ func TestASuperLifetimeBinderIsHeldRigid(t *testing.T) {
 		},
 		{
 			name: "two values at one site report once",
-			src:  cb + `fn mk(seed: &{x: number}) -> [Cb, Cb] { return [fn (q) { return seed }, fn (q) { return seed }] }`,
-			want: []string{"2:48-2:96: the caller of this signature chooses 'a, but the value requires 'a to be outlived by a lifetime the signature does not quantify"},
+			src:  cbIn + `fn mk<'s>(seed: &'s {x: number}) -> [CbIn<'s>, CbIn<'s>] { return [fn (q) { return seed }, fn (q) { return seed }] }`,
+			want: []string{"2:67-2:115: the caller of this signature chooses 'a, but the value requires 'a to be outlived by a lifetime the signature does not quantify"},
 		},
 		{
 			name: "a callback argument to an overloaded function is checked",
-			src: cb + `declare fn pick(f: Cb) -> number
+			src: `declare fn pick(f: fn <'a>(q: &'a {x: number}) -> &'a {x: number}) -> number
 				declare fn pick(s: string) -> number
 				fn go(seed: &{x: number}) -> number { return pick(fn (q) { return seed }) }`,
-			want: []string{"4:50-4:78: the caller of this signature chooses 'a, but the value requires 'a to be outlived by a lifetime the signature does not quantify"},
+			want: []string{"3:50-3:78: the caller of this signature chooses 'a, but the value requires 'a to be outlived by a lifetime the signature does not quantify"},
 		},
 		{
 			name: "a callback argument is checked at the call",
-			src: cb + `fn use(f: Cb) -> number { return 1 }
+			src: `fn use(f: fn <'a>(q: &'a {x: number}) -> &'a {x: number}) -> number { return 1 }
 				fn go(seed: &{x: number}) -> number { return use(fn (q) { return seed }) }`,
-			want: []string{"3:54-3:76: the caller of this signature chooses 'a, but the value requires 'a to be outlived by a lifetime the signature does not quantify"},
+			want: []string{"2:54-2:76: the caller of this signature chooses 'a, but the value requires 'a to be outlived by a lifetime the signature does not quantify"},
 		},
 	}
 	for _, tt := range tests {

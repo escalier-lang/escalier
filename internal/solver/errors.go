@@ -2522,10 +2522,10 @@ func (e *LifetimeRelationUndeclaredError) Message() string {
 		e.Sub, e.Super, e.Sub, e.Super)
 }
 
-// CallOnlyFuncKeptError fires when a body keeps a function parameter that has no retention
-// lifetime past the call. Such a parameter, as `g` in `fn f(g: fn () -> undefined)`, is only
+// CallOnlyFuncKeptError fires when a body keeps a function parameter whose type is written with
+// no lifetime past the call. Such a parameter, as `g` in `fn f(g: fn () -> undefined)`, is only
 // called during the call, so a caller lends it a closure's captures for that call alone.
-// `onClick(g)` against `declare fn onClick(handler: &'static fn () -> undefined)` keeps it for
+// `onClick(g)` against `declare fn onClick(handler: 'static fn () -> undefined)` keeps it for
 // 'static. Name is the parameter's name, Static says the body keeps it for 'static, and Param
 // is the parameter's pattern, which the error blames.
 type CallOnlyFuncKeptError struct {

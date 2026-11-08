@@ -125,6 +125,9 @@ func (c *checker) preBindInterface(scope *Scope, lvl int, decls []*ast.Interface
 // subtyping relation. A member the body declares under a name `extends` also
 // supplied replaces it.
 func (c *checker) inferInterfaceBody(sh *interfaceShell) {
+	// An interface describes values that may live for the whole program, so a function type
+	// written with no lifetime in a property's type holds no borrow.
+	defer c.elideFuncsAs(elideStatic)()
 	prevNS := c.classNamespace
 	c.classNamespace = sh.ns
 	defer func() { c.classNamespace = prevNS }()

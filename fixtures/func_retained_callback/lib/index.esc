@@ -1,6 +1,6 @@
 val mut handlers: Array<fn () -> undefined> = []
 
-export fn onClick(handler: &'static fn () -> undefined) {
+export fn onClick(handler: 'static fn () -> undefined) {
     handlers.push(handler)
 }
 
@@ -8,7 +8,7 @@ export fn forEachItem(f: fn () -> undefined) {
     f()
 }
 
-export fn runWith<'a>(f: &'a fn (x: number) -> number, p: &'a {x: number}) -> number {
+export fn runWith<'a>(f: 'a fn (x: number) -> number, p: &'a {x: number}) -> number {
     return f(p.x)
 }
 

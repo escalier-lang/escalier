@@ -7,17 +7,26 @@ import (
 )
 
 // callOnlyParam is a parameter of a body-carrying function whose written type is a function
-// with no retention lifetime. Such a parameter is only called during the call. ft is the copy
-// of that type the body's binding holds. Its Lt is the parameter's call lifetime, a fresh
-// lifetime at the level of the function's parameters that ends when the call returns.
+// type with no lifetime, as `g` in `fn f(g: fn () -> undefined)`. Such a parameter is only
+// called during the call, unless the signature ties its lifetime to the result. param is the
+// parameter's index in the signature.
 type callOnlyParam struct {
-	name string
-	node ast.Node
-	ft   *soltype.FuncType
+	name  string
+	node  ast.Node
+	param int
+	// lt is the lifetime of the parameter's function type.
+	lt *soltype.LifetimeVar
 	// outerMark is the lifetime counter before the function's parameters resolved, for a
 	// function written inside another body. Every lifetime minted before it belongs to the enclosing body
 	// or to the module. It is -1 for a function with no enclosing body.
 	outerMark int
+}
+
+// isElidedFuncType reports whether ann is a function type written with no lifetime, as
+// `fn () -> undefined` is. On a parameter, that form's lifetime ends with the call.
+func isElidedFuncType(ann ast.TypeAnn) bool {
+	fn, isFn := ann.(*ast.FuncTypeAnn)
+	return isFn && fn.Lifetime == nil
 }
 
 // callOnlyCheck is one parameter waiting for checkCallOnlyParams. sig is the type of the
@@ -35,16 +44,60 @@ func (c *checker) queueCallOnlyChecks(params []callOnlyParam, sig *soltype.FuncT
 	}
 }
 
+// sigLifetimes holds the lifetimes a signature names, split by where they occur.
+type sigLifetimes struct {
+	// result holds the lifetimes in the return and throws types. A caller reads them from
+	// the result, so a parameter whose lifetime outlives one is tied to the result.
+	result map[*soltype.LifetimeVar]occPolarity
+	// params holds the lifetimes in each parameter's type, indexed like the signature's
+	// parameters, and in the receiver's type at index -1.
+	params map[int]map[*soltype.LifetimeVar]occPolarity
+}
+
+// lifetimesOf returns the lifetimes sig names, split by where they occur.
+func lifetimesOf(sig *soltype.FuncType) sigLifetimes {
+	out := sigLifetimes{result: map[*soltype.LifetimeVar]occPolarity{}, params: map[int]map[*soltype.LifetimeVar]occPolarity{}}
+	for _, t := range []soltype.Type{sig.Ret, sig.Throws} {
+		if t == nil {
+			continue
+		}
+		occ, _ := walkLtOcc(t, soltype.Positive)
+		for lt, pol := range occ {
+			out.result[lt] = pol
+		}
+	}
+	if sig.SelfParam != nil {
+		out.params[-1], _ = walkLtOcc(sig.SelfParam.Type, soltype.Negative)
+	}
+	for i, p := range sig.Params {
+		out.params[i], _ = walkLtOcc(p.Type, soltype.Negative)
+	}
+	return out
+}
+
+// inOtherParam reports whether lt occurs in a parameter of the signature other than the one at
+// index skip.
+func (s sigLifetimes) inOtherParam(lt *soltype.LifetimeVar, skip int) bool {
+	for i, occ := range s.params {
+		if i == skip {
+			continue
+		}
+		if _, found := occ[lt]; found {
+			return true
+		}
+	}
+	return false
+}
+
 // checkCallOnlyParams reports each queued parameter whose body keeps it past the call. A body
-// keeps it past the call when it requires the call lifetime to outlive one of these. Each item
-// names the TestCallOnlyFunc cases that reach it.
+// keeps it past the call when it requires the parameter's lifetime to outlive one of these.
+// Each item names the TestCallOnlyFunc cases that reach it.
 //
 //   - 'static. See "passed on to a static parameter" and "stored into a static field of a
 //     borrowed parameter".
-//   - A lifetime the function's own type holds, since a caller reads its arguments and its
-//     result after the call. See "returned" and "stored into a retained field of a borrowed
-//     parameter".
-//   - A lifetime at a lower level than the call lifetime, which belongs to the module or to an
+//   - A lifetime another parameter's type holds, since a caller reads its arguments after the
+//     call. See "stored into a retained field of a borrowed parameter".
+//   - A lifetime at a lower level than the parameter's, which belongs to the module or to an
 //     enclosing body. See "stored into a retained field of an enclosing function's parameter".
 //   - For a function written inside another body, a lifetime minted before its parameters
 //     resolved. The enclosing body minted it, possibly at the same level. See "stored into a
@@ -52,24 +105,26 @@ func (c *checker) queueCallOnlyChecks(params []callOnlyParam, sig *soltype.FuncT
 //   - An elided lifetime, which a binding of the enclosing body holds in its display type. See
 //     "stored into a binding of the enclosing body".
 //
-// Any other lifetime is one the body mints itself, or a parameter lifetime of a function
-// inferred together with this one. The call lifetime may outlive those.
+// A lifetime the result's type holds ties the parameter to the result, which the signature
+// shows, so it is not reported. See "returned" and "captured by a returned closure". Any other
+// lifetime is one the body mints itself, or a parameter lifetime of a function inferred
+// together with this one. The parameter's lifetime may outlive those.
 //
 // It runs once the enclosing component has solved, since a constraint a sibling's body records
-// can reach the call lifetime after this function's body is walked.
+// can reach the parameter's lifetime after this function's body is walked.
 func (c *checker) checkCallOnlyParams() {
 	pending := c.pendingCallOnly
 	c.pendingCallOnly = nil
-	sigOcc := map[*soltype.FuncType]map[*soltype.LifetimeVar]occPolarity{}
+	sigLts := map[*soltype.FuncType]sigLifetimes{}
 	for _, check := range pending {
 		p := check.param
-		lt := p.ft.Lt.(*soltype.LifetimeVar)
-		occ, walked := sigOcc[check.sig]
+		lt := p.lt
+		lts, walked := sigLts[check.sig]
 		if !walked {
-			occ, _ = walkLtOcc(check.sig, soltype.Positive)
-			sigOcc[check.sig] = occ
+			lts = lifetimesOf(check.sig)
+			sigLts[check.sig] = lts
 		}
-		_, outside := occ[lt]
+		outside := false
 		static := false
 		for _, kept := range outlivedBy(lt) {
 			switch kept := kept.(type) {
@@ -81,8 +136,10 @@ func (c *checker) checkCallOnlyParams() {
 				// lifetime outside the call.
 				outside = true
 			case *soltype.LifetimeVar:
-				_, inSig := occ[kept]
-				outside = outside || inSig || kept.Level < lt.Level || kept.ID < p.outerMark
+				if _, inResult := lts.result[kept]; inResult {
+					continue
+				}
+				outside = outside || lts.inOtherParam(kept, p.param) || kept.Level < lt.Level || kept.ID < p.outerMark
 			}
 		}
 		if static || outside {

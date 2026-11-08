@@ -309,8 +309,8 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 	}
 
 	// Optional lifetime annotation before the inner type, the `'a` in
-	// `'a Point`, attached to the resulting TypeRefTypeAnn after the inner
-	// type is parsed.
+	// `'a Point` or `'a fn () -> R`, attached to the resulting TypeRefTypeAnn or
+	// FuncTypeAnn after the inner type is parsed.
 	lifetime := p.parseOptLifetimeAnn()
 	token = p.lexer.peek()
 
@@ -568,11 +568,15 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 	typeAnn = p.typeAnnSuffix(typeAnn)
 
 	if lifetime != nil {
-		if ref, ok := typeAnn.(*ast.TypeRefTypeAnn); ok {
-			ref.Lifetime = lifetime
-		} else {
+		switch t := typeAnn.(type) {
+		case *ast.TypeRefTypeAnn:
+			t.Lifetime = lifetime
+		case *ast.FuncTypeAnn:
+			// `'a fn () -> R` bounds the borrows the function holds by 'a.
+			t.SetLifetime(lifetime)
+		default:
 			p.reportError(lifetime.Span(),
-				"lifetime annotation must precede a type reference")
+				"lifetime annotation must precede a type reference or a function type")
 		}
 	}
 

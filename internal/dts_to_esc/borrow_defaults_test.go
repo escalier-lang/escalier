@@ -38,6 +38,15 @@ func TestApplyBorrowDefaults(t *testing.T) {
 				"@js(\"f\")\nexport declare fn f(a: string, b: fn (x: number) -> unknown, c: Promise<Flat>, d: Callback, e: Mode) -> undefined",
 			},
 		},
+		// A callback parameter is written `fn` with no lifetime, so the callee only calls it
+		// during the call, as I2 states. So is one in a union, one that is optional, and the
+		// callback's own parameters.
+		"CallbackParams": {
+			src: `declare function f(cb: (done: () => void) => void, onEv: ((ev: number) => void) | null, opt?: () => void): () => void;`,
+			want: []string{
+				"@js(\"f\")\nexport declare fn f(cb: fn (done: fn () -> unknown) -> unknown, onEv: (fn (ev: number) -> unknown) | null, opt?: fn () -> unknown) -> fn () -> unknown",
+			},
+		},
 		"UncertainParamsStayOwned": {
 			src: `declare function f<T>(a: T, b: unknown, c: Flat | string, ...rest: Flat[]): void;`,
 			want: []string{

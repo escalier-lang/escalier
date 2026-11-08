@@ -583,7 +583,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	if len(sig.TypeParams) > 0 {
 		if allowTypeParams {
 			declScope = scope.Child()
+			// A type parameter's bound constrains a parameter's type, so a function type in it
+			// gets a fresh lifetime as one written in the parameter would.
+			restore := c.elideFuncsAs(elideFresh)
 			typeParams = c.resolveTypeParams(declScope, lvl, sig.TypeParams)
+			restore()
 		} else {
 			c.reportUnsupportedFeature(node, "TypeParam")
 		}
@@ -594,6 +598,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		c.reportUnsupportedFeature(node, "LifetimeParam")
 	}
 	fnScope := declScope.Child()
+	// A function type written with no lifetime in a parameter gets a fresh one. returnElision
+	// reads the lifetimes the receiver and parameters mint after inputMark to decide the
+	// return type's.
+	defer c.elideFuncsAs(elideFresh)()
+	inputMark := c.ctx.lifetimeCounter
 	// An instance member binds `self` in its own scope and carries the receiver as its
 	// SelfParam. Both borrow at one lifetime, which a written `&'a self` resolves here in
 	// the member's named-lifetime scope, so the body's `self` and the signature agree with
@@ -613,7 +622,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// defaults holds each parameter default until the body's context is open, so a raise
 	// or a use inside one belongs to this function.
 	var defaults []paramDefaultSite
-	// callOnlyParams holds the parameters typed as a function with no retention lifetime.
+	// callOnlyParams holds the parameters whose function type is written with no lifetime.
 	var callOnlyParams []callOnlyParam
 	// A lifetime the enclosing body minted can sit at the level of this function's parameters,
 	// so the counter tells those lifetimes apart. outerMark is -1 for a function with no
@@ -693,15 +702,13 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			if isIdent && ip.Mutable && !mutable {
 				c.info.inertMut.Add(ip)
 			}
-			// A function parameter with no retention lifetime is only called during the call,
-			// so the body sees it at a fresh lifetime that ends with the call. The signature
-			// keeps the plain type, which is what a caller reads.
+			// A parameter whose function type is written with no lifetime is only called during
+			// the call, unless the signature ties the lifetime to the result.
 			bodyT := pt
-			if ft, isFn := pt.(*soltype.FuncType); isFn && written && body != nil && ft.Lt == nil {
-				callOnly := *ft
-				callOnly.Lt = c.ctx.freshLifetime(lvl)
-				bodyT = &callOnly
-				callOnlyParams = append(callOnlyParams, callOnlyParam{name: name, node: pat, ft: &callOnly, outerMark: outerMark})
+			if ft, isFn := pt.(*soltype.FuncType); isFn && body != nil && isElidedFuncType(p.TypeAnn) {
+				if lt, isVar := ft.Lt.(*soltype.LifetimeVar); isVar {
+					callOnlyParams = append(callOnlyParams, callOnlyParam{name: name, node: pat, param: i, lt: lt, outerMark: outerMark})
+				}
 			}
 			// A parameter binding never generalizes — its var is fixed for the body — so
 			// it is a MonoScheme; instantiate returns bodyT unchanged at every use.
@@ -740,6 +747,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		}
 	}
 
+	c.fnElision = c.returnElision(inputMark, sig.LifetimeParams)
 	// The clause is the sink every throw and call is checked against, so it resolves
 	// before the body: `never` for no clause, which is how omitting it declares that the
 	// function raises nothing; T for `throws T`; a fresh var for `throws _` or a bad one.
@@ -916,6 +924,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// last expression is NOT an implicit return — only an explicit `return`
 		// produces the function's value. This mirrors the old checker's
 		// inferFuncBody.
+		// A function type written with no lifetime in the body gets a fresh one, as an elided
+		// `&` does there.
+		c.fnElision = elideFresh
 		c.inferBlock(fnScope, lvl, body)
 		// The first rule of D16 has to settle the borrows' lifetimes before
 		// commitOwnedReturns decides which returns are owned.
@@ -2318,7 +2329,9 @@ func (c *checker) applyCallShape(lvl int, e *ast.CallExpr, callee soltype.Type, 
 	// `Throws` slot, callThrows. A non-throwing `never` records nothing. callThrows is raised
 	// into this body's sink below.
 	callThrows := c.freshThrowsSink(lvl)
-	callShape := &soltype.FuncType{Params: callShapeParams, Ret: res, Throws: callThrows}
+	// A call only runs the callee, so the shape carries a lifetime of its own. A callee that
+	// may hold borrows then fits the shape, as a `fn` parameter accepts it.
+	callShape := &soltype.FuncType{Params: callShapeParams, Ret: res, Throws: callThrows, Lt: c.ctx.freshLifetime(lvl)}
 	// A resolved callee that declares nothing raises nothing, so it leaves the enclosing
 	// clause unused. Any other callee counts as raising, since its throws may still be an
 	// unsolved variable at this point. resolveOverload reaches the same rule through the same
