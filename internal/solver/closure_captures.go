@@ -1,8 +1,11 @@
 package solver
 
 import (
+	"slices"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
+	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
 // This file records what a closure captures from the body it is written in. A closure that
@@ -72,6 +75,12 @@ func (c *checker) recordClosureCaptures(scope *Scope, closure ast.Func) {
 			t.captureTypes[root] = bindingType(b)
 		}
 	}
+}
+
+// shortFuncLifetimes returns the lifetimes retentionLifetimes finds in t other than 'static. A
+// function whose lifetime is 'static outlives any closure that captures it.
+func shortFuncLifetimes(t soltype.Type) []soltype.Lifetime {
+	return slices.DeleteFunc(retentionLifetimes(t), isStaticFuncLt)
 }
 
 // movedCaptures maps the name of each local of the enclosing body that the current closure

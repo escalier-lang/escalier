@@ -9,11 +9,16 @@ import (
 // callOnlyParam is a parameter of a body-carrying function whose written type is a function
 // type with no lifetime, as `g` in `fn f(g: fn () -> undefined)`. Such a parameter is only
 // called during the call, unless the signature ties its lifetime to the result. param is the
-// parameter's index in the signature.
+// parameter's index in the signature. ann is the parameter's annotation. ft is the copy of the
+// parameter's type the body's binding holds, which shares the lifetime of the type the
+// signature holds.
 type callOnlyParam struct {
 	name  string
 	node  ast.Node
 	param int
+	// optional marks a parameter written `g?`.
+	optional bool
+	ann      *ast.FuncTypeAnn
 	// lt is the lifetime of the parameter's function type.
 	lt *soltype.LifetimeVar
 	// outerMark is the lifetime counter before the function's parameters resolved, for a
@@ -27,6 +32,89 @@ type callOnlyParam struct {
 func isElidedFuncType(ann ast.TypeAnn) bool {
 	fn, isFn := ann.(*ast.FuncTypeAnn)
 	return isFn && fn.Lifetime == nil
+}
+
+// deferredBody returns the phrase an error names a function by when its body can run after the
+// call that starts it returns, such as "a generator". It returns "" for any other function.
+func deferredBody(sig ast.FuncSig) string {
+	switch {
+	case sig.Gen:
+		return "a generator"
+	case sig.Async:
+		return "an async function"
+	}
+	return ""
+}
+
+// noteCallOnlyParam records lt, the lifetime of a call-only parameter, so that noteCallOnlyRead
+// watches reads of values that hold it. It must run when the parameter is bound, before its
+// function's body is walked.
+func (c *checker) noteCallOnlyParam(lt *soltype.LifetimeVar) {
+	if c.callOnlyDepth == nil {
+		c.callOnlyDepth = map[*soltype.LifetimeVar]int{}
+	}
+	c.callOnlyDepth[lt] = len(c.deferredBodies)
+}
+
+// deferredRead is the first read of a call-only parameter inside an `async` or `gen` body
+// entered after the parameter was bound. body is the phrase deferredBody returns for that body,
+// and node is the read.
+type deferredRead struct {
+	body string
+	node ast.Node
+}
+
+// noteCallOnlyRead records the read node, whose value resolved to t, for each call-only
+// parameter whose lifetime t holds, when the read is inside an `async` or `gen` body entered
+// after the parameter was bound. t holds the lifetime when a function in t has it, or has a
+// lifetime bounded below by it, as a closure that captures the parameter has. So a read of
+// the parameter itself counts, and so does a read of an object or array holding it or of a
+// closure that calls it.
+func (c *checker) noteCallOnlyRead(node ast.Node, t soltype.Type) {
+	if len(c.callOnlyDepth) == 0 || len(c.deferredBodies) == 0 {
+		return
+	}
+	for _, lt := range c.callOnlyLtsIn(t) {
+		depth := c.callOnlyDepth[lt]
+		if depth >= len(c.deferredBodies) {
+			continue
+		}
+		if c.callOnlyDeferredRead == nil {
+			c.callOnlyDeferredRead = map[*soltype.LifetimeVar]deferredRead{}
+		}
+		if _, recorded := c.callOnlyDeferredRead[lt]; !recorded {
+			c.callOnlyDeferredRead[lt] = deferredRead{body: c.deferredBodies[depth], node: node}
+		}
+	}
+}
+
+// callOnlyLtsIn returns the lifetimes of call-only parameters that the functions in t hold.
+// Each function's lifetime is read through its lower bounds, the origin it proxies, and the
+// copies instantiation made of it.
+func (c *checker) callOnlyLtsIn(t soltype.Type) []*soltype.LifetimeVar {
+	var out []*soltype.LifetimeVar
+	seen := set.NewSet[*soltype.LifetimeVar]()
+	pending := shortFuncLifetimes(t)
+	for len(pending) > 0 {
+		v, isVar := pending[len(pending)-1].(*soltype.LifetimeVar)
+		pending = pending[:len(pending)-1]
+		if !isVar || seen.Contains(v) {
+			continue
+		}
+		seen.Add(v)
+		if _, callOnly := c.callOnlyDepth[v]; callOnly {
+			out = append(out, v)
+			continue
+		}
+		pending = append(pending, v.LowerBounds...)
+		if origin, proxied := c.ctx.ltProxyOrigin[v]; proxied {
+			pending = append(pending, origin)
+		}
+		for _, copied := range c.ctx.ltCopies[v] {
+			pending = append(pending, copied)
+		}
+	}
+	return out
 }
 
 // callOnlyCheck is one parameter waiting for checkCallOnlyParams. sig is the type of the
@@ -110,6 +198,11 @@ func (s sigLifetimes) inOtherParam(lt *soltype.LifetimeVar, skip int) bool {
 // lifetime is one the body mints itself, or a parameter lifetime of a function inferred
 // together with this one. The parameter's lifetime may outlive those.
 //
+// The body of an `async` or `gen` function can run after the call that starts it returns. So
+// such a body keeps past the call each parameter it reads, whether the parameter is its own or
+// one of an enclosing function. See "read by a generator", "read by an async function", and
+// "read by an async closure".
+//
 // It runs once the enclosing component has solved, since a constraint a sibling's body records
 // can reach the parameter's lifetime after this function's body is walked.
 func (c *checker) checkCallOnlyParams() {
@@ -126,6 +219,9 @@ func (c *checker) checkCallOnlyParams() {
 		}
 		outside := false
 		static := false
+		// keeper names a lifetime of this signature that another parameter holds and the
+		// parameter must outlive, which the parameter could take instead of 'static.
+		keeper := ""
 		for _, kept := range outlivedBy(lt) {
 			switch kept := kept.(type) {
 			case *soltype.StaticLifetime:
@@ -139,11 +235,22 @@ func (c *checker) checkCallOnlyParams() {
 				if _, inResult := lts.result[kept]; inResult {
 					continue
 				}
-				outside = outside || lts.inOtherParam(kept, p.param) || kept.Level < lt.Level || kept.ID < p.outerMark
+				inOther := lts.inOtherParam(kept, p.param)
+				if name, named := c.signatureLts[kept]; named && inOther && keeper == "" {
+					keeper = name
+				}
+				outside = outside || inOther || kept.Level < lt.Level || kept.ID < p.outerMark
 			}
 		}
 		if static || outside {
-			c.report(&CallOnlyFuncKeptError{Name: p.name, Static: static, Param: p.node})
+			// The lifetime bounds do not record where the body added them, so the error
+			// blames the parameter.
+			if static {
+				keeper = ""
+			}
+			c.report(&CallOnlyFuncKeptError{Name: p.name, Optional: p.optional, Written: p.ann, Static: static, Keeper: keeper, Param: p.node})
+		} else if read, isRead := c.callOnlyDeferredRead[lt]; isRead {
+			c.report(&CallOnlyFuncKeptError{Name: p.name, Optional: p.optional, Written: p.ann, Deferred: read.body, Param: p.node, Read: read.node})
 		}
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/printer"
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/escalier-lang/escalier/internal/solver/ucs"
 )
@@ -2522,26 +2523,64 @@ func (e *LifetimeRelationUndeclaredError) Message() string {
 		e.Sub, e.Super, e.Sub, e.Super)
 }
 
-// CallOnlyFuncKeptError fires when a body keeps a function parameter whose type is written with
-// no lifetime past the call. Such a parameter, as `g` in `fn f(g: fn () -> undefined)`, is only
-// called during the call, so a caller lends it a closure's captures for that call alone.
-// `onClick(g)` against `declare fn onClick(handler: 'static fn () -> undefined)` keeps it for
-// 'static. Name is the parameter's name, Static says the body keeps it for 'static, and Param
-// is the parameter's pattern, which the error blames.
+// CallOnlyFuncKeptError fires when a body keeps a function parameter whose type is written with no
+// lifetime past the call. Such a parameter, as `g` in `fn f(g: fn () -> undefined)`, is only called
+// during the call, so a caller lends it a closure's captures for that call alone. `onClick(g)`
+// against `declare fn onClick(handler: 'static fn () -> undefined)` keeps it for 'static. Name is
+// the parameter's name, and Optional marks one written `g?`. Written is the parameter's
+// annotation. Static says the body keeps it for 'static. Keeper is the name of a lifetime of the
+// signature, as "'a", that the body keeps the parameter for when it does not keep it for
+// 'static, and "" when the signature names none. Deferred names the kind of function whose body
+// reads the parameter and can run after the call returns, as in "a generator", and is ""
+// otherwise. Param is the parameter's pattern. Read is the first read of the parameter in that
+// body when Deferred is set, and nil otherwise. The error blames Read when it is set and Param
+// otherwise, and relates Param when it blames Read.
 type CallOnlyFuncKeptError struct {
-	Name   string
-	Static bool
-	Param  ast.Node
+	Name     string
+	Optional bool
+	Written  *ast.FuncTypeAnn
+	Static   bool
+	Keeper   string
+	Deferred string
+	Param    ast.Node
+	Read     ast.Node
 }
 
-func (*CallOnlyFuncKeptError) isSolverError()        {}
-func (e *CallOnlyFuncKeptError) Span() ast.Span      { return e.Param.Span() }
-func (e *CallOnlyFuncKeptError) Related() []ast.Span { return nil }
-func (e *CallOnlyFuncKeptError) Message() string {
-	if e.Static {
-		return fmt.Sprintf("parameter '%s' is only called during the call, so it cannot be kept for 'static", e.Name)
+func (*CallOnlyFuncKeptError) isSolverError() {}
+func (e *CallOnlyFuncKeptError) Span() ast.Span {
+	if e.Read != nil {
+		return e.Read.Span()
 	}
-	return fmt.Sprintf("parameter '%s' is only called during the call, so it cannot outlive the call", e.Name)
+	return e.Param.Span()
+}
+func (e *CallOnlyFuncKeptError) Related() []ast.Span {
+	if e.Read != nil {
+		return []ast.Span{e.Param.Span()}
+	}
+	return nil
+}
+func (e *CallOnlyFuncKeptError) Message() string {
+	var kept string
+	switch {
+	case e.Static:
+		kept = "it is stored where it lives for the whole program"
+	case e.Deferred != "":
+		kept = fmt.Sprintf("it is read by %s, which can run after the call returns", e.Deferred)
+	default:
+		kept = "it is kept after the call returns"
+	}
+	written, _ := printer.Print(e.Written, printer.DefaultOptions())
+	lifetime := "'static"
+	if e.Keeper != "" {
+		lifetime = e.Keeper
+	}
+	// The fix keeps the parameter's `?`, so a caller that omits the argument still checks.
+	marker := ""
+	if e.Optional {
+		marker = "?"
+	}
+	return fmt.Sprintf("'%s' may borrow values that live only during the call, but %s; write `%s%s: %s %s` to keep it",
+		e.Name, kept, e.Name, marker, lifetime, written)
 }
 
 // LifetimeBinderNotSatisfiedError fires when a value is checked against a signature that
