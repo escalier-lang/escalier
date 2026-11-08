@@ -274,15 +274,14 @@ operation that passes the value does not change it.
 | Immutable borrow, `&T` | Rejected by T6 | Copy | Rejected by T4 |
 | Mutable borrow, `&mut T` | Rejected by T6 | Copy, narrowed to `&` by T4 | Copy |
 
-A primitive or a promise has no borrow form, so its destination is always
-bare. A function has no borrow form either. Its type's lifetime, written as in
-`'a fn`, bounds the borrows the function holds, and E4 states how it passes. A
-generic `&T` whose `T` is a primitive or a promise
-stands for `T`. With `fn f<T>(x: &T)`, the call
-`f(5)` copies `5` into `x`, and a read of a value-type field through a `&` copies
-the field out. Each binding
-in the function below shows one outcome, and the read of `q.x` shows the error a
-use after a move reports.
+A primitive or a promise has no borrow form, so its destination is always bare.
+A function has no borrow form either. Its type's lifetime, written as in
+`'a fn`, bounds the borrows the function holds, and E4 states how it passes.
+A generic `&T` whose `T` is a primitive or a promise stands for `T`. With
+`fn f<T>(x: &T)`, the call `f(5)` copies `5` into `x`, and a read of a
+value-type field through a `&` copies the field out. Each binding in the function below
+shows one outcome, and the read of `q.x` shows the error a use after a move
+reports.
 
 ```esc
 fn go(r: &{x: number}) -> number {
@@ -679,24 +678,25 @@ fn setup() {
     val cfg = {msg: "hello"}
     val show = fn () { console.log(cfg.msg) }
     run(show)                   // accepted, since run only calls show during the call
-    keep(show)                  // accepted, since cfg has no later use, so show owns it
+    keep(show)                  // accepted, and keep holds show's immutable borrow of cfg
+    console.log(cfg.msg)        // accepted, since show only reads cfg
 
     val mut count = {n: 0}
     val inc = fn () { count.n = count.n + 1 }
     run(inc)                    // accepted
-    keep(inc)                   // accepted, and keep takes count over
-    render(&count)              // error: 'count' is used after the 'cb' that 'keep' retains took it over for 'static
+    keep(inc)                   // accepted, and keep holds inc's mutable borrow of count
+    render(&count)              // error: cannot borrow 'count' as immutable while it is borrowed as mutable by the 'cb' that 'keep' retains
 
     var n = 0
     handlers.push(fn () { n = n + 1 })    // accepted, since n has no later use
 }
 ```
 
-`keep(show)` is accepted because `show` takes ownership of `cfg`. Every local of
-`setup` that `show` borrows is dead after the call, so nothing in `setup` can
-observe what the closure does with it. `keep(inc)` takes `count` over the same
-way, so the error is at `render(&count)`, which reads a value the kept closure
-now owns and may write at any time. D17 states the rule.
+`keep(show)` is accepted, and `keep` holds `show`'s borrow of `cfg` for the
+rest of the program. `show` only reads `cfg`, so that borrow is immutable, and
+the later read of `cfg.msg` is accepted. `inc` writes `count`, so `keep(inc)`
+holds a mutable borrow of it. The error is at `render(&count)`, which reads a
+value the kept closure may write at any time. D17 states the rule.
 
 To keep a closure that borrows a live local, give the slot a lifetime that the
 local outlives. A class with a lifetime parameter does this. A `Button<'a>`
@@ -1135,10 +1135,9 @@ reads it. A parameter whose `fn` type has no written lifetime is only called
 during the call, as D17 decides. A parameter written `'static fn` may be kept
 for the rest of the program.
 
-`onClick` below keeps its handler for the rest of the program, so the handler
-takes ownership of `count`, which it borrows. `render` reads `count` after the
-call, a value the handler now owns and may change on any click, so the read is
-rejected:
+`onClick` below keeps its handler for the rest of the program, so it holds the
+handler's mutable borrow of `count` for that long. `render` reads `count` after
+the call, a value the handler may change on any click, so the read is rejected:
 
 ```esc
 declare fn onClick(handler: 'static fn () -> undefined) -> undefined
@@ -1147,14 +1146,14 @@ declare fn render(view: &{n: number}) -> undefined
 fn setup() {
     val mut count = {n: 0}
     onClick(fn () { count.n = count.n + 1 })
-    render(&count)    // error: 'count' is used after the 'handler' that 'onClick' retains took it over for 'static
+    render(&count)    // error: cannot borrow 'count' as immutable while it is borrowed as mutable by the 'handler' that 'onClick' retains
 }
 ```
 
 There are two ways to write `setup` so that it checks. The first moves every use
-of `count` into the handler. `setup` never uses `count` again, so the handler
-takes ownership of it, and the borrow `render` takes inside the closure lasts
-only for one call:
+of `count` into the handler. `setup` never uses `count` again, so nothing
+conflicts with the handler's kept borrow, and the borrow `render` takes inside
+the closure lasts only for one call:
 
 ```esc
 fn setup() {
@@ -1633,11 +1632,10 @@ A function type's lifetime bounds the borrows the function holds, the way a
 `&'a T` borrow's lifetime bounds how long the borrow lives. Six rules decide
 how the lifetime is written, elided, inferred, and checked:
 
-1. Any `fn` type may hold borrows, in every position. Its lifetime is written as
-   a prefix, as in `'a fn () -> undefined` or `'static fn () -> undefined`. It
-   needs writing only where the elided one is not the one wanted. A function
-   type takes no
-   `&`, so `&fn () -> undefined` is rejected with
+1. Any `fn` type may hold borrows, in every position. Its lifetime is written
+   as a prefix, as in `'a fn () -> undefined` or `'static fn () -> undefined`.
+   It needs writing only where the elided one is not the one wanted. A function
+   type takes no `&`, so `&fn () -> undefined` is rejected with
    `Unsupported: borrow of a non-borrowable type`. A function is still a value
    type, so F2 copies it into a slot, and passing one needs no written `&`.
 2. A `fn` type written with no lifetime takes one by its position, the way an
@@ -1679,36 +1677,43 @@ how the lifetime is written, elided, inferred, and checked:
 
    A closure that borrows nothing is `'static`. There is no capture syntax
    other than `move fn` in rule 6.
-5. A kept closure takes ownership of the body's locals it borrows. This rule
-   extends F3's returned closure to every destination that keeps a closure
-   past the body. Such a destination is a `return` or a `'static` slot. A `'static`
+5. A kept closure keeps its borrows of the body's locals. This rule extends
+   F3's returned closure to every destination that keeps a closure past the
+   body. Such a destination is a `return` or a `'static` slot. A `'static`
    slot is a `'static fn` parameter, a module-level binding, a `'static`
-   field, or an element of a module-level array. When a closure flows into one
-   of them, it owns the `val` and `var` locals of the enclosing body that it
-   borrows, instead of borrowing them. The store moves each of those locals
-   into the closure:
-   - A later read, write, move or borrow of one reports that it is used after
-     the slot took it over, at the later use. An example is `'count' is used
-     after the 'handler' that 'onClick' retains took it over for 'static`.
-   - A borrow of one that is still live at the store reports `cannot move 'p'
-     while it is borrowed`.
-   - A parameter, or a borrow of something outside the body, is not the
-     body's to give away, so the closure keeps borrowing it. At a `return`,
-     the borrow ties the result to the parameter's lifetime, as F3 and `wrap`
-     below show. A `'static` slot rejects such a closure at the store, with a
-     message such as `` this closure borrows `p`, but `keep` keeps it for
+   field, or an element of a module-level array. When a closure flows into
+   one of them, each borrow it holds of a `val` or `var` local of the
+   enclosing body lasts for the rest of the program. Each kept borrow keeps
+   the mode rule 4 gave it, and later uses of the local are checked against
+   it:
+   - After a kept immutable borrow, a read or `&` is accepted. A write,
+     `&mut` or move is rejected, as in `cannot assign to 'p.x' while it is
+     borrowed as immutable by 'sink'`.
+   - After a kept mutable borrow, every read, write, borrow or move is
+     rejected, as in `cannot borrow 'count' as immutable while it is
+     borrowed as mutable by the 'handler' that 'onClick' retains`. This is
+     stricter than an ordinary `&mut`, which allows the owner to read. The
+     kept closure may run at any time, so no later read can be ordered
+     before or after its write.
+   - A borrow of one that is still live at the store is checked against the
+     kept borrow by the usual exclusivity rules.
+   - Calling the kept closure through its own local name is accepted.
+   - A parameter, or a borrow of something outside the body, outlives the
+     body by an amount the body can't know. At a `return`, the borrow ties
+     the result to the parameter's lifetime, as F3 and `wrap` below show. A
+     `'static` slot rejects such a closure at the store, with a message
+     such as `` this closure borrows `p`, but `keep` keeps it for
      'static; pass a function that borrows nothing ``.
 6. `move fn` makes a closure own its captures from where it is written. A
    captured value type is still copied, and a captured borrow stays a borrow.
 
 Rule 5 is where Escalier departs from Rust. Rust frees a local at the end of
 its scope, so a closure that outlives the scope must be written `move` to own
-what it captures. Escalier compiles to JavaScript, where a
-captured local is never freed while a closure can reach it. The borrow rules
-here protect against aliasing and against use after a move, not against
-deallocation. The checker infers the move that Rust asks the user to write,
-and reports any later use of a moved local, so nothing in the body can alias
-what the closure owns.
+what it captures. Escalier compiles to JavaScript, where a captured local is
+never freed while a closure can reach it. The borrow rules here protect
+against aliasing, not against deallocation. So a kept closure can go on
+borrowing a local after the body returns. Only a later use that conflicts
+with the closure's borrow is rejected.
 
 The program below shows rule 2 in three positions. Each comment names the
 lifetime of the `fn` type on its line or the line below:
@@ -1733,7 +1738,7 @@ fn stash(g: fn () -> undefined) {
 
 E4's `setup` example shows rules 3 through 5. `keep(show)` and `keep(inc)` are
 both accepted by rule 5. The later `render(&count)` is rejected because
-`keep` took `count` over.
+`keep` holds `inc`'s mutable borrow of `count`.
 
 An unannotated parameter that the body only calls is call-only, so
 `fn f(g) { return g() }` infers `fn <T0>(g: fn () -> T0) -> T0`. One the body
@@ -1743,7 +1748,7 @@ Each error follows the shape of Rust's. It names the value, what the value
 borrows, what keeps the value and for how long, and the fix. Two examples:
 
 - `` 'g' may borrow values that live only during the call, but it is kept after the call returns; write `g: 'static fn () -> undefined` to keep it ``
-- `` 'count' is used after the 'cb' that 'keep' retains took it over for 'static ``
+- `cannot borrow 'count' as immutable while it is borrowed as mutable by the 'cb' that 'keep' retains`
 
 The wording of each fix may change. The shape stays.
 
@@ -1773,10 +1778,11 @@ each, and each item says whether that behaviour is decided or open:
   nothing gets a `'static` function type. With `var g = fn () {}` in a body,
   a later `g = fn () { p.x = 2 }` over a local `p` is then rejected with
   `` this closure borrows `p`, but `g` has the type of a closure that borrows nothing; annotate `g` with a function type to let it hold one that borrows ``.
-  A written type such as `var g: fn () -> undefined` in the same body is
-  fresh by rule 2, so it holds either closure. At module level the written
-  type is `'static` by rule 2, so it rejects the borrowing closure too. This is decided. The binding's type comes from its
-  initializer, as it does for any binding with no written type.
+  A written type such as `var g: fn () -> undefined` in the same body is fresh
+  by rule 2, so it holds either closure. At module level the written type is
+  `'static` by rule 2, so it rejects the borrowing closure too. This is decided.
+  The binding's type comes from its initializer, as it does for any binding with
+  no written type.
 - A conditional type's `extends` test and its `infer` patterns ignore function
   lifetimes. Whether they should compare them is open.
 
@@ -2172,7 +2178,7 @@ the solver.
 | E4, D10 | The two `setup` programs from D10 | The first rejected, the second accepted |
 | D17 | `wrap` and `stash` from D17 | The signature and the error D17 lists |
 | D17 | `&fn () -> undefined` in an annotation | `Unsupported: borrow of a non-borrowable type` |
-| D17 | A closure over a local passed to a `'static fn` parameter, then the local read, written, moved or borrowed | The later use reports that the slot took the local over |
+| D17 | A closure over a local passed to a `'static fn` parameter, then the local read, written, moved or borrowed | A read or `&` after a reading closure is accepted. A write, `&mut` or move after it, or any use after a writing closure, reports a conflict with the kept borrow |
 | D17 | A closure over a local passed to a `'static fn` parameter, with no later use of the local | Accepted |
 | D17 | A closure over a parameter passed to a `'static fn` parameter | Rejected at the call |
 | D17 | An unannotated `var` started with a closure that borrows nothing, then assigned one that borrows a local | Rejected |
