@@ -26,6 +26,20 @@ type borrowDest struct {
 	// reborrows marks a destination that borrows a borrow source again rather than
 	// copying it, which F4 gives a method receiver and a pattern over a borrow.
 	reborrows bool
+	// writable marks a destination whose type has a `&mut` member, such as a parameter
+	// typed `&mut {v: number} | &{v: number}`. The callee can narrow it to that member and
+	// write through it, so it may be written through even when borrow is `&`.
+	writable bool
+}
+
+// narrow returns the kind of borrow the destination receives from a source borrow of the
+// given kind. A destination that cannot be written through narrows a `&mut` source to `&`,
+// as T4 does. No destination widens a `&` source.
+func (b *borrowDest) narrow(kind borrowKind) borrowKind {
+	if b.borrow == mutableBorrow || b.writable {
+		return kind
+	}
+	return immutableBorrow
 }
 
 // inferredReturnDest is a return with no annotation. It takes ownership of an owned
@@ -64,8 +78,18 @@ func (*paramDest) isFlowDest()          {}
 func (*calleeDest) isFlowDest()         {}
 func (*captureDest) isFlowDest()        {}
 
-// provisionalFlow is a flow F3 has not settled yet. table holds the placeholder event at
-// index. source is the source expression, read for its type once the flow settles. A
+// provisionalFlow is a flow F3 has not settled yet, because its source or destination is not
+// known where the flow is written. Three cases wait, and flowWait names what each waits on:
+//
+//   - A flow out of an unannotated parameter waits until the body is walked. Whether
+//     `val q = p` moves or copies p depends on whether p settles as owned or as a borrow.
+//   - A closure's capture waits for the closure's flow site. A closure that is returned or
+//     stored takes its captures with it, and one called where it is written only uses them.
+//   - An argument whose callee's signature the call could not see waits until the module or
+//     script is inferred.
+//
+// movedParams also reads the flows that wait on a parameter, to find the parameters the
+// body moves. table holds the placeholder event at index. source is the source expression, read for its type once the flow settles. A
 // closure capture and a destructured part have no source expression of their own, so
 // source is nil and sourceT holds the type of the value that flows.
 type provisionalFlow struct {

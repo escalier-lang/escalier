@@ -46,7 +46,7 @@ func TestReceiverModes(t *testing.T) {
 					c.look()
 				}
 			`,
-			want: []string{"15:6-15:12: use of moved value 'c'"},
+			want: []string{"15:6-15:7: use of moved value 'c'"},
 		},
 		{
 			name: "a field read after a consuming call is a use of the moved value",
@@ -117,7 +117,7 @@ func TestReceiverModes(t *testing.T) {
 					c.look()
 				}
 			`,
-			want: []string{"15:6-15:12: use of moved value 'c'"},
+			want: []string{"15:6-15:7: use of moved value 'c'"},
 		},
 		{
 			name: "a consuming call through a borrowed parameter is rejected",

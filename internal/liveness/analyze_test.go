@@ -19,7 +19,7 @@ func TestCollectUsesSimpleDecl(t *testing.T) {
 	// val x = 1
 	x := identPat("x")
 	stmts := []ast.Stmt{valDecl(x, numLit(1))}
-	Rename(ids, nil, block(stmts...), nil)
+	RenameFrom(ids, nil, block(stmts...), nil, 1)
 
 	uses := CollectUses(ids, stmts)
 
@@ -38,7 +38,7 @@ func TestCollectUsesDeclWithIdentInit(t *testing.T) {
 		valDecl(x, numLit(1)),
 		valDecl(y, xRef),
 	}
-	Rename(ids, nil, block(stmts...), nil)
+	RenameFrom(ids, nil, block(stmts...), nil, 1)
 
 	uses := CollectUses(ids, stmts)
 
@@ -60,7 +60,7 @@ func TestCollectUsesAssignment(t *testing.T) {
 		varDecl(x, numLit(1)),
 		exprStmt(assignExpr(xTarget, numLit(2))),
 	}
-	Rename(ids, nil, block(stmts...), nil)
+	RenameFrom(ids, nil, block(stmts...), nil, 1)
 
 	uses := CollectUses(ids, stmts)
 
@@ -79,7 +79,7 @@ func TestCollectUsesExprStmt(t *testing.T) {
 		valDecl(x, numLit(1)),
 		exprStmt(call(ident("print"), xRef)),
 	}
-	Rename(ids, nil, block(stmts...), map[string]VarID{"print": -1})
+	RenameFrom(ids, nil, block(stmts...), map[string]VarID{"print": -1}, 1)
 
 	uses := CollectUses(ids, stmts)
 
@@ -98,7 +98,7 @@ func TestCollectUsesMemberExpr(t *testing.T) {
 		valDecl(obj, &ast.ObjectExpr{Elems: nil}),
 		exprStmt(&ast.MemberExpr{Object: objRef, Prop: ast.NewIdentifier("x", span())}),
 	}
-	Rename(ids, nil, block(stmts...), nil)
+	RenameFrom(ids, nil, block(stmts...), nil, 1)
 
 	uses := CollectUses(ids, stmts)
 
@@ -112,7 +112,7 @@ func TestCollectUsesIgnoresNonLocal(t *testing.T) {
 	stmts := []ast.Stmt{
 		exprStmt(call(ident("print"), ident("globalVar"))),
 	}
-	Rename(ids, nil, block(stmts...), map[string]VarID{"print": -1, "globalVar": -2})
+	RenameFrom(ids, nil, block(stmts...), map[string]VarID{"print": -1, "globalVar": -2}, 1)
 
 	uses := CollectUses(ids, stmts)
 
@@ -130,7 +130,7 @@ func TestCollectUsesReturnStmt(t *testing.T) {
 		valDecl(x, numLit(1)),
 		ast.NewReturnStmt(xRef, span()),
 	}
-	Rename(ids, nil, block(stmts...), nil)
+	RenameFrom(ids, nil, block(stmts...), nil, 1)
 
 	uses := CollectUses(ids, stmts)
 
@@ -157,7 +157,7 @@ func TestCollectUsesFuncDecl(t *testing.T) {
 		ast.NewDeclStmt(funcDecl, span()),
 		exprStmt(call(addRef)),
 	}
-	Rename(ids, nil, block(stmts...), nil)
+	RenameFrom(ids, nil, block(stmts...), nil, 1)
 
 	uses := CollectUses(ids, stmts)
 
@@ -183,7 +183,7 @@ func TestCollectUsesDoExprRecursed(t *testing.T) {
 			exprStmt(ast.NewBinary(xRef, numLit(1), ast.Plus, span())),
 		)}),
 	}
-	Rename(ids, nil, block(stmts...), nil)
+	RenameFrom(ids, nil, block(stmts...), nil, 1)
 
 	uses := CollectUses(ids, stmts)
 
@@ -213,7 +213,7 @@ func TestCollectUsesIfElseRecursed(t *testing.T) {
 			span(),
 		)),
 	}
-	Rename(ids, nil, block(stmts...), map[string]VarID{"cond": -1})
+	RenameFrom(ids, nil, block(stmts...), map[string]VarID{"cond": -1}, 1)
 
 	uses := CollectUses(ids, stmts)
 
@@ -258,7 +258,7 @@ func TestCollectUsesMatchRecursed(t *testing.T) {
 			span(),
 		)),
 	}
-	Rename(ids, nil, block(stmts...), map[string]VarID{"target": -1})
+	RenameFrom(ids, nil, block(stmts...), map[string]VarID{"target": -1}, 1)
 
 	uses := CollectUses(ids, stmts)
 
@@ -303,7 +303,7 @@ func TestCollectUsesMatchWithGuardRecursed(t *testing.T) {
 			span(),
 		)),
 	}
-	Rename(ids, nil, block(stmts...), map[string]VarID{"target": -1, "true": -2})
+	RenameFrom(ids, nil, block(stmts...), map[string]VarID{"target": -1, "true": -2}, 1)
 
 	uses := CollectUses(ids, stmts)
 
@@ -341,7 +341,7 @@ func TestCollectUsesTryCatchRecursed(t *testing.T) {
 			span(),
 		)),
 	}
-	Rename(ids, nil, block(stmts...), nil)
+	RenameFrom(ids, nil, block(stmts...), nil, 1)
 
 	uses := CollectUses(ids, stmts)
 
@@ -351,11 +351,14 @@ func TestCollectUsesTryCatchRecursed(t *testing.T) {
 		"try and catch bodies should be recursed into by CollectUses")
 }
 
-// --- AnalyzeBlock tests ---
+// --- Straight-line liveness tests ---
+//
+// Each body below has no branches, so AnalyzeFunction puts every statement in the entry block,
+// block 0, at its source index.
 
 func TestLivenessEmptyBlock(t *testing.T) {
 	ids := NewVarIDs()
-	info := AnalyzeBlock(ids, nil)
+	info := AnalyzeFunction(BuildCFG(ids, block()))
 
 	require.NotNil(t, info)
 	require.Empty(t, info.LastUse)
@@ -373,9 +376,10 @@ func TestLivenessSimpleSequential(t *testing.T) {
 		valDecl(y, xRef),
 		exprStmt(call(ident("print"), yRef)),
 	}
-	Rename(ids, nil, block(stmts...), map[string]VarID{"print": -1})
+	body := block(stmts...)
+	RenameFrom(ids, nil, body, map[string]VarID{"print": -1}, 1)
 
-	info := AnalyzeBlock(ids, stmts)
+	info := AnalyzeFunction(BuildCFG(ids, body))
 
 	xID := ids.Of(x)
 	yID := ids.Of(y)
@@ -413,9 +417,10 @@ func TestLivenessVariableDeadAfterLastUse(t *testing.T) {
 		valDecl(y, numLit(2)),
 		exprStmt(call(ident("print"), yRef)),
 	}
-	Rename(ids, nil, block(stmts...), map[string]VarID{"print": -1})
+	body := block(stmts...)
+	RenameFrom(ids, nil, body, map[string]VarID{"print": -1}, 1)
 
-	info := AnalyzeBlock(ids, stmts)
+	info := AnalyzeFunction(BuildCFG(ids, body))
 
 	xID := ids.Of(x)
 
@@ -439,9 +444,10 @@ func TestLivenessDefinitionKillsVariable(t *testing.T) {
 		exprStmt(assignExpr(xTarget, numLit(2))),
 		exprStmt(call(ident("print"), xRef2)),
 	}
-	Rename(ids, nil, block(stmts...), map[string]VarID{"print": -1})
+	body := block(stmts...)
+	RenameFrom(ids, nil, body, map[string]VarID{"print": -1}, 1)
 
-	info := AnalyzeBlock(ids, stmts)
+	info := AnalyzeFunction(BuildCFG(ids, body))
 
 	xID := ids.Of(x)
 
@@ -471,9 +477,10 @@ func TestLivenessUnusedVariableNeverLive(t *testing.T) {
 		valDecl(y, numLit(2)),
 		exprStmt(call(ident("print"), yRef)),
 	}
-	Rename(ids, nil, block(stmts...), map[string]VarID{"print": -1})
+	body := block(stmts...)
+	RenameFrom(ids, nil, body, map[string]VarID{"print": -1}, 1)
 
-	info := AnalyzeBlock(ids, stmts)
+	info := AnalyzeFunction(BuildCFG(ids, body))
 
 	xID := ids.Of(x)
 
@@ -499,9 +506,10 @@ func TestLivenessShadowingDistinctVarIDs(t *testing.T) {
 		valDecl(x2, numLit(2)),
 		exprStmt(call(ident("print"), xRef2)),
 	}
-	Rename(ids, nil, block(stmts...), map[string]VarID{"print": -1})
+	body := block(stmts...)
+	RenameFrom(ids, nil, body, map[string]VarID{"print": -1}, 1)
 
-	info := AnalyzeBlock(ids, stmts)
+	info := AnalyzeFunction(BuildCFG(ids, body))
 
 	x1ID := ids.Of(x1)
 	x2ID := ids.Of(x2)
@@ -530,9 +538,10 @@ func TestLivenessLastUse(t *testing.T) {
 		exprStmt(call(ident("print"), xRef1)),
 		exprStmt(call(ident("print"), xRef2)),
 	}
-	Rename(ids, nil, block(stmts...), map[string]VarID{"print": -1})
+	body := block(stmts...)
+	RenameFrom(ids, nil, body, map[string]VarID{"print": -1}, 1)
 
-	info := AnalyzeBlock(ids, stmts)
+	info := AnalyzeFunction(BuildCFG(ids, body))
 
 	xID := ids.Of(x)
 
@@ -549,9 +558,10 @@ func TestLivenessIsLiveAfter(t *testing.T) {
 		valDecl(x, numLit(1)),
 		exprStmt(call(ident("print"), xRef)),
 	}
-	Rename(ids, nil, block(stmts...), map[string]VarID{"print": -1})
+	body := block(stmts...)
+	RenameFrom(ids, nil, body, map[string]VarID{"print": -1}, 1)
 
-	info := AnalyzeBlock(ids, stmts)
+	info := AnalyzeFunction(BuildCFG(ids, body))
 
 	xID := ids.Of(x)
 
@@ -574,9 +584,10 @@ func TestLivenessMultipleVariables(t *testing.T) {
 		valDecl(c, ast.NewBinary(aRef, bRef, ast.Plus, span())),
 		exprStmt(call(ident("print"), cRef)),
 	}
-	Rename(ids, nil, block(stmts...), map[string]VarID{"print": -1})
+	body := block(stmts...)
+	RenameFrom(ids, nil, body, map[string]VarID{"print": -1}, 1)
 
-	info := AnalyzeBlock(ids, stmts)
+	info := AnalyzeFunction(BuildCFG(ids, body))
 
 	aID := ids.Of(a)
 	bID := ids.Of(b)
@@ -612,9 +623,10 @@ func TestLivenessAssignmentFromVariable(t *testing.T) {
 		exprStmt(assignExpr(bTarget, aRef)),
 		exprStmt(call(ident("print"), bRef)),
 	}
-	Rename(ids, nil, block(stmts...), map[string]VarID{"print": -1})
+	body := block(stmts...)
+	RenameFrom(ids, nil, body, map[string]VarID{"print": -1}, 1)
 
-	info := AnalyzeBlock(ids, stmts)
+	info := AnalyzeFunction(BuildCFG(ids, body))
 
 	aID := ids.Of(a)
 	bID := ids.Of(b)

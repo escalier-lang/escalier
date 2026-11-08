@@ -25,7 +25,8 @@ type flowLifetimeCase struct {
 func runFlowLifetimeCases(t *testing.T, cases []flowLifetimeCase) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			values, errs := inferAgainstTreeWithSpans(t, c.src)
+			res := InferModuleAgainstStdlib(parseModule(t, c.src), benchTree, Options{})
+			values, errs := renderedValues(res), messagesWithSpan(t, res.Errors)
 			require.Equal(t, c.want, errs)
 			for name, want := range c.values {
 				require.Contains(t, values, name)
@@ -294,10 +295,7 @@ func TestFlowLifetimeEscapingReadOnlyParam(t *testing.T) {
 }
 */
 
-// DISABLED until #2247, which blocks writes and new immutable borrows after a `'static` borrow.
-// Today the write to `p.x` in `remember` checks clean, since the exclusivity check does not keep
-// the borrow stored in `cache` live after the store.
-/*
+// TestFlowLifetimeStaticBorrow covers a write to a place a `'static` borrow reaches.
 func TestFlowLifetimeStaticBorrow(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{
 		// L1. The returned borrow in `make` outlives `p`, which is accepted. The borrow stored in
@@ -322,7 +320,6 @@ func TestFlowLifetimeStaticBorrow(t *testing.T) {
 		},
 	})
 }
-*/
 
 // DISABLED until #2286, which rejects a body that ties its result to a lifetime the signature
 // leaves unnamed.
@@ -349,14 +346,13 @@ func TestFlowLifetimeUndeclaredElidedRelation(t *testing.T) {
 }
 */
 
-// DISABLED until #2249 and #2269. Today the program reports three errors and renders `cache` as
+// DISABLED until #2249 and #2324. Today the program reports three errors and renders `cache` as
 // `fn (p: &mut {x: number}) -> undefined`:
 //
 //   - The initializer `&mut {x: 0}` reports `cannot constrain immutable object <: mutable object`
-//     and `cannot constrain number <: 0`. No issue tracks this yet.
+//     and `cannot constrain number <: 0`, which #2324 tracks.
 //   - The store `sink = p` reports `cannot constrain immutable object <: mutable object`. Any store
-//     into a module-level `&mut` binding reports it, and the store also moves `p`, which F2 rules
-//     out for a borrow.
+//     into a module-level `&mut` binding reports it, as #2249 tracks.
 /*
 func TestFlowLifetimeStaticRender(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{
@@ -386,10 +382,7 @@ func TestFlowLifetimeStaticRender(t *testing.T) {
 }
 */
 
-// DISABLED until #2269, which turns on the single ownership pass. Today the move `val q = p`
-// checks clean, and the later call reports `this call runs 'peek', which reads 'p' after it was
-// moved` instead.
-/*
+// TestFlowLifetimeClosureBlocksMove covers the `moved` program from E4.
 func TestFlowLifetimeClosureBlocksMove(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{
 		// E4. `peek` still holds its borrow of `p` for its later call, so E3 rejects the move.
@@ -407,7 +400,6 @@ func TestFlowLifetimeClosureBlocksMove(t *testing.T) {
 		},
 	})
 }
-*/
 
 // TestFlowLifetimeRetainedCallback covers the first `setup` program in D10, which E4 rejects.
 func TestFlowLifetimeRetainedCallback(t *testing.T) {

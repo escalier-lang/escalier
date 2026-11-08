@@ -7,11 +7,14 @@ import (
 )
 
 // TestEscapingClosureCapture covers a closure that outlives the body it is written in. A returned
-// closure moves each owned local it captures, so a later use of the local reads a moved value.
-// One stored into a module-level binding may run during any call after the store, so each such
-// call borrows the owned locals it writes. A local it only reads stays free. One stored into a
-// caller-owned object borrows its captures, and the paths it hands the caller are weighed like
-// a stored borrow's. A closure that stays in the body borrows its captures too.
+// closure moves each owned local it captures at the return. One stored into a module-level
+// binding borrows its captures for `'static`, and may run during any call after the store, so
+// each such call borrows the owned locals it writes. One stored into a caller-owned object
+// borrows its captures, and the paths it hands the caller are weighed like a stored borrow's. A
+// closure that stays in the body borrows its captures too.
+//
+// A move of a local that a module-level closure captures breaks E3, and the diagnostic is at
+// the move. TestOwnershipDataflow covers the move of a local a module-level closure only reads.
 func TestEscapingClosureCapture(t *testing.T) {
 	tests := map[string]struct {
 		src  string
@@ -51,7 +54,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 					take(p)
 				}
 			`,
-			want: []string{"7:11-7:12: cannot move 'p' in a call that may run 'sink', which writes it"},
+			want: []string{"7:11-7:12: cannot move 'p' while it is borrowed"},
 		},
 		// A direct call to an overloaded name may run sink as much as any other call.
 		"MoveIntoAnOverloadAfterStoringAWritingClosureIntoAGlobalConflicts": {
@@ -65,19 +68,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 					take(p)
 				}
 			`,
-			want: []string{"8:11-8:12: cannot move 'p' in a call that may run 'sink', which writes it"},
-		},
-		// A closure that only reads p does not keep p from moving.
-		"MoveAfterStoringAReadingClosureIntoAGlobalOk": {
-			src: `
-				var sink: fn () -> number = fn () { return 0 }
-				declare fn take(x: {x: number}) -> undefined
-				fn go() {
-					val p = {x: 1}
-					sink = fn () { return p.x }
-					take(p)
-				}
-			`,
+			want: []string{"8:11-8:12: cannot move 'p' while it is borrowed"},
 		},
 		// readIt may call sink, which writes p while readIt reads it through `a`.
 		"BorrowAfterStoringAWritingClosureIntoAGlobalConflicts": {
@@ -107,7 +98,8 @@ func TestEscapingClosureCapture(t *testing.T) {
 			`,
 			want: []string{"7:6-7:16: this call may run 'sink', which writes 'p' while it is borrowed as immutable"},
 		},
-		// noop may run sink, which writes p after the move gave it to q.
+		// noop may run sink, which writes p after the move gave it to q. The pass rejects the
+		// move itself, since sink holds its borrow of p between calls.
 		"CallAfterMovingALocalAGlobalClosureWritesConflicts": {
 			src: `
 				var sink: fn () -> undefined = fn () {}
@@ -119,7 +111,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 					noop()
 				}
 			`,
-			want: []string{"8:6-8:12: this call may run 'sink', which writes 'p' after it was moved"},
+			want: []string{"7:14-7:15: cannot move 'p' while it is borrowed"},
 		},
 		"UnusedBorrowAfterStoringAWritingClosureIntoAGlobalOk": {
 			src: `
@@ -213,7 +205,8 @@ func TestEscapingClosureCapture(t *testing.T) {
 				}
 			`,
 		},
-		// Returning p hands the caller p as an owned value beside the closure's borrow of it.
+		// Returning p hands the caller p as an owned value beside the closure's borrow of it, so
+		// the return breaks E3.
 		"ReturningALocalAStoredClosureCapturesConflicts": {
 			src: `
 				fn go(out: &mut {cb: fn () -> number}) -> {x: number} {
@@ -222,9 +215,10 @@ func TestEscapingClosureCapture(t *testing.T) {
 					return p
 				}
 			`,
-			want: []string{"5:13-5:14: 'p' leaves the function both as an owned value and through a borrow"},
+			want: []string{"5:13-5:14: cannot move 'p' while it is borrowed"},
 		},
-		// The stored closure writes p while `q.r` hands the caller an immutable path to it.
+		// The stored closure writes p while `q.r` hands the caller an immutable path to it. The
+		// caller can call `out.cb` while it reads `q.r`, so `&p` breaks E2.
 		"StoringAWritingClosureBesideAnImmutableStoreConflicts": {
 			src: `
 				fn go(out: &mut {cb: fn () -> undefined}, q: &mut {r: &{x: number}}) {
@@ -233,7 +227,18 @@ func TestEscapingClosureCapture(t *testing.T) {
 					q.r = &p
 				}
 			`,
-			want: []string{"5:12-5:14: 'p' leaves the function through a mutable path and an immutable one"},
+			want: []string{"5:12-5:14: cannot borrow 'p' as immutable while it is borrowed as mutable"},
+		},
+		// The writing closure stays in a local that the caller never reaches and that no call
+		// runs, so `&p` hands the caller the only path to p.
+		"KeepingAWritingClosureInALocalBesideAnImmutableStoreOk": {
+			src: `
+				fn go(q: &mut {r: &{x: number}}) {
+					val mut p = {x: 1}
+					val f = fn () { p.x = 2 }
+					q.r = &p
+				}
+			`,
 		},
 		// An owned parameter dies with the frame, so a closure stored into it borrows p.
 		"StoreIntoAnOwnedParameterLeavesTheCaptureOk": {

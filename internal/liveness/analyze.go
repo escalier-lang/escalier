@@ -1,14 +1,10 @@
 package liveness
 
-import (
-	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/set"
-)
+import "github.com/escalier-lang/escalier/internal/set"
 
 // analyzeStmts walks a sequence of statements backward, computing per-statement
 // LiveBefore and LiveAfter sets. initialLiveAfter is the set of variables live
-// after the last statement (empty for a standalone block, or the block's LiveOut
-// from fixed-point iteration for CFG-based analysis).
+// after the last statement, the block's LiveOut from the fixed-point iteration.
 func analyzeStmts(stmtUses []StmtUses, initialLiveAfter set.Set[VarID]) ([]set.Set[VarID], []set.Set[VarID]) {
 	n := len(stmtUses)
 	liveBefore := make([]set.Set[VarID], n)
@@ -49,36 +45,6 @@ func computeLastUse(stmtUses []StmtUses, blockID int, lastUse map[VarID]StmtRef)
 		for _, use := range su.Uses {
 			lastUse[use] = StmtRef{BlockID: blockID, StmtIdx: i}
 		}
-	}
-}
-
-// AnalyzeBlock computes liveness for a linear block of statements.
-// For control-flow-aware analysis, use AnalyzeFunction with a CFG instead.
-//
-// The algorithm walks backward from the last statement:
-//  1. Start with LiveAfter = {} for the last statement
-//  2. For each statement, working backward:
-//     LiveBefore[stmt] = (LiveAfter[stmt] - Defs[stmt]) ∪ Uses[stmt]
-//     LiveAfter[prev] = LiveBefore[stmt]
-//  3. A variable is "dead" at a point if it is not in LiveBefore or LiveAfter
-//
-// ids holds the VarIDs the rename pass assigned to the statements.
-func AnalyzeBlock(ids *VarIDs, stmts []ast.Stmt) *LivenessInfo {
-	// For Phase 3, everything is in a single block (blockID = 0).
-	blockID := 0
-	lastUse := make(map[VarID]StmtRef)
-
-	// Collect per-statement uses and defs.
-	stmtUses := CollectUses(ids, stmts)
-
-	before, after := analyzeStmts(stmtUses, set.NewSet[VarID]())
-
-	computeLastUse(stmtUses, blockID, lastUse)
-
-	return &LivenessInfo{
-		LiveBefore: [][]set.Set[VarID]{before},
-		LiveAfter:  [][]set.Set[VarID]{after},
-		LastUse:    lastUse,
 	}
 }
 

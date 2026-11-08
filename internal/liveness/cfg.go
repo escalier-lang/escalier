@@ -2,6 +2,7 @@ package liveness
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 )
 
 // BasicBlock represents a maximal sequence of statements with no internal
@@ -15,12 +16,16 @@ type BasicBlock struct {
 	// by Stmts — for example, loop variable bindings from ForInStmt
 	// patterns, IfValExpr pattern bindings, or MatchExpr arm patterns.
 	ExtraDefs []VarID
+	// Suspends marks a block whose entry suspends the body before any of its statements
+	// run. The header of a `for await` loop does, since the loop awaits its next element
+	// there on every iteration.
+	Suspends bool
 }
 
 // decomposedStmt records that a statement (typically a DeclStmt whose init
 // was a branching expression) was decomposed by the CFG builder. The stmt
 // itself doesn't appear in any block's Stmts, but it needs a StmtRef so
-// that alias tracking can look up liveness at the join point.
+// that a check made at the statement can look up liveness at the join point.
 type decomposedStmt struct {
 	Stmt  ast.Stmt
 	Block *BasicBlock
@@ -32,6 +37,9 @@ type CFG struct {
 	Exit            *BasicBlock
 	Blocks          []*BasicBlock
 	decomposedStmts []decomposedStmt
+	// reassignJoins holds the ID of each join block whose ExtraDefs name the target of a
+	// reassignment with a branching right-hand side, such as the p of `p = if c { a } else { b }`.
+	reassignJoins set.Set[int]
 	// ids holds the VarIDs of the body the CFG was built from.
 	ids *VarIDs
 }
@@ -44,7 +52,7 @@ type CFG struct {
 // ids holds the VarIDs the rename pass assigned to the body. The CFG keeps it, so
 // AnalyzeFunction reads the same table.
 func BuildCFG(ids *VarIDs, body ast.Block) *CFG {
-	b := &cfgBuilder{ids: ids}
+	b := &cfgBuilder{ids: ids, reassignJoins: set.NewSet[int]()}
 	entry := b.newBlock()
 	exit := b.newBlock()
 	b.exit = exit
@@ -54,7 +62,7 @@ func BuildCFG(ids *VarIDs, body ast.Block) *CFG {
 		b.addEdge(final, exit)
 	}
 
-	return &CFG{Entry: entry, Exit: exit, Blocks: b.blocks, decomposedStmts: b.decomposedStmts, ids: ids}
+	return &CFG{Entry: entry, Exit: exit, Blocks: b.blocks, decomposedStmts: b.decomposedStmts, reassignJoins: b.reassignJoins, ids: ids}
 }
 
 // BuildStmtToRef constructs a mapping from AST statement nodes to their
@@ -85,6 +93,7 @@ type cfgBuilder struct {
 	blocks          []*BasicBlock
 	exit            *BasicBlock
 	decomposedStmts []decomposedStmt
+	reassignJoins   set.Set[int]
 }
 
 func (b *cfgBuilder) newBlock() *BasicBlock {
@@ -117,6 +126,16 @@ func (b *cfgBuilder) processStmts(stmts []ast.Stmt, current *BasicBlock) *BasicB
 func (b *cfgBuilder) processStmt(stmt ast.Stmt, current *BasicBlock) *BasicBlock {
 	switch s := stmt.(type) {
 	case *ast.ReturnStmt:
+		// A branching expression such as `return if c { a } else { b }` gets a block per
+		// branch, the same as a branching initializer of a `val`. The return then sits at
+		// the join, which leads to the exit.
+		if s.Expr != nil {
+			if join := b.decomposeBranch(s.Expr, nil, current); join != nil {
+				b.recordDecomposed(s, join)
+				b.addEdge(join, b.exit)
+				return nil
+			}
+		}
 		current.Stmts = append(current.Stmts, stmt)
 		b.addEdge(current, b.exit)
 		return nil
@@ -163,8 +182,8 @@ func (b *cfgBuilder) processExprStmt(s *ast.ExprStmt, current *BasicBlock) *Basi
 }
 
 // recordDecomposed tracks a decomposed statement → join block mapping so that
-// BuildStmtToRef can create a StmtRef for the statement. This enables alias
-// tracking and transition checking to look up liveness at the join point.
+// BuildStmtToRef can create a StmtRef for the statement. A check made at the
+// statement then looks up liveness at the join point.
 func (b *cfgBuilder) recordDecomposed(s ast.Stmt, join *BasicBlock) {
 	b.decomposedStmts = append(b.decomposedStmts, decomposedStmt{
 		Stmt:  s,
@@ -201,7 +220,11 @@ func (b *cfgBuilder) processAssignBranch(be *ast.BinaryExpr, current *BasicBlock
 		}
 	}
 
-	return b.decomposeBranch(be.Right, joinDefs, current)
+	join := b.decomposeBranch(be.Right, joinDefs, current)
+	if join != nil && len(joinDefs) > 0 {
+		b.reassignJoins.Add(join.ID)
+	}
+	return join
 }
 
 // processDeclStmt handles a declaration statement, decomposing it if the
@@ -456,6 +479,7 @@ func (b *cfgBuilder) processForIn(s *ast.ForInStmt, current *BasicBlock) *BasicB
 
 	// Header block: loop entry point (branch: enter body or exit loop).
 	header := b.newBlock()
+	header.Suspends = s.IsAwait
 	b.addEdge(current, header)
 
 	// Body block with loop variable bindings.

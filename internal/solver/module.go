@@ -28,6 +28,11 @@ type Options struct {
 	// CheckJsDecorators reports a pseudo-package file whose values break the `@js`
 	// rules jsDecoratorErrors lists, at the import that loads it.
 	CheckJsDecorators bool
+	// stdlibDir is the pseudo-package tree the run's groups were built from, or "" for a
+	// run given its groups some other way. InferModuleAgainstStdlib and
+	// InferScriptAgainstStdlib set it. A load of a package the groups do not cover reads
+	// the tree to group it.
+	stdlibDir string
 }
 
 // InferModule builds the dep graph for a single parsed module, infers every
@@ -163,6 +168,7 @@ func newRunChecker(source ModuleSource, groupSource GroupSource, groups PackageG
 	c.noAmbientNames = opts.NoAmbientNames
 	c.checkJsDecorators = opts.CheckJsDecorators
 	c.dependencies = opts.Dependencies
+	c.stdlibDir = opts.stdlibDir
 	return c
 }
 
@@ -301,6 +307,14 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 		}
 		return true
 	})
+	// Every flow is settled and every body is walked, so the dataflow pass can read the
+	// events of this module's bodies.
+	c.runOwnershipDataflow()
+	// A package's diagnostics reach the entry module's as a PackageInferenceError, so only
+	// the entry module, which has no package URI, prints them.
+	if c.pkgURI == "" {
+		traceDiagnostics(c.errs, module.Sources)
+	}
 	return soltype.ModuleSymbols{Minted: declaredSymbols(module, c.info), Owners: c.symbolOwners}
 }
 

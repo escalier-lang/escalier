@@ -8,7 +8,7 @@ import (
 
 // TestSelfRootedPlaces covers places rooted at a method's receiver. The liveness pre-pass
 // defines `self` as a parameter of the body, so `self.p` names a tracked place the way `s.p`
-// does for a parameter s. Each analysis built on places sees it: the exclusivity check, the
+// does for a parameter `s`. Each analysis built on places sees it: the exclusivity rules, the
 // move check, and borrow-edge recording.
 func TestSelfRootedPlaces(t *testing.T) {
 	tests := map[string]struct {
