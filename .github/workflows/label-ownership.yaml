@@ -1,22 +1,49 @@
 name: Label ownership issues
 
-# Adds the ownership label to an issue opened in or moved into an ownership
-# milestone. The label adds the issue to the Ownership project board.
+# Keeps the ownership label in step with the ownership milestones. An issue
+# opened in or moved into one gets the label, and an issue taken out of one
+# loses it. The label adds the issue to the Ownership project board.
+#
+# Milestone 9 is "Simplify ownership, lifetime, and mutability rules and
+# implementation" and milestone 19 is "Ownership Extensions".
 on:
   issues:
-    types: [opened, milestoned]
+    types: [opened, milestoned, demilestoned]
 
 jobs:
-  label:
-    # Milestone 9 is "Simplify ownership, lifetime, and mutability rules and
-    # implementation" and milestone 19 is "Ownership Extensions".
-    if: contains(fromJSON('[9, 19]'), github.event.issue.milestone.number)
+  add:
+    # For opened, the milestone is on the issue. For milestoned, the event's
+    # milestone is the one just set.
+    if: >-
+      (github.event.action == 'opened' && contains(fromJSON('[9, 19]'), github.event.issue.milestone.number)) ||
+      (github.event.action == 'milestoned' && contains(fromJSON('[9, 19]'), github.event.milestone.number))
     runs-on: ubuntu-latest
     permissions:
       issues: write
     steps:
       - name: Add the ownership label
         run: gh issue edit "$NUMBER" --repo "$GITHUB_REPOSITORY" --add-label ownership
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.issue.number }}
+
+  remove:
+    # The event's milestone is the one just removed.
+    if: github.event.action == 'demilestoned' && contains(fromJSON('[9, 19]'), github.event.milestone.number)
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      # Moving an issue from one ownership milestone to the other can fire
+      # demilestoned and milestoned together. Reading the issue's current
+      # milestone keeps the label when it still belongs.
+      - name: Remove the ownership label
+        run: |
+          current=$(gh api "repos/$GITHUB_REPOSITORY/issues/$NUMBER" --jq '.milestone.number // 0')
+          case "$current" in
+            9|19) echo "#$NUMBER is in milestone $current, so it keeps the label." ;;
+            *) gh issue edit "$NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label ownership ;;
+          esac
         env:
           GH_TOKEN: ${{ github.token }}
           NUMBER: ${{ github.event.issue.number }}
