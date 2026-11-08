@@ -288,13 +288,11 @@ func (v *aliasLeafCollector) EnterPat(p ast.Pat) bool {
 	case *ast.IdentPat:
 		v.add(p.Name, p, p.Mutable || p.TypeAnn != nil || p.Default != nil)
 	case *ast.ObjectPat:
+		// A key-value element and a rest bind their leaves through the sub-patterns the walk
+		// visits next.
 		for _, elem := range p.Elems {
-			switch elem := elem.(type) {
-			case *ast.ObjShorthandPat:
-				v.add(elem.Key.Name, elem, elem.Mutable || elem.TypeAnn != nil || elem.Default != nil)
-			case *ast.ObjKeyValuePat, *ast.ObjRestPat:
-			default:
-				v.ok = false
+			if sh, ok := elem.(*ast.ObjShorthandPat); ok {
+				v.add(sh.Key.Name, sh, sh.Mutable || sh.TypeAnn != nil || sh.Default != nil)
 			}
 		}
 	case *ast.TuplePat, *ast.RestPat, *ast.WildcardPat:
@@ -347,15 +345,12 @@ func (v *nameMentionScanner) EnterObjExprElem(e ast.ObjExprElem) bool {
 // shorthandName returns the name a shorthand property `{name}` reads, and false when e is not a
 // shorthand property.
 func shorthandName(e ast.ObjExprElem) (string, bool) {
-	prop, ok := e.(*ast.PropertyExpr)
-	if !ok || prop.Value != nil {
-		return "", false
+	if prop, ok := e.(*ast.PropertyExpr); ok && prop.Value == nil {
+		if key, isIdent := prop.Name.(*ast.IdentExpr); isIdent {
+			return key.Name, true
+		}
 	}
-	key, ok := prop.Name.(*ast.IdentExpr)
-	if !ok {
-		return "", false
-	}
-	return key.Name, true
+	return "", false
 }
 
 // noteOpenEscapes adds to openEscapes the VarID of each argument of the call e that is a bare

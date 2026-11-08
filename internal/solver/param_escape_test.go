@@ -126,6 +126,34 @@ func TestInferUnannotatedParamOwnership(t *testing.T) {
 			want: "fn (arg0: {x: unknown}) -> {y: 1}",
 		},
 		{
+			// The second `val` binds q again while reading through it, so a later use of q may
+			// name either binding.
+			name: "BoundReadNameReboundByAlias",
+			srcs: []string{`fn f(p) {
+				val q = p.x
+				val {q} = q
+				return q
+			}`},
+			want: "fn <T0>(arg0: {x: {q: T0}}) -> T0",
+		},
+		{
+			// A literal pattern binds no alias, so the read in its initializer goes nowhere the
+			// scanner accepts.
+			name: "MemberReadIntoLiteralPattern",
+			srcs: []string{`fn f(p) {
+				val 1 = p.x
+				return 1
+			}`},
+			want: "fn (arg0: {x: unknown}) -> 1",
+		},
+		{
+			// A defaulted parameter stays owned, since the default fills it when the caller
+			// passes nothing.
+			name: "DefaultedParam",
+			srcs: []string{`fn f(p = {x: 1}) { return p.x }`},
+			want: "fn <T0>(arg0?: {x: T0}) -> T0 | 1",
+		},
+		{
 			name: "MemberReadAsBlockValue",
 			srcs: []string{`
 				var sink = {y: 0}
