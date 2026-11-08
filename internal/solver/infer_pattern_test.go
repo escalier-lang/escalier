@@ -694,9 +694,11 @@ func TestInferRestPatternUnknownScrutineeShape(t *testing.T) {
 // leftover empty, so `val [b, c] = rest` cannot be justified. Annotating the parameter
 // gives the leftover a length and the same destructuring checks.
 func TestInferRestPatternUnknownLeftoverUses(t *testing.T) {
+	// `f` is declared with the signature the Tuple case of
+	// TestInferRestPatternUnknownScrutineeShape asserts for `fn f([a, ...rest]) { return rest }`.
 	t.Run("returning the leftover is checked against the caller", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
-			fn f([a, ...rest]) { return rest }
+			declare fn f(p: [unknown, ...]) -> [...]
 			val bad: string = f([1, 2])
 		`)
 		require.Len(t, errs, 1)
@@ -755,8 +757,15 @@ func TestInferRestPatternParamAdmitsExtraFields(t *testing.T) {
 	})
 
 	t.Run("no rest still closes to exact", func(t *testing.T) {
+		values, _, errs := inferSource(t, `fn f({x}) { return x }`)
+		require.Empty(t, errs)
+		require.Equal(t, "fn <T0>({x}: {x: T0}) -> T0", values["f"])
+	})
+
+	// `f` is declared with the signature "no rest still closes to exact" asserts.
+	t.Run("an exact param rejects extra fields", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
-			fn f({x}) { return x }
+			declare fn f<T0>(p: {x: T0}) -> T0
 			val r = f({x: 1, y: 2})
 		`)
 		require.Len(t, errs, 1)
