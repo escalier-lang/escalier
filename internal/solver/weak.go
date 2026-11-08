@@ -145,8 +145,10 @@ func (m *slotMarker) widen(t soltype.Type, mode slotMode) (soltype.Type, bool) {
 			m.mark(v, vm)
 			return v
 		}
-		nv := m.c.ctx.newSlotVar(v, vm)
-		m.c.constrain(m.site, v, nv)
+		nv, minted := m.c.ctx.slotVarFor(v, vm)
+		if minted {
+			m.c.constrain(m.site, v, nv)
+		}
 		return nv
 	}
 	return m.c.ctx.widenLiterals(t, mode, onVar, &changed), changed
@@ -178,12 +180,45 @@ func (c *Context) setSlotMode(v *soltype.TypeVarType, mode slotMode) {
 	c.slotModes[v] = mode
 }
 
-// newSlotVar returns a fresh variable at v's level with the slot mode mode. The caller
-// constrains v into it, so it receives v's values widened as a slot of mode widens them.
-func (c *Context) newSlotVar(v *soltype.TypeVarType, mode slotMode) *soltype.TypeVarType {
+// slotVarKey names the variable slotVarFor returns for v in a slot of mode.
+type slotVarKey struct {
+	v    *soltype.TypeVarType
+	mode slotMode
+}
+
+// slotVarFor returns the variable that receives v's values widened as a slot of mode
+// widens them, and reports whether it minted that variable. A minted variable is fresh, at
+// v's level, with the slot mode mode, and the caller constrains v into it. It is bounded
+// above by each slot variable v already flows into whose mode covers mode. A later call
+// with the same v and mode returns the same variable, which v already flows into.
+func (c *Context) slotVarFor(v *soltype.TypeVarType, mode slotMode) (*soltype.TypeVarType, bool) {
+	key := slotVarKey{v: v, mode: mode}
+	if nv, ok := c.slotVars[key]; ok {
+		return nv, false
+	}
 	nv := c.freshVar(v.Level)
 	c.setSlotMode(nv, mode)
-	return nv
+	if c.slotVars == nil {
+		c.slotVars = map[slotVarKey]*soltype.TypeVarType{}
+	}
+	c.slotVars[key] = nv
+	// A slot variable u that v flows into widens each value of v at least as far as mode
+	// does, so every value of nv is a value of u too. Recording nv <: u lets coalescing
+	// merge the two. Without it, `{next: v}` flowing into a slot u that also holds
+	// `{next: u}` renders as two knots that describe the same type.
+	for _, ub := range v.UpperBounds {
+		if u, isVar := ub.(*soltype.TypeVarType); isVar {
+			if own, isSlot := c.slotModes[u]; isSlot && own.covers(mode) {
+				c.addUpperBound(nv, u)
+			}
+		}
+	}
+	// A discard truncates the bound that constrains v into nv, so it drops the entry too.
+	// A later call then mints a variable that v flows into again.
+	if c.probe != nil {
+		c.probe.onRollback(func() { delete(c.slotVars, key) })
+	}
+	return nv, true
 }
 
 // widenSlotBound returns sub widened as a lower bound of a variable whose slot mode is
@@ -191,10 +226,10 @@ func (c *Context) newSlotVar(v *soltype.TypeVarType, mode slotMode) *soltype.Typ
 //
 // A literal in a writable slot widens as widenLiterals widens it. A variable in a writable
 // slot is kept when its own slot mode covers the slot's, since every value that reaches it
-// is widened already. Any other variable is replaced by a fresh variable of the slot's mode,
-// and the original is constrained into it. The fresh variable then holds the widened form
-// of each value the original holds. The original keeps its literals, which every other
-// place it reaches still reads.
+// is widened already. Any other variable is replaced by the variable slotVarFor returns for
+// it, and the original is constrained into that variable when slotVarFor mints it. The
+// replacement then holds the widened form of each value the original holds. The original
+// keeps its literals, which every other place it reaches still reads.
 // With `fn put(x) { seen.set("k", [x]) }`, `put(1)` leaves `x` at `1` and adds `[number]`
 // to the values of a weak `val mut seen = Map()`.
 func (c *Context) widenSlotBound(sub soltype.Type, mode slotMode, seen *seenPairs) (soltype.Type, []SolverError) {
@@ -203,8 +238,14 @@ func (c *Context) widenSlotBound(sub soltype.Type, mode slotMode, seen *seenPair
 		if own, ok := c.slotModes[v]; ok && own.covers(vm) {
 			return v
 		}
-		nv := c.newSlotVar(v, vm)
-		errs = append(errs, c.constrain(v, nv, seen, false)...)
+		// The replacement is reused, so a recursive value stays finite. With
+		// `fn f() { return {next: f()} }`, a variable v of f's result holds `{next: v}`.
+		// Constraining v into its replacement r widens that bound, which reaches v again.
+		// The second visit returns r, so r holds `{next: r}`.
+		nv, minted := c.slotVarFor(v, vm)
+		if minted {
+			errs = append(errs, c.constrain(v, nv, seen, false)...)
+		}
 		return nv
 	}
 	return c.widenLiterals(sub, mode, onVar, nil), errs
