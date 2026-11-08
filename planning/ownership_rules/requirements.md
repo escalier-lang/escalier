@@ -1759,12 +1759,13 @@ each, and each item says whether that behaviour is decided or open:
   closure that borrows a local, and `mount(opts: Opts)` with
   `interface Opts { cb: fn () -> undefined }` rejects it. The difference is
   surprising, and whether to keep it is open.
-- An unannotated `var` that starts with a closure that borrows nothing gets a
-  `'static` function type. With `var g = fn () {}`, a later
-  `g = fn () { p.x = 2 }` over a local `p` is then rejected with
+- An unannotated `var` inside a body that starts with a closure that borrows
+  nothing gets a `'static` function type. With `var g = fn () {}` in a body,
+  a later `g = fn () { p.x = 2 }` over a local `p` is then rejected with
   `` this closure borrows `p`, but `g` has the type of a closure that borrows nothing; annotate `g` with a function type to let it hold one that borrows ``.
-  A written type such as `var g: fn () -> undefined` is fresh by rule 2, so
-  it holds either closure. This is decided. The binding's type comes from its
+  A written type such as `var g: fn () -> undefined` in the same body is
+  fresh by rule 2, so it holds either closure. At module level the written
+  type is `'static` by rule 2, so it rejects the borrowing closure too. This is decided. The binding's type comes from its
   initializer, as it does for any binding with no written type.
 - A conditional type's `extends` test and its `infer` patterns ignore function
   lifetimes. Whether they should compare them is open.
