@@ -243,13 +243,24 @@ func TestFlowLifetimeNonEscapingParam(t *testing.T) {
 
 func TestFlowLifetimeEscapingParamMoves(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{
-		// F3. The call to `store` moves `a`, so the later read of `a.x` uses a moved value.
+		// F3. `store` lets `p` escape into module-level state, so its parameter is owned.
 		{
-			name: "F3/StoreMovesArgument",
+			name: "F3/StoreOwnsItsParam",
 			src: `
 				var sink = {x: 0}
 
 				fn store(p) { sink = p }
+			`,
+			values: map[string]string{
+				"store": "fn (p: {x: number}) -> undefined",
+			},
+		},
+		// F3. The call to `store` moves `a`, so the later read of `a.x` uses a moved value.
+		// `store` is declared with the signature F3/StoreOwnsItsParam asserts.
+		{
+			name: "F3/StoreMovesArgument",
+			src: `
+				declare fn store(p: {x: number}) -> undefined
 
 				fn go() -> number {
 					val a = {x: 1}
@@ -257,7 +268,7 @@ func TestFlowLifetimeEscapingParamMoves(t *testing.T) {
 					return a.x
 				}
 			`,
-			want: []string{"9:13-9:16: use of moved value 'a'"},
+			want: []string{"7:13-7:16: use of moved value 'a'"},
 		},
 	})
 }

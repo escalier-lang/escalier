@@ -126,11 +126,15 @@ func TestOwnershipEventsCheckingModel(t *testing.T) {
 			},
 		},
 		{
+			// `store` and `read` carry the signatures TestInferStoreAndReadSignatures asserts for
+			// their unannotated forms. They are written as annotated functions rather than
+			// `declare fn`, since a call to a declared function emits no read of the callee.
+			// `read` returns `&p.x`, since its written `&'a T0` return rejects a plain `p.x`.
 			name: "ArgumentIntoEscapingParam",
 			src: `
 				var sink = {x: 0}
-				fn store(p) { sink = p }
-				fn read(p) { return p.x }
+				fn store(p: {x: number}) -> undefined { sink = p }
+				fn read<T0, 'a>(p: &'a {x: T0}) -> &'a T0 { return &p.x }
 				fn go() -> number {
 					val a = {x: 1}
 					store(a)
@@ -141,7 +145,7 @@ func TestOwnershipEventsCheckingModel(t *testing.T) {
 			`,
 			want: []string{
 				"b0.1: use(`store`, read)",                 // `store(a)` reads the callee `store`
-				"b0.1: move(`a`, arg(`store`, 0))",         // `store(a)` moves a, since `store` stores its parameter into `sink`
+				"b0.1: move(`a`, arg(`store`, 0))",         // `store(a)` moves a, since `store`'s parameter is the owned `{x: number}`
 				"b0.3: use(`read`, read)",                  // `read(&b)` reads the callee `read`
 				"b0.3: borrow(&, `b`, arg(`read`, 0), '1)", // `read(&b)` passes the written borrow `&b`
 				"b0.3: pass(arg(`read`, 0), `n`)",          // `read` returns `&'a T0` through its `&'a` parameter, so n holds the borrow
@@ -603,11 +607,49 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 	})
 }
 
+// TestInferStoreAndReadSignatures asserts the signatures that F3 infers for `store` and `read`.
+// The ArgumentIntoEscapingParam case of TestOwnershipEventsCheckingModel calls functions
+// written with these signatures.
+func TestInferStoreAndReadSignatures(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		fn   string
+		want string
+	}{
+		{
+			// `sink = p` lets p escape into module-level state, so p is owned.
+			name: "StoreOwnsItsParam",
+			src: `
+				var sink = {x: 0}
+				fn store(p) { sink = p }
+			`,
+			fn:   "store",
+			want: "fn (p: {x: number}) -> undefined",
+		},
+		{
+			// The body only reads p, so p is a borrow and the result carries its lifetime.
+			name: "ReadBorrowsItsParam",
+			src:  `fn read(p) { return p.x }`,
+			fn:   "read",
+			want: "fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values[tt.fn])
+		})
+	}
+}
+
 // TestOwnershipEventsProvisionalFlows covers flows whose ownership F3 settles only once a body
 // is walked. Each becomes the event the settled ownership gives.
 func TestOwnershipEventsProvisionalFlows(t *testing.T) {
 	runOwnershipEvents(t, []ownershipEventsCase{
 		{
+			// This case infers `go` and calls it in one source, since `go` calls itself.
 			name: "RecursiveCallIsProvisional",
 			src: `
 				fn go(n: number, p) {
@@ -642,6 +684,7 @@ func TestOwnershipEventsProvisionalFlows(t *testing.T) {
 			},
 		},
 		{
+			// This case infers `go` and `stop` together, since the two functions call each other.
 			name: "MutualRecursion",
 			src: `
 				fn go(n: number, p) {

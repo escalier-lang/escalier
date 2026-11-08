@@ -395,50 +395,90 @@ func TestInferMemberEmptyPropertyNameIsSilent(t *testing.T) {
 }
 
 // A function reading a field of its param synthesizes an inexact "has at least this
-// field" requirement during body inference (A1's selection-vs-concrete split), then
-// SEALS it to exact at generalization (B1/B2's operative close): `p` is `non-open`
-// and never escapes — `p.a`'s result is returned, but `p` itself is not — so its
-// requirement closes to exact `{a: number}` and a wider argument is rejected. An
-// `open` param keeps the row-polymorphic form and accepts the wider object. This
-// exercises the close end-to-end through generalization and a call.
+// field" requirement during body inference, which is A1's selection-vs-concrete split.
+// Generalization then seals it to exact, which is the operative close of B1 and B2. `p` is
+// not `open` and never escapes, since `p.a`'s result is returned but `p` itself is not, so
+// its requirement closes to the exact `{a: T0}`. An `open` param keeps the
+// row-polymorphic form `{a: T0, ...}`.
+func TestInferModuleMemberReadSealsParam(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "a closed param seals to exact",
+			src:  "fn f(p) { return p.a }",
+			want: "fn <T0, 'a>(p: &'a {a: T0}) -> &'a T0",
+		},
+		{
+			name: "an open param stays inexact",
+			src:  "fn f(open p) { return p.a }",
+			want: "fn <T0, 'a>(p: &'a {a: T0, ...}) -> &'a T0",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}
+
+// TestInferModuleMemberReadAcceptsWiderArg covers calls to a callee declared with each
+// signature TestInferModuleMemberReadSealsParam asserts. The exact `{a: T0}` rejects a wider
+// argument and the inexact `{a: T0, ...}` accepts it.
 func TestInferModuleMemberReadAcceptsWiderArg(t *testing.T) {
-	t.Run("wider object is rejected for a closed param", func(t *testing.T) {
-		src := `
-			fn f(p) { return p.a }
+	tests := []struct {
+		name string
+		src  string
+		want []string
+		// blame is the source text the first error's primary span covers. It is empty when
+		// the case does not check blame.
+		blame string
+	}{
+		{
+			name: "wider object is rejected for a closed param",
+			src: `
+			declare fn f<T0, 'a>(p: &'a {a: T0}) -> &'a T0
 			val r = f({a: 1, b: 2})
-		`
-		_, _, errs := inferSource(t, src)
-		require.Len(t, errs, 1)
-		require.Equal(t, "3:24-3:25: object has extra property: b", msgWithSpan(t, errs[0]))
-	})
-
-	t.Run("wider object is accepted for an open param", func(t *testing.T) {
-		src := `
-			fn f(open p) { return p.a }
+		`,
+			want: []string{"3:24-3:25: object has extra property: b"},
+		},
+		{
+			name: "wider object is accepted for an open param",
+			src: `
+			declare fn f<T0, 'a>(p: &'a {a: T0, ...}) -> &'a T0
 			val r = f({a: 1, b: 2})
-		`
-		_, _, errs := inferSource(t, src)
-		require.Empty(t, errs)
-	})
-
-	t.Run("missing field is rejected at the call", func(t *testing.T) {
-		src := `
-			fn f(p) { return p.a }
+		`,
+		},
+		{
+			// `{b: 2}` fails the exact `{a: T0}` requirement on two counts: the missing `a` and
+			// the extra `b`. The object arm reports missing properties before extra ones. The
+			// missing property blames the argument `{b: 2}`, which is the object that lacks the
+			// field, not the whole call.
+			name: "missing field is rejected at the call",
+			src: `
+			declare fn f<T0, 'a>(p: &'a {a: T0}) -> &'a T0
 			val r = f({b: 2})
-		`
-		_, _, errs := inferSource(t, src)
-		// {b: 2} fails the sealed exact `{a: T}` requirement on two counts: the
-		// missing `a` and the extra `b`. The object arm reports missing properties
-		// before extra ones.
-		require.Len(t, errs, 2)
-		require.Equal(t, "3:14-3:20: object is missing property: a", msgWithSpan(t, errs[0]))
-		require.Equal(t, "3:18-3:19: object has extra property: b", msgWithSpan(t, errs[1]))
-		// Blame the offending argument {b: 2} — the object that lacks the field — not
-		// the whole call. The requirement's field var is freshened on instantiation
-		// and carries no prov, so MissingPropertyError's blame degrades to the Sub
-		// (the argument object literal), which inferObject did record.
-		require.Equal(t, "{b: 2}", spanText(src, errs[0].Span()))
-	})
+		`,
+			want: []string{
+				"3:14-3:20: object is missing property: a",
+				"3:18-3:19: object has extra property: b",
+			},
+			blame: "{b: 2}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
+			if tt.blame != "" {
+				require.Equal(t, tt.blame, spanText(tt.src, errs[0].Span()))
+			}
+		})
+	}
 }
 
 // --- IndexExpr (value receiver, constant string key) ---
