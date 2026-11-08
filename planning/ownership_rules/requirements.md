@@ -317,9 +317,10 @@ Each case below follows from that:
   captures.
 - A closure stored into module-level state, or passed to any other `'static`
   slot, is kept for the rest of the program. Such a slot holds no borrow of a
-  local. When none of the locals the closure captures has a later use, the
-  closure owns them, as it does when it is returned. Otherwise the store is
-  rejected. D17 decides both cases. A function is a value type, so the store
+  local, so the closure owns the locals of the body it captures, as it does
+  when it is returned. A later use of one of those locals is an error. A
+  closure that captures a parameter or an outside borrow is rejected at the
+  store. D17 decides both cases. A function is a value type, so the store
   copies the closure, and the case above for module-level state does not by
   itself make its captures owned.
 
@@ -683,8 +684,8 @@ fn setup() {
     val mut count = {n: 0}
     val inc = fn () { count.n = count.n + 1 }
     run(inc)                    // accepted
-    keep(inc)                   // error: inc borrows count, and render reads count below
-    render(&count)
+    keep(inc)                   // accepted, and keep takes count over
+    render(&count)              // error: 'count' is used after the 'cb' that 'keep' retains took it over for 'static
 
     var n = 0
     handlers.push(fn () { n = n + 1 })    // accepted, since n has no later use
@@ -693,9 +694,9 @@ fn setup() {
 
 `keep(show)` is accepted because `show` takes ownership of `cfg`. Every local of
 `setup` that `show` borrows is dead after the call, so nothing in `setup` can
-observe what the closure does with it. `keep(inc)` is rejected because `render`
-reads `count` after the call, and the kept closure could write `count` while
-`render` reads it. D17 states the rule.
+observe what the closure does with it. `keep(inc)` takes `count` over the same
+way, so the error is at `render(&count)`, which reads a value the kept closure
+now owns and may write at any time. D17 states the rule.
 
 To keep a closure that borrows a live local, give the slot a lifetime that the
 local outlives. A class with a lifetime parameter does this. A `Button<'a>`
@@ -1135,9 +1136,10 @@ reads it. A parameter whose `fn` type has no written lifetime is only called
 during the call, as D17 decides. A parameter written `'static fn` may be kept
 for the rest of the program.
 
-`onClick` below keeps its handler for the rest of the program. The handler
-borrows `count`, and `render` reads `count` after the call, so the handler
-cannot take ownership of it. The call is rejected:
+`onClick` below keeps its handler for the rest of the program, so the handler
+takes ownership of `count`, which it borrows. `render` reads `count` after the
+call, a value the handler now owns and may change on any click, so the read is
+rejected:
 
 ```esc
 declare fn onClick(handler: 'static fn () -> undefined) -> undefined
@@ -1145,13 +1147,10 @@ declare fn render(view: &{n: number}) -> undefined
 
 fn setup() {
     val mut count = {n: 0}
-    onClick(fn () { count.n = count.n + 1 })    // error: this closure borrows `count`, but `onClick` keeps it for 'static; pass a function that borrows nothing, or declare `count` at module level
-    render(&count)
+    onClick(fn () { count.n = count.n + 1 })
+    render(&count)    // error: 'count' is used after the 'handler' that 'onClick' retains took it over for 'static
 }
 ```
-
-The checker also reports the conflict at `render(&count)`, since a click could
-change `count` while `render` holds an immutable view of it.
 
 There are two ways to write `setup` so that it checks. The first moves every use
 of `count` into the handler. `setup` never uses `count` again, so the handler
@@ -1677,18 +1676,23 @@ how the lifetime is written, elided, inferred, and checked:
 
    A closure that borrows nothing is `'static`. There is no capture syntax
    other than `move fn` in rule 6.
-5. A closure takes ownership of the dead locals it borrows. This rule extends
-   F3's returned closure to every destination that keeps a closure past the
-   body. Such a destination is a `return` or a `'static` slot. A `'static`
+5. A kept closure takes ownership of the body's locals it borrows. This rule
+   extends F3's returned closure to every destination that keeps a closure
+   past the body. Such a destination is a `return` or a `'static` slot. A `'static`
    slot is a `'static fn` parameter, a module-level binding, a `'static`
    field, or an element of a module-level array. When a closure flows into one
-   of them, and no local of the enclosing body that it borrows has a later use
-   in that body, the closure owns those locals instead of borrowing them. A
-   later use is a read, a write, or a live borrow.
-   A local with one stays borrowed, so the store into a `'static` slot is
-   rejected. The takeover moves each local into the closure, so a later move
-   of one reports `use of moved value`. A parameter, or a borrow of something
-   outside the body, is not the body's to give away, so it stays borrowed.
+   of them, it owns the `val` and `var` locals of the enclosing body that it
+   borrows, instead of borrowing them. The store moves each of those locals
+   into the closure:
+   - A later read, write, move or borrow of one reports that it is used after
+     the slot took it over, at the later use. An example is `'count' is used
+     after the 'handler' that 'onClick' retains took it over for 'static`.
+   - A borrow of one that is still live at the store reports `cannot move 'p'
+     while it is borrowed`.
+   - A parameter, or a borrow of something outside the body, is not the
+     body's to give away. A closure that borrows one is rejected at the store,
+     with a message such as `` this closure borrows `p`, but `keep` keeps it
+     for 'static; pass a function that borrows nothing ``.
 6. `move fn` makes a closure own its captures from where it is written. A
    captured value type is still copied, and a captured borrow stays a borrow.
 
@@ -1697,8 +1701,9 @@ its scope, so a closure that outlives the scope must be written `move` to own
 what it captures. Escalier compiles to JavaScript, where a
 captured local is never freed while a closure can reach it. The borrow rules
 here protect against aliasing and against use after a move, not against
-deallocation. A local with no later use can be neither, so the checker infers
-the move that Rust asks the user to write.
+deallocation. The checker infers the move that Rust asks the user to write,
+and reports any later use of a moved local, so nothing in the body can alias
+what the closure owns.
 
 The program below shows rule 2 in three positions. Each comment names the
 lifetime of the `fn` type on its line or the line below:
@@ -1721,8 +1726,9 @@ fn stash(g: fn () -> undefined) {
 }
 ```
 
-E4's `setup` example shows rules 3 through 5. `keep(show)` is accepted by rule
-5, and `keep(inc)` is rejected because `count` has a later use.
+E4's `setup` example shows rules 3 through 5. `keep(show)` and `keep(inc)` are
+both accepted by rule 5. The later `render(&count)` is rejected because
+`keep` took `count` over.
 
 An unannotated parameter that the body only calls is call-only, so
 `fn f(g) { return g() }` infers `fn <T0>(g: fn () -> T0) -> T0`. One the body
@@ -2162,7 +2168,9 @@ the solver.
 | E4, D10 | The two `setup` programs from D10 | The first rejected, the second accepted |
 | D17 | `wrap` and `stash` from D17 | The signature and the error D17 lists |
 | D17 | `&fn () -> undefined` in an annotation | `Unsupported: borrow of a non-borrowable type` |
-| D17 | A closure over a local passed to a `'static fn` parameter, then the local moved | The move reports a use of a moved value |
+| D17 | A closure over a local passed to a `'static fn` parameter, then the local read, written, moved or borrowed | The later use reports that the slot took the local over |
+| D17 | A closure over a local passed to a `'static fn` parameter, with no later use of the local | Accepted |
+| D17 | A closure over a parameter passed to a `'static fn` parameter | Rejected at the call |
 | D17 | An unannotated `var` started with a closure that borrows nothing, then assigned one that borrows a local | Rejected |
 | I1 | Convert `reset(x: Readonly<{a: {b: number}}>)` | `reset(x: &mut Readonly<{a: {b: number}}>)` |
 | I1 | Convert a parameter typed `Readonly<{a: number}>` | `&Readonly<{a: number}>` |
