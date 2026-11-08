@@ -505,6 +505,24 @@ func TestEscapingClosureCapture(t *testing.T) {
 				}
 			`,
 		},
+		// Both stores keep the same closure, so they share its kept borrows, and its own mutable
+		// borrow of p.a.n and immutable borrow of p.a do not conflict across the two stores.
+		"StoreOfOneClosureIntoTwoGlobalsOk": {
+			src: `
+				var sink: 'static fn () -> undefined = fn () {}
+				var sink2: 'static fn () -> undefined = fn () {}
+				declare fn see(a: &{n: number}) -> undefined
+				fn go() {
+					val mut p = {a: {n: 1}}
+					val f = fn () {
+						p.a.n = 2
+						see(&p.a)
+					}
+					sink = f
+					sink2 = f
+				}
+			`,
+		},
 		// Two closures that only read p each keep an immutable borrow of it.
 		"TwoGlobalClosuresReadingOneLocalOk": {
 			src: `

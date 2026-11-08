@@ -508,10 +508,9 @@ type bodyDataflow struct {
 	capturedAt map[liveness.VarID][]liveness.StmtRef
 }
 
-// keptLoanKey names the loan a store keeps of one place for one closure, or for the stored
-// value. place is the placeKey of the place.
+// keptLoanKey names the loan kept of one place for one closure, or for one stored value. place
+// is the placeKey of the place.
 type keptLoanKey struct {
-	store *retainedStore
 	node  ast.Node
 	place string
 }
@@ -1524,7 +1523,7 @@ func (d *bodyDataflow) run(ev *runEvent, at liveness.StmtRef, s *dataflowState) 
 			continue
 		}
 
-		run := &closureRun{node: ev.call, via: store.via}
+		run := &closureRun{node: ev.call, via: store.via, own: d.storeClosures(store, s)}
 		for _, root := range store.writes {
 			if taken.Contains(root) {
 				continue
@@ -1577,12 +1576,14 @@ func (d *bodyDataflow) run(ev *runEvent, at liveness.StmtRef, s *dataflowState) 
 //
 // A kept loan is mutable for a place the closure may write and immutable for one it only reads.
 // It is live at every later point, so the rules check each later use of its place against it
-// the way they check a 'static borrow. A `var` binding the closures borrow that no loan covers, such as one holding a number, gets a
-// loan of its own here, mutable when a closure assigns to it.
+// the way they check a 'static borrow. A `var` binding the closures borrow that no loan covers,
+// such as one holding a number, gets a loan of its own here, mutable when a closure assigns to
+// it.
 //
 // Each loan the store keeps is checked against the loans live at the store, so a live borrow of
 // the other kind breaks E2. A kept loan does not conflict with another loan the same store
-// keeps, since one slot holds both.
+// keeps, since one slot holds both. A closure stored twice keeps one set of loans, so the second
+// store does not conflict with the first.
 func (d *bodyDataflow) keepCaptureLoans(store *retainedStore, at liveness.StmtRef, s *dataflowState) {
 	written := set.NewSet[ast.Node]()
 	var next []movePlace
@@ -1658,6 +1659,10 @@ func (d *bodyDataflow) keepCaptureLoans(store *retainedStore, at liveness.StmtRe
 			continue
 		}
 		kept.Add(bev)
+		// A closure an earlier store kept stays named by that store.
+		if prev, ok := s.loans[bev]; ok && prev.kept != "" {
+			continue
+		}
 		l := newLiveLoan(bev)
 		l.static, l.kept = true, store.via
 		s.loans[bev] = l
@@ -1671,11 +1676,12 @@ func (d *bodyDataflow) keepCaptureLoans(store *retainedStore, at liveness.StmtRe
 	}
 }
 
-// keptLoan returns the borrow event of the loan store keeps of place for the closure or value
-// node, mutable when mut is set. node is the closure whose capture the loan stands for, or the
-// stored value for a `var` binding no capture loan covers.
+// keptLoan returns the borrow event of the loan kept of place for the closure or value node,
+// mutable when mut is set. node is the closure whose capture the loan stands for, or the stored
+// value for a `var` binding no capture loan covers. Every store of one closure shares the loan.
+// store gives the point the loan is first taken at.
 func (d *bodyDataflow) keptLoan(store *retainedStore, node ast.Node, place movePlace, mut bool) *borrowEvent {
-	key := keptLoanKey{store: store, node: node, place: placeKey(place)}
+	key := keptLoanKey{node: node, place: placeKey(place)}
 	bev, ok := d.keptLoans[key]
 	if !ok {
 		kind := immutableBorrow
@@ -1690,6 +1696,23 @@ func (d *bodyDataflow) keptLoan(store *retainedStore, node ast.Node, place moveP
 		d.order[bev] = loanOrder{event: len(d.table.events), derived: len(d.keptLoans)}
 	}
 	return bev
+}
+
+// storeClosures returns each closure store's value holds: each closure written in it, and each
+// closure whose capture the place it names holds.
+func (d *bodyDataflow) storeClosures(store *retainedStore, s *dataflowState) set.Set[ast.Node] {
+	out := set.NewSet[ast.Node]()
+	for _, closure := range store.closures {
+		out.Add(closure)
+	}
+	if store.named {
+		for _, l := range s.loans {
+			if l.closure() && l.heldAt(store.place) {
+				out.Add(l.ev.node)
+			}
+		}
+	}
+	return out
 }
 
 // storeReachable reports whether a call at the point `at` may run the closure `store` keeps.
