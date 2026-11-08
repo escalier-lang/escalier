@@ -2466,51 +2466,41 @@ func TestFlowMatrix(t *testing.T) {
 			`,
 			want: []string{"6:6-6:7: this call runs 'f', which writes 'p' while it is borrowed as immutable"},
 		},
-		// DISABLED until the kept-borrows PR (fn-4): a 'static slot keeps the borrows a closure
-		// over locals of the body holds, per place, and checks later uses against them under E2,
-		// where this branch rejects the closure at the store.
-		/*
-			// A `'static` immutable borrow stays live for the rest of the program, so a later write to its
-			// source is rejected. Rules L1 and E2.
-			// `sink` keeps the closure's immutable borrow of `p` for the rest of the program, so the
-			// later write conflicts with it.
-			{
-				column: "WriteAfterStaticImmutableBorrow",
-				site:   "ClosureCapture",
-				src: `
-					var sink: 'static fn () -> number = fn () { return 0 }
-					fn g() {
-						val mut p = {x: 1}
-						sink = fn () { return p.x }
-						p.x = 2
-					}
-				`,
-				want: []string{"6:6-6:9: cannot assign to 'p.x' while it is borrowed as immutable by 'sink'"},
-			},
-		*/
-		// DISABLED until the kept-borrows PR (fn-4): a 'static slot keeps the borrows a closure
-		// over locals of the body holds, per place, and checks later uses against them under E2,
-		// where this branch rejects the closure at the store.
-		/*
-			// A `'static` mutable borrow stays live for the rest of the program, so a later immutable borrow
-			// of its source is rejected. Rules L1 and E2.
-			// `sink` keeps the closure's mutable borrow of `p` for the rest of the program, so the
-			// later immutable borrow conflicts with it.
-			{
-				column: "ImmutableBorrowAfterStaticMutableBorrow",
-				site:   "ClosureCapture",
-				src: `
-					var sink: 'static fn () -> undefined = fn () {}
-					declare fn readIt(a: &{x: number}) -> undefined
-					fn g() {
-						val mut p = {x: 1}
-						sink = fn () { p.x = 2 }
-						readIt(&p)
-					}
-				`,
-				want: []string{"7:13-7:15: cannot borrow 'p' as immutable while 'p.x' is borrowed as mutable by 'sink'"},
-			},
-		*/
+		// A `'static` immutable borrow stays live for the rest of the program, so a later write to its
+		// source is rejected. Rules L1 and E2.
+		// `sink` keeps the closure's immutable borrow of `p` for the rest of the program, so the
+		// later write conflicts with it.
+		{
+			column: "WriteAfterStaticImmutableBorrow",
+			site:   "ClosureCapture",
+			src: `
+				var sink: 'static fn () -> number = fn () { return 0 }
+				fn g() {
+					val mut p = {x: 1}
+					sink = fn () { return p.x }
+					p.x = 2
+				}
+			`,
+			want: []string{"6:6-6:9: cannot assign to 'p.x' while it is borrowed as immutable by 'sink'"},
+		},
+		// A `'static` mutable borrow stays live for the rest of the program, so a later immutable borrow
+		// of its source is rejected. Rules L1 and E2.
+		// `sink` keeps the closure's mutable borrow of `p` for the rest of the program, so the
+		// later immutable borrow conflicts with it.
+		{
+			column: "ImmutableBorrowAfterStaticMutableBorrow",
+			site:   "ClosureCapture",
+			src: `
+				var sink: 'static fn () -> undefined = fn () {}
+				declare fn readIt(a: &{x: number}) -> undefined
+				fn g() {
+					val mut p = {x: 1}
+					sink = fn () { p.x = 2 }
+					readIt(&p)
+				}
+			`,
+			want: []string{"7:13-7:15: cannot borrow 'p' as immutable while 'p.x' is borrowed as mutable by 'sink'"},
+		},
 		// Borrows of different fields reach different values, so a write to one field while another is
 		// borrowed is accepted. Rule E2.
 		{

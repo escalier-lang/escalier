@@ -44,6 +44,11 @@ type BorrowAliasError struct {
 	SecondVia  string
 	FirstRuns  bool
 	SecondRuns bool
+	// FirstKept and SecondKept name the slot that keeps the matching borrow for the rest of the
+	// program, when it is a kept closure's capture. Each is a phrase closureVia or retainedVia
+	// returns, and is empty for any other borrow.
+	FirstKept  string
+	SecondKept string
 	node       ast.Node
 	first      ast.Span
 }
@@ -59,11 +64,19 @@ func (e *BorrowAliasError) Message() string {
 	if e.FirstPlace != e.Place {
 		held = fmt.Sprintf("'%s' is", e.FirstPlace)
 	}
+	// A kept borrow names the slot that keeps it, after the kind of the borrow it describes.
+	firstKind, secondKind := kindName(e.FirstMut), kindName(e.SecondMut)
+	if e.FirstKept != "" {
+		firstKind += " by " + e.FirstKept
+	}
+	if e.SecondKept != "" {
+		secondKind += " for " + e.SecondKept
+	}
 	if e.SecondVia != "" {
 		if e.SecondMut {
-			return fmt.Sprintf("this call %s %s, which writes '%s' while %s borrowed as immutable", runsVerb(e.SecondRuns), e.SecondVia, e.Place, held)
+			return fmt.Sprintf("this call %s %s, which writes '%s' while %s borrowed as %s", runsVerb(e.SecondRuns), e.SecondVia, e.Place, held, firstKind)
 		}
-		return fmt.Sprintf("this call %s %s, which reads '%s' while %s borrowed as mutable", runsVerb(e.SecondRuns), e.SecondVia, e.Place, held)
+		return fmt.Sprintf("this call %s %s, which reads '%s' while %s borrowed as %s", runsVerb(e.SecondRuns), e.SecondVia, e.Place, held, firstKind)
 	}
 	if e.FirstVia != "" {
 		if e.FirstMut {
@@ -71,10 +84,15 @@ func (e *BorrowAliasError) Message() string {
 		}
 		return fmt.Sprintf("cannot borrow '%s' as mutable in a call that %s %s, which reads it", e.Place, runsVerb(e.FirstRuns), e.FirstVia)
 	}
-	if e.SecondMut {
-		return fmt.Sprintf("cannot borrow '%s' as mutable while %s borrowed as immutable", e.Place, held)
+	return fmt.Sprintf("cannot borrow '%s' as %s while %s borrowed as %s", e.Place, secondKind, held, firstKind)
+}
+
+// kindName returns how a message names the kind of a borrow.
+func kindName(mut bool) string {
+	if mut {
+		return "mutable"
 	}
-	return fmt.Sprintf("cannot borrow '%s' as immutable while %s borrowed as mutable", e.Place, held)
+	return "immutable"
 }
 
 // MoveWhileBorrowedError reports a move of data a live borrow still reaches. After
@@ -87,8 +105,12 @@ type MoveWhileBorrowedError struct {
 	// ViaRuns marks a closure the call is sure to run, because the call's callee names it.
 	Via     string
 	ViaRuns bool
-	move    ast.Node
-	borrow  ast.Span
+	// Kept names the slot that keeps the borrow for the rest of the program, when the borrow is
+	// a kept closure's capture, and is empty otherwise. It is a phrase closureVia or retainedVia
+	// returns.
+	Kept   string
+	move   ast.Node
+	borrow ast.Span
 }
 
 func (*MoveWhileBorrowedError) isSolverError()        {}
@@ -97,6 +119,9 @@ func (e *MoveWhileBorrowedError) Related() []ast.Span { return []ast.Span{e.borr
 func (e *MoveWhileBorrowedError) Message() string {
 	if e.Via != "" {
 		return fmt.Sprintf("cannot move '%s' in a call that %s %s, which writes it", e.Place, runsVerb(e.ViaRuns), e.Via)
+	}
+	if e.Kept != "" {
+		return fmt.Sprintf("cannot move '%s' while it is borrowed by %s", e.Place, e.Kept)
 	}
 	return fmt.Sprintf("cannot move '%s' while it is borrowed", e.Place)
 }
@@ -114,7 +139,11 @@ func runsVerb(runs bool) string {
 // the written data is live.
 type BorrowedValueWriteError struct {
 	// Place names the field written, `x.v` for `x.v = 5`.
-	Place  string
+	Place string
+	// Kept names the slot that keeps the borrow for the rest of the program, when the borrow is
+	// a kept closure's capture, and is empty otherwise. It is a phrase closureVia or
+	// retainedVia returns.
+	Kept   string
 	write  ast.Node
 	borrow ast.Span
 }
@@ -123,6 +152,9 @@ func (*BorrowedValueWriteError) isSolverError()        {}
 func (e *BorrowedValueWriteError) Span() ast.Span      { return e.write.Span() }
 func (e *BorrowedValueWriteError) Related() []ast.Span { return []ast.Span{e.borrow} }
 func (e *BorrowedValueWriteError) Message() string {
+	if e.Kept != "" {
+		return fmt.Sprintf("cannot assign to '%s' while it is borrowed as immutable by %s", e.Place, e.Kept)
+	}
 	return fmt.Sprintf("cannot assign to '%s' while it is borrowed as immutable", e.Place)
 }
 

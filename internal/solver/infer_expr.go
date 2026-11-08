@@ -2838,7 +2838,9 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 			// Anything can call a closure in a module-level binding from here on, so each
 			// later call may run it.
 			if c.fn != nil && hasEventRef {
-				if _, ok := c.fn.stmtToRef[assignStmt]; ok {
+				// A value whose closures' borrows the slot keeps got its store when the
+				// assignment was checked.
+				if _, ok := c.fn.stmtToRef[assignStmt]; ok && !c.keepsCaptures(e.Right) {
 					c.noteRetainedClosureStore(retainedStore{via: closureVia(target.Name), expr: e.Right, at: eventRef, static: true})
 				}
 			}

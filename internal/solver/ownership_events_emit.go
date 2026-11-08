@@ -574,6 +574,11 @@ func (c *checker) emitCaptureFlows(closure ast.Func, root liveness.VarID, decl a
 	}
 
 	paths := c.capturedPaths(closure, decl)
+	events := c.fn.events
+	if events.keptAccesses[closure] == nil {
+		events.keptAccesses[closure] = map[liveness.VarID][]keptAccess{}
+	}
+	events.keptAccesses[closure][root] = c.capturedAccesses(closure, decl, writes)
 	if moveNode != nil {
 		paths = []capturedPath{c.capturedMove(paths, moveNode, decl)}
 	}
@@ -612,7 +617,7 @@ func (c *checker) capturedPaths(closure ast.Func, decl ast.Node) []capturedPath 
 	t := c.fn.events
 	f, ok := t.capturedPlaces[closure]
 	if !ok {
-		f = &capturedPlaceFinder{c: c, paths: map[ast.Node][]capturedPath{}, whole: set.NewSet[ast.Node]()}
+		f = &capturedPlaceFinder{c: c, paths: map[ast.Node][]capturedPath{}, whole: set.NewSet[ast.Node](), accesses: map[ast.Node][]keptAccess{}, usedWhole: set.NewSet[ast.Node](), written: set.NewSet[ast.Expr]()}
 		if body := closure.FuncBody(); body != nil {
 			body.Accept(f)
 		}
@@ -666,16 +671,61 @@ func (c *checker) capturedMove(paths []capturedPath, moveNode ast.Node, decl ast
 	return capturedPath{path: cp.segs, t: c.info.TypeOf(cp.exprs[len(cp.exprs)-1]), moves: true}
 }
 
+// keptAccess is one place under a captured local that a closure reads or writes, at the
+// precision a slot that keeps the closure keeps its borrow at. path is the field path under
+// the local, and is empty when the closure uses the local whole. mut says the closure may
+// write the place.
+type keptAccess struct {
+	path []placeSeg
+	mut  bool
+}
+
+// capturedAccesses returns the places under the local declared by decl that closure's body
+// reads or writes, each with whether the body may write it. writes says the body writes the
+// local somewhere.
+//
+// Unlike capturedPaths, a path ends at the field the body names even when that field holds a
+// value type, so a write of `p.x` and a read of `p.y` stay apart. A place is written when it
+// is the target of `=` or the operand of `&mut`. A chain that ends at a method or getter may
+// write what it reaches, so it counts as written when writes is set. The whole local is
+// returned, written when writes is set, when the body uses the local itself, through a
+// dynamic index, or inside a nested function or JSX.
+func (c *checker) capturedAccesses(closure ast.Func, decl ast.Node, writes bool) []keptAccess {
+	f := c.fn.events.capturedPlaces[closure]
+	if f == nil || f.allWhole || f.usedWhole.Contains(decl) || len(f.accesses[decl]) == 0 {
+		return []keptAccess{{mut: writes}}
+	}
+	var out []keptAccess
+	for _, a := range f.accesses[decl] {
+		a.mut = a.mut && writes
+		i := slices.IndexFunc(out, func(o keptAccess) bool { return slices.Equal(o.path, a.path) })
+		if i < 0 {
+			out = append(out, a)
+		} else {
+			out[i].mut = out[i].mut || a.mut
+		}
+	}
+	return out
+}
+
 // capturedPlaceFinder walks a closure's body for capturedPaths. paths maps the declaration of
 // each local the body reaches through a field to the places it reaches. whole holds each
 // declaration of a local the body uses whole. allWhole is set when the body holds a nested
 // function or JSX, whose uses of a local the walk does not name.
+//
+// accesses maps the same declarations to the places capturedAccesses returns, before writes
+// narrows them. usedWhole holds each declaration of a local the body names with no field path,
+// which whole also holds. whole holds as well a local the body reaches only through value-type
+// fields. written holds each chain that is the target of `=` or the operand of `&mut`.
 type capturedPlaceFinder struct {
 	ast.DefaultVisitor
-	c        *checker
-	paths    map[ast.Node][]capturedPath
-	whole    set.Set[ast.Node]
-	allWhole bool
+	c         *checker
+	paths     map[ast.Node][]capturedPath
+	whole     set.Set[ast.Node]
+	allWhole  bool
+	accesses  map[ast.Node][]keptAccess
+	usedWhole set.Set[ast.Node]
+	written   set.Set[ast.Expr]
 }
 
 func (v *capturedPlaceFinder) EnterExpr(e ast.Expr) bool {
@@ -683,6 +733,14 @@ func (v *capturedPlaceFinder) EnterExpr(e ast.Expr) bool {
 	case *ast.FuncExpr, *ast.JSXElementExpr, *ast.JSXFragmentExpr:
 		v.allWhole = true
 		return false
+	case *ast.BinaryExpr:
+		if e.Op == ast.Assign {
+			v.written.Add(e.Left)
+		}
+	case *ast.BorrowExpr:
+		if e.Mut {
+			v.written.Add(e.Arg)
+		}
 	case *ast.IdentExpr, *ast.MemberExpr, *ast.IndexExpr:
 		return v.recordChain(e)
 	}
@@ -720,6 +778,13 @@ func (v *capturedPlaceFinder) recordChain(e ast.Expr) bool {
 	if !ok {
 		// A chain not rooted at a local can still read one in a dynamic index.
 		return !v.allWhole
+	}
+
+	if cp.whole || len(cp.segs) == 0 {
+		v.usedWhole.Add(cp.decl)
+	} else {
+		mut := v.written.Contains(e) || cp.closed
+		v.accesses[cp.decl] = append(v.accesses[cp.decl], keptAccess{path: cp.segs, mut: mut})
 	}
 
 	segs := cp.segs

@@ -436,7 +436,8 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 
 // TestOwnershipEventsClosureCaptures covers closure captures, which F3 decides from where the
 // closure flows. A closure stored into a module-level binding records a 'static borrow of each
-// capture.
+// capture. The dataflow pass then keeps each such borrow of a local for the rest of the program
+// from the store on, which the events do not show.
 func TestOwnershipEventsClosureCaptures(t *testing.T) {
 	runOwnershipEvents(t, []ownershipEventsCase{
 		{
@@ -468,65 +469,50 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 				"b0.1: borrow(&, `p`, arg(`map`, 0), '_)",     // the closure passed to `xs.map` captures p and is not returned, so it borrows p
 			},
 		},
-		// DISABLED until the kept-borrows PR (fn-4): a 'static slot keeps the borrows a closure
-		// over locals of the body holds, per place, and checks later uses against them under E2,
-		// where this branch rejects the closure at the store.
-		/*
-			{
-				name: "ClosureStoredInModuleBorrowsCaptureForStatic",
-				src: `
-					var handler: 'static fn () -> number = fn () { return 0 }
-					fn go() {
-						val p = {x: 1}
-						handler = fn () { return p.x }
-					}
-				`,
-				want: []string{
-					"b0.1: borrow(&, `p`, `handler`, 'static)", // `handler = fn ...` stores the closure in a module binding, so it borrows p for 'static
-					"b0.1: use(`handler`, write)",              // `handler = fn ...` writes the module binding
-				},
+		{
+			name: "ClosureStoredInModuleBorrowsCaptureForStatic",
+			src: `
+				var handler: 'static fn () -> number = fn () { return 0 }
+				fn go() {
+					val p = {x: 1}
+					handler = fn () { return p.x }
+				}
+			`,
+			want: []string{
+				"b0.1: borrow(&, `p`, `handler`, 'static)", // `handler = fn ...` stores the closure in a module binding, so it borrows p for 'static
+				"b0.1: use(`handler`, write)",              // `handler = fn ...` writes the module binding
 			},
-		*/
-		// DISABLED until the kept-borrows PR (fn-4): a 'static slot keeps the borrows a closure
-		// over locals of the body holds, per place, and checks later uses against them under E2,
-		// where this branch rejects the closure at the store.
-		/*
-			{
-				name: "WritingClosureStoredInModuleBorrowsCaptureMutably",
-				src: `
-					var handler: 'static fn () -> undefined = fn () {}
-					fn go() {
-						val mut p = {x: 1}
-						handler = fn () { p.x = 2 }
-					}
-				`,
-				want: []string{
-					"b0.1: borrow(&mut, `p`, `handler`, 'static)", // the stored closure writes p, so its 'static borrow is mutable
-					"b0.1: use(`handler`, write)",                 // `handler = fn ...` writes the module binding
-				},
+		},
+		{
+			name: "WritingClosureStoredInModuleBorrowsCaptureMutably",
+			src: `
+				var handler: 'static fn () -> undefined = fn () {}
+				fn go() {
+					val mut p = {x: 1}
+					handler = fn () { p.x = 2 }
+				}
+			`,
+			want: []string{
+				"b0.1: borrow(&mut, `p`, `handler`, 'static)", // the stored closure writes p, so its 'static borrow is mutable
+				"b0.1: use(`handler`, write)",                 // `handler = fn ...` writes the module binding
 			},
-		*/
-		// DISABLED until the kept-borrows PR (fn-4): a 'static slot keeps the borrows a closure
-		// over locals of the body holds, per place, and checks later uses against them under E2,
-		// where this branch rejects the closure at the store.
-		/*
-			{
-				name: "ClosureStoredInModuleThroughLocalBorrowsCaptureForStatic",
-				src: `
-					var handler: 'static fn () -> number = fn () { return 0 }
-					fn go() {
-						val p = {x: 1}
-						val f = fn () { return p.x }
-						handler = f
-					}
-				`,
-				want: []string{
-					"b0.1: borrow(&, `p`, `f`, 'static)", // `handler = f` stores the closure f holds, so it borrows p for 'static
-					"b0.2: use(`f`, read)",               // `handler = f` reads f, since a closure is a value type
-					"b0.2: use(`handler`, write)",        // `handler = f` writes the module binding
-				},
+		},
+		{
+			name: "ClosureStoredInModuleThroughLocalBorrowsCaptureForStatic",
+			src: `
+				var handler: 'static fn () -> number = fn () { return 0 }
+				fn go() {
+					val p = {x: 1}
+					val f = fn () { return p.x }
+					handler = f
+				}
+			`,
+			want: []string{
+				"b0.1: borrow(&, `p`, `f`, 'static)", // `handler = f` stores the closure f holds, so it borrows p for 'static
+				"b0.2: use(`f`, read)",               // `handler = f` reads f, since a closure is a value type
+				"b0.2: use(`handler`, write)",        // `handler = f` writes the module binding
 			},
-		*/
+		},
 		{
 			name: "ClosureReturnedWhereWrittenOwnsCapture",
 			src: `

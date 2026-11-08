@@ -550,26 +550,34 @@ func TestOwnershipDataflow(t *testing.T) {
 				}
 			`,
 		},
-		// DISABLED until the kept-borrows PR (fn-4): a 'static slot keeps the borrows a closure
-		// over locals of the body holds, per place, and checks later uses against them under E2,
-		// where this branch rejects the closure at the store.
-		/*
-			{
-				// sink keeps the closure's immutable borrow of p for the rest of the program, so moving
-				// p breaks E3.
-				name: "E3MoveAfterStoringAReadingClosureIntoAGlobal",
-				src: `
-					var sink: 'static fn () -> number = fn () { return 0 }
-					declare fn take(x: {x: number}) -> undefined
-					fn go() {
-						val p = {x: 1}
-						sink = fn () { return p.x }
-						take(p)
-					}
-				`,
-				errs: []string{"cannot move 'p' while it is borrowed by 'sink'"},
-			},
-		*/
+		{
+			// sink keeps its function for 'static and p is a local of go, so sink keeps the
+			// closure's borrow of p for the rest of the program. Nothing uses p after the store, so
+			// go checks.
+			name: "E3StoreOfAReadingClosureIntoAGlobal",
+			src: `
+				var sink: 'static fn () -> number = fn () { return 0 }
+				fn go() {
+					val p = {x: 1}
+					sink = fn () { return p.x }
+				}
+			`,
+		},
+		{
+			// sink keeps the closure's immutable borrow of p for the rest of the program, so moving
+			// p breaks E3.
+			name: "E3MoveAfterStoringAReadingClosureIntoAGlobal",
+			src: `
+				var sink: 'static fn () -> number = fn () { return 0 }
+				declare fn take(x: {x: number}) -> undefined
+				fn go() {
+					val p = {x: 1}
+					sink = fn () { return p.x }
+					take(p)
+				}
+			`,
+			errs: []string{"cannot move 'p' while it is borrowed by 'sink'"},
+		},
 		{
 			// One return that names the closure twice moves its capture once.
 			name: "ReturnOfAClosureTwiceInOneValue",
@@ -638,29 +646,24 @@ func TestOwnershipDataflow(t *testing.T) {
 			`,
 			errs: []string{"cannot move 'p' while it is borrowed"},
 		},
-		// DISABLED until the kept-borrows PR (fn-4): a 'static slot keeps the borrows a closure
-		// over locals of the body holds, per place, and checks later uses against them under E2,
-		// where this branch rejects the closure at the store.
-		/*
-			{
-				// The store moves r into f, and r holds a borrow of p, so that borrow lasts for
-				// 'static and p cannot move.
-				name: "E3MoveAfterStoringAClosureThatCapturesABorrow",
-				src: `
-					declare fn take(p: {x: number}) -> number
-					var sink: 'static fn () -> number = fn () { return 0 }
-					fn go() {
-						val p = {x: 1}
-						val r = &p
-						val f = fn () { return r.x }
-						val n = r.x
-						sink = f
-						take(p)
-					}
-				`,
-				errs: []string{"cannot move 'p' while it is borrowed"},
-			},
-		*/
+		{
+			// The store moves r into f, and r holds a borrow of p, so that borrow lasts for
+			// 'static and p cannot move.
+			name: "E3MoveAfterStoringAClosureThatCapturesABorrow",
+			src: `
+				declare fn take(p: {x: number}) -> number
+				var sink: 'static fn () -> number = fn () { return 0 }
+				fn go() {
+					val p = {x: 1}
+					val r = &p
+					val f = fn () { return r.x }
+					val n = r.x
+					sink = f
+					take(p)
+				}
+			`,
+			errs: []string{"cannot move 'p' while it is borrowed"},
+		},
 		{
 			// The move conflicts with a and with f's capture. It is reported once, at the move,
 			// and the later call reports nothing more.
@@ -2331,31 +2334,26 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 			`,
 			want: []string{"6:12-6:13: use of moved value 'q'"},
 		},
-		// DISABLED until the kept-borrows PR (fn-4): a 'static slot keeps the borrows a closure
-		// over locals of the body holds, per place, and checks later uses against them under E2,
-		// where this branch rejects the closure at the store.
-		/*
-			{
-				// sink keeps f's borrow of p from before the branch, so the later move of p on the path
-				// that does not return breaks E3.
-				name: "E3MoveAfterStoringAndReturningAClosure",
-				src: `
-					var sink: 'static fn () -> number = fn () { return 0 }
-					declare fn take(x: {x: number}) -> undefined
-					fn go(c: boolean) {
-						val p = {x: 1}
-						val f = fn () { return p.x }
-						sink = f
-						if c {
-							return f
-						}
-						take(p)
-						return fn () { return 0 }
+		{
+			// sink keeps f's borrow of p from before the branch, so the later move of p on the path
+			// that does not return breaks E3.
+			name: "E3MoveAfterStoringAndReturningAClosure",
+			src: `
+				var sink: 'static fn () -> number = fn () { return 0 }
+				declare fn take(x: {x: number}) -> undefined
+				fn go(c: boolean) {
+					val p = {x: 1}
+					val f = fn () { return p.x }
+					sink = f
+					if c {
+						return f
 					}
-				`,
-				want: []string{"11:11-11:12: cannot move 'p' while it is borrowed by 'sink'"},
-			},
-		*/
+					take(p)
+					return fn () { return 0 }
+				}
+			`,
+			want: []string{"11:11-11:12: cannot move 'p' while it is borrowed by 'sink'"},
+		},
 		{
 			// The body reads `p.r` while the mutable borrow `a` holds is live, so the store's `&b`
 			// breaks E2. The caller reads `p.r` once f returns, and the return hands it b as an
