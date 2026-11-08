@@ -265,6 +265,10 @@ type checker struct {
 	// list and puts the previous one back when it ends.
 	weakReads []*ast.IdentExpr
 
+	// weakLvl is the level of the module being walked. A variable at or below it belongs to
+	// a weak module-level binding.
+	weakLvl int
+
 	// pendingBindingVars holds the binding var of each value binding of the module component
 	// being inferred. The binding reads as that bare variable until the component's phase 3
 	// binds it to its scheme.

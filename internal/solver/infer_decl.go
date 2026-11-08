@@ -740,6 +740,7 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl, self *solt
 		initLvl = lvl
 	}
 	firstVar := c.ctx.varCounter
+	firstRead := len(c.weakReads)
 	initType, ok := c.inferVarDeclInit(scope, initLvl, d, "")
 	if !ok {
 		return ValueBinding{}, false
@@ -782,6 +783,13 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl, self *solt
 	// A relaxed binding is weak only in the variables its value can store.
 	if relaxes(d) && c.lowerStoringVars(bound, lvl) {
 		weak = true
+	}
+	// A binding that generalizes gives each use its own copy of a parameter of the function
+	// it holds, so a parameter that flows into a weak module-level binding would let each
+	// call decide that binding's type.
+	if !weak {
+		name, _ := varName(d)
+		c.checkWeakInflow(inflowSite{t: bound, name: name, reads: c.weakReads[firstRead:], fallback: d.Pattern, lvl: lvl})
 	}
 	scheme := c.generalize(bound, lvl)
 	if weak {

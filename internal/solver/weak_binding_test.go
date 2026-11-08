@@ -826,6 +826,44 @@ fn h(y) { return g(y) }
 				"13:18-13:19: a parameter of 'h' flows into 'g', whose type is not known yet. Write the type of 'g', as in `val g: fn (x: number) -> number | undefined = makeCellFor(h)`.",
 			},
 		},
+		{
+			// The second `Cell` has its own argument, so its function may hold state as the
+			// first one's does.
+			name: "EachUseOfAnAliasStaysWeak",
+			src: `
+type Cell<T> = fn (x: T) -> T
+declare fn mk2<A, B>() -> [Cell<A>, Cell<B>]
+val p = mk2()
+fn a() { return p[1](1) }
+fn b() { val s: string = p[1]("x") }
+`,
+			want: []string{"6:26-6:35: cannot constrain 1 <: string"},
+		},
+		{
+			// put generalizes inside outer, so each call of put would decide seen's type.
+			name: "ABodyLevelFunctionWhoseParameterFlowsIntoAWeakBinding",
+			src: `
+val mut seen = Map()
+fn outer() {
+	val put = fn (y) { seen.set("k", y) }
+	put(1)
+}
+`,
+			want: []string{
+				"4:21-4:25: a parameter of 'put' flows into 'seen', whose type is not known yet. Write the type of 'seen', as in `val mut seen: Map<string, number> = Map()`.",
+			},
+		},
+		{
+			name: "ADestructuredWeakBindingIsNamed",
+			src: `
+declare fn makeStore<T>() -> {cache: Map<string, T>}
+val {mut cache} = makeStore()
+fn put(x) { cache.set("k", x) }
+`,
+			want: []string{
+				"4:13-4:18: a parameter of 'put' flows into 'cache', whose type is not known yet. Write the type of 'cache'.",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

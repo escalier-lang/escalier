@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"slices"
 	"sort"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -241,15 +242,16 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	prevOwners := c.symbolOwners
 	c.symbolOwners = symbolOwners(module, g)
 	prevWeak, prevReaders, prevLocals, prevWeakVars := c.weakBindings, c.weakReaders, c.weakLocals, c.weakBindingVars
-	prevReads := c.weakReads
+	prevReads, prevWeakLvl := c.weakReads, c.weakLvl
 	c.weakBindings, c.weakReaders, c.weakLocals, c.weakReads = nil, nil, nil, nil
+	c.weakLvl = lvl
 	c.weakBindingVars = set.NewSet[*soltype.TypeVarType]()
 	defer func() {
 		target.onDefine = prevOnDefine
 		c.nsIndex = nil
 		c.symbolOwners = prevOwners
 		c.weakBindings, c.weakReaders, c.weakLocals, c.weakBindingVars = prevWeak, prevReaders, prevLocals, prevWeakVars
-		c.weakReads = prevReads
+		c.weakReads, c.weakLvl = prevReads, prevWeakLvl
 	}()
 	// M4 E3: dep_graph fans one top-level destructuring `val {x, y} = …` across one
 	// SCC component per leaf key. Its initializer is typed and its pattern bound
@@ -1120,7 +1122,7 @@ func (c *checker) inferComponent(
 			c.recordType(b.infoNode, display)
 		}
 		if b.weak {
-			c.noteWeakBinding(b, scheme)
+			c.noteWeakBinding(b, key.Name(), scheme)
 		} else {
 			c.noteWeakReader(b, scheme, lvl)
 		}
@@ -1133,8 +1135,19 @@ func (c *checker) inferComponent(
 			continue
 		}
 		c.pendingBindingVars.Remove(b.v)
-		if sc, isPoly := generalized[key].(*PolyScheme); isPoly && !b.weak {
-			c.checkWeakInflow(b, key.Name(), sc, lvl)
+		sc, isPoly := generalized[key].(*PolyScheme)
+		if !isPoly || b.weak {
+			continue
+		}
+		fallback := b.infoNode
+		if fallback == nil {
+			fallback = b.primary
+		}
+		site := inflowSite{t: b.v, name: key.Name(), reads: b.weakReads, fallback: fallback, lvl: lvl}
+		// The binding's display type was sealed before the check dropped its weak upper
+		// bounds, so it is sealed again once the module is inferred.
+		if c.checkWeakInflow(site) && !slices.ContainsFunc(c.weakReaders, func(r weakReader) bool { return r.scheme == sc }) {
+			c.weakReaders = append(c.weakReaders, weakReader{scheme: sc, infoNode: b.infoNode})
 		}
 	}
 }

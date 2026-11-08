@@ -738,6 +738,32 @@ func (c *Context) addUpperBound(v *soltype.TypeVarType, t soltype.Type) {
 	v.UpperBounds = append(v.UpperBounds, t)
 }
 
+// dropUpperBound replaces each upper bound of v that is ub itself with a fresh variable at
+// v's level, which bounds nothing, so the bound list keeps its length. A discarded probe
+// puts the replaced bounds back.
+func (c *Context) dropUpperBound(v *soltype.TypeVarType, ub soltype.Type) {
+	c.recordMutation(v)
+	for i, b := range v.UpperBounds {
+		if b != ub {
+			continue
+		}
+		v.UpperBounds[i] = c.freshVar(v.Level)
+		if c.probe != nil {
+			c.probe.onRollback(func() { v.UpperBounds[i] = b })
+		}
+	}
+}
+
+// lowerLevel sets v's level to lvl. A discarded probe puts the previous level back.
+func (c *Context) lowerLevel(v *soltype.TypeVarType, lvl int) {
+	c.recordMutation(v)
+	prev := v.Level
+	v.Level = lvl
+	if c.probe != nil {
+		c.probe.onRollback(func() { v.Level = prev })
+	}
+}
+
 // replaceLowerBound replaces v's lower bound at index i with t and returns the errors that
 // checking t against v's upper bounds and borrowed reads reports, as adding t would. A
 // discarded probe puts the replaced bound back.

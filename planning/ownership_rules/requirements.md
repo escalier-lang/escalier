@@ -1857,8 +1857,8 @@ settled it on so far, or as `number` when none has. Once the error is reported,
 the calls of `h` no longer reach `g`'s weak variables. With the written type,
 `h` infers as `fn (y: number) -> number | undefined`. The same error covers
 `fn remember(value) { seen.set("last", value) }` over `val mut seen = Map()`.
-The check covers module-level bindings and the module-level functions that read
-them.
+The check covers a module-level weak binding read by any binding that
+generalizes, at module level or in a function body.
 
 A weak variable no use decides settles silently. A container that is never
 written settles at `never`, so `val mut seen = Map()` with no `seen.set` reads
