@@ -130,6 +130,20 @@ val one = put(1)
 			},
 		},
 		{
+			// Without the annotation, x's type is a variable that may stand for an object, so
+			// storing `[x]` moves x and the return reads a moved value.
+			name: "AStoredParameterOfUnknownTypeMoves",
+			src: `
+val mut seen = Map()
+fn put(x) {
+	seen.set("k", [x])
+	return x
+}
+val one = put(1)
+`,
+			want: []string{"5:9-5:10: use of moved value 'x'"},
+		},
+		{
 			// f's result holds `{next: f()}`, so the variable for it reaches itself through
 			// the field. Storing it in the map widens that variable as a slot, and the
 			// widened copy is one knot that holds itself.
