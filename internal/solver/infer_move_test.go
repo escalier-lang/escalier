@@ -974,7 +974,7 @@ func TestInferUnannotatedDestructuredParam(t *testing.T) {
 			name: "TupleLeafReturned",
 			srcs: []string{
 				`fn f([x, y]) { return y }`,
-				`fn f(p) { return p.1 }`,
+				`fn f(p) { return p[1] }`,
 				`fn f(p) {
 	val [x, y] = p
 	return y
@@ -982,7 +982,7 @@ func TestInferUnannotatedDestructuredParam(t *testing.T) {
 			},
 			sig: "fn <T0, 'a>(arg0: &'a [unknown, T0]) -> &'a T0",
 			gap: map[int]string{
-				1: "`p.1` lexes as `p` followed by the number literal `.1`, so the body returns p. Tracked by #2579.",
+				1: "`p[1]` on an unannotated parameter reports `Unsupported: IndexExpr`. Tracked by #2579.",
 			},
 		},
 		{
