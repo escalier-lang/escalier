@@ -46,9 +46,9 @@ func deferredBody(sig ast.FuncSig) string {
 	return ""
 }
 
-// noteCallOnlyParam records lt, the lifetime of a call-only parameter, so that noteCallOnlyRead
-// watches reads of values that hold it. It must run when the parameter is bound, before its
-// function's body is walked.
+// noteCallOnlyParam records lt, the lifetime of a call-only parameter, so that funcLtSources
+// treats it as one and noteCallOnlyRead watches reads of values that hold it. It must run when
+// the parameter is bound, before its function's body is walked.
 func (c *checker) noteCallOnlyParam(lt *soltype.LifetimeVar) {
 	if c.callOnlyDepth == nil {
 		c.callOnlyDepth = map[*soltype.LifetimeVar]int{}

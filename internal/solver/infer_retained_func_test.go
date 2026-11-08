@@ -144,6 +144,12 @@ fn mk(x: number) -> fn () -> undefined { return fn () {} }`,
 			binding: "f",
 			want:    "fn <'a>(g: 'a fn () -> undefined) -> 'a fn () -> undefined",
 		},
+		{
+			name:    "elided parameter captured by a returned closure",
+			src:     `fn f(g: fn () -> undefined) { return fn () { g() } }`,
+			binding: "f",
+			want:    "fn <'a>(g: 'a fn () -> undefined) -> 'a fn () -> undefined",
+		},
 		// A binding annotation inside a body takes a fresh lifetime, so the local holds the
 		// call-only parameter without keeping it past the call.
 		{
@@ -664,6 +670,12 @@ fn h(x: fn () -> undefined, n: number) {
 			src: `declare fn each(f: fn () -> undefined) -> undefined
 fn f(g: fn () -> undefined) { each(fn () { g() }) }`,
 		},
+		{
+			name: "captured by a closure passed to a static parameter",
+			src: `declare fn onClick(handler: 'static fn () -> undefined) -> undefined
+fn f(g: fn () -> undefined) { onClick(fn () { g() }) }`,
+			want: []string{"2:6-2:7: " + static},
+		},
 		// A `'static` parameter may be kept forever, so a closure that captures it may be too.
 		{
 			name: "static parameter captured by a closure passed to a static parameter",
@@ -674,6 +686,33 @@ fn f(g: 'static fn () -> undefined) {
     onClick(g)
     sink = fn () { g() }
 }`,
+		},
+		{
+			name: "captured by a named closure passed to a static parameter",
+			src: `declare fn onClick(handler: 'static fn () -> undefined) -> undefined
+fn f(g: fn () -> undefined) {
+    val h = fn () { g() }
+    onClick(h)
+}`,
+			want: []string{"2:6-2:7: " + static},
+		},
+		{
+			name: "captured through a second closure passed to a static parameter",
+			src: `declare fn onClick(handler: 'static fn () -> undefined) -> undefined
+fn f(g: fn () -> undefined) {
+    val h = fn () { g() }
+    onClick(fn () { h() })
+}`,
+			want: []string{"2:6-2:7: " + static},
+		},
+		{
+			name: "captured in an object by a closure passed to a static parameter",
+			src: `declare fn onClick(handler: 'static fn () -> undefined) -> undefined
+fn f(g: fn () -> undefined) {
+    val o = {cb: g}
+    onClick(fn () { o.cb() })
+}`,
+			want: []string{"4:13-4:29: this closure borrows `o`, but `onClick` keeps it for 'static; pass a function that borrows nothing", "2:6-2:7: 'g' may borrow values that live only during the call, but it is stored where it lives for the whole program; write `g: 'static fn () -> undefined` to keep it"},
 		},
 		{
 			name: "stored into a static module-level var",
@@ -806,6 +845,14 @@ fn f(g: fn () -> undefined) {
 }`,
 			want: []string{"3:27-3:30: " + fmt.Sprintf(deferred, "an async function")},
 		},
+		{
+			name: "read through a wrapping closure by an async closure",
+			src: `fn f(g: fn () -> undefined) {
+    val h = fn () { g() }
+    val p = async fn () { h() }
+}`,
+			want: []string{"3:27-3:28: " + fmt.Sprintf(deferred, "an async function")},
+		},
 		// The fix keeps the parameter's `?`.
 		{
 			name: "optional parameter stored into a module-level slot",
@@ -847,6 +894,12 @@ async fn f<'a>(g: 'a fn () -> undefined) {
     g()
 }`,
 		},
+		{
+			name: "named lifetime captured by a closure passed to a static parameter",
+			src: `declare fn onClick(handler: 'static fn () -> undefined) -> undefined
+fn f<'a>(g: 'a fn () -> undefined) { onClick(fn () { g() }) }`,
+			want: []string{"2:6-2:8: the body requires 'a to outlive 'static, but the signature does not declare it; add the bound 'a: 'static"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -872,7 +925,9 @@ func TestCallOnlyFuncDeferredRelated(t *testing.T) {
 
 // A function type written with no lifetime in a module-level binding's annotation is 'static,
 // so it holds only a function that borrows nothing shorter than the program, as E4 states. A
-// slot written `'static fn` holds the same functions.
+// slot written `'static fn` holds the same functions. A closure that captures nothing, or only
+// reads value types from `val` bindings, holds no borrow. One that captures an object local, or
+// reads or writes a captured `var`, borrows it, and such a slot rejects it.
 // TestModuleLevelFuncHoldsNoBorrow covers the E4 example, the captures that decide whether a
 // closure fits such a slot, and each kind of slot, and asserts the full message, with its span,
 // of each error.
@@ -920,6 +975,14 @@ fn setup() {
     keep(fn () { console.log(n) })
 }`,
 		},
+		// A parameter's default is a closure over the parameters before it.
+		{
+			name: "closure in a parameter default that reads a borrowed parameter",
+			src: decls + `fn setup(x: &{n: number}, g = fn () { console.log(x.n) }) {
+    keep(g)
+}`,
+			want: []string{"4:31-4:57: this closure borrows `x`, but `keep` keeps it for 'static; " + fix},
+		},
 		// A module-level binding lives for the whole program, so reading one holds no borrow.
 		{
 			name: "closure that reads a module-level object",
@@ -952,6 +1015,39 @@ fn setup() {
     return n * 2
 }`,
 		},
+		{
+			name: "closure that captures an unannotated parameter later used as an object",
+			src: decls + `fn setup(n) {
+    sink = fn () { console.log(n) }
+    return n.x
+}`,
+			want: []string{"5:12-5:36: this closure borrows `n`, but `sink` keeps it for 'static; " + fix},
+		},
+		{
+			name: "bound closure that captures an unannotated parameter used as an object",
+			src: decls + `fn setup(n) {
+    val show = fn () { console.log(n) }
+    sink = show
+    return n.x
+}`,
+			want: []string{"6:12-6:16: `show` borrows `n`, but `sink` keeps it for 'static; " + fix},
+		},
+		// A parameter nothing constrains may hold an object, so the closure may borrow it.
+		{
+			name: "closure that captures an unconstrained unannotated parameter",
+			src: decls + `fn setup(n) {
+    sink = fn () { console.log(n) }
+}`,
+			want: []string{"5:12-5:36: this closure borrows `n`, but `sink` keeps it for 'static; " + fix},
+		},
+		{
+			name: "closure that captures an unannotated parameter and an object parameter",
+			src: decls + `fn setup(n, p: {x: number}) {
+    sink = fn () { console.log(n + p.x) }
+    return n + 1
+}`,
+			want: []string{"5:12-5:42: this closure borrows `p`, but `sink` keeps it for 'static; " + fix},
+		},
 		// g's own check reports that it is kept for 'static, and the closure's borrow of n is
 		// decided once n settles to a number.
 		{
@@ -963,6 +1059,55 @@ fn setup() {
     return n + 1
 }`,
 			want: []string{"4:25-4:26: 'g' may borrow values that live only during the call, but it is stored where it lives for the whole program; write `g: 'static fn () -> undefined` to keep it"},
+		},
+		{
+			name: "local joining an object parameter's closure and a call-only parameter",
+			src: decls + `fn setup(c: boolean, n, g: fn () -> undefined) {
+    val a = fn () { console.log(n) }
+    val h = if c { a } else { g }
+    sink = h
+    return n.x
+}`,
+			want: []string{
+				"4:25-4:26: 'g' may borrow values that live only during the call, but it is stored where it lives for the whole program; write `g: 'static fn () -> undefined` to keep it",
+				"7:12-7:13: `h` borrows `n`, but `sink` keeps it for 'static; " + fix,
+			},
+		},
+		// hold keeps its argument for 'static, so the closure is rejected there, and its 'static
+		// result fits the slot.
+		{
+			name: "closure that captures an unannotated parameter kept through a static result",
+			src: decls + `declare fn hold(cb: 'static fn () -> undefined) -> 'static fn () -> undefined
+fn setup(n) {
+    sink = hold(fn () { console.log(n) })
+    return n.x
+}`,
+			want: []string{"6:17-6:41: this closure borrows `n`, but `hold` keeps it for 'static; " + fix},
+		},
+		// A closure takes only the locals of the body that returns it. One returned from mk
+		// still borrows o, which belongs to setup.
+		{
+			name: "closure returned from a local closure",
+			src: decls + `fn setup() {
+    val mut o = {x: 1}
+    val mk = fn () { return fn () { o.x = 2 } }
+    sink = mk()
+}`,
+			want: []string{"7:12-7:16: this function borrows `o`, but `sink` keeps it for 'static; " + fix + ", or declare `o` at module level"},
+		},
+		{
+			name: "returned closure and the closure it returns",
+			src: `var sinkAny: fn () -> unknown = fn () { return 0 }
+fn outer() {
+    val x = {n: 1}
+    val inner = fn () { console.log(x.n) }
+    return fn () { return inner }
+}
+fn setup() {
+    sinkAny = outer()
+    sinkAny = outer()()
+}`,
+			want: []string{"9:15-9:24: this function borrows `x`, but `sinkAny` keeps it for 'static; " + fix + ", or declare `x` at module level"},
 		},
 		// A `'static fn` parameter's borrows live for the whole program, so the body may keep it
 		// anywhere.
@@ -992,6 +1137,17 @@ fn f(g: 'static fn () -> undefined) { sink = fn () { g() } }`,
 fn f<'a>(g: 'a fn () -> undefined) { sink = g }`,
 			want: []string{"2:6-2:8: the body requires 'a to outlive 'static, but the signature does not declare it; add the bound 'a: 'static"},
 		},
+		// A class's lifetime has no such check, so the slot reports the function. The error
+		// blames the field's annotation, where the function's type was written.
+		{
+			name: "named-lifetime field stored into a module-level slot",
+			src: `var sink: fn () -> undefined = fn () {}
+class Button<'a> {
+    onClick: 'a fn () -> undefined,
+    keep(&self) -> undefined { sink = self.onClick },
+}`,
+			want: []string{"3:14-3:35: this function may hold borrows that do not live for 'static, but `sink` keeps it for 'static; " + fix},
+		},
 		// A type parameter's bound is elided as a parameter's type is, so apply only calls f
 		// during the call and keeps none of cfg.
 		{
@@ -1003,12 +1159,42 @@ fn setup() {
     cfg.msg = "bye"
 }`,
 		},
+		// A union member that keeps its function for 'static reports a closure over a parameter
+		// with the message a lone 'static slot gives, and accepts a function that borrows
+		// nothing, as the lone slot does.
+		{
+			name: "closure over a parameter passed to a static parameter",
+			src: `declare fn on(cb: 'static fn () -> undefined) -> undefined
+fn setup(p: {a: number}) {
+    on(fn () { console.log(p.a) })
+}`,
+			want: []string{"3:8-3:34: this closure borrows `p`, but `on` keeps it for 'static; pass a function that borrows nothing"},
+		},
+		{
+			name: "closure over a parameter passed to a static union member",
+			src: `declare fn on(cb: ('static fn () -> undefined) | null) -> undefined
+fn setup(p: {a: number}) {
+    on(fn () { console.log(p.a) })
+}`,
+			want: []string{"3:8-3:34: this closure borrows `p`, but `on` keeps it for 'static; pass a function that borrows nothing"},
+		},
 		{
 			name: "function that borrows nothing passed to a static union member",
 			src: `declare fn on(cb: ('static fn () -> undefined) | null) -> undefined
 fn setup() {
     on(fn () { console.log("hello") })
 }`,
+		},
+		// The lifetime does not decide the arm, but the chosen arm still reports a closure over a
+		// parameter, which the slot cannot keep.
+		{
+			name: "closure over a parameter passed to an overload with a static parameter",
+			src: `declare fn keep(cb: 'static fn () -> undefined) -> undefined
+declare fn keep(cb: number) -> undefined
+fn setup(p: {a: number}) {
+    keep(fn () { console.log(p.a) })
+}`,
+			want: []string{"4:10-4:36: this closure borrows `p`, but `keep` keeps it for 'static; pass a function that borrows nothing"},
 		},
 		// An interface method's `&self` is an input lifetime, so its elided result may borrow
 		// what the receiver does, as the class's method does.
@@ -1031,6 +1217,17 @@ fn f() {
     mount({cb: fn () { p.x = 2 }})
 }`,
 		},
+		// An unannotated local takes the type of the closure it starts with, which borrows
+		// nothing, so a later closure that borrows does not fit it.
+		{
+			name: "closure assigned to a local that started with a closure that borrows nothing",
+			src: `fn f() {
+    val mut p = {x: 1}
+    var g = fn () {}
+    g = fn () { p.x = 2 }
+}`,
+			want: []string{"4:9-4:26: this closure borrows `p`, but `g` has the type of a closure that borrows nothing; annotate `g` with a function type to let it hold one that borrows"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1040,10 +1237,155 @@ fn f() {
 	}
 }
 
+// A closure returned from a function takes the locals of that function it captures, as F3
+// states, so it holds no borrow once returned. One that still borrows something the function
+// did not own keeps its lifetime. The rendered signature cannot show that lifetime when it
+// connects nothing, so TestReturnedClosureLifetime stores each result into a module-level slot
+// and asserts the full message, with its span, of each error that reports.
+func TestReturnedClosureLifetime(t *testing.T) {
+	const fix = "pass a function that borrows nothing"
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "returned closure that captures an object local",
+			src: `var sink: fn () -> 1 = fn () { return 1 }
+fn mk() {
+    val o = {x: 1}
+    return fn () { return o.x }
+}
+fn use() { sink = mk() }`,
+		},
+		{
+			name: "closure returned from a returned closure",
+			src: `var sink: fn () -> 1 = fn () { return 1 }
+fn outer() {
+    val x = {n: 1}
+    return fn () { return fn () { return x.n } }
+}
+fn use() { sink = outer()() }`,
+			want: []string{"6:19-6:28: this function borrows `x`, but `sink` keeps it for 'static; " + fix + ", or declare `x` at module level"},
+		},
+		{
+			name: "returned closure that captures an object holding a borrowed parameter",
+			src: `var sink: fn () -> number = fn () { return 1 }
+fn f(p: &mut {a: number}) {
+    val o = {r: p}
+    return fn () { return o.r.a }
+}
+fn use() {
+    val mut q = {a: 1}
+    sink = f(&mut q)
+}`,
+			want: []string{"8:12-8:21: this function borrows `o`, but `sink` keeps it for 'static; " + fix},
+		},
+		// A declared function's elided return takes the lifetime of its input, and the checker
+		// knows no binding the result borrows.
+		{
+			name: "result of a declared function with an input lifetime",
+			src: `var sink: fn () -> undefined = fn () {}
+declare fn watch(p: &{x: number}) -> fn () -> undefined
+fn use() {
+    val q = {x: 1}
+    sink = watch(&q)
+}`,
+			want: []string{"5:12-5:21: this function may hold borrows that do not live for 'static, but `sink` keeps it for 'static; " + fix},
+		},
+		{
+			name: "returned closure that captures an object holding a borrow of a local",
+			src: `var sink: fn () -> 1 = fn () { return 1 }
+fn f() {
+    val x = {a: 1}
+    val o = {r: &x}
+    return fn () { return o.r.a }
+}
+fn use() { sink = f() }`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, errs := inferAgainstTreeWithSpans(t, tt.src)
+			require.Equal(t, tt.want, errs)
+		})
+	}
+}
+
+// A `fn` declaration at a script's top level is a closure over the script's earlier bindings,
+// so it holds a borrow of each one the way a `val name = fn …` closure does.
+// TestScriptFuncDeclHoldsBorrow covers the captures that make it borrow and the ones that keep
+// it 'static, and asserts the full message, with its span, of each error.
+func TestScriptFuncDeclHoldsBorrow(t *testing.T) {
+	const decls = `var sink: fn () -> unknown = fn () { return 0 }
+declare fn run(cb: fn () -> unknown) -> undefined
+`
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "declaration that captures nothing",
+			src: decls + `fn one() { return 1 }
+sink = one`,
+		},
+		{
+			name: "declaration that copies a value type",
+			src: decls + `val msg = "hi"
+fn show() { return msg }
+sink = show`,
+		},
+		{
+			name: "declaration that reads an object",
+			src: decls + `val o = {x: 1}
+fn read() { return o.x }
+run(read)
+sink = read`,
+			want: []string{"6:8-6:12: `read` borrows `o`, but `sink` keeps it for 'static; pass a function that borrows nothing"},
+		},
+		{
+			name: "declaration that writes a var",
+			src: decls + `var n = 0
+fn inc() { n = n + 1 }
+run(inc)
+sink = inc`,
+			want: []string{"6:8-6:11: `inc` borrows `n`, but `sink` keeps it for 'static; pass a function that borrows nothing"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferScriptSource(t, tt.src)
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
+		})
+	}
+}
+
+// A top-level function and a module-level closure capture only module-level bindings, which
+// live for 'static, so a slot that keeps a function for 'static accepts either one. A declared
+// function with no input lifetime returns a 'static function, so the slot accepts its result
+// too. TestStaticFuncKept covers each such slot and asserts that none reports an error.
+func TestStaticFuncKept(t *testing.T) {
+	src := `declare fn onClick(handler: 'static fn () -> undefined) -> undefined
+var sink: fn () -> undefined = fn () {}
+fn handle() {}
+val handleExpr = fn () {}
+declare fn mk() -> fn () -> undefined
+fn setup() {
+    onClick(handle)
+    sink = handle
+    onClick(handleExpr)
+    onClick(mk())
+    sink = mk()
+}`
+	_, errs := inferAgainstTreeWithSpans(t, src)
+	require.Empty(t, errs)
+}
+
 // A closure passed to a `'static fn` parameter may run during any later call. The parameter
-// holds only a function that borrows nothing shorter than the program. TestRetainedClosureBorrows
-// covers the ways a call reaches such a parameter and asserts the full message, with its span,
-// of each error.
+// holds only a function that borrows nothing shorter than the program, so it rejects a closure
+// that borrows a local. TestRetainedClosureBorrows covers the ways a call reaches such a
+// parameter and asserts the full message, with its span, of each error.
 //
 // A parameter whose lifetime is only bounded by 'static, as `'a: 'static` bounds it, keeps the
 // closure, so a later call may run the closure while `count` is borrowed.
@@ -1505,6 +1847,45 @@ fn setup() {
 		t.Run(tt.name, func(t *testing.T) {
 			_, errs := inferAgainstTreeWithSpans(t, tt.src)
 			require.Equal(t, tt.want, errs)
+		})
+	}
+}
+
+// TestBodilessSignatureFuncKeptForStatic covers a function whose lifetime comes from a
+// signature with no body, a declared function or an interface method, stored into a 'static
+// slot. Each store reports that the function may hold borrows.
+func TestBodilessSignatureFuncKeptForStatic(t *testing.T) {
+	const decls = `var sink: fn () -> undefined = fn () {}
+declare fn id(g: fn () -> undefined) -> fn () -> undefined
+interface Reg { add(g: fn () -> undefined) -> fn () -> undefined }
+`
+	const kept = "this function may hold borrows that do not live for 'static, but `sink` keeps it for 'static; pass a function that borrows nothing"
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "declared function returns its parameter",
+			src:  decls + `fn h(g: fn () -> undefined) { sink = id(g) }`,
+			want: []string{"4:38-4:43: " + kept},
+		},
+		// The error underlines the interface method's return type rather than the call.
+		{
+			name: "interface method returns its parameter",
+			src:  decls + `fn h(g: fn () -> undefined, r: Reg) { sink = r.add(g) }`,
+			want: []string{"3:47-3:65: " + kept},
+		},
+		{
+			name: "declared function returns a named lifetime parameter",
+			src:  decls + `fn h<'a>(g: 'a fn () -> undefined) { sink = id(g) }`,
+			want: []string{"4:45-4:50: " + kept},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
 		})
 	}
 }
