@@ -66,6 +66,7 @@ When a one-off task needs more logic than a short shell pipeline (parsing JSON, 
   - `Bug` — the compiler does the wrong thing on valid input, crashes, or accepts invalid input it should reject. This covers unsound checks and missing diagnostics.
   - `Feature` — new language surface, new syntax, a new type-system construct, or a new tooling capability.
   - `Task` — internal engineering work with no change to what the compiler accepts or rejects. Refactors, renames, cleanups, performance work, tests, docs, dependency bumps, and milestone plumbing.
+- Add the `ownership` label to a new issue about ownership, borrows, lifetimes, or mutability. The label adds the issue to the Ownership project board.
 
 ## Pull requests
 
