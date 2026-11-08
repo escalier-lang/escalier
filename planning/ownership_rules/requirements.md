@@ -1352,7 +1352,7 @@ such a parameter makes it `&mut`, and one that only reads it makes it `&`.
 
 The checker infers the `&` case only. A parameter that does not escape and that
 the body writes through is inferred as owned, so `fn w(p) { p.x = 1 }` asks for
-`mut p`. No issue tracks the `&mut` case yet.
+`mut p`. [#2570](https://github.com/escalier-lang/escalier/issues/2570) tracks the `&mut` case.
 
 ### D14. The mutability of a borrow a pattern binds
 
