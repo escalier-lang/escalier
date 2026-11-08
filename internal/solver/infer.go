@@ -502,6 +502,10 @@ type funcCtx struct {
 	// every borrow is of a local of this body. setClosureRetention fills it, and
 	// ownReturnedClosures reads it.
 	frameClosures set.Set[*soltype.LifetimeVar]
+	// bodyLtMark is the lifetime counter when the walk of this body began, after its
+	// parameters and return annotation resolved. A lifetime minted from it on belongs to the
+	// body. isFrameLifetime reads it.
+	bodyLtMark int
 	// returnExprs holds each ReturnStmt's operand expression in the same source order as
 	// returns, with a nil entry for a bare `return`. inferFunc reads it to decide the
 	// immutable→mutable upgrade at a `mut` return annotation. The upgrade fires only when

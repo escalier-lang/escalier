@@ -271,6 +271,11 @@ func (c *checker) bindScriptFuncWithBody(scope *Scope, lvl int, s ast.Stmt, decl
 	// before it, as one queued while an expression is typed does.
 	c.markLifetimes(decl)
 	t, _ := c.inferFuncDecl(scope, lvl+1, decl)
+	// The declaration is a closure over the script's earlier bindings, so it holds a borrow
+	// of each one it captures the way a `val name = fn …` closure does.
+	if ft, isFn := t.(*soltype.FuncType); isFn {
+		c.setClosureRetention(scope, lvl+1, decl, ft)
+	}
 	c.recordClosureCaptures(scope, decl)
 	c.constrain(decl, t, self)
 

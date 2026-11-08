@@ -186,6 +186,75 @@ fn mk(x: number) -> fn () -> undefined { return fn () {} }`,
 			binding: "outer",
 			want:    "fn () -> fn () -> &fn () -> 1",
 		},
+		// A returned closure takes a local it captures, but a borrow inside the local still
+		// reaches what it borrows from outside the body.
+		{
+			name: "returned closure that captures an object holding a borrowed parameter",
+			src: `fn f(p: &mut {a: number}) {
+    val o = {r: p}
+    return fn () { return o.r.a }
+}`,
+			binding: "f",
+			want:    "fn (p: &mut {a: number}) -> &fn () -> number",
+		},
+		{
+			name: "returned closure that captures an array holding a borrowed parameter",
+			src: `fn f(p: &{a: number}) {
+    val o = [p]
+    return fn () { return o[0].a }
+}`,
+			binding: "f",
+			want:    "fn (p: &{a: number}) -> &fn () -> number",
+		},
+		{
+			name: "returned closure that captures a tuple holding a borrowed parameter",
+			src: `fn f(p: &{a: number}) {
+    val o: [&{a: number}, number] = [p, 1]
+    return fn () { return o[1] }
+}`,
+			binding: "f",
+			want:    "fn (p: &{a: number}) -> &fn () -> number",
+		},
+		{
+			name: "returned closure that captures a union holding a borrowed parameter",
+			src: `fn f(p: &{a: number}, c: boolean) {
+    val o: {r: &{a: number}} | number = if c { {r: p} } else { 5 }
+    return fn () { return o }
+}`,
+			binding: "f",
+			want:    "fn <'a>(p: &'a {a: number}, c: boolean) -> &fn () -> {r: &'a {a: number}} | number",
+		},
+		{
+			name: "returned closure that captures a borrow through a borrowed parameter",
+			src: `fn f(p: &{a: {b: number}}) {
+    val o = {r: &p.a}
+    return fn () { return o.r.b }
+}`,
+			binding: "f",
+			want:    "fn (p: &{a: {b: number}}) -> &fn () -> number",
+		},
+		// q's type is a variable that a borrow annotation bounds, so q holds a caller's borrow.
+		{
+			name: "returned closure that captures an object holding a parameter used as a borrow",
+			src: `fn f(p: &{a: number}, q) {
+    val o = {r: q}
+    val z: &{a: number} = o.r
+    return fn () { return o.r }
+}`,
+			binding: "f",
+			want:    "fn <T0>(p: &{a: number}, q: T0 & &{a: number}) -> &fn () -> T0",
+		},
+		// x is a local of the body, so a returned closure takes it along with the borrow of it.
+		{
+			name: "returned closure that captures an object holding a borrow of a local",
+			src: `fn f() {
+    val x = {a: 1}
+    val o = {r: &x}
+    return fn () { return o.r.a }
+}`,
+			binding: "f",
+			want:    "fn () -> fn () -> 1",
+		},
 		{
 			name: "returned local that joins two closures",
 			src: `fn mk(c: boolean) {
@@ -988,6 +1057,56 @@ fn f() {
 		t.Run(tt.name, func(t *testing.T) {
 			_, errs := inferAgainstTreeWithSpans(t, tt.src)
 			require.Equal(t, tt.want, errs)
+		})
+	}
+}
+
+// A `fn` declaration at a script's top level is a closure over the script's earlier bindings,
+// so it holds a borrow of each one the way a `val name = fn …` closure does.
+// TestScriptFuncDeclHoldsBorrow covers the captures that make it a `&fn` and the ones that keep
+// it plain, and asserts the full message, with its span, of each error.
+func TestScriptFuncDeclHoldsBorrow(t *testing.T) {
+	const decls = `declare fn keep(cb: fn () -> unknown) -> undefined
+declare fn run(cb: &fn () -> unknown) -> undefined
+`
+	const intoPlain = "this function may hold borrows, so it cannot be used as `fn () -> unknown`, which holds none; write `&fn () -> unknown` to accept it"
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "declaration that captures nothing",
+			src: decls + `fn one() { return 1 }
+keep(one)`,
+		},
+		{
+			name: "declaration that copies a value type",
+			src: decls + `val msg = "hi"
+fn show() { return msg }
+keep(show)`,
+		},
+		{
+			name: "declaration that reads an object",
+			src: decls + `val o = {x: 1}
+fn read() { return o.x }
+run(read)
+keep(read)`,
+			want: []string{"6:6-6:10: " + intoPlain},
+		},
+		{
+			name: "declaration that writes a var",
+			src: decls + `var n = 0
+fn inc() { n = n + 1 }
+run(inc)
+keep(inc)`,
+			want: []string{"6:6-6:9: " + intoPlain},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferScriptSource(t, tt.src)
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
 		})
 	}
 }

@@ -126,23 +126,19 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 		} else if !readOnly || c.capturesByBorrow(held) {
 			definite = true
 		}
-		if !readOnly || isVar || c.capturesByBorrow(held) {
+		retained := held != nil && len(retentionLifetimes(held)) > 0
+		if !readOnly || isVar || retained || c.capturesByBorrow(held) {
 			retain()
-			// A returned closure takes a local it captures, but not the referent of a borrow
-			// the local holds.
-			_, borrowed := held.(*soltype.RefType)
-			framed = framed && !borrowed && c.isFrameLocal(capture.Name, b)
+			// A returned closure takes a local it captures, but not what a borrow or a closure
+			// inside the local borrows from outside the body.
+			framed = framed && c.isFrameLocal(capture.Name, b) && c.holdsOnlyFrameBorrows(held)
 		}
 		// Instantiating a generalized binding mints fresh variables, so a binding whose type
 		// holds no retained function is skipped before that. Instantiation keeps the shape of
 		// the type, so it cannot add one.
-		body := schemeBody(b.Schemes[0])
-		if body == nil || len(retentionLifetimes(body)) == 0 {
+		if !retained {
 			continue
 		}
-		// A returned closure takes a local closure of its body that it captures, along with
-		// what that closure borrows, so capturing one keeps the outer closure framed.
-		framed = framed && c.isFrameLocal(capture.Name, b) && c.holdsOnlyFrameClosures(body)
 		for _, lt := range retentionLifetimes(c.bindingValue(lvl, b)) {
 			retain()
 			c.ctx.constrainLt(lt, ft.Lt)
@@ -175,17 +171,95 @@ func (c *checker) isFrameLocal(name string, b ValueBinding) bool {
 	return ok && local == name && !c.fn.captureVarIDs.Contains(id)
 }
 
-// holdsOnlyFrameClosures reports whether every retention lifetime in t belongs to a closure in
-// the current body's frameClosures.
-func (c *checker) holdsOnlyFrameClosures(t soltype.Type) bool {
-	if c.fn.frameClosures == nil {
-		return false
+// holdsOnlyFrameBorrows reports whether every borrow a value of type t holds is of a local of
+// the current body. The walk reads each borrow, each function with a retention lifetime, and
+// each class or alias lifetime argument in t, and the bounds of each type variable it reaches.
+// It does not enter a function type, since a function's parameters and result are not values
+// it holds. A function's retention lifetime must belong to a closure in the body's
+// frameClosures, since a closure's lifetime does not record what it captures. Any other
+// lifetime must satisfy isFrameLifetime. A borrow in a variable's upper bound says the value a
+// caller supplies is a borrow, so it is never a borrow of a local.
+func (c *checker) holdsOnlyFrameBorrows(t soltype.Type) bool {
+	if t == nil {
+		return true
 	}
-	for _, lt := range retentionLifetimes(t) {
-		v, isVar := lt.(*soltype.LifetimeVar)
-		if !isVar || !c.fn.frameClosures.Contains(v) {
+	v := &frameBorrowVisitor{c: c, ok: true, vars: set.NewSet[*soltype.TypeVarType]()}
+	t.Accept(v, soltype.Positive)
+	return v.ok
+}
+
+// frameBorrowVisitor is the visitor holdsOnlyFrameBorrows runs.
+type frameBorrowVisitor struct {
+	c    *checker
+	ok   bool
+	vars set.Set[*soltype.TypeVarType]
+	// upper is set while the walk reads a variable's upper bounds.
+	upper bool
+}
+
+func (v *frameBorrowVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	switch t := t.(type) {
+	case *soltype.RefType:
+		if t.Lt != nil && (v.upper || !v.c.isFrameLifetime(t.Lt)) {
+			v.ok = false
+		}
+	case *soltype.FuncType:
+		if t.Lt != nil {
+			lt, isVar := t.Lt.(*soltype.LifetimeVar)
+			v.ok = v.ok && !v.upper && isVar && v.c.fn.frameClosures != nil && v.c.fn.frameClosures.Contains(lt)
+		}
+		return soltype.EnterResult{SkipChildren: true}
+	case *soltype.ClassType:
+		v.lifetimeArgs(t.LifetimeArgs)
+	case *soltype.AliasType:
+		v.lifetimeArgs(t.LifetimeArgs)
+	case *soltype.TypeVarType:
+		if !v.vars.Contains(t) {
+			v.vars.Add(t)
+			for _, b := range t.LowerBounds {
+				b.Accept(v, pol)
+			}
+			upper := v.upper
+			v.upper = true
+			for _, b := range t.UpperBounds {
+				b.Accept(v, pol)
+			}
+			v.upper = upper
+		}
+	}
+	return soltype.EnterResult{}
+}
+
+func (*frameBorrowVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+
+// lifetimeArgs clears ok when one of lts is not a frame lifetime.
+func (v *frameBorrowVisitor) lifetimeArgs(lts []soltype.Lifetime) {
+	for _, lt := range lts {
+		if !v.c.isFrameLifetime(lt) {
+			v.ok = false
+		}
+	}
+}
+
+// isFrameLifetime reports whether lt belongs to the current body. It does when lt is a variable
+// minted after the body's parameters resolved, and so is each of its lower bounds, read through
+// their own lower bounds. A lifetime with a parameter's lifetime among its lower bounds borrows
+// what the parameter borrows.
+func (c *checker) isFrameLifetime(lt soltype.Lifetime) bool {
+	seen := set.NewSet[*soltype.LifetimeVar]()
+	pending := []soltype.Lifetime{lt}
+	for len(pending) > 0 {
+		cur := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		v, isVar := cur.(*soltype.LifetimeVar)
+		if !isVar || v.ID < c.fn.bodyLtMark {
 			return false
 		}
+		if seen.Contains(v) {
+			continue
+		}
+		seen.Add(v)
+		pending = append(pending, v.LowerBounds...)
 	}
 	return true
 }

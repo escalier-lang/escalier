@@ -929,6 +929,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		if deferred != "" {
 			c.deferredBodies = append(c.deferredBodies, deferred)
 		}
+		c.fn.bodyLtMark = c.ctx.lifetimeCounter
 		c.inferBlock(fnScope, lvl, body)
 		if deferred != "" {
 			c.deferredBodies = c.deferredBodies[:len(c.deferredBodies)-1]
