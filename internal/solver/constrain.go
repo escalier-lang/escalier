@@ -2180,8 +2180,6 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
 }
 
-// copiesOutOfBorrow reports whether t is a value type a read can copy out of a borrow: a type
-// isValueType accepts, a function, or a union of these.
 // isCallableShape reports whether t is one of the three shapes `function` admits: a function
 // type, `function` itself, or an object carrying a call or constructor signature.
 func isCallableShape(t soltype.Type) bool {
@@ -2199,6 +2197,8 @@ func isCallableShape(t soltype.Type) bool {
 	return false
 }
 
+// copiesOutOfBorrow reports whether t is a value type a read can copy out of a borrow: a type
+// isValueType accepts, a function, or a union of these.
 func copiesOutOfBorrow(t soltype.Type) bool {
 	switch t := t.(type) {
 	case *soltype.FuncType, *soltype.FunctionTopType:
