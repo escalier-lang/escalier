@@ -103,6 +103,22 @@ func TestInferRetainedFuncParam(t *testing.T) {
 			binding: "mk",
 			want:    "fn () -> fn () -> undefined",
 		},
+		// A declared signature has no body, so its plain `fn` result renders as written.
+		{
+			name:    "plain function in a declared return annotation",
+			src:     `declare fn mk() -> fn () -> undefined`,
+			binding: "mk",
+			want:    "fn () -> fn () -> undefined",
+		},
+		// An overload's signature is bound from its annotations, not from its body, so the
+		// first arm renders as written although its body returns g.
+		{
+			name: "plain function in an overload's return annotation",
+			src: `fn mk(g: fn () -> undefined) -> fn () -> undefined { return g }
+fn mk(x: number) -> fn () -> undefined { return fn () {} }`,
+			binding: "mk",
+			want:    "(fn (g: fn () -> undefined) -> fn () -> undefined) & (fn (x: number) -> fn () -> undefined)",
+		},
 		// A plain `fn` parameter may be kept anywhere, so returning it needs no lifetime.
 		{
 			name:    "plain function parameter returned",
@@ -563,6 +579,13 @@ fn f(g: &fn () -> undefined) { keep(g) }`,
 			src:  `fn f(g: &fn () -> undefined) -> fn () -> undefined { return g }`,
 			want: []string{"1:61-1:62: " + intoPlain},
 		},
+		// An overload's body is checked against the arm's annotations.
+		{
+			name: "returned through an overload's plain return annotation",
+			src: `fn f(g: &fn () -> undefined) -> fn () -> undefined { return g }
+fn f(x: number) -> fn () -> undefined { return fn () {} }`,
+			want: []string{"1:61-1:62: " + intoPlain},
+		},
 		// A generator's body starts on the first `next()`, after the call that made it returns.
 		{
 			name: "read by a generator",
@@ -848,17 +871,21 @@ fn f() {
 }
 
 // A top-level function and a module-level closure capture only module-level bindings, which
-// live for 'static, so a slot that keeps a function for 'static accepts either one.
-// TestStaticFuncKept covers each such slot and asserts that none reports an error.
+// live for 'static, so a slot that keeps a function for 'static accepts either one. A declared
+// function's plain `fn` result holds no borrow, so the slot accepts it too. TestStaticFuncKept
+// covers each such slot and asserts that none reports an error.
 func TestStaticFuncKept(t *testing.T) {
 	src := `declare fn onClick(handler: &'static fn () -> undefined) -> undefined
 var sink: fn () -> undefined = fn () {}
 fn handle() {}
 val handleExpr = fn () {}
+declare fn mk() -> fn () -> undefined
 fn setup() {
     onClick(handle)
     sink = handle
     onClick(handleExpr)
+    onClick(mk())
+    sink = mk()
 }`
 	_, errs := inferAgainstTreeWithSpans(t, src)
 	require.Empty(t, errs)
