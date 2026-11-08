@@ -368,6 +368,7 @@ func (c *Context) fork() *Context {
 	f.buildingAliases = maps.Clone(c.buildingAliases)
 	f.borrowedReads = clipValues(c.borrowedReads)
 	f.slotModes = maps.Clone(c.slotModes)
+	f.slotVars = maps.Clone(c.slotVars)
 	f.unionCommits = maps.Clone(c.unionCommits)
 	f.holeVars = maps.Clone(c.holeVars)
 	return &f
