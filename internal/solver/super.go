@@ -47,7 +47,10 @@ func (c *checker) inferSuperCall(scope *Scope, lvl int, e *ast.SuperCallExpr) so
 			break
 		}
 		if ctor, hasCtor := obj.Constructor(); hasCtor {
-			c.constrain(e, overloadReadType(ctor.Signatures), &soltype.FuncType{Params: args, Ret: c.superCtx.super})
+			// The call only runs the constructor, so the shape carries a lifetime of its own, as
+			// the call shape applyCallShape builds does.
+			shape := &soltype.FuncType{Params: args, Ret: c.superCtx.super, Lt: c.ctx.freshLifetime(lvl)}
+			c.constrain(e, overloadReadType(ctor.Signatures), shape)
 		} else if c.notConstructible(obj) {
 			c.report(&NotConstructibleError{Node: e, Class: obj.Class})
 		}

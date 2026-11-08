@@ -449,6 +449,12 @@ func TestInferRetainedFuncErrors(t *testing.T) {
 	}
 }
 
+// TestShortFuncLifetimesOfNoType asserts that shortFuncLifetimes finds no lifetime in a nil type
+// rather than walking it.
+func TestShortFuncLifetimesOfNoType(t *testing.T) {
+	require.Empty(t, shortFuncLifetimes(nil))
+}
+
 // TestRetainedFuncAtom asserts that a function type's retention lifetime keeps it apart from
 // the same function type without one. The two compare unequal, sort apart, and do not fuse
 // into one arrow.
@@ -590,6 +596,49 @@ fn f(g: fn () -> undefined) {
 		{
 			name: "returned",
 			src:  `fn f(g: fn () -> undefined) { return g }`,
+		},
+		// The result shares 'a with p, whose argument the caller still holds after the call, so
+		// storing g into p keeps it past the call even though the result names 'a.
+		{
+			name: "stored into a named-lifetime field of a parameter the result returns",
+			src: `fn f<'a>(g: fn () -> undefined, p: &'a mut {cb: 'a fn () -> undefined}) -> &'a mut {cb: 'a fn () -> undefined} {
+    p.cb = g
+    return p
+}`,
+			want: []string{"1:10-1:11: 'g' may borrow values that live only during the call, but it is kept after the call returns; write `g: 'a fn () -> undefined` to keep it"},
+		},
+		// The result claims to live for 'a, which p's argument outlives the call by, so returning
+		// g keeps it past the call.
+		{
+			name: "returned for a lifetime another parameter holds",
+			src:  `fn f<'a>(g: fn () -> undefined, p: &'a {x: number}) -> 'a fn () -> undefined { return g }`,
+			want: []string{"1:10-1:11: 'g' may borrow values that live only during the call, but it is kept after the call returns; write `g: 'a fn () -> undefined` to keep it"},
+		},
+		// A value of an intersection of function types holds what each one does, so g fills it
+		// for the call alone.
+		{
+			name: "passed on to a parameter typed as an intersection of function types",
+			src: `declare fn each(cb: (fn (x: number) -> undefined) & (fn (x: string) -> undefined)) -> undefined
+fn f(g: fn (x: number | string) -> undefined) { each(g) }`,
+		},
+		// A `super(…)` call only runs the superclass constructor, so passing g on is fine when the
+		// constructor only calls it, and a constructor that keeps it for 'static reports g.
+		{
+			name: "passed on to a superclass constructor that only calls it",
+			src: `class A { constructor(&mut self, cb: fn () -> undefined) { cb() } }
+class B extends A { constructor(&mut self, g: fn () -> undefined) { super(g) } }`,
+		},
+		{
+			name: "passed on to a superclass constructor that keeps it for static",
+			src: `class A { constructor(&mut self, cb: 'static fn () -> undefined) {} }
+class B extends A { constructor(&mut self, g: fn () -> undefined) { super(g) } }`,
+			want: []string{"2:44-2:45: " + static},
+		},
+		// A member's signature is linked to its body without the function's own lifetime, so a
+		// method returning g ties g to its result as a plain function does.
+		{
+			name: "returned from a method",
+			src:  `class C { keep(self, g: fn () -> undefined) -> fn () -> undefined { return g } }`,
 		},
 		// p's field takes a lifetime of its own, which the caller reads after the call, so g
 		// must outlive the call.

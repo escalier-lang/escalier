@@ -214,8 +214,12 @@ type closureBorrow struct {
 }
 
 // shortFuncLifetimes returns the lifetimes retentionLifetimes finds in t other than 'static. A
-// function whose lifetime is 'static outlives any closure that captures it.
+// function whose lifetime is 'static outlives any closure that captures it. A nil t holds
+// none.
 func shortFuncLifetimes(t soltype.Type) []soltype.Lifetime {
+	if t == nil {
+		return nil
+	}
 	return slices.DeleteFunc(retentionLifetimes(t), isStaticFuncLt)
 }
 
