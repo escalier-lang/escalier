@@ -211,9 +211,9 @@ returned promise:
 
 ```esc
 declare class Promise<T, E = never> {
-    then<'a, R, F>(&'a self, onfulfilled: &'a fn (value: &'a T) -> R throws F) -> Promise<R, E | F>,
-    catch<'a, R, G>(&'a self, onrejected: &'a fn (reason: &'a E) -> R throws G) -> Promise<&'a T | R, G>,
-    finally<'a, F>(&'a self, onfinally: &'a fn () -> unknown throws F) -> Promise<&'a T, E | F>,
+    then<'a, R, F>(&'a self, onfulfilled: 'a fn (value: &'a T) -> R throws F) -> Promise<R, E | F>,
+    catch<'a, R, G>(&'a self, onrejected: 'a fn (reason: &'a E) -> R throws G) -> Promise<&'a T | R, G>,
+    finally<'a, F>(&'a self, onfinally: 'a fn () -> unknown throws F) -> Promise<&'a T, E | F>,
 }
 ```
 
@@ -347,7 +347,7 @@ its promise, so dropping the promise does not end the body.
 async fn go() -> Promise<number> {
     val mut f: Flat = {x: 1}
     val pr = show(&f)
-    f.x = 2              // error: cannot assign to 'f.x' while it is borrowed as immutable
+    f.x = 2              // error: cannot assign to 'f.x' while it is borrowed as immutable by 'pr'
     return await pr
 }
 
@@ -361,7 +361,28 @@ async fn ok() -> Promise<number> {
 fn forget() {
     val mut f: Flat = {x: 1}
     show(&f)
-    f.x = 2              // error: cannot assign to 'f.x' while it is borrowed as immutable
+    f.x = 2              // error: cannot assign to 'f.x' while it is borrowed as immutable by the promise 'show' returns
+}
+```
+
+The borrows an argument carries include those of a function argument. D17
+makes a parameter written as a plain `fn` type call-only, with a lifetime that
+ends with the call. In an `async fn`, that lifetime instead lasts until the
+promise settles, so the body may call the parameter after an `await`, and a
+closure passed to it keeps its captures borrowed until then:
+
+```esc
+async fn later(cb: fn () -> undefined) -> Promise<undefined> {
+    await tick()
+    cb()                 // accepted, since cb's lifetime lasts until later's promise settles
+}
+
+async fn useLater() -> Promise<number> {
+    val mut count = {n: 0}
+    val pr = later(fn () { count.n = count.n + 1 })
+    val v = &count       // error: cannot borrow 'count' as immutable while 'count.n' is borrowed as mutable by 'pr'
+    await pr
+    return count.n
 }
 ```
 
@@ -369,10 +390,13 @@ The rule covers every call whose result is a promise:
 
 - An `async fn` or an async closure.
 - A bodyless `declare fn` or method that returns a promise. Its declaration
-  cannot say how long the implementation reads its arguments, and I3 picks
-  the form that rejects more programs. So
+  cannot say how long the implementation reads a borrowed argument, and I3
+  picks the form that rejects more programs. So
   `declare fn save(doc: &Doc) -> Promise<undefined>` holds `doc` until its
-  promise settles. The reaction methods of A2 are such methods.
+  promise settles. A callback parameter is the exception. I2 converts it as
+  call-only and takes the declaration at its word, so its lifetime still ends
+  with the call. A declaration that keeps its callback writes a lifetime, as
+  the reaction methods of A2 do.
 - A function that is not `async` but returns a promise. Its body can keep a
   borrow past the call only through a reaction or an async call, whose result
   holds the borrow by this same rule. Returning that result hands the hold to
@@ -387,13 +411,18 @@ already treat a `'static` path as live at every later point, so an `await`
 needs no exclusivity rule of its own for those paths.
 
 An `await` is still a use of each borrow a stored closure holds, the same as a
-call that may run the closure, as E4 states. The checking model records it the
-same way. In `stored` from E4, an `await` in place of `readIt(&p)` reports
-`this await may run 'sink', which writes 'p' while it is borrowed as immutable`
-when an immutable borrow of `p` is live across it.
+call that may run the closure, as E4 states. A closure kept in `sink` that
+writes `p` makes an `await` with an immutable borrow of `p` live across it
+report `this await may run 'sink', which writes 'p' while it is borrowed as immutable`.
 
-Module-level state that another function writes during the suspension is not
-covered. Section 8.6 discusses it.
+E4 also makes a call to a module-level function a use of the module-level
+bindings that function writes, and an `await` of such a call runs it before
+the body resumes. While the body is suspended, the event loop may run any other
+task, and that task may call any module-level function. So an `await` counts
+as a call that may run every module-level function. It uses each module-level
+binding some module-level function writes, as a mutable path. Section 8.6
+shows the case, and [#2600](https://github.com/escalier-lang/escalier/issues/2600) implements it. A `yield` is the same, since the
+consumer may run any code before it calls `next` again.
 
 ### 3.6 A6. The rejection value follows the fulfilment value
 
@@ -542,7 +571,9 @@ because `next` takes `&mut self`, by X3.
 A `gen fn` body runs only when the consumer calls `next`. A generator that is
 never advanced again never reads its arguments again. So the generator value
 holds each borrow its call's arguments carry, and the borrows stay live while
-the generator value is live, by L1. This is lazier than A4. An `async fn` body
+the generator value is live, by L1. As in A4, those include the borrows of a
+call-only `fn` argument, so the body may call such a parameter on any later
+`next`. This is lazier than A4. An `async fn` body
 keeps running after its promise is dropped, and a generator body stops when the
 generator is.
 
@@ -550,7 +581,7 @@ generator is.
 fn run() {
     val mut f: Flat = {x: 1}
     val it = each(&f)
-    f.x = 2      // error: cannot assign to 'f.x' while it is borrowed as immutable
+    f.x = 2      // error: cannot assign to 'f.x' while it is borrowed as immutable by 'it'
     for n in it {}
 }
 
@@ -695,7 +726,8 @@ from the rules above. They land with the PRs in section 12 that make each one
 true, so the rules document keeps describing what the checker enforces.
 
 - **Terms.** A promise leaves the list of value types. The list becomes
-  primitives and functions. A promise is reference-shaped, which matches the
+  primitives and functions. F2's sentence that a generic `&T` whose `T` is a
+  promise stands for `T` changes too, since A3 distributes the borrow instead. A promise is reference-shaped, which matches the
   checker today, since `isReferenceShaped` in
   [moves.go](../../internal/solver/moves.go) treats a `Promise` class instance
   as movable. Its doc comment also says a promise is a value type and changes
@@ -710,7 +742,13 @@ true, so the rules document keeps describing what the checker enforces.
   `.finally` receiver is already covered as a method receiver.
 - **E4.** A call that returns a promise, including an `async fn` call and a
   reaction, holds its arguments' borrows until that promise settles, by A2 and
-  A4. A generator holds them while it is live, by G4. An
+  A4. E4 already makes a call to a module-level function, and an `await` of
+  one, use the module-level bindings it reaches. A5 extends that to every
+  `await` and `yield`, which may let other code run.
+- **D17.** Rule 2 makes a call-only `fn` parameter unreadable in an `async`
+  or generator body after the call returns. A4 and G4 replace that clause: the
+  parameter's lifetime lasts until the promise settles or while the generator
+  is live, and the caller's closure keeps its captures borrowed for as long. A generator holds them while it is live, by G4. An
   `await` counts as a call that may run any stored closure, by A5. These sit
   beside the closure rule, since a suspended body is a closure the runtime
   holds.
@@ -727,7 +765,10 @@ true, so the rules document keeps describing what the checker enforces.
   since a number has no owned layer. A promise of an object widens the object's
   writable fields.
 - **I2.** A promise leaves the value-type parameters. The converter writes a
-  promise parameter as X1 states.
+  promise parameter as X1 states. I2 names `Promise.then` among the APIs that
+  need a `'static fn` callback. A2 gives the reaction methods `'a fn`
+  callbacks tied to the promise they return instead, so
+  [#2573](https://github.com/escalier-lang/escalier/issues/2573) leaves `then`, `catch` and `finally` to [#2438](https://github.com/escalier-lang/escalier/issues/2438).
 - **Comparison with Rust.** The table gains rows for A1, A2, A3, A4, G2 and
   R1, from section 9.
 - **Conformance tests.** The flow matrix gains `await`, `yield` and the loop as
@@ -830,27 +871,32 @@ Recommendation: keep A2 as stated.
 ### 8.6 Module-level state written while a body is suspended
 
 A borrow of a module-level binding held across an `await` can observe a write
-another function makes while the body is suspended:
+that another task makes while the body is suspended:
 
 ```esc
-var cfg = {x: 0}
+var mut cfg = {x: 0}
 
 fn bump() { cfg.x = cfg.x + 1 }
 
 async fn show() -> Promise<number> {
     val r = &cfg
-    await tick()         // bump may run here
+    await tick()         // error: this await may run 'bump', which writes 'cfg' while it is borrowed as immutable
     return r.x
 }
 ```
 
-The ownership rules have the same gap for a synchronous call to `bump` between
-the borrow and the read, so it is not specific to `await`. A5 makes an `await`
-a call to unknown code, so whatever rule closes the gap for calls closes it for
-suspensions too.
+E4 already rejects the same write when the body calls `bump` itself, whether
+or not it awaits the call. An `await` of `tick` gives the event loop a chance
+to run some other task that calls `bump`, which no call in the body shows.
+The options are:
 
-Recommendation: file the gap against the ownership rules and leave A5 as the
-link. [#2445](https://github.com/escalier-lang/escalier/issues/2445) tracks the gap.
+- **Treat an `await` as a call that may run every module-level function.**
+  This is A5. It rejects `show`, and it accepts a borrow of a binding no
+  module-level function writes.
+- **Leave suspensions alone.** This accepts `show` and lets `r` observe the
+  write.
+
+Recommendation: A5. [#2600](https://github.com/escalier-lang/escalier/issues/2600) implements it.
 
 ### 8.7 Prefer `await` to a reaction whose result is dropped
 
@@ -1022,47 +1068,36 @@ section 7 lists. Each PR runs `UPDATE_SNAPS=true go test ./...` and
 `UPDATE_FIXTURES=true go test ./cmd/...` and reviews the fixture deltas.
 
 Each issue below is one PR. The table lists them in an order that respects
-their dependencies. Four of the dependencies are open issues in the
+their dependencies. Two of the dependencies are open issues in the
 "Simplify ownership, lifetime, and mutability rules and implementation"
-milestone, which the rules here build on:
-
-- [#2247](https://github.com/escalier-lang/escalier/issues/2247) makes a `'static` borrow block later writes and new borrows. A2,
-  A4 and G2 each keep a borrow live past the frame and rely on it.
-- [#2318](https://github.com/escalier-lang/escalier/issues/2318) and [#2290](https://github.com/escalier-lang/escalier/issues/2290) bind `&mut` borrows through a pattern over a
-  `&mut` borrow and through a mutably borrowed array, which R1 relies on for
-  `for x in &mut arr`.
-- [#2300](https://github.com/escalier-lang/escalier/issues/2300) moves an owned argument passed to a type-parameter parameter,
-  which X3 relies on when an array is passed as an `Iterable<T>`.
+milestone. [#2318](https://github.com/escalier-lang/escalier/issues/2318) and [#2290](https://github.com/escalier-lang/escalier/issues/2290) bind `&mut` borrows through a pattern
+over a `&mut` borrow and through a mutably borrowed array, which R1 relies on
+for `for x in &mut arr`.
 
 | Issue | Rules | What the PR does | Depends on |
 |---|---|---|---|
-| [#2426](https://github.com/escalier-lang/escalier/issues/2426) | A1, A6 | Gives `await` its three forms, removes `SharedAwaitIntoMutError`, and removes promise from the value types in `requirements.md` | |
-| [#2424](https://github.com/escalier-lang/escalier/issues/2424) | | Distributes a borrow over a union, the rule A3 builds on | |
-| [#2438](https://github.com/escalier-lang/escalier/issues/2438) | A2, A4, A5 | Makes a call that returns a promise hold its arguments' borrows until that promise settles, which closes the `show` hole in section 2. Applies the same rule to reactions and changes the reaction methods in `prelude.esc` per X2 | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2247](https://github.com/escalier-lang/escalier/issues/2247) |
+| [#2426](https://github.com/escalier-lang/escalier/issues/2426) | A1, A6 | Gives `await` its three forms, removes `SharedAwaitIntoMutError`, and removes promise from the value types in `requirements.md` |  |
+| [#2424](https://github.com/escalier-lang/escalier/issues/2424) |  | Distributes a borrow over a union, the rule A3 builds on |  |
+| [#2438](https://github.com/escalier-lang/escalier/issues/2438) | A2, A4, A5 | Makes a call that returns a promise hold its arguments' borrows until that promise settles, which closes the `show` hole in section 2. Covers call-only `fn` arguments, applies the same rule to reactions, and changes the reaction methods in `prelude.esc` per X2 | [#2426](https://github.com/escalier-lang/escalier/issues/2426) |
+| [#2600](https://github.com/escalier-lang/escalier/issues/2600) | A5 | Makes an `await` or a `yield` use each module-level binding some module-level function writes, as section 8.6 describes |  |
 | [#2427](https://github.com/escalier-lang/escalier/issues/2427) | A3, A7 | Normalizes a borrow of a promise to a promise of a borrow, refines the D12 warning per section 7, and adds `ReactionBorrowLifetimeError` | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2424](https://github.com/escalier-lang/escalier/issues/2424), [#2438](https://github.com/escalier-lang/escalier/issues/2438) |
-| [#2439](https://github.com/escalier-lang/escalier/issues/2439) | G4 | Makes a generator hold its arguments' borrows while it is live, which closes the `each` hole in section 2 | |
-| [#2428](https://github.com/escalier-lang/escalier/issues/2428) | G1 to G3, G5 | Gives `yield` its three forms and keeps a yielded borrow live for the rest of the body | [#2247](https://github.com/escalier-lang/escalier/issues/2247) |
-| [#2440](https://github.com/escalier-lang/escalier/issues/2440) | R2 | Binds a fresh loop variable on each iteration in the control-flow graph | |
-| [#2441](https://github.com/escalier-lang/escalier/issues/2441) | X3 | Restricts `fill` and `copyWithin` to element types F2 copies, and adds `DuplicatingArrayMethodError` | |
+| [#2439](https://github.com/escalier-lang/escalier/issues/2439) | G4 | Makes a generator hold its arguments' borrows while it is live, including call-only `fn` arguments, which closes the `each` hole in section 2 |  |
+| [#2428](https://github.com/escalier-lang/escalier/issues/2428) | G1 to G3, G5 | Gives `yield` its three forms and keeps a yielded borrow live for the rest of the body |  |
+| [#2440](https://github.com/escalier-lang/escalier/issues/2440) | R2 | Binds a fresh loop variable on each iteration in the control-flow graph |  |
+| [#2441](https://github.com/escalier-lang/escalier/issues/2441) | X3 | Restricts `fill` and `copyWithin` to element types F2 copies, and adds `DuplicatingArrayMethodError` |  |
 | [#2444](https://github.com/escalier-lang/escalier/issues/2444) | R1, R3 | Gives `for` loops their three forms, adds `ImmutableIteratorLoopError` and the loop form of the moved-value message from section 8.2 | [#2428](https://github.com/escalier-lang/escalier/issues/2428), [#2440](https://github.com/escalier-lang/escalier/issues/2440), [#2441](https://github.com/escalier-lang/escalier/issues/2441), [#2318](https://github.com/escalier-lang/escalier/issues/2318), [#2290](https://github.com/escalier-lang/escalier/issues/2290) |
-| [#2442](https://github.com/escalier-lang/escalier/issues/2442) | X3, X4 | Changes the element-reading iterator methods and the `Iterable` and `Generator` declarations | [#2444](https://github.com/escalier-lang/escalier/issues/2444), [#2300](https://github.com/escalier-lang/escalier/issues/2300) |
+| [#2442](https://github.com/escalier-lang/escalier/issues/2442) | X3, X4 | Changes the element-reading iterator methods and the `Iterable` and `Generator` declarations | [#2444](https://github.com/escalier-lang/escalier/issues/2444) |
 | [#2443](https://github.com/escalier-lang/escalier/issues/2443) | S1 to S3 | Applies the rules to async generators, including the implicit `await` of a promise operand to `yield` | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2438](https://github.com/escalier-lang/escalier/issues/2438), [#2444](https://github.com/escalier-lang/escalier/issues/2444) |
 | [#2447](https://github.com/escalier-lang/escalier/issues/2447) | A2 | Warns on a reaction to a promise held in a place whose result is never awaited inside an `async fn`, as section 8.7 describes | [#2438](https://github.com/escalier-lang/escalier/issues/2438) |
 
-[#2439](https://github.com/escalier-lang/escalier/issues/2439), [#2440](https://github.com/escalier-lang/escalier/issues/2440) and [#2441](https://github.com/escalier-lang/escalier/issues/2441) need nothing else and can land first.
-
-Every issue that changes the move and borrow checks lands best after
-[#2269](https://github.com/escalier-lang/escalier/issues/2269), which turns on the single ownership pass. Landing earlier means
-extending the current move and loan checks, which [#2270](https://github.com/escalier-lang/escalier/issues/2270) to [#2272](https://github.com/escalier-lang/escalier/issues/2272)
-then remove. That covers every issue in the table except [#2424](https://github.com/escalier-lang/escalier/issues/2424),
-[#2440](https://github.com/escalier-lang/escalier/issues/2440), [#2441](https://github.com/escalier-lang/escalier/issues/2441), [#2442](https://github.com/escalier-lang/escalier/issues/2442) and [#2447](https://github.com/escalier-lang/escalier/issues/2447).
+[#2439](https://github.com/escalier-lang/escalier/issues/2439), [#2600](https://github.com/escalier-lang/escalier/issues/2600), [#2428](https://github.com/escalier-lang/escalier/issues/2428), [#2440](https://github.com/escalier-lang/escalier/issues/2440) and [#2441](https://github.com/escalier-lang/escalier/issues/2441) need nothing else
+and can land first.
 
 Three related issues sit outside this milestone:
 
 - [#2304](https://github.com/escalier-lang/escalier/issues/2304) implements the D12 warning. Whichever of it and [#2427](https://github.com/escalier-lang/escalier/issues/2427)
   lands second judges a promise as A7 states.
+- [#2573](https://github.com/escalier-lang/escalier/issues/2573) marks the Web API callbacks a callee keeps. It leaves `then`,
+  `catch` and `finally` to [#2438](https://github.com/escalier-lang/escalier/issues/2438), which gives them A2's form.
 - [#2308](https://github.com/escalier-lang/escalier/issues/2308) binds `val mut r = await p` for a sole local promise. A1
   settles the same program, so [#2426](https://github.com/escalier-lang/escalier/issues/2426) supersedes it.
-- [#2445](https://github.com/escalier-lang/escalier/issues/2445) covers module-level state written by another function while a
-  borrow of it is live, across a call or a suspension, as section 8.6
-  describes.
