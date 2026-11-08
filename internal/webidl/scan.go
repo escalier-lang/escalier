@@ -96,6 +96,13 @@ func Scan(sources map[string]string) (map[string]Definition, error) {
 			if prev, dup := declaredIn[p.name]; dup {
 				return nil, fmt.Errorf("%s: %s is also defined in %s", file, p.name, prev)
 			}
+			// WebIDL requires an identifier to name one definition, whatever
+			// `[LegacyNamespace]` it carries. A second one would leave a partial
+			// with two definitions to extend, so it is an error.
+			if prev, dup := keyOf[p.ident]; dup {
+				return nil, fmt.Errorf("%s: %s is defined as both %s in %s and %s",
+					file, p.ident, prev, declaredIn[prev], p.name)
+			}
 			declaredIn[p.name] = file
 			keyOf[p.ident] = p.name
 			defs[p.name] = p.def
