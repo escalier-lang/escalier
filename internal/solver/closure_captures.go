@@ -122,16 +122,24 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 		}
 	}
 	framed := c.fn != nil
+	// takeable says each capture the closure borrows is a `val` or `var` of the body it is
+	// written in, rather than a parameter or a binding of a script's top level.
+	takeable := c.fn != nil && !c.inScript()
 	// direct says some capture is borrowed by the closure itself, rather than only through a
 	// function the capture holds.
 	direct := false
+	// taken holds the locals the closure borrows, as closureBorrow describes.
+	var taken takenLocals
 	// definite says some capture holds a borrow whatever its type settles to, and undecided
 	// holds the type variables of the other captures that may hold one.
 	definite := false
 	var undecided []*soltype.TypeVarType
 	for _, capture := range c.closureCaptures(closure) {
 		b, found := scope.GetValue(capture.Name)
-		if !found || len(b.Schemes) != 1 || b.ModuleLevel {
+		// A binding with no VarID and no declaration of its own, such as a global the
+		// prelude declares, is not a local. A parameter read by another parameter's default
+		// has a declaration but no VarID yet, since the body's locals are numbered later.
+		if !found || len(b.Schemes) != 1 || b.ModuleLevel || (b.VarID <= 0 && bindingDecl(b) == nil) {
 			continue
 		}
 		// The scheme's own type keeps an unsolved variable as a variable, where the binding's
@@ -151,6 +159,22 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 			// A returned closure takes a local it captures, but not what a borrow or a closure
 			// inside the local borrows from outside the body.
 			framed = framed && c.isFrameLocal(capture.Name, b) && c.holdsOnlyFrameBorrows(held)
+			_, isVarDecl := bindingDecl(b).(*ast.VarDecl)
+			takeable = takeable && isVarDecl
+			if b.VarID > 0 {
+				taken.roots = append(taken.roots, liveness.VarID(b.VarID))
+				if b.Kind == ast.VarKind {
+					taken.vars = append(taken.vars, liveness.VarID(b.VarID))
+				}
+			}
+			// A closure the capture holds borrows its own locals, which go with it.
+			for _, lt := range shortFuncLifetimes(held) {
+				if lv, isLtVar := lt.(*soltype.LifetimeVar); isLtVar {
+					inner := c.closureBorrows[lv].taken
+					taken.roots = append(taken.roots, inner.roots...)
+					taken.vars = append(taken.vars, inner.vars...)
+				}
+			}
 		}
 		// Instantiating a generalized binding mints fresh variables, so a binding whose type
 		// holds no retained function is skipped before that. Instantiation keeps the shape of
@@ -166,6 +190,8 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 	}
 	if lt, isVar := ft.Lt.(*soltype.LifetimeVar); isVar && borrowed.name != "" {
 		borrowed.viaFuncs = !direct
+		borrowed.takeable = takeable && framed
+		borrowed.taken = taken
 		if c.closureBorrows == nil {
 			c.closureBorrows = map[*soltype.LifetimeVar]closureBorrow{}
 		}
@@ -188,11 +214,26 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 // closureBorrow is the capture that makes a closure hold a borrow. name is the captured
 // binding's name. local says the binding is a `val` or `var` of a function body, which could be
 // declared at module level instead. viaFuncs says the closure holds a borrow only through
-// functions it captures, whose lifetimes bound the closure's from below.
+// functions it captures, whose lifetimes bound the closure's from below. takeable says every
+// capture the closure borrows is a `val` or `var` of the body it is written in that holds no
+// borrow from outside that body, so a slot that keeps the closure for 'static can take those
+// locals over, as takeOverCaptures describes.
+// taken lists the locals the closure borrows, including those a closure it captures borrows.
 type closureBorrow struct {
 	name     string
 	local    bool
 	viaFuncs bool
+	takeable bool
+	taken    takenLocals
+}
+
+// takenLocals lists the locals a closure borrows, which a slot that keeps the closure for
+// 'static takes over. roots holds each one. vars holds the `var` bindings among them, which the
+// closure reads or writes as bindings. Such a binding may hold a value type no loan tracks, so a
+// takeover marks each one moved directly.
+type takenLocals struct {
+	roots []liveness.VarID
+	vars  []liveness.VarID
 }
 
 // shortFuncLifetimes returns the lifetimes retentionLifetimes finds in t other than 'static. A
@@ -516,6 +557,64 @@ func (c *checker) sortFuncKeptForStatic(err *FuncKeptForStaticError) bool {
 		c.heldFuncEscapes = append(c.heldFuncEscapes, heldFuncEscape{err: err, closures: src.closures})
 		return false
 	}
+	if c.takesOverCaptures(err, src) {
+		return false
+	}
+	return true
+}
+
+// takesOverCaptures reports whether the slot err names takes over the captures of each closure
+// its source holds a borrow through, and records the takeover when it does. It does when the
+// source holds a borrow only through closures written in the current body whose captures are
+// all takeable, as closureBorrow describes, and the slot is a written type that an argument or
+// an assigned value fills. err.inferred must be set.
+//
+// The value is added to the body's takeovers, and a store into a field gets its retainedStore
+// here. The dataflow pass then moves each captured local into the closure at the store, so a
+// later use of the local is a use of a moved value.
+func (c *checker) takesOverCaptures(err *FuncKeptForStaticError, src funcLtSourceSet) bool {
+	// A slot whose type an unannotated binding took from a closure keeps nothing for 'static.
+	if c.fn == nil || err.inferred || src.other || len(src.closures) == 0 {
+		return false
+	}
+	var taken takenLocals
+	for _, lt := range src.closures {
+		b, found := c.closureBorrows[lt]
+		if !found || !b.takeable || c.fn.frameClosures == nil || !c.fn.frameClosures.Contains(lt) {
+			return false
+		}
+		taken.roots = append(taken.roots, b.taken.roots...)
+		taken.vars = append(taken.vars, b.taken.vars...)
+	}
+	// A rest argument is checked against the call as a whole, so the source's own node names
+	// the argument then.
+	var value ast.Expr
+	var keeper ast.Expr
+	for _, n := range []ast.Node{err.site, c.nodeOfType(err.Sub)} {
+		if e, isExpr := n.(ast.Expr); isExpr {
+			if k, found := c.keeperOf[e]; found {
+				value, keeper = e, k
+				break
+			}
+		}
+	}
+	if keeper == nil {
+		return false
+	}
+	if c.fn.takeovers == nil {
+		c.fn.takeovers = map[ast.Expr]takenLocals{}
+	}
+	c.fn.takeovers[value] = taken
+	// An assignment to a module-level name records its own store once the assignment checks,
+	// and a call records one for each argument its parameters keep. A store into a field has
+	// no store of its own, so it gets one here.
+	if assign, isAssign := keeper.(*ast.BinaryExpr); isAssign {
+		if _, isMember := assign.Left.(*ast.MemberExpr); isMember {
+			if at, ok := c.eventStmtRef(); ok {
+				c.noteRetainedClosureStore(retainedStore{via: closureVia(strings.Trim(placeText(assign.Left), "`")), expr: value, at: at, static: true})
+			}
+		}
+	}
 	return true
 }
 
@@ -575,6 +674,14 @@ func (c *checker) funcKeptNames(err *FuncKeptForStaticError) (source, keeper str
 		source = "this closure"
 	}
 	return source, keeper
+}
+
+// nodeOfType returns the node t's provenance names, or nil when it names none.
+func (c *checker) nodeOfType(t soltype.Type) ast.Node {
+	if n, ok := c.prov.NodeFor(t); ok {
+		return n
+	}
+	return nil
 }
 
 // placeText renders a place written as a name or a chain of property reads, as "`registry.cb`",

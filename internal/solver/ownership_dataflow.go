@@ -107,6 +107,9 @@ type UseAfterMoveError struct {
 	// ViaReads marks a closure named by Via that only reads the place. It is false for one
 	// that writes it.
 	ViaReads bool
+	// Taken names the slot that keeps the closure that took the place over, as
+	// takeOverCaptures does, and is empty for any other move.
+	Taken string
 	// use is the read being rejected; it self-blames from here.
 	use ast.Node
 	// moveSite is the expression that moved the binding, used for the related span. It
@@ -132,6 +135,9 @@ func (e *UseAfterMoveError) Message() string {
 			access = "reads"
 		}
 		return fmt.Sprintf("this call %s %s, which %s '%s' after it was moved", runsVerb(e.ViaRuns), e.Via, access, e.Name)
+	}
+	if e.Taken != "" {
+		return fmt.Sprintf("'%s' is used after %s took it over for 'static", e.Name, e.Taken)
 	}
 	return fmt.Sprintf("use of moved value '%s'", e.Name)
 }
@@ -204,6 +210,10 @@ type movedPlace struct {
 	// `called` marks the binding of a closure that a call of it moved, as D2 decides. Only a
 	// later call of the closure uses the binding.
 	called bool
+	// `taken` names the slot whose closure took the place over, as takeOverCaptures does, and
+	// is empty for any other move. A write to such a place is a use of it, since the closure
+	// still reads the binding the write would change.
+	taken string
 }
 
 // heldPlace is one local place that holds a loan, and the expression of the flow that made
@@ -655,9 +665,12 @@ func (d *bodyDataflow) entryState(b *liveness.BasicBlock, out []*dataflowState) 
 // transfer applies the events of `block` to s, point by point.
 func (d *bodyDataflow) transfer(block int, s *dataflowState) {
 	for _, at := range d.points[block] {
-		// A store reads what its value holds before the statement runs.
+		// A store reads what its value holds before the statement runs. A store that takes
+		// over its closures' captures leaves no write for a later call to run.
 		for _, store := range d.storesAt[at] {
-			d.noteStoreWrites(store, s)
+			if !store.takeover {
+				d.noteStoreWrites(store, s)
+			}
 		}
 
 		// A declaration binds a fresh value, so a move of the binding on an earlier iteration
@@ -672,6 +685,14 @@ func (d *bodyDataflow) transfer(block int, s *dataflowState) {
 
 		for _, ev := range d.events[at] {
 			d.step(ev, at, s)
+		}
+
+		// A call takes over its arguments' captures when it ends, as callEnd does. Any other
+		// store takes them over once its statement has run.
+		for _, store := range d.storesAt[at] {
+			if store.takeover && store.call == nil {
+				d.takeOverCaptures(store, at, s)
+			}
 		}
 
 		// The caller runs at a yield or an await, and can keep a copy of a borrow the body
@@ -803,7 +824,7 @@ func (d *bodyDataflow) write(ev *useEvent, at liveness.StmtRef, s *dataflowState
 			continue
 		}
 
-		if len(m.place.path) < depth && !m.called {
+		if (len(m.place.path) < depth || m.taken != "") && !m.called {
 			// The write blames the part of its target that names the moved place, so a write
 			// to `p.x` after p moved blames `p`.
 			d.reportMoved(m, ev.place, d.placeExprAt(target, len(m.place.path)))
@@ -1361,6 +1382,9 @@ func (d *bodyDataflow) pass(ev *passEvent, s *dataflowState) {
 //     dead once the arguments are evaluated. The later of the two paths is blamed, so
 //     `p.writeRead(&p)` reports `&p`.
 //  2. Each loan a slot of the call holds is released, and a loan nothing else holds ends.
+//
+// Between the two, each argument a parameter keeps for 'static takes over its closures'
+// captures, as takeOverCaptures does.
 func (d *bodyDataflow) callEnd(ev *callEvent, at liveness.StmtRef, s *dataflowState) {
 	// Step 1 checks each receiver this call reserved, scanning the loans in sorted order.
 	// Most calls reserve no receiver, and those skip the sort.
@@ -1413,6 +1437,14 @@ func (d *bodyDataflow) callEnd(ev *callEvent, at liveness.StmtRef, s *dataflowSt
 		}
 	}
 
+	// A parameter that keeps a closure for 'static takes over the closure's captures before
+	// the call releases the loans its arguments hold.
+	for _, store := range d.storesAt[at] {
+		if store.takeover && store.call == ast.Node(ev.call) {
+			d.takeOverCaptures(store, at, s)
+		}
+	}
+
 	// Step 2 releases every slot of this call. A loan with no holder, no slot of another call,
 	// and no hold that lasts to the end of the statement ends here.
 	for k, l := range s.loans {
@@ -1448,7 +1480,7 @@ func (d *bodyDataflow) callEnd(ev *callEvent, at liveness.StmtRef, s *dataflowSt
 func (d *bodyDataflow) run(ev *runEvent, at liveness.StmtRef, s *dataflowState) {
 	taken := set.NewSet[liveness.VarID]()
 	for _, store := range d.table.retained {
-		if store.call == ast.Node(ev.call) || !d.storeReachable(store, at) {
+		if store.takeover || store.call == ast.Node(ev.call) || !d.storeReachable(store, at) {
 			continue
 		}
 
@@ -1491,6 +1523,84 @@ func (d *bodyDataflow) run(ev *runEvent, at liveness.StmtRef, s *dataflowState) 
 		d.reportMoved(m, ev.callee, blame)
 	}
 	s.moved[k] = movedPlace{place: ev.callee, node: ev.call, every: true, called: true}
+}
+
+// takeOverCaptures moves each place a closure that store keeps captures into that closure,
+// at the point `at` of the store, when the place is rooted at one of the locals store.taken
+// lists. takesOverCaptures accepted each of those, so the closure owns them from the store on
+// instead of borrowing them. The closures are those noteStoreWrites reads:
+// each closure written in the stored value, each closure the place the value names holds, and
+// each closure a place those closures capture holds in turn.
+//
+// The move is checked as any move is, so a live borrow of the local, including another
+// closure's capture of it, conflicts with it, and a later use of the local is a use of a moved
+// value. The closure's own loans of the place end, since it owns the place now.
+func (d *bodyDataflow) takeOverCaptures(store *retainedStore, at liveness.StmtRef, s *dataflowState) {
+	written := set.NewSet[ast.Node]()
+	var next []movePlace
+	for _, closure := range store.closures {
+		written.Add(closure)
+		for _, capture := range d.captures[closure] {
+			next = append(next, movePlace{root: capture.base().place.root})
+		}
+	}
+	if store.named {
+		next = append(next, store.place)
+	}
+
+	taken := map[*borrowEvent]*liveLoan{}
+	seen := set.NewSet[liveness.VarID]()
+	for _, l := range s.loans {
+		if l.closure() && written.Contains(l.ev.node) {
+			taken[l.ev] = l
+		}
+	}
+	for len(next) > 0 {
+		p := next[len(next)-1]
+		next = next[:len(next)-1]
+		if len(p.path) == 0 {
+			if seen.Contains(p.root) {
+				continue
+			}
+			seen.Add(p.root)
+		}
+		for _, l := range s.loans {
+			if !l.heldAt(p) {
+				continue
+			}
+			if l.closure() && !(store.named && l.ev.place.root == store.place.root) {
+				taken[l.ev] = l
+			}
+			next = append(next, movePlace{root: l.ev.place.root})
+		}
+	}
+
+	roots := set.FromSlice(store.taken.roots)
+	for _, l := range d.sortedLoans(s) {
+		if taken[l.ev] != l || !roots.Contains(l.ev.place.root) {
+			continue
+		}
+		closure, _ := l.ev.node.(ast.Func)
+		delete(s.loans, l.ev)
+		mv := &moveEvent{
+			flowBase: flowBase{eventBase: eventBase{place: l.ev.place, node: store.expr}, holder: eventHolder{target: moduleTarget{}}},
+			closure:  closure,
+		}
+		d.move(mv, at, s)
+		k := placeKey(l.ev.place)
+		m := s.moved[k]
+		m.taken = store.via
+		s.moved[k] = m
+	}
+
+	// A `var` holding a value type has no loan to take, so its binding is marked moved here.
+	for _, root := range store.taken.vars {
+		p := movePlace{root: root}
+		k := placeKey(p)
+		if _, moved := s.moved[k]; !moved {
+			s.moved[k] = movedPlace{place: p, node: store.expr, every: true, taken: store.via}
+		}
+	}
 }
 
 // storeReachable reports whether a call at the point `at` may run the closure `store` keeps.
@@ -1648,7 +1758,7 @@ func (d *bodyDataflow) reportMoved(m movedPlace, place movePlace, node ast.Node)
 
 // movedError returns the error reportMoved reports.
 func (d *bodyDataflow) movedError(m movedPlace, place movePlace, node ast.Node) *UseAfterMoveError {
-	e := &UseAfterMoveError{Name: d.placeName(m.place), Conditional: !m.every, use: node, moveSite: m.node}
+	e := &UseAfterMoveError{Name: d.placeName(m.place), Conditional: !m.every, Taken: m.taken, use: node, moveSite: m.node}
 	if len(place.path) < len(m.place.path) {
 		e.ReadName = d.placeName(place)
 		e.Partial = true

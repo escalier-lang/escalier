@@ -520,6 +520,10 @@ type funcCtx struct {
 	// every borrow is of a local of this body. setClosureRetention fills it, and
 	// ownReturnedClosures reads it.
 	frameClosures set.Set[*soltype.LifetimeVar]
+	// takeovers maps each value a slot keeps for 'static whose closures take over the locals
+	// they capture to those locals. takesOverCaptures fills it, and noteRetainedClosureStore
+	// and noteRetainedClosureArgs read it.
+	takeovers map[ast.Expr]takenLocals
 	// bodyLtMark is the lifetime counter when the walk of this body began, after its
 	// parameters and return annotation resolved. A lifetime minted from it on belongs to the
 	// body. isFrameLifetime reads it.

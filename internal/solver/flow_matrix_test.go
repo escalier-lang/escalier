@@ -2468,8 +2468,8 @@ func TestFlowMatrix(t *testing.T) {
 		},
 		// A `'static` immutable borrow stays live for the rest of the program, so a later write to its
 		// source is rejected. Rules L1 and E2.
-		// A 'static slot holds only a function that borrows nothing shorter than the program, so the
-		// store of a closure that borrows `p` is rejected.
+		// The store takes `p` over into the closure `sink` keeps, so the later write uses a value
+		// the closure owns.
 		{
 			column: "WriteAfterStaticImmutableBorrow",
 			site:   "ClosureCapture",
@@ -2481,12 +2481,12 @@ func TestFlowMatrix(t *testing.T) {
 					p.x = 2
 				}
 			`,
-			want: []string{"5:13-5:33: this closure borrows `p`, but `sink` keeps it for 'static; pass a function that borrows nothing, or declare `p` at module level"},
+			want: []string{"6:6-6:7: 'p' is used after 'sink' took it over for 'static"},
 		},
 		// A `'static` mutable borrow stays live for the rest of the program, so a later immutable borrow
 		// of its source is rejected. Rules L1 and E2.
-		// A 'static slot holds only a function that borrows nothing shorter than the program, so the
-		// store of a closure that writes `p` is rejected.
+		// The store takes `p` over into the closure `sink` keeps, so the later borrow uses a value
+		// the closure owns.
 		{
 			column: "ImmutableBorrowAfterStaticMutableBorrow",
 			site:   "ClosureCapture",
@@ -2499,7 +2499,7 @@ func TestFlowMatrix(t *testing.T) {
 					readIt(&p)
 				}
 			`,
-			want: []string{"6:13-6:30: this closure borrows `p`, but `sink` keeps it for 'static; pass a function that borrows nothing, or declare `p` at module level"},
+			want: []string{"7:14-7:15: 'p' is used after 'sink' took it over for 'static"},
 		},
 		// Borrows of different fields reach different values, so a write to one field while another is
 		// borrowed is accepted. Rule E2.

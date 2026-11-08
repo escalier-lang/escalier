@@ -461,9 +461,9 @@ func TestClosureRunsAtPlaces(t *testing.T) {
 
 // TestRetainedClosureWritesFollowCaptures covers a retained closure that writes a local
 // through a closure it captures. The capture is the only use of the captured binding, so
-// the stored closure reaches the inner closure's loans only through the capture. The retained
-// closure borrows the local through what it captures, so `onClick` rejects it. Each case
-// asserts that rejection and the conflict the dataflow pass still reports after it.
+// the stored closure reaches the inner closure's loans only through the capture. `onClick`
+// keeps its handler for 'static, so it takes over the local the inner closure writes, and the
+// later `render(&count)` borrows a value the handler owns.
 func TestRetainedClosureWritesFollowCaptures(t *testing.T) {
 	tests := map[string]struct {
 		src  string
@@ -480,7 +480,7 @@ func TestRetainedClosureWritesFollowCaptures(t *testing.T) {
 					render(&count)
 				}
 			`,
-			want: []string{"7:14-7:27: this closure borrows `count`, but `onClick` keeps it for 'static; pass a function that borrows nothing, or declare `count` at module level", "8:6-8:20: this call may run the 'handler' that 'onClick' retains, which writes 'count' while it is borrowed as immutable"},
+			want: []string{"8:14-8:19: 'count' is used after the 'handler' that 'onClick' retains took it over for 'static"},
 		},
 		"CapturedObjectHoldingAClosure": {
 			src: `
@@ -493,7 +493,7 @@ func TestRetainedClosureWritesFollowCaptures(t *testing.T) {
 					render(&count)
 				}
 			`,
-			want: []string{"7:14-7:30: this closure borrows `o`, but `onClick` keeps it for 'static; pass a function that borrows nothing", "8:6-8:20: this call may run the 'handler' that 'onClick' retains, which writes 'count' while it is borrowed as immutable"},
+			want: []string{"8:14-8:19: 'count' is used after the 'handler' that 'onClick' retains took it over for 'static"},
 		},
 		"CapturedClosureThatOnlyReads": {
 			src: `
@@ -507,7 +507,7 @@ func TestRetainedClosureWritesFollowCaptures(t *testing.T) {
 					render(&count)
 				}
 			`,
-			want: []string{"8:14-8:27: this closure borrows `count`, but `onClick` keeps it for 'static; pass a function that borrows nothing, or declare `count` at module level"},
+			want: []string{"9:14-9:19: 'count' is used after the 'handler' that 'onClick' retains took it over for 'static"},
 		},
 	}
 	for name, tc := range tests {

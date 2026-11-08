@@ -94,6 +94,11 @@ type retainedStore struct {
 	// `writes` lists the owned locals the closures write, in VarID order. The dataflow pass
 	// fills it at `at`, as noteStoreWrites describes.
 	writes []liveness.VarID
+	// `takeover` marks a store whose closures take over the locals they capture, as
+	// takesOverCaptures decides. The dataflow pass moves those locals at `at`, and no later
+	// call runs the closures against them. taken lists those locals.
+	takeover bool
+	taken    takenLocals
 }
 
 // emitClosureRuns emits the runEvent of the call `e`, attached to `ref`. It must run once the
@@ -228,6 +233,7 @@ func (c *checker) noteRetainedClosureStore(store retainedStore) *retainedStore {
 		return nil
 	}
 	s := &store
+	s.taken, s.takeover = c.fn.takeovers[s.expr]
 	if p, ok := c.exprPlace(s.expr); ok && p.root > 0 {
 		s.place, s.named = p, true
 	}
@@ -269,8 +275,12 @@ func (c *checker) noteRetainedClosureArgs(e *ast.CallExpr, fn *soltype.FuncType,
 		// that holds no borrow, so keeping the argument keeps none of the caller's locals. A
 		// function's lifetime is the one written ahead of `fn`, such as `'a` in
 		// `handler: 'a fn () -> undefined`.
+		// A slot that keeps the closure for 'static takes over the locals it captures, which
+		// takesOverCaptures decided when the argument was checked. Such a slot may hold a
+		// function with no lifetime, which retentionLifetimes does not list.
+		_, takeover := c.fn.takeovers[arg]
 		lts := retentionLifetimes(param.Type)
-		if len(lts) == 0 {
+		if len(lts) == 0 && !takeover {
 			continue
 		}
 
@@ -298,6 +308,7 @@ func (c *checker) noteRetainedClosureArgs(e *ast.CallExpr, fn *soltype.FuncType,
 				shared = append(shared, lv)
 			}
 		}
+		store.static = store.static || takeover
 
 		// Find what keeps a closure that is not kept for the rest of the program. In
 		// `subscribe(e, fn () { … })` with `subscribe<'a>(emitter: &'a mut Emitter, handler:
