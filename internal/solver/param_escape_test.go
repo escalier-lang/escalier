@@ -225,6 +225,41 @@ func TestInferUnannotatedParamOwnership(t *testing.T) {
 			want: "fn (arg0: {x: {y: number}}) -> undefined",
 		},
 		{
+			// A read stored into a `&'static` sink requires the field itself to hold a
+			// `'static` borrow, so the parameter stays owned around it.
+			name: "LeafStoredInStaticBorrow",
+			srcs: []string{
+				`declare var sink: &'static {y: number}
+				fn f(p) { sink = p.x }`,
+				`declare var sink: &'static {y: number}
+				fn f(p) {
+					val q = p.x
+					sink = q
+				}`,
+				`declare var sink: &'static {y: number}
+				fn f(p) { sink = do { p.x } }`,
+				`declare var sink: &'static {y: number}
+				fn f({x}) { sink = x }`,
+			},
+			want: "fn (arg0: {x: &'static {y: number}}) -> undefined",
+		},
+		{
+			name: "MemberBorrowStoredInStaticBorrow",
+			srcs: []string{`
+				declare var sink: &'static {y: number}
+				fn f(p) { sink = &p.x }
+			`},
+			want: "fn (arg0: &'static {x: &'static {y: number}}) -> undefined",
+		},
+		{
+			name: "StoredInStaticBorrow",
+			srcs: []string{`
+				declare var sink: &'static {x: number}
+				fn f(p) { sink = p }
+			`},
+			want: "fn (arg0: &'static {x: number}) -> undefined",
+		},
+		{
 			name: "MutPatternLeaf",
 			srcs: []string{`fn f({mut x}) { return x }`},
 			want: "fn <T0>(arg0: {x: T0}) -> T0",
