@@ -1,3 +1,4 @@
+declare const count: {n: number};
 export declare function forEachItem(f: () => undefined): undefined;
 declare const handlers: Array<() => undefined>;
 export declare function onClick(handler: () => undefined): undefined;
