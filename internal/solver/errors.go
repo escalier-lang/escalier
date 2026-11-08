@@ -2523,17 +2523,17 @@ func (e *LifetimeRelationUndeclaredError) Message() string {
 		e.Sub, e.Super, e.Sub, e.Super)
 }
 
-// CallOnlyFuncKeptError fires when a body keeps a function parameter whose type is written with
-// no lifetime past the call. Such a parameter, as `g` in `fn f(g: fn () -> undefined)`, is only
-// called during the call, so a caller lends it a closure's captures for that call alone.
-// `onClick(g)` against `declare fn onClick(handler: 'static fn () -> undefined)` keeps it for
-// 'static. Name is the parameter's name, and Written is the parameter's annotation. Static says
-// the body keeps it for 'static. Keeper is the name of a lifetime of the signature, as "'a",
-// that the body keeps the parameter for when it does not keep it for 'static, and "" when the
-// signature names none. Deferred names the kind of function whose body reads the parameter and
-// can run after the call returns, as in "a generator", and is "" otherwise. Param is the parameter's pattern. Read is the first read of the parameter in that
-// body when Deferred is set, and nil otherwise. The error blames Read when it is set and Param
-// otherwise, and relates Param when it blames Read.
+// CallOnlyFuncKeptError fires when a body keeps a function parameter whose type is written with no
+// lifetime past the call. Such a parameter, as `g` in `fn f(g: fn () -> undefined)`, is only called
+// during the call, so a caller lends it a closure's captures for that call alone. `onClick(g)`
+// against `declare fn onClick(handler: 'static fn () -> undefined)` keeps it for 'static. Name is
+// the parameter's name, and Written is the parameter's annotation. Static says the body keeps it
+// for 'static. Keeper is the name of a lifetime of the signature, as "'a", that the body keeps the
+// parameter for when it does not keep it for 'static, and "" when the signature names none.
+// Deferred names the kind of function whose body reads the parameter and can run after the call
+// returns, as in "a generator", and is "" otherwise. Param is the parameter's pattern. Read is the
+// first read of the parameter in that body when Deferred is set, and nil otherwise. The error
+// blames Read when it is set and Param otherwise, and relates Param when it blames Read.
 type CallOnlyFuncKeptError struct {
 	Name     string
 	Written  *ast.FuncTypeAnn
