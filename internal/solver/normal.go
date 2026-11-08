@@ -1558,7 +1558,8 @@ func fusableFuncs(a, b *soltype.FuncType) bool {
 	if len(a.LifetimeParams) > 0 || len(b.LifetimeParams) > 0 {
 		return false
 	}
-	// The fused arrow carries no retention lifetime, so a retained function stays its own atom.
+	// The fused arrow carries no lifetime, so an arrow with one stays its own atom rather than
+	// lose it.
 	if a.Lt != nil || b.Lt != nil {
 		return false
 	}
