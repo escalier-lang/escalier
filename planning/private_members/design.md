@@ -80,6 +80,44 @@ matches JS, where a subclass cannot name its base's `#x`.
 A private static member is reached through the class value, `Account.count`, by
 the same rule.
 
+### Which member an access names
+
+JavaScript writes a private access as `obj.#x`, a different syntax from
+`obj.x`. JS has no static types, so without the sigil every `obj.x` would need a
+runtime check of whether the running code may see a private `x` on `obj`.
+Escalier writes both accesses as `obj.x`. The checker knows the receiver's type
+at every access, so it picks the member at compile time and codegen emits `.#x`
+or `.x` to match.
+
+Inside the body of `C`, an access `e.m` names `C`'s private `m` when the type of
+`e` is one of these:
+
+- `C`;
+- a subclass of `C`;
+- a type variable whose bound is `C` or a subclass of `C`.
+
+Any other receiver names only public members, even inside the body. A receiver
+of type `unknown` has no members to name. A union is the case that needs a rule.
+Take `Ledger`, an unrelated class with a public `balance`:
+
+```ts
+// inside Account's body
+fn total(x: Account | Ledger) -> number {
+    return x.balance
+}
+```
+
+On an `Account`, `x.balance` would have to be `.#balance`, and on a `Ledger` it
+would have to be `.balance`. No single JS expression does both, so the checker
+rejects the access:
+
+```
+PrivateMemberUnionAccessError: `balance` names a private member of Account on one arm of `Account | Ledger` and a public member on another
+```
+
+Narrowing `x` with a `match` first resolves it, because each arm then has a
+receiver of a single class.
+
 ### Diagnostics
 
 An access from outside reports that the member is private, not that it is
@@ -205,6 +243,33 @@ DuplicateClassMemberError: class Account declares `balance` twice
 
 A getter and a setter for the same name are one member and do not trigger it.
 
+### A subclass may reuse a base's private name
+
+The duplicate check covers one class body. A subclass can declare a public member
+with the same name as a private member of its base:
+
+```ts
+class Base {
+    private balance: number,
+    report(&self, other: &Sub) -> number {
+        return other.balance    // Base's private balance: other.#balance
+    },
+}
+
+class Sub extends Base {
+    balance: string,
+}
+
+val s: Sub = ...
+s.balance                       // Sub's public balance: s.balance
+```
+
+Rejecting `Sub` would force a subclass author to know every private name of
+every base class, and a later private member added to a base would break
+subclasses it can't see. JS private names never collide with anything for the
+same reason. Both members exist on a `Sub` instance at runtime, as `#balance` and
+`balance`, and the rule above picks between them by where the access is written.
+
 ### Proxies
 
 A method that reads `this.#x` throws when it is called through a Proxy, because
@@ -318,6 +383,13 @@ runtime.
   asserting that access from outside the class fails with the full
   `PrivateMemberAccessError` message and access from inside is accepted.
 - A subclass body accessing its base's private member fails.
+- Inside a class body, an access through a union of the class and an unrelated
+  class with a same-named public member fails with the full
+  `PrivateMemberUnionAccessError` message, and the same access after a `match`
+  narrows the receiver is accepted.
+- A subclass declaring a public member named like its base's private member is
+  accepted. The fixture's emitted JS reads `.#name` inside the base body and
+  `.name` outside it.
 - `keyof`, a mapped type, spread and assignability to an object type each have a
   test showing a private member is excluded. The `keyof` test uses a `final`
   class, so its exact union shows the private key is missing.
