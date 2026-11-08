@@ -14,8 +14,8 @@ TypeScript's `private` is a check-time rule only. At runtime the member is an
 ordinary string-keyed property, so `Object.keys`, spread, `JSON.stringify` and a
 cast all reach it. Escalier's `private` holds at runtime, so the type the checker
 gives an instance describes what the instance actually exposes. In particular,
-`keyof C` lists the keys `Object.keys` can return for an instance of `C`, and a
-private member is never one of them.
+a private member is never one of the keys `keyof C` lists, and `Object.keys`
+never returns it for an instance of `C`.
 
 ## Syntax
 
@@ -112,7 +112,10 @@ when that class declared it, and reports `PrivateMemberAccessError` otherwise.
 Everywhere the checker treats an instance as a set of keys, it leaves private
 members out:
 
-- `keyof C`.
+- `keyof C`. A non-final class's instance type is inexact, as
+  `planning/exact-types/requirements.md` §2.6 sets out, so `keyof C` is an inexact
+  union of the declared keys. A private member is not one of the declared keys. A
+  `final` class's `keyof` is the exact union of its public keys.
 - A mapped type over `C`, and the utility types built on one, such as `Pick`,
   `Omit`, `Partial` and `Readonly`.
 - Object spread `{...acct}`. JS spread copies own enumerable string and symbol
@@ -309,13 +312,6 @@ runtime.
    presence of any private elem stand in for it? A `.d.ts` class with only a
    `#private;` marker has no private elem to point at.
 
-## Related issue
-
-`val k: keyof Point = "zz"` type-checks when `Point` is a class, while the same
-check on a type alias reports `cannot constrain "zz" <: "x"`. The `keyof` rules
-above assume a class's key set is checked, so that issue needs fixing first or
-alongside.
-
 ## Done when
 
 - Each of the four member kinds, in both instance and static form, has a test
@@ -323,7 +319,8 @@ alongside.
   `PrivateMemberAccessError` message and access from inside is accepted.
 - A subclass body accessing its base's private member fails.
 - `keyof`, a mapped type, spread and assignability to an object type each have a
-  test showing a private member is excluded.
+  test showing a private member is excluded. The `keyof` test uses a `final`
+  class, so its exact union shows the private key is missing.
 - A fixture's emitted JS uses `#name` for every private member and
   `ClassName.#name` for every private static.
 - A non-`declare` class with only private constructors can be built from a static
