@@ -314,7 +314,9 @@ Each case below follows from that:
   case above for module-level state does not make its captures owned. The borrow
   is `&mut` for a capture the closure writes and `&` otherwise. By the closure
   rows of the exclusivity table, the captured place can then never move, and E4
-  checks each later call against the borrow.
+  checks each later call against the borrow. The closure's type is
+  `&'static fn`, so the state's type must be `&'static fn` to hold it, as E4
+  states.
 
 A `val` or `var` binding of an owned value is always an owned destination, even
 when the binding's scope is shorter than the source's. A binding whose
@@ -665,7 +667,7 @@ is rejected. In `stored`, the closure in `sink` may run during any later call,
 so `readIt(&p)` conflicts with the write it may perform.
 
 ```esc
-var sink: fn () -> undefined = fn () {}
+var sink: &'static fn () -> undefined = fn () {}
 declare fn readIt(a: &{x: number}) -> undefined
 
 fn local() -> number {
@@ -1000,7 +1002,7 @@ owned, as for `store` in F3. A written annotation overrides the inference.
 
 ### D10. Recording that a callback is not retained
 
-A function value is a value type, so it carries no lifetime, and nothing in the
+A function value is a value type. Without a lifetime on its type, nothing in the
 rules distinguishes a callee that only calls a callback from one that stores it.
 The source-analysis plan for third-party packages expects to record exactly that
 fact. [#1267](https://github.com/escalier-lang/escalier/issues/1267) tracks the
@@ -1010,9 +1012,9 @@ The program below shows the gap. It writes the parameters in the lifetime form
 recommended below. `onClick` keeps its handler for the rest of the program, so
 the handler's mutable borrow of `count` stays live after the call, as for a
 closure stored into module-level state under E4. `render` then takes an
-immutable view of `count` that a click could change. Today the two parameter
-types are the same `fn () -> undefined`, so the checker treats `onClick` like a
-callee that only calls its argument and accepts the program.
+immutable view of `count` that a click could change. The checker reads both
+parameter types as `fn () -> undefined` and ignores the lifetime, so it treats
+`onClick` like a callee that only calls its argument and accepts the program.
 
 ```esc
 declare fn onClick(handler: &'static fn () -> undefined) -> undefined
