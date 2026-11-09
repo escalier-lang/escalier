@@ -12,3 +12,12 @@ export fn kind(u: number | fn (x: number) -> number) -> string {
         n: number => "number",
     }
 }
+
+type Callback = function | undefined
+
+export fn hasCallback(u: Callback | number) -> boolean {
+    return match u {
+        c: Callback => true,
+        n: number => false,
+    }
+}

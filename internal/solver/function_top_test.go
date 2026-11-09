@@ -157,3 +157,78 @@ func TestABorrowCopiesIntoFunction(t *testing.T) {
 	`)
 	require.Empty(t, errorMessagesOf(errs))
 }
+
+// `function` shares no value with a primitive, so its meet with one is `never` and a
+// primitive fills its complement. A function type overlaps it and does not.
+func TestFunctionIsDisjointFromThePrimitives(t *testing.T) {
+	tests := map[string]struct {
+		src      string
+		expected []string
+	}{
+		"ANumberFillsNotFunction": {
+			src: "declare val n: number\nval y: ~function = n",
+		},
+		"FunctionFillsNotNumber": {
+			src: "declare val f: function\nval y: ~number = f",
+		},
+		"AFunctionTypeDoesNotFillNotFunction": {
+			src:      "declare val f: fn () -> number\nval y: ~function = f",
+			expected: []string{"cannot constrain function <: ~function"},
+		},
+		"TheMeetWithANumberIsNever": {
+			src: "declare val v: function & number\nval s: string = v",
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src)
+			if tc.expected == nil {
+				require.Empty(t, errorMessagesOf(errs))
+				return
+			}
+			require.Equal(t, tc.expected, errorMessagesOf(errs))
+		})
+	}
+}
+
+// A union that names `function` twice keeps one copy.
+func TestARepeatedFunctionMemberCollapses(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		declare val v: function | number | function
+		val w = v
+	`)
+	require.Empty(t, errorMessagesOf(errs))
+	require.Equal(t, "function | number", values["w"])
+}
+
+// A callee whose type is not `function` keeps the ordinary call rules. An unannotated
+// parameter infers a function type from the call, and an unbounded type parameter reports the
+// constraint the call places on it.
+func TestACalleeThatIsNotFunctionKeepsTheCallRules(t *testing.T) {
+	tests := map[string]struct {
+		src       string
+		signature string
+		expected  []string
+	}{
+		"AnUnannotatedParameter": {
+			src:       `fn g(f) { return f(1) }`,
+			signature: "fn <T0>(f: fn (arg0: 1) -> T0) -> T0",
+		},
+		"AnUnboundedTypeParameter": {
+			src:       `fn g<T>(f: T) { return f(1) }`,
+			signature: "fn <T>(f: T) -> never",
+			expected:  []string{"cannot constrain T <: function"},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tc.src)
+			if tc.expected == nil {
+				require.Empty(t, errorMessagesOf(errs))
+			} else {
+				require.Equal(t, tc.expected, errorMessagesOf(errs))
+			}
+			require.Equal(t, tc.signature, values["g"])
+		})
+	}
+}
