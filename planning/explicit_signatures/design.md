@@ -291,6 +291,38 @@ closure really can hold any input, which is why Rust captures every lifetime
 there too. A return type that holds both kinds, such as
 `{f: fn () -> undefined, r: &Flat}`, applies each rule to its own part.
 
+A returned `fn` type or promise tied to every input renders with one lifetime
+shared by the inputs. A caller's borrow of any one input then lasts as long as
+the result:
+
+```esc
+fn adder(a: &Flat, b: &Flat) -> fn () -> number {
+    return fn () { return a.x + b.x }
+}
+// adder: fn <'a>(a: &'a Flat, b: &'a Flat) -> 'a fn () -> number
+
+async fn sum(a: &Flat, b: &Flat) -> Promise<number> {
+    await tick()
+    return a.x
+}
+// sum: fn <'a>(a: &'a Flat, b: &'a Flat) -> 'a Promise<number>
+
+async fn go() -> Promise<number> {
+    val mut x: Flat = {x: 1}
+    val mut y: Flat = {x: 2}
+    val pr = sum(&x, &y)
+    y.x = 3              // error: cannot assign to 'y.x' while it is borrowed as immutable by 'pr'
+    return await pr
+}
+```
+
+`adder`'s closure holds both inputs, so the tie is exact. `sum`'s body reads
+only `a` after its `await`, so the elided tie holds `y` longer than the body
+needs, and `go`'s write is rejected. An author who wants `b` released at the
+call writes the lifetime out, as
+`fn <'a>(a: &'a Flat, b: &Flat) -> 'a Promise<number>`, and the body is
+checked against it.
+
 An ambiguous returned borrow reports `AmbiguousReturnLifetimeError`:
 
 ```esc
