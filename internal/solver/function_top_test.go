@@ -232,3 +232,12 @@ func TestACalleeThatIsNotFunctionKeepsTheCallRules(t *testing.T) {
 		})
 	}
 }
+
+// The call error underlines the whole call and points nowhere else.
+func TestCallingFunctionBlamesTheCall(t *testing.T) {
+	const src = "declare val f: function\nval r = f(1)"
+	_, _, errs := inferSource(t, src)
+	require.Len(t, errs, 1)
+	require.Equal(t, "f(1)", spanText(src, errs[0].Span()))
+	require.Empty(t, errs[0].Related())
+}
