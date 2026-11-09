@@ -1466,10 +1466,24 @@ func (c *checker) definedMembers(t soltype.Type) (soltype.Type, bool) {
 // lifetime, as fieldReadBorrow reads a field of unknown shape through a read-through
 // receiver.
 func (c *checker) applyBindMode(lvl int, node ast.Node, mut bool, leafType, concrete soltype.Type, scrutineeMode bindMode) soltype.Type {
+	// Under `&`, an element typed by a rigid type parameter binds as a field read of it
+	// does in fieldReadBorrow. Every other mode reads it as an element of unknown shape,
+	// the same as one typed by an inference variable.
+	rigid, isRigid := concrete.(*soltype.TypeVarType)
+	isRigid = isRigid && rigid.Rigid != nil
+	if isRigid {
+		concrete = nil
+	}
 	switch scrutineeMode.borrow {
 	case bmImm:
 		if mut {
 			c.report(&MutLeafThroughSharedBorrowError{Node: node})
+		}
+		if isRigid {
+			v := c.freshAt(lvl)
+			c.constrain(node, rigid, v)
+			c.ctx.markRigidReadVar(v)
+			return soltype.NewRef(false, scrutineeMode.lt, v)
 		}
 		if ri, ok := leafType.(soltype.RefInner); ok && soltype.BorrowableType(concrete) {
 			return soltype.NewRef(false, scrutineeMode.lt, ri)
@@ -1532,12 +1546,12 @@ func (c *checker) widenOwnedLeaf(lvl int, node ast.Node, leafType, concrete solt
 // scrutinee-derived concrete type is used, which is non-nil only when the scrutinee's
 // shape is statically known. A concrete type that is still an inference variable is
 // treated as unknown, since wrapping a variable defeats the clean-rendering the hint
-// exists to provide.
+// exists to provide. A rigid type parameter is returned, since applyBindMode reads it.
 func (c *checker) concreteLeaf(concrete soltype.Type, typeAnn ast.TypeAnn) soltype.Type {
 	if typeAnn != nil {
 		return nil
 	}
-	if _, isVar := concrete.(*soltype.TypeVarType); isVar {
+	if v, isVar := concrete.(*soltype.TypeVarType); isVar && v.Rigid == nil {
 		return nil
 	}
 	return concrete

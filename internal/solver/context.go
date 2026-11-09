@@ -37,6 +37,12 @@ type Context struct {
 	// variable, and the copiers add each copy through copyParamMark. isParamVar reads it.
 	paramVars set.Set[*soltype.TypeVarType]
 
+	// rigidReadVars holds the result variable of each read of a field or destructured
+	// element that is typed by a rigid parameter and read off an immutable borrow. The read
+	// yields a borrow of the variable, and the variable has the parameter as a lower bound.
+	// markRigidReadVar adds one and constrainBorrowIntoRigid reads it.
+	rigidReadVars set.Set[*soltype.TypeVarType]
+
 	// typeArgParams holds the parameters of instantiated signatures that are typed by a type
 	// argument of that instantiation, as markTypeArgParams defines them. isTypeArgParam
 	// reads it.
@@ -463,6 +469,14 @@ func (c *Context) markParamVar(v *soltype.TypeVarType) {
 		c.paramVars = set.NewSet[*soltype.TypeVarType]()
 	}
 	c.paramVars.Add(v)
+}
+
+// markRigidReadVar records v in rigidReadVars.
+func (c *Context) markRigidReadVar(v *soltype.TypeVarType) {
+	if c.rigidReadVars == nil {
+		c.rigidReadVars = set.NewSet[*soltype.TypeVarType]()
+	}
+	c.rigidReadVars.Add(v)
 }
 
 // isParamVar reports whether v is a type parameter's variable or a copy of one.

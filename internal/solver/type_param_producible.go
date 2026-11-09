@@ -120,6 +120,16 @@ func forcedConcreteFloor(root *soltype.TypeVarType, admitted func(soltype.Type) 
 				}
 			}
 			return nil, false
+		case *soltype.RefType:
+			// A borrow of a variable holds whatever the variable does. A read of a field
+			// typed by a parameter `T` borrows a variable whose lower bound is `T`.
+			if v, isVar := b.Inner.(*soltype.TypeVarType); isVar {
+				return walkBound(v)
+			}
+			if mentionsAnyVar(b, paramVars) {
+				return nil, false
+			}
+			return b, true
 		default:
 			if mentionsAnyVar(b, paramVars) {
 				return nil, false // the value depends on the caller's own type parameter

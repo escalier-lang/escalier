@@ -1097,23 +1097,17 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			return c.constrain(inner, super, seen, false)
 		}
 	}
-	// A borrow of a rigid parameter fills a destination typed by a rigid parameter when the
-	// borrowed parameter does, as a borrow of a variable fills a value-type destination
-	// above. A read through `&'a {v: T}` yields `&'a T`, so
-	// `read(&self) -> T { return self.v }` checks `T` against `T`.
-	if ref, ok := sub.(*soltype.RefType); ok && ref.Lt != nil && !ref.Mut {
-		inner, innerIsVar := ref.Inner.(*soltype.TypeVarType)
-		superVar, superIsVar := super.(*soltype.TypeVarType)
-		if innerIsVar && inner.Rigid != nil && superIsVar && superVar.Rigid != nil {
-			return c.constrain(inner, super, seen, false)
-		}
-	}
 	// A value type copies into an immutable borrow of a variable the same way, since it has no
 	// storage for the borrow to share. `fn remember(value) { seen.set("last", value) }` takes
 	// `&'static T0`, and `remember("a")` checks `"a"` against `T0`.
 	if ref, ok := super.(*soltype.RefType); ok && ref.Lt != nil && !ref.Mut && copiesOutOfBorrow(sub) {
 		if inner, ok := ref.Inner.(*soltype.TypeVarType); ok {
 			return c.constrain(sub, inner, seen, false)
+		}
+	}
+	if ref, ok := sub.(*soltype.RefType); ok && ref.Lt != nil {
+		if errs, handled := c.constrainBorrowIntoRigid(ref, super, seen); handled {
+			return errs
 		}
 	}
 
@@ -2183,6 +2177,33 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	}
 
 	return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+}
+
+// constrainBorrowIntoRigid checks `ref <: super` when super is a rigid type parameter and ref
+// borrows either a variable in rigidReadVars or a rigid type parameter. ref must carry a
+// lifetime. handled is false for any other pair.
+//
+// A borrow of a variable in rigidReadVars fills super when the variable does. That keeps
+// `read(&self) -> T { return self.v }` checking `T` against `T`. A borrow of a rigid
+// parameter escapes into the owned parameter, so `fn steal<T>(p: &T) -> T { return p }`
+// reports a BorrowEscapeError. When the borrowed parameter does not fill super either, that
+// mismatch is reported instead.
+func (c *Context) constrainBorrowIntoRigid(ref *soltype.RefType, super soltype.Type, seen *seenPairs) ([]SolverError, bool) {
+	superVar, superIsVar := super.(*soltype.TypeVarType)
+	inner, innerIsVar := ref.Inner.(*soltype.TypeVarType)
+	if !superIsVar || superVar.Rigid == nil || !innerIsVar {
+		return nil, false
+	}
+	switch {
+	case !ref.Mut && c.rigidReadVars.Contains(inner):
+		return c.constrain(inner, super, seen, false), true
+	case inner.Rigid != nil:
+		if innerErrs := c.trialUnderProbe(inner, super); hasHardError(innerErrs) {
+			return innerErrs, true
+		}
+		return []SolverError{&BorrowEscapeError{Sub: ref, Super: super}}, true
+	}
+	return nil, false
 }
 
 // copiesOutOfBorrow reports whether t is a value type a read can copy out of a borrow: a type

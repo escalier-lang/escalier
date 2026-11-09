@@ -4129,10 +4129,12 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 	if !prop.Optional {
 		// A rigid type parameter has no shape the body may rely on, the same as a field
 		// whose type inference has not settled, so the read keeps the receiver's borrow as
-		// the readThroughVars branch above does. `p.x` off `p: &'a {x: T0}` reads as
-		// `&'a T0`, the type `fn read(p) { return p.x }` infers for the same read.
+		// the readThroughVars branch above does. `p.x` off `p: &'a {x: T0}` reads as a
+		// borrow of fieldVar, whose lower bound is `T0`, so it renders `&'a T0`, the type
+		// `fn read(p) { return p.x }` infers for the same read.
 		if tp, isRigid := prop.Type.(*soltype.TypeVarType); isRigid && tp.Rigid != nil && recvLt != nil && !recvMut {
-			return soltype.NewRef(false, recvLt, tp)
+			c.ctx.markRigidReadVar(fieldVar)
+			return soltype.NewRef(false, recvLt, fieldVar)
 		}
 		if borrow, ok := c.fieldBorrow(prop.Type, fieldVar, recvMut, recvLt, lvl); ok {
 			// The borrow wraps fieldVar rather than the declared field type. A read off

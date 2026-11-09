@@ -3515,14 +3515,23 @@ func (e *OverrideFormMismatchError) Message() string {
 // nothing to a user. When it is, resolve it to a concrete bound so the message names
 // the actual shape — `immutable object`, not `immutable t3`. Prefer a lower bound, the
 // value that flowed in; fall back to an upper bound, then to the bare variable when it
-// carries no concrete bound.
+// carries no concrete bound. A rigid type parameter renders under its own name.
+//
+// A bound that borrows the variable itself is not resolved, since rendering it reaches
+// the same variable again. Such a bound renders the variable bare.
 func describeBorrowInner(t soltype.Type) string {
-	if v, ok := t.(*soltype.TypeVarType); ok {
-		if b, ok := concreteBoundOf(v); ok {
+	if v, ok := t.(*soltype.TypeVarType); ok && v.Rigid == nil {
+		if b, ok := concreteBoundOf(v); ok && !borrowsVar(b, v) {
 			return describe(b)
 		}
 	}
 	return describe(t)
+}
+
+// borrowsVar reports whether t is a borrow whose inner is v.
+func borrowsVar(t soltype.Type, v *soltype.TypeVarType) bool {
+	ref, ok := t.(*soltype.RefType)
+	return ok && ref.Inner == soltype.RefInner(v)
 }
 
 // concreteBoundOf returns a non-variable bound of v, preferring lower bounds, or
@@ -3852,6 +3861,10 @@ func describe(t soltype.Type) string {
 		}
 		return "~" + inner
 	case *soltype.TypeVarType:
+		// A rigid parameter renders under its source name, as its skolem does.
+		if t.Rigid != nil {
+			return t.Rigid.Name
+		}
 		return "t" + strconv.Itoa(t.ID)
 	case *soltype.SkolemType:
 		// A skolem renders under its source parameter name, so a rejected `return 5`

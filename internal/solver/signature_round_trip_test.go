@@ -72,13 +72,41 @@ func TestInferredSignatureRoundTrips(t *testing.T) {
 				val [a, b] = p
 				return a
 			}`,
-			annotated: `fn f<T0>(p: [T0, unknown]) -> T0 {
+			annotated: `fn f<T0, 'a>(p: &'a [T0, unknown]) -> &'a T0 {
 				val [a, b] = p
 				return a
 			}`,
-			sig:     `fn <T0>(p: [T0, unknown]) -> T0`,
+			sig:     `fn <T0, 'a>(p: &'a [T0, unknown]) -> &'a T0`,
 			callers: `val m = f([1, "s"])`,
 			values:  map[string]string{"m": "1"},
+		},
+		{
+			name: "WrittenBorrowOfDestructuredElement",
+			inferred: `fn f(p) {
+				val [a, b] = p
+				return &a
+			}`,
+			annotated: `fn f<T0, 'a>(p: &'a [T0, unknown]) -> &'a T0 {
+				val [a, b] = p
+				return &a
+			}`,
+			sig:     `fn <T0, 'a>(p: &'a [T0, unknown]) -> &'a T0`,
+			callers: `val m = f([{y: 1}, "s"])`,
+			values:  map[string]string{"m": "&{y: 1}"},
+		},
+		{
+			name: "ObjectDestructure",
+			inferred: `fn f(p) {
+				val {x} = p
+				return x
+			}`,
+			annotated: `fn f<T0, 'a>(p: &'a {x: T0}) -> &'a T0 {
+				val {x} = p
+				return x
+			}`,
+			sig:     `fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0`,
+			callers: `val m = f({x: 2})`,
+			values:  map[string]string{"m": "2"},
 		},
 		{
 			name:      "Identity",
@@ -124,7 +152,9 @@ func TestInferredSignatureRoundTrips(t *testing.T) {
 }
 
 // TestBorrowOfTypeParamIntoOwned covers a borrow of a type parameter flowing into an owned
-// slot. A borrow of a rigid parameter can't fill an unrelated type parameter.
+// slot. A borrow of a rigid parameter can't fill an unrelated type parameter. It can't fill
+// the same parameter either, since a caller could then write through an object it only
+// lent. A concrete type such as `&{x: number}` into `{x: number}` is rejected the same way.
 func TestBorrowOfTypeParamIntoOwned(t *testing.T) {
 	tests := []struct {
 		name string
@@ -136,19 +166,34 @@ func TestBorrowOfTypeParamIntoOwned(t *testing.T) {
 			src:  `fn f<T, U>(p: &T) -> U { return p }`,
 			want: []string{"1:33-1:34: cannot constrain T <: U"},
 		},
-		// A borrow of T fills an owned T without a copy, so a caller could write through an
-		// object it only lent. A concrete type such as `&{x: number}` into `{x: number}` is
-		// already rejected by T6.
-		//
-		// DISABLED until #2589, which applies T6 to a type parameter. Until then `steal`
-		// checks clean.
-		/*
-			{
-				name: "into the same type parameter",
-				src:  `fn steal<T>(p: &T) -> T { return p }`,
-				want: []string{"1:16-1:18: cannot use borrowed &T as owned T"},
-			},
-		*/
+		{
+			name: "into the same type parameter",
+			src:  `fn steal<T>(p: &T) -> T { return p }`,
+			want: []string{"1:16-1:18: cannot use borrowed &T as owned T"},
+		},
+		{
+			name: "mutable borrow into the same type parameter",
+			src:  `fn steal<T>(p: &mut T) -> T { return p }`,
+			want: []string{"1:16-1:22: cannot use borrowed &mut T as owned T"},
+		},
+		{
+			name: "into a union naming the same type parameter",
+			src:  `fn steal<T>(p: &T) -> T | number { return p }`,
+			want: []string{"1:16-1:18: cannot use borrowed &T as owned T | number"},
+		},
+		{
+			name: "field read into an unrelated type parameter",
+			src:  `fn f<T, U>(p: &{x: T}) -> U { return p.x }`,
+			want: []string{"1:38-1:41: cannot constrain T <: U"},
+		},
+		{
+			name: "destructured element into an unrelated type parameter",
+			src: `fn f<T, U>(p: &[T, number]) -> U {
+				val [a, b] = p
+				return a
+			}`,
+			want: []string{"3:12-3:13: cannot constrain T <: U"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
