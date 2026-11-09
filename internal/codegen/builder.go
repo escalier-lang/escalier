@@ -51,6 +51,9 @@ type Builder struct {
 	// solModuleNames holds every name the module declares at any level, so an alias name
 	// collides with none of them.
 	solModuleNames set.Set[string]
+	// solRuntimeTypes holds the names of the `@escalier/runtime` types the definitions
+	// reference, which BuildDefinitions imports at the top of the file.
+	solRuntimeTypes set.Set[string]
 }
 
 // NewBuilder returns a Builder that answers the JSTypes questions through t, which is

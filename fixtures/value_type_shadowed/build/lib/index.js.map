@@ -1,0 +1,1 @@
+{"version":3,"file":"./index.js","sources":["../../lib/index.esc","../../lib/inner/inner.esc"],"sourcesContent":["export fn steal\u003cT: ValueType\u003e(p: \u0026T) -\u003e T {\n    return p\n}\n","export type ValueType = \"a\" | \"b\"\n"],"names":[],"mappings":";AAAA,sBAA8B;QAAA,AAAA;EAC1B,OAAO"}
