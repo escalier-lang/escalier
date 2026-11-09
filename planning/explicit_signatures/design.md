@@ -98,8 +98,9 @@ the signature alone, without re-deriving the callee's body.
 ### 3.1 W1. A written type is complete
 
 A type the source writes is read on its own. Elision fills in any lifetime it
-leaves out, by D17 rule 2 and its extension to promises in #2430. The body is
-then checked against the result. The body never widens or narrows a written
+leaves out, by D17 rule 2 and its extension to promises in #2430, with the
+change section 5.4 makes for a returned borrow. The body is then checked
+against the result. The body never widens or narrows a written
 type.
 
 This holds for every function, closures included, and for each part of a
@@ -195,7 +196,11 @@ the PRs in section 7 that make each one true.
   type and in hover. A written signature renders as written.
 - **D16.** It stays. It applies to closures and to a written owned return type
   whose body returns a borrow of a local.
-- **D17.** Rule 4's closure lifetime inference stays. The open question in its
+- **D17.** Rule 2's elision of a return type changes for a returned borrow,
+  as section 5.4 decides. A returned `&T` or `&mut T` takes the one input
+  lifetime, or the receiver's, and is an error when neither picks one. A
+  returned `fn` type, promise or generator keeps the rule as written. Rule 4's
+  closure lifetime inference stays. The open question in its
   rendering section, whether to drop a connected output lifetime that rule 2
   would recover, affects only closures.
 - **Comparison with Rust.** The rows for F3, L2, L3 and D4 move toward "Same".
@@ -253,6 +258,58 @@ Recommendation: elision decides. A reader can then read any written type
 without the body, and a bodyless declaration and a function with a body mean
 the same thing when they write the same signature.
 
+### 5.4 How elision picks a returned borrow's lifetime
+
+D17 rule 2 gives an elided lifetime in a return type a fresh lifetime tied to
+every input lifetime. Rust's elision picks one instead:
+
+1. Each elided lifetime in a parameter gets its own lifetime.
+2. When there is exactly one input lifetime, every elided output lifetime takes
+   it.
+3. When there is a `&self` or `&mut self` receiver, every elided output
+   lifetime takes the receiver's.
+
+When neither 2 nor 3 applies, Rust rejects the signature. For an `impl Trait`
+return, including the future an `async fn` returns, Rust captures every input
+lifetime instead, as D17 rule 2 does.
+
+The options were:
+
+- **Tie a returned borrow to every input.** D17 rule 2 as written. Every
+  signature means something, and the tie is always sound, since it can only
+  keep more borrows alive than the body needs. It over-constrains callers,
+  though. `fn pick(a: &Flat, b: &Flat) -> &Flat` leaves the caller's `b`
+  borrowed for as long as the result lives, even when the body returns only
+  `a`.
+- **Pick one input as Rust does, and reject an ambiguous signature.** The
+  author says which input the result borrows from. A signature never claims
+  more than the author meant, and W1's reading of a written type stays exact.
+
+Recommendation: Rust's rules for a returned borrow, and the tie to every input
+for a returned `fn` type, promise or generator. A pending computation or a
+closure really can hold any input, which is why Rust captures every lifetime
+there too. A return type that holds both kinds, such as
+`{f: fn () -> undefined, r: &Flat}`, applies each rule to its own part.
+
+An ambiguous returned borrow reports `AmbiguousReturnLifetimeError`:
+
+```esc
+fn pick(a: &Flat, b: &Flat) -> &Flat { return a }
+// error: the return type borrows from 'a' or 'b', and elision cannot tell which; write a lifetime, as in `fn pick<'x>(a: &'x Flat, b: &Flat) -> &'x Flat`
+
+fn first(a: &Flat) -> &Flat { return a }
+// accepted: fn <'a>(a: &'a Flat) -> &'a Flat, since a is the one input
+
+class Box {
+    inner: Flat,
+    peek(&self, other: &Flat) -> &Flat { return &self.inner },
+    // accepted: the result takes the receiver's lifetime
+}
+```
+
+The language server's code action from step 1 of the plan writes the lifetime
+the body establishes, so the error is fixed by one action.
+
 ## 6. Interop
 
 Declarations are already written. The declaration converter in
@@ -270,7 +327,9 @@ Each step below is a PR. Each runs `UPDATE_SNAPS=true go test ./...` and
    inference, so it lands before anything is required, and the later steps use
    it to migrate code.
 2. **W1 for written types.** A written type is read on its own, and L2 accepts
-   an elided lifetime that ties more than the body uses.
+   an elided lifetime that ties more than the body uses. A returned borrow's
+   elided lifetime follows section 5.4, and `AmbiguousReturnLifetimeError`
+   reports one elision cannot pick.
 3. **W2 as a warning.** `MissingSignatureError` reports as a warning, so the
    migration can proceed file by file.
 4. **Migrate fixtures and tests.** The survey for #2611 counted:
