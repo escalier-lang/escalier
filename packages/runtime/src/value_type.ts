@@ -6,11 +6,12 @@
  * object as well as a plain function.
  */
 export type ValueType =
-  | number
-  | string
-  | boolean
-  | bigint
-  | symbol
-  | null
-  | undefined
-  | Function;
+    | number
+    | string
+    | boolean
+    | bigint
+    | symbol
+    | null
+    | undefined
+    // biome-ignore lint/complexity/noBannedTypes: Escalier's `function` admits every callable value, which is what `Function` names.
+    | Function;
