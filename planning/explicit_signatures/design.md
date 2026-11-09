@@ -117,7 +117,9 @@ return type off a closure so that inference decides it.
 
 A function declared at module level, exported or not, and a class method write
 every parameter type, the return type, and every lifetime parameter that
-elision does not supply. A missing piece reports `MissingSignatureError`:
+elision does not supply. So does a function expression bound to a module-level
+variable. It writes the full signature on the function expression, or the
+variable has a type annotation that supplies it. A missing piece reports `MissingSignatureError`:
 
 ```esc
 fn read(p) { return p.x }
@@ -131,6 +133,27 @@ whatever the author writes, so the suggestion need not be sound.
 A function that returns nothing writes `-> undefined`. A `throws` clause stays
 optional, since a sync function with no clause already declares that it raises
 nothing.
+
+A module-level closure is a module-level function in all but syntax, and an
+importer reads its signature the same way. Left inferred, a small edit to its
+body changes what importers may do, and the error appears in their module:
+
+```esc
+// lib/loader.esc
+export val load = async fn (pick: fn () -> string) {
+    await tick()
+    val key = pick()          // read after the await, so the promise holds pick
+    return key.length
+}
+// error: 'load' is a module-level closure, so it needs a full signature; write `fn (pick: fn () -> string) -> Promise<number>` on the closure, or annotate 'load'
+
+// accepted:
+export val loadNow: fn (pick: fn () -> string) -> 'static Promise<number> = async fn (pick) {
+    val key = pick()
+    await tick()
+    return key.length
+}
+```
 
 ### 3.3 W3. A closure parameter needs a type unless its context supplies one
 
@@ -158,9 +181,38 @@ borrowed, so F3 never has to decide it.
 ### 3.4 W4. A closure's return type and captures stay inferred
 
 A closure's return type, when unwritten, is the join of its return points, and
-D16 applies to it. Its captures and its lifetime are inferred by D17 rule 4. A
-closure's signature is read where it is written, so a reader does not need it
-from a distance the way they need a module-level function's.
+D16 applies to it. Its captures and its lifetime are inferred by D17 rule 4. An
+async closure with no written return type infers its promise's lifetime as A4
+in #2430 describes.
+
+A closure inside a body can leave the function that defines it only through a
+written type:
+
+- returned, it is checked against the enclosing function's written return
+  type, by W1;
+- passed to a call, it is checked against the callee's written parameter type;
+- stored in a field, an element or a `'static` slot, it is checked against
+  that slot's declared type.
+
+So a closure's inferred signature never crosses its enclosing function's
+boundary, and an error it causes is reported in the same function, near the
+closure:
+
+```esc
+async fn go(names: &Array<string>) -> Promise<number> {
+    val mut ctx = {count: 0}
+    val load = async fn (pick: fn () -> string) {
+        await tick()
+        return pick().length      // pick read after the await, so load's promise holds it
+    }
+    val pr = load(fn () { return ctx.count.toString() })
+    ctx.count = 1                 // error: cannot assign to 'ctx.count' while 'ctx' is borrowed as immutable by 'pr'
+    return await pr
+}
+```
+
+Rust makes the same choice. Its closures are fully inferred, including capture
+lifetimes, which neither language can write.
 
 A written closure return type follows W1, so a partly written closure has the
 same reading as a partly written declaration.
@@ -574,6 +626,12 @@ step 4.
    exported function to write its error classes. Recommendation: allow it, and
    have hover and generated `.d.ts` output show the inferred type. Requiring
    it on exports is a later tightening if this causes surprises.
-4. **Whether script top-level functions follow W2.** A script is often short and
+4. **Whether a closure bound to a local name writes its return type.** A
+   closure inferred inside a long function can still change what code far
+   below it may do, as `load` does in W4. Options: keep W4 as stated, or
+   require a written return type on a closure bound to a local name while a
+   closure passed straight to a call stays fully inferred. Recommendation:
+   keep W4, and revisit if long functions show the problem in practice.
+5. **Whether script top-level functions follow W2.** A script is often short and
    exploratory. Recommendation: yes, for one rule everywhere, with the code
    action from step 1 to write the signatures.
