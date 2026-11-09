@@ -1812,6 +1812,11 @@ bound the closure reports `the body requires 'b to outlive 'a, but the
 signature does not declare it; add the bound 'b: 'a`. A name that no enclosing
 function declares is reported as used but not declared.
 
+A closure in a class member's body sees the class's lifetimes and the member's
+own. When both bind a name, the member's is nearer and wins. A class is
+declared only at module or script level, so no function's lifetimes reach a
+class body.
+
 Each error follows the shape of Rust's. It names the value, what the value
 borrows, what keeps the value and for how long, and the fix. Two examples:
 

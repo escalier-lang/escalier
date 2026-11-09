@@ -85,6 +85,16 @@ func TestInferUndeclaredLifetimeNestedSeesEnclosingClause(t *testing.T) {
   return p
 }`,
 		},
+		// A closure in a member body sees the class's 'a and the member's own 'c.
+		{
+			name: "declared by the enclosing class and by the enclosing member",
+			src: `class C<'a> {
+  peer: &'a mut {value: number},
+  run<'c>(&mut self, slot: &mut {cb: &'c mut {value: number}}) -> undefined {
+    val f = fn (p: &'a mut {value: number}, q: &'c mut {value: number}) { slot.cb = q }
+  },
+}`,
+		},
 		// outer's 'a appears only in a bound, so no position interns it before the body. The
 		// body's scope interns it, so the closure reaches outer's 'a.
 		{

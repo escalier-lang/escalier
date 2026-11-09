@@ -200,7 +200,8 @@ type checker struct {
 	// checkLifetimeDeclarations reads the names as declared. enterBodyLifetimeScope adds a
 	// function's names while its body is walked, and enterLifetimeScope hides the names a
 	// nested signature binds while that signature resolves. It is nil outside every function
-	// body. A class's names stay in declLifetimes.
+	// body, and enterDeclLifetimeScope empties it while a class or alias body is inferred. A
+	// class's names stay in declLifetimes.
 	enclosingLifetimes map[string]*soltype.LifetimeVar
 	// enclosingBounds maps each name in enclosingLifetimes to the names its function declares
 	// or implies it outlives, closed transitively. checkSignatureImpliesBodyLifetimes reads it to

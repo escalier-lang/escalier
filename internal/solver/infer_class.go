@@ -60,9 +60,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 
 	// Install the same lifetime scopes and `Self` class the signatures were built under, so a
 	// `&'a` a member body writes reaches the variable its signature holds.
-	savedClassLts := c.declLifetimes
-	c.declLifetimes = shell.namedLts
-	defer func() { c.declLifetimes = savedClassLts }()
+	defer c.enterDeclLifetimeScope(shell.namedLts)()
 	savedNamedLts := c.namedLifetimes
 	c.namedLifetimes = sigs.namedLts
 	defer func() { c.namedLifetimes = savedNamedLts }()
@@ -217,9 +215,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 			prevNS := c.classNamespace
 			c.classNamespace = ns
 			defer func() { c.classNamespace = prevNS }()
-			savedClassLts := c.declLifetimes
-			c.declLifetimes = shell.namedLts
-			defer func() { c.declLifetimes = savedClassLts }()
+			defer c.enterDeclLifetimeScope(shell.namedLts)()
 			savedNamedLts := c.namedLifetimes
 			c.namedLifetimes = sigs.namedLts
 			defer func() { c.namedLifetimes = savedNamedLts }()
@@ -508,9 +504,7 @@ func (c *checker) buildClassSigs(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// of its own. It holds the declared parameters and nothing else: the shell's map is
 	// written only by resolveClassLifetimeParams, and every reader below copies before
 	// minting, so an undeclared name a field writes cannot intern itself as a class binder.
-	savedClassLts := c.declLifetimes
-	c.declLifetimes = shell.namedLts
-	defer func() { c.declLifetimes = savedClassLts }()
+	defer c.enterDeclLifetimeScope(shell.namedLts)()
 
 	// Resolve the body under a copy of that scope, so a `&'a` written in a field reaches the
 	// class parameter while a name the body mints stays out of the shell's map. A class is
@@ -969,6 +963,9 @@ func (c *checker) nestedLifetimeScope(own []*ast.LifetimeParam) map[string]*solt
 	if out == nil {
 		out = map[string]*soltype.LifetimeVar{}
 	}
+	// enterDeclLifetimeScope empties enclosingLifetimes when a class or alias body starts,
+	// so every name in it belongs to a member or function whose body encloses this signature.
+	// That function is nearer than the declaration, so its name wins.
 	maps.Copy(out, c.enclosingLifetimes)
 	for _, p := range own {
 		delete(out, p.Name)
@@ -987,6 +984,18 @@ func (c *checker) enterLifetimeScope(own []*ast.LifetimeParam) (restore func()) 
 	c.enclosingLifetimes, c.enclosingBounds = hideLifetimes(c.enclosingLifetimes, c.enclosingBounds, own)
 	return func() {
 		c.namedLifetimes, c.enclosingLifetimes, c.enclosingBounds = savedNamed, savedEnclosing, savedBounds
+	}
+}
+
+// enterDeclLifetimeScope installs lts as the lifetimes of the class or type alias whose body
+// is about to be inferred, and returns a function that restores the scopes in force before.
+// While it is installed, enclosingLifetimes and enclosingBounds are empty, so a signature in
+// the body starts from the declaration's names and from no function's.
+func (c *checker) enterDeclLifetimeScope(lts map[string]*soltype.LifetimeVar) (restore func()) {
+	savedDecl, savedEnclosing, savedBounds := c.declLifetimes, c.enclosingLifetimes, c.enclosingBounds
+	c.declLifetimes, c.enclosingLifetimes, c.enclosingBounds = lts, nil, nil
+	return func() {
+		c.declLifetimes, c.enclosingLifetimes, c.enclosingBounds = savedDecl, savedEnclosing, savedBounds
 	}
 }
 
@@ -1045,8 +1054,17 @@ func (c *checker) enterBodyLifetimeScope(sig ast.FuncSig, lvl int) (restore func
 	if bounds == nil {
 		bounds = map[string]set.Set[string]{}
 	}
+	// A bound may name an enclosing lifetime, whose own bounds are already closed, so adding
+	// them once keeps every entry closed across function levels.
 	for name, supers := range declaredOutlives(sig.LifetimeParams, impliedOutlives(sig)).outlives {
-		bounds[name] = supers
+		closed := set.NewSet[string]()
+		for super := range supers {
+			closed.Add(super)
+			for outer := range c.enclosingBounds[super] {
+				closed.Add(outer)
+			}
+		}
+		bounds[name] = closed
 	}
 	for _, p := range sig.LifetimeParams {
 		if p.Name != "static" {

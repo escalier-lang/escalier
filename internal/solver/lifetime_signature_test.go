@@ -117,6 +117,59 @@ func TestSignatureImpliesBodyLifetimes(t *testing.T) {
 			name: "a relation to a class lifetime from a closure in a member is not checked",
 			src:  `class C<'a> { peer: &'a mut {value: number}, run(&mut self) -> undefined { val f = fn <'b>(p: &'b mut {value: number}) { self.peer = p } } }`,
 		},
+		// inner's 'b: 'c, mid's 'c: 'd and outer's 'd: 'a, implied by `&'a &'d`, chain to 'b: 'a
+		// across three function levels.
+		{
+			name: "bounds across enclosing function levels cover the relation",
+			src: `fn outer<'a, 'd>(p: &mut {cb: 'a fn () -> undefined}, r: &'a &'d {x: number}, s: &mut {cb: 'd fn () -> undefined}) {
+  val mid = fn <'c: 'd>(q: &mut {cb: 'c fn () -> undefined}) {
+    s.cb = q.cb
+    val inner = fn <'b: 'c>(g: 'b fn () -> undefined) {
+      q.cb = g
+      p.cb = g
+    }
+  }
+}`,
+		},
+		{
+			name: "bounds across enclosing function levels that stop short report",
+			src: `fn outer<'a, 'd>(p: &mut {cb: 'a fn () -> undefined}, s: &mut {cb: 'd fn () -> undefined}) {
+  val mid = fn <'c: 'd>(q: &mut {cb: 'c fn () -> undefined}) {
+    s.cb = q.cb
+    val inner = fn <'b: 'c>(g: 'b fn () -> undefined) {
+      q.cb = g
+      p.cb = g
+    }
+  }
+}`,
+			want: []string{"4:21-4:27: the body requires 'b to outlive 'a, but the signature does not declare it; add the bound 'b: 'a"},
+		},
+		// The member's own 'a hides the class's, so the closure's store into slot needs 'b to
+		// outlive the member's 'a.
+		{
+			name: "a closure in a member is checked against the member's lifetime that hides the class's",
+			src: `class C<'a> {
+  peer: &'a mut {value: number},
+  run<'a>(&mut self, slot: &mut {cb: &'a mut {value: number}}) -> undefined {
+    val f = fn <'b>(p: &'b mut {value: number}) { slot.cb = p }
+  },
+}`,
+			want: []string{"4:17-4:19: the body requires 'b to outlive 'a, but the signature does not declare it; add the bound 'b: 'a"},
+		},
+		// outer's body is inferred before C's, and C's member body does not see outer's 'a.
+		{
+			name: "a module-level function's lifetime does not reach a closure in a class member",
+			src: `fn outer<'a>(q: &'a {value: number}) -> &'a {value: number} {
+  val f = fn (x: &'a {value: number}) -> &'a {value: number} { return x }
+  return q
+}
+class C<'a> {
+  peer: &'a mut {value: number},
+  run(&mut self) -> undefined {
+    val f = fn <'b>(p: &'b mut {value: number}) { self.peer = p }
+  },
+}`,
+		},
 		{
 			name: "a closure's own lifetime unrelated to the enclosing one of the same name is not checked against it",
 			src: `fn outer<'a>(p: &mut {cb: 'a fn () -> undefined}) {
