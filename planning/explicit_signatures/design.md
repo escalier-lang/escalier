@@ -254,6 +254,51 @@ The options for a written type with an elided lifetime were:
 - **Inference decides.** The body fills in an elided lifetime in a function
   that has one, and elision applies only to a bodyless declaration.
 
+The two options differ only where the body holds less than elision gives. In
+`loadBare` from section 2, the body calls `pick` before its first `await`
+and reads nothing after it:
+
+```esc
+async fn loadBare(pick: fn () -> string) -> Promise<number> {
+    val key = pick()
+    await tick()
+    return key.length
+}
+// elision decides:  fn <'a>(pick: 'a fn () -> string) -> 'a Promise<number>
+// inference decides: fn (pick: fn () -> string) -> 'static Promise<number>
+
+declare fn loadDeclared(pick: fn () -> string) -> Promise<number>
+// either option:    fn <'a>(pick: 'a fn () -> string) -> 'a Promise<number>
+```
+
+Under inference, `loadBare` and `loadDeclared` write the same signature and
+mean different things, so a caller's closure is released at the call to one
+and held until the other's promise settles. Under elision both mean the
+second, and an author who wants `loadBare`'s call-only reading writes it:
+
+```esc
+async fn load(pick: fn () -> string) -> 'static Promise<number> {
+    val key = pick()
+    await tick()
+    return key.length
+}
+// load: fn (pick: fn () -> string) -> 'static Promise<number>
+```
+
+Where the body holds what elision gives, the options agree, and the written
+type means the same either way:
+
+```esc
+async fn show(p: &Flat) -> Promise<number> {
+    await tick()
+    return p.x
+}
+// either option:    fn <'a>(p: &'a Flat) -> 'a Promise<number>
+
+fn first(a: &Flat) -> &Flat { return a }
+// either option:    fn <'a>(a: &'a Flat) -> &'a Flat
+```
+
 Recommendation: elision decides. A reader can then read any written type
 without the body, and a bodyless declaration and a function with a body mean
 the same thing when they write the same signature.
