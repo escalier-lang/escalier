@@ -1444,6 +1444,7 @@ func (*DuplicateConstructorSignatureError) isSolverError()  {}
 func (*FieldInitializerNotAllowedError) isSolverError()     {}
 func (*SubclassConstructorRequiredError) isSolverError()    {}
 func (*NotConstructibleError) isSolverError()               {}
+func (*CallOfFunctionTopError) isSolverError()              {}
 func (*CallSignatureRequiresDeclareError) isSolverError()   {}
 func (*WriteOnlyPropertyError) isSolverError()              {}
 func (*ReadOnlyPropertyError) isSolverError()               {}
@@ -2112,6 +2113,18 @@ func (e *NotConstructibleError) Message() string {
 	// rather than under its registry name.
 	name := soltype.Print(&soltype.ClassType{Name: e.Class})
 	return fmt.Sprintf("`%s` cannot be constructed because it declares no public constructor", name)
+}
+
+// CallOfFunctionTopError fires on a call whose callee has type `function`, or is a type
+// parameter bounded by it.
+type CallOfFunctionTopError struct {
+	Node ast.Node
+}
+
+func (e *CallOfFunctionTopError) Span() ast.Span      { return e.Node.Span() }
+func (e *CallOfFunctionTopError) Related() []ast.Span { return nil }
+func (e *CallOfFunctionTopError) Message() string {
+	return "cannot call a value of type function, since its parameters are unknown; narrow it to a function type first"
 }
 
 // SubclassConstructorRequiredError fires when a class with an `extends` clause
@@ -3842,6 +3855,8 @@ func describe(t soltype.Type) string {
 		return "never"
 	case *soltype.UnknownType:
 		return "unknown"
+	case *soltype.FunctionTopType:
+		return "function"
 	case *soltype.ErrorType:
 		return "error"
 	case *soltype.UnionType:

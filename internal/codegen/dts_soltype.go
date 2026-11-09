@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -100,7 +101,14 @@ type solTypeAnnBuilder struct {
 	// the path for the body of `I` is `i`, and its property `key` is at `i.key`. It is
 	// empty when the object describes no value a path reaches.
 	valuePath string
+	// runtimeTypes collects the `@escalier/runtime` types the render references by name,
+	// for the caller to import. A nil set imports nothing, and a type that would need an
+	// import renders as the type it stands for instead.
+	runtimeTypes set.Set[string]
 }
+
+// runtimeValueTypeName is the name `@escalier/runtime` exports the ValueType alias under.
+const runtimeValueTypeName = "ValueType"
 
 // newSolTypeAnnBuilder returns a renderer for one declaration. typeParams are
 // that declaration's own, since nothing inside its body binds them.
@@ -213,6 +221,10 @@ func (b *solTypeAnnBuilder) typeAnn(t soltype.Type) TypeAnn {
 		return NewNeverTypeAnn(nil)
 	case *soltype.UnknownType:
 		return NewUnknownTypeAnn(nil)
+	case *soltype.FunctionTopType:
+		// TypeScript's `Function` admits a class and a callable object as well as a plain
+		// function, which is the set `function` admits.
+		return NewRefTypeAnn("Function", nil)
 	case *soltype.ErrorType:
 		// The recovery sentinel absorbs in both directions, as `any` does, so a
 		// declaration built after a reported error cascades no second one.
@@ -236,6 +248,15 @@ func (b *solTypeAnnBuilder) typeAnn(t soltype.Type) TypeAnn {
 	case *soltype.ClassType:
 		return NewRefTypeAnn(b.refName(t.Name), b.typeArgs(t.Name, t.TypeArgs, t.Defaults))
 	case *soltype.AliasType:
+		// TypeScript has no ValueType, so the built-in alias renders as the alias
+		// `@escalier/runtime` exports, or as the union it names when no import is possible.
+		if t.Name == soltype.ValueTypeName {
+			if b.runtimeTypes == nil {
+				return b.typeAnn(&soltype.UnionType{Types: soltype.ValueTypeMembers()})
+			}
+			b.runtimeTypes.Add(runtimeValueTypeName)
+			return NewRefTypeAnn(runtimeValueTypeName, nil)
+		}
 		return NewRefTypeAnn(b.refName(t.Name), b.typeArgs(t.Name, t.TypeArgs, t.Defaults))
 	case *soltype.GeneratorType:
 		// Both take three type arguments in TypeScript. Escalier's fourth, what

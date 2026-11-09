@@ -70,6 +70,7 @@ func (b *Builder) BuildDefinitions(
 	b.solSymbolAliases = nil
 	b.solSymbolAliasNames = map[int]string{}
 	b.solModuleNames = declaredModuleNames(namespaceGroups)
+	b.solRuntimeTypes = set.NewSet[string]()
 
 	// A class and an enum each hold a type binding and a value binding pointing at one
 	// declaration, so the walk would reach the declaration twice without this.
@@ -116,8 +117,25 @@ func (b *Builder) BuildDefinitions(
 	}
 
 	// The aliases go first. TypeScript resolves a name anywhere in the file, so the order
-	// is only for a reader, who meets each alias before the namespace that uses it.
-	return &Module{Stmts: append(symbolAliasStmts(b.solSymbolAliases), stmts...)}
+	// is only for a reader, who meets each alias before the namespace that uses it. The
+	// runtime import goes ahead of them, where a reader expects imports.
+	stmts = append(symbolAliasStmts(b.solSymbolAliases), stmts...)
+	return &Module{Stmts: append(runtimeImportStmts(b.solRuntimeTypes), stmts...)}
+}
+
+// runtimeImportStmts returns the import of the named `@escalier/runtime` types, sorted, or
+// nothing when names is empty.
+func runtimeImportStmts(names set.Set[string]) []Stmt {
+	if names.Len() == 0 {
+		return nil
+	}
+	specifiers := names.ToSlice()
+	sort.Strings(specifiers)
+	return []Stmt{&DeclStmt{
+		Decl:   NewImportDecl(specifiers, "@escalier/runtime", nil),
+		span:   nil,
+		source: nil,
+	}}
 }
 
 // solSymbolAlias is one private top-level value that holds a unique symbol under a name
@@ -315,6 +333,11 @@ func (b *Builder) solRenderer(names solNames, companionPrefix string, typeParams
 	render := newSolTypeAnnBuilder(names, companionPrefix, typeParams)
 	render.symbolKeys = b.symbolKeysForBlock()
 	render.symbolPaths = b.solSymbolKeys
+	// An imported `ValueType` would clash with a declaration of that name anywhere in the
+	// module, so such a module keeps the union written out.
+	if !b.solModuleNames.Contains(runtimeValueTypeName) {
+		render.runtimeTypes = b.solRuntimeTypes
+	}
 	return render
 }
 

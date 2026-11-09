@@ -1999,7 +1999,7 @@ func (e *typeEvaluator) reduceExactness(kind soltype.ExactnessKind, operand solt
 		return op
 	case *soltype.PrimType, *soltype.LitType, *soltype.RegexType, *soltype.NeverType,
 		*soltype.UnknownType, *soltype.NullType, *soltype.UndefinedType, *soltype.GeneratorType,
-		*soltype.ErrorType:
+		*soltype.ErrorType, *soltype.FunctionTopType:
 		return reduced
 	}
 	return &soltype.ExactnessType{Kind: kind, Operand: reduced}

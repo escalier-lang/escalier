@@ -249,6 +249,22 @@ func (s *Scope) GetType(name string) (TypeBinding, bool) {
 	return TypeBinding{}, false
 }
 
+// getTypeOutsideBuiltins resolves name the way GetType does, stopping at the first builtin
+// scope, so a binding only a builtin scope holds is not found.
+func (s *Scope) getTypeOutsideBuiltins(name string) (TypeBinding, bool) {
+	for cur := s; cur != nil && !cur.builtin; cur = cur.parent {
+		if b, ok := cur.types[name]; ok {
+			return b, true
+		}
+		for _, ns := range cur.unprefixed {
+			if b, ok := ns.Types[name]; ok {
+				return b, true
+			}
+		}
+	}
+	return TypeBinding{}, false
+}
+
 // OwnType resolves name in this scope's own type map, without walking to the
 // parent. It is how a lookup asks for a binding this scope itself made, as
 // opposed to one an enclosing scope seeded under the same name.

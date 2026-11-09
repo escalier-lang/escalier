@@ -229,9 +229,11 @@ func (c *checker) holdsValueType(t soltype.Type) bool {
 		return true
 	}
 
-	if u, ok := c.expandAliasChain(t).(*soltype.UnionType); ok {
-		for _, member := range u.Types {
-			if !c.holdsValueType(member) {
+	// unionMembers flattens nested unions and aliases, and reads an alias that names itself
+	// once, so `type Loop = Loop | number` yields `number` instead of expanding forever.
+	if _, ok := c.expandAliasChain(t).(*soltype.UnionType); ok {
+		for _, member := range c.unionMembers(t) {
+			if !c.isValueShaped(member) {
 				return false
 			}
 		}
