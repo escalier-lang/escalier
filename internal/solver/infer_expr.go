@@ -540,20 +540,20 @@ func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.
 func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Block, node ast.Node, allowTypeParams, inClass bool) *soltype.FuncType {
 	// Give this function its own named-lifetime scope so a `&'a` in its signature
 	// resolves consistently across its params and return, without sharing the name
-	// with an enclosing or sibling function. Restored on exit so a nested function
-	// does not clobber the outer scope's names.
+	// with a sibling function. Restored on exit so a nested function does not clobber
+	// the outer scope's names.
 	//
-	// A class member starts from the class's own parameters rather than from nothing, so a
-	// member writing the class's `&'a` reaches the variable that parameter carries. A name
-	// this signature rebinds shadows the class's, and nestedLifetimeScope drops those.
-	// namedLifetime allocates the map on first use, so a plain function with no `&'a`
-	// annotation pays no allocation.
-	savedNamedLts := c.namedLifetimes
-	c.namedLifetimes = c.nestedLifetimeScope(sig.LifetimeParams)
-	defer func() { c.namedLifetimes = savedNamedLts }()
-	// inherited holds the outer names the signature can write, which its body passes on to a
-	// closure or nested function together with the names it binds itself.
-	inherited := lifetimeNames(c.namedLifetimes)
+	// The scope starts from the parameters of an enclosing class and of each enclosing
+	// function, so a member writing the class's `&'a`, or a closure writing its enclosing
+	// function's `'a`, reaches the variable that parameter carries. A name this signature
+	// rebinds shadows the outer one, and nestedLifetimeScope drops those. namedLifetime
+	// allocates the map on first use, so a plain function with no `&'a` annotation pays no
+	// allocation.
+	//
+	// outerScope and outerBounds are the enclosing functions' lifetimes before this signature
+	// hides the names it binds, for checkSignatureImpliesBodyLifetimes to read.
+	outerScope, outerBounds := c.enclosingLifetimes, c.enclosingBounds
+	defer c.enterLifetimeScope(sig.LifetimeParams)()
 	// Take the name inferMemberBodies left for this member, and clear it so a lambda nested in
 	// the body walked below is not blamed under the member's name. It is empty for every function
 	// that is not a class member.
@@ -940,10 +940,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// A function type written with no lifetime in the body gets a fresh one, as an elided
 		// `&` does there.
 		c.fnElision = elideFresh
-		savedEnclosing := c.enclosingLifetimes
-		c.enclosingLifetimes = c.bodyLifetimeScope(inherited, sig.LifetimeParams)
+		restoreScope := c.enterBodyLifetimeScope(sig, lvl)
 		c.inferBlock(fnScope, lvl, body)
-		c.enclosingLifetimes = savedEnclosing
+		restoreScope()
 		if deferred != "" {
 			c.deferredBodies = c.deferredBodies[:len(c.deferredBodies)-1]
 		}
@@ -1138,8 +1137,8 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// not tied until every body in the group has been walked.
 	if hasBody {
 		c.queueReturnCheck(node, ft, lvl-1, memberName)
-		// The signature's whole scope is interned by now, including a name a later parameter
-		// writes.
+		// The scope holds every name the signature's positions wrote, including a name a
+		// parameter after this one writes.
 		for i := range callOnlyParams {
 			callOnlyParams[i].scope = c.namedLifetimes
 		}
@@ -1154,7 +1153,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// The converse also holds: every relation the body imposes between the lifetimes
 		// the signature names must be one the signature declares, since callers read only
 		// the signature.
-		c.checkSignatureImpliesBodyLifetimes(sig, ft)
+		c.checkSignatureImpliesBodyLifetimes(sig, ft, outerScope, outerBounds)
 		// A body-carrying generic function must actually produce every type parameter it
 		// declares in an output position. A bodyless `declare fn` asserts its signature
 		// with no body to check, so it is not verified here.

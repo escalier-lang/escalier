@@ -32,9 +32,11 @@ import (
 // `fn <'b>(g: 'b fn () -> undefined) { p.cb = g }` in its body needs 'b to outlive outer's 'a,
 // which `<'b: 'a>` declares.
 //
-// sig is the function's signature and ft its inferred type. A lifetime the enclosing class
-// declares is not checked here.
-func (c *checker) checkSignatureImpliesBodyLifetimes(sig ast.FuncSig, ft *soltype.FuncType) {
+// sig is the function's signature and ft its inferred type. outerScope and outerBounds are
+// the enclosing functions' lifetimes and their bounds, as enclosingLifetimes and
+// enclosingBounds held them before the signature hid the names it binds. A lifetime the
+// enclosing class declares is not checked here.
+func (c *checker) checkSignatureImpliesBodyLifetimes(sig ast.FuncSig, ft *soltype.FuncType, outerScope map[string]*soltype.LifetimeVar, outerBounds map[string]set.Set[string]) {
 	ltParams := sig.LifetimeParams
 	named := map[string]*soltype.LifetimeVar{}
 	binders := map[string]*ast.LifetimeParam{}
@@ -90,22 +92,35 @@ func (c *checker) checkSignatureImpliesBodyLifetimes(sig ast.FuncSig, ft *soltyp
 	// does not choose. So each relation the body requires from one of the signature's lifetimes
 	// to it has to be declared too. A name the signature binds itself hides the enclosing
 	// lifetime of that name, which then cannot be named in a bound.
+	// A bound on an enclosing lifetime also covers each one that lifetime's function declares
+	// or implies it outlives.
 	own := set.NewSet[string]()
 	for _, p := range ltParams {
 		own.Add(p.Name)
 	}
-	outerNames := slices.Sorted(maps.Keys(c.enclosingLifetimes))
+	covers := func(sub, super string) bool {
+		if declared.implies(sub, super) {
+			return true
+		}
+		for via := range declared.outlives[sub] {
+			if !own.Contains(via) && outerBounds[via].Contains(super) {
+				return true
+			}
+		}
+		return false
+	}
+	outerNames := slices.Sorted(maps.Keys(outerScope))
 	for _, sub := range order {
 		if forcedStatic(named[sub]) {
 			continue
 		}
 		reach := set.FromSlice(outlivedBy(named[sub]))
 		for _, name := range outerNames {
-			if !reach.Contains(c.enclosingLifetimes[name]) {
+			if !reach.Contains(outerScope[name]) {
 				continue
 			}
 			shadowed := own.Contains(name)
-			if shadowed || !declared.implies(sub, name) {
+			if shadowed || !covers(sub, name) {
 				c.report(&LifetimeRelationUndeclaredError{Sub: sub, Super: name, Shadowed: shadowed, Param: binders[sub]})
 			}
 		}

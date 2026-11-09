@@ -243,10 +243,11 @@ func (c *checker) checkCallOnlyParams() {
 				if _, inResult := lts.result[kept]; inResult && !inOther {
 					continue
 				}
-				if name, named := c.signatureLts[kept]; named && p.scope[name[1:]] == kept && keeper == "" {
+				enclosing := kept.ID < p.outerMark
+				if name, named := c.signatureLts[kept]; named && (inOther || enclosing) && p.scope[name[1:]] == kept && keeper == "" {
 					keeper = name
 				}
-				outside = outside || inOther || kept.Level < lt.Level || kept.ID < p.outerMark
+				outside = outside || inOther || kept.Level < lt.Level || enclosing
 			}
 		}
 		if static || outside {

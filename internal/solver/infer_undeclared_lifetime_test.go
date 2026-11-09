@@ -70,8 +70,8 @@ func TestInferStaticLifetimeNeverUndeclared(t *testing.T) {
 
 // A lifetime an enclosing function's `<…>` list binds is in scope in a closure written in its
 // body, so the closure `relay` may write `&'a` with no clause of its own.
-// TestInferUndeclaredLifetimeNestedSeesEnclosingClause covers that case and a lifetime no
-// enclosing function binds, which is still undeclared.
+// TestInferUndeclaredLifetimeNestedSeesEnclosingClause covers that case, a name the closure's
+// own clause hides, and a lifetime no enclosing function binds, which is undeclared.
 func TestInferUndeclaredLifetimeNestedSeesEnclosingClause(t *testing.T) {
 	tests := []struct {
 		name string
@@ -84,6 +84,28 @@ func TestInferUndeclaredLifetimeNestedSeesEnclosingClause(t *testing.T) {
   val relay = fn (q: &'a {x: number}) -> &'a {x: number} { return q }
   return p
 }`,
+		},
+		// outer's 'a appears only in a bound, so no position interns it before the body. The
+		// body's scope interns it, so the closure reaches outer's 'a.
+		{
+			name: "declared by the enclosing function and written only in a bound",
+			src: `fn outer<'a, 'b: 'a>(x: &'b {x: number}) -> &'a {x: number} {
+  val f = fn (q: &'a {x: number}) -> &'a {x: number} { return q }
+  return x
+}`,
+		},
+		// The closure's own 'a hides outer's in a function type its own signature writes, and
+		// that function type binds no 'a of its own.
+		{
+			name: "hidden by the closure's own clause in a nested function type",
+			src: `fn outer<'a>(p: &'a {x: number}) -> &'a {x: number} {
+  val inner = fn <'a>(g: fn (x: &'a {x: number}) -> undefined) {}
+  return p
+}`,
+			want: []string{
+				"2:19-2:21: lifetime parameter 'a is declared but never used",
+				"2:34-2:36: lifetime 'a is used but not declared; add `<'a>` to the enclosing function signature",
+			},
 		},
 		{
 			name: "declared by no enclosing function",

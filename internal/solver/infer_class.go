@@ -976,30 +976,85 @@ func (c *checker) nestedLifetimeScope(own []*ast.LifetimeParam) map[string]*solt
 	return out
 }
 
-// lifetimeNames returns the names scope maps.
-func lifetimeNames(scope map[string]*soltype.LifetimeVar) set.Set[string] {
-	return set.FromSlice(slices.Collect(maps.Keys(scope)))
+// enterLifetimeScope installs the named-lifetime scope of a signature whose `<…>` clause is
+// own, as nestedLifetimeScope builds it, and returns a function that restores the scopes in
+// force before. While it is installed, enclosingLifetimes and enclosingBounds leave out each
+// name own binds, so a function type nested in the signature reaches own's lifetime rather
+// than the enclosing function's lifetime of the same name.
+func (c *checker) enterLifetimeScope(own []*ast.LifetimeParam) (restore func()) {
+	savedNamed, savedEnclosing, savedBounds := c.namedLifetimes, c.enclosingLifetimes, c.enclosingBounds
+	c.namedLifetimes = c.nestedLifetimeScope(own)
+	c.enclosingLifetimes, c.enclosingBounds = hideLifetimes(c.enclosingLifetimes, c.enclosingBounds, own)
+	return func() {
+		c.namedLifetimes, c.enclosingLifetimes, c.enclosingBounds = savedNamed, savedEnclosing, savedBounds
+	}
 }
 
-// bodyLifetimeScope returns the lifetime names a function's body passes on to a closure or a
-// nested function written in it, each mapped to its variable. They are inherited, the outer
-// names the function's signature can write, and each name own binds. It reads the variables
-// from the function's named-lifetime scope, so it runs while that scope is installed and after
-// the signature's positions have interned own's names. A name own binds that no position
-// writes binds nothing and is left out.
-func (c *checker) bodyLifetimeScope(inherited set.Set[string], own []*ast.LifetimeParam) map[string]*soltype.LifetimeVar {
-	out := map[string]*soltype.LifetimeVar{}
-	for name := range inherited {
-		if v, ok := c.namedLifetimes[name]; ok {
-			out[name] = v
-		}
-	}
+// hideLifetimes returns scope and bounds without each name own binds. A bound whose target is
+// such a name is dropped too, since that name now denotes own's lifetime. Both results are
+// fresh, and each is nil when nothing is left.
+func hideLifetimes(scope map[string]*soltype.LifetimeVar, bounds map[string]set.Set[string], own []*ast.LifetimeParam) (map[string]*soltype.LifetimeVar, map[string]set.Set[string]) {
+	hidden := set.NewSet[string]()
 	for _, p := range own {
-		if v, ok := c.namedLifetimes[p.Name]; ok && p.Name != "static" {
-			out[p.Name] = v
+		hidden.Add(p.Name)
+	}
+	var outScope map[string]*soltype.LifetimeVar
+	for name, v := range scope {
+		if !hidden.Contains(name) {
+			if outScope == nil {
+				outScope = map[string]*soltype.LifetimeVar{}
+			}
+			outScope[name] = v
 		}
 	}
-	return out
+	var outBounds map[string]set.Set[string]
+	for name, supers := range bounds {
+		if hidden.Contains(name) {
+			continue
+		}
+		kept := set.NewSet[string]()
+		for super := range supers {
+			if !hidden.Contains(super) {
+				kept.Add(super)
+			}
+		}
+		if outBounds == nil {
+			outBounds = map[string]set.Set[string]{}
+		}
+		outBounds[name] = kept
+	}
+	return outScope, outBounds
+}
+
+// enterBodyLifetimeScope makes the names a function's signature binds part of the enclosing
+// scope a closure or function type written in its body starts from, and returns a function
+// that restores the scope in force before. sig is the function's signature. It runs while the
+// signature's named-lifetime scope is installed. A name the signature binds that no position
+// wrote is interned here, so a closure that writes it reaches the function's lifetime. The
+// bounds the signature declares and implies join enclosingBounds.
+func (c *checker) enterBodyLifetimeScope(sig ast.FuncSig, lvl int) (restore func()) {
+	savedEnclosing, savedBounds := c.enclosingLifetimes, c.enclosingBounds
+	if len(sig.LifetimeParams) == 0 {
+		return func() {}
+	}
+	scope := maps.Clone(c.enclosingLifetimes)
+	if scope == nil {
+		scope = map[string]*soltype.LifetimeVar{}
+	}
+	bounds := maps.Clone(c.enclosingBounds)
+	if bounds == nil {
+		bounds = map[string]set.Set[string]{}
+	}
+	for name, supers := range declaredOutlives(sig.LifetimeParams, impliedOutlives(sig)).outlives {
+		bounds[name] = supers
+	}
+	for _, p := range sig.LifetimeParams {
+		if p.Name != "static" {
+			scope[p.Name] = c.namedLifetime(p.Name, lvl)
+		}
+	}
+	c.enclosingLifetimes, c.enclosingBounds = scope, bounds
+	return func() { c.enclosingLifetimes, c.enclosingBounds = savedEnclosing, savedBounds }
 }
 
 // signatureLifetimeParams returns the binder a class member's or call signature's own `<…>`

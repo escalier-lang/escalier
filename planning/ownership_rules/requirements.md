@@ -1810,7 +1810,7 @@ body needs from one of them to an enclosing lifetime has to be declared, as
 `fn <'b: 'a>(g: 'b fn () -> undefined) { p.cb = g }` declares it. Without the
 bound the closure reports `the body requires 'b to outlive 'a, but the
 signature does not declare it; add the bound 'b: 'a`. A name that no enclosing
-function declares is still reported as used but not declared.
+function declares is reported as used but not declared.
 
 Each error follows the shape of Rust's. It names the value, what the value
 borrows, what keeps the value and for how long, and the fix. Two examples:

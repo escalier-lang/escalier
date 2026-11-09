@@ -1377,9 +1377,7 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, recv *as
 	// nested `fn<'a: 'static>(…)` annotation would resolve `'a` to the enclosing
 	// function's `'a` and its declared bound would force that outer lifetime, so an
 	// unrelated borrow parameter of the enclosing function would be pinned to 'static.
-	savedNamedLts := c.namedLifetimes
-	c.namedLifetimes = c.nestedLifetimeScope(ta.LifetimeParams)
-	defer func() { c.namedLifetimes = savedNamedLts }()
+	defer c.enterLifetimeScope(ta.LifetimeParams)()
 
 	// Resolve the annotation's type parameters into a child scope so a parameter, the
 	// return, and any union member all read a sibling `T` as one shared var. A

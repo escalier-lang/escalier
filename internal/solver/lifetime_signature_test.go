@@ -91,6 +91,32 @@ func TestSignatureImpliesBodyLifetimes(t *testing.T) {
 			}`,
 			want: []string{"2:21-2:23: the body requires 'a to outlive the enclosing function's 'a, which this signature's own 'a hides; rename it and add the bound"},
 		},
+		// outer declares 'c: 'a through `&'a &'c`, so the closure's bound 'b: 'c covers 'b: 'a.
+		{
+			name: "a bound on an enclosing lifetime covers what that lifetime outlives",
+			src: `fn outer<'a, 'c>(p: &mut {cb: 'a fn () -> undefined}, q: &mut {cb: 'c fn () -> undefined}, r: &'a &'c {x: number}) {
+				val inner = fn <'b: 'c>(g: 'b fn () -> undefined) {
+					q.cb = g
+					p.cb = g
+				}
+			}`,
+		},
+		{
+			name: "a bound on an enclosing lifetime that does not outlive the other reports",
+			src: `fn outer<'a, 'c>(p: &mut {cb: 'a fn () -> undefined}, q: &mut {cb: 'c fn () -> undefined}) {
+				val inner = fn <'b: 'c>(g: 'b fn () -> undefined) {
+					q.cb = g
+					p.cb = g
+				}
+			}`,
+			want: []string{"2:21-2:27: the body requires 'b to outlive 'a, but the signature does not declare it; add the bound 'b: 'a"},
+		},
+		// A class's lifetimes are not checked against a member's own, and neither are they
+		// against a closure's in the member's body.
+		{
+			name: "a relation to a class lifetime from a closure in a member is not checked",
+			src:  `class C<'a> { peer: &'a mut {value: number}, run(&mut self) -> undefined { val f = fn <'b>(p: &'b mut {value: number}) { self.peer = p } } }`,
+		},
 		{
 			name: "a closure's own lifetime unrelated to the enclosing one of the same name is not checked against it",
 			src: `fn outer<'a>(p: &mut {cb: 'a fn () -> undefined}) {
