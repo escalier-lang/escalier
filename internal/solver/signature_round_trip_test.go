@@ -172,6 +172,29 @@ func TestBorrowOfTypeParamIntoOwned(t *testing.T) {
 			want: []string{"1:16-1:18: cannot use borrowed &T as owned T"},
 		},
 		{
+			name: "into the same type parameter bounded by a primitive",
+			src:  `fn f<T: number>(p: &T) -> T { return p }`,
+			want: nil,
+		},
+		{
+			name: "into the same type parameter bounded by a union of primitives",
+			src:  `fn f<T: number | string>(p: &T) -> T { return p }`,
+			want: nil,
+		},
+		{
+			name: "field read through a local into the same type parameter bounded by a primitive",
+			src: `fn f<T: number>(p: &{x: T}) -> T {
+				val y = p.x
+				return y
+			}`,
+			want: nil,
+		},
+		{
+			name: "into the same type parameter bounded by an object",
+			src:  `fn f<T: {x: number}>(p: &T) -> T { return p }`,
+			want: []string{"1:25-1:27: cannot use borrowed &T as owned T"},
+		},
+		{
 			name: "mutable borrow into the same type parameter",
 			src:  `fn steal<T>(p: &mut T) -> T { return p }`,
 			want: []string{"1:16-1:22: cannot use borrowed &mut T as owned T"},

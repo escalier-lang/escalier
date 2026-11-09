@@ -105,6 +105,13 @@ func forcedConcreteFloor(root *soltype.TypeVarType, admitted func(soltype.Type) 
 	var walkVar func(v *soltype.TypeVarType) (soltype.Type, bool)
 	var walkBound func(b soltype.Type) (soltype.Type, bool)
 	walkBound = func(b soltype.Type) (soltype.Type, bool) {
+		// A borrow of a variable holds whatever the variable does. A read of a field typed
+		// by a parameter `T` borrows a variable whose lower bound is `T`.
+		if ref, isRef := b.(*soltype.RefType); isRef {
+			if v, isVar := ref.Inner.(*soltype.TypeVarType); isVar {
+				b = v
+			}
+		}
 		switch b := b.(type) {
 		case *soltype.TypeVarType:
 			if paramVars.Contains(b) {
@@ -120,16 +127,6 @@ func forcedConcreteFloor(root *soltype.TypeVarType, admitted func(soltype.Type) 
 				}
 			}
 			return nil, false
-		case *soltype.RefType:
-			// A borrow of a variable holds whatever the variable does. A read of a field
-			// typed by a parameter `T` borrows a variable whose lower bound is `T`.
-			if v, isVar := b.Inner.(*soltype.TypeVarType); isVar {
-				return walkBound(v)
-			}
-			if mentionsAnyVar(b, paramVars) {
-				return nil, false
-			}
-			return b, true
 		default:
 			if mentionsAnyVar(b, paramVars) {
 				return nil, false // the value depends on the caller's own type parameter
