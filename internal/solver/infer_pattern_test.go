@@ -664,7 +664,7 @@ func TestInferRestPatternUnknownScrutineeShape(t *testing.T) {
 				fn f([a, ...rest]) {
 					return rest
 				}`,
-			want: "fn ([a, ...rest]: [unknown, ...]) -> [...]",
+			want: "fn <'a>([a, ...rest]: &'a [unknown, ...]) -> &'a [...]",
 		},
 		{
 			// The parameter is inexact because the pattern names a rest. See
@@ -674,7 +674,7 @@ func TestInferRestPatternUnknownScrutineeShape(t *testing.T) {
 				fn f({x, ...rest}) {
 					return rest
 				}`,
-			want: "fn ({x, ...rest}: {x: unknown, ...}) -> {...}",
+			want: "fn <'a>({x, ...rest}: &'a {x: unknown, ...}) -> &'a {...}",
 		},
 	}
 	for _, tt := range tests {
@@ -753,19 +753,19 @@ func TestInferRestPatternParamAdmitsExtraFields(t *testing.T) {
 			val r = f({x: 1, y: 2})
 		`)
 		require.Empty(t, errs)
-		require.Equal(t, "fn <T0>({x, ...rest}: {x: T0, ...}) -> T0", values["f"])
+		require.Equal(t, "fn <T0, 'a>({x, ...rest}: &'a {x: T0, ...}) -> &'a T0", values["f"])
 	})
 
 	t.Run("no rest still closes to exact", func(t *testing.T) {
 		values, _, errs := inferSource(t, `fn f({x}) { return x }`)
 		require.Empty(t, errs)
-		require.Equal(t, "fn <T0>({x}: {x: T0}) -> T0", values["f"])
+		require.Equal(t, "fn <T0, 'a>({x}: &'a {x: T0}) -> &'a T0", values["f"])
 	})
 
 	// `f` is declared with the signature "no rest still closes to exact" asserts.
 	t.Run("an exact param rejects extra fields", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
-			declare fn f<T0>(p: {x: T0}) -> T0
+			declare fn f<T0, 'a>(p: &'a {x: T0}) -> &'a T0
 			val r = f({x: 1, y: 2})
 		`)
 		require.Len(t, errs, 1)
@@ -778,7 +778,7 @@ func TestInferRestPatternParamAdmitsExtraFields(t *testing.T) {
 			val r = f([1, 2, 3])
 		`)
 		require.Empty(t, errs)
-		require.Equal(t, "fn <T0>([a, ...rest]: [T0, ...]) -> T0", values["f"])
+		require.Equal(t, "fn <T0, 'a>([a, ...rest]: &'a [T0, ...]) -> &'a T0", values["f"])
 	})
 }
 
@@ -932,6 +932,52 @@ func TestInferRestPatternRejectedPositions(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
 			require.Len(t, errs, 1)
 			require.Equal(t, tt.want, msgWithSpan(t, errs[0]))
+		})
+	}
+}
+
+// TestInferRestOnlyObjectPatternMatchesNamedField covers an object pattern made only of a
+// rest against the same scrutinee as a pattern with one named field. Both require an
+// object, so each pair accepts and rejects the same values. Only the span differs, since
+// the rest-only pattern underlines the whole pattern and the named field underlines the
+// field.
+func TestInferRestOnlyObjectPatternMatchesNamedField(t *testing.T) {
+	tests := []struct {
+		name      string
+		restSrc   string
+		fieldSrc  string
+		wantRest  []string
+		wantField []string
+	}{
+		{
+			name:     "MatchArmOverUnion",
+			restSrc:  "declare val x: number | {a: number}\nval r = match x { {...q} => 1, _ => 2 }",
+			fieldSrc: "declare val x: number | {a: number}\nval r = match x { {a} => 1, _ => 2 }",
+		},
+		{
+			name:     "IfValOverUnion",
+			restSrc:  "fn f(x: number | {a: number}) -> number { if val {...q} = x { return 1 }\n return 2 }",
+			fieldSrc: "fn f(x: number | {a: number}) -> number { if val {a} = x { return 1 }\n return 2 }",
+		},
+		{
+			name:     "ValElseOverUnion",
+			restSrc:  "fn f(x: number | {a: number}) -> number { val {...q} = x else { return 1 }\n return 2 }",
+			fieldSrc: "fn f(x: number | {a: number}) -> number { val {a} = x else { return 1 }\n return 2 }",
+		},
+		{
+			name:      "ValOverNumber",
+			restSrc:   "val {...q} = 5",
+			fieldSrc:  "val {a} = 5",
+			wantRest:  []string{"1:5-1:11: cannot constrain 5 <: object"},
+			wantField: []string{"1:6-1:7: cannot constrain 5 <: object"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, restErrs := inferSource(t, tt.restSrc)
+			require.Equal(t, tt.wantRest, messagesWithSpan(t, restErrs))
+			_, _, fieldErrs := inferSource(t, tt.fieldSrc)
+			require.Equal(t, tt.wantField, messagesWithSpan(t, fieldErrs))
 		})
 	}
 }

@@ -746,6 +746,17 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl, self *solt
 	if self != nil {
 		c.constrain(d.Init, initType, self)
 	}
+	// A `val q = p.x` through a borrowed parameter binds a read-through borrow. Each use of q
+	// instantiates the borrow's inner, and the copy has to stay read-through, so a read such
+	// as `q.y` keeps the borrow.
+	if ref, isRef := initType.(*soltype.RefType); isRef && !ref.Mut && d.Kind == ast.ValKind {
+		if v, isVar := ref.Inner.(*soltype.TypeVarType); isVar && c.readThroughVars.Contains(v) {
+			if c.readThroughLocals == nil {
+				c.readThroughLocals = set.NewSet[*soltype.TypeVarType]()
+			}
+			c.readThroughLocals.Add(v)
+		}
+	}
 	bound := initType
 	// M4 B3: an un-annotated body-level `var` widens at coalesce time like its
 	// top-level peer. The top-level SCC path flags the binding var it already

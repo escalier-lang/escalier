@@ -651,9 +651,14 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		}
 		// F3 makes an unannotated parameter that does not escape a borrow. A parameter the body
 		// only reads through does not escape, so it borrows immutably, as `p` in
-		// `fn read(p) { return p.x }` does. A function passed as a call argument keeps a plain
+		// `fn read(p) { return p.x }` does. A destructuring parameter whose leaves the body only
+		// reads through borrows the same way, as `{x}` in `fn take({x}) { return x }` does. Its
+		// leaves then bind as borrows too. A function passed as a call argument keeps a plain
 		// variable for each parameter, since the callee's signature gives each one its type.
-		if v, ok := pt.(*soltype.TypeVarType); ok && !written && !isArg && body != nil && identParamOnlyReadThrough(pat, rest, optional, body) {
+		if v, ok := pt.(*soltype.TypeVarType); ok && !written {
+			c.addUnannotatedParamVar(v)
+		}
+		if v, ok := pt.(*soltype.TypeVarType); ok && !written && !isArg && body != nil && paramOnlyReadThrough(pat, rest, optional, body) {
 			pt = soltype.NewRef(false, c.ctx.freshLifetime(lvl), v)
 			c.addReadThroughVar(v)
 		}
@@ -719,16 +724,6 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			// whose mismatch blame should point at the pattern.
 			if p.TypeAnn == nil {
 				c.recordProv(pt, pat, ParamBinding)
-				// A pattern naming a `...rest` binds the properties its fields do not, so
-				// the parameter has to admit an argument that carries them. Policy A would
-				// otherwise close the usage-inferred object to exact, which rejects every
-				// such argument and leaves the rest nothing to bind: `fn f({x, ...rest})`
-				// would infer the parameter `{x: T0}` and reject `f({x: 1, y: 2})` for the
-				// extra y. Marking the var open keeps the folded object inexact, the same
-				// row-polymorphic shape the written `open` marker produces.
-				if v, ok := pt.(*soltype.TypeVarType); ok && objectPatNamesRest(pat) {
-					v.Open = true
-				}
 			}
 			mirror := c.bindPattern(fnScope, lvl, pat, pt, paramTypes)
 			params[i] = &soltype.FuncParam{Pattern: mirror, Type: pt, Optional: optional, Rest: rest}
@@ -4156,6 +4151,14 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 		return newUnion(nil, []soltype.Type{borrow, &soltype.UndefinedType{}})
 	}
 	return fieldVar
+}
+
+// addUnannotatedParamVar adds v to unannotatedParamVars.
+func (c *checker) addUnannotatedParamVar(v *soltype.TypeVarType) {
+	if c.unannotatedParamVars == nil {
+		c.unannotatedParamVars = set.NewSet[*soltype.TypeVarType]()
+	}
+	c.unannotatedParamVars.Add(v)
 }
 
 // addReadThroughVar adds v to readThroughVars.
