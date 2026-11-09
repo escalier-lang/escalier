@@ -2241,15 +2241,12 @@ func (c *Context) copiesOutOfBorrowAt(t soltype.Type, depth int) bool {
 		return len(t.Types) > 0
 	case *soltype.AliasType:
 		return c.copiesOutOfBorrowAt(c.expandAlias(t), depth+1)
-	case *soltype.TypeVarType:
+	case *soltype.TypeVarType, *soltype.SkolemType:
 		// Only a declared parameter has a bound that says what every instantiation is. An
 		// inference variable's upper bounds record what its uses demanded so far.
-		if t.Rigid == nil {
+		if v, isVar := t.(*soltype.TypeVarType); isVar && v.Rigid == nil {
 			return false
 		}
-		bound, ok := paramUpperBound(t)
-		return ok && c.copiesOutOfBorrowAt(bound, depth+1)
-	case *soltype.SkolemType:
 		bound, ok := paramUpperBound(t)
 		return ok && c.copiesOutOfBorrowAt(bound, depth+1)
 	}

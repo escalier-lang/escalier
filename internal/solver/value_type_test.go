@@ -3,6 +3,7 @@ package solver
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -147,4 +148,25 @@ func TestANamespaceAliasShadowsValueType(t *testing.T) {
 		declare val g: wasm.G<5>
 	`)
 	require.Equal(t, []string{`cannot constrain 5 <: "a" | "b"`}, errorMessagesOf(errs))
+}
+
+// copiesOutOfBorrow answers false for an alias whose expansion never ends, rather than
+// expanding it forever. `type Loop = number | Loop` reaches Loop again on every expansion.
+func TestCopiesOutOfBorrowStopsOnARecursiveAlias(t *testing.T) {
+	ctx := &Context{}
+	loop := &soltype.AliasType{Name: "Loop"}
+	ctx.registerAlias("Loop", &AliasDef{
+		Body: &soltype.UnionType{Types: []soltype.Type{&soltype.PrimType{Prim: soltype.NumPrim}, loop}},
+	})
+	require.False(t, ctx.copiesOutOfBorrow(loop))
+}
+
+// A skolem bounded by ValueType copies out of a borrow, and an unbounded one does not.
+func TestCopiesOutOfBorrowReadsAParameterBound(t *testing.T) {
+	ctx := &Context{}
+	registerValueTypeAlias(ctx)
+	bounded := &soltype.SkolemType{Name: "T", Upper: &soltype.AliasType{Name: soltype.ValueTypeName}}
+	unbounded := &soltype.SkolemType{Name: "U"}
+	require.True(t, ctx.copiesOutOfBorrow(bounded))
+	require.False(t, ctx.copiesOutOfBorrow(unbounded))
 }
