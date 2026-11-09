@@ -1352,12 +1352,14 @@ func (c *checker) lookupClassBinding(scope *Scope, name string) (TypeBinding, bo
 		}
 	}
 
-	bare, bareOK := scope.GetType(name)
-	if bareOK {
-		if _, isClass := bare.Type.(*soltype.ClassType); !isClass {
-			return bare, true
+	// A namespace sibling outranks a builtin of the same name, as it does a class, so a
+	// namespace declaring its own `ValueType` resolves its references to that declaration.
+	if declared, ok := scope.getTypeOutsideBuiltins(name); ok {
+		if _, isClass := declared.Type.(*soltype.ClassType); !isClass {
+			return declared, true
 		}
 	}
+	bare, bareOK := scope.GetType(name)
 	if c.classNamespace != "" {
 		if b, ok := scope.GetType(declScopeKey(c.classNamespace, name)); ok {
 			return b, true

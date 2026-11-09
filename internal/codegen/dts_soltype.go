@@ -240,6 +240,10 @@ func (b *solTypeAnnBuilder) typeAnn(t soltype.Type) TypeAnn {
 	case *soltype.ClassType:
 		return NewRefTypeAnn(b.refName(t.Name), b.typeArgs(t.Name, t.TypeArgs, t.Defaults))
 	case *soltype.AliasType:
+		// TypeScript has no ValueType, so the built-in alias renders as the union it names.
+		if t.Name == soltype.ValueTypeName {
+			return b.typeAnn(&soltype.UnionType{Types: soltype.ValueTypeMembers()})
+		}
 		return NewRefTypeAnn(b.refName(t.Name), b.typeArgs(t.Name, t.TypeArgs, t.Defaults))
 	case *soltype.GeneratorType:
 		// Both take three type arguments in TypeScript. Escalier's fourth, what
