@@ -551,6 +551,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	savedNamedLts := c.namedLifetimes
 	c.namedLifetimes = c.nestedLifetimeScope(sig.LifetimeParams)
 	defer func() { c.namedLifetimes = savedNamedLts }()
+	// inherited holds the outer names the signature can write, which its body passes on to a
+	// closure or nested function together with the names it binds itself.
+	inherited := lifetimeNames(c.namedLifetimes)
 	// Take the name inferMemberBodies left for this member, and clear it so a lambda nested in
 	// the body walked below is not blamed under the member's name. It is empty for every function
 	// that is not a class member.
@@ -937,7 +940,10 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// A function type written with no lifetime in the body gets a fresh one, as an elided
 		// `&` does there.
 		c.fnElision = elideFresh
+		savedEnclosing := c.enclosingLifetimes
+		c.enclosingLifetimes = c.bodyLifetimeScope(inherited, sig.LifetimeParams)
 		c.inferBlock(fnScope, lvl, body)
+		c.enclosingLifetimes = savedEnclosing
 		if deferred != "" {
 			c.deferredBodies = c.deferredBodies[:len(c.deferredBodies)-1]
 		}
@@ -1132,6 +1138,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// not tied until every body in the group has been walked.
 	if hasBody {
 		c.queueReturnCheck(node, ft, lvl-1, memberName)
+		// The signature's whole scope is interned by now, including a name a later parameter
+		// writes.
+		for i := range callOnlyParams {
+			callOnlyParams[i].scope = c.namedLifetimes
+		}
 		c.queueCallOnlyChecks(callOnlyParams, ft)
 	}
 	// A body-carrying function must prove every lifetime bound its signature declares,

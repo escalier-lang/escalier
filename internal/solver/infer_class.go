@@ -952,21 +952,52 @@ func packageKeyPrefix(uri string) string {
 	return packageKeyHead + strings.ReplaceAll(escaped, ".", "%2E")
 }
 
-// nestedLifetimeScope returns the named-lifetime scope a signature nested in a class body
-// starts from: the class's own parameters, minus every name the signature rebinds. A rebound
-// name shadows the class's, so the `'a` of `pick<'a>` inside `class Holder<'a>` is a lifetime
-// of its own rather than the class's. own is the signature's `<…>` clause.
+// nestedLifetimeScope returns the named-lifetime scope a nested signature starts from: the
+// parameters of an enclosing class and of each enclosing function, minus every name the
+// signature rebinds. A rebound name shadows the outer one, so the `'a` of `pick<'a>` inside
+// `class Holder<'a>` is a lifetime of its own rather than the class's, and so is the `'a` of
+// `fn <'a>(…)` written in the body of `fn outer<'a>`. own is the signature's `<…>` clause.
 //
-// The result is a fresh map, so a name the signature mints stays out of the class's scope and
-// out of a sibling signature's. It is nil outside a class body, where a signature starts from
-// nothing.
+// The result is a fresh map, so a name the signature mints stays out of the outer scope and
+// out of a sibling signature's. It is nil outside every class and function body, where a
+// signature starts from nothing.
 func (c *checker) nestedLifetimeScope(own []*ast.LifetimeParam) map[string]*soltype.LifetimeVar {
-	if len(c.declLifetimes) == 0 {
+	if len(c.declLifetimes) == 0 && len(c.enclosingLifetimes) == 0 {
 		return nil
 	}
 	out := maps.Clone(c.declLifetimes)
+	if out == nil {
+		out = map[string]*soltype.LifetimeVar{}
+	}
+	maps.Copy(out, c.enclosingLifetimes)
 	for _, p := range own {
 		delete(out, p.Name)
+	}
+	return out
+}
+
+// lifetimeNames returns the names scope maps.
+func lifetimeNames(scope map[string]*soltype.LifetimeVar) set.Set[string] {
+	return set.FromSlice(slices.Collect(maps.Keys(scope)))
+}
+
+// bodyLifetimeScope returns the lifetime names a function's body passes on to a closure or a
+// nested function written in it, each mapped to its variable. They are inherited, the outer
+// names the function's signature can write, and each name own binds. It reads the variables
+// from the function's named-lifetime scope, so it runs while that scope is installed and after
+// the signature's positions have interned own's names. A name own binds that no position
+// writes binds nothing and is left out.
+func (c *checker) bodyLifetimeScope(inherited set.Set[string], own []*ast.LifetimeParam) map[string]*soltype.LifetimeVar {
+	out := map[string]*soltype.LifetimeVar{}
+	for name := range inherited {
+		if v, ok := c.namedLifetimes[name]; ok {
+			out[name] = v
+		}
+	}
+	for _, p := range own {
+		if v, ok := c.namedLifetimes[p.Name]; ok && p.Name != "static" {
+			out[p.Name] = v
+		}
 	}
 	return out
 }

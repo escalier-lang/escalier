@@ -705,13 +705,27 @@ fn h(x: fn () -> undefined, n: number) {
 			want: []string{"3:21-3:22: " + kept},
 		},
 		// 'a belongs to outer, so inner's parameter lifetime would have to outlive a lifetime
-		// of the enclosing body.
+		// of the enclosing body. outer's 'a is in scope in inner, so the fix names it.
 		{
 			name: "stored into a named-lifetime field of an enclosing function's parameter",
 			src: `fn outer<'a>(p: &mut {cb: 'a fn () -> undefined}) {
     val inner = fn (g: fn () -> undefined) { p.cb = g }
 }`,
-			want: []string{"2:21-2:22: " + kept},
+			want: []string{"2:21-2:22: 'g' may borrow values that live only during the call, but it is kept after the call returns; write `g: 'a fn () -> undefined` to keep it"},
+		},
+		{
+			name: "stored into a named-lifetime field of an enclosing function's parameter with that lifetime",
+			src: `fn outer<'a>(p: &mut {cb: 'a fn () -> undefined}) {
+    val inner = fn (g: 'a fn () -> undefined) { p.cb = g }
+}`,
+		},
+		// inner's own 'a hides outer's, so the fix cannot name outer's and falls back to 'static.
+		{
+			name: "stored into a named-lifetime field of an enclosing function's parameter under a hiding clause",
+			src: `fn outer<'a>(p: &mut {cb: 'a fn () -> undefined}) {
+    val inner = fn <'a>(g: fn () -> undefined, q: &'a {x: number}) { p.cb = g }
+}`,
+			want: []string{"2:25-2:26: " + kept},
 		},
 		// A closure that calls g holds g's borrows, so it may be kept no longer than g.
 		{

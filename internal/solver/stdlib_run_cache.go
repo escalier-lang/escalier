@@ -306,6 +306,7 @@ func (c *checker) fork(source ModuleSource, groupSource GroupSource, groups Pack
 	f.callOnlyDeferredRead = maps.Clone(c.callOnlyDeferredRead)
 	f.methodSelfParams = maps.Clone(c.methodSelfParams)
 	f.declLifetimes = maps.Clone(c.declLifetimes)
+	f.enclosingLifetimes = maps.Clone(c.enclosingLifetimes)
 	f.componentClasses = maps.Clone(c.componentClasses)
 	f.componentClassOf = maps.Clone(c.componentClassOf)
 	f.memberNamespaces = maps.Clone(c.memberNamespaces)

@@ -67,6 +67,36 @@ func TestSignatureImpliesBodyLifetimes(t *testing.T) {
 			name: "a declared function with no body is not checked",
 			src:  `declare fn f<'a, 'b>(x: &'a {x: number}, y: &'b {x: number}) -> &'b {x: number}`,
 		},
+		// A closure's caller chooses the closure's own lifetimes, so storing g into p's field
+		// needs 'b to outlive outer's 'a, which the closure's list has to declare.
+		{
+			name: "an undeclared relation to an enclosing function's lifetime reports",
+			src: `fn outer<'a>(p: &mut {cb: 'a fn () -> undefined}) {
+				val inner = fn <'b>(g: 'b fn () -> undefined) { p.cb = g }
+			}`,
+			want: []string{"2:21-2:23: the body requires 'b to outlive 'a, but the signature does not declare it; add the bound 'b: 'a"},
+		},
+		{
+			name: "a declared bound covers the relation to an enclosing function's lifetime",
+			src: `fn outer<'a>(p: &mut {cb: 'a fn () -> undefined}) {
+				val inner = fn <'b: 'a>(g: 'b fn () -> undefined) { p.cb = g }
+			}`,
+		},
+		// The closure's own 'a hides outer's, so its 'a is a separate lifetime and no bound can
+		// name outer's.
+		{
+			name: "a relation to an enclosing lifetime the closure's own clause hides reports",
+			src: `fn outer<'a>(p: &mut {cb: 'a fn () -> undefined}) {
+				val inner = fn <'a>(g: 'a fn () -> undefined) { p.cb = g }
+			}`,
+			want: []string{"2:21-2:23: the body requires 'a to outlive the enclosing function's 'a, which this signature's own 'a hides; rename it and add the bound"},
+		},
+		{
+			name: "a closure's own lifetime unrelated to the enclosing one of the same name is not checked against it",
+			src: `fn outer<'a>(p: &mut {cb: 'a fn () -> undefined}) {
+				val inner = fn <'a>(x: &'a {x: number}) -> &'a {x: number} { return x }
+			}`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

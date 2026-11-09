@@ -68,21 +68,41 @@ func TestInferStaticLifetimeNeverUndeclared(t *testing.T) {
 	require.Empty(t, errs)
 }
 
-// A nested function is judged by its own clause, not an enclosing one. The inner `relay`
-// declares no `<'a>`, so its `&'a` borrows are undeclared with no clause and are hard
-// errors, even though the outer function declares `<'a>`. An enclosing function's
-// lifetimes are not visible to a nested one.
-func TestInferUndeclaredLifetimeNestedJudgedByOwnClause(t *testing.T) {
-	_, _, errs := inferSource(t, `fn outer<'a>(p: &'a {x: number}) -> &'a {x: number} {
+// A lifetime an enclosing function's `<…>` list binds is in scope in a closure written in its
+// body, so the closure `relay` may write `&'a` with no clause of its own.
+// TestInferUndeclaredLifetimeNestedSeesEnclosingClause covers that case and a lifetime no
+// enclosing function binds, which is still undeclared.
+func TestInferUndeclaredLifetimeNestedSeesEnclosingClause(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "declared by the enclosing function",
+			src: `fn outer<'a>(p: &'a {x: number}) -> &'a {x: number} {
   val relay = fn (q: &'a {x: number}) -> &'a {x: number} { return q }
   return p
-}`)
-	require.Equal(t,
-		[]string{
-			"2:23-2:25: lifetime 'a is used but not declared; add `<'a>` to the enclosing function signature",
-			"2:43-2:45: lifetime 'a is used but not declared; add `<'a>` to the enclosing function signature",
+}`,
 		},
-		messagesWithSpan(t, errs))
+		{
+			name: "declared by no enclosing function",
+			src: `fn outer(p: &{x: number}) -> &{x: number} {
+  val relay = fn (q: &'a {x: number}) -> &'a {x: number} { return q }
+  return p
+}`,
+			want: []string{
+				"2:23-2:25: lifetime 'a is used but not declared; add `<'a>` to the enclosing function signature",
+				"2:43-2:45: lifetime 'a is used but not declared; add `<'a>` to the enclosing function signature",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
+		})
+	}
 }
 
 // A declared binder that no borrow and no bound references is dead weight. `<'a>` is

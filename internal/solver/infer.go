@@ -193,6 +193,13 @@ type checker struct {
 	// writes into it: both readers copy before minting, so a name one mints stays out of the
 	// declaration's scope and out of a sibling signature's.
 	declLifetimes map[string]*soltype.LifetimeVar
+	// enclosingLifetimes maps each lifetime name an enclosing function's `<…>` list binds, and
+	// that no nearer list rebinds, to the variable its parameter carries. A closure, a nested
+	// function, or a function type annotation written in a body may write such a name with no
+	// clause of its own, so nestedLifetimeScope seeds the nested scope from this and
+	// checkLifetimeDeclarations reads the names as declared. inferFunc sets it while it walks a
+	// body and restores it after. It is nil outside every function body.
+	enclosingLifetimes map[string]*soltype.LifetimeVar
 
 	// classNamespace is the dep_graph namespace of the module-level declaration
 	// currently being inferred, empty at the root namespace and outside any
