@@ -17,7 +17,7 @@ the same way it consumes an array.
 
 The rules here use the terms, rule names and diagnostics of the ownership rules.
 A reference such as F2 or E3 names a rule in that document. Rules this document
-adds are numbered A1 to A7 for promises, G1 to G5 for generators, R1 to R3 for
+adds are numbered A1 to A8 for promises, G1 to G5 for generators, R1 to R3 for
 loops, and S1 to S3 for async generators. Section 7 lists what the ownership
 rules themselves change.
 
@@ -219,8 +219,8 @@ declare class Promise<T, E = never> {
 
 The declaration omits the `PromiseLike` return forms and the two-callback
 `then` overload, which follow the same pattern. The returned promise is an
-`'a Promise`, so by A4 `'a` lasts until the caller awaits it, and for
-`'static` when the caller drops or stores it without awaiting it. Four consequences follow from the ordinary
+`'a Promise`, so by A4 and A8 `'a` lasts until the caller awaits it, and
+for `'static` when the caller drops or stores it without awaiting it. Four consequences follow from the ordinary
 rules:
 
 - While `q = p.then(cb)` is unawaited, `p` has a live immutable borrow.
@@ -343,11 +343,8 @@ case for one that holds nothing. The prefix is a different thing from A3's
 `Promise<&'a T>`. `'a Promise<T>` holds borrows while it is pending.
 `Promise<&'a T>` settles to a borrow.
 
-An `'a Promise` keeps `'a` live until it settles. The checker knows it has
-settled once the caller has awaited it in any of A1's forms. A promise the
-caller moves elsewhere, stores, or drops without awaiting may settle at any
-later point, so its `'a` lasts for `'static`. Dropping the promise does not
-end the computation.
+An `'a Promise` keeps `'a` live until it settles. A8 states where the
+checker can tell that it has, and what happens to a promise it cannot follow.
 
 ```esc
 async fn show(p: &Flat) -> Promise<number> {
@@ -368,12 +365,6 @@ async fn ok() -> Promise<number> {
     val n = await show(&f)
     f.x = 2              // accepted, since show's promise has settled
     return n
-}
-
-fn forget() {
-    val mut f: Flat = {x: 1}
-    show(&f)
-    f.x = 2              // error: cannot assign to 'f.x' while it is borrowed as immutable by the promise 'show' returns
 }
 ```
 
@@ -517,6 +508,70 @@ fn k() {
 
 T9 and D18 already widen the literals of an owned layer of a `mut` binding, so
 `val mut r = Promise.resolve({x: 1})` settles to `Promise<{x: number}>`.
+
+### 3.8 A8. A promise's hold ends when the promise is known to have settled
+
+A4 keeps an `'a Promise`'s `'a` live until the promise settles. The checker
+cannot see a promise settle at runtime. It ends the hold where the program
+shows the promise has settled, follows the promise where it moves, and keeps
+`'a` for `'static` where it cannot follow it.
+
+A promise is *dropped* when its holder's last use is not an `await` of it.
+That covers a call whose result is discarded, as in `show(&f)` written as a
+statement, a binding that dies unawaited, and a slot overwritten before its
+promise is awaited. JavaScript has no drop operation, so dropping is something
+the checker reads from the program. The promise's body keeps running.
+
+The rules:
+
+- **An `await` ends the hold.** Awaiting the promise in any of A1's forms
+  ends it.
+- **A move passes the hold along.** A move or copy of the promise into a holder
+  the checking model follows, such as a local, an array element, or a field of
+  a local, passes the hold to that holder, as L1 passes a borrow.
+- **A combinator that waits for every input ends each input's hold.** An
+  `await` of `Promise.all` or `Promise.allSettled` ends the hold of each
+  promise passed in, since their results settle only after every input has.
+  `Promise.race` and `Promise.any` settle after the first input, so they end
+  no other input's hold.
+- **Anything else keeps the hold for `'static`.** A dropped promise, and one
+  stored where the checker cannot follow it, such as module-level state or a
+  field of a parameter, keeps `'a` for the rest of the program.
+
+```esc
+async fn both() -> Promise<number> {
+    val mut a: Flat = {x: 1}
+    val mut b: Flat = {x: 2}
+    val ps = [show(&a), show(&b)]
+    a.x = 3              // error: cannot assign to 'a.x' while it is borrowed as immutable by 'ps'
+    val [m, n] = await Promise.all(ps)
+    b.x = 4              // accepted, since Promise.all has settled both promises
+    return m + n
+}
+```
+
+A dropped promise that holds borrows freezes them without anything in the
+program saying so. It reports a warning, `DroppedPromiseWarning`. A
+`'static` promise holds nothing, so dropping one never warns. `void e` drops
+a promise on purpose and silences the warning. The hold still lasts for
+`'static`:
+
+```esc
+fn forget() {
+    val mut f: Flat = {x: 1}
+    show(&f)             // warns: the promise 'show' returns is never awaited, so 'f' stays borrowed for the rest of the program; await it, or write `void` before the call to drop it on purpose
+    f.x = 2              // error: cannot assign to 'f.x' while it is borrowed as immutable by the promise 'show' returns
+}
+
+fn prefetch(doc: Doc) {
+    void save(&doc)      // accepted with no warning, and doc stays borrowed for 'static
+}
+```
+
+`void` is a type keyword today. [#2610](https://github.com/escalier-lang/escalier/issues/2610) adds `void e` as an expression
+whose value is `undefined`, together with the hold tracking and the warning.
+[#2438](https://github.com/escalier-lang/escalier/issues/2438) keeps every case but an `await` of the promise itself at
+`'static`, which is sound but stricter.
 
 ## 4. Rules for generators
 
@@ -834,7 +889,8 @@ true, so the rules document keeps describing what the checker enforces.
   the examples in sections 3 to 6.
 - **Checking model.** `await`, `yield` and the loop header emit the same
   `copy`, `borrow` and `move` events as any other flow site. A4 and G4 add the
-  returned promise or generator as a holder of each argument borrow.
+  returned promise or generator as a holder of each argument borrow, and A8
+  follows a promise through moves and combinators as it follows a borrow.
 
 ## 8. Choices
 
@@ -900,7 +956,7 @@ A callback that returns a value type, or a promise of one, is not affected.
 
 ### 8.4 A dropped promise keeps the borrows it holds for `'static`
 
-A4 keeps an unawaited `'a Promise`'s `'a` live for `'static`. A
+A8 keeps a dropped `'a Promise`'s `'a` live for `'static`. A
 fire-and-forget call such as `void save(&doc)` then freezes `doc` for the
 rest of the program, when `save`'s promise holds `doc`. A shorter lifetime
 would be unsound, since nothing ends a running async body. A caller that wants
@@ -908,7 +964,7 @@ would be unsound, since nothing ends a running async body. A caller that wants
 promise holds nothing, such as `load` in A4, costs a fire-and-forget caller
 nothing.
 
-Recommendation: keep A4 as stated.
+Recommendation: keep A8 as stated.
 
 ### 8.5 The reaction callback's parameter is a borrow
 
@@ -979,8 +1035,9 @@ How much a dropped reaction costs depends on its receiver:
   and code that must not wait for the promise, needs a reaction whose result
   it drops. A reaction on a temporary fits there.
 
-So inside an `async fn` or an async closure, a reaction whose receiver is a
-place and whose result is never awaited reports a warning,
+A8's `DroppedPromiseWarning` reports any dropped reaction result that holds a
+borrow. Inside an `async fn` or an async closure, a reaction whose receiver is
+a place reports it with wording that points at `await` instead,
 `ReactionOnPlaceWarning`:
 
 ```esc
@@ -1003,6 +1060,7 @@ available. [#2447](https://github.com/escalier-lang/escalier/issues/2447) implem
 | A2 reactions borrow until their result settles | No reactions. A spawned task requires `'static` captures, and a scoped task borrows until its scope joins | Differs | An awaited reaction acts like a scoped task, and a dropped one like `tokio::spawn`, which needs `'static` |
 | A3 borrow of a promise | `&Future` is not awaitable. `Shared<F>` yields clones | No equivalent | |
 | A4 a promise holds the borrows its pending computation reads | An `async fn` returns `impl Future + 'a`, which holds its borrows until it is dropped | Differs | `'a Promise<T>` is the same shape as `impl Future + 'a`. Rust futures are lazy, so dropping one ends the borrows. A JavaScript `async fn` runs eagerly, so only settling ends them |
+| A8 a promise's hold ends when it is known to have settled | Dropping a future cancels it. Futures are `#[must_use]`, and `join_all` waits for every input | Differs | Dropping a promise cancels nothing, so it keeps the hold for `'static`. Escalier warns only when the dropped promise holds borrows, and `void` silences it, as `let _ =` does in Rust |
 | G1 three `yield` forms | Coroutines are unstable. `gen` blocks yield owned values | Differs | |
 | G2 a yielded borrow lives as long as the generator | `Iterator::Item` cannot borrow the iterator. A lending iterator needs generic associated types | Differs | Escalier ties the borrow to the generator, not to each `next` |
 | G4 a generator holds the borrows its body reads while live | An iterator holding `&'a T` is bounded by `'a` | Same | |
@@ -1137,6 +1195,7 @@ for `for x in &mut arr`.
 | [#2426](https://github.com/escalier-lang/escalier/issues/2426) | A1, A6 | Gives `await` its three forms, removes `SharedAwaitIntoMutError`, and removes promise from the value types in `requirements.md` |  |
 | [#2424](https://github.com/escalier-lang/escalier/issues/2424) |  | Distributes a borrow over a union, the rule A3 builds on |  |
 | [#2438](https://github.com/escalier-lang/escalier/issues/2438) | A2, A4, A5 | Infers an async body's promise lifetime and keeps an `'a Promise`'s `'a` live until it settles, which closes the `show` hole in section 2. Gives the reaction methods `'a Promise` results in `prelude.esc` per X2 | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2601](https://github.com/escalier-lang/escalier/issues/2601) |
+| [#2610](https://github.com/escalier-lang/escalier/issues/2610) | A8 | Follows a promise through moves and combinators to end its hold, adds `void e`, and warns on a dropped promise that holds borrows | [#2438](https://github.com/escalier-lang/escalier/issues/2438) |
 | [#2600](https://github.com/escalier-lang/escalier/issues/2600) | A5 | Makes an `await` or a `yield` use each module-level binding some module-level function writes, as section 8.6 describes |  |
 | [#2427](https://github.com/escalier-lang/escalier/issues/2427) | A3, A7 | Normalizes a borrow of a promise to a promise of a borrow, refines the D12 warning per section 7, and adds `ReactionBorrowLifetimeError` | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2424](https://github.com/escalier-lang/escalier/issues/2424), [#2438](https://github.com/escalier-lang/escalier/issues/2438) |
 | [#2439](https://github.com/escalier-lang/escalier/issues/2439) | G4 | Infers a generator body's lifetime and keeps it live while the generator is, which closes the `each` hole in section 2 | [#2601](https://github.com/escalier-lang/escalier/issues/2601) |
@@ -1146,7 +1205,7 @@ for `for x in &mut arr`.
 | [#2444](https://github.com/escalier-lang/escalier/issues/2444) | R1, R3 | Gives `for` loops their three forms, adds `ImmutableIteratorLoopError` and the loop form of the moved-value message from section 8.2 | [#2428](https://github.com/escalier-lang/escalier/issues/2428), [#2440](https://github.com/escalier-lang/escalier/issues/2440), [#2441](https://github.com/escalier-lang/escalier/issues/2441), [#2318](https://github.com/escalier-lang/escalier/issues/2318), [#2290](https://github.com/escalier-lang/escalier/issues/2290) |
 | [#2442](https://github.com/escalier-lang/escalier/issues/2442) | X3, X4 | Changes the element-reading iterator methods and the `Iterable` and `Generator` declarations | [#2444](https://github.com/escalier-lang/escalier/issues/2444) |
 | [#2443](https://github.com/escalier-lang/escalier/issues/2443) | S1 to S3 | Applies the rules to async generators, including the implicit `await` of a promise operand to `yield` | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2438](https://github.com/escalier-lang/escalier/issues/2438), [#2444](https://github.com/escalier-lang/escalier/issues/2444) |
-| [#2447](https://github.com/escalier-lang/escalier/issues/2447) | A2 | Warns on a reaction to a promise held in a place whose result is never awaited inside an `async fn`, as section 8.7 describes | [#2438](https://github.com/escalier-lang/escalier/issues/2438) |
+| [#2447](https://github.com/escalier-lang/escalier/issues/2447) | A2, A8 | Reports A8's dropped-promise warning for a reaction on a promise held in a place with wording that points at `await`, as section 8.7 describes | [#2438](https://github.com/escalier-lang/escalier/issues/2438), [#2610](https://github.com/escalier-lang/escalier/issues/2610) |
 | [#2602](https://github.com/escalier-lang/escalier/issues/2602) | X1 | Classifies how long each promise-returning built-in and Web API function keeps its arguments, and writes the declarations to match | [#2601](https://github.com/escalier-lang/escalier/issues/2601) |
 
 [#2601](https://github.com/escalier-lang/escalier/issues/2601), [#2600](https://github.com/escalier-lang/escalier/issues/2600), [#2428](https://github.com/escalier-lang/escalier/issues/2428), [#2440](https://github.com/escalier-lang/escalier/issues/2440) and [#2441](https://github.com/escalier-lang/escalier/issues/2441) need nothing else
