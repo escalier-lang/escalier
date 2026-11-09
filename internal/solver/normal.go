@@ -861,8 +861,8 @@ func (f *knotFinder) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type
 
 // valueFamily is a set of runtime values no value outside it belongs to, so two atoms drawn
 // from different families are disjoint and their meet is `never`. Seven families cover the
-// primitives and the two absence markers, and an eighth, refCellFamily, covers the borrows no
-// primitive can be.
+// primitives and the two absence markers. refCellFamily covers the borrows no primitive can be,
+// and functionFamily covers `function`.
 //
 // Objects, tuples, functions, and class instances are deliberately absent. They are disjoint
 // from a primitive too, but keeping two such atoms apart is already precise, so a family for
@@ -880,6 +880,7 @@ const (
 	symbolFamily
 	bigintFamily
 	refCellFamily
+	functionFamily
 )
 
 // valueFamilyOf returns the family t draws its values from, and notValueAtom for
@@ -903,6 +904,8 @@ func (c *Context) valueFamilyOf(t soltype.Type) valueFamily {
 		return undefinedFamily
 	case *soltype.RefType:
 		return c.refCellOrNot(t.Inner)
+	case *soltype.FunctionTopType:
+		return functionFamily
 	}
 	return notValueAtom
 }
@@ -979,6 +982,11 @@ func litFamily(l soltype.Lit) valueFamily {
 func (c *Context) meetValueAtoms(a, b soltype.Type) (soltype.Type, bool) {
 	fa, fb := c.valueFamilyOf(a), c.valueFamilyOf(b)
 	if fa == notValueAtom || fb == notValueAtom {
+		return nil, false
+	}
+	// A borrow of a callable object is a `function`, so the two families overlap. The
+	// meet stays unfused.
+	if (fa == functionFamily && fb == refCellFamily) || (fa == refCellFamily && fb == functionFamily) {
 		return nil, false
 	}
 	if fa != fb {

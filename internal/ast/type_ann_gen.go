@@ -20,6 +20,8 @@ func (node *AnyTypeAnn) Span() Span { return node.span }
 
 func (node *UnknownTypeAnn) Span() Span { return node.span }
 
+func (node *FunctionTopTypeAnn) Span() Span { return node.span }
+
 func (node *NeverTypeAnn) Span() Span { return node.span }
 
 func (node *RestSpreadTypeAnn) Span() Span { return node.span }

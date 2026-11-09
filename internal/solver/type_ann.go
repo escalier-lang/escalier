@@ -132,6 +132,12 @@ func (c *checker) resolveTypeAnnType(scope *Scope, ta ast.TypeAnn, lvl int) (sol
 		t := &soltype.UnknownType{}
 		c.recordProvForResult(t, ta, AnnotationType)
 		return t, true
+	case *ast.FunctionTopTypeAnn:
+		// recordProvForResult records nothing here, for the reason the NeverTypeAnn arm gives:
+		// FunctionTopType is a shared zero-size singleton.
+		t := &soltype.FunctionTopType{}
+		c.recordProvForResult(t, ta, AnnotationType)
+		return t, true
 	case *ast.AnyTypeAnn:
 		// `any` resolves to `unknown`, the top of the lattice. A declaration writes `any`
 		// where it places no constraint on a type, most often a type parameter's default such

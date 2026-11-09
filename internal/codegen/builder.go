@@ -1321,6 +1321,10 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 		return b.buildTypeOfCheck(valueExpr, "string", StrictEqual, nil)
 	case *ast.BooleanTypeAnn:
 		return b.buildTypeOfCheck(valueExpr, "boolean", StrictEqual, nil)
+	case *ast.FunctionTopTypeAnn:
+		// JavaScript's `typeof` reads "function" for a class and for a callable object as
+		// well as for a plain function, which is the set `function` admits.
+		return b.buildTypeOfCheck(valueExpr, "function", StrictEqual, nil)
 	case *ast.LitTypeAnn:
 		// An inline regex type is tested with its own pattern.
 		if re, isRegex := t.Lit.(*ast.RegexLit); isRegex {
@@ -1448,6 +1452,8 @@ func (b *Builder) buildSolTypeGuard(valueExpr Expr, t soltype.Type, source ast.N
 		}
 	case *soltype.RegexType:
 		return b.buildRegexGuard(valueExpr, t.Source, source)
+	case *soltype.FunctionTopType:
+		return b.buildTypeOfCheck(valueExpr, "function", StrictEqual, source)
 	case *soltype.NullType:
 		return NewBinaryExpr(valueExpr, StrictEqual, NewLitExpr(NewNullLit(source), source), source)
 	case *soltype.UndefinedType:

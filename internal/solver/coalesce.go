@@ -1782,6 +1782,9 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 	case *soltype.UnknownType:
 		_, ok := b.(*soltype.UnknownType)
 		return ok
+	case *soltype.FunctionTopType:
+		_, ok := b.(*soltype.FunctionTopType)
+		return ok
 	case *soltype.ErrorType:
 		_, ok := b.(*soltype.ErrorType)
 		return ok

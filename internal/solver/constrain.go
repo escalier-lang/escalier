@@ -1342,6 +1342,12 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		}
 	}
 
+	// `function` admits every value that can be called. A sub of any other kind falls
+	// through to the structural switch, which rejects it.
+	if _, ok := super.(*soltype.FunctionTopType); ok && isCallableShape(sub) {
+		return nil
+	}
+
 	// Structural cases first; fall through to the variable cases when a side
 	// that didn't match here is a TypeVarType.
 	switch sub := sub.(type) {
@@ -2174,11 +2180,28 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
 }
 
+// isCallableShape reports whether t is one of the three shapes `function` admits: a function
+// type, `function` itself, or an object carrying a call or constructor signature.
+func isCallableShape(t soltype.Type) bool {
+	switch t := t.(type) {
+	case *soltype.FuncType, *soltype.FunctionTopType:
+		return true
+	case *soltype.ObjectType:
+		for _, elem := range t.Elems {
+			switch elem.(type) {
+			case *soltype.CallableElem, *soltype.ConstructorElem:
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // copiesOutOfBorrow reports whether t is a value type a read can copy out of a borrow: a type
 // isValueType accepts, a function, or a union of these.
 func copiesOutOfBorrow(t soltype.Type) bool {
 	switch t := t.(type) {
-	case *soltype.FuncType:
+	case *soltype.FuncType, *soltype.FunctionTopType:
 		return true
 	case *soltype.UnionType:
 		for _, member := range t.Types {

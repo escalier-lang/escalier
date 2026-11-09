@@ -357,6 +357,9 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 		case Unknown:
 			p.lexer.consume()
 			typeAnn = ast.NewUnknownTypeAnn(token.Span)
+		case Function:
+			p.lexer.consume()
+			typeAnn = ast.NewFunctionTopTypeAnn(token.Span)
 		case Never:
 			p.lexer.consume()
 			typeAnn = ast.NewNeverTypeAnn(token.Span)

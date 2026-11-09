@@ -77,7 +77,7 @@ func (c *checker) spreadableOperand(t soltype.Type, seen *spreadSeen) bool {
 	case *soltype.IntersectionType:
 		return c.someSpreadable(t.Types, seen)
 	case *soltype.PrimType, *soltype.LitType, *soltype.ObjectType, *soltype.FuncType,
-		*soltype.NullType, *soltype.UndefinedType, *soltype.UnknownType,
+		*soltype.FunctionTopType, *soltype.NullType, *soltype.UndefinedType, *soltype.UnknownType,
 		*soltype.GeneratorType, *soltype.TemplateLitType, *soltype.StringIntrinsicType,
 		*soltype.RegexType:
 		return false

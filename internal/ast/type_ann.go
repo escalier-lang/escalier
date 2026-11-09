@@ -18,6 +18,7 @@ func (*BigintTypeAnn) isTypeAnn()       {}
 func (*AnyTypeAnn) isTypeAnn()          {}
 func (*UnknownTypeAnn) isTypeAnn()      {}
 func (*NeverTypeAnn) isTypeAnn()        {}
+func (*FunctionTopTypeAnn) isTypeAnn()  {}
 func (*ObjectTypeAnn) isTypeAnn()       {}
 func (*TupleTypeAnn) isTypeAnn()        {}
 func (*UnionTypeAnn) isTypeAnn()        {}
@@ -156,6 +157,21 @@ func NewUnknownTypeAnn(span Span) *UnknownTypeAnn {
 	return &UnknownTypeAnn{span: span, commentSlots: commentSlots{}}
 }
 func (t *UnknownTypeAnn) Accept(v Visitor) {
+	v.EnterTypeAnn(t)
+	v.ExitTypeAnn(t)
+}
+
+// FunctionTopTypeAnn is the `function` keyword type, the supertype of every value
+// that can be called.
+type FunctionTopTypeAnn struct {
+	span Span
+	commentSlots
+}
+
+func NewFunctionTopTypeAnn(span Span) *FunctionTopTypeAnn {
+	return &FunctionTopTypeAnn{span: span, commentSlots: commentSlots{}}
+}
+func (t *FunctionTopTypeAnn) Accept(v Visitor) {
 	v.EnterTypeAnn(t)
 	v.ExitTypeAnn(t)
 }
