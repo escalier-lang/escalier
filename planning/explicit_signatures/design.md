@@ -165,13 +165,77 @@ from a distance the way they need a module-level function's.
 A written closure return type follows W1, so a partly written closure has the
 same reading as a partly written declaration.
 
-### 3.5 W5. A signature wildcard is allowed only in a closure
+### 3.5 W5. A declaration may infer its error type, and nothing else
 
-`_` in a type, as in `throws _` or `-> Promise<_, _>`, asks the checker to infer
-that part. It is a partly written type by design, so it conflicts with W2 in a
-declaration. A module-level function or method that writes `_` reports
-`MissingSignatureError` with the inferred type in the message. A closure may
-still write `_`.
+`_` in a type asks the checker to infer that part. A closure may write `_`
+anywhere. A module-level function or method may write it only for its error
+type, which is:
+
+- the type in a `throws` clause;
+- the error parameter of a returned `Promise`, `Generator` or
+  `AsyncGenerator`.
+
+Escalier's exceptions are typed, so a function's error type is a union of the
+errors its callees raise. Writing it out is tedious and changes whenever a
+callee's errors change, which is the cost checked exceptions are known for. An
+error type rarely changes what a caller may do with its own data, so inferring
+it keeps W2's benefit.
+
+The error type's ownership and lifetime stay written, and only the error
+classes are inferred:
+
+| Form | Meaning |
+|---|---|
+| `throws _`, `Promise<T, _>` | An inferred owned error |
+| `throws &'a _`, `Promise<T, &'a _>` | An inferred error behind a written immutable borrow |
+| `throws &'a mut _`, `Promise<T, &'a mut _>` | An inferred error behind a written mutable borrow |
+| `throws NetError`, `Promise<T, NetError>` | A written error type |
+
+The type `_` infers must hold no lifetime. A borrowed error has its borrow
+and lifetime written, as `&'a _` writes them. An error that raises a borrow
+comes from awaiting a promise someone else may await too, as A6 in #2430
+states, so the borrow is real, and the signature says so.
+
+The lifetime of a borrowed error may be elided, as in `throws &_` or
+`Promise<T, &_>`. It follows section 5.4's rule for a returned borrow: it takes
+the one input lifetime or the receiver's, and is an error otherwise. In
+`-> Promise<T, &_>`, the promise's prefix and the error's borrow are elided by
+their own rules, so an author who wants them to share a lifetime writes
+`-> 'a Promise<T, &'a _>`.
+
+Every error a function raises agrees on ownership, by T8. A function whose
+error type is a borrow throws borrows only, so a fresh error is thrown as
+`throw &NetError(1)`:
+
+```esc
+class NetError { code: number }
+
+declare fn fetchFlat() -> Promise<Flat, NetError>
+
+val cached = fetchFlat()
+
+async fn readX() -> Promise<number, &'static _> {
+    val x = try {
+        (await &cached).x
+    } catch {
+        e => throw e         // e: &'static NetError, since cached may be awaited again
+    }
+    return x
+}
+// readX: fn () -> Promise<number, &'static NetError>
+
+async fn readFresh() -> Promise<number, _> {
+    val f = await fetchFlat()
+    if f.x < 0 {
+        throw NetError(400)  // owned, since the error type is owned
+    }
+    return f.x
+}
+// readFresh: fn () -> Promise<number, NetError>
+```
+
+A `_` anywhere else in a declaration's signature reports
+`MissingSignatureError` with the inferred type in the message.
 
 ## 4. What changes in the ownership rules
 
@@ -475,11 +539,15 @@ Each step below is a PR. Each runs `UPDATE_SNAPS=true go test ./...` and
    Function bodies no longer have to be checked in dependency order, and the
    hazard `seedStubReturn` in [infer_class.go](../../internal/solver/infer_class.go)
    guards against, an unannotated method return fixed at `never` by an early
-   reader, goes away.
+   reader, goes away. A function whose error type is `_` still needs its
+   callees' error types first. Those functions are checked in dependency
+   order, and a group of mutually recursive ones solves its error types
+   together, as today but only for error types.
 6. **W3, and removal of parameter inference.** Closure parameters with no
    context report `MissingParamTypeError`. F3's parameter inference, D9, and
    the parameter settling in `flow_settle.go` are removed.
-7. **W5.** `_` in a declaration's signature is rejected.
+7. **W5.** `_` in a declaration's signature is rejected outside its error
+   type, and the error type's `_` infers only a type with no lifetime.
 8. **The rules document.** `requirements.md` and `docs/09_ownership.md` change
    as section 4 lists.
 
@@ -499,6 +567,13 @@ step 4.
    inferred when its return type omits it. Recommendation: treat
    `-> Promise<T>` as `Promise<T, never>` on a declaration, so that its
    rejection type is written too.
-3. **Whether script top-level functions follow W2.** A script is often short and
+3. **Whether an exported function may infer its error type.** An inferred
+   error type is still part of a module's public API, so a change in some
+   callee can change what an exported function raises without any change to
+   its source. Options: allow `_` as for any declaration, or require an
+   exported function to write its error classes. Recommendation: allow it, and
+   have hover and generated `.d.ts` output show the inferred type. Requiring
+   it on exports is a later tightening if this causes surprises.
+4. **Whether script top-level functions follow W2.** A script is often short and
    exploratory. Recommendation: yes, for one rule everywhere, with the code
    action from step 1 to write the signatures.
