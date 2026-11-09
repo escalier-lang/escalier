@@ -72,9 +72,9 @@ func TestAValueTypeBorrowFillsAnOwnedSlot(t *testing.T) {
 
 // A call checks its argument against the ValueType bound, and the failure names the bound.
 func TestAValueTypeBoundChecksTheArgument(t *testing.T) {
-	const decl = `declare fn id<T: ValueType>(v: T) -> T`
 	t.Run("AValueIsAccepted", func(t *testing.T) {
-		values, _, errs := inferSource(t, decl+`
+		values, _, errs := inferSource(t, `
+			declare fn id<T: ValueType>(v: T) -> T
 			val r = id(5)
 		`)
 		require.Empty(t, errorMessagesOf(errs))
@@ -82,7 +82,8 @@ func TestAValueTypeBoundChecksTheArgument(t *testing.T) {
 	})
 
 	t.Run("AnObjectIsRejected", func(t *testing.T) {
-		_, _, errs := inferSource(t, decl+`
+		_, _, errs := inferSource(t, `
+			declare fn id<T: ValueType>(v: T) -> T
 			val r = id({x: 1})
 		`)
 		require.Equal(t, []string{"cannot constrain object <: ValueType"}, errorMessagesOf(errs))
@@ -97,8 +98,12 @@ func TestAValueTypeBoundChecksTheArgument(t *testing.T) {
 	})
 }
 
-// A type parameter bounded by a union is a subtype of that union, although no single member
-// admits the parameter on its own.
+// TestABoundedParameterFillsItsUnionBound covers the rule that checks a type parameter
+// against a union by its declared bound. `T: number | string` is neither a `number` nor a
+// `string`, so no single member of `number | string` admits it, and the check compares the
+// bound with the union instead. A `T: ValueType` parameter relies on this rule, since
+// ValueType expands to a union, and `return p` in `fn steal<T: ValueType>(p: &T) -> T` is
+// rejected without it.
 func TestABoundedParameterFillsItsUnionBound(t *testing.T) {
 	tests := map[string]struct {
 		src      string
