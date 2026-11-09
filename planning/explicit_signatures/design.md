@@ -323,6 +323,33 @@ call writes the lifetime out, as
 `fn <'a>(a: &'a Flat, b: &Flat) -> 'a Promise<number>`, and the body is
 checked against it.
 
+A returned generator is tied the same way. Its hold ends when the generator
+dies rather than when a promise settles, as G4 in #2430 states:
+
+```esc
+gen fn pairs(a: &Flat, b: &Flat) -> Generator<number, undefined, unknown> {
+    yield a.x
+    yield b.x
+}
+// pairs: fn <'a>(a: &'a Flat, b: &'a Flat) -> 'a Generator<number, undefined, unknown>
+
+fn walk() -> number {
+    val mut x: Flat = {x: 1}
+    val mut y: Flat = {x: 2}
+    val it = pairs(&x, &y)
+    y.x = 3              // error: cannot assign to 'y.x' while it is borrowed as immutable by 'it'
+    var total = 0
+    for n in it {
+        total = total + n
+    }
+    y.x = 4              // accepted, since the loop moved it and it is dead
+    return total
+}
+```
+
+`pairs` reads both inputs on later calls of `next`, so the tie is exact, as
+it is for `adder`.
+
 An ambiguous returned borrow reports `AmbiguousReturnLifetimeError`:
 
 ```esc
