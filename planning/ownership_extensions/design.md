@@ -658,9 +658,10 @@ fn prefetch(doc: Doc) -> undefined {
 }
 ```
 
-`void` is a type keyword today.
+`void` is a reserved keyword today. Escalier has no `void` type, and the parser
+rejects `void` in a type with a message to write `undefined`.
 [#2610](https://github.com/escalier-lang/escalier/issues/2610) adds `void e` as
-an expression whose value is `undefined`, together with the hold tracking and
+an expression whose value and type are `undefined`, together with the hold tracking and
 the warning. [#2438](https://github.com/escalier-lang/escalier/issues/2438)
 keeps every case but an `await` of the promise itself at `'static`, which is
 sound but stricter.
