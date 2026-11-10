@@ -111,10 +111,14 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # setup-node caches the pnpm store by default when package.json names
+      # a packageManager, which needs pnpm on PATH. This job runs Node
+      # scripts with no dependencies, so it skips pnpm and the cache.
       - name: Install Node.js
         uses: actions/setup-node@v5
         with:
           node-version: '24'
+          package-manager-cache: false
 
       - name: Test the classifier
         run: node --test .github/scripts/classify-fixture-deltas.test.mjs
