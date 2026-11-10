@@ -901,6 +901,53 @@ fn bumpAll(r: &mut Array<Flat>) -> number {
 }
 ```
 
+The form also decides what the body may do with the source:
+
+- **A loop over `arr` leaves the body nothing to use.** The loop consumes
+  `arr` when it starts, so by E1 a read, write, method call or borrow of `arr`
+  in the body reports the moved-value error. Reassigning a `val mut` source
+  re-initializes it, by E1, and the loop keeps iterating the original array.
+- **A loop over `&arr` lets the body read `arr`.** Every path is immutable. A
+  write to `arr` is a mutable path to the places the loop's borrows point
+  into, so E2 rejects it. `arr[0].x = 5` shows why, since it would change what
+  `f` observes.
+- **A loop over `&mut arr` lets the body write `arr`.** E2 lets several mutable
+  paths be live at once. The elements stay `&mut T`. Narrowing one to `&T`, by
+  T4, makes it an immutable path, so a write to `arr` while that borrow is
+  live is rejected.
+
+```esc
+fn inside(arr: Array<Flat>) -> undefined {
+    for f in arr {
+        val n = arr.length   // error: use of moved value 'arr'; the `for` loop moved it, so iterate `&arr` to keep it
+    }
+}
+
+fn readInside(mut arr: Array<Flat>) -> undefined {
+    for f in &arr {
+        val n = arr.length   // accepted, since both paths are immutable
+        arr.push({x: n})     // error: cannot borrow 'arr' as mutable while it is borrowed as immutable
+    }
+}
+
+fn grow(mut arr: Array<Flat>) -> undefined {
+    for f in &mut arr {
+        val n = f.x
+        if n > 0 {
+            arr.push({x: n - 1})   // accepted, since the loop's borrow and this one are both mutable
+        }
+    }
+}
+
+fn narrowed(mut arr: Array<Flat>) -> undefined {
+    for f in &mut arr {
+        val g: &Flat = f
+        arr.push({x: 0})     // error: cannot borrow 'arr' as mutable while it is borrowed as immutable
+        val m = g.x          // g is still live here
+    }
+}
+```
+
 Section 8.2 compares this rule with binding every element as a borrow.
 
 ### 5.2 R2. Each iteration binds a fresh loop variable
