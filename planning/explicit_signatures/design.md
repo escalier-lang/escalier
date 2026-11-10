@@ -368,27 +368,11 @@ only `-> undefined`.
 
 Recommendation: require it, and let the language server write it.
 
-An alternative under consideration, and not yet decided, is to read a missing
-return type on a declaration as `-> undefined`, as Rust reads `fn f()` as
-`fn f() -> ()`. A missing return type would then have one fixed meaning, as W1
-asks, the way a missing `throws` clause on a sync function already declares
-that it raises nothing. A declaration that returns a value with no return type
-written would be rejected at its `return`, and the code action would write the
-real type. The functions that return nothing would need no annotation, which
-removes much of the migration.
-
-Three details are open under this alternative:
-
-- **`async fn`.** A missing return type would mean `-> Promise<undefined>`,
-  with the promise's prefix elided as #2430 describes. `async fn main() { … }`
-  would then need no annotation.
-- **`gen fn`.** A generator's yield type has no sensible default, so a
-  generator would still write its return type.
-- **Closures.** A closure keeps W4, so its missing return type is still
-  inferred. The same syntax would then mean `undefined` on a declaration and
-  an inferred type on a closure. Rust has the same split. The rule would need
-  to state it plainly, since a closure moved to module level would change
-  meaning.
+Reading a missing return type on a declaration as `-> undefined`, as Rust
+reads `fn f()`, was considered and set aside. The code action writes the
+return type, so requiring it costs the author nothing, and the default would
+make a missing return type mean `undefined` on a declaration but an inferred
+type on a closure.
 
 ### 5.3 What a written bare lifetime means
 
