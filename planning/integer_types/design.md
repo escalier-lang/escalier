@@ -639,6 +639,11 @@ declare class IntRange<
 
 declare class IntRangeIter<T: int> {
     step(&self, n: 1..Infinity) -> IntRangeIter<T>,
+    map<U>(&self, f: fn (value: T, index: int) -> U) -> IteratorObject<U, undefined, unknown>,
+    filter(&self, f: fn (value: T, index: int) -> boolean) -> IteratorObject<T, undefined, unknown>,
+    take(&self, limit: 0..Infinity) -> IteratorObject<T, undefined, unknown>,
+    toArray(&self) -> Array<T>,
+    // ... and the other iterator helpers
     [Symbol.iterator](&self) -> Iterator<T, undefined, undefined>,
 }
 ```
@@ -690,6 +695,9 @@ Two methods change the order or spacing. They follow Rust's `rev` and
 - Both return an `IntRangeIter<T>` with the same element type as the range. The
   type does not record the step. `(0..10).step(2)` yields elements of type
   `0..10`, which contains every element it yields.
+- An `IntRangeIter` also has the iterator helpers, such as `map`, `filter`,
+  `take`, and `toArray`, because the runtime builds it on `Iterator.range`.
+  Section 9.3 describes the runtime.
 
 Neither method has a type-level counterpart. Section 13 records the decision to
 defer stepped types.
@@ -1068,6 +1076,56 @@ const r = new IntRange(0, n);
 
 The counting-loop form matters because ranges will appear mostly in loop heads.
 It avoids an allocation and an iterator call per step.
+
+#### The runtime and `Iterator.range`
+
+The TC39 proposal [`Iterator.range`](https://github.com/tc39/proposal-iterator.range)
+yields arithmetic sequences, and the runtime builds iteration on it. The
+proposal is at Stage 2 and no engine ships it, so `@escalier/runtime` uses
+`Iterator.range` when the engine provides it and its own implementation of the
+same algorithm otherwise.
+
+`IntRange` stays a class of its own rather than an alias for the iterator
+`Iterator.range` returns. That iterator does not fit the design in two ways:
+
+- It can be consumed only once. After `val r = 0..10`, a second `for i in r`
+  must yield the elements again, so `IntRange[Symbol.iterator]` calls
+  `Iterator.range` anew on each call.
+- It has no `start`, `end`, `length`, or `has`. The proposal rules out
+  membership tests, so `IntRange` implements those itself.
+
+`IntRangeIter` records its bounds, step, and direction, and calls
+`Iterator.range` when it is iterated. A chain of `step` and `reversed` calls
+therefore becomes a single `Iterator.range` call, and the iterator helpers come
+from the iterator it returns.
+
+Each call passes the step explicitly and clamps the bounds first:
+
+| Escalier | Runtime call |
+|---|---|
+| `a..b` | `Iterator.range(a', b', 1)` |
+| `a..=b` | `Iterator.range(a', b', {step: 1, inclusive: true})` |
+| `a..Infinity` | `Iterator.range(a', 9007199254740991, {step: 1, inclusive: true})` |
+| `(a..b).step(k)` | `Iterator.range(a', b', k)` |
+| `(a..b).reversed()` | `Iterator.range(b' - 1, a' - 1, -1)` |
+| `(a..=b).reversed().step(k)` | `Iterator.range(b', a', {step: -k, inclusive: true})` |
+
+Here `a'` and `b'` are the bounds clamped to the safe integers, as section 6.2
+describes. Both the step and the clamp are required:
+
+- Without a step, `Iterator.range` infers the direction from the bounds, so
+  `Iterator.range(10, 0)` yields `10` down to `1`. In Escalier `10..0` is
+  empty. With an explicit step of `1`, `Iterator.range(10, 0, 1)` yields
+  nothing, which matches.
+- `Iterator.range` computes each value as `start + step * count` in `number`
+  arithmetic. Past `2 ** 53` that repeats or skips values, and on an unbounded
+  range `count` itself eventually stops growing. Clamping keeps every value a
+  safe integer and stops an unbounded range after `2 ** 53 - 1`.
+
+The proposal accepts more than Escalier does. It takes decimal steps, an
+inclusive `Infinity` end, and `bigint` bounds. The checker rejects the first
+two before codegen, so they never reach the runtime. `bigint` support would
+serve `bigint` ranges if decision 7 in section 13 is revisited.
 
 ### 9.4. Large integer literals
 
