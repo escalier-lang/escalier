@@ -766,6 +766,34 @@ Inside the body, `yield` evaluates to the value `next` sent, at type `TNext`.
 `val first = yield 0` binds an owned `Flat`. `it` is a `val mut` binding
 because `next` takes `&mut self`, by X3.
 
+A borrow `TNext` names its lifetime in the written return type, since the
+function has no input for elision to tie it to. Each `&a` sent to `next` must
+last for `'a`, and `'a` stays live while the generator does, by G4:
+
+```esc
+gen fn pair<'a>() -> 'a Generator<number, number, &'a Flat> {
+    val first = yield 0
+    val second = yield first.x
+    return first.x + second.x    // first is read after a later suspension
+}
+
+fn lend() -> undefined {
+    val mut it = pair()
+    val mut a: Flat = {x: 1}
+    it.next(&a)
+    a.x = 2      // error: cannot assign to 'a.x' while it is borrowed as immutable by 'it'
+    it.next(&a)
+}
+
+fn done() -> undefined {
+    val mut it = pair()
+    val mut a: Flat = {x: 1}
+    it.next(&a)
+    it.next(&a)
+    a.x = 2      // accepted, since it is dead
+}
+```
+
 ### 4.4 G4. A generator holds the borrows its body reads while it is live
 
 A `gen fn` body runs only when the consumer calls `next`, so every read in
