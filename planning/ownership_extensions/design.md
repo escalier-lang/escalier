@@ -436,7 +436,7 @@ A written `'static` on a body's promise is checked against what the body
 holds:
 
 ```esc
-async fn load(pick: fn () -> string) -> 'static Promise<number> {
+async fn keyed(pick: fn () -> string) -> 'static Promise<number> {
     val key = pick()     // accepted, since pick is read before the first await
     await tick()
     return key.length
@@ -770,6 +770,7 @@ loop, an owned destination. It has the same three forms as `await` and
 | `for x in &arr` | Borrowed immutably for the loop | `&T` |
 | `for x in &mut arr` | Borrowed mutably for the loop | `&mut T` |
 | `for x in r`, with `r: &Array<T>` | `r` is copied, by F2 | `&T` |
+| `for x in r`, with `r: &mut Array<T>` | `r` is copied, by F2, and stays usable after the loop | `&mut T` |
 | `for x in mk()`, any `e` that is not a place | Nothing | `T`, owned |
 
 A loop over an owned source is the source's last owner. An owned container holds
@@ -801,6 +802,13 @@ fn bump(mut arr: Array<Flat>) -> undefined {
     for f in &mut arr {
         f.x = f.x + 1        // accepted
     }
+}
+
+fn bumpAll(r: &mut Array<Flat>) -> number {
+    for f in r {
+        f.x = 1              // accepted, since f is &mut Flat
+    }
+    return r.length          // accepted, since the loop copied r
 }
 ```
 
@@ -1016,7 +1024,7 @@ fire-and-forget call such as `void save(&doc)` then freezes `doc` for the
 rest of the program, when `save`'s promise holds `doc`. A shorter lifetime
 would be unsound, since nothing ends a running async body. A caller that wants
 `doc` back writes `await save(&doc)`, or passes an owned copy. A callee whose
-promise holds nothing, such as `load` in A4, costs a fire-and-forget caller
+promise holds nothing, such as `keyed` in A4, costs a fire-and-forget caller
 nothing.
 
 Recommendation: keep A8 as stated.
