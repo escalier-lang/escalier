@@ -1030,8 +1030,10 @@ The options for `yield &x` were:
   consumer of an iterable assumes. The body cannot write a place after lending
   it. A body that reuses one buffer yields a new value instead, as `fresh` does.
 
-Recommendation: G2. It interoperates with every consumer of `Iterable<T>`, and
-it needs no new kind of lifetime.
+Decision: G2. A consumer that collects every value a generator yields, as
+`[...g]` and `Array.from(g)` do, is a common pattern, and G2 keeps it working.
+G2 also interoperates with every consumer of `Iterable<T>`, and it needs no new
+kind of lifetime.
 
 ### 8.2 A loop moves its source unless the source is written as a borrow
 
