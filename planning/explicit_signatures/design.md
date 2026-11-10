@@ -436,35 +436,43 @@ the same thing when they write the same signature.
 ### 5.4 How elision picks a returned borrow's lifetime
 
 D17 rule 2 gives an elided lifetime in a return type a fresh lifetime tied to
-every input lifetime. Rust's elision picks one instead:
+every input lifetime. Rust handles two kinds of returned value differently:
 
-1. Each elided lifetime in a parameter gets its own lifetime.
-2. When there is exactly one input lifetime, every elided output lifetime takes
-   it.
-3. When there is a `&self` or `&mut self` receiver, every elided output
-   lifetime takes the receiver's.
+- **A returned reference** takes one input lifetime, by three rules:
+  1. Each elided lifetime in a parameter gets its own lifetime.
+  2. When there is exactly one input lifetime, every elided output lifetime
+     takes it.
+  3. When there is a `&self` or `&mut self` receiver, every elided output
+     lifetime takes the receiver's.
 
-When neither 2 nor 3 applies, Rust rejects the signature. For an `impl Trait`
-return, including the future an `async fn` returns, Rust captures every input
-lifetime instead, as D17 rule 2 does.
+  When neither rule 2 nor rule 3 applies, Rust rejects the signature.
+- **A returned `impl Trait`**, including the future an `async fn` returns
+  and a closure returned as `impl Fn`, captures every input lifetime, as D17
+  rule 2 does.
 
-The options were:
+The split follows what each value can hold. A reference points at one place,
+so the signature can say which input it comes from. A pending computation or a
+closure can hold any of its inputs, so tying it to all of them is the accurate
+default.
 
-- **Tie a returned borrow to every input.** D17 rule 2 as written. Every
-  signature means something, and the tie is always sound, since it can only
-  keep more borrows alive than the body needs. It over-constrains callers,
-  though. `fn pick(a: &Flat, b: &Flat) -> &Flat` leaves the caller's `b`
-  borrowed for as long as the result lives, even when the body returns only
-  `a`.
-- **Pick one input as Rust does, and reject an ambiguous signature.** The
-  author says which input the result borrows from. A signature never claims
-  more than the author meant, and W1's reading of a written type stays exact.
+Escalier follows the same split:
 
-Recommendation: Rust's rules for a returned borrow, and the tie to every input
-for a returned `fn` type, promise or generator. A pending computation or a
-closure really can hold any input, which is why Rust captures every lifetime
-there too. A return type that holds both kinds, such as
+- A returned `&T` or `&mut T` takes its lifetime by Rust's three rules, and
+  reports `AmbiguousReturnLifetimeError` when neither rule 2 nor rule 3
+  applies.
+- A returned `fn` type, promise or generator is tied to every input, as D17
+  rule 2 states.
+
+A return type that holds both kinds, such as
 `{f: fn () -> undefined, r: &Flat}`, applies each rule to its own part.
+
+The alternative was to keep D17 rule 2 for a returned borrow too. Every
+signature would then mean something, and the tie is always sound, since it can
+only keep more borrows alive than the body needs. It over-constrains callers,
+though. `fn pick(a: &Flat, b: &Flat) -> &Flat` would leave the caller's `b`
+borrowed for as long as the result lives, even when the body returns only
+`a`. Picking one input means a signature never claims more than the author
+meant, and W1's reading of a written type stays exact.
 
 A returned `fn` type or promise tied to every input renders with one lifetime
 shared by the inputs. A caller's borrow of any one input then lasts as long as
