@@ -117,9 +117,14 @@ return type off a closure so that inference decides it.
 
 A function declared at module level, exported or not, and a class method write
 every parameter type, the return type, and every lifetime parameter that
-elision does not supply. So does a function expression bound to a module-level
-variable. It writes the full signature on the function expression, or the
-variable has a type annotation that supplies it. A missing piece reports `MissingSignatureError`:
+elision does not supply. So do these:
+
+- a function expression bound to a module-level variable, which writes the
+  full signature on the function expression or has a type annotation on the
+  variable that supplies it;
+- a named `fn` declared inside a body, since its name invites calls from
+  elsewhere in the body;
+- a function at a script's top level, so one rule holds everywhere. A missing piece reports `MissingSignatureError`:
 
 ```esc
 fn read(p) { return p.x }
@@ -138,7 +143,9 @@ so a suggestion need not be sound.
 
 A function that returns nothing writes `-> undefined`. A `throws` clause stays
 optional, since a sync function with no clause already declares that it raises
-nothing.
+nothing. An async declaration's `-> Promise<T>` means `Promise<T, never>` in
+the same way, so a declaration that rejects writes its rejection type, or `_`
+by W5.
 
 A module-level closure is a module-level function in all but syntax, and an
 importer reads its signature the same way. Left inferred, a small edit to its
@@ -220,6 +227,12 @@ async fn go(names: &Array<string>) -> Promise<number> {
 Rust makes the same choice. Its closures are fully inferred, including capture
 lifetimes, which neither language can write.
 
+W4 holds for a closure bound to a local name as well as for one passed straight
+to a call. A long function can still have an inferred closure change what code
+far below it may do, as `load` does above. If that shows up in practice, a
+later change could require a written return type on a closure bound to a local
+name.
+
 A written closure return type follows W1, so a partly written closure has the
 same reading as a partly written declaration.
 
@@ -291,6 +304,13 @@ async fn readFresh() -> Promise<number, _> {
 }
 // readFresh: fn () -> Promise<number, NetError>
 ```
+
+An exported function may write `_` for its error type like any declaration.
+The inferred type is still part of the module's public API, so a change in
+some callee can change what it raises without any change to its source. Hover
+and generated `.d.ts` output show the inferred type. Requiring exported
+functions to write their error classes is a later tightening if this causes
+surprises.
 
 A `_` anywhere else in a declaration's signature reports
 `MissingSignatureError` with the inferred type in the message.
@@ -641,32 +661,22 @@ Each step below is a PR. Each runs `UPDATE_SNAPS=true go test ./...` and
 Steps 1 and 2 need nothing else. Step 3 follows step 1. Steps 5 to 7 follow
 step 4.
 
-## 8. Open questions
+## 8. Resolved questions
 
-1. **Whether local named functions follow W2.** A `fn` declared inside a body is
-   read like a module-level function, but is visible only there. Options: treat
-   it as a declaration under W2, or as a closure under W3 and W4.
-   Recommendation: a declaration, since the name invites calls from a distance
-   within the body.
-2. **Whether to require a `throws` clause where a function raises.** A sync
-   function with no clause already declares that it raises nothing, so the
-   checker reports a body that raises. An async function's rejection type is
-   inferred when its return type omits it. Recommendation: treat
-   `-> Promise<T>` as `Promise<T, never>` on a declaration, so that its
-   rejection type is written too.
-3. **Whether an exported function may infer its error type.** An inferred
-   error type is still part of a module's public API, so a change in some
-   callee can change what an exported function raises without any change to
-   its source. Options: allow `_` as for any declaration, or require an
-   exported function to write its error classes. Recommendation: allow it, and
-   have hover and generated `.d.ts` output show the inferred type. Requiring
-   it on exports is a later tightening if this causes surprises.
-4. **Whether a closure bound to a local name writes its return type.** A
-   closure inferred inside a long function can still change what code far
-   below it may do, as `load` does in W4. Options: keep W4 as stated, or
-   require a written return type on a closure bound to a local name while a
-   closure passed straight to a call stays fully inferred. Recommendation:
-   keep W4, and revisit if long functions show the problem in practice.
-5. **Whether script top-level functions follow W2.** A script is often short and
-   exploratory. Recommendation: yes, for one rule everywhere, with the code
-   action from step 1 to write the signatures.
+Each question below was open in an earlier draft. Each is now decided, and the
+rule it changed says so.
+
+1. **Local named functions follow W2.** A `fn` declared inside a body writes
+   its full signature, since its name invites calls from a distance within the
+   body.
+2. **An async declaration writes its rejection type.** `-> Promise<T>` on a
+   declaration means `Promise<T, never>`, as a missing `throws` clause means
+   a sync function raises nothing. W2 states it.
+3. **An exported function may infer its error type.** Hover and generated
+   `.d.ts` output show the inferred type, and requiring a written error type
+   on exports is a later tightening. W5 states it.
+4. **A closure bound to a local name keeps W4.** Its return type stays
+   inferred, and the question is revisited if long functions show the problem
+   in practice. W4 states it.
+5. **Script top-level functions follow W2,** for one rule everywhere, with the
+   code action from step 1 of the plan writing their signatures.
