@@ -2115,6 +2115,35 @@ func (c *checker) inferCallee(scope *Scope, lvl int, e *ast.CallExpr) (soltype.T
 	return callee, shortCircuits
 }
 
+// isFunctionTop reports whether t is `function`, or a type parameter whose declared bound is
+// `function`. An inference variable is read as the type its lower bounds settled on, and an
+// alias, a `typeof` and a borrow are read through.
+func (c *checker) isFunctionTop(t soltype.Type) bool {
+	t = soltype.CarrierOf(t)
+	// A rigid type parameter keeps its declared bound, which coalescing would not read.
+	if v, isVar := t.(*soltype.TypeVarType); isVar && v.Rigid == nil {
+		t = groundedCarrier(t)
+	}
+	t = c.ctx.expandedCarrier(t)
+	switch p := t.(type) {
+	case *soltype.FunctionTopType:
+		return true
+	case *soltype.TypeVarType:
+		if p.Rigid == nil {
+			return false
+		}
+	case *soltype.SkolemType:
+	default:
+		return false
+	}
+	bound, ok := paramUpperBound(t)
+	if !ok {
+		return false
+	}
+	_, isTop := c.ctx.expandedCarrier(bound).(*soltype.FunctionTopType)
+	return isTop
+}
+
 // calleeFreshlyInstantiated reports whether e's callee is a name whose binding generalized,
 // so reading it instantiated the binding's scheme for this call alone. Every variable the
 // scheme quantifies is then a copy no other expression reads.
@@ -2139,6 +2168,13 @@ func (c *checker) calleeTarget(lvl int, e *ast.CallExpr, callee soltype.Type, fr
 	// the callee so nothing else reports the same call.
 	if obj, ok := c.classValueCarrier(callee); ok && c.notConstructible(obj) {
 		c.report(&NotConstructibleError{Node: e, Class: obj.Class})
+		return callTarget{callee: &soltype.ErrorType{}}
+	}
+	// A `function` says nothing about the parameters it takes, so no argument list can be
+	// checked against it. Constraining it against the call shape would report the mismatch
+	// as two function types, so the call is reported here instead.
+	if c.isFunctionTop(callee) {
+		c.report(&CallOfFunctionTopError{Node: e})
 		return callTarget{callee: &soltype.ErrorType{}}
 	}
 	// A member callee whose type is an intersection of function arms is an overloaded

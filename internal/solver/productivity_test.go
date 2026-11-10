@@ -325,3 +325,23 @@ func TestInferNotProductiveAliasAbsorbs(t *testing.T) {
 			"wrap the recursive reference in an object, tuple, or function type",
 	}, messagesWithSpan(t, errs))
 }
+
+// A borrow that flows into a type naming a non-productive alias reports the alias once and
+// terminates. Deciding whether the destination is a value type reads the alias, which names
+// itself, so each case covers that read stopping at the second reference.
+func TestInferNotProductiveAliasAsABorrowDestination(t *testing.T) {
+	const message = "recursive type alias `Loop` reaches itself without passing under a type " +
+		"constructor, so no lap of the recursion emits any structure and the alias names no type; " +
+		"wrap the recursive reference in an object, tuple, or function type"
+	tests := map[string]string{
+		"AUnionWithThePrimitive": "type Loop = Loop | number\nfn f<T>(p: &T) -> number | Loop { return p }",
+		"AFieldReadOfABorrow":    "type Loop = Loop | number\nfn f(p: &{x: number}) -> Loop { return p.x }",
+		"ABorrowedObject":        "type Loop = Loop | {x: number}\nfn f(p: &{x: number}) -> Loop { return p }",
+	}
+	for name, src := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, src)
+			require.Equal(t, []string{message}, errorMessagesOf(errs))
+		})
+	}
+}

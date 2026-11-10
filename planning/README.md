@@ -24,5 +24,11 @@ source is still open.
 `for … in` loops. Its `design.md` is the design for the Ownership Extensions
 milestone, and section 7 of it lists what the ownership rules change.
 
+**`explicit_signatures/`** proposes that module-level functions and methods
+write their full signature, that closure parameters be typed by their context
+or an annotation, and that a written type mean exactly what it says. Section 4
+of its `design.md` lists what the ownership rules in
+`ownership_rules/requirements.md` change.
+
 Each folder's `design.md` is the whole of it: the problem, the requirements and
 the plan.

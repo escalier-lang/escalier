@@ -31,6 +31,12 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"UnknownTypeAnn": {
 			input: "unknown",
 		},
+		"FunctionTopTypeAnn": {
+			input: "function",
+		},
+		"FunctionTopTypeAnnInUnion": {
+			input: "function | number",
+		},
 		"NumberLiteralTypeAnn": {
 			input: "5",
 		},

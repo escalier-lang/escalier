@@ -190,11 +190,12 @@ func (c *checker) recordProvForResult(t soltype.Type, n ast.Node, kind ASTOrigin
 
 // sharedSingleton reports whether t is one of the zero-size atom types Go gives a
 // shared address. Every &soltype.NeverType{}, &soltype.UnknownType{},
-// &soltype.NullType{}, and &soltype.UndefinedType{} in a module points at one
-// address, so the pointer-keyed Prov table cannot tell two of them apart.
+// &soltype.NullType{}, &soltype.UndefinedType{}, and &soltype.FunctionTopType{} in a
+// module points at one address, so the pointer-keyed Prov table cannot tell two of them apart.
 func sharedSingleton(t soltype.Type) bool {
 	switch t.(type) {
-	case *soltype.NeverType, *soltype.UnknownType, *soltype.NullType, *soltype.UndefinedType:
+	case *soltype.NeverType, *soltype.UnknownType, *soltype.NullType, *soltype.UndefinedType,
+		*soltype.FunctionTopType:
 		return true
 	}
 	return false

@@ -1,0 +1,3 @@
+export fn steal<T: ValueType>(p: &T) -> T {
+    return p
+}

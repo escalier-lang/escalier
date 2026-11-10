@@ -39,6 +39,7 @@ func NewPrelude() *Scope {
 	addOperatorBindings(s)
 	addStdlibTypePlaceholders(s)
 	addIteratorResultAliases(s)
+	addValueTypeAlias(s)
 	return s
 }
 
@@ -289,4 +290,20 @@ func doneTag(done bool) soltype.Type {
 // that cannot collide in the first place.
 func builtinTypeParam(name string, id int) *soltype.TypeParam {
 	return &soltype.TypeParam{Name: name, Var: &soltype.TypeVarType{ID: id}}
+}
+
+// addValueTypeAlias binds ValueType to the AliasType handle a reference resolves to.
+// registerValueTypeAlias puts the body on each run's Context, for the reason
+// addIteratorResultAliases gives.
+func addValueTypeAlias(s *Scope) {
+	s.defineType("ValueType", TypeBinding{Type: &soltype.AliasType{Name: soltype.ValueTypeName}})
+}
+
+// registerValueTypeAlias registers the body of ValueType on ctx, the union of
+// soltype.ValueTypeMembers.
+func registerValueTypeAlias(ctx *Context) {
+	ctx.registerAlias(soltype.ValueTypeName, &AliasDef{
+		Body:          newUnion(ctx, soltype.ValueTypeMembers()),
+		ReportsByName: true,
+	})
 }

@@ -1919,6 +1919,7 @@ func TestPrintAllTypeAnnotations(t *testing.T) {
 		{"bigint type", "bigint", "bigint"},
 		{"any type", "any", "any"},
 		{"unknown type", "unknown", "unknown"},
+		{"function type", "function", "function"},
 		{"never type", "never", "never"},
 
 		// Literal types

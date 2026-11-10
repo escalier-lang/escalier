@@ -3,6 +3,7 @@ package codegen
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/escalier-lang/escalier/internal/solver"
 	"github.com/stretchr/testify/require"
@@ -1241,4 +1242,25 @@ func TestBuildTypeAnnFormers(t *testing.T) {
 			require.Equal(t, test.expected, renderSol(t, test.sol))
 		})
 	}
+}
+
+// The built-in ValueType renders as the alias `@escalier/runtime` exports when the caller
+// collects runtime imports, and as the union it names when it does not.
+func TestBuildTypeAnnValueType(t *testing.T) {
+	valueType := &soltype.AliasType{Name: soltype.ValueTypeName}
+
+	t.Run("ItRendersAsTheRuntimeAlias", func(t *testing.T) {
+		render := newSolTypeAnnBuilder(solNames{preludePrefix: solPreludePrefix}, "t", nil)
+		render.runtimeTypes = set.NewSet[string]()
+		printer := NewPrinter()
+		printer.PrintTypeAnn(render.render(valueType))
+		require.Equal(t, "ValueType", printer.Output)
+		require.Equal(t, []string{"ValueType"}, render.runtimeTypes.ToSlice())
+	})
+
+	t.Run("ItRendersAsTheUnionWithoutAnImport", func(t *testing.T) {
+		require.Equal(t,
+			"number | string | boolean | bigint | symbol | null | undefined | Function",
+			renderSol(t, valueType))
+	})
 }

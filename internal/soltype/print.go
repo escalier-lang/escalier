@@ -924,7 +924,7 @@ func (p *namedPrinter) printTypeMinPrec(t Type, minPrec int) string {
 func isPrintLeaf(t Type) bool {
 	switch t.(type) {
 	case *TypeVarType, *PrimType, *LitType, *NeverType, *UnknownType, *ErrorType,
-		*NullType, *UndefinedType, *MappedKeyType, *InferType, *TypeofType,
+		*NullType, *UndefinedType, *MappedKeyType, *InferType, *TypeofType, *FunctionTopType,
 		*UniqueSymbolType, *RegexType, *RecursiveVarType, *SelfType:
 		return true
 	}
@@ -999,6 +999,8 @@ func (p *namedPrinter) printType(t Type) string {
 		return "never"
 	case *UnknownType:
 		return "unknown"
+	case *FunctionTopType:
+		return "function"
 	case *ErrorType:
 		return "error"
 	case *NullType:

@@ -3252,3 +3252,23 @@
     span: 0-22,
 }
 ---
+
+[TestParseTypeAnnNoErrors/FunctionTopTypeAnn - 1]
+&ast.FunctionTopTypeAnn{
+    span: 0-8,
+}
+---
+
+[TestParseTypeAnnNoErrors/FunctionTopTypeAnnInUnion - 1]
+&ast.UnionTypeAnn{
+    Types: []ast.TypeAnn{
+        &ast.FunctionTopTypeAnn{
+            span: 0-8,
+        },
+        &ast.NumberTypeAnn{
+            span: 11-17,
+        },
+    },
+    span: 0-17,
+}
+---
