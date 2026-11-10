@@ -304,7 +304,9 @@ prefer `await` and the warning that steers toward it.
 
 A promise's contents can be reached only through `await` or a reaction. A
 borrow of a promise therefore gives exactly the access a promise of a borrow
-gives, and the type checker normalizes one to the other:
+gives. The type checker rewrites each borrow of a promise on the left below
+into the promise of a borrow on the right. The right-hand form is the
+*normalized form*:
 
 - `&'a Promise<T, E>` is `Promise<&'a T, &'a E>`.
 - `&'a mut Promise<T, E>` is `Promise<&'a mut T, &'a mut E>`.
@@ -315,8 +317,9 @@ absorbs the borrow, as F2 states, so `&'a Promise<number>` is
 `Promise<number>`. The borrow event that `&p` records still holds `p` for
 `'a`. The normalization changes the type, not the borrow check.
 
-The normalized form is the one the printer renders. The rule is the same kind
-of rule as [#2424](https://github.com/escalier-lang/escalier/issues/2424), which
+The printer renders the normalized form, so `&p` with `p: Promise<Flat>`
+prints as `Promise<&Flat>`. The rule is the same kind of rule as
+[#2424](https://github.com/escalier-lang/escalier/issues/2424), which
 distributes a borrow over a union, and the two compose.
 
 The rule lets a caller lend a promise to a function that only awaits it:
