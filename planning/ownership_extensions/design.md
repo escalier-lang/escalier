@@ -435,9 +435,11 @@ async body may read the parameter after an `await`, and a plain function may
 capture it into a reaction or an async call it returns. D17 rule 2 already lets
 a call-only parameter reach a result whose lifetime the signature ties to it,
 so no new exception is needed. The caller's closure then stays borrowed until
-it awaits the result:
+it awaits the result. `later` below is the table's "until the promise settles"
+row:
 
 ```esc
+// Until the promise settles: elided, so the promise holds cb
 async fn later(cb: fn () -> undefined) -> Promise<undefined> {
     await tick()
     cb()
@@ -454,18 +456,45 @@ async fn useLater() -> Promise<number> {
 ```
 
 A written `'static` on a body's promise is checked against what the body
-holds:
+holds. For an `async fn`, "before it returns" means before its first `await`,
+since the call returns the promise there. `keyed` below is the "only before it
+returns" row, and `alsoBad` claims that row but breaks it:
 
 ```esc
+// Only before it returns: pick is read before the first await
 async fn keyed(pick: fn () -> string) -> 'static Promise<number> {
     val key = pick()     // accepted, since pick is read before the first await
     await tick()
     return key.length
 }
 
+async fn useKeyed() -> Promise<number> {
+    val mut name = {s: "a"}
+    val pr = keyed(fn () { return name.s })
+    name.s = "b"         // accepted, since keyed's promise does not hold pick
+    return await pr
+}
+
+// Claims "only before it returns", but reads cb after the first await
 async fn alsoBad(cb: fn () -> undefined) -> 'static Promise<undefined> {
     await tick()
     cb()                 // error: the written 'static promise may be kept for the whole program, but 'cb' is read after the first await; write `-> Promise<undefined>` to let the promise hold it
+}
+```
+
+The "past the promise" row is for a callee that keeps the callback after its
+promise settles, such as one that registers a listener. Awaiting the promise
+then does not end the closure's borrow:
+
+```esc
+// Past the promise: watch keeps cb for the rest of the program
+declare fn watch(cb: 'static fn () -> undefined) -> Promise<undefined>
+
+async fn useWatch() -> Promise<number> {
+    val mut count = {n: 0}
+    await watch(fn () { count.n = count.n + 1 })
+    val v = &count       // error: cannot borrow 'count' as immutable while 'count.n' is borrowed as mutable by the 'cb' that 'watch' retains
+    return v.n
 }
 ```
 
