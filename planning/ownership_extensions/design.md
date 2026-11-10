@@ -974,6 +974,36 @@ advancing a generator writes its state:
 ``cannot borrow 'it' as immutable to iterate it, since advancing a generator writes it; iterate `it` or `&mut it` ``.
 This is a new diagnostic, `ImmutableIteratorLoopError`.
 
+```esc
+gen fn count() -> Generator<number, undefined, unknown> {
+    yield 1
+    yield 2
+    yield 3
+}
+
+fn consume() -> undefined {
+    val mut it = count()
+    for n in it {}
+    it.next()            // error: use of moved value 'it'; the `for` loop moved it, so iterate `&mut it` to keep it
+}
+
+fn resume() -> undefined {
+    val mut it = count()
+    for n in &mut it {
+        if n == 2 { break }
+    }
+    it.next()            // accepted, and reports done, since the break closed the generator
+}
+
+fn peek() -> undefined {
+    val mut it = count()
+    for n in &it {}      // error: cannot borrow 'it' as immutable to iterate it, since advancing a generator writes it; iterate `it` or `&mut it`
+}
+```
+
+The moved-value message from section 8.2 suggests `&mut it` for an iterator,
+since `&it` would report `ImmutableIteratorLoopError`.
+
 An array, a `Map` or a `Set` is not an iterator, so R1 decides a loop over it
 and R3 does not. Its `[Symbol.iterator]` returns a fresh iterator on each
 call, so a loop over it never advances the container and writes none of its
