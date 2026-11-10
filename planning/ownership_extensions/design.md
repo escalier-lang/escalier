@@ -974,6 +974,14 @@ advancing a generator writes its state:
 ``cannot borrow 'it' as immutable to iterate it, since advancing a generator writes it; iterate `it` or `&mut it` ``.
 This is a new diagnostic, `ImmutableIteratorLoopError`.
 
+An array, a `Map` or a `Set` is not an iterator, so R1 decides a loop over it
+and R3 does not. Its `[Symbol.iterator]` returns a fresh iterator on each
+call, so a loop over it never advances the container and writes none of its
+state. That is why `for x in &arr` is legal and `for x in &it` is not. A
+direct call such as `val it = arr[Symbol.iterator]()` returns an
+`ArrayIterator<&'a T>` that borrows `arr`, by X3, and a loop over that `it`
+follows R3 like any other iterator.
+
 ## 6. Rules for async generators
 
 ### 6.1 S1. An async generator is a generator whose steps are promises
