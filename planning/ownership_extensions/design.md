@@ -757,6 +757,7 @@ gen fn sum() -> Generator<number, number, Flat> {
 fn go() -> undefined {
     val mut it = sum()
     val mut a: Flat = {x: 1}
+    it.next({x: 0})      // starts the body, which discards the value
     it.next(a)
     a.x = 2      // error: use of moved value 'a'
 }
@@ -765,6 +766,11 @@ fn go() -> undefined {
 Inside the body, `yield` evaluates to the value `next` sent, at type `TNext`.
 `val first = yield 0` binds an owned `Flat`. `it` is a `val mut` binding
 because `next` takes `&mut self`, by X3.
+
+The first `next` starts the body, which has not reached a `yield` yet, so
+JavaScript discards the value it sends. X3 still requires a `TNext` on that
+call unless `undefined` is assignable to `TNext`, so `go` sends a value the
+body never sees. G3 moves or borrows it all the same.
 
 A borrow `TNext` names its lifetime in the written return type, since the
 function has no input for elision to tie it to. Each `&a` sent to `next` must
@@ -780,6 +786,7 @@ gen fn pair<'a>() -> 'a Generator<number, number, &'a Flat> {
 fn lend() -> undefined {
     val mut it = pair()
     val mut a: Flat = {x: 1}
+    it.next(&a)          // starts the body, which discards the value
     it.next(&a)
     a.x = 2      // error: cannot assign to 'a.x' while it is borrowed as immutable by 'it'
     it.next(&a)
@@ -788,6 +795,7 @@ fn lend() -> undefined {
 fn done() -> undefined {
     val mut it = pair()
     val mut a: Flat = {x: 1}
+    it.next(&a)
     it.next(&a)
     it.next(&a)
     a.x = 2      // accepted, since it is dead
@@ -1306,6 +1314,26 @@ methods unchanged.
 `throw`, since advancing a generator writes it. `[Symbol.iterator]` on a
 generator returns itself, so R3 decides the loop.
 
+`next` sends its argument to the `yield` the body is suspended at, and that
+`yield` evaluates to it at type `TNext`. The prelude declares
+`next(...value: [] | [TNext])`, as TypeScript does, which lets any call leave
+the value out. A `yield` then evaluates to `undefined` at a type that excludes
+it. In G3's `sum`, a bare `it.next()` on the second call binds `first` to
+`undefined`, and `first.x` throws. The declarations change to
+`next(&mut self, value: TNext)`, and the checker lets a call leave `value` out
+only when `undefined` is assignable to `TNext`. The checker cannot tell the
+first call from a later one, since it does not track how far a generator has
+run, so the rule covers every call. A generator that wants a bare first
+`next` declares `TNext` as `T | undefined` and narrows each `yield` in its
+body.
+
+A `for` loop, a spread, `yield from` and every consumer of `Iterable<T>` call
+`next()` with no value. So a generator satisfies `Iterable<T>`, and a loop
+accepts it, only when `undefined` is assignable to its `TNext`. `for x in it`
+with `it = sum()` reports
+``cannot iterate 'it', since iteration calls `next()` with no value and its generator expects a `Flat`; advance it with `it.next(v)` ``.
+This is a new diagnostic, `IterationNextValueError`.
+
 The element-reading methods of `Array`, `Map` and `Set` hand out elements the
 container still holds. `values()`, `entries()`, `keys()` on a `Map` with
 object keys, and `[Symbol.iterator]` called directly return iterators of owned
@@ -1368,7 +1396,7 @@ PR that implements W1, step 2 of that design's plan under
 | [#2440](https://github.com/escalier-lang/escalier/issues/2440) | R2 | Binds a fresh loop variable on each iteration in the control-flow graph |  |
 | [#2441](https://github.com/escalier-lang/escalier/issues/2441) | X3 | Restricts `fill` and `copyWithin` to element types F2 copies, and adds `DuplicatingArrayMethodError` |  |
 | [#2444](https://github.com/escalier-lang/escalier/issues/2444) | R1, R3, G5 | Gives `for` loops their three forms and `yield from` the same, since G5 is decided by R1, adds `ImmutableIteratorLoopError` and the loop form of the moved-value message from section 8.2 | [#2428](https://github.com/escalier-lang/escalier/issues/2428), [#2440](https://github.com/escalier-lang/escalier/issues/2440), [#2441](https://github.com/escalier-lang/escalier/issues/2441), [#2318](https://github.com/escalier-lang/escalier/issues/2318), [#2290](https://github.com/escalier-lang/escalier/issues/2290) |
-| [#2442](https://github.com/escalier-lang/escalier/issues/2442) | X3, X4 | Changes the element-reading iterator methods and the `Iterable` and `Generator` declarations | [#2444](https://github.com/escalier-lang/escalier/issues/2444) |
+| [#2442](https://github.com/escalier-lang/escalier/issues/2442) | X3, X4 | Changes the element-reading iterator methods and the `Iterable` and `Generator` declarations, makes `next` require a `TNext` unless it admits `undefined`, and adds `IterationNextValueError` | [#2444](https://github.com/escalier-lang/escalier/issues/2444) |
 | [#2443](https://github.com/escalier-lang/escalier/issues/2443) | S1 to S3 | Applies the rules to async generators, including the implicit `await` of a promise operand to `yield` | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2438](https://github.com/escalier-lang/escalier/issues/2438), [#2444](https://github.com/escalier-lang/escalier/issues/2444) |
 | [#2447](https://github.com/escalier-lang/escalier/issues/2447) | A2, A8 | Reports A8's dropped-promise warning for a reaction on a promise held in a place with wording that points at `await`, as section 8.7 describes | [#2438](https://github.com/escalier-lang/escalier/issues/2438), [#2610](https://github.com/escalier-lang/escalier/issues/2610) |
 | [#2602](https://github.com/escalier-lang/escalier/issues/2602) | X1 | Classifies how long each promise-returning built-in and Web API function keeps its arguments, and writes the declarations to match | [#2601](https://github.com/escalier-lang/escalier/issues/2601) |
