@@ -247,8 +247,11 @@ Four consequences follow from the ordinary rules:
   `await &p` stays legal. `await p` reports
   `cannot move 'p' while it is borrowed`, by E3. `await &mut p` reports
   `cannot borrow 'p' as mutable while it is borrowed as immutable`, by E2.
-- After `await q`, the borrow has ended, so `await p` and writes to the
-  callback's captures are legal again.
+- `await q` ends `q`'s own hold on `'a`. The value it yields holds `'a` too
+  when `R` mentions `'a`, as `&'a T` does when the callback returns its
+  argument. So `await p` and writes to the callback's captures are legal again
+  once `await q` has run and no value it yielded that mentions `'a` is still
+  live.
 - The callback receives `&'a T`. Passing the value on as owned reports
   `cannot use borrowed &Flat as owned object`, by T6. Storing it anywhere that
   outlives `'a` is rejected by L1.
@@ -271,6 +274,13 @@ async fn after() -> Promise<number> {
     val n = await p.then(fn (v) { return v.x })
     val b = await p                        // accepted, since the reaction's result has settled
     return b.x + n
+}
+
+async fn alias() -> Promise<number> {
+    val p = load()
+    val r = await p.then(fn (v) { return v })  // r: &Flat, which holds 'a
+    val b = await p                        // error: cannot move 'p' while it is borrowed
+    return r.x + b.x
 }
 
 fn forget() -> undefined {
@@ -553,7 +563,9 @@ the checker reads from the program. The promise's body keeps running.
 The rules:
 
 - **An `await` ends the hold.** Awaiting the promise in any of A1's forms
-  ends it.
+  ends the promise's own hold. The value the `await` yields is a separate
+  holder, so when its type mentions `'a`, L1 keeps `'a` live while that value
+  is live.
 - **A move passes the hold along.** A move or copy of the promise into a holder
   the checking model follows, such as a local, an array element, or a field of
   a local, passes the hold to that holder, as L1 passes a borrow.
