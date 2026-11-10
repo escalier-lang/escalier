@@ -168,6 +168,14 @@ async fn twice() -> Promise<number> {
     return a.x + b.x
 }
 
+async fn twiceMut() -> Promise<number> {
+    val mut p = load()
+    val m = await &mut p
+    val n = await &mut p // accepted, since E2 lets several mutable paths be live at once
+    m.x = 2
+    return n.x           // 2, since m and n borrow the same Flat
+}
+
 async fn owned() -> Promise<undefined> {
     val p = load()
     keep(await &p)       // error: cannot use borrowed &Flat as owned object
