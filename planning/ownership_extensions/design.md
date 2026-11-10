@@ -642,6 +642,13 @@ gen fn fresh() -> Generator<{x: number}, undefined, unknown> {
 }
 ```
 
+Yielding a borrow of a local is accepted for the reason L1 gives for
+returning one: a borrow may outlive the binding that owns its place, so `h`
+yielding `&buf` is accepted as L1's `make` returning `&p` is. D16 does not turn
+the yielded borrow into an owned value, as it would a returned borrow that
+nothing else reaches. The body keeps running after the `yield` and may still
+read `buf`, so something else does reach it.
+
 The consumer's side needs no rule. After `yield &x`, E2 rejects every later
 write to `x` in the body, so the consumer's `&Flat` observes no mutation.
 After `yield &mut x`, the body may still write `x`, since E2 allows several
