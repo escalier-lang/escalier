@@ -1412,6 +1412,65 @@ object keys, and `[Symbol.iterator]` called directly return iterators of owned
 `AsyncIterable<T>` follows X3, with `[Symbol.asyncIterator]` in place of
 `[Symbol.iterator]`.
 
+### 10.5 X5. Iterator helpers
+
+ES2025 adds helper methods to `Iterator.prototype`, from the TC39
+[iterator helpers](https://github.com/tc39/proposal-iterator-helpers)
+proposal. The prelude declares them on `IteratorObject`, converted from
+TypeScript's lib. Four rules fit them to the ownership rules:
+
+- **A predicate borrows the value it tests.** `filter` passes each value to its
+  predicate and then yields the same value, and `find` returns the value its
+  predicate matched. An owned parameter would let the predicate keep a value
+  the helper also hands out. So the predicates of `filter`, `find`, `some` and
+  `every` take `&T`. The callbacks of `map`, `flatMap`, `reduce` and `forEach`
+  keep an owned `T`, since each value reaches them once and the helper does
+  not keep it.
+- **A lazy helper moves its source.** `it.map(f)` returns a wrapper that shares
+  `it`'s state, so advancing either advances both. `map`, `filter`, `flatMap`,
+  `take` and `drop` therefore take `self`, as a `for` loop moves its source by
+  R1. `Iterator.from` takes its argument the same way, since it returns an
+  iterator argument unchanged.
+- **A lazy helper keeps its callback, and an eager one does not.** A lazy
+  helper calls its callback on each later `next`, so the callback is an `'a fn`
+  and the result an `'a IteratorObject`, as A2 types a reaction. Elision of
+  the written declaration gives this, by A4. `reduce`, `toArray`, `forEach`,
+  `some`, `every` and `find` call their callback only during the call, so it
+  stays call-only.
+- **A helper calls `next()` with no value.** The helpers never forward a value
+  to their source. So every helper requires a source whose `TNext` admits
+  `undefined`, as X3 requires of a `for` loop, and a helper call on any other
+  source reports `IterationNextValueError`.
+
+```esc
+declare interface IteratorObject<T, TReturn, TNext> {
+    map<'a, U>(self, f: 'a fn (value: T, index: number) -> U) -> 'a IteratorObject<U, undefined, unknown>,
+    filter<'a>(self, f: 'a fn (value: &T, index: number) -> boolean) -> 'a IteratorObject<T, undefined, unknown>,
+    find(&mut self, f: fn (value: &T, index: number) -> boolean) -> T | undefined,
+}
+
+fn go(arr: Array<Flat>) -> undefined {
+    val it = Iterator.from(arr).filter(fn (f, i) {
+        keep(f)              // error: cannot use borrowed &Flat as owned object
+        return true
+    })
+}
+
+fn go2() -> Array<number> {
+    return sum().map(fn (n, i) { return n }).toArray()   // error: IterationNextValueError, since sum expects a Flat from next
+}
+```
+
+A helper that exits early, such as `take` at its limit or `some` on a match,
+calls `return()` on its source. A moved source is gone already. A caller that
+lent `&mut it` gets back a closed generator, as R3 says a `for` loop leaves
+one.
+
+The [async iterator helpers](https://github.com/tc39/proposal-async-iterator-helpers)
+proposal is at Stage 2 and is being revised so that several `next` calls can be
+pending at once. This design waits for Stage 3. The rules above carry over, and
+E2 already lets two pending `next` promises each hold `&mut self`.
+
 ## 11. Open questions
 
 Each question lists the options and a recommendation. None blocks the first PR.
@@ -1476,6 +1535,7 @@ PR that implements W1, step 2 of that design's plan under
 | [#2441](https://github.com/escalier-lang/escalier/issues/2441) | X3 | Restricts `fill` and `copyWithin` to element types F2 copies, and adds `DuplicatingArrayMethodError` |  |
 | [#2444](https://github.com/escalier-lang/escalier/issues/2444) | R1, R3, G5 | Gives `for` loops their three forms and `yield from` the same, since G5 is decided by R1, adds `ImmutableIteratorLoopError` and the loop form of the moved-value message from section 8.2 | [#2428](https://github.com/escalier-lang/escalier/issues/2428), [#2440](https://github.com/escalier-lang/escalier/issues/2440), [#2441](https://github.com/escalier-lang/escalier/issues/2441), [#2318](https://github.com/escalier-lang/escalier/issues/2318), [#2290](https://github.com/escalier-lang/escalier/issues/2290) |
 | [#2442](https://github.com/escalier-lang/escalier/issues/2442) | X3, X4 | Changes the element-reading iterator methods and the `Iterable` and `Generator` declarations, makes `next` require a `TNext` unless it admits `undefined`, and adds `IterationNextValueError` | [#2444](https://github.com/escalier-lang/escalier/issues/2444) |
+| [#2614](https://github.com/escalier-lang/escalier/issues/2614) | X5 | Borrows the predicates' values, moves the source of a lazy helper, ties a lazy helper to its callback, and requires a source whose `TNext` admits `undefined` | [#2442](https://github.com/escalier-lang/escalier/issues/2442), [#2601](https://github.com/escalier-lang/escalier/issues/2601) |
 | [#2443](https://github.com/escalier-lang/escalier/issues/2443) | S1 to S3 | Applies the rules to async generators, including the implicit `await` of a promise operand to `yield` | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2438](https://github.com/escalier-lang/escalier/issues/2438), [#2444](https://github.com/escalier-lang/escalier/issues/2444) |
 | [#2447](https://github.com/escalier-lang/escalier/issues/2447) | A2, A8 | Reports A8's dropped-promise warning for a reaction on a promise held in a place with wording that points at `await`, as section 8.7 describes | [#2438](https://github.com/escalier-lang/escalier/issues/2438), [#2610](https://github.com/escalier-lang/escalier/issues/2610) |
 | [#2602](https://github.com/escalier-lang/escalier/issues/2602) | X1 | Classifies how long each promise-returning built-in and Web API function keeps its arguments, and writes the declarations to match | [#2601](https://github.com/escalier-lang/escalier/issues/2601) |
