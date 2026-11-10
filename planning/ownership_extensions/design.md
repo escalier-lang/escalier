@@ -1085,6 +1085,25 @@ The options for `for x in arr` were:
   `yield` and keeps F4's rule that every borrow is written. The cost is that
   `for n in nums` followed by `nums.length` reports `use of moved value
   'nums'`, even for an array of numbers.
+- **Mark the pattern instead, as in `for &x in arr`.** The `&` would sit on
+  the binding that receives the element, not on the source being passed.
+
+R1 puts the `&` on the source for four reasons:
+
+- Every flow site writes the borrow on the value it passes. F4 asks for a
+  written `&v` or `&mut v` in `f(&v)`, `await &p` and `yield &x`, and
+  `for x in &arr` is the same rule. How `arr` is written decides whether it is
+  moved or borrowed.
+- A pattern already follows its source. F4 and D14 say a pattern over a borrow
+  binds borrows, so `x` is `&T` because the source is `&Array<T>`. The pattern
+  needs no marker, which is why `for x in r` works unchanged with
+  `r: &Array<T>`.
+- `for &x in arr` leaves the source's fate unclear. The loop still needs a rule
+  for `arr`. If the loop moves `arr`, it binds borrows into a container it has
+  consumed. If the loop borrows `arr`, the `&` describes `arr` but sits on `x`.
+- Rust gives the pattern the opposite meaning. `for &x in v.iter()`
+  dereferences each element and copies it out, so a Rust reader would read
+  `for &x in arr` as copying each element.
 
 Recommendation: R1. One rule then covers all three consumers. To soften the
 cost, a use of a source a loop moved reports the loop as a related span, and
