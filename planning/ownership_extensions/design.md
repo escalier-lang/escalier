@@ -21,6 +21,15 @@ adds are numbered A1 to A8 for promises, G1 to G5 for generators, R1 to R3 for
 loops, and S1 to S3 for async generators. Section 7 lists what the ownership
 rules themselves change.
 
+The rules here assume the written-signature rules in [planning/explicit_signatures/design.md](../explicit_signatures/design.md), from
+[#2611](https://github.com/escalier-lang/escalier/issues/2611). By its W1, a
+written type is complete, and elision fills in any lifetime it leaves out. By
+its W2, a module-level function, a method, and a closure bound to a
+module-level variable write their full signature. Inference fills in only a
+closure's return type and captures, by its W4. The examples in section 2 show
+code as the checker reads it today. The examples in the rule sections write
+their signatures as W2 asks.
+
 The Ownership Extensions milestone implements this document. It is the design
 for [#2426](https://github.com/escalier-lang/escalier/issues/2426),
 [#2427](https://github.com/escalier-lang/escalier/issues/2427) and
@@ -156,7 +165,7 @@ async fn twice() -> Promise<number> {
     return a.x + b.x
 }
 
-async fn owned() {
+async fn owned() -> Promise<undefined> {
     val p = load()
     keep(await &p)       // error: cannot use borrowed &Flat as owned object
 }
@@ -253,7 +262,7 @@ async fn after() -> Promise<number> {
     return b.x + n
 }
 
-fn forget() {
+fn forget() -> undefined {
     val p = load()
     p.then(fn (v) { return v.x })          // the result is dropped, so p stays borrowed for 'static
 }
@@ -320,7 +329,7 @@ async fn wait(p: Promise<&Flat>) -> Promise<number> {
     return await p.then(fn (v) { return v.x })   // accepted
 }
 
-fn watch(p: Promise<&Flat>) {
+fn watch(p: Promise<&Flat>) -> undefined {
     p.then(fn (v) { return v.x })   // error: the promise `then` returns is never awaited, so the runtime may keep its callback for 'static, and 'p' holds a borrow that ends with the call; await the promise `then` returns, or write `Promise<&'static Flat>`
 }
 ```
@@ -370,20 +379,23 @@ async fn ok() -> Promise<number> {
 
 The lifetime comes from three places:
 
-- **Inference, for an `async fn` or an async closure.** The promise holds what
-  the body reads after its first suspension, the way D17 rule 4 derives a
-  closure's lifetime from its captures. A borrowed parameter or a call-only
-  `fn` parameter read after an `await` ties its lifetime to the promise's. A
-  body that reads its parameters only before it suspends holds nothing, so its
-  promise is `'static`. `show` reads `p` after `await tick()`, so its
-  promise is `'a Promise`.
-- **Elision, for a written or declared signature.** An elided prefix follows
-  D17 rule 2. In a return type it is tied to the signature's input lifetimes,
-  so `declare fn save(doc: &Doc) -> Promise<undefined>` reads as
+- **Elision, for every written return type.** By W1, a written type is read on
+  its own, with or without a body. An elided prefix on a returned promise is
+  tied to every input lifetime, as D17 rule 2 and section 5.4 of the
+  written-signatures design state. So `show` above reads as
+  `fn <'a>(p: &'a Flat) -> 'a Promise<number>`, and
+  `declare fn save(doc: &Doc) -> Promise<undefined>` reads as
   `fn <'a>(doc: &'a Doc) -> 'a Promise<undefined>`. That is the form that
   rejects more programs, as I3 asks. It covers a callback parameter too, so a
-  closure passed to a promise-returning library function stays borrowed until
-  the caller awaits the result.
+  closure passed to a promise-returning function stays borrowed until the
+  caller awaits the result.
+- **Inference, for an async closure with no written return type.** By W4, a
+  closure's return type stays inferred. Its promise holds what the body reads
+  after its first suspension, the way D17 rule 4 derives a closure's lifetime
+  from its captures. A borrowed parameter or a call-only `fn` parameter read
+  after an `await` ties its lifetime to the promise's. A body that reads its
+  parameters only before it suspends holds nothing, so its promise is
+  `'static`.
 - **A written prefix.** A declaration states the other two cases:
 
 | How long the implementation uses an argument | Parameter | Returned promise |
@@ -392,13 +404,14 @@ The lifetime comes from three places:
 | Until the promise settles | `cb: 'a fn () -> R` | `'a Promise<T>`, which elision also gives |
 | Past the promise | `cb: 'static fn () -> R` | `'static Promise<T>`, which elision also gives |
 
-A call-only `fn` parameter keeps D17 rule 2's meaning in a body whose promise
-does not hold it. An async body that reads one after an `await`, or a plain
-function that captures one into a reaction or an async call it returns, ties
-the parameter's lifetime to the returned promise. D17 rule 2 already lets a
-call-only parameter reach a result whose lifetime the signature ties to it, so
-no new exception is needed. The caller's closure then stays borrowed until it
-awaits the result:
+A call-only `fn` parameter keeps D17 rule 2's meaning when the returned
+promise does not hold it, as with a written `'static Promise`. Under elision
+the returned promise is tied to every input, the parameter included, so an
+async body may read the parameter after an `await`, and a plain function may
+capture it into a reaction or an async call it returns. D17 rule 2 already lets
+a call-only parameter reach a result whose lifetime the signature ties to it,
+so no new exception is needed. The caller's closure then stays borrowed until
+it awaits the result:
 
 ```esc
 async fn later(cb: fn () -> undefined) -> Promise<undefined> {
@@ -479,7 +492,7 @@ declare class MyError { code: number }
 declare fn loadOr() -> Promise<Flat, MyError>
 declare fn report(e: MyError) -> undefined
 
-async fn go() {
+async fn go() -> Promise<undefined> {
     val p = loadOr()
     try {
         await &p
@@ -498,9 +511,9 @@ slot. A3 makes `&mut p` grant writes to the promise's contents, so whether a
 of `T` can be written:
 
 ```esc
-async fn fetchNum() { return 5 }
+async fn fetchNum() -> Promise<number> { return 5 }
 
-fn k() {
+fn k() -> undefined {
     val mut q = fetchNum()    // warns, since Promise<number> has no writable slot
     val mut r = load()        // accepted, since &mut r can write the Flat inside
 }
@@ -557,13 +570,13 @@ a promise on purpose and silences the warning. The hold still lasts for
 `'static`:
 
 ```esc
-fn forget() {
+fn forget() -> undefined {
     val mut f: Flat = {x: 1}
     show(&f)             // warns: the promise 'show' returns is never awaited, so 'f' stays borrowed for the rest of the program; await it, or write `void` before the call to drop it on purpose
     f.x = 2              // error: cannot assign to 'f.x' while it is borrowed as immutable by the promise 'show' returns
 }
 
-fn prefetch(doc: Doc) {
+fn prefetch(doc: Doc) -> undefined {
     void save(&doc)      // accepted with no warning, and doc stays borrowed for 'static
 }
 ```
@@ -590,7 +603,7 @@ written as a borrow:
 | `yield {x: 0}`, any value no place holds | Nothing | owned |
 
 ```esc
-gen fn g() {
+gen fn g() -> Generator<Flat, undefined, unknown> {
     val mut buf: Flat = {x: 0}
     yield buf
     buf.x = 1    // error: use of moved value 'buf'
@@ -609,13 +622,13 @@ later point of the body. E2 then rejects any later write to an immutably
 yielded place, and any later immutable borrow of a mutably yielded one.
 
 ```esc
-gen fn h() {
+gen fn h() -> Generator<&Flat, undefined, unknown> {
     val mut buf: Flat = {x: 0}
     yield &buf
     buf.x = 1    // error: cannot assign to 'buf.x' while it is borrowed as immutable
 }
 
-gen fn fresh() {
+gen fn fresh() -> Generator<{x: number}, undefined, unknown> {
     for i in [0, 1, 2] {
         yield {x: i}    // accepted, since each value is new
     }
@@ -626,13 +639,14 @@ The consumer's side needs no rule. After `yield &x`, E2 rejects every later
 write to `x` in the body, so the consumer's `&Flat` observes no mutation.
 After `yield &mut x`, the body may still write `x`, since E2 allows several
 mutable paths. The consumer's `&mut` promises nothing about other writers, so
-nothing is broken. The yield type renders
-with an elided lifetime, as `Generator<&Flat, undefined, unknown>`, unless the
-borrow ties to a parameter, which L3 renders:
+nothing is broken. A yielded borrow of a local renders with an elided
+lifetime, as `Generator<&Flat, undefined, unknown>`. One that ties to a
+parameter writes the lifetime it shares with the parameter:
 
 ```esc
-gen fn items<'a>(p: &'a {inner: Flat}) { yield &p.inner }
-// fn <'a>(p: &'a {inner: Flat}) -> Generator<&'a Flat, undefined, unknown>
+gen fn items<'a>(p: &'a {inner: Flat}) -> Generator<&'a Flat, undefined, unknown> {
+    yield &p.inner
+}
 ```
 
 Section 8.1 compares this rule with a lending generator, which ends the borrow
@@ -653,7 +667,7 @@ gen fn sum() -> Generator<number, number, Flat> {
     return first.x + second.x
 }
 
-fn go() {
+fn go() -> undefined {
     val mut it = sum()
     val mut a: Flat = {x: 1}
     it.next(a)
@@ -670,34 +684,37 @@ because `next` takes `&mut self`, by X3.
 A `gen fn` body runs only when the consumer calls `next`, so every read in
 the body happens after the call has returned. A generator type takes a lifetime
 prefix the way A4's promise does, as in `'a Generator<Y, R, N, E>`. Its
-lifetime bounds the borrows the generator's body reads, and inference gives it
-the lifetime of each borrowed or call-only `fn` parameter the body reads.
+lifetime bounds the borrows the generator's body reads. A written generator
+return type's elided prefix is tied to every input, as a promise's is in A4. A
+generator closure with no written return type infers it from each borrowed or
+call-only `fn` parameter its body reads.
 
 An `'a Generator` keeps `'a` live while the generator value is live, by L1.
 This is lazier than A4. An `async fn` body keeps running after its promise is
 dropped, and a generator body stops when the generator does.
 
 ```esc
-gen fn each(p: &Flat) { yield p.x }
+gen fn each(p: &Flat) -> Generator<number, undefined, unknown> { yield p.x }
 // each: fn <'a>(p: &'a Flat) -> 'a Generator<number, undefined, unknown>
 
-fn run() {
+fn run() -> undefined {
     val mut f: Flat = {x: 1}
     val it = each(&f)
     f.x = 2      // error: cannot assign to 'f.x' while it is borrowed as immutable by 'it'
     for n in it {}
 }
 
-fn ok() {
+fn ok() -> undefined {
     val mut f: Flat = {x: 1}
     for n in each(&f) {}
     f.x = 2      // accepted, since the generator is dead
 }
 ```
 
-A call-only `fn` parameter the body calls ties its lifetime to the
-generator's, so `gen fn each2(cb: fn () -> number) { yield cb() }` renders
-as `fn <'a>(cb: 'a fn () -> number) -> 'a Generator<number, undefined, unknown>`.
+A call-only `fn` parameter is tied to the generator the same way, so
+`gen fn each2(cb: fn () -> number) -> Generator<number, undefined, unknown> { yield cb() }`
+reads as `fn <'a>(cb: 'a fn () -> number) -> 'a Generator<number, undefined, unknown>`,
+and the body may call `cb` on any later `next`.
 
 ### 4.5 G5. `yield from g` iterates `g`
 
@@ -727,7 +744,7 @@ borrow binds borrows with the borrow's mutability, the same way F4 and D14 say
 a pattern over a borrow binds them. The loop's pattern is a pattern.
 
 ```esc
-fn go(arr: Array<Flat>) {
+fn go(arr: Array<Flat>) -> undefined {
     for f in arr {
         keep(f)              // accepted, since the loop moved arr
     }
@@ -745,7 +762,7 @@ fn after(arr: Array<Flat>) -> number {
     return arr.length        // error: use of moved value 'arr'; the `for` loop moved it, so iterate `&arr` to keep it
 }
 
-fn bump(mut arr: Array<Flat>) {
+fn bump(mut arr: Array<Flat>) -> undefined {
     for f in &mut arr {
         f.x = f.x + 1        // accepted
     }
@@ -806,13 +823,13 @@ consumer receives the settled value. `yield e` there is `yield await e`, and A1
 then G1 decide it:
 
 ```esc
-async gen fn stream() {
+async gen fn stream() -> AsyncGenerator<Flat, undefined, unknown> {
     val p = load()
     yield p          // moves p and yields the Flat it settles to
     yield &p         // error: use of moved value 'p'
 }
 
-async gen fn cached() {
+async gen fn cached() -> AsyncGenerator<&Flat, undefined, unknown> {
     val p = load()
     yield &p         // yields &Flat, a borrow of p's contents, by A3
     yield await p    // error: cannot move 'p' while it is borrowed
@@ -857,7 +874,8 @@ true, so the rules document keeps describing what the checker enforces.
 - **D17.** Its lifetime prefix extends from function types to promise and
   generator types, by A4 and G4. Rules 2 and 4 then apply to them as written:
   rule 2 elides a returned promise's lifetime, and rule 4's capture inference
-  becomes the inference of what an async or generator body holds. Rule 2's
+  becomes the inference of what an async or generator closure holds when its
+  return type is unwritten. Rule 2's
   clause that a call-only parameter may not be read in an `async` or
   generator body after the call returns is replaced. Such a read ties the
   parameter's lifetime to the returned promise or generator, which the rule's
@@ -992,7 +1010,7 @@ that another task makes while the body is suspended:
 ```esc
 var mut cfg = {x: 0}
 
-fn bump() { cfg.x = cfg.x + 1 }
+fn bump() -> undefined { cfg.x = cfg.x + 1 }
 
 async fn show() -> Promise<number> {
     val r = &cfg
@@ -1129,7 +1147,7 @@ covers, and `copyWithin` copies slots onto other slots. Each would let the
 loop in `go` below hand one object to two iterations:
 
 ```esc
-fn go(mut arr: Array<Flat>) {
+fn go(mut arr: Array<Flat>) -> undefined {
     arr.fill({x: 0})
     for f in arr {
         keep(f)    // the first two iterations would receive the same Flat
@@ -1188,6 +1206,12 @@ their dependencies. Two of the dependencies are open issues in the
 milestone. [#2318](https://github.com/escalier-lang/escalier/issues/2318) and [#2290](https://github.com/escalier-lang/escalier/issues/2290) bind `&mut` borrows through a pattern
 over a `&mut` borrow and through a mutably borrowed array, which R1 relies on
 for `for x in &mut arr`.
+
+A4, G4 and S1 read a written return type by W1 of the written-signatures
+design, so [#2438](https://github.com/escalier-lang/escalier/issues/2438) and
+[#2439](https://github.com/escalier-lang/escalier/issues/2439) land after the
+PR that implements W1, step 2 of that design's plan under
+[#2611](https://github.com/escalier-lang/escalier/issues/2611).
 
 | Issue | Rules | What the PR does | Depends on |
 |---|---|---|---|
