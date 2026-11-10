@@ -399,10 +399,12 @@ declare fn loadDeclared(pick: fn () -> string) -> Promise<number>
 // either option:    fn <'a>(pick: 'a fn () -> string) -> 'a Promise<number>
 ```
 
-Under inference, `loadBare` and `loadDeclared` write the same signature and
-mean different things, so a caller's closure is released at the call to one
-and held until the other's promise settles. Under elision both mean the
-second, and an author who wants `loadBare`'s call-only reading writes it:
+Under inference, `loadBare` and `loadDeclared` write the same signature but
+mean different things. A caller's closure is released at the call to
+`loadBare` and held until `loadDeclared`'s promise settles. Under elision both
+mean `fn <'a>(pick: 'a fn () -> string) -> 'a Promise<number>`, so both hold the
+caller's closure until the promise settles. An author who wants the call-only
+reading for `loadBare` writes it:
 
 ```esc
 async fn load(pick: fn () -> string) -> 'static Promise<number> {
