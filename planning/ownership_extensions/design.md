@@ -1425,6 +1425,19 @@ Each question lists the options and a recommendation. None blocks the first PR.
 2. **Whether a lending generator is worth adding later.** G2 rejects a body
    that reuses a buffer across yields. Recommendation: wait for a real program
    that needs it.
+3. **Whether to warn when a loop changes the shape of its own source.** In
+   `for f in &mut arr`, E2 lets the body call `arr.push(…)`, since several
+   mutable paths may be live at once. That is sound, but the loop then visits
+   the new elements, and `splice` or `shift` makes it skip some. One option is
+   a borrow that is mutable for the elements and immutable for the container's
+   slots, which would need E2 to tell the slots of `arr` apart from the values
+   they hold. The other is a lint that warns, inside `for f in &mut arr`, on a
+   call on the loop source that changes its length or order: `push`, `pop`,
+   `shift`, `unshift`, `splice`, `sort`, `reverse`, `copyWithin`, `fill`, and a
+   write to `length`. A write through `f` or to `arr[i]` stays silent, since
+   neither changes which elements the loop visits. Recommendation: the lint.
+   The other two loop forms need neither, since a loop over `arr` moves it and
+   a loop over `&arr` already rejects writes.
 
 ## 12. Plan
 
