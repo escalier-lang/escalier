@@ -123,12 +123,18 @@ variable has a type annotation that supplies it. A missing piece reports `Missin
 
 ```esc
 fn read(p) { return p.x }
-// error: 'read' is declared at module level, so its parameters need types; write `fn read<T>(p: &{x: T}) -> &T`
+// error: 'read' is declared at module level, so parameter 'p' needs a type and 'read' needs a return type
+
+fn count(xs: &Array<number>) { return xs.length }
+// error: 'count' is declared at module level, so it needs a return type; write `-> number`
 ```
 
-The suggested signature in the message comes from today's inference, which
-stays available to the language server as a suggestion. The checker verifies
-whatever the author writes, so the suggestion need not be sound.
+The message suggests only what the checker can still compute once W3 removes
+parameter inference. W4 keeps return-type inference and D16 for closures, and
+lifetimes still come from constraint flow, so a missing return type or lifetime
+comes with a suggestion. A missing parameter type does not, since nothing in
+the body decides it any more. The checker verifies whatever the author writes,
+so a suggestion need not be sound.
 
 A function that returns nothing writes `-> undefined`. A `throws` clause stays
 optional, since a sync function with no clause already declares that it raises
@@ -145,7 +151,7 @@ export val load = async fn (pick: fn () -> string) {
     val key = pick()          // read after the await, so the promise holds pick
     return key.length
 }
-// error: 'load' is a module-level closure, so it needs a full signature; write `fn (pick: fn () -> string) -> Promise<number>` on the closure, or annotate 'load'
+// error: 'load' is a module-level closure, so it needs a return type; write `-> Promise<number>` on the closure, or annotate 'load'
 
 // accepted:
 export val loadNow: fn (pick: fn () -> string) -> 'static Promise<number> = async fn (pick) {
@@ -565,9 +571,10 @@ Each step below is a PR. Each runs `UPDATE_SNAPS=true go test ./...` and
 `UPDATE_FIXTURES=true go test ./cmd/...` and reviews the fixture deltas.
 
 1. **A code action that writes a signature.** The language server offers to
-   write the inferred signature of a function that lacks one. It uses today's
-   inference, so it lands before anything is required, and the later steps use
-   it to migrate code.
+   write the inferred signature of a function that lacks one, parameters
+   included. It uses today's inference, so it lands before anything is
+   required, and steps 3 to 5 use it to migrate code. The parameter half is
+   temporary, since step 6 removes the inference it reads.
 2. **W1 for written types.** A written type is read on its own, and L2 accepts
    an elided lifetime that ties more than the body uses. A returned borrow's
    elided lifetime follows section 5.4, and `AmbiguousReturnLifetimeError`
@@ -619,6 +626,9 @@ Each step below is a PR. Each runs `UPDATE_SNAPS=true go test ./...` and
      longer minted. Unification remains only where the context is itself
      generic, as for a closure passed to `fn apply<F>(f: F)`, where W3 already
      asks for written parameter types.
+
+   The code action from step 1 stops writing parameter types and keeps writing
+   return types and lifetimes, which W4's inference still computes.
 
    The step is done when those functions and fields are gone, the per-rule
    tests for F3's unannotated parameters and for D9 are replaced by tests of
