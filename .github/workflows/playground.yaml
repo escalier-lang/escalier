@@ -7,10 +7,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
 
       - name: Install Go dependencies
         run: go mod download
@@ -18,14 +18,14 @@ jobs:
       - name: Build lsp-server
         run: make lsp-server-wasm
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v5
         with:
           run_install: false
 
       - name: Install Node.js
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v5
         with:
-          node-version: '22'
+          node-version: '24'
 
       - name: Install JS dependencies
         run: pnpm install
@@ -35,7 +35,7 @@ jobs:
         run: pnpm build:prod-ci
 
       - name: Upload Page Artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: ./playground/dist
 
@@ -51,4 +51,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
