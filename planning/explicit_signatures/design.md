@@ -596,8 +596,34 @@ Each step below is a PR. Each runs `UPDATE_SNAPS=true go test ./...` and
    order, and a group of mutually recursive ones solves its error types
    together, as today but only for error types.
 6. **W3, and removal of parameter inference.** Closure parameters with no
-   context report `MissingParamTypeError`. F3's parameter inference, D9, and
-   the parameter settling in `flow_settle.go` are removed.
+   context report `MissingParamTypeError`. Every parameter then has a written
+   or contextual type, so the checker no longer works out a parameter's type
+   from how the body uses it. This removes:
+   - **Ownership inference.** `paramOnlyReadThrough` and its alias scanner,
+     `noteOpenEscapes` and `markOpenEscapeParams` in
+     [param_escape.go](../../internal/solver/param_escape.go), which implement
+     F3's parameter rule and D9.
+   - **Parameter settling.** `registerUnsettledParams`, `settleParams`,
+     `markMovedParams`, `movedParams` and `flowMovesParam` in
+     [flow_settle.go](../../internal/solver/flow_settle.go), the
+     unsettled-parameter flows in `ownership_events.go` and
+     `ownership_events_emit.go`, and the `paramByVar`, `unsettledParams` and
+     `unannotatedParamVars` fields in `infer.go`, with the
+     `addUnannotatedParamVar` and `addReadThroughVar` calls in `inferFunc`.
+   - **Structural inference.** `writtenParamType` in
+     [infer_expr.go](../../internal/solver/infer_expr.go) gives an unannotated
+     parameter a fresh type variable that the body's uses shape, so
+     `fn read(p) { return p.x }` gives `p` the type `{x: T0}`, and
+     generalization turns `T0` into a type parameter. A parameter's type now
+     always comes from an annotation or a context, so that fresh variable is no
+     longer minted. Unification remains only where the context is itself
+     generic, as for a closure passed to `fn apply<F>(f: F)`, where W3 already
+     asks for written parameter types.
+
+   The step is done when those functions and fields are gone, the per-rule
+   tests for F3's unannotated parameters and for D9 are replaced by tests of
+   `MissingParamTypeError` and of contextual typing, and
+   `go test ./...` passes.
 7. **W5.** `_` in a declaration's signature is rejected outside its error
    type, and the error type's `_` infers only a type with no lifetime.
 8. **The rules document.** `requirements.md` and `docs/09_ownership.md` change
