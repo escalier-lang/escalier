@@ -148,9 +148,11 @@ When `T` is itself a borrow, as in `Promise<&'b mut Flat>`, `await p` yields
 that borrow. When `T` is a value type, each form yields a copy of the value, as
 F2 states for a `&T` whose `T` is a value type.
 
-The borrow forms follow from A3. `&p` has type `Promise<&'a T>`, and awaiting
-that promise is an `await` of a value that is not a place, so it yields
-`&'a T`.
+A1 states the borrow forms' result types directly, so an `await` of `&p` or
+`&mut p` needs nothing else. A3 then generalizes them to a borrow of a promise
+used outside an `await`: `&p` has type `Promise<&'a T>`, and awaiting that
+promise is an `await` of a value that is not a place, so it yields `&'a T`, as
+A1 says.
 
 ```esc
 async fn go() -> Promise<number> {
@@ -548,10 +550,14 @@ The rules:
   the checking model follows, such as a local, an array element, or a field of
   a local, passes the hold to that holder, as L1 passes a borrow.
 - **A combinator that waits for every input ends each input's hold.** An
-  `await` of `Promise.all` or `Promise.allSettled` ends the hold of each
-  promise passed in, since their results settle only after every input has.
+  `await` of `Promise.allSettled` ends the hold of each promise passed in,
+  since its result settles only after every input has. `Promise.all` waits for
+  every input only when they all fulfil. It rejects as soon as one input
+  rejects, while the other inputs' bodies keep running. So an `await` of
+  `Promise.all` ends each input's hold on the path where it fulfils, and on
+  the path where it throws each input keeps its hold for `'static`.
   `Promise.race` and `Promise.any` settle after the first input, so they end
-  no other input's hold.
+  no other input's hold on either path.
 - **Anything else keeps the hold for `'static`.** A dropped promise, and one
   stored where the checker cannot follow it, such as module-level state or a
   field of a parameter, keeps `'a` for the rest of the program.
@@ -563,8 +569,22 @@ async fn both() -> Promise<number> {
     val ps = [show(&a), show(&b)]
     a.x = 3              // error: cannot assign to 'a.x' while it is borrowed as immutable by 'ps'
     val [m, n] = await Promise.all(ps)
-    b.x = 4              // accepted, since Promise.all has settled both promises
+    b.x = 4              // accepted, since Promise.all fulfilled, so both promises have settled
     return m + n
+}
+
+async fn bothOrZero() -> Promise<number> {
+    val mut a: Flat = {x: 1}
+    val mut b: Flat = {x: 2}
+    val ps = [show(&a), show(&b)]
+    val n = try {
+        val [m, k] = await Promise.all(ps)
+        m + k
+    } catch {
+        e => 0           // show(&a) may have rejected while show(&b) still runs
+    }
+    b.x = 4              // error: cannot assign to 'b.x' while it is borrowed as immutable by 'ps'
+    return n
 }
 ```
 
@@ -971,7 +991,7 @@ Recommendation: R1. One rule then covers all three consumers. To soften the
 cost, a use of a source a loop moved reports the loop as a related span, and
 the message suggests the borrow:
 ``use of moved value 'nums'; the `for` loop moved it, so iterate `&nums` to keep it``.
-PR 5 adds that form of the message.
+[#2444](https://github.com/escalier-lang/escalier/issues/2444) adds that form of the message.
 
 ### 8.3 What `catch` returns when the fallback is owned
 
@@ -1262,12 +1282,18 @@ PR that implements W1, step 2 of that design's plan under
 | [#2447](https://github.com/escalier-lang/escalier/issues/2447) | A2, A8 | Reports A8's dropped-promise warning for a reaction on a promise held in a place with wording that points at `await`, as section 8.7 describes | [#2438](https://github.com/escalier-lang/escalier/issues/2438), [#2610](https://github.com/escalier-lang/escalier/issues/2610) |
 | [#2602](https://github.com/escalier-lang/escalier/issues/2602) | X1 | Classifies how long each promise-returning built-in and Web API function keeps its arguments, and writes the declarations to match | [#2601](https://github.com/escalier-lang/escalier/issues/2601) |
 
+[#2426](https://github.com/escalier-lang/escalier/issues/2426),
+[#2424](https://github.com/escalier-lang/escalier/issues/2424),
 [#2601](https://github.com/escalier-lang/escalier/issues/2601),
 [#2600](https://github.com/escalier-lang/escalier/issues/2600),
 [#2428](https://github.com/escalier-lang/escalier/issues/2428),
 [#2440](https://github.com/escalier-lang/escalier/issues/2440) and
 [#2441](https://github.com/escalier-lang/escalier/issues/2441) need nothing else
 and can land first.
+[#2426](https://github.com/escalier-lang/escalier/issues/2426) implements A1's
+borrow forms for an `await` operand alone, and
+[#2427](https://github.com/escalier-lang/escalier/issues/2427) extends them to
+any borrow of a promise.
 
 Three related issues sit outside this milestone:
 
