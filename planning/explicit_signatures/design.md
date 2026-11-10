@@ -589,13 +589,18 @@ Each step below is a PR. Each runs `UPDATE_SNAPS=true go test ./...` and
    module-level function is then bound from its signature before any body is
    checked, as `annotatedOverloadArms` in
    [module.go](../../internal/solver/module.go) already does for overload arms.
-   Function bodies no longer have to be checked in dependency order, and the
-   hazard `seedStubReturn` in [infer_class.go](../../internal/solver/infer_class.go)
-   guards against, an unannotated method return fixed at `never` by an early
-   reader, goes away. A function whose error type is `_` still needs its
-   callees' error types first. Those functions are checked in dependency
-   order, and a group of mutually recursive ones solves its error types
-   together, as today but only for error types.
+   Function bodies then no longer have to be checked in dependency order.
+
+   Binding methods first also removes a hazard. Today an unannotated method
+   has no return type until its body is checked. A reader outside the class
+   that runs earlier can fix that return type at `never`. `seedStubReturn` in
+   [infer_class.go](../../internal/solver/infer_class.go) guards against this.
+   With every method's return type written, the hazard cannot arise.
+
+   Error types are the exception. A function whose error type is `_` still
+   needs its callees' error types first, so those functions are checked in
+   dependency order. A group of mutually recursive ones solves its error
+   types together. That is today's ordering, applied only to error types.
 6. **W3, and removal of parameter inference.** Closure parameters with no
    context report `MissingParamTypeError`. Every parameter then has a written
    or contextual type, so the checker no longer works out a parameter's type
