@@ -1690,6 +1690,19 @@ Each question lists the options and a recommendation. None blocks the first PR.
    `await`. Stripping it would be safe, since `yield` awaits its operand
    anyway, but it would save one microtask per `yield` and make the emitted
    JavaScript stop matching the source.
+5. **Whether `fill` should accept a copyable value on an array of mixed
+   elements.** Section 10.3.3 bounds `fill` by `where T: Copyable`, so
+   `Array<number | Flat>.fill(0)` is rejected, though storing a `number` in
+   every slot is sound. Only the stored value needs to be copyable. One option
+   is a conditional type, `type AsCopyable<T> = if T : Copyable { T } else { never }`,
+   with `value: AsCopyable<T>`. It distributes over the union and accepts the
+   call, but an `Array<Flat>` then reports a generic error about `never` in
+   place of `DuplicatingArrayMethodError`. Another is a method type parameter,
+   `fill<V: T & Copyable>(&mut self, value: V, …)`, which also accepts the call
+   and keeps the failure a bound failure that maps onto the diagnostic.
+   `copyWithin` takes no value and keeps `where T: Copyable` in every option.
+   Recommendation: keep the bound on `T` until a program needs the mixed case,
+   then move `fill` to the `V: T & Copyable` form.
 
 ## 12. Plan
 
