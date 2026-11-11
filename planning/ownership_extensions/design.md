@@ -1280,7 +1280,7 @@ the message suggests the borrow:
 ### 8.3 What `catch` returns when the fallback is owned
 
 `p.catch(fn (e) { return {x: 0} })` produces a promise that settles either to
-`p`'s value, a `&'a Flat`, or to a fresh `Flat`. That union mixes ownership.
+`p`'s value (a `&'a Flat`) or to a fresh `Flat`. That union mixes ownership.
 The options are:
 
 - **Reject it by T8** and ask the callback to write `&{x: 0}`. L1 lets that
