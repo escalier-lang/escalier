@@ -118,6 +118,18 @@ func TestMissingSignature(t *testing.T) {
 			},
 		},
 		{
+			name: "ComputedKeyMethod",
+			src: `
+				val k = "k"
+				class C {
+					[k](&self) { return 1 },
+				}
+			`,
+			expected: []string{
+				"4:7-4:8: '[k]' is a method, so it needs a return type",
+			},
+		},
+		{
 			name:   "ScriptTopLevelFunc",
 			src:    `fn count(xs: &Array<number>) { return xs.length }`,
 			script: true,

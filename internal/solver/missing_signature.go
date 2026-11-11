@@ -191,6 +191,10 @@ func memberName(key ast.ObjKey) string {
 	if name, ok := objKeyName(key); ok {
 		return name
 	}
+	if computed, ok := key.(*ast.ComputedKey); ok {
+		written, _ := printer.Print(computed.Expr, printer.DefaultOptions())
+		return "[" + written + "]"
+	}
 	written, _ := printer.Print(key, printer.DefaultOptions())
 	return written
 }

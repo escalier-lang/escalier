@@ -1,4 +1,4 @@
-lib/index.esc:5:6: '' is a method, so it needs a return type
+lib/index.esc:5:6: '[baz]' is a method, so it needs a return type
 
 5:      [baz](&self) {
          ^^^
