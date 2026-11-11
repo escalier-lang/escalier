@@ -1,7 +1,6 @@
 package solver
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -543,9 +542,6 @@ fn f(g) { onClick(g) }`,
 // the signature ties its lifetime to the result. TestCallOnlyFunc covers bodies that use such a
 // parameter and asserts the full message, with its span, of each error they report.
 func TestCallOnlyFunc(t *testing.T) {
-	const static = "'g' may borrow values that live only during the call, but it is stored where it lives for the whole program; write `g: 'static fn () -> undefined` to keep it"
-	const kept = "'g' may borrow values that live only during the call, but it is kept after the call returns; write `g: 'static fn () -> undefined` to keep it"
-	const deferred = "'g' may borrow values that live only during the call, but it is read by %s, which can run after the call returns; write `g: 'static fn () -> undefined` to keep it"
 	tests := []struct {
 		name string
 		src  string
@@ -626,7 +622,7 @@ class B extends A { constructor(&mut self, g: fn () -> undefined) { super(g) } }
 			name: "passed on to a superclass constructor that keeps it for static",
 			src: `class A { constructor(&mut self, cb: 'static fn () -> undefined) {} }
 class B extends A { constructor(&mut self, g: fn () -> undefined) { super(g) } }`,
-			want: []string{"2:44-2:45: " + static},
+			want: []string{"2:44-2:45: 'g' may borrow values that live only during the call, but it is stored where it lives for the whole program; write `g: 'static fn () -> undefined` to keep it"},
 		},
 		// A member's signature is linked to its body without the function's own lifetime, so a
 		// method returning g ties g to its result as a plain function does.
@@ -639,7 +635,7 @@ class B extends A { constructor(&mut self, g: fn () -> undefined) { super(g) } }
 		{
 			name: "stored into an elided field of a borrowed parameter",
 			src:  `fn f(g: fn () -> undefined, p: &mut {cb: fn () -> undefined}) { p.cb = g }`,
-			want: []string{"1:6-1:7: " + kept},
+			want: []string{"1:6-1:7: 'g' may borrow values that live only during the call, but it is kept after the call returns; write `g: 'static fn () -> undefined` to keep it"},
 		},
 		{
 			name: "returned through an elided return annotation",
@@ -660,7 +656,7 @@ fn f(x: number) -> fn () -> undefined { return fn () {} }`,
 			name: "passed on to a static parameter",
 			src: `declare fn onClick(handler: 'static fn () -> undefined) -> undefined
 fn f(g: fn () -> undefined) { onClick(g) }`,
-			want: []string{"2:6-2:7: " + static},
+			want: []string{"2:6-2:7: 'g' may borrow values that live only during the call, but it is stored where it lives for the whole program; write `g: 'static fn () -> undefined` to keep it"},
 		},
 		{
 			name: "named lifetime passed on to a static parameter",
@@ -671,7 +667,7 @@ fn f<'a>(g: 'a fn () -> undefined) { onClick(g) }`,
 		{
 			name: "stored into a static field of a borrowed parameter",
 			src:  `fn f(g: fn () -> undefined, p: &mut {cb: 'static fn () -> undefined}) { p.cb = g }`,
-			want: []string{"1:6-1:7: " + static},
+			want: []string{"1:6-1:7: 'g' may borrow values that live only during the call, but it is stored where it lives for the whole program; write `g: 'static fn () -> undefined` to keep it"},
 		},
 		// p holds g for 'a, which the signature names, so the fix names 'a too.
 		{
@@ -696,7 +692,7 @@ fn h(x: fn () -> undefined, n: number) {
     val inner = fn (g: fn () -> undefined) { keep = g }
     keep()
 }`,
-			want: []string{"3:21-3:22: " + kept},
+			want: []string{"3:21-3:22: 'g' may borrow values that live only during the call, but it is kept after the call returns; write `g: 'static fn () -> undefined` to keep it"},
 		},
 		// 'a belongs to outer, so inner's parameter lifetime would have to outlive a lifetime
 		// of the enclosing body.
@@ -705,7 +701,7 @@ fn h(x: fn () -> undefined, n: number) {
 			src: `fn outer<'a>(p: &mut {cb: 'a fn () -> undefined}) {
     val inner = fn (g: fn () -> undefined) { p.cb = g }
 }`,
-			want: []string{"2:21-2:22: " + kept},
+			want: []string{"2:21-2:22: 'g' may borrow values that live only during the call, but it is kept after the call returns; write `g: 'static fn () -> undefined` to keep it"},
 		},
 		// A closure that calls g holds g's borrows, so it may be kept no longer than g.
 		{
@@ -735,7 +731,7 @@ fn f(g: 'static fn () -> undefined) {
 			name: "stored into a static module-level var",
 			src: `var sink: 'static fn () -> undefined = fn () {}
 fn f(g: fn () -> undefined) { sink = g }`,
-			want: []string{"2:6-2:7: " + static},
+			want: []string{"2:6-2:7: 'g' may borrow values that live only during the call, but it is stored where it lives for the whole program; write `g: 'static fn () -> undefined` to keep it"},
 		},
 		{
 			name: "stored into a static module-level var through an annotated local",
@@ -744,38 +740,38 @@ fn f(g: fn () -> undefined) {
     val k: fn () -> undefined = g
     sink = k
 }`,
-			want: []string{"2:6-2:7: " + static},
+			want: []string{"2:6-2:7: 'g' may borrow values that live only during the call, but it is stored where it lives for the whole program; write `g: 'static fn () -> undefined` to keep it"},
 		},
 		{
 			name: "pushed onto a static module-level array",
 			src: `var mut handlers: Array<'static fn () -> undefined> = []
 fn f(g: fn () -> undefined) { handlers.push(g) }`,
-			want: []string{"2:6-2:7: " + static},
+			want: []string{"2:6-2:7: 'g' may borrow values that live only during the call, but it is stored where it lives for the whole program; write `g: 'static fn () -> undefined` to keep it"},
 		},
 		{
 			name: "stored into a static field of a module-level object",
 			src: `var mut registry: {cb: 'static fn () -> undefined} = {cb: fn () {}}
 fn f(g: fn () -> undefined) { registry.cb = g }`,
-			want: []string{"2:6-2:7: " + static},
+			want: []string{"2:6-2:7: 'g' may borrow values that live only during the call, but it is stored where it lives for the whole program; write `g: 'static fn () -> undefined` to keep it"},
 		},
 		// A module-level slot written with no lifetime holds its function for 'static too.
 		{
 			name: "stored into a module-level var with an elided lifetime",
 			src: `var sink: fn () -> undefined = fn () {}
 fn f(g: fn () -> undefined) { sink = g }`,
-			want: []string{"2:6-2:7: " + static},
+			want: []string{"2:6-2:7: 'g' may borrow values that live only during the call, but it is stored where it lives for the whole program; write `g: 'static fn () -> undefined` to keep it"},
 		},
 		{
 			name: "pushed onto a module-level array with an elided lifetime",
 			src: `var mut handlers: Array<fn () -> undefined> = []
 fn f(g: fn () -> undefined) { handlers.push(g) }`,
-			want: []string{"2:6-2:7: " + static},
+			want: []string{"2:6-2:7: 'g' may borrow values that live only during the call, but it is stored where it lives for the whole program; write `g: 'static fn () -> undefined` to keep it"},
 		},
 		{
 			name: "stored into a module-level object field with an elided lifetime",
 			src: `var mut registry: {cb: fn () -> undefined} = {cb: fn () {}}
 fn f(g: fn () -> undefined) { registry.cb = g }`,
-			want: []string{"2:6-2:7: " + static},
+			want: []string{"2:6-2:7: 'g' may borrow values that live only during the call, but it is stored where it lives for the whole program; write `g: 'static fn () -> undefined` to keep it"},
 		},
 		// A class field and a type alias hold their function for 'static when the lifetime is
 		// elided, the way a module-level binding does.
@@ -783,14 +779,14 @@ fn f(g: fn () -> undefined) { registry.cb = g }`,
 			name: "stored into a class field with an elided lifetime",
 			src: `class Button { onClick: fn () -> undefined }
 fn f(g: fn () -> undefined) { return Button(g) }`,
-			want: []string{"2:6-2:7: " + static},
+			want: []string{"2:6-2:7: 'g' may borrow values that live only during the call, but it is stored where it lives for the whole program; write `g: 'static fn () -> undefined` to keep it"},
 		},
 		{
 			name: "passed on to a parameter typed with an alias",
 			src: `type Handler = fn () -> undefined
 declare fn onClick(handler: Handler) -> undefined
 fn f(g: fn () -> undefined) { onClick(g) }`,
-			want: []string{"3:6-3:7: " + static},
+			want: []string{"3:6-3:7: 'g' may borrow values that live only during the call, but it is stored where it lives for the whole program; write `g: 'static fn () -> undefined` to keep it"},
 		},
 		// A generator's body starts on the first `next()`, after the call that made it returns.
 		{
@@ -799,7 +795,7 @@ fn f(g: fn () -> undefined) { onClick(g) }`,
     g()
     yield 1
 }`,
-			want: []string{"2:5-2:6: " + fmt.Sprintf(deferred, "a generator")},
+			want: []string{"2:5-2:6: 'g' may borrow values that live only during the call, but it is read by a generator, which can run after the call returns; write `g: 'static fn () -> undefined` to keep it"},
 		},
 		// An async body resumes after each `await`, once the call has returned.
 		{
@@ -809,7 +805,7 @@ async fn f(g: fn () -> undefined) {
     await tick()
     g()
 }`,
-			want: []string{"4:5-4:6: " + fmt.Sprintf(deferred, "an async function")},
+			want: []string{"4:5-4:6: 'g' may borrow values that live only during the call, but it is read by an async function, which can run after the call returns; write `g: 'static fn () -> undefined` to keep it"},
 		},
 		{
 			name: "read by a closure in an async function",
@@ -819,7 +815,7 @@ async fn f(g: fn () -> undefined) {
     await tick()
     h()
 }`,
-			want: []string{"3:21-3:22: " + fmt.Sprintf(deferred, "an async function")},
+			want: []string{"3:21-3:22: 'g' may borrow values that live only during the call, but it is read by an async function, which can run after the call returns; write `g: 'static fn () -> undefined` to keep it"},
 		},
 		{
 			name: "read by an async closure",
@@ -831,7 +827,7 @@ fn f(g: fn () -> undefined) {
     }
     h()
 }`,
-			want: []string{"5:9-5:10: " + fmt.Sprintf(deferred, "an async function")},
+			want: []string{"5:9-5:10: 'g' may borrow values that live only during the call, but it is read by an async function, which can run after the call returns; write `g: 'static fn () -> undefined` to keep it"},
 		},
 		// The message names the first deferred body that reads g, here the async closure.
 		{
@@ -843,7 +839,7 @@ fn f(g: fn () -> undefined) {
         yield 1
     }
 }`,
-			want: []string{"2:27-2:28: " + fmt.Sprintf(deferred, "an async function")},
+			want: []string{"2:27-2:28: 'g' may borrow values that live only during the call, but it is read by an async function, which can run after the call returns; write `g: 'static fn () -> undefined` to keep it"},
 		},
 		// An object, an array, and a closure that hold g each carry g into the async body.
 		{
@@ -852,7 +848,7 @@ fn f(g: fn () -> undefined) {
     val o = {cb: g}
     val p = async fn () { o.cb() }
 }`,
-			want: []string{"3:27-3:28: " + fmt.Sprintf(deferred, "an async function")},
+			want: []string{"3:27-3:28: 'g' may borrow values that live only during the call, but it is read by an async function, which can run after the call returns; write `g: 'static fn () -> undefined` to keep it"},
 		},
 		{
 			name: "read through an array element by an async closure",
@@ -860,7 +856,7 @@ fn f(g: fn () -> undefined) {
     val arr = [g]
     val p = async fn () { arr[0]() }
 }`,
-			want: []string{"3:27-3:30: " + fmt.Sprintf(deferred, "an async function")},
+			want: []string{"3:27-3:30: 'g' may borrow values that live only during the call, but it is read by an async function, which can run after the call returns; write `g: 'static fn () -> undefined` to keep it"},
 		},
 		// g reaches h only after the async closure reads h, and the error still reports g, since
 		// the `var` keeps it past the call.
@@ -871,7 +867,7 @@ fn f(g: fn () -> undefined) {
     val p = async fn () { h() }
     h = g
 }`,
-			want: []string{"1:6-1:7: " + kept},
+			want: []string{"1:6-1:7: 'g' may borrow values that live only during the call, but it is kept after the call returns; write `g: 'static fn () -> undefined` to keep it"},
 		},
 		// h's annotation gives it a lifetime of its own, which g's bounds from below.
 		{
@@ -880,7 +876,7 @@ fn f(g: fn () -> undefined) {
     val h: fn () -> undefined = g
     val p = async fn () { h() }
 }`,
-			want: []string{"3:27-3:28: " + fmt.Sprintf(deferred, "an async function")},
+			want: []string{"3:27-3:28: 'g' may borrow values that live only during the call, but it is read by an async function, which can run after the call returns; write `g: 'static fn () -> undefined` to keep it"},
 		},
 		// The fix keeps the parameter's `?`.
 		{
@@ -979,7 +975,6 @@ func TestModuleLevelFuncHoldsNoBorrow(t *testing.T) {
 declare fn run(cb: fn () -> undefined) -> undefined
 declare fn keep(cb: 'static fn () -> undefined) -> undefined
 `
-	const fix = "pass a function that borrows nothing"
 	tests := []struct {
 		name string
 		src  string
