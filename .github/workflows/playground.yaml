@@ -3,14 +3,21 @@ on:
     branches:
       - main
 
+# The build job only reads the repository. The deploy job asks for the
+# Pages permissions it needs in its own block.
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
 
       - name: Install Go dependencies
         run: go mod download
@@ -18,14 +25,14 @@ jobs:
       - name: Build lsp-server
         run: make lsp-server-wasm
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
         with:
           run_install: false
 
       - name: Install Node.js
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
-          node-version: '22'
+          node-version: '24'
 
       - name: Install JS dependencies
         run: pnpm install
@@ -35,7 +42,7 @@ jobs:
         run: pnpm build:prod-ci
 
       - name: Upload Page Artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: ./playground/dist
 
@@ -51,4 +58,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

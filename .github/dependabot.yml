@@ -1,0 +1,16 @@
+version: 2
+updates:
+  # Bumps the SHA-pinned actions in .github/workflows and the version
+  # comment beside each pin. One grouped PR a week keeps the noise down.
+  # The cooldown waits a week after a release before proposing it, so a
+  # compromised release has time to be caught and pulled first.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns:
+          - "*"
