@@ -53,6 +53,22 @@ func (c *checker) returnElision(inputMark int, lifetimeParams []*ast.LifetimePar
 	return elideStatic
 }
 
+// noteSignatureLifetimes maps the variable each of params names in the current named-lifetime
+// scope to its name in signatureLts. params is the `<'a>` list of a function with a body, whose
+// lifetimes the rigid-lifetime checks hold to the bounds the list declares.
+func (c *checker) noteSignatureLifetimes(params []*ast.LifetimeParam) {
+	for _, p := range params {
+		lt, found := c.namedLifetimes[p.Name]
+		if !found {
+			continue
+		}
+		if c.signatureLts == nil {
+			c.signatureLts = map[*soltype.LifetimeVar]string{}
+		}
+		c.signatureLts[lt] = "'" + p.Name
+	}
+}
+
 // isStaticFuncLt reports whether lt, a function type's lifetime, is 'static. A nil lifetime
 // reads as 'static, since a function with none holds no borrow.
 func isStaticFuncLt(lt soltype.Lifetime) bool {
