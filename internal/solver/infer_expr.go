@@ -550,9 +550,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// allocates the map on first use, so a plain function with no `&'a` annotation pays no
 	// allocation.
 	//
-	// outerScope and outerBounds are the enclosing functions' lifetimes before this signature
-	// hides the names it binds, for checkSignatureImpliesBodyLifetimes to read.
-	outerScope, outerBounds := c.enclosingLifetimes, c.enclosingBounds
+	// outerScope, outerBounds and outerOwners are the enclosing functions' lifetimes before this
+	// signature hides the names it binds, for checkSignatureImpliesBodyLifetimes to read.
+	outerScope, outerBounds, outerOwners := c.enclosingLifetimes, c.enclosingBounds, c.enclosingOwners
 	defer c.enterLifetimeScope(sig.LifetimeParams)()
 	// Take the name inferMemberBodies left for this member, and clear it so a lambda nested in
 	// the body walked below is not blamed under the member's name. It is empty for every function
@@ -940,7 +940,16 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// A function type written with no lifetime in the body gets a fresh one, as an elided
 		// `&` does there.
 		c.fnElision = elideFresh
-		restoreScope := c.enterBodyLifetimeScope(sig, lvl)
+		// A closure has no name, so a lifetime of its own that hides a farther one is called
+		// the enclosing closure's.
+		owner := "the enclosing closure's"
+		if fd, ok := node.(*ast.FuncDecl); ok && fd.Name != nil {
+			owner = fd.Name.Name + "'s"
+		}
+		if memberName != "" {
+			owner = memberName + "'s"
+		}
+		restoreScope := c.enterBodyLifetimeScope(sig, lvl, owner, outerScope)
 		c.inferBlock(fnScope, lvl, body)
 		restoreScope()
 		if deferred != "" {
@@ -1153,7 +1162,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// The converse also holds: every relation the body imposes between the lifetimes
 		// the signature names must be one the signature declares, since callers read only
 		// the signature.
-		c.checkSignatureImpliesBodyLifetimes(sig, ft, outerScope, outerBounds)
+		c.checkSignatureImpliesBodyLifetimes(sig, ft, outerScope, outerBounds, outerOwners)
 		// A body-carrying generic function must actually produce every type parameter it
 		// declares in an output position. A bodyless `declare fn` asserts its signature
 		// with no body to check, so it is not verified here.

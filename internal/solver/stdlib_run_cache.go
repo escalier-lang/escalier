@@ -308,6 +308,7 @@ func (c *checker) fork(source ModuleSource, groupSource GroupSource, groups Pack
 	f.declLifetimes = maps.Clone(c.declLifetimes)
 	f.enclosingLifetimes = maps.Clone(c.enclosingLifetimes)
 	f.enclosingBounds = maps.Clone(c.enclosingBounds)
+	f.enclosingOwners = maps.Clone(c.enclosingOwners)
 	f.componentClasses = maps.Clone(c.componentClasses)
 	f.componentClassOf = maps.Clone(c.componentClassOf)
 	f.memberNamespaces = maps.Clone(c.memberNamespaces)

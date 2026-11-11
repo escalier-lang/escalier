@@ -34,9 +34,10 @@ import (
 //
 // sig is the function's signature and ft its inferred type. outerScope and outerBounds are
 // the enclosing functions' lifetimes and their bounds, as enclosingLifetimes and
-// enclosingBounds held them before the signature hid the names it binds. A lifetime the
-// enclosing class declares is not checked here.
-func (c *checker) checkSignatureImpliesBodyLifetimes(sig ast.FuncSig, ft *soltype.FuncType, outerScope map[string]*soltype.LifetimeVar, outerBounds map[string]set.Set[string]) {
+// enclosingBounds held them before the signature hid the names it binds. outerOwners is
+// enclosingOwners at the same point. A lifetime the enclosing class declares is not checked
+// here.
+func (c *checker) checkSignatureImpliesBodyLifetimes(sig ast.FuncSig, ft *soltype.FuncType, outerScope map[string]*soltype.LifetimeVar, outerBounds map[string]set.Set[string], outerOwners map[string]string) {
 	ltParams := sig.LifetimeParams
 	named := map[string]*soltype.LifetimeVar{}
 	binders := map[string]*ast.LifetimeParam{}
@@ -121,7 +122,7 @@ func (c *checker) checkSignatureImpliesBodyLifetimes(sig ast.FuncSig, ft *soltyp
 			}
 			shadowed := own.Contains(name)
 			if shadowed || !covers(sub, name) {
-				c.report(&LifetimeRelationUndeclaredError{Sub: sub, Super: name, Shadowed: shadowed, Param: binders[sub]})
+				c.report(&LifetimeRelationUndeclaredError{Sub: sub, Super: name, Shadowed: shadowed, Owner: outerOwners[name], Param: binders[sub]})
 			}
 		}
 	}

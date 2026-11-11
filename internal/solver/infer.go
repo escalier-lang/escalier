@@ -207,6 +207,10 @@ type checker struct {
 	// or implies it outlives, closed transitively. checkSignatureImpliesBodyLifetimes reads it to
 	// accept a nested signature's bound on one enclosing lifetime that outlives another.
 	enclosingBounds map[string]set.Set[string]
+	// enclosingOwners maps each name in enclosingLifetimes that hides a farther lifetime of the
+	// same name to the possessive of the function that binds it, as "run's" for `run<'a>` in
+	// `class C<'a>`. checkSignatureImpliesBodyLifetimes reads it to say which 'a it means.
+	enclosingOwners map[string]string
 
 	// classNamespace is the dep_graph namespace of the module-level declaration
 	// currently being inferred, empty at the root namespace and outside any

@@ -2508,12 +2508,14 @@ func (e *LifetimeBoundNotSatisfiedError) Message() string {
 // bounds do not imply. `fn f<'a, 'b>(x: &'a T, y: &'b T) -> &'b T { return x }` needs 'a to
 // outlive 'b. Sub and Super are the two names without the leading `'`, and Super is
 // "static" for 'static. Super may name an enclosing function's lifetime. Shadowed marks one
-// that the signature hides by binding the same name, so no bound can name it. Param is Sub's
-// binder, which the error blames.
+// that the signature hides by binding the same name, so no bound can name it. Owner is the
+// possessive of the function that binds Super, as "run's", when Super's name also denotes a
+// farther lifetime, and "" otherwise. Param is Sub's binder, which the error blames.
 type LifetimeRelationUndeclaredError struct {
 	Sub      string
 	Super    string
 	Shadowed bool
+	Owner    string
 	Param    *ast.LifetimeParam
 }
 
@@ -2526,9 +2528,13 @@ func (e *LifetimeRelationUndeclaredError) Message() string {
 			"the body requires '%s to outlive the enclosing function's '%s, which this signature's own '%s hides; rename it and add the bound",
 			e.Sub, e.Super, e.Super)
 	}
+	super := "'" + e.Super
+	if e.Owner != "" {
+		super = e.Owner + " " + super
+	}
 	return fmt.Sprintf(
-		"the body requires '%s to outlive '%s, but the signature does not declare it; add the bound '%s: '%s",
-		e.Sub, e.Super, e.Sub, e.Super)
+		"the body requires '%s to outlive %s, but the signature does not declare it; add the bound '%s: '%s",
+		e.Sub, super, e.Sub, e.Super)
 }
 
 // CallOnlyFuncKeptError fires when a body keeps a function parameter whose type is written with no

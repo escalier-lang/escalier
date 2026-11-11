@@ -117,11 +117,25 @@ func TestSignatureImpliesBodyLifetimes(t *testing.T) {
 			name: "a relation to a class lifetime from a closure in a member is not checked",
 			src:  `class C<'a> { peer: &'a mut {value: number}, run(&mut self) -> undefined { val f = fn <'b>(p: &'b mut {value: number}) { self.peer = p } } }`,
 		},
-		// inner's 'b: 'c, mid's 'c: 'd and outer's 'd: 'a, implied by `&'a &'d`, chain to 'b: 'a
-		// across three function levels.
+		// outer's parameter `r: &'a &'d {x: number}` implies 'd: 'a. With inner's 'b: 'c and mid's
+		// 'c: 'd, that chains to 'b: 'a across three function levels.
 		{
 			name: "bounds across enclosing function levels cover the relation",
 			src: `fn outer<'a, 'd>(p: &mut {cb: 'a fn () -> undefined}, r: &'a &'d {x: number}, s: &mut {cb: 'd fn () -> undefined}) {
+  val mid = fn <'c: 'd>(q: &mut {cb: 'c fn () -> undefined}) {
+    s.cb = q.cb
+    val inner = fn <'b: 'c>(g: 'b fn () -> undefined) {
+      q.cb = g
+      p.cb = g
+    }
+  }
+}`,
+		},
+		// outer declares 'd: 'a in its clause, and its store into p.cb proves it.
+		{
+			name: "bounds across enclosing function levels cover the relation with a declared bound",
+			src: `fn outer<'a, 'd: 'a>(p: &mut {cb: 'a fn () -> undefined}, s: &mut {cb: 'd fn () -> undefined}) {
+  p.cb = s.cb
   val mid = fn <'c: 'd>(q: &mut {cb: 'c fn () -> undefined}) {
     s.cb = q.cb
     val inner = fn <'b: 'c>(g: 'b fn () -> undefined) {
@@ -154,7 +168,29 @@ func TestSignatureImpliesBodyLifetimes(t *testing.T) {
     val f = fn <'b>(p: &'b mut {value: number}) { slot.cb = p }
   },
 }`,
-			want: []string{"4:17-4:19: the body requires 'b to outlive 'a, but the signature does not declare it; add the bound 'b: 'a"},
+			want: []string{"4:17-4:19: the body requires 'b to outlive run's 'a, but the signature does not declare it; add the bound 'b: 'a"},
+		},
+		// The member's 'c hides nothing, so the message names 'c alone.
+		{
+			name: "a closure in a member is checked against the member's own lifetime",
+			src: `class C<'a> {
+  peer: &'a mut {value: number},
+  run<'c>(&mut self, slot: &mut {cb: &'c mut {value: number}}) -> undefined {
+    val f = fn <'b>(p: &'b mut {value: number}) { slot.cb = p }
+  },
+}`,
+			want: []string{"4:17-4:19: the body requires 'b to outlive 'c, but the signature does not declare it; add the bound 'b: 'c"},
+		},
+		// mid's own 'a hides outer's, and mid has no name of its own.
+		{
+			name: "a closure is checked against an enclosing closure's lifetime that hides a farther one",
+			src: `fn outer<'a>(p: &'a {x: number}) -> &'a {x: number} {
+  val mid = fn <'a>(slot: &mut {cb: &'a mut {value: number}}) {
+    val inner = fn <'b>(q: &'b mut {value: number}) { slot.cb = q }
+  }
+  return p
+}`,
+			want: []string{"3:21-3:23: the body requires 'b to outlive the enclosing closure's 'a, but the signature does not declare it; add the bound 'b: 'a"},
 		},
 		// outer's body is inferred before C's, and C's member body does not see outer's 'a.
 		{
