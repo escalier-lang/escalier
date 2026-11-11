@@ -36,8 +36,8 @@ Escalier is a programming language with a Go-based compiler. The compiler pipeli
 - Use the `Set` ADT from [internal/set/](internal/set/) (`set.NewSet[T]()`, `set.FromSlice(...)`) instead of `map[T]struct{}` or `map[T]bool`.
 - Don't shadow Go builtins (`any`, `error`, `new`, `len`, etc.) or imported type/package aliases with local identifiers. Pick a distinct name (e.g. `anyT`, `errVal`).
 - Name a function for what it produces or does, not for why a caller wants it. `immutableTarget` says it converts a mutable target to its immutable form, where `ownedMutUpgradeTarget` named the rule the conversion serves and left readers asking what was upgraded. A name built from the reason also goes stale as soon as a second caller needs the same operation for a different reason.
-- Put the reason at the CALL SITE, not in the docstring. A docstring says what the function returns and what its parameters mean, so a reader deciding whether to call it needs nothing else. Why THIS call is the right one belongs in a comment above it, where the surrounding code gives it meaning. Two callers of one function usually have two different reasons, and neither fits in the one docstring they share.
-- Keep in the docstring only what every caller needs: the contract, the shape of the return, and any ordering a caller has to respect. A constraint like "this must run before X" is contract, not rationale, so it stays.
+- Put the reason at the CALL SITE, not in the docstring. A docstring says what the function returns and what its parameters mean, so a reader deciding whether to call it needs nothing else. Why THIS call is correct belongs in a comment above it, where the surrounding code gives it meaning. Two callers of one function usually have two different reasons, and neither fits in the one docstring they share.
+- Keep in the docstring only what every caller needs: the contract, the return type, and any ordering a caller has to respect. A constraint like "this must run before X" is contract, not rationale, so it stays.
 - Write comments about what the code does now, not what it did before a change. Drop phrasing like "previously", "used to", "is now", "no longer", and "the old behaviour", and don't make a PR number or milestone the subject of a sentence. A comment that narrates the diff goes stale the moment the next change lands. Describe the current behaviour and its rationale instead, and leave the history to git.
 
 ## Writing tests
@@ -179,7 +179,7 @@ Those apply wherever they make sense and are simply irrelevant elsewhere.
     - Filler copulas where a plain "is" or a precise verb reads better: "serves
       as", "stands as", "acts as", "boasts", "features".
     - The "not just X, but Y" construction, and groups of three forced for
-      rhythm. State the one thing that matters.
+      rhythm. State the single point.
     - Vague "-ing" tails bolted onto a clause: "..., ensuring correctness",
       "..., highlighting the issue", "..., allowing reuse". Make the fact its
       own sentence or drop it.
