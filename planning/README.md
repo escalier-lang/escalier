@@ -19,6 +19,11 @@ the target against a hand-written annotation set and switches over when the
 table lands. `[Exposed]` answers nothing about the runtimes, which is why their
 source is still open.
 
+**`ownership_extensions/`** extends the rules in
+`ownership_rules/requirements.md` to `await`, `yield`, async generators and
+`for … in` loops. Its `design.md` is the design for the Ownership Extensions
+milestone, and section 7 of it lists what the ownership rules change.
+
 **`explicit_signatures/`** proposes that module-level functions and methods
 write their full signature, that closure parameters be typed by their context
 or an annotation, and that a written type mean exactly what it says. Section 4
