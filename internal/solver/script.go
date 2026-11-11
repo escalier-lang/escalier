@@ -169,6 +169,9 @@ func (c *checker) inferScriptIn(scope *Scope, script *ast.Script) (*Scope, *Info
 	// Every flow is settled and every body is walked, so the dataflow pass can read the
 	// events of the script's bodies.
 	c.runOwnershipDataflow()
+	if c.requireSignatures {
+		c.checkScriptSignatures(script)
+	}
 	traceDiagnostics(c.errs, nil)
 
 	return scope, c.info, c.errs

@@ -1,0 +1,5 @@
+lib/index.esc:7:11: 'greet' is declared at module level, so it needs a return type; write `-> undefined`
+
+7:  export fn greet(name: string) {
+              ^^^^^
+

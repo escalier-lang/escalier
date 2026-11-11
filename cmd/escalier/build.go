@@ -178,7 +178,8 @@ func writeModuleOutputs(stderr io.Writer, moduleName string, output compiler.Com
 // package succeeded. A package that reports a type error still writes its output, so a
 // program the checker rejects can be run, which is what an inner loop and a debugging
 // session both want. The errors reach stderr and the exit code reports the failure, so
-// nothing reads the output as a clean build.
+// nothing reads the output as a clean build. A warning reaches stderr as well, and leaves
+// the package's build a success.
 //
 // A parse error is the one thing that stops the write, and not as a policy: it leaves an
 // error node in the tree that codegen has no lowering for, so CompilePackage skips lib
@@ -238,7 +239,14 @@ func build(stdout io.Writer, stderr io.Writer, pkgs []string) bool {
 		}
 		_ = os.Chdir(cwd)
 
-		if errs := unreadable + len(output.ParseErrors) + len(output.TypeErrors); errs > 0 {
+		// A warning is printed with the errors but leaves the package built.
+		typeErrors := 0
+		for _, err := range output.TypeErrors {
+			if !compiler.IsWarning(err) {
+				typeErrors++
+			}
+		}
+		if errs := unreadable + len(output.ParseErrors) + typeErrors; errs > 0 {
 			fmt.Fprintf(stdout, " - failed (%s)\n", errorCount(errs))
 			allOK = false
 			continue

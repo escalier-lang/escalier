@@ -3,3 +3,83 @@ lib/generators.esc:74:1: the body never yields, so this returns an empty Generat
 74: export gen fn genNoYield() {
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+lib/generators.esc:2:15: 'count' is declared at module level, so it needs a return type; write `-> Generator<1 | 2 | 3, undefined, unknown>`
+
+2:  export gen fn count() {
+                  ^^^^^
+
+lib/generators.esc:9:15: 'countWithDone' is declared at module level, so it needs a return type; write `-> Generator<1 | 2, "done", unknown>`
+
+9:  export gen fn countWithDone() {
+                  ^^^^^^^^^^^^^
+
+lib/generators.esc:16:15: 'mixed' is declared at module level, so it needs a return type; write `-> Generator<1 | "hello", undefined, unknown>`
+
+16: export gen fn mixed() {
+                  ^^^^^
+
+lib/generators.esc:22:15: 'inner' is declared at module level, so it needs a return type; write `-> Generator<1 | 2, undefined, unknown>`
+
+22: export gen fn inner() {
+                  ^^^^^
+
+lib/generators.esc:27:15: 'outer' is declared at module level, so it needs a return type; write `-> Generator<1 | 2 | 3, undefined, unknown>`
+
+27: export gen fn outer() {
+                  ^^^^^
+
+lib/generators.esc:42:11: 'countArray' is declared at module level, so it needs a return type; write `-> Array<1 | 2 | 3>`
+
+42: export fn countArray() {
+              ^^^^^^^^^^
+
+lib/generators.esc:46:11: 'outerArray' is declared at module level, so it needs a return type; write `-> Array<1 | 2 | 3>`
+
+46: export fn outerArray() {
+              ^^^^^^^^^^
+
+lib/generators.esc:51:21: 'fetchItems' is declared at module level, so it needs a return type; write `-> AsyncGenerator<1 | 2 | 3, undefined, unknown>`
+
+51: export async gen fn fetchItems() {
+                        ^^^^^^^^^^
+
+lib/generators.esc:58:15: 'genCount' is declared at module level, so it needs a return type; write `-> Generator<10 | 20, undefined, unknown>`
+
+58: export gen fn genCount() {
+                  ^^^^^^^^
+
+lib/generators.esc:64:21: 'genFetch' is declared at module level, so it needs a return type; write `-> AsyncGenerator<1, undefined, unknown>`
+
+64: export async gen fn genFetch() {
+                        ^^^^^^^^
+
+lib/generators.esc:69:12: 'genExpr' is a module-level closure, so it needs a return type; write `-> Generator<"a", undefined, unknown>` on the closure, or annotate 'genExpr'
+
+69: export val genExpr = gen fn () {
+               ^^^^^^^
+
+lib/generators.esc:74:15: 'genNoYield' is declared at module level, so it needs a return type; write `-> Generator<never, 1, unknown>`
+
+74: export gen fn genNoYield() {
+                  ^^^^^^^^^^
+
+lib/generators.esc:80:11: 'drive' is declared at module level, so it needs a return type; write `-> IteratorResult<1 | 2 | 3, undefined>`
+
+80: export fn drive() {
+              ^^^^^
+
+lib/generators.esc:86:11: 'driveWithValue' is declared at module level, so it needs a return type; write `-> IteratorResult<1 | 2 | 3, undefined>`
+
+86: export fn driveWithValue() {
+              ^^^^^^^^^^^^^^
+
+lib/generators.esc:98:11: 'driveResumable' is declared at module level, so it needs a return type; write `-> IteratorResult<number, string>`
+
+98: export fn driveResumable() {
+              ^^^^^^^^^^^^^^
+
+lib/generators.esc:105:15: 'relayResumable' is declared at module level, so it needs a return type; write `-> Generator<number, undefined, string>`
+
+105:export gen fn relayResumable() {
+                  ^^^^^^^^^^^^^^
+

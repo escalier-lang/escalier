@@ -1,0 +1,10 @@
+lib/iterators.esc:20:11: 'spreadString' is declared at module level, so it needs a return type; write `-> Array<string>`
+
+20: export fn spreadString(s: string) {
+              ^^^^^^^^^^^^
+
+lib/iterators.esc:24:11: 'spreadArray' is declared at module level, so it needs a return type; write `-> Array<number>`
+
+24: export fn spreadArray(items: Array<number>) {
+              ^^^^^^^^^^^
+

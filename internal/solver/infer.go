@@ -365,6 +365,8 @@ type checker struct {
 	dependencies set.Set[string]
 	// checkJsDecorators is Options.CheckJsDecorators for this run.
 	checkJsDecorators bool
+	// requireSignatures is Options.RequireSignatures for this run.
+	requireSignatures bool
 	// definitionsSettled is set once settleLoadedDefinitions has run.
 	definitionsSettled bool
 	// ambientBound is set once bindAmbientExports has loaded the literal classes' packages
@@ -970,6 +972,7 @@ func (c *checker) forScript(pkgURI string) *checker {
 		groups:            c.groups,
 		stdlibDir:         c.stdlibDir,
 		checkJsDecorators: c.checkJsDecorators,
+		requireSignatures: c.requireSignatures,
 		weakBindingVars:   set.NewSet[*soltype.TypeVarType](),
 	}
 	// Point the recorder at the script, so a fusion its walk records lands in the

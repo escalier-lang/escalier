@@ -11,43 +11,50 @@ import (
 
 // TestSignatureAction covers the code action that writes a function's inferred signature.
 // Each case requests actions at the start of cursor's first occurrence in src, and expected
-// is src with the action's edits applied, or "" when the action is not offered.
+// is src with the action's edits applied, or "" when the action is not offered. warning is
+// the MissingSignatureError src reports, or "" when it reports none.
 func TestSignatureAction(t *testing.T) {
 	tests := []struct {
 		name     string
 		src      string
 		cursor   string
 		expected string
+		warning  string
 	}{
 		{
 			name:     "UnannotatedParam",
 			src:      "fn read(p) { return p.x }",
 			cursor:   "read",
 			expected: "fn read<T0>(p: &{x: T0}) -> &T0 { return p.x }",
+			warning:  "0:3-0:7 'read' is declared at a script's top level, so parameter 'p' needs a type and 'read' needs a return type",
 		},
 		{
 			name:     "MissingReturnType",
 			src:      "fn count(xs: &Array<number>) { return xs.length }",
 			cursor:   "xs:",
 			expected: "fn count(xs: &Array<number>) -> number { return xs.length }",
+			warning:  "0:3-0:8 'count' is declared at a script's top level, so it needs a return type; write `-> number`",
 		},
 		{
 			name:     "ReturnsUndefined",
 			src:      "fn noop(x: number) {}",
 			cursor:   "noop",
 			expected: "fn noop(x: number) -> undefined {}",
+			warning:  "0:3-0:7 'noop' is declared at a script's top level, so it needs a return type; write `-> undefined`",
 		},
 		{
 			name:     "NoParams",
 			src:      "fn one() { return 1 }",
 			cursor:   "fn",
 			expected: "fn one() -> 1 { return 1 }",
+			warning:  "0:3-0:6 'one' is declared at a script's top level, so it needs a return type; write `-> 1`",
 		},
 		{
 			name:     "WrittenTypeParam",
 			src:      "fn id<T>(x: T) { return x }",
 			cursor:   "id",
 			expected: "fn id<T>(x: T) -> T { return x }",
+			warning:  "0:3-0:5 'id' is declared at a script's top level, so it needs a return type; write `-> T`",
 		},
 		{
 			name:     "ReturnedBorrowOfOneOfTwoParams",
@@ -60,36 +67,42 @@ func TestSignatureAction(t *testing.T) {
 			src:      "type Flat = {x: number}\nclass Box {\n\tinner: Flat,\n\tget(&self) { return self.inner.x },\n}",
 			cursor:   "get",
 			expected: "type Flat = {x: number}\nclass Box {\n\tinner: Flat,\n\tget(&self) -> number { return self.inner.x },\n}",
+			warning:  "3:1-3:4 'get' is a method, so it needs a return type; write `-> number`",
 		},
 		{
 			name:     "MethodReturnsReceiverBorrow",
 			src:      "type Flat = {x: number}\nclass Box {\n\tinner: Flat,\n\tpeek(&self, other: &Flat) { return &self.inner },\n}",
 			cursor:   "peek",
 			expected: "type Flat = {x: number}\nclass Box {\n\tinner: Flat,\n\tpeek(&self, other: &Flat) -> &Flat { return &self.inner },\n}",
+			warning:  "3:1-3:5 'peek' is a method, so it needs a return type; write `-> &Flat`",
 		},
 		{
 			name:     "MethodOfGenericClass",
 			src:      "class Cell<T> {\n\tvalue: T,\n\tget(&self) { return self.value },\n}",
 			cursor:   "get",
 			expected: "class Cell<T> {\n\tvalue: T,\n\tget(&self) -> &T { return self.value },\n}",
+			warning:  "2:1-2:4 'get' is a method, so it needs a return type; write `-> &T`",
 		},
 		{
 			name:     "MethodTypeParamHidesClassTypeParam",
 			src:      "class Cell<T> {\n\tvalue: T,\n\tpass<T>(&self, x: T) { return x },\n}",
 			cursor:   "pass",
 			expected: "class Cell<T> {\n\tvalue: T,\n\tpass<T>(&self, x: T) -> T { return x },\n}",
+			warning:  "2:1-2:5 'pass' is a method, so it needs a return type; write `-> T`",
 		},
 		{
 			name:     "BinderListEndsInComma",
 			src:      "fn id<T,>(x: T) { return x }",
 			cursor:   "id",
 			expected: "fn id<T,>(x: T) -> T { return x }",
+			warning:  "0:3-0:5 'id' is declared at a script's top level, so it needs a return type; write `-> T`",
 		},
 		{
 			name:     "NoParamsAfterBinderList",
 			src:      "fn one<T>() { return 1 }",
 			cursor:   "one",
 			expected: "fn one<T>() -> 1 { return 1 }",
+			warning:  "0:3-0:6 'one' is declared at a script's top level, so it needs a return type; write `-> 1`",
 		},
 		{
 			// Writing the binder list would repeat the `where` clause's bound on `T`.
@@ -97,6 +110,7 @@ func TestSignatureAction(t *testing.T) {
 			src:      "fn f<T>(x: T, y) where T: number { return [x, y] }",
 			cursor:   "f<",
 			expected: "",
+			warning:  "0:3-0:4 'f' is declared at a script's top level, so parameter 'y' needs a type and 'f' needs a return type",
 		},
 		{
 			name:     "AddsLifetimeToWrittenBinders",
@@ -117,6 +131,7 @@ func TestSignatureAction(t *testing.T) {
 			src:      "fn f(\n\tx: number, // the input\n\ty: number /* scale */\n) { return x * y }",
 			cursor:   "f(",
 			expected: "fn f(\n\tx: number, // the input\n\ty: number /* scale */\n) -> number { return x * y }",
+			warning:  "0:3-0:4 'f' is declared at a script's top level, so it needs a return type; write `-> number`",
 		},
 		{
 			name:     "FullSignature",
@@ -129,6 +144,7 @@ func TestSignatureAction(t *testing.T) {
 			src:      "fn noop(x: number) { x }",
 			cursor:   "x }",
 			expected: "",
+			warning:  "0:3-0:7 'noop' is declared at a script's top level, so it needs a return type; write `-> undefined`",
 		},
 	}
 	for _, tt := range tests {
@@ -136,7 +152,11 @@ func TestSignatureAction(t *testing.T) {
 			s := integrationServer(t, map[string]string{"bin/main.esc": tt.src})
 			ctx, published := publishedDiagnostics()
 			uri := openFileIn(t, s, ctx, "bin/main.esc", tt.src)
-			require.Empty(t, awaitDiagnostics(t, published, uri, 1))
+			if tt.warning == "" {
+				require.Empty(t, awaitDiagnostics(t, published, uri, 1))
+			} else {
+				require.Equal(t, []string{tt.warning}, awaitDiagnostics(t, published, uri, 1))
+			}
 
 			offset := strings.Index(tt.src, tt.cursor)
 			require.GreaterOrEqual(t, offset, 0)
@@ -184,7 +204,9 @@ func TestSignatureActionStaleDocument(t *testing.T) {
 	s := integrationServer(t, map[string]string{"bin/main.esc": src})
 	ctx, published := publishedDiagnostics()
 	uri := openFileIn(t, s, ctx, "bin/main.esc", src)
-	require.Empty(t, awaitDiagnostics(t, published, uri, 1))
+	require.Equal(t,
+		[]string{"0:3-0:7 'noop' is declared at a script's top level, so it needs a return type; write `-> undefined`"},
+		awaitDiagnostics(t, published, uri, 1))
 	// Recording a newer version without checking it leaves the check output stale.
 	s.mu.Lock()
 	doc := s.documents[uri]
@@ -209,7 +231,9 @@ func TestSignatureActionInLib(t *testing.T) {
 	s := integrationServer(t, map[string]string{"lib/index.esc": src})
 	ctx, published := publishedDiagnostics()
 	uri := openFileIn(t, s, ctx, "lib/index.esc", src)
-	require.Empty(t, awaitDiagnostics(t, published, uri, 1))
+	require.Equal(t,
+		[]string{"0:10-0:15 'count' is declared at module level, so it needs a return type; write `-> number`"},
+		awaitDiagnostics(t, published, uri, 1))
 	pos := protocol.Position{Line: 0, Character: 10}
 	result, err := s.textDocumentCodeAction(&glsp.Context{}, &protocol.CodeActionParams{
 		TextDocument: protocol.TextDocumentIdentifier{URI: uri},
@@ -255,4 +279,15 @@ func TestSkipPast(t *testing.T) {
 			require.Equal(t, tt.expected, got)
 		})
 	}
+}
+
+// TestMissingSignatureSeverity asserts that MissingSignatureError is published as a warning.
+func TestMissingSignatureSeverity(t *testing.T) {
+	src := "fn noop(x: number) {}"
+	s := integrationServer(t, map[string]string{"bin/main.esc": src})
+	ctx, published := publishedDiagnostics()
+	uri := openFileIn(t, s, ctx, "bin/main.esc", src)
+	diags := awaitPublished(t, published, uri, 1)
+	require.Len(t, diags, 1)
+	require.Equal(t, addr(protocol.DiagnosticSeverityWarning), diags[0].Severity)
 }

@@ -811,6 +811,9 @@ func (server *Server) publishDiagnosticsForScript(
 // the error's span indexes into, or nil when the check output holds none.
 func toDiagnostic(err compiler.Diagnostic, src *ast.Source) protocol.Diagnostic {
 	severity := protocol.DiagnosticSeverityError
+	if compiler.IsWarning(err) {
+		severity = protocol.DiagnosticSeverityWarning
+	}
 	source := "escalier"
 	diag := protocol.Diagnostic{
 		Range:    spanToRange(lineMapFor(src), err.Span()),
