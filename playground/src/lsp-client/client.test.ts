@@ -85,6 +85,7 @@ test('initialize', async () => {
             "codeActionKinds": [
               "compile",
               "quickfix",
+              "refactor.rewrite",
             ],
           },
           "completionProvider": {

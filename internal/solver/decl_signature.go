@@ -96,9 +96,10 @@ func (i *Info) MethodSignature(class *ast.ClassDecl, m *ast.MethodElem) (DeclSig
 }
 
 // elidedLifetimes returns the lifetimes of s that elision assigns when the signature leaves
-// them out. ltBounds is the outlives relation displayLtBounds computes for s.Type. Each
-// lifetime returned is one the checker inferred rather than one the source named, and has
-// no outlives bound. It is one of these:
+// them out. ltBounds is the outlives relation displayLtBounds computes for s.Type. A
+// lifetime returned has no outlives bound and is not one of s.Type's own named lifetime
+// parameters. A lifetime the source names in a function's `<'a>` list reaches the scheme as
+// a free variable, so it can be returned. Each lifetime returned is one of these:
 //
 //   - a lifetime that occurs once among the receiver and the parameters and not in the
 //     return or throws type, which elision gives each lifetime a parameter leaves out;

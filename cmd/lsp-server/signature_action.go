@@ -145,7 +145,7 @@ func findSignatureTarget(file checkedFile, loc ast.Location) (signatureTarget, b
 // rewritten. ok is false when the inferred signature cannot be written into the source:
 // for a function type that carries its own lifetime, for a parameter list whose length
 // differs from the inferred one, and for a binder list that needs rewriting while the
-// source writes a `where` clause, whose bounds the rewritten list would repeat.
+// source writes a `where` clause or declares a lifetime that elision assigns.
 func signatureEdits(target signatureTarget, src *ast.Source) ([]protocol.TextEdit, bool) {
 	ft := target.signature.Type
 	sig := target.sig
@@ -163,22 +163,32 @@ func signatureEdits(target signatureTarget, src *ast.Source) ([]protocol.TextEdi
 	insert := func(offset int, text string) { replace(offset, offset, text) }
 	replaceSpan := func(span ast.Span, text string) { replace(span.Start.Offset, span.End.Offset, text) }
 
-	// The binder list is rewritten when the inferred signature binds more parameters than
-	// the source writes, and every part that names one of the added lifetimes is rewritten
-	// with it.
+	// The binder list is rewritten when the inferred signature binds a lifetime the source
+	// does not declare, or more parameters than the source writes, and every part that names
+	// one of the added lifetimes is rewritten with it.
+	declared := set.NewSet[string]()
+	for _, lp := range sig.LifetimeParams {
+		declared.Add("'" + lp.Name)
+	}
+	renderedNames := set.NewSet[string]()
 	var added []*regexp.Regexp
-	if len(rendered.Binders) > len(sig.TypeParams)+len(sig.LifetimeParams) {
+	for _, b := range rendered.Binders {
+		name, _, _ := strings.Cut(b, ":")
+		renderedNames.Add(name)
+		if strings.HasPrefix(name, "'") && !declared.Contains(name) {
+			added = append(added, regexp.MustCompile(regexp.QuoteMeta(name)+`\b`))
+		}
+	}
+	if len(added) > 0 || len(rendered.Binders) > len(sig.TypeParams)+len(sig.LifetimeParams) {
+		// A rewritten list would repeat a `where` clause's bounds, and would drop a lifetime
+		// the source declares that elision assigns, which the parts kept as written still
+		// name.
 		if writesWhereClause(sig) {
 			return nil, false
 		}
-		declared := set.NewSet[string]()
-		for _, lp := range sig.LifetimeParams {
-			declared.Add("'" + lp.Name)
-		}
-		for _, b := range rendered.Binders {
-			name, _, _ := strings.Cut(b, ":")
-			if strings.HasPrefix(name, "'") && !declared.Contains(name) {
-				added = append(added, regexp.MustCompile(regexp.QuoteMeta(name)+`\b`))
+		for _, name := range declared.ToSlice() {
+			if !renderedNames.Contains(name) {
+				return nil, false
 			}
 		}
 		binders := strings.Join(rendered.Binders, ", ")

@@ -1,0 +1,157 @@
+package solver
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/dep_graph"
+	"github.com/stretchr/testify/require"
+)
+
+// renderWritten joins the parts PrintWritten returns as `<binders>(receiver, params) -> ret
+// throws T`, so a test asserts them in one string.
+func renderWritten(sig DeclSignature) string {
+	parts := sig.PrintWritten()
+	var b strings.Builder
+	if len(parts.Binders) > 0 {
+		b.WriteString("<" + strings.Join(parts.Binders, ", ") + ">")
+	}
+	params := parts.Params
+	if parts.Receiver != "" {
+		params = append([]string{parts.Receiver}, params...)
+	}
+	b.WriteString("(" + strings.Join(params, ", ") + ") -> " + parts.Ret)
+	if parts.Throws != "" {
+		b.WriteString(" throws " + parts.Throws)
+	}
+	return b.String()
+}
+
+// inferForSignatures infers src as a module and returns its Info with the declarations of
+// its root namespace.
+func inferForSignatures(t *testing.T, src string) (*Info, []ast.Decl) {
+	t.Helper()
+	module := parseModuleFiles(t, map[string]string{"input.esc": src})
+	c := newTestChecker()
+	scope := c.preludeScope().Child()
+	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
+	require.Empty(t, c.errs)
+	ns, ok := module.Namespaces.Get("")
+	require.True(t, ok)
+	return c.info, ns.Decls
+}
+
+// TestFuncDeclSignaturePrintWritten covers which lifetimes PrintWritten leaves for elision
+// to assign. Each case's source declares one function, f.
+func TestFuncDeclSignaturePrintWritten(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		expected string
+	}{
+		{
+			name:     "OneInputLifetime",
+			src:      `fn f(p) { return p.x }`,
+			expected: "<T0>(&{x: T0}) -> &T0",
+		},
+		{
+			name:     "ReturnedBorrowOfOneOfTwo",
+			src:      "type Flat = {x: number}\nfn f(a: &Flat, b: &Flat) -> &Flat { return a }",
+			expected: "<'a>(&'a Flat, &Flat) -> &'a Flat",
+		},
+		{
+			name:     "LifetimeNotInOutput",
+			src:      "type Flat = {x: number}\nfn f(a: &Flat, b: &Flat) -> number { return a.x + b.x }",
+			expected: "(&Flat, &Flat) -> number",
+		},
+		{
+			name:     "WrittenLifetimeElided",
+			src:      "type Flat = {x: number}\nfn f<'q>(a: &'q Flat) -> &'q Flat { return a }",
+			// The lifetime the source names reaches the scheme as a free variable, so it is
+			// elided like an inferred one.
+			expected: "(&Flat) -> &Flat",
+		},
+		{
+			name:     "LifetimeInsideFuncParam",
+			src:      "type Flat = {x: number}\nfn f(a: &Flat, g: fn (x: &Flat) -> number) -> number { return g(a) }",
+			// The call ties x to a, so the lifetime occurs inside g's type and stays written.
+			expected: "<'a>(&'a Flat, fn (x: &'a Flat) -> number) -> number",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			info, decls := inferForSignatures(t, tt.src)
+			var fn *ast.FuncDecl
+			for _, d := range decls {
+				if fd, ok := d.(*ast.FuncDecl); ok && fd.Name.Name == "f" {
+					fn = fd
+				}
+			}
+			require.NotNil(t, fn)
+			sig, ok := info.FuncDeclSignature(fn)
+			require.True(t, ok)
+			require.Equal(t, tt.expected, renderWritten(sig))
+		})
+	}
+}
+
+// TestMethodSignature covers which signature MethodSignature returns for each method of a
+// class, by the method's position in the class body. A method with no signature expects "".
+func TestMethodSignature(t *testing.T) {
+	src := `
+		type Flat = {x: number}
+		class Box {
+			inner: Flat,
+			peek(&self, other: &Flat) -> &Flat { return &self.inner },
+			get(&self) { return self.inner.x },
+			static make(x: number) { return x + 1 },
+		}
+	`
+	info, decls := inferForSignatures(t, src)
+	var class *ast.ClassDecl
+	for _, d := range decls {
+		if cd, ok := d.(*ast.ClassDecl); ok {
+			class = cd
+		}
+	}
+	require.NotNil(t, class)
+	var got []string
+	for _, elem := range class.Body {
+		m, ok := elem.(*ast.MethodElem)
+		if !ok {
+			continue
+		}
+		sig, ok := info.MethodSignature(class, m)
+		require.True(t, ok)
+		got = append(got, renderWritten(sig))
+	}
+	require.Equal(t, []string{
+		"(&self, &Flat) -> &Flat",
+		"(&self) -> number",
+		"(number) -> number",
+	}, got)
+}
+
+// TestMethodSignatureComputedKey asserts that MethodSignature returns no signature when a
+// method on the same side of the class has a computed key, whose name only the checker
+// resolves.
+func TestMethodSignatureComputedKey(t *testing.T) {
+	src := `
+		val K = "k"
+		class C {
+			[K](&self) -> number { return 1 },
+			get(&self) { return 2 },
+		}
+	`
+	info, decls := inferForSignatures(t, src)
+	for _, d := range decls {
+		class, ok := d.(*ast.ClassDecl)
+		if !ok {
+			continue
+		}
+		m := class.Body[1].(*ast.MethodElem)
+		_, ok = info.MethodSignature(class, m)
+		require.False(t, ok)
+	}
+}
