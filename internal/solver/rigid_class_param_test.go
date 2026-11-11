@@ -31,7 +31,7 @@ func TestAMemberBodyIsCheckedForEveryClassArgument(t *testing.T) {
 }
 class Keyed<U> extends Bag<U> {
 	key: fn (x: U) -> number,
-	constructor(&mut self, items: Array<U>, key: fn (x: U) -> number) {
+	constructor(&mut self, items: Array<U>, key: 'static fn (x: U) -> number) {
 		super(items)
 		self.key = key
 	},
@@ -54,13 +54,13 @@ val mm = k.contains`,
 }
 class Keyed<U> extends Bag<U> {
 	key: fn (x: U) -> number,
-	constructor(&mut self, items: Array<U>, key: fn (x: U) -> number) {
+	constructor(&mut self, items: Array<U>, key: 'static fn (x: U) -> number) {
 		super(items)
 		self.key = key
 	},
 }
 class Leaf<V> extends Keyed<V> {
-	constructor(&mut self, items: Array<V>, key: fn (x: V) -> number) {
+	constructor(&mut self, items: Array<V>, key: 'static fn (x: V) -> number) {
 		super(items, key)
 	},
 	contains<B>(&self, x: B) -> number { return self.key(x) },
@@ -77,7 +77,7 @@ class Leaf<V> extends Keyed<V> {
 }
 class Keyed<U> extends Bag<U> {
 	key: fn (x: U) -> number,
-	constructor(&mut self, items: Array<U>, key: fn (x: U) -> number) {
+	constructor(&mut self, items: Array<U>, key: 'static fn (x: U) -> number) {
 		super(items)
 		self.key = key
 	},

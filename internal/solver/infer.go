@@ -132,8 +132,11 @@ type checker struct {
 	// same reason. The map is allocated lazily by namedLifetime on first use.
 	namedLifetimes map[string]*soltype.LifetimeVar
 
-	// pendingCallOnly holds a check per function parameter that has no retention lifetime, for
-	// checkCallOnlyParams to read once the enclosing component has solved.
+	// fnElision is the lifetime a function type written with no lifetime gets at the current
+	// position. elideFuncsAs sets it, and elidedFuncLifetime reads it.
+	fnElision funcElision
+	// pendingCallOnly holds a check per parameter whose function type is written with no
+	// lifetime, for checkCallOnlyParams to read once the enclosing component has solved.
 	pendingCallOnly []callOnlyCheck
 	// ltMarks maps a node to the lifetime counter at the start of its inference, written by
 	// markLifetimes for every expression and statement. A rigid-lifetime check sited at the

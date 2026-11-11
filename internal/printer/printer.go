@@ -1717,14 +1717,21 @@ const (
 
 // typeAnnPrecedence returns the binding power of a type annotation's top-level operator.
 func typeAnnPrecedence(t ast.TypeAnn) int {
-	switch t.(type) {
+	switch t := t.(type) {
 	case *ast.FuncTypeAnn, *ast.RestSpreadTypeAnn:
 		return precTypeOpenEnded
+	case *ast.RefTypeAnn:
+		// A borrow takes the whole annotation after it, so `&fn () -> A` reaches as far
+		// right as the function type does.
+		if typeAnnPrecedence(t.Inner) == precTypeOpenEnded {
+			return precTypeOpenEnded
+		}
+		return precTypePrefix
 	case *ast.UnionTypeAnn:
 		return precTypeUnion
 	case *ast.IntersectionTypeAnn:
 		return precTypeIntersection
-	case *ast.KeyOfTypeAnn, *ast.MutableTypeAnn, *ast.RefTypeAnn, *ast.InferTypeAnn, *ast.NegationTypeAnn:
+	case *ast.KeyOfTypeAnn, *ast.MutableTypeAnn, *ast.InferTypeAnn, *ast.NegationTypeAnn:
 		return precTypePrefix
 	default:
 		return precTypePrimary
@@ -1854,6 +1861,10 @@ func (p *Printer) printLifetimeAnn(lt ast.LifetimeAnnNode) {
 }
 
 func (p *Printer) printFuncTypeAnn(typ *ast.FuncTypeAnn) {
+	if typ.Lifetime != nil {
+		p.printLifetimeAnn(typ.Lifetime)
+		p.writeString(" ")
+	}
 	p.writeString("fn")
 	p.printFuncTypeAnnTail(typ)
 }

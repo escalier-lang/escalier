@@ -3207,49 +3207,72 @@
 }
 ---
 
-[TestParseTypeAnnNoErrors/BorrowStaticFuncType - 1]
-&ast.RefTypeAnn{
+
+
+[TestParseTypeAnnNoErrors/LifetimeFuncType - 1]
+&ast.FuncTypeAnn{
     Lifetime: &ast.LifetimeAnn{
-        Name: "static",
-        span: 1-8,
+        Name: "a",
+        span: 0-2,
     },
-    Inner: &ast.FuncTypeAnn{
-        Params: []*ast.Param{
-            &ast.Param{
-                Pattern: &ast.IdentPat{
-                    Name: "x",
-                    span: 13-14,
-                },
-                TypeAnn: &ast.NumberTypeAnn{
-                    span: 16-22,
-                },
-            },
+    Return: &ast.LitTypeAnn{
+        Lit: &ast.UndefinedLit{
+            span: 12-21,
         },
-        Return: &ast.NumberTypeAnn{
-            span: 27-33,
-        },
-        span: 9-33,
+        span: 12-21,
     },
-    span: 0-33,
+    span: 0-21,
 }
 ---
 
-[TestParseTypeAnnNoErrors/BorrowLifetimeFuncType - 1]
-&ast.RefTypeAnn{
-    Lifetime: &ast.LifetimeAnn{
-        Name: "a",
-        span: 1-3,
-    },
-    Inner: &ast.FuncTypeAnn{
-        Return: &ast.LitTypeAnn{
-            Lit: &ast.UndefinedLit{
-                span: 13-22,
+[TestParseTypeAnnNoErrors/LifetimeFuncTypeInUnion - 1]
+&ast.UnionTypeAnn{
+    Types: []ast.TypeAnn{
+        &ast.FuncTypeAnn{
+            Lifetime: &ast.LifetimeAnn{
+                Name: "static",
+                span: 1-8,
             },
-            span: 13-22,
+            Return: &ast.LitTypeAnn{
+                Lit: &ast.UndefinedLit{
+                    span: 18-27,
+                },
+                span: 18-27,
+            },
+            span: 1-27,
         },
-        span: 4-22,
+        &ast.LitTypeAnn{
+            Lit: &ast.NullLit{
+                span: 31-35,
+            },
+            span: 31-35,
+        },
     },
-    span: 0-22,
+    span: 1-35,
+}
+---
+
+[TestParseTypeAnnNoErrors/StaticFuncType - 1]
+&ast.FuncTypeAnn{
+    Lifetime: &ast.LifetimeAnn{
+        Name: "static",
+        span: 0-7,
+    },
+    Params: []*ast.Param{
+        &ast.Param{
+            Pattern: &ast.IdentPat{
+                Name: "x",
+                span: 12-13,
+            },
+            TypeAnn: &ast.NumberTypeAnn{
+                span: 15-21,
+            },
+        },
+    },
+    Return: &ast.NumberTypeAnn{
+        span: 26-32,
+    },
+    span: 0-32,
 }
 ---
 

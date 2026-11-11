@@ -608,7 +608,11 @@ func (t *TypeRefTypeAnn) Accept(v Visitor) {
 	v.ExitTypeAnn(t)
 }
 
+// FuncTypeAnn is a function type `fn (…) -> R`. A leading lifetime, as in `'a fn () -> R` or
+// `'static fn () -> R`, bounds the borrows the function may hold. Lifetime is nil when the
+// lifetime is elided, and the checker then picks it by where the type is written.
 type FuncTypeAnn struct {
+	Lifetime       LifetimeAnnNode  // optional, e.g. 'a in 'a fn () -> R
 	LifetimeParams []*LifetimeParam // optional, e.g. <'a, 'b: 'a>
 	TypeParams     []*TypeParam     // optional
 	Params         []*Param
@@ -637,8 +641,19 @@ func NewFuncTypeAnn(
 		commentSlots:   commentSlots{},
 	}
 }
+
+// SetLifetime sets the leading lifetime of the function type and widens its span to start
+// at the lifetime.
+func (t *FuncTypeAnn) SetLifetime(lt LifetimeAnnNode) {
+	t.Lifetime = lt
+	t.span = MergeSpans(lt.Span(), t.span)
+}
+
 func (t *FuncTypeAnn) Accept(v Visitor) {
 	if v.EnterTypeAnn(t) {
+		if t.Lifetime != nil {
+			t.Lifetime.Accept(v)
+		}
 		acceptLifetimeParams(v, t.LifetimeParams)
 		acceptTypeParams(v, t.TypeParams)
 		for _, param := range t.Params {
@@ -882,10 +897,6 @@ func (t *MutableTypeAnn) Accept(v Visitor) {
 //
 // The prefix `&` binds tight to a single atom, so `&A | B` is `(&A) | B`.
 // A borrow of a compound is written with explicit parens, `&(A | B)`.
-//
-// The same node carries a function parameter's retention lifetime, as in
-// `&'a fn () -> undefined`. That form does not borrow the function. The checker
-// lowers it to a function type whose lifetime bounds how long a callee keeps it.
 type RefTypeAnn struct {
 	Mut      bool
 	Lifetime LifetimeAnnNode // optional

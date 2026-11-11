@@ -1559,6 +1559,9 @@ func (c *checker) checkClassBodyLifetimes(decl *ast.ClassDecl) {
 func (c *checker) buildFieldSigs(
 	scope *Scope, lvl int, decl *ast.ClassDecl, body, static *soltype.ObjectType,
 ) []staticFieldInit {
+	// A field holds its function for as long as the instance lives, so a function type
+	// written with no lifetime in a field's type holds no borrow.
+	defer c.elideFuncsAs(elideStatic)()
 	var inits []staticFieldInit
 	for _, elem := range decl.Body {
 		field, ok := elem.(*ast.FieldElem)
@@ -1904,7 +1907,12 @@ func (c *checker) seedStubReturn(scope *Scope, lvl int, fn *ast.FuncExpr, stub *
 		return false
 	}
 	errsLen := len(c.errs)
+	// Whether a function type in the return holds a borrow depends on the member's receiver
+	// and parameters, which the body pass resolves. Giving it a lifetime here makes the
+	// finder below leave the return to that pass.
+	restore := c.elideFuncsAs(elideFresh)
 	ret, ok := c.resolveTypeAnn(scope, sig.Return, lvl)
+	restore()
 	c.errs = c.errs[:errsLen]
 	if !ok {
 		return false
@@ -1932,6 +1940,8 @@ func (v *openTypeFinder) EnterType(t soltype.Type, _ soltype.Polarity) soltype.E
 		v.found = v.found || len(t.LifetimeArgs) > 0 || t.Lt != nil
 	case *soltype.AliasType:
 		v.found = v.found || len(t.LifetimeArgs) > 0
+	case *soltype.FuncType:
+		v.found = v.found || t.Lt != nil
 	}
 	return soltype.EnterResult{}
 }

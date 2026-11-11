@@ -235,6 +235,9 @@ func (c *checker) resolveLifetimeParams(lvl int, ltParams []*ast.LifetimeParam) 
 // symbolic in the stored body, and expandAlias substitutes an instance's arguments for them
 // at subtyping time.
 func (c *checker) inferAliasBody(sh *aliasShell) {
+	// An alias names a type for every place that writes it, so a function type written with
+	// no lifetime in its body holds no borrow, as it does in a module-level binding.
+	defer c.elideFuncsAs(elideStatic)()
 	prevNS := c.classNamespace
 	c.classNamespace = sh.ns
 	defer func() { c.classNamespace = prevNS }()
