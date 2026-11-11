@@ -425,6 +425,8 @@ func (s *Server) memberCompletions(e *ast.MemberExpr, info *solver.Info, view sc
 	// A namespace is not a value, so the check records no type for one, and its members
 	// are read from the scope that binds it instead.
 	if ns, ok := namespaceAt(e.Object, view, info); ok {
+		// A member expression is in value position, where a type the namespace holds
+		// can't be written. A class's value still appears, beside the type it declares.
 		return completionsFromNamespace(ns, info, info.LendsMut(e.Object))
 	}
 	return nil
@@ -457,10 +459,11 @@ func namespaceAt(expr ast.Expr, view scopeView, info *solver.Info) (*solver.Name
 	return nil, false
 }
 
-// completionsFromNamespace returns a completion item for each value, type, and nested
+// completionsFromNamespace returns a completion item for each value and nested
 // namespace ns holds, followed by each member of ns.AsValue that ns does not hold
-// under the same name. info expands a type alias for display. receiverMut says whether
-// ns.AsValue lends mutable access, as completionsFromSolType documents.
+// under the same name. It leaves out the types ns holds. info reads the members of
+// ns.AsValue. receiverMut says whether ns.AsValue lends mutable access, as
+// completionsFromSolType documents.
 func completionsFromNamespace(ns *solver.Namespace, info *solver.Info, receiverMut bool) []protocol.CompletionItem {
 	var items []protocol.CompletionItem
 	add := func(name string, kind protocol.CompletionItemKind, detail string) {
@@ -477,10 +480,6 @@ func completionsFromNamespace(ns *solver.Namespace, info *solver.Info, receiverM
 			continue
 		}
 		add(name, completionKindForSolValue(t), printSolType(t))
-	}
-	for _, name := range identifiers(slices.Sorted(maps.Keys(ns.Types))) {
-		binding := ns.Types[name]
-		add(name, completionKindForSolType(binding), printSolType(info.Expand(binding.Type)))
 	}
 	for _, name := range identifiers(slices.Sorted(maps.Keys(ns.Nested))) {
 		add(name, protocol.CompletionItemKindModule, "")

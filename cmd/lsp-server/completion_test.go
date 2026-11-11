@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -1847,6 +1848,71 @@ func TestMemberCompletionFromSolverMembership(t *testing.T) {
 			}
 			for _, item := range tt.excludes {
 				require.NotContains(t, items, item)
+			}
+		})
+	}
+}
+
+// TestNamespaceMemberCompletionLabels covers which members a package's namespace offers
+// after a dot, which is always in value position. A class is offered once, for its value,
+// and a type with no value is left out.
+func TestNamespaceMemberCompletionLabels(t *testing.T) {
+	tests := []struct {
+		name  string
+		files map[string]string
+		// open is the file the cursor is in. line and col are 1-based.
+		open      string
+		line, col int
+		// once are labels the list must hold exactly once.
+		once     []string
+		excludes []string
+	}{
+		{
+			name:     "PackageNamespace",
+			files:    map[string]string{"lib/index.esc": "import \"std:intl\"\nval x = intl."},
+			open:     "lib/index.esc",
+			line:     2,
+			col:      14,
+			once:     []string{"Collator", "DateTimeFormat"},
+			excludes: []string{"DateTimeFormatOptions", "ResolvedDateTimeFormatOptions"},
+		},
+		{
+			name:     "PackageNamespaceWithOwnValue",
+			files:    map[string]string{"bin/main.esc": "import \"web:fetch\"\nval x = fetch."},
+			open:     "bin/main.esc",
+			line:     2,
+			col:      15,
+			once:     []string{"Headers", "Request", "Response"},
+			excludes: []string{"HeadersInit"},
+		},
+		{
+			name:     "ValueBoundBesideNamespace",
+			files:    map[string]string{"lib/index.esc": "import \"std:console\"\nexport fn main() {\n    console.\n}\n"},
+			open:     "lib/index.esc",
+			line:     3,
+			col:      13,
+			once:     []string{"console", "log"},
+			excludes: []string{"Console"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var labels []string
+			for _, item := range solverMemberCompletions(t, tt.files, tt.open, tt.line, tt.col) {
+				label, _, _ := strings.Cut(item, ": ")
+				labels = append(labels, label)
+			}
+			for _, label := range tt.once {
+				occurrences := 0
+				for _, l := range labels {
+					if l == label {
+						occurrences++
+					}
+				}
+				require.Equal(t, 1, occurrences, "occurrences of %s", label)
+			}
+			for _, label := range tt.excludes {
+				require.NotContains(t, labels, label)
 			}
 		})
 	}
