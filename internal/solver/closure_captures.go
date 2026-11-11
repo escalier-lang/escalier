@@ -127,9 +127,15 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 		}
 	}
 	framed := c.fn != nil
+	// keepable says each capture the closure borrows is a `val` or `var` of the body it is
+	// written in, rather than a parameter or a binding of a script's top level, and has a VarID
+	// for keepCaptureLoans to find its loans by.
+	keepable := c.fn != nil && !c.inScript()
 	// direct says some capture is borrowed by the closure itself, rather than only through a
 	// function the capture holds.
 	direct := false
+	// locals holds the locals the closure borrows, as closureBorrow describes.
+	var locals borrowedLocals
 	// definite says some capture holds a borrow whatever its type settles to, and undecided
 	// holds the type variables of the other captures that may hold one.
 	definite := false
@@ -164,6 +170,22 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 			// A returned closure takes a local it captures, but not what a borrow or a closure
 			// inside the local borrows from outside the body.
 			framed = framed && c.isFrameLocal(capture.Name, b) && c.holdsOnlyFrameBorrows(held)
+			_, isVarDecl := bindingDecl(b).(*ast.VarDecl)
+			keepable = keepable && isVarDecl && b.VarID > 0
+			if b.VarID > 0 {
+				locals.roots = append(locals.roots, liveness.VarID(b.VarID))
+				if b.Kind == ast.VarKind {
+					locals.vars = append(locals.vars, borrowedVar{root: liveness.VarID(b.VarID), writes: capture.IsMutable})
+				}
+			}
+			// A closure the capture holds borrows its own locals, which go with it.
+			for _, lt := range heldLts {
+				if lv, isLtVar := lt.(*soltype.LifetimeVar); isLtVar {
+					inner := c.closureBorrows[lv].locals
+					locals.roots = append(locals.roots, inner.roots...)
+					locals.vars = append(locals.vars, inner.vars...)
+				}
+			}
 		}
 		// Instantiating a generalized binding mints fresh variables, so a binding whose type
 		// holds no function with a lifetime is skipped before that. Instantiation keeps the shape of
@@ -184,6 +206,8 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 	if borrowed.name != "" {
 		borrowed.viaFuncs = !direct
 		borrowed.local = allLocal
+		borrowed.keepable = keepable && framed
+		borrowed.locals = locals
 		if c.closureBorrows == nil {
 			c.closureBorrows = map[*soltype.LifetimeVar]closureBorrow{}
 		}
@@ -207,10 +231,30 @@ func (c *checker) setClosureRetention(scope *Scope, lvl int, closure ast.Func, f
 // binding's name. local says every binding the closure borrows is a `val` or `var` of a function
 // body, which could be declared at module level instead. viaFuncs says the closure holds a
 // borrow only through functions it captures, whose lifetimes bound the closure's from below.
+// keepable says every capture the closure borrows is a `val` or `var` of the body it is written
+// in that holds no borrow from outside that body, so a slot can keep the closure for 'static by
+// keeping those borrows for the rest of the program, as keepCaptureLoans describes. locals lists
+// the locals the closure borrows, including those a closure it captures borrows.
 type closureBorrow struct {
 	name     string
 	local    bool
 	viaFuncs bool
+	keepable bool
+	locals   borrowedLocals
+}
+
+// borrowedLocals lists the locals a closure borrows. roots holds each one. vars holds the `var`
+// bindings among them, which the closure reads or writes as bindings. Such a binding may hold a
+// value type that no loan tracks.
+type borrowedLocals struct {
+	roots []liveness.VarID
+	vars  []borrowedVar
+}
+
+// borrowedVar is a `var` binding a closure borrows. writes says the closure assigns to it.
+type borrowedVar struct {
+	root   liveness.VarID
+	writes bool
 }
 
 // shortFuncLifetimes returns the lifetimes retentionLifetimes finds in t other than 'static. A
@@ -537,6 +581,63 @@ func (c *checker) sortFuncKeptForStatic(err *FuncKeptForStaticError) bool {
 	if tentative {
 		c.heldFuncEscapes = append(c.heldFuncEscapes, heldFuncEscape{err: err, closures: src.closures})
 		return false
+	}
+	if c.recordKeptCaptures(err, src) {
+		return false
+	}
+	return true
+}
+
+// recordKeptCaptures reports whether the slot err names can keep the borrows of each closure its
+// source holds a borrow through, and records the value it keeps when it can. It can when the
+// source holds a borrow only through closures written in the current body whose captures are
+// all keepable, as closureBorrow describes, and the slot is a written type that an argument or
+// an assigned value fills. err.inferred must be set.
+//
+// The value is added to the body's keptCaptures, and an assignment or a declaration gets its
+// retainedStore here. The dataflow pass then keeps each loan the closures hold of those locals
+// for the rest of the program, as keepCaptureLoans describes.
+func (c *checker) recordKeptCaptures(err *FuncKeptForStaticError, src funcLtSourceSet) bool {
+	// A slot whose type an unannotated binding took from a closure keeps nothing for 'static.
+	if c.fn == nil || err.inferred || src.other || len(src.closures) == 0 {
+		return false
+	}
+	var locals borrowedLocals
+	for _, lt := range src.closures {
+		b, found := c.closureBorrows[lt]
+		if !found || !b.keepable || c.fn.frameClosures == nil || !c.fn.frameClosures.Contains(lt) {
+			return false
+		}
+		locals.roots = append(locals.roots, b.locals.roots...)
+		locals.vars = append(locals.vars, b.locals.vars...)
+	}
+	value, keeper := c.keptValue(err)
+	if keeper == nil {
+		return false
+	}
+	if c.fn.keptCaptures == nil {
+		c.fn.keptCaptures = map[ast.Expr]borrowedLocals{}
+	}
+	c.fn.keptCaptures[value] = locals
+	// A call records a store for each argument its parameters keep. An assignment or a
+	// declaration gets its store here, since a slot it fills keeps the closure from then on.
+	var via string
+	switch keeper := keeper.(type) {
+	case *ast.BinaryExpr:
+		via = "the slot"
+		if text := placeText(keeper.Left); text != "" {
+			via = closureVia(strings.Trim(text, "`"))
+		}
+	case *ast.VarDecl:
+		via = "the slot"
+		if ip, isIdent := keeper.Pattern.(*ast.IdentPat); isIdent {
+			via = closureVia(ip.Name)
+		}
+	}
+	if via != "" {
+		if at, ok := c.eventStmtRef(); ok {
+			c.noteRetainedClosureStore(retainedStore{via: via, expr: value, at: at, static: true})
+		}
 	}
 	return true
 }

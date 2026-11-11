@@ -344,6 +344,9 @@ type ownershipEvents struct {
 	// capturedPlaces maps each closure written in the body to the places its body reaches,
 	// which capturedPaths reads for each local the closure captures.
 	capturedPlaces map[ast.Func]*capturedPlaceFinder
+	// keptAccesses maps each closure written in the body, and each local it captures, to the
+	// places capturedAccesses returns for that local. keepCaptureLoans reads it.
+	keptAccesses map[ast.Func]map[liveness.VarID][]keptAccess
 	// cfg is the control-flow graph of the body, and live is the liveness of each of its
 	// locals over cfg. The dataflow pass in ownership_dataflow.go walks cfg and reads live to
 	// decide whether a holder is used again.
@@ -500,6 +503,7 @@ func newOwnershipEvents(names map[liveness.VarID]string) *ownershipEvents {
 		tupleParts:      map[string][]placeSeg{},
 		callees:         map[ast.Expr]*ast.CallExpr{},
 		capturedPlaces:  map[ast.Func]*capturedPlaceFinder{},
+		keptAccesses:    map[ast.Func]map[liveness.VarID][]keptAccess{},
 		callerOwned:     set.NewSet[liveness.VarID](),
 		boundClosures:   set.NewSet[ast.Func](),
 		retainedResults: map[ast.Expr][]*retainedStore{},
