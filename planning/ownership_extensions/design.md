@@ -765,10 +765,10 @@ fn go() -> undefined {
 
 Inside the body, `yield` evaluates to the value `next` sent, at type `TNext`.
 `val first = yield 0` binds an owned `Flat`. `it` is a `val mut` binding
-because `next` takes `&mut self`, by X3.
+because `next` takes `&mut self`, by section 10.3.4.
 
 The first `next` starts the body, which has not reached a `yield` yet, so
-JavaScript discards the value it sends. X3 still requires a `TNext` on that
+JavaScript discards the value it sends. Section 10.3.5 still requires a `TNext` on that
 call unless `undefined` is assignable to `TNext`, so `go` sends a value the
 body never sees. G3 moves or borrows it all the same.
 
@@ -863,7 +863,7 @@ loop, an owned destination. It has the same three forms as `await` and
 | `for x in mk()`, any `e` that is not a place | Nothing | `T`, owned |
 
 A loop over an owned source is the source's last owner. An owned container holds
-each reference-shaped element in exactly one slot, by X3. So each element
+each reference-shaped element in exactly one slot, by section 10.3.3. So each element
 reaches `x` once and nothing else reaches it afterward, and `x` owns it. A loop
 over a borrow binds borrows with the borrow's mutability, the same way F4 and
 D14 say a pattern over a borrow binds them. The loop's pattern is a pattern.
@@ -1010,7 +1010,7 @@ call, so a loop over it never advances the container and writes none of its
 state. That is why `for x in &arr` is legal and `for x in &it` is not.
 
 Calling `[Symbol.iterator]` on an array directly gives an iterator, and a loop
-over that iterator follows R3. X3 declares the method with `&'a self`, so the
+over that iterator follows R3. Section 10.3.2 declares the method with `&'a self`, so the
 iterator borrows `arr` while it is live and hands out `&'a T`. Whichever R3
 form the loop uses, each element is a borrow:
 
@@ -1470,6 +1470,11 @@ until the promise they return settles.
 
 ### 10.3 X3. `Iterable<T>`, `Iterator<T>` and `Generator<…>`
 
+X3 settles five things about the iteration declarations in the prelude, one
+per subsection.
+
+#### 10.3.1 Which values satisfy `Iterable<T>`
+
 Two declarations of `[Symbol.iterator]` are involved, and they differ on
 purpose:
 
@@ -1478,7 +1483,7 @@ purpose:
   function consumes, so passing a value as an `Iterable<T>` moves it, as R1
   moves the source of a loop.
 - **`Array`, `Map` and `Set`** declare their own `[Symbol.iterator]` with
-  `&'a self` returning borrows, as the last paragraph of this section states.
+  `&'a self` returning borrows, as section 10.3.2 states.
   A direct call such as `arr[Symbol.iterator]()` leaves the container holding
   its elements, so the elements it hands out are borrows.
 
@@ -1496,6 +1501,17 @@ right declaration for a direct call on a container that stays live.
 
 `Array.from(&arr)` then returns `Array<&Flat>`, which I3 already asks of a
 shallow copy.
+
+#### 10.3.2 Element-reading methods return borrows
+
+The element-reading methods of `Array`, `Map` and `Set` hand out elements the
+container still holds. `values()`, `entries()`, `keys()` on a `Map` with
+object keys, and `[Symbol.iterator]` called directly return iterators of owned
+`T` today. They change to take `&'a self` and return borrows, as in
+`values<'a>(&'a self) -> ArrayIterator<&'a T>`. A `Map`'s entries become
+`[&'a K, &'a V]`, since each entry tuple is fresh.
+
+#### 10.3.3 `fill` and `copyWithin` require a `Copyable` element
 
 R1 and E1 both rely on an owned container holding each reference-shaped
 element in exactly one slot. Two `Array` methods break that today.
@@ -1536,9 +1552,13 @@ methods unchanged. The bound also serves user code. A generic
 `fn myFill<T: Copyable>(arr: &mut Array<T>, value: T)` may store `value` in
 every slot, since F2 copies it each time.
 
+#### 10.3.4 Advancing a generator takes `&mut self`
+
 `Generator` and `AsyncGenerator` take `&mut self` on `next`, `return` and
 `throw`, since advancing a generator writes it. `[Symbol.iterator]` on a
 generator returns itself, so R3 decides the loop.
+
+#### 10.3.5 `next` requires a value unless `TNext` admits `undefined`
 
 `next` sends its argument to the `yield` the body is suspended at, and that
 `yield` evaluates to it at type `TNext`. The prelude declares
@@ -1559,13 +1579,6 @@ accepts it, only when `undefined` is assignable to its `TNext`. `for x in it`
 with `it = sum()` reports
 ``cannot iterate 'it', since iteration calls `next()` with no value and its generator expects a `Flat`; advance it with `it.next(v)` ``.
 This is a new diagnostic, `IterationNextValueError`.
-
-The element-reading methods of `Array`, `Map` and `Set` hand out elements the
-container still holds. `values()`, `entries()`, `keys()` on a `Map` with
-object keys, and `[Symbol.iterator]` called directly return iterators of owned
-`T` today. They change to take `&'a self` and return borrows, as in
-`values<'a>(&'a self) -> ArrayIterator<&'a T>`. A `Map`'s entries become
-`[&'a K, &'a V]`, since each entry tuple is fresh.
 
 ### 10.4 X4. `AsyncIterable<T>`
 
@@ -1599,7 +1612,7 @@ TypeScript's lib. Four rules fit them to the ownership rules:
   stays call-only.
 - **A helper calls `next()` with no value.** The helpers never forward a value
   to their source. So every helper requires a source whose `TNext` admits
-  `undefined`, as X3 requires of a `for` loop, and a helper call on any other
+  `undefined`, as section 10.3.5 requires of a `for` loop, and a helper call on any other
   source reports `IterationNextValueError`.
 
 ```esc
@@ -1704,7 +1717,7 @@ PR that implements W1, step 2 of that design's plan under
 | [#2439](https://github.com/escalier-lang/escalier/issues/2439) | G4 | Infers a generator body's lifetime and keeps it live while the generator is, which closes the `each` hole in section 2 | [#2601](https://github.com/escalier-lang/escalier/issues/2601) |
 | [#2428](https://github.com/escalier-lang/escalier/issues/2428) | G1 to G3 | Gives `yield` its three forms and keeps a yielded borrow live for the rest of the body |  |
 | [#2440](https://github.com/escalier-lang/escalier/issues/2440) | R2 | Binds a fresh loop variable on each iteration in the control-flow graph |  |
-| [#2441](https://github.com/escalier-lang/escalier/issues/2441) | X3 | Adds the `Copyable` alias, bounds `fill` and `copyWithin` by it, and adds `DuplicatingArrayMethodError` |  |
+| [#2441](https://github.com/escalier-lang/escalier/issues/2441) | X3 (10.3.3) | Adds the `Copyable` alias, bounds `fill` and `copyWithin` by it, and adds `DuplicatingArrayMethodError` |  |
 | [#2444](https://github.com/escalier-lang/escalier/issues/2444) | R1, R3, G5 | Gives `for` loops their three forms and `yield from` the same, since G5 is decided by R1, adds `ImmutableIteratorLoopError` and the loop form of the moved-value message from section 8.2 | [#2428](https://github.com/escalier-lang/escalier/issues/2428), [#2440](https://github.com/escalier-lang/escalier/issues/2440), [#2441](https://github.com/escalier-lang/escalier/issues/2441), [#2318](https://github.com/escalier-lang/escalier/issues/2318), [#2290](https://github.com/escalier-lang/escalier/issues/2290) |
 | [#2442](https://github.com/escalier-lang/escalier/issues/2442) | X3, X4 | Changes the element-reading iterator methods and the `Iterable` and `Generator` declarations, makes `next` require a `TNext` unless it admits `undefined`, and adds `IterationNextValueError` | [#2444](https://github.com/escalier-lang/escalier/issues/2444) |
 | [#2614](https://github.com/escalier-lang/escalier/issues/2614) | X5 | Borrows the predicates' values, moves the source of a lazy helper, ties a lazy helper to its callback, and requires a source whose `TNext` admits `undefined` | [#2442](https://github.com/escalier-lang/escalier/issues/2442), [#2601](https://github.com/escalier-lang/escalier/issues/2601) |
