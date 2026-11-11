@@ -1107,10 +1107,18 @@ async gen fn cached() -> AsyncGenerator<&Flat, undefined, unknown> {
     yield &p         // yields &Flat, a borrow of p's contents, by A3
     yield await p    // error: cannot move 'p' while it is borrowed
 }
+
+async gen fn twice() -> AsyncGenerator<&Flat, undefined, unknown> {
+    val p = load()
+    yield &p         // yields &Flat
+    yield await &p   // accepted, and yields a second &Flat of the same value
+}
 ```
 
 In `cached`, G2 keeps the first yielded borrow live for the rest of the body,
-so the move in `await p` is rejected by E3.
+so the move in `await p` is rejected by E3. In `twice`, `yield await &p` is the
+same as `yield &p`, by S2. It borrows `p` again without moving it, and E2 lets
+both immutable borrows stay live.
 
 ### 6.3 S3. `yield await p` moves `p` and yields the result
 
