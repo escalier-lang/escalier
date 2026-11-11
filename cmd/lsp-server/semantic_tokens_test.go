@@ -176,6 +176,19 @@ func TestSemanticTokensMarkMutableBindings(t *testing.T) {
 			},
 		},
 		{
+			// A constructor's `&mut self` is a parameter whose pattern spans `&mut self`.
+			name: "ConstructorReceiver",
+			file: "bin/main.esc",
+			src: `class Box {
+    value: number,
+    constructor(&mut self) { self.value = 0 },
+}`,
+			expected: []string{
+				"3:22 self parameter+mutable",
+				"3:30 self parameter+mutable",
+			},
+		},
+		{
 			name: "ModuleLevelBinding",
 			file: "lib/index.esc",
 			src: `val mut totals = {sum: 0}

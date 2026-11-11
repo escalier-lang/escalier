@@ -161,17 +161,24 @@ func definitionSpan(decl ast.Node, src *ast.Source) ast.Span {
 	return decl.Span()
 }
 
-// identPatNameSpan returns the span of the name ip binds. The pattern's own span also
-// covers a leading `mut`, a type annotation, and a default, and the pattern keeps no
-// span of the name alone. The name follows the `mut` and any whitespace after it in
-// src's text, so it is found there.
+// identPatNameSpan returns the span of the name ip binds, found in src's text. The
+// pattern keeps no span of the name alone. Its own span can start before the name, at a
+// `mut` or at the `&mut` of a constructor's `&mut self`, and can run past it over a type
+// annotation and a default. The name is the last occurrence of ip.Name before the
+// annotation or the default, since nothing but punctuation and whitespace sits between
+// them.
 func identPatNameSpan(ip *ast.IdentPat, src *ast.Source) ast.Span {
 	span := ip.Span()
 	start := span.Start.Offset
-	if ip.Mutable && src != nil {
-		start += len("mut")
-		for start < len(src.Contents) && strings.ContainsRune(" \t\r\n", rune(src.Contents[start])) {
-			start++
+	limit := span.End.Offset
+	if ip.TypeAnn != nil {
+		limit = ip.TypeAnn.Span().Start.Offset
+	} else if ip.Default != nil {
+		limit = ip.Default.Span().Start.Offset
+	}
+	if src != nil && start <= limit && limit <= len(src.Contents) {
+		if i := strings.LastIndex(src.Contents[start:limit], ip.Name); i >= 0 {
+			start += i
 		}
 	}
 	return ast.Span{

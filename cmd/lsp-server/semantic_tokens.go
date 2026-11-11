@@ -197,6 +197,11 @@ func (v *mutableTokenVisitor) addRead(e *ast.IdentExpr) {
 	if decl, found := v.info.DeclOf(e); found && v.params.Contains(decl) {
 		tokenType = tokenTypeParameter
 	}
+	// `self` always names the receiver, which is a parameter whether or not the checker
+	// recorded a declaration for the read.
+	if e.Name == "self" {
+		tokenType = tokenTypeParameter
+	}
 	v.add(e.Span(), tokenType)
 }
 
