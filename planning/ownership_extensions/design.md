@@ -1044,6 +1044,38 @@ the body cannot let the body write a value the consumer still holds. The
 consumer may hold a yielded borrow while the body runs ahead to its next
 `yield`, and G2 already rejects any write the body would make.
 
+```esc
+async gen fn ticks(p: &Flat) -> AsyncGenerator<number, undefined, unknown> {
+    await tick()
+    yield p.x
+    await tick()
+    yield p.x + 1        // p is read after a suspension, so the generator holds it
+}
+// ticks: fn <'a>(p: &'a Flat) -> 'a AsyncGenerator<number, undefined, unknown>
+
+async fn read() -> Promise<number> {
+    val mut f: Flat = {x: 1}
+    val mut total = 0
+    for await n in ticks(&f) {
+        total = total + n
+        f.x = 2          // error: cannot assign to 'f.x' while it is borrowed as immutable by the generator 'ticks' returns
+    }
+    f.x = 3              // accepted, since the loop ran the generator to completion
+    return total
+}
+
+async fn skip() -> Promise<undefined> {
+    val mut f: Flat = {x: 1}
+    val mut it = ticks(&f)
+    it.next()            // warns: the promise 'next' returns is never awaited, so 'f' stays borrowed for the rest of the program; await it, or write `void` before the call to drop it on purpose
+    f.x = 2              // error: cannot assign to 'f.x' while it is borrowed as immutable by the promise 'next' returns
+}
+```
+
+In `skip`, `it` is dead after `it.next()`, but the body keeps running to its
+first `yield` and reads `p` there. The dropped step promise keeps `'a` live
+for `'static`, by A8, which is why the write to `f.x` is rejected.
+
 ### 6.2 S2. `yield` in an async generator awaits a promise operand
 
 JavaScript awaits a promise passed to `yield` inside an async generator, so the
