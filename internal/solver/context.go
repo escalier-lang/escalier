@@ -479,6 +479,14 @@ func (c *Context) markRigidReadVar(v *soltype.TypeVarType) {
 	c.rigidReadVars.Add(v)
 }
 
+// copyRigidReadMark records nv in rigidReadVars when from is in it. Instantiation and
+// extrusion call it on each copy they make.
+func (c *Context) copyRigidReadMark(nv, from *soltype.TypeVarType) {
+	if c.rigidReadVars.Contains(from) {
+		c.markRigidReadVar(nv)
+	}
+}
+
 // isParamVar reports whether v is a type parameter's variable or a copy of one.
 func (c *Context) isParamVar(v *soltype.TypeVarType) bool {
 	return c.paramVars.Contains(v)

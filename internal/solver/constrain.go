@@ -2210,9 +2210,9 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 // A borrow of a variable in rigidReadVars fills super when the variable does. That keeps
 // `read(&self) -> T { return self.v }` checking `T` against `T`. A borrow of a rigid
 // parameter escapes into the owned parameter, so `fn steal<T>(p: &T) -> T { return p }`
-// reports a BorrowEscapeError. A borrowed parameter with a value-type upper bound copies out
-// instead, as `&number` fills `number`. When the borrowed parameter does not fill super
-// either, that mismatch is reported instead.
+// reports a BorrowEscapeError. When the borrowed parameter does not fill super either, that
+// mismatch is reported instead. constrain copies a parameter bounded by a value type out of a
+// borrow before calling this, so `fn f<T: number>(p: &T) -> T { return p }` never reaches it.
 func (c *Context) constrainBorrowIntoRigid(ref *soltype.RefType, super soltype.Type, seen *seenPairs) ([]SolverError, bool) {
 	superVar, superIsVar := super.(*soltype.TypeVarType)
 	inner, innerIsVar := ref.Inner.(*soltype.TypeVarType)
@@ -2225,11 +2225,6 @@ func (c *Context) constrainBorrowIntoRigid(ref *soltype.RefType, super soltype.T
 	case inner.Rigid != nil:
 		if innerErrs := c.trialUnderProbe(inner, super); hasHardError(innerErrs) {
 			return innerErrs, true
-		}
-		// A parameter bounded by a value type holds only values, which copy out of a borrow,
-		// so `fn f<T: number>(p: &T) -> T { return p }` checks.
-		if slices.ContainsFunc(inner.Rigid.Uppers, c.copiesOutOfBorrow) {
-			return c.constrain(inner, super, seen, false), true
 		}
 		return []SolverError{&BorrowEscapeError{Sub: ref, Super: super}}, true
 	}
@@ -3905,6 +3900,7 @@ func (e *extruder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Enter
 	}
 	nv := e.c.freshVar(e.lvl)
 	e.c.copyParamMark(nv, v)
+	e.c.copyRigidReadMark(nv, v)
 	e.cache[key] = nv
 	// A default that applies to v carries over to the copy, counted against the bounds the
 	// copy holds once they are copied, so the copy takes the default for as long as no

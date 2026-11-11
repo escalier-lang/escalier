@@ -6,26 +6,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestInferredSignatureRoundTrips covers functions whose inferred signature, written back
-// as an annotation, checks clean and renders as the same signature. Each case declares
-// `f` once without annotations and once with the signature inference gave it. Both
-// declarations share the callers in `callers`, and each value in `values` must come out
-// the same under either declaration.
-func TestInferredSignatureRoundTrips(t *testing.T) {
-	tests := []struct {
-		name      string
-		inferred  string
-		annotated string
-		sig       string
-		callers   string
-		values    map[string]string
-	}{
-		{
-			name:      "FieldRead",
-			inferred:  `fn f(p) { return p.x }`,
-			annotated: `fn f<T0, 'a>(p: &'a {x: T0}) -> &'a T0 { return p.x }`,
-			sig:       `fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0`,
-			callers: `
+// roundTripCase declares a function `f` twice. inferred writes it without annotations and
+// annotated writes it with the signature sig that inference gives inferred. callers calls
+// the annotated `f`, and values holds the type each named binding of callers takes.
+type roundTripCase struct {
+	name      string
+	inferred  string
+	annotated string
+	sig       string
+	callers   string
+	values    map[string]string
+}
+
+var roundTripCases = []roundTripCase{
+	{
+		name:      "FieldRead",
+		inferred:  `fn f(p) { return p.x }`,
+		annotated: `fn f<T0, 'a>(p: &'a {x: T0}) -> &'a T0 { return p.x }`,
+		sig:       `fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0`,
+		callers: `
 				val b = {x: 2}
 				val n = f(&b)
 				val c = {x: {y: 2}}
@@ -36,116 +35,135 @@ func TestInferredSignatureRoundTrips(t *testing.T) {
 					return d.x + k
 				}
 			`,
-			values: map[string]string{
-				"n":   "2",
-				"m":   "&{y: 2}",
-				"sum": "fn () -> number",
-			},
+		values: map[string]string{
+			"n":   "2",
+			"m":   "&{y: 2}",
+			"sum": "fn () -> number",
 		},
-		{
-			name:      "WrittenBorrowOfField",
-			inferred:  `fn f(p) { return &p.x }`,
-			annotated: `fn f<T0, 'a>(p: &'a {x: T0}) -> &'a T0 { return &p.x }`,
-			sig:       `fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0`,
-			callers: `
+	},
+	{
+		name:      "WrittenBorrowOfField",
+		inferred:  `fn f(p) { return &p.x }`,
+		annotated: `fn f<T0, 'a>(p: &'a {x: T0}) -> &'a T0 { return &p.x }`,
+		sig:       `fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0`,
+		callers: `
 				val c = {x: {y: 2}}
 				val m = f(&c)
 			`,
-			values: map[string]string{"m": "&{y: 2}"},
-		},
-		{
-			name:      "NestedFieldRead",
-			inferred:  `fn f(p) { return p.x.y }`,
-			annotated: `fn f<T0, 'a>(p: &'a {x: {y: T0}}) -> &'a T0 { return p.x.y }`,
-			sig:       `fn <T0, 'a>(p: &'a {x: {y: T0}}) -> &'a T0`,
-			callers: `
+		values: map[string]string{"m": "&{y: 2}"},
+	},
+	{
+		name:      "NestedFieldRead",
+		inferred:  `fn f(p) { return p.x.y }`,
+		annotated: `fn f<T0, 'a>(p: &'a {x: {y: T0}}) -> &'a T0 { return p.x.y }`,
+		sig:       `fn <T0, 'a>(p: &'a {x: {y: T0}}) -> &'a T0`,
+		callers: `
 				val c = {x: {y: {z: 2}}}
 				val m = f(&c)
 			`,
-			values: map[string]string{"m": "&{z: 2}"},
-		},
-		{
-			// Inference rejects an index read off an unannotated parameter, so a tuple
-			// element reaches a signature through a destructuring pattern instead.
-			name: "TupleDestructure",
-			inferred: `fn f(p) {
+		values: map[string]string{"m": "&{z: 2}"},
+	},
+	{
+		// Inference rejects an index read off an unannotated parameter, so a tuple
+		// element reaches a signature through a destructuring pattern instead.
+		name: "TupleDestructure",
+		inferred: `fn f(p) {
 				val [a, b] = p
 				return a
 			}`,
-			annotated: `fn f<T0, 'a>(p: &'a [T0, unknown]) -> &'a T0 {
+		annotated: `fn f<T0, 'a>(p: &'a [T0, unknown]) -> &'a T0 {
 				val [a, b] = p
 				return a
 			}`,
-			sig:     `fn <T0, 'a>(p: &'a [T0, unknown]) -> &'a T0`,
-			callers: `val m = f([1, "s"])`,
-			values:  map[string]string{"m": "1"},
-		},
-		{
-			name: "WrittenBorrowOfDestructuredElement",
-			inferred: `fn f(p) {
+		sig:     `fn <T0, 'a>(p: &'a [T0, unknown]) -> &'a T0`,
+		callers: `val m = f([1, "s"])`,
+		values:  map[string]string{"m": "1"},
+	},
+	{
+		name: "WrittenBorrowOfDestructuredElement",
+		inferred: `fn f(p) {
 				val [a, b] = p
 				return &a
 			}`,
-			annotated: `fn f<T0, 'a>(p: &'a [T0, unknown]) -> &'a T0 {
+		annotated: `fn f<T0, 'a>(p: &'a [T0, unknown]) -> &'a T0 {
 				val [a, b] = p
 				return &a
 			}`,
-			sig:     `fn <T0, 'a>(p: &'a [T0, unknown]) -> &'a T0`,
-			callers: `val m = f([{y: 1}, "s"])`,
-			values:  map[string]string{"m": "&{y: 1}"},
-		},
-		{
-			name: "ObjectDestructure",
-			inferred: `fn f(p) {
+		sig:     `fn <T0, 'a>(p: &'a [T0, unknown]) -> &'a T0`,
+		callers: `val m = f([{y: 1}, "s"])`,
+		values:  map[string]string{"m": "&{y: 1}"},
+	},
+	{
+		name: "ObjectDestructure",
+		inferred: `fn f(p) {
 				val {x} = p
 				return x
 			}`,
-			annotated: `fn f<T0, 'a>(p: &'a {x: T0}) -> &'a T0 {
+		annotated: `fn f<T0, 'a>(p: &'a {x: T0}) -> &'a T0 {
 				val {x} = p
 				return x
 			}`,
-			sig:     `fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0`,
-			callers: `val m = f({x: 2})`,
-			values:  map[string]string{"m": "2"},
-		},
-		{
-			name:      "Identity",
-			inferred:  `fn f(x) { return x }`,
-			annotated: `fn f<T0>(x: T0) -> T0 { return x }`,
-			sig:       `fn <T0>(x: T0) -> T0`,
-			callers:   `val m = f("hi")`,
-			values:    map[string]string{"m": `"hi"`},
-		},
-		{
-			name: "OwnedStore",
-			inferred: `
+		sig:     `fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0`,
+		callers: `val m = f({x: 2})`,
+		values:  map[string]string{"m": "2"},
+	},
+	{
+		name:      "Identity",
+		inferred:  `fn f(x) { return x }`,
+		annotated: `fn f<T0>(x: T0) -> T0 { return x }`,
+		sig:       `fn <T0>(x: T0) -> T0`,
+		callers:   `val m = f("hi")`,
+		values:    map[string]string{"m": `"hi"`},
+	},
+	{
+		name: "OwnedStore",
+		inferred: `
 				var sink = {x: 0}
 				fn f(p) { sink = p }
 			`,
-			annotated: `
+		annotated: `
 				var sink = {x: 0}
 				fn f(p: {x: number}) -> undefined { sink = p }
 			`,
-			sig:     `fn (p: {x: number}) -> undefined`,
-			callers: `val m = f({x: 1})`,
-			values:  map[string]string{"m": "undefined"},
-		},
-		{
-			name:      "FieldWrite",
-			inferred:  `fn f(mut p, v) { p.x = v }`,
-			annotated: `fn f<T0>(mut p: {x: T0}, v: T0) -> undefined { p.x = v }`,
-			sig:       `fn <T0>(p: {x: T0}, v: T0) -> undefined`,
-		},
-	}
-	for _, tt := range tests {
+		sig:     `fn (p: {x: number}) -> undefined`,
+		callers: `val m = f({x: 1})`,
+		values:  map[string]string{"m": "undefined"},
+	},
+	{
+		name:      "FieldWrite",
+		inferred:  `fn f(mut p, v) { p.x = v }`,
+		annotated: `fn f<T0>(mut p: {x: T0}, v: T0) -> undefined { p.x = v }`,
+		sig:       `fn <T0>(p: {x: T0}, v: T0) -> undefined`,
+	},
+}
+
+// TestInferredSignatureRoundTrips covers functions whose inferred signature, written back
+// as an annotation, checks clean and renders as the same signature. Each case checks the
+// unannotated `f` and the annotated `f`, each in a source of its own.
+func TestInferredSignatureRoundTrips(t *testing.T) {
+	for _, tt := range roundTripCases {
 		t.Run(tt.name, func(t *testing.T) {
 			for _, src := range []string{tt.inferred, tt.annotated} {
-				values, errs := inferAgainstTreeWithSpans(t, src+"\n"+tt.callers)
+				values, errs := inferAgainstTreeWithSpans(t, src)
 				require.Empty(t, errs, src)
 				require.Equal(t, tt.sig, values["f"], src)
-				for name, want := range tt.values {
-					require.Equal(t, want, values[name], "%s: binding %q", src, name)
-				}
+			}
+		})
+	}
+}
+
+// TestCallsToRoundTrippedSignature covers calls to the annotated `f` of each roundTripCases
+// entry that has callers, asserting the type each named binding of the callers takes.
+func TestCallsToRoundTrippedSignature(t *testing.T) {
+	for _, tt := range roundTripCases {
+		if tt.callers == "" {
+			continue
+		}
+		t.Run(tt.name, func(t *testing.T) {
+			values, errs := inferAgainstTreeWithSpans(t, tt.annotated+"\n"+tt.callers)
+			require.Empty(t, errs)
+			for name, want := range tt.values {
+				require.Equal(t, want, values[name], "binding %q", name)
 			}
 		})
 	}
@@ -216,6 +234,25 @@ func TestBorrowOfTypeParamIntoOwned(t *testing.T) {
 				return a
 			}`,
 			want: []string{"3:12-3:13: cannot constrain T <: U"},
+		},
+		{
+			// Each use of `y` instantiates a copy of the read's result variable, and the
+			// copy still reads as a field read.
+			name: "field read through a local into an unrelated type parameter",
+			src: `fn f<T, U>(p: &{x: T}) -> U {
+				val y = p.x
+				return y
+			}`,
+			want: []string{"3:12-3:13: cannot constrain T <: U"},
+		},
+		{
+			name: "destructured element through a local into an unrelated type parameter",
+			src: `fn f<T, U>(p: &[T, number]) -> U {
+				val [a, b] = p
+				val c = a
+				return c
+			}`,
+			want: []string{"4:12-4:13: cannot constrain T <: U"},
 		},
 	}
 	for _, tt := range tests {
