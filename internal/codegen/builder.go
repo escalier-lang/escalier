@@ -1382,9 +1382,8 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 		// Check if it's an array
 		return buildArrayIsArrayCheck(valueExpr, nil)
 	case *ast.TypeRefTypeAnn:
-		// A reference to a nominal type is tested with `instanceof` against the class
-		// name. nominalGuardName reports whether the reference is nominal, either
-		// directly or through a type alias.
+		// A reference to a nominal type is tested with `instanceof` against the class.
+		// An alias to a class gets the same test, under the class's own name.
 		//
 		// TODO(#289): handle non-object types
 		// TODO(#289): handle structural object types
@@ -1409,9 +1408,9 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 
 // buildSolTypeGuard returns a runtime test that value is of type t, for a type an alias
 // names rather than one written as an annotation. It tests primitives, literals, regex
-// types, `null`, `undefined`, object types by their properties, tuples, unions of them, and
-// aliases of any of these. An optional property passes when it is absent. It returns `true`
-// for any other type.
+// types, `null`, `undefined`, object types by their properties, tuples, classes this module
+// declares, unions of them, and aliases of any of these. An optional property passes when it
+// is absent. It returns `true` for any other type.
 //
 // source is the annotation the guard tests, which every node of the guard maps back to.
 // expanding holds the aliases being expanded on the way down to t. An alias already in it
@@ -1485,6 +1484,10 @@ func (b *Builder) buildSolTypeGuard(valueExpr Expr, t soltype.Type, source ast.N
 		return combineConditions(conditions, source)
 	case *soltype.TupleType:
 		return buildArrayIsArrayCheck(valueExpr, source)
+	case *soltype.ClassType:
+		if name, declared := b.moduleClassName(t); declared {
+			return NewBinaryExpr(valueExpr, InstanceOf, NewIdentExpr(name, "", source), source)
+		}
 	case *soltype.UnionType:
 		guards := make([]Expr, len(t.Types))
 		for i, member := range t.Types {
@@ -1532,14 +1535,46 @@ func (b *Builder) buildRegexGuard(valueExpr Expr, pattern string, source ast.Nod
 }
 
 // nominalGuardName returns the class name an `x instanceof C` guard tests for a
-// reference to a nominal type, and reports whether the reference is one. The name
-// comes from the reference as written; only whether it is nominal comes from
-// inference.
+// reference to a nominal type, and reports whether the reference is one. The
+// reference may name the class directly or through a chain of aliases.
+//
+// A class this module declares returns the name moduleClassName gives it. A class
+// declared elsewhere, such as `Array` or a class from an imported package, returns
+// the name as written when the reference names the class directly. An alias to such
+// a class reports false, because the alias declares no runtime binding and the
+// class's own name may not be bound where the guard runs.
 func (b *Builder) nominalGuardName(t *ast.TypeRefTypeAnn) (string, bool) {
+	if ct, isClass := b.types().ExpandedTypeOf(t).(*soltype.ClassType); isClass {
+		if name, declared := b.moduleClassName(ct); declared {
+			return name, true
+		}
+	}
 	if !b.types().IsNominalTypeRef(t) {
 		return "", false
 	}
 	return ast.QualIdentToString(t.Name), true
+}
+
+// moduleClassName returns the name the emitted JavaScript binds a class or enum
+// variant to, and reports whether this module declares it. The name is the
+// namespace-qualified name with each dot replaced by a double underscore, so class
+// `Circle` in namespace `geo` returns `geo__Circle`. Every such name is bound at the
+// top level of the module. A class declared outside the module has no declaration in
+// the dep graph and reports false.
+func (b *Builder) moduleClassName(ct *soltype.ClassType) (string, bool) {
+	if b.depGraph == nil {
+		return "", false
+	}
+	// A variant binds no value of its own. The enum declaring it does, and its name is
+	// the variant's name minus the last segment.
+	declName := ct.Name
+	if lastDot := strings.LastIndex(declName, "."); ct.Variant && lastDot >= 0 {
+		declName = declName[:lastDot]
+	}
+	if !b.depGraph.HasBinding(dep_graph.ValueBindingKey(declName)) {
+		return "", false
+	}
+	return strings.ReplaceAll(ct.Name, ".", "__"), true
 }
 
 // isArrayTypeRef reports whether a reference is the `Array` the guard tests with

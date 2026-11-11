@@ -1512,3 +1512,14 @@ func TestTheGuardForAnAliasMapsBackToTheAnnotation(t *testing.T) {
 		require.Equal(t, ast.Node(ref), node.Source())
 	}
 }
+
+// TestModuleClassNameWithoutADepGraph asserts that a builder with no dep graph reports
+// every class as declared outside the module, so a guard falls back to the name as
+// written instead of reading a nil graph.
+func TestModuleClassNameWithoutADepGraph(t *testing.T) {
+	builder := &Builder{tempId: 0, depGraph: nil}
+
+	name, declared := builder.moduleClassName(&soltype.ClassType{Name: "geo.Circle"})
+	require.False(t, declared)
+	require.Equal(t, "", name)
+}

@@ -287,24 +287,62 @@ func TestEmitsJSForTypeDrivenForms(t *testing.T) {
 	}
 }
 
-// TestAPatternOnAnAliasEmitsNoInstanceOfGuard asserts that no `instanceof` guard is
-// emitted for a pattern annotated with an alias of a class.
-//
-// The guard tests the name the annotation wrote. An alias declares no runtime binding,
-// so `value instanceof Alias` throws a ReferenceError. An alias is therefore not
-// nominal for emission even though the class it stands for is.
-func TestAPatternOnAnAliasEmitsNoInstanceOfGuard(t *testing.T) {
-	sources := libSources(`
-		class Point { x: number }
-		type Alias = Point
-		declare val v: unknown
-		export val hit = match v { p: Alias => 1, _ => 0 }
-	`)
-
-	js := CompilePackage(sources, PackageConfig{}).CompUnits["lib/index"].JS
-	require.NotEmpty(t, js)
-	require.NotContains(t, js, "instanceof Alias",
-		"an alias has no runtime binding, so the guard would throw a ReferenceError")
+// TestTheSolverEmitsAnInstanceOfTestForAClassAlias covers the runtime test emitted for an
+// annotation naming a class through an alias. The guard tests the class's own name,
+// because an alias declares no runtime binding and `value instanceof Alias` would throw
+// a ReferenceError. A class in a namespace is tested under the name its declaration
+// emits, such as `geo__Circle`.
+func TestTheSolverEmitsAnInstanceOfTestForAClassAlias(t *testing.T) {
+	const classes = "class Point { x: number }\nclass Other { y: string }\n"
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "AnAliasInAPattern",
+			src:  classes + "type Alias = Point\ndeclare val v: unknown\nexport val hit = match v { p: Alias => 1, _ => 0 }",
+			want: `if (temp4 instanceof Point) {`,
+		},
+		{
+			name: "AnAliasInAnOverload",
+			src:  classes + "type Alias = Point\nexport fn f(v: Alias) -> number { return 1 }\nexport fn f(v: Other) -> number { return 2 }",
+			want: `if (arguments.length === 1 && param0 instanceof Point) {`,
+		},
+		{
+			name: "AnAliasOfAnAlias",
+			src:  classes + "type A = Point\ntype B = A\nexport fn f(v: B) -> number { return 1 }\nexport fn f(v: Other) -> number { return 2 }",
+			want: `if (arguments.length === 1 && param0 instanceof Point) {`,
+		},
+		{
+			name: "AGenericAliasOfAGenericClass",
+			src:  classes + "class Holder<T> { value: T }\ntype Box<T> = Holder<T>\nexport fn f(v: Box<string>) -> number { return 1 }\nexport fn f(v: Other) -> number { return 2 }",
+			want: `if (arguments.length === 1 && param0 instanceof Holder) {`,
+		},
+		{
+			name: "AnAliasOfAGenericClassInstance",
+			src:  classes + "class Holder<T> { value: T }\ntype NumHolder = Holder<number>\nexport fn f(v: NumHolder) -> number { return 1 }\nexport fn f(v: Other) -> number { return 2 }",
+			want: `if (arguments.length === 1 && param0 instanceof Holder) {`,
+		},
+		{
+			// A class declared outside the module has no binding in its dep graph, so
+			// the guard falls back to the name as written.
+			name: "ADirectReferenceToAnOutsideClass",
+			src:  classes + "export fn f(v: Date) -> number { return 1 }\nexport fn f(v: Other) -> number { return 2 }",
+			want: `if (arguments.length === 1 && param0 instanceof Date) {`,
+		},
+		{
+			name: "AUnionAliasOfClasses",
+			src:  classes + "type Either = Point | Other\nexport fn f(v: Either) -> number { return 1 }\nexport fn f(v: string) -> number { return 2 }",
+			want: `if (arguments.length === 1 && (param0 instanceof Point || param0 instanceof Other)) {`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CompilePackage(libSources(tt.src), PackageConfig{}).CompUnits["lib/index"].JS
+			require.Contains(t, got, tt.want)
+		})
+	}
 }
 
 // TestGuardsAnOptionalChainTarget asserts that an `if val` over an optional chain guards
