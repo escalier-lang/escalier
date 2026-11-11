@@ -1007,10 +1007,21 @@ since `&it` would report `ImmutableIteratorLoopError`.
 An array, a `Map` or a `Set` is not an iterator, so R1 decides a loop over it
 and R3 does not. Its `[Symbol.iterator]` returns a fresh iterator on each
 call, so a loop over it never advances the container and writes none of its
-state. That is why `for x in &arr` is legal and `for x in &it` is not. A
-direct call such as `val it = arr[Symbol.iterator]()` returns an
-`ArrayIterator<&'a T>` that borrows `arr`, by X3, and a loop over that `it`
-follows R3 like any other iterator.
+state. That is why `for x in &arr` is legal and `for x in &it` is not.
+
+Calling `[Symbol.iterator]` on an array directly gives an iterator, and a loop
+over that iterator follows R3. X3 declares the method with `&'a self`, so the
+iterator borrows `arr` while it is live and hands out `&'a T`. Whichever R3
+form the loop uses, each element is a borrow:
+
+```esc
+fn direct(mut arr: Array<Flat>) -> undefined {
+    val mut it = arr[Symbol.iterator]()   // it: ArrayIterator<&Flat>, which borrows arr
+    arr.push({x: 0})     // error: cannot borrow 'arr' as mutable while it is borrowed as immutable by 'it'
+    for f in &it {}      // error: cannot borrow 'it' as immutable to iterate it, since advancing a generator writes it; iterate `it` or `&mut it`
+    for f in &mut it {}  // accepted, and f is &Flat
+}
+```
 
 ## 6. Rules for async generators
 
