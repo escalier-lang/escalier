@@ -811,6 +811,18 @@ func (c *schemeCoalescer) displayBinder(v *soltype.TypeVarType) *soltype.TypeVar
 //     and only the declared bound is what callers have to satisfy. Reporting the list
 //     would show a bound no caller is held to. `.d.ts` emission writes a clause only for
 //     a lone bound, so it would write none at all once the list holds two.
+//
+//  3. A rigid parameter shows only the bounds it held when it became rigid. A parameter
+//     turns rigid when a body that has to work for every instantiation of it is walked.
+//     A bound recorded during that walk links the parameter to a variable the body built
+//     from it, so instantiation can copy the link to a call. It states nothing a caller
+//     has to satisfy. In
+//
+//     fn read<T0, 'a>(p: &'a {x: T0}) -> &'a T0 { return &p.x }
+//
+//     the read requires `p` to be `{x: β}` for a fresh variable `β`, which links `T0` to
+//     `β`. `read` renders `fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0` with this cleanup and
+//     `fn <T1, T0: T1, 'a>(p: &'a {x: T0}) -> &'a T0` without it.
 func cleanBinderBounds(
 	keep set.Set[*soltype.TypeVarType],
 	simp *schemeSimplification,
@@ -825,6 +837,13 @@ func cleanBinderBounds(
 		rep := simp.rep(v)
 		up, upChanged := dropSameClassVars(v.UpperBounds, rep, simp)
 		lo, loChanged := dropSameClassVars(v.LowerBounds, rep, simp)
+		if rp := v.Rigid; rp != nil {
+			var dropped bool
+			up, dropped = boundsAmong(up, rp.Uppers)
+			upChanged = upChanged || dropped
+			lo, dropped = boundsAmong(lo, rp.Lowers)
+			loChanged = loChanged || dropped
+		}
 		// A declared parameter shows the bounds its binder wrote and nothing else. Its
 		// variable also carries what the bodies linked it to, such as the return variable of
 		// a method that reads a field typed by it, and a binder rendering from the variable's
@@ -886,6 +905,15 @@ func dropSameClassVars(bounds []soltype.Type, rep *soltype.TypeVarType, simp *sc
 		return bounds, false
 	}
 	return out, true
+}
+
+// boundsAmong returns the entries of bounds that allowed also holds, compared by identity,
+// plus whether any entry was dropped.
+func boundsAmong(bounds, allowed []soltype.Type) ([]soltype.Type, bool) {
+	out := slices.DeleteFunc(slices.Clone(bounds), func(b soltype.Type) bool {
+		return !slices.Contains(allowed, b)
+	})
+	return out, len(out) != len(bounds)
 }
 
 // schemeType returns a scheme's coalesced DISPLAY type (variable-free except for

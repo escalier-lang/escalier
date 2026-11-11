@@ -374,6 +374,11 @@ type checker struct {
 	// unannotated parameter, and the result variable of each field read through one of those
 	// borrows. fieldReadBorrow reads a field off such a borrow as a borrow at the same lifetime.
 	readThroughVars set.Set[*soltype.TypeVarType]
+	// declaredReadShapes maps the result variable of a field read through an immutable
+	// borrow to the field's declared type. Only a field declared as an object, tuple, class
+	// instance, or alias reads through such a variable. declaredField reads the fields of
+	// the variable off the declared type.
+	declaredReadShapes map[*soltype.TypeVarType]soltype.Type
 	// readThroughLocals holds the inner variable of each read-through borrow a body-level
 	// `val` binds, as `q` binds one in `val q = p.x`. The binding generalizes, so each use of
 	// it instantiates a copy of the variable, and the freshener adds that copy to

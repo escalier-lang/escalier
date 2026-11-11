@@ -1300,6 +1300,28 @@ func TestDescribeNegation(t *testing.T) {
 	}
 }
 
+// TestDescribeBorrowOfVariable covers how describe names the inner of a borrow when the inner
+// is a variable. A rigid parameter keeps its source name. A variable whose only concrete bound
+// borrows the variable itself renders bare instead of resolving that bound again.
+func TestDescribeBorrowOfVariable(t *testing.T) {
+	rigid := &soltype.TypeVarType{ID: 7, Rigid: &soltype.RigidParam{Name: "T"}}
+	selfBorrowing := &soltype.TypeVarType{ID: 8}
+	selfBorrowing.LowerBounds = []soltype.Type{&soltype.RefType{Lt: soltype.Static, Inner: selfBorrowing}}
+	tests := []struct {
+		name string
+		in   soltype.Type
+		want string
+	}{
+		{"rigid parameter", &soltype.RefType{Lt: soltype.Static, Inner: rigid}, "T"},
+		{"bound borrows the variable", &soltype.RefType{Lt: soltype.Static, Inner: selfBorrowing}, "t8"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, describe(tt.in))
+		})
+	}
+}
+
 // --- The coinductive seen-set's two records ---
 
 // nestedRecursiveObj builds the cyclic object type `{p: pt, next: {q: <the outer object>}}` and

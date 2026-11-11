@@ -1105,6 +1105,11 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			return c.constrain(sub, inner, seen, false)
 		}
 	}
+	if ref, ok := sub.(*soltype.RefType); ok && ref.Lt != nil {
+		if errs, handled := c.constrainBorrowIntoRigid(ref, super, seen); handled {
+			return errs
+		}
+	}
 
 	// A variable constrained against itself is reflexively true, so it records
 	// nothing. Without this guard the self-edge `T <: T` lands in the variable's own
@@ -2196,6 +2201,34 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	}
 
 	return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+}
+
+// constrainBorrowIntoRigid checks `ref <: super` when super is a rigid type parameter and ref
+// borrows either a variable in rigidReadVars or a rigid type parameter. ref must carry a
+// lifetime. handled is false for any other pair.
+//
+// A borrow of a variable in rigidReadVars fills super when the variable does. That keeps
+// `read(&self) -> T { return self.v }` checking `T` against `T`. A borrow of a rigid
+// parameter escapes into the owned parameter, so `fn steal<T>(p: &T) -> T { return p }`
+// reports a BorrowEscapeError. When the borrowed parameter does not fill super either, that
+// mismatch is reported instead. constrain copies a parameter bounded by a value type out of a
+// borrow before calling this, so `fn f<T: number>(p: &T) -> T { return p }` never reaches it.
+func (c *Context) constrainBorrowIntoRigid(ref *soltype.RefType, super soltype.Type, seen *seenPairs) ([]SolverError, bool) {
+	superVar, superIsVar := super.(*soltype.TypeVarType)
+	inner, innerIsVar := ref.Inner.(*soltype.TypeVarType)
+	if !superIsVar || superVar.Rigid == nil || !innerIsVar {
+		return nil, false
+	}
+	switch {
+	case !ref.Mut && c.rigidReadVars.Contains(inner):
+		return c.constrain(inner, super, seen, false), true
+	case inner.Rigid != nil:
+		if innerErrs := c.trialUnderProbe(inner, super); hasHardError(innerErrs) {
+			return innerErrs, true
+		}
+		return []SolverError{&BorrowEscapeError{Sub: ref, Super: super}}, true
+	}
+	return nil, false
 }
 
 // isCallableShape reports whether t is one of the three shapes `function` admits: a function
@@ -3867,6 +3900,7 @@ func (e *extruder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Enter
 	}
 	nv := e.c.freshVar(e.lvl)
 	e.c.copyParamMark(nv, v)
+	e.c.copyRigidReadMark(nv, v)
 	e.cache[key] = nv
 	// A default that applies to v carries over to the copy, counted against the bounds the
 	// copy holds once they are copied, so the copy takes the default for as long as no
