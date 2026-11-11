@@ -389,17 +389,6 @@ func wantsCodeActionKind(only []protocol.CodeActionKind, kind protocol.CodeActio
 // successful validation, or if any sibling file has changed since the last
 // package-level validation.
 // Must be called while holding mu.RLock().
-// waitForFreshCheck blocks until the cached check output reflects the latest text of
-// uri, or until 2s pass, whichever comes first. The caller holds s.mu's read lock, which
-// the wait releases while it sleeps and holds again when it returns.
-func (s *Server) waitForFreshCheck(uri protocol.DocumentUri) {
-	deadline := time.Now().Add(2 * time.Second)
-	for s.isCacheStale(uri) && time.Now().Before(deadline) {
-		// Sleeps until validation calls `Broadcast()`.
-		s.validated.Wait()
-	}
-}
-
 func (s *Server) isCacheStale(uri protocol.DocumentUri) bool {
 	doc, ok := s.documents[uri]
 	if !ok {
@@ -416,6 +405,17 @@ func (s *Server) isCacheStale(uri protocol.DocumentUri) bool {
 		return true
 	}
 	return false
+}
+
+// waitForFreshCheck blocks until the cached check output reflects the latest text of
+// uri, or until 2s pass, whichever comes first. The caller holds s.mu's read lock, which
+// the wait releases while it sleeps and holds again when it returns.
+func (s *Server) waitForFreshCheck(uri protocol.DocumentUri) {
+	deadline := time.Now().Add(2 * time.Second)
+	for s.isCacheStale(uri) && time.Now().Before(deadline) {
+		// Sleeps until validation calls `Broadcast()`.
+		s.validated.Wait()
+	}
 }
 
 // isModuleFile checks if a URI corresponds to a file under the lib/ directory.

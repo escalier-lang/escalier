@@ -52,20 +52,25 @@ type semanticToken struct {
 func (s *Server) textDocumentSemanticTokensFull(context *glsp.Context, params *protocol.SemanticTokensParams) (*protocol.SemanticTokens, error) {
 	uri := params.TextDocument.URI
 
+	// validateBinScript replaces a script's entries in the check output under the write
+	// lock, so the file's AST, source, and Info are read together under the read lock.
 	s.mu.RLock()
 	s.waitForFreshCheck(uri)
-	co := s.checkOutput
 	sourceID := s.sourceIDForURI(uri)
+	var script *ast.Script
+	var module *ast.Module
+	var src *ast.Source
+	var info *solver.Info
+	if co := s.checkOutput; co != nil {
+		script = co.Scripts[sourceID]
+		module = co.Module
+		src = co.SourceByID(sourceID)
+		info = co.InfoFor(sourceID)
+	}
 	s.mu.RUnlock()
 
-	empty := &protocol.SemanticTokens{Data: []protocol.UInteger{}}
-	if co == nil {
-		return empty, nil
-	}
-	src := co.SourceByID(sourceID)
-	info := co.InfoFor(sourceID)
 	if src == nil || info == nil {
-		return empty, nil
+		return &protocol.SemanticTokens{Data: []protocol.UInteger{}}, nil
 	}
 
 	s.solverMu.RLock()
@@ -77,20 +82,26 @@ func (s *Server) textDocumentSemanticTokensFull(context *glsp.Context, params *p
 		src:            src,
 		params:         set.NewSet[ast.Node](),
 	}
-	if script, ok := co.Scripts[sourceID]; ok {
+	if script != nil {
 		script.Accept(visitor)
-	} else if co.Module != nil {
-		walkModuleFile(visitor, co.Module, sourceID)
+	} else if module != nil {
+		walkModuleFile(visitor, module, sourceID)
 	}
 	return &protocol.SemanticTokens{Data: encodeSemanticTokens(src.LineMap(), visitor.tokens)}, nil
 }
 
-// encodeSemanticTokens returns tokens in LSP's wire form. Each token becomes five
-// integers: its line relative to the previous token's line, its start column relative
-// to the previous token's start column when both sit on one line and absolute
-// otherwise, its length, its type, and its modifier bits. Columns and lengths count
-// UTF-16 code units. lineMap maps the file the tokens' spans index into. The result
-// lists the tokens in order of position whatever order tokens holds them in.
+// encodeSemanticTokens returns tokens in LSP's wire form, ordered by position. It sorts
+// tokens in place. lineMap maps the file the tokens' spans index into. Each token becomes
+// five integers:
+//
+//   - its line, relative to the previous token's line
+//   - its start column, relative to the previous token's start column when both are on
+//     one line, and counted from the start of the line otherwise
+//   - its length
+//   - its type
+//   - its modifier bits
+//
+// Columns and lengths count UTF-16 code units.
 func encodeSemanticTokens(lineMap *ast.LineMap, tokens []semanticToken) []protocol.UInteger {
 	slices.SortFunc(tokens, func(a, b semanticToken) int {
 		return a.span.Start.Offset - b.span.Start.Offset
@@ -141,15 +152,18 @@ func (v *mutableTokenVisitor) EnterExpr(e ast.Expr) bool {
 	case *ast.FuncExpr:
 		v.addParams(e.Params)
 	case *ast.IdentExpr:
-		_, mut, _ := bindingOf(v.info, e)
-		if !mut && !v.info.LendsMut(e) {
-			break
+		v.addRead(e)
+	}
+	return true
+}
+
+func (v *mutableTokenVisitor) EnterObjExprElem(e ast.ObjExprElem) bool {
+	// The walk skips the key of a shorthand property such as `{p}`, since a key is
+	// usually a field name. A shorthand key also reads the binding p.
+	if prop, ok := e.(*ast.PropertyExpr); ok && prop.Value == nil {
+		if ident, ok := prop.ValueExpr().(*ast.IdentExpr); ok {
+			v.addRead(ident)
 		}
-		tokenType := tokenTypeVariable
-		if decl, found := v.info.DeclOf(e); found && v.params.Contains(decl) {
-			tokenType = tokenTypeParameter
-		}
-		v.add(e.Span(), tokenType)
 	}
 	return true
 }
@@ -164,7 +178,8 @@ func (v *mutableTokenVisitor) EnterPat(p ast.Pat) bool {
 		// The walk enters no node for a shorthand leaf such as `{mut x}`, so its parent
 		// object pattern reports it.
 		for _, elem := range p.Elems {
-			if leaf, ok := elem.(*ast.ObjShorthandPat); ok && leaf.Key != nil && leaf.Mutable {
+			leaf, ok := elem.(*ast.ObjShorthandPat)
+			if ok && leaf.Key != nil && (leaf.Mutable || v.info.LendsMut(leaf)) {
 				v.add(leaf.Key.Span(), v.leafTokenType(leaf))
 			}
 		}
@@ -172,8 +187,21 @@ func (v *mutableTokenVisitor) EnterPat(p ast.Pat) bool {
 	return true
 }
 
-// addParams records the binding leaves of params. The walk enters a function's
-// parameters before its body, so every read of a parameter comes after this call.
+// addRead records a token for e, a read of a binding, when it reads mutable data.
+func (v *mutableTokenVisitor) addRead(e *ast.IdentExpr) {
+	_, mut, _ := bindingOf(v.info, e)
+	if !mut && !v.info.LendsMut(e) {
+		return
+	}
+	tokenType := tokenTypeVariable
+	if decl, found := v.info.DeclOf(e); found && v.params.Contains(decl) {
+		tokenType = tokenTypeParameter
+	}
+	v.add(e.Span(), tokenType)
+}
+
+// addParams records the binding leaves of params. Call it on entering the function that
+// declares params, before the walk reaches the function's body.
 func (v *mutableTokenVisitor) addParams(params []*ast.Param) {
 	for _, param := range params {
 		ast.ForEachLeafBinding(param.Pattern, func(_ string, leaf ast.Node) {

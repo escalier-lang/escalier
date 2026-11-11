@@ -153,6 +153,29 @@ func TestSemanticTokensMarkMutableBindings(t *testing.T) {
 			},
 		},
 		{
+			name: "ShorthandPropertyRead",
+			file: "bin/main.esc",
+			src: `fn main() {
+    val mut p = {x: 0}
+    val o = {p}
+}`,
+			expected: []string{
+				"2:13 p variable+mutable",
+				"3:14 p variable+mutable",
+			},
+		},
+		{
+			name: "ShorthandParamHoldingMutableBorrow",
+			file: "bin/main.esc",
+			src: `fn reset({p}: {p: &mut {x: number}}) {
+    p.x = 0
+}`,
+			expected: []string{
+				"1:11 p parameter+mutable",
+				"2:5 p parameter+mutable",
+			},
+		},
+		{
 			name: "ModuleLevelBinding",
 			file: "lib/index.esc",
 			src: `val mut totals = {sum: 0}
