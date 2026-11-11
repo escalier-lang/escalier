@@ -47,6 +47,16 @@ jobs:
         startsWith(github.event.comment.body, format('/code-review{0}', fromJSON('"\r"')))) &&
       github.event.comment.user.login == 'k4b7'
     runs-on: ubuntu-latest
+    # A review takes about a minute. The limit caps what a run that hangs or
+    # loops can spend.
+    timeout-minutes: 30
+    # Each run ends by approving the PR or requesting changes. One run per PR
+    # at a time keeps two runs from posting verdicts that race. A new request
+    # waits for the running review instead of cancelling it partway through
+    # its comments.
+    concurrency:
+      group: code-review-${{ github.event.issue.number }}
+      cancel-in-progress: false
     permissions:
       contents: read
       pull-requests: write
@@ -55,9 +65,10 @@ jobs:
     steps:
       # The 👀 reaction tells the commenter the review has started.
       - name: React to the command
-        run: gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions -f content=eyes --silent
+        run: gh api "repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID/reactions" -f content=eyes --silent
         env:
           GH_TOKEN: ${{ github.token }}
+          COMMENT_ID: ${{ github.event.comment.id }}
 
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -70,11 +81,12 @@ jobs:
       - name: Check out the PR branch
         run: |
           cp .claude/skills/pr-review/SKILL.md "$RUNNER_TEMP/pr-review.md"
-          gh pr checkout ${{ github.event.issue.number }}
+          gh pr checkout "$PR_NUMBER"
           mkdir -p .claude/skills/pr-review
           cp "$RUNNER_TEMP/pr-review.md" .claude/skills/pr-review/SKILL.md
         env:
           GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
 
       - name: Run Claude
         id: claude
@@ -89,8 +101,11 @@ jobs:
             Read .claude/skills/pr-review/SKILL.md and follow it to review this PR.
             The level is the word after /code-review in COMMAND, or medium when none is given.
             The PR branch is checked out in the working directory.
+          # The skill writes only .pr-review-summary.md, so Write and Edit
+          # reach that one file. Text in the PR can't steer Claude into
+          # changing any other file in the checkout.
           claude_args: |
-            --allowedTools "Read,Grep,Glob,Write,Edit,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh api repos/escalier-lang/escalier/pulls/*/comments *),Bash(gh api repos/escalier-lang/escalier/issues/*/comments *),Bash(gh api -X PATCH repos/escalier-lang/escalier/issues/comments/* *),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git diff:*),Bash(git log:*),Bash(sha256sum)"
+            --allowedTools "Read,Grep,Glob,Write(./.pr-review-summary.md),Edit(./.pr-review-summary.md),mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh api repos/escalier-lang/escalier/pulls/*/comments *),Bash(gh api repos/escalier-lang/escalier/issues/*/comments *),Bash(gh api -X PATCH repos/escalier-lang/escalier/issues/comments/* *),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git diff:*),Bash(git log:*),Bash(sha256sum)"
 
       # Approves the PR when no medium or high finding is left unresolved, and
       # requests changes otherwise. It counts every unresolved thread that
