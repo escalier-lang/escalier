@@ -1120,6 +1120,12 @@ so the move in `await p` is rejected by E3. In `twice`, `yield await &p` is the
 same as `yield &p`, by S2. It borrows `p` again without moving it, and E2 lets
 both immutable borrows stay live.
 
+The checker treats `yield &p` and `yield await &p` alike. Both await `&p`, so
+both yield `&'a T` by A1, and a rejection throws at the `yield` in both. At
+runtime the written `await` adds one microtask before the `yield`, and codegen
+keeps it. The written form shows at the yield site that the yielded value is a
+`&Flat` and not a promise, which is why open question 4 recommends it.
+
 ### 6.3 S3. `yield await p` moves `p` and yields the result
 
 `yield await p` moves `p` by A1 and yields the owned result by G1.
