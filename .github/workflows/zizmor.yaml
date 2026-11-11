@@ -1,0 +1,33 @@
+name: zizmor
+
+# Audits the workflows under .github/ for security problems such as unpinned
+# actions, persisted credentials, broad token permissions and template
+# injection. https://docs.zizmor.sh/audits/ lists every check.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions: {}
+
+jobs:
+  zizmor:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      # The job prints findings to the log and annotates the diff, then
+      # fails if any are left. Uploading SARIF to code scanning would need
+      # security-events: write.
+      - name: Run zizmor
+        uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
+        with:
+          version: 1.32.0
+          advanced-security: false
+          annotations: true
