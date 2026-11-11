@@ -1599,6 +1599,15 @@ Each question lists the options and a recommendation. None blocks the first PR.
    neither changes which elements the loop visits. Recommendation: the lint.
    The other two loop forms need neither, since a loop over `arr` moves it and
    a loop over `&arr` already rejects writes.
+4. **Whether to lint `yield await` or a bare `yield` of a promise in an async
+   generator.** By S2, `yield e` there awaits a promise `e`, so `yield await e`
+   differs at runtime only by one extra microtask. A rejection throws at the
+   `yield` in both forms. A lint against the redundant `await` would remove
+   the only sign of the `await` at the yield site, where `yield &p` looks like
+   it yields a `Promise<&Flat>` but yields a `&Flat`. Options: no lint, a lint
+   against `yield await`, or a lint against a bare `yield` of a promise that
+   suggests `yield await e`. Recommendation: the last, since it flags the
+   place where the source and the yielded type disagree.
 
 ## 12. Plan
 
