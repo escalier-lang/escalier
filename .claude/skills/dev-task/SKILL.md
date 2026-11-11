@@ -22,7 +22,7 @@ Land the implementation as a working, tested change before moving on. The next t
 
 ## Phase 2 — Review and fix
 
-Run the `/code-review` skill on your working diff. It surfaces correctness bugs and reuse/simplification/efficiency cleanups.
+Run the `/code-review` skill on your working diff. It reports correctness bugs and reuse/simplification/efficiency cleanups.
 
 Then triage every finding before touching anything:
 
@@ -38,9 +38,8 @@ Review every comment in your diff — both comments you wrote and any that revie
 
 Read your diff's comments against the "Code conventions" and the two "Writing Prose" sections in CLAUDE.md. The recurring offenders to watch for:
 
-- **Parentheticals.** CLAUDE.md is emphatic that asides in parentheses make comments hard to parse. Cut the aside if it isn't load-bearing, promote it to its own sentence if it matters, or fold it in with a comma if it's short and essential. Never nest or stack them. Parentheses are fine only for a short essential clarification like a code reference or a concrete example.
+- **Complex sentences.** Each sentence should parse left to right in one pass and carry one idea. Split a sentence that strings clauses together with dashes, semicolons, colons or parentheses. Make an aside its own sentence if it matters and cut it if it doesn't. Keep parentheses for a short code reference or example. For a multi-step process, lay the steps out as a list rather than stringing them through a paragraph.
 - **Misused colons.** Use a colon only to introduce a list, a definition, or a direct elaboration that completes the clause before it. Don't use one mid-sentence to tack on a second thought — split it into two sentences or join with a conjunction.
-- **Overlong sentences.** Prefer short, complete sentences over one long sentence held together by dashes and semicolons. One idea per sentence. For a multi-step process, lay the steps out as a list rather than stringing them through a paragraph.
 - **Undefined or vague terms.** Define a coined or technical term the first time it appears, in plain language, before you rely on it. Replace vague verbs like "handles", "manages", "drives", or "supplies" with the precise action — produces, reads, returns, mutates, consults. Name the value the code passes around, not the technique that produced it.
 - **Unanchored claims.** When a comment cites specific output such as a rendered type or an inferred value, include the source snippet that produces it so the reader can trace it.
 - **Diff narration.** Write comments about what the code does now, not what it did before a change. Drop phrasing like "previously", "used to", "is now", "no longer", and "the old behavior", and don't make a PR number or milestone the subject of a sentence. A comment that narrates the diff goes stale the moment the next change lands. Describe the current behavior and its rationale instead, and leave the history to git.

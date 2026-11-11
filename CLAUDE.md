@@ -38,7 +38,6 @@ Escalier is a programming language with a Go-based compiler. The compiler pipeli
 - Name a function for what it produces or does, not for why a caller wants it. `immutableTarget` says it converts a mutable target to its immutable form, where `ownedMutUpgradeTarget` named the rule the conversion serves and left readers asking what was upgraded. A name built from the reason also goes stale as soon as a second caller needs the same operation for a different reason.
 - Put the reason at the CALL SITE, not in the docstring. A docstring says what the function returns and what its parameters mean, so a reader deciding whether to call it needs nothing else. Why THIS call is the right one belongs in a comment above it, where the surrounding code gives it meaning. Two callers of one function usually have two different reasons, and neither fits in the one docstring they share.
 - Keep in the docstring only what every caller needs: the contract, the shape of the return, and any ordering a caller has to respect. A constraint like "this must run before X" is contract, not rationale, so it stays.
-- Avoid parentheticals in comments — they make comments hard to read, especially when nested or combined with em-dashes. Rewrite the aside as a plain sentence, fold it into the main clause, or drop it. Reserve parentheses for short, essential clarifications like a code reference or a concrete example. Prefer several short sentences over one sentence carrying multiple asides.
 - Write comments about what the code does now, not what it did before a change. Drop phrasing like "previously", "used to", "is now", "no longer", and "the old behaviour", and don't make a PR number or milestone the subject of a sentence. A comment that narrates the diff goes stale the moment the next change lands. Describe the current behaviour and its rationale instead, and leave the history to git.
 
 ## Writing tests
@@ -126,25 +125,15 @@ Those apply wherever they make sense and are simply irrelevant elsewhere.
 - Don't use a colon where a comma, dash, or period would read more naturally.
   A colon makes the reader stop and expect a list or payoff; if none follows,
   it's jarring.
-- Avoid parentheticals. They interrupt the sentence and force the reader to
-  hold the main clause in mind while processing the aside. In almost every case
-  one of these is better:
-    - Cut the parenthetical entirely if it's not load-bearing.
-    - Promote it to its own sentence if it matters.
-    - Fold it into the sentence with a comma if it's short and essential.
-- Never nest a parenthetical inside another, and never stack two parentheticals
-  in one sentence.
-- Don't use parentheses to define or gloss a term inline. Define it in the
-  preceding or following sentence instead.
-- Prefer short, complete sentences over long ones held together by dashes,
-  semicolons, and asides. One idea per sentence.
+- Write each sentence so a reader can parse it left to right in one pass,
+  with one idea per sentence. When a sentence strings clauses together with
+  dashes, semicolons, colons or parentheses, split it. Make an aside its own
+  sentence if it matters and cut it if it doesn't. Keep parentheses for a
+  short code reference or example.
 - When explaining a process with multiple steps, lay the steps out as a list
   rather than stringing them through a paragraph. Use a numbered list when the
   order matters and a bulleted list when it doesn't. One step per item reads far
   more easily than steps joined by semicolons or "then ... then ...".
-- Read each sentence as if a human has to parse it left to right with no
-  rereading. If understanding it requires jumping back to an earlier clause,
-  restructure it.
 - In Markdown you write, such as PR descriptions, docs, and issue bodies, use
   sentence case for headings and keep decorative emoji out of them. Don't add an
   inline bold lead-in that just restates the sentence after it.
@@ -170,11 +159,23 @@ Those apply wherever they make sense and are simply irrelevant elsewhere.
   adding information. Watch for these:
     - Filler openers and connectors: "additionally", "furthermore", "moreover",
       "in order to", "due to the fact that", "it is worth noting that", "it is
-      important to note that". Delete them or start with the point.
+      important to note that", "at its core", "when it comes to", "this is
+      where X comes in". Delete them or start with the point.
     - Puffery and inflated verbs: "crucial", "pivotal", "seamless", "robust",
-      "powerful", "leverage", "utilize", "delve", "underscore", "showcase".
-      Prefer the plain word. Write "use" not "utilize", "important" not
-      "crucial", "shows" not "showcases".
+      "powerful", "comprehensive", "intricate", "holistic", "leverage",
+      "utilize", "delve", "underscore", "showcase", "foster", "harness",
+      "navigate", "landscape". Prefer the plain word. Write "use" not
+      "utilize", "important" not "crucial", "shows" not "showcases".
+    - Borrowed metaphors that stand in for a plain statement: "load-bearing",
+      "surface" as a verb, "the shape of", "doing the work", "heavy lifting",
+      "the engine", "quietly", "the tell". Say what the code or the sentence
+      actually does.
+    - Labels that tell the reader how to value something: "this matters",
+      "the right X", any "worth X" construction, and "honestly" on your own
+      claim. State the thing and let it show its own value.
+    - Framing around the content: announcing the structure before giving it,
+      restating the question before answering it, and lists of a bold term
+      followed by its explanation. Give the content directly.
     - Filler copulas where a plain "is" or a precise verb reads better: "serves
       as", "stands as", "acts as", "boasts", "features".
     - The "not just X, but Y" construction, and groups of three forced for
@@ -186,7 +187,7 @@ Those apply wherever they make sense and are simply irrelevant elsewhere.
       "in most cases", when the code always does the thing.
 - Don't inject personality to compensate for cutting those phrases. A comment or
   doc wants flat, precise description, not a lively voice, editorial opinions, or
-  first-person asides. Cut the tell and stop. Plain is the goal, not colourful.
+  first-person asides. Cut the phrase and stop. Plain is the goal, not colourful.
 - Name the value, not the technique that produced it. Don't write "union-find"
   when you mean the merge classes it computed, or "the visitor" when you mean
   the walk's result. Refer to the thing the code hands around.
