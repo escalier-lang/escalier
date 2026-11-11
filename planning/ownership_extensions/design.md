@@ -1070,11 +1070,24 @@ async fn skip() -> Promise<undefined> {
     it.next()            // warns: the promise 'next' returns is never awaited, so 'f' stays borrowed for the rest of the program; await it, or write `void` before the call to drop it on purpose
     f.x = 2              // error: cannot assign to 'f.x' while it is borrowed as immutable by the promise 'next' returns
 }
+
+async fn step() -> Promise<undefined> {
+    val mut f: Flat = {x: 1}
+    val mut it = ticks(&f)
+    await it.next()
+    f.x = 2              // accepted, since the step has settled and it is dead
+}
 ```
 
 In `skip`, `it` is dead after `it.next()`, but the body keeps running to its
 first `yield` and reads `p` there. The dropped step promise keeps `'a` live
 for `'static`, by A8, which is why the write to `f.x` is rejected.
+
+`step` awaits the same call. The `await` ends the step promise's hold, by A8,
+and the body is suspended at its first `yield`. `it` is dead after that line,
+so the generator's hold ends too, by G4, and nothing resumes the body to read
+`p` again. A later use of `it`, such as a second `await it.next()`, would keep
+the generator live at the write and bring the error back.
 
 ### 6.2 S2. `yield` in an async generator awaits a promise operand
 
