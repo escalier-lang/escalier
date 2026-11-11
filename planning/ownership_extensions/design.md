@@ -1784,20 +1784,20 @@ array, which R1 relies on for `for x in &mut arr`.
 
 A4, G4 and S1 read a written return type by W1 of the written-signatures
 design, so [#2438](https://github.com/escalier-lang/escalier/issues/2438) and
-[#2439](https://github.com/escalier-lang/escalier/issues/2439) land after the
-PR that implements W1, step 2 of that design's plan under
-[#2611](https://github.com/escalier-lang/escalier/issues/2611).
+[#2439](https://github.com/escalier-lang/escalier/issues/2439) land after
+[#2627](https://github.com/escalier-lang/escalier/issues/2627), which implements W1
+as step 2 of that design's plan.
 
 | Issue | Rules | What the PR does | Depends on |
 |---|---|---|---|
 | [#2601](https://github.com/escalier-lang/escalier/issues/2601) | A4, G4 | Adds the lifetime prefix on promise and generator types, with its elision and rendering | |
 | [#2426](https://github.com/escalier-lang/escalier/issues/2426) | A1, A6 | Gives `await` its three forms, removes `SharedAwaitIntoMutError`, and removes promise from the value types in `requirements.md` |  |
 | [#2424](https://github.com/escalier-lang/escalier/issues/2424) |  | Distributes a borrow over a union, the rule A3 builds on |  |
-| [#2438](https://github.com/escalier-lang/escalier/issues/2438) | A2, A4, A5 for stored closures | Infers an async body's promise lifetime and keeps an `'a Promise`'s `'a` live until it settles, which closes the `show` hole in section 2. Gives the reaction methods `'a Promise` results in `prelude.esc` per X2 | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2601](https://github.com/escalier-lang/escalier/issues/2601), [#2611](https://github.com/escalier-lang/escalier/issues/2611) |
+| [#2438](https://github.com/escalier-lang/escalier/issues/2438) | A2, A4, A5 for stored closures | Infers an async body's promise lifetime and keeps an `'a Promise`'s `'a` live until it settles, which closes the `show` hole in section 2. Gives the reaction methods `'a Promise` results in `prelude.esc` per X2 | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2601](https://github.com/escalier-lang/escalier/issues/2601), [#2627](https://github.com/escalier-lang/escalier/issues/2627) |
 | [#2610](https://github.com/escalier-lang/escalier/issues/2610) | A8 | Follows a promise through moves and combinators to end its hold, adds `void e`, and warns on a dropped promise that holds borrows | [#2438](https://github.com/escalier-lang/escalier/issues/2438) |
 | [#2600](https://github.com/escalier-lang/escalier/issues/2600) | A5 for module-level state | Makes an `await` or a `yield` use each module-level binding some module-level function writes, as section 8.6 describes |  |
 | [#2427](https://github.com/escalier-lang/escalier/issues/2427) | A3, A7 | Normalizes a borrow of a promise to a promise of a borrow, refines the D12 warning per section 7, and adds `ReactionBorrowLifetimeError` | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2424](https://github.com/escalier-lang/escalier/issues/2424), [#2438](https://github.com/escalier-lang/escalier/issues/2438) |
-| [#2439](https://github.com/escalier-lang/escalier/issues/2439) | G4 | Infers a generator body's lifetime and keeps it live while the generator is, which closes the `each` hole in section 2 | [#2601](https://github.com/escalier-lang/escalier/issues/2601), [#2611](https://github.com/escalier-lang/escalier/issues/2611) |
+| [#2439](https://github.com/escalier-lang/escalier/issues/2439) | G4 | Infers a generator body's lifetime and keeps it live while the generator is, which closes the `each` hole in section 2 | [#2601](https://github.com/escalier-lang/escalier/issues/2601), [#2627](https://github.com/escalier-lang/escalier/issues/2627) |
 | [#2428](https://github.com/escalier-lang/escalier/issues/2428) | G1 to G3 | Gives `yield` its three forms and keeps a yielded borrow live for the rest of the body |  |
 | [#2440](https://github.com/escalier-lang/escalier/issues/2440) | R2 | Binds a fresh loop variable on each iteration in the control-flow graph |  |
 | [#2441](https://github.com/escalier-lang/escalier/issues/2441) | X3 (10.3.3) | Adds the `Copyable` alias, bounds `fill` and `copyWithin` by it, and adds `DuplicatingArrayMethodError` |  |
