@@ -1552,6 +1552,14 @@ methods unchanged. The bound also serves user code. A generic
 `fn myFill<T: Copyable>(arr: &mut Array<T>, value: T)` may store `value` in
 every slot, since F2 copies it each time.
 
+A copy keeps the lifetime of what it copies. A copied value type has no
+lifetime, so the copy and the original are unrelated afterwards. A copied
+borrow is a second borrow of the same value, by F2, with the same lifetime. So
+`arr.fill(r)` with `r: &'a Flat` stores one `&'a Flat` in every slot, and by L1
+`'a` stays live while the array is, even after `r` dies. The bound needs no
+codegen. A value type is copied by value in JavaScript already, and a borrow
+compiles to a reference, so `fill` runs unchanged.
+
 #### 10.3.4 Advancing a generator takes `&mut self`
 
 `Generator` and `AsyncGenerator` take `&mut self` on `next`, `return` and
