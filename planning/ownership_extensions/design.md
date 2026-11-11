@@ -1536,18 +1536,22 @@ type Copyable = ValueType | &unknown
 ```
 
 `&unknown` admits every borrow, since a `&mut T` narrows to a `&T` by T4. The
-prelude states the requirement as a bound on each method:
+prelude states the requirement as a bound on each method. `fill` bounds the
+value it stores, since only that value is duplicated. `copyWithin` stores no
+new value and duplicates the elements already there, so it bounds `T`:
 
 ```esc
-fill(&mut self, value: T, start?: number, end?: number) -> Self where T: Copyable,
+fill<V: T & Copyable>(&mut self, value: V, start?: number, end?: number) -> Self,
 copyWithin(&mut self, target: number, start: number, end?: number) -> Self where T: Copyable,
 ```
 
-`arr.fill({x: 0})` on an `Array<Flat>` fails the bound and reports
+`arr.fill({x: 0})` on an `Array<Flat>` fails the bound, since no `V` is both a
+`Flat` and `Copyable`, and reports
 ``cannot call 'fill' on an array of owned elements, since it stores one value in several slots; fill an array of a value type or of borrows``.
 This is a new diagnostic, `DuplicatingArrayMethodError`, and `copyWithin`
 reports it with its own name. `fill` on an `Array<number>` or an
-`Array<&Flat>` checks clean. A `TypedArray` holds only numbers and keeps both
+`Array<&Flat>` checks clean, and so does `fill(0)` on an
+`Array<number | Flat>`, where `V` is `number`. A `TypedArray` holds only numbers and keeps both
 methods unchanged. The bound also serves user code. A generic
 `fn myFill<T: Copyable>(arr: &mut Array<T>, value: T)` may store `value` in
 every slot, since F2 copies it each time.
@@ -1696,8 +1700,8 @@ E2 already lets two pending `next` promises each hold `&mut self`.
 
 ## 11. Questions
 
-Each question lists the options and its outcome. Questions 1 to 4 are decided.
-Question 5 is open. None blocks the first PR.
+Each question lists the options and its decision.
+None blocks the first PR.
 
 1. **Whether `await &p` on a promise of a value type needs the `&`.** With
    `p: Promise<number>`, all three forms of A1 yield a `number`, but `await p`
@@ -1736,9 +1740,9 @@ Question 5 is open. None blocks the first PR.
    anyway, but it would save one microtask per `yield` and make the emitted
    JavaScript stop matching the source.
 5. **Whether `fill` should accept a copyable value on an array of mixed
-   elements.** Section 10.3.3 bounds `fill` by `where T: Copyable`, so
-   `Array<number | Flat>.fill(0)` is rejected, though storing a `number` in
-   every slot is sound. Only the stored value needs to be copyable. One option
+   elements.** A bound `where T: Copyable` on `fill` would reject
+   `Array<number | Flat>.fill(0)`, though storing a `number` in every slot is
+   sound. Only the stored value needs to be copyable. One option
    is a conditional type, `type AsCopyable<T> = if T : Copyable { T } else { never }`,
    with `value: AsCopyable<T>`. It distributes over the union and accepts the
    call, but an `Array<Flat>` then reports a generic error about `never` in
@@ -1746,8 +1750,10 @@ Question 5 is open. None blocks the first PR.
    `fill<V: T & Copyable>(&mut self, value: V, …)`, which also accepts the call
    and keeps the failure a bound failure that maps onto the diagnostic.
    `copyWithin` takes no value and keeps `where T: Copyable` in every option.
-   Recommendation: keep the bound on `T` until a program needs the mixed case,
-   then move `fill` to the `V: T & Copyable` form.
+   Decision: the `V: T & Copyable` form, now. Nothing would tell us that a
+   program needs the mixed case. The bound on `T` reports the ordinary
+   `DuplicatingArrayMethodError`, which a user works around without filing an
+   issue, so waiting would keep a false rejection that no one reports.
 
 ## 12. Plan
 
