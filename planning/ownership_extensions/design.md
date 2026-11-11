@@ -970,8 +970,8 @@ owned or borrowed as G1 made it.
 A `for` loop closes a generator when it exits early, and a generator that ran
 to completion yields nothing more. So moving an owned generator into the loop
 loses nothing the caller could still use. `for x in &it` is rejected, since
-advancing a generator writes its state:
-``cannot borrow 'it' as immutable to iterate it, since advancing a generator writes it; iterate `it` or `&mut it` ``.
+advancing an iterator writes its state:
+``cannot borrow 'it' as immutable to iterate it, since advancing an iterator writes it; iterate `it` or `&mut it` ``.
 This is a new diagnostic, `ImmutableIteratorLoopError`.
 
 ```esc
@@ -997,7 +997,7 @@ fn resume() -> undefined {
 
 fn peek() -> undefined {
     val mut it = count()
-    for n in &it {}      // error: cannot borrow 'it' as immutable to iterate it, since advancing a generator writes it; iterate `it` or `&mut it`
+    for n in &it {}      // error: cannot borrow 'it' as immutable to iterate it, since advancing an iterator writes it; iterate `it` or `&mut it`
 }
 ```
 
@@ -1018,7 +1018,7 @@ form the loop uses, each element is a borrow:
 fn direct(mut arr: Array<Flat>) -> undefined {
     val mut it = arr[Symbol.iterator]()   // it: ArrayIterator<&Flat>, which borrows arr
     arr.push({x: 0})     // error: cannot borrow 'arr' as mutable while it is borrowed as immutable by 'it'
-    for f in &it {}      // error: cannot borrow 'it' as immutable to iterate it, since advancing a generator writes it; iterate `it` or `&mut it`
+    for f in &it {}      // error: cannot borrow 'it' as immutable to iterate it, since advancing an iterator writes it; iterate `it` or `&mut it`
     for f in &mut it {}  // accepted, and f is &Flat
 }
 ```
