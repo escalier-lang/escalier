@@ -6,7 +6,6 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/tliron/glsp"
@@ -232,15 +231,8 @@ func shouldSuppressCompletions(script *ast.Script, module *ast.Module, sourceID 
 func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.CompletionParams) (any, error) {
 	uri := params.TextDocument.URI
 
-	// Wait for an in-flight validation to complete if the cached AST is
-	// stale (i.e. the document has been updated but validation hasn't
-	// finished yet). Times out after 2s to avoid blocking indefinitely.
-	deadline := time.Now().Add(2 * time.Second)
 	s.mu.RLock()
-	for s.isCacheStale(uri) && time.Now().Before(deadline) {
-		// Puts the gorountine to sleep until `Broadcast()` is called.
-		s.validated.Wait()
-	}
+	s.waitForFreshCheck(uri)
 	var module *ast.Module
 	var script *ast.Script
 	var checkedSrc *ast.Source

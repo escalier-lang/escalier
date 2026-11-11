@@ -126,15 +126,16 @@ func NewServer() *Server {
 		SetTrace:    s.setTrace,
 
 		// TextDocument
-		TextDocumentDeclaration:    s.textDocumentDeclaration,
-		TextDocumentDefinition:     s.textDocumentDefinition,
-		TextDocumentTypeDefinition: s.textDocumentTypeDefinition,
-		TextDocumentDidOpen:        s.textDocumentDidOpen,
-		TextDocumentDidChange:      s.textDocumentDidChange,
-		TextDocumentHover:          s.textDocumentHover,
-		TextDocumentCompletion:     s.textDocumentCompletion,
-		CompletionItemResolve:      s.completionItemResolve,
-		TextDocumentCodeAction:     s.textDocumentCodeAction,
+		TextDocumentDeclaration:        s.textDocumentDeclaration,
+		TextDocumentDefinition:         s.textDocumentDefinition,
+		TextDocumentTypeDefinition:     s.textDocumentTypeDefinition,
+		TextDocumentDidOpen:            s.textDocumentDidOpen,
+		TextDocumentDidChange:          s.textDocumentDidChange,
+		TextDocumentHover:              s.textDocumentHover,
+		TextDocumentCompletion:         s.textDocumentCompletion,
+		CompletionItemResolve:          s.completionItemResolve,
+		TextDocumentCodeAction:         s.textDocumentCodeAction,
+		TextDocumentSemanticTokensFull: s.textDocumentSemanticTokensFull,
 
 		// Workspace
 		WorkspaceExecuteCommand:        s.workspaceExecuteCommand,
@@ -197,6 +198,7 @@ func (s *Server) initialize(context *glsp.Context, params *protocol.InitializePa
 		TriggerCharacters: []string{"."},
 		ResolveProvider:   &resolveProvider,
 	}
+	capabilities.SemanticTokensProvider = semanticTokensOptions()
 	capabilities.DeclarationProvider = true
 	capabilities.DefinitionProvider = true
 	capabilities.CodeActionProvider = protocol.CodeActionOptions{

@@ -287,7 +287,7 @@ func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.
 // `mut p: {x: number}`, since a value's mutability belongs to its binding rather than
 // its type. Any other node renders as its type alone.
 func hoverText(info *solver.Info, node ast.Node, t soltype.Type) string {
-	name, mut, ok := hoverBinding(info, node)
+	name, mut, ok := bindingOf(info, node)
 	if !ok {
 		return soltype.PrintAsScheme(t)
 	}
@@ -297,10 +297,10 @@ func hoverText(info *solver.Info, node ast.Node, t soltype.Type) string {
 	return name + ": " + soltype.PrintAsScheme(t)
 }
 
-// hoverBinding returns the name node binds or reads, and whether that binding is mutable.
+// bindingOf returns the name node binds or reads, and whether that binding is mutable.
 // ok is false when node neither binds a name nor reads one a `val`, `var`, or parameter
 // binding declared.
-func hoverBinding(info *solver.Info, node ast.Node) (name string, mut bool, ok bool) {
+func bindingOf(info *solver.Info, node ast.Node) (name string, mut bool, ok bool) {
 	switch n := node.(type) {
 	case *ast.IdentPat:
 		return n.Name, info.BindsMut(n), true
@@ -389,6 +389,17 @@ func wantsCodeActionKind(only []protocol.CodeActionKind, kind protocol.CodeActio
 // successful validation, or if any sibling file has changed since the last
 // package-level validation.
 // Must be called while holding mu.RLock().
+// waitForFreshCheck blocks until the cached check output reflects the latest text of
+// uri, or until 2s pass, whichever comes first. The caller holds s.mu's read lock, which
+// the wait releases while it sleeps and holds again when it returns.
+func (s *Server) waitForFreshCheck(uri protocol.DocumentUri) {
+	deadline := time.Now().Add(2 * time.Second)
+	for s.isCacheStale(uri) && time.Now().Before(deadline) {
+		// Sleeps until validation calls `Broadcast()`.
+		s.validated.Wait()
+	}
+}
+
 func (s *Server) isCacheStale(uri protocol.DocumentUri) bool {
 	doc, ok := s.documents[uri]
 	if !ok {
