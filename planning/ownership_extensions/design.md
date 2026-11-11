@@ -1203,9 +1203,20 @@ true, so the rules document keeps describing what the checker enforces.
 
 ### 8.1 A borrowed yield lives as long as the generator
 
-The options for `yield &x` were:
+The options for `yield &x` were judged against `h` from G2, which lends a
+local buffer and then writes it:
 
-- **Reject a borrow of a generator local.** Simple, and it rejects `h` above.
+```esc
+gen fn h() -> Generator<&Flat, undefined, unknown> {
+    val mut buf: Flat = {x: 0}
+    yield &buf
+    buf.x = 1    // error under G2: cannot assign to 'buf.x' while it is borrowed as immutable
+}
+```
+
+The options were:
+
+- **Reject a borrow of a generator local.** Simple, and it rejects `h` at the `yield`.
   It also rejects a generator that yields a borrow of a local it never writes
   again, which G2 accepts.
 - **Type a lending generator.** A *lending* generator is one whose yielded
