@@ -1303,6 +1303,30 @@ would be unsound, since nothing ends a running async body. A caller that wants
 promise holds nothing, such as `keyed` in A4, costs a fire-and-forget caller
 nothing.
 
+The same holds for a closure's captures. Under A4's elision, a callback
+parameter is an `'a fn` tied to the returned `'a Promise`, so dropping the
+promise keeps every capture the closure borrows for `'static`. What the caller
+may still do with a capture follows D17's rule for a closure kept for
+`'static`. After a closure that writes a capture, the caller may read it, write
+it and borrow it as `&mut`, and E2 rejects only a `&` of the place it writes.
+After a closure that only reads a capture, the caller may read it and borrow it
+as `&`, and E2 rejects a write or a `&mut`:
+
+```esc
+fn fire() -> undefined {
+    val mut count = {n: 0}
+    void later(fn () { count.n = count.n + 1 })
+    count.n = 5          // accepted, since both paths to count.n are mutable
+    val v = &count       // error: cannot borrow 'count' as immutable while 'count.n' is borrowed as mutable by the promise 'later' returns
+}
+```
+
+A dropped reaction freezes its receiver and its callback's captures the same
+way, as A2's `forget` shows. A callee like `keyed`, whose `'static Promise`
+leaves its callback call-only, releases the captures when the call returns. A
+callee with a `'static fn` parameter, like `watch` in A4, keeps them whether
+or not the caller awaits its promise.
+
 Recommendation: keep A8 as stated.
 
 ### 8.5 The reaction callback's parameter is a borrow
