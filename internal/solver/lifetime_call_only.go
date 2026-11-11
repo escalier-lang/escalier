@@ -21,6 +21,9 @@ type callOnlyParam struct {
 	ann      *ast.FuncTypeAnn
 	// lt is the lifetime of the parameter's function type.
 	lt *soltype.LifetimeVar
+	// scope is the named-lifetime scope of the parameter's signature, mapping each name the
+	// signature can write to its variable.
+	scope map[string]*soltype.LifetimeVar
 	// outerMark is the lifetime counter before the function's parameters resolved, for a
 	// function written inside another body. Every lifetime minted before it belongs to the enclosing body
 	// or to the module. It is -1 for a function with no enclosing body.
@@ -221,8 +224,10 @@ func (c *checker) checkCallOnlyParams() {
 		}
 		outside := false
 		static := false
-		// keeper names a lifetime of this signature that another parameter holds and the
-		// parameter must outlive, which the parameter could take instead of 'static.
+		// keeper names a lifetime the parameter must outlive that a `<…>` list declares and
+		// that the parameter's signature can name, which the parameter could take instead of
+		// 'static. It is one of the signature's own lifetimes that another parameter holds, or
+		// a lifetime of an enclosing function that no nearer list hides.
 		keeper := ""
 		for _, kept := range outlivedBy(lt) {
 			switch kept := kept.(type) {
@@ -238,10 +243,11 @@ func (c *checker) checkCallOnlyParams() {
 				if _, inResult := lts.result[kept]; inResult && !inOther {
 					continue
 				}
-				if name, named := c.signatureLts[kept]; named && inOther && keeper == "" {
+				enclosing := kept.ID < p.outerMark
+				if name, named := c.signatureLts[kept]; named && (inOther || enclosing) && p.scope[name[1:]] == kept && keeper == "" {
 					keeper = name
 				}
-				outside = outside || inOther || kept.Level < lt.Level || kept.ID < p.outerMark
+				outside = outside || inOther || kept.Level < lt.Level || enclosing
 			}
 		}
 		if static || outside {

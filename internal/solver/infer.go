@@ -193,6 +193,24 @@ type checker struct {
 	// writes into it: both readers copy before minting, so a name one mints stays out of the
 	// declaration's scope and out of a sibling signature's.
 	declLifetimes map[string]*soltype.LifetimeVar
+	// enclosingLifetimes maps each lifetime name an enclosing function's `<…>` list binds, and
+	// that no nearer list rebinds, to the variable its parameter carries. A closure or a
+	// function type annotation written in a body may write such a name with no clause of its
+	// own, so nestedLifetimeScope seeds the nested scope from this and
+	// checkLifetimeDeclarations reads the names as declared. enterBodyLifetimeScope adds a
+	// function's names while its body is walked, and enterLifetimeScope hides the names a
+	// nested signature binds while that signature resolves. It is nil outside every function
+	// body, and enterDeclLifetimeScope empties it while a class or alias body is inferred. A
+	// class's names stay in declLifetimes.
+	enclosingLifetimes map[string]*soltype.LifetimeVar
+	// enclosingBounds maps each name in enclosingLifetimes to the names its function declares
+	// or implies it outlives, closed transitively. checkSignatureImpliesBodyLifetimes reads it to
+	// accept a nested signature's bound on one enclosing lifetime that outlives another.
+	enclosingBounds map[string]set.Set[string]
+	// enclosingOwners maps each name in enclosingLifetimes that hides a farther lifetime of the
+	// same name to the possessive of the function that binds it, as "run's" for `run<'a>` in
+	// `class C<'a>`. checkSignatureImpliesBodyLifetimes reads it to say which 'a it means.
+	enclosingOwners map[string]string
 
 	// classNamespace is the dep_graph namespace of the module-level declaration
 	// currently being inferred, empty at the root namespace and outside any

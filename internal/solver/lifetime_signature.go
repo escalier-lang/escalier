@@ -1,6 +1,9 @@
 package solver
 
 import (
+	"maps"
+	"slices"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -24,9 +27,17 @@ import (
 // every lifetime written inside T outlives 'a, so `p: &'a &'b T` implies 'b: 'a without a
 // written bound. Those count as declared.
 //
-// sig is the function's signature and ft its inferred type. A lifetime the enclosing class
-// declares is not checked here.
-func (c *checker) checkSignatureImpliesBodyLifetimes(sig ast.FuncSig, ft *soltype.FuncType) {
+// A relation from one of the signature's lifetimes to a lifetime an enclosing function
+// declares is checked the same way. `fn outer<'a>(p: &mut {cb: 'a fn () -> undefined})` with
+// `fn <'b>(g: 'b fn () -> undefined) { p.cb = g }` in its body needs 'b to outlive outer's 'a,
+// which `<'b: 'a>` declares.
+//
+// sig is the function's signature and ft its inferred type. outerScope and outerBounds are
+// the enclosing functions' lifetimes and their bounds, as enclosingLifetimes and
+// enclosingBounds held them before the signature hid the names it binds. outerOwners is
+// enclosingOwners at the same point. A lifetime the enclosing class declares is not checked
+// here.
+func (c *checker) checkSignatureImpliesBodyLifetimes(sig ast.FuncSig, ft *soltype.FuncType, outerScope map[string]*soltype.LifetimeVar, outerBounds map[string]set.Set[string], outerOwners map[string]string) {
 	ltParams := sig.LifetimeParams
 	named := map[string]*soltype.LifetimeVar{}
 	binders := map[string]*ast.LifetimeParam{}
@@ -74,6 +85,44 @@ func (c *checker) checkSignatureImpliesBodyLifetimes(sig ast.FuncSig, ft *soltyp
 			}
 			if !declared.implies(sub, super) {
 				c.report(&LifetimeRelationUndeclaredError{Sub: sub, Super: super, Param: binders[sub]})
+			}
+		}
+	}
+
+	// An enclosing function's lifetime is a fixed lifetime here, which a caller of this function
+	// does not choose. So each relation the body requires from one of the signature's lifetimes
+	// to it has to be declared too. A name the signature binds itself hides the enclosing
+	// lifetime of that name, which then cannot be named in a bound.
+	// A bound on an enclosing lifetime also covers each one that lifetime's function declares
+	// or implies it outlives.
+	own := set.NewSet[string]()
+	for _, p := range ltParams {
+		own.Add(p.Name)
+	}
+	covers := func(sub, super string) bool {
+		if declared.implies(sub, super) {
+			return true
+		}
+		for via := range declared.outlives[sub] {
+			if !own.Contains(via) && outerBounds[via].Contains(super) {
+				return true
+			}
+		}
+		return false
+	}
+	outerNames := slices.Sorted(maps.Keys(outerScope))
+	for _, sub := range order {
+		if forcedStatic(named[sub]) {
+			continue
+		}
+		reach := set.FromSlice(outlivedBy(named[sub]))
+		for _, name := range outerNames {
+			if !reach.Contains(outerScope[name]) {
+				continue
+			}
+			shadowed := own.Contains(name)
+			if shadowed || !covers(sub, name) {
+				c.report(&LifetimeRelationUndeclaredError{Sub: sub, Super: name, Shadowed: shadowed, Owner: outerOwners[name], Param: binders[sub]})
 			}
 		}
 	}

@@ -487,6 +487,12 @@ closure that calls it, ties its lifetime to the result, so `f` reads as
 that share a lifetime name it, as in
 `fn runWith<'a>(f: 'a fn (x: number) -> number, p: &'a {x: number})`.
 
+A lifetime a function names is in scope in the closures written in its body. In
+`fn outer<'a>(p: &mut {cb: 'a fn () -> undefined})`, the closure
+`fn (g: 'a fn () -> undefined) { p.cb = g }` checks, and the same closure with
+`g: fn () -> undefined` suggests `` write `g: 'a fn () -> undefined` to keep it ``.
+A closure that declares its own `<'a>` hides the enclosing `'a`.
+
 ## Partial moves
 
 Moving one field out of an owned object consumes that field's slot, not the whole

@@ -68,21 +68,73 @@ func TestInferStaticLifetimeNeverUndeclared(t *testing.T) {
 	require.Empty(t, errs)
 }
 
-// A nested function is judged by its own clause, not an enclosing one. The inner `relay`
-// declares no `<'a>`, so its `&'a` borrows are undeclared with no clause and are hard
-// errors, even though the outer function declares `<'a>`. An enclosing function's
-// lifetimes are not visible to a nested one.
-func TestInferUndeclaredLifetimeNestedJudgedByOwnClause(t *testing.T) {
-	_, _, errs := inferSource(t, `fn outer<'a>(p: &'a {x: number}) -> &'a {x: number} {
+// A lifetime an enclosing function's `<…>` list binds is in scope in a closure written in its
+// body, so the closure `relay` may write `&'a` with no clause of its own.
+// TestInferUndeclaredLifetimeNestedSeesEnclosingClause covers that case, a name the closure's
+// own clause hides, and a lifetime no enclosing function binds, which is undeclared.
+func TestInferUndeclaredLifetimeNestedSeesEnclosingClause(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "declared by the enclosing function",
+			src: `fn outer<'a>(p: &'a {x: number}) -> &'a {x: number} {
   val relay = fn (q: &'a {x: number}) -> &'a {x: number} { return q }
   return p
-}`)
-	require.Equal(t,
-		[]string{
-			"2:23-2:25: lifetime 'a is used but not declared; add `<'a>` to the enclosing function signature",
-			"2:43-2:45: lifetime 'a is used but not declared; add `<'a>` to the enclosing function signature",
+}`,
 		},
-		messagesWithSpan(t, errs))
+		// A closure in a member body sees the class's 'a and the member's own 'c.
+		{
+			name: "declared by the enclosing class and by the enclosing member",
+			src: `class C<'a> {
+  peer: &'a mut {value: number},
+  run<'c>(&mut self, slot: &mut {cb: &'c mut {value: number}}) -> undefined {
+    val f = fn (p: &'a mut {value: number}, q: &'c mut {value: number}) { slot.cb = q }
+  },
+}`,
+		},
+		// outer's 'a appears only in a bound, so no position interns it before the body. The
+		// body's scope interns it, so the closure reaches outer's 'a.
+		{
+			name: "declared by the enclosing function and written only in a bound",
+			src: `fn outer<'a, 'b: 'a>(x: &'b {x: number}) -> &'a {x: number} {
+  val f = fn (q: &'a {x: number}) -> &'a {x: number} { return q }
+  return x
+}`,
+		},
+		// The closure's own 'a hides outer's in a function type its own signature writes, and
+		// that function type binds no 'a of its own.
+		{
+			name: "hidden by the closure's own clause in a nested function type",
+			src: `fn outer<'a>(p: &'a {x: number}) -> &'a {x: number} {
+  val inner = fn <'a>(g: fn (x: &'a {x: number}) -> undefined) {}
+  return p
+}`,
+			want: []string{
+				"2:19-2:21: lifetime parameter 'a is declared but never used",
+				"2:34-2:36: lifetime 'a is used but not declared; add `<'a>` to the enclosing function signature",
+			},
+		},
+		{
+			name: "declared by no enclosing function",
+			src: `fn outer(p: &{x: number}) -> &{x: number} {
+  val relay = fn (q: &'a {x: number}) -> &'a {x: number} { return q }
+  return p
+}`,
+			want: []string{
+				"2:23-2:25: lifetime 'a is used but not declared; add `<'a>` to the enclosing function signature",
+				"2:43-2:45: lifetime 'a is used but not declared; add `<'a>` to the enclosing function signature",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
+		})
+	}
 }
 
 // A declared binder that no borrow and no bound references is dead weight. `<'a>` is
