@@ -934,7 +934,7 @@ fn grow(mut arr: Array<Flat>) -> undefined {
     for f in &mut arr {
         val n = f.x
         if n > 0 {
-            arr.push({x: n - 1})   // accepted, since the loop's borrow and this one are both mutable
+            arr.push({x: n - 1})   // accepted, since the loop's borrow and this one are both mutable, and warns by question 3 in section 11
         }
     }
 }
@@ -1095,6 +1095,9 @@ JavaScript awaits a promise passed to `yield` inside an async generator, so the
 consumer receives the settled value. `yield e` there is `yield await e`, and A1
 then G1 decide it:
 
+The examples write some yields bare to show what S2 does. Each bare `yield`
+of a promise also reports the warning question 4 in section 11 decides on.
+
 ```esc
 async gen fn stream() -> AsyncGenerator<Flat, undefined, unknown> {
     val p = load()
@@ -1190,14 +1193,22 @@ true, so the rules document keeps describing what the checker enforces.
   `catch` and `finally` to
   [#2438](https://github.com/escalier-lang/escalier/issues/2438).
 - **Comparison with Rust.** The table gains rows for A1, A2, A3, A4, G2 and
-  R1, from section 9.
+  R1, from section 9. Each row lands with the PR that implements its rule: A1
+  with [#2426](https://github.com/escalier-lang/escalier/issues/2426), A2 and A4 with [#2438](https://github.com/escalier-lang/escalier/issues/2438), A3 with
+  [#2427](https://github.com/escalier-lang/escalier/issues/2427), G2 with [#2428](https://github.com/escalier-lang/escalier/issues/2428) and R1 with
+  [#2444](https://github.com/escalier-lang/escalier/issues/2444).
 - **Conformance tests.** The flow matrix gains `await`, `yield` and the loop as
   flow sites, so each column becomes a test at each. The per-rule list gains
-  the examples in sections 3 to 6.
+  the examples in sections 3 to 6. [#2426](https://github.com/escalier-lang/escalier/issues/2426) adds the `await` column,
+  [#2428](https://github.com/escalier-lang/escalier/issues/2428) the `yield` column and [#2444](https://github.com/escalier-lang/escalier/issues/2444) the loop
+  column, and each PR adds the per-rule examples for its rules.
 - **Checking model.** `await`, `yield` and the loop header emit the same
   `copy`, `borrow` and `move` events as any other flow site. A4 and G4 add the
   returned promise or generator as a holder of each argument borrow, and A8
   follows a promise through moves and combinators as it follows a borrow.
+  Each of [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2428](https://github.com/escalier-lang/escalier/issues/2428), [#2444](https://github.com/escalier-lang/escalier/issues/2444),
+  [#2438](https://github.com/escalier-lang/escalier/issues/2438), [#2439](https://github.com/escalier-lang/escalier/issues/2439) and [#2610](https://github.com/escalier-lang/escalier/issues/2610) updates this
+  paragraph for the events it adds.
 
 ## 8. Choices
 
@@ -1725,7 +1736,8 @@ None blocks the first PR.
    write to `length`. A write through `f` or to `arr[i]` stays silent, since
    neither changes which elements the loop visits. Decision: the lint. A
    loop that changes the collection it iterates is hard to reason about even
-   when the checker accepts it. The other two loop forms need neither, since a loop over `arr` moves it and
+   when the checker accepts it. [#2624](https://github.com/escalier-lang/escalier/issues/2624) adds it. The other two loop forms
+   need neither, since a loop over `arr` moves it and
    a loop over `&arr` already rejects writes.
 4. **Whether to lint `yield await` or a bare `yield` of a promise in an async
    generator.** By S2, `yield e` there awaits a promise `e`, so `yield await e`
@@ -1734,7 +1746,7 @@ None blocks the first PR.
    the only sign of the `await` at the yield site, where `yield &p` looks like
    it yields a `Promise<&Flat>` but yields a `&Flat`. Options: no lint, a lint
    against `yield await`, or a lint against a bare `yield` of a promise that
-   suggests `yield await e`. Decision: the last, since it flags the
+   suggests `yield await e`. Decision: the last, which [#2625](https://github.com/escalier-lang/escalier/issues/2625) adds, since it flags the
    place where the source and the yielded type disagree. Codegen keeps the
    `await`. Stripping it would be safe, since `yield` awaits its operand
    anyway, but it would save one microtask per `yield` and make the emitted
@@ -1773,27 +1785,29 @@ array, which R1 relies on for `for x in &mut arr`.
 
 A4, G4 and S1 read a written return type by W1 of the written-signatures
 design, so [#2438](https://github.com/escalier-lang/escalier/issues/2438) and
-[#2439](https://github.com/escalier-lang/escalier/issues/2439) land after the
-PR that implements W1, step 2 of that design's plan under
-[#2611](https://github.com/escalier-lang/escalier/issues/2611).
+[#2439](https://github.com/escalier-lang/escalier/issues/2439) land after
+[#2627](https://github.com/escalier-lang/escalier/issues/2627), which implements W1
+as step 2 of that design's plan.
 
 | Issue | Rules | What the PR does | Depends on |
 |---|---|---|---|
 | [#2601](https://github.com/escalier-lang/escalier/issues/2601) | A4, G4 | Adds the lifetime prefix on promise and generator types, with its elision and rendering | |
 | [#2426](https://github.com/escalier-lang/escalier/issues/2426) | A1, A6 | Gives `await` its three forms, removes `SharedAwaitIntoMutError`, and removes promise from the value types in `requirements.md` |  |
 | [#2424](https://github.com/escalier-lang/escalier/issues/2424) |  | Distributes a borrow over a union, the rule A3 builds on |  |
-| [#2438](https://github.com/escalier-lang/escalier/issues/2438) | A2, A4, A5 for stored closures | Infers an async body's promise lifetime and keeps an `'a Promise`'s `'a` live until it settles, which closes the `show` hole in section 2. Gives the reaction methods `'a Promise` results in `prelude.esc` per X2 | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2601](https://github.com/escalier-lang/escalier/issues/2601) |
+| [#2438](https://github.com/escalier-lang/escalier/issues/2438) | A2, A4, A5 for stored closures | Infers an async body's promise lifetime and keeps an `'a Promise`'s `'a` live until it settles, which closes the `show` hole in section 2. Gives the reaction methods `'a Promise` results in `prelude.esc` per X2 | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2601](https://github.com/escalier-lang/escalier/issues/2601), [#2627](https://github.com/escalier-lang/escalier/issues/2627) |
 | [#2610](https://github.com/escalier-lang/escalier/issues/2610) | A8 | Follows a promise through moves and combinators to end its hold, adds `void e`, and warns on a dropped promise that holds borrows | [#2438](https://github.com/escalier-lang/escalier/issues/2438) |
 | [#2600](https://github.com/escalier-lang/escalier/issues/2600) | A5 for module-level state | Makes an `await` or a `yield` use each module-level binding some module-level function writes, as section 8.6 describes |  |
 | [#2427](https://github.com/escalier-lang/escalier/issues/2427) | A3, A7 | Normalizes a borrow of a promise to a promise of a borrow, refines the D12 warning per section 7, and adds `ReactionBorrowLifetimeError` | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2424](https://github.com/escalier-lang/escalier/issues/2424), [#2438](https://github.com/escalier-lang/escalier/issues/2438) |
-| [#2439](https://github.com/escalier-lang/escalier/issues/2439) | G4 | Infers a generator body's lifetime and keeps it live while the generator is, which closes the `each` hole in section 2 | [#2601](https://github.com/escalier-lang/escalier/issues/2601) |
+| [#2439](https://github.com/escalier-lang/escalier/issues/2439) | G4 | Infers a generator body's lifetime and keeps it live while the generator is, which closes the `each` hole in section 2 | [#2601](https://github.com/escalier-lang/escalier/issues/2601), [#2627](https://github.com/escalier-lang/escalier/issues/2627) |
 | [#2428](https://github.com/escalier-lang/escalier/issues/2428) | G1 to G3 | Gives `yield` its three forms and keeps a yielded borrow live for the rest of the body |  |
 | [#2440](https://github.com/escalier-lang/escalier/issues/2440) | R2 | Binds a fresh loop variable on each iteration in the control-flow graph |  |
 | [#2441](https://github.com/escalier-lang/escalier/issues/2441) | X3 (10.3.3) | Adds the `Copyable` alias, bounds `fill` and `copyWithin` by it, and adds `DuplicatingArrayMethodError` |  |
 | [#2444](https://github.com/escalier-lang/escalier/issues/2444) | R1, R3, G5 | Gives `for` loops their three forms and `yield from` the same, since G5 is decided by R1, adds `ImmutableIteratorLoopError` and the loop form of the moved-value message from section 8.2 | [#2428](https://github.com/escalier-lang/escalier/issues/2428), [#2440](https://github.com/escalier-lang/escalier/issues/2440), [#2441](https://github.com/escalier-lang/escalier/issues/2441), [#2318](https://github.com/escalier-lang/escalier/issues/2318), [#2290](https://github.com/escalier-lang/escalier/issues/2290) |
+| [#2624](https://github.com/escalier-lang/escalier/issues/2624) | Question 3 | Warns when a `for … in &mut` loop changes the length or order of its source, as `LoopSourceShapeWarning` | [#2444](https://github.com/escalier-lang/escalier/issues/2444) |
 | [#2442](https://github.com/escalier-lang/escalier/issues/2442) | X3, X4 | Changes the element-reading iterator methods and the `Iterable` and `Generator` declarations, makes `next` require a `TNext` unless it admits `undefined`, and adds `IterationNextValueError` | [#2444](https://github.com/escalier-lang/escalier/issues/2444) |
 | [#2614](https://github.com/escalier-lang/escalier/issues/2614) | X5 | Borrows the predicates' values, moves the source of a lazy helper, ties a lazy helper to its callback, and requires a source whose `TNext` admits `undefined` | [#2442](https://github.com/escalier-lang/escalier/issues/2442), [#2601](https://github.com/escalier-lang/escalier/issues/2601) |
-| [#2443](https://github.com/escalier-lang/escalier/issues/2443) | S1 to S3 | Applies the rules to async generators, including the implicit `await` of a promise operand to `yield` | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2438](https://github.com/escalier-lang/escalier/issues/2438), [#2444](https://github.com/escalier-lang/escalier/issues/2444) |
+| [#2443](https://github.com/escalier-lang/escalier/issues/2443) | S1 to S3 | Applies the rules to async generators, including the implicit `await` of a promise operand to `yield` | [#2426](https://github.com/escalier-lang/escalier/issues/2426), [#2438](https://github.com/escalier-lang/escalier/issues/2438), [#2444](https://github.com/escalier-lang/escalier/issues/2444), [#2610](https://github.com/escalier-lang/escalier/issues/2610) |
+| [#2625](https://github.com/escalier-lang/escalier/issues/2625) | Question 4 | Warns on a bare `yield` of a promise in an async generator, as `ImplicitYieldAwaitWarning` | [#2443](https://github.com/escalier-lang/escalier/issues/2443) |
 | [#2447](https://github.com/escalier-lang/escalier/issues/2447) | A2, A8 | Reports A8's dropped-promise warning for a reaction on a promise held in a place with wording that points at `await`, as section 8.7 describes | [#2438](https://github.com/escalier-lang/escalier/issues/2438), [#2610](https://github.com/escalier-lang/escalier/issues/2610) |
 | [#2602](https://github.com/escalier-lang/escalier/issues/2602) | X1 | Classifies how long each promise-returning built-in and Web API function keeps its arguments, and writes the declarations to match | [#2601](https://github.com/escalier-lang/escalier/issues/2601) |
 
