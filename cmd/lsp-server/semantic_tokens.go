@@ -5,6 +5,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/escalier-lang/escalier/internal/solver"
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
@@ -15,11 +16,13 @@ import (
 var semanticTokenTypes = []string{
 	string(protocol.SemanticTokenTypeVariable),
 	string(protocol.SemanticTokenTypeParameter),
+	string(protocol.SemanticTokenTypeMethod),
 }
 
 const (
 	tokenTypeVariable = iota
 	tokenTypeParameter
+	tokenTypeMethod
 )
 
 // semanticTokenModifiers lists the token modifiers the server reports, in legend order.
@@ -128,8 +131,10 @@ func encodeSemanticTokens(lineMap *ast.LineMap, tokens []semanticToken) []protoc
 }
 
 // mutableTokenVisitor collects a token for each name in one file that binds or reads
-// mutable data. A name binds mutable data when its binding is mutable, as in
-// `val mut p`, or when its value is a mutable borrow, as in `val r: &mut Point`.
+// mutable data, and for each name of a method that takes `&mut self`. A name binds
+// mutable data when its binding is mutable, as in `val mut p`, or when its value is a
+// mutable borrow, as in `val r: &mut Point`. A method name is marked where a class or an
+// object type declares it and where a call reads it, as `push` in `xs.push(1)`.
 type mutableTokenVisitor struct {
 	ast.DefaultVisitor
 	info *solver.Info
@@ -153,6 +158,32 @@ func (v *mutableTokenVisitor) EnterExpr(e ast.Expr) bool {
 		v.addParams(e.Params)
 	case *ast.IdentExpr:
 		v.addRead(e)
+	case *ast.MemberExpr:
+		if v.readsMutMethod(e) {
+			v.add(e.Prop.Span(), tokenTypeMethod)
+		}
+	}
+	return true
+}
+
+func (v *mutableTokenVisitor) EnterClassElem(e ast.ClassElem) bool {
+	// A constructor's receiver is a parameter pattern of its function, which EnterPat
+	// marks, so only these members' receivers are marked here.
+	switch e := e.(type) {
+	case *ast.MethodElem:
+		v.addMethodName(e.Name, e.Receiver)
+		v.addReceiver(e.Receiver)
+	case *ast.GetterElem:
+		v.addReceiver(e.Receiver)
+	case *ast.SetterElem:
+		v.addReceiver(e.Receiver)
+	}
+	return true
+}
+
+func (v *mutableTokenVisitor) EnterObjTypeAnnElem(e ast.ObjTypeAnnElem) bool {
+	if m, ok := e.(*ast.MethodTypeAnn); ok {
+		v.addMethodName(m.Name, m.Receiver)
 	}
 	return true
 }
@@ -205,6 +236,51 @@ func (v *mutableTokenVisitor) addRead(e *ast.IdentExpr) {
 		tokenType = tokenTypeParameter
 	}
 	v.add(e.Span(), tokenType)
+}
+
+// addMethodName records a token for name, the name a method is declared under, when
+// receiver is `&mut self`. It records nothing for a name written as a string or a
+// computed key.
+func (v *mutableTokenVisitor) addMethodName(name ast.ObjKey, receiver *ast.MethodReceiver) {
+	if receiver == nil || receiver.Mode != ast.BorrowReceiver || !receiver.Mut {
+		return
+	}
+	if ident, ok := name.(*ast.IdentExpr); ok {
+		v.add(ident.Span(), tokenTypeMethod)
+	}
+}
+
+// addReceiver records a parameter token for the `self` of receiver when receiver is
+// `&mut self` or `mut self`. Inside the member's body, `self` then reads mutable data.
+func (v *mutableTokenVisitor) addReceiver(receiver *ast.MethodReceiver) {
+	if receiver == nil || !receiver.Mut {
+		return
+	}
+	// A receiver ends with `self`.
+	end := receiver.Span_.End.Offset
+	v.add(ast.Span{
+		Start:    ast.Location{Offset: end - len("self")},
+		End:      ast.Location{Offset: end},
+		SourceID: receiver.Span_.SourceID,
+	}, tokenTypeParameter)
+}
+
+// readsMutMethod reports whether e reads a method that takes `&mut self` off its object.
+// An overloaded method counts when every arm takes `&mut self`.
+func (v *mutableTokenVisitor) readsMutMethod(e *ast.MemberExpr) bool {
+	if e.Prop == nil || !v.info.IsMethodRead(e) {
+		return false
+	}
+	obj, ok := v.info.MemberObject(v.info.DisplayTypeOf(e.Object))
+	if !ok {
+		return false
+	}
+	for _, elem := range obj.Elems {
+		if method, ok := elem.(*soltype.MethodElem); ok && soltype.ObjElemName(method) == e.Prop.Name {
+			return solver.NeedsMutReceiver(method)
+		}
+	}
+	return false
 }
 
 // addParams records the binding leaves of params. Call it on entering the function that

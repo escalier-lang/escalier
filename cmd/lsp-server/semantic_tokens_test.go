@@ -244,3 +244,86 @@ func TestEncodeSemanticTokensCountsUTF16(t *testing.T) {
 		1, 0, 1, tokenTypeVariable, tokenModifierMutable,
 	}, encodeSemanticTokens(lineMap, tokens))
 }
+
+func TestSemanticTokensMarkMutatingMethods(t *testing.T) {
+	tests := []struct {
+		name     string
+		file     string
+		src      string
+		expected []string
+	}{
+		{
+			// Only `bump`, the method that takes `&mut self`, is marked. `take` moves the
+			// instance into the call and mutates its own binding, so the caller's value is
+			// not mutated through it. The `self` of `&mut self` and of `mut self` is marked
+			// in the receiver and in the body, and the `self` of `&self` is not.
+			name: "ClassMethods",
+			file: "bin/main.esc",
+			src: `class Counter {
+    n: number,
+    constructor(&mut self) { self.n = 0 },
+    bump(&mut self) -> undefined { self.n = self.n + 1 },
+    take(mut self) -> number {
+        self.n = 0
+        return self.n
+    },
+    read(&self) -> number { return self.n },
+}
+fn main() {
+    val mut c = Counter()
+    c.bump()
+    val n = c.read()
+    val m = c.take()
+}`,
+			expected: []string{
+				"3:22 self parameter+mutable",
+				"3:30 self parameter+mutable",
+				"4:5 bump method+mutable",
+				"4:15 self parameter+mutable",
+				"4:36 self parameter+mutable",
+				"4:45 self parameter+mutable",
+				"5:14 self parameter+mutable",
+				"6:9 self parameter+mutable",
+				"7:16 self parameter+mutable",
+				"12:13 c variable+mutable",
+				"13:5 c variable+mutable",
+				"13:7 bump method+mutable",
+				"14:13 c variable+mutable",
+				"15:13 c variable+mutable",
+			},
+		},
+		{
+			name: "StdlibMethodCall",
+			file: "bin/main.esc",
+			src: `fn main() {
+    val mut xs: Array<number> = []
+    xs.push(1)
+    val n = xs.indexOf(1)
+}`,
+			expected: []string{
+				"2:13 xs variable+mutable",
+				"3:5 xs variable+mutable",
+				"3:8 push method+mutable",
+				"4:13 xs variable+mutable",
+			},
+		},
+		{
+			name: "InterfaceMethodDeclaration",
+			file: "lib/index.esc",
+			src: `interface Stack {
+    push(&mut self, n: number) -> undefined,
+    peek(&self) -> number,
+}`,
+			expected: []string{
+				"2:5 push method+mutable",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tokens, diagnostics := semanticTokensFor(t, map[string]string{tt.file: tt.src}, tt.file)
+			require.Empty(t, diagnostics)
+			require.Equal(t, tt.expected, tokens)
+		})
+	}
+}
