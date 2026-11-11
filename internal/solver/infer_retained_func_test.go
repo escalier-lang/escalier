@@ -1047,10 +1047,6 @@ fn f(g: fn () -> undefined) { sink = g }`,
 // closure fits such a slot, and each kind of slot, and asserts the full message, with its span,
 // of each error.
 func TestModuleLevelFuncHoldsNoBorrow(t *testing.T) {
-	const decls = `var sink: fn () -> undefined = fn () {}
-declare fn run(cb: fn () -> undefined) -> undefined
-declare fn keep(cb: 'static fn () -> undefined) -> undefined
-`
 	const fix = "pass a function that borrows nothing"
 	tests := []struct {
 		name string
@@ -1059,14 +1055,18 @@ declare fn keep(cb: 'static fn () -> undefined) -> undefined
 	}{
 		{
 			name: "closure that captures nothing",
-			src: decls + `fn setup() {
+			src: `var sink: fn () -> undefined = fn () {}
+declare fn run(cb: fn () -> undefined) -> undefined
+fn setup() {
     sink = fn () { console.log("hello") }
     run(fn () { console.log("hello") })
 }`,
 		},
 		{
 			name: "closure that copies a value type",
-			src: decls + `fn setup() {
+			src: `var sink: fn () -> undefined = fn () {}
+declare fn run(cb: fn () -> undefined) -> undefined
+fn setup() {
     val msg = "hello"
     val greet = fn () { console.log(msg) }
     sink = greet
@@ -1076,7 +1076,9 @@ declare fn keep(cb: 'static fn () -> undefined) -> undefined
 		// Nothing in setup uses cfg after the store, so sink's kept borrow conflicts with nothing.
 		{
 			name: "E4 example",
-			src: decls + `fn setup() {
+			src: `var sink: fn () -> undefined = fn () {}
+declare fn run(cb: fn () -> undefined) -> undefined
+fn setup() {
     val cfg = {msg: "hello"}
     val show = fn () { console.log(cfg.msg) }
     run(show)
@@ -1085,7 +1087,9 @@ declare fn keep(cb: 'static fn () -> undefined) -> undefined
 		},
 		{
 			name: "E4 example kept by a static parameter",
-			src: decls + `fn setup() {
+			src: `declare fn run(cb: fn () -> undefined) -> undefined
+declare fn keep(cb: 'static fn () -> undefined) -> undefined
+fn setup() {
     val cfg = {msg: "hello"}
     val show = fn () { console.log(cfg.msg) }
     run(show)
@@ -1095,7 +1099,8 @@ declare fn keep(cb: 'static fn () -> undefined) -> undefined
 		// show only reads cfg, so keep keeps an immutable borrow of it and a later read checks.
 		{
 			name: "E4 example with a later read of the captured local",
-			src: decls + `fn setup() {
+			src: `declare fn keep(cb: 'static fn () -> undefined) -> undefined
+fn setup() {
     val cfg = {msg: "hello"}
     val show = fn () { console.log(cfg.msg) }
     keep(show)
@@ -1105,31 +1110,36 @@ declare fn keep(cb: 'static fn () -> undefined) -> undefined
 		// sink keeps show's immutable borrow of cfg, so a later write conflicts with it.
 		{
 			name: "E4 example with a later write of the captured local stored into a module-level slot",
-			src: decls + `fn setup() {
+			src: `var sink: fn () -> undefined = fn () {}
+fn setup() {
     val mut cfg = {msg: "hello"}
     val show = fn () { console.log(cfg.msg) }
     sink = show
     cfg.msg = "bye"
 }`,
-			want: []string{"8:5-8:12: cannot assign to 'cfg.msg' while it is borrowed as immutable by 'sink'"},
+			want: []string{"6:5-6:12: cannot assign to 'cfg.msg' while it is borrowed as immutable by 'sink'"},
 		},
 		{
 			name: "closure written in the call to a static parameter",
-			src: decls + `fn setup() {
+			src: `declare fn keep(cb: 'static fn () -> undefined) -> undefined
+fn setup() {
     val mut count = {n: 0}
     keep(fn () { count.n = count.n + 1 })
 }`,
 		},
 		{
 			name: "closure over a module-level object passed to a static parameter",
-			src: decls + `val mut count = {n: 0}
+			src: `declare fn keep(cb: 'static fn () -> undefined) -> undefined
+val mut count = {n: 0}
 fn setup() {
     keep(fn () { count.n = count.n + 1 })
 }`,
 		},
 		{
 			name: "closure that writes a var local",
-			src: decls + `fn setup() {
+			src: `var sink: fn () -> undefined = fn () {}
+declare fn run(cb: fn () -> undefined) -> undefined
+fn setup() {
     var n = 0
     val inc = fn () { n = n + 1 }
     run(inc)
@@ -1138,7 +1148,8 @@ fn setup() {
 		},
 		{
 			name: "closure that reads a var local",
-			src: decls + `fn setup() {
+			src: `var sink: fn () -> undefined = fn () {}
+fn setup() {
     var n = 0
     sink = fn () { console.log(n) }
 }`,
@@ -1147,7 +1158,8 @@ fn setup() {
 		// a number the closure copies.
 		{
 			name: "closure that copies a value type returned by a call",
-			src: decls + `declare fn count() -> number
+			src: `declare fn keep(cb: 'static fn () -> undefined) -> undefined
+declare fn count() -> number
 fn setup() {
     val n = count()
     keep(fn () { console.log(n) })
@@ -1156,15 +1168,17 @@ fn setup() {
 		// A parameter's default is a closure over the parameters before it.
 		{
 			name: "closure in a parameter default that reads a borrowed parameter",
-			src: decls + `fn setup(x: &{n: number}, g = fn () { console.log(x.n) }) {
+			src: `declare fn keep(cb: 'static fn () -> undefined) -> undefined
+fn setup(x: &{n: number}, g = fn () { console.log(x.n) }) {
     keep(g)
 }`,
-			want: []string{"4:31-4:57: this closure borrows `x`, but `keep` keeps it for 'static; " + fix},
+			want: []string{"2:31-2:57: this closure borrows `x`, but `keep` keeps it for 'static; " + fix},
 		},
 		// A module-level binding lives for the whole program, so reading one holds no borrow.
 		{
 			name: "closure that reads a module-level object",
-			src: decls + `val cfg = {msg: "hello"}
+			src: `var sink: fn () -> undefined = fn () {}
+val cfg = {msg: "hello"}
 fn setup() {
     sink = fn () { console.log(cfg.msg) }
 }`,
@@ -1173,21 +1187,24 @@ fn setup() {
 		// closure copies it or borrows it is decided once the body is checked.
 		{
 			name: "closure that captures an unannotated parameter later used as a number",
-			src: decls + `fn setup(n) {
+			src: `var sink: fn () -> undefined = fn () {}
+fn setup(n) {
     sink = fn () { console.log(n) }
     return n + 1
 }`,
 		},
 		{
 			name: "closure that captures an unannotated parameter already used as a number",
-			src: decls + `fn setup(n) {
+			src: `var sink: fn () -> undefined = fn () {}
+fn setup(n) {
     val m: number = n
     sink = fn () { console.log(n) }
 }`,
 		},
 		{
 			name: "bound closure that captures an unannotated parameter used as a number",
-			src: decls + `fn setup(n) {
+			src: `var sink: fn () -> undefined = fn () {}
+fn setup(n) {
     val show = fn () { console.log(n) }
     sink = show
     return n * 2
@@ -1195,83 +1212,91 @@ fn setup() {
 		},
 		{
 			name: "closure that captures an unannotated parameter later used as an object",
-			src: decls + `fn setup(n) {
+			src: `var sink: fn () -> undefined = fn () {}
+fn setup(n) {
     sink = fn () { console.log(n) }
     return n.x
 }`,
-			want: []string{"5:12-5:36: this closure borrows `n`, but `sink` keeps it for 'static; " + fix},
+			want: []string{"3:12-3:36: this closure borrows `n`, but `sink` keeps it for 'static; " + fix},
 		},
 		{
 			name: "bound closure that captures an unannotated parameter used as an object",
-			src: decls + `fn setup(n) {
+			src: `var sink: fn () -> undefined = fn () {}
+fn setup(n) {
     val show = fn () { console.log(n) }
     sink = show
     return n.x
 }`,
-			want: []string{"6:12-6:16: `show` borrows `n`, but `sink` keeps it for 'static; " + fix},
+			want: []string{"4:12-4:16: `show` borrows `n`, but `sink` keeps it for 'static; " + fix},
 		},
 		// A parameter nothing constrains may hold an object, so the closure may borrow it.
 		{
 			name: "closure that captures an unconstrained unannotated parameter",
-			src: decls + `fn setup(n) {
+			src: `var sink: fn () -> undefined = fn () {}
+fn setup(n) {
     sink = fn () { console.log(n) }
 }`,
-			want: []string{"5:12-5:36: this closure borrows `n`, but `sink` keeps it for 'static; " + fix},
+			want: []string{"3:12-3:36: this closure borrows `n`, but `sink` keeps it for 'static; " + fix},
 		},
 		{
 			name: "closure that captures an unannotated parameter and an object parameter",
-			src: decls + `fn setup(n, p: {x: number}) {
+			src: `var sink: fn () -> undefined = fn () {}
+fn setup(n, p: {x: number}) {
     sink = fn () { console.log(n + p.x) }
     return n + 1
 }`,
-			want: []string{"5:12-5:42: this closure borrows `p`, but `sink` keeps it for 'static; " + fix},
+			want: []string{"3:12-3:42: this closure borrows `p`, but `sink` keeps it for 'static; " + fix},
 		},
 		// g's own check reports that it is kept for 'static, and the closure's borrow of n is
 		// decided once n settles to a number.
 		{
 			name: "local joining an unannotated parameter's closure and a call-only parameter",
-			src: decls + `fn setup(c: boolean, n, g: fn () -> undefined) {
+			src: `var sink: fn () -> undefined = fn () {}
+fn setup(c: boolean, n, g: fn () -> undefined) {
     val a = fn () { console.log(n) }
     val h = if c { a } else { g }
     sink = h
     return n + 1
 }`,
-			want: []string{"4:25-4:26: 'g' may borrow values that live only during the call, but it is stored where it lives for the whole program; write `g: 'static fn () -> undefined` to keep it"},
+			want: []string{"2:25-2:26: 'g' may borrow values that live only during the call, but it is stored where it lives for the whole program; write `g: 'static fn () -> undefined` to keep it"},
 		},
 		{
 			name: "local joining an object parameter's closure and a call-only parameter",
-			src: decls + `fn setup(c: boolean, n, g: fn () -> undefined) {
+			src: `var sink: fn () -> undefined = fn () {}
+fn setup(c: boolean, n, g: fn () -> undefined) {
     val a = fn () { console.log(n) }
     val h = if c { a } else { g }
     sink = h
     return n.x
 }`,
 			want: []string{
-				"4:25-4:26: 'g' may borrow values that live only during the call, but it is stored where it lives for the whole program; write `g: 'static fn () -> undefined` to keep it",
-				"7:12-7:13: `h` borrows `n`, but `sink` keeps it for 'static; " + fix,
+				"2:25-2:26: 'g' may borrow values that live only during the call, but it is stored where it lives for the whole program; write `g: 'static fn () -> undefined` to keep it",
+				"5:12-5:13: `h` borrows `n`, but `sink` keeps it for 'static; " + fix,
 			},
 		},
 		// hold keeps its argument for 'static, so the closure is rejected there, and its 'static
 		// result fits the slot.
 		{
 			name: "closure that captures an unannotated parameter kept through a static result",
-			src: decls + `declare fn hold(cb: 'static fn () -> undefined) -> 'static fn () -> undefined
+			src: `var sink: fn () -> undefined = fn () {}
+declare fn hold(cb: 'static fn () -> undefined) -> 'static fn () -> undefined
 fn setup(n) {
     sink = hold(fn () { console.log(n) })
     return n.x
 }`,
-			want: []string{"6:17-6:41: this closure borrows `n`, but `hold` keeps it for 'static; " + fix},
+			want: []string{"4:17-4:41: this closure borrows `n`, but `hold` keeps it for 'static; " + fix},
 		},
 		// A closure takes only the locals of the body that returns it. One returned from mk
 		// still borrows o, which belongs to setup.
 		{
 			name: "closure returned from a local closure",
-			src: decls + `fn setup() {
+			src: `var sink: fn () -> undefined = fn () {}
+fn setup() {
     val mut o = {x: 1}
     val mk = fn () { return fn () { o.x = 2 } }
     sink = mk()
 }`,
-			want: []string{"7:12-7:16: this function borrows `o`, but `sink` keeps it for 'static; " + fix + ", or declare `o` at module level"},
+			want: []string{"5:12-5:16: this function borrows `o`, but `sink` keeps it for 'static; " + fix + ", or declare `o` at module level"},
 		},
 		{
 			name: "returned closure and the closure it returns",
@@ -1447,11 +1472,12 @@ fn setup() {
 		// would leave the borrow of `b`, so the error does not suggest it.
 		{
 			name: "closure over a local and a parameter",
-			src: decls + `fn setup(b: {x: number}) {
+			src: `declare fn keep(cb: 'static fn () -> undefined) -> undefined
+fn setup(b: {x: number}) {
     val z = {x: 1}
     keep(fn () { console.log(z.x + b.x) })
 }`,
-			want: []string{"6:10-6:42: this closure borrows `z`, but `keep` keeps it for 'static; pass a function that borrows nothing"},
+			want: []string{"4:10-4:42: this closure borrows `z`, but `keep` keeps it for 'static; pass a function that borrows nothing"},
 		},
 		// A union member that keeps its function for 'static reports a closure over a parameter
 		// with the message a lone 'static slot gives, and accepts a function that borrows
@@ -1633,9 +1659,6 @@ fn use() { sink = f() }`,
 // TestScriptFuncDeclHoldsBorrow covers the captures that make it borrow and the ones that keep
 // it 'static, and asserts the full message, with its span, of each error.
 func TestScriptFuncDeclHoldsBorrow(t *testing.T) {
-	const decls = `var sink: fn () -> unknown = fn () { return 0 }
-declare fn run(cb: fn () -> unknown) -> undefined
-`
 	tests := []struct {
 		name string
 		src  string
@@ -1643,18 +1666,22 @@ declare fn run(cb: fn () -> unknown) -> undefined
 	}{
 		{
 			name: "declaration that captures nothing",
-			src: decls + `fn one() { return 1 }
+			src: `var sink: fn () -> unknown = fn () { return 0 }
+fn one() { return 1 }
 sink = one`,
 		},
 		{
 			name: "declaration that copies a value type",
-			src: decls + `val msg = "hi"
+			src: `var sink: fn () -> unknown = fn () { return 0 }
+val msg = "hi"
 fn show() { return msg }
 sink = show`,
 		},
 		{
 			name: "declaration that reads an object",
-			src: decls + `val o = {x: 1}
+			src: `var sink: fn () -> unknown = fn () { return 0 }
+declare fn run(cb: fn () -> unknown) -> undefined
+val o = {x: 1}
 fn read() { return o.x }
 run(read)
 sink = read`,
@@ -1662,7 +1689,9 @@ sink = read`,
 		},
 		{
 			name: "declaration that writes a var",
-			src: decls + `var n = 0
+			src: `var sink: fn () -> unknown = fn () { return 0 }
+declare fn run(cb: fn () -> unknown) -> undefined
+var n = 0
 fn inc() { n = n + 1 }
 run(inc)
 sink = inc`,
@@ -2176,10 +2205,6 @@ fn setup() {
 // signature with no body, a declared function or an interface method, stored into a 'static
 // slot. Each store reports that the function may hold borrows.
 func TestBodilessSignatureFuncKeptForStatic(t *testing.T) {
-	const decls = `var sink: fn () -> undefined = fn () {}
-declare fn id(g: fn () -> undefined) -> fn () -> undefined
-interface Reg { add(g: fn () -> undefined) -> fn () -> undefined }
-`
 	const kept = "this function may hold borrows that do not live for 'static, but `sink` keeps it for 'static; pass a function that borrows nothing"
 	tests := []struct {
 		name string
@@ -2188,19 +2213,25 @@ interface Reg { add(g: fn () -> undefined) -> fn () -> undefined }
 	}{
 		{
 			name: "declared function returns its parameter",
-			src:  decls + `fn h(g: fn () -> undefined) { sink = id(g) }`,
-			want: []string{"4:38-4:43: " + kept},
+			src: `var sink: fn () -> undefined = fn () {}
+declare fn id(g: fn () -> undefined) -> fn () -> undefined
+fn h(g: fn () -> undefined) { sink = id(g) }`,
+			want: []string{"3:38-3:43: " + kept},
 		},
 		// The error underlines the interface method's return type rather than the call.
 		{
 			name: "interface method returns its parameter",
-			src:  decls + `fn h(g: fn () -> undefined, r: Reg) { sink = r.add(g) }`,
-			want: []string{"3:47-3:65: " + kept},
+			src: `var sink: fn () -> undefined = fn () {}
+interface Reg { add(g: fn () -> undefined) -> fn () -> undefined }
+fn h(g: fn () -> undefined, r: Reg) { sink = r.add(g) }`,
+			want: []string{"2:47-2:65: " + kept},
 		},
 		{
 			name: "declared function returns a named lifetime parameter",
-			src:  decls + `fn h<'a>(g: 'a fn () -> undefined) { sink = id(g) }`,
-			want: []string{"4:45-4:50: " + kept},
+			src: `var sink: fn () -> undefined = fn () {}
+declare fn id(g: fn () -> undefined) -> fn () -> undefined
+fn h<'a>(g: 'a fn () -> undefined) { sink = id(g) }`,
+			want: []string{"3:45-3:50: " + kept},
 		},
 	}
 	for _, tt := range tests {
