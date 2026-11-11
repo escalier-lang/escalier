@@ -1588,6 +1588,38 @@ with `it = sum()` reports
 ``cannot iterate 'it', since iteration calls `next()` with no value and its generator expects a `Flat`; advance it with `it.next(v)` ``.
 This is a new diagnostic, `IterationNextValueError`.
 
+`sum` from G3 reads every value `next` sends, so its `TNext` is `Flat`. `opt`
+accepts a bare `next` by admitting `undefined` and narrowing, and `count`
+from R3 ignores what `next` sends:
+
+```esc
+gen fn sum() -> Generator<number, number, Flat> {
+    val first = yield 0
+    val second = yield first.x
+    return first.x + second.x
+}
+
+gen fn opt() -> Generator<number, undefined, Flat | undefined> {
+    val first = yield 0
+    if first != undefined {
+        yield first.x    // first is Flat | undefined, so the body narrows it
+    }
+}
+
+fn drive() -> undefined {
+    val mut s = sum()
+    s.next({x: 0})       // accepted, and the body discards the value
+    s.next()             // error: missing argument 'value', and its type Flat does not admit undefined
+    for n in s {}        // error: cannot iterate 's', since iteration calls `next()` with no value and its generator expects a `Flat`; advance it with `s.next(v)`
+
+    val mut o = opt()
+    o.next()             // accepted, since undefined is assignable to Flat | undefined
+    for n in o {}        // accepted
+
+    for n in count() {}  // accepted, since count's TNext is unknown
+}
+```
+
 ### 10.4 X4. `AsyncIterable<T>`
 
 `AsyncIterable<T>` follows X3, with `[Symbol.asyncIterator]` in place of
