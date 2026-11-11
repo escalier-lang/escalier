@@ -265,9 +265,10 @@ func (c *checker) noteRetainedClosureArgs(e *ast.CallExpr, fn *soltype.FuncType,
 			break
 		}
 
-		// A parameter whose type holds no function with a lifetime records no store. A
+		// A parameter whose type holds no function with a lifetime accepts only a function
+		// that holds no borrow, so keeping the argument keeps none of the caller's locals. A
 		// function's lifetime is the one written ahead of `fn`, such as `'a` in
-		// `handler: 'a fn () -> undefined`, or the one elision gives a `fn` written with none.
+		// `handler: 'a fn () -> undefined`.
 		lts := retentionLifetimes(param.Type)
 		if len(lts) == 0 {
 			continue

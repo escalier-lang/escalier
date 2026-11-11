@@ -7,14 +7,13 @@ import (
 )
 
 // TestEscapingClosureCapture covers a closure that outlives the body it is written in. A returned
-// closure moves each owned local it captures at the return. One stored into a module-level
-// binding borrows its captures for `'static`, and may run during any call after the store, so
-// each such call borrows the owned locals it writes. One stored into a caller-owned object
+// closure moves each owned local it captures at the return. One stored into a caller-owned object
 // borrows its captures, and the paths it hands the caller are weighed like a stored borrow's. A
 // closure that stays in the body borrows its captures too.
 //
-// A move of a local that a module-level closure captures breaks E3, and the diagnostic is at
-// the move. TestOwnershipDataflow covers the move of a local a module-level closure only reads.
+// A module-level binding keeps its function for 'static, so it holds only a function that borrows
+// nothing shorter than the program. A closure over a parameter, or over a borrow from outside the
+// body, is rejected at the store.
 func TestEscapingClosureCapture(t *testing.T) {
 	tests := map[string]struct {
 		src  string
@@ -351,30 +350,25 @@ func TestEscapingClosureCapture(t *testing.T) {
 			`,
 			want: nil,
 		},
-		// DISABLED until the static-slots PR (fn-3): a closure takes a lifetime from what it captures,
-		// and a slot that keeps its function for 'static rejects a function that may hold a shorter
-		// borrow, where this branch gives a closure no lifetime and accepts it.
-		/*
-			// f's annotation gives it a lifetime of its own, so the store cannot tell which closure f
-			// holds and keeps the error for a function that may borrow.
-			"StoreOfAClosureChosenOnABranchMayBorrowTheCapture": {
-				src: `
-					var sink: 'static fn () -> undefined = fn () {}
-					declare fn readIt(a: &{x: number}) -> undefined
-					fn go(c: boolean) {
-						val mut p = {x: 1}
-						var f: fn () -> undefined = fn () {}
-						if c {
-							f = fn () { p.x = 2 }
-						}
-						sink = f
-						val a = &p
-						readIt(a)
+		// f's annotation gives it a lifetime of its own, so the store cannot tell which closure f
+		// holds and keeps the error for a function that may borrow.
+		"StoreOfAClosureChosenOnABranchMayBorrowTheCapture": {
+			src: `
+				var sink: 'static fn () -> undefined = fn () {}
+				declare fn readIt(a: &{x: number}) -> undefined
+				fn go(c: boolean) {
+					val mut p = {x: 1}
+					var f: fn () -> undefined = fn () {}
+					if c {
+						f = fn () { p.x = 2 }
 					}
-				`,
-				want: []string{"10:13-10:14: `f` may hold borrows that do not live for 'static, but `sink` keeps it for 'static; pass a function that borrows nothing"},
-			},
-		*/
+					sink = f
+					val a = &p
+					readIt(a)
+				}
+			`,
+			want: []string{"10:13-10:14: `f` may hold borrows that do not live for 'static, but `sink` keeps it for 'static; pass a function that borrows nothing"},
+		},
 		// DISABLED until the kept-borrows PR (fn-4): a 'static slot keeps the borrows a closure
 		// over locals of the body holds, per place, and checks later uses against them under E2,
 		// where this branch rejects the closure at the store.
@@ -493,6 +487,27 @@ func TestEscapingClosureCapture(t *testing.T) {
 				want: []string{"8:14-8:16: cannot borrow 'p' as immutable while 'p.x' is borrowed as mutable by 'sink'"},
 			},
 		*/
+		// A parameter belongs to the caller, so sink cannot keep a borrow of it.
+		"StoreOfAClosureOverAParameterRejected": {
+			src: `
+				var sink: 'static fn () -> number = fn () { return 0 }
+				fn go(p: {x: number}) {
+					sink = fn () { return p.x }
+				}
+			`,
+			want: []string{"4:13-4:33: this closure borrows `p`, but `sink` keeps it for 'static; pass a function that borrows nothing"},
+		},
+		// o holds a borrow of the caller's value, which sink cannot keep.
+		"StoreOfAClosureOverAnOutsideBorrowRejected": {
+			src: `
+				var sink: 'static fn () -> number = fn () { return 0 }
+				fn go(p: &{x: number}) {
+					val o = {r: p}
+					sink = fn () { return o.r.x }
+				}
+			`,
+			want: []string{"5:13-5:35: this closure borrows `o`, but `sink` keeps it for 'static; pass a function that borrows nothing"},
+		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {

@@ -139,15 +139,32 @@ type checker struct {
 	// lifetime, for checkCallOnlyParams to read once the enclosing component has solved.
 	pendingCallOnly []callOnlyCheck
 	// signatureLts maps each lifetime a function's `<'a>` list declares, as `'a` in
-	// `fn f<'a>(…)`, to its name. noteSignatureLifetimes fills it, and checkCallOnlyParams
-	// reads it.
+	// `fn f<'a>(…)`, to its name. noteSignatureLifetimes fills it, and funcLtSources and
+	// checkCallOnlyParams read it.
 	signatureLts map[*soltype.LifetimeVar]string
+	// keeperOf maps each argument of a call to the call, the value of each assignment to the
+	// assignment, and the initializer of each annotated declaration to the declaration.
+	// inferCallArgs, inferAssign, and inferVarDeclInit fill it, funcKeptNames reads it to name
+	// what keeps a value checked with the value as the site, and settleTentativeFuncEscapes
+	// clears it once the component has solved.
+	keeperOf map[ast.Expr]ast.Node
+	// closureBorrows maps the lifetime of each closure that holds a borrow to the capture
+	// that makes it hold one. setClosureRetention fills it, and funcLtSources reads it.
+	closureBorrows map[*soltype.LifetimeVar]closureBorrow
+	// tentativeClosures maps the lifetime of each closure that holds a borrow only if a
+	// captured binding's type settles to something other than a value type, to the type
+	// variables of those bindings. setClosureRetention fills it, and
+	// settleTentativeFuncEscapes reads it.
+	tentativeClosures map[*soltype.LifetimeVar][]*soltype.TypeVarType
+	// heldFuncEscapes holds each FuncKeptForStaticError sortFuncKeptForStatic kept back, for
+	// settleTentativeFuncEscapes to decide.
+	heldFuncEscapes []heldFuncEscape
 	// deferredBodies holds, for each `async` or `gen` body being walked, the phrase
 	// deferredBody returns for it, outermost first.
 	deferredBodies []string
 	// callOnlyDepth maps the lifetime of each call-only parameter, the ones pendingCallOnly
 	// checks, to the length of deferredBodies when the parameter was bound.
-	// noteCallOnlyParam fills it, and noteCallOnlyRead reads it.
+	// noteCallOnlyParam fills it, and funcLtSources and noteCallOnlyRead read it.
 	callOnlyDepth map[*soltype.LifetimeVar]int
 	// callOnlyDeferredRead maps the lifetime of a call-only parameter to the first read of a
 	// value holding it inside an `async` or `gen` body entered after the parameter was bound.
@@ -511,6 +528,14 @@ type funcCtx struct {
 	async   bool
 	node    ast.Node
 	returns []soltype.Type
+	// frameClosures holds the lifetime of each closure written in this body whose
+	// every borrow is of a local of this body. setClosureRetention fills it, and
+	// ownReturnedClosures reads it.
+	frameClosures set.Set[*soltype.LifetimeVar]
+	// bodyLtMark is the lifetime counter when the walk of this body began, after its
+	// parameters and return annotation resolved. A lifetime minted from it on belongs to the
+	// body. isFrameLifetime reads it.
+	bodyLtMark int
 	// returnExprs holds each ReturnStmt's operand expression in the same source order as
 	// returns, with a nil entry for a bare `return`. inferFunc reads it to decide the
 	// immutable→mutable upgrade at a `mut` return annotation. The upgrade fires only when
@@ -1058,6 +1083,11 @@ func (c *checker) blameConstraintErrors(n ast.Node, errs []SolverError) {
 			err.prov, err.site = c.prov, n
 		case *BorrowEscapeError:
 			err.prov, err.site = c.prov, n
+		case *FuncKeptForStaticError:
+			err.prov, err.site = c.prov, n
+			if !c.sortFuncKeptForStatic(err) {
+				continue
+			}
 		case *ClassIntoExactObjectError:
 			err.prov, err.site = c.prov, n
 		case *StructuralIntoClassError:

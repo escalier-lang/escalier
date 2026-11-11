@@ -1,3 +1,4 @@
+export const count = {n: 0};
 export function forEachItem(temp1) {
   const f = temp1;
   f();
@@ -13,7 +14,6 @@ export function runWith(temp3, temp4) {
   return f(p.x);
 }
 export function setup() {
-  const count = {n: 0};
   onClick(function () {
     count.n = count.n + 1;
   });

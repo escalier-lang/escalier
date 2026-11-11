@@ -2598,6 +2598,69 @@ func (e *CallOnlyFuncKeptError) Message() string {
 		e.Name, kept, e.Name, marker, lifetime, written)
 }
 
+// FuncKeptForStaticError fires when a function that may hold a borrow shorter than 'static flows
+// into a slot that keeps it for 'static, such as a `'static fn` parameter or a module-level
+// binding annotated `fn () -> undefined`. Sub is the source, a FuncType whose Lt is a lifetime
+// other than 'static. Super is the destination, a FuncType whose Lt is nil or 'static. It is the
+// function form of BorrowEscapeError.
+//
+// blameConstraintErrors fills the rest from what the checker knows about the source and the
+// site. source names the source, as "`show`" or "this closure". borrowed is the name of a
+// binding the source borrows, as `cfg`, and "" when the checker does not know one. local says
+// borrowed is a `val` or `var` local, which could move to module level. keeper names what keeps
+// the function, as "`sink`". inferred says Super is the type of a closure that borrows nothing,
+// which an unannotated binding took from its initializer, rather than a written type.
+type FuncKeptForStaticError struct {
+	Sub   *soltype.FuncType
+	Super *soltype.FuncType
+	prov  NodeResolver
+	site  ast.Node
+
+	source   string
+	borrowed string
+	local    bool
+	keeper   string
+	inferred bool
+}
+
+func (*FuncKeptForStaticError) isSolverError() {}
+func (e *FuncKeptForStaticError) Span() ast.Span {
+	// The source is blamed. A source with no node of its own, such as a binding's
+	// instantiated type, falls back to the site rather than to the destination.
+	return spanOfFirst(e.prov, e.site, e.Sub)
+}
+func (e *FuncKeptForStaticError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
+func (e *FuncKeptForStaticError) Message() string {
+	source, keeper := e.source, e.keeper
+	if source == "" {
+		source = "this function"
+	}
+	if keeper == "" {
+		keeper = "its destination"
+	}
+	if e.inferred {
+		holds := "may hold borrows"
+		if e.borrowed != "" {
+			holds = fmt.Sprintf("borrows `%s`", e.borrowed)
+		}
+		target := e.keeper
+		if target == "" {
+			target = "it"
+		}
+		return fmt.Sprintf("%s %s, but %s has the type of a closure that borrows nothing; annotate %s with a function type to let it hold one that borrows",
+			source, holds, keeper, target)
+	}
+	if e.borrowed == "" {
+		return fmt.Sprintf("%s may hold borrows that do not live for 'static, but %s keeps it for 'static; pass a function that borrows nothing",
+			source, keeper)
+	}
+	fix := "pass a function that borrows nothing"
+	if e.local {
+		fix += fmt.Sprintf(", or declare `%s` at module level", e.borrowed)
+	}
+	return fmt.Sprintf("%s borrows `%s`, but %s keeps it for 'static; %s", source, e.borrowed, keeper, fix)
+}
+
 // LifetimeBinderNotSatisfiedError fires when a value is checked against a signature that
 // quantifies a lifetime and works only for some choices of it. The signature's caller chooses
 // the lifetime, so a closure passed where `fn <'a>(q: &'a T) -> &'a T` is expected has to

@@ -461,6 +461,7 @@ func (c *checker) resolveIdentPath(scope *Scope, lvl int, e *ast.IdentExpr, objP
 		t := c.bindingValue(lvl, b)
 		c.noteOuterRead(e, t)
 		c.noteCallOnlyRead(e, t)
+		c.noteFrameClosureRead(b, t)
 		// A bare `self` that leaves the body, as in `return self` or `f(self)`, is an
 		// instance of the class. The structural view shares the class body's own element
 		// pointers, so letting it escape into a member's inferred signature would make the
@@ -519,6 +520,7 @@ func astKind(n any) string {
 // render time.
 func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.Type {
 	t := c.inferFunc(scope, lvl, e.FuncSig, e.Body, e, true, false)
+	c.setClosureRetention(scope, lvl, e, t)
 	c.recordType(e, t)
 	// The closure reads or writes what it captures from the body it is written in.
 	c.recordClosureCaptures(scope, e)
@@ -931,6 +933,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		if deferred != "" {
 			c.deferredBodies = append(c.deferredBodies, deferred)
 		}
+		c.fn.bodyLtMark = c.ctx.lifetimeCounter
 		// A function type written with no lifetime in the body gets a fresh one, as an elided
 		// `&` does there.
 		c.fnElision = elideFresh
@@ -942,6 +945,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// commitOwnedReturns decides which returns are owned.
 		c.shareOutlivingBorrowLifetimes()
 		c.commitOwnedReturns()
+		c.ownReturnedClosures()
 		// A body that moves an unannotated parameter takes ownership of the caller's value,
 		// so each call moves the argument it passes there. It reads the flows that wait on
 		// the parameters, so it runs before settleParams settles them.
@@ -2495,6 +2499,7 @@ func (c *checker) implicitMutBorrow(src ast.Expr, srcT, dest soltype.Type) solty
 func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr, preset map[ast.Expr]soltype.Type) []soltype.Type {
 	args := make([]soltype.Type, len(e.Args))
 	for i, a := range e.Args {
+		c.noteKeeper(a, e)
 		if t, ok := preset[a]; ok {
 			args[i] = t
 			continue
@@ -2705,6 +2710,7 @@ func soleCallableSignature(t *soltype.ObjectType) (*soltype.FuncType, bool) {
 // `b: number`. On an error path (invalid / immutable / unknown target) no value is
 // stored, so it recovers to `undefined`.
 func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.Type {
+	c.noteKeeper(e.Right, e)
 	undefinedT := soltype.Type(&soltype.UndefinedType{})
 	// Guard a malformed assignment node (the real parser substitutes ast.NewError for
 	// a missing operand, so this is unreachable from source — but a hand-built AST
