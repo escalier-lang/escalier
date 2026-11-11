@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"slices"
 	"sort"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -241,13 +242,16 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	prevOwners := c.symbolOwners
 	c.symbolOwners = symbolOwners(module, g)
 	prevWeak, prevReaders, prevLocals, prevWeakVars := c.weakBindings, c.weakReaders, c.weakLocals, c.weakBindingVars
-	c.weakBindings, c.weakReaders, c.weakLocals = nil, nil, nil
+	prevReads, prevWeakLvl := c.weakReads, c.weakLvl
+	c.weakBindings, c.weakReaders, c.weakLocals, c.weakReads = nil, nil, nil, nil
+	c.weakLvl = lvl
 	c.weakBindingVars = set.NewSet[*soltype.TypeVarType]()
 	defer func() {
 		target.onDefine = prevOnDefine
 		c.nsIndex = nil
 		c.symbolOwners = prevOwners
 		c.weakBindings, c.weakReaders, c.weakLocals, c.weakBindingVars = prevWeak, prevReaders, prevLocals, prevWeakVars
+		c.weakReads, c.weakLvl = prevReads, prevWeakLvl
 	}()
 	// M4 E3: dep_graph fans one top-level destructuring `val {x, y} = …` across one
 	// SCC component per leaf key. Its initializer is typed and its pattern bound
@@ -433,11 +437,17 @@ type componentBinding struct {
 	arms []overloadArm
 	// initVars is the range of ids of the variables the binding's initializer minted.
 	initVars varRange
-	// weak marks a `val` or `var` whose declaration does not generalize, as generalizes
-	// decides. Its binding var and initializer are inferred at the component's own level,
-	// so the variables they carry are weak. Every function that reads the binding shares
-	// them, and no later component quantifies them.
+	// weak marks a `val` or `var` whose variables are weak. A declaration weakAtDecl reports
+	// is weak from the start. Its binding var and initializer are inferred at the
+	// component's own level, so the variables they carry are weak. A relaxed binding is weak
+	// once lowerStoringVars moves one of its variables to that level. Every function that
+	// reads the binding shares its weak variables, and no later component quantifies them.
 	weak bool
+	// relaxed marks a `val` that relaxes reports. Phase 3 decides which of its variables
+	// are weak.
+	relaxed bool
+	// weakReads lists the reads the binding's definitions make that c.weakReads lists.
+	weakReads []*ast.IdentExpr
 	// signatureBound marks an overload set whose arms are ALL fully annotated, so phase
 	// 1 could build their signatures body-free and pre-bind the whole set in scope.
 	// b.arms then holds those signature types. A reference WITHIN the component — a
@@ -553,9 +563,9 @@ func (c *checker) inferComponent(
 		}
 		// A weak binding's var sits at lvl with the variables its initializer mints, so
 		// no component's generalization at lvl quantifies it, this one's included.
-		weak := false
+		weak, relaxed := false, false
 		if vd := keyVarDecl(g, key); vd != nil {
-			weak = !generalizes(vd)
+			weak, relaxed = weakAtDecl(vd), relaxes(vd)
 		}
 		vLvl := inner
 		if weak {
@@ -565,7 +575,11 @@ func (c *checker) inferComponent(
 		if weak {
 			c.weakBindingVars.Add(v)
 		}
-		bindings[key] = &componentBinding{v: v, weak: weak}
+		if c.pendingBindingVars == nil {
+			c.pendingBindingVars = set.NewSet[*soltype.TypeVarType]()
+		}
+		c.pendingBindingVars.Add(v)
+		bindings[key] = &componentBinding{v: v, weak: weak, relaxed: relaxed}
 		// Pre-bind the binding var as a MonoScheme so a mutually-recursive reference
 		// resolves through the var itself (instantiate returns it unchanged) before
 		// generalization happens in phase 3. A `val mut` declaration pre-binds as mutable,
@@ -858,7 +872,9 @@ func (c *checker) inferComponent(
 			// namespace down for inferClassDecl to reconstruct it. Every other decl
 			// kind ignores it.
 			firstVar := c.ctx.varCounter
+			firstRead := len(c.weakReads)
 			t, src, ok := c.inferDeclDef(c.lookupScope(scope, d), declLevel(d, lvl), d, g.GetNamespace(key))
+			b.weakReads = append(b.weakReads, c.weakReads[firstRead:]...)
 			if !ok {
 				continue
 			}
@@ -985,11 +1001,23 @@ func (c *checker) inferComponent(
 	c.checkRigidLifetimes()
 	c.checkCallOnlyParams()
 
+	// Every definition in the component is inferred, so a relaxed binding's type has every
+	// bound its initializer gives it. The variables a value of that type can store move to
+	// lvl before any binding of the component generalizes, so none of them quantifies one.
+	for _, key := range component {
+		if b, isValue := bindings[key]; isValue && b.relaxed && b.bound && c.lowerStoringVars(b.v, lvl) {
+			b.weak = true
+		}
+	}
+
 	// Phase 3: rebind each value name to its coalesced monomorphic type. A binding
 	// whose declarations all failed to produce a definition (missing initializer,
 	// destructuring, unsupported kind) is removed rather than left as a `never`
 	// placeholder, matching PR-2: a later reference to it is then a genuine
 	// unknown-identifier error instead of resolving to a stray binding.
+	//
+	// generalized holds the scheme each binding that is not an overload set generalized to.
+	generalized := map[dep_graph.BindingKey]TypeScheme{}
 	for _, key := range component {
 		b, isValue := bindings[key]
 		if !isValue {
@@ -1075,6 +1103,7 @@ func (c *checker) inferComponent(
 		} else {
 			scheme = c.generalize(b.v, lvl)
 		}
+		generalized[key] = scheme
 		scope.defineValue(key.Name(), ValueBinding{Schemes: []TypeScheme{scheme}, Sources: b.sources, Kind: b.kind, Mut: b.mut, ModuleLevel: true, Weak: b.weak})
 		// Record the binding's final (coalesced) DISPLAY type in Info on infoNode, so
 		// it is queryable even for a `val` in a recursive group (where coalescing at
@@ -1093,9 +1122,32 @@ func (c *checker) inferComponent(
 			c.recordType(b.infoNode, display)
 		}
 		if b.weak {
-			c.noteWeakBinding(b, scheme)
+			c.noteWeakBinding(b, key.Name(), scheme)
 		} else {
 			c.noteWeakReader(b, scheme, lvl)
+		}
+	}
+	// Every weak binding of the component is noted now, so the check also finds a parameter
+	// that flows into a weak binding of the same component.
+	for _, key := range component {
+		b, isValue := bindings[key]
+		if !isValue {
+			continue
+		}
+		c.pendingBindingVars.Remove(b.v)
+		sc, isPoly := generalized[key].(*PolyScheme)
+		if !isPoly || b.weak {
+			continue
+		}
+		fallback := b.infoNode
+		if fallback == nil {
+			fallback = b.primary
+		}
+		site := inflowSite{t: b.v, name: key.Name(), reads: b.weakReads, fallback: fallback, lvl: lvl}
+		// The binding's display type was sealed before the check dropped its weak upper
+		// bounds, so it is sealed again once the module is inferred.
+		if c.checkWeakInflow(site) && !slices.ContainsFunc(c.weakReaders, func(r weakReader) bool { return r.scheme == sc }) {
+			c.weakReaders = append(c.weakReaders, weakReader{scheme: sc, infoNode: b.infoNode})
 		}
 	}
 }

@@ -460,6 +460,10 @@ func (c *checker) resolveIdentPath(scope *Scope, lvl int, e *ast.IdentExpr, objP
 		}
 		t := c.bindingValue(lvl, b)
 		c.noteOuterRead(e, t)
+		// A binding of the component being inferred may turn out weak once the component is.
+		if (b.Weak && b.ModuleLevel) || c.isPendingBinding(b) {
+			c.weakReads = append(c.weakReads, e)
+		}
 		// A bare `self` that leaves the body, as in `return self` or `f(self)`, is an
 		// instance of the class. The structural view shares the class body's own element
 		// pointers, so letting it escape into a member's inferred signature would make the
@@ -1101,6 +1105,12 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// re-minted by coalescing at binding time, so the entry is exact for inline
 	// callees; M3's FromInstantiation makes named-callee blame precise.)
 	c.recordProv(ft, node, FuncInference)
+	// The pre-pass recorded what the body captures, so a relaxed binding of a call that
+	// returns this function can tell whether the function holds state. A `declare fn` has no
+	// body to read, so it keeps Pure false.
+	if fn, isFunc := node.(ast.Func); isFunc && hasBody {
+		ft.Pure = c.capturesNoState(scope, fn)
+	}
 	// Queue the return type for the finite-inhabitant check. A `declare fn` adopts its annotation
 	// with no body to recurse through, so only a body-carrying function is queued. The check itself
 	// waits until the enclosing group's bound graph is complete, since a mutually-recursive knot is

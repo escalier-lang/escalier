@@ -542,7 +542,9 @@ func (c *checker) generalize(t soltype.Type, lvl int) TypeScheme {
 // generalized type instantiates fresh variables, so a write through one use would never
 // reach another, and such a binding never generalizes.
 //
-// A declaration that does not generalize infers its initializer at the binding's own
+// A `val` that does not generalize is relaxed when relaxes reports it, and its
+// generalization waits for its initializer's type, as lowerStoringVars describes. Any
+// other declaration that does not generalize infers its initializer at the binding's own
 // level. Its variables are then weak: every use shares them, and generalizing at that
 // level quantifies none of them.
 func generalizes(d *ast.VarDecl) bool {

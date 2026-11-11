@@ -252,7 +252,12 @@ func paramsBind(params []*ast.Param, name string) bool {
 func (c *checker) collectModuleCaptures(scope *Scope, fn ast.Func, outerBindings map[string]liveness.VarID) ([]string, map[string][]ast.Func) {
 	reached := map[string]bool{}
 	funcs := map[string][]ast.Func{}
-	for _, capture := range liveness.ClosureCaptures(c.varIDs, fn, outerBindings) {
+	captures := liveness.ClosureCaptures(c.varIDs, fn, outerBindings)
+	if c.closureCaptureInfo == nil {
+		c.closureCaptureInfo = map[ast.Func][]liveness.CaptureInfo{}
+	}
+	c.closureCaptureInfo[fn] = captures
+	for _, capture := range captures {
 		b, found := scope.GetValue(capture.Name)
 		if !found || !b.ModuleLevel {
 			continue

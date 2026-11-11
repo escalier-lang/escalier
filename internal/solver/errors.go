@@ -4015,3 +4015,30 @@ func (e *ConditionalSuperCallError) Message() string {
 func (*SuperCallAfterSelfError) Message() string {
 	return "`super(…)` must run before `self` is used, since the inherited members do not exist until it does."
 }
+
+// WeakBindingInflowError fires when a parameter of a generalized function flows into a
+// weak variable of a module-level binding, as `y` does into `g` in
+// `fn h(y) { return g(y) }` over `val g = makeCell()`. Each call of the function would
+// decide the binding's type. Use is the read of the binding inside the function, or the
+// function's name when it reads the binding only through another binding. Func is the
+// function's name, Binding the weak binding's name, Decl its declaration, and Example that
+// declaration with a written type, or "" when there is none to show.
+type WeakBindingInflowError struct {
+	Use     ast.Node
+	Func    string
+	Binding string
+	Decl    ast.Node
+	Example string
+}
+
+func (*WeakBindingInflowError) isSolverError() {}
+
+func (e *WeakBindingInflowError) Span() ast.Span      { return e.Use.Span() }
+func (e *WeakBindingInflowError) Related() []ast.Span { return []ast.Span{e.Decl.Span()} }
+func (e *WeakBindingInflowError) Message() string {
+	msg := fmt.Sprintf("a parameter of '%s' flows into '%s', whose type is not known yet. Write the type of '%s'", e.Func, e.Binding, e.Binding)
+	if e.Example == "" {
+		return msg + "."
+	}
+	return msg + ", as in `" + e.Example + "`."
+}

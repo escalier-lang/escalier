@@ -1154,7 +1154,9 @@ fn go() -> number {
 }
 ```
 
-`seen` settles to `Map<string, &'static {retries: number}>`.
+`remember`'s parameter flows into `seen`'s weak value type, so D18 also asks
+for a written type on `seen`, and the call in `go` does not decide it. The
+parameter's ownership is decided first, so `go` checks as the comment says.
 
 L1 allows either answer for an escaping value. The destination can own it, or
 it can be a `'static` borrow that leaves the source usable under E2. A converter
@@ -1171,8 +1173,7 @@ common case for a memoization key or a configuration object. A body that writes
 the stored value needs one of the other two forms.
 
 `markOpenEscapeParams` in [param_escape.go](../../internal/solver/param_escape.go)
-applies the rule. Rendering `remember` with its `'static &` parameter is tracked
-by [#2352](https://github.com/escalier-lang/escalier/issues/2352).
+applies the rule.
 
 ### D10. Recording that a callback is not retained
 
@@ -1872,12 +1873,12 @@ These gaps remain:
 ### D18. A module-level binding whose type its uses decide
 
 A binding *generalizes* when each use of it gets fresh copies of its type
-variables, as a polymorphic function does. A `val` or `var` generalizes only
+variables, as a polymorphic function does. A `val` or `var` generalizes
 when it has a type annotation, or when it is an immutable binding whose
-initializer is a syntactic value. Any other binding's type variables are
-*weak*. A weak variable is shared by every use of its binding, so the uses
-decide its type together. OCaml calls this the value restriction, and prints
-such a variable as `'_weak1`.
+initializer is a syntactic value. A type variable that a binding does not
+generalize is *weak*. A weak variable is shared by every use of its binding, so
+the uses decide its type together. OCaml calls this the value restriction, and
+prints such a variable as `'_weak1`.
 
 ```esc
 val mut seen = Map()
@@ -1908,6 +1909,46 @@ expression. A `var` and a binding written `mut` never generalize, whatever
 their initializer, since a write through one use would not reach another. So
 `val f = fn (x) { return x }` stays `fn <T0>(x: T0) -> T0`.
 
+An immutable binding of one name whose initializer is not a syntactic value
+generalizes the type variables its value cannot store. This is ML's relaxed
+value restriction, extended with the captures the checker records for D17.
+Generalizing such a variable is unsound only when the value can keep a value of
+it and hand it back later at another type:
+
+```esc
+fn makeCell() {
+    val mut m = Map()
+    return fn (x) { val prev = m.get("k"); m.set("k", x); return prev }
+}
+val g = makeCell()   // if g generalized, g(1) then g("a") would return 1 as a string
+```
+
+A type variable of the binding stays weak when any of these mentions it where
+the value produces something:
+
+- a function that may hold state,
+- a `&mut` borrow,
+- a class argument the class's `MutVariance` makes invariant,
+- a getter or setter of an object, or
+- a generator.
+
+A function the checker inferred from a body holds no state when it captures no
+`var`, no `mut` binding, and no value that may hold state, and writes no place
+it captures. The captures of the functions nested in it count as its own, so a
+closure that returns another closure writing a shared map holds state. A
+function it captures that may hold state makes it hold state too, which covers
+a write through a captured function. A function type from a declaration or an
+annotation has no body to read, so it may hold state. A variable the value only
+accepts, such as the parameter type of a function in it, does not count unless
+it also sits in one of the positions above, since the value cannot keep what it
+only receives.
+
+So with `fn makeId() { return fn (x) { return x } }`, `val g = makeId()`
+generalizes to `fn <T0>(x: T0) -> T0`, and `fn h(y) { return g(y) }` infers
+as `fn <T0>(y: T0) -> T0`. `val g = makeCell()` stays weak. So does
+`val g = mk()` over `declare fn mk<T>() -> fn (x: T) -> T`, since `mk` is
+declared.
+
 Requiring an annotation on every module-level binding, as Rust requires one on
 every `static`, would also give `seen` one type. It would give up inference for
 the common case of a call whose result needs none, such as `val five = id(5)`.
@@ -1922,10 +1963,10 @@ uses decided rather than what the initializer alone gave.
 A weak variable is one type, so the settled type shows it the same way in every
 position. That type is the union of the values that flowed into it, or the
 types its uses require when no value did, or `never` when nothing reached it.
-With `fn makeId() { return fn (x) { return x } }`, `val g = makeId()` called
-as `g(5)` and `g("a")` settles to `fn (x: 5 | "a") -> 5 | "a"`. A `g` that
-nothing calls settles to `fn (x: never) -> never`, so a module that imports it
-cannot call it with a value the exporting module never settled it on.
+With `declare fn mk<T>() -> fn (x: T) -> T`, `val g = mk()` called as `g(5)`
+and `g("a")` settles to `fn (x: 5 | "a") -> 5 | "a"`. A `g` that nothing calls
+settles to `fn (x: never) -> never`, so a module that imports it cannot call it
+with a value the exporting module never settled it on.
 
 The settled type widens the literals in each slot the binding can write, the
 same slots T9 widens in a literal initializer:
@@ -1968,30 +2009,48 @@ displays. A value widens as it reaches a writable slot, so every read of the
 binding sees the settled type, whichever function writes it and in whatever
 order. With `seen` written by `seen.set("k", 1)`, `fn get() { return seen.get("k") }`
 infers as `fn () -> number | undefined`, and `val one: 1 | undefined = seen.get("k")`
-is rejected. A value keeps its literals everywhere else it flows. A `put(x)`
-that stores `[x]` in `seen` and returns `x` returns `1` from `put(1)` and
-stores `[number]`.
+is rejected. A value keeps its literals everywhere else it flows.
 
-The checker requires no annotation. A weak variable no use decides settles
-silently. A container that is never written settles at `never`, so
-`val mut seen = Map()` with no `seen.set` reads as `Map<never, never>`. A
-function that stores its parameter in the map and has no caller leaves the
-parameter `unknown`, as `value` is in
-`fn remember(value) { seen.set("last", value) }`.
-An exported binding needs no annotation either, so `export val mut b = Box(5)`
-settles to `Box<number>`. Requiring one for an exported or undecided weak
-variable is a possible later tightening.
+A weak binding used directly settles from that use, as `seen` does from
+`seen.set("k", 1)`. A function whose parameter flows into a weak variable is
+different. The function generalizes, so each of its calls would pick a type for
+the parameter, and unrelated calls would decide the weak binding's type. The
+checker reports an error that asks for a written type on the weak binding
+instead. It points at the binding's use inside the function, or at the
+function's name when the function reaches the binding only through another
+one:
+
+```esc
+val g = makeCell()
+fn h(y) { return g(y) }
+// a parameter of 'h' flows into 'g', whose type is not known yet. Write the
+// type of 'g', as in `val g: fn (x: number) -> number | undefined = makeCell()`.
+```
+
+The example annotation shows each weak variable as the type its uses have
+settled it on so far, or as `number` when none has. Once the error is reported,
+the calls of `h` no longer reach `g`'s weak variables. With the written type,
+`h` infers as `fn (y: number) -> number | undefined`. The same error covers
+`fn remember(value) { seen.set("last", value) }` over `val mut seen = Map()`.
+The check covers a module-level weak binding read by any binding that
+generalizes, at module level or in a function body.
+
+A weak variable no use decides settles silently. A container that is never
+written settles at `never`, so `val mut seen = Map()` with no `seen.set` reads
+as `Map<never, never>`. An exported binding needs no annotation either, so
+`export val mut b = Box(5)` settles to `Box<number>`. Requiring one for an
+exported weak variable no use decides is tracked by
+[#2354](https://github.com/escalier-lang/escalier/issues/2354).
 
 A weak variable that received an owned value from one use and a borrow from
 another reports the error T8 gives a join of such branches, against the
 module-level binding.
 
-The rule lives in `generalizes` in [poly.go](../../internal/solver/poly.go),
-and the settling in [weak.go](../../internal/solver/weak.go). Two follow-ups
-are open. Keeping a function monomorphic when its parameter flows into a weak
-binding is tracked by
-[#2352](https://github.com/escalier-lang/escalier/issues/2352). Widening the
-literals in the checked type, and not only in the displayed one, is tracked by
+The rule lives in `generalizes` in [poly.go](../../internal/solver/poly.go)
+and `lowerStoringVars` in [weak_relax.go](../../internal/solver/weak_relax.go).
+The settling and the error for a parameter that flows into a weak variable live
+in [weak.go](../../internal/solver/weak.go). Widening the literals in the
+checked type, and not only in the displayed one, is tracked by
 [#2348](https://github.com/escalier-lang/escalier/issues/2348).
 
 ## Known bugs

@@ -49,9 +49,9 @@ type ValueBinding struct {
 	// WRITE: storing a value into module-level storage outlives every borrow region,
 	// so a borrowed value written there escapes to 'static (M4 D3).
 	ModuleLevel bool
-	// Weak marks a `val` or `var` that did not generalize, as generalizes decides. Its
-	// single scheme quantifies no variable, so every use shares the variables its type
-	// holds.
+	// Weak marks a `val` or `var` whose type holds weak variables. Its single scheme does not
+	// quantify them, so every use shares them. A binding weakAtDecl reports quantifies no
+	// variable, and a relaxed binding quantifies every variable lowerStoringVars left.
 	Weak bool
 	// VarID is the liveness VarID assigned to this binding's name by the function
 	// body's rename pass (M4 G1), or 0 for a binding outside any liveness-analysed

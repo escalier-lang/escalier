@@ -349,6 +349,12 @@ type FuncType struct {
 	// the function a borrow, and a function value is still copied. Lt is free in the
 	// function type, unlike the lifetimes in LifetimeParams.
 	Lt Lifetime
+	// Pure marks a function that holds no state a call can change. The checker sets it on
+	// a function it inferred from a body when that body captures no `var`, no `mut`
+	// binding, and no value that may hold state, and writes no captured place, directly or
+	// through a function it captures. A written or declared function type leaves it false, so such a
+	// function counts as possibly holding state. Subtyping ignores it.
+	Pure bool
 }
 
 // ThrowsOrNever returns the type a call to t may raise, resolving the nil shorthand to the

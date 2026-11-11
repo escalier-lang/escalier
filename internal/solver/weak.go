@@ -1,17 +1,20 @@
 package solver
 
 import (
+	"fmt"
 	"slices"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dep_graph"
+	"github.com/escalier-lang/escalier/internal/printer"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// A weak variable is a type variable that belongs to a binding which did not generalize,
-// as generalizes decides. `val mut seen = Map()` binds `seen` to `Map<K, V>`, where K and V
-// are weak. Every function that reads `seen` constrains the same K and V, so
+// A weak variable is a type variable of a binding that the binding does not quantify. A
+// binding weakAtDecl reports quantifies none of its variables, and a relaxed binding leaves
+// out the ones lowerStoringVars moves. `val mut seen = Map()` binds `seen` to `Map<K, V>`,
+// where K and V are weak. Every function that reads `seen` constrains the same K and V, so
 // `seen.set("k", 1)` in one function and `seen.set("k", "s")` in another both reach V.
 //
 // A weak variable sits at the level of the scope that declares the binding. For a
@@ -30,10 +33,10 @@ func keyVarDecl(g *dep_graph.DepGraph, key dep_graph.BindingKey) *ast.VarDecl {
 }
 
 // declLevel returns the level a module-level declaration d is inferred at, for a component
-// at lvl. A `val` or `var` that does not generalize is inferred at lvl, which makes the
+// at lvl. A `val` or `var` that weakAtDecl reports is inferred at lvl, which makes the
 // variables its initializer mints weak. Every other declaration is inferred at lvl+1.
 func declLevel(d ast.Decl, lvl int) int {
-	if vd, ok := d.(*ast.VarDecl); ok && !generalizes(vd) {
+	if vd, ok := d.(*ast.VarDecl); ok && weakAtDecl(vd) {
 		return lvl
 	}
 	return lvl + 1
@@ -47,27 +50,32 @@ type weakBinding struct {
 	// infoNode is the node the binding's display type is recorded on, or nil when it has
 	// none.
 	infoNode ast.Node
+	// decl is the declaration that made the binding.
+	decl *ast.VarDecl
+	// name is the name the binding binds.
+	name string
 }
 
-// newWeakBinding returns the weakBinding for a binding bound to scheme, or false when
-// scheme quantifies over nothing settleWeakDisplay can reseal, as the MonoScheme of a
-// binding that recovered to the error sentinel does.
-func newWeakBinding(scheme TypeScheme, infoNode ast.Node) (weakBinding, bool) {
+// newWeakBinding returns the weakBinding for the binding name that decl made, bound to
+// scheme, or false when scheme quantifies over nothing settleWeakDisplay can reseal, as the
+// MonoScheme of a binding that recovered to the error sentinel does.
+func newWeakBinding(scheme TypeScheme, infoNode ast.Node, decl *ast.VarDecl, name string) (weakBinding, bool) {
 	sc, ok := scheme.(*PolyScheme)
 	if !ok {
 		return weakBinding{}, false
 	}
-	return weakBinding{scheme: sc, infoNode: infoNode}, true
+	return weakBinding{scheme: sc, infoNode: infoNode, decl: decl, name: name}, true
 }
 
-// noteWeakBinding records the weak module-level binding b for settleWeakBindings and
-// widens its writable slots, as widenWeakSlots does. scheme is the scheme b was bound to.
-func (c *checker) noteWeakBinding(b *componentBinding, scheme TypeScheme) {
+// noteWeakBinding records the weak module-level binding b, named name, for
+// settleWeakBindings and widens its writable slots, as widenWeakSlots does. scheme is the
+// scheme b was bound to.
+func (c *checker) noteWeakBinding(b *componentBinding, name string, scheme TypeScheme) {
 	vd, ok := b.primary.(*ast.VarDecl)
 	if !ok {
 		return
 	}
-	if w, ok := newWeakBinding(scheme, b.infoNode); ok {
+	if w, ok := newWeakBinding(scheme, b.infoNode, vd, name); ok {
 		// A leaf of a destructuring is `mut` on its own, so b.mut is read in place of the
 		// pattern's. The binding var is minted before the initializer is inferred, so it is
 		// owned apart from the initializer's range.
@@ -81,7 +89,8 @@ func (c *checker) noteWeakBinding(b *componentBinding, scheme TypeScheme) {
 // settleWeakLocals and widens its writable slots, as widenWeakSlots does. initVars is the
 // range of ids of the variables d's initializer and binding var minted.
 func (c *checker) noteWeakLocal(d *ast.VarDecl, scheme TypeScheme, initVars varRange) {
-	if w, ok := newWeakBinding(scheme, d.Pattern); ok {
+	name, _ := varName(d)
+	if w, ok := newWeakBinding(scheme, d.Pattern, d, name); ok {
 		c.widenWeakSlots(w.scheme, d, hasMutLeaf(d.Pattern), initVars.contains)
 		c.weakLocals = append(c.weakLocals, w)
 	}
@@ -270,6 +279,185 @@ func (c *checker) noteWeakReader(b *componentBinding, scheme TypeScheme, lvl int
 		c.weakReaders = append(c.weakReaders, weakReader{scheme: sc, infoNode: b.infoNode})
 	}
 }
+
+// weakInflow is a variable of a generalized binding that has a weak variable among its
+// upper bounds. Each value that reaches from flows into to.
+type weakInflow struct {
+	from, to *soltype.TypeVarType
+}
+
+// inflowSite describes a binding about to generalize, for checkWeakInflow.
+type inflowSite struct {
+	// t is the binding's type.
+	t soltype.Type
+	// name is the binding's name.
+	name string
+	// reads lists the binding's reads of bindings that may be weak, as c.weakReads lists them.
+	reads []*ast.IdentExpr
+	// fallback is the node the error points at when no read names the weak binding.
+	fallback ast.Node
+	// lvl is the level the binding generalizes at. A variable above it is the binding's own.
+	lvl int
+}
+
+// checkWeakInflow reports a WeakBindingInflowError when a variable the binding at site
+// quantifies flows into a weak variable of a module-level binding, as `y` does in
+// `fn h(y) { return g(y) }` over a weak `val g = makeCell()`. Every call of `h` would pick
+// its own type for `y`, and each call would decide `g`'s type from that pick. It reports
+// whether it reported the error.
+//
+// The error names the weak binding the first such variable flows into. It points at the
+// first of site's reads that names that binding, or at site's fallback node when site
+// reaches the binding only through another one. After reporting it, each such variable
+// loses its weak upper bounds, so a call of the binding does not decide the weak binding's
+// type.
+func (c *checker) checkWeakInflow(site inflowSite) bool {
+	if len(c.weakBindings) == 0 {
+		return false
+	}
+	s := &weakInflowScanner{lvl: site.lvl, weakLvl: c.weakLvl, seen: set.NewSet[polarVar]()}
+	site.t.Accept(s, soltype.Positive)
+	var w weakBinding
+	found := false
+	for _, flow := range s.out {
+		reached := reachableVars(flow.to)
+		if idx := slices.IndexFunc(c.weakBindings, func(w weakBinding) bool { return reachesAnyVar(w.scheme.Body, reached) }); idx >= 0 {
+			w, found = c.weakBindings[idx], true
+			break
+		}
+	}
+	if !found {
+		return false
+	}
+	use := site.fallback
+	for _, read := range site.reads {
+		if read.Name == w.name {
+			use = read
+			break
+		}
+	}
+	c.report(&WeakBindingInflowError{
+		Use:     use,
+		Func:    site.name,
+		Binding: w.name,
+		Decl:    w.decl,
+		Example: c.weakAnnotationExample(w),
+	})
+	for _, flow := range s.out {
+		c.ctx.dropUpperBound(flow.from, flow.to)
+	}
+	return true
+}
+
+// weakInflowScanner is the visitor behind checkWeakInflow. It walks a binding's type the
+// way weakVarScanner does and records, in out, each variable above lvl reached at a
+// negative position that has a weak variable among its upper bounds. A weak variable is
+// one at or below weakLvl.
+type weakInflowScanner struct {
+	lvl, weakLvl int
+	seen         set.Set[polarVar]
+	out          []weakInflow
+}
+
+func (s *weakInflowScanner) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	v, isVar := t.(*soltype.TypeVarType)
+	if !isVar {
+		return soltype.EnterResult{}
+	}
+	key := polarVar{v: v, pol: pol}
+	// A variable at or below lvl belongs to an enclosing scope or to a weak binding, and its
+	// bounds are theirs.
+	if v.Level <= s.lvl || s.seen.Contains(key) {
+		return soltype.EnterResult{SkipChildren: true}
+	}
+	s.seen.Add(key)
+	bounds := v.LowerBounds
+	if pol == soltype.Negative {
+		bounds = v.UpperBounds
+		for _, ub := range bounds {
+			if w, isWeak := ub.(*soltype.TypeVarType); isWeak && w.Level <= s.weakLvl {
+				s.out = append(s.out, weakInflow{from: v, to: w})
+			}
+		}
+	}
+	for _, bound := range bounds {
+		bound.Accept(s, pol)
+	}
+	return soltype.EnterResult{SkipChildren: true}
+}
+
+func (s *weakInflowScanner) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+
+// reachableVars returns every variable t mentions, and every variable their bounds
+// mention, keyed by id.
+func reachableVars(t soltype.Type) map[int]*soltype.TypeVarType {
+	vars := map[int]*soltype.TypeVarType{}
+	t.Accept(&varCollector{out: vars, seen: set.NewSet[*soltype.TypeVarType]()}, soltype.Positive)
+	return vars
+}
+
+// reachesAnyVar reports whether t reaches a variable in vars, as reachableVars follows bounds.
+// A bound between two variables is recorded on one of them only, so a weak variable that
+// a parameter flows into may reach the binding's own variables without being reached from
+// them.
+func reachesAnyVar(t soltype.Type, vars map[int]*soltype.TypeVarType) bool {
+	for id, v := range reachableVars(t) {
+		if vars[id] == v {
+			return true
+		}
+	}
+	return false
+}
+
+// weakAnnotationExample returns the declaration of the weak binding w with a written type
+// that has no type variable. A weak variable no value has reached yet is shown as
+// `number`, and every other variable as its bounds, so `val g = makeCell()` with
+// `fn makeCell() { val mut m = Map(); return fn (x) { … } }` gives
+// `val g: fn (x: number) -> number | undefined = makeCell()`. It returns "" when w's
+// declaration binds no single name or has no initializer.
+func (c *checker) weakAnnotationExample(w weakBinding) string {
+	vd, sc := w.decl, w.scheme
+	pat, isIdent := vd.Pattern.(*ast.IdentPat)
+	if !isIdent || vd.Init == nil {
+		return ""
+	}
+	undecided := funcTypeParamVars(sc.Body)
+	binders := undecided.Clone()
+	for _, v := range reachableVars(sc.Body) {
+		if v.Level <= sc.Level && isNeverType(coalesce(v, soltype.Positive)) {
+			undecided.Add(v)
+		}
+	}
+	shown := coalesceKeeping(sc.Body, soltype.Positive, undecided, nil, nil)
+	shown = shown.Accept(&varReplacer{keep: binders, with: &soltype.PrimType{Prim: soltype.NumPrim}}, soltype.Positive)
+	init, err := printer.Print(vd.Init, printer.DefaultOptions())
+	if err != nil {
+		return ""
+	}
+	keyword := "val"
+	if vd.Kind == ast.VarKind {
+		keyword = "var"
+	}
+	if isMutableIdentPat(vd.Pattern) {
+		keyword += " mut"
+	}
+	return fmt.Sprintf("%s %s: %s = %s", keyword, pat.Name, c.renderValueBinding(&MonoScheme{Ty: shown}), init)
+}
+
+// varReplacer replaces each type variable outside keep with the type with.
+type varReplacer struct {
+	keep set.Set[*soltype.TypeVarType]
+	with soltype.Type
+}
+
+func (r *varReplacer) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	if v, isVar := t.(*soltype.TypeVarType); isVar && !r.keep.Contains(v) {
+		return soltype.EnterResult{Type: r.with, SkipChildren: true}
+	}
+	return soltype.EnterResult{}
+}
+
+func (r *varReplacer) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // settleWeakBindings runs once every component of a module at lvl is inferred:
 //

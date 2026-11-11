@@ -111,10 +111,12 @@ fn f() {
 			},
 		},
 		{
-			// The value a function stores widens in the map, and the function's own
-			// parameter keeps the literal it was called with. The `number` annotation on `n`
+			// put's parameter flows into the map's value type, so the checker asks for a
+			// written type on `seen`, and put's calls do not decide it. With `put(1)`, the
+			// map's element stays `never` and put's parameter keeps the literal it was called
+			// with. The `number` annotation on `n`
 			// makes x a value type, so storing `[x]` copies x and the return can read it.
-			name: "AStoredParameterWidensOnlyInTheMap",
+			name: "AStoredParameterLeavesTheMapUndecided",
 			src: `
 val mut seen = Map()
 fn put(x) {
@@ -125,8 +127,11 @@ fn put(x) {
 val one = put(1)
 `,
 			values: map[string]string{
-				"seen": "Map<string, [number]>",
+				"seen": "Map<string, [never]>",
 				"one":  "1",
+			},
+			want: []string{
+				"5:2-5:6: a parameter of 'put' flows into 'seen', whose type is not known yet. Write the type of 'seen', as in `val mut seen: Map<string, [number]> = Map()`.",
 			},
 		},
 		{
@@ -141,7 +146,10 @@ fn put(x) {
 }
 val one = put(1)
 `,
-			want: []string{"5:9-5:10: use of moved value 'x'"},
+			want: []string{
+				"4:2-4:6: a parameter of 'put' flows into 'seen', whose type is not known yet. Write the type of 'seen', as in `val mut seen: Map<string, [number]> = Map()`.",
+				"5:9-5:10: use of moved value 'x'",
+			},
 		},
 		{
 			// f's result holds `{next: f()}`, so the variable for it reaches itself through
@@ -180,9 +188,9 @@ fn b() { seen.set("k", {a: 2}) }
 			},
 		},
 		{
-			// Nothing calls `remember`, so nothing decides what `value` holds. The map's value
-			// type settles at `never` and the parameter at `unknown`, with no error. #2352 keeps
-			// remember monomorphic over the map's value type, so `value` becomes `never` too.
+			// remember's parameter flows into the map's value type, so the checker asks for a
+			// written type on `seen`. The map's value type settles at `never` and the
+			// parameter at `unknown`.
 			name: "AStoreOfAParameterNothingCalls",
 			src: `
 val mut seen = Map()
@@ -191,6 +199,9 @@ fn remember(value) { seen.set("last", value) }
 			values: map[string]string{
 				"seen":     "Map<string, never>",
 				"remember": "fn (value: unknown) -> undefined",
+			},
+			want: []string{
+				"3:22-3:26: a parameter of 'remember' flows into 'seen', whose type is not known yet. Write the type of 'seen', as in `val mut seen: Map<string, number> = Map()`.",
 			},
 		},
 		{
@@ -266,8 +277,8 @@ val b = f("s")
 			},
 		},
 		{
-			// #2349 quantifies the closure makeId returns on the closure itself, so g
-			// becomes `fn <T0>(x: T0) -> T0`.
+			// The closure makeId returns captures nothing, so nothing in `g` can store a
+			// value and `g` generalizes.
 			name: "AFunctionACallReturnsIsSettledByItsUse",
 			src: `
 fn makeId() { return fn (x) { return x } }
@@ -275,35 +286,28 @@ val g = makeId()
 fn use() { return g(1) }
 `,
 			values: map[string]string{
-				"g":   "fn (x: 1) -> 1",
+				"g":   "fn <T0>(x: T0) -> T0",
 				"use": "fn () -> 1",
 			},
 		},
 		{
-			// #2349 quantifies the closure makeId returns on the closure itself, so g
-			// becomes `fn <T0>(x: T0) -> T0`.
 			name: "AFunctionACallReturnsThatNothingCalls",
 			src: `
 fn makeId() { return fn (x) { return x } }
 val g = makeId()
 `,
-			values: map[string]string{"g": "fn (x: never) -> never"},
+			values: map[string]string{"g": "fn <T0>(x: T0) -> T0"},
 		},
 		{
-			// An importer sees the same type, so it cannot call g with a value the module
-			// never settled g on. #2349 quantifies the closure makeId returns on the closure
-			// itself, so g becomes `fn <T0>(x: T0) -> T0`.
 			name: "AnExportedFunctionACallReturnsThatNothingCalls",
 			src: `
 fn makeId() { return fn (x) { return x } }
 export val g = makeId()
 `,
-			values: map[string]string{"g": "fn (x: never) -> never"},
+			values: map[string]string{"g": "fn <T0>(x: T0) -> T0"},
 		},
 		{
-			// The parameter and the result are one variable, so both show every value the
-			// module passed. #2349 quantifies the closure makeId returns on the closure itself,
-			// so g becomes `fn <T0>(x: T0) -> T0`.
+			// Each call of the generalized `g` picks its own type for the parameter.
 			name: "AnExportedFunctionACallReturnsCalledTwice",
 			src: `
 fn makeId() { return fn (x) { return x } }
@@ -311,7 +315,7 @@ export val g = makeId()
 val n = g(5)
 val s = g("a")
 `,
-			values: map[string]string{"g": `fn (x: 5 | "a") -> 5 | "a"`},
+			values: map[string]string{"g": "fn <T0>(x: T0) -> T0", "n": "5", "s": `"a"`},
 		},
 		{
 			// No value but `never` flows into T, so its type is what its uses require. Each
@@ -378,16 +382,17 @@ export val inc2 = twice(fn (x: number) -> number { return x + 1 })
 		},
 		{
 			// The `6` the pattern tests is not part of `o`'s type, which keeps the `5` it
-			// was built from.
+			// was built from. Box's field is writable, so `o`'s argument is weak and every
+			// read of `o` shares it.
 			// #2355 reports `6` as a pattern that cannot match `5`, so this case then needs
-			// `val mut o`, which makes the element `number`.
+			// `val mut o`, which makes the argument `number`.
 			name: "APatternTestLeavesASharedElementAlone",
 			src: `
-val mk = fn (v) { return [v] }
-val o = mk(5)
-fn f() { return match o[0] { 6 => "six", _ => "other" } }
+class Box<T> { value: T }
+val o = Box(5)
+fn f() { return match o.value { 6 => "six", _ => "other" } }
 `,
-			values: map[string]string{"o": "[5]"},
+			values: map[string]string{"o": "Box<5>"},
 		},
 		{
 			// An immutable binding keeps its literals whether its initializer is a call or
@@ -547,6 +552,514 @@ fn g() { setX(seen.get("k")) }
 				require.Contains(t, values, name)
 				require.Equal(t, want, values[name], name)
 			}
+		})
+	}
+}
+
+// makeCellSrc declares makeCell, whose closure writes the map it captures, so a value the
+// closure is called with can come back from a later call.
+const makeCellSrc = `
+fn makeCell() {
+	val mut m = Map()
+	return fn (x) {
+		val prev = m.get("k")
+		m.set("k", x)
+		return prev
+	}
+}
+`
+
+// TestRelaxedValueRestriction covers a `val` whose initializer is a call. Each variable of
+// the call result's type that nothing in the result can store generalizes, and every other
+// one is weak. A function whose parameter flows into a weak variable reports an error that
+// asks for a written type on the weak binding.
+func TestRelaxedValueRestriction(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		// values maps a top-level binding to its rendered type. Bindings the map leaves
+		// out are not checked.
+		values map[string]string
+		// want lists every diagnostic the program reports, each with its span.
+		want []string
+	}{
+		{
+			name: "AClosureThatCapturesNothingGeneralizes",
+			src: `
+fn makeId() { return fn (x) { return x } }
+val g = makeId()
+fn h(y) { return g(y) }
+`,
+			values: map[string]string{
+				"g": "fn <T0>(x: T0) -> T0",
+				"h": "fn <T0>(y: T0) -> T0",
+			},
+		},
+		{
+			// h's parameter would decide the type of the map g writes, so the checker asks
+			// for a written type on g. h's calls then leave g undecided.
+			name: "AClosureThatWritesACapturedMapStaysWeak",
+			src: makeCellSrc + `
+val g = makeCell()
+fn h(y) { return g(y) }
+val a = h(1)
+`,
+			values: map[string]string{
+				"makeCell": "fn <T0>() -> fn (x: T0) -> T0 | undefined",
+				"g":        "fn (x: undefined) -> undefined",
+			},
+			want: []string{
+				"12:18-12:19: a parameter of 'h' flows into 'g', whose type is not known yet. Write the type of 'g', as in `val g: fn (x: number) -> number | undefined = makeCell()`.",
+			},
+		},
+		{
+			name: "AWrittenTypeOnTheCallResultLetsAFunctionPassItsParameter",
+			src: makeCellSrc + `
+val g: fn (x: number) -> number | undefined = makeCell()
+fn h(y) { return g(y) }
+`,
+			values: map[string]string{"h": "fn (y: number) -> number | undefined"},
+		},
+		{
+			// A use of the weak binding itself, with no parameter in between, decides its
+			// type. The settled type shows the weak variable as one type in every position,
+			// so the parameter shows the `undefined` the result adds as well.
+			name: "AUseOfAWeakBindingDecidesItsType",
+			src: makeCellSrc + `
+val g = makeCell()
+fn h() { return g(1) }
+`,
+			values: map[string]string{
+				"g": "fn (x: 1 | undefined) -> 1 | undefined",
+				"h": "fn () -> 1 | undefined",
+			},
+		},
+		{
+			name: "AWriteToAWeakContainerDecidesItsType",
+			src: `
+val mut seen = Map()
+fn put() { seen.set("k", 1) }
+`,
+			values: map[string]string{"seen": "Map<string, number>"},
+		},
+		{
+			// A declared function has no body to read, so the function it returns may hold
+			// state.
+			name: "ADeclaredCalleeStaysWeak",
+			src: `
+declare fn mk<T>() -> fn (x: T) -> T
+val g = mk()
+fn h() { return g(1) }
+`,
+			values: map[string]string{"g": "fn (x: 1) -> 1"},
+		},
+		{
+			name: "AClosureThatWritesACapturedVarStaysWeak",
+			src: `
+var count = 0
+fn makeCounter() {
+	return fn (x) {
+		count = count + 1
+		return x
+	}
+}
+val g = makeCounter()
+fn h() { return g(1) }
+`,
+			values: map[string]string{"g": "fn (x: 1) -> 1"},
+		},
+		{
+			name: "AClosureThatCallsADeclaredFunctionStaysWeak",
+			src: `
+declare fn log(x: number) -> undefined
+fn makeLogged() {
+	return fn (x) {
+		log(1)
+		return x
+	}
+}
+val g = makeLogged()
+fn h() { return g(1) }
+`,
+			values: map[string]string{"g": "fn (x: 1) -> 1"},
+		},
+		{
+			name: "AClosureThatCallsAFunctionHoldingNoStateGeneralizes",
+			src: `
+fn ident(x) { return x }
+fn makeVia() { return fn (x) { return ident(x) } }
+val g = makeVia()
+`,
+			values: map[string]string{"g": "fn <T0>(x: T0) -> T0"},
+		},
+		{
+			// touch writes the map it reaches, so a closure that calls touch holds state too.
+			name: "AClosureThatCallsAFunctionWritingStateStaysWeak",
+			src: `
+val mut store = Map()
+fn touch() { store.set("k", 1) }
+fn makeTouch() {
+	return fn (x) {
+		touch()
+		return x
+	}
+}
+val g = makeTouch()
+fn h() { return g(1) }
+`,
+			values: map[string]string{"g": "fn (x: 1) -> 1"},
+		},
+		{
+			// The outer closure writes nothing itself, but the closure it returns writes the
+			// map both share.
+			name: "AClosureWhoseNestedClosureWritesACapturedMapStaysWeak",
+			src: `
+fn makeNested() {
+	val mut m = Map()
+	return fn () {
+		return fn (x) {
+			m.set("k", x)
+			return x
+		}
+	}
+}
+val g = makeNested()
+fn h() { return g()(1) }
+`,
+			values: map[string]string{"g": "fn () -> fn (x: 1) -> 1"},
+		},
+		{
+			// A write through a `&mut` reaches every read of the same place.
+			name: "AMutableBorrowStaysWeak",
+			src: `
+declare fn mkRef<T>() -> &'static mut {v: T}
+val r = mkRef()
+fn a() { r.v = 1 }
+fn b() { val s: string = r.v }
+`,
+			want: []string{"5:26-5:29: cannot constrain 1 <: string"},
+		},
+		{
+			// Nothing can write the field of an object `o` holds, so each read gets its own
+			// copy of `o`'s type.
+			name: "AnObjectWithNoWritableSlotGeneralizes",
+			src: `
+declare fn mkObj<T>() -> {v: T}
+val o = mkObj()
+fn a() { val s: string = o.v }
+fn b() { val n: number = o.v }
+`,
+		},
+		{
+			name: "ABodyLevelCallResultGeneralizes",
+			src: `
+fn makeId() { return fn (x) { return x } }
+fn f() {
+	val g = makeId()
+	return [g(1), g("a")]
+}
+`,
+			values: map[string]string{"f": `fn () -> [1, "a"]`},
+		},
+		{
+			name: "ABodyLevelCallResultThatCanStoreStaysWeak",
+			src: makeCellSrc + `
+fn f() {
+	val g = makeCell()
+	return [g(1), g("a")]
+}
+`,
+			values: map[string]string{"f": `fn () -> [1 | "a" | undefined, 1 | "a" | undefined]`},
+		},
+		{
+			// The alias names a function type, which may hold state like the one it stands
+			// for.
+			name: "AFunctionTypeBehindAnAliasStaysWeak",
+			src: `
+type Cell<T> = fn (x: T) -> T
+declare fn mk<T>() -> Cell<T>
+val g = mk()
+fn h() { return g(1) }
+`,
+			values: map[string]string{"g": "Cell<1>"},
+		},
+		{
+			// A class instance's fields are not in its type, so a closure that captures one
+			// may hold state.
+			name: "AClosureThatCapturesAClassInstanceStaysWeak",
+			src: `
+class Holder { tag: string }
+fn makeHeld() {
+	val held = Holder("t")
+	return fn (x) {
+		val t = held.tag
+		return x
+	}
+}
+val g = makeHeld()
+fn h() { return g(1) }
+`,
+			values: map[string]string{"g": "fn (x: 1) -> 1"},
+		},
+		{
+			// h reads g only through getG, so the error points at h's name.
+			name: "AParameterThatReachesAWeakBindingThroughAnotherFunction",
+			src: makeCellSrc + `
+val g = makeCell()
+fn getG() { return g }
+fn h(y) { return getG()(y) }
+`,
+			want: []string{
+				"13:4-13:5: a parameter of 'h' flows into 'g', whose type is not known yet. Write the type of 'g', as in `val g: fn (x: number) -> number | undefined = makeCell()`.",
+			},
+		},
+		{
+			// g and h read each other, so they are inferred together, and g's variables
+			// become weak only once both are.
+			name: "AParameterThatFlowsIntoAWeakBindingOfTheSameComponent",
+			src: makeCellSrc + `
+fn makeCellFor(f) { return makeCell() }
+val g = makeCellFor(h)
+fn h(y) { return g(y) }
+`,
+			want: []string{
+				"13:18-13:19: a parameter of 'h' flows into 'g', whose type is not known yet. Write the type of 'g', as in `val g: fn (x: number) -> number | undefined = makeCellFor(h)`.",
+			},
+		},
+		{
+			// The second `Cell` has its own argument, so its function may hold state as the
+			// first one's does.
+			name: "EachUseOfAnAliasStaysWeak",
+			src: `
+type Cell<T> = fn (x: T) -> T
+declare fn mk2<A, B>() -> [Cell<A>, Cell<B>]
+val p = mk2()
+fn a() { return p[1](1) }
+fn b() { val s: string = p[1]("x") }
+`,
+			want: []string{"6:26-6:35: cannot constrain 1 <: string"},
+		},
+		{
+			// put generalizes inside outer, so each call of put would decide seen's type.
+			name: "ABodyLevelFunctionWhoseParameterFlowsIntoAWeakBinding",
+			src: `
+val mut seen = Map()
+fn outer() {
+	val put = fn (y) { seen.set("k", y) }
+	put(1)
+}
+`,
+			want: []string{
+				"4:21-4:25: a parameter of 'put' flows into 'seen', whose type is not known yet. Write the type of 'seen', as in `val mut seen: Map<string, number> = Map()`.",
+			},
+		},
+		{
+			name: "ADestructuredWeakBindingIsNamed",
+			src: `
+declare fn makeStore<T>() -> {cache: Map<string, T>}
+val {mut cache} = makeStore()
+fn put(x) { cache.set("k", x) }
+`,
+			want: []string{
+				"4:13-4:18: a parameter of 'put' flows into 'cache', whose type is not known yet. Write the type of 'cache'.",
+			},
+		},
+		{
+			// hold is declared, so the function it returns may hold state and the value it
+			// returns is weak. That value is a generic function, which keeps its own type
+			// parameter.
+			name: "AWeakBindingThatHoldsAGenericFunction",
+			src: `
+declare fn hold<T>(init: T) -> fn () -> T
+val g = hold(fn <U>(y: U) -> U { return y })
+fn u() { return g() }
+`,
+			values: map[string]string{
+				"g": "fn () -> fn <U>(y: U) -> U",
+				"u": "fn () -> fn <U>(y: U) -> U",
+			},
+		},
+		{
+			// The function `f` keeps its own lifetime parameter.
+			name: "AWeakBindingThatHoldsAFunctionWithALifetimeParameter",
+			src: `
+declare fn hold<T>(init: T) -> fn () -> T
+declare val f: fn <'a>(p: &'a {x: number}) -> &'a {x: number}
+val g = hold(f)
+fn u() { return g() }
+`,
+			values: map[string]string{
+				"g": "fn () -> fn <'a>(p: &'a {x: number}) -> &'a {x: number}",
+				"u": "fn () -> fn <'a>(p: &'a {x: number}) -> &'a {x: number}",
+			},
+		},
+		{
+			name: "AWeakBindingThatHoldsABorrow",
+			src: `
+declare fn hold<T>(init: T) -> fn () -> T
+val p = {x: 1}
+val g = hold(&p)
+fn u() { return g() }
+`,
+			values: map[string]string{"g": "fn () -> &{x: 1}", "u": "fn () -> &{x: 1}"},
+		},
+		{
+			name: "AWeakBindingThatHoldsAClassInstanceWithALifetime",
+			src: `
+declare fn hold<T>(init: T) -> fn () -> T
+class Holder<'a> { peer: &'a {value: number} }
+val p = {value: 1}
+val g = hold(Holder(&p))
+fn u() { return g() }
+`,
+			values: map[string]string{"g": "fn <'a>() -> Holder<'a>", "u": "fn <'a>() -> Holder<'a>"},
+		},
+		{
+			name: "AWeakBindingThatHoldsAnAliasWithALifetime",
+			src: `
+declare fn hold<T>(init: T) -> fn () -> T
+type Ref<'a> = &'a {value: number}
+declare fn mkRef<'a>(p: &'a {value: number}) -> Ref<'a>
+val p = {value: 1}
+val g = hold(mkRef(&p))
+fn u() { return g() }
+`,
+			values: map[string]string{"g": "fn <'a>() -> Ref<'a>", "u": "fn <'a>() -> Ref<'a>"},
+		},
+		{
+			// `T` appears only in a parameter of `put`, so a `Sink` can accept a value of it
+			// but never hand one back. Each use of `s` gets its own `T`, so the two calls do not
+			// conflict.
+			name: "AContravariantClassArgumentGeneralizes",
+			src: `
+class Sink<T> { put(&self, x: T) -> undefined { return undefined } }
+declare fn mkSink<T>() -> Sink<T>
+val s = mkSink()
+fn a() { s.put(1) }
+fn b() { s.put("x") }
+`,
+			values: map[string]string{"s": "Sink<never>"},
+		},
+		{
+			// A setter can store what a getter hands back, so `T` is weak and the `1` the
+			// setter receives reaches the read in `c`.
+			name: "AnObjectWithAnAccessorStaysWeak",
+			src: `
+declare fn mkBox<T>() -> {get value() -> T, set value(v: T)}
+val b = mkBox()
+fn a() { b.value = 1 }
+fn c() { val s: string = b.value }
+`,
+			want: []string{
+				"4:10-4:21: cannot mutate 'b' because its binding is immutable; declare it as `val mut b`",
+				"5:26-5:33: cannot constrain 1 <: string",
+			},
+		},
+		{
+			// The closure captures two borrows of one value, so the walk reaches that value's
+			// type twice. Neither borrow can change it.
+			name: "AClosureThatCapturesTwoBorrowsOfOneValueGeneralizes",
+			src: `
+fn mk(p) {
+	val q = [&p, &p]
+	return fn (x) {
+		val t = q
+		return x
+	}
+}
+val g = mk({a: 1})
+`,
+			values: map[string]string{"g": "fn <T0>(x: T0) -> T0"},
+		},
+		{
+			// The captured pair names the alias twice.
+			name: "AClosureThatCapturesAnAliasTwiceGeneralizes",
+			src: `
+type Pt = {x: number}
+fn mk(pair: [Pt, Pt]) {
+	return fn (x) {
+		val t = pair
+		return x
+	}
+}
+val g = mk([{x: 1}, {x: 2}])
+`,
+			values: map[string]string{"g": "fn <T0>(x: T0) -> T0"},
+		},
+		{
+			// put's parameter flows into seen, not into the weak binding declared before it.
+			name: "AParameterThatFlowsIntoTheSecondOfTwoWeakBindings",
+			src: `
+val mut other = Map()
+val mut seen = Map()
+fn put(x) { seen.set("k", x) }
+`,
+			want: []string{
+				"4:13-4:17: a parameter of 'put' flows into 'seen', whose type is not known yet. Write the type of 'seen', as in `val mut seen: Map<string, number> = Map()`.",
+			},
+		},
+		{
+			name: "AnExampleForAWeakVarBinding",
+			src: makeCellSrc + `
+var cell = makeCell()
+fn h(y) { return cell(y) }
+`,
+			want: []string{
+				"12:18-12:22: a parameter of 'h' flows into 'cell', whose type is not known yet. Write the type of 'cell', as in `var cell: fn (x: number) -> number | undefined = makeCell()`.",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, errs := inferAgainstTreeWithSpans(t, tt.src)
+			require.Equal(t, tt.want, errs)
+			for name, want := range tt.values {
+				require.Contains(t, values, name)
+				require.Equal(t, want, values[name], name)
+			}
+		})
+	}
+}
+
+// TestWeakBindingInflowBlame covers where the error for a parameter that flows into a weak
+// binding points: the source each span covers, primary first and then the related span on
+// the weak binding's declaration.
+func TestWeakBindingInflowBlame(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+		// spans lists the source text of the primary span and then of each related span.
+		spans []string
+	}{
+		{
+			name: "ADirectRead",
+			src: `declare fn mk<T>() -> fn (x: T) -> T
+val g = mk()
+fn h(y) { return g(y) }`,
+			want:  "3:18-3:19: a parameter of 'h' flows into 'g', whose type is not known yet. Write the type of 'g', as in `val g: fn (x: number) -> number = mk()`.",
+			spans: []string{"g", "val g = mk()"},
+		},
+		{
+			// h has no read of g, so the error points at h's name.
+			name: "AReadThroughAnotherFunction",
+			src: `declare fn mk<T>() -> fn (x: T) -> T
+val g = mk()
+fn getG() { return g }
+fn h(y) { return getG()(y) }`,
+			want:  "4:4-4:5: a parameter of 'h' flows into 'g', whose type is not known yet. Write the type of 'g', as in `val g: fn (x: number) -> number = mk()`.",
+			spans: []string{"h", "val g = mk()"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, []string{tt.want}, messagesWithSpan(t, errs))
+			spans := []string{spanText(tt.src, errs[0].Span())}
+			for _, s := range errs[0].Related() {
+				spans = append(spans, spanText(tt.src, s))
+			}
+			require.Equal(t, tt.spans, spans)
 		})
 	}
 }
