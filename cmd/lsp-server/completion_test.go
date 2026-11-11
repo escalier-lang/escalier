@@ -1816,6 +1816,28 @@ func TestMemberCompletionFromSolverMembership(t *testing.T) {
 			col:      3,
 			contains: []string{"value: number"},
 		},
+		{
+			// `import "std:console"` binds `console` as the package's namespace and as the
+			// `console` value it exports, so a member read offers both sets of members.
+			name: "ValueBoundBesideNamespaceAfterDot",
+			files: map[string]string{
+				"lib/index.esc": "import \"std:console\"\n\nexport fn main() {\n    console.log(\"hello\")\n    console.\n}\n",
+			},
+			open:     "lib/index.esc",
+			line:     5,
+			col:      13,
+			contains: []string{"log: fn (...data: Array<unknown>) -> undefined", "console: Console"},
+		},
+		{
+			name: "ValueBoundBesideNamespaceInBin",
+			files: map[string]string{
+				"bin/main.esc": "import \"std:console\"\nconsole.",
+			},
+			open:     "bin/main.esc",
+			line:     2,
+			col:      9,
+			contains: []string{"error: fn (...data: Array<unknown>) -> undefined"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

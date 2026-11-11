@@ -14,6 +14,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/compiler"
 	"github.com/escalier-lang/escalier/internal/lexer_util"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/escalier-lang/escalier/internal/solver"
 )
@@ -424,7 +425,7 @@ func (s *Server) memberCompletions(e *ast.MemberExpr, info *solver.Info, view sc
 	// A namespace is not a value, so the check records no type for one, and its members
 	// are read from the scope that binds it instead.
 	if ns, ok := namespaceAt(e.Object, view, info); ok {
-		return completionsFromNamespace(ns, info)
+		return completionsFromNamespace(ns, info, info.LendsMut(e.Object))
 	}
 	return nil
 }
@@ -432,12 +433,16 @@ func (s *Server) memberCompletions(e *ast.MemberExpr, info *solver.Info, view sc
 // namespaceAt returns the namespace expr names, or false when it names none. An
 // identifier names the namespace view resolves it to. A member expression such as
 // `a.b` names the namespace its property selects from the namespace its object names.
-// An identifier info resolved to a value names no namespace, since a value hides a
-// namespace of the same name.
+// An identifier info recorded a type for names no namespace, since the check read it
+// as a value.
 func namespaceAt(expr ast.Expr, view scopeView, info *solver.Info) (*solver.Namespace, bool) {
 	switch expr := expr.(type) {
 	case *ast.IdentExpr:
-		if _, isValue := info.DeclOf(expr); isValue || view == nil {
+		// A value hides a namespace of the same name, so its read records a type. The
+		// exception is a value bound beside its own namespace, as `import "std:console"`
+		// binds `console`. A member read off it looks in the namespace first, so the check
+		// records the identifier's declaration and no type.
+		if info.DisplayTypeOf(expr) != nil || view == nil {
 			return nil, false
 		}
 		return view.lookupNamespace(expr.Name)
@@ -453,8 +458,10 @@ func namespaceAt(expr ast.Expr, view scopeView, info *solver.Info) (*solver.Name
 }
 
 // completionsFromNamespace returns a completion item for each value, type, and nested
-// namespace ns holds. info expands a type alias for display.
-func completionsFromNamespace(ns *solver.Namespace, info *solver.Info) []protocol.CompletionItem {
+// namespace ns holds, followed by each member of ns.AsValue that ns does not hold
+// under the same name. info expands a type alias for display. receiverMut says whether
+// ns.AsValue lends mutable access, as completionsFromSolType documents.
+func completionsFromNamespace(ns *solver.Namespace, info *solver.Info, receiverMut bool) []protocol.CompletionItem {
 	var items []protocol.CompletionItem
 	add := func(name string, kind protocol.CompletionItemKind, detail string) {
 		item := protocol.CompletionItem{Label: name, Kind: &kind}
@@ -477,6 +484,20 @@ func completionsFromNamespace(ns *solver.Namespace, info *solver.Info) []protoco
 	}
 	for _, name := range identifiers(slices.Sorted(maps.Keys(ns.Nested))) {
 		add(name, protocol.CompletionItemKindModule, "")
+	}
+	// A member read the namespace cannot answer is read off its value instead.
+	if ns.AsValue != nil {
+		if t := ns.AsValue.DisplayType(); t != nil {
+			held := set.NewSet[string]()
+			for _, item := range items {
+				held.Add(completionDedupeKey(item))
+			}
+			for _, item := range completionsFromSolType(t, info, receiverMut) {
+				if !held.Contains(completionDedupeKey(item)) {
+					items = append(items, item)
+				}
+			}
+		}
 	}
 	return items
 }
