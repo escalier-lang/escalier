@@ -1674,6 +1674,16 @@ fn go2() -> Array<number> {
 }
 ```
 
+A lazy helper's result is an `IteratorObject<U, undefined, unknown>`, whatever
+the source's `TReturn` and `TNext`, since a helper passes neither through. When
+the source finishes, the helper finishes with `{done: true, value: undefined}`
+and drops the value the source returned, so its `TReturn` is `undefined`. A
+helper ignores what its caller passes to `next` and calls the source's `next()`
+with no value, so it accepts anything, and its `TNext` is `unknown`. The
+source's `TNext` would claim that a value sent to the helper reaches the
+source, which it does not. An `unknown` `TNext` admits `undefined`, so a
+helper's result satisfies section 10.3.5, and a loop or a spread accepts it.
+
 A helper that exits early, such as `take` at its limit or `some` on a match,
 calls `return()` on its source. A moved source is gone already. A caller that
 lent `&mut it` gets back a closed generator, as R3 says a `for` loop leaves
