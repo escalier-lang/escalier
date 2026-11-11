@@ -1513,11 +1513,28 @@ fn go(mut arr: Array<Flat>) -> undefined {
 ```
 
 So both methods require an element type that F2 copies, meaning a value type
-or a `&` borrow. `arr.fill({x: 0})` on an `Array<Flat>` reports
-``cannot call 'fill' on an array of owned elements, since it stores one value in several slots; fill an array of a value type or of `&` borrows``.
+or a borrow. A new built-in alias names that set, next to `ValueType`:
+
+```esc
+type Copyable = ValueType | &unknown
+```
+
+`&unknown` admits every borrow, since a `&mut T` narrows to a `&T` by T4. The
+prelude states the requirement as a bound on each method:
+
+```esc
+fill(&mut self, value: T, start?: number, end?: number) -> Self where T: Copyable,
+copyWithin(&mut self, target: number, start: number, end?: number) -> Self where T: Copyable,
+```
+
+`arr.fill({x: 0})` on an `Array<Flat>` fails the bound and reports
+``cannot call 'fill' on an array of owned elements, since it stores one value in several slots; fill an array of a value type or of borrows``.
 This is a new diagnostic, `DuplicatingArrayMethodError`, and `copyWithin`
-reports it with its own name. A `TypedArray` holds only numbers and keeps both
-methods unchanged.
+reports it with its own name. `fill` on an `Array<number>` or an
+`Array<&Flat>` checks clean. A `TypedArray` holds only numbers and keeps both
+methods unchanged. The bound also serves user code. A generic
+`fn myFill<T: Copyable>(arr: &mut Array<T>, value: T)` may store `value` in
+every slot, since F2 copies it each time.
 
 `Generator` and `AsyncGenerator` take `&mut self` on `next`, `return` and
 `throw`, since advancing a generator writes it. `[Symbol.iterator]` on a
@@ -1687,7 +1704,7 @@ PR that implements W1, step 2 of that design's plan under
 | [#2439](https://github.com/escalier-lang/escalier/issues/2439) | G4 | Infers a generator body's lifetime and keeps it live while the generator is, which closes the `each` hole in section 2 | [#2601](https://github.com/escalier-lang/escalier/issues/2601) |
 | [#2428](https://github.com/escalier-lang/escalier/issues/2428) | G1 to G3 | Gives `yield` its three forms and keeps a yielded borrow live for the rest of the body |  |
 | [#2440](https://github.com/escalier-lang/escalier/issues/2440) | R2 | Binds a fresh loop variable on each iteration in the control-flow graph |  |
-| [#2441](https://github.com/escalier-lang/escalier/issues/2441) | X3 | Restricts `fill` and `copyWithin` to element types F2 copies, and adds `DuplicatingArrayMethodError` |  |
+| [#2441](https://github.com/escalier-lang/escalier/issues/2441) | X3 | Adds the `Copyable` alias, bounds `fill` and `copyWithin` by it, and adds `DuplicatingArrayMethodError` |  |
 | [#2444](https://github.com/escalier-lang/escalier/issues/2444) | R1, R3, G5 | Gives `for` loops their three forms and `yield from` the same, since G5 is decided by R1, adds `ImmutableIteratorLoopError` and the loop form of the moved-value message from section 8.2 | [#2428](https://github.com/escalier-lang/escalier/issues/2428), [#2440](https://github.com/escalier-lang/escalier/issues/2440), [#2441](https://github.com/escalier-lang/escalier/issues/2441), [#2318](https://github.com/escalier-lang/escalier/issues/2318), [#2290](https://github.com/escalier-lang/escalier/issues/2290) |
 | [#2442](https://github.com/escalier-lang/escalier/issues/2442) | X3, X4 | Changes the element-reading iterator methods and the `Iterable` and `Generator` declarations, makes `next` require a `TNext` unless it admits `undefined`, and adds `IterationNextValueError` | [#2444](https://github.com/escalier-lang/escalier/issues/2444) |
 | [#2614](https://github.com/escalier-lang/escalier/issues/2614) | X5 | Borrows the predicates' values, moves the source of a lazy helper, ties a lazy helper to its callback, and requires a source whose `TNext` admits `undefined` | [#2442](https://github.com/escalier-lang/escalier/issues/2442), [#2601](https://github.com/escalier-lang/escalier/issues/2601) |
