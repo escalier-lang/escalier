@@ -1124,7 +1124,7 @@ The checker treats `yield &p` and `yield await &p` alike. Both await `&p`, so
 both yield `&'a T` by A1, and a rejection throws at the `yield` in both. At
 runtime the written `await` adds one microtask before the `yield`, and codegen
 keeps it. The written form shows at the yield site that the yielded value is a
-`&Flat` and not a promise, which is why open question 4 recommends it.
+`&Flat` and not a promise, which is why question 4 in section 11 requires it.
 
 ### 6.3 S3. `yield await p` moves `p` and yields the result
 
@@ -1694,19 +1694,21 @@ proposal is at Stage 2 and is being revised so that several `next` calls can be
 pending at once. This design waits for Stage 3. The rules above carry over, and
 E2 already lets two pending `next` promises each hold `&mut self`.
 
-## 11. Open questions
+## 11. Questions
 
-Each question lists the options and a recommendation. None blocks the first PR.
+Each question lists the options and its outcome. Questions 1 to 4 are decided.
+Question 5 is open. None blocks the first PR.
 
 1. **Whether `await &p` on a promise of a value type needs the `&`.** With
    `p: Promise<number>`, all three forms of A1 yield a `number`, but `await p`
    still moves `p`. Options: keep the move, or treat `await p` of a
-   value-type promise as `await &p`. Recommendation: keep the move. One rule is
+   value-type promise as `await &p`. Decision: keep the move. One rule is
    easier to read than one that depends on `T`, and the error message names
    the fix.
 2. **Whether a lending generator is worth adding later.** G2 rejects a body
-   that reuses a buffer across yields. Recommendation: wait for a real program
-   that needs it.
+   that reuses a buffer across yields. Decision: do not add one. A lending
+   generator could not be spread or collected, as section 8.1 explains, and
+   that pattern is too common to give up.
 3. **Whether to warn when a loop changes the shape of its own source.** In
    `for f in &mut arr`, E2 lets the body call `arr.push(…)`, since several
    mutable paths may be live at once. That is sound, but the loop then visits
@@ -1717,8 +1719,9 @@ Each question lists the options and a recommendation. None blocks the first PR.
    call on the loop source that changes its length or order: `push`, `pop`,
    `shift`, `unshift`, `splice`, `sort`, `reverse`, `copyWithin`, `fill`, and a
    write to `length`. A write through `f` or to `arr[i]` stays silent, since
-   neither changes which elements the loop visits. Recommendation: the lint.
-   The other two loop forms need neither, since a loop over `arr` moves it and
+   neither changes which elements the loop visits. Decision: the lint. A
+   loop that changes the collection it iterates is hard to reason about even
+   when the checker accepts it. The other two loop forms need neither, since a loop over `arr` moves it and
    a loop over `&arr` already rejects writes.
 4. **Whether to lint `yield await` or a bare `yield` of a promise in an async
    generator.** By S2, `yield e` there awaits a promise `e`, so `yield await e`
@@ -1727,7 +1730,7 @@ Each question lists the options and a recommendation. None blocks the first PR.
    the only sign of the `await` at the yield site, where `yield &p` looks like
    it yields a `Promise<&Flat>` but yields a `&Flat`. Options: no lint, a lint
    against `yield await`, or a lint against a bare `yield` of a promise that
-   suggests `yield await e`. Recommendation: the last, since it flags the
+   suggests `yield await e`. Decision: the last, since it flags the
    place where the source and the yielded type disagree. Codegen keeps the
    `await`. Stripping it would be safe, since `yield` awaits its operand
    anyway, but it would save one microtask per `yield` and make the emitted
