@@ -17,12 +17,14 @@ var semanticTokenTypes = []string{
 	string(protocol.SemanticTokenTypeVariable),
 	string(protocol.SemanticTokenTypeParameter),
 	string(protocol.SemanticTokenTypeMethod),
+	string(protocol.SemanticTokenTypeProperty),
 }
 
 const (
 	tokenTypeVariable = iota
 	tokenTypeParameter
 	tokenTypeMethod
+	tokenTypeProperty
 )
 
 // semanticTokenModifiers lists the token modifiers the server reports, in legend order.
@@ -84,6 +86,7 @@ func (s *Server) textDocumentSemanticTokensFull(context *glsp.Context, params *p
 		info:           info,
 		src:            src,
 		params:         set.NewSet[ast.Node](),
+		memberObjects:  map[string]*soltype.ObjectType{},
 	}
 	if script != nil {
 		script.Accept(visitor)
@@ -131,10 +134,11 @@ func encodeSemanticTokens(lineMap *ast.LineMap, tokens []semanticToken) []protoc
 }
 
 // mutableTokenVisitor collects a token for each name in one file that binds or reads
-// mutable data, and for each name of a method that takes `&mut self`. A name binds
-// mutable data when its binding is mutable, as in `val mut p`, or when its value is a
-// mutable borrow, as in `val r: &mut Point`. A method name is marked where a class or an
-// object type declares it and where a call reads it, as `push` in `xs.push(1)`.
+// mutable data, and for each name of a method or a getter that takes `&mut self`. A
+// name binds mutable data when its binding is mutable, as in `val mut p`, or when its
+// value is a mutable borrow, as in `val r: &mut Point`. A member name is marked where a
+// class or an object type declares it and where a member expression reads it, as `push`
+// in `xs.push(1)`.
 type mutableTokenVisitor struct {
 	ast.DefaultVisitor
 	info *solver.Info
@@ -142,7 +146,10 @@ type mutableTokenVisitor struct {
 	// params holds each leaf of a parameter pattern the walk has entered, an
 	// *ast.IdentPat or an *ast.ObjShorthandPat.
 	params set.Set[ast.Node]
-	tokens []semanticToken
+	// memberObjects maps a receiver type, keyed by its printed form, to the member object
+	// info.MemberObject returned for it, or to nil when it returned none.
+	memberObjects map[string]*soltype.ObjectType
+	tokens        []semanticToken
 }
 
 func (v *mutableTokenVisitor) EnterDecl(d ast.Decl) bool {
@@ -159,8 +166,8 @@ func (v *mutableTokenVisitor) EnterExpr(e ast.Expr) bool {
 	case *ast.IdentExpr:
 		v.addRead(e)
 	case *ast.MemberExpr:
-		if v.readsMutMethod(e) {
-			v.add(e.Prop.Span(), tokenTypeMethod)
+		if tokenType, ok := v.mutMemberRead(e); ok {
+			v.add(e.Prop.Span(), tokenType)
 		}
 	}
 	return true
@@ -171,9 +178,10 @@ func (v *mutableTokenVisitor) EnterClassElem(e ast.ClassElem) bool {
 	// marks, so only these members' receivers are marked here.
 	switch e := e.(type) {
 	case *ast.MethodElem:
-		v.addMethodName(e.Name, e.Receiver)
+		v.addMemberName(e.Name, e.Receiver, tokenTypeMethod)
 		v.addReceiver(e.Receiver)
 	case *ast.GetterElem:
+		v.addMemberName(e.Name, e.Receiver, tokenTypeProperty)
 		v.addReceiver(e.Receiver)
 	case *ast.SetterElem:
 		v.addReceiver(e.Receiver)
@@ -182,8 +190,11 @@ func (v *mutableTokenVisitor) EnterClassElem(e ast.ClassElem) bool {
 }
 
 func (v *mutableTokenVisitor) EnterObjTypeAnnElem(e ast.ObjTypeAnnElem) bool {
-	if m, ok := e.(*ast.MethodTypeAnn); ok {
-		v.addMethodName(m.Name, m.Receiver)
+	switch e := e.(type) {
+	case *ast.MethodTypeAnn:
+		v.addMemberName(e.Name, e.Receiver, tokenTypeMethod)
+	case *ast.GetterTypeAnn:
+		v.addMemberName(e.Name, e.Receiver, tokenTypeProperty)
 	}
 	return true
 }
@@ -238,20 +249,20 @@ func (v *mutableTokenVisitor) addRead(e *ast.IdentExpr) {
 	v.add(e.Span(), tokenType)
 }
 
-// addMethodName records a token for name, the name a method is declared under, when
-// receiver is `&mut self`. It records nothing for a name written as a string or a
-// computed key.
-func (v *mutableTokenVisitor) addMethodName(name ast.ObjKey, receiver *ast.MethodReceiver) {
+// addMemberName records a token of tokenType for name, the name a method or a getter is
+// declared under, when receiver is `&mut self`. It records nothing for a name written as
+// a string or a computed key.
+func (v *mutableTokenVisitor) addMemberName(name ast.ObjKey, receiver *ast.MethodReceiver, tokenType int) {
 	if receiver == nil || receiver.Mode != ast.BorrowReceiver || !receiver.Mut {
 		return
 	}
 	if ident, ok := name.(*ast.IdentExpr); ok {
-		v.add(ident.Span(), tokenTypeMethod)
+		v.add(ident.Span(), tokenType)
 	}
 }
 
 // addReceiver records a parameter token for the `self` of receiver when receiver is
-// `&mut self` or `mut self`. Inside the member's body, `self` then reads mutable data.
+// `&mut self` or `mut self`.
 func (v *mutableTokenVisitor) addReceiver(receiver *ast.MethodReceiver) {
 	if receiver == nil || !receiver.Mut {
 		return
@@ -265,22 +276,55 @@ func (v *mutableTokenVisitor) addReceiver(receiver *ast.MethodReceiver) {
 	}, tokenTypeParameter)
 }
 
-// readsMutMethod reports whether e reads a method that takes `&mut self` off its object.
-// An overloaded method counts when every arm takes `&mut self`.
-func (v *mutableTokenVisitor) readsMutMethod(e *ast.MemberExpr) bool {
-	if e.Prop == nil || !v.info.IsMethodRead(e) {
-		return false
+// mutMemberRead returns the token type of e's property when e reads a member that needs
+// mutable access to its object, and false otherwise. A method that takes `&mut self`
+// gets the method type, and a getter that takes `&mut self` gets the property type. An
+// overloaded method counts when every arm takes `&mut self`.
+func (v *mutableTokenVisitor) mutMemberRead(e *ast.MemberExpr) (int, bool) {
+	if e.Prop == nil {
+		return 0, false
 	}
-	obj, ok := v.info.MemberObject(v.info.DisplayTypeOf(e.Object))
-	if !ok {
-		return false
+	obj := v.memberObject(v.info.DisplayTypeOf(e.Object))
+	if obj == nil {
+		return 0, false
 	}
 	for _, elem := range obj.Elems {
-		if method, ok := elem.(*soltype.MethodElem); ok && soltype.ObjElemName(method) == e.Prop.Name {
-			return solver.NeedsMutReceiver(method)
+		if soltype.ObjElemName(elem) != e.Prop.Name {
+			continue
+		}
+		switch elem.(type) {
+		case *soltype.MethodElem:
+			if v.info.IsMethodRead(e) && solver.NeedsMutReceiver(elem) {
+				return tokenTypeMethod, true
+			}
+		case *soltype.GetterElem:
+			if solver.NeedsMutReceiver(elem) {
+				return tokenTypeProperty, true
+			}
 		}
 	}
-	return false
+	return 0, false
+}
+
+// memberObject returns the member object info.MemberObject returns for t, or nil when it
+// returns none or t is nil. The result is shared between calls, so the caller must not
+// mutate it.
+func (v *mutableTokenVisitor) memberObject(t soltype.Type) *soltype.ObjectType {
+	if t == nil {
+		return nil
+	}
+	// A file reads members off a few receiver types many times over, and building a
+	// member object costs far more than printing the type.
+	key := soltype.Print(t)
+	if obj, found := v.memberObjects[key]; found {
+		return obj
+	}
+	obj, ok := v.info.MemberObject(t)
+	if !ok {
+		obj = nil
+	}
+	v.memberObjects[key] = obj
+	return obj
 }
 
 // addParams records the binding leaves of params. Call it on entering the function that

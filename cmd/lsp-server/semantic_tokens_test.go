@@ -293,6 +293,43 @@ fn main() {
 			},
 		},
 		{
+			name: "CallsOnSelfAndThroughBorrowAndMutGetter",
+			file: "bin/main.esc",
+			src: `class Counter {
+    n: number,
+    constructor(&mut self) { self.n = 0 },
+    bump(&mut self) -> undefined { self.n = self.n + 1 },
+    twice(&mut self) -> undefined {
+        self.bump()
+    },
+    get value(&mut self) -> number { return self.n },
+}
+fn f(c: &mut Counter) {
+    c.bump()
+    val v = c.value
+}`,
+			expected: []string{
+				"3:22 self parameter+mutable",
+				"3:30 self parameter+mutable",
+				"4:5 bump method+mutable",
+				"4:15 self parameter+mutable",
+				"4:36 self parameter+mutable",
+				"4:45 self parameter+mutable",
+				"5:5 twice method+mutable",
+				"5:16 self parameter+mutable",
+				"6:9 self parameter+mutable",
+				"6:14 bump method+mutable",
+				"8:9 value property+mutable",
+				"8:20 self parameter+mutable",
+				"8:45 self parameter+mutable",
+				"10:6 c parameter+mutable",
+				"11:5 c parameter+mutable",
+				"11:7 bump method+mutable",
+				"12:13 c parameter+mutable",
+				"12:15 value property+mutable",
+			},
+		},
+		{
 			name: "StdlibMethodCall",
 			file: "bin/main.esc",
 			src: `fn main() {
