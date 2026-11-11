@@ -1607,7 +1607,10 @@ Each question lists the options and a recommendation. None blocks the first PR.
    it yields a `Promise<&Flat>` but yields a `&Flat`. Options: no lint, a lint
    against `yield await`, or a lint against a bare `yield` of a promise that
    suggests `yield await e`. Recommendation: the last, since it flags the
-   place where the source and the yielded type disagree.
+   place where the source and the yielded type disagree. Codegen keeps the
+   `await`. Stripping it would be safe, since `yield` awaits its operand
+   anyway, but it would save one microtask per `yield` and make the emitted
+   JavaScript stop matching the source.
 
 ## 12. Plan
 
