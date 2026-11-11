@@ -1,8 +1,9 @@
 name: zizmor
 
-# Audits the workflows under .github/ for security problems such as unpinned
-# actions, persisted credentials, broad token permissions and template
-# injection. https://docs.zizmor.sh/audits/ lists every check.
+# Audits the workflows and Dependabot config under .github/ for security
+# problems such as unpinned actions, persisted credentials, broad token
+# permissions and template injection. https://docs.zizmor.sh/audits/ lists
+# every check.
 on:
   pull_request:
   push:
@@ -29,5 +30,7 @@ jobs:
         uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
         with:
           version: 1.32.0
+          # The default collection skips .github/dependabot.yml.
+          collect: all
           advanced-security: false
           annotations: true
