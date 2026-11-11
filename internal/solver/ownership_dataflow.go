@@ -998,20 +998,12 @@ func (d *bodyDataflow) checkNewPath(place movePlace, kind borrowKind, node ast.N
 		}
 		firstLocal := firstInBody && (d.loanLive(first, at, true) || (first.ev.at == at && d.loanLive(first, at, false)))
 		if (local && firstLocal) || (escapes && d.loanEscapes(first, at, true)) {
-			err := &BorrowAliasError{
-				Place:      d.placeName(place),
-				FirstPlace: d.placeName(first.ev.place),
-				FirstMut:   first.ev.borrow == mutableBorrow,
-				SecondMut:  kind == mutableBorrow,
-				FirstKept:  first.kept,
-				SecondKept: fresh.kept,
-				node:       node,
-				first:      first.ev.node.Span(),
-			}
-			if first.via != nil {
-				err.FirstVia, err.FirstRuns = first.via.via, first.via.runs
-			}
-			d.report(err)
+			d.report(&BorrowAliasError{
+				First:  d.loanSide(first),
+				Second: BorrowSide{Place: d.placeName(place), Mut: kind == mutableBorrow, Kept: fresh.kept},
+				node:   node,
+				first:  first.ev.node.Span(),
+			})
 			return
 		}
 	}
@@ -1464,13 +1456,10 @@ func (d *bodyDataflow) callEnd(ev *callEvent, at liveness.StmtRef, s *dataflowSt
 				first, second = r, m
 			}
 			d.report(&BorrowAliasError{
-				Place:      d.placeName(second.ev.place),
-				FirstPlace: d.placeName(first.ev.place),
-				FirstMut:   first == r,
-				SecondMut:  second == r,
-				FirstKept:  first.kept,
-				node:       second.ev.node,
-				first:      first.ev.node.Span(),
+				First:  BorrowSide{Place: d.placeName(first.ev.place), Mut: first == r, Kept: first.kept},
+				Second: BorrowSide{Place: d.placeName(second.ev.place), Mut: second == r},
+				node:   second.ev.node,
+				first:  first.ev.node.Span(),
 			})
 			break
 		}
@@ -1772,33 +1761,20 @@ func (d *bodyDataflow) useCapture(ev *runEvent, run *closureRun, local capturedL
 
 			if arg, ok := l.ev.holder.target.(argTarget); ok && arg.call == ev.call && !retained {
 				d.report(&BorrowAliasError{
-					Place:      d.placeName(l.ev.place),
-					FirstPlace: d.placeName(place),
-					FirstMut:   local.mut,
-					SecondMut:  l.ev.borrow == mutableBorrow,
-					FirstVia:   run.via,
-					FirstRuns:  run.runs,
-					node:       l.ev.node,
-					first:      run.node.Span(),
+					First:  BorrowSide{Place: d.placeName(place), Mut: local.mut, Via: run.via, Runs: run.runs},
+					Second: BorrowSide{Place: d.placeName(l.ev.place), Mut: l.ev.borrow == mutableBorrow},
+					node:   l.ev.node,
+					first:  run.node.Span(),
 				})
 				continue
 			}
 
-			err := &BorrowAliasError{
-				Place:      d.placeName(place),
-				FirstPlace: d.placeName(l.ev.place),
-				FirstMut:   l.ev.borrow == mutableBorrow,
-				SecondMut:  local.mut,
-				SecondVia:  run.via,
-				SecondRuns: run.runs,
-				FirstKept:  l.kept,
-				node:       run.node,
-				first:      l.ev.node.Span(),
-			}
-			if l.via != nil {
-				err.FirstVia, err.FirstRuns = l.via.via, l.via.runs
-			}
-			d.report(err)
+			d.report(&BorrowAliasError{
+				First:  d.loanSide(l),
+				Second: BorrowSide{Place: d.placeName(place), Mut: local.mut, Via: run.via, Runs: run.runs},
+				node:   run.node,
+				first:  l.ev.node.Span(),
+			})
 		}
 	}
 }
@@ -2209,6 +2185,15 @@ func (d *bodyDataflow) report(e SolverError) {
 	}
 	d.blamed.Add(e.Span())
 	*d.errs = append(*d.errs, e)
+}
+
+// loanSide describes the borrow l took, for a BorrowAliasError that names it.
+func (d *bodyDataflow) loanSide(l *liveLoan) BorrowSide {
+	side := BorrowSide{Place: d.placeName(l.ev.place), Mut: l.ev.borrow == mutableBorrow, Kept: l.kept}
+	if l.via != nil {
+		side.Via, side.Runs = l.via.via, l.via.runs
+	}
+	return side
 }
 
 // placeName renders p for a diagnostic as the root's name followed by its field path.
