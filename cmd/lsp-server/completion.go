@@ -427,7 +427,11 @@ func (s *Server) memberCompletions(e *ast.MemberExpr, info *solver.Info, view sc
 	if ns, ok := namespaceAt(e.Object, view, info); ok {
 		// A member expression is in value position, where a type the namespace holds
 		// can't be written. A class's value still appears, beside the type it declares.
-		return completionsFromNamespace(ns, info, info.LendsMut(e.Object))
+		// The checker records no type for the identifier, so the value bound beside the
+		// namespace lends mutable access exactly when its binding is `mut`, as
+		// `export declare val mut performance` is.
+		receiverMut := ns.AsValue != nil && ns.AsValue.Mut
+		return completionsFromNamespace(ns, info, receiverMut)
 	}
 	return nil
 }

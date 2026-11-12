@@ -95,7 +95,9 @@ type pathResult struct {
 	// value. chainValue adds it back once the outermost link is resolved.
 	shortCircuits bool
 	// place is the binding value is an owned layer of, or nil when value is not one. See
-	// ownedPlace.
+	// ownedPlace. For a namespace bound beside a value, as `import "web:performance"`
+	// binds `performance`, it is the binding of that value, read by a member read the
+	// namespace answers with ns.AsValue.
 	place *ownedPlace
 }
 
@@ -119,6 +121,20 @@ func placeOf(name string, b ValueBinding, value soltype.Type) *ownedPlace {
 		return nil
 	}
 	return &ownedPlace{name: name, b: b}
+}
+
+// asValuePlace returns the place value comes from when it is read off the `mut` binding
+// valuePlace names. It returns nil when valuePlace is nil, when its binding is not `mut`,
+// or when value is not an owned layer of it. valuePlace is the place a namespace
+// resolved with, as pathResult.place documents.
+func asValuePlace(valuePlace *ownedPlace, value soltype.Type) *ownedPlace {
+	// A package declares the value, so the program cannot redeclare an immutable one
+	// `mut`. Leaving its place out keeps the type mismatch a mutation reports rather
+	// than the hint to redeclare the binding that an owned place produces.
+	if valuePlace == nil || !valuePlace.b.Mut {
+		return nil
+	}
+	return placeOf(valuePlace.name, valuePlace.b, value)
 }
 
 // fieldPlace returns the place a value read off a receiver at recv comes from. A value that
@@ -456,7 +472,7 @@ func (c *checker) resolveIdentPath(scope *Scope, lvl int, e *ast.IdentExpr, objP
 		// namespace, which reads `x` off f's value when the namespace has no `x`.
 		if objPos && b.Members != nil {
 			c.recordDecl(e, b)
-			return pathResult{ns: b.Members}
+			return pathResult{ns: b.Members, place: &ownedPlace{name: e.Name, b: b}}
 		}
 		t := c.bindingValue(lvl, b)
 		c.noteOuterRead(e, t)
@@ -1880,7 +1896,7 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 		// of a value receiver. resolveNamespaceMember records the resolved
 		// value's type on accessNode and reports an unknown name. The wrap
 		// then runs on the value with no receiver-bounded lifetime.
-		nsResult := c.resolveNamespaceMember(lvl, accessNode, provNode, obj.ns, propName)
+		nsResult := c.resolveNamespaceMember(lvl, accessNode, provNode, obj.ns, obj.place, propName)
 		sub := c.demandValue(nsResult, accessNode)
 		return c.wrapBorrow(e, lvl, sub, false)
 	}
@@ -4032,7 +4048,7 @@ func (c *checker) resolveMemberPath(scope *Scope, lvl int, e *ast.MemberExpr, ob
 		return pathResult{value: t}
 	}
 	if obj.ns != nil {
-		return c.resolveNamespaceMember(lvl, e, e.Prop, obj.ns, e.Prop.Name)
+		return c.resolveNamespaceMember(lvl, e, e.Prop, obj.ns, obj.place, e.Prop.Name)
 	}
 	// The outermost read of the chain emits a read of the full path `pair.a` rather than
 	// the spine's bare root. A spine step has objPos true and emits nothing, since the full
@@ -4377,11 +4393,12 @@ func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr, objP
 		name, ok := constStringKey(e.Index)
 		switch {
 		case ok:
-			return c.resolveNamespaceMember(lvl, e, e.Index, obj.ns, name)
+			return c.resolveNamespaceMember(lvl, e, e.Index, obj.ns, obj.place, name)
 		case obj.ns.AsValue != nil && len(obj.ns.AsValue.Schemes) > 0:
 			// A dynamic key indexes the value a package's `export = arr` names, as in
 			// `arr[i]`.
-			obj = pathResult{value: c.bindingValue(lvl, *obj.ns.AsValue), shortCircuits: obj.shortCircuits}
+			value := c.bindingValue(lvl, *obj.ns.AsValue)
+			obj = pathResult{value: value, shortCircuits: obj.shortCircuits, place: asValuePlace(obj.place, value)}
 		default:
 			c.report(&DynamicNamespaceIndexError{Index: e, NS: obj.ns})
 			return pathResult{err: true}
@@ -4604,8 +4621,9 @@ func (c *checker) markOpenVar(t soltype.Type) {
 // ns.AsValue when that is set, and is otherwise an UnknownNamespaceMemberError.
 // node is the member/index expression, for blame and the Info record. provNode is
 // the `.prop` identifier or the index key, which a read off ns.AsValue records its
-// provenance against.
-func (c *checker) resolveNamespaceMember(lvl int, node ast.Expr, provNode ast.Node, ns *Namespace, name string) pathResult {
+// provenance against. valuePlace is the pathResult.place the namespace resolved with,
+// naming the binding of ns.AsValue, or nil when it names none.
+func (c *checker) resolveNamespaceMember(lvl int, node ast.Expr, provNode ast.Node, ns *Namespace, valuePlace *ownedPlace, name string) pathResult {
 	if nested, ok := ns.Nested[name]; ok {
 		return pathResult{ns: nested}
 	}
@@ -4616,7 +4634,14 @@ func (c *checker) resolveNamespaceMember(lvl int, node ast.Expr, provNode ast.No
 		return pathResult{value: t}
 	}
 	if ns.AsValue != nil && len(ns.AsValue.Schemes) > 0 {
-		return c.valueProp(lvl, node, provNode, name, c.bindingValue(lvl, *ns.AsValue), nil)
+		recv := c.bindingValue(lvl, *ns.AsValue)
+		// The value is read through its own binding, so a `val mut` value lends the
+		// mutable access a `&mut self` member needs, as `performance.now()` does.
+		place := asValuePlace(valuePlace, recv)
+		r := c.valueProp(lvl, node, provNode, name, recv, place)
+		r.place = fieldPlace(place, r.value)
+		c.noteMutPlace(node, r.place)
+		return r
 	}
 	c.report(&UnknownNamespaceMemberError{Node: node, NS: ns, Name: name})
 	return pathResult{err: true}

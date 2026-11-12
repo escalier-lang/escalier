@@ -1895,6 +1895,16 @@ func TestNamespaceMemberCompletionLabels(t *testing.T) {
 			excludes: []string{"Console"},
 		},
 		{
+			// `web:performance` declares `performance` `val mut`, so the members that
+			// take `&mut self` are offered beside the ones that take `&self`.
+			name:  "MutValueBoundBesideNamespace",
+			files: map[string]string{"lib/index.esc": "import \"web:performance\"\nexport fn main() {\n    performance.\n}\n"},
+			open:  "lib/index.esc",
+			line:  3,
+			col:   17,
+			once:  []string{"clearMarks", "getEntries", "now"},
+		},
+		{
 			// A local value hides the namespace the import binds under the same name.
 			name:     "LocalValueShadowsNamespace",
 			files:    map[string]string{"lib/index.esc": "import \"std:math\"\nexport fn main() {\n    val math = {alpha: 1}\n    math.\n}\n"},
