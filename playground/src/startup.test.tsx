@@ -97,7 +97,7 @@ describe('downloadStartupFiles', () => {
         });
     });
 
-    test('reports progress on a frame and none after it resolves', async () => {
+    test('reports starting once the downloads arrive, and no progress after', async () => {
         stubFetch();
         const runFrames = stubFrames();
         const showStatus = vi.fn();
@@ -110,7 +110,7 @@ describe('downloadStartupFiles', () => {
         );
         runFrames();
 
-        expect(showStatus).not.toHaveBeenCalled();
+        expect(showStatus.mock.calls).toEqual([[{ kind: 'starting' }]]);
     });
 
     test('reports the latest progress once per frame', async () => {
@@ -145,6 +145,7 @@ describe('downloadStartupFiles', () => {
 
         expect(showStatus.mock.calls).toEqual([
             [{ kind: 'downloading', progress: { loaded: 5, total: 9 } }],
+            [{ kind: 'starting' }],
         ]);
     });
 
@@ -167,6 +168,7 @@ describe('downloadStartupFiles', () => {
 
 describe('runStartup', () => {
     test('shows the loading screen and lets start update it', async () => {
+        const log = vi.spyOn(console, 'log').mockImplementation(() => {});
         const render = vi.fn();
 
         const started = await runStartup(render, async (showStatus) => {
@@ -178,6 +180,7 @@ describe('runStartup', () => {
             { kind: 'downloading', progress: { loaded: 0, total: 0 } },
             { kind: 'starting' },
         ]);
+        expect(log).toHaveBeenCalledWith('App loaded');
     });
 
     test('shows the error when start throws', async () => {
