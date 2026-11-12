@@ -1,0 +1,86 @@
+/*
+ * The playground's colours. syncTheme in theme.ts sets data-theme on the root
+ * element to `light` or `dark`, and the dark values below apply until it does.
+ */
+:root {
+    color-scheme: dark;
+
+    /* Backgrounds, from the page behind the panels to the raised surfaces. */
+    --color-bg: #181818;
+    --color-bg-editor: #1e1e1e;
+    --color-bg-raised: #252526;
+    --color-bg-menu: #2b2b2b;
+    --color-bg-input: #2a2a2a;
+    --color-bg-button: #3c3c3c;
+    --color-bg-button-hover: #4c4c4c;
+    --color-bg-selected: #094771;
+    --color-bg-hover: rgba(255, 255, 255, 0.05);
+    --color-bg-active: rgba(255, 255, 255, 0.1);
+    --color-bg-error: #5a1d1d;
+    --color-backdrop: rgba(0, 0, 0, 0.5);
+
+    /* Text. */
+    --color-text: #cccccc;
+    --color-text-strong: #ffffff;
+    --color-text-muted: #969696;
+    --color-text-faint: #666666;
+    --color-text-error: #f48771;
+    --color-text-on-accent: #ffffff;
+
+    /* Lines. */
+    --color-border: #2b2b2b;
+    --color-border-strong: #444444;
+
+    /* Accents. */
+    --color-accent: #007acc;
+    --color-button-primary: #0078d4;
+    --color-button-primary-hover: #1a8ae8;
+    --color-danger: #d42020;
+    --color-danger-hover: #e03030;
+    --color-warning: #8a6d14;
+
+    /* Shadows. */
+    --color-shadow: rgba(0, 0, 0, 0.4);
+    --color-shadow-strong: rgba(0, 0, 0, 0.6);
+}
+
+:root[data-theme="light"] {
+    color-scheme: light;
+
+    --color-bg: #f8f8f8;
+    --color-bg-editor: #ffffff;
+    --color-bg-raised: #f3f3f3;
+    --color-bg-menu: #ffffff;
+    --color-bg-input: #ffffff;
+    --color-bg-button: #e5e5e5;
+    --color-bg-button-hover: #d4d4d4;
+    --color-bg-selected: #cce4f7;
+    --color-bg-hover: rgba(0, 0, 0, 0.04);
+    --color-bg-active: rgba(0, 0, 0, 0.08);
+    --color-bg-error: #fde7e9;
+    --color-backdrop: rgba(0, 0, 0, 0.3);
+
+    --color-text: #3b3b3b;
+    --color-text-strong: #1f1f1f;
+    --color-text-muted: #6f6f6f;
+    --color-text-faint: #9e9e9e;
+    --color-text-error: #b42318;
+    --color-text-on-accent: #ffffff;
+
+    --color-border: #e5e5e5;
+    --color-border-strong: #cecece;
+
+    --color-accent: #005fb8;
+    --color-button-primary: #005fb8;
+    --color-button-primary-hover: #0258a8;
+    --color-danger: #c42b1c;
+    --color-danger-hover: #a52517;
+    --color-warning: #8a6d14;
+
+    --color-shadow: rgba(0, 0, 0, 0.16);
+    --color-shadow-strong: rgba(0, 0, 0, 0.25);
+}
+
+body {
+    background-color: var(--color-bg);
+}

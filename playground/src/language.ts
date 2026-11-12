@@ -13,6 +13,7 @@ import {
     createSemanticTokensProvider,
     modifierTokenRules,
 } from './semantic-tokens';
+import { monacoThemeName, useThemeStore } from './theme';
 
 export const languageID = 'escalier';
 
@@ -402,10 +403,25 @@ export function setupLanguage(
         );
     }
 
-    monaco.editor.defineTheme('escalier-theme', {
+    const rules = modifierTokenRules(legend);
+    monaco.editor.defineTheme(monacoThemeName('dark'), {
         base: 'vs-dark',
         inherit: true,
         colors: {},
-        rules: modifierTokenRules(legend),
+        rules,
+    });
+    monaco.editor.defineTheme(monacoThemeName('light'), {
+        base: 'vs',
+        inherit: true,
+        colors: {},
+        rules,
+    });
+    // Monaco applies one theme to every editor, so following the store here also
+    // restyles the editors that exist already.
+    monaco.editor.setTheme(monacoThemeName(useThemeStore.getState().theme));
+    useThemeStore.subscribe((state, prev) => {
+        if (state.theme !== prev.theme) {
+            monaco.editor.setTheme(monacoThemeName(state.theme));
+        }
     });
 }

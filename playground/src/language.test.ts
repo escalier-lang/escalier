@@ -3,6 +3,7 @@ import type * as lsp from 'vscode-languageserver-protocol';
 
 import { setupLanguage } from './language';
 import type { Client } from './lsp-client/client';
+import { useThemeStore } from './theme';
 
 const monacoMock = vi.hoisted(() => {
     class Emitter<T> {
@@ -28,6 +29,7 @@ const monacoMock = vi.hoisted(() => {
             onDidCreateModel: vi.fn(),
             onWillDisposeModel: vi.fn(),
             setModelMarkers: vi.fn(),
+            setTheme: vi.fn(),
         },
         languages: {
             onLanguage: vi.fn(),
@@ -113,11 +115,14 @@ describe('setupLanguage', () => {
         });
         expect(tokens.data).toEqual(new Uint32Array([0, 8, 1, 0, 1]));
 
+        const rules = [{ token: 'variable.mutable', fontStyle: 'underline' }];
         expect(monacoMock.editor.defineTheme).toHaveBeenCalledWith(
-            'escalier-theme',
-            expect.objectContaining({
-                rules: [{ token: 'variable.mutable', fontStyle: 'underline' }],
-            }),
+            'escalier-dark',
+            expect.objectContaining({ base: 'vs-dark', rules }),
+        );
+        expect(monacoMock.editor.defineTheme).toHaveBeenCalledWith(
+            'escalier-light',
+            expect.objectContaining({ base: 'vs', rules }),
         );
     });
 
@@ -130,8 +135,23 @@ describe('setupLanguage', () => {
             monacoMock.languages.registerDocumentSemanticTokensProvider,
         ).not.toHaveBeenCalled();
         expect(monacoMock.editor.defineTheme).toHaveBeenCalledWith(
-            'escalier-theme',
+            'escalier-dark',
             expect.objectContaining({ rules: [] }),
+        );
+    });
+
+    test('sets the Monaco theme that matches the theme store', () => {
+        const { client } = fakeClient();
+        useThemeStore.getState().setPreference('dark');
+
+        setupLanguage(client, {});
+        expect(monacoMock.editor.setTheme).toHaveBeenLastCalledWith(
+            'escalier-dark',
+        );
+
+        useThemeStore.getState().setPreference('light');
+        expect(monacoMock.editor.setTheme).toHaveBeenLastCalledWith(
+            'escalier-light',
         );
     });
 

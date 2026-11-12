@@ -1,12 +1,12 @@
 .explorer {
     grid-area: explorer;
-    background-color: #181818;
-    border-right: 1px solid #2b2b2b;
+    background-color: var(--color-bg);
+    border-right: 1px solid var(--color-border);
     overflow-y: auto;
     overflow-x: hidden;
     font-family: sans-serif;
     font-size: 13px;
-    color: #cccccc;
+    color: var(--color-text);
     user-select: none;
 }
 
@@ -15,7 +15,7 @@
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.5px;
-    color: #969696;
+    color: var(--color-text-muted);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -34,7 +34,7 @@
 .headerButton {
     background: none;
     border: none;
-    color: #969696;
+    color: var(--color-text-muted);
     cursor: pointer;
     padding: 2px 4px;
     font-size: 14px;
@@ -43,8 +43,8 @@
 }
 
 .headerButton:hover {
-    background-color: rgba(255, 255, 255, 0.1);
-    color: #cccccc;
+    background-color: var(--color-bg-active);
+    color: var(--color-text);
 }
 
 .tree {
@@ -75,11 +75,11 @@
 }
 
 .entry:hover {
-    background-color: rgba(255, 255, 255, 0.05);
+    background-color: var(--color-bg-hover);
 }
 
 .entry:focus-visible {
-    outline: 1px solid #007acc;
+    outline: 1px solid var(--color-accent);
 }
 
 .dirEntry {
@@ -103,12 +103,12 @@
 /* Context menu */
 .contextMenu {
     position: fixed;
-    background-color: #2b2b2b;
-    border: 1px solid #444;
+    background-color: var(--color-bg-menu);
+    border: 1px solid var(--color-border-strong);
     border-radius: 4px;
     padding: 4px 0;
     z-index: 1000;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 2px 8px var(--color-shadow);
 }
 
 .contextMenuItem {
@@ -116,7 +116,7 @@
     width: 100%;
     background: none;
     border: none;
-    color: #cccccc;
+    color: var(--color-text);
     font-size: 13px;
     font-family: sans-serif;
     padding: 6px 16px;
@@ -126,20 +126,20 @@
 }
 
 .contextMenuItem:hover {
-    background-color: #094771;
+    background-color: var(--color-bg-selected);
 }
 
 .destructiveItem {
-    color: #f48771;
+    color: var(--color-text-error);
 }
 
 .destructiveItem:hover {
-    background-color: #5a1d1d;
+    background-color: var(--color-bg-error);
 }
 
 .contextMenuSeparator {
     height: 1px;
-    background-color: #444;
+    background-color: var(--color-border-strong);
     margin: 4px 0;
 }
 
@@ -147,10 +147,10 @@
 .inlineInput {
     display: block;
     width: calc(100% - 4px);
-    background-color: #2a2a2a;
-    border: 1px solid #007acc;
+    background-color: var(--color-bg-input);
+    border: 1px solid var(--color-accent);
     border-radius: 2px;
-    color: #cccccc;
+    color: var(--color-text);
     font: inherit;
     padding: 1px 6px;
     margin: 1px 2px;

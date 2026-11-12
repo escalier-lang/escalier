@@ -1,5 +1,10 @@
 import { useCallback, useState } from 'react';
 
+import {
+    type ThemePreference,
+    themePreferences,
+    useThemeStore,
+} from '../theme';
 import { ConfirmDialog } from './confirm-dialog';
 import { Dropdown, type DropdownItem } from './dropdown';
 import styles from './toolbar.module.css';
@@ -10,6 +15,17 @@ type ToolbarProps = {
     onSelectTemplate: (slug: string) => void;
     onSelectExample: (slug: string) => void;
 };
+
+const themeLabels: Record<ThemePreference, string> = {
+    system: 'System',
+    light: 'Light',
+    dark: 'Dark',
+};
+
+const themeItems: DropdownItem[] = themePreferences.map((preference) => ({
+    slug: preference,
+    label: themeLabels[preference],
+}));
 
 type PendingAction = {
     kind: 'template' | 'example';
@@ -23,6 +39,18 @@ export const Toolbar = ({
     onSelectTemplate,
     onSelectExample,
 }: ToolbarProps) => {
+    const themePreference = useThemeStore((state) => state.preference);
+    const setThemePreference = useThemeStore((state) => state.setPreference);
+    const handleSelectTheme = useCallback(
+        (slug: string) => {
+            const preference = themePreferences.find((p) => p === slug);
+            if (preference) {
+                setThemePreference(preference);
+            }
+        },
+        [setThemePreference],
+    );
+
     const [pendingAction, setPendingAction] = useState<PendingAction | null>(
         null,
     );
@@ -60,6 +88,14 @@ export const Toolbar = ({
                 label="Examples"
                 items={examples}
                 onSelect={handleSelectExample}
+            />
+            <div className={styles.spacer} />
+            <Dropdown
+                label={`Theme: ${themeLabels[themePreference]}`}
+                items={themeItems}
+                onSelect={handleSelectTheme}
+                align="end"
+                selectedSlug={themePreference}
             />
 
             {pendingAction && (

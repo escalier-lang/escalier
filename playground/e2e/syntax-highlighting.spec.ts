@@ -44,12 +44,15 @@ test.describe('Syntax highlighting', () => {
             );
         }
         // The `get` in `map.get("a")` names a method, so it keeps the identifier
-        // colour.
-        await expect(spans('get')).toHaveCount(2);
-        await expect(spans('get').nth(1)).not.toHaveAttribute(
-            'class',
-            keywordClass,
-        );
+        // colour. Monaco joins it with the `.` and `(` around it when the theme
+        // draws them in the same colour, so match any span that contains it.
+        const methodGet = lines
+            .locator('.view-line')
+            .filter({ hasText: 'val found' })
+            .locator('span > span')
+            .filter({ hasText: 'get' });
+        await expect(methodGet).toHaveCount(1);
+        await expect(methodGet).not.toHaveAttribute('class', keywordClass);
 
         // Bracket pair colouring gives a bracket its own class, so a `->` drawn in
         // one colour is a single span with no bracket class. Monaco joins the spaces
