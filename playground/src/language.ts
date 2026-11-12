@@ -68,6 +68,20 @@ export function setupLanguage(
     // Fires when a document's semantic tokens may have changed, so Monaco asks for them
     // again.
     const semanticTokensChanged = new monaco.Emitter<void>();
+    let semanticTokensRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+
+    // Fires semanticTokensChanged once for a burst of calls. A package check publishes
+    // diagnostics for every open file in a row, and each fire makes Monaco request
+    // tokens for every visible model.
+    function scheduleSemanticTokensRefresh() {
+        if (semanticTokensRefreshTimer !== undefined) {
+            return;
+        }
+        semanticTokensRefreshTimer = setTimeout(() => {
+            semanticTokensRefreshTimer = undefined;
+            semanticTokensChanged.fire();
+        }, 0);
+    }
 
     type ModelState = {
         debounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -116,7 +130,7 @@ export function setupLanguage(
 
             // The server publishes diagnostics after each check, and the tokens it reports
             // come from the latest check.
-            semanticTokensChanged.fire();
+            scheduleSemanticTokensRefresh();
 
             if (params.uri.endsWith('.esc')) {
                 // Trigger a full package recompilation. The compile
@@ -379,22 +393,25 @@ export function setupLanguage(
                 return legend;
             },
             async provideDocumentSemanticTokens(model, _lastResultId, _token) {
-                try {
-                    flushPendingChanges(model.uri.toString());
-                    const tokens = await client.textDocumentSemanticTokensFull({
-                        textDocument: { uri: model.uri.toString() },
-                    });
-                    if (!tokens) {
-                        return null;
-                    }
-                    return {
-                        resultId: tokens.resultId,
-                        data: new Uint32Array(tokens.data),
-                    };
-                } catch (e) {
-                    console.error('Semantic tokens error:', e);
+                const uri = model.uri.toString();
+                // Monaco asks for tokens soon after every edit. Flushing the debounced
+                // didChange here would start a check per request, so the request is
+                // declined until the debounce sends the change. Monaco keeps its current
+                // tokens on an error whose message contains "busy", and the refresh that
+                // follows the check's diagnostics fetches the new tokens.
+                if (modelStates.get(uri)?.debounceTimer !== undefined) {
+                    throw new Error('busy: a change is waiting to be sent');
+                }
+                const tokens = await client.textDocumentSemanticTokensFull({
+                    textDocument: { uri },
+                });
+                if (!tokens) {
                     return null;
                 }
+                return {
+                    resultId: tokens.resultId,
+                    data: new Uint32Array(tokens.data),
+                };
             },
             releaseDocumentSemanticTokens() {},
         });
@@ -411,8 +428,9 @@ export function setupLanguage(
 /**
  * Returns a theme rule that underlines each token type in legend when it carries the
  * `mutable` modifier. Monaco looks a semantic token up in the theme as its type followed
- * by its modifiers, joined by dots, so `variable.mutable` matches a mutable variable and
- * keeps the colour the theme gives `variable`.
+ * by its modifiers in legend order, joined by dots, so `variable.mutable` matches a
+ * mutable variable and keeps the colour the theme gives `variable`. A rule matches only
+ * while `mutable` is the first modifier in legend order that a token carries.
  */
 export function mutableTokenRules(
     legend: lsp.SemanticTokensLegend | undefined,
