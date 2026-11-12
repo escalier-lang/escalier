@@ -7,20 +7,15 @@ import {
 
 import wasmUrl from '../../bin/lsp-server.wasm?url';
 
-import { LoadingScreen, type LoadingStatus } from './components/loading-screen';
-import {
-    type Download,
-    type DownloadProgress,
-    downloadAll,
-    frameThrottled,
-} from './downloads';
+import type { LoadingStatus } from './components/loading-screen';
 import { useEditorStore } from './editor-store';
 import { BrowserFS } from './fs/browser-fs';
-import { type Manifest, createVolume } from './fs/volume';
+import type { Manifest } from './fs/volume';
 import { setupLanguage } from './language';
 import { Client } from './lsp-client/client';
 import { Playground } from './playground';
 import { loadProject } from './project-loader';
+import { downloadStartupFiles, runStartup } from './startup';
 
 import './user-worker'; // sets up the monaco editor worker
 
@@ -37,33 +32,14 @@ async function start(
     // Download the language server and the whole standard library up front. The
     // filesystem fetches a file it doesn't hold with a synchronous request when the
     // language server first reads it, which blocks the page for a round trip per file.
-    const builtins = manifest.builtins ?? [];
-    const downloads: Download[] = [
-        { url: wasmUrl, size: manifest.lspServerWasmSize },
-        ...builtins.map((relPath) => ({
-            url: `${baseUrl}escalier-builtins/${relPath}`,
-            size: manifest.builtinSizes?.[relPath],
-        })),
-    ];
-    const progress = frameThrottled((latest: DownloadProgress) =>
-        showStatus({ kind: 'downloading', progress: latest }),
+    const { wasm, volume } = await downloadStartupFiles(
+        manifest,
+        baseUrl,
+        wasmUrl,
+        showStatus,
     );
-    let contents: Uint8Array<ArrayBuffer>[];
-    try {
-        contents = await downloadAll(downloads, progress.call);
-    } finally {
-        // Stop before the next status, so a frame scheduled by the last chunk or by a
-        // download still running after a failure can't draw the progress over it.
-        progress.stop();
-    }
-    const [wasm, ...builtinContents] = contents;
     showStatus({ kind: 'starting' });
 
-    const volume = createVolume(manifest, baseUrl);
-    builtins.forEach((relPath, i) => {
-        volume[`/node_modules/escalier-builtins/${relPath}`].content =
-            builtinContents[i];
-    });
     // BrowserFS copies each file's content out of the volume when it's constructed,
     // so the volume must hold the downloads first.
     const fs = new BrowserFS(volume);
@@ -122,7 +98,7 @@ async function start(
 
     // Create a new client for the language server and
     // initialize it with the process ID and root URI.
-    const client = new Client(wasm.buffer, '/', fs, {
+    const client = new Client(wasm, '/', fs, {
         // The interop loader walks for `escalier.toml`+`internal/interop/data`
         // to find its built-in override files; that walk can't succeed in
         // the playground's virtual filesystem, so point it at the path
@@ -202,22 +178,13 @@ async function main() {
     }
 
     const reactRoot = ReactDOM.createRoot(root);
-    const showStatus = (status: LoadingStatus) => {
-        reactRoot.render(<LoadingScreen status={status} />);
-    };
-    showStatus({ kind: 'downloading', progress: { loaded: 0, total: 0 } });
-
-    try {
-        await start(reactRoot, showStatus);
-    } catch (err) {
-        console.error('Failed to load the playground:', err);
-        showStatus({
-            kind: 'failed',
-            message: err instanceof Error ? err.message : String(err),
-        });
-        return;
+    const started = await runStartup(
+        (node) => reactRoot.render(node),
+        (showStatus) => start(reactRoot, showStatus),
+    );
+    if (started) {
+        console.log('App loaded');
     }
-    console.log('App loaded');
 }
 
 main();
