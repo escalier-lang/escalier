@@ -1,3 +1,6 @@
+import "std:error"
+import "std:number"
+
 // A config loader that reads a port number from text. Each failure is its own
 // class, so a caller can tell them apart with a pattern.
 class ConfigError {
@@ -21,8 +24,8 @@ class PortRangeError {
 // `throws _` asks the checker to read the clause off the body. This function
 // can throw `ParseError | PortRangeError`, and every caller must account for it.
 export fn parsePort(text: string) -> number throws _ {
-    val port = Number.parseInt(text, 10)
-    if Number.isNaN(port) {
+    val port = number.parseInt(text, 10)
+    if number.isNaN(port) {
         throw ParseError("port", text)
     }
     if port < 1 || port > 65535 {
@@ -63,14 +66,14 @@ export fn describe(text: string) -> string throws _ {
     return `listening on ${lenientPort(text)}`
 }
 
-// An arm can also narrow the caught `unknown` to a builtin such as `Error`.
+// An arm can also narrow the caught `unknown` to a builtin such as `error.Error`.
 // `_` catches whatever is left, so nothing escapes `report`.
 export fn report(text: string) -> string {
     return try {
         describe(text)
     } catch {
         PortRangeError{port} => `port ${port} is out of range`,
-        Error{message} => message,
+        error.Error{message} => message,
         _ => "unexpected failure",
     }
 }

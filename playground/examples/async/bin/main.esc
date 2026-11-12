@@ -1,3 +1,5 @@
+import "std:console"
+
 // The names `lib/index.esc` exports are in scope here without an import.
 // `titleOrFallback` never rejects, so each call can be awaited without a `try`.
 async fn main() -> Promise<undefined> {

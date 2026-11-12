@@ -1,3 +1,5 @@
+import "std:console"
+
 // The names `lib/index.esc` exports are in scope here without an import.
 val catalogue: Array<Product> = [
     {id: 1, name: "Maple syrup", price: 12.5, inStock: true},

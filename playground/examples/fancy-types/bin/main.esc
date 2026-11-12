@@ -1,3 +1,6 @@
+import "std:console"
+import "std:json"
+
 // The names `lib/index.esc` exports are in scope here without an import.
 val settings: Settings = {volume: 4, muted: false, theme: "dark"}
 
@@ -6,4 +9,4 @@ console.log(gutter, levels.volume, retries)
 
 val getters = gettersFor(&settings)
 console.log(getters.getVolume(), getters.getTheme())
-console.log(JSON.stringify(exportSettings(&settings)))
+console.log(json.stringify(exportSettings(&settings)))

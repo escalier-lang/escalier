@@ -1,3 +1,5 @@
+import "std:console"
+
 // (2 + 3) * -4
 val expr = Expr.Mul(add(Expr.Num(2), Expr.Num(3)), Expr.Neg(Expr.Num(4)))
 console.log(`${show(expr)} = ${evaluate(expr)}`)

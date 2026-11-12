@@ -1,3 +1,5 @@
+import "std:console"
+
 drive(maxSpeed)
 console.log(`${drive(30)} ${unit}`)
 console.log(shiftLength(9, 17))

@@ -1,3 +1,5 @@
+import "std:console"
+
 val mut thermostat = Thermostat(21)
 thermostat.fahrenheit = 75
 console.log(thermostat.target)
