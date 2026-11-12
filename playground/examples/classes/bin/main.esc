@@ -1,0 +1,9 @@
+val mut thermostat = Thermostat(21)
+thermostat.fahrenheit = 75
+console.log(thermostat.target)
+
+val reading = Reading("Kitchen", 77)
+console.log(reading.label())
+
+val adjusted = adjust(thermostat, &reading)
+console.log(adjusted.target, Thermostat.minimum)

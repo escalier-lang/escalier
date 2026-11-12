@@ -1,0 +1,4 @@
+val peak = Landmark("Mount Rainier", 46.852, -121.760)
+console.log(format({lat: peak.lat, lng: peak.lng}))
+console.log(locate(peak).lat)
+console.log(formatAll(&[{lat: 49.283, lng: -123.121}, {lat: 43.651, lng: -79.383}]))
