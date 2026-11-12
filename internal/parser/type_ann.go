@@ -1275,6 +1275,18 @@ func (p *Parser) peekSecondIsTypeParamName() bool {
 // implements) can avoid a post-hoc type assertion on the TypeAnn interface.
 func (p *Parser) parseTypeRef(firstToken *Token) *ast.TypeRefTypeAnn {
 	qualIdent := p.parseQualifiedIdent(firstToken)
+	// parseQualifiedIdent leaves a `.` in place when no identifier follows it. A
+	// type reference consumes that dot and ends in an empty name, as a member
+	// expression does, so that `val c: intl.` records the `intl.` an editor
+	// completes after.
+	if dot := p.lexer.peek(); dot.Type == Dot {
+		p.lexer.consume()
+		qualIdent = &ast.Member{
+			Left:  qualIdent,
+			Right: ast.NewIdentifier("", ast.NewSpan(dot.Span.End, dot.Span.End, p.lexer.source.ID)),
+		}
+		p.reportError(dot.Span, "expected an identifier after .")
+	}
 	if p.lexer.peek().Type == LessThan {
 		p.lexer.consume() // consume '<'
 		// Each angle-bracket arg can be a bare lifetime (`'a`, `'static`)

@@ -651,3 +651,31 @@ func TestParseOptionalMethodTypeAnn_GenericIsNotSupported(t *testing.T) {
 	p.typeAnn()
 	require.NotEmpty(t, p.errors)
 }
+
+// TestParseTypeRefTrailingDot asserts that a type reference ending in a `.` keeps the
+// dot as a qualified name whose last part is empty, and reports the missing identifier.
+func TestParseTypeRefTrailingDot(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		// qualName is the reference's qualified name, rendered by ast.QualIdentToString.
+		qualName string
+	}{
+		{name: "OnePart", input: "intl.", qualName: "intl."},
+		{name: "TwoParts", input: "a.b.", qualName: "a.b."},
+		{name: "BeforeParen", input: "intl.)", qualName: "intl."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			typeAnn, errors := parseTypeAnnSrc(t, tt.input)
+			ref, ok := typeAnn.(*ast.TypeRefTypeAnn)
+			require.True(t, ok, "got %T", typeAnn)
+			require.Equal(t, tt.qualName, ast.QualIdentToString(ref.Name))
+			member, ok := ref.Name.(*ast.Member)
+			require.True(t, ok, "got %T", ref.Name)
+			require.Empty(t, member.Right.Name)
+			require.Len(t, errors, 1)
+			require.Equal(t, "expected an identifier after .", errors[0].Message)
+		})
+	}
+}
