@@ -38,7 +38,6 @@ async function start(
         wasmUrl,
         showStatus,
     );
-    showStatus({ kind: 'starting' });
 
     // BrowserFS copies each file's content out of the volume when it's constructed,
     // so the volume must hold the downloads first.
@@ -178,13 +177,10 @@ async function main() {
     }
 
     const reactRoot = ReactDOM.createRoot(root);
-    const started = await runStartup(
+    await runStartup(
         (node) => reactRoot.render(node),
         (showStatus) => start(reactRoot, showStatus),
     );
-    if (started) {
-        console.log('App loaded');
-    }
 }
 
 main();

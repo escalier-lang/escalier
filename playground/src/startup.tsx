@@ -20,7 +20,8 @@ export type StartupFiles = {
 /**
  * Downloads lsp-server.wasm from wasmUrl and every standard library file the manifest
  * lists, in parallel, and reports their progress to showStatus at most once per
- * animation frame. Rejects when any download fails. showStatus receives no
+ * animation frame. Once every download has arrived, it reports that the language
+ * server is starting. Rejects when any download fails. showStatus receives no
  * progress after the returned promise settles.
  */
 export async function downloadStartupFiles(
@@ -50,6 +51,7 @@ export async function downloadStartupFiles(
         progress.stop();
     }
     const [wasm, ...builtinContents] = contents;
+    showStatus({ kind: 'starting' });
 
     const volume = createVolume(manifest, baseUrl);
     builtins.forEach((relPath, i) => {
@@ -62,7 +64,8 @@ export async function downloadStartupFiles(
 /**
  * Renders the loading screen, then runs start with a function that updates it.
  * start renders the playground itself once it's ready. When start throws, the
- * loading screen shows the error. Returns whether start succeeded.
+ * loading screen shows the error. Returns whether start succeeded, and logs
+ * `App loaded` when it did.
  */
 export async function runStartup(
     render: (node: ReactNode) => void,
@@ -83,5 +86,6 @@ export async function runStartup(
         });
         return false;
     }
+    console.log('App loaded');
     return true;
 }
