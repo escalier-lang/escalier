@@ -33,6 +33,16 @@ func TestPseudoPackageBindsAsItsOwnNameValue(t *testing.T) {
 			want: map[string]string{"r": "Promise<Response>", "h": "Response | undefined"},
 		},
 		{
+			// `web:performance` and `web:crypto` declare their values `val mut`, so a
+			// method that takes `&mut self` checks.
+			name: "performance and crypto call methods that take &mut self",
+			src: `import "web:performance"
+				import "web:crypto"
+				fn stamp() -> number { return performance.now() }
+				fn id() -> string { return crypto.randomUUID() }`,
+			want: map[string]string{"stamp": "fn () -> number", "id": "fn () -> string"},
+		},
+		{
 			name: "a package exporting no value of its name stays a namespace",
 			src: `import "std:math"
 				val p = math.PI`,

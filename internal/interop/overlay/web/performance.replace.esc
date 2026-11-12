@@ -1,0 +1,6 @@
+// `performance` is declared `val mut` so a program can call the methods of
+// `Performance` that take `&mut self`, such as `now`, `mark`, and `measure`. The
+// converter emits `var`, which makes the name reassignable and the value it
+// holds immutable, so every one of those calls fails to check.
+@js("performance")
+export declare val mut performance: Performance
