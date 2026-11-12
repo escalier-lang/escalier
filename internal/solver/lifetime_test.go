@@ -312,9 +312,8 @@ func TestParamFeedingTwoJoinsRendersMeetBound(t *testing.T) {
 }
 
 // Two param lifetimes that mutually outlive are EQUAL, so buildLtBoundSet condenses
-// them to one representative and a join over both renders `&'a` under a single name.
-// The params keep their own names 'a and 'b from the borrows they originate on; only
-// the join lifetime resolves to the representative.
+// them to one representative. Both params and the join over them render under the name
+// of the param with the lowest ID.
 func TestJoinOverMutualOutlivesCollapsesToOne(t *testing.T) {
 	c := newTestChecker()
 	a := c.ctx.freshLifetime(0)
@@ -327,7 +326,7 @@ func TestJoinOverMutualOutlivesCollapsesToOne(t *testing.T) {
 	fn := borrowFn(mutPointRef(join), a, b)
 
 	require.Equal(t,
-		"fn <'a, 'b>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &'a mut {x: number}",
+		"fn <'a>(p: &'a mut {x: number}, q: &'a mut {x: number}) -> &'a mut {x: number}",
 		renderScheme(&MonoScheme{Ty: fn}))
 }
 

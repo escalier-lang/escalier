@@ -108,10 +108,10 @@ func TestClassValueBindsItsParametersOnEachSignature(t *testing.T) {
 			want:  "{<'a>(x: &'a {x: number}) -> &'a {x: number}}",
 		},
 		{
-			// `t` writes no lifetime, and its body ties the return to `q`. The inferred
-			// lifetime binds on `t` as a written one binds on `s`, so the value quantifies
-			// nothing and each static names its own `'a`.
-			name: "an inferred method lifetime binds on its own method",
+			// `t` writes no lifetime, and elision ties the return to `q`, its one input. The
+			// elided lifetime binds on `t` as a written one binds on `s`, so the value
+			// quantifies nothing and each static names its own `'a`.
+			name: "an elided method lifetime binds on its own method",
 			src: `class Util {
 				static s<'a>(p: &'a {x: number}) -> &'a {x: number} { return p },
 				static t(q: &{x: number}) -> &{x: number} { return q },
@@ -120,11 +120,11 @@ func TestClassValueBindsItsParametersOnEachSignature(t *testing.T) {
 			want:  "{new () -> Util, s<'a>(p: &'a {x: number}) -> &'a {x: number}, t<'a>(q: &'a {x: number}) -> &'a {x: number}}",
 		},
 		{
-			// The return joins both borrows, so the inferred binder carries the outlives
-			// bounds the join puts on them, as a top-level function's prefix would.
-			name: "an inferred method lifetime carries its outlives bounds",
+			// The return joins both borrows, so the binder carries the outlives bounds the
+			// join puts on them, as a top-level function's prefix would.
+			name: "a method lifetime carries its outlives bounds",
 			src: `class Util {
-				static pick(a: &{x: number}, b: &{x: number}, k: boolean) -> &{x: number} {
+				static pick<'a: 'c, 'b: 'c, 'c>(a: &'a {x: number}, b: &'b {x: number}, k: boolean) -> &'c {x: number} {
 					return if k { a } else { b }
 				},
 			}`,

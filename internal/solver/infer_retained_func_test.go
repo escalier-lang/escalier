@@ -2197,7 +2197,9 @@ fn setup() {
 
 // TestBodilessSignatureFuncKeptForStatic covers a function whose lifetime comes from a
 // signature with no body, a declared function or an interface method, stored into a 'static
-// slot. Each store reports that the function may hold borrows.
+// slot. A declared function's elided return lifetime is tied to its parameter, so the store
+// reports the argument that does not live for 'static. An interface method's store reports
+// that the function may hold borrows.
 func TestBodilessSignatureFuncKeptForStatic(t *testing.T) {
 	tests := []struct {
 		name string
@@ -2209,7 +2211,7 @@ func TestBodilessSignatureFuncKeptForStatic(t *testing.T) {
 			src: `var sink: fn () -> undefined = fn () {}
 declare fn id(g: fn () -> undefined) -> fn () -> undefined
 fn h(g: fn () -> undefined) { sink = id(g) }`,
-			want: []string{"3:38-3:43: this function may hold borrows that do not live for 'static, but `sink` keeps it for 'static; pass a function that borrows nothing"},
+			want: []string{"3:6-3:7: 'g' may borrow values that live only during the call, but it is stored where it lives for the whole program; write `g: 'static fn () -> undefined` to keep it"},
 		},
 		// The error underlines the interface method's return type rather than the call.
 		{
@@ -2224,7 +2226,7 @@ fn h(g: fn () -> undefined, r: Reg) { sink = r.add(g) }`,
 			src: `var sink: fn () -> undefined = fn () {}
 declare fn id(g: fn () -> undefined) -> fn () -> undefined
 fn h<'a>(g: 'a fn () -> undefined) { sink = id(g) }`,
-			want: []string{"3:45-3:50: this function may hold borrows that do not live for 'static, but `sink` keeps it for 'static; pass a function that borrows nothing"},
+			want: []string{"3:6-3:8: the body requires 'a to outlive 'static, but the signature does not declare it; add the bound 'a: 'static"},
 		},
 	}
 	for _, tt := range tests {

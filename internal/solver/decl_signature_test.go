@@ -57,7 +57,7 @@ func TestFuncDeclSignaturePrintWritten(t *testing.T) {
 		},
 		{
 			name:     "ReturnedBorrowOfOneOfTwo",
-			src:      "type Flat = {x: number}\nfn f(a: &Flat, b: &Flat) -> &Flat { return a }",
+			src:      "type Flat = {x: number}\nfn f<'q>(a: &'q Flat, b: &Flat) -> &'q Flat { return a }",
 			expected: "<'a>(&'a Flat, &Flat) -> &'a Flat",
 		},
 		{

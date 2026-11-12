@@ -404,7 +404,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 		// Returning the alias hands the caller a writer of b beside the reader `p.r`.
 		"ReturningALiveAliasConflicts": {
 			src: `
-				fn f(p: &mut {r: &{value: number}}) -> {peer: &mut {value: number}} {
+				fn f<'x>(p: &'x mut {r: &{value: number}}) -> {peer: &'x mut {value: number}} {
 					val mut b = {value: 1}
 					val a = {peer: &mut b}
 					p.r = &b
@@ -513,7 +513,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 		// paths to e are still reported.
 		"ReturnWithAnAgreeingSharedLocalStillChecksItsOwnPaths": {
 			src: `
-				fn f(p: &mut {peer: &mut {value: number}}) -> [&mut {value: number}, &{value: number}, &mut {value: number}] {
+				fn f<'x>(p: &'x mut {peer: &mut {value: number}}) -> [&'x mut {value: number}, &'x {value: number}, &'x mut {value: number}] {
 					val mut a = {value: 0}
 					val mut e = {value: 1}
 					p.peer = &mut a

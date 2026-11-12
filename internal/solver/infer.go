@@ -135,6 +135,9 @@ type checker struct {
 	// fnElision is the lifetime a function type written with no lifetime gets at the current
 	// position. elideFuncsAs sets it, and elidedFuncLifetime reads it.
 	fnElision funcElision
+	// retLts is the elision for a lifetime a signature's return type leaves out, set by
+	// resolveReturnAnn while the return type's own level resolves and nil elsewhere.
+	retLts *returnLifetimes
 	// pendingCallOnly holds a check per parameter whose function type is written with no
 	// lifetime, for checkCallOnlyParams to read once the enclosing component has solved.
 	pendingCallOnly []callOnlyCheck
