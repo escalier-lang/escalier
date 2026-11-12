@@ -149,4 +149,13 @@ describe('modifierTokenRules', () => {
             }),
         ).toEqual([]);
     });
+
+    test('ignores a modifier named like an object property', () => {
+        expect(
+            modifierTokenRules({
+                tokenTypes: ['variable'],
+                tokenModifiers: ['constructor', 'toString'],
+            }),
+        ).toEqual([]);
+    });
 });

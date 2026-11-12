@@ -72,10 +72,10 @@ export function coalesced(fn: () => void): () => void {
  * The font style each modifier the server reports gives a token. A `mutable` name is
  * underlined, as rust-analyzer shows one, and a `reassignable` name is bold.
  */
-const modifierFontStyles: Record<string, string> = {
-    mutable: 'underline',
-    reassignable: 'bold',
-};
+const modifierFontStyles = new Map<string, string>([
+    ['mutable', 'underline'],
+    ['reassignable', 'bold'],
+]);
 
 /**
  * Returns the theme rules that style each token type in legend by the modifiers it
@@ -92,15 +92,15 @@ export function modifierTokenRules(
     if (!legend) {
         return [];
     }
-    const styled = legend.tokenModifiers.filter(
-        (modifier) => modifier in modifierFontStyles,
+    const styled = legend.tokenModifiers.filter((modifier) =>
+        modifierFontStyles.has(modifier),
     );
     const rules: monaco.editor.ITokenThemeRule[] = [];
     // Each non-empty subset of styled, kept in legend order, is one combination.
     for (let mask = 1; mask < 1 << styled.length; mask++) {
         const modifiers = styled.filter((_, i) => mask & (1 << i));
         const fontStyle = modifiers
-            .map((modifier) => modifierFontStyles[modifier])
+            .map((modifier) => modifierFontStyles.get(modifier))
             .join(' ');
         for (const tokenType of legend.tokenTypes) {
             rules.push({
