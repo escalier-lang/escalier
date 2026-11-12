@@ -5,7 +5,6 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
-	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/escalier-lang/escalier/internal/solver"
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
@@ -86,8 +85,6 @@ func (s *Server) textDocumentSemanticTokensFull(context *glsp.Context, params *p
 		info:           info,
 		src:            src,
 		params:         set.NewSet[ast.Node](),
-		writeTargets:   set.NewSet[*ast.MemberExpr](),
-		memberObjects:  map[string]*soltype.ObjectType{},
 	}
 	if script != nil {
 		script.Accept(visitor)
@@ -138,8 +135,8 @@ func encodeSemanticTokens(lineMap *ast.LineMap, tokens []semanticToken) []protoc
 // mutable data, and for each name of a method or a getter that takes `&mut self`. A
 // name binds mutable data when its binding is mutable, as in `val mut p`, or when its
 // value is a mutable borrow, as in `val r: &mut Point`. A member name is marked where a
-// class or an object type declares it and where a member expression reads it, as `push`
-// in `xs.push(1)`.
+// class or an object type declares it, and not where a member expression reads it, which
+// is how rust-analyzer marks a method that takes `&mut self`.
 type mutableTokenVisitor struct {
 	ast.DefaultVisitor
 	info *solver.Info
@@ -147,13 +144,7 @@ type mutableTokenVisitor struct {
 	// params holds each leaf of a parameter pattern the walk has entered, an
 	// *ast.IdentPat or an *ast.ObjShorthandPat.
 	params set.Set[ast.Node]
-	// writeTargets holds each member expression the walk has seen on the left of an
-	// assignment, such as `c.value` in `c.value = 1`.
-	writeTargets set.Set[*ast.MemberExpr]
-	// memberObjects maps a receiver type, keyed by soltype.PrintQualified, to the member
-	// object info.MemberObject returned for it, or to nil when it returned none.
-	memberObjects map[string]*soltype.ObjectType
-	tokens        []semanticToken
+	tokens []semanticToken
 }
 
 func (v *mutableTokenVisitor) EnterDecl(d ast.Decl) bool {
@@ -169,19 +160,6 @@ func (v *mutableTokenVisitor) EnterExpr(e ast.Expr) bool {
 		v.addParams(e.Params)
 	case *ast.IdentExpr:
 		v.addRead(e)
-	case *ast.BinaryExpr:
-		if target, ok := e.Left.(*ast.MemberExpr); ok && e.Op == ast.Assign {
-			v.writeTargets.Add(target)
-		}
-	case *ast.MemberExpr:
-		// An assignment to `c.value` writes through a setter rather than reading the
-		// getter, so it gets no token.
-		if v.writeTargets.Contains(e) {
-			break
-		}
-		if tokenType, ok := v.mutMemberRead(e); ok {
-			v.add(e.Prop.Span(), tokenType)
-		}
 	}
 	return true
 }
@@ -287,59 +265,6 @@ func (v *mutableTokenVisitor) addReceiver(receiver *ast.MethodReceiver) {
 		End:      ast.Location{Offset: end},
 		SourceID: receiver.Span_.SourceID,
 	}, tokenTypeParameter)
-}
-
-// mutMemberRead returns the token type of e's property when e reads a member that needs
-// mutable access to its object, and false otherwise. A method that takes `&mut self`
-// gets the method type, and a getter that takes `&mut self` gets the property type. An
-// overloaded method counts when every arm takes `&mut self`.
-func (v *mutableTokenVisitor) mutMemberRead(e *ast.MemberExpr) (int, bool) {
-	if e.Prop == nil {
-		return 0, false
-	}
-	obj := v.memberObject(v.info.DisplayTypeOf(e.Object))
-	if obj == nil {
-		return 0, false
-	}
-	for _, elem := range obj.Elems {
-		if soltype.ObjElemName(elem) != e.Prop.Name {
-			continue
-		}
-		switch elem.(type) {
-		case *soltype.MethodElem:
-			if v.info.IsMethodRead(e) && solver.NeedsMutReceiver(elem) {
-				return tokenTypeMethod, true
-			}
-		case *soltype.GetterElem:
-			if solver.NeedsMutReceiver(elem) {
-				return tokenTypeProperty, true
-			}
-		}
-	}
-	return 0, false
-}
-
-// memberObject returns the member object info.MemberObject returns for t, or nil when it
-// returns none or t is nil. The result is shared between calls, so the caller must not
-// mutate it.
-func (v *mutableTokenVisitor) memberObject(t soltype.Type) *soltype.ObjectType {
-	if t == nil {
-		return nil
-	}
-	// A file reads members off a few receiver types many times over, and building a
-	// member object costs far more than printing the type. PrintQualified names a class
-	// by its namespace-qualified name, so `Counter` and `geo.Counter` get distinct keys
-	// where Print renders both as `Counter`.
-	key := soltype.PrintQualified(t)
-	if obj, found := v.memberObjects[key]; found {
-		return obj
-	}
-	obj, ok := v.info.MemberObject(t)
-	if !ok {
-		obj = nil
-	}
-	v.memberObjects[key] = obj
-	return obj
 }
 
 // addParams records the binding leaves of params. Call it on entering the function that

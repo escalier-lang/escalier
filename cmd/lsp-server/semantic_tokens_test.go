@@ -247,18 +247,18 @@ func TestEncodeSemanticTokensCountsUTF16(t *testing.T) {
 
 func TestSemanticTokensMarkMutatingMethods(t *testing.T) {
 	tests := []struct {
-		name string
-		file string
-		src  string
-		// others holds the other files of the package, keyed by path.
-		others   map[string]string
+		name     string
+		file     string
+		src      string
 		expected []string
 	}{
 		{
-			// Only `bump`, the method that takes `&mut self`, is marked. `take` moves the
-			// instance into the call and mutates its own binding, so the caller's value is
-			// not mutated through it. The `self` of `&mut self` and of `mut self` is marked
-			// in the receiver and in the body, and the `self` of `&self` is not.
+			// Only `bump`, the method that takes `&mut self`, is marked, and only where the
+			// class declares it. rust-analyzer leaves a call such as `c.bump()` unmarked.
+			// `take` moves the instance into the call and mutates its own binding, so the
+			// caller's value is not mutated through it. The `self` of `&mut self` and of
+			// `mut self` is marked in the receiver and in the body, and the `self` of
+			// `&self` is not.
 			name: "ClassMethods",
 			file: "bin/main.esc",
 			src: `class Counter {
@@ -289,12 +289,13 @@ fn main() {
 				"7:16 self parameter+mutable",
 				"12:13 c variable+mutable",
 				"13:5 c variable+mutable",
-				"13:7 bump method+mutable",
 				"14:13 c variable+mutable",
 				"15:13 c variable+mutable",
 			},
 		},
 		{
+			// Calls and getter reads are unmarked, whether through `self` or through a
+			// `&mut` parameter. The declarations of `bump`, `twice` and `value` are marked.
 			name: "CallsOnSelfAndThroughBorrowAndMutGetter",
 			file: "bin/main.esc",
 			src: `class Counter {
@@ -320,81 +321,17 @@ fn f(c: &mut Counter) {
 				"5:5 twice method+mutable",
 				"5:16 self parameter+mutable",
 				"6:9 self parameter+mutable",
-				"6:14 bump method+mutable",
 				"8:9 value property+mutable",
 				"8:20 self parameter+mutable",
 				"8:45 self parameter+mutable",
 				"10:6 c parameter+mutable",
 				"11:5 c parameter+mutable",
-				"11:7 bump method+mutable",
 				"12:13 c parameter+mutable",
-				"12:15 value property+mutable",
 			},
 		},
 		{
-			// The two classes print alike as `Counter`, and only the root one's `bump`
-			// takes `&mut self`.
-			name: "ClassesSharingANameInTwoNamespaces",
-			file: "lib/index.esc",
-			src: `export class Counter {
-    n: number,
-    constructor(&mut self) { self.n = 0 },
-    bump(&mut self) -> undefined { self.n = 1 },
-}
-export fn f(a: &mut Counter, b: &mut geo.Counter) {
-    a.bump()
-    b.bump()
-}`,
-			others: map[string]string{
-				"lib/geo/counter.esc": `export class Counter {
-    n: number,
-    constructor(&mut self) { self.n = 0 },
-    bump(&self) -> number { return self.n },
-}`,
-			},
-			expected: []string{
-				"3:22 self parameter+mutable",
-				"3:30 self parameter+mutable",
-				"4:5 bump method+mutable",
-				"4:15 self parameter+mutable",
-				"4:36 self parameter+mutable",
-				"6:13 a parameter+mutable",
-				"6:30 b parameter+mutable",
-				"7:5 a parameter+mutable",
-				"7:7 bump method+mutable",
-				"8:5 b parameter+mutable",
-			},
-		},
-		{
-			// The assignment on line 8 writes through the setter, so its `value` gets no token,
-			// and the read on line 9 does.
-			name: "AssignmentThroughSetter",
-			file: "bin/main.esc",
-			src: `class Box {
-    n: number,
-    constructor(&mut self) { self.n = 0 },
-    get value(&mut self) -> number { return self.n },
-    set value(&mut self, v: number) { self.n = v },
-}
-fn f(b: &mut Box) {
-    b.value = 1
-    val v = b.value
-}`,
-			expected: []string{
-				"3:22 self parameter+mutable",
-				"3:30 self parameter+mutable",
-				"4:9 value property+mutable",
-				"4:20 self parameter+mutable",
-				"4:45 self parameter+mutable",
-				"5:20 self parameter+mutable",
-				"5:39 self parameter+mutable",
-				"7:6 b parameter+mutable",
-				"8:5 b parameter+mutable",
-				"9:13 b parameter+mutable",
-				"9:15 value property+mutable",
-			},
-		},
-		{
+			// `push` takes `&mut self`, and a call to it is unmarked, as rust-analyzer
+			// leaves it. The receiver `xs` is marked as a mutable binding.
 			name: "StdlibMethodCall",
 			file: "bin/main.esc",
 			src: `fn main() {
@@ -405,7 +342,6 @@ fn f(b: &mut Box) {
 			expected: []string{
 				"2:13 xs variable+mutable",
 				"3:5 xs variable+mutable",
-				"3:8 push method+mutable",
 				"4:13 xs variable+mutable",
 			},
 		},
@@ -423,11 +359,7 @@ fn f(b: &mut Box) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			files := map[string]string{tt.file: tt.src}
-			for path, src := range tt.others {
-				files[path] = src
-			}
-			tokens, diagnostics := semanticTokensFor(t, files, tt.file)
+			tokens, diagnostics := semanticTokensFor(t, map[string]string{tt.file: tt.src}, tt.file)
 			require.Empty(t, diagnostics)
 			require.Equal(t, tt.expected, tokens)
 		})
