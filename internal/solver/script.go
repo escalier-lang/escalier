@@ -101,7 +101,7 @@ func (c *checker) bindScriptImports(scope *Scope, script *ast.Script) {
 	for _, pseudo := range []bool{true, false} {
 		for _, stmt := range script.Imports {
 			if IsSchemePrefixedImport(stmt.PackageName) == pseudo {
-				c.errs = append(c.errs, c.bindImport(scope, stmt)...)
+				c.errs = append(c.errs, c.bindImport(scope, stmt, false)...)
 			}
 		}
 	}
