@@ -99,6 +99,26 @@ func TestSignatureAction(t *testing.T) {
 			expected: "",
 		},
 		{
+			name:     "AddsLifetimeToWrittenBinders",
+			src:      "type Flat = {x: number}\nfn pick<T, U>(t: T, u: U, a: &Flat, b: &Flat) -> &Flat { return a }",
+			cursor:   "pick",
+			expected: "type Flat = {x: number}\nfn pick<T, U, 'a>(t: T, u: U, a: &'a Flat, b: &Flat) -> &'a Flat { return a }",
+		},
+		{
+			// Elision assigns the source's 'q, so a rewritten binder list would drop it while
+			// `a: &'q Flat` still names it.
+			name:     "RewriteWouldDropWrittenLifetime",
+			src:      "type Flat = {x: number}\nfn pick<'q>(q: &'q Flat, a: &Flat, b: &Flat) -> &Flat { return a }",
+			cursor:   "pick",
+			expected: "",
+		},
+		{
+			name:     "CommentsInParamList",
+			src:      "fn f(\n\tx: number, // the input\n\ty: number /* scale */\n) { return x * y }",
+			cursor:   "f(",
+			expected: "fn f(\n\tx: number, // the input\n\ty: number /* scale */\n) -> number { return x * y }",
+		},
+		{
 			name:     "FullSignature",
 			src:      "fn full(a: number) -> number { return a }",
 			cursor:   "full",
@@ -203,4 +223,36 @@ func TestSignatureActionInLib(t *testing.T) {
 	require.Equal(t,
 		"export fn count(xs: &Array<number>) -> number { return xs.length }",
 		applyEdits(src, actions[0].Edit.Changes[uri]))
+}
+
+func TestSkipPast(t *testing.T) {
+	tests := []struct {
+		name     string
+		contents string
+		want     byte
+		marks    string
+		// expected is the offset skipPast returns, or -1 when it fails.
+		expected int
+	}{
+		{name: "Immediate", contents: ")", want: ')', expected: 1},
+		{name: "Whitespace", contents: " \t\n)", want: ')', expected: 4},
+		{name: "Marks", contents: ", ...)", want: ')', marks: ",.", expected: 6},
+		{name: "LineComment", contents: "// c\n)", want: ')', expected: 6},
+		{name: "BlockComment", contents: "/* ) */)", want: ')', expected: 8},
+		{name: "UnclosedBlockComment", contents: "/* )", want: ')', expected: -1},
+		{name: "UnterminatedLineComment", contents: "// )", want: ')', expected: -1},
+		{name: "OtherByte", contents: "x)", want: ')', expected: -1},
+		{name: "End", contents: "  ", want: ')', expected: -1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := skipPast(tt.contents, 0, tt.want, tt.marks)
+			if tt.expected < 0 {
+				require.False(t, ok)
+				return
+			}
+			require.True(t, ok)
+			require.Equal(t, tt.expected, got)
+		})
+	}
 }
