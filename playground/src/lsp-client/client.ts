@@ -620,6 +620,12 @@ export class Client {
         return this.sendRequest('completionItem/resolve', params);
     }
 
+    textDocumentSignatureHelp(
+        params: lsp.SignatureHelpParams,
+    ): Promise<lsp.SignatureHelp | null> {
+        return this.sendRequest('textDocument/signatureHelp', params);
+    }
+
     // Go to type definition
 
     // Go to implementation

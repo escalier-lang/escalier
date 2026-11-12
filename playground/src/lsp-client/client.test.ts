@@ -117,6 +117,15 @@ test('initialize', async () => {
               ],
             },
           },
+          "signatureHelpProvider": {
+            "retriggerCharacters": [
+              ")",
+            ],
+            "triggerCharacters": [
+              "(",
+              ",",
+            ],
+          },
           "textDocumentSync": 1,
           "typeDefinitionProvider": true,
           "workspace": {
@@ -386,6 +395,64 @@ test('textDocument/didChange', { timeout: CHECK_TEST_TIMEOUT_MS }, async () => {
       ]
     `);
 });
+
+test(
+    'textDocument/signatureHelp',
+    { timeout: CHECK_TEST_TIMEOUT_MS },
+    async () => {
+        const text =
+            'fn add(a: number, b: number) -> number { return a + b }\nval x = add(1, )\n';
+        fs.writeFileSync(filePath(), text);
+
+        await client.initialize({
+            processId: process.pid,
+            rootUri,
+            capabilities: {},
+        });
+
+        client.textDocumentDidOpen({
+            textDocument: {
+                uri: fileUri(),
+                version: 1,
+                languageId: 'escalier',
+                text,
+            },
+        });
+
+        // The cursor sits after `add(1, `, in the second argument.
+        const help = await client.textDocumentSignatureHelp({
+            textDocument: { uri: fileUri() },
+            position: { line: 1, character: 15 },
+        });
+
+        expect(help).toMatchInlineSnapshot(`
+          {
+            "activeParameter": 1,
+            "activeSignature": 0,
+            "signatures": [
+              {
+                "activeParameter": 1,
+                "label": "add(a: number, b: number) -> number",
+                "parameters": [
+                  {
+                    "label": [
+                      4,
+                      13,
+                    ],
+                  },
+                  {
+                    "label": [
+                      15,
+                      24,
+                    ],
+                  },
+                ],
+              },
+            ],
+          }
+        `);
+    },
+);
 
 test('textDocument/codeAction', async () => {
     await client.initialize({

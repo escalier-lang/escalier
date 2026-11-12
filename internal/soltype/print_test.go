@@ -1077,3 +1077,74 @@ func TestPrintFuncLifetime(t *testing.T) {
 		require.Equal(t, "'a fn () -> undefined", p.printType(fnWith(named)))
 	})
 }
+
+func TestPrintSignature(t *testing.T) {
+	free := &TypeVarType{ID: 20, Level: 1}
+	tests := []struct {
+		name string
+		in   *FuncType
+		want string
+		// params are the substrings the returned ranges cover, nil when there are none.
+		params []string
+	}{
+		{
+			name:   "plain",
+			in:     &FuncType{Params: []*FuncParam{identP("a", numP()), optP("b", strP())}, Ret: numP()},
+			want:   "fn (a: number, b?: string) -> number",
+			params: []string{"a: number", "b?: string"},
+		},
+		{
+			name:   "no parameters",
+			in:     &FuncType{Ret: numP()},
+			want:   "fn () -> number",
+			params: []string{},
+		},
+		{
+			name: "receiver and inexact marker",
+			in: &FuncType{
+				SelfParam: identP("self", numP()),
+				Params:    []*FuncParam{restP("xs", numP())},
+				Inexact:   true,
+				Ret:       numP(),
+			},
+			want:   "fn (self, ...xs: number, ...) -> number",
+			params: []string{"...xs: number"},
+		},
+		{
+			name:   "free variable quantified",
+			in:     &FuncType{Params: []*FuncParam{identP("x", free)}, Ret: free},
+			want:   "fn <T0>(x: T0) -> T0",
+			params: []string{"x: T0"},
+		},
+		{
+			name:   "throws clause",
+			in:     &FuncType{Params: []*FuncParam{identP("s", strP())}, Ret: numP(), Throws: strP()},
+			want:   "fn (s: string) -> number throws string",
+			params: []string{"s: string"},
+		},
+		{
+			name: "retained function",
+			in: &FuncType{
+				Params: []*FuncParam{identP("x", numP())},
+				Ret:    numP(),
+				Lt:     &LifetimeVar{ID: 1},
+			},
+			want:   "<'a> ('a fn (x: number) -> number)",
+			params: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ranges := PrintSignature(tt.in)
+			require.Equal(t, tt.want, got)
+			var params []string
+			if ranges != nil {
+				params = []string{}
+				for _, r := range ranges {
+					params = append(params, got[r[0]:r[1]])
+				}
+			}
+			require.Equal(t, tt.params, params)
+		})
+	}
+}
