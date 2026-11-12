@@ -444,7 +444,7 @@ func namespaceAt(expr ast.Expr, view scopeView, info *solver.Info) (*solver.Name
 		// exception is a value bound beside its own namespace, as `import "std:console"`
 		// binds `console`. A member read off it looks in the namespace first, so the check
 		// records the identifier's declaration and no type.
-		if info.DisplayTypeOf(expr) != nil || view == nil {
+		if info.TypeOf(expr) != nil || view == nil {
 			return nil, false
 		}
 		return view.lookupNamespace(expr.Name)

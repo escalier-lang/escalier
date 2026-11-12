@@ -1894,6 +1894,16 @@ func TestNamespaceMemberCompletionLabels(t *testing.T) {
 			once:     []string{"console", "log"},
 			excludes: []string{"Console"},
 		},
+		{
+			// A local value hides the namespace the import binds under the same name.
+			name:     "LocalValueShadowsNamespace",
+			files:    map[string]string{"lib/index.esc": "import \"std:math\"\nexport fn main() {\n    val math = {alpha: 1}\n    math.\n}\n"},
+			open:     "lib/index.esc",
+			line:     4,
+			col:      10,
+			once:     []string{"alpha"},
+			excludes: []string{"abs", "floor"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
