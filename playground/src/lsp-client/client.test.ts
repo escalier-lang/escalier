@@ -423,6 +423,51 @@ test.skip('workspace/executeCommand', async () => {
     expect(resp.text).toContain('const x = 5;');
 });
 
+test(
+    'textDocument/semanticTokens/full',
+    { timeout: CHECK_TEST_TIMEOUT_MS },
+    async () => {
+        let diagnosticsPublished = false;
+        client.onTextDocumentPublishDiagnostics((_params) => {
+            diagnosticsPublished = true;
+        });
+
+        const text = 'val mut p = {x: 0}\np.x = 1\n';
+        fs.writeFileSync(filePath(), text);
+
+        await client.initialize({
+            processId: process.pid,
+            rootUri,
+            capabilities: {},
+        });
+
+        client.textDocumentDidOpen({
+            textDocument: {
+                uri: fileUri(),
+                version: 1,
+                languageId: 'escalier',
+                text,
+            },
+        });
+
+        await vi.waitFor(
+            () => {
+                expect(diagnosticsPublished).toBeTruthy();
+            },
+            { timeout: 10_000 },
+        );
+
+        const tokens = await client.textDocumentSemanticTokensFull({
+            textDocument: { uri: fileUri() },
+        });
+
+        // Each token is five integers: line delta, start column delta, length, type
+        // index, and modifier bits. Both tokens are `p`, a variable (type 0) with the
+        // mutable modifier (bit 1).
+        expect(tokens?.data).toEqual([0, 8, 1, 0, 1, 1, 0, 1, 0, 1]);
+    },
+);
+
 test('constructing a second client leaves the running one usable', async () => {
     // Go resolves `globalThis.fs` on every syscall. Building a Client used to
     // install its shim there, which repointed this already-running server's
