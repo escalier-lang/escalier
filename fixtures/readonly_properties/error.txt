@@ -13,18 +13,3 @@ lib/index.esc:30:5: cannot assign to 'x' because it is a readonly property
 30:     point.x = 0
         ^^^^^^^
 
-lib/index.esc:23:4: 'updateMutableProperties' is declared at module level, so it needs a return type; write `-> undefined`
-
-23: fn updateMutableProperties() {
-       ^^^^^^^^^^^^^^^^^^^^^^^
-
-lib/index.esc:28:4: 'tryUpdateImmutableProperties' is declared at module level, so it needs a return type; write `-> undefined`
-
-28: fn tryUpdateImmutableProperties() {
-       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-lib/index.esc:36:5: 'increment' is a method, so it needs a return type; write `-> undefined`
-
-36:     increment(&mut self) {
-        ^^^^^^^^^
-

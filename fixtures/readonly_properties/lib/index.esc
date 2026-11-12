@@ -20,12 +20,12 @@ val pointX = point.x
 val immutableX = immutablePoint.x
 
 // Test that we can mutate non-readonly properties
-fn updateMutableProperties() {
+fn updateMutableProperties() -> undefined {
     point.y = 25
 }
 
 // Test that we cannot mutate readonly properties
-fn tryUpdateImmutableProperties() {
+fn tryUpdateImmutableProperties() -> undefined {
     config.apiUrl = "https://foo.example.com"
     point.x = 0
 }
@@ -33,7 +33,7 @@ fn tryUpdateImmutableProperties() {
 // Test readonly fields with explicit values
 class Counter {
     readonly value: number,
-    increment(&mut self) {
+    increment(&mut self) -> undefined {
         self.value = self.value + 1
     },
 }

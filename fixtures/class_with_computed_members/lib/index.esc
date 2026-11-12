@@ -2,7 +2,7 @@ val bar = "bar"
 val baz = "baz"
 class Foo {
     [bar]: number,
-    [baz](&self) {
+    [baz](&self) -> number {
         return self[bar]
     },
     constructor(&mut self, barVal: number = 42) {

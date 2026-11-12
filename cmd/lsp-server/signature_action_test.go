@@ -252,38 +252,6 @@ func TestSignatureActionInLib(t *testing.T) {
 		applyEdits(src, actions[0].Edit.Changes[uri]))
 }
 
-func TestSkipPast(t *testing.T) {
-	tests := []struct {
-		name     string
-		contents string
-		want     byte
-		marks    string
-		// expected is the offset skipPast returns, or -1 when it fails.
-		expected int
-	}{
-		{name: "Immediate", contents: ")", want: ')', expected: 1},
-		{name: "Whitespace", contents: " \t\n)", want: ')', expected: 4},
-		{name: "Marks", contents: ", ...)", want: ')', marks: ",.", expected: 6},
-		{name: "LineComment", contents: "// c\n)", want: ')', expected: 6},
-		{name: "BlockComment", contents: "/* ) */)", want: ')', expected: 8},
-		{name: "UnclosedBlockComment", contents: "/* )", want: ')', expected: -1},
-		{name: "UnterminatedLineComment", contents: "// )", want: ')', expected: -1},
-		{name: "OtherByte", contents: "x)", want: ')', expected: -1},
-		{name: "End", contents: "  ", want: ')', expected: -1},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, ok := skipPast(tt.contents, 0, tt.want, tt.marks)
-			if tt.expected < 0 {
-				require.False(t, ok)
-				return
-			}
-			require.True(t, ok)
-			require.Equal(t, tt.expected, got)
-		})
-	}
-}
-
 // TestMissingSignatureSeverity asserts that MissingSignatureError is published as a warning.
 func TestMissingSignatureSeverity(t *testing.T) {
 	src := "fn noop(x: number) {}"

@@ -8,8 +8,3 @@ lib/keyof.esc:3:22: cannot constrain 3 <: 0 | 1 | 2 | "length"
 3:  val j: keyof Tuple = 3
                          ^
 
-lib/keyof.esc:17:5: 'print' is a method, so it needs a return type; write `-> undefined`
-
-17:     print(&self) {
-        ^^^^^
-

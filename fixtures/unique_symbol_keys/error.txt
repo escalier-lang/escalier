@@ -1,5 +1,0 @@
-lib/index.esc:8:11: 'store' is declared at module level, so it needs a return type; write `-> undefined`
-
-8:  export fn store(mut c: C, v: number) { c[sym] = v }
-              ^^^^^
-

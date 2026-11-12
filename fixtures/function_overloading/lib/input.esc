@@ -81,7 +81,7 @@ async fn fetchData(id: string) -> Promise<string> {
   return "Data for key: " ++ id
 }
 
-async fn test() {
+async fn test() -> Promise<undefined> {
   val data1 = await fetchData(42)
   val data2 = await fetchData("user123")
 }

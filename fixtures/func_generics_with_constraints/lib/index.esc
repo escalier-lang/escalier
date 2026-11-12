@@ -2,7 +2,7 @@ fn addNums1(a: number, b: number) -> number {
     return a + b
 }
 
-fn addStrs1<A: string, B: string>(a: A, b: B) {
+fn addStrs1<A: string, B: string>(a: A, b: B) -> number {
     return addNums1(a, b) // error
 }
 
@@ -10,7 +10,7 @@ fn addNums2<A: number, B: number>(a: A, b: B) -> number {
     return addNums1(a, b) // okay
 }
 
-val addStrs3 = fn<A: string, B: string>(a: A, b: B) {
+val addStrs3 = fn<A: string, B: string>(a: A, b: B) -> number {
     return addNums1(a, b) // error
 }
 
@@ -18,7 +18,7 @@ val addNums4 = fn<A: number, B: number>(a: A, b: B) -> number {
     return addNums1(a, b) // okay
 }
 
-fn main() {
+fn main() -> undefined {
     addNums2("hello", 5)
     addNums4("hello", 5)
 }

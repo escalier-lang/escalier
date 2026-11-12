@@ -1,21 +1,21 @@
-fn add(a, b) {
+fn add(a: number, b: number) -> number {
     return a + b
 }
 
-fn identity(x) {
+fn identity<T0>(x: T0) -> T0 {
     return x
 }
 
-fn fst(a, b) {
+fn fst<T0>(a: T0, b: unknown) -> T0 {
     return a
 }
 
-fn snd(a, b) {
+fn snd<T0>(a: unknown, b: T0) -> T0 {
     return b
 }
 
 fn fstNum<A: number, B: number>(a: A, b: B) -> A { return a }
-fn fstNumWrapper(a, b) { return fstNum(a, b) }
+fn fstNumWrapper<T0: number>(a: T0, b: number) -> T0 { return fstNum(a, b) }
 
 val sum = add(1, 2)
 val x = identity(5)

@@ -1,10 +1,10 @@
 val mut handlers: Array<fn () -> undefined> = []
 
-export fn onClick(handler: 'static fn () -> undefined) {
+export fn onClick(handler: 'static fn () -> undefined) -> undefined {
     handlers.push(handler)
 }
 
-export fn forEachItem(f: fn () -> undefined) {
+export fn forEachItem(f: fn () -> undefined) -> undefined {
     f()
 }
 
@@ -12,7 +12,7 @@ export fn runWith<'a>(f: 'a fn (x: number) -> number, p: &'a {x: number}) -> num
     return f(p.x)
 }
 
-export fn setup() {
+export fn setup() -> number {
     val mut count = {n: 0}
     forEachItem(fn () { count.n = count.n + 1 })
     onClick(fn () { count.n = count.n + 1 })
