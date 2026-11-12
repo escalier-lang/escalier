@@ -58,7 +58,10 @@ function copyCategory(fs, srcDir) {
 }
 
 export function main(fs = nodeFs, options = {}) {
-    const { builtinsSrc = '../internal/interop/data' } = options;
+    const {
+        builtinsSrc = '../internal/interop/data',
+        lspServerWasm = '../bin/lsp-server.wasm',
+    } = options;
 
     // --- Type definitions ---
 
@@ -100,6 +103,21 @@ export function main(fs = nodeFs, options = {}) {
         builtins = listFilesRecursive(fs, builtinsSrc);
     }
 
+    // --- Download sizes ---
+    // The playground's loading screen weighs its progress bar by these sizes. It
+    // can't read them from Content-Length, which counts compressed bytes when the
+    // server compresses the response.
+
+    const builtinSizes = {};
+    for (const relPath of builtins) {
+        builtinSizes[relPath] = fs.statSync(
+            nodePath.join(builtinsSrc, relPath),
+        ).size;
+    }
+    const lspServerWasmSize = fs.existsSync(lspServerWasm)
+        ? fs.statSync(lspServerWasm).size
+        : undefined;
+
     // --- Write manifest ---
 
     const manifest = {
@@ -107,6 +125,8 @@ export function main(fs = nodeFs, options = {}) {
         templates,
         examples,
         builtins,
+        builtinSizes,
+        lspServerWasmSize,
     };
     fs.writeFileSync(
         'public/types/manifest.json',

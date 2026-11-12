@@ -7,6 +7,8 @@ import {
 
 import wasmUrl from '../../bin/lsp-server.wasm?url';
 
+import { LoadingScreen, type LoadingStatus } from './components/loading-screen';
+import { type Download, type DownloadProgress, downloadAll } from './downloads';
 import { useEditorStore } from './editor-store';
 import { BrowserFS } from './fs/browser-fs';
 import { type Manifest, createVolume } from './fs/volume';
@@ -17,15 +19,65 @@ import { loadProject } from './project-loader';
 
 import './user-worker'; // sets up the monaco editor worker
 
-async function main() {
-    const wasmBuffer = await fetch(wasmUrl).then((res) => res.arrayBuffer());
+/**
+ * Returns a function that reports progress to showStatus at most once per animation
+ * frame, so a download that arrives in many small chunks doesn't render the loading
+ * screen once per chunk.
+ */
+function progressReporter(
+    showStatus: (status: LoadingStatus) => void,
+): (progress: DownloadProgress) => void {
+    let latest: DownloadProgress | undefined;
+    return (progress) => {
+        const scheduled = latest !== undefined;
+        latest = progress;
+        if (scheduled) {
+            return;
+        }
+        requestAnimationFrame(() => {
+            if (latest) {
+                showStatus({ kind: 'downloading', progress: latest });
+            }
+            latest = undefined;
+        });
+    };
+}
+
+async function start(
+    reactRoot: ReactDOM.Root,
+    showStatus: (status: LoadingStatus) => void,
+) {
     const baseUrl = import.meta.env.BASE_URL;
 
     const manifest: Manifest = await fetch(
         `${baseUrl}types/manifest.json`,
     ).then((res) => res.json());
 
-    const fs = new BrowserFS(createVolume(manifest, baseUrl));
+    // Download the language server and the whole standard library up front. The
+    // filesystem fetches a file it doesn't hold with a synchronous request when the
+    // language server first reads it, which blocks the page for a round trip per file.
+    const builtins = manifest.builtins ?? [];
+    const downloads: Download[] = [
+        { url: wasmUrl, size: manifest.lspServerWasmSize },
+        ...builtins.map((relPath) => ({
+            url: `${baseUrl}escalier-builtins/${relPath}`,
+            size: manifest.builtinSizes?.[relPath],
+        })),
+    ];
+    const [wasm, ...builtinContents] = await downloadAll(
+        downloads,
+        progressReporter(showStatus),
+    );
+    showStatus({ kind: 'starting' });
+
+    const volume = createVolume(manifest, baseUrl);
+    builtins.forEach((relPath, i) => {
+        volume[`/node_modules/escalier-builtins/${relPath}`].content =
+            builtinContents[i];
+    });
+    // BrowserFS copies each file's content out of the volume when it's constructed,
+    // so the volume must hold the downloads first.
+    const fs = new BrowserFS(volume);
 
     // Load the initial project into the filesystem BEFORE initializing the
     // LSP server. The LSP scans the workspace during initialize — if no
@@ -81,7 +133,7 @@ async function main() {
 
     // Create a new client for the language server and
     // initialize it with the process ID and root URI.
-    const client = new Client(wasmBuffer, '/', fs, {
+    const client = new Client(wasm.buffer, '/', fs, {
         // The interop loader walks for `escalier.toml`+`internal/interop/data`
         // to find its built-in override files; that walk can't succeed in
         // the playground's virtual filesystem, so point it at the path
@@ -148,17 +200,35 @@ async function main() {
 
     setupLanguage(client, initResponse.capabilities);
 
+    reactRoot.render(
+        <Playground fs={fs} manifest={manifest} baseUrl={baseUrl} />,
+    );
+}
+
+async function main() {
     const root = document.getElementById('root');
 
     if (!root) {
         throw new Error('Root element not found');
     }
 
-    ReactDOM.createRoot(root).render(
-        <Playground fs={fs} manifest={manifest} baseUrl={baseUrl} />,
-    );
+    const reactRoot = ReactDOM.createRoot(root);
+    const showStatus = (status: LoadingStatus) => {
+        reactRoot.render(<LoadingScreen status={status} />);
+    };
+    showStatus({ kind: 'downloading', progress: { loaded: 0, total: 0 } });
+
+    try {
+        await start(reactRoot, showStatus);
+    } catch (err) {
+        console.error('Failed to load the playground:', err);
+        showStatus({
+            kind: 'failed',
+            message: err instanceof Error ? err.message : String(err),
+        });
+        return;
+    }
+    console.log('App loaded');
 }
 
-main().then(() => {
-    console.log('App loaded');
-});
+main();
