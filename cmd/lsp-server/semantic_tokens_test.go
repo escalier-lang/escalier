@@ -184,6 +184,7 @@ func TestSemanticTokensMarkMutableBindings(t *testing.T) {
     constructor(&mut self) { self.value = 0 },
 }`,
 			expected: []string{
+				"3:5 constructor method+mutable",
 				"3:22 self parameter+mutable",
 				"3:30 self parameter+mutable",
 			},
@@ -243,4 +244,154 @@ func TestEncodeSemanticTokensCountsUTF16(t *testing.T) {
 		0, 10, 2, tokenTypeParameter, tokenModifierMutable,
 		1, 0, 1, tokenTypeVariable, tokenModifierMutable,
 	}, encodeSemanticTokens(lineMap, tokens))
+}
+
+func TestSemanticTokensMarkMutatingMethods(t *testing.T) {
+	tests := []struct {
+		name     string
+		file     string
+		src      string
+		expected []string
+	}{
+		{
+			// `constructor` and `bump`, the members that take `&mut self`, are marked, and
+			// only where the class declares them. rust-analyzer leaves a call such as
+			// `c.bump()` unmarked.
+			// `take` moves the instance into the call and mutates its own binding, so the
+			// caller's value is not mutated through it. The `self` of `&mut self` and of
+			// `mut self` is marked in the receiver and in the body, and the `self` of
+			// `&self` is not.
+			name: "ClassMethods",
+			file: "bin/main.esc",
+			src: `class Counter {
+    n: number,
+    constructor(&mut self) { self.n = 0 },
+    bump(&mut self) -> undefined { self.n = self.n + 1 },
+    take(mut self) -> number {
+        self.n = 0
+        return self.n
+    },
+    read(&self) -> number { return self.n },
+}
+fn main() {
+    val mut c = Counter()
+    c.bump()
+    val n = c.read()
+    val m = c.take()
+}`,
+			expected: []string{
+				"3:5 constructor method+mutable",
+				"3:22 self parameter+mutable",
+				"3:30 self parameter+mutable",
+				"4:5 bump method+mutable",
+				"4:15 self parameter+mutable",
+				"4:36 self parameter+mutable",
+				"4:45 self parameter+mutable",
+				"5:14 self parameter+mutable",
+				"6:9 self parameter+mutable",
+				"7:16 self parameter+mutable",
+				"12:13 c variable+mutable",
+				"13:5 c variable+mutable",
+				"14:13 c variable+mutable",
+				"15:13 c variable+mutable",
+			},
+		},
+		{
+			// Calls, getter reads and setter writes are unmarked, whether through `self` or
+			// through a `&mut` parameter. The declarations of `bump`, `twice` and both
+			// halves of `value` are marked.
+			name: "CallsOnSelfAndThroughBorrowAndMutGetter",
+			file: "bin/main.esc",
+			src: `class Counter {
+    n: number,
+    constructor(&mut self) { self.n = 0 },
+    bump(&mut self) -> undefined { self.n = self.n + 1 },
+    twice(&mut self) -> undefined {
+        self.bump()
+    },
+    get value(&mut self) -> number { return self.n },
+    set value(&mut self, v: number) { self.n = v },
+}
+fn f(c: &mut Counter) {
+    c.bump()
+    val v = c.value
+    c.value = v
+}`,
+			expected: []string{
+				"3:5 constructor method+mutable",
+				"3:22 self parameter+mutable",
+				"3:30 self parameter+mutable",
+				"4:5 bump method+mutable",
+				"4:15 self parameter+mutable",
+				"4:36 self parameter+mutable",
+				"4:45 self parameter+mutable",
+				"5:5 twice method+mutable",
+				"5:16 self parameter+mutable",
+				"6:9 self parameter+mutable",
+				"8:9 value property+mutable",
+				"8:20 self parameter+mutable",
+				"8:45 self parameter+mutable",
+				"9:9 value property+mutable",
+				"9:20 self parameter+mutable",
+				"9:39 self parameter+mutable",
+				"11:6 c parameter+mutable",
+				"12:5 c parameter+mutable",
+				"13:13 c parameter+mutable",
+				"14:5 c parameter+mutable",
+			},
+		},
+		{
+			// A constructor takes `&mut self`, so its keyword is marked after a `private`.
+			name: "PrivateConstructor",
+			file: "bin/main.esc",
+			src: `class Box {
+    value: number,
+    private constructor(&mut self) { self.value = 0 },
+}`,
+			expected: []string{
+				"3:13 constructor method+mutable",
+				"3:30 self parameter+mutable",
+				"3:38 self parameter+mutable",
+			},
+		},
+		{
+			// `push` takes `&mut self`, and a call to it is unmarked, as rust-analyzer
+			// leaves it. The receiver `xs` is marked as a mutable binding.
+			name: "StdlibMethodCall",
+			file: "bin/main.esc",
+			src: `fn main() {
+    val mut xs: Array<number> = []
+    xs.push(1)
+    val n = xs.indexOf(1)
+}`,
+			expected: []string{
+				"2:13 xs variable+mutable",
+				"3:5 xs variable+mutable",
+				"4:13 xs variable+mutable",
+			},
+		},
+		{
+			// The `&mut self` method and setter are marked, and the `&self` method and
+			// getter are not.
+			name: "InterfaceMemberDeclarations",
+			file: "lib/index.esc",
+			src: `interface Stack {
+    push(&mut self, n: number) -> undefined,
+    peek(&self) -> number,
+    get top(&self) -> number,
+    set top(&mut self, n: number),
+}`,
+			expected: []string{
+				"2:5 push method+mutable",
+				"5:9 top property+mutable",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tokens, diagnostics := semanticTokensFor(t, map[string]string{tt.file: tt.src}, tt.file)
+			require.Empty(t, diagnostics)
+			require.Equal(t, tt.expected, tokens)
+		})
+	}
 }

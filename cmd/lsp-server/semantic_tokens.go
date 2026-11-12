@@ -2,6 +2,7 @@ package main
 
 import (
 	"slices"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
@@ -15,11 +16,15 @@ import (
 var semanticTokenTypes = []string{
 	string(protocol.SemanticTokenTypeVariable),
 	string(protocol.SemanticTokenTypeParameter),
+	string(protocol.SemanticTokenTypeMethod),
+	string(protocol.SemanticTokenTypeProperty),
 }
 
 const (
 	tokenTypeVariable = iota
 	tokenTypeParameter
+	tokenTypeMethod
+	tokenTypeProperty
 )
 
 // semanticTokenModifiers lists the token modifiers the server reports, in legend order.
@@ -128,8 +133,11 @@ func encodeSemanticTokens(lineMap *ast.LineMap, tokens []semanticToken) []protoc
 }
 
 // mutableTokenVisitor collects a token for each name in one file that binds or reads
-// mutable data. A name binds mutable data when its binding is mutable, as in
-// `val mut p`, or when its value is a mutable borrow, as in `val r: &mut Point`.
+// mutable data, and for each method, getter, setter, or constructor that takes
+// `&mut self`. A name binds mutable data when its binding is mutable, as in `val mut p`,
+// or when its value is a mutable borrow, as in `val r: &mut Point`. A member name is
+// marked where a class or an object type declares it, and not where a member expression
+// reads it, which is how rust-analyzer marks a method that takes `&mut self`.
 type mutableTokenVisitor struct {
 	ast.DefaultVisitor
 	info *solver.Info
@@ -153,6 +161,43 @@ func (v *mutableTokenVisitor) EnterExpr(e ast.Expr) bool {
 		v.addParams(e.Params)
 	case *ast.IdentExpr:
 		v.addRead(e)
+	}
+	return true
+}
+
+func (v *mutableTokenVisitor) EnterClassElem(e ast.ClassElem) bool {
+	// A constructor's receiver is a parameter pattern of its function, which EnterPat
+	// marks, so only these members' receivers are marked here.
+	switch e := e.(type) {
+	case *ast.ConstructorElem:
+		// A constructor takes `&mut self` like a mutating method, and its keyword
+		// signals that the body mutates the instance it builds.
+		if e.Receiver != nil && e.Receiver.Mode == ast.BorrowReceiver && e.Receiver.Mut {
+			if span, ok := constructorKeywordSpan(e, v.src); ok {
+				v.add(span, tokenTypeMethod)
+			}
+		}
+	case *ast.MethodElem:
+		v.addMemberName(e.Name, e.Receiver, tokenTypeMethod)
+		v.addReceiver(e.Receiver)
+	case *ast.GetterElem:
+		v.addMemberName(e.Name, e.Receiver, tokenTypeProperty)
+		v.addReceiver(e.Receiver)
+	case *ast.SetterElem:
+		v.addMemberName(e.Name, e.Receiver, tokenTypeProperty)
+		v.addReceiver(e.Receiver)
+	}
+	return true
+}
+
+func (v *mutableTokenVisitor) EnterObjTypeAnnElem(e ast.ObjTypeAnnElem) bool {
+	switch e := e.(type) {
+	case *ast.MethodTypeAnn:
+		v.addMemberName(e.Name, e.Receiver, tokenTypeMethod)
+	case *ast.GetterTypeAnn:
+		v.addMemberName(e.Name, e.Receiver, tokenTypeProperty)
+	case *ast.SetterTypeAnn:
+		v.addMemberName(e.Name, e.Receiver, tokenTypeProperty)
 	}
 	return true
 }
@@ -205,6 +250,62 @@ func (v *mutableTokenVisitor) addRead(e *ast.IdentExpr) {
 		tokenType = tokenTypeParameter
 	}
 	v.add(e.Span(), tokenType)
+}
+
+// addMemberName records a token of tokenType for name, the name a method, getter, or
+// setter is declared under, when receiver is `&mut self`. It records nothing for a name written as
+// a string or a computed key.
+func (v *mutableTokenVisitor) addMemberName(name ast.ObjKey, receiver *ast.MethodReceiver, tokenType int) {
+	if receiver == nil || receiver.Mode != ast.BorrowReceiver || !receiver.Mut {
+		return
+	}
+	if ident, ok := name.(*ast.IdentExpr); ok {
+		v.add(ident.Span(), tokenType)
+	}
+}
+
+// constructorKeywordSpan returns the span of the `constructor` keyword that names c in
+// src's text, and false when the text holds none. The element's span can start before
+// the keyword, at `private`, so the keyword is the first `constructor` followed by `(`.
+func constructorKeywordSpan(c *ast.ConstructorElem, src *ast.Source) (ast.Span, bool) {
+	const keyword = "constructor"
+	span := c.Span()
+	start, end := span.Start.Offset, span.End.Offset
+	if src == nil || start < 0 || end > len(src.Contents) || start > end {
+		return ast.Span{}, false
+	}
+	text := src.Contents[start:end]
+	for i := 0; i+len(keyword) <= len(text); {
+		j := strings.Index(text[i:], keyword)
+		if j < 0 {
+			break
+		}
+		at := i + j
+		if rest := strings.TrimLeft(text[at+len(keyword):], " \t\r\n"); strings.HasPrefix(rest, "(") {
+			return ast.Span{
+				Start:    ast.Location{Offset: start + at},
+				End:      ast.Location{Offset: start + at + len(keyword)},
+				SourceID: span.SourceID,
+			}, true
+		}
+		i = at + len(keyword)
+	}
+	return ast.Span{}, false
+}
+
+// addReceiver records a parameter token for the `self` of receiver when receiver is
+// `&mut self` or `mut self`.
+func (v *mutableTokenVisitor) addReceiver(receiver *ast.MethodReceiver) {
+	if receiver == nil || !receiver.Mut {
+		return
+	}
+	// A receiver ends with `self`.
+	end := receiver.Span_.End.Offset
+	v.add(ast.Span{
+		Start:    ast.Location{Offset: end - len("self")},
+		End:      ast.Location{Offset: end},
+		SourceID: receiver.Span_.SourceID,
+	}, tokenTypeParameter)
 }
 
 // addParams records the binding leaves of params. Call it on entering the function that

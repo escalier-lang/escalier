@@ -111,6 +111,8 @@ test('initialize', async () => {
               "tokenTypes": [
                 "variable",
                 "parameter",
+                "method",
+                "property",
               ],
             },
           },
