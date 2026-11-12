@@ -5,7 +5,7 @@
     justify-content: center;
     height: 100%;
     gap: 12px;
-    color: #969696;
+    color: var(--color-text-muted);
     font-family: sans-serif;
     font-size: 14px;
 }
@@ -13,8 +13,8 @@
 .spinner {
     width: 24px;
     height: 24px;
-    border: 3px solid #333;
-    border-top-color: #007acc;
+    border: 3px solid var(--color-border-strong);
+    border-top-color: var(--color-accent);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
 }
@@ -26,8 +26,8 @@
 }
 
 .errorBanner {
-    background-color: #5a1d1d;
-    color: #f48771;
+    background-color: var(--color-bg-error);
+    color: var(--color-text-error);
     padding: 8px 16px;
     font-family: sans-serif;
     font-size: 13px;

@@ -1,24 +1,24 @@
 .dialog {
-    background: #252526;
-    border: 1px solid #3c3c3c;
+    background: var(--color-bg-raised);
+    border: 1px solid var(--color-border-strong);
     border-radius: 8px;
     padding: 24px;
     min-width: 320px;
     max-width: 480px;
     font-family: sans-serif;
-    color: #cccccc;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+    color: var(--color-text);
+    box-shadow: 0 8px 32px var(--color-shadow-strong);
 }
 
 .dialog::backdrop {
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--color-backdrop);
 }
 
 .title {
     font-size: 15px;
     font-weight: 600;
     margin: 0 0 12px 0;
-    color: #ffffff;
+    color: var(--color-text-strong);
 }
 
 .message {
@@ -36,37 +36,37 @@
 .button {
     padding: 6px 16px;
     border-radius: 4px;
-    border: 1px solid #3c3c3c;
+    border: 1px solid var(--color-border-strong);
     font-size: 13px;
     font-family: sans-serif;
     cursor: pointer;
 }
 
 .cancelButton {
-    background: #3c3c3c;
-    color: #cccccc;
+    background: var(--color-bg-button);
+    color: var(--color-text);
 }
 
 .cancelButton:hover {
-    background: #4c4c4c;
+    background: var(--color-bg-button-hover);
 }
 
 .confirmButton {
-    background: #0078d4;
-    border-color: #0078d4;
-    color: #ffffff;
+    background: var(--color-button-primary);
+    border-color: var(--color-button-primary);
+    color: var(--color-text-on-accent);
 }
 
 .confirmButton:hover {
-    background: #1a8ae8;
+    background: var(--color-button-primary-hover);
 }
 
 .destructiveButton {
-    background: #d42020;
-    border-color: #d42020;
-    color: #ffffff;
+    background: var(--color-danger);
+    border-color: var(--color-danger);
+    color: var(--color-text-on-accent);
 }
 
 .destructiveButton:hover {
-    background: #e03030;
+    background: var(--color-danger-hover);
 }

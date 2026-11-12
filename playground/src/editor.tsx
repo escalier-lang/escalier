@@ -12,6 +12,7 @@ import { Toast } from './components/toast';
 import { useEditorStore } from './editor-store';
 import type { BrowserFS } from './fs/browser-fs';
 import { languageID } from './language';
+import { monacoThemeName, useThemeStore } from './theme';
 
 import styles from './editor.module.css';
 
@@ -218,7 +219,7 @@ export const Editor = ({
         if (!inputElem || !outputElem) return;
 
         const inputEditor = monaco.editor.create(inputElem, {
-            theme: 'escalier-theme',
+            theme: monacoThemeName(useThemeStore.getState().theme),
             bracketPairColorization: { enabled: true },
             fontSize: 14,
             automaticLayout: true,
@@ -228,7 +229,7 @@ export const Editor = ({
         inputEditorRef.current = inputEditor;
 
         const outputEditor = monaco.editor.create(outputElem, {
-            theme: 'escalier-theme',
+            theme: monacoThemeName(useThemeStore.getState().theme),
             bracketPairColorization: { enabled: true },
             fontSize: 14,
             automaticLayout: true,

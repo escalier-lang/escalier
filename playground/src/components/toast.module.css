@@ -6,31 +6,31 @@
     border-radius: 6px;
     font-family: sans-serif;
     font-size: 13px;
-    color: #fff;
+    color: var(--color-text-on-accent);
     z-index: 1000;
     display: flex;
     align-items: center;
     gap: 12px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 4px 12px var(--color-shadow);
     animation: toast-slide-in 0.2s ease-out;
 }
 
 .info {
-    background-color: #0078d4;
+    background-color: var(--color-button-primary);
 }
 
 .warning {
-    background-color: #8a6d14;
+    background-color: var(--color-warning);
 }
 
 .error {
-    background-color: #d42020;
+    background-color: var(--color-danger);
 }
 
 .dismiss {
     background: none;
     border: none;
-    color: #fff;
+    color: var(--color-text-on-accent);
     cursor: pointer;
     font-size: 16px;
     padding: 0 4px;

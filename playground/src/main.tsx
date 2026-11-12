@@ -16,6 +16,9 @@ import { Client } from './lsp-client/client';
 import { Playground } from './playground';
 import { loadProject } from './project-loader';
 import { downloadStartupFiles, runStartup } from './startup';
+import { prefersLightQuery, syncTheme } from './theme';
+
+import './theme.css';
 
 import './user-worker'; // sets up the monaco editor worker
 
@@ -176,6 +179,12 @@ async function main() {
     if (!root) {
         throw new Error('Root element not found');
     }
+
+    syncTheme(
+        document.documentElement,
+        window.localStorage,
+        window.matchMedia(prefersLightQuery),
+    );
 
     const reactRoot = ReactDOM.createRoot(root);
     const started = await runStartup(
