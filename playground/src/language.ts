@@ -59,8 +59,15 @@ function lspRangeToMonacoRange(range: lsp.Range): monaco.Range {
     );
 }
 
-export function setupLanguage(client: Client) {
+export function setupLanguage(
+    client: Client,
+    capabilities: lsp.ServerCapabilities,
+) {
     monaco.languages.register({ id: languageID });
+
+    // Fires when a document's semantic tokens may have changed, so Monaco asks for them
+    // again.
+    const semanticTokensChanged = new monaco.Emitter<void>();
 
     type ModelState = {
         debounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -106,6 +113,10 @@ export function setupLanguage(client: Client) {
             if (!model) {
                 return;
             }
+
+            // The server publishes diagnostics after each check, and the tokens it reports
+            // come from the latest check.
+            semanticTokensChanged.fire();
 
             if (params.uri.endsWith('.esc')) {
                 // Trigger a full package recompilation. The compile
@@ -359,10 +370,58 @@ export function setupLanguage(client: Client) {
         },
     });
 
+    const semanticTokensProvider = capabilities.semanticTokensProvider;
+    const legend = semanticTokensProvider?.legend;
+    if (legend) {
+        monaco.languages.registerDocumentSemanticTokensProvider(languageID, {
+            onDidChange: semanticTokensChanged.event,
+            getLegend() {
+                return legend;
+            },
+            async provideDocumentSemanticTokens(model, _lastResultId, _token) {
+                try {
+                    flushPendingChanges(model.uri.toString());
+                    const tokens = await client.textDocumentSemanticTokensFull({
+                        textDocument: { uri: model.uri.toString() },
+                    });
+                    if (!tokens) {
+                        return null;
+                    }
+                    return {
+                        resultId: tokens.resultId,
+                        data: new Uint32Array(tokens.data),
+                    };
+                } catch (e) {
+                    console.error('Semantic tokens error:', e);
+                    return null;
+                }
+            },
+            releaseDocumentSemanticTokens() {},
+        });
+    }
+
     monaco.editor.defineTheme('escalier-theme', {
         base: 'vs-dark',
         inherit: true,
         colors: {},
-        rules: [],
+        rules: mutableTokenRules(legend),
     });
+}
+
+/**
+ * Returns a theme rule that underlines each token type in legend when it carries the
+ * `mutable` modifier. Monaco looks a semantic token up in the theme as its type followed
+ * by its modifiers, joined by dots, so `variable.mutable` matches a mutable variable and
+ * keeps the colour the theme gives `variable`.
+ */
+export function mutableTokenRules(
+    legend: lsp.SemanticTokensLegend | undefined,
+): monaco.editor.ITokenThemeRule[] {
+    if (!legend?.tokenModifiers.includes('mutable')) {
+        return [];
+    }
+    return legend.tokenTypes.map((tokenType) => ({
+        token: `${tokenType}.mutable`,
+        fontStyle: 'underline',
+    }));
 }

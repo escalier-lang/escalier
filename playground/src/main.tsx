@@ -1,5 +1,9 @@
 import ReactDOM from 'react-dom/client';
-import { FileChangeType, type FileEvent } from 'vscode-languageserver-protocol';
+import {
+    FileChangeType,
+    type FileEvent,
+    type InitializeResult,
+} from 'vscode-languageserver-protocol';
 
 import wasmUrl from '../../bin/lsp-server.wasm?url';
 
@@ -88,7 +92,7 @@ async function main() {
         ESCALIER_STDLIB_DIR: '/node_modules/escalier-builtins',
     });
     client.run();
-    const initResponse = await client.initialize({
+    const initResponse: InitializeResult = await client.initialize({
         processId: process.pid,
         rootUri: 'file:///',
         capabilities: {},
@@ -142,7 +146,7 @@ async function main() {
         client.workspaceDidChangeWatchedFiles({ changes });
     });
 
-    setupLanguage(client);
+    setupLanguage(client, initResponse.capabilities);
 
     const root = document.getElementById('root');
 

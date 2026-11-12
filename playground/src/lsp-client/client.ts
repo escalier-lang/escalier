@@ -548,6 +548,12 @@ export class Client {
         return this.sendRequest('textDocument/hover', params);
     }
 
+    textDocumentSemanticTokensFull(
+        params: lsp.SemanticTokensParams,
+    ): Promise<lsp.SemanticTokens | null> {
+        return this.sendRequest('textDocument/semanticTokens/full', params);
+    }
+
     textDocumentCompletion(
         params: lsp.CompletionParams,
     ): Promise<lsp.CompletionList | lsp.CompletionItem[] | null> {
