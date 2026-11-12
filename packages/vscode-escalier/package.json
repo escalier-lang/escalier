@@ -36,6 +36,10 @@
 			{
 				"id": "mutable",
 				"description": "Mutable bindings, mutable borrows, and members that take &mut self"
+			},
+			{
+				"id": "reassignable",
+				"description": "Bindings a var declaration introduces, which can be reassigned"
 			}
 		],
 		"semanticTokenScopes": [
@@ -44,10 +48,25 @@
 				"scopes": {
 					"*.mutable": [
 						"markup.underline"
+					],
+					"*.reassignable": [
+						"markup.bold"
 					]
 				}
 			}
-		]
+		],
+		"configurationDefaults": {
+			"editor.semanticTokenColorCustomizations": {
+				"rules": {
+					"*.mutable:escalier": {
+						"underline": true
+					},
+					"*.reassignable:escalier": {
+						"bold": true
+					}
+				}
+			}
+		}
 	},
 	"dependencies": {
 		"glob": "^11.1.0",

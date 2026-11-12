@@ -28,12 +28,18 @@ const (
 )
 
 // semanticTokenModifiers lists the token modifiers the server reports, in legend order.
-// Modifier i sets bit 1<<i of a token's modifier bits. `mutable` is not one of the
-// modifiers LSP predefines. rust-analyzer reports the same name for the same purpose, and
-// an editor styles it through its own configuration.
-var semanticTokenModifiers = []string{"mutable"}
+// Modifier i sets bit 1<<i of a token's modifier bits. Neither is one of the modifiers
+// LSP predefines, so an editor styles each through its own configuration.
+//
+//   - `mutable` marks a name whose value can be mutated. rust-analyzer reports the same
+//     name for the same purpose.
+//   - `reassignable` marks a name a `var` declaration binds, which can be reassigned.
+var semanticTokenModifiers = []string{"mutable", "reassignable"}
 
-const tokenModifierMutable = 1 << 0
+const (
+	tokenModifierMutable = 1 << iota
+	tokenModifierReassignable
+)
 
 // semanticTokensOptions returns the semantic tokens capability the server advertises.
 func semanticTokensOptions() *protocol.SemanticTokensOptions {
@@ -86,6 +92,7 @@ func (s *Server) textDocumentSemanticTokensFull(context *glsp.Context, params *p
 		info:           info,
 		src:            src,
 		params:         set.NewSet[ast.Node](),
+		reassignables:  set.NewSet[ast.Node](),
 	}
 	if script != nil {
 		script.Accept(visitor)
@@ -133,11 +140,13 @@ func encodeSemanticTokens(lineMap *ast.LineMap, tokens []semanticToken) []protoc
 }
 
 // mutableTokenVisitor collects a token for each name in one file that binds or reads
-// mutable data, and for each method, getter, setter, or constructor that takes
-// `&mut self`. A name binds mutable data when its binding is mutable, as in `val mut p`,
-// or when its value is a mutable borrow, as in `val r: &mut Point`. A member name is
-// marked where a class or an object type declares it, and not where a member expression
-// reads it, which is how rust-analyzer marks a method that takes `&mut self`.
+// mutable data or a reassignable binding, and for each method, getter, setter, or
+// constructor that takes `&mut self`. A name binds mutable data when its binding is
+// mutable, as in `val mut p`, or when its value is a mutable borrow, as in
+// `val r: &mut Point`. A name binds a reassignable binding when a `var` declaration binds
+// it, as in `var n = 0`. A member name is marked where a class or an object type declares
+// it, and not where a member expression reads it, which is how rust-analyzer marks a
+// method that takes `&mut self`.
 type mutableTokenVisitor struct {
 	ast.DefaultVisitor
 	info *solver.Info
@@ -145,12 +154,24 @@ type mutableTokenVisitor struct {
 	// params holds each leaf of a parameter pattern the walk has entered, an
 	// *ast.IdentPat or an *ast.ObjShorthandPat.
 	params set.Set[ast.Node]
-	tokens []semanticToken
+	// reassignables holds each leaf of a `var` declaration's pattern the walk has
+	// entered, an *ast.IdentPat or an *ast.ObjShorthandPat.
+	reassignables set.Set[ast.Node]
+	tokens        []semanticToken
 }
 
 func (v *mutableTokenVisitor) EnterDecl(d ast.Decl) bool {
-	if fn, ok := d.(*ast.FuncDecl); ok {
-		v.addParams(fn.Params)
+	switch d := d.(type) {
+	case *ast.FuncDecl:
+		v.addParams(d.Params)
+	case *ast.VarDecl:
+		// The walk enters a declaration before its pattern and before every read of
+		// the names it binds.
+		if d.Kind == ast.VarKind {
+			ast.ForEachLeafBinding(d.Pattern, func(_ string, leaf ast.Node) {
+				v.reassignables.Add(leaf)
+			})
+		}
 	}
 	return true
 }
@@ -174,7 +195,7 @@ func (v *mutableTokenVisitor) EnterClassElem(e ast.ClassElem) bool {
 		// signals that the body mutates the instance it builds.
 		if e.Receiver != nil && e.Receiver.Mode == ast.BorrowReceiver && e.Receiver.Mut {
 			if span, ok := constructorKeywordSpan(e, v.src); ok {
-				v.add(span, tokenTypeMethod)
+				v.add(span, tokenTypeMethod, tokenModifierMutable)
 			}
 		}
 	case *ast.MethodElem:
@@ -216,30 +237,32 @@ func (v *mutableTokenVisitor) EnterObjExprElem(e ast.ObjExprElem) bool {
 func (v *mutableTokenVisitor) EnterPat(p ast.Pat) bool {
 	switch p := p.(type) {
 	case *ast.IdentPat:
-		if v.info.BindsMut(p) || v.info.LendsMut(p) {
-			v.add(identPatNameSpan(p, v.src), v.leafTokenType(p))
-		}
+		v.add(identPatNameSpan(p, v.src), v.leafTokenType(p), v.leafModifiers(p, v.info.BindsMut(p)))
 	case *ast.ObjectPat:
 		// The walk enters no node for a shorthand leaf such as `{mut x}`, so its parent
 		// object pattern reports it.
 		for _, elem := range p.Elems {
-			leaf, ok := elem.(*ast.ObjShorthandPat)
-			if ok && leaf.Key != nil && (leaf.Mutable || v.info.LendsMut(leaf)) {
-				v.add(leaf.Key.Span(), v.leafTokenType(leaf))
+			if leaf, ok := elem.(*ast.ObjShorthandPat); ok && leaf.Key != nil {
+				v.add(leaf.Key.Span(), v.leafTokenType(leaf), v.leafModifiers(leaf, leaf.Mutable))
 			}
 		}
 	}
 	return true
 }
 
-// addRead records a token for e, a read of a binding, when it reads mutable data.
+// addRead records a token for e, a read of a binding, when it reads mutable data or a
+// reassignable binding.
 func (v *mutableTokenVisitor) addRead(e *ast.IdentExpr) {
 	_, mut, _ := bindingOf(v.info, e)
-	if !mut && !v.info.LendsMut(e) {
-		return
+	decl, found := v.info.DeclOf(e)
+	modifiers := 0
+	if mut || v.info.LendsMut(e) {
+		modifiers |= tokenModifierMutable
+	}
+	if found && v.isReassignable(decl) {
+		modifiers |= tokenModifierReassignable
 	}
 	tokenType := tokenTypeVariable
-	decl, found := v.info.DeclOf(e)
 	switch {
 	case found && v.params.Contains(decl):
 		tokenType = tokenTypeParameter
@@ -249,7 +272,30 @@ func (v *mutableTokenVisitor) addRead(e *ast.IdentExpr) {
 		// `val mut self` has a declaration and keeps the variable type.
 		tokenType = tokenTypeParameter
 	}
-	v.add(e.Span(), tokenType)
+	v.add(e.Span(), tokenType, modifiers)
+}
+
+// isReassignable reports whether decl, the node a read resolved to, is bound by a `var`
+// declaration. decl is the whole *ast.VarDecl for a module-level binding and the leaf of
+// its pattern for a local one.
+func (v *mutableTokenVisitor) isReassignable(decl ast.Node) bool {
+	if varDecl, ok := decl.(*ast.VarDecl); ok {
+		return varDecl.Kind == ast.VarKind
+	}
+	return v.reassignables.Contains(decl)
+}
+
+// leafModifiers returns the modifier bits of leaf, a binding leaf that is an
+// *ast.IdentPat or an *ast.ObjShorthandPat. bindsMut says whether its binding is `mut`.
+func (v *mutableTokenVisitor) leafModifiers(leaf ast.Node, bindsMut bool) int {
+	modifiers := 0
+	if bindsMut || v.info.LendsMut(leaf) {
+		modifiers |= tokenModifierMutable
+	}
+	if v.reassignables.Contains(leaf) {
+		modifiers |= tokenModifierReassignable
+	}
+	return modifiers
 }
 
 // addMemberName records a token of tokenType for name, the name a method, getter, or
@@ -260,7 +306,7 @@ func (v *mutableTokenVisitor) addMemberName(name ast.ObjKey, receiver *ast.Metho
 		return
 	}
 	if ident, ok := name.(*ast.IdentExpr); ok {
-		v.add(ident.Span(), tokenType)
+		v.add(ident.Span(), tokenType, tokenModifierMutable)
 	}
 }
 
@@ -305,7 +351,7 @@ func (v *mutableTokenVisitor) addReceiver(receiver *ast.MethodReceiver) {
 		Start:    ast.Location{Offset: end - len("self")},
 		End:      ast.Location{Offset: end},
 		SourceID: receiver.Span_.SourceID,
-	}, tokenTypeParameter)
+	}, tokenTypeParameter, tokenModifierMutable)
 }
 
 // addParams records the binding leaves of params. Call it on entering the function that
@@ -327,7 +373,11 @@ func (v *mutableTokenVisitor) leafTokenType(leaf ast.Node) int {
 	return tokenTypeVariable
 }
 
-// add records a mutable token of tokenType over span.
-func (v *mutableTokenVisitor) add(span ast.Span, tokenType int) {
-	v.tokens = append(v.tokens, semanticToken{span: span, tokenType: tokenType, modifiers: tokenModifierMutable})
+// add records a token of tokenType with modifier bits modifiers over span. It records
+// nothing when modifiers is zero, since the server reports only marked names.
+func (v *mutableTokenVisitor) add(span ast.Span, tokenType int, modifiers int) {
+	if modifiers == 0 {
+		return
+	}
+	v.tokens = append(v.tokens, semanticToken{span: span, tokenType: tokenType, modifiers: modifiers})
 }

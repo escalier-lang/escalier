@@ -5,7 +5,7 @@ import type * as lsp from 'vscode-languageserver-protocol';
 import {
     coalesced,
     createSemanticTokensProvider,
-    mutableTokenRules,
+    modifierTokenRules,
 } from './semantic-tokens';
 
 const uri = 'file:///lib/index.esc';
@@ -107,21 +107,46 @@ describe('coalesced', () => {
     });
 });
 
-describe('mutableTokenRules', () => {
-    test('underlines each token type with the mutable modifier', () => {
-        expect(mutableTokenRules(legend)).toEqual([
+describe('modifierTokenRules', () => {
+    test('styles each token type by every combination of its modifiers', () => {
+        expect(
+            modifierTokenRules({
+                tokenTypes: ['variable', 'parameter'],
+                tokenModifiers: ['mutable', 'reassignable'],
+            }),
+        ).toEqual([
+            { token: 'variable.mutable', fontStyle: 'underline' },
+            { token: 'parameter.mutable', fontStyle: 'underline' },
+            { token: 'variable.reassignable', fontStyle: 'bold' },
+            { token: 'parameter.reassignable', fontStyle: 'bold' },
+            {
+                token: 'variable.mutable.reassignable',
+                fontStyle: 'underline bold',
+            },
+            {
+                token: 'parameter.mutable.reassignable',
+                fontStyle: 'underline bold',
+            },
+        ]);
+    });
+
+    test('underlines each token type when the legend has only mutable', () => {
+        expect(modifierTokenRules(legend)).toEqual([
             { token: 'variable.mutable', fontStyle: 'underline' },
             { token: 'parameter.mutable', fontStyle: 'underline' },
         ]);
     });
 
     test('returns no rules without a legend', () => {
-        expect(mutableTokenRules(undefined)).toEqual([]);
+        expect(modifierTokenRules(undefined)).toEqual([]);
     });
 
-    test('returns no rules when the legend has no mutable modifier', () => {
+    test('returns no rules when the legend has no styled modifier', () => {
         expect(
-            mutableTokenRules({ tokenTypes: ['variable'], tokenModifiers: [] }),
+            modifierTokenRules({
+                tokenTypes: ['variable'],
+                tokenModifiers: ['readonly'],
+            }),
         ).toEqual([]);
     });
 });

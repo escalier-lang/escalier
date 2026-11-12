@@ -107,6 +107,7 @@ test('initialize', async () => {
             "legend": {
               "tokenModifiers": [
                 "mutable",
+                "reassignable",
               ],
               "tokenTypes": [
                 "variable",
