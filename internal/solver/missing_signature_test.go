@@ -96,6 +96,33 @@ func TestMissingSignature(t *testing.T) {
 			},
 		},
 		{
+			name: "FullSignatureSuggestion",
+			src: `
+				type Flat = {x: number}
+				fn pick<T>(a: &Flat, b: &Flat, t: T, n?: number) { return a }
+			`,
+			expected: []string{
+				"3:8-3:12: 'pick' is declared at module level, so it needs a return type; " +
+					"write `fn pick<T, 'a>(a: &'a Flat, b: &Flat, t: T, n?: number) -> &'a Flat`",
+			},
+		},
+		{
+			name: "MethodFullSignatureSuggestion",
+			src: `
+				type Flat = {x: number}
+				class Picker {
+					n: number,
+					pick(&self, a: &Flat, b: &Flat) { return a },
+					static get zero() { return 0 },
+				}
+			`,
+			expected: []string{
+				"5:6-5:10: 'pick' is a method, so it needs a return type; " +
+					"write `pick<'a>(&self, a: &'a Flat, b: &Flat) -> &'a Flat`",
+				"6:17-6:21: 'zero' is a method, so it needs a return type; write `-> 0`",
+			},
+		},
+		{
 			name: "ClosureMissingParamType",
 			src:  `val double = fn (x) { return x * 2 }`,
 			expected: []string{
