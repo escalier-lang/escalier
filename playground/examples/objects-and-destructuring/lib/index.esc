@@ -16,8 +16,9 @@ export fn newTask(title: string, {done = false, tags = []}: {done?: boolean, tag
     return {title, done, tags}
 }
 
-// Object types are exact, so the checker rejects an option the type doesn't
-// list. Uncomment to see the error: object has extra property: priority
+// Object types are exact, so the checker rejects an option the type doesn't list.
+// Uncomment the line below to see the error:
+// > object has extra property: priority
 // val lawn = newTask("Mow the lawn", {priority: 1})
 
 // A tuple pattern binds elements by position, and a rest element collects the
