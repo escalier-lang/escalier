@@ -679,3 +679,35 @@ func TestParseTypeRefTrailingDot(t *testing.T) {
 		})
 	}
 }
+
+// TestParseTypeMemberOfNonRef asserts that `.` after a type that is not a plain
+// reference, such as `Foo<T>.K`, reads as an index access, and that a `.` with no
+// identifier after it indexes by "" and reports the missing identifier.
+func TestParseTypeMemberOfNonRef(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		printed string
+		errors  []string
+	}{
+		{name: "AfterTypeArgs", input: "Foo<T>.K", printed: `Foo<T>["K"]`},
+		{name: "AfterParens", input: "(A).b", printed: `A["b"]`},
+		{name: "TrailingDotAfterTypeArgs", input: "Foo<T>.", printed: `Foo<T>[""]`, errors: []string{"expected an identifier after ."}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			typeAnn, errs := parseTypeAnnSrc(t, tt.input)
+			printed, err := printer.Print(typeAnn, printer.DefaultOptions())
+			require.NoError(t, err)
+			require.Equal(t, tt.printed, printed)
+			messages := []string{}
+			for _, e := range errs {
+				messages = append(messages, e.Message)
+			}
+			if tt.errors == nil {
+				tt.errors = []string{}
+			}
+			require.Equal(t, tt.errors, messages)
+		})
+	}
+}
