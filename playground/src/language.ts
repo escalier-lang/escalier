@@ -8,6 +8,11 @@ import {
 } from './completions';
 import type { Client } from './lsp-client/client';
 import { monarchLanguage } from './monarch-language';
+import {
+    coalesced,
+    createSemanticTokensProvider,
+    mutableTokenRules,
+} from './semantic-tokens';
 
 export const languageID = 'escalier';
 
@@ -59,8 +64,20 @@ function lspRangeToMonacoRange(range: lsp.Range): monaco.Range {
     );
 }
 
-export function setupLanguage(client: Client) {
+export function setupLanguage(
+    client: Client,
+    capabilities: lsp.ServerCapabilities,
+) {
     monaco.languages.register({ id: languageID });
+
+    // Fires when a document's semantic tokens may have changed, so Monaco asks for them
+    // again.
+    const semanticTokensChanged = new monaco.Emitter<void>();
+    // A package check publishes diagnostics for every open file in a row, and each fire
+    // makes Monaco request tokens for every visible model, so a burst fires once.
+    const scheduleSemanticTokensRefresh = coalesced(() =>
+        semanticTokensChanged.fire(),
+    );
 
     type ModelState = {
         debounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -106,6 +123,10 @@ export function setupLanguage(client: Client) {
             if (!model) {
                 return;
             }
+
+            // The server publishes diagnostics after each check, and the tokens it reports
+            // come from the latest check.
+            scheduleSemanticTokensRefresh();
 
             if (params.uri.endsWith('.esc')) {
                 // Trigger a full package recompilation. The compile
@@ -359,10 +380,31 @@ export function setupLanguage(client: Client) {
         },
     });
 
+    const semanticTokensProvider = capabilities.semanticTokensProvider;
+    const legend = semanticTokensProvider?.legend;
+    if (legend) {
+        monaco.languages.registerDocumentSemanticTokensProvider(
+            languageID,
+            createSemanticTokensProvider({
+                legend,
+                request: (params) =>
+                    client.textDocumentSemanticTokensFull(params),
+                // Monaco asks for tokens soon after every edit. Flushing the debounced
+                // didChange, as completion and hover do, would start a check per
+                // request. The provider declines while the change is pending instead,
+                // and the refresh that follows the check's diagnostics fetches the new
+                // tokens.
+                hasPendingChange: (uri) =>
+                    modelStates.get(uri)?.debounceTimer !== undefined,
+                onDidChange: semanticTokensChanged.event,
+            }),
+        );
+    }
+
     monaco.editor.defineTheme('escalier-theme', {
         base: 'vs-dark',
         inherit: true,
         colors: {},
-        rules: [],
+        rules: mutableTokenRules(legend),
     });
 }

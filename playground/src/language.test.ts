@@ -1,0 +1,161 @@
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import type * as lsp from 'vscode-languageserver-protocol';
+
+import { setupLanguage } from './language';
+import type { Client } from './lsp-client/client';
+
+const monacoMock = vi.hoisted(() => {
+    class Emitter<T> {
+        private listeners: Array<(value: T) => void> = [];
+        event = (listener: (value: T) => void) => {
+            this.listeners.push(listener);
+            return { dispose() {} };
+        };
+        fire(value: T) {
+            for (const listener of this.listeners) {
+                listener(value);
+            }
+        }
+    }
+    return {
+        Emitter,
+        MarkerSeverity: { Error: 8, Warning: 4, Info: 2, Hint: 1 },
+        Range: class {},
+        Uri: { parse: (s: string) => s },
+        editor: {
+            defineTheme: vi.fn(),
+            getModels: vi.fn(() => [] as unknown[]),
+            onDidCreateModel: vi.fn(),
+            onWillDisposeModel: vi.fn(),
+            setModelMarkers: vi.fn(),
+        },
+        languages: {
+            onLanguage: vi.fn(),
+            register: vi.fn(),
+            registerCompletionItemProvider: vi.fn(),
+            registerDeclarationProvider: vi.fn(),
+            registerDefinitionProvider: vi.fn(),
+            registerDocumentSemanticTokensProvider: vi.fn(),
+            registerHoverProvider: vi.fn(),
+            setLanguageConfiguration: vi.fn(),
+            setMonarchTokensProvider: vi.fn(),
+        },
+    };
+});
+
+vi.mock('monaco-editor-core', () => monacoMock);
+
+const uri = 'file:///lib/index.esc';
+const legend: lsp.SemanticTokensLegend = {
+    tokenTypes: ['variable'],
+    tokenModifiers: ['mutable'],
+};
+
+type FakeClient = {
+    client: Client;
+    publishDiagnostics: (params: lsp.PublishDiagnosticsParams) => void;
+    textDocumentSemanticTokensFull: ReturnType<typeof vi.fn>;
+};
+
+function fakeClient(): FakeClient {
+    let onDiagnostics: (params: lsp.PublishDiagnosticsParams) => void =
+        () => {};
+    const textDocumentSemanticTokensFull = vi
+        .fn()
+        .mockResolvedValue({ data: [0, 8, 1, 0, 1] });
+    const client = {
+        onTextDocumentPublishDiagnostics: (
+            handler: (params: lsp.PublishDiagnosticsParams) => void,
+        ) => {
+            onDiagnostics = handler;
+        },
+        workspaceExecuteCommand: vi.fn().mockResolvedValue(undefined),
+        textDocumentSemanticTokensFull,
+    } as unknown as Client;
+    return {
+        client,
+        publishDiagnostics: (params) => onDiagnostics(params),
+        textDocumentSemanticTokensFull,
+    };
+}
+
+describe('setupLanguage', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    test('registers a semantic tokens provider with the server legend', async () => {
+        const { client, textDocumentSemanticTokensFull } = fakeClient();
+
+        setupLanguage(client, {
+            semanticTokensProvider: { legend, full: true },
+        });
+
+        const register =
+            monacoMock.languages.registerDocumentSemanticTokensProvider;
+        expect(register).toHaveBeenCalledTimes(1);
+        const [languageID, provider] = register.mock.calls[0];
+        expect(languageID).toBe('escalier');
+        expect(provider.getLegend()).toBe(legend);
+
+        const model = { uri: { toString: () => uri } };
+        const tokens = await provider.provideDocumentSemanticTokens(
+            model,
+            null,
+            {},
+        );
+        expect(textDocumentSemanticTokensFull).toHaveBeenCalledWith({
+            textDocument: { uri },
+        });
+        expect(tokens.data).toEqual(new Uint32Array([0, 8, 1, 0, 1]));
+
+        expect(monacoMock.editor.defineTheme).toHaveBeenCalledWith(
+            'escalier-theme',
+            expect.objectContaining({
+                rules: [{ token: 'variable.mutable', fontStyle: 'underline' }],
+            }),
+        );
+    });
+
+    test('registers no provider when the server advertises no semantic tokens', () => {
+        const { client } = fakeClient();
+
+        setupLanguage(client, {});
+
+        expect(
+            monacoMock.languages.registerDocumentSemanticTokensProvider,
+        ).not.toHaveBeenCalled();
+        expect(monacoMock.editor.defineTheme).toHaveBeenCalledWith(
+            'escalier-theme',
+            expect.objectContaining({ rules: [] }),
+        );
+    });
+
+    test('asks Monaco for new tokens once after a burst of diagnostics', () => {
+        vi.useFakeTimers();
+        const { client, publishDiagnostics } = fakeClient();
+        monacoMock.editor.getModels.mockReturnValue([
+            { uri: { toString: () => uri } },
+        ]);
+
+        setupLanguage(client, {
+            semanticTokensProvider: { legend, full: true },
+        });
+        const [, provider] =
+            monacoMock.languages.registerDocumentSemanticTokensProvider.mock
+                .calls[0];
+        const refreshed = vi.fn();
+        provider.onDidChange(refreshed);
+
+        publishDiagnostics({ uri, diagnostics: [] });
+        publishDiagnostics({ uri, diagnostics: [] });
+        expect(refreshed).not.toHaveBeenCalled();
+
+        vi.runAllTimers();
+        expect(refreshed).toHaveBeenCalledTimes(1);
+    });
+});
