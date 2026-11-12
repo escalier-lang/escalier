@@ -94,20 +94,34 @@ func TestAmbientCheckerReloadsEditedPrelude(t *testing.T) {
 	require.Equal(t, "string", values["m"])
 }
 
-// TestAmbientCheckerReportsLoadErrorAtImport asserts that a package which loads with a
-// diagnostic reports it at the import naming it, on a cached run as on a fresh one. A
-// run that imports nothing does not load the package, so it reports nothing.
+// TestAmbientCheckerReportsLoadErrorAtImport covers a package that loads with a diagnostic,
+// on a cached run as on a fresh one. An import reports it at the import's span. Without an
+// import, `std:math` does not load and reports nothing, while `std:number`, which every run
+// loads for a number's members, reports it with no span.
 func TestAmbientCheckerReportsLoadErrorAtImport(t *testing.T) {
-	inferDir := seedStdlib(t, withPreludeClasses(map[string]string{
-		"std/math.esc": `export val PI: number = "pi"`,
-	}))
-	inferErr := `package "std:math" (` + filepath.Join(inferDir, "std", "math.esc") +
-		`) has 1 error(s):` + "\n" + `  cannot constrain "pi" <: number`
-	jsDir := seedStdlib(t, withJsPreludeClasses(map[string]string{
-		"std/math.esc": `export declare val PI: number`,
-	}))
-	jsErr := `exported value "PI" in pseudo-package file ` + filepath.Join(jsDir, "std", "math.esc") +
-		" is missing an `@js(\"...\")` decorator"
+	type broken struct {
+		dir      string
+		inferErr string
+		jsDir    string
+		jsErr    string
+	}
+	seed := func(name string) broken {
+		inferDir := seedStdlib(t, withPreludeClasses(map[string]string{
+			"std/" + name + ".esc": `export val PI: number = "pi"`,
+		}))
+		jsDir := seedStdlib(t, withJsPreludeClasses(map[string]string{
+			"std/" + name + ".esc": `export declare val PI: number`,
+		}))
+		return broken{
+			dir: inferDir,
+			inferErr: `package "std:` + name + `" (` + filepath.Join(inferDir, "std", name+".esc") +
+				`) has 1 error(s):` + "\n" + `  cannot constrain "pi" <: number`,
+			jsDir: jsDir,
+			jsErr: `exported value "PI" in pseudo-package file ` + filepath.Join(jsDir, "std", name+".esc") +
+				" is missing an `@js(\"...\")` decorator",
+		}
+	}
+	math, number := seed("math"), seed("number")
 	jsOpts := Options{CheckJsDecorators: true}
 
 	cases := []struct {
@@ -119,27 +133,53 @@ func TestAmbientCheckerReportsLoadErrorAtImport(t *testing.T) {
 	}{
 		{
 			name: "inference error imported",
-			dir:  inferDir,
+			dir:  math.dir,
 			src:  "import \"std:math\"\nval p = math.PI",
-			want: []string{"1:1-1:18: " + inferErr},
+			want: []string{"1:1-1:18: " + math.inferErr},
 		},
 		{
 			name: "inference error not imported",
-			dir:  inferDir,
+			dir:  math.dir,
 			src:  `val p = 1`,
 		},
 		{
 			name: "loader rule imported",
-			dir:  jsDir,
+			dir:  math.jsDir,
 			opts: jsOpts,
 			src:  "import \"std:math\"\nval p = math.PI",
-			want: []string{"1:1-1:18: " + jsErr},
+			want: []string{"1:1-1:18: " + math.jsErr},
 		},
 		{
 			name: "loader rule not imported",
-			dir:  jsDir,
+			dir:  math.jsDir,
 			opts: jsOpts,
 			src:  `val p = 1`,
+		},
+		{
+			name: "literal class package inference error imported",
+			dir:  number.dir,
+			src:  "import \"std:number\"\nval p = number.PI",
+			want: []string{"1:1-1:20: " + number.inferErr},
+		},
+		{
+			name: "literal class package inference error not imported",
+			dir:  number.dir,
+			src:  `val p = 1`,
+			want: []string{"1:1-1:1: " + number.inferErr},
+		},
+		{
+			name: "literal class package loader rule imported",
+			dir:  number.jsDir,
+			opts: jsOpts,
+			src:  "import \"std:number\"\nval p = number.PI",
+			want: []string{"1:1-1:20: " + number.jsErr},
+		},
+		{
+			name: "literal class package loader rule not imported",
+			dir:  number.jsDir,
+			opts: jsOpts,
+			src:  `val p = 1`,
+			want: []string{"1:1-1:1: " + number.jsErr},
 		},
 	}
 	for _, tt := range cases {

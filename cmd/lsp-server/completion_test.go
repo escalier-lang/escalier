@@ -2226,6 +2226,22 @@ func TestScopeCompletionFromSolver(t *testing.T) {
 			excludes: []string{"unary +", "unary -"},
 		},
 		{
+			name:     "PreludeTypeInScript",
+			files:    map[string]string{"bin/main.esc": "val n = PropertyK"},
+			open:     "bin/main.esc",
+			line:     1,
+			col:      18,
+			expected: map[string]string{"PropertyKey": "string | number | symbol"},
+		},
+		{
+			name:     "PreludeTypeInModule",
+			files:    map[string]string{"lib/a.esc": "export val n = PropertyK"},
+			open:     "lib/a.esc",
+			line:     1,
+			col:      25,
+			expected: map[string]string{"PropertyKey": "string | number | symbol"},
+		},
+		{
 			name:     "UnimportedNamespaceLeftOutInScript",
 			files:    map[string]string{"bin/main.esc": "val n = Mat"},
 			open:     "bin/main.esc",
