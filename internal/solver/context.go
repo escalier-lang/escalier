@@ -555,22 +555,43 @@ func (c *Context) rigidSkolem(v *soltype.TypeVarType) *soltype.SkolemType {
 	}
 	sk := c.freshSkolem(rp.Name)
 	sk.Param = v
+	sk.Upper, sk.Lower = rigidBounds(rp)
+	rp.Skolem = sk
+	return sk
+}
+
+// displaySkolem returns the skolem the rigid parameter v is read as when one has been
+// minted. Otherwise it returns an unregistered skolem with the parameter's name and the
+// bounds rigidSkolem would give it, which prints and reads the same but never meets
+// constrain. It changes nothing, so it is safe once a run has finished. v must be rigid.
+func displaySkolem(v *soltype.TypeVarType) *soltype.SkolemType {
+	rp := v.Rigid
+	if rp.Skolem != nil {
+		return rp.Skolem
+	}
+	sk := &soltype.SkolemType{Name: rp.Name}
+	sk.Upper, sk.Lower = rigidBounds(rp)
+	return sk
+}
+
+// rigidBounds returns the meet of rp's upper bounds and the join of its lower bounds, each
+// nil when rp holds no bound on that side.
+func rigidBounds(rp *soltype.RigidParam) (upper, lower soltype.Type) {
 	switch len(rp.Uppers) {
 	case 0:
 	case 1:
-		sk.Upper = rp.Uppers[0]
+		upper = rp.Uppers[0]
 	default:
-		sk.Upper = &soltype.IntersectionType{Types: rp.Uppers}
+		upper = &soltype.IntersectionType{Types: rp.Uppers}
 	}
 	switch len(rp.Lowers) {
 	case 0:
 	case 1:
-		sk.Lower = rp.Lowers[0]
+		lower = rp.Lowers[0]
 	default:
-		sk.Lower = &soltype.UnionType{Types: rp.Lowers}
+		lower = &soltype.UnionType{Types: rp.Lowers}
 	}
-	rp.Skolem = sk
-	return sk
+	return upper, lower
 }
 
 // nameRigidParams returns t for display with each rigid parameter's variable replaced by

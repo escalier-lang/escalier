@@ -1217,9 +1217,8 @@ func (p *namedPrinter) printType(t Type) string {
 		// stays bare as `~number`.
 		return "~" + p.printTypeMinPrec(t.Inner, precPrefix)
 	case *SkolemType:
-		// A skolem renders under its source parameter name. It is transient to a
-		// checking-mode pass and does not survive into a displayed type, so this arm is
-		// reached only defensively.
+		// A skolem renders under its source parameter name. A diagnostic's operands and
+		// a type parameter read inside its own function display one.
 		return t.Name
 	}
 	panic(fmt.Sprintf("printType: unhandled %T", t))
