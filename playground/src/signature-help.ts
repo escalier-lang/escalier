@@ -1,3 +1,4 @@
+import type * as monaco from 'monaco-editor-core';
 import type * as lsp from 'vscode-languageserver-protocol';
 
 // These types mirror Monaco's SignatureHelp types, so this module converts the
@@ -59,12 +60,60 @@ export function convertSignatureHelp(
     };
 }
 
+export type SignatureHelpRequest = (
+    params: lsp.SignatureHelpParams,
+) => Promise<lsp.SignatureHelp | null>;
+
+export type SignatureHelpProviderOptions = {
+    /** The options the server advertised in its `initialize` result. */
+    options: lsp.SignatureHelpOptions;
+    /** Sends `textDocument/signatureHelp` to the server. */
+    request: SignatureHelpRequest;
+    /** Sends any change to the document at uri that has not been sent yet. */
+    flushPendingChanges: (uri: string) => void;
+};
+
+/**
+ * Returns a Monaco provider of the signatures of the call holding the cursor,
+ * read from the server. It triggers on the characters the server advertised,
+ * and it returns null when the server returns no signature or the request
+ * fails.
+ */
+export function createSignatureHelpProvider({
+    options,
+    request,
+    flushPendingChanges,
+}: SignatureHelpProviderOptions): monaco.languages.SignatureHelpProvider {
+    return {
+        signatureHelpTriggerCharacters: options.triggerCharacters,
+        signatureHelpRetriggerCharacters: options.retriggerCharacters,
+        async provideSignatureHelp(model, position, _token, _context) {
+            const uri = model.uri.toString();
+            try {
+                // The `(` or `,` that triggered the request is usually still
+                // in a debounced didChange, and the server must see it.
+                flushPendingChanges(uri);
+                const value = await provideSignatureHelp(request, uri, {
+                    // Monaco counts lines and columns from 1, and LSP from 0.
+                    line: position.lineNumber - 1,
+                    character: position.column - 1,
+                });
+                if (!value) {
+                    return null;
+                }
+                return { value, dispose() {} };
+            } catch (e) {
+                console.error('Signature help error:', e);
+                return null;
+            }
+        },
+    };
+}
+
 // provideSignatureHelp requests the signatures of the call holding position in
 // the document uri names, and returns them in Monaco's form.
 export async function provideSignatureHelp(
-    getSignatureHelp: (
-        params: lsp.SignatureHelpParams,
-    ) => Promise<lsp.SignatureHelp | null>,
+    getSignatureHelp: SignatureHelpRequest,
     uri: string,
     position: lsp.Position,
 ): Promise<MonacoSignatureHelp | null> {

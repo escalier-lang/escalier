@@ -1,7 +1,12 @@
-import { describe, expect, test, vi } from 'vitest';
+import type * as monaco from 'monaco-editor-core';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import type * as lsp from 'vscode-languageserver-protocol';
 
-import { convertSignatureHelp, provideSignatureHelp } from './signature-help';
+import {
+    convertSignatureHelp,
+    createSignatureHelpProvider,
+    provideSignatureHelp,
+} from './signature-help';
 
 const position: lsp.Position = { line: 0, character: 12 };
 const uri = 'file:///bin/main.esc';
@@ -117,5 +122,118 @@ describe('convertSignatureHelp', () => {
             parameters: [{ label: 'x: number', documentation: 'The input.' }],
             activeParameter: undefined,
         });
+    });
+});
+
+describe('createSignatureHelpProvider', () => {
+    const model = { uri: { toString: () => uri } } as monaco.editor.ITextModel;
+    // Monaco's line 1, column 13 is LSP's line 0, character 12.
+    const monacoPosition = {
+        lineNumber: 1,
+        column: 13,
+    } as monaco.Position;
+    const cancellation = {} as monaco.CancellationToken;
+    const context = {} as monaco.languages.SignatureHelpContext;
+    const options: lsp.SignatureHelpOptions = {
+        triggerCharacters: ['(', ','],
+        retriggerCharacters: [')'],
+    };
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    test('triggers on the characters the server advertised', () => {
+        const provider = createSignatureHelpProvider({
+            options,
+            request: vi.fn(),
+            flushPendingChanges: vi.fn(),
+        });
+        expect(provider.signatureHelpTriggerCharacters).toEqual(['(', ',']);
+        expect(provider.signatureHelpRetriggerCharacters).toEqual([')']);
+    });
+
+    test('flushes pending changes, then returns the signatures', async () => {
+        const calls: string[] = [];
+        const flushPendingChanges = vi.fn(() => {
+            calls.push('flush');
+        });
+        const request = vi.fn(async () => {
+            calls.push('request');
+            return {
+                signatures: [
+                    {
+                        label: 'f(x: number) -> number',
+                        parameters: [{ label: [2, 11] }],
+                    },
+                ],
+                activeSignature: 0,
+                activeParameter: 0,
+            } satisfies lsp.SignatureHelp;
+        });
+        const provider = createSignatureHelpProvider({
+            options,
+            request,
+            flushPendingChanges,
+        });
+
+        const result = await provider.provideSignatureHelp(
+            model,
+            monacoPosition,
+            cancellation,
+            context,
+        );
+
+        expect(calls).toEqual(['flush', 'request']);
+        expect(flushPendingChanges).toHaveBeenCalledWith(uri);
+        expect(request).toHaveBeenCalledWith({
+            textDocument: { uri },
+            position,
+        });
+        expect(result?.value).toEqual({
+            signatures: [
+                {
+                    label: 'f(x: number) -> number',
+                    documentation: undefined,
+                    parameters: [{ label: [2, 11], documentation: undefined }],
+                    activeParameter: undefined,
+                },
+            ],
+            activeSignature: 0,
+            activeParameter: 0,
+        });
+    });
+
+    test('returns null when the server returns no signature', async () => {
+        const provider = createSignatureHelpProvider({
+            options,
+            request: vi.fn().mockResolvedValue(null),
+            flushPendingChanges: vi.fn(),
+        });
+        const result = await provider.provideSignatureHelp(
+            model,
+            monacoPosition,
+            cancellation,
+            context,
+        );
+        expect(result).toBeNull();
+    });
+
+    test('returns null and logs when the request fails', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const failure = new Error('server gone');
+        const provider = createSignatureHelpProvider({
+            options,
+            request: vi.fn().mockRejectedValue(failure),
+            flushPendingChanges: vi.fn(),
+        });
+        const result = await provider.provideSignatureHelp(
+            model,
+            monacoPosition,
+            cancellation,
+            context,
+        );
+        expect(result).toBeNull();
+        expect(error).toHaveBeenCalledWith('Signature help error:', failure);
     });
 });

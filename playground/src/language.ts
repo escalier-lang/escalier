@@ -13,7 +13,7 @@ import {
     createSemanticTokensProvider,
     modifierTokenRules,
 } from './semantic-tokens';
-import { provideSignatureHelp } from './signature-help';
+import { createSignatureHelpProvider } from './signature-help';
 import { monacoThemeName, useThemeStore } from './theme';
 
 export const languageID = 'escalier';
@@ -383,33 +383,16 @@ export function setupLanguage(
         },
     });
 
-    const signatureHelpProvider = capabilities.signatureHelpProvider;
-    if (signatureHelpProvider) {
-        monaco.languages.registerSignatureHelpProvider(languageID, {
-            signatureHelpTriggerCharacters:
-                signatureHelpProvider.triggerCharacters,
-            signatureHelpRetriggerCharacters:
-                signatureHelpProvider.retriggerCharacters,
-            async provideSignatureHelp(model, position, _token, _context) {
-                try {
-                    // The `(` or `,` that triggered the request is usually
-                    // still in a debounced didChange, and the server must see it.
-                    flushPendingChanges(model.uri.toString());
-                    const value = await provideSignatureHelp(
-                        (params) => client.textDocumentSignatureHelp(params),
-                        model.uri.toString(),
-                        monacoPosToLspPos(position),
-                    );
-                    if (!value) {
-                        return null;
-                    }
-                    return { value, dispose() {} };
-                } catch (e) {
-                    console.error('Signature help error:', e);
-                    return null;
-                }
-            },
-        });
+    const signatureHelpOptions = capabilities.signatureHelpProvider;
+    if (signatureHelpOptions) {
+        monaco.languages.registerSignatureHelpProvider(
+            languageID,
+            createSignatureHelpProvider({
+                options: signatureHelpOptions,
+                request: (params) => client.textDocumentSignatureHelp(params),
+                flushPendingChanges,
+            }),
+        );
     }
 
     const semanticTokensProvider = capabilities.semanticTokensProvider;
