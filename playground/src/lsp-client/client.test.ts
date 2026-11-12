@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type * as lsp from 'vscode-languageserver-protocol';
 
-import { Client } from './client';
+import { Client, frameMessage, takeMessages } from './client';
 
 let client: Client;
 let runPromise: Promise<unknown>;
@@ -282,6 +282,44 @@ test('textDocument/didOpen', { timeout: CHECK_TEST_TIMEOUT_MS }, async () => {
       ]
     `);
 });
+
+// A UTF-16 character count undercounts the bytes of non-ASCII text, so this test
+// asserts that a document holding some still reaches the server whole and
+// gets checked.
+test(
+    'textDocument/didOpen with non-ASCII text',
+    { timeout: CHECK_TEST_TIMEOUT_MS },
+    async () => {
+        const published: string[][] = [];
+        client.onTextDocumentPublishDiagnostics((params) => {
+            published.push(params.diagnostics.map((d) => d.message));
+        });
+
+        const text = 'val greeting: number = "こんにちは, 世界"\n';
+        fs.writeFileSync(filePath(), text);
+
+        await client.initialize({
+            processId: process.pid,
+            rootUri,
+            capabilities: {},
+        });
+        client.textDocumentDidOpen({
+            textDocument: {
+                uri: fileUri(),
+                version: 1,
+                languageId: 'escalier',
+                text,
+            },
+        });
+
+        await vi.waitFor(() => expect(published).not.toEqual([]), {
+            timeout: 10000,
+        });
+        expect(published[0]).toEqual([
+            'cannot constrain "こんにちは, 世界" <: number',
+        ]);
+    },
+);
 
 test('textDocument/didChange', { timeout: CHECK_TEST_TIMEOUT_MS }, async () => {
     let diagnostics: lsp.PublishDiagnosticsParams['diagnostics'] | null = null;
@@ -689,4 +727,54 @@ test('multi-chunk message with exact boundary split', async () => {
     const result = await deferred.promise;
 
     expect(result).toEqual({ message: 'test response with specific length' });
+});
+
+test('frameMessage counts the payload in UTF-8 bytes', () => {
+    const decoder = new TextDecoder();
+
+    expect(decoder.decode(frameMessage('{"text":"°C"}'))).toBe(
+        'Content-Length: 14\r\n\r\n{"text":"°C"}',
+    );
+});
+
+test('takeMessages splits complete messages from the bytes left over', () => {
+    const first = frameMessage('{"id":1,"text":"こんにちは"}');
+    const second = frameMessage('{"id":2}');
+    // The buffer holds both messages and the first 30 bytes of a third, which
+    // stops partway through a three-byte character.
+    const third = frameMessage('{"id":3,"text":"世界"}');
+    const buffer = new Uint8Array(first.length + second.length + 30);
+    buffer.set(first);
+    buffer.set(second, first.length);
+    buffer.set(third.subarray(0, 30), first.length + second.length);
+
+    const { payloads, malformed, rest } = takeMessages(buffer);
+
+    expect(payloads).toEqual(['{"id":1,"text":"こんにちは"}', '{"id":2}']);
+    expect(malformed).toEqual([]);
+    expect(rest).toEqual(third.subarray(0, 30));
+
+    // The rest of the third message completes it, and its split character
+    // decodes whole.
+    const completed = new Uint8Array(third.length);
+    completed.set(rest);
+    completed.set(third.subarray(30), 30);
+    expect(takeMessages(completed).payloads).toEqual([
+        '{"id":3,"text":"世界"}',
+    ]);
+});
+
+test('takeMessages skips a header without a Content-Length', () => {
+    const encoder = new TextEncoder();
+    const bad = encoder.encode('Content-Type: text/plain\r\n\r\n');
+    const good = frameMessage('{"id":4}');
+    const buffer = new Uint8Array(bad.length + good.length);
+    buffer.set(bad);
+    buffer.set(good, bad.length);
+
+    expect(takeMessages(buffer)).toEqual({
+        payloads: ['{"id":4}'],
+        malformed: ['Content-Type: text/plain'],
+        rest: new Uint8Array(0),
+    });
 });
