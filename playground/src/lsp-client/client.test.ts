@@ -102,6 +102,18 @@ test('initialize', async () => {
           },
           "hoverProvider": true,
           "renameProvider": true,
+          "semanticTokensProvider": {
+            "full": true,
+            "legend": {
+              "tokenModifiers": [
+                "mutable",
+              ],
+              "tokenTypes": [
+                "variable",
+                "parameter",
+              ],
+            },
+          },
           "textDocumentSync": 1,
           "typeDefinitionProvider": true,
           "workspace": {
