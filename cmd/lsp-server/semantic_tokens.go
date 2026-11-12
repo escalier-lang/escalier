@@ -194,12 +194,14 @@ func (v *mutableTokenVisitor) addRead(e *ast.IdentExpr) {
 		return
 	}
 	tokenType := tokenTypeVariable
-	if decl, found := v.info.DeclOf(e); found && v.params.Contains(decl) {
+	decl, found := v.info.DeclOf(e)
+	switch {
+	case found && v.params.Contains(decl):
 		tokenType = tokenTypeParameter
-	}
-	// `self` always names the receiver, which is a parameter whether or not the checker
-	// recorded a declaration for the read.
-	if e.Name == "self" {
+	case !found && e.Name == "self":
+		// The checker records no declaration for a read of a method's receiver, and
+		// `self` with no declaration names that receiver. A local written
+		// `val mut self` has a declaration and keeps the variable type.
 		tokenType = tokenTypeParameter
 	}
 	v.add(e.Span(), tokenType)

@@ -189,6 +189,18 @@ func TestSemanticTokensMarkMutableBindings(t *testing.T) {
 			},
 		},
 		{
+			name: "LocalNamedSelf",
+			file: "bin/main.esc",
+			src: `fn main() {
+    val mut self = {x: 0}
+    self.x = 1
+}`,
+			expected: []string{
+				"2:13 self variable+mutable",
+				"3:5 self variable+mutable",
+			},
+		},
+		{
 			name: "ModuleLevelBinding",
 			file: "lib/index.esc",
 			src: `val mut totals = {sum: 0}
