@@ -184,6 +184,7 @@ func TestSemanticTokensMarkMutableBindings(t *testing.T) {
     constructor(&mut self) { self.value = 0 },
 }`,
 			expected: []string{
+				"3:5 constructor method+mutable",
 				"3:22 self parameter+mutable",
 				"3:30 self parameter+mutable",
 			},
@@ -253,8 +254,9 @@ func TestSemanticTokensMarkMutatingMethods(t *testing.T) {
 		expected []string
 	}{
 		{
-			// Only `bump`, the method that takes `&mut self`, is marked, and only where the
-			// class declares it. rust-analyzer leaves a call such as `c.bump()` unmarked.
+			// `constructor` and `bump`, the members that take `&mut self`, are marked, and
+			// only where the class declares them. rust-analyzer leaves a call such as
+			// `c.bump()` unmarked.
 			// `take` moves the instance into the call and mutates its own binding, so the
 			// caller's value is not mutated through it. The `self` of `&mut self` and of
 			// `mut self` is marked in the receiver and in the body, and the `self` of
@@ -278,6 +280,7 @@ fn main() {
     val m = c.take()
 }`,
 			expected: []string{
+				"3:5 constructor method+mutable",
 				"3:22 self parameter+mutable",
 				"3:30 self parameter+mutable",
 				"4:5 bump method+mutable",
@@ -312,6 +315,7 @@ fn f(c: &mut Counter) {
     val v = c.value
 }`,
 			expected: []string{
+				"3:5 constructor method+mutable",
 				"3:22 self parameter+mutable",
 				"3:30 self parameter+mutable",
 				"4:5 bump method+mutable",
@@ -327,6 +331,20 @@ fn f(c: &mut Counter) {
 				"10:6 c parameter+mutable",
 				"11:5 c parameter+mutable",
 				"12:13 c parameter+mutable",
+			},
+		},
+		{
+			// A constructor takes `&mut self`, so its keyword is marked after a `private`.
+			name: "PrivateConstructor",
+			file: "bin/main.esc",
+			src: `class Box {
+    value: number,
+    private constructor(&mut self) { self.value = 0 },
+}`,
+			expected: []string{
+				"3:13 constructor method+mutable",
+				"3:30 self parameter+mutable",
+				"3:38 self parameter+mutable",
 			},
 		},
 		{

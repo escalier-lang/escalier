@@ -2,6 +2,7 @@ package main
 
 import (
 	"slices"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
@@ -132,7 +133,7 @@ func encodeSemanticTokens(lineMap *ast.LineMap, tokens []semanticToken) []protoc
 }
 
 // mutableTokenVisitor collects a token for each name in one file that binds or reads
-// mutable data, and for each name of a method or a getter that takes `&mut self`. A
+// mutable data, and for each method, getter, or constructor that takes `&mut self`. A
 // name binds mutable data when its binding is mutable, as in `val mut p`, or when its
 // value is a mutable borrow, as in `val r: &mut Point`. A member name is marked where a
 // class or an object type declares it, and not where a member expression reads it, which
@@ -168,6 +169,14 @@ func (v *mutableTokenVisitor) EnterClassElem(e ast.ClassElem) bool {
 	// A constructor's receiver is a parameter pattern of its function, which EnterPat
 	// marks, so only these members' receivers are marked here.
 	switch e := e.(type) {
+	case *ast.ConstructorElem:
+		// A constructor takes `&mut self` like a mutating method, and its keyword
+		// signals that the body mutates the instance it builds.
+		if e.Receiver != nil && e.Receiver.Mode == ast.BorrowReceiver && e.Receiver.Mut {
+			if span, ok := constructorKeywordSpan(e, v.src); ok {
+				v.add(span, tokenTypeMethod)
+			}
+		}
 	case *ast.MethodElem:
 		v.addMemberName(e.Name, e.Receiver, tokenTypeMethod)
 		v.addReceiver(e.Receiver)
@@ -250,6 +259,35 @@ func (v *mutableTokenVisitor) addMemberName(name ast.ObjKey, receiver *ast.Metho
 	if ident, ok := name.(*ast.IdentExpr); ok {
 		v.add(ident.Span(), tokenType)
 	}
+}
+
+// constructorKeywordSpan returns the span of the `constructor` keyword that names c in
+// src's text, and false when the text holds none. The element's span can start before
+// the keyword, at `private`, so the keyword is the first `constructor` followed by `(`.
+func constructorKeywordSpan(c *ast.ConstructorElem, src *ast.Source) (ast.Span, bool) {
+	const keyword = "constructor"
+	span := c.Span()
+	start, end := span.Start.Offset, span.End.Offset
+	if src == nil || start < 0 || end > len(src.Contents) || start > end {
+		return ast.Span{}, false
+	}
+	text := src.Contents[start:end]
+	for i := 0; i+len(keyword) <= len(text); {
+		j := strings.Index(text[i:], keyword)
+		if j < 0 {
+			break
+		}
+		at := i + j
+		if rest := strings.TrimLeft(text[at+len(keyword):], " \t\r\n"); strings.HasPrefix(rest, "(") {
+			return ast.Span{
+				Start:    ast.Location{Offset: start + at},
+				End:      ast.Location{Offset: start + at + len(keyword)},
+				SourceID: span.SourceID,
+			}, true
+		}
+		i = at + len(keyword)
+	}
+	return ast.Span{}, false
 }
 
 // addReceiver records a parameter token for the `self` of receiver when receiver is
