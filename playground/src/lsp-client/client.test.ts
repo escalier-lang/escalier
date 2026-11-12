@@ -775,6 +775,36 @@ test('takeMessages reads the Content-Length header in any case', () => {
     ).toEqual(['{"id":5}']);
 });
 
+test('takeMessages skips the body of a header without a Content-Length', () => {
+    const encoder = new TextEncoder();
+    // The skipped body holds a blank line, which would read as the end of a header.
+    const bad = encoder.encode(
+        'Content-Type: text/plain\r\n\r\nline one\r\n\r\nline two',
+    );
+    const good = frameMessage('{"id":6}');
+    const buffer = new Uint8Array(bad.length + good.length);
+    buffer.set(bad);
+    buffer.set(good, bad.length);
+
+    expect(takeMessages(buffer)).toEqual({
+        payloads: ['{"id":6}'],
+        malformed: ['Content-Type: text/plain'],
+        rest: new Uint8Array(0),
+    });
+});
+
+test('takeMessages drops a malformed message when no Content-Length follows', () => {
+    const encoder = new TextEncoder();
+
+    expect(
+        takeMessages(encoder.encode('Content-Type: text/plain\r\n\r\n{"a":1}')),
+    ).toEqual({
+        payloads: [],
+        malformed: ['Content-Type: text/plain'],
+        rest: new Uint8Array(0),
+    });
+});
+
 test('takeMessages skips a header without a Content-Length', () => {
     const encoder = new TextEncoder();
     const bad = encoder.encode('Content-Type: text/plain\r\n\r\n');
