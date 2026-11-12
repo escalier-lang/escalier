@@ -42,6 +42,10 @@ describe('createSemanticTokensProvider', () => {
         });
         expect(provider.getLegend()).toBe(legend);
         expect(provider.onDidChange).toBe(onDidChange);
+        // The provider keeps no state per result, so releasing one does nothing.
+        expect(() =>
+            provider.releaseDocumentSemanticTokens(undefined),
+        ).not.toThrow();
     });
 
     test('returns null when the server returns no tokens', async () => {
