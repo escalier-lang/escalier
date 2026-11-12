@@ -48,9 +48,11 @@ func coalesce(t soltype.Type, pol soltype.Polarity) soltype.Type {
 //	fn f<T: A>(x: &mut T) { x }
 //
 // the read of `x` coalesces to `&mut T`. coalesce inlines `T`'s variable to its lower
-// bounds, of which it has none, and returns `never`. A generic function's own binder variables stay symbolic
-// as they do in coalesce, so the signature of `f` keeps its `T`. The result is for display
-// and for reading members, never for constraining.
+// bounds, of which it has none, and returns `never`.
+//
+// A generic function's own binder variables stay symbolic, as they do in coalesce, so the
+// signature of `f` keeps its `T`. The result is for display and for reading members, never
+// for constraining.
 func coalesceNamingParams(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	c := &coalescer{seen: set.NewSet[*soltype.TypeVarType](), keep: funcTypeParamVars(t), namesParams: true}
 	return coalesceLifetimes(t.Accept(c, pol), pol, nil)
