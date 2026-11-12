@@ -146,6 +146,30 @@ fn f<T: A>(x: &mut T) {
 			members: []string{"m"},
 		},
 		{
+			// Returning `x` as an `A` checks `T` against its bound, which mints `T`'s skolem.
+			name: "ParameterWhoseSkolemTheBodyMinted",
+			src: `
+interface A {
+	m(&mut self) -> undefined,
+}
+fn f<T: A>(x: T) -> A {
+	x
+	return x
+}
+`,
+			want:    "T",
+			members: []string{"m"},
+		},
+		{
+			name: "LowerBoundedParameter",
+			src: `
+fn f<T>(x: T) where number: T {
+	x
+}
+`,
+			want: "T",
+		},
+		{
 			name: "OwnedUnboundedParameter",
 			src: `
 fn f<T>(x: T) {
