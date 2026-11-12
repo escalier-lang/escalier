@@ -1,3 +1,23 @@
-export fn greet(name: string) -> string {
-    return "Hello, " ++ name ++ "!"
+// Welcome to Escalier! It compiles to JavaScript, which appears in the right-hand
+// panel. Hover over any name to see the type the checker inferred for it.
+
+// An enum lists the languages the greeter speaks.
+export enum Language {
+    English,
+    French,
+    Japanese,
+}
+
+// A `match` must cover every variant of the enum. Delete one of the arms below to
+// see the checker report the language that's missing.
+export fn greeting(language: Language) -> string {
+    return match language {
+        Language.English() => "Hello",
+        Language.French() => "Bonjour",
+        Language.Japanese() => "こんにちは",
+    }
+}
+
+export fn greet(name: string, language: Language) -> string {
+    return `${greeting(language)}, ${name}!`
 }

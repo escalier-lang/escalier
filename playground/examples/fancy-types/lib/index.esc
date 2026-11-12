@@ -1,0 +1,54 @@
+// Escalier's types describe sets of values, and the type-level operators compute
+// new types from old ones. This example types an app's settings.
+
+// A template literal type describes strings by their shape. `Px` is every
+// string that is a number followed by `px`.
+export type Px = `${number}px`
+export val gutter: Px = "16px"
+// Uncomment the line below to see the error:
+// > cannot constrain "16em" <: `${number}px`
+// val margin: Px = "16em"
+
+// `~T` is every value `T` rejects, and `&` keeps what both sides accept. So
+// `NonEmpty` is every string except the empty one.
+export type NonEmpty = string & ~""
+export fn greet(name: NonEmpty) -> string {
+    return `Welcome back, ${name}!`
+}
+// Uncomment the line below to see the error:
+// > cannot constrain "" <: ~""
+// val nobody = greet("")
+
+export type Settings = {volume: number, muted: boolean, theme: "light" | "dark"}
+
+// A mapped type builds an object type from another type's keys. A template
+// literal in the key position renames each key, so `Getters<Settings>` has
+// `getVolume`, `getMuted` and `getTheme`.
+export type Getters<T> = {[`get${Capitalize<K>}`]: fn () -> T[K] for K in keyof T}
+export fn gettersFor({volume, muted, theme}: &Settings) -> Getters<Settings> {
+    return {
+        getVolume: fn () { return volume },
+        getMuted: fn () { return muted },
+        getTheme: fn () { return theme },
+    }
+}
+
+// A trailing `if` keeps only the keys whose type passes the test, so
+// `NumberFields<Settings>` has `volume` and nothing else.
+export type NumberFields<T> = {[K]: T[K] for K in keyof T if T[K] : number}
+export val levels: NumberFields<Settings> = {volume: 7}
+// Uncomment the line below to see the error:
+// > object has extra property: muted
+// val loud: NumberFields<Settings> = {volume: 11, muted: false}
+
+// A conditional type tests a type against a pattern, and `infer` names the part
+// it matched. `Unwrap` calls itself, so it peels any number of promises.
+export type Unwrap<T> = if T : Promise<infer V> { Unwrap<V> } else { T }
+export val retries: Unwrap<Promise<Promise<number>>> = 3
+
+// A type alias can refer to itself. An index signature is written with `?`,
+// since no object has a value at every string key.
+export type Json = null | boolean | number | string | Array<Json> | {[key: string]?: Json}
+export fn exportSettings(settings: &Settings) -> Json {
+    return {volume: settings.volume, muted: settings.muted, theme: settings.theme}
+}

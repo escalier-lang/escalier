@@ -1,0 +1,58 @@
+// Escalier infers types without annotations. Hover over any name to see the
+// type the checker gave it.
+
+// A `val` keeps the literal type of its value, since the binding can never
+// change. `maxSpeed` has type `120` and `unit` has type `"km"`.
+export val maxSpeed = 120
+export val unit = "km"
+
+// A `var` widens to the primitive, since it can be reassigned. `odometer` has
+// type `number`.
+var odometer = 0
+
+export fn drive(km: number) {
+    odometer = odometer + km
+    return odometer
+}
+
+// Parameters need no annotations. Subtracting `start` from `end` tells the
+// checker both are numbers, so `elapsed` is `fn (start: number, end: number) -> number`.
+export fn elapsed(start, end) {
+    return end - start
+}
+
+// Uncomment to see the error: cannot constrain "9:00" <: number
+// val shift = elapsed("9:00", "17:00")
+
+// Usage builds up a parameter's type. Reading `p.x` and `p.y` and multiplying
+// them requires `p` to be an object with numeric `x` and `y` fields.
+export fn distance(p) {
+    return Math.sqrt(p.x * p.x + p.y * p.y)
+}
+
+// A parameter that is only passed along stays generic. `swap` returns its two
+// arguments in reverse order, whatever their types.
+export fn swap(a, b) {
+    return [b, a]
+}
+
+// Each call instantiates a generic function on its own. `pair` has type
+// `[5, "five"]`.
+export val pair = swap("five", 5)
+
+// The `_` hole asks the checker to fill in part of an annotation. `first` is
+// generic in the element type, so `heading` has type `"north" | "south"`.
+export fn first(xs: Array<_>) {
+    return xs[0]
+}
+
+export val heading = first(["north", "south"])
+
+// A callback takes its parameter types from the slot it is passed to, so `word`
+// is a `string` and `lengths` returns `Array<number>`. `map` calls its callback
+// with three arguments, and the trailing `...` lets this one ignore the last two.
+// Remove the `...` to see the error: cannot constrain function of arity 1 <:
+// function of arity 3
+export fn lengths(words: Array<string>) {
+    return words.map(fn (word, ...) { return word.length })
+}

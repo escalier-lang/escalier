@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type * as lsp from 'vscode-languageserver-protocol';
 
-import { Client } from './client';
+import { Client, frameMessage, takeMessages } from './client';
 
 let client: Client;
 let runPromise: Promise<unknown>;
@@ -282,6 +282,44 @@ test('textDocument/didOpen', { timeout: CHECK_TEST_TIMEOUT_MS }, async () => {
       ]
     `);
 });
+
+// A UTF-16 character count undercounts the bytes of non-ASCII text, so this test
+// asserts that a document holding some still reaches the server whole and
+// gets checked.
+test(
+    'textDocument/didOpen with non-ASCII text',
+    { timeout: CHECK_TEST_TIMEOUT_MS },
+    async () => {
+        const published: string[][] = [];
+        client.onTextDocumentPublishDiagnostics((params) => {
+            published.push(params.diagnostics.map((d) => d.message));
+        });
+
+        const text = 'val greeting: number = "こんにちは, 世界"\n';
+        fs.writeFileSync(filePath(), text);
+
+        await client.initialize({
+            processId: process.pid,
+            rootUri,
+            capabilities: {},
+        });
+        client.textDocumentDidOpen({
+            textDocument: {
+                uri: fileUri(),
+                version: 1,
+                languageId: 'escalier',
+                text,
+            },
+        });
+
+        await vi.waitFor(() => expect(published).not.toEqual([]), {
+            timeout: 10000,
+        });
+        expect(published[0]).toEqual([
+            'cannot constrain "こんにちは, 世界" <: number',
+        ]);
+    },
+);
 
 test('textDocument/didChange', { timeout: CHECK_TEST_TIMEOUT_MS }, async () => {
     let diagnostics: lsp.PublishDiagnosticsParams['diagnostics'] | null = null;
@@ -689,4 +727,104 @@ test('multi-chunk message with exact boundary split', async () => {
     const result = await deferred.promise;
 
     expect(result).toEqual({ message: 'test response with specific length' });
+});
+
+test('frameMessage counts the payload in UTF-8 bytes', () => {
+    const decoder = new TextDecoder();
+
+    expect(decoder.decode(frameMessage('{"text":"°C"}'))).toBe(
+        'Content-Length: 14\r\n\r\n{"text":"°C"}',
+    );
+});
+
+test('takeMessages splits complete messages from the bytes left over', () => {
+    const first = frameMessage('{"id":1,"text":"こんにちは"}');
+    const second = frameMessage('{"id":2}');
+    // The buffer holds both messages and the start of a third. The third message
+    // ends in `世界"}`, so cutting it 7 bytes before the end splits the three
+    // bytes of `世`.
+    const third = frameMessage('{"id":3,"text":"世界"}');
+    const split = third.length - 7;
+    const buffer = new Uint8Array(first.length + second.length + split);
+    buffer.set(first);
+    buffer.set(second, first.length);
+    buffer.set(third.subarray(0, split), first.length + second.length);
+
+    const { payloads, malformed, rest } = takeMessages(buffer);
+
+    expect(payloads).toEqual(['{"id":1,"text":"こんにちは"}', '{"id":2}']);
+    expect(malformed).toEqual([]);
+    expect(rest).toEqual(third.subarray(0, split));
+
+    // The rest of the third message completes it, and its split character
+    // decodes whole.
+    const completed = new Uint8Array(third.length);
+    completed.set(rest);
+    completed.set(third.subarray(split), split);
+    expect(takeMessages(completed).payloads).toEqual([
+        '{"id":3,"text":"世界"}',
+    ]);
+});
+
+test('takeMessages reads the Content-Length header in any case', () => {
+    const encoder = new TextEncoder();
+
+    expect(
+        takeMessages(encoder.encode('content-length: 8\r\n\r\n{"id":5}'))
+            .payloads,
+    ).toEqual(['{"id":5}']);
+});
+
+test('takeMessages skips the body of a header without a Content-Length', () => {
+    const encoder = new TextEncoder();
+    // The skipped body holds a blank line, which would read as the end of a header.
+    const bad = encoder.encode(
+        'Content-Type: text/plain\r\n\r\nline one\r\n\r\nline two',
+    );
+    const good = frameMessage('{"id":6}');
+    const buffer = new Uint8Array(bad.length + good.length);
+    buffer.set(bad);
+    buffer.set(good, bad.length);
+
+    expect(takeMessages(buffer)).toEqual({
+        payloads: ['{"id":6}'],
+        malformed: ['Content-Type: text/plain'],
+        rest: new Uint8Array(0),
+    });
+});
+
+test('takeMessages keeps a Content-Length header split across chunks after a malformed message', () => {
+    const encoder = new TextEncoder();
+    // The first chunk ends partway through the next message's header name.
+    const first = takeMessages(
+        encoder.encode('Content-Type: text/plain\r\n\r\n{"a":1}Content-Len'),
+    );
+    expect(first.payloads).toEqual([]);
+    expect(first.malformed).toEqual(['Content-Type: text/plain']);
+
+    const second = encoder.encode('gth: 8\r\n\r\n{"id":7}');
+    const buffer = new Uint8Array(first.rest.length + second.length);
+    buffer.set(first.rest);
+    buffer.set(second, first.rest.length);
+
+    expect(takeMessages(buffer)).toEqual({
+        payloads: ['{"id":7}'],
+        malformed: [],
+        rest: new Uint8Array(0),
+    });
+});
+
+test('takeMessages skips a header without a Content-Length', () => {
+    const encoder = new TextEncoder();
+    const bad = encoder.encode('Content-Type: text/plain\r\n\r\n');
+    const good = frameMessage('{"id":4}');
+    const buffer = new Uint8Array(bad.length + good.length);
+    buffer.set(bad);
+    buffer.set(good, bad.length);
+
+    expect(takeMessages(buffer)).toEqual({
+        payloads: ['{"id":4}'],
+        malformed: ['Content-Type: text/plain'],
+        rest: new Uint8Array(0),
+    });
 });

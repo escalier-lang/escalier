@@ -1,0 +1,7 @@
+// The names `lib/index.esc` exports are in scope here without an import.
+console.log(portOrDefault("443"))
+console.log(portOrDefault("http"))
+console.log(portOrDefault("70000"))
+console.log(report("8443"))
+console.log(report("not-a-port"))
+console.log(report("0"))

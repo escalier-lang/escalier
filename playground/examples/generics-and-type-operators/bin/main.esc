@@ -1,0 +1,15 @@
+// The names `lib/index.esc` exports are in scope here without an import.
+val catalogue: Array<Product> = [
+    {id: 1, name: "Maple syrup", price: 12.5, inStock: true},
+    {id: 2, name: "Canoe paddle", price: 89, inStock: false},
+    {id: 3, name: "Wool toque", price: 24, inStock: true},
+]
+
+val page = firstPage(&catalogue, 2)
+console.log(`showing ${page.items.length} of ${page.total}`)
+
+for product in withinBudget(&catalogue, 30) {
+    console.log(`${product.name}: ${product.price} ${defaults.currency}`)
+}
+
+console.log(`courier costs ${shippingFee("courier")}`)

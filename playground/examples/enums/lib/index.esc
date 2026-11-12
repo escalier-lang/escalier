@@ -1,0 +1,67 @@
+// An enum lists a fixed set of variants, and each variant can carry values.
+// This example builds a calculator's expression tree.
+
+// A variant may refer to the enum itself, so an `Expr` can hold other `Expr`
+// values. The name `Expr` is also a type, the union of the five variants.
+export enum Expr {
+    Num(value: number),
+    Neg(operand: Expr),
+    Add(left: Expr, right: Expr),
+    Mul(left: Expr, right: Expr),
+    Div(left: Expr, right: Expr),
+}
+
+// The name `Expr` also holds one constructor per variant. `Expr.Add` is a
+// function that takes two `Expr` values and returns an `Expr`.
+export val add = Expr.Add
+
+// A `match` over an enum must handle every variant. Delete an arm to see the
+// error: match is not exhaustive; add a branch for `Expr.Div`
+export fn evaluate(expr: Expr) -> number {
+    return match expr {
+        Expr.Num(value) => value,
+        Expr.Neg(operand) => -evaluate(operand),
+        Expr.Add(left, right) => evaluate(left) + evaluate(right),
+        Expr.Mul(left, right) => evaluate(left) * evaluate(right),
+        Expr.Div(left, right) => evaluate(left) / evaluate(right),
+    }
+}
+
+// `show` walks the same tree to print it with brackets.
+export fn show(expr: Expr) -> string {
+    return match expr {
+        Expr.Num(value) => `${value}`,
+        Expr.Neg(operand) => `-${show(operand)}`,
+        Expr.Add(left, right) => `(${show(left)} + ${show(right)})`,
+        Expr.Mul(left, right) => `(${show(left)} * ${show(right)})`,
+        Expr.Div(left, right) => `(${show(left)} / ${show(right)})`,
+    }
+}
+
+// `if val` tests for one variant without listing the others.
+export fn isLiteral(expr: Expr) -> boolean {
+    return if val Expr.Num(_) = expr { true } else { false }
+}
+
+// A generic enum takes type parameters. `failure` has type
+// `Result<never, "division by zero">`.
+export enum Result<T, E> {
+    Ok(value: T),
+    Err(error: E),
+}
+
+export val failure = Result.Err("division by zero")
+
+export fn safeDivide(a: number, b: number) -> Result<number, string> {
+    if b == 0 {
+        return Result.Err("division by zero")
+    }
+    return Result.Ok(a / b)
+}
+
+export fn report(result: Result<number, string>) -> string {
+    return match result {
+        Result.Ok(value) => `ok: ${value}`,
+        Result.Err(error) => `error: ${error}`,
+    }
+}

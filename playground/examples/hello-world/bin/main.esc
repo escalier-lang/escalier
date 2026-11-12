@@ -1,2 +1,10 @@
-val message = greet("World")
-console.log(message)
+// The names `lib/index.esc` exports are in scope here without an import.
+val guests = [
+    {name: "World", language: Language.English()},
+    {name: "le monde", language: Language.French()},
+    {name: "世界", language: Language.Japanese()},
+]
+
+for {name, language} in guests {
+    console.log(greet(name, language))
+}

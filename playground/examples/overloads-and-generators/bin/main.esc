@@ -1,0 +1,11 @@
+// The names `lib/index.esc` exports are in scope here without an import.
+console.log(formatDuration(95))
+console.log(formatDuration({start: 540, end: 600}))
+console.log(formatDuration("Lunch", 45))
+console.log(formatDuration([30, 90, 150]))
+
+for line in agenda(["Roadmap review", "Hiring update"]) {
+    console.log(line)
+}
+
+printSchedule(30, 120, 30)

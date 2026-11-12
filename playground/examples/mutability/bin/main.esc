@@ -1,0 +1,3 @@
+val tasks = plan()
+console.log(openTasks(&tasks))
+console.log(retitle())

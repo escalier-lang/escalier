@@ -1,0 +1,56 @@
+// Formatting meeting durations and stepping through a day's schedule.
+
+// Declaring `formatDuration` more than once at the top level makes an overload
+// set. Each call resolves to the arm whose parameters accept its arguments.
+// The compiled JavaScript is one function that tests the arguments at runtime.
+export fn formatDuration(minutes: number) -> string {
+    val hours = Math.floor(minutes / 60)
+    val rest = minutes - hours * 60
+    return if hours > 0 { `${hours}h ${rest}m` } else { `${rest}m` }
+}
+
+export fn formatDuration(span: {start: number, end: number}) -> string {
+    return formatDuration(span.end - span.start)
+}
+
+export fn formatDuration(label: string, minutes: number) -> string {
+    return `${label}: ${formatDuration(minutes)}`
+}
+
+// Arms may return different types. `formatDuration(95)` is a `string`, and
+// `formatDuration([30, 90])` is an `Array<string>`.
+export fn formatDuration(spans: Array<number>) -> Array<string> {
+    return spans.map(fn (minutes, ...) { return formatDuration(minutes) })
+}
+
+// Uncomment to see the error: No matching overload for this call, followed by
+// the signature of each arm
+// val bad = formatDuration(true)
+
+// A `gen fn` returns a generator that produces values lazily with `yield`.
+// `yield from` hands off to another generator until it finishes, so the
+// return type is `Generator<number, undefined, unknown>`.
+export gen fn timeSlots(start: number, end: number, step: number) {
+    if start < end {
+        yield start
+        yield from timeSlots(start + step, end, step)
+    }
+}
+
+// The second type argument is what the generator returns when it finishes.
+// `agenda` yields strings and returns a count, so its type is
+// `Generator<string, number, unknown>`.
+export gen fn agenda(items: Array<string>) {
+    for item in items {
+        yield `- ${item}`
+    }
+    return items.length
+}
+
+// `for … in` consumes a generator one value at a time. Each slot is an offset
+// in minutes from the start of a meeting.
+export fn printSchedule(start: number, end: number, step: number) {
+    for minute in timeSlots(start, end, step) {
+        console.log(formatDuration("Check-in after", minute))
+    }
+}

@@ -1,0 +1,59 @@
+// A class bundles fields with the methods that read and write them. Calling the
+// class constructs an instance, with no `new` keyword.
+export class Thermostat {
+    // A `static` member belongs to the class itself, so it is read as
+    // `Thermostat.minimum` rather than through an instance.
+    static minimum = 5,
+
+    target: number,
+
+    // A getter is read like a field and computes its value on each read.
+    get fahrenheit(&self) -> number {
+        return self.target * 9 / 5 + 32
+    },
+
+    // A setter runs on assignment. It writes `self`, so it takes `&mut self`.
+    set fahrenheit(&mut self, value: number) {
+        self.target = (value - 32) * 5 / 9
+    },
+
+    // A `&self` method only reads the instance.
+    isHeating(&self, current: number) -> boolean {
+        return current < self.target
+    },
+
+    // A `&mut self` method may write the instance's fields.
+    lower(&mut self, degrees: number) {
+        self.target = Math.max(Thermostat.minimum, self.target - degrees)
+    },
+}
+
+// A `final` class cannot be subclassed. An explicit constructor sets fields
+// from arguments that need not match the field list.
+// Uncomment to see the error: Cannot extend `Reading`; it is a final class and
+// has no subclasses.
+// class OutdoorReading extends Reading {}
+export final class Reading {
+    room: string,
+    celsius: number,
+    constructor(&mut self, room: string, fahrenheit: number) {
+        self.room = room
+        self.celsius = (fahrenheit - 32) * 5 / 9
+    },
+    label(&self) -> string {
+        return self.room ++ ": " ++ self.celsius.toFixed(1) ++ "°C"
+    },
+}
+
+// Classes are nominal, so an object literal with the same fields is not a
+// `Reading`.
+// Uncomment to see the error: cannot constrain object <: class Reading
+// val fake: Reading = {room: "Hall", celsius: 20}
+
+// The parameter is written `mut thermostat`, so the body may call `lower`.
+export fn adjust(mut thermostat: Thermostat, reading: &Reading) -> Thermostat {
+    if !thermostat.isHeating(reading.celsius) {
+        thermostat.lower(2)
+    }
+    return thermostat
+}

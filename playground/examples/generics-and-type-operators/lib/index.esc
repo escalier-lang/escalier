@@ -1,0 +1,51 @@
+// A small product catalogue, used to show how generics and the type-level
+// operators build new types out of existing ones.
+export type Product = {id: number, name: string, price: number, inStock: boolean}
+
+// A generic type alias takes type parameters the way a function takes values.
+export type Page<T> = {items: Array<T>, total: number}
+
+// A generic function keeps the caller's element type, so paging an
+// `Array<Product>` returns a `Page<Product>`.
+export fn firstPage<T>(items: &Array<T>, size: number) -> Page<T> {
+    return {items: items.slice(0, size), total: items.length}
+}
+
+// The constraint `T: {price: number, ...}` lets the body read `price`. The
+// trailing `...` makes the bound inexact, so any object with a numeric `price`
+// fits, and the result keeps the caller's element type.
+export fn withinBudget<T: {price: number, ...}>(items: &Array<T>, limit: number) -> Array<T> {
+    return items.filter(fn (item, ...) { return item.price <= limit })
+}
+
+// `keyof` produces the union of an object type's keys, and indexed access reads
+// one member's type out. `ProductKey` is `"id" | "name" | "price" | "inStock"`.
+export type ProductKey = keyof Product
+export type Price = Product["price"]
+
+// `typeof` lifts a value's type into type position. A `val` keeps literal
+// types, so `Settings` is `{currency: "CAD", taxRate: 0.13}`.
+export val defaults = {currency: "CAD", taxRate: 0.13}
+export type Settings = typeof defaults
+
+// `~U` is every value `U` rejects, so `T & ~U` removes `U` from `T`. The
+// `match` in `shippingFee` is exhaustive without a `"pickup"` arm.
+export type Without<T, U> = T & ~U
+export type Delivery = "pickup" | "post" | "courier"
+export fn shippingFee(method: Without<Delivery, "pickup">) -> number {
+    return match method {
+        "post" => 5,
+        "courier" => 15,
+    }
+}
+// Uncomment to see the error: cannot constrain "pickup" <: ~"pickup"
+// val pickupFee = shippingFee("pickup")
+
+// A mapped type builds an object type by walking a key set. `Patch<T>` makes
+// every member optional, so a sale can name only the fields it changes.
+export type Patch<T> = {[K]?: T[K] for K in keyof T}
+export val sale: Patch<Product> = {price: 10}
+
+// A conditional type tests a type against a pattern, and `infer` captures part
+// of the match. `ElementOf<Array<Product>>` is `Product`.
+export type ElementOf<T> = if T : Array<infer E> { E } else { never }

@@ -17,6 +17,108 @@ let runningClient: Client | undefined;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
+/** The bytes of `\r\n\r\n`, which ends an LSP message's header. */
+const headerEnd = encoder.encode('\r\n\r\n');
+
+/**
+ * Returns payload as an LSP message: a `Content-Length` header that counts the
+ * payload's UTF-8 bytes, followed by the payload.
+ */
+export function frameMessage(payload: string): Uint8Array {
+    const body = encoder.encode(payload);
+    const header = encoder.encode(`Content-Length: ${body.byteLength}\r\n\r\n`);
+    const message = new Uint8Array(header.byteLength + body.byteLength);
+    message.set(header);
+    message.set(body, header.byteLength);
+    return message;
+}
+
+/**
+ * Returns the index where needle first occurs in haystack at or after from, or -1.
+ * With ignoreCase, ASCII letters in haystack match needle's lower-case letters.
+ */
+function indexOfBytes(
+    haystack: Uint8Array,
+    needle: Uint8Array,
+    from = 0,
+    ignoreCase = false,
+): number {
+    outer: for (let i = from; i + needle.length <= haystack.length; i++) {
+        for (let j = 0; j < needle.length; j++) {
+            let byte = haystack[i + j];
+            if (ignoreCase && byte >= 0x41 && byte <= 0x5a) {
+                byte += 0x20;
+            }
+            if (byte !== needle[j]) {
+                continue outer;
+            }
+        }
+        return i;
+    }
+    return -1;
+}
+
+/** The lower-case bytes of the header name every LSP message starts with. */
+const contentLengthName = encoder.encode('content-length:');
+
+/**
+ * Splits buffer into the payloads of the complete LSP messages it starts with, and
+ * returns them with the bytes left over, which begin an incomplete message. A
+ * payload is decoded only once all of its bytes have arrived, so a character split
+ * across two chunks decodes whole. A header without a `Content-Length` is reported
+ * in malformed and skipped, along with the bytes up to the next `Content-Length`
+ * header. When that header hasn't arrived, rest keeps only the bytes that could
+ * begin it.
+ */
+export function takeMessages(buffer: Uint8Array): {
+    payloads: string[];
+    malformed: string[];
+    rest: Uint8Array;
+} {
+    const payloads: string[] = [];
+    const malformed: string[] = [];
+    let start = 0;
+    for (;;) {
+        const end = indexOfBytes(buffer.subarray(start), headerEnd);
+        if (end === -1) {
+            break;
+        }
+        const header = decoder.decode(buffer.subarray(start, start + end));
+        const bodyStart = start + end + headerEnd.length;
+        // LSP header names are case-insensitive.
+        const match = header.match(/Content-Length: (\d+)/i);
+        if (!match) {
+            malformed.push(header);
+            // Without a length the body's end is unknown, so its bytes can't be told
+            // apart from the next header. Skip to the next Content-Length header. When
+            // none has arrived, keep only the bytes that could begin one, since the
+            // next chunk may complete it.
+            const next = indexOfBytes(
+                buffer,
+                contentLengthName,
+                bodyStart,
+                true,
+            );
+            if (next === -1) {
+                start = Math.max(
+                    bodyStart,
+                    buffer.length - (contentLengthName.length - 1),
+                );
+                break;
+            }
+            start = next;
+            continue;
+        }
+        const bodyEnd = bodyStart + Number.parseInt(match[1], 10);
+        if (bodyEnd > buffer.length) {
+            break;
+        }
+        payloads.push(decoder.decode(buffer.subarray(bodyStart, bodyEnd)));
+        start = bodyEnd;
+    }
+    return { payloads, malformed, rest: buffer.slice(start) };
+}
+
 const enosys = () => {
     const err = new Error('not implemented');
     // @ts-ignore
@@ -56,8 +158,8 @@ export class Client {
     private requestID: number;
     private wasmBuf: ArrayBuffer;
     private errorBuffer: string;
-    private contentLength: number;
-    private messageBuffer: string;
+    /** Bytes from stdout that begin a message whose bytes have not all arrived. */
+    private pending: Uint8Array;
     /** Set by `stop()`. Silences the server's output from then on. */
     private stopped = false;
 
@@ -81,70 +183,22 @@ export class Client {
         this.requestID = 0;
         this.wasmBuf = wasmBuf;
         this.errorBuffer = '';
-        this.contentLength = 0;
-        this.messageBuffer = '';
+        this.pending = new Uint8Array(0);
 
         this.stdout.on('data', (chunk) => {
-            const message = decoder.decode(chunk);
-
-            // If we don't have a content length yet, we're starting a new message
-            if (this.contentLength === 0) {
-                const headerRegex = /Content-Length: (\d+)\r?\n\r?\n/;
-                const match = message.match(headerRegex);
-
-                if (match) {
-                    this.contentLength = Number.parseInt(match[1], 10);
-                    // Extract payload after the header
-                    const headerEndIndex = (match.index ?? 0) + match[0].length;
-                    this.messageBuffer = message.substring(headerEndIndex);
-                } else {
-                    console.error('No Content-Length header found in message');
-                    return;
-                }
-            } else {
-                // Continuing to accumulate chunks for the current message
-                this.messageBuffer += message;
-            }
-
-            // Check if we have received the complete message (Content-Length is in bytes)
-            if (
-                encoder.encode(this.messageBuffer).byteLength >=
-                this.contentLength
-            ) {
-                const payload = this.messageBuffer.substring(
-                    0,
-                    this.contentLength,
+            const buffer = new Uint8Array(this.pending.length + chunk.length);
+            buffer.set(this.pending);
+            buffer.set(chunk, this.pending.length);
+            const { payloads, malformed, rest } = takeMessages(buffer);
+            this.pending = rest;
+            for (const header of malformed) {
+                console.error(
+                    'No Content-Length header found in message',
+                    header,
                 );
-
-                try {
-                    const object = JSON.parse(payload);
-
-                    // TODO: validate that the object being returned is a valid RPC JSON response
-                    if (object.id != null) {
-                        // Handle response to a client request
-                        const deferred = this.deferreds.get(object.id);
-                        if (deferred) {
-                            if (object.error) {
-                                deferred.reject(object.error);
-                            }
-                            if ('result' in object) {
-                                deferred.resolve(object.result);
-                            }
-                            // After resolving/rejecting the promise, remove it from the map
-                            // to prevent memory leaks.
-                            this.deferreds.delete(object.id);
-                        }
-                    } else {
-                        // Handle server initiated message
-                        this.emitter.emit(object.method, object.params);
-                    }
-                } catch (e) {
-                    console.log('Error parsing JSON:', e);
-                }
-
-                // Reset state for next message
-                this.contentLength = 0;
-                this.messageBuffer = '';
+            }
+            for (const payload of payloads) {
+                this.dispatch(payload);
             }
         });
 
@@ -576,18 +630,45 @@ export class Client {
         return this.sendRequest('workspace/executeCommand', params);
     }
 
+    /** Resolves the request a response answers, or emits a server notification. */
+    private dispatch(payload: string) {
+        try {
+            const object = JSON.parse(payload);
+
+            // TODO: validate that the object being returned is a valid RPC JSON response
+            if (object.id != null) {
+                // Handle response to a client request
+                const deferred = this.deferreds.get(object.id);
+                if (deferred) {
+                    if (object.error) {
+                        deferred.reject(object.error);
+                    }
+                    if ('result' in object) {
+                        deferred.resolve(object.result);
+                    }
+                    // After resolving/rejecting the promise, remove it from the map
+                    // to prevent memory leaks.
+                    this.deferreds.delete(object.id);
+                }
+            } else {
+                // Handle server initiated message
+                this.emitter.emit(object.method, object.params);
+            }
+        } catch (e) {
+            console.log('Error parsing JSON:', e);
+        }
+    }
+
     private fireAndForget(method: string, params: any) {
         const id = this.requestID++;
         const payload = JSON.stringify({ jsonrpc: '2.0', id, method, params });
-        const message = `Content-Length: ${payload.length}\r\n\r\n${payload}`;
-        this.stdin.write(encoder.encode(message));
+        this.stdin.write(frameMessage(payload));
     }
 
     private async sendRequest(method: string, params: any): Promise<any> {
         const id = this.requestID++;
         const payload = JSON.stringify({ jsonrpc: '2.0', id, method, params });
-        const message = `Content-Length: ${payload.length}\r\n\r\n${payload}`;
-        this.stdin.write(encoder.encode(message));
+        this.stdin.write(frameMessage(payload));
 
         const deferred = new Deferred();
         this.deferreds.set(id, deferred);

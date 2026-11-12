@@ -10,11 +10,13 @@ import { loadProject } from './project-loader';
 
 import styles from './playground.module.css';
 
-function slugToLabel(slug: string): string {
-    return slug
-        .split('-')
-        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-        .join(' ');
+/**
+ * Returns the menu label for a project slug in sentence case, so
+ * `overloads-and-generators` becomes `Overloads and generators`.
+ */
+export function slugToLabel(slug: string): string {
+    const words = slug.split('-').join(' ');
+    return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 type PlaygroundProps = {

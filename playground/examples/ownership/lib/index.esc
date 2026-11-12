@@ -1,0 +1,62 @@
+// Every object has one owner. A borrow, written `&` or `&mut`, lets a function
+// use a value while its owner keeps it.
+type Account = {owner: string, balance: number}
+
+// An immutable borrow can only read. The caller keeps the account.
+export fn describe(account: &Account) -> string {
+    return account.owner ++ ": $" ++ account.balance.toString()
+}
+
+// A mutable borrow can write, and the caller still owns the account afterwards.
+export fn deposit(account: &mut Account, amount: number) {
+    account.balance = account.balance + amount
+}
+
+export class Bank {
+    accounts: Array<Account>,
+    // A parameter with a bare type takes ownership. Storing the account in
+    // the bank moves it out of the caller.
+    open(&mut self, account: Account) {
+        self.accounts.push(account)
+    },
+}
+
+export fn openAccounts() -> Bank {
+    val mut bank = Bank([])
+    val mut savings = {owner: "Ada", balance: 0}
+    deposit(&mut savings, 100)
+    console.log(describe(&savings))
+
+    bank.open(savings)
+    // `savings` now belongs to the bank, so this function cannot read it.
+    // Uncomment to see the error: use of moved value 'savings'
+    // console.log(describe(&savings))
+    return bank
+}
+
+// A closure that stays in the function borrows what it captures. The owner
+// may write between calls.
+export fn statement() {
+    val mut checking = {owner: "Grace", balance: 20}
+    val show = fn () { console.log(describe(&checking)) }
+    show()
+    deposit(&mut checking, 30)
+    show()
+}
+
+// A returned closure outlives the function, so it takes ownership of what it
+// captures.
+export fn reporter() -> fn () -> string {
+    val account = {owner: "Linus", balance: 5}
+    return fn () { return describe(&account) }
+}
+
+// While an immutable borrow is live, the owner may not write the value.
+export fn audit() -> number {
+    val mut account = {owner: "Barbara", balance: 75}
+    val snapshot = &account
+    // Uncomment to see the error: cannot assign to 'account.balance' while it
+    // is borrowed as immutable
+    // account.balance = 0
+    return snapshot.balance
+}
