@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import {
     type ThemePreference,
+    localStorageIfAvailable,
     monacoThemeName,
     readThemePreference,
     resolveTheme,
@@ -84,6 +85,24 @@ describe('readThemePreference', () => {
                 },
             }),
         ).toBe('system');
+    });
+});
+
+describe('localStorageIfAvailable', () => {
+    test('returns the window storage', () => {
+        const storage = memoryStorage() as unknown as Storage;
+        expect(localStorageIfAvailable({ localStorage: storage })).toBe(
+            storage,
+        );
+    });
+
+    test('returns undefined when reading the storage throws', () => {
+        const win = {
+            get localStorage(): Storage {
+                throw new Error('SecurityError');
+            },
+        };
+        expect(localStorageIfAvailable(win)).toBeUndefined();
     });
 });
 

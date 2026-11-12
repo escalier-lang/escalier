@@ -49,6 +49,20 @@ export function readThemePreference(
     }
 }
 
+/**
+ * Returns the window's localStorage, or undefined when the browser blocks it.
+ * Reading `window.localStorage` throws a SecurityError when site data is blocked.
+ */
+export function localStorageIfAvailable(
+    win: Pick<Window, 'localStorage'>,
+): Storage | undefined {
+    try {
+        return win.localStorage;
+    } catch {
+        return undefined;
+    }
+}
+
 type ThemeStore = {
     preference: ThemePreference;
     systemPrefersLight: boolean;

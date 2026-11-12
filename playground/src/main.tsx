@@ -16,7 +16,7 @@ import { Client } from './lsp-client/client';
 import { Playground } from './playground';
 import { loadProject } from './project-loader';
 import { downloadStartupFiles, runStartup } from './startup';
-import { prefersLightQuery, syncTheme } from './theme';
+import { localStorageIfAvailable, prefersLightQuery, syncTheme } from './theme';
 
 import './theme.css';
 
@@ -181,7 +181,7 @@ async function main() {
 
     syncTheme(
         document.documentElement,
-        window.localStorage,
+        localStorageIfAvailable(window),
         window.matchMedia(prefersLightQuery),
     );
 
