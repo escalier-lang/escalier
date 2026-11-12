@@ -88,11 +88,11 @@ func copyDir(src string, dst string) error {
 // skipped and why.
 const disabledMarker = "DISABLED"
 
-func checkFixture(t *testing.T, repoRoot string, fixtureDir string) {
-	if reason, err := os.ReadFile(filepath.Join(fixtureDir, disabledMarker)); err == nil {
-		t.Skip(strings.TrimSpace(string(reason)))
-	}
-
+// prepareBuildDir copies srcDir's lib and bin directories into a new temporary
+// directory, links the repository's node_modules and escalier.toml into it, and
+// changes into it, so build(".") compiles the project at srcDir. It returns the
+// temporary directory.
+func prepareBuildDir(t *testing.T, repoRoot string, srcDir string) string {
 	tmpDir := t.TempDir()
 
 	err := os.Mkdir(filepath.Join(tmpDir, "lib"), 0755)
@@ -128,21 +128,28 @@ func checkFixture(t *testing.T, repoRoot string, fixtureDir string) {
 	err = os.Chdir(tmpDir)
 	require.NoError(t, err)
 
-	// Copy the fixture's lib and bin directories over to the temp directory
-	_, err = os.Stat(filepath.Join(fixtureDir, "lib"))
+	// Copy the project's lib and bin directories over to the temp directory
+	_, err = os.Stat(filepath.Join(srcDir, "lib"))
 	if !os.IsNotExist(err) {
-		err = copyDir(filepath.Join(fixtureDir, "lib"), filepath.Join(tmpDir, "lib"))
+		err = copyDir(filepath.Join(srcDir, "lib"), filepath.Join(tmpDir, "lib"))
 		require.NoError(t, err)
 	}
 
-	_, err = os.Stat(filepath.Join(fixtureDir, "bin"))
+	_, err = os.Stat(filepath.Join(srcDir, "bin"))
 	if !os.IsNotExist(err) {
-		err = copyDir(filepath.Join(fixtureDir, "bin"), filepath.Join(tmpDir, "bin"))
+		err = copyDir(filepath.Join(srcDir, "bin"), filepath.Join(tmpDir, "bin"))
 		require.NoError(t, err)
 	}
 
-	// files, err := compiler.FindSourceFiles()
-	// require.NoError(t, err)
+	return tmpDir
+}
+
+func checkFixture(t *testing.T, repoRoot string, fixtureDir string) {
+	if reason, err := os.ReadFile(filepath.Join(fixtureDir, disabledMarker)); err == nil {
+		t.Skip(strings.TrimSpace(string(reason)))
+	}
+
+	tmpDir := prepareBuildDir(t, repoRoot, fixtureDir)
 
 	stdout := bytes.NewBuffer(nil)
 	stderr := bytes.NewBuffer(nil)
@@ -160,12 +167,12 @@ func checkFixture(t *testing.T, repoRoot string, fixtureDir string) {
 
 	// Write errors to error.txt if there are any
 	if stderr.Len() > 0 {
-		err = os.WriteFile(filepath.Join(tmpDir, "error.txt"), stderr.Bytes(), 0644)
+		err := os.WriteFile(filepath.Join(tmpDir, "error.txt"), stderr.Bytes(), 0644)
 		require.NoError(t, err, "failed to write error.txt")
 	}
 
 	if os.Getenv("UPDATE_FIXTURES") == "true" {
-		err = os.RemoveAll(filepath.Join(fixtureDir, "build"))
+		err := os.RemoveAll(filepath.Join(fixtureDir, "build"))
 		if err != nil {
 			fmt.Fprintln(stderr, "failed to remove build directory:", err)
 			return
@@ -233,7 +240,7 @@ func checkFixture(t *testing.T, repoRoot string, fixtureDir string) {
 
 		// Check if all of the files are the same
 		buildDir := filepath.Join(tmpDir, "build")
-		err = filepath.WalkDir(buildDir, func(path string, d fs.DirEntry, err error) error {
+		err := filepath.WalkDir(buildDir, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
@@ -293,5 +300,41 @@ func TestBuildFixtureTests(t *testing.T) {
 			fixtureDir := filepath.Join(rootDir, "fixtures", fixture.Name())
 			checkFixture(t, repoRoot, fixtureDir)
 		})
+	}
+}
+
+// TestPlaygroundExamplesBuild asserts that every example and template the playground
+// offers builds without a diagnostic, so a checker change that breaks one fails here
+// rather than in the playground.
+func TestPlaygroundExamplesBuild(t *testing.T) {
+	repoRoot, err := findRepoRoot()
+	require.NoError(t, err, "failed to find repository root")
+
+	origDir, err := os.Getwd()
+	require.NoError(t, err)
+	defer func() {
+		_ = os.Chdir(origDir)
+	}()
+
+	for _, category := range []string{"examples", "templates"} {
+		categoryDir := filepath.Join(repoRoot, "playground", category)
+		projects, err := os.ReadDir(categoryDir)
+		require.NoError(t, err)
+
+		for _, project := range projects {
+			if !project.IsDir() {
+				continue
+			}
+			t.Run(category+"/"+project.Name(), func(t *testing.T) {
+				prepareBuildDir(t, repoRoot, filepath.Join(categoryDir, project.Name()))
+
+				stdout := bytes.NewBuffer(nil)
+				stderr := bytes.NewBuffer(nil)
+				buildOK := build(stdout, stderr, []string{"."})
+
+				require.Empty(t, stderr.String())
+				require.True(t, buildOK)
+			})
+		}
 	}
 }
