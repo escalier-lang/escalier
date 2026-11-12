@@ -33,11 +33,23 @@ export function frameMessage(payload: string): Uint8Array {
     return message;
 }
 
-/** Returns the index where needle first occurs in haystack, or -1. */
-function indexOfBytes(haystack: Uint8Array, needle: Uint8Array): number {
-    outer: for (let i = 0; i + needle.length <= haystack.length; i++) {
+/**
+ * Returns the index where needle first occurs in haystack at or after from, or -1.
+ * With ignoreCase, ASCII letters in haystack match needle's lower-case letters.
+ */
+function indexOfBytes(
+    haystack: Uint8Array,
+    needle: Uint8Array,
+    from = 0,
+    ignoreCase = false,
+): number {
+    outer: for (let i = from; i + needle.length <= haystack.length; i++) {
         for (let j = 0; j < needle.length; j++) {
-            if (haystack[i + j] !== needle[j]) {
+            let byte = haystack[i + j];
+            if (ignoreCase && byte >= 0x41 && byte <= 0x5a) {
+                byte += 0x20;
+            }
+            if (byte !== needle[j]) {
                 continue outer;
             }
         }
@@ -46,12 +58,16 @@ function indexOfBytes(haystack: Uint8Array, needle: Uint8Array): number {
     return -1;
 }
 
+/** The lower-case bytes of the header name every LSP message starts with. */
+const contentLengthName = encoder.encode('content-length:');
+
 /**
  * Splits buffer into the payloads of the complete LSP messages it starts with, and
  * returns them with the bytes left over, which begin an incomplete message. A
  * payload is decoded only once all of its bytes have arrived, so a character split
  * across two chunks decodes whole. A header without a `Content-Length` is reported
- * in malformed and skipped.
+ * in malformed and skipped, along with the bytes up to the next `Content-Length`
+ * header.
  */
 export function takeMessages(buffer: Uint8Array): {
     payloads: string[];
@@ -72,7 +88,20 @@ export function takeMessages(buffer: Uint8Array): {
         const match = header.match(/Content-Length: (\d+)/i);
         if (!match) {
             malformed.push(header);
-            start = bodyStart;
+            // Without a length the body's end is unknown, so its bytes can't be told
+            // apart from the next header. Skip to the next Content-Length header, or
+            // drop what's buffered when none has arrived.
+            const next = indexOfBytes(
+                buffer,
+                contentLengthName,
+                bodyStart,
+                true,
+            );
+            if (next === -1) {
+                start = buffer.length;
+                break;
+            }
+            start = next;
             continue;
         }
         const bodyEnd = bodyStart + Number.parseInt(match[1], 10);
