@@ -91,6 +91,14 @@ func TestPackageValueLendsMutAccessThroughItsBinding(t *testing.T) {
 			errors: []string{"cannot mutate 'counter' because its binding is immutable; the standard library declares it without `mut`"},
 		},
 		{
+			name: "AMutArrayValueReadThroughADynamicKey",
+			files: map[string]string{
+				"web/list.esc": "export declare val mut list: Array<number>\n",
+			},
+			src: `import "web:list"
+				fn f(i: number) -> number | undefined { return list[i] }`,
+		},
+		{
 			name:  "AnImmutableValueCallsASelfMethod",
 			files: immutableCounter,
 			src: `import "web:counter"
@@ -108,4 +116,11 @@ func TestPackageValueLendsMutAccessThroughItsBinding(t *testing.T) {
 			require.Equal(t, tt.errors, errorMessagesOf(res.Errors))
 		})
 	}
+}
+
+// TestAsValuePlaceWithoutABinding asserts that asValuePlace returns nil when the namespace
+// resolved with no binding of its value, as a nested namespace does.
+func TestAsValuePlaceWithoutABinding(t *testing.T) {
+	t.Parallel()
+	require.Nil(t, asValuePlace(nil, nil))
 }
