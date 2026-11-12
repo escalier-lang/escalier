@@ -21,7 +21,8 @@ export fn elapsed(start, end) {
     return end - start
 }
 
-// Uncomment to see the error: cannot constrain "9:00" <: number
+// Uncomment the line below to see the error:
+// > cannot constrain "9:00" <: number
 // val shift = elapsed("9:00", "17:00")
 
 // Usage builds up a parameter's type. Reading `p.x` and `p.y` and multiplying

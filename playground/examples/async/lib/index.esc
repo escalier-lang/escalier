@@ -35,8 +35,8 @@ export async fn loadTitle(id: number) -> Promise<_, _> {
 
 // `Promise<string>` leaves the rejection slot at its default, `never`, which
 // claims the promise cannot reject.
-// Uncomment to see the error: `rawTitle` doesn't state a rejection type even
-// though it can throw `HttpError | ShapeError`
+// Uncomment the line below to see the error:
+// > `rawTitle` doesn't state a rejection type even though it can throw `HttpError | ShapeError`
 // async fn rawTitle(id: number) -> Promise<string> { return await loadTitle(id) }
 
 // A `try` around an `await` catches a rejection the same way it catches a

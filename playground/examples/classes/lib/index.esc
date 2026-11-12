@@ -30,8 +30,8 @@ export class Thermostat {
 
 // A `final` class cannot be subclassed. An explicit constructor sets fields
 // from arguments that need not match the field list.
-// Uncomment to see the error: Cannot extend `Reading`; it is a final class and
-// has no subclasses.
+// Uncomment the line below to see the error:
+// > Cannot extend `Reading`; it is a final class and has no subclasses.
 // class OutdoorReading extends Reading {}
 export final class Reading {
     room: string,
@@ -47,7 +47,8 @@ export final class Reading {
 
 // Classes are nominal, so an object literal with the same fields is not a
 // `Reading`.
-// Uncomment to see the error: cannot constrain object <: class Reading
+// Uncomment the line below to see the error:
+// > cannot constrain object <: class Reading
 // val fake: Reading = {room: "Hall", celsius: 20}
 
 // The parameter is written `mut thermostat`, so the body may call `lower`.

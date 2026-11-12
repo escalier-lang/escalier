@@ -38,7 +38,8 @@ export fn shippingFee(method: Without<Delivery, "pickup">) -> number {
         "courier" => 15,
     }
 }
-// Uncomment to see the error: cannot constrain "pickup" <: ~"pickup"
+// Uncomment the line below to see the error:
+// > cannot constrain "pickup" <: ~"pickup"
 // val pickupFee = shippingFee("pickup")
 
 // A mapped type builds an object type by walking a key set. `Patch<T>` makes

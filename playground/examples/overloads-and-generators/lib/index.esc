@@ -23,8 +23,12 @@ export fn formatDuration(spans: Array<number>) -> Array<string> {
     return spans.map(fn (minutes, ...) { return formatDuration(minutes) })
 }
 
-// Uncomment to see the error: No matching overload for this call, followed by
-// the signature of each arm
+// Uncomment the line below to see the error:
+// > No matching overload for this call
+// >   fn (minutes: number) -> string
+// >   fn (span: {start: number, end: number}) -> string
+// >   fn (label: string, minutes: number) -> string
+// >   fn (spans: Array<number>) -> Array<string>
 // val bad = formatDuration(true)
 
 // A `gen fn` returns a generator that produces values lazily with `yield`.
