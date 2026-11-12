@@ -31,7 +31,23 @@
 			  "scopeName": "source.esc",
 			  "path": "./syntaxes/escalier.tmLanguage.json"
 			}
-		  ]
+		  ],
+		"semanticTokenModifiers": [
+			{
+				"id": "mutable",
+				"description": "Mutable bindings, mutable borrows, and members that take &mut self"
+			}
+		],
+		"semanticTokenScopes": [
+			{
+				"language": "escalier",
+				"scopes": {
+					"*.mutable": [
+						"markup.underline"
+					]
+				}
+			}
+		]
 	},
 	"dependencies": {
 		"glob": "^11.1.0",
