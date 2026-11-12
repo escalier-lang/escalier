@@ -237,7 +237,10 @@ func (v *mutableTokenVisitor) EnterObjExprElem(e ast.ObjExprElem) bool {
 func (v *mutableTokenVisitor) EnterPat(p ast.Pat) bool {
 	switch p := p.(type) {
 	case *ast.IdentPat:
-		v.add(identPatNameSpan(p, v.src), v.leafTokenType(p), v.leafModifiers(p, v.info.BindsMut(p)))
+		// Finding the name searches the source text, so it runs only for a marked name.
+		if modifiers := v.leafModifiers(p, v.info.BindsMut(p)); modifiers != 0 {
+			v.add(identPatNameSpan(p, v.src), v.leafTokenType(p), modifiers)
+		}
 	case *ast.ObjectPat:
 		// The walk enters no node for a shorthand leaf such as `{mut x}`, so its parent
 		// object pattern reports it.

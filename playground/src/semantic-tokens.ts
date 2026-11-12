@@ -82,7 +82,9 @@ const modifierFontStyles: Record<string, string> = {
  * carries, one rule per combination of the modifiers modifierFontStyles names. Monaco
  * looks a semantic token up in the theme as its type followed by its modifiers in legend
  * order, joined by dots. So `variable.mutable.reassignable` matches a `var mut` binding
- * and gets both styles, and each rule keeps the colour the theme gives the type.
+ * and gets both styles, and each rule keeps the colour the theme gives the type. A rule
+ * matches only a token that carries no modifier outside modifierFontStyles, since such a
+ * modifier would join its key.
  */
 export function modifierTokenRules(
     legend: lsp.SemanticTokensLegend | undefined,

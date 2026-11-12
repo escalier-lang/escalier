@@ -311,6 +311,33 @@ func TestSemanticTokensMarkReassignableBindings(t *testing.T) {
 			},
 		},
 		{
+			name: "VarMutShorthandLeaf",
+			file: "bin/main.esc",
+			src: `fn main() {
+    var {mut x, y} = {x: {a: 1}, y: 2}
+    x.a = y
+}`,
+			expected: []string{
+				"2:14 x variable+mutable+reassignable",
+				"2:17 y variable+reassignable",
+				"3:5 x variable+mutable+reassignable",
+				"3:11 y variable+reassignable",
+			},
+		},
+		{
+			name: "ModuleLevelVarMutReadInAFunction",
+			file: "lib/index.esc",
+			src: `var mut totals = {sum: 0}
+export fn add(n: number) {
+    totals.sum = totals.sum + n
+}`,
+			expected: []string{
+				"1:9 totals variable+mutable+reassignable",
+				"3:5 totals variable+mutable+reassignable",
+				"3:18 totals variable+mutable+reassignable",
+			},
+		},
+		{
 			name: "ModuleLevelVarReadInAFunction",
 			file: "lib/index.esc",
 			src: `var count = 0
