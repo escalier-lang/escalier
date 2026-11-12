@@ -1,18 +1,15 @@
 # 03 Imports
 
-Escalier has **no ambient globals**. Every name a program uses is either declared
-in that program's own module or imported. `Array`, `Promise`, `Math`, `console`,
-and `document` are all behind an explicit import, unlike TypeScript, where the
-whole `lib.es*` surface and, in a browser program, the whole `lib.dom` surface
-are visible everywhere without asking.
+Escalier has **no ambient globals**. Every name a program uses is declared in
+that program's own module, imported, or exported by the
+[prelude](#the-prelude). `Math`, `console`, `Error`, and `document` are all
+behind an explicit import, unlike TypeScript, where the whole `lib.es*` surface
+and, in a browser program, the whole `lib.dom` surface are visible everywhere
+without asking.
 
 Two things follow. `globalThis` does not exist — it was the union of every
 ambient name, and there is nothing left to take its union over. Neither does
 `eval`.
-
-Until that model is complete, the compiler binds the builtins ambiently as a
-compatibility surface. [Ambient builtins](#ambient-builtins) describes it and
-how a package turns it off.
 
 ## The two kinds of import
 
@@ -80,9 +77,8 @@ val d: date.Date = date.Date()   // construct — no `new` keyword
 val start = date.Date.now()      // a class static
 ```
 
-That is how an import reaches a class. While the [ambient builtins](#ambient-builtins)
-are on, `Date()` and `Date.now()` also resolve with no import. A package that turns
-them off reaches the class only through the import, as `date.Date`.
+That is the only way to reach a class outside the prelude. Without the import,
+`Date()` reports `Unknown identifier: Date`.
 
 Every export is a member of that one binding, whatever kind it is. A class, a
 function, a value, a type, and a nested namespace are all read the same way, so
@@ -198,32 +194,32 @@ Shape-loading is per-file and additive, and it never satisfies an explicit
 reference. `"ab".toUpperCase()` works without an import; `String.raw(…)` needs
 `import "std:string"`.
 
-### Ambient builtins
+### Only the prelude is ambient
 
-The compiler binds the exports of every `std:*` package, plus `web:core` and
-`web:fetch`, without an import. `Math.PI`, `console.log`, `parseInt`, `Error`,
-and `fetch` all resolve with no import statement. An `@js` path decides where a
-name binds, so `@js("Math.clz32")` puts `clz32` in an ambient `Math`. A module's
-own declaration and a file's import both shadow an ambient name.
+A file reaches a name with no import only when `std:prelude` exports it. Every
+other `std:*` and `web:*` package needs its import, whether the name is a value,
+a class, a type, or a namespace.
 
-A builtin class binds the same way, so `Date()` and `Date.now()` need no import.
-Importing its package still binds the package as a namespace, so after
-`import "std:date"` the class is also `date.Date`, as
-[A class is reached through its package](#a-class-is-reached-through-its-package)
-describes.
-
-A package turns the ambient names off in its `package.json`:
-
-```json
-{
-  "name": "my-lib",
-  "escalier": { "ambient": false }
-}
+```escalier
+console.log("hi")      // error: Unknown identifier: console
 ```
 
-Every file in that package then sees only `std:prelude` and its own imports, so
-`Math.PI` is spelled `import "std:math"` and `math.PI`. Shape-loading is not
-affected, so `"ab".toUpperCase()` and a regex literal still type without an import.
+```escalier
+import "std:console"
+
+console.log("hi")      // ok
+```
+
+A builtin is named through the binding its import makes, so `Math.PI` is spelled
+`math.PI` after `import "std:math"`, and `parseInt` is `number.parseInt` after
+`import "std:number"`. A package that exports a value under its own name, such as
+`std:console` with `console` or `web:fetch` with `fetch`, binds that value
+under the import's name too.
+
+An npm package's `.d.ts` is the exception. It is written against TypeScript's
+global library, so the checker reads its declarations against every `std:*`
+package plus `web:core` and `web:fetch`. None of those names reach the file that
+imports the npm package.
 
 ### The Web surface
 
@@ -349,7 +345,7 @@ packages are not.
 
 ## Shadowing
 
-A local declaration shadows an imported one, and both shadow an ambient builtin.
+A local declaration shadows an imported one, and both shadow a prelude export.
 There is no `globalThis` escape hatch for reaching a shadowed name.
 
 Two imports whose last segments collide need one of them renamed. The syntax is

@@ -104,8 +104,8 @@ const (
 
 // PseudoPackageDeclError reports a declaration in a pseudo-package file that
 // breaks a rule jsDecoratorErrors lists. It is anchored at the import that
-// loaded the file. An ambient package loads with no import, so its diagnostic
-// carries an empty span.
+// loaded the file. A library package that loads with no import, such as one the
+// globals scope binds, carries an empty span.
 type PseudoPackageDeclError struct {
 	// Path is the pseudo-package file that holds the declaration.
 	Path string

@@ -8,8 +8,7 @@ import (
 
 // TestPseudoPackageBindsAsItsOwnNameValue covers an import of a pseudo-package that
 // exports a value under the name the import binds. The binding reads as that value
-// and as the package's namespace at once. The runs set Options.NoAmbientNames, so
-// the import is the only way the names resolve.
+// and as the package's namespace at once.
 func TestPseudoPackageBindsAsItsOwnNameValue(t *testing.T) {
 	t.Parallel()
 
@@ -68,7 +67,7 @@ func TestPseudoPackageBindsAsItsOwnNameValue(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			res := InferModuleAgainstStdlib(parseModule(t, tt.src), committedTree, Options{NoAmbientNames: true})
+			res := InferModuleAgainstStdlib(parseModule(t, tt.src), committedTree, Options{})
 			require.Empty(t, errorMessagesOf(res.Errors))
 			values := renderedValues(res)
 			for name, want := range tt.want {

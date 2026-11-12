@@ -1,2 +1,4 @@
+import "std:console"
+
 val message = greet("World")
 console.log(message)

@@ -400,8 +400,8 @@ type ImmutableBindingError struct {
 	Site      ast.Node
 	Fix       string
 	Unmovable bool
-	// Foreign marks a global the standard library declares, such as `console`. The message
-	// names no fix for it.
+	// Foreign marks a value a standard library package declares, such as `console` after
+	// `import "std:console"`. The message names no fix for it.
 	Foreign bool
 }
 

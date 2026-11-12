@@ -18,8 +18,8 @@ import (
 )
 
 // stdlib_run_cache.go keeps one checker per standard library tree with the prelude
-// and the ambient packages already loaded. A run against that tree starts from a fork
-// of it instead of inferring the packages again.
+// and the literal classes' packages already loaded. A run against that tree starts
+// from a fork of it instead of inferring the packages again.
 //
 // A fork shares every type, definition, scope, and namespace the cached checker holds,
 // and has its own copy of each container a run adds to. Sharing is safe because no run
@@ -45,9 +45,8 @@ type ambientKey struct {
 	// closure, so an edit to the tree misses the cache rather than reading a stale
 	// load. The prelude loads alone, outside any group, so closure does not name it.
 	digest [sha256.Size]byte
-	// noAmbientNames and checkJsDecorators are the Options fields that change what
-	// loading the packages binds or reports.
-	noAmbientNames    bool
+	// checkJsDecorators is the Options field that changes what loading the packages
+	// reports.
 	checkJsDecorators bool
 }
 
@@ -73,7 +72,7 @@ var ambientCheckers = struct {
 }{entries: map[ambientKey]*ambientEntry{}}
 
 // ambientChecker returns a checker for one run against the standard library in dir,
-// with the prelude and the ambient packages loaded and bound. dir is the root of the
+// with the prelude and the literal classes' packages loaded. dir is the root of the
 // stdlib tree, the directory holding the `std/`, `web/`, and `node/` pseudo-package
 // files, so one dir serves every package checked against that stdlib.
 //
@@ -141,7 +140,6 @@ func ambientKeyOf(dir string, groups PackageGroups, opts Options) (ambientKey, b
 	key := ambientKey{
 		dir:               dir,
 		closure:           strings.Join(uris, ","),
-		noAmbientNames:    opts.NoAmbientNames,
 		checkJsDecorators: opts.CheckJsDecorators,
 	}
 	copy(key.digest[:], sum.Sum(nil))
@@ -165,18 +163,17 @@ func writeHashedFile(sum hash.Hash, uri string, digest [sha256.Size]byte) {
 	sum.Write(digest[:])
 }
 
-// loadAmbientChecker returns a checker with the prelude and the ambient packages of
-// dir loaded and bound, ready for fork. It holds nothing that refers to the run
+// loadAmbientChecker returns a checker with the prelude and the literal classes'
+// packages of dir loaded, ready for fork. It holds nothing that refers to the run
 // that built it.
 func loadAmbientChecker(dir string, groups PackageGroups, opts Options) *checker {
 	// The packages loaded here are pseudo-packages, which never reach node_modules
 	// or the project's dependency list, so the load ignores both.
 	c := newRunChecker(StdlibSource(dir), StdlibGroupSource(dir), groups, Options{
-		NoAmbientNames:    opts.NoAmbientNames,
 		CheckJsDecorators: opts.CheckJsDecorators,
 	})
-	c.ambientScope()
-	c.bindAmbientExports()
+	c.preludeScope()
+	c.loadLiteralClassPackages()
 	// A run reads a loaded class's variance and an alias's uniform knot through the
 	// cached definitions. Settling both now means no run writes to those definitions.
 	c.settleLoadedDefinitions()
@@ -349,8 +346,8 @@ func (c *checker) fork(source ModuleSource, groupSource GroupSource, groups Pack
 		f.heldLoadErrs[uri] = copies[held]
 	}
 
-	// A run that binds the globals scope itself, as one with Options.NoAmbientNames does
-	// when it loads an npm package, fills a scope of its own.
+	// A run that binds the globals scope itself, as one does when it loads an npm
+	// package, fills a scope of its own.
 	if !c.globalsBound {
 		f.globals = nil
 	}

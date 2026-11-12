@@ -311,12 +311,9 @@ func (c *checker) reportImmutableBinding(site ast.Node, place *ownedPlace) {
 	if ip, ok := decl.(*ast.IdentPat); ok && ip.Mutable {
 		err.Unmovable = true
 	}
-	// A global the standard library declares, such as `console`, is not one this code can
-	// rewrite, so the message suggests no new declaration. Neither is the value a `std:` or
-	// `web:` package binds beside its namespace, as `import "web:crypto"` binds `crypto`.
-	if g, ok := c.globalsScope().GetValue(place.name); ok && decl != nil && bindingDecl(g) == decl {
-		err.Foreign = true
-	}
+	// The value a `std:` or `web:` package binds beside its namespace, as
+	// `import "std:console"` binds `console`, is not one this code can rewrite, so the
+	// message suggests no new declaration.
 	if place.b.Members != nil && IsSchemePrefixedImport(place.b.Members.Name) {
 		err.Foreign = true
 	}

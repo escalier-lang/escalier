@@ -13,9 +13,8 @@ import (
 // InferScript infers a script. A script is a source file whose top-level statements
 // run in source order with function-body semantics, the bin/ counterpart to a
 // library module. It returns the populated script Scope, the Info side table, and any
-// SolverErrors. The returned scope is a child of the run's ambient scope, which
-// layers the ambient builtins over the prelude package's exports and the operator
-// table.
+// SolverErrors. The returned scope is a child of the scope holding the prelude
+// package's exports, which is a child of the operator table.
 //
 // A module and a script differ in how their top-level declarations relate. InferModule
 // dependency-orders mutually-visible top-level declarations through the dep graph. A
@@ -63,11 +62,11 @@ func inferScriptWithGroups(
 
 // inferScriptOn infers script on c, a checker from newRunChecker or ambientChecker.
 func inferScriptOn(c *checker, script *ast.Script) (*Scope, *Info, []SolverError) {
-	c.bindAmbientExports()
-	// A run that loaded the ambient packages itself settles them the way a cached
+	c.loadLiteralClassPackages()
+	// A run that loaded the library packages itself settles them the way a cached
 	// checker's are settled, so the two read the same answers.
 	c.settleLoadedDefinitions()
-	return c.inferScriptIn(c.ambientScope().Child(), script)
+	return c.inferScriptIn(c.preludeScope().Child(), script)
 }
 
 // InferScriptInLib infers script against the scope a library module's run produced, so

@@ -34,8 +34,8 @@ func (c *checker) loadPackage(uri string, span ast.Span) (*Namespace, []SolverEr
 				span:  span,
 			}}
 		}
-		// A package bindAmbientExports loaded with diagnostics reports them at the
-		// entry module's first import naming it, as it would had that import loaded it.
+		// A package loadLibraryPackages loaded with diagnostics reports them at the entry
+		// module's first import naming it, as it would had that import loaded it.
 		// An import inside a package being inferred leaves them for the entry module.
 		if c.pkgURI == "" {
 			return ns, c.claimHeldLoadErrors(uri, span)
@@ -209,9 +209,7 @@ func (c *checker) inferPackage(uri string, module *ast.Module) (*Namespace, []So
 
 	scope := c.preludeScope().Child()
 	// A `.d.ts` is written against TypeScript's global library, which the globals
-	// scope holds. `Console` is one such name. The globals scope is used even when
-	// the run sets Options.NoAmbientNames, since that option governs the names the
-	// project's own files reach.
+	// scope holds. `Console` is one such name.
 	if !IsSchemePrefixedImport(uri) {
 		scope = c.globalsScope().Child()
 	}
