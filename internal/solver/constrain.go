@@ -522,6 +522,16 @@ func (c *Context) constrainBorrowedFieldRead(sub *soltype.RefType, req *soltype.
 	if v, ok := inner.(*soltype.TypeVarType); ok {
 		return c.constrainBorrowedVarFieldRead(sub, v, req, seen), true
 	}
+	// A type parameter's skolem is read through its upper bound under the same borrow, since
+	// every type the parameter stands for has the bound's members. `x.n()` off `x: &T` with
+	// `T: A` reads `n` from `&A`. A skolem with no upper bound exposes no members.
+	if sk, ok := inner.(*soltype.SkolemType); ok {
+		upper, ok := sk.Upper.(soltype.RefInner)
+		if !ok {
+			return nil, false
+		}
+		return c.constrainBorrowedFieldRead(&soltype.RefType{Mut: sub.Mut, Lt: sub.Lt, Inner: upper}, req, seen, skipMissing)
+	}
 	// A class instance is read through its body, projected at the instance's arguments so a
 	// field typed `T` reads as the argument. Any other pointee is left to the caller, which
 	// reports the borrow as escaping.
