@@ -191,13 +191,16 @@ func (i *Info) MemberObject(t soltype.Type) (*soltype.ObjectType, bool) {
 
 // DisplayTypeOf returns the type recorded for n coalesced to the form a person reads,
 // or nil when none was recorded. Every inference variable is replaced by the bounds it
-// settled on, except a type parameter generalization kept, which soltype.PrintAsScheme
-// names. `val x = 5` displays `x` as `5` where TypeOf may return a variable. Call it only
-// once a run has finished, for the reason ResolvedTypeOf gives.
+// settled on, with two exceptions. A type parameter generalization kept stays a variable,
+// which soltype.PrintAsScheme names. A type parameter read inside the function that
+// declares it becomes a skolem that prints under the parameter's name, so `x` in
+// `fn f<T>(x: &mut T) { x }` displays as `&mut T`. `val x = 5` displays `x` as `5` where
+// TypeOf may return a variable. Call it only once a run has finished, for the reason
+// ResolvedTypeOf gives.
 func (i *Info) DisplayTypeOf(n ast.Node) soltype.Type {
 	t := i.types[n]
 	if t == nil {
 		return nil
 	}
-	return coalesce(t, soltype.Positive)
+	return coalesceNamingParams(t, soltype.Positive)
 }
