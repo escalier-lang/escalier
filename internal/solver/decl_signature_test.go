@@ -78,6 +78,31 @@ func TestFuncDeclSignaturePrintWritten(t *testing.T) {
 			// The call ties x to a, so the lifetime occurs inside g's type and stays written.
 			expected: "<'a>(&'a Flat, fn (x: &'a Flat) -> number) -> number",
 		},
+		{
+			name:     "TypeParamBound",
+			src:      "fn f<T: {x: number}>(p: &T) -> number { return p.x }",
+			expected: "<T: {x: number}>(&T) -> number",
+		},
+		{
+			name:     "OutlivesBound",
+			src:      "type Flat = {x: number}\nfn f<'a, 'b: 'a>(p: &'a Flat, q: &'b Flat) -> &'a Flat { return if p.x > 0 { p } else { q } }",
+			expected: "<'a, 'b: 'a>(&'a Flat, &'b Flat) -> &'a Flat",
+		},
+		{
+			name:     "StaticBorrow",
+			src:      "type Flat = {x: number}\nfn f(p: &'static Flat) -> &'static Flat { return p }",
+			expected: "(&'static Flat) -> &'static Flat",
+		},
+		{
+			name:     "ClassLifetimeArgument",
+			src:      "type Flat = {x: number}\nclass Ref<'a> { v: &'a Flat }\nfn f<'a>(r: Ref<'a>) -> &'a Flat { return r.v }",
+			expected: "<'a>(Ref<'a>) -> &'a Flat",
+		},
+		{
+			name:     "AliasLifetimeArgument",
+			src:      "type Flat = {x: number}\ntype R<'a> = {v: &'a Flat}\nfn f<'a>(r: R<'a>) -> &'a Flat { return r.v }",
+			expected: "<'a>(R<'a>) -> &'a Flat",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -105,6 +130,9 @@ func TestMethodSignature(t *testing.T) {
 			inner: Flat,
 			peek(&self, other: &Flat) -> &Flat { return &self.inner },
 			get(&self) { return self.inner.x },
+			reader(&self) -> fn () -> number { return fn () { return self.inner.x } },
+			at(&self, i: number) -> number { return i },
+			at(&self, s: string) -> string { return s },
 			static make(x: number) { return x + 1 },
 		}
 	`
@@ -129,6 +157,9 @@ func TestMethodSignature(t *testing.T) {
 	require.Equal(t, []string{
 		"(&self, &Flat) -> &Flat",
 		"(&self) -> number",
+		"(&self) -> fn () -> number",
+		"(&self, number) -> number",
+		"(&self, string) -> string",
 		"(number) -> number",
 	}, got)
 }
