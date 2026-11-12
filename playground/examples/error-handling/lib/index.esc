@@ -47,8 +47,8 @@ export fn portOrDefault(text: string) -> number {
     }
 }
 
-// What escapes a `try` is the caught set minus what the arms handle. An arm for
-// the base class `ConfigError` also handles `ParseError`, so only
+// What escapes a `try` is the thrown set minus what the arms catch. An arm for
+// the base class `ConfigError` also catches `ParseError`, so only
 // `PortRangeError` escapes, and that is the clause the checker infers here.
 export fn lenientPort(text: string) -> number throws _ {
     return try {

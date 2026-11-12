@@ -68,7 +68,8 @@ export function takeMessages(buffer: Uint8Array): {
         }
         const header = decoder.decode(buffer.subarray(start, start + end));
         const bodyStart = start + end + headerEnd.length;
-        const match = header.match(/Content-Length: (\d+)/);
+        // LSP header names are case-insensitive.
+        const match = header.match(/Content-Length: (\d+)/i);
         if (!match) {
             malformed.push(header);
             start = bodyStart;

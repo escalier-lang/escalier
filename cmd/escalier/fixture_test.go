@@ -101,7 +101,6 @@ func prepareBuildDir(t *testing.T, repoRoot string, srcDir string) string {
 	// Create a symlink named "node_modules" in the temporary directory that
 	// points to the repository's node_modules folder.
 	nodeModulesTarget := filepath.Join(repoRoot, "node_modules")
-	fmt.Printf("nodeModulesTarget = %s\n", nodeModulesTarget)
 	nodeModulesLink := filepath.Join(tmpDir, "node_modules")
 	err = os.Symlink(nodeModulesTarget, nodeModulesLink)
 	if err != nil && !os.IsExist(err) {
@@ -326,7 +325,14 @@ func TestPlaygroundExamplesBuild(t *testing.T) {
 				continue
 			}
 			t.Run(category+"/"+project.Name(), func(t *testing.T) {
-				prepareBuildDir(t, repoRoot, filepath.Join(categoryDir, project.Name()))
+				projectDir := filepath.Join(categoryDir, project.Name())
+				tmpDir := prepareBuildDir(t, repoRoot, projectDir)
+
+				// The playground reads each project's package.json, so the build
+				// reads the same package config.
+				pkg, err := os.ReadFile(filepath.Join(projectDir, "package.json"))
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "package.json"), pkg, 0644))
 
 				stdout := bytes.NewBuffer(nil)
 				stderr := bytes.NewBuffer(nil)

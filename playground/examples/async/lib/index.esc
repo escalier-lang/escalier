@@ -39,8 +39,8 @@ export async fn loadTitle(id: number) -> Promise<_, _> {
 // though it can throw `HttpError | ShapeError`
 // async fn rawTitle(id: number) -> Promise<string> { return await loadTitle(id) }
 
-// Catching around an `await` handles a rejection the same way `try` handles a
-// synchronous `throws`. The first two arms cover the known rejections. `fetch`
+// A `try` around an `await` catches a rejection the same way it catches a
+// synchronous throw. The first two arms cover the known rejections. `fetch`
 // declares none, but a network failure still rejects at runtime, so `_` catches
 // whatever else arrives.
 export async fn titleOrFallback(id: number) -> Promise<string> {

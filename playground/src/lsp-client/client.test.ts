@@ -740,28 +740,39 @@ test('frameMessage counts the payload in UTF-8 bytes', () => {
 test('takeMessages splits complete messages from the bytes left over', () => {
     const first = frameMessage('{"id":1,"text":"こんにちは"}');
     const second = frameMessage('{"id":2}');
-    // The buffer holds both messages and the first 30 bytes of a third, which
-    // stops partway through a three-byte character.
+    // The buffer holds both messages and the start of a third. The third message
+    // ends in `世界"}`, so cutting it 7 bytes before the end splits the three
+    // bytes of `世`.
     const third = frameMessage('{"id":3,"text":"世界"}');
-    const buffer = new Uint8Array(first.length + second.length + 30);
+    const split = third.length - 7;
+    const buffer = new Uint8Array(first.length + second.length + split);
     buffer.set(first);
     buffer.set(second, first.length);
-    buffer.set(third.subarray(0, 30), first.length + second.length);
+    buffer.set(third.subarray(0, split), first.length + second.length);
 
     const { payloads, malformed, rest } = takeMessages(buffer);
 
     expect(payloads).toEqual(['{"id":1,"text":"こんにちは"}', '{"id":2}']);
     expect(malformed).toEqual([]);
-    expect(rest).toEqual(third.subarray(0, 30));
+    expect(rest).toEqual(third.subarray(0, split));
 
     // The rest of the third message completes it, and its split character
     // decodes whole.
     const completed = new Uint8Array(third.length);
     completed.set(rest);
-    completed.set(third.subarray(30), 30);
+    completed.set(third.subarray(split), split);
     expect(takeMessages(completed).payloads).toEqual([
         '{"id":3,"text":"世界"}',
     ]);
+});
+
+test('takeMessages reads the Content-Length header in any case', () => {
+    const encoder = new TextEncoder();
+
+    expect(
+        takeMessages(encoder.encode('content-length: 8\r\n\r\n{"id":5}'))
+            .payloads,
+    ).toEqual(['{"id":5}']);
 });
 
 test('takeMessages skips a header without a Content-Length', () => {
