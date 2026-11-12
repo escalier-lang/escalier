@@ -243,7 +243,8 @@ test('textDocument/didOpen', { timeout: CHECK_TEST_TIMEOUT_MS }, async () => {
         diagnostics = params.diagnostics;
     });
 
-    const text = 'import "std:console"\nconsole.log("Hello, world!")\nval x =\n';
+    const text =
+        'import "std:console"\nconsole.log("Hello, world!")\nval x =\n';
     fs.writeFileSync(filePath(), text);
 
     await client.initialize({
@@ -359,7 +360,11 @@ test('textDocument/didChange', { timeout: CHECK_TEST_TIMEOUT_MS }, async () => {
             uri: fileUri(),
             version: 2,
         },
-        contentChanges: [{ text: 'import "std:console"\nconsole.log("Hello, world!")\nval x =\n' }],
+        contentChanges: [
+            {
+                text: 'import "std:console"\nconsole.log("Hello, world!")\nval x =\n',
+            },
+        ],
     });
 
     // Wait for the diagnostics from didChange (not didOpen).

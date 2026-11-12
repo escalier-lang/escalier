@@ -85,7 +85,8 @@ const fileContents: Record<string, string> = {
     'examples/hello-world/bin/main.esc': 'val sum = add(5, 10)\n',
     'examples/no-lib-index/escalier.toml': '[project]\nname = "no-lib-index"\n',
     'examples/no-lib-index/package.json': '{"name":"no-lib-index"}',
-    'examples/no-lib-index/bin/main.esc': 'import "std:console"\nconsole.log("hi")\n',
+    'examples/no-lib-index/bin/main.esc':
+        'import "std:console"\nconsole.log("hi")\n',
     'examples/no-esc/escalier.toml': '[project]\nname = "no-esc"\n',
     'examples/no-esc/package.json': '{"name":"no-esc"}',
     'templates/single-package/escalier.toml':
@@ -93,7 +94,8 @@ const fileContents: Record<string, string> = {
     'templates/single-package/package.json': '{"name":"my-project"}',
     'templates/single-package/lib/index.esc':
         'export fn greet() -> string {\n    return "hi"\n}\n',
-    'templates/single-package/bin/main.esc': 'import "std:console"\nconsole.log(greet())\n',
+    'templates/single-package/bin/main.esc':
+        'import "std:console"\nconsole.log(greet())\n',
 };
 
 let fs: BrowserFS;
