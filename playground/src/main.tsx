@@ -8,7 +8,12 @@ import {
 import wasmUrl from '../../bin/lsp-server.wasm?url';
 
 import { LoadingScreen, type LoadingStatus } from './components/loading-screen';
-import { type Download, type DownloadProgress, downloadAll } from './downloads';
+import {
+    type Download,
+    type DownloadProgress,
+    downloadAll,
+    frameThrottled,
+} from './downloads';
 import { useEditorStore } from './editor-store';
 import { BrowserFS } from './fs/browser-fs';
 import { type Manifest, createVolume } from './fs/volume';
@@ -18,30 +23,6 @@ import { Playground } from './playground';
 import { loadProject } from './project-loader';
 
 import './user-worker'; // sets up the monaco editor worker
-
-/**
- * Returns a function that reports progress to showStatus at most once per animation
- * frame, so a download that arrives in many small chunks doesn't render the loading
- * screen once per chunk.
- */
-function progressReporter(
-    showStatus: (status: LoadingStatus) => void,
-): (progress: DownloadProgress) => void {
-    let latest: DownloadProgress | undefined;
-    return (progress) => {
-        const scheduled = latest !== undefined;
-        latest = progress;
-        if (scheduled) {
-            return;
-        }
-        requestAnimationFrame(() => {
-            if (latest) {
-                showStatus({ kind: 'downloading', progress: latest });
-            }
-            latest = undefined;
-        });
-    };
-}
 
 async function start(
     reactRoot: ReactDOM.Root,
@@ -64,10 +45,18 @@ async function start(
             size: manifest.builtinSizes?.[relPath],
         })),
     ];
-    const [wasm, ...builtinContents] = await downloadAll(
-        downloads,
-        progressReporter(showStatus),
+    const progress = frameThrottled((latest: DownloadProgress) =>
+        showStatus({ kind: 'downloading', progress: latest }),
     );
+    let contents: Uint8Array<ArrayBuffer>[];
+    try {
+        contents = await downloadAll(downloads, progress.call);
+    } finally {
+        // Stop before the next status, so a frame scheduled by the last chunk or by a
+        // download still running after a failure can't draw the progress over it.
+        progress.stop();
+    }
+    const [wasm, ...builtinContents] = contents;
     showStatus({ kind: 'starting' });
 
     const volume = createVolume(manifest, baseUrl);

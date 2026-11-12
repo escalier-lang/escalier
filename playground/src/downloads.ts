@@ -77,3 +77,43 @@ export function downloadAll(
         ),
     );
 }
+
+/** A function that calls another at most once per animation frame. */
+export type FrameThrottled<T> = {
+    /** Schedules fn with value, or replaces the value of the call already scheduled. */
+    call: (value: T) => void;
+    /** Cancels the scheduled call and makes every later call do nothing. */
+    stop: () => void;
+};
+
+/**
+ * Returns a throttled form of fn that calls it at most once per animation frame,
+ * with the latest value it received in that frame.
+ */
+export function frameThrottled<T>(fn: (value: T) => void): FrameThrottled<T> {
+    let frame: number | undefined;
+    let latest: T;
+    let stopped = false;
+    return {
+        call(value) {
+            if (stopped) {
+                return;
+            }
+            latest = value;
+            if (frame !== undefined) {
+                return;
+            }
+            frame = requestAnimationFrame(() => {
+                frame = undefined;
+                fn(latest);
+            });
+        },
+        stop() {
+            stopped = true;
+            if (frame !== undefined) {
+                cancelAnimationFrame(frame);
+                frame = undefined;
+            }
+        },
+    };
+}

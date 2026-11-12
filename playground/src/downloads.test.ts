@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
-import { type DownloadProgress, downloadAll, fetchBytes } from './downloads';
+import {
+    type DownloadProgress,
+    downloadAll,
+    fetchBytes,
+    frameThrottled,
+} from './downloads';
 
 /** Returns a Response whose body streams chunks one at a time. */
 function streamingResponse(chunks: number[][]): Response {
@@ -140,5 +145,56 @@ describe('downloadAll', () => {
                 () => {},
             ),
         ).rejects.toThrow('Failed to fetch /missing: Not Found');
+    });
+});
+
+describe('frameThrottled', () => {
+    /** Stubs requestAnimationFrame and returns a function that runs the queued frames. */
+    function stubFrames(): () => void {
+        const frames = new Map<number, FrameRequestCallback>();
+        let nextId = 1;
+        vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+            frames.set(nextId, cb);
+            return nextId++;
+        });
+        vi.stubGlobal('cancelAnimationFrame', (id: number) => {
+            frames.delete(id);
+        });
+        return () => {
+            const queued = [...frames.values()];
+            frames.clear();
+            for (const cb of queued) {
+                cb(0);
+            }
+        };
+    }
+
+    test('calls fn once per frame with the latest value', () => {
+        const runFrames = stubFrames();
+        const fn = vi.fn();
+        const throttled = frameThrottled(fn);
+
+        throttled.call(1);
+        throttled.call(2);
+        expect(fn).not.toHaveBeenCalled();
+        runFrames();
+        expect(fn.mock.calls).toEqual([[2]]);
+
+        throttled.call(3);
+        runFrames();
+        expect(fn.mock.calls).toEqual([[2], [3]]);
+    });
+
+    test('drops the scheduled call and every later call once stopped', () => {
+        const runFrames = stubFrames();
+        const fn = vi.fn();
+        const throttled = frameThrottled(fn);
+
+        throttled.call(1);
+        throttled.stop();
+        throttled.call(2);
+        runFrames();
+
+        expect(fn).not.toHaveBeenCalled();
     });
 });
