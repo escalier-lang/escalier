@@ -509,3 +509,31 @@ fn f(c: &mut Counter) {
 		})
 	}
 }
+
+// TestSemanticTokensEncodeModifierBits asserts the wire form of each modifier
+// combination, read from the last of each token's five integers. Bit 0 is `mutable` and
+// bit 1 is `reassignable`, in legend order, so `var n` encodes 2 and `var mut q` encodes 3.
+func TestSemanticTokensEncodeModifierBits(t *testing.T) {
+	require.Equal(t, []string{"mutable", "reassignable"}, semanticTokenModifiers)
+
+	src := `fn main() {
+    val mut p = {x: 0}
+    var n = 0
+    var mut q = {x: 0}
+    q.x = n
+}`
+	s := integrationServer(t, map[string]string{"bin/main.esc": src})
+	uri := openFile(t, s, "bin/main.esc", src)
+	result, err := s.textDocumentSemanticTokensFull(&glsp.Context{}, &protocol.SemanticTokensParams{
+		TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+	})
+	require.NoError(t, err)
+	require.Empty(t, s.checkOutput.TypeErrors)
+	require.Equal(t, []protocol.UInteger{
+		1, 12, 1, tokenTypeVariable, 1, // p: mutable
+		1, 8, 1, tokenTypeVariable, 2, // n: reassignable
+		1, 12, 1, tokenTypeVariable, 3, // q: mutable and reassignable
+		1, 4, 1, tokenTypeVariable, 3, // q read
+		0, 6, 1, tokenTypeVariable, 2, // n read
+	}, result.Data)
+}
