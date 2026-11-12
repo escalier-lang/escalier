@@ -109,6 +109,16 @@ type Namespace struct {
 	AsValue *ValueBinding
 }
 
+// holdsMember reports whether ns answers a member read of name itself, with a nested
+// namespace or a value, rather than reading name off ns.AsValue.
+func (ns *Namespace) holdsMember(name string) bool {
+	if _, ok := ns.Nested[name]; ok {
+		return true
+	}
+	b, ok := ns.Values[name]
+	return ok && len(b.Schemes) > 0
+}
+
 // Scope is the solver's multi-sorted lexical scope. It has one map per binding sort plus
 // a parent link for lexical lookup.
 //

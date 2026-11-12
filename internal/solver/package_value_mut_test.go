@@ -15,6 +15,7 @@ func TestPackageValueLendsMutAccessThroughItsBinding(t *testing.T) {
 
 	const counterClass = `export declare class Counter {
 		n: number,
+		state: {count: number},
 		bump(&mut self) -> undefined,
 		read(&self) -> number,
 	}
@@ -55,7 +56,39 @@ func TestPackageValueLendsMutAccessThroughItsBinding(t *testing.T) {
 			files: immutableCounter,
 			src: `import "web:counter"
 				fn f() -> undefined { return counter.bump() }`,
-			errors: []string{"cannot constrain immutable Counter <: mutable Counter"},
+			errors: []string{"cannot mutate 'counter' because its binding is immutable; the standard library declares it without `mut`"},
+		},
+		{
+			name:  "AMutValueTakesAFieldWrite",
+			files: mutCounter,
+			src: `import "web:counter"
+				fn f() { counter.n = 1 }`,
+		},
+		{
+			name:  "AnImmutableValueRejectsAFieldWrite",
+			files: immutableCounter,
+			src: `import "web:counter"
+				fn f() { counter.n = 1 }`,
+			errors: []string{"cannot mutate 'counter' because its binding is immutable; the standard library declares it without `mut`"},
+		},
+		{
+			name:  "AMutValueLendsAMutableBorrowOfAField",
+			files: mutCounter,
+			src: `import "web:counter"
+				fn f() {
+					val s = &mut counter.state
+					s.count = 1
+				}`,
+		},
+		{
+			name:  "AnImmutableValueRejectsAMutableBorrowOfAField",
+			files: immutableCounter,
+			src: `import "web:counter"
+				fn f() {
+					val s = &mut counter.state
+					s.count = 1
+				}`,
+			errors: []string{"cannot mutate 'counter' because its binding is immutable; the standard library declares it without `mut`"},
 		},
 		{
 			name:  "AnImmutableValueCallsASelfMethod",

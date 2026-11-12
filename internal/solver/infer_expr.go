@@ -96,8 +96,8 @@ type pathResult struct {
 	shortCircuits bool
 	// place is the binding value is an owned layer of, or nil when value is not one. See
 	// ownedPlace. For a namespace bound beside a value, as `import "web:performance"`
-	// binds `performance`, it is the binding of that value, read by a member read the
-	// namespace answers with ns.AsValue.
+	// binds `performance`, it names that value's binding. A member read that ns.AsValue
+	// answers reads the value through it.
 	place *ownedPlace
 }
 
@@ -123,15 +123,11 @@ func placeOf(name string, b ValueBinding, value soltype.Type) *ownedPlace {
 	return &ownedPlace{name: name, b: b}
 }
 
-// asValuePlace returns the place value comes from when it is read off the `mut` binding
-// valuePlace names. It returns nil when valuePlace is nil, when its binding is not `mut`,
-// or when value is not an owned layer of it. valuePlace is the place a namespace
-// resolved with, as pathResult.place documents.
+// asValuePlace returns the place value comes from when it is read off the binding
+// valuePlace names, or nil when valuePlace is nil or value is not an owned layer of it.
+// valuePlace is the place a namespace resolved with, as pathResult.place documents.
 func asValuePlace(valuePlace *ownedPlace, value soltype.Type) *ownedPlace {
-	// A package declares the value, so the program cannot redeclare an immutable one
-	// `mut`. Leaving its place out keeps the type mismatch a mutation reports rather
-	// than the hint to redeclare the binding that an owned place produces.
-	if valuePlace == nil || !valuePlace.b.Mut {
+	if valuePlace == nil {
 		return nil
 	}
 	return placeOf(valuePlace.name, valuePlace.b, value)
@@ -316,8 +312,12 @@ func (c *checker) reportImmutableBinding(site ast.Node, place *ownedPlace) {
 		err.Unmovable = true
 	}
 	// A global the standard library declares, such as `console`, is not one this code can
-	// rewrite, so the message suggests no new declaration.
+	// rewrite, so the message suggests no new declaration. Neither is the value a `std:` or
+	// `web:` package binds beside its namespace, as `import "web:crypto"` binds `crypto`.
 	if g, ok := c.globalsScope().GetValue(place.name); ok && decl != nil && bindingDecl(g) == decl {
+		err.Foreign = true
+	}
+	if place.b.Members != nil && IsSchemePrefixedImport(place.b.Members.Name) {
 		err.Foreign = true
 	}
 	c.report(err)
@@ -472,6 +472,10 @@ func (c *checker) resolveIdentPath(scope *Scope, lvl int, e *ast.IdentExpr, objP
 		// namespace, which reads `x` off f's value when the namespace has no `x`.
 		if objPos && b.Members != nil {
 			c.recordDecl(e, b)
+			// The identifier names the value as well as the namespace, so it is an owned
+			// layer of a `mut` binding the way any other read of one is. An editor reads
+			// that record to offer `&mut self` members after `performance.`.
+			c.noteMutPlace(e, placeOf(e.Name, b, b.DisplayType()))
 			return pathResult{ns: b.Members, place: &ownedPlace{name: e.Name, b: b}}
 		}
 		t := c.bindingValue(lvl, b)
@@ -1890,6 +1894,12 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 		c.recordType(accessNode, recovery)
 		c.recordType(e, recovery)
 		return recovery
+	}
+	if obj.ns != nil && !obj.ns.holdsMember(propName) && obj.ns.AsValue != nil && len(obj.ns.AsValue.Schemes) > 0 {
+		// A name the namespace does not hold is a field of the value bound beside it, as
+		// `state` is in `&mut counter.state`, so it borrows like a field of any receiver.
+		value := c.bindingValue(lvl, *obj.ns.AsValue)
+		obj = pathResult{value: value, place: asValuePlace(obj.place, value)}
 	}
 	if obj.ns != nil {
 		// `Foo.bar` for a namespace `Foo` names a namespace value, not a field
