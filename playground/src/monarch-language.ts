@@ -16,7 +16,7 @@ export const monarchLanguage: monaco.languages.IMonarchLanguage = {
         'if', 'else', 'match', 'for', 'return',  'throw', 'try', 'catch', 'finally',
 
         // type modifiers
-        'readonly', 'mutable', 'mut',
+        'readonly', 'mut',
 
         // function modifiers
         'async', 'await', 'gen', 'yield',
