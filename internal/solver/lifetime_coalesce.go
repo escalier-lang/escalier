@@ -234,6 +234,9 @@ type ltAnalysis struct {
 	outlivesGraph *ltBoundSet  // condensed outlives graph; rep IDs collapse mutual-outlives cycles
 	comp          map[int]int  // representative ID -> connected-component leader ID in outlivesGraph
 	posComps      set.Set[int] // component leaders reaching a positive occurrence
+	// lowestParam maps a representative ID to the param lifetime with the lowest ID that
+	// shares it, leaving out a 'static-forced param. sccParam fills it on first use.
+	lowestParam map[int]*soltype.LifetimeVar
 }
 
 // newLtAnalysis builds the grouping from the structurally-occurring lifetime
@@ -320,14 +323,22 @@ func (a *ltAnalysis) kept(v *soltype.LifetimeVar) bool {
 // v's representative, which are equal to v. A 'static-forced param renders as 'static and is
 // passed over.
 func (a *ltAnalysis) sccParam(v *soltype.LifetimeVar) *soltype.LifetimeVar {
-	rep := a.outlivesGraph.repOf(v.ID)
-	best := v
-	for p := range a.occ {
-		if p.ID < best.ID && a.isParam(p) && !forcedToStatic(p) && a.outlivesGraph.repOf(p.ID) == rep {
-			best = p
+	if a.lowestParam == nil {
+		a.lowestParam = map[int]*soltype.LifetimeVar{}
+		for p := range a.occ {
+			if !a.isParam(p) || forcedToStatic(p) {
+				continue
+			}
+			rep := a.outlivesGraph.repOf(p.ID)
+			if cur, ok := a.lowestParam[rep]; !ok || p.ID < cur.ID {
+				a.lowestParam[rep] = p
+			}
 		}
 	}
-	return best
+	if p, ok := a.lowestParam[a.outlivesGraph.repOf(v.ID)]; ok && p.ID < v.ID {
+		return p
+	}
+	return v
 }
 
 // componentParams returns the kept param lifetimes in v's connected component, keyed

@@ -30,28 +30,31 @@ type returnLifetimes struct {
 }
 
 // newReturnLifetimes returns the elision for the return type of a signature whose receiver
-// is receiver, nil for none, and whose parameters are params, written as sig writes them.
-// head is how a suggested signature starts, such as `fn pick` for a function, `peek` for a
-// method, or the empty string for `fn` alone. It returns nil when the signature has no input
-// lifetime.
-func newReturnLifetimes(receiver *soltype.FuncParam, params []*soltype.FuncParam, sig *ast.FuncSig, head string) *returnLifetimes {
+// is receiver, nil for none, and whose parameters are params, written as recv and sig write
+// them. head is how a suggested signature starts, such as `fn pick` for a function, `peek`
+// for a method, or the empty string for `fn` alone. It returns nil when the signature has no
+// input lifetime.
+func newReturnLifetimes(receiver *soltype.FuncParam, params []*soltype.FuncParam, recv *ast.MethodReceiver, sig *ast.FuncSig, head string) *returnLifetimes {
 	r := &returnLifetimes{}
 	seen := map[soltype.Lifetime]bool{}
+	// collect records the input lifetimes t holds and reports whether it holds one.
 	collect := func(t soltype.Type) bool {
 		c := &inputLifetimeCollector{}
 		t.Accept(c, soltype.Negative)
+		holds := false
 		for _, lt := range c.lts {
 			// 'static outlives every lifetime, so a returned borrow written with no lifetime
 			// is never given it, and it does not count against the one-input rule.
 			if _, static := lt.(*soltype.StaticLifetime); static {
 				continue
 			}
+			holds = true
 			if !seen[lt] {
 				seen[lt] = true
 				r.inputs = append(r.inputs, lt)
 			}
 		}
-		return len(c.lts) > 0
+		return holds
 	}
 	if receiver != nil {
 		collect(receiver.Type)
@@ -75,7 +78,7 @@ func newReturnLifetimes(receiver *soltype.FuncParam, params []*soltype.FuncParam
 		r.borrow = r.inputs[0]
 	}
 	if r.borrow == nil && len(r.owners) > 1 {
-		r.suggestion = suggestReturnLifetime(sig, head)
+		r.suggestion = suggestReturnLifetime(recv, sig, head)
 	}
 	return r
 }
@@ -141,22 +144,23 @@ func (c *checker) resolveReturnAnn(scope *Scope, ann ast.TypeAnn, lvl int, r *re
 
 // suggestReturnLifetime renders sig with a lifetime `'x` added to its binder list, to the
 // first parameter whose written type is a borrow with no lifetime, and to the return type,
-// which has to be such a borrow too. head starts the rendering, as `fn pick` or `peek`, and
-// `fn ` stands in when it is empty. It returns the empty string when sig has no such
-// parameter or return type.
-func suggestReturnLifetime(sig *ast.FuncSig, head string) string {
+// which has to be such a borrow too. recv is a method's receiver, nil for none, which leads
+// the parameter list. head starts the rendering, as `fn pick` or `peek`, and `fn ` stands
+// in when it is empty. It returns the empty string when sig has no such parameter or return
+// type.
+func suggestReturnLifetime(recv *ast.MethodReceiver, sig *ast.FuncSig, head string) string {
 	ret, ok := sig.Return.(*ast.RefTypeAnn)
 	if !ok || ret.Lifetime != nil {
 		return ""
 	}
-	print := func(n ast.Node) string {
+	render := func(n ast.Node) string {
 		written, _ := printer.Print(n, printer.CompactOptions())
 		return written
 	}
 	withX := func(ref *ast.RefTypeAnn) string {
 		copied := *ref
 		copied.Lifetime = ast.NewLifetimeAnn("x", ast.Span{})
-		return print(&copied)
+		return render(&copied)
 	}
 	binders := []string{"'x"}
 	for _, lp := range sig.LifetimeParams {
@@ -168,7 +172,7 @@ func suggestReturnLifetime(sig *ast.FuncSig, head string) string {
 	params := make([]string, len(sig.Params))
 	added := false
 	for i, p := range sig.Params {
-		name := print(p.Pattern)
+		name := render(p.Pattern)
 		if p.Optional {
 			name += "?"
 		}
@@ -177,13 +181,22 @@ func suggestReturnLifetime(sig *ast.FuncSig, head string) string {
 			params[i] = name + ": " + withX(ref)
 			added = true
 		case p.TypeAnn != nil:
-			params[i] = name + ": " + print(p.TypeAnn)
+			params[i] = name + ": " + render(p.TypeAnn)
 		default:
 			params[i] = name
 		}
 	}
 	if !added {
 		return ""
+	}
+	// A borrowed receiver gives a returned borrow its lifetime, so only a consuming one
+	// reaches here.
+	if recv != nil {
+		self := "self"
+		if recv.Mut {
+			self = "mut self"
+		}
+		params = append([]string{self}, params...)
 	}
 	if head == "" {
 		head = "fn "

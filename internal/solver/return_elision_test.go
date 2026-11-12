@@ -97,6 +97,15 @@ func TestReturnLifetimeElision(t *testing.T) {
 			expected: "fn <'a>(a: &'a Flat) -> {f: 'a fn () -> number, r: &'a Flat}",
 		},
 		{
+			// 's' holds only 'static, which elision never gives a returned borrow.
+			name: "StaticOnlyParamIsNotAnOwner",
+			src:  `fn pick(a: &Flat, s: &'static Flat, b: &Flat) -> &Flat { return a }`,
+			errs: []string{
+				"2:50-2:55: the return type borrows from 'a' or 'b', and elision cannot tell which; write a lifetime, " +
+					"as in `fn pick<'x>(a: &'x Flat, s: &'static Flat, b: &Flat) -> &'x Flat`",
+			},
+		},
+		{
 			name: "DeclaredFunctionReports",
 			src:  `declare fn pick(a: &Flat, b: &Flat) -> &Flat`,
 			errs: []string{
@@ -157,4 +166,18 @@ func TestMethodReturnLifetimeElision(t *testing.T) {
 			require.Equal(t, tt.expected, printClassBody(def))
 		})
 	}
+}
+
+// TestMethodAmbiguousReturnLifetime asserts that the signature suggested for a method that
+// consumes its receiver keeps the receiver.
+func TestMethodAmbiguousReturnLifetime(t *testing.T) {
+	src := `class Box {
+		inner: {x: number},
+		n(self, a: &{x: number}, b: &{x: number}) -> &{x: number} { return a },
+	}`
+	res := InferModuleWithSource(parseModule(t, src), testStdlibSource())
+	require.Equal(t, []string{
+		"the return type borrows from 'a' or 'b', and elision cannot tell which; write a lifetime, " +
+			"as in `n<'x>(self, a: &'x { x: number }, b: &{ x: number }) -> &'x { x: number }`",
+	}, errorMessagesOf(res.Errors))
 }
