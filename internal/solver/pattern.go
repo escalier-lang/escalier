@@ -84,11 +84,20 @@ func leafMut(marked bool, purpose bindPurpose) bool {
 // monomorphic projection of the scrutinee. Used by every body-level and
 // function-param destructuring path.
 func defineLeafMono(scope *Scope, name string, t soltype.Type, node ast.Node) {
-	scope.defineValue(name, ValueBinding{
-		Schemes: []TypeScheme{monoScheme(t)},
-		Sources: []provenance.Provenance{&ast.NodeProvenance{Node: node}},
-		Mut:     leafMutable(node),
-	})
+	defineLeafMonoOfKind(ast.ValKind)(scope, name, t, node)
+}
+
+// defineLeafMonoOfKind returns a leafEmit that defines each leaf as defineLeafMono does,
+// with the binding's Kind set to kind. A VarKind leaf is reassignable.
+func defineLeafMonoOfKind(kind ast.VariableKind) leafEmit {
+	return func(scope *Scope, name string, t soltype.Type, node ast.Node) {
+		scope.defineValue(name, ValueBinding{
+			Schemes: []TypeScheme{monoScheme(t)},
+			Sources: []provenance.Provenance{&ast.NodeProvenance{Node: node}},
+			Kind:    kind,
+			Mut:     leafMutable(node),
+		})
+	}
 }
 
 // bindMode records how a pattern's leaves bind to the scrutinee. It is derived from

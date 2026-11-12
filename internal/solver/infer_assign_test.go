@@ -330,3 +330,77 @@ func TestInferAssignNilOperandDoesNotPanic(t *testing.T) {
 	require.Len(t, c.errs, 1)
 	require.Equal(t, "Unsupported: BinaryExpr", c.errs[0].Message())
 }
+
+// Every leaf a body-level destructuring `var` binds is reassignable, as the name a plain
+// `var` binds is. The same patterns under `val` reject the reassignment.
+func TestInferAssignDestructuredLeaf(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		errs []string
+	}{
+		{
+			name: "var object shorthand",
+			src: `fn main() {
+    var {x} = {x: 1}
+    x = 2
+}`,
+			errs: nil,
+		},
+		{
+			name: "var object key-value",
+			src: `fn main() {
+    var {x, y: z} = {x: 1, y: 2}
+    z = x
+}`,
+			errs: nil,
+		},
+		{
+			name: "var nested",
+			src: `fn main() {
+    var {p: {q}, r: [s]} = {p: {q: 1}, r: ["a"]}
+    q = 2
+    s = "b"
+}`,
+			errs: nil,
+		},
+		{
+			name: "var tuple",
+			src: `fn main() {
+    var [a, b] = [1, 2]
+    a = b
+}`,
+			errs: nil,
+		},
+		{
+			name: "val object shorthand",
+			src: `fn main() {
+    val {x} = {x: 1}
+    x = 2
+}`,
+			errs: []string{"3:5-3:10: Cannot assign to immutable binding: x"},
+		},
+		{
+			name: "val object key-value",
+			src: `fn main() {
+    val {x, y: z} = {x: 1, y: 2}
+    z = x
+}`,
+			errs: []string{"3:5-3:10: Cannot assign to immutable binding: z"},
+		},
+		{
+			name: "val tuple",
+			src: `fn main() {
+    val [a, b] = [1, 2]
+    a = b
+}`,
+			errs: []string{"3:5-3:10: Cannot assign to immutable binding: a"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.errs, messagesWithSpan(t, errs))
+		})
+	}
+}

@@ -835,7 +835,9 @@ func (c *checker) inferDestructureDecl(scope *Scope, lvl int, d *ast.VarDecl) so
 	if !ok {
 		return nil
 	}
-	c.bindPattern(scope, lvl, d.Pattern, initType, nil)
+	// Each leaf takes the declaration's kind, so every name a `var` pattern binds is
+	// reassignable, as the name a plain `var` binds is.
+	c.bindPatternWith(scope, lvl, d.Pattern, initType, nil, defineLeafMonoOfKind(d.Kind), forBinding)
 	recordLeafVarIDs(c.varIDs, scope, d.Pattern)
 	return initType
 }
