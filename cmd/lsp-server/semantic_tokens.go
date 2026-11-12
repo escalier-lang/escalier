@@ -86,6 +86,7 @@ func (s *Server) textDocumentSemanticTokensFull(context *glsp.Context, params *p
 		info:           info,
 		src:            src,
 		params:         set.NewSet[ast.Node](),
+		writeTargets:   set.NewSet[*ast.MemberExpr](),
 		memberObjects:  map[string]*soltype.ObjectType{},
 	}
 	if script != nil {
@@ -146,8 +147,11 @@ type mutableTokenVisitor struct {
 	// params holds each leaf of a parameter pattern the walk has entered, an
 	// *ast.IdentPat or an *ast.ObjShorthandPat.
 	params set.Set[ast.Node]
-	// memberObjects maps a receiver type, keyed by its printed form, to the member object
-	// info.MemberObject returned for it, or to nil when it returned none.
+	// writeTargets holds each member expression the walk has seen on the left of an
+	// assignment, such as `c.value` in `c.value = 1`.
+	writeTargets set.Set[*ast.MemberExpr]
+	// memberObjects maps a receiver type, keyed by soltype.PrintQualified, to the member
+	// object info.MemberObject returned for it, or to nil when it returned none.
 	memberObjects map[string]*soltype.ObjectType
 	tokens        []semanticToken
 }
@@ -165,7 +169,16 @@ func (v *mutableTokenVisitor) EnterExpr(e ast.Expr) bool {
 		v.addParams(e.Params)
 	case *ast.IdentExpr:
 		v.addRead(e)
+	case *ast.BinaryExpr:
+		if target, ok := e.Left.(*ast.MemberExpr); ok && e.Op == ast.Assign {
+			v.writeTargets.Add(target)
+		}
 	case *ast.MemberExpr:
+		// An assignment to `c.value` writes through a setter rather than reading the
+		// getter, so it gets no token.
+		if v.writeTargets.Contains(e) {
+			break
+		}
 		if tokenType, ok := v.mutMemberRead(e); ok {
 			v.add(e.Prop.Span(), tokenType)
 		}
@@ -314,8 +327,10 @@ func (v *mutableTokenVisitor) memberObject(t soltype.Type) *soltype.ObjectType {
 		return nil
 	}
 	// A file reads members off a few receiver types many times over, and building a
-	// member object costs far more than printing the type.
-	key := soltype.Print(t)
+	// member object costs far more than printing the type. PrintQualified names a class
+	// by its namespace-qualified name, so `Counter` and `geo.Counter` get distinct keys
+	// where Print renders both as `Counter`.
+	key := soltype.PrintQualified(t)
 	if obj, found := v.memberObjects[key]; found {
 		return obj
 	}

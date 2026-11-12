@@ -247,9 +247,11 @@ func TestEncodeSemanticTokensCountsUTF16(t *testing.T) {
 
 func TestSemanticTokensMarkMutatingMethods(t *testing.T) {
 	tests := []struct {
-		name     string
-		file     string
-		src      string
+		name string
+		file string
+		src  string
+		// others holds the other files of the package, keyed by path.
+		others   map[string]string
 		expected []string
 	}{
 		{
@@ -330,6 +332,69 @@ fn f(c: &mut Counter) {
 			},
 		},
 		{
+			// The two classes print alike as `Counter`, and only the root one's `bump`
+			// takes `&mut self`.
+			name: "ClassesSharingANameInTwoNamespaces",
+			file: "lib/index.esc",
+			src: `export class Counter {
+    n: number,
+    constructor(&mut self) { self.n = 0 },
+    bump(&mut self) -> undefined { self.n = 1 },
+}
+export fn f(a: &mut Counter, b: &mut geo.Counter) {
+    a.bump()
+    b.bump()
+}`,
+			others: map[string]string{
+				"lib/geo/counter.esc": `export class Counter {
+    n: number,
+    constructor(&mut self) { self.n = 0 },
+    bump(&self) -> number { return self.n },
+}`,
+			},
+			expected: []string{
+				"3:22 self parameter+mutable",
+				"3:30 self parameter+mutable",
+				"4:5 bump method+mutable",
+				"4:15 self parameter+mutable",
+				"4:36 self parameter+mutable",
+				"6:13 a parameter+mutable",
+				"6:30 b parameter+mutable",
+				"7:5 a parameter+mutable",
+				"7:7 bump method+mutable",
+				"8:5 b parameter+mutable",
+			},
+		},
+		{
+			// The assignment on line 8 writes through the setter, so its `value` gets no token,
+			// and the read on line 9 does.
+			name: "AssignmentThroughSetter",
+			file: "bin/main.esc",
+			src: `class Box {
+    n: number,
+    constructor(&mut self) { self.n = 0 },
+    get value(&mut self) -> number { return self.n },
+    set value(&mut self, v: number) { self.n = v },
+}
+fn f(b: &mut Box) {
+    b.value = 1
+    val v = b.value
+}`,
+			expected: []string{
+				"3:22 self parameter+mutable",
+				"3:30 self parameter+mutable",
+				"4:9 value property+mutable",
+				"4:20 self parameter+mutable",
+				"4:45 self parameter+mutable",
+				"5:20 self parameter+mutable",
+				"5:39 self parameter+mutable",
+				"7:6 b parameter+mutable",
+				"8:5 b parameter+mutable",
+				"9:13 b parameter+mutable",
+				"9:15 value property+mutable",
+			},
+		},
+		{
 			name: "StdlibMethodCall",
 			file: "bin/main.esc",
 			src: `fn main() {
@@ -358,7 +423,11 @@ fn f(c: &mut Counter) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tokens, diagnostics := semanticTokensFor(t, map[string]string{tt.file: tt.src}, tt.file)
+			files := map[string]string{tt.file: tt.src}
+			for path, src := range tt.others {
+				files[path] = src
+			}
+			tokens, diagnostics := semanticTokensFor(t, files, tt.file)
 			require.Empty(t, diagnostics)
 			require.Equal(t, tt.expected, tokens)
 		})
