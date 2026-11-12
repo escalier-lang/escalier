@@ -107,6 +107,7 @@ test('initialize', async () => {
             "legend": {
               "tokenModifiers": [
                 "mutable",
+                "reassignable",
               ],
               "tokenTypes": [
                 "variable",
@@ -463,8 +464,65 @@ test(
 
         // Each token is five integers: line delta, start column delta, length, type
         // index, and modifier bits. Both tokens are `p`, a variable (type 0) with the
-        // mutable modifier (bit 1).
+        // mutable modifier (bit 0, value 1).
         expect(tokens?.data).toEqual([0, 8, 1, 0, 1, 1, 0, 1, 0, 1]);
+    },
+);
+
+test(
+    'textDocument/semanticTokens/full encodes reassignable modifier bits',
+    { timeout: CHECK_TEST_TIMEOUT_MS },
+    async () => {
+        let diagnosticsPublished = false;
+        client.onTextDocumentPublishDiagnostics((_params) => {
+            diagnosticsPublished = true;
+        });
+
+        const text = 'var n = 0\nvar mut q = {x: 0}\nq.x = n\n';
+        fs.writeFileSync(filePath(), text);
+
+        const initResult = await client.initialize({
+            processId: process.pid,
+            rootUri,
+            capabilities: {},
+        });
+        const legend = initResult.capabilities.semanticTokensProvider?.legend;
+        expect(legend?.tokenModifiers).toEqual(['mutable', 'reassignable']);
+
+        client.textDocumentDidOpen({
+            textDocument: {
+                uri: fileUri(),
+                version: 1,
+                languageId: 'escalier',
+                text,
+            },
+        });
+
+        await vi.waitFor(
+            () => {
+                expect(diagnosticsPublished).toBeTruthy();
+            },
+            { timeout: 10_000 },
+        );
+
+        const tokens = await client.textDocumentSemanticTokensFull({
+            textDocument: { uri: fileUri() },
+        });
+
+        // Each token is five integers, and the last holds its modifier bits in legend
+        // order. `n` is reassignable (bit 1, value 2). `q` is mutable and
+        // reassignable (bits 0 and 1, value 3).
+        const data = tokens?.data ?? [];
+        const perToken: number[][] = [];
+        for (let i = 0; i < data.length; i += 5) {
+            perToken.push(data.slice(i, i + 5));
+        }
+        expect(perToken).toEqual([
+            [0, 4, 1, 0, 2], // n
+            [1, 8, 1, 0, 3], // q
+            [1, 0, 1, 0, 3], // q read
+            [0, 6, 1, 0, 2], // n read
+        ]);
     },
 );
 

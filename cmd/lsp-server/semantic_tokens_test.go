@@ -122,13 +122,11 @@ func TestSemanticTokensMarkMutableBindings(t *testing.T) {
 			},
 		},
 		{
-			// `var` makes a name reassignable, which leaves the value it holds immutable.
 			name: "ImmutableBindingsHaveNoTokens",
 			file: "bin/main.esc",
 			src: `fn main() {
     val a = 1
-    var b = a
-    b = 2
+    val b = a
 }`,
 			expected: []string{},
 		},
@@ -244,6 +242,122 @@ func TestEncodeSemanticTokensCountsUTF16(t *testing.T) {
 		0, 10, 2, tokenTypeParameter, tokenModifierMutable,
 		1, 0, 1, tokenTypeVariable, tokenModifierMutable,
 	}, encodeSemanticTokens(lineMap, tokens))
+}
+
+// TestSemanticTokensMarkReassignableBindings covers the reassignable modifier, which marks
+// every name a `var` declaration binds. It combines with the mutable modifier on a
+// `var mut` binding.
+func TestSemanticTokensMarkReassignableBindings(t *testing.T) {
+	tests := []struct {
+		name     string
+		file     string
+		src      string
+		expected []string
+	}{
+		{
+			name: "VarBindingAndReads",
+			file: "bin/main.esc",
+			src: `fn main() -> number {
+    var n = 0
+    n = n + 1
+    return n
+}`,
+			expected: []string{
+				"2:9 n variable+reassignable",
+				"3:5 n variable+reassignable",
+				"3:9 n variable+reassignable",
+				"4:12 n variable+reassignable",
+			},
+		},
+		{
+			name: "VarMutBindingAndReads",
+			file: "bin/main.esc",
+			src: `fn main() {
+    var mut q = {x: 0}
+    q.x = 1
+    q = {x: 2}
+}`,
+			expected: []string{
+				"2:13 q variable+mutable+reassignable",
+				"3:5 q variable+mutable+reassignable",
+				"4:5 q variable+mutable+reassignable",
+			},
+		},
+		{
+			// A `val mut` binding can be mutated but not reassigned.
+			name: "ValMutBindingIsNotReassignable",
+			file: "bin/main.esc",
+			src: `fn main() {
+    val mut p = {x: 0}
+    p.x = 1
+}`,
+			expected: []string{
+				"2:13 p variable+mutable",
+				"3:5 p variable+mutable",
+			},
+		},
+		{
+			name: "DestructuredVarBindings",
+			file: "bin/main.esc",
+			src: `fn main() -> number {
+    var {x, y: z} = {x: 1, y: 2}
+    return x + z
+}`,
+			expected: []string{
+				"2:10 x variable+reassignable",
+				"2:16 z variable+reassignable",
+				"3:12 x variable+reassignable",
+				"3:16 z variable+reassignable",
+			},
+		},
+		{
+			name: "VarMutShorthandLeaf",
+			file: "bin/main.esc",
+			src: `fn main() {
+    var {mut x, y} = {x: {a: 1}, y: 2}
+    x.a = y
+}`,
+			expected: []string{
+				"2:14 x variable+mutable+reassignable",
+				"2:17 y variable+reassignable",
+				"3:5 x variable+mutable+reassignable",
+				"3:11 y variable+reassignable",
+			},
+		},
+		{
+			name: "ModuleLevelVarMutReadInAFunction",
+			file: "lib/index.esc",
+			src: `var mut totals = {sum: 0}
+export fn add(n: number) {
+    totals.sum = totals.sum + n
+}`,
+			expected: []string{
+				"1:9 totals variable+mutable+reassignable",
+				"3:5 totals variable+mutable+reassignable",
+				"3:18 totals variable+mutable+reassignable",
+			},
+		},
+		{
+			name: "ModuleLevelVarReadInAFunction",
+			file: "lib/index.esc",
+			src: `var count = 0
+export fn bump() {
+    count = count + 1
+}`,
+			expected: []string{
+				"1:5 count variable+reassignable",
+				"3:5 count variable+reassignable",
+				"3:13 count variable+reassignable",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tokens, diagnostics := semanticTokensFor(t, map[string]string{tt.file: tt.src}, tt.file)
+			require.Empty(t, diagnostics)
+			require.Equal(t, tt.expected, tokens)
+		})
+	}
 }
 
 func TestSemanticTokensMarkMutatingMethods(t *testing.T) {
@@ -394,4 +508,32 @@ fn f(c: &mut Counter) {
 			require.Equal(t, tt.expected, tokens)
 		})
 	}
+}
+
+// TestSemanticTokensEncodeModifierBits asserts the wire form of each modifier
+// combination, read from the last of each token's five integers. Bit 0 is `mutable` and
+// bit 1 is `reassignable`, in legend order, so `var n` encodes 2 and `var mut q` encodes 3.
+func TestSemanticTokensEncodeModifierBits(t *testing.T) {
+	require.Equal(t, []string{"mutable", "reassignable"}, semanticTokenModifiers)
+
+	src := `fn main() {
+    val mut p = {x: 0}
+    var n = 0
+    var mut q = {x: 0}
+    q.x = n
+}`
+	s := integrationServer(t, map[string]string{"bin/main.esc": src})
+	uri := openFile(t, s, "bin/main.esc", src)
+	result, err := s.textDocumentSemanticTokensFull(&glsp.Context{}, &protocol.SemanticTokensParams{
+		TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+	})
+	require.NoError(t, err)
+	require.Empty(t, s.checkOutput.TypeErrors)
+	require.Equal(t, []protocol.UInteger{
+		1, 12, 1, tokenTypeVariable, 1, // p: mutable
+		1, 8, 1, tokenTypeVariable, 2, // n: reassignable
+		1, 12, 1, tokenTypeVariable, 3, // q: mutable and reassignable
+		1, 4, 1, tokenTypeVariable, 3, // q read
+		0, 6, 1, tokenTypeVariable, 2, // n read
+	}, result.Data)
 }

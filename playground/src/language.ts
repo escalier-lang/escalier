@@ -11,7 +11,7 @@ import { monarchLanguage } from './monarch-language';
 import {
     coalesced,
     createSemanticTokensProvider,
-    mutableTokenRules,
+    modifierTokenRules,
 } from './semantic-tokens';
 
 export const languageID = 'escalier';
@@ -405,6 +405,6 @@ export function setupLanguage(
         base: 'vs-dark',
         inherit: true,
         colors: {},
-        rules: mutableTokenRules(legend),
+        rules: modifierTokenRules(legend),
     });
 }
