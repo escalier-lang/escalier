@@ -133,11 +133,11 @@ func encodeSemanticTokens(lineMap *ast.LineMap, tokens []semanticToken) []protoc
 }
 
 // mutableTokenVisitor collects a token for each name in one file that binds or reads
-// mutable data, and for each method, getter, or constructor that takes `&mut self`. A
-// name binds mutable data when its binding is mutable, as in `val mut p`, or when its
-// value is a mutable borrow, as in `val r: &mut Point`. A member name is marked where a
-// class or an object type declares it, and not where a member expression reads it, which
-// is how rust-analyzer marks a method that takes `&mut self`.
+// mutable data, and for each method, getter, setter, or constructor that takes
+// `&mut self`. A name binds mutable data when its binding is mutable, as in `val mut p`,
+// or when its value is a mutable borrow, as in `val r: &mut Point`. A member name is
+// marked where a class or an object type declares it, and not where a member expression
+// reads it, which is how rust-analyzer marks a method that takes `&mut self`.
 type mutableTokenVisitor struct {
 	ast.DefaultVisitor
 	info *solver.Info
@@ -184,6 +184,7 @@ func (v *mutableTokenVisitor) EnterClassElem(e ast.ClassElem) bool {
 		v.addMemberName(e.Name, e.Receiver, tokenTypeProperty)
 		v.addReceiver(e.Receiver)
 	case *ast.SetterElem:
+		v.addMemberName(e.Name, e.Receiver, tokenTypeProperty)
 		v.addReceiver(e.Receiver)
 	}
 	return true
@@ -194,6 +195,8 @@ func (v *mutableTokenVisitor) EnterObjTypeAnnElem(e ast.ObjTypeAnnElem) bool {
 	case *ast.MethodTypeAnn:
 		v.addMemberName(e.Name, e.Receiver, tokenTypeMethod)
 	case *ast.GetterTypeAnn:
+		v.addMemberName(e.Name, e.Receiver, tokenTypeProperty)
+	case *ast.SetterTypeAnn:
 		v.addMemberName(e.Name, e.Receiver, tokenTypeProperty)
 	}
 	return true
@@ -249,8 +252,8 @@ func (v *mutableTokenVisitor) addRead(e *ast.IdentExpr) {
 	v.add(e.Span(), tokenType)
 }
 
-// addMemberName records a token of tokenType for name, the name a method or a getter is
-// declared under, when receiver is `&mut self`. It records nothing for a name written as
+// addMemberName records a token of tokenType for name, the name a method, getter, or
+// setter is declared under, when receiver is `&mut self`. It records nothing for a name written as
 // a string or a computed key.
 func (v *mutableTokenVisitor) addMemberName(name ast.ObjKey, receiver *ast.MethodReceiver, tokenType int) {
 	if receiver == nil || receiver.Mode != ast.BorrowReceiver || !receiver.Mut {

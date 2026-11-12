@@ -297,8 +297,9 @@ fn main() {
 			},
 		},
 		{
-			// Calls and getter reads are unmarked, whether through `self` or through a
-			// `&mut` parameter. The declarations of `bump`, `twice` and `value` are marked.
+			// Calls, getter reads and setter writes are unmarked, whether through `self` or
+			// through a `&mut` parameter. The declarations of `bump`, `twice` and both
+			// halves of `value` are marked.
 			name: "CallsOnSelfAndThroughBorrowAndMutGetter",
 			file: "bin/main.esc",
 			src: `class Counter {
@@ -309,10 +310,12 @@ fn main() {
         self.bump()
     },
     get value(&mut self) -> number { return self.n },
+    set value(&mut self, v: number) { self.n = v },
 }
 fn f(c: &mut Counter) {
     c.bump()
     val v = c.value
+    c.value = v
 }`,
 			expected: []string{
 				"3:5 constructor method+mutable",
@@ -328,9 +331,13 @@ fn f(c: &mut Counter) {
 				"8:9 value property+mutable",
 				"8:20 self parameter+mutable",
 				"8:45 self parameter+mutable",
-				"10:6 c parameter+mutable",
-				"11:5 c parameter+mutable",
-				"12:13 c parameter+mutable",
+				"9:9 value property+mutable",
+				"9:20 self parameter+mutable",
+				"9:39 self parameter+mutable",
+				"11:6 c parameter+mutable",
+				"12:5 c parameter+mutable",
+				"13:13 c parameter+mutable",
+				"14:5 c parameter+mutable",
 			},
 		},
 		{
@@ -364,14 +371,19 @@ fn f(c: &mut Counter) {
 			},
 		},
 		{
-			name: "InterfaceMethodDeclaration",
+			// The `&mut self` method and setter are marked, and the `&self` method and
+			// getter are not.
+			name: "InterfaceMemberDeclarations",
 			file: "lib/index.esc",
 			src: `interface Stack {
     push(&mut self, n: number) -> undefined,
     peek(&self) -> number,
+    get top(&self) -> number,
+    set top(&mut self, n: number),
 }`,
 			expected: []string{
 				"2:5 push method+mutable",
+				"5:9 top property+mutable",
 			},
 		},
 	}
