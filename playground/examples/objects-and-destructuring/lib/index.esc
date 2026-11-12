@@ -1,0 +1,46 @@
+// Destructuring binds parts of an object or tuple to separate names. This
+// example keeps a small to-do list.
+
+export type Task = {title: string, done: boolean, tags: Array<string>}
+
+// An object pattern picks fields out by name, and `title: name` binds the
+// `title` field to a different name.
+export fn label({title: name, done}: &Task) -> string {
+    val mark = if done { "[x]" } else { "[ ]" }
+    return `${mark} ${name}`
+}
+
+// A default fills in a field the caller left out. `newTask("Buy milk", {})` gets
+// `done` set to `false` and an empty tag list.
+export fn newTask(title: string, {done = false, tags = []}: {done?: boolean, tags?: Array<string>}) -> Task {
+    return {title, done, tags}
+}
+
+// Object types are exact, so the checker rejects an option the type doesn't
+// list. Uncomment to see the error: object has extra property: priority
+// val lawn = newTask("Mow the lawn", {priority: 1})
+
+// A tuple pattern binds elements by position, and a rest element collects the
+// ones left over. Patterns nest, so `{title}` reaches into the first element.
+export fn headline([{title}, ...rest]: [Task, ...Array<Task>]) -> string {
+    return `${title} and ${rest.length} more`
+}
+
+// An object rest collects the fields the pattern didn't name. `withoutTags`
+// returns `{title: string, done: boolean}`.
+export fn withoutTags(task: Task) {
+    val {tags, ...rest} = task
+    return rest
+}
+
+// Returning a tuple lets a function produce two results, which the caller
+// destructures in one binding.
+export fn progress(tasks: &Array<Task>) -> [number, number] {
+    var finished = 0
+    for {done} in tasks {
+        if done {
+            finished = finished + 1
+        }
+    }
+    return [finished, tasks.length]
+}

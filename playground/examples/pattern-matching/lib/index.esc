@@ -1,0 +1,64 @@
+// A `match` picks the first arm whose pattern fits the value, and the checker
+// makes sure some arm fits every possible value. This example measures shapes
+// in a small drawing program.
+
+export type Unit = "px" | "cm" | "in"
+export type Length = {value: number, unit: Unit}
+
+// A literal pattern matches one exact value. `Unit` has three members, so the
+// `match` needs an arm for each. Delete an arm to see the error:
+// match is not exhaustive; add a branch for `"in"`
+export fn pixelsPer(unit: Unit) -> number {
+    return match unit {
+        "px" => 1,
+        "cm" => 37.8,
+        "in" => 96,
+    }
+}
+
+// An object pattern binds fields by name and can test a field against a
+// literal. A guard after `if` adds a condition on the names the pattern bound.
+// Both can fail, so the last arm covers everything else.
+export fn describe(length: Length) -> string {
+    return match length {
+        {value} if value == 0 => "nothing",
+        {value, unit: "px"} => `${value} pixels`,
+        {value, unit} => `${value}${unit}, or ${value * pixelsPer(unit)} pixels`,
+    }
+}
+
+// A tuple pattern matches by position, and `_` skips an element. Each guard
+// tests the coordinates its pattern bound, and the final `_` arm catches the
+// points no guard accepted.
+export fn quadrant(point: [number, number]) -> string {
+    return match point {
+        [x, y] if x == 0 && y == 0 => "origin",
+        [_, y] if y < 0 => "below the x axis",
+        [x, _] if x < 0 => "top left",
+        _ => "top right",
+    }
+}
+
+// A type annotation on a binding narrows it. `size` is a `number` in the first
+// arm and `name` is a `string` in the second.
+export fn parseLength(input: number | string) -> Length {
+    return match input {
+        size: number => ({value: size, unit: "px"}),
+        name: string => ({value: if name == "large" { 100 } else { 10 }, unit: "px"}),
+    }
+}
+
+// `if val` runs its block only when the pattern matches. Inside the block, `w`
+// is a `number` rather than `number | null`.
+export fn widthOrDefault(width: number | null) -> number {
+    return if val w: number = width { w } else { 300 }
+}
+
+// `val … else` binds a name for the rest of the block, or runs the `else`
+// block when the pattern doesn't match. Here the `else` returns early.
+export fn scale(length: Length, factor: number | null) -> Length {
+    val f: number = factor else {
+        return length
+    }
+    return {value: length.value * f, unit: length.unit}
+}
