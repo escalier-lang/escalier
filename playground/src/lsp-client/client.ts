@@ -67,7 +67,8 @@ const contentLengthName = encoder.encode('content-length:');
  * payload is decoded only once all of its bytes have arrived, so a character split
  * across two chunks decodes whole. A header without a `Content-Length` is reported
  * in malformed and skipped, along with the bytes up to the next `Content-Length`
- * header.
+ * header. When that header hasn't arrived, rest keeps only the bytes that could
+ * begin it.
  */
 export function takeMessages(buffer: Uint8Array): {
     payloads: string[];
@@ -89,8 +90,9 @@ export function takeMessages(buffer: Uint8Array): {
         if (!match) {
             malformed.push(header);
             // Without a length the body's end is unknown, so its bytes can't be told
-            // apart from the next header. Skip to the next Content-Length header, or
-            // drop what's buffered when none has arrived.
+            // apart from the next header. Skip to the next Content-Length header. When
+            // none has arrived, keep only the bytes that could begin one, since the
+            // next chunk may complete it.
             const next = indexOfBytes(
                 buffer,
                 contentLengthName,
@@ -98,7 +100,10 @@ export function takeMessages(buffer: Uint8Array): {
                 true,
             );
             if (next === -1) {
-                start = buffer.length;
+                start = Math.max(
+                    bodyStart,
+                    buffer.length - (contentLengthName.length - 1),
+                );
                 break;
             }
             start = next;

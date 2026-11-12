@@ -793,14 +793,23 @@ test('takeMessages skips the body of a header without a Content-Length', () => {
     });
 });
 
-test('takeMessages drops a malformed message when no Content-Length follows', () => {
+test('takeMessages keeps a Content-Length header split across chunks after a malformed message', () => {
     const encoder = new TextEncoder();
+    // The first chunk ends partway through the next message's header name.
+    const first = takeMessages(
+        encoder.encode('Content-Type: text/plain\r\n\r\n{"a":1}Content-Len'),
+    );
+    expect(first.payloads).toEqual([]);
+    expect(first.malformed).toEqual(['Content-Type: text/plain']);
 
-    expect(
-        takeMessages(encoder.encode('Content-Type: text/plain\r\n\r\n{"a":1}')),
-    ).toEqual({
-        payloads: [],
-        malformed: ['Content-Type: text/plain'],
+    const second = encoder.encode('gth: 8\r\n\r\n{"id":7}');
+    const buffer = new Uint8Array(first.rest.length + second.length);
+    buffer.set(first.rest);
+    buffer.set(second, first.rest.length);
+
+    expect(takeMessages(buffer)).toEqual({
+        payloads: ['{"id":7}'],
+        malformed: [],
         rest: new Uint8Array(0),
     });
 });
