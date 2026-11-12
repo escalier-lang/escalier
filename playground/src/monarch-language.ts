@@ -16,7 +16,7 @@ export const monarchLanguage: monaco.languages.IMonarchLanguage = {
         'if', 'else', 'match', 'for', 'return',  'throw', 'try', 'catch', 'finally',
 
         // type modifiers
-        'readonly', 'mutable',
+        'readonly', 'mutable', 'mut',
 
         // function modifiers
         'async', 'await', 'gen', 'yield',
@@ -46,6 +46,10 @@ export const monarchLanguage: monaco.languages.IMonarchLanguage = {
     // The main tokenizer for our languages
     tokenizer: {
         root: [
+            // `get` and `set` start an accessor only when a name follows them, so
+            // `map.get(key)` stays an identifier.
+            [/(get|set)(?=\s+[a-zA-Z_$])/, 'keyword'],
+
             // identifiers and keywords
             [
                 /[a-z_$][\w$]*/,
