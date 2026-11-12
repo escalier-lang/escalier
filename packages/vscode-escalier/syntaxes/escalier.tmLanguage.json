@@ -54,7 +54,7 @@
         },
 		"modifiers": {
 			"name": "storage.modifier.esc",
-			"match": "\\b(mut|in|let|type|new|extends|async)\\b"
+			"match": "\\b(mut|in|let|type|new|extends|async)\\b|\\b(get|set)\\b(?=\\s+[A-Za-z_$])"
 		}
 	},
 	"scopeName": "source.esc"

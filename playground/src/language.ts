@@ -291,11 +291,12 @@ export function setupLanguage(
 
     monaco.languages.setMonarchTokensProvider(languageID, monarchLanguage);
     monaco.languages.setLanguageConfiguration(languageID, {
+        // `<` and `>` are left out because they also appear in operators such as `->`
+        // and `>=`, where bracket pair colouring would mark them as unmatched.
         brackets: [
             ['(', ')'],
             ['{', '}'],
             ['[', ']'],
-            ['<', '>'],
             ['`', '`'],
             ['"', '"'],
         ],
