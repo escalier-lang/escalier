@@ -9,6 +9,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/compiler"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/escalier-lang/escalier/internal/solver"
 )
@@ -105,14 +106,15 @@ func findCallAtLocation(co *compiler.CheckOutput, sourceID int, text string, loc
 	return v.call, argIndex(v.call, text, v.open, loc)
 }
 
-// argListOpen returns the offset of the `(` that opens call's argument list. Only
-// whitespace and the `?` of an optional call `f?(x)` may sit between the callee and it.
+// argListOpen returns the offset of the `(` that opens call's argument list. Between the
+// callee and it may sit whitespace, the `?` of an optional call `f?(x)`, and the `)` of a
+// parenthesized callee `(f)(x)`, whose span leaves its parentheses out.
 func argListOpen(call *ast.CallExpr, text string) (int, bool) {
 	for i := call.Callee.Span().End.Offset; i < len(text); i++ {
 		switch text[i] {
 		case '(':
 			return i, true
-		case ' ', '\t', '\r', '\n', '?':
+		case ' ', '\t', '\r', '\n', '?', ')':
 		default:
 			return 0, false
 		}
@@ -122,13 +124,18 @@ func argListOpen(call *ast.CallExpr, text string) (int, bool) {
 
 // inArgList reports whether loc lies between the parentheses of call, whose `(` is at
 // open. A call missing its `)` reaches to the end of its span, which is where the parser
-// stopped reading arguments.
+// stopped reading arguments. A span ending in a `)` that closes its last argument, as
+// `add(1, neg(2)` does, is such a call.
 func inArgList(call *ast.CallExpr, text string, open int, loc ast.Location) bool {
 	if loc.Offset <= open {
 		return false
 	}
 	end := call.Span().End.Offset
-	if end > open+1 && end <= len(text) && text[end-1] == ')' {
+	closed := end > open+1 && end <= len(text) && text[end-1] == ')'
+	if closed && len(call.Args) > 0 && call.Args[len(call.Args)-1].Span().End.Offset >= end {
+		closed = false
+	}
+	if closed {
 		return loc.Offset < end
 	}
 	return loc.Offset <= end
@@ -137,33 +144,38 @@ func inArgList(call *ast.CallExpr, text string, open int, loc ast.Location) bool
 // argIndex returns the index of the argument of call that loc is in, counting the commas
 // between the `(` at open and loc. Only the gaps between arguments are searched, so a
 // comma inside an argument such as `f(g(a, b), |)` does not count.
+//
+// The parser recovers from a half-typed argument list with nodes whose spans may overlap
+// or run out of order, so a gap whose ends are out of order or outside text is skipped.
 func argIndex(call *ast.CallExpr, text string, open int, loc ast.Location) int {
+	// commaBefore reports whether text[start:end] holds a comma before loc.
+	commaBefore := func(start, end int) bool {
+		end = min(end, loc.Offset, len(text))
+		return start >= 0 && start < end && strings.Contains(text[start:end], ",")
+	}
 	index := 0
 	gapStart := open + 1
 	for _, arg := range call.Args {
-		if comma := strings.IndexByte(text[gapStart:arg.Span().Start.Offset], ','); comma >= 0 &&
-			gapStart+comma < loc.Offset {
+		if commaBefore(gapStart, arg.Span().Start.Offset) {
 			index++
 		}
-		gapStart = arg.Span().End.Offset
+		gapStart = max(gapStart, arg.Span().End.Offset)
 	}
-	if gapStart < loc.Offset && loc.Offset <= len(text) {
-		if strings.Contains(text[gapStart:loc.Offset], ",") {
-			index++
-		}
+	if commaBefore(gapStart, loc.Offset) {
+		index++
 	}
 	return index
 }
 
-// calleeSignatures returns the signatures a call to callee may resolve to, in the order
-// they are declared. info is the table callee was checked with and scope is the top-level
-// scope of the file callee is in.
+// calleeSignatures returns the signatures a call to callee may resolve to. info is the
+// table callee was checked with, and scope is the top-level scope of the file callee is in.
 func calleeSignatures(info *solver.Info, scope *solver.Scope, callee ast.Expr) []*soltype.FuncType {
 	switch callee := callee.(type) {
 	case *ast.IdentExpr:
-		// The call site records only the overload arm the call resolved to, and a generic
-		// callee instantiated for the call. The binding holds every arm, each with its type
-		// parameters, so it is read when the callee names a top-level binding.
+		// The call site records the callee as the call used it. That is the one overload
+		// arm that matched, or a generic function with its type parameters filled in. The
+		// binding holds every arm with its type parameters, so it is read when the callee
+		// names a top-level binding.
 		if b, ok := topLevelBinding(info, scope, callee); ok {
 			if sigs := signaturesOf(info, b.DisplayType()); len(sigs) > 0 {
 				return sigs
@@ -208,8 +220,9 @@ func topLevelBinding(info *solver.Info, scope *solver.Scope, ident *ast.IdentExp
 }
 
 // signaturesOf returns the signatures a value of type t can be called with. A function
-// has its own, an overload set rendered as an intersection has one per arm, and an object
-// has its constructors, or its call signatures when it has no constructor.
+// has its own, and an overload set rendered as an intersection has one per arm. An object
+// has its constructors followed by its call signatures, since a call to a class that
+// declares both resolves to whichever accepts the arguments.
 func signaturesOf(info *solver.Info, t soltype.Type) []*soltype.FuncType {
 	switch t := t.(type) {
 	case *soltype.FuncType:
@@ -221,16 +234,16 @@ func signaturesOf(info *solver.Info, t soltype.Type) []*soltype.FuncType {
 		}
 		return sigs
 	case *soltype.ObjectType:
-		var callable []*soltype.FuncType
+		var ctors, calls []*soltype.FuncType
 		for _, elem := range t.Elems {
 			switch elem := elem.(type) {
 			case *soltype.ConstructorElem:
-				return elem.Signatures
+				ctors = append(ctors, elem.Signatures...)
 			case *soltype.CallableElem:
-				callable = elem.Signatures
+				calls = append(calls, elem.Signatures...)
 			}
 		}
-		return callable
+		return append(ctors, calls...)
 	case nil:
 		return nil
 	}
@@ -256,16 +269,25 @@ func calleeName(callee ast.Expr) string {
 // signatureHelp builds the response for a call to name whose candidate signatures are
 // sigs, with the cursor in argument active. The active signature is the first one with a
 // parameter at that index.
+//
+// Signatures that render the same label are listed once. A class such as `intl.Collator`
+// declares each constructor again as a call signature.
 func signatureHelp(name string, sigs []*soltype.FuncType, active int) *protocol.SignatureHelp {
-	infos := make([]protocol.SignatureInformation, len(sigs))
+	infos := make([]protocol.SignatureInformation, 0, len(sigs))
+	seen := set.NewSet[string]()
 	activeSig := -1
-	for i, sig := range sigs {
-		infos[i] = signatureInformation(name, sig)
-		param, ok := activeParam(sig, active)
-		infos[i].ActiveParameter = addr(protocol.UInteger(param))
-		if ok && activeSig < 0 {
-			activeSig = i
+	for _, sig := range sigs {
+		info := signatureInformation(name, sig)
+		if seen.Contains(info.Label) {
+			continue
 		}
+		seen.Add(info.Label)
+		param, ok := activeParam(sig, active)
+		info.ActiveParameter = addr(protocol.UInteger(param))
+		if ok && activeSig < 0 {
+			activeSig = len(infos)
+		}
+		infos = append(infos, info)
 	}
 	if activeSig < 0 {
 		activeSig = 0
@@ -310,7 +332,7 @@ func signatureInformation(name string, sig *soltype.FuncType) protocol.Signature
 			// LSP counts label offsets in UTF-16 code units.
 			Label: []protocol.UInteger{
 				protocol.UInteger(utf16Len(label[:start])),
-				protocol.UInteger(utf16Len(label[:end])),
+				protocol.UInteger(utf16Len(label[:start]) + utf16Len(label[start:end])),
 			},
 		}
 	}
@@ -319,5 +341,9 @@ func signatureInformation(name string, sig *soltype.FuncType) protocol.Signature
 
 // utf16Len returns the number of UTF-16 code units s encodes to.
 func utf16Len(s string) int {
-	return len(utf16.Encode([]rune(s)))
+	n := 0
+	for _, r := range s {
+		n += utf16.RuneLen(r)
+	}
+	return n
 }

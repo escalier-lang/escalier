@@ -203,6 +203,55 @@ func TestSignatureHelp(t *testing.T) {
 			activeParameter: 1,
 		},
 		{
+			// A class that declares both answers a call with either, so both are listed.
+			name: "ConstructorAndCallSignature",
+			files: map[string]string{
+				"lib/tag.esc": "export declare class Tag {\n    constructor(&mut self, id: number),\n" +
+					"    (name: string) -> Tag,\n}",
+				"bin/main.esc": "val t = Tag(|)",
+			},
+			open: "bin/main.esc",
+			expected: []renderedSignature{
+				{label: "Tag(id: number) -> Tag", params: []string{"id: number"}, active: 0},
+				{label: "Tag(name: string) -> Tag", params: []string{"name: string"}, active: 0},
+			},
+		},
+		{
+			name: "NamespaceOverloadSet",
+			files: map[string]string{
+				"lib/text/dup.esc": "export fn dup(value: number) -> number { return 2 * value }\n" +
+					"export fn dup(value: string) -> string { return value }",
+				"bin/main.esc": "val d = text.dup(\"a\"|)",
+			},
+			open: "bin/main.esc",
+			expected: []renderedSignature{
+				{label: "dup(value: number) -> number", params: []string{"value: number"}, active: 0},
+				{label: "dup(value: string) -> string", params: []string{"value: string"}, active: 0},
+			},
+		},
+		{
+			name:  "ParenthesizedCallee",
+			files: map[string]string{"lib/math.esc": addLib, "bin/main.esc": "val x = (add)(1, |)"},
+			open:  "bin/main.esc",
+			expected: []renderedSignature{
+				{label: "add(a: number, b: number) -> number", params: []string{"a: number", "b: number"}, active: 1},
+			},
+			activeParameter: 1,
+		},
+		{
+			// The outer call has no `)`, so its span ends with the `)` of `neg(2)`.
+			name: "UnclosedCallAfterNestedCall",
+			files: map[string]string{
+				"lib/math.esc": addLib + "\nexport fn neg(n: number) -> number { return -n }",
+				"bin/main.esc": "val x = add(1, neg(2)|",
+			},
+			open: "bin/main.esc",
+			expected: []renderedSignature{
+				{label: "add(a: number, b: number) -> number", params: []string{"a: number", "b: number"}, active: 1},
+			},
+			activeParameter: 1,
+		},
+		{
 			name: "RestParameter",
 			files: map[string]string{
 				"lib/sum.esc":  "export declare fn sum(first: number, ...rest: Array<number>) -> number",

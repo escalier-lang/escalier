@@ -383,9 +383,9 @@ func printAsSchemeWith(
 	}
 	if len(labels) == 0 && len(ltVars) == 0 {
 		// No quantified parameters: render as a plain (possibly raw-var) type, which
-		// keeps a leaked variable visible as t{ID}. It renders through a fresh printer as Print
-		// does, since p has already bound the function's own type parameters and printFuncTail
-		// binds them again. The fresh printer keeps p's record.
+		// keeps a leaked variable visible as t{ID}. A fresh printer renders it, as in Print,
+		// because p has already bound the function's own type parameters and printFuncTail
+		// would bind them a second time. The fresh printer keeps p's record.
 		return (&namedPrinter{record: p.record}).printType(t)
 	}
 	p.ltNames = ltNames
