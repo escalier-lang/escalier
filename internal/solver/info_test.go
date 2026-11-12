@@ -120,3 +120,65 @@ func TestInfoDeclOf(t *testing.T) {
 		})
 	}
 }
+
+// TestDisplayTypeOfTypeParameterInItsFunction covers how DisplayTypeOf renders a read of a
+// value typed by a type parameter, inside the function that declares the parameter, and
+// the members MemberObject reads off it.
+func TestDisplayTypeOfTypeParameterInItsFunction(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+		// members lists the names MemberObject reports, or nil when it reports none.
+		members []string
+	}{
+		{
+			name: "MutBorrowOfBoundedParameter",
+			src: `
+interface A {
+	m(&mut self) -> undefined,
+}
+fn f<T: A>(x: &mut T) {
+	x
+}
+`,
+			want:    "&mut T",
+			members: []string{"m"},
+		},
+		{
+			name: "OwnedUnboundedParameter",
+			src: `
+fn f<T>(x: T) {
+	x
+}
+`,
+			want: "T",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			module := parseModule(t, tt.src)
+			res := InferModuleAgainstStdlib(module, benchTree, Options{})
+			require.Empty(t, res.Errors)
+			ns, ok := module.Namespaces.Get("")
+			require.True(t, ok)
+			f, ok := ns.Decls[len(ns.Decls)-1].(*ast.FuncDecl)
+			require.True(t, ok)
+			stmt, ok := f.Body.Stmts[0].(*ast.ExprStmt)
+			require.True(t, ok)
+			display := res.Info.DisplayTypeOf(stmt.Expr)
+			require.Equal(t, tt.want, soltype.Print(display))
+			obj, ok := res.Info.MemberObject(display)
+			if tt.members == nil {
+				require.False(t, ok)
+				return
+			}
+			require.True(t, ok)
+			names := make([]string, len(obj.Elems))
+			for i, elem := range obj.Elems {
+				names[i] = soltype.ObjElemName(elem)
+			}
+			require.Equal(t, tt.members, names)
+		})
+	}
+}

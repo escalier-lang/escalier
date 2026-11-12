@@ -1749,6 +1749,59 @@ d.`,
 	}
 }
 
+// TestMemberCompletionOnTypeParameter covers a receiver typed by a type parameter inside
+// the function that declares it, which offers the members of the parameter's bound.
+func TestMemberCompletionOnTypeParameter(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		// line and col are the 1-based cursor position in src.
+		line, col int
+		expected  []string
+	}{
+		{
+			name: "MutBorrowOffersMutSelfMethod",
+			src: `interface A {
+    m(&mut self) -> undefined,
+    n(&self) -> number,
+}
+fn f<T: A>(x: &mut T) {
+    x.
+}`,
+			line:     6,
+			col:      7,
+			expected: []string{"m: fn () -> undefined", "n: fn () -> number"},
+		},
+		{
+			name: "BoundNamingSiblingParameter",
+			src: `interface A {
+    m(&mut self) -> undefined,
+}
+fn f<U: A, T: U>(x: &mut T) {
+    x.
+}`,
+			line:     5,
+			col:      7,
+			expected: []string{"m: fn () -> undefined"},
+		},
+		{
+			name: "UnboundedParameterOffersNothing",
+			src: `fn f<T>(x: &mut T) {
+    x.
+}`,
+			line:     2,
+			col:      7,
+			expected: []string{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			files := map[string]string{"lib/index.esc": tt.src}
+			require.Equal(t, tt.expected, solverMemberCompletions(t, files, "lib/index.esc", tt.line, tt.col))
+		})
+	}
+}
+
 // TestMemberCompletionFromSolverMembership covers receivers whose member lists are too
 // long to assert whole, such as the standard library's classes, by naming members the
 // list must and must not hold.

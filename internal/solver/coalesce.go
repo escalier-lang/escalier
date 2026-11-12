@@ -41,6 +41,21 @@ func coalesce(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	return coalesceKeeping(t, pol, funcTypeParamVars(t), nil, nil)
 }
 
+// coalesceNamingParams is coalesce with each rigid type parameter's variable replaced by
+// the parameter's skolem, which prints under the parameter's name. A variable whose bounds
+// reach a rigid parameter reads as that parameter too. Inside
+//
+//	fn f<T: A>(x: &mut T) { x }
+//
+// the read of `x` coalesces to `&mut T`. coalesce inlines `T`'s variable to its lower
+// bounds, of which it has none, and returns `never`. A generic function's own binder variables stay symbolic
+// as they do in coalesce, so the signature of `f` keeps its `T`. The result is for display
+// and for reading members, never for constraining.
+func coalesceNamingParams(t soltype.Type, pol soltype.Polarity) soltype.Type {
+	c := &coalescer{seen: set.NewSet[*soltype.TypeVarType](), keep: funcTypeParamVars(t), namesParams: true}
+	return coalesceLifetimes(t.Accept(c, pol), pol, nil)
+}
+
 // groundedCarrier reports the shape of t, looking through any borrow and resolving t if it is
 // still an inference variable. That shape is what a type switch needs before it can dispatch
 // on t. A borrow is peeled, so `&xs` grounds to the shape of `xs`. An unsolved variable is
@@ -216,6 +231,9 @@ type coalescer struct {
 	// recovered as positive-position lower-bound contributions (see keptFlowMap). nil on
 	// the plain coalesce path, where ranging over the nil map yields nothing.
 	flow map[*soltype.TypeVarType][]*soltype.TypeVarType
+	// namesParams replaces each rigid type parameter's variable that is not in keep with
+	// the skolem displaySkolem returns for it. Only coalesceNamingParams sets it.
+	namesParams bool
 }
 
 func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
@@ -229,6 +247,9 @@ func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ente
 	// through it survives coalescing for per-instance projection (B8).
 	if c.keep.Contains(v) {
 		return soltype.EnterResult{Type: v, SkipChildren: true}
+	}
+	if c.namesParams && v.Rigid != nil {
+		return soltype.EnterResult{Type: displaySkolem(v), SkipChildren: true}
 	}
 	// Re-entering a variable already on the current path is a recursive position: the bound graph
 	// loops back on itself with no concrete type breaking the cycle. It renders as a reference to
