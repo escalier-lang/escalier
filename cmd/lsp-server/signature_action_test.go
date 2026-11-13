@@ -137,6 +137,14 @@ func TestSignatureAction(t *testing.T) {
 			diagnostic: "0:3-0:4 'f' is declared at a script's top level, so it needs a return type; write `-> number`",
 		},
 		{
+			// The checker renders this method with a binder the source does not write. Every
+			// part of its signature is written, so the action adds no binder for it.
+			name:     "FullSignatureGenericMethod",
+			src:      "class Foo {\n\tvalue: number,\n\tget<T>(&self, d: T) -> number | T {\n\t\tif self.value != 0 { return self.value } else { return d }\n\t},\n}",
+			cursor:   "get",
+			expected: "",
+		},
+		{
 			name:     "FullSignature",
 			src:      "fn full(a: number) -> number { return a }",
 			cursor:   "full",

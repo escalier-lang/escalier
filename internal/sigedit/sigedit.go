@@ -93,10 +93,10 @@ func Apply(contents string, edits []Edit) string {
 }
 
 // Edits returns the edits that write target's inferred signature into contents, the text of
-// the file target is declared in. A
-// part the source leaves out is written. A part the source writes is kept as written,
-// unless it needs a lifetime the edits add to the binder list, in which case it is
-// rewritten. ok is false when the inferred signature cannot be written into the source:
+// the file target is declared in. A part the source leaves out is written. A part the source
+// writes is kept as written, unless it needs a lifetime the edits add to the binder list, in
+// which case it is rewritten. ok is false when the inferred signature cannot be written into
+// the source:
 // for a function type that carries its own lifetime, for a parameter list whose length
 // differs from the inferred one, and for a binder list that needs rewriting while the
 // source writes a `where` clause or declares a lifetime that elision assigns.
@@ -184,21 +184,17 @@ func (target Target) Edits(contents string) ([]Edit, bool) {
 			replaceSpan(p.TypeAnn.Span(), rendered.Params[i])
 		}
 	}
-	throws := ""
-	if sig.Throws == nil && rendered.Throws != "" {
-		throws = " throws " + rendered.Throws
-	}
+	// A function with no `throws` clause raises nothing, so its inferred signature has no
+	// throws type and no clause is ever written.
 	switch {
 	case sig.Return == nil:
 		end, ok := paramListEnd(target, contents)
 		if !ok {
 			return nil, false
 		}
-		insert(end, " -> "+rendered.Ret+throws)
+		insert(end, " -> "+rendered.Ret)
 	case namesAdded(rendered.Ret):
-		replaceSpan(sig.Return.Span(), rendered.Ret+throws)
-	case throws != "":
-		insert(sig.Return.Span().End.Offset, throws)
+		replaceSpan(sig.Return.Span(), rendered.Ret)
 	}
 	if sig.Throws != nil && namesAdded(rendered.Throws) {
 		replaceSpan(sig.Throws.Span(), rendered.Throws)
