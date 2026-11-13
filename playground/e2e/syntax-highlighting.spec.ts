@@ -63,4 +63,28 @@ test.describe('Syntax highlighting', () => {
         await expect(arrow).toHaveCount(1);
         await expect(arrow).not.toHaveClass(/bracket-highlighting/);
     });
+
+    test('colours keywords in compiled JavaScript', async ({ page }) => {
+        // The playground opens the compiled build output in the output panel.
+        const lines = page.locator('#output-panel .view-lines');
+        await expect(lines).toContainText('function');
+
+        const spans = (text: string) =>
+            lines
+                .locator('span > span')
+                .filter({ hasText: new RegExp(`^${text}$`) });
+        const keywordClass =
+            (await spans('function').first().getAttribute('class')) ?? '';
+        expect(keywordClass).not.toBe('');
+        await expect(spans('export').first()).toHaveAttribute(
+            'class',
+            keywordClass,
+        );
+
+        // hello-world's `Language.English() => "Hello"` compiles to a string literal,
+        // which gets a colour of its own.
+        const hello = spans('["\']Hello["\']').first();
+        await expect(hello).toBeVisible();
+        await expect(hello).not.toHaveAttribute('class', keywordClass);
+    });
 });

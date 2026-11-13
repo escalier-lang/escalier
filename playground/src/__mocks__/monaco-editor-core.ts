@@ -19,3 +19,11 @@ export const editor = {
 export const Uri = {
     parse: vi.fn((s: string) => s),
 };
+
+export const languages = {
+    // monaco-editor's basic-languages modules read IndentAction when they load.
+    IndentAction: { None: 0, Indent: 1, IndentOutdent: 2, Outdent: 3 },
+    register: vi.fn(),
+    setMonarchTokensProvider: vi.fn(),
+    setLanguageConfiguration: vi.fn(),
+};
