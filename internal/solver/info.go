@@ -189,6 +189,17 @@ func (i *Info) MemberObject(t soltype.Type) (*soltype.ObjectType, bool) {
 	return i.ctx.memberObject(t)
 }
 
+// IsArray reports whether t is an instance of the `Array` class the run settled on, after
+// expanding any alias or borrow on the outside. It returns false on a table built by NewInfo.
+// Call it only once a run has finished, for the reason MemberObject gives.
+func (i *Info) IsArray(t soltype.Type) bool {
+	if i.ctx == nil || t == nil {
+		return false
+	}
+	_, ok := i.ctx.arrayElem(i.ctx.expandedCarrier(t))
+	return ok
+}
+
 // DisplayTypeOf returns the type recorded for n coalesced to the form a person reads,
 // or nil when none was recorded. Every inference variable is replaced by the bounds it
 // settled on, with two exceptions. A type parameter generalization kept stays a variable,

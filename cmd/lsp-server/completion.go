@@ -290,7 +290,9 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 
 	var items []protocol.CompletionItem
 
-	if node == nil {
+	if keys, ok := emptyIndexKeyCompletions(node, parent, loc, info); ok {
+		items = keys
+	} else if node == nil {
 		// Cursor on whitespace/blank — provide scope-based completions
 		items = s.completionsFromScope(script, scriptView, info, loc, string(uri))
 	} else {
@@ -371,7 +373,9 @@ func (s *Server) moduleCompletion(
 
 	var items []protocol.CompletionItem
 
-	if node == nil {
+	if keys, ok := emptyIndexKeyCompletions(node, parent, loc, info); ok {
+		items = keys
+	} else if node == nil {
 		items = s.completionsFromModuleScope(module, sourceID, fileView, moduleView, info, loc)
 	} else {
 		switch n := node.(type) {
@@ -440,8 +444,8 @@ func (s *Server) memberCompletions(e *ast.MemberExpr, info *solver.Info, view sc
 	if info == nil {
 		return nil
 	}
-	if t := info.DisplayTypeOf(e.Object); t != nil {
-		return completionsFromSolType(t, info, info.LendsMut(e.Object))
+	if items, t := valueMemberCompletions(e.Object, info); t != nil {
+		return items
 	}
 	// A namespace is not a value, so the check records no type for one, and its members
 	// are read from the scope that binds it instead.
@@ -451,6 +455,34 @@ func (s *Server) memberCompletions(e *ast.MemberExpr, info *solver.Info, view sc
 		return completionsFromNamespace(ns, info, info.LendsMut(e.Object))
 	}
 	return nil
+}
+
+// valueMemberCompletions returns the completion items for the members of the value obj,
+// and the display type info recorded for obj that they were read from. A `&mut self`
+// method or a setter is left out unless obj lends mutable access. t is nil, and items
+// is empty, when info recorded no type for obj.
+func valueMemberCompletions(obj ast.Expr, info *solver.Info) (items []protocol.CompletionItem, t soltype.Type) {
+	t = info.DisplayTypeOf(obj)
+	if t == nil {
+		return nil, nil
+	}
+	return withPropertyDetails(completionsFromSolType(t, info, info.LendsMut(obj))), t
+}
+
+// withPropertyDetails returns items with the detail of each property item replaced by
+// its property signature, as propertyDetail renders it. A setter's detail stays
+// `setter`, since a setter has no type to read. It runs on merged items, so a member
+// of a union shows one signature over the joined types.
+func withPropertyDetails(items []protocol.CompletionItem) []protocol.CompletionItem {
+	for i := range items {
+		isProperty := items[i].Kind != nil && *items[i].Kind == protocol.CompletionItemKindProperty
+		if !isProperty || items[i].Detail == nil || *items[i].Detail == "setter" {
+			continue
+		}
+		detail := propertyDetail(completionDedupeKey(items[i]), *items[i].Detail, isOptionalCompletion(items[i]))
+		items[i].Detail = &detail
+	}
+	return items
 }
 
 // namespaceAt returns the namespace expr names, or false when it names none. An
@@ -524,7 +556,7 @@ func completionsFromNamespace(ns *solver.Namespace, info *solver.Info, receiverM
 			for _, item := range items {
 				held.Add(completionDedupeKey(item))
 			}
-			for _, item := range completionsFromSolType(t, info, receiverMut) {
+			for _, item := range withPropertyDetails(completionsFromSolType(t, info, receiverMut)) {
 				if !held.Contains(completionDedupeKey(item)) {
 					items = append(items, item)
 				}
@@ -564,6 +596,81 @@ func namespaceTypeCompletions(ns *solver.Namespace) []protocol.CompletionItem {
 		items = append(items, protocol.CompletionItem{Label: name, Kind: &kind})
 	}
 	return items
+}
+
+// emptyIndexKeyCompletions returns a completion item for each key of the object of an
+// index expression whose brackets hold nothing before loc, as in `p[]` or an unclosed
+// `p[`. Each label is the key quoted as the string literal that indexes it, such as
+// `"x"` for `p["x"]`. node and parent are the node at loc and its parent. It returns
+// false when loc is not inside such brackets or the object's type is not indexed by key.
+func emptyIndexKeyCompletions(node, parent ast.Node, loc ast.Location, info *solver.Info) ([]protocol.CompletionItem, bool) {
+	if info == nil {
+		return nil, false
+	}
+	index, ok := node.(*ast.IndexExpr)
+	if !ok {
+		// In `p[]` the cursor sits on the ErrorExpr that stands in for the index.
+		index, ok = parent.(*ast.IndexExpr)
+		if !ok || index.Index != node {
+			return nil, false
+		}
+	}
+	// When the token after `[` starts no expression, the parser records an ErrorExpr
+	// spanning it as the index. That token is the `]` of `p[]`, the first token of the
+	// next line after an unclosed `p[`, or nothing at the end of the file. A cursor at
+	// or before the token's start is inside the empty brackets.
+	errExpr, ok := index.Index.(*ast.ErrorExpr)
+	if !ok || loc.Offset > errExpr.Span().Start.Offset {
+		return nil, false
+	}
+	// The keys are the members `p.` would offer.
+	items, t := valueMemberCompletions(index.Object, info)
+	if t == nil || !indexedByKey(t, info) {
+		return nil, false
+	}
+	for i := range items {
+		items[i].Label = strconv.Quote(completionDedupeKey(items[i]))
+		items[i].FilterText = nil
+	}
+	return items, true
+}
+
+// propertyDetail returns the detail for the property name whose type renders as typ,
+// such as `(property) x: number` for `{x: number}`. An optional property is marked
+// with `?`, and its type gains `| undefined` unless typ already ends with it, as in
+// `(property) a?: number | undefined` for `{a?: number}`.
+func propertyDetail(name, typ string, optional bool) string {
+	if !optional {
+		return "(property) " + name + ": " + typ
+	}
+	if !strings.HasSuffix(typ, "| undefined") {
+		typ += " | undefined"
+	}
+	return "(property) " + name + "?: " + typ
+}
+
+// indexedByKey reports whether a value of type t is read by a key name, as an object
+// is. An array, a tuple, or a primitive is read by a number or a variable instead. A
+// union is indexed by key when each variant other than `null` and `undefined` is.
+func indexedByKey(t soltype.Type, info *solver.Info) bool {
+	if info.IsArray(t) {
+		return false
+	}
+	switch t := info.Expand(t).(type) {
+	case *soltype.PrimType, *soltype.LitType, *soltype.TupleType:
+		return false
+	case *soltype.UnionType:
+		for _, variant := range t.Types {
+			switch variant.(type) {
+			case *soltype.NullType, *soltype.UndefinedType:
+				continue
+			}
+			if !indexedByKey(variant, info) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // indexKeyCompletions returns a completion item for each key of the type the annotation
