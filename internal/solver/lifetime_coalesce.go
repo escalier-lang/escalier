@@ -319,9 +319,10 @@ func (a *ltAnalysis) kept(v *soltype.LifetimeVar) bool {
 	return a.posComps.Contains(a.leaderOf(v))
 }
 
-// sccParam returns the param lifetime with the lowest ID among v and the params that share
-// v's representative, which are equal to v. A 'static-forced param renders as 'static and is
-// passed over.
+// sccParam returns the param lifetime that v renders under among the params that share v's
+// representative, which are equal to v. That is the one with the lowest ID, or v itself when
+// v is a param with a lower ID than each of them. A 'static-forced param renders as 'static
+// and is passed over. It returns v when no param shares its representative.
 func (a *ltAnalysis) sccParam(v *soltype.LifetimeVar) *soltype.LifetimeVar {
 	if a.lowestParam == nil {
 		a.lowestParam = map[int]*soltype.LifetimeVar{}
@@ -335,7 +336,13 @@ func (a *ltAnalysis) sccParam(v *soltype.LifetimeVar) *soltype.LifetimeVar {
 			}
 		}
 	}
-	if p, ok := a.lowestParam[a.outlivesGraph.repOf(v.ID)]; ok && p.ID < v.ID {
+	p, ok := a.lowestParam[a.outlivesGraph.repOf(v.ID)]
+	if !ok {
+		return v
+	}
+	// A non-param lifetime renders under the param it equals whatever their IDs, since it
+	// has no name of its own to keep.
+	if !a.isParam(v) || p.ID < v.ID {
 		return p
 	}
 	return v

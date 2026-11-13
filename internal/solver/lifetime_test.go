@@ -364,6 +364,24 @@ func TestJoinRepresentativeIsNonParamRendersParamName(t *testing.T) {
 		renderScheme(&MonoScheme{Ty: fn}))
 }
 
+// A non-param lifetime equal to one param renders under that param's name even when a
+// second param also outlives it, so the return is not taken for a join over both params.
+// The non-param lifetime is minted first, for the reason the test above gives.
+func TestNonParamEqualToAParamRendersItsName(t *testing.T) {
+	c := newTestChecker()
+	m := c.ctx.freshJoinLifetime(0) // non-param, minted first so it holds the smaller ID
+	p := c.ctx.freshLifetime(0)
+	q := c.ctx.freshLifetime(0)
+	c.ctx.constrainLt(p, m) // p and m outlive each other, so they are equal
+	c.ctx.constrainLt(m, p)
+	c.ctx.constrainLt(q, m) // q outlives m
+	fn := borrowFn(mutPointRef(m), p, q)
+
+	require.Equal(t,
+		"fn <'a, 'b: 'a>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &'a mut {x: number}",
+		renderScheme(&MonoScheme{Ty: fn}))
+}
+
 // A discarded probe truncates every lifetime bound the trial appended back to the
 // pre-probe length, exactly as it does for type-variable bounds — the second sort
 // rides the same journal discipline. Bounds added before the probe survive.
