@@ -2530,3 +2530,126 @@ func TestIndexExprScopeCompletion(t *testing.T) {
 		})
 	}
 }
+
+// TestExtractorPatternCompletion covers the names offered after the dot of an extractor
+// pattern's qualified name, such as an enum variant in a `match` arm.
+func TestExtractorPatternCompletion(t *testing.T) {
+	const enum = "export enum Lang {\n    English,\n    French,\n    Spanish,\n}\n"
+	const shape = "export enum Shape {\n    Circle(radius: number),\n    Square(side: number),\n}\n"
+	tests := []struct {
+		name string
+		path string
+		src  string
+		// line and col are the 1-based cursor position in src.
+		line, col int
+		expected  []string
+	}{
+		{
+			name:     "EmptyVariantInLib",
+			path:     "lib/index.esc",
+			src:      enum + "export fn f(l: Lang) -> string {\n    return match l {\n        Lang.English => \"en\",\n        Lang.\n    }\n}\n",
+			line:     9,
+			col:      14,
+			expected: []string{"English", "French", "Spanish"},
+		},
+		{
+			name:     "EmptyVariantInBin",
+			path:     "bin/main.esc",
+			src:      enum + "fn f(l: Lang) -> string {\n    return match l {\n        Lang.English => \"en\",\n        Lang.\n    }\n}\n",
+			line:     9,
+			col:      14,
+			expected: []string{"English", "French", "Spanish"},
+		},
+		{
+			name:     "EmptyVariantAtEndOfFile",
+			path:     "lib/index.esc",
+			src:      enum + "export fn f(l: Lang) -> string {\n    return match l {\n        Lang.",
+			line:     8,
+			col:      14,
+			expected: []string{"English", "French", "Spanish"},
+		},
+		{
+			name:     "PartialVariant",
+			path:     "lib/index.esc",
+			src:      enum + "export fn f(l: Lang) -> string {\n    return match l {\n        Lang.English => \"en\",\n        Lang.Fr\n    }\n}\n",
+			line:     9,
+			col:      16,
+			expected: []string{"French"},
+		},
+		{
+			name:     "VariantWithFields",
+			path:     "lib/index.esc",
+			src:      shape + "export fn f(s: Shape) -> number {\n    return match s {\n        Shape.Circle(r) => r,\n        Shape.\n    }\n}\n",
+			line:     8,
+			col:      15,
+			expected: []string{"Circle", "Square"},
+		},
+		{
+			// Only the text before the cursor filters, so editing a written variant
+			// offers its siblings too.
+			name:     "CursorInsideVariant",
+			path:     "lib/index.esc",
+			src:      "export enum Lang {\n    French,\n    Frisian,\n    Spanish,\n}\nexport fn f(l: Lang) -> string {\n    return match l {\n        Lang.French => \"fr\",\n        _ => \"\",\n    }\n}\n",
+			line:     8,
+			col:      16,
+			expected: []string{"French", "Frisian"},
+		},
+		{
+			// A namespace of plain functions and constants holds nothing a pattern can
+			// name, so nothing is offered.
+			name:     "NamespaceWithoutConstructors",
+			path:     "lib/index.esc",
+			src:      "import \"std:math\"\nexport fn f(n: number) -> string {\n    return match n {\n        math.\n    }\n}\n",
+			line:     4,
+			col:      14,
+			expected: []string{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			items := completionItemsAt(t, map[string]string{tt.path: tt.src}, tt.path, tt.line, tt.col)
+			labels := make([]string, len(items))
+			for i, item := range items {
+				labels[i] = item.Label
+			}
+			require.Equal(t, tt.expected, labels)
+		})
+	}
+}
+
+// TestExtractorPatternCompletionFallsBack covers cursor positions in an extractor pattern
+// outside the part after the last dot, where the enum's variants are not offered.
+func TestExtractorPatternCompletionFallsBack(t *testing.T) {
+	const shape = "export enum Shape {\n    Circle(radius: number),\n    Square(side: number),\n}\n"
+	tests := []struct {
+		name string
+		src  string
+		// line and col are the 1-based cursor position in src.
+		line, col int
+	}{
+		{
+			name: "CursorInEnumName",
+			src:  shape + "export fn f(s: Shape) -> number {\n    return match s {\n        Shape.Circle(r) => r,\n        _ => 0,\n    }\n}\n",
+			line: 7,
+			col:  11,
+		},
+		{
+			name: "CursorInArgument",
+			src:  shape + "export fn f(s: Shape) -> number {\n    return match s {\n        Shape.Circle(r) => r,\n        _ => 0,\n    }\n}\n",
+			line: 7,
+			col:  23,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			files := map[string]string{"lib/index.esc": tt.src}
+			items := completionItemsAt(t, files, "lib/index.esc", tt.line, tt.col)
+			labels := make([]string, len(items))
+			for i, item := range items {
+				labels[i] = item.Label
+			}
+			require.NotContains(t, labels, "Circle")
+			require.NotContains(t, labels, "Square")
+		})
+	}
+}

@@ -63,6 +63,7 @@ func (p *Parser) pattern(allowIdentDefault bool, allowColonTypeAnn bool) ast.Pat
 
 		// Skip through any dots and identifiers (qualified identifier)
 		isQualified := false
+		trailingDot := false
 		for p.lexer.peek().Type == Dot {
 			p.lexer.consume() // consume dot
 			next := p.lexer.peek()
@@ -70,6 +71,7 @@ func (p *Parser) pattern(allowIdentDefault bool, allowColonTypeAnn bool) ast.Pat
 				p.lexer.consume() // consume identifier
 				isQualified = true
 			} else {
+				trailingDot = true
 				break
 			}
 		}
@@ -78,7 +80,15 @@ func (p *Parser) pattern(allowIdentDefault bool, allowColonTypeAnn bool) ast.Pat
 		p.lexer.restoreState(savedState) // restore to start
 		p.lexer.consume()                // consume first identifier again
 
-		if next.Type == OpenParen {
+		if trailingDot {
+			// A qualified name that ends in `.`, such as `Color.` while the variant is
+			// still being typed, ends in an empty name, as a member expression does. The
+			// pattern stays in the tree so an editor can complete after the dot.
+			qualIdent := p.parseQualifiedIdent(token)
+			dot := p.lexer.next()
+			span := ast.NewSpan(token.Span.Start, dot.Span.End, p.lexer.source.ID)
+			return ast.NewExtractorPat(p.endInEmptyName(qualIdent, dot), nil, span)
+		} else if next.Type == OpenParen {
 			return p.extractorPat(token)
 		} else if next.Type == OpenBrace {
 			return p.instancePat(token)

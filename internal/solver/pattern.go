@@ -990,7 +990,10 @@ func (c *checker) bindExtractorPat(scope *Scope, lvl int, p *ast.ExtractorPat, s
 	name := ast.QualIdentToString(p.Name)
 	sig, lookupErr := c.extractorSignature(scope, lvl, p, p.Name)
 	if lookupErr != nil {
-		c.reportPat(purpose, lookupErr)
+		// The parser already reported a name written up to its `.`, such as `Color.`.
+		if !ast.EndsInEmptyName(p.Name) {
+			c.reportPat(purpose, lookupErr)
+		}
 		// Bind each argument against a fresh var so its leaves stay defined and a later
 		// reference does not cascade into an unknown-identifier error.
 		args := make([]soltype.Pat, len(p.Args))

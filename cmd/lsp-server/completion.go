@@ -292,6 +292,8 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 
 	if keys, ok := emptyIndexKeyCompletions(node, parent, loc, info); ok {
 		items = keys
+	} else if values, ok := extractorNameCompletions(node, loc, scriptView, info); ok {
+		items = values
 	} else if node == nil {
 		// Cursor on whitespace/blank — provide scope-based completions
 		items = s.completionsFromScope(script, scriptView, info, loc, string(uri))
@@ -375,6 +377,8 @@ func (s *Server) moduleCompletion(
 
 	if keys, ok := emptyIndexKeyCompletions(node, parent, loc, info); ok {
 		items = keys
+	} else if values, ok := extractorNameCompletions(node, loc, nsView, info); ok {
+		items = values
 	} else if node == nil {
 		items = s.completionsFromModuleScope(module, sourceID, fileView, moduleView, info, loc)
 	} else {
@@ -510,6 +514,45 @@ func namespaceAt(expr ast.Expr, view scopeView, info *solver.Info) (*solver.Name
 		return nested, ok
 	}
 	return nil, false
+}
+
+// extractorNameCompletions returns the completion items for the last part of the
+// qualified name of an extractor pattern, such as `Color.Re` in `Color.Re => …` or
+// `Color.` while the part is still empty. It lists the constructors and nested
+// namespaces of the namespace before the last dot, such as an enum's variants, filtered
+// by the part typed before loc. node is the node at loc, and view is the scope the
+// pattern is written in. It returns false when node is not such a pattern, when loc is
+// outside the last part, or when the name before the dot names no namespace.
+func extractorNameCompletions(node ast.Node, loc ast.Location, view scopeView, info *solver.Info) ([]protocol.CompletionItem, bool) {
+	pat, ok := node.(*ast.ExtractorPat)
+	if !ok {
+		return nil, false
+	}
+	member, ok := pat.Name.(*ast.Member)
+	if !ok || loc.Offset < member.Right.Span().Start.Offset || loc.Offset > member.Right.Span().End.Offset {
+		return nil, false
+	}
+	ns, ok := namespaceOfQualIdent(member.Left, view)
+	if !ok {
+		return nil, false
+	}
+	// A pattern never writes to its target, so no member needs mutable access. Only a
+	// constructor, such as an enum variant or a class, can name an extractor, and a
+	// nested namespace leads to more of them.
+	var items []protocol.CompletionItem
+	for _, item := range completionsFromNamespace(ns, info, false) {
+		if item.Kind == nil {
+			continue
+		}
+		switch *item.Kind {
+		case protocol.CompletionItemKindConstructor, protocol.CompletionItemKindModule:
+			items = append(items, item)
+		}
+	}
+	if typed := member.Right.Name[:loc.Offset-member.Right.Span().Start.Offset]; typed != "" {
+		items = filterByPrefix(items, typed)
+	}
+	return items, true
 }
 
 // completionsFromNamespace returns the completion items for a member read off ns in

@@ -456,6 +456,38 @@ func TestDiagnosticsPublishedFromSolver(t *testing.T) {
 			expected: []string{`0:16-0:23 cannot constrain "hello" <: number`},
 		},
 		{
+			// A pattern still being typed after its dot reports only parse errors. The
+			// checker reads the arm as a catch-all, so it reports no unknown variant and
+			// no missing branch.
+			name: "PatternEndingInDot",
+			files: map[string]string{
+				"lib/index.esc": "export enum Lang {\n    English,\n    French,\n}\nexport fn f(l: Lang) -> string {\n    return match l {\n        Lang.English => \"en\",\n        Lang.\n    }\n}\n",
+			},
+			open: "lib/index.esc",
+			expected: []string{
+				"7:12-7:13 expected an identifier after .",
+				"8:4-8:5 Expected => but got }",
+				"9:0-9:1 Expected an expression",
+			},
+		},
+		{
+			// A half-typed arm before the others reports only its parse error.
+			name: "PatternEndingInDotBeforeOtherArms",
+			files: map[string]string{
+				"lib/index.esc": "export enum Lang {\n    English,\n    French,\n}\nexport fn f(l: Lang) -> string {\n    return match l {\n        Lang. => \"x\",\n        Lang.English => \"en\",\n        Lang.French => \"fr\",\n    }\n}\n",
+			},
+			open:     "lib/index.esc",
+			expected: []string{"6:12-6:13 expected an identifier after ."},
+		},
+		{
+			name: "IfValPatternEndingInDot",
+			files: map[string]string{
+				"lib/index.esc": "export enum Lang {\n    English,\n    French,\n}\nexport fn f(l: Lang) -> boolean {\n    return if val Lang. = l { true } else { false }\n}\n",
+			},
+			open:     "lib/index.esc",
+			expected: []string{"5:22-5:23 expected an identifier after ."},
+		},
+		{
 			name: "LibTypeErrorFromFullCheck",
 			files: map[string]string{
 				"lib/math.esc": `export val x: number = "hello"`,
