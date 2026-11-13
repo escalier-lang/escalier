@@ -1,7 +1,11 @@
 package sigedit
 
 import (
+	"context"
 	"testing"
+
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/parser"
 
 	"github.com/stretchr/testify/require"
 )
@@ -51,6 +55,42 @@ func TestApply(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			require.Equal(t, tt.expected, Apply("abc", tt.edits))
+		})
+	}
+}
+
+// TestParamListEnd covers where paramListEnd finds the `)` that closes a function's
+// parameter list. Each case parses src, then scans contents, which is src with bytes
+// replaced to model text the parse did not read. expected is the offset paramListEnd
+// returns, or -1 when it fails.
+func TestParamListEnd(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		contents string
+		expected int
+	}{
+		{name: "AfterLastParam", src: "fn f(x: number) {}", contents: "fn f(x: number) {}", expected: 15},
+		{name: "NoParams", src: "fn f() {}", contents: "fn f() {}", expected: 6},
+		{name: "NoParamsAfterBinders", src: "fn f<T>() {}", contents: "fn f<T>() {}", expected: 9},
+		{name: "BinderListNotClosed", src: "fn f<T>() {}", contents: "fn f<T]() {}", expected: -1},
+		{name: "ParamListNotOpened", src: "fn f() {}", contents: "fn f]) {}", expected: -1},
+		{name: "ParamListNotClosed", src: "fn f(x: number) {}", contents: "fn f(x: number] {}", expected: -1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			decls, errs := parser.ParseDecls(context.Background(), &ast.Source{Path: "t.esc", Contents: tt.src})
+			require.Empty(t, errs)
+			require.Len(t, decls, 1)
+			fn, ok := decls[0].(*ast.FuncDecl)
+			require.True(t, ok)
+			got, ok := paramListEnd(Target{Name: fn.Name, Sig: &fn.FuncSig}, tt.contents)
+			if tt.expected < 0 {
+				require.False(t, ok)
+				return
+			}
+			require.True(t, ok)
+			require.Equal(t, tt.expected, got)
 		})
 	}
 }
