@@ -124,6 +124,15 @@ func TestInfoDeclOf(t *testing.T) {
 // TestDisplayTypeOfTypeParameterInItsFunction covers how DisplayTypeOf renders a read of a
 // value typed by a type parameter, inside the function that declares the parameter, and
 // the members MemberObject reads off it.
+func TestIsArrayOnTableWithoutRun(t *testing.T) {
+	info := NewInfo()
+
+	// A table built by NewInfo has no run to name an `Array` class.
+	arrayT := &soltype.ClassType{Name: "Array", TypeArgs: []soltype.Type{&soltype.PrimType{Prim: soltype.NumPrim}}}
+	require.False(t, info.IsArray(arrayT))
+	require.False(t, info.IsArray(nil))
+}
+
 func TestDisplayTypeOfTypeParameterInItsFunction(t *testing.T) {
 	tests := []struct {
 		name string
