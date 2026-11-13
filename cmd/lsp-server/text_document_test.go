@@ -733,7 +733,7 @@ func TestHoverFromSolver(t *testing.T) {
 				"bin/main.esc": "val x = add(1, 2)",
 			},
 			open: "bin/main.esc", line: 0, col: 9,
-			expected: escalierCode("fn (a: number, b: number) -> number"),
+			expected: escalierCode("fn add(a: number, b: number) -> number"),
 		},
 		// The checker binds `self` with no declaration, so the hover shows its type alone.
 		{
@@ -899,6 +899,105 @@ func TestHoverFromSolver(t *testing.T) {
 			},
 			open: "lib/a.esc", line: 0, col: 33,
 			expected: escalierCode("(type parameter) K in keyof T"),
+		},
+		{
+			name: "FuncDeclName",
+			files: map[string]string{
+				"lib/a.esc": "export fn add(a: number, b: number) -> number { return a + b }",
+			},
+			open: "lib/a.esc", line: 0, col: 10,
+			expected: escalierCode("fn add(a: number, b: number) -> number"),
+		},
+		{
+			name: "GenericFuncDeclName",
+			files: map[string]string{
+				"lib/a.esc": "export fn id<T: number>(x: T) -> T { return x }",
+			},
+			open: "lib/a.esc", line: 0, col: 10,
+			expected: escalierCode("fn id<T: number>(x: T) -> T"),
+		},
+		{
+			name: "OverloadedFuncReadFromBin",
+			files: map[string]string{
+				"lib/a.esc":    "export fn f(n: number) -> string { return \"n\" }\nexport fn f(s: string) -> string { return s }",
+				"bin/main.esc": "val s = f(1)",
+			},
+			open: "bin/main.esc", line: 0, col: 8,
+			expected: escalierCode("fn f(n: number) -> string (+1 overload)"),
+		},
+		{
+			name: "ClassDeclName",
+			files: map[string]string{
+				"lib/a.esc": "export class Dog { name: string, bark(self) -> string { return self.name } }",
+			},
+			open: "lib/a.esc", line: 0, col: 13,
+			expected: escalierCode("class Dog"),
+		},
+		{
+			name: "GenericClassDeclName",
+			files: map[string]string{
+				"lib/a.esc": "export class Box<T> { value: T }",
+			},
+			open: "lib/a.esc", line: 0, col: 13,
+			expected: escalierCode("class Box<T>"),
+		},
+		{
+			name: "ClassConstructorRead",
+			files: map[string]string{
+				"lib/a.esc":    "export class HttpError { status: number }",
+				"bin/main.esc": "val e = HttpError(404)",
+			},
+			open: "bin/main.esc", line: 0, col: 8,
+			expected: escalierCode("constructor HttpError(status: number)"),
+		},
+		{
+			name: "ClassRefInType",
+			files: map[string]string{
+				"lib/a.esc": "export class Dog { name: string, bark(self) -> string { return self.name } }\nexport fn f(d: Dog) -> string { return d.bark() }",
+			},
+			open: "lib/a.esc", line: 1, col: 17,
+			expected: escalierCode("class Dog"),
+		},
+		{
+			name: "EnumDeclName",
+			files: map[string]string{
+				"lib/a.esc": "export enum Expr { Num(value: number), Neg(operand: Expr) }",
+			},
+			open: "lib/a.esc", line: 0, col: 12,
+			expected: escalierCode("enum Expr"),
+		},
+		{
+			name: "GenericEnumDeclName",
+			files: map[string]string{
+				"lib/a.esc": "export enum Result<T, E> { Ok(value: T), Err(error: E) }",
+			},
+			open: "lib/a.esc", line: 0, col: 12,
+			expected: escalierCode("enum Result<T, E>"),
+		},
+		{
+			name: "EnumRefInType",
+			files: map[string]string{
+				"lib/a.esc": "export enum Expr { Num(value: number), Neg(operand: Expr) }\nexport fn show(e: Expr) -> number { return 1 }",
+			},
+			open: "lib/a.esc", line: 1, col: 18,
+			expected: escalierCode("enum Expr"),
+		},
+		{
+			name: "InterfaceDeclName",
+			files: map[string]string{
+				"lib/a.esc": "export interface Shape { area(self) -> number, name: string }",
+			},
+			open: "lib/a.esc", line: 0, col: 17,
+			expected: escalierCode("interface Shape { area(self) -> number, name: string }"),
+		},
+		{
+			name: "ConstructorWithFuncParam",
+			files: map[string]string{
+				"lib/a.esc":    "export class Timer { constructor(cb: fn () -> undefined) { } }",
+				"bin/main.esc": "val t = Timer(fn () { return undefined })",
+			},
+			open: "bin/main.esc", line: 0, col: 8,
+			expected: escalierCode("constructor Timer(cb: fn () -> undefined)"),
 		},
 		{
 			name:  "Keyword",
