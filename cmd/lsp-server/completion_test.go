@@ -2333,7 +2333,8 @@ func TestScopeCompletionFromSolverAfterIncrementalCheck(t *testing.T) {
 }
 
 // TestIndexKeyCompletion covers the keys offered between the empty brackets of an index
-// access type such as `Point[]`, each quoted as the string literal type that indexes it.
+// access type such as `Point[]` or an index expression such as `p[]`, each quoted as
+// the string literal that indexes it.
 func TestIndexKeyCompletion(t *testing.T) {
 	tests := []struct {
 		name string
@@ -2383,6 +2384,38 @@ func TestIndexKeyCompletion(t *testing.T) {
 			line:     5,
 			col:      20,
 			expected: []string{`"name": string`, `"speak": fn () -> string`},
+		},
+		{
+			name:     "IndexExprInLib",
+			path:     "lib/index.esc",
+			src:      "type Point = {x: number, y: string}\ndeclare val p: Point\nval x = p[]",
+			line:     3,
+			col:      11,
+			expected: []string{`"x": number`, `"y": string`},
+		},
+		{
+			name:     "IndexExprInBin",
+			path:     "bin/main.esc",
+			src:      "type Point = {x: number, y: string}\ndeclare val p: Point\nval x = p[]",
+			line:     3,
+			col:      11,
+			expected: []string{`"x": number`, `"y": string`},
+		},
+		{
+			name:     "IndexExprUnclosedBracket",
+			path:     "lib/index.esc",
+			src:      "type Point = {x: number, y: string}\ndeclare val p: Point\nval x = p[",
+			line:     3,
+			col:      11,
+			expected: []string{`"x": number`, `"y": string`},
+		},
+		{
+			name:     "IndexExprOnMemberObject",
+			path:     "lib/index.esc",
+			src:      "type Point = {x: number, y: string}\ndeclare val o: {p: Point}\nval x = o.p[]",
+			line:     3,
+			col:      13,
+			expected: []string{`"x": number`, `"y": string`},
 		},
 	}
 	for _, tt := range tests {
