@@ -151,6 +151,43 @@ func TestSignatureAction(t *testing.T) {
 			expected: "",
 		},
 		{
+			name:       "OptionalParamWithoutType",
+			src:        "fn f(x?) { return x }",
+			cursor:     "f(",
+			expected:   "fn f<T0>(x?: T0) -> T0 { return x }",
+			diagnostic: "0:3-0:4 'f' is declared at a script's top level, so parameter 'x' needs a type and 'f' needs a return type",
+		},
+		{
+			name:       "MethodReceiverGetsLifetime",
+			src:        "type Flat = {x: number}\nclass Box {\n\tinner: Flat,\n\tpick(&self, a: &Flat, c: boolean) { if c { return &self.inner } else { return a } },\n}",
+			cursor:     "pick",
+			expected:   "type Flat = {x: number}\nclass Box {\n\tinner: Flat,\n\tpick<'a>(&self, a: &'a Flat, c: boolean) -> &Flat | &'a Flat { if c { return &self.inner } else { return a } },\n}",
+			diagnostic: "3:1-3:5 'pick' is a method, so it needs a return type; write `pick<'a>(&self, a: &'a Flat, c: boolean) -> &Flat | &'a Flat`",
+		},
+		{
+			name:       "ThrowsGetsLifetime",
+			src:        "type Flat = {x: number}\nfn f(a: &Flat, b: &Flat, c: boolean) throws &Flat { if c { throw a } else { throw b } }",
+			cursor:     "f(",
+			expected:   "type Flat = {x: number}\nfn f<'a: 'c, 'b: 'c, 'c>(a: &'a Flat, b: &'b Flat, c: boolean) -> never throws &'c Flat { if c { throw a } else { throw b } }",
+			diagnostic: "1:3-1:4 'f' is declared at a script's top level, so it needs a return type; write `-> never`",
+		},
+		{
+			// The inferred signature adds the binder `T0` and elides the source's 'q, so a
+			// rewritten binder list would drop 'q while `q: &'q Flat` still names it.
+			name:       "AddedTypeParamWouldDropWrittenLifetime",
+			src:        "type Flat = {x: number}\nfn f<T, 'q>(t: T, q: &'q Flat, y) { return [t, y] }",
+			cursor:     "f<",
+			expected:   "",
+			diagnostic: "1:3-1:4 'f' is declared at a script's top level, so parameter 'y' needs a type and 'f' needs a return type",
+		},
+		{
+			name:       "AfterDeclaredFn",
+			src:        "declare fn g(x: number) -> number\nfn one() { return 1 }",
+			cursor:     "one",
+			expected:   "declare fn g(x: number) -> number\nfn one() -> 1 { return 1 }",
+			diagnostic: "1:3-1:6 'one' is declared at a script's top level, so it needs a return type; write `-> 1`",
+		},
+		{
 			name:       "CursorInBody",
 			src:        "fn noop(x: number) { x }",
 			cursor:     "x }",
