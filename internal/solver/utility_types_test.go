@@ -35,7 +35,7 @@ import (
 // source never wrote. So `ReturnType` captures the return past any parameter list and `Parameters`
 // captures the parameter list past any return.
 //
-// Both bound `F` by `fn (...args: _) -> _`, the written top of the function lattice. Its
+// Both bound `F` by `fn (...args: _) -> _`, the bound that admits a function of any arity. Its
 // rest parameter absorbs whatever parameter list the argument declares, and the two `_` are the
 // other form of the marker: a bound is not a conditional's operand, so nothing matches against it
 // and each `_` is an inference variable the argument's own type fills. Either way neither position

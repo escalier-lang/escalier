@@ -696,8 +696,9 @@ val slot: fn(x: number, ...) -> number = wide`
 	require.Equal(t, "2:42-2:46: cannot constrain unknown <: number", msgWithSpan(t, errs[0]))
 }
 
-// `fn (...args: _) -> _` is the written top of the function lattice. Its rest parameter absorbs
-// whatever parameter list the argument declares. The `_` on the rest parameter is an inference
+// `fn (...args: _) -> _` is the bound that admits a function of any arity, and the prelude bounds
+// `Parameters<F>` and `ReturnType<F>` by it. Its rest parameter absorbs whatever parameter list
+// the argument declares. The `_` on the rest parameter is an inference
 // variable that the absorbed list fills as one tuple. The `_` return places no constraint on the
 // argument. The type accepts a function of any arity and rejects everything that is not a function.
 //
@@ -705,7 +706,7 @@ val slot: fn(x: number, ...) -> number = wide`
 // value annotation, which these cases use, `_` keeps its ordinary meaning of "infer this here", so
 // the rendered binding shows what each placeholder was solved to. Each case renders the binding
 // named `f` when it type-checks and reports one error when it does not.
-func TestInferFunctionTopType(t *testing.T) {
+func TestInferAnyFunctionBound(t *testing.T) {
 	tests := []struct {
 		name    string
 		src     string
@@ -740,8 +741,8 @@ func TestInferFunctionTopType(t *testing.T) {
 			wantErr: "cannot constrain object <: function",
 		},
 		{
-			// An `Array<_>` rest may pass any number of arguments, so it is not a top type. An
-			// exact function accepts a fixed number and fails the arity gate.
+			// An `Array<_>` rest may pass any number of arguments, so it does not admit every
+			// function. An exact function accepts a fixed number and fails the arity gate.
 			name:    "ArrayRestRejectsAnExactFunction",
 			src:     `val f: fn(...args: Array<_>) -> _ = fn (x: number) { return 1 }`,
 			wantErr: "cannot constrain function of arity 1 <: function of arity 0 or more",
@@ -765,7 +766,7 @@ func TestInferFunctionTopType(t *testing.T) {
 // Each case renders the binding `r` when it type-checks and reports exactly the listed messages
 // when it does not.
 func TestInferVariableRestParamCall(t *testing.T) {
-	const top = "val f: fn(...args: _) -> _ = fn (x: number) { return 1 }\n"
+	const anyFn = "val f: fn(...args: _) -> _ = fn (x: number) { return 1 }\n"
 	tests := []struct {
 		name     string
 		src      string
@@ -790,25 +791,25 @@ func TestInferVariableRestParamCall(t *testing.T) {
 			want: "[]",
 		},
 		{
-			// The top type's rest variable holds the filling function's parameter tuple, so a
-			// call is checked against that tuple.
-			name: "TopTypeAcceptsTheDeclaredArguments",
-			src:  top + "val r = f(1)",
+			// The bound's rest variable holds the filling function's parameter tuple, so a call
+			// is checked against that tuple.
+			name: "AnyFunctionBoundAcceptsTheDeclaredArguments",
+			src:  anyFn + "val r = f(1)",
 			want: "1",
 		},
 		{
-			name:     "TopTypeRejectsAnExtraArgument",
-			src:      top + "val r = f(1, 2)",
+			name:     "AnyFunctionBoundRejectsAnExtraArgument",
+			src:      anyFn + "val r = f(1, 2)",
 			wantErrs: []string{"cannot constrain tuple of length 2 <: tuple of length 1"},
 		},
 		{
-			name:     "TopTypeRejectsAMissingArgument",
-			src:      top + "val r = f()",
+			name:     "AnyFunctionBoundRejectsAMissingArgument",
+			src:      anyFn + "val r = f()",
 			wantErrs: []string{"cannot constrain tuple of length 0 <: tuple of length 1"},
 		},
 		{
-			name:     "TopTypeRejectsAWrongArgument",
-			src:      top + "val r = f(\"a\")",
+			name:     "AnyFunctionBoundRejectsAWrongArgument",
+			src:      anyFn + "val r = f(\"a\")",
 			wantErrs: []string{`cannot constrain "a" <: number`},
 		},
 	}
