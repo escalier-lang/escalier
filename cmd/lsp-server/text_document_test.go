@@ -737,12 +737,12 @@ func TestHoverFromSolver(t *testing.T) {
 		},
 		// The checker binds `self` with no declaration, so the hover shows its type alone.
 		{
-			name: "SelfRead",
+			name: "SelfBorrowRead",
 			files: map[string]string{
-				"lib/c.esc": "export class C { n: number, get(self) -> number { return self.n } }",
+				"lib/c.esc": "export class C { n: number, peek(&self) -> number { return self.n } }",
 			},
-			open: "lib/c.esc", line: 0, col: 58,
-			expected: escalierCode("{n: number, get(self) -> number}"),
+			open: "lib/c.esc", line: 0, col: 59,
+			expected: escalierCode("self: &C"),
 		},
 		{
 			name: "LibParam",
@@ -998,6 +998,54 @@ func TestHoverFromSolver(t *testing.T) {
 			},
 			open: "bin/main.esc", line: 0, col: 8,
 			expected: escalierCode("constructor Timer(cb: fn () -> undefined)"),
+		},
+		{
+			name: "SelfMutBorrowRead",
+			files: map[string]string{
+				"lib/c.esc": "export class C { n: number, bump(&mut self) { self.n = self.n + 1 } }",
+			},
+			open: "lib/c.esc", line: 0, col: 46,
+			expected: escalierCode("self: &mut C"),
+		},
+		{
+			name: "PropertyReadOnClass",
+			files: map[string]string{
+				"lib/a.esc": "export class HttpError { status: number }\nexport fn f(e: &HttpError) -> number { return e.status }",
+			},
+			open: "lib/a.esc", line: 1, col: 48,
+			expected: escalierCode("(property) HttpError.status: number"),
+		},
+		{
+			name: "MethodReadOnClass",
+			files: map[string]string{
+				"lib/a.esc": "export class C { n: number, peek(self) -> number { return self.n } }\nexport fn g(c: &C) -> number { return c.peek() }",
+			},
+			open: "lib/a.esc", line: 1, col: 40,
+			expected: escalierCode("(method) C.peek() -> number"),
+		},
+		{
+			name: "GetterRead",
+			files: map[string]string{
+				"lib/a.esc": "export class Temp { celsius: number, get fahrenheit(self) -> number { return self.celsius } }\nexport fn u(t: &Temp) -> number { return t.fahrenheit }",
+			},
+			open: "lib/a.esc", line: 1, col: 43,
+			expected: escalierCode("(getter) Temp.fahrenheit: number"),
+		},
+		{
+			name: "PropertyReadOnObjectLiteral",
+			files: map[string]string{
+				"lib/a.esc": "export fn f(p: &{x: number}) -> number { return p.x }",
+			},
+			open: "lib/a.esc", line: 0, col: 50,
+			expected: escalierCode("(property) x: number"),
+		},
+		{
+			name: "ObjectLiteralPropertyKey",
+			files: map[string]string{
+				"lib/a.esc": "export val p = {volume: 7}",
+			},
+			open: "lib/a.esc", line: 0, col: 16,
+			expected: escalierCode("(property) volume: 7"),
 		},
 		{
 			name:  "Keyword",
