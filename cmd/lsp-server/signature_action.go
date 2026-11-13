@@ -56,22 +56,7 @@ type checkedFile struct {
 // function or its signature is already written in full. loc is in file, and uri is
 // file's document.
 func signatureAction(file checkedFile, uri protocol.DocumentUri, loc ast.Location) (protocol.CodeAction, bool) {
-	var decls []ast.Decl
-	if file.script != nil {
-		for _, stmt := range file.script.Stmts {
-			if ds, ok := stmt.(*ast.DeclStmt); ok {
-				decls = append(decls, ds.Decl)
-			}
-		}
-	} else if file.module != nil {
-		for _, ns := range file.module.Namespaces.Values() {
-			for _, d := range ns.Decls {
-				if d.Span().SourceID == file.id {
-					decls = append(decls, d)
-				}
-			}
-		}
-	}
+	decls := sigedit.FileDecls(file.script, file.module, file.id)
 	for _, target := range sigedit.Targets(file.info, decls, file.id) {
 		if !target.SignatureSpan.Contains(loc) {
 			continue

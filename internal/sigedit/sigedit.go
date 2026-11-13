@@ -33,6 +33,32 @@ type Edit struct {
 	Text       string
 }
 
+// FileDecls returns the declarations of the file sourceID names. When script is not nil the
+// file is that script, and its top-level declarations are returned. Otherwise the file is
+// a lib/ file of module, and the declarations of module written in it are returned.
+func FileDecls(script *ast.Script, module *ast.Module, sourceID int) []ast.Decl {
+	var decls []ast.Decl
+	if script != nil {
+		for _, stmt := range script.Stmts {
+			if ds, ok := stmt.(*ast.DeclStmt); ok {
+				decls = append(decls, ds.Decl)
+			}
+		}
+		return decls
+	}
+	if module == nil {
+		return nil
+	}
+	for _, ns := range module.Namespaces.Values() {
+		for _, d := range ns.Decls {
+			if d.Span().SourceID == sourceID {
+				decls = append(decls, d)
+			}
+		}
+	}
+	return decls
+}
+
 // Targets returns each function decls declares with a body, and each method with a body of
 // a class decls declares, for which info records a signature. sourceID is the file decls
 // are declared in.

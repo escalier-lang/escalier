@@ -78,7 +78,7 @@ func writePackage(dir string) error {
 			continue
 		}
 		var edits []sigedit.Edit
-		for _, target := range sigedit.Targets(info, declsOf(&co, src.ID), src.ID) {
+		for _, target := range sigedit.Targets(info, sigedit.FileDecls(co.Scripts[src.ID], co.Module, src.ID), src.ID) {
 			targetEdits, ok := target.Edits(src.Contents)
 			if !ok {
 				fmt.Fprintf(os.Stderr, "%s: skipped %s, whose signature cannot be written\n",
@@ -135,31 +135,6 @@ func readSources(dir string) ([]*ast.Source, error) {
 		sources = append(sources, &ast.Source{ID: i, Path: filepath.ToSlash(rel), Contents: string(contents)})
 	}
 	return sources, nil
-}
-
-// declsOf returns the declarations of the file sourceID names: a script's top-level
-// declarations, or the module declarations written in a lib/ file.
-func declsOf(co *compiler.CheckOutput, sourceID int) []ast.Decl {
-	var decls []ast.Decl
-	if script, ok := co.Scripts[sourceID]; ok {
-		for _, stmt := range script.Stmts {
-			if ds, ok := stmt.(*ast.DeclStmt); ok {
-				decls = append(decls, ds.Decl)
-			}
-		}
-		return decls
-	}
-	if co.Module == nil {
-		return nil
-	}
-	for _, ns := range co.Module.Namespaces.Values() {
-		for _, d := range ns.Decls {
-			if d.Span().SourceID == sourceID {
-				decls = append(decls, d)
-			}
-		}
-	}
-	return decls
 }
 
 // nameOf returns the name target is declared under, for a message.
