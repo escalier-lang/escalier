@@ -21,8 +21,8 @@ function displayName(path: string): string {
     return path.split('/').pop() ?? path;
 }
 
-/** Get the Monaco language for a file path. */
-function languageForPath(path: string): string {
+/** Returns the Monaco language id for a file path. */
+export function languageForPath(path: string): string {
     if (path.endsWith('.esc')) return languageID;
     if (path.endsWith('.js')) return 'javascript';
     if (path.endsWith('.ts') || path.endsWith('.d.ts')) return 'typescript';

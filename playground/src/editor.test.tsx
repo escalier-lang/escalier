@@ -10,7 +10,7 @@ vi.mock('monaco-editor-core');
 // Mock the language module to avoid Monaco language registration side effects.
 vi.mock('./language', () => ({ languageID: 'escalier' }));
 
-import { Editor } from './editor';
+import { Editor, languageForPath } from './editor';
 import type { EditorState } from './editor-state';
 import { initialEditorState } from './editor-state';
 import { useEditorStore } from './editor-store';
@@ -389,5 +389,19 @@ describe('Editor', () => {
 
             expect(screen.queryByRole('alert')).not.toBeInTheDocument();
         });
+    });
+});
+
+describe('languageForPath', () => {
+    test.each([
+        { path: '/lib/index.esc', language: 'escalier' },
+        { path: '/build/lib/index.js', language: 'javascript' },
+        { path: '/build/lib/index.d.ts', language: 'typescript' },
+        { path: '/package.json', language: 'json' },
+        { path: '/build/lib/index.js.map', language: 'json' },
+        { path: '/escalier.toml', language: 'toml' },
+        { path: '/README.md', language: 'plaintext' },
+    ])('maps $path to $language', ({ path, language }) => {
+        expect(languageForPath(path)).toBe(language);
     });
 });
