@@ -7,6 +7,7 @@ import {
 
 import wasmUrl from '../../bin/lsp-server.wasm?url';
 
+import { registerBasicLanguages } from './basic-languages';
 import type { LoadingStatus } from './components/loading-screen';
 import { useEditorStore } from './editor-store';
 import { BrowserFS } from './fs/browser-fs';
@@ -26,6 +27,11 @@ async function start(
     reactRoot: ReactDOM.Root,
     showStatus: (status: LoadingStatus) => void,
 ) {
+    // Compiled output such as `build/lib/index.js` opens next to Escalier source.
+    // Its highlighting needs no language server, so it is registered before the
+    // server starts.
+    registerBasicLanguages();
+
     const baseUrl = import.meta.env.BASE_URL;
 
     const manifest: Manifest = await fetch(

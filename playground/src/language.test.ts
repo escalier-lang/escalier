@@ -32,7 +32,6 @@ const monacoMock = vi.hoisted(() => {
             setTheme: vi.fn(),
         },
         languages: {
-            IndentAction: { None: 0, Indent: 1, IndentOutdent: 2, Outdent: 3 },
             onLanguage: vi.fn(),
             register: vi.fn(),
             registerCompletionItemProvider: vi.fn(),
@@ -125,15 +124,6 @@ describe('setupLanguage', () => {
             'escalier-light',
             expect.objectContaining({ base: 'vs', rules }),
         );
-    });
-
-    test('registers the languages of the files the editor opens', () => {
-        setupLanguage(fakeClient().client, {});
-
-        const ids = monacoMock.languages.register.mock.calls.map(
-            ([{ id }]) => id,
-        );
-        expect(ids).toEqual(['escalier', 'javascript', 'typescript']);
     });
 
     test('registers no provider when the server advertises no semantic tokens', () => {

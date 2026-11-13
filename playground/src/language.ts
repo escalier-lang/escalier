@@ -1,7 +1,6 @@
 import * as monaco from 'monaco-editor-core';
 import * as lsp from 'vscode-languageserver-protocol';
 
-import { registerBasicLanguages } from './basic-languages';
 import {
     type CompletionSuggestion,
     provideCompletionItems,
@@ -72,8 +71,6 @@ export function setupLanguage(
     capabilities: lsp.ServerCapabilities,
 ) {
     monaco.languages.register({ id: languageID });
-    // The editor opens compiled output such as `build/main.js` next to Escalier source.
-    registerBasicLanguages();
 
     // Fires when a document's semantic tokens may have changed, so Monaco asks for them
     // again.
