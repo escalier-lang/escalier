@@ -602,10 +602,25 @@ func emptyIndexKeyCompletions(node, parent ast.Node, loc ast.Location, info *sol
 	// The keys are the members `p.` would offer, so mutability filters them the same way.
 	items := completionsFromSolType(t, info, info.LendsMut(index.Object))
 	for i := range items {
-		items[i].Label = strconv.Quote(completionDedupeKey(items[i]))
+		name := completionDedupeKey(items[i])
+		if isOptionalCompletion(items[i]) && items[i].Detail != nil {
+			detail := optionalPropertyDetail(name, *items[i].Detail)
+			items[i].Detail = &detail
+		}
+		items[i].Label = strconv.Quote(name)
 		items[i].FilterText = nil
 	}
 	return items, true
+}
+
+// optionalPropertyDetail returns the detail for the optional property name whose type
+// renders as typ, such as `(property) a?: number | undefined` for `{a?: number}`. It
+// adds `| undefined` unless typ already ends with it.
+func optionalPropertyDetail(name, typ string) string {
+	if !strings.HasSuffix(typ, "| undefined") {
+		typ += " | undefined"
+	}
+	return "(property) " + name + "?: " + typ
 }
 
 // indexedByKey reports whether a value of type t is read by a key name, as an object

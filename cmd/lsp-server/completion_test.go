@@ -2431,7 +2431,15 @@ func TestIndexKeyCompletion(t *testing.T) {
 			src:      "declare val o: {a?: number}\nval x = o[]",
 			line:     2,
 			col:      11,
-			expected: []string{`"a": number`},
+			expected: []string{`"a": (property) a?: number | undefined`},
+		},
+		{
+			name:     "IndexExprOptionalKeyAllowingUndefined",
+			path:     "lib/index.esc",
+			src:      "declare val o: {a?: number | undefined}\nval x = o[]",
+			line:     2,
+			col:      11,
+			expected: []string{`"a": (property) a?: number | undefined`},
 		},
 		{
 			name:     "IndexExprLeavesOutMutMembersOfImmutableValue",
