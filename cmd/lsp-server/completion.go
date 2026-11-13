@@ -444,8 +444,8 @@ func (s *Server) memberCompletions(e *ast.MemberExpr, info *solver.Info, view sc
 	if info == nil {
 		return nil
 	}
-	if t := info.DisplayTypeOf(e.Object); t != nil {
-		return completionsFromSolType(t, info, info.LendsMut(e.Object))
+	if items, t := valueMemberCompletions(e.Object, info); t != nil {
+		return items
 	}
 	// A namespace is not a value, so the check records no type for one, and its members
 	// are read from the scope that binds it instead.
@@ -455,6 +455,18 @@ func (s *Server) memberCompletions(e *ast.MemberExpr, info *solver.Info, view sc
 		return completionsFromNamespace(ns, info, info.LendsMut(e.Object))
 	}
 	return nil
+}
+
+// valueMemberCompletions returns the completion items for the members of the value obj,
+// and the display type info recorded for obj that they were read from. A `&mut self`
+// method or a setter is left out unless obj lends mutable access. t is nil, and items
+// is empty, when info recorded no type for obj.
+func valueMemberCompletions(obj ast.Expr, info *solver.Info) (items []protocol.CompletionItem, t soltype.Type) {
+	t = info.DisplayTypeOf(obj)
+	if t == nil {
+		return nil, nil
+	}
+	return completionsFromSolType(t, info, info.LendsMut(obj)), t
 }
 
 // namespaceAt returns the namespace expr names, or false when it names none. An
@@ -595,12 +607,11 @@ func emptyIndexKeyCompletions(node, parent ast.Node, loc ast.Location, info *sol
 	if !ok || loc.Offset > errExpr.Span().Start.Offset {
 		return nil, false
 	}
-	t := info.DisplayTypeOf(index.Object)
+	// The keys are the members `p.` would offer.
+	items, t := valueMemberCompletions(index.Object, info)
 	if t == nil || !indexedByKey(t, info) {
 		return nil, false
 	}
-	// The keys are the members `p.` would offer, so mutability filters them the same way.
-	items := completionsFromSolType(t, info, info.LendsMut(index.Object))
 	for i := range items {
 		name := completionDedupeKey(items[i])
 		// A setter has no type to read, so its detail stays `setter`.
