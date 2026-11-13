@@ -587,15 +587,39 @@ func TestInferArrayRestParamFuncAnnotation(t *testing.T) {
 			want: []string{`cannot constrain "a" <: number`},
 		},
 		{
-			// A fixed-arity function fills the slot, since the rest parameter absorbs its
-			// parameter list and checks each position against the element.
-			name: "AcceptsAFixedArityFunction",
+			// An exact function accepts exactly two arguments, and a holder of the slot may pass
+			// any number, so the arity gate rejects it even though both elements match.
+			name: "RejectsAFixedArityFunction",
 			src:  `fn two(x: number, y: number) -> number { return 1 }` + "\n" + `val h: fn(...xs: Array<number>) -> number = two`,
+			want: []string{"cannot constrain function of arity 2 <: function of arity 0 or more"},
 		},
 		{
-			name: "RejectsAFixedArityFunctionOnTheElement",
-			src:  `fn two(x: number, y: string) -> number { return 1 }` + "\n" + `val h: fn(...xs: Array<number>) -> number = two`,
+			// An inexact function ignores the arguments past its listed params, so the rest
+			// parameter absorbs its parameter list and checks each position against the element.
+			name: "AcceptsAnInexactFunction",
+			src:  `val two: fn(x: number, y: number, ...) -> number = fn (x, y, ...) { return 1 }` + "\n" + `val h: fn(...xs: Array<number>) -> number = two`,
+		},
+		{
+			name: "RejectsAnInexactFunctionOnTheElement",
+			src:  `val two: fn(x: number, y: string, ...) -> number = fn (x, y, ...) { return 1 }` + "\n" + `val h: fn(...xs: Array<number>) -> number = two`,
 			want: []string{"cannot constrain number <: string"},
+		},
+		{
+			// `a` may call its callback with a string followed by any number of numbers, and
+			// `fn (x: string)` accepts exactly one argument. Accepting it would let a caller of
+			// `helper` pass `fn (...xs: Array<string>)`, which then receives numbers as strings.
+			name: "RejectsAnExactFunctionAfterAFixedPrefix",
+			src: `declare fn a(f: fn(x: string, ...extras: Array<number>) -> undefined) -> undefined` + "\n" +
+				`fn helper(f: fn(x: string) -> undefined) -> undefined { return a(f) }`,
+			want: []string{"cannot constrain function of arity 1 <: function of arity 1 or more"},
+		},
+		{
+			// An exact function with an `Array<E>` rest of its own accepts any number of
+			// arguments, so it fills the slot.
+			name: "AcceptsAFunctionWithItsOwnArrayRest",
+			src: `declare fn a(f: fn(x: string, ...extras: Array<number>) -> undefined) -> undefined` + "\n" +
+				`declare fn g(x: string, ...ys: Array<number>) -> undefined` + "\n" +
+				`val r = a(g)`,
 		},
 		{
 			// Two array rest parameters pair as ordinary positions and compare element to
@@ -672,10 +696,10 @@ val slot: fn(x: number, ...) -> number = wide`
 	require.Equal(t, "2:42-2:46: cannot constrain unknown <: number", msgWithSpan(t, errs[0]))
 }
 
-// `fn (...args: Array<_>) -> _` is the written top of the function lattice. Its rest parameter
-// absorbs whatever parameter list the argument declares, and the `Array<_>` element and the `_`
-// return are inference placeholders, so neither constrains the argument further. It accepts a
-// function of any arity and rejects everything that is not a function.
+// `fn (...args: _) -> _` is the written top of the function lattice. Its rest parameter absorbs
+// whatever parameter list the argument declares. The `_` on the rest parameter is an inference
+// variable that the absorbed list fills as one tuple. The `_` return places no constraint on the
+// argument. The type accepts a function of any arity and rejects everything that is not a function.
 //
 // In a type-parameter bound that is all it does, since nothing reads the solved placeholders. In a
 // value annotation, which these cases use, `_` keeps its ordinary meaning of "infer this here", so
@@ -689,35 +713,38 @@ func TestInferFunctionTopType(t *testing.T) {
 		wantErr string // "" ⇒ expect no error
 	}{
 		{
-			// Nothing constrains the element, so it coalesces to the negative-position identity.
 			name: "AcceptsNullary",
-			src:  `val f: fn(...args: Array<_>) -> _ = fn () { return 1 }`,
-			want: "fn (...args: Array<unknown>) -> 1",
+			src:  `val f: fn(...args: _) -> _ = fn () { return 1 }`,
+			want: "fn (...args: []) -> 1",
 		},
 		{
-			// The rest parameter absorbs both declared params, so the arity is no obstacle. Each
-			// absorbed position bounds the element variable from above, and a parameter is
-			// contravariant, so the element coalesces to their meet.
 			name: "AcceptsBinary",
-			src:  `val f: fn(...args: Array<_>) -> _ = fn (x: number, y: string) { return 1 }`,
-			want: "fn (...args: Array<number & string>) -> 1",
+			src:  `val f: fn(...args: _) -> _ = fn (x: number, y: string) { return 1 }`,
+			want: "fn (...args: [number, string]) -> 1",
 		},
 		{
 			// A written function type flows in the same way a function expression does.
 			name: "AcceptsFunctionTypedBinding",
 			src: `val g: fn(x: number) -> number = fn (x) { return x }
-				val f: fn(...args: Array<_>) -> _ = g`,
-			want: "fn (...args: Array<number>) -> number",
+				val f: fn(...args: _) -> _ = g`,
+			want: "fn (...args: [number]) -> number",
 		},
 		{
 			name:    "RejectsNumber",
-			src:     `val f: fn(...args: Array<_>) -> _ = 5`,
+			src:     `val f: fn(...args: _) -> _ = 5`,
 			wantErr: "cannot constrain 5 <: function",
 		},
 		{
 			name:    "RejectsObject",
-			src:     `val f: fn(...args: Array<_>) -> _ = {a: 1}`,
+			src:     `val f: fn(...args: _) -> _ = {a: 1}`,
 			wantErr: "cannot constrain object <: function",
+		},
+		{
+			// An `Array<_>` rest may pass any number of arguments, so it is not a top type. An
+			// exact function accepts a fixed number and fails the arity gate.
+			name:    "ArrayRestRejectsAnExactFunction",
+			src:     `val f: fn(...args: Array<_>) -> _ = fn (x: number) { return 1 }`,
+			wantErr: "cannot constrain function of arity 1 <: function of arity 0 or more",
 		},
 	}
 	for _, tt := range tests {

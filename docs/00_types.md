@@ -290,8 +290,8 @@ capture is dropped, which is how a pattern names only the position it cares
 about.
 
 ```esc
-type ReturnType<F: fn (...args: Array<_>) -> _> =
-    if F : fn (...args: Array<_>) -> infer R { R } else { never }
+type ReturnType<F: fn (...args: _) -> _> =
+    if F : fn (...args: _) -> infer R { R } else { never }
 ```
 
 A type parameter's constraint is written with `:`, as `F` does above.
