@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type * as lsp from 'vscode-languageserver-protocol';
 
-import { Client, frameMessage, takeMessages } from './client';
+import { Client } from './client';
 
 let client: Client;
 let runPromise: Promise<unknown>;
@@ -214,12 +214,10 @@ test('foo/bar', async () => {
     // @ts-expect-error: sendRequest is private
     const promise = client.sendRequest('foo/bar', null);
 
-    await expect(promise).rejects.toMatchInlineSnapshot(`
-  {
-    "code": -32601,
-    "message": "method not supported: foo/bar",
-  }
-`);
+    await expect(promise).rejects.toMatchObject({
+        code: -32601,
+        message: 'method not supported: foo/bar',
+    });
 });
 
 // The server's first check loads the standard library, which takes several
@@ -589,242 +587,110 @@ test('a second client refuses to run while one is already running', async () => 
     );
 });
 
-// The two tests below exercise how the client reassembles a response that
-// arrives split across several stdout chunks. A message is delimited by a
-// `Content-Length` header rather than by the chunk it came in, so the client
-// has to buffer until it holds the whole body. They build their own Client and
-// never call run(), so they drive its stdout directly and no LSP server is
-// involved.
+// The tests below drive a Client's stdin and stdout directly. They build their own
+// Client and never call run(), so no LSP server is involved.
 
-test('multi-chunk message handling', async () => {
-    const encoder = new TextEncoder();
-
-    // Create a mock FSAPI
+/** Returns a Client that no server reads from or writes to. */
+function standaloneClient(): Client {
     const mockFS = {
         fstat: vi.fn(),
         lstat: vi.fn(),
         open: vi.fn(),
         read: vi.fn(),
     };
+    return new Client(buffer, process.cwd(), mockFS as any);
+}
 
-    const cwd = process.cwd();
-    const testClient = new Client(buffer, cwd, mockFS as any);
+/** Returns payload framed with a Content-Length header that counts its UTF-8 bytes. */
+function framed(payload: string): Uint8Array {
+    const encoder = new TextEncoder();
+    const body = encoder.encode(payload);
+    const header = encoder.encode(`Content-Length: ${body.length}\r\n\r\n`);
+    const message = new Uint8Array(header.length + body.length);
+    message.set(header);
+    message.set(body, header.length);
+    return message;
+}
 
-    // Don't call run() or initialize() to avoid interference from the real server
+/** Returns the JSON of a window/logMessage notification carrying message. */
+function logMessage(message: string): string {
+    return JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'window/logMessage',
+        params: { type: 3, message },
+    });
+}
 
-    // Create a large response that will be split across chunks
-    const largeResult = {
-        capabilities: {
-            textDocumentSync: 1,
-            hoverProvider: true,
-            definitionProvider: true,
-            // Add lots of data to make it large
-            data: 'x'.repeat(5000),
+test('reassembles a message split across stdout chunks', async () => {
+    const testClient = standaloneClient();
+    const received: string[] = [];
+    testClient.onWindowLogMessage((params) => received.push(params.message));
+
+    // 100-byte chunks split some of the three-byte characters between chunks.
+    const text = `こんにちは ${'x'.repeat(5000)} 世界`;
+    const message = framed(logMessage(text));
+    // @ts-expect-error: stdout is private
+    const stdout = testClient.stdout;
+    for (let i = 0; i < message.length; i += 100) {
+        stdout.write(message.subarray(i, i + 100));
+    }
+
+    await vi.waitFor(() => expect(received).toEqual([text]));
+    await testClient.stop();
+});
+
+test('reads every message that arrives in one stdout chunk', async () => {
+    const testClient = standaloneClient();
+    const received: string[] = [];
+    testClient.onWindowLogMessage((params) => received.push(params.message));
+
+    const first = framed(logMessage('°C'));
+    const second = framed(logMessage('second'));
+    const chunk = new Uint8Array(first.length + second.length);
+    chunk.set(first);
+    chunk.set(second, first.length);
+    // @ts-expect-error: stdout is private
+    testClient.stdout.write(chunk);
+
+    await vi.waitFor(() => expect(received).toEqual(['°C', 'second']));
+    await testClient.stop();
+});
+
+test('frames a message it sends with its length in UTF-8 bytes', async () => {
+    const testClient = standaloneClient();
+    const params = {
+        textDocument: {
+            uri: 'file:///lib/index.esc',
+            languageId: 'escalier',
+            version: 1,
+            text: 'val greeting = "こんにちは"',
         },
     };
 
-    const responseObject = {
-        jsonrpc: '2.0',
-        id: 999,
-        result: largeResult,
-    };
+    await testClient.textDocumentDidOpen(params);
 
-    const payload = JSON.stringify(responseObject);
-    const header = `Content-Length: ${payload.length}\r\n\r\n`;
-    const fullMessage = header + payload;
-
-    // Split the message into multiple chunks
-    const chunkSize = 100;
+    // @ts-expect-error: stdin is private
+    const stdin = testClient.stdin;
     const chunks: Uint8Array[] = [];
-    for (let i = 0; i < fullMessage.length; i += chunkSize) {
-        const chunkStr = fullMessage.substring(i, i + chunkSize);
-        chunks.push(encoder.encode(chunkStr));
+    for (let chunk = stdin.read(); chunk; chunk = stdin.read()) {
+        chunks.push(chunk);
     }
-
-    console.log(`Split message into ${chunks.length} chunks`);
-
-    // Set up a deferred for request ID 999
-    // @ts-expect-error: deferreds is private
-    const deferreds = testClient.deferreds;
-    const deferred = {
-        promise: null as any,
-        resolve: null as any,
-        reject: null as any,
-    };
-    deferred.promise = new Promise((resolve, reject) => {
-        deferred.resolve = resolve;
-        deferred.reject = reject;
-    });
-    deferreds.set(999, deferred);
-
-    // Simulate receiving chunks through stdout
-    // @ts-expect-error: stdout is private
-    const stdout = testClient.stdout;
-
-    // Send chunks one at a time
+    const bytes = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+    let offset = 0;
     for (const chunk of chunks) {
-        stdout.write(chunk);
+        bytes.set(chunk, offset);
+        offset += chunk.length;
     }
+    const text = new TextDecoder().decode(bytes);
+    const [header, body] = text.split('\r\n\r\n');
 
-    // Wait for the promise to resolve
-    const result = await deferred.promise;
-
-    expect(result).toEqual(largeResult);
-});
-
-test('multi-chunk message with exact boundary split', async () => {
-    const encoder = new TextEncoder();
-
-    // Create a mock FSAPI
-    const mockFS = {
-        fstat: vi.fn(),
-        lstat: vi.fn(),
-        open: vi.fn(),
-        read: vi.fn(),
-    };
-
-    const cwd = process.cwd();
-    const testClient = new Client(buffer, cwd, mockFS as any);
-
-    const responseObject = {
+    expect(header).toBe(
+        `Content-Length: ${new TextEncoder().encode(body).length}`,
+    );
+    expect(JSON.parse(body)).toEqual({
         jsonrpc: '2.0',
-        id: 888,
-        result: { message: 'test response with specific length' },
-    };
-
-    const payload = JSON.stringify(responseObject);
-    const header = `Content-Length: ${payload.length}\r\n\r\n`;
-
-    // Split at the header/payload boundary
-    const chunk1 = encoder.encode(header);
-    const halfPayload = Math.floor(payload.length / 2);
-    const chunk2 = encoder.encode(payload.substring(0, halfPayload));
-    const chunk3 = encoder.encode(payload.substring(halfPayload));
-
-    console.log('Sending message in 3 chunks: header, first half, second half');
-
-    // Set up a deferred for request ID 888
-    // @ts-expect-error: deferreds is private
-    const deferreds = testClient.deferreds;
-    const deferred = {
-        promise: null as any,
-        resolve: null as any,
-        reject: null as any,
-    };
-    deferred.promise = new Promise((resolve, reject) => {
-        deferred.resolve = resolve;
-        deferred.reject = reject;
+        method: 'textDocument/didOpen',
+        params,
     });
-    deferreds.set(888, deferred);
-
-    // @ts-expect-error: stdout is private
-    const stdout = testClient.stdout;
-
-    stdout.write(chunk1);
-    stdout.write(chunk2);
-    stdout.write(chunk3);
-
-    const result = await deferred.promise;
-
-    expect(result).toEqual({ message: 'test response with specific length' });
-});
-
-test('frameMessage counts the payload in UTF-8 bytes', () => {
-    const decoder = new TextDecoder();
-
-    expect(decoder.decode(frameMessage('{"text":"°C"}'))).toBe(
-        'Content-Length: 14\r\n\r\n{"text":"°C"}',
-    );
-});
-
-test('takeMessages splits complete messages from the bytes left over', () => {
-    const first = frameMessage('{"id":1,"text":"こんにちは"}');
-    const second = frameMessage('{"id":2}');
-    // The buffer holds both messages and the start of a third. The third message
-    // ends in `世界"}`, so cutting it 7 bytes before the end splits the three
-    // bytes of `世`.
-    const third = frameMessage('{"id":3,"text":"世界"}');
-    const split = third.length - 7;
-    const buffer = new Uint8Array(first.length + second.length + split);
-    buffer.set(first);
-    buffer.set(second, first.length);
-    buffer.set(third.subarray(0, split), first.length + second.length);
-
-    const { payloads, malformed, rest } = takeMessages(buffer);
-
-    expect(payloads).toEqual(['{"id":1,"text":"こんにちは"}', '{"id":2}']);
-    expect(malformed).toEqual([]);
-    expect(rest).toEqual(third.subarray(0, split));
-
-    // The rest of the third message completes it, and its split character
-    // decodes whole.
-    const completed = new Uint8Array(third.length);
-    completed.set(rest);
-    completed.set(third.subarray(split), split);
-    expect(takeMessages(completed).payloads).toEqual([
-        '{"id":3,"text":"世界"}',
-    ]);
-});
-
-test('takeMessages reads the Content-Length header in any case', () => {
-    const encoder = new TextEncoder();
-
-    expect(
-        takeMessages(encoder.encode('content-length: 8\r\n\r\n{"id":5}'))
-            .payloads,
-    ).toEqual(['{"id":5}']);
-});
-
-test('takeMessages skips the body of a header without a Content-Length', () => {
-    const encoder = new TextEncoder();
-    // The skipped body holds a blank line, which would read as the end of a header.
-    const bad = encoder.encode(
-        'Content-Type: text/plain\r\n\r\nline one\r\n\r\nline two',
-    );
-    const good = frameMessage('{"id":6}');
-    const buffer = new Uint8Array(bad.length + good.length);
-    buffer.set(bad);
-    buffer.set(good, bad.length);
-
-    expect(takeMessages(buffer)).toEqual({
-        payloads: ['{"id":6}'],
-        malformed: ['Content-Type: text/plain'],
-        rest: new Uint8Array(0),
-    });
-});
-
-test('takeMessages keeps a Content-Length header split across chunks after a malformed message', () => {
-    const encoder = new TextEncoder();
-    // The first chunk ends partway through the next message's header name.
-    const first = takeMessages(
-        encoder.encode('Content-Type: text/plain\r\n\r\n{"a":1}Content-Len'),
-    );
-    expect(first.payloads).toEqual([]);
-    expect(first.malformed).toEqual(['Content-Type: text/plain']);
-
-    const second = encoder.encode('gth: 8\r\n\r\n{"id":7}');
-    const buffer = new Uint8Array(first.rest.length + second.length);
-    buffer.set(first.rest);
-    buffer.set(second, first.rest.length);
-
-    expect(takeMessages(buffer)).toEqual({
-        payloads: ['{"id":7}'],
-        malformed: [],
-        rest: new Uint8Array(0),
-    });
-});
-
-test('takeMessages skips a header without a Content-Length', () => {
-    const encoder = new TextEncoder();
-    const bad = encoder.encode('Content-Type: text/plain\r\n\r\n');
-    const good = frameMessage('{"id":4}');
-    const buffer = new Uint8Array(bad.length + good.length);
-    buffer.set(bad);
-    buffer.set(good, bad.length);
-
-    expect(takeMessages(buffer)).toEqual({
-        payloads: ['{"id":4}'],
-        malformed: ['Content-Type: text/plain'],
-        rest: new Uint8Array(0),
-    });
+    await testClient.stop();
 });
