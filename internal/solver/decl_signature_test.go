@@ -66,15 +66,15 @@ func TestFuncDeclSignaturePrintWritten(t *testing.T) {
 			expected: "(&Flat, &Flat) -> number",
 		},
 		{
-			name:     "WrittenLifetimeElided",
-			src:      "type Flat = {x: number}\nfn f<'q>(a: &'q Flat) -> &'q Flat { return a }",
+			name: "WrittenLifetimeElided",
+			src:  "type Flat = {x: number}\nfn f<'q>(a: &'q Flat) -> &'q Flat { return a }",
 			// The lifetime the source names reaches the scheme as a free variable, so it is
 			// elided like an inferred one.
 			expected: "(&Flat) -> &Flat",
 		},
 		{
-			name:     "LifetimeInsideFuncParam",
-			src:      "type Flat = {x: number}\nfn f(a: &Flat, g: fn (x: &Flat) -> number) -> number { return g(a) }",
+			name: "LifetimeInsideFuncParam",
+			src:  "type Flat = {x: number}\nfn f(a: &Flat, g: fn (x: &Flat) -> number) -> number { return g(a) }",
 			// The call ties x to a, so the lifetime occurs inside g's type and stays written.
 			expected: "<'a>(&'a Flat, fn (x: &'a Flat) -> number) -> number",
 		},
@@ -102,6 +102,16 @@ func TestFuncDeclSignaturePrintWritten(t *testing.T) {
 			name:     "AliasLifetimeArgument",
 			src:      "type Flat = {x: number}\ntype R<'a> = {v: &'a Flat}\nfn f<'a>(r: R<'a>) -> &'a Flat { return r.v }",
 			expected: "<'a>(R<'a>) -> &'a Flat",
+		},
+		{
+			name:     "TypeParamDefault",
+			src:      "fn f<T = number>(p: &T) -> number { return 1 }",
+			expected: "<T = number>(&T) -> number",
+		},
+		{
+			name:     "FuncParamWithLifetimeBinders",
+			src:      "type Flat = {x: number}\nfn f(g: fn <'a, 'b: 'a>(x: &'a Flat, y: &'b Flat) -> &'a Flat) -> number { return 1 }",
+			expected: "(fn <'a>(x: &'a Flat, y: &'a Flat) -> &'a Flat) -> number",
 		},
 	}
 	for _, tt := range tests {
@@ -184,5 +194,43 @@ func TestMethodSignatureComputedKey(t *testing.T) {
 		m := class.Body[1].(*ast.MethodElem)
 		_, ok = info.MethodSignature(class, m)
 		require.False(t, ok)
+	}
+}
+
+// TestMethodSignatureOwnComputedKey asserts that MethodSignature returns no signature for a
+// method whose own key is computed.
+func TestMethodSignatureOwnComputedKey(t *testing.T) {
+	src := `
+		val K = "k"
+		class C {
+			[K](&self) -> number { return 1 },
+		}
+	`
+	info, decls := inferForSignatures(t, src)
+	var class *ast.ClassDecl
+	for _, d := range decls {
+		if cd, ok := d.(*ast.ClassDecl); ok {
+			class = cd
+		}
+	}
+	require.NotNil(t, class)
+	_, ok := info.MethodSignature(class, class.Body[0].(*ast.MethodElem))
+	require.False(t, ok)
+}
+
+// TestSignaturesWithoutRecordedTypes asserts that FuncDeclSignature and MethodSignature
+// return no signature from a table built by NewInfo, which records no types.
+func TestSignaturesWithoutRecordedTypes(t *testing.T) {
+	_, decls := inferForSignatures(t, "fn f(x: number) -> number { return x }\nclass C { get(&self) -> number { return 1 } }")
+	info := NewInfo()
+	for _, d := range decls {
+		switch d := d.(type) {
+		case *ast.FuncDecl:
+			_, ok := info.FuncDeclSignature(d)
+			require.False(t, ok)
+		case *ast.ClassDecl:
+			_, ok := info.MethodSignature(d, d.Body[0].(*ast.MethodElem))
+			require.False(t, ok)
+		}
 	}
 }
