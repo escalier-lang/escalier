@@ -675,7 +675,8 @@ func indexedByKey(t soltype.Type, info *solver.Info) bool {
 
 // indexKeyCompletions returns a completion item for each key of the type the annotation
 // target resolved to, quoted as the string literal type that indexes it, such as
-// `"x"` for `Point["x"]`. A key that is a symbol, such as `[Symbol.iterator]`, is left
+// `"x"` for `Point["x"]`. A property's or getter's detail is its property signature,
+// such as `(property) x: number`. A key that is a symbol, such as `[Symbol.iterator]`, is left
 // out, and a key with both a getter and a setter is listed once. It returns nil when info
 // is nil or recorded no type for target.
 func indexKeyCompletions(target ast.TypeAnn, info *solver.Info) []protocol.CompletionItem {
@@ -699,9 +700,9 @@ func indexKeyCompletions(target ast.TypeAnn, info *solver.Info) []protocol.Compl
 		var detail string
 		switch elem := elem.(type) {
 		case *soltype.PropertyElem:
-			detail = soltype.Print(elem.Type)
+			detail = propertyDetail(name, soltype.Print(elem.Type), elem.Optional)
 		case *soltype.GetterElem:
-			detail = soltype.Print(elem.Type)
+			detail = propertyDetail(name, soltype.Print(elem.Type), false)
 		case *soltype.MethodElem:
 			kind = protocol.CompletionItemKindMethod
 			detail = methodDetail(elem)
