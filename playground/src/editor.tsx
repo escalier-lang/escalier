@@ -27,7 +27,7 @@ function languageForPath(path: string): string {
     if (path.endsWith('.js')) return 'javascript';
     if (path.endsWith('.ts') || path.endsWith('.d.ts')) return 'typescript';
     if (path.endsWith('.json') || path.endsWith('.js.map')) return 'json';
-    if (path.endsWith('.toml')) return 'plaintext';
+    if (path.endsWith('.toml')) return 'toml';
     return 'plaintext';
 }
 

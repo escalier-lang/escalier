@@ -16,6 +16,7 @@ describe('registerBasicLanguages', () => {
         { id: 'javascript', tokenPostfix: '.js', keyword: 'function' },
         { id: 'typescript', tokenPostfix: '.ts', keyword: 'interface' },
         { id: 'json', tokenPostfix: '.json', keyword: undefined },
+        { id: 'toml', tokenPostfix: '.toml', keyword: undefined },
     ])(
         'registers $id with a Monarch tokenizer',
         ({ id, tokenPostfix, keyword }) => {

@@ -113,4 +113,34 @@ test.describe('Syntax highlighting', () => {
             keyClass,
         );
     });
+
+    test('colours table headers and keys in TOML', async ({ page }) => {
+        // The explorer opens files in the input panel.
+        await page
+            .getByRole('button', { name: 'escalier.toml', exact: true })
+            .click();
+        const lines = page.locator('#input-panel .view-lines');
+        await expect(lines).toContainText('project');
+
+        const spans = (text: string) =>
+            lines
+                .locator('span > span')
+                .filter({ hasText: new RegExp(`^${text}$`) });
+        // hello-world's escalier.toml holds `[project]` then `name = "hello-world"`.
+        // Monaco draws `[project]` as three spans; the `project` one carries the
+        // table-header colour.
+        const header = spans('project').first();
+        await expect(header).toBeVisible();
+        const headerClass = (await header.getAttribute('class')) ?? '';
+        expect(headerClass).not.toBe('');
+
+        // The `name` key and the `"hello-world"` value each get a colour of their own.
+        const key = spans('name').first();
+        await expect(key).toBeVisible();
+        await expect(key).not.toHaveAttribute('class', headerClass);
+
+        const value = spans('"hello-world"').first();
+        await expect(value).toBeVisible();
+        await expect(value).not.toHaveAttribute('class', headerClass);
+    });
 });
