@@ -107,6 +107,10 @@ type Namespace struct {
 	// is not a value. A package whose `.d.ts` writes `export = equal` sets it to the
 	// binding of `equal`. A member this namespace does not hold is read off this value.
 	AsValue *ValueBinding
+	// AsValueName is the name Values holds AsValue under, or "" when Values does not
+	// hold it. `import "std:console"` binds `console` to the value its namespace
+	// exports as `console`, so that namespace sets AsValueName to "console".
+	AsValueName string
 }
 
 // holdsMember reports whether ns answers a member read of name itself, with a nested

@@ -5,6 +5,7 @@ import (
 	"maps"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -312,7 +313,17 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 				items = s.completionsFromScope(script, scriptView, info, loc, string(uri))
 				items = filterByPrefix(items, n.Name)
 			}
+		case *ast.ErrorTypeAnn:
+			// The cursor sits between the empty brackets of an index access such as
+			// `Point[]`, where the target's keys can be written.
+			if index, ok := parent.(*ast.IndexTypeAnn); ok && index.Index == n {
+				items = indexKeyCompletions(index.Target, info)
+			}
 		case *ast.TypeRefTypeAnn:
+			if member, ok := n.Name.(*ast.Member); ok {
+				items = qualifiedTypeCompletions(member, scriptView)
+				break
+			}
 			// Cursor is in a type annotation — return only type completions.
 			items = typeCompletionsFromScope(scriptView, "script", string(uri))
 			if n.Name != nil {
@@ -377,7 +388,17 @@ func (s *Server) moduleCompletion(
 				items = s.completionsFromModuleScope(module, sourceID, fileView, moduleView, info, loc)
 				items = filterByPrefix(items, n.Name)
 			}
+		case *ast.ErrorTypeAnn:
+			// The cursor sits between the empty brackets of an index access such as
+			// `Point[]`, where the target's keys can be written.
+			if index, ok := parent.(*ast.IndexTypeAnn); ok && index.Index == n {
+				items = indexKeyCompletions(index.Target, info)
+			}
 		case *ast.TypeRefTypeAnn:
+			if member, ok := n.Name.(*ast.Member); ok {
+				items = qualifiedTypeCompletions(member, nsView)
+				break
+			}
 			// Cursor is in a type annotation — return only type completions.
 			// Include file-scoped imports so imported types are visible.
 			seen := map[string]bool{}
@@ -459,11 +480,14 @@ func namespaceAt(expr ast.Expr, view scopeView, info *solver.Info) (*solver.Name
 	return nil, false
 }
 
-// completionsFromNamespace returns a completion item for each value and nested
-// namespace ns holds, followed by each member of ns.AsValue that ns does not hold
-// under the same name. It leaves out the types ns holds. info reads the members of
-// ns.AsValue. receiverMut says whether ns.AsValue lends mutable access, as
-// completionsFromSolType documents.
+// completionsFromNamespace returns the completion items for a member read off ns in
+// value position. It returns an item for each value and nested namespace ns holds,
+// followed by each member of ns.AsValue that ns does not hold under the same name. It
+// leaves out the types ns holds and the value ns holds under ns.AsValueName. A value
+// that can be constructed, such as `intl.Collator`, gets the constructor kind and its
+// constructor signatures as its detail. info reads the members of ns.AsValue.
+// receiverMut says whether ns.AsValue lends mutable access, as completionsFromSolType
+// documents.
 func completionsFromNamespace(ns *solver.Namespace, info *solver.Info, receiverMut bool) []protocol.CompletionItem {
 	var items []protocol.CompletionItem
 	add := func(name string, kind protocol.CompletionItemKind, detail string) {
@@ -474,9 +498,18 @@ func completionsFromNamespace(ns *solver.Namespace, info *solver.Info, receiverM
 		items = append(items, item)
 	}
 	for _, name := range identifiers(slices.Sorted(maps.Keys(ns.Values))) {
+		// The import binds this value under the namespace's own name, so
+		// `console.console` would repeat the `console` before the dot.
+		if name == ns.AsValueName {
+			continue
+		}
 		t := ns.Values[name].DisplayType()
 		// A member bound with no type yet is one a read of it cannot resolve.
 		if t == nil {
+			continue
+		}
+		if ctor, ok := constructorElem(info, t); ok {
+			add(name, protocol.CompletionItemKindConstructor, printSolType(&soltype.ObjectType{Elems: []soltype.ObjTypeElem{ctor}}))
 			continue
 		}
 		add(name, completionKindForSolValue(t), printSolType(t))
@@ -499,6 +532,115 @@ func completionsFromNamespace(ns *solver.Namespace, info *solver.Info, receiverM
 		}
 	}
 	return items
+}
+
+// constructorElem returns the constructor signatures a value of type t carries, and
+// false when t is not an object type with a constructor. info expands an alias or a
+// borrow around the object.
+func constructorElem(info *solver.Info, t soltype.Type) (*soltype.ConstructorElem, bool) {
+	obj, ok := info.Expand(t).(*soltype.ObjectType)
+	if !ok {
+		return nil, false
+	}
+	for _, elem := range obj.Elems {
+		if ctor, ok := elem.(*soltype.ConstructorElem); ok {
+			return ctor, true
+		}
+	}
+	return nil, false
+}
+
+// namespaceTypeCompletions returns a completion item for each type and nested
+// namespace ns holds, for a qualified type reference such as `intl.Collator`. It
+// leaves out the values ns holds.
+func namespaceTypeCompletions(ns *solver.Namespace) []protocol.CompletionItem {
+	var items []protocol.CompletionItem
+	for _, name := range identifiers(slices.Sorted(maps.Keys(ns.Types))) {
+		kind := completionKindForSolType(ns.Types[name])
+		items = append(items, protocol.CompletionItem{Label: name, Kind: &kind})
+	}
+	for _, name := range identifiers(slices.Sorted(maps.Keys(ns.Nested))) {
+		kind := protocol.CompletionItemKindModule
+		items = append(items, protocol.CompletionItem{Label: name, Kind: &kind})
+	}
+	return items
+}
+
+// indexKeyCompletions returns a completion item for each key of the type the annotation
+// target resolved to, quoted as the string literal type that indexes it, such as
+// `"x"` for `Point["x"]`. A key that is a symbol, such as `[Symbol.iterator]`, is left
+// out, and a key with both a getter and a setter is listed once. It returns nil when info
+// is nil or recorded no type for target.
+func indexKeyCompletions(target ast.TypeAnn, info *solver.Info) []protocol.CompletionItem {
+	if info == nil {
+		return nil
+	}
+	obj, ok := info.MemberObject(info.TypeOf(target))
+	if !ok {
+		return nil
+	}
+	var items []protocol.CompletionItem
+	// A getter and a setter for one key are two elements but one key.
+	seen := set.NewSet[string]()
+	for _, elem := range obj.Elems {
+		name := soltype.ObjElemName(elem)
+		if name == "" || soltype.IsSymbolMemberName(name) || seen.Contains(name) {
+			continue
+		}
+		seen.Add(name)
+		kind := protocol.CompletionItemKindProperty
+		var detail string
+		switch elem := elem.(type) {
+		case *soltype.PropertyElem:
+			detail = soltype.Print(elem.Type)
+		case *soltype.GetterElem:
+			detail = soltype.Print(elem.Type)
+		case *soltype.MethodElem:
+			kind = protocol.CompletionItemKindMethod
+			detail = methodDetail(elem)
+		case *soltype.SetterElem:
+			detail = "setter"
+		}
+		label := strconv.Quote(name)
+		items = append(items, protocol.CompletionItem{Label: label, Kind: &kind, Detail: &detail})
+	}
+	return items
+}
+
+// qualifiedTypeCompletions returns the completion items for the last part of a
+// qualified type reference such as `intl.Co`. It lists the types and nested
+// namespaces of the namespace before the last dot, filtered by the part typed after
+// it. view is the scope the reference is written in.
+func qualifiedTypeCompletions(member *ast.Member, view scopeView) []protocol.CompletionItem {
+	ns, ok := namespaceOfQualIdent(member.Left, view)
+	if !ok {
+		return nil
+	}
+	items := namespaceTypeCompletions(ns)
+	if member.Right.Name != "" {
+		items = filterByPrefix(items, member.Right.Name)
+	}
+	return items
+}
+
+// namespaceOfQualIdent returns the namespace a qualified name such as `a.b` names,
+// resolving its first part from view, or false when it names none.
+func namespaceOfQualIdent(name ast.QualIdent, view scopeView) (*solver.Namespace, bool) {
+	switch name := name.(type) {
+	case *ast.Ident:
+		if view == nil {
+			return nil, false
+		}
+		return view.lookupNamespace(name.Name)
+	case *ast.Member:
+		outer, ok := namespaceOfQualIdent(name.Left, view)
+		if !ok {
+			return nil, false
+		}
+		nested, ok := outer.Nested[name.Right.Name]
+		return nested, ok
+	}
+	return nil, false
 }
 
 // completionsFromSolType returns completion items for the members of a value of type t.

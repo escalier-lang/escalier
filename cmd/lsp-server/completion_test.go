@@ -1872,7 +1872,8 @@ func TestMemberCompletionFromSolverMembership(t *testing.T) {
 		},
 		{
 			// `import "std:console"` binds `console` as the package's namespace and as the
-			// `console` value it exports, so a member read offers both sets of members.
+			// `console` value it exports. A member read offers the value's members and
+			// leaves out the namespace's own `console`, which repeats the name before the dot.
 			name: "ValueBoundBesideNamespaceAfterDot",
 			files: map[string]string{
 				"lib/index.esc": "import \"std:console\"\n\nexport fn main() {\n    console.log(\"hello\")\n    console.\n}\n",
@@ -1880,7 +1881,8 @@ func TestMemberCompletionFromSolverMembership(t *testing.T) {
 			open:     "lib/index.esc",
 			line:     5,
 			col:      13,
-			contains: []string{"log: fn (...data: Array<unknown>) -> undefined", "console: Console"},
+			contains: []string{"log: fn (...data: Array<unknown>) -> undefined"},
+			excludes: []string{"console: Console"},
 		},
 		{
 			name: "ValueBoundBesideNamespaceInBin",
@@ -1907,8 +1909,8 @@ func TestMemberCompletionFromSolverMembership(t *testing.T) {
 }
 
 // TestNamespaceMemberCompletionLabels covers which members a package's namespace offers
-// after a dot, which is always in value position. A class is offered once, for its value,
-// and a type with no value is left out.
+// after a dot in value position. A class is offered once, for its value, and a type with
+// no value is left out.
 func TestNamespaceMemberCompletionLabels(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -1944,8 +1946,8 @@ func TestNamespaceMemberCompletionLabels(t *testing.T) {
 			open:     "lib/index.esc",
 			line:     3,
 			col:      13,
-			once:     []string{"console", "log"},
-			excludes: []string{"Console"},
+			once:     []string{"log"},
+			excludes: []string{"Console", "console"},
 		},
 		{
 			// `web:performance` declares `performance` `val mut`, so the members that
@@ -1986,6 +1988,163 @@ func TestNamespaceMemberCompletionLabels(t *testing.T) {
 			}
 			for _, label := range tt.excludes {
 				require.NotContains(t, labels, label)
+			}
+		})
+	}
+}
+
+// completionItemsAt checks files on internal/solver, opens open, and returns the
+// completion items at line and col, both 1-based.
+func completionItemsAt(t *testing.T, files map[string]string, open string, line, col int) []protocol.CompletionItem {
+	t.Helper()
+	s := integrationServer(t, files)
+	uri := openFile(t, s, open, files[open])
+	result, err := s.textDocumentCompletion(&glsp.Context{}, &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+			Position: protocol.Position{
+				Line:      protocol.UInteger(line - 1),
+				Character: protocol.UInteger(col - 1),
+			},
+		},
+	})
+	require.NoError(t, err)
+	list, ok := result.(*protocol.CompletionList)
+	require.True(t, ok)
+	return list.Items
+}
+
+// TestNamespaceMemberCompletionPosition covers how the members of an imported package
+// after a dot depend on the position the dot is written in. In value position the list
+// holds the package's values, with each class as its constructor. In type position it
+// holds only the package's types.
+func TestNamespaceMemberCompletionPosition(t *testing.T) {
+	type entry struct {
+		kind   protocol.CompletionItemKind
+		detail string
+	}
+	collatorCtor := entry{
+		kind:   protocol.CompletionItemKindConstructor,
+		detail: "{new (locales?: LocalesArgument, options?: CollatorOptions) -> Collator; new (locales?: string | Array<string>, options?: CollatorOptions) -> Collator}",
+	}
+	getCanonicalLocales := entry{
+		kind:   protocol.CompletionItemKindFunction,
+		detail: "fn (locale?: string | Array<string>) -> Array<string>",
+	}
+	collatorType := entry{kind: protocol.CompletionItemKindClass}
+	collatorOptionsType := entry{kind: protocol.CompletionItemKindInterface}
+	valueOnly := []string{"getCanonicalLocales", "supportedValuesOf"}
+	typeOnly := []string{"CollatorOptions", "LocalesArgument"}
+	tests := []struct {
+		name string
+		path string
+		src  string
+		// line and col are the 1-based cursor position in src.
+		line, col int
+		// expected maps labels the list must hold to their kind and detail.
+		expected map[string]entry
+		excludes []string
+		// exact, when set, is the whole list of labels in order.
+		exact []string
+	}{
+		{
+			name:     "ValueInLib",
+			path:     "lib/index.esc",
+			src:      "import \"std:intl\"\nval c = intl.",
+			line:     2,
+			col:      14,
+			expected: map[string]entry{"Collator": collatorCtor, "getCanonicalLocales": getCanonicalLocales},
+			excludes: typeOnly,
+		},
+		{
+			name:     "ValueInFunctionBody",
+			path:     "lib/index.esc",
+			src:      "import \"std:intl\"\nexport fn f() {\n    val c = intl.\n}\n",
+			line:     3,
+			col:      18,
+			expected: map[string]entry{"Collator": collatorCtor, "getCanonicalLocales": getCanonicalLocales},
+			excludes: typeOnly,
+		},
+		{
+			name:     "ValueInBin",
+			path:     "bin/main.esc",
+			src:      "import \"std:intl\"\nval c = intl.",
+			line:     2,
+			col:      14,
+			expected: map[string]entry{"Collator": collatorCtor},
+			excludes: typeOnly,
+		},
+		{
+			name:     "ValueFilteredByPrefix",
+			path:     "lib/index.esc",
+			src:      "import \"std:intl\"\nval c = intl.Co",
+			line:     2,
+			col:      16,
+			exact:    []string{"Collator"},
+			expected: map[string]entry{"Collator": collatorCtor},
+		},
+		{
+			name:     "TypeInValAnnotation",
+			path:     "lib/index.esc",
+			src:      "import \"std:intl\"\nval c: intl.",
+			line:     2,
+			col:      13,
+			expected: map[string]entry{"Collator": collatorType, "CollatorOptions": collatorOptionsType},
+			excludes: valueOnly,
+		},
+		{
+			name:     "TypeInParamAnnotation",
+			path:     "lib/index.esc",
+			src:      "import \"std:intl\"\nexport fn f(x: intl.) {}\n",
+			line:     2,
+			col:      21,
+			expected: map[string]entry{"Collator": collatorType, "CollatorOptions": collatorOptionsType},
+			excludes: valueOnly,
+		},
+		{
+			name:     "TypeInBin",
+			path:     "bin/main.esc",
+			src:      "import \"std:intl\"\nval c: intl.",
+			line:     2,
+			col:      13,
+			expected: map[string]entry{"Collator": collatorType, "CollatorOptions": collatorOptionsType},
+			excludes: valueOnly,
+		},
+		{
+			name:     "TypeFilteredByPrefix",
+			path:     "lib/index.esc",
+			src:      "import \"std:intl\"\nval c: intl.Co",
+			line:     2,
+			col:      15,
+			exact:    []string{"Collator", "CollatorOptions"},
+			expected: map[string]entry{"Collator": collatorType, "CollatorOptions": collatorOptionsType},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			items := completionItemsAt(t, map[string]string{tt.path: tt.src}, tt.path, tt.line, tt.col)
+			got := make(map[string]entry, len(items))
+			labels := make([]string, len(items))
+			for i, item := range items {
+				e := entry{}
+				if item.Kind != nil {
+					e.kind = *item.Kind
+				}
+				if item.Detail != nil {
+					e.detail = *item.Detail
+				}
+				got[item.Label] = e
+				labels[i] = item.Label
+			}
+			if tt.exact != nil {
+				require.Equal(t, tt.exact, labels)
+			}
+			for label, want := range tt.expected {
+				require.Contains(t, got, label)
+				require.Equal(t, want, got[label], "entry for %s", label)
+			}
+			for _, label := range tt.excludes {
+				require.NotContains(t, got, label)
 			}
 		})
 	}
@@ -2171,4 +2330,73 @@ func TestScopeCompletionFromSolverAfterIncrementalCheck(t *testing.T) {
 	s.mu.RUnlock()
 
 	require.Equal(t, []string{"later"}, getCompletionLabelsAt(t, s, binURI, 3, 11))
+}
+
+// TestIndexKeyCompletion covers the keys offered between the empty brackets of an index
+// access type such as `Point[]`, each quoted as the string literal type that indexes it.
+func TestIndexKeyCompletion(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		src  string
+		// line and col are the 1-based cursor position in src.
+		line, col int
+		// expected is each item rendered as `label: detail`, in order.
+		expected []string
+	}{
+		{
+			name:     "ObjectAliasInLib",
+			path:     "lib/index.esc",
+			src:      "type Point = {x: number, y: string}\nval p: Point[]",
+			line:     2,
+			col:      14,
+			expected: []string{`"x": number`, `"y": string`},
+		},
+		{
+			name:     "ObjectAliasInBin",
+			path:     "bin/main.esc",
+			src:      "type Point = {x: number, y: string}\nval p: Point[]",
+			line:     2,
+			col:      14,
+			expected: []string{`"x": number`, `"y": string`},
+		},
+		{
+			name:     "GenericAlias",
+			path:     "lib/index.esc",
+			src:      "type Pair<T> = {first: T, second: T}\nval p: Pair<boolean>[]",
+			line:     2,
+			col:      22,
+			expected: []string{`"first": boolean`, `"second": boolean`},
+		},
+		{
+			name:     "UnclosedBracket",
+			path:     "lib/index.esc",
+			src:      "type Point = {x: number, y: string}\nval p: Point[",
+			line:     2,
+			col:      14,
+			expected: []string{`"x": number`, `"y": string`},
+		},
+		{
+			name:     "ClassWithMethod",
+			path:     "lib/index.esc",
+			src:      "class Dog {\n    name: string,\n    speak(&self) -> string { return self.name },\n}\nexport fn f(d: Dog[]) {}\n",
+			line:     5,
+			col:      20,
+			expected: []string{`"name": string`, `"speak": fn () -> string`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			items := completionItemsAt(t, map[string]string{tt.path: tt.src}, tt.path, tt.line, tt.col)
+			rendered := make([]string, len(items))
+			for i, item := range items {
+				detail := ""
+				if item.Detail != nil {
+					detail = *item.Detail
+				}
+				rendered[i] = item.Label + ": " + detail
+			}
+			require.Equal(t, tt.expected, rendered)
+		})
+	}
 }

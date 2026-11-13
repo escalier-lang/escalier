@@ -651,3 +651,70 @@ func TestParseOptionalMethodTypeAnn_GenericIsNotSupported(t *testing.T) {
 	p.typeAnn()
 	require.NotEmpty(t, p.errors)
 }
+
+// TestParseTypeRefTrailingDot asserts that a type reference ending in a `.` keeps the
+// dot as a qualified name whose last part is empty, and reports the missing identifier.
+func TestParseTypeRefTrailingDot(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		// qualName is the reference's qualified name, rendered by ast.QualIdentToString.
+		qualName string
+	}{
+		{name: "OnePart", input: "intl.", qualName: "intl."},
+		{name: "TwoParts", input: "a.b.", qualName: "a.b."},
+		{name: "BeforeParen", input: "intl.)", qualName: "intl."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			typeAnn, errors := parseTypeAnnSrc(t, tt.input)
+			ref, ok := typeAnn.(*ast.TypeRefTypeAnn)
+			require.True(t, ok, "got %T", typeAnn)
+			require.Equal(t, tt.qualName, ast.QualIdentToString(ref.Name))
+			member, ok := ref.Name.(*ast.Member)
+			require.True(t, ok, "got %T", ref.Name)
+			require.Empty(t, member.Right.Name)
+			require.Len(t, errors, 1)
+			require.Equal(t, "expected an identifier after .", errors[0].Message)
+		})
+	}
+}
+
+// TestParseTypeEmptyIndex asserts that a type followed by `[` with no index type keeps
+// its index access, with an empty ErrorTypeAnn as the index, and reports the missing
+// index. The cursor between the brackets of `Foo<T>[]` falls inside that ErrorTypeAnn.
+func TestParseTypeEmptyIndex(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		// indexAt is the offset the empty index sits at.
+		indexAt int
+	}{
+		{name: "EmptyBrackets", input: "Foo<T>[]", indexAt: 7},
+		{name: "UnclosedBracket", input: "Foo<T>[", indexAt: 7},
+		{name: "AfterReference", input: "Point[]", indexAt: 6},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			typeAnn, errs := parseTypeAnnSrc(t, tt.input)
+			index, ok := typeAnn.(*ast.IndexTypeAnn)
+			require.True(t, ok, "got %T", typeAnn)
+			require.IsType(t, &ast.ErrorTypeAnn{}, index.Index)
+			require.Equal(t, tt.indexAt, index.Index.Span().Start.Offset)
+			require.Equal(t, tt.indexAt, index.Index.Span().End.Offset)
+			require.Len(t, errs, 1)
+			require.Equal(t, "Expected an expression after '['", errs[0].Message)
+		})
+	}
+}
+
+// TestParseTypeDotAfterNonRef asserts that a `.` after a type that is not a plain
+// reference, such as `Foo<T>.K`, ends the type annotation, since only a qualified
+// reference such as `ns.T` reads a member with a dot.
+func TestParseTypeDotAfterNonRef(t *testing.T) {
+	typeAnn, errs := parseTypeAnnSrc(t, "Foo<T>.K")
+	printed, err := printer.Print(typeAnn, printer.DefaultOptions())
+	require.NoError(t, err)
+	require.Equal(t, "Foo<T>", printed)
+	require.Empty(t, errs)
+}
