@@ -244,3 +244,26 @@ func TestSignaturesWithoutRecordedTypes(t *testing.T) {
 		}
 	}
 }
+
+// TestMethodSignatureOwnLifetime asserts that a method keeps a lifetime it declares when
+// elision would assign the receiver's lifetime instead.
+func TestMethodSignatureOwnLifetime(t *testing.T) {
+	src := `
+		type Flat = {x: number}
+		class Box {
+			inner: Flat,
+			pick<'a>(&self, a: &'a Flat, b: &Flat) -> &'a Flat { return a },
+		}
+	`
+	info, decls := inferForSignatures(t, src)
+	var class *ast.ClassDecl
+	for _, d := range decls {
+		if cd, ok := d.(*ast.ClassDecl); ok {
+			class = cd
+		}
+	}
+	require.NotNil(t, class)
+	sig, ok := info.MethodSignature(class, class.Body[1].(*ast.MethodElem))
+	require.True(t, ok)
+	require.Equal(t, "<'a>(&self, &'a Flat, &Flat) -> &'a Flat", renderWritten(sig))
+}
