@@ -4,6 +4,8 @@ import { storybookTest } from '@storybook/addon-vitest/vitest-plugin';
 import { playwright } from '@vitest/browser-playwright';
 import { defineConfig } from 'vitest/config';
 
+import { monacoCorePlugin } from './playground/monaco-core-plugin';
+
 const dirname =
     typeof __dirname !== 'undefined'
         ? __dirname
@@ -18,6 +20,7 @@ export default defineConfig({
         projects: [
             {
                 extends: true,
+                plugins: [monacoCorePlugin()],
                 resolve: {
                     alias: {
                         // monaco-editor-core has no `main`/`exports` fields,
@@ -36,6 +39,9 @@ export default defineConfig({
                     name: 'unit',
                     include: ['**/*.test.{ts,tsx}'],
                     exclude: ['**/node_modules/**', '**/out/**'],
+                    // Vitest runs node_modules through Node unless they are inlined,
+                    // and monacoCorePlugin only applies to modules Vite transforms.
+                    server: { deps: { inline: ['monaco-editor'] } },
                 },
             },
             {
