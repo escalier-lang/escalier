@@ -234,15 +234,37 @@ func constructorText(name string, ctor *soltype.ConstructorElem) string {
 }
 
 // signatureParams renders a function type's parameter list alone, dropping the leading
-// `fn ` and the ` -> ret` return, as `(status: number)` for `fn (status: number) -> C`.
-// A parameter that is itself a function type holds its own ` -> `, so the return is the
-// last one, not the first.
+// `fn `, any `<T>` type-parameter binder, and the ` -> ret` return, as `(status: number)`
+// for `fn <T>(status: number) -> C`. A parameter that is itself a function type holds its
+// own ` -> `, so the return is the last one, not the first.
 func signatureParams(sig *soltype.FuncType) string {
-	rendered := strings.TrimPrefix(soltype.PrintAsScheme(sig), "fn ")
+	rendered := dropTypeBinder(strings.TrimPrefix(soltype.PrintAsScheme(sig), "fn "))
 	if i := strings.LastIndex(rendered, " -> "); i >= 0 {
 		rendered = rendered[:i]
 	}
 	return rendered
+}
+
+// dropTypeBinder returns s without a leading `<…>` type-parameter binder, matching the
+// closing `>` by angle-bracket depth so a nested generic in a bound stays inside the
+// binder. A string with no leading binder is returned unchanged.
+func dropTypeBinder(s string) string {
+	if !strings.HasPrefix(s, "<") {
+		return s
+	}
+	depth := 0
+	for i, r := range s {
+		switch r {
+		case '<':
+			depth++
+		case '>':
+			depth--
+			if depth == 0 {
+				return strings.TrimPrefix(s[i+1:], " ")
+			}
+		}
+	}
+	return s
 }
 
 // plural returns the "s" that pluralizes a noun counted by n, and "" when n is one.
@@ -409,6 +431,9 @@ func memberReadText(info *solver.Info, m *ast.MemberExpr) (string, bool) {
 	t := info.DisplayTypeOf(m)
 	if t == nil {
 		return "", false
+	}
+	if ctor, ok := variantConstructor(t); ok {
+		return "(variant) " + qualify(baseName(typeName(ctor.Ret)), m.Prop.Name) + signatureParams(ctor), true
 	}
 	objType := info.ResolvedTypeOf(m.Object)
 	owner := baseName(typeName(info.Expand(objType)))
@@ -600,4 +625,50 @@ func classRefName(class *ast.ClassDecl) string {
 		names[i] = tp.Name
 	}
 	return class.Name.Name + "<" + strings.Join(names, ", ") + ">"
+}
+
+// variantConstructor returns an enum variant's constructor signature when t is the type a
+// variant name reads as, and false otherwise. A variant carries both a constructor and a
+// `Symbol.customMatcher` method, which a plain class constructor object does not, so the
+// two are told apart by the matcher.
+func variantConstructor(t soltype.Type) (*soltype.FuncType, bool) {
+	obj, ok := t.(*soltype.ObjectType)
+	if !ok {
+		return nil, false
+	}
+	var ctor *soltype.FuncType
+	hasMatcher := false
+	for _, elem := range obj.Elems {
+		switch elem := elem.(type) {
+		case *soltype.ConstructorElem:
+			if len(elem.Signatures) > 0 {
+				ctor = elem.Signatures[0]
+			}
+		case *soltype.MethodElem:
+			if sym, ok := soltype.SymbolOfMemberName(elem.Name); ok && sym == "customMatcher" {
+				hasMatcher = true
+			}
+		}
+	}
+	if ctor == nil || !hasMatcher {
+		return nil, false
+	}
+	return ctor, true
+}
+
+// namespaceHover returns `namespace Math` for a read of a namespace name, and false when
+// the cursor is on none. A name that also reads a value shows the value, so a namespace
+// hover fills in only where no value type was recorded.
+func namespaceHover(q hoverQuery) (string, bool) {
+	ident, ok := q.node.(*ast.IdentExpr)
+	if !ok || q.info == nil || q.scope == nil {
+		return "", false
+	}
+	if q.info.DisplayTypeOf(ident) != nil {
+		return "", false
+	}
+	if _, ok := q.scope.GetNamespace(ident.Name); ok {
+		return "namespace " + ident.Name, true
+	}
+	return "", false
 }

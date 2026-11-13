@@ -1048,6 +1048,38 @@ func TestHoverFromSolver(t *testing.T) {
 			expected: escalierCode("(property) volume: 7"),
 		},
 		{
+			name: "NamespaceRead",
+			files: map[string]string{
+				"lib/a.esc": "export fn f() -> number { return Math.floor(1.5) }",
+			},
+			open: "lib/a.esc", line: 0, col: 33,
+			expected: escalierCode("namespace Math"),
+		},
+		{
+			name: "EnumAsNamespaceRead",
+			files: map[string]string{
+				"lib/a.esc": "export enum Expr { Num(value: number), Neg(operand: Expr) }\nexport val add = Expr.Num",
+			},
+			open: "lib/a.esc", line: 1, col: 17,
+			expected: escalierCode("namespace Expr"),
+		},
+		{
+			name: "EnumVariantRead",
+			files: map[string]string{
+				"lib/a.esc": "export enum Expr { Num(value: number), Neg(operand: Expr) }\nexport val add = Expr.Num",
+			},
+			open: "lib/a.esc", line: 1, col: 22,
+			expected: escalierCode("(variant) Expr.Num(value: number)"),
+		},
+		{
+			name: "GenericEnumVariantRead",
+			files: map[string]string{
+				"lib/a.esc": "export enum Result<T, E> { Ok(value: T), Err(error: E) }\nexport val mk = Result.Ok",
+			},
+			open: "lib/a.esc", line: 1, col: 23,
+			expected: escalierCode("(variant) Result.Ok(value: T)"),
+		},
+		{
 			name:  "Keyword",
 			files: map[string]string{"bin/main.esc": "val x = 5"},
 			open:  "bin/main.esc", line: 0, col: 1,
