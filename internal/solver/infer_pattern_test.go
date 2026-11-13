@@ -200,6 +200,21 @@ val n: number = f(["s"])`,
 	}
 }
 
+// TestInferParamLinkedToTypeParamKeepsConcreteBound asserts that a parameter linked to the
+// function's type parameter through the body renders with a concrete bound a call recorded on it.
+func TestInferParamLinkedToTypeParamKeepsConcreteBound(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn numOnly(n: number) -> number { return n }
+		fn g<T>(t: T, y) -> T {
+			val z: T = y
+			numOnly(y)
+			return t
+		}
+	`)
+	require.Empty(t, messagesWithSpan(t, errs))
+	require.Equal(t, "fn <T>(t: T, y: T & number) -> T", values["g"])
+}
+
 // A field default makes the field optional, so destructuring an absent field
 // that carries a default binds the default's type instead of reporting a missing
 // property.
