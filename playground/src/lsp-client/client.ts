@@ -112,7 +112,7 @@ export class Client {
     private connection: MessageConnection;
     private wasmBuf: ArrayBuffer;
     private errorBuffer: string;
-    /** Set by `stop()`. Silences the server's output from then on. */
+    /** Set by `stop()`. Silences the server's output and drops notifications from then on. */
     private stopped = false;
 
     // Go resolves `globalThis.fs` and `globalThis.process` on every syscall,
@@ -468,17 +468,21 @@ export class Client {
         // before `initialize`, so stop() sends it without waiting on the reply.
         this.shutdown().catch(() => {});
         await this.exit();
-        this.connection.dispose();
+        // `stopped` silences the server's output from here on, and makes later
+        // notifications no-ops.
+        //
         // The Go runtime keeps running past this point. `exit` is a
         // notification, and the callbacks that drain the server's writes are
         // scheduled on timers that outlive this call. Whatever it prints from
-        // here on describes a server nobody reads.
+        // here on describes a server nobody reads. Under Vitest that output
+        // reaches the main process as an `onUserConsoleLog` message. One that
+        // arrives after the worker has begun closing its rpc channel fails the
+        // whole run with an EnvironmentTeardownError, while every test passes.
         //
-        // Under Vitest that output reaches the main process as an
-        // `onUserConsoleLog` message. One that arrives after the worker has
-        // begun closing its rpc channel fails the whole run with an
-        // EnvironmentTeardownError, while every test passes.
+        // Editor teardown can still send didChange or didClose after stop(), and
+        // the disposed connection would reject them with no one to catch it.
         this.stopped = true;
+        this.connection.dispose();
     }
 
     async exit() {
@@ -569,7 +573,14 @@ export class Client {
         return this.sendRequest('workspace/executeCommand', params);
     }
 
+    /**
+     * Sends a notification, or does nothing once stop() has run, since the
+     * connection it would write to is gone. Callers don't wait on notifications.
+     */
     private sendNotification(method: string, params: unknown): Promise<void> {
+        if (this.stopped) {
+            return Promise.resolve();
+        }
         return this.connection.sendNotification(method, params);
     }
 

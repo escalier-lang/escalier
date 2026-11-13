@@ -621,6 +621,23 @@ function logMessage(message: string): string {
     });
 }
 
+/** Returns the text the client has written to the server's stdin so far. */
+function readStdin(testClient: Client): string {
+    // @ts-expect-error: stdin is private
+    const stdin = testClient.stdin;
+    const chunks: Uint8Array[] = [];
+    for (let chunk = stdin.read(); chunk; chunk = stdin.read()) {
+        chunks.push(chunk);
+    }
+    const bytes = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+    let offset = 0;
+    for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.length;
+    }
+    return new TextDecoder().decode(bytes);
+}
+
 test('reassembles a message split across stdout chunks', async () => {
     const testClient = standaloneClient();
     const received: string[] = [];
@@ -656,6 +673,56 @@ test('reads every message that arrives in one stdout chunk', async () => {
     await testClient.stop();
 });
 
+test.each<[string, (client: Client) => Promise<void>]>([
+    [
+        'textDocument/willSave',
+        (c) =>
+            c.textDocumentWillSave({
+                textDocument: { uri: 'file:///a.esc' },
+                reason: 1,
+            }),
+    ],
+    [
+        'textDocument/didSave',
+        (c) =>
+            c.textDocumentDidSave({ textDocument: { uri: 'file:///a.esc' } }),
+    ],
+    [
+        'textDocument/didClose',
+        (c) =>
+            c.textDocumentDidClose({ textDocument: { uri: 'file:///a.esc' } }),
+    ],
+    [
+        'workspace/didChangeWatchedFiles',
+        (c) => c.workspaceDidChangeWatchedFiles({ changes: [] }),
+    ],
+    ['exit', (c) => c.exit()],
+])('sends %s as a notification', async (method, send) => {
+    const testClient = standaloneClient();
+
+    await send(testClient);
+
+    const body = JSON.parse(readStdin(testClient).split('\r\n\r\n')[1]);
+    expect(body.method).toBe(method);
+    expect(body).not.toHaveProperty('id');
+    await testClient.stop();
+});
+
+test('drops a notification sent after stop()', async () => {
+    const testClient = standaloneClient();
+    await testClient.stop();
+    // @ts-expect-error: stdin is private
+    const stdin = testClient.stdin;
+    while (stdin.read()) {}
+
+    await expect(
+        testClient.textDocumentDidClose({
+            textDocument: { uri: 'file:///lib/index.esc' },
+        }),
+    ).resolves.toBeUndefined();
+    expect(stdin.read()).toBeUndefined();
+});
+
 test('frames a message it sends with its length in UTF-8 bytes', async () => {
     const testClient = standaloneClient();
     const params = {
@@ -669,19 +736,7 @@ test('frames a message it sends with its length in UTF-8 bytes', async () => {
 
     await testClient.textDocumentDidOpen(params);
 
-    // @ts-expect-error: stdin is private
-    const stdin = testClient.stdin;
-    const chunks: Uint8Array[] = [];
-    for (let chunk = stdin.read(); chunk; chunk = stdin.read()) {
-        chunks.push(chunk);
-    }
-    const bytes = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
-    let offset = 0;
-    for (const chunk of chunks) {
-        bytes.set(chunk, offset);
-        offset += chunk.length;
-    }
-    const text = new TextDecoder().decode(bytes);
+    const text = readStdin(testClient);
     const [header, body] = text.split('\r\n\r\n');
 
     expect(header).toBe(
