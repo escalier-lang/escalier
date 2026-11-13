@@ -57,6 +57,7 @@ type FakeClient = {
     client: Client;
     publishDiagnostics: (params: lsp.PublishDiagnosticsParams) => void;
     textDocumentSemanticTokensFull: ReturnType<typeof vi.fn>;
+    textDocumentHover: ReturnType<typeof vi.fn>;
 };
 
 function fakeClient(): FakeClient {
@@ -65,6 +66,7 @@ function fakeClient(): FakeClient {
     const textDocumentSemanticTokensFull = vi
         .fn()
         .mockResolvedValue({ data: [0, 8, 1, 0, 1] });
+    const textDocumentHover = vi.fn();
     const client = {
         onTextDocumentPublishDiagnostics: (
             handler: (params: lsp.PublishDiagnosticsParams) => void,
@@ -73,11 +75,13 @@ function fakeClient(): FakeClient {
         },
         workspaceExecuteCommand: vi.fn().mockResolvedValue(undefined),
         textDocumentSemanticTokensFull,
+        textDocumentHover,
     } as unknown as Client;
     return {
         client,
         publishDiagnostics: (params) => onDiagnostics(params),
         textDocumentSemanticTokensFull,
+        textDocumentHover,
     };
 }
 
@@ -177,5 +181,49 @@ describe('setupLanguage', () => {
 
         vi.runAllTimers();
         expect(refreshed).toHaveBeenCalledTimes(1);
+    });
+
+    test('shows the markdown hover the server returns', async () => {
+        const { client, textDocumentHover } = fakeClient();
+        textDocumentHover.mockResolvedValue({
+            contents: {
+                kind: 'markdown',
+                value: '```escalier\nx: number\n```',
+            },
+        });
+
+        setupLanguage(client, {});
+
+        const [languageID, provider] =
+            monacoMock.languages.registerHoverProvider.mock.calls[0];
+        expect(languageID).toBe('escalier');
+        const model = { uri: { toString: () => uri } };
+        const hover = await provider.provideHover(model, {
+            lineNumber: 1,
+            column: 5,
+        });
+        expect(textDocumentHover).toHaveBeenCalledWith({
+            textDocument: { uri },
+            position: { line: 0, character: 4 },
+        });
+        expect(hover).toEqual({
+            contents: [{ value: '```escalier\nx: number\n```' }],
+        });
+    });
+
+    test('returns no hover when the server returns none', async () => {
+        const { client, textDocumentHover } = fakeClient();
+        textDocumentHover.mockResolvedValue(null);
+
+        setupLanguage(client, {});
+
+        const [, provider] =
+            monacoMock.languages.registerHoverProvider.mock.calls[0];
+        const model = { uri: { toString: () => uri } };
+        const hover = await provider.provideHover(model, {
+            lineNumber: 1,
+            column: 5,
+        });
+        expect(hover).toBeNull();
     });
 });
