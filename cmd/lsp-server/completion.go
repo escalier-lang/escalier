@@ -292,6 +292,8 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 
 	if keys, ok := emptyIndexKeyCompletions(node, parent, loc, info); ok {
 		items = keys
+	} else if values, ok := extractorNameCompletions(node, loc, scriptView, info); ok {
+		items = values
 	} else if node == nil {
 		// Cursor on whitespace/blank — provide scope-based completions
 		items = s.completionsFromScope(script, scriptView, info, loc, string(uri))
@@ -375,6 +377,8 @@ func (s *Server) moduleCompletion(
 
 	if keys, ok := emptyIndexKeyCompletions(node, parent, loc, info); ok {
 		items = keys
+	} else if values, ok := extractorNameCompletions(node, loc, nsView, info); ok {
+		items = values
 	} else if node == nil {
 		items = s.completionsFromModuleScope(module, sourceID, fileView, moduleView, info, loc)
 	} else {
@@ -510,6 +514,35 @@ func namespaceAt(expr ast.Expr, view scopeView, info *solver.Info) (*solver.Name
 		return nested, ok
 	}
 	return nil, false
+}
+
+// extractorNameCompletions returns the completion items for the last part of the
+// qualified name of an extractor pattern, such as `Color.Re` in `Color.Re => …` or
+// `Color.` while the part is still empty. It lists the values of the namespace before
+// the last dot, such as an enum's variants, filtered by the part typed after it. node is
+// the node at loc, and view is the scope the pattern is written in. It returns false
+// when node is not such a pattern, when loc is before the last part, or when the name
+// before the dot names no namespace.
+func extractorNameCompletions(node ast.Node, loc ast.Location, view scopeView, info *solver.Info) ([]protocol.CompletionItem, bool) {
+	pat, ok := node.(*ast.ExtractorPat)
+	if !ok {
+		return nil, false
+	}
+	member, ok := pat.Name.(*ast.Member)
+	if !ok || loc.Offset < member.Right.Span().Start.Offset || loc.Offset > member.Right.Span().End.Offset {
+		return nil, false
+	}
+	ns, ok := namespaceOfQualIdent(member.Left, view)
+	if !ok {
+		return nil, false
+	}
+	// A pattern matches a value, so the namespace's values are offered as `ns.` in an
+	// expression offers them. A pattern never writes to its target.
+	items := completionsFromNamespace(ns, info, false)
+	if member.Right.Name != "" {
+		items = filterByPrefix(items, member.Right.Name)
+	}
+	return items, true
 }
 
 // completionsFromNamespace returns the completion items for a member read off ns in

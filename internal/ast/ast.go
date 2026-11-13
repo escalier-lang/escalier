@@ -45,6 +45,13 @@ type QualIdent interface {
 func (*Ident) isQualIdent()  {}
 func (*Member) isQualIdent() {}
 
+// EndsInEmptyName reports whether qi's last part is an empty identifier, which the parser
+// records for a qualified name written up to its last `.`, such as `Color.`.
+func EndsInEmptyName(qi QualIdent) bool {
+	member, ok := qi.(*Member)
+	return ok && member.Right != nil && member.Right.Name == ""
+}
+
 // QualIdentToString converts a QualIdent to its string representation
 func QualIdentToString(qi QualIdent) string {
 	switch q := qi.(type) {

@@ -425,3 +425,39 @@ func findFirstMethodInScript(script *ast.Script) *ast.MethodElem {
 	}
 	return nil
 }
+
+// TestParseQualifiedPatternWithTrailingDot asserts that a qualified extractor name that
+// ends in `.`, such as `Color.` while the variant is still being typed, parses as an
+// extractor pattern whose name ends in an empty identifier, with one error at the dot.
+func TestParseQualifiedPatternWithTrailingDot(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		// left is the qualified name before the trailing dot.
+		left string
+		// dotStart is the offset of the trailing dot.
+		dotStart int
+	}{
+		{name: "OnePart", input: "Color.", left: "Color", dotStart: 5},
+		{name: "TwoParts", input: "ns.Color.", left: "ns.Color", dotStart: 8},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: tt.input}
+			p := NewParser(context.Background(), source)
+			pat := p.pattern(true, true)
+
+			extractor, ok := pat.(*ast.ExtractorPat)
+			require.True(t, ok, "expected an ExtractorPat, got %T", pat)
+			member, ok := extractor.Name.(*ast.Member)
+			require.True(t, ok, "expected a qualified name, got %T", extractor.Name)
+			require.Equal(t, tt.left, ast.QualIdentToString(member.Left))
+			require.Equal(t, "", member.Right.Name)
+			require.Equal(t, len(tt.input), member.Right.Span().Start.Offset)
+			require.Equal(t, len(tt.input), extractor.Span().End.Offset)
+			require.Len(t, p.errors, 1)
+			require.Equal(t, "expected an identifier after .", p.errors[0].Message)
+			require.Equal(t, tt.dotStart, p.errors[0].Span.Start.Offset)
+		})
+	}
+}

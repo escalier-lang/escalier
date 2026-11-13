@@ -198,6 +198,12 @@ func shallowTest(p ast.Pat, scrutinee *Scrutinee, origin Origin) (Test, []bindSp
 		_, binds := objectTest(p.Object, scrutinee, origin)
 		return &ClassTest{Name: p.ClassName}, binds
 	case *ast.ExtractorPat:
+		if ast.EndsInEmptyName(p.Name) {
+			// The parser already reported the name written up to its `.`, such as
+			// `Color.` while the variant is still being typed. Reading the branch as a
+			// catch-all reports nothing more about it, such as a missing branch.
+			return nil, nil
+		}
 		binds, arity, kind := positionalBinds(p.Args, scrutinee, origin,
 			func(i int) Step { return ExtractStep{Index: i} },
 			func(from int) Step { return ExtractSuffixStep{From: from} })

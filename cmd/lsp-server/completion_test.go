@@ -2530,3 +2530,69 @@ func TestIndexExprScopeCompletion(t *testing.T) {
 		})
 	}
 }
+
+// TestExtractorPatternCompletion covers the names offered after the dot of an extractor
+// pattern's qualified name, such as an enum variant in a `match` arm.
+func TestExtractorPatternCompletion(t *testing.T) {
+	const enum = "export enum Lang {\n    English,\n    French,\n    Spanish,\n}\n"
+	const shape = "export enum Shape {\n    Circle(radius: number),\n    Square(side: number),\n}\n"
+	tests := []struct {
+		name string
+		path string
+		src  string
+		// line and col are the 1-based cursor position in src.
+		line, col int
+		expected  []string
+	}{
+		{
+			name:     "EmptyVariantInLib",
+			path:     "lib/index.esc",
+			src:      enum + "export fn f(l: Lang) -> string {\n    return match l {\n        Lang.English => \"en\",\n        Lang.\n    }\n}\n",
+			line:     9,
+			col:      14,
+			expected: []string{"English", "French", "Spanish"},
+		},
+		{
+			name:     "EmptyVariantInBin",
+			path:     "bin/main.esc",
+			src:      enum + "fn f(l: Lang) -> string {\n    return match l {\n        Lang.English => \"en\",\n        Lang.\n    }\n}\n",
+			line:     9,
+			col:      14,
+			expected: []string{"English", "French", "Spanish"},
+		},
+		{
+			name:     "EmptyVariantAtEndOfFile",
+			path:     "lib/index.esc",
+			src:      enum + "export fn f(l: Lang) -> string {\n    return match l {\n        Lang.",
+			line:     8,
+			col:      14,
+			expected: []string{"English", "French", "Spanish"},
+		},
+		{
+			name:     "PartialVariant",
+			path:     "lib/index.esc",
+			src:      enum + "export fn f(l: Lang) -> string {\n    return match l {\n        Lang.English => \"en\",\n        Lang.Fr\n    }\n}\n",
+			line:     9,
+			col:      16,
+			expected: []string{"French"},
+		},
+		{
+			name:     "VariantWithFields",
+			path:     "lib/index.esc",
+			src:      shape + "export fn f(s: Shape) -> number {\n    return match s {\n        Shape.Circle(r) => r,\n        Shape.\n    }\n}\n",
+			line:     8,
+			col:      15,
+			expected: []string{"Circle", "Square"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			items := completionItemsAt(t, map[string]string{tt.path: tt.src}, tt.path, tt.line, tt.col)
+			labels := make([]string, len(items))
+			for i, item := range items {
+				labels[i] = item.Label
+			}
+			require.Equal(t, tt.expected, labels)
+		})
+	}
+}
