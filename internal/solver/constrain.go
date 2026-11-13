@@ -1570,9 +1570,9 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 				}
 			}
 			// A SUB rest slot the scatter could not read stands for the super positions from its
-			// index on, and declares no element type to check them against, so it is arity-only.
-			// That is the same reading the surplus-param loop below gives such a slot. Pairing it
-			// with one super position instead would check a single argument against the whole
+			// index on, and declares no element type to check them against, so the walk stops
+			// before it. A variable slot is checked against those positions by the gather below,
+			// and any other shape is arity-only. Pairing it with one super position instead would check a single argument against the whole
 			// slot: `f(1, "a")` against `fn (...args: [...T, string]) -> R` would ask for
 			// `1 <: [...T, string]`, which is neither true nor what the slot means. A super
 			// carrying its own rest at that index is a different pairing — two slots compared
@@ -1580,6 +1580,19 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			if absorbAt < 0 && scatterAt < 0 {
 				if j := restIndex(subX); j >= 0 && j < n && !supX.Params[j].Rest {
 					n = j
+				}
+			}
+			// A SUB rest slot typed by a variable binds the super positions from its index on as
+			// one tuple, the mirror of the gather an absorbing super runs. The check is
+			// contravariant, so the gathered tuple is the sub of the pair. At a call this ties the
+			// arguments to the slot, so `f(1)` against `fn (...args: []) -> R` checks `[1] <: []`.
+			// A super with its own rest param is left to the shared-position walk.
+			if absorbAt < 0 && !hasRest(supX) {
+				if j := restIndex(subX); j >= 0 {
+					if slot, isVar := subX.Params[j].Type.(*soltype.TypeVarType); isVar {
+						gathered := c.gatherRestParams(supX.Params[min(j, len(supX.Params)):], supX.Inexact)
+						errs = append(errs, c.constrain(gathered, slot, seen, false)...) // contravariant
+					}
 				}
 			}
 			for i := 0; i < n; i++ {
@@ -1597,8 +1610,9 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 				for i := n; i < len(subX.Params); i++ {
 					if subX.Params[i].Rest {
 						// The scatter above already checked an `Array<E>` rest against every
-						// super position. A rest of any other shape declares no element type to
-						// check the open tail's arguments against, so it stays arity-only.
+						// super position, and the gather checked a variable rest against the
+						// open tail. A rest of any other shape declares no element type to check
+						// the open tail's arguments against, so it stays arity-only.
 						continue
 					}
 					errs = append(errs, c.constrain(unknownT, subX.Params[i].Type, seen, false)...)

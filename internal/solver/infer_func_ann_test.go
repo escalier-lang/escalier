@@ -761,6 +761,74 @@ func TestInferFunctionTopType(t *testing.T) {
 	}
 }
 
+// A rest parameter typed by a variable binds a call's arguments from its index on as one tuple.
+// Each case renders the binding `r` when it type-checks and reports exactly the listed messages
+// when it does not.
+func TestInferVariableRestParamCall(t *testing.T) {
+	const top = "val f: fn(...args: _) -> _ = fn (x: number) { return 1 }\n"
+	tests := []struct {
+		name     string
+		src      string
+		want     string // the rendered `r` binding; checked when wantErrs is empty
+		wantErrs []string
+	}{
+		{
+			// The type parameter is the tuple of the call's arguments.
+			name: "GenericRestInfersTheArgumentTuple",
+			src:  "declare fn g<A>(...args: A) -> A\nval r = g(1, \"a\")",
+			want: `[1, "a"]`,
+		},
+		{
+			// Positions before the rest param are checked on their own and not gathered.
+			name: "GenericRestAfterAFixedParam",
+			src:  "declare fn g<A>(x: number, ...args: A) -> A\nval r = g(1, \"a\")",
+			want: `["a"]`,
+		},
+		{
+			name: "GenericRestWithNoArguments",
+			src:  "declare fn g<A>(...args: A) -> A\nval r = g()",
+			want: "[]",
+		},
+		{
+			// The top type's rest variable holds the filling function's parameter tuple, so a
+			// call is checked against that tuple.
+			name: "TopTypeAcceptsTheDeclaredArguments",
+			src:  top + "val r = f(1)",
+			want: "1",
+		},
+		{
+			name:     "TopTypeRejectsAnExtraArgument",
+			src:      top + "val r = f(1, 2)",
+			wantErrs: []string{"cannot constrain tuple of length 2 <: tuple of length 1"},
+		},
+		{
+			name:     "TopTypeRejectsAMissingArgument",
+			src:      top + "val r = f()",
+			wantErrs: []string{"cannot constrain tuple of length 0 <: tuple of length 1"},
+		},
+		{
+			name:     "TopTypeRejectsAWrongArgument",
+			src:      top + "val r = f(\"a\")",
+			wantErrs: []string{`cannot constrain "a" <: number`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			got := make([]string, len(errs))
+			for i, e := range errs {
+				got[i] = e.Message()
+			}
+			if len(tt.wantErrs) == 0 {
+				require.Empty(t, got)
+				require.Equal(t, tt.want, values["r"])
+				return
+			}
+			require.Equal(t, tt.wantErrs, got)
+		})
+	}
+}
+
 // A rest parameter written on a function or method DECLARATION binds a slot, the same as one
 // written in a `fn(...) -> R` type annotation. The declaration path binds the pattern into the
 // body's scope, which the annotation path never does, so it reaches the marker separately and
