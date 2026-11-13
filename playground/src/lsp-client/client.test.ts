@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type * as lsp from 'vscode-languageserver-protocol';
 
-import { Client } from './client';
+import { Client, asNodeBuffer } from './client';
 
 let client: Client;
 let runPromise: Promise<unknown>;
@@ -706,6 +706,26 @@ test.each<[string, (client: Client) => Promise<void>]>([
     expect(body.method).toBe(method);
     expect(body).not.toHaveProperty('id');
     await testClient.stop();
+});
+
+test('asNodeBuffer views the same bytes as a Buffer where Buffer exists', () => {
+    const bytes = new Uint8Array([0, 1, 2, 3, 4]).subarray(1, 4);
+
+    const view = asNodeBuffer(bytes);
+
+    expect(Buffer.isBuffer(view)).toBe(true);
+    expect([...view]).toEqual([1, 2, 3]);
+    expect(view.buffer).toBe(bytes.buffer);
+});
+
+test('asNodeBuffer returns the chunk itself where Buffer is undefined', () => {
+    const bytes = new Uint8Array([1, 2, 3]);
+    vi.stubGlobal('Buffer', undefined);
+    try {
+        expect(asNodeBuffer(bytes)).toBe(bytes);
+    } finally {
+        vi.unstubAllGlobals();
+    }
 });
 
 test('drops a notification sent after stop()', async () => {

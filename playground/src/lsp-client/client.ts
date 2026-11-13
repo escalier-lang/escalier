@@ -61,7 +61,7 @@ class SimpleStream {
  * bounds for a plain `Uint8Array`, so a chunk holding more than one message
  * misreads the second. The browser runtime accepts either type.
  */
-function asNodeBuffer(chunk: Uint8Array): Uint8Array {
+export function asNodeBuffer(chunk: Uint8Array): Uint8Array {
     if (typeof Buffer === 'undefined') {
         return chunk;
     }
