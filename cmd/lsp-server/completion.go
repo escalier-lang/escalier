@@ -444,8 +444,8 @@ func (s *Server) memberCompletions(e *ast.MemberExpr, info *solver.Info, view sc
 	if info == nil {
 		return nil
 	}
-	if t := info.DisplayTypeOf(e.Object); t != nil {
-		return completionsFromSolType(t, info, info.LendsMut(e.Object))
+	if items, t := valueMemberCompletions(e.Object, info); t != nil {
+		return items
 	}
 	// A namespace is not a value, so the check records no type for one, and its members
 	// are read from the scope that binds it instead.
@@ -455,6 +455,34 @@ func (s *Server) memberCompletions(e *ast.MemberExpr, info *solver.Info, view sc
 		return completionsFromNamespace(ns, info, info.LendsMut(e.Object))
 	}
 	return nil
+}
+
+// valueMemberCompletions returns the completion items for the members of the value obj,
+// and the display type info recorded for obj that they were read from. A `&mut self`
+// method or a setter is left out unless obj lends mutable access. t is nil, and items
+// is empty, when info recorded no type for obj.
+func valueMemberCompletions(obj ast.Expr, info *solver.Info) (items []protocol.CompletionItem, t soltype.Type) {
+	t = info.DisplayTypeOf(obj)
+	if t == nil {
+		return nil, nil
+	}
+	return withPropertyDetails(completionsFromSolType(t, info, info.LendsMut(obj))), t
+}
+
+// withPropertyDetails returns items with the detail of each property item replaced by
+// its property signature, as propertyDetail renders it. A setter's detail stays
+// `setter`, since a setter has no type to read. It runs on merged items, so a member
+// of a union shows one signature over the joined types.
+func withPropertyDetails(items []protocol.CompletionItem) []protocol.CompletionItem {
+	for i := range items {
+		isProperty := items[i].Kind != nil && *items[i].Kind == protocol.CompletionItemKindProperty
+		if !isProperty || items[i].Detail == nil || *items[i].Detail == "setter" {
+			continue
+		}
+		detail := propertyDetail(completionDedupeKey(items[i]), *items[i].Detail, isOptionalCompletion(items[i]))
+		items[i].Detail = &detail
+	}
+	return items
 }
 
 // namespaceAt returns the namespace expr names, or false when it names none. An
@@ -528,7 +556,7 @@ func completionsFromNamespace(ns *solver.Namespace, info *solver.Info, receiverM
 			for _, item := range items {
 				held.Add(completionDedupeKey(item))
 			}
-			for _, item := range completionsFromSolType(t, info, receiverMut) {
+			for _, item := range withPropertyDetails(completionsFromSolType(t, info, receiverMut)) {
 				if !held.Contains(completionDedupeKey(item)) {
 					items = append(items, item)
 				}
@@ -595,21 +623,13 @@ func emptyIndexKeyCompletions(node, parent ast.Node, loc ast.Location, info *sol
 	if !ok || loc.Offset > errExpr.Span().Start.Offset {
 		return nil, false
 	}
-	t := info.DisplayTypeOf(index.Object)
+	// The keys are the members `p.` would offer.
+	items, t := valueMemberCompletions(index.Object, info)
 	if t == nil || !indexedByKey(t, info) {
 		return nil, false
 	}
-	// The keys are the members `p.` would offer, so mutability filters them the same way.
-	items := completionsFromSolType(t, info, info.LendsMut(index.Object))
 	for i := range items {
-		name := completionDedupeKey(items[i])
-		// A setter has no type to read, so its detail stays `setter`.
-		isProperty := items[i].Kind != nil && *items[i].Kind == protocol.CompletionItemKindProperty
-		if isProperty && items[i].Detail != nil && *items[i].Detail != "setter" {
-			detail := propertyDetail(name, *items[i].Detail, isOptionalCompletion(items[i]))
-			items[i].Detail = &detail
-		}
-		items[i].Label = strconv.Quote(name)
+		items[i].Label = strconv.Quote(completionDedupeKey(items[i]))
 		items[i].FilterText = nil
 	}
 	return items, true

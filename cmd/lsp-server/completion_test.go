@@ -774,9 +774,9 @@ obj.`
 			detailByLabel[item.Label] = *item.Detail
 		}
 	}
-	assert.Equal(t, "number", detailByLabel["a"], "a is on both variants")
-	assert.Equal(t, "string | undefined", detailByLabel["b"], "b is only on one variant")
-	assert.Equal(t, "boolean | undefined", detailByLabel["c"], "c is only on one variant")
+	assert.Equal(t, "(property) a: number", detailByLabel["a"], "a is on both variants")
+	assert.Equal(t, "(property) b: string | undefined", detailByLabel["b"], "b is only on one variant")
+	assert.Equal(t, "(property) c: boolean | undefined", detailByLabel["c"], "c is only on one variant")
 }
 
 func TestIntersectionCompletionOnlyCommonKeys(t *testing.T) {
@@ -1582,42 +1582,42 @@ func TestMemberCompletionFromSolver(t *testing.T) {
 			src:      "val obj: {a: number, b: string} = {a: 1, b: \"hello\"}\nobj.",
 			line:     2,
 			col:      5,
-			expected: []string{"a: number", "b: string"},
+			expected: []string{"a: (property) a: number", "b: (property) b: string"},
 		},
 		{
 			name:     "FilteredByPrefix",
 			src:      "val obj: {alpha: number, beta: string, able: boolean} = {alpha: 1, beta: \"hi\", able: true}\nobj.al",
 			line:     2,
 			col:      7,
-			expected: []string{"alpha: number"},
+			expected: []string{"alpha: (property) alpha: number"},
 		},
 		{
 			name:     "UnionOffersEveryVariantsMembers",
 			src:      "val obj: {a: number, b: string} | {a: number, c: boolean} = {a: 1, b: \"hi\"}\nobj.",
 			line:     2,
 			col:      5,
-			expected: []string{"a: number", "b: string | undefined", "c: boolean | undefined"},
+			expected: []string{"a: (property) a: number", "b: (property) b: string | undefined", "c: (property) c: boolean | undefined"},
 		},
 		{
 			name:     "IntersectionOffersCommonMembers",
 			src:      "declare val obj: {a: number, b: string} & {a: number, c: boolean}\nobj.",
 			line:     2,
 			col:      5,
-			expected: []string{"a: number"},
+			expected: []string{"a: (property) a: number"},
 		},
 		{
 			name:     "OptionalChainSkipsNullish",
 			src:      "declare val obj: {a: number} | undefined\nobj?.",
 			line:     2,
 			col:      6,
-			expected: []string{"a: number"},
+			expected: []string{"a: (property) a: number"},
 		},
 		{
 			name:     "GetterWithoutSetterOnImmutableReceiver",
 			src:      "declare val obj: {\n    get bar(self) -> boolean,\n    set bar(mut self, value: boolean) -> undefined\n}\nobj.",
 			line:     5,
 			col:      5,
-			expected: []string{"bar: boolean"},
+			expected: []string{"bar: (property) bar: boolean"},
 		},
 		{
 			name: "ClassInstanceHidesMutSelfOnImmutableBinding",
@@ -1632,7 +1632,7 @@ val c = Counter()
 c.`,
 			line:     9,
 			col:      3,
-			expected: []string{"get: fn () -> number", "n: number"},
+			expected: []string{"get: fn () -> number", "n: (property) n: number"},
 		},
 		{
 			name: "ClassInstanceShowsMutSelfOnMutBinding",
@@ -1647,14 +1647,14 @@ val mut c = Counter()
 c.`,
 			line:     9,
 			col:      3,
-			expected: []string{"bump: fn () -> number", "get: fn () -> number", "n: number"},
+			expected: []string{"bump: fn () -> number", "get: fn () -> number", "n: (property) n: number"},
 		},
 		{
 			name:     "UnionBehindAlias",
 			src:      "type Shape = {a: number, b: string} | {a: number, c: boolean}\ndeclare val s: Shape\ns.",
 			line:     3,
 			col:      3,
-			expected: []string{"a: number", "b: string | undefined", "c: boolean | undefined"},
+			expected: []string{"a: (property) a: number", "b: (property) b: string | undefined", "c: (property) c: boolean | undefined"},
 		},
 		{
 			name: "MutSelfGetterOnImmutableBinding",
@@ -1667,14 +1667,14 @@ val l = Lazy()
 l.`,
 			line:     7,
 			col:      3,
-			expected: []string{"m: string"},
+			expected: []string{"m: (property) m: string"},
 		},
 		{
 			name:     "GetterKeepsTypeInUnionOnMutReceiver",
 			src:      "declare val mut obj: ({get bar(self) -> boolean, set bar(mut self, value: boolean) -> undefined} | {bar: boolean})\nobj.",
 			line:     2,
 			col:      5,
-			expected: []string{"bar: boolean"},
+			expected: []string{"bar: (property) bar: boolean"},
 		},
 		{
 			name: "GenericClassAtDeclaredArgument",
@@ -1687,7 +1687,7 @@ declare val b: Box<string>
 b.`,
 			line:     7,
 			col:      3,
-			expected: []string{"get: fn () -> string", "value: string"},
+			expected: []string{"get: fn () -> string", "value: (property) value: string"},
 		},
 		{
 			name: "GenericClassAtInferredArgument",
@@ -1700,7 +1700,7 @@ val b = Box(5)
 b.`,
 			line:     7,
 			col:      3,
-			expected: []string{"get: fn () -> 5", "value: 5"},
+			expected: []string{"get: fn () -> 5", "value: (property) value: 5"},
 		},
 		{
 			name: "GenericAlias",
@@ -1709,7 +1709,7 @@ declare val p: Pair<number, string>
 p.`,
 			line:     3,
 			col:      3,
-			expected: []string{"first: number", "second: string"},
+			expected: []string{"first: (property) first: number", "second: (property) second: string"},
 		},
 		{
 			name: "GenericAliasOfUnion",
@@ -1718,7 +1718,7 @@ declare val r: Result<number, string>
 r.`,
 			line:     3,
 			col:      3,
-			expected: []string{"error: string | undefined", "ok: true | false", "value: number | undefined"},
+			expected: []string{"error: (property) error: string | undefined", "ok: (property) ok: true | false", "value: (property) value: number | undefined"},
 		},
 		{
 			name: "SubclassOfGenericClass",
@@ -1732,7 +1732,7 @@ val d = Dog()
 d.`,
 			line:     8,
 			col:      3,
-			expected: []string{"food: string"},
+			expected: []string{"food: (property) food: string"},
 		},
 		{
 			name:     "ErrorTypeOffersNothing",
@@ -1857,7 +1857,7 @@ func TestMemberCompletionFromSolverMembership(t *testing.T) {
 			open:     "lib/point.esc",
 			line:     3,
 			col:      11,
-			contains: []string{"x: number", "y: number"},
+			contains: []string{"x: (property) x: number", "y: (property) y: number"},
 		},
 		{
 			name: "BinReadsLibClass",
@@ -1868,7 +1868,7 @@ func TestMemberCompletionFromSolverMembership(t *testing.T) {
 			open:     "bin/main.esc",
 			line:     2,
 			col:      3,
-			contains: []string{"value: number"},
+			contains: []string{"value: (property) value: number"},
 		},
 		{
 			// `import "std:console"` binds `console` as the package's namespace and as the
