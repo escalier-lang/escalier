@@ -120,6 +120,17 @@ func TestCompilePackageWritesDespiteATypeError(t *testing.T) {
 // A parse error DOES stop the write, and not as a policy. It leaves an error node that
 // codegen has no lowering for, so CompilePackage produces no compilation unit and the
 // artifacts from the last compile that parsed stay on disk.
+// TestCompilePackageSucceedsWithOnlyWarnings asserts that a compile reporting only a
+// warning, here a MissingSignatureError, succeeds, as the CLI's build does.
+func TestCompilePackageSucceedsWithOnlyWarnings(t *testing.T) {
+	s, root := newTestServer(t, []string{"lib/index.esc"})
+	writeLibFile(t, s, root, "export fn one() { return 1 }\n")
+
+	result, err := s.compilePackage()
+	require.NoError(t, err)
+	require.Equal(t, map[string]any{"success": true}, result)
+}
+
 func TestCompilePackageKeepsArtifactsWhenTheSourceDoesNotParse(t *testing.T) {
 	s, root := newTestServer(t, []string{"lib/index.esc"})
 	writeLibFile(t, s, root, "export val n: number = 1\n")
