@@ -87,4 +87,30 @@ test.describe('Syntax highlighting', () => {
         await expect(hello).toBeVisible();
         await expect(hello).not.toHaveAttribute('class', keywordClass);
     });
+
+    test('colours keys and values in JSON', async ({ page }) => {
+        // The explorer opens files in the input panel.
+        await page
+            .getByRole('button', { name: 'package.json', exact: true })
+            .click();
+        const lines = page.locator('#input-panel .view-lines');
+        await expect(lines).toContainText('"version"');
+
+        const spans = (text: string) =>
+            lines
+                .locator('span > span')
+                .filter({ hasText: new RegExp(`^${text}$`) });
+        // hello-world's package.json holds `"name": "hello-world"`.
+        const keyClass =
+            (await spans('"name"').first().getAttribute('class')) ?? '';
+        expect(keyClass).not.toBe('');
+        await expect(spans('"version"').first()).toHaveAttribute(
+            'class',
+            keyClass,
+        );
+        await expect(spans('"hello-world"').first()).not.toHaveAttribute(
+            'class',
+            keyClass,
+        );
+    });
 });
