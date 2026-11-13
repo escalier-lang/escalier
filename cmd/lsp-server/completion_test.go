@@ -2391,7 +2391,7 @@ func TestIndexKeyCompletion(t *testing.T) {
 			src:      "type Point = {x: number, y: string}\ndeclare val p: Point\nval x = p[]",
 			line:     3,
 			col:      11,
-			expected: []string{`"x": number`, `"y": string`},
+			expected: []string{`"x": (property) x: number`, `"y": (property) y: string`},
 		},
 		{
 			name:     "IndexExprInBin",
@@ -2399,7 +2399,7 @@ func TestIndexKeyCompletion(t *testing.T) {
 			src:      "type Point = {x: number, y: string}\ndeclare val p: Point\nval x = p[]",
 			line:     3,
 			col:      11,
-			expected: []string{`"x": number`, `"y": string`},
+			expected: []string{`"x": (property) x: number`, `"y": (property) y: string`},
 		},
 		{
 			name:     "IndexExprUnclosedBracket",
@@ -2407,7 +2407,7 @@ func TestIndexKeyCompletion(t *testing.T) {
 			src:      "type Point = {x: number, y: string}\ndeclare val p: Point\nval x = p[",
 			line:     3,
 			col:      11,
-			expected: []string{`"x": number`, `"y": string`},
+			expected: []string{`"x": (property) x: number`, `"y": (property) y: string`},
 		},
 		{
 			name:     "IndexExprOnMemberObject",
@@ -2415,7 +2415,7 @@ func TestIndexKeyCompletion(t *testing.T) {
 			src:      "type Point = {x: number, y: string}\ndeclare val o: {p: Point}\nval x = o.p[]",
 			line:     3,
 			col:      13,
-			expected: []string{`"x": number`, `"y": string`},
+			expected: []string{`"x": (property) x: number`, `"y": (property) y: string`},
 		},
 		{
 			name:     "IndexExprUnclosedBracketMidFile",
@@ -2423,7 +2423,7 @@ func TestIndexKeyCompletion(t *testing.T) {
 			src:      "type Point = {x: number, y: string}\ndeclare val p: Point\nval x = p[\nval z = 5\n",
 			line:     3,
 			col:      11,
-			expected: []string{`"x": number`, `"y": string`},
+			expected: []string{`"x": (property) x: number`, `"y": (property) y: string`},
 		},
 		{
 			name:     "IndexExprOptionalKey",
@@ -2447,7 +2447,7 @@ func TestIndexKeyCompletion(t *testing.T) {
 			src:      "class C {\n    n: number,\n    bump(&mut self) { self.n = self.n + 1 },\n}\ndeclare val c: C\nval x = c[]",
 			line:     6,
 			col:      11,
-			expected: []string{`"n": number`},
+			expected: []string{`"n": (property) n: number`},
 		},
 	}
 	for _, tt := range tests {

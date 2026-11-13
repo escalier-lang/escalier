@@ -603,8 +603,10 @@ func emptyIndexKeyCompletions(node, parent ast.Node, loc ast.Location, info *sol
 	items := completionsFromSolType(t, info, info.LendsMut(index.Object))
 	for i := range items {
 		name := completionDedupeKey(items[i])
-		if isOptionalCompletion(items[i]) && items[i].Detail != nil {
-			detail := optionalPropertyDetail(name, *items[i].Detail)
+		// A setter has no type to read, so its detail stays `setter`.
+		isProperty := items[i].Kind != nil && *items[i].Kind == protocol.CompletionItemKindProperty
+		if isProperty && items[i].Detail != nil && *items[i].Detail != "setter" {
+			detail := propertyDetail(name, *items[i].Detail, isOptionalCompletion(items[i]))
 			items[i].Detail = &detail
 		}
 		items[i].Label = strconv.Quote(name)
@@ -613,10 +615,14 @@ func emptyIndexKeyCompletions(node, parent ast.Node, loc ast.Location, info *sol
 	return items, true
 }
 
-// optionalPropertyDetail returns the detail for the optional property name whose type
-// renders as typ, such as `(property) a?: number | undefined` for `{a?: number}`. It
-// adds `| undefined` unless typ already ends with it.
-func optionalPropertyDetail(name, typ string) string {
+// propertyDetail returns the detail for the property name whose type renders as typ,
+// such as `(property) x: number` for `{x: number}`. An optional property is marked
+// with `?`, and its type gains `| undefined` unless typ already ends with it, as in
+// `(property) a?: number | undefined` for `{a?: number}`.
+func propertyDetail(name, typ string, optional bool) string {
+	if !optional {
+		return "(property) " + name + ": " + typ
+	}
 	if !strings.HasSuffix(typ, "| undefined") {
 		typ += " | undefined"
 	}
