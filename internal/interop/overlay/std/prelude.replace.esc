@@ -149,19 +149,18 @@ export declare type NonNullable<T> = T & ~(undefined | null)
 // `unknown`, which makes the bound a function accepting any number of `unknown` arguments.
 // Parameters are contravariant, so `fn (a: number)` would not fit it.
 //
-// `fn (...args: _) -> _` says "any function". Each `_` is a fresh variable at every use. The
-// rest variable binds the whole parameter list as one tuple, so a function of any arity fits.
-// An `Array<_>` rest would not do, since it may pass any number of arguments and an exact
-// function accepts a fixed number.
+// `function` is the type of every callable value, so it says "any function" directly. It names
+// no signature, so it places no constraint on arity. Each pattern's rest parameter matches a
+// parameter list of any length.
 //
 // The two constructor forms take a class value. TypeScript writes them over
 // `abstract new (...args: any) => any`, and the mechanical lowering loses the `new`, so
 // they are restated over a construct signature.
-export declare type Parameters<T: fn (...args: _) -> _> = if T : fn (...args: infer P) -> _ { P } else { never }
+export declare type Parameters<T: function> = if T : fn (...args: infer P) -> _ { P } else { never }
 
 export declare type ConstructorParameters<T: {new (...args: _) -> _}> = if T : {new (...args: infer P) -> _} { P } else { never }
 
-export declare type ReturnType<T: fn (...args: _) -> _> = if T : fn (...args: _) -> infer R { R } else { unknown }
+export declare type ReturnType<T: function> = if T : fn (...args: _) -> infer R { R } else { unknown }
 
 export declare type InstanceType<T: {new (...args: _) -> _}> = if T : {new (...args: _) -> infer R} { R } else { unknown }
 

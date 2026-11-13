@@ -696,9 +696,8 @@ val slot: fn(x: number, ...) -> number = wide`
 	require.Equal(t, "2:42-2:46: cannot constrain unknown <: number", msgWithSpan(t, errs[0]))
 }
 
-// `fn (...args: _) -> _` is the bound that admits a function of any arity, and the prelude bounds
-// `Parameters<F>` and `ReturnType<F>` by it. Its rest parameter absorbs whatever parameter list
-// the argument declares. The `_` on the rest parameter is an inference
+// `fn (...args: _) -> _` admits a function of any arity. Its rest parameter absorbs whatever
+// parameter list the argument declares. The `_` on the rest parameter is an inference
 // variable that the absorbed list fills as one tuple. The `_` return places no constraint on the
 // argument. The type accepts a function of any arity and rejects everything that is not a function.
 //

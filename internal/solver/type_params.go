@@ -439,8 +439,8 @@ func (c *checker) checkTypeArgBounds(
 		//
 		// The bound's `_` holes are variables the declaration minted once. Each reference
 		// fills them for itself, so the comparison runs against copies of them. Without the
-		// copies, every reference to `Parameters<F>` would add bounds to the same holes in
-		// `fn (...args: _) -> _`.
+		// copies, every reference to `InstanceType<C>` would add bounds to the same holes in
+		// `{new (...args: _) -> _}`.
 		if p.UpperBound != nil {
 			declared := c.freshenBoundHoles(p.UpperBound, lvl)
 			if bound := declared.Accept(subst, soltype.Positive); !fromDefault || bound != declared {

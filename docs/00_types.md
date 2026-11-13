@@ -290,7 +290,7 @@ capture is dropped, which is how a pattern names only the position it cares
 about.
 
 ```esc
-type ReturnType<F: fn (...args: _) -> _> =
+type ReturnType<F: function> =
     if F : fn (...args: _) -> infer R { R } else { never }
 ```
 

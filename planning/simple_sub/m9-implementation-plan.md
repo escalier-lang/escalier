@@ -1031,7 +1031,7 @@ The corpus leaves `F` unbounded, so `ReturnType<number>` reduces to `never` wher
 TypeScript reports an error. Alias bounds are enforced since #956, so the bound is the only
 missing half, but no writable bound admits every function. A function type's return is
 covariant, so the bound would have to be `fn () -> unknown`, and that pins the arity to
-nullary alongside it. PR14 step 5 settles the bound, which is `fn (...args: _) -> _`. This PR does
+nullary alongside it. PR14 step 5 settles the bound, which is `function`. This PR does
 add the `UnknownTypeAnn` arm `resolveTypeAnn` was missing, since `unknown` is the lattice top
 and had no annotation surface.
 
@@ -1045,8 +1045,8 @@ on `F`. Both wait on the same rest-parameter work, so this PR lands them togethe
 the minimal `Array<T>` that rest-parameter element checking needs.
 
 The pattern-matching half and the bound need no `Array<T>`, since an `infer` clause or a `_`
-in a rest slot reads no element type. The bound is `fn (...args: _) -> _`, the shape that
-admits a function of any arity. The per-argument checking deferred on `FuncParam.Rest`
+in a rest slot reads no element type. The bound is `function`, the type of every callable
+value. The per-argument checking deferred on `FuncParam.Rest`
 ([soltype/type.go:191-193](../../internal/soltype/type.go)) does need an element type to check
 trailing arguments against. The `Array<T>` here is minimal: an element
 type and no members. The full one, with `length`, indexing, and the iteration protocol, is
@@ -1137,8 +1137,10 @@ it. This PR is its first producer. A tuple-typed rest parameter reuses `TupleTyp
    rest-parameter bound is the worst candidate rather than the best: its [0, ∞) is the
    widest accept-set there is, so it rejects every fixed-arity function, nullary included.
 
-   The bound is `fn (...args: _) -> _`, and what makes it work is a change to how a rest
-   parameter on the SUPER side is checked. Such a parameter **absorbs** the sub parameters
+   The bound is `function`, the type of every callable value. It names no signature, so it
+   imposes no arity. The patterns the utilities match against still need a signature that
+   matches any arity, and what makes those work is a change to how a rest parameter on the
+   SUPER side is checked. Such a parameter **absorbs** the sub parameters
    from its index on rather than declaring an arity they must contain. Two slot types absorb,
    each checking the absorbed group its own way:
 
@@ -1170,14 +1172,14 @@ it. This PR is its first producer. A tuple-typed rest parameter reuses `TupleTyp
    subtyping check: `g(1, "a")` against `g: fn (...xs: Array<number>) -> R` checks
    `"a" <: number` at the second position.
 
-   Two alternatives were weighed and rejected. `function`, the top type of every callable
-   value, names no signature so it imposes no arity and needs no relaxation. It also admits
-   class values, which TypeScript's `ReturnType` bound rejects. Leaving
+   Two alternatives were weighed and rejected. `fn (...args: _) -> _` admits the same
+   arguments through the variable-slot absorb, but each reference has to fill its own copy of
+   the `_` holes, and it says "any function" less directly than `function` does. Leaving
    `ReturnType<F>` unbounded costs nothing and is what PR13 shipped, but it forgoes a
    diagnostic TypeScript reports.
 
-**`_` in a conditional's pattern.** Writing the bound as `fn (...args: _) -> _` invites
-the same spelling in the pattern the utilities match against, and it did not work at first: a
+**`_` in a conditional's pattern.** The utilities write `_` for the position they don't
+capture, as in `fn (...args: _) -> infer R`, and that did not work at first: a
 conditional reduces only when both operands are ground, and `_` resolved to an inference variable,
 so a pattern carrying one never grounded.
 
@@ -1212,7 +1214,7 @@ rejecting would lose the whole match over one parameter. TypeScript writes the s
 **Wiring.** Re-enable `TestUtilityTypeParameters`'s `Parameters<F>` cases in
 [utility_types_test.go](../../internal/solver/utility_types_test.go) and move the
 definition into `utilityTypeDecls`. Rewrite `ReturnType<F>` there to the arity-agnostic
-`type ReturnType<F: fn (...args: _) -> _> = if F : fn (...args: infer P) -> infer R { R } else { never }`
+`type ReturnType<F: function> = if F : fn (...args: infer P) -> infer R { R } else { never }`
 and drop `TestUtilityTypeReturnTypeIsAritySpecific`, whose cases all reduce once the
 pattern matches any arity. Move its `ReturnTypeOfNonFunction` case from
 `TestUtilityTypeReductions` to the bound-rejection table, since the bound catches it before
@@ -1222,7 +1224,7 @@ the Else branch does.
 `Parameters<fn () -> boolean>` ⇒ `[]`. `ReturnType<fn (x: number) -> string>` ⇒ `string`,
 matching TypeScript, and the same for every other arity. `ReturnType<number>` and
 `Parameters<number>` are each rejected at the reference by the
-`fn (...args: _) -> _` bound, with a full message, rather than reducing to `never`.
+`function` bound, with a full message, rather than reducing to `never`.
 That bound accepts a function of any arity and rejects every non-function. An
 `...xs: Array<E>` rest parameter binds any number of trailing arguments and checks each
 against `E`, so `g(1, "a")` against `fn (...xs: Array<number>) -> R` reports one error. A rest parameter written anywhere but last
