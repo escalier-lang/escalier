@@ -471,6 +471,23 @@ func TestDiagnosticsPublishedFromSolver(t *testing.T) {
 			},
 		},
 		{
+			// A half-typed arm before the others reports only its parse error.
+			name: "PatternEndingInDotBeforeOtherArms",
+			files: map[string]string{
+				"lib/index.esc": "export enum Lang {\n    English,\n    French,\n}\nexport fn f(l: Lang) -> string {\n    return match l {\n        Lang. => \"x\",\n        Lang.English => \"en\",\n        Lang.French => \"fr\",\n    }\n}\n",
+			},
+			open:     "lib/index.esc",
+			expected: []string{"6:12-6:13 expected an identifier after ."},
+		},
+		{
+			name: "IfValPatternEndingInDot",
+			files: map[string]string{
+				"lib/index.esc": "export enum Lang {\n    English,\n    French,\n}\nexport fn f(l: Lang) -> boolean {\n    return if val Lang. = l { true } else { false }\n}\n",
+			},
+			open:     "lib/index.esc",
+			expected: []string{"5:22-5:23 expected an identifier after ."},
+		},
+		{
 			name: "LibTypeErrorFromFullCheck",
 			files: map[string]string{
 				"lib/math.esc": `export val x: number = "hello"`,

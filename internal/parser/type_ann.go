@@ -1259,11 +1259,7 @@ func (p *Parser) parseTypeRef(firstToken *Token) *ast.TypeRefTypeAnn {
 	// completes after.
 	if dot := p.lexer.peek(); dot.Type == Dot {
 		p.lexer.consume()
-		qualIdent = &ast.Member{
-			Left:  qualIdent,
-			Right: ast.NewIdentifier("", ast.NewSpan(dot.Span.End, dot.Span.End, p.lexer.source.ID)),
-		}
-		p.reportError(dot.Span, "expected an identifier after .")
+		qualIdent = p.endInEmptyName(qualIdent, dot)
 	}
 	if p.lexer.peek().Type == LessThan {
 		p.lexer.consume() // consume '<'
@@ -1338,6 +1334,16 @@ func (p *Parser) tryParseLifetimeArg() ast.LifetimeAnnNode {
 }
 
 // parseQualifiedIdent parses a qualified identifier like Foo.Bar.Baz
+// endInEmptyName returns left followed by an empty name that starts and ends where the
+// consumed token dot ends, and reports the identifier missing after dot.
+func (p *Parser) endInEmptyName(left ast.QualIdent, dot *Token) *ast.Member {
+	p.reportError(dot.Span, "expected an identifier after .")
+	return &ast.Member{
+		Left:  left,
+		Right: ast.NewIdentifier("", ast.NewSpan(dot.Span.End, dot.Span.End, p.lexer.source.ID)),
+	}
+}
+
 func (p *Parser) parseQualifiedIdent(firstToken *Token) ast.QualIdent {
 	// Start with the first identifier
 	var qualIdent ast.QualIdent = ast.NewIdentifier(firstToken.Value, firstToken.Span)

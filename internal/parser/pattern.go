@@ -86,13 +86,8 @@ func (p *Parser) pattern(allowIdentDefault bool, allowColonTypeAnn bool) ast.Pat
 			// pattern stays in the tree so an editor can complete after the dot.
 			qualIdent := p.parseQualifiedIdent(token)
 			dot := p.lexer.next()
-			qualIdent = &ast.Member{
-				Left:  qualIdent,
-				Right: ast.NewIdentifier("", ast.NewSpan(dot.Span.End, dot.Span.End, p.lexer.source.ID)),
-			}
-			p.reportError(dot.Span, "expected an identifier after .")
 			span := ast.NewSpan(token.Span.Start, dot.Span.End, p.lexer.source.ID)
-			return ast.NewExtractorPat(qualIdent, nil, span)
+			return ast.NewExtractorPat(p.endInEmptyName(qualIdent, dot), nil, span)
 		} else if next.Type == OpenParen {
 			return p.extractorPat(token)
 		} else if next.Type == OpenBrace {
