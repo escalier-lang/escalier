@@ -197,6 +197,16 @@ func (i *Info) MemberObject(t soltype.Type) (*soltype.ObjectType, bool) {
 // `fn f<T>(x: &mut T) { x }` displays as `&mut T`. `val x = 5` displays `x` as `5` where
 // TypeOf may return a variable. Call it only once a run has finished, for the reason
 // ResolvedTypeOf gives.
+// IsArray reports whether t is an instance of the `Array` class the run settled on, after
+// expanding any alias or borrow on the outside. It returns false on a table built by NewInfo.
+func (i *Info) IsArray(t soltype.Type) bool {
+	if i.ctx == nil || t == nil {
+		return false
+	}
+	_, ok := i.ctx.arrayElem(i.ctx.expandedCarrier(t))
+	return ok
+}
+
 func (i *Info) DisplayTypeOf(n ast.Node) soltype.Type {
 	t := i.types[n]
 	if t == nil {

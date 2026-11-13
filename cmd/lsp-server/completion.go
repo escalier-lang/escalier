@@ -290,7 +290,9 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 
 	var items []protocol.CompletionItem
 
-	if node == nil {
+	if keys, ok := emptyIndexKeyCompletions(node, parent, loc, info); ok {
+		items = keys
+	} else if node == nil {
 		// Cursor on whitespace/blank — provide scope-based completions
 		items = s.completionsFromScope(script, scriptView, info, loc, string(uri))
 	} else {
@@ -318,19 +320,6 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 			// `Point[]`, where the target's keys can be written.
 			if index, ok := parent.(*ast.IndexTypeAnn); ok && index.Index == n {
 				items = indexKeyCompletions(index.Target, info)
-			}
-		case *ast.ErrorExpr:
-			// The cursor sits between the empty brackets of an index expression such
-			// as `p[]`, where the object's keys can be written.
-			if index, ok := parent.(*ast.IndexExpr); ok && index.Index == n {
-				items = indexKeyCompletions(index.Object, info)
-			}
-		case *ast.IndexExpr:
-			// In an unclosed `p[` at the end of the file, the index is an ErrorExpr
-			// with an empty span. The node search skips it, so the cursor lands on
-			// the index expression instead.
-			if errExpr, ok := n.Index.(*ast.ErrorExpr); ok && errExpr.Span().Start == errExpr.Span().End {
-				items = indexKeyCompletions(n.Object, info)
 			}
 		case *ast.TypeRefTypeAnn:
 			if member, ok := n.Name.(*ast.Member); ok {
@@ -384,7 +373,9 @@ func (s *Server) moduleCompletion(
 
 	var items []protocol.CompletionItem
 
-	if node == nil {
+	if keys, ok := emptyIndexKeyCompletions(node, parent, loc, info); ok {
+		items = keys
+	} else if node == nil {
 		items = s.completionsFromModuleScope(module, sourceID, fileView, moduleView, info, loc)
 	} else {
 		switch n := node.(type) {
@@ -406,19 +397,6 @@ func (s *Server) moduleCompletion(
 			// `Point[]`, where the target's keys can be written.
 			if index, ok := parent.(*ast.IndexTypeAnn); ok && index.Index == n {
 				items = indexKeyCompletions(index.Target, info)
-			}
-		case *ast.ErrorExpr:
-			// The cursor sits between the empty brackets of an index expression such
-			// as `p[]`, where the object's keys can be written.
-			if index, ok := parent.(*ast.IndexExpr); ok && index.Index == n {
-				items = indexKeyCompletions(index.Object, info)
-			}
-		case *ast.IndexExpr:
-			// In an unclosed `p[` at the end of the file, the index is an ErrorExpr
-			// with an empty span. The node search skips it, so the cursor lands on
-			// the index expression instead.
-			if errExpr, ok := n.Index.(*ast.ErrorExpr); ok && errExpr.Span().Start == errExpr.Span().End {
-				items = indexKeyCompletions(n.Object, info)
 			}
 		case *ast.TypeRefTypeAnn:
 			if member, ok := n.Name.(*ast.Member); ok {
@@ -592,13 +570,74 @@ func namespaceTypeCompletions(ns *solver.Namespace) []protocol.CompletionItem {
 	return items
 }
 
-// indexKeyCompletions returns a completion item for each key of the type info recorded
-// for target, quoted as the string literal that indexes it, such as `"x"` for
-// `Point["x"]` or `p["x"]`. target is the object of an index access, either a type
-// annotation or an expression. A key that is a symbol, such as `[Symbol.iterator]`, is left
+// emptyIndexKeyCompletions returns a completion item for each key of the object of an
+// index expression whose brackets hold nothing before loc, as in `p[]` or an unclosed
+// `p[`. Each label is the key quoted as the string literal that indexes it, such as
+// `"x"` for `p["x"]`. node and parent are the node at loc and its parent. It returns
+// false when loc is not inside such brackets or the object's type is not indexed by key.
+func emptyIndexKeyCompletions(node, parent ast.Node, loc ast.Location, info *solver.Info) ([]protocol.CompletionItem, bool) {
+	if info == nil {
+		return nil, false
+	}
+	index, ok := node.(*ast.IndexExpr)
+	if !ok {
+		// In `p[]` the cursor sits on the ErrorExpr that stands in for the index.
+		index, ok = parent.(*ast.IndexExpr)
+		if !ok || index.Index != node {
+			return nil, false
+		}
+	}
+	// When the token after `[` starts no expression, the parser records an ErrorExpr
+	// spanning it as the index. That token is the `]` of `p[]`, the first token of the
+	// next line after an unclosed `p[`, or nothing at the end of the file. A cursor at
+	// or before the token's start is inside the empty brackets.
+	errExpr, ok := index.Index.(*ast.ErrorExpr)
+	if !ok || loc.Offset > errExpr.Span().Start.Offset {
+		return nil, false
+	}
+	t := info.DisplayTypeOf(index.Object)
+	if t == nil || !indexedByKey(t, info) {
+		return nil, false
+	}
+	// The keys are the members `p.` would offer, so mutability filters them the same way.
+	items := completionsFromSolType(t, info, info.LendsMut(index.Object))
+	for i := range items {
+		items[i].Label = strconv.Quote(completionDedupeKey(items[i]))
+		items[i].FilterText = nil
+	}
+	return items, true
+}
+
+// indexedByKey reports whether a value of type t is read by a key name, as an object
+// is. An array, a tuple, or a primitive is read by a number or a variable instead. A
+// union is indexed by key when each variant other than `null` and `undefined` is.
+func indexedByKey(t soltype.Type, info *solver.Info) bool {
+	if info.IsArray(t) {
+		return false
+	}
+	switch t := info.Expand(t).(type) {
+	case *soltype.PrimType, *soltype.LitType, *soltype.TupleType:
+		return false
+	case *soltype.UnionType:
+		for _, variant := range t.Types {
+			switch variant.(type) {
+			case *soltype.NullType, *soltype.UndefinedType:
+				continue
+			}
+			if !indexedByKey(variant, info) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// indexKeyCompletions returns a completion item for each key of the type the annotation
+// target resolved to, quoted as the string literal type that indexes it, such as
+// `"x"` for `Point["x"]`. A key that is a symbol, such as `[Symbol.iterator]`, is left
 // out, and a key with both a getter and a setter is listed once. It returns nil when info
 // is nil or recorded no type for target.
-func indexKeyCompletions(target ast.Node, info *solver.Info) []protocol.CompletionItem {
+func indexKeyCompletions(target ast.TypeAnn, info *solver.Info) []protocol.CompletionItem {
 	if info == nil {
 		return nil
 	}

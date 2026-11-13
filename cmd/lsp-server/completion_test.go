@@ -2417,6 +2417,30 @@ func TestIndexKeyCompletion(t *testing.T) {
 			col:      13,
 			expected: []string{`"x": number`, `"y": string`},
 		},
+		{
+			name:     "IndexExprUnclosedBracketMidFile",
+			path:     "lib/index.esc",
+			src:      "type Point = {x: number, y: string}\ndeclare val p: Point\nval x = p[\nval z = 5\n",
+			line:     3,
+			col:      11,
+			expected: []string{`"x": number`, `"y": string`},
+		},
+		{
+			name:     "IndexExprOptionalKey",
+			path:     "lib/index.esc",
+			src:      "declare val o: {a?: number}\nval x = o[]",
+			line:     2,
+			col:      11,
+			expected: []string{`"a": number`},
+		},
+		{
+			name:     "IndexExprLeavesOutMutMembersOfImmutableValue",
+			path:     "lib/index.esc",
+			src:      "class C {\n    n: number,\n    bump(&mut self) { self.n = self.n + 1 },\n}\ndeclare val c: C\nval x = c[]",
+			line:     6,
+			col:      11,
+			expected: []string{`"n": number`},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -2430,6 +2454,55 @@ func TestIndexKeyCompletion(t *testing.T) {
 				rendered[i] = item.Label + ": " + detail
 			}
 			require.Equal(t, tt.expected, rendered)
+		})
+	}
+}
+
+// TestIndexExprScopeCompletion covers index expressions whose brackets offer the names
+// in scope instead of the object's keys. Each case asserts that completion returns items
+// and that none of them is the quoted key `"at"`.
+func TestIndexExprScopeCompletion(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		// line and col are the 1-based cursor position in src.
+		line, col int
+	}{
+		{
+			name: "Array",
+			src:  "declare val arr: Array<{at: number}>\ndeclare val i: number\nval x = arr[]",
+			line: 3,
+			col:  13,
+		},
+		{
+			name: "Tuple",
+			src:  "declare val arr: [number, string]\ndeclare val i: number\nval x = arr[]",
+			line: 3,
+			col:  13,
+		},
+		{
+			name: "AfterClosingBracket",
+			src:  "declare val arr: {at: number}\ndeclare val i: number\nval x = arr[i]",
+			line: 3,
+			col:  15,
+		},
+		{
+			name: "NonEmptyIndex",
+			src:  "declare val arr: {at: number}\ndeclare val i: number\nval x = arr[i]",
+			line: 3,
+			col:  14,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			files := map[string]string{"lib/index.esc": tt.src}
+			items := completionItemsAt(t, files, "lib/index.esc", tt.line, tt.col)
+			labels := make([]string, len(items))
+			for i, item := range items {
+				labels[i] = item.Label
+			}
+			require.NotEmpty(t, labels)
+			require.NotContains(t, labels, `"at"`)
 		})
 	}
 }
