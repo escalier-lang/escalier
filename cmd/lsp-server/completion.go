@@ -466,7 +466,23 @@ func valueMemberCompletions(obj ast.Expr, info *solver.Info) (items []protocol.C
 	if t == nil {
 		return nil, nil
 	}
-	return completionsFromSolType(t, info, info.LendsMut(obj)), t
+	return withPropertyDetails(completionsFromSolType(t, info, info.LendsMut(obj))), t
+}
+
+// withPropertyDetails returns items with the detail of each property item replaced by
+// its property signature, as propertyDetail renders it. A setter's detail stays
+// `setter`, since a setter has no type to read. It runs on merged items, so a member
+// of a union shows one signature over the joined types.
+func withPropertyDetails(items []protocol.CompletionItem) []protocol.CompletionItem {
+	for i := range items {
+		isProperty := items[i].Kind != nil && *items[i].Kind == protocol.CompletionItemKindProperty
+		if !isProperty || items[i].Detail == nil || *items[i].Detail == "setter" {
+			continue
+		}
+		detail := propertyDetail(completionDedupeKey(items[i]), *items[i].Detail, isOptionalCompletion(items[i]))
+		items[i].Detail = &detail
+	}
+	return items
 }
 
 // namespaceAt returns the namespace expr names, or false when it names none. An
@@ -540,7 +556,7 @@ func completionsFromNamespace(ns *solver.Namespace, info *solver.Info, receiverM
 			for _, item := range items {
 				held.Add(completionDedupeKey(item))
 			}
-			for _, item := range completionsFromSolType(t, info, receiverMut) {
+			for _, item := range withPropertyDetails(completionsFromSolType(t, info, receiverMut)) {
 				if !held.Contains(completionDedupeKey(item)) {
 					items = append(items, item)
 				}
@@ -613,14 +629,7 @@ func emptyIndexKeyCompletions(node, parent ast.Node, loc ast.Location, info *sol
 		return nil, false
 	}
 	for i := range items {
-		name := completionDedupeKey(items[i])
-		// A setter has no type to read, so its detail stays `setter`.
-		isProperty := items[i].Kind != nil && *items[i].Kind == protocol.CompletionItemKindProperty
-		if isProperty && items[i].Detail != nil && *items[i].Detail != "setter" {
-			detail := propertyDetail(name, *items[i].Detail, isOptionalCompletion(items[i]))
-			items[i].Detail = &detail
-		}
-		items[i].Label = strconv.Quote(name)
+		items[i].Label = strconv.Quote(completionDedupeKey(items[i]))
 		items[i].FilterText = nil
 	}
 	return items, true
