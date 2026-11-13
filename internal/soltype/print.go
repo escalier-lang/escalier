@@ -186,6 +186,28 @@ func PrintAsScheme(t Type) string {
 	return PrintAsSchemeWith(t, func(*TypeVarType) bool { return true }, nil, nil, nil)
 }
 
+// PrintSignature renders t as PrintAsScheme does and returns the byte range each of t's
+// parameters takes in the result, in parameter order. A receiver and the inexact `...`
+// marker get no range. `fn (a: number, b?: string) -> number` returns the ranges of
+// `a: number` and `b?: string`. The ranges are nil when t renders through a form that
+// does not end in its parameter list and return type, such as a function with a lifetime
+// rendering `<'a> ('a fn (x: number) -> number)`.
+func PrintSignature(t *FuncType) (string, [][2]int) {
+	rec := &paramRecord{fn: t}
+	out := printAsSchemeWith(
+		&namedPrinter{record: rec}, t, func(*TypeVarType) bool { return true }, nil, nil, nil,
+	)
+	if rec.body == "" || !strings.HasSuffix(out, rec.body) {
+		return out, nil
+	}
+	start := len(out) - len(rec.body)
+	ranges := make([][2]int, len(rec.ranges))
+	for i, r := range rec.ranges {
+		ranges[i] = [2]int{start + r[0], start + r[1]}
+	}
+	return out, ranges
+}
+
 // PrintWithParams renders a type like Print, naming each variable in declared under the
 // source name its declaration wrote.
 //
@@ -246,7 +268,19 @@ func PrintAsSchemeWith(
 	declared []*TypeParam,
 	declaredLts []*LifetimeParam,
 ) string {
-	p := &namedPrinter{}
+	return printAsSchemeWith(&namedPrinter{}, t, isParam, ltBounds, declared, declaredLts)
+}
+
+// printAsSchemeWith is PrintAsSchemeWith rendering through p, so a caller can set fields
+// such as record on the printer first. p must not have rendered anything yet.
+func printAsSchemeWith(
+	p *namedPrinter,
+	t Type,
+	isParam func(*TypeVarType) bool,
+	ltBounds map[*LifetimeVar][]*LifetimeVar,
+	declared []*TypeParam,
+	declaredLts []*LifetimeParam,
+) string {
 	// A function's own type parameters claim their source names before anything else, so a
 	// generated T0 skips a name the source itself wrote. `fn <T0>` beside a free scheme
 	// variable renders `fn <T1, T0>`, with each binder naming one variable.
@@ -349,8 +383,10 @@ func PrintAsSchemeWith(
 	}
 	if len(labels) == 0 && len(ltVars) == 0 {
 		// No quantified parameters: render as a plain (possibly raw-var) type, which
-		// keeps a leaked variable visible as t{ID}.
-		return Print(t)
+		// keeps a leaked variable visible as t{ID}. A fresh printer renders it, as in Print,
+		// because p has already bound the function's own type parameters and printFuncTail
+		// would bind them a second time. The fresh printer keeps p's record.
+		return (&namedPrinter{record: p.record}).printType(t)
 	}
 	p.ltNames = ltNames
 	// A declared parameter's bound renders here rather than beside its name, because a
@@ -796,6 +832,18 @@ type namedPrinter struct {
 	// signature releases its own parameters' names on the way out, so two sibling signatures
 	// each written `<T>` both render `T`.
 	claimed set.Set[string]
+	// record is the parameter layout PrintSignature asks for, or nil when nothing reads one.
+	record *paramRecord
+}
+
+// paramRecord is where printFuncBody writes the parameter layout of one function as it
+// renders it. fn is the function to record. ranges holds the byte range each of fn's
+// parameters takes within body, in parameter order. body is the string printFuncBody
+// returned for fn, and it is empty until fn has rendered.
+type paramRecord struct {
+	fn     *FuncType
+	ranges [][2]int
+	body   string
 }
 
 // nameTaken reports whether a type parameter in scope at this point already renders under
@@ -1484,6 +1532,35 @@ func (p *namedPrinter) printFuncTail(t *FuncType) string {
 // throws clause.
 func (p *namedPrinter) printFuncBody(t *FuncType, where string) string {
 	ps := p.printParamList(t)
+	if p.record == nil || p.record.fn != t {
+		return p.printFuncBodyFrom(t, ps, where)
+	}
+	first := 0
+	if t.SelfParam != nil {
+		first = 1
+	}
+	p.record.ranges = paramRanges(ps, first, len(t.Params))
+	p.record.body = p.printFuncBodyFrom(t, ps, where)
+	return p.record.body
+}
+
+// paramRanges returns the byte range of each of the n entries ps[first:first+n] within
+// "(" + strings.Join(ps, ", ") + ")", where ps is a rendered parameter list.
+func paramRanges(ps []string, first, n int) [][2]int {
+	ranges := make([][2]int, 0, n)
+	off := len("(")
+	for i, s := range ps {
+		if i >= first && i < first+n {
+			ranges = append(ranges, [2]int{off, off + len(s)})
+		}
+		off += len(s) + len(", ")
+	}
+	return ranges
+}
+
+// printFuncBodyFrom renders the "(params) -> ret" portion of t from ps, the entries of its
+// rendered parameter list, and where, its rendered `where` clause.
+func (p *namedPrinter) printFuncBodyFrom(t *FuncType, ps []string, where string) string {
 	// A `throws T` clause renders after the return type, matching the surface syntax, and
 	// a `where` clause after that.
 	clause := p.printThrowsClause(t.ThrowsOrNever()) + where

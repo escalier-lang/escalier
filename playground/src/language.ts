@@ -13,6 +13,7 @@ import {
     createSemanticTokensProvider,
     modifierTokenRules,
 } from './semantic-tokens';
+import { createSignatureHelpProvider } from './signature-help';
 import { monacoThemeName, useThemeStore } from './theme';
 
 export const languageID = 'escalier';
@@ -381,6 +382,18 @@ export function setupLanguage(
             };
         },
     });
+
+    const signatureHelpOptions = capabilities.signatureHelpProvider;
+    if (signatureHelpOptions) {
+        monaco.languages.registerSignatureHelpProvider(
+            languageID,
+            createSignatureHelpProvider({
+                options: signatureHelpOptions,
+                request: (params) => client.textDocumentSignatureHelp(params),
+                flushPendingChanges,
+            }),
+        );
+    }
 
     const semanticTokensProvider = capabilities.semanticTokensProvider;
     const legend = semanticTokensProvider?.legend;
