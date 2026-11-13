@@ -1080,6 +1080,38 @@ func TestHoverFromSolver(t *testing.T) {
 			expected: escalierCode("(variant) Result.Ok(value: T)"),
 		},
 		{
+			name: "ClassFieldDecl",
+			files: map[string]string{
+				"lib/a.esc": "export class Dog { name: string, bark(&self) -> string { return self.name } }",
+			},
+			open: "lib/a.esc", line: 0, col: 19,
+			expected: escalierCode("(property) Dog.name: string"),
+		},
+		{
+			name: "ClassMethodDecl",
+			files: map[string]string{
+				"lib/a.esc": "export class Dog { name: string, bark(&self) -> string { return self.name } }",
+			},
+			open: "lib/a.esc", line: 0, col: 33,
+			expected: escalierCode("(method) Dog.bark() -> string"),
+		},
+		{
+			name: "ClassGetterDecl",
+			files: map[string]string{
+				"lib/a.esc": "export class Temp { celsius: number, get fahrenheit(&self) -> number { return self.celsius } }",
+			},
+			open: "lib/a.esc", line: 0, col: 41,
+			expected: escalierCode("(getter) Temp.fahrenheit: number"),
+		},
+		{
+			name: "ObjectTypeProperty",
+			files: map[string]string{
+				"lib/a.esc": "export type Pt = {lat: number, lng: number}",
+			},
+			open: "lib/a.esc", line: 0, col: 18,
+			expected: escalierCode("(property) lat: number"),
+		},
+		{
 			name:  "Keyword",
 			files: map[string]string{"bin/main.esc": "val x = 5"},
 			open:  "bin/main.esc", line: 0, col: 1,

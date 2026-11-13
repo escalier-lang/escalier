@@ -672,3 +672,99 @@ func namespaceHover(q hoverQuery) (string, bool) {
 	}
 	return "", false
 }
+
+// declMemberHover returns the hover text for a member written in a declaration: a class
+// field, method, getter or setter name, or a property of an object type. It returns false
+// when the cursor is on none. A class member carries the class name, as
+// `(property) Dog.name: string`; an object-type property carries none.
+func declMemberHover(q hoverQuery) (string, bool) {
+	switch n := q.node.(type) {
+	case *ast.IdentExpr:
+		class, ok := parentClassDecl(q.ancestors)
+		if !ok {
+			return "", false
+		}
+		return classMemberDeclText(q.info, q.scope, class, n.Name)
+	case *ast.FuncExpr:
+		// A method's function expression spans its name, so the cursor on the name lands
+		// here rather than on an identifier.
+		class, ok := parentClassDecl(q.ancestors)
+		if !ok {
+			return "", false
+		}
+		if name, ok := memberNameOfFn(class, n); ok {
+			return classMemberDeclText(q.info, q.scope, class, name)
+		}
+	case *ast.ObjectTypeAnn:
+		return objTypePropText(n, q.loc)
+	}
+	return "", false
+}
+
+// memberNameOfFn returns the name of the method, getter or setter of class whose function
+// is fn, and false when no such member has it.
+func memberNameOfFn(class *ast.ClassDecl, fn *ast.FuncExpr) (string, bool) {
+	for _, elem := range class.Body {
+		switch elem := elem.(type) {
+		case *ast.MethodElem:
+			if elem.Fn == fn {
+				return objKeyName(elem.Name), true
+			}
+		case *ast.GetterElem:
+			if elem.Fn == fn {
+				return objKeyName(elem.Name), true
+			}
+		case *ast.SetterElem:
+			if elem.Fn == fn {
+				return objKeyName(elem.Name), true
+			}
+		}
+	}
+	return "", false
+}
+
+// parentClassDecl returns the class declaration when it is the cursor node's immediate
+// parent, which holds for a member name written directly in the class body.
+func parentClassDecl(ancestors []ast.Node) (*ast.ClassDecl, bool) {
+	if len(ancestors) == 0 {
+		return nil, false
+	}
+	class, ok := ancestors[len(ancestors)-1].(*ast.ClassDecl)
+	return class, ok
+}
+
+// classMemberDeclText renders the member named `name` of class, found among the class's
+// members so a field, method, getter or setter each render in their own form. It returns
+// false when info or scope is nil or the class exposes no such member.
+func classMemberDeclText(info *solver.Info, scope *solver.Scope, class *ast.ClassDecl, name string) (string, bool) {
+	if info == nil || scope == nil {
+		return "", false
+	}
+	binding, ok := scope.GetType(class.Name.Name)
+	if !ok {
+		return "", false
+	}
+	obj, ok := info.MemberObject(binding.Type)
+	if !ok {
+		return "", false
+	}
+	for _, elem := range obj.Elems {
+		if soltype.ObjElemName(elem) == name {
+			return memberElemText(class.Name.Name, elem), true
+		}
+	}
+	return "", false
+}
+
+// objTypePropText renders the property of an object type annotation whose key the cursor
+// is on, as `(property) lat: number`, and false when the cursor is on no property key.
+func objTypePropText(obj *ast.ObjectTypeAnn, loc ast.Location) (string, bool) {
+	for _, elem := range obj.Elems {
+		prop, ok := elem.(*ast.PropertyTypeAnn)
+		if !ok || !prop.Name.Span().Contains(loc) {
+			continue
+		}
+		return propertyText("", objKeyName(prop.Name), printCompact(prop.Value)), true
+	}
+	return "", false
+}
