@@ -184,7 +184,7 @@ func TestIntegration_HoverShowsType(t *testing.T) {
 
 	content, ok := hover.Contents.(protocol.MarkupContent)
 	require.True(t, ok)
-	assert.Equal(t, "`x: number`", content.Value)
+	assert.Equal(t, escalierCode("x: number"), content.Value)
 }
 
 // --- Integration test: diagnostics ---
@@ -637,6 +637,11 @@ func TestDefinitionFromSolver(t *testing.T) {
 	}
 }
 
+// escalierCode returns the hover text that shows code as an Escalier code block.
+func escalierCode(code string) string {
+	return "```escalier\n" + code + "\n```"
+}
+
 func TestHoverFromSolver(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -644,49 +649,50 @@ func TestHoverFromSolver(t *testing.T) {
 		// open is the file the request names. line and col are 0-based.
 		open      string
 		line, col protocol.UInteger
-		expected  string
+		// expected is the hover text, or "" when the request returns no hover.
+		expected string
 	}{
 		{
 			name:  "InferredVal",
 			files: map[string]string{"bin/main.esc": "val x = 5"},
 			open:  "bin/main.esc", line: 0, col: 4,
-			expected: "`x: 5`",
+			expected: escalierCode("x: 5"),
 		},
 		{
 			name:  "ValMutBinding",
 			files: map[string]string{"bin/main.esc": "val mut p = {x: 1}"},
 			open:  "bin/main.esc", line: 0, col: 8,
-			expected: "`mut p: {x: number}`",
+			expected: escalierCode("mut p: {x: number}"),
 		},
 		{
 			name:  "ValMutRead",
 			files: map[string]string{"bin/main.esc": "val mut p = {x: 1}\nval n = p.x"},
 			open:  "bin/main.esc", line: 1, col: 8,
-			expected: "`mut p: {x: number}`",
+			expected: escalierCode("mut p: {x: number}"),
 		},
 		{
 			name:  "DestructuredMutShorthandReadInFunction",
 			files: map[string]string{"lib/a.esc": "val {mut a, b} = {a: {x: 1}, b: {x: 2}}\nexport fn f() -> number { return a.x + b.x }"},
 			open:  "lib/a.esc", line: 1, col: 33,
-			expected: "`mut a: {x: number}`",
+			expected: escalierCode("mut a: {x: number}"),
 		},
 		{
 			name:  "DestructuredShorthandReadInFunction",
 			files: map[string]string{"lib/a.esc": "val {mut a, b} = {a: {x: 1}, b: {x: 2}}\nexport fn f() -> number { return a.x + b.x }"},
 			open:  "lib/a.esc", line: 1, col: 39,
-			expected: "`b: {x: 2}`",
+			expected: escalierCode("b: {x: 2}"),
 		},
 		{
 			name:  "DestructuredMutKeyValueReadInFunction",
 			files: map[string]string{"lib/a.esc": "val {a: mut c} = {a: {x: 1}}\nexport fn f() -> number { return c.x }"},
 			open:  "lib/a.esc", line: 1, col: 33,
-			expected: "`mut c: {x: number}`",
+			expected: escalierCode("mut c: {x: number}"),
 		},
 		{
 			name:  "AnnotatedValMut",
 			files: map[string]string{"bin/main.esc": "val mut p: {x: number} = {x: 1}"},
 			open:  "bin/main.esc", line: 0, col: 8,
-			expected: "`mut p: {x: number}`",
+			expected: escalierCode("mut p: {x: number}"),
 		},
 		{
 			name: "MutParam",
@@ -694,13 +700,13 @@ func TestHoverFromSolver(t *testing.T) {
 				"lib/point.esc": "export fn f(mut p: {x: number}) -> number { return p.x }",
 			},
 			open: "lib/point.esc", line: 0, col: 16,
-			expected: "`mut p: {x: number}`",
+			expected: escalierCode("mut p: {x: number}"),
 		},
 		{
 			name:  "DestructuredMutRead",
 			files: map[string]string{"bin/main.esc": "val {mut a} = {a: {x: 1}}\nval n = a.x"},
 			open:  "bin/main.esc", line: 1, col: 8,
-			expected: "`mut a: {x: number}`",
+			expected: escalierCode("mut a: {x: number}"),
 		},
 		{
 			// A call moves its argument only into a concrete owned shape, so the `mut` on a
@@ -710,7 +716,7 @@ func TestHoverFromSolver(t *testing.T) {
 				"lib/point.esc": "export fn f(mut p: {x: number} | {y: number}) -> number { return 1 }",
 			},
 			open: "lib/point.esc", line: 0, col: 16,
-			expected: "`p: {x: number} | {y: number}`",
+			expected: escalierCode("p: {x: number} | {y: number}"),
 		},
 		{
 			name: "MutParamRead",
@@ -718,7 +724,7 @@ func TestHoverFromSolver(t *testing.T) {
 				"lib/point.esc": "export fn f(mut p: {x: number}) -> number { return p.x }",
 			},
 			open: "lib/point.esc", line: 0, col: 51,
-			expected: "`mut p: {x: number}`",
+			expected: escalierCode("mut p: {x: number}"),
 		},
 		{
 			name: "LibFuncReadFromBin",
@@ -727,7 +733,7 @@ func TestHoverFromSolver(t *testing.T) {
 				"bin/main.esc": "val x = add(1, 2)",
 			},
 			open: "bin/main.esc", line: 0, col: 9,
-			expected: "`fn (a: number, b: number) -> number`",
+			expected: escalierCode("fn (a: number, b: number) -> number"),
 		},
 		// The checker binds `self` with no declaration, so the hover shows its type alone.
 		{
@@ -736,7 +742,7 @@ func TestHoverFromSolver(t *testing.T) {
 				"lib/c.esc": "export class C { n: number, get(self) -> number { return self.n } }",
 			},
 			open: "lib/c.esc", line: 0, col: 58,
-			expected: "`{n: number, get(self) -> number}`",
+			expected: escalierCode("{n: number, get(self) -> number}"),
 		},
 		{
 			name: "LibParam",
@@ -744,7 +750,32 @@ func TestHoverFromSolver(t *testing.T) {
 				"lib/math.esc": "export fn add(a: number, b: number) -> number { return a + b }",
 			},
 			open: "lib/math.esc", line: 0, col: 55,
-			expected: "`a: number`",
+			expected: escalierCode("a: number"),
+		},
+		{
+			name:  "NumberLiteral",
+			files: map[string]string{"bin/main.esc": "val x = 5"},
+			open:  "bin/main.esc", line: 0, col: 8,
+		},
+		{
+			name:  "StringLiteralArgument",
+			files: map[string]string{"bin/main.esc": "declare fn f(s: string) -> number\nval n = f(\"title\")"},
+			open:  "bin/main.esc", line: 1, col: 11,
+		},
+		{
+			name:  "TemplateString",
+			files: map[string]string{"bin/main.esc": "val n = 1\nval s = `n = ${n}`"},
+			open:  "bin/main.esc", line: 1, col: 9,
+		},
+		{
+			name:  "LiteralPattern",
+			files: map[string]string{"bin/main.esc": "val n: number = 1\nval s = match n { 0 => \"zero\", _ => \"other\" }"},
+			open:  "bin/main.esc", line: 1, col: 18,
+		},
+		{
+			name:  "Keyword",
+			files: map[string]string{"bin/main.esc": "val x = 5"},
+			open:  "bin/main.esc", line: 0, col: 1,
 		},
 	}
 	for _, tt := range tests {
@@ -759,8 +790,14 @@ func TestHoverFromSolver(t *testing.T) {
 				},
 			})
 			require.NoError(t, err)
+			if tt.expected == "" {
+				require.Nil(t, hover)
+				return
+			}
+			require.NotNil(t, hover)
 			content, ok := hover.Contents.(protocol.MarkupContent)
 			require.True(t, ok)
+			require.Equal(t, protocol.MarkupKindMarkdown, content.Kind)
 			require.Equal(t, tt.expected, content.Value)
 		})
 	}

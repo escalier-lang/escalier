@@ -353,30 +353,15 @@ export function setupLanguage(
                 textDocument: { uri: model.uri.toString() },
                 position: monacoPosToLspPos(position),
             });
-            if (!hover) {
-                return {
-                    contents: [
-                        {
-                            value: 'TODO: return hover contents',
-                        },
-                    ],
-                };
+            // The server sends its hover as Markdown, or nothing when the
+            // cursor is on nothing with a hover to show.
+            if (!hover || !lsp.MarkupContent.is(hover.contents)) {
+                return null;
             }
-
-            if (lsp.MarkupContent.is(hover.contents)) {
-                return {
-                    contents: [
-                        {
-                            value: hover.contents.value,
-                        },
-                    ],
-                };
-            }
-
             return {
                 contents: [
                     {
-                        value: 'TODO: hover - handle other types',
+                        value: hover.contents.value,
                     },
                 ],
             };
