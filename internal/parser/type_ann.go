@@ -1333,7 +1333,6 @@ func (p *Parser) tryParseLifetimeArg() ast.LifetimeAnnNode {
 	return nil
 }
 
-// parseQualifiedIdent parses a qualified identifier like Foo.Bar.Baz
 // endInEmptyName returns left followed by an empty name that starts and ends where the
 // consumed token dot ends, and reports the identifier missing after dot.
 func (p *Parser) endInEmptyName(left ast.QualIdent, dot *Token) *ast.Member {
@@ -1344,6 +1343,7 @@ func (p *Parser) endInEmptyName(left ast.QualIdent, dot *Token) *ast.Member {
 	}
 }
 
+// parseQualifiedIdent parses a qualified identifier like Foo.Bar.Baz
 func (p *Parser) parseQualifiedIdent(firstToken *Token) ast.QualIdent {
 	// Start with the first identifier
 	var qualIdent ast.QualIdent = ast.NewIdentifier(firstToken.Value, firstToken.Span)
