@@ -114,6 +114,31 @@ func TestSignatureHelp(t *testing.T) {
 			activeParameter: 1,
 		},
 		{
+			name:  "CommaInBlockComment",
+			files: map[string]string{"lib/math.esc": addLib, "bin/main.esc": "val x = add(1 /* a, b */ |)"},
+			open:  "bin/main.esc",
+			expected: []renderedSignature{
+				{label: "add(a: number, b: number) -> number", params: []string{"a: number", "b: number"}, active: 0},
+			},
+		},
+		{
+			name:  "CommaInLineComment",
+			files: map[string]string{"lib/math.esc": addLib, "bin/main.esc": "val x = add(1 // a, b\n    |)"},
+			open:  "bin/main.esc",
+			expected: []renderedSignature{
+				{label: "add(a: number, b: number) -> number", params: []string{"a: number", "b: number"}, active: 0},
+			},
+		},
+		{
+			name:  "CommaAfterBlockComment",
+			files: map[string]string{"lib/math.esc": addLib, "bin/main.esc": "val x = add(1 /* a, b */, |)"},
+			open:  "bin/main.esc",
+			expected: []renderedSignature{
+				{label: "add(a: number, b: number) -> number", params: []string{"a: number", "b: number"}, active: 1},
+			},
+			activeParameter: 1,
+		},
+		{
 			// A comma inside the first argument separates the inner call's arguments, not
 			// the outer call's.
 			name:  "OuterCallAfterNestedCall",

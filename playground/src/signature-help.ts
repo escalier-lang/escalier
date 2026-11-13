@@ -1,8 +1,9 @@
 import type * as monaco from 'monaco-editor-core';
 import type * as lsp from 'vscode-languageserver-protocol';
 
-// These types mirror Monaco's SignatureHelp types, so this module converts the
-// LSP response without importing Monaco and its tests run without a browser.
+// These types mirror Monaco's SignatureHelp types. Monaco is imported for its
+// types alone, so this module loads no Monaco code and its tests run without a
+// browser.
 
 export type MonacoDocumentation = string | { value: string };
 

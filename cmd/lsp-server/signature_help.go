@@ -151,7 +151,7 @@ func argIndex(call *ast.CallExpr, text string, open int, loc ast.Location) int {
 	// commaBefore reports whether text[start:end] holds a comma before loc.
 	commaBefore := func(start, end int) bool {
 		end = min(end, loc.Offset, len(text))
-		return start >= 0 && start < end && strings.Contains(text[start:end], ",")
+		return start >= 0 && start < end && hasCommaOutsideComments(text[start:end])
 	}
 	index := 0
 	gapStart := open + 1
@@ -165,6 +165,31 @@ func argIndex(call *ast.CallExpr, text string, open int, loc ast.Location) int {
 		index++
 	}
 	return index
+}
+
+// hasCommaOutsideComments reports whether gap, the text between two arguments, holds a
+// comma that is not inside a `//` or `/* */` comment. A gap holds nothing else, so the
+// scan reads no string or regex literal.
+func hasCommaOutsideComments(gap string) bool {
+	for i := 0; i < len(gap); i++ {
+		switch {
+		case gap[i] == ',':
+			return true
+		case strings.HasPrefix(gap[i:], "//"):
+			end := strings.IndexByte(gap[i:], '\n')
+			if end < 0 {
+				return false
+			}
+			i += end
+		case strings.HasPrefix(gap[i:], "/*"):
+			end := strings.Index(gap[i+2:], "*/")
+			if end < 0 {
+				return false
+			}
+			i += 2 + end + 1
+		}
+	}
+	return false
 }
 
 // calleeSignatures returns the signatures a call to callee may resolve to. info is the
