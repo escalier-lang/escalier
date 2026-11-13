@@ -673,6 +673,21 @@ test('reads every message that arrives in one stdout chunk', async () => {
     await testClient.stop();
 });
 
+test('calls every listener registered for a notification', async () => {
+    const testClient = standaloneClient();
+    const first: string[] = [];
+    const second: string[] = [];
+    testClient.onWindowLogMessage((params) => first.push(params.message));
+    testClient.onWindowLogMessage((params) => second.push(params.message));
+
+    // @ts-expect-error: stdout is private
+    testClient.stdout.write(framed(logMessage('hello')));
+
+    await vi.waitFor(() => expect(second).toEqual(['hello']));
+    expect(first).toEqual(['hello']);
+    await testClient.stop();
+});
+
 test.each<[string, (client: Client) => Promise<void>]>([
     [
         'textDocument/willSave',

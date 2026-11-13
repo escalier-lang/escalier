@@ -115,6 +115,13 @@ export class Client {
     /** Set by `stop()`. Silences the server's output and drops notifications from then on. */
     private stopped = false;
 
+    /**
+     * Calls every listener registered for a notification's method. A
+     * MessageConnection keeps one handler per method, so the client registers
+     * one handler that emits here.
+     */
+    private notifications = new EventEmitter();
+
     // Go resolves `globalThis.fs` and `globalThis.process` on every syscall,
     // so whichever value is installed last serves every runtime rather than
     // the one that installed it. These are built here and installed in run(),
@@ -599,6 +606,11 @@ export class Client {
     }
 
     private on(method: string, callback: (params: any) => void) {
-        this.connection.onNotification(method, callback);
+        if (this.notifications.listenerCount(method) === 0) {
+            this.connection.onNotification(method, (params) =>
+                this.notifications.emit(method, params),
+            );
+        }
+        this.notifications.on(method, callback);
     }
 }
