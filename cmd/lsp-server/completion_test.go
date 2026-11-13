@@ -2351,7 +2351,7 @@ func TestIndexKeyCompletion(t *testing.T) {
 			src:      "type Point = {x: number, y: string}\nval p: Point[]",
 			line:     2,
 			col:      14,
-			expected: []string{`"x": number`, `"y": string`},
+			expected: []string{`"x": (property) x: number`, `"y": (property) y: string`},
 		},
 		{
 			name:     "ObjectAliasInBin",
@@ -2359,7 +2359,7 @@ func TestIndexKeyCompletion(t *testing.T) {
 			src:      "type Point = {x: number, y: string}\nval p: Point[]",
 			line:     2,
 			col:      14,
-			expected: []string{`"x": number`, `"y": string`},
+			expected: []string{`"x": (property) x: number`, `"y": (property) y: string`},
 		},
 		{
 			name:     "GenericAlias",
@@ -2367,7 +2367,7 @@ func TestIndexKeyCompletion(t *testing.T) {
 			src:      "type Pair<T> = {first: T, second: T}\nval p: Pair<boolean>[]",
 			line:     2,
 			col:      22,
-			expected: []string{`"first": boolean`, `"second": boolean`},
+			expected: []string{`"first": (property) first: boolean`, `"second": (property) second: boolean`},
 		},
 		{
 			name:     "UnclosedBracket",
@@ -2375,7 +2375,7 @@ func TestIndexKeyCompletion(t *testing.T) {
 			src:      "type Point = {x: number, y: string}\nval p: Point[",
 			line:     2,
 			col:      14,
-			expected: []string{`"x": number`, `"y": string`},
+			expected: []string{`"x": (property) x: number`, `"y": (property) y: string`},
 		},
 		{
 			name:     "ClassWithMethod",
@@ -2383,7 +2383,23 @@ func TestIndexKeyCompletion(t *testing.T) {
 			src:      "class Dog {\n    name: string,\n    speak(&self) -> string { return self.name },\n}\nexport fn f(d: Dog[]) {}\n",
 			line:     5,
 			col:      20,
-			expected: []string{`"name": string`, `"speak": fn () -> string`},
+			expected: []string{`"name": (property) name: string`, `"speak": fn () -> string`},
+		},
+		{
+			name:     "OptionalKey",
+			path:     "lib/index.esc",
+			src:      "type O = {a?: number}\nval x: O[]",
+			line:     2,
+			col:      10,
+			expected: []string{`"a": (property) a?: number | undefined`},
+		},
+		{
+			name:     "Getter",
+			path:     "lib/index.esc",
+			src:      "type O = {get n(self) -> number}\nval x: O[]",
+			line:     2,
+			col:      10,
+			expected: []string{`"n": (property) n: number`},
 		},
 		{
 			name:     "IndexExprInLib",
