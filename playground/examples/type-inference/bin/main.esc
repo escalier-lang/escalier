@@ -1,7 +1,5 @@
 drive(maxSpeed)
 console.log(`${drive(30)} ${unit}`)
-console.log(elapsed(9, 17))
-console.log(distance(&{x: 3, y: 4}))
+console.log(shiftLength(9, 17))
 console.log(pair)
-console.log(heading)
 console.log(lengths(["sun", "moon", "stars"]))
