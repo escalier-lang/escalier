@@ -226,10 +226,8 @@ func acceptSet(f *soltype.FuncType) (lo, hi int) {
 // The group may end in the sub's own rest param when that param is an `Array<E>` at or past k,
 // since its element type says what each value past the fixed params is. An inexact sub absorbs
 // when it has no rest param, since it ignores every value past its listed params. An exact sub
-// with no rest param absorbs only into a variable slot, which binds the group as one fixed-length
-// tuple. An `Array<E>` slot may pass any number of values, and such a sub accepts a fixed number.
-// A sub shorter than k, an inexact sub with a rest param, or one whose rest has no element type to
-// read does not absorb.
+// with no rest param absorbs only when arraySlot is false. A sub shorter than k, an inexact sub
+// with a rest param, or one whose rest has no element type to read does not absorb.
 func (c *Context) canAbsorbRest(sub *soltype.FuncType, k int, arraySlot bool) bool {
 	j := restIndex(sub)
 	if sub.Inexact && j >= 0 {
@@ -1491,9 +1489,9 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			// contravariant, the orientation the fixed positions use. A written tuple never
 			// reaches here, expandTupleRest having split it.
 			//
-			// An exact sub with no rest param absorbs only into a variable slot. It passes the
-			// `Array<E>` case to the full accept-set gate below, because such a slot may pass more
-			// arguments than the sub accepts. Without that, this check would pass:
+			// An exact sub with no rest param absorbs only into a variable slot. Against an
+			// `Array<E>` slot it goes through the full accept-set gate below, because such a slot
+			// may pass more arguments than the sub accepts. Absorbing it would accept this pair:
 			//
 			//	fn (x: string) -> undefined  <:  fn (x: string, ...extras: Array<number>) -> undefined
 			absorbAt, absorbElem := -1, soltype.Type(nil)

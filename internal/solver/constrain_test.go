@@ -375,8 +375,8 @@ func TestConstrainRestParamElementChecking(t *testing.T) {
 			Messages(c.Constrain(sub, super)))
 	})
 
-	// An inexact sub's rest stands for its whole tail, so each listed parameter it absorbs
-	// is checked against the element. The sub ignores the values past its listed params,
+	// The super's rest stands for an inexact sub's whole tail, so each listed parameter it
+	// absorbs is checked against the element. The sub ignores the values past its listed params,
 	// so those values need no element check. The check is contravariant, the orientation
 	// the fixed positions use, so the element is the sub of each pair.
 	//
