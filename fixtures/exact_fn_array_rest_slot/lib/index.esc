@@ -1,0 +1,23 @@
+// `a` may call its callback with a string followed by any number of numbers.
+export fn a(f: fn(x: string, ...extras: Array<number>) -> undefined) -> undefined {
+    return undefined
+}
+
+// `f` accepts exactly one string, so it can't fill `a`'s parameter. Accepting it would let a
+// caller pass `Va2`, which would then receive the numbers as strings.
+export fn aHelper(f: fn(x: string) -> undefined) -> undefined {
+    return a(f)
+}
+
+export fn Va(x: string) -> undefined {
+    return undefined
+}
+
+export fn Va2(...xs: Array<string>) -> undefined {
+    return undefined
+}
+
+// Both calls are sound on their own. `aHelper` calls its callback with one string, and each of
+// these accepts one string.
+export val withVa = aHelper(Va)
+export val withVa2 = aHelper(Va2)

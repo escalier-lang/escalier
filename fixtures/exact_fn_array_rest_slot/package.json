@@ -1,0 +1,6 @@
+{
+    "name": "exact_fn_array_rest_slot",
+    "version": "0.0.1",
+    "type": "module",
+    "main": "build/lib/index.js"
+}
