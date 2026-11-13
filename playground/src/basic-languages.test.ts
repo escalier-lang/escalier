@@ -12,14 +12,36 @@ describe('registerBasicLanguages', () => {
 
     // Each language asserts one token or configuration detail that is specific to
     // it, so a tokenizer wired to the wrong definition fails here.
+    const cComments = { lineComment: '//', blockComment: ['/*', '*/'] };
     test.each([
-        { id: 'javascript', tokenPostfix: '.js', keyword: 'function' },
-        { id: 'typescript', tokenPostfix: '.ts', keyword: 'interface' },
-        { id: 'json', tokenPostfix: '.json', keyword: undefined },
-        { id: 'toml', tokenPostfix: '.toml', keyword: undefined },
+        {
+            id: 'javascript',
+            tokenPostfix: '.js',
+            keyword: 'function',
+            comments: cComments,
+        },
+        {
+            id: 'typescript',
+            tokenPostfix: '.ts',
+            keyword: 'interface',
+            comments: cComments,
+        },
+        // JSON has no comment syntax.
+        {
+            id: 'json',
+            tokenPostfix: '.json',
+            keyword: undefined,
+            comments: undefined,
+        },
+        {
+            id: 'toml',
+            tokenPostfix: '.toml',
+            keyword: undefined,
+            comments: { lineComment: '#' },
+        },
     ])(
         'registers $id with a Monarch tokenizer',
-        ({ id, tokenPostfix, keyword }) => {
+        ({ id, tokenPostfix, keyword, comments }) => {
             registerBasicLanguages();
 
             expect(monaco.languages.register).toHaveBeenCalledWith({ id });
@@ -40,6 +62,7 @@ describe('registerBasicLanguages', () => {
                 .mocked(monaco.languages.setLanguageConfiguration)
                 .mock.calls.find(([languageId]) => languageId === id);
             expect(confCall?.[1].brackets).toContainEqual(['{', '}']);
+            expect(confCall?.[1].comments).toEqual(comments);
         },
     );
 });

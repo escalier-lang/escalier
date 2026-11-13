@@ -143,4 +143,42 @@ test.describe('Syntax highlighting', () => {
         await expect(value).toBeVisible();
         await expect(value).not.toHaveAttribute('class', headerClass);
     });
+
+    test('colours the rows of a multi-line TOML array as values', async ({
+        page,
+    }) => {
+        await page
+            .getByRole('button', { name: 'escalier.toml', exact: true })
+            .click();
+        const inputPanel = page.locator('#input-panel');
+        await expect(inputPanel.locator('.view-lines')).toContainText(
+            'project',
+        );
+        await inputPanel.locator('.view-lines').click();
+        const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+        await page.keyboard.press(`${modifier}+A`);
+        // insertText adds the text as one edit, so Monaco closes no brackets.
+        await page.keyboard.insertText(
+            [
+                '[project]',
+                'edition = 2026',
+                'points = [',
+                '  [7, 8],',
+                ']',
+            ].join('\n'),
+        );
+
+        const lines = inputPanel.locator('.view-lines');
+        const spans = (text: string) =>
+            lines
+                .locator('span > span')
+                .filter({ hasText: new RegExp(`^${text}$`) });
+        const numberClass =
+            (await spans('2026').first().getAttribute('class')) ?? '';
+        expect(numberClass).not.toBe('');
+        // `[7, 8],` is a row of the `points` array, not a table header, so its
+        // numbers get the number colour.
+        await expect(spans('7').first()).toHaveAttribute('class', numberClass);
+        await expect(spans('8').first()).toHaveAttribute('class', numberClass);
+    });
 });

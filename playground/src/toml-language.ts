@@ -26,19 +26,24 @@ export const language: monaco.languages.IMonarchLanguage = {
     tokenPostfix: '.toml',
     tokenizer: {
         root: [
-            [/#.*$/, 'comment'],
             // A table or array-of-tables header, such as `[project]` or `[[bin]]`.
-            [/\[\[.*?\]\]/, 'type'],
-            [/\[.*?\]/, 'type'],
-            // A bare or quoted key up to its `=`.
-            [
-                /(^\s*)([\w.-]+|"[^"]*"|'[^']*')(\s*)(=)/,
-                ['', 'key', '', 'delimiter'],
-            ],
+            // Monarch tries a rule that starts with `^` only at the start of a line.
+            [/^\s*\[\[[^\]]*\]\]/, 'type'],
+            [/^\s*\[[^\]]*\]/, 'type'],
+            { include: '@keyValue' },
+        ],
+        // The entries of an array. The state lasts until the matching `]`, so the
+        // rows of an array that spans several lines are not read as table headers.
+        array: [[/\]/, 'delimiter', '@pop'], { include: '@keyValue' }],
+        keyValue: [
+            [/#.*$/, 'comment'],
+            // A bare or quoted key up to its `=`, in a table or an inline table.
+            [/([\w.-]+|"[^"]*"|'[^']*')(\s*)(=)/, ['key', '', 'delimiter']],
             { include: '@value' },
         ],
         value: [
             [/\s+/, 'white'],
+            [/\[/, 'delimiter', '@array'],
             [/"""/, 'string', '@multilineBasic'],
             [/'''/, 'string', '@multilineLiteral'],
             [/"(?:[^"\\]|\\.)*"/, 'string'],
@@ -52,7 +57,7 @@ export const language: monaco.languages.IMonarchLanguage = {
             [/[+-]?(?:0x[0-9a-fA-F_]+|0o[0-7_]+|0b[01_]+)/, 'number'],
             [/[+-]?(?:\d[\d_]*)(?:\.\d[\d_]*)?(?:[eE][+-]?\d+)?/, 'number'],
             [/[+-]?(?:inf|nan)\b/, 'number'],
-            [/[{}[\],]/, 'delimiter'],
+            [/[{},\]]/, 'delimiter'],
         ],
         multilineBasic: [
             [/[^"]+/, 'string'],
