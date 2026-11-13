@@ -84,6 +84,19 @@ func findNodeAtLocation(co *compiler.CheckOutput, sourceID int, loc ast.Location
 	return nil
 }
 
+// findNodeWithAncestorsAt returns the deepest node at loc in the file sourceID names,
+// with its ancestors outermost first, searching scripts first and then module files.
+// It returns a nil node when co holds no such file or nothing in it spans loc.
+func findNodeWithAncestorsAt(co *compiler.CheckOutput, sourceID int, loc ast.Location) (ast.Node, []ast.Node) {
+	if script, ok := co.Scripts[sourceID]; ok {
+		return findNodeWithAncestors(script, loc)
+	}
+	if co.Module != nil {
+		return findNodeWithAncestorsInFile(co.Module, sourceID, loc)
+	}
+	return nil, nil
+}
+
 // ParentVisitor extends the base visitor with parent tracking.
 type ParentVisitor struct {
 	ast.DefaultVisitor
