@@ -5,6 +5,7 @@ import (
 	"maps"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -312,6 +313,12 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 				items = s.completionsFromScope(script, scriptView, info, loc, string(uri))
 				items = filterByPrefix(items, n.Name)
 			}
+		case *ast.ErrorTypeAnn:
+			// The cursor sits between the empty brackets of an index access such as
+			// `Point[]`, where the target's keys can be written.
+			if index, ok := parent.(*ast.IndexTypeAnn); ok && index.Index == n {
+				items = indexKeyCompletions(index.Target, info)
+			}
 		case *ast.TypeRefTypeAnn:
 			if member, ok := n.Name.(*ast.Member); ok {
 				items = qualifiedTypeCompletions(member, scriptView)
@@ -380,6 +387,12 @@ func (s *Server) moduleCompletion(
 			} else {
 				items = s.completionsFromModuleScope(module, sourceID, fileView, moduleView, info, loc)
 				items = filterByPrefix(items, n.Name)
+			}
+		case *ast.ErrorTypeAnn:
+			// The cursor sits between the empty brackets of an index access such as
+			// `Point[]`, where the target's keys can be written.
+			if index, ok := parent.(*ast.IndexTypeAnn); ok && index.Index == n {
+				items = indexKeyCompletions(index.Target, info)
 			}
 		case *ast.TypeRefTypeAnn:
 			if member, ok := n.Name.(*ast.Member); ok {
@@ -549,6 +562,47 @@ func namespaceTypeCompletions(ns *solver.Namespace) []protocol.CompletionItem {
 	for _, name := range identifiers(slices.Sorted(maps.Keys(ns.Nested))) {
 		kind := protocol.CompletionItemKindModule
 		items = append(items, protocol.CompletionItem{Label: name, Kind: &kind})
+	}
+	return items
+}
+
+// indexKeyCompletions returns a completion item for each key of the type the annotation
+// target resolved to, quoted as the string literal type that indexes it, such as
+// `"x"` for `Point["x"]`. A key that is a symbol, such as `[Symbol.iterator]`, is left
+// out, and a key with both a getter and a setter is listed once. It returns nil when info
+// is nil or recorded no type for target.
+func indexKeyCompletions(target ast.TypeAnn, info *solver.Info) []protocol.CompletionItem {
+	if info == nil {
+		return nil
+	}
+	obj, ok := info.MemberObject(info.TypeOf(target))
+	if !ok {
+		return nil
+	}
+	var items []protocol.CompletionItem
+	// A getter and a setter for one key are two elements but one key.
+	seen := set.NewSet[string]()
+	for _, elem := range obj.Elems {
+		name := soltype.ObjElemName(elem)
+		if name == "" || soltype.IsSymbolMemberName(name) || seen.Contains(name) {
+			continue
+		}
+		seen.Add(name)
+		kind := protocol.CompletionItemKindProperty
+		var detail string
+		switch elem := elem.(type) {
+		case *soltype.PropertyElem:
+			detail = soltype.Print(elem.Type)
+		case *soltype.GetterElem:
+			detail = soltype.Print(elem.Type)
+		case *soltype.MethodElem:
+			kind = protocol.CompletionItemKindMethod
+			detail = methodDetail(elem)
+		case *soltype.SetterElem:
+			detail = "setter"
+		}
+		label := strconv.Quote(name)
+		items = append(items, protocol.CompletionItem{Label: label, Kind: &kind, Detail: &detail})
 	}
 	return items
 }

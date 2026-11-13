@@ -2331,3 +2331,72 @@ func TestScopeCompletionFromSolverAfterIncrementalCheck(t *testing.T) {
 
 	require.Equal(t, []string{"later"}, getCompletionLabelsAt(t, s, binURI, 3, 11))
 }
+
+// TestIndexKeyCompletion covers the keys offered between the empty brackets of an index
+// access type such as `Point[]`, each quoted as the string literal type that indexes it.
+func TestIndexKeyCompletion(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		src  string
+		// line and col are the 1-based cursor position in src.
+		line, col int
+		// expected is each item rendered as `label: detail`, in order.
+		expected []string
+	}{
+		{
+			name:     "ObjectAliasInLib",
+			path:     "lib/index.esc",
+			src:      "type Point = {x: number, y: string}\nval p: Point[]",
+			line:     2,
+			col:      14,
+			expected: []string{`"x": number`, `"y": string`},
+		},
+		{
+			name:     "ObjectAliasInBin",
+			path:     "bin/main.esc",
+			src:      "type Point = {x: number, y: string}\nval p: Point[]",
+			line:     2,
+			col:      14,
+			expected: []string{`"x": number`, `"y": string`},
+		},
+		{
+			name:     "GenericAlias",
+			path:     "lib/index.esc",
+			src:      "type Pair<T> = {first: T, second: T}\nval p: Pair<boolean>[]",
+			line:     2,
+			col:      22,
+			expected: []string{`"first": boolean`, `"second": boolean`},
+		},
+		{
+			name:     "UnclosedBracket",
+			path:     "lib/index.esc",
+			src:      "type Point = {x: number, y: string}\nval p: Point[",
+			line:     2,
+			col:      14,
+			expected: []string{`"x": number`, `"y": string`},
+		},
+		{
+			name:     "ClassWithMethod",
+			path:     "lib/index.esc",
+			src:      "class Dog {\n    name: string,\n    speak(&self) -> string { return self.name },\n}\nexport fn f(d: Dog[]) {}\n",
+			line:     5,
+			col:      20,
+			expected: []string{`"name": string`, `"speak": fn () -> string`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			items := completionItemsAt(t, map[string]string{tt.path: tt.src}, tt.path, tt.line, tt.col)
+			rendered := make([]string, len(items))
+			for i, item := range items {
+				detail := ""
+				if item.Detail != nil {
+					detail = *item.Detail
+				}
+				rendered[i] = item.Label + ": " + detail
+			}
+			require.Equal(t, tt.expected, rendered)
+		})
+	}
+}

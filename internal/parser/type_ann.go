@@ -610,11 +610,16 @@ loop:
 		switch token.Type {
 		case OpenBracket:
 			p.lexer.consume()
-			// TODO: handle the case when parseExpr() return None correctly
 			index := p.typeAnn()
 			if index == nil {
 				p.reportError(token.Span, "Expected an expression after '['")
-				break loop
+				// `Foo[]` keeps its index access, with an empty ErrorTypeAnn between the
+				// brackets, so an editor can offer Foo's keys at the cursor there.
+				index = ast.NewErrorTypeAnn(ast.NewSpan(token.Span.End, token.Span.End, p.lexer.source.ID))
+				if p.lexer.peek().Type != CloseBracket {
+					typeAnn = ast.NewIndexTypeAnn(typeAnn, index, ast.MergeSpans(typeAnn.Span(), index.Span()))
+					break loop
+				}
 			}
 			terminator := p.lexer.next()
 			if terminator.Type != CloseBracket {
@@ -625,33 +630,6 @@ loop:
 				obj, index,
 				ast.Span{Start: obj.Span().Start, End: terminator.Span.End, SourceID: p.lexer.source.ID},
 			)
-		case Dot:
-			p.lexer.consume()
-			prop := p.lexer.next()
-			// nolint: exhaustive
-			switch prop.Type {
-			case Identifier, Underscore:
-				obj := typeAnn
-				// This interprets T.K as T["K"]
-				prop := ast.NewLitTypeAnn(ast.NewString(prop.Value, token.Span), token.Span)
-				typeAnn = ast.NewIndexTypeAnn(
-					obj, prop,
-					ast.Span{Start: obj.Span().Start, End: prop.Span().End, SourceID: p.lexer.source.ID},
-				)
-			default:
-				obj := typeAnn
-				// This interprets T. as T[""]
-				prop := ast.NewLitTypeAnn(ast.NewString("", token.Span), token.Span)
-				typeAnn = ast.NewIndexTypeAnn(
-					obj, prop,
-					ast.Span{Start: obj.Span().Start, End: prop.Span().End, SourceID: p.lexer.source.ID},
-				)
-				if token.Type == Dot {
-					p.reportError(token.Span, "expected an identifier after .")
-				} else {
-					p.reportError(token.Span, "expected an identifier after ?.")
-				}
-			}
 		default:
 			break loop
 		}
