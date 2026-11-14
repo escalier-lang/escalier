@@ -1,0 +1,436 @@
+# Fallbacks for expressions that can raise
+
+## Problem
+
+`try`/`catch` is an expression, but handling one call with it takes five lines:
+
+```esc
+val x = try {
+    thingThatCanThrow()
+} catch {
+    _ => valueOfLastResort
+}
+```
+
+The common case wants none of what the block form offers. It has one expression
+to guard, no arms to choose between, and one value to use instead. Rust code
+reaches the same point with `result.unwrap_or(v)`, and Zig with `foo() catch v`.
+Escalier has no short form, so code either pays for the block or moves the call
+into a helper.
+
+This document proposes an infix form that guards one expression and supplies a
+fallback value, and shows how the same shape extends to type checks.
+
+## Proposal
+
+A `catch` written after an expression evaluates that expression. If it raises,
+the result is the fallback on the right instead.
+
+```esc
+val port = Number.parseInt(env.PORT) catch 8080
+val config = readConfig(userPath) catch readConfig(defaultPath) catch defaults
+```
+
+It is the block form with the braces and the catch-all arm removed. These two are
+equivalent:
+
+```esc
+val x = a() catch b
+
+val x = try { a() } catch { _ => b }
+```
+
+### Binding the caught value
+
+The fallback can name the caught value with `binding =>`:
+
+```esc
+val n = parse(s) catch e => { log(e); 0 }
+```
+
+The binding has type `unknown`, the same as the caught value of a `try`
+([06 Error Handling](../../docs/06_error_handling.md#the-caught-value-is-unknown)).
+`ident =>` never starts an expression, because function expressions are written
+`fn (…) { … }`, so the parser can tell the two right-hand forms apart with one
+token of lookahead.
+
+### Translating an error
+
+A `throw` expression is a valid fallback, which gives a one-line way to convert
+one error into another:
+
+```esc
+val cfg = JSON.parse(text) catch throw ConfigError(path)
+```
+
+## Semantics
+
+### What the left operand guards
+
+Everything evaluated by the left operand is guarded, exactly as if it were the
+body of a `try` block. That includes every subexpression, not only the outermost
+call:
+
+```esc
+val v = f(g(), h.prop) catch 0
+// a raise from g(), from the getter for h.prop, or from f() yields 0
+```
+
+The raise sites the checker records today are the ones the left operand can
+contain. Each one sends its known throws into the enclosing throws sink, and
+`catch` replaces that sink for the left operand:
+
+| Raise site | Example | Where the checker records it |
+|---|---|---|
+| A call, including an overloaded one and a constructor call | `parse(s)`, `Date(x)` | `applyCallShape`, `overload.go` |
+| A getter read, including a read through destructuring | `obj.size`, `val {size} = obj` | `classes.go`, `pattern.go` |
+| A setter write | `obj.size = 3` | `inferAccessorAssign` |
+| An `await` of a promise with a rejection type | `await fetch(url)` | `inferAwait` |
+| A `throw` expression | `throw E()` | `inferThrow` |
+| Advancing an iterator | `yield* gen()` | `inferYield` through `constrainIterationRaise` |
+
+`for … in` also advances an iterator, but it is a statement, so it can only reach
+a `catch` through a function call or a `do` block. Spreading an iterable and
+destructuring one with an array pattern do not appear as raise sites today. If
+they are added later, `catch` picks them up with no change to this design.
+
+### Type
+
+The result type is the union of the left operand's type and the fallback's type:
+
+```esc
+declare fn parse(s: string) -> number throws ParseError
+val n = parse(s) catch "invalid"
+// n: number | "invalid"
+```
+
+### Known throws
+
+The fallback is a catch-all, so every known throw of the left operand is
+handled. None of them reach the enclosing function's clause:
+
+```esc
+declare fn parse(s: string) -> number throws ParseError
+fn f(s: string) -> number { return parse(s) catch 0 }
+// OK: f raises nothing
+```
+
+The fallback is evaluated in the enclosing throws sink, so what it raises does
+reach the enclosing clause:
+
+```esc
+declare fn parse(s: string) -> number throws ParseError
+declare fn parseLoose(s: string) -> number throws LooseError
+fn f(s: string) throws _ { return parse(s) catch parseLoose(s) }
+// inferred: fn (s: string) -> number throws LooseError
+```
+
+### Evaluation order and chaining
+
+The fallback is evaluated only when the left operand raises. `catch` is
+right-associative, so a chain reads as a list of attempts in order:
+
+```esc
+a() catch b() catch c
+// groups as a() catch (b() catch c)
+```
+
+Left association would give the same result, since in both groupings `c` runs
+exactly when `a()` and `b()` both raise. Right association lowers to a `try`
+nested inside the outer `catch` clause rather than inside the outer `try` block,
+which keeps each attempt's stack trace free of the earlier attempts' frames.
+
+### Precedence
+
+`catch` binds more loosely than every other binary operator, including `??` and
+`||`. The left operand is therefore the whole expression before it, which is the
+reading a `try` block gives:
+
+```esc
+x + f() catch 0          // (x + f()) catch 0
+a() ?? b catch c         // (a() ?? b) catch c
+a() catch b + 1          // a() catch (b + 1)
+```
+
+Assignment and `val` initializers take a `catch` expression as their right side,
+so `y = f() catch 0` assigns the result of the whole `catch` expression.
+`ast.Precedence` lists `Assign` at 10 today, so the parser change has to place
+`catch` relative to how assignment is actually parsed, not relative to that
+number.
+
+Prefix operators bind tighter, so `await` and `!` sit inside the left operand:
+
+```esc
+await fetch(url) catch null   // (await fetch(url)) catch null
+```
+
+A `catch` on a new line continues the previous expression. A line cannot start
+with `catch` otherwise, so this adds no ambiguity.
+
+### Unawaited promises
+
+A `catch` around an expression of type `Promise<T, E>` catches only what is
+raised synchronously while the promise is created. The rejection is not caught.
+This is almost always a missing `await`, so the checker warns when the left
+operand's type is a promise whose `E` is not `never`:
+
+```esc
+val res = fetch(url) catch null
+// WARNING: the left operand of `catch` is a promise, so its rejection is not
+// caught; write `await fetch(url) catch null`
+```
+
+### Nothing to catch
+
+A left operand that contains no raise site at all is reported, the way a `try`
+with no catch arms is:
+
+```esc
+val n = 1 + 2 catch 0
+// ERROR: the left operand of `catch` contains no call, `await`, accessor or
+// `throw`, so it cannot raise; drop the `catch` and its fallback
+```
+
+A left operand that has raise sites whose known throws are all `never` is
+accepted. The runtime can still raise something no signature named, and a
+fallback for it is a reasonable thing to write.
+
+### Ownership and liveness
+
+On the fallback path the left operand may have stopped part way through. The
+fallback sees the same state a `catch` arm sees after a `try` block: each move in
+the left operand counts as possibly done, so the fallback cannot use a value the
+left operand moved.
+
+```esc
+fn f(v: Buffer) -> Buffer {
+    return consume(v) catch v
+    // ERROR: `v` may have been moved by `consume(v)`
+}
+```
+
+Whatever rule the liveness pass applies between a `try` block and its arms
+applies here unchanged.
+
+## Representation and lowering
+
+### Keep a dedicated AST node
+
+`catch` gets its own node rather than being rewritten into a `TryCatchExpr` by
+the parser:
+
+```go
+type CatchExpr struct {
+    Expr     Expr
+    Binding  *IdentPat // nil when the fallback names no binding
+    Fallback Expr
+    span     Span
+    commentSlots
+}
+```
+
+A parser-level rewrite would cost three things:
+
+1. The printer formats the AST back to source, so a rewrite would turn every
+   `a() catch b` into the five-line block form the feature exists to avoid.
+2. Diagnostics would describe a `try` block the user never wrote, and an error
+   could not point at the left operand or the fallback by role.
+3. The rewritten node needs a synthesized `_` arm with no source of its own,
+   which has no honest span to give it.
+
+### Checking
+
+The solver checks a `CatchExpr` with the machinery `inferTryCatch` already uses.
+That function installs a fresh throws sink over the enclosing one, infers the
+block against it, and restores the enclosing sink before it checks the arms. The
+step that installs and restores the sink becomes a helper both forms call.
+
+For a `CatchExpr` the checker does the following:
+
+1. Install a fresh throws sink and record its provenance against the
+   `CatchExpr` node.
+2. Infer `Expr` against that sink.
+3. Restore the enclosing sink.
+4. Bind `Binding`, if present, at `unknown`.
+5. Infer `Fallback` against the enclosing sink.
+6. Return the union of the two operand types.
+
+Nothing is passed to `rethrowUnhandled`, since an unguarded catch-all leaves no
+known throw uncovered.
+
+### Codegen
+
+The codegen builder already lowers a value-producing `try` into a temporary and a
+`try` statement, passing the source node for each emitted node. `CatchExpr`
+lowers the same way:
+
+```esc
+val x = parse(s) catch 0
+```
+
+```js
+let $temp;
+try {
+  $temp = parse(s);
+} catch {
+  $temp = 0;
+}
+const x = $temp;
+```
+
+A chain nests in the `catch` clause:
+
+```esc
+val x = a() catch b() catch c
+```
+
+```js
+let $temp;
+try {
+  $temp = a();
+} catch {
+  try {
+    $temp = b();
+  } catch {
+    $temp = c;
+  }
+}
+const x = $temp;
+```
+
+A binding becomes the `catch` parameter, renamed if it would collide.
+
+### Source maps and provenance
+
+Each emitted node carries a source node, and the mapping is chosen so a debugger
+steps through the operands, not through the generated scaffolding:
+
+| Emitted node | Source node |
+|---|---|
+| `let $temp`, the `try` statement, the `catch` clause | the `CatchExpr` |
+| The assignment in the `try` block | `Expr` |
+| The assignment in the `catch` clause | `Fallback` |
+| The `catch` parameter | `Binding` |
+
+The throws sink records its provenance against the `CatchExpr`, so a diagnostic
+that traces a type back through the sink names the `catch` the user wrote.
+
+The builder hoists a value-producing `try` out of its surrounding expression into
+statements placed before it. A `catch` nested in a larger expression inherits
+whatever ordering that hoisting gives. In `f(g(), a() catch 0)`, `g()` must still
+run before `a()`, and a fixture has to assert this before the feature ships.
+
+## Spelling
+
+The proposal spells the operator `catch`. The alternatives considered:
+
+| Spelling | Example | Assessment |
+|---|---|---|
+| `catch` | `a() catch b` | Reuses the keyword that already means "handle a raise". Zig uses the same form. Leaves room for `catch e => …` and `catch { arms }`. |
+| `?!` | `a() ?! b` | Reads well and does not collide with an existing token. Its meaning has to be learned, and it has no natural place for a binding or arms. |
+| `!?` | `a() !? b` | As `?!`. Close enough to `?!` that the two are easy to mix up. |
+| `?` | `a() ? b` | Collides with `?.`, the optional call `?(`, the optional markers on parameters and properties, and the postfix `?` the planned `Result` type reserves. |
+| `try … catch` without braces | `try a() catch b` | Marks the guarded region at both ends, but a chain reads as `try a() catch try b() catch c`. |
+| `try?` then `??` | `try? a() ?? b` | Swift's form. It turns a raise into `undefined`, so it cannot tell a raise from a function that returns `undefined`. |
+
+`catch` is recommended because the reader already knows what it means, and
+because the binding and arm forms below extend it without new syntax. `?!` is
+the best of the symbolic options if a symbol is preferred, and every section
+above applies to it unchanged apart from the binding form.
+
+## Extensions
+
+### Selective arms
+
+A `catch` followed by a brace-delimited arm list is the block form without its
+`try`:
+
+```esc
+val n = parse(s) catch {
+    ParseError{pos} => -pos,
+    TimeoutError => 0,
+}
+```
+
+Arms that leave known throws uncovered rethrow them, as in a `try`. This form is
+not part of the first version. A brace after `catch` would otherwise be an
+object literal or a `do`-less block, so the parser has to scan for `=>` to tell
+them apart. `{a, b} => …` (an object pattern) and `{a, b}` (an object literal)
+share a prefix, so the scan can be long. The first version rejects `{` directly
+after `catch` and asks for parentheses or a `do` block.
+
+### Type checks
+
+Nullability already has its fallback, `??`. A failed type check has
+`val x: T = u else { fallback }` and `if val`
+([04 Pattern Matching](../../docs/04_pattern_matching.md)), but both are
+statements or full conditional expressions. The expression-level counterpart
+follows Kotlin's `as?`: a checked narrowing that produces `undefined` when the
+check fails, so that `??` supplies the fallback.
+
+```esc
+fn port(u: unknown) -> number {
+    return u as? number ?? 8080
+}
+```
+
+`u as? T` has type `T | undefined` and lowers to the runtime test the pattern
+`x: T` already produces. It accepts only the types a pattern can test at runtime:
+primitives, classes, literal types, and object and tuple shapes built from them.
+A `T` that itself admits `undefined` is rejected, since the result could no
+longer tell a failed check from a value that passed it.
+
+This keeps one fallback operator per failure channel:
+
+| Failure | Detected by | Fallback |
+|---|---|---|
+| The value is `null` or `undefined` | the value | `??` |
+| The value fails a type test | `as? T` | `??` |
+| Evaluation raises | the throws sink | `catch` |
+
+`as?` is a separate proposal. It is listed here to show that `catch` does not need
+to grow a type-check mode.
+
+### `Result`
+
+The planned `Result<T, E>` represents failure as a value, not as a raise, so
+`catch` does not apply to it. `catch` gives a one-line conversion in each
+direction:
+
+```esc
+val r = Result.Ok(parse(s)) catch e => Result.Err(e)
+```
+
+## Implementation plan
+
+1. Parser. Lex `catch` after a complete expression as an infix keyword at the
+   lowest binary precedence, right-associative, with the `ident =>` binding form.
+   Add `CatchExpr` to [internal/ast/](../../internal/ast/) with visitor support,
+   and print it in [internal/printer/](../../internal/printer/) with parentheses
+   wherever precedence needs them. Snapshot tests cover chains, precedence
+   against `??`, `||` and `+`, `await`, and assignment.
+2. Solver. Factor the sink install and restore out of `inferTryCatch` and check
+   `CatchExpr` with it. Add the no-raise-site error and the unawaited-promise
+   warning. Tests in a new `internal/solver/infer_catch_expr_test.go` assert the
+   result type, that known throws do not reach the enclosing clause, that the
+   fallback's throws do, and that a move in the left operand blocks a use in the
+   fallback.
+3. Codegen. Lower `CatchExpr` beside `TryCatchExpr` in
+   [internal/codegen/builder.go](../../internal/codegen/builder.go) with the
+   source-node mapping above. Fixtures cover a chain, a binding, a fallback that
+   throws, the argument-order case `f(g(), a() catch 0)`, and the source map for
+   each.
+4. Docs. Add a section to
+   [docs/06_error_handling.md](../../docs/06_error_handling.md) and replace the
+   description of `try`/`catch` as heavy for a single call.
+
+## Open questions
+
+- Should the no-raise-site case be an error or a warning? A `try` with no arms is
+  an error, but that `try` cannot do anything, whereas a needless fallback still
+  runs correctly.
+- When throwing is restricted to `Error` subclasses, the binding's type becomes
+  `Error` for Escalier code. Should the binding follow the same setting that
+  decides this for `try`?
+- Should `catch` also accept a `finally` block, or is the block form the place for
+  cleanup?
