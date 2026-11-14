@@ -356,10 +356,10 @@ func valueDefaultsField(p ast.Pat) bool {
 	return ok && ident.Default != nil
 }
 
-// appendBind adds what a sub-pattern contributes at the projection step reaches. A
-// wildcard binds nothing and needs no test, so it adds nothing at all. An identifier
-// binds the projection. Any other sub-pattern is kept whole as a nameless bind, which
-// binder.wrap turns into a split over that projection.
+// appendBind adds what a sub-pattern contributes at the projection step reaches. An
+// identifier binds the projection. Any other sub-pattern, a wildcard included, is kept
+// whole as a nameless bind. binder.wrap turns that bind into a split over the projection
+// when the sub-pattern tests something, and keeps it as a bind when it tests nothing.
 func appendBind(binds []bindSpec, p ast.Pat, parent *Scrutinee, step Step, origin Origin) []bindSpec {
 	if p == nil {
 		return binds

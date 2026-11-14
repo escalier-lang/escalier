@@ -128,6 +128,27 @@ func TestNormalizeGuardFallsToTheTail(t *testing.T) {
 	require.Same(t, split.Default, guard.Default)
 }
 
+// A named catch-all binds the scrutinee, and the guard and the split still reach the
+// same bind rather than two copies of it.
+func TestNormalizeGuardFallsToANamedTail(t *testing.T) {
+	core := coreMatch(
+		ident("p"),
+		matchCase(objPat("x", "y"), greaterThan(), ident("x"), span(45, 70)),
+		matchCase(identPat("other"), nil, num(0), span(85, 100)),
+	)
+
+	norm := Normalize(core)
+	snaps.MatchInlineSnapshot(t, Print(norm, DefaultPrintOptions()), snaps.Inline(`split p {
+  {x, y} => bind x = p.x, y = p.y; guard (x > y) {
+    leaf x
+  } default bind other = p; leaf 0
+} default bind other = p; leaf 0`))
+
+	split := norm.(*NormSplit)
+	guard := split.Branches[0].Cont.(*NormBind).Cont.(*NormBind).Cont.(*NormGuard)
+	require.Same(t, split.Default, guard.Default)
+}
+
 // An unguarded catch-all arm always runs, so it becomes the tail and every arm after it
 // is unreachable. The split stays, because it is what names the scrutinee.
 func TestNormalizeDropsArmsAfterACatchAll(t *testing.T) {
