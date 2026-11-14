@@ -102,39 +102,39 @@ func TestInferThrowsFromBodyUnderAWildcardClause(t *testing.T) {
 	runThrowsCases(t, []throwsCase{
 		{
 			name: "SingleThrow",
-			src:  `fn f() throws _ { throw "boom" }`,
+			src:  `fn f() -> never throws _ { throw "boom" }`,
 			want: `fn () -> never throws "boom"`,
 		},
 		{
 			// Two throws on different paths union, the same join the return points take.
 			name: "ThrowsOnBothBranches",
-			src:  `fn f(c: boolean) throws _ { if c { throw "a" } else { throw 5 } }`,
+			src:  `fn f(c: boolean) -> never throws _ { if c { throw "a" } else { throw 5 } }`,
 			want: `fn (c: boolean) -> never throws "a" | 5`,
 		},
 		{
 			// The `else` branch diverges, so it drops out of the value union and only the
 			// `then` branch reaches the return.
 			name: "ThrowOnOnePathOnly",
-			src:  `fn f(c: boolean) throws _ { if c { return 1 } else { throw "x" } }`,
+			src:  `fn f(c: boolean) -> 1 throws _ { if c { return 1 } else { throw "x" } }`,
 			want: `fn (c: boolean) -> 1 throws "x"`,
 		},
 		{
 			// `throw` is `never`, so it composes where a value is expected and contributes
 			// nothing to the union of the branches.
 			name: "ThrowInValuePosition",
-			src:  `fn f(c: boolean) throws _ { return if c { 1 } else { throw "x" } }`,
+			src:  `fn f(c: boolean) -> 1 throws _ { return if c { 1 } else { throw "x" } }`,
 			want: `fn (c: boolean) -> 1 throws "x"`,
 		},
 		{
 			// A body with no exceptional exit renders no clause at all, clause or no.
 			name: "NoThrowRendersNoClause",
-			src:  `fn f() { return 1 }`,
+			src:  `fn f() -> 1 { return 1 }`,
 			want: `fn () -> 1`,
 		},
 		{
 			// A wildcard clause nothing reached is still no clause.
 			name: "UnreachedWildcardRendersNoClause",
-			src:  `fn f() throws _ { return 1 }`,
+			src:  `fn f() -> 1 throws _ { return 1 }`,
 			want: `fn () -> 1`,
 		},
 		{
@@ -142,7 +142,7 @@ func TestInferThrowsFromBodyUnderAWildcardClause(t *testing.T) {
 			// the enclosing `f` needs no clause of its own.
 			name: "NestedFunctionThrowsDoNotLeak",
 			src: `
-				fn f() {
+				fn f() -> 1 {
 					val g = fn () throws _ { throw "inner" }
 					return 1
 				}
@@ -158,7 +158,7 @@ func TestInferThrowsClause(t *testing.T) {
 	runThrowsCases(t, []throwsCase{
 		{
 			name: "ClauseWidensTheThrownLiteral",
-			src:  `fn f() throws string { throw "boom" }`,
+			src:  `fn f() -> never throws string { throw "boom" }`,
 			want: "fn () -> never throws string",
 		},
 	})
@@ -178,8 +178,8 @@ func TestInferThrowsPropagateThroughCalls(t *testing.T) {
 		{
 			name: "CallerInheritsCalleeThrows",
 			src: `
-				fn f() throws string { throw "boom" }
-				fn g() throws _ { f() }
+				fn f() -> never throws string { throw "boom" }
+				fn g() -> undefined throws _ { f() }
 			`,
 			binding: "g",
 			want:    "fn () -> undefined throws string",
@@ -188,23 +188,23 @@ func TestInferThrowsPropagateThroughCalls(t *testing.T) {
 			name: "CallToNonThrowingCalleeAddsNothing",
 			src: `
 				fn f() -> number { return 1 }
-				fn g() { return f() }
+				fn g() -> number { return f() }
 			`,
 			binding: "g",
 			want:    "fn () -> number",
 		},
 		{
 			name:    "CallThroughAParameter",
-			src:     `fn f(cb: fn() -> number throws string) throws _ { return cb() }`,
+			src:     `fn f(cb: fn() -> number throws string) -> number throws _ { return cb() }`,
 			binding: "f",
 			want:    "fn (cb: fn () -> number throws string) -> number throws string",
 		},
 		{
 			name: "ThrowsPropagateThroughACallChain",
 			src: `
-				fn a() throws string { throw "boom" }
-				fn b() throws _ { a() }
-				fn c() throws _ { b() }
+				fn a() -> never throws string { throw "boom" }
+				fn b() -> undefined throws _ { a() }
+				fn c() -> undefined throws _ { b() }
 			`,
 			binding: "c",
 			want:    "fn () -> undefined throws string",
@@ -214,8 +214,8 @@ func TestInferThrowsPropagateThroughCalls(t *testing.T) {
 			// nothing.
 			name: "ClosureKeepsItsOwnThrows",
 			src: `
-				fn a() throws string { throw "boom" }
-				fn outer() {
+				fn a() -> never throws string { throw "boom" }
+				fn outer() -> fn () -> undefined throws string {
 					val inner = fn () throws _ { a() }
 					return inner
 				}
@@ -227,7 +227,7 @@ func TestInferThrowsPropagateThroughCalls(t *testing.T) {
 			name: "BodylessDeclareFnDeclaresThrows",
 			src: `
 				declare fn a() -> number throws string
-				fn f() throws _ { return a() }
+				fn f() -> number throws _ { return a() }
 			`,
 			want: "fn () -> number throws string",
 		},
@@ -239,8 +239,8 @@ func TestInferThrowsPropagateThroughCalls(t *testing.T) {
 			// directions. The cycle used to render as `throws μX0.(string | X0)`.
 			name: "SinkMintedInAValInitializerStaysAtTheBodyLevel",
 			src: `
-				fn a() throws string { throw "boom" }
-				fn f() throws _ {
+				fn a() -> never throws string { throw "boom" }
+				fn f() -> never throws _ {
 					val x = a()
 					a()
 					return x
@@ -268,8 +268,8 @@ func TestInferThrowsThroughOverloadResolution(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn a(x: number) -> never throws string { throw "boom" }
 		fn a(x: string) -> string { return x }
-		fn callsThrowingArm() throws _ { return a(1) }
-		fn callsQuietArm() { return a("s") }
+		fn callsThrowingArm() -> never throws _ { return a(1) }
+		fn callsQuietArm() -> string { return a("s") }
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn () -> never throws string", values["callsThrowingArm"])
@@ -290,7 +290,7 @@ func TestInferThrowsSubtyping(t *testing.T) {
 		{
 			name: "NarrowerThrowsSatisfiesWider",
 			src: `
-				fn narrow() throws string { throw "boom" }
+				fn narrow() -> never throws string { throw "boom" }
 				val f: fn() -> never throws string | number = narrow
 			`,
 			want: "fn () -> never throws string | number",
@@ -330,7 +330,7 @@ func TestInferThrowsPolymorphism(t *testing.T) {
 			name: "CallBindsTheThrowsParameter",
 			src: `
 				fn f<E>(g: fn() -> number throws E) -> number throws E { return g() }
-				fn h() throws _ { return f(fn () -> never throws string { throw "x" }) }
+				fn h() -> number throws _ { return f(fn () -> never throws string { throw "x" }) }
 			`,
 			binding: "h",
 			want:    "fn () -> number throws string",
@@ -363,7 +363,7 @@ func TestInferThrowsOnClassMembers(t *testing.T) {
 					constructor(&mut self, text: string) { self.text = text },
 					parse(&self) -> never throws string { throw "bad input" },
 				}
-				fn f(p: Parser) throws _ { return p.parse() }
+				fn f(p: Parser) -> never throws _ { return p.parse() }
 			`,
 			want: "fn (p: Parser) -> never throws string",
 		},
@@ -374,7 +374,7 @@ func TestInferThrowsOnClassMembers(t *testing.T) {
 					n: number,
 					constructor(&mut self, n: number) throws string { throw "bad count" },
 				}
-				fn f(n: number) throws _ { return Counter(n) }
+				fn f(n: number) -> Counter throws _ { return Counter(n) }
 			`,
 			want: "fn (n: number) -> Counter throws string",
 		},
@@ -466,8 +466,8 @@ func TestInferThrowsOverDeclaredSignature(t *testing.T) {
 			// A clause satisfied by a call rather than by a `throw` still counts as used.
 			name: "ClauseUsedByACall",
 			src: `
-				fn a() throws string { throw "boom" }
-				fn f() throws string { a() }
+				fn a() -> never throws string { throw "boom" }
+				fn f() -> undefined throws string { a() }
 			`,
 			want: "fn () -> undefined throws string",
 		},
@@ -571,8 +571,8 @@ func TestInferThrowsFromAnAccessor(t *testing.T) {
 			// until the method is called, so a clause-less reader is fine.
 			name: "MethodValueReadIsNotAnExceptionalExit",
 			src: `
-				class C { m(&self) throws string { throw "boom" } }
-				fn f(c: C) { val g = c.m }
+				class C { m(&self) -> never throws string { throw "boom" } }
+				fn f(c: C) -> undefined { val g = c.m }
 			`,
 			want: "fn (c: C) -> undefined",
 		},
@@ -581,7 +581,7 @@ func TestInferThrowsFromAnAccessor(t *testing.T) {
 			// no clause and its readers need none either.
 			name: "GetterHandlingItsCalleeInternallyRaisesNothing",
 			src: `
-				fn a() throws string { throw "boom" }
+				fn a() -> never throws string { throw "boom" }
 				class C { get x(&self) -> number { return try { a() } catch { e => 0 } } }
 				fn f(c: C) -> number { return c.x }
 			`,
@@ -868,9 +868,9 @@ func TestInferThrowsThroughASetterWrite(t *testing.T) {
 					v: number,
 					bad: boolean,
 					set x(&mut self, n: number) throws string { if self.bad { throw "boom" } self.v = n },
-					m(&mut self) throws _ { self.x = 5 },
+					m(&mut self) -> undefined throws _ { self.x = 5 },
 				}
-				fn f(mut c: C) throws _ { c.m() }
+				fn f(mut c: C) -> undefined throws _ { c.m() }
 			`,
 			want: "fn (c: C) -> undefined throws string",
 		},
@@ -880,7 +880,7 @@ func TestInferThrowsThroughASetterWrite(t *testing.T) {
 			name: "NonThrowingSetterWriteAddsNothing",
 			src: `
 				class C { v: number, set x(&mut self, n: number) { self.v = n } }
-				fn f(mut c: C) { c.x = 5 }
+				fn f(mut c: C) -> undefined { c.x = 5 }
 			`,
 			want: "fn (c: C) -> undefined",
 		},
@@ -889,7 +889,7 @@ func TestInferThrowsThroughASetterWrite(t *testing.T) {
 			name: "PlainFieldWriteIsNotAnExceptionalExit",
 			src: `
 				class C { v: number }
-				fn f(mut c: C) { c.v = 5 }
+				fn f(mut c: C) -> undefined { c.v = 5 }
 			`,
 			want: "fn (c: C) -> undefined",
 		},

@@ -294,7 +294,7 @@ func TestInferTupleSpreadMessageMatchesTheValueForm(t *testing.T) {
 	_, _, annErrs := inferSource(t, "type Bad = [...number, string]")
 	require.Len(t, annErrs, 1)
 
-	_, _, valErrs := inferSource(t, "fn f(n: number) { return [...n, 1] }")
+	_, _, valErrs := inferSource(t, "fn f(n: number) -> [1] { return [...n, 1] }")
 	require.Len(t, valErrs, 1)
 
 	require.Equal(t, "cannot spread number into a tuple", annErrs[0].Message())

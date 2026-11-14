@@ -25,7 +25,7 @@ import (
 func TestInferErrorBindingFlowsIntoCallNoCascade(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn id(x: number) -> number { return x }
-		fn f() {
+		fn f() -> number {
 			var a = missing
 			return id(a)
 		}

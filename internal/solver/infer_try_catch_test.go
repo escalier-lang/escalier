@@ -15,14 +15,14 @@ func TestInferTryCatchHandlesWithACatchAll(t *testing.T) {
 	runThrowsCases(t, []throwsCase{
 		{
 			name: "CatchAllLetsAClauselessFunctionThrow",
-			src:  `fn f() { try { throw "boom" } catch { e => 0 } }`,
+			src:  `fn f() -> undefined { try { throw "boom" } catch { e => 0 } }`,
 			want: "fn () -> undefined",
 		},
 		{
 			name: "CatchAllLetsAClauselessFunctionCallAThrowingCallee",
 			src: `
-				fn a() throws string { throw "boom" }
-				fn f() { try { a() } catch { e => 0 } }
+				fn a() -> never throws string { throw "boom" }
+				fn f() -> undefined { try { a() } catch { e => 0 } }
 			`,
 			want: "fn () -> undefined",
 		},
@@ -30,7 +30,7 @@ func TestInferTryCatchHandlesWithACatchAll(t *testing.T) {
 			// A catch arm body is walked against the enclosing sink, not the nested one, so
 			// an exception it raises propagates the way any other exit does.
 			name: "AnArmBodyRaisesIntoTheEnclosingClause",
-			src:  `fn f() throws _ { try { throw "boom" } catch { e => throw 5 } }`,
+			src:  `fn f() -> never throws _ { try { throw "boom" } catch { e => throw 5 } }`,
 			want: "fn () -> never throws 5",
 		},
 	})
@@ -54,13 +54,13 @@ func TestInferTryCatchBindsTheKnownThrows(t *testing.T) {
 			// The arm returns the caught binding, so the function's return type is the caught
 			// type.
 			name: "CaughtBindingIsTheThrownValue",
-			src:  `fn f() { try { throw "boom" } catch { e => { return e } } }`,
+			src:  `fn f() -> "boom" { try { throw "boom" } catch { e => { return e } } }`,
 			want: `fn () -> "boom"`,
 		},
 		{
 			name: "CaughtBindingIsTheUnionOfTheThrownValues",
 			src: `
-				fn f(c: boolean) {
+				fn f(c: boolean) -> "boom" | 5 {
 					try {
 						if c { throw "boom" } else { throw 5 }
 					} catch {
@@ -104,14 +104,14 @@ func TestInferTryCatchBindsTheKnownThrows(t *testing.T) {
 			// A value outside the known throws can still reach the `catch` at runtime, so an
 			// arm naming one is allowed.
 			name: "AnArmMayNameAValueOutsideTheKnownThrows",
-			src:  `fn f() { try { throw "boom" } catch { 5 => 0, _ => 1 } }`,
+			src:  `fn f() -> undefined { try { throw "boom" } catch { 5 => 0, _ => 1 } }`,
 			want: "fn () -> undefined",
 		},
 		{
 			// A catch-all below arms that cover every known thrown value is allowed. It catches
 			// the values no signature named.
 			name: "ACatchAllBelowCoveringArmsIsAllowed",
-			src:  `fn f() { try { throw "boom" } catch { "boom" => 0, _ => 1 } }`,
+			src:  `fn f() -> undefined { try { throw "boom" } catch { "boom" => 0, _ => 1 } }`,
 			want: "fn () -> undefined",
 		},
 	})
@@ -130,7 +130,7 @@ func TestInferTryCatchRethrowsWhatTheArmsLeave(t *testing.T) {
 		{
 			name: "UncoveredMemberReachesTheClause",
 			src: `
-				fn f(c: boolean) throws _ {
+				fn f(c: boolean) -> undefined throws _ {
 					try {
 						if c { throw "boom" } else { throw 5 }
 					} catch {
@@ -145,14 +145,14 @@ func TestInferTryCatchRethrowsWhatTheArmsLeave(t *testing.T) {
 			// of its own is legal. This is the point of covering the members a callee
 			// declares: the handling is what removes the obligation.
 			name: "CoveringEveryKnownMemberLeavesNoClause",
-			src:  `fn f() { try { throw "boom" } catch { "boom" => 0 } }`,
+			src:  `fn f() -> undefined { try { throw "boom" } catch { "boom" => 0 } }`,
 			want: "fn () -> undefined",
 		},
 		{
 			// A guarded arm can always fail its guard, so it covers nothing and its member
 			// is rethrown.
 			name: "AGuardedArmCoversNothing",
-			src:  `fn f() throws _ { try { throw "boom" } catch { "boom" if true => 0 } }`,
+			src:  `fn f() -> undefined throws _ { try { throw "boom" } catch { "boom" if true => 0 } }`,
 			want: `fn () -> undefined throws "boom"`,
 		},
 	})
@@ -162,18 +162,18 @@ func TestInferTryCatchRethrowsWhatTheArmsLeave(t *testing.T) {
 			// land. The blame is the try/catch, not the `throw "boom"` inside the block:
 			// that `throw` IS caught, and what fails is the re-raise past the arms.
 			name: "RethrowNeedsAClause",
-			src:  `fn f(c: boolean) { try { if c { throw "boom" } else { throw 5 } } catch { 5 => 0 } }`,
+			src:  `fn f(c: boolean) -> undefined { try { if c { throw "boom" } else { throw 5 } } catch { 5 => 0 } }`,
 			wantErrs: []string{
-				"1:20-1:81: the catch arms leave \"boom\" uncovered, so it is rethrown, and the enclosing `throws never` does not admit it. Cover it with a catch arm, or widen the enclosing clause",
+				"1:33-1:94: the catch arms leave \"boom\" uncovered, so it is rethrown, and the enclosing `throws never` does not admit it. Cover it with a catch arm, or widen the enclosing clause",
 			},
 		},
 		{
 			// A clause narrower than what escapes fails the same way. Only the uncovered
 			// member is named, so the diagnostic points at the one type to account for.
 			name: "RethrowMustSatisfyANarrowClause",
-			src:  `fn f(c: boolean) throws string { try { if c { throw "a" } else { throw 5 } } catch { "a" => 0 } }`,
+			src:  `fn f(c: boolean) -> undefined throws string { try { if c { throw "a" } else { throw 5 } } catch { "a" => 0 } }`,
 			wantErrs: []string{
-				"1:34-1:94: the catch arms leave 5 uncovered, so it is rethrown, and the enclosing `throws string` does not admit it. Cover it with a catch arm, or widen the enclosing clause",
+				"1:47-1:107: the catch arms leave 5 uncovered, so it is rethrown, and the enclosing `throws string` does not admit it. Cover it with a catch arm, or widen the enclosing clause",
 			},
 		},
 	})
@@ -291,7 +291,7 @@ func TestInferTryCatchNests(t *testing.T) {
 		{
 			name: "InnerRemainderReachesTheOuterArms",
 			src: `
-				fn f(c: boolean) {
+				fn f(c: boolean) -> "boom" {
 					try {
 						try {
 							if c { throw "boom" } else { throw 5 }
@@ -310,7 +310,7 @@ func TestInferTryCatchNests(t *testing.T) {
 			// still needs no clause.
 			name: "AnOuterCatchAllAbsorbsTheInnerRemainder",
 			src: `
-				fn f(c: boolean) {
+				fn f(c: boolean) -> undefined {
 					try {
 						try { if c { throw "boom" } else { throw 5 } } catch { 5 => 0 }
 					} catch {
@@ -325,7 +325,7 @@ func TestInferTryCatchNests(t *testing.T) {
 			// never collects what the inner function raises.
 			name: "ANestedFunctionsThrowsAreNotCaught",
 			src: `
-				fn f() {
+				fn f() -> undefined {
 					try {
 						val g = fn () throws _ { throw "inner" }
 						val y = 1
@@ -342,8 +342,8 @@ func TestInferTryCatchNests(t *testing.T) {
 			// a later exceptional exit, and the resulting cycle would render as a μ-knot.
 			name: "SinkInAValInitializerStaysAtTheBodyLevel",
 			src: `
-				fn a() throws string { throw "boom" }
-				fn f() throws _ {
+				fn a() -> never throws string { throw "boom" }
+				fn f() -> 0 throws _ {
 					val x = try { a() } catch { "x" => 0 }
 					return x
 				}
@@ -363,8 +363,8 @@ func TestInferTryCatchOverClassErrors(t *testing.T) {
 			src: `
 				class FooError { msg: string, constructor(&mut self, msg: string) { self.msg = msg } }
 				class BarError { msg: string, constructor(&mut self, msg: string) { self.msg = msg } }
-				fn a() throws FooError | BarError { throw FooError("x") }
-				fn f() throws _ { try { a() } catch { FooError{msg} => msg } }
+				fn a() -> never throws FooError | BarError { throw FooError("x") }
+				fn f() -> undefined throws _ { try { a() } catch { FooError{msg} => msg } }
 			`,
 			want: "fn () -> undefined throws BarError",
 		},
@@ -375,8 +375,8 @@ func TestInferTryCatchOverClassErrors(t *testing.T) {
 			src: `
 				class FooError { msg: string, constructor(&mut self, msg: string) { self.msg = msg } }
 				class BarError { code: number, constructor(&mut self, code: number) { self.code = code } }
-				fn a() throws FooError | BarError { throw FooError("x") }
-				fn f() { try { a() } catch { FooError{msg} => { return msg }, e => { return 0 } } }
+				fn a() -> never throws FooError | BarError { throw FooError("x") }
+				fn f() -> string | 0 { try { a() } catch { FooError{msg} => { return msg }, e => { return 0 } } }
 			`,
 			want: "fn () -> string | 0",
 		},
@@ -494,13 +494,13 @@ func TestInferTryCatchValue(t *testing.T) {
 	runThrowsCases(t, []throwsCase{
 		{
 			name: "ValueJoinsTheBlockAndTheArms",
-			src:  `fn f() { return try { 1 } catch { e => 2 } }`,
+			src:  `fn f() -> 1 | 2 { return try { 1 } catch { e => 2 } }`,
 			want: "fn () -> 1 | 2",
 		},
 		{
 			// A diverging arm contributes nothing, so only the block's value survives.
 			name: "ADivergingArmDropsOutOfTheJoin",
-			src:  `fn f() throws _ { return try { 1 } catch { e => throw 5 } }`,
+			src:  `fn f() -> 1 throws _ { return try { 1 } catch { e => throw 5 } }`,
 			want: "fn () -> 1 throws 5",
 		},
 		{
@@ -516,10 +516,10 @@ func TestInferTryCatchValue(t *testing.T) {
 // still fires. The nested sink is what makes that visible: every exceptional exit the body
 // has was consumed inside the `try`.
 func TestInferTryCatchLeavesAnUnusedClauseUnused(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f() throws string { try { throw "boom" } catch { e => 0 } }`)
+	values, _, errs := inferSource(t, `fn f() -> undefined throws string { try { throw "boom" } catch { e => 0 } }`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
-		"1:15-1:21: the body raises nothing, so the declared `throws string` is unreachable; drop the clause",
+		"1:28-1:34: the body raises nothing, so the declared `throws string` is unreachable; drop the clause",
 		msgWithSpan(t, errs[0]))
 	require.Equal(t, "fn () -> undefined throws string", values["f"])
 }
@@ -535,8 +535,8 @@ func TestInferTryCatchExpandsAliasedErrorTypes(t *testing.T) {
 			// The control: the same union written inline, which never needed expanding.
 			name: "InlineUnionIsCovered",
 			src: `
-				fn a() throws "a" | "b" { throw "a" }
-				fn f() { try { a() } catch { "a" => 0, "b" => 1 } }
+				fn a() -> never throws "a" | "b" { throw "a" }
+				fn f() -> undefined { try { a() } catch { "a" => 0, "b" => 1 } }
 			`,
 			want: "fn () -> undefined",
 		},
@@ -545,8 +545,8 @@ func TestInferTryCatchExpandsAliasedErrorTypes(t *testing.T) {
 			name: "AliasedUnionIsCovered",
 			src: `
 				type Err = "a" | "b"
-				fn a() throws Err { throw "a" }
-				fn f() { try { a() } catch { "a" => 0, "b" => 1 } }
+				fn a() -> never throws Err { throw "a" }
+				fn f() -> undefined { try { a() } catch { "a" => 0, "b" => 1 } }
 			`,
 			want: "fn () -> undefined",
 		},
@@ -556,8 +556,8 @@ func TestInferTryCatchExpandsAliasedErrorTypes(t *testing.T) {
 			name: "EnumVariantsAreCovered",
 			src: `
 				enum Color { Red, Green }
-				fn a() throws Color { throw Color.Red() }
-				fn f() { try { a() } catch { Color.Red => 0, Color.Green => 1 } }
+				fn a() -> never throws Color { throw Color.Red() }
+				fn f() -> undefined { try { a() } catch { Color.Red => 0, Color.Green => 1 } }
 			`,
 			want: "fn () -> undefined",
 		},
@@ -568,8 +568,8 @@ func TestInferTryCatchExpandsAliasedErrorTypes(t *testing.T) {
 			src: `
 				type Inner = "a" | "b"
 				type Outer = Inner | "c"
-				fn a() throws Outer { throw "a" }
-				fn f() { try { a() } catch { "a" => 0, "b" => 1, "c" => 2 } }
+				fn a() -> never throws Outer { throw "a" }
+				fn f() -> undefined { try { a() } catch { "a" => 0, "b" => 1, "c" => 2 } }
 			`,
 			want: "fn () -> undefined",
 		},
@@ -582,8 +582,8 @@ func TestInferTryCatchExpandsAliasedErrorTypes(t *testing.T) {
 			src: `
 				type Inner = "a" | "b"
 				type Outer = Inner | "c"
-				fn a() throws Outer { throw "a" }
-				fn f() throws _ { try { a() } catch { "a" => 0, "c" => 2 } }
+				fn a() -> never throws Outer { throw "a" }
+				fn f() -> undefined throws _ { try { a() } catch { "a" => 0, "c" => 2 } }
 			`,
 			want: `fn () -> undefined throws "b"`,
 		},
@@ -612,7 +612,7 @@ func TestInferTryCatchArmNarrowsItsScrutinee(t *testing.T) {
 		{
 			name: "TuplePatternNarrowsToTheMemberItFits",
 			src: `
-				fn f(b: boolean) {
+				fn f(b: boolean) -> 1 | 0 {
 					return try {
 						if b { throw [1, 2] } else { throw ["a"] }
 					} catch {
@@ -632,19 +632,19 @@ func TestInferTryCatchArmTestLeavesTheCaughtValue(t *testing.T) {
 	runThrowsCases(t, []throwsCase{
 		{
 			name: "LiteralArmAboveACatchAll",
-			src:  `fn f() { return try { throw "x" } catch { 5 => 0, e => e } }`,
+			src:  `fn f() -> 0 | "x" { return try { throw "x" } catch { 5 => 0, e => e } }`,
 			want: `fn () -> 0 | "x"`,
 		},
 		{
 			name: "LiteralArmBelowACatchAll",
-			src:  `fn f() { return try { throw "x" } catch { e => e, 5 => 0 } }`,
+			src:  `fn f() -> "x" { return try { throw "x" } catch { e => e, 5 => 0 } }`,
 			want: `fn () -> "x"`,
 		},
 		{
 			name: "ClassArmAboveACatchAll",
 			src: `
 				class AppError { code: number, constructor(&mut self) { self.code = 0 } }
-				fn f() { return try { throw "x" } catch { AppError{code} => code, e => e } }
+				fn f() -> number | "x" { return try { throw "x" } catch { AppError{code} => code, e => e } }
 			`,
 			want: `fn () -> number | "x"`,
 		},

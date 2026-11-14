@@ -107,12 +107,12 @@ func TestInferOptionalChain(t *testing.T) {
 		},
 		{
 			name: "MemberOffABorrowOfANullableUnion",
-			src:  "fn read(p: &({b: number} | undefined)) { return p?.b }\nval x = read",
+			src:  "fn read(p: &({b: number} | undefined)) -> number | undefined { return p?.b }\nval x = read",
 			want: "fn (p: &({b: number} | undefined)) -> number | undefined",
 		},
 		{
 			name: "MemberOffAnOptionalParam",
-			src:  "fn read(p: {b: number} | undefined) { return p?.b }\nval x = read(undefined)",
+			src:  "fn read(p: {b: number} | undefined) -> number | undefined { return p?.b }\nval x = read(undefined)",
 			want: "number | undefined",
 		},
 	}
@@ -162,13 +162,13 @@ func TestInferOptionalChainErrors(t *testing.T) {
 			// JavaScript rejects an optional chain as an assignment target, even when the
 			// `?.` is not the last link.
 			name:     "AssignmentThroughAnOptionalLink",
-			src:      "fn write(mut a: {b: {c: number}}) { a?.b.c = 5 }",
-			wantErrs: []string{"1:37-1:43: cannot assign through an optional chain, since `?.` may short-circuit and leave no place to write"},
+			src:      "fn write(mut a: {b: {c: number}}) -> undefined { a?.b.c = 5 }",
+			wantErrs: []string{"1:50-1:56: cannot assign through an optional chain, since `?.` may short-circuit and leave no place to write"},
 		},
 		{
 			name:     "AssignmentThroughAnOptionalIndex",
-			src:      `fn write(mut a: {b: number}) { a?["b"] = 5 }`,
-			wantErrs: []string{"1:32-1:39: cannot assign through an optional chain, since `?.` may short-circuit and leave no place to write"},
+			src:      `fn write(mut a: {b: number}) -> undefined { a?["b"] = 5 }`,
+			wantErrs: []string{"1:45-1:52: cannot assign through an optional chain, since `?.` may short-circuit and leave no place to write"},
 		},
 		{
 			name:     "BorrowOfAnOptionalChain",
@@ -195,12 +195,12 @@ func TestInferOptionalObjectFieldRead(t *testing.T) {
 	}{
 		{
 			name: "OwnedReceiver",
-			src:  "fn read(a: {b?: {c: number}}) { return a.b }",
+			src:  "fn read(a: {b?: {c: number}}) -> {c: number} | undefined { return a.b }",
 			want: "fn (a: {b?: {c: number}}) -> {c: number} | undefined",
 		},
 		{
 			name: "BorrowedReceiver",
-			src:  "fn read(a: &{b?: {c: number}}) { return &a.b }",
+			src:  "fn read(a: &{b?: {c: number}}) -> &{c: number} | undefined { return &a.b }",
 			want: "fn <'a>(a: &'a {b?: {c: number}}) -> &'a {c: number} | undefined",
 		},
 	}

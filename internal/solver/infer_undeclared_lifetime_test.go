@@ -31,7 +31,7 @@ func TestInferUndeclaredLifetimeNoClauseHardError(t *testing.T) {
 // sibling suggested since the miss is likely a typo. 'a is declared and borrowed by p, so
 // it is not unused; only the stray 'b on q is undeclared, and 'a is one edit away.
 func TestInferUndeclaredLifetimeWithClause(t *testing.T) {
-	_, _, errs := inferSource(t, `fn f<'a>(p: &'a {x: number}, q: &'b {x: number}) { return p }`)
+	_, _, errs := inferSource(t, `fn f<'a>(p: &'a {x: number}, q: &'b {x: number}) -> &'a {x: number} { return p }`)
 	require.Equal(t,
 		[]string{"1:34-1:36: lifetime 'b is used but not declared; did you mean 'a?"},
 		messagesWithSpan(t, errs))
@@ -140,7 +140,7 @@ func TestInferUndeclaredLifetimeNestedSeesEnclosingClause(t *testing.T) {
 // A declared binder that no borrow and no bound references is dead weight. `<'a>` is
 // declared but p borrows at a fresh inferred lifetime, so 'a is unused and warns.
 func TestInferUnusedLifetimeParamWarns(t *testing.T) {
-	_, _, errs := inferSource(t, `fn f<'a>(p: &{x: number}) { return p }`)
+	_, _, errs := inferSource(t, `fn f<'a>(p: &{x: number}) -> &{x: number} { return p }`)
 	require.Equal(t,
 		[]string{"1:6-1:8: lifetime parameter 'a is declared but never used"},
 		messagesWithSpan(t, errs))
@@ -167,7 +167,7 @@ func TestInferDuplicateLifetimeParam(t *testing.T) {
 // uses reports the duplicate once and the unused warning once, both blaming the first
 // binder, rather than a warning per repeat.
 func TestInferDuplicateLifetimeParamUnusedReportedOnce(t *testing.T) {
-	_, _, errs := inferSource(t, `fn g<'a, 'a>(p: &{x: number}) { return p }`)
+	_, _, errs := inferSource(t, `fn g<'a, 'a>(p: &{x: number}) -> &{x: number} { return p }`)
 	require.Equal(t,
 		[]string{
 			"1:10-1:12: lifetime parameter 'a is declared more than once",
