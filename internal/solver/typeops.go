@@ -2233,9 +2233,9 @@ func (f *freeVarFinder) ExitType(t soltype.Type, pol soltype.Polarity) soltype.T
 	return t
 }
 
-// operatorEvaluator is the rewriting visitor behind Info.Evaluate. It reduces each
-// operator it reaches, outermost first, since reducing an operator reduces its operands
-// too. The value an operator reduces to can hold operators of its own, such as the
+// operatorEvaluator is a rewriting visitor that replaces each operator it reaches by the
+// type the operator reduces to. It reduces outermost first, since reducing an operator
+// reduces its operands too. The value an operator reduces to can hold operators of its own, such as the
 // object `{y: Point["y"]}` a conditional selects, so the visitor walks that value's
 // children in turn. An operator that stays as written is not walked again.
 //
@@ -2265,8 +2265,8 @@ func (v *operatorEvaluator) ExitType(t soltype.Type, pol soltype.Polarity) solty
 	return t
 }
 
-// isEvaluableOp reports whether t is an operator Info.Evaluate reduces on the way into
-// it: a residual operator, an object carrying a spread or mapped member, or a tuple
+// isEvaluableOp reports whether t is an operator operatorEvaluator reduces on the way
+// into it: a residual operator, an object carrying a spread or mapped member, or a tuple
 // carrying a spread.
 func isEvaluableOp(t soltype.Type) bool {
 	return isResidualOp(t) || objectIsResidual(t) || tupleHasSpread(t)
