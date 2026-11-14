@@ -719,22 +719,31 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 	rep := c.simp.rep(v)
 	retain := rep.Level > c.genLevel && c.simp.mergedOcc[rep.ID].both() && !hasEqualBounds(rep) &&
 		!c.inlined.Contains(rep)
-	// A non-binder var whose class representative is a binder renders under that binder's
-	// display copy, so an artifact reached in a structural position reads as the declared
-	// parameter rather than a second name for the same type.
-	// v's own bounds, or at a negative position the upper bounds of every member of its
-	// class. A member reached once its class is on the path is cut short below, so its
-	// upper bounds are read here, by the first member reached. A call that passes a
-	// parameter to a callee's bounded type parameter records the bound on a member other
-	// than the parameter's own variable.
+	// bs holds the bounds v inlines to. At a negative position it holds the upper bounds of
+	// every member of v's class. A member reached once its class is on the path is cut short
+	// below, so its upper bounds are read here, by the first member reached. A call that passes
+	// a parameter to a callee's bounded type parameter records the bound on a member other than
+	// the parameter's own variable. A var whose class has a display copy from cleanBinderBounds
+	// reads only its own bounds.
+	//
+	// A var whose class representative is a binder renders under that binder or its display
+	// copy, so an artifact reached in a structural position reads as the declared parameter
+	// rather than a second name for the same type. In `fn f<T>({x :: T}) -> T`, the variable
+	// the pattern reads `x` into merges with `T`, and the parameter renders `{x: T}`.
+	// repCarriesBounds is false for a binder that renders as itself, since it shows only its
+	// declared bound. A concrete bound on its class then renders beside it, so
+	// `fn g<T>(t: T, y) -> T { val z: T = y; numOnly(y); return t }` gives `y: T & number`.
 	bs := v.BoundsAt(pol)
+	repCarriesBounds := true
 	if shown := c.displayBinder(rep); shown != rep {
 		rep = shown
 	} else {
 		if pol == soltype.Negative {
 			bs = c.classUpper[rep]
 		}
-		if retain {
+		if c.keep.Contains(rep) {
+			repCarriesBounds = false
+		} else if retain {
 			rep = c.binderFor(rep)
 		}
 	}
@@ -779,8 +788,8 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 	// that is always true here. An upper bound is not copied that way, which is why bs
 	// holds the class's upper bounds at a negative position.
 	for _, b := range bs {
-		// The binder carries every concrete upper bound, so the position needs only its name.
-		if retain && pol == soltype.Negative && concreteMember(b) {
+		// A binder copy that carries the class's concrete upper bounds needs only its name here.
+		if retain && repCarriesBounds && pol == soltype.Negative && concreteMember(b) {
 			continue
 		}
 		parts = append(parts, b.Accept(c, pol))
