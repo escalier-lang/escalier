@@ -1,3 +1,5 @@
+import "std:math"
+
 // The stdlib declares each owned array without `mut`, so a rest
 // parameter reads `...items: Array<T>` and a return reads `Array<T>`.
 // The binding that receives a value decides whether it is mutable.
@@ -18,7 +20,7 @@ export fn concatAll(xs: Array<number>, ys: Array<number>) -> Array<number> {
 }
 
 export fn largest(a: number, b: number) -> number {
-    return Math.max(a, b, 0)
+    return math.max(a, b, 0)
 }
 
 // `Promise.all` takes `values: &mut Iterable<…>`. Its declaration does not say

@@ -1,3 +1,5 @@
+import "std:console"
+
 type Point = {x: number, y: number}
 val p: Point = {x: 5, y: 10}
 val msg = `p = (${p.x}, ${p.y})`

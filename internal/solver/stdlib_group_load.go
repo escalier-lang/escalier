@@ -235,10 +235,10 @@ func sortedGroup(group []string) []string {
 // ModuleSource cannot supply: the closure a module's imports reach, and a
 // reader for the whole closure at once. opts adjusts the run.
 func InferModuleAgainstStdlib(module *ast.Module, dir string, opts Options) *ModuleResult {
-	// Every run loads the ambient packages, so they root the closure beside the
-	// module's own imports. Left out, they would load one at a time and miss the
-	// groups their imports form.
-	roots := set.FromSlice(append(pseudoPackageImports(moduleImports(module)), ambientPackages...)).ToSlice()
+	// A run that imports an npm package loads the globals packages, so they root the
+	// closure beside the module's own imports. Left out, they would load one at a time
+	// and miss the groups their imports form.
+	roots := set.FromSlice(append(pseudoPackageImports(moduleImports(module)), globalsPackages...)).ToSlice()
 	sort.Strings(roots)
 	source := packageSource(dir, opts)
 	groups, err := BuildPackageClosure(dir, roots)
@@ -261,10 +261,10 @@ func InferModuleAgainstStdlib(module *ast.Module, dir string, opts Options) *Mod
 
 // InferScriptAgainstStdlib infers script against the pseudo-packages in dir. It is
 // the script counterpart to InferModuleAgainstStdlib, and the closure grows from the
-// ambient packages and the script's own imports. opts adjusts the run.
+// globals packages and the script's own imports. opts adjusts the run.
 func InferScriptAgainstStdlib(script *ast.Script, dir string, opts Options) (*Scope, *Info, []SolverError) {
 	source := packageSource(dir, opts)
-	roots := set.FromSlice(append(pseudoPackageImports(script.Imports), ambientPackages...)).ToSlice()
+	roots := set.FromSlice(append(pseudoPackageImports(script.Imports), globalsPackages...)).ToSlice()
 	sort.Strings(roots)
 	groups, err := BuildPackageClosure(dir, roots)
 	if err != nil {

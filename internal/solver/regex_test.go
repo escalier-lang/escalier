@@ -295,7 +295,8 @@ func TestInferRegexLiteral(t *testing.T) {
 		{
 			name: "a method reads through RegExp",
 			src: `
-				val mut re: RegExp = /ab+c/
+				import "std:regexp"
+				val mut re: regexp.RegExp = /ab+c/
 				val ok = re.test("abbc")
 			`,
 			want: map[string]string{"ok": "boolean"},

@@ -28,9 +28,11 @@ func TestAmbientCheckerMatchesFreshLoad(t *testing.T) {
 		name string
 		src  string
 	}{
-		{"ambient values", `
-			val n = parseInt("42")
-			val r = Math.max(1, 2)
+		{"imported values", `
+			import "std:number"
+			import "std:math"
+			val n = number.parseInt("42")
+			val r = math.max(1, 2)
 		`},
 		{"generic stdlib method", `
 			val xs: Array<number> = [1, 2, 3]
@@ -41,7 +43,8 @@ func TestAmbientCheckerMatchesFreshLoad(t *testing.T) {
 			val p = math.PI
 		`},
 		{"diagnostic", `
-			val s: string = Math.max(1, 2)
+			import "std:math"
+			val s: string = math.max(1, 2)
 		`},
 	}
 	for _, tt := range cases {
@@ -73,8 +76,8 @@ func TestAmbientCheckerForksAreIndependent(t *testing.T) {
 }
 
 // TestAmbientCheckerReloadsEditedPrelude asserts that editing the prelude in place
-// misses the cache. The prelude loads outside the ambient packages' group, so the
-// closure alone does not name it.
+// misses the cache. The prelude loads outside any group, so the closure alone does not
+// name it.
 func TestAmbientCheckerReloadsEditedPrelude(t *testing.T) {
 	dir := seedStdlib(t, withPreludeClasses(map[string]string{
 		"std/prelude.esc": "export declare val marker: number\n",
@@ -91,20 +94,34 @@ func TestAmbientCheckerReloadsEditedPrelude(t *testing.T) {
 	require.Equal(t, "string", values["m"])
 }
 
-// TestAmbientCheckerReportsLoadErrorAtImport asserts that an ambient package which
-// loads with a diagnostic reports it at the import naming it, on a cached run as on
-// a fresh one, and with no span when nothing imports it.
+// TestAmbientCheckerReportsLoadErrorAtImport covers a package that loads with a diagnostic,
+// on a cached run as on a fresh one. An import reports it at the import's span. Without an
+// import, `std:math` does not load and reports nothing, while `std:number`, which every run
+// loads for a number's members, reports it with no span.
 func TestAmbientCheckerReportsLoadErrorAtImport(t *testing.T) {
-	inferDir := seedStdlib(t, withPreludeClasses(map[string]string{
-		"std/math.esc": `export val PI: number = "pi"`,
-	}))
-	inferErr := `package "std:math" (` + filepath.Join(inferDir, "std", "math.esc") +
-		`) has 1 error(s):` + "\n" + `  cannot constrain "pi" <: number`
-	jsDir := seedStdlib(t, withJsPreludeClasses(map[string]string{
-		"std/math.esc": `export declare val PI: number`,
-	}))
-	jsErr := `exported value "PI" in pseudo-package file ` + filepath.Join(jsDir, "std", "math.esc") +
-		" is missing an `@js(\"...\")` decorator"
+	type broken struct {
+		dir      string
+		inferErr string
+		jsDir    string
+		jsErr    string
+	}
+	seed := func(name string) broken {
+		inferDir := seedStdlib(t, withPreludeClasses(map[string]string{
+			"std/" + name + ".esc": `export val PI: number = "pi"`,
+		}))
+		jsDir := seedStdlib(t, withJsPreludeClasses(map[string]string{
+			"std/" + name + ".esc": `export declare val PI: number`,
+		}))
+		return broken{
+			dir: inferDir,
+			inferErr: `package "std:` + name + `" (` + filepath.Join(inferDir, "std", name+".esc") +
+				`) has 1 error(s):` + "\n" + `  cannot constrain "pi" <: number`,
+			jsDir: jsDir,
+			jsErr: `exported value "PI" in pseudo-package file ` + filepath.Join(jsDir, "std", name+".esc") +
+				" is missing an `@js(\"...\")` decorator",
+		}
+	}
+	math, number := seed("math"), seed("number")
 	jsOpts := Options{CheckJsDecorators: true}
 
 	cases := []struct {
@@ -116,29 +133,53 @@ func TestAmbientCheckerReportsLoadErrorAtImport(t *testing.T) {
 	}{
 		{
 			name: "inference error imported",
-			dir:  inferDir,
+			dir:  math.dir,
 			src:  "import \"std:math\"\nval p = math.PI",
-			want: []string{"1:1-1:18: " + inferErr},
+			want: []string{"1:1-1:18: " + math.inferErr},
 		},
 		{
 			name: "inference error not imported",
-			dir:  inferDir,
+			dir:  math.dir,
 			src:  `val p = 1`,
-			want: []string{"1:1-1:1: " + inferErr},
 		},
 		{
 			name: "loader rule imported",
-			dir:  jsDir,
+			dir:  math.jsDir,
 			opts: jsOpts,
 			src:  "import \"std:math\"\nval p = math.PI",
-			want: []string{"1:1-1:18: " + jsErr},
+			want: []string{"1:1-1:18: " + math.jsErr},
 		},
 		{
 			name: "loader rule not imported",
-			dir:  jsDir,
+			dir:  math.jsDir,
 			opts: jsOpts,
 			src:  `val p = 1`,
-			want: []string{"1:1-1:1: " + jsErr},
+		},
+		{
+			name: "literal class package inference error imported",
+			dir:  number.dir,
+			src:  "import \"std:number\"\nval p = number.PI",
+			want: []string{"1:1-1:20: " + number.inferErr},
+		},
+		{
+			name: "literal class package inference error not imported",
+			dir:  number.dir,
+			src:  `val p = 1`,
+			want: []string{"1:1-1:1: " + number.inferErr},
+		},
+		{
+			name: "literal class package loader rule imported",
+			dir:  number.jsDir,
+			opts: jsOpts,
+			src:  "import \"std:number\"\nval p = number.PI",
+			want: []string{"1:1-1:20: " + number.jsErr},
+		},
+		{
+			name: "literal class package loader rule not imported",
+			dir:  number.jsDir,
+			opts: jsOpts,
+			src:  `val p = 1`,
+			want: []string{"1:1-1:1: " + number.jsErr},
 		},
 	}
 	for _, tt := range cases {
@@ -192,7 +233,7 @@ func inferCached(t *testing.T, dir, src string, opts Options) (map[string]string
 func inferFresh(t *testing.T, dir, src string, opts Options) (map[string]string, []string) {
 	t.Helper()
 	module := parseModule(t, src)
-	roots := append(pseudoPackageImports(moduleImports(module)), ambientPackages...)
+	roots := append(pseudoPackageImports(moduleImports(module)), globalsPackages...)
 	sort.Strings(roots)
 	groups, err := BuildPackageClosure(dir, roots)
 	require.NoError(t, err)
@@ -245,22 +286,20 @@ func TestFixturesLeaveStdlibVarsUntouched(t *testing.T) {
 // copy holds is compared with the object it was copied from. The first fixture that
 // writes to the checker is the first to fail.
 func TestForkLeavesCachedCheckerUnchanged(t *testing.T) {
-	groups, err := BuildPackageClosure(benchTree, ambientPackages)
+	groups, err := BuildPackageClosure(benchTree, globalsPackages)
 	require.NoError(t, err)
-	for _, opts := range []Options{{}, {NoAmbientNames: true}} {
-		loaded := loadAmbientChecker(benchTree, groups, opts)
-		g := graphcopy.New(isASTPointer)
-		graphcopy.Copy(g, loaded)
-		for _, fixture := range fixtureLibraries(t) {
-			t.Run(fmt.Sprintf("%s/NoAmbientNames=%t", fixture.name, opts.NoAmbientNames), func(t *testing.T) {
-				module := fixture.parse(t)
-				if !loadsGroups(t, module, groups) {
-					t.Skip("the fixture imports a package outside the ambient packages' closure")
-				}
-				inferModuleOn(loaded.fork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups), module)
-				require.Empty(t, g.Diff())
-			})
-		}
+	loaded := loadAmbientChecker(benchTree, groups, Options{})
+	g := graphcopy.New(isASTPointer)
+	graphcopy.Copy(g, loaded)
+	for _, fixture := range fixtureLibraries(t) {
+		t.Run(fixture.name, func(t *testing.T) {
+			module := fixture.parse(t)
+			if !loadsGroups(t, module, groups) {
+				t.Skip("the fixture imports a package outside the globals packages' closure")
+			}
+			inferModuleOn(loaded.fork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups), module)
+			require.Empty(t, g.Diff())
+		})
 	}
 }
 
@@ -268,7 +307,7 @@ func TestForkLeavesCachedCheckerUnchanged(t *testing.T) {
 // diagnostics on a fork that shares the loaded checker as on a deep copy of it. The
 // shared forks run concurrently, so a race between them shows under -race.
 func TestForkMatchesDeepFork(t *testing.T) {
-	groups, err := BuildPackageClosure(benchTree, ambientPackages)
+	groups, err := BuildPackageClosure(benchTree, globalsPackages)
 	require.NoError(t, err)
 	loaded := loadAmbientChecker(benchTree, groups, Options{})
 	for _, fixture := range fixtureLibraries(t) {
@@ -277,7 +316,7 @@ func TestForkMatchesDeepFork(t *testing.T) {
 			// Inference writes to the AST it walks, so each run reads its own parse.
 			copiedModule, sharedModule := fixture.parse(t), fixture.parse(t)
 			if !loadsGroups(t, copiedModule, groups) {
-				t.Skip("the fixture imports a package outside the ambient packages' closure")
+				t.Skip("the fixture imports a package outside the globals packages' closure")
 			}
 			copied := inferModuleOn(loaded.deepFork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups), copiedModule)
 			shared := inferModuleOn(loaded.fork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups), sharedModule)
@@ -292,7 +331,7 @@ func TestForkMatchesDeepFork(t *testing.T) {
 // and that each slice reaches it with no spare capacity. A container field added later
 // fails here until fork copies it or this test names it read-only.
 func TestForkCopiesEveryContainer(t *testing.T) {
-	groups, err := BuildPackageClosure(benchTree, ambientPackages)
+	groups, err := BuildPackageClosure(benchTree, globalsPackages)
 	require.NoError(t, err)
 	loaded := loadAmbientChecker(benchTree, groups, Options{})
 	run := loaded.fork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups)
@@ -336,7 +375,7 @@ func TestForkCopiesEveryContainer(t *testing.T) {
 // packages groups names and no others.
 func loadsGroups(t *testing.T, module *ast.Module, groups PackageGroups) bool {
 	t.Helper()
-	roots := set.FromSlice(append(pseudoPackageImports(moduleImports(module)), ambientPackages...)).ToSlice()
+	roots := set.FromSlice(append(pseudoPackageImports(moduleImports(module)), globalsPackages...)).ToSlice()
 	sort.Strings(roots)
 	own, err := BuildPackageClosure(benchTree, roots)
 	require.NoError(t, err)
@@ -418,7 +457,7 @@ func sourcesOf(srcs map[string]string) []*ast.Source {
 // the cache holds for every later run.
 func forkLoadedChecker(t *testing.T) *checker {
 	t.Helper()
-	groups, err := BuildPackageClosure(benchTree, ambientPackages)
+	groups, err := BuildPackageClosure(benchTree, globalsPackages)
 	require.NoError(t, err)
 	return loadAmbientChecker(benchTree, groups, Options{}).fork(StdlibSource(benchTree), StdlibGroupSource(benchTree), groups)
 }
@@ -475,7 +514,7 @@ func TestCheckThawedRejectsAStdlibAlias(t *testing.T) {
 // TestAmbientCheckerSettlesLoadedDefinitions asserts that the cached checker holds no
 // provisional class, and a memoized uniform knot for every alias.
 func TestAmbientCheckerSettlesLoadedDefinitions(t *testing.T) {
-	groups, err := BuildPackageClosure(benchTree, ambientPackages)
+	groups, err := BuildPackageClosure(benchTree, globalsPackages)
 	require.NoError(t, err)
 	c := loadAmbientChecker(benchTree, groups, Options{})
 	for name, def := range c.ctx.classes {
@@ -492,7 +531,7 @@ func TestAmbientCheckerSettlesLoadedDefinitions(t *testing.T) {
 // with Invariant in every slot, and requires settling to restore the variance Array's
 // body gives.
 func TestSettleLoadedDefinitionsMeasuresAProvisionalClass(t *testing.T) {
-	groups, err := BuildPackageClosure(benchTree, ambientPackages)
+	groups, err := BuildPackageClosure(benchTree, globalsPackages)
 	require.NoError(t, err)
 	c := loadAmbientChecker(benchTree, groups, Options{})
 	def := c.ctx.classes[c.ctx.arrayClass]
@@ -518,7 +557,7 @@ func TestForkReportsHeldDiagnosticsPerRun(t *testing.T) {
 	dir := seedStdlib(t, withPreludeClasses(map[string]string{
 		"std/math.esc": `export val PI: number = "pi"`,
 	}))
-	groups, err := BuildPackageClosure(dir, ambientPackages)
+	groups, err := BuildPackageClosure(dir, globalsPackages)
 	require.NoError(t, err)
 	loaded := loadAmbientChecker(dir, groups, Options{})
 	loadErr := `package "std:math" (` + filepath.Join(dir, "std", "math.esc") +
@@ -545,7 +584,7 @@ func TestClipValues(t *testing.T) {
 // tests comparing cached runs with fresh ones compare against a cached run rather than
 // the fallback to a fresh load.
 func TestAmbientCheckerServesRuns(t *testing.T) {
-	groups, err := BuildPackageClosure(benchTree, ambientPackages)
+	groups, err := BuildPackageClosure(benchTree, globalsPackages)
 	require.NoError(t, err)
 	source := StdlibSource(benchTree)
 

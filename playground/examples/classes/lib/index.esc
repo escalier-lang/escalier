@@ -1,3 +1,5 @@
+import "std:math"
+
 // A class bundles fields with the methods that read and write them. Calling the
 // class constructs an instance, with no `new` keyword.
 export class Thermostat {
@@ -24,7 +26,7 @@ export class Thermostat {
 
     // A `&mut self` method may write the instance's fields.
     lower(&mut self, degrees: number) -> undefined {
-        self.target = Math.max(Thermostat.minimum, self.target - degrees)
+        self.target = math.max(Thermostat.minimum, self.target - degrees)
     },
 }
 

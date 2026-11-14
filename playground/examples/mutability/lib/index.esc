@@ -1,3 +1,5 @@
+import "std:console"
+
 // Values are immutable unless a binding says otherwise. `val` and `var` decide
 // whether the name can be reassigned. `mut` decides whether the value can be
 // written.

@@ -1,3 +1,5 @@
+import "std:console"
+
 console.log(pixelsPer("in"))
 console.log(describe({value: 0, unit: "cm"}))
 console.log(describe({value: 12, unit: "px"}))

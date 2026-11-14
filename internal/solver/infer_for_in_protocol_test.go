@@ -626,7 +626,8 @@ func TestIterationAgainstStdlib(t *testing.T) {
 			// own body, so its type expands to an intersection of the parent and that body.
 			name: "ForInOverAnIterableIterator",
 			src: `
-				declare val it: IterableIterator<number>
+				import "std:iterator"
+				declare val it: iterator.IterableIterator<number>
 				fn first() { for x in it { return x } }
 			`,
 			want: map[string]string{"first": "fn () -> number"},
@@ -634,7 +635,8 @@ func TestIterationAgainstStdlib(t *testing.T) {
 		{
 			name: "ForAwaitOverAnAsyncIterableIterator",
 			src: `
-				declare val it: AsyncIterableIterator<number>
+				import "std:async"
+				declare val it: async.AsyncIterableIterator<number>
 				async fn first() { for await x in it { return x } }
 			`,
 			want: map[string]string{"first": "fn () -> Promise<number>"},
@@ -644,7 +646,8 @@ func TestIterationAgainstStdlib(t *testing.T) {
 			// turn extends `Iterator` and `Disposable`.
 			name: "ForInOverMapKeys",
 			src: `
-				declare val m: Map<string, number>
+				import "std:map"
+				declare val m: map.Map<string, number>
 				fn first() { for x in m.keys() { return x } }
 			`,
 			want: map[string]string{"first": "fn () -> string"},
@@ -652,7 +655,8 @@ func TestIterationAgainstStdlib(t *testing.T) {
 		{
 			name: "SpreadMapKeys",
 			src: `
-				declare val m: Map<string, number>
+				import "std:map"
+				declare val m: map.Map<string, number>
 				fn all() { return [...m.keys()] }
 			`,
 			want: map[string]string{"all": "fn () -> Array<string>"},
@@ -660,7 +664,8 @@ func TestIterationAgainstStdlib(t *testing.T) {
 		{
 			name: "SpreadAnIterableIterator",
 			src: `
-				declare val it: IterableIterator<number>
+				import "std:iterator"
+				declare val it: iterator.IterableIterator<number>
 				fn all() { return [...it] }
 			`,
 			want: map[string]string{"all": "fn () -> Array<number>"},
@@ -668,7 +673,8 @@ func TestIterationAgainstStdlib(t *testing.T) {
 		{
 			name: "YieldFromAnIterableIterator",
 			src: `
-				declare val it: IterableIterator<number>
+				import "std:iterator"
+				declare val it: iterator.IterableIterator<number>
 				gen fn each() { yield from it }
 			`,
 			want: map[string]string{"each": "fn () -> Generator<number, undefined, unknown>"},

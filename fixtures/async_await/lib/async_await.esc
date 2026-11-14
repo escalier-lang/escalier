@@ -1,3 +1,5 @@
+import "web:fetch"
+
 // Basic async function
 export async fn fetchData(url: string) -> Promise<string> {
     return "data from " ++ url
@@ -26,7 +28,7 @@ export async fn fetchMultiple(url1: string, url2: string) -> Promise<string> {
 }
 
 // Async function with conditional await
-export async fn conditionalFetch(useCache: boolean, url: string) -> Promise<"cached data" | Response> {
+export async fn conditionalFetch(useCache: boolean, url: string) -> Promise<"cached data" | fetch.Response> {
     if useCache {
         return "cached data"
     } else {

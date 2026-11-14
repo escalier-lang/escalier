@@ -1,30 +1,30 @@
-lib/index.esc:95:5: cannot mutate 'c' because its binding is immutable; declare it as `mut c`
+lib/index.esc:97:5: cannot mutate 'c' because its binding is immutable; declare it as `mut c`
 
-95:     c.getOrInsert("k", 0)   // EXPECTED-ERROR (tier 6 exception)
+97:     c.getOrInsert("k", 0)   // EXPECTED-ERROR (tier 6 exception)
         ^^^^^^^^^^^^^
 
-lib/index.esc:55:5: cannot mutate 'd' because its binding is immutable; declare it as `mut d`
+lib/index.esc:57:5: cannot mutate 'd' because its binding is immutable; declare it as `mut d`
 
-55:     d.setHours(12)          // EXPECTED-ERROR (tier 4: Date.setHours mutates)
+57:     d.setHours(12)          // EXPECTED-ERROR (tier 4: Date.setHours mutates)
         ^^^^^^^^^^
 
-lib/index.esc:20:5: cannot mutate 'xs' because its binding is immutable; declare it as `mut xs`
+lib/index.esc:22:5: cannot mutate 'xs' because its binding is immutable; declare it as `mut xs`
 
-20:     xs.push(1)  // EXPECTED-ERROR (tier 2)
+22:     xs.push(1)  // EXPECTED-ERROR (tier 2)
         ^^^^^^^
 
-lib/index.esc:128:5: cannot mutate 'w' because its binding is immutable; declare it as `mut w`
+lib/index.esc:130:5: cannot mutate 'w' because its binding is immutable; declare it as `mut w`
 
-128:    w.render()              // EXPECTED-ERROR (tier 8: defaults to mutating)
+130:    w.render()              // EXPECTED-ERROR (tier 8: defaults to mutating)
         ^^^^^^^^
 
-lib/index.esc:73:5: cannot mutate 'xs' because its binding is immutable; declare it as `mut xs`
+lib/index.esc:75:5: cannot mutate 'xs' because its binding is immutable; declare it as `mut xs`
 
-73:     xs.sort()               // EXPECTED-ERROR (tier 2: sort requires a mut binding)
+75:     xs.sort()               // EXPECTED-ERROR (tier 2: sort requires a mut binding)
         ^^^^^^^
 
-lib/index.esc:33:5: cannot assign to 'x' because it is a readonly property
+lib/index.esc:35:5: cannot assign to 'x' because it is a readonly property
 
-33:     p.x = 0     // EXPECTED-ERROR (tier 2: readonly prop)
+35:     p.x = 0     // EXPECTED-ERROR (tier 2: readonly prop)
         ^^^
 

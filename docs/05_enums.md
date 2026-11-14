@@ -4,6 +4,8 @@ An enum declares one or more variants. Each variant is an identifier followed by
 an optional parameter list.
 
 ```esc
+import "std:console"
+
 enum MyOption<T> {
     Some(value: T),
     None,

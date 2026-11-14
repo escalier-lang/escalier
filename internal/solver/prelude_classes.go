@@ -265,8 +265,8 @@ func (e *MissingPreludeClassError) isSolverError()      {}
 
 // withLibCounters runs `load` with the Context drawing variable and unique-symbol ids from
 // the library counters, then hands the program's own counters back. The library counters
-// keep their place between calls, so ids drawn this way never repeat one the prelude or an
-// ambient package drew.
+// keep their place between calls, so ids drawn this way never repeat one the prelude or
+// another library package drew.
 func (c *checker) withLibCounters(load func()) {
 	programVars, programSymbols := c.ctx.varCounter, c.ctx.symbolCounter
 	c.ctx.varCounter, c.ctx.symbolCounter = c.libVarCounter, c.libSymbolCounter

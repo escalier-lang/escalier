@@ -27,9 +27,8 @@ func IsWarning(d Diagnostic) bool {
 // newBackend returns the checker every entry point runs, configured by config.
 func newBackend(config PackageConfig) backend {
 	return solverBackend{options: solver.Options{
-		NoAmbientNames: config.NoAmbientNames,
-		PackageDir:     config.Dir,
-		Dependencies:   config.Dependencies,
+		PackageDir:   config.Dir,
+		Dependencies: config.Dependencies,
 		// The compiler lowers each pseudo-package value to the JS its `@js` names.
 		CheckJsDecorators: true,
 		// Written signatures are required of the user's own code, which is all the compiler

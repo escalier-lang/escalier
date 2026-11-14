@@ -1,3 +1,5 @@
+import "web:fetch"
+
 // Loading a to-do item over HTTP. A failed request and a body of the wrong
 // shape are each their own class, so a caller can tell them apart.
 class HttpError {

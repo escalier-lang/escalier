@@ -36,218 +36,143 @@ func renderedValues(res *ModuleResult) map[string]string {
 	return values
 }
 
-// TestAmbientBuiltinsResolveWithoutImport covers the three ambient binding rules. A
-// bare `@js` path binds at the top level, a dotted one binds into a namespace named by
-// its prefix, and a type binds under its declared name or beside its value.
-func TestAmbientBuiltinsResolveWithoutImport(t *testing.T) {
+// TestBuiltinsNeedImport covers a builtin outside the prelude, referenced without an
+// import of its package. Each one is unbound in the entry module.
+func TestBuiltinsNeedImport(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		wantErrs []string
+	}{
+		{
+			name:     "Console",
+			src:      `val logged = console.log("hello")`,
+			wantErrs: []string{"1:14-1:21: Unknown identifier: console"},
+		},
+		{
+			name:     "DottedNamespace",
+			src:      `val pi = Math.PI`,
+			wantErrs: []string{"1:10-1:14: Unknown identifier: Math"},
+		},
+		{
+			name:     "BareFunction",
+			src:      `val n = parseInt("1")`,
+			wantErrs: []string{"1:9-1:17: Unknown identifier: parseInt"},
+		},
+		{
+			name:     "BareConstant",
+			src:      `val n = NaN`,
+			wantErrs: []string{"1:9-1:12: Unknown identifier: NaN"},
+		},
+		{
+			name:     "Class",
+			src:      `val e = Error("boom")`,
+			wantErrs: []string{"1:9-1:14: Unknown identifier: Error"},
+		},
+		{
+			name:     "TypeOnlyExport",
+			src:      `declare val c: Console`,
+			wantErrs: []string{"1:16-1:23: cannot find type `Console`"},
+		},
+		{
+			name:     "WebFetch",
+			src:      `val r = fetch("https://example.com")`,
+			wantErrs: []string{"1:9-1:14: Unknown identifier: fetch"},
+		},
+		{
+			name:     "WebCoreType",
+			src:      `declare val e: Event`,
+			wantErrs: []string{"1:16-1:21: cannot find type `Event`"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, errs := inferAgainstTreeWithSpans(t, test.src)
+			require.Equal(t, test.wantErrs, errs)
+		})
+	}
+}
+
+// TestBuiltinsResolveThroughImport covers a builtin outside the prelude reached through an
+// import of its package, and the names that resolve with no import at all. A prelude
+// export binds unprefixed, and a primitive's members and a regex literal's type are read
+// from the library packages every run loads.
+func TestBuiltinsResolveThroughImport(t *testing.T) {
 	tests := []struct {
 		name string
 		src  string
 		want map[string]string
 	}{
 		{
-			name: "DottedPathBindsIntoNamespace",
-			src:  `val pi = Math.PI`,
+			name: "Console",
+			src: `
+				import "std:console"
+				val logged = console.log("hello")
+				declare val c: console.Console
+			`,
+			want: map[string]string{"logged": "undefined", "c": "Console"},
+		},
+		{
+			name: "Math",
+			src: `
+				import "std:math"
+				val pi = math.PI
+			`,
 			want: map[string]string{"pi": "number"},
 		},
 		{
-			name: "DottedPathCall",
-			src:  `val parsed = JSON.parse("1")`,
-			want: map[string]string{"parsed": "unknown"},
-		},
-		{
-			name: "BarePathValue",
+			name: "Number",
 			src: `
-				val logged = console.log("hello")
-				val nothing: undefined = console.log("again")
+				import "std:number"
+				val n = number.parseInt("1")
 			`,
-			want: map[string]string{"logged": "undefined"},
-		},
-		{
-			name: "BarePathFunction",
-			src:  `val n = parseInt("1")`,
 			want: map[string]string{"n": "number"},
 		},
 		{
-			name: "BarePathConstant",
-			src:  `val n = NaN`,
-			want: map[string]string{"n": "number"},
-		},
-		{
-			name: "ClassBindsValueAndType",
+			name: "Error",
 			src: `
-				val e = Error("boom")
-				val typed: Error = e
+				import "std:error"
+				val e = error.Error("boom")
+				val typed: error.Error = e
 			`,
 			want: map[string]string{"e": "Error", "typed": "Error"},
 		},
 		{
-			name: "TypeOnlyExport",
-			src:  `declare val c: Console`,
-			want: map[string]string{"c": "Console"},
-		},
-		{
-			name: "ClassTypeBindsBesideDottedValue",
-			src:  `declare val collator: Intl.Collator`,
-			want: map[string]string{"collator": "Collator"},
-		},
-		{
-			name: "WebFetchBindsAtTheTopLevel",
-			src:  `val r = fetch("https://example.com")`,
+			name: "WebFetch",
+			src: `
+				import "web:fetch"
+				val r = fetch("https://example.com")
+			`,
 			want: map[string]string{"r": "Promise<Response>"},
 		},
 		{
-			name: "WebCoreTypeBinds",
-			src:  `declare val e: Event`,
+			name: "WebCore",
+			src: `
+				import "web:core"
+				declare val e: Event
+			`,
 			want: map[string]string{"e": "Event"},
 		},
 		{
-			name: "ExplicitImportStillBindsNamespace",
-			src: `
-				import "std:math"
-				val pi = math.PI
-			`,
-			want: map[string]string{"pi": "number"},
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			values, errs := inferAgainstTree(t, test.src)
-			require.Empty(t, errs)
-			for name, want := range test.want {
-				require.Equal(t, want, values[name], "value binding %q", name)
-			}
-		})
-	}
-}
-
-// TestAmbientBuiltinsShadowedByModule asserts that a module's own declaration wins over
-// an ambient name of the same sort.
-func TestAmbientBuiltinsShadowedByModule(t *testing.T) {
-	tests := []struct {
-		name string
-		src  string
-		want map[string]string
-	}{
-		{
-			name: "ValueShadowsNamespace",
-			src: `
-				val Math = {PI: "pie"}
-				val pi = Math.PI
-			`,
-			want: map[string]string{"pi": `"pie"`},
-		},
-		{
-			name: "FunctionShadowsValue",
-			src: `
-				fn parseInt(s: string) -> string { return s }
-				val n = parseInt("1")
-			`,
-			want: map[string]string{"n": "string"},
-		},
-		{
-			name: "ValueShadowsConstant",
-			src: `
-				val NaN = "not a number"
-				val n = NaN
-			`,
-			want: map[string]string{"n": `"not a number"`},
-		},
-		{
-			name: "ClassShadowsClass",
-			src: `
-				class Error { code: number }
-				val e = Error(1)
-				val code = e.code
-			`,
-			want: map[string]string{"code": "number"},
-		},
-		{
-			// The alias renders under its own name, so the assignment is what shows it is the
-			// module's `number` rather than the ambient interface.
-			name: "TypeShadowsType",
-			src: `
-				type Console = number
-				declare val c: Console
-				val n: number = c
-			`,
-			want: map[string]string{"n": "number"},
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			values, errs := inferAgainstTree(t, test.src)
-			require.Empty(t, errs)
-			for name, want := range test.want {
-				require.Equal(t, want, values[name], "value binding %q", name)
-			}
-		})
-	}
-}
-
-// TestAmbientBuiltinsInScript asserts that a script reaches the ambient names the way a
-// module does.
-func TestAmbientBuiltinsInScript(t *testing.T) {
-	scope, _, errs := InferScriptAgainstStdlib(parseScript(t, `val pi = Math.PI`), benchTree, Options{})
-	require.Empty(t, errs)
-	b, ok := scope.OwnValue("pi")
-	require.True(t, ok)
-	require.Equal(t, "number", soltype.Print(schemeType(b.Schemes[0])))
-}
-
-// TestAmbientNamesOptOut covers a run with Options.NoAmbientNames set. No ambient name
-// binds, so a builtin needs its import. The ambient packages still load, so a primitive's
-// members and a regex literal's type resolve without one.
-func TestAmbientNamesOptOut(t *testing.T) {
-	tests := []struct {
-		name     string
-		src      string
-		want     map[string]string
-		wantErrs []string
-	}{
-		{
-			name:     "AnAmbientNameIsUnbound",
-			src:      `val pi = Math.PI`,
-			wantErrs: []string{"Unknown identifier: Math"},
-		},
-		{
-			name:     "AWebNameIsUnbound",
-			src:      `val r = fetch("https://example.com")`,
-			wantErrs: []string{"Unknown identifier: fetch"},
-		},
-		{
-			name: "AnImportStillBinds",
-			src: `
-				import "std:math"
-				val pi = math.PI
-			`,
-			want: map[string]string{"pi": "number"},
-		},
-		{
-			name: "APreludeNameStillBinds",
+			name: "APreludeNameNeedsNoImport",
 			src:  `val xs: Array<number> = []`,
 			want: map[string]string{"xs": "Array<number>"},
 		},
 		{
-			name: "APrimitiveMemberStillReads",
+			name: "APrimitiveMemberNeedsNoImport",
 			src:  `val n = "abc".length`,
 			want: map[string]string{"n": "number"},
 		},
 		{
-			name: "ARegexLiteralStillTypes",
+			name: "ARegexLiteralNeedsNoImport",
 			src:  `val re = /ab+c/`,
 			want: map[string]string{"re": "RegExp"},
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			res := InferModuleAgainstStdlib(parseModule(t, test.src), benchTree, Options{NoAmbientNames: true})
-			if test.wantErrs != nil {
-				require.Equal(t, test.wantErrs, errorMessagesOf(res.Errors))
-				return
-			}
-			require.Empty(t, errorMessagesOf(res.Errors))
-			values := renderedValues(res)
+			values, errs := inferAgainstTree(t, test.src)
+			require.Empty(t, errs)
 			for name, want := range test.want {
 				require.Equal(t, want, values[name], "value binding %q", name)
 			}
@@ -255,14 +180,27 @@ func TestAmbientNamesOptOut(t *testing.T) {
 	}
 }
 
-// TestAmbientGlobalWriteNamesNoRedeclaration asserts that a write through a standard library
+// TestBuiltinsInScript asserts that a script reaches a builtin outside the prelude only
+// through an import, the way a module does.
+func TestBuiltinsInScript(t *testing.T) {
+	_, _, errs := InferScriptAgainstStdlib(parseScript(t, `val pi = Math.PI`), benchTree, Options{})
+	require.Equal(t, []string{"Unknown identifier: Math"}, errorMessagesOf(errs))
+
+	scope, _, errs := InferScriptAgainstStdlib(parseScript(t, "import \"std:math\"\nval pi = math.PI"), benchTree, Options{})
+	require.Empty(t, errs)
+	b, ok := scope.OwnValue("pi")
+	require.True(t, ok)
+	require.Equal(t, "number", soltype.Print(schemeType(b.Schemes[0])))
+}
+
+// TestLibraryGlobalWriteNamesNoRedeclaration asserts that a write through a standard library
 // global the library declares without `mut` reports the immutable binding without suggesting a
 // declaration the code being checked cannot change. TypeScript accepts the same write, and
 // whether Escalier should accept it too is an open question that #2321 tracks.
-func TestAmbientGlobalWriteNamesNoRedeclaration(t *testing.T) {
-	_, errs := inferAgainstTreeWithSpans(t, "fn f() {\n\tconsole.log = fn() {}\n}\n")
+func TestLibraryGlobalWriteNamesNoRedeclaration(t *testing.T) {
+	_, errs := inferAgainstTreeWithSpans(t, "import \"std:console\"\nfn f() {\n\tconsole.log = fn() {}\n}\n")
 	require.Equal(t, []string{
-		"2:2-2:23: cannot mutate 'console' because its binding is immutable; the standard library declares it without `mut`",
-		"2:16-2:23: object is missing property: log",
+		"3:2-3:23: cannot mutate 'console' because its binding is immutable; the standard library declares it without `mut`",
+		"3:16-3:23: object is missing property: log",
 	}, errs)
 }

@@ -1,3 +1,5 @@
+import "std:console"
+
 val peak = Landmark("Mount Rainier", 46.852, -121.760)
 console.log(format({lat: peak.lat, lng: peak.lng}))
 console.log(locate(peak).lat)

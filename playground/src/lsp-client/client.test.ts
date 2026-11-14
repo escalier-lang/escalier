@@ -243,7 +243,8 @@ test('textDocument/didOpen', { timeout: CHECK_TEST_TIMEOUT_MS }, async () => {
         diagnostics = params.diagnostics;
     });
 
-    const text = 'console.log("Hello, world!")\nval x =\n';
+    const text =
+        'import "std:console"\nconsole.log("Hello, world!")\nval x =\n';
     fs.writeFileSync(filePath(), text);
 
     await client.initialize({
@@ -277,11 +278,11 @@ test('textDocument/didOpen', { timeout: CHECK_TEST_TIMEOUT_MS }, async () => {
           "range": {
             "end": {
               "character": 0,
-              "line": 2,
+              "line": 3,
             },
             "start": {
               "character": 0,
-              "line": 2,
+              "line": 3,
             },
           },
           "severity": 1,
@@ -350,7 +351,7 @@ test('textDocument/didChange', { timeout: CHECK_TEST_TIMEOUT_MS }, async () => {
             uri: fileUri(),
             version: 2,
             languageId: 'escalier',
-            text: 'console.log("Hello, world!")\nval x = 5\n',
+            text: 'import "std:console"\nconsole.log("Hello, world!")\nval x = 5\n',
         },
     });
 
@@ -359,7 +360,11 @@ test('textDocument/didChange', { timeout: CHECK_TEST_TIMEOUT_MS }, async () => {
             uri: fileUri(),
             version: 2,
         },
-        contentChanges: [{ text: 'console.log("Hello, world!")\nval x =\n' }],
+        contentChanges: [
+            {
+                text: 'import "std:console"\nconsole.log("Hello, world!")\nval x =\n',
+            },
+        ],
     });
 
     // Wait for the diagnostics from didChange (not didOpen).
@@ -381,11 +386,11 @@ test('textDocument/didChange', { timeout: CHECK_TEST_TIMEOUT_MS }, async () => {
           "range": {
             "end": {
               "character": 0,
-              "line": 2,
+              "line": 3,
             },
             "start": {
               "character": 0,
-              "line": 2,
+              "line": 3,
             },
           },
           "severity": 1,
@@ -508,7 +513,7 @@ test.skip('workspace/executeCommand', async () => {
             uri: fileUri(),
             version: 2,
             languageId: 'escalier',
-            text: 'console.log("Hello, world!")\nval x = 5\n',
+            text: 'import "std:console"\nconsole.log("Hello, world!")\nval x = 5\n',
         },
     });
 

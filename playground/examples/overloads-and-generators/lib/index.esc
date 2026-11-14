@@ -1,10 +1,13 @@
+import "std:console"
+import "std:math"
+
 // Formatting meeting durations and stepping through a day's schedule.
 
 // Declaring `formatDuration` more than once at the top level makes an overload
 // set. Each call resolves to the arm whose parameters accept its arguments.
 // The compiled JavaScript is one function that tests the arguments at runtime.
 export fn formatDuration(minutes: number) -> string {
-    val hours = Math.floor(minutes / 60)
+    val hours = math.floor(minutes / 60)
     val rest = minutes - hours * 60
     return if hours > 0 { `${hours}h ${rest}m` } else { `${rest}m` }
 }

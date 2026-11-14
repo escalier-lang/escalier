@@ -44,7 +44,7 @@ func TestScopeEnumeration(t *testing.T) {
 }
 
 // TestScriptScopeChainBuiltins covers where a script run's chain turns builtin: at the
-// script scope's parent, the ambient scope, and at every scope above it.
+// script scope's parent, the prelude scope, and at every scope above it.
 func TestScriptScopeChainBuiltins(t *testing.T) {
 	scope, _, errs := InferScript(parseScript(t, "val x = 1"), testStdlibSource())
 	require.Empty(t, errs)

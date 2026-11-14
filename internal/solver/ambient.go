@@ -10,18 +10,18 @@ import (
 	"github.com/escalier-lang/escalier/internal/set"
 )
 
-// ambient.go binds the builtins a program reaches without an import, such as
+// ambient.go binds the globals scope, the scope an npm package's `.d.ts` is checked
+// against. It stands in for TypeScript's global library, so it holds names such as
 // `Math.PI`, `console.log`, `parseInt`, and `Error`.
 //
-// The ambient scope sits between the prelude scope and a module's own scope, so a
-// module's declaration and a file's import both shadow an ambient name. It is a
-// compatibility surface over the packages ambientPackages lists. Importing one of
-// them still works, and binds the package as a namespace the way any import does.
+// A project's own files never read the globals scope. A module or script reaches a
+// builtin through the prelude or through an import, such as `import "std:console"`
+// for `console.log`.
 
-// ambientPackages lists the packages whose exports the ambient scope binds. The
+// globalsPackages lists the packages whose exports the globals scope binds. The
 // first package to claim a name keeps it, so a later package never replaces an
 // earlier one's binding.
-var ambientPackages = []string{
+var globalsPackages = []string{
 	"std:async",
 	"std:bigint",
 	"std:boolean",
@@ -51,7 +51,7 @@ var ambientPackages = []string{
 }
 
 // globalsScope returns the per-run scope that holds the exports of every package in
-// ambientPackages, creating it empty as a child of the prelude scope on the first
+// globalsPackages, creating it empty as a child of the prelude scope on the first
 // request and returning the same scope on every later one. bindGlobals fills it.
 func (c *checker) globalsScope() *Scope {
 	if c.globals == nil {
@@ -61,38 +61,18 @@ func (c *checker) globalsScope() *Scope {
 	return c.globals
 }
 
-// ambientScope returns the per-run scope that holds the ambient builtins. It is
-// globalsScope, except in a run with Options.NoAmbientNames set, where it is an
-// empty child of the prelude scope created on the first request.
-// bindAmbientExports fills it.
-func (c *checker) ambientScope() *Scope {
-	if !c.noAmbientNames {
-		return c.globalsScope()
-	}
-	if c.ambient == nil {
-		c.ambient = c.preludeScope().Child()
-		c.ambient.builtin = true
-	}
-	return c.ambient
-}
-
-// bindAmbientExports fills the ambient scope. It calls bindGlobals, except in a run
-// with Options.NoAmbientNames set. That run binds nothing and loads only the
-// packages literalClassPackages lists. A run binds the ambient scope once, and a
-// later call returns without loading anything.
-func (c *checker) bindAmbientExports() {
-	if !c.noAmbientNames {
-		c.bindGlobals()
+// loadLiteralClassPackages loads the packages literalClassPackages lists and binds
+// none of their exports. A run loads them once, and a later call returns without
+// loading anything.
+func (c *checker) loadLiteralClassPackages() {
+	if c.literalClassesLoaded {
 		return
 	}
-	if c.ambientBound {
-		return
-	}
-	c.ambientBound = true
+	c.literalClassesLoaded = true
 	c.loadLibraryPackages(literalClassPackages(), nil)
 }
 
-// bindGlobals loads each package in ambientPackages and binds its exports into the
+// bindGlobals loads each package in globalsPackages and binds its exports into the
 // globals scope by three rules:
 //
 //  1. A type-only export binds under its declared name. `interface Console` binds
@@ -117,13 +97,13 @@ func (c *checker) bindGlobals() {
 		return
 	}
 	c.globalsBound = true
-	c.loadLibraryPackages(ambientPackages, &ambientBinder{scope: c.globalsScope(), namespaces: map[string]*Namespace{}})
+	c.loadLibraryPackages(globalsPackages, &globalsBinder{scope: c.globalsScope(), namespaces: map[string]*Namespace{}})
 }
 
 // loadLibraryPackages loads each package uris names, holds its diagnostics back with
 // holdLoadErrors, and binds its exports through b when b is non-nil. A package the
 // source does not answer for is skipped.
-func (c *checker) loadLibraryPackages(uris []string, b *ambientBinder) {
+func (c *checker) loadLibraryPackages(uris []string, b *globalsBinder) {
 	// The packages draw from the range the prelude draws from, so a program's own
 	// variables and symbols are numbered the same whether or not any builtin loaded.
 	programVars, programSymbols := c.ctx.varCounter, c.ctx.symbolCounter
@@ -147,7 +127,7 @@ func (c *checker) loadLibraryPackages(uris []string, b *ambientBinder) {
 	}
 }
 
-// heldLoadErrors is the diagnostics one ambient load returned, shared by every member
+// heldLoadErrors is the diagnostics one library load returned, shared by every member
 // of the group that load inferred.
 type heldLoadErrors struct {
 	errs     []SolverError
@@ -236,16 +216,16 @@ func literalClassPackages() []string {
 	return sorted
 }
 
-// ambientBinder fills one ambient scope. namespaces maps each dotted `@js` prefix
+// globalsBinder fills the globals scope. namespaces maps each dotted `@js` prefix
 // to the namespace rule 3 created for it, keyed by the whole prefix.
-type ambientBinder struct {
+type globalsBinder struct {
 	scope      *Scope
 	namespaces map[string]*Namespace
 }
 
-// bindPackage binds every export of ns by the rules bindAmbientExports lists.
+// bindPackage binds every export of ns by the rules bindGlobals lists.
 // Names are visited in sorted order so a run does not depend on map iteration.
-func (b *ambientBinder) bindPackage(ns *Namespace) {
+func (b *globalsBinder) bindPackage(ns *Namespace) {
 	// boundWithValue holds the names of this package's types that share a name with
 	// one of its `@js` values. The first loop binds such a type next to its value, so
 	// `@js("Intl.Collator") class Collator` puts the type `Collator` in `Intl`. It
@@ -288,9 +268,9 @@ func (b *ambientBinder) bindPackage(ns *Namespace) {
 }
 
 // target returns the value and type maps a binding under prefix goes into. An empty
-// prefix is the ambient scope itself. Any other prefix is a namespace, created on
+// prefix is the globals scope itself. Any other prefix is a namespace, created on
 // first use and nested one level per segment, so `A.B` lives in `B` inside `A`.
-func (b *ambientBinder) target(prefix []string) (map[string]ValueBinding, map[string]TypeBinding) {
+func (b *globalsBinder) target(prefix []string) (map[string]ValueBinding, map[string]TypeBinding) {
 	if len(prefix) == 0 {
 		return b.scope.values, b.scope.types
 	}
