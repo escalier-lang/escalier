@@ -110,20 +110,26 @@ func writeFile(path string, dryRun, verbose bool) (stats, error) {
 		return s, err
 	}
 	// A literal joined to another with + holds only part of a source, such as the body
-	// after a shared `decls` prefix, so it does not check on its own.
+	// after a shared `decls` prefix, so it does not check on its own. When the part before it
+	// is a string constant of this file, prefix holds that constant, the literal is checked
+	// after it, and only the edits that fall in the literal are written.
 	joined := map[*goast.BasicLit]bool{}
+	prefix := map[*goast.BasicLit]string{}
+	constants := stringConstants(file)
 	goast.Inspect(file, func(n goast.Node) bool {
-		if bin, ok := n.(*goast.BinaryExpr); ok && bin.Op == gotoken.ADD {
-			for _, operand := range []goast.Expr{bin.X, bin.Y} {
-				for {
-					paren, ok := operand.(*goast.ParenExpr)
-					if !ok {
-						break
-					}
-					operand = paren.X
-				}
-				if lit, ok := operand.(*goast.BasicLit); ok {
-					joined[lit] = true
+		bin, ok := n.(*goast.BinaryExpr)
+		if !ok || bin.Op != gotoken.ADD {
+			return true
+		}
+		for _, operand := range []goast.Expr{bin.X, bin.Y} {
+			if lit, ok := unparen(operand).(*goast.BasicLit); ok {
+				joined[lit] = true
+			}
+		}
+		if ident, ok := unparen(bin.X).(*goast.Ident); ok {
+			if lit, ok := unparen(bin.Y).(*goast.BasicLit); ok {
+				if value, ok := constants.before(ident.Name, bin.Pos()); ok {
+					prefix[lit] = value
 				}
 			}
 		}
@@ -132,14 +138,26 @@ func writeFile(path string, dryRun, verbose bool) (stats, error) {
 	var edits []literalEdit
 	goast.Inspect(file, func(n goast.Node) bool {
 		lit, ok := n.(*goast.BasicLit)
-		if !ok || lit.Kind != gotoken.STRING || joined[lit] {
+		if !ok || lit.Kind != gotoken.STRING {
+			return true
+		}
+		head, hasPrefix := prefix[lit]
+		if joined[lit] && !hasPrefix {
 			return true
 		}
 		value, err := strconv.Unquote(lit.Value)
 		if err != nil || !strings.Contains(value, "fn ") {
 			return true
 		}
-		rewritten, unresolved, unwritable, panicked := writeSourceSafely(value)
+		rewritten, unresolved, unwritable, panicked := writeSourceSafely(head + value)
+		// An edit that falls in the prefix belongs to the constant, which the source of
+		// every test that joins it shares, so the literal is left as it is.
+		if panicked == nil && unresolved == "" {
+			if !strings.HasPrefix(rewritten, head) {
+				return true
+			}
+			rewritten = rewritten[len(head):]
+		}
 		if panicked != nil {
 			fmt.Fprintf(os.Stderr, "%s: skipped, the checker panicked: %v\n", fset.Position(lit.Pos()), panicked)
 			return true
@@ -151,6 +169,9 @@ func writeFile(path string, dryRun, verbose bool) (stats, error) {
 				fmt.Fprintf(os.Stderr, "%s: skipped, it would write %q\n", fset.Position(lit.Pos()), unresolved)
 			}
 			return true
+		}
+		if panicked != nil || unresolved != "" {
+			rewritten = value
 		}
 		if rewritten == value {
 			return true
@@ -333,4 +354,74 @@ func hasError(co compiler.CheckOutput) bool {
 		}
 	}
 	return false
+}
+
+// unparen returns e with any parentheses around it removed.
+func unparen(e goast.Expr) goast.Expr {
+	for {
+		paren, ok := e.(*goast.ParenExpr)
+		if !ok {
+			return e
+		}
+		e = paren.X
+	}
+}
+
+// stringDef is one assignment of a string literal to a name.
+type stringDef struct {
+	pos   gotoken.Pos
+	value string
+}
+
+// stringDefs maps each name the file assigns a single string literal to, by `const`,
+// `var` or `:=`, to its assignments in source order.
+type stringDefs map[string][]stringDef
+
+// before returns the value of the last assignment to name that comes before pos, and false
+// when there is none.
+func (d stringDefs) before(name string, pos gotoken.Pos) (string, bool) {
+	var value string
+	found := false
+	for _, def := range d[name] {
+		if def.pos < pos {
+			value, found = def.value, true
+		}
+	}
+	return value, found
+}
+
+// stringConstants collects the string literals file assigns to a name.
+func stringConstants(file *goast.File) stringDefs {
+	defs := stringDefs{}
+	add := func(name *goast.Ident, value goast.Expr) {
+		lit, ok := value.(*goast.BasicLit)
+		if !ok || lit.Kind != gotoken.STRING {
+			return
+		}
+		text, err := strconv.Unquote(lit.Value)
+		if err != nil {
+			return
+		}
+		defs[name.Name] = append(defs[name.Name], stringDef{pos: name.Pos(), value: text})
+	}
+	goast.Inspect(file, func(n goast.Node) bool {
+		switch n := n.(type) {
+		case *goast.ValueSpec:
+			if len(n.Names) == len(n.Values) {
+				for i, name := range n.Names {
+					add(name, n.Values[i])
+				}
+			}
+		case *goast.AssignStmt:
+			if n.Tok == gotoken.DEFINE && len(n.Lhs) == len(n.Rhs) {
+				for i, lhs := range n.Lhs {
+					if name, ok := lhs.(*goast.Ident); ok {
+						add(name, n.Rhs[i])
+					}
+				}
+			}
+		}
+		return true
+	})
+	return defs
 }

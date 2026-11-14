@@ -742,11 +742,11 @@ func TestOwnedCallResultFlowsIntoAMutDestination(t *testing.T) {
 	}{
 		{
 			name: "a constructor call into an annotated binding",
-			src:  counter + "fn go() { val mut d: Counter = Counter(0)\nd.bump() }",
+			src:  counter + "fn go() -> undefined { val mut d: Counter = Counter(0)\nd.bump() }",
 		},
 		{
 			name: "a declared function into an annotated binding",
-			src:  counter + "fn go() { val mut d: Counter = shared()\nd.bump() }",
+			src:  counter + "fn go() -> undefined { val mut d: Counter = shared()\nd.bump() }",
 		},
 		{
 			name: "a module-level annotated binding",
@@ -762,11 +762,11 @@ func TestOwnedCallResultFlowsIntoAMutDestination(t *testing.T) {
 		},
 		{
 			name: "a call into a `mut` parameter",
-			src:  counter + "fn take(mut c: Counter) { c.bump() }\nfn go() { take(shared()) }",
+			src:  counter + "fn take(mut c: Counter) -> undefined { c.bump() }\nfn go() -> undefined { take(shared()) }",
 		},
 		{
 			name: "a call reassigned into a `mut` binding",
-			src:  counter + "fn go() { var mut d = Counter(0)\nd = shared()\nd.bump() }",
+			src:  counter + "fn go() -> undefined { var mut d = Counter(0)\nd = shared()\nd.bump() }",
 		},
 		{
 			name: "a call returned through an owned return annotation",

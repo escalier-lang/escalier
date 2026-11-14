@@ -402,8 +402,8 @@ func TestInferTryCatchSubtractsThroughSubtyping(t *testing.T) {
 			// needs no clause.
 			name: "ABaseClassArmSubtractsASubclassMember",
 			src: base + `
-				fn a() throws ParseError { throw ParseError() }
-				fn f() { try { a() } catch { AppError{code} => code } }
+				fn a() -> never throws ParseError { throw ParseError() }
+				fn f() -> undefined { try { a() } catch { AppError{code} => code } }
 			`,
 			want: "fn () -> undefined",
 		},
@@ -412,8 +412,8 @@ func TestInferTryCatchSubtractsThroughSubtyping(t *testing.T) {
 			// member survives the difference and reaches the clause.
 			name: "ASubclassArmLeavesTheBaseClassMember",
 			src: base + `
-				fn a() throws AppError { throw AppError() }
-				fn f() throws _ { try { a() } catch { ParseError{code} => code } }
+				fn a() -> never throws AppError { throw AppError() }
+				fn f() -> undefined throws _ { try { a() } catch { ParseError{code} => code } }
 			`,
 			want: "fn () -> undefined throws AppError",
 		},
@@ -422,10 +422,10 @@ func TestInferTryCatchSubtractsThroughSubtyping(t *testing.T) {
 			// hierarchy is rethrown on its own.
 			name: "ABaseClassArmLeavesAnUnrelatedMember",
 			src: base + `
-				fn a(c: boolean) throws ParseError | OtherError {
+				fn a(c: boolean) -> never throws ParseError | OtherError {
 					if c { throw ParseError() } else { throw OtherError() }
 				}
-				fn f(c: boolean) throws _ { try { a(c) } catch { AppError{code} => code } }
+				fn f(c: boolean) -> undefined throws _ { try { a(c) } catch { AppError{code} => code } }
 			`,
 			want: "fn (c: boolean) -> undefined throws OtherError",
 		},
@@ -458,8 +458,8 @@ func TestInferTryCatchSubtractsThroughGenericClasses(t *testing.T) {
 			// be decided and nothing escapes.
 			name: "AnArmNamingTheMembersOwnGenericClassCatchesIt",
 			src: base + `
-				fn a() throws Failure<number> { throw Failure(0) }
-				fn f() { try { a() } catch { Failure{payload} => 0 } }
+				fn a() -> never throws Failure<number> { throw Failure(0) }
+				fn f() -> undefined { try { a() } catch { Failure{payload} => 0 } }
 			`,
 			want: "fn () -> undefined",
 		},
@@ -470,8 +470,8 @@ func TestInferTryCatchSubtractsThroughGenericClasses(t *testing.T) {
 			// TestInferTryCatchSubtractsThroughSubtyping reaches.
 			name: "ABaseClassArmSubtractsAGenericSubclassMember",
 			src: base + `
-				fn a() throws Timeout<number> { throw Timeout(0) }
-				fn f() { try { a() } catch { Failure{payload} => 0 } }
+				fn a() -> never throws Timeout<number> { throw Timeout(0) }
+				fn f() -> undefined { try { a() } catch { Failure{payload} => 0 } }
 			`,
 			want: "fn () -> undefined",
 		},
@@ -480,8 +480,8 @@ func TestInferTryCatchSubtractsThroughGenericClasses(t *testing.T) {
 			// the member survives the difference and reaches the clause.
 			name: "ASubclassArmLeavesTheGenericBaseClassMember",
 			src: base + `
-				fn a() throws Failure<number> { throw Failure(0) }
-				fn f() throws _ { try { a() } catch { Timeout{payload} => 0 } }
+				fn a() -> never throws Failure<number> { throw Failure(0) }
+				fn f() -> undefined throws _ { try { a() } catch { Timeout{payload} => 0 } }
 			`,
 			want: "fn () -> undefined throws Failure<number>",
 		},

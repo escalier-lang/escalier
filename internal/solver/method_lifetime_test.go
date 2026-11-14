@@ -196,7 +196,7 @@ func TestAStoredMethodValueBindsItsLifetimesPerCall(t *testing.T) {
 		{
 			name: "each call of the value binds its own lifetime",
 			src: view + `
-				fn both(v: &View, a: &{x: number}, b: &{x: number}) {
+				fn both<'a, 'b>(v: &View, a: &'a {x: number}, b: &'b {x: number}) -> [&'a {x: number}, &'b {x: number}] {
 					val f = v.id
 					val ra = f(a)
 					val rb = f(b)
@@ -234,7 +234,7 @@ func TestAStoredMethodValueBindsItsLifetimesPerCall(t *testing.T) {
 			// argument has to outlive each result.
 			name: "a receiver lifetime is shared by every call of the value",
 			src: view + `
-				fn both(v: &View, a: &{x: number}, b: &{x: number}) {
+				fn both<'a: 'd & 'e, 'b: 'd & 'e, 'c: 'd & 'e, 'd, 'e>(v: &'a View, a: &'b {x: number}, b: &'c {x: number}) -> [&'d {x: number}, &'e {x: number}] {
 					val f = v.pick
 					val ra = f(a)
 					val rb = f(b)

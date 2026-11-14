@@ -1651,11 +1651,11 @@ func TestInferClassMutVariance(t *testing.T) {
 			}
 		`
 		_, _, errs := inferSource(t, src+`
-			fn wide(p: &mut Prop<number | string>) { }
-			fn narrow(p: &mut Prop<number>) { wide(p) }
+			fn wide(p: &mut Prop<number | string>) -> undefined { }
+			fn narrow(p: &mut Prop<number>) -> undefined { wide(p) }
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "9:43-9:44: cannot constrain string <: number", msgWithSpan(t, errs[0]))
+		require.Equal(t, "9:56-9:57: cannot constrain string <: number", msgWithSpan(t, errs[0]))
 
 		_, _, errs = inferSource(t, src+`
 			fn widen(p: Prop<number>) -> Prop<number | string> { return p }
@@ -3529,7 +3529,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 		{
 			name: "a callback reads through a borrowed self",
 			src: coll + `
-				fn f(xs: &Coll<number>) { xs.each(fn (v, arr) { return arr.length }) }
+				fn f(xs: &Coll<number>) -> undefined { xs.each(fn (v, arr) { return arr.length }) }
 			`,
 		},
 		{
@@ -3539,7 +3539,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 					constructor(&mut self),
 					readonly extra: number,
 				}
-				fn f(s: &Sub) { s.each(fn (v, arr) { return arr.extra }) }
+				fn f(s: &Sub) -> undefined { s.each(fn (v, arr) { return arr.extra }) }
 			`,
 		},
 		{
@@ -3778,13 +3778,13 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 		{
 			name: "a callback reads through a borrow written by name",
 			src: named + `
-				fn f(xs: &Named<number>) { xs.each(fn (v, arr) { return arr.length }) }
+				fn f(xs: &Named<number>) -> undefined { xs.each(fn (v, arr) { return arr.length }) }
 			`,
 		},
 		{
 			name: "a callback cannot call a mutating method through a borrow",
 			src: named + `
-				fn f(xs: &Named<number>) { xs.each(fn (v, arr) { return arr.push(1) }) }
+				fn f(xs: &Named<number>) -> undefined { xs.each(fn (v, arr) { return arr.push(1) }) }
 			`,
 			want: []string{"object is missing property: push"},
 		},
