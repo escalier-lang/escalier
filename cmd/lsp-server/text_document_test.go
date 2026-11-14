@@ -1546,7 +1546,7 @@ func TestHoverFromSolver(t *testing.T) {
 			expected: escalierCode("namespace errs"),
 		},
 		{
-			name: "ExtractorPatternOffName",
+			name: "ExtractorPatternBetweenArgsHasNoHover",
 			files: map[string]string{
 				"lib/a.esc": "export enum E { Num(value: number), Pair(a: number, b: string) }\nexport fn f(e: E) -> number {\n    return match e {\n        E.Num(v) => v,\n        E.Pair(a, b) => a,\n    }\n}",
 			},
