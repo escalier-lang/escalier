@@ -46,6 +46,7 @@ const manifest: Manifest = {
     types: [],
     templates: { basic: ['lib/index.esc'] },
     examples: { enums: ['lib/index.esc'] },
+    builtins: [],
 };
 
 function renderPlayground() {
