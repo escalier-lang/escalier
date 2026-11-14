@@ -60,9 +60,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 
 	// Install the same lifetime scopes and `Self` class the signatures were built under, so a
 	// `&'a` a member body writes reaches the variable its signature holds.
-	savedClassLts := c.declLifetimes
-	c.declLifetimes = shell.namedLts
-	defer func() { c.declLifetimes = savedClassLts }()
+	defer c.enterDeclLifetimeScope(shell.namedLts)()
 	savedNamedLts := c.namedLifetimes
 	c.namedLifetimes = sigs.namedLts
 	defer func() { c.namedLifetimes = savedNamedLts }()
@@ -217,9 +215,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 			prevNS := c.classNamespace
 			c.classNamespace = ns
 			defer func() { c.classNamespace = prevNS }()
-			savedClassLts := c.declLifetimes
-			c.declLifetimes = shell.namedLts
-			defer func() { c.declLifetimes = savedClassLts }()
+			defer c.enterDeclLifetimeScope(shell.namedLts)()
 			savedNamedLts := c.namedLifetimes
 			c.namedLifetimes = sigs.namedLts
 			defer func() { c.namedLifetimes = savedNamedLts }()
@@ -508,9 +504,7 @@ func (c *checker) buildClassSigs(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// of its own. It holds the declared parameters and nothing else: the shell's map is
 	// written only by resolveClassLifetimeParams, and every reader below copies before
 	// minting, so an undeclared name a field writes cannot intern itself as a class binder.
-	savedClassLts := c.declLifetimes
-	c.declLifetimes = shell.namedLts
-	defer func() { c.declLifetimes = savedClassLts }()
+	defer c.enterDeclLifetimeScope(shell.namedLts)()
 
 	// Resolve the body under a copy of that scope, so a `&'a` written in a field reaches the
 	// class parameter while a name the body mints stays out of the shell's map. A class is
@@ -952,23 +946,155 @@ func packageKeyPrefix(uri string) string {
 	return packageKeyHead + strings.ReplaceAll(escaped, ".", "%2E")
 }
 
-// nestedLifetimeScope returns the named-lifetime scope a signature nested in a class body
-// starts from: the class's own parameters, minus every name the signature rebinds. A rebound
-// name shadows the class's, so the `'a` of `pick<'a>` inside `class Holder<'a>` is a lifetime
-// of its own rather than the class's. own is the signature's `<…>` clause.
+// nestedLifetimeScope returns the named-lifetime scope a nested signature starts from: the
+// parameters of an enclosing class and of each enclosing function, minus every name the
+// signature rebinds. A rebound name shadows the outer one, so the `'a` of `pick<'a>` inside
+// `class Holder<'a>` is a lifetime of its own rather than the class's, and so is the `'a` of
+// `fn <'a>(…)` written in the body of `fn outer<'a>`. own is the signature's `<…>` clause.
 //
-// The result is a fresh map, so a name the signature mints stays out of the class's scope and
-// out of a sibling signature's. It is nil outside a class body, where a signature starts from
-// nothing.
+// The result is a fresh map, so a name the signature mints stays out of the outer scope and
+// out of a sibling signature's. It is nil outside every class and function body, where a
+// signature starts from nothing.
 func (c *checker) nestedLifetimeScope(own []*ast.LifetimeParam) map[string]*soltype.LifetimeVar {
-	if len(c.declLifetimes) == 0 {
+	if len(c.declLifetimes) == 0 && len(c.enclosingLifetimes) == 0 {
 		return nil
 	}
 	out := maps.Clone(c.declLifetimes)
+	if out == nil {
+		out = map[string]*soltype.LifetimeVar{}
+	}
+	// enterDeclLifetimeScope empties enclosingLifetimes when a class or alias body starts,
+	// so every name in it belongs to a member or function whose body encloses this signature.
+	// That function is nearer than the declaration, so its name wins.
+	maps.Copy(out, c.enclosingLifetimes)
 	for _, p := range own {
 		delete(out, p.Name)
 	}
 	return out
+}
+
+// enterLifetimeScope installs nestedLifetimeScope(own) as the named-lifetime scope and returns
+// a function that restores the scopes in force before. While it is installed,
+// enclosingLifetimes and enclosingBounds leave out each name own binds.
+func (c *checker) enterLifetimeScope(own []*ast.LifetimeParam) (restore func()) {
+	savedNamed, savedEnclosing, savedBounds := c.namedLifetimes, c.enclosingLifetimes, c.enclosingBounds
+	c.namedLifetimes = c.nestedLifetimeScope(own)
+	c.enclosingLifetimes, c.enclosingBounds = hideLifetimes(c.enclosingLifetimes, c.enclosingBounds, own)
+	return func() {
+		c.namedLifetimes, c.enclosingLifetimes, c.enclosingBounds = savedNamed, savedEnclosing, savedBounds
+	}
+}
+
+// enterDeclLifetimeScope installs lts as declLifetimes and returns a function that restores
+// the scopes in force before. While it is installed, enclosingLifetimes, enclosingBounds and
+// enclosingOwners are empty.
+func (c *checker) enterDeclLifetimeScope(lts map[string]*soltype.LifetimeVar) (restore func()) {
+	savedDecl, savedEnclosing, savedBounds := c.declLifetimes, c.enclosingLifetimes, c.enclosingBounds
+	savedOwners := c.enclosingOwners
+	c.declLifetimes, c.enclosingLifetimes, c.enclosingBounds, c.enclosingOwners = lts, nil, nil, nil
+	return func() {
+		c.declLifetimes, c.enclosingLifetimes, c.enclosingBounds = savedDecl, savedEnclosing, savedBounds
+		c.enclosingOwners = savedOwners
+	}
+}
+
+// hideLifetimes returns scope and bounds without each name own binds. A bound whose target is
+// such a name is dropped too, since that name now denotes own's lifetime. When own is empty it
+// returns scope and bounds themselves. Otherwise both results are fresh, and each is nil when
+// nothing is left.
+func hideLifetimes(scope map[string]*soltype.LifetimeVar, bounds map[string]set.Set[string], own []*ast.LifetimeParam) (map[string]*soltype.LifetimeVar, map[string]set.Set[string]) {
+	if len(own) == 0 {
+		return scope, bounds
+	}
+	hidden := set.NewSet[string]()
+	for _, p := range own {
+		hidden.Add(p.Name)
+	}
+	var outScope map[string]*soltype.LifetimeVar
+	for name, v := range scope {
+		if !hidden.Contains(name) {
+			if outScope == nil {
+				outScope = map[string]*soltype.LifetimeVar{}
+			}
+			outScope[name] = v
+		}
+	}
+	var outBounds map[string]set.Set[string]
+	for name, supers := range bounds {
+		if hidden.Contains(name) {
+			continue
+		}
+		kept := set.NewSet[string]()
+		for super := range supers {
+			if !hidden.Contains(super) {
+				kept.Add(super)
+			}
+		}
+		if outBounds == nil {
+			outBounds = map[string]set.Set[string]{}
+		}
+		outBounds[name] = kept
+	}
+	return outScope, outBounds
+}
+
+// enterBodyLifetimeScope makes the names a function's signature binds part of the enclosing
+// scope a closure or function type written in its body starts from, and returns a function
+// that restores the scope in force before. sig is the function's signature. It runs while the
+// signature's named-lifetime scope is installed. A name the signature binds that no position
+// wrote is interned here, so a closure that writes it reaches the function's lifetime. The
+// bounds the signature declares and implies join enclosingBounds.
+//
+// owner is the function's possessive, as "run's", for enclosingOwners. outerScope is the
+// enclosing functions' lifetimes before the signature hid the names it binds. A name the
+// signature binds that outerScope or declLifetimes also binds is recorded in enclosingOwners
+// under owner.
+func (c *checker) enterBodyLifetimeScope(sig ast.FuncSig, lvl int, owner string, outerScope map[string]*soltype.LifetimeVar) (restore func()) {
+	savedEnclosing, savedBounds, savedOwners := c.enclosingLifetimes, c.enclosingBounds, c.enclosingOwners
+	if len(sig.LifetimeParams) == 0 {
+		return func() {}
+	}
+	owners := maps.Clone(c.enclosingOwners)
+	if owners == nil {
+		owners = map[string]string{}
+	}
+	scope := maps.Clone(c.enclosingLifetimes)
+	if scope == nil {
+		scope = map[string]*soltype.LifetimeVar{}
+	}
+	bounds := maps.Clone(c.enclosingBounds)
+	if bounds == nil {
+		bounds = map[string]set.Set[string]{}
+	}
+	// A bound may name an enclosing lifetime, whose own bounds are already closed, so adding
+	// them once keeps every entry closed across function levels.
+	for name, supers := range declaredOutlives(sig.LifetimeParams, impliedOutlives(sig)).outlives {
+		closed := set.NewSet[string]()
+		for super := range supers {
+			closed.Add(super)
+			for outer := range c.enclosingBounds[super] {
+				closed.Add(outer)
+			}
+		}
+		bounds[name] = closed
+	}
+	for _, p := range sig.LifetimeParams {
+		if p.Name == "static" {
+			continue
+		}
+		scope[p.Name] = c.namedLifetime(p.Name, lvl)
+		_, inOuter := outerScope[p.Name]
+		_, inDecl := c.declLifetimes[p.Name]
+		if inOuter || inDecl {
+			owners[p.Name] = owner
+		} else {
+			delete(owners, p.Name)
+		}
+	}
+	c.enclosingLifetimes, c.enclosingBounds, c.enclosingOwners = scope, bounds, owners
+	return func() {
+		c.enclosingLifetimes, c.enclosingBounds, c.enclosingOwners = savedEnclosing, savedBounds, savedOwners
+	}
 }
 
 // signatureLifetimeParams returns the binder a class member's or call signature's own `<…>`
@@ -1559,6 +1685,9 @@ func (c *checker) checkClassBodyLifetimes(decl *ast.ClassDecl) {
 func (c *checker) buildFieldSigs(
 	scope *Scope, lvl int, decl *ast.ClassDecl, body, static *soltype.ObjectType,
 ) []staticFieldInit {
+	// A field holds its function for as long as the instance lives, so a function type
+	// written with no lifetime in a field's type holds no borrow.
+	defer c.elideFuncsAs(elideStatic)()
 	var inits []staticFieldInit
 	for _, elem := range decl.Body {
 		field, ok := elem.(*ast.FieldElem)
@@ -1904,7 +2033,12 @@ func (c *checker) seedStubReturn(scope *Scope, lvl int, fn *ast.FuncExpr, stub *
 		return false
 	}
 	errsLen := len(c.errs)
+	// Whether a function type in the return holds a borrow depends on the member's receiver
+	// and parameters, which the body pass resolves. Giving it a lifetime here makes the
+	// finder below leave the return to that pass.
+	restore := c.elideFuncsAs(elideFresh)
 	ret, ok := c.resolveTypeAnn(scope, sig.Return, lvl)
+	restore()
 	c.errs = c.errs[:errsLen]
 	if !ok {
 		return false
@@ -1932,6 +2066,8 @@ func (v *openTypeFinder) EnterType(t soltype.Type, _ soltype.Polarity) soltype.E
 		v.found = v.found || len(t.LifetimeArgs) > 0 || t.Lt != nil
 	case *soltype.AliasType:
 		v.found = v.found || len(t.LifetimeArgs) > 0
+	case *soltype.FuncType:
+		v.found = v.found || t.Lt != nil
 	}
 	return soltype.EnterResult{}
 }

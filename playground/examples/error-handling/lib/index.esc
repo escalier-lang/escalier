@@ -1,0 +1,76 @@
+// A config loader that reads a port number from text. Each failure is its own
+// class, so a caller can tell them apart with a pattern.
+class ConfigError {
+    key: string,
+    constructor(&mut self, key: string) { self.key = key }
+}
+
+class ParseError extends ConfigError {
+    text: string,
+    constructor(&mut self, key: string, text: string) {
+        super(key)
+        self.text = text
+    }
+}
+
+class PortRangeError {
+    port: number,
+    constructor(&mut self, port: number) { self.port = port }
+}
+
+// `throws _` asks the checker to read the clause off the body. This function
+// can throw `ParseError | PortRangeError`, and every caller must account for it.
+export fn parsePort(text: string) -> number throws _ {
+    val port = Number.parseInt(text, 10)
+    if Number.isNaN(port) {
+        throw ParseError("port", text)
+    }
+    if port < 1 || port > 65535 {
+        throw PortRangeError(port)
+    }
+    return port
+}
+
+// Omitting `throws` declares that a function raises nothing.
+// Uncomment to see the error: `unsafePort` can throw `ParseError | PortRangeError`,
+// but it doesn't declare it; add `throws ParseError | PortRangeError` to `unsafePort`'s signature
+// fn unsafePort(text: string) -> number { return parsePort(text) }
+
+// The caught value is `unknown`, and each arm narrows it with a class pattern.
+// The arms cover both known throws, so `portOrDefault` needs no `throws` clause.
+export fn portOrDefault(text: string) -> number {
+    return try {
+        parsePort(text)
+    } catch {
+        ParseError{} => 8080,
+        PortRangeError{port} => if port < 1 { 1 } else { 65535 },
+    }
+}
+
+// What escapes a `try` is the thrown set minus what the arms catch. An arm for
+// the base class `ConfigError` also catches `ParseError`, so only
+// `PortRangeError` escapes, and that is the clause the checker infers here.
+export fn lenientPort(text: string) -> number throws _ {
+    return try {
+        parsePort(text)
+    } catch {
+        ConfigError{} => 8080,
+    }
+}
+
+// A callee's `throws` reaches its caller, so `describe` throws `PortRangeError` too.
+export fn describe(text: string) -> string throws _ {
+    return `listening on ${lenientPort(text)}`
+}
+
+// An arm can also narrow the caught `unknown` to a builtin such as `Error`.
+// `_` catches whatever is left, so nothing escapes `report`.
+export fn report(text: string) -> string {
+    return try {
+        describe(text)
+    } catch {
+        PortRangeError{port} => `port ${port} is out of range`,
+        Error{message} => message,
+        _ => "unexpected failure",
+    }
+}

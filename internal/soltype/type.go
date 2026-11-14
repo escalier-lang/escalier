@@ -343,11 +343,11 @@ type FuncType struct {
 	// LifetimeParams are the function's quantified lifetime parameters, the twin of TypeParams;
 	// LevelOf skips them too, though a body lifetime still counts through its RefType.
 	LifetimeParams []*LifetimeParam
-	// Lt is the function's retention lifetime, written `&'a fn () -> R` on a parameter. A
-	// retention lifetime bounds how long a callee may keep a function it receives. Nil
-	// means the callee only calls the function during the call. The lifetime does not make
-	// the function a borrow, and a function value is still copied. Lt is free in the
-	// function type, unlike the lifetimes in LifetimeParams.
+	// Lt is the function's lifetime, written `'a fn () -> R`. It bounds the borrows the
+	// function may hold, so a slot keeps the function only while Lt is live. Nil means the
+	// function holds no borrow that ends before 'static, the same as soltype.Static. The
+	// lifetime does not make the function a borrow, and a function value is still copied. Lt
+	// is free in the function type, unlike the lifetimes in LifetimeParams.
 	Lt Lifetime
 }
 
@@ -963,7 +963,9 @@ type RefType struct {
 // wrapper off a borrow whose inner coalesced to a knot. SelfType is a RefInner because it
 // stands for a class instance, so `&Self` borrows the receiver's own class. GeneratorType is
 // a RefInner because a generator is a stateful object, so `mut Generator<Y, R, N>` borrows
-// one the way `mut Point` borrows a class instance.
+// one the way `mut Point` borrows a class instance. SkolemType is a RefInner because it
+// stands for a type parameter, as TypeVarType does, so `&mut T` keeps its borrow when `T`
+// reads as its skolem.
 type RefInner interface {
 	Type
 	isRefInner()
@@ -979,6 +981,7 @@ func (*AliasType) isRefInner()        {}
 func (*RecursiveType) isRefInner()    {}
 func (*SelfType) isRefInner()         {}
 func (*GeneratorType) isRefInner()    {}
+func (*SkolemType) isRefInner()       {}
 
 // GeneratorType is the external face of a `gen fn`: calling one returns a generator
 // object rather than the body's value. It is a dedicated concrete rather than a

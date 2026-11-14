@@ -1,0 +1,15 @@
+val chores: Array<Task> = [
+    newTask("Water the plants", {done: true, tags: ["home"]}),
+    newTask("Book the dentist", {tags: ["health", "phone"]}),
+    newTask("Return library books", {}),
+]
+
+for task in chores {
+    console.log(label(&task))
+}
+
+val [finished, total] = progress(&chores)
+console.log(`${finished} of ${total} done`)
+
+console.log(headline([newTask("Pay rent", {}), newTask("Call mom", {})]))
+console.log(withoutTags(newTask("Buy milk", {tags: ["shop"]})))

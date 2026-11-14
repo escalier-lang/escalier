@@ -1,6 +1,7 @@
 import * as monaco from 'monaco-editor-core';
 import * as lsp from 'vscode-languageserver-protocol';
 
+import { registerBasicLanguages } from './basic-languages';
 import {
     type CompletionSuggestion,
     provideCompletionItems,
@@ -8,6 +9,13 @@ import {
 } from './completions';
 import type { Client } from './lsp-client/client';
 import { monarchLanguage } from './monarch-language';
+import {
+    coalesced,
+    createSemanticTokensProvider,
+    modifierTokenRules,
+} from './semantic-tokens';
+import { createSignatureHelpProvider } from './signature-help';
+import { monacoThemeName, useThemeStore } from './theme';
 
 export const languageID = 'escalier';
 
@@ -59,8 +67,22 @@ function lspRangeToMonacoRange(range: lsp.Range): monaco.Range {
     );
 }
 
-export function setupLanguage(client: Client) {
+export function setupLanguage(
+    client: Client,
+    capabilities: lsp.ServerCapabilities,
+) {
     monaco.languages.register({ id: languageID });
+    // The editor opens compiled output such as `build/main.js` next to Escalier source.
+    registerBasicLanguages();
+
+    // Fires when a document's semantic tokens may have changed, so Monaco asks for them
+    // again.
+    const semanticTokensChanged = new monaco.Emitter<void>();
+    // A package check publishes diagnostics for every open file in a row, and each fire
+    // makes Monaco request tokens for every visible model, so a burst fires once.
+    const scheduleSemanticTokensRefresh = coalesced(() =>
+        semanticTokensChanged.fire(),
+    );
 
     type ModelState = {
         debounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -106,6 +128,10 @@ export function setupLanguage(client: Client) {
             if (!model) {
                 return;
             }
+
+            // The server publishes diagnostics after each check, and the tokens it reports
+            // come from the latest check.
+            scheduleSemanticTokensRefresh();
 
             if (params.uri.endsWith('.esc')) {
                 // Trigger a full package recompilation. The compile
@@ -270,11 +296,12 @@ export function setupLanguage(client: Client) {
 
     monaco.languages.setMonarchTokensProvider(languageID, monarchLanguage);
     monaco.languages.setLanguageConfiguration(languageID, {
+        // `<` and `>` are left out because they also appear in operators such as `->`
+        // and `>=`, where bracket pair colouring would mark them as unmatched.
         brackets: [
             ['(', ')'],
             ['{', '}'],
             ['[', ']'],
-            ['<', '>'],
             ['`', '`'],
             ['"', '"'],
         ],
@@ -359,10 +386,58 @@ export function setupLanguage(client: Client) {
         },
     });
 
-    monaco.editor.defineTheme('escalier-theme', {
+    const signatureHelpOptions = capabilities.signatureHelpProvider;
+    if (signatureHelpOptions) {
+        monaco.languages.registerSignatureHelpProvider(
+            languageID,
+            createSignatureHelpProvider({
+                options: signatureHelpOptions,
+                request: (params) => client.textDocumentSignatureHelp(params),
+                flushPendingChanges,
+            }),
+        );
+    }
+
+    const semanticTokensProvider = capabilities.semanticTokensProvider;
+    const legend = semanticTokensProvider?.legend;
+    if (legend) {
+        monaco.languages.registerDocumentSemanticTokensProvider(
+            languageID,
+            createSemanticTokensProvider({
+                legend,
+                request: (params) =>
+                    client.textDocumentSemanticTokensFull(params),
+                // Monaco asks for tokens soon after every edit. Flushing the debounced
+                // didChange, as completion and hover do, would start a check per
+                // request. The provider declines while the change is pending instead,
+                // and the refresh that follows the check's diagnostics fetches the new
+                // tokens.
+                hasPendingChange: (uri) =>
+                    modelStates.get(uri)?.debounceTimer !== undefined,
+                onDidChange: semanticTokensChanged.event,
+            }),
+        );
+    }
+
+    const rules = modifierTokenRules(legend);
+    monaco.editor.defineTheme(monacoThemeName('dark'), {
         base: 'vs-dark',
         inherit: true,
         colors: {},
-        rules: [],
+        rules,
+    });
+    monaco.editor.defineTheme(monacoThemeName('light'), {
+        base: 'vs',
+        inherit: true,
+        colors: {},
+        rules,
+    });
+    // Monaco applies one theme to every editor, so following the store here also
+    // restyles the editors that exist already.
+    monaco.editor.setTheme(monacoThemeName(useThemeStore.getState().theme));
+    useThemeStore.subscribe((state, prev) => {
+        if (state.theme !== prev.theme) {
+            monaco.editor.setTheme(monacoThemeName(state.theme));
+        }
     });
 }

@@ -176,21 +176,21 @@ func TestFlowLifetimeRules(t *testing.T) {
 				}
 			`,
 		},
-		// E4. The closure in `sink` may run during any later call, so `readIt(&p)` conflicts with
-		// the write the closure performs.
+		// E4. `sink` keeps its function for the whole program, so it keeps the closure's mutable
+		// borrow of `p.x` for the rest of the program, and `&p` conflicts with it.
 		{
 			name: "E4/Stored",
 			src: `
-				var sink: fn () -> undefined = fn () {}
+				var sink: 'static fn () -> undefined = fn () {}
 				declare fn readIt(a: &{x: number}) -> undefined
 
 				fn stored() {
 					val mut p = {x: 1}
 					sink = fn () { p.x = 2 }
-					readIt(&p)    // error: this call may run 'sink', which writes 'p' while it is borrowed as immutable
+					readIt(&p)    // error: cannot borrow 'p' as immutable while 'p.x' is borrowed as mutable by 'sink'
 				}
 			`,
-			want: []string{"8:6-8:16: this call may run 'sink', which writes 'p' while it is borrowed as immutable"},
+			want: []string{"8:13-8:15: cannot borrow 'p' as immutable while 'p.x' is borrowed as mutable by 'sink'"},
 		},
 		// E4. A closure that moves a capture moves it at each call, so the second call uses a
 		// moved value.
@@ -411,39 +411,59 @@ func TestFlowLifetimeClosureBlocksMove(t *testing.T) {
 	})
 }
 
-// TestFlowLifetimeRetainedCallback covers the first `setup` program in D10, which E4 rejects.
+// TestFlowLifetimeRetainedCallback covers the D10 `setup` program that makes an immutable path
+// to `count` after `onClick` keeps its handler. `onClick` keeps the handler for 'static, so it
+// keeps the handler's mutable borrow of `count.n` for the rest of the program, and a later
+// immutable borrow of `count` conflicts with it.
 func TestFlowLifetimeRetainedCallback(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{
-		// E4 and D10. `onClick` keeps its handler for the rest of the program, so the handler's
-		// mutable borrow of `count` stays live after the call and `render` takes an immutable view
-		// a click could change.
+		// E4 and D10. `onClick` keeps its handler and the handler's mutable borrow of `count.n` for
+		// the rest of the program, so `render`'s immutable borrow conflicts with it.
 		{
 			name: "D10/RetainedHandlerConflicts",
 			src: `
-				declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+				declare fn onClick(handler: 'static fn () -> undefined) -> undefined
 				declare fn render(view: &{n: number}) -> undefined
 
 				fn setup() {
 					val mut count = {n: 0}
 					onClick(fn () { count.n = count.n + 1 })
-					render(&count)    // error: a click may run the handler, which writes 'count' while it is borrowed as immutable
+					render(&count)    // error: cannot borrow 'count' as immutable while 'count.n' is borrowed as mutable
 				}
 			`,
-			want: []string{"8:6-8:20: this call may run the 'handler' that 'onClick' retains, which writes 'count' while it is borrowed as immutable"},
+			want: []string{"8:13-8:19: cannot borrow 'count' as immutable while 'count.n' is borrowed as mutable by the 'handler' that 'onClick' retains"},
 		},
 	})
 }
 
-// TestFlowLifetimeRetainedCallbackAccepted covers the two fixed `setup` programs in D10 and a
-// closure passed to a parameter that only calls it, each of which E4 accepts.
+// TestFlowLifetimeRetainedCallbackAccepted covers the D10 programs E4 accepts: a handler that is
+// the only use of `count` after `onClick` keeps it, a mutable view beside a handler that writes
+// `count`, a handler that only reads `count` beside a later immutable view, and a closure passed
+// to a parameter that only calls it.
 func TestFlowLifetimeRetainedCallbackAccepted(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{
-		// E4 and D10. The handler owns `count`, since `onClick` keeps it past the frame, so the
-		// borrow inside the handler lasts for one call.
+		// E4 and D10. A mutable view makes no promise that the value holds still, and E2 allows
+		// two mutable paths at once, so it sits beside the mutable borrow `onClick` keeps.
+		{
+			name: "D10/MutableView",
+			src: `
+				declare fn onClick(handler: 'static fn () -> undefined) -> undefined
+				declare fn render(view: &mut {n: number}) -> undefined
+
+				fn setup() {
+					val mut count = {n: 0}
+					onClick(fn () { count.n = count.n + 1 })
+					render(&mut count)    // accepted
+				}
+			`,
+		},
+		// E4 and D10. `onClick` keeps the handler's borrow of `count` for the rest of the program,
+		// and nothing in `setup` uses `count` after it. The borrow inside the handler lasts for one
+		// call.
 		{
 			name: "D10/HandlerOwnsState",
 			src: `
-				declare fn onClick(handler: &'static fn () -> undefined) -> undefined
+				declare fn onClick(handler: 'static fn () -> undefined) -> undefined
 				declare fn render(view: &{n: number}) -> undefined
 
 				fn setup() {
@@ -455,18 +475,19 @@ func TestFlowLifetimeRetainedCallbackAccepted(t *testing.T) {
 				}
 			`,
 		},
-		// E4 and D10. A mutable view makes no promise that the value holds still, and E2 allows
-		// several mutable paths at once.
+		// E4 and D10. The handler only reads `count`, so `onClick` keeps an immutable borrow of it,
+		// and `render`'s immutable borrow beside it checks.
 		{
-			name: "D10/MutableView",
+			name: "D10/ReadingHandlerBesideAView",
 			src: `
-				declare fn onClick(handler: &'static fn () -> undefined) -> undefined
-				declare fn render(view: &mut {n: number}) -> undefined
+				declare fn onClick(handler: 'static fn () -> undefined) -> undefined
+				declare fn render(view: &{n: number}) -> undefined
+				declare fn log(n: number) -> undefined
 
 				fn setup() {
 					val mut count = {n: 0}
-					onClick(fn () { count.n = count.n + 1 })
-					render(&mut count)    // accepted
+					onClick(fn () { log(count.n) })
+					render(&count)    // accepted
 				}
 			`,
 		},

@@ -186,6 +186,28 @@ func PrintAsScheme(t Type) string {
 	return PrintAsSchemeWith(t, func(*TypeVarType) bool { return true }, nil, nil, nil)
 }
 
+// PrintSignature renders t as PrintAsScheme does and returns the byte range each of t's
+// parameters takes in the result, in parameter order. A receiver and the inexact `...`
+// marker get no range. `fn (a: number, b?: string) -> number` returns the ranges of
+// `a: number` and `b?: string`. The ranges are nil when t renders through a form that
+// does not end in its parameter list and return type, such as a function with a lifetime
+// rendering `<'a> ('a fn (x: number) -> number)`.
+func PrintSignature(t *FuncType) (string, [][2]int) {
+	rec := &paramRecord{fn: t}
+	out := printAsSchemeWith(
+		&namedPrinter{record: rec}, t, func(*TypeVarType) bool { return true }, nil, nil, nil,
+	)
+	if rec.body == "" || !strings.HasSuffix(out, rec.body) {
+		return out, nil
+	}
+	start := len(out) - len(rec.body)
+	ranges := make([][2]int, len(rec.ranges))
+	for i, r := range rec.ranges {
+		ranges[i] = [2]int{start + r[0], start + r[1]}
+	}
+	return out, ranges
+}
+
 // PrintWithParams renders a type like Print, naming each variable in declared under the
 // source name its declaration wrote.
 //
@@ -246,11 +268,23 @@ func PrintAsSchemeWith(
 	declared []*TypeParam,
 	declaredLts []*LifetimeParam,
 ) string {
-	p := &namedPrinter{}
+	return printAsSchemeWith(&namedPrinter{}, t, isParam, ltBounds, declared, declaredLts)
+}
+
+// printAsSchemeWith is PrintAsSchemeWith rendering through p, so a caller can set fields
+// such as record on the printer first. p must not have rendered anything yet.
+func printAsSchemeWith(
+	p *namedPrinter,
+	t Type,
+	isParam func(*TypeVarType) bool,
+	ltBounds map[*LifetimeVar][]*LifetimeVar,
+	declared []*TypeParam,
+	declaredLts []*LifetimeParam,
+) string {
 	// A function's own type parameters claim their source names before anything else, so a
 	// generated T0 skips a name the source itself wrote. `fn <T0>` beside a free scheme
 	// variable renders `fn <T1, T0>`, with each binder naming one variable.
-	// A retained function binds its own type parameters in printFuncTail instead, since it
+	// A function with a lifetime binds its own type parameters in printFuncTail instead, since it
 	// renders through the general path below.
 	if ft, ok := t.(*FuncType); ok && ft.Lt == nil {
 		p.bindTypeParams(ft.TypeParams)
@@ -349,8 +383,10 @@ func PrintAsSchemeWith(
 	}
 	if len(labels) == 0 && len(ltVars) == 0 {
 		// No quantified parameters: render as a plain (possibly raw-var) type, which
-		// keeps a leaked variable visible as t{ID}.
-		return Print(t)
+		// keeps a leaked variable visible as t{ID}. A fresh printer renders it, as in Print,
+		// because p has already bound the function's own type parameters and printFuncTail
+		// would bind them a second time. The fresh printer keeps p's record.
+		return (&namedPrinter{record: p.record}).printType(t)
 	}
 	p.ltNames = ltNames
 	// A declared parameter's bound renders here rather than beside its name, because a
@@ -396,8 +432,8 @@ func PrintAsSchemeWith(
 	for i, lv := range ltVars {
 		ltLabels[i] = p.lifetimeBinder(lv, ltBounds[lv], ltIndex)
 	}
-	// A retained function such as `&'a fn () -> R` takes the general prefix path below,
-	// since its quantifier prefix must also bind the retention lifetime outside the `&'a`.
+	// A function with a lifetime such as `'a fn () -> R` takes the general prefix path below,
+	// since its quantifier prefix must also bind the lifetime written ahead of `fn`.
 	if ft, ok := t.(*FuncType); ok && ft.Lt == nil {
 		// Merge the scheme's free variables, the function's OWN type and lifetime
 		// parameters, and the free scheme lifetimes into one ordered prefix, so a generic
@@ -570,7 +606,7 @@ func (c *ltVarCollector) EnterType(t Type, _ Polarity) EnterResult {
 			c.add(la)
 		}
 	case *FuncType:
-		// The retention lifetime of `&'a fn` is free and prints ahead of the function's
+		// The lifetime of `'a fn` is free and prints ahead of the function's
 		// own binders, so it is collected before they are marked seen.
 		c.add(t.Lt)
 		// A function's own lifetime parameters are bound, not free, so mark their
@@ -765,6 +801,10 @@ type namedPrinter struct {
 	// `'l{ID}` debug form. Display-time lifetime coalescing populates it so a
 	// param-originated lifetime renders under its quantified name.
 	ltNames map[*LifetimeVar]string
+	// inParams counts the parameter lists being rendered around the current type. Inside
+	// one, a function type with no lifetime renders `'static fn`, since a bare `fn` there
+	// reads as a function that may be called only during the call.
+	inParams int
 	// qualify renders a ClassType or AliasType under its full dep_graph-qualified name
 	// instead of the namespace-stripped display name, so two nominal types sharing a local
 	// name across namespaces stay distinct. PrintQualified sets it for identity-key use;
@@ -792,6 +832,18 @@ type namedPrinter struct {
 	// signature releases its own parameters' names on the way out, so two sibling signatures
 	// each written `<T>` both render `T`.
 	claimed set.Set[string]
+	// record is the parameter layout PrintSignature asks for, or nil when nothing reads one.
+	record *paramRecord
+}
+
+// paramRecord is where printFuncBody writes the parameter layout of one function as it
+// renders it. fn is the function to record. ranges holds the byte range each of fn's
+// parameters takes within body, in parameter order. body is the string printFuncBody
+// returned for fn, and it is empty until fn has rendered.
+type paramRecord struct {
+	fn     *FuncType
+	ranges [][2]int
+	body   string
 }
 
 // nameTaken reports whether a type parameter in scope at this point already renders under
@@ -1116,7 +1168,7 @@ func (p *namedPrinter) printType(t Type) string {
 		parts = append(parts, args...)
 		return name + "<" + strings.Join(parts, ", ") + ">"
 	case *FuncType:
-		return p.funcRetentionPrefix(t) + "fn " + p.printFuncTail(t)
+		return p.funcLifetimePrefix(t) + "fn " + p.printFuncTail(t)
 	case *KeyofType:
 		// `keyof T`. The operand prints at
 		// precPrefix so a looser operand such as a union gets parenthesized: `keyof (A | B)`.
@@ -1213,9 +1265,8 @@ func (p *namedPrinter) printType(t Type) string {
 		// stays bare as `~number`.
 		return "~" + p.printTypeMinPrec(t.Inner, precPrefix)
 	case *SkolemType:
-		// A skolem renders under its source parameter name. It is transient to a
-		// checking-mode pass and does not survive into a displayed type, so this arm is
-		// reached only defensively.
+		// A skolem renders under its source parameter name. A diagnostic's operands and
+		// a type parameter read inside its own function display one.
 		return t.Name
 	}
 	panic(fmt.Sprintf("printType: unhandled %T", t))
@@ -1343,7 +1394,12 @@ func (p *namedPrinter) printObjElem(e ObjTypeElem) string {
 		if !ok {
 			name = "value"
 		}
-		return "set " + p.printObjectKey(e.Name) + "(" + recv + name + ": " + p.printType(e.Param.Type) + ")" +
+		// The value is a parameter, so a function type with no lifetime renders as it does in
+		// a parameter list.
+		p.inParams++
+		param := p.printType(e.Param.Type)
+		p.inParams--
+		return "set " + p.printObjectKey(e.Name) + "(" + recv + name + ": " + param + ")" +
 			p.printThrowsClause(e.ThrowsOrNever())
 	case *ConstructorElem:
 		// A class value's constructor renders as the unnamed call signature
@@ -1414,17 +1470,21 @@ func (p *namedPrinter) refBorrowPrefix(t *RefType) string {
 	return prefix
 }
 
-// funcRetentionPrefix renders the retention lifetime of a function type. It returns
-// "&'a " for `&'a fn () -> R`, "&" when the lifetime elides, and the empty string for a
-// function with no retention lifetime.
-func (p *namedPrinter) funcRetentionPrefix(t *FuncType) string {
+// funcLifetimePrefix renders the lifetime of a function type. It returns "'a " for
+// `'a fn () -> R`, and the empty string when the lifetime elides. A function with no
+// lifetime holds no borrow, so it renders "'static " inside a parameter list and the empty
+// string elsewhere.
+func (p *namedPrinter) funcLifetimePrefix(t *FuncType) string {
 	if t.Lt == nil {
+		if p.inParams > 0 {
+			return "'static "
+		}
 		return ""
 	}
 	if name := p.borrowLifetimeName(t.Lt); name != "" {
-		return "&" + name + " "
+		return name + " "
 	}
-	return "&"
+	return ""
 }
 
 // printSelfReceiver renders a method's receiver as the Rust-style shorthand, reading
@@ -1471,6 +1531,54 @@ func (p *namedPrinter) printFuncTail(t *FuncType) string {
 // the caller built from the binders in scope, or the empty string, and it follows the
 // throws clause.
 func (p *namedPrinter) printFuncBody(t *FuncType, where string) string {
+	ps := p.printParamList(t)
+	if p.record == nil || p.record.fn != t {
+		return p.printFuncBodyFrom(t, ps, where)
+	}
+	first := 0
+	if t.SelfParam != nil {
+		first = 1
+	}
+	p.record.ranges = paramRanges(ps, first, len(t.Params))
+	p.record.body = p.printFuncBodyFrom(t, ps, where)
+	return p.record.body
+}
+
+// paramRanges returns the byte range of each of the n entries ps[first:first+n] within
+// "(" + strings.Join(ps, ", ") + ")", where ps is a rendered parameter list.
+func paramRanges(ps []string, first, n int) [][2]int {
+	ranges := make([][2]int, 0, n)
+	off := len("(")
+	for i, s := range ps {
+		if i >= first && i < first+n {
+			ranges = append(ranges, [2]int{off, off + len(s)})
+		}
+		off += len(s) + len(", ")
+	}
+	return ranges
+}
+
+// printFuncBodyFrom renders the "(params) -> ret" portion of t from ps, the entries of its
+// rendered parameter list, and where, its rendered `where` clause.
+func (p *namedPrinter) printFuncBodyFrom(t *FuncType, ps []string, where string) string {
+	// A `throws T` clause renders after the return type, matching the surface syntax, and
+	// a `where` clause after that.
+	clause := p.printThrowsClause(t.ThrowsOrNever()) + where
+	if clause == "" {
+		return "(" + strings.Join(ps, ", ") + ") -> " + p.printType(t.Ret)
+	}
+	// `-> R` is greedy, so a function-typed return is parenthesized once a clause follows
+	// it — `fn () -> (fn () -> number) throws string` — or the clause re-reads as the inner
+	// function's. precUnion bounds a function type and nothing else, precFunc being the
+	// only precedence below it.
+	return "(" + strings.Join(ps, ", ") + ") -> " + p.printTypeMinPrec(t.Ret, precUnion) + clause
+}
+
+// printParamList renders the receiver and each parameter of t, with inParams raised while
+// it does.
+func (p *namedPrinter) printParamList(t *FuncType) []string {
+	p.inParams++
+	defer func() { p.inParams-- }()
 	ps := make([]string, 0, len(t.Params)+2)
 	if t.SelfParam != nil {
 		ps = append(ps, p.printSelfReceiver(t.SelfParam))
@@ -1489,17 +1597,7 @@ func (p *namedPrinter) printFuncBody(t *FuncType, where string) string {
 	if t.Inexact {
 		ps = append(ps, "...")
 	}
-	// A `throws T` clause renders after the return type, matching the surface syntax, and
-	// a `where` clause after that.
-	clause := p.printThrowsClause(t.ThrowsOrNever()) + where
-	if clause == "" {
-		return "(" + strings.Join(ps, ", ") + ") -> " + p.printType(t.Ret)
-	}
-	// `-> R` is greedy, so a function-typed return is parenthesized once a clause follows
-	// it — `fn () -> (fn () -> number) throws string` — or the clause re-reads as the inner
-	// function's. precUnion bounds a function type and nothing else, precFunc being the
-	// only precedence below it.
-	return "(" + strings.Join(ps, ", ") + ") -> " + p.printTypeMinPrec(t.Ret, precUnion) + clause
+	return ps
 }
 
 // whereClause renders ` where L: P, …` with one relation per parameter of tps that has a

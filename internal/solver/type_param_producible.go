@@ -42,7 +42,7 @@ func (c *checker) checkTypeParamsProducible(node ast.Node, ft *soltype.FuncType,
 			}
 			return false
 		}
-		if floor, ok := forcedConcreteFloor(tp.Var, admitted, paramVars); ok {
+		if floor, ok := forcedConcreteFloor(tp.Var, admitted, paramVars, c.ctx.rigidReadVars); ok {
 			c.report(&TypeParamNotProducibleError{Name: tp.Name, Floor: floor, Node: node})
 		}
 	}
@@ -99,12 +99,21 @@ func (v *polarityVarVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltyp
 // `T | number` is a forced floor even when a sibling branch is the caller's own `T`. A
 // branch that mentions a declared type-param var carries the caller's choice and is not
 // forced. The seen set keeps a cyclic bound graph terminating. A lower bound of root that
-// admitted reports true is one the signature already promised, so it is skipped.
-func forcedConcreteFloor(root *soltype.TypeVarType, admitted func(soltype.Type) bool, paramVars set.Set[*soltype.TypeVarType]) (soltype.Type, bool) {
+// admitted reports true is one the signature already promised, so it is skipped. An
+// immutable borrow of a variable in readVars is walked as the variable it borrows.
+func forcedConcreteFloor(root *soltype.TypeVarType, admitted func(soltype.Type) bool, paramVars, readVars set.Set[*soltype.TypeVarType]) (soltype.Type, bool) {
 	seen := set.NewSet[*soltype.TypeVarType]()
 	var walkVar func(v *soltype.TypeVarType) (soltype.Type, bool)
 	var walkBound func(b soltype.Type) (soltype.Type, bool)
 	walkBound = func(b soltype.Type) (soltype.Type, bool) {
+		// A read of a field typed by a parameter `T` off an immutable borrow yields a borrow
+		// of a variable whose lower bound is `T`, and the borrow holds what that variable
+		// holds. Any other borrow is a floor of its own.
+		if ref, isRef := b.(*soltype.RefType); isRef && !ref.Mut {
+			if v, isVar := ref.Inner.(*soltype.TypeVarType); isVar && readVars.Contains(v) {
+				b = v
+			}
+		}
 		switch b := b.(type) {
 		case *soltype.TypeVarType:
 			if paramVars.Contains(b) {

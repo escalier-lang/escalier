@@ -522,6 +522,16 @@ func (c *Context) constrainBorrowedFieldRead(sub *soltype.RefType, req *soltype.
 	if v, ok := inner.(*soltype.TypeVarType); ok {
 		return c.constrainBorrowedVarFieldRead(sub, v, req, seen), true
 	}
+	// A type parameter's skolem is read through its upper bound under the same borrow, since
+	// every type the parameter stands for has the bound's members. `x.n()` off `x: &T` with
+	// `T: A` reads `n` from `&A`. A skolem with no upper bound exposes no members.
+	if sk, ok := inner.(*soltype.SkolemType); ok {
+		upper, ok := sk.Upper.(soltype.RefInner)
+		if !ok {
+			return nil, false
+		}
+		return c.constrainBorrowedFieldRead(&soltype.RefType{Mut: sub.Mut, Lt: sub.Lt, Inner: upper}, req, seen, skipMissing)
+	}
 	// A class instance is read through its body, projected at the instance's arguments so a
 	// field typed `T` reads as the argument. Any other pointee is left to the caller, which
 	// reports the borrow as escaping.
@@ -1105,6 +1115,11 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			return c.constrain(sub, inner, seen, false)
 		}
 	}
+	if ref, ok := sub.(*soltype.RefType); ok && ref.Lt != nil {
+		if errs, handled := c.constrainBorrowIntoRigid(ref, super, seen); handled {
+			return errs
+		}
+	}
 
 	// A variable constrained against itself is reflexively true, so it records
 	// nothing. Without this guard the self-edge `T <: T` lands in the variable's own
@@ -1341,6 +1356,18 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 					return []SolverError{&BorrowEscapeError{Sub: ref, Super: super}}
 				}
 			}
+			// A function that fits a member except for its lifetime fails only on the
+			// lifetime, so it is checked against the union as if it held no borrow and
+			// reported as kept for 'static, the way a lone 'static slot reports it.
+			if ft, ok := sub.(*soltype.FuncType); ok && !isStaticFuncLt(ft.Lt) {
+				freed := *ft
+				freed.Lt = nil
+				if member := c.staticFuncMember(&freed, supU); member != nil {
+					errs := c.constrain(&freed, super, seen, mutCtx)
+					c.constrainLt(ft.Lt, soltype.Static)
+					return append(errs, &FuncKeptForStaticError{Sub: ft, Super: member})
+				}
+			}
 			return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
 		}
 	}
@@ -1429,12 +1456,23 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			if quantified(sub) {
 				return c.constrain(c.instantiateFuncBinder(sub, binderLevel(sub)), sup, seen, mutCtx)
 			}
-			// A retention lifetime is covariant, like a borrow's. A function kept for the
-			// destination's lifetime has to stay valid that long, so the source's lifetime must
-			// outlive it. A source with no lifetime is a function value whose captures decide how
-			// long it stays valid, so it fills any slot. A destination with no lifetime only calls
-			// the function during the call, so it accepts any source.
-			if sub.Lt != nil && sup.Lt != nil {
+			// A function's lifetime is covariant, like a borrow's. A function whose borrows live
+			// for the destination's lifetime has to stay valid that long, so the source's
+			// lifetime must outlive it. A source whose lifetime is nil or 'static fills any slot.
+			//
+			// A 'static destination, written `'static fn` or a `fn` with no lifetime outside a
+			// signature or a body, holds only a function that borrows nothing shorter than the
+			// program. A source that may hold such a borrow is reported there, the way a borrow
+			// escapes into an owned slot. The source's lifetime is still bounded by 'static, so
+			// a call-only parameter or a signature's lifetime reaching the slot is reported by
+			// its own check.
+			var funcErrs []SolverError
+			switch {
+			case isStaticFuncLt(sub.Lt):
+			case isStaticFuncLt(sup.Lt):
+				c.constrainLt(sub.Lt, soltype.Static)
+				funcErrs = append(funcErrs, &FuncKeptForStaticError{Sub: sub, Super: sup})
+			default:
 				c.constrainLt(sub.Lt, sup.Lt)
 			}
 			// A tuple-typed rest param on either side expands to one positional param per element,
@@ -1455,7 +1493,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 					absorbAt, absorbElem = k, elem
 				}
 			}
-			var errs []SolverError
+			errs := funcErrs
 			if absorbAt >= 0 {
 				if absorbElem != nil {
 					for _, p := range subX.Params[absorbAt:] {
@@ -2196,6 +2234,34 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	}
 
 	return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+}
+
+// constrainBorrowIntoRigid checks `ref <: super` when super is a rigid type parameter and ref
+// borrows either a variable in rigidReadVars or a rigid type parameter. ref must carry a
+// lifetime. handled is false for any other pair.
+//
+// A borrow of a variable in rigidReadVars fills super when the variable does. That keeps
+// `read(&self) -> T { return self.v }` checking `T` against `T`. A borrow of a rigid
+// parameter escapes into the owned parameter, so `fn steal<T>(p: &T) -> T { return p }`
+// reports a BorrowEscapeError. When the borrowed parameter does not fill super either, that
+// mismatch is reported instead. constrain copies a parameter bounded by a value type out of a
+// borrow before calling this, so `fn f<T: number>(p: &T) -> T { return p }` never reaches it.
+func (c *Context) constrainBorrowIntoRigid(ref *soltype.RefType, super soltype.Type, seen *seenPairs) ([]SolverError, bool) {
+	superVar, superIsVar := super.(*soltype.TypeVarType)
+	inner, innerIsVar := ref.Inner.(*soltype.TypeVarType)
+	if !superIsVar || superVar.Rigid == nil || !innerIsVar {
+		return nil, false
+	}
+	switch {
+	case !ref.Mut && c.rigidReadVars.Contains(inner):
+		return c.constrain(inner, super, seen, false), true
+	case inner.Rigid != nil:
+		if innerErrs := c.trialUnderProbe(inner, super); hasHardError(innerErrs) {
+			return innerErrs, true
+		}
+		return []SolverError{&BorrowEscapeError{Sub: ref, Super: super}}, true
+	}
+	return nil, false
 }
 
 // isCallableShape reports whether t is one of the three shapes `function` admits: a function
@@ -3867,6 +3933,7 @@ func (e *extruder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Enter
 	}
 	nv := e.c.freshVar(e.lvl)
 	e.c.copyParamMark(nv, v)
+	e.c.copyRigidReadMark(nv, v)
 	e.cache[key] = nv
 	// A default that applies to v carries over to the copy, counted against the bounds the
 	// copy holds once they are copied, so the copy takes the default for as long as no
@@ -3920,4 +3987,15 @@ func (e *extruder) extrudeLifetime(lt soltype.Lifetime, pol soltype.Polarity) so
 		e.ltCache = map[ltExtrudeKey]*soltype.LifetimeVar{}
 	}
 	return e.c.extrudeLt(lt, pol, e.lvl, e.ltCache)
+}
+
+// staticFuncMember returns the first member of u that is a function type whose lifetime is
+// 'static and that freed fits, or nil when no member is. freed is a function with no lifetime.
+func (c *Context) staticFuncMember(freed *soltype.FuncType, u *soltype.UnionType) *soltype.FuncType {
+	for _, member := range u.Types {
+		if ft, ok := member.(*soltype.FuncType); ok && isStaticFuncLt(ft.Lt) && !hasHardError(c.trialUnderProbe(freed, ft)) {
+			return ft
+		}
+	}
+	return nil
 }

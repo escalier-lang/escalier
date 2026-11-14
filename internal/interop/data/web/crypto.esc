@@ -246,7 +246,7 @@ export declare class SubtleCrypto {
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/crypto) */
 @js("crypto")
-export declare var crypto: Crypto
+export declare val mut crypto: Crypto
 
 export declare type AlgorithmIdentifier = Algorithm | string
 

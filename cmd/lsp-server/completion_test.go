@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -773,9 +774,9 @@ obj.`
 			detailByLabel[item.Label] = *item.Detail
 		}
 	}
-	assert.Equal(t, "number", detailByLabel["a"], "a is on both variants")
-	assert.Equal(t, "string | undefined", detailByLabel["b"], "b is only on one variant")
-	assert.Equal(t, "boolean | undefined", detailByLabel["c"], "c is only on one variant")
+	assert.Equal(t, "(property) a: number", detailByLabel["a"], "a is on both variants")
+	assert.Equal(t, "(property) b: string | undefined", detailByLabel["b"], "b is only on one variant")
+	assert.Equal(t, "(property) c: boolean | undefined", detailByLabel["c"], "c is only on one variant")
 }
 
 func TestIntersectionCompletionOnlyCommonKeys(t *testing.T) {
@@ -1581,42 +1582,42 @@ func TestMemberCompletionFromSolver(t *testing.T) {
 			src:      "val obj: {a: number, b: string} = {a: 1, b: \"hello\"}\nobj.",
 			line:     2,
 			col:      5,
-			expected: []string{"a: number", "b: string"},
+			expected: []string{"a: (property) a: number", "b: (property) b: string"},
 		},
 		{
 			name:     "FilteredByPrefix",
 			src:      "val obj: {alpha: number, beta: string, able: boolean} = {alpha: 1, beta: \"hi\", able: true}\nobj.al",
 			line:     2,
 			col:      7,
-			expected: []string{"alpha: number"},
+			expected: []string{"alpha: (property) alpha: number"},
 		},
 		{
 			name:     "UnionOffersEveryVariantsMembers",
 			src:      "val obj: {a: number, b: string} | {a: number, c: boolean} = {a: 1, b: \"hi\"}\nobj.",
 			line:     2,
 			col:      5,
-			expected: []string{"a: number", "b: string | undefined", "c: boolean | undefined"},
+			expected: []string{"a: (property) a: number", "b: (property) b: string | undefined", "c: (property) c: boolean | undefined"},
 		},
 		{
 			name:     "IntersectionOffersCommonMembers",
 			src:      "declare val obj: {a: number, b: string} & {a: number, c: boolean}\nobj.",
 			line:     2,
 			col:      5,
-			expected: []string{"a: number"},
+			expected: []string{"a: (property) a: number"},
 		},
 		{
 			name:     "OptionalChainSkipsNullish",
 			src:      "declare val obj: {a: number} | undefined\nobj?.",
 			line:     2,
 			col:      6,
-			expected: []string{"a: number"},
+			expected: []string{"a: (property) a: number"},
 		},
 		{
 			name:     "GetterWithoutSetterOnImmutableReceiver",
 			src:      "declare val obj: {\n    get bar(self) -> boolean,\n    set bar(mut self, value: boolean) -> undefined\n}\nobj.",
 			line:     5,
 			col:      5,
-			expected: []string{"bar: boolean"},
+			expected: []string{"bar: (property) bar: boolean"},
 		},
 		{
 			name: "ClassInstanceHidesMutSelfOnImmutableBinding",
@@ -1631,7 +1632,7 @@ val c = Counter()
 c.`,
 			line:     9,
 			col:      3,
-			expected: []string{"get: fn () -> number", "n: number"},
+			expected: []string{"get: fn () -> number", "n: (property) n: number"},
 		},
 		{
 			name: "ClassInstanceShowsMutSelfOnMutBinding",
@@ -1646,14 +1647,14 @@ val mut c = Counter()
 c.`,
 			line:     9,
 			col:      3,
-			expected: []string{"bump: fn () -> number", "get: fn () -> number", "n: number"},
+			expected: []string{"bump: fn () -> number", "get: fn () -> number", "n: (property) n: number"},
 		},
 		{
 			name:     "UnionBehindAlias",
 			src:      "type Shape = {a: number, b: string} | {a: number, c: boolean}\ndeclare val s: Shape\ns.",
 			line:     3,
 			col:      3,
-			expected: []string{"a: number", "b: string | undefined", "c: boolean | undefined"},
+			expected: []string{"a: (property) a: number", "b: (property) b: string | undefined", "c: (property) c: boolean | undefined"},
 		},
 		{
 			name: "MutSelfGetterOnImmutableBinding",
@@ -1666,14 +1667,14 @@ val l = Lazy()
 l.`,
 			line:     7,
 			col:      3,
-			expected: []string{"m: string"},
+			expected: []string{"m: (property) m: string"},
 		},
 		{
 			name:     "GetterKeepsTypeInUnionOnMutReceiver",
 			src:      "declare val mut obj: ({get bar(self) -> boolean, set bar(mut self, value: boolean) -> undefined} | {bar: boolean})\nobj.",
 			line:     2,
 			col:      5,
-			expected: []string{"bar: boolean"},
+			expected: []string{"bar: (property) bar: boolean"},
 		},
 		{
 			name: "GenericClassAtDeclaredArgument",
@@ -1686,7 +1687,7 @@ declare val b: Box<string>
 b.`,
 			line:     7,
 			col:      3,
-			expected: []string{"get: fn () -> string", "value: string"},
+			expected: []string{"get: fn () -> string", "value: (property) value: string"},
 		},
 		{
 			name: "GenericClassAtInferredArgument",
@@ -1699,7 +1700,7 @@ val b = Box(5)
 b.`,
 			line:     7,
 			col:      3,
-			expected: []string{"get: fn () -> 5", "value: 5"},
+			expected: []string{"get: fn () -> 5", "value: (property) value: 5"},
 		},
 		{
 			name: "GenericAlias",
@@ -1708,7 +1709,7 @@ declare val p: Pair<number, string>
 p.`,
 			line:     3,
 			col:      3,
-			expected: []string{"first: number", "second: string"},
+			expected: []string{"first: (property) first: number", "second: (property) second: string"},
 		},
 		{
 			name: "GenericAliasOfUnion",
@@ -1717,7 +1718,7 @@ declare val r: Result<number, string>
 r.`,
 			line:     3,
 			col:      3,
-			expected: []string{"error: string | undefined", "ok: true | false", "value: number | undefined"},
+			expected: []string{"error: (property) error: string | undefined", "ok: (property) ok: true | false", "value: (property) value: number | undefined"},
 		},
 		{
 			name: "SubclassOfGenericClass",
@@ -1731,7 +1732,7 @@ val d = Dog()
 d.`,
 			line:     8,
 			col:      3,
-			expected: []string{"food: string"},
+			expected: []string{"food: (property) food: string"},
 		},
 		{
 			name:     "ErrorTypeOffersNothing",
@@ -1745,6 +1746,59 @@ d.`,
 		t.Run(tt.name, func(t *testing.T) {
 			files := map[string]string{"bin/main.esc": tt.src}
 			require.Equal(t, tt.expected, solverMemberCompletions(t, files, "bin/main.esc", tt.line, tt.col))
+		})
+	}
+}
+
+// TestMemberCompletionOnTypeParameter covers a receiver typed by a type parameter inside
+// the function that declares it, which offers the members of the parameter's bound.
+func TestMemberCompletionOnTypeParameter(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		// line and col are the 1-based cursor position in src.
+		line, col int
+		expected  []string
+	}{
+		{
+			name: "MutBorrowOffersMutSelfMethod",
+			src: `interface A {
+    m(&mut self) -> undefined,
+    n(&self) -> number,
+}
+fn f<T: A>(x: &mut T) {
+    x.
+}`,
+			line:     6,
+			col:      7,
+			expected: []string{"m: fn () -> undefined", "n: fn () -> number"},
+		},
+		{
+			name: "BoundNamingSiblingParameter",
+			src: `interface A {
+    m(&mut self) -> undefined,
+}
+fn f<U: A, T: U>(x: &mut T) {
+    x.
+}`,
+			line:     5,
+			col:      7,
+			expected: []string{"m: fn () -> undefined"},
+		},
+		{
+			name: "UnboundedParameterOffersNothing",
+			src: `fn f<T>(x: &mut T) {
+    x.
+}`,
+			line:     2,
+			col:      7,
+			expected: []string{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			files := map[string]string{"lib/index.esc": tt.src}
+			require.Equal(t, tt.expected, solverMemberCompletions(t, files, "lib/index.esc", tt.line, tt.col))
 		})
 	}
 }
@@ -1803,7 +1857,7 @@ func TestMemberCompletionFromSolverMembership(t *testing.T) {
 			open:     "lib/point.esc",
 			line:     3,
 			col:      11,
-			contains: []string{"x: number", "y: number"},
+			contains: []string{"x: (property) x: number", "y: (property) y: number"},
 		},
 		{
 			name: "BinReadsLibClass",
@@ -1814,7 +1868,31 @@ func TestMemberCompletionFromSolverMembership(t *testing.T) {
 			open:     "bin/main.esc",
 			line:     2,
 			col:      3,
-			contains: []string{"value: number"},
+			contains: []string{"value: (property) value: number"},
+		},
+		{
+			// `import "std:console"` binds `console` as the package's namespace and as the
+			// `console` value it exports. A member read offers the value's members and
+			// leaves out the namespace's own `console`, which repeats the name before the dot.
+			name: "ValueBoundBesideNamespaceAfterDot",
+			files: map[string]string{
+				"lib/index.esc": "import \"std:console\"\n\nexport fn main() {\n    console.log(\"hello\")\n    console.\n}\n",
+			},
+			open:     "lib/index.esc",
+			line:     5,
+			col:      13,
+			contains: []string{"log: fn (...data: Array<unknown>) -> undefined"},
+			excludes: []string{"console: Console"},
+		},
+		{
+			name: "ValueBoundBesideNamespaceInBin",
+			files: map[string]string{
+				"bin/main.esc": "import \"std:console\"\nconsole.",
+			},
+			open:     "bin/main.esc",
+			line:     2,
+			col:      9,
+			contains: []string{"error: fn (...data: Array<unknown>) -> undefined"},
 		},
 	}
 	for _, tt := range tests {
@@ -1825,6 +1903,248 @@ func TestMemberCompletionFromSolverMembership(t *testing.T) {
 			}
 			for _, item := range tt.excludes {
 				require.NotContains(t, items, item)
+			}
+		})
+	}
+}
+
+// TestNamespaceMemberCompletionLabels covers which members a package's namespace offers
+// after a dot in value position. A class is offered once, for its value, and a type with
+// no value is left out.
+func TestNamespaceMemberCompletionLabels(t *testing.T) {
+	tests := []struct {
+		name  string
+		files map[string]string
+		// open is the file the cursor is in. line and col are 1-based.
+		open      string
+		line, col int
+		// once are labels the list must hold exactly once.
+		once     []string
+		excludes []string
+	}{
+		{
+			name:     "PackageNamespace",
+			files:    map[string]string{"lib/index.esc": "import \"std:intl\"\nval x = intl."},
+			open:     "lib/index.esc",
+			line:     2,
+			col:      14,
+			once:     []string{"Collator", "DateTimeFormat"},
+			excludes: []string{"DateTimeFormatOptions", "ResolvedDateTimeFormatOptions"},
+		},
+		{
+			name:     "PackageNamespaceWithOwnValue",
+			files:    map[string]string{"bin/main.esc": "import \"web:fetch\"\nval x = fetch."},
+			open:     "bin/main.esc",
+			line:     2,
+			col:      15,
+			once:     []string{"Headers", "Request", "Response"},
+			excludes: []string{"HeadersInit"},
+		},
+		{
+			name:     "ValueBoundBesideNamespace",
+			files:    map[string]string{"lib/index.esc": "import \"std:console\"\nexport fn main() {\n    console.\n}\n"},
+			open:     "lib/index.esc",
+			line:     3,
+			col:      13,
+			once:     []string{"log"},
+			excludes: []string{"Console", "console"},
+		},
+		{
+			// `web:performance` declares `performance` `val mut`, so the members that
+			// take `&mut self` are offered beside the ones that take `&self`.
+			name:  "MutValueBoundBesideNamespace",
+			files: map[string]string{"lib/index.esc": "import \"web:performance\"\nexport fn main() {\n    performance.\n}\n"},
+			open:  "lib/index.esc",
+			line:  3,
+			col:   17,
+			once:  []string{"clearMarks", "getEntries", "now"},
+		},
+		{
+			// A local value hides the namespace the import binds under the same name.
+			name:     "LocalValueShadowsNamespace",
+			files:    map[string]string{"lib/index.esc": "import \"std:math\"\nexport fn main() {\n    val math = {alpha: 1}\n    math.\n}\n"},
+			open:     "lib/index.esc",
+			line:     4,
+			col:      10,
+			once:     []string{"alpha"},
+			excludes: []string{"abs", "floor"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var labels []string
+			for _, item := range solverMemberCompletions(t, tt.files, tt.open, tt.line, tt.col) {
+				label, _, _ := strings.Cut(item, ": ")
+				labels = append(labels, label)
+			}
+			for _, label := range tt.once {
+				occurrences := 0
+				for _, l := range labels {
+					if l == label {
+						occurrences++
+					}
+				}
+				require.Equal(t, 1, occurrences, "occurrences of %s", label)
+			}
+			for _, label := range tt.excludes {
+				require.NotContains(t, labels, label)
+			}
+		})
+	}
+}
+
+// completionItemsAt checks files on internal/solver, opens open, and returns the
+// completion items at line and col, both 1-based.
+func completionItemsAt(t *testing.T, files map[string]string, open string, line, col int) []protocol.CompletionItem {
+	t.Helper()
+	s := integrationServer(t, files)
+	uri := openFile(t, s, open, files[open])
+	result, err := s.textDocumentCompletion(&glsp.Context{}, &protocol.CompletionParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+			Position: protocol.Position{
+				Line:      protocol.UInteger(line - 1),
+				Character: protocol.UInteger(col - 1),
+			},
+		},
+	})
+	require.NoError(t, err)
+	list, ok := result.(*protocol.CompletionList)
+	require.True(t, ok)
+	return list.Items
+}
+
+// TestNamespaceMemberCompletionPosition covers how the members of an imported package
+// after a dot depend on the position the dot is written in. In value position the list
+// holds the package's values, with each class as its constructor. In type position it
+// holds only the package's types.
+func TestNamespaceMemberCompletionPosition(t *testing.T) {
+	type entry struct {
+		kind   protocol.CompletionItemKind
+		detail string
+	}
+	collatorCtor := entry{
+		kind:   protocol.CompletionItemKindConstructor,
+		detail: "{new (locales?: LocalesArgument, options?: CollatorOptions) -> Collator; new (locales?: string | Array<string>, options?: CollatorOptions) -> Collator}",
+	}
+	getCanonicalLocales := entry{
+		kind:   protocol.CompletionItemKindFunction,
+		detail: "fn (locale?: string | Array<string>) -> Array<string>",
+	}
+	collatorType := entry{kind: protocol.CompletionItemKindClass}
+	collatorOptionsType := entry{kind: protocol.CompletionItemKindInterface}
+	valueOnly := []string{"getCanonicalLocales", "supportedValuesOf"}
+	typeOnly := []string{"CollatorOptions", "LocalesArgument"}
+	tests := []struct {
+		name string
+		path string
+		src  string
+		// line and col are the 1-based cursor position in src.
+		line, col int
+		// expected maps labels the list must hold to their kind and detail.
+		expected map[string]entry
+		excludes []string
+		// exact, when set, is the whole list of labels in order.
+		exact []string
+	}{
+		{
+			name:     "ValueInLib",
+			path:     "lib/index.esc",
+			src:      "import \"std:intl\"\nval c = intl.",
+			line:     2,
+			col:      14,
+			expected: map[string]entry{"Collator": collatorCtor, "getCanonicalLocales": getCanonicalLocales},
+			excludes: typeOnly,
+		},
+		{
+			name:     "ValueInFunctionBody",
+			path:     "lib/index.esc",
+			src:      "import \"std:intl\"\nexport fn f() {\n    val c = intl.\n}\n",
+			line:     3,
+			col:      18,
+			expected: map[string]entry{"Collator": collatorCtor, "getCanonicalLocales": getCanonicalLocales},
+			excludes: typeOnly,
+		},
+		{
+			name:     "ValueInBin",
+			path:     "bin/main.esc",
+			src:      "import \"std:intl\"\nval c = intl.",
+			line:     2,
+			col:      14,
+			expected: map[string]entry{"Collator": collatorCtor},
+			excludes: typeOnly,
+		},
+		{
+			name:     "ValueFilteredByPrefix",
+			path:     "lib/index.esc",
+			src:      "import \"std:intl\"\nval c = intl.Co",
+			line:     2,
+			col:      16,
+			exact:    []string{"Collator"},
+			expected: map[string]entry{"Collator": collatorCtor},
+		},
+		{
+			name:     "TypeInValAnnotation",
+			path:     "lib/index.esc",
+			src:      "import \"std:intl\"\nval c: intl.",
+			line:     2,
+			col:      13,
+			expected: map[string]entry{"Collator": collatorType, "CollatorOptions": collatorOptionsType},
+			excludes: valueOnly,
+		},
+		{
+			name:     "TypeInParamAnnotation",
+			path:     "lib/index.esc",
+			src:      "import \"std:intl\"\nexport fn f(x: intl.) {}\n",
+			line:     2,
+			col:      21,
+			expected: map[string]entry{"Collator": collatorType, "CollatorOptions": collatorOptionsType},
+			excludes: valueOnly,
+		},
+		{
+			name:     "TypeInBin",
+			path:     "bin/main.esc",
+			src:      "import \"std:intl\"\nval c: intl.",
+			line:     2,
+			col:      13,
+			expected: map[string]entry{"Collator": collatorType, "CollatorOptions": collatorOptionsType},
+			excludes: valueOnly,
+		},
+		{
+			name:     "TypeFilteredByPrefix",
+			path:     "lib/index.esc",
+			src:      "import \"std:intl\"\nval c: intl.Co",
+			line:     2,
+			col:      15,
+			exact:    []string{"Collator", "CollatorOptions"},
+			expected: map[string]entry{"Collator": collatorType, "CollatorOptions": collatorOptionsType},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			items := completionItemsAt(t, map[string]string{tt.path: tt.src}, tt.path, tt.line, tt.col)
+			got := make(map[string]entry, len(items))
+			labels := make([]string, len(items))
+			for i, item := range items {
+				e := entry{}
+				if item.Kind != nil {
+					e.kind = *item.Kind
+				}
+				if item.Detail != nil {
+					e.detail = *item.Detail
+				}
+				got[item.Label] = e
+				labels[i] = item.Label
+			}
+			if tt.exact != nil {
+				require.Equal(t, tt.exact, labels)
+			}
+			for label, want := range tt.expected {
+				require.Contains(t, got, label)
+				require.Equal(t, want, got[label], "entry for %s", label)
+			}
+			for _, label := range tt.excludes {
+				require.NotContains(t, got, label)
 			}
 		})
 	}
@@ -2010,4 +2330,326 @@ func TestScopeCompletionFromSolverAfterIncrementalCheck(t *testing.T) {
 	s.mu.RUnlock()
 
 	require.Equal(t, []string{"later"}, getCompletionLabelsAt(t, s, binURI, 3, 11))
+}
+
+// TestIndexKeyCompletion covers the keys offered between the empty brackets of an index
+// access type such as `Point[]` or an index expression such as `p[]`, each quoted as
+// the string literal that indexes it.
+func TestIndexKeyCompletion(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		src  string
+		// line and col are the 1-based cursor position in src.
+		line, col int
+		// expected is each item rendered as `label: detail`, in order.
+		expected []string
+	}{
+		{
+			name:     "ObjectAliasInLib",
+			path:     "lib/index.esc",
+			src:      "type Point = {x: number, y: string}\nval p: Point[]",
+			line:     2,
+			col:      14,
+			expected: []string{`"x": (property) x: number`, `"y": (property) y: string`},
+		},
+		{
+			name:     "ObjectAliasInBin",
+			path:     "bin/main.esc",
+			src:      "type Point = {x: number, y: string}\nval p: Point[]",
+			line:     2,
+			col:      14,
+			expected: []string{`"x": (property) x: number`, `"y": (property) y: string`},
+		},
+		{
+			name:     "GenericAlias",
+			path:     "lib/index.esc",
+			src:      "type Pair<T> = {first: T, second: T}\nval p: Pair<boolean>[]",
+			line:     2,
+			col:      22,
+			expected: []string{`"first": (property) first: boolean`, `"second": (property) second: boolean`},
+		},
+		{
+			name:     "UnclosedBracket",
+			path:     "lib/index.esc",
+			src:      "type Point = {x: number, y: string}\nval p: Point[",
+			line:     2,
+			col:      14,
+			expected: []string{`"x": (property) x: number`, `"y": (property) y: string`},
+		},
+		{
+			name:     "ClassWithMethod",
+			path:     "lib/index.esc",
+			src:      "class Dog {\n    name: string,\n    speak(&self) -> string { return self.name },\n}\nexport fn f(d: Dog[]) {}\n",
+			line:     5,
+			col:      20,
+			expected: []string{`"name": (property) name: string`, `"speak": fn () -> string`},
+		},
+		{
+			name:     "OptionalKey",
+			path:     "lib/index.esc",
+			src:      "type O = {a?: number}\nval x: O[]",
+			line:     2,
+			col:      10,
+			expected: []string{`"a": (property) a?: number | undefined`},
+		},
+		{
+			name:     "Getter",
+			path:     "lib/index.esc",
+			src:      "type O = {get n(self) -> number}\nval x: O[]",
+			line:     2,
+			col:      10,
+			expected: []string{`"n": (property) n: number`},
+		},
+		{
+			name:     "IndexExprInLib",
+			path:     "lib/index.esc",
+			src:      "type Point = {x: number, y: string}\ndeclare val p: Point\nval x = p[]",
+			line:     3,
+			col:      11,
+			expected: []string{`"x": (property) x: number`, `"y": (property) y: string`},
+		},
+		{
+			name:     "IndexExprInBin",
+			path:     "bin/main.esc",
+			src:      "type Point = {x: number, y: string}\ndeclare val p: Point\nval x = p[]",
+			line:     3,
+			col:      11,
+			expected: []string{`"x": (property) x: number`, `"y": (property) y: string`},
+		},
+		{
+			name:     "IndexExprUnclosedBracket",
+			path:     "lib/index.esc",
+			src:      "type Point = {x: number, y: string}\ndeclare val p: Point\nval x = p[",
+			line:     3,
+			col:      11,
+			expected: []string{`"x": (property) x: number`, `"y": (property) y: string`},
+		},
+		{
+			name:     "IndexExprOnMemberObject",
+			path:     "lib/index.esc",
+			src:      "type Point = {x: number, y: string}\ndeclare val o: {p: Point}\nval x = o.p[]",
+			line:     3,
+			col:      13,
+			expected: []string{`"x": (property) x: number`, `"y": (property) y: string`},
+		},
+		{
+			name:     "IndexExprUnclosedBracketMidFile",
+			path:     "lib/index.esc",
+			src:      "type Point = {x: number, y: string}\ndeclare val p: Point\nval x = p[\nval z = 5\n",
+			line:     3,
+			col:      11,
+			expected: []string{`"x": (property) x: number`, `"y": (property) y: string`},
+		},
+		{
+			name:     "IndexExprOptionalKey",
+			path:     "lib/index.esc",
+			src:      "declare val o: {a?: number}\nval x = o[]",
+			line:     2,
+			col:      11,
+			expected: []string{`"a": (property) a?: number | undefined`},
+		},
+		{
+			name:     "IndexExprOptionalKeyAllowingUndefined",
+			path:     "lib/index.esc",
+			src:      "declare val o: {a?: number | undefined}\nval x = o[]",
+			line:     2,
+			col:      11,
+			expected: []string{`"a": (property) a?: number | undefined`},
+		},
+		{
+			name:     "IndexExprLeavesOutMutMembersOfImmutableValue",
+			path:     "lib/index.esc",
+			src:      "class C {\n    n: number,\n    bump(&mut self) { self.n = self.n + 1 },\n}\ndeclare val c: C\nval x = c[]",
+			line:     6,
+			col:      11,
+			expected: []string{`"n": (property) n: number`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			items := completionItemsAt(t, map[string]string{tt.path: tt.src}, tt.path, tt.line, tt.col)
+			rendered := make([]string, len(items))
+			for i, item := range items {
+				detail := ""
+				if item.Detail != nil {
+					detail = *item.Detail
+				}
+				rendered[i] = item.Label + ": " + detail
+			}
+			require.Equal(t, tt.expected, rendered)
+		})
+	}
+}
+
+// TestIndexExprScopeCompletion covers index expressions whose brackets offer the names
+// in scope instead of the object's keys. Each case asserts that completion returns items
+// and that none of them is the quoted key `"at"`.
+func TestIndexExprScopeCompletion(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		// line and col are the 1-based cursor position in src.
+		line, col int
+	}{
+		{
+			name: "Array",
+			src:  "declare val arr: Array<{at: number}>\ndeclare val i: number\nval x = arr[]",
+			line: 3,
+			col:  13,
+		},
+		{
+			name: "Tuple",
+			src:  "declare val arr: [number, string]\ndeclare val i: number\nval x = arr[]",
+			line: 3,
+			col:  13,
+		},
+		{
+			name: "AfterClosingBracket",
+			src:  "declare val arr: {at: number}\ndeclare val i: number\nval x = arr[i]",
+			line: 3,
+			col:  15,
+		},
+		{
+			name: "NonEmptyIndex",
+			src:  "declare val arr: {at: number}\ndeclare val i: number\nval x = arr[i]",
+			line: 3,
+			col:  14,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			files := map[string]string{"lib/index.esc": tt.src}
+			items := completionItemsAt(t, files, "lib/index.esc", tt.line, tt.col)
+			labels := make([]string, len(items))
+			for i, item := range items {
+				labels[i] = item.Label
+			}
+			require.NotEmpty(t, labels)
+			require.NotContains(t, labels, `"at"`)
+		})
+	}
+}
+
+// TestExtractorPatternCompletion covers the names offered after the dot of an extractor
+// pattern's qualified name, such as an enum variant in a `match` arm.
+func TestExtractorPatternCompletion(t *testing.T) {
+	const enum = "export enum Lang {\n    English,\n    French,\n    Spanish,\n}\n"
+	const shape = "export enum Shape {\n    Circle(radius: number),\n    Square(side: number),\n}\n"
+	tests := []struct {
+		name string
+		path string
+		src  string
+		// line and col are the 1-based cursor position in src.
+		line, col int
+		expected  []string
+	}{
+		{
+			name:     "EmptyVariantInLib",
+			path:     "lib/index.esc",
+			src:      enum + "export fn f(l: Lang) -> string {\n    return match l {\n        Lang.English => \"en\",\n        Lang.\n    }\n}\n",
+			line:     9,
+			col:      14,
+			expected: []string{"English", "French", "Spanish"},
+		},
+		{
+			name:     "EmptyVariantInBin",
+			path:     "bin/main.esc",
+			src:      enum + "fn f(l: Lang) -> string {\n    return match l {\n        Lang.English => \"en\",\n        Lang.\n    }\n}\n",
+			line:     9,
+			col:      14,
+			expected: []string{"English", "French", "Spanish"},
+		},
+		{
+			name:     "EmptyVariantAtEndOfFile",
+			path:     "lib/index.esc",
+			src:      enum + "export fn f(l: Lang) -> string {\n    return match l {\n        Lang.",
+			line:     8,
+			col:      14,
+			expected: []string{"English", "French", "Spanish"},
+		},
+		{
+			name:     "PartialVariant",
+			path:     "lib/index.esc",
+			src:      enum + "export fn f(l: Lang) -> string {\n    return match l {\n        Lang.English => \"en\",\n        Lang.Fr\n    }\n}\n",
+			line:     9,
+			col:      16,
+			expected: []string{"French"},
+		},
+		{
+			name:     "VariantWithFields",
+			path:     "lib/index.esc",
+			src:      shape + "export fn f(s: Shape) -> number {\n    return match s {\n        Shape.Circle(r) => r,\n        Shape.\n    }\n}\n",
+			line:     8,
+			col:      15,
+			expected: []string{"Circle", "Square"},
+		},
+		{
+			// Only the text before the cursor filters, so editing a written variant
+			// offers its siblings too.
+			name:     "CursorInsideVariant",
+			path:     "lib/index.esc",
+			src:      "export enum Lang {\n    French,\n    Frisian,\n    Spanish,\n}\nexport fn f(l: Lang) -> string {\n    return match l {\n        Lang.French => \"fr\",\n        _ => \"\",\n    }\n}\n",
+			line:     8,
+			col:      16,
+			expected: []string{"French", "Frisian"},
+		},
+		{
+			// A namespace of plain functions and constants holds nothing a pattern can
+			// name, so nothing is offered.
+			name:     "NamespaceWithoutConstructors",
+			path:     "lib/index.esc",
+			src:      "import \"std:math\"\nexport fn f(n: number) -> string {\n    return match n {\n        math.\n    }\n}\n",
+			line:     4,
+			col:      14,
+			expected: []string{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			items := completionItemsAt(t, map[string]string{tt.path: tt.src}, tt.path, tt.line, tt.col)
+			labels := make([]string, len(items))
+			for i, item := range items {
+				labels[i] = item.Label
+			}
+			require.Equal(t, tt.expected, labels)
+		})
+	}
+}
+
+// TestExtractorPatternCompletionFallsBack covers cursor positions in an extractor pattern
+// outside the part after the last dot, where the enum's variants are not offered.
+func TestExtractorPatternCompletionFallsBack(t *testing.T) {
+	const shape = "export enum Shape {\n    Circle(radius: number),\n    Square(side: number),\n}\n"
+	tests := []struct {
+		name string
+		src  string
+		// line and col are the 1-based cursor position in src.
+		line, col int
+	}{
+		{
+			name: "CursorInEnumName",
+			src:  shape + "export fn f(s: Shape) -> number {\n    return match s {\n        Shape.Circle(r) => r,\n        _ => 0,\n    }\n}\n",
+			line: 7,
+			col:  11,
+		},
+		{
+			name: "CursorInArgument",
+			src:  shape + "export fn f(s: Shape) -> number {\n    return match s {\n        Shape.Circle(r) => r,\n        _ => 0,\n    }\n}\n",
+			line: 7,
+			col:  23,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			files := map[string]string{"lib/index.esc": tt.src}
+			items := completionItemsAt(t, files, "lib/index.esc", tt.line, tt.col)
+			labels := make([]string, len(items))
+			for i, item := range items {
+				labels[i] = item.Label
+			}
+			require.NotContains(t, labels, "Circle")
+			require.NotContains(t, labels, "Square")
+		})
+	}
 }

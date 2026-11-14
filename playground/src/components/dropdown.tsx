@@ -11,9 +11,22 @@ type DropdownProps = {
     label: string;
     items: DropdownItem[];
     onSelect: (slug: string, label: string) => void;
+    /** Which edge of the button the menu lines up with. Defaults to `start`. */
+    align?: 'start' | 'end';
+    /**
+     * The slug of the item that's currently chosen. When set, the items are radio
+     * items and the chosen one is checked.
+     */
+    selectedSlug?: string;
 };
 
-export const Dropdown = ({ label, items, onSelect }: DropdownProps) => {
+export const Dropdown = ({
+    label,
+    items,
+    onSelect,
+    align = 'start',
+    selectedSlug,
+}: DropdownProps) => {
     const [open, setOpen] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -54,13 +67,29 @@ export const Dropdown = ({ label, items, onSelect }: DropdownProps) => {
                 <span className={styles.caret}>&#9662;</span>
             </button>
             {open && (
-                <div className={styles.dropdown} role="menu">
+                <div
+                    className={
+                        align === 'end'
+                            ? `${styles.dropdown} ${styles.dropdownEnd}`
+                            : styles.dropdown
+                    }
+                    role="menu"
+                >
                     {items.map((item) => (
                         <button
                             key={item.slug}
                             type="button"
                             className={styles.dropdownItem}
-                            role="menuitem"
+                            role={
+                                selectedSlug === undefined
+                                    ? 'menuitem'
+                                    : 'menuitemradio'
+                            }
+                            aria-checked={
+                                selectedSlug === undefined
+                                    ? undefined
+                                    : item.slug === selectedSlug
+                            }
                             onClick={() => {
                                 setOpen(false);
                                 onSelect(item.slug, item.label);

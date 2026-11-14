@@ -228,7 +228,7 @@ func (c *checker) resolveTypeAnnType(scope *Scope, ta ast.TypeAnn, lvl int) (sol
 	case *ast.IntersectionTypeAnn:
 		return c.resolveIntersectionTypeAnn(scope, ta, lvl)
 	case *ast.FuncTypeAnn:
-		return c.resolveFuncTypeAnn(scope, ta, nil, lvl)
+		return c.resolveFuncValueTypeAnn(scope, ta, lvl)
 	case *ast.KeyOfTypeAnn:
 		return c.resolveKeyOfTypeAnn(scope, ta, lvl)
 	case *ast.NegationTypeAnn:
@@ -1354,6 +1354,25 @@ func restParamSlotShape(p *ast.Param, last bool) (ast.Pat, bool, bool) {
 	}
 }
 
+// resolveFuncValueTypeAnn lowers a function type annotation written where a value's type goes,
+// such as `'a fn (x: number) -> number`. It is resolveFuncTypeAnn with the function's own
+// lifetime set: the written one, or the one elidedFuncLifetime picks when none is written.
+func (c *checker) resolveFuncValueTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int) (soltype.Type, bool) {
+	// The lifetime written ahead of `fn` names a lifetime of the enclosing scope, so it
+	// resolves before resolveFuncTypeAnn opens the annotation's own lifetime scope.
+	var lt soltype.Lifetime
+	if ta.Lifetime != nil {
+		lt = c.resolveLifetimeAnn(ta.Lifetime, lvl)
+	} else {
+		lt = c.elidedFuncLifetime(lvl)
+	}
+	t, ok := c.resolveFuncTypeAnn(scope, ta, nil, lvl)
+	if ft, isFn := t.(*soltype.FuncType); isFn {
+		ft.Lt = lt
+	}
+	return t, ok
+}
+
 // resolveFuncTypeAnn lowers a function type annotation `fn<T>(p: A, ...) -> R` into a
 // soltype.FuncType, recovering an unsupported part to a fresh var so the shape survives. A
 // `<T>` list resolves through resolveTypeParams into a child scope, so a parameter, return,
@@ -1364,9 +1383,7 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, recv *as
 	// nested `fn<'a: 'static>(…)` annotation would resolve `'a` to the enclosing
 	// function's `'a` and its declared bound would force that outer lifetime, so an
 	// unrelated borrow parameter of the enclosing function would be pinned to 'static.
-	savedNamedLts := c.namedLifetimes
-	c.namedLifetimes = c.nestedLifetimeScope(ta.LifetimeParams)
-	defer func() { c.namedLifetimes = savedNamedLts }()
+	defer c.enterLifetimeScope(ta.LifetimeParams)()
 
 	// Resolve the annotation's type parameters into a child scope so a parameter, the
 	// return, and any union member all read a sibling `T` as one shared var. A
@@ -1375,7 +1392,11 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, recv *as
 	var typeParams []*soltype.TypeParam
 	if len(ta.TypeParams) > 0 {
 		annScope = scope.Child()
+		// A type parameter's bound constrains a parameter's type, so a function type in it
+		// gets a fresh lifetime as one written in the parameter would.
+		restore := c.elideFuncsAs(elideFresh)
 		typeParams = c.resolveTypeParams(annScope, lvl, ta.TypeParams)
+		restore()
 	}
 
 	// Report any named lifetime this annotation uses without binding it in its own `<…>`
@@ -1383,6 +1404,10 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, recv *as
 	c.checkLifetimeDeclarations(ta.LifetimeParams, recv, ta.Params, ta.Return, ta.Throws)
 	c.lowerLifetimeParamBounds(ta.LifetimeParams, lvl)
 
+	// A function type written with no lifetime in a parameter gets a fresh one, and one in the
+	// return type gets one only when a parameter has a lifetime to tie it to.
+	defer c.elideFuncsAs(elideFresh)()
+	inputMark := c.ctx.lifetimeCounter
 	params := make([]*soltype.FuncParam, len(ta.Params))
 	for i, p := range ta.Params {
 		pat, rest, optional := c.restParamSlot(p, i == len(ta.Params)-1)
@@ -1408,6 +1433,11 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, recv *as
 		params[i] = &soltype.FuncParam{Pattern: c.mirrorParamPat(pat), Type: pt, Optional: optional, Rest: rest}
 	}
 
+	c.fnElision = c.returnElision(inputMark, ta.LifetimeParams)
+	// A member's `&self` is an input lifetime, though the receiver is lowered elsewhere.
+	if recv != nil && !recv.Consumes() {
+		c.fnElision = elideFresh
+	}
 	// The parser requires `-> R`, so ta.Return is normally non-nil. Guard
 	// defensively and recover an unsupported or absent return to a fresh var,
 	// keeping the function shape.
@@ -1524,9 +1554,8 @@ func (c *checker) resolveMutableTypeAnn(scope *Scope, ta *ast.MutableTypeAnn, lv
 
 // resolveRefTypeAnn lowers a borrow annotation `&T`, `&mut T`, `&'a T`, or `&'a mut T`
 // to a soltype.RefType{Mut, Lt, Inner}. The inner must be a RefInner. A borrow of a
-// value type such as a primitive has nothing to point at and is reported as an
-// unsupported feature. A function type inner is the exception, and lowers through
-// retainedFuncType to a FuncType carrying the lifetime.
+// value type such as a primitive or a function has nothing to point at and is reported
+// as an unsupported feature.
 //
 // resolveLifetimeAnn mints the lifetime. A bare `&` gets a fresh inferred lifetime, and
 // `&'a` resolves the named lifetime to the variable that name denotes in the current
@@ -1543,9 +1572,6 @@ func (c *checker) resolveRefTypeAnn(scope *Scope, ta *ast.RefTypeAnn, lvl int) (
 	// A borrow whose pointee is itself a borrow collapses to depth one.
 	if nested, isRef := inner.(*soltype.RefType); isRef {
 		return c.normalizeNestedBorrow(ta, lt, nested)
-	}
-	if fn, isFn := inner.(*soltype.FuncType); isFn {
-		return c.retainedFuncType(ta, lt, fn)
 	}
 	ri, isRI := inner.(soltype.RefInner)
 	if !isRI {
@@ -1576,26 +1602,6 @@ func (c *checker) normalizeNestedBorrow(ta *ast.RefTypeAnn, outerLt soltype.Life
 	t := soltype.NewRef(false, outerLt, inner.Inner)
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
-}
-
-// retainedFuncType lowers `&'a fn (…) -> R` to the function type fn with its retention
-// lifetime Lt set to lt. The result is a FuncType, not a RefType, since a function is a
-// value type that is copied, and the `&'a` only bounds how long a callee keeps its copy.
-// Two forms are reported as unsupported features:
-//
-//   - `&mut fn`, since nothing can write through a function.
-//   - `&'a (&'b fn)`, since a function has one retention lifetime.
-func (c *checker) retainedFuncType(ta *ast.RefTypeAnn, lt soltype.Lifetime, fn *soltype.FuncType) (soltype.Type, bool) {
-	if ta.Mut {
-		return c.reportUnsupportedFeature(ta, "mutable borrow of a function type"), false
-	}
-	if fn.Lt != nil {
-		return c.reportUnsupportedFeature(ta, "second retention lifetime on a function type"), false
-	}
-	t := *fn
-	t.Lt = lt
-	c.recordProv(&t, ta, AnnotationType)
-	return &t, true
 }
 
 // resolveLifetimeAnn resolves the lifetime of a borrow annotation. A nil node is

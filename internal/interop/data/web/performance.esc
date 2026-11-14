@@ -459,7 +459,7 @@ export declare interface PerformanceObserverCallback {
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/performance) */
 @js("performance")
-export declare var performance: Performance
+export declare val mut performance: Performance
 
 export declare type PerformanceEntryList = Array<PerformanceEntry>
 

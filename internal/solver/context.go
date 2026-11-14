@@ -37,6 +37,12 @@ type Context struct {
 	// variable, and the copiers add each copy through copyParamMark. isParamVar reads it.
 	paramVars set.Set[*soltype.TypeVarType]
 
+	// rigidReadVars holds the result variable of each read of a field or destructured
+	// element that is typed by a rigid parameter and read off an immutable borrow. The read
+	// yields a borrow of the variable, and the variable has the parameter as a lower bound.
+	// markRigidReadVar adds one and constrainBorrowIntoRigid reads it.
+	rigidReadVars set.Set[*soltype.TypeVarType]
+
 	// typeArgParams holds the parameters of instantiated signatures that are typed by a type
 	// argument of that instantiation, as markTypeArgParams defines them. isTypeArgParam
 	// reads it.
@@ -465,6 +471,22 @@ func (c *Context) markParamVar(v *soltype.TypeVarType) {
 	c.paramVars.Add(v)
 }
 
+// markRigidReadVar records v in rigidReadVars.
+func (c *Context) markRigidReadVar(v *soltype.TypeVarType) {
+	if c.rigidReadVars == nil {
+		c.rigidReadVars = set.NewSet[*soltype.TypeVarType]()
+	}
+	c.rigidReadVars.Add(v)
+}
+
+// copyRigidReadMark records nv in rigidReadVars when from is in it. Instantiation and
+// extrusion call it on each copy they make.
+func (c *Context) copyRigidReadMark(nv, from *soltype.TypeVarType) {
+	if c.rigidReadVars.Contains(from) {
+		c.markRigidReadVar(nv)
+	}
+}
+
 // isParamVar reports whether v is a type parameter's variable or a copy of one.
 func (c *Context) isParamVar(v *soltype.TypeVarType) bool {
 	return c.paramVars.Contains(v)
@@ -533,22 +555,43 @@ func (c *Context) rigidSkolem(v *soltype.TypeVarType) *soltype.SkolemType {
 	}
 	sk := c.freshSkolem(rp.Name)
 	sk.Param = v
+	sk.Upper, sk.Lower = rigidBounds(rp)
+	rp.Skolem = sk
+	return sk
+}
+
+// displaySkolem returns the skolem the rigid parameter v is read as when one has been
+// minted. Otherwise it returns an unregistered skolem with the parameter's name and the
+// bounds rigidSkolem would give it, which prints and reads the same but never meets
+// constrain. It changes nothing, so it is safe once a run has finished. v must be rigid.
+func displaySkolem(v *soltype.TypeVarType) *soltype.SkolemType {
+	rp := v.Rigid
+	if rp.Skolem != nil {
+		return rp.Skolem
+	}
+	sk := &soltype.SkolemType{Name: rp.Name}
+	sk.Upper, sk.Lower = rigidBounds(rp)
+	return sk
+}
+
+// rigidBounds returns the meet of rp's upper bounds and the join of its lower bounds, each
+// nil when rp holds no bound on that side.
+func rigidBounds(rp *soltype.RigidParam) (upper, lower soltype.Type) {
 	switch len(rp.Uppers) {
 	case 0:
 	case 1:
-		sk.Upper = rp.Uppers[0]
+		upper = rp.Uppers[0]
 	default:
-		sk.Upper = &soltype.IntersectionType{Types: rp.Uppers}
+		upper = &soltype.IntersectionType{Types: rp.Uppers}
 	}
 	switch len(rp.Lowers) {
 	case 0:
 	case 1:
-		sk.Lower = rp.Lowers[0]
+		lower = rp.Lowers[0]
 	default:
-		sk.Lower = &soltype.UnionType{Types: rp.Lowers}
+		lower = &soltype.UnionType{Types: rp.Lowers}
 	}
-	rp.Skolem = sk
-	return sk
+	return upper, lower
 }
 
 // nameRigidParams returns t for display with each rigid parameter's variable replaced by

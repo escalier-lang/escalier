@@ -159,6 +159,7 @@ func (c *checker) inferScriptIn(scope *Scope, script *ast.Script) (*Scope, *Info
 	c.checkCanReturn()
 	c.checkRigidLifetimes()
 	c.checkCallOnlyParams()
+	c.settleTentativeFuncEscapes()
 	// The script's top level is the outermost body, so every read off an inferred receiver
 	// it or its functions made is decided here.
 	c.pendingRecvReads = append(c.pendingRecvReads, c.fn.inferredRecvReads...)
@@ -270,6 +271,11 @@ func (c *checker) bindScriptFuncWithBody(scope *Scope, lvl int, s ast.Stmt, decl
 	// before it, as one queued while an expression is typed does.
 	c.markLifetimes(decl)
 	t, _ := c.inferFuncDecl(scope, lvl+1, decl)
+	// The declaration is a closure over the script's earlier bindings, so it holds a borrow
+	// of each one it captures the way a `val name = fn …` closure does.
+	if ft, isFn := t.(*soltype.FuncType); isFn {
+		c.setClosureRetention(scope, lvl+1, decl, ft)
+	}
 	c.recordClosureCaptures(scope, decl)
 	c.constrain(decl, t, self)
 

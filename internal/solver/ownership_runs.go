@@ -58,6 +58,9 @@ type closureRun struct {
 	runs bool
 	// `captures` lists each local the closure captures, in VarID order.
 	captures []capturedLocal
+	// `own` holds each closure the run reaches. Running a closure uses its own loans, including
+	// those a slot keeps for it, so none of them conflicts with the run.
+	own set.Set[ast.Node]
 }
 
 // retainedStore records a value that may carry a closure and stays reachable after its
@@ -94,6 +97,13 @@ type retainedStore struct {
 	// `writes` lists the owned locals the closures write, in VarID order. The dataflow pass
 	// fills it at `at`, as noteStoreWrites describes.
 	writes []liveness.VarID
+	// `keeps` marks a store that keeps its closures' borrows of the locals they capture for the
+	// rest of the program, as recordKeptCaptures decides. The dataflow pass keeps those loans
+	// from `at` on, as keepCaptureLoans describes, and checks each later use of the locals
+	// against them rather than against a call that may run the closures. `locals` lists the
+	// locals.
+	keeps  bool
+	locals borrowedLocals
 }
 
 // emitClosureRuns emits the runEvent of the call `e`, attached to `ref`. It must run once the
@@ -171,12 +181,14 @@ func (d *bodyDataflow) closureRunOf(name closureName, s *dataflowState) (*closur
 	held := name.place
 	captured := map[liveness.VarID]*capturedLocal{}
 	whole := set.NewSet[liveness.VarID]()
+	own := set.NewSet[ast.Node]()
 	sure := name.runs
 	for _, l := range d.sortedLoans(s) {
 		root := l.ev.place.root
 		if !l.closure() || root == held.root || !l.heldAt(held) {
 			continue
 		}
+		own.Add(l.ev.node)
 		sure = sure && l.heldWithin(held)
 		local, seen := captured[root]
 		if !seen {
@@ -196,7 +208,7 @@ func (d *bodyDataflow) closureRunOf(name closureName, s *dataflowState) (*closur
 		return nil, false
 	}
 
-	run := &closureRun{node: name.node, via: closureVia(d.placeName(held)), runs: sure}
+	run := &closureRun{node: name.node, via: closureVia(d.placeName(held)), runs: sure, own: own}
 	for _, root := range slices.Sorted(maps.Keys(captured)) {
 		// A capture of the whole local covers every field path, so the paths are dropped.
 		local := *captured[root]
@@ -219,6 +231,16 @@ func (c *checker) noteBoundClosure(closure ast.Func) {
 	}
 }
 
+// keepsCaptures reports whether value is one whose closures' borrows a slot keeps for the rest of
+// the program, as recordKeptCaptures decides.
+func (c *checker) keepsCaptures(value ast.Expr) bool {
+	if c.fn == nil {
+		return false
+	}
+	_, found := c.fn.keptCaptures[value]
+	return found
+}
+
 // noteRetainedClosureStore adds `store` to the body's retained stores and returns it, with
 // the place and the closures of its value filled in. It returns nil when the body has no event
 // table.
@@ -228,6 +250,7 @@ func (c *checker) noteRetainedClosureStore(store retainedStore) *retainedStore {
 		return nil
 	}
 	s := &store
+	s.locals, s.keeps = c.fn.keptCaptures[s.expr]
 	if p, ok := c.exprPlace(s.expr); ok && p.root > 0 {
 		s.place, s.named = p, true
 	}
@@ -265,11 +288,16 @@ func (c *checker) noteRetainedClosureArgs(e *ast.CallExpr, fn *soltype.FuncType,
 			break
 		}
 
-		// A parameter whose type has no retention lifetime does not keep the argument past
-		// the call. A retention lifetime is the lifetime written on a function type, such as
-		// `'a` in `handler: &'a fn () -> undefined`.
+		// A parameter whose type holds no function with a lifetime accepts only a function
+		// that holds no borrow, so keeping the argument keeps none of the caller's locals. A
+		// function's lifetime is the one written ahead of `fn`, such as `'a` in
+		// `handler: 'a fn () -> undefined`.
+		// A slot that keeps the closure for 'static keeps its borrows of the locals it
+		// captures, which recordKeptCaptures decided when the argument was checked. Such a slot
+		// may hold a function with no lifetime, which retentionLifetimes does not list.
+		_, keeps := c.fn.keptCaptures[arg]
 		lts := retentionLifetimes(param.Type)
-		if len(lts) == 0 {
+		if len(lts) == 0 && !keeps {
 			continue
 		}
 
@@ -297,10 +325,11 @@ func (c *checker) noteRetainedClosureArgs(e *ast.CallExpr, fn *soltype.FuncType,
 				shared = append(shared, lv)
 			}
 		}
+		store.static = store.static || keeps
 
 		// Find what keeps a closure that is not kept for the rest of the program. In
 		// `subscribe(e, fn () { … })` with `subscribe<'a>(emitter: &'a mut Emitter, handler:
-		// &'a fn () -> undefined)`, the binding `e` shares `'a` and is a holder. A result type
+		// 'a fn () -> undefined)`, the binding `e` shares `'a` and is a holder. A result type
 		// that mentions `'a` keeps the closure too, so the binding the result flows into
 		// becomes a holder later. With neither, the closure cannot outlive the call, and the
 		// argument records no store.

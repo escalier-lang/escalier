@@ -1792,6 +1792,31 @@ An unannotated parameter that the body only calls is call-only, so
 `fn f(g) { return g() }` infers `fn <T0>(g: fn () -> T0) -> T0`. One the body
 stores into a `'static` slot infers a `'static fn` parameter.
 
+A lifetime that a function's `<…>` list names is in scope in every closure and
+function type written in its body, as Rust's are. A closure can then keep a
+call-only parameter for the enclosing function's lifetime:
+
+```esc
+fn outer<'a>(p: &mut {cb: 'a fn () -> undefined}) {
+    val inner = fn (g: 'a fn () -> undefined) { p.cb = g }    // checks
+    val other = fn (g: fn () -> undefined) { p.cb = g }
+    // error: 'g' may borrow values that live only during the call, but it is kept after the call returns; write `g: 'a fn () -> undefined` to keep it
+}
+```
+
+A closure that declares its own `<'a>` hides the enclosing `'a`. The caller of
+the closure chooses the closure's own lifetimes, so a relation the closure's
+body needs from one of them to an enclosing lifetime has to be declared, as
+`fn <'b: 'a>(g: 'b fn () -> undefined) { p.cb = g }` declares it. Without the
+bound the closure reports `the body requires 'b to outlive 'a, but the
+signature does not declare it; add the bound 'b: 'a`. A name that no enclosing
+function declares is reported as used but not declared.
+
+A closure in a class member's body sees the class's lifetimes and the member's
+own. When both bind a name, the member's is nearer and wins. A class is
+declared only at module or script level, so no function's lifetimes reach a
+class body.
+
 Each error follows the shape of Rust's. It names the value, what the value
 borrows, what keeps the value and for how long, and the fix. Two examples:
 
@@ -1838,8 +1863,9 @@ The checker change is tracked by
 [#2342](https://github.com/escalier-lang/escalier/issues/2342),
 [#2553](https://github.com/escalier-lang/escalier/issues/2553), and
 [#2554](https://github.com/escalier-lang/escalier/issues/2554). Its
-implementation is in [#2550](https://github.com/escalier-lang/escalier/pull/2550),
-in `func_elision.go`, `closure_captures.go`, and `lifetime_call_only.go` under
+implementation is in [#2595](https://github.com/escalier-lang/escalier/pull/2595)
+through [#2598](https://github.com/escalier-lang/escalier/pull/2598), in
+`func_elision.go`, `closure_captures.go`, and `lifetime_call_only.go` under
 `internal/solver`. These parts are not implemented:
 
 - `move fn` from rule 6, tracked by

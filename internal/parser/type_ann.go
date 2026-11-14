@@ -309,8 +309,8 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 	}
 
 	// Optional lifetime annotation before the inner type, the `'a` in
-	// `'a Point`, attached to the resulting TypeRefTypeAnn after the inner
-	// type is parsed.
+	// `'a Point` or `'a fn () -> R`, attached to the resulting TypeRefTypeAnn or
+	// FuncTypeAnn after the inner type is parsed.
 	lifetime := p.parseOptLifetimeAnn()
 	token = p.lexer.peek()
 
@@ -571,11 +571,15 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 	typeAnn = p.typeAnnSuffix(typeAnn)
 
 	if lifetime != nil {
-		if ref, ok := typeAnn.(*ast.TypeRefTypeAnn); ok {
-			ref.Lifetime = lifetime
-		} else {
+		switch t := typeAnn.(type) {
+		case *ast.TypeRefTypeAnn:
+			t.Lifetime = lifetime
+		case *ast.FuncTypeAnn:
+			// `'a fn () -> R` bounds the borrows the function holds by 'a.
+			t.SetLifetime(lifetime)
+		default:
 			p.reportError(lifetime.Span(),
-				"lifetime annotation must precede a type reference")
+				"lifetime annotation must precede a type reference or a function type")
 		}
 	}
 
@@ -606,11 +610,16 @@ loop:
 		switch token.Type {
 		case OpenBracket:
 			p.lexer.consume()
-			// TODO: handle the case when parseExpr() return None correctly
 			index := p.typeAnn()
 			if index == nil {
 				p.reportError(token.Span, "Expected an expression after '['")
-				break loop
+				// `Foo[]` keeps its index access, with an empty ErrorTypeAnn between the
+				// brackets, so an editor can offer Foo's keys at the cursor there.
+				index = ast.NewErrorTypeAnn(ast.NewSpan(token.Span.End, token.Span.End, p.lexer.source.ID))
+				if p.lexer.peek().Type != CloseBracket {
+					typeAnn = ast.NewIndexTypeAnn(typeAnn, index, ast.MergeSpans(typeAnn.Span(), index.Span()))
+					break loop
+				}
 			}
 			terminator := p.lexer.next()
 			if terminator.Type != CloseBracket {
@@ -621,33 +630,6 @@ loop:
 				obj, index,
 				ast.Span{Start: obj.Span().Start, End: terminator.Span.End, SourceID: p.lexer.source.ID},
 			)
-		case Dot:
-			p.lexer.consume()
-			prop := p.lexer.next()
-			// nolint: exhaustive
-			switch prop.Type {
-			case Identifier, Underscore:
-				obj := typeAnn
-				// This interprets T.K as T["K"]
-				prop := ast.NewLitTypeAnn(ast.NewString(prop.Value, token.Span), token.Span)
-				typeAnn = ast.NewIndexTypeAnn(
-					obj, prop,
-					ast.Span{Start: obj.Span().Start, End: prop.Span().End, SourceID: p.lexer.source.ID},
-				)
-			default:
-				obj := typeAnn
-				// This interprets T. as T[""]
-				prop := ast.NewLitTypeAnn(ast.NewString("", token.Span), token.Span)
-				typeAnn = ast.NewIndexTypeAnn(
-					obj, prop,
-					ast.Span{Start: obj.Span().Start, End: prop.Span().End, SourceID: p.lexer.source.ID},
-				)
-				if token.Type == Dot {
-					p.reportError(token.Span, "expected an identifier after .")
-				} else {
-					p.reportError(token.Span, "expected an identifier after ?.")
-				}
-			}
 		default:
 			break loop
 		}
@@ -1271,6 +1253,14 @@ func (p *Parser) peekSecondIsTypeParamName() bool {
 // implements) can avoid a post-hoc type assertion on the TypeAnn interface.
 func (p *Parser) parseTypeRef(firstToken *Token) *ast.TypeRefTypeAnn {
 	qualIdent := p.parseQualifiedIdent(firstToken)
+	// parseQualifiedIdent leaves a `.` in place when no identifier follows it. A
+	// type reference consumes that dot and ends in an empty name, as a member
+	// expression does, so that `val c: intl.` records the `intl.` an editor
+	// completes after.
+	if dot := p.lexer.peek(); dot.Type == Dot {
+		p.lexer.consume()
+		qualIdent = p.endInEmptyName(qualIdent, dot)
+	}
 	if p.lexer.peek().Type == LessThan {
 		p.lexer.consume() // consume '<'
 		// Each angle-bracket arg can be a bare lifetime (`'a`, `'static`)
@@ -1341,6 +1331,16 @@ func (p *Parser) tryParseLifetimeArg() ast.LifetimeAnnNode {
 	}
 	p.restoreState(saved)
 	return nil
+}
+
+// endInEmptyName returns left followed by an empty name that starts and ends where the
+// consumed token dot ends, and reports the identifier missing after dot.
+func (p *Parser) endInEmptyName(left ast.QualIdent, dot *Token) *ast.Member {
+	p.reportError(dot.Span, "expected an identifier after .")
+	return &ast.Member{
+		Left:  left,
+		Right: ast.NewIdentifier("", ast.NewSpan(dot.Span.End, dot.Span.End, p.lexer.source.ID)),
+	}
 }
 
 // parseQualifiedIdent parses a qualified identifier like Foo.Bar.Baz

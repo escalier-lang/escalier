@@ -14,6 +14,10 @@ export interface Manifest {
     templates: Record<string, string[]>;
     examples: Record<string, string[]>;
     builtins: string[];
+    /** The size in bytes of each file in builtins, keyed by its path in builtins. */
+    builtinSizes?: Record<string, number>;
+    /** The size in bytes of lsp-server.wasm when the manifest was written. */
+    lspServerWasmSize?: number;
 }
 
 export function volumeToDir(volume: Volume): FSDir {

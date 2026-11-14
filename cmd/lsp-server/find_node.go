@@ -133,7 +133,15 @@ func (v *ParentVisitor) exit(n ast.Node) {
 	}
 }
 
-func (v *ParentVisitor) EnterExpr(e ast.Expr) bool              { return v.enter(e) }
+// EnterExpr skips an ErrorExpr with an empty span. The parser places one where a
+// missing expression would start, so in `val c: intl.` at the end of a file the
+// missing initializer sits at the cursor, and the cursor belongs to `intl.` instead.
+func (v *ParentVisitor) EnterExpr(e ast.Expr) bool {
+	if errExpr, ok := e.(*ast.ErrorExpr); ok && errExpr.Span().Start == errExpr.Span().End {
+		return false
+	}
+	return v.enter(e)
+}
 func (v *ParentVisitor) ExitExpr(e ast.Expr)                     { v.exit(e) }
 func (v *ParentVisitor) EnterLit(l ast.Lit) bool                 { return v.enter(l) }
 func (v *ParentVisitor) ExitLit(l ast.Lit)                       { v.exit(l) }

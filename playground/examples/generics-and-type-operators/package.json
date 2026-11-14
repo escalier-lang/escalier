@@ -1,0 +1,5 @@
+{
+  "name": "generics-and-type-operators",
+  "version": "1.0.0",
+  "main": "build/bin/main.js"
+}

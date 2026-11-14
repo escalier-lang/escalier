@@ -435,7 +435,9 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 }
 
 // TestOwnershipEventsClosureCaptures covers closure captures, which F3 decides from where the
-// closure flows.
+// closure flows. A closure stored into a module-level binding records a 'static borrow of each
+// capture. The dataflow pass then keeps each such borrow of a local for the rest of the program
+// from the store on, which the events do not show.
 func TestOwnershipEventsClosureCaptures(t *testing.T) {
 	runOwnershipEvents(t, []ownershipEventsCase{
 		{
@@ -470,7 +472,7 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 		{
 			name: "ClosureStoredInModuleBorrowsCaptureForStatic",
 			src: `
-				var handler: fn () -> number = fn () { return 0 }
+				var handler: 'static fn () -> number = fn () { return 0 }
 				fn go() {
 					val p = {x: 1}
 					handler = fn () { return p.x }
@@ -484,7 +486,7 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 		{
 			name: "WritingClosureStoredInModuleBorrowsCaptureMutably",
 			src: `
-				var handler: fn () -> undefined = fn () {}
+				var handler: 'static fn () -> undefined = fn () {}
 				fn go() {
 					val mut p = {x: 1}
 					handler = fn () { p.x = 2 }
@@ -498,7 +500,7 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 		{
 			name: "ClosureStoredInModuleThroughLocalBorrowsCaptureForStatic",
 			src: `
-				var handler: fn () -> number = fn () { return 0 }
+				var handler: 'static fn () -> number = fn () { return 0 }
 				fn go() {
 					val p = {x: 1}
 					val f = fn () { return p.x }

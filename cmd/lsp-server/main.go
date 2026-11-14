@@ -126,15 +126,17 @@ func NewServer() *Server {
 		SetTrace:    s.setTrace,
 
 		// TextDocument
-		TextDocumentDeclaration:    s.textDocumentDeclaration,
-		TextDocumentDefinition:     s.textDocumentDefinition,
-		TextDocumentTypeDefinition: s.textDocumentTypeDefinition,
-		TextDocumentDidOpen:        s.textDocumentDidOpen,
-		TextDocumentDidChange:      s.textDocumentDidChange,
-		TextDocumentHover:          s.textDocumentHover,
-		TextDocumentCompletion:     s.textDocumentCompletion,
-		CompletionItemResolve:      s.completionItemResolve,
-		TextDocumentCodeAction:     s.textDocumentCodeAction,
+		TextDocumentDeclaration:        s.textDocumentDeclaration,
+		TextDocumentDefinition:         s.textDocumentDefinition,
+		TextDocumentTypeDefinition:     s.textDocumentTypeDefinition,
+		TextDocumentDidOpen:            s.textDocumentDidOpen,
+		TextDocumentDidChange:          s.textDocumentDidChange,
+		TextDocumentHover:              s.textDocumentHover,
+		TextDocumentCompletion:         s.textDocumentCompletion,
+		TextDocumentSignatureHelp:      s.textDocumentSignatureHelp,
+		CompletionItemResolve:          s.completionItemResolve,
+		TextDocumentCodeAction:         s.textDocumentCodeAction,
+		TextDocumentSemanticTokensFull: s.textDocumentSemanticTokensFull,
 
 		// Workspace
 		WorkspaceExecuteCommand:        s.workspaceExecuteCommand,
@@ -193,10 +195,17 @@ func (s *Server) initialize(context *glsp.Context, params *protocol.InitializePa
 	capabilities := s.handler.CreateServerCapabilities()
 	capabilities.TextDocumentSync = protocol.TextDocumentSyncKindFull
 	resolveProvider := true
+	// `(` opens an argument list and `,` moves to the next argument. `)` closes the list
+	// while signature help is showing, and the client asks again to learn it should hide.
+	capabilities.SignatureHelpProvider = &protocol.SignatureHelpOptions{
+		TriggerCharacters:   []string{"(", ","},
+		RetriggerCharacters: []string{")"},
+	}
 	capabilities.CompletionProvider = &protocol.CompletionOptions{
 		TriggerCharacters: []string{"."},
 		ResolveProvider:   &resolveProvider,
 	}
+	capabilities.SemanticTokensProvider = semanticTokensOptions()
 	capabilities.DeclarationProvider = true
 	capabilities.DefinitionProvider = true
 	capabilities.CodeActionProvider = protocol.CodeActionOptions{

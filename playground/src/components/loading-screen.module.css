@@ -1,0 +1,148 @@
+.root {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+}
+
+/* The grid matches .editor-root in editor.module.css. */
+.skeleton {
+    width: 100%;
+    height: 100%;
+    background-color: var(--color-bg);
+    display: grid;
+    grid-template-columns: 220px 1fr 1fr;
+    grid-template-rows: 36px 40px 1fr;
+    grid-template-areas:
+        "toolbar    toolbar     toolbar"
+        "explorer   input-tabs  output-tabs"
+        "explorer   input       output";
+}
+
+.toolbar {
+    grid-area: toolbar;
+    background-color: var(--color-bg-raised);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.explorer {
+    grid-area: explorer;
+    border-right: 1px solid var(--color-border);
+    padding: 40px 12px;
+}
+
+.inputTabs {
+    grid-area: input-tabs;
+}
+
+.outputTabs {
+    grid-area: output-tabs;
+    border-left: 1px solid var(--color-border);
+}
+
+.input {
+    grid-area: input;
+    background-color: var(--color-bg-editor);
+    padding: 8px 64px;
+}
+
+.output {
+    grid-area: output;
+    background-color: var(--color-bg-editor);
+    border-left: 1px solid var(--color-border);
+}
+
+.line {
+    height: 12px;
+    margin: 8px 0;
+    border-radius: 3px;
+    background-color: var(--color-border);
+}
+
+.backdrop {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background-color: var(--color-backdrop);
+}
+
+.modal {
+    position: static;
+    margin: 0;
+    width: min(420px, 100%);
+    box-sizing: border-box;
+    padding: 20px 24px;
+    background-color: var(--color-bg-raised);
+    border: 1px solid var(--color-border-strong);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px var(--color-backdrop);
+    font-family: sans-serif;
+    color: var(--color-text);
+}
+
+.title {
+    margin: 0 0 16px;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.track {
+    height: 6px;
+    border-radius: 3px;
+    background-color: var(--color-border-strong);
+    overflow: hidden;
+}
+
+.bar {
+    height: 100%;
+    background-color: var(--color-accent);
+    transition: width 0.15s linear;
+}
+
+.failedBar {
+    width: 100%;
+    height: 100%;
+    background-color: var(--color-text-error);
+}
+
+.indeterminateBar {
+    width: 30%;
+    height: 100%;
+    background-color: var(--color-accent);
+    animation: slide 1.2s ease-in-out infinite;
+}
+
+@keyframes slide {
+    from {
+        transform: translateX(-100%);
+    }
+    to {
+        transform: translateX(340%);
+    }
+}
+
+.caption,
+.error {
+    margin: 12px 0 0;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.caption {
+    color: var(--color-text-muted);
+}
+
+.error {
+    color: var(--color-text-error);
+}
+
+.visuallyHidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}

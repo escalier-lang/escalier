@@ -1596,15 +1596,29 @@ func (c *checker) objectMember(lvl int, blame ast.Node, name string, carrier sol
 // memberObject returns the object type whose elements are the members a value of type t
 // exposes, with every inference variable in them coalesced. It reads t the way a member
 // read off a value of type t does, except that a union reads as the merge
-// unionMemberObject builds. It returns false for an intersection, `never`, `unknown`, and an object built
-// from a mapped type or a spread.
+// unionMemberObject builds. A type parameter, as a skolem or a rigid variable, reads as its
+// upper bound. It returns false for an intersection, `never`, `unknown`, a type parameter
+// with no upper bound, and an object built from a mapped type or a spread.
 //
 // It only reads the Context. Reducing a mapped type or a spread would mint variables, so
 // an object holding one is declined rather than reduced.
 func (c *Context) memberObject(t soltype.Type) (*soltype.ObjectType, bool) {
 	// An inference variable reads as the bounds it settled on. An alias, an interface or a
 	// `typeof` reads as the type it expands to, and a borrow as what it borrows.
-	carrier := c.expandedCarrier(groundedCarrier(t))
+	carrier := c.expandedCarrier(groundedOrSkolem(t))
+	// A type parameter exposes the members of its upper bound, since every type the
+	// function can be called at has them. `fn f<T: A>(x: &mut T)` reads `x` as exposing
+	// `A`'s members. The bound may name a sibling parameter, so the read repeats.
+	for range maxExpandDepth {
+		sk, ok := carrier.(*soltype.SkolemType)
+		if !ok {
+			break
+		}
+		if sk.Upper == nil {
+			return nil, false
+		}
+		carrier = c.expandedCarrier(groundedOrSkolem(sk.Upper))
+	}
 	if u, ok := carrier.(*soltype.UnionType); ok {
 		return c.unionMemberObject(u)
 	}
@@ -1656,6 +1670,15 @@ func (c *Context) memberObject(t soltype.Type) (*soltype.ObjectType, bool) {
 	// storage.
 	coalesced, ok := coalesce(obj, soltype.Positive).(*soltype.ObjectType)
 	return coalesced, ok
+}
+
+// groundedOrSkolem returns displaySkolem's skolem when t, with any borrow peeled, is a
+// rigid type parameter's variable, and groundedCarrier(t) otherwise.
+func groundedOrSkolem(t soltype.Type) soltype.Type {
+	if v, ok := soltype.CarrierOf(t).(*soltype.TypeVarType); ok && v.Rigid != nil {
+		return displaySkolem(v)
+	}
+	return groundedCarrier(t)
 }
 
 // unionMemberObject returns one object holding every member some variant of u exposes, read

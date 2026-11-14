@@ -1,0 +1,13 @@
+import "web:performance"
+import "web:crypto"
+
+// `web:performance` and `web:crypto` declare their values `val mut`, so the
+// methods that take `&mut self` check and lower to calls on the globals.
+export fn elapsed(start: number) -> number {
+    performance.mark("end")
+    return performance.now() - start
+}
+
+export fn newID() -> string {
+    return crypto.randomUUID()
+}

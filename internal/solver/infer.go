@@ -132,9 +132,45 @@ type checker struct {
 	// same reason. The map is allocated lazily by namedLifetime on first use.
 	namedLifetimes map[string]*soltype.LifetimeVar
 
-	// pendingCallOnly holds a check per function parameter that has no retention lifetime, for
-	// checkCallOnlyParams to read once the enclosing component has solved.
+	// fnElision is the lifetime a function type written with no lifetime gets at the current
+	// position. elideFuncsAs sets it, and elidedFuncLifetime reads it.
+	fnElision funcElision
+	// pendingCallOnly holds a check per parameter whose function type is written with no
+	// lifetime, for checkCallOnlyParams to read once the enclosing component has solved.
 	pendingCallOnly []callOnlyCheck
+	// signatureLts maps each lifetime a function's `<'a>` list declares, as `'a` in
+	// `fn f<'a>(…)`, to its name. noteSignatureLifetimes fills it, and funcLtSources and
+	// checkCallOnlyParams read it.
+	signatureLts map[*soltype.LifetimeVar]string
+	// keeperOf maps each argument of a call to the call, the value of each assignment to the
+	// assignment, and the initializer of each annotated declaration to the declaration.
+	// inferCallArgs, inferAssign, and inferVarDeclInit fill it, funcKeptNames reads it to name
+	// what keeps a value checked with the value as the site, and settleTentativeFuncEscapes
+	// clears it once the component has solved.
+	keeperOf map[ast.Expr]ast.Node
+	// closureBorrows maps the lifetime of each closure that holds a borrow to the capture
+	// that makes it hold one. setClosureRetention fills it, and funcLtSources reads it.
+	closureBorrows map[*soltype.LifetimeVar]closureBorrow
+	// tentativeClosures maps the lifetime of each closure that holds a borrow only if a
+	// captured binding's type settles to something other than a value type, to the type
+	// variables of those bindings. setClosureRetention fills it, and
+	// settleTentativeFuncEscapes reads it.
+	tentativeClosures map[*soltype.LifetimeVar][]*soltype.TypeVarType
+	// heldFuncEscapes holds each FuncKeptForStaticError sortFuncKeptForStatic kept back, for
+	// settleTentativeFuncEscapes to decide.
+	heldFuncEscapes []heldFuncEscape
+	// deferredBodies holds, for each `async` or `gen` body being walked, the phrase
+	// deferredBody returns for it, outermost first.
+	deferredBodies []string
+	// callOnlyDepth maps the lifetime of each call-only parameter, the ones pendingCallOnly
+	// checks, to the length of deferredBodies when the parameter was bound.
+	// noteCallOnlyParam fills it, and funcLtSources and noteCallOnlyRead read it.
+	callOnlyDepth map[*soltype.LifetimeVar]int
+	// callOnlyDeferredRead maps the lifetime of a call-only parameter to the first read of a
+	// value holding it inside an `async` or `gen` body entered after the parameter was bound.
+	// The read's phrase from deferredBodies names the first such body among those that
+	// enclose the read. noteCallOnlyRead fills it.
+	callOnlyDeferredRead map[*soltype.LifetimeVar]deferredRead
 	// ltMarks maps a node to the lifetime counter at the start of its inference, written by
 	// markLifetimes for every expression and statement. A rigid-lifetime check sited at the
 	// node reads it to tell the lifetimes the checked value minted from the ones it shares.
@@ -157,6 +193,24 @@ type checker struct {
 	// writes into it: both readers copy before minting, so a name one mints stays out of the
 	// declaration's scope and out of a sibling signature's.
 	declLifetimes map[string]*soltype.LifetimeVar
+	// enclosingLifetimes maps each lifetime name an enclosing function's `<…>` list binds, and
+	// that no nearer list rebinds, to the variable its parameter carries. A closure or a
+	// function type annotation written in a body may write such a name with no clause of its
+	// own, so nestedLifetimeScope seeds the nested scope from this and
+	// checkLifetimeDeclarations reads the names as declared. enterBodyLifetimeScope adds a
+	// function's names while its body is walked, and enterLifetimeScope hides the names a
+	// nested signature binds while that signature resolves. It is nil outside every function
+	// body, and enterDeclLifetimeScope empties it while a class or alias body is inferred. A
+	// class's names stay in declLifetimes.
+	enclosingLifetimes map[string]*soltype.LifetimeVar
+	// enclosingBounds maps each name in enclosingLifetimes to the names its function declares
+	// or implies it outlives, closed transitively. checkSignatureImpliesBodyLifetimes reads it to
+	// accept a nested signature's bound on one enclosing lifetime that outlives another.
+	enclosingBounds map[string]set.Set[string]
+	// enclosingOwners maps each name in enclosingLifetimes that hides a farther lifetime of the
+	// same name to the possessive of the function that binds it, as "run's" for `run<'a>` in
+	// `class C<'a>`. checkSignatureImpliesBodyLifetimes reads it to say which 'a it means.
+	enclosingOwners map[string]string
 
 	// classNamespace is the dep_graph namespace of the module-level declaration
 	// currently being inferred, empty at the root namespace and outside any
@@ -374,6 +428,11 @@ type checker struct {
 	// unannotated parameter, and the result variable of each field read through one of those
 	// borrows. fieldReadBorrow reads a field off such a borrow as a borrow at the same lifetime.
 	readThroughVars set.Set[*soltype.TypeVarType]
+	// declaredReadShapes maps the result variable of a field read through an immutable
+	// borrow to the field's declared type. Only a field declared as an object, tuple, class
+	// instance, or alias reads through such a variable. declaredField reads the fields of
+	// the variable off the declared type.
+	declaredReadShapes map[*soltype.TypeVarType]soltype.Type
 	// readThroughLocals holds the inner variable of each read-through borrow a body-level
 	// `val` binds, as `q` binds one in `val q = p.x`. The binding generalizes, so each use of
 	// it instantiates a copy of the variable, and the freshener adds that copy to
@@ -487,6 +546,18 @@ type funcCtx struct {
 	async   bool
 	node    ast.Node
 	returns []soltype.Type
+	// frameClosures holds the lifetime of each closure written in this body whose
+	// every borrow is of a local of this body. setClosureRetention fills it, and
+	// ownReturnedClosures reads it.
+	frameClosures set.Set[*soltype.LifetimeVar]
+	// keptCaptures maps each value a slot keeps for 'static by keeping its closures' borrows to
+	// the locals those closures borrow. recordKeptCaptures fills it, and noteRetainedClosureStore
+	// and noteRetainedClosureArgs read it.
+	keptCaptures map[ast.Expr]borrowedLocals
+	// bodyLtMark is the lifetime counter when the walk of this body began, after its
+	// parameters and return annotation resolved. A lifetime minted from it on belongs to the
+	// body. isFrameLifetime reads it.
+	bodyLtMark int
 	// returnExprs holds each ReturnStmt's operand expression in the same source order as
 	// returns, with a nil entry for a bare `return`. inferFunc reads it to decide the
 	// immutable→mutable upgrade at a `mut` return annotation. The upgrade fires only when
@@ -1034,6 +1105,11 @@ func (c *checker) blameConstraintErrors(n ast.Node, errs []SolverError) {
 			err.prov, err.site = c.prov, n
 		case *BorrowEscapeError:
 			err.prov, err.site = c.prov, n
+		case *FuncKeptForStaticError:
+			err.prov, err.site = c.prov, n
+			if !c.sortFuncKeptForStatic(err) {
+				continue
+			}
 		case *ClassIntoExactObjectError:
 			err.prov, err.site = c.prov, n
 		case *StructuralIntoClassError:

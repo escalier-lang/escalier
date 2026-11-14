@@ -164,6 +164,7 @@ func (f *freshener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterR
 	nv := f.c.freshAt(f.lvl)
 	nv.Open = v.Open // carry the `open` param marker onto the instantiated copy
 	f.c.ctx.copyParamMark(nv, v)
+	f.c.ctx.copyRigidReadMark(nv, v)
 	// A local bound to a read through a borrowed parameter, as `q` is in `val q = p.x`,
 	// instantiates its borrow's inner at each use. The copy joins readThroughVars, so a read
 	// through the local keeps the borrow as a read through the parameter does.
@@ -258,6 +259,7 @@ func (f *allFreshener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.Ent
 	nv := f.c.freshAt(f.lvl)
 	nv.Open = v.Open // carry the `open` param marker onto the freshened copy
 	f.c.ctx.copyParamMark(nv, v)
+	f.c.ctx.copyRigidReadMark(nv, v)
 	f.cache[v] = nv // populate BEFORE bounds so a cyclic bound referencing v resolves to nv
 	nv.LowerBounds = f.freshenBounds(v.LowerBounds)
 	nv.UpperBounds = f.freshenBounds(v.UpperBounds)

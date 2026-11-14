@@ -263,8 +263,10 @@ func setOwnNameValue(uri string, ns *Namespace) {
 	if !IsSchemePrefixedImport(uri) {
 		return
 	}
-	if b, found := ns.Values[ast.DeriveImportName(uri)]; found {
+	name := ast.DeriveImportName(uri)
+	if b, found := ns.Values[name]; found {
 		ns.AsValue = &b
+		ns.AsValueName = name
 	}
 }
 

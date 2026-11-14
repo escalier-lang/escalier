@@ -25,56 +25,77 @@ import (
 // whether it can change, so one can write through its view and the other expects it to hold
 // still.
 type BorrowAliasError struct {
-	// Place is what the blamed borrow reaches and FirstPlace what the borrow already live
-	// reaches, each `x` for a whole binding and `x.a` for a field. They overlap and are often
-	// equal, but a borrow of a whole binding conflicts with a borrow of one of its fields, and
-	// then naming only one of them leaves the reader hunting for the other.
-	Place      string
-	FirstPlace string
-	// FirstMut and SecondMut say whether a write can go through each borrow. Exactly one of them
-	// is true, since a conflicting pair is one mutable borrow beside one immutable borrow. Second is
-	// the one the error is blamed on, since it is where the program first holds two views.
-	FirstMut  bool
-	SecondMut bool
-	// FirstVia and SecondVia name the closure a call may run, when the matching borrow is that
-	// closure's access to what it captures during the call. Each is a phrase closureVia or
-	// retainedVia returns, and is empty for a borrow the program writes. FirstRuns and
-	// SecondRuns mark a closure the call is sure to run, because the call's callee names it.
-	FirstVia   string
-	SecondVia  string
-	FirstRuns  bool
-	SecondRuns bool
-	node       ast.Node
-	first      ast.Span
+	// First is the borrow already live and Second the one the error is blamed on, since it is
+	// where the program first holds two views. Exactly one of them is mutable, since a
+	// conflicting pair is one mutable borrow beside one immutable borrow.
+	First  BorrowSide
+	Second BorrowSide
+	node   ast.Node
+	first  ast.Span
+}
+
+// BorrowSide describes one of the two borrows a BorrowAliasError names.
+type BorrowSide struct {
+	// Place is what the borrow reaches, `x` for a whole binding and `x.a` for a field. The two
+	// sides' places overlap and are often equal, but a borrow of a whole binding conflicts with
+	// a borrow of one of its fields, and then naming only one of them leaves the reader hunting
+	// for the other.
+	Place string
+	// Mut says whether a write can go through the borrow.
+	Mut bool
+	// Via names the closure a call may run, when the borrow is that closure's access to what it
+	// captures during the call. It is a phrase closureVia or retainedVia returns, and is empty
+	// for a borrow the program writes. Runs marks a closure the call is sure to run, because the
+	// call's callee names it.
+	Via  string
+	Runs bool
+	// Kept names the slot that keeps the borrow for the rest of the program, when it is a kept
+	// closure's capture. It is a phrase closureVia or retainedVia returns, and is empty for any
+	// other borrow.
+	Kept string
 }
 
 func (*BorrowAliasError) isSolverError()        {}
 func (e *BorrowAliasError) Span() ast.Span      { return e.node.Span() }
 func (e *BorrowAliasError) Related() []ast.Span { return []ast.Span{e.first} }
 func (e *BorrowAliasError) Message() string {
+	first, second := e.First, e.Second
 	// One place covers both borrows when they name the same data, so "it" is unambiguous.
 	// Where the two differ the other place is named, since the reader cannot otherwise tell
 	// which part of the binding the live borrow holds.
 	held := "it is"
-	if e.FirstPlace != e.Place {
-		held = fmt.Sprintf("'%s' is", e.FirstPlace)
+	if first.Place != second.Place {
+		held = fmt.Sprintf("'%s' is", first.Place)
 	}
-	if e.SecondVia != "" {
-		if e.SecondMut {
-			return fmt.Sprintf("this call %s %s, which writes '%s' while %s borrowed as immutable", runsVerb(e.SecondRuns), e.SecondVia, e.Place, held)
+	// A kept borrow names the slot that keeps it, after the kind of the borrow it describes.
+	firstKind, secondKind := kindName(first.Mut), kindName(second.Mut)
+	if first.Kept != "" {
+		firstKind += " by " + first.Kept
+	}
+	if second.Kept != "" {
+		secondKind += " for " + second.Kept
+	}
+	if second.Via != "" {
+		if second.Mut {
+			return fmt.Sprintf("this call %s %s, which writes '%s' while %s borrowed as %s", runsVerb(second.Runs), second.Via, second.Place, held, firstKind)
 		}
-		return fmt.Sprintf("this call %s %s, which reads '%s' while %s borrowed as mutable", runsVerb(e.SecondRuns), e.SecondVia, e.Place, held)
+		return fmt.Sprintf("this call %s %s, which reads '%s' while %s borrowed as %s", runsVerb(second.Runs), second.Via, second.Place, held, firstKind)
 	}
-	if e.FirstVia != "" {
-		if e.FirstMut {
-			return fmt.Sprintf("cannot borrow '%s' as immutable in a call that %s %s, which writes it", e.Place, runsVerb(e.FirstRuns), e.FirstVia)
+	if first.Via != "" {
+		if first.Mut {
+			return fmt.Sprintf("cannot borrow '%s' as immutable in a call that %s %s, which writes it", second.Place, runsVerb(first.Runs), first.Via)
 		}
-		return fmt.Sprintf("cannot borrow '%s' as mutable in a call that %s %s, which reads it", e.Place, runsVerb(e.FirstRuns), e.FirstVia)
+		return fmt.Sprintf("cannot borrow '%s' as mutable in a call that %s %s, which reads it", second.Place, runsVerb(first.Runs), first.Via)
 	}
-	if e.SecondMut {
-		return fmt.Sprintf("cannot borrow '%s' as mutable while %s borrowed as immutable", e.Place, held)
+	return fmt.Sprintf("cannot borrow '%s' as %s while %s borrowed as %s", second.Place, secondKind, held, firstKind)
+}
+
+// kindName returns how a message names the kind of a borrow.
+func kindName(mut bool) string {
+	if mut {
+		return "mutable"
 	}
-	return fmt.Sprintf("cannot borrow '%s' as immutable while %s borrowed as mutable", e.Place, held)
+	return "immutable"
 }
 
 // MoveWhileBorrowedError reports a move of data a live borrow still reaches. After
@@ -87,8 +108,12 @@ type MoveWhileBorrowedError struct {
 	// ViaRuns marks a closure the call is sure to run, because the call's callee names it.
 	Via     string
 	ViaRuns bool
-	move    ast.Node
-	borrow  ast.Span
+	// Kept names the slot that keeps the borrow for the rest of the program, when the borrow is
+	// a kept closure's capture, and is empty otherwise. It is a phrase closureVia or retainedVia
+	// returns.
+	Kept   string
+	move   ast.Node
+	borrow ast.Span
 }
 
 func (*MoveWhileBorrowedError) isSolverError()        {}
@@ -97,6 +122,9 @@ func (e *MoveWhileBorrowedError) Related() []ast.Span { return []ast.Span{e.borr
 func (e *MoveWhileBorrowedError) Message() string {
 	if e.Via != "" {
 		return fmt.Sprintf("cannot move '%s' in a call that %s %s, which writes it", e.Place, runsVerb(e.ViaRuns), e.Via)
+	}
+	if e.Kept != "" {
+		return fmt.Sprintf("cannot move '%s' while it is borrowed by %s", e.Place, e.Kept)
 	}
 	return fmt.Sprintf("cannot move '%s' while it is borrowed", e.Place)
 }
@@ -114,7 +142,11 @@ func runsVerb(runs bool) string {
 // the written data is live.
 type BorrowedValueWriteError struct {
 	// Place names the field written, `x.v` for `x.v = 5`.
-	Place  string
+	Place string
+	// Kept names the slot that keeps the borrow for the rest of the program, when the borrow is
+	// a kept closure's capture, and is empty otherwise. It is a phrase closureVia or
+	// retainedVia returns.
+	Kept   string
 	write  ast.Node
 	borrow ast.Span
 }
@@ -123,6 +155,9 @@ func (*BorrowedValueWriteError) isSolverError()        {}
 func (e *BorrowedValueWriteError) Span() ast.Span      { return e.write.Span() }
 func (e *BorrowedValueWriteError) Related() []ast.Span { return []ast.Span{e.borrow} }
 func (e *BorrowedValueWriteError) Message() string {
+	if e.Kept != "" {
+		return fmt.Sprintf("cannot assign to '%s' while it is borrowed as immutable by %s", e.Place, e.Kept)
+	}
 	return fmt.Sprintf("cannot assign to '%s' while it is borrowed as immutable", e.Place)
 }
 

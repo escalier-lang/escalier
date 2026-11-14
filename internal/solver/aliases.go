@@ -235,6 +235,9 @@ func (c *checker) resolveLifetimeParams(lvl int, ltParams []*ast.LifetimeParam) 
 // symbolic in the stored body, and expandAlias substitutes an instance's arguments for them
 // at subtyping time.
 func (c *checker) inferAliasBody(sh *aliasShell) {
+	// An alias names a type for every place that writes it, so a function type written with
+	// no lifetime in its body holds no borrow, as it does in a module-level binding.
+	defer c.elideFuncsAs(elideStatic)()
 	prevNS := c.classNamespace
 	c.classNamespace = sh.ns
 	defer func() { c.classNamespace = prevNS }()
@@ -250,9 +253,7 @@ func (c *checker) inferAliasBody(sh *aliasShell) {
 	// nothing, so `type Box<'a> = fn (x: &'a B) -> &'a B` would mint an `'a` of its own and
 	// leave the alias's parameter naming nothing. Hand the nested scope the alias's declared
 	// parameters, the same way a class body does for its members.
-	savedDeclLts := c.declLifetimes
-	c.declLifetimes = declaredLifetimeScope(sh.decl.LifetimeParams, sh.def.LifetimeParams)
-	defer func() { c.declLifetimes = savedDeclLts }()
+	defer c.enterDeclLifetimeScope(declaredLifetimeScope(sh.decl.LifetimeParams, sh.def.LifetimeParams))()
 
 	// A nil TypeAnn is parser error recovery for `type Foo =`, already reported. Bind a
 	// fresh var and skip resolveTypeAnn, since a nil annotation has no span to report on.

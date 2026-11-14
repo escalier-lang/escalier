@@ -192,4 +192,29 @@ describe('copy-files main', () => {
         // README.md should not have been copied
         expect(fs.existsSync('public/templates/README.md')).toBe(false);
     });
+
+    test('records the size of each builtin and of lsp-server.wasm', () => {
+        fs.mkdirSync('bin', { recursive: true });
+        fs.writeFileSync('bin/lsp-server.wasm', new Uint8Array(1234));
+
+        const manifest = main(fs, {
+            builtinsSrc: 'interop-data',
+            lspServerWasm: 'bin/lsp-server.wasm',
+        });
+
+        expect(manifest.builtinSizes).toEqual({
+            'builtins/README.md': '# builtins placeholder'.length,
+            'libs/README.md': '# libs placeholder'.length,
+        });
+        expect(manifest.lspServerWasmSize).toBe(1234);
+    });
+
+    test('leaves the wasm size out when lsp-server.wasm is missing', () => {
+        const manifest = main(fs, {
+            builtinsSrc: 'interop-data',
+            lspServerWasm: 'bin/lsp-server.wasm',
+        });
+
+        expect(manifest.lspServerWasmSize).toBeUndefined();
+    });
 });

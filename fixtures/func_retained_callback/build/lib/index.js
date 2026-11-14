@@ -14,10 +14,10 @@ export function runWith(temp3, temp4) {
 }
 export function setup() {
   const count = {n: 0};
-  onClick(function () {
+  forEachItem(function () {
     count.n = count.n + 1;
   });
-  forEachItem(function () {
+  onClick(function () {
     count.n = count.n + 1;
   });
   const p = {x: 1};

@@ -95,7 +95,9 @@ type pathResult struct {
 	// value. chainValue adds it back once the outermost link is resolved.
 	shortCircuits bool
 	// place is the binding value is an owned layer of, or nil when value is not one. See
-	// ownedPlace.
+	// ownedPlace. For a namespace bound beside a value, as `import "web:performance"`
+	// binds `performance`, it names that value's binding. A member read that ns.AsValue
+	// answers reads the value through it.
 	place *ownedPlace
 }
 
@@ -119,6 +121,16 @@ func placeOf(name string, b ValueBinding, value soltype.Type) *ownedPlace {
 		return nil
 	}
 	return &ownedPlace{name: name, b: b}
+}
+
+// asValuePlace returns the place value comes from when it is read off the binding
+// valuePlace names, or nil when valuePlace is nil or value is not an owned layer of it.
+// valuePlace is the place a namespace resolved with, as pathResult.place documents.
+func asValuePlace(valuePlace *ownedPlace, value soltype.Type) *ownedPlace {
+	if valuePlace == nil {
+		return nil
+	}
+	return placeOf(valuePlace.name, valuePlace.b, value)
 }
 
 // fieldPlace returns the place a value read off a receiver at recv comes from. A value that
@@ -300,8 +312,12 @@ func (c *checker) reportImmutableBinding(site ast.Node, place *ownedPlace) {
 		err.Unmovable = true
 	}
 	// A global the standard library declares, such as `console`, is not one this code can
-	// rewrite, so the message suggests no new declaration.
+	// rewrite, so the message suggests no new declaration. Neither is the value a `std:` or
+	// `web:` package binds beside its namespace, as `import "web:crypto"` binds `crypto`.
 	if g, ok := c.globalsScope().GetValue(place.name); ok && decl != nil && bindingDecl(g) == decl {
+		err.Foreign = true
+	}
+	if place.b.Members != nil && IsSchemePrefixedImport(place.b.Members.Name) {
 		err.Foreign = true
 	}
 	c.report(err)
@@ -456,10 +472,16 @@ func (c *checker) resolveIdentPath(scope *Scope, lvl int, e *ast.IdentExpr, objP
 		// namespace, which reads `x` off f's value when the namespace has no `x`.
 		if objPos && b.Members != nil {
 			c.recordDecl(e, b)
-			return pathResult{ns: b.Members}
+			// The identifier names the value as well as the namespace, so it is an owned
+			// layer of a `mut` binding the way any other read of one is. An editor reads
+			// that record to offer `&mut self` members after `performance.`.
+			c.noteMutPlace(e, placeOf(e.Name, b, b.DisplayType()))
+			return pathResult{ns: b.Members, place: &ownedPlace{name: e.Name, b: b}}
 		}
 		t := c.bindingValue(lvl, b)
 		c.noteOuterRead(e, t)
+		c.noteCallOnlyRead(e, t)
+		c.noteFrameClosureRead(b, t)
 		// A bare `self` that leaves the body, as in `return self` or `f(self)`, is an
 		// instance of the class. The structural view shares the class body's own element
 		// pointers, so letting it escape into a member's inferred signature would make the
@@ -518,6 +540,7 @@ func astKind(n any) string {
 // render time.
 func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.Type {
 	t := c.inferFunc(scope, lvl, e.FuncSig, e.Body, e, true, false)
+	c.setClosureRetention(scope, lvl, e, t)
 	c.recordType(e, t)
 	// The closure reads or writes what it captures from the body it is written in.
 	c.recordClosureCaptures(scope, e)
@@ -537,17 +560,20 @@ func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.
 func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Block, node ast.Node, allowTypeParams, inClass bool) *soltype.FuncType {
 	// Give this function its own named-lifetime scope so a `&'a` in its signature
 	// resolves consistently across its params and return, without sharing the name
-	// with an enclosing or sibling function. Restored on exit so a nested function
-	// does not clobber the outer scope's names.
+	// with a sibling function. Restored on exit so a nested function does not clobber
+	// the outer scope's names.
 	//
-	// A class member starts from the class's own parameters rather than from nothing, so a
-	// member writing the class's `&'a` reaches the variable that parameter carries. A name
-	// this signature rebinds shadows the class's, and nestedLifetimeScope drops those.
-	// namedLifetime allocates the map on first use, so a plain function with no `&'a`
-	// annotation pays no allocation.
-	savedNamedLts := c.namedLifetimes
-	c.namedLifetimes = c.nestedLifetimeScope(sig.LifetimeParams)
-	defer func() { c.namedLifetimes = savedNamedLts }()
+	// The scope starts from the parameters of an enclosing class and of each enclosing
+	// function, so a member writing the class's `&'a`, or a closure writing its enclosing
+	// function's `'a`, reaches the variable that parameter carries. A name this signature
+	// rebinds shadows the outer one, and nestedLifetimeScope drops those. namedLifetime
+	// allocates the map on first use, so a plain function with no `&'a` annotation pays no
+	// allocation.
+	//
+	// outerScope, outerBounds and outerOwners are the enclosing functions' lifetimes before this
+	// signature hides the names it binds, for checkSignatureImpliesBodyLifetimes to read.
+	outerScope, outerBounds, outerOwners := c.enclosingLifetimes, c.enclosingBounds, c.enclosingOwners
+	defer c.enterLifetimeScope(sig.LifetimeParams)()
 	// Take the name inferMemberBodies left for this member, and clear it so a lambda nested in
 	// the body walked below is not blamed under the member's name. It is empty for every function
 	// that is not a class member.
@@ -583,7 +609,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	if len(sig.TypeParams) > 0 {
 		if allowTypeParams {
 			declScope = scope.Child()
+			// A type parameter's bound constrains a parameter's type, so a function type in it
+			// gets a fresh lifetime as one written in the parameter would.
+			restore := c.elideFuncsAs(elideFresh)
 			typeParams = c.resolveTypeParams(declScope, lvl, sig.TypeParams)
+			restore()
 		} else {
 			c.reportUnsupportedFeature(node, "TypeParam")
 		}
@@ -594,6 +624,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		c.reportUnsupportedFeature(node, "LifetimeParam")
 	}
 	fnScope := declScope.Child()
+	// A function type written with no lifetime in a parameter gets a fresh one. returnElision
+	// reads the lifetimes the receiver and parameters mint after inputMark to decide the
+	// return type's.
+	defer c.elideFuncsAs(elideFresh)()
+	inputMark := c.ctx.lifetimeCounter
 	// An instance member binds `self` in its own scope and carries the receiver as its
 	// SelfParam. Both borrow at one lifetime, which a written `&'a self` resolves here in
 	// the member's named-lifetime scope, so the body's `self` and the signature agree with
@@ -613,7 +648,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// defaults holds each parameter default until the body's context is open, so a raise
 	// or a use inside one belongs to this function.
 	var defaults []paramDefaultSite
-	// callOnlyParams holds the parameters typed as a function with no retention lifetime.
+	// callOnlyParams holds the parameters whose function type is written with no lifetime.
 	var callOnlyParams []callOnlyParam
 	// A lifetime the enclosing body minted can sit at the level of this function's parameters,
 	// so the counter tells those lifetimes apart. outerMark is -1 for a function with no
@@ -693,15 +728,14 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			if isIdent && ip.Mutable && !mutable {
 				c.info.inertMut.Add(ip)
 			}
-			// A function parameter with no retention lifetime is only called during the call,
-			// so the body sees it at a fresh lifetime that ends with the call. The signature
-			// keeps the plain type, which is what a caller reads.
+			// A parameter whose function type is written with no lifetime is only called during
+			// the call, unless the signature ties the lifetime to the result.
 			bodyT := pt
-			if ft, isFn := pt.(*soltype.FuncType); isFn && written && body != nil && ft.Lt == nil {
-				callOnly := *ft
-				callOnly.Lt = c.ctx.freshLifetime(lvl)
-				bodyT = &callOnly
-				callOnlyParams = append(callOnlyParams, callOnlyParam{name: name, node: pat, ft: &callOnly, outerMark: outerMark})
+			if ft, isFn := pt.(*soltype.FuncType); isFn && body != nil && isElidedFuncType(p.TypeAnn) {
+				if lt, isVar := ft.Lt.(*soltype.LifetimeVar); isVar {
+					c.noteCallOnlyParam(lt)
+					callOnlyParams = append(callOnlyParams, callOnlyParam{name: name, node: pat, param: i, optional: p.Optional, ann: p.TypeAnn.(*ast.FuncTypeAnn), lt: lt, outerMark: outerMark})
+				}
 			}
 			// A parameter binding never generalizes — its var is fixed for the body — so
 			// it is a MonoScheme; instantiate returns bodyT unchanged at every use.
@@ -740,6 +774,8 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		}
 	}
 
+	c.fnElision = c.returnElision(inputMark, sig.LifetimeParams)
+	c.noteSignatureLifetimes(sig.LifetimeParams)
 	// The clause is the sink every throw and call is checked against, so it resolves
 	// before the body: `never` for no clause, which is how omitting it declares that the
 	// function raises nothing; T for `throws T`; a fresh var for `throws _` or a bad one.
@@ -916,11 +952,34 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// last expression is NOT an implicit return — only an explicit `return`
 		// produces the function's value. This mirrors the old checker's
 		// inferFuncBody.
+		deferred := deferredBody(sig)
+		if deferred != "" {
+			c.deferredBodies = append(c.deferredBodies, deferred)
+		}
+		c.fn.bodyLtMark = c.ctx.lifetimeCounter
+		// A function type written with no lifetime in the body gets a fresh one, as an elided
+		// `&` does there.
+		c.fnElision = elideFresh
+		// A closure has no name, so a lifetime of its own that hides a farther one is called
+		// the enclosing closure's.
+		owner := "the enclosing closure's"
+		if fd, ok := node.(*ast.FuncDecl); ok && fd.Name != nil {
+			owner = fd.Name.Name + "'s"
+		}
+		if memberName != "" {
+			owner = memberName + "'s"
+		}
+		restoreScope := c.enterBodyLifetimeScope(sig, lvl, owner, outerScope)
 		c.inferBlock(fnScope, lvl, body)
+		restoreScope()
+		if deferred != "" {
+			c.deferredBodies = c.deferredBodies[:len(c.deferredBodies)-1]
+		}
 		// The first rule of D16 has to settle the borrows' lifetimes before
 		// commitOwnedReturns decides which returns are owned.
 		c.shareOutlivingBorrowLifetimes()
 		c.commitOwnedReturns()
+		c.ownReturnedClosures()
 		// A body that moves an unannotated parameter takes ownership of the caller's value,
 		// so each call moves the argument it passes there. It reads the flows that wait on
 		// the parameters, so it runs before settleParams settles them.
@@ -1107,6 +1166,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// not tied until every body in the group has been walked.
 	if hasBody {
 		c.queueReturnCheck(node, ft, lvl-1, memberName)
+		// The scope holds every name the signature's positions wrote, including a name a
+		// parameter after this one writes.
+		for i := range callOnlyParams {
+			callOnlyParams[i].scope = c.namedLifetimes
+		}
 		c.queueCallOnlyChecks(callOnlyParams, ft)
 	}
 	// A body-carrying function must prove every lifetime bound its signature declares,
@@ -1118,7 +1182,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// The converse also holds: every relation the body imposes between the lifetimes
 		// the signature names must be one the signature declares, since callers read only
 		// the signature.
-		c.checkSignatureImpliesBodyLifetimes(sig, ft)
+		c.checkSignatureImpliesBodyLifetimes(sig, ft, outerScope, outerBounds, outerOwners)
 		// A body-carrying generic function must actually produce every type parameter it
 		// declares in an output position. A bodyless `declare fn` asserts its signature
 		// with no body to check, so it is not verified here.
@@ -1831,12 +1895,18 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 		c.recordType(e, recovery)
 		return recovery
 	}
+	if obj.ns != nil && !obj.ns.holdsMember(propName) && obj.ns.AsValue != nil && len(obj.ns.AsValue.Schemes) > 0 {
+		// A name the namespace does not hold is a field of the value bound beside it, as
+		// `state` is in `&mut counter.state`, so it borrows like a field of any receiver.
+		value := c.bindingValue(lvl, *obj.ns.AsValue)
+		obj = pathResult{value: value, place: asValuePlace(obj.place, value)}
+	}
 	if obj.ns != nil {
 		// `Foo.bar` for a namespace `Foo` names a namespace value, not a field
 		// of a value receiver. resolveNamespaceMember records the resolved
 		// value's type on accessNode and reports an unknown name. The wrap
 		// then runs on the value with no receiver-bounded lifetime.
-		nsResult := c.resolveNamespaceMember(lvl, accessNode, provNode, obj.ns, propName)
+		nsResult := c.resolveNamespaceMember(lvl, accessNode, provNode, obj.ns, obj.place, propName)
 		sub := c.demandValue(nsResult, accessNode)
 		return c.wrapBorrow(e, lvl, sub, false)
 	}
@@ -2354,7 +2424,9 @@ func (c *checker) applyCallShape(lvl int, e *ast.CallExpr, callee soltype.Type, 
 	// `Throws` slot, callThrows. A non-throwing `never` records nothing. callThrows is raised
 	// into this body's sink below.
 	callThrows := c.freshThrowsSink(lvl)
-	callShape := &soltype.FuncType{Params: callShapeParams, Ret: res, Throws: callThrows}
+	// A call only runs the callee, so the shape carries a lifetime of its own. A callee that
+	// may hold borrows then fits the shape, as a `fn` parameter accepts it.
+	callShape := &soltype.FuncType{Params: callShapeParams, Ret: res, Throws: callThrows, Lt: c.ctx.freshLifetime(lvl)}
 	// A resolved callee that declares nothing raises nothing, so it leaves the enclosing
 	// clause unused. Any other callee counts as raising, since its throws may still be an
 	// unsolved variable at this point. resolveOverload reaches the same rule through the same
@@ -2472,6 +2544,7 @@ func (c *checker) implicitMutBorrow(src ast.Expr, srcT, dest soltype.Type) solty
 func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr, preset map[ast.Expr]soltype.Type) []soltype.Type {
 	args := make([]soltype.Type, len(e.Args))
 	for i, a := range e.Args {
+		c.noteKeeper(a, e)
 		if t, ok := preset[a]; ok {
 			args[i] = t
 			continue
@@ -2682,6 +2755,7 @@ func soleCallableSignature(t *soltype.ObjectType) (*soltype.FuncType, bool) {
 // `b: number`. On an error path (invalid / immutable / unknown target) no value is
 // stored, so it recovers to `undefined`.
 func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.Type {
+	c.noteKeeper(e.Right, e)
 	undefinedT := soltype.Type(&soltype.UndefinedType{})
 	// Guard a malformed assignment node (the real parser substitutes ast.NewError for
 	// a missing operand, so this is unreachable from source — but a hand-built AST
@@ -2845,7 +2919,9 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 			// Anything can call a closure in a module-level binding from here on, so each
 			// later call may run it.
 			if c.fn != nil && hasEventRef {
-				if _, ok := c.fn.stmtToRef[assignStmt]; ok {
+				// A value whose closures' borrows the slot keeps got its store when the
+				// assignment was checked.
+				if _, ok := c.fn.stmtToRef[assignStmt]; ok && !c.keepsCaptures(e.Right) {
 					c.noteRetainedClosureStore(retainedStore{via: closureVia(target.Name), expr: e.Right, at: eventRef, static: true})
 				}
 			}
@@ -3982,7 +4058,7 @@ func (c *checker) resolveMemberPath(scope *Scope, lvl int, e *ast.MemberExpr, ob
 		return pathResult{value: t}
 	}
 	if obj.ns != nil {
-		return c.resolveNamespaceMember(lvl, e, e.Prop, obj.ns, e.Prop.Name)
+		return c.resolveNamespaceMember(lvl, e, e.Prop, obj.ns, obj.place, e.Prop.Name)
 	}
 	// The outermost read of the chain emits a read of the full path `pair.a` rather than
 	// the spine's bare root. A spine step has objPos true and emits nothing, since the full
@@ -4146,6 +4222,9 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 // keep their pre-PR-4 behaviour, so only annotated reference shapes pick up
 // the new borrow. The exception is an immutable borrow whose inner is in
 // readThroughVars, which reads as `fieldVar` borrowed at the receiver's lifetime.
+//
+// A field typed by a rigid type parameter `T` reads off an immutable borrow at
+// lifetime `'a` as `&'a T`.
 func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Type, name string, lvl int) soltype.Type {
 	recvInner, recvMut, recvLt := soltype.UnwrapRef(recv)
 	prop, ok := c.declaredField(recv, name)
@@ -4160,7 +4239,21 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 		return fieldVar
 	}
 	if !prop.Optional {
+		// A rigid type parameter has no shape the body may rely on, the same as a field
+		// whose type inference has not settled, so the read keeps the receiver's borrow as
+		// the readThroughVars branch above does. `p.x` off `p: &'a {x: T0}` reads as a
+		// borrow of fieldVar, whose lower bound is `T0`, so it renders `&'a T0`, the type
+		// `fn read(p) { return p.x }` infers for the same read.
+		if tp, isRigid := prop.Type.(*soltype.TypeVarType); isRigid && tp.Rigid != nil && recvLt != nil && !recvMut {
+			c.ctx.markRigidReadVar(fieldVar)
+			return soltype.NewRef(false, recvLt, fieldVar)
+		}
 		if borrow, ok := c.fieldBorrow(prop.Type, fieldVar, recvMut, recvLt, lvl); ok {
+			// The borrow wraps fieldVar rather than the declared field type. A read off
+			// the borrow, as `.y` in `p.x.y`, still reads the declared field type.
+			if ref, isRef := borrow.(*soltype.RefType); isRef && ref.Inner == soltype.RefInner(fieldVar) {
+				c.addDeclaredReadShape(fieldVar, prop.Type)
+			}
 			return borrow
 		}
 		return fieldVar
@@ -4190,15 +4283,31 @@ func (c *checker) addReadThroughVar(v *soltype.TypeVarType) {
 	c.readThroughVars.Add(v)
 }
 
+// addDeclaredReadShape records shape as the declared type of the field read whose result
+// variable is v.
+func (c *checker) addDeclaredReadShape(v *soltype.TypeVarType, shape soltype.Type) {
+	if c.declaredReadShapes == nil {
+		c.declaredReadShapes = map[*soltype.TypeVarType]soltype.Type{}
+	}
+	c.declaredReadShapes[v] = shape
+}
+
 // declaredField returns the property named name on the field list a receiver of type recv
 // carries. It returns false when recv's shape is not statically known or declares no such
-// property.
+// property. A receiver that borrows the result variable of an earlier field read carries
+// the field list of that field's declared type.
 func (c *checker) declaredField(recv soltype.Type, name string) (*soltype.PropertyElem, bool) {
 	// An alias and a class name the same field list an object type writes inline, so each
 	// resolves to that list before the read. Without this a receiver annotated `&mut Config`
 	// or `&mut Box` would declare no fields and its reads would lose their mutability, while
 	// the inline `&mut {…}` spelling of the same type kept it.
-	carrier := c.memberCarrier(soltype.CarrierOf(recv))
+	carrier := soltype.CarrierOf(recv)
+	if v, isVar := carrier.(*soltype.TypeVarType); isVar {
+		if shape, found := c.declaredReadShapes[v]; found {
+			carrier = shape
+		}
+	}
+	carrier = c.memberCarrier(carrier)
 	if ct, isClass := c.classCarrier(carrier); isClass {
 		// Projected at the instance's arguments, so a field typed `T` reads as the
 		// argument `Box<number>` supplies rather than as the declared parameter.
@@ -4294,11 +4403,12 @@ func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr, objP
 		name, ok := constStringKey(e.Index)
 		switch {
 		case ok:
-			return c.resolveNamespaceMember(lvl, e, e.Index, obj.ns, name)
+			return c.resolveNamespaceMember(lvl, e, e.Index, obj.ns, obj.place, name)
 		case obj.ns.AsValue != nil && len(obj.ns.AsValue.Schemes) > 0:
 			// A dynamic key indexes the value a package's `export = arr` names, as in
 			// `arr[i]`.
-			obj = pathResult{value: c.bindingValue(lvl, *obj.ns.AsValue), shortCircuits: obj.shortCircuits}
+			value := c.bindingValue(lvl, *obj.ns.AsValue)
+			obj = pathResult{value: value, shortCircuits: obj.shortCircuits, place: asValuePlace(obj.place, value)}
 		default:
 			c.report(&DynamicNamespaceIndexError{Index: e, NS: obj.ns})
 			return pathResult{err: true}
@@ -4521,8 +4631,9 @@ func (c *checker) markOpenVar(t soltype.Type) {
 // ns.AsValue when that is set, and is otherwise an UnknownNamespaceMemberError.
 // node is the member/index expression, for blame and the Info record. provNode is
 // the `.prop` identifier or the index key, which a read off ns.AsValue records its
-// provenance against.
-func (c *checker) resolveNamespaceMember(lvl int, node ast.Expr, provNode ast.Node, ns *Namespace, name string) pathResult {
+// provenance against. valuePlace is the pathResult.place the namespace resolved with,
+// naming the binding of ns.AsValue, or nil when it names none.
+func (c *checker) resolveNamespaceMember(lvl int, node ast.Expr, provNode ast.Node, ns *Namespace, valuePlace *ownedPlace, name string) pathResult {
 	if nested, ok := ns.Nested[name]; ok {
 		return pathResult{ns: nested}
 	}
@@ -4533,7 +4644,14 @@ func (c *checker) resolveNamespaceMember(lvl int, node ast.Expr, provNode ast.No
 		return pathResult{value: t}
 	}
 	if ns.AsValue != nil && len(ns.AsValue.Schemes) > 0 {
-		return c.valueProp(lvl, node, provNode, name, c.bindingValue(lvl, *ns.AsValue), nil)
+		recv := c.bindingValue(lvl, *ns.AsValue)
+		// The value is read through its own binding, so a `val mut` value lends the
+		// mutable access a `&mut self` member needs, as `performance.now()` does.
+		place := asValuePlace(valuePlace, recv)
+		r := c.valueProp(lvl, node, provNode, name, recv, place)
+		r.place = fieldPlace(place, r.value)
+		c.noteMutPlace(node, r.place)
+		return r
 	}
 	c.report(&UnknownNamespaceMemberError{Node: node, NS: ns, Name: name})
 	return pathResult{err: true}

@@ -1,0 +1,6 @@
+val bank = openAccounts()
+console.log(bank.accounts.length)
+statement()
+val report = reporter()
+console.log(report())
+console.log(audit())

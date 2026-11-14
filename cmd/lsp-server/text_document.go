@@ -161,17 +161,24 @@ func definitionSpan(decl ast.Node, src *ast.Source) ast.Span {
 	return decl.Span()
 }
 
-// identPatNameSpan returns the span of the name ip binds. The pattern's own span also
-// covers a leading `mut`, a type annotation, and a default, and the pattern keeps no
-// span of the name alone. The name follows the `mut` and any whitespace after it in
-// src's text, so it is found there.
+// identPatNameSpan returns the span of the name ip binds, found in src's text. The
+// pattern keeps no span of the name alone. Its own span can start before the name, at a
+// `mut` or at the `&mut` of a constructor's `&mut self`, and can run past it over a type
+// annotation and a default. The name is the last occurrence of ip.Name before the
+// annotation or the default, since nothing but punctuation and whitespace sits between
+// them.
 func identPatNameSpan(ip *ast.IdentPat, src *ast.Source) ast.Span {
 	span := ip.Span()
 	start := span.Start.Offset
-	if ip.Mutable && src != nil {
-		start += len("mut")
-		for start < len(src.Contents) && strings.ContainsRune(" \t\r\n", rune(src.Contents[start])) {
-			start++
+	limit := span.End.Offset
+	if ip.TypeAnn != nil {
+		limit = ip.TypeAnn.Span().Start.Offset
+	} else if ip.Default != nil {
+		limit = ip.Default.Span().Start.Offset
+	}
+	if src != nil && start <= limit && limit <= len(src.Contents) {
+		if i := strings.LastIndex(src.Contents[start:limit], ip.Name); i >= 0 {
+			start += i
 		}
 	}
 	return ast.Span{
@@ -287,7 +294,7 @@ func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.
 // `mut p: {x: number}`, since a value's mutability belongs to its binding rather than
 // its type. Any other node renders as its type alone.
 func hoverText(info *solver.Info, node ast.Node, t soltype.Type) string {
-	name, mut, ok := hoverBinding(info, node)
+	name, mut, ok := bindingOf(info, node)
 	if !ok {
 		return soltype.PrintAsScheme(t)
 	}
@@ -297,10 +304,10 @@ func hoverText(info *solver.Info, node ast.Node, t soltype.Type) string {
 	return name + ": " + soltype.PrintAsScheme(t)
 }
 
-// hoverBinding returns the name node binds or reads, and whether that binding is mutable.
+// bindingOf returns the name node binds or reads, and whether that binding is mutable.
 // ok is false when node neither binds a name nor reads one a `val`, `var`, or parameter
 // binding declared.
-func hoverBinding(info *solver.Info, node ast.Node) (name string, mut bool, ok bool) {
+func bindingOf(info *solver.Info, node ast.Node) (name string, mut bool, ok bool) {
 	switch n := node.(type) {
 	case *ast.IdentPat:
 		return n.Name, info.BindsMut(n), true
@@ -405,6 +412,17 @@ func (s *Server) isCacheStale(uri protocol.DocumentUri) bool {
 		return true
 	}
 	return false
+}
+
+// waitForFreshCheck blocks until the cached check output reflects the latest text of
+// uri, or until 2s pass, whichever comes first. The caller holds s.mu's read lock, which
+// the wait releases while it sleeps and holds again when it returns.
+func (s *Server) waitForFreshCheck(uri protocol.DocumentUri) {
+	deadline := time.Now().Add(2 * time.Second)
+	for s.isCacheStale(uri) && time.Now().Before(deadline) {
+		// Sleeps until validation calls `Broadcast()`.
+		s.validated.Wait()
+	}
 }
 
 // isModuleFile checks if a URI corresponds to a file under the lib/ directory.

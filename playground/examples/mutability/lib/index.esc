@@ -1,0 +1,65 @@
+// Values are immutable unless a binding says otherwise. `val` and `var` decide
+// whether the name can be reassigned. `mut` decides whether the value can be
+// written.
+type Task = {readonly id: number, title: string, done: boolean}
+
+export fn plan() -> Array<Task> {
+    // `mut` is deep. Through `tasks`, the array and every task in it are
+    // writable.
+    val mut tasks: Array<Task> = []
+    tasks.push({id: 1, title: "Write docs", done: false})
+    tasks.push({id: 2, title: "Ship it", done: false})
+    tasks[0].done = true
+
+    // `readonly` fixes one field, even on a mutable value.
+    // Uncomment to see the error: cannot assign to 'id' because it is a readonly property
+    // tasks[0].id = 7
+
+    // A `var` can be rebound to a new value. Without `mut`, it cannot write the
+    // value it holds.
+    var draft = {id: 3, title: "Plan", done: false}
+    draft = {id: 4, title: "Review", done: false}
+    // Uncomment to see the error: cannot mutate 'draft' because its binding is
+    // immutable; declare it as `var mut draft`
+    // draft.done = true
+
+    // A `var mut` binding allows both.
+    var mut current = {id: 5, title: "Test", done: false}
+    current.done = true
+    current = {id: 6, title: "Release", done: false}
+    tasks.push(current)
+    return tasks
+}
+
+// A borrow stops `mut` from spreading. `pending` is a mutable array, but each
+// element is an immutable borrow of a task the caller owns.
+export fn openTasks(tasks: &Array<Task>) -> number {
+    val mut pending: Array<&Task> = []
+    for task in tasks {
+        if !task.done {
+            pending.push(task)
+        }
+    }
+    // Uncomment to see the error: cannot constrain immutable Task <: mutable object
+    // pending[0].done = true
+    return pending.length
+}
+
+// A mutable borrow lets a function write a value it does not own.
+export fn rename(task: &mut Task, title: string) {
+    task.title = title
+}
+
+// A mutable path and an immutable borrow may not both be live. `view` is read
+// after the write below, so the write is rejected. Once `view` is done, a
+// mutable borrow is fine.
+export fn retitle() -> string {
+    val mut task = {id: 7, title: "Test", done: false}
+    val view: &Task = &task
+    // Uncomment to see the error: cannot assign to 'task.done' while it is
+    // borrowed as immutable
+    // task.done = true
+    console.log(view.title)
+    rename(&mut task, "Test again")
+    return task.title
+}

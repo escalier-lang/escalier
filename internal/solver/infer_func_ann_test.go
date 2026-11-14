@@ -280,6 +280,51 @@ func TestInferGenericFuncAnnotationChecksBoundedParam(t *testing.T) {
 	})
 }
 
+// TestInferGenericFuncAnnotationChecksBorrowedParam covers a body checked against a generic
+// annotation whose parameter is a borrow of a type parameter. The borrow survives
+// skolemizing, so a body that turns `&T` into `&mut T` or `&mut T` into an owned `T` is
+// rejected, and a method read off `&T` resolves through `T`'s bound.
+func TestInferGenericFuncAnnotationChecksBorrowedParam(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		// msgs lists every diagnostic the source reports, each with its span.
+		msgs []string
+	}{
+		{
+			name: "ImmutableBorrowReturnedAsMutable",
+			src:  `val g: fn <T>(x: &T) -> &mut T = fn (x) { return x }`,
+			msgs: []string{"1:34-1:53: cannot constrain immutable T <: mutable T"},
+		},
+		{
+			name: "MutableBorrowReturnedAsOwned",
+			src:  `val g: fn <T>(x: &mut T) -> T = fn (x) { return x }`,
+			msgs: []string{"1:33-1:52: cannot use borrowed &mut T as owned T"},
+		},
+		{
+			name: "MethodReadThroughBound",
+			src: `interface A { n(&self) -> number }
+val g: fn <T: A>(x: &T) -> number = fn (x) { return x.n() }`,
+		},
+		{
+			name: "MissingMethodOnBound",
+			src: `interface A { n(&self) -> number }
+val g: fn <T: A>(x: &T) -> number = fn (x) { return x.q() }`,
+			msgs: []string{"2:55-2:56: object is missing property: q"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			var msgs []string
+			for _, e := range errs {
+				msgs = append(msgs, msgWithSpan(t, e))
+			}
+			require.Equal(t, tt.msgs, msgs)
+		})
+	}
+}
+
 // A throws clause in a function type annotation resolves to the declared type and
 // renders back after the return type. The annotated function raises nothing, and a
 // non-throwing body satisfies a throwing annotation because throws is covariant and the

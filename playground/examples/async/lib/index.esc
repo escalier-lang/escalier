@@ -1,0 +1,55 @@
+// Loading a to-do item over HTTP. A failed request and a body of the wrong
+// shape are each their own class, so a caller can tell them apart.
+class HttpError {
+    status: number,
+    constructor(&mut self, status: number) { self.status = status }
+}
+
+class ShapeError {
+    field: string,
+    constructor(&mut self, field: string) { self.field = field }
+}
+
+// An `async fn` returns `Promise<T, E>`, where `E` is the rejection type.
+// The `_` in the rejection slot asks the checker to infer it from the body.
+// A `throw` inside an `async fn` rejects the promise, so `E` is `HttpError` here.
+export async fn fetchJSON(url: string) -> Promise<unknown, _> {
+    val res = await fetch(url)
+    if !res.ok {
+        throw HttpError(res.status)
+    }
+    return res.json()
+}
+
+// The parsed body is `unknown`. A `match` arm with a type annotation narrows it
+// to the shape the page expects, and any other shape rejects with `ShapeError`.
+// Awaiting `fetchJSON` adds its `HttpError` to this function's rejection type,
+// so the inferred type is `Promise<string, HttpError | ShapeError>`.
+export async fn loadTitle(id: number) -> Promise<_, _> {
+    val body = await fetchJSON(`https://jsonplaceholder.typicode.com/todos/${id}`)
+    return match body {
+        todo: {title: string, ...} => todo.title,
+        _ => { throw ShapeError("title") },
+    }
+}
+
+// `Promise<string>` leaves the rejection slot at its default, `never`, which
+// claims the promise cannot reject.
+// Uncomment to see the error: `rawTitle` doesn't state a rejection type even
+// though it can throw `HttpError | ShapeError`
+// async fn rawTitle(id: number) -> Promise<string> { return await loadTitle(id) }
+
+// A `try` around an `await` catches a rejection the same way it catches a
+// synchronous throw. The first two arms cover the known rejections. `fetch`
+// declares none, but a network failure still rejects at runtime, so `_` catches
+// whatever else arrives.
+export async fn titleOrFallback(id: number) -> Promise<string> {
+    return try {
+        await loadTitle(id)
+    } catch {
+        HttpError{status} => `request failed with status ${status}`,
+        ShapeError{field} => `response had no ${field}`,
+        _ => "network unavailable",
+    }
+}
+

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/printer"
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/escalier-lang/escalier/internal/solver/ucs"
 )
@@ -2519,42 +2520,159 @@ func (e *LifetimeBoundNotSatisfiedError) Message() string {
 // lifetimes its signature declares, or between one of them and 'static, that the declared
 // bounds do not imply. `fn f<'a, 'b>(x: &'a T, y: &'b T) -> &'b T { return x }` needs 'a to
 // outlive 'b. Sub and Super are the two names without the leading `'`, and Super is
-// "static" for 'static. Param is Sub's binder, which the error blames.
+// "static" for 'static. Super may name an enclosing function's lifetime. Shadowed marks one
+// that the signature hides by binding the same name, so no bound can name it. Owner is the
+// possessive of the function that binds Super, as "run's", when Super's name also denotes a
+// farther lifetime, and "" otherwise. Param is Sub's binder, which the error blames.
 type LifetimeRelationUndeclaredError struct {
-	Sub   string
-	Super string
-	Param *ast.LifetimeParam
+	Sub      string
+	Super    string
+	Shadowed bool
+	Owner    string
+	Param    *ast.LifetimeParam
 }
 
 func (*LifetimeRelationUndeclaredError) isSolverError()        {}
 func (e *LifetimeRelationUndeclaredError) Span() ast.Span      { return e.Param.Span() }
 func (e *LifetimeRelationUndeclaredError) Related() []ast.Span { return nil }
 func (e *LifetimeRelationUndeclaredError) Message() string {
-	return fmt.Sprintf(
-		"the body requires '%s to outlive '%s, but the signature does not declare it; add the bound '%s: '%s",
-		e.Sub, e.Super, e.Sub, e.Super)
-}
-
-// CallOnlyFuncKeptError fires when a body keeps a function parameter that has no retention
-// lifetime past the call. Such a parameter, as `g` in `fn f(g: fn () -> undefined)`, is only
-// called during the call, so a caller lends it a closure's captures for that call alone.
-// `onClick(g)` against `declare fn onClick(handler: &'static fn () -> undefined)` keeps it for
-// 'static. Name is the parameter's name, Static says the body keeps it for 'static, and Param
-// is the parameter's pattern, which the error blames.
-type CallOnlyFuncKeptError struct {
-	Name   string
-	Static bool
-	Param  ast.Node
-}
-
-func (*CallOnlyFuncKeptError) isSolverError()        {}
-func (e *CallOnlyFuncKeptError) Span() ast.Span      { return e.Param.Span() }
-func (e *CallOnlyFuncKeptError) Related() []ast.Span { return nil }
-func (e *CallOnlyFuncKeptError) Message() string {
-	if e.Static {
-		return fmt.Sprintf("parameter '%s' is only called during the call, so it cannot be kept for 'static", e.Name)
+	if e.Shadowed {
+		return fmt.Sprintf(
+			"the body requires '%s to outlive the enclosing function's '%s, which this signature's own '%s hides; rename it and add the bound",
+			e.Sub, e.Super, e.Super)
 	}
-	return fmt.Sprintf("parameter '%s' is only called during the call, so it cannot outlive the call", e.Name)
+	super := "'" + e.Super
+	if e.Owner != "" {
+		super = e.Owner + " " + super
+	}
+	return fmt.Sprintf(
+		"the body requires '%s to outlive %s, but the signature does not declare it; add the bound '%s: '%s",
+		e.Sub, super, e.Sub, e.Super)
+}
+
+// CallOnlyFuncKeptError fires when a body keeps a function parameter whose type is written with no
+// lifetime past the call. Such a parameter, as `g` in `fn f(g: fn () -> undefined)`, is only called
+// during the call, so a caller lends it a closure's captures for that call alone. `onClick(g)`
+// against `declare fn onClick(handler: 'static fn () -> undefined)` keeps it for 'static. Name is
+// the parameter's name, and Optional marks one written `g?`. Written is the parameter's
+// annotation. Static says the body keeps it for 'static. Keeper is the name of a lifetime of the
+// signature, as "'a", that the body keeps the parameter for when it does not keep it for
+// 'static, and "" when the signature names none. Deferred names the kind of function whose body
+// reads the parameter and can run after the call returns, as in "a generator", and is ""
+// otherwise. Param is the parameter's pattern. Read is the first read of the parameter in that
+// body when Deferred is set, and nil otherwise. The error blames Read when it is set and Param
+// otherwise, and relates Param when it blames Read.
+type CallOnlyFuncKeptError struct {
+	Name     string
+	Optional bool
+	Written  *ast.FuncTypeAnn
+	Static   bool
+	Keeper   string
+	Deferred string
+	Param    ast.Node
+	Read     ast.Node
+}
+
+func (*CallOnlyFuncKeptError) isSolverError() {}
+func (e *CallOnlyFuncKeptError) Span() ast.Span {
+	if e.Read != nil {
+		return e.Read.Span()
+	}
+	return e.Param.Span()
+}
+func (e *CallOnlyFuncKeptError) Related() []ast.Span {
+	if e.Read != nil {
+		return []ast.Span{e.Param.Span()}
+	}
+	return nil
+}
+func (e *CallOnlyFuncKeptError) Message() string {
+	var kept string
+	switch {
+	case e.Static:
+		kept = "it is stored where it lives for the whole program"
+	case e.Deferred != "":
+		kept = fmt.Sprintf("it is read by %s, which can run after the call returns", e.Deferred)
+	default:
+		kept = "it is kept after the call returns"
+	}
+	// Print fails only for a node that is not a script, expression, statement, declaration,
+	// pattern, or type annotation, and Written is always a type annotation.
+	written, _ := printer.Print(e.Written, printer.DefaultOptions())
+	lifetime := "'static"
+	if e.Keeper != "" {
+		lifetime = e.Keeper
+	}
+	// The fix keeps the parameter's `?`, so a caller that omits the argument still checks.
+	marker := ""
+	if e.Optional {
+		marker = "?"
+	}
+	return fmt.Sprintf("'%s' may borrow values that live only during the call, but %s; write `%s%s: %s %s` to keep it",
+		e.Name, kept, e.Name, marker, lifetime, written)
+}
+
+// FuncKeptForStaticError fires when a function that may hold a borrow shorter than 'static flows
+// into a slot that keeps it for 'static, such as a `'static fn` parameter or a module-level
+// binding annotated `fn () -> undefined`. Sub is the source, a FuncType whose Lt is a lifetime
+// other than 'static. Super is the destination, a FuncType whose Lt is nil or 'static. It is the
+// function form of BorrowEscapeError.
+//
+// blameConstraintErrors fills the rest from what the checker knows about the source and the
+// site. source names the source, as "`show`" or "this closure". borrowed is the name of a
+// binding the source borrows, as `cfg`, and "" when the checker does not know one. local says
+// borrowed is a `val` or `var` local, which could move to module level. keeper names what keeps
+// the function, as "`sink`". inferred says Super is the type of a closure that borrows nothing,
+// which an unannotated binding took from its initializer, rather than a written type.
+type FuncKeptForStaticError struct {
+	Sub   *soltype.FuncType
+	Super *soltype.FuncType
+	prov  NodeResolver
+	site  ast.Node
+
+	source   string
+	borrowed string
+	local    bool
+	keeper   string
+	inferred bool
+}
+
+func (*FuncKeptForStaticError) isSolverError() {}
+func (e *FuncKeptForStaticError) Span() ast.Span {
+	// The source is blamed. A source with no node of its own, such as a binding's
+	// instantiated type, falls back to the site rather than to the destination.
+	return spanOfFirst(e.prov, e.site, e.Sub)
+}
+func (e *FuncKeptForStaticError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
+func (e *FuncKeptForStaticError) Message() string {
+	source, keeper := e.source, e.keeper
+	if source == "" {
+		source = "this function"
+	}
+	if keeper == "" {
+		keeper = "its destination"
+	}
+	if e.inferred {
+		holds := "may hold borrows"
+		if e.borrowed != "" {
+			holds = fmt.Sprintf("borrows `%s`", e.borrowed)
+		}
+		target := e.keeper
+		if target == "" {
+			target = "it"
+		}
+		return fmt.Sprintf("%s %s, but %s has the type of a closure that borrows nothing; annotate %s with a function type to let it hold one that borrows",
+			source, holds, keeper, target)
+	}
+	if e.borrowed == "" {
+		return fmt.Sprintf("%s may hold borrows that do not live for 'static, but %s keeps it for 'static; pass a function that borrows nothing",
+			source, keeper)
+	}
+	fix := "pass a function that borrows nothing"
+	if e.local {
+		fix += fmt.Sprintf(", or declare `%s` at module level", e.borrowed)
+	}
+	return fmt.Sprintf("%s borrows `%s`, but %s keeps it for 'static; %s", source, e.borrowed, keeper, fix)
 }
 
 // LifetimeBinderNotSatisfiedError fires when a value is checked against a signature that
@@ -3528,14 +3646,23 @@ func (e *OverrideFormMismatchError) Message() string {
 // nothing to a user. When it is, resolve it to a concrete bound so the message names
 // the actual shape — `immutable object`, not `immutable t3`. Prefer a lower bound, the
 // value that flowed in; fall back to an upper bound, then to the bare variable when it
-// carries no concrete bound.
+// carries no concrete bound. A rigid type parameter renders under its own name.
+//
+// A bound that borrows the variable itself is not resolved, since rendering it reaches
+// the same variable again. Such a bound renders the variable bare.
 func describeBorrowInner(t soltype.Type) string {
-	if v, ok := t.(*soltype.TypeVarType); ok {
-		if b, ok := concreteBoundOf(v); ok {
+	if v, ok := t.(*soltype.TypeVarType); ok && v.Rigid == nil {
+		if b, ok := concreteBoundOf(v); ok && !borrowsVar(b, v) {
 			return describe(b)
 		}
 	}
 	return describe(t)
+}
+
+// borrowsVar reports whether t is a borrow whose inner is v.
+func borrowsVar(t soltype.Type, v *soltype.TypeVarType) bool {
+	ref, ok := t.(*soltype.RefType)
+	return ok && ref.Inner == soltype.RefInner(v)
 }
 
 // concreteBoundOf returns a non-variable bound of v, preferring lower bounds, or
@@ -3867,6 +3994,10 @@ func describe(t soltype.Type) string {
 		}
 		return "~" + inner
 	case *soltype.TypeVarType:
+		// A rigid parameter renders under its source name, as its skolem does.
+		if t.Rigid != nil {
+			return t.Rigid.Name
+		}
 		return "t" + strconv.Itoa(t.ID)
 	case *soltype.SkolemType:
 		// A skolem renders under its source parameter name, so a rejected `return 5`

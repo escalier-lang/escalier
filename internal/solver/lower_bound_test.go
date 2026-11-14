@@ -298,7 +298,7 @@ func TestInferClassLowerBoundedMethod(t *testing.T) {
 			src: bag + `
 				class Keyed<U> extends Bag<U> {
 					key: fn (x: U) -> number,
-					constructor(&mut self, items: Array<U>, key: fn (x: U) -> number) {
+					constructor(&mut self, items: Array<U>, key: 'static fn (x: U) -> number) {
 						super(items)
 						self.key = key
 					},

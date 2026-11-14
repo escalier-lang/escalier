@@ -1,27 +1,50 @@
 import ReactDOM from 'react-dom/client';
-import { FileChangeType, type FileEvent } from 'vscode-languageserver-protocol';
+import {
+    FileChangeType,
+    type FileEvent,
+    type InitializeResult,
+} from 'vscode-languageserver-protocol';
 
 import wasmUrl from '../../bin/lsp-server.wasm?url';
 
+import type { LoadingStatus } from './components/loading-screen';
 import { useEditorStore } from './editor-store';
 import { BrowserFS } from './fs/browser-fs';
-import { type Manifest, createVolume } from './fs/volume';
+import type { Manifest } from './fs/volume';
 import { setupLanguage } from './language';
 import { Client } from './lsp-client/client';
 import { Playground } from './playground';
 import { loadProject } from './project-loader';
+import { downloadStartupFiles, runStartup } from './startup';
+import { localStorageIfAvailable, prefersLightQuery, syncTheme } from './theme';
+
+import './theme.css';
 
 import './user-worker'; // sets up the monaco editor worker
 
-async function main() {
-    const wasmBuffer = await fetch(wasmUrl).then((res) => res.arrayBuffer());
+async function start(
+    reactRoot: ReactDOM.Root,
+    showStatus: (status: LoadingStatus) => void,
+) {
     const baseUrl = import.meta.env.BASE_URL;
 
     const manifest: Manifest = await fetch(
         `${baseUrl}types/manifest.json`,
     ).then((res) => res.json());
 
-    const fs = new BrowserFS(createVolume(manifest, baseUrl));
+    // Download the language server and the whole standard library up front. The
+    // filesystem fetches a file it doesn't hold with a synchronous request when the
+    // language server first reads it, which blocks the page for a round trip per file.
+    const { wasm, volume } = await downloadStartupFiles(
+        manifest,
+        baseUrl,
+        wasmUrl,
+        showStatus,
+    );
+
+    // BrowserFS copies each file's content out of the volume when it's constructed,
+    // so the volume must hold the downloads first.
+    const fs = new BrowserFS(volume);
 
     // Load the initial project into the filesystem BEFORE initializing the
     // LSP server. The LSP scans the workspace during initialize — if no
@@ -77,7 +100,7 @@ async function main() {
 
     // Create a new client for the language server and
     // initialize it with the process ID and root URI.
-    const client = new Client(wasmBuffer, '/', fs, {
+    const client = new Client(wasm, '/', fs, {
         // The interop loader walks for `escalier.toml`+`internal/interop/data`
         // to find its built-in override files; that walk can't succeed in
         // the playground's virtual filesystem, so point it at the path
@@ -88,7 +111,7 @@ async function main() {
         ESCALIER_STDLIB_DIR: '/node_modules/escalier-builtins',
     });
     client.run();
-    const initResponse = await client.initialize({
+    const initResponse: InitializeResult = await client.initialize({
         processId: process.pid,
         rootUri: 'file:///',
         capabilities: {},
@@ -142,19 +165,31 @@ async function main() {
         client.workspaceDidChangeWatchedFiles({ changes });
     });
 
-    setupLanguage(client);
+    setupLanguage(client, initResponse.capabilities);
 
+    reactRoot.render(
+        <Playground fs={fs} manifest={manifest} baseUrl={baseUrl} />,
+    );
+}
+
+async function main() {
     const root = document.getElementById('root');
 
     if (!root) {
         throw new Error('Root element not found');
     }
 
-    ReactDOM.createRoot(root).render(
-        <Playground fs={fs} manifest={manifest} baseUrl={baseUrl} />,
+    syncTheme(
+        document.documentElement,
+        localStorageIfAvailable(window),
+        window.matchMedia(prefersLightQuery),
+    );
+
+    const reactRoot = ReactDOM.createRoot(root);
+    await runStartup(
+        (node) => reactRoot.render(node),
+        (showStatus) => start(reactRoot, showStatus),
     );
 }
 
-main().then(() => {
-    console.log('App loaded');
-});
+main();

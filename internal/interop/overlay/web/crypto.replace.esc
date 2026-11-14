@@ -1,0 +1,5 @@
+// `crypto` is declared `val mut` so a program can call `randomUUID`, which takes
+// `&mut self`. The converter emits `var`, which makes the name reassignable and
+// the value it holds immutable, so that call fails to check.
+@js("crypto")
+export declare val mut crypto: Crypto

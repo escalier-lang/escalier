@@ -551,12 +551,24 @@ func TestOwnershipDataflow(t *testing.T) {
 			`,
 		},
 		{
-			// The closure in sink borrows p for `'static`, so p cannot move even though the
-			// closure only reads it. The closure rows of the exclusivity table reject a move
-			// between calls.
+			// sink keeps its function for 'static and p is a local of go, so sink keeps the
+			// closure's borrow of p for the rest of the program. Nothing uses p after the store, so
+			// go checks.
+			name: "E3StoreOfAReadingClosureIntoAGlobal",
+			src: `
+				var sink: 'static fn () -> number = fn () { return 0 }
+				fn go() {
+					val p = {x: 1}
+					sink = fn () { return p.x }
+				}
+			`,
+		},
+		{
+			// sink keeps the closure's immutable borrow of p for the rest of the program, so moving
+			// p breaks E3.
 			name: "E3MoveAfterStoringAReadingClosureIntoAGlobal",
 			src: `
-				var sink: fn () -> number = fn () { return 0 }
+				var sink: 'static fn () -> number = fn () { return 0 }
 				declare fn take(x: {x: number}) -> undefined
 				fn go() {
 					val p = {x: 1}
@@ -564,7 +576,7 @@ func TestOwnershipDataflow(t *testing.T) {
 					take(p)
 				}
 			`,
-			errs: []string{"cannot move 'p' while it is borrowed"},
+			errs: []string{"cannot move 'p' while it is borrowed by 'sink'"},
 		},
 		{
 			// One return that names the closure twice moves its capture once.
@@ -635,12 +647,12 @@ func TestOwnershipDataflow(t *testing.T) {
 			errs: []string{"cannot move 'p' while it is borrowed"},
 		},
 		{
-			// f borrows r for `'static` once it is stored into sink, so the borrow of p that r
-			// holds lasts for `'static` as well.
+			// The store moves r into f, and r holds a borrow of p, so that borrow lasts for
+			// 'static and p cannot move.
 			name: "E3MoveAfterStoringAClosureThatCapturesABorrow",
 			src: `
 				declare fn take(p: {x: number}) -> number
-				var sink: fn () -> number = fn () { return 0 }
+				var sink: 'static fn () -> number = fn () { return 0 }
 				fn go() {
 					val p = {x: 1}
 					val r = &p
@@ -2323,12 +2335,11 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 			want: []string{"6:12-6:13: use of moved value 'q'"},
 		},
 		{
-			// A closure stored into sink and also returned keeps its `'static` borrow of p, so
-			// the return does not move p. A later move of p conflicts with that borrow, so E3
-			// reports the move.
+			// sink keeps f's borrow of p from before the branch, so the later move of p on the path
+			// that does not return breaks E3.
 			name: "E3MoveAfterStoringAndReturningAClosure",
 			src: `
-				var sink: fn () -> number = fn () { return 0 }
+				var sink: 'static fn () -> number = fn () { return 0 }
 				declare fn take(x: {x: number}) -> undefined
 				fn go(c: boolean) {
 					val p = {x: 1}
@@ -2341,7 +2352,7 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 					return fn () { return 0 }
 				}
 			`,
-			want: []string{"11:11-11:12: cannot move 'p' while it is borrowed"},
+			want: []string{"11:11-11:12: cannot move 'p' while it is borrowed by 'sink'"},
 		},
 		{
 			// The body reads `p.r` while the mutable borrow `a` holds is live, so the store's `&b`

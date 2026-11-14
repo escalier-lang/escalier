@@ -1,10 +1,16 @@
 import type { Mode, OpenMode, PathLike, Stats } from 'node:fs';
 import EventEmitter from 'eventemitter3';
 import type * as lsp from 'vscode-languageserver-protocol';
+import {
+    Disposable,
+    type MessageConnection,
+    type RAL,
+    ReadableStreamMessageReader,
+    WriteableStreamMessageWriter,
+    createMessageConnection,
+} from 'vscode-languageserver-protocol/browser';
 
 import type { FSAPI } from '../fs/fs-api';
-
-import { Deferred } from './deferred';
 
 import './wasm_exec'; // run for side-effects
 
@@ -33,8 +39,9 @@ class SimpleStream {
         this.emitter = new EventEmitter();
     }
 
-    on(event: string, listener: (chunk: Uint8Array) => void) {
+    on(event: string, listener: (chunk: Uint8Array) => void): Disposable {
         this.emitter.on(event, listener);
+        return Disposable.create(() => this.emitter.off(event, listener));
     }
 
     write(chunk: Uint8Array) {
@@ -47,19 +54,73 @@ class SimpleStream {
     }
 }
 
+/**
+ * Returns a Node `Buffer` view of chunk where `Buffer` exists, and chunk itself
+ * elsewhere. vscode-jsonrpc's Node runtime, which a Node test run loads, slices
+ * the bytes it reads with `Buffer.from(chunk, 0, length)`. Node ignores those
+ * bounds for a plain `Uint8Array`, so a chunk holding more than one message
+ * misreads the second. The browser runtime accepts either type.
+ */
+export function asNodeBuffer(chunk: Uint8Array): Uint8Array {
+    if (typeof Buffer === 'undefined') {
+        return chunk;
+    }
+    return Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+}
+
+/** Subscribes to an event the in-memory streams never fire. */
+const neverFires = () => Disposable.create(() => {});
+
+/**
+ * Returns stream as the readable stream a jsonrpc message reader takes. The reader
+ * splits the bytes the server writes to stdout into messages.
+ */
+function readableOf(stream: SimpleStream): RAL.ReadableStream {
+    return {
+        onData: (listener) =>
+            stream.on('data', (chunk) => listener(asNodeBuffer(chunk))),
+        onClose: neverFires,
+        onError: neverFires,
+        onEnd: neverFires,
+    };
+}
+
+/**
+ * Returns stream as the writable stream a jsonrpc message writer takes. The writer
+ * frames each message it writes, and the server reads them from stdin.
+ */
+function writableOf(stream: SimpleStream): RAL.WritableStream {
+    return {
+        onClose: neverFires,
+        onError: neverFires,
+        onEnd: neverFires,
+        write(data: Uint8Array | string) {
+            stream.write(
+                typeof data === 'string' ? encoder.encode(data) : data,
+            );
+            return Promise.resolve();
+        },
+        end() {},
+    };
+}
+
 export class Client {
     private go: any;
     private stdin: SimpleStream;
     private stdout: SimpleStream;
-    private emitter: EventEmitter;
-    private deferreds: Map<number, Deferred>;
-    private requestID: number;
+    /** Sends requests and notifications over stdin and reads the replies from stdout. */
+    private connection: MessageConnection;
     private wasmBuf: ArrayBuffer;
     private errorBuffer: string;
-    private contentLength: number;
-    private messageBuffer: string;
-    /** Set by `stop()`. Silences the server's output from then on. */
+    /** Set by `stop()`. Silences the server's output and drops notifications from then on. */
     private stopped = false;
+
+    /**
+     * Calls every listener registered for a notification's method. A
+     * MessageConnection keeps one handler per method, so the client registers
+     * one handler that emits here.
+     */
+    private notifications = new EventEmitter();
 
     // Go resolves `globalThis.fs` and `globalThis.process` on every syscall,
     // so whichever value is installed last serves every runtime rather than
@@ -76,77 +137,13 @@ export class Client {
     ) {
         this.stdin = new SimpleStream();
         this.stdout = new SimpleStream();
-        this.emitter = new EventEmitter();
-        this.deferreds = new Map();
-        this.requestID = 0;
         this.wasmBuf = wasmBuf;
         this.errorBuffer = '';
-        this.contentLength = 0;
-        this.messageBuffer = '';
-
-        this.stdout.on('data', (chunk) => {
-            const message = decoder.decode(chunk);
-
-            // If we don't have a content length yet, we're starting a new message
-            if (this.contentLength === 0) {
-                const headerRegex = /Content-Length: (\d+)\r?\n\r?\n/;
-                const match = message.match(headerRegex);
-
-                if (match) {
-                    this.contentLength = Number.parseInt(match[1], 10);
-                    // Extract payload after the header
-                    const headerEndIndex = (match.index ?? 0) + match[0].length;
-                    this.messageBuffer = message.substring(headerEndIndex);
-                } else {
-                    console.error('No Content-Length header found in message');
-                    return;
-                }
-            } else {
-                // Continuing to accumulate chunks for the current message
-                this.messageBuffer += message;
-            }
-
-            // Check if we have received the complete message (Content-Length is in bytes)
-            if (
-                encoder.encode(this.messageBuffer).byteLength >=
-                this.contentLength
-            ) {
-                const payload = this.messageBuffer.substring(
-                    0,
-                    this.contentLength,
-                );
-
-                try {
-                    const object = JSON.parse(payload);
-
-                    // TODO: validate that the object being returned is a valid RPC JSON response
-                    if (object.id != null) {
-                        // Handle response to a client request
-                        const deferred = this.deferreds.get(object.id);
-                        if (deferred) {
-                            if (object.error) {
-                                deferred.reject(object.error);
-                            }
-                            if ('result' in object) {
-                                deferred.resolve(object.result);
-                            }
-                            // After resolving/rejecting the promise, remove it from the map
-                            // to prevent memory leaks.
-                            this.deferreds.delete(object.id);
-                        }
-                    } else {
-                        // Handle server initiated message
-                        this.emitter.emit(object.method, object.params);
-                    }
-                } catch (e) {
-                    console.log('Error parsing JSON:', e);
-                }
-
-                // Reset state for next message
-                this.contentLength = 0;
-                this.messageBuffer = '';
-            }
-        });
+        this.connection = createMessageConnection(
+            new ReadableStreamMessageReader(readableOf(this.stdout)),
+            new WriteableStreamMessageWriter(writableOf(this.stdin)),
+        );
+        this.connection.listen();
 
         // const enosys = () => {
         //     const err = new Error('not implemented');
@@ -470,26 +467,33 @@ export class Client {
     }
 
     async shutdown() {
-        return this.fireAndForget('shutdown', null);
+        return this.sendRequest('shutdown', null);
     }
 
     async stop() {
-        await this.shutdown();
+        // A server that is stopping may never answer `shutdown`, or may reject it
+        // before `initialize`, so stop() sends it without waiting on the reply.
+        this.shutdown().catch(() => {});
         await this.exit();
+        // `stopped` silences the server's output from here on, and makes later
+        // notifications no-ops.
+        //
         // The Go runtime keeps running past this point. `exit` is a
         // notification, and the callbacks that drain the server's writes are
         // scheduled on timers that outlive this call. Whatever it prints from
-        // here on describes a server nobody reads.
+        // here on describes a server nobody reads. Under Vitest that output
+        // reaches the main process as an `onUserConsoleLog` message. One that
+        // arrives after the worker has begun closing its rpc channel fails the
+        // whole run with an EnvironmentTeardownError, while every test passes.
         //
-        // Under Vitest that output reaches the main process as an
-        // `onUserConsoleLog` message. One that arrives after the worker has
-        // begun closing its rpc channel fails the whole run with an
-        // EnvironmentTeardownError, while every test passes.
+        // Editor teardown can still send didChange or didClose after stop(), and
+        // the disposed connection would reject them with no one to catch it.
         this.stopped = true;
+        this.connection.dispose();
     }
 
     async exit() {
-        return this.fireAndForget('exit', null);
+        return this.sendNotification('exit', null);
     }
 
     //
@@ -497,29 +501,29 @@ export class Client {
     //
 
     textDocumentDidOpen(params: lsp.DidOpenTextDocumentParams) {
-        return this.fireAndForget('textDocument/didOpen', params);
+        return this.sendNotification('textDocument/didOpen', params);
     }
 
     textDocumentDidChange(params: lsp.DidChangeTextDocumentParams) {
-        return this.fireAndForget('textDocument/didChange', params);
+        return this.sendNotification('textDocument/didChange', params);
     }
 
     textDocumentWillSave(params: lsp.WillSaveTextDocumentParams) {
-        return this.fireAndForget('textDocument/willSave', params);
+        return this.sendNotification('textDocument/willSave', params);
     }
 
     // textDocumentWillSaveWaitUntil
 
     textDocumentDidSave(params: lsp.DidSaveTextDocumentParams) {
-        return this.fireAndForget('textDocument/didSave', params);
+        return this.sendNotification('textDocument/didSave', params);
     }
 
     textDocumentDidClose(params: lsp.DidCloseTextDocumentParams) {
-        return this.fireAndForget('textDocument/didClose', params);
+        return this.sendNotification('textDocument/didClose', params);
     }
 
     workspaceDidChangeWatchedFiles(params: lsp.DidChangeWatchedFilesParams) {
-        return this.fireAndForget('workspace/didChangeWatchedFiles', params);
+        return this.sendNotification('workspace/didChangeWatchedFiles', params);
     }
 
     //
@@ -548,6 +552,12 @@ export class Client {
         return this.sendRequest('textDocument/hover', params);
     }
 
+    textDocumentSemanticTokensFull(
+        params: lsp.SemanticTokensParams,
+    ): Promise<lsp.SemanticTokens | null> {
+        return this.sendRequest('textDocument/semanticTokens/full', params);
+    }
+
     textDocumentCompletion(
         params: lsp.CompletionParams,
     ): Promise<lsp.CompletionList | lsp.CompletionItem[] | null> {
@@ -560,6 +570,12 @@ export class Client {
         return this.sendRequest('completionItem/resolve', params);
     }
 
+    textDocumentSignatureHelp(
+        params: lsp.SignatureHelpParams,
+    ): Promise<lsp.SignatureHelp | null> {
+        return this.sendRequest('textDocument/signatureHelp', params);
+    }
+
     // Go to type definition
 
     // Go to implementation
@@ -570,23 +586,19 @@ export class Client {
         return this.sendRequest('workspace/executeCommand', params);
     }
 
-    private fireAndForget(method: string, params: any) {
-        const id = this.requestID++;
-        const payload = JSON.stringify({ jsonrpc: '2.0', id, method, params });
-        const message = `Content-Length: ${payload.length}\r\n\r\n${payload}`;
-        this.stdin.write(encoder.encode(message));
+    /**
+     * Sends a notification, or does nothing once stop() has run, since the
+     * connection it would write to is gone. Callers don't wait on notifications.
+     */
+    private sendNotification(method: string, params: unknown): Promise<void> {
+        if (this.stopped) {
+            return Promise.resolve();
+        }
+        return this.connection.sendNotification(method, params);
     }
 
-    private async sendRequest(method: string, params: any): Promise<any> {
-        const id = this.requestID++;
-        const payload = JSON.stringify({ jsonrpc: '2.0', id, method, params });
-        const message = `Content-Length: ${payload.length}\r\n\r\n${payload}`;
-        this.stdin.write(encoder.encode(message));
-
-        const deferred = new Deferred();
-        this.deferreds.set(id, deferred);
-
-        return deferred.promise;
+    private sendRequest(method: string, params: unknown): Promise<any> {
+        return this.connection.sendRequest(method, params);
     }
 
     onTextDocumentPublishDiagnostics(
@@ -600,6 +612,11 @@ export class Client {
     }
 
     private on(method: string, callback: (params: any) => void) {
-        this.emitter.on(method, callback);
+        if (this.notifications.listenerCount(method) === 0) {
+            this.connection.onNotification(method, (params) =>
+                this.notifications.emit(method, params),
+            );
+        }
+        this.notifications.on(method, callback);
     }
 }
