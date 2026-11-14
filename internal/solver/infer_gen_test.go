@@ -860,14 +860,14 @@ func TestInferGenWithoutYieldWarns(t *testing.T) {
 	runGenErrCases(t, []genErrCase{
 		{
 			name:     "SyncGenNeverYields",
-			src:      `gen fn f() -> Generator<never, "done", unknown> { return "done" }`,
-			wantErrs: []string{"1:1-1:66: the body never yields, so this returns an empty Generator; add a `yield` or drop the `gen`"},
+			src:      `gen fn f() { return "done" }`,
+			wantErrs: []string{"1:1-1:29: the body never yields, so this returns an empty Generator; add a `yield` or drop the `gen`"},
 		},
 		{
 			// An `async gen fn` returns an AsyncGenerator, so the message names that form.
 			name:     "AsyncGenNeverYields",
-			src:      `async gen fn f() -> AsyncGenerator<never, 1, unknown> { return 1 }`,
-			wantErrs: []string{"1:1-1:67: the body never yields, so this returns an empty AsyncGenerator; add a `yield` or drop the `gen`"},
+			src:      `async gen fn f() { return 1 }`,
+			wantErrs: []string{"1:1-1:30: the body never yields, so this returns an empty AsyncGenerator; add a `yield` or drop the `gen`"},
 		},
 		{
 			// A `gen` method is measured the same way, blamed at the member.
@@ -879,7 +879,7 @@ func TestInferGenWithoutYieldWarns(t *testing.T) {
 
 	// The warning does not change the type: a yield-less generator still faces callers as
 	// a Generator whose Yield slot coalesces to `never`.
-	values, _, errs := inferSource(t, `gen fn f() -> Generator<never, "done", unknown> { return "done" }`)
+	values, _, errs := inferSource(t, `gen fn f() { return "done" }`)
 	require.Len(t, errs, 1)
 	require.True(t, isWarning(errs[0]))
 	require.Equal(t, `fn () -> Generator<never, "done", unknown>`, values["f"])
