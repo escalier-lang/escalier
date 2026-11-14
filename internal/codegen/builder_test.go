@@ -288,7 +288,7 @@ func TestBuildDeclWithNamespace(t *testing.T) {
 			expected:   "let state__count = 1;",
 		},
 		"FuncDecl_EmptyBody": {
-			declSource: "fn noop() {}",
+			declSource: "fn noop() -> undefined {}",
 			ns:         "",
 			expected:   "function noop();",
 		},
@@ -883,7 +883,7 @@ func TestBuildTryCatchRethrow(t *testing.T) {
 	}{
 		// A bare `_` always runs, so nothing escapes and the body needs no test.
 		"BareWildcard": {
-			src: "fn f() {\n\treturn try { throw \"x\" } catch { _ => 0 }\n}",
+			src: "fn f() -> 0 {\n\treturn try { throw \"x\" } catch { _ => 0 }\n}",
 			expected: `export function f() {
   let temp1;
   try {
@@ -916,7 +916,7 @@ func TestBuildTryCatchRethrow(t *testing.T) {
 		// An identifier binds the caught value without testing it, so it always runs and
 		// draws no rethrow.
 		"BareIdent": {
-			src: "fn f() {\n\treturn try { throw \"x\" } catch { e => e }\n}",
+			src: "fn f() -> \"x\" {\n\treturn try { throw \"x\" } catch { e => e }\n}",
 			expected: `export function f() {
   let temp1;
   try {
@@ -949,7 +949,7 @@ func TestBuildTryCatchRethrow(t *testing.T) {
 		// An always-running arm makes every later arm unreachable wherever it sits, so
 		// nothing escapes and the later arms are not emitted at all.
 		"CatchAllBeforeAnotherArm": {
-			src: "fn f() {\n\treturn try { throw \"x\" } catch { _ => 0, \"x\" => 1 }\n}",
+			src: "fn f() -> 0 {\n\treturn try { throw \"x\" } catch { _ => 0, \"x\" => 1 }\n}",
 			expected: `export function f() {
   let temp1;
   try {
@@ -1117,7 +1117,7 @@ func TestBuildTryCatchRethrow(t *testing.T) {
 		// left that reads it, and short-circuiting keeps the path read behind the checks
 		// that make it safe.
 		"GuardReadsPatternBinding": {
-			src: "fn f() {\n\treturn try { throw {message: \"m\"} } catch { {message: msg} if msg != \"\" => msg, _ => \"other\" }\n}",
+			src: "fn f() -> \"m\" | \"other\" {\n\treturn try { throw {message: \"m\"} } catch { {message: msg} if msg != \"\" => msg, _ => \"other\" }\n}",
 			expected: `export function f() {
   let temp1;
   try {
@@ -1136,7 +1136,7 @@ func TestBuildTryCatchRethrow(t *testing.T) {
 		// A nested pattern reaches through each step of the path, and every existence
 		// check precedes the read that depends on it.
 		"GuardReadsNestedBinding": {
-			src: "fn f() {\n\treturn try { throw {user: {name: \"n\"}} } catch { {user: {name: nm}} if nm != \"\" => nm, _ => \"other\" }\n}",
+			src: "fn f() -> \"n\" | \"other\" {\n\treturn try { throw {user: {name: \"n\"}} } catch { {user: {name: nm}} if nm != \"\" => nm, _ => \"other\" }\n}",
 			expected: `export function f() {
   let temp1;
   try {
@@ -1154,7 +1154,7 @@ func TestBuildTryCatchRethrow(t *testing.T) {
 		},
 		// A guard naming none of the bindings needs no rewriting to join the pattern test.
 		"GuardIgnoresPatternBinding": {
-			src: "fn f(n: number) {\n\treturn try { throw {message: \"m\"} } catch { {message: msg} if n > 0 => msg, _ => \"other\" }\n}",
+			src: "fn f(n: number) -> \"m\" | \"other\" {\n\treturn try { throw {message: \"m\"} } catch { {message: msg} if n > 0 => msg, _ => \"other\" }\n}",
 			expected: `export function f(temp1) {
   const n = temp1;
   let temp2;
@@ -1176,7 +1176,7 @@ func TestBuildTryCatchRethrow(t *testing.T) {
 		// inside the pattern test keeps that order, and the flag then carries the arm body
 		// and the fall-through in one `if`/`else` that the later arms continue.
 		"GuardLowersToStatements": {
-			src: "fn f(n: number) {\n\treturn try { throw \"x\" } catch { \"x\" if (if n > 0 { true } else { false }) => 0, \"y\" => 1, _ => 2 }\n}",
+			src: "fn f(n: number) -> 0 | 2 | 1 {\n\treturn try { throw \"x\" } catch { \"x\" if (if n > 0 { true } else { false }) => 0, \"y\" => 1, _ => 2 }\n}",
 			expected: `export function f(temp1) {
   const n = temp1;
   let temp2;
@@ -1209,7 +1209,7 @@ func TestBuildTryCatchRethrow(t *testing.T) {
 		// rewrite, so its statements still read the declarations and have to run after
 		// them.
 		"StatementGuardReadsBinding": {
-			src: "fn f() {\n\treturn try { throw {message: \"m\"} } catch { {message: msg} if (if msg != \"\" { true } else { false }) => 0, _ => 1 }\n}",
+			src: "fn f() -> 0 | 1 {\n\treturn try { throw {message: \"m\"} } catch { {message: msg} if (if msg != \"\" { true } else { false }) => 0, _ => 1 }\n}",
 			expected: `export function f() {
   let temp1;
   try {
@@ -1238,7 +1238,7 @@ func TestBuildTryCatchRethrow(t *testing.T) {
 		},
 		// No arm always runs, so a value matching neither literal is re-raised.
 		"LiteralArmsOnly": {
-			src: "fn f() {\n\treturn try { throw \"x\" } catch { \"x\" => 0, \"y\" => 1 }\n}",
+			src: "fn f() -> 0 | 1 {\n\treturn try { throw \"x\" } catch { \"x\" => 0, \"y\" => 1 }\n}",
 			expected: `export function f() {
   let temp1;
   try {

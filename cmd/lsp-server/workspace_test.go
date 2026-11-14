@@ -124,7 +124,7 @@ func TestCompilePackageWritesDespiteATypeError(t *testing.T) {
 // warning, here a MissingSignatureError, succeeds, as the CLI's build does.
 func TestCompilePackageSucceedsWithOnlyWarnings(t *testing.T) {
 	s, root := newTestServer(t, []string{"lib/index.esc"})
-	writeLibFile(t, s, root, "export fn one() { return 1 }\n")
+	writeLibFile(t, s, root, "export fn one() -> 1 { return 1 }\n")
 
 	result, err := s.compilePackage()
 	require.NoError(t, err)

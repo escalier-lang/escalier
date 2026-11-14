@@ -815,7 +815,7 @@ func TestEmitsAnObjectRestOverAUnion(t *testing.T) {
 // union member, and fit another that carries more, also tests that the extra keys are
 // absent. `{radius}` then matches only the unlabelled shape.
 func TestTheSolverEmitsAKeyAbsenceTest(t *testing.T) {
-	src := "export fn f(s: {radius: number} | {radius: number, label: string}) { return match s { {radius} => radius, {radius, label} => label } }"
+	src := "export fn f(s: {radius: number} | {radius: number, label: string}) -> number | string { return match s { {radius} => radius, {radius, label} => label } }"
 	got := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].JS
 	require.Contains(t, got, `if (temp3 != null && "radius" in temp3 && !("label" in temp3)) {`)
 	require.Contains(t, got, `} else if (temp3 != null && "radius" in temp3 && "label" in temp3) {`)
@@ -825,7 +825,7 @@ func TestTheSolverEmitsAKeyAbsenceTest(t *testing.T) {
 // earlier guarded arm's equal test implies still checks the absent keys. The guard can
 // fail, so the second `{radius}` arm runs on the values the first one tested.
 func TestTheSolverEmitsAKeyAbsenceTestForAnImpliedArm(t *testing.T) {
-	src := "export fn f(s: {radius: number} | {radius: number, label: string}) { return match s { {radius} if radius > 0 => 1, {radius} => 2, {radius, label} => 3 } }"
+	src := "export fn f(s: {radius: number} | {radius: number, label: string}) -> 1 | 2 | 3 { return match s { {radius} if radius > 0 => 1, {radius} => 2, {radius, label} => 3 } }"
 	got := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].JS
 	require.Contains(t, got, `} else if (temp3 != null && "radius" in temp3 && !("label" in temp3)) {`)
 }
@@ -834,7 +834,7 @@ func TestTheSolverEmitsAKeyAbsenceTestForAnImpliedArm(t *testing.T) {
 // in a tuple tests only the keys it names. The match is exhaustive, so a test that also
 // checked `label` was absent would let the labelled value fall past every arm.
 func TestTheSolverEmitsNoKeyAbsenceTestForANestedPattern(t *testing.T) {
-	src := "export fn f(s: [{radius: number} | {radius: number, label: string}, number]) { return match s { [{radius}, _] => radius } }"
+	src := "export fn f(s: [{radius: number} | {radius: number, label: string}, number]) -> number { return match s { [{radius}, _] => radius } }"
 	got := CompilePackage(libSources(src), PackageConfig{}).CompUnits["lib/index"].JS
 	require.Contains(t, got, `if (temp3.length == 2 && temp3[0] != null && "radius" in temp3[0]) {`)
 }
@@ -851,12 +851,12 @@ func TestTheSolverEmitsAKeyAbsenceTestByOpenness(t *testing.T) {
 	}{
 		{
 			name: "AnInexactLooseMember",
-			src:  "export fn f(s: {radius: number} | {radius: number, label: string, ...}) { return match s { {radius} => radius, {radius, label} => label } }",
+			src:  "export fn f(s: {radius: number} | {radius: number, label: string, ...}) -> number | string { return match s { {radius} => radius, {radius, label} => label } }",
 			want: `if (temp3 != null && "radius" in temp3 && !("label" in temp3)) {`,
 		},
 		{
 			name: "AnInexactTightMember",
-			src:  "export fn f(s: {radius: number, ...} | {radius: string, label: string}) { return match s { {radius} => radius, _ => 0 } }",
+			src:  "export fn f(s: {radius: number, ...} | {radius: string, label: string}) -> number | string { return match s { {radius} => radius, _ => 0 } }",
 			want: `if (temp3 != null && "radius" in temp3) {`,
 		},
 	}
@@ -879,22 +879,22 @@ func TestTheSolverEmitsARegexTestForARegexAnnotation(t *testing.T) {
 	}{
 		{
 			name: "AnInlineRegex",
-			src:  "export fn f(s: string) { return match s { w: /^[a-z]+$/i => 1, _ => 2 } }",
+			src:  "export fn f(s: string) -> 1 | 2 { return match s { w: /^[a-z]+$/i => 1, _ => 2 } }",
 			want: `if (typeof temp3 === "string" && /^[a-z]+$/i.test(temp3)) {`,
 		},
 		{
 			name: "ARegexAlias",
-			src:  "type Digits = /^\\d+$/\nexport fn f(s: string) { return match s { d: Digits => 1, _ => 2 } }",
+			src:  "type Digits = /^\\d+$/\nexport fn f(s: string) -> 1 | 2 { return match s { d: Digits => 1, _ => 2 } }",
 			want: `if (typeof temp3 === "string" && /^\d+$/.test(temp3)) {`,
 		},
 		{
 			name: "ANestedRegexAlias",
-			src:  "type Digits = /^\\d+$/\nexport fn f(p: [string, number]) { return match p { [d: Digits, n] => n, _ => 0 } }",
+			src:  "type Digits = /^\\d+$/\nexport fn f(p: [string, number]) -> number { return match p { [d: Digits, n] => n, _ => 0 } }",
 			want: `if (temp3.length == 2 && typeof temp3[0] === "string" && /^\d+$/.test(temp3[0])) {`,
 		},
 		{
 			name: "ARegexAliasInAnObjectTypeAnnotation",
-			src:  "type Digits = /^\\d+$/\nexport fn f(v: {code: string}) { return match v { x: {code: Digits} => 1, _ => 2 } }",
+			src:  "type Digits = /^\\d+$/\nexport fn f(v: {code: string}) -> 1 | 2 { return match v { x: {code: Digits} => 1, _ => 2 } }",
 			want: `typeof temp3.code === "string" && /^\d+$/.test(temp3.code)) {`,
 		},
 		{
@@ -922,64 +922,64 @@ func TestTheSolverEmitsAUnionTestForAUnionAnnotation(t *testing.T) {
 	}{
 		{
 			name: "AnInlineUnion",
-			src:  "export fn f(v: number | string | boolean) { return match v { x: number | string => 1, _ => 2 } }",
+			src:  "export fn f(v: number | string | boolean) -> 1 | 2 { return match v { x: number | string => 1, _ => 2 } }",
 			want: `if (typeof temp3 === "number" || typeof temp3 === "string") {`,
 		},
 		{
 			name: "AUnionAlias",
-			src:  "type NumOrStr = number | string\nexport fn f(v: number | string | boolean) { return match v { x: NumOrStr => 1, _ => 2 } }",
+			src:  "type NumOrStr = number | string\nexport fn f(v: number | string | boolean) -> 1 | 2 { return match v { x: NumOrStr => 1, _ => 2 } }",
 			want: `if (typeof temp3 === "number" || typeof temp3 === "string") {`,
 		},
 		{
 			name: "AUnionAliasOfRegexAliases",
-			src:  "type A = /^[a-z]+$/\ntype B = /^\\d+$/\ntype Id = A | B\nexport fn f(s: string) { return match s { i: Id => 1, _ => 2 } }",
+			src:  "type A = /^[a-z]+$/\ntype B = /^\\d+$/\ntype Id = A | B\nexport fn f(s: string) -> 1 | 2 { return match s { i: Id => 1, _ => 2 } }",
 			want: `if (typeof temp3 === "string" && /^[a-z]+$/.test(temp3) || typeof temp3 === "string" && /^\d+$/.test(temp3)) {`,
 		},
 		{
 			name: "AUnionAliasOfLiterals",
-			src:  "type Lits = \"a\" | 1 | null | undefined\nexport fn f(v: string | number | null | undefined) { return match v { x: Lits => 1, _ => 2 } }",
+			src:  "type Lits = \"a\" | 1 | null | undefined\nexport fn f(v: string | number | null | undefined) -> 1 | 2 { return match v { x: Lits => 1, _ => 2 } }",
 			want: `if (temp3 === "a" || temp3 === 1 || temp3 === null || temp3 === undefined) {`,
 		},
 		{
 			name: "AUnionInAnObjectTypeAnnotation",
-			src:  "export fn f(v: {code: number | string | boolean}) { return match v { x: {code: number | string} => 1, _ => 2 } }",
+			src:  "export fn f(v: {code: number | string | boolean}) -> 1 | 2 { return match v { x: {code: number | string} => 1, _ => 2 } }",
 			want: `"code" in temp3 && (typeof temp3.code === "number" || typeof temp3.code === "string")) {`,
 		},
 		{
 			name: "AUnionAliasWithAnObjectMember",
-			src:  "type NumOrObj = number | {a: number}\nexport fn f(v: number | {a: number} | string) { return match v { x: NumOrObj => 1, _ => 2 } }",
+			src:  "type NumOrObj = number | {a: number}\nexport fn f(v: number | {a: number} | string) -> 1 | 2 { return match v { x: NumOrObj => 1, _ => 2 } }",
 			want: `if (typeof temp3 === "number" || temp3 !== null && typeof temp3 === "object" && "a" in temp3 && typeof temp3.a === "number") {`,
 		},
 		{
 			name: "AUnionAliasOfOtherLiterals",
-			src:  "type T = true | \"s\"\nexport fn f(v: T | number) { return match v { x: T => 1, _ => 2 } }",
+			src:  "type T = true | \"s\"\nexport fn f(v: T | number) -> 1 | 2 { return match v { x: T => 1, _ => 2 } }",
 			want: `if (temp3 === true || temp3 === "s") {`,
 		},
 		{
 			// An optional property passes when it is absent, and is tested when it is present.
 			name: "AUnionAliasOfATupleAndAnObjectWithAUnionProperty",
-			src:  "type T = boolean | [number] | {a?: number, b: string, c: number | string}\nexport fn f(v: T | number) { return match v { x: T => 1, _ => 2 } }",
+			src:  "type T = boolean | [number] | {a?: number, b: string, c: number | string}\nexport fn f(v: T | number) -> 1 | 2 { return match v { x: T => 1, _ => 2 } }",
 			want: `if (typeof temp3 === "boolean" || Array.isArray(temp3) || temp3 !== null && typeof temp3 === "object" && (!("a" in temp3) || typeof temp3.a === "number") && "b" in temp3 && typeof temp3.b === "string" && "c" in temp3 && (typeof temp3.c === "number" || typeof temp3.c === "string")) {`,
 		},
 		{
 			name: "AUnionAliasOfTwoInstancesOfOneGenericAlias",
-			src:  "type Maybe<T> = T | null\ntype NumOrStr = Maybe<number> | Maybe<string>\nexport fn f(v: NumOrStr | boolean) { return match v { x: NumOrStr => 1, _ => 2 } }",
+			src:  "type Maybe<T> = T | null\ntype NumOrStr = Maybe<number> | Maybe<string>\nexport fn f(v: NumOrStr | boolean) -> 1 | 2 { return match v { x: NumOrStr => 1, _ => 2 } }",
 			want: `if (typeof temp3 === "number" || temp3 === null || typeof temp3 === "string" || temp3 === null) {`,
 		},
 		{
 			name: "AUnionAliasWithAPropertyOfAnAlias",
-			src:  "type Digits = /^\\d+$/\ntype T = number | {d: Digits}\nexport fn f(v: T | string) { return match v { x: T => 1, _ => 2 } }",
+			src:  "type Digits = /^\\d+$/\ntype T = number | {d: Digits}\nexport fn f(v: T | string) -> 1 | 2 { return match v { x: T => 1, _ => 2 } }",
 			want: `if (typeof temp3 === "number" || temp3 !== null && typeof temp3 === "object" && "d" in temp3 && typeof temp3.d === "string" && /^\d+$/.test(temp3.d)) {`,
 		},
 		{
 			name: "AUnionAliasWithAPropertyNotAnIdentifier",
-			src:  "type T = number | {\"a-b\": string}\nexport fn f(v: T | string) { return match v { x: T => 1, _ => 2 } }",
+			src:  "type T = number | {\"a-b\": string}\nexport fn f(v: T | string) -> 1 | 2 { return match v { x: T => 1, _ => 2 } }",
 			want: `if (typeof temp3 === "number" || temp3 !== null && typeof temp3 === "object" && "a-b" in temp3 && typeof temp3["a-b"] === "string") {`,
 		},
 		{
 			// The recursive reference passes, which ends the guard.
 			name: "ARecursiveUnionAlias",
-			src:  "type Tree = number | {left: Tree}\nexport fn f(v: Tree | string) { return match v { x: Tree => 1, _ => 2 } }",
+			src:  "type Tree = number | {left: Tree}\nexport fn f(v: Tree | string) -> 1 | 2 { return match v { x: Tree => 1, _ => 2 } }",
 			want: `if (typeof temp3 === "number" || temp3 !== null && typeof temp3 === "object" && "left" in temp3 && (typeof temp3.left === "number" || temp3.left !== null && typeof temp3.left === "object" && "left" in temp3.left)) {`,
 		},
 	}
