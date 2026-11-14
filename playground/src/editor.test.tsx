@@ -426,6 +426,28 @@ describe('Editor', () => {
             expect(onProjectModified).toHaveBeenCalledTimes(1);
         });
 
+        test('reports a file created in the file explorer', () => {
+            const fs = makeFakeFS();
+            Object.assign(fs, {
+                writeFile: vi.fn(
+                    (
+                        _path: string,
+                        _data: Uint8Array,
+                        cb: (err: Error | null) => void,
+                    ) => cb(null),
+                ),
+            });
+            const onProjectModified = vi.fn();
+            render(<Editor fs={fs} onProjectModified={onProjectModified} />);
+
+            fireEvent.click(screen.getByLabelText('New File'));
+            const input = screen.getByLabelText('New file name');
+            fireEvent.change(input, { target: { value: 'notes.esc' } });
+            fireEvent.keyDown(input, { key: 'Enter' });
+
+            expect(onProjectModified).toHaveBeenCalledTimes(1);
+        });
+
         test('ignores a read-only file', () => {
             setStoreState({
                 leftTabs: [{ path: '/build/bin/main.js' }],
