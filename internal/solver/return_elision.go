@@ -1,10 +1,12 @@
 package solver
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/printer"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -32,9 +34,17 @@ type returnLifetimes struct {
 // newReturnLifetimes returns the elision for the return type of a signature whose receiver
 // is receiver, nil for none, and whose parameters are params, written as recv and sig write
 // them. head is how a suggested signature starts, such as `fn pick` for a function, `peek`
-// for a method, or the empty string for `fn` alone. It returns nil when the signature has no
-// input lifetime.
-func newReturnLifetimes(receiver *soltype.FuncParam, params []*soltype.FuncParam, recv *ast.MethodReceiver, sig *ast.FuncSig, head string) *returnLifetimes {
+// for a method, or the empty string for `fn` alone. inScope holds the lifetime names an
+// enclosing class or function binds, which a suggested lifetime must not reuse. It returns nil
+// when the signature has no input lifetime.
+func newReturnLifetimes(
+	receiver *soltype.FuncParam,
+	params []*soltype.FuncParam,
+	recv *ast.MethodReceiver,
+	sig *ast.FuncSig,
+	head string,
+	inScope set.Set[string],
+) *returnLifetimes {
 	r := &returnLifetimes{}
 	seen := map[soltype.Lifetime]bool{}
 	// collect records the input lifetimes t holds and reports whether it holds one.
@@ -78,9 +88,21 @@ func newReturnLifetimes(receiver *soltype.FuncParam, params []*soltype.FuncParam
 		r.borrow = r.inputs[0]
 	}
 	if r.borrow == nil && len(r.owners) > 1 {
-		r.suggestion = suggestReturnLifetime(recv, sig, head)
+		r.suggestion = suggestReturnLifetime(recv, sig, head, inScope)
 	}
 	return r
+}
+
+// lifetimeNamesInScope returns the lifetime names bound where the checker is reading: those
+// of the enclosing declaration, such as a class's `<'a>`, and those of enclosing functions.
+func (c *checker) lifetimeNamesInScope() set.Set[string] {
+	names := set.NewSet[string]()
+	for _, scope := range []map[string]*soltype.LifetimeVar{c.namedLifetimes, c.declLifetimes, c.enclosingLifetimes} {
+		for name := range scope {
+			names.Add(name)
+		}
+	}
+	return names
 }
 
 // returnBorrowLifetime returns the lifetime a borrow written with no lifetime takes at the
@@ -142,13 +164,14 @@ func (c *checker) resolveReturnAnn(scope *Scope, ann ast.TypeAnn, lvl int, r *re
 	return c.resolveTypeAnn(scope, ann, lvl)
 }
 
-// suggestReturnLifetime renders sig with a lifetime `'x` added to its binder list, to the
+// suggestReturnLifetime renders sig with a fresh lifetime added to its binder list, to the
 // first parameter whose written type is a borrow with no lifetime, and to the return type,
-// which has to be such a borrow too. recv is a method's receiver, nil for none, which leads
+// which has to be such a borrow too. The lifetime is `'x`, or the first of `'x1`, `'x2`,
+// and so on when sig or inScope already binds that name. recv is a method's receiver, nil for none, which leads
 // the parameter list. head starts the rendering, as `fn pick` or `peek`, and `fn ` stands
 // in when it is empty. It returns the empty string when sig has no such parameter or return
 // type.
-func suggestReturnLifetime(recv *ast.MethodReceiver, sig *ast.FuncSig, head string) string {
+func suggestReturnLifetime(recv *ast.MethodReceiver, sig *ast.FuncSig, head string, inScope set.Set[string]) string {
 	ret, ok := sig.Return.(*ast.RefTypeAnn)
 	if !ok || ret.Lifetime != nil {
 		return ""
@@ -157,12 +180,23 @@ func suggestReturnLifetime(recv *ast.MethodReceiver, sig *ast.FuncSig, head stri
 		written, _ := printer.Print(n, printer.CompactOptions())
 		return written
 	}
+	taken := set.NewSet[string]()
+	for name := range inScope {
+		taken.Add(name)
+	}
+	for _, lp := range sig.LifetimeParams {
+		taken.Add(lp.Name)
+	}
+	fresh := "x"
+	for i := 1; taken.Contains(fresh); i++ {
+		fresh = "x" + strconv.Itoa(i)
+	}
 	withX := func(ref *ast.RefTypeAnn) string {
 		copied := *ref
-		copied.Lifetime = ast.NewLifetimeAnn("x", ast.Span{})
+		copied.Lifetime = ast.NewLifetimeAnn(fresh, ast.Span{})
 		return render(&copied)
 	}
-	binders := []string{"'x"}
+	binders := []string{"'" + fresh}
 	for _, lp := range sig.LifetimeParams {
 		binders = append(binders, "'"+lp.Name)
 	}

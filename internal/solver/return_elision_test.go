@@ -181,3 +181,40 @@ func TestMethodAmbiguousReturnLifetime(t *testing.T) {
 			"as in `n<'x>(self, a: &'x { x: number }, b: &{ x: number }) -> &'x { x: number }`",
 	}, errorMessagesOf(res.Errors))
 }
+
+// TestSuggestedReturnLifetimeAvoidsBoundNames covers the name the suggested signature gives its
+// added lifetime when the function or its class already binds `'x`.
+func TestSuggestedReturnLifetimeAvoidsBoundNames(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		expected []string
+	}{
+		{
+			name: "FunctionBindsX",
+			src:  "type Flat = {x: number}\nfn pick<'x>(q: &'x Flat, a: &Flat, b: &Flat) -> &Flat { return a }",
+			expected: []string{
+				"the return type borrows from 'q', 'a' or 'b', and elision cannot tell which; write a lifetime, " +
+					"as in `fn pick<'x1, 'x>(q: &'x Flat, a: &'x1 Flat, b: &Flat) -> &'x1 Flat`",
+			},
+		},
+		{
+			name: "ClassBindsX",
+			src: `type Flat = {x: number}
+			class Box<'x> {
+				r: &'x Flat,
+				n(self, a: &Flat, b: &Flat) -> &Flat { return a },
+			}`,
+			expected: []string{
+				"the return type borrows from 'a' or 'b', and elision cannot tell which; write a lifetime, " +
+					"as in `n<'x1>(self, a: &'x1 Flat, b: &Flat) -> &'x1 Flat`",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := InferModuleWithSource(parseModule(t, tt.src), testStdlibSource())
+			require.Equal(t, tt.expected, errorMessagesOf(res.Errors))
+		})
+	}
+}

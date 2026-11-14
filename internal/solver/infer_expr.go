@@ -802,7 +802,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	var asyncInner, asyncRejects soltype.Type
 	asyncIsPromise := false
 	// A lifetime the return type leaves out takes the one the signature's inputs give it.
-	retLts := newReturnLifetimes(selfParam, params, recv, &sig, signatureHead(node, memberName))
+	retLts := newReturnLifetimes(selfParam, params, recv, &sig, signatureHead(node, memberName), c.lifetimeNamesInScope())
 	if sig.Async {
 		if sig.Return != nil {
 			asyncAnnT, asyncAnnOK = c.resolveReturnAnn(declScope, sig.Return, lvl, retLts)
