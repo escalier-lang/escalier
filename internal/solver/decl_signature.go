@@ -85,6 +85,10 @@ func (i *Info) MethodSignature(class *ast.ClassDecl, m *ast.MethodElem) (DeclSig
 	}
 	for _, elem := range members.Elems {
 		if me, isMethod := elem.(*soltype.MethodElem); isMethod && me.Name == name && arm < len(me.Signatures) {
+			// m is one declaration of the overload set, and the code action edits that
+			// declaration's own signature, so m gets the one arm it declares rather than
+			// the first arm or all of them. The bounds check returns no signature, rather
+			// than panicking, if the checker registered fewer arms than the source writes.
 			return DeclSignature{
 				Type:                me.Signatures[arm],
 				ClassTypeParams:     def.TypeParams,
