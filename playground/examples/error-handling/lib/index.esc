@@ -32,8 +32,8 @@ export fn parsePort(text: string) -> number throws _ {
 }
 
 // Omitting `throws` declares that a function raises nothing.
-// Uncomment to see the error: `unsafePort` can throw `ParseError | PortRangeError`,
-// but it doesn't declare it; add `throws ParseError | PortRangeError` to `unsafePort`'s signature
+// Uncomment the line below to see the error:
+// > `unsafePort` can throw `ParseError | PortRangeError`, but it doesn't declare it; add `throws ParseError | PortRangeError` to `unsafePort`'s signature
 // fn unsafePort(text: string) -> number { return parsePort(text) }
 
 // The caught value is `unknown`, and each arm narrows it with a class pattern.

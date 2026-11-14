@@ -29,7 +29,8 @@ export fn openAccounts() -> Bank {
 
     bank.open(savings)
     // `savings` now belongs to the bank, so this function cannot read it.
-    // Uncomment to see the error: use of moved value 'savings'
+    // Uncomment the line below to see the error:
+    // > use of moved value 'savings'
     // console.log(describe(&savings))
     return bank
 }
@@ -55,8 +56,8 @@ export fn reporter() -> fn () -> string {
 export fn audit() -> number {
     val mut account = {owner: "Barbara", balance: 75}
     val snapshot = &account
-    // Uncomment to see the error: cannot assign to 'account.balance' while it
-    // is borrowed as immutable
+    // Uncomment the line below to see the error:
+    // > cannot assign to 'account.balance' while it is borrowed as immutable
     // account.balance = 0
     return snapshot.balance
 }

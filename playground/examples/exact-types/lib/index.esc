@@ -10,7 +10,8 @@ export fn format(c: Coord) -> string {
     return c.lat.toFixed(3) ++ ", " ++ c.lng.toFixed(3)
 }
 
-// Uncomment to see the error: object has extra property: alt
+// Uncomment the line below to see the error:
+// > object has extra property: alt
 // val summit = format({lat: 46.852, lng: -121.760, alt: 4392})
 
 // An exact value fits an inexact type. The reverse is rejected, since an
@@ -25,7 +26,8 @@ export fn widen(c: Coord) -> Located {
 export fn latitude(p) { return p.lat }
 export fn longitude(open p) { return p.lng }
 
-// Uncomment to see the error: object has extra property: lng
+// Uncomment the line below to see the error:
+// > object has extra property: lng
 // val lat = latitude(&{lat: 46.852, lng: -121.760})
 export val lng = longitude(&{lat: 46.852, lng: -121.760})
 
@@ -42,7 +44,8 @@ export fn locate(l: Landmark) -> Located {
     return l
 }
 
-// Uncomment to see the error: cannot constrain class Landmark <: exact object
+// Uncomment the line below to see the error:
+// > cannot constrain class Landmark <: exact object
 // fn exactly(l: Landmark) -> {name: string, lat: number, lng: number} { return l }
 
 // A function value is exact too. It must accept as many arguments as the
@@ -50,6 +53,6 @@ export fn locate(l: Landmark) -> Located {
 export fn formatAll(coords: &Array<Coord>) -> Array<string> {
     return coords.map(fn (c, ...) { return format(c) })
 }
-// Uncomment to see the error: cannot constrain function of arity 1 <: function
-// of arity 3
+// Uncomment the line below to see the error:
+// > cannot constrain function of arity 1 <: function of arity 3
 // fn formatEach(coords: &Array<Coord>) { return coords.map(fn (c) { return format(c) }) }
