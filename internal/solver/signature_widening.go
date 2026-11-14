@@ -138,7 +138,7 @@ func (c *checker) checkWrittenLifetimes(w *writtenLifetimes) {
 	type pair struct{ a, b *soltype.LifetimeVar }
 	reported := set.NewSet[pair]()
 	for _, sub := range w.order {
-		if w.funcLts.Contains(sub) || reachesStatic(sub, nil) {
+		if w.funcLts.Contains(sub) || reachesStatic(sub) {
 			continue
 		}
 		for _, super := range w.order {
@@ -268,7 +268,7 @@ func outlivesThrough(sub, super *soltype.LifetimeVar, limit map[*soltype.Lifetim
 
 // reachesStatic reports whether lt outlives 'static by a chain of upper bounds, which a
 // body forces when it keeps a borrow for the whole program.
-func reachesStatic(lt *soltype.LifetimeVar, limit map[*soltype.LifetimeVar]int) bool {
+func reachesStatic(lt *soltype.LifetimeVar) bool {
 	seen := set.NewSet[*soltype.LifetimeVar]()
 	stack := []*soltype.LifetimeVar{lt}
 	for len(stack) > 0 {
