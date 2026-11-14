@@ -1,0 +1,5 @@
+lib/index.esc:17:4: 'main' is declared at module level, so it needs a return type; write `-> undefined`
+
+17: fn main() {
+       ^^^^
+

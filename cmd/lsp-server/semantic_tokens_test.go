@@ -72,7 +72,7 @@ func TestSemanticTokensMarkMutableBindings(t *testing.T) {
 		{
 			name: "MutBindingAndReads",
 			file: "bin/main.esc",
-			src: `fn main() {
+			src: `fn main() -> undefined {
     val mut p = {x: 0}
     p.x = p.x + 1
     val total = p.x
@@ -87,7 +87,7 @@ func TestSemanticTokensMarkMutableBindings(t *testing.T) {
 		{
 			name: "MutParam",
 			file: "bin/main.esc",
-			src: `fn reset(mut p: {x: number}) {
+			src: `fn reset(mut p: {x: number}) -> undefined {
     p.x = 0
 }`,
 			expected: []string{
@@ -98,7 +98,7 @@ func TestSemanticTokensMarkMutableBindings(t *testing.T) {
 		{
 			name: "MutableBorrowParam",
 			file: "bin/main.esc",
-			src: `fn reset(p: &mut {x: number}) {
+			src: `fn reset(p: &mut {x: number}) -> undefined {
     p.x = 0
 }`,
 			expected: []string{
@@ -109,7 +109,7 @@ func TestSemanticTokensMarkMutableBindings(t *testing.T) {
 		{
 			name: "LocalHoldingMutableBorrow",
 			file: "bin/main.esc",
-			src: `fn main() {
+			src: `fn main() -> undefined {
     val mut p = {x: 0}
     val r = &mut p
     r.x = 1
@@ -124,7 +124,7 @@ func TestSemanticTokensMarkMutableBindings(t *testing.T) {
 		{
 			name: "ImmutableBindingsHaveNoTokens",
 			file: "bin/main.esc",
-			src: `fn main() {
+			src: `fn main() -> undefined {
     val a = 1
     val b = a
 }`,
@@ -141,7 +141,7 @@ func TestSemanticTokensMarkMutableBindings(t *testing.T) {
 		{
 			name: "ShorthandDestructuring",
 			file: "bin/main.esc",
-			src: `fn main() {
+			src: `fn main() -> undefined {
     val {mut x, y} = {x: {a: 1}, y: 2}
     x.a = y
 }`,
@@ -153,7 +153,7 @@ func TestSemanticTokensMarkMutableBindings(t *testing.T) {
 		{
 			name: "ShorthandPropertyRead",
 			file: "bin/main.esc",
-			src: `fn main() {
+			src: `fn main() -> undefined {
     val mut p = {x: 0}
     val o = {p}
 }`,
@@ -165,7 +165,7 @@ func TestSemanticTokensMarkMutableBindings(t *testing.T) {
 		{
 			name: "ShorthandParamHoldingMutableBorrow",
 			file: "bin/main.esc",
-			src: `fn reset({p}: {p: &mut {x: number}}) {
+			src: `fn reset({p}: {p: &mut {x: number}}) -> undefined {
     p.x = 0
 }`,
 			expected: []string{
@@ -190,7 +190,7 @@ func TestSemanticTokensMarkMutableBindings(t *testing.T) {
 		{
 			name: "LocalNamedSelf",
 			file: "bin/main.esc",
-			src: `fn main() {
+			src: `fn main() -> undefined {
     val mut self = {x: 0}
     self.x = 1
 }`,
@@ -203,7 +203,7 @@ func TestSemanticTokensMarkMutableBindings(t *testing.T) {
 			name: "ModuleLevelBinding",
 			file: "lib/index.esc",
 			src: `val mut totals = {sum: 0}
-export fn add(n: number) {
+export fn add(n: number) -> undefined {
     totals.sum = totals.sum + n
 }`,
 			expected: []string{
@@ -272,7 +272,7 @@ func TestSemanticTokensMarkReassignableBindings(t *testing.T) {
 		{
 			name: "VarMutBindingAndReads",
 			file: "bin/main.esc",
-			src: `fn main() {
+			src: `fn main() -> undefined {
     var mut q = {x: 0}
     q.x = 1
     q = {x: 2}
@@ -287,7 +287,7 @@ func TestSemanticTokensMarkReassignableBindings(t *testing.T) {
 			// A `val mut` binding can be mutated but not reassigned.
 			name: "ValMutBindingIsNotReassignable",
 			file: "bin/main.esc",
-			src: `fn main() {
+			src: `fn main() -> undefined {
     val mut p = {x: 0}
     p.x = 1
 }`,
@@ -313,7 +313,7 @@ func TestSemanticTokensMarkReassignableBindings(t *testing.T) {
 		{
 			name: "VarMutShorthandLeaf",
 			file: "bin/main.esc",
-			src: `fn main() {
+			src: `fn main() -> undefined {
     var {mut x, y} = {x: {a: 1}, y: 2}
     x.a = y
 }`,
@@ -328,7 +328,7 @@ func TestSemanticTokensMarkReassignableBindings(t *testing.T) {
 			name: "ModuleLevelVarMutReadInAFunction",
 			file: "lib/index.esc",
 			src: `var mut totals = {sum: 0}
-export fn add(n: number) {
+export fn add(n: number) -> undefined {
     totals.sum = totals.sum + n
 }`,
 			expected: []string{
@@ -341,7 +341,7 @@ export fn add(n: number) {
 			name: "ModuleLevelVarReadInAFunction",
 			file: "lib/index.esc",
 			src: `var count = 0
-export fn bump() {
+export fn bump() -> undefined {
     count = count + 1
 }`,
 			expected: []string{
@@ -387,7 +387,7 @@ func TestSemanticTokensMarkMutatingMethods(t *testing.T) {
     },
     read(&self) -> number { return self.n },
 }
-fn main() {
+fn main() -> undefined {
     val mut c = Counter()
     c.bump()
     val n = c.read()
@@ -426,7 +426,7 @@ fn main() {
     get value(&mut self) -> number { return self.n },
     set value(&mut self, v: number) { self.n = v },
 }
-fn f(c: &mut Counter) {
+fn f(c: &mut Counter) -> undefined {
     c.bump()
     val v = c.value
     c.value = v
@@ -473,7 +473,7 @@ fn f(c: &mut Counter) {
 			// leaves it. The receiver `xs` is marked as a mutable binding.
 			name: "StdlibMethodCall",
 			file: "bin/main.esc",
-			src: `fn main() {
+			src: `fn main() -> undefined {
     val mut xs: Array<number> = []
     xs.push(1)
     val n = xs.indexOf(1)
@@ -516,7 +516,7 @@ fn f(c: &mut Counter) {
 func TestSemanticTokensEncodeModifierBits(t *testing.T) {
 	require.Equal(t, []string{"mutable", "reassignable"}, semanticTokenModifiers)
 
-	src := `fn main() {
+	src := `fn main() -> undefined {
     val mut p = {x: 0}
     var n = 0
     var mut q = {x: 0}

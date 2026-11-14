@@ -28,6 +28,9 @@ type Options struct {
 	// CheckJsDecorators reports a pseudo-package file whose values break the `@js`
 	// rules jsDecoratorErrors lists, at the import that loads it.
 	CheckJsDecorators bool
+	// RequireSignatures reports MissingSignatureError for each function of the module or
+	// script whose signature has to be written in full and is not.
+	RequireSignatures bool
 	// stdlibDir is the pseudo-package tree the run's groups were built from, or "" for a
 	// run given its groups some other way. InferModuleAgainstStdlib and
 	// InferScriptAgainstStdlib set it. A load of a package the groups do not cover reads
@@ -167,6 +170,7 @@ func newRunChecker(source ModuleSource, groupSource GroupSource, groups PackageG
 	c.groups = groups
 	c.noAmbientNames = opts.NoAmbientNames
 	c.checkJsDecorators = opts.CheckJsDecorators
+	c.requireSignatures = opts.RequireSignatures
 	c.dependencies = opts.Dependencies
 	c.stdlibDir = opts.stdlibDir
 	return c
@@ -191,6 +195,9 @@ func inferModuleOn(c *checker, module *ast.Module) *ModuleResult {
 	c.reportHeldLoadErrors()
 	g := dep_graph.BuildDepGraph(module)
 	symbols := c.inferDepGraph(scope, 0, module, g)
+	if c.requireSignatures {
+		c.checkModuleSignatures(module)
+	}
 	return &ModuleResult{
 		Scope:      scope,
 		FileScopes: fileScopes,

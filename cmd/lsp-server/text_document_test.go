@@ -1407,7 +1407,7 @@ func TestBorrowQuickFix(t *testing.T) {
 		{
 			name:    "MutableBorrowOfAnArgument",
 			message: "this argument is borrowed by the callee, so write the borrow: `&mut`",
-			src:     "fn write(p: &mut {v: number}) {}\nfn g() {\n\tval mut x = {v: 1}\n\twrite(x)\n}",
+			src:     "fn write(p: &mut {v: number}) -> undefined {}\nfn g() -> undefined {\n\tval mut x = {v: 1}\n\twrite(x)\n}",
 			data: borrowFixData{
 				Borrow: "&mut",
 				Range: protocol.Range{
@@ -1421,7 +1421,7 @@ func TestBorrowQuickFix(t *testing.T) {
 		{
 			name:    "LiteralIsParenthesized",
 			message: "this argument is borrowed by the callee, so write the borrow: `&`",
-			src:     "fn read(p: &{v: number}) {}\nfn g() {\n\tread({v: 1})\n}",
+			src:     "fn read(p: &{v: number}) -> undefined {}\nfn g() -> undefined {\n\tread({v: 1})\n}",
 			data: borrowFixData{
 				Borrow: "&",
 				Range: protocol.Range{
@@ -1437,7 +1437,7 @@ func TestBorrowQuickFix(t *testing.T) {
 			// The span of `(h).f` starts inside the parentheses, and the borrow goes before them.
 			name:    "ParenthesizedReceiver",
 			message: "this argument is borrowed by the callee, so write the borrow: `&`",
-			src:     "fn read(p: &{v: number}) {}\nfn g(h: &{f: {v: number}}) {\n\tread((h).f)\n}",
+			src:     "fn read(p: &{v: number}) -> undefined {}\nfn g(h: &{f: {v: number}}) -> undefined {\n\tread((h).f)\n}",
 			data: borrowFixData{
 				Borrow: "&",
 				Range: protocol.Range{
@@ -1451,7 +1451,7 @@ func TestBorrowQuickFix(t *testing.T) {
 		{
 			name:    "ShorthandProperty",
 			message: "this value is borrowed by its destination, so write the borrow: `&`",
-			src:     "fn g(f: {x: number}) {\n\tval o: {f: &{x: number}} = {f}\n}",
+			src:     "fn g(f: {x: number}) -> undefined {\n\tval o: {f: &{x: number}} = {f}\n}",
 			data: borrowFixData{
 				Borrow: "&",
 				Range: protocol.Range{
@@ -1519,7 +1519,7 @@ func TestBorrowQuickFix(t *testing.T) {
 // TestBorrowQuickFixSkipsOptionalChain asserts that an optional chain filling a borrow
 // destination gets no quick fix, because `&h?.f` is not a borrow the checker accepts.
 func TestBorrowQuickFixSkipsOptionalChain(t *testing.T) {
-	src := "fn g(h: &{f: {x: number}} | undefined) {\n\tval d = h?.f\n}"
+	src := "fn g(h: &{f: {x: number}} | undefined) -> undefined {\n\tval d = h?.f\n}"
 	s := integrationServer(t, map[string]string{"bin/main.esc": src})
 	ctx, published := publishedDiagnostics()
 	uri := openFileIn(t, s, ctx, "bin/main.esc", src)

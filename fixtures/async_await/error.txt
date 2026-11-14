@@ -1,0 +1,15 @@
+lib/async_await.esc:2:17: 'fetchData' is declared at module level, so it needs a return type; write `-> Promise<string>`
+
+2:  export async fn fetchData(url: string) {
+                    ^^^^^^^^^
+
+lib/async_await.esc:20:17: 'fetchMultiple' is declared at module level, so it needs a return type; write `-> Promise<string>`
+
+20: export async fn fetchMultiple(url1: string, url2: string) {
+                    ^^^^^^^^^^^^^
+
+lib/async_await.esc:29:17: 'conditionalFetch' is declared at module level, so it needs a return type; write `-> Promise<"cached data" | Response>`
+
+29: export async fn conditionalFetch(useCache: boolean, url: string) {
+                    ^^^^^^^^^^^^^^^^
+

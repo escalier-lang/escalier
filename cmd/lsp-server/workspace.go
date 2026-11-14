@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -134,7 +135,9 @@ func (s *Server) compilePackage() (any, error) {
 	// A type error does not stop the write, matching the CLI. The caller still hears
 	// about it, reported in the shape the parse errors above use, a span beside a
 	// message, so one client path reads both and can place a type error on its own line.
-	if len(output.TypeErrors) > 0 {
+	// A warning leaves the build a success, as it does for the CLI, and is reported only
+	// alongside an error.
+	if slices.ContainsFunc(output.TypeErrors, func(d compiler.Diagnostic) bool { return !compiler.IsWarning(d) }) {
 		reported := make([]reportedError, len(output.TypeErrors))
 		for i, err := range output.TypeErrors {
 			reported[i] = reportedError{Span: err.Span(), Message: err.Message()}

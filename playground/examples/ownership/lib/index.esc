@@ -8,7 +8,7 @@ export fn describe(account: &Account) -> string {
 }
 
 // A mutable borrow can write, and the caller still owns the account afterwards.
-export fn deposit(account: &mut Account, amount: number) {
+export fn deposit(account: &mut Account, amount: number) -> undefined {
     account.balance = account.balance + amount
 }
 
@@ -16,7 +16,7 @@ export class Bank {
     accounts: Array<Account>,
     // A parameter with a bare type takes ownership. Storing the account in
     // the bank moves it out of the caller.
-    open(&mut self, account: Account) {
+    open(&mut self, account: Account) -> undefined {
         self.accounts.push(account)
     },
 }
@@ -36,7 +36,7 @@ export fn openAccounts() -> Bank {
 
 // A closure that stays in the function borrows what it captures. The owner
 // may write between calls.
-export fn statement() {
+export fn statement() -> undefined {
     val mut checking = {owner: "Grace", balance: 20}
     val show = fn () { console.log(describe(&checking)) }
     show()

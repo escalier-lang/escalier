@@ -46,7 +46,7 @@ export fn openTasks(tasks: &Array<Task>) -> number {
 }
 
 // A mutable borrow lets a function write a value it does not own.
-export fn rename(task: &mut Task, title: string) {
+export fn rename(task: &mut Task, title: string) -> undefined {
     task.title = title
 }
 

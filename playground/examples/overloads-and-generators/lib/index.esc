@@ -30,7 +30,7 @@ export fn formatDuration(spans: Array<number>) -> Array<string> {
 // A `gen fn` returns a generator that produces values lazily with `yield`.
 // `yield from` hands off to another generator until it finishes, so the
 // return type is `Generator<number, undefined, unknown>`.
-export gen fn timeSlots(start: number, end: number, step: number) {
+export gen fn timeSlots(start: number, end: number, step: number) -> Generator<number, undefined, unknown> {
     if start < end {
         yield start
         yield from timeSlots(start + step, end, step)
@@ -40,7 +40,7 @@ export gen fn timeSlots(start: number, end: number, step: number) {
 // The second type argument is what the generator returns when it finishes.
 // `agenda` yields strings and returns a count, so its type is
 // `Generator<string, number, unknown>`.
-export gen fn agenda(items: Array<string>) {
+export gen fn agenda(items: Array<string>) -> Generator<string, number, unknown> {
     for item in items {
         yield `- ${item}`
     }
@@ -49,7 +49,7 @@ export gen fn agenda(items: Array<string>) {
 
 // `for … in` consumes a generator one value at a time. Each slot is an offset
 // in minutes from the start of a meeting.
-export fn printSchedule(start: number, end: number, step: number) {
+export fn printSchedule(start: number, end: number, step: number) -> undefined {
     for minute in timeSlots(start, end, step) {
         console.log(formatDuration("Check-in after", minute))
     }

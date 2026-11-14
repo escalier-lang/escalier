@@ -1,0 +1,5 @@
+lib/input.esc:84:10: 'test' is declared at module level, so it needs a return type; write `-> Promise<undefined>`
+
+84: async fn test() {
+             ^^^^
+

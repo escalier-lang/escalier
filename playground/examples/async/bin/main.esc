@@ -1,6 +1,6 @@
 // The names `lib/index.esc` exports are in scope here without an import.
 // `titleOrFallback` never rejects, so each call can be awaited without a `try`.
-async fn main() {
+async fn main() -> Promise<undefined> {
     console.log(await titleOrFallback(1))
     console.log(await titleOrFallback(100000))
 }

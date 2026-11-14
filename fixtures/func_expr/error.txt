@@ -1,0 +1,5 @@
+lib/func_expr.esc:1:12: 'add' is a module-level closure, so it needs a return type; write `-> number` on the closure, or annotate 'add'
+
+1:  export val add = fn (a: number, b: number) {
+               ^^^
+
