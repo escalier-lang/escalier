@@ -393,7 +393,7 @@ func memberReadText(info *solver.Info, m *ast.MemberExpr) (string, bool) {
 		return "", false
 	}
 	objType := info.ResolvedTypeOf(m.Object)
-	owner := baseName(typeName(info.Expand(objType)))
+	owner := memberOwner(info, m.Object, objType)
 	if obj, ok := info.MemberObject(objType); ok {
 		for _, elem := range obj.Elems {
 			if soltype.ObjElemName(elem) == m.Prop.Name {
@@ -404,6 +404,21 @@ func memberReadText(info *solver.Info, m *ast.MemberExpr) (string, bool) {
 	// The member resolved to a type with no fixed member set, such as an index
 	// signature, so its recorded type stands in and the kind defaults to a property.
 	return propertyText(owner, m.Prop.Name, soltype.PrintAsScheme(t)), true
+}
+
+// memberOwner returns the name of the type a member read through object belongs to, where
+// objType is object's resolved type, or "" for an object with no name. A read of a class
+// name, as in `Thermostat.minimum`, reads the class's static side, whose type is an
+// unnamed object, so the class's name is taken from its declaration.
+func memberOwner(info *solver.Info, object ast.Expr, objType soltype.Type) string {
+	if ident, ok := object.(*ast.IdentExpr); ok {
+		if decl, ok := info.DeclOf(ident); ok {
+			if class, ok := decl.(*ast.ClassDecl); ok {
+				return class.Name.Name
+			}
+		}
+	}
+	return baseName(typeName(info.Expand(objType)))
 }
 
 // objLiteralPropText returns the hover text for the key of an object-literal property, as
@@ -438,7 +453,11 @@ func memberElemText(owner string, elem soltype.ObjTypeElem) string {
 		if len(elem.Signatures) == 0 {
 			return propertyText(owner, elem.Name, "")
 		}
-		text := "(method) " + qualify(owner, elem.Name) + methodSignature(elem.Signatures[0])
+		name := qualify(owner, elem.Name)
+		if elem.Optional {
+			name += "?"
+		}
+		text := "(method) " + name + methodSignature(elem.Signatures[0])
 		if extra := len(elem.Signatures) - 1; extra > 0 {
 			text += " (+" + strconv.Itoa(extra) + " overload" + plural(extra) + ")"
 		}
