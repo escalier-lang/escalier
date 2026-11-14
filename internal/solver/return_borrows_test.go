@@ -359,7 +359,7 @@ func TestReturnValueBorrows(t *testing.T) {
 		// rejects for mixing ownership. Holding the rewrite back leaves the function uniform.
 		"MixedLocalAndParamReturnsStayBorrowed": {
 			src: `
-				fn f(p: &mut {value: number}, cond: boolean) -> &mut {value: number} {
+				val f = fn (p: &mut {value: number}, cond: boolean) {
 					val mut b = {value: 0}
 					if cond {
 						return &mut b
