@@ -162,16 +162,26 @@ func (c *checker) checkMemberSignatures(class *ast.ClassDecl) {
 		var key ast.ObjKey
 		var fn *ast.FuncExpr
 		suggest := func() string { return "" }
+		// checkSignature calls suggest only for a member that leaves out just its return
+		// type, so the lookups of the member's registered type run for those members alone.
 		switch e := elem.(type) {
 		case *ast.MethodElem:
 			key, fn = e.Name, e.Fn
-			if sig, ok := c.info.MethodSignature(class, e); ok {
-				suggest = func() string { return writtenSignature(memberName(e.Name), &e.Fn.FuncSig, sig) }
+			suggest = func() string {
+				sig, ok := c.info.MethodSignature(class, e)
+				if !ok {
+					return ""
+				}
+				return writtenSignature(memberName(e.Name), &e.Fn.FuncSig, sig)
 			}
 		case *ast.GetterElem:
 			key, fn = e.Name, e.Fn
-			if t, ok := c.getterType(class, e); ok {
-				suggest = func() string { return "-> " + t }
+			suggest = func() string {
+				t, ok := c.getterType(class, e)
+				if !ok {
+					return ""
+				}
+				return "-> " + t
 			}
 		case *ast.SetterElem:
 			key, fn = e.Name, e.Fn
