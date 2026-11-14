@@ -120,8 +120,10 @@ nothing.
 **C3. A requirement flows through calls.** A call contributes its callee's
 `needs` clause to the caller's.
 
-**C4. A higher-order function passes a callback's requirements through.** A
-requirement variable is an ordinary type parameter, as an exception variable is.
+**C4. A higher-order function passes a callback's extent-bound requirements
+through.** A requirement variable is an ordinary type parameter, as an exception
+variable is. Capturable requirements are owed where a closure is created and
+need no variable.
 
 **C5. A requirement is removed only by something that provides it.** A context
 value is removed by a provider. An environment is removed by the entrypoint's
@@ -194,10 +196,13 @@ This is the only place the shared rules need a case for one requirement kind.
 
 ### 6.4 Higher-order functions
 
-A requirement variable works as an exception variable does:
+A closure's capturable requirements are owed where the closure is created
+(section 6.5), not where it is called. Environment requirements are owed there
+too, since a closure runs in the global scope it was created in. So a
+higher-order function such as `map` takes no part in them:
 
 ```esc
-fn map<T, U, E = never, R = never>(arr: [T], f: fn (T) -> U throws E needs R) -> [U] throws E needs R
+fn map<T, U, E = never>(arr: [T], f: fn (T) -> U throws E) -> [U] throws E
 
 fn renderItem(item: Item) -> Node needs Theme | Env<window> { ... }
 
@@ -207,8 +212,25 @@ fn renderAll(items: [Item]) -> [Node] needs _ {
 // inferred: fn (items: [Item]) -> [Node] needs Theme | Env<window>
 ```
 
-`R` is inferred at each call. Only library signatures such as `map` write a
-requirement variable.
+`renderAll` owes `Theme` and `Env<window>` because it creates the closure that
+calls `renderItem`. A capturable requirement never appears on a function value's
+type.
+
+A requirement variable is needed only for extent-bound requirements, which
+section 6.8 defines. On a callback's type, `needs R` declares that the callee
+calls the callback before it returns, so an extent-bound requirement the caller
+holds still holds inside the callback:
+
+```esc
+fn map<T, U, E = never, R = never>(arr: [T], f: fn (T) -> U throws E needs R) -> [U] throws E needs R
+
+declare fn setTimeout(callback: fn () -> undefined, ms: number) -> number
+```
+
+A closure that needs `Render` may be passed to `map` during a render, and
+passing it to `setTimeout` is an error, since `setTimeout`'s callback type has
+no `needs` clause. `R` is inferred at each call, as `E` is. Only library
+signatures write a requirement variable.
 
 ### 6.5 Callbacks that escape
 
@@ -284,12 +306,23 @@ function main() {
 }
 ```
 
-- One record, not one parameter per context, means a function polymorphic in
-  `R` passes `$ctx` along without knowing what is in it.
+A function value never takes `$ctx`. Three rules keep it that way:
+
+- A direct call to a declared function with a context requirement passes
+  `$ctx`, as in `label($ctx, s)`.
 - A closure captures `$ctx` where it is created, which is the rule in section
-  6.5. A JavaScript built-in such as `Array.prototype.map` therefore calls the
-  closure unchanged.
-- Environment requirements add no parameter. They are checked and erased.
+  6.5.
+- A declared function used as a value, whether passed as an argument, stored in
+  a variable or assigned to a field, is wrapped in a closure that binds the
+  current record. `p.then(label)` compiles to
+  `p.then((x) => label($ctx, x))`.
+
+Every function value therefore has the plain JavaScript calling convention. A
+JavaScript built-in such as `Array.prototype.map` calls an Escalier closure
+unchanged and needs no wrapper. Requirement variables and environment
+requirements add no parameter. They are checked and erased. The runtime cost is
+one closure allocation each time a declared function with a context requirement
+is used as a value.
 
 React contexts compile to React's own API: `context` to `createContext`, reads
 to `useContext`, and the provider to `Context.Provider`. They do not use `$ctx`.
@@ -317,12 +350,12 @@ captured at that call.
   }
   ```
 
-- **Promise callbacks.** A callback's requirements are owed where it is passed,
-  whether the callee runs it at once, as `map` does, or later, as `then` does.
-  Passing a function by name binds the current record, so `p.then(label)`
-  compiles to `p.then((x) => label($ctx, x))`. `then` therefore takes the same
-  `needs R` parameter shape as `map`, and an escaping callback needs no rule of
-  its own.
+- **Promise callbacks.** A callback's capturable requirements are owed where it
+  is created, whether the callee runs it at once, as `map` does, or later, as
+  `then` does. Passing a function by name binds the current record (section
+  6.7). `then` runs its callback after it returns, so its callback type has no
+  `needs` clause, and a callback that needs an extent-bound requirement can't be
+  passed to it.
 
 - **Generators.** Calling a generator function creates the iterator and captures
   `$ctx`. The body runs on each `next()` and reads the captured record. The
@@ -412,8 +445,8 @@ and adds a lookup to every read, which fails C8.
 - **Swift** global-actor isolation such as `@MainActor` is an environment
   requirement, inferred from enclosing types and inherited by closures.
 
-Escalier's design takes inference from Haskell, requirement variables from its
-own `throws`, and capture at creation from Effekt.
+Escalier's design takes inference from Haskell, requirement variables for
+extent-bound requirements from its own `throws`, and capture at creation from Effekt.
 
 ## 9. Open questions
 
