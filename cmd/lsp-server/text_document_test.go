@@ -1571,7 +1571,7 @@ func TestHoverFromSolver(t *testing.T) {
 		{
 			name: "InstancePatternNamespaceQualifier",
 			files: map[string]string{
-				"lib/a.esc": "export fn f(e: errs.HttpError) -> number {\n    return match e {\n        errs.HttpError {status} => status,\n    }\n}",
+				"lib/a.esc":         "export fn f(e: errs.HttpError) -> number {\n    return match e {\n        errs.HttpError {status} => status,\n    }\n}",
 				"lib/errs/http.esc": "export class HttpError { status: number }\n",
 			},
 			open: "lib/a.esc", line: 2, col: 9,
@@ -1588,7 +1588,7 @@ func TestHoverFromSolver(t *testing.T) {
 			name: "InstancePatternShadowedByNamespaceSibling",
 			files: map[string]string{
 				"lib/errs/use.esc": "export class HttpError { code: number }\nexport fn f(e: HttpError) -> number {\n    return match e {\n        HttpError {code} => code,\n    }\n}",
-				"lib/main.esc": "export class HttpError { code: string }\n",
+				"lib/main.esc":     "export class HttpError { code: string }\n",
 			},
 			open: "lib/errs/use.esc", line: 3, col: 10,
 		},
@@ -1596,7 +1596,7 @@ func TestHoverFromSolver(t *testing.T) {
 			name: "InstancePatternFieldShadowedByNamespaceSibling",
 			files: map[string]string{
 				"lib/errs/use.esc": "export class HttpError { code: number }\nexport fn f(e: HttpError) -> number {\n    return match e {\n        HttpError {code} => code,\n    }\n}",
-				"lib/main.esc": "export class HttpError { code: string }\n",
+				"lib/main.esc":     "export class HttpError { code: string }\n",
 			},
 			open: "lib/errs/use.esc", line: 3, col: 20,
 		},
