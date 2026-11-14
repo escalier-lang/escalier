@@ -128,7 +128,7 @@ func TestClosureRunsFollowHolders(t *testing.T) {
 		"MoveOfACaptureWhileAClosureCallingItsClosureIsLive": {
 			src: `
 				declare fn take(x: {x: number}) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {x: 1}
 					val f = fn () { p.x = 2 }
 					val g = fn () { f() }
@@ -474,7 +474,7 @@ func TestRetainedClosureWritesFollowCaptures(t *testing.T) {
 			src: `
 				declare fn onClick(handler: 'static fn () -> undefined) -> undefined
 				declare fn render(view: &{n: number}) -> undefined
-				fn setup() {
+				fn setup() -> undefined {
 					val mut count = {n: 0}
 					val h = fn () { count.n = count.n + 1 }
 					onClick(fn () { h() })
@@ -487,7 +487,7 @@ func TestRetainedClosureWritesFollowCaptures(t *testing.T) {
 			src: `
 				declare fn onClick(handler: 'static fn () -> undefined) -> undefined
 				declare fn render(view: &{n: number}) -> undefined
-				fn setup() {
+				fn setup() -> undefined {
 					val mut count = {n: 0}
 					val o = {cb: fn () { count.n = count.n + 1 }}
 					onClick(fn () { o.cb() })
@@ -501,7 +501,7 @@ func TestRetainedClosureWritesFollowCaptures(t *testing.T) {
 				declare fn onClick(handler: 'static fn () -> undefined) -> undefined
 				declare fn render(view: &{n: number}) -> undefined
 				declare fn log(n: number) -> undefined
-				fn setup() {
+				fn setup() -> undefined {
 					val mut count = {n: 0}
 					val h = fn () { log(count.n) }
 					onClick(fn () { h() })

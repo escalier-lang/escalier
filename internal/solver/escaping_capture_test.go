@@ -35,7 +35,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		"ReadAfterStoringAReadingClosureIntoAGlobalOk": {
 			src: `
 				var sink: 'static fn () -> number = fn () { return 0 }
-				fn go() {
+				fn go() -> undefined {
 					val p = {x: 1}
 					sink = fn () { return p.x }
 					val n = p.x
@@ -46,7 +46,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		"WriteAfterStoringAReadingClosureIntoAGlobalConflicts": {
 			src: `
 				var sink: 'static fn () -> number = fn () { return 0 }
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {x: 1}
 					sink = fn () { return p.x }
 					p.x = 2
@@ -58,7 +58,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		"ReadAfterStoringAWritingClosureIntoAGlobalOk": {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {x: 1}
 					sink = fn () { p.x = 2 }
 					val n = p.x
@@ -69,7 +69,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		"WriteAfterStoringAWritingClosureIntoAGlobalOk": {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {x: 1}
 					sink = fn () { p.x = 2 }
 					p.x = 3
@@ -82,7 +82,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
 				declare fn bump(a: &mut {x: number, y: number}) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {x: 1, y: 2}
 					sink = fn () { p.x = 2 }
 					bump(&mut p)
@@ -94,7 +94,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		"WriteOfAFieldTheReadingClosureLeavesOk": {
 			src: `
 				var sink: 'static fn () -> number = fn () { return 0 }
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {x: 1, y: 2}
 					sink = fn () { return p.y }
 					p.x = 3
@@ -106,7 +106,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
 				declare fn readIt(a: &{v: number}) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {x: {v: 1}, y: {v: 2}}
 					sink = fn () { p.x.v = 2 }
 					readIt(&p.y)
@@ -120,7 +120,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 				var sink: 'static fn () -> undefined = fn () {}
 				declare fn readIt(a: &{v: number}) -> undefined
 				declare fn readA(a: &{b: {v: number}, c: {v: number}}) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {a: {b: {v: 1}, c: {v: 2}}}
 					sink = fn () { p.a.b.v = 2 }
 					readIt(&p.a.c)
@@ -134,7 +134,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		"WritesBesideANestedReadPath": {
 			src: `
 				var sink: 'static fn () -> number = fn () { return 0 }
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {a: {b: 1, c: 2}}
 					sink = fn () { return p.a.b }
 					p.a.c = 3
@@ -149,7 +149,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
 				declare fn see(a: &{x: number, y: number}) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {x: 1, y: 2}
 					sink = fn () { see(&p) }
 					p.x = 3
@@ -162,7 +162,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
 				declare fn take(x: {x: number}) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {x: 1}
 					sink = fn () { p.x = 2 }
 					take(p)
@@ -176,7 +176,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 				var sink: 'static fn () -> undefined = fn () {}
 				declare fn take(x: {x: number}) -> undefined
 				declare fn take(x: string) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {x: 1}
 					sink = fn () { p.x = 2 }
 					take(p)
@@ -189,7 +189,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
 				declare fn readIt(a: &{x: number}) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {x: 1}
 					sink = fn () { p.x = 2 }
 					val a = &p
@@ -203,7 +203,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
 				declare fn readIt(a: &{x: number}) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {x: 1}
 					sink = fn () { p.x = 2 }
 					readIt(&p)
@@ -216,7 +216,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
 				declare fn noop() -> undefined
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {x: 1}
 					sink = fn () { p.x = 2 }
 					val q = p
@@ -229,7 +229,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		"UnusedBorrowAfterStoringAWritingClosureIntoAGlobalConflicts": {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {x: 1}
 					sink = fn () { p.x = 2 }
 					val a = &p
@@ -243,7 +243,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
 				declare fn readIt(a: &{x: number}) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {x: 1}
 					val f = fn () { p.x = 2 }
 					val a = &p
@@ -259,7 +259,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
 				declare fn readIt(a: &{x: number}) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {x: 1}
 					val f = fn () { p.x = 2 }
 					sink = f
@@ -273,7 +273,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		"CallOfAStoredClosureThroughItsLocalNameOk": {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {x: 1}
 					val f = fn () { p.x = 2 }
 					sink = f
@@ -284,13 +284,13 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// A returned closure moves p as the frame ends, so nothing reads p afterwards.
 		"ReturnOfAClosureLastInTheBodyOk": {
 			src: `
-				fn go() {
+				fn go() -> fn () -> 1 {
 					val p = {x: 1}
 					val f = fn () { return p.x }
 					val n = p.x
 					return f
 				}
-				fn go2() {
+				fn go2() -> fn () -> 1 {
 					val p = {x: 1}
 					return fn () { return p.x }
 				}
@@ -315,7 +315,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// A closure stored into `out` borrows p, so the frame can still read p.
 		"StoreIntoABorrowParameterBorrowsTheCaptureOk": {
 			src: `
-				fn go(out: &mut {cb: fn () -> number}) {
+				fn go(out: &mut {cb: fn () -> number}) -> undefined {
 					val p = {x: 1}
 					out.cb = fn () { return p.x }
 					val n = p.x
@@ -326,7 +326,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// write to p in the frame is no conflict.
 		"WriteAfterStoringAReadingClosureOk": {
 			src: `
-				fn go(out: &mut {cb: fn () -> number}) {
+				fn go(out: &mut {cb: fn () -> number}) -> undefined {
 					val mut p = {x: 1}
 					out.cb = fn () { return p.x }
 					p.x = 2
@@ -349,7 +349,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// caller can call `out.cb` while it reads `q.r`, so `&p` breaks E2.
 		"StoringAWritingClosureBesideAnImmutableStoreConflicts": {
 			src: `
-				fn go(out: &mut {cb: fn () -> undefined}, q: &mut {r: &{x: number}}) {
+				fn go(out: &mut {cb: fn () -> undefined}, q: &mut {r: &{x: number}}) -> undefined {
 					val mut p = {x: 1}
 					out.cb = fn () { p.x = 2 }
 					q.r = &p
@@ -361,7 +361,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// runs, so `&p` hands the caller the only path to p.
 		"KeepingAWritingClosureInALocalBesideAnImmutableStoreOk": {
 			src: `
-				fn go(q: &mut {r: &{x: number}}) {
+				fn go(q: &mut {r: &{x: number}}) -> undefined {
 					val mut p = {x: 1}
 					val f = fn () { p.x = 2 }
 					q.r = &p
@@ -371,7 +371,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// An owned parameter dies with the frame, so a closure stored into it borrows p.
 		"StoreIntoAnOwnedParameterLeavesTheCaptureOk": {
 			src: `
-				fn go(mut box: {cb: fn () -> number}) {
+				fn go(mut box: {cb: fn () -> number}) -> undefined {
 					val p = {x: 1}
 					box.cb = fn () { return p.x }
 					val n = p.x
@@ -382,7 +382,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// A closure that stays in the body borrows p.
 		"LocalClosureBorrowsTheCaptureOk": {
 			src: `
-				fn go() {
+				fn go() -> undefined {
 					val p = {x: 1}
 					val f = fn () { return p.x }
 					f()
@@ -395,7 +395,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		"PrimitiveCaptureIsCopiedOk": {
 			src: `
 				var sink: 'static fn () -> number = fn () { return 0 }
-				fn go() {
+				fn go() -> undefined {
 					val n = 1
 					sink = fn () { return n }
 					val m = n
@@ -406,7 +406,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// A capture holding a borrow is not moved by a return.
 		"BorrowedCaptureIsNotMovedOk": {
 			src: `
-				fn go(p: &{x: number}) {
+				fn go(p: &{x: number}) -> fn () -> number {
 					val f = fn () { return p.x }
 					val n = p.x
 					return f
@@ -433,7 +433,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
 				declare fn readIt(a: &{x: number}) -> undefined
-				fn go(c: boolean) {
+				fn go(c: boolean) -> undefined {
 					val mut p = {x: 1}
 					var f: fn () -> undefined = fn () {}
 					if c {
@@ -451,7 +451,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
 				declare fn readIt(a: &{x: number}) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {x: 1}
 					val f = fn () { p.x = 2 }
 					val g = f
@@ -468,7 +468,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 			src: `
 				var sink: {cb: 'static fn () -> undefined} = {cb: fn () {}}
 				declare fn readIt(a: &{x: number}) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {x: 1}
 					sink = {cb: fn () { p.x = 2 }}
 					val a = &p
@@ -483,7 +483,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
 				declare fn readIt(a: &{x: number}) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {x: 1}
 					val f = fn () { p.x = 2 }
 					sink = fn () { f() }
@@ -499,7 +499,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
 				declare fn take(a: {x: number}) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {x: 1}
 					val o = {cb: fn () { p.x = 2 }}
 					sink = fn () { o.cb() }
@@ -513,7 +513,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
 				var sink2: 'static fn () -> undefined = fn () {}
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {x: 1}
 					sink = fn () { p.x = 2 }
 					sink2 = fn () { p.x = 3 }
@@ -527,7 +527,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 				var sink: 'static fn () -> undefined = fn () {}
 				var sink2: 'static fn () -> undefined = fn () {}
 				declare fn readIt(a: &{x: number}) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {x: 1}
 					val f = fn () { p.x = 2 }
 					val g = fn () { f() }
@@ -545,7 +545,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 				var sink: 'static fn () -> undefined = fn () {}
 				var sink2: 'static fn () -> undefined = fn () {}
 				declare fn see(a: &{n: number}) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {a: {n: 1}}
 					val f = fn () {
 						p.a.n = 2
@@ -561,7 +561,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 			src: `
 				var sink: 'static fn () -> number = fn () { return 0 }
 				var sink2: 'static fn () -> number = fn () { return 0 }
-				fn go() {
+				fn go() -> undefined {
 					val p = {x: 1}
 					sink = fn () { return p.x }
 					sink2 = fn () { return p.x }
@@ -573,7 +573,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		"StoreOfAReadingClosureIntoAGlobalInALoopOk": {
 			src: `
 				var sink: 'static fn () -> number = fn () { return 0 }
-				fn go(xs: Array<number>) {
+				fn go(xs: Array<number>) -> undefined {
 					val p = {x: 1}
 					for x in xs {
 						sink = fn () { return p.x }
@@ -586,7 +586,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		"StoreOfAWritingClosureIntoAGlobalInALoopOk": {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
-				fn go(xs: Array<number>) {
+				fn go(xs: Array<number>) -> undefined {
 					val mut p = {x: 1}
 					for x in xs {
 						sink = fn () { p.x = 2 }
@@ -600,7 +600,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
 				declare fn readIt(a: &{x: number}) -> undefined
-				fn go(c: boolean) {
+				fn go(c: boolean) -> undefined {
 					val mut p = {x: 1}
 					val f = if c { (fn () { p.x = 2 }) } else { (fn () {}) }
 					sink = f
@@ -614,7 +614,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		"StoreOfAClosureOverALocalDeadAfterTheStoreOk": {
 			src: `
 				var sink: 'static fn () -> number = fn () { return 0 }
-				fn go() {
+				fn go() -> undefined {
 					val p = {x: 1}
 					sink = fn () { return p.x }
 				}
@@ -624,7 +624,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		"StoreOfAClosureOverAVarDeadAfterTheStoreOk": {
 			src: `
 				var sink: 'static fn () -> number = fn () { return 0 }
-				fn go() {
+				fn go() -> undefined {
 					var n = 1
 					n = n + 1
 					sink = fn () { return n }
@@ -636,7 +636,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		"StoreOfAClosureOverAVarWrittenAfterTheStoreConflicts": {
 			src: `
 				var sink: 'static fn () -> number = fn () { return 0 }
-				fn go() {
+				fn go() -> undefined {
 					var n = 1
 					sink = fn () { return n }
 					n = 2
@@ -649,7 +649,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		"StoreOfAClosureAssigningAVarReadAfterTheStoreOk": {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
-				fn go() {
+				fn go() -> undefined {
 					var n = 1
 					sink = fn () { n = n + 1 }
 					val m = n
@@ -686,7 +686,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		"StoreOfAClosureOverAParameterRejected": {
 			src: `
 				var sink: 'static fn () -> number = fn () { return 0 }
-				fn go(p: {x: number}) {
+				fn go(p: {x: number}) -> undefined {
 					sink = fn () { return p.x }
 				}
 			`,
@@ -696,7 +696,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		"StoreOfAClosureOverAnOutsideBorrowRejected": {
 			src: `
 				var sink: 'static fn () -> number = fn () { return 0 }
-				fn go(p: &{x: number}) {
+				fn go(p: &{x: number}) -> undefined {
 					val o = {r: p}
 					sink = fn () { return o.r.x }
 				}

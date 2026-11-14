@@ -165,7 +165,7 @@ func TestInferOwnedMutFromFreshLiteral(t *testing.T) {
 // afterward is a use-after-move.
 func TestInferOwnedMutFromMovedVariable(t *testing.T) {
 	t.Run("dead source upgrades", func(t *testing.T) {
-		src := `fn f() {
+		src := `fn f() -> undefined {
 	val cfg: {x: number} = {x: 1}
 	val mut m: {x: number} = cfg
 	m.x = 2
@@ -174,7 +174,7 @@ func TestInferOwnedMutFromMovedVariable(t *testing.T) {
 		require.Empty(t, errs)
 	})
 	t.Run("live source is a use-after-move", func(t *testing.T) {
-		src := `fn f() {
+		src := `fn f() -> undefined {
 	val cfg: {x: number} = {x: 1}
 	val mut m: {x: number} = cfg
 	cfg.x
@@ -190,7 +190,7 @@ func TestInferOwnedMutFromMovedVariable(t *testing.T) {
 func TestInferOwnedMutFromMovedVariableNested(t *testing.T) {
 	t.Run("object field is a moved variable", func(t *testing.T) {
 		// The write through m.p shows the binding's mutability reaches the nested field.
-		src := `fn f() {
+		src := `fn f() -> undefined {
 	val cfg = {x: 1}
 	val mut m: {p: {x: number}} = {p: cfg}
 	m.p.x = 9
@@ -199,7 +199,7 @@ func TestInferOwnedMutFromMovedVariableNested(t *testing.T) {
 		require.Empty(t, errs)
 	})
 	t.Run("tuple element is a moved variable", func(t *testing.T) {
-		src := `fn f() {
+		src := `fn f() -> undefined {
 	val cfg = {x: 1}
 	val mut t: [number, {x: number}] = [1, cfg]
 	t
@@ -208,7 +208,7 @@ func TestInferOwnedMutFromMovedVariableNested(t *testing.T) {
 		require.Empty(t, errs)
 	})
 	t.Run("live nested source is a use-after-move", func(t *testing.T) {
-		src := `fn f() {
+		src := `fn f() -> undefined {
 	val cfg = {x: 1}
 	val mut m: {p: {x: number}} = {p: cfg}
 	cfg.x
@@ -227,7 +227,7 @@ func TestInferOwnedMutFromMovedVariableNested(t *testing.T) {
 // reassignment is a use-after-move.
 func TestInferOwnedMutReassign(t *testing.T) {
 	t.Run("fresh literal", func(t *testing.T) {
-		src := `fn f() {
+		src := `fn f() -> undefined {
 	var mut m: {x: number} = {x: 0}
 	m = {x: 1}
 	m.x = 2
@@ -236,7 +236,7 @@ func TestInferOwnedMutReassign(t *testing.T) {
 		require.Empty(t, errs)
 	})
 	t.Run("moved variable", func(t *testing.T) {
-		src := `fn f() {
+		src := `fn f() -> undefined {
 	var mut m: {x: number} = {x: 0}
 	val cfg: {x: number} = {x: 1}
 	m = cfg
@@ -246,7 +246,7 @@ func TestInferOwnedMutReassign(t *testing.T) {
 		require.Empty(t, errs)
 	})
 	t.Run("live source is a use-after-move", func(t *testing.T) {
-		src := `fn f() {
+		src := `fn f() -> undefined {
 	var mut m: {x: number} = {x: 0}
 	val cfg: {x: number} = {x: 1}
 	m = cfg
@@ -261,14 +261,14 @@ func TestInferOwnedMutReassign(t *testing.T) {
 // the variable consumes it, so a later read is a use-after-move.
 func TestInferOwnedMutCallArgument(t *testing.T) {
 	t.Run("fresh literal", func(t *testing.T) {
-		src := `fn sink(mut q: {x: number}) {}
-fn f() { sink({x: 1}) }`
+		src := `fn sink(mut q: {x: number}) -> undefined {}
+fn f() -> undefined { sink({x: 1}) }`
 		_, _, errs := inferSource(t, src)
 		require.Empty(t, errs)
 	})
 	t.Run("moved variable", func(t *testing.T) {
-		src := `fn sink(mut q: {x: number}) {}
-fn f() {
+		src := `fn sink(mut q: {x: number}) -> undefined {}
+fn f() -> undefined {
 	val cfg: {x: number} = {x: 1}
 	sink(cfg)
 }`
@@ -276,8 +276,8 @@ fn f() {
 		require.Empty(t, errs)
 	})
 	t.Run("live argument is a use-after-move", func(t *testing.T) {
-		src := `fn sink(mut q: {x: number}) {}
-fn f() {
+		src := `fn sink(mut q: {x: number}) -> undefined {}
+fn f() -> undefined {
 	val cfg: {x: number} = {x: 1}
 	sink(cfg)
 	cfg.x
@@ -288,8 +288,8 @@ fn f() {
 	t.Run("a narrower field moves into a wider parameter", func(t *testing.T) {
 		// The caller gives the value up, so no view of it at the narrower field type
 		// survives the call for the callee's wider write to break.
-		src := `fn sink(mut q: {a: {x: number | string}}) { q.a.x = "s" }
-fn f(mut p: {a: {x: number}}) { sink(p) }`
+		src := `fn sink(mut q: {a: {x: number | string}}) -> undefined { q.a.x = "s" }
+fn f(mut p: {a: {x: number}}) -> undefined { sink(p) }`
 		_, _, errs := inferSource(t, src)
 		require.Empty(t, messagesWithSpan(t, errs))
 	})
@@ -300,7 +300,7 @@ fn f(mut p: {a: {x: number}}) { sink(p) }`
 func TestInferOwnedMutReturn(t *testing.T) {
 	t.Run("fresh literal", func(t *testing.T) {
 		values, _, errs := inferSource(t, `fn f() -> {x: number} { return {x: 1} }
-fn g() { val mut r = f()
+fn g() -> undefined { val mut r = f()
 	r.x = 2 }`)
 		require.Empty(t, errs)
 		require.Equal(t, "fn () -> {x: number}", values["f"])
@@ -310,7 +310,7 @@ fn g() { val mut r = f()
 	val cfg: {x: number} = {x: 1}
 	return cfg
 }
-fn g() { val mut r = f()
+fn g() -> undefined { val mut r = f()
 	r.x = 2 }`
 		values, _, errs := inferSource(t, src)
 		require.Empty(t, errs)
@@ -323,14 +323,14 @@ fn g() { val mut r = f()
 // immutable receiver is rejected.
 func TestInferOwnedMutFieldWrite(t *testing.T) {
 	t.Run("fresh literal", func(t *testing.T) {
-		src := `fn f(mut obj: {a: {x: number}}) {
+		src := `fn f(mut obj: {a: {x: number}}) -> undefined {
 	obj.a = {x: 5}
 }`
 		_, _, errs := inferSource(t, src)
 		require.Empty(t, errs)
 	})
 	t.Run("moved variable", func(t *testing.T) {
-		src := `fn f(mut obj: {a: {x: number}}) {
+		src := `fn f(mut obj: {a: {x: number}}) -> undefined {
 	val cfg: {x: number} = {x: 5}
 	obj.a = cfg
 }`
@@ -338,7 +338,7 @@ func TestInferOwnedMutFieldWrite(t *testing.T) {
 		require.Empty(t, errs)
 	})
 	t.Run("live source is a use-after-move", func(t *testing.T) {
-		src := `fn f(mut obj: {a: {x: number}}) {
+		src := `fn f(mut obj: {a: {x: number}}) -> undefined {
 	val cfg: {x: number} = {x: 5}
 	obj.a = cfg
 	cfg.x
@@ -347,7 +347,7 @@ func TestInferOwnedMutFieldWrite(t *testing.T) {
 		require.Equal(t, []string{"4:2-4:7: use of moved value 'cfg'"}, messagesWithSpan(t, errs))
 	})
 	t.Run("immutable receiver rejected", func(t *testing.T) {
-		src := `fn f(obj: {a: {x: number}}) {
+		src := `fn f(obj: {a: {x: number}}) -> undefined {
 	obj.a = {x: 5}
 }`
 		_, _, errs := inferSource(t, src)
@@ -439,14 +439,14 @@ func TestInferValMutMoveNeedsAConsume(t *testing.T) {
 		require.Empty(t, errs)
 	})
 	t.Run("the same place moves in inside a function, and is consumed", func(t *testing.T) {
-		const src = `fn f() {
+		const src = `fn f() -> undefined {
 	val cfg = {x: 1}
 	val mut m: {x: number} = cfg
 }`
 		_, _, errs := inferSource(t, src)
 		require.Empty(t, errs)
 
-		_, _, errs = inferSource(t, `fn f() {
+		_, _, errs = inferSource(t, `fn f() -> undefined {
 	val cfg = {x: 1}
 	val mut m: {x: number} = cfg
 	cfg.x
@@ -460,7 +460,7 @@ func TestInferValMutMoveNeedsAConsume(t *testing.T) {
 // read of the source is a use-after-move.
 func TestInferValMutMovesIntoAWiderDestination(t *testing.T) {
 	t.Run("declaration", func(t *testing.T) {
-		src := `fn f() {
+		src := `fn f() -> undefined {
 	val mut inner: {x: number} = {x: 0}
 	val mut m: {p: {x: number | string}} = {p: inner}
 	m.p.x = "s"
@@ -522,13 +522,13 @@ func TestInferOwnedMutArgumentIntoAWiderParam(t *testing.T) {
 func TestInferOwnedMutModuleGlobalWrite(t *testing.T) {
 	t.Run("fresh literal", func(t *testing.T) {
 		src := `var mut sink: {x: number} = {x: 0}
-fn f() { sink = {x: 1} }`
+fn f() -> undefined { sink = {x: 1} }`
 		_, _, errs := inferSource(t, src)
 		require.Empty(t, errs)
 	})
 	t.Run("moved variable", func(t *testing.T) {
 		src := `var mut sink: {x: number} = {x: 0}
-fn f() {
+fn f() -> undefined {
 	val cfg: {x: number} = {x: 1}
 	sink = cfg
 }`
@@ -537,7 +537,7 @@ fn f() {
 	})
 	t.Run("live source is a use-after-move", func(t *testing.T) {
 		src := `var mut sink: {x: number} = {x: 0}
-fn f() {
+fn f() -> undefined {
 	val cfg: {x: number} = {x: 1}
 	sink = cfg
 	cfg.x

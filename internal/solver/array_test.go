@@ -29,32 +29,32 @@ func TestArrayResolvesToTheIngestedClass(t *testing.T) {
 		{
 			// A member the declaration names, which the retired concrete could not answer.
 			name: "LengthReads",
-			src:  `fn f(xs: Array<number>) { return xs.length }`,
+			src:  `val f = fn (xs: Array<number>) { return xs.length }`,
 			want: map[string]string{"f": "fn (xs: Array<number>) -> number"},
 		},
 		{
 			// A method the declaration names, checked against its signature.
 			name: "PushChecks",
-			src:  `fn f(mut xs: Array<number>) { return xs.push(1) }`,
+			src:  `val f = fn (mut xs: Array<number>) { return xs.push(1) }`,
 			want: map[string]string{"f": "fn (xs: Array<number>) -> number"},
 		},
 		{
 			// A numeric key reads the element. An array declares no position for the key to
 			// land on, so the element is the answer whatever the index is.
 			name: "NumericLiteralIndexYieldsTheElement",
-			src:  `fn f(xs: Array<number>) { return xs[0] }`,
+			src:  `val f = fn (xs: Array<number>) { return xs[0] }`,
 			want: map[string]string{"f": "fn (xs: Array<number>) -> number"},
 		},
 		{
 			name: "NumberTypedIndexYieldsTheElement",
-			src:  `fn f(xs: Array<string>, k: number) { return xs[k] }`,
+			src:  `val f = fn (xs: Array<string>, k: number) { return xs[k] }`,
 			want: map[string]string{"f": "fn (xs: Array<string>, k: number) -> string"},
 		},
 		{
 			// Iteration binds the loop variable at the element type.
 			name: "ForInBindsTheElement",
 			src: `
-				fn f(xs: Array<number>) {
+				val f = fn (xs: Array<number>) {
 					for x in xs {
 						return x
 					}
@@ -90,12 +90,12 @@ func TestArrayIsCovariantAndMutArrayIsNot(t *testing.T) {
 		{
 			name: "SharedArrayWidens",
 			src: `fn take(xs: Array<number>) -> number { return 1 }
-				fn give(ys: Array<1>) { return take(ys) }`,
+				fn give(ys: Array<1>) -> number { return take(ys) }`,
 		},
 		{
 			name: "MutArrayDoesNotWiden",
 			src: `fn take(xs: &mut Array<number>) -> number { return 1 }
-				fn give(ys: &mut Array<1>) { return take(ys) }`,
+				fn give(ys: &mut Array<1>) -> number { return take(ys) }`,
 			want: []string{"cannot constrain number <: 1"},
 		},
 	}
@@ -128,7 +128,7 @@ func TestCommittedCollectionsAreCovariantAndMutOnesAreNot(t *testing.T) {
 	}{
 		{
 			name: "ArrayWidensIntoAUnion",
-			src:  `fn f(a: &Array<number>) { val b: &Array<number | string> = a }`,
+			src:  `fn f(a: &Array<number>) -> undefined { val b: &Array<number | string> = a }`,
 		},
 		{
 			name: "ArrayWidensIntoAParameter",
@@ -137,34 +137,34 @@ func TestCommittedCollectionsAreCovariantAndMutOnesAreNot(t *testing.T) {
 		},
 		{
 			name: "ArrayOfAnUnrelatedElementIsRejectedOnce",
-			src:  `fn f(a: &Array<string>) { val b: &Array<number> = a }`,
+			src:  `fn f(a: &Array<string>) -> undefined { val b: &Array<number> = a }`,
 			want: []string{"cannot constrain string <: number"},
 		},
 		{
 			name: "MutArrayDoesNotWiden",
-			src:  `fn f(a: &mut Array<number>) { val b: &mut Array<number | string> = a }`,
+			src:  `fn f(a: &mut Array<number>) -> undefined { val b: &mut Array<number | string> = a }`,
 			want: []string{"cannot constrain string <: number"},
 		},
 		{
 			name: "SetWidens",
 			src: `import "std:set"
-				fn f(a: &set.Set<number>) { val b: &set.Set<number | string> = a }`,
+				fn f(a: &set.Set<number>) -> undefined { val b: &set.Set<number | string> = a }`,
 		},
 		{
 			name: "MutSetDoesNotWiden",
 			src: `import "std:set"
-				fn f(a: &mut set.Set<number>) { val b: &mut set.Set<number | string> = a }`,
+				fn f(a: &mut set.Set<number>) -> undefined { val b: &mut set.Set<number | string> = a }`,
 			want: []string{"cannot constrain string <: number"},
 		},
 		{
 			name: "MapWidensInBothParameters",
 			src: `import "std:map"
-				fn f(a: &map.Map<"k", number>) { val b: &map.Map<string, number | string> = a }`,
+				fn f(a: &map.Map<"k", number>) -> undefined { val b: &map.Map<string, number | string> = a }`,
 		},
 		{
 			name: "MutMapDoesNotWiden",
 			src: `import "std:map"
-				fn f(a: &mut map.Map<string, number>) { val b: &mut map.Map<string, number | string> = a }`,
+				fn f(a: &mut map.Map<string, number>) -> undefined { val b: &mut map.Map<string, number | string> = a }`,
 			want: []string{"cannot constrain string <: number"},
 		},
 	}
@@ -262,7 +262,7 @@ func TestIterationCallbacksBorrowTheReceiver(t *testing.T) {
 			// hands the callback `&Self`, an immutable borrow of the receiver, and an
 			// immutable `Array` does not fit the callback's `&mut` annotation.
 			name: "ArrayCallbackCannotWriteThroughAWidenedView",
-			src: `fn widen(xs: &Array<number | string>) {
+			src: `fn widen(xs: &Array<number | string>) -> undefined {
 				xs.forEach(fn (v, i, arr: &mut Array<number | string>) {
 					arr.push("s")
 					return 0
@@ -273,7 +273,7 @@ func TestIterationCallbacksBorrowTheReceiver(t *testing.T) {
 		{
 			name: "SetCallbackCannotMutateTheSet",
 			src: `import "std:set"
-				fn f(xs: &set.Set<number>) {
+				fn f(xs: &set.Set<number>) -> undefined {
 					xs.forEach(fn (v, v2, s: &mut set.Set<number>) {
 						s.add(1)
 						return 0
@@ -284,14 +284,14 @@ func TestIterationCallbacksBorrowTheReceiver(t *testing.T) {
 		{
 			// The callback claims it can keep the array, which a borrow does not allow.
 			name: "CallbackAnnotatedWithTheOwnedArrayIsRejected",
-			src: `fn f(xs: &Array<number>) {
+			src: `fn f(xs: &Array<number>) -> undefined {
 				xs.forEach(fn (v: number, i: number, arr: Array<number>) { return 0 })
 			}`,
 			want: []string{"cannot use borrowed &Array<number> as owned Array<number>"},
 		},
 		{
 			name: "CallbackAnnotatedWithABorrowReadsTheArray",
-			src: `fn f(xs: &Array<number>) {
+			src: `fn f(xs: &Array<number>) -> undefined {
 				xs.forEach(fn (v: number, i: number, arr: &Array<number>) { return arr.length })
 			}`,
 		},
@@ -325,7 +325,7 @@ func TestIterationCallbacksBorrowTheReceiver(t *testing.T) {
 func TestArrayMethodRejectsAWrongElement(t *testing.T) {
 	t.Parallel()
 
-	_, _, errs := inferSource(t, `fn f(mut xs: Array<number>) { return xs.push("a") }`)
+	_, _, errs := inferSource(t, `val f = fn (mut xs: Array<number>) { return xs.push("a") }`)
 	require.Equal(t, []string{`cannot constrain "a" <: number`}, errorMessagesOf(errs))
 }
 
@@ -449,28 +449,28 @@ func TestTupleIntoArray(t *testing.T) {
 		{
 			name: "SpreadElementFits",
 			src: `fn h(xs: &Array<number>) -> number { return 0 }
-				fn f(t: &[number, ...Array<number>]) { return h(t) }`,
+				val f = fn (t: &[number, ...Array<number>]) { return h(t) }`,
 		},
 		{
 			name: "LeadingElementBeforeSpreadDoesNotFit",
 			src: `fn h(xs: &Array<number>) -> number { return 0 }
-				fn f(t: &[string, ...Array<number>]) { return h(t) }`,
+				val f = fn (t: &[string, ...Array<number>]) { return h(t) }`,
 			want: []string{"cannot constrain string <: number"},
 		},
 		{
 			name: "InexactTuple",
 			src: `fn h(xs: &Array<number>) -> number { return 0 }
-				fn f(t: &[number, ...]) { return h(t) }`,
+				val f = fn (t: &[number, ...]) { return h(t) }`,
 			want: []string{"cannot constrain unknown <: number"},
 		},
 		{
 			name: "MutTupleThroughAnImmutableView",
 			src: `fn h(xs: &Array<number>) -> number { return 0 }
-				fn f(t: &mut [number, number]) { return h(t) }`,
+				val f = fn (t: &mut [number, number]) { return h(t) }`,
 		},
 		{
 			name: "LiteralIntoMutAnnotationThenPush",
-			src: `fn g() {
+			src: `fn g() -> undefined {
 					val mut m: Array<number> = [1, 2]
 					m.push(3)
 				}`,
@@ -483,7 +483,7 @@ func TestTupleIntoArray(t *testing.T) {
 		{
 			name: "MutTupleIntoMutArrayOfItsElement",
 			src: `fn h(xs: &mut Array<number>) -> number { return 0 }
-				fn f(t: &mut [number, number]) { return h(t) }`,
+				val f = fn (t: &mut [number, number]) { return h(t) }`,
 			want: []string{"cannot constrain tuple <: Array<number>"},
 		},
 	}

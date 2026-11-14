@@ -24,7 +24,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 		// only path to p once f returns.
 		"ImmutableStoreOk": {
 			src: `
-				fn f(out: &mut {r: &{x: number}}) {
+				fn f(out: &mut {r: &{x: number}}) -> undefined {
 					val p = {x: 1}
 					out.r = &p
 				}
@@ -33,7 +33,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 		// A borrow stored through an `if`/`else` takes the same loan a plain store does.
 		"ImmutableStoreThroughAnIfElseOk": {
 			src: `
-				fn f(cond: boolean, out: &mut {r: &{x: number}}) {
+				fn f(cond: boolean, out: &mut {r: &{x: number}}) -> undefined {
 					val p = {x: 1}
 					out.r = if cond { &p } else { &p }
 				}
@@ -57,7 +57,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 		// expects to hold still.
 		"MovingIntoALocalAfterAnImmutableStoreConflicts": {
 			src: `
-				fn f(out: &mut {r: &{x: number}}) {
+				fn f(out: &mut {r: &{x: number}}) -> undefined {
 					val p = {x: 1}
 					out.r = &p
 					val mut q = p
@@ -95,7 +95,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 		// `p.r` before the write that follows it.
 		"WritingAfterAYieldConflicts": {
 			src: `
-				gen fn f(p: &mut {r: &{value: number}}) {
+				gen fn f(p: &mut {r: &{value: number}}) -> Generator<1, undefined, unknown> {
 					val mut b = {value: 1}
 					p.r = &b
 					yield 1
@@ -234,7 +234,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 		// as owned data beside the borrow `out.r` holds.
 		"StoringARestElementConflicts": {
 			src: `
-				fn f(out: &mut {r: &{v: number}}, q: &mut {o: {y: {v: number}, z: {v: number}}}) {
+				fn f(out: &mut {r: &{v: number}}, q: &mut {o: {y: {v: number}, z: {v: number}}}) -> undefined {
 					val b = {x: {v: 1}, y: {v: 2}, z: {v: 3}}
 					out.r = &b.z
 					val {x, ...rest} = b
@@ -308,7 +308,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 		"StoringALocalTheStoredLocalMovedIntoModuleStateConflicts": {
 			src: `
 				var sink: {x: number} = {x: 0}
-				fn f(out: &mut {r: &{x: number}}) {
+				fn f(out: &mut {r: &{x: number}}) -> undefined {
 					val p = {x: 1}
 					out.r = &p
 					val q = p
@@ -320,7 +320,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 		// A leaf that copies a borrow moves nothing, and its borrow edge says what it reaches.
 		"DestructuringABorrowLeafOk": {
 			src: `
-				fn f(out: &mut {r: &mut {value: number}}) {
+				fn f(out: &mut {r: &mut {value: number}}) -> undefined {
 					val mut b = {value: 1}
 					val a = {peer: &mut b}
 					val {peer} = a
@@ -331,7 +331,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 		// A mutable borrow of p taken after the store and never read changes nothing.
 		"BorrowingMutablyAfterAnImmutableStoreOk": {
 			src: `
-				fn f(out: &mut {r: &{x: number}}) {
+				fn f(out: &mut {r: &{x: number}}) -> undefined {
 					val mut p = {x: 1}
 					out.r = &p
 					val q = &mut p
@@ -354,7 +354,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 		// that pair. The second borrow gets no diagnostic of its own, since the pair names it.
 		"StoresOfMixedMutabilityConflict": {
 			src: `
-				fn f(p: &mut {r: &{value: number}}, q: &mut {r: &mut {value: number}}) {
+				fn f(p: &mut {r: &{value: number}}, q: &mut {r: &mut {value: number}}) -> undefined {
 					val mut b = {value: 1}
 					p.r = &b
 					q.r = &mut b
@@ -367,7 +367,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 		// Two writers are Rule 3 of planning/lifetimes/requirements.md and are accepted.
 		"MutableStoresOk": {
 			src: `
-				fn f(p: &mut {r: &mut {value: number}}, q: &mut {r: &mut {value: number}}) {
+				fn f(p: &mut {r: &mut {value: number}}, q: &mut {r: &mut {value: number}}) -> undefined {
 					val mut b = {value: 1}
 					p.r = &mut b
 					q.r = &mut b
@@ -378,7 +378,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 		// the store breaks E2 even though f never reads `p.r` again.
 		"WritingThroughALiveAliasConflicts": {
 			src: `
-				fn f(p: &mut {r: &{value: number}}) {
+				fn f(p: &mut {r: &{value: number}}) -> undefined {
 					val mut b = {value: 1}
 					val a = {peer: &mut b}
 					p.r = &b
@@ -419,7 +419,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 		// iteration stored.
 		"StoreInsideALoopConflicts": {
 			src: `
-				fn f(p: &mut {r: &{value: number}}, xs: [number]) {
+				fn f(p: &mut {r: &{value: number}}, xs: [number]) -> undefined {
 					val mut b = {value: 1}
 					for x in xs {
 						b.value = x
@@ -433,7 +433,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 		// still reach b when b is written. The read of p afterwards keeps the earlier loan live.
 		"RepointingOnOneBranchKeepsTheLoan": {
 			src: `
-				fn f(p: &mut {r: &{value: number}}, cond: boolean) {
+				fn f(p: &mut {r: &{value: number}}, cond: boolean) -> undefined {
 					val mut b = {value: 1}
 					val e = {value: 2}
 					p.r = &b
@@ -451,7 +451,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 		// fine.
 		"RepointingAfterABranchEndsTheLoan": {
 			src: `
-				fn f(p: &mut {r: &{value: number}}, cond: boolean) {
+				fn f(p: &mut {r: &{value: number}}, cond: boolean) -> undefined {
 					val mut b = {value: 1}
 					val e = {value: 2}
 					var n = 0
@@ -469,7 +469,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 		// never meets the stored borrow even though p is read afterwards.
 		"StoreOnOneBranchLeavesTheOtherFreeOk": {
 			src: `
-				fn f(k: boolean, p: &mut {peer: &{value: number}}) {
+				fn f(k: boolean, p: &mut {peer: &{value: number}}) -> undefined {
 					val mut c = {value: 0}
 					if k {
 						p.peer = &c
@@ -484,7 +484,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 		// alone and no immutable path to it is left.
 		"OverwrittenFieldStoreIsNoPathOk": {
 			src: `
-				fn f(p: &mut {peer: &{value: number}}, q: &mut {peer: &mut {value: number}}) {
+				fn f(p: &mut {peer: &{value: number}}, q: &mut {peer: &mut {value: number}}) -> undefined {
 					val mut c = {value: 0}
 					val mut d = {value: 1}
 					p.peer = &c
@@ -527,7 +527,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 		// `p.r` and its loan ends there. Moving b before p is read again is fine.
 		"RepointingTheFieldEndsTheLoan": {
 			src: `
-				fn f(p: &mut {r: &mut {value: number}}) {
+				fn f(p: &mut {r: &mut {value: number}}) -> undefined {
 					val mut b = {value: 1}
 					val mut e = {value: 2}
 					p.r = &mut b
@@ -552,7 +552,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 func TestReturnAfterACallReadTheLocal(t *testing.T) {
 	src := `
 declare fn take(x: {peer: &{value: number}}) -> undefined
-fn f(p: &mut {peer: &mut {value: number}}) {
+fn f(p: &mut {peer: &mut {value: number}}) -> {value: number} {
 	val mut c = {value: 1}
 	take({peer: &c})
 	return &mut c
