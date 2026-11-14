@@ -731,3 +731,300 @@ func namespaceHover(q hoverQuery) (string, bool) {
 	}
 	return "", false
 }
+
+// declMemberHover returns the hover text for a member written in a declaration: a class
+// field, method, getter or setter name, or a property of an object type. It returns false
+// when the cursor is on none. A class member carries the class name, as
+// `(property) Dog.name: string`; an object-type property carries none.
+func declMemberHover(q hoverQuery) (string, bool) {
+	switch n := q.node.(type) {
+	case *ast.IdentExpr:
+		// A static field's initializer and a computed key also sit directly under the
+		// class, so the identifier has to be one of the members' own name nodes.
+		class, ok := parentClassDecl(q.ancestors)
+		if !ok {
+			return "", false
+		}
+		if member, ok := memberNamedBy(class, n); ok {
+			return classMemberDeclText(q.info, q.scope, class, member)
+		}
+	case *ast.FuncExpr:
+		// A method's function expression spans its name, so the cursor on the name lands
+		// here rather than on an identifier.
+		class, ok := parentClassDecl(q.ancestors)
+		if !ok {
+			return "", false
+		}
+		if member, ok := memberOfFn(class, n); ok {
+			return classMemberDeclText(q.info, q.scope, class, member)
+		}
+	case *ast.ObjectTypeAnn:
+		if member, ok := objTypeMemberNamedAt(n, q.loc); ok {
+			return objTypeMemberText(q, n, member)
+		}
+	case *ast.FuncTypeAnn:
+		// A method's function type spans its name, so the cursor on a method, getter or
+		// setter name in an object type lands here rather than on the object type.
+		obj, ok := parentObjectTypeAnn(q.ancestors)
+		if !ok {
+			return "", false
+		}
+		if member, ok := objTypeMemberOfFn(obj, n); ok && member.Key().Span().Contains(q.loc) {
+			// The function type's ancestors end at obj, so obj's own ancestors are the ones
+			// before it.
+			outer := q
+			outer.ancestors = q.ancestors[:len(q.ancestors)-1]
+			return objTypeMemberText(outer, obj, member)
+		}
+	}
+	return "", false
+}
+
+// memberNamedBy returns the field, method, getter or setter of class whose name node is
+// ident itself, and false when ident is no member's name node.
+func memberNamedBy(class *ast.ClassDecl, ident *ast.IdentExpr) (ast.ClassElem, bool) {
+	key := ast.ObjKey(ident)
+	for _, elem := range class.Body {
+		if name, ok := classElemName(elem); ok && name == key {
+			return elem, true
+		}
+	}
+	return nil, false
+}
+
+// memberOfFn returns the method, getter or setter of class whose function is fn, and false
+// when no such member has it.
+func memberOfFn(class *ast.ClassDecl, fn *ast.FuncExpr) (ast.ClassElem, bool) {
+	for _, elem := range class.Body {
+		switch elem := elem.(type) {
+		case *ast.MethodElem:
+			if elem.Fn == fn {
+				return elem, true
+			}
+		case *ast.GetterElem:
+			if elem.Fn == fn {
+				return elem, true
+			}
+		case *ast.SetterElem:
+			if elem.Fn == fn {
+				return elem, true
+			}
+		}
+	}
+	return nil, false
+}
+
+// classElemName returns the name key of a field, method, getter or setter, and false for
+// any other class element.
+func classElemName(elem ast.ClassElem) (ast.ObjKey, bool) {
+	switch elem := elem.(type) {
+	case *ast.FieldElem:
+		return elem.Name, true
+	case *ast.MethodElem:
+		return elem.Name, true
+	case *ast.GetterElem:
+		return elem.Name, true
+	case *ast.SetterElem:
+		return elem.Name, true
+	}
+	return nil, false
+}
+
+// sameMemberKind reports whether the class element member and the object-type element
+// elem are the same kind of member: a field and a property, or two methods, getters or
+// setters.
+func sameMemberKind(member ast.ClassElem, elem soltype.ObjTypeElem) bool {
+	switch member.(type) {
+	case *ast.FieldElem:
+		_, ok := elem.(*soltype.PropertyElem)
+		return ok
+	case *ast.MethodElem:
+		_, ok := elem.(*soltype.MethodElem)
+		return ok
+	case *ast.GetterElem:
+		_, ok := elem.(*soltype.GetterElem)
+		return ok
+	case *ast.SetterElem:
+		_, ok := elem.(*soltype.SetterElem)
+		return ok
+	}
+	return false
+}
+
+// parentObjectTypeAnn returns the object type annotation when it is the cursor node's
+// immediate parent.
+func parentObjectTypeAnn(ancestors []ast.Node) (*ast.ObjectTypeAnn, bool) {
+	if len(ancestors) == 0 {
+		return nil, false
+	}
+	obj, ok := ancestors[len(ancestors)-1].(*ast.ObjectTypeAnn)
+	return obj, ok
+}
+
+// parentClassDecl returns the class declaration when it is the cursor node's immediate
+// parent, which holds for a member name written directly in the class body.
+func parentClassDecl(ancestors []ast.Node) (*ast.ClassDecl, bool) {
+	if len(ancestors) == 0 {
+		return nil, false
+	}
+	class, ok := ancestors[len(ancestors)-1].(*ast.ClassDecl)
+	return class, ok
+}
+
+// classMemberDeclText renders member, a field, method, getter or setter of class, in the
+// form a read of it shows. It finds the matching element of the class's members by name
+// and kind, so a getter and a setter of one name each render as themselves. It returns
+// false when info or scope is nil or the class exposes no such member.
+func classMemberDeclText(info *solver.Info, scope *solver.Scope, class *ast.ClassDecl, member ast.ClassElem) (string, bool) {
+	if info == nil || scope == nil {
+		return "", false
+	}
+	key, ok := classElemName(member)
+	if !ok {
+		return "", false
+	}
+	name := objKeyName(key)
+	obj, ok := classMembers(info, scope, class, isStaticMember(member))
+	if !ok {
+		return "", false
+	}
+	for _, elem := range obj.Elems {
+		if soltype.ObjElemName(elem) == name && sameMemberKind(member, elem) {
+			return memberElemText(class.Name.Name, elem), true
+		}
+	}
+	return "", false
+}
+
+// classMembers returns the members of class: its instance members, or its static members
+// when static is true. The static members belong to the class's value, the object a read
+// of the class name yields, so they are looked up through the class's value binding.
+func classMembers(info *solver.Info, scope *solver.Scope, class *ast.ClassDecl, static bool) (*soltype.ObjectType, bool) {
+	if static {
+		binding, ok := scope.GetValue(class.Name.Name)
+		if !ok {
+			return nil, false
+		}
+		return info.MemberObject(binding.DisplayType())
+	}
+	binding, ok := scope.GetType(class.Name.Name)
+	if !ok {
+		return nil, false
+	}
+	return info.MemberObject(binding.Type)
+}
+
+// isStaticMember reports whether member is declared `static`.
+func isStaticMember(member ast.ClassElem) bool {
+	switch member := member.(type) {
+	case *ast.FieldElem:
+		return member.Static
+	case *ast.MethodElem:
+		return member.Static
+	case *ast.GetterElem:
+		return member.Static
+	case *ast.SetterElem:
+		return member.Static
+	}
+	return false
+}
+
+// objTypeMemberText renders the member of the object type annotation obj that member
+// names, where member is one of obj's elements. A property renders from its annotation, as
+// `(property) readonly id: number`. A method, getter or setter renders from obj's type, in
+// the form a read of it shows, so its receiver is left out. It returns false when member
+// is no such element or obj's type is unknown.
+func objTypeMemberText(q hoverQuery, obj *ast.ObjectTypeAnn, member ast.ObjTypeAnnElem) (string, bool) {
+	if prop, ok := member.(*ast.PropertyTypeAnn); ok {
+		return modifiedPropertyText("", objKeyName(prop.Name), printCompact(prop.Value), prop.Readonly, prop.Optional), true
+	}
+	recorded, ok := objTypeAnnMembers(q, obj)
+	if !ok {
+		return "", false
+	}
+	name := objKeyName(member.Key())
+	for _, elem := range recorded.Elems {
+		if soltype.ObjElemName(elem) == name && sameObjTypeMemberKind(member, elem) {
+			return memberElemText("", elem), true
+		}
+	}
+	return "", false
+}
+
+// objTypeAnnMembers returns the members of the type the object type annotation obj
+// denotes. The checker records a type for an object type written as a type, such as the
+// body of an alias. It records none for an interface's body, so that body's members come
+// from the interface's own type, found by the interface's name. It returns false when
+// neither is known.
+func objTypeAnnMembers(q hoverQuery, obj *ast.ObjectTypeAnn) (*soltype.ObjectType, bool) {
+	if q.info == nil {
+		return nil, false
+	}
+	if recorded, ok := q.info.TypeOf(obj).(*soltype.ObjectType); ok {
+		return recorded, true
+	}
+	if len(q.ancestors) == 0 || q.scope == nil {
+		return nil, false
+	}
+	iface, ok := q.ancestors[len(q.ancestors)-1].(*ast.InterfaceDecl)
+	if !ok || iface.TypeAnn != obj {
+		return nil, false
+	}
+	binding, ok := q.scope.GetType(iface.Name.Name)
+	if !ok {
+		return nil, false
+	}
+	return q.info.MemberObject(binding.Type)
+}
+
+// objTypeMemberNamedAt returns the property, method, getter or setter of obj whose name
+// holds loc.
+func objTypeMemberNamedAt(obj *ast.ObjectTypeAnn, loc ast.Location) (ast.ObjTypeAnnElem, bool) {
+	for _, elem := range obj.Elems {
+		switch elem.(type) {
+		case *ast.PropertyTypeAnn, *ast.MethodTypeAnn, *ast.GetterTypeAnn, *ast.SetterTypeAnn:
+			if key := elem.Key(); key != nil && key.Span().Contains(loc) {
+				return elem, true
+			}
+		}
+	}
+	return nil, false
+}
+
+// objTypeMemberOfFn returns the method, getter or setter of obj whose function type is fn.
+func objTypeMemberOfFn(obj *ast.ObjectTypeAnn, fn *ast.FuncTypeAnn) (ast.ObjTypeAnnElem, bool) {
+	for _, elem := range obj.Elems {
+		switch elem := elem.(type) {
+		case *ast.MethodTypeAnn:
+			if elem.Fn == fn {
+				return elem, true
+			}
+		case *ast.GetterTypeAnn:
+			if elem.Fn == fn {
+				return elem, true
+			}
+		case *ast.SetterTypeAnn:
+			if elem.Fn == fn {
+				return elem, true
+			}
+		}
+	}
+	return nil, false
+}
+
+// sameObjTypeMemberKind reports whether the object-type annotation member and the
+// object-type element elem are the same kind of member: two methods, getters or setters.
+func sameObjTypeMemberKind(member ast.ObjTypeAnnElem, elem soltype.ObjTypeElem) bool {
+	switch member.(type) {
+	case *ast.MethodTypeAnn:
+		_, ok := elem.(*soltype.MethodElem)
+		return ok
+	case *ast.GetterTypeAnn:
+		_, ok := elem.(*soltype.GetterElem)
+		return ok
+	case *ast.SetterTypeAnn:
+		_, ok := elem.(*soltype.SetterElem)
+		return ok
+	}
+	return false
+}

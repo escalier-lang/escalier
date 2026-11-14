@@ -1112,6 +1112,58 @@ func TestHoverFromSolver(t *testing.T) {
 			expected: escalierCode("(variant) Result.Ok(value: T)"),
 		},
 		{
+			name: "ClassFieldDecl",
+			files: map[string]string{
+				"lib/a.esc": "export class Dog { name: string, bark(&self) -> string { return self.name } }",
+			},
+			open: "lib/a.esc", line: 0, col: 19,
+			expected: escalierCode("(property) Dog.name: string"),
+		},
+		{
+			name: "ClassMethodDecl",
+			files: map[string]string{
+				"lib/a.esc": "export class Dog { name: string, bark(&self) -> string { return self.name } }",
+			},
+			open: "lib/a.esc", line: 0, col: 33,
+			expected: escalierCode("(method) Dog.bark() -> string"),
+		},
+		{
+			name: "ClassGetterDecl",
+			files: map[string]string{
+				"lib/a.esc": "export class Temp { celsius: number, get fahrenheit(&self) -> number { return self.celsius } }",
+			},
+			open: "lib/a.esc", line: 0, col: 41,
+			expected: escalierCode("(getter) Temp.fahrenheit: number"),
+		},
+		{
+			name: "ObjectTypeProperty",
+			files: map[string]string{
+				"lib/a.esc": "export type Pt = {lat: number, lng: number}",
+			},
+			open: "lib/a.esc", line: 0, col: 18,
+			expected: escalierCode("(property) lat: number"),
+		},
+		{
+			// A static field's initializer sits directly under the class, so a read in it
+			// shows the value it reads rather than a member of the class.
+			name: "StaticFieldInitializerRead",
+			files: map[string]string{
+				"lib/a.esc": "val count = 1\nexport class C { count: number, static total: number = count }",
+			},
+			open: "lib/a.esc", line: 1, col: 55,
+			expected: escalierCode("count: 1"),
+		},
+		{
+			// A getter and a setter share a name, so the declaration resolves by the kind of
+			// member written as well as its name.
+			name: "ClassSetterDecl",
+			files: map[string]string{
+				"lib/a.esc": "export class T { n: number, get x(&self) -> number { return self.n }, set x(&mut self, v: number) { self.n = v } }",
+			},
+			open: "lib/a.esc", line: 0, col: 74,
+			expected: escalierCode("(setter) T.x: number"),
+		},
+		{
 			name: "InferRefInExtends",
 			files: map[string]string{
 				"lib/a.esc": "export type Same<T> = if T : [infer A, A] { A } else { never }",
@@ -1149,6 +1201,30 @@ func TestHoverFromSolver(t *testing.T) {
 				"lib/a.esc": "export fn f(p: &{x: number, y?: number}) -> number | undefined { return p.y }",
 			},
 			open: "lib/a.esc", line: 0, col: 74,
+			expected: escalierCode("(property) y?: number"),
+		},
+		{
+			name: "ReadonlyClassFieldDecl",
+			files: map[string]string{
+				"lib/a.esc": "export class Ticket { readonly id: number }",
+			},
+			open: "lib/a.esc", line: 0, col: 31,
+			expected: escalierCode("(property) readonly Ticket.id: number"),
+		},
+		{
+			name: "ReadonlyObjectTypeProperty",
+			files: map[string]string{
+				"lib/a.esc": "export type Task = {readonly id: number, title: string}",
+			},
+			open: "lib/a.esc", line: 0, col: 29,
+			expected: escalierCode("(property) readonly id: number"),
+		},
+		{
+			name: "OptionalObjectTypeProperty",
+			files: map[string]string{
+				"lib/a.esc": "export type Point = {x: number, y?: number}",
+			},
+			open: "lib/a.esc", line: 0, col: 32,
 			expected: escalierCode("(property) y?: number"),
 		},
 		{
@@ -1198,6 +1274,54 @@ func TestHoverFromSolver(t *testing.T) {
 			},
 			open: "lib/a.esc", line: 0, col: 41,
 			expected: escalierCode("(variant) Result.Err(error: E)"),
+		},
+		{
+			name: "StaticFieldDecl",
+			files: map[string]string{
+				"lib/a.esc": "export class C { static max: number = 5, static make() -> number { return 1 } }",
+			},
+			open: "lib/a.esc", line: 0, col: 24,
+			expected: escalierCode("(property) C.max: number"),
+		},
+		{
+			name: "StaticMethodDecl",
+			files: map[string]string{
+				"lib/a.esc": "export class C { static max: number = 5, static make() -> number { return 1 } }",
+			},
+			open: "lib/a.esc", line: 0, col: 48,
+			expected: escalierCode("(method) C.make() -> number"),
+		},
+		{
+			name: "InterfaceMethodDecl",
+			files: map[string]string{
+				"lib/a.esc": "export interface Shape { area(self) -> number, describe?(self) -> string, get label(self) -> string }",
+			},
+			open: "lib/a.esc", line: 0, col: 25,
+			expected: escalierCode("(method) area() -> number"),
+		},
+		{
+			name: "InterfaceOptionalMethodDecl",
+			files: map[string]string{
+				"lib/a.esc": "export interface Shape { area(self) -> number, describe?(self) -> string, get label(self) -> string }",
+			},
+			open: "lib/a.esc", line: 0, col: 47,
+			expected: escalierCode("(method) describe?() -> string"),
+		},
+		{
+			name: "InterfaceGetterDecl",
+			files: map[string]string{
+				"lib/a.esc": "export interface Shape { area(self) -> number, describe?(self) -> string, get label(self) -> string }",
+			},
+			open: "lib/a.esc", line: 0, col: 78,
+			expected: escalierCode("(getter) label: string"),
+		},
+		{
+			name: "ObjectTypeMethodDecl",
+			files: map[string]string{
+				"lib/a.esc": "export type S = {area(self) -> number}",
+			},
+			open: "lib/a.esc", line: 0, col: 17,
+			expected: escalierCode("(method) area() -> number"),
 		},
 		{
 			name:  "Keyword",
