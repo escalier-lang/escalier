@@ -785,22 +785,22 @@ func TestHoverFromSolver(t *testing.T) {
 			expected: escalierCode("a: number"),
 		},
 		{
-			name:  "NumberLiteral",
+			name:  "NumberLiteralHasNoHover",
 			files: map[string]string{"bin/main.esc": "val x = 5"},
 			open:  "bin/main.esc", line: 0, col: 8,
 		},
 		{
-			name:  "StringLiteralArgument",
+			name:  "StringLiteralArgumentHasNoHover",
 			files: map[string]string{"bin/main.esc": "declare fn f(s: string) -> number\nval n = f(\"title\")"},
 			open:  "bin/main.esc", line: 1, col: 11,
 		},
 		{
-			name:  "TemplateString",
+			name:  "TemplateStringHasNoHover",
 			files: map[string]string{"bin/main.esc": "val n = 1\nval s = `n = ${n}`"},
 			open:  "bin/main.esc", line: 1, col: 9,
 		},
 		{
-			name:  "LiteralPattern",
+			name:  "LiteralPatternHasNoHover",
 			files: map[string]string{"bin/main.esc": "val n: number = 1\nval s = match n { 0 => \"zero\", _ => \"other\" }"},
 			open:  "bin/main.esc", line: 1, col: 18,
 		},
@@ -813,7 +813,7 @@ func TestHoverFromSolver(t *testing.T) {
 			expected: escalierCode("type Point = { x: number, y?: number }"),
 		},
 		{
-			name: "TypeAliasKeyword",
+			name: "TypeAliasKeywordHasNoHover",
 			files: map[string]string{
 				"lib/a.esc": "export type Point = {x: number, y?: number}",
 			},
@@ -1340,7 +1340,7 @@ func TestHoverFromSolver(t *testing.T) {
 			expected: escalierCode("(alias) namespace m\nimport \"std:math\" as m"),
 		},
 		{
-			name: "ImportKeyword",
+			name: "ImportKeywordHasNoHover",
 			files: map[string]string{
 				"lib/a.esc": "import \"std:math\"\nexport val pi: number = math.PI",
 			},
@@ -1427,7 +1427,7 @@ func TestHoverFromSolver(t *testing.T) {
 			expected: escalierCode("defaults: {p: {x: 1}}"),
 		},
 		{
-			name: "TypeofKeyword",
+			name: "TypeofKeywordHasNoHover",
 			files: map[string]string{
 				"lib/a.esc": "val defaults = {x: 1}\nexport type D = typeof defaults",
 			},
@@ -1482,7 +1482,7 @@ func TestHoverFromSolver(t *testing.T) {
 			expected: escalierCode("x: \"s\""),
 		},
 		{
-			name: "WildcardInConditionalExtends",
+			name: "WildcardInConditionalExtendsHasNoHover",
 			files: map[string]string{
 				"lib/a.esc": "export type F<T> = T extends Array<_> ? 1 : 2",
 			},
@@ -1585,7 +1585,7 @@ func TestHoverFromSolver(t *testing.T) {
 			open: "lib/a.esc", line: 4, col: 17,
 		},
 		{
-			name: "InstancePatternShadowedByNamespaceSibling",
+			name: "InstancePatternShadowedByNamespaceSiblingHasNoHover",
 			files: map[string]string{
 				"lib/errs/use.esc": "export class HttpError { code: number }\nexport fn f(e: HttpError) -> number {\n    return match e {\n        HttpError {code} => code,\n    }\n}",
 				"lib/main.esc":     "export class HttpError { code: string }\n",
@@ -1593,7 +1593,7 @@ func TestHoverFromSolver(t *testing.T) {
 			open: "lib/errs/use.esc", line: 3, col: 10,
 		},
 		{
-			name: "InstancePatternFieldShadowedByNamespaceSibling",
+			name: "InstancePatternFieldShadowedByNamespaceSiblingHasNoHover",
 			files: map[string]string{
 				"lib/errs/use.esc": "export class HttpError { code: number }\nexport fn f(e: HttpError) -> number {\n    return match e {\n        HttpError {code} => code,\n    }\n}",
 				"lib/main.esc":     "export class HttpError { code: string }\n",
@@ -1601,7 +1601,7 @@ func TestHoverFromSolver(t *testing.T) {
 			open: "lib/errs/use.esc", line: 3, col: 20,
 		},
 		{
-			name:  "Keyword",
+			name:  "KeywordHasNoHover",
 			files: map[string]string{"bin/main.esc": "val x = 5"},
 			open:  "bin/main.esc", line: 0, col: 1,
 		},
