@@ -150,14 +150,6 @@ func writeFile(path string, dryRun, verbose bool) (stats, error) {
 			return true
 		}
 		rewritten, unresolved, unwritable, panicked := writeSourceSafely(head + value)
-		// An edit that falls in the prefix belongs to the constant, which the source of
-		// every test that joins it shares, so the literal is left as it is.
-		if panicked == nil && unresolved == "" {
-			if !strings.HasPrefix(rewritten, head) {
-				return true
-			}
-			rewritten = rewritten[len(head):]
-		}
 		if panicked != nil {
 			fmt.Fprintf(os.Stderr, "%s: skipped, the checker panicked: %v\n", fset.Position(lit.Pos()), panicked)
 			return true
@@ -170,9 +162,12 @@ func writeFile(path string, dryRun, verbose bool) (stats, error) {
 			}
 			return true
 		}
-		if panicked != nil || unresolved != "" {
-			rewritten = value
+		// An edit that falls in the prefix belongs to the constant, which the source of
+		// every test that joins it shares, so the literal is left as it is.
+		if !strings.HasPrefix(rewritten, head) {
+			return true
 		}
+		rewritten = rewritten[len(head):]
 		if rewritten == value {
 			return true
 		}
