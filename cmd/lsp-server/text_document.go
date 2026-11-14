@@ -245,19 +245,10 @@ func (s *Server) textDocumentDidChange(context *glsp.Context, params *protocol.D
 	return nil
 }
 
+// textDocumentHover returns the hover for the node at the cursor, or nil when the cursor
+// is on nothing with a hover to show.
 func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.HoverParams) (*protocol.Hover, error) {
-	fmt.Fprintf(os.Stderr, "textDocumentHover - uri = %s\n", params.TextDocument.URI)
-
 	loc := posToLoc(server.lineMapForURI(params.TextDocument.URI), params.Position)
-	// The client's position is already a line and column, so report it directly
-	// rather than converting the offset back. It is 0-based, where a person
-	// counts from 1.
-	value := fmt.Sprintf(
-		"textDocumentHover - loc = line:%d, column:%d\n",
-		params.Position.Line+1,
-		params.Position.Character+1,
-	)
-
 	sourceID := server.sourceIDForURI(params.TextDocument.URI)
 	server.mu.RLock()
 	var hoverNode ast.Node
@@ -267,26 +258,32 @@ func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.
 		info = co.InfoFor(sourceID)
 	}
 	server.mu.RUnlock()
-	switch hoverNode.(type) {
-	case ast.Expr, ast.Pat:
-		if info == nil {
-			break
-		}
-		server.solverMu.RLock()
-		if t := info.DisplayTypeOf(hoverNode); t != nil {
-			value = "`" + hoverText(info, hoverNode, t) + "`"
-		}
-		server.solverMu.RUnlock()
+	if info == nil {
+		return nil, nil
 	}
+	switch hoverNode.(type) {
+	// A literal or template string already shows its value in the source, so a hover
+	// on it adds nothing.
+	case *ast.LiteralExpr, *ast.TemplateLitExpr, *ast.LitPat:
+		return nil, nil
+	case ast.Expr, ast.Pat:
+		server.solverMu.RLock()
+		defer server.solverMu.RUnlock()
+		if t := info.DisplayTypeOf(hoverNode); t != nil {
+			return codeHover(hoverText(info, hoverNode, t)), nil
+		}
+	}
+	return nil, nil
+}
 
-	hover := protocol.Hover{
+// codeHover returns a hover that shows code as an Escalier code block.
+func codeHover(code string) *protocol.Hover {
+	return &protocol.Hover{
 		Contents: protocol.MarkupContent{
 			Kind:  protocol.MarkupKindMarkdown,
-			Value: value,
+			Value: "```escalier\n" + code + "\n```",
 		},
-		Range: nil,
 	}
-	return &hover, nil
 }
 
 // hoverText renders the hover for node, whose display type is t. A binding, or a read
