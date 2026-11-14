@@ -175,7 +175,8 @@ fn main() -> undefined {
 ```
 
 `with` removes `Theme` from the requirements of the calls in its block, as
-`catch` removes the exceptions its arms match.
+`catch` removes the exceptions its arms match. A `with` whose result is a React
+element also removes it from the element's type (section 6.6.3).
 
 ### 6.3 Combining requirements
 
@@ -247,34 +248,148 @@ created in.
 
 ### 6.6 React
 
-React calls a child component after its parent returns, so a requirement belongs
-on the element type, not on the call. `<Button/>` has type `Element needs R`,
-where `R` is `Button`'s requirement. A context created without a default value
-is a requirement, and one created with a default adds none.
+React calls a child component after its parent returns, and it resolves a
+context by the element's position in the tree, not by where the element was
+created. So a requirement belongs on the element type, not on the call. This is
+the one place a capturable requirement stays on a value's type.
+
+#### 6.6.1 Components
+
+A component reads a context the way any function does, and its requirements are
+inferred the same way. A context declared without a default value is a
+requirement, and one declared with a default adds none.
 
 ```esc
 context Theme: ThemeValue                 // React.createContext with no default
 
-fn useTheme() -> ThemeValue needs Theme | Render { ... }
-
-fn Button(props: {label: string}) -> Element needs _ {
-    val theme = useTheme()
-    return <button class={theme.button}>{props.label}</button>
+fn Button(props: {label: string}) -> Element needs Theme {
+    return <button class={buttonClass()}>{props.label}</button>
 }
-// inferred: fn (props: {label: string}) -> Element needs Theme | Render
 
-fn ThemeProvider<R>(props: {value: ThemeValue, children: Element needs R}) -> Element needs Exclude<R, Theme>
+fn buttonClass() -> string needs Theme { return Theme.button }
 
-// Root.render accepts only an element whose requirements are environments
+fn useTheme() -> ThemeValue needs Theme | Render { ... }
+```
+
+`<C/>` has type `Element needs N`, where `N` is `C`'s requirements minus
+`Render`. React provides `Render` when it renders `C`. A component's
+requirements include those of every element it returns, so a component that
+renders `<Button/>` needs `Theme` itself unless it provides it.
+
+`Render` is a requirement only a component body has, so calling a hook outside a
+component is an error. That replaces the hooks lint rule. `Render` is
+extent-bound (section 6.8).
+
+`Root.render` accepts only an element whose requirements are environments:
+
+```esc
 fn render(self, el: Element needs Env<window>) -> undefined
 ```
 
-`Render` is a requirement only a component body has, so calling `useTheme`
-outside a component is an error. That replaces the hooks lint rule.
+A context requirement that reaches it is an error naming the component that
+needs the context and the chain of elements down to it.
+
+#### 6.6.2 Pass-through
+
+An element-typed parameter or prop with no `needs` clause gets a fresh
+requirement variable. A returned `Element` includes the variables of the
+function's element-typed parameters and props, joined with any requirement its
+clause writes. So a component that takes children passes their requirements
+through without writing anything:
+
+```esc
+fn Card(props: {children: Element}) -> Element {
+    return <div class="card">{props.children}</div>
+}
+// means: fn <R>(props: {children: Element needs R}) -> Element needs R
+
+fn Panel(props: {title: string, children: Element}) -> Element needs Theme {
+    return <section class={Theme.panel}><h2>{props.title}</h2>{props.children}</section>
+}
+// means: fn <R>(props: {title: string, children: Element needs R}) -> Element needs Theme | R
+```
+
+When a parent writes `<Card><Button/></Card>`, the parent creates the
+`<Button/>` element, so its `Theme` requirement travels with the element through
+`Card`'s variable. `Card` needs nothing of its own.
+
+A component with requirements of its own passes the others through too.
+Otherwise `Panel` would accept only children that need `Theme` or nothing, and a
+child needing `Locale` could not be placed inside it, even under a root that
+provides `Locale`.
+
+The default covers element-typed parameters, props and slots, including render
+props such as `render: fn (Item) -> Element`. It does not cover fields or
+variables. It differs from `throws`, where a bare `fn () -> T` accepts only a
+callback that raises nothing. The difference is deliberate. Children are almost
+always passed through, and a missing variable would reject them at every call
+site.
+
+`needs never` on an element prop declares that the prop accepts no
+requirements. A component writes it when it renders the element somewhere other
+than under itself:
+
+- under a separate React root, such as one created with `createRoot` inside an
+  iframe, since context does not cross roots;
+- through a registry rendered elsewhere, such as a toast manager that stores
+  elements and renders them under a host near the app root.
+
+The default is sound without it. Handing `props.children` to a registry whose
+parameter is `Element needs never` is an error inside the component's body, at
+the hand-off, and writing `needs never` on the prop moves that error to the
+callers. React portals keep context, so a portal is not one of these cases.
+
+#### 6.6.3 Providers
+
+A `with` block whose result is an `Element` removes the requirement from the
+result's type and compiles to a React provider around it. A provider component
+is therefore ordinary code:
+
+```esc
+fn ThemeProvider<R>(props: {value: ThemeValue, children: Element needs R}) -> Element needs _ {
+    return with Theme = props.value { props.children }
+}
+// inferred: fn <R>(props: {value: ThemeValue, children: Element needs R}) -> Element needs Exclude<R, Theme>
+```
+
+`with` is the only construct that removes a requirement, so nothing has to
+declare that `ThemeProvider` provides `Theme`. A component may also write the
+`with` directly:
+
+```esc
+fn App() -> Element {
+    return with Theme = dark { <Layout><Button label="Save" /></Layout> }
+}
+```
+
+Only the block's result is wrapped in the provider. An element created inside
+the block that leaves another way, such as through an outer variable, keeps its
+requirement in its type.
 
 `ThemeProvider` removes a requirement from a requirement variable. `Exclude` in
 the prelude is a conditional type, and a conditional type on an unsolved
-variable does not reduce during inference. Section 9 lists the two ways out.
+variable does not reduce during inference. Open question 1 lists the two ways
+out.
+
+#### 6.6.4 Codegen
+
+A context declaration compiles to `React.createContext(undefined)`. A component
+body builds its own `$ctx` from `React.use` for the contexts it reads directly,
+so the helpers it calls take `$ctx` as they would anywhere else. A `with` whose
+result is an element compiles to the context's provider:
+
+```js
+const Theme = React.createContext(undefined);
+
+function Button(props) {
+    const $ctx = { Theme: React.use(Theme) };
+    return <button className={buttonClass($ctx)}>{props.label}</button>;
+}
+
+function ThemeProvider(props) {
+    return <Theme value={props.value}>{props.children}</Theme>;
+}
+```
 
 The React planning in
 [planning/react_and_jsx/requirements.md](../react_and_jsx/requirements.md) §4.5
@@ -324,8 +439,7 @@ requirements add no parameter. They are checked and erased. The runtime cost is
 one closure allocation each time a declared function with a context requirement
 is used as a value.
 
-React contexts compile to React's own API: `context` to `createContext`, reads
-to `useContext`, and the provider to `Context.Provider`. They do not use `$ctx`.
+Section 6.6.4 has how React contexts compile.
 
 ### 6.8 Promises and generators
 
