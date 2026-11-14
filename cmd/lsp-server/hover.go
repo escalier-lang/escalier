@@ -466,7 +466,7 @@ func objLiteralPropText(info *solver.Info, prop *ast.PropertyExpr) (string, bool
 func memberElemText(owner string, elem soltype.ObjTypeElem) string {
 	switch elem := elem.(type) {
 	case *soltype.PropertyElem:
-		return propertyText(owner, elem.Name, soltype.Print(elem.Type))
+		return modifiedPropertyText(owner, elem.Name, soltype.Print(elem.Type), elem.Readonly, elem.Optional)
 	case *soltype.GetterElem:
 		return "(getter) " + qualify(owner, elem.Name) + ": " + soltype.Print(elem.Type)
 	case *soltype.SetterElem:
@@ -488,6 +488,21 @@ func memberElemText(owner string, elem soltype.ObjTypeElem) string {
 // owner when it is empty.
 func propertyText(owner, name, typ string) string {
 	return "(property) " + qualify(owner, name) + ": " + typ
+}
+
+// modifiedPropertyText renders a property member as propertyText does, adding the
+// `readonly` and `?` modifiers the property declares, as
+// `(property) readonly Task.id: number` and `(property) Point.y?: number`.
+func modifiedPropertyText(owner, name, typ string, readonly, optional bool) string {
+	text := "(property) "
+	if readonly {
+		text += "readonly "
+	}
+	text += qualify(owner, name)
+	if optional {
+		text += "?"
+	}
+	return text + ": " + typ
 }
 
 // methodSignature renders a method's parameters and return without its receiver, as
