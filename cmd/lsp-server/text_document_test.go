@@ -1112,6 +1112,16 @@ func TestHoverFromSolver(t *testing.T) {
 			expected: escalierCode("(property) lat: number"),
 		},
 		{
+			// A static field's initializer sits directly under the class, so a read in it
+			// shows the value it reads rather than a member of the class.
+			name: "StaticFieldInitializerRead",
+			files: map[string]string{
+				"lib/a.esc": "val count = 1\nexport class C { count: number, static total: number = count }",
+			},
+			open: "lib/a.esc", line: 1, col: 55,
+			expected: escalierCode("count: 1"),
+		},
+		{
 			name:  "Keyword",
 			files: map[string]string{"bin/main.esc": "val x = 5"},
 			open:  "bin/main.esc", line: 0, col: 1,

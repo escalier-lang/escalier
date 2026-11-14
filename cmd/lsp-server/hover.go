@@ -680,8 +680,10 @@ func namespaceHover(q hoverQuery) (string, bool) {
 func declMemberHover(q hoverQuery) (string, bool) {
 	switch n := q.node.(type) {
 	case *ast.IdentExpr:
+		// A static field's initializer and a computed key also sit directly under the
+		// class, so the identifier has to be one of the members' own names.
 		class, ok := parentClassDecl(q.ancestors)
-		if !ok {
+		if !ok || !isMemberName(class, n) {
 			return "", false
 		}
 		return classMemberDeclText(q.info, q.scope, class, n.Name)
@@ -699,6 +701,33 @@ func declMemberHover(q hoverQuery) (string, bool) {
 		return objTypePropText(n, q.loc)
 	}
 	return "", false
+}
+
+// isMemberName reports whether ident is the name a field, method, getter or setter of
+// class is declared under.
+func isMemberName(class *ast.ClassDecl, ident *ast.IdentExpr) bool {
+	key := ast.ObjKey(ident)
+	for _, elem := range class.Body {
+		switch elem := elem.(type) {
+		case *ast.FieldElem:
+			if elem.Name == key {
+				return true
+			}
+		case *ast.MethodElem:
+			if elem.Name == key {
+				return true
+			}
+		case *ast.GetterElem:
+			if elem.Name == key {
+				return true
+			}
+		case *ast.SetterElem:
+			if elem.Name == key {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // memberNameOfFn returns the name of the method, getter or setter of class whose function
