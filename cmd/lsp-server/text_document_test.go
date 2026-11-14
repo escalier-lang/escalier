@@ -1120,6 +1120,30 @@ func TestHoverFromSolver(t *testing.T) {
 			expected: escalierCode("(property) y?: number"),
 		},
 		{
+			name: "StaticFieldRead",
+			files: map[string]string{
+				"lib/a.esc": "export class C { static max: number = 5, static make() -> number { return 1 } }\nexport val m = C.max",
+			},
+			open: "lib/a.esc", line: 1, col: 17,
+			expected: escalierCode("(property) C.max: number"),
+		},
+		{
+			name: "StaticMethodRead",
+			files: map[string]string{
+				"lib/a.esc": "export class C { static max: number = 5, static make() -> number { return 1 } }\nexport val k = C.make()",
+			},
+			open: "lib/a.esc", line: 1, col: 17,
+			expected: escalierCode("(method) C.make() -> number"),
+		},
+		{
+			name: "OptionalMethodRead",
+			files: map[string]string{
+				"lib/a.esc": "export fn f(s: &{describe?(self) -> string}) -> number { val d = s.describe\n return 1 }",
+			},
+			open: "lib/a.esc", line: 0, col: 67,
+			expected: escalierCode("(method) describe?() -> string"),
+		},
+		{
 			name:  "Keyword",
 			files: map[string]string{"bin/main.esc": "val x = 5"},
 			open:  "bin/main.esc", line: 0, col: 1,
