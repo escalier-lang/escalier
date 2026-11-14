@@ -72,13 +72,13 @@ func TestReturnLifetimeElision(t *testing.T) {
 			name:     "ThrownBorrowTiedToEveryInput",
 			src:      "fn f(a: &Flat, b: &Flat, c: boolean) -> never throws &Flat { if c { throw a } else { throw b } }",
 			binding:  "f",
-			expected: "fn <'a>(a: &'a Flat, b: &'a Flat, c: boolean) -> never throws &'a Flat",
+			expected: "fn <'a: 'c, 'b: 'c, 'c>(a: &'a Flat, b: &'b Flat, c: boolean) -> never throws &'c Flat",
 		},
 		{
 			name:     "ThrownBorrowOfOneInputTiedToEveryInput",
 			src:      "fn g(a: &Flat, b: &Flat, c: boolean) -> never throws &Flat { throw a }",
 			binding:  "g",
-			expected: "fn <'a>(a: &'a Flat, b: &'a Flat, c: boolean) -> never throws &'a Flat",
+			expected: "fn <'a: 'c, 'b: 'c, 'c>(a: &'a Flat, b: &'b Flat, c: boolean) -> never throws &'c Flat",
 		},
 		{
 			name:     "ReturnedFunctionTiedToEveryInput",
