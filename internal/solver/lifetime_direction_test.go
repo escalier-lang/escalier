@@ -35,7 +35,7 @@ func TestBorrowOutlivesItsDestination(t *testing.T) {
 			name: "each argument funneled into one lifetime parameter outlives the result",
 			src: `
 				fn twoArgs<'r>(a: &'r {x: number}, b: &'r {x: number}) -> &'r {x: number} { return a }
-				fn callTwo(a: &{x: number}, b: &{x: number}) { return twoArgs(a, b) }
+				fn callTwo<'a: 'c, 'b: 'c, 'c>(a: &'a {x: number}, b: &'b {x: number}) -> &'c {x: number} { return twoArgs(a, b) }
 			`,
 			value: "callTwo",
 			typ:   "fn <'a: 'c, 'b: 'c, 'c>(a: &'a {x: number}, b: &'b {x: number}) -> &'c {x: number}",

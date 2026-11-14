@@ -23,7 +23,7 @@ func TestInferObjectRestConvertsAccessors(t *testing.T) {
 			// property at the getter's own type.
 			name: "GetterBecomesAProperty",
 			src: `
-				fn f(p: {x: number, get y(&self) -> string}) {
+				fn f(p: {x: number, get y(&self) -> string}) -> {y: string} {
 					val {x, ...rest} = p
 					return rest
 				}`,
@@ -34,7 +34,7 @@ func TestInferObjectRestConvertsAccessors(t *testing.T) {
 			// the copy stores. The name survives rather than being dropped.
 			name: "SetterOnlyBecomesUndefined",
 			src: `
-				fn f(p: {x: number, set y(&mut self, v: string)}) {
+				fn f(p: {x: number, set y(&mut self, v: string)}) -> {y: undefined} {
 					val {x, ...rest} = p
 					return rest
 				}`,
@@ -45,7 +45,7 @@ func TestInferObjectRestConvertsAccessors(t *testing.T) {
 			// collapses to the single property the getter's type gives.
 			name: "GetterAndSetterPairCollapse",
 			src: `
-				fn f(p: {x: number, get y(&self) -> string, set y(&mut self, v: string)}) {
+				fn f(p: {x: number, get y(&self) -> string, set y(&mut self, v: string)}) -> {y: string} {
 					val {x, ...rest} = p
 					return rest
 				}`,
@@ -56,7 +56,7 @@ func TestInferObjectRestConvertsAccessors(t *testing.T) {
 			// property does not carry it.
 			name: "GetterThrowsIsNotStored",
 			src: `
-				fn f(p: {x: number, get y(&self) -> string throws boolean}) {
+				fn f(p: {x: number, get y(&self) -> string throws boolean}) -> {y: string} {
 					val {x, ...rest} = p
 					return rest
 				}`,
@@ -67,7 +67,7 @@ func TestInferObjectRestConvertsAccessors(t *testing.T) {
 			// leftover rather than flattening.
 			name: "MethodCarriesThrough",
 			src: `
-				fn f(p: {x: number, m(&self, a: number) -> string}) {
+				fn f(p: {x: number, m(&self, a: number) -> string}) -> {m(a: number) -> string} {
 					val {x, ...rest} = p
 					return rest
 				}`,
@@ -92,7 +92,7 @@ func TestInferObjectRestMembersStayUsable(t *testing.T) {
 				v: number,
 				get doubled(&self) -> number { return self.v },
 			}
-			fn f(b: Box) {
+			fn f(b: Box) -> number {
 				val {v, ...rest} = b
 				return rest.doubled
 			}
@@ -103,7 +103,7 @@ func TestInferObjectRestMembersStayUsable(t *testing.T) {
 
 	t.Run("a converted setter-only name reads undefined", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
-			fn f(p: {x: number, set y(&mut self, v: string)}) {
+			fn f(p: {x: number, set y(&mut self, v: string)}) -> undefined {
 				val {x, ...rest} = p
 				return rest.y
 			}
@@ -118,7 +118,7 @@ func TestInferObjectRestMembersStayUsable(t *testing.T) {
 				v: number,
 				set value(&mut self, x: number) { self.v = x },
 			}
-			fn f(b: Box) {
+			fn f(b: Box) -> undefined {
 				val {v, ...rest} = b
 				return rest.value
 			}
@@ -134,7 +134,7 @@ func TestInferObjectRestMembersStayUsable(t *testing.T) {
 				get value(&self) -> number { return self.v },
 				set value(&mut self, x: number) { self.v = x },
 			}
-			fn f(b: Box) {
+			fn f(b: Box) -> number {
 				val {v, ...rest} = b
 				return rest.value
 			}
@@ -151,7 +151,7 @@ func TestInferObjectRestMembersStayUsable(t *testing.T) {
 				v: number,
 				get doubled(&self) -> number { return self.v },
 			}
-			fn f(b: Box) {
+			fn f(b: Box) -> {doubled: number, ...} {
 				val {v, ...mut rest} = b
 				rest.doubled = 5
 				return rest
@@ -167,7 +167,7 @@ func TestInferObjectRestMembersStayUsable(t *testing.T) {
 				v: number,
 				getV(&self) -> number { return self.v },
 			}
-			fn f(b: Box) {
+			fn f(b: Box) -> number {
 				val {v, ...rest} = b
 				return rest.getV()
 			}
@@ -195,7 +195,7 @@ func TestInferObjectPatternAccessorField(t *testing.T) {
 		{
 			name: "a getter field on an object type binds",
 			src: `
-				fn f(p: {x: number, get y(&self) -> string}) {
+				fn f(p: {x: number, get y(&self) -> string}) -> string {
 					val {y} = p
 					return y
 				}
@@ -209,7 +209,7 @@ func TestInferObjectPatternAccessorField(t *testing.T) {
 					v: number,
 					get doubled(&self) -> number { return self.v },
 				}
-				fn f(b: Box) { return b.doubled }
+				fn f(b: Box) -> number { return b.doubled }
 			`,
 			want: "fn (b: Box) -> number",
 		},
@@ -220,7 +220,7 @@ func TestInferObjectPatternAccessorField(t *testing.T) {
 					v: number,
 					get doubled(&self) -> number { return self.v },
 				}
-				fn f(b: Box) {
+				fn f(b: Box) -> {v: number, ...} {
 					val {doubled, ...rest} = b
 					return rest
 				}
@@ -234,7 +234,7 @@ func TestInferObjectPatternAccessorField(t *testing.T) {
 					v: number,
 					set value(&mut self, x: number) { self.v = x },
 				}
-				fn f(b: Box) {
+				fn f(b: Box) -> {v: number, ...} {
 					val {value, ...rest} = b
 					return rest
 				}
@@ -250,7 +250,7 @@ func TestInferObjectPatternAccessorField(t *testing.T) {
 					get value(&self) -> number { return self.v },
 					set value(&mut self, x: number) { self.v = x },
 				}
-				fn f(b: Box) {
+				fn f(b: Box) -> [number, {v: number, ...}] {
 					val {value, ...rest} = b
 					return [value, rest]
 				}
@@ -285,7 +285,7 @@ func TestInferObjectRestOnClassInstance(t *testing.T) {
 			name: "InstanceFields",
 			src: `
 				class Pt { x: number, y: string }
-				fn f(p: Pt) {
+				fn f(p: Pt) -> {y: string, ...} {
 					val {x, ...rest} = p
 					return rest
 				}`,
@@ -297,7 +297,7 @@ func TestInferObjectRestOnClassInstance(t *testing.T) {
 			name: "InstanceEveryFieldNamed",
 			src: `
 				class Pt { x: number, y: string }
-				fn f(p: Pt) {
+				fn f(p: Pt) -> {...} {
 					val {x, y, ...rest} = p
 					return rest
 				}`,
@@ -309,7 +309,7 @@ func TestInferObjectRestOnClassInstance(t *testing.T) {
 			name: "GenericInstanceReadsAtItsArgument",
 			src: `
 				class Box<T> { value: T, tag: string }
-				fn f(b: Box<number>) {
+				fn f(b: Box<number>) -> {value: number, ...} {
 					val {tag, ...rest} = b
 					return rest
 				}`,
@@ -324,7 +324,7 @@ func TestInferObjectRestOnClassInstance(t *testing.T) {
 					v: number,
 					static make() -> number { return 1 },
 				}
-				fn f(b: Box) {
+				fn f(b: Box) -> {...} {
 					val {v, ...rest} = b
 					return rest
 				}`,
@@ -341,7 +341,7 @@ func TestInferObjectRestOnClassInstance(t *testing.T) {
 					v: number,
 					get doubled(&mut self) -> number { return self.v },
 				}
-				fn f(b: Box) {
+				fn f(b: Box) -> {doubled: number, ...} {
 					val {v, ...rest} = b
 					return rest
 				}`,
@@ -352,7 +352,7 @@ func TestInferObjectRestOnClassInstance(t *testing.T) {
 			name: "InstanceMatchArm",
 			src: `
 				class Pt { x: number, y: string }
-				fn f(p: Pt) {
+				fn f(p: Pt) -> {y: string, ...} {
 					return match p {
 						{x, ...rest} => rest
 					}
@@ -365,7 +365,7 @@ func TestInferObjectRestOnClassInstance(t *testing.T) {
 			name: "InstancePatternArm",
 			src: `
 				class Pt { x: number, y: string }
-				fn f(p: Pt) {
+				fn f(p: Pt) -> {y: string, ...} {
 					return match p {
 						Pt {x, ...rest} => rest
 					}
@@ -381,7 +381,7 @@ func TestInferObjectRestOnClassInstance(t *testing.T) {
 					v: number,
 					set value(&mut self, x: number) { self.v = x },
 				}
-				fn f(b: Box) {
+				fn f(b: Box) -> {value: undefined, ...} {
 					val {v, ...rest} = b
 					return rest
 				}`,
@@ -397,7 +397,7 @@ func TestInferObjectRestOnClassInstance(t *testing.T) {
 					get value(&self) -> number { return self.v },
 					set value(&mut self, x: number) { self.v = x },
 				}
-				fn f(b: Box) {
+				fn f(b: Box) -> {value: number, ...} {
 					val {v, ...rest} = b
 					return rest
 				}`,
@@ -414,7 +414,7 @@ func TestInferObjectRestOnClassInstance(t *testing.T) {
 					get value(&self) -> number { return self.v },
 					set value(&mut self, x: number | string) { },
 				}
-				fn f(b: Box) {
+				fn f(b: Box) -> {value: number, ...} {
 					val {v, ...rest} = b
 					return rest
 				}`,
@@ -429,7 +429,7 @@ func TestInferObjectRestOnClassInstance(t *testing.T) {
 					v: number,
 					static set cfg(x: number) { },
 				}
-				fn f(b: Box) {
+				fn f(b: Box) -> {...} {
 					val {v, ...rest} = b
 					return rest
 				}`,
@@ -443,7 +443,7 @@ func TestInferObjectRestOnClassInstance(t *testing.T) {
 					v: number,
 					set value(&mut self, x: number) { self.v = x },
 				}
-				fn f(b: Box) {
+				fn f(b: Box) -> {value: undefined, ...} {
 					return match b {
 						{v, ...rest} => rest
 					}
@@ -566,7 +566,7 @@ func TestInferObjectRestOverUnion(t *testing.T) {
 		{
 			name: "a plain read of a key an exact member lacks",
 			src: `
-				fn f(p: {kind: "a", b: string} | {kind: "c", c: number}) {
+				fn f(p: {kind: "a", b: string} | {kind: "c", c: number}) -> string | undefined {
 					return p.b
 				}
 			`,
@@ -579,7 +579,7 @@ func TestInferObjectRestOverUnion(t *testing.T) {
 		{
 			name: "a plain read of a key one member lacks",
 			src: `
-				fn f(p: {kind: "a", b: string} | {kind: "c", c: number, ...}) {
+				fn f(p: {kind: "a", b: string} | {kind: "c", c: number, ...}) -> unknown {
 					return p.b
 				}
 			`,
@@ -589,7 +589,7 @@ func TestInferObjectRestOverUnion(t *testing.T) {
 		{
 			name: "a destructured key one member lacks reads as the plain read does",
 			src: `
-				fn f(p: {kind: "a", b: string} | {kind: "c", c: number, ...}) {
+				fn f(p: {kind: "a", b: string} | {kind: "c", c: number, ...}) -> [unknown, {kind: "a"} | {kind: "c", c: number, ...}] {
 					val {b, ...rest} = p
 					return [b, rest]
 				}
@@ -626,7 +626,7 @@ func TestInferObjectRestOverUnion(t *testing.T) {
 		{
 			name: "a destructured key through a non-object member reports the plain read's error",
 			src: `
-				fn f(p: {kind: "a", b: string} | number) {
+				fn f(p: {kind: "a", b: string} | number) -> {...} {
 					val {b, ...rest} = p
 					return rest
 				}
