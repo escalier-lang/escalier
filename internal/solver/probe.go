@@ -206,6 +206,12 @@ func (p *Probe) mutatedBounds() bool {
 			return true
 		}
 	}
+	return p.mutatedLtBounds()
+}
+
+// mutatedLtBounds reports whether any lifetime variable this probe journaled has grown a
+// bound since first touch.
+func (p *Probe) mutatedLtBounds() bool {
 	for _, e := range p.ltEntries {
 		if len(e.v.LowerBounds) > e.prevLower || len(e.v.UpperBounds) > e.prevUpper {
 			return true

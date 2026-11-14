@@ -168,7 +168,7 @@ func TestSignatureAction(t *testing.T) {
 			name:       "ThrowsGetsLifetime",
 			src:        "type Flat = {x: number}\nfn f(a: &Flat, b: &Flat, c: boolean) throws &Flat { if c { throw a } else { throw b } }",
 			cursor:     "f(",
-			expected:   "type Flat = {x: number}\nfn f<'a: 'c, 'b: 'c, 'c>(a: &'a Flat, b: &'b Flat, c: boolean) -> never throws &'c Flat { if c { throw a } else { throw b } }",
+			expected:   "type Flat = {x: number}\nfn f<'a>(a: &'a Flat, b: &'a Flat, c: boolean) -> never throws &'a Flat { if c { throw a } else { throw b } }",
 			diagnostic: "1:3-1:4 'f' is declared at a script's top level, so it needs a return type; write `-> never`",
 		},
 		{

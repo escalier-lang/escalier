@@ -210,7 +210,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "ImmutableCopy",
 			site:   "FieldStore",
 			src: `
-				fn g(o: &mut {f: &{x: number}}, r: &{x: number}) -> number {
+				fn g<'r>(o: &mut {f: &'r {x: number}}, r: &'r {x: number}) -> number {
 					o.f = r
 					return o.f.x + r.x
 				}
@@ -220,7 +220,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "ImmutableCopy",
 			site:   "ElementStore",
 			src: `
-				fn g(a: &mut Array<&{x: number}>, r: &{x: number}) -> number {
+				fn g<'r>(a: &mut Array<&'r {x: number}>, r: &'r {x: number}) -> number {
 					a[0] = r
 					return a[0].x + r.x
 				}
@@ -315,7 +315,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableCopy",
 			site:   "FieldStore",
 			src: `
-				fn g(o: &mut {f: &mut {x: number}}, m: &mut {x: number}) {
+				fn g<'m>(o: &mut {f: &'m mut {x: number}}, m: &'m mut {x: number}) {
 					o.f = m
 					o.f.x = 1
 					m.x = 2
@@ -326,7 +326,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableCopy",
 			site:   "ElementStore",
 			src: `
-				fn g(a: &mut Array<&mut {x: number}>, m: &mut {x: number}) {
+				fn g<'m>(a: &mut Array<&'m mut {x: number}>, m: &'m mut {x: number}) {
 					a[0] = m
 					a[0].x = 1
 					m.x = 2
@@ -405,7 +405,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "Narrow",
 			site:   "FieldStore",
 			src: `
-				fn g(o: &mut {f: &{x: number}}, m: &mut {x: number}) -> number {
+				fn g<'m>(o: &mut {f: &'m {x: number}}, m: &'m mut {x: number}) -> number {
 					o.f = m
 					return o.f.x + m.x
 				}
@@ -415,7 +415,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "Narrow",
 			site:   "ElementStore",
 			src: `
-				fn g(a: &mut Array<&{x: number}>, m: &mut {x: number}) -> number {
+				fn g<'m>(a: &mut Array<&'m {x: number}>, m: &'m mut {x: number}) -> number {
 					a[0] = m
 					return a[0].x + m.x
 				}
@@ -2936,7 +2936,7 @@ func TestFlowMatrixMissingFieldBorrow(t *testing.T) {
 			column: "UnwrittenFieldBorrow",
 			site:   "FieldStore",
 			src: `
-				fn g(o: &mut {f: &{x: number}}, h: &{f: {x: number}}) {
+				fn g<'h>(o: &mut {f: &'h {x: number}}, h: &'h {f: {x: number}}) {
 					o.f = h.f
 				}
 			`,
@@ -2946,7 +2946,7 @@ func TestFlowMatrixMissingFieldBorrow(t *testing.T) {
 			column: "UnwrittenFieldBorrow",
 			site:   "ElementStore",
 			src: `
-				fn g(a: &mut Array<&{x: number}>, h: &{f: {x: number}}) {
+				fn g<'h>(a: &mut Array<&'h {x: number}>, h: &'h {f: {x: number}}) {
 					a[0] = h.f
 				}
 			`,

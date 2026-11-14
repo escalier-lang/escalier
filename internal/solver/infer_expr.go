@@ -781,9 +781,13 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// function raises nothing; T for `throws T`; a fresh var for `throws _` or a bad one.
 	// The clause form belongs to sync functions; the async arm below rejects one.
 	var declaredThrows soltype.Type = &soltype.NeverType{}
+	// A lifetime the return type leaves out takes the one the signature's inputs give it.
+	retLts := newReturnLifetimes(selfParam, params, recv, &sig, signatureHead(node, memberName), c.lifetimeNamesInScope())
 	if sig.Throws != nil && !sig.Async {
 		declaredThrows = c.freshAt(lvl)
-		if annT, ok := c.resolveTypeAnn(declScope, sig.Throws, lvl); ok {
+		// A borrow the clause writes with no lifetime is tied to every input from the
+		// signature, so the body cannot narrow it to the inputs it happens to throw.
+		if annT, ok := c.resolveReturnAnn(declScope, sig.Throws, lvl, retLts.throwsLifetimes()); ok {
 			declaredThrows = annT
 		}
 	}
@@ -801,8 +805,6 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// annotation was a promise at all, since either slot may legitimately hold `never`.
 	var asyncInner, asyncRejects soltype.Type
 	asyncIsPromise := false
-	// A lifetime the return type leaves out takes the one the signature's inputs give it.
-	retLts := newReturnLifetimes(selfParam, params, recv, &sig, signatureHead(node, memberName), c.lifetimeNamesInScope())
 	if sig.Async {
 		if sig.Return != nil {
 			asyncAnnT, asyncAnnOK = c.resolveReturnAnn(declScope, sig.Return, lvl, retLts)
@@ -898,6 +900,21 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// lower bound is rigid from below regardless, so `return 1` against `-> B` with
 		// `where number: B` is checked against the bound rather than recorded as a floor.
 		c.ctx.markTypeParamsRigid(typeParams, false)
+	}
+	// A declaration's written signature is what its callers read, so the relations among its
+	// lifetimes are recorded before the body can add any. A closure's return type and
+	// captures stay inferred, so it is not checked this way.
+	var written *writtenLifetimes
+	if _, isClosure := node.(*ast.FuncExpr); hasBody && (!isClosure || inClass) {
+		writtenRet := retAnnT
+		if sig.Async {
+			writtenRet = asyncAnnT
+		}
+		var writtenThrows soltype.Type
+		if sig.Throws != nil && !sig.Async {
+			writtenThrows = declaredThrows
+		}
+		written = c.snapshotWrittenLifetimes(sig, recv, selfParam, params, writtenRet, writtenThrows, c.enclosingLifetimeVars())
 	}
 	if hasBody {
 		var closure ast.Func
@@ -1185,6 +1202,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// the signature names must be one the signature declares, since callers read only
 		// the signature.
 		c.checkSignatureImpliesBodyLifetimes(sig, ft, outerScope, outerBounds, outerOwners)
+		// The same holds for a lifetime the signature leaves unnamed in a part it writes,
+		// which elision fixes from the signature alone.
+		c.checkWrittenLifetimes(written)
 		// A body-carrying generic function must actually produce every type parameter it
 		// declares in an output position. A bodyless `declare fn` asserts its signature
 		// with no body to check, so it is not verified here.

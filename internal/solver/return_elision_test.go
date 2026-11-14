@@ -67,6 +67,20 @@ func TestReturnLifetimeElision(t *testing.T) {
 			src:  "fn make() -> &Flat {\n\tval p = {x: 1}\n\treturn &p\n}",
 		},
 		{
+			// A borrow a throws clause writes with no lifetime is tied to every input, as a
+			// returned function type is, whichever inputs the body throws.
+			name:     "ThrownBorrowTiedToEveryInput",
+			src:      "fn f(a: &Flat, b: &Flat, c: boolean) -> never throws &Flat { if c { throw a } else { throw b } }",
+			binding:  "f",
+			expected: "fn <'a>(a: &'a Flat, b: &'a Flat, c: boolean) -> never throws &'a Flat",
+		},
+		{
+			name:     "ThrownBorrowOfOneInputTiedToEveryInput",
+			src:      "fn g(a: &Flat, b: &Flat, c: boolean) -> never throws &Flat { throw a }",
+			binding:  "g",
+			expected: "fn <'a>(a: &'a Flat, b: &'a Flat, c: boolean) -> never throws &'a Flat",
+		},
+		{
 			name:     "ReturnedFunctionTiedToEveryInput",
 			src:      `fn adder(a: &Flat, b: &Flat) -> fn () -> number { return fn () { return a.x + b.x } }`,
 			binding:  "adder",

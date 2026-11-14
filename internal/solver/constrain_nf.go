@@ -183,6 +183,14 @@ func (c *Context) constrainImplied(
 	for i := range order {
 		order[i] = i
 	}
+	// A borrow fits a borrow member of any lifetime by recording that its lifetime outlives
+	// the member's, so the first borrow member in order always holds. Returning `a` into
+	// `&Flat | &'a Flat` would commit `&Flat` and relate 'a to the other member's lifetime,
+	// which the union does not ask for. Only lifetimes tell borrow members apart this way, so
+	// the pairs are trialled for one when two or more supers are borrows.
+	if winIdx, winErrs, ok := c.commitPairWithoutNewLifetime(pairs, seen, mutCtx); ok {
+		return nfDecision{errs: winErrs, committed: []soltype.Type{pairs[winIdx].super}}
+	}
 	committed, winIdx, winErrs, trialErrs := c.trialAndCommit(order, func(idx int) []SolverError {
 		// A cloned seen keeps each pair's coinductive cache independent, so a failed
 		// pair's entries cannot short-circuit a later pair to success.
@@ -354,6 +362,37 @@ func decomposableArrow(f *soltype.FuncType) bool {
 		return false
 	}
 	return !f.Params[0].Optional && !f.Params[0].Rest
+}
+
+// commitPairWithoutNewLifetime commits the first pair whose super is a borrow and that holds
+// without adding a lifetime bound, and returns its index and the warnings its trial gave. It
+// trials pairs only when two or more distinct supers are borrows, and ok is false when it
+// trials none or none qualifies, leaving no bound behind.
+func (c *Context) commitPairWithoutNewLifetime(pairs []nfPair, seen *seenPairs, mutCtx bool) (int, []SolverError, bool) {
+	refs := set.NewSet[soltype.Type]()
+	for _, p := range pairs {
+		if _, ok := p.super.(*soltype.RefType); ok {
+			refs.Add(p.super)
+		}
+	}
+	if refs.Len() < 2 {
+		return -1, nil, false
+	}
+	for i, p := range pairs {
+		if _, ok := p.super.(*soltype.RefType); !ok {
+			continue
+		}
+		probe := newProbe(c, c.probe)
+		c.probe = probe
+		errs := c.constrain(p.sub, p.super, seen.Clone(), mutCtx)
+		c.probe = probe.parent
+		if !hasHardError(errs) && !probe.mutatedLtBounds() {
+			probe.Commit()
+			return i, errs, true
+		}
+		probe.Discard()
+	}
+	return -1, nil, false
 }
 
 // nfPair is one candidate pair constrainImplied trials.
