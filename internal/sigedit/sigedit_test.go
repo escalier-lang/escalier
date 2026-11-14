@@ -85,6 +85,13 @@ func TestParamListEnd(t *testing.T) {
 		{name: "ParenInTemplateText", src: "fn f(p: `a(${string}`) {}", contents: "fn f(p: `a(${string}`) {}", expected: 22},
 		{name: "NestedTemplateInHole", src: "fn f(p: `a${`(${number}`}b`) {}", contents: "fn f(p: `a${`(${number}`}b`) {}", expected: 28},
 		{name: "FunctionTypeParam", src: "fn f(g: fn (x: number) -> number) {}", contents: "fn f(g: fn (x: number) -> number) {}", expected: 33},
+		{name: "UnclosedStringLiteral", src: "fn f(x: number) {}", contents: "fn f(x: \"number) {}", expected: -1},
+		{name: "UnclosedBlockCommentInParams", src: "fn f(x: number) {}", contents: "fn f(x: /*number) {}", expected: -1},
+		{name: "UnclosedLineCommentInParams", src: "fn f(x: number) {}", contents: "fn f(x: //number) {}", expected: -1},
+		{name: "UnclosedTemplateLiteral", src: "fn f(x: number) {}", contents: "fn f(x: `number) {}", expected: -1},
+		{name: "UnclosedTemplateHole", src: "fn f(x: number) {}", contents: "fn f(x: `${number) {}", expected: -1},
+		{name: "UnclosedStringInTemplateHole", src: "fn f(x: number) {}", contents: "fn f(x: `${\"n) {}", expected: -1},
+		{name: "BracesInTemplateHole", src: "fn f(p: `a${{b: number}}(`) {}", contents: "fn f(p: `a${{b: number}}(`) {}", expected: 27},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
