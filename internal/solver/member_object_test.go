@@ -437,9 +437,16 @@ func TestInfoEvaluate(t *testing.T) {
 			expected: "{k: \"x\" | \"y\"}",
 		},
 		{
+			// The annotation resolves the meet but leaves the `keyof` in it unreduced,
+			// so Evaluate reduces the meet once its members are evaluated.
 			name:     "Difference",
-			src:      "declare val v: (\"a\" | \"b\") & ~\"a\"",
-			expected: "\"b\"",
+			src:      "type Point = {x: number, y?: number}\ndeclare val v: keyof Point & ~\"x\"",
+			expected: "\"y\"",
+		},
+		{
+			name:     "Complement",
+			src:      "type Point = {x: number, y?: number}\ndeclare val v: ~keyof Point",
+			expected: "~(\"x\" | \"y\")",
 		},
 		{
 			name:     "SpreadOfAlias",
