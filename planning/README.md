@@ -19,6 +19,11 @@ the target against a hand-written annotation set and switches over when the
 table lands. `[Exposed]` answers nothing about the runtimes, which is why their
 source is still open.
 
+**`coeffects/`** proposes a `needs` clause that records what a function
+requires from its caller's context, built on the same rules as `throws`. It
+treats the environments in `environments/` as one kind of requirement, and
+moves their check from the entrypoint onto function types.
+
 **`ownership_extensions/`** extends the rules in
 `ownership_rules/requirements.md` to `await`, `yield`, async generators and
 `for … in` loops. Its `design.md` is the design for the Ownership Extensions
