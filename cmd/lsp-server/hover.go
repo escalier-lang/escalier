@@ -68,6 +68,9 @@ func typeHover(q hoverQuery) (string, bool) {
 		if n.Name.Span().Contains(q.loc) {
 			return declText(n), true
 		}
+		if variant, ok := variantNamedAt(n, q.loc); ok {
+			return variantDeclText(n, variant), true
+		}
 	case *ast.InferTypeAnn:
 		return "(type parameter) " + n.Name, true
 	case *ast.TypeRefTypeAnn:
@@ -235,15 +238,49 @@ func constructorText(name string, ctor *soltype.ConstructorElem) string {
 }
 
 // signatureParams renders a function type's parameter list alone, dropping the leading
-// `fn ` and the ` -> ret` return, as `(status: number)` for `fn (status: number) -> C`.
-// A parameter that is itself a function type holds its own ` -> `, so the return is the
-// last one, not the first.
+// `fn `, any `<T>` type-parameter binder, and the ` -> ret` return, as `(status: number)`
+// for `fn <T>(status: number) -> C`. A parameter that is itself a function type holds its
+// own ` -> `, so the return is the last one, not the first.
 func signatureParams(sig *soltype.FuncType) string {
-	rendered := strings.TrimPrefix(soltype.PrintAsScheme(sig), "fn ")
+	// A constructor's or a variant's signature is generalized over its class's or enum's
+	// type parameters, so the printer writes them as a leading binder:
+	// `fn <T, E>(value: T) -> Result<T, E>` for `Result.Ok`. Kept, the hover would read
+	// `(variant) Result.Ok<T, E>(value: T)`, as if the variant took type arguments of its
+	// own. The printed text can't tell the owner's parameters from the signature's, so a
+	// signature with type parameters of its own loses them too. A printer that renders the
+	// parameter list on its own would remove the guess, which #2716 tracks.
+	rendered := dropTypeBinder(strings.TrimPrefix(soltype.PrintAsScheme(sig), "fn "))
 	if i := strings.LastIndex(rendered, " -> "); i >= 0 {
 		rendered = rendered[:i]
 	}
 	return rendered
+}
+
+// dropTypeBinder returns s without a leading `<…>` type-parameter binder, matching the
+// closing `>` by angle-bracket depth so a nested generic in a bound stays inside the
+// binder. The `>` of a function type's `->` is not a bracket, so a function-typed bound
+// such as `<T: fn (x: number) -> number>` stays inside the binder too. A string with no
+// leading binder is returned unchanged.
+func dropTypeBinder(s string) string {
+	if !strings.HasPrefix(s, "<") {
+		return s
+	}
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '<':
+			depth++
+		case '>':
+			if i > 0 && s[i-1] == '-' {
+				continue
+			}
+			depth--
+			if depth == 0 {
+				return strings.TrimPrefix(s[i+1:], " ")
+			}
+		}
+	}
+	return s
 }
 
 // plural returns the "s" that pluralizes a noun counted by n, and "" when n is one.
@@ -391,6 +428,9 @@ func memberReadText(info *solver.Info, m *ast.MemberExpr) (string, bool) {
 	t := info.DisplayTypeOf(m)
 	if t == nil {
 		return "", false
+	}
+	if ctor, ok := variantConstructor(t); ok {
+		return "(variant) " + qualify(baseName(typeName(ctor.Ret)), m.Prop.Name) + signatureParams(ctor), true
 	}
 	objType := info.ResolvedTypeOf(m.Object)
 	owner := memberOwner(info, m.Object, objType)
@@ -617,4 +657,77 @@ func classRefName(class *ast.ClassDecl) string {
 		names[i] = tp.Name
 	}
 	return class.Name.Name + "<" + strings.Join(names, ", ") + ">"
+}
+
+// variantNamedAt returns the variant of decl whose name holds loc.
+func variantNamedAt(decl *ast.EnumDecl, loc ast.Location) (*ast.EnumVariant, bool) {
+	for _, elem := range decl.Elems {
+		if variant, ok := elem.(*ast.EnumVariant); ok && variant.Name.Span().Contains(loc) {
+			return variant, true
+		}
+	}
+	return nil, false
+}
+
+// variantDeclText renders the variant of decl as it is declared, as
+// `(variant) Expr.Num(value: number)`, the form a read of the variant shows.
+func variantDeclText(decl *ast.EnumDecl, variant *ast.EnumVariant) string {
+	params := make([]string, len(variant.Params))
+	for i, param := range variant.Params {
+		text := printCompact(param.Pattern)
+		if param.Optional {
+			text += "?"
+		}
+		if param.TypeAnn != nil {
+			text += ": " + printCompact(param.TypeAnn)
+		}
+		params[i] = text
+	}
+	return "(variant) " + decl.Name.Name + "." + variant.Name.Name + "(" + strings.Join(params, ", ") + ")"
+}
+
+// variantConstructor returns an enum variant's constructor signature when t is the type a
+// variant name reads as, and false otherwise. A variant carries both a constructor and a
+// `Symbol.customMatcher` method, which a plain class constructor object does not, so the
+// two are told apart by the matcher.
+func variantConstructor(t soltype.Type) (*soltype.FuncType, bool) {
+	obj, ok := t.(*soltype.ObjectType)
+	if !ok {
+		return nil, false
+	}
+	var ctor *soltype.FuncType
+	hasMatcher := false
+	for _, elem := range obj.Elems {
+		switch elem := elem.(type) {
+		case *soltype.ConstructorElem:
+			if len(elem.Signatures) > 0 {
+				ctor = elem.Signatures[0]
+			}
+		case *soltype.MethodElem:
+			if sym, ok := soltype.SymbolOfMemberName(elem.Name); ok && sym == "customMatcher" {
+				hasMatcher = true
+			}
+		}
+	}
+	if ctor == nil || !hasMatcher {
+		return nil, false
+	}
+	return ctor, true
+}
+
+// namespaceHover returns `namespace Math` for a read of a namespace name, and false when
+// the cursor is on none. A name that also reads a value shows the value, so a namespace
+// hover fills in only where no value type was recorded.
+func namespaceHover(q hoverQuery) (string, bool) {
+	ident, ok := q.node.(*ast.IdentExpr)
+	if !ok || q.info == nil || q.scope == nil {
+		return "", false
+	}
+	if q.info.DisplayTypeOf(ident) != nil {
+		return "", false
+	}
+	if _, ok := q.scope.GetNamespace(ident.Name); ok {
+		return "namespace " + ident.Name, true
+	}
+	return "", false
 }
