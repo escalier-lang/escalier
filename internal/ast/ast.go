@@ -52,6 +52,15 @@ func EndsInEmptyName(qi QualIdent) bool {
 	return ok && member.Right != nil && member.Right.Name == ""
 }
 
+// LastIdent returns the last name of qi, `c` in `a.b.c`.
+func LastIdent(qi QualIdent) *Ident {
+	if member, ok := qi.(*Member); ok {
+		return member.Right
+	}
+	ident, _ := qi.(*Ident)
+	return ident
+}
+
 // QualIdentToString converts a QualIdent to its string representation
 func QualIdentToString(qi QualIdent) string {
 	switch q := qi.(type) {

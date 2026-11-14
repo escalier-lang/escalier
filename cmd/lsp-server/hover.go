@@ -1086,14 +1086,23 @@ func patternHover(q hoverQuery) (string, bool) {
 	return "", false
 }
 
-// patternNameText renders the declaration the qualified name qi resolves to in q.scope,
-// or the part of qi under the cursor when the cursor is on a qualifier. In `Expr.Num` the
-// cursor on `Num` shows the variant and on `Expr` shows `enum Expr`. It returns false
-// when that part names no declaration or namespace.
+// patternNameText renders the declaration of the class or enum variant a pattern names
+// with qi, or of the part of qi under the cursor. In `Expr.Num` the cursor on `Num`
+// shows the variant and on `Expr` shows `enum Expr`. It returns false when qi does not
+// name the class the solver resolved it to from q.scope, or the part names no declaration.
 func patternNameText(q hoverQuery, qi ast.QualIdent) (string, bool) {
+	if _, ok := patternClassBinding(q, qi); !ok {
+		return "", false
+	}
+	return qualNameText(q, qi)
+}
+
+// qualNameText renders the declaration the part of the qualified name qi under the cursor
+// names in q.scope. It returns false when that part names no declaration or namespace.
+func qualNameText(q hoverQuery, qi ast.QualIdent) (string, bool) {
 	member, isMember := qi.(*ast.Member)
 	if isMember && member.Left.Span().Contains(q.loc) {
-		return patternNameText(q, member.Left)
+		return qualNameText(q, member.Left)
 	}
 	if binding, ok := qualTypeBinding(q.scope, qi); ok {
 		for _, src := range binding.Sources {
@@ -1117,6 +1126,22 @@ func patternNameText(q hoverQuery, qi ast.QualIdent) (string, bool) {
 		return "namespace " + ast.QualIdentToString(qi), true
 	}
 	return "", false
+}
+
+// patternClassBinding returns the type binding of the class a pattern names with qi. It
+// returns false when the solver recorded no class for the pattern, or when qi resolves in
+// q.scope to a different class. Inside a namespace, `HttpError` names the namespace's own
+// class first, which the file scope does not see.
+func patternClassBinding(q hoverQuery, qi ast.QualIdent) (solver.TypeBinding, bool) {
+	if q.info == nil {
+		return solver.TypeBinding{}, false
+	}
+	recorded := typeName(q.info.TypeOf(ast.LastIdent(qi)))
+	binding, ok := qualTypeBinding(q.scope, qi)
+	if !ok || recorded == "" || typeName(binding.Type) != recorded {
+		return solver.TypeBinding{}, false
+	}
+	return binding, true
 }
 
 // qualTypeBinding returns the type binding the qualified name qi names in scope, and
@@ -1154,10 +1179,10 @@ func instanceFieldText(q hoverQuery, inst *ast.InstancePat) (string, bool) {
 			break
 		}
 	}
-	if name == "" || q.info == nil {
+	if name == "" {
 		return "", false
 	}
-	binding, ok := qualTypeBinding(q.scope, inst.ClassName)
+	binding, ok := patternClassBinding(q, inst.ClassName)
 	if !ok {
 		return "", false
 	}
@@ -1183,53 +1208,51 @@ func typeOfHover(q hoverQuery) (string, bool) {
 	if !ok || q.info == nil || q.scope == nil || !ann.Value.Span().Contains(q.loc) {
 		return "", false
 	}
-	text, _, ok := typeOfPathText(q, ann.Value)
-	return text, ok
+	return typeOfPathText(q, ann.Value)
 }
 
-// typeOfPathText returns the hover text for the part of the `typeof` path qi under the
-// cursor, along with the type qi reads. It returns false when a part of qi up to the
-// cursor names no value or member.
-func typeOfPathText(q hoverQuery, qi ast.QualIdent) (string, soltype.Type, bool) {
+// typeOfPathText returns the hover text for the name under the cursor in the `typeof`
+// path qi, reading the type the solver recorded for each name of the path. It returns
+// false when that name reads nothing the solver recorded.
+func typeOfPathText(q hoverQuery, qi ast.QualIdent) (string, bool) {
 	switch qi := qi.(type) {
 	case *ast.Ident:
+		t := q.info.TypeOf(qi)
+		if t == nil {
+			// A namespace is not a value, so the solver records no type for its name.
+			if _, ok := q.scope.GetNamespace(qi.Name); ok {
+				return "namespace " + qi.Name, true
+			}
+			return "", false
+		}
+		// The solver resolved the name in the scope the type sits in, which can be a
+		// function body. The hover reads `mut` from the file scope's binding of the name
+		// only when that binding is the one the solver read.
 		binding, ok := q.scope.GetValue(qi.Name)
-		if !ok {
-			return "", nil, false
-		}
-		t := binding.DisplayType()
-		text := qi.Name + ": " + soltype.PrintAsScheme(t)
-		if binding.Mut {
-			text = "mut " + text
-		}
-		return text, t, true
+		mut := ok && binding.Mut && binding.DisplayType() == t
+		return bindingText(qi.Name, mut, t), true
 	case *ast.Member:
-		leftText, leftType, ok := typeOfPathText(q, qi.Left)
-		if !ok || qi.Left.Span().Contains(q.loc) {
-			return leftText, leftType, ok
+		if qi.Left.Span().Contains(q.loc) {
+			return typeOfPathText(q, qi.Left)
 		}
-		obj, ok := q.info.MemberObject(leftType)
-		if !ok {
-			return "", nil, false
+		t := q.info.TypeOf(qi.Right)
+		if t == nil {
+			return "", false
+		}
+		leftType := q.info.TypeOf(ast.LastIdent(qi.Left))
+		if leftType == nil {
+			// The left side is a namespace, so the name reads one of its values.
+			return bindingText(ast.QualIdentToString(qi), false, t), true
 		}
 		owner := baseName(typeName(q.info.Expand(leftType)))
-		for _, elem := range obj.Elems {
-			if soltype.ObjElemName(elem) == qi.Right.Name {
-				return memberElemText(owner, elem), memberValueType(elem), true
+		if obj, ok := q.info.MemberObject(leftType); ok {
+			for _, elem := range obj.Elems {
+				if soltype.ObjElemName(elem) == qi.Right.Name {
+					return memberElemText(owner, elem), true
+				}
 			}
 		}
+		return propertyText(owner, qi.Right.Name, soltype.PrintAsScheme(t)), true
 	}
-	return "", nil, false
-}
-
-// memberValueType returns the type a read of elem yields, or nil for a member a read
-// does not yield a single type for, such as a setter or a method.
-func memberValueType(elem soltype.ObjTypeElem) soltype.Type {
-	switch elem := elem.(type) {
-	case *soltype.PropertyElem:
-		return elem.Type
-	case *soltype.GetterElem:
-		return elem.Type
-	}
-	return nil
+	return "", false
 }

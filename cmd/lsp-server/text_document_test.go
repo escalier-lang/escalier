@@ -1458,6 +1458,37 @@ func TestHoverFromSolver(t *testing.T) {
 			expected: escalierCode("\"s\""),
 		},
 		{
+			name: "TypeofNamespaceMember",
+			files: map[string]string{
+				"lib/a.esc": "import \"std:math\"\nexport type P = typeof math.PI",
+			},
+			open: "lib/a.esc", line: 1, col: 28,
+			expected: escalierCode("math.PI: number"),
+		},
+		{
+			name: "TypeofNamespaceHead",
+			files: map[string]string{
+				"lib/a.esc": "import \"std:math\"\nexport type P = typeof math.PI",
+			},
+			open: "lib/a.esc", line: 1, col: 25,
+			expected: escalierCode("namespace math"),
+		},
+		{
+			name: "TypeofShadowingLocal",
+			files: map[string]string{
+				"lib/a.esc": "val x = 1\nexport fn f() -> number {\n    val x = \"s\"\n    val y: typeof x = x\n    return 1\n}",
+			},
+			open: "lib/a.esc", line: 3, col: 18,
+			expected: escalierCode("x: \"s\""),
+		},
+		{
+			name: "WildcardInConditionalExtends",
+			files: map[string]string{
+				"lib/a.esc": "export type F<T> = T extends Array<_> ? 1 : 2",
+			},
+			open: "lib/a.esc", line: 0, col: 35,
+		},
+		{
 			name:  "Keyword",
 			files: map[string]string{"bin/main.esc": "val x = 5"},
 			open:  "bin/main.esc", line: 0, col: 1,

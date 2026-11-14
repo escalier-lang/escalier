@@ -322,10 +322,17 @@ func hoverText(info *solver.Info, node ast.Node, t soltype.Type) string {
 	if !ok {
 		return soltype.PrintAsScheme(t)
 	}
+	return bindingText(name, mut, t)
+}
+
+// bindingText renders a binding of name to a value of type t, as `p: {x: number}`, or as
+// `mut p: {x: number}` when mut is true.
+func bindingText(name string, mut bool, t soltype.Type) string {
+	text := name + ": " + soltype.PrintAsScheme(t)
 	if mut {
-		return "mut " + name + ": " + soltype.PrintAsScheme(t)
+		return "mut " + text
 	}
-	return name + ": " + soltype.PrintAsScheme(t)
+	return text
 }
 
 // bindingOf returns the name node binds or reads, and whether that binding is mutable.

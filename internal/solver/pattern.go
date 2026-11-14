@@ -877,6 +877,8 @@ func (c *checker) bindInstancePat(scope *Scope, lvl int, p *ast.InstancePat, scr
 		obj, _ := c.bindPatMode(scope, lvl, p.Object, c.freshAt(lvl), nil, scrutineeMode, leafTypes, emit, purpose).(*soltype.ObjectPat)
 		return &soltype.InstancePat{ClassName: name, Object: obj}
 	}
+	// Hover reads the class this name resolves to from the recorded type.
+	c.recordPatType(purpose, ast.LastIdent(p.ClassName), ct)
 	target, targetConcrete := c.narrowToClass(lvl, p, ct, scrutinee, concrete, nil)
 	obj, _ := c.bindPatMode(scope, lvl, p.Object, target, targetConcrete, scrutineeMode, leafTypes, emit, purpose).(*soltype.ObjectPat)
 	return &soltype.InstancePat{ClassName: ct.Name, Object: obj}
@@ -1001,6 +1003,10 @@ func (c *checker) bindExtractorPat(scope *Scope, lvl int, p *ast.ExtractorPat, s
 			args[i] = c.bindPatMode(scope, lvl, a, c.freshAt(lvl), nil, scrutineeMode, leafTypes, emit, purpose)
 		}
 		return &soltype.ExtractorPat{Name: name, Args: args}
+	}
+	// Hover reads the class this name resolves to from the recorded type.
+	if ct, ok := c.resolveQualClassType(scope, p.Name); ok {
+		c.recordPatType(purpose, ast.LastIdent(p.Name), ct)
 	}
 	params := c.narrowToExtractor(p, sig, scrutinee)
 	fixed, rest, recovered := splitTupleRest(p.Args)
