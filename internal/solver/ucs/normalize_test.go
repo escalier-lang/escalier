@@ -65,7 +65,7 @@ func TestNormalizeFlatLiteralMatch(t *testing.T) {
 	//   }
 	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split n {
   1 => leaf "one"
-} default leaf "other"`))
+} default bind _ = n; leaf "other"`))
 }
 
 // Arms that test one scrutinee against different tags become branches of one split
@@ -95,7 +95,7 @@ func TestNormalizeMergesSameScrutineeArms(t *testing.T) {
   1 => leaf "one"
   2 => leaf "two"
   3 => leaf "three"
-} default leaf "other"`))
+} default bind _ = n; leaf "other"`))
 }
 
 // A guard names where a failed condition continues, which is what makes the form
@@ -118,8 +118,8 @@ func TestNormalizeGuardFallsToTheTail(t *testing.T) {
 	snaps.MatchInlineSnapshot(t, Print(norm, DefaultPrintOptions()), snaps.Inline(`split p {
   {x, y} => bind x = p.x, y = p.y; guard (x > y) {
     leaf x
-  } default leaf 0
-} default leaf 0`))
+  } default bind _ = p; leaf 0
+} default bind _ = p; leaf 0`))
 
 	// The guard and the split reach the same node, so the arm the guard falls into is
 	// the arm the split falls into and neither is duplicated.
@@ -328,8 +328,8 @@ func TestNormalizeNestedSplitFallsToTheArmBelow(t *testing.T) {
 	snaps.MatchInlineSnapshot(t, Print(norm, DefaultPrintOptions()), snaps.Inline(`split p {
   {x} => split p.x {
     1 => leaf "one"
-  } default leaf "other"
-} default leaf "other"`))
+  } default bind _ = p; leaf "other"
+} default bind _ = p; leaf "other"`))
 
 	outer := norm.(*NormSplit)
 	inner := outer.Branches[0].Cont.(*NormSplit)
@@ -360,8 +360,8 @@ func TestNormalizeKeepsTheFallthroughOutOfTheArmsScope(t *testing.T) {
 	snaps.MatchInlineSnapshot(t, Print(norm, DefaultPrintOptions()), snaps.Inline(`split p {
   {x, y} => split p.y {
     [_] => bind z = p.y.0, x = p.x; leaf "one"
-  } default leaf "other"
-} default leaf "other"`))
+  } default bind _ = p; leaf "other"
+} default bind _ = p; leaf "other"`))
 
 	// `x` is named at the outer tag-level and still binds below the split over `p.y`,
 	// which is what keeps that split's default clear of it.
@@ -467,9 +467,9 @@ func TestNormalizeGuardReadsNestedBinds(t *testing.T) {
   {start} => split p.start {
     {x, y} => bind x = p.start.x, y = p.start.y; guard (x > y) {
       leaf x
-    } default leaf 0
-  } default leaf 0
-} default leaf 0`))
+    } default bind _ = p; leaf 0
+  } default bind _ = p; leaf 0
+} default bind _ = p; leaf 0`))
 }
 
 // A pattern that tests no tag of its own has no split to become. A bare rest is the only
@@ -514,8 +514,8 @@ func TestNormalizeKeepsArmBackReferences(t *testing.T) {
   1 [match arm] arm=45-58 => leaf "one" [match arm] arm=45-58
   2 [match arm] arm=85-106 => guard (x > y) [guard] {
     leaf "two" [match arm] arm=85-106
-  } default leaf "other" [match arm] arm=125-140
-} default leaf "other" [match arm] arm=125-140`))
+  } default bind _ = n [match arm]; leaf "other" [match arm] arm=125-140
+} default bind _ = n [match arm]; leaf "other" [match arm] arm=125-140`))
 }
 
 // A split flattening introduced blames the sub-pattern it tests and still points back at
@@ -569,7 +569,7 @@ func TestNormalizeKeepsLeafNodes(t *testing.T) {
 
 	split := Normalize(core).(*NormSplit)
 	require.Same(t, matched, split.Branches[0].Cont)
-	require.Same(t, tailLeaf, split.Default)
+	require.Same(t, tailLeaf, split.Default.(*NormBind).Cont)
 }
 
 // A core split with no branches still becomes a split, so the scrutinee it tests stays

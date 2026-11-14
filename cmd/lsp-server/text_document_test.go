@@ -1537,6 +1537,38 @@ func TestHoverFromSolver(t *testing.T) {
 			expected: escalierCode("value: number"),
 		},
 		{
+			name: "MatchWildcardArm",
+			files: map[string]string{
+				"lib/a.esc": "export fn f(x: number | string) -> number {\n    return match x {\n        0 => 1,\n        _ => 0,\n    }\n}",
+			},
+			open: "lib/a.esc", line: 3, col: 8,
+			expected: escalierCode("number | string"),
+		},
+		{
+			name: "MatchWildcardTupleElement",
+			files: map[string]string{
+				"lib/a.esc": "export fn f(p: [number, string]) -> number {\n    return match p {\n        [a, _] => a,\n    }\n}",
+			},
+			open: "lib/a.esc", line: 2, col: 12,
+			expected: escalierCode("string"),
+		},
+		{
+			name: "MatchWildcardObjectField",
+			files: map[string]string{
+				"lib/a.esc": "export fn f(p: {x: number, y: string}) -> number {\n    return match p {\n        {x, y: _} => x,\n    }\n}",
+			},
+			open: "lib/a.esc", line: 2, col: 15,
+			expected: escalierCode("string"),
+		},
+		{
+			name: "MatchWildcardExtractorArg",
+			files: map[string]string{
+				"lib/a.esc": "export enum E { Pair(a: number, b: string) }\nexport fn f(e: E) -> number {\n    return match e {\n        E.Pair(a, _) => a,\n    }\n}",
+			},
+			open: "lib/a.esc", line: 3, col: 18,
+			expected: escalierCode("string"),
+		},
+		{
 			name:  "Keyword",
 			files: map[string]string{"bin/main.esc": "val x = 5"},
 			open:  "bin/main.esc", line: 0, col: 1,

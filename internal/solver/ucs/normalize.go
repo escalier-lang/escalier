@@ -212,6 +212,15 @@ func (b *splitBuilder) build(cands []candidate) ([]*NormBranch, Norm) {
 		if cand.nested || mayFall(cand.branch.Cont) {
 			fallthru = b.term(specialize(cands[i+1:], cand.test))
 		}
+		if cand.test == nil {
+			if term, ok := b.built[candidatesKey(cands[i:])]; ok {
+				// An earlier branch's fallthrough already built this tail, so the split
+				// reaches the same node rather than a copy of it.
+				dflt = term
+				b.inlined.Add(cand.index)
+				break
+			}
+		}
 		nest := binder{fallthru: fallthru, arm: cand.branch.Arm, reads: b.reads}
 		cont := nest.wrap(cand.binds, normalizeTerm(cand.branch.Cont, fallthru))
 		if cand.test == nil {
