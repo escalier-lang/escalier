@@ -24,7 +24,7 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 		{
 			name: "borrow of a local nothing else reaches",
 			src: `
-				fn h() {
+				fn h() -> {x: 1} {
 					val b = {x: 1}
 					return &b
 				}
@@ -38,7 +38,7 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 			name: "borrow of a local module-level state also reads",
 			src: `
 				var cache: &{x: number} = &{x: 0}
-				fn h() {
+				fn h() -> &'static {x: 1} {
 					val b = {x: 1}
 					cache = &b
 					return &b
@@ -53,7 +53,7 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 			name: "call whose signature ties the result to the argument",
 			src: `
 				declare fn lookup<'a>(p: &'a {x: number}) -> &'a {x: number}
-				fn h() {
+				fn h() -> &{x: number} {
 					val b = {x: 1}
 					return lookup(&b)
 				}
@@ -68,7 +68,7 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 			name: "call whose signature ties the result to nothing",
 			src: `
 				declare fn make() -> &{x: number}
-				fn h() {
+				fn h() -> {x: number} {
 					return make()
 				}
 			`,
@@ -80,7 +80,7 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 		{
 			name: "result of a closure whose borrow a local of the frame holds",
 			src: `
-				fn outer() {
+				fn outer() -> {x: 1} {
 					val cfg = {x: 0}
 					var cache: &{x: number} = &{x: 0}
 
@@ -104,7 +104,7 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 			name: "borrow of module-level state",
 			src: `
 				var cfg = {x: 0}
-				fn getCfg(p: &{x: number}) {
+				fn getCfg(p: &{x: number}) -> &'static {x: number} {
 					return &cfg
 				}
 			`,
@@ -115,7 +115,7 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 			name: "borrow of a local module-level state also reads, beside a parameter",
 			src: `
 				var cache: &{x: number} = &{x: 0}
-				fn stash(p: &{x: number}) {
+				fn stash(p: &{x: number}) -> &'static {x: 1} {
 					val q = {x: 1}
 					cache = &q
 					return &q
@@ -130,7 +130,7 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 		{
 			name: "closure returning a borrow of a capture",
 			src: `
-				fn outer() {
+				fn outer() -> fn (p: &{x: number}) -> &{x: 0} {
 					val cfg = {x: 0}
 					val getCfg = fn (p: &{x: number}) {
 						return &cfg
@@ -148,7 +148,7 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 		{
 			name: "closure returning a borrow a capture also holds",
 			src: `
-				fn outer() {
+				fn outer() -> fn (p: &{x: number}) -> &{x: 1} {
 					var cache: &{x: number} = &{x: 0}
 					val stash = fn (p: &{x: number}) {
 						val q = {x: 1}
@@ -166,7 +166,7 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 			name: "borrow module-level state reads through a copy",
 			src: `
 				var cache: &{x: number} = &{x: 0}
-				fn h() {
+				fn h() -> &'static {x: 1} {
 					val b = {x: 1}
 					val t = &b
 					cache = t
@@ -181,7 +181,7 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 			name: "borrow taken before module-level state reads the place",
 			src: `
 				var cache: &{x: number} = &{x: 0}
-				fn h() {
+				fn h() -> &'static {x: 1} {
 					val b = {x: 1}
 					val t = &b
 					cache = &b
@@ -198,7 +198,7 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 			name: "borrow of an optional field taken before module-level state reads it",
 			src: `
 				var cache: &{y: number} | undefined = undefined
-				fn h() {
+				fn h() -> &'static {y: number} | undefined {
 					val b: {x?: {y: number}} = {x: {y: 1}}
 					val t = &b.x
 					cache = &b.x
@@ -212,7 +212,7 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 			name: "borrow of an optional field module-level state reads through a copy",
 			src: `
 				var cache: &{y: number} | undefined = undefined
-				fn h() {
+				fn h() -> &'static {y: number} | undefined {
 					val b: {x?: {y: number}} = {x: {y: 1}}
 					val t = &b.x
 					cache = t
@@ -227,7 +227,7 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 			name: "borrow of a place overlapping one module-level state reads",
 			src: `
 				var cache: &{y: number} = &{y: 0}
-				fn h() {
+				fn h() -> &'static {x: {y: 1}} {
 					val b = {x: {y: 1}}
 					cache = &b.x
 					return &b
@@ -243,7 +243,7 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 			name: "borrow inside a returned literal module-level state also reads",
 			src: `
 				var cache: &{x: number} = &{x: 0}
-				fn h() {
+				fn h() -> {f: &'static {x: 1}} {
 					val b = {x: 1}
 					val o = {f: &b}
 					cache = &b
@@ -258,7 +258,7 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 		{
 			name: "borrow of a parameter",
 			src: `
-				fn h(f: {v: number}) {
+				fn h(f: {v: number}) -> &{v: number} {
 					val r = &f
 					return r
 				}
@@ -274,7 +274,7 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 			src: `
 				val cfg = {x: 1}
 				val gref = &cfg
-				fn h() {
+				fn h() -> &{x: 1} {
 					return gref
 				}
 			`,
@@ -289,7 +289,7 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 					p: {x: number},
 					peek<'a>(&'a self) -> &'a {x: number} { return &self.p },
 				}
-				fn h() {
+				fn h() -> &{x: number} {
 					val v = View({x: 1})
 					return v.peek()
 				}
@@ -321,13 +321,13 @@ func TestFrameOwnedReturnWrites(t *testing.T) {
 			src: `
 				var cache: &{x: number} = &{x: 0}
 
-				fn h() {
+				fn h() -> &'static {x: 1} {
 					val b = {x: 1}
 					cache = &b
 					return &b
 				}
 
-				fn k() {
+				fn k() -> undefined {
 					val mut r = h()
 					r.x = 5
 				}
@@ -338,14 +338,14 @@ func TestFrameOwnedReturnWrites(t *testing.T) {
 				"12:12-12:13: cannot constrain 5 <: 1",
 				// The write needs a mutable object, and r is an immutable borrow. This is the
 				// write D16's first rule rejects by keeping h's result a borrow.
-				"12:6-12:13: cannot constrain immutable object <: mutable object",
+				"4:15-4:30: cannot constrain immutable object <: mutable object",
 			},
 		},
 		// Inside outer, cache still reads the value stash returns.
 		{
 			name: "write through the result of a closure a local of the frame also reads",
 			src: `
-				fn outer() {
+				fn outer() -> {x: 1} {
 					val cfg = {x: 0}
 					var cache: &{x: number} = &{x: 0}
 
@@ -395,7 +395,7 @@ func TestFrameOwnedMutReturnSignatures(t *testing.T) {
 			src: `
 				declare fn keep(x: &'static mut {x: number}) -> undefined
 
-				fn h() {
+				fn h() -> &'static mut {x: number} {
 					val mut b = {x: 1}
 					keep(&mut b)
 					return &mut b
@@ -409,7 +409,7 @@ func TestFrameOwnedMutReturnSignatures(t *testing.T) {
 			src: `
 				declare fn keep(x: &'static mut {x: number}) -> undefined
 
-				fn h() {
+				fn h() -> {p: &'static mut {x: number}} {
 					val mut b = {x: 1}
 					keep(&mut b)
 					return {p: &mut b}
@@ -424,7 +424,7 @@ func TestFrameOwnedMutReturnSignatures(t *testing.T) {
 			src: `
 				declare fn keep(x: &'static mut {x: number}) -> undefined
 
-				fn h() {
+				fn h() -> &'static mut {x: number} {
 					val mut b = {x: 1}
 					keep(&mut b)
 					val r = &mut b
@@ -440,7 +440,7 @@ func TestFrameOwnedMutReturnSignatures(t *testing.T) {
 			src: `
 				declare fn keep(x: &'static mut {x: number}) -> undefined
 
-				fn h() {
+				fn h() -> &'static mut {x: number} {
 					val mut b = {x: 1}
 					val r = &mut b
 					keep(&mut b)
@@ -455,7 +455,7 @@ func TestFrameOwnedMutReturnSignatures(t *testing.T) {
 			src: `
 				declare fn keep(x: &'static mut {x: number}) -> undefined
 
-				fn h() {
+				fn h() -> &'static mut {x: number} {
 					val mut b = {x: 1}
 					keep(&mut b)
 					val r = &mut b
@@ -471,7 +471,7 @@ func TestFrameOwnedMutReturnSignatures(t *testing.T) {
 		{
 			name: "mutable borrow of a local stored into a parameter",
 			src: `
-				fn h(out: &mut {s: &mut {x: number}}) {
+				fn h<'a>(out: &mut {s: &'a mut {x: number}}) -> &'a mut {x: number} {
 					val mut b = {x: 1}
 					out.s = &mut b
 					return &mut b
@@ -483,7 +483,7 @@ func TestFrameOwnedMutReturnSignatures(t *testing.T) {
 		{
 			name: "nested mutable borrow of a local nothing else reaches",
 			src: `
-				fn h() {
+				fn h() -> {p: {x: number}} {
 					val mut b = {x: 1}
 					return {p: &mut b}
 				}
@@ -494,7 +494,7 @@ func TestFrameOwnedMutReturnSignatures(t *testing.T) {
 		{
 			name: "two mutable borrows of one local in a returned literal",
 			src: `
-				fn h() {
+				fn h() -> {l: &mut {x: number}, r: &mut {x: number}} {
 					val mut b = {x: 1}
 					return {l: &mut b, r: &mut b}
 				}
@@ -505,7 +505,7 @@ func TestFrameOwnedMutReturnSignatures(t *testing.T) {
 		{
 			name: "mutable borrows of two locals in a returned literal",
 			src: `
-				fn h() {
+				fn h() -> {l: {x: number}, r: {x: number}} {
 					val mut b = {x: 1}
 					val mut c = {x: 2}
 					return {l: &mut b, r: &mut c}
@@ -518,7 +518,7 @@ func TestFrameOwnedMutReturnSignatures(t *testing.T) {
 		{
 			name: "mutable borrow of a local holding two borrows of one local",
 			src: `
-				fn h() {
+				fn h() -> {l: &mut {x: number}, r: &mut {x: number}} {
 					val mut b = {x: 1}
 					val mut d = {l: &mut b, r: &mut b}
 					return &mut d
@@ -530,7 +530,7 @@ func TestFrameOwnedMutReturnSignatures(t *testing.T) {
 		{
 			name: "mutable borrow of a local in a returned tuple",
 			src: `
-				fn h() {
+				fn h() -> [{x: number}] {
 					val mut b = {x: 1}
 					return [&mut b]
 				}

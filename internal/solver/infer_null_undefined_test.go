@@ -138,7 +138,7 @@ func TestInferNullUndefinedUnrelated(t *testing.T) {
 			// That result is the same atom the `undefined` annotation names, and it is just as
 			// unrelated to `null`.
 			name: "NullIsNotAValuelessBlockResult",
-			src:  "fn g() {}\nval n: null = g()",
+			src:  "fn g() -> undefined {}\nval n: null = g()",
 			want: "2:15-2:18: cannot constrain undefined <: null",
 		},
 	}
@@ -184,7 +184,7 @@ func TestInferNullUndefinedUnionKeepsWrittenOrder(t *testing.T) {
 // arm leaves the members after it alone, exactly as a literal arm does.
 func TestInferMatchNullArmCoversUnionMember(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x: number | null) {
+		fn f(x: number | null) -> number | null {
 			return match x {
 				null => 0,
 				n => n
@@ -199,7 +199,7 @@ func TestInferMatchNullArmCoversUnionMember(t *testing.T) {
 // `null` member, so `undefined` is what escapes.
 func TestInferMatchNullArmMissingUndefinedMember(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f(x: null | undefined) {
+		fn f(x: null | undefined) -> 0 {
 			return match x {
 				null => 0
 			}
@@ -212,7 +212,7 @@ func TestInferMatchNullArmMissingUndefinedMember(t *testing.T) {
 // Naming both atoms covers a scrutinee made of nothing else.
 func TestInferMatchBothAtomArmsCoverUnion(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x: null | undefined) {
+		fn f(x: null | undefined) -> 0 | 1 {
 			return match x {
 				null => 0,
 				undefined => 1
@@ -249,7 +249,7 @@ func TestInferIfWithoutElseIsAnnotatable(t *testing.T) {
 // an arm covers it and the match needs no catch-all.
 func TestInferMatchUndefinedArmCoversAValuelessBlockResult(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(c: boolean) {
+		fn f(c: boolean) -> "five" | "none" {
 			val u = if c { 5 }
 			return match u {
 				5 => "five",

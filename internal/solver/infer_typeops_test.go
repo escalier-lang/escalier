@@ -588,7 +588,7 @@ func TestInferKeyofUnionWithUnreadableMember(t *testing.T) {
 			// type parameter is even consulted.
 			name: "DisjointReadableMembersLast",
 			src: `
-				fn f<T>(k: keyof ({a: number} | {b: number} | T)) {}
+				fn f<T>(k: keyof ({a: number} | {b: number} | T)) -> undefined {}
 				val r = f("a")
 			`,
 			wantErr: `cannot constrain "a" <: never`,
@@ -597,7 +597,7 @@ func TestInferKeyofUnionWithUnreadableMember(t *testing.T) {
 			// The same operand with the type parameter written first reduces the same way.
 			name: "DisjointReadableMembersFirst",
 			src: `
-				fn f<T>(k: keyof (T | {a: number} | {b: number})) {}
+				fn f<T>(k: keyof (T | {a: number} | {b: number})) -> undefined {}
 				val r = f("a")
 			`,
 			wantErr: `cannot constrain "a" <: never`,
@@ -606,7 +606,7 @@ func TestInferKeyofUnionWithUnreadableMember(t *testing.T) {
 			// And with a readable member on each side of it.
 			name: "DisjointReadableMembersAround",
 			src: `
-				fn f<T>(k: keyof ({a: number} | {b: number} | T | {c: number})) {}
+				fn f<T>(k: keyof ({a: number} | {b: number} | T | {c: number})) -> undefined {}
 				val r = f("a")
 			`,
 			wantErr: `cannot constrain "a" <: never`,
@@ -616,7 +616,7 @@ func TestInferKeyofUnionWithUnreadableMember(t *testing.T) {
 			// survives and the operator stays symbolic.
 			name: "OverlappingReadableMembers",
 			src: `
-				fn f<T>(k: keyof ({a: number, x: string} | {b: number, x: string} | T)) {}
+				fn f<T>(k: keyof ({a: number, x: string} | {b: number, x: string} | T)) -> undefined {}
 				val r = f("a")
 			`,
 			wantErr: `cannot constrain "a" <: keyof object | object | t12`,
@@ -643,12 +643,12 @@ func TestInferKeyofAnnotationStaysSymbolic(t *testing.T) {
 	}{
 		{
 			name: "InlineObject",
-			src:  `fn h(k: keyof {x: number, y: string}) {}`,
+			src:  `val h = fn (k: keyof {x: number, y: string}) {}`,
 			want: map[string]string{"h": "fn (k: keyof {x: number, y: string}) -> undefined"},
 		},
 		{
 			name: "UnionOperand",
-			src:  `fn g<T>(x: keyof (T | {a: number})) {}`,
+			src:  `fn g<T>(x: keyof (T | {a: number})) -> undefined {}`,
 			want: map[string]string{"g": "fn <T>(x: keyof (T | {a: number})) -> undefined"},
 		},
 	}
@@ -670,7 +670,7 @@ func TestInferKeyofAnnotationStaysSymbolic(t *testing.T) {
 // keys of its own.
 func TestInferKeyofNested(t *testing.T) {
 	t.Run("TypeParamInSignature", func(t *testing.T) {
-		values, _, errs := inferSource(t, `fn f<T>(k: keyof keyof T) {}`)
+		values, _, errs := inferSource(t, `val f = fn <T>(k: keyof keyof T) {}`)
 		require.Empty(t, errs)
 		require.Equal(t, "fn <T>(k: keyof keyof T) -> undefined", values["f"])
 	})
@@ -1377,12 +1377,12 @@ func TestInferIndexStaysSymbolic(t *testing.T) {
 		},
 		{
 			name: "InlineObjectTarget",
-			src:  `fn h(k: {x: number, y: string}["x"]) {}`,
+			src:  `val h = fn (k: {x: number, y: string}["x"]) {}`,
 			want: map[string]string{"h": `fn (k: {x: number, y: string}["x"]) -> undefined`},
 		},
 		{
 			name: "KeyofIndex",
-			src:  `fn g<T>(k: T[keyof T]) {}`,
+			src:  `val g = fn <T>(k: T[keyof T]) {}`,
 			want: map[string]string{"g": "fn <T>(k: T[keyof T]) -> undefined"},
 		},
 	}
@@ -1980,7 +1980,7 @@ func TestInferKeyofIndexOverSpreadTuple(t *testing.T) {
 		{
 			// keyof over an abstract spread operand stays symbolic.
 			name:         "KeyofAbstractSpread",
-			src:          `fn f<T: Array<string>>(k: keyof [...T, boolean]) {}`,
+			src:          `fn f<T: Array<string>>(k: keyof [...T, boolean]) -> undefined {}`,
 			wantSymbolic: "keyof [...T, boolean]",
 		},
 		{
@@ -2088,12 +2088,12 @@ func TestInferCondSignatureStaysSymbolic(t *testing.T) {
 	}{
 		{
 			name: "TypeParamCheck",
-			src:  `fn f<T>(x: if T : number { string } else { boolean }) {}`,
+			src:  `val f = fn <T>(x: if T : number { string } else { boolean }) {}`,
 			want: map[string]string{"f": "fn <T>(x: if T : number { string } else { boolean }) -> undefined"},
 		},
 		{
 			name: "TypeParamExtends",
-			src:  `fn g<T>(x: if number : T { string } else { boolean }) {}`,
+			src:  `val g = fn <T>(x: if number : T { string } else { boolean }) {}`,
 			want: map[string]string{"g": "fn <T>(x: if number : T { string } else { boolean }) -> undefined"},
 		},
 	}
@@ -2609,7 +2609,7 @@ func TestInferCondDistribution(t *testing.T) {
 // renders the way the source wrote it: the Extends operand shows the `infer U` binder and the Then
 // branch shows the bare reference `U`.
 func TestInferCondInferStaysSymbolic(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f<T>(x: if T : [infer U] { U } else { boolean }) {}`)
+	values, _, errs := inferSource(t, `val f = fn <T>(x: if T : [infer U] { U } else { boolean }) {}`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn <T>(x: if T : [infer U] { U } else { boolean }) -> undefined", values["f"])
 }
@@ -4363,32 +4363,32 @@ func TestInferDynamicIndexRead(t *testing.T) {
 	}{
 		{
 			name:   "DynamicKeyOffAnIndexSignature",
-			src:    "type Dict = {[K: string]?: number}\nfn f(d: Dict, k: string) { return d[k] }",
+			src:    "type Dict = {[K: string]?: number}\nfn f(d: Dict, k: string) -> number | undefined { return d[k] }",
 			wantFn: "fn (d: Dict, k: string) -> number | undefined",
 		},
 		{
 			// The constant-key and dot forms already resolved this way, and the dynamic form agrees.
 			name:   "ConstantKeyAgreesWithTheDynamicForm",
-			src:    "type Dict = {[K: string]?: number}\nfn f(d: Dict) { return d[\"a\"] }",
+			src:    "type Dict = {[K: string]?: number}\nfn f(d: Dict) -> number | undefined { return d[\"a\"] }",
 			wantFn: "fn (d: Dict) -> number | undefined",
 		},
 		{
 			name:   "DotFormAgreesWithTheDynamicForm",
-			src:    "type Dict = {[K: string]?: number}\nfn f(d: Dict) { return d.a }",
+			src:    "type Dict = {[K: string]?: number}\nfn f(d: Dict) -> number | undefined { return d.a }",
 			wantFn: "fn (d: Dict) -> number | undefined",
 		},
 		{
 			// A dynamic key cannot be shown to name the declared member, so it reads through the
 			// signature rather than through `name`.
 			name:   "DynamicKeyOnAMixedObjectReadsTheSignature",
-			src:    "type Config = {name: string, [K: string]?: boolean}\nfn f(c: Config, k: string) { return c[k] }",
+			src:    "type Config = {name: string, [K: string]?: boolean}\nfn f(c: Config, k: string) -> boolean | undefined { return c[k] }",
 			wantFn: "fn (c: Config, k: string) -> boolean | undefined",
 		},
 		{
 			// A key set narrower than the object's keys resolves without a signature, and carries no
 			// `undefined` because every key in it is declared.
 			name:   "KeySubsetOfADeclaredObject",
-			src:    "fn f(o: {a: number, b: string}, k: \"a\" | \"b\") { return o[k] }",
+			src:    "fn f(o: {a: number, b: string}, k: \"a\" | \"b\") -> number | string { return o[k] }",
 			wantFn: `fn (o: {a: number, b: string}, k: "a" | "b") -> number | string`,
 		},
 		{

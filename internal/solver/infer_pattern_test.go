@@ -14,7 +14,7 @@ import (
 // binding worked.
 func TestInferValObjectPatternBinds(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: {x: number, y: string}) {
+		fn f(p: {x: number, y: string}) -> [number, string] {
 			val {x, y} = p
 			return [x, y]
 		}
@@ -28,7 +28,7 @@ func TestInferValObjectPatternBinds(t *testing.T) {
 // tolerated.
 func TestInferValObjectPatternPartial(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: {x: number, y: string}) {
+		fn f(p: {x: number, y: string}) -> number {
 			val {x} = p
 			return x
 		}
@@ -54,7 +54,7 @@ func TestInferValObjectPatternMissingField(t *testing.T) {
 // names in the result confirms each position bound the right element.
 func TestInferValTuplePatternBinds(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn h(t: [number, string]) {
+		fn h(t: [number, string]) -> [string, number] {
 			val [a, b] = t
 			return [b, a]
 		}
@@ -80,7 +80,7 @@ func TestInferValTuplePatternWrongArity(t *testing.T) {
 // leaves bind, and the parameter renders its pattern.
 func TestInferObjectPatternParam(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn g({x, y}: {x: number, y: string}) {
+		fn g({x, y}: {x: number, y: string}) -> [number, string] {
 			return [x, y]
 		}
 	`)
@@ -104,7 +104,7 @@ func TestInferObjectPatternParamInferred(t *testing.T) {
 // the inner leaves at the nested field types.
 func TestInferNestedObjectPattern(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: {pt: {x: number, y: string}}) {
+		fn f(p: {pt: {x: number, y: string}}) -> [number, string] {
 			val {pt: {x, y}} = p
 			return [x, y]
 		}
@@ -116,7 +116,7 @@ func TestInferNestedObjectPattern(t *testing.T) {
 // A wildcard element in a tuple pattern matches without binding a name.
 func TestInferTuplePatternWildcard(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(t: [number, string]) {
+		fn f(t: [number, string]) -> number {
 			val [a, _] = t
 			return a
 		}
@@ -129,7 +129,7 @@ func TestInferTuplePatternWildcard(t *testing.T) {
 // conflicts is a constraint error, not a silently dropped annotation.
 func TestInferObjectPatternLeafTypeAnnConflict(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f(p: {x: number}) {
+		fn f(p: {x: number}) -> string {
 			val {x :: string} = p
 			return x
 		}
@@ -141,7 +141,7 @@ func TestInferObjectPatternLeafTypeAnnConflict(t *testing.T) {
 // A matching leaf type annotation checks and is adopted as the leaf's type.
 func TestInferObjectPatternLeafTypeAnnAdopted(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: {x: number}) {
+		fn f(p: {x: number}) -> number {
 			val {x :: number} = p
 			return x
 		}
@@ -160,7 +160,7 @@ func TestInferObjectPatternLeafTypeAnnAdopted(t *testing.T) {
 // together.
 func TestInferObjectPatternLeafDefault(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: {x: number}) {
+		fn f(p: {x: number}) -> 0 {
 			val {z = 0} = p
 			return z
 		}
@@ -177,12 +177,12 @@ func TestInferObjectPatternLeafDefault(t *testing.T) {
 func TestInferObjectPatternOptionalProperty(t *testing.T) {
 	tests := map[string]string{
 		"Shorthand": `
-			fn f(p: {x?: number}) {
+			fn f(p: {x?: number}) -> number | undefined {
 				val {x} = p
 				return x
 			}`,
 		"KeyValue": `
-			fn f(p: {x?: number}) {
+			fn f(p: {x?: number}) -> number | undefined {
 				val {x: a} = p
 				return a
 			}`,
@@ -200,7 +200,7 @@ func TestInferObjectPatternOptionalProperty(t *testing.T) {
 // the fixed elements bind without a spurious arity error.
 func TestInferTuplePatternRestPrefix(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(t: [number, string, boolean]) {
+		fn f(t: [number, string, boolean]) -> number {
 			val [a, ...rest] = t
 			return a
 		}
@@ -226,7 +226,7 @@ func TestInferRestPatternBinds(t *testing.T) {
 			// The suffix of an exact tuple is exact: two elements remain past `a`.
 			name: "TupleValDestructure",
 			src: `
-				fn f(t: [number, string, boolean]) {
+				fn f(t: [number, string, boolean]) -> [string, boolean] {
 					val [a, ...rest] = t
 					return rest
 				}`,
@@ -237,7 +237,7 @@ func TestInferRestPatternBinds(t *testing.T) {
 			// element back into the parameter's pattern.
 			name: "TupleParam",
 			src: `
-				fn f([a, ...rest]: [number, string, boolean]) {
+				fn f([a, ...rest]: [number, string, boolean]) -> [string, boolean] {
 					return rest
 				}`,
 			want: "fn ([a, ...rest]: [number, string, boolean]) -> [string, boolean]",
@@ -247,7 +247,7 @@ func TestInferRestPatternBinds(t *testing.T) {
 			// irrefutable over an exact tuple, so no catch-all is needed.
 			name: "TupleMatchArm",
 			src: `
-				fn f(t: [number, string, boolean]) {
+				fn f(t: [number, string, boolean]) -> [string, boolean] {
 					return match t {
 						[a, ...rest] => rest
 					}
@@ -259,7 +259,7 @@ func TestInferRestPatternBinds(t *testing.T) {
 			// elements the tail hides are part of the leftover.
 			name: "TupleInexactScrutinee",
 			src: `
-				fn f(t: [number, string, ...]) {
+				fn f(t: [number, string, ...]) -> [string, ...] {
 					val [a, ...rest] = t
 					return rest
 				}`,
@@ -269,7 +269,7 @@ func TestInferRestPatternBinds(t *testing.T) {
 			// A rest that consumes every remaining element binds the empty tuple.
 			name: "TupleRestBindsEmptySuffix",
 			src: `
-				fn f(t: [number]) {
+				fn f(t: [number]) -> [] {
 					val [a, ...rest] = t
 					return rest
 				}`,
@@ -280,7 +280,7 @@ func TestInferRestPatternBinds(t *testing.T) {
 			// the inner tuple's suffix.
 			name: "TupleNestedRest",
 			src: `
-				fn f(t: [number, [string, boolean, number]]) {
+				fn f(t: [number, [string, boolean, number]]) -> [boolean, number] {
 					val [a, [b, ...rest]] = t
 					return rest
 				}`,
@@ -291,7 +291,7 @@ func TestInferRestPatternBinds(t *testing.T) {
 			// so `...[b, c]` destructures the suffix in turn.
 			name: "TupleRestSubPatternDestructures",
 			src: `
-				fn f(t: [number, string, boolean]) {
+				fn f(t: [number, string, boolean]) -> [boolean, string] {
 					val [a, ...[b, c]] = t
 					return [c, b]
 				}`,
@@ -300,7 +300,7 @@ func TestInferRestPatternBinds(t *testing.T) {
 		{
 			name: "ObjectValDestructure",
 			src: `
-				fn f(p: {x: number, y: string, z: boolean}) {
+				fn f(p: {x: number, y: string, z: boolean}) -> {y: string, z: boolean} {
 					val {x, ...rest} = p
 					return rest
 				}`,
@@ -309,7 +309,7 @@ func TestInferRestPatternBinds(t *testing.T) {
 		{
 			name: "ObjectParam",
 			src: `
-				fn f({x, ...rest}: {x: number, y: string}) {
+				fn f({x, ...rest}: {x: number, y: string}) -> {y: string} {
 					return rest
 				}`,
 			want: "fn ({x, ...rest}: {x: number, y: string}) -> {y: string}",
@@ -317,7 +317,7 @@ func TestInferRestPatternBinds(t *testing.T) {
 		{
 			name: "ObjectMatchArm",
 			src: `
-				fn f(p: {x: number, y: string}) {
+				fn f(p: {x: number, y: string}) -> {y: string} {
 					return match p {
 						{x, ...rest} => rest
 					}
@@ -329,7 +329,7 @@ func TestInferRestPatternBinds(t *testing.T) {
 			// `readonly` markers the scrutinee wrote.
 			name: "ObjectRestKeepsMarkers",
 			src: `
-				fn f(p: {x: number, y?: string, readonly z: boolean}) {
+				fn f(p: {x: number, y?: string, readonly z: boolean}) -> {y?: string, readonly z: boolean} {
 					val {x, ...rest} = p
 					return rest
 				}`,
@@ -340,7 +340,7 @@ func TestInferRestPatternBinds(t *testing.T) {
 			// removes x from the leftover even though the leaf is named a.
 			name: "ObjectKeyValueFieldNamesItsKey",
 			src: `
-				fn f(p: {x: number, y: string}) {
+				fn f(p: {x: number, y: string}) -> {y: string} {
 					val {x: a, ...rest} = p
 					return rest
 				}`,
@@ -351,7 +351,7 @@ func TestInferRestPatternBinds(t *testing.T) {
 			// the tail hides belong to the leftover too.
 			name: "ObjectInexactScrutinee",
 			src: `
-				fn f(p: {x: number, y: string, ...}) {
+				fn f(p: {x: number, y: string, ...}) -> {y: string, ...} {
 					val {x, ...rest} = p
 					return rest
 				}`,
@@ -361,7 +361,7 @@ func TestInferRestPatternBinds(t *testing.T) {
 			// A rest that names no leftover property binds the empty object.
 			name: "ObjectRestBindsEmptyLeftover",
 			src: `
-				fn f(p: {x: number}) {
+				fn f(p: {x: number}) -> {} {
 					val {x, ...rest} = p
 					return rest
 				}`,
@@ -441,7 +441,7 @@ func TestInferRestPatternBorrowMode(t *testing.T) {
 // ergonomics the sibling leaves follow.
 func TestInferRestPatternMutBorrowAcceptsWrite(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(pt: &mut {a: {x: number}, b: {y: number}}) {
+		fn f(pt: &mut {a: {x: number}, b: {y: number}}) -> undefined {
 			val {a, ...rest} = pt
 			rest.b = {y: 5}
 		}
@@ -467,7 +467,7 @@ func TestInferRestPatternGroundsScrutinee(t *testing.T) {
 			name: "TupleSpreadOverAlias",
 			src: `
 				type Pair = [string, boolean]
-				fn f(t: [number, ...Pair]) {
+				fn f(t: [number, ...Pair]) -> [string, boolean] {
 					val [a, ...rest] = t
 					return rest
 				}`,
@@ -480,7 +480,7 @@ func TestInferRestPatternGroundsScrutinee(t *testing.T) {
 			name: "TupleFixedElementInsideSpread",
 			src: `
 				type Pair = [string, boolean]
-				fn f(t: [number, ...Pair]) {
+				fn f(t: [number, ...Pair]) -> [number, string, [boolean]] {
 					val [a, b, ...rest] = t
 					return [a, b, rest]
 				}`,
@@ -491,7 +491,7 @@ func TestInferRestPatternGroundsScrutinee(t *testing.T) {
 			name: "TupleFixedPrefixConsumesSpread",
 			src: `
 				type Pair = [string, boolean]
-				fn f(t: [number, ...Pair]) {
+				fn f(t: [number, ...Pair]) -> [boolean, []] {
 					val [a, b, c, ...rest] = t
 					return [c, rest]
 				}`,
@@ -503,7 +503,7 @@ func TestInferRestPatternGroundsScrutinee(t *testing.T) {
 			src: `
 				type Inner = [boolean]
 				type Pair = [string, ...Inner]
-				fn f(t: [number, ...Pair]) {
+				fn f(t: [number, ...Pair]) -> [boolean] {
 					val [a, b, ...rest] = t
 					return rest
 				}`,
@@ -515,7 +515,7 @@ func TestInferRestPatternGroundsScrutinee(t *testing.T) {
 			name: "TupleInexactSpreadOperand",
 			src: `
 				type Open = [string, ...]
-				fn f(t: [number, ...Open]) {
+				fn f(t: [number, ...Open]) -> [string, ...] {
 					val [a, ...rest] = t
 					return rest
 				}`,
@@ -525,7 +525,7 @@ func TestInferRestPatternGroundsScrutinee(t *testing.T) {
 			name: "ObjectAliasScrutinee",
 			src: `
 				type Rec = {x: number, y: string, z: boolean}
-				fn f(p: Rec) {
+				fn f(p: Rec) -> {y: string, z: boolean} {
 					val {x, ...rest} = p
 					return rest
 				}`,
@@ -540,7 +540,7 @@ func TestInferRestPatternGroundsScrutinee(t *testing.T) {
 					x: number,
 					y: string,
 				}
-				fn f(p: Point) {
+				fn f(p: Point) -> {y: string, ...} {
 					val {x, ...rest} = p
 					return rest
 				}`,
@@ -553,7 +553,7 @@ func TestInferRestPatternGroundsScrutinee(t *testing.T) {
 			src: `
 				type Point = {x: number, y: string}
 				type Partial<T> = {[K]?: T[K] for K in keyof T}
-				fn f(p: Partial<Point>) {
+				fn f(p: Partial<Point>) -> {y?: string} {
 					val {x, ...rest} = p
 					return rest
 				}`,
@@ -564,7 +564,7 @@ func TestInferRestPatternGroundsScrutinee(t *testing.T) {
 			// than flattening into a property.
 			name: "ObjectMethodMemberSurvives",
 			src: `
-				fn f(p: {x: number, m(a: number) -> string}) {
+				fn f(p: {x: number, m(a: number) -> string}) -> {m(a: number) -> string} {
 					val {x, ...rest} = p
 					return rest
 				}`,
@@ -730,7 +730,7 @@ func TestInferRestPatternUnknownLeftoverUses(t *testing.T) {
 
 	t.Run("an annotated scrutinee gives the leftover a length", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
-			fn f(p: [number, string, boolean]) {
+			fn f(p: [number, string, boolean]) -> boolean {
 				val [a, ...rest] = p
 				val [b, c] = rest
 				return c
@@ -806,7 +806,7 @@ func TestInferTuplePatternRestFallbackGuards(t *testing.T) {
 			// A two-element prefix against a one-element scrutinee leaves nothing to cut.
 			name: "ScrutineeShorterThanFixedPrefix",
 			src: `
-				fn f(t: [number]) {
+				fn f(t: [number]) -> [...] {
 					val [a, b, ...rest] = t
 					return rest
 				}`,
@@ -818,7 +818,7 @@ func TestInferTuplePatternRestFallbackGuards(t *testing.T) {
 			// the stdlib tree writes, so the spread operand itself is legal.
 			name: "SpreadOverTypeParamNeverSplices",
 			src: `
-				fn f<P: Array<number>>(t: [number, ...P]) {
+				fn f<P: Array<number>>(t: [number, ...P]) -> [...] {
 					val [a, ...rest] = t
 					return rest
 				}`,
@@ -849,28 +849,28 @@ func TestInferMatchRestSubPatternAfterARefutableArm(t *testing.T) {
 	}{
 		{
 			name: "LiteralFirstArm",
-			src:  `fn f(p: [number, string | number]) { return match p { [a, ...[5]] => "s", [c, ...[d]] => "n" } }`,
+			src:  `fn f(p: [number, string | number]) -> "s" | "n" { return match p { [a, ...[5]] => "s", [c, ...[d]] => "n" } }`,
 			want: `fn (p: [number, string | number]) -> "s" | "n"`,
 		},
 		{
 			name: "GuardedFirstArm",
-			src:  `fn f(p: [number, string | number]) { return match p { [a, ...[b]] if b == 1 => "s", [c, ...[d]] => "n" } }`,
+			src:  `fn f(p: [number, string | number]) -> "s" | "n" { return match p { [a, ...[b]] if b == 1 => "s", [c, ...[d]] => "n" } }`,
 			want: `fn (p: [number, string | number]) -> "s" | "n"`,
 		},
 		{
 			name: "AnnotatedFirstArm",
-			src:  `fn f(p: [number, string | number]) { return match p { [a, ...[b: string]] => "s", [c, ...[d]] => "n" } }`,
+			src:  `fn f(p: [number, string | number]) -> "s" | "n" { return match p { [a, ...[b: string]] => "s", [c, ...[d]] => "n" } }`,
 			want: `fn (p: [number, string | number]) -> "s" | "n"`,
 		},
 		{
 			// The members share one arity, so the suffix reads as their elementwise union.
 			name: "UnionOfTuplesScrutinee",
-			src:  `fn f(p: [number, string] | [number, boolean]) { return match p { [a, ...["x"]] => 0, [c, ...[d]] => d } }`,
+			src:  `fn f(p: [number, string] | [number, boolean]) -> 0 | string | boolean { return match p { [a, ...["x"]] => 0, [c, ...[d]] => d } }`,
 			want: "fn (p: [number, string] | [number, boolean]) -> 0 | string | boolean",
 		},
 		{
 			name: "SecondArmBindsTheSuffixElement",
-			src:  `fn f(p: [number, string | number]) { return match p { [a, ...[5]] => 0, [c, ...[d]] => d } }`,
+			src:  `fn f(p: [number, string | number]) -> string | number { return match p { [a, ...[5]] => 0, [c, ...[d]] => d } }`,
 			want: "fn (p: [number, string | number]) -> string | number",
 		},
 	}
@@ -898,7 +898,7 @@ func TestInferRestPatternRejectedPositions(t *testing.T) {
 			// length nothing pins down, so no position after it names a fixed element.
 			name: "TupleNonTrailingRest",
 			src: `
-				fn f(t: [number, string, boolean]) {
+				fn f(t: [number, string, boolean]) -> [never, never] {
 					val [...rest, b] = t
 					return [rest, b]
 				}`,
@@ -920,7 +920,7 @@ func TestInferRestPatternRejectedPositions(t *testing.T) {
 			// property the fields do not name. The non-final one is the rejected one.
 			name: "ObjectSecondRest",
 			src: `
-				fn f(p: {x: number, y: string}) {
+				fn f(p: {x: number, y: string}) -> [never, {y: string}] {
 					val {x, ...rest, ...more} = p
 					return [rest, more]
 				}`,
@@ -1035,7 +1035,7 @@ func TestMirrorParamPatRestRoundTrip(t *testing.T) {
 // binding.
 func TestInferDestructuredLeafClosureCapture(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: {x: number}) {
+		fn f(p: {x: number}) -> number {
 			val {x} = p
 			val g = fn () { return x }
 			return g()
@@ -1049,7 +1049,7 @@ func TestInferDestructuredLeafClosureCapture(t *testing.T) {
 // applied through the initializer.
 func TestInferVarTupleDestructureWidens(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f() {
+		fn f() -> [number, number] {
 			var [a, b] = [1, 2]
 			return [a, b]
 		}
@@ -1061,7 +1061,7 @@ func TestInferVarTupleDestructureWidens(t *testing.T) {
 // A `var` object destructuring widens its leaf the same way.
 func TestInferVarObjectDestructureWidens(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f() {
+		fn f() -> number {
 			var {x} = {x: 5}
 			return x
 		}
@@ -1074,7 +1074,7 @@ func TestInferVarObjectDestructureWidens(t *testing.T) {
 // the borrowed field values, just as a member read through the borrow would.
 func TestInferDestructureBorrowScrutinee(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(mut p: {x: number, y: string}) {
+		fn f(mut p: {x: number, y: string}) -> [number, string] {
 			val {x, y} = p
 			return [x, y]
 		}
@@ -1087,7 +1087,7 @@ func TestInferDestructureBorrowScrutinee(t *testing.T) {
 // annotation rejects is a constraint error.
 func TestInferObjectPatternLeafDefaultViolatesAnnotation(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f(p: {x: number}) {
+		fn f(p: {x: number}) -> number {
 			val {x :: number = "hi"} = p
 			return x
 		}
@@ -1103,7 +1103,7 @@ func TestInferObjectPatternLeafDefaultViolatesAnnotation(t *testing.T) {
 // exhaustive without a catch-all.
 func TestInferMatchBindsArm(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: {x: number, y: string}) {
+		fn f(p: {x: number, y: string}) -> [number, string] {
 			return match p {
 				{x, y} => [x, y]
 			}
@@ -1150,7 +1150,7 @@ func TestInferMatchParamUsageTuple(t *testing.T) {
 // need no extra catch-all to type.
 func TestInferMatchJoinsArms(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(n: number) {
+		fn f(n: number) -> "one" | "other" {
 			return match n {
 				1 => "one",
 				_ => "other"
@@ -1165,7 +1165,7 @@ func TestInferMatchJoinsArms(t *testing.T) {
 // catch-all.
 func TestInferMatchExactNeedsNoCatchAll(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: {x: number, y: number}) {
+		fn f(p: {x: number, y: number}) -> number {
 			return match p {
 				{x, y} => x
 			}
@@ -1181,7 +1181,7 @@ func TestInferMatchExactNeedsNoCatchAll(t *testing.T) {
 // the scrutinee carry every field the pattern names, not that the pattern name every field.
 func TestInferMatchPartialObjectPatternCovers(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: {x: number, y: string}) {
+		fn f(p: {x: number, y: string}) -> number {
 			return match p {
 				{x} => x
 			}
@@ -1195,7 +1195,7 @@ func TestInferMatchPartialObjectPatternCovers(t *testing.T) {
 // structural arm does not cover it. A missing catch-all is a NonExhaustiveMatchError.
 func TestInferMatchInexactNeedsCatchAll(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f(p: {x: number, y: number, ...}) {
+		fn f(p: {x: number, y: number, ...}) -> number {
 			return match p {
 				{x, y} => x
 			}
@@ -1211,7 +1211,7 @@ func TestInferMatchInexactNeedsCatchAll(t *testing.T) {
 // since `0 <: number`.
 func TestInferMatchInexactWithCatchAll(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: {x: number, y: number, ...}) {
+		fn f(p: {x: number, y: number, ...}) -> number {
 			return match p {
 				{x, y} => x,
 				_ => 0
@@ -1227,7 +1227,7 @@ func TestInferMatchInexactWithCatchAll(t *testing.T) {
 // literal patterns match one member each, so the arms together are exhaustive.
 func TestInferMatchExactUnionCoversMembers(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(b: boolean) {
+		fn f(b: boolean) -> 1 | 2 {
 			val x = if b { "a" } else { "b" }
 			return match x {
 				"a" => 1,
@@ -1243,7 +1243,7 @@ func TestInferMatchExactUnionCoversMembers(t *testing.T) {
 // arms match `"a"` only, so `"b"` escapes and the message names it.
 func TestInferMatchExactUnionMissingMember(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f(b: boolean) {
+		fn f(b: boolean) -> 1 {
 			val x = if b { "a" } else { "b" }
 			return match x {
 				"a" => 1
@@ -1262,7 +1262,7 @@ func TestInferMatchExactUnionMissingMember(t *testing.T) {
 // `"z"` arm. The guarded arm comes first so that no arm sits below a covering prefix.
 func TestInferMatchExactUnionGuardedArmNoPhantomMember(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f(b: boolean) {
+		fn f(b: boolean) -> 3 | 1 | 2 {
 			val x = if b { "a" } else { "b" }
 			return match x {
 				"z" if b => 3,
@@ -1279,7 +1279,7 @@ func TestInferMatchExactUnionGuardedArmNoPhantomMember(t *testing.T) {
 // exhaustive.
 func TestInferMatchBareNumberWithCatchAll(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f(n: number) {
+		fn f(n: number) -> "one" | "other" {
 			return match n {
 				1 => "one",
 				_ => "other"
@@ -1293,7 +1293,7 @@ func TestInferMatchBareNumberWithCatchAll(t *testing.T) {
 // as a catch-all does, so no separate catch-all is needed.
 func TestInferMatchBareNumberTypePatternCovers(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f(n: number) {
+		fn f(n: number) -> number {
 			return match n {
 				x: number => x
 			}
@@ -1306,7 +1306,7 @@ func TestInferMatchBareNumberTypePatternCovers(t *testing.T) {
 // `true` and `false` is exhaustive and must not be flagged for a catch-all.
 func TestInferMatchBooleanEnumeratedNotFlagged(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f(b: boolean) {
+		fn f(b: boolean) -> 1 | 2 {
 			return match b {
 				true => 1,
 				false => 2
@@ -1322,7 +1322,7 @@ func TestInferMatchBooleanEnumeratedNotFlagged(t *testing.T) {
 // joined element types `1 | 3` / `2 | 4` and the match type-checks.
 func TestInferMatchTupleUnionExhaustive(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(b: boolean) {
+		fn f(b: boolean) -> 1 | 3 {
 			val x = if b { [1, 2] } else { [3, 4] }
 			return match x {
 				[a, c] => a
@@ -1338,7 +1338,7 @@ func TestInferMatchTupleUnionExhaustive(t *testing.T) {
 // its whole shape.
 func TestInferMatchGuardedArmDoesNotCover(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f(p: {x: number, ...}, b: boolean) {
+		fn f(p: {x: number, ...}, b: boolean) -> number {
 			return match p {
 				{x} if b => x
 			}
@@ -1352,7 +1352,7 @@ func TestInferMatchGuardedArmDoesNotCover(t *testing.T) {
 // a constraint error.
 func TestInferMatchGuardMustBeBoolean(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f(p: {x: number}) {
+		fn f(p: {x: number}) -> number {
 			return match p {
 				{x} if x => x,
 				_ => 0
@@ -1369,7 +1369,7 @@ func TestInferMatchGuardMustBeBoolean(t *testing.T) {
 // irrefutably rather than for a catch-all.
 func TestInferMatchRefutableArmNonExhaustive(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f(p: {x: number}) {
+		fn f(p: {x: number}) -> 10 {
 			return match p {
 				{x: 1} => 10
 			}
@@ -1383,7 +1383,7 @@ func TestInferMatchRefutableArmNonExhaustive(t *testing.T) {
 // kind mismatch is rejected, just as a top-level literal pattern is.
 func TestInferMatchNestedWrongLiteralRejected(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f(p: {x: number}) {
+		fn f(p: {x: number}) -> 1 | 0 {
 			return match p {
 				{x: "hi"} => 1,
 				_ => 0
@@ -1397,7 +1397,7 @@ func TestInferMatchNestedWrongLiteralRejected(t *testing.T) {
 // The same check applies to a nested literal in a tuple pattern element.
 func TestInferMatchTupleNestedWrongLiteralRejected(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f(t: [number, number]) {
+		fn f(t: [number, number]) -> 1 | 0 {
 			return match t {
 				[a, "hi"] => 1,
 				_ => 0
@@ -1411,7 +1411,7 @@ func TestInferMatchTupleNestedWrongLiteralRejected(t *testing.T) {
 // A correctly-typed nested literal pattern still type-checks.
 func TestInferMatchNestedRightLiteralOK(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: {x: number}) {
+		fn f(p: {x: number}) -> 1 | 0 {
 			return match p {
 				{x: 1} => 1,
 				_ => 0
@@ -1430,13 +1430,13 @@ func TestInferMatchNestedRightLiteralOK(t *testing.T) {
 func TestInferMatchArmBindingScopedInDepGraph(t *testing.T) {
 	_, _, errs := inferSources(t, map[string]string{
 		"main": `
-			fn f(p: {ov: number}) {
+			fn f(p: {ov: number}) -> number {
 				return match p {
 					{ov} => ov
 				}
 			}
-			fn ov(a: number) { return f({ov: a}) }
-			fn ov(a: string) { return a }
+			fn ov(a: number) -> number { return f({ov: a}) }
+			fn ov(a: string) -> string { return a }
 		`,
 	})
 	require.Empty(t, errs)
@@ -1446,7 +1446,7 @@ func TestInferMatchArmBindingScopedInDepGraph(t *testing.T) {
 // binds the inner elements at the nested element types.
 func TestInferObjectContainingTuplePattern(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(o: {pt: [number, string]}) {
+		fn f(o: {pt: [number, string]}) -> [string, number] {
 			val {pt: [a, b]} = o
 			return [b, a]
 		}
@@ -1467,49 +1467,49 @@ func TestInferMatchVariadicTupleScrutinee(t *testing.T) {
 	}{
 		{
 			name: "EachLengthBindsItsPositions",
-			src:  `fn f(t: [number, ...Array<string>]) { return match t { [a] => a, [a, b] => b, [a, b, c, ...r] => c } }`,
+			src:  `fn f(t: [number, ...Array<string>]) -> number | string { return match t { [a] => a, [a, b] => b, [a, b, c, ...r] => c } }`,
 			want: "fn (t: [number, ...Array<string>]) -> number | string",
 		},
 		{
 			// `[a]` covers length 1 and `[a, b, ...r]` every length from 2 up, so together
 			// they cover the variadic member.
 			name: "AnExactAndARestTestCoverAVariadicMember",
-			src:  `fn f(s: {x: number} | [number, ...Array<string>]) { return match s { {x} => 0, [a] => 1, [a, b, ...r] => 2 } }`,
+			src:  `fn f(s: {x: number} | [number, ...Array<string>]) -> 0 | 1 | 2 { return match s { {x} => 0, [a] => 1, [a, b, ...r] => 2 } }`,
 			want: "fn (s: {x: number} | [number, ...Array<string>]) -> 0 | 1 | 2",
 		},
 		{
 			// A test reads each variadic member of a union at the length it tests, so `c`
 			// reads a `string` out of either member.
 			name: "AUnionMemberIsReadAtTheTestedLength",
-			src:  `fn f(t: [string, string, string] | [number, ...Array<string>]) { return match t { [a, b, c, ...r] => c, _ => "" } }`,
+			src:  `fn f(t: [string, string, string] | [number, ...Array<string>]) -> string { return match t { [a, b, c, ...r] => c, _ => "" } }`,
 			want: "fn (t: [string, string, string] | [number, ...Array<string>]) -> string",
 		},
 		{
 			name: "AnExactTestReadsAUnionMemberAtItsLength",
-			src:  `fn f(t: [boolean, boolean] | [number, ...Array<string>]) { return match t { [a, b] => b, _ => true } }`,
+			src:  `fn f(t: [boolean, boolean] | [number, ...Array<string>]) -> boolean | string { return match t { [a, b] => b, _ => true } }`,
 			want: "fn (t: [boolean, boolean] | [number, ...Array<string>]) -> boolean | string",
 		},
 		{
 			name:     "AVariadicMemberMissingALength",
-			src:      `fn f(s: {x: number} | [number, ...Array<string>]) { return match s { {x} => 0, [a] => 1, [a, b, c, ...r] => 2 } }`,
-			wantErrs: []string{"1:60-1:112: match is not exhaustive; add a branch for `[number, ...Array<string>]`"},
+			src:      `fn f(s: {x: number} | [number, ...Array<string>]) -> 0 | 1 | 2 { return match s { {x} => 0, [a] => 1, [a, b, c, ...r] => 2 } }`,
+			wantErrs: []string{"1:73-1:125: match is not exhaustive; add a branch for `[number, ...Array<string>]`"},
 		},
 		{
 			name: "ARestPastThePrefixBindsTheMiddle",
-			src:  `fn f(t: [number, ...Array<string>]) { return match t { [a] => 0, [a, b, ...r] => r } }`,
+			src:  `fn f(t: [number, ...Array<string>]) -> 0 | Array<string> { return match t { [a] => 0, [a, b, ...r] => r } }`,
 			want: "fn (t: [number, ...Array<string>]) -> 0 | Array<string>",
 		},
 		{
 			// `[a, b]` reads the suffix's `boolean` at its last position. Past the prefix, a
 			// position under a rest may hold a middle or a suffix value, so `c` reads both.
 			name: "AFixedSuffixFillsTheLastPositions",
-			src:  `fn f(t: [number, ...Array<string>, boolean]) { return match t { [a, b] => b, [a, b, c, ...r] => c } }`,
+			src:  `fn f(t: [number, ...Array<string>, boolean]) -> boolean | string { return match t { [a, b] => b, [a, b, c, ...r] => c } }`,
 			want: "fn (t: [number, ...Array<string>, boolean]) -> boolean | string",
 		},
 		{
 			name:     "MissingLengthsAreReported",
-			src:      `fn f(t: [number, ...Array<string>]) { return match t { [a] => a, [a, b] => b } }`,
-			wantErrs: []string{"1:46-1:79: match is not exhaustive; add a branch for `[number, ...Array<string>]`"},
+			src:      `fn f(t: [number, ...Array<string>]) -> number | string { return match t { [a] => a, [a, b] => b } }`,
+			wantErrs: []string{"1:65-1:98: match is not exhaustive; add a branch for `[number, ...Array<string>]`"},
 		},
 		{
 			// A `val` destructuring tests no length, so it still needs the scrutinee to have
@@ -1543,49 +1543,49 @@ func TestInferMatchTupleRestOverAUnion(t *testing.T) {
 	}{
 		{
 			name: "MembersOfDifferentLengths",
-			src:  `fn f(t: [number] | [number, string]) { return match t { [a, ...r] => r } }`,
+			src:  `fn f(t: [number] | [number, string]) -> [] | [string] { return match t { [a, ...r] => r } }`,
 			want: "fn (t: [number] | [number, string]) -> [] | [string]",
 		},
 		{
 			// A variadic member gives the rest its values past the prefix. The `[]` the
 			// other member gives joins into that `Array<string>`.
 			name: "AVariadicMember",
-			src:  `fn f(t: [string] | [number, ...Array<string>]) { return match t { [a, ...r] => r } }`,
+			src:  `fn f(t: [string] | [number, ...Array<string>]) -> Array<string> { return match t { [a, ...r] => r } }`,
 			want: "fn (t: [string] | [number, ...Array<string>]) -> Array<string>",
 		},
 		{
 			// Only the variadic member reaches length 3, and its rest starts past its prefix.
 			name: "APrefixLongerThanAVariadicMembersPrefix",
-			src:  `fn f(t: [string, string] | [number, ...Array<string>]) { return match t { [a, b, c, ...r] => r, _ => [] } }`,
+			src:  `fn f(t: [string, string] | [number, ...Array<string>]) -> Array<string> { return match t { [a, b, c, ...r] => r, _ => [] } }`,
 			want: "fn (t: [string, string] | [number, ...Array<string>]) -> Array<string>",
 		},
 		{
 			// Both members reach length 3, so the rest reads past the variadic member's prefix.
 			name: "BothMembersReachThePrefix",
-			src:  `fn f(t: [string, string, string] | [number, ...Array<string>]) { return match t { [a, b, c, ...r] => r, _ => [] } }`,
+			src:  `fn f(t: [string, string, string] | [number, ...Array<string>]) -> Array<string> { return match t { [a, b, c, ...r] => r, _ => [] } }`,
 			want: "fn (t: [string, string, string] | [number, ...Array<string>]) -> Array<string>",
 		},
 		{
 			// A rest that starts inside a variadic tuple's prefix keeps the rest of the prefix.
 			name: "ARestInsideTheVariadicPrefix",
-			src:  `fn f(t: [number, string, ...Array<boolean>]) { return match t { [a, ...r] => r } }`,
+			src:  `fn f(t: [number, string, ...Array<boolean>]) -> [string, ...Array<boolean>] { return match t { [a, ...r] => r } }`,
 			want: "fn (t: [number, string, ...Array<boolean>]) -> [string, ...Array<boolean>]",
 		},
 		{
 			// A destructuring tests no length, so the rest reads every member.
 			name: "ADestructuring",
-			src:  "fn f(t: [number] | [number, string]) { val [a, ...r] = t\nreturn r }",
+			src:  "fn f(t: [number] | [number, string]) -> [] | [string] { val [a, ...r] = t\nreturn r }",
 			want: "fn (t: [number] | [number, string]) -> [] | [string]",
 		},
 		{
 			name: "MembersOfOneLength",
-			src:  `fn f(t: [number, string] | [boolean, number]) { return match t { [a, ...r] => r } }`,
+			src:  `fn f(t: [number, string] | [boolean, number]) -> [string] | [number] { return match t { [a, ...r] => r } }`,
 			want: "fn (t: [number, string] | [boolean, number]) -> [string] | [number]",
 		},
 		{
 			// `[a, b, ...r]` passes only the two-element member, so `r` reads its suffix alone.
 			name: "AMemberTooShortIsLeftOut",
-			src:  `fn f(t: [number] | [number, string]) { return match t { [a, b, ...r] => r, [a] => [] } }`,
+			src:  `fn f(t: [number] | [number, string]) -> [] { return match t { [a, b, ...r] => r, [a] => [] } }`,
 			want: "fn (t: [number] | [number, string]) -> []",
 		},
 	}
@@ -1611,24 +1611,24 @@ func TestInferMatchNarrowsByAbsentKeys(t *testing.T) {
 	}{
 		{
 			name: "EachShapeHasItsArm",
-			src:  `fn f(s: {radius: number} | {radius: number, label: string}) { return match s { {radius} => radius, {radius, label} => label } }`,
+			src:  `fn f(s: {radius: number} | {radius: number, label: string}) -> number | string { return match s { {radius} => radius, {radius, label} => label } }`,
 			want: "fn (s: {radius: number} | {radius: number, label: string}) -> number | string",
 		},
 		{
 			name:     "TheLabelledShapeNeedsItsOwnArm",
-			src:      `fn f(s: {radius: number} | {radius: number, label: string}) { return match s { {radius} => radius } }`,
-			wantErrs: []string{"1:70-1:100: match is not exhaustive; add a branch for `{radius: number, label: string}`"},
+			src:      `fn f(s: {radius: number} | {radius: number, label: string}) -> number { return match s { {radius} => radius } }`,
+			wantErrs: []string{"1:80-1:110: match is not exhaustive; add a branch for `{radius: number, label: string}`"},
 		},
 		{
 			// An inexact member still carries the keys it declares, so a check that `label`
 			// is absent rules it out.
 			name:     "AnInexactMemberIsExcludedByAKeyItDeclares",
-			src:      `fn f(s: {radius: number} | {radius: number, label: string, ...}) { return match s { {radius} => radius } }`,
-			wantErrs: []string{"1:75-1:105: match is not exhaustive; add a branch for `{radius: number, label: string, ...}`"},
+			src:      `fn f(s: {radius: number} | {radius: number, label: string, ...}) -> number { return match s { {radius} => radius } }`,
+			wantErrs: []string{"1:85-1:115: match is not exhaustive; add a branch for `{radius: number, label: string, ...}`"},
 		},
 		{
 			name: "AnInexactMemberWithItsOwnArm",
-			src:  `fn f(s: {radius: number} | {radius: number, label: string, ...}) { return match s { {radius} => radius, {radius, label} => label } }`,
+			src:  `fn f(s: {radius: number} | {radius: number, label: string, ...}) -> number | string { return match s { {radius} => radius, {radius, label} => label } }`,
 			want: "fn (s: {radius: number} | {radius: number, label: string, ...}) -> number | string",
 		},
 		{
@@ -1636,57 +1636,57 @@ func TestInferMatchNarrowsByAbsentKeys(t *testing.T) {
 			// only `size` is checked absent. The inexact member may carry `size`, which its
 			// type cannot rule out, so no key is checked and the pattern matches all three.
 			name: "AnInexactMemberDeclaringNoAbsentKey",
-			src:  `fn f(s: {radius: number, label?: string} | {radius: number, size: number} | {radius: number, label: string, ...}) { return match s { {radius} => radius } }`,
+			src:  `fn f(s: {radius: number, label?: string} | {radius: number, size: number} | {radius: number, label: string, ...}) -> number { return match s { {radius} => radius } }`,
 			want: "fn (s: {radius: number, label?: string} | {radius: number, size: number} | {radius: number, label: string, ...}) -> number",
 		},
 		{
 			// The tight member declares the loose member's extra key, so no key is left to
 			// check absent and the pattern matches both.
 			name: "ATightMemberDeclaresTheExtraKey",
-			src:  `fn f(s: {a: number, b?: string} | {a: number, b: number}) { return match s { {a} => a } }`,
+			src:  `fn f(s: {a: number, b?: string} | {a: number, b: number}) -> number { return match s { {a} => a } }`,
 			want: "fn (s: {a: number, b?: string} | {a: number, b: number}) -> number",
 		},
 		{
 			// A member with an index signature still carries the keys it declares, so a check
 			// that `b` is absent rules it out.
 			name:     "AMemberWithAnIndexSignatureIsExcludedByAKeyItDeclares",
-			src:      `fn f(s: {a: number} | {a: number, b: string, [k: string]: number}) { return match s { {a} => a } }`,
-			wantErrs: []string{"1:77-1:97: match is not exhaustive; add a branch for `{a: number, b: string, [k: string]: number}`"},
+			src:      `fn f(s: {a: number} | {a: number, b: string, [k: string]: number}) -> number { return match s { {a} => a } }`,
+			wantErrs: []string{"1:87-1:107: match is not exhaustive; add a branch for `{a: number, b: string, [k: string]: number}`"},
 		},
 		{
 			// A tight member with an index signature may carry `b`, so checking `b` is absent
 			// could reject its values. No key is checked, and `{a}` matches both members.
 			name: "ATightMemberWithAnIndexSignature",
-			src:  `fn f(s: {a: number, [k: string]: number} | {a: string, b: string}) { return match s { {a} => a } }`,
+			src:  `fn f(s: {a: number, [k: string]: number} | {a: string, b: string}) -> number | string { return match s { {a} => a } }`,
 			want: "fn (s: {a: number, [k: string]: number} | {a: string, b: string}) -> number | string",
 		},
 		{
 			name:     "ARequiredMethodIsAnExtraKey",
-			src:      `fn f(s: {a: number} | {a: string, m() -> number}) { return match s { {a} => 1 } }`,
-			wantErrs: []string{"1:60-1:80: match is not exhaustive; add a branch for `{a: string, m() -> number}`"},
+			src:      `fn f(s: {a: number} | {a: string, m() -> number}) -> 1 { return match s { {a} => 1 } }`,
+			wantErrs: []string{"1:65-1:85: match is not exhaustive; add a branch for `{a: string, m() -> number}`"},
 		},
 		{
 			name:     "AGetterIsAnExtraKey",
-			src:      `fn f(s: {a: number} | {a: string, get g(self) -> number}) { return match s { {a} => 1 } }`,
-			wantErrs: []string{"1:68-1:88: match is not exhaustive; add a branch for `{a: string, get g() -> number}`"},
+			src:      `fn f(s: {a: number} | {a: string, get g(self) -> number}) -> 1 { return match s { {a} => 1 } }`,
+			wantErrs: []string{"1:73-1:93: match is not exhaustive; add a branch for `{a: string, get g() -> number}`"},
 		},
 		{
 			// An optional member is one a value need not carry, so it is no extra key.
 			name: "AnOptionalMemberIsNoExtraKey",
-			src:  `fn f(s: {a: number} | {a: string, m?: number}) { return match s { {a} => 1 } }`,
+			src:  `fn f(s: {a: number} | {a: string, m?: number}) -> 1 { return match s { {a} => 1 } }`,
 			want: "fn (s: {a: number} | {a: string, m?: number}) -> 1",
 		},
 		{
 			// A rest takes the keys the pattern leaves, so it checks none absent.
 			name: "ARestChecksNothingAbsent",
-			src:  `fn f(s: {radius: number} | {radius: number, label: string}) { return match s { {radius, ...r} => radius } }`,
+			src:  `fn f(s: {radius: number} | {radius: number, label: string}) -> number { return match s { {radius, ...r} => radius } }`,
 			want: "fn (s: {radius: number} | {radius: number, label: string}) -> number",
 		},
 		{
 			// Coverage reads absent keys for the root's members alone, so a nested pattern
 			// checks none and matches every member carrying its keys.
 			name: "ANestedPatternChecksNothingAbsent",
-			src:  `fn f(s: [{radius: number} | {radius: number, label: string}, number]) { return match s { [{radius}, _] => radius } }`,
+			src:  `fn f(s: [{radius: number} | {radius: number, label: string}, number]) -> number { return match s { [{radius}, _] => radius } }`,
 			want: "fn (s: [{radius: number} | {radius: number, label: string}, number]) -> number",
 		},
 	}

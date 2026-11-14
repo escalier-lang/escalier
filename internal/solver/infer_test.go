@@ -388,8 +388,8 @@ func TestInferModuleDuplicateTopLevelValIsError(t *testing.T) {
 // but its value is discarded and the body returns `undefined`.
 func TestInferFuncBodyTailIsNotImplicitReturn(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f() { 5 }
-		fn g() { return 5 }
+		fn f() -> undefined { 5 }
+		fn g() -> 5 { return 5 }
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn () -> undefined", values["f"])
@@ -399,10 +399,10 @@ func TestInferFuncBodyTailIsNotImplicitReturn(t *testing.T) {
 // The discarded tail is still type-checked: an error inside it is reported even
 // though its value never reaches the function's return type.
 func TestInferFuncBodyDiscardedTailStillChecked(t *testing.T) {
-	src := `fn f() { missing }`
+	src := `fn f() -> undefined { missing }`
 	values, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
-	require.Equal(t, "1:10-1:17: Unknown identifier: missing", msgWithSpan(t, errs[0]))
+	require.Equal(t, "1:23-1:30: Unknown identifier: missing", msgWithSpan(t, errs[0]))
 	require.Equal(t, "fn () -> undefined", values["f"])
 }
 
@@ -421,7 +421,7 @@ func TestInferModuleSCCOrdering(t *testing.T) {
 			// component is inferred first, so the call sees its concrete type.
 			name: "OutOfOrderFuncReference",
 			src: `
-				fn caller(n: number) { return callee(n) }
+				val caller = fn (n: number) { return callee(n) }
 				fn callee(n: number) -> number { return n }
 			`,
 			want: map[string]string{
@@ -434,7 +434,7 @@ func TestInferModuleSCCOrdering(t *testing.T) {
 			// never returns, so its return type coalesces to never. It resolves
 			// because the SCC driver pre-binds foo to a var before its body.
 			name: "SelfRecursive",
-			src:  `fn foo(x: number) { return foo(x) }`,
+			src:  `val foo = fn (x: number) { return foo(x) }`,
 			want: map[string]string{"foo": "fn (x: number) -> never"},
 		},
 		{
@@ -481,8 +481,8 @@ func TestInferModuleSCCOrdering(t *testing.T) {
 // than hang.
 func TestInferModuleUngroundedMutualRecursionTerminates(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn a(n: number) { return b(n) }
-		fn b(n: number) { return a(n) }
+		val a = fn (n: number) { return b(n) }
+		val b = fn (n: number) { return a(n) }
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, map[string]string{

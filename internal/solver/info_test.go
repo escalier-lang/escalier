@@ -147,7 +147,7 @@ func TestDisplayTypeOfTypeParameterInItsFunction(t *testing.T) {
 interface A {
 	m(&mut self) -> undefined,
 }
-fn f<T: A>(x: &mut T) {
+fn f<T: A>(x: &mut T) -> undefined {
 	x
 }
 `,
@@ -172,7 +172,7 @@ fn f<T: A>(x: T) -> A {
 		{
 			name: "LowerBoundedParameter",
 			src: `
-fn f<T>(x: T) where number: T {
+fn f<T>(x: T) -> undefined where number: T {
 	x
 }
 `,
@@ -181,7 +181,7 @@ fn f<T>(x: T) where number: T {
 		{
 			name: "OwnedUnboundedParameter",
 			src: `
-fn f<T>(x: T) {
+fn f<T>(x: T) -> undefined {
 	x
 }
 `,

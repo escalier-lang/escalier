@@ -15,7 +15,7 @@ import (
 func TestInferInstancePatBindsFields(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class Point { x: number, y: number }
-		fn f(p: Point) {
+		fn f(p: Point) -> [number, number] {
 			return match p {
 				Point { x, y } => [x, y]
 			}
@@ -30,7 +30,7 @@ func TestInferInstancePatBindsFields(t *testing.T) {
 func TestInferInstancePatValDestructure(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class Point { x: number, y: number }
-		fn f(p: Point) {
+		fn f(p: Point) -> [number, number] {
 			val Point { x, y } = p
 			return [x, y]
 		}
@@ -45,7 +45,7 @@ func TestInferInstancePatValDestructure(t *testing.T) {
 func TestInferExtractorPatBindsArgs(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class Point { x: number, y: number, static [Symbol.customMatcher](subject: Point) -> [number, number] { return [subject.x, subject.y] } }
-		fn f(p: Point) {
+		fn f(p: Point) -> [number, number] {
 			return match p {
 				Point(x, y) => [x, y]
 			}
@@ -66,7 +66,7 @@ func TestInferExtractorPatExplicitConstructor(t *testing.T) {
 				self.degrees = degrees
 			},
 		}
-		fn f(c: Celsius) {
+		fn f(c: Celsius) -> [never, never] {
 			return match c {
 				Celsius(label, degrees) => [label, degrees]
 			}
@@ -82,7 +82,7 @@ func TestInferExtractorPatExplicitConstructor(t *testing.T) {
 func TestInferInstancePatGeneric(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class Box<T> { value: T }
-		fn f(b: Box<number>) {
+		fn f(b: Box<number>) -> number {
 			return match b {
 				Box { value } => value
 			}
@@ -97,7 +97,7 @@ func TestInferInstancePatGeneric(t *testing.T) {
 func TestInferExtractorPatGeneric(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class Box<T> { value: T, static [Symbol.customMatcher]<U>(subject: Box<U>) -> [U] { return [subject.value] } }
-		fn f(b: Box<string>) {
+		fn f(b: Box<string>) -> string {
 			return match b {
 				Box(value) => value
 			}
@@ -112,7 +112,7 @@ func TestInferExtractorPatGeneric(t *testing.T) {
 func TestInferInstancePatNested(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class Line { start: {x: number, y: number} }
-		fn f(l: Line) {
+		fn f(l: Line) -> [number, number] {
 			return match l {
 				Line { start: {x, y} } => [x, y]
 			}
@@ -127,7 +127,7 @@ func TestInferInstancePatNested(t *testing.T) {
 func TestInferInstancePatOmitFields(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class Point { x: number, y: number }
-		fn f(p: Point) {
+		fn f(p: Point) -> number {
 			val Point { x } = p
 			return x
 		}
@@ -141,7 +141,7 @@ func TestInferInstancePatOmitFields(t *testing.T) {
 func TestInferInstancePatRenameFields(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class Point { x: number, y: string }
-		fn f(p: Point) {
+		fn f(p: Point) -> [number, string] {
 			val Point { x: a, y: b } = p
 			return [a, b]
 		}
@@ -155,7 +155,7 @@ func TestInferInstancePatRenameFields(t *testing.T) {
 func TestInferInstancePatWrongField(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		class Point { x: number, y: number }
-		fn f(p: Point) {
+		fn f(p: Point) -> number {
 			return match p {
 				Point { x, z } => x
 			}
@@ -170,7 +170,7 @@ func TestInferInstancePatWrongField(t *testing.T) {
 func TestInferExtractorPatWrongArity(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		class Point { x: number, y: number, static [Symbol.customMatcher](subject: Point) -> [number, number] { return [subject.x, subject.y] } }
-		fn f(p: Point) {
+		fn f(p: Point) -> number {
 			return match p {
 				Point(x) => x
 			}
@@ -222,7 +222,7 @@ func TestInferInstancePatNominalMismatch(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		class Point { x: number, y: number }
 		class Circle { radius: number }
-		fn f(c: Circle) {
+		fn f(c: Circle) -> [number, number] {
 			return match c {
 				Point { x, y } => [x, y]
 			}
@@ -312,7 +312,7 @@ func TestInferMatchGenericEnumExhaustiveness(t *testing.T) {
 			Some(value: T),
 			None,
 		}
-		fn f(o: MyOption<number>) {
+		fn f(o: MyOption<number>) -> number {
 			return match o {
 				MyOption.Some(value) => value,
 				MyOption.None() => 0,
@@ -376,7 +376,7 @@ func TestInferMatchUnionAliasExhaustiveness(t *testing.T) {
 func TestInferMatchNominalMemberUncoveredStructural(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		class Point { x: number, static [Symbol.customMatcher](subject: Point) -> [number] { return [subject.x] } }
-		fn f(b: boolean) {
+		fn f(b: boolean) -> number {
 			val p = if b { Point(1) } else { {y: 2} }
 			return match p {
 				Point(x) => x
@@ -393,7 +393,7 @@ func TestInferMatchNominalMemberUncoveredStructural(t *testing.T) {
 // The `"a"` member is uncovered, so the match stays non-exhaustive.
 func TestInferMatchUnionUncoveredWithStructuralMember(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f(b: boolean) {
+		fn f(b: boolean) -> 1 {
 			val p = if b { "a" } else { {x: 1} }
 			return match p {
 				{x} => x
@@ -410,7 +410,7 @@ func TestInferMatchUnionUncoveredWithStructuralMember(t *testing.T) {
 // `{y: string}` member, so neither reports a missing property and both members are covered.
 func TestInferMatchStructuralObjectUnion(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: {x: number} | {y: string}) {
+		fn f(p: {x: number} | {y: string}) -> 1 | 2 {
 			return match p {
 				{x} => 1,
 				{y} => 2
@@ -426,7 +426,7 @@ func TestInferMatchStructuralObjectUnion(t *testing.T) {
 // {z: boolean}`, but no arm names the `z` field, so the third member is uncovered.
 func TestInferMatchStructuralObjectUnionUncovered(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f(p: {x: number} | {y: string} | {z: boolean}) {
+		fn f(p: {x: number} | {y: string} | {z: boolean}) -> 1 | 2 {
 			return match p {
 				{x} => 1,
 				{y} => 2
@@ -443,7 +443,7 @@ func TestInferMatchStructuralObjectUnionUncovered(t *testing.T) {
 // exhaustive and each arm reads its own member's element types.
 func TestInferMatchTupleUnionDifferentArity(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(b: boolean) {
+		fn f(b: boolean) -> 1 | "a" {
 			val x = if b { [1, 2] } else { ["a"] }
 			return match x {
 				[a, c] => a,
@@ -462,7 +462,7 @@ func TestInferMatchTupleUnionDifferentArity(t *testing.T) {
 // two.
 func TestInferMatchTupleRestPattern(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: [number, number] | [string]) {
+		fn f(p: [number, number] | [string]) -> number | string {
 			return match p {
 				[head, ...tail] => head
 			}
@@ -476,7 +476,7 @@ func TestInferMatchTupleRestPattern(t *testing.T) {
 // `{x: number}` member, it reads `x` at `number` without error.
 func TestInferMatchExactUnionNarrowsCleanly(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn g(p: {x: number} | {y: string}) {
+		fn g(p: {x: number} | {y: string}) -> number {
 			return match p {
 				{x} => x,
 				_ => 0
@@ -494,7 +494,7 @@ func TestInferMatchExactUnionNarrowsCleanly(t *testing.T) {
 // `{x}` arm narrows to `x: number`, while this irrefutable read keeps the `undefined`.
 func TestValDestructureUnionReadsPartialFieldAsUndefined(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: {x: number} | {y: string}) {
+		fn f(p: {x: number} | {y: string}) -> number | undefined {
 			val {x} = p
 			return x
 		}
@@ -508,7 +508,7 @@ func TestValDestructureUnionReadsPartialFieldAsUndefined(t *testing.T) {
 // rejecting on the `{y: string}` member that lacks `x`.
 func TestInferMemberUnionReadsPartialFieldAsUndefined(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: {x: number} | {y: string}) {
+		fn f(p: {x: number} | {y: string}) -> number | undefined {
 			return p.x
 		}
 	`)
@@ -521,7 +521,7 @@ func TestInferMemberUnionReadsPartialFieldAsUndefined(t *testing.T) {
 // yields `number | string`.
 func TestInferMemberUnionReadsCommonFieldAsJoin(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: {x: number} | {x: string}) {
+		fn f(p: {x: number} | {x: string}) -> number | string {
 			return p.x
 		}
 	`)
@@ -547,7 +547,7 @@ func TestInferMemberUnionAbsentFieldErrors(t *testing.T) {
 // than erroring, because the source may omit the property at runtime.
 func TestInferMemberOptionalFieldReadsAsUndefined(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: {x?: number}) {
+		fn f(p: {x?: number}) -> number | undefined {
 			return p.x
 		}
 	`)
@@ -559,7 +559,7 @@ func TestInferMemberOptionalFieldReadsAsUndefined(t *testing.T) {
 // `val {x} = p` over `{x?: number}` binds `x: number | undefined`.
 func TestValDestructureOptionalFieldReadsAsUndefined(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: {x?: number}) {
+		fn f(p: {x?: number}) -> number | undefined {
 			val {x} = p
 			return x
 		}
@@ -573,7 +573,7 @@ func TestValDestructureOptionalFieldReadsAsUndefined(t *testing.T) {
 // with OptionalPropertyError (#887), since the source may omit the property.
 func TestOptionalSourceIntoRequiredTargetStillErrors(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f(p: {x?: number}) {
+		fn f(p: {x?: number}) -> {x: number} {
 			val q: {x: number} = p
 			return q
 		}
@@ -590,7 +590,7 @@ func TestInferMemberClassUnionReadsCommonFieldAsJoin(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class A { x: number, y: number }
 		class B { x: string, z: boolean }
-		fn f(p: A | B) {
+		fn f(p: A | B) -> number | string {
 			return p.x
 		}
 	`)
@@ -613,7 +613,7 @@ func TestInferMemberClassUnionReadsPartialField(t *testing.T) {
 			src: `
 				class A { x: number }
 				class B { y: string }
-				fn f(p: A | B) {
+				fn f(p: A | B) -> unknown {
 					return p.x
 				}
 			`,
@@ -624,7 +624,7 @@ func TestInferMemberClassUnionReadsPartialField(t *testing.T) {
 			src: `
 				class A { x: number }
 				final class B { y: string }
-				fn f(p: A | B) {
+				fn f(p: A | B) -> number | undefined {
 					return p.x
 				}
 			`,
@@ -646,7 +646,7 @@ func TestInferMemberClassUnionReadsPartialField(t *testing.T) {
 func TestInferMemberMixedObjectClassUnionReadsField(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class Point { x: number, y: number }
-		fn f(p: {x: string} | Point) {
+		fn f(p: {x: string} | Point) -> string | number {
 			return p.x
 		}
 	`)
@@ -661,7 +661,7 @@ func TestInferMemberClassUnionReadsGetter(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class A { _v: number, get v(&self) -> number { return self._v } }
 		class B { _v: string, get v(&self) -> string { return self._v } }
-		fn f(p: A | B) {
+		fn f(p: A | B) -> number | string {
 			return p.v
 		}
 	`)
@@ -676,7 +676,7 @@ func TestInferMemberClassUnionReadsMethod(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class A { area(&self) -> number { return 1 } }
 		class B { area(&self, scale: number) -> string { return "x" } }
-		fn f(p: A | B) {
+		fn f(p: A | B) -> (fn () -> number) | (fn (scale: number) -> string) {
 			return p.area
 		}
 	`)
@@ -697,7 +697,7 @@ func TestInferMemberClassUnionReadsOverloadedMethod(t *testing.T) {
 			area(&self, x: number) -> number { return x },
 			area(&self, x: string) -> string { return x },
 		}
-		fn f(p: A | B) {
+		fn f(p: A | B) -> (fn (x: number) -> number) & (fn (x: string) -> string) {
 			return p.area
 		}
 	`)
@@ -727,7 +727,7 @@ func TestInferMemberClassUnionSetterOnlyReadsUndefined(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		final class A { _v: number, set v(&mut self, x: number) { self._v = x } }
 		class B { v: string }
-		fn f(p: A | B) {
+		fn f(p: A | B) -> string | undefined {
 			return p.v
 		}
 	`)
@@ -743,7 +743,7 @@ func TestInferMemberClassUnionAccessorPairReadsGetter(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class A { _v: number, set v(&mut self, x: string) { }, get v(&self) -> string { return "a" } }
 		class B { v: string }
-		fn f(p: A | B) {
+		fn f(p: A | B) -> string {
 			return p.v
 		}
 	`)
@@ -856,7 +856,7 @@ func TestInferExtractorPatRestAndDefault(t *testing.T) {
 func TestInferExtractorPatRestArity(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		class Point { x: number, y: number, static [Symbol.customMatcher](subject: Point) -> [number, number] { return [subject.x, subject.y] } }
-		fn f(p: Point) {
+		fn f(p: Point) -> number {
 			return match p {
 				Point(x, y, z, ...rest) => x
 			}
@@ -1029,7 +1029,7 @@ func TestInferStructuralPatternOverClassInstance(t *testing.T) {
 		},
 		{
 			name: "a getter fills a property of an annotated object type",
-			src: `fn f(c: &Circle) {
+			src: `fn f(c: &Circle) -> number {
 				val o: &{area: number, ...} = c
 				return o.area
 			}`,
@@ -1039,8 +1039,8 @@ func TestInferStructuralPatternOverClassInstance(t *testing.T) {
 			// Destructuring reads the getter, so what it can raise reaches the enclosing
 			// function, which declares no `throws` here.
 			name:     "a raising getter's raise reaches the destructuring function",
-			src:      `fn f(c: &Circle) { val {risky} = c }`,
-			wantErrs: []string{"9:26-9:31: `f` can throw `string`, but it doesn't declare it; add `throws string` to `f`'s signature"},
+			src:      `fn f(c: &Circle) -> undefined { val {risky} = c }`,
+			wantErrs: []string{"9:39-9:44: `f` can throw `string`, but it doesn't declare it; add `throws string` to `f`'s signature"},
 		},
 		{
 			name: "a raising getter destructures under a matching throws clause",
@@ -1060,27 +1060,27 @@ func TestInferStructuralPatternOverClassInstance(t *testing.T) {
 			// Each member of a union scrutinee raises what its getter can raise.
 			name: "a raising getter's raise reaches the function through a union",
 			src: `class Square { side: number, get risky(&self) -> number throws boolean { if self.side < 0 { throw true } return self.side } }
-				fn f(s: &(Circle | Square)) { val {risky} = s }`,
-			wantErrs: []string{"10:40-10:45: `f` can throw `string`, but it doesn't declare it; add `throws string` to `f`'s signature", "10:40-10:45: `f` can throw `boolean`, but it doesn't declare it; add `throws boolean` to `f`'s signature"},
+				fn f(s: &(Circle | Square)) -> undefined { val {risky} = s }`,
+			wantErrs: []string{"10:53-10:58: `f` can throw `string`, but it doesn't declare it; add `throws string` to `f`'s signature", "10:53-10:58: `f` can throw `boolean`, but it doesn't declare it; add `throws boolean` to `f`'s signature"},
 		},
 		{
 			// A read through the property has no place to record the getter's raise.
 			name:     "a raising getter does not fill a property type",
-			src:      `fn f(c: &Circle) { val o: &{risky: number, ...} = c }`,
-			wantErrs: []string{"9:52-9:53: the getter `risky` can throw `string`, which the property `risky: number` cannot"},
+			src:      `fn f(c: &Circle) -> undefined { val o: &{risky: number, ...} = c }`,
+			wantErrs: []string{"9:65-9:66: the getter `risky` can throw `string`, which the property `risky: number` cannot"},
 		},
 		{
 			name: "a getter that takes its receiver mutably does not fill a property",
 			src: `class Counter { n: number, get next(&mut self) -> number { return self.n } }
-				fn f(c: &Counter) { val {next} = c }`,
-			wantErrs: []string{"10:30-10:34: object is missing property: next"},
+				fn f(c: &Counter) -> undefined { val {next} = c }`,
+			wantErrs: []string{"10:43-10:47: object is missing property: next"},
 		},
 		{
 			// `&mut {area: number, ...}` is a mutable borrow of an object type, through which
 			// `o.area = 1` would write the field. Circle declares only a getter for `area`,
 			// so it cannot take that write.
 			name: "a getter does not fill a field of a mutable object type",
-			src: `fn f(c: &mut Circle) {
+			src: `fn f(c: &mut Circle) -> undefined {
 				val o: &mut {area: number, ...} = c
 			}`,
 			wantErrs: []string{"10:39-10:40: readonly field 'area' cannot satisfy a writable field requirement"},
@@ -1092,7 +1092,7 @@ func TestInferStructuralPatternOverClassInstance(t *testing.T) {
 					get value(&self) -> number { return self.v },
 					set value(&mut self, x: number) { self.v = x },
 				}
-				fn f(c: &mut Cell) {
+				fn f(c: &mut Cell) -> &mut {value: number, ...} {
 					val o: &mut {value: number, ...} = c
 					return o
 				}`,
@@ -1116,10 +1116,10 @@ func TestInferStructuralPatternOverClassInstance(t *testing.T) {
 		},
 		{
 			name: "a structural arm leaves the classes without its keys uncovered",
-			src: `fn f(o: &(Color | Event)) { return match o {
+			src: `fn f(o: &(Color | Event)) -> number { return match o {
 				{r, g, b} => r + g + b,
 			} }`,
-			wantErrs: []string{"9:37-11:5: match is not exhaustive; add a branch for `Event`"},
+			wantErrs: []string{"9:47-11:5: match is not exhaustive; add a branch for `Event`"},
 		},
 	}
 	for _, tt := range tests {
@@ -1183,7 +1183,7 @@ func TestInferInstancePatBaseClassOverSubclass(t *testing.T) {
 			// A caller can instantiate `U` as `Failure<number>`, so the arm does not narrow the
 			// union to its `Failure<string>` member, and `payload` is not bound as a `string`.
 			name: "a union with a type parameter member does not narrow",
-			src:  `fn f<U>(p: Failure<string> | U) { return match p { Failure{payload} => payload, _ => 0 } }`,
+			src:  `fn f<U>(p: Failure<string> | U) -> 0 { return match p { Failure{payload} => payload, _ => 0 } }`,
 			want: "fn <U>(p: Failure<string> | U) -> 0",
 		},
 	}
