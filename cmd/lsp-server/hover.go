@@ -239,6 +239,13 @@ func constructorText(name string, ctor *soltype.ConstructorElem) string {
 // for `fn <T>(status: number) -> C`. A parameter that is itself a function type holds its
 // own ` -> `, so the return is the last one, not the first.
 func signatureParams(sig *soltype.FuncType) string {
+	// A constructor's or a variant's signature is generalized over its class's or enum's
+	// type parameters, so the printer writes them as a leading binder:
+	// `fn <T, E>(value: T) -> Result<T, E>` for `Result.Ok`. Kept, the hover would read
+	// `(variant) Result.Ok<T, E>(value: T)`, as if the variant took type arguments of its
+	// own. The printed text can't tell the owner's parameters from the signature's, so a
+	// signature with type parameters of its own loses them too. A printer that renders the
+	// parameter list on its own would remove the guess, which #2716 tracks.
 	rendered := dropTypeBinder(strings.TrimPrefix(soltype.PrintAsScheme(sig), "fn "))
 	if i := strings.LastIndex(rendered, " -> "); i >= 0 {
 		rendered = rendered[:i]
