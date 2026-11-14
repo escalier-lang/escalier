@@ -46,9 +46,9 @@ func TestSpecializeOverlappingArmsOfDifferentShapes(t *testing.T) {
     leaf x
   } default split p {
     {x} => bind x = p.x; leaf 1
-  } default leaf 0
+  } default bind _ = p; leaf 0
   {x} => bind x = p.x; leaf 1
-} default leaf 0`))
+} default bind _ = p; leaf 0`))
 }
 
 // An arm the guarded one rules out is dropped from what the guard falls into. No value
@@ -64,9 +64,9 @@ func TestSpecializeDropsArmsTheGuardedTestRulesOut(t *testing.T) {
 	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split n {
   1 => guard (x > y) {
     leaf "one"
-  } default leaf "other"
+  } default bind _ = n; leaf "other"
   2 => leaf "two"
-} default leaf "other"`))
+} default bind _ = n; leaf "other"`))
 }
 
 // Two guarded arms of the same tag chain: the first proves the second's test, so the
@@ -88,8 +88,8 @@ func TestSpecializeChainsGuardsOnOneTag(t *testing.T) {
     leaf "a"
   } default guard (g) {
     leaf "b"
-  } default leaf "c"
-} default leaf "c"`))
+  } default bind _ = n; leaf "c"
+} default bind _ = n; leaf "c"`))
 }
 
 // Only a branch this rewrite duplicated is dropped. Two unguarded arms of the same tag
@@ -152,11 +152,11 @@ func TestSpecializeClearsANestedBranchsTest(t *testing.T) {
       leaf "a"
     } default split p.x {
       2 => leaf "b"
-    } default leaf "c"
+    } default bind _ = p; leaf "c"
   } default split p.x {
     2 => leaf "b"
-  } default leaf "c"
-} default leaf "c"`))
+  } default bind _ = p; leaf "c"
+} default bind _ = p; leaf "c"`))
 }
 
 // A tag one arm proves is not always a tag another arm's value shares. Only a pair the

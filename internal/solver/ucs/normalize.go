@@ -204,6 +204,15 @@ func (b *splitBuilder) build(cands []candidate) ([]*NormBranch, Norm) {
 			// dropping it would leave the coverage check nothing to report.
 			continue
 		}
+		if cand.test == nil {
+			if term, ok := b.built[candidatesKey(cands[i:])]; ok {
+				// An earlier branch's fallthrough already built this tail, so the split
+				// reaches the same node rather than a copy of it.
+				dflt = term
+				b.inlined.Add(cand.index)
+				break
+			}
+		}
 		// Only a branch that can fail needs to name where it continues. An unguarded arm
 		// whose pattern nests no further ends in a leaf, so the fallthrough would be dead
 		// weight. Nesting is the other way a branch fails, when the tag test passes and a

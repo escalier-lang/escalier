@@ -44,6 +44,12 @@ func TestShallowTestPatternKinds(t *testing.T) {
 			name:    "wildcard",
 			pattern: wildcardPat(),
 			target:  "p",
+			want:    "no test => bind _ = p; leaf 0",
+		},
+		{
+			name:    "missing pattern",
+			pattern: nil,
+			target:  "p",
 			want:    "no test => leaf 0",
 		},
 		{
@@ -74,7 +80,7 @@ func TestShallowTestPatternKinds(t *testing.T) {
 			name:    "object matching a field against a wildcard",
 			pattern: ast.NewObjectPat([]ast.ObjPatElem{keyValueElem("x", wildcardPat())}, ast.Span{}),
 			target:  "p",
-			want:    "{x} => leaf 0",
+			want:    "{x} => bind _ = p.x; leaf 0",
 		},
 		{
 			name: "object rest",

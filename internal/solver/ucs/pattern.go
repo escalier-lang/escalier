@@ -166,11 +166,15 @@ func bindNode(bind bindSpec, cont Norm) Norm {
 // recursion that flattens a nested pattern lives there rather than here.
 func shallowTest(p ast.Pat, scrutinee *Scrutinee, origin Origin) (Test, []bindSpec) {
 	switch p := p.(type) {
-	case nil, *ast.WildcardPat:
-		// A wildcard binds without testing. A branch carrying no pattern at all is a
-		// lowering bug rather than a form the surface can write, and treating it the
-		// same way keeps the read total so the bug shows up as a printable IR.
+	case nil:
+		// A branch carrying no pattern at all is a lowering bug rather than a form the
+		// surface can write. Reading it as a catch-all keeps the read total so the bug
+		// shows up as a printable IR.
 		return nil, nil
+	case *ast.WildcardPat:
+		// A wildcard matches without testing. It still binds the scrutinee as a nameless
+		// bind, so the solver types the wildcard against the value that reaches it.
+		return nil, []bindSpec{{pat: p, source: scrutinee, origin: leafOrigin(origin, p)}}
 	case *ast.IdentPat:
 		// An identifier pattern binds the scrutinee itself rather than a projection of
 		// it, so the bind's source is the scrutinee node. A narrowing annotation on it is
@@ -352,15 +356,12 @@ func valueDefaultsField(p ast.Pat) bool {
 	return ok && ident.Default != nil
 }
 
-// appendBind adds what a sub-pattern contributes at the projection step reaches. A
-// wildcard binds nothing and needs no test, so it adds nothing at all. An identifier
-// binds the projection. Any other sub-pattern is kept whole as a nameless bind, which
-// binder.wrap turns into a split over that projection.
+// appendBind adds what a sub-pattern contributes at the projection step reaches. An
+// identifier binds the projection. Any other sub-pattern, a wildcard included, is kept
+// whole as a nameless bind. binder.wrap turns that bind into a split over the projection
+// when the sub-pattern tests something, and keeps it as a bind when it tests nothing.
 func appendBind(binds []bindSpec, p ast.Pat, parent *Scrutinee, step Step, origin Origin) []bindSpec {
 	if p == nil {
-		return binds
-	}
-	if _, isWildcard := p.(*ast.WildcardPat); isWildcard {
 		return binds
 	}
 	leaf := leafOrigin(origin, p)
