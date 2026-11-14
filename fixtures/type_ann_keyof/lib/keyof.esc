@@ -14,7 +14,7 @@ val y: Point["y"] = 10
 
 class Event {
     msg: string,
-    print(&self) {
+    print(&self) -> undefined {
         console.log(self.msg)
     }
 }

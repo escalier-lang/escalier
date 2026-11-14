@@ -17,11 +17,11 @@ export fn charCount(s: string) -> number {
 }
 
 // Spread iterator into array
-export fn spreadString(s: string) {
+export fn spreadString(s: string) -> Array<string> {
     return [...s]
 }
 
-export fn spreadArray(items: Array<number>) {
+export fn spreadArray(items: Array<number>) -> Array<number> {
     return [...items]
 }
 

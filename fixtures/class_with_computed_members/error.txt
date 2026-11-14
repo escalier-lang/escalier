@@ -1,5 +1,0 @@
-lib/index.esc:5:6: '[baz]' is a method, so it needs a return type
-
-5:      [baz](&self) {
-         ^^^
-

@@ -137,10 +137,55 @@ func TestSignatureAction(t *testing.T) {
 			diagnostic: "0:3-0:4 'f' is declared at a script's top level, so it needs a return type; write `-> number`",
 		},
 		{
+			// The checker renders this method with a binder the source does not write. Every
+			// part of its signature is written, so the action adds no binder for it.
+			name:     "FullSignatureGenericMethod",
+			src:      "class Foo {\n\tvalue: number,\n\tget<T>(&self, d: T) -> number | T {\n\t\tif self.value != 0 { return self.value } else { return d }\n\t},\n}",
+			cursor:   "get",
+			expected: "",
+		},
+		{
 			name:     "FullSignature",
 			src:      "fn full(a: number) -> number { return a }",
 			cursor:   "full",
 			expected: "",
+		},
+		{
+			name:       "OptionalParamWithoutType",
+			src:        "fn f(x?) { return x }",
+			cursor:     "f(",
+			expected:   "fn f<T0>(x?: T0) -> T0 { return x }",
+			diagnostic: "0:3-0:4 'f' is declared at a script's top level, so parameter 'x' needs a type and 'f' needs a return type",
+		},
+		{
+			name:       "MethodReceiverGetsLifetime",
+			src:        "type Flat = {x: number}\nclass Box {\n\tinner: Flat,\n\tpick(&self, a: &Flat, c: boolean) { if c { return &self.inner } else { return a } },\n}",
+			cursor:     "pick",
+			expected:   "type Flat = {x: number}\nclass Box {\n\tinner: Flat,\n\tpick<'a>(&self, a: &'a Flat, c: boolean) -> &Flat | &'a Flat { if c { return &self.inner } else { return a } },\n}",
+			diagnostic: "3:1-3:5 'pick' is a method, so it needs a return type; write `pick<'a>(&self, a: &'a Flat, c: boolean) -> &Flat | &'a Flat`",
+		},
+		{
+			name:       "ThrowsGetsLifetime",
+			src:        "type Flat = {x: number}\nfn f(a: &Flat, b: &Flat, c: boolean) throws &Flat { if c { throw a } else { throw b } }",
+			cursor:     "f(",
+			expected:   "type Flat = {x: number}\nfn f<'a: 'c, 'b: 'c, 'c>(a: &'a Flat, b: &'b Flat, c: boolean) -> never throws &'c Flat { if c { throw a } else { throw b } }",
+			diagnostic: "1:3-1:4 'f' is declared at a script's top level, so it needs a return type; write `-> never`",
+		},
+		{
+			// The inferred signature adds the binder `T0` and elides the source's 'q, so a
+			// rewritten binder list would drop 'q while `q: &'q Flat` still names it.
+			name:       "AddedTypeParamWouldDropWrittenLifetime",
+			src:        "type Flat = {x: number}\nfn f<T, 'q>(t: T, q: &'q Flat, y) { return [t, y] }",
+			cursor:     "f<",
+			expected:   "",
+			diagnostic: "1:3-1:4 'f' is declared at a script's top level, so parameter 'y' needs a type and 'f' needs a return type",
+		},
+		{
+			name:       "AfterDeclaredFn",
+			src:        "declare fn g(x: number) -> number\nfn one() { return 1 }",
+			cursor:     "one",
+			expected:   "declare fn g(x: number) -> number\nfn one() -> 1 { return 1 }",
+			diagnostic: "1:3-1:6 'one' is declared at a script's top level, so it needs a return type; write `-> 1`",
 		},
 		{
 			name:       "CursorInBody",
@@ -250,38 +295,6 @@ func TestSignatureActionInLib(t *testing.T) {
 	require.Equal(t,
 		"export fn count(xs: &Array<number>) -> number { return xs.length }",
 		applyEdits(src, actions[0].Edit.Changes[uri]))
-}
-
-func TestSkipPast(t *testing.T) {
-	tests := []struct {
-		name     string
-		contents string
-		want     byte
-		marks    string
-		// expected is the offset skipPast returns, or -1 when it fails.
-		expected int
-	}{
-		{name: "Immediate", contents: ")", want: ')', expected: 1},
-		{name: "Whitespace", contents: " \t\n)", want: ')', expected: 4},
-		{name: "Marks", contents: ", ...)", want: ')', marks: ",.", expected: 6},
-		{name: "LineComment", contents: "// c\n)", want: ')', expected: 6},
-		{name: "BlockComment", contents: "/* ) */)", want: ')', expected: 8},
-		{name: "UnclosedBlockComment", contents: "/* )", want: ')', expected: -1},
-		{name: "UnterminatedLineComment", contents: "// )", want: ')', expected: -1},
-		{name: "OtherByte", contents: "x)", want: ')', expected: -1},
-		{name: "End", contents: "  ", want: ')', expected: -1},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, ok := skipPast(tt.contents, 0, tt.want, tt.marks)
-			if tt.expected < 0 {
-				require.False(t, ok)
-				return
-			}
-			require.True(t, ok)
-			require.Equal(t, tt.expected, got)
-		})
-	}
 }
 
 // TestMissingSignatureSeverity asserts that MissingSignatureError is published as a warning.

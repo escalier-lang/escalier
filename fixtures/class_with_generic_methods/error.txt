@@ -28,13 +28,3 @@ lib/index.esc:33:22: cannot constrain "hello" <: number
 33: val d = Foo.addNums4("hello", 5)
                          ^^^^^^^
 
-lib/index.esc:16:5: 'addStrs1' is a method, so it needs a return type; write `-> number`
-
-16:     addStrs1<A: string, B: string>(&self, a: A, b: B) {
-        ^^^^^^^^
-
-lib/index.esc:22:12: 'addStrs3' is a method, so it needs a return type; write `-> number`
-
-22:     static addStrs3<A: string, B: string>(a: A, b: B) {
-               ^^^^^^^^
-

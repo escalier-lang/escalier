@@ -1,6 +1,6 @@
 class MyMath {
     readonly static pi = 3.141592,
-    static add(a: number, b: number) {
+    static add(a: number, b: number) -> number {
         return a + b
     },
 }

@@ -16,7 +16,7 @@ fn read_from_immutable_array(xs: Array<number>) -> number {
 }
 
 // Calling a mutating method on an immutable Array is a type error.
-fn cannot_push_to_immutable(xs: Array<number>) {
+fn cannot_push_to_immutable(xs: Array<number>) -> undefined {
     xs.push(1)  // EXPECTED-ERROR (tier 2)
 }
 
@@ -29,7 +29,7 @@ class Point {
     y: number,
 }
 
-fn cannot_write_readonly_field_on_mut(mut p: Point) {
+fn cannot_write_readonly_field_on_mut(mut p: Point) -> undefined {
     p.x = 0     // EXPECTED-ERROR (tier 2: readonly prop)
     p.y = 1     // OK: y is not readonly, p is mutable
 }
@@ -51,11 +51,11 @@ fn read_immutable_date(d: Date) -> number {
     return d.getHours()     // OK: getHours non-mutating
 }
 
-fn cannot_mutate_immutable_date(d: Date) {
+fn cannot_mutate_immutable_date(d: Date) -> undefined {
     d.setHours(12)          // EXPECTED-ERROR (tier 4: Date.setHours mutates)
 }
 
-fn mutate_mutable_date(mut d: Date) {
+fn mutate_mutable_date(mut d: Date) -> undefined {
     d.setHours(12)          // OK: receiver is mutable
 }
 
@@ -69,7 +69,7 @@ fn to_sorted_on_immutable(xs: Array<number>) -> Array<number> {
     return xs.toSorted()    // OK: toSorted returns a new array
 }
 
-fn cannot_sort_immutable(xs: Array<number>) {
+fn cannot_sort_immutable(xs: Array<number>) -> undefined {
     xs.sort()               // EXPECTED-ERROR (tier 2: sort requires a mut binding)
 }
 
@@ -79,10 +79,10 @@ fn cannot_sort_immutable(xs: Array<number>) {
 
 class Cache {
     items: Array<number>,
-    getValue(&self) {
+    getValue(&self) -> number {
         return self.items.length
     },
-    getOrInsert(&mut self, _key: string, default_: number) {
+    getOrInsert(&mut self, _key: string, default_: number) -> number {
         return default_
     },
 }
@@ -91,7 +91,7 @@ fn get_on_immutable_cache(c: Cache) -> number {
     return c.getValue()     // OK: get* assumed non-mutating
 }
 
-fn cannot_get_or_insert_on_immutable(c: Cache) {
+fn cannot_get_or_insert_on_immutable(c: Cache) -> undefined {
     c.getOrInsert("k", 0)   // EXPECTED-ERROR (tier 6 exception)
 }
 
@@ -103,16 +103,16 @@ fn cannot_get_or_insert_on_immutable(c: Cache) {
 // copy (clone), default-mutating (render).
 class Widget {
     name: string,
-    isReady(&self) {
+    isReady(&self) -> true {
         return true
     },
-    toJSON(&self) {
+    toJSON(&self) -> string {
         return self.name
     },
-    clone(&self) {
+    clone(&self) -> Widget {
         return Widget(self.name)
     },
-    render(&mut self) {
+    render(&mut self) -> undefined {
         self.name = ""
     },
 }
@@ -124,7 +124,7 @@ fn name_heuristics_on_immutable(w: Widget) -> Widget {
     return copy
 }
 
-fn cannot_render_immutable(w: Widget) {
+fn cannot_render_immutable(w: Widget) -> undefined {
     w.render()              // EXPECTED-ERROR (tier 8: defaults to mutating)
 }
 

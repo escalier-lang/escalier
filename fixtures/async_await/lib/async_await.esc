@@ -1,5 +1,5 @@
 // Basic async function
-export async fn fetchData(url: string) {
+export async fn fetchData(url: string) -> Promise<string> {
     return "data from " ++ url
 }
 
@@ -17,7 +17,7 @@ export async fn fetchWithError(shouldError: boolean) -> Promise<_, _> {
 }
 
 // Async function with multiple awaits
-export async fn fetchMultiple(url1: string, url2: string) {
+export async fn fetchMultiple(url1: string, url2: string) -> Promise<string> {
     val data1 = await fetch(url1)
     val text1 = await data1.text()
     val data2 = await fetch(url2)
@@ -26,7 +26,7 @@ export async fn fetchMultiple(url1: string, url2: string) {
 }
 
 // Async function with conditional await
-export async fn conditionalFetch(useCache: boolean, url: string) {
+export async fn conditionalFetch(useCache: boolean, url: string) -> Promise<"cached data" | Response> {
     if useCache {
         return "cached data"
     } else {

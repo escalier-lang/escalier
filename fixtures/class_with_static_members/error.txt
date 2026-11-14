@@ -1,5 +1,0 @@
-lib/index.esc:3:12: 'add' is a method, so it needs a return type; write `-> number`
-
-3:      static add(a: number, b: number) {
-               ^^^
-
