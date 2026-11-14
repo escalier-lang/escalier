@@ -47,6 +47,12 @@ func TestShallowTestPatternKinds(t *testing.T) {
 			want:    "no test => bind _ = p; leaf 0",
 		},
 		{
+			name:    "missing pattern",
+			pattern: nil,
+			target:  "p",
+			want:    "no test => leaf 0",
+		},
+		{
 			name:    "identifier binds the scrutinee itself",
 			pattern: identPat("all"),
 			target:  "p",
