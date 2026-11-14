@@ -48,6 +48,7 @@ The rest of the document covers the following, in order:
   standard library.
 - Section 12 lists milestones and section 13 records the decisions on the
   questions left open during the design.
+- Section 14 lists the questions that are still open.
 
 ## 2. Semantics
 
@@ -1596,3 +1597,49 @@ records the decision.
     the interval arithmetic, so exposing it is cheap. The intrinsics also give
     `IntRange` an exact `length` of `Sub<E, S>` when both bounds are safe
     integers.
+
+## 14. Open questions
+
+1. **Integer division.** `/` always produces a fractional result. Its type is
+   `finite` for an `int` divided by an `int & ~0`, and `number` otherwise.
+   Section 5.1 gives the rules. An integer quotient takes
+   `Math.trunc(a / b)` or `Math.floor(a / b)`, which section 11.5 types as
+   `int`. A dedicated operation would make the intent visible and could
+   return a range under interval arithmetic. The options are:
+   - A contextual keyword, as in `a div b`. It reads well, but it adds an
+     operator with its own precedence.
+   - A prelude function such as `idiv(a, b)`. It needs no new syntax.
+   - Python's `//`. It is not available, because `//` starts a comment in
+     Escalier.
+
+   The operation also needs a rounding rule. Truncation matches
+   `Math.trunc`, and `bigint` division in JavaScript truncates too. Flooring
+   matches Python and gives a non-negative remainder for a positive divisor.
+   Either form compiles to a `Math` call, as in `Math.trunc(a / b)`.
+2. **64-bit integers.** `BigInt64Array`, `BigUint64Array`, and the
+   `DataView` 64-bit getters yield `bigint` values, so `int64` and `uint64`
+   aliases would be ranges over `bigint`. Decision 7 defers `bigint` ranges.
+   Supporting them raises these problems:
+   - The lexer does not read `bigint` literals. It reads `1n` as the number
+     `1` followed by an identifier `n`.
+   - `int64` cannot be a subtype of `int`, since JavaScript throws a
+     `TypeError` on `1n + 1`. Moving between the two families needs
+     `BigInt(x)`, which throws on a non-integer, or `Number(x)`, which
+     rounds past `2 ** 53`.
+   - `bigint` arithmetic differs from `number` arithmetic. `7n / 2n` is
+     `3n`, `x % 0n` throws a `RangeError`, and `2n ** -1n` throws. There is
+     no overflow, so `int64 + int64` is a wider range than `int64`.
+   - `bigint` has no `Infinity`, so an unbounded `bigint` range needs the
+     open-ended shorthand from section 2.3, as in `0n..`.
+   - `IntRangeType` stores `float64` bounds, which cannot hold
+     `2 ** 63 - 1` exactly. A `bigint` range needs a parallel atom with
+     `big.Int` bounds.
+   - `1n == 1` is `true` and `1n === 1` is `false`, so a `===` between
+     `int64` and a `number` type is always `false`, like the `NaN`
+     comparisons decision 9 reports.
+   - `Math` functions and `JSON.stringify` throw on a `bigint`. The two
+     families are disjoint, so the types already reject these calls.
+
+   The interval rules, range patterns, iteration through `Iterator.range`,
+   and the `.d.ts` mapping to `bigint` carry over. The work would be its own
+   milestone, after `bigint` literals exist.
