@@ -1065,9 +1065,14 @@ func patternHover(q hoverQuery) (string, bool) {
 	}
 	switch n := q.node.(type) {
 	case *ast.ExtractorPat:
-		if n.Name.Span().Contains(q.loc) {
-			return patternNameText(q, n.Name)
+		if !n.Name.Span().Contains(q.loc) {
+			return "", false
 		}
+		binding, ok := patternClassBinding(q, n.Name)
+		if !ok {
+			return "", false
+		}
+		return patternNameText(q, n.Name, binding)
 	case *ast.ObjectPat:
 		// An instance pattern's object pattern spans the class name too, so the cursor on
 		// either the name or a field lands on the object pattern.
@@ -1078,52 +1083,66 @@ func patternHover(q hoverQuery) (string, bool) {
 		if !ok || inst.Object != n {
 			return "", false
 		}
-		if inst.ClassName.Span().Contains(q.loc) {
-			return patternNameText(q, inst.ClassName)
+		binding, ok := patternClassBinding(q, inst.ClassName)
+		if !ok {
+			return "", false
 		}
-		return instanceFieldText(q, inst)
+		if inst.ClassName.Span().Contains(q.loc) {
+			return patternNameText(q, inst.ClassName, binding)
+		}
+		return instanceFieldText(q, inst, binding)
 	}
 	return "", false
 }
 
-// patternNameText renders the declaration of the class or enum variant a pattern names
-// with qi, or of the part of qi under the cursor. In `Expr.Num` the cursor on `Num`
-// shows the variant and on `Expr` shows `enum Expr`. It returns false when qi does not
-// name the class the solver resolved it to from q.scope, or the part names no declaration.
-func patternNameText(q hoverQuery, qi ast.QualIdent) (string, bool) {
-	if _, ok := patternClassBinding(q, qi); !ok {
-		return "", false
+// patternNameText renders the part of qi under the cursor, where qi is the name of a
+// pattern and binding is the type binding of the class it names. In `Expr.Num` the
+// cursor on `Num` renders binding as the variant, and on `Expr` shows `enum Expr`. It
+// returns false when that part names no declaration or namespace.
+func patternNameText(q hoverQuery, qi ast.QualIdent, binding solver.TypeBinding) (string, bool) {
+	if member, ok := qi.(*ast.Member); ok && member.Left.Span().Contains(q.loc) {
+		return qualNameText(q, member.Left)
 	}
-	return qualNameText(q, qi)
+	return typeBindingText(qi, binding)
 }
 
 // qualNameText renders the declaration the part of the qualified name qi under the cursor
 // names in q.scope. It returns false when that part names no declaration or namespace.
 func qualNameText(q hoverQuery, qi ast.QualIdent) (string, bool) {
-	member, isMember := qi.(*ast.Member)
-	if isMember && member.Left.Span().Contains(q.loc) {
+	if member, ok := qi.(*ast.Member); ok && member.Left.Span().Contains(q.loc) {
 		return qualNameText(q, member.Left)
 	}
 	if binding, ok := qualTypeBinding(q.scope, qi); ok {
-		for _, src := range binding.Sources {
-			np, ok := src.(*ast.NodeProvenance)
-			if !ok {
-				continue
-			}
-			switch decl := np.Node.(type) {
-			case *ast.EnumVariant:
-				if isMember {
-					return variantDeclText(ast.QualIdentToString(member.Left), decl), true
-				}
-			case ast.Decl:
-				if text := declText(decl); text != "" {
-					return text, true
-				}
-			}
+		if text, ok := typeBindingText(qi, binding); ok {
+			return text, true
 		}
 	}
 	if _, ok := namespaceOfQualIdent(qi, newSolverScopeView(q.scope, q.info)); ok {
 		return "namespace " + ast.QualIdentToString(qi), true
+	}
+	return "", false
+}
+
+// typeBindingText renders the declaration of binding, the type binding the qualified name
+// qi names, as `class HttpError` or `(variant) Expr.Num(value: number)`. A variant takes
+// its enum's name from qi. It returns false when binding has no declaration to render.
+func typeBindingText(qi ast.QualIdent, binding solver.TypeBinding) (string, bool) {
+	member, isMember := qi.(*ast.Member)
+	for _, src := range binding.Sources {
+		np, ok := src.(*ast.NodeProvenance)
+		if !ok {
+			continue
+		}
+		switch decl := np.Node.(type) {
+		case *ast.EnumVariant:
+			if isMember {
+				return variantDeclText(ast.QualIdentToString(member.Left), decl), true
+			}
+		case ast.Decl:
+			if text := declText(decl); text != "" {
+				return text, true
+			}
+		}
 	}
 	return "", false
 }
@@ -1162,9 +1181,10 @@ func qualTypeBinding(scope *solver.Scope, qi ast.QualIdent) (solver.TypeBinding,
 }
 
 // instanceFieldText renders the field of the class inst tests whose key in inst holds the
-// cursor, as `(property) HttpError.status: number`. It returns false when the cursor is on
-// no key or the class has no member of that name.
-func instanceFieldText(q hoverQuery, inst *ast.InstancePat) (string, bool) {
+// cursor, as `(property) HttpError.status: number`, where binding is the type binding of
+// that class. It returns false when the cursor is on no key or the class has no member of
+// that name.
+func instanceFieldText(q hoverQuery, inst *ast.InstancePat, binding solver.TypeBinding) (string, bool) {
 	var name string
 	for _, elem := range inst.Object.Elems {
 		var key *ast.Ident
@@ -1180,10 +1200,6 @@ func instanceFieldText(q hoverQuery, inst *ast.InstancePat) (string, bool) {
 		}
 	}
 	if name == "" {
-		return "", false
-	}
-	binding, ok := patternClassBinding(q, inst.ClassName)
-	if !ok {
 		return "", false
 	}
 	obj, ok := q.info.MemberObject(binding.Type)
