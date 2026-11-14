@@ -362,35 +362,28 @@ func TestConstrainRestParamElementChecking(t *testing.T) {
 		return &soltype.ClassType{Name: "Array", TypeArgs: []soltype.Type{elem}}
 	}
 
-	// An absorbing rest stands for the sub's whole tail, so each parameter it absorbs is
-	// checked against the element. The check is contravariant, the orientation the fixed
-	// positions use, so the element is the sub of each pair.
+	// An exact sub with no rest param accepts a fixed number of arguments, and the rest may
+	// pass any number, so the pair fails the arity gate even though each element matches.
 	//
-	//	fn (a: number, b: string) -> number  <:  fn (...rest: Array<number>) -> number
-	//
-	// `b`'s string is what the rest absorbs at its second position, and `number <: string`
-	// is the check that fails.
-	t.Run("an absorbed parameter is rejected on the element", func(t *testing.T) {
-		c := arrayCtx()
-		super := restFn(num(), restParam("rest", arrayOf(num())))
-		sub := exactFn(num(), identParam("a", num()), identParam("b", str()))
-		require.Equal(t,
-			[]string{"cannot constrain number <: string"},
-			Messages(c.Constrain(sub, super)))
-	})
-
 	//	fn (a: number, b: number) -> number  <:  fn (...rest: Array<number>) -> number
-	t.Run("an absorbed parameter matching the element is accepted", func(t *testing.T) {
+	t.Run("an exact sub is rejected on arity", func(t *testing.T) {
 		c := arrayCtx()
 		super := restFn(num(), restParam("rest", arrayOf(num())))
 		sub := exactFn(num(), identParam("a", num()), identParam("b", num()))
-		require.Empty(t, c.Constrain(sub, super))
+		require.Equal(t,
+			[]string{"cannot constrain function of arity 2 <: function of arity 0 or more"},
+			Messages(c.Constrain(sub, super)))
 	})
 
-	// An inexact sub absorbs its listed params the way an exact one does. It ignores the
-	// values past them, so those values need no element check.
+	// The super's rest stands for an inexact sub's whole tail, so each listed parameter it
+	// absorbs is checked against the element. The sub ignores the values past its listed params,
+	// so those values need no element check. The check is contravariant, the orientation
+	// the fixed positions use, so the element is the sub of each pair.
 	//
 	//	fn (a: number, b: string, ...) -> number  <:  fn (...rest: Array<number>) -> number
+	//
+	// `b`'s string is what the rest absorbs at its second position, and `number <: string`
+	// is the check that fails.
 	t.Run("an inexact sub's listed parameters are checked on the element", func(t *testing.T) {
 		c := arrayCtx()
 		super := restFn(num(), restParam("rest", arrayOf(num())))
@@ -411,14 +404,14 @@ func TestConstrainRestParamElementChecking(t *testing.T) {
 	// The named prefix ahead of the rest keeps its own positional check, so absorbing the
 	// tail does not loosen the parameters the super declares by position.
 	//
-	//	fn (a: number, b: number) -> number  <:  fn (a: string, ...rest: Array<number>) -> number
+	//	fn (a: number, b: number, ...) -> number  <:  fn (a: string, ...rest: Array<number>) -> number
 	//
 	// The rest absorbs `b` and accepts it. Position `a` is checked on its own, and
 	// `string <: number` is what fails.
 	t.Run("the prefix ahead of the rest is still checked by position", func(t *testing.T) {
 		c := arrayCtx()
 		super := restFn(num(), identParam("a", str()), restParam("rest", arrayOf(num())))
-		sub := exactFn(num(), identParam("a", num()), identParam("b", num()))
+		sub := inexactFn(num(), identParam("a", num()), identParam("b", num()))
 		require.Equal(t,
 			[]string{"cannot constrain string <: number"},
 			Messages(c.Constrain(sub, super)))
