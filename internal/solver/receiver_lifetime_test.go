@@ -59,7 +59,7 @@ func TestReceiverLifetimeDeclarations(t *testing.T) {
 						out.r = q
 					},
 				}
-				fn f(out: &mut {r: &{x: number}}, q: &{x: number}) {
+				fn f<'b>(out: &mut {r: &'b {x: number}}, q: &'b {x: number}) {
 					val c = C({x: 1})
 					c.lend(out, q)
 				}
