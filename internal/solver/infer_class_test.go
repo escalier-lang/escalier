@@ -521,7 +521,7 @@ func TestInferDeclareClassImplementsInterface(t *testing.T) {
 			src: `
 				interface Named { readonly name: string }
 				declare class Person implements Named { readonly age: number }
-				fn f(p: Person) { return p.name }
+				val f = fn (p: Person) { return p.name }
 			`,
 			want: map[string]string{"f": "fn (p: Person) -> string"},
 		},
@@ -530,7 +530,7 @@ func TestInferDeclareClassImplementsInterface(t *testing.T) {
 			src: `
 				interface HasId { readonly id: string | number }
 				declare class Row implements HasId { readonly id: number }
-				fn f(r: Row) { return r.id }
+				val f = fn (r: Row) { return r.id }
 			`,
 			want: map[string]string{"f": "fn (r: Row) -> number"},
 		},
@@ -540,7 +540,7 @@ func TestInferDeclareClassImplementsInterface(t *testing.T) {
 				interface HasId { readonly id: string | number }
 				declare class Base { readonly id: number }
 				declare class Row extends Base implements HasId { constructor(&mut self) }
-				fn f(r: Row) { return r.id }
+				val f = fn (r: Row) { return r.id }
 			`,
 			want: map[string]string{"f": "fn (r: Row) -> number"},
 		},
@@ -549,7 +549,7 @@ func TestInferDeclareClassImplementsInterface(t *testing.T) {
 			src: `
 				interface Box<T> { readonly value: T }
 				declare class NumBox implements Box<number> {}
-				fn f(b: NumBox) { return b.value }
+				val f = fn (b: NumBox) { return b.value }
 			`,
 			want: map[string]string{"f": "fn (b: NumBox) -> number"},
 		},
@@ -559,7 +559,7 @@ func TestInferDeclareClassImplementsInterface(t *testing.T) {
 				interface A { readonly x: number | string, readonly y: boolean }
 				interface B extends A { readonly x: number }
 				declare class C implements B {}
-				fn f(c: C) { return [c.x, c.y] }
+				val f = fn (c: C) { return [c.x, c.y] }
 			`,
 			want: map[string]string{"f": "fn (c: C) -> [number, boolean]"},
 		},
@@ -569,7 +569,7 @@ func TestInferDeclareClassImplementsInterface(t *testing.T) {
 				interface First { readonly v: number }
 				interface Second { readonly v: number }
 				declare class C implements First, Second {}
-				fn f(c: C) { return c.v }
+				val f = fn (c: C) { return c.v }
 			`,
 			want: map[string]string{"f": "fn (c: C) -> number"},
 		},
@@ -581,7 +581,7 @@ func TestInferDeclareClassImplementsInterface(t *testing.T) {
 				interface First { id<T>(self, x: T) -> T }
 				interface Second { id<U>(self, x: U) -> U }
 				declare class C implements First, Second {}
-				fn f(c: C) { return c.id(1) }
+				val f = fn (c: C) { return c.id(1) }
 			`,
 			want: map[string]string{"f": "fn (c: C) -> 1"},
 		},
@@ -621,7 +621,7 @@ func TestInferDeclareClassImplementsConflictingInterfaces(t *testing.T) {
 		interface First { readonly v: number }
 		interface Second { readonly v: string }
 		declare class C implements First, Second {}
-		fn f(c: C) { return c.v }
+		val f = fn (c: C) { return c.v }
 	`)
 	require.Equal(t, []string{
 		"class `C` implements `First` and `Second`, which declare `v` differently: `{readonly v: number}` and `{readonly v: string}`",
@@ -951,7 +951,7 @@ func TestInferClassReturnsSelf(t *testing.T) {
 				declare fn take(p: &P) -> number
 				class P {
 					x: number,
-					send(&self) { return take(self) },
+					send(&self) -> number { return take(self) },
 				}
 				val p = P(1)
 				val n = p.send()
@@ -1485,9 +1485,9 @@ func TestInferClassContravariance(t *testing.T) {
 	t.Run("narrowing flows through a function argument", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class Consumer<T> {
-				accept(&self, x: T) { },
+				accept(&self, x: T) -> undefined { },
 			}
-			fn feed(c: Consumer<number>) { }
+			fn feed(c: Consumer<number>) -> undefined { }
 			val wide: Consumer<number | string> = Consumer()
 			val r = feed(wide)
 		`)
@@ -1511,11 +1511,11 @@ func TestInferClassMutVariance(t *testing.T) {
 		// under `mut`, which is what rejects it.
 		_, _, errs := inferSource(t, `
 			class Box<T> { value: T }
-			fn wide(b: &mut Box<number | string>) { }
-			fn narrow(b: &mut Box<number>) { wide(b) }
+			fn wide(b: &mut Box<number | string>) -> undefined { }
+			fn narrow(b: &mut Box<number>) -> undefined { wide(b) }
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "4:42-4:43: cannot constrain string <: number", msgWithSpan(t, errs[0]))
+		require.Equal(t, "4:55-4:56: cannot constrain string <: number", msgWithSpan(t, errs[0]))
 	})
 	t.Run("mut field parameter rejects a narrowing", func(t *testing.T) {
 		// The other direction fails too, which is what invariance means. Here the danger
@@ -1523,11 +1523,11 @@ func TestInferClassMutVariance(t *testing.T) {
 		// instance holds a `string`.
 		_, _, errs := inferSource(t, `
 			class Box<T> { value: T }
-			fn narrow(b: &mut Box<number>) { }
-			fn wide(b: &mut Box<number | string>) { narrow(b) }
+			fn narrow(b: &mut Box<number>) -> undefined { }
+			fn wide(b: &mut Box<number | string>) -> undefined { narrow(b) }
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "4:51-4:52: cannot constrain string <: number", msgWithSpan(t, errs[0]))
+		require.Equal(t, "4:64-4:65: cannot constrain string <: number", msgWithSpan(t, errs[0]))
 	})
 	t.Run("mut method parameter accepts a narrowing", func(t *testing.T) {
 		// `T` reaches no storage, only `accept`'s parameter, so a `mut` reference buys no
@@ -1536,10 +1536,10 @@ func TestInferClassMutVariance(t *testing.T) {
 		// Rejecting this was the imprecision escalier-lang/escalier#870 reported.
 		_, _, errs := inferSource(t, `
 			class Consumer<T> {
-				accept(&self, x: T) { },
+				accept(&self, x: T) -> undefined { },
 			}
-			fn narrow(c: &mut Consumer<number>) { }
-			fn wide(c: &mut Consumer<number | string>) { narrow(c) }
+			fn narrow(c: &mut Consumer<number>) -> undefined { }
+			fn wide(c: &mut Consumer<number | string>) -> undefined { narrow(c) }
 		`)
 		require.Empty(t, errs)
 	})
@@ -1550,13 +1550,13 @@ func TestInferClassMutVariance(t *testing.T) {
 		// immutably.
 		_, _, errs := inferSource(t, `
 			class Consumer<T> {
-				accept(&self, x: T) { },
+				accept(&self, x: T) -> undefined { },
 			}
-			fn wide(c: &mut Consumer<number | string>) { }
-			fn narrow(c: &mut Consumer<number>) { wide(c) }
+			fn wide(c: &mut Consumer<number | string>) -> undefined { }
+			fn narrow(c: &mut Consumer<number>) -> undefined { wide(c) }
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "6:47-6:48: cannot constrain string <: number", msgWithSpan(t, errs[0]))
+		require.Equal(t, "6:60-6:61: cannot constrain string <: number", msgWithSpan(t, errs[0]))
 	})
 	t.Run("mut readonly field accepts a widening", func(t *testing.T) {
 		// `readonly` rejects `f.value = …` through any reference, so the field is an
@@ -1564,8 +1564,8 @@ func TestInferClassMutVariance(t *testing.T) {
 		// and a read yields the `number` the instance holds.
 		_, _, errs := inferSource(t, `
 			class Frozen<T> { readonly value: T }
-			fn wide(f: &mut Frozen<number | string>) { }
-			fn narrow(f: &mut Frozen<number>) { wide(f) }
+			fn wide(f: &mut Frozen<number | string>) -> undefined { }
+			fn narrow(f: &mut Frozen<number>) -> undefined { wide(f) }
 		`)
 		require.Empty(t, errs)
 	})
@@ -1575,11 +1575,11 @@ func TestInferClassMutVariance(t *testing.T) {
 		// rejected here as it would be immutably.
 		_, _, errs := inferSource(t, `
 			class Frozen<T> { readonly value: T }
-			fn narrow(f: &mut Frozen<number>) { }
-			fn wide(f: &mut Frozen<number | string>) { narrow(f) }
+			fn narrow(f: &mut Frozen<number>) -> undefined { }
+			fn wide(f: &mut Frozen<number | string>) -> undefined { narrow(f) }
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "4:54-4:55: cannot constrain string <: number", msgWithSpan(t, errs[0]))
+		require.Equal(t, "4:67-4:68: cannot constrain string <: number", msgWithSpan(t, errs[0]))
 	})
 	t.Run("mut method return accepts a widening", func(t *testing.T) {
 		// Both of Reader's occurrences of T are output positions, and neither becomes
@@ -1590,8 +1590,8 @@ func TestInferClassMutVariance(t *testing.T) {
 				readonly value: T,
 				read(&self) -> T { return self.value },
 			}
-			fn wide(r: &mut Reader<number | string>) { }
-			fn narrow(r: &mut Reader<number>) { wide(r) }
+			fn wide(r: &mut Reader<number | string>) -> undefined { }
+			fn narrow(r: &mut Reader<number>) -> undefined { wide(r) }
 		`)
 		require.Empty(t, errs)
 	})
@@ -1603,8 +1603,8 @@ func TestInferClassMutVariance(t *testing.T) {
 			class Sink<T> {
 				push(&mut self, item: T) -> undefined { return undefined },
 			}
-			fn narrow(s: &mut Sink<number>) { }
-			fn wide(s: &mut Sink<number | string>) { narrow(s) }
+			fn narrow(s: &mut Sink<number>) -> undefined { }
+			fn wide(s: &mut Sink<number | string>) -> undefined { narrow(s) }
 		`)
 		require.Empty(t, errs)
 	})
@@ -1615,11 +1615,11 @@ func TestInferClassMutVariance(t *testing.T) {
 			class Sink<T> {
 				push(&mut self, item: T) -> undefined { return undefined },
 			}
-			fn wide(s: &mut Sink<number | string>) { }
-			fn narrow(s: &mut Sink<number>) { wide(s) }
+			fn wide(s: &mut Sink<number | string>) -> undefined { }
+			fn narrow(s: &mut Sink<number>) -> undefined { wide(s) }
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "6:43-6:44: cannot constrain string <: number", msgWithSpan(t, errs[0]))
+		require.Equal(t, "6:56-6:57: cannot constrain string <: number", msgWithSpan(t, errs[0]))
 	})
 	t.Run("a mut self mutator pins a parameter a self reader returns", func(t *testing.T) {
 		// The shape `Array<T>` has, and the reason it is covariant shared and invariant
@@ -1632,11 +1632,11 @@ func TestInferClassMutVariance(t *testing.T) {
 				read(&self) -> T { return self.value },
 				write(&mut self, v: T) -> undefined { return undefined },
 			}
-			fn wide(s: &mut Slot<number | string>) { }
-			fn narrow(s: &mut Slot<number>) { wide(s) }
+			fn wide(s: &mut Slot<number | string>) -> undefined { }
+			fn narrow(s: &mut Slot<number>) -> undefined { wide(s) }
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "8:43-8:44: cannot constrain string <: number", msgWithSpan(t, errs[0]))
+		require.Equal(t, "8:56-8:57: cannot constrain string <: number", msgWithSpan(t, errs[0]))
 	})
 	t.Run("a setter pins a parameter its getter returns", func(t *testing.T) {
 		// A setter is a write, so no immutable reference reaches it and it lands in the
@@ -1671,11 +1671,11 @@ func TestInferClassMutVariance(t *testing.T) {
 				value: T,
 				read(&self) -> T { return self.value },
 			}
-			fn wide(b: &mut Box<number | string>) { }
-			fn narrow(b: &mut Box<number>) { wide(b) }
+			fn wide(b: &mut Box<number | string>) -> undefined { }
+			fn narrow(b: &mut Box<number>) -> undefined { wide(b) }
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "7:42-7:43: cannot constrain string <: number", msgWithSpan(t, errs[0]))
+		require.Equal(t, "7:55-7:56: cannot constrain string <: number", msgWithSpan(t, errs[0]))
 	})
 	t.Run("a mut subclass reference reaches its superclass", func(t *testing.T) {
 		// The write `reset` performs lands on `pos`, and checkInheritedMembers makes a
@@ -1695,8 +1695,8 @@ func TestInferClassMutVariance(t *testing.T) {
 					self.breed = breed
 				},
 			}
-			fn reset(a: &mut Animal) { a.pos = {x: 0} }
-			fn resetDog(d: &mut Dog) { reset(d) }
+			fn reset(a: &mut Animal) -> undefined { a.pos = {x: 0} }
+			fn resetDog(d: &mut Dog) -> undefined { reset(d) }
 		`)
 		require.Empty(t, errs)
 	})
@@ -1750,11 +1750,11 @@ func TestInferClassMutVariance(t *testing.T) {
 		// bare spelling accepts a few cases above.
 		_, _, errs := inferSource(t, `
 			class Consumer<T> {
-				accept(&self, x: T) { },
+				accept(&self, x: T) -> undefined { },
 			}
 			type CNum = Consumer<number>
-			fn narrow(c: &mut CNum) { }
-			fn wide(c: &mut Consumer<number | string>) { narrow(c) }
+			fn narrow(c: &mut CNum) -> undefined { }
+			fn wide(c: &mut Consumer<number | string>) -> undefined { narrow(c) }
 		`)
 		require.Empty(t, errs)
 	})
@@ -1769,8 +1769,8 @@ func TestInferClassMutVariance(t *testing.T) {
 				value: T,
 				read(&self) -> T { return self.value },
 			}
-			fn wide(b: Box<number | string>) { }
-			fn narrow(b: Box<number>) { wide(b) }
+			fn wide(b: Box<number | string>) -> undefined { }
+			fn narrow(b: Box<number>) -> undefined { wide(b) }
 		`)
 		require.Empty(t, errs)
 	})
@@ -1935,8 +1935,8 @@ func TestInferClassNestedClassVariance(t *testing.T) {
 			name: "a nested class in a readonly field is invariant through mut",
 			src: `
 				class Bag<T> { readonly items: Array<T> }
-				fn wide(b: &mut Bag<number | string>) { }
-				fn narrow(b: &mut Bag<number>) { wide(b) }
+				fn wide(b: &mut Bag<number | string>) -> undefined { }
+				fn narrow(b: &mut Bag<number>) -> undefined { wide(b) }
 			`,
 			want: []string{"cannot constrain string <: number"},
 		},
@@ -1973,8 +1973,8 @@ func TestInferClassNestedClassVariance(t *testing.T) {
 			src: `
 				class Box<T> { value: T }
 				class H<'a, T> { readonly r: &'a Box<T> }
-				fn wide(h: &mut H<'static, number>) { }
-				fn narrow(h: &mut H<'static, 1>) { wide(h) }
+				fn wide(h: &mut H<'static, number>) -> undefined { }
+				fn narrow(h: &mut H<'static, 1>) -> undefined { wide(h) }
 			`,
 		},
 		{
@@ -1985,8 +1985,8 @@ func TestInferClassNestedClassVariance(t *testing.T) {
 			src: `
 				class Box<T> { value: T }
 				class H<'a, T> { readonly r: &'a mut Box<T> }
-				fn wide(h: &mut H<'static, number>) { }
-				fn narrow(h: &mut H<'static, 1>) { wide(h) }
+				fn wide(h: &mut H<'static, number>) -> undefined { }
+				fn narrow(h: &mut H<'static, 1>) -> undefined { wide(h) }
 				fn widen(h: &H<'static, 1>) -> &H<'static, number> { return h }
 			`,
 			want: []string{"cannot constrain number <: 1", "cannot constrain number <: 1"},
@@ -2266,7 +2266,7 @@ func TestInferClassVarianceModifiers(t *testing.T) {
 			src: `class Cell<out T> {
 				readonly value: T,
 				readonly sink: fn (x: T) -> undefined,
-				push(&mut self, x: T) { },
+				push(&mut self, x: T) -> undefined { },
 			}`,
 			want: []string{"type parameter `T` is declared covariant but is actually invariant"},
 		},
@@ -3097,7 +3097,7 @@ func TestInferClassMethodTypeParamRendering(t *testing.T) {
 			name: "an instance method's bound",
 			src: `
 				class C { pick<T: string>(&self, x: T) -> T { return x }, }
-				fn probe(c: C) { return c.pick }`,
+				fn probe(c: C) -> fn <T: string>(x: T) -> T { return c.pick }`,
 			binding: "probe",
 			want:    "fn (c: C) -> fn <T: string>(x: T) -> T",
 		},
@@ -3105,7 +3105,7 @@ func TestInferClassMethodTypeParamRendering(t *testing.T) {
 			name: "an unbounded binder",
 			src: `
 				class C { pick<T>(&self, x: T) -> T { return x }, }
-				fn probe(c: C) { return c.pick }`,
+				fn probe(c: C) -> fn <T>(x: T) -> T { return c.pick }`,
 			binding: "probe",
 			want:    "fn (c: C) -> fn <T>(x: T) -> T",
 		},
@@ -3113,7 +3113,7 @@ func TestInferClassMethodTypeParamRendering(t *testing.T) {
 			name: "a bound naming the class's parameter",
 			src: `
 				class C<U> { v: U, pick<T: U>(&self, x: T) -> T { return x }, }
-				fn probe(c: C<number>) { return c.pick }`,
+				fn probe(c: C<number>) -> fn <T: number>(x: T) -> T { return c.pick }`,
 			binding: "probe",
 			want:    "fn (c: C<number>) -> fn <T: number>(x: T) -> T",
 		},
@@ -3121,7 +3121,7 @@ func TestInferClassMethodTypeParamRendering(t *testing.T) {
 			name: "a signature mixing both binders",
 			src: `
 				class C<U> { v: U, map<T>(&self, x: T) -> [T, U] { return [x, self.v] }, }
-				fn probe(c: C<number>) { return c.map }`,
+				fn probe(c: C<number>) -> fn <T>(x: T) -> [T, number] { return c.map }`,
 			binding: "probe",
 			want:    "fn (c: C<number>) -> fn <T>(x: T) -> [T, number]",
 		},
@@ -3199,7 +3199,7 @@ func TestInferClassKeepsANestedCallbackBinder(t *testing.T) {
 	values, _, errs := inferSource(t, `class C {
 	apply(&self, g: fn <V>(x: V) -> V, y: number) -> number { return g(y) },
 }
-fn probe(c: C) { return c.apply }`)
+fn probe(c: C) -> fn (g: fn <V>(x: V) -> V, y: number) -> number { return c.apply }`)
 	require.Empty(t, messagesWithSpan(t, errs))
 	require.Equal(t,
 		"fn (c: C) -> fn (g: fn <V>(x: V) -> V, y: number) -> number",
@@ -3567,7 +3567,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 					readonly inner: Box,
 					each(&self, cb: fn (c: &C) -> undefined) -> undefined { return undefined },
 				}
-				fn f(c: &C, keep: &mut Array<Box>) {
+				fn f(c: &C, keep: &mut Array<Box>) -> undefined {
 					c.each(fn (x) {
 						keep.push(x.inner)
 						return undefined
@@ -3601,7 +3601,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 				class A { readonly n: number }
 				class B { readonly n: number }
 				declare fn each(cb: fn (x: &(A | B)) -> unknown) -> unknown
-				fn f() { each(fn (x) { return x.n }) }
+				fn f() -> undefined { each(fn (x) { return x.n }) }
 			`,
 		},
 		{
@@ -3612,7 +3612,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 					readonly inner: Box | null,
 					each(&self, cb: fn (c: &C) -> undefined) -> undefined { return undefined },
 				}
-				fn f(c: &C, keep: &mut Array<Box | null>) {
+				fn f(c: &C, keep: &mut Array<Box | null>) -> undefined {
 					c.each(fn (x) {
 						keep.push(x.inner)
 						return undefined
@@ -3629,7 +3629,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 				class Box { v: number }
 				class C { readonly inner: Box }
 				declare fn each<T>(v: &T, cb: fn (x: &T) -> undefined) -> undefined
-				fn f(c: &C, keep: &mut Array<Box>) {
+				fn f(c: &C, keep: &mut Array<Box>) -> undefined {
 					each(c, fn (x) {
 						keep.push(x.inner)
 						return undefined
@@ -3678,7 +3678,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 				class Box { v: number }
 				class C { readonly inner: Box }
 				declare fn each<T>(cb: fn (x: &T) -> undefined, v: &T) -> undefined
-				fn f(c: &C, keep: &mut Array<Box>) {
+				fn f(c: &C, keep: &mut Array<Box>) -> undefined {
 					each(fn (x) {
 						keep.push(x.inner)
 						return undefined
@@ -3712,7 +3712,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 			src: `
 				class C { readonly n: number }
 				declare fn each<T>(v: T, cb: fn (x: &T) -> undefined) -> undefined
-				fn f(c: &C) {
+				fn f(c: &C) -> undefined {
 					each(c, fn (x) {
 						val b: boolean = x.n
 						return undefined
@@ -3726,7 +3726,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 			src: `
 				class C { readonly n: number }
 				declare fn each<T>(v: &T, cb: fn (x: &T) -> undefined) -> undefined
-				fn f(c: &(C | null)) {
+				fn f(c: &(C | null)) -> undefined {
 					each(c, fn (x) {
 						val b: number = x.n
 						return undefined
@@ -3741,7 +3741,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 			src: `
 				class C { readonly n: number }
 				declare fn each<T>(v: &T, cb: fn (x: &T) -> undefined) -> undefined
-				fn f(c: &C) {
+				fn f(c: &C) -> undefined {
 					each(c, fn (x) {
 						val m = x.missing
 						return undefined
@@ -3757,7 +3757,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 				class Box { v: number }
 				class C<'a> { readonly m: &'a mut Box }
 				declare fn each<'a>(c: &C<'a>, cb: fn (x: &C<'a>) -> undefined) -> undefined
-				fn f(c: &C<'static>) {
+				fn f(c: &C<'static>) -> undefined {
 					each(c, fn (x) {
 						val p = x.m
 						p.v = 5
@@ -4099,13 +4099,13 @@ func TestInferClassReadsLaterClassMember(t *testing.T) {
 			src: `
 				class A {
 					readonly b: B,
-					get(&self) { return self.b.m() },
+					get(&self) -> number { return self.b.m() },
 					k(&self) -> number { return 1 },
 				}
 				class B {
 					readonly a: A,
 					m(&self) -> number { return 1 },
-					j(&self) { return self.a.k() },
+					j(&self) -> number { return self.a.k() },
 				}
 				fn f(a: A) -> string { return a.get() }
 			`,
@@ -4116,8 +4116,8 @@ func TestInferClassReadsLaterClassMember(t *testing.T) {
 			// walked. The mismatch is reported once.
 			name: "FuncReadsStubInCycle",
 			src: `
-				fn f(b: B) { return b.m() }
-				class B { m(&self) -> number { return 1 }, n(&self, b: B) { return f(b) } }
+				val f = fn (b: B) { return b.m() }
+				class B { m(&self) -> number { return 1 }, n(&self, b: B) -> number { return f(b) } }
 				fn g(b: B) -> string { return f(b) }
 			`,
 			wantErrs: []string{"4:35-4:39: cannot constrain number <: string"},
@@ -4168,9 +4168,9 @@ func TestInferReaderOfLaterClassMemberType(t *testing.T) {
 		{
 			name: "ReaderChainBeforeMember",
 			src: `
-				fn f(b: B) { return b.m() }
-				fn g(b: B) { return f(b) }
-				class B { m(&self) { return 1 }, n(&self, b: B) { return g(b) } }
+				val f = fn (b: B) { return b.m() }
+				val g = fn (b: B) { return f(b) }
+				class B { m(&self) -> 1 { return 1 }, n(&self, b: B) -> 1 { return g(b) } }
 			`,
 			wantValues: map[string]string{
 				"f": "fn (b: B) -> 1",
@@ -4180,9 +4180,9 @@ func TestInferReaderOfLaterClassMemberType(t *testing.T) {
 		{
 			name: "ReaderChainBeforeGetter",
 			src: `
-				fn f(b: B) { return b.v }
-				fn g(b: B) { return f(b) }
-				class B { get v(&self) { return "s" }, n(&self, b: B) { return g(b) } }
+				fn f(b: B) -> "s" { return b.v }
+				fn g(b: B) -> "s" { return f(b) }
+				class B { get v(&self) { return "s" }, n(&self, b: B) -> "s" { return g(b) } }
 			`,
 			wantValues: map[string]string{
 				"f": `fn (b: B) -> "s"`,

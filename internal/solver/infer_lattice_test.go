@@ -24,7 +24,7 @@ func TestInferUnionAnnotationAcceptsOtherMember(t *testing.T) {
 // `true`/`false` literal — otherwise the error message would not match.
 func TestInferUnionAnnotationRejectsNonMember(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn check(b: boolean) {
+		fn check(b: boolean) -> undefined {
 			val x: number | string = b
 		}
 	`)
@@ -74,7 +74,7 @@ func TestInferUnionAnnotationDedups(t *testing.T) {
 // reject the borrow before the lattice rule could match the borrow member.
 func TestInferUnionAnnotationBorrowMember(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn check(r: &mut {x: number}) {
+		fn check(r: &mut {x: number}) -> undefined {
 			val v: &mut {x: number} | number = r
 		}
 	`)

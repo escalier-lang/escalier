@@ -18,7 +18,7 @@ import (
 // out at the lifetime it came in. Occurring in both positions, it is named `'a`
 // and quantified. This is the IdentityRefReturn acceptance (M4 D4).
 func TestInferIdentityRefReturn(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(p: &mut {x: number}) { return p }`)
+	values, _, errs := inferSource(t, `fn f(p: &mut {x: number}) -> &mut {x: number} { return p }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number}", values["f"])
 }
@@ -27,7 +27,7 @@ func TestInferIdentityRefReturn(t *testing.T) {
 // object literal is owned (Lt nil) and not mutable, so the result renders as a
 // bare object `{…}` with no `mut` prefix and no `'l` lifetime annotation.
 func TestInferFreshObjectReturn(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f() { return {x: 5} }`)
+	values, _, errs := inferSource(t, `fn f() -> {x: 5} { return {x: 5} }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn () -> {x: 5}", values["f"])
 }
@@ -36,7 +36,7 @@ func TestInferFreshObjectReturn(t *testing.T) {
 // the output. `p` is returned, so its lifetime is named `'a`. `q` connects
 // nothing, so its lifetime name is elided but the `&mut` is kept.
 func TestInferDistinctParamLifetimes(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(p: &mut {x: number}, q: &mut {y: number}) { return p }`)
+	values, _, errs := inferSource(t, `fn f<'a>(p: &'a mut {x: number}, q: &mut {y: number}) -> &'a mut {x: number} { return p }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn <'a>(p: &'a mut {x: number}, q: &mut {y: number}) -> &'a mut {x: number}", values["f"])
 }
@@ -86,7 +86,7 @@ func TestInferSharedParamLifetimeIsNamed(t *testing.T) {
 // Writing a field through an owned-mutable param checks. The write requirement's
 // fresh lifetime imposes no obligation, so an owned receiver satisfies it.
 func TestInferFieldWriteThroughBorrowParam(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(mut p: {x: number}) { p.x = 10 }`)
+	values, _, errs := inferSource(t, `fn f(mut p: {x: number}) -> undefined { p.x = 10 }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (p: {x: number}) -> undefined", values["f"])
 }
@@ -100,7 +100,7 @@ func TestInferBorrowEscapesIntoOwnedArg(t *testing.T) {
 	src := `fn use(o: {x: number}) -> number {
   return o.x
 }
-fn f(p: &mut {x: number}) {
+fn f(p: &mut {x: number}) -> number {
   return use(p)
 }`
 	_, _, errs := inferSource(t, src)
@@ -117,7 +117,7 @@ func TestInferBorrowIntoBorrowArg(t *testing.T) {
 	src := `fn use(o: &mut {x: number}) -> number {
   return o.x
 }
-fn f(p: &mut {x: number}) {
+fn f(p: &mut {x: number}) -> number {
   return use(p)
 }`
 	values, _, errs := inferSource(t, src)
@@ -133,7 +133,7 @@ fn f(p: &mut {x: number}) {
 // the `written` map on a receiver var, this exercises the peel-and-constrain
 // path on a concrete borrow.
 func TestInferReadAfterWriteThroughBorrowParam(t *testing.T) {
-	src := `fn f(p: &mut {x: number}) {
+	src := `fn f(p: &mut {x: number}) -> number {
   p.x = 5
   return p.x
 }`
@@ -147,7 +147,7 @@ func TestInferReadAfterWriteThroughBorrowParam(t *testing.T) {
 // mutable destination. This confirms the field-write requirement's fresh lifetime (D2) did
 // not loosen the mutability gate — an owned-but-immutable receiver still fails.
 func TestInferFieldWriteToImmutableObjectRejected(t *testing.T) {
-	src := `fn g(o: {x: number}) {
+	src := `fn g(o: {x: number}) -> undefined {
   o.x = 5
 }`
 	_, _, errs := inferSource(t, src)
@@ -163,7 +163,7 @@ func TestInferFieldWriteToImmutableObjectRejected(t *testing.T) {
 // lifetimes 'l0/'l1 stay named on the borrows they originate, and each outlives 'c, so
 // the quantifier prefix carries the bounds `'a: 'c, 'b: 'c`.
 func TestInferConditionalUnionReturn(t *testing.T) {
-	src := `fn f(p: &mut {x: number}, q: &mut {x: number}) {
+	src := `fn f<'a: 'c, 'b: 'c, 'c>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &'c mut {x: number} {
   if true {
     return p
   } else {
@@ -183,7 +183,7 @@ func TestInferConditionalUnionReturn(t *testing.T) {
 // return falls back to the generic union, preserving both borrows with their own
 // lifetimes (M4 D3).
 func TestInferMismatchedBorrowsFallBackToUnion(t *testing.T) {
-	src := `fn f(p: &mut {x: number}, q: &mut {y: number}) {
+	src := `fn f<'a, 'b>(p: &'a mut {x: number}, q: &'b mut {y: number}) -> &'a mut {x: number} | &'b mut {y: number} {
   if true {
     return p
   } else {
@@ -202,7 +202,7 @@ func TestInferMismatchedBorrowsFallBackToUnion(t *testing.T) {
 // bound `: 'd` in the prefix. This confirms the join generalizes past the two-branch
 // case to an n-ary return set.
 func TestInferThreeWayBorrowJoin(t *testing.T) {
-	src := `fn f(p: &mut {x: number}, q: &mut {x: number}, r: &mut {x: number}) {
+	src := `fn f<'a: 'd, 'b: 'd, 'c: 'd, 'd>(p: &'a mut {x: number}, q: &'b mut {x: number}, r: &'c mut {x: number}) -> &'d mut {x: number} {
   if true {
     return p
   } else {
@@ -232,10 +232,10 @@ func TestInferThreeWayBorrowJoin(t *testing.T) {
 // lifetimes, so `use` renders the same clean bounded form over `a` and `b` rather than
 // the raw freshened ids.
 func TestInferInstantiatedJoinReturnsUnion(t *testing.T) {
-	src := `fn pick(p: &mut {x: number}, q: &mut {x: number}) {
+	src := `fn pick<'a: 'c, 'b: 'c, 'c>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &'c mut {x: number} {
   if true { return p } else { return q }
 }
-fn use(a: &mut {x: number}, b: &mut {x: number}) {
+fn use<'a: 'c, 'b: 'c, 'c>(a: &'a mut {x: number}, b: &'b mut {x: number}) -> &'c mut {x: number} {
   return pick(a, b)
 }`
 	values, _, errs := inferSource(t, src)
@@ -254,7 +254,7 @@ fn use(a: &mut {x: number}, b: &mut {x: number}) {
 // `string` fails that pin, so the join falls back to the type-level union, readable
 // everywhere and writable at `x` only after narrowing.
 func TestInferIncompatibleBorrowJoinReturnsUnion(t *testing.T) {
-	src := `fn f(p: &mut {x: number}, q: &mut {x: string}) {
+	src := `fn f<'a, 'b>(p: &'a mut {x: number}, q: &'b mut {x: string}) -> &'a mut {x: number} | &'b mut {x: string} {
   if true {
     return p
   } else {
@@ -273,7 +273,7 @@ func TestInferIncompatibleBorrowJoinReturnsUnion(t *testing.T) {
 // string}` reads `number | string` via the union read rule, the read-until-narrowed
 // view the permissive join enables.
 func TestInferIncompatibleBorrowUnionFieldReads(t *testing.T) {
-	src := `fn f(p: &mut {x: number}, q: &mut {x: string}) {
+	src := `fn f(p: &mut {x: number}, q: &mut {x: string}) -> number | string {
   val r = if true {
     p
   } else {
@@ -295,7 +295,7 @@ func TestInferIncompatibleBorrowUnionFieldReads(t *testing.T) {
 // member field types rather than collapsing to a single lifetime, so the per-branch
 // borrows survive the read.
 func TestInferIncompatibleBorrowUnionReadsBorrowedField(t *testing.T) {
-	src := `fn f(p: &mut {a: &mut {x: number}}, q: &mut {a: &mut {x: string}}) {
+	src := `fn f<'a, 'b>(p: &mut {a: &'a mut {x: number}}, q: &mut {a: &'b mut {x: string}}) -> &'a mut {x: number} | &'b mut {x: string} {
   val r = if true {
     p
   } else {
@@ -347,7 +347,7 @@ func TestInferIncompatibleBorrowJoinKeepsDistinctLifetimes(t *testing.T) {
 // to a single diagnostic is tracked in escalier-lang/escalier#806; update this
 // assertion when that lands.
 func TestInferIncompatibleBorrowUnionWriteRejected(t *testing.T) {
-	src := `fn f(p: &mut {x: number}, q: &mut {x: string}) {
+	src := `fn f(p: &mut {x: number}, q: &mut {x: string}) -> undefined {
   val r = if true {
     p
   } else {
@@ -401,7 +401,7 @@ func TestInferMixedBorrowAndOwnedReturnFallsBackToUnion(t *testing.T) {
 // owned module-level binding.
 func TestInferGlobalWriteEscapesBorrowToStatic(t *testing.T) {
 	src := `var sink = &{x: 0}
-fn cache(p: &{x: number}) {
+fn cache(p: &{x: number}) -> undefined {
   sink = p
 }`
 	values, _, errs := inferSource(t, src)
@@ -426,7 +426,7 @@ func TestBorrowIntoAnUnannotatedLiteral(t *testing.T) {
 		{
 			name: "MutableBorrowElement",
 			src: `
-				fn f(p: &mut {x: number}) {
+				fn f(p: &mut {x: number}) -> {peer: &mut {x: number}} {
 					val a = {peer: p}
 					return a
 				}
@@ -436,7 +436,7 @@ func TestBorrowIntoAnUnannotatedLiteral(t *testing.T) {
 		{
 			name: "ImmutableBorrowElement",
 			src: `
-				fn f(r: &{x: number}) {
+				fn f(r: &{x: number}) -> {at: &{x: number}} {
 					val v = {at: r}
 					return v
 				}
@@ -446,7 +446,7 @@ func TestBorrowIntoAnUnannotatedLiteral(t *testing.T) {
 		{
 			name: "NestedElement",
 			src: `
-				fn f(p: &mut {x: number}) {
+				fn f(p: &mut {x: number}) -> {outer: {peer: &mut {x: number}}} {
 					val w = {outer: {peer: p}}
 					return w
 				}
@@ -456,7 +456,7 @@ func TestBorrowIntoAnUnannotatedLiteral(t *testing.T) {
 		{
 			name: "TupleElement",
 			src: `
-				fn f(r: &{x: number}) {
+				fn f(r: &{x: number}) -> [&{x: number}, &{x: number}] {
 					val t = [r, r]
 					return t
 				}
@@ -467,7 +467,7 @@ func TestBorrowIntoAnUnannotatedLiteral(t *testing.T) {
 			// Each literal copies p, so p is still usable after both.
 			name: "BorrowElementCopies",
 			src: `
-				fn f(p: &mut {x: number}) {
+				fn f(p: &mut {x: number}) -> &mut {x: number} {
 					val a = {peer: p}
 					val b = {peer: p}
 					return p
@@ -490,7 +490,7 @@ func TestBorrowIntoAnUnannotatedLiteral(t *testing.T) {
 			// with f's frame and D16 makes the return owned. Its field still borrows r.
 			name: "BorrowedLiteral",
 			src: `
-				fn f(r: &{x: number}) {
+				fn f(r: &{x: number}) -> {f: &{x: number}} {
 					val o = &{f: r}
 					return o
 				}
@@ -501,7 +501,7 @@ func TestBorrowIntoAnUnannotatedLiteral(t *testing.T) {
 			// The union's only reference-shaped member is a borrow, so each literal copies maybe.
 			name: "UnionOfABorrowCopies",
 			src: `
-				fn f(maybe: &{x: number} | null) {
+				fn f(maybe: &{x: number} | null) -> {f: &{x: number} | null} {
 					val o = {f: maybe}
 					val q = {f: maybe}
 					return o
@@ -512,7 +512,7 @@ func TestBorrowIntoAnUnannotatedLiteral(t *testing.T) {
 		{
 			name: "OwnedElementMoves",
 			src: `
-				fn f() {
+				fn f() -> 1 {
 					val p = {x: 1}
 					val b = {inner: p}
 					return p.x
@@ -523,7 +523,7 @@ func TestBorrowIntoAnUnannotatedLiteral(t *testing.T) {
 		{
 			name: "MixedUnionElementType",
 			src: `
-				fn f(s: {x: number} | &{x: number}) {
+				fn f(s: {x: number} | &{x: number}) -> {f: {x: number} | &{x: number}} {
 					val a = {f: s}
 					return a
 				}
@@ -534,7 +534,7 @@ func TestBorrowIntoAnUnannotatedLiteral(t *testing.T) {
 			// The union has an owned member, so the literal moves s.
 			name: "MixedUnionElementMoves",
 			src: `
-				fn f(s: {x: number} | &{x: number}) {
+				fn f(s: {x: number} | &{x: number}) -> {x: number} | &{x: number} {
 					val a = {f: s}
 					return s
 				}
@@ -544,7 +544,7 @@ func TestBorrowIntoAnUnannotatedLiteral(t *testing.T) {
 		{
 			name: "UnwrittenFieldBorrow",
 			src: `
-				fn f(r: &{g: {x: number}}) {
+				fn f(r: &{g: {x: number}}) -> {f: &{x: number}} {
 					val o = {f: r.g}
 					return o
 				}
@@ -554,7 +554,7 @@ func TestBorrowIntoAnUnannotatedLiteral(t *testing.T) {
 		{
 			name: "WrittenBorrowElement",
 			src: `
-				fn f() {
+				fn f() -> undefined {
 					val p = {x: 1}
 					val o = {f: &p}
 				}
@@ -584,7 +584,7 @@ func TestInferGlobalWriteOfABorrowIntoAnOwnedBinding(t *testing.T) {
 			name: "InferredOwnedBinding",
 			src: `
 				var sink = {x: 0}
-				fn cache(p: &mut {x: number}) {
+				fn cache(p: &mut {x: number}) -> undefined {
 					sink = p
 				}
 			`,
@@ -594,7 +594,7 @@ func TestInferGlobalWriteOfABorrowIntoAnOwnedBinding(t *testing.T) {
 			name: "DeclaredOwnedBinding",
 			src: `
 				declare var sink: {x: number}
-				fn cache(p: &{x: number}) {
+				fn cache(p: &{x: number}) -> undefined {
 					sink = p
 				}
 			`,
@@ -604,7 +604,7 @@ func TestInferGlobalWriteOfABorrowIntoAnOwnedBinding(t *testing.T) {
 			name: "WrittenBorrowOfALocal",
 			src: `
 				declare var sink: {x: number}
-				fn cache() {
+				fn cache() -> undefined {
 					val p = {x: 1}
 					sink = &p
 				}
@@ -615,7 +615,7 @@ func TestInferGlobalWriteOfABorrowIntoAnOwnedBinding(t *testing.T) {
 			name: "OwnedValueIsAccepted",
 			src: `
 				declare var sink: {x: number}
-				fn cache() {
+				fn cache() -> undefined {
 					val p = {x: 1}
 					sink = p
 				}
@@ -640,7 +640,7 @@ func TestInferGlobalWriteOfABorrowIntoAnOwnedBinding(t *testing.T) {
 // lifetime machinery engaged.
 func TestInferGlobalWriteNonBorrowUnaffected(t *testing.T) {
 	src := `var n = 0
-fn bump() {
+fn bump() -> undefined {
   n = 5
 }`
 	values, _, errs := inferSource(t, src)
@@ -655,7 +655,7 @@ fn bump() {
 // immutable view of p. q dies within p's region and never escapes, so the
 // lifetime sort accepts it with no error.
 func TestInferImmutableBorrowAliasLocally(t *testing.T) {
-	src := `fn f(p: &mut {x: number}) {
+	src := `fn f(p: &mut {x: number}) -> number {
   val q: &{x: number} = p
   return q.x
 }`
@@ -669,7 +669,7 @@ func TestInferImmutableBorrowAliasLocally(t *testing.T) {
 // over the same named lifetime as the parameter. This is the D4 display path for
 // a borrow alias that reaches an output.
 func TestInferImmutableBorrowAliasReturnedCarriesLifetime(t *testing.T) {
-	src := `fn f(p: &mut {x: number}) {
+	src := `fn f(p: &mut {x: number}) -> &{x: number} {
   val q: &{x: number} = p
   return q
 }`
@@ -697,7 +697,7 @@ func TestInferBorrowAliasEscapingOwnedReturnRejected(t *testing.T) {
 // owned-immutable parameter without an escape error.
 func TestInferOwnedToOwnedImmutableBinding(t *testing.T) {
 	src := `fn acceptObj(o: {x: number}) -> number { return o.x }
-fn f(r: {x: number}) {
+fn f(r: {x: number}) -> number {
   val q: {x: number} = r
   return acceptObj(q)
 }`
@@ -711,7 +711,7 @@ fn f(r: {x: number}) {
 // into an owned-immutable parameter without an escape error.
 func TestInferOwnedMutDecayToOwnedImmutable(t *testing.T) {
 	src := `fn acceptObj(o: {x: number}) -> number { return o.x }
-fn f() {
+fn f() -> number {
   val mut items: {x: number} = {x: 1}
   val q: {x: number} = items
   return acceptObj(q)
@@ -724,7 +724,7 @@ fn f() {
 // borrow aliased through an explicit `&` tuple annotation and returned carries
 // the source's lifetime to the output.
 func TestInferTupleBorrowAliasReturnsLifetime(t *testing.T) {
-	src := `fn f(p: &mut [number, number]) {
+	src := `fn f(p: &mut [number, number]) -> &[number, number] {
   val q: &[number, number] = p
   return q
 }`
@@ -739,7 +739,7 @@ func TestInferTupleBorrowAliasReturnsLifetime(t *testing.T) {
 // escape error.
 func TestInferOwnedToOwnedTupleBinding(t *testing.T) {
 	src := `fn acceptTup(o: [number, number]) -> number { return 0 }
-fn f(r: [number, number]) {
+fn f(r: [number, number]) -> number {
   val q: [number, number] = r
   return acceptTup(q)
 }`
@@ -753,7 +753,7 @@ fn f(r: [number, number]) {
 // source's extra `y` tolerated by width subtyping. Returned, the view carries
 // the source's lifetime and renders its inexact tail.
 func TestInferInexactBorrowAlias(t *testing.T) {
-	src := `fn f(p: &mut {x: number, y: number}) {
+	src := `fn f(p: &mut {x: number, y: number}) -> &{x: number, ...} {
   val q: &{x: number, ...} = p
   return q
 }`
@@ -769,7 +769,7 @@ func TestInferInexactBorrowAlias(t *testing.T) {
 // and named `'a`, so the signature renders the borrow in `&'a` notation rather than the
 // old `'a {x}` form.
 func TestInferBorrowAnnImmutableParam(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(p: &{x: number}) { return p }`)
+	values, _, errs := inferSource(t, `fn f(p: &{x: number}) -> &{x: number} { return p }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn <'a>(p: &'a {x: number}) -> &'a {x: number}", values["f"])
 }
@@ -778,7 +778,7 @@ func TestInferBorrowAnnImmutableParam(t *testing.T) {
 // the same RefType the borrow-by-default `mut {x}` param produced, now written
 // explicitly, so it renders identically as `&'a mut {x}`.
 func TestInferBorrowAnnMutableParam(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(p: &mut {x: number}) { return p }`)
+	values, _, errs := inferSource(t, `fn f(p: &mut {x: number}) -> &mut {x: number} { return p }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number}", values["f"])
 }
@@ -788,7 +788,7 @@ func TestInferBorrowAnnMutableParam(t *testing.T) {
 // one makes that lifetime load-bearing, and the display names it `'a` on both params. The
 // `<'a>` binder is required: a `&'a` borrow whose name no clause declares is rejected.
 func TestInferNamedBorrowLifetimeShared(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f<'a>(p: &'a {x: number}, q: &'a {x: number}) { return p }`)
+	values, _, errs := inferSource(t, `fn f<'a>(p: &'a {x: number}, q: &'a {x: number}) -> &'a {x: number} { return p }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn <'a>(p: &'a {x: number}, q: &'a {x: number}) -> &'a {x: number}", values["f"])
 }
@@ -821,7 +821,7 @@ func TestInferOwnedReceiverFieldReadIsOwned(t *testing.T) {
 // A borrow of a field that escapes carries the receiver's borrow lifetime through.
 // The receiver is `&mut`, so the field is borrowed as `&mut p.a`.
 func TestInferMemberReadEscapingBorrowsReceiver(t *testing.T) {
-	src := `fn f(p: &mut {a: {x: number}}) {
+	src := `fn f(p: &mut {a: {x: number}}) -> &mut {x: number} {
   return &mut p.a
 }`
 	values, _, errs := inferSource(t, src)
@@ -836,7 +836,7 @@ func TestInferMemberReadEscapingBorrowsReceiver(t *testing.T) {
 // borrows inside the body, but the binding `q` never escapes, so
 // the param's borrow lifetime does not need to be named.
 func TestInferMemberReadLocalElidesLifetime(t *testing.T) {
-	src := `fn f(p: &mut {a: {x: number}}) {
+	src := `fn f(p: &mut {a: {x: number}}) -> undefined {
   val q = &mut p.a
 }`
 	values, _, errs := inferSource(t, src)
@@ -851,7 +851,7 @@ func TestInferMemberReadLocalElidesLifetime(t *testing.T) {
 // reads back as a `&'a {x: number}` at the field's own annotation-minted
 // lifetime, not a depth-two borrow over the receiver.
 func TestInferMemberReadFlatBorrowOfRefField(t *testing.T) {
-	src := `fn f(obj: {a: &{x: number}}) {
+	src := `fn f(obj: {a: &{x: number}}) -> &{x: number} {
   return obj.a
 }`
 	values, _, errs := inferSource(t, src)
@@ -869,7 +869,7 @@ func TestInferMemberReadFlatBorrowOfRefField(t *testing.T) {
 // borrow needs the move-engine work in PR 6, and PR 9 normalizes the
 // otherwise uninhabitable `&mut &mut` shape.
 func TestInferMemberReadOfMutBorrowField(t *testing.T) {
-	src := `fn f(p: {a: &mut {x: number}}) {
+	src := `fn f(p: {a: &mut {x: number}}) -> &mut {x: number} {
   return p.a
 }`
 	values, _, errs := inferSource(t, src)
@@ -885,7 +885,7 @@ func TestInferMemberReadOfMutBorrowField(t *testing.T) {
 // firing on non-borrowable fields and tripping the bare<:RefType escape
 // guard when the field flows into a primitive sink.
 func TestInferMemberReadPrimitiveStaysValue(t *testing.T) {
-	src := `fn f(p: &mut {x: number}) {
+	src := `fn f(p: &mut {x: number}) -> number {
   return p.x
 }`
 	values, _, errs := inferSource(t, src)
@@ -899,7 +899,7 @@ func TestInferMemberReadPrimitiveStaysValue(t *testing.T) {
 // implicit read produces, with no extra wrapping. Both the param and the
 // return render at the receiver's named lifetime.
 func TestInferExplicitBorrowOfMemberSharesLifetime(t *testing.T) {
-	src := `fn f(obj: &mut {a: {x: number}, b: {y: number}}) {
+	src := `fn f(obj: &mut {a: {x: number}, b: {y: number}}) -> &{y: number} {
   return &obj.b
 }`
 	values, _, errs := inferSource(t, src)
@@ -916,7 +916,7 @@ func TestInferExplicitBorrowOfMemberSharesLifetime(t *testing.T) {
 // leaves a disjoint sibling such as `obj.a` independently usable. This test
 // asserts the typing rule only.
 func TestInferExplicitMutBorrowOfMemberAcceptsMutReceiver(t *testing.T) {
-	src := `fn f(obj: &mut {a: {x: number}, b: {y: number}}) {
+	src := `fn f(obj: &mut {a: {x: number}, b: {y: number}}) -> &mut {y: number} {
   return &mut obj.b
 }`
 	values, _, errs := inferSource(t, src)
@@ -932,7 +932,7 @@ func TestInferExplicitMutBorrowOfMemberAcceptsMutReceiver(t *testing.T) {
 // imposes for a field write `obj.f = v`, surfacing here at the explicit mut
 // borrow.
 func TestInferExplicitMutBorrowOfMemberOnImmutableRejected(t *testing.T) {
-	src := `fn f(obj: &{a: {x: number}}) {
+	src := `fn f(obj: &{a: {x: number}}) -> &mut {x: number} {
   return &mut obj.a
 }`
 	_, _, errs := inferSource(t, src)
@@ -968,7 +968,7 @@ func TestInferMemberReadInferredReceiverUnchanged(t *testing.T) {
 // IndexExpr branch the operand types as an immutable wrap that the outer
 // `&mut` cannot upgrade.
 func TestInferExplicitMutBorrowOfConstIndexAcceptsMutReceiver(t *testing.T) {
-	src := `fn f(obj: &mut {a: {x: number}, b: {y: number}}) {
+	src := `fn f(obj: &mut {a: {x: number}, b: {y: number}}) -> &mut {y: number} {
   return &mut obj["b"]
 }`
 	values, _, errs := inferSource(t, src)

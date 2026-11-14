@@ -124,10 +124,10 @@ func TestInferOverloadArmMatchesPlainCallee(t *testing.T) {
 // missing clause, not "no matching overload" — `next` is itself an overload set of two arms.
 func TestInferOverloadThrowsIsNotDispatch(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		gen fn g() { yield 1 throw "boom" }
-		fn f() { val it = g() return it.next() }
+		gen fn g() -> Generator<1, never, unknown, "boom"> { yield 1 throw "boom" }
+		fn f() -> IteratorYieldResult<1> { val it = g() return it.next() }
 	`)
-	require.Equal(t, []string{"3:32-3:41: `f` can throw `\"boom\"`, but it doesn't declare it; add `throws string` to `f`'s signature"},
+	require.Equal(t, []string{"3:58-3:67: `f` can throw `\"boom\"`, but it doesn't declare it; add `throws string` to `f`'s signature"},
 		messagesWithSpan(t, errs))
 }
 

@@ -119,7 +119,7 @@ func TestInferModuleDestructuring(t *testing.T) {
 			// `f`'s body is inferred, the same way a single recursive `val` resolves.
 			name: "recursive group",
 			src: `
-				fn f() { return g() }
+				val f = fn () { return g() }
 				val {g} = {g: f}
 			`,
 			values: map[string]string{"f": "fn () -> never", "g": "fn () -> never"},
