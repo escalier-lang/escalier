@@ -289,6 +289,79 @@ func printAsSchemeWith(
 	if ft, ok := t.(*FuncType); ok && ft.Lt == nil {
 		p.bindTypeParams(ft.TypeParams)
 	}
+	b := p.nameScheme(t, isParam, ltBounds, declared, declaredLts, nil)
+	if len(b.labels) == 0 && len(b.ltLabels) == 0 {
+		// No quantified parameters: render as a plain (possibly raw-var) type, which
+		// keeps a leaked variable visible as t{ID}. A fresh printer renders it, as in Print,
+		// because p has already bound the function's own type parameters and printFuncTail
+		// would bind them a second time. The fresh printer keeps p's record.
+		return (&namedPrinter{record: p.record}).printType(t)
+	}
+	switch t.(type) {
+	case *ClassType, *AliasType:
+		// A class instance or alias reference already displays its parameters inline in its
+		// `<...>` argument list, so it needs no separate quantifier prefix. A generalized
+		// Map<K, V> renders as Map<T0, T1>, not <T0, T1> Map<T0, T1>, and Foo<'a> as Foo<'a>,
+		// not <'a> Foo<'a>. Their only free-variable children are their arguments, so every
+		// quantified variable is shown inline and none is lost by dropping the prefix.
+		return p.printType(t)
+	}
+	// A function with a lifetime such as `'a fn () -> R` takes the general prefix path below,
+	// since its quantifier prefix must also bind the lifetime written ahead of `fn`.
+	if ft, ok := t.(*FuncType); ok && ft.Lt == nil {
+		// Merge the scheme's free variables, the function's OWN type and lifetime
+		// parameters, and the free scheme lifetimes into one ordered prefix, so a generic
+		// method that also captures a scheme variable renders `fn <T0, U, 'a>(...)` rather
+		// than adjacent groups. A function's own lifetime params are excluded from ltLabels
+		// by freeLifetimeVars, so they are named and rendered here from their declared
+		// bounds. printFuncBody omits the prefix so the own parameters are not repeated. The
+		// own TYPE parameters were bound at the top of this function, so typeParamBinders
+		// reads their names back rather than binding them a second time.
+		p.nameLifetimeParams(ft.LifetimeParams)
+		binders := append([]string{}, b.labels...)
+		binders = append(binders, p.typeParamBinders(ft.TypeParams)...)
+		binders = append(binders, p.lifetimeParamBinders(ft.LifetimeParams)...)
+		binders = append(binders, b.ltLabels...)
+		// The scheme's declared parameters and the function's own share one clause, so a
+		// lower bound on either renders once, after the signature.
+		where := p.whereClause(append(append([]*TypeParam{}, b.labeled...), ft.TypeParams...))
+		return "fn <" + strings.Join(binders, ", ") + ">" + p.printFuncBody(ft, where)
+	}
+	prefix := "<" + strings.Join(append(b.labels, b.ltLabels...), ", ") + ">"
+	// The prefix binds the WHOLE body, and a body joined by `|` or `&` needs parens to
+	// say so. `<'a, 'b> &'a T | &'b T` reads as though the prefix covered the first
+	// member alone, which would leave 'b bound by nothing. A body that is one atom or
+	// one prefix form cannot be split by a following operator, so it needs none: the
+	// class-constructor rendering stays `<T> {new (value: T) -> Node<T>}`. A declared
+	// parameter's lower bound follows the body as a `where` clause.
+	return prefix + " " + p.printTypeMinPrec(t, precPrefix) + p.whereClause(b.labeled)
+}
+
+// schemeBinders are the quantifier binders nameScheme assigns to a scheme's free variables.
+type schemeBinders struct {
+	// labels are the type-parameter binders, the declared ones first in declaration order
+	// and the generated T0, T1, … after them, each with its bound.
+	labels []string
+	// labeled lists the declared parameters that got a label, in label order, for the
+	// `where` clause.
+	labeled []*TypeParam
+	// ltLabels are the lifetime binders, each with its outlives bounds.
+	ltLabels []string
+}
+
+// nameScheme names the free variables of t that a quantifier prefix binds, registers each
+// name with p, and returns the binders. isParam, ltBounds, declared and declaredLts mean what
+// they mean for PrintAsSchemeWith. A free lifetime in unbound gets no name and no binder, so
+// it renders as a bare borrow. A type variable or lifetime p already names keeps its name and
+// gets no binder, and a generated name skips every name p already holds.
+func (p *namedPrinter) nameScheme(
+	t Type,
+	isParam func(*TypeVarType) bool,
+	ltBounds map[*LifetimeVar][]*LifetimeVar,
+	declared []*TypeParam,
+	declaredLts []*LifetimeParam,
+	unbound set.Set[*LifetimeVar],
+) schemeBinders {
 	// The free variables the caller is willing to quantify, in first-appearance print order.
 	// Anything isParam rejects is left unnamed and renders as t{ID}.
 	var params []*TypeVarType
@@ -298,7 +371,7 @@ func printAsSchemeWith(
 		}
 	}
 	quantified := set.FromSlice(params)
-	var labels []string
+	var b schemeBinders
 	// A declared parameter's binder carries its name here and its bound further down, once
 	// every name a bound could reach is registered. declaredAt records where each one's
 	// label sits so the bound can be appended to it in place.
@@ -310,8 +383,8 @@ func printAsSchemeWith(
 		if _, bound := p.names[tp.Var]; bound {
 			continue // one variable gets one binder, however many parameters point at it
 		}
-		declaredAt[len(labels)] = tp
-		labels = append(labels, p.bindTypeParam(tp.Var, tp.Name))
+		declaredAt[len(b.labels)] = tp
+		b.labels = append(b.labels, p.bindTypeParam(tp.Var, tp.Name))
 	}
 	// Every remaining quantified variable takes a generated T0, T1, … in first-appearance
 	// order, skipping any name a source parameter already claims.
@@ -323,14 +396,14 @@ func printAsSchemeWith(
 		if _, bound := p.names[v]; bound {
 			continue
 		}
-		generatedAt[len(labels)] = v
+		generatedAt[len(b.labels)] = v
 		name := typeParamName(next)
 		for p.nameTaken(name) {
 			next++
 			name = typeParamName(next)
 		}
 		next++
-		labels = append(labels, p.bindTypeParam(v, name))
+		b.labels = append(b.labels, p.bindTypeParam(v, name))
 	}
 	// Borrow lifetimes left in the coalesced type by coalesceLifetimes are all
 	// nameable. A connect-nothing one was already elided unless a complement encloses
@@ -344,7 +417,13 @@ func printAsSchemeWith(
 	//
 	// Name each 'a, 'b, … in first-appearance order and add it to the quantifier prefix
 	// after the type parameters.
-	ltVars := declaredLtsFirst(freeLifetimeVars(t), declaredLts)
+	var ltVars []*LifetimeVar
+	for _, lv := range declaredLtsFirst(freeLifetimeVars(t), declaredLts) {
+		if _, named := p.ltNames[lv]; named || unbound.Contains(lv) {
+			continue
+		}
+		ltVars = append(ltVars, lv)
+	}
 	ltNames := map[*LifetimeVar]string{}
 	ltIndex := map[*LifetimeVar]int{}
 	// A lifetime the declaration named keeps that name, the lifetime twin of the declared
@@ -366,6 +445,9 @@ func printAsSchemeWith(
 	for _, name := range declaredLtNames {
 		reserved.Add(name)
 	}
+	for _, name := range p.ltNames {
+		reserved.Add(name)
+	}
 	nextLt := 0
 	for i, lv := range ltVars {
 		ltIndex[lv] = i
@@ -381,14 +463,15 @@ func printAsSchemeWith(
 		nextLt++
 		ltNames[lv] = name
 	}
-	if len(labels) == 0 && len(ltVars) == 0 {
-		// No quantified parameters: render as a plain (possibly raw-var) type, which
-		// keeps a leaked variable visible as t{ID}. A fresh printer renders it, as in Print,
-		// because p has already bound the function's own type parameters and printFuncTail
-		// would bind them a second time. The fresh printer keeps p's record.
-		return (&namedPrinter{record: p.record}).printType(t)
+	if len(b.labels) == 0 && len(ltVars) == 0 {
+		return b
 	}
-	p.ltNames = ltNames
+	if p.ltNames == nil {
+		p.ltNames = map[*LifetimeVar]string{}
+	}
+	for lv, name := range ltNames {
+		p.ltNames[lv] = name
+	}
 	// A declared parameter's bound renders here rather than beside its name, because a
 	// bound may name a sibling parameter or a lifetime and both are registered only now.
 	// `class Holder<'a, T: &'a {value: number}>` would otherwise drop the `'a`.
@@ -396,71 +479,97 @@ func printAsSchemeWith(
 	// Only the bounds the source wrote render. The variable's accumulated bounds carry
 	// what a body forced, which is not what the declaration promises, and showing one
 	// would read as if the source had written it.
-	// labeled lists the declared parameters that got a label, in label order, for the
-	// `where` clause.
-	var labeled []*TypeParam
-	for i := range labels {
+	for i := range b.labels {
 		tp, ok := declaredAt[i]
 		if !ok {
 			continue
 		}
-		labeled = append(labeled, tp)
+		b.labeled = append(b.labeled, tp)
 		var bounds []Type
 		if tp.UpperBound != nil {
 			bounds = []Type{tp.UpperBound}
 		}
-		labels[i] += p.typeParamSuffix(bounds, tp.Default)
+		b.labels[i] += p.typeParamSuffix(bounds, tp.Default)
 	}
 	// A generated binder renders the upper bounds its variable carries. The solver hands
 	// this function a display copy that carries only the concrete bounds the parameter is
 	// held to. Passing a to a callee's `A: number` renders `fn <T0: number>(a: T0) -> T0`.
-	for i := range labels {
+	for i := range b.labels {
 		if v, generated := generatedAt[i]; generated {
-			labels[i] += p.typeParamSuffix(v.UpperBounds, nil)
+			b.labels[i] += p.typeParamSuffix(v.UpperBounds, nil)
 		}
 	}
-	switch t.(type) {
-	case *ClassType, *AliasType:
-		// A class instance or alias reference already displays its parameters inline in its
-		// `<...>` argument list, so it needs no separate quantifier prefix. A generalized
-		// Map<K, V> renders as Map<T0, T1>, not <T0, T1> Map<T0, T1>, and Foo<'a> as Foo<'a>,
-		// not <'a> Foo<'a>. Their only free-variable children are their arguments, so every
-		// quantified variable is shown inline and none is lost by dropping the prefix.
-		return p.printType(t)
-	}
-	ltLabels := make([]string, len(ltVars))
+	b.ltLabels = make([]string, len(ltVars))
 	for i, lv := range ltVars {
-		ltLabels[i] = p.lifetimeBinder(lv, ltBounds[lv], ltIndex)
+		b.ltLabels[i] = p.lifetimeBinder(lv, ltBounds[lv], ltIndex)
 	}
-	// A function with a lifetime such as `'a fn () -> R` takes the general prefix path below,
-	// since its quantifier prefix must also bind the lifetime written ahead of `fn`.
-	if ft, ok := t.(*FuncType); ok && ft.Lt == nil {
-		// Merge the scheme's free variables, the function's OWN type and lifetime
-		// parameters, and the free scheme lifetimes into one ordered prefix, so a generic
-		// method that also captures a scheme variable renders `fn <T0, U, 'a>(...)` rather
-		// than adjacent groups. A function's own lifetime params are excluded from ltLabels
-		// by freeLifetimeVars, so they are named and rendered here from their declared
-		// bounds. printFuncBody omits the prefix so the own parameters are not repeated. The
-		// own TYPE parameters were bound at the top of this function, so typeParamBinders
-		// reads their names back rather than binding them a second time.
-		p.nameLifetimeParams(ft.LifetimeParams)
-		binders := append([]string{}, labels...)
-		binders = append(binders, p.typeParamBinders(ft.TypeParams)...)
-		binders = append(binders, p.lifetimeParamBinders(ft.LifetimeParams)...)
-		binders = append(binders, ltLabels...)
-		// The scheme's declared parameters and the function's own share one clause, so a
-		// lower bound on either renders once, after the signature.
-		where := p.whereClause(append(append([]*TypeParam{}, labeled...), ft.TypeParams...))
-		return "fn <" + strings.Join(binders, ", ") + ">" + p.printFuncBody(ft, where)
+	return b
+}
+
+// FuncSignature is a function type rendered one part at a time, so that each part can be
+// written where the source declares it.
+type FuncSignature struct {
+	// Binders are the type and lifetime parameters, each as it renders between `<` and `>`.
+	Binders []string
+	// Receiver is the method receiver, such as `&self` or `&'a mut self`, and the empty
+	// string for a function with none.
+	Receiver string
+	// Params is the type of each parameter after the receiver, in order.
+	Params []string
+	// Ret is the return type.
+	Ret string
+	// Throws is the type a call may raise, and the empty string when it raises nothing.
+	Throws string
+}
+
+// PrintFuncSignature renders t one part at a time, under the names PrintAsSchemeWith gives
+// a function scheme when every free variable is quantified. ltBounds means what it means for
+// PrintAsSchemeWith.
+//
+// scoped and scopedLts are the type and lifetime parameters of the declaration around t,
+// such as the class a method belongs to. Each renders under its source name and gets no
+// binder. A lifetime in elided gets no binder either and renders as a bare borrow, whether
+// it is free in t or one of t's own lifetime parameters.
+func PrintFuncSignature(
+	t *FuncType,
+	scoped []*TypeParam,
+	scopedLts []*LifetimeParam,
+	ltBounds map[*LifetimeVar][]*LifetimeVar,
+	elided set.Set[*LifetimeVar],
+) FuncSignature {
+	p := &namedPrinter{}
+	// The signature's own type parameters bind first, so each renders under the name the
+	// source wrote for it. A method's `<T>` inside a class's `<T>` hides the class's
+	// parameter in the source, so the class's takes the renamed form, which the method
+	// cannot name anyway.
+	p.bindTypeParams(t.TypeParams)
+	p.bindTypeParams(scoped)
+	p.nameLifetimeParams(scopedLts)
+	b := p.nameScheme(t, func(*TypeVarType) bool { return true }, ltBounds, nil, nil, elided)
+	var own []*LifetimeParam
+	for _, lp := range t.LifetimeParams {
+		if !elided.Contains(lp.Var) {
+			own = append(own, lp)
+		}
 	}
-	prefix := "<" + strings.Join(append(labels, ltLabels...), ", ") + ">"
-	// The prefix binds the WHOLE body, and a body joined by `|` or `&` needs parens to
-	// say so. `<'a, 'b> &'a T | &'b T` reads as though the prefix covered the first
-	// member alone, which would leave 'b bound by nothing. A body that is one atom or
-	// one prefix form cannot be split by a following operator, so it needs none: the
-	// class-constructor rendering stays `<T> {new (value: T) -> Node<T>}`. A declared
-	// parameter's lower bound follows the body as a `where` clause.
-	return prefix + " " + p.printTypeMinPrec(t, precPrefix) + p.whereClause(labeled)
+	p.scopeLifetimeNames(own)
+	sig := FuncSignature{Binders: append([]string{}, b.labels...)}
+	sig.Binders = append(sig.Binders, p.typeParamBinders(t.TypeParams)...)
+	sig.Binders = append(sig.Binders, p.lifetimeParamBinders(own)...)
+	sig.Binders = append(sig.Binders, b.ltLabels...)
+	if t.SelfParam != nil {
+		sig.Receiver = p.printSelfReceiver(t.SelfParam)
+	}
+	p.inParams++
+	for _, param := range t.Params {
+		sig.Params = append(sig.Params, p.printType(param.Type))
+	}
+	p.inParams--
+	sig.Ret = p.printType(t.Ret)
+	if throws := t.ThrowsOrNever(); !isNever(throws) {
+		sig.Throws = p.printType(throws)
+	}
+	return sig
 }
 
 // declaredLtsFirst returns free with the lifetimes a declaration names moved to the front, in

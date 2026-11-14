@@ -361,7 +361,7 @@ func addr[T any](x T) *T {
 	return &x
 }
 
-func (*Server) textDocumentCodeAction(context *glsp.Context, params *protocol.CodeActionParams) (any, error) {
+func (s *Server) textDocumentCodeAction(context *glsp.Context, params *protocol.CodeActionParams) (any, error) {
 	compileAction := protocol.CodeAction{
 		Title:       "Compile",
 		Kind:        addr("compile"),
@@ -386,6 +386,11 @@ func (*Server) textDocumentCodeAction(context *glsp.Context, params *protocol.Co
 			if action, ok := borrowFixAction(params.TextDocument.URI, diag); ok {
 				codeActions = append(codeActions, action)
 			}
+		}
+	}
+	if wantsCodeActionKind(params.Context.Only, signatureActionKind) {
+		if action, ok := s.signatureActionAt(params.TextDocument.URI, params.Range.Start); ok {
+			codeActions = append(codeActions, action)
 		}
 	}
 
