@@ -16,7 +16,7 @@ PRs.
 
 ## Where names come from
 
-### Today on `main`
+### On `main`
 
 `import "uri"` is the only import form, since #1472. It binds the package as a
 namespace under the statement's local name. `ImportStmt.LocalName` in
@@ -37,29 +37,26 @@ come first in both. `ParseLibFiles` parses them before any declaration, and a
 script reports `An import must come before the script's first statement`
 (`internal/parser/parser.go`).
 
-`main` still binds most builtins ambiently. `internal/solver/ambient.go` loads
-the 26 packages in `ambientPackages` into a globals scope that sits between the
-prelude and every module. `bindGlobals` binds a value whose `@js` path is dotted,
-such as `@js("Math.sqrt") export declare fn sqrt`, into a namespace named by the
-prefix. So `Math.sqrt(x)` and `Intl.Collator` resolve today with no import, while
-a bare `sqrt` resolves nowhere.
+A project's own module or script reaches `std:prelude` with no import and
+nothing else, since #2692. `inferModuleOn` and `inferScriptOn` parent the entry
+scope at the prelude scope. `console.log("hi")` with no import reports
+`Unknown identifier: console`, and `Math.PI` reports `Unknown identifier: Math`.
 
-`web:core` is the one exception to qualified access. `bindCoreExports` binds its
-exports unprefixed into the importing file.
+`internal/solver/ambient.go` still fills a globals scope from the packages in
+`globalsPackages`, but only an npm package's `.d.ts` reads it. `bindGlobals`
+binds a value whose `@js` path is dotted, such as `@js("Math.sqrt") export
+declare fn sqrt`, into a namespace named by the prefix. Those `Math` and `Intl`
+namespaces are what a `.d.ts` sees. A project file never does.
 
-### After #2692 and #2537
+`web:core` is the one exception to qualified access. `bindCoreExports` in
+`imports.go` binds its exports unprefixed into the importing file.
 
-Both PRs are open. Once they land, a project's own module or script reaches
-`std:prelude` and `web:prelude` with no import and nothing else. `console.log("hi")`
-with no import reports `Unknown identifier: console`, and `Math.PI` reports
-`Unknown identifier: Math`. The globals scope stays, but only an npm package's
-`.d.ts` reads it. #2537 also renames `web:core` to `web:prelude` and removes
-`bindCoreExports`.
+### After #2537
 
-This is the state the feature targets. On `main` today, only bare names such as
-`sqrt` and the packages outside `ambientPackages`, such as `web:performance`,
-need an import. After the two PRs every non-prelude name does, which is when the
-feature pays off.
+#2537 is still open. It renames `web:core` to `web:prelude`, makes it ambient
+beside `std:prelude`, and removes `bindCoreExports`. After it lands, `Event`
+and `AbortController` need no import, and every other name outside the two
+preludes does.
 
 ### What the user writes after the import
 
@@ -155,10 +152,11 @@ file, so no package load is needed to show a signature.
 
 ### Code actions
 
-`textDocumentCodeAction` in `cmd/lsp-server/text_document.go` returns the
-`compile` action and, for `quickfix`, one `borrowFixAction` per diagnostic in the
-request. `borrowFixAction` in `cmd/lsp-server/borrow_fix.go` is the model to
-follow. `toDiagnostic` attaches `borrowFixData` to the published diagnostic, the
+`textDocumentCodeAction` in `cmd/lsp-server/text_document.go` returns three
+kinds of action. It returns the `compile` action, one `borrowFixAction` per
+diagnostic for `quickfix`, and the `signatureActionAt` rewrite from
+`cmd/lsp-server/signature_action.go` for `refactor.rewrite`. `borrowFixAction`
+in `cmd/lsp-server/borrow_fix.go` is the model to follow. `toDiagnostic` attaches `borrowFixData` to the published diagnostic, the
 client echoes it back in the code action request, and the action is built from it
 with no re-check.
 
@@ -256,8 +254,8 @@ the parser requires anyway.
   qualified name with no import edit. A name reached through the prelude is
   already in scope and needs nothing.
 - **The prelude packages.** Leave `std:prelude` out of the index, and
-  `web:prelude` once #2537 lands. Until then, leave out `web:core` too, since its
-  import binds its exports unprefixed.
+  `web:prelude` once #2537 lands. Until then, offer `web:core` names as an
+  import alone with no qualifier, since its import binds its exports unprefixed.
 - **npm packages.** Their exports come from `.d.ts` files under `node_modules`.
   They are out of scope here, and the index's interface should leave room to add
   them.
@@ -279,9 +277,7 @@ the parser requires anyway.
 3. **Quick fix.** Attach fix data to `UnknownIdentifierError` and
    `UnknownTypeError` in `toDiagnostic`, and add an `importFixAction` beside
    `borrowFixAction` that returns one action per candidate package. About 250
-   lines with tests. The risk is moderate. Until #2692 merges, the only cases it
-   fixes on `main` are bare members such as `sqrt` and packages outside
-   `ambientPackages`.
+   lines with tests. The risk is moderate.
 4. **Completion items.** Add auto-import items at the two dispatch points, make
    `sortAndLimit` honour `SortText` with a separate cap, and print details in
    `completionItemResolve`. About 400 lines with tests. The risk is moderate,
@@ -293,6 +289,6 @@ the parser requires anyway.
    The risk is moderate, mostly from matching markers to diagnostics.
 
 Step 1 has no dependencies. Steps 3 and 4 need steps 1 and 2 and can land in
-either order, and step 5 needs whichever of them it exposes. Landing steps 3 to
-5 after #2692 and #2537 lets their tests assert the final ambient rules instead
-of the compatibility surface.
+either order, and step 5 needs whichever of them it exposes. Landing step 1
+after #2537 lets its exclusion list name `web:prelude` directly instead of
+special-casing `web:core`.
