@@ -294,6 +294,68 @@ function main() {
 React contexts compile to React's own API: `context` to `createContext`, reads
 to `useContext`, and the provider to `Context.Provider`. They do not use `$ctx`.
 
+### 6.8 Promises and generators
+
+A promise or generator separates where its body starts from where it resumes,
+as a callback that escapes does. They follow the rule in section 6.5: a
+requirement is owed where the function is called, and the body reads the record
+captured at that call.
+
+- **Async functions.** `$ctx` is a parameter, so it lives in the async
+  function's closure and survives every `await`. The returned promise carries no
+  requirement, because the requirement was satisfied before the promise existed.
+  An `async fn` absorbs its throws into the promise's rejection type, but its
+  `needs` clause stays on the function:
+
+  ```esc
+  async fn load(id: string) -> Promise<Data, _> needs Logger { ... }
+
+  fn main() -> undefined {
+      with Logger = consoleLogger {
+          load("a").then(fn (data) => show(data))   // Logger is captured at the call
+      }
+  }
+  ```
+
+- **Promise callbacks.** A callback's requirements are owed where it is passed,
+  whether the callee runs it at once, as `map` does, or later, as `then` does.
+  Passing a function by name binds the current record, so `p.then(label)`
+  compiles to `p.then((x) => label($ctx, x))`. `then` therefore takes the same
+  `needs R` parameter shape as `map`, and an escaping callback needs no rule of
+  its own.
+
+- **Generators.** Calling a generator function creates the iterator and captures
+  `$ctx`. The body runs on each `next()` and reads the captured record. The
+  requirement belongs to the generator function and not to
+  `Generator<T, TReturn, TNext>`, so an iterator can be consumed outside the
+  `with` block that created it.
+
+- **Environments.** A continuation resumes in the global scope it started in, so
+  environment requirements are unaffected.
+
+Capture covers a requirement whose value is all the body needs. Some
+requirements describe a span of time instead. `Render` holds only while React is
+running the component's render, and a database transaction holds only until it
+commits. A captured record can't put a continuation back inside that span, so
+requirement kinds fall into two classes:
+
+- A *capturable* requirement, such as a context value, is captured where the
+  closure, async call or generator is created, as above.
+- An *extent-bound* requirement, such as `Render` or an open transaction, holds
+  only while the call that established it is running. Using one after an
+  `await` or `yield` is an error, and so is an escaping closure that needs one.
+
+```esc
+async fn Profile(props: {id: string}) -> Promise<Element> needs _ {
+    val user = await fetchUser(props.id)
+    val theme = useTheme()
+    // error: useTheme needs Render, which does not hold after the await above
+    return <Card theme={theme} user={user} />
+}
+```
+
+React's rule that a component can't call hooks after an `await` is this check.
+
 ## 7. Alternatives considered
 
 ### 7.1 Ship environments first, then lift them into coeffects
@@ -374,10 +436,12 @@ own `throws`, and capture at creation from Effekt.
    a non-goal, and adopting it reopens that decision.
 5. **Do inferred requirements print?** Hover and diagnostics could show the
    clause always, only when non-empty, or only on request.
-6. **Does `async` change anything?** An `async fn` absorbs its throws into the
-   returned promise. A requirement can't be absorbed that way, because the body
-   still runs where it is called. The rule needs stating, since it is the one
-   place `throws` and `needs` part ways for async code.
+6. **How does a requirement kind declare that it is extent-bound?** Section 6.8
+   needs `Render` and a transaction to be extent-bound and a context value to be
+   capturable. The choice could be a modifier on the `context` declaration, a
+   separate declaration form, or a fixed set of built-in extent-bound kinds.
+   The answer also decides whether a library can define its own, as a
+   database client would for a transaction.
 
 ## 10. Non-goals
 
