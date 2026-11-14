@@ -1291,16 +1291,70 @@ read at an index that may hold an optional element includes `undefined`.
 ### 11.4. Typed arrays and `DataView`
 
 Every typed array stores integers of a fixed width, so its element type is an
-exact range:
+exact range. The prelude names each width:
+
+```esc
+type int8   = -128..128
+type uint8  = 0..256
+type int16  = -32768..32768
+type uint16 = 0..65536
+type int32  = -2147483648..2147483648
+type uint32 = 0..4294967296
+```
 
 | Class | Element type |
 |---|---|
-| `Int8Array` | `-128..128` |
-| `Uint8Array`, `Uint8ClampedArray` | `0..256` |
-| `Int16Array` | `-32768..32768` |
-| `Uint16Array` | `0..65536` |
-| `Int32Array` | `-2147483648..2147483648` |
-| `Uint32Array` | `0..4294967296` |
+| `Int8Array` | `int8` |
+| `Uint8Array`, `Uint8ClampedArray` | `uint8` |
+| `Int16Array` | `int16` |
+| `Uint16Array` | `uint16` |
+| `Int32Array` | `int32` |
+| `Uint32Array` | `uint32` |
+
+The aliases are ordinary ranges, so they need no lattice rules of their own.
+`int8 <: int16` holds because `-128..128` lies inside `-32768..32768`, and
+`uint8 <: int16` holds for the same reason.
+
+Arithmetic on these types does not wrap. In C or Rust, adding `1` to the
+`int8` value `127` gives `-128`. In Escalier, `a + b` with `a: int8` and
+`b: int8` gives `int` today and `-256..255` once interval arithmetic from
+section 5.3 lands. A value wraps only when a typed array stores it, as the next
+paragraph describes. The language guide states this.
+
+There are no `int64` or `uint64` aliases. `BigInt64Array` and `BigUint64Array`
+hold `bigint` values, so those names wait on `bigint` ranges, which decision 7
+in section 13 defers.
+
+#### Keeping alias names in printed types
+
+An alias of a range stays an `AliasType` reference until a lattice operation
+needs its interval. The printer already renders an `AliasType` under its own
+name, so `val b: uint8 = bytes[0]` shows `b: uint8` in hover text and errors.
+The same holds for a stdlib signature written with an alias, such as
+`getUint8(...) -> uint8`.
+
+A meet or a join reads the interval behind the alias and builds a new interval
+set. Without a rule for it, every such operation would print the raw range. The
+rule is to return the operand itself whenever the result equals it:
+
+| Type | Printed |
+|---|---|
+| `uint8 \| 5` | `uint8` |
+| `uint8 & int` | `uint8` |
+| `uint8 \| uint8` | `uint8` |
+| `uint8 & 0..100` | `0..100` |
+| `uint8 \| 256` | `0..257` |
+
+`5` lies inside `uint8`, so the join is `uint8` unchanged, and the printer
+sees the alias. `uint8 & 0..100` is a new set, so it prints as a range. This
+matches the solver's existing practice of returning a member untouched,
+keeping its pointer, when a reduction leaves it unchanged.
+
+The printer does not turn a computed range back into an alias name. Under
+interval arithmetic, `i + 1` with `i: -1..255` gives `0..256`. That value did
+not come from a byte array, and printing `uint8` would suggest it did. The same applies to a
+user-written alias such as `type Percent = 0..=100`. Only a type that came
+from the alias keeps its name.
 
 The range is the read type. A write takes any `number`, since JavaScript wraps
 or clamps the value into the range rather than throwing. Writing `300` into a
@@ -1311,7 +1365,7 @@ section 13 covers the feature.
 
 `Float32Array`, `Float64Array`, and the `BigInt` arrays keep `number` and
 `bigint` elements. The `DataView` getters follow the same table. For example,
-`getUint8` returns `0..256` and `getInt16` returns `-32768..32768`.
+`getUint8` returns `uint8` and `getInt16` returns `int16`.
 
 ### 11.5. Strings, `Math`, and `Number`
 
