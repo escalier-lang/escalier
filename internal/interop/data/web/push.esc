@@ -3,8 +3,8 @@
 // derived facts, and the overlay. Change one of those and re-run.
 
 import "std:typed_arrays"
-import "web:core"
 import "web:dom"
+import "web:web"
 
 export declare interface PushSubscriptionJSON {
     endpoint?: string,
@@ -13,7 +13,7 @@ export declare interface PushSubscriptionJSON {
 }
 
 export declare interface PushSubscriptionOptionsInit {
-    applicationServerKey?: BufferSource | string | null,
+    applicationServerKey?: web.BufferSource | string | null,
     userVisibleOnly?: boolean
 }
 

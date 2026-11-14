@@ -8,8 +8,7 @@ import (
 )
 
 // TestScopeEnumeration covers the exported reads a caller outside the package walks a
-// scope chain with. A namespace whose members a scope binds under their own names
-// counts as that scope's own, and a parent's bindings never do.
+// scope chain with. A scope lists only its own bindings, never a parent's.
 func TestScopeEnumeration(t *testing.T) {
 	num := ValueBinding{Schemes: []TypeScheme{monoScheme(&soltype.PrimType{Prim: soltype.NumPrim})}}
 	str := TypeBinding{Type: &soltype.PrimType{Prim: soltype.StrPrim}}
@@ -19,12 +18,10 @@ func TestScopeEnumeration(t *testing.T) {
 
 	scope := root.Child()
 	scope.defineValue("b", num)
+	scope.defineValue("a", num)
 	scope.defineType("T", str)
+	scope.defineType("U", str)
 	scope.defineNamespace("ns", &Namespace{Name: "ns"})
-	scope.defineUnprefixed(&Namespace{
-		Values: map[string]ValueBinding{"a": num},
-		Types:  map[string]TypeBinding{"U": str},
-	})
 
 	require.Same(t, root, scope.Parent())
 	require.Nil(t, root.Parent())

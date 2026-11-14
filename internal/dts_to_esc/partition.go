@@ -404,7 +404,7 @@ var webPackages = []struct {
 	File    string
 	Members []string
 }{
-	{"web:core", "web/core.esc", []string{
+	{"web:web", "web/web.esc", []string{
 		// The event model. Every package that reports progress or
 		// listens for anything names these, and none of them mentions a
 		// document or an element.
@@ -431,9 +431,9 @@ var webPackages = []struct {
 		"TextDecoder", "TextDecoderCommon", "TextDecoderOptions",
 		"TextDecodeOptions",
 		// The message event, which the WinterTC minimum common API lists.
-		// `source` and `ports` name the browser and web/core.replace.esc
+		// `source` and `ports` name the browser and web/web.replace.esc
 		// retypes them; the deprecated `initMessageEvent` does too and
-		// web/core.drop.esc removes it.
+		// web/web.drop.esc removes it.
 		"MessageEvent", "MessageEventInit",
 	}},
 	{"web:fetch", "web/fetch.esc", []string{
@@ -479,7 +479,7 @@ var webPackages = []struct {
 		// The encoding pair. MDN files them under the Encoding API, but
 		// each extends GenericTransformStream and names a readable and a
 		// writable side, so they say more about streams than about
-		// encoding. The encoder and decoder they wrap are in web:core,
+		// encoding. The encoder and decoder they wrap are in web:web,
 		// which is a tier below and cannot name a stream.
 		"TextEncoderStream", "TextDecoderStream",
 		"ReadableStreamAsyncIterator", "ReadableStreamController",
@@ -522,7 +522,7 @@ var webPackages = []struct {
 		"HashAlgorithmIdentifier",
 		// BufferSource is not listed here. It is a general WebIDL
 		// typedef, ArrayBuffer | ArrayBufferView, that Fetch, Streams,
-		// WebSocket, TextDecoder, WebGL and Crypto all name, so web:core
+		// WebSocket, TextDecoder, WebGL and Crypto all name, so web:web
 		// carries it rather than any one of them.
 	}},
 	{"web:workers", "web/workers.esc", []string{
@@ -812,7 +812,7 @@ var webPackages = []struct {
 		// `keys` and `values` each return one.
 		"FormData", "FormDataEntryValue", "FormDataIterator",
 		// FileList and FileReader belong to the browser tier. Node 22 defines
-		// neither, and FileReader fires the ProgressEvent that `web:core`
+		// neither, and FileReader fires the ProgressEvent that `web:web`
 		// deliberately does not carry.
 	}},
 	{"web:performance", "web/performance.esc", []string{
@@ -1018,12 +1018,12 @@ var UnreferencedDOMTypes = set.FromSlice([]string{
 // The other half of the cover is the digest sidecar beside each overlay
 // file, which fails when a member the file stands in for changes upstream.
 var OverlayRetypedSoleReferrers = map[string]string{
-	// `web:core` declares `MessageEvent` and `MessageEventInit`, and their
+	// `web:web` declares `MessageEvent` and `MessageEventInit`, and their
 	// four references to the name are all answered there. The `source`
-	// member of each is retyped to `null` in overlay/web/core.replace.esc,
+	// member of each is retyped to `null` in overlay/web/web.replace.esc,
 	// and the two `initMessageEvent` overloads that name it are removed in
-	// overlay/web/core.drop.esc.
-	"MessageEventSource": "web:core",
+	// overlay/web/web.drop.esc.
+	"MessageEventSource": "web:web",
 }
 
 // DOMResidualSources is the set of `.d.ts` source-file basenames whose

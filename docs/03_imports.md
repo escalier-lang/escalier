@@ -218,7 +218,7 @@ under the import's name too.
 
 An npm package's `.d.ts` is the exception. It is written against TypeScript's
 global library, so the checker reads its declarations against every `std:*`
-package plus `web:core` and `web:fetch`. None of those names reach the file that
+package plus `web:web` and `web:fetch`. None of those names reach the file that
 imports the npm package.
 
 ### The Web surface
@@ -236,6 +236,21 @@ Web families with no DOM coupling get their own packages: `web:fetch`,
 `web:websocket`, `web:storage`, `web:url`, `web:file`,
 `web:performance`, `web:credentials`, `web:webauthn`, `web:payments`. A typical
 browser program imports `web:dom` plus one or two siblings.
+
+The names every web runtime shares are in `web:web`. It holds the event model
+(`Event`, `EventTarget`, `MessageEvent` and their option bags), cancellation
+(`AbortController`, `AbortSignal`), `DOMException`, and the text encoder and
+decoder. Its exports are named through the import, as every other package's are:
+
+```escalier
+import "web:web"
+
+val controller = web.AbortController()
+val signal: web.AbortSignal = controller.signal
+```
+
+The sibling packages name them the same way, so `web:websocket` declares
+`class CloseEvent extends web.Event`.
 
 A sibling that needs a `web:dom` type refers to it through a qualified name, so
 `web:fetch`'s `Response.body` is a `streams.ReadableStream | null` and has to be

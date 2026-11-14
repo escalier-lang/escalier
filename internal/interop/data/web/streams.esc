@@ -3,7 +3,7 @@
 // derived facts, and the overlay. Change one of those and re-run.
 
 import "std:typed_arrays"
-import "web:core"
+import "web:web"
 
 export declare interface QueuingStrategy<T = any> {
     highWaterMark?: number,
@@ -80,7 +80,7 @@ export declare interface StreamPipeOptions {
      * The signal option can be set to an AbortSignal to allow aborting an ongoing pipe operation via the corresponding AbortController. In this case, this source readable stream will be canceled, and destination aborted, unless the respective options preventCancel or preventAbort are set.
      */
     preventClose?: boolean,
-    signal?: AbortSignal
+    signal?: web.AbortSignal
 }
 
 export declare interface Transformer<I = any, O = any> {
@@ -268,16 +268,16 @@ export declare interface ReadableStreamGenericReader {
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextDecoderStream) */
 @js("TextDecoderStream")
-export declare class TextDecoderStream implements GenericTransformStream, TextDecoderCommon {
+export declare class TextDecoderStream implements GenericTransformStream, web.TextDecoderCommon {
     readonly readable: ReadableStream<string>,
-    readonly writable: WritableStream<BufferSource>,
+    readonly writable: WritableStream<web.BufferSource>,
     static prototype: TextDecoderStream,
-    constructor(&mut self, label?: string, options?: TextDecoderOptions)
+    constructor(&mut self, label?: string, options?: web.TextDecoderOptions)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextEncoderStream) */
 @js("TextEncoderStream")
-export declare class TextEncoderStream implements GenericTransformStream, TextEncoderCommon {
+export declare class TextEncoderStream implements GenericTransformStream, web.TextEncoderCommon {
     readonly readable: ReadableStream<typed_arrays.Uint8Array>,
     readonly writable: WritableStream<string>,
     static prototype: TextEncoderStream,
@@ -337,7 +337,7 @@ export declare class WritableStream<W = any> {
 @js("WritableStreamDefaultController")
 export declare class WritableStreamDefaultController {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultController/signal) */
-    readonly signal: AbortSignal,
+    readonly signal: web.AbortSignal,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultController/error) */
     error(&mut self, e?: unknown) -> undefined,
     static prototype: WritableStreamDefaultController,

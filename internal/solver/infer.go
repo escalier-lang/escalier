@@ -335,13 +335,12 @@ type checker struct {
 	// have bound.
 	activeGroup set.Set[string]
 
-	// moduleDeclared holds the top-level names of the module whose imports are
-	// being bound, split by the namespace each occupies. Imports bind before the
-	// declarations are inferred, so the module scope cannot answer the question
-	// and the AST is what does. The unprefixed `web:core` binding reads it, to
-	// leave a name the module declares alone rather than shadow it from the
-	// nearer file scope.
-	moduleDeclared declaredNames
+	// moduleDeclared holds the top-level value names of the module whose imports
+	// are being bound. Imports bind before the declarations are inferred, so the
+	// module scope cannot answer the question and the AST is what does.
+	// bindImportedNamespace reads it, to leave a value the module declares alone
+	// rather than shadow it from the nearer file scope.
+	moduleDeclared set.Set[string]
 
 	// prelude is the per-run scope holding the prelude package's exports, built
 	// on first request by preludeScope and shared by the entry module and every

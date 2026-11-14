@@ -410,41 +410,36 @@ func TestBuildDepGraphV2_Dependencies(t *testing.T) {
 // TestBuildDepGraphWithImports covers a reference that names a binding of another
 // namespace through what its own file imports. `fetch/index.esc` lands its
 // declarations in the `fetch` namespace, so `streams.Stream` written there means
-// `web__streams.Stream` only through the alias, and a bare `Signal` means
-// `web__core.Signal` only through the UnprefixedImport entry.
+// `web__streams.Stream` only through the import binding. A bare name reaches no
+// import, since every import binds its package under a qualifier.
 func TestBuildDepGraphWithImports(t *testing.T) {
 	imports := map[int]map[string]string{
-		0: {"streams": "web__streams", "core": "web__core", UnprefixedImport: "web__core"},
+		0: {"streams": "web__streams", "web": "web__web"},
 	}
 	tests := map[string]struct {
 		contents string
 		key      BindingKey
 		want     []BindingKey
 	}{
-		"AnAliasedQualifiedType": {
+		"AQualifiedType": {
 			contents: `declare type Body = streams.Stream`,
 			key:      TypeBindingKey("fetch.Body"),
 			want:     []BindingKey{TypeBindingKey("web__streams.Stream")},
 		},
-		"AnUnprefixedBareType": {
+		"AQualifiedTypeInAnObject": {
+			contents: `declare type Init = {signal: web.Signal}`,
+			key:      TypeBindingKey("fetch.Init"),
+			want:     []BindingKey{TypeBindingKey("web__web.Signal")},
+		},
+		"AQualifiedSuperclass": {
+			contents: `declare class Request extends web.Signal {}`,
+			key:      ValueBindingKey("fetch.Request"),
+			want:     []BindingKey{TypeBindingKey("web__web.Signal"), ValueBindingKey("web__web.Signal")},
+		},
+		"ABareNameReachesNoImport": {
 			contents: `declare type Init = {signal: Signal}`,
 			key:      TypeBindingKey("fetch.Init"),
-			want:     []BindingKey{TypeBindingKey("web__core.Signal")},
-		},
-		"AnUnprefixedSuperclass": {
-			contents: `declare class Request extends Signal {}`,
-			key:      ValueBindingKey("fetch.Request"),
-			want:     []BindingKey{TypeBindingKey("web__core.Signal"), ValueBindingKey("web__core.Signal")},
-		},
-		"AnUnprefixedValue": {
-			contents: `val s = Signal`,
-			key:      ValueBindingKey("fetch.s"),
-			want:     []BindingKey{ValueBindingKey("web__core.Signal")},
-		},
-		"AnOwnSiblingOutranksTheUnprefixedImport": {
-			contents: "declare type Signal = number\ndeclare type Init = {signal: Signal}",
-			key:      TypeBindingKey("fetch.Init"),
-			want:     []BindingKey{TypeBindingKey("fetch.Signal")},
+			want:     []BindingKey{},
 		},
 	}
 	for name, test := range tests {
@@ -454,7 +449,7 @@ func TestBuildDepGraphWithImports(t *testing.T) {
 			ctx := context.Background()
 			module, errs := parser.ParseLibFiles(ctx, []*ast.Source{
 				{ID: 0, Path: "fetch/index.esc", Contents: test.contents},
-				{ID: 1, Path: "web__core/index.esc", Contents: `declare class Signal {}`},
+				{ID: 1, Path: "web__web/index.esc", Contents: `declare class Signal {}`},
 				{ID: 2, Path: "web__streams/index.esc", Contents: `declare class Stream {}`},
 			})
 			require.Empty(t, errs)

@@ -6,7 +6,6 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/provenance"
-	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -140,10 +139,6 @@ type Scope struct {
 	values     map[string]ValueBinding
 	types      map[string]TypeBinding
 	namespaces map[string]*Namespace
-	// unprefixed holds namespaces whose members this scope binds under their own
-	// names without copying them. GetValue and GetType consult them after this
-	// scope's own maps, so a member defined after the binding is still reached.
-	unprefixed []*Namespace
 	parent     *Scope
 	// builtin marks a scope that holds builtins every program sees. See IsBuiltin.
 	builtin bool
@@ -223,24 +218,13 @@ func (s *Scope) bindNamespace(name string, ns *Namespace) {
 	}
 }
 
-// defineUnprefixed binds every member ns holds, now or later, under its own name
-// in this scope. See the unprefixed field.
-func (s *Scope) defineUnprefixed(ns *Namespace) {
-	s.unprefixed = append(s.unprefixed, ns)
-}
-
 // GetValue resolves name in the value sort by lexical lookup: this scope's own
-// map and its unprefixed namespaces, then up the parent chain. The comma-ok form
+// map, then up the parent chain. The comma-ok form
 // makes the not-found case explicit at every call site.
 func (s *Scope) GetValue(name string) (ValueBinding, bool) {
 	for cur := s; cur != nil; cur = cur.parent {
 		if b, ok := cur.values[name]; ok {
 			return b, true
-		}
-		for _, ns := range cur.unprefixed {
-			if b, ok := ns.Values[name]; ok {
-				return b, true
-			}
 		}
 	}
 	return ValueBinding{}, false
@@ -252,11 +236,6 @@ func (s *Scope) GetType(name string) (TypeBinding, bool) {
 		if b, ok := cur.types[name]; ok {
 			return b, true
 		}
-		for _, ns := range cur.unprefixed {
-			if b, ok := ns.Types[name]; ok {
-				return b, true
-			}
-		}
 	}
 	return TypeBinding{}, false
 }
@@ -267,11 +246,6 @@ func (s *Scope) getTypeOutsideBuiltins(name string) (TypeBinding, bool) {
 	for cur := s; cur != nil && !cur.builtin; cur = cur.parent {
 		if b, ok := cur.types[name]; ok {
 			return b, true
-		}
-		for _, ns := range cur.unprefixed {
-			if b, ok := ns.Types[name]; ok {
-				return b, true
-			}
 		}
 	}
 	return TypeBinding{}, false
@@ -296,10 +270,6 @@ func (s *Scope) OwnValue(name string) (ValueBinding, bool) {
 // than the module scope, such as a type parameter or a name the file imported,
 // leaving the module scope to a probe that orders its keys itself. A nil stop
 // searches the whole chain.
-//
-// It does not read the unprefixed namespaces. Those rank below the module
-// scope's own keys, so a package member reaches its sibling before a name an
-// import binds bare, and GetType reads them once those keys have missed.
 func (s *Scope) getTypeBefore(name string, stop *Scope) (TypeBinding, bool) {
 	for cur := s; cur != nil && cur != stop; cur = cur.parent {
 		if b, ok := cur.types[name]; ok {
@@ -340,17 +310,11 @@ func (s *Scope) Parent() *Scope {
 	return s.parent
 }
 
-// LocalValue resolves name in the value sort without walking to the parent. It reads
-// this scope's own map, then the namespaces whose members the scope binds under their
-// own names, which is the order GetValue reads them at each level.
+// LocalValue resolves name in the value sort from this scope's own map, without
+// walking to the parent.
 func (s *Scope) LocalValue(name string) (ValueBinding, bool) {
 	if b, ok := s.values[name]; ok {
 		return b, true
-	}
-	for _, ns := range s.unprefixed {
-		if b, ok := ns.Values[name]; ok {
-			return b, true
-		}
 	}
 	return ValueBinding{}, false
 }
@@ -360,40 +324,17 @@ func (s *Scope) LocalType(name string) (TypeBinding, bool) {
 	if b, ok := s.types[name]; ok {
 		return b, true
 	}
-	for _, ns := range s.unprefixed {
-		if b, ok := ns.Types[name]; ok {
-			return b, true
-		}
-	}
 	return TypeBinding{}, false
 }
 
 // ValueNames returns, sorted, every name LocalValue resolves in the value sort.
 func (s *Scope) ValueNames() []string {
-	names := set.NewSet[string]()
-	for name := range s.values {
-		names.Add(name)
-	}
-	for _, ns := range s.unprefixed {
-		for name := range ns.Values {
-			names.Add(name)
-		}
-	}
-	return slices.Sorted(maps.Keys(names))
+	return slices.Sorted(maps.Keys(s.values))
 }
 
 // TypeNames returns, sorted, every name LocalType resolves in the type sort.
 func (s *Scope) TypeNames() []string {
-	names := set.NewSet[string]()
-	for name := range s.types {
-		names.Add(name)
-	}
-	for _, ns := range s.unprefixed {
-		for name := range ns.Types {
-			names.Add(name)
-		}
-	}
-	return slices.Sorted(maps.Keys(names))
+	return slices.Sorted(maps.Keys(s.types))
 }
 
 // NamespaceNames returns, sorted, every name this scope binds in the namespace sort.
