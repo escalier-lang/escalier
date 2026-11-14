@@ -3,8 +3,8 @@
 // derived facts, and the overlay. Change one of those and re-run.
 
 import "std:typed_arrays"
-import "web:core"
 import "web:credentials"
+import "web:web"
 
 export declare interface AuthenticationExtensionsClientInputs {
     appid?: string,
@@ -34,8 +34,8 @@ export declare interface AuthenticationExtensionsPRFOutputs {
 }
 
 export declare interface AuthenticationExtensionsPRFValues {
-    first: BufferSource,
-    second?: BufferSource
+    first: web.BufferSource,
+    second?: web.BufferSource
 }
 
 export declare interface AuthenticatorSelectionCriteria {
@@ -52,7 +52,7 @@ export declare interface CredentialPropertiesOutput {
 export declare interface PublicKeyCredentialCreationOptions {
     attestation?: AttestationConveyancePreference,
     authenticatorSelection?: AuthenticatorSelectionCriteria,
-    challenge: BufferSource,
+    challenge: web.BufferSource,
     excludeCredentials?: Array<PublicKeyCredentialDescriptor>,
     extensions?: AuthenticationExtensionsClientInputs,
     pubKeyCredParams: Array<PublicKeyCredentialParameters>,
@@ -75,7 +75,7 @@ export declare interface PublicKeyCredentialCreationOptionsJSON {
 }
 
 export declare interface PublicKeyCredentialDescriptor {
-    id: BufferSource,
+    id: web.BufferSource,
     transports?: Array<AuthenticatorTransport>,
     type: PublicKeyCredentialType
 }
@@ -97,7 +97,7 @@ export declare interface PublicKeyCredentialParameters {
 
 export declare interface PublicKeyCredentialRequestOptions {
     allowCredentials?: Array<PublicKeyCredentialDescriptor>,
-    challenge: BufferSource,
+    challenge: web.BufferSource,
     extensions?: AuthenticationExtensionsClientInputs,
     rpId?: string,
     timeout?: number,
@@ -120,7 +120,7 @@ export declare interface PublicKeyCredentialRpEntity extends PublicKeyCredential
 
 export declare interface PublicKeyCredentialUserEntity extends PublicKeyCredentialEntity {
     displayName: string,
-    id: BufferSource
+    id: web.BufferSource
 }
 
 export declare interface PublicKeyCredentialUserEntityJSON {

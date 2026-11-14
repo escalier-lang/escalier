@@ -46,7 +46,7 @@ var globalsPackages = []string{
 	"std:typed_arrays",
 	"std:url",
 	"std:weak_ref",
-	"web:core",
+	"web:web",
 	"web:fetch",
 }
 

@@ -3,14 +3,14 @@
 // derived facts, and the overlay. Change one of those and re-run.
 
 import "std:typed_arrays"
-import "web:core"
 import "web:streams"
+import "web:web"
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CompressionStream) */
 @js("CompressionStream")
 export declare class CompressionStream implements streams.GenericTransformStream {
     readonly readable: streams.ReadableStream<typed_arrays.Uint8Array>,
-    readonly writable: streams.WritableStream<BufferSource>,
+    readonly writable: streams.WritableStream<web.BufferSource>,
     static prototype: CompressionStream,
     constructor(&mut self, format: CompressionFormat)
 }
@@ -19,7 +19,7 @@ export declare class CompressionStream implements streams.GenericTransformStream
 @js("DecompressionStream")
 export declare class DecompressionStream implements streams.GenericTransformStream {
     readonly readable: streams.ReadableStream<typed_arrays.Uint8Array>,
-    readonly writable: streams.WritableStream<BufferSource>,
+    readonly writable: streams.WritableStream<web.BufferSource>,
     static prototype: DecompressionStream,
     constructor(&mut self, format: CompressionFormat)
 }

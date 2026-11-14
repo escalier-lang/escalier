@@ -318,7 +318,7 @@ func (c *checker) fork(source ModuleSource, groupSource GroupSource, groups Pack
 	f.weakBindingVars = set.NewSet[*soltype.TypeVarType]()
 	f.fileScopes = maps.Clone(c.fileScopes)
 	f.activeGroup = maps.Clone(c.activeGroup)
-	f.moduleDeclared = declaredNames{values: maps.Clone(c.moduleDeclared.values), types: maps.Clone(c.moduleDeclared.types)}
+	f.moduleDeclared = maps.Clone(c.moduleDeclared)
 	f.loadStack = slices.Clip(c.loadStack)
 	f.pendingRecvReads = slices.Clip(c.pendingRecvReads)
 	f.pendingMutations = slices.Clip(c.pendingMutations)

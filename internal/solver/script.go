@@ -95,7 +95,7 @@ func InferScriptInLib(script *ast.Script, lib *ModuleResult) (*Scope, *Info, []S
 // binding overwrites an earlier one, so no name is held back from the imports.
 func (c *checker) bindScriptImports(scope *Scope, script *ast.Script) {
 	prevDeclared := c.moduleDeclared
-	c.moduleDeclared = declaredNames{values: set.NewSet[string](), types: set.NewSet[string]()}
+	c.moduleDeclared = set.NewSet[string]()
 	defer func() { c.moduleDeclared = prevDeclared }()
 	for _, pseudo := range []bool{true, false} {
 		for _, stmt := range script.Imports {

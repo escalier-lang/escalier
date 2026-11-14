@@ -80,7 +80,7 @@ func TestBuiltinsNeedImport(t *testing.T) {
 			wantErrs: []string{"1:9-1:14: Unknown identifier: fetch"},
 		},
 		{
-			name:     "WebCoreType",
+			name:     "WebType",
 			src:      `declare val e: Event`,
 			wantErrs: []string{"1:16-1:21: cannot find type `Event`"},
 		},
@@ -146,10 +146,10 @@ func TestBuiltinsResolveThroughImport(t *testing.T) {
 			want: map[string]string{"r": "Promise<Response>"},
 		},
 		{
-			name: "WebCore",
+			name: "Web",
 			src: `
-				import "web:core"
-				declare val e: Event
+				import "web:web"
+				declare val e: web.Event
 			`,
 			want: map[string]string{"e": "Event"},
 		},

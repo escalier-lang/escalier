@@ -45,7 +45,7 @@ func TestTierNames(t *testing.T) {
 // Each tier holds what it is meant to. The membership is the input to
 // every check built on it, so it is asserted rather than left implicit.
 func TestTierMembership(t *testing.T) {
-	require.Equal(t, []string{"web:core"}, PackagesInTier(TierCore))
+	require.Equal(t, []string{"web:web"}, PackagesInTier(TierCore))
 
 	require.Equal(t, []string{
 		"web:compression", "web:crypto", "web:fetch",

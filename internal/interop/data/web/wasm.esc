@@ -5,8 +5,8 @@
 import "std:error"
 import "std:function"
 import "std:typed_arrays"
-import "web:core"
 import "web:fetch"
+import "web:web"
 
 @js("WebAssembly.CompileError")
 export declare class CompileError extends error.Error {
@@ -55,7 +55,7 @@ export declare class Memory {
 @js("WebAssembly.Module")
 export declare class Module {
     static prototype: Module,
-    constructor(&mut self, bytes: BufferSource),
+    constructor(&mut self, bytes: web.BufferSource),
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module/customSections_static) */
     static customSections(moduleObject: &mut Module, sectionName: string) -> Array<typed_arrays.ArrayBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module/exports_static) */
@@ -147,7 +147,7 @@ export declare type ValueType = keyof ValueTypeMap
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/compile_static) */
 @js("WebAssembly.compile")
-export declare fn compile(bytes: BufferSource) -> Promise<Module>
+export declare fn compile(bytes: web.BufferSource) -> Promise<Module>
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/compileStreaming_static) */
 @js("WebAssembly.compileStreaming")
@@ -155,7 +155,7 @@ export declare fn compileStreaming(source: fetch.Response | PromiseLike<fetch.Re
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/instantiate_static) */
 @js("WebAssembly.instantiate")
-export declare fn instantiate(bytes: BufferSource, importObject?: &mut Imports) -> Promise<WebAssemblyInstantiatedSource>
+export declare fn instantiate(bytes: web.BufferSource, importObject?: &mut Imports) -> Promise<WebAssemblyInstantiatedSource>
 
 @js("WebAssembly.instantiate")
 export declare fn instantiate(moduleObject: &mut Module, importObject?: &mut Imports) -> Promise<Instance>
@@ -166,4 +166,4 @@ export declare fn instantiateStreaming(source: fetch.Response | PromiseLike<fetc
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/validate_static) */
 @js("WebAssembly.validate")
-export declare fn validate(bytes: BufferSource) -> boolean
+export declare fn validate(bytes: web.BufferSource) -> boolean

@@ -2,10 +2,10 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-import "web:core"
 import "web:url"
+import "web:web"
 
-export declare interface StorageEventInit extends EventInit {
+export declare interface StorageEventInit extends web.EventInit {
     key?: string | null,
     newValue?: string | null,
     oldValue?: string | null,
@@ -74,7 +74,7 @@ export declare class Storage {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/StorageEvent)
  */
 @js("StorageEvent")
-export declare class StorageEvent extends Event {
+export declare class StorageEvent extends web.Event {
     /**
      * Returns the key of the storage item being changed.
      *

@@ -184,33 +184,32 @@ func TestACyclicTripleLoadsAndResolves(t *testing.T) {
 }
 
 // A member reaches what it imports from a sibling in every declaration kind,
-// not only in a class body. The qualified `streams.Stream` reads through the
-// import's namespace and the bare `Signal` through `web:core`'s unprefixed
-// binding. Each resolves only once the sibling's declaration is inferred, so
+// not only in a class body. `streams.Stream` and `web.Signal` each read
+// through their import's namespace. Each resolves only once the sibling's declaration is inferred, so
 // these cover the order the group walks its declarations in as much as the
 // lookup itself.
 func TestAGroupMemberReachesItsImportsFromEveryDeclarationKind(t *testing.T) {
 	t.Parallel()
 
 	files := map[string]string{
-		"web/core.esc": `
+		"web/web.esc": `
 			import "web:fetch"
 			export declare class Signal { readonly aborted: boolean }
 			export declare type Uses = fetch.Init
 		`,
 		"web/streams.esc": `
-			import "web:core"
+			import "web:web"
 			import "web:fetch"
-			export declare class Stream { readonly locked: boolean, readonly signal: Signal }
+			export declare class Stream { readonly locked: boolean, readonly signal: web.Signal }
 			export declare type Uses = fetch.Init
 		`,
 		"web/fetch.esc": `
-			import "web:core"
+			import "web:web"
 			import "web:streams"
-			export declare interface Init { signal: Signal, body: streams.Stream }
-			export declare type Alias = {signal: Signal, body: streams.Stream}
-			export declare fn take(signal: Signal, body: streams.Stream) -> number
-			export declare val signal: Signal
+			export declare interface Init { signal: web.Signal, body: streams.Stream }
+			export declare type Alias = {signal: web.Signal, body: streams.Stream}
+			export declare fn take(signal: web.Signal, body: streams.Stream) -> number
+			export declare val signal: web.Signal
 			export declare val body: streams.Stream
 		`,
 	}
@@ -557,11 +556,11 @@ func TestTheCommittedEventTargetRejectsANullListener(t *testing.T) {
 	}{
 		{
 			name: "a listener",
-			src:  "import \"web:core\"\nfn go(mut t: core.EventTarget, l: core.EventListenerOrEventListenerObject) { t.addEventListener(\"x\", l) }",
+			src:  "import \"web:web\"\nfn go(mut t: web.EventTarget, l: web.EventListenerOrEventListenerObject) { t.addEventListener(\"x\", l) }",
 		},
 		{
 			name:    "null",
-			src:     "import \"web:core\"\nfn go(mut t: core.EventTarget) { t.addEventListener(\"x\", null) }",
+			src:     "import \"web:web\"\nfn go(mut t: web.EventTarget) { t.addEventListener(\"x\", null) }",
 			wantErr: "cannot constrain null <: EventListener | EventListenerObject",
 		},
 	}
@@ -578,7 +577,7 @@ func TestTheCommittedEventTargetRejectsANullListener(t *testing.T) {
 	}
 }
 
-// Every `std:*` package, plus `web:core` and `web:fetch`, loads from the
+// Every `std:*` package, plus `web:web` and `web:fetch`, loads from the
 // committed tree with nothing reported.
 //
 // The `std:*` rows come from the files under `std/`, so a package added to
@@ -591,7 +590,7 @@ func TestTheCommittedTreeLoadsCleanForStdAndWebFetch(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, files)
 
-	uris := []string{"", "web:core", "web:fetch"}
+	uris := []string{"", "web:web", "web:fetch"}
 	for _, file := range files {
 		pkg := strings.TrimSuffix(filepath.Base(file), ".esc")
 		if pkg != "prelude" {

@@ -3,8 +3,8 @@
 // derived facts, and the overlay. Change one of those and re-run.
 
 import "std:typed_arrays"
-import "web:core"
 import "web:streams"
+import "web:web"
 
 export declare interface BlobPropertyBag {
     endings?: EndingType,
@@ -92,7 +92,7 @@ export declare class FormData {
     constructor(&mut self)
 }
 
-export declare type BlobPart = BufferSource | Blob | string
+export declare type BlobPart = web.BufferSource | Blob | string
 
 export declare type FormDataEntryValue = File | string
 

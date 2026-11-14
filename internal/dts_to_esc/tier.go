@@ -11,7 +11,7 @@ import (
 //
 // Grouping by specification does not draw that line. `AbortSignal` is
 // specified in the DOM and implemented everywhere, so a package taking
-// one would have to reach a name filed under the browser. `web:core`
+// one would have to reach a name filed under the browser. `web:web`
 // holds those names instead, which keeps the portable tier off the DOM.
 
 // Tier is the set of runtimes a package's declarations are available
@@ -66,7 +66,7 @@ func (t Tier) String() string {
 // is portable because Node, Deno, Bun and Workers all implement it;
 // `web:webgl` is not, because it takes an `HTMLCanvasElement` to draw on.
 var webTiers = map[string]Tier{
-	"web:core": TierCore,
+	"web:web": TierCore,
 
 	"web:fetch":       TierPortable,
 	"web:url":         TierPortable,
