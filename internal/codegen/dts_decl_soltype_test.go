@@ -130,7 +130,7 @@ func TestBuildDeclStmt(t *testing.T) {
 		},
 		{
 			name:   "FnReturningNoValueDeclaresAnUndefinedReturn",
-			source: `export fn log(msg: string) { console.log(msg) }`,
+			source: `export fn log(msg: string) -> undefined { console.log(msg) }`,
 			ns: &fakeSolNamespace{
 				values: map[string]soltype.Type{
 					"log": solFn([]*soltype.FuncParam{solParam("msg", solStr())}, &soltype.UndefinedType{}),
@@ -179,7 +179,7 @@ func TestBuildDeclStmt(t *testing.T) {
 		},
 		{
 			name:   "FnReturningUndefinedExplicitlyDeclaresAnUndefinedReturn",
-			source: `export fn k() { return undefined }`,
+			source: `export fn k() -> undefined { return undefined }`,
 			ns: &fakeSolNamespace{
 				values: map[string]soltype.Type{"k": solFn(nil, &soltype.UndefinedType{})},
 			},
