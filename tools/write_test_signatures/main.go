@@ -60,14 +60,14 @@ func main() {
 			failed = true
 			continue
 		}
-		if s.edited > 0 || s.unresolved > 0 || s.unwritable > 0 {
-			fmt.Printf("%s: %d literals edited, %d unresolved, %d signatures unwritable\n",
-				path, s.edited, s.unresolved, s.unwritable)
+		if s.edited > 0 || s.unresolved > 0 || s.unwritable > 0 || s.diagnosed > 0 {
+			fmt.Printf("%s: %d literals edited, %d unresolved, %d signatures unwritable, %d diagnosed\n",
+				path, s.edited, s.unresolved, s.unwritable, s.diagnosed)
 		}
 		total.add(s)
 	}
-	fmt.Printf("total: %d literals edited, %d unresolved, %d signatures unwritable\n",
-		total.edited, total.unresolved, total.unwritable)
+	fmt.Printf("total: %d literals edited, %d unresolved, %d signatures unwritable, %d diagnosed\n",
+		total.edited, total.unresolved, total.unwritable, total.diagnosed)
 	if failed {
 		os.Exit(1)
 	}
@@ -82,12 +82,16 @@ type stats struct {
 	unresolved int
 	// unwritable counts the functions whose inferred signature the edits cannot write.
 	unwritable int
+	// diagnosed counts the functions left as they are because a diagnostic other than a
+	// MissingSignatureError falls inside them.
+	diagnosed int
 }
 
 func (s *stats) add(o stats) {
 	s.edited += o.edited
 	s.unresolved += o.unresolved
 	s.unwritable += o.unwritable
+	s.diagnosed += o.diagnosed
 }
 
 // literalEdit replaces the bytes [start, end) of a Go file with text.
@@ -149,12 +153,13 @@ func writeFile(path string, dryRun, verbose bool) (stats, error) {
 		if err != nil || !strings.Contains(value, "fn ") {
 			return true
 		}
-		rewritten, unresolved, unwritable, panicked := writeSourceSafely(head + value)
+		rewritten, unresolved, skipped, panicked := writeSourceSafely(head + value)
 		if panicked != nil {
 			fmt.Fprintf(os.Stderr, "%s: skipped, the checker panicked: %v\n", fset.Position(lit.Pos()), panicked)
 			return true
 		}
-		s.unwritable += unwritable
+		s.unwritable += skipped.unwritable
+		s.diagnosed += skipped.diagnosed
 		if unresolved != "" {
 			s.unresolved++
 			if verbose {
@@ -194,23 +199,23 @@ func writeFile(path string, dryRun, verbose bool) (stats, error) {
 
 // writeSourceSafely is writeSource, returning the value the checker panicked with, if any,
 // rather than stopping the run.
-func writeSourceSafely(src string) (rewritten, unresolved string, unwritable int, panicked any) {
+func writeSourceSafely(src string) (rewritten, unresolved string, skipped stats, panicked any) {
 	defer func() {
 		if r := recover(); r != nil {
-			rewritten, unresolved, unwritable, panicked = src, "", 0, r
+			rewritten, unresolved, skipped, panicked = src, "", stats{}, r
 		}
 	}()
-	rewritten, unresolved, unwritable = writeSource(src)
-	return rewritten, unresolved, unwritable, nil
+	rewritten, unresolved, skipped = writeSource(src)
+	return rewritten, unresolved, skipped, nil
 }
 
 // writeSource returns src with the inferred signature written for each function and method
 // that leaves part of it out, other than one that leaves out a parameter type. unresolved is
 // the text of an edit that would write a type the checker could not resolve, in which case
-// src is returned as it is, and the empty string otherwise. unwritable counts the functions
+// src is returned as it is, and the empty string otherwise. skipped counts the functions
 // whose signature the edits cannot write. src is checked as a module, or as a script when it
 // does not parse as a module.
-func writeSource(src string) (rewritten, unresolved string, unwritable int) {
+func writeSource(src string) (rewritten, unresolved string, skipped stats) {
 	for _, path := range []string{"lib/index.esc", "bin/main.esc"} {
 		source := &ast.Source{ID: 0, Path: path, Contents: src}
 		co := compiler.CheckPackage([]*ast.Source{source}, compiler.PackageConfig{})
@@ -219,7 +224,7 @@ func writeSource(src string) (rewritten, unresolved string, unwritable int) {
 		}
 		info := co.InfoFor(0)
 		if info == nil {
-			return src, "", 0
+			return src, "", skipped
 		}
 		var edits []sigedit.Edit
 		for _, target := range sigedit.Targets(info, sigedit.FileDecls(co.Scripts[0], co.Module, 0), 0) {
@@ -228,22 +233,28 @@ func writeSource(src string) (rewritten, unresolved string, unwritable int) {
 			if leavesOutParamType(target.Sig) {
 				continue
 			}
+			// A diagnostic inside the function can leave its inferred signature describing
+			// the error, such as a return type of `never`, rather than what the test means.
 			targetEdits, ok := target.Edits(src)
 			if !ok {
-				unwritable++
+				skipped.unwritable++
+				continue
+			}
+			if sigedit.Diagnosed(target, co.TypeErrors) && writesNever(targetEdits) {
+				skipped.diagnosed++
 				continue
 			}
 			edits = append(edits, targetEdits...)
 		}
 		if len(edits) == 0 {
-			return src, "", unwritable
+			return src, "", skipped
 		}
 		// A type the checker could not resolve renders as `error`, and a variable it left
 		// unsolved as t{ID}. Either means the literal does not check on its own, as one file
 		// of a several-file test does, so its signature is not the one the test means.
 		for _, e := range edits {
 			if unresolvedType.MatchString(e.Text) {
-				return src, e.Text, unwritable
+				return src, e.Text, skipped
 			}
 		}
 		// A body with an error can leave a type the checker infers as `never`, such as the
@@ -252,19 +263,29 @@ func writeSource(src string) (rewritten, unresolved string, unwritable int) {
 		if hasError(co) {
 			for _, e := range edits {
 				if neverType.MatchString(e.Text) {
-					return src, e.Text, unwritable
+					return src, e.Text, skipped
 				}
 			}
 		}
-		return sigedit.Apply(src, edits), "", unwritable
+		return sigedit.Apply(src, edits), "", skipped
 	}
-	return src, "", 0
+	return src, "", skipped
 }
 
 // unresolvedType matches a rendered type that holds an unresolved type, a raw variable such
 // as t4, or a recursive type, which renders as `μX0.T` and has no source form. A word
 // followed by `:` or `?:` is a field name, as in `{t1: number}`, so it is not a variable.
 var unresolvedType = regexp.MustCompile(`(?:^|[^\w"-])error(?:[^\w"-]|$)|(?:^|[^\w"-])t[0-9]+(?:[^\w"?:-]|$)|μ`)
+
+// writesNever reports whether any of edits writes a type that names `never`.
+func writesNever(edits []sigedit.Edit) bool {
+	for _, e := range edits {
+		if neverType.MatchString(e.Text) {
+			return true
+		}
+	}
+	return false
+}
 
 // neverType matches a rendered type that names `never`.
 var neverType = regexp.MustCompile(`\bnever\b`)
