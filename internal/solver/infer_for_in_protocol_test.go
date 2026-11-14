@@ -26,7 +26,7 @@ func TestForInReadsTheIteratorProtocol(t *testing.T) {
 			name: "AnArrayIteratesThroughItsOwnMember",
 			src: `
 				declare fn mk() -> Array<number>
-				fn use() { for x in mk() { return x } }
+				fn use() -> number { for x in mk() { return x } }
 			`,
 			want: "fn () -> number",
 		},
@@ -34,7 +34,7 @@ func TestForInReadsTheIteratorProtocol(t *testing.T) {
 			name: "AnInterfaceDeclaringTheMember",
 			src: `
 				declare fn mk() -> Iterable<string>
-				fn use() { for x in mk() { return x } }
+				fn use() -> string { for x in mk() { return x } }
 			`,
 			want: "fn () -> string",
 		},
@@ -44,7 +44,7 @@ func TestForInReadsTheIteratorProtocol(t *testing.T) {
 			src: `
 				declare class Seq { [Symbol.iterator](&self) -> Iterator<boolean> }
 				declare fn mk() -> Seq
-				fn use() { for x in mk() { return x } }
+				fn use() -> boolean { for x in mk() { return x } }
 			`,
 			want: "fn () -> boolean",
 		},
@@ -54,7 +54,7 @@ func TestForInReadsTheIteratorProtocol(t *testing.T) {
 			name: "APropertyHoldingTheFunction",
 			src: `
 				declare fn mk() -> { [Symbol.iterator]: fn () -> Iterator<string> }
-				fn use() { for x in mk() { return x } }
+				fn use() -> string { for x in mk() { return x } }
 			`,
 			want: "fn () -> string",
 		},
@@ -79,14 +79,14 @@ func TestForInKeepsItsNonProtocolArms(t *testing.T) {
 	}{
 		{
 			name: "ATuple",
-			src:  `fn use() { for x in [1, 2, 3] { return x } }`,
+			src:  `fn use() -> 1 | 2 | 3 { for x in [1, 2, 3] { return x } }`,
 			want: "fn () -> 1 | 2 | 3",
 		},
 		{
 			name: "AGenerator",
 			src: `
-				gen fn g() { yield 1 }
-				fn use() { for x in g() { return x } }
+				gen fn g() -> Generator<1, undefined, unknown> { yield 1 }
+				fn use() -> 1 { for x in g() { return x } }
 			`,
 			want: "fn () -> 1",
 		},
@@ -111,14 +111,14 @@ func TestForInRejectsWhatDeclaresNoProtocolMember(t *testing.T) {
 	}{
 		{
 			name: "APrimitive",
-			src:  `fn use(n: number) { for x in n { x } }`,
+			src:  `fn use(n: number) -> undefined { for x in n { x } }`,
 			want: "number is not iterable",
 		},
 		{
 			name: "AClassWithoutTheMember",
 			src: `
 				declare class Bag { size: number }
-				fn use(b: Bag) { for x in b { x } }
+				fn use(b: Bag) -> undefined { for x in b { x } }
 			`,
 			want: "Bag is not iterable",
 		},
@@ -128,7 +128,7 @@ func TestForInRejectsWhatDeclaresNoProtocolMember(t *testing.T) {
 			name: "AMemberWithNoElementToRead",
 			src: `
 				declare class Seq { [Symbol.iterator](&self) -> number }
-				fn use(s: Seq) { for x in s { x } }
+				fn use(s: Seq) -> undefined { for x in s { x } }
 			`,
 			want: "Seq is not iterable",
 		},
@@ -138,7 +138,7 @@ func TestForInRejectsWhatDeclaresNoProtocolMember(t *testing.T) {
 			name: "ADeclaredValue",
 			src: `
 				declare val n: number
-				fn use() { for x in n { x } }
+				fn use() -> undefined { for x in n { x } }
 			`,
 			want: "number is not iterable",
 		},
@@ -147,7 +147,7 @@ func TestForInRejectsWhatDeclaresNoProtocolMember(t *testing.T) {
 			src: `
 				interface Sized { size: number }
 				interface Bag extends Sized { name: string }
-				fn use(b: Bag) { for x in b { x } }
+				fn use(b: Bag) -> undefined { for x in b { x } }
 			`,
 			want: "Bag is not iterable",
 		},
@@ -158,7 +158,7 @@ func TestForInRejectsWhatDeclaresNoProtocolMember(t *testing.T) {
 			src: `
 				interface A extends B { a: number }
 				interface B extends A { b: number }
-				fn use(s: A) { for x in s { x } }
+				fn use(s: A) -> undefined { for x in s { x } }
 			`,
 			want: "A is not iterable",
 		},
@@ -185,7 +185,7 @@ func TestForInOverAnIntersection(t *testing.T) {
 			name: "TheOwnMemberAnswers",
 			src: `
 				interface Seq<T> extends Iterator<T> { [Symbol.iterator]() -> Seq<T> }
-				fn use(s: Seq<number>) { for x in s { return x } }
+				fn use(s: Seq<number>) -> number { for x in s { return x } }
 			`,
 			want: "fn (s: Seq<number>) -> number",
 		},
@@ -194,7 +194,7 @@ func TestForInOverAnIntersection(t *testing.T) {
 			src: `
 				interface Named { name: string }
 				interface Seq extends Named, Iterable<number> { size: number }
-				fn use(s: Seq) { for x in s { return x } }
+				fn use(s: Seq) -> number { for x in s { return x } }
 			`,
 			want: "fn (s: Seq) -> number",
 		},
@@ -205,7 +205,7 @@ func TestForInOverAnIntersection(t *testing.T) {
 			src: `
 				interface Base { [Symbol.iterator]() -> Iterator<number> }
 				interface Seq extends Base { [Symbol.iterator]() -> Iterator<string> }
-				fn use(s: Seq) { for x in s { return x } }
+				fn use(s: Seq) -> string { for x in s { return x } }
 			`,
 			want: "fn (s: Seq) -> string",
 		},
@@ -214,7 +214,7 @@ func TestForInOverAnIntersection(t *testing.T) {
 			name: "AnArmIterationCannotCallIsSkipped",
 			src: `
 				type Seq = Iterable<number> & {[Symbol.iterator](&self, hint: string) -> Iterator<string>}
-				fn use(s: Seq) { for x in s { return x } }
+				fn use(s: Seq) -> number { for x in s { return x } }
 			`,
 			want: "fn (s: Seq) -> number",
 		},
@@ -225,7 +225,7 @@ func TestForInOverAnIntersection(t *testing.T) {
 			src: `
 				type Wrap<T> = T
 				type Seq = Wrap<Iterable<number>> & Wrap<{size: number}>
-				fn use(s: Seq) { for x in s { return x } }
+				fn use(s: Seq) -> number { for x in s { return x } }
 			`,
 			want: "fn (s: Seq) -> number",
 		},
@@ -267,7 +267,7 @@ func TestForAwaitReadsTheAsyncMember(t *testing.T) {
 	t.Run("AnAsyncMemberDoesNotAnswerASyncLoop", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			declare fn mk() -> AsyncIterable<string>
-			fn use(xs: AsyncIterable<string>) { for x in xs { x } }
+			fn use(xs: AsyncIterable<string>) -> undefined { for x in xs { x } }
 		`)
 		require.Equal(t, []string{"AsyncIterable<string, undefined, unknown> is not iterable"},
 			errorMessagesOf(errs))
@@ -286,7 +286,7 @@ func TestForAwaitReadsTheAsyncMember(t *testing.T) {
 func TestYieldFromReadsTheIteratorProtocol(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		declare fn mk() -> Array<number>
-		gen fn g() { yield from mk() }
+		gen fn g() -> Generator<number, undefined, unknown> { yield from mk() }
 	`)
 	require.Empty(t, errorMessagesOf(errs))
 	require.Equal(t, "fn () -> Generator<number, undefined, unknown>", values["g"])
@@ -310,7 +310,7 @@ func TestForInReadsTheNullaryProtocolSignature(t *testing.T) {
 					[Symbol.iterator](&self, hint: string) -> Iterator<number>,
 					[Symbol.iterator](&self) -> Iterator<boolean>,
 				}
-				fn use(s: Seq) { for x in s { return x } }
+				fn use(s: Seq) -> boolean { for x in s { return x } }
 			`,
 			want: "fn (s: Seq) -> boolean",
 		},
@@ -320,7 +320,7 @@ func TestForInReadsTheNullaryProtocolSignature(t *testing.T) {
 			name: "AnOptionalParameterLeavesTheMemberCallable",
 			src: `
 				declare class Seq { [Symbol.iterator](&self, hint?: string) -> Iterator<number> }
-				fn use(s: Seq) { for x in s { return x } }
+				fn use(s: Seq) -> number { for x in s { return x } }
 			`,
 			want: "fn (s: Seq) -> number",
 		},
@@ -329,7 +329,7 @@ func TestForInReadsTheNullaryProtocolSignature(t *testing.T) {
 			name: "ARestParameterLeavesTheMemberCallable",
 			src: `
 				declare class Seq { [Symbol.iterator](&self, ...hints: Array<string>) -> Iterator<number> }
-				fn use(s: Seq) { for x in s { return x } }
+				fn use(s: Seq) -> number { for x in s { return x } }
 			`,
 			want: "fn (s: Seq) -> number",
 		},
@@ -348,7 +348,7 @@ func TestForInReadsTheNullaryProtocolSignature(t *testing.T) {
 func TestForInRejectsAProtocolMemberDemandingAnArgument(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		declare class Seq { [Symbol.iterator](&self, hint: string) -> Iterator<number> }
-		fn use(s: Seq) { for x in s { x } }
+		fn use(s: Seq) -> undefined { for x in s { x } }
 	`)
 	require.Equal(t, []string{"Seq is not iterable"}, errorMessagesOf(errs))
 }
@@ -357,7 +357,7 @@ func TestForInRejectsAProtocolMemberDemandingAnArgument(t *testing.T) {
 func TestForInFollowsAnAliasToTheIterable(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		type Nums = Array<number>
-		fn use(n: Nums) { for x in n { return x } }
+		fn use(n: Nums) -> number { for x in n { return x } }
 	`)
 	require.Empty(t, errorMessagesOf(errs))
 	require.Equal(t, "fn (n: Nums) -> number", values["use"])
@@ -381,7 +381,7 @@ func TestYieldFromForwardsEveryProtocolSlot(t *testing.T) {
 		{
 			name: "AllThreeSlotsAreForwarded",
 			src: `
-				gen fn g(xs: Iterable<string, number, boolean>) {
+				gen fn g(xs: Iterable<string, number, boolean>) -> Generator<string, number, boolean> {
 					val done = yield from xs
 					return done
 				}
@@ -393,7 +393,7 @@ func TestYieldFromForwardsEveryProtocolSlot(t *testing.T) {
 			// only the element is stated and the delegation finishes with `undefined`.
 			name: "AnUnstatedSlotFallsBack",
 			src: `
-				gen fn g(xs: Array<number>) {
+				gen fn g(xs: Array<number>) -> Generator<number, undefined, unknown> {
 					val done = yield from xs
 					return done
 				}
@@ -434,14 +434,14 @@ func TestForInRejectsAnOptionalProtocolMember(t *testing.T) {
 			name: "AnOptionalMethod",
 			src: `
 				declare fn mk() -> { [Symbol.iterator]?(&self) -> Iterator<number> }
-				fn use() { for x in mk() { x } }
+				fn use() -> undefined { for x in mk() { x } }
 			`,
 		},
 		{
 			name: "AnOptionalProperty",
 			src: `
 				declare fn mk() -> { [Symbol.iterator]?: fn () -> Iterator<number> }
-				fn use() { for x in mk() { x } }
+				fn use() -> undefined { for x in mk() { x } }
 			`,
 		},
 	}
@@ -462,7 +462,7 @@ func TestForInFollowsAnAliasThatRenamesAnIterator(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		type Flip<A, B> = Iterator<B, A>
 		declare class Seq { [Symbol.iterator](&self) -> Flip<number, string> }
-		fn use(s: Seq) { for x in s { return x } }
+		fn use(s: Seq) -> string { for x in s { return x } }
 	`)
 	require.Empty(t, errorMessagesOf(errs))
 	require.Equal(t, "fn (s: Seq) -> string", values["use"])
@@ -481,13 +481,13 @@ func TestYieldFromInAnAsyncBodyReadsTheAsyncMember(t *testing.T) {
 			name: "AnAsyncOnlyDelegate",
 			src: `
 				declare class Stream { [Symbol.asyncIterator](&self) -> AsyncIterator<string> }
-				async gen fn g(s: Stream) { yield from s }
+				async gen fn g(s: Stream) -> AsyncGenerator<string, undefined, unknown> { yield from s }
 			`,
 			want: "fn (s: Stream) -> AsyncGenerator<string, undefined, unknown>",
 		},
 		{
 			name: "ASyncDelegateFallsBack",
-			src:  `async gen fn g(xs: Array<number>) { yield from xs }`,
+			src:  `async gen fn g(xs: Array<number>) -> AsyncGenerator<number, undefined, unknown> { yield from xs }`,
 			want: "fn (xs: Array<number>) -> AsyncGenerator<number, undefined, unknown>",
 		},
 	}
@@ -515,7 +515,7 @@ func TestForInFollowsAnAliasChainWithoutLooping(t *testing.T) {
 			src: `
 				type Mid<T> = Iterator<T>
 				declare class Seq { [Symbol.iterator](&self) -> Mid<number> }
-				fn use(s: Seq) { for x in s { return x } }
+				fn use(s: Seq) -> number { for x in s { return x } }
 			`,
 		},
 		{
@@ -523,7 +523,7 @@ func TestForInFollowsAnAliasChainWithoutLooping(t *testing.T) {
 			src: `
 				type Loop<T> = Loop<T>
 				declare class Seq { [Symbol.iterator](&self) -> Loop<number> }
-				fn use(s: Seq) { for x in s { return x } }
+				fn use(s: Seq) -> number { for x in s { return x } }
 			`,
 			want: []string{
 				"recursive type alias `Loop` reaches itself without passing under a type " +
@@ -537,7 +537,7 @@ func TestForInFollowsAnAliasChainWithoutLooping(t *testing.T) {
 				type A<T> = B<T>
 				type B<T> = A<T>
 				declare class Seq { [Symbol.iterator](&self) -> A<number> }
-				fn use(s: Seq) { for x in s { return x } }
+				fn use(s: Seq) -> number { for x in s { return x } }
 			`,
 			want: []string{
 				"recursive type alias `B` reaches itself through `A` without passing under a type " +
@@ -592,33 +592,33 @@ func TestIterationAgainstStdlib(t *testing.T) {
 		},
 		{
 			name: "SpreadAString",
-			src:  `fn chars(s: string) { return [...s] }`,
+			src:  `val chars = fn (s: string) { return [...s] }`,
 			want: map[string]string{"chars": "fn (s: string) -> Array<string>"},
 		},
 		{
 			name: "SpreadAnArrayBesideAnElement",
-			src:  `fn withZero(xs: Array<number>) { return [0, ...xs] }`,
+			src:  `val withZero = fn (xs: Array<number>) { return [0, ...xs] }`,
 			want: map[string]string{"withZero": "fn (xs: Array<number>) -> [0, ...Array<number>]"},
 		},
 		{
 			name: "SpreadAGenerator",
 			src: `
-				gen fn count() {
+				gen fn count() -> Generator<1 | 2, undefined, unknown> {
 					yield 1
 					yield 2
 				}
-				fn all() { return [...count()] }
+				val all = fn () { return [...count()] }
 			`,
 			want: map[string]string{"all": "fn () -> Array<1 | 2>"},
 		},
 		{
 			name: "InexactTupleTailWidensTheArray",
-			src:  `fn f(xs: Array<number>, t: [string, ...]) { return [...xs, ...t] }`,
+			src:  `val f = fn (xs: Array<number>, t: [string, ...]) { return [...xs, ...t] }`,
 			want: map[string]string{"f": "fn (xs: Array<number>, t: [string, ...]) -> Array<unknown>"},
 		},
 		{
 			name: "InexactTupleBeforeAnIterableSpread",
-			src:  `fn f(xs: Array<number>, t: [string, ...]) { return [...t, ...xs] }`,
+			src:  `val f = fn (xs: Array<number>, t: [string, ...]) { return [...t, ...xs] }`,
 			want: map[string]string{"f": "fn (xs: Array<number>, t: [string, ...]) -> [string, ...Array<unknown>]"},
 		},
 		{
@@ -627,7 +627,7 @@ func TestIterationAgainstStdlib(t *testing.T) {
 			name: "ForInOverAnIterableIterator",
 			src: `
 				declare val it: IterableIterator<number>
-				fn first() { for x in it { return x } }
+				val first = fn () { for x in it { return x } }
 			`,
 			want: map[string]string{"first": "fn () -> number"},
 		},
@@ -635,7 +635,7 @@ func TestIterationAgainstStdlib(t *testing.T) {
 			name: "ForAwaitOverAnAsyncIterableIterator",
 			src: `
 				declare val it: AsyncIterableIterator<number>
-				async fn first() { for await x in it { return x } }
+				async fn first() -> Promise<number> { for await x in it { return x } }
 			`,
 			want: map[string]string{"first": "fn () -> Promise<number>"},
 		},
@@ -645,7 +645,7 @@ func TestIterationAgainstStdlib(t *testing.T) {
 			name: "ForInOverMapKeys",
 			src: `
 				declare val m: Map<string, number>
-				fn first() { for x in m.keys() { return x } }
+				val first = fn () { for x in m.keys() { return x } }
 			`,
 			want: map[string]string{"first": "fn () -> string"},
 		},
@@ -653,7 +653,7 @@ func TestIterationAgainstStdlib(t *testing.T) {
 			name: "SpreadMapKeys",
 			src: `
 				declare val m: Map<string, number>
-				fn all() { return [...m.keys()] }
+				val all = fn () { return [...m.keys()] }
 			`,
 			want: map[string]string{"all": "fn () -> Array<string>"},
 		},
@@ -661,7 +661,7 @@ func TestIterationAgainstStdlib(t *testing.T) {
 			name: "SpreadAnIterableIterator",
 			src: `
 				declare val it: IterableIterator<number>
-				fn all() { return [...it] }
+				val all = fn () { return [...it] }
 			`,
 			want: map[string]string{"all": "fn () -> Array<number>"},
 		},
@@ -669,14 +669,14 @@ func TestIterationAgainstStdlib(t *testing.T) {
 			name: "YieldFromAnIterableIterator",
 			src: `
 				declare val it: IterableIterator<number>
-				gen fn each() { yield from it }
+				gen fn each() -> Generator<number, undefined, unknown> { yield from it }
 			`,
 			want: map[string]string{"each": "fn () -> Generator<number, undefined, unknown>"},
 		},
 		{
 			name: "GeneratorWithOneTypeArgument",
 			src: `
-				gen fn count() {
+				gen fn count() -> Generator<1, undefined, unknown> {
 					yield 1
 				}
 				val g: Generator<number> = count()
@@ -700,10 +700,10 @@ func TestIterationAgainstStdlib(t *testing.T) {
 // that name, and that a generator a call returns fills a `mut` annotation.
 func TestGeneratorAnnotationAgainstStdlib(t *testing.T) {
 	values, errs := inferAgainstTree(t, `
-		gen fn count() {
+		gen fn count() -> Generator<1, undefined, unknown> {
 			yield 1
 		}
-		fn drive() {
+		fn drive() -> IteratorResult<1, undefined> {
 			val mut it: Generator<1, undefined, unknown> = count()
 			return it.next()
 		}
