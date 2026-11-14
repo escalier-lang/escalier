@@ -274,38 +274,121 @@ func binderSpan(sig *ast.FuncSig) (ast.Span, bool) {
 }
 
 // paramListEnd returns the offset just past the `)` that closes target's parameter list
-// in contents, and false when the text there is not one. The scan starts after the last
-// parameter, after the receiver, or inside the `(` that follows the name and its binder
-// list.
+// in contents, and false when the text there is not one. The list opens at the first `(`
+// after the name and its binder list, and the `)` that closes it is the one that brings the
+// count of open parentheses back to zero. A parenthesized type such as
+// `p: &({a: number} | {b: number})` closes its own parentheses inside the list, and the span
+// of that type ends inside them, so the last parameter's span does not mark the list's end.
 func paramListEnd(target Target, contents string) (int, bool) {
-	sig := target.Sig
-	var from int
-	switch {
-	case len(sig.Params) > 0:
-		last := sig.Params[len(sig.Params)-1]
-		from = last.Pattern.Span().End.Offset
-		if last.TypeAnn != nil {
-			from = last.TypeAnn.Span().End.Offset
-		}
-	case target.Receiver != nil:
-		from = target.Receiver.Span_.End.Offset
-	default:
-		from = target.Name.Span().End.Offset
-		if span, ok := binderSpan(sig); ok {
-			var closed bool
-			// A binder list may end in a comma.
-			if from, closed = skipPast(contents, span.End.Offset, '>', ","); !closed {
-				return 0, false
-			}
-		}
-		var opened bool
-		if from, opened = skipPast(contents, from, '(', ""); !opened {
+	from := target.Name.Span().End.Offset
+	if span, ok := binderSpan(target.Sig); ok {
+		var closed bool
+		// A binder list may end in a comma.
+		if from, closed = skipPast(contents, span.End.Offset, '>', ","); !closed {
 			return 0, false
 		}
 	}
-	// A parameter list may end in a comma, and an inexact one in `...`. An optional
-	// parameter written with no type ends in `?`.
-	return skipPast(contents, from, ')', "?,.")
+	var opened bool
+	if from, opened = skipPast(contents, from, '(', ""); !opened {
+		return 0, false
+	}
+	return closingParen(contents, from)
+}
+
+// closingParen returns the offset just past the `)` that closes a `(` ending just before
+// from, and false when contents ends first. Parentheses inside a comment, a string literal or
+// a template literal are not counted.
+func closingParen(contents string, from int) (int, bool) {
+	depth := 1
+	for i := from; i < len(contents); {
+		if next, skipped, ok := skipNonCode(contents, i); skipped {
+			if !ok {
+				return 0, false
+			}
+			i = next
+			continue
+		}
+		switch contents[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return i + 1, true
+			}
+		}
+		i++
+	}
+	return 0, false
+}
+
+// skipNonCode reports whether a comment, a string literal or a template literal starts at
+// offset i of contents, and if so returns the offset just past it. ok is false when contents
+// ends inside it. The scan follows the lexer, which reads no escapes: a string runs from `"`
+// to the next `"`, and a template literal from a backtick to the next backtick outside a
+// `${...}` hole. A `'` starts a lifetime such as `'static`, not a string.
+func skipNonCode(contents string, i int) (next int, skipped, ok bool) {
+	switch {
+	case strings.HasPrefix(contents[i:], "//"):
+		n := strings.IndexByte(contents[i:], '\n')
+		if n < 0 {
+			return 0, true, false
+		}
+		return i + n, true, true
+	case strings.HasPrefix(contents[i:], "/*"):
+		n := strings.Index(contents[i+2:], "*/")
+		if n < 0 {
+			return 0, true, false
+		}
+		return i + n + 4, true, true
+	case contents[i] == '"':
+		n := strings.IndexByte(contents[i+1:], '"')
+		if n < 0 {
+			return 0, true, false
+		}
+		return i + n + 2, true, true
+	case contents[i] == '`':
+		next, ok := templateEnd(contents, i+1)
+		return next, true, ok
+	}
+	return 0, false, false
+}
+
+// templateEnd returns the offset just past the backtick that closes a template literal
+// whose text starts at from. A `${` opens a hole that holds a type and closes at the `}`
+// that balances it, and the hole may hold comments, strings and further template literals.
+func templateEnd(contents string, from int) (int, bool) {
+	for i := from; i < len(contents); {
+		switch {
+		case contents[i] == '`':
+			return i + 1, true
+		case strings.HasPrefix(contents[i:], "${"):
+			depth := 1
+			i += 2
+			for depth > 0 {
+				if i >= len(contents) {
+					return 0, false
+				}
+				if next, skipped, ok := skipNonCode(contents, i); skipped {
+					if !ok {
+						return 0, false
+					}
+					i = next
+					continue
+				}
+				switch contents[i] {
+				case '{':
+					depth++
+				case '}':
+					depth--
+				}
+				i++
+			}
+		default:
+			i++
+		}
+	}
+	return 0, false
 }
 
 // skipPast returns the offset just past the byte want, reading contents from offset from
@@ -318,18 +401,12 @@ func skipPast(contents string, from int, want byte, marks string) (int, bool) {
 			return i + 1, true
 		case strings.IndexByte(" \t\r\n", contents[i]) >= 0, strings.IndexByte(marks, contents[i]) >= 0:
 			i++
-		case strings.HasPrefix(contents[i:], "//"):
-			n := strings.IndexByte(contents[i:], '\n')
-			if n < 0 {
+		case strings.HasPrefix(contents[i:], "//"), strings.HasPrefix(contents[i:], "/*"):
+			next, _, ok := skipNonCode(contents, i)
+			if !ok {
 				return 0, false
 			}
-			i += n
-		case strings.HasPrefix(contents[i:], "/*"):
-			n := strings.Index(contents[i+2:], "*/")
-			if n < 0 {
-				return 0, false
-			}
-			i += n + 4
+			i = next
 		default:
 			return 0, false
 		}
