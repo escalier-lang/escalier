@@ -1122,6 +1122,16 @@ func TestHoverFromSolver(t *testing.T) {
 			expected: escalierCode("count: 1"),
 		},
 		{
+			// A getter and a setter share a name, so the declaration resolves by the kind of
+			// member written as well as its name.
+			name: "ClassSetterDecl",
+			files: map[string]string{
+				"lib/a.esc": "export class T { n: number, get x(&self) -> number { return self.n }, set x(&mut self, v: number) { self.n = v } }",
+			},
+			open: "lib/a.esc", line: 0, col: 74,
+			expected: escalierCode("(setter) T.x: number"),
+		},
+		{
 			name:  "Keyword",
 			files: map[string]string{"bin/main.esc": "val x = 5"},
 			open:  "bin/main.esc", line: 0, col: 1,

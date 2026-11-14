@@ -686,12 +686,14 @@ func declMemberHover(q hoverQuery) (string, bool) {
 	switch n := q.node.(type) {
 	case *ast.IdentExpr:
 		// A static field's initializer and a computed key also sit directly under the
-		// class, so the identifier has to be one of the members' own names.
+		// class, so the identifier has to be one of the members' own name nodes.
 		class, ok := parentClassDecl(q.ancestors)
-		if !ok || !isMemberName(class, n) {
+		if !ok {
 			return "", false
 		}
-		return classMemberDeclText(q.info, q.scope, class, n.Name)
+		if member, ok := memberNamedBy(class, n); ok {
+			return classMemberDeclText(q.info, q.scope, class, member)
+		}
 	case *ast.FuncExpr:
 		// A method's function expression spans its name, so the cursor on the name lands
 		// here rather than on an identifier.
@@ -699,8 +701,8 @@ func declMemberHover(q hoverQuery) (string, bool) {
 		if !ok {
 			return "", false
 		}
-		if name, ok := memberNameOfFn(class, n); ok {
-			return classMemberDeclText(q.info, q.scope, class, name)
+		if member, ok := memberOfFn(class, n); ok {
+			return classMemberDeclText(q.info, q.scope, class, member)
 		}
 	case *ast.ObjectTypeAnn:
 		return objTypePropText(n, q.loc)
@@ -708,53 +710,75 @@ func declMemberHover(q hoverQuery) (string, bool) {
 	return "", false
 }
 
-// isMemberName reports whether ident is the name a field, method, getter or setter of
-// class is declared under.
-func isMemberName(class *ast.ClassDecl, ident *ast.IdentExpr) bool {
+// memberNamedBy returns the field, method, getter or setter of class whose name node is
+// ident itself, and false when ident is no member's name node.
+func memberNamedBy(class *ast.ClassDecl, ident *ast.IdentExpr) (ast.ClassElem, bool) {
 	key := ast.ObjKey(ident)
 	for _, elem := range class.Body {
-		switch elem := elem.(type) {
-		case *ast.FieldElem:
-			if elem.Name == key {
-				return true
-			}
-		case *ast.MethodElem:
-			if elem.Name == key {
-				return true
-			}
-		case *ast.GetterElem:
-			if elem.Name == key {
-				return true
-			}
-		case *ast.SetterElem:
-			if elem.Name == key {
-				return true
-			}
+		if name, ok := classElemName(elem); ok && name == key {
+			return elem, true
 		}
 	}
-	return false
+	return nil, false
 }
 
-// memberNameOfFn returns the name of the method, getter or setter of class whose function
-// is fn, and false when no such member has it.
-func memberNameOfFn(class *ast.ClassDecl, fn *ast.FuncExpr) (string, bool) {
+// memberOfFn returns the method, getter or setter of class whose function is fn, and false
+// when no such member has it.
+func memberOfFn(class *ast.ClassDecl, fn *ast.FuncExpr) (ast.ClassElem, bool) {
 	for _, elem := range class.Body {
 		switch elem := elem.(type) {
 		case *ast.MethodElem:
 			if elem.Fn == fn {
-				return objKeyName(elem.Name), true
+				return elem, true
 			}
 		case *ast.GetterElem:
 			if elem.Fn == fn {
-				return objKeyName(elem.Name), true
+				return elem, true
 			}
 		case *ast.SetterElem:
 			if elem.Fn == fn {
-				return objKeyName(elem.Name), true
+				return elem, true
 			}
 		}
 	}
-	return "", false
+	return nil, false
+}
+
+// classElemName returns the name key of a field, method, getter or setter, and false for
+// any other class element.
+func classElemName(elem ast.ClassElem) (ast.ObjKey, bool) {
+	switch elem := elem.(type) {
+	case *ast.FieldElem:
+		return elem.Name, true
+	case *ast.MethodElem:
+		return elem.Name, true
+	case *ast.GetterElem:
+		return elem.Name, true
+	case *ast.SetterElem:
+		return elem.Name, true
+	}
+	return nil, false
+}
+
+// sameMemberKind reports whether the class element member and the object-type element
+// elem are the same kind of member: a field and a property, or two methods, getters or
+// setters.
+func sameMemberKind(member ast.ClassElem, elem soltype.ObjTypeElem) bool {
+	switch member.(type) {
+	case *ast.FieldElem:
+		_, ok := elem.(*soltype.PropertyElem)
+		return ok
+	case *ast.MethodElem:
+		_, ok := elem.(*soltype.MethodElem)
+		return ok
+	case *ast.GetterElem:
+		_, ok := elem.(*soltype.GetterElem)
+		return ok
+	case *ast.SetterElem:
+		_, ok := elem.(*soltype.SetterElem)
+		return ok
+	}
+	return false
 }
 
 // parentClassDecl returns the class declaration when it is the cursor node's immediate
@@ -767,13 +791,19 @@ func parentClassDecl(ancestors []ast.Node) (*ast.ClassDecl, bool) {
 	return class, ok
 }
 
-// classMemberDeclText renders the member named `name` of class, found among the class's
-// members so a field, method, getter or setter each render in their own form. It returns
+// classMemberDeclText renders member, a field, method, getter or setter of class, in the
+// form a read of it shows. It finds the matching element of the class's members by name
+// and kind, so a getter and a setter of one name each render as themselves. It returns
 // false when info or scope is nil or the class exposes no such member.
-func classMemberDeclText(info *solver.Info, scope *solver.Scope, class *ast.ClassDecl, name string) (string, bool) {
+func classMemberDeclText(info *solver.Info, scope *solver.Scope, class *ast.ClassDecl, member ast.ClassElem) (string, bool) {
 	if info == nil || scope == nil {
 		return "", false
 	}
+	key, ok := classElemName(member)
+	if !ok {
+		return "", false
+	}
+	name := objKeyName(key)
 	binding, ok := scope.GetType(class.Name.Name)
 	if !ok {
 		return "", false
@@ -783,7 +813,7 @@ func classMemberDeclText(info *solver.Info, scope *solver.Scope, class *ast.Clas
 		return "", false
 	}
 	for _, elem := range obj.Elems {
-		if soltype.ObjElemName(elem) == name {
+		if soltype.ObjElemName(elem) == name && sameMemberKind(member, elem) {
 			return memberElemText(class.Name.Name, elem), true
 		}
 	}
