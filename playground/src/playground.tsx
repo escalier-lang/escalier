@@ -29,7 +29,8 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
     const { dispatch: editorDispatch, ...editorState } = useEditorStore();
     const { dispatch: playgroundDispatch, ...playgroundState } =
         usePlaygroundStore();
-    const { initialCompileDone, validationResult } = playgroundState;
+    const { initialCompileDone, validationResult, projectModified } =
+        playgroundState;
 
     const { leftTabs, rightTabs } = editorState;
 
@@ -150,6 +151,7 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
             loadProject(slug, 'template', manifest, baseUrl, fs).then(
                 (primaryFile) => {
                     if (id !== loadIdRef.current) return;
+                    playgroundDispatch({ type: 'projectLoaded' });
                     editorDispatch({ type: 'resetTabs', primaryFile });
                     // Clear the query param when switching to a template
                     history.replaceState(null, '', window.location.pathname);
@@ -177,6 +179,7 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
             loadProject(slug, 'example', manifest, baseUrl, fs).then(
                 (primaryFile) => {
                     if (id !== loadIdRef.current) return;
+                    playgroundDispatch({ type: 'projectLoaded' });
                     editorDispatch({ type: 'resetTabs', primaryFile });
                     // Update URL query param for deep linking
                     const url = new URL(window.location.href);
@@ -223,7 +226,13 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
             examples={exampleItems}
             onSelectTemplate={handleSelectTemplate}
             onSelectExample={handleSelectExample}
+            projectModified={projectModified}
         />
+    );
+
+    const handleProjectModified = useCallback(
+        () => playgroundDispatch({ type: 'markProjectModified' }),
+        [playgroundDispatch],
     );
 
     return (
@@ -234,6 +243,7 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
             rightPaneOverlay={rightPaneOverlay}
             banner={banner}
             toolbar={toolbar}
+            onProjectModified={handleProjectModified}
         />
     );
 };

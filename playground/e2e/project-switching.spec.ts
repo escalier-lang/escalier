@@ -1,45 +1,85 @@
-import { expect, test } from '@playwright/test';
+import { type Page, expect, test } from '@playwright/test';
 
 import { loadPlayground, waitForCompilation } from './helpers';
+
+/** Appends a comment to the open file, the way a person editing the project would. */
+async function editOpenFile(page: Page): Promise<void> {
+    const inputPanel = page.locator('#input-panel');
+    await inputPanel.locator('.view-lines').click();
+    const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+    await page.keyboard.press(`${modifier}+End`);
+    await page.keyboard.type('\n// edited');
+    // Keyboard events can be dropped or delayed under parallel execution.
+    await expect(inputPanel.locator('.view-lines')).toContainText('edited', {
+        timeout: 5_000,
+    });
+}
+
+/** Picks the Calculator example from the Examples menu. */
+async function pickCalculator(page: Page): Promise<void> {
+    await page.getByRole('button', { name: 'Examples' }).click();
+    await page.getByRole('menuitem', { name: 'Calculator' }).click();
+}
 
 test.describe('Project Switching', () => {
     test.beforeEach(async ({ page }) => {
         await loadPlayground(page);
     });
 
-    test('switch to calculator example', async ({ page }) => {
-        // Open the Examples dropdown
-        await page.getByRole('button', { name: 'Examples' }).click();
+    test('switches an unedited project without asking', async ({ page }) => {
+        await pickCalculator(page);
 
-        // Click Calculator
-        await page.getByRole('menuitem', { name: 'Calculator' }).click();
+        await expect(page.getByRole('dialog')).toBeHidden();
+        await expect(page.getByText('math.esc')).toBeVisible({
+            timeout: 10_000,
+        });
+        await waitForCompilation(page);
+    });
 
-        // Confirmation dialog should appear
+    test('asks before replacing an edited project', async ({ page }) => {
+        await editOpenFile(page);
+        await pickCalculator(page);
+
         const dialog = page.getByRole('dialog');
         await expect(dialog).toBeVisible();
         await expect(dialog).toContainText('Replace current project');
 
-        // Confirm the replacement
         await dialog.getByRole('button', { name: 'Replace' }).click();
 
-        // Wait for the new project to compile, verifying calculator-specific output
+        await expect(page.getByText('math.esc')).toBeVisible({
+            timeout: 10_000,
+        });
         await waitForCompilation(page);
     });
 
-    test('cancel project switch preserves current state', async ({ page }) => {
-        // Open the Examples dropdown
+    test('asks again after switching once the new project is edited', async ({
+        page,
+    }) => {
+        await pickCalculator(page);
+        await expect(page.getByText('math.esc')).toBeVisible({
+            timeout: 10_000,
+        });
+
+        await editOpenFile(page);
         await page.getByRole('button', { name: 'Examples' }).click();
+        await page.getByRole('menuitem', { name: 'Hello world' }).click();
 
-        // Click Calculator
-        await page.getByRole('menuitem', { name: 'Calculator' }).click();
+        await expect(page.getByRole('dialog')).toBeVisible();
+    });
 
-        // Cancel in the dialog
+    test('cancel project switch preserves current state', async ({ page }) => {
+        await editOpenFile(page);
+        await pickCalculator(page);
+
         const dialog = page.getByRole('dialog');
         await dialog.getByRole('button', { name: 'Cancel' }).click();
 
-        // Hello-world files should still be visible (no math.esc)
+        // Hello-world files should still be visible (no math.esc), with the edit kept.
         await expect(page.getByText('math.esc')).toBeHidden();
         await expect(page.getByText('escalier.toml')).toBeVisible();
+        await expect(
+            page.locator('#input-panel').locator('.view-lines'),
+        ).toContainText('edited');
     });
 
     test('switching examples auto-opens build output on right side', async ({
@@ -53,13 +93,7 @@ test.describe('Project Switching', () => {
             outputTablist.getByRole('tab', { name: /index\.js/ }),
         ).toBeVisible({ timeout: 10_000 });
 
-        // Switch to calculator example
-        await page.getByRole('button', { name: 'Examples' }).click();
-        await page.getByRole('menuitem', { name: 'Calculator' }).click();
-        await page
-            .getByRole('dialog')
-            .getByRole('button', { name: 'Replace' })
-            .click();
+        await pickCalculator(page);
 
         // Wait for the new project to compile
         await waitForCompilation(page);
@@ -71,13 +105,7 @@ test.describe('Project Switching', () => {
     });
 
     test('URL updates when switching examples', async ({ page }) => {
-        // Switch to calculator
-        await page.getByRole('button', { name: 'Examples' }).click();
-        await page.getByRole('menuitem', { name: 'Calculator' }).click();
-        await page
-            .getByRole('dialog')
-            .getByRole('button', { name: 'Replace' })
-            .click();
+        await pickCalculator(page);
         await waitForCompilation(page);
 
         // URL should contain the example query param
