@@ -1312,6 +1312,17 @@ type uint32 = 0..4294967296
 | `Int32Array` | `int32` |
 | `Uint32Array` | `uint32` |
 
+The range is the read type. A write takes any `number`, since JavaScript wraps
+or clamps the value into the range rather than throwing. Writing `300` into a
+`Uint8Array` stores `44`. The element signature therefore needs separate read
+and write types. Until the stdlib has them, typed array elements stay `number`
+for both reads and writes, and this table applies once they land. Decision 10 in
+section 13 covers the feature.
+
+`Float32Array`, `Float64Array`, and the `BigInt` arrays keep `number` and
+`bigint` elements. The `DataView` getters follow the same table. For example,
+`getUint8` returns `uint8` and `getInt16` returns `int16`.
+
 The aliases are ordinary ranges, so they need no lattice rules of their own.
 `int8 <: int16` holds because `-128..128` lies inside `-32768..32768`, and
 `uint8 <: int16` holds for the same reason.
@@ -1319,8 +1330,8 @@ The aliases are ordinary ranges, so they need no lattice rules of their own.
 Arithmetic on these types does not wrap. In C or Rust, adding `1` to the
 `int8` value `127` gives `-128`. In Escalier, `a + b` with `a: int8` and
 `b: int8` gives `int` today and `-256..255` once interval arithmetic from
-section 5.3 lands. A value wraps only when a typed array stores it, as the next
-paragraph describes. The language guide states this.
+section 5.3 lands. A value wraps only when a typed array stores it, as the
+paragraph on writes above describes. The language guide states this.
 
 There are no `int64` or `uint64` aliases. `BigInt64Array` and `BigUint64Array`
 hold `bigint` values, so those names wait on `bigint` ranges, which decision 7
@@ -1353,20 +1364,9 @@ keeping its pointer, when a reduction leaves it unchanged.
 
 The printer does not turn a computed range back into an alias name. Under
 interval arithmetic, `i + 1` with `i: -1..255` gives `0..256`. That value did
-not come from a byte array, and printing `uint8` would suggest it did. The same applies to a
-user-written alias such as `type Percent = 0..=100`. Only a type that came
-from the alias keeps its name.
-
-The range is the read type. A write takes any `number`, since JavaScript wraps
-or clamps the value into the range rather than throwing. Writing `300` into a
-`Uint8Array` stores `44`. The element signature therefore needs separate read
-and write types. Until the stdlib has them, typed array elements stay `number`
-for both reads and writes, and this table applies once they land. Decision 10 in
-section 13 covers the feature.
-
-`Float32Array`, `Float64Array`, and the `BigInt` arrays keep `number` and
-`bigint` elements. The `DataView` getters follow the same table. For example,
-`getUint8` returns `uint8` and `getInt16` returns `int16`.
+not come from a byte array, and printing `uint8` would suggest it did. The same
+applies to a user-written alias such as `type Percent = 0..=100`. Only a type
+that came from the alias keeps its name.
 
 ### 11.5. Strings, `Math`, and `Number`
 
