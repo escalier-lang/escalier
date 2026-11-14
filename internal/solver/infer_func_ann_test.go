@@ -395,7 +395,7 @@ func TestInferLifetimeFuncAnnotation(t *testing.T) {
 		// must not share a variable, so `outer`'s parameter stays a plain borrow lifetime.
 		{
 			name: "nested annotation scope is local",
-			src: `fn outer<'a>(p: &'a {x: number}) {
+			src: `fn outer<'a>(p: &'a {x: number}) -> &{x: number} {
   val g: fn<'a: 'static>(q: &'a {y: number}) -> &'a {y: number} = fn (q) { return q }
   return p
 }`,

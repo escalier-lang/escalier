@@ -383,9 +383,9 @@ func TestInferAnnAccessorReadRaises(t *testing.T) {
 			name: "SetterWriteRaisesUndeclared",
 			src: `
 				declare fn make() -> {set a(&mut self, v: number) throws string, ...}
-				fn g() { var mut o = make() o.a = 5 }
+				fn g() -> undefined { var mut o = make() o.a = 5 }
 			`,
-			want: []string{"3:33-3:40: `g` can throw `string`, but it doesn't declare it; add `throws string` to `g`'s signature"},
+			want: []string{"3:46-3:53: `g` can throw `string`, but it doesn't declare it; add `throws string` to `g`'s signature"},
 		},
 	}
 	for _, tt := range tests {
@@ -408,7 +408,7 @@ func TestInferAnnSetterWrite(t *testing.T) {
 			name: "Write",
 			src: `
 				declare fn make() -> {set a(&mut self, v: number), ...}
-				fn g() { var mut o = make() o.a = 5 }
+				fn g() -> undefined { var mut o = make() o.a = 5 }
 			`,
 			want: nil,
 		},
@@ -416,17 +416,17 @@ func TestInferAnnSetterWrite(t *testing.T) {
 			name: "WrittenValueIsChecked",
 			src: `
 				declare fn make() -> {set a(&mut self, v: number), ...}
-				fn g() { var mut o = make() o.a = "nope" }
+				fn g() -> undefined { var mut o = make() o.a = "nope" }
 			`,
-			want: []string{`3:39-3:45: cannot constrain "nope" <: number`},
+			want: []string{`3:52-3:58: cannot constrain "nope" <: number`},
 		},
 		{
 			name: "GetterOnlyNameIsReadOnly",
 			src: `
 				declare fn make() -> {get a(&self) -> number, ...}
-				fn g() { var mut o = make() o.a = 5 }
+				fn g() -> undefined { var mut o = make() o.a = 5 }
 			`,
-			want: []string{"3:33-3:40: Property 'a' is read-only; it has a getter but no setter or field to write."},
+			want: []string{"3:46-3:53: Property 'a' is read-only; it has a getter but no setter or field to write."},
 		},
 		{
 			name: "PairWritesThenReads",

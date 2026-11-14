@@ -61,23 +61,23 @@ func TestInferGenExternalGeneratorFace(t *testing.T) {
 	runGenCases(t, []genCase{
 		{
 			name: "SingleYield",
-			src:  `gen fn f() { yield 1 }`,
+			src:  `gen fn f() -> Generator<1, undefined, unknown> { yield 1 }`,
 			want: `fn () -> Generator<1, undefined, unknown>`,
 		},
 		{
 			name: "TwoYieldsUnion",
-			src:  `gen fn f() { yield 1 yield "a" }`,
+			src:  `gen fn f() -> Generator<1 | "a", undefined, unknown> { yield 1 yield "a" }`,
 			want: `fn () -> Generator<1 | "a", undefined, unknown>`,
 		},
 		{
 			name: "YieldAndReturn",
-			src:  `gen fn f() { yield 1 return "done" }`,
+			src:  `gen fn f() -> Generator<1, "done", unknown> { yield 1 return "done" }`,
 			want: `fn () -> Generator<1, "done", unknown>`,
 		},
 		{
 			// A bare `yield` yields `undefined`, matching JavaScript.
 			name: "BareYield",
-			src:  `gen fn f() { yield }`,
+			src:  `gen fn f() -> Generator<undefined, undefined, unknown> { yield }`,
 			want: `fn () -> Generator<undefined, undefined, unknown>`,
 		},
 		{
@@ -89,7 +89,7 @@ func TestInferGenExternalGeneratorFace(t *testing.T) {
 			// Without an annotation the Next slot is `unknown`, so a `yield` evaluates
 			// to `unknown`. Returning that value puts `unknown` in the Ret slot too.
 			name: "InferredNextTypesTheYield",
-			src:  `gen fn f() { val x = yield 1 return x }`,
+			src:  `gen fn f() -> Generator<1, unknown, unknown> { val x = yield 1 return x }`,
 			want: `fn () -> Generator<1, unknown, unknown>`,
 		},
 		{
@@ -145,8 +145,8 @@ func TestInferGenNextSlotInference(t *testing.T) {
 			// Without `_` the slot is `unknown`, so a body that wants a narrower type
 			// out of its `yield` has to say so in the annotation.
 			name:     "UnannotatedNextDoesNotInferFromABodyUse",
-			src:      `gen fn f() { val x: string = yield 1 }`,
-			wantErrs: []string{"1:30-1:37: cannot constrain unknown <: string"},
+			src:      `gen fn f() -> Generator<1, undefined, unknown> { val x: string = yield 1 }`,
+			wantErrs: []string{"1:66-1:73: cannot constrain unknown <: string"},
 		},
 	})
 }
@@ -157,12 +157,12 @@ func TestInferAsyncGen(t *testing.T) {
 	runGenCases(t, []genCase{
 		{
 			name: "AsyncGenIsAsyncGenerator",
-			src:  `async gen fn f() { yield 1 }`,
+			src:  `async gen fn f() -> AsyncGenerator<1, undefined, unknown> { yield 1 }`,
 			want: `fn () -> AsyncGenerator<1, undefined, unknown>`,
 		},
 		{
 			name: "AwaitInsideAsyncGen",
-			src:  `async gen fn f(p: Promise<number>) { yield await p }`,
+			src:  `async gen fn f(p: Promise<number>) -> AsyncGenerator<number, undefined, unknown> { yield await p }`,
 			want: `fn (p: Promise<number>) -> AsyncGenerator<number, undefined, unknown>`,
 		},
 	})
@@ -176,14 +176,14 @@ func TestInferYieldFrom(t *testing.T) {
 	runGenCases(t, []genCase{
 		{
 			name: "DelegateToTuple",
-			src:  `gen fn f() { yield from [1, 2] }`,
+			src:  `gen fn f() -> Generator<1 | 2, undefined, unknown> { yield from [1, 2] }`,
 			want: `fn () -> Generator<1 | 2, undefined, unknown>`,
 		},
 		{
 			name: "DelegateToGeneratorForwardsYieldsAndReturns",
 			src: `
-				gen fn g() { yield 1 return "r" }
-				gen fn f() { yield "a" return yield from g() }
+				gen fn g() -> Generator<1, "r", unknown> { yield 1 return "r" }
+				gen fn f() -> Generator<"a" | 1, "r", unknown> { yield "a" return yield from g() }
 			`,
 			want: `fn () -> Generator<"a" | 1, "r", unknown>`,
 		},
@@ -194,7 +194,7 @@ func TestInferYieldFrom(t *testing.T) {
 			// puts in the delegating generator's Ret slot.
 			name: "DelegateToAUnionOfGenerators",
 			src: `
-				gen fn f(g: Generator<number, string, never> | Generator<boolean, number, never>) {
+				gen fn f(g: Generator<number, string, never> | Generator<boolean, number, never>) -> Generator<number | boolean, string | number, never> {
 					return yield from g
 				}
 			`,
@@ -205,7 +205,7 @@ func TestInferYieldFrom(t *testing.T) {
 			// the union the delegation evaluates to.
 			name: "DelegateToAUnionOfAGeneratorAndATuple",
 			src: `
-				gen fn f(g: Generator<number, string, never> | [boolean]) {
+				gen fn f(g: Generator<number, string, never> | [boolean]) -> Generator<number | boolean, string | undefined, never> {
 					return yield from g
 				}
 			`,
@@ -216,7 +216,7 @@ func TestInferYieldFrom(t *testing.T) {
 			// union of them is too, one branch at a time.
 			name: "AsyncGenDelegatesToAUnionOfAsyncGenerators",
 			src: `
-				async gen fn f(g: AsyncGenerator<number, string, never> | AsyncGenerator<boolean, number, never>) {
+				async gen fn f(g: AsyncGenerator<number, string, never> | AsyncGenerator<boolean, number, never>) -> AsyncGenerator<number | boolean, string | number, never> {
 					return yield from g
 				}
 			`,
@@ -228,7 +228,7 @@ func TestInferYieldFrom(t *testing.T) {
 			// the delegation, so the rule states a Generator requirement rather than
 			// reading the operand's shape.
 			name: "SelfRecursiveDelegation",
-			src:  `gen fn f() { yield 1 yield from f() }`,
+			src:  `gen fn f() -> Generator<1, undefined, unknown> { yield 1 yield from f() }`,
 			want: `fn () -> Generator<1, undefined, unknown>`,
 		},
 		{
@@ -236,8 +236,8 @@ func TestInferYieldFrom(t *testing.T) {
 			// yield the union across the cycle.
 			name: "MutuallyRecursiveDelegation",
 			src: `
-				gen fn a() { yield 1 yield from b() }
-				gen fn b() { yield "x" yield from a() }
+				gen fn a() -> Generator<1 | "x", undefined, unknown> { yield 1 yield from b() }
+				gen fn b() -> Generator<"x" | 1, undefined, unknown> { yield "x" yield from a() }
 			`,
 			binding: "a",
 			want:    `fn () -> Generator<1 | "x", undefined, unknown>`,
@@ -249,7 +249,7 @@ func TestInferYieldFrom(t *testing.T) {
 			name: "DelegationNarrowsTheInferredNext",
 			src: `
 				gen fn g() -> Generator<number, string, string> { yield 1 return "r" }
-				gen fn f() { return yield from g() }
+				gen fn f() -> Generator<number, string, string> { return yield from g() }
 			`,
 			want: `fn () -> Generator<number, string, string>`,
 		},
@@ -262,7 +262,7 @@ func TestInferYieldFrom(t *testing.T) {
 			src: `
 				gen fn a() -> Generator<number, string, string> { yield 1 return "r" }
 				gen fn b() -> Generator<number, string, number> { yield 2 return "r" }
-				gen fn f() { yield from a() yield from b() }
+				gen fn f() -> Generator<number, undefined, string & number> { yield from a() yield from b() }
 			`,
 			want: `fn () -> Generator<number, undefined, string & number>`,
 		},
@@ -286,8 +286,8 @@ func TestInferYieldFrom(t *testing.T) {
 			// reported at its own site. The ErrorType that walk yields then absorbs, so
 			// the delegation adds no second diagnostic on top.
 			name:     "ABrokenDelegateReportsOnlyItsOwnError",
-			src:      `gen fn f() { yield from missing() }`,
-			wantErrs: []string{"1:25-1:32: Unknown identifier: missing"},
+			src:      `gen fn f() -> Generator<never, undefined, unknown> { yield from missing() }`,
+			wantErrs: []string{"1:65-1:72: Unknown identifier: missing"},
 		},
 		{
 			// A union delegate is legal only when every branch is. A sync generator body
@@ -311,16 +311,16 @@ func TestInferGenIteration(t *testing.T) {
 		{
 			name: "ForInOverGenerator",
 			src: `
-				gen fn g() { yield 1 yield 2 }
-				fn f() { for x in g() { return x } }
+				gen fn g() -> Generator<1 | 2, undefined, unknown> { yield 1 yield 2 }
+				fn f() -> 1 | 2 { for x in g() { return x } }
 			`,
 			want: `fn () -> 1 | 2`,
 		},
 		{
 			name: "ForAwaitOverAsyncGenerator",
 			src: `
-				async gen fn g() { yield 1 }
-				async fn f() { for await x in g() { return x } }
+				async gen fn g() -> AsyncGenerator<1, undefined, unknown> { yield 1 }
+				async fn f() -> Promise<1> { for await x in g() { return x } }
 			`,
 			want: `fn () -> Promise<1>`,
 		},
@@ -330,7 +330,7 @@ func TestInferGenIteration(t *testing.T) {
 			// sync path applies to a union of generators.
 			name: "ForAwaitOverAUnionOfAsyncGenerators",
 			src: `
-				async fn f(g: AsyncGenerator<number, undefined, never> | AsyncGenerator<string, undefined, never>) {
+				async fn f(g: AsyncGenerator<number, undefined, never> | AsyncGenerator<string, undefined, never>) -> Promise<number | string> {
 					for await x in g { return x }
 				}
 			`,
@@ -339,7 +339,7 @@ func TestInferGenIteration(t *testing.T) {
 		{
 			name: "ForInOverAUnionOfGenerators",
 			src: `
-				fn f(g: Generator<number, undefined, never> | Generator<string, undefined, never>) {
+				fn f(g: Generator<number, undefined, never> | Generator<string, undefined, never>) -> number | string {
 					for x in g { return x }
 				}
 			`,
@@ -350,8 +350,8 @@ func TestInferGenIteration(t *testing.T) {
 			// iterating its result binds at what the body yields.
 			name: "GenMethodOnAClass",
 			src: `
-				class C { gen m(&self) { yield 1 } }
-				fn f(c: C) { for x in c.m() { return x } }
+				class C { gen m(&self) -> Generator<1, undefined, unknown> { yield 1 } }
+				fn f(c: C) -> 1 { for x in c.m() { return x } }
 			`,
 			want: `fn (c: C) -> 1`,
 		},
@@ -362,9 +362,9 @@ func TestInferGenIteration(t *testing.T) {
 			name: "ForInOverAsyncGeneratorRejected",
 			src: `
 				declare fn g() -> AsyncGenerator<number, undefined, never>
-				fn f(a: AsyncGenerator<number, undefined, never>) { for x in a { } }
+				fn f(a: AsyncGenerator<number, undefined, never>) -> undefined { for x in a { } }
 			`,
-			wantErrs: []string{"3:66-3:67: AsyncGenerator<number, undefined, never> is not iterable"},
+			wantErrs: []string{"3:79-3:80: AsyncGenerator<number, undefined, never> is not iterable"},
 		},
 	})
 }
@@ -377,13 +377,13 @@ func TestInferYieldRequiresGenContext(t *testing.T) {
 	runGenErrCases(t, []genErrCase{
 		{
 			name:     "YieldInAPlainFunction",
-			src:      `fn f() { yield 1 }`,
-			wantErrs: []string{"1:10-1:17: yield can only be used inside a generator function"},
+			src:      `fn f() -> undefined { yield 1 }`,
+			wantErrs: []string{"1:23-1:30: yield can only be used inside a generator function"},
 		},
 		{
 			name:     "YieldFromInAPlainFunction",
-			src:      `fn f() { yield from [1, 2] }`,
-			wantErrs: []string{"1:10-1:27: yield from can only be used inside a generator function"},
+			src:      `fn f() -> undefined { yield from [1, 2] }`,
+			wantErrs: []string{"1:23-1:40: yield from can only be used inside a generator function"},
 		},
 		{
 			// The closure opens its own function context with the marker clear, so its
@@ -440,8 +440,8 @@ func TestInferGenReturnAnnotationShape(t *testing.T) {
 		},
 		{
 			name:     "YieldFromNonIterable",
-			src:      `gen fn f() { yield from 5 }`,
-			wantErrs: []string{"1:25-1:26: 5 is not iterable"},
+			src:      `gen fn f() -> Generator<never, undefined, unknown> { yield from 5 }`,
+			wantErrs: []string{"1:65-1:66: 5 is not iterable"},
 		},
 	})
 }
@@ -457,7 +457,7 @@ func TestInferGenRaises(t *testing.T) {
 			// With no annotation the raise is inferred into the slot, the way an
 			// annotation-less `async fn` infers its rejection.
 			name: "RaiseInferredIntoTheSlot",
-			src:  `gen fn f() { yield 1 throw "boom" }`,
+			src:  `gen fn f() -> Generator<1, never, unknown, "boom"> { yield 1 throw "boom" }`,
 			want: `fn () -> Generator<1, never, unknown, "boom">`,
 		},
 		{
@@ -471,7 +471,7 @@ func TestInferGenRaises(t *testing.T) {
 			// A generator that cannot raise leaves the slot at `never` and renders three
 			// arguments, the same suppression `Promise<T>` gets.
 			name: "NonRaisingGeneratorRendersThreeArgs",
-			src:  `gen fn f() { yield 1 }`,
+			src:  `gen fn f() -> Generator<1, undefined, unknown> { yield 1 }`,
 			want: `fn () -> Generator<1, undefined, unknown>`,
 		},
 		{
@@ -479,8 +479,8 @@ func TestInferGenRaises(t *testing.T) {
 			// no clause of its own.
 			name: "ObtainingAGeneratorRaisesNothing",
 			src: `
-				gen fn g() { yield 1 throw "boom" }
-				fn f() { val it = g() }
+				gen fn g() -> Generator<1, never, unknown, "boom"> { yield 1 throw "boom" }
+				fn f() -> undefined { val it = g() }
 			`,
 			want: `fn () -> undefined`,
 		},
@@ -488,8 +488,8 @@ func TestInferGenRaises(t *testing.T) {
 			// Iterating advances the generator, so the raise reaches the caller's clause.
 			name: "IteratingCarriesTheRaiseToTheCaller",
 			src: `
-				gen fn g() { yield 1 throw "boom" }
-				fn f() throws _ { for x in g() { } }
+				gen fn g() -> Generator<1, never, unknown, "boom"> { yield 1 throw "boom" }
+				fn f() -> undefined throws _ { for x in g() { } }
 			`,
 			want: `fn () -> undefined throws "boom"`,
 		},
@@ -497,8 +497,8 @@ func TestInferGenRaises(t *testing.T) {
 			// Delegating advances the delegate, so it carries the raise the same way.
 			name: "DelegatingCarriesTheRaiseToTheDelegator",
 			src: `
-				gen fn g() { yield 1 throw "boom" }
-				gen fn f() { yield from g() }
+				gen fn g() -> Generator<1, never, unknown, "boom"> { yield 1 throw "boom" }
+				gen fn f() -> Generator<1, undefined, unknown, "boom"> { yield from g() }
 			`,
 			want: `fn () -> Generator<1, undefined, unknown, "boom">`,
 		},
@@ -507,8 +507,8 @@ func TestInferGenRaises(t *testing.T) {
 			// so it carries the raise the way iterating and delegating do.
 			name: "AdvancingWithNextCarriesTheRaiseToTheCaller",
 			src: `
-				gen fn g() { yield 1 throw "boom" }
-				fn f() throws _ { val it = g() return it.next() }
+				gen fn g() -> Generator<1, never, unknown, "boom"> { yield 1 throw "boom" }
+				fn f() -> IteratorYieldResult<1> throws _ { val it = g() return it.next() }
 			`,
 			want: `fn () -> IteratorYieldResult<1> throws "boom"`,
 		},
@@ -517,8 +517,8 @@ func TestInferGenRaises(t *testing.T) {
 			// body raises, so the raise reaches whoever awaits the result.
 			name: "AwaitingNextCarriesTheRaiseAsARejection",
 			src: `
-				async gen fn g() { yield 1 throw "boom" }
-				async fn f() { val it = g() return await it.next() }
+				async gen fn g() -> AsyncGenerator<1, never, unknown, "boom"> { yield 1 throw "boom" }
+				async fn f() -> Promise<IteratorYieldResult<1>, "boom"> { val it = g() return await it.next() }
 			`,
 			want: `fn () -> Promise<IteratorYieldResult<1>, "boom">`,
 		},
@@ -527,8 +527,8 @@ func TestInferGenRaises(t *testing.T) {
 			// it raises nothing into the calling body.
 			name: "CallingNextOnAnAsyncGeneratorRaisesNothing",
 			src: `
-				async gen fn g() { yield 1 throw "boom" }
-				fn f() { val it = g() return it.next() }
+				async gen fn g() -> AsyncGenerator<1, never, unknown, "boom"> { yield 1 throw "boom" }
+				fn f() -> Promise<IteratorYieldResult<1>, "boom"> { val it = g() return it.next() }
 			`,
 			want: `fn () -> Promise<IteratorYieldResult<1>, "boom">`,
 		},
@@ -538,8 +538,8 @@ func TestInferGenRaises(t *testing.T) {
 			// The raise type belongs in the return annotation, so a `throws` clause on a
 			// generator is rejected the way one on an `async fn` is.
 			name:     "ThrowsClauseRejected",
-			src:      `gen fn f() throws _ { yield 1 throw "boom" }`,
-			wantErrs: []string{"1:19-1:20: generator function cannot have a throws clause; declare the raise type in the return type as Generator<..., E>"},
+			src:      `gen fn f() -> Generator<1, never, unknown, "boom"> throws _ { yield 1 throw "boom" }`,
+			wantErrs: []string{"1:59-1:60: generator function cannot have a throws clause; declare the raise type in the return type as Generator<..., E>"},
 		},
 		{
 			// A declared raise slot is the sink each `throw` is checked against, so a
@@ -552,20 +552,20 @@ func TestInferGenRaises(t *testing.T) {
 			// A clause-less caller that iterates a raising generator is asked to handle it.
 			name: "IteratingWithoutAClauseRejected",
 			src: `
-				gen fn g() { yield 1 throw "boom" }
-				fn f() { for x in g() { } }
+				gen fn g() -> Generator<1, never, unknown, "boom"> { yield 1 throw "boom" }
+				fn f() -> undefined { for x in g() { } }
 			`,
-			wantErrs: []string{"3:23-3:26: `f` can throw `\"boom\"`, but it doesn't declare it; add `throws string` to `f`'s signature"},
+			wantErrs: []string{"3:36-3:39: `f` can throw `\"boom\"`, but it doesn't declare it; add `throws string` to `f`'s signature"},
 		},
 		{
 			// A clause-less caller that advances a raising generator by hand is asked to
 			// handle it too, so `next` is not a hole the other two advance paths close.
 			name: "AdvancingWithoutAClauseRejected",
 			src: `
-				gen fn g() { yield 1 throw "boom" }
-				fn f() { val it = g() return it.next() }
+				gen fn g() -> Generator<1, never, unknown, "boom"> { yield 1 throw "boom" }
+				fn f() -> IteratorYieldResult<1> { val it = g() return it.next() }
 			`,
-			wantErrs: []string{"3:34-3:43: `f` can throw `\"boom\"`, but it doesn't declare it; add `throws string` to `f`'s signature"},
+			wantErrs: []string{"3:60-3:69: `f` can throw `\"boom\"`, but it doesn't declare it; add `throws string` to `f`'s signature"},
 		},
 	})
 }
@@ -582,8 +582,8 @@ func TestInferGenNext(t *testing.T) {
 			// distinct.
 			name: "NextResultNamesIteratorResult",
 			src: `
-				gen fn g() { yield 1 return "done" }
-				fn f() { val it = g() return it.next() }
+				gen fn g() -> Generator<1, "done", unknown> { yield 1 return "done" }
+				fn f() -> IteratorResult<1, "done"> { val it = g() return it.next() }
 			`,
 			want: `fn () -> IteratorResult<1, "done">`,
 		},
@@ -593,8 +593,8 @@ func TestInferGenNext(t *testing.T) {
 			// no value inhabits.
 			name: "NextResultNamesTheYieldArmAlone",
 			src: `
-				gen fn g() { yield 1 throw "boom" }
-				fn f() throws _ { val it = g() return it.next() }
+				gen fn g() -> Generator<1, never, unknown, "boom"> { yield 1 throw "boom" }
+				fn f() -> IteratorYieldResult<1> throws _ { val it = g() return it.next() }
 			`,
 			want: `fn () -> IteratorYieldResult<1> throws "boom"`,
 		},
@@ -603,8 +603,8 @@ func TestInferGenNext(t *testing.T) {
 			// reference to the same built-in alias a source-level annotation resolves to.
 			name: "NextResultSatisfiesAnAnnotationNamingIt",
 			src: `
-				gen fn g() { yield 1 return "done" }
-				fn f() { val r: IteratorResult<1, "done"> = g().next() return r }
+				gen fn g() -> Generator<1, "done", unknown> { yield 1 return "done" }
+				fn f() -> IteratorResult<1, "done"> { val r: IteratorResult<1, "done"> = g().next() return r }
 			`,
 			want: `fn () -> IteratorResult<1, "done">`,
 		},
@@ -613,7 +613,7 @@ func TestInferGenNext(t *testing.T) {
 			// an iterator written by hand may omit it while yielding.
 			name: "YieldArmAcceptsAResultWithoutDone",
 			src: `
-				fn f() { val r: IteratorYieldResult<5> = {value: 5} return r }
+				fn f() -> IteratorYieldResult<5> { val r: IteratorYieldResult<5> = {value: 5} return r }
 			`,
 			want: `fn () -> IteratorYieldResult<5>`,
 		},
@@ -622,8 +622,8 @@ func TestInferGenNext(t *testing.T) {
 			// one arm by testing its `done` needs narrowing on a literal-tagged union.
 			name: "ReadingValueOffTheResultJoinsBothArms",
 			src: `
-				gen fn g() { yield 1 return "done" }
-				fn f() { val r = g().next() return r.value }
+				gen fn g() -> Generator<1, "done", unknown> { yield 1 return "done" }
+				fn f() -> 1 | "done" { val r = g().next() return r.value }
 			`,
 			want: `fn () -> 1 | "done"`,
 		},
@@ -633,7 +633,7 @@ func TestInferGenNext(t *testing.T) {
 			name: "NextAcceptsTheSentValue",
 			src: `
 				gen fn g() -> Generator<number, string, string> { yield 1 return "x" }
-				fn f() { val it = g() return it.next("a") }
+				fn f() -> IteratorResult<number, string> { val it = g() return it.next("a") }
 			`,
 			want: `fn () -> IteratorResult<number, string>`,
 		},
@@ -642,8 +642,8 @@ func TestInferGenNext(t *testing.T) {
 			// argumentless arm stays available for a generator that declares no send type.
 			name: "ArgumentlessNextOnAnInferredSendType",
 			src: `
-				gen fn g() { yield 1 }
-				fn f() { val it = g() return it.next() }
+				gen fn g() -> Generator<1, undefined, unknown> { yield 1 }
+				fn f() -> IteratorResult<1, undefined> { val it = g() return it.next() }
 			`,
 			want: `fn () -> IteratorResult<1, undefined>`,
 		},
@@ -651,8 +651,8 @@ func TestInferGenNext(t *testing.T) {
 			// A generator obtained without an intervening binding advances the same way.
 			name: "NextOnACallResult",
 			src: `
-				gen fn g() { yield 1 }
-				fn f() { return g().next() }
+				gen fn g() -> Generator<1, undefined, unknown> { yield 1 }
+				fn f() -> IteratorResult<1, undefined> { return g().next() }
 			`,
 			want: `fn () -> IteratorResult<1, undefined>`,
 		},
@@ -662,8 +662,8 @@ func TestInferGenNext(t *testing.T) {
 			// their join rather than declining for want of a single bound.
 			name: "NextOnTwoCallsOfOneGenerator",
 			src: `
-				gen fn g() { yield 1 }
-				fn f(b: boolean) { val it = if b { g() } else { g() } return it.next() }
+				gen fn g() -> Generator<1, undefined, unknown> { yield 1 }
+				fn f(b: boolean) -> IteratorResult<1, undefined> { val it = if b { g() } else { g() } return it.next() }
 			`,
 			want: `fn (b: boolean) -> IteratorResult<1, undefined>`,
 		},
@@ -672,9 +672,9 @@ func TestInferGenNext(t *testing.T) {
 			// the result reports what either may yield.
 			name: "NextOnAJoinOfTwoGenerators",
 			src: `
-				gen fn g() { yield 1 }
-				gen fn h() { yield "a" }
-				fn f(b: boolean) { val it = if b { g() } else { h() } return it.next() }
+				gen fn g() -> Generator<1, undefined, unknown> { yield 1 }
+				gen fn h() -> Generator<"a", undefined, unknown> { yield "a" }
+				fn f(b: boolean) -> IteratorResult<1 | "a", undefined> { val it = if b { g() } else { h() } return it.next() }
 			`,
 			want: `fn (b: boolean) -> IteratorResult<1 | "a", undefined>`,
 		},
@@ -683,9 +683,9 @@ func TestInferGenNext(t *testing.T) {
 			// that advances it needs a clause covering both.
 			name: "NextOnAJoinCarriesEitherRaise",
 			src: `
-				gen fn g() { yield 1 throw "boom" }
-				gen fn h() { yield "a" throw 5 }
-				fn f(b: boolean) throws _ { val it = if b { g() } else { h() } return it.next() }
+				gen fn g() -> Generator<1, never, unknown, "boom"> { yield 1 throw "boom" }
+				gen fn h() -> Generator<"a", never, unknown, 5> { yield "a" throw 5 }
+				fn f(b: boolean) -> IteratorYieldResult<1 | "a"> throws _ { val it = if b { g() } else { h() } return it.next() }
 			`,
 			want: `fn (b: boolean) -> IteratorYieldResult<1 | "a"> throws "boom" | 5`,
 		},
@@ -697,7 +697,7 @@ func TestInferGenNext(t *testing.T) {
 			name: "NextOnAUnionValuedLowerBound",
 			src: `
 				declare fn mk() -> Generator<1, undefined, unknown> | Generator<2, undefined, unknown>
-				fn f() { return mk().next() }
+				fn f() -> IteratorResult<1 | 2, undefined> { return mk().next() }
 			`,
 			want: `fn () -> IteratorResult<1 | 2, undefined>`,
 		},
@@ -707,7 +707,7 @@ func TestInferGenNext(t *testing.T) {
 			// no `yield` is already rejected for being an empty generator.
 			name: "NextResultNamesTheReturnArmAlone",
 			src: `
-				fn f(it: Generator<never, string, unknown>) { return it.next() }
+				fn f(it: Generator<never, string, unknown>) -> IteratorReturnResult<string> { return it.next() }
 			`,
 			want: `fn (it: Generator<never, string, unknown>) -> IteratorReturnResult<string>`,
 		},
@@ -716,7 +716,7 @@ func TestInferGenNext(t *testing.T) {
 			// advancing it evaluates to `never`.
 			name: "NextResultIsNeverWhenNeitherOutcomeIsReachable",
 			src: `
-				fn f(it: Generator<never, never, unknown>) { return it.next() }
+				fn f(it: Generator<never, never, unknown>) -> never { return it.next() }
 			`,
 			want: `fn (it: Generator<never, never, unknown>) -> never`,
 		},
@@ -729,9 +729,9 @@ func TestInferGenNext(t *testing.T) {
 			name: "ArgumentlessNextRejectedOnANarrowSendType",
 			src: `
 				gen fn g() -> Generator<number, string, string> { yield 1 return "x" }
-				fn f() { val it = g() return it.next() }
+				fn f() -> IteratorResult<number, string> { val it = g() return it.next() }
 			`,
-			wantErrs: []string{`3:34-3:43: Not enough arguments: expected at least 1, but got 0`},
+			wantErrs: []string{`3:68-3:77: Not enough arguments: expected at least 1, but got 0`},
 		},
 		{
 			// A declared send type has to stand for whatever a caller picks, so omitting the
@@ -740,9 +740,9 @@ func TestInferGenNext(t *testing.T) {
 			// `undefined`.
 			name: "ArgumentlessNextRejectedOnADeclaredSendTypeParam",
 			src: `
-				fn drive<T>(it: Generator<number, string, T>) { return it.next() }
+				fn drive<T>(it: Generator<number, string, T>) -> IteratorResult<number, string> { return it.next() }
 			`,
-			wantErrs: []string{`2:60-2:69: Not enough arguments: expected at least 1, but got 0`},
+			wantErrs: []string{`2:94-2:103: Not enough arguments: expected at least 1, but got 0`},
 		},
 		{
 			// IteratorResult takes both its arguments, where TypeScript defaults the second
@@ -750,7 +750,7 @@ func TestInferGenNext(t *testing.T) {
 			// mismatch rather than a silent widening.
 			name: "IteratorResultRequiresBothArguments",
 			src: `
-				fn f(r: IteratorResult<1>) { return r }
+				fn f(r: IteratorResult<1>) -> IteratorResult<1, unknown> { return r }
 			`,
 			wantErrs: []string{"2:13-2:30: type alias `IteratorResult` expects 2 type arguments but got 1"},
 		},
@@ -803,7 +803,7 @@ func TestGeneratorSubtyping(t *testing.T) {
 		{
 			name: "CovariantYieldAndRet",
 			src: `
-				gen fn g() { yield 1 return "done" }
+				gen fn g() -> Generator<1, "done", unknown> { yield 1 return "done" }
 				val f: fn () -> Generator<number, string, never> = g
 			`,
 			want: `fn () -> Generator<number, string, never>`,
@@ -814,7 +814,7 @@ func TestGeneratorSubtyping(t *testing.T) {
 			// promises to accept a string.
 			name: "ContravariantNextAcceptsANarrowerAnnotation",
 			src: `
-				gen fn g() { yield 1 return "done" }
+				gen fn g() -> Generator<1, "done", unknown> { yield 1 return "done" }
 				val f: fn () -> Generator<number, string, string> = g
 			`,
 			want: `fn () -> Generator<number, string, string>`,
@@ -834,7 +834,7 @@ func TestGeneratorSubtyping(t *testing.T) {
 		{
 			name: "YieldSlotMismatchAtUse",
 			src: `
-				gen fn g() { yield "a" return true }
+				gen fn g() -> Generator<"a", true, unknown> { yield "a" return true }
 				val h: fn () -> Generator<number, boolean, never> = g
 			`,
 			wantErrs: []string{`3:57-3:58: cannot constrain "a" <: number`},
@@ -860,14 +860,14 @@ func TestInferGenWithoutYieldWarns(t *testing.T) {
 	runGenErrCases(t, []genErrCase{
 		{
 			name:     "SyncGenNeverYields",
-			src:      `gen fn f() { return "done" }`,
-			wantErrs: []string{"1:1-1:29: the body never yields, so this returns an empty Generator; add a `yield` or drop the `gen`"},
+			src:      `gen fn f() -> Generator<never, "done", unknown> { return "done" }`,
+			wantErrs: []string{"1:1-1:66: the body never yields, so this returns an empty Generator; add a `yield` or drop the `gen`"},
 		},
 		{
 			// An `async gen fn` returns an AsyncGenerator, so the message names that form.
 			name:     "AsyncGenNeverYields",
-			src:      `async gen fn f() { return 1 }`,
-			wantErrs: []string{"1:1-1:30: the body never yields, so this returns an empty AsyncGenerator; add a `yield` or drop the `gen`"},
+			src:      `async gen fn f() -> AsyncGenerator<never, 1, unknown> { return 1 }`,
+			wantErrs: []string{"1:1-1:67: the body never yields, so this returns an empty AsyncGenerator; add a `yield` or drop the `gen`"},
 		},
 		{
 			// A `gen` method is measured the same way, blamed at the member.
@@ -879,18 +879,18 @@ func TestInferGenWithoutYieldWarns(t *testing.T) {
 
 	// The warning does not change the type: a yield-less generator still faces callers as
 	// a Generator whose Yield slot coalesces to `never`.
-	values, _, errs := inferSource(t, `gen fn f() { return "done" }`)
+	values, _, errs := inferSource(t, `gen fn f() -> Generator<never, "done", unknown> { return "done" }`)
 	require.Len(t, errs, 1)
 	require.True(t, isWarning(errs[0]))
 	require.Equal(t, `fn () -> Generator<never, "done", unknown>`, values["f"])
 
 	// A body that yields reports nothing at all.
-	_, _, yielding := inferSource(t, `gen fn f() { yield 1 }`)
+	_, _, yielding := inferSource(t, `gen fn f() -> Generator<1, undefined, unknown> { yield 1 }`)
 	require.Empty(t, yielding)
 
 	// Delegating counts as yielding, so a body whose only yield is a `yield from` does not
 	// draw this warning.
-	_, _, delegating := inferSource(t, `gen fn f() { yield from [1, 2] }`)
+	_, _, delegating := inferSource(t, `gen fn f() -> Generator<1 | 2, undefined, unknown> { yield from [1, 2] }`)
 	require.Empty(t, delegating)
 
 	// A bodyless `declare gen fn` has no body to measure, so it is never flagged.

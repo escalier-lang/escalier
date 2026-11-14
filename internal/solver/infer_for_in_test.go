@@ -24,7 +24,7 @@ func TestInferForInElementType(t *testing.T) {
 		// the loop variable at `1 | 2 | 3`.
 		"TupleLiteralElementUnion": {
 			src: `
-				fn f() {
+				val f = fn () {
 					for x in [1, 2, 3] {
 						return x
 					}
@@ -35,7 +35,7 @@ func TestInferForInElementType(t *testing.T) {
 		// A single-element tuple binds the loop variable at that element's type.
 		"SingleElementTupleBindsElement": {
 			src: `
-				fn f(xs: [number]) {
+				val f = fn (xs: [number]) {
 					for x in xs {
 						return x
 					}
@@ -46,7 +46,7 @@ func TestInferForInElementType(t *testing.T) {
 		// A heterogeneous tuple yields the union of its element types.
 		"HeterogeneousTupleElementUnion": {
 			src: `
-				fn f(xs: [number, string]) {
+				val f = fn (xs: [number, string]) {
 					for x in xs {
 						return x
 					}
@@ -59,7 +59,7 @@ func TestInferForInElementType(t *testing.T) {
 		// `unknown`, since the loop variable may also be some unlisted tail element.
 		"InexactTupleElementIsUnknown": {
 			src: `
-				fn f(xs: [number, ...]) {
+				val f = fn (xs: [number, ...]) {
 					for x in xs {
 						return x
 					}
@@ -73,7 +73,7 @@ func TestInferForInElementType(t *testing.T) {
 		// the function never returns.
 		"EmptyTupleBodyUnreachable": {
 			src: `
-				fn f(xs: []) {
+				val f = fn (xs: []) {
 					for x in xs {
 						return x
 					}
@@ -85,7 +85,7 @@ func TestInferForInElementType(t *testing.T) {
 		// union is iterable when every branch is.
 		"UnionOfTuplesElementUnion": {
 			src: `
-				fn f(xs: [number] | [string]) {
+				val f = fn (xs: [number] | [string]) {
 					for x in xs {
 						return x
 					}
@@ -97,7 +97,7 @@ func TestInferForInElementType(t *testing.T) {
 		// type as `for x in xs`.
 		"BorrowedIterablePeeled": {
 			src: `
-				fn f(xs: [number]) {
+				val f = fn (xs: [number]) {
 					for x in &xs {
 						return x
 					}
@@ -109,7 +109,7 @@ func TestInferForInElementType(t *testing.T) {
 		// one returned here.
 		"NestedLoops": {
 			src: `
-				fn f(xs: [number], ys: [string]) {
+				val f = fn (xs: [number], ys: [string]) {
 					for x in xs {
 						for y in ys {
 							return y
@@ -123,7 +123,7 @@ func TestInferForInElementType(t *testing.T) {
 		// off the pattern against the owned tuple-element scrutinee.
 		"ForMutLoopVariable": {
 			src: `
-				fn f(xs: [number]) {
+				val f = fn (xs: [number]) {
 					for mut x in xs {
 					}
 				}
@@ -152,7 +152,7 @@ func TestInferForInErrors(t *testing.T) {
 		// as its literal type in the message.
 		"NumberNotIterable": {
 			src: `
-				fn f() {
+				val f = fn () {
 					for x in 5 {
 					}
 				}
@@ -163,7 +163,7 @@ func TestInferForInErrors(t *testing.T) {
 		// class instance would satisfy, and it is out of scope until then.
 		"ObjectNotIterable": {
 			src: `
-				fn f(o: {x: number}) {
+				val f = fn (o: {x: number}) {
 					for x in o {
 					}
 				}
@@ -175,7 +175,7 @@ func TestInferForInErrors(t *testing.T) {
 		// failure.
 		"ForAwaitOutsideAsync": {
 			src: `
-				fn f(xs: [number]) {
+				val f = fn (xs: [number]) {
 					for await x in xs {
 					}
 				}
@@ -186,7 +186,7 @@ func TestInferForInErrors(t *testing.T) {
 		// rejected by the type rule: a tuple is a sync iterable, not an async iterable.
 		"ForAwaitOverSyncIterable": {
 			src: `
-				async fn f(xs: [number]) {
+				async fn f(xs: [number]) -> Promise<undefined> {
 					for await x in xs {
 					}
 				}
@@ -198,7 +198,7 @@ func TestInferForInErrors(t *testing.T) {
 		// diagnostic on top of the underlying error.
 		"BrokenIterableNoCascade": {
 			src: `
-				fn f() {
+				val f = fn () {
 					for x in nope {
 					}
 				}
@@ -222,7 +222,7 @@ func TestForInBackEdgeMoves(t *testing.T) {
 	// with p already moved, so the same statement on the next iteration reads a moved
 	// value.
 	src := `
-		fn f(xs: [number]) {
+		val f = fn (xs: [number]) {
 			val mut p = {x: 0}
 			for x in xs {
 				val q = p
@@ -246,7 +246,7 @@ func TestForInBorrowAvoidsMove(t *testing.T) {
 		// with p already moved, so the next iteration's `val q = p` reads a moved value.
 		"MoveReusedAcrossBackEdge": {
 			src: `
-				fn f(xs: [number]) {
+				val f = fn (xs: [number]) {
 					val mut p = {x: 0}
 					for x in xs {
 						val q = p
@@ -259,7 +259,7 @@ func TestForInBorrowAvoidsMove(t *testing.T) {
 		// p usable — no use-after-move.
 		"BorrowReusedAcrossBackEdge": {
 			src: `
-				fn f(xs: [number]) {
+				val f = fn (xs: [number]) {
 					val mut p = {x: 0}
 					for x in xs {
 						val q = &p
@@ -272,7 +272,7 @@ func TestForInBorrowAvoidsMove(t *testing.T) {
 		// the loop exits is a use-after-move — and the next-iteration re-read is one too.
 		"MoveThenUsedAfterLoop": {
 			src: `
-				fn f(xs: [number]) {
+				val f = fn (xs: [number]) {
 					val mut p = {x: 0}
 					for x in xs {
 						val q = p
@@ -289,7 +289,7 @@ func TestForInBorrowAvoidsMove(t *testing.T) {
 		// valid.
 		"BorrowThenUsedAfterLoop": {
 			src: `
-				fn f(xs: [number]) {
+				val f = fn (xs: [number]) {
 					val mut p = {x: 0}
 					for x in xs {
 						val q = &p
@@ -319,7 +319,7 @@ func TestForInLoopBindingIsFreshEachIteration(t *testing.T) {
 		"MoveLoopVariable": {
 			src: `
 				declare fn take(p: {x: number}) -> number
-				fn f(xs: Array<{x: number}>) {
+				val f = fn (xs: Array<{x: number}>) {
 					for x in xs { take(x) }
 				}
 			`,
@@ -328,7 +328,7 @@ func TestForInLoopBindingIsFreshEachIteration(t *testing.T) {
 		"MoveDestructuredBinding": {
 			src: `
 				declare fn take(p: {x: number}) -> number
-				fn f(xs: Array<{a: {x: number}}>) {
+				val f = fn (xs: Array<{a: {x: number}}>) {
 					for {a} in xs { take(a) }
 				}
 			`,
@@ -337,7 +337,7 @@ func TestForInLoopBindingIsFreshEachIteration(t *testing.T) {
 		"MoveLoopVariableTwiceInOneIteration": {
 			src: `
 				declare fn take(p: {x: number}) -> number
-				fn f(xs: Array<{x: number}>) {
+				val f = fn (xs: Array<{x: number}>) {
 					for x in xs {
 						take(x)
 						take(x)
@@ -371,7 +371,7 @@ func TestForInBackEdgeBorrows(t *testing.T) {
 		// accepts, since nothing in the frame uses them afterwards.
 		"ReassignInLoopUnionsAtMerge": {
 			src: `
-				fn f(xs: [number], out: &mut {slot: &mut {value: number}}) {
+				val f = fn (xs: [number], out: &mut {slot: &mut {value: number}}) {
 					val mut c = {value: 1}
 					val mut d = {value: 0}
 					var a = &mut c
@@ -391,7 +391,7 @@ func TestForInBackEdgeBorrows(t *testing.T) {
 		// reassignment through the back edge.
 		"PostLoopReassignClearsLoopEdges": {
 			src: `
-				fn f(xs: [number], out: &mut {slot: &mut {value: number}}) {
+				val f = fn (xs: [number], out: &mut {slot: &mut {value: number}}) {
 					val mut c = {value: 1}
 					val mut d = {value: 0}
 					var a = &mut c
@@ -411,7 +411,7 @@ func TestForInBackEdgeBorrows(t *testing.T) {
 		// the back edge: it does not over-report a false escape.
 		"FieldStoreInLoopComoves": {
 			src: `
-				fn f(xs: [number]) {
+				fn f(xs: [number]) -> {peer: {x: number}} {
 					val mut c = {x: 1}
 					val mut d = {x: 0}
 					val mut b = {peer: &mut c}
