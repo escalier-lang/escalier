@@ -29,21 +29,29 @@ type returnLifetimes struct {
 	// reported is set once the error is reported, so a return type with several borrows
 	// reports it once.
 	reported bool
-	// tiesBorrows makes a borrow written with no lifetime take a fresh lifetime that every
-	// input outlives, as a function type does, rather than the receiver's or the one input's.
-	// A throws clause resolves this way, since D17 rule 2 ties an elided output lifetime to
-	// every input and section 5.4's rules cover only a returned borrow.
-	tiesBorrows bool
+	// output names the output this elision resolves, "the return type" or "the thrown type",
+	// for the error a borrow reports when borrow is nil.
+	output string
+	// throwsSuggestion is the signature to suggest in that error for the throws clause, or
+	// the empty string when there is none to suggest.
+	throwsSuggestion string
 }
 
-// throwsLifetimes returns the elision for a throws clause of the signature whose return
+// throwsLifetimes returns the elision for the throws clause of the signature whose return
 // type r is the elision for, or nil when r is nil because the signature has no input
-// lifetime.
+// lifetime. A borrow the clause writes with no lifetime takes the same lifetime a returned
+// borrow does, and reports its own error when elision picks none.
 func (r *returnLifetimes) throwsLifetimes() *returnLifetimes {
 	if r == nil {
 		return nil
 	}
-	return &returnLifetimes{inputs: r.inputs, tiesBorrows: true}
+	return &returnLifetimes{
+		inputs:     r.inputs,
+		borrow:     r.borrow,
+		owners:     r.owners,
+		suggestion: r.throwsSuggestion,
+		output:     "the thrown type",
+	}
 }
 
 // newReturnLifetimes returns the elision for the return type of a signature whose receiver
@@ -60,7 +68,7 @@ func newReturnLifetimes(
 	head string,
 	inScope set.Set[string],
 ) *returnLifetimes {
-	r := &returnLifetimes{}
+	r := &returnLifetimes{output: "the return type"}
 	seen := map[soltype.Lifetime]bool{}
 	// collect records the input lifetimes t holds and reports whether it holds one.
 	collect := func(t soltype.Type) bool {
@@ -103,7 +111,8 @@ func newReturnLifetimes(
 		r.borrow = r.inputs[0]
 	}
 	if r.borrow == nil && len(r.owners) > 1 {
-		r.suggestion = suggestReturnLifetime(recv, sig, head, inScope)
+		r.suggestion = suggestLifetime(recv, sig, head, inScope, false)
+		r.throwsSuggestion = suggestLifetime(recv, sig, head, inScope, true)
 	}
 	return r
 }
@@ -126,24 +135,12 @@ func (c *checker) lifetimeNamesInScope() set.Set[string] {
 // against ann once and returns a fresh lifetime at lvl.
 func (c *checker) returnBorrowLifetime(ann ast.Node, lvl int) soltype.Lifetime {
 	r := c.retLts
-	if r.tiesBorrows {
-		lt := c.ctx.freshLifetime(lvl)
-		// Each input outlives the thrown borrow, and the bounds stay one way so the
-		// signature renders as `<'a: 'c, 'b: 'c, 'c>` rather than merging the inputs into one
-		// lifetime.
-		for _, in := range r.inputs {
-			if _, static := in.(*soltype.StaticLifetime); !static {
-				c.ctx.constrainLt(in, lt)
-			}
-		}
-		return lt
-	}
 	if r.borrow != nil {
 		return r.borrow
 	}
 	if !r.reported {
 		r.reported = true
-		c.report(&AmbiguousReturnLifetimeError{Owners: r.owners, Suggestion: r.suggestion, Node: ann})
+		c.report(&AmbiguousReturnLifetimeError{Output: r.output, Owners: r.owners, Suggestion: r.suggestion, Node: ann})
 	}
 	return c.ctx.freshLifetime(lvl)
 }
@@ -192,16 +189,20 @@ func (c *checker) resolveReturnAnn(scope *Scope, ann ast.TypeAnn, lvl int, r *re
 	return c.resolveTypeAnn(scope, ann, lvl)
 }
 
-// suggestReturnLifetime renders sig with a fresh lifetime added to its binder list, to the
+// suggestLifetime renders sig with a fresh lifetime added to its binder list, to the
 // first parameter whose written type is a borrow with no lifetime, and to the return type,
-// which has to be such a borrow too. The lifetime is `'x`, or the first of `'x1`, `'x2`,
+// or to the throws clause when throws is set, which has to be such a borrow too. The lifetime is `'x`, or the first of `'x1`, `'x2`,
 // and so on when sig or inScope already binds that name. recv is a method's receiver, nil for none, which leads
 // the parameter list. head starts the rendering, as `fn pick` or `peek`, and `fn ` stands
 // in when it is empty. It returns the empty string when sig has no such parameter or return
 // type.
-func suggestReturnLifetime(recv *ast.MethodReceiver, sig *ast.FuncSig, head string, inScope set.Set[string]) string {
-	ret, ok := sig.Return.(*ast.RefTypeAnn)
-	if !ok || ret.Lifetime != nil {
+func suggestLifetime(recv *ast.MethodReceiver, sig *ast.FuncSig, head string, inScope set.Set[string], throws bool) string {
+	target := sig.Return
+	if throws {
+		target = sig.Throws
+	}
+	out, ok := target.(*ast.RefTypeAnn)
+	if !ok || out.Lifetime != nil {
 		return ""
 	}
 	render := func(n ast.Node) string {
@@ -263,7 +264,14 @@ func suggestReturnLifetime(recv *ast.MethodReceiver, sig *ast.FuncSig, head stri
 	if head == "" {
 		head = "fn "
 	}
-	return head + "<" + strings.Join(binders, ", ") + ">(" + strings.Join(params, ", ") + ") -> " + withX(ret)
+	rendered := head + "<" + strings.Join(binders, ", ") + ">(" + strings.Join(params, ", ") + ")"
+	if !throws {
+		return rendered + " -> " + withX(out)
+	}
+	if sig.Return != nil {
+		rendered += " -> " + render(sig.Return)
+	}
+	return rendered + " throws " + withX(out)
 }
 
 // inputLifetimeCollector gathers, in order, the lifetimes a type holds outside any function
@@ -313,10 +321,13 @@ func (c *inputLifetimeCollector) add(lt soltype.Lifetime) {
 	c.lts = append(c.lts, lt)
 }
 
-// AmbiguousReturnLifetimeError reports a borrow that a return type writes with no lifetime
-// when elision picks none: the signature has no borrowed receiver, and its parameters hold
-// no lifetime or more than one. Node is the borrow, which carries the blame span.
+// AmbiguousReturnLifetimeError reports a borrow that a return type or a throws clause writes
+// with no lifetime when elision picks none: the signature has no borrowed receiver, and its
+// parameters hold no lifetime or more than one. Node is the borrow, which carries the blame
+// span.
 type AmbiguousReturnLifetimeError struct {
+	// Output names the output that writes the borrow, "the return type" or "the thrown type".
+	Output string
 	// Owners names each parameter whose type holds an input lifetime.
 	Owners []string
 	// Suggestion is a signature that writes the lifetime, or the empty string for none.
@@ -331,14 +342,14 @@ func (e *AmbiguousReturnLifetimeError) Message() string {
 	var msg string
 	switch len(e.Owners) {
 	case 0, 1:
-		msg = "the return type borrows, and the signature's inputs hold several lifetimes, " +
+		msg = e.Output + " borrows, and the signature's inputs hold several lifetimes, " +
 			"so elision cannot tell which it takes; write a lifetime"
 	default:
 		quoted := make([]string, len(e.Owners))
 		for i, o := range e.Owners {
 			quoted[i] = "'" + o + "'"
 		}
-		msg = "the return type borrows from " + strings.Join(quoted[:len(quoted)-1], ", ") + " or " +
+		msg = e.Output + " borrows from " + strings.Join(quoted[:len(quoted)-1], ", ") + " or " +
 			quoted[len(quoted)-1] + ", and elision cannot tell which; write a lifetime"
 	}
 	if e.Suggestion != "" {
