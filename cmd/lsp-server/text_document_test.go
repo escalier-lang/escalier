@@ -1489,6 +1489,54 @@ func TestHoverFromSolver(t *testing.T) {
 			open: "lib/a.esc", line: 0, col: 35,
 		},
 		{
+			name: "GenericEnumTypeRef",
+			files: map[string]string{
+				"lib/a.esc": "export enum MyOption<T> {\n    Some(value: T),\n    None(),\n}\nexport fn unwrap(o: MyOption<number>) -> number {\n    return match o {\n        MyOption.Some(value) => value,\n        MyOption.None() => 0,\n    }\n}",
+			},
+			open: "lib/a.esc", line: 4, col: 22,
+			expected: escalierCode("enum MyOption<T>"),
+		},
+		{
+			name: "GenericEnumExtractorVariant",
+			files: map[string]string{
+				"lib/a.esc": "export enum MyOption<T> {\n    Some(value: T),\n    None(),\n}\nexport fn unwrap(o: MyOption<number>) -> number {\n    return match o {\n        MyOption.Some(value) => value,\n        MyOption.None() => 0,\n    }\n}",
+			},
+			open: "lib/a.esc", line: 6, col: 18,
+			expected: escalierCode("(variant) MyOption.Some(value: T)"),
+		},
+		{
+			name: "GenericEnumExtractorQualifier",
+			files: map[string]string{
+				"lib/a.esc": "export enum MyOption<T> {\n    Some(value: T),\n    None(),\n}\nexport fn unwrap(o: MyOption<number>) -> number {\n    return match o {\n        MyOption.Some(value) => value,\n        MyOption.None() => 0,\n    }\n}",
+			},
+			open: "lib/a.esc", line: 6, col: 10,
+			expected: escalierCode("enum MyOption<T>"),
+		},
+		{
+			name: "GenericEnumNullaryExtractor",
+			files: map[string]string{
+				"lib/a.esc": "export enum MyOption<T> {\n    Some(value: T),\n    None(),\n}\nexport fn unwrap(o: MyOption<number>) -> number {\n    return match o {\n        MyOption.Some(value) => value,\n        MyOption.None() => 0,\n    }\n}",
+			},
+			open: "lib/a.esc", line: 7, col: 18,
+			expected: escalierCode("(variant) MyOption.None()"),
+		},
+		{
+			name: "GenericEnumExtractorBinding",
+			files: map[string]string{
+				"lib/a.esc": "export enum MyOption<T> {\n    Some(value: T),\n    None(),\n}\nexport fn unwrap(o: MyOption<number>) -> number {\n    return match o {\n        MyOption.Some(value) => value,\n        MyOption.None() => 0,\n    }\n}",
+			},
+			open: "lib/a.esc", line: 6, col: 23,
+			expected: escalierCode("value: number"),
+		},
+		{
+			name: "GenericEnumArmBindingRead",
+			files: map[string]string{
+				"lib/a.esc": "export enum MyOption<T> {\n    Some(value: T),\n    None(),\n}\nexport fn unwrap(o: MyOption<number>) -> number {\n    return match o {\n        MyOption.Some(value) => value,\n        MyOption.None() => 0,\n    }\n}",
+			},
+			open: "lib/a.esc", line: 6, col: 33,
+			expected: escalierCode("value: number"),
+		},
+		{
 			name:  "Keyword",
 			files: map[string]string{"bin/main.esc": "val x = 5"},
 			open:  "bin/main.esc", line: 0, col: 1,
