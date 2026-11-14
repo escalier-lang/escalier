@@ -547,9 +547,10 @@ func enclosingClass(ancestors []ast.Node) *ast.ClassDecl {
 	return nil
 }
 
-// enclosingReceiver returns the `self` receiver of the method whose body holds the cursor,
-// found by matching a function-expression ancestor to a member of class. It returns nil
-// when no method body encloses the cursor, as for a closure that captured `self`.
+// enclosingReceiver returns the `self` receiver of the nearest method whose body holds the
+// cursor, found by matching a function-expression ancestor to a member of class. A closure
+// inside a method is not a member, so `self` read in it resolves to that method's
+// receiver. It returns nil when no method body encloses the cursor.
 func enclosingReceiver(ancestors []ast.Node, class *ast.ClassDecl) *ast.MethodReceiver {
 	for i := len(ancestors) - 1; i >= 0; i-- {
 		fn, ok := ancestors[i].(*ast.FuncExpr)
