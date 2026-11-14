@@ -1,6 +1,7 @@
 package main
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -356,8 +357,10 @@ func typeParamInScope(ancestors []ast.Node, name string, loc ast.Location) (stri
 		}
 		switch n := ancestors[i].(type) {
 		case *ast.CondTypeAnn:
-			// An `infer` binds its name in the branch taken when the test passes.
-			if n.Then.Span().Contains(loc) && infersName(n.Extends, name) {
+			// A capture, such as an `infer` or a named regex group, binds its name in the
+			// test and in the branch taken when the test passes.
+			inScope := n.Extends.Span().Contains(loc) || n.Then.Span().Contains(loc)
+			if inScope && slices.Contains(ast.CaptureNames(n.Extends), name) {
 				return "(type parameter) " + name, true
 			}
 		case *ast.ObjectTypeAnn:
@@ -370,27 +373,6 @@ func typeParamInScope(ancestors []ast.Node, name string, loc ast.Location) (stri
 		}
 	}
 	return "", false
-}
-
-// infersName reports whether the pattern t holds an `infer` of name.
-func infersName(t ast.TypeAnn, name string) bool {
-	v := &inferFinder{name: name}
-	t.Accept(v)
-	return v.found
-}
-
-// inferFinder records whether a walk reaches an `infer` of name.
-type inferFinder struct {
-	ast.DefaultVisitor
-	name  string
-	found bool
-}
-
-func (v *inferFinder) EnterTypeAnn(t ast.TypeAnn) bool {
-	if infer, ok := t.(*ast.InferTypeAnn); ok && infer.Name == v.name {
-		v.found = true
-	}
-	return !v.found
 }
 
 // typeParamText returns the hover text for the type parameter tp, with its bound and
