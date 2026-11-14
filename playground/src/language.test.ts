@@ -137,7 +137,13 @@ describe('setupLanguage', () => {
         const ids = monacoMock.languages.register.mock.calls.map(
             ([{ id }]) => id,
         );
-        expect(ids).toEqual(['escalier', 'javascript', 'typescript']);
+        expect(ids).toEqual([
+            'escalier',
+            'javascript',
+            'typescript',
+            'json',
+            'toml',
+        ]);
     });
 
     test('registers no provider when the server advertises no semantic tokens', () => {
