@@ -1196,6 +1196,54 @@ func TestHoverFromSolver(t *testing.T) {
 			expected: escalierCode("(property) y?: number"),
 		},
 		{
+			name: "StaticFieldRead",
+			files: map[string]string{
+				"lib/a.esc": "export class C { static max: number = 5, static make() -> number { return 1 } }\nexport val m = C.max",
+			},
+			open: "lib/a.esc", line: 1, col: 17,
+			expected: escalierCode("(property) C.max: number"),
+		},
+		{
+			name: "StaticMethodRead",
+			files: map[string]string{
+				"lib/a.esc": "export class C { static max: number = 5, static make() -> number { return 1 } }\nexport val k = C.make()",
+			},
+			open: "lib/a.esc", line: 1, col: 17,
+			expected: escalierCode("(method) C.make() -> number"),
+		},
+		{
+			name: "OptionalMethodRead",
+			files: map[string]string{
+				"lib/a.esc": "export fn f(s: &{describe?(self) -> string}) -> number { val d = s.describe\n return 1 }",
+			},
+			open: "lib/a.esc", line: 0, col: 67,
+			expected: escalierCode("(method) describe?() -> string"),
+		},
+		{
+			name: "EnumVariantDecl",
+			files: map[string]string{
+				"lib/a.esc": "export enum Expr { Num(value: number), Add(left: Expr, right: Expr) }",
+			},
+			open: "lib/a.esc", line: 0, col: 19,
+			expected: escalierCode("(variant) Expr.Num(value: number)"),
+		},
+		{
+			name: "EnumVariantDeclTwoParams",
+			files: map[string]string{
+				"lib/a.esc": "export enum Expr { Num(value: number), Add(left: Expr, right: Expr) }",
+			},
+			open: "lib/a.esc", line: 0, col: 39,
+			expected: escalierCode("(variant) Expr.Add(left: Expr, right: Expr)"),
+		},
+		{
+			name: "GenericEnumVariantDecl",
+			files: map[string]string{
+				"lib/a.esc": "export enum Result<T, E> { Ok(value: T), Err(error: E) }",
+			},
+			open: "lib/a.esc", line: 0, col: 41,
+			expected: escalierCode("(variant) Result.Err(error: E)"),
+		},
+		{
 			name:  "Keyword",
 			files: map[string]string{"bin/main.esc": "val x = 5"},
 			open:  "bin/main.esc", line: 0, col: 1,

@@ -68,6 +68,9 @@ func typeHover(q hoverQuery) (string, bool) {
 		if n.Name.Span().Contains(q.loc) {
 			return declText(n), true
 		}
+		if variant, ok := variantNamedAt(n, q.loc); ok {
+			return variantDeclText(n, variant), true
+		}
 	case *ast.InferTypeAnn:
 		return "(type parameter) " + n.Name, true
 	case *ast.TypeRefTypeAnn:
@@ -430,7 +433,7 @@ func memberReadText(info *solver.Info, m *ast.MemberExpr) (string, bool) {
 		return "(variant) " + qualify(baseName(typeName(ctor.Ret)), m.Prop.Name) + signatureParams(ctor), true
 	}
 	objType := info.ResolvedTypeOf(m.Object)
-	owner := baseName(typeName(info.Expand(objType)))
+	owner := memberOwner(info, m.Object, objType)
 	if obj, ok := info.MemberObject(objType); ok {
 		for _, elem := range obj.Elems {
 			if soltype.ObjElemName(elem) == m.Prop.Name {
@@ -441,6 +444,21 @@ func memberReadText(info *solver.Info, m *ast.MemberExpr) (string, bool) {
 	// The member resolved to a type with no fixed member set, such as an index
 	// signature, so its recorded type stands in and the kind defaults to a property.
 	return propertyText(owner, m.Prop.Name, soltype.PrintAsScheme(t)), true
+}
+
+// memberOwner returns the name of the type a member read through object belongs to, where
+// objType is object's resolved type, or "" for an object with no name. A read of a class
+// name, as in `Thermostat.minimum`, reads the class's static side, whose type is an
+// unnamed object, so the class's name is taken from its declaration.
+func memberOwner(info *solver.Info, object ast.Expr, objType soltype.Type) string {
+	if ident, ok := object.(*ast.IdentExpr); ok {
+		if decl, ok := info.DeclOf(ident); ok {
+			if class, ok := decl.(*ast.ClassDecl); ok {
+				return class.Name.Name
+			}
+		}
+	}
+	return baseName(typeName(info.Expand(objType)))
 }
 
 // objLiteralPropText returns the hover text for the key of an object-literal property, as
@@ -475,7 +493,11 @@ func memberElemText(owner string, elem soltype.ObjTypeElem) string {
 		if len(elem.Signatures) == 0 {
 			return propertyText(owner, elem.Name, "")
 		}
-		text := "(method) " + qualify(owner, elem.Name) + methodSignature(elem.Signatures[0])
+		name := qualify(owner, elem.Name)
+		if elem.Optional {
+			name += "?"
+		}
+		text := "(method) " + name + methodSignature(elem.Signatures[0])
 		if extra := len(elem.Signatures) - 1; extra > 0 {
 			text += " (+" + strconv.Itoa(extra) + " overload" + plural(extra) + ")"
 		}
@@ -635,6 +657,33 @@ func classRefName(class *ast.ClassDecl) string {
 		names[i] = tp.Name
 	}
 	return class.Name.Name + "<" + strings.Join(names, ", ") + ">"
+}
+
+// variantNamedAt returns the variant of decl whose name holds loc.
+func variantNamedAt(decl *ast.EnumDecl, loc ast.Location) (*ast.EnumVariant, bool) {
+	for _, elem := range decl.Elems {
+		if variant, ok := elem.(*ast.EnumVariant); ok && variant.Name.Span().Contains(loc) {
+			return variant, true
+		}
+	}
+	return nil, false
+}
+
+// variantDeclText renders the variant of decl as it is declared, as
+// `(variant) Expr.Num(value: number)`, the form a read of the variant shows.
+func variantDeclText(decl *ast.EnumDecl, variant *ast.EnumVariant) string {
+	params := make([]string, len(variant.Params))
+	for i, param := range variant.Params {
+		text := printCompact(param.Pattern)
+		if param.Optional {
+			text += "?"
+		}
+		if param.TypeAnn != nil {
+			text += ": " + printCompact(param.TypeAnn)
+		}
+		params[i] = text
+	}
+	return "(variant) " + decl.Name.Name + "." + variant.Name.Name + "(" + strings.Join(params, ", ") + ")"
 }
 
 // variantConstructor returns an enum variant's constructor signature when t is the type a
