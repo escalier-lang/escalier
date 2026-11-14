@@ -30,7 +30,7 @@ func TestReceiverModes(t *testing.T) {
 		{
 			name: "a borrowing call leaves the receiver usable",
 			src: counter + `
-				fn f() {
+				fn f() -> undefined {
 					val c = C(1)
 					c.look()
 					c.look()
@@ -40,7 +40,7 @@ func TestReceiverModes(t *testing.T) {
 		{
 			name: "a consuming call moves the receiver",
 			src: counter + `
-				fn f() {
+				fn f() -> undefined {
 					val c = C(1)
 					c.take()
 					c.look()
@@ -62,7 +62,7 @@ func TestReceiverModes(t *testing.T) {
 		{
 			name: "a consuming call is the last use, so borrowing calls before it are fine",
 			src: counter + `
-				fn f() {
+				fn f() -> undefined {
 					val c = C(1)
 					c.look()
 					c.take()
@@ -100,7 +100,7 @@ func TestReceiverModes(t *testing.T) {
 		{
 			name: "a mutable consuming receiver takes a mutable owned instance",
 			src: counter + `
-				fn f() {
+				fn f() -> undefined {
 					val mut c = C(1)
 					c.drain()
 				}
@@ -111,7 +111,7 @@ func TestReceiverModes(t *testing.T) {
 			// alone, the way `val mut d = c` would.
 			name: "a mutable consuming receiver takes an immutable instance and moves it",
 			src: counter + `
-				fn f() {
+				fn f() -> undefined {
 					val c = C(1)
 					c.drain()
 					c.look()
@@ -122,7 +122,7 @@ func TestReceiverModes(t *testing.T) {
 		{
 			name: "a consuming call through a borrowed parameter is rejected",
 			src: counter + `
-				fn f(p: &C) {
+				fn f(p: &C) -> undefined {
 					p.take()
 				}
 			`,
@@ -131,7 +131,7 @@ func TestReceiverModes(t *testing.T) {
 		{
 			name: "a borrow copied into a local is still a borrow",
 			src: counter + `
-				fn f(p: &C) {
+				fn f(p: &C) -> undefined {
 					val q = p
 					q.take()
 				}

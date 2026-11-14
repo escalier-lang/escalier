@@ -20,7 +20,7 @@ func TestUniqueSymbol(t *testing.T) {
 	t.Run("EveryOneIsASymbol", func(t *testing.T) {
 		values, _, errs := inferSource(t, decl+`
 			declare fn take(s: symbol) -> number
-			fn use() { return take(C.a) }
+			fn use() -> number { return take(C.a) }
 		`)
 		require.Empty(t, errorMessagesOf(errs))
 		require.Equal(t, "fn () -> number", values["use"])
@@ -29,7 +29,7 @@ func TestUniqueSymbol(t *testing.T) {
 	t.Run("OneReachesItself", func(t *testing.T) {
 		values, _, errs := inferSource(t, decl+`
 			declare fn takeA(s: typeof C.a) -> number
-			fn use() { return takeA(C.a) }
+			fn use() -> number { return takeA(C.a) }
 		`)
 		require.Empty(t, errorMessagesOf(errs))
 		require.Equal(t, "fn () -> number", values["use"])
@@ -40,7 +40,7 @@ func TestUniqueSymbol(t *testing.T) {
 	t.Run("TwoDistinctOnesAreUnrelated", func(t *testing.T) {
 		_, _, errs := inferSource(t, decl+`
 			declare fn takeA(s: typeof C.a) -> number
-			fn use() { return takeA(C.b) }
+			fn use() -> number { return takeA(C.b) }
 		`)
 		require.Equal(t,
 			[]string{"cannot constrain typeof C.b <: typeof C.a"},
@@ -52,7 +52,7 @@ func TestUniqueSymbol(t *testing.T) {
 	t.Run("ASymbolIsNotAParticularOne", func(t *testing.T) {
 		_, _, errs := inferSource(t, decl+`
 			declare fn takeA(s: typeof C.a) -> number
-			fn use(s: symbol) { return takeA(s) }
+			fn use(s: symbol) -> number { return takeA(s) }
 		`)
 		require.Equal(t,
 			[]string{"cannot constrain symbol <: typeof C.a"},
@@ -111,7 +111,7 @@ func TestUniqueSymbolBehavesLikeALiteralOfItsPrimitive(t *testing.T) {
 	// `var n = 5` widens to `number`.
 	t.Run("AVarHoldingOneWidensToSymbol", func(t *testing.T) {
 		values, _, errs := inferSource(t, decl+`
-			fn f() {
+			fn f() -> symbol {
 				var s = C.a
 				s = C.b
 				return s
@@ -125,7 +125,7 @@ func TestUniqueSymbolBehavesLikeALiteralOfItsPrimitive(t *testing.T) {
 	// enumerates `symbol` and a match over it needs a catch-all.
 	t.Run("AMatchOverSymbolNeedsACatchAll", func(t *testing.T) {
 		_, _, errs := inferSource(t, decl+`
-			fn f(s: symbol) {
+			fn f(s: symbol) -> 1 {
 				return match s {
 					x: typeof C.a => 1
 				}
@@ -294,8 +294,8 @@ val k = i.key`},
 			// The function reads the key through its parameter and may be inferred before
 			// `i`, which it does not refer to. The name is still the one `i` gives.
 			name: "ValDeclaredAfterTheUse",
-			srcs: map[string]string{"input.esc": iface + `fn wrap(x: &I) { return {[x.key]: 1} }
-fn read(x: &I) { return x.key }
+			srcs: map[string]string{"input.esc": iface + `fn wrap(x: &I) -> {[i.key]: 1} { return {[x.key]: 1} }
+fn read(x: &I) -> typeof i.key { return x.key }
 declare val i: I`},
 			want: map[string]string{"wrap": "fn (x: &I) -> {[i.key]: 1}", "read": "fn (x: &I) -> typeof i.key"},
 		},
@@ -303,12 +303,12 @@ declare val i: I`},
 			// `make` builds its key through a parameter, and `o[i.key]` reads it through `i`.
 			// Both spell one member, so the read finds it.
 			name: "KeysBuiltTwoWaysMatch",
-			srcs: map[string]string{"input.esc": iface + `fn make(x: &I) { return {[x.key]: 1} }
+			srcs: map[string]string{"input.esc": iface + `fn make(x: &I) -> {[i.key]: 1} { return {[x.key]: 1} }
 declare val i: I
 val o = make(i)
 val r = o[i.key]
 val p = {[i.key]: "x"}
-fn readP(x: &I) { return p[x.key] }`},
+fn readP(x: &I) -> "x" { return p[x.key] }`},
 			want: map[string]string{"o": "{[i.key]: 1}", "r": "1", "readP": `fn (x: &I) -> "x"`},
 		},
 		{
