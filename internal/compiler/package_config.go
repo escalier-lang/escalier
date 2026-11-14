@@ -14,10 +14,6 @@ import (
 // PackageConfig is the part of a package's package.json the compiler reads. The zero
 // value is the configuration of a package that sets nothing.
 type PackageConfig struct {
-	// NoAmbientNames leaves the builtins unbound unless a file imports them, so
-	// `Math.PI` needs `import "std:math"` and is spelled `math.PI`. It is set by
-	// `"escalier": {"ambient": false}`. Only internal/solver reads it.
-	NoAmbientNames bool
 	// Dir is the package's root directory, where its package.json sits. An import
 	// with no URI scheme resolves through the `node_modules` directories at and
 	// above it.
@@ -32,9 +28,6 @@ type PackageConfig struct {
 
 // packageJSON is the shape of the package.json fields ReadPackageConfig reads.
 type packageJSON struct {
-	Escalier struct {
-		Ambient *bool `json:"ambient"`
-	} `json:"escalier"`
 	Dependencies         map[string]string `json:"dependencies"`
 	PeerDependencies     map[string]string `json:"peerDependencies"`
 	OptionalDependencies map[string]string `json:"optionalDependencies"`
@@ -69,9 +62,6 @@ func ReadPackageConfig(dir string) (PackageConfig, error) {
 		for name := range deps {
 			config.Dependencies.Add(name)
 		}
-	}
-	if pkg.Escalier.Ambient != nil {
-		config.NoAmbientNames = !*pkg.Escalier.Ambient
 	}
 	return config, nil
 }

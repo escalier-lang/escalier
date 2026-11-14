@@ -1,10 +1,10 @@
-lib/keyof.esc:11:27: cannot constrain "z" <: "x" | "y"
+lib/keyof.esc:13:27: cannot constrain "z" <: "x" | "y"
 
-11: val coord2: keyof Point = "z"
+13: val coord2: keyof Point = "z"
                               ^^^
 
-lib/keyof.esc:3:22: cannot constrain 3 <: 0 | 1 | 2 | "length"
+lib/keyof.esc:5:22: cannot constrain 3 <: 0 | 1 | 2 | "length"
 
-3:  val j: keyof Tuple = 3
+5:  val j: keyof Tuple = 3
                          ^
 

@@ -70,12 +70,13 @@ func cursorAt(src string, line, column int) ast.Location {
 }
 
 func TestMemberCompletionHidesMutSelfOnImmutableReceiver(t *testing.T) {
-	source := `declare val m: Map<string, number>
+	source := `import "std:map"
+declare val m: map.Map<string, number>
 m.`
 	script, _, info := parseAndInferAllowErrors(t, source)
 
-	// Cursor at end of "m." — line 2, after the dot
-	loc := cursorAt(source, 2, 3)
+	// Cursor at end of "m." — line 3, after the dot
+	loc := cursorAt(source, 3, 3)
 	node, _ := findNodeAndParent(script, loc)
 
 	require.NotNil(t, node)
@@ -92,11 +93,12 @@ m.`
 }
 
 func TestMemberCompletionShowsMutSelfOnMutableReceiver(t *testing.T) {
-	source := `declare val mut m: Map<string, number>
+	source := `import "std:map"
+declare val mut m: map.Map<string, number>
 m.`
 	script, _, info := parseAndInferAllowErrors(t, source)
 
-	loc := cursorAt(source, 2, 3)
+	loc := cursorAt(source, 3, 3)
 	node, _ := findNodeAndParent(script, loc)
 
 	require.NotNil(t, node)
@@ -1826,26 +1828,26 @@ func TestMemberCompletionFromSolverMembership(t *testing.T) {
 		},
 		{
 			name:     "ImmutableMapHidesMutSelf",
-			files:    map[string]string{"bin/main.esc": "declare val m: Map<string, number>\nm."},
+			files:    map[string]string{"bin/main.esc": "import \"std:map\"\ndeclare val m: map.Map<string, number>\nm."},
 			open:     "bin/main.esc",
-			line:     2,
+			line:     3,
 			col:      3,
 			contains: []string{"has: fn <B>(key: B) -> boolean where string: B"},
 			excludes: []string{"clear: fn () -> undefined"},
 		},
 		{
 			name:     "MutMapShowsMutSelf",
-			files:    map[string]string{"bin/main.esc": "declare val mut m: Map<string, number>\nm."},
+			files:    map[string]string{"bin/main.esc": "import \"std:map\"\ndeclare val mut m: map.Map<string, number>\nm."},
 			open:     "bin/main.esc",
-			line:     2,
+			line:     3,
 			col:      3,
 			contains: []string{"has: fn <B>(key: B) -> boolean where string: B", "clear: fn () -> undefined"},
 		},
 		{
-			name:     "AmbientNamespace",
-			files:    map[string]string{"bin/main.esc": "val n = Math.flo"},
+			name:     "ImportedNamespace",
+			files:    map[string]string{"bin/main.esc": "import \"std:math\"\nval n = math.flo"},
 			open:     "bin/main.esc",
-			line:     1,
+			line:     2,
 			col:      17,
 			contains: []string{"floor: fn (x: number) -> number"},
 		},
@@ -2206,12 +2208,13 @@ func TestScopeCompletionFromSolver(t *testing.T) {
 			excludes: []string{"y", "z"},
 		},
 		{
-			name:     "AmbientBuiltinsInScript",
+			name:     "UnimportedBuiltinsLeftOutInScript",
 			files:    map[string]string{"bin/main.esc": "val n = pars"},
 			open:     "bin/main.esc",
 			line:     1,
 			col:      13,
-			expected: map[string]string{"parseInt": "fn (string: string, radix?: number) -> number"},
+			expected: map[string]string{},
+			excludes: []string{"parseInt"},
 		},
 		{
 			name:     "OperatorBindingsLeftOut",
@@ -2223,12 +2226,29 @@ func TestScopeCompletionFromSolver(t *testing.T) {
 			excludes: []string{"unary +", "unary -"},
 		},
 		{
-			name:     "AmbientNamespaceInScript",
+			name:     "PreludeTypeInScript",
+			files:    map[string]string{"bin/main.esc": "val n = PropertyK"},
+			open:     "bin/main.esc",
+			line:     1,
+			col:      18,
+			expected: map[string]string{"PropertyKey": "string | number | symbol"},
+		},
+		{
+			name:     "PreludeTypeInModule",
+			files:    map[string]string{"lib/a.esc": "export val n = PropertyK"},
+			open:     "lib/a.esc",
+			line:     1,
+			col:      25,
+			expected: map[string]string{"PropertyKey": "string | number | symbol"},
+		},
+		{
+			name:     "UnimportedNamespaceLeftOutInScript",
 			files:    map[string]string{"bin/main.esc": "val n = Mat"},
 			open:     "bin/main.esc",
 			line:     1,
 			col:      12,
-			expected: map[string]string{"Math": "namespace"},
+			expected: map[string]string{},
+			excludes: []string{"Math"},
 		},
 		{
 			name: "BinSeesLibExport",
@@ -2279,12 +2299,13 @@ func TestScopeCompletionFromSolver(t *testing.T) {
 			expected: map[string]string{"math": ""},
 		},
 		{
-			name:     "AmbientBuiltinsInModule",
+			name:     "UnimportedBuiltinsLeftOutInModule",
 			files:    map[string]string{"lib/a.esc": "export val n = pars"},
 			open:     "lib/a.esc",
 			line:     1,
 			col:      20,
-			expected: map[string]string{"parseInt": "fn (string: string, radix?: number) -> number"},
+			expected: map[string]string{},
+			excludes: []string{"parseInt"},
 		},
 	}
 	for _, tt := range tests {

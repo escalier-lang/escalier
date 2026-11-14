@@ -311,12 +311,9 @@ func (c *checker) reportImmutableBinding(site ast.Node, place *ownedPlace) {
 	if ip, ok := decl.(*ast.IdentPat); ok && ip.Mutable {
 		err.Unmovable = true
 	}
-	// A global the standard library declares, such as `console`, is not one this code can
-	// rewrite, so the message suggests no new declaration. Neither is the value a `std:` or
-	// `web:` package binds beside its namespace, as `import "web:crypto"` binds `crypto`.
-	if g, ok := c.globalsScope().GetValue(place.name); ok && decl != nil && bindingDecl(g) == decl {
-		err.Foreign = true
-	}
+	// The value a `std:` or `web:` package binds beside its namespace, as
+	// `import "std:console"` binds `console`, is not one this code can rewrite, so the
+	// message suggests no new declaration.
 	if place.b.Members != nil && IsSchemePrefixedImport(place.b.Members.Name) {
 		err.Foreign = true
 	}
@@ -801,9 +798,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// annotation was a promise at all, since either slot may legitimately hold `never`.
 	var asyncInner, asyncRejects soltype.Type
 	asyncIsPromise := false
+	// A lifetime the return type leaves out takes the one the signature's inputs give it.
+	retLts := newReturnLifetimes(selfParam, params, recv, &sig, signatureHead(node, memberName), c.lifetimeNamesInScope())
 	if sig.Async {
 		if sig.Return != nil {
-			asyncAnnT, asyncAnnOK = c.resolveTypeAnn(declScope, sig.Return, lvl)
+			asyncAnnT, asyncAnnOK = c.resolveReturnAnn(declScope, sig.Return, lvl, retLts)
 			if inner, errT, isPromise := c.ctx.promiseParts(asyncAnnT); asyncAnnOK && isPromise {
 				asyncInner, asyncRejects, asyncIsPromise = inner, errT, true
 			}
@@ -868,7 +867,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	var retAnnT soltype.Type
 	retAnnOK := false
 	if sig.Return != nil && !sig.Async && !sig.Gen {
-		retAnnT, retAnnOK = c.resolveTypeAnn(declScope, sig.Return, lvl)
+		retAnnT, retAnnOK = c.resolveReturnAnn(declScope, sig.Return, lvl, retLts)
 	}
 	// The body has to work for every instantiation its type parameters' bounds allow, so
 	// those parameters are rigid from the walk of the body on. They stay rigid after it,

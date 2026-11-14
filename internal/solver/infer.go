@@ -135,6 +135,9 @@ type checker struct {
 	// fnElision is the lifetime a function type written with no lifetime gets at the current
 	// position. elideFuncsAs sets it, and elidedFuncLifetime reads it.
 	fnElision funcElision
+	// retLts is the elision for a lifetime a signature's return type leaves out, set by
+	// resolveReturnAnn while the return type's own level resolves and nil elsewhere.
+	retLts *returnLifetimes
 	// pendingCallOnly holds a check per parameter whose function type is written with no
 	// lifetime, for checkCallOnlyParams to read once the enclosing component has solved.
 	pendingCallOnly []callOnlyCheck
@@ -343,33 +346,26 @@ type checker struct {
 	// prelude is the per-run scope holding the prelude package's exports, built
 	// on first request by preludeScope and shared by the entry module and every
 	// package this run loads. It sits between the process-wide operator table and
-	// the ambient scope, so an ambient name shadows a prelude export.
+	// the entry module's or script's own scope.
 	prelude *Scope
 	// globals is the per-run scope globalsScope builds over the prelude, holding the
-	// exports of every package in ambientPackages. An npm package's scope is its
+	// exports of every package in globalsPackages. An npm package's scope is its
 	// child. It is nil until a run asks for it.
 	globals *Scope
 	// globalsBound is set once bindGlobals has filled the globals scope.
 	globalsBound bool
-	// ambient is the empty scope ambientScope builds over the prelude in a run with
-	// Options.NoAmbientNames set. Every other run uses globals as its ambient scope.
-	// The entry module's scope is a child of the ambient scope, so a module
-	// declaration shadows an ambient name and a file's import shadows both. A
-	// pseudo-package parents its scope at the prelude and never sees either one.
-	ambient *Scope
-	// noAmbientNames is Options.NoAmbientNames for this run.
-	noAmbientNames bool
 	// stdlibDir is Options.stdlibDir for this run.
 	stdlibDir string
 	// dependencies is Options.Dependencies for this run.
 	dependencies set.Set[string]
 	// checkJsDecorators is Options.CheckJsDecorators for this run.
 	checkJsDecorators bool
+	// requireSignatures is Options.RequireSignatures for this run.
+	requireSignatures bool
 	// definitionsSettled is set once settleLoadedDefinitions has run.
 	definitionsSettled bool
-	// ambientBound is set once bindAmbientExports has loaded the literal classes' packages
-	// in a run with Options.NoAmbientNames set.
-	ambientBound bool
+	// literalClassesLoaded is set once loadLiteralClassPackages has run.
+	literalClassesLoaded bool
 	// heldLoadErrs maps a package URI to the diagnostics its library load returned,
 	// and heldLoadOrder lists each of those once, in load order. holdLoadErrors fills
 	// both.
@@ -379,8 +375,8 @@ type checker struct {
 	// so a second regex literal does not report it again.
 	regexpReported bool
 	// libVarCounter and libSymbolCounter are where the library packages' own counters
-	// stand. The prelude starts them at preludeIDBase and the ambient packages continue
-	// from where it stopped, so neither shares an id with the program.
+	// stand. The prelude starts them at preludeIDBase and the other library packages
+	// continue from where it stopped, so neither shares an id with the program.
 	libVarCounter    int
 	libSymbolCounter int
 
@@ -970,6 +966,7 @@ func (c *checker) forScript(pkgURI string) *checker {
 		groups:            c.groups,
 		stdlibDir:         c.stdlibDir,
 		checkJsDecorators: c.checkJsDecorators,
+		requireSignatures: c.requireSignatures,
 		weakBindingVars:   set.NewSet[*soltype.TypeVarType](),
 	}
 	// Point the recorder at the script, so a fusion its walk records lands in the

@@ -328,8 +328,9 @@ func (s *Scope) OwnNamespace(name string) (*Namespace, bool) {
 
 // IsBuiltin reports whether s holds builtins every program sees rather than names a
 // program declared. Three scopes do: the root holding the operators and the placeholder
-// types, the scope holding the prelude package's exports, and the scope holding the
-// ambient packages' exports. Each is an ancestor of every module and script scope.
+// types, the scope holding the prelude package's exports, and the globals scope an npm
+// package's scope is a child of. The first two are ancestors of every module and script
+// scope.
 func (s *Scope) IsBuiltin() bool {
 	return s.builtin
 }

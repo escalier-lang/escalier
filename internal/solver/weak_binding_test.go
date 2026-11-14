@@ -24,8 +24,8 @@ func TestWeakModuleBinding(t *testing.T) {
 	}{
 		{
 			name: "WritesFromTwoFunctionsReachOneMap",
-			src: `
-val mut seen = Map()
+			src: `import "std:map"
+val mut seen = map.Map()
 fn a() { seen.set("k", 1) }
 fn b() { seen.set("j", "s") }
 `,
@@ -33,8 +33,8 @@ fn b() { seen.set("j", "s") }
 		},
 		{
 			name: "AReadSeesTheWritesOfALaterFunction",
-			src: `
-val mut seen = Map()
+			src: `import "std:map"
+val mut seen = map.Map()
 fn get() { return seen.get("k") }
 fn put() { seen.set("k", 1) }
 `,
@@ -47,8 +47,8 @@ fn put() { seen.set("k", 1) }
 			// A read sees the widened value type, so it cannot claim the literal a write
 			// stored.
 			name: "AReadCannotNarrowAWidenedSlot",
-			src: `
-val mut seen = Map()
+			src: `import "std:map"
+val mut seen = map.Map()
 fn put() { seen.set("k", 1) }
 fn get() { return seen.get("k") }
 fn read() {
@@ -68,8 +68,8 @@ fn read() {
 			// bound on the map's value type when the write reaches it, and the write is the
 			// site of the error.
 			name: "AWriteCannotWidenPastAnEarlierRead",
-			src: `
-val mut seen = Map()
+			src: `import "std:map"
+val mut seen = map.Map()
 fn put() { seen.set("k", 1) }
 val one: 1 | undefined = seen.get("k")
 `,
@@ -99,9 +99,9 @@ fn f() {
 			// A body-level binding widens the same way, so the read later in the body sees
 			// `number`.
 			name: "AReadOfALocalContainerSeesTheWidenedSlot",
-			src: `
+			src: `import "std:map"
 fn f() {
-	val mut m = Map()
+	val mut m = map.Map()
 	m.set("k", 1)
 	val one: 1 | undefined = m.get("k")
 }
@@ -115,8 +115,8 @@ fn f() {
 			// parameter keeps the literal it was called with. The `number` annotation on `n`
 			// makes x a value type, so storing `[x]` copies x and the return can read it.
 			name: "AStoredParameterWidensOnlyInTheMap",
-			src: `
-val mut seen = Map()
+			src: `import "std:map"
+val mut seen = map.Map()
 fn put(x) {
 	val n: number = x
 	seen.set("k", [x])
@@ -133,8 +133,8 @@ val one = put(1)
 			// Without the annotation, x's type is a variable that may stand for an object, so
 			// storing `[x]` moves x and the return reads a moved value.
 			name: "AStoredParameterOfUnknownTypeMoves",
-			src: `
-val mut seen = Map()
+			src: `import "std:map"
+val mut seen = map.Map()
 fn put(x) {
 	seen.set("k", [x])
 	return x
@@ -148,9 +148,9 @@ val one = put(1)
 			// the field. Storing it in the map widens that variable as a slot, and the
 			// widened copy is one knot that holds itself.
 			name: "ARecursiveValueStoredInAMapStaysOneKnot",
-			src: `
+			src: `import "std:map"
 fn f() { return {next: f()} }
-val mut seen = Map()
+val mut seen = map.Map()
 fn put() { seen.set("k", f()) }
 `,
 			values: map[string]string{"seen": "Map<string, {next: μX0.{next: X0}}>"},
@@ -169,8 +169,8 @@ val {mut a, b} = id({a: {x: 1}, b: {x: 2}})
 		},
 		{
 			name: "AnOwnedValueAndABorrowInOneMap",
-			src: `
-val mut seen = Map()
+			src: `import "std:map"
+val mut seen = map.Map()
 val x: {a: number} = {a: 1}
 fn a() { seen.set("k", &x) }
 fn b() { seen.set("k", {a: 2}) }
@@ -184,8 +184,8 @@ fn b() { seen.set("k", {a: 2}) }
 			// type settles at `never` and the parameter at `unknown`, with no error. #2352 keeps
 			// remember monomorphic over the map's value type, so `value` becomes `never` too.
 			name: "AStoreOfAParameterNothingCalls",
-			src: `
-val mut seen = Map()
+			src: `import "std:map"
+val mut seen = map.Map()
 fn remember(value) { seen.set("last", value) }
 `,
 			values: map[string]string{
@@ -196,15 +196,15 @@ fn remember(value) { seen.set("last", value) }
 		{
 			// #2305 warns on the `mut` of seen, since nothing writes it.
 			name: "AMutableContainerNothingWrites",
-			src: `
-val mut seen = Map()
+			src: `import "std:map"
+val mut seen = map.Map()
 `,
 			values: map[string]string{"seen": "Map<never, never>"},
 		},
 		{
 			name: "AnImmutableContainerNothingCanWrite",
-			src: `
-val seen = Map()
+			src: `import "std:map"
+val seen = map.Map()
 `,
 			values: map[string]string{"seen": "Map<never, never>"},
 		},
@@ -212,15 +212,15 @@ val seen = Map()
 			// No use decides the map's types, and an importer sees them as `never`. #2354
 			// decides whether this reports an error or a warning asking for an annotation.
 			name: "AnExportedContainer",
-			src: `
-export val seen = Map()
+			src: `import "std:map"
+export val seen = map.Map()
 `,
 			values: map[string]string{"seen": "Map<never, never>"},
 		},
 		{
 			name: "AnExportedMutableContainerItsFunctionsWrite",
-			src: `
-export val mut seen = Map()
+			src: `import "std:map"
+export val mut seen = map.Map()
 fn a() { seen.set("k", 1) }
 `,
 			values: map[string]string{"seen": "Map<string, number>"},
@@ -247,8 +247,8 @@ export val five = id(5)
 		},
 		{
 			name: "AnAnnotatedContainer",
-			src: `
-val seen: Map<string, number> = Map()
+			src: `import "std:map"
+val seen: map.Map<string, number> = map.Map()
 `,
 			values: map[string]string{"seen": "Map<string, number>"},
 		},
@@ -346,9 +346,9 @@ fn u() {
 			// make's type comes from the bounds the checker uses for m, which hold the
 			// widened values.
 			name: "ALocalContainerGeneralizesWithItsFunction",
-			src: `
+			src: `import "std:map"
 fn make() {
-	val mut m = Map()
+	val mut m = map.Map()
 	m.set("k", 1)
 	m.set("k", "s")
 	return m
@@ -476,9 +476,9 @@ val r = borrowMut(&mut p)
 			// The map's values are writable slots, so a write can store a borrow of any
 			// `{x: number}`, and `&` accepts it.
 			name: "AnImmutableBorrowInAWritableSlotWidens",
-			src: `
+			src: `import "std:map"
 val p = {x: 1}
-val mut seen = Map()
+val mut seen = map.Map()
 fn f() { seen.set("k", &p) }
 `,
 			values: map[string]string{"seen": "Map<string, &{x: number}>"},
@@ -487,9 +487,9 @@ fn f() { seen.set("k", &p) }
 			// A read of the map sees the borrow its writable slot holds, with the referent's
 			// literals widened in the checked type as well as in the display.
 			name: "AReadOfAnImmutableBorrowInAWritableSlotSeesItWidened",
-			src: `
+			src: `import "std:map"
 val p = {x: 1}
-val mut seen = Map()
+val mut seen = map.Map()
 fn f() { seen.set("k", &p) }
 fn g() { return seen.get("k") }
 `,
@@ -515,9 +515,9 @@ val s = borrow(&p)
 			// even though the map's values are writable slots. Only the borrow in the slot
 			// could be replaced, and only by another `&mut {x: 1}`.
 			name: "AMutableBorrowInAWritableSlotKeepsItsLiterals",
-			src: `
+			src: `import "std:map"
 val mut p: {x: 1} = {x: 1}
-val mut seen = Map()
+val mut seen = map.Map()
 fn f() { seen.set("k", &mut p) }
 `,
 			values: map[string]string{"seen": "Map<string, &mut {x: 1}>"},
@@ -526,9 +526,9 @@ fn f() { seen.set("k", &mut p) }
 			// setX can write any number to x. Passing it the borrow the map holds would write
 			// through to p, whose x is declared 1, so the call is rejected.
 			name: "AMutableBorrowFromAWritableSlotRejectsAWiderWrite",
-			src: `
+			src: `import "std:map"
 val mut p: {x: 1} = {x: 1}
-val mut seen = Map()
+val mut seen = map.Map()
 fn f() { seen.set("k", &mut p) }
 fn setX(r: &mut {x: number} | undefined) {}
 fn g() { setX(seen.get("k")) }
@@ -555,8 +555,8 @@ fn g() { setX(seen.get("k")) }
 // functions settled a weak binding and a function that reads it on. Both components close
 // before `put` writes the map, so a type recorded then would show the map holding nothing.
 func TestWeakBindingInfoShowsTheSettledType(t *testing.T) {
-	module := parseModule(t, `
-val mut seen = Map()
+	module := parseModule(t, `import "std:map"
+val mut seen = map.Map()
 fn get() { return seen.get("k") }
 fn put() { seen.set("k", 1) }
 `)
@@ -583,9 +583,9 @@ func TestWeakLocalInfoShowsTheSettledType(t *testing.T) {
 	}{
 		{
 			name: "WritesAfterTheDeclaration",
-			src: `
+			src: `import "std:map"
 fn f() -> number {
-	val mut m = Map()
+	val mut m = map.Map()
 	m.set("k", 1)
 	return m.size
 }
@@ -594,10 +594,10 @@ fn f() -> number {
 		},
 		{
 			name: "AWeakModuleBindingALaterFunctionWrites",
-			src: `
-val mut seen = Map()
+			src: `import "std:map"
+val mut seen = map.Map()
 fn f() -> number {
-	val mut m = Map()
+	val mut m = map.Map()
 	m.set("a", seen.get("k"))
 	return m.size
 }

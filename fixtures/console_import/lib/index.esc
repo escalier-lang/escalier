@@ -4,6 +4,6 @@ import "std:console"
 // value and as the package's namespace at once.
 export val logger: console.Console = console
 
-export fn greet(name: string) {
+export fn greet(name: string) -> undefined {
     console.log(`hello, ${name}`)
 }

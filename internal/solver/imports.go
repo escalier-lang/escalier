@@ -35,7 +35,7 @@ func (c *checker) bindFileImports(scope *Scope, module *ast.Module) map[int]*Sco
 		fileScopes[file.SourceID] = scope.Child()
 	}
 	// Every pseudo-package import binds before any npm import. Binding an npm import
-	// binds the ambient scope first, and a pseudo-package the ambient scope loads
+	// binds the globals scope first, and a pseudo-package the globals scope loads
 	// reports its diagnostics with no span. Bound first, the pseudo-package reports
 	// them at the import that names it.
 	for _, file := range module.Files {

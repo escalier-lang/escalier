@@ -1365,6 +1365,10 @@ func (c *checker) resolveFuncValueTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl
 		lt = c.resolveLifetimeAnn(ta.Lifetime, lvl)
 	} else {
 		lt = c.elidedFuncLifetime(lvl)
+		// A function type a return type writes with no lifetime may hold any input.
+		if c.retLts != nil && lt != nil {
+			c.tieToInputs(lt)
+		}
 	}
 	t, ok := c.resolveFuncTypeAnn(scope, ta, nil, lvl)
 	if ft, isFn := t.(*soltype.FuncType); isFn {
@@ -1378,6 +1382,11 @@ func (c *checker) resolveFuncValueTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl
 // `<T>` list resolves through resolveTypeParams into a child scope, so a parameter, return,
 // or union member that names `T` reads the annotation's own quantified var.
 func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, recv *ast.MethodReceiver, lvl int) (soltype.Type, bool) {
+	// The annotation is a signature of its own, so an enclosing return type's elision does
+	// not reach its positions.
+	savedRetLts := c.retLts
+	c.retLts = nil
+	defer func() { c.retLts = savedRetLts }()
 	// A function type annotation is its own quantifier scope, so give it its own
 	// named-lifetime map the way inferFunc does for a function body. Without this a
 	// nested `fn<'a: 'static>(…)` annotation would resolve `'a` to the enclosing
@@ -1563,7 +1572,7 @@ func (c *checker) resolveMutableTypeAnn(scope *Scope, ta *ast.MutableTypeAnn, lv
 // reaches an output renders under a quantified name like `&'a {x}`, while one that
 // connects nothing elides. The result always carries a lifetime.
 func (c *checker) resolveRefTypeAnn(scope *Scope, ta *ast.RefTypeAnn, lvl int) (soltype.Type, bool) {
-	lt := c.resolveLifetimeAnn(ta.Lifetime, lvl)
+	lt := c.resolveBorrowLifetime(ta, lvl)
 	inner, ok := c.resolveTypeAnn(scope, ta.Inner, lvl)
 	if !ok {
 		// Recover an unsupported inner to a fresh var so the borrow wrapper survives, cascade-safe.
@@ -1615,6 +1624,16 @@ func (c *checker) resolveLifetimeAnn(node ast.LifetimeAnnNode, lvl int) soltype.
 		// A nil node, or any unexpected form, is an inferred borrow with a fresh lifetime.
 		return c.ctx.freshLifetime(lvl)
 	}
+}
+
+// resolveBorrowLifetime resolves the lifetime of the borrow annotation ta. A borrow that
+// a return type writes with no lifetime takes the one elision gives it, and any other
+// resolves through resolveLifetimeAnn.
+func (c *checker) resolveBorrowLifetime(ta *ast.RefTypeAnn, lvl int) soltype.Lifetime {
+	if ta.Lifetime == nil && c.retLts != nil {
+		return c.returnBorrowLifetime(ta, lvl)
+	}
+	return c.resolveLifetimeAnn(ta.Lifetime, lvl)
 }
 
 // lowerLifetimeParamBounds lowers each declared `'a: 'b` bound ("'a outlives 'b") to

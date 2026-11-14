@@ -245,48 +245,63 @@ func (s *Server) textDocumentDidChange(context *glsp.Context, params *protocol.D
 	return nil
 }
 
+// textDocumentHover returns the hover for the node at the cursor, or nil when the cursor
+// is on nothing with a hover to show.
 func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.HoverParams) (*protocol.Hover, error) {
-	fmt.Fprintf(os.Stderr, "textDocumentHover - uri = %s\n", params.TextDocument.URI)
-
 	loc := posToLoc(server.lineMapForURI(params.TextDocument.URI), params.Position)
-	// The client's position is already a line and column, so report it directly
-	// rather than converting the offset back. It is 0-based, where a person
-	// counts from 1.
-	value := fmt.Sprintf(
-		"textDocumentHover - loc = line:%d, column:%d\n",
-		params.Position.Line+1,
-		params.Position.Character+1,
-	)
-
 	sourceID := server.sourceIDForURI(params.TextDocument.URI)
 	server.mu.RLock()
-	var hoverNode ast.Node
-	var info *solver.Info
+	q := hoverQuery{loc: loc}
 	if co := server.checkOutput; co != nil {
-		hoverNode = findNodeAtLocation(co, sourceID, loc)
-		info = co.InfoFor(sourceID)
+		q.node, q.ancestors = findNodeWithAncestorsAt(co, sourceID, loc)
+		q.info = co.InfoFor(sourceID)
+		q.scope = scopeOfFile(co, sourceID)
 	}
 	server.mu.RUnlock()
-	switch hoverNode.(type) {
-	case ast.Expr, ast.Pat:
-		if info == nil {
-			break
-		}
-		server.solverMu.RLock()
-		if t := info.DisplayTypeOf(hoverNode); t != nil {
-			value = "`" + hoverText(info, hoverNode, t) + "`"
-		}
-		server.solverMu.RUnlock()
+	if q.info == nil {
+		return nil, nil
 	}
+	server.solverMu.RLock()
+	defer server.solverMu.RUnlock()
+	if text, ok := typeHover(q); ok {
+		return codeHover(text), nil
+	}
+	if text, ok := valueHover(q); ok {
+		return codeHover(text), nil
+	}
+	if text, ok := selfHover(q); ok {
+		return codeHover(text), nil
+	}
+	if text, ok := memberHover(q); ok {
+		return codeHover(text), nil
+	}
+	if text, ok := namespaceHover(q); ok {
+		return codeHover(text), nil
+	}
+	if text, ok := declMemberHover(q); ok {
+		return codeHover(text), nil
+	}
+	switch q.node.(type) {
+	// A literal or template string already shows its value in the source, so a hover
+	// on it adds nothing.
+	case *ast.LiteralExpr, *ast.TemplateLitExpr, *ast.LitPat:
+		return nil, nil
+	case ast.Expr, ast.Pat:
+		if t := q.info.DisplayTypeOf(q.node); t != nil {
+			return codeHover(hoverText(q.info, q.node, t)), nil
+		}
+	}
+	return nil, nil
+}
 
-	hover := protocol.Hover{
+// codeHover returns a hover that shows code as an Escalier code block.
+func codeHover(code string) *protocol.Hover {
+	return &protocol.Hover{
 		Contents: protocol.MarkupContent{
 			Kind:  protocol.MarkupKindMarkdown,
-			Value: value,
+			Value: "```escalier\n" + code + "\n```",
 		},
-		Range: nil,
 	}
-	return &hover, nil
 }
 
 // hoverText renders the hover for node, whose display type is t. A binding, or a read
@@ -346,7 +361,7 @@ func addr[T any](x T) *T {
 	return &x
 }
 
-func (*Server) textDocumentCodeAction(context *glsp.Context, params *protocol.CodeActionParams) (any, error) {
+func (s *Server) textDocumentCodeAction(context *glsp.Context, params *protocol.CodeActionParams) (any, error) {
 	compileAction := protocol.CodeAction{
 		Title:       "Compile",
 		Kind:        addr("compile"),
@@ -371,6 +386,11 @@ func (*Server) textDocumentCodeAction(context *glsp.Context, params *protocol.Co
 			if action, ok := borrowFixAction(params.TextDocument.URI, diag); ok {
 				codeActions = append(codeActions, action)
 			}
+		}
+	}
+	if wantsCodeActionKind(params.Context.Only, signatureActionKind) {
+		if action, ok := s.signatureActionAt(params.TextDocument.URI, params.Range.Start); ok {
+			codeActions = append(codeActions, action)
 		}
 	}
 
@@ -791,6 +811,9 @@ func (server *Server) publishDiagnosticsForScript(
 // the error's span indexes into, or nil when the check output holds none.
 func toDiagnostic(err compiler.Diagnostic, src *ast.Source) protocol.Diagnostic {
 	severity := protocol.DiagnosticSeverityError
+	if compiler.IsWarning(err) {
+		severity = protocol.DiagnosticSeverityWarning
+	}
 	source := "escalier"
 	diag := protocol.Diagnostic{
 		Range:    spanToRange(lineMapFor(src), err.Span()),

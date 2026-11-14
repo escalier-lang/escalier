@@ -52,7 +52,7 @@ func TestInferTaggedTemplateLit(t *testing.T) {
 		require.Equal(t, "boolean", values["x"])
 	})
 	t.Run("TemplateStringsArray", func(t *testing.T) {
-		values, errs := inferAgainstTree(t, "declare fn tag(strings: TemplateStringsArray) -> number\nval x = tag`plain`")
+		values, errs := inferAgainstTree(t, "import \"std:string\"\ndeclare fn tag(strings: string.TemplateStringsArray) -> number\nval x = tag`plain`")
 		require.Empty(t, errs)
 		require.Equal(t, "number", values["x"])
 	})

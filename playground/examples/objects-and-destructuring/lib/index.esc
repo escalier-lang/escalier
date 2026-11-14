@@ -28,7 +28,7 @@ export fn headline([{title}, ...rest]: [Task, ...Array<Task>]) -> string {
 
 // An object rest collects the fields the pattern didn't name. `withoutTags`
 // returns `{title: string, done: boolean}`.
-export fn withoutTags(task: Task) {
+export fn withoutTags(task: Task) -> {title: string, done: boolean} {
     val {tags, ...rest} = task
     return rest
 }

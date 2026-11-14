@@ -215,6 +215,7 @@ func (s *Server) initialize(context *glsp.Context, params *protocol.InitializePa
 		CodeActionKinds: []protocol.CodeActionKind{
 			"compile",
 			protocol.CodeActionKindQuickFix,
+			signatureActionKind,
 		},
 		ResolveProvider: nil,
 	}

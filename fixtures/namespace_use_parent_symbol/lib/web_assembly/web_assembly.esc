@@ -4,7 +4,7 @@ interface GlobalDescriptor<T: ValueType = ValueType> {
 }
 
 interface ValueTypeMap {
-    anyfunc: Function,
+    anyfunc: function,
     externref: any,
     f32: number,
     f64: number,

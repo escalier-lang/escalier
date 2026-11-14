@@ -234,6 +234,9 @@ type ltAnalysis struct {
 	outlivesGraph *ltBoundSet  // condensed outlives graph; rep IDs collapse mutual-outlives cycles
 	comp          map[int]int  // representative ID -> connected-component leader ID in outlivesGraph
 	posComps      set.Set[int] // component leaders reaching a positive occurrence
+	// lowestParam maps a representative ID to the param lifetime with the lowest ID that
+	// shares it, leaving out a 'static-forced param. sccParam fills it on first use.
+	lowestParam map[int]*soltype.LifetimeVar
 }
 
 // newLtAnalysis builds the grouping from the structurally-occurring lifetime
@@ -316,6 +319,35 @@ func (a *ltAnalysis) kept(v *soltype.LifetimeVar) bool {
 	return a.posComps.Contains(a.leaderOf(v))
 }
 
+// sccParam returns the param lifetime that v renders under among the params that share v's
+// representative, which are equal to v. That is the one with the lowest ID, or v itself when
+// v is a param with a lower ID than each of them. A 'static-forced param renders as 'static
+// and is passed over. It returns v when no param shares its representative.
+func (a *ltAnalysis) sccParam(v *soltype.LifetimeVar) *soltype.LifetimeVar {
+	if a.lowestParam == nil {
+		a.lowestParam = map[int]*soltype.LifetimeVar{}
+		for p := range a.occ {
+			if !a.isParam(p) || forcedToStatic(p) {
+				continue
+			}
+			rep := a.outlivesGraph.repOf(p.ID)
+			if cur, ok := a.lowestParam[rep]; !ok || p.ID < cur.ID {
+				a.lowestParam[rep] = p
+			}
+		}
+	}
+	p, ok := a.lowestParam[a.outlivesGraph.repOf(v.ID)]
+	if !ok {
+		return v
+	}
+	// A non-param lifetime renders under the param it equals whatever their IDs, since it
+	// has no name of its own to keep.
+	if !a.isParam(v) || p.ID < v.ID {
+		return p
+	}
+	return v
+}
+
 // componentParams returns the kept param lifetimes in v's connected component, keyed
 // by SCC representative so mutually-outliving params list once. Each entry emits a
 // param var, since the representative itself can be a non-param bridge var named in no
@@ -372,12 +404,20 @@ func (a *ltAnalysis) resolveLt(v *soltype.LifetimeVar) (lt soltype.Lifetime, eli
 	}
 	if a.isParam(v) {
 		if a.kept(v) || a.noElide.Contains(v) {
-			return v, false // a named param renders under its own quantified name
+			// A named param renders under its own quantified name, unless params that
+			// outlive each other share its representative. Those are one lifetime, so all of
+			// them render under the name of the one with the lowest ID.
+			return a.sccParam(v), false
 		}
 		return nil, true // connect-nothing param: elide
 	}
 	// A non-param lifetime is a join variable minted at a return or branch, or an
-	// instantiation intermediary. It resolves to the param lifetimes it reaches.
+	// instantiation intermediary. One equal to a param, by outliving it both ways, renders
+	// under that param's name.
+	if p := a.sccParam(v); p != v && a.kept(p) {
+		return p, false
+	}
+	// Any other resolves to the param lifetimes it reaches.
 	members := a.componentParams(v)
 	switch len(members) {
 	case 0:

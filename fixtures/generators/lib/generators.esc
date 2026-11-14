@@ -1,30 +1,30 @@
 // Basic generator function
-export gen fn count() {
+export gen fn count() -> Generator<1 | 2 | 3, undefined, unknown> {
     yield 1
     yield 2
     yield 3
 }
 
 // Generator with a return value
-export gen fn countWithDone() {
+export gen fn countWithDone() -> Generator<1 | 2, "done", unknown> {
     yield 1
     yield 2
     return "done"
 }
 
 // Generator that yields different types
-export gen fn mixed() {
+export gen fn mixed() -> Generator<1 | "hello", undefined, unknown> {
     yield 1
     yield "hello"
 }
 
 // Yield delegation using yield from
-export gen fn inner() {
+export gen fn inner() -> Generator<1 | 2, undefined, unknown> {
     yield 1
     yield 2
 }
 
-export gen fn outer() {
+export gen fn outer() -> Generator<1 | 2 | 3, undefined, unknown> {
     yield from inner()
     yield 3
 }
@@ -39,51 +39,51 @@ export fn sumOuter() -> number {
 }
 
 // Spread generator into array
-export fn countArray() {
+export fn countArray() -> Array<1 | 2 | 3> {
     return [...count()]
 }
 
-export fn outerArray() {
+export fn outerArray() -> Array<1 | 2 | 3> {
     return [...outer()]
 }
 
 // Async generator function
-export async gen fn fetchItems() {
+export async gen fn fetchItems() -> AsyncGenerator<1 | 2 | 3, undefined, unknown> {
     yield 1
     yield 2
     yield 3
 }
 
 // Generator declared with the `gen` keyword
-export gen fn genCount() {
+export gen fn genCount() -> Generator<10 | 20, undefined, unknown> {
     yield 10
     yield 20
 }
 
 // Async generator declared with `async gen`
-export async gen fn genFetch() {
+export async gen fn genFetch() -> AsyncGenerator<1, undefined, unknown> {
     yield 1
 }
 
 // Generator function expression
-export val genExpr = gen fn () {
+export val genExpr = gen fn () -> Generator<"a", undefined, unknown> {
     yield "a"
 }
 
 // A `gen fn` whose body never yields is still a generator
-export gen fn genNoYield() {
+export gen fn genNoYield() -> Generator<never, 1, unknown> {
     return 1
 }
 
 // Drive a generator by hand. `next` takes `mut self`, so the binding is declared
 // `val mut` to make the method visible.
-export fn drive() {
+export fn drive() -> IteratorResult<1 | 2 | 3, undefined> {
     val mut it: Generator<1 | 2 | 3, undefined, unknown> = count()
     return it.next()
 }
 
 // The inferred send type is `unknown`, so a caller may send a value back in
-export fn driveWithValue() {
+export fn driveWithValue() -> IteratorResult<1 | 2 | 3, undefined> {
     val mut it: Generator<1 | 2 | 3, undefined, unknown> = count()
     return it.next("resume")
 }
@@ -95,13 +95,13 @@ export gen fn resumable() -> Generator<number, string, string> {
     return sent
 }
 
-export fn driveResumable() {
+export fn driveResumable() -> IteratorResult<number, string> {
     val mut it: Generator<number, string, string> = resumable()
     return it.next("go")
 }
 
 // Delegating forwards a sent value into the delegate, so this generator's send type
 // narrows to the one `resumable` declares rather than staying `unknown`
-export gen fn relayResumable() {
+export gen fn relayResumable() -> Generator<number, undefined, string> {
     yield from resumable()
 }

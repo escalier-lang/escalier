@@ -943,7 +943,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			// live.
 			name: "E2AtAStoreTheReturnKeepsLive",
 			src: `
-				fn f(p: &mut {r: &{value: number}}) -> {peer: &mut {value: number}} {
+				fn f<'x>(p: &'x mut {r: &{value: number}}) -> {peer: &'x mut {value: number}} {
 					val mut b = {value: 1}
 					val a = {peer: &mut b}
 					p.r = &b

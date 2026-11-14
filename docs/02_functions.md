@@ -176,6 +176,8 @@ The rejection type may be written, in which case the body's throws are checked
 against it:
 
 ```esc
+import "web:fetch"
+
 async fn fetchJSON(url: string) -> Promise<unknown, FetchError> {
     val res = await fetch(url)
     if !res.ok {
@@ -312,8 +314,10 @@ stated, and `...` is how you state it.
 Parameters accept the same patterns as `val` bindings.
 
 ```esc
+import "std:math"
+
 fn dist({x, y}: {x: number, y: number}) -> number {
-    return Math.sqrt(x ** 2 + y ** 2)
+    return math.sqrt(x ** 2 + y ** 2)
 }
 ```
 

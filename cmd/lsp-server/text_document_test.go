@@ -184,7 +184,7 @@ func TestIntegration_HoverShowsType(t *testing.T) {
 
 	content, ok := hover.Contents.(protocol.MarkupContent)
 	require.True(t, ok)
-	assert.Equal(t, "`x: number`", content.Value)
+	assert.Equal(t, escalierCode("x: number"), content.Value)
 }
 
 // --- Integration test: diagnostics ---
@@ -669,6 +669,11 @@ func TestDefinitionFromSolver(t *testing.T) {
 	}
 }
 
+// escalierCode returns the hover text that shows code as an Escalier code block.
+func escalierCode(code string) string {
+	return "```escalier\n" + code + "\n```"
+}
+
 func TestHoverFromSolver(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -676,49 +681,50 @@ func TestHoverFromSolver(t *testing.T) {
 		// open is the file the request names. line and col are 0-based.
 		open      string
 		line, col protocol.UInteger
-		expected  string
+		// expected is the hover text, or "" when the request returns no hover.
+		expected string
 	}{
 		{
 			name:  "InferredVal",
 			files: map[string]string{"bin/main.esc": "val x = 5"},
 			open:  "bin/main.esc", line: 0, col: 4,
-			expected: "`x: 5`",
+			expected: escalierCode("x: 5"),
 		},
 		{
 			name:  "ValMutBinding",
 			files: map[string]string{"bin/main.esc": "val mut p = {x: 1}"},
 			open:  "bin/main.esc", line: 0, col: 8,
-			expected: "`mut p: {x: number}`",
+			expected: escalierCode("mut p: {x: number}"),
 		},
 		{
 			name:  "ValMutRead",
 			files: map[string]string{"bin/main.esc": "val mut p = {x: 1}\nval n = p.x"},
 			open:  "bin/main.esc", line: 1, col: 8,
-			expected: "`mut p: {x: number}`",
+			expected: escalierCode("mut p: {x: number}"),
 		},
 		{
 			name:  "DestructuredMutShorthandReadInFunction",
 			files: map[string]string{"lib/a.esc": "val {mut a, b} = {a: {x: 1}, b: {x: 2}}\nexport fn f() -> number { return a.x + b.x }"},
 			open:  "lib/a.esc", line: 1, col: 33,
-			expected: "`mut a: {x: number}`",
+			expected: escalierCode("mut a: {x: number}"),
 		},
 		{
 			name:  "DestructuredShorthandReadInFunction",
 			files: map[string]string{"lib/a.esc": "val {mut a, b} = {a: {x: 1}, b: {x: 2}}\nexport fn f() -> number { return a.x + b.x }"},
 			open:  "lib/a.esc", line: 1, col: 39,
-			expected: "`b: {x: 2}`",
+			expected: escalierCode("b: {x: 2}"),
 		},
 		{
 			name:  "DestructuredMutKeyValueReadInFunction",
 			files: map[string]string{"lib/a.esc": "val {a: mut c} = {a: {x: 1}}\nexport fn f() -> number { return c.x }"},
 			open:  "lib/a.esc", line: 1, col: 33,
-			expected: "`mut c: {x: number}`",
+			expected: escalierCode("mut c: {x: number}"),
 		},
 		{
 			name:  "AnnotatedValMut",
 			files: map[string]string{"bin/main.esc": "val mut p: {x: number} = {x: 1}"},
 			open:  "bin/main.esc", line: 0, col: 8,
-			expected: "`mut p: {x: number}`",
+			expected: escalierCode("mut p: {x: number}"),
 		},
 		{
 			name: "MutParam",
@@ -726,13 +732,13 @@ func TestHoverFromSolver(t *testing.T) {
 				"lib/point.esc": "export fn f(mut p: {x: number}) -> number { return p.x }",
 			},
 			open: "lib/point.esc", line: 0, col: 16,
-			expected: "`mut p: {x: number}`",
+			expected: escalierCode("mut p: {x: number}"),
 		},
 		{
 			name:  "DestructuredMutRead",
 			files: map[string]string{"bin/main.esc": "val {mut a} = {a: {x: 1}}\nval n = a.x"},
 			open:  "bin/main.esc", line: 1, col: 8,
-			expected: "`mut a: {x: number}`",
+			expected: escalierCode("mut a: {x: number}"),
 		},
 		{
 			// A call moves its argument only into a concrete owned shape, so the `mut` on a
@@ -742,7 +748,7 @@ func TestHoverFromSolver(t *testing.T) {
 				"lib/point.esc": "export fn f(mut p: {x: number} | {y: number}) -> number { return 1 }",
 			},
 			open: "lib/point.esc", line: 0, col: 16,
-			expected: "`p: {x: number} | {y: number}`",
+			expected: escalierCode("p: {x: number} | {y: number}"),
 		},
 		{
 			name: "MutParamRead",
@@ -750,7 +756,7 @@ func TestHoverFromSolver(t *testing.T) {
 				"lib/point.esc": "export fn f(mut p: {x: number}) -> number { return p.x }",
 			},
 			open: "lib/point.esc", line: 0, col: 51,
-			expected: "`mut p: {x: number}`",
+			expected: escalierCode("mut p: {x: number}"),
 		},
 		{
 			name: "LibFuncReadFromBin",
@@ -759,16 +765,16 @@ func TestHoverFromSolver(t *testing.T) {
 				"bin/main.esc": "val x = add(1, 2)",
 			},
 			open: "bin/main.esc", line: 0, col: 9,
-			expected: "`fn (a: number, b: number) -> number`",
+			expected: escalierCode("fn add(a: number, b: number) -> number"),
 		},
 		// The checker binds `self` with no declaration, so the hover shows its type alone.
 		{
-			name: "SelfRead",
+			name: "SelfBorrowRead",
 			files: map[string]string{
-				"lib/c.esc": "export class C { n: number, get(self) -> number { return self.n } }",
+				"lib/c.esc": "export class C { n: number, peek(&self) -> number { return self.n } }",
 			},
-			open: "lib/c.esc", line: 0, col: 58,
-			expected: "`{n: number, get(self) -> number}`",
+			open: "lib/c.esc", line: 0, col: 59,
+			expected: escalierCode("self: &C"),
 		},
 		{
 			name: "LibParam",
@@ -776,7 +782,551 @@ func TestHoverFromSolver(t *testing.T) {
 				"lib/math.esc": "export fn add(a: number, b: number) -> number { return a + b }",
 			},
 			open: "lib/math.esc", line: 0, col: 55,
-			expected: "`a: number`",
+			expected: escalierCode("a: number"),
+		},
+		{
+			name:  "NumberLiteral",
+			files: map[string]string{"bin/main.esc": "val x = 5"},
+			open:  "bin/main.esc", line: 0, col: 8,
+		},
+		{
+			name:  "StringLiteralArgument",
+			files: map[string]string{"bin/main.esc": "declare fn f(s: string) -> number\nval n = f(\"title\")"},
+			open:  "bin/main.esc", line: 1, col: 11,
+		},
+		{
+			name:  "TemplateString",
+			files: map[string]string{"bin/main.esc": "val n = 1\nval s = `n = ${n}`"},
+			open:  "bin/main.esc", line: 1, col: 9,
+		},
+		{
+			name:  "LiteralPattern",
+			files: map[string]string{"bin/main.esc": "val n: number = 1\nval s = match n { 0 => \"zero\", _ => \"other\" }"},
+			open:  "bin/main.esc", line: 1, col: 18,
+		},
+		{
+			name: "TypeAliasDecl",
+			files: map[string]string{
+				"lib/a.esc": "export type Point = {x: number, y?: number}",
+			},
+			open: "lib/a.esc", line: 0, col: 13,
+			expected: escalierCode("type Point = { x: number, y?: number }"),
+		},
+		{
+			name: "TypeAliasKeyword",
+			files: map[string]string{
+				"lib/a.esc": "export type Point = {x: number, y?: number}",
+			},
+			open: "lib/a.esc", line: 0, col: 8,
+		},
+		{
+			name: "TypeAliasUseFromBin",
+			files: map[string]string{
+				"lib/a.esc":    "export type Point = {x: number, y?: number}",
+				"bin/main.esc": "val p: Point = {x: 1}",
+			},
+			open: "bin/main.esc", line: 0, col: 8,
+			expected: escalierCode("type Point = { x: number, y?: number }"),
+		},
+		{
+			name: "TypeAliasInIndexedAccess",
+			files: map[string]string{
+				"lib/a.esc": "export type Point = {x: number, y?: number}\nexport type Y = Point[\"y\"]",
+			},
+			open: "lib/a.esc", line: 1, col: 17,
+			expected: escalierCode("type Point = { x: number, y?: number }"),
+		},
+		{
+			name: "IndexedAccessAliasDecl",
+			files: map[string]string{
+				"lib/a.esc": "export type Point = {x: number, y?: number}\nexport type Y = Point[\"y\"]",
+			},
+			open: "lib/a.esc", line: 1, col: 12,
+			expected: escalierCode("type Y = Point[\"y\"]"),
+		},
+		{
+			name: "GenericAliasDecl",
+			files: map[string]string{
+				"lib/a.esc": "export type Unwrap<T> = if T : Promise<infer V> { Unwrap<V> } else { T }",
+			},
+			open: "lib/a.esc", line: 0, col: 13,
+			expected: escalierCode("type Unwrap<T> = if T : Promise<infer V> { Unwrap<V> } else { T }"),
+		},
+		{
+			name: "GenericAliasUse",
+			files: map[string]string{
+				"lib/a.esc": "export type Box<T> = {value: T}\nexport val b: Box<string> = {value: \"a\"}",
+			},
+			open: "lib/a.esc", line: 1, col: 14,
+			expected: escalierCode("type Box<T> = { value: T }"),
+		},
+		{
+			name: "BuiltinAlias",
+			files: map[string]string{
+				"lib/a.esc": "export type Point = {x: number, y?: number}\nexport val p: Partial<Point> = {}",
+			},
+			open: "lib/a.esc", line: 1, col: 15,
+			expected: escalierCode("type Partial<T> = { [P]+?: T[P] for P in keyof T }"),
+		},
+		{
+			name: "AliasTypeParamDecl",
+			files: map[string]string{
+				"lib/a.esc": "export type Box<T> = {value: T}",
+			},
+			open: "lib/a.esc", line: 0, col: 16,
+			expected: escalierCode("(type parameter) T"),
+		},
+		{
+			name: "AliasTypeParamRef",
+			files: map[string]string{
+				"lib/a.esc": "export type Box<T> = {value: T}",
+			},
+			open: "lib/a.esc", line: 0, col: 29,
+			expected: escalierCode("(type parameter) T"),
+		},
+		{
+			name: "FuncTypeParamDecl",
+			files: map[string]string{
+				"lib/a.esc": "export fn id<T: number>(x: T) -> T { return x }",
+			},
+			open: "lib/a.esc", line: 0, col: 13,
+			expected: escalierCode("(type parameter) T: number"),
+		},
+		{
+			name: "FuncTypeParamRef",
+			files: map[string]string{
+				"lib/a.esc": "export fn id<T: number>(x: T) -> T { return x }",
+			},
+			open: "lib/a.esc", line: 0, col: 27,
+			expected: escalierCode("(type parameter) T: number"),
+		},
+		{
+			name: "TypeParamDefault",
+			files: map[string]string{
+				"lib/a.esc": "export type Box<T = string> = {value: T}",
+			},
+			open: "lib/a.esc", line: 0, col: 38,
+			expected: escalierCode("(type parameter) T = string"),
+		},
+		{
+			name: "InferDecl",
+			files: map[string]string{
+				"lib/a.esc": "export type Unwrap<T> = if T : Promise<infer V> { Unwrap<V> } else { T }",
+			},
+			open: "lib/a.esc", line: 0, col: 46,
+			expected: escalierCode("(type parameter) V"),
+		},
+		{
+			name: "InferRef",
+			files: map[string]string{
+				"lib/a.esc": "export type Unwrap<T> = if T : Promise<infer V> { Unwrap<V> } else { T }",
+			},
+			open: "lib/a.esc", line: 0, col: 58,
+			expected: escalierCode("(type parameter) V"),
+		},
+		{
+			name: "MappedTypeKey",
+			files: map[string]string{
+				"lib/a.esc": "export type Patch<T> = {[K]+?: T[K] for K in keyof T}",
+			},
+			open: "lib/a.esc", line: 0, col: 33,
+			expected: escalierCode("(type parameter) K in keyof T"),
+		},
+		{
+			name: "FuncDeclName",
+			files: map[string]string{
+				"lib/a.esc": "export fn add(a: number, b: number) -> number { return a + b }",
+			},
+			open: "lib/a.esc", line: 0, col: 10,
+			expected: escalierCode("fn add(a: number, b: number) -> number"),
+		},
+		{
+			name: "GenericFuncDeclName",
+			files: map[string]string{
+				"lib/a.esc": "export fn id<T: number>(x: T) -> T { return x }",
+			},
+			open: "lib/a.esc", line: 0, col: 10,
+			expected: escalierCode("fn id<T: number>(x: T) -> T"),
+		},
+		{
+			name: "OverloadedFuncReadFromBin",
+			files: map[string]string{
+				"lib/a.esc":    "export fn f(n: number) -> string { return \"n\" }\nexport fn f(s: string) -> string { return s }",
+				"bin/main.esc": "val s = f(1)",
+			},
+			open: "bin/main.esc", line: 0, col: 8,
+			expected: escalierCode("fn f(n: number) -> string (+1 overload)"),
+		},
+		{
+			name: "ClassDeclName",
+			files: map[string]string{
+				"lib/a.esc": "export class Dog { name: string, bark(self) -> string { return self.name } }",
+			},
+			open: "lib/a.esc", line: 0, col: 13,
+			expected: escalierCode("class Dog"),
+		},
+		{
+			name: "GenericClassDeclName",
+			files: map[string]string{
+				"lib/a.esc": "export class Box<T> { value: T }",
+			},
+			open: "lib/a.esc", line: 0, col: 13,
+			expected: escalierCode("class Box<T>"),
+		},
+		{
+			name: "ClassConstructorRead",
+			files: map[string]string{
+				"lib/a.esc":    "export class HttpError { status: number }",
+				"bin/main.esc": "val e = HttpError(404)",
+			},
+			open: "bin/main.esc", line: 0, col: 8,
+			expected: escalierCode("constructor HttpError(status: number)"),
+		},
+		{
+			name: "ClassRefInType",
+			files: map[string]string{
+				"lib/a.esc": "export class Dog { name: string, bark(self) -> string { return self.name } }\nexport fn f(d: Dog) -> string { return d.bark() }",
+			},
+			open: "lib/a.esc", line: 1, col: 17,
+			expected: escalierCode("class Dog"),
+		},
+		{
+			name: "EnumDeclName",
+			files: map[string]string{
+				"lib/a.esc": "export enum Expr { Num(value: number), Neg(operand: Expr) }",
+			},
+			open: "lib/a.esc", line: 0, col: 12,
+			expected: escalierCode("enum Expr"),
+		},
+		{
+			name: "GenericEnumDeclName",
+			files: map[string]string{
+				"lib/a.esc": "export enum Result<T, E> { Ok(value: T), Err(error: E) }",
+			},
+			open: "lib/a.esc", line: 0, col: 12,
+			expected: escalierCode("enum Result<T, E>"),
+		},
+		{
+			name: "EnumRefInType",
+			files: map[string]string{
+				"lib/a.esc": "export enum Expr { Num(value: number), Neg(operand: Expr) }\nexport fn show(e: Expr) -> number { return 1 }",
+			},
+			open: "lib/a.esc", line: 1, col: 18,
+			expected: escalierCode("enum Expr"),
+		},
+		{
+			name: "InterfaceDeclName",
+			files: map[string]string{
+				"lib/a.esc": "export interface Shape { area(self) -> number, name: string }",
+			},
+			open: "lib/a.esc", line: 0, col: 17,
+			expected: escalierCode("interface Shape { area(self) -> number, name: string }"),
+		},
+		{
+			name: "ConstructorWithFuncParam",
+			files: map[string]string{
+				"lib/a.esc":    "export class Timer { constructor(cb: fn () -> undefined) { } }",
+				"bin/main.esc": "val t = Timer(fn () { return undefined })",
+			},
+			open: "bin/main.esc", line: 0, col: 8,
+			expected: escalierCode("constructor Timer(cb: fn () -> undefined)"),
+		},
+		{
+			name: "SelfMutBorrowRead",
+			files: map[string]string{
+				"lib/c.esc": "export class C { n: number, bump(&mut self) { self.n = self.n + 1 } }",
+			},
+			open: "lib/c.esc", line: 0, col: 46,
+			expected: escalierCode("self: &mut C"),
+		},
+		{
+			name: "PropertyReadOnClass",
+			files: map[string]string{
+				"lib/a.esc": "export class HttpError { status: number }\nexport fn f(e: &HttpError) -> number { return e.status }",
+			},
+			open: "lib/a.esc", line: 1, col: 48,
+			expected: escalierCode("(property) HttpError.status: number"),
+		},
+		{
+			name: "MethodReadOnClass",
+			files: map[string]string{
+				"lib/a.esc": "export class C { n: number, peek(self) -> number { return self.n } }\nexport fn g(c: &C) -> number { return c.peek() }",
+			},
+			open: "lib/a.esc", line: 1, col: 40,
+			expected: escalierCode("(method) C.peek() -> number"),
+		},
+		{
+			name: "GetterRead",
+			files: map[string]string{
+				"lib/a.esc": "export class Temp { celsius: number, get fahrenheit(self) -> number { return self.celsius } }\nexport fn u(t: &Temp) -> number { return t.fahrenheit }",
+			},
+			open: "lib/a.esc", line: 1, col: 43,
+			expected: escalierCode("(getter) Temp.fahrenheit: number"),
+		},
+		{
+			name: "PropertyReadOnObjectLiteral",
+			files: map[string]string{
+				"lib/a.esc": "export fn f(p: &{x: number}) -> number { return p.x }",
+			},
+			open: "lib/a.esc", line: 0, col: 50,
+			expected: escalierCode("(property) x: number"),
+		},
+		{
+			name: "ObjectLiteralPropertyKey",
+			files: map[string]string{
+				"lib/a.esc": "export val p = {volume: 7}",
+			},
+			open: "lib/a.esc", line: 0, col: 16,
+			expected: escalierCode("(property) volume: 7"),
+		},
+		{
+			name: "NamespaceRead",
+			files: map[string]string{
+				"lib/a.esc": "import \"std:math\"\nexport fn f() -> number { return math.floor(1.5) }",
+			},
+			open: "lib/a.esc", line: 1, col: 33,
+			expected: escalierCode("namespace math"),
+		},
+		{
+			name: "EnumAsNamespaceRead",
+			files: map[string]string{
+				"lib/a.esc": "export enum Expr { Num(value: number), Neg(operand: Expr) }\nexport val add = Expr.Num",
+			},
+			open: "lib/a.esc", line: 1, col: 17,
+			expected: escalierCode("namespace Expr"),
+		},
+		{
+			name: "EnumVariantRead",
+			files: map[string]string{
+				"lib/a.esc": "export enum Expr { Num(value: number), Neg(operand: Expr) }\nexport val add = Expr.Num",
+			},
+			open: "lib/a.esc", line: 1, col: 22,
+			expected: escalierCode("(variant) Expr.Num(value: number)"),
+		},
+		{
+			name: "GenericEnumVariantRead",
+			files: map[string]string{
+				"lib/a.esc": "export enum Result<T, E> { Ok(value: T), Err(error: E) }\nexport val mk = Result.Ok",
+			},
+			open: "lib/a.esc", line: 1, col: 23,
+			expected: escalierCode("(variant) Result.Ok(value: T)"),
+		},
+		{
+			name: "ClassFieldDecl",
+			files: map[string]string{
+				"lib/a.esc": "export class Dog { name: string, bark(&self) -> string { return self.name } }",
+			},
+			open: "lib/a.esc", line: 0, col: 19,
+			expected: escalierCode("(property) Dog.name: string"),
+		},
+		{
+			name: "ClassMethodDecl",
+			files: map[string]string{
+				"lib/a.esc": "export class Dog { name: string, bark(&self) -> string { return self.name } }",
+			},
+			open: "lib/a.esc", line: 0, col: 33,
+			expected: escalierCode("(method) Dog.bark() -> string"),
+		},
+		{
+			name: "ClassGetterDecl",
+			files: map[string]string{
+				"lib/a.esc": "export class Temp { celsius: number, get fahrenheit(&self) -> number { return self.celsius } }",
+			},
+			open: "lib/a.esc", line: 0, col: 41,
+			expected: escalierCode("(getter) Temp.fahrenheit: number"),
+		},
+		{
+			name: "ObjectTypeProperty",
+			files: map[string]string{
+				"lib/a.esc": "export type Pt = {lat: number, lng: number}",
+			},
+			open: "lib/a.esc", line: 0, col: 18,
+			expected: escalierCode("(property) lat: number"),
+		},
+		{
+			// A static field's initializer sits directly under the class, so a read in it
+			// shows the value it reads rather than a member of the class.
+			name: "StaticFieldInitializerRead",
+			files: map[string]string{
+				"lib/a.esc": "val count = 1\nexport class C { count: number, static total: number = count }",
+			},
+			open: "lib/a.esc", line: 1, col: 55,
+			expected: escalierCode("count: 1"),
+		},
+		{
+			// A getter and a setter share a name, so the declaration resolves by the kind of
+			// member written as well as its name.
+			name: "ClassSetterDecl",
+			files: map[string]string{
+				"lib/a.esc": "export class T { n: number, get x(&self) -> number { return self.n }, set x(&mut self, v: number) { self.n = v } }",
+			},
+			open: "lib/a.esc", line: 0, col: 74,
+			expected: escalierCode("(setter) T.x: number"),
+		},
+		{
+			name: "InferRefInExtends",
+			files: map[string]string{
+				"lib/a.esc": "export type Same<T> = if T : [infer A, A] { A } else { never }",
+			},
+			open: "lib/a.esc", line: 0, col: 39,
+			expected: escalierCode("(type parameter) A"),
+		},
+		{
+			name: "RegexCaptureRef",
+			files: map[string]string{
+				"lib/a.esc": "export type Strip<T> = if T : /^_*(?<Ident>[a-zA-Z]+)_*$/ { Ident } else { T }",
+			},
+			open: "lib/a.esc", line: 0, col: 60,
+			expected: escalierCode("(type parameter) Ident"),
+		},
+		{
+			name: "ReadonlyPropertyReadOnClass",
+			files: map[string]string{
+				"lib/a.esc": "export class Ticket { readonly id: number }\nexport fn f(t: &Ticket) -> number { return t.id }",
+			},
+			open: "lib/a.esc", line: 1, col: 45,
+			expected: escalierCode("(property) readonly Ticket.id: number"),
+		},
+		{
+			name: "ReadonlyPropertyReadOnObjectType",
+			files: map[string]string{
+				"lib/a.esc": "export fn f(t: &{readonly id: number}) -> number { return t.id }",
+			},
+			open: "lib/a.esc", line: 0, col: 60,
+			expected: escalierCode("(property) readonly id: number"),
+		},
+		{
+			name: "OptionalPropertyRead",
+			files: map[string]string{
+				"lib/a.esc": "export fn f(p: &{x: number, y?: number}) -> number | undefined { return p.y }",
+			},
+			open: "lib/a.esc", line: 0, col: 74,
+			expected: escalierCode("(property) y?: number"),
+		},
+		{
+			name: "ReadonlyClassFieldDecl",
+			files: map[string]string{
+				"lib/a.esc": "export class Ticket { readonly id: number }",
+			},
+			open: "lib/a.esc", line: 0, col: 31,
+			expected: escalierCode("(property) readonly Ticket.id: number"),
+		},
+		{
+			name: "ReadonlyObjectTypeProperty",
+			files: map[string]string{
+				"lib/a.esc": "export type Task = {readonly id: number, title: string}",
+			},
+			open: "lib/a.esc", line: 0, col: 29,
+			expected: escalierCode("(property) readonly id: number"),
+		},
+		{
+			name: "OptionalObjectTypeProperty",
+			files: map[string]string{
+				"lib/a.esc": "export type Point = {x: number, y?: number}",
+			},
+			open: "lib/a.esc", line: 0, col: 32,
+			expected: escalierCode("(property) y?: number"),
+		},
+		{
+			name: "StaticFieldRead",
+			files: map[string]string{
+				"lib/a.esc": "export class C { static max: number = 5, static make() -> number { return 1 } }\nexport val m = C.max",
+			},
+			open: "lib/a.esc", line: 1, col: 17,
+			expected: escalierCode("(property) C.max: number"),
+		},
+		{
+			name: "StaticMethodRead",
+			files: map[string]string{
+				"lib/a.esc": "export class C { static max: number = 5, static make() -> number { return 1 } }\nexport val k = C.make()",
+			},
+			open: "lib/a.esc", line: 1, col: 17,
+			expected: escalierCode("(method) C.make() -> number"),
+		},
+		{
+			name: "OptionalMethodRead",
+			files: map[string]string{
+				"lib/a.esc": "export fn f(s: &{describe?(self) -> string}) -> number { val d = s.describe\n return 1 }",
+			},
+			open: "lib/a.esc", line: 0, col: 67,
+			expected: escalierCode("(method) describe?() -> string"),
+		},
+		{
+			name: "EnumVariantDecl",
+			files: map[string]string{
+				"lib/a.esc": "export enum Expr { Num(value: number), Add(left: Expr, right: Expr) }",
+			},
+			open: "lib/a.esc", line: 0, col: 19,
+			expected: escalierCode("(variant) Expr.Num(value: number)"),
+		},
+		{
+			name: "EnumVariantDeclTwoParams",
+			files: map[string]string{
+				"lib/a.esc": "export enum Expr { Num(value: number), Add(left: Expr, right: Expr) }",
+			},
+			open: "lib/a.esc", line: 0, col: 39,
+			expected: escalierCode("(variant) Expr.Add(left: Expr, right: Expr)"),
+		},
+		{
+			name: "GenericEnumVariantDecl",
+			files: map[string]string{
+				"lib/a.esc": "export enum Result<T, E> { Ok(value: T), Err(error: E) }",
+			},
+			open: "lib/a.esc", line: 0, col: 41,
+			expected: escalierCode("(variant) Result.Err(error: E)"),
+		},
+		{
+			name: "StaticFieldDecl",
+			files: map[string]string{
+				"lib/a.esc": "export class C { static max: number = 5, static make() -> number { return 1 } }",
+			},
+			open: "lib/a.esc", line: 0, col: 24,
+			expected: escalierCode("(property) C.max: number"),
+		},
+		{
+			name: "StaticMethodDecl",
+			files: map[string]string{
+				"lib/a.esc": "export class C { static max: number = 5, static make() -> number { return 1 } }",
+			},
+			open: "lib/a.esc", line: 0, col: 48,
+			expected: escalierCode("(method) C.make() -> number"),
+		},
+		{
+			name: "InterfaceMethodDecl",
+			files: map[string]string{
+				"lib/a.esc": "export interface Shape { area(self) -> number, describe?(self) -> string, get label(self) -> string }",
+			},
+			open: "lib/a.esc", line: 0, col: 25,
+			expected: escalierCode("(method) area() -> number"),
+		},
+		{
+			name: "InterfaceOptionalMethodDecl",
+			files: map[string]string{
+				"lib/a.esc": "export interface Shape { area(self) -> number, describe?(self) -> string, get label(self) -> string }",
+			},
+			open: "lib/a.esc", line: 0, col: 47,
+			expected: escalierCode("(method) describe?() -> string"),
+		},
+		{
+			name: "InterfaceGetterDecl",
+			files: map[string]string{
+				"lib/a.esc": "export interface Shape { area(self) -> number, describe?(self) -> string, get label(self) -> string }",
+			},
+			open: "lib/a.esc", line: 0, col: 78,
+			expected: escalierCode("(getter) label: string"),
+		},
+		{
+			name: "ObjectTypeMethodDecl",
+			files: map[string]string{
+				"lib/a.esc": "export type S = {area(self) -> number}",
+			},
+			open: "lib/a.esc", line: 0, col: 17,
+			expected: escalierCode("(method) area() -> number"),
+		},
+		{
+			name:  "Keyword",
+			files: map[string]string{"bin/main.esc": "val x = 5"},
+			open:  "bin/main.esc", line: 0, col: 1,
 		},
 	}
 	for _, tt := range tests {
@@ -791,8 +1341,14 @@ func TestHoverFromSolver(t *testing.T) {
 				},
 			})
 			require.NoError(t, err)
+			if tt.expected == "" {
+				require.Nil(t, hover)
+				return
+			}
+			require.NotNil(t, hover)
 			content, ok := hover.Contents.(protocol.MarkupContent)
 			require.True(t, ok)
+			require.Equal(t, protocol.MarkupKindMarkdown, content.Kind)
 			require.Equal(t, tt.expected, content.Value)
 		})
 	}
@@ -851,7 +1407,7 @@ func TestBorrowQuickFix(t *testing.T) {
 		{
 			name:    "MutableBorrowOfAnArgument",
 			message: "this argument is borrowed by the callee, so write the borrow: `&mut`",
-			src:     "fn write(p: &mut {v: number}) {}\nfn g() {\n\tval mut x = {v: 1}\n\twrite(x)\n}",
+			src:     "fn write(p: &mut {v: number}) -> undefined {}\nfn g() -> undefined {\n\tval mut x = {v: 1}\n\twrite(x)\n}",
 			data: borrowFixData{
 				Borrow: "&mut",
 				Range: protocol.Range{
@@ -865,7 +1421,7 @@ func TestBorrowQuickFix(t *testing.T) {
 		{
 			name:    "LiteralIsParenthesized",
 			message: "this argument is borrowed by the callee, so write the borrow: `&`",
-			src:     "fn read(p: &{v: number}) {}\nfn g() {\n\tread({v: 1})\n}",
+			src:     "fn read(p: &{v: number}) -> undefined {}\nfn g() -> undefined {\n\tread({v: 1})\n}",
 			data: borrowFixData{
 				Borrow: "&",
 				Range: protocol.Range{
@@ -881,7 +1437,7 @@ func TestBorrowQuickFix(t *testing.T) {
 			// The span of `(h).f` starts inside the parentheses, and the borrow goes before them.
 			name:    "ParenthesizedReceiver",
 			message: "this argument is borrowed by the callee, so write the borrow: `&`",
-			src:     "fn read(p: &{v: number}) {}\nfn g(h: &{f: {v: number}}) {\n\tread((h).f)\n}",
+			src:     "fn read(p: &{v: number}) -> undefined {}\nfn g(h: &{f: {v: number}}) -> undefined {\n\tread((h).f)\n}",
 			data: borrowFixData{
 				Borrow: "&",
 				Range: protocol.Range{
@@ -895,7 +1451,7 @@ func TestBorrowQuickFix(t *testing.T) {
 		{
 			name:    "ShorthandProperty",
 			message: "this value is borrowed by its destination, so write the borrow: `&`",
-			src:     "fn g(f: {x: number}) {\n\tval o: {f: &{x: number}} = {f}\n}",
+			src:     "fn g(f: {x: number}) -> undefined {\n\tval o: {f: &{x: number}} = {f}\n}",
 			data: borrowFixData{
 				Borrow: "&",
 				Range: protocol.Range{
@@ -963,7 +1519,7 @@ func TestBorrowQuickFix(t *testing.T) {
 // TestBorrowQuickFixSkipsOptionalChain asserts that an optional chain filling a borrow
 // destination gets no quick fix, because `&h?.f` is not a borrow the checker accepts.
 func TestBorrowQuickFixSkipsOptionalChain(t *testing.T) {
-	src := "fn g(h: &{f: {x: number}} | undefined) {\n\tval d = h?.f\n}"
+	src := "fn g(h: &{f: {x: number}} | undefined) -> undefined {\n\tval d = h?.f\n}"
 	s := integrationServer(t, map[string]string{"bin/main.esc": src})
 	ctx, published := publishedDiagnostics()
 	uri := openFileIn(t, s, ctx, "bin/main.esc", src)

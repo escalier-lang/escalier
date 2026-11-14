@@ -1,6 +1,6 @@
 type Digits = /^\d+$/
 
-export fn classify(s: string) {
+export fn classify(s: string) -> "digits" | "word" | "other" {
     return match s {
         d: Digits => "digits",
         w: /^[a-z]+$/i => "word",
@@ -8,7 +8,7 @@ export fn classify(s: string) {
     }
 }
 
-export fn firstDigits(p: [string, number]) {
+export fn firstDigits(p: [string, number]) -> number {
     return match p {
         [d: Digits, n] => n,
         _ => 0,
@@ -17,7 +17,7 @@ export fn firstDigits(p: [string, number]) {
 
 type Id = /^[a-z]+$/ | Digits
 
-export fn kind(v: string | number | boolean) {
+export fn kind(v: string | number | boolean) -> "id" | "scalar" | "other" {
     return match v {
         i: Id => "id",
         n: number | boolean => "scalar",

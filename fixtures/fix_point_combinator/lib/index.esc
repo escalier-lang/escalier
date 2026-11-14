@@ -8,11 +8,11 @@ class Fix<A, B> {
 
 val fix = fn<A, B>(
     f: 'static fn(f: fn(arg: A) -> B) -> fn(arg: A) -> B
-) {
+) -> fn (arg: A) -> B {
     return Fix(f).recurse
 }
 
-val fact = fn(cont: fn(n: number) -> number) {
+val fact = fn(cont: fn(n: number) -> number) -> fn (n: number) -> number {
     return fn(n: number) -> number {
         return if n <= 0 { 1 } else { n * cont(n - 1) }
     }

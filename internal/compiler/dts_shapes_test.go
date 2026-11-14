@@ -127,12 +127,17 @@ func TestEachDeclarationShapeEmitsDefinitions(t *testing.T) {
 	}
 }
 
-// shapeDiagnostics returns what a compile reported about the source, dropping the
-// prelude's own diagnostics, which ride along on every solver run in this package.
+// shapeDiagnostics returns the errors a compile reported about the source. It drops the
+// warnings, and the prelude's own diagnostics, which ride along on every solver run in
+// this package.
 func shapeDiagnostics(out CompilerOutput) []string {
 	var reported []string
 	for _, diagnostic := range out.TypeErrors {
 		if pkg, fromPackage := diagnostic.(*solver.PackageInferenceError); fromPackage && pkg.URI == preludePackageURI {
+			continue
+		}
+		// A warning leaves the shape accepted.
+		if IsWarning(diagnostic) {
 			continue
 		}
 		reported = append(reported, diagnostic.Message())

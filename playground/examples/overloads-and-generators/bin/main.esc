@@ -1,3 +1,5 @@
+import "std:console"
+
 // The names `lib/index.esc` exports are in scope here without an import.
 console.log(formatDuration(95))
 console.log(formatDuration({start: 540, end: 600}))

@@ -186,7 +186,9 @@ and the body decides how:
   argument.
 
 ```esc
-val mut seen = Map()
+import "std:map"
+
+val mut seen = map.Map()
 
 fn remember(value) { seen.set("last", value) }
 // remember: fn <T0>(value: &'static T0) -> undefined
@@ -383,6 +385,8 @@ elided `&` does:
 - In an annotation inside a body, the lifetime is fresh, as an elided `&` is.
 
 ```esc
+import "std:console"
+
 declare fn run(cb: fn () -> undefined) -> undefined
 var sink: fn () -> undefined = fn () {}
 

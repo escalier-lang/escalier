@@ -156,10 +156,11 @@ func checkFixture(t *testing.T, repoRoot string, fixtureDir string) {
 	fmt.Println("stderr =", stderr.String())
 
 	// A package writes its output whether or not it checks, so a fixture's build/ tree
-	// and its error.txt are independent. What build's answer tracks is whether anything
-	// was reported, which is what error.txt records.
-	require.Equal(t, stderr.Len() == 0, buildOK,
-		"build reports success exactly when it wrote nothing to stderr")
+	// and its error.txt are independent. error.txt records everything reported, warnings
+	// included, and a build that fails has reported why.
+	if !buildOK {
+		require.NotZero(t, stderr.Len(), "a failed build reports why on stderr")
+	}
 
 	_, builtErr := os.Stat(filepath.Join(tmpDir, "build"))
 	emitted := builtErr == nil

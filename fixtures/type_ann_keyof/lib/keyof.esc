@@ -1,3 +1,5 @@
+import "std:console"
+
 type Tuple = [string, number, boolean]
 val i: keyof Tuple = 2
 val j: keyof Tuple = 3
@@ -14,7 +16,7 @@ val y: Point["y"] = 10
 
 class Event {
     msg: string,
-    print(&self) {
+    print(&self) -> undefined {
         console.log(self.msg)
     }
 }

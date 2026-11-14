@@ -25,6 +25,8 @@ trace back to where it came from.
 Catch arms are patterns, the same ones `match` uses.
 
 ```esc
+import "std:console"
+
 try { riskyOperation() } catch { error => console.log(error) }
 
 try { operation() } catch {
@@ -131,9 +133,12 @@ slot of the promise it returns, so its type is always `Promise<T, E>` and never
 carries a `throws` clause.
 
 ```esc
+import "std:error"
+import "web:fetch"
+
 class FetchError { url: string, constructor(&mut self, url: string) { self.url = url } }
 
-async fn fetchJSON(url: string) -> Promise<unknown, FetchError | SyntaxError> {
+async fn fetchJSON(url: string) -> Promise<unknown, FetchError | error.SyntaxError> {
     val res = await fetch(url)
     if !res.ok {
         throw FetchError(url)
@@ -152,7 +157,7 @@ async fn main() {
         val json = await fetchJSON("https://example.com/data")
         use(json)
     } catch {
-        SyntaxError{message} => report(message),
+        error.SyntaxError{message} => report(message),
         FetchError{url} => report(url),
     }
 }

@@ -48,6 +48,7 @@ The rest of the document covers the following, in order:
   standard library.
 - Section 12 lists milestones and section 13 records the decisions on the
   questions left open during the design.
+- Section 14 lists the questions that are still open.
 
 ## 2. Semantics
 
@@ -639,6 +640,11 @@ declare class IntRange<
 
 declare class IntRangeIter<T: int> {
     step(&self, n: 1..Infinity) -> IntRangeIter<T>,
+    map<U>(&self, f: fn (value: T, index: int) -> U) -> IteratorObject<U, undefined, unknown>,
+    filter(&self, f: fn (value: T, index: int) -> boolean) -> IteratorObject<T, undefined, unknown>,
+    take(&self, limit: 0..Infinity) -> IteratorObject<T, undefined, unknown>,
+    toArray(&self) -> Array<T>,
+    // ... and the other iterator helpers
     [Symbol.iterator](&self) -> Iterator<T, undefined, undefined>,
 }
 ```
@@ -690,6 +696,9 @@ Two methods change the order or spacing. They follow Rust's `rev` and
 - Both return an `IntRangeIter<T>` with the same element type as the range. The
   type does not record the step. `(0..10).step(2)` yields elements of type
   `0..10`, which contains every element it yields.
+- An `IntRangeIter` also has the iterator helpers, such as `map`, `filter`,
+  `take`, and `toArray`, because the runtime builds it on `Iterator.range`.
+  Section 9.3 describes the runtime.
 
 Neither method has a type-level counterpart. Section 13 records the decision to
 defer stepped types.
@@ -1069,6 +1078,56 @@ const r = new IntRange(0, n);
 The counting-loop form matters because ranges will appear mostly in loop heads.
 It avoids an allocation and an iterator call per step.
 
+#### The runtime and `Iterator.range`
+
+The TC39 proposal [`Iterator.range`](https://github.com/tc39/proposal-iterator.range)
+yields arithmetic sequences, and the runtime builds iteration on it. The
+proposal is at Stage 2 and no engine ships it, so `@escalier/runtime` uses
+`Iterator.range` when the engine provides it and its own implementation of the
+same algorithm otherwise.
+
+`IntRange` stays a class of its own rather than an alias for the iterator
+`Iterator.range` returns. That iterator does not fit the design in two ways:
+
+- It can be consumed only once. After `val r = 0..10`, a second `for i in r`
+  must yield the elements again, so `IntRange[Symbol.iterator]` calls
+  `Iterator.range` anew on each call.
+- It has no `start`, `end`, `length`, or `has`. The proposal rules out
+  membership tests, so `IntRange` implements those itself.
+
+`IntRangeIter` records its bounds, step, and direction, and calls
+`Iterator.range` when it is iterated. A chain of `step` and `reversed` calls
+therefore becomes a single `Iterator.range` call, and the iterator helpers come
+from the iterator it returns.
+
+Each call passes the step explicitly and clamps the bounds first:
+
+| Escalier | Runtime call |
+|---|---|
+| `a..b` | `Iterator.range(a', b', 1)` |
+| `a..=b` | `Iterator.range(a', b', {step: 1, inclusive: true})` |
+| `a..Infinity` | `Iterator.range(a', 9007199254740991, {step: 1, inclusive: true})` |
+| `(a..b).step(k)` | `Iterator.range(a', b', k)` |
+| `(a..b).reversed()` | `Iterator.range(b' - 1, a' - 1, -1)` |
+| `(a..=b).reversed().step(k)` | `Iterator.range(b', a', {step: -k, inclusive: true})` |
+
+Here `a'` and `b'` are the bounds clamped to the safe integers, as section 6.2
+describes. Both the step and the clamp are required:
+
+- Without a step, `Iterator.range` infers the direction from the bounds, so
+  `Iterator.range(10, 0)` yields `10` down to `1`. In Escalier `10..0` is
+  empty. With an explicit step of `1`, `Iterator.range(10, 0, 1)` yields
+  nothing, which matches.
+- `Iterator.range` computes each value as `start + step * count` in `number`
+  arithmetic. Past `2 ** 53` that repeats or skips values, and on an unbounded
+  range `count` itself eventually stops growing. Clamping keeps every value a
+  safe integer and stops an unbounded range after `2 ** 53 - 1`.
+
+The proposal accepts more than Escalier does. It takes decimal steps, an
+inclusive `Infinity` end, and `bigint` bounds. The checker rejects the first
+two before codegen, so they never reach the runtime. `bigint` support would
+serve `bigint` ranges if decision 7 in section 13 is revisited.
+
 ### 9.4. Large integer literals
 
 `codegen/printer.go` prints number literals with
@@ -1233,16 +1292,25 @@ read at an index that may hold an optional element includes `undefined`.
 ### 11.4. Typed arrays and `DataView`
 
 Every typed array stores integers of a fixed width, so its element type is an
-exact range:
+exact range. The prelude names each width:
+
+```esc
+type int8   = -128..128
+type uint8  = 0..256
+type int16  = -32768..32768
+type uint16 = 0..65536
+type int32  = -2147483648..2147483648
+type uint32 = 0..4294967296
+```
 
 | Class | Element type |
 |---|---|
-| `Int8Array` | `-128..128` |
-| `Uint8Array`, `Uint8ClampedArray` | `0..256` |
-| `Int16Array` | `-32768..32768` |
-| `Uint16Array` | `0..65536` |
-| `Int32Array` | `-2147483648..2147483648` |
-| `Uint32Array` | `0..4294967296` |
+| `Int8Array` | `int8` |
+| `Uint8Array`, `Uint8ClampedArray` | `uint8` |
+| `Int16Array` | `int16` |
+| `Uint16Array` | `uint16` |
+| `Int32Array` | `int32` |
+| `Uint32Array` | `uint32` |
 
 The range is the read type. A write takes any `number`, since JavaScript wraps
 or clamps the value into the range rather than throwing. Writing `300` into a
@@ -1253,7 +1321,52 @@ section 13 covers the feature.
 
 `Float32Array`, `Float64Array`, and the `BigInt` arrays keep `number` and
 `bigint` elements. The `DataView` getters follow the same table. For example,
-`getUint8` returns `0..256` and `getInt16` returns `-32768..32768`.
+`getUint8` returns `uint8` and `getInt16` returns `int16`.
+
+The aliases are ordinary ranges, so they need no lattice rules of their own.
+`int8 <: int16` holds because `-128..128` lies inside `-32768..32768`, and
+`uint8 <: int16` holds for the same reason.
+
+Arithmetic on these types does not wrap. In C or Rust, adding `1` to the
+`int8` value `127` gives `-128`. In Escalier, `a + b` with `a: int8` and
+`b: int8` gives `int` today and `-256..255` once interval arithmetic from
+section 5.3 lands. A value wraps only when a typed array stores it, as the
+paragraph on writes above describes. The language guide states this.
+
+There are no `int64` or `uint64` aliases. `BigInt64Array` and `BigUint64Array`
+hold `bigint` values, so those names wait on `bigint` ranges, which decision 7
+in section 13 defers.
+
+#### Keeping alias names in printed types
+
+An alias of a range stays an `AliasType` reference until a lattice operation
+needs its interval. The printer already renders an `AliasType` under its own
+name, so `val b: uint8 = bytes[0]` shows `b: uint8` in hover text and errors.
+The same holds for a stdlib signature written with an alias, such as
+`getUint8(...) -> uint8`.
+
+A meet or a join reads the interval behind the alias and builds a new interval
+set. Without a rule for it, every such operation would print the raw range. The
+rule is to return the operand itself whenever the result equals it:
+
+| Type | Printed |
+|---|---|
+| `uint8 \| 5` | `uint8` |
+| `uint8 & int` | `uint8` |
+| `uint8 \| uint8` | `uint8` |
+| `uint8 & 0..100` | `0..100` |
+| `uint8 \| 256` | `0..257` |
+
+`5` lies inside `uint8`, so the join is `uint8` unchanged, and the printer
+sees the alias. `uint8 & 0..100` is a new set, so it prints as a range. This
+matches the solver's existing practice of returning a member untouched,
+keeping its pointer, when a reduction leaves it unchanged.
+
+The printer does not turn a computed range back into an alias name. Under
+interval arithmetic, `i + 1` with `i: -1..255` gives `0..256`. That value did
+not come from a byte array, and printing `uint8` would suggest it did. The same
+applies to a user-written alias such as `type Percent = 0..=100`. Only a type
+that came from the alias keeps its name.
 
 ### 11.5. Strings, `Math`, and `Number`
 
@@ -1484,3 +1597,49 @@ records the decision.
     the interval arithmetic, so exposing it is cheap. The intrinsics also give
     `IntRange` an exact `length` of `Sub<E, S>` when both bounds are safe
     integers.
+
+## 14. Open questions
+
+1. **Integer division.** `/` always produces a fractional result. Its type is
+   `finite` for an `int` divided by an `int & ~0`, and `number` otherwise.
+   Section 5.1 gives the rules. An integer quotient takes
+   `Math.trunc(a / b)` or `Math.floor(a / b)`, which section 11.5 types as
+   `int`. A dedicated operation would make the intent visible and could
+   return a range under interval arithmetic. The options are:
+   - A contextual keyword, as in `a div b`. It reads well, but it adds an
+     operator with its own precedence.
+   - A prelude function such as `idiv(a, b)`. It needs no new syntax.
+   - Python's `//`. It is not available, because `//` starts a comment in
+     Escalier.
+
+   The operation also needs a rounding rule. Truncation matches
+   `Math.trunc`, and `bigint` division in JavaScript truncates too. Flooring
+   matches Python and gives a non-negative remainder for a positive divisor.
+   Either form compiles to a `Math` call, as in `Math.trunc(a / b)`.
+2. **64-bit integers.** `BigInt64Array`, `BigUint64Array`, and the
+   `DataView` 64-bit getters yield `bigint` values, so `int64` and `uint64`
+   aliases would be ranges over `bigint`. Decision 7 defers `bigint` ranges.
+   Supporting them raises these problems:
+   - The lexer does not read `bigint` literals. It reads `1n` as the number
+     `1` followed by an identifier `n`.
+   - `int64` cannot be a subtype of `int`, since JavaScript throws a
+     `TypeError` on `1n + 1`. Moving between the two families needs
+     `BigInt(x)`, which throws on a non-integer, or `Number(x)`, which
+     rounds past `2 ** 53`.
+   - `bigint` arithmetic differs from `number` arithmetic. `7n / 2n` is
+     `3n`, `x % 0n` throws a `RangeError`, and `2n ** -1n` throws. There is
+     no overflow, so `int64 + int64` is a wider range than `int64`.
+   - `bigint` has no `Infinity`, so an unbounded `bigint` range needs the
+     open-ended shorthand from section 2.3, as in `0n..`.
+   - `IntRangeType` stores `float64` bounds, which cannot hold
+     `2 ** 63 - 1` exactly. A `bigint` range needs a parallel atom with
+     `big.Int` bounds.
+   - `1n == 1` is `true` and `1n === 1` is `false`, so a `===` between
+     `int64` and a `number` type is always `false`, like the `NaN`
+     comparisons decision 9 reports.
+   - `Math` functions and `JSON.stringify` throw on a `bigint`. The two
+     families are disjoint, so the types already reject these calls.
+
+   The interval rules, range patterns, iteration through `Iterator.range`,
+   and the `.d.ts` mapping to `bigint` carry over. The work would be its own
+   milestone, after `bigint` literals exist.

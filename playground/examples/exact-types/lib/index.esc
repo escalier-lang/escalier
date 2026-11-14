@@ -19,11 +19,11 @@ export fn widen(c: Coord) -> Located {
     return c
 }
 
-// An unannotated parameter infers its type from the fields the body reads, and
-// that type is exact. Marking the parameter `open` makes the inferred type
-// inexact, so callers may pass objects with extra fields.
-export fn latitude(p) { return p.lat }
-export fn longitude(open p) { return p.lng }
+// A parameter's object type is exact too. `latitude` accepts only a value with
+// exactly a `lat` field. `longitude` writes a trailing `...`, so callers may
+// pass objects with extra fields.
+export fn latitude(p: &{lat: number}) -> number { return p.lat }
+export fn longitude(p: &{lng: number, ...}) -> number { return p.lng }
 
 // Uncomment to see the error: object has extra property: lng
 // val lat = latitude(&{lat: 46.852, lng: -121.760})

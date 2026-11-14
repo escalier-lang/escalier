@@ -1,3 +1,5 @@
+import "std:error"
+
 // Basic try-catch
 export val basicTryCatch = try {
     "success"
@@ -14,7 +16,7 @@ export val tryCatchWithThrow = try {
 
 // Try-catch with multiple patterns
 export val multipleCases = try {
-    throw Error("fail")
+    throw error.Error("fail")
 } catch {
     Error => "caught error",
     _ => "unknown",

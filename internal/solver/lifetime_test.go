@@ -312,9 +312,8 @@ func TestParamFeedingTwoJoinsRendersMeetBound(t *testing.T) {
 }
 
 // Two param lifetimes that mutually outlive are EQUAL, so buildLtBoundSet condenses
-// them to one representative and a join over both renders `&'a` under a single name.
-// The params keep their own names 'a and 'b from the borrows they originate on; only
-// the join lifetime resolves to the representative.
+// them to one representative. Both params and the join over them render under the name
+// of the param with the lowest ID.
 func TestJoinOverMutualOutlivesCollapsesToOne(t *testing.T) {
 	c := newTestChecker()
 	a := c.ctx.freshLifetime(0)
@@ -327,7 +326,7 @@ func TestJoinOverMutualOutlivesCollapsesToOne(t *testing.T) {
 	fn := borrowFn(mutPointRef(join), a, b)
 
 	require.Equal(t,
-		"fn <'a, 'b>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &'a mut {x: number}",
+		"fn <'a>(p: &'a mut {x: number}, q: &'a mut {x: number}) -> &'a mut {x: number}",
 		renderScheme(&MonoScheme{Ty: fn}))
 }
 
@@ -362,6 +361,24 @@ func TestJoinRepresentativeIsNonParamRendersParamName(t *testing.T) {
 
 	require.Equal(t,
 		"fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number}",
+		renderScheme(&MonoScheme{Ty: fn}))
+}
+
+// A non-param lifetime equal to one param renders under that param's name even when a
+// second param also outlives it, so the return is not taken for a join over both params.
+// The non-param lifetime is minted first, for the reason the test above gives.
+func TestNonParamEqualToAParamRendersItsName(t *testing.T) {
+	c := newTestChecker()
+	m := c.ctx.freshJoinLifetime(0) // non-param, minted first so it holds the smaller ID
+	p := c.ctx.freshLifetime(0)
+	q := c.ctx.freshLifetime(0)
+	c.ctx.constrainLt(p, m) // p and m outlive each other, so they are equal
+	c.ctx.constrainLt(m, p)
+	c.ctx.constrainLt(q, m) // q outlives m
+	fn := borrowFn(mutPointRef(m), p, q)
+
+	require.Equal(t,
+		"fn <'a, 'b: 'a>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &'a mut {x: number}",
 		renderScheme(&MonoScheme{Ty: fn}))
 }
 

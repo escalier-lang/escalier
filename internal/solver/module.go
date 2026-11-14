@@ -13,10 +13,6 @@ import (
 
 // Options adjusts one inference run. The zero value is the default run.
 type Options struct {
-	// NoAmbientNames leaves the ambient scope empty, so a module reaches a builtin only
-	// through `std:prelude` or its own imports. The ambient packages still load, since
-	// a primitive's members and a regex literal's type are read from them.
-	NoAmbientNames bool
 	// PackageDir is the directory an import with no URI scheme resolves from, through
 	// the `node_modules` directories at and above it. An empty PackageDir resolves no
 	// such import.
@@ -28,6 +24,9 @@ type Options struct {
 	// CheckJsDecorators reports a pseudo-package file whose values break the `@js`
 	// rules jsDecoratorErrors lists, at the import that loads it.
 	CheckJsDecorators bool
+	// RequireSignatures reports MissingSignatureError for each function of the module or
+	// script whose signature has to be written in full and is not.
+	RequireSignatures bool
 	// stdlibDir is the pseudo-package tree the run's groups were built from, or "" for a
 	// run given its groups some other way. InferModuleAgainstStdlib and
 	// InferScriptAgainstStdlib set it. A load of a package the groups do not cover reads
@@ -38,9 +37,8 @@ type Options struct {
 // InferModule builds the dep graph for a single parsed module, infers every
 // top-level declaration in dep_graph SCC order, populates Info, and returns the
 // populated module Scope, the Info side table, and any SolverErrors. The module
-// scope is a child of the run's ambient scope, so the ambient builtins resolve
-// through the parent, the prelude package's exports through its parent, and the
-// operator table through the prelude's parent in turn.
+// scope is a child of the scope holding the prelude package's exports, so those
+// resolve through the parent and the operator table through the prelude's parent.
 //
 // PR-5 replaces PR-2's source-order loop with dep_graph SCC ordering: a decl that
 // forward-references a name defined later in the source, or that mutually
@@ -165,8 +163,8 @@ func newRunChecker(source ModuleSource, groupSource GroupSource, groups PackageG
 	c.source = source
 	c.groupSource = groupSource
 	c.groups = groups
-	c.noAmbientNames = opts.NoAmbientNames
 	c.checkJsDecorators = opts.CheckJsDecorators
+	c.requireSignatures = opts.RequireSignatures
 	c.dependencies = opts.Dependencies
 	c.stdlibDir = opts.stdlibDir
 	return c
@@ -177,12 +175,12 @@ func inferModuleOn(c *checker, module *ast.Module) *ModuleResult {
 	// The prelude package is loaded before anything is walked, so no rule reaches
 	// for a handle from inside a speculation trial, where a load would publish a
 	// package whose bounds a discard then truncates.
-	scope := c.ambientScope().Child()
-	// Before the imports, so a package the module imports from the ambient packages'
+	scope := c.preludeScope().Child()
+	// Before the imports, so a package the module imports from the literal classes'
 	// group finds it loaded on the library counters. A forked checker has already
 	// run this and skips it.
-	c.bindAmbientExports()
-	// A run that loaded the ambient packages itself settles them the way a cached
+	c.loadLiteralClassPackages()
+	// A run that loaded the library packages itself settles them the way a cached
 	// checker's are settled, so the two read the same answers.
 	c.settleLoadedDefinitions()
 	fileScopes := c.bindFileImports(scope, module)
@@ -191,6 +189,9 @@ func inferModuleOn(c *checker, module *ast.Module) *ModuleResult {
 	c.reportHeldLoadErrors()
 	g := dep_graph.BuildDepGraph(module)
 	symbols := c.inferDepGraph(scope, 0, module, g)
+	if c.requireSignatures {
+		c.checkModuleSignatures(module)
+	}
 	return &ModuleResult{
 		Scope:      scope,
 		FileScopes: fileScopes,
