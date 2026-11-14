@@ -124,12 +124,12 @@ func TestPrimitiveMemberReadsWrapper(t *testing.T) {
 			// Each member reads `toString` off its own wrapper, `Number` for `number`
 			// and `String` for `string`, and the two results join.
 			name: "MixedPrimitiveUnion",
-			src:  `fn g(x: number | string) { return x.toString() }`,
+			src:  `val g = fn (x: number | string) { return x.toString() }`,
 			want: map[string]string{"g": "fn (x: number | string) -> string"},
 		},
 		{
 			name: "PrimitiveAndClassInstanceUnion",
-			src:  `fn len(x: string | &Array<number>) { return x.length }`,
+			src:  `val len = fn (x: string | &Array<number>) { return x.length }`,
 			want: map[string]string{"len": "fn (x: string | &Array<number>) -> number"},
 		},
 	}
@@ -163,7 +163,7 @@ func TestPrimitiveMemberRejected(t *testing.T) {
 			// call rejects it.
 			name: "MixedReceiver",
 			src: `
-				fn f(c: boolean, x: &{a: number}) {
+				val f = fn (c: boolean, x: &{a: number}) {
 					val y = if c { 1 } else { x }
 					return y.toFixed(1)
 				}
@@ -209,8 +209,8 @@ func TestPrimitiveMemberRejected(t *testing.T) {
 			// rule that every member must carry the property. `number` carries
 			// `toString` through `Number`, so only `undefined` is reported.
 			name: "UnionWithUndefined",
-			src:  `fn g(x: number | undefined) { return x.toString() }`,
-			want: []string{"1:38-1:48: cannot constrain undefined <: object"},
+			src:  `val g = fn (x: number | undefined) { return x.toString() }`,
+			want: []string{"1:45-1:55: cannot constrain undefined <: object"},
 		},
 		{
 			name: "ObjectAnnotationWithMethodType",

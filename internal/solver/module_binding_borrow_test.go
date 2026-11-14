@@ -21,7 +21,7 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 			src: `
 				declare fn take(x: {v: number}) -> undefined
 				val x = {v: 1}
-				fn test() {
+				fn test() -> undefined {
 					take(x)
 					take(x)
 				}
@@ -36,8 +36,8 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 				declare fn take(x: {v: number}) -> undefined
 				val x = {v: 1}
-				fn peek() { readRead(&x, &x) }
-				fn test() {
+				fn peek() -> undefined { readRead(&x, &x) }
+				fn test() -> undefined {
 					take(x)
 					peek()
 				}
@@ -51,8 +51,8 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 				val mut x = {v: 1}
-				fn bump() { x.v = 5 }
-				fn test() {
+				fn bump() -> undefined { x.v = 5 }
+				fn test() -> undefined {
 					val a = &x
 					bump()
 					readRead(a, a)
@@ -78,8 +78,8 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 				val mut x = {v: 1}
-				fn look() { readRead(&x, &x) }
-				fn test() {
+				fn look() -> undefined { readRead(&x, &x) }
+				fn test() -> undefined {
 					val a = &x
 					look()
 					readRead(a, a)
@@ -91,12 +91,12 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 				val mut x = {v: 1}
-				fn bump() { x.v = 5 }
-				fn bumpTwice() {
+				fn bump() -> undefined { x.v = 5 }
+				fn bumpTwice() -> undefined {
 					bump()
 					bump()
 				}
-				fn test() {
+				fn test() -> undefined {
 					val a = &x
 					bumpTwice()
 					readRead(a, a)
@@ -108,8 +108,8 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 				val mut x = {v: 1}
-				fn bump() { x.v = 5 }
-				fn test(x: {v: number}) {
+				fn bump() -> undefined { x.v = 5 }
+				fn test(x: {v: number}) -> undefined {
 					val a = &x
 					bump()
 					readRead(a, a)
@@ -121,8 +121,8 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 				val mut x = {v: 1}
-				fn bump() { x.v = 5 }
-				fn test() {
+				fn bump() -> undefined { x.v = 5 }
+				fn test() -> undefined {
 					val a = &x
 					val g = fn () { bump() }
 					g()
@@ -135,8 +135,8 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 				val mut x = {v: 1}
-				fn bump() { x.v = 5 }
-				fn test() {
+				fn bump() -> undefined { x.v = 5 }
+				fn test() -> undefined {
 					val mut x = {v: 2}
 					val a = &x
 					val g = fn () { bump() }
@@ -149,7 +149,7 @@ func TestModuleBindingMovesAndBorrows(t *testing.T) {
 		"ClassValueReadTwice": {
 			src: `
 				class Foo { v: number }
-				fn test() {
+				fn test() -> undefined {
 					val a = Foo
 					val b = Foo
 				}

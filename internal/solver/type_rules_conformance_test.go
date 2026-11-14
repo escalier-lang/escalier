@@ -59,7 +59,7 @@ func TestTypeRules(t *testing.T) {
 		{
 			name: "T2/WriteThroughValBinding",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val p: {x: number} = {x: 0}
 					p.x = 1
 				}
@@ -72,7 +72,7 @@ func TestTypeRules(t *testing.T) {
 		{
 			name: "T3/DeepWriteThroughValMutBinding",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {a: {b: 0}}
 					p.a.b = 1
 				}
@@ -84,7 +84,7 @@ func TestTypeRules(t *testing.T) {
 			name: "T3/ValArrayOfMutableBorrows",
 			src: `
 				type Point = {x: number, y: number}
-				fn g(q: &mut Point) {
+				fn g(q: &mut Point) -> undefined {
 					val a: Array<&mut Point> = []
 					a.push(q)
 					a[0].x = 1
@@ -97,7 +97,7 @@ func TestTypeRules(t *testing.T) {
 		{
 			name: "T3/MutInOwnedObjectAnnotation",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val p: {a: mut {b: number}} = {a: {b: 0}}
 				}
 			`,
@@ -109,10 +109,10 @@ func TestTypeRules(t *testing.T) {
 		{
 			name: "T3/MutBorrowThroughReadonlySlot",
 			src: `
-				fn resetWritten(x: &mut {readonly a: {b: number}}) {
+				fn resetWritten(x: &mut {readonly a: {b: number}}) -> undefined {
 					x.a.b = 0
 				}
-				fn replaceWritten(x: &mut {readonly a: {b: number}}) {
+				fn replaceWritten(x: &mut {readonly a: {b: number}}) -> undefined {
 					x.a = {b: 0}
 				}
 			`,
@@ -121,10 +121,10 @@ func TestTypeRules(t *testing.T) {
 		{
 			name: "T3/MutBorrowThroughMappedType",
 			src: `
-				fn resetMapped(x: &mut Readonly<{a: {b: number}}>) {
+				fn resetMapped(x: &mut Readonly<{a: {b: number}}>) -> undefined {
 					x.a.b = 0
 				}
-				fn replaceMapped(x: &mut Readonly<{a: {b: number}}>) {
+				fn replaceMapped(x: &mut Readonly<{a: {b: number}}>) -> undefined {
 					x.a = {b: 0}
 				}
 			`,
@@ -134,7 +134,7 @@ func TestTypeRules(t *testing.T) {
 			name: "T3/MutBorrowThroughMappedAlias",
 			src: `
 				type R = Readonly<{a: {b: number}}>
-				fn resetAlias(x: &mut R) {
+				fn resetAlias(x: &mut R) -> undefined {
 					x.a.b = 0
 				}
 			`,
@@ -144,10 +144,10 @@ func TestTypeRules(t *testing.T) {
 		{
 			name: "T3/ImmutableBorrowThroughMappedType",
 			src: `
-				fn resetWritten(x: &{readonly a: {b: number}}) {
+				fn resetWritten(x: &{readonly a: {b: number}}) -> undefined {
 					x.a.b = 0
 				}
-				fn resetMapped(x: &Readonly<{a: {b: number}}>) {
+				fn resetMapped(x: &Readonly<{a: {b: number}}>) -> undefined {
 					x.a.b = 0
 				}
 			`,
@@ -159,10 +159,10 @@ func TestTypeRules(t *testing.T) {
 		{
 			name: "T3/OwnedMutThroughMappedType",
 			src: `
-				fn resetOwned(mut x: Readonly<{a: {b: number}}>) {
+				fn resetOwned(mut x: Readonly<{a: {b: number}}>) -> undefined {
 					x.a.b = 0
 				}
-				fn replaceOwned(mut x: Readonly<{a: {b: number}}>) {
+				fn replaceOwned(mut x: Readonly<{a: {b: number}}>) -> undefined {
 					x.a = {b: 0}
 				}
 			`,
@@ -174,7 +174,7 @@ func TestTypeRules(t *testing.T) {
 			name: "T5/WriteReadonlyFieldAfterInit",
 			src: `
 				class C { readonly x: number }
-				fn g() {
+				fn g() -> undefined {
 					val mut c = C(1)
 					c.x = 2
 				}
@@ -189,7 +189,7 @@ func TestTypeRules(t *testing.T) {
 					_x: number,
 					get x(&self) -> number { return self._x },
 				}
-				fn g() {
+				fn g() -> undefined {
 					val mut c = C(1)
 					c.x = 2
 				}
@@ -276,7 +276,7 @@ func TestTypeRulesBindingMutability(t *testing.T) {
 		{
 			name: "T3/DeepWriteThroughAnnotatedValMutBinding",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val mut p: {a: {b: number}} = {a: {b: 0}}
 					p.a.b = 1
 				}
@@ -288,7 +288,7 @@ func TestTypeRulesBindingMutability(t *testing.T) {
 			name: "T3/ValMutArrayOfImmutableBorrows",
 			src: `
 				type Point = {x: number, y: number}
-				fn g(q: &Point) {
+				fn g(q: &Point) -> undefined {
 					val mut b: Array<&Point> = []
 					b.push(q)
 					b[0].x = 1
@@ -301,7 +301,7 @@ func TestTypeRulesBindingMutability(t *testing.T) {
 		{
 			name: "T5/ReadonlyFieldIntoWritableSlot",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val q: {readonly a: number} = {a: 1}
 					val mut p: {a: number} = q
 				}
@@ -312,30 +312,30 @@ func TestTypeRulesBindingMutability(t *testing.T) {
 		{
 			name: "T5/ReadonlyFieldIntoMutParam",
 			src: `
-				fn sink(mut o: {a: number}) { o.a = 5 }
-				fn f(obj: {readonly a: number}) { sink(obj) }
+				fn sink(mut o: {a: number}) -> undefined { o.a = 5 }
+				fn f(obj: {readonly a: number}) -> undefined { sink(obj) }
 			`,
-			want: []string{"3:44-3:47: readonly field 'a' cannot satisfy a writable field requirement"},
+			want: []string{"3:57-3:60: readonly field 'a' cannot satisfy a writable field requirement"},
 		},
 		// The signature does not carry the parameter's binding mutability, so T5 applies to an
 		// immutable parameter too. `move` writes `a` after it moves `o` into a `val mut` binding.
 		{
 			name: "T5/ReadonlyFieldIntoImmutableParam",
 			src: `
-				fn move(o: {a: number}) {
+				fn move(o: {a: number}) -> undefined {
 					val mut m = o
 					m.a = 5
 				}
-				fn f(obj: {readonly a: number}) { move(obj) }
+				fn f(obj: {readonly a: number}) -> undefined { move(obj) }
 			`,
-			want: []string{"6:44-6:47: readonly field 'a' cannot satisfy a writable field requirement"},
+			want: []string{"6:57-6:60: readonly field 'a' cannot satisfy a writable field requirement"},
 		},
 		// A call through a function value sees only the callee's type, which has no `mut`.
 		{
 			name: "T5/ReadonlyFieldIntoParamThroughFunctionValue",
 			src: `
-				fn sink(mut o: {a: number}) { o.a = 5 }
-				fn f(obj: {readonly a: number}) {
+				fn sink(mut o: {a: number}) -> undefined { o.a = 5 }
+				fn f(obj: {readonly a: number}) -> undefined {
 					val s = sink
 					s(obj)
 				}
@@ -346,7 +346,7 @@ func TestTypeRulesBindingMutability(t *testing.T) {
 		{
 			name: "T5/ReadonlyFieldIntoValBinding",
 			src: `
-				fn f(obj: {readonly a: number}) {
+				fn f(obj: {readonly a: number}) -> undefined {
 					val o: {a: number} = obj
 					val mut m = o
 					m.a = 5
@@ -358,7 +358,7 @@ func TestTypeRulesBindingMutability(t *testing.T) {
 		{
 			name: "T5/ReadonlyFieldIntoReassignedVar",
 			src: `
-				fn f(obj: {readonly a: number}) {
+				fn f(obj: {readonly a: number}) -> undefined {
 					var o: {a: number} = {a: 1}
 					o = obj
 				}
@@ -381,10 +381,10 @@ func TestTypeRulesBindingMutability(t *testing.T) {
 			name: "T5/ReadonlyFieldFromCallResultIntoParam",
 			src: `
 				fn mk() -> {readonly a: number} { return {a: 1} }
-				fn sink(mut o: {a: number}) { o.a = 5 }
-				fn f() { sink(mk()) }
+				fn sink(mut o: {a: number}) -> undefined { o.a = 5 }
+				fn f() -> undefined { sink(mk()) }
 			`,
-			want: []string{"4:19-4:23: readonly field 'a' cannot satisfy a writable field requirement"},
+			want: []string{"4:32-4:36: readonly field 'a' cannot satisfy a writable field requirement"},
 		},
 		// An immutable borrow can neither write `a` nor move the value, so a readonly field
 		// fills the parameter's writable field.
@@ -407,7 +407,7 @@ func TestTypeRulesOwnedMutType(t *testing.T) {
 			name: "T3/MutInOwnedTypeArgument",
 			src: `
 				type Point = {x: number, y: number}
-				fn g() {
+				fn g() -> undefined {
 					val a: Array<mut Point> = []
 				}
 			`,

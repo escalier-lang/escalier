@@ -77,14 +77,14 @@ func TestSignatureImpliesBodyLifetimes(t *testing.T) {
 		// needs 'b to outlive outer's 'a, which the closure's list has to declare.
 		{
 			name: "an undeclared relation to an enclosing function's lifetime reports",
-			src: `fn outer<'a>(p: &mut {cb: 'a fn () -> undefined}) {
+			src: `fn outer<'a>(p: &mut {cb: 'a fn () -> undefined}) -> undefined {
 				val inner = fn <'b>(g: 'b fn () -> undefined) { p.cb = g }
 			}`,
 			want: []string{"2:21-2:23: the body requires 'b to outlive 'a, but the signature does not declare it; add the bound 'b: 'a"},
 		},
 		{
 			name: "a declared bound covers the relation to an enclosing function's lifetime",
-			src: `fn outer<'a>(p: &mut {cb: 'a fn () -> undefined}) {
+			src: `fn outer<'a>(p: &mut {cb: 'a fn () -> undefined}) -> undefined {
 				val inner = fn <'b: 'a>(g: 'b fn () -> undefined) { p.cb = g }
 			}`,
 		},
@@ -92,7 +92,7 @@ func TestSignatureImpliesBodyLifetimes(t *testing.T) {
 		// name outer's.
 		{
 			name: "a relation to an enclosing lifetime the closure's own clause hides reports",
-			src: `fn outer<'a>(p: &mut {cb: 'a fn () -> undefined}) {
+			src: `fn outer<'a>(p: &mut {cb: 'a fn () -> undefined}) -> undefined {
 				val inner = fn <'a>(g: 'a fn () -> undefined) { p.cb = g }
 			}`,
 			want: []string{"2:21-2:23: the body requires 'a to outlive the enclosing function's 'a, which this signature's own 'a hides; rename it and add the bound"},
@@ -100,7 +100,7 @@ func TestSignatureImpliesBodyLifetimes(t *testing.T) {
 		// outer declares 'c: 'a through `&'a &'c`, so the closure's bound 'b: 'c covers 'b: 'a.
 		{
 			name: "a bound on an enclosing lifetime covers what that lifetime outlives",
-			src: `fn outer<'a, 'c>(p: &mut {cb: 'a fn () -> undefined}, q: &mut {cb: 'c fn () -> undefined}, r: &'a &'c {x: number}) {
+			src: `fn outer<'a, 'c>(p: &mut {cb: 'a fn () -> undefined}, q: &mut {cb: 'c fn () -> undefined}, r: &'a &'c {x: number}) -> undefined {
 				val inner = fn <'b: 'c>(g: 'b fn () -> undefined) {
 					q.cb = g
 					p.cb = g
@@ -109,7 +109,7 @@ func TestSignatureImpliesBodyLifetimes(t *testing.T) {
 		},
 		{
 			name: "a bound on an enclosing lifetime that does not outlive the other reports",
-			src: `fn outer<'a, 'c>(p: &mut {cb: 'a fn () -> undefined}, q: &mut {cb: 'c fn () -> undefined}) {
+			src: `fn outer<'a, 'c>(p: &mut {cb: 'a fn () -> undefined}, q: &mut {cb: 'c fn () -> undefined}) -> undefined {
 				val inner = fn <'b: 'c>(g: 'b fn () -> undefined) {
 					q.cb = g
 					p.cb = g
@@ -127,7 +127,7 @@ func TestSignatureImpliesBodyLifetimes(t *testing.T) {
 		// 'c: 'd, that chains to 'b: 'a across three function levels.
 		{
 			name: "bounds across enclosing function levels cover the relation",
-			src: `fn outer<'a, 'd>(p: &mut {cb: 'a fn () -> undefined}, r: &'a &'d {x: number}, s: &mut {cb: 'd fn () -> undefined}) {
+			src: `fn outer<'a, 'd>(p: &mut {cb: 'a fn () -> undefined}, r: &'a &'d {x: number}, s: &mut {cb: 'd fn () -> undefined}) -> undefined {
   val mid = fn <'c: 'd>(q: &mut {cb: 'c fn () -> undefined}) {
     s.cb = q.cb
     val inner = fn <'b: 'c>(g: 'b fn () -> undefined) {
@@ -140,7 +140,7 @@ func TestSignatureImpliesBodyLifetimes(t *testing.T) {
 		// outer declares 'd: 'a in its clause, and its store into p.cb proves it.
 		{
 			name: "bounds across enclosing function levels cover the relation with a declared bound",
-			src: `fn outer<'a, 'd: 'a>(p: &mut {cb: 'a fn () -> undefined}, s: &mut {cb: 'd fn () -> undefined}) {
+			src: `fn outer<'a, 'd: 'a>(p: &mut {cb: 'a fn () -> undefined}, s: &mut {cb: 'd fn () -> undefined}) -> undefined {
   p.cb = s.cb
   val mid = fn <'c: 'd>(q: &mut {cb: 'c fn () -> undefined}) {
     s.cb = q.cb
@@ -153,7 +153,7 @@ func TestSignatureImpliesBodyLifetimes(t *testing.T) {
 		},
 		{
 			name: "bounds across enclosing function levels that stop short report",
-			src: `fn outer<'a, 'd>(p: &mut {cb: 'a fn () -> undefined}, s: &mut {cb: 'd fn () -> undefined}) {
+			src: `fn outer<'a, 'd>(p: &mut {cb: 'a fn () -> undefined}, s: &mut {cb: 'd fn () -> undefined}) -> undefined {
   val mid = fn <'c: 'd>(q: &mut {cb: 'c fn () -> undefined}) {
     s.cb = q.cb
     val inner = fn <'b: 'c>(g: 'b fn () -> undefined) {
@@ -214,7 +214,7 @@ class C<'a> {
 		},
 		{
 			name: "a closure's own lifetime unrelated to the enclosing one of the same name is not checked against it",
-			src: `fn outer<'a>(p: &mut {cb: 'a fn () -> undefined}) {
+			src: `fn outer<'a>(p: &mut {cb: 'a fn () -> undefined}) -> undefined {
 				val inner = fn <'a>(x: &'a {x: number}) -> &'a {x: number} { return x }
 			}`,
 		},

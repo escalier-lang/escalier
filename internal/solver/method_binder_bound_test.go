@@ -193,7 +193,7 @@ func TestAMethodBinderBoundIsAnInputPosition(t *testing.T) {
 func TestABodyUseWithinTheDeclaredBoundReachesTheCaller(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f<A: string>(a: A) -> A { return a }
-		fn g<U: string>(u: U) { return f(u) }
+		fn g<U: string>(u: U) -> U { return f(u) }
 		val r = g("a")
 	`)
 	require.Empty(t, errorMessagesOf(errs))
@@ -206,7 +206,7 @@ func TestABodyUseWithinTheDeclaredBoundReachesTheCaller(t *testing.T) {
 // `f`'s `A`, which `f(u)` linked U to and which is bounded by `string` too.
 func TestACallBreakingALinkedBoundReportsOnce(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f<A: string>(a: A) -> A { return a }
-fn g<U: string>(u: U) { return f(u) }
+fn g<U: string>(u: U) -> U { return f(u) }
 val r = g(5)`)
 	require.Equal(t, []string{"3:11-3:12: cannot constrain 5 <: string"}, messagesWithSpan(t, errs))
 }

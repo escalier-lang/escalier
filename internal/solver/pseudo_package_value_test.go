@@ -21,7 +21,7 @@ func TestPseudoPackageBindsAsItsOwnNameValue(t *testing.T) {
 		{
 			name: "console is the value and names the type",
 			src: `import "std:console"
-				fn log() { console.log("x") }
+				val log = fn () { console.log("x") }
 				val c: console.Console = console`,
 			want: map[string]string{"log": "fn () -> undefined", "c": "Console"},
 		},
@@ -53,7 +53,7 @@ func TestPseudoPackageBindsAsItsOwnNameValue(t *testing.T) {
 			// the import writes, the way an npm package's `export =` value is.
 			name: "an alias binds the value under the alias",
 			src: `import "std:console" as c
-				fn log() { c.log("x") }
+				val log = fn () { c.log("x") }
 				val k: c.Console = c`,
 			want: map[string]string{"log": "fn () -> undefined", "k": "Console"},
 		},

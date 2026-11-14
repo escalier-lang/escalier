@@ -134,7 +134,7 @@ func TestMemberObject(t *testing.T) {
 		{
 			name: "UnreducedMappedType",
 			src: `
-				fn f<T>(v: {[P]: T[P] for P in keyof T}) {
+				fn f<T>(v: {[P]: T[P] for P in keyof T}) -> undefined {
 					val probe = v
 				}
 			`,
@@ -239,7 +239,7 @@ func TestMemberObject(t *testing.T) {
 		{
 			name: "UnionWithUnreducedMember",
 			src: `
-				fn f<T>(v: {[P]: T[P] for P in keyof T} | {a: number}) {
+				fn f<T>(v: {[P]: T[P] for P in keyof T} | {a: number}) -> undefined {
 					val probe = v
 				}
 			`,

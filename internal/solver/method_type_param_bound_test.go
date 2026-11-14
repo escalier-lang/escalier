@@ -77,7 +77,7 @@ func TestAMethodTypeParamBoundIsCheckedInItsBody(t *testing.T) {
 		{
 			name: "FreeFunctionInTheSameComponent",
 			src: `fn add(a: number, b: number) -> number { if a > 0 { strs("x") } return a + b }
-			fn strs<A: string>(a: A) { return add(a, a) }`,
+			fn strs<A: string>(a: A) -> number { return add(a, a) }`,
 			want: []string{"1:1-1:79: cannot constrain string <: number"},
 		},
 	}

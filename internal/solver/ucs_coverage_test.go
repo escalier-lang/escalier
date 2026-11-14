@@ -23,7 +23,7 @@ import (
 // live on inside the tail, so the members they cover are still covered.
 func TestMatchCoverageReadsArmsBelowAGuardedCatchAll(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: {x: number} | {y: string}, b: boolean) {
+		fn f(p: {x: number} | {y: string}, b: boolean) -> number {
 			return match p {
 				_ if b => 0,
 				{x} => x,
@@ -46,7 +46,7 @@ func TestMatchCoverageNonExhaustive(t *testing.T) {
 		// inexact scrutinee. The open tail still holds values no structural arm can see.
 		"GuardedCatchAllOverInexact": {
 			src: `
-				fn f(p: {x: number, ...}, b: boolean) {
+				fn f(p: {x: number, ...}, b: boolean) -> number {
 					return match p {
 						_ if b => 0,
 						{x} => x
@@ -59,7 +59,7 @@ func TestMatchCoverageNonExhaustive(t *testing.T) {
 		// values the scrutinee's fields describe, so the open tail stays uncovered.
 		"LiteralFieldArmsOverInexact": {
 			src: `
-				fn f(p: {x: number, ...}) {
+				fn f(p: {x: number, ...}) -> "one" | "other" {
 					return match p {
 						{x: 1} => "one",
 						{x} => "other"
@@ -72,7 +72,7 @@ func TestMatchCoverageNonExhaustive(t *testing.T) {
 		// uncovered however many arms the form has.
 		"UncoveredLiteralMember": {
 			src: `
-				fn f(n: 1 | 2 | 3) {
+				fn f(n: 1 | 2 | 3) -> "one" | "two" {
 					return match n {
 						1 => "one",
 						2 => "two"
@@ -84,7 +84,7 @@ func TestMatchCoverageNonExhaustive(t *testing.T) {
 		// A `boolean` holds `true` and `false`, so an arm naming only one leaves the other.
 		"BooleanMissingAValue": {
 			src: `
-				fn f(b: boolean) {
+				fn f(b: boolean) -> "yes" {
 					return match b {
 						true => "yes"
 					}
@@ -95,7 +95,7 @@ func TestMatchCoverageNonExhaustive(t *testing.T) {
 		// A `boolean` member of a union is covered only once both of its values are named.
 		"BooleanMemberMissingAValue": {
 			src: `
-				fn f(u: string | boolean) {
+				fn f(u: string | boolean) -> string {
 					return match u {
 						s: string => s,
 						true => "yes"
@@ -120,7 +120,7 @@ func TestMatchCoverageNonExhaustive(t *testing.T) {
 // default rather than as another branch.
 func TestMatchCoverageCatchAllBelowAGuard(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: {x: number, ...}, b: boolean) {
+		fn f(p: {x: number, ...}, b: boolean) -> 0 | 1 {
 			return match p {
 				_ if b => 0,
 				_ => 1
@@ -136,7 +136,7 @@ func TestMatchCoverageCatchAllBelowAGuard(t *testing.T) {
 // the guarded branch, whose every path now reaches a body.
 func TestMatchCoverageArmDroppedAsADuplicateStillCovers(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(n: 1 | 2, b: boolean) {
+		fn f(n: 1 | 2, b: boolean) -> "guarded" | "one" | "two" {
 			return match n {
 				1 if b => "guarded",
 				1 => "one",
@@ -153,7 +153,7 @@ func TestMatchCoverageArmDroppedAsADuplicateStillCovers(t *testing.T) {
 // irrefutable pattern, so the arm covers an exact object scrutinee.
 func TestMatchCoverageNestedObjectPatternCovers(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: {a: {b: number}}) {
+		fn f(p: {a: {b: number}}) -> number {
 			return match p {
 				{a: {b}} => b
 			}
@@ -168,7 +168,7 @@ func TestMatchCoverageNestedObjectPatternCovers(t *testing.T) {
 // the first already proved, leaving it as what the projected literal split falls into.
 func TestMatchCoverageLiteralFieldArmFallsIntoThePlainArm(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: {x: number}) {
+		fn f(p: {x: number}) -> "one" | "other" {
 			return match p {
 				{x: 1} => "one",
 				{x} => "other"
@@ -189,7 +189,7 @@ func TestMatchCoverageIgnoresBranchesUnderAnotherTag(t *testing.T) {
 	// only a `{a: number}` value reaches.
 	t.Run("ObjectUnion", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
-			fn f(v: {a: number} | {b: string}, g: boolean) {
+			fn f(v: {a: number} | {b: string}, g: boolean) -> 0 | 1 | 2 {
 				return match v {
 					{a} if g => 0,
 					{b} if g => 1,
@@ -210,7 +210,7 @@ func TestMatchCoverageIgnoresBranchesUnderAnotherTag(t *testing.T) {
 				RGB(r: number, g: number, b: number),
 				Hex(code: string),
 			}
-			fn f(c: Color) {
+			fn f(c: Color) -> 0 | 1 | 2 {
 				return match c {
 					Color.Hex("x") => 0,
 					Color.RGB(0, g, b) => 1,
@@ -229,14 +229,14 @@ func TestMatchCoverageIgnoresBranchesUnderAnotherTag(t *testing.T) {
 func TestMatchCoverageBareRestArmReportsOnlyTheUnsupportedPattern(t *testing.T) {
 	tests := map[string]string{
 		"Alone": `
-			fn f(p: {x: number}) {
+			fn f(p: {x: number}) -> 0 {
 				return match p {
 					...rest => 0
 				}
 			}
 		`,
 		"AboveACatchAll": `
-			fn f(n: 1 | 2) {
+			fn f(n: 1 | 2) -> 0 {
 				return match n {
 					...rest => 0,
 					_ => 1
@@ -267,7 +267,7 @@ func TestMatchCoverageCreditsAnnotationTests(t *testing.T) {
 		// Primitive members, each named by the arm annotated with it.
 		"PrimitiveMembers": {
 			src: `
-				fn f(u: number | string) {
+				fn f(u: number | string) -> number | string {
 					return match u {
 						x: number => x,
 						y: string => y
@@ -278,7 +278,7 @@ func TestMatchCoverageCreditsAnnotationTests(t *testing.T) {
 		// Literal members. A literal type annotation admits the one value its member holds.
 		"LiteralMembers": {
 			src: `
-				fn f(u: 1 | 2) {
+				fn f(u: 1 | 2) -> 1 | 2 {
 					return match u {
 						x: 1 => x,
 						y: 2 => y
@@ -290,7 +290,7 @@ func TestMatchCoverageCreditsAnnotationTests(t *testing.T) {
 		// two kinds of tag add up.
 		"AnnotationAndShapeTag": {
 			src: `
-				fn f(u: number | {x: number}) {
+				fn f(u: number | {x: number}) -> number {
 					return match u {
 						n: number => n,
 						{x} => x
@@ -302,7 +302,7 @@ func TestMatchCoverageCreditsAnnotationTests(t *testing.T) {
 		// it tests does not change that, though it does name the member the message reports.
 		"GuardedAnnotatedArm": {
 			src: `
-				fn f(u: number | string, b: boolean) {
+				fn f(u: number | string, b: boolean) -> number | string {
 					return match u {
 						x: number if b => x,
 						y: string => y
@@ -316,7 +316,7 @@ func TestMatchCoverageCreditsAnnotationTests(t *testing.T) {
 		// without repeating that diagnostic.
 		"UnresolvableAnnotation": {
 			src: `
-				fn f(u: number | string) {
+				fn f(u: number | string) -> 0 {
 					return match u {
 						x: Nope => 0
 					}
@@ -348,7 +348,7 @@ func TestNonExhaustiveMessageNamesWhatEscapes(t *testing.T) {
 		// No branch names the second member, so the message asks for one matching its shape.
 		"UnionMemberNoArmNames": {
 			src: `
-				fn f(p: {x: number} | {y: string}) {
+				fn f(p: {x: number} | {y: string}) -> number {
 					return match p {
 						{x} => x
 					}
@@ -359,7 +359,7 @@ func TestNonExhaustiveMessageNamesWhatEscapes(t *testing.T) {
 		// Two members escape at once, so both are named in source order.
 		"SeveralUnionMembers": {
 			src: `
-				fn f(p: {x: number} | {y: string} | {z: boolean}) {
+				fn f(p: {x: number} | {y: string} | {z: boolean}) -> number {
 					return match p {
 						{x} => x
 					}
@@ -371,7 +371,7 @@ func TestNonExhaustiveMessageNamesWhatEscapes(t *testing.T) {
 		// fall through, so the fix is an unguarded branch rather than a catch-all.
 		"GuardedArmOverExactObject": {
 			src: `
-				fn f(p: {x: number}, b: boolean) {
+				fn f(p: {x: number}, b: boolean) -> number {
 					return match p {
 						{x} if b => x
 					}
@@ -383,7 +383,7 @@ func TestNonExhaustiveMessageNamesWhatEscapes(t *testing.T) {
 		// carries a clause for each.
 		"GuardedMemberAlongsideAnUnnamedOne": {
 			src: `
-				fn f(p: {x: number} | {y: string}, b: boolean) {
+				fn f(p: {x: number} | {y: string}, b: boolean) -> 0 {
 					return match p {
 						{x} if b => 0
 					}
@@ -395,7 +395,7 @@ func TestNonExhaustiveMessageNamesWhatEscapes(t *testing.T) {
 		// falls through and every member takes the guarded wording.
 		"GuardedCatchAllOverUnion": {
 			src: `
-				fn f(p: {x: number} | {y: string}, b: boolean) {
+				fn f(p: {x: number} | {y: string}, b: boolean) -> 0 {
 					return match p {
 						q if b => 0
 					}
@@ -407,7 +407,7 @@ func TestNonExhaustiveMessageNamesWhatEscapes(t *testing.T) {
 		// fix is a branch binding that shape irrefutably.
 		"RefutableSubPattern": {
 			src: `
-				fn f(p: {x: number}) {
+				fn f(p: {x: number}) -> 10 {
 					return match p {
 						{x: 1} => 10
 					}
@@ -422,7 +422,7 @@ func TestNonExhaustiveMessageNamesWhatEscapes(t *testing.T) {
 					RGB(r: number, g: number, b: number),
 					Hex(code: string),
 				}
-				fn f(c: Color) {
+				fn f(c: Color) -> number {
 					return match c {
 						Color.RGB(r, g, b) => r
 					}
@@ -438,7 +438,7 @@ func TestNonExhaustiveMessageNamesWhatEscapes(t *testing.T) {
 					Some(value: T),
 					None,
 				}
-				fn f(o: MyOption<number>) {
+				fn f(o: MyOption<number>) -> number {
 					return match o {
 						MyOption.Some(value) => value
 					}
@@ -450,7 +450,7 @@ func TestNonExhaustiveMessageNamesWhatEscapes(t *testing.T) {
 		// `n: number => n` covers whichever member its type admits.
 		"PrimitiveMember": {
 			src: `
-				fn f(x: number | string) {
+				fn f(x: number | string) -> 1 {
 					return match x {
 						1 => 1
 					}
@@ -464,7 +464,7 @@ func TestNonExhaustiveMessageNamesWhatEscapes(t *testing.T) {
 		"AliasUnionMember": {
 			src: `
 				type C = {y: string}
-				fn f(p: {x: number} | C) {
+				fn f(p: {x: number} | C) -> 1 {
 					return match p {
 						{x} => 1
 					}
@@ -477,7 +477,7 @@ func TestNonExhaustiveMessageNamesWhatEscapes(t *testing.T) {
 		"AliasStructuralScrutinee": {
 			src: `
 				type P = {x: number}
-				fn f(p: P) {
+				fn f(p: P) -> 10 {
 					return match p {
 						{x: 1} => 10
 					}
@@ -490,7 +490,7 @@ func TestNonExhaustiveMessageNamesWhatEscapes(t *testing.T) {
 		// the tail comes from, rather than asking for the catch-all unexplained.
 		"InexactObjectNamesItsOpenTail": {
 			src: `
-				fn f(p: {x: number, ...}) {
+				fn f(p: {x: number, ...}) -> number {
 					return match p {
 						{x} => x
 					}
@@ -503,7 +503,7 @@ func TestNonExhaustiveMessageNamesWhatEscapes(t *testing.T) {
 		// is the open tail the catch-all covers.
 		"BareNumberCoveredByLiterals": {
 			src: `
-				fn f(n: number) {
+				fn f(n: number) -> "one" | "two" {
 					return match n {
 						1 => "one",
 						2 => "two"
@@ -516,7 +516,7 @@ func TestNonExhaustiveMessageNamesWhatEscapes(t *testing.T) {
 		// uncovered.
 		"BareStringCoveredByLiterals": {
 			src: `
-				fn g(s: string) {
+				fn g(s: string) -> 1 | 2 {
 					return match s {
 						"a" => 1,
 						"b" => 2
@@ -529,7 +529,7 @@ func TestNonExhaustiveMessageNamesWhatEscapes(t *testing.T) {
 		// booleans, objects, and everything else uncovered.
 		"UnknownCoveredByTypePatterns": {
 			src: `
-				fn h(u: unknown) {
+				fn h(u: unknown) -> number | string {
 					return match u {
 						x: number => x,
 						y: string => y
