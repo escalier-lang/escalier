@@ -11,139 +11,151 @@ import (
 
 // TestSignatureAction covers the code action that writes a function's inferred signature.
 // Each case requests actions at the start of cursor's first occurrence in src, and expected
-// is src with the action's edits applied, or "" when the action is not offered. diagnostic
-// is the one diagnostic src reports, or "" when it reports none.
+// is src with the action's edits applied, or "" when the action is not offered. diagnostics
+// are the diagnostics src reports, in any order.
 func TestSignatureAction(t *testing.T) {
 	tests := []struct {
-		name       string
-		src        string
-		cursor     string
-		expected   string
-		diagnostic string
+		name        string
+		src         string
+		cursor      string
+		expected    string
+		diagnostics []string
 	}{
 		{
-			name:       "UnannotatedParam",
-			src:        "fn read(p) { return p.x }",
-			cursor:     "read",
-			expected:   "fn read<T0>(p: &{x: T0}) -> &T0 { return p.x }",
-			diagnostic: "0:3-0:7 'read' is declared at a script's top level, so parameter 'p' needs a type and 'read' needs a return type",
+			// The ambiguity warning in the body leaves the inferred return type `never`, so
+			// the action does not write it.
+			name:     "NeverReturnFromABodyWithAWarning",
+			src:      "fn h<T>(t: T, k: fn <A>(x: A | T | number) -> A) { return k(5) }",
+			cursor:   "h<",
+			expected: "",
+			diagnostics: []string{
+				"0:60-0:61 ambiguous match against t5 | T | number: committed number, but t5 would also match; annotate to disambiguate",
+				"0:3-0:4 'h' is declared at a script's top level, so it needs a return type; write `-> never`",
+			},
 		},
 		{
-			name:       "MissingReturnType",
-			src:        "fn count(xs: &Array<number>) { return xs.length }",
-			cursor:     "xs:",
-			expected:   "fn count(xs: &Array<number>) -> number { return xs.length }",
-			diagnostic: "0:3-0:8 'count' is declared at a script's top level, so it needs a return type; write `-> number`",
+			name:        "UnannotatedParam",
+			src:         "fn read(p) { return p.x }",
+			cursor:      "read",
+			expected:    "fn read<T0>(p: &{x: T0}) -> &T0 { return p.x }",
+			diagnostics: []string{"0:3-0:7 'read' is declared at a script's top level, so parameter 'p' needs a type and 'read' needs a return type"},
 		},
 		{
-			name:       "ReturnsUndefined",
-			src:        "fn noop(x: number) {}",
-			cursor:     "noop",
-			expected:   "fn noop(x: number) -> undefined {}",
-			diagnostic: "0:3-0:7 'noop' is declared at a script's top level, so it needs a return type; write `-> undefined`",
+			name:        "MissingReturnType",
+			src:         "fn count(xs: &Array<number>) { return xs.length }",
+			cursor:      "xs:",
+			expected:    "fn count(xs: &Array<number>) -> number { return xs.length }",
+			diagnostics: []string{"0:3-0:8 'count' is declared at a script's top level, so it needs a return type; write `-> number`"},
 		},
 		{
-			name:       "NoParams",
-			src:        "fn one() { return 1 }",
-			cursor:     "fn",
-			expected:   "fn one() -> 1 { return 1 }",
-			diagnostic: "0:3-0:6 'one' is declared at a script's top level, so it needs a return type; write `-> 1`",
+			name:        "ReturnsUndefined",
+			src:         "fn noop(x: number) {}",
+			cursor:      "noop",
+			expected:    "fn noop(x: number) -> undefined {}",
+			diagnostics: []string{"0:3-0:7 'noop' is declared at a script's top level, so it needs a return type; write `-> undefined`"},
 		},
 		{
-			name:       "WrittenTypeParam",
-			src:        "fn id<T>(x: T) { return x }",
-			cursor:     "id",
-			expected:   "fn id<T>(x: T) -> T { return x }",
-			diagnostic: "0:3-0:5 'id' is declared at a script's top level, so it needs a return type; write `-> T`",
+			name:        "NoParams",
+			src:         "fn one() { return 1 }",
+			cursor:      "fn",
+			expected:    "fn one() -> 1 { return 1 }",
+			diagnostics: []string{"0:3-0:6 'one' is declared at a script's top level, so it needs a return type; write `-> 1`"},
 		},
 		{
-			name:       "ReturnedBorrowOfOneOfTwoParams",
-			src:        "type Flat = {x: number}\nfn pick(a: &Flat, b: &Flat) -> &Flat { return a }",
-			cursor:     "pick",
-			expected:   "type Flat = {x: number}\nfn pick<'a>(a: &'a Flat, b: &Flat) -> &'a Flat { return a }",
-			diagnostic: "1:31-1:36 the return type borrows from 'a' or 'b', and elision cannot tell which; write a lifetime, as in `fn pick<'x>(a: &'x Flat, b: &Flat) -> &'x Flat`",
+			name:        "WrittenTypeParam",
+			src:         "fn id<T>(x: T) { return x }",
+			cursor:      "id",
+			expected:    "fn id<T>(x: T) -> T { return x }",
+			diagnostics: []string{"0:3-0:5 'id' is declared at a script's top level, so it needs a return type; write `-> T`"},
 		},
 		{
-			name:       "Method",
-			src:        "type Flat = {x: number}\nclass Box {\n\tinner: Flat,\n\tget(&self) { return self.inner.x },\n}",
-			cursor:     "get",
-			expected:   "type Flat = {x: number}\nclass Box {\n\tinner: Flat,\n\tget(&self) -> number { return self.inner.x },\n}",
-			diagnostic: "3:1-3:4 'get' is a method, so it needs a return type; write `-> number`",
+			name:        "ReturnedBorrowOfOneOfTwoParams",
+			src:         "type Flat = {x: number}\nfn pick(a: &Flat, b: &Flat) -> &Flat { return a }",
+			cursor:      "pick",
+			expected:    "type Flat = {x: number}\nfn pick<'a>(a: &'a Flat, b: &Flat) -> &'a Flat { return a }",
+			diagnostics: []string{"1:31-1:36 the return type borrows from 'a' or 'b', and elision cannot tell which; write a lifetime, as in `fn pick<'x>(a: &'x Flat, b: &Flat) -> &'x Flat`"},
 		},
 		{
-			name:       "MethodReturnsReceiverBorrow",
-			src:        "type Flat = {x: number}\nclass Box {\n\tinner: Flat,\n\tpeek(&self, other: &Flat) { return &self.inner },\n}",
-			cursor:     "peek",
-			expected:   "type Flat = {x: number}\nclass Box {\n\tinner: Flat,\n\tpeek(&self, other: &Flat) -> &Flat { return &self.inner },\n}",
-			diagnostic: "3:1-3:5 'peek' is a method, so it needs a return type; write `-> &Flat`",
+			name:        "Method",
+			src:         "type Flat = {x: number}\nclass Box {\n\tinner: Flat,\n\tget(&self) { return self.inner.x },\n}",
+			cursor:      "get",
+			expected:    "type Flat = {x: number}\nclass Box {\n\tinner: Flat,\n\tget(&self) -> number { return self.inner.x },\n}",
+			diagnostics: []string{"3:1-3:4 'get' is a method, so it needs a return type; write `-> number`"},
 		},
 		{
-			name:       "MethodOfGenericClass",
-			src:        "class Cell<T> {\n\tvalue: T,\n\tget(&self) { return self.value },\n}",
-			cursor:     "get",
-			expected:   "class Cell<T> {\n\tvalue: T,\n\tget(&self) -> &T { return self.value },\n}",
-			diagnostic: "2:1-2:4 'get' is a method, so it needs a return type; write `-> &T`",
+			name:        "MethodReturnsReceiverBorrow",
+			src:         "type Flat = {x: number}\nclass Box {\n\tinner: Flat,\n\tpeek(&self, other: &Flat) { return &self.inner },\n}",
+			cursor:      "peek",
+			expected:    "type Flat = {x: number}\nclass Box {\n\tinner: Flat,\n\tpeek(&self, other: &Flat) -> &Flat { return &self.inner },\n}",
+			diagnostics: []string{"3:1-3:5 'peek' is a method, so it needs a return type; write `-> &Flat`"},
 		},
 		{
-			name:       "MethodTypeParamHidesClassTypeParam",
-			src:        "class Cell<T> {\n\tvalue: T,\n\tpass<T>(&self, x: T) { return x },\n}",
-			cursor:     "pass",
-			expected:   "class Cell<T> {\n\tvalue: T,\n\tpass<T>(&self, x: T) -> T { return x },\n}",
-			diagnostic: "2:1-2:5 'pass' is a method, so it needs a return type; write `-> T`",
+			name:        "MethodOfGenericClass",
+			src:         "class Cell<T> {\n\tvalue: T,\n\tget(&self) { return self.value },\n}",
+			cursor:      "get",
+			expected:    "class Cell<T> {\n\tvalue: T,\n\tget(&self) -> &T { return self.value },\n}",
+			diagnostics: []string{"2:1-2:4 'get' is a method, so it needs a return type; write `-> &T`"},
 		},
 		{
-			name:       "BinderListEndsInComma",
-			src:        "fn id<T,>(x: T) { return x }",
-			cursor:     "id",
-			expected:   "fn id<T,>(x: T) -> T { return x }",
-			diagnostic: "0:3-0:5 'id' is declared at a script's top level, so it needs a return type; write `-> T`",
+			name:        "MethodTypeParamHidesClassTypeParam",
+			src:         "class Cell<T> {\n\tvalue: T,\n\tpass<T>(&self, x: T) { return x },\n}",
+			cursor:      "pass",
+			expected:    "class Cell<T> {\n\tvalue: T,\n\tpass<T>(&self, x: T) -> T { return x },\n}",
+			diagnostics: []string{"2:1-2:5 'pass' is a method, so it needs a return type; write `-> T`"},
 		},
 		{
-			name:       "NoParamsAfterBinderList",
-			src:        "fn one<T>() { return 1 }",
-			cursor:     "one",
-			expected:   "fn one<T>() -> 1 { return 1 }",
-			diagnostic: "0:3-0:6 'one' is declared at a script's top level, so it needs a return type; write `-> 1`",
+			name:        "BinderListEndsInComma",
+			src:         "fn id<T,>(x: T) { return x }",
+			cursor:      "id",
+			expected:    "fn id<T,>(x: T) -> T { return x }",
+			diagnostics: []string{"0:3-0:5 'id' is declared at a script's top level, so it needs a return type; write `-> T`"},
+		},
+		{
+			name:        "NoParamsAfterBinderList",
+			src:         "fn one<T>() { return 1 }",
+			cursor:      "one",
+			expected:    "fn one<T>() -> 1 { return 1 }",
+			diagnostics: []string{"0:3-0:6 'one' is declared at a script's top level, so it needs a return type; write `-> 1`"},
 		},
 		{
 			// Writing the binder list would repeat the `where` clause's bound on `T`.
-			name:       "WhereClauseWithAddedBinder",
-			src:        "fn f<T>(x: T, y) where T: number { return [x, y] }",
-			cursor:     "f<",
-			expected:   "",
-			diagnostic: "0:3-0:4 'f' is declared at a script's top level, so parameter 'y' needs a type and 'f' needs a return type",
+			name:        "WhereClauseWithAddedBinder",
+			src:         "fn f<T>(x: T, y) where T: number { return [x, y] }",
+			cursor:      "f<",
+			expected:    "",
+			diagnostics: []string{"0:3-0:4 'f' is declared at a script's top level, so parameter 'y' needs a type and 'f' needs a return type"},
 		},
 		{
-			name:       "AddsLifetimeToWrittenBinders",
-			src:        "type Flat = {x: number}\nfn pick<T, U>(t: T, u: U, a: &Flat, b: &Flat) -> &Flat { return a }",
-			cursor:     "pick",
-			expected:   "type Flat = {x: number}\nfn pick<T, U, 'a>(t: T, u: U, a: &'a Flat, b: &Flat) -> &'a Flat { return a }",
-			diagnostic: "1:49-1:54 the return type borrows from 'a' or 'b', and elision cannot tell which; write a lifetime, as in `fn pick<'x, T, U>(t: T, u: U, a: &'x Flat, b: &Flat) -> &'x Flat`",
+			name:        "AddsLifetimeToWrittenBinders",
+			src:         "type Flat = {x: number}\nfn pick<T, U>(t: T, u: U, a: &Flat, b: &Flat) -> &Flat { return a }",
+			cursor:      "pick",
+			expected:    "type Flat = {x: number}\nfn pick<T, U, 'a>(t: T, u: U, a: &'a Flat, b: &Flat) -> &'a Flat { return a }",
+			diagnostics: []string{"1:49-1:54 the return type borrows from 'a' or 'b', and elision cannot tell which; write a lifetime, as in `fn pick<'x, T, U>(t: T, u: U, a: &'x Flat, b: &Flat) -> &'x Flat`"},
 		},
 		{
 			// Elision assigns the source's 'q, so a rewritten binder list would drop it while
 			// `a: &'q Flat` still names it.
-			name:       "RewriteWouldDropWrittenLifetime",
-			src:        "type Flat = {x: number}\nfn pick<'q>(q: &'q Flat, a: &Flat, b: &Flat) -> &Flat { return a }",
-			cursor:     "pick",
-			expected:   "",
-			diagnostic: "1:48-1:53 the return type borrows from 'q', 'a' or 'b', and elision cannot tell which; write a lifetime, as in `fn pick<'x, 'q>(q: &'q Flat, a: &'x Flat, b: &Flat) -> &'x Flat`",
+			name:        "RewriteWouldDropWrittenLifetime",
+			src:         "type Flat = {x: number}\nfn pick<'q>(q: &'q Flat, a: &Flat, b: &Flat) -> &Flat { return a }",
+			cursor:      "pick",
+			expected:    "",
+			diagnostics: []string{"1:48-1:53 the return type borrows from 'q', 'a' or 'b', and elision cannot tell which; write a lifetime, as in `fn pick<'x, 'q>(q: &'q Flat, a: &'x Flat, b: &Flat) -> &'x Flat`"},
 		},
 		{
 			// The type's span ends inside its parentheses, so the return type goes after the
 			// `)` that closes the parameter list, not the type's own.
-			name:       "ParenthesizedParamType",
-			src:        "fn f(p: &({a: number} | {b: number})) { return p }",
-			cursor:     "f(",
-			expected:   "fn f(p: &({a: number} | {b: number})) -> &({a: number} | {b: number}) { return p }",
-			diagnostic: "0:3-0:4 'f' is declared at a script's top level, so it needs a return type; write `-> &({a: number} | {b: number})`",
+			name:        "ParenthesizedParamType",
+			src:         "fn f(p: &({a: number} | {b: number})) { return p }",
+			cursor:      "f(",
+			expected:    "fn f(p: &({a: number} | {b: number})) -> &({a: number} | {b: number}) { return p }",
+			diagnostics: []string{"0:3-0:4 'f' is declared at a script's top level, so it needs a return type; write `-> &({a: number} | {b: number})`"},
 		},
 		{
-			name:       "CommentsInParamList",
-			src:        "fn f(\n\tx: number, // the input\n\ty: number /* scale */\n) { return x * y }",
-			cursor:     "f(",
-			expected:   "fn f(\n\tx: number, // the input\n\ty: number /* scale */\n) -> number { return x * y }",
-			diagnostic: "0:3-0:4 'f' is declared at a script's top level, so it needs a return type; write `-> number`",
+			name:        "CommentsInParamList",
+			src:         "fn f(\n\tx: number, // the input\n\ty: number /* scale */\n) { return x * y }",
+			cursor:      "f(",
+			expected:    "fn f(\n\tx: number, // the input\n\ty: number /* scale */\n) -> number { return x * y }",
+			diagnostics: []string{"0:3-0:4 'f' is declared at a script's top level, so it needs a return type; write `-> number`"},
 		},
 		{
 			// The checker renders this method with a binder the source does not write. Every
@@ -160,57 +172,57 @@ func TestSignatureAction(t *testing.T) {
 			expected: "",
 		},
 		{
-			name:       "OptionalParamWithoutType",
-			src:        "fn f(x?) { return x }",
-			cursor:     "f(",
-			expected:   "fn f<T0>(x?: T0) -> T0 { return x }",
-			diagnostic: "0:3-0:4 'f' is declared at a script's top level, so parameter 'x' needs a type and 'f' needs a return type",
+			name:        "OptionalParamWithoutType",
+			src:         "fn f(x?) { return x }",
+			cursor:      "f(",
+			expected:    "fn f<T0>(x?: T0) -> T0 { return x }",
+			diagnostics: []string{"0:3-0:4 'f' is declared at a script's top level, so parameter 'x' needs a type and 'f' needs a return type"},
 		},
 		{
-			name:       "MethodReceiverGetsLifetime",
-			src:        "type Flat = {x: number}\nclass Box {\n\tinner: Flat,\n\tpick(&self, a: &Flat, c: boolean) { if c { return &self.inner } else { return a } },\n}",
-			cursor:     "pick",
-			expected:   "type Flat = {x: number}\nclass Box {\n\tinner: Flat,\n\tpick<'a>(&self, a: &'a Flat, c: boolean) -> &Flat | &'a Flat { if c { return &self.inner } else { return a } },\n}",
-			diagnostic: "3:1-3:5 'pick' is a method, so it needs a return type; write `pick<'a>(&self, a: &'a Flat, c: boolean) -> &Flat | &'a Flat`",
+			name:        "MethodReceiverGetsLifetime",
+			src:         "type Flat = {x: number}\nclass Box {\n\tinner: Flat,\n\tpick(&self, a: &Flat, c: boolean) { if c { return &self.inner } else { return a } },\n}",
+			cursor:      "pick",
+			expected:    "type Flat = {x: number}\nclass Box {\n\tinner: Flat,\n\tpick<'a>(&self, a: &'a Flat, c: boolean) -> &Flat | &'a Flat { if c { return &self.inner } else { return a } },\n}",
+			diagnostics: []string{"3:1-3:5 'pick' is a method, so it needs a return type; write `pick<'a>(&self, a: &'a Flat, c: boolean) -> &Flat | &'a Flat`"},
 		},
 		{
 			// The method names 's, and the body makes 's outlive the result as well as other's
 			// lifetime, so the written signature declares the bound on 's too.
-			name:       "NamedLifetimeKeepsTheBoundTheBodyNeeds",
-			src:        "type Flat = {x: number}\ndeclare fn either<'r>(a: &'r Flat, b: &'r Flat) -> &'r Flat\nclass Box {\n\tinner: Flat,\n\tpick<'s>(&'s self, other: &Flat) { return either(&self.inner, other) },\n}",
-			cursor:     "pick",
-			expected:   "type Flat = {x: number}\ndeclare fn either<'r>(a: &'r Flat, b: &'r Flat) -> &'r Flat\nclass Box {\n\tinner: Flat,\n\tpick<'s: 'b, 'a: 'b, 'b>(&'s self, other: &'a Flat) -> &'b Flat { return either(&self.inner, other) },\n}",
-			diagnostic: "4:1-4:5 'pick' is a method, so it needs a return type; write `pick<'s: 'b, 'a: 'b, 'b>(&'s self, other: &'a Flat) -> &'b Flat`",
+			name:        "NamedLifetimeKeepsTheBoundTheBodyNeeds",
+			src:         "type Flat = {x: number}\ndeclare fn either<'r>(a: &'r Flat, b: &'r Flat) -> &'r Flat\nclass Box {\n\tinner: Flat,\n\tpick<'s>(&'s self, other: &Flat) { return either(&self.inner, other) },\n}",
+			cursor:      "pick",
+			expected:    "type Flat = {x: number}\ndeclare fn either<'r>(a: &'r Flat, b: &'r Flat) -> &'r Flat\nclass Box {\n\tinner: Flat,\n\tpick<'s: 'b, 'a: 'b, 'b>(&'s self, other: &'a Flat) -> &'b Flat { return either(&self.inner, other) },\n}",
+			diagnostics: []string{"4:1-4:5 'pick' is a method, so it needs a return type; write `pick<'s: 'b, 'a: 'b, 'b>(&'s self, other: &'a Flat) -> &'b Flat`"},
 		},
 		{
-			name:       "ThrowsGetsLifetime",
-			src:        "type Flat = {x: number}\nfn f(a: &Flat, b: &Flat, c: boolean) throws &Flat { if c { throw a } else { throw b } }",
-			cursor:     "f(",
-			expected:   "type Flat = {x: number}\nfn f<'a>(a: &'a Flat, b: &'a Flat, c: boolean) -> never throws &'a Flat { if c { throw a } else { throw b } }",
-			diagnostic: "1:3-1:4 'f' is declared at a script's top level, so it needs a return type; write `-> never`",
+			name:        "ThrowsGetsLifetime",
+			src:         "type Flat = {x: number}\nfn f(a: &Flat, b: &Flat, c: boolean) throws &Flat { if c { throw a } else { throw b } }",
+			cursor:      "f(",
+			expected:    "type Flat = {x: number}\nfn f<'a>(a: &'a Flat, b: &'a Flat, c: boolean) -> never throws &'a Flat { if c { throw a } else { throw b } }",
+			diagnostics: []string{"1:3-1:4 'f' is declared at a script's top level, so it needs a return type; write `-> never`"},
 		},
 		{
 			// The inferred signature adds the binder `T0` and elides the source's 'q, so a
 			// rewritten binder list would drop 'q while `q: &'q Flat` still names it.
-			name:       "AddedTypeParamWouldDropWrittenLifetime",
-			src:        "type Flat = {x: number}\nfn f<T, 'q>(t: T, q: &'q Flat, y) { return [t, y] }",
-			cursor:     "f<",
-			expected:   "",
-			diagnostic: "1:3-1:4 'f' is declared at a script's top level, so parameter 'y' needs a type and 'f' needs a return type",
+			name:        "AddedTypeParamWouldDropWrittenLifetime",
+			src:         "type Flat = {x: number}\nfn f<T, 'q>(t: T, q: &'q Flat, y) { return [t, y] }",
+			cursor:      "f<",
+			expected:    "",
+			diagnostics: []string{"1:3-1:4 'f' is declared at a script's top level, so parameter 'y' needs a type and 'f' needs a return type"},
 		},
 		{
-			name:       "AfterDeclaredFn",
-			src:        "declare fn g(x: number) -> number\nfn one() { return 1 }",
-			cursor:     "one",
-			expected:   "declare fn g(x: number) -> number\nfn one() -> 1 { return 1 }",
-			diagnostic: "1:3-1:6 'one' is declared at a script's top level, so it needs a return type; write `-> 1`",
+			name:        "AfterDeclaredFn",
+			src:         "declare fn g(x: number) -> number\nfn one() { return 1 }",
+			cursor:      "one",
+			expected:    "declare fn g(x: number) -> number\nfn one() -> 1 { return 1 }",
+			diagnostics: []string{"1:3-1:6 'one' is declared at a script's top level, so it needs a return type; write `-> 1`"},
 		},
 		{
-			name:       "CursorInBody",
-			src:        "fn noop(x: number) { x }",
-			cursor:     "x }",
-			expected:   "",
-			diagnostic: "0:3-0:7 'noop' is declared at a script's top level, so it needs a return type; write `-> undefined`",
+			name:        "CursorInBody",
+			src:         "fn noop(x: number) { x }",
+			cursor:      "x }",
+			expected:    "",
+			diagnostics: []string{"0:3-0:7 'noop' is declared at a script's top level, so it needs a return type; write `-> undefined`"},
 		},
 	}
 	for _, tt := range tests {
@@ -218,10 +230,11 @@ func TestSignatureAction(t *testing.T) {
 			s := integrationServer(t, map[string]string{"bin/main.esc": tt.src})
 			ctx, published := publishedDiagnostics()
 			uri := openFileIn(t, s, ctx, "bin/main.esc", tt.src)
-			if tt.diagnostic == "" {
-				require.Empty(t, awaitDiagnostics(t, published, uri, 1))
+			got := awaitDiagnostics(t, published, uri, 1)
+			if len(tt.diagnostics) == 0 {
+				require.Empty(t, got)
 			} else {
-				require.Equal(t, []string{tt.diagnostic}, awaitDiagnostics(t, published, uri, 1))
+				require.ElementsMatch(t, tt.diagnostics, got)
 			}
 
 			offset := strings.Index(tt.src, tt.cursor)

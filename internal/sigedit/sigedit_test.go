@@ -6,6 +6,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
+	"github.com/escalier-lang/escalier/internal/solver"
 
 	"github.com/stretchr/testify/require"
 )
@@ -107,6 +108,39 @@ func TestParamListEnd(t *testing.T) {
 			}
 			require.True(t, ok)
 			require.Equal(t, tt.expected, got)
+		})
+	}
+}
+
+// spanDiag is a diagnostic that blames span.
+type spanDiag struct{ span ast.Span }
+
+func (d spanDiag) Span() ast.Span { return d.span }
+
+// TestWritesNeverWhileDiagnosed covers when edits that write `never` are held back for a
+// diagnostic inside the declaration, which spans offsets 10 to 50.
+func TestWritesNeverWhileDiagnosed(t *testing.T) {
+	at := func(start, end int) ast.Span {
+		return ast.Span{Start: ast.Location{Offset: start}, End: ast.Location{Offset: end}}
+	}
+	missing := &solver.MissingSignatureError{Node: ast.NewIdentifier("f", at(13, 14))}
+	never := []Edit{{Start: 20, End: 20, Text: " -> never"}}
+	tests := []struct {
+		name     string
+		edits    []Edit
+		diags    []interface{ Span() ast.Span }
+		expected bool
+	}{
+		{name: "NeverWithDiagnosticInside", edits: never, diags: []interface{ Span() ast.Span }{spanDiag{at(30, 35)}}, expected: true},
+		{name: "OtherTypeWithDiagnosticInside", edits: []Edit{{Start: 20, End: 20, Text: " -> number"}}, diags: []interface{ Span() ast.Span }{spanDiag{at(30, 35)}}, expected: false},
+		{name: "NeverWithDiagnosticOutside", edits: never, diags: []interface{ Span() ast.Span }{spanDiag{at(60, 65)}}, expected: false},
+		{name: "NeverWithOnlyMissingSignature", edits: never, diags: []interface{ Span() ast.Span }{missing}, expected: false},
+		{name: "NeverWithNoDiagnostic", edits: never, expected: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := Target{DeclSpan: at(10, 50)}
+			require.Equal(t, tt.expected, WritesNeverWhileDiagnosed(target, tt.edits, tt.diags))
 		})
 	}
 }

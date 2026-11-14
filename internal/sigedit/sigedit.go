@@ -22,6 +22,8 @@ type Target struct {
 	Receiver *ast.MethodReceiver
 	// SignatureSpan runs from the start of the declaration to the start of its body.
 	SignatureSpan ast.Span
+	// DeclSpan is the whole declaration, body included.
+	DeclSpan ast.Span
 	// Signature is what the checker inferred for the function.
 	Signature solver.DeclSignature
 }
@@ -75,7 +77,9 @@ func Targets(info *solver.Info, decls []ast.Decl, sourceID int) []Target {
 				continue
 			}
 			span := ast.Span{Start: d.Span().Start, End: d.Body.Span.Start, SourceID: sourceID}
-			targets = append(targets, Target{Name: d.Name, Sig: &d.FuncSig, SignatureSpan: span, Signature: signature})
+			targets = append(targets, Target{
+				Name: d.Name, Sig: &d.FuncSig, SignatureSpan: span, DeclSpan: d.Span(), Signature: signature,
+			})
 		case *ast.ClassDecl:
 			for _, elem := range d.Body {
 				m, ok := elem.(*ast.MethodElem)
@@ -88,13 +92,35 @@ func Targets(info *solver.Info, decls []ast.Decl, sourceID int) []Target {
 				}
 				span := ast.Span{Start: m.Span().Start, End: m.Fn.Body.Span.Start, SourceID: sourceID}
 				targets = append(targets, Target{
-					Name: m.Name, Sig: &m.Fn.FuncSig, Receiver: m.Receiver, SignatureSpan: span, Signature: signature,
+					Name: m.Name, Sig: &m.Fn.FuncSig, Receiver: m.Receiver, SignatureSpan: span, DeclSpan: m.Span(),
+					Signature: signature,
 				})
 			}
 		}
 	}
 	return targets
 }
+
+// WritesNeverWhileDiagnosed reports whether edits write a type that names `never` while a
+// diagnostic of diags other than a MissingSignatureError falls inside target's declaration.
+// edits are the edits target.Edits returned.
+func WritesNeverWhileDiagnosed[D interface{ Span() ast.Span }](target Target, edits []Edit, diags []D) bool {
+	if !slices.ContainsFunc(edits, func(e Edit) bool { return neverType.MatchString(e.Text) }) {
+		return false
+	}
+	for _, d := range diags {
+		if _, missing := any(d).(*solver.MissingSignatureError); missing {
+			continue
+		}
+		if target.DeclSpan.ContainsSpan(d.Span()) {
+			return true
+		}
+	}
+	return false
+}
+
+// neverType matches a rendered type that names `never`.
+var neverType = regexp.MustCompile(`\bnever\b`)
 
 // Apply returns contents with edits applied. The edits must not overlap.
 func Apply(contents string, edits []Edit) string {

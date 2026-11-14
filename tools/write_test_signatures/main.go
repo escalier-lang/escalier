@@ -217,6 +217,11 @@ func writeSource(src string) (rewritten, unresolved string, unwritable int) {
 				unwritable++
 				continue
 			}
+			// A diagnostic inside the function can leave a type the checker infers as
+			// `never`, which describes the error rather than what the test means.
+			if sigedit.WritesNeverWhileDiagnosed(target, targetEdits, co.TypeErrors) {
+				continue
+			}
 			edits = append(edits, targetEdits...)
 		}
 		if len(edits) == 0 {
