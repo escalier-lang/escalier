@@ -510,11 +510,24 @@ fn remember() {
 }
 ```
 
-**L2. A signature states exactly the lifetime relations its body needs.** A
+**L2. A signature states every lifetime relation its body needs.** A
 body-carrying function must declare every outlives relation between its
 parameters and return that its body establishes. Each declared bound `'a: 'b`
 must also be established by the body. A bodyless `declare fn` is taken at its
 word. See [D4](#d4-declared-lifetime-bounds-are-obligations).
+
+A lifetime the signature leaves out is read from the signature alone, by D17
+rule 2, and the body is checked against it. An elided lifetime may tie more
+than the body uses. `only` below returns a closure that reads `a` alone, but
+its elided return lifetime is tied to both inputs, and the signature is
+accepted:
+
+```esc
+fn only(a: &{x: number}, b: &{x: number}) -> fn () -> number {
+    return fn () { return a.x }
+}
+// only: fn <'a>(a: &'a {x: number}, b: &'a {x: number}) -> 'a fn () -> number
+```
 
 `pick` declares that its result lives as long as `p`, and its body returns `p`.
 `wrong` makes the same declaration but returns `q`, so its body needs a relation
@@ -1045,6 +1058,10 @@ Nothing in the body makes `'a` outlive `'b`, so the declaration reports
 `declared lifetime bound 'a: 'b is not satisfied; the body does not make 'a outlive 'b`.
 `checkDeclaredLifetimeBounds` in
 [infer_expr.go](../../internal/solver/infer_expr.go) runs the check.
+
+A tie that elision makes is not a declared bound. D17 rule 2 may tie an elided
+lifetime to more inputs than the body uses, as L2 states, and nothing in the
+body has to establish that tie.
 
 ### D5. A `readonly` field is initialized once in a constructor
 
@@ -1697,16 +1714,35 @@ how the lifetime is written, elided, inferred, and checked:
      bullet's elision does. The body may return the parameter, or a closure
      that holds it, there.
    - In a return type, the lifetime depends on the signature's input
-     lifetimes. An input lifetime is one that the receiver, a parameter, or a
-     `<'a>` list introduces. When the signature has one, the return lifetime
-     is fresh and tied to the input lifetimes, and the body's returns bound
-     it. A signature with no input lifetime has nothing a returned function
-     could borrow from, so its elided return lifetime is `'static`.
+     lifetimes. An input lifetime is one that the receiver or a parameter
+     holds, other than `'static`. When the signature has one, the returned
+     function is tied to every input lifetime, so it may hold any of them. A
+     signature with no input lifetime has nothing a returned function could
+     borrow from, so its elided return lifetime is `'static`.
    - In a module-level binding's annotation, a class field, an interface, or a
      type alias, the lifetime is `'static`. So is a field or an element type
      inside one of those. A script's top level counts as module level.
    - In a binding annotation inside a body, the lifetime is fresh, as an elided
      `&` is there.
+
+   A borrow the return type writes with no lifetime takes one input lifetime,
+   as Rust's elision does, where a returned function type is tied to all of them. It takes the receiver's lifetime when the
+   receiver is a borrow, and otherwise the one input lifetime. When neither
+   picks one, the signature reports `AmbiguousReturnLifetimeError`:
+
+   ```esc
+   type Flat = {x: number}
+
+   fn first(a: &Flat) -> &Flat { return a }
+   // first: fn <'a>(a: &'a Flat) -> &'a Flat
+
+   fn pick(a: &Flat, b: &Flat) -> &Flat { return a }
+   // error: the return type borrows from 'a' or 'b', and elision cannot tell which; write a lifetime, as in `fn pick<'x>(a: &'x Flat, b: &Flat) -> &'x Flat`
+   ```
+
+   A signature with no input lifetime gives a returned borrow a fresh lifetime,
+   which L1 decides. A return type that holds both a function type and a
+   borrow applies each rule to its own part.
 3. A `'static fn` slot holds only a function that borrows nothing shorter-lived
    than the program. A written `'static` and one that rule 2 elides mean the
    same. A module-level function fits, and so does a closure that

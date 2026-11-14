@@ -801,9 +801,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// annotation was a promise at all, since either slot may legitimately hold `never`.
 	var asyncInner, asyncRejects soltype.Type
 	asyncIsPromise := false
+	// A lifetime the return type leaves out takes the one the signature's inputs give it.
+	retLts := newReturnLifetimes(selfParam, params, recv, &sig, signatureHead(node, memberName), c.lifetimeNamesInScope())
 	if sig.Async {
 		if sig.Return != nil {
-			asyncAnnT, asyncAnnOK = c.resolveTypeAnn(declScope, sig.Return, lvl)
+			asyncAnnT, asyncAnnOK = c.resolveReturnAnn(declScope, sig.Return, lvl, retLts)
 			if inner, errT, isPromise := c.ctx.promiseParts(asyncAnnT); asyncAnnOK && isPromise {
 				asyncInner, asyncRejects, asyncIsPromise = inner, errT, true
 			}
@@ -868,7 +870,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	var retAnnT soltype.Type
 	retAnnOK := false
 	if sig.Return != nil && !sig.Async && !sig.Gen {
-		retAnnT, retAnnOK = c.resolveTypeAnn(declScope, sig.Return, lvl)
+		retAnnT, retAnnOK = c.resolveReturnAnn(declScope, sig.Return, lvl, retLts)
 	}
 	// The body has to work for every instantiation its type parameters' bounds allow, so
 	// those parameters are rigid from the walk of the body on. They stay rigid after it,

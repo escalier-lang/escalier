@@ -8,8 +8,8 @@ import (
 
 // TestSignatureImpliesBodyLifetimes covers the relations a body may impose between the
 // lifetimes its signature names. Each must follow from a declared bound, a chain of them, or
-// a bound the signature's own types imply. An unnamed lifetime stays inferred, and a
-// declared function with no body is not checked.
+// a bound the signature's own types imply. A declared function with no body is not
+// checked.
 func TestSignatureImpliesBodyLifetimes(t *testing.T) {
 	tests := []struct {
 		name string
@@ -60,8 +60,14 @@ func TestSignatureImpliesBodyLifetimes(t *testing.T) {
 			src:  `fn f<'a, 'b>(p: &'a &'b {x: number}) -> &'a {x: number} { return p }`,
 		},
 		{
-			name: "an unnamed lifetime stays inferred",
+			// A written signature is read on its own, so its body cannot pick which input an
+			// elided returned borrow takes.
+			name: "an elided returned borrow with two input lifetimes reports",
 			src:  `fn f(x: &{x: number}, y: &{x: number}) -> &{x: number} { return x }`,
+			want: []string{
+				"1:43-1:55: the return type borrows from 'x' or 'y', and elision cannot tell which; write a lifetime, " +
+					"as in `fn f<'x>(x: &'x { x: number }, y: &{ x: number }) -> &'x { x: number }`",
+			},
 		},
 		{
 			name: "a declared function with no body is not checked",

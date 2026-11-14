@@ -61,16 +61,15 @@ func TestFrameOwnedReturnSignatures(t *testing.T) {
 			binding: "h",
 			want:    "fn () -> &{x: number}",
 		},
-		// The result's lifetime ties to nothing in the signature. L2 rejects a body that returns
-		// p under this signature, so make returns a value nothing outside the call reaches. D16's
-		// second rule then makes h's return owned.
+		// The result's lifetime ties to nothing in the signature, which has no input lifetime,
+		// so make returns a value nothing outside the call reaches. D16's second rule then
+		// makes h's return owned.
 		{
 			name: "call whose signature ties the result to nothing",
 			src: `
-				declare fn make(p: &{x: number}) -> &{x: number}
+				declare fn make() -> &{x: number}
 				fn h() {
-					val b = {x: 1}
-					return make(&b)
+					return make()
 				}
 			`,
 			binding: "h",
