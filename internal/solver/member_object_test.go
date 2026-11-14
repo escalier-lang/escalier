@@ -473,3 +473,79 @@ func TestInfoEvaluateOnNewInfo(t *testing.T) {
 	access := &soltype.IndexType{Target: &soltype.AliasType{Name: "Point"}, Index: &soltype.LitType{Lit: &soltype.StrLit{Value: "y"}}}
 	require.Same(t, access, NewInfo().Evaluate(access))
 }
+
+func TestInfoExpandAlias(t *testing.T) {
+	tests := []struct {
+		name string
+		// src declares v at an alias reference, and ExpandAlias is asked about it.
+		src      string
+		expected string
+	}{
+		{
+			name:     "GenericAlias",
+			src:      "type Box<T> = {value: T}\ndeclare val v: Box<string>",
+			expected: "{value: string}",
+		},
+		{
+			name:     "AliasOfAlias",
+			src:      "type Point = {x: number}\ntype P = Point\ndeclare val v: P",
+			expected: "Point",
+		},
+		{
+			name:     "ComputedBody",
+			src:      "type Point = {x: number, y?: number}\ntype Y = Point[\"y\"]\ndeclare val v: Y",
+			expected: "Point[\"y\"]",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := InferModuleWithSource(parseModule(t, tt.src), testStdlibSource())
+			require.Empty(t, res.Errors)
+
+			binding, ok := res.Scope.OwnValue("v")
+			require.True(t, ok)
+			alias, ok := binding.DisplayType().(*soltype.AliasType)
+			require.True(t, ok)
+			body, ok := res.Info.ExpandAlias(alias)
+			require.True(t, ok)
+			require.Equal(t, tt.expected, soltype.Print(body))
+		})
+	}
+}
+
+func TestInfoExpandAliasUnregistered(t *testing.T) {
+	res := InferModuleWithSource(parseModule(t, "val v = 1"), testStdlibSource())
+	_, ok := res.Info.ExpandAlias(&soltype.AliasType{Name: "Missing"})
+	require.False(t, ok)
+}
+
+func TestInfoExpandAliasOnNewInfo(t *testing.T) {
+	_, ok := NewInfo().ExpandAlias(&soltype.AliasType{Name: "Point"})
+	require.False(t, ok)
+}
+
+func TestInfoAliasTypeParams(t *testing.T) {
+	res := InferModuleWithSource(parseModule(t, "type Pair<K, V> = [K, V]\ndeclare val v: Pair<string, number>"), testStdlibSource())
+	require.Empty(t, res.Errors)
+	binding, ok := res.Scope.OwnValue("v")
+	require.True(t, ok)
+	alias, ok := binding.DisplayType().(*soltype.AliasType)
+	require.True(t, ok)
+
+	params, ok := res.Info.AliasTypeParams(alias)
+	require.True(t, ok)
+	require.Len(t, params, 2)
+	require.Equal(t, "K", params[0].Name)
+	require.Equal(t, "V", params[1].Name)
+	body, ok := res.Info.ExpandAlias(&soltype.AliasType{Name: alias.Name, TypeArgs: []soltype.Type{params[0].Var, params[1].Var}})
+	require.True(t, ok)
+	require.Equal(t, "[K, V]", soltype.PrintWithParams(body, params))
+
+	_, ok = res.Info.AliasTypeParams(&soltype.AliasType{Name: "Missing"})
+	require.False(t, ok)
+}
+
+func TestInfoAliasTypeParamsOnNewInfo(t *testing.T) {
+	_, ok := NewInfo().AliasTypeParams(&soltype.AliasType{Name: "Point"})
+	require.False(t, ok)
+}

@@ -215,9 +215,13 @@ describe('setupLanguage', () => {
         expect(textDocumentHover).toHaveBeenCalledWith({
             textDocument: { uri },
             position: { line: 0, character: 4 },
+            verbosityLevel: 0,
         });
         expect(hover).toEqual({
             contents: [{ value: '```escalier\nx: number\n```' }],
+            verbosityLevel: 0,
+            canIncreaseVerbosity: false,
+            canDecreaseVerbosity: false,
         });
     });
 
