@@ -518,7 +518,7 @@ func TestMethodCallStoreEdge(t *testing.T) {
 		// the loan of b it would take for the equivalent free function.
 		"MethodStoreReachesTheCaller": {
 			src: decls + `
-				fn build(s: Store, mut p: {value: number}, out: &mut {slot: &mut {value: number}}) {
+				fn build(s: Store, mut p: {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p}
 					s.put(&mut a, &mut b)
