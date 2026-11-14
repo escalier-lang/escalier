@@ -1537,6 +1537,38 @@ func TestHoverFromSolver(t *testing.T) {
 			expected: escalierCode("value: number"),
 		},
 		{
+			name: "InstancePatternNamespaceQualifier",
+			files: map[string]string{
+				"lib/a.esc": "export fn f(e: errs.HttpError) -> number {\n    return match e {\n        errs.HttpError {status} => status,\n    }\n}",
+				"lib/errs/http.esc": "export class HttpError { status: number }\n",
+			},
+			open: "lib/a.esc", line: 2, col: 9,
+			expected: escalierCode("namespace errs"),
+		},
+		{
+			name: "ExtractorPatternOffName",
+			files: map[string]string{
+				"lib/a.esc": "export enum E { Num(value: number), Pair(a: number, b: string) }\nexport fn f(e: E) -> number {\n    return match e {\n        E.Num(v) => v,\n        E.Pair(a, b) => a,\n    }\n}",
+			},
+			open: "lib/a.esc", line: 4, col: 17,
+		},
+		{
+			name: "InstancePatternShadowedByNamespaceSibling",
+			files: map[string]string{
+				"lib/errs/use.esc": "export class HttpError { code: number }\nexport fn f(e: HttpError) -> number {\n    return match e {\n        HttpError {code} => code,\n    }\n}",
+				"lib/main.esc": "export class HttpError { code: string }\n",
+			},
+			open: "lib/errs/use.esc", line: 3, col: 10,
+		},
+		{
+			name: "InstancePatternFieldShadowedByNamespaceSibling",
+			files: map[string]string{
+				"lib/errs/use.esc": "export class HttpError { code: number }\nexport fn f(e: HttpError) -> number {\n    return match e {\n        HttpError {code} => code,\n    }\n}",
+				"lib/main.esc": "export class HttpError { code: string }\n",
+			},
+			open: "lib/errs/use.esc", line: 3, col: 20,
+		},
+		{
 			name:  "Keyword",
 			files: map[string]string{"bin/main.esc": "val x = 5"},
 			open:  "bin/main.esc", line: 0, col: 1,
