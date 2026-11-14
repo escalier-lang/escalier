@@ -25,7 +25,7 @@ func TestMethodLifetimesPerCall(t *testing.T) {
 					p: {x: number},
 					peek<'a>(&'a self) -> &'a {x: number} { return &self.p },
 				}
-				fn read(v: &View) { return v.peek() }
+				fn read(v: &View) -> &{x: number} { return v.peek() }
 			`,
 			value: "read",
 			want:  "fn <'a>(v: &'a View) -> &'a {x: number}",
@@ -37,7 +37,7 @@ func TestMethodLifetimesPerCall(t *testing.T) {
 					p: {x: number},
 					peek<'a>(&'a self) -> &'a {x: number} { return &self.p },
 				}
-				fn read(a: &View, b: &View, k: boolean) {
+				fn read<'a: 'c, 'b: 'c, 'c>(a: &'a View, b: &'b View, k: boolean) -> &'c {x: number} {
 					val v = if k { a } else { b }
 					return v.peek()
 				}
@@ -52,7 +52,7 @@ func TestMethodLifetimesPerCall(t *testing.T) {
 					p: {x: number},
 					edit<'a>(&'a mut self) -> &'a mut {x: number} { return &mut self.p },
 				}
-				fn write(v: &mut View) { return v.edit() }
+				fn write(v: &mut View) -> &mut {x: number} { return v.edit() }
 			`,
 			value: "write",
 			want:  "fn <'a>(v: &'a mut View) -> &'a mut {x: number}",
@@ -64,8 +64,8 @@ func TestMethodLifetimesPerCall(t *testing.T) {
 					a: {x: number},
 					pick<'r>(&'r self, other: &'r {x: number}) -> &'r {x: number} { return other },
 				}
-				fn first(p: &Pair, s: &{x: number}) { return p.pick(s) }
-				fn second(p: &Pair, l: &{x: number}) { return p.pick(l) }
+				fn first<'a: 'c, 'b: 'c, 'c>(p: &'a Pair, s: &'b {x: number}) -> &'c {x: number} { return p.pick(s) }
+				fn second<'a: 'c, 'b: 'c, 'c>(p: &'a Pair, l: &'b {x: number}) -> &'c {x: number} { return p.pick(l) }
 			`,
 			value: "second",
 			want:  "fn <'a: 'c, 'b: 'c, 'c>(p: &'a Pair, l: &'b {x: number}) -> &'c {x: number}",
@@ -77,7 +77,7 @@ func TestMethodLifetimesPerCall(t *testing.T) {
 					a: {x: number},
 					pick<'r>(&'r self, other: &'r {x: number}) -> &'r {x: number} { return other },
 				}
-				fn both(p: &Pair, a: &{x: number}, q: &Pair, b: &{x: number}) {
+				fn both<'a: 'c, 'b: 'c, 'c>(p: &Pair, a: &{x: number}, q: &'a Pair, b: &'b {x: number}) -> &'c {x: number} {
 					val first = p.pick(a)
 					return q.pick(b)
 				}
@@ -104,7 +104,7 @@ func TestMethodLifetimesPerCall(t *testing.T) {
 				class K {
 					static pick<'r>(a: &'r {x: number}, b: &'r {x: number}) -> &'r {x: number} { return a },
 				}
-				fn h(a: &{x: number}, b: &{x: number}) { return K.pick(a, b) }
+				fn h<'a: 'c, 'b: 'c, 'c>(a: &'a {x: number}, b: &'b {x: number}) -> &'c {x: number} { return K.pick(a, b) }
 			`,
 			value: "h",
 			want:  "fn <'a: 'c, 'b: 'c, 'c>(a: &'a {x: number}, b: &'b {x: number}) -> &'c {x: number}",
@@ -116,7 +116,7 @@ func TestMethodLifetimesPerCall(t *testing.T) {
 					p: {x: number},
 					peek<'a>(&'a self) -> &'a {x: number} { return &self.p },
 				}
-				fn read(v: &View) {
+				fn read(v: &View) -> &{x: number} {
 					val f = v.peek
 					return f()
 				}
@@ -209,7 +209,7 @@ func TestAStoredMethodValueBindsItsLifetimesPerCall(t *testing.T) {
 			// A parameter annotated with its own binder is quantified the same way, so the
 			// annotation's `'a` names neither argument and each call binds it afresh.
 			name: "a callback parameter's binder is instantiated per call",
-			src: `fn both(f: fn <'a>(q: &'a {x: number}) -> &'a {x: number}, a: &{x: number}, b: &{x: number}) {
+			src: `fn both<'b, 'c>(f: fn <'a>(q: &'a {x: number}) -> &'a {x: number}, a: &'b {x: number}, b: &'c {x: number}) -> [&'b {x: number}, &'c {x: number}] {
 				val ra = f(a)
 				val rb = f(b)
 				return [ra, rb]
@@ -222,7 +222,7 @@ func TestAStoredMethodValueBindsItsLifetimesPerCall(t *testing.T) {
 			name: "a declared callback type shared by two sites couples neither to the other",
 			src: `type Cb = fn <'a>(q: &'a {x: number}) -> &'a {x: number}
 				fn mk() -> Cb { return fn (q) { return q } }
-				fn both(f: Cb, b: &{x: number}, c: &{x: number}) {
+				fn both<'a, 'b>(f: Cb, b: &'a {x: number}, c: &'b {x: number}) -> [&'a {x: number}, &'b {x: number}] {
 					val rb = f(b)
 					val rc = f(c)
 					return [rb, rc]

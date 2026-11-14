@@ -511,7 +511,7 @@ func TestReadThroughBorrowParamKeepsBorrow(t *testing.T) {
 		{
 			name: "WriteThroughReturnedField",
 			src: `fn read(p) { return p.x }
-				fn h() {
+				fn h() -> {x: {y: 1}} {
 					val b = {x: {y: 1}}
 					var mut r = read(&b)
 					r.y = 5
@@ -523,7 +523,7 @@ func TestReadThroughBorrowParamKeepsBorrow(t *testing.T) {
 		{
 			name: "ValueFieldCopiesOut",
 			src: `fn read(p) { return p.x }
-				fn h() {
+				fn h() -> number {
 					val b = {x: 1}
 					val n = read(&b)
 					return n + 1
@@ -533,7 +533,7 @@ func TestReadThroughBorrowParamKeepsBorrow(t *testing.T) {
 		{
 			name: "UndefinedFieldCopiesOut",
 			src: `fn read(p) { return p.x }
-				fn h() {
+				fn h() -> undefined {
 					val b = {x: undefined}
 					val s: undefined = read(&b)
 					return s
@@ -543,7 +543,7 @@ func TestReadThroughBorrowParamKeepsBorrow(t *testing.T) {
 		{
 			name: "FunctionFieldCopiesOut",
 			src: `fn read(p) { return p.x }
-				fn h() {
+				fn h() -> 1 {
 					val b = {x: fn () { return 1 }}
 					return read(&b)()
 				}`,
@@ -552,7 +552,7 @@ func TestReadThroughBorrowParamKeepsBorrow(t *testing.T) {
 		{
 			name: "ObjectFieldIntoOwnedDestination",
 			src: `fn read(p) { return p.x }
-				fn h() {
+				fn h() -> {y: number} {
 					val b = {x: {y: 1}}
 					val s: {y: number} = read(&b)
 					return s
@@ -648,7 +648,7 @@ func TestInferOpenEscapeParam(t *testing.T) {
 			name: "AnnotationOverrides",
 			src: `
 				val mut seen = Map()
-				fn remember(value: {retries: number}) { seen.set("last", value) }
+				fn remember(value: {retries: number}) -> undefined { seen.set("last", value) }
 				fn go() -> number {
 					val opts = {retries: 3}
 					remember(opts)

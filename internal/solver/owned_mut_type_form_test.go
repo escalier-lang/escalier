@@ -19,7 +19,7 @@ func TestOwnedMutTypeRejected(t *testing.T) {
 		want []string
 	}{
 		"Parameter": {
-			src:  "fn f(p: mut {x: number}) {}",
+			src:  "fn f(p: mut {x: number}) -> undefined {}",
 			want: []string{"1:9-1:12: " + ownedMutTypeMsg},
 		},
 		"Binding": {
@@ -63,23 +63,23 @@ func TestOwnedMutTypeRejected(t *testing.T) {
 			want: []string{"1:17-1:20: " + ownedMutTypeMsg},
 		},
 		"RestParameter": {
-			src:  "fn f(...items: mut Array<number>) {}",
+			src:  "fn f(...items: mut Array<number>) -> undefined {}",
 			want: []string{"1:16-1:19: " + ownedMutTypeMsg},
 		},
 		"InsideABorrow": {
-			src:  "fn f(p: &mut {a: mut {b: number}}) {}",
+			src:  "fn f(p: &mut {a: mut {b: number}}) -> undefined {}",
 			want: []string{"1:18-1:21: " + ownedMutTypeMsg},
 		},
 		// `mut` over a name that does not resolve reports the missing name as well.
 		"OverUnknownName": {
-			src: "fn g(p: mut Nope) {}",
+			src: "fn g(p: mut Nope) -> undefined {}",
 			want: []string{
 				"1:9-1:12: " + ownedMutTypeMsg,
 				"1:13-1:17: cannot find type `Nope`",
 			},
 		},
 		"MutableBorrow": {
-			src: "fn f(p: &mut {a: {b: number}}) { p.a.b = 1 }",
+			src: "fn f(p: &mut {a: {b: number}}) -> undefined { p.a.b = 1 }",
 		},
 	}
 

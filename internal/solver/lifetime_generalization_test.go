@@ -147,7 +147,7 @@ func TestFreshenCopiesLifetimeBoundsUnderProbe(t *testing.T) {
 // instantiation, but the scheme body keeps its original param lifetime. D4 names it
 // `'a` since it reaches both the parameter and the return.
 func TestInferIdentityRefReturnStillRendersAfterGeneralization(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(p: &mut {x: number}) { return p }`)
+	values, _, errs := inferSource(t, `fn f(p: &mut {x: number}) -> &mut {x: number} { return p }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number}", values["f"])
 }
@@ -160,7 +160,7 @@ func TestInferBorrowFnCalledAtTwoSites(t *testing.T) {
 	src := `fn use(o: &mut {x: number}) -> number {
   return o.x
 }
-fn f(a: &mut {x: number}, b: &mut {x: number}) {
+fn f(a: &mut {x: number}, b: &mut {x: number}) -> number {
   val ra = use(a)
   val rb = use(b)
   return rb

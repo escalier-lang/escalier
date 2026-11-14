@@ -26,8 +26,8 @@ func TestWeakModuleBinding(t *testing.T) {
 			name: "WritesFromTwoFunctionsReachOneMap",
 			src: `
 val mut seen = Map()
-fn a() { seen.set("k", 1) }
-fn b() { seen.set("j", "s") }
+fn a() -> undefined { seen.set("k", 1) }
+fn b() -> undefined { seen.set("j", "s") }
 `,
 			values: map[string]string{"seen": "Map<string, number | string>"},
 		},
@@ -35,8 +35,8 @@ fn b() { seen.set("j", "s") }
 			name: "AReadSeesTheWritesOfALaterFunction",
 			src: `
 val mut seen = Map()
-fn get() { return seen.get("k") }
-fn put() { seen.set("k", 1) }
+fn get() -> number | undefined { return seen.get("k") }
+fn put() -> undefined { seen.set("k", 1) }
 `,
 			values: map[string]string{
 				"seen": "Map<string, number>",
@@ -49,9 +49,9 @@ fn put() { seen.set("k", 1) }
 			name: "AReadCannotNarrowAWidenedSlot",
 			src: `
 val mut seen = Map()
-fn put() { seen.set("k", 1) }
-fn get() { return seen.get("k") }
-fn read() {
+fn put() -> undefined { seen.set("k", 1) }
+fn get() -> number | undefined { return seen.get("k") }
+fn read() -> undefined {
 	val one: 1 | undefined = seen.get("k")
 }
 `,
@@ -70,11 +70,11 @@ fn read() {
 			name: "AWriteCannotWidenPastAnEarlierRead",
 			src: `
 val mut seen = Map()
-fn put() { seen.set("k", 1) }
+fn put() -> undefined { seen.set("k", 1) }
 val one: 1 | undefined = seen.get("k")
 `,
 			want: []string{
-				"3:26-3:27: cannot constrain number <: 1 | undefined",
+				"3:39-3:40: cannot constrain number <: 1 | undefined",
 			},
 		},
 		{
@@ -85,7 +85,7 @@ val one: 1 | undefined = seen.get("k")
 class Box<T> { value: T }
 val mut b = Box(5)
 val c = Box(5)
-fn f() {
+fn f() -> undefined {
 	val n: 5 = b.value
 	val m: 5 = c.value
 }
@@ -100,7 +100,7 @@ fn f() {
 			// `number`.
 			name: "AReadOfALocalContainerSeesTheWidenedSlot",
 			src: `
-fn f() {
+fn f() -> undefined {
 	val mut m = Map()
 	m.set("k", 1)
 	val one: 1 | undefined = m.get("k")
@@ -172,8 +172,8 @@ val {mut a, b} = id({a: {x: 1}, b: {x: 2}})
 			src: `
 val mut seen = Map()
 val x: {a: number} = {a: 1}
-fn a() { seen.set("k", &x) }
-fn b() { seen.set("k", {a: 2}) }
+fn a() -> undefined { seen.set("k", &x) }
+fn b() -> undefined { seen.set("k", {a: 2}) }
 `,
 			want: []string{
 				"2:5-2:13: a union or intersection mixes owned and borrowed members. Make ownership uniform first. Clone the borrowed member to own it, or borrow the owned member.",
@@ -221,7 +221,7 @@ export val seen = Map()
 			name: "AnExportedMutableContainerItsFunctionsWrite",
 			src: `
 export val mut seen = Map()
-fn a() { seen.set("k", 1) }
+fn a() -> undefined { seen.set("k", 1) }
 `,
 			values: map[string]string{"seen": "Map<string, number>"},
 		},
@@ -270,9 +270,9 @@ val b = f("s")
 			// becomes `fn <T0>(x: T0) -> T0`.
 			name: "AFunctionACallReturnsIsSettledByItsUse",
 			src: `
-fn makeId() { return fn (x) { return x } }
+fn makeId<T0>() -> fn (x: T0) -> T0 { return fn (x) { return x } }
 val g = makeId()
-fn use() { return g(1) }
+val use = fn () { return g(1) }
 `,
 			values: map[string]string{
 				"g":   "fn (x: 1) -> 1",
@@ -284,7 +284,7 @@ fn use() { return g(1) }
 			// becomes `fn <T0>(x: T0) -> T0`.
 			name: "AFunctionACallReturnsThatNothingCalls",
 			src: `
-fn makeId() { return fn (x) { return x } }
+fn makeId<T0>() -> fn (x: T0) -> T0 { return fn (x) { return x } }
 val g = makeId()
 `,
 			values: map[string]string{"g": "fn (x: never) -> never"},
@@ -295,7 +295,7 @@ val g = makeId()
 			// itself, so g becomes `fn <T0>(x: T0) -> T0`.
 			name: "AnExportedFunctionACallReturnsThatNothingCalls",
 			src: `
-fn makeId() { return fn (x) { return x } }
+fn makeId<T0>() -> fn (x: T0) -> T0 { return fn (x) { return x } }
 export val g = makeId()
 `,
 			values: map[string]string{"g": "fn (x: never) -> never"},
@@ -306,7 +306,7 @@ export val g = makeId()
 			// so g becomes `fn <T0>(x: T0) -> T0`.
 			name: "AnExportedFunctionACallReturnsCalledTwice",
 			src: `
-fn makeId() { return fn (x) { return x } }
+fn makeId<T0>() -> fn (x: T0) -> T0 { return fn (x) { return x } }
 export val g = makeId()
 val n = g(5)
 val s = g("a")
@@ -321,7 +321,7 @@ val s = g("a")
 declare fn mk<T>() -> fn (x: T) -> T
 val g = mk()
 declare val z: never
-fn u() {
+fn u() -> undefined {
 	val a: {x: number} = g(z)
 	val b: {y: string} = g(z)
 }
@@ -335,7 +335,7 @@ fn u() {
 			src: `
 declare fn mk<T>() -> fn () -> T
 val h = mk()
-fn u() {
+fn u() -> undefined {
 	val a: {x: number} = h()
 	val b: {y: string} = h()
 }
@@ -347,7 +347,7 @@ fn u() {
 			// widened values.
 			name: "ALocalContainerGeneralizesWithItsFunction",
 			src: `
-fn make() {
+fn make() -> Map<string, number | string> {
 	val mut m = Map()
 	m.set("k", 1)
 	m.set("k", "s")
@@ -385,7 +385,7 @@ export val inc2 = twice(fn (x: number) -> number { return x + 1 })
 			src: `
 val mk = fn (v) { return [v] }
 val o = mk(5)
-fn f() { return match o[0] { 6 => "six", _ => "other" } }
+fn f() -> "six" | "other" { return match o[0] { 6 => "six", _ => "other" } }
 `,
 			values: map[string]string{"o": "[5]"},
 		},
@@ -406,7 +406,7 @@ val c = id([5, 10])
 			// on the `mut` of p, since a promise has no writable slot.
 			name: "APromiseWidensOnlyWhenItsBindingIsReassignable",
 			src: `
-async fn fetchNum() { return 5 }
+async fn fetchNum() -> Promise<5> { return 5 }
 val mut p = fetchNum()
 var q = fetchNum()
 `,
@@ -433,7 +433,7 @@ var g = Frozen(5)
 			name: "APromiseInsideAWritableSlotWidens",
 			src: `
 declare fn id<T>(x: T) -> T
-async fn fetchNum() { return 5 }
+async fn fetchNum() -> Promise<5> { return 5 }
 val mut a = id([fetchNum()])
 val mut o = id({x: 1, y: fetchNum()})
 `,
@@ -479,7 +479,7 @@ val r = borrowMut(&mut p)
 			src: `
 val p = {x: 1}
 val mut seen = Map()
-fn f() { seen.set("k", &p) }
+fn f() -> undefined { seen.set("k", &p) }
 `,
 			values: map[string]string{"seen": "Map<string, &{x: number}>"},
 		},
@@ -490,8 +490,8 @@ fn f() { seen.set("k", &p) }
 			src: `
 val p = {x: 1}
 val mut seen = Map()
-fn f() { seen.set("k", &p) }
-fn g() { return seen.get("k") }
+fn f() -> undefined { seen.set("k", &p) }
+fn g() -> &{x: number} | undefined { return seen.get("k") }
 `,
 			values: map[string]string{"g": "fn () -> &{x: number} | undefined"},
 		},
@@ -518,7 +518,7 @@ val s = borrow(&p)
 			src: `
 val mut p: {x: 1} = {x: 1}
 val mut seen = Map()
-fn f() { seen.set("k", &mut p) }
+fn f() -> undefined { seen.set("k", &mut p) }
 `,
 			values: map[string]string{"seen": "Map<string, &mut {x: 1}>"},
 		},
@@ -529,13 +529,13 @@ fn f() { seen.set("k", &mut p) }
 			src: `
 val mut p: {x: 1} = {x: 1}
 val mut seen = Map()
-fn f() { seen.set("k", &mut p) }
-fn setX(r: &mut {x: number} | undefined) {}
-fn g() { setX(seen.get("k")) }
+fn f() -> undefined { seen.set("k", &mut p) }
+fn setX(r: &mut {x: number} | undefined) -> undefined {}
+fn g() -> undefined { setX(seen.get("k")) }
 `,
 			values: map[string]string{"seen": "Map<string, &mut {x: 1}>"},
 			want: []string{
-				"6:15-6:28: cannot constrain mut object <: mut object | undefined",
+				"6:28-6:41: cannot constrain mut object <: mut object | undefined",
 			},
 		},
 	}
@@ -557,8 +557,8 @@ fn g() { setX(seen.get("k")) }
 func TestWeakBindingInfoShowsTheSettledType(t *testing.T) {
 	module := parseModule(t, `
 val mut seen = Map()
-fn get() { return seen.get("k") }
-fn put() { seen.set("k", 1) }
+fn get() -> number | undefined { return seen.get("k") }
+fn put() -> undefined { seen.set("k", 1) }
 `)
 	res := InferModuleAgainstStdlib(module, benchTree, Options{})
 	require.Empty(t, res.Errors)
@@ -601,7 +601,7 @@ fn f() -> number {
 	m.set("a", seen.get("k"))
 	return m.size
 }
-fn put() { seen.set("k", 1) }
+fn put() -> undefined { seen.set("k", 1) }
 `,
 			want: "Map<string, number | undefined>",
 		},

@@ -181,8 +181,8 @@ val n = take(other)`},
 declare class C {
     readonly [sym]: number,
 }
-fn go(c: &mut C) { c[sym] = 5 }`},
-			wantErrs: []string{"5:20-5:26: cannot assign to '[sym]' because it is a readonly property"},
+fn go(c: &mut C) -> undefined { c[sym] = 5 }`},
+			wantErrs: []string{"5:33-5:39: cannot assign to '[sym]' because it is a readonly property"},
 		},
 		{
 			name: "WellKnownSymbol",
@@ -418,9 +418,9 @@ func TestUniqueSymbolPosition(t *testing.T) {
 		},
 		{
 			name:     "Parameter",
-			src:      "fn f(s: unique symbol) { return s }",
+			src:      "val f = fn (s: unique symbol) { return s }",
 			want:     map[string]string{"f": "fn (s: symbol) -> symbol"},
-			wantErrs: []string{"1:9-1:22: A `unique symbol` type is only allowed on a `val` declaration, a `static readonly` class field, or a `readonly` property."},
+			wantErrs: []string{"1:16-1:29: A `unique symbol` type is only allowed on a `val` declaration, a `static readonly` class field, or a `readonly` property."},
 		},
 		{
 			name:     "ReturnType",

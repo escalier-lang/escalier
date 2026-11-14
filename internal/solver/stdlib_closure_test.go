@@ -557,11 +557,11 @@ func TestTheCommittedEventTargetRejectsANullListener(t *testing.T) {
 	}{
 		{
 			name: "a listener",
-			src:  "import \"web:core\"\nfn go(mut t: core.EventTarget, l: core.EventListenerOrEventListenerObject) { t.addEventListener(\"x\", l) }",
+			src:  "import \"web:core\"\nfn go(mut t: core.EventTarget, l: core.EventListenerOrEventListenerObject) -> undefined { t.addEventListener(\"x\", l) }",
 		},
 		{
 			name:    "null",
-			src:     "import \"web:core\"\nfn go(mut t: core.EventTarget) { t.addEventListener(\"x\", null) }",
+			src:     "import \"web:core\"\nfn go(mut t: core.EventTarget) -> undefined { t.addEventListener(\"x\", null) }",
 			wantErr: "cannot constrain null <: EventListener | EventListenerObject",
 		},
 	}

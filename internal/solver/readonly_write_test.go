@@ -32,41 +32,41 @@ func TestReadonlyWriteDiagnostic(t *testing.T) {
     readonly x: number,
     y: number,
 }
-fn f(mut p: Point) { p.x = 0 }`,
-			want: []string{"5:22-5:25: cannot assign to 'x' because it is a readonly property"},
+fn f(mut p: Point) -> undefined { p.x = 0 }`,
+			want: []string{"5:35-5:38: cannot assign to 'x' because it is a readonly property"},
 		},
 		{
 			name: "ThroughModuleLevelVal",
 			src: `val mut config: {readonly apiUrl: string} = {apiUrl: "a"}
-fn f() { config.apiUrl = "b" }`,
-			want: []string{"2:10-2:23: cannot assign to 'apiUrl' because it is a readonly property"},
+fn f() -> undefined { config.apiUrl = "b" }`,
+			want: []string{"2:23-2:36: cannot assign to 'apiUrl' because it is a readonly property"},
 		},
 		{
 			name: "ThroughObjectParam",
-			src:  `fn f(mut obj: {readonly a: number}) { obj.a = 5 }`,
-			want: []string{"1:39-1:44: cannot assign to 'a' because it is a readonly property"},
+			src:  `fn f(mut obj: {readonly a: number}) -> undefined { obj.a = 5 }`,
+			want: []string{"1:52-1:57: cannot assign to 'a' because it is a readonly property"},
 		},
 		{
 			name: "ThroughMappedReadonlyType",
 			src: `type RO<T> = {readonly [P]: T[P] for P in keyof T}
-fn f(mut o: RO<{a: number}>) { o.a = 5 }`,
-			want: []string{"2:32-2:35: cannot assign to 'a' because it is a readonly property"},
+fn f(mut o: RO<{a: number}>) -> undefined { o.a = 5 }`,
+			want: []string{"2:45-2:48: cannot assign to 'a' because it is a readonly property"},
 		},
 		{
 			name: "ConstantStringIndex",
-			src:  `fn f(mut obj: {readonly a: number}) { obj["a"] = 5 }`,
-			want: []string{"1:39-1:47: cannot assign to 'a' because it is a readonly property"},
+			src:  `fn f(mut obj: {readonly a: number}) -> undefined { obj["a"] = 5 }`,
+			want: []string{"1:52-1:60: cannot assign to 'a' because it is a readonly property"},
 		},
 		{
 			name: "ReadonlyIndexSignature",
-			src:  `fn f(d: &mut {readonly [K: string]?: number}, k: string) { d[k] = 1 }`,
-			want: []string{"1:60-1:64: cannot assign to '[string]' because it is a readonly property"},
+			src:  `fn f(d: &mut {readonly [K: string]?: number}, k: string) -> undefined { d[k] = 1 }`,
+			want: []string{"1:73-1:77: cannot assign to '[string]' because it is a readonly property"},
 		},
 		{
 			name: "SubtypingIntoWritableParam",
-			src: `fn sink(o: &mut {a: number}) {}
-fn f(mut obj: {readonly a: number}) { sink(&mut obj) }`,
-			want: []string{"2:44-2:52: readonly field 'a' cannot satisfy a writable field requirement"},
+			src: `fn sink(o: &mut {a: number}) -> undefined {}
+fn f(mut obj: {readonly a: number}) -> undefined { sink(&mut obj) }`,
+			want: []string{"2:57-2:65: readonly field 'a' cannot satisfy a writable field requirement"},
 		},
 	}
 	for _, tt := range tests {

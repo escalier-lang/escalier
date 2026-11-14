@@ -40,7 +40,7 @@ func TestAnnKeyNamesOneMember(t *testing.T) {
 	runAnnKeyCases(t, []annKeyCase{
 		{
 			name:   "UniqueSymbol",
-			src:    "declare val sym: unique symbol\nfn f(o: &{[sym]: number}) { return o[sym] }",
+			src:    "declare val sym: unique symbol\nval f = fn (o: &{[sym]: number}) { return o[sym] }",
 			values: map[string]string{"f": "fn (o: &{[sym]: number}) -> number"},
 		},
 		{
@@ -93,12 +93,12 @@ func TestAnnKeyNamesOneMember(t *testing.T) {
 		},
 		{
 			name:   "LocalValInAFunctionBody",
-			src:    "fn f() {\n  val k = \"a\"\n  val o: {[k]: number} = {a: 1}\n  return o\n}",
+			src:    "fn f() -> {a: number} {\n  val k = \"a\"\n  val o: {[k]: number} = {a: 1}\n  return o\n}",
 			values: map[string]string{"f": "fn () -> {a: number}"},
 		},
 		{
 			name:   "ParamInAFunctionBody",
-			src:    "fn f(k: \"a\") {\n  val o: {[k]: number} = {a: 1}\n  return o\n}",
+			src:    "fn f(k: \"a\") -> {a: number} {\n  val o: {[k]: number} = {a: 1}\n  return o\n}",
 			values: map[string]string{"f": "fn (k: \"a\") -> {a: number}"},
 		},
 		{

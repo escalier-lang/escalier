@@ -476,13 +476,13 @@ func TestInferRegexTypeComplementInAMatch(t *testing.T) {
 	}{
 		{
 			name: "TheFallThroughArmBindsTheComplement",
-			src:  `fn f(s: string) { return match s { d: /^\d+$/ => "", other => other } }`,
+			src:  `fn f(s: string) -> string & ~/^\d+$/ { return match s { d: /^\d+$/ => "", other => other } }`,
 			want: `fn (s: string) -> string & ~/^\d+$/`,
 		},
 		{
 			name: "ARegexAliasAnnotation",
 			src: `type D = /^\d+$/
-				fn f(s: string) { return match s { d: D => "", other => other } }`,
+				fn f(s: string) -> string & ~/^\d+$/ { return match s { d: D => "", other => other } }`,
 			want: `fn (s: string) -> string & ~/^\d+$/`,
 		},
 		{

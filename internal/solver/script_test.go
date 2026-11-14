@@ -244,7 +244,7 @@ func TestInferScriptTypeAndFuncDecls(t *testing.T) {
 		{
 			name: "FnWithBody",
 			src: `
-				fn add(a: number, b: number) {
+				val add = fn (a: number, b: number) {
 					return a + b
 				}
 				val sum = add(1, 2)
@@ -257,7 +257,7 @@ func TestInferScriptTypeAndFuncDecls(t *testing.T) {
 		{
 			name: "RecursiveFn",
 			src: `
-				fn countdown(n: number) {
+				fn countdown(n: number) -> "done" {
 					if n == 0 {
 						return "done"
 					}
@@ -297,7 +297,7 @@ func TestInferScriptTypeAndFuncDecls(t *testing.T) {
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 
 				val mut x = {v: 1}
-				fn f(n: number) {
+				fn f(n: number) -> undefined {
 					if n > 0 {
 						val a = &x
 						f(n - 1)
@@ -312,7 +312,7 @@ func TestInferScriptTypeAndFuncDecls(t *testing.T) {
 			// The parameter f shadows the function's own name, so `&f` borrows the parameter.
 			name: "ParamShadowsTheFnName",
 			src: `
-				fn f(f: {v: number}) {
+				fn f(f: {v: number}) -> &{v: number} {
 					val r = &f
 					return r
 				}
@@ -332,7 +332,7 @@ func TestInferScriptTypeAndFuncDecls(t *testing.T) {
 			name: "FnCapturesAnEarlierVal",
 			src: `
 				val base = 10
-				fn addBase(x: number) {
+				val addBase = fn (x: number) {
 					return x + base
 				}
 				val r = addBase(1)
@@ -346,7 +346,7 @@ func TestInferScriptTypeAndFuncDecls(t *testing.T) {
 			name: "FnCapturesAnEarlierVar",
 			src: `
 				var count = 0
-				fn bump() {
+				val bump = fn () {
 					count = count + 1
 					return count
 				}
@@ -375,7 +375,7 @@ func TestInferScriptTypeAndFuncDecls(t *testing.T) {
 		{
 			name: "GeneratorFn",
 			src: `
-				gen fn nums() {
+				gen fn nums() -> Generator<1 | 2, undefined, unknown> {
 					yield 1
 					yield 2
 				}
@@ -389,7 +389,7 @@ func TestInferScriptTypeAndFuncDecls(t *testing.T) {
 		{
 			name: "AsyncFn",
 			src: `
-				async fn fetchNum() {
+				async fn fetchNum() -> Promise<5> {
 					return 5
 				}
 				val p = fetchNum()
@@ -403,7 +403,7 @@ func TestInferScriptTypeAndFuncDecls(t *testing.T) {
 			name: "FnBeforeDeclaration",
 			src: `
 				val n = double(2)
-				fn double(x: number) {
+				fn double(x: number) -> number {
 					return x * 2
 				}
 			`,
@@ -423,7 +423,7 @@ func TestInferScriptTypeAndFuncDecls(t *testing.T) {
 		{
 			name: "FnInAFunctionBody",
 			src: `
-				fn outer() {
+				fn outer() -> undefined {
 					fn inner() {
 						return 1
 					}
@@ -434,10 +434,10 @@ func TestInferScriptTypeAndFuncDecls(t *testing.T) {
 		{
 			name: "OverloadedFnWithBody",
 			src: `
-				fn parse(x: string) {
+				fn parse(x: string) -> 1 {
 					return 1
 				}
-				fn parse(x: number) {
+				fn parse(x: number) -> "1" {
 					return "1"
 				}
 				val b = parse(1)
@@ -448,7 +448,7 @@ func TestInferScriptTypeAndFuncDecls(t *testing.T) {
 		{
 			name: "DeclareFnAfterFnWithBody",
 			src: `
-				fn parse(x: string) {
+				fn parse(x: string) -> 1 {
 					return 1
 				}
 				declare fn parse(x: number) -> string
