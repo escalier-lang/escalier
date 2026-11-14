@@ -161,9 +161,9 @@ func typeName(t soltype.Type) string {
 }
 
 // declText returns the declaration header decl shows on hover, without its `export` or
-// `declare` modifier, or "" for a declaration it does not render. A function shows its
-// signature, a class and an enum show their name and type parameters, and an interface
-// shows its members as well.
+// `declare` modifier, or "" for a declaration it does not render. A type alias shows its
+// whole declaration, a class and an enum show their name and type parameters, and an
+// interface shows its members as well.
 func declText(decl ast.Decl) string {
 	switch decl := decl.(type) {
 	case *ast.TypeDecl:
@@ -577,9 +577,10 @@ func enclosingClass(ancestors []ast.Node) *ast.ClassDecl {
 	return nil
 }
 
-// enclosingReceiver returns the `self` receiver of the method whose body holds the cursor,
-// found by matching a function-expression ancestor to a member of class. It returns nil
-// when no method body encloses the cursor, as for a closure that captured `self`.
+// enclosingReceiver returns the `self` receiver of the nearest method whose body holds the
+// cursor, found by matching a function-expression ancestor to a member of class. A closure
+// inside a method is not a member, so `self` read in it resolves to that method's
+// receiver. It returns nil when no method body encloses the cursor.
 func enclosingReceiver(ancestors []ast.Node, class *ast.ClassDecl) *ast.MethodReceiver {
 	for i := len(ancestors) - 1; i >= 0; i-- {
 		fn, ok := ancestors[i].(*ast.FuncExpr)
