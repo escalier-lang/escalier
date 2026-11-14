@@ -1144,6 +1144,30 @@ func TestHoverFromSolver(t *testing.T) {
 			expected: escalierCode("(method) describe?() -> string"),
 		},
 		{
+			name: "EnumVariantDecl",
+			files: map[string]string{
+				"lib/a.esc": "export enum Expr { Num(value: number), Add(left: Expr, right: Expr) }",
+			},
+			open: "lib/a.esc", line: 0, col: 19,
+			expected: escalierCode("(variant) Expr.Num(value: number)"),
+		},
+		{
+			name: "EnumVariantDeclTwoParams",
+			files: map[string]string{
+				"lib/a.esc": "export enum Expr { Num(value: number), Add(left: Expr, right: Expr) }",
+			},
+			open: "lib/a.esc", line: 0, col: 39,
+			expected: escalierCode("(variant) Expr.Add(left: Expr, right: Expr)"),
+		},
+		{
+			name: "GenericEnumVariantDecl",
+			files: map[string]string{
+				"lib/a.esc": "export enum Result<T, E> { Ok(value: T), Err(error: E) }",
+			},
+			open: "lib/a.esc", line: 0, col: 41,
+			expected: escalierCode("(variant) Result.Err(error: E)"),
+		},
+		{
 			name:  "Keyword",
 			files: map[string]string{"bin/main.esc": "val x = 5"},
 			open:  "bin/main.esc", line: 0, col: 1,

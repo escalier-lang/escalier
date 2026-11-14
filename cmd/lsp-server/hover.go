@@ -68,6 +68,9 @@ func typeHover(q hoverQuery) (string, bool) {
 		if n.Name.Span().Contains(q.loc) {
 			return declText(n), true
 		}
+		if variant, ok := variantNamedAt(n, q.loc); ok {
+			return variantDeclText(n, variant), true
+		}
 	case *ast.InferTypeAnn:
 		return "(type parameter) " + n.Name, true
 	case *ast.TypeRefTypeAnn:
@@ -654,6 +657,33 @@ func classRefName(class *ast.ClassDecl) string {
 		names[i] = tp.Name
 	}
 	return class.Name.Name + "<" + strings.Join(names, ", ") + ">"
+}
+
+// variantNamedAt returns the variant of decl whose name holds loc.
+func variantNamedAt(decl *ast.EnumDecl, loc ast.Location) (*ast.EnumVariant, bool) {
+	for _, elem := range decl.Elems {
+		if variant, ok := elem.(*ast.EnumVariant); ok && variant.Name.Span().Contains(loc) {
+			return variant, true
+		}
+	}
+	return nil, false
+}
+
+// variantDeclText renders the variant of decl as it is declared, as
+// `(variant) Expr.Num(value: number)`, the form a read of the variant shows.
+func variantDeclText(decl *ast.EnumDecl, variant *ast.EnumVariant) string {
+	params := make([]string, len(variant.Params))
+	for i, param := range variant.Params {
+		text := printCompact(param.Pattern)
+		if param.Optional {
+			text += "?"
+		}
+		if param.TypeAnn != nil {
+			text += ": " + printCompact(param.TypeAnn)
+		}
+		params[i] = text
+	}
+	return "(variant) " + decl.Name.Name + "." + variant.Name.Name + "(" + strings.Join(params, ", ") + ")"
 }
 
 // variantConstructor returns an enum variant's constructor signature when t is the type a
