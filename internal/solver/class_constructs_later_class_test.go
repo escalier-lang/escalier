@@ -35,12 +35,12 @@ func TestAMemberBodyConstructsALaterClass(t *testing.T) {
 			name: "a method calls a function that constructs a later class",
 			src: `class A {
 				v: number,
-				toB(&self) { return makeB(self.v) },
+				toB(&self) -> B { return makeB(self.v) },
 			}
-			fn makeB(n: number) { return B(n) }
+			fn makeB(n: number) -> B { return B(n) }
 			class B {
 				n: number,
-				toA(&self) { return A(self.n) },
+				toA(&self) -> A { return A(self.n) },
 			}
 			val toB = A(1).toB`,
 			want: map[string]string{"toB": "fn () -> B"},

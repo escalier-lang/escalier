@@ -20,14 +20,14 @@ func TestInferAsyncThrowsAbsorbedIntoRejection(t *testing.T) {
 	runThrowsCases(t, []throwsCase{
 		{
 			name: "ClauselessThrowInfersTheRejection",
-			src:  `async fn f() { throw "x" }`,
+			src:  `async fn f() -> Promise<never, "x"> { throw "x" }`,
 			want: `fn () -> Promise<never, "x">`,
 		},
 		{
 			// Two throws on different paths union into the rejection, the same join a
 			// sync `throws _` builds.
 			name: "ThrowsOnBothBranchesUnionIntoTheRejection",
-			src:  `async fn f(c: boolean) { if c { throw "a" } else { throw 5 } }`,
+			src:  `async fn f(c: boolean) -> Promise<never, "a" | 5> { if c { throw "a" } else { throw 5 } }`,
 			want: `fn (c: boolean) -> Promise<never, "a" | 5>`,
 		},
 		{
@@ -39,7 +39,7 @@ func TestInferAsyncThrowsAbsorbedIntoRejection(t *testing.T) {
 		},
 		{
 			name: "NonThrowingBodyLeavesTheRejectionNever",
-			src:  `async fn f() { return 5 }`,
+			src:  `async fn f() -> Promise<5> { return 5 }`,
 			want: "fn () -> Promise<5>",
 		},
 	})
@@ -89,9 +89,9 @@ func TestInferAsyncThrowsClauseRejected(t *testing.T) {
 		},
 		{
 			name: "WildcardClause",
-			src:  `async fn f() throws _ { return 5 }`,
+			src:  `async fn f() -> Promise<5> throws _ { return 5 }`,
 			wantErrs: []string{
-				"1:21-1:22: async function cannot have a throws clause; declare the rejection type in the return type as Promise<..., E> or Promise<_, _>",
+				"1:35-1:36: async function cannot have a throws clause; declare the rejection type in the return type as Promise<..., E> or Promise<_, _>",
 			},
 		},
 		{
@@ -125,8 +125,8 @@ func TestInferAsyncRejectionSurfacesAtAwait(t *testing.T) {
 			// fine.
 			name: "HoldingThePromiseRaisesNothing",
 			src: `
-				async fn f() { throw "boom" }
-				fn g() { val p = f() }
+				async fn f() -> Promise<never, "boom"> { throw "boom" }
+				fn g() -> undefined { val p = f() }
 			`,
 			binding: "g",
 			want:    "fn () -> undefined",
@@ -137,8 +137,8 @@ func TestInferAsyncRejectionSurfacesAtAwait(t *testing.T) {
 			// built on.
 			name: "AwaitedRejectionPropagatesIntoTheCallersRejection",
 			src: `
-				async fn f() { throw "boom" }
-				async fn g() { await f() }
+				async fn f() -> Promise<never, "boom"> { throw "boom" }
+				async fn g() -> Promise<undefined, "boom"> { await f() }
 			`,
 			binding: "g",
 			want:    `fn () -> Promise<undefined, "boom">`,
@@ -146,7 +146,7 @@ func TestInferAsyncRejectionSurfacesAtAwait(t *testing.T) {
 		{
 			name: "AwaitedRejectionPropagatesThroughAParameter",
 			src: `
-				async fn g(p: Promise<number, string>) { return await p }
+				async fn g(p: Promise<number, string>) -> Promise<number, string> { return await p }
 			`,
 			binding: "g",
 			want:    "fn (p: Promise<number, string>) -> Promise<number, string>",
@@ -156,8 +156,8 @@ func TestInferAsyncRejectionSurfacesAtAwait(t *testing.T) {
 			// caller's own rejection slot — the join with PR10b.
 			name: "TryAroundAwaitCatchesTheRejection",
 			src: `
-				async fn f() { throw "boom" }
-				async fn g() { try { await f() } catch { e => 0 } }
+				async fn f() -> Promise<never, "boom"> { throw "boom" }
+				async fn g() -> Promise<undefined> { try { await f() } catch { e => 0 } }
 			`,
 			binding: "g",
 			want:    "fn () -> Promise<undefined>",
@@ -165,8 +165,8 @@ func TestInferAsyncRejectionSurfacesAtAwait(t *testing.T) {
 		{
 			name: "AwaitingANonRejectingPromiseAddsNothing",
 			src: `
-				async fn f() { return 5 }
-				async fn g() { await f() }
+				async fn f() -> Promise<5> { return 5 }
+				async fn g() -> Promise<undefined> { await f() }
 			`,
 			binding: "g",
 			want:    "fn () -> Promise<undefined>",
@@ -183,7 +183,7 @@ func TestInferAwaitJoinedRejections(t *testing.T) {
 		{
 			name: "RejectingBranchSecond",
 			src: `
-				async fn g(c: boolean, p1: Promise<number>, p2: Promise<number, string>) {
+				async fn g(c: boolean, p1: Promise<number>, p2: Promise<number, string>) -> Promise<undefined, string> {
 					await (if c { p1 } else { p2 })
 				}
 			`,
@@ -193,7 +193,7 @@ func TestInferAwaitJoinedRejections(t *testing.T) {
 		{
 			name: "RejectingBranchFirst",
 			src: `
-				async fn g(c: boolean, p1: Promise<number, string>, p2: Promise<number>) {
+				async fn g(c: boolean, p1: Promise<number, string>, p2: Promise<number>) -> Promise<undefined, string> {
 					await (if c { p1 } else { p2 })
 				}
 			`,
@@ -205,7 +205,7 @@ func TestInferAwaitJoinedRejections(t *testing.T) {
 			// caller's rejection is their union.
 			name: "BranchesRejectingWithDifferentTypesUnion",
 			src: `
-				async fn g(c: boolean, p1: Promise<number, "a">, p2: Promise<number, "b">) {
+				async fn g(c: boolean, p1: Promise<number, "a">, p2: Promise<number, "b">) -> Promise<undefined, "a" | "b"> {
 					await (if c { p1 } else { p2 })
 				}
 			`,
@@ -218,7 +218,7 @@ func TestInferAwaitJoinedRejections(t *testing.T) {
 			// each binding taking its own promise's value.
 			name: "SeparateAwaitsRejectingWithDifferentTypesUnion",
 			src: `
-				async fn g(p1: Promise<number, "a">, p2: Promise<string, "b">) {
+				async fn g(p1: Promise<number, "a">, p2: Promise<string, "b">) -> Promise<string, "a" | "b"> {
 					val a = await p1
 					val b = await p2
 					return b
@@ -242,7 +242,7 @@ func TestInferAsyncThrowsHeldToTheAnnotation(t *testing.T) {
 		{
 			name: "AwaitUnderAOneArgumentPromiseAnnotation",
 			src: `
-				async fn f() { throw "boom" }
+				async fn f() -> Promise<never, "boom"> { throw "boom" }
 				async fn g() -> Promise<number> {
 					await f()
 					return 5
@@ -261,7 +261,7 @@ func TestInferSyncFunctionReturningARejectingPromise(t *testing.T) {
 		{
 			name: "OwnThrowsStaysOnTheClause",
 			src: `
-				fn f(p: Promise<number, "a">, c: boolean) throws "boom" {
+				fn f(p: Promise<number, "a">, c: boolean) -> Promise<number, "a"> throws "boom" {
 					if c { throw "boom" }
 					return p
 				}
@@ -278,14 +278,14 @@ func TestInferSyncFunctionReturningARejectingPromise(t *testing.T) {
 func TestInferAsyncFetchJSONExample(t *testing.T) {
 	src := `
 		declare fn fetch(url: string) -> Promise<string, "fetch-error">
-		async fn fetchJSON(url: string, ok: boolean) {
+		async fn fetchJSON(url: string, ok: boolean) -> Promise<string, "fetch-error" | "syntax-error"> {
 			val res = await fetch(url)
 			if ok {
 				return res
 			}
 			throw "syntax-error"
 		}
-		async fn process(url: string, ok: boolean) {
+		async fn process(url: string, ok: boolean) -> Promise<string> {
 			try {
 				return await fetchJSON(url, ok)
 			} catch {
@@ -312,14 +312,14 @@ func TestInferPromiseErrRendering(t *testing.T) {
 			// describe names the rejection type when the slot holds a concrete type,
 			// so the mismatch reads as the promise the user wrote.
 			name:     "DiagnosticNamesTheRejectingPromise",
-			src:      `fn f(p: Promise<number, string>) { val x: number = p }`,
-			wantErrs: []string{"1:52-1:53: cannot constrain Promise<number, string> <: number"},
+			src:      `fn f(p: Promise<number, string>) -> undefined { val x: number = p }`,
+			wantErrs: []string{"1:65-1:66: cannot constrain Promise<number, string> <: number"},
 		},
 		{
 			// A bad second argument reports once and recovers the slot to a fresh var,
 			// keeping the Promise wrapper the way a bad payload does.
 			name:     "BadRejectionArgumentRecoversTheWrapper",
-			src:      `fn f(p: Promise<number, Bogus>) { }`,
+			src:      `fn f(p: Promise<number, Bogus>) -> undefined { }`,
 			wantErrs: []string{"1:25-1:30: cannot find type `Bogus`"},
 		},
 	})
@@ -329,7 +329,7 @@ func TestInferPromiseErrRendering(t *testing.T) {
 			// members.
 			name: "PromisesDifferingOnlyInRejectionStayDistinct",
 			src: `
-				fn f(c: boolean, p1: Promise<number, "a">, p2: Promise<number, "b">) {
+				fn f(c: boolean, p1: Promise<number, "a">, p2: Promise<number, "b">) -> Promise<number, "a"> | Promise<number, "b"> {
 					return if c { p1 } else { p2 }
 				}
 			`,

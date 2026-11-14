@@ -198,7 +198,7 @@ func TestBuiltinsInScript(t *testing.T) {
 // declaration the code being checked cannot change. TypeScript accepts the same write, and
 // whether Escalier should accept it too is an open question that #2321 tracks.
 func TestLibraryGlobalWriteNamesNoRedeclaration(t *testing.T) {
-	_, errs := inferAgainstTreeWithSpans(t, "import \"std:console\"\nfn f() {\n\tconsole.log = fn() {}\n}\n")
+	_, errs := inferAgainstTreeWithSpans(t, "import \"std:console\"\nfn f() -> undefined {\n\tconsole.log = fn() {}\n}\n")
 	require.Equal(t, []string{
 		"3:2-3:23: cannot mutate 'console' because its binding is immutable; the standard library declares it without `mut`",
 		"3:16-3:23: object is missing property: log",

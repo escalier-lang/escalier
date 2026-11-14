@@ -212,7 +212,7 @@ val {x, y, z} = p`,
 			related: []string{"[number, ...]"},
 		},
 		"ParamObjectPatternMissingKey": {
-			src:     `fn f({x, z}: {x: number}) { return x }`,
+			src:     `fn f({x, z}: {x: number}) -> number { return x }`,
 			want:    []string{"1:10-1:11: object is missing property: z"},
 			related: []string{"{x: number}"},
 		},
@@ -257,7 +257,7 @@ val x = "hi"`
 // An assignment through an optional chain blames the whole target `o?.a` and names the
 // optional chain as the reason.
 func TestBlameOptionalChainAssignmentTarget(t *testing.T) {
-	src := `fn f(mut o: {a: number}) {
+	src := `fn f(mut o: {a: number}) -> undefined {
     o?.a = 6
 }`
 	_, _, errs := inferSource(t, src)
@@ -274,7 +274,7 @@ func TestBlameOptionalChainAssignmentTarget(t *testing.T) {
 // and operand-outside-site branches are already covered by TestBlameCallArgument
 // and TestBlameIdentifierUseNotDefinition above.)
 func TestBlameUndefinedSubjectFallsBackToCallSite(t *testing.T) {
-	src := `fn f() {}
+	src := `fn f() -> undefined {}
 val x: number = f()`
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs, "2:17-2:20: cannot constrain undefined <: number", "f()", "number")
@@ -463,8 +463,8 @@ func TestBlameMutabilityDiagnostics(t *testing.T) {
 		related []string
 	}{
 		"WriteThroughImmutableParam": {
-			src:     `fn f(p: {x: number}) { p.x = 1 }`,
-			want:    "1:24-1:31: cannot mutate 'p' because its binding is immutable; declare it as `mut p`",
+			src:     `fn f(p: {x: number}) -> undefined { p.x = 1 }`,
+			want:    "1:37-1:44: cannot mutate 'p' because its binding is immutable; declare it as `mut p`",
 			primary: "p.x = 1",
 			related: []string{"p"},
 		},
@@ -474,7 +474,7 @@ func TestBlameMutabilityDiagnostics(t *testing.T) {
 			primary: "self.n = 1",
 		},
 		"OwnedMutType": {
-			src:     `fn f(p: mut {x: number}) {}`,
+			src:     `fn f(p: mut {x: number}) -> undefined {}`,
 			want:    "1:9-1:12: " + ownedMutTypeMsg,
 			primary: "mut",
 		},

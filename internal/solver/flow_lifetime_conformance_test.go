@@ -48,12 +48,12 @@ func TestFlowLifetimeRules(t *testing.T) {
 		{
 			name: "F3/MakeAndSame",
 			src: `
-				fn make() {
+				fn make() -> {x: 1} {
 					val p = {x: 1}
 					return p    // moves p out, so make returns an owned value
 				}
 
-				fn same(p: &{x: number}) {
+				fn same(p: &{x: number}) -> &{x: number} {
 					return p    // same: fn <'a>(p: &'a {x: number}) -> &'a {x: number}
 				}
 			`,
@@ -74,7 +74,7 @@ func TestFlowLifetimeRules(t *testing.T) {
 					return a + p.x                  // p is still usable
 				}
 
-				fn returned() {
+				val returned = fn () {
 					val p = {x: 1}
 					return fn () { return p.x }     // owns p, since it outlives the frame
 				}
@@ -155,7 +155,7 @@ func TestFlowLifetimeRules(t *testing.T) {
 				fn read(p: &{x: number}) -> number { return p.x }
 				// fn (p: &{x: number}) -> number, since the lifetime connects nothing
 
-				fn same(p: &{x: number}) { return p }
+				fn same(p: &{x: number}) -> &{x: number} { return p }
 				// fn <'a>(p: &'a {x: number}) -> &'a {x: number}, since it ties p to the result
 			`,
 			values: map[string]string{
@@ -184,7 +184,7 @@ func TestFlowLifetimeRules(t *testing.T) {
 				var sink: 'static fn () -> undefined = fn () {}
 				declare fn readIt(a: &{x: number}) -> undefined
 
-				fn stored() {
+				fn stored() -> undefined {
 					val mut p = {x: 1}
 					sink = fn () { p.x = 2 }
 					readIt(&p)    // error: cannot borrow 'p' as immutable while 'p.x' is borrowed as mutable by 'sink'
@@ -320,7 +320,7 @@ func TestFlowLifetimeStaticBorrow(t *testing.T) {
 
 				var cache: &{x: number} = &{x: 0}
 
-				fn remember() {
+				val remember = fn () {
 					val mut p = {x: 1}
 					cache = &p         // the borrow's lifetime is 'static
 					p.x = 2            // rejected by E2, since cache can still read p
@@ -425,7 +425,7 @@ func TestFlowLifetimeRetainedCallback(t *testing.T) {
 				declare fn onClick(handler: 'static fn () -> undefined) -> undefined
 				declare fn render(view: &{n: number}) -> undefined
 
-				fn setup() {
+				fn setup() -> undefined {
 					val mut count = {n: 0}
 					onClick(fn () { count.n = count.n + 1 })
 					render(&count)    // error: cannot borrow 'count' as immutable while 'count.n' is borrowed as mutable
@@ -450,7 +450,7 @@ func TestFlowLifetimeRetainedCallbackAccepted(t *testing.T) {
 				declare fn onClick(handler: 'static fn () -> undefined) -> undefined
 				declare fn render(view: &mut {n: number}) -> undefined
 
-				fn setup() {
+				fn setup() -> undefined {
 					val mut count = {n: 0}
 					onClick(fn () { count.n = count.n + 1 })
 					render(&mut count)    // accepted
@@ -466,7 +466,7 @@ func TestFlowLifetimeRetainedCallbackAccepted(t *testing.T) {
 				declare fn onClick(handler: 'static fn () -> undefined) -> undefined
 				declare fn render(view: &{n: number}) -> undefined
 
-				fn setup() {
+				fn setup() -> undefined {
 					val mut count = {n: 0}
 					onClick(fn () {
 						count.n = count.n + 1
@@ -484,7 +484,7 @@ func TestFlowLifetimeRetainedCallbackAccepted(t *testing.T) {
 				declare fn render(view: &{n: number}) -> undefined
 				declare fn log(n: number) -> undefined
 
-				fn setup() {
+				fn setup() -> undefined {
 					val mut count = {n: 0}
 					onClick(fn () { log(count.n) })
 					render(&count)    // accepted
@@ -499,7 +499,7 @@ func TestFlowLifetimeRetainedCallbackAccepted(t *testing.T) {
 				declare fn forEachItem(f: fn () -> undefined) -> undefined
 				declare fn render(view: &{n: number}) -> undefined
 
-				fn setup() {
+				fn setup() -> undefined {
 					val mut count = {n: 0}
 					forEachItem(fn () { count.n = count.n + 1 })
 					render(&count)    // accepted

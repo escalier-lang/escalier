@@ -20,7 +20,7 @@ import (
 // parameter is where that shows: the return hands the value back frozen, so it renders the
 // same as TestInferBareImmutableParamIsOwned's.
 func TestInferBareMutParamIsOwned(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(mut p: {x: number}) { return p }`)
+	values, _, errs := inferSource(t, `fn f(mut p: {x: number}) -> {x: number} { return p }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (p: {x: number}) -> {x: number}", values["f"])
 }
@@ -28,7 +28,7 @@ func TestInferBareMutParamIsOwned(t *testing.T) {
 // A bare immutable parameter is OWNED-immutable. The signature renders the
 // unwrapped value type with no borrow lifetime.
 func TestInferBareImmutableParamIsOwned(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(p: {x: number}) { return p }`)
+	values, _, errs := inferSource(t, `fn f(p: {x: number}) -> {x: number} { return p }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (p: {x: number}) -> {x: number}", values["f"])
 }
@@ -38,7 +38,7 @@ func TestInferBareImmutableParamIsOwned(t *testing.T) {
 // `val q = p` for an owned-immutable p establishes q as owned-immutable. PR 6
 // will make this consume p. For now it only establishes the owned binding.
 func TestInferValOwnedImmFromOwnedImm(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(p: {x: number}) {
+	values, _, errs := inferSource(t, `fn f(p: {x: number}) -> {x: number} {
   val q = p
   return q
 }`)
@@ -75,7 +75,7 @@ func TestInferValBorrowFromOwnedImm(t *testing.T) {
 // pins that: it type-checks only against a mutable binding. The return renders frozen, so it
 // cannot show the mutability the write proves.
 func TestInferValMutOwnedFromOwnedMut(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(mut p: {x: number}) {
+	values, _, errs := inferSource(t, `fn f(mut p: {x: number}) -> {x: number} {
   val mut q = p
   q.x = 5
   return q
@@ -105,7 +105,7 @@ func TestInferValMutBorrowFromOwnedMut(t *testing.T) {
 // `&mut p` on an owned-IMMUTABLE p is a mutability mismatch. A mutable borrow
 // cannot be taken on a value that is not declared mutable.
 func TestInferBorrowMutOnImmutableRejected(t *testing.T) {
-	_, _, errs := inferSource(t, `fn f(p: {x: number}) {
+	_, _, errs := inferSource(t, `fn f(p: {x: number}) -> &mut {x: number} {
   val q = &mut p
   return q
 }`)
@@ -124,7 +124,7 @@ func TestInferBorrowMutOnImmutableRejected(t *testing.T) {
 // `number`, so q holds `{x: number}` where a plain `val q = {x: 0}` keeps the singleton
 // `{x: 0}`. The `mut` itself does not reach the return, which hands the value back frozen.
 func TestInferValMutConstructsOwnedMut(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f() {
+	values, _, errs := inferSource(t, `fn f() -> {x: number} {
   val mut q = {x: 0}
   return q
 }`)
@@ -136,7 +136,7 @@ func TestInferValMutConstructsOwnedMut(t *testing.T) {
 // binding and the mutable value are orthogonal, and the returned value carries neither, so
 // the return renders `{x: number}`.
 func TestInferVarMutConstructsOwnedMut(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f() {
+	values, _, errs := inferSource(t, `fn f() -> {x: number} {
   var mut q = {x: 0}
   return q
 }`)
@@ -147,7 +147,7 @@ func TestInferVarMutConstructsOwnedMut(t *testing.T) {
 // The owned-mutable construction is deep and uniform, reaching nested objects and
 // tuple elements, so `val mut q = {a: {b: 1}}` is mutable to its leaves.
 func TestInferValMutConstructsDeepOwnedMut(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f() {
+	values, _, errs := inferSource(t, `fn f() -> {a: {b: number}} {
   val mut q = {a: {b: 1}}
   return q
 }`)
@@ -159,7 +159,7 @@ func TestInferValMutConstructsDeepOwnedMut(t *testing.T) {
 // field is `number`, so `q.x = 5` checks where a non-widened `mut {x: 0}` would
 // reject `5 <: 0` under the mutable field's invariance.
 func TestInferValMutConstructedAllowsFieldWrite(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f() {
+	values, _, errs := inferSource(t, `fn f() -> {x: number} {
   val mut q = {x: 0}
   q.x = 5
   return q
@@ -172,7 +172,7 @@ func TestInferValMutConstructedAllowsFieldWrite(t *testing.T) {
 // mutable borrow destination, so `&mut q` checks where an owned-immutable q would fail the
 // mutability gate.
 func TestInferValMutConstructedBorrowsMut(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f() {
+	values, _, errs := inferSource(t, `fn f() -> {x: number} {
   val mut q = {x: 0}
   val r = &mut q
   return r
@@ -195,7 +195,7 @@ func TestInferVarBindingBorrowsMut(t *testing.T) {
 		want []string
 	}{
 		"VarMutBorrowsMut": {
-			src: `fn f() {
+			src: `fn f() -> undefined {
   var mut q = {x: 0}
   val r = &mut q
   r.x = 1
@@ -203,7 +203,7 @@ func TestInferVarBindingBorrowsMut(t *testing.T) {
 			want: nil,
 		},
 		"VarMutBorrowsMutAfterReassignment": {
-			src: `fn f() {
+			src: `fn f() -> undefined {
   var mut q = {x: 0}
   q = {x: 1}
   val r = &mut q
@@ -212,14 +212,14 @@ func TestInferVarBindingBorrowsMut(t *testing.T) {
 			want: nil,
 		},
 		"VarMutBorrowsImmutably": {
-			src: `fn f() {
+			src: `fn f() -> undefined {
   var mut q = {x: 0}
   val r = &q
 }`,
 			want: nil,
 		},
 		"PlainVarRejectsMutBorrow": {
-			src: `fn f() {
+			src: `fn f() -> undefined {
   var q = {x: 0}
   val r = &mut q
 }`,
@@ -238,7 +238,7 @@ func TestInferVarBindingBorrowsMut(t *testing.T) {
 // interior mutability, so it is not wrapped in an owned-mutable borrow. A `val mut`
 // keeps the literal singleton, exactly as a plain `val` would.
 func TestInferValMutPrimitiveUnchanged(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f() {
+	values, _, errs := inferSource(t, `fn f() -> 5 {
   val mut n = 5
   return n
 }`)
@@ -255,7 +255,7 @@ func TestInferValMutPrimitiveUnchanged(t *testing.T) {
 // would be rejected against the immutable `src` it moved from. The return renders frozen and
 // so cannot show it.
 func TestInferValMutThawFromVariable(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(src: {x: number}) {
+	values, _, errs := inferSource(t, `fn f(src: {x: number}) -> {x: number} {
   val mut p = src
   p.x = 5
   return p
@@ -271,7 +271,7 @@ func TestInferValMutThawFromVariable(t *testing.T) {
 // rendered return shows, since the `mut` does not reach it. This is the same widening the
 // fresh-literal `val mut q = {x: 0}` upgrade applies.
 func TestInferValMutThawWidensLiteral(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f() {
+	values, _, errs := inferSource(t, `fn f() -> {x: number} {
   val p = {x: 0}
   val mut q = p
   return q
@@ -286,12 +286,12 @@ func TestInferValMutThawWidensLiteral(t *testing.T) {
 // mutably again. The write through q is what proves the thaw, since it type-checks only
 // against a mutable binding.
 func TestInferredReturnFreezesAndCallerThaws(t *testing.T) {
-	values, _, errs := inferSource(t, `fn build() {
+	values, _, errs := inferSource(t, `fn build() -> {x: number} {
   val mut p = {x: 0}
   p.x = 1
   return p
 }
-fn use() {
+fn use() -> {x: number} {
   val mut q = build()
   q.x = 2
   return q
@@ -308,7 +308,7 @@ fn use() {
 // Both freeze the value immutably; only the `var` binding widens.
 func TestFreezeVarWidensLiteral(t *testing.T) {
 	t.Run("var_widens", func(t *testing.T) {
-		values, _, errs := inferSource(t, `fn f() {
+		values, _, errs := inferSource(t, `fn f() -> {x: number} {
   val p = {x: 0}
   var q = p
   return q
@@ -317,7 +317,7 @@ func TestFreezeVarWidensLiteral(t *testing.T) {
 		require.Equal(t, "fn () -> {x: number}", values["f"])
 	})
 	t.Run("val_keeps_singleton", func(t *testing.T) {
-		values, _, errs := inferSource(t, `fn f() {
+		values, _, errs := inferSource(t, `fn f() -> {x: 0} {
   val p = {x: 0}
   val q = p
   return q
@@ -331,7 +331,7 @@ func TestFreezeVarWidensLiteral(t *testing.T) {
 
 // `val q: {x} = p` for an owned-immutable p binds q at the annotated owned type.
 func TestInferValAnnotatedOwnedImm(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(p: {x: number}) {
+	values, _, errs := inferSource(t, `fn f(p: {x: number}) -> {x: number} {
   val q: {x: number} = p
   return q
 }`)
@@ -342,7 +342,7 @@ func TestInferValAnnotatedOwnedImm(t *testing.T) {
 // `val q: &{x} = p` for an owned p fills a borrow annotation without writing the borrow, so
 // it reports the missing `&`. `val q: &{x} = &p` is the accepted form.
 func TestInferValAnnotatedBorrowImm(t *testing.T) {
-	_, _, errs := inferSource(t, `fn f(p: {x: number}) {
+	_, _, errs := inferSource(t, `fn f(p: {x: number}) -> {x: number} {
   val q: &{x: number} = p
   return q
 }`)
@@ -353,7 +353,7 @@ func TestInferValAnnotatedBorrowImm(t *testing.T) {
 
 // `val q: &mut {x} = p` for an owned-mutable p reports the missing `&mut` the same way.
 func TestInferValAnnotatedBorrowMut(t *testing.T) {
-	_, _, errs := inferSource(t, `fn f(mut p: {x: number}) {
+	_, _, errs := inferSource(t, `fn f(mut p: {x: number}) -> {x: number} {
   val q: &mut {x: number} = p
   return q
 }`)
@@ -370,7 +370,7 @@ func TestOwnedMutArgumentNeedsAWrittenBorrow(t *testing.T) {
 	src := `fn use(o: &mut {x: number}) -> number {
   return o.x
 }
-fn f(mut p: {x: number}) {
+fn f(mut p: {x: number}) -> number {
   return use(p)
 }`
 	_, _, errs := inferSource(t, src)
@@ -384,7 +384,7 @@ func TestOwnedMutArgumentWithAWrittenBorrow(t *testing.T) {
 	src := `fn use(o: &mut {x: number}) -> number {
   return o.x
 }
-fn f(mut p: {x: number}) {
+fn f(mut p: {x: number}) -> number {
   return use(&mut p)
 }`
 	values, _, errs := inferSource(t, src)
@@ -397,7 +397,7 @@ func TestOwnedArgumentNeedsAWrittenImmutableBorrow(t *testing.T) {
 	src := `fn use(o: &{x: number}) -> number {
   return o.x
 }
-fn f(p: {x: number}) {
+fn f(p: {x: number}) -> number {
   return use(p)
 }`
 	_, _, errs := inferSource(t, src)
@@ -410,7 +410,7 @@ func TestOwnedArgumentWithAWrittenImmutableBorrow(t *testing.T) {
 	src := `fn use(o: &{x: number}) -> number {
   return o.x
 }
-fn f(p: {x: number}) {
+fn f(p: {x: number}) -> number {
   return use(&p)
 }`
 	values, _, errs := inferSource(t, src)
@@ -424,7 +424,7 @@ func TestImmutableArgumentCannotFillAMutBorrow(t *testing.T) {
 	src := `fn use(o: &mut {x: number}) -> number {
   return o.x
 }
-fn f(p: {x: number}) {
+fn f(p: {x: number}) -> number {
   return use(&mut p)
 }`
 	_, _, errs := inferSource(t, src)
@@ -440,7 +440,7 @@ fn f(p: {x: number}) {
 // `&mut` borrow, and its lifetime threads through into the immutable reborrow at
 // the return.
 func TestInferBorrowExprImmReturnedCarriesLifetime(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(p: &mut {x: number}) { return &p }`)
+	values, _, errs := inferSource(t, `fn f(p: &mut {x: number}) -> &{x: number} { return &p }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn <'a>(p: &'a mut {x: number}) -> &'a {x: number}", values["f"])
 }
@@ -493,7 +493,7 @@ func TestInferBorrowExprAsArgumentIntoBorrowParam(t *testing.T) {
 	src := `fn use(o: &{x: number}) -> number {
   return o.x
 }
-fn f(p: {x: number}) {
+fn f(p: {x: number}) -> number {
   return use(&p)
 }`
 	values, _, errs := inferSource(t, src)
@@ -508,7 +508,7 @@ func TestInferBorrowMutExprAsArgumentIntoMutBorrowParam(t *testing.T) {
 	src := `fn use(o: &mut {x: number}) -> number {
   return o.x
 }
-fn f(mut p: {x: number}) {
+fn f(mut p: {x: number}) -> number {
   return use(&mut p)
 }`
 	values, _, errs := inferSource(t, src)
@@ -520,7 +520,7 @@ fn f(mut p: {x: number}) {
 // The result carries the same lifetime through to the return, which renders as
 // the parameter's named lifetime when the borrow reaches the output.
 func TestInferBorrowExprMutReborrowOfMutParam(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(p: &mut {x: number}) { return &mut p }`)
+	values, _, errs := inferSource(t, `fn f(p: &mut {x: number}) -> &mut {x: number} { return &mut p }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number}", values["f"])
 }
