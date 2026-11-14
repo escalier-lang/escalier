@@ -200,7 +200,7 @@ compiler.CompilerOutput{
             Suggestion: "-> Promise<undefined>",
             Node: &ast.Ident{
                 Name: "processItems",
-                span: 9-21,
+                span: 28-40,
             },
         },
     },

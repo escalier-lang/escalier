@@ -1082,10 +1082,10 @@ func TestHoverFromSolver(t *testing.T) {
 		{
 			name: "NamespaceRead",
 			files: map[string]string{
-				"lib/a.esc": "export fn f() -> number { return Math.floor(1.5) }",
+				"lib/a.esc": "import \"std:math\"\nexport fn f() -> number { return math.floor(1.5) }",
 			},
-			open: "lib/a.esc", line: 0, col: 33,
-			expected: escalierCode("namespace Math"),
+			open: "lib/a.esc", line: 1, col: 33,
+			expected: escalierCode("namespace math"),
 		},
 		{
 			name: "EnumAsNamespaceRead",
