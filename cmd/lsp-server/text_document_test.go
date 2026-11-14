@@ -1064,6 +1064,30 @@ func TestHoverFromSolver(t *testing.T) {
 			expected: escalierCode("(type parameter) Ident"),
 		},
 		{
+			name: "ReadonlyPropertyReadOnClass",
+			files: map[string]string{
+				"lib/a.esc": "export class Ticket { readonly id: number }\nexport fn f(t: &Ticket) -> number { return t.id }",
+			},
+			open: "lib/a.esc", line: 1, col: 45,
+			expected: escalierCode("(property) readonly Ticket.id: number"),
+		},
+		{
+			name: "ReadonlyPropertyReadOnObjectType",
+			files: map[string]string{
+				"lib/a.esc": "export fn f(t: &{readonly id: number}) -> number { return t.id }",
+			},
+			open: "lib/a.esc", line: 0, col: 60,
+			expected: escalierCode("(property) readonly id: number"),
+		},
+		{
+			name: "OptionalPropertyRead",
+			files: map[string]string{
+				"lib/a.esc": "export fn f(p: &{x: number, y?: number}) -> number | undefined { return p.y }",
+			},
+			open: "lib/a.esc", line: 0, col: 74,
+			expected: escalierCode("(property) y?: number"),
+		},
+		{
 			name:  "Keyword",
 			files: map[string]string{"bin/main.esc": "val x = 5"},
 			open:  "bin/main.esc", line: 0, col: 1,
