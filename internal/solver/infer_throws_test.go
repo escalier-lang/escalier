@@ -717,7 +717,7 @@ func TestInferThrowsThroughAGetterRead(t *testing.T) {
 			// A catch-all covers whatever the block raises, so the read leaves the
 			// enclosing clause untouched and `f` needs none.
 			name: "CatchAllAroundTheReadClearsTheClause",
-			src:  raisingGetterClass + `fn f(c: C) { try { return c.x } catch { e => 0 } }`,
+			src:  raisingGetterClass + `fn f(c: C) -> number { try { return c.x } catch { e => 0 } }`,
 			want: "fn (c: C) -> number",
 		},
 		{
@@ -726,7 +726,7 @@ func TestInferThrowsThroughAGetterRead(t *testing.T) {
 			// rethrown and reaches the clause.
 			name: "NamedArmLeavesTheDeclaredRaiseToRethrow",
 			src: raisingGetterClass + `
-				fn f(c: C) throws _ { try { val n = c.x } catch { "boom" => 0 } }
+				fn f(c: C) -> undefined throws _ { try { val n = c.x } catch { "boom" => 0 } }
 			`,
 			want: "fn (c: C) -> undefined throws string",
 		},
@@ -801,7 +801,7 @@ func TestInferThrowsThroughAGetterRead(t *testing.T) {
 			// The read sits inside a nested function, which owns its own throws sink, so
 			// the raise stays on the lambda and the enclosing `f` needs no clause.
 			name: "ReadInsideANestedLambdaDoesNotLeakOut",
-			src:  raisingGetterClass + `fn f(c: C) { val g = fn () -> number throws _ { return c.x } }`,
+			src:  raisingGetterClass + `fn f(c: C) -> undefined { val g = fn () -> number throws _ { return c.x } }`,
 			want: "fn (c: C) -> undefined",
 		},
 	})
@@ -811,10 +811,10 @@ func TestInferThrowsThroughAGetterRead(t *testing.T) {
 			// rethrown into a clause-less function.
 			name: "PartialCatchAroundTheReadStillNeedsAClause",
 			src: raisingGetterClass + `
-				fn f(c: C) { try { val n = c.x } catch { "boom" => 0 } }
+				fn f(c: C) -> undefined { try { val n = c.x } catch { "boom" => 0 } }
 			`,
 			wantErrs: []string{
-				"8:18-8:57: the catch arms leave string uncovered, so it is rethrown, and the enclosing `throws never` does not admit it. Cover it with a catch arm, or widen the enclosing clause",
+				"8:31-8:70: the catch arms leave string uncovered, so it is rethrown, and the enclosing `throws never` does not admit it. Cover it with a catch arm, or widen the enclosing clause",
 			},
 		},
 		{
@@ -850,13 +850,13 @@ func TestInferThrowsThroughASetterWrite(t *testing.T) {
 		{
 			// `throws _` on the writer infers from the write.
 			name: "WriterInfersTheSetterClause",
-			src:  raisingSetterClass + `fn f(mut c: C) throws _ { c.x = 5 }`,
+			src:  raisingSetterClass + `fn f(mut c: C) -> undefined throws _ { c.x = 5 }`,
 			want: "fn (c: C) -> undefined throws string",
 		},
 		{
 			// A catch-all around the write covers it, so the writer needs no clause.
 			name: "CatchAllAroundTheWriteClearsTheClause",
-			src:  raisingSetterClass + `fn f(mut c: C) { try { c.x = 5 } catch { e => 0 } }`,
+			src:  raisingSetterClass + `fn f(mut c: C) -> undefined { try { c.x = 5 } catch { e => 0 } }`,
 			want: "fn (c: C) -> undefined",
 		},
 		{
@@ -899,8 +899,8 @@ func TestInferThrowsThroughASetterWrite(t *testing.T) {
 			// The write is the exceptional exit, so the diagnostic blames the assignment
 			// rather than the setter's own body, which declared its raise correctly.
 			name:     "WriteThroughARaisingSetterFromAClauselessWriter",
-			src:      raisingSetterClass + `fn f(mut c: C) { c.x = 5 }`,
-			wantErrs: []string{"7:18-7:25: `f` can throw `string`, but it doesn't declare it; add `throws string` to `f`'s signature"},
+			src:      raisingSetterClass + `fn f(mut c: C) -> undefined { c.x = 5 }`,
+			wantErrs: []string{"7:31-7:38: `f` can throw `string`, but it doesn't declare it; add `throws string` to `f`'s signature"},
 		},
 		{
 			name: "SelfWriteThroughARaisingSetterFromAClauselessMethod",

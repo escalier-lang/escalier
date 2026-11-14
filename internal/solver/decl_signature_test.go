@@ -148,7 +148,7 @@ func TestFuncDeclSignaturePrintWritten(t *testing.T) {
 		},
 		{
 			name:     "ThrowsBorrow",
-			src:      "type Flat = {x: number}\nfn f(a: &Flat, b: &Flat) -> number throws &Flat { if a.x > 0 { throw a } return b.x }",
+			src:      "type Flat = {x: number}\nfn f<'a>(a: &'a Flat, b: &Flat) -> number throws &'a Flat { if a.x > 0 { throw a } return b.x }",
 			expected: "<'a>(&'a Flat, &Flat) -> number throws &'a Flat",
 		},
 	}
@@ -180,11 +180,11 @@ func TestMethodSignature(t *testing.T) {
 			peek(&self, other: &Flat) -> &Flat { return &self.inner },
 			pick(&self, other: &Flat) { return either(&self.inner, other) },
 			pickNamed<'s>(&'s self, other: &Flat) { return either(&self.inner, other) },
-			get(&self) { return self.inner.x },
+			get(&self) -> number { return self.inner.x },
 			reader(&self) -> fn () -> number { return fn () { return self.inner.x } },
 			at(&self, i: number) -> number { return i },
 			at(&self, s: string) -> string { return s },
-			static make(x: number) { return x + 1 },
+			static make(x: number) -> number { return x + 1 },
 		}
 	`
 	info, decls := inferForSignatures(t, src)

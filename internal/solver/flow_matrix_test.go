@@ -372,7 +372,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableCopy",
 			site:   "Receiver",
 			src: flowReceiverClass + `
-				fn g(m: &mut C) {
+				fn g(m: &mut C) -> undefined {
 					m.set()
 					m.x = 2
 				}
@@ -561,7 +561,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "Widen",
 			site:   "Receiver",
 			src: flowReceiverClass + `
-				fn g(r: &C) {
+				fn g(r: &C) -> undefined {
 					r.set()
 				}
 			`,
@@ -791,7 +791,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableBorrow",
 			site:   "Receiver",
 			src: flowReceiverClass + `
-				fn g() {
+				fn g() -> undefined {
 					val mut p = C(1)
 					val r = (&mut p).set()
 				}
@@ -884,7 +884,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableBorrowThroughVal",
 			site:   "Receiver",
 			src: flowReceiverClass + `
-				fn g() {
+				fn g() -> undefined {
 					val p = C(1)
 					val r = (&mut p).set()
 				}
@@ -1566,7 +1566,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MoveInALoop",
 			site:   "Receiver",
 			src: flowReceiverClass + `
-				fn g() {
+				fn g() -> undefined {
 					val p = C(1)
 					for i in [1, 2] {
 						val n = p.take()
@@ -1701,7 +1701,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "PartialMove",
 			site:   "Receiver",
 			src: flowReceiverClass + `
-				fn g() {
+				fn g() -> undefined {
 					val p = {a: C(1), b: C(2)}
 					val n = p.a.take()
 					val e = p
@@ -4394,7 +4394,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			column: "MoveWhileMutablyBorrowed",
 			site:   "Receiver",
 			src: flowReceiverClass + `
-				fn g() {
+				fn g() -> undefined {
 					val mut p = C(1)
 					val r = &mut p
 					val n = p.take()
