@@ -80,7 +80,7 @@ class C {
 			// The inner function's parameter is rigid from its body on, and the outer one's is
 			// rigid around it.
 			name: "ANestedGenericFunction",
-			src: `fn g<U: number>(u: U) {
+			src: `fn g<U: number>(u: U) -> U {
 	val h = fn <V: string>(v: V) -> V { return v }
 	return h(u)
 }`,

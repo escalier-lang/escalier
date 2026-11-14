@@ -93,7 +93,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			// Only one arm runs, so the move in one arm leaves p usable in the other.
 			name: "E1MoveInEachArmOfReturnedIf",
 			src: `
-				fn go(c: boolean, p: {a: {x: number}}) {
+				fn go(c: boolean, p: {a: {x: number}}) -> {a: {x: number}} {
 					return if c { p } else { p }
 				}
 			`,
@@ -101,7 +101,7 @@ func TestOwnershipDataflow(t *testing.T) {
 		{
 			name: "E1PartialMoveInOneArmOfReturnedIf",
 			src: `
-				fn go(c: boolean, p: {a: {x: number}}) {
+				fn go(c: boolean, p: {a: {x: number}}) -> {x: number} | {a: {x: number}} {
 					return if c { p.a } else { p }
 				}
 			`,
@@ -109,7 +109,7 @@ func TestOwnershipDataflow(t *testing.T) {
 		{
 			name: "E1MoveInEachArmOfReturnedMatch",
 			src: `
-				fn go(c: boolean, p: {a: {x: number}}) {
+				fn go(c: boolean, p: {a: {x: number}}) -> {a: {x: number}} {
 					return match c {
 						true => p,
 						false => p,
@@ -120,7 +120,7 @@ func TestOwnershipDataflow(t *testing.T) {
 		{
 			name: "E1MoveInEachArmOfIfBoundThenReturned",
 			src: `
-				fn go(c: boolean, p: {a: {x: number}}) {
+				fn go(c: boolean, p: {a: {x: number}}) -> {a: {x: number}} {
 					val r = if c { p } else { p }
 					return r
 				}
@@ -129,7 +129,7 @@ func TestOwnershipDataflow(t *testing.T) {
 		{
 			name: "E1ReturnInEachArmOfIf",
 			src: `
-				fn go(c: boolean, p: {a: {x: number}}) {
+				fn go(c: boolean, p: {a: {x: number}}) -> {a: {x: number}} {
 					if c {
 						return p
 					} else {
@@ -142,7 +142,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			// The first arm moves p twice on one path, so E1 still rejects it.
 			name: "E1DoubleMoveInOneArmOfReturnedIf",
 			src: `
-				fn go(c: boolean, p: {a: {x: number}}) {
+				fn go(c: boolean, p: {a: {x: number}}) -> [{a: {x: number}}, {a: {x: number}}] | {a: {x: number}} {
 					return if c { [p, p] } else { p }
 				}
 			`,
@@ -151,7 +151,7 @@ func TestOwnershipDataflow(t *testing.T) {
 		{
 			name: "E1MoveInLoop",
 			src: `
-				fn go(items: Array<number>) {
+				fn go(items: Array<number>) -> undefined {
 					val p = {x: 1}
 					for item in items {
 						val q = p
@@ -194,7 +194,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			// check go after it.
 			name: "E1BesideBodyWithoutEvents",
 			src: `
-				fn noop() {}
+				fn noop() -> undefined {}
 
 				fn go() -> number {
 					val p = {x: 1}
@@ -557,7 +557,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			name: "E3StoreOfAReadingClosureIntoAGlobal",
 			src: `
 				var sink: 'static fn () -> number = fn () { return 0 }
-				fn go() {
+				fn go() -> undefined {
 					val p = {x: 1}
 					sink = fn () { return p.x }
 				}
@@ -570,7 +570,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			src: `
 				var sink: 'static fn () -> number = fn () { return 0 }
 				declare fn take(x: {x: number}) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					val p = {x: 1}
 					sink = fn () { return p.x }
 					take(p)
@@ -582,7 +582,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			// One return that names the closure twice moves its capture once.
 			name: "ReturnOfAClosureTwiceInOneValue",
 			src: `
-				fn go() {
+				fn go() -> [fn () -> 1, fn () -> 1] {
 					val p = {x: 1}
 					val f = fn () { return p.x }
 					return [f, f]
@@ -593,7 +593,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			// The return of f moves p while `a` still borrows it for the returned tuple.
 			name: "E3ReturnOfAClosureBesideABorrowOfItsCapture",
 			src: `
-				fn go() {
+				fn go() -> [fn () -> 1, {x: 1}] {
 					val p = {x: 1}
 					val f = fn () { return p.x }
 					val a = &p
@@ -653,7 +653,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			src: `
 				declare fn take(p: {x: number}) -> number
 				var sink: 'static fn () -> number = fn () { return 0 }
-				fn go() {
+				fn go() -> undefined {
 					val p = {x: 1}
 					val r = &p
 					val f = fn () { return r.x }
@@ -671,7 +671,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			src: `
 				declare fn take(p: {x: number}) -> number
 				declare fn read(a: &{x: number}) -> number
-				fn go() {
+				fn go() -> undefined {
 					val p = {x: 1}
 					val a = &p
 					val f = fn () { return p.x }
@@ -690,7 +690,7 @@ func TestOwnershipDataflow(t *testing.T) {
 					x: number,
 					readWith(&self, w: &mut R) -> undefined {},
 				}
-				fn go() {
+				fn go() -> undefined {
 					val mut p = R(1)
 					p.readWith(&mut p)
 				}
@@ -728,7 +728,7 @@ func TestOwnershipDataflow(t *testing.T) {
 		{
 			name: "ClosureMovingAFieldPartiallyMovesTheLocal",
 			src: `
-				fn go() {
+				fn go() -> undefined {
 					val p = {a: {x: 1}, b: {x: 2}}
 					val f = fn () {
 						val q = p.a
@@ -770,7 +770,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			// move rather than a move of the whole tuple.
 			name: "TupleElementsMovedOnDifferentPathsArePartialMoves",
 			src: `
-				fn go(cond: boolean) {
+				fn go(cond: boolean) -> undefined {
 					val t = [{x: 1}, {x: 2}, {x: 3}]
 					if cond {
 						val [a, {}, {}] = t
@@ -903,7 +903,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			// and not h.
 			name: "CopyOutOfAMutablyBorrowedSlotOk",
 			src: `
-				fn go() {
+				fn go() -> undefined {
 					val x = {v: 1}
 					val mut h: {s: &{v: number}} = {s: &x}
 					val r = &mut h
@@ -957,7 +957,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			// borrows, so the pass also reports E2 at the store into q.
 			name: "E2AtEachStoreOfAPair",
 			src: `
-				fn f(p: &mut {r: {x: &{v: number}, y: &{v: number}}}, q: &mut {r: &mut {v: number}}) {
+				fn f(p: &mut {r: {x: &{v: number}, y: &{v: number}}}, q: &mut {r: &mut {v: number}}) -> undefined {
 					val mut b = {x: {v: 1}, y: {v: 2}}
 					val a = &mut b.x
 					p.r = {x: &b.x, y: &b.y}
@@ -975,7 +975,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			// the pair by E2.
 			name: "SharedPathsInOneLiteralReportedByE2",
 			src: `
-				fn build() {
+				fn build() -> {p: &mut {n: number}, q: &{n: number}} {
 					val mut b = {x: {n: 1}, y: {n: 2}}
 					val t = {p: &mut b.x, q: &b.x}
 					return t
@@ -1013,7 +1013,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			name: "E2InsideAReturnAfterACallReadAnotherLocal",
 			src: `
 				declare fn take(x: {peer: &{n: number}}) -> undefined
-				fn build() {
+				fn build() -> [{n: number}, &{n: number}, &mut {n: number}] {
 					val mut b = {n: 1}
 					val mut c = {n: 3}
 					take({peer: &b})
@@ -1028,7 +1028,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			name: "E2MixedUnionArgumentAfterAnImmutableOne",
 			src: `
 				declare fn readWrite(a: &{x: number}, b: &mut {x: number} | &{x: number}) -> undefined
-				fn go(m: &mut {x: number} | &{x: number}) {
+				fn go(m: &mut {x: number} | &{x: number}) -> undefined {
 					readWrite(m, m)
 				}
 			`,
@@ -1038,7 +1038,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			name: "E2MixedUnionArgumentBeforeAnImmutableOne",
 			src: `
 				declare fn writeRead(a: &mut {x: number} | &{x: number}, b: &{x: number}) -> undefined
-				fn go(m: &mut {x: number} | &{x: number}) {
+				fn go(m: &mut {x: number} | &{x: number}) -> undefined {
 					writeRead(m, m)
 				}
 			`,
@@ -1050,7 +1050,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			name: "E2ImmutableArgumentAfterAMutableCopyOfAParameter",
 			src: `
 				declare fn writeRead(a: &mut {x: number}, b: &{x: number}) -> undefined
-				fn go(m: &mut {x: number}) {
+				fn go(m: &mut {x: number}) -> undefined {
 					writeRead(m, m)
 				}
 			`,
@@ -1060,7 +1060,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			name: "E2ImmutableArgumentAfterAMutableCopyOfALocalBorrow",
 			src: `
 				declare fn writeRead(a: &mut {x: number}, b: &{x: number}) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					val mut x = {x: 1}
 					val m = &mut x
 					writeRead(m, m)
@@ -1087,7 +1087,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			// from p's loan however many times the loop runs, so the pass reaches a fixed point.
 			name: "StaticSelfCopyInALoopOk",
 			src: `
-				fn go(p: &'static {x: number}, items: Array<number>) {
+				fn go(p: &'static {x: number}, items: Array<number>) -> undefined {
 					var a: &'static {x: number} = p
 					for item in items {
 						a = a
@@ -1100,7 +1100,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			// borrow a holds. The pass reports the conflict once, at `&mut b`.
 			name: "E2AtABorrowBothStoresHandOut",
 			src: `
-				fn f(p: &mut {r: &{v: number}}, q: &mut {s: &mut {v: number}}) {
+				fn f(p: &mut {r: &{v: number}}, q: &mut {s: &mut {v: number}}) -> undefined {
 					val mut b = {v: 1}
 					val a = &b
 					val c = &mut b
@@ -1115,7 +1115,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			// write.
 			name: "StaticBorrowInATypedLiteral",
 			src: `
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {x: 1}
 					val o: {f: &'static {x: number}} = {f: &p}
 					p.x = 2
@@ -1127,7 +1127,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			// The pattern's annotation is `'static`, so the leaf d borrows p.f for `'static`.
 			name: "StaticBorrowInAnAnnotatedPattern",
 			src: `
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {f: {x: 1}}
 					val {f: d}: &'static {f: {x: number}} = &p
 					p.f.x = 2
@@ -1139,7 +1139,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			// The annotation gives each element of the array literal a `'static` borrow.
 			name: "StaticBorrowInATypedArrayLiteral",
 			src: `
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {x: 1}
 					val a: Array<&'static {x: number}> = [&p]
 					p.x = 2
@@ -1151,7 +1151,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			// The element type is `'static`, so the stored borrow stays live after the store.
 			name: "StaticBorrowStoredIntoAnElement",
 			src: `
-				fn go(arr: &mut Array<&'static mut {x: number}>) {
+				fn go(arr: &mut Array<&'static mut {x: number}>) -> undefined {
 					val mut p = {x: 1}
 					arr[0] = &mut p
 					val r = &p
@@ -1164,7 +1164,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			// reading arr.
 			name: "BorrowStoredIntoAnElementEndsOk",
 			src: `
-				fn go(arr: &mut Array<&mut {x: number}>) {
+				fn go(arr: &mut Array<&mut {x: number}>) -> undefined {
 					val mut p = {x: 1}
 					arr[0] = &mut p
 					val r = &p
@@ -1181,7 +1181,7 @@ func TestOwnershipDataflow(t *testing.T) {
 					len(&self) -> number { return self.n },
 					push(&mut self, x: number) -> undefined {},
 				}
-				fn go() {
+				fn go() -> undefined {
 					val mut v = V(1)
 					v.push(v.len())
 				}
@@ -1196,7 +1196,7 @@ func TestOwnershipDataflow(t *testing.T) {
 					x: number,
 					writeRead(&mut self, r: &R) -> undefined {},
 				}
-				fn go() {
+				fn go() -> undefined {
 					val mut p = R(1)
 					p.writeRead(&p)
 				}
@@ -1222,7 +1222,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			src: `
 				declare fn pickMut<'a>(p: &'a mut {x: number}) -> &'a mut {x: number}
 				declare fn both(m: &mut {x: number}, r: &{x: number}) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					val mut a = {x: 1}
 					both(pickMut(&mut a), &a)
 				}
@@ -1250,7 +1250,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			// that `c.peer` holds.
 			name: "WritingASiblingFieldKeepsTheLoan",
 			src: `
-				fn go() {
+				fn go() -> undefined {
 					val mut d = {value: 1}
 					val mut e = {value: 2}
 					val mut g = {value: 3}
@@ -1268,7 +1268,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			// iteration stored, and the caller reads `p.r` once f returns.
 			name: "WriteAfterAStoreOnAnEarlierIterationConflicts",
 			src: `
-				fn f(p: &mut {r: &{value: number}}, xs: [number]) {
+				fn f(p: &mut {r: &{value: number}}, xs: [number]) -> undefined {
 					val mut b = {value: 1}
 					for x in xs {
 						b.value = x
@@ -1283,7 +1283,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			// the borrow of b.
 			name: "WriteAfterAYieldAndARepointConflicts",
 			src: `
-				gen fn f(p: &mut {r: &{value: number}}) {
+				gen fn f(p: &mut {r: &{value: number}}) -> Generator<1, undefined, unknown> {
 					val mut b = {value: 1}
 					val c = {value: 2}
 					p.r = &b
@@ -1298,7 +1298,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			// Without a `yield`, the repoint ends the borrow of b before the write.
 			name: "WriteAfterARepointOk",
 			src: `
-				gen fn f(p: &mut {r: &{value: number}}) {
+				gen fn f(p: &mut {r: &{value: number}}) -> Generator<1, undefined, unknown> {
 					val mut b = {value: 1}
 					val c = {value: 2}
 					p.r = &b
@@ -1314,7 +1314,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			name: "BorrowAfterAStaticBorrowInALiteralArgumentConflicts",
 			src: `
 				declare fn take(x: [&'static mut {value: number}]) -> undefined
-				fn f() {
+				fn f() -> undefined {
 					val mut b = {value: 2}
 					take([&mut b])
 					val c = &b
@@ -1327,7 +1327,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			// borrow stays live after it.
 			name: "WriteAfterAYieldConflicts",
 			src: `
-				gen fn f(p: &mut {r: &{value: number}}) {
+				gen fn f(p: &mut {r: &{value: number}}) -> Generator<1, undefined, unknown> {
 					val mut b = {value: 1}
 					p.r = &b
 					yield 1
@@ -1419,7 +1419,7 @@ func TestOwnershipDataflow(t *testing.T) {
 					len(&self) -> number { return self.n },
 					push(&mut self, x: number) -> undefined {},
 				}
-				fn go() {
+				fn go() -> undefined {
 					val mut v = V(1)
 					val r = &v
 					v.push(r.len())
@@ -1466,7 +1466,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			// even though the write comes before the `yield`.
 			name: "WriteBeforeAYieldConflicts",
 			src: `
-				gen fn f(p: &mut {r: &{value: number}}) {
+				gen fn f(p: &mut {r: &{value: number}}) -> Generator<1, undefined, unknown> {
 					val mut b = {value: 1}
 					p.r = &b
 					b.value = 5
@@ -1845,7 +1845,7 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 			name: "ClosureArgumentBesideAnImmutableBorrow",
 			src: `
 				declare fn run(a: &{v: number}, f: fn () -> undefined) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					val mut x = {v: 1}
 					val a = &x
 					run(a, fn () { x.v = 5 })
@@ -1868,7 +1868,7 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 		{
 			name: "WriteAfterMoveBlamesTheMovedPlace",
 			src: `
-				fn go(mut p: {x: number}) {
+				fn go(mut p: {x: number}) -> undefined {
 					val q: {x: number} = p
 					p.x = 5
 					q.x
@@ -1880,7 +1880,7 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 			name: "BorrowAfterMoveBlamesTheOperand",
 			src: `
 				declare fn sink(p: {x: number}) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					val a = {x: 1}
 					sink(a)
 					val r = &a
@@ -1920,7 +1920,7 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 		{
 			name: "DestructuringInALoopNamesTheMovedField",
 			src: `
-				fn go() {
+				fn go() -> undefined {
 					val p = {f: {x: 1}}
 					for i in [1, 2] {
 						val {f: d} = p
@@ -1932,7 +1932,7 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 		{
 			name: "TupleWithEveryElementMovedIsMoved",
 			src: `
-				fn go() {
+				fn go() -> undefined {
 					val b = [{v: 1}, {v: 2}]
 					val [x, y] = b
 					val z = b
@@ -1943,7 +1943,7 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 		{
 			name: "TupleRestMovesTheTuple",
 			src: `
-				fn go() {
+				fn go() -> undefined {
 					val b = [{v: 1}, {v: 2}]
 					val [x, ...rest] = b
 					val z = b
@@ -1956,7 +1956,7 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 			// reported once.
 			name: "TupleDestructuredInALoopReportsOnce",
 			src: `
-				fn go() {
+				fn go() -> undefined {
 					val b = [{x: 1}, {x: 2}]
 					for i in [1, 2] {
 						val [x, y] = b
@@ -1983,7 +1983,7 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 			name: "WriteThroughADynamicIndexAfterMoveBlamesTheElement",
 			src: `
 				declare fn sink(p: Array<{x: number}>) -> undefined
-				fn go(i: number) {
+				fn go(i: number) -> undefined {
 					val mut xs: Array<{x: number}> = [{x: 1}]
 					sink(xs)
 					xs[i].x = 2
@@ -1996,7 +1996,7 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 			name: "WriteToAMovedPlaceReportsOnlyTheMove",
 			src: `
 				declare fn sink(p: {x: number}) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					val mut a: {x: number} = {x: 1}
 					sink(a)
 					val snapshot: &{x: number} = &a
@@ -2014,7 +2014,7 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 			name: "WriteToAPlaceMovedOnOneBranchReportsOnlyTheMove",
 			src: `
 				declare fn sink(p: {x: number}) -> undefined
-				fn go(cond: boolean) {
+				fn go(cond: boolean) -> undefined {
 					val mut a: {x: number} = {x: 1}
 					if cond {
 						sink(a)
@@ -2070,7 +2070,7 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 		{
 			name: "MissingBorrowInABranchReportsOnce",
 			src: `
-				fn go() {
+				fn go() -> undefined {
 					val mut items: {x: number} = {x: 1}
 					val snapshot: &{x: number} = do { items }
 					items.x = 2
@@ -2083,7 +2083,7 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 			// The rest element is rejected, so the pattern moves nothing out of p.
 			name: "RejectedRestPatternMovesNothing",
 			src: `
-				fn go(p: {x: number, y: string}) {
+				fn go(p: {x: number, y: string}) -> [never, string] {
 					val {...rest, x} = p
 					return [rest, p.y]
 				}
@@ -2127,7 +2127,7 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 			name: "CopiedBorrowConflictsAtTheCall",
 			src: `
 				declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val a = &x
 					val c = a
@@ -2168,7 +2168,7 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 			name: "ReassignedCopyHoldsTheLoan",
 			src: `
 				declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val mut y = {v: 2}
 					val a = &x
@@ -2184,7 +2184,7 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 			// `a = a` leaves a holding the loan of x.
 			name: "SelfAssignmentKeepsTheLoan",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					var a: &{v: number} = &x
 					a = a
@@ -2199,7 +2199,7 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 			// there, so moving d is accepted.
 			name: "RepointingAFieldOfACopyEndsItsLoan",
 			src: `
-				fn go() {
+				fn go() -> undefined {
 					val mut d = {value: 1}
 					val mut e = {value: 2}
 					val b = {peer: &mut d, other: &mut e}
@@ -2299,7 +2299,7 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 			name: "MoveOfABindingDeclaredInALoopOk",
 			src: `
 				declare fn take(q: {x: number}) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					for i in [1, 2] {
 						val q = {x: 1}
 						take(q)
@@ -2312,7 +2312,7 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 			name: "MoveOfABranchingDeclarationInALoopOk",
 			src: `
 				declare fn take(q: {x: number}) -> undefined
-				fn go(c: boolean) {
+				fn go(c: boolean) -> undefined {
 					for i in [1, 2] {
 						val q = if c { {x: 1} } else { {x: 2} }
 						take(q)
@@ -2325,7 +2325,7 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 			name: "MoveOfABindingDeclaredOutsideALoop",
 			src: `
 				declare fn take(q: {x: number}) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					val q = {x: 1}
 					for i in [1, 2] {
 						take(q)
@@ -2341,7 +2341,7 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 			src: `
 				var sink: 'static fn () -> number = fn () { return 0 }
 				declare fn take(x: {x: number}) -> undefined
-				fn go(c: boolean) {
+				fn go(c: boolean) -> (fn () -> 1) | (fn () -> 0) {
 					val p = {x: 1}
 					val f = fn () { return p.x }
 					sink = f

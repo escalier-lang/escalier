@@ -64,7 +64,7 @@ func TestInferTypeParamDefaultAtCall(t *testing.T) {
 		{
 			// `g` generalizes over the call, and each use instantiates the default again.
 			name:    "ThroughAGeneralizedFunction",
-			src:     "declare fn make<T = number>() -> Array<T>\nfn g() { return make() }\nval r = g()",
+			src:     "declare fn make<T = number>() -> Array<T>\nfn g() -> Array<number> { return make() }\nval r = g()",
 			binding: "r",
 			want:    "Array<number>",
 		},

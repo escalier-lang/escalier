@@ -187,42 +187,42 @@ func TestVariadicTupleInference(t *testing.T) {
 	}{
 		{
 			name: "FixedElementBeforeASpread",
-			src:  `fn f(xs: Array<number>) { return [0, ...xs] }`,
+			src:  `fn f(xs: Array<number>) -> [0, ...Array<number>] { return [0, ...xs] }`,
 			want: "fn (xs: Array<number>) -> [0, ...Array<number>]",
 		},
 		{
 			name: "SpreadAlone",
-			src:  `fn f(xs: Array<number>) { return [...xs] }`,
+			src:  `fn f(xs: Array<number>) -> Array<number> { return [...xs] }`,
 			want: "fn (xs: Array<number>) -> Array<number>",
 		},
 		{
 			name: "FixedElementAfterASpread",
-			src:  `fn f(xs: Array<number>) { return [...xs, "z"] }`,
+			src:  `fn f(xs: Array<number>) -> [...Array<number>, "z"] { return [...xs, "z"] }`,
 			want: `fn (xs: Array<number>) -> [...Array<number>, "z"]`,
 		},
 		{
 			name: "TwoSpreadsShareOneMiddle",
-			src:  `fn f(xs: Array<number>, ys: Array<string>) { return [0, ...xs, 1, ...ys, true] }`,
+			src:  `fn f(xs: Array<number>, ys: Array<string>) -> [0, ...Array<number | string>, true] { return [0, ...xs, 1, ...ys, true] }`,
 			want: "fn (xs: Array<number>, ys: Array<string>) -> [0, ...Array<number | string>, true]",
 		},
 		{
 			name: "SpreadAVariadicTuple",
-			src:  `fn f(t: [number, ...Array<string>]) { return [...t, true] }`,
+			src:  `fn f(t: [number, ...Array<string>]) -> [number, ...Array<string>, true] { return [...t, true] }`,
 			want: "fn (t: [number, ...Array<string>]) -> [number, ...Array<string>, true]",
 		},
 		{
 			name: "SpreadALeadingVariadicTuple",
-			src:  `fn f(t: [...Array<string>, number]) { return [0, ...t] }`,
+			src:  `fn f(t: [...Array<string>, number]) -> [0, ...Array<string>, number] { return [0, ...t] }`,
 			want: "fn (t: [...Array<string>, number]) -> [0, ...Array<string>, number]",
 		},
 		{
 			name: "IndexALeadingVariadicTuple",
-			src:  `fn f(t: [...Array<string>, number]) { return t[0] }`,
+			src:  `fn f(t: [...Array<string>, number]) -> number | string { return t[0] }`,
 			want: "fn (t: [...Array<string>, number]) -> number | string",
 		},
 		{
 			name: "IterateAVariadicTuple",
-			src: `fn f(t: [number, ...Array<string>]) {
+			src: `fn f(t: [number, ...Array<string>]) -> number | string {
 				var r: number | string = 0
 				for x in t { r = x }
 				return r
@@ -231,7 +231,7 @@ func TestVariadicTupleInference(t *testing.T) {
 		},
 		{
 			name: "RestAfterThePrefix",
-			src: `fn f(t: [number, ...Array<string>, boolean]) {
+			src: `fn f(t: [number, ...Array<string>, boolean]) -> [number, [...Array<string>, boolean]] {
 				val [a, ...rest] = t
 				return [a, rest]
 			}`,
@@ -239,7 +239,7 @@ func TestVariadicTupleInference(t *testing.T) {
 		},
 		{
 			name: "LengthReadsOffArray",
-			src: `fn f(xs: Array<number>) {
+			src: `fn f(xs: Array<number>) -> number {
 				val ys = [0, ...xs]
 				return ys.length
 			}`,
@@ -247,7 +247,7 @@ func TestVariadicTupleInference(t *testing.T) {
 		},
 		{
 			name: "IndexInsideThePrefix",
-			src: `fn f(xs: Array<number>) {
+			src: `fn f(xs: Array<number>) -> "a" {
 				val ys = ["a", ...xs]
 				return ys[0]
 			}`,
@@ -255,7 +255,7 @@ func TestVariadicTupleInference(t *testing.T) {
 		},
 		{
 			name: "IndexPastThePrefix",
-			src: `fn f(xs: Array<number>) {
+			src: `fn f(xs: Array<number>) -> "a" | number {
 				val ys = ["a", ...xs]
 				return ys[1]
 			}`,
@@ -263,7 +263,7 @@ func TestVariadicTupleInference(t *testing.T) {
 		},
 		{
 			name: "MemberOfAUnionOfVariadicTuples",
-			src: `fn f(xs: Array<number>, c: boolean) {
+			src: `fn f(xs: Array<number>, c: boolean) -> number {
 				val r = if c { [0, ...xs] } else { ["a", ...xs] }
 				return r.length
 			}`,
@@ -271,17 +271,17 @@ func TestVariadicTupleInference(t *testing.T) {
 		},
 		{
 			name: "SpreadAnInexactVariadicTupleLast",
-			src:  `fn f(t: [number, ...Array<string>, ...]) { return [...t] }`,
+			src:  `fn f(t: [number, ...Array<string>, ...]) -> [number, ...Array<string>, ...] { return [...t] }`,
 			want: "fn (t: [number, ...Array<string>, ...]) -> [number, ...Array<string>, ...]",
 		},
 		{
 			name: "SpreadAnInexactVariadicTupleBeforeAnIterable",
-			src:  `fn f(t: [number, ...Array<string>, ...], xs: Array<boolean>) { return [...t, ...xs] }`,
+			src:  `fn f(t: [number, ...Array<string>, ...], xs: Array<boolean>) -> [number, ...Array<unknown>] { return [...t, ...xs] }`,
 			want: "fn (t: [number, ...Array<string>, ...], xs: Array<boolean>) -> [number, ...Array<unknown>]",
 		},
 		{
 			name: "RestInAMatchArm",
-			src:  `fn f(t: [number, ...Array<string>]) { return match t { [_, ...rest] => rest } }`,
+			src:  `fn f(t: [number, ...Array<string>]) -> Array<string> { return match t { [_, ...rest] => rest } }`,
 			want: "fn (t: [number, ...Array<string>]) -> Array<string>",
 		},
 	}
@@ -297,9 +297,9 @@ func TestVariadicTupleInference(t *testing.T) {
 // TestVariadicTupleInexactSpreadNotLast asserts that an inexact variadic tuple spread before
 // another element is rejected, since its open tail leaves no position for what follows.
 func TestVariadicTupleInexactSpreadNotLast(t *testing.T) {
-	_, _, errs := inferSource(t, `fn f(t: [number, ...Array<string>, ...]) { return [...t, 1] }`)
+	_, _, errs := inferSource(t, `fn f(t: [number, ...Array<string>, ...]) -> [1] { return [...t, 1] }`)
 	require.Equal(t, []string{
-		"1:52-1:56: cannot spread an inexact tuple except as the last element",
+		"1:59-1:63: cannot spread an inexact tuple except as the last element",
 	}, messagesWithSpan(t, errs))
 }
 

@@ -195,7 +195,7 @@ func TestOwnershipEventsCheckingModel(t *testing.T) {
 		{
 			name: "ReturnedClosureOwnsCapture",
 			src: `
-				fn go() {
+				fn go() -> fn () -> 1 {
 					val p = {x: 1}
 					return fn () { return p.x }
 				}
@@ -233,7 +233,7 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 		{
 			name: "DestructureOwned",
 			src: `
-				fn go() {
+				fn go() -> [{x: 1}, {y: 2}] {
 					val p = {a: {x: 1}, b: {y: 2}, n: 3}
 					val {a, n} = p
 					return [a, p.b]
@@ -249,7 +249,7 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 		{
 			name: "PatternOverMutableBorrow",
 			src: `
-				fn go(p: &mut {a: {x: number}, n: number}) {
+				fn go(p: &mut {a: {x: number}, n: number}) -> undefined {
 					val {a, n} = p
 					a.x = n
 				}
@@ -264,7 +264,7 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 		{
 			name: "LiteralElementsAndSpread",
 			src: `
-				fn go() {
+				fn go() -> {a: {x: 1}, b: {x: 2}, c: [{x: 3}], y: 4} {
 					val p = {x: 1}
 					val q = {x: 2}
 					val r = {x: 3}
@@ -282,7 +282,7 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 		{
 			name: "BranchValues",
 			src: `
-				fn go(c: boolean) {
+				fn go(c: boolean) -> {x: 1} | {x: 2} {
 					val p = {x: 1}
 					val q = {x: 2}
 					val r = if c { p } else { q }
@@ -299,7 +299,7 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 		{
 			name: "Stores",
 			src: `
-				fn go(mut o: {a: {x: number}}) {
+				fn go(mut o: {a: {x: number}}) -> {x: number} {
 					val q = {x: 1}
 					o.a = q
 					var r = {x: 2}
@@ -325,7 +325,7 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 					set(&mut self) -> undefined { self.x = 1 },
 					take(self) -> number { return self.x },
 				}
-				fn go(mut c: C) {
+				fn go(mut c: C) -> undefined {
 					c.get()
 					c.set()
 					c.take()
@@ -340,7 +340,7 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 		{
 			name: "MatchArmsInReturn",
 			src: `
-				fn go(p: {v: {x: number}, n: number}) {
+				fn go(p: {v: {x: number}, n: number}) -> number {
 					return match p {
 						{v} if v.x > 0 => v.x,
 						{n} => n,
@@ -358,7 +358,7 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 		{
 			name: "MatchArmBlocks",
 			src: `
-				fn go(p: {v: {x: number}, n: number}) {
+				fn go(p: {v: {x: number}, n: number}) -> {x: number} {
 					val r = match p {
 						{v} if v.x > 0 => {
 							v
@@ -384,7 +384,7 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 			// so the argument flows by the signature's owned parameter.
 			name: "CallThroughCallSignature",
 			src: `
-				fn go(f: {(p: {x: number}) -> undefined}) {
+				fn go(f: {(p: {x: number}) -> undefined}) -> undefined {
 					val o = {x: 1}
 					f(o)
 				}
@@ -419,7 +419,7 @@ func TestOwnershipEventsFlowSites(t *testing.T) {
 		{
 			name: "IfVal",
 			src: `
-				fn go(p: {v: {x: number}} | undefined) {
+				fn go(p: {v: {x: number}} | undefined) -> number {
 					if val {v} = p {
 						return v.x
 					}
@@ -443,7 +443,7 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 		{
 			name: "ClosureWritingCaptureBorrowsMutably",
 			src: `
-				fn go() {
+				fn go() -> {x: number} {
 					val mut p = {x: 1}
 					val f = fn () { p.x = 2 }
 					f()
@@ -459,7 +459,7 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 		{
 			name: "ClosureArgumentBorrowsCapture",
 			src: `
-				fn go(xs: Array<number>) {
+				fn go(xs: Array<number>) -> Array<number> {
 					val p = {x: 1}
 					return xs.map(fn (v, i, a) { return v + p.x })
 				}
@@ -473,7 +473,7 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 			name: "ClosureStoredInModuleBorrowsCaptureForStatic",
 			src: `
 				var handler: 'static fn () -> number = fn () { return 0 }
-				fn go() {
+				fn go() -> undefined {
 					val p = {x: 1}
 					handler = fn () { return p.x }
 				}
@@ -487,7 +487,7 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 			name: "WritingClosureStoredInModuleBorrowsCaptureMutably",
 			src: `
 				var handler: 'static fn () -> undefined = fn () {}
-				fn go() {
+				fn go() -> undefined {
 					val mut p = {x: 1}
 					handler = fn () { p.x = 2 }
 				}
@@ -501,7 +501,7 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 			name: "ClosureStoredInModuleThroughLocalBorrowsCaptureForStatic",
 			src: `
 				var handler: 'static fn () -> number = fn () { return 0 }
-				fn go() {
+				fn go() -> undefined {
 					val p = {x: 1}
 					val f = fn () { return p.x }
 					handler = f
@@ -516,7 +516,7 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 		{
 			name: "ClosureReturnedWhereWrittenOwnsCapture",
 			src: `
-				fn go() {
+				fn go() -> fn () -> 1 {
 					val p = {x: 1}
 					return fn () { return p.x }
 				}
@@ -545,7 +545,7 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 		{
 			name: "ClosureReturnedOnOneBranchMovesCaptureThere",
 			src: `
-				fn go(c: boolean) {
+				fn go(c: boolean) -> (fn () -> 1) | (fn () -> 0) {
 					val p = {x: 1}
 					val f = fn () { return p.x }
 					if c {
@@ -564,7 +564,7 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 		{
 			name: "ClosureReturnedInLiteralMovesCaptureAtReturn",
 			src: `
-				fn go() {
+				fn go() -> {h: fn () -> 1} {
 					val p = {x: 1}
 					val f = fn () { return p.x }
 					return {h: f}
@@ -596,7 +596,7 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 		{
 			name: "ReturnedClosureDoesNotMoveABorrowedCapture",
 			src: `
-				fn go(p: &{x: number}) {
+				fn go(p: &{x: number}) -> fn () -> number {
 					val f = fn () { return p.x }
 					return f
 				}
@@ -766,7 +766,7 @@ func TestOwnershipEventsPatterns(t *testing.T) {
 		{
 			name: "TupleWithRest",
 			src: `
-				fn go(t: [{x: number}, {y: number}, {z: number}]) {
+				fn go(t: [{x: number}, {y: number}, {z: number}]) -> [{x: number}, {y: number}, {z: number}] {
 					val [a, ...rest] = t
 					val [b, c] = rest
 					return [a, b, c]
@@ -785,7 +785,7 @@ func TestOwnershipEventsPatterns(t *testing.T) {
 		{
 			name: "ObjectWithRest",
 			src: `
-				fn go() {
+				fn go() -> [{x: 1}, {b: {y: 2}, c: {z: 3}}] {
 					val o = {a: {x: 1}, b: {y: 2}, c: {z: 3}}
 					val {a, ...rest} = o
 					return [a, rest]
@@ -803,7 +803,7 @@ func TestOwnershipEventsPatterns(t *testing.T) {
 			name: "Extractor",
 			src: `
 				enum Opt { Some(v: {x: number}), None }
-				fn go(o: Opt) {
+				fn go(o: Opt) -> {x: number} {
 					val r = match o {
 						Opt.Some(v) => v,
 						Opt.None => ({x: 0}),
@@ -830,7 +830,7 @@ func TestOwnershipEventsMatchArmNodes(t *testing.T) {
 			name: "ArmBodies",
 			src: `
 				fn take(p: {x: number}) -> number { return p.x }
-				fn go(c: boolean) {
+				fn go(c: boolean) -> number {
 					val p = {x: 1}
 					val q = {x: 2}
 					var y = 0
@@ -884,7 +884,7 @@ func TestOwnershipEventsUnionSources(t *testing.T) {
 		{
 			name: "OwnedOrNull",
 			src: `
-				fn go(p: {x: number} | null) {
+				fn go(p: {x: number} | null) -> {x: number} | null {
 					val q = p
 					return q
 				}
@@ -897,7 +897,7 @@ func TestOwnershipEventsUnionSources(t *testing.T) {
 		{
 			name: "BorrowOrUndefined",
 			src: `
-				fn go(r: &{x: number} | undefined) {
+				fn go(r: &{x: number} | undefined) -> &{x: number} | undefined {
 					val q = r
 					return q
 				}
@@ -920,8 +920,8 @@ func TestOwnershipEventsBranchInsideExpression(t *testing.T) {
 		{
 			name: "IfInTupleElement",
 			src: `
-				fn log() {}
-				fn go(c: boolean) {
+				fn log() -> undefined {}
+				fn go(c: boolean) -> [{x: 1} | {x: 2}, {x: 3}] {
 					val p = {x: 1}
 					val q = {x: 2}
 					val r = {x: 3}
@@ -951,7 +951,7 @@ func TestOwnershipEventsBorrowTypes(t *testing.T) {
 			name: "AliasOfBorrowBinding",
 			src: `
 				type R = &{x: number}
-				fn go(s: R) {
+				fn go(s: R) -> R {
 					val p: R = s
 					return p
 				}
@@ -965,7 +965,7 @@ func TestOwnershipEventsBorrowTypes(t *testing.T) {
 			name: "AliasOfBorrowRestField",
 			src: `
 				type R = &{x: number}
-				fn go(o: {a: {x: number}, b: R}) {
+				fn go(o: {a: {x: number}, b: R}) -> [{x: number}, {b: R}] {
 					val {a, ...rest} = o
 					return [a, rest]
 				}
@@ -1005,7 +1005,7 @@ func TestOwnershipEventsFieldWriteThroughOwnedBound(t *testing.T) {
 			src: `
 				val base = {x: 1}
 				var mut h: {f: &{x: number}} = {f: &base}
-				fn go() {
+				fn go() -> undefined {
 					val q = {x: 1}
 					h.f = q
 				}
@@ -1026,7 +1026,7 @@ func TestOwnershipEventsBracketPlace(t *testing.T) {
 		{
 			name: "DottedKey",
 			src: `
-				fn go() {
+				fn go() -> {x: 1} {
 					val o = {"a.b": {x: 1}}
 					val q = o["a.b"]
 					return q
@@ -1055,7 +1055,7 @@ func TestOwnershipEventsTupleParts(t *testing.T) {
 		{
 			name: "EveryElement",
 			src: `
-				fn go() {
+				fn go() -> undefined {
 					val b = [{v: 1}, {v: 2}]
 					val [x, y] = b
 				}
@@ -1065,7 +1065,7 @@ func TestOwnershipEventsTupleParts(t *testing.T) {
 		{
 			name: "RestElement",
 			src: `
-				fn go() {
+				fn go() -> undefined {
 					val b = [{v: 1}, {v: 2}, {v: 3}]
 					val [x, ...rest] = b
 				}
@@ -1075,7 +1075,7 @@ func TestOwnershipEventsTupleParts(t *testing.T) {
 		{
 			name: "TooShort",
 			src: `
-				fn go() {
+				fn go() -> undefined {
 					val b = [{v: 1}, {v: 2}]
 					val [x] = b
 				}
@@ -1085,7 +1085,7 @@ func TestOwnershipEventsTupleParts(t *testing.T) {
 		{
 			name: "Array",
 			src: `
-				fn go(arr: Array<{v: number}>) {
+				fn go(arr: Array<{v: number}>) -> undefined {
 					val [x, y] = arr
 				}
 			`,
@@ -1094,7 +1094,7 @@ func TestOwnershipEventsTupleParts(t *testing.T) {
 		{
 			name: "MatchArmsSplitDifferently",
 			src: `
-				fn go(t: [{v: number}, {v: number}, {v: number}]) {
+				fn go(t: [{v: number}, {v: number}, {v: number}]) -> undefined {
 					val n = match t {
 						[a, b, c] => 1,
 						[a, ...rest] => 2,
@@ -1203,7 +1203,7 @@ func TestOwnershipEventsReceivers(t *testing.T) {
 					x: number,
 					readWith(&self, w: &mut R) -> undefined {},
 				}
-				fn go() {
+				fn go() -> undefined {
 					val mut p = R(1)
 					val mut q = R(2)
 					p.readWith(&mut q)

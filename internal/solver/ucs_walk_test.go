@@ -27,7 +27,7 @@ func TestMatchDiagnosticsNameTheMatch(t *testing.T) {
 		// for a branch, which is what a `match` is written out of.
 		"NonExhaustive": {
 			src: `
-				fn f(p: {x: number, ...}) {
+				fn f(p: {x: number, ...}) -> number {
 					return match p {
 						{x} => x
 					}
@@ -39,7 +39,7 @@ func TestMatchDiagnosticsNameTheMatch(t *testing.T) {
 		// wording applies.
 		"GuardedArmDoesNotCover": {
 			src: `
-				fn f(p: {x: number, ...}, b: boolean) {
+				fn f(p: {x: number, ...}, b: boolean) -> number {
 					return match p {
 						{x} if b => x
 					}
@@ -51,7 +51,7 @@ func TestMatchDiagnosticsNameTheMatch(t *testing.T) {
 		// non-exhaustive, and the message names the `match` as well as that member.
 		"UnionMemberUncovered": {
 			src: `
-				fn f(p: {x: number} | {y: string}) {
+				fn f(p: {x: number} | {y: string}) -> number {
 					return match p {
 						{x} => x
 					}
@@ -75,7 +75,7 @@ func TestMatchDiagnosticsNameTheMatch(t *testing.T) {
 // that continuation explicit, and the walk types the arm it reaches.
 func TestInferMatchGuardFallsIntoTheNextArm(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: {x: number}, b: boolean) {
+		fn f(p: {x: number}, b: boolean) -> "guarded" | "plain" {
 			return match p {
 				{x} if b => "guarded",
 				{x} => "plain"
@@ -99,7 +99,7 @@ func TestInferMatchTypesAFallthroughArmOnce(t *testing.T) {
 		// again as what the guard falls into. Its fault is in the body.
 		"CatchAllBody": {
 			src: `
-				fn f(p: {x: number}, b: boolean) {
+				fn f(p: {x: number}, b: boolean) -> 1 {
 					return match p {
 						{x} if b => 1,
 						other => other.missing
@@ -113,7 +113,7 @@ func TestInferMatchTypesAFallthroughArmOnce(t *testing.T) {
 		// recognizing the copy at the body alone would report it twice.
 		"CopiedTest": {
 			src: `
-				fn f(p: {x: number}, b: boolean) {
+				fn f(p: {x: number}, b: boolean) -> 1 | 2 {
 					return match p {
 						{x} if b => 1,
 						{y} => 2
@@ -126,7 +126,7 @@ func TestInferMatchTypesAFallthroughArmOnce(t *testing.T) {
 		// which the copy would emit a second time.
 		"CopiedTupleArity": {
 			src: `
-				fn f(t: [number, string], b: boolean) {
+				fn f(t: [number, string], b: boolean) -> 1 | 2 | 3 {
 					return match t {
 						[a, c] if b => 1,
 						[a, c, d] => 2,
@@ -173,8 +173,8 @@ func TestInferMatchArmBindingDoesNotEscape(t *testing.T) {
 // TestPathBinderMaterializesEachScrutineeOnce asserts on the solver side.
 func TestInferMatchInfersTheTargetOnce(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn g(s: string) { return {x: 1} }
-		fn f(b: boolean) {
+		fn g(s: string) -> {x: 1} { return {x: 1} }
+		fn f(b: boolean) -> 1 {
 			return match g(2) {
 				{x} if b => x,
 				{x} => x
@@ -189,7 +189,7 @@ func TestInferMatchInfersTheTargetOnce(t *testing.T) {
 // diverge coalesces to `never`.
 func TestInferMatchAllArmsDiverge(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(n: number) throws string {
+		fn f(n: number) -> never throws string {
 			val x = match n {
 				1 => throw "one",
 				_ => throw "other"
@@ -209,7 +209,7 @@ func TestInferMatchAllArmsDiverge(t *testing.T) {
 func TestInferMatchFallthroughKeepsTheMatchedTest(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class Point { x: number, y: number, static [Symbol.customMatcher](subject: Point) -> [number, number] { return [subject.x, subject.y] } }
-		fn f(p: Point, b: boolean) {
+		fn f(p: Point, b: boolean) -> number {
 			return match p {
 				Point(a, c) if b => 0,
 				Point(a, c) => a
@@ -226,7 +226,7 @@ func TestInferMatchFallthroughKeepsTheMatchedTest(t *testing.T) {
 // into is the shared term and takes no test.
 func TestInferMatchFallthroughKeepsTheTestPastAJoin(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: {x: number} | {y: string}, b: boolean, c: boolean) {
+		fn f(p: {x: number} | {y: string}, b: boolean, c: boolean) -> number {
 			return match p {
 				{x} if b => x,
 				{x} if c => x,
@@ -244,7 +244,7 @@ func TestInferMatchFallthroughKeepsTheTestPastAJoin(t *testing.T) {
 // the guarded arm tested.
 func TestInferMatchJoinPointInheritsNoTest(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: {x: number} | {y: string}, b: boolean) {
+		fn f(p: {x: number} | {y: string}, b: boolean) -> 0 | {x: number} | {y: string} {
 			return match p {
 				{x} if b => 0,
 				other => other
@@ -261,7 +261,7 @@ func TestInferMatchJoinPointInheritsNoTest(t *testing.T) {
 // arm's leaf against both members and report the field the other member lacks.
 func TestInferMatchNarrowsUnionAtEachLevel(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: {a: {x: number}} | {a: {y: string}}) {
+		fn f(p: {a: {x: number}} | {a: {y: string}}) -> number | string {
 			return match p {
 				{a: {x}} => x,
 				{a: {y}} => y
@@ -279,7 +279,7 @@ func TestInferMatchNarrowsUnionAtEachLevel(t *testing.T) {
 // dead arm directly above it, so the second one still names the arm that covers it.
 func TestInferMatchTypesArmsAfterACatchAll(t *testing.T) {
 	src := `
-		fn f(n: number) {
+		fn f(n: number) -> number {
 			return match n {
 				all => all,
 				1 => "one",
@@ -303,7 +303,7 @@ func TestInferMatchTypesArmsAfterACatchAll(t *testing.T) {
 // rather than going unchecked because the arm never reached the IR.
 func TestInferMatchReportsFaultsAfterACatchAll(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f(n: number) {
+		fn f(n: number) -> number {
 			return match n {
 				all => all,
 				1 => nope
@@ -329,7 +329,7 @@ func TestInferMatchUnreachableArmBlamesTheCoveringArm(t *testing.T) {
 // an arm that matches everything, so the arms below it draw no second message.
 func TestInferMatchBareRestDoesNotCoverLaterArms(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f(n: number) {
+		fn f(n: number) -> 1 {
 			return match n {
 				...rest => 1,
 				2 => 3
@@ -344,7 +344,7 @@ func TestInferMatchBareRestDoesNotCoverLaterArms(t *testing.T) {
 // stay reachable. Neither is reported.
 func TestInferMatchGuardedCatchAllLeavesLaterArmsReachable(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(n: number, b: boolean) {
+		fn f(n: number, b: boolean) -> number | "one" {
 			return match n {
 				all if b => all,
 				1 => "one",
@@ -363,7 +363,7 @@ func TestInferMatchGuardedCatchAllLeavesLaterArmsReachable(t *testing.T) {
 // naming the `[string]` member the pattern was never meant to match.
 func TestInferMatchUnreachableArmNarrowsItsScrutinee(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f(p: [number, number] | [string]) {
+		fn f(p: [number, number] | [string]) -> 0 {
 			return match p {
 				_ => 0,
 				[a, b] => a
@@ -387,7 +387,7 @@ func unreachableArm(line, startCol, endCol int) string {
 // types, so the walk's projections agree with what one whole pattern would have bound.
 func TestInferMatchNestedPatternBindsThroughProjections(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(l: {start: {x: number, y: string}}) {
+		fn f(l: {start: {x: number, y: string}}) -> [number, string] {
 			return match l {
 				{start: {x, y}} => [x, y]
 			}

@@ -24,7 +24,7 @@ func TestSharedReturnPaths(t *testing.T) {
 		// rather than by where they sit in the carrier.
 		"DisjointFieldsInATupleOk": {
 			src: `
-				fn build() {
+				fn build() -> [{n: number}, {n: number}] {
 					val mut b = {x: {n: 1}, y: {n: 2}}
 					val t = [&mut b.x, &mut b.y]
 					return t
@@ -38,7 +38,7 @@ func TestSharedReturnPaths(t *testing.T) {
 		// so `&b.x` breaks E2 against `&mut b.x`.
 		"OneFieldWrittenAndReadReported": {
 			src: `
-				fn build() {
+				fn build() -> {p: &mut {n: number}, q: &{n: number}} {
 					val mut b = {x: {n: 1}, y: {n: 2}}
 					val t = {p: &mut b.x, q: &b.x}
 					return t
@@ -51,7 +51,7 @@ func TestSharedReturnPaths(t *testing.T) {
 		// and the GC'd target leaves no reference for the second writer to dangle.
 		"OneFieldTwiceMutableOk": {
 			src: `
-				fn build() {
+				fn build() -> {p: &mut {n: number}, q: &mut {n: number}} {
 					val mut b = {x: {n: 1}, y: {n: 2}}
 					val t = {p: &mut b.x, q: &mut b.x}
 					return t
@@ -64,7 +64,7 @@ func TestSharedReturnPaths(t *testing.T) {
 		// q reads. As in OneFieldWrittenAndReadReported, the pass reports the pair by E2.
 		"WholeBindingContainsAFieldReported": {
 			src: `
-				fn build() {
+				fn build() -> {p: &mut {x: {n: number}, y: {n: number}}, q: &{n: number}} {
 					val mut b = {x: {n: 1}, y: {n: 2}}
 					val t = {p: &mut b, q: &b.y}
 					return t
