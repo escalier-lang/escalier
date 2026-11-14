@@ -794,7 +794,7 @@ func (b *pathBinder) applyClassTest(scope *Scope, node ast.Node, v scrutineeView
 		return v
 	}
 	// Hover reads the class this name resolves to from the recorded type.
-	b.c.recordType(ast.LastIdent(t.Name), ct)
+	b.c.recordPatternClass(t.Name, ct)
 	target, targetConcrete := b.c.narrowToClass(b.lvl, node, ct, v.ty, v.concrete, v.shape)
 	v.ty, v.concrete, v.shape = target, targetConcrete, target
 	return v
@@ -812,7 +812,7 @@ func (b *pathBinder) applyExtractorTest(scope *Scope, node ast.Node, v scrutinee
 	}
 	// Hover reads the class this name resolves to from the recorded type.
 	if ct, ok := b.c.resolveQualClassType(scope, t.Name); ok {
-		b.c.recordType(ast.LastIdent(t.Name), ct)
+		b.c.recordPatternClass(t.Name, ct)
 	}
 	params := b.c.narrowToExtractor(node, sig, v.ty)
 	if err := extractorArityError(node, name, params, t.Arity, t.Rest == ucs.TrailingRest); err != nil {

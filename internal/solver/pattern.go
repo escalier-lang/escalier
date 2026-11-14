@@ -878,7 +878,7 @@ func (c *checker) bindInstancePat(scope *Scope, lvl int, p *ast.InstancePat, scr
 		return &soltype.InstancePat{ClassName: name, Object: obj}
 	}
 	// Hover reads the class this name resolves to from the recorded type.
-	c.recordPatType(purpose, ast.LastIdent(p.ClassName), ct)
+	c.recordPatternClass(p.ClassName, ct)
 	target, targetConcrete := c.narrowToClass(lvl, p, ct, scrutinee, concrete, nil)
 	obj, _ := c.bindPatMode(scope, lvl, p.Object, target, targetConcrete, scrutineeMode, leafTypes, emit, purpose).(*soltype.ObjectPat)
 	return &soltype.InstancePat{ClassName: ct.Name, Object: obj}
@@ -981,6 +981,12 @@ func (c *checker) unionMembersAsClass(shape soltype.Type, className string) []*s
 	return ups
 }
 
+// recordPatternClass records ct, the class an instance or extractor pattern names with
+// qi, against the last name of qi, so `Expr.Num(v)` records the variant class on `Num`.
+func (c *checker) recordPatternClass(qi ast.QualIdent, ct *soltype.ClassType) {
+	c.recordType(ast.LastIdent(qi), ct)
+}
+
 // bindExtractorPat types an extractor pattern `Name(a, b)`. It narrows the scrutinee to the
 // subject of the named value's `[Symbol.customMatcher]`, then binds each argument against
 // a value of the tuple the matcher returns. A name extractorSignature cannot resolve is
@@ -1006,7 +1012,7 @@ func (c *checker) bindExtractorPat(scope *Scope, lvl int, p *ast.ExtractorPat, s
 	}
 	// Hover reads the class this name resolves to from the recorded type.
 	if ct, ok := c.resolveQualClassType(scope, p.Name); ok {
-		c.recordPatType(purpose, ast.LastIdent(p.Name), ct)
+		c.recordPatternClass(p.Name, ct)
 	}
 	params := c.narrowToExtractor(p, sig, scrutinee)
 	fixed, rest, recovered := splitTupleRest(p.Args)
