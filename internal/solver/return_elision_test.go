@@ -67,18 +67,32 @@ func TestReturnLifetimeElision(t *testing.T) {
 			src:  "fn make() -> &Flat {\n\tval p = {x: 1}\n\treturn &p\n}",
 		},
 		{
-			// A borrow a throws clause writes with no lifetime is tied to every input, as a
-			// returned function type is, whichever inputs the body throws.
-			name:     "ThrownBorrowTiedToEveryInput",
-			src:      "fn f(a: &Flat, b: &Flat, c: boolean) -> never throws &Flat { if c { throw a } else { throw b } }",
+			// A borrow a throws clause writes with no lifetime takes its lifetime the way a
+			// returned borrow does.
+			name:     "ThrownBorrowTakesTheOneInput",
+			src:      "fn f(a: &Flat, c: boolean) -> never throws &Flat { throw a }",
 			binding:  "f",
-			expected: "fn <'a: 'c, 'b: 'c, 'c>(a: &'a Flat, b: &'b Flat, c: boolean) -> never throws &'c Flat",
+			expected: "fn <'a>(a: &'a Flat, c: boolean) -> never throws &'a Flat",
 		},
 		{
-			name:     "ThrownBorrowOfOneInputTiedToEveryInput",
-			src:      "fn g(a: &Flat, b: &Flat, c: boolean) -> never throws &Flat { throw a }",
-			binding:  "g",
-			expected: "fn <'a: 'c, 'b: 'c, 'c>(a: &'a Flat, b: &'b Flat, c: boolean) -> never throws &'c Flat",
+			name: "ThrownBorrowOfTwoInputsReports",
+			src:  "fn f(a: &Flat, b: &Flat, c: boolean) -> never throws &Flat { if c { throw a } else { throw b } }",
+			errs: []string{
+				"2:54-2:59: the thrown type borrows from 'a' or 'b', and elision cannot tell which; write a lifetime, " +
+					"as in `fn f<'x>(a: &'x Flat, b: &Flat, c: boolean) -> never throws &'x Flat`",
+			},
+		},
+		{
+			// The return type and the throws clause each report the borrow elision cannot
+			// place.
+			name: "ReturnedAndThrownBorrowsEachReport",
+			src:  "fn f(a: &Flat, b: &Flat) -> &Flat throws &Flat { if a.x > 0 { throw a } return a }",
+			errs: []string{
+				"2:42-2:47: the thrown type borrows from 'a' or 'b', and elision cannot tell which; write a lifetime, " +
+					"as in `fn f<'x>(a: &'x Flat, b: &Flat) -> &Flat throws &'x Flat`",
+				"2:29-2:34: the return type borrows from 'a' or 'b', and elision cannot tell which; write a lifetime, " +
+					"as in `fn f<'x>(a: &'x Flat, b: &Flat) -> &'x Flat`",
+			},
 		},
 		{
 			name:     "ReturnedFunctionTiedToEveryInput",
@@ -169,6 +183,14 @@ func TestMethodReturnLifetimeElision(t *testing.T) {
 				grab(&mut self, a: &{x: number}, b: &{x: number}) -> &mut {x: number} { return &mut self.inner },
 			}`,
 			expected: "{inner: {x: number}, grab<'a>(&'a mut self, a: &{x: number}, b: &{x: number}) -> &'a mut {x: number}}",
+		},
+		{
+			name: "ThrownBorrowTakesTheReceiverLifetime",
+			src: `class Box {
+				inner: {x: number},
+				check(&self, other: &{x: number}) -> number throws &{x: number} { if other.x > 0 { throw &self.inner } return 1 },
+			}`,
+			expected: "{inner: {x: number}, check<'a>(&'a self, other: &{x: number}) -> number throws &'a {x: number}}",
 		},
 	}
 	for _, tt := range tests {

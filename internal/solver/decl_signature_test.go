@@ -151,6 +151,11 @@ func TestFuncDeclSignaturePrintWritten(t *testing.T) {
 			src:      "type Flat = {x: number}\nfn f<'a>(a: &'a Flat, b: &Flat) -> number throws &'a Flat { if a.x > 0 { throw a } return b.x }",
 			expected: "<'a>(&'a Flat, &Flat) -> number throws &'a Flat",
 		},
+		{
+			name:     "ThrowsBorrowOfOneInput",
+			src:      "type Flat = {x: number}\nfn f(a: &Flat, n: number) -> number throws &Flat { if n > 0 { throw a } return n }",
+			expected: "(&Flat, number) -> number throws &Flat",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

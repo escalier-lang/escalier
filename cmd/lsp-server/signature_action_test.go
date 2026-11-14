@@ -210,10 +210,10 @@ func TestSignatureAction(t *testing.T) {
 			diagnostics: []string{"4:1-4:5 'pick' is a method, so it needs a return type; write `pick<'s: 'b, 'a: 'b, 'b>(&'s self, other: &'a Flat) -> &'b Flat`"},
 		},
 		{
-			name:        "ThrowsGetsLifetime",
-			src:         "type Flat = {x: number}\nfn f(a: &Flat, b: &Flat, c: boolean) throws &Flat { if c { throw a } else { throw b } }",
+			name:        "ThrownBorrowOfOneInputElides",
+			src:         "type Flat = {x: number}\nfn f(a: &Flat, c: boolean) throws &Flat { throw a }",
 			cursor:      "f(",
-			expected:    "type Flat = {x: number}\nfn f<'a>(a: &'a Flat, b: &'a Flat, c: boolean) -> never throws &'a Flat { if c { throw a } else { throw b } }",
+			expected:    "type Flat = {x: number}\nfn f(a: &Flat, c: boolean) -> never throws &Flat { throw a }",
 			diagnostics: []string{"1:3-1:4 'f' is declared at a script's top level, so it needs a return type; write `-> never`"},
 		},
 		{
