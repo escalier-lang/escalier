@@ -30,7 +30,7 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 					put(&mut self, p: &'a mut {value: number}) -> undefined { self.peer = p },
 				}
 
-				fn build(mut p: {value: number}, out: &mut {slot: &mut {value: number}}) {
+				val build = fn (mut p: {value: number}, out: &mut {slot: &mut {value: number}}) {
 					val mut b = {value: 2}
 					val mut h = Holder(&mut p)
 					h.put(&mut b)
@@ -101,7 +101,7 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 					put(&mut self, p: &'a mut {value: number}) -> undefined { self.peer = p },
 				}
 
-				fn build(mut p: {value: number}, out: &mut {slot: &mut {value: number}}) {
+				val build = fn (mut p: {value: number}, out: &mut {slot: &mut {value: number}}) {
 					val mut b = {value: 2}
 					val mut h = Holder(&mut p)
 					h["put"](&mut b)
@@ -143,7 +143,7 @@ func TestSelfReceiverIsAStoreSource(t *testing.T) {
 			drain(&self, out: &mut {slot: &'a mut {value: number}}) -> undefined { out.slot = self.peer },
 		}
 
-		fn build(mut p: {value: number}, sink: &mut {slot: &mut {value: number}}) {
+		val build = fn (mut p: {value: number}, sink: &mut {slot: &mut {value: number}}) {
 			val mut b = {value: 2}
 			val mut h = Holder(&mut b)
 			val mut o = {slot: &mut p}

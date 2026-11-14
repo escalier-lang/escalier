@@ -292,7 +292,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableCopy",
 			site:   "Binding",
 			src: `
-				fn g(m: &mut {x: number}) {
+				fn g(m: &mut {x: number}) -> undefined {
 					val d: &mut {x: number} = m
 					d.x = 1
 					m.x = 2
@@ -303,7 +303,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableCopy",
 			site:   "Reassignment",
 			src: `
-				fn g(init: &mut {x: number}, m: &mut {x: number}) {
+				fn g(init: &mut {x: number}, m: &mut {x: number}) -> undefined {
 					var d: &mut {x: number} = init
 					d = m
 					d.x = 1
@@ -315,7 +315,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableCopy",
 			site:   "FieldStore",
 			src: `
-				fn g(o: &mut {f: &mut {x: number}}, m: &mut {x: number}) {
+				fn g(o: &mut {f: &mut {x: number}}, m: &mut {x: number}) -> undefined {
 					o.f = m
 					o.f.x = 1
 					m.x = 2
@@ -326,7 +326,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableCopy",
 			site:   "ElementStore",
 			src: `
-				fn g(a: &mut Array<&mut {x: number}>, m: &mut {x: number}) {
+				fn g(a: &mut Array<&mut {x: number}>, m: &mut {x: number}) -> undefined {
 					a[0] = m
 					a[0].x = 1
 					m.x = 2
@@ -339,7 +339,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableCopy",
 			site:   "LiteralElement",
 			src: `
-				fn g(m: &mut {x: number}) {
+				fn g(m: &mut {x: number}) -> undefined {
 					val o: {f: &mut {x: number}} = {f: m}
 					o.f.x = 1
 					m.x = 2
@@ -350,7 +350,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableCopy",
 			site:   "Destructuring",
 			src: `
-				fn g(c: {f: &mut {x: number}}) {
+				fn g(c: {f: &mut {x: number}}) -> undefined {
 					val {f: d}: {f: &mut {x: number}} = c
 					d.x = 1
 					c.f.x = 2
@@ -362,7 +362,7 @@ func TestFlowMatrix(t *testing.T) {
 			site:   "Argument",
 			src: `
 				declare fn take(d: &mut {x: number}) -> undefined
-				fn g(m: &mut {x: number}) {
+				fn g(m: &mut {x: number}) -> undefined {
 					take(m)
 					m.x = 2
 				}
@@ -392,7 +392,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableCopy",
 			site:   "ClosureCapture",
 			src: `
-				fn g(m: &mut {x: number}) {
+				fn g(m: &mut {x: number}) -> undefined {
 					val f = fn () { m.x = 1 }
 					f()
 					m.x = 2
@@ -487,7 +487,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "Widen",
 			site:   "Binding",
 			src: `
-				fn g(r: &{x: number}) {
+				fn g(r: &{x: number}) -> undefined {
 					val d: &mut {x: number} = r
 				}
 			`,
@@ -497,7 +497,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "Widen",
 			site:   "Reassignment",
 			src: `
-				fn g(init: &mut {x: number}, r: &{x: number}) {
+				fn g(init: &mut {x: number}, r: &{x: number}) -> undefined {
 					var d: &mut {x: number} = init
 					d = r
 				}
@@ -508,7 +508,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "Widen",
 			site:   "FieldStore",
 			src: `
-				fn g(o: &mut {f: &mut {x: number}}, r: &{x: number}) {
+				fn g(o: &mut {f: &mut {x: number}}, r: &{x: number}) -> undefined {
 					o.f = r
 				}
 			`,
@@ -518,7 +518,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "Widen",
 			site:   "ElementStore",
 			src: `
-				fn g(a: &mut Array<&mut {x: number}>, r: &{x: number}) {
+				fn g(a: &mut Array<&mut {x: number}>, r: &{x: number}) -> undefined {
 					a[0] = r
 				}
 			`,
@@ -530,7 +530,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "Widen",
 			site:   "LiteralElement",
 			src: `
-				fn g(r: &{x: number}) {
+				fn g(r: &{x: number}) -> undefined {
 					val o: {f: &mut {x: number}} = {f: r}
 				}
 			`,
@@ -540,7 +540,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "Widen",
 			site:   "Destructuring",
 			src: `
-				fn g(c: {f: &{x: number}}) {
+				fn g(c: {f: &{x: number}}) -> undefined {
 					val {f: d}: {f: &mut {x: number}} = c
 				}
 			`,
@@ -551,7 +551,7 @@ func TestFlowMatrix(t *testing.T) {
 			site:   "Argument",
 			src: `
 				declare fn take(d: &mut {x: number}) -> undefined
-				fn g(r: &{x: number}) {
+				fn g(r: &{x: number}) -> undefined {
 					take(r)
 				}
 			`,
@@ -582,7 +582,7 @@ func TestFlowMatrix(t *testing.T) {
 			site:   "ModuleLevelStore",
 			src: `
 				declare var sink: &mut {x: number}
-				fn g(r: &{x: number}) {
+				fn g(r: &{x: number}) -> undefined {
 					sink = r
 				}
 			`,
@@ -593,7 +593,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "Widen",
 			site:   "ClosureCapture",
 			src: `
-				fn g(r: &{x: number}) {
+				fn g(r: &{x: number}) -> undefined {
 					val f = fn () { r.x = 1 }
 					f()
 				}
@@ -722,7 +722,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableBorrow",
 			site:   "Binding",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					val d: &mut {x: number} = &mut p
 					d.x = 2
@@ -733,7 +733,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableBorrow",
 			site:   "Reassignment",
 			src: `
-				fn g(init: &mut {x: number}) {
+				fn g(init: &mut {x: number}) -> undefined {
 					val mut p = {x: 1}
 					var d: &mut {x: number} = init
 					d = &mut p
@@ -745,7 +745,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableBorrow",
 			site:   "FieldStore",
 			src: `
-				fn g(o: &mut {f: &mut {x: number}}) {
+				fn g(o: &mut {f: &mut {x: number}}) -> undefined {
 					val mut p = {x: 1}
 					o.f = &mut p
 					o.f.x = 2
@@ -758,7 +758,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableBorrow",
 			site:   "LiteralElement",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					val o: {f: &mut {x: number}} = {f: &mut p}
 					o.f.x = 2
@@ -769,7 +769,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableBorrow",
 			site:   "Destructuring",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {f: {x: 1}}
 					val {f: d} = &mut p
 					d.x = 2
@@ -781,7 +781,7 @@ func TestFlowMatrix(t *testing.T) {
 			site:   "Argument",
 			src: `
 				declare fn take(d: &mut {x: number}) -> undefined
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					take(&mut p)
 				}
@@ -802,7 +802,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableBorrow",
 			site:   "ClosureCapture",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					val f = fn () { p.x = 2 }
 					f()
@@ -814,7 +814,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableBorrowThroughVal",
 			site:   "Binding",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val p: {x: number} = {x: 1}
 					val d: &mut {x: number} = &mut p
 				}
@@ -825,7 +825,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableBorrowThroughVal",
 			site:   "Reassignment",
 			src: `
-				fn g(init: &mut {x: number}) {
+				fn g(init: &mut {x: number}) -> undefined {
 					val p: {x: number} = {x: 1}
 					var d: &mut {x: number} = init
 					d = &mut p
@@ -837,7 +837,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableBorrowThroughVal",
 			site:   "FieldStore",
 			src: `
-				fn g(o: &mut {f: &mut {x: number}}) {
+				fn g(o: &mut {f: &mut {x: number}}) -> undefined {
 					val p: {x: number} = {x: 1}
 					o.f = &mut p
 				}
@@ -850,7 +850,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableBorrowThroughVal",
 			site:   "LiteralElement",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val p: {x: number} = {x: 1}
 					val o: {f: &mut {x: number}} = {f: &mut p}
 				}
@@ -861,7 +861,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableBorrowThroughVal",
 			site:   "Destructuring",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val p: {f: {x: number}} = {f: {x: 1}}
 					val {f: d} = &mut p
 				}
@@ -873,7 +873,7 @@ func TestFlowMatrix(t *testing.T) {
 			site:   "Argument",
 			src: `
 				declare fn take(d: &mut {x: number}) -> undefined
-				fn g() {
+				fn g() -> undefined {
 					val p: {x: number} = {x: 1}
 					take(&mut p)
 				}
@@ -897,7 +897,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableBorrowThroughVal",
 			site:   "ClosureCapture",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val p: {x: number} = {x: 1}
 					val f = fn () { p.x = 2 }
 					f()
@@ -923,7 +923,7 @@ func TestFlowMatrix(t *testing.T) {
 			site:   "Argument",
 			src: `
 				declare fn take(d: &{x: number}) -> undefined
-				fn g() {
+				fn g() -> undefined {
 					val p = {x: 1}
 					take(p)
 				}
@@ -990,7 +990,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "ImmutableBorrowIntoOwned",
 			site:   "Binding",
 			src: `
-				fn g(r: &{x: number}) {
+				fn g(r: &{x: number}) -> undefined {
 					val d: {x: number} = r
 				}
 			`,
@@ -1000,7 +1000,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "ImmutableBorrowIntoOwned",
 			site:   "Reassignment",
 			src: `
-				fn g(r: &{x: number}) {
+				fn g(r: &{x: number}) -> undefined {
 					var d: {x: number} = {x: 0}
 					d = r
 				}
@@ -1011,7 +1011,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "ImmutableBorrowIntoOwned",
 			site:   "FieldStore",
 			src: `
-				fn g(o: &mut {f: {x: number}}, r: &{x: number}) {
+				fn g(o: &mut {f: {x: number}}, r: &{x: number}) -> undefined {
 					o.f = r
 				}
 			`,
@@ -1021,7 +1021,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "ImmutableBorrowIntoOwned",
 			site:   "ElementStore",
 			src: `
-				fn g(a: &mut Array<{x: number}>, r: &{x: number}) {
+				fn g(a: &mut Array<{x: number}>, r: &{x: number}) -> undefined {
 					a[0] = r
 				}
 			`,
@@ -1031,7 +1031,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "ImmutableBorrowIntoOwned",
 			site:   "Destructuring",
 			src: `
-				fn g(c: {f: &{x: number}}) {
+				fn g(c: {f: &{x: number}}) -> undefined {
 					val {f: d}: {f: {x: number}} = c
 				}
 			`,
@@ -1042,7 +1042,7 @@ func TestFlowMatrix(t *testing.T) {
 			site:   "Argument",
 			src: `
 				declare fn take(d: {x: number}) -> undefined
-				fn g(r: &{x: number}) {
+				fn g(r: &{x: number}) -> undefined {
 					take(r)
 				}
 			`,
@@ -1074,7 +1074,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "ImmutableBorrowIntoOwned",
 			site:   "ClosureCapture",
 			src: `
-				fn g(r: &{x: number}) {
+				fn g(r: &{x: number}) -> fn () -> number {
 					return fn () { return r.x }
 				}
 			`,
@@ -1084,7 +1084,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableBorrowIntoOwned",
 			site:   "Binding",
 			src: `
-				fn g(m: &mut {x: number}) {
+				fn g(m: &mut {x: number}) -> undefined {
 					val d: {x: number} = m
 				}
 			`,
@@ -1094,7 +1094,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableBorrowIntoOwned",
 			site:   "Reassignment",
 			src: `
-				fn g(m: &mut {x: number}) {
+				fn g(m: &mut {x: number}) -> undefined {
 					var d: {x: number} = {x: 0}
 					d = m
 				}
@@ -1105,7 +1105,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableBorrowIntoOwned",
 			site:   "FieldStore",
 			src: `
-				fn g(o: &mut {f: {x: number}}, m: &mut {x: number}) {
+				fn g(o: &mut {f: {x: number}}, m: &mut {x: number}) -> undefined {
 					o.f = m
 				}
 			`,
@@ -1115,7 +1115,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableBorrowIntoOwned",
 			site:   "ElementStore",
 			src: `
-				fn g(a: &mut Array<{x: number}>, m: &mut {x: number}) {
+				fn g(a: &mut Array<{x: number}>, m: &mut {x: number}) -> undefined {
 					a[0] = m
 				}
 			`,
@@ -1125,7 +1125,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableBorrowIntoOwned",
 			site:   "Destructuring",
 			src: `
-				fn g(c: {f: &mut {x: number}}) {
+				fn g(c: {f: &mut {x: number}}) -> undefined {
 					val {f: d}: {f: {x: number}} = c
 				}
 			`,
@@ -1136,7 +1136,7 @@ func TestFlowMatrix(t *testing.T) {
 			site:   "Argument",
 			src: `
 				declare fn take(d: {x: number}) -> undefined
-				fn g(m: &mut {x: number}) {
+				fn g(m: &mut {x: number}) -> undefined {
 					take(m)
 				}
 			`,
@@ -1168,7 +1168,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MutableBorrowIntoOwned",
 			site:   "ClosureCapture",
 			src: `
-				fn g(m: &mut {x: number}) {
+				fn g(m: &mut {x: number}) -> fn () -> undefined {
 					return fn () { m.x = 1 }
 				}
 			`,
@@ -1473,7 +1473,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MoveInALoop",
 			site:   "Binding",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val p = {x: 1}
 					for i in [1, 2] {
 						val d = p
@@ -1486,7 +1486,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MoveInALoop",
 			site:   "Reassignment",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val p = {x: 1}
 					for i in [1, 2] {
 						var d: {x: number} = {x: 0}
@@ -1500,7 +1500,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MoveInALoop",
 			site:   "FieldStore",
 			src: `
-				fn g(o: &mut {f: {x: number}}) {
+				fn g(o: &mut {f: {x: number}}) -> undefined {
 					val p = {x: 1}
 					for i in [1, 2] {
 						o.f = p
@@ -1513,7 +1513,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MoveInALoop",
 			site:   "ElementStore",
 			src: `
-				fn g(a: &mut Array<{x: number}>) {
+				fn g(a: &mut Array<{x: number}>) -> undefined {
 					val p = {x: 1}
 					for i in [1, 2] {
 						a[0] = p
@@ -1526,7 +1526,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MoveInALoop",
 			site:   "LiteralElement",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val p = {x: 1}
 					for i in [1, 2] {
 						val o = {f: p}
@@ -1539,7 +1539,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MoveInALoop",
 			site:   "Destructuring",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val p = {f: {x: 1}}
 					for i in [1, 2] {
 						val {f: d} = p
@@ -1553,7 +1553,7 @@ func TestFlowMatrix(t *testing.T) {
 			site:   "Argument",
 			src: `
 				declare fn take(d: {x: number}) -> undefined
-				fn g() {
+				fn g() -> undefined {
 					val p = {x: 1}
 					for i in [1, 2] {
 						take(p)
@@ -1593,7 +1593,7 @@ func TestFlowMatrix(t *testing.T) {
 			site:   "ModuleLevelStore",
 			src: `
 				declare var sink: {x: number}
-				fn g() {
+				fn g() -> undefined {
 					val p = {x: 1}
 					for i in [1, 2] {
 						sink = p
@@ -1615,7 +1615,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "PartialMove",
 			site:   "Binding",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val p = {a: {x: 1}, b: {x: 2}}
 					val d = p.a
 					val e = p
@@ -1627,7 +1627,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "PartialMove",
 			site:   "Reassignment",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val p = {a: {x: 1}, b: {x: 2}}
 					var d: {x: number} = {x: 0}
 					d = p.a
@@ -1640,7 +1640,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "PartialMove",
 			site:   "FieldStore",
 			src: `
-				fn g(o: &mut {f: {x: number}}) {
+				fn g(o: &mut {f: {x: number}}) -> undefined {
 					val p = {a: {x: 1}, b: {x: 2}}
 					o.f = p.a
 					val e = p
@@ -1652,7 +1652,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "PartialMove",
 			site:   "ElementStore",
 			src: `
-				fn g(a: &mut Array<{x: number}>) {
+				fn g(a: &mut Array<{x: number}>) -> undefined {
 					val p = {a: {x: 1}, b: {x: 2}}
 					a[0] = p.a
 					val e = p
@@ -1664,7 +1664,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "PartialMove",
 			site:   "LiteralElement",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val p = {a: {x: 1}, b: {x: 2}}
 					val o = {f: p.a}
 					val e = p
@@ -1676,7 +1676,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "PartialMove",
 			site:   "Destructuring",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val p = {a: {f: {x: 1}}, b: {x: 2}}
 					val {f: d} = p.a
 					val e = p
@@ -1689,7 +1689,7 @@ func TestFlowMatrix(t *testing.T) {
 			site:   "Argument",
 			src: `
 				declare fn take(d: {x: number}) -> undefined
-				fn g() {
+				fn g() -> undefined {
 					val p = {a: {x: 1}, b: {x: 2}}
 					take(p.a)
 					val e = p
@@ -1719,7 +1719,7 @@ func TestFlowMatrix(t *testing.T) {
 			site:   "ModuleLevelStore",
 			src: `
 				declare var sink: {x: number}
-				fn g() {
+				fn g() -> undefined {
 					val p = {a: {x: 1}, b: {x: 2}}
 					sink = p.a
 					val e = p
@@ -1841,7 +1841,7 @@ func TestFlowMatrix(t *testing.T) {
 			site:   "Binding",
 			src: `
 				val cfg = {x: 1}
-				fn g() {
+				fn g() -> undefined {
 					val d = cfg
 				}
 			`,
@@ -1852,7 +1852,7 @@ func TestFlowMatrix(t *testing.T) {
 			site:   "Reassignment",
 			src: `
 				val cfg = {x: 1}
-				fn g() {
+				fn g() -> undefined {
 					var d: {x: number} = {x: 0}
 					d = cfg
 				}
@@ -1864,7 +1864,7 @@ func TestFlowMatrix(t *testing.T) {
 			site:   "FieldStore",
 			src: `
 				val cfg = {x: 1}
-				fn g(o: &mut {f: {x: number}}) {
+				fn g(o: &mut {f: {x: number}}) -> undefined {
 					o.f = cfg
 				}
 			`,
@@ -1875,7 +1875,7 @@ func TestFlowMatrix(t *testing.T) {
 			site:   "ElementStore",
 			src: `
 				val cfg = {x: 1}
-				fn g(a: &mut Array<{x: number}>) {
+				fn g(a: &mut Array<{x: number}>) -> undefined {
 					a[0] = cfg
 				}
 			`,
@@ -1886,7 +1886,7 @@ func TestFlowMatrix(t *testing.T) {
 			site:   "LiteralElement",
 			src: `
 				val cfg = {x: 1}
-				fn g() {
+				fn g() -> undefined {
 					val o = {f: cfg}
 				}
 			`,
@@ -1897,7 +1897,7 @@ func TestFlowMatrix(t *testing.T) {
 			site:   "Destructuring",
 			src: `
 				val cfg = {f: {x: 1}}
-				fn g() {
+				fn g() -> undefined {
 					val {f: d} = cfg
 				}
 			`,
@@ -1920,7 +1920,7 @@ func TestFlowMatrix(t *testing.T) {
 			src: `
 				val cfg = {x: 1}
 				declare var sink: {x: number}
-				fn g() {
+				fn g() -> undefined {
 					sink = cfg
 				}
 			`,
@@ -1931,7 +1931,7 @@ func TestFlowMatrix(t *testing.T) {
 			site:   "ClosureCapture",
 			src: `
 				val cfg = {x: 1}
-				fn g() {
+				fn g() -> undefined {
 					val f = fn () {
 						val q = cfg
 						return q.x
@@ -2016,7 +2016,7 @@ func TestFlowMatrix(t *testing.T) {
 			site:   "Argument",
 			src: `
 				declare fn keep(d: &'static {x: number}) -> undefined
-				fn g() {
+				fn g() -> undefined {
 					val p = {x: 1}
 					keep(&p)
 				}
@@ -2133,7 +2133,7 @@ func TestFlowMatrix(t *testing.T) {
 				declare fn readWrite(a: &{x: number}, b: &mut {x: number}) -> undefined
 				declare fn writeWrite(a: &mut {x: number}, b: &mut {x: number}) -> undefined
 				declare fn writeRead(a: &mut {x: number}, b: &{x: number}) -> undefined
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					readWrite(&p, &mut p)
 				}
@@ -2227,7 +2227,7 @@ func TestFlowMatrix(t *testing.T) {
 				declare fn writeRead(a: &mut {x: number}, b: &{x: number}) -> undefined
 				declare fn read(a: &{x: number}) -> undefined
 				declare fn write(a: &mut {x: number}) -> undefined
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					write(&mut p)
 					read(&p)
@@ -2287,7 +2287,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "WriteDuringMutableBorrow",
 			site:   "Binding",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					val d: &mut {x: number} = &mut p
 					p.x = 2
@@ -2299,7 +2299,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "WriteDuringMutableBorrow",
 			site:   "Reassignment",
 			src: `
-				fn g(init: &mut {x: number}) {
+				fn g(init: &mut {x: number}) -> undefined {
 					val mut p = {x: 1}
 					var d: &mut {x: number} = init
 					d = &mut p
@@ -2312,7 +2312,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "WriteDuringMutableBorrow",
 			site:   "FieldStore",
 			src: `
-				fn g(o: &mut {f: &mut {x: number}}) {
+				fn g(o: &mut {f: &mut {x: number}}) -> undefined {
 					val mut p = {x: 1}
 					o.f = &mut p
 					p.x = 2
@@ -2326,7 +2326,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "WriteDuringMutableBorrow",
 			site:   "LiteralElement",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					val o: {f: &mut {x: number}} = {f: &mut p}
 					p.x = 2
@@ -2338,7 +2338,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "WriteDuringMutableBorrow",
 			site:   "Destructuring",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {f: {x: 1}}
 					val {f: d} = &mut p
 					p.f.x = 2
@@ -2353,7 +2353,7 @@ func TestFlowMatrix(t *testing.T) {
 				declare fn readWrite(a: &{x: number}, b: &mut {x: number}) -> undefined
 				declare fn writeWrite(a: &mut {x: number}, b: &mut {x: number}) -> undefined
 				declare fn writeRead(a: &mut {x: number}, b: &{x: number}) -> undefined
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					writeWrite(&mut p, &mut p)
 				}
@@ -2370,7 +2370,7 @@ func TestFlowMatrix(t *testing.T) {
 					writeRead(&mut self, r: &R) -> undefined {},
 					take(self) -> number { return self.x },
 				}
-				fn g() {
+				fn g() -> undefined {
 					val mut p = R(1)
 					p.writeWith(&mut p)
 				}
@@ -2385,7 +2385,7 @@ func TestFlowMatrix(t *testing.T) {
 				fn pickMut(p: &mut {x: number}) -> &mut {x: number} {
 					return p
 				}
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					val d = pickMut(&mut p)
 					p.x = 2
@@ -2397,7 +2397,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "WriteDuringMutableBorrow",
 			site:   "ClosureCapture",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					val f = fn () { p.x = 1 }
 					f()
@@ -2445,7 +2445,7 @@ func TestFlowMatrix(t *testing.T) {
 				declare fn readWrite(a: &{x: number}, b: &mut {x: number}) -> undefined
 				declare fn writeWrite(a: &mut {x: number}, b: &mut {x: number}) -> undefined
 				declare fn writeRead(a: &mut {x: number}, b: &{x: number}) -> undefined
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					writeRead(&mut p, &p)
 				}
@@ -2475,7 +2475,7 @@ func TestFlowMatrix(t *testing.T) {
 			site:   "ClosureCapture",
 			src: `
 				var sink: 'static fn () -> number = fn () { return 0 }
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					sink = fn () { return p.x }
 					p.x = 2
@@ -2493,7 +2493,7 @@ func TestFlowMatrix(t *testing.T) {
 			src: `
 				var sink: 'static fn () -> undefined = fn () {}
 				declare fn readIt(a: &{x: number}) -> undefined
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					sink = fn () { p.x = 2 }
 					readIt(&p)
@@ -2573,7 +2573,7 @@ func TestFlowMatrix(t *testing.T) {
 				declare fn readWrite(a: &{x: number}, b: &mut {x: number}) -> undefined
 				declare fn writeWrite(a: &mut {x: number}, b: &mut {x: number}) -> undefined
 				declare fn writeRead(a: &mut {x: number}, b: &{x: number}) -> undefined
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {a: {x: 1}, b: {x: 2}}
 					readWrite(&p.a, &mut p.b)
 				}
@@ -2725,7 +2725,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MoveWhileMutablyBorrowed",
 			site:   "Binding",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					val r = &mut p
 					val d = p
@@ -2738,7 +2738,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MoveWhileMutablyBorrowed",
 			site:   "Reassignment",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					val r = &mut p
 					var d = {x: 0}
@@ -2752,7 +2752,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MoveWhileMutablyBorrowed",
 			site:   "FieldStore",
 			src: `
-				fn g(o: &mut {f: {x: number}}) {
+				fn g(o: &mut {f: {x: number}}) -> undefined {
 					val mut p = {x: 1}
 					val r = &mut p
 					o.f = p
@@ -2765,7 +2765,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MoveWhileMutablyBorrowed",
 			site:   "ElementStore",
 			src: `
-				fn g(arr: &mut Array<{x: number}>) {
+				fn g(arr: &mut Array<{x: number}>) -> undefined {
 					val mut p = {x: 1}
 					val r = &mut p
 					arr[0] = p
@@ -2778,7 +2778,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MoveWhileMutablyBorrowed",
 			site:   "LiteralElement",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					val r = &mut p
 					val o = {f: p}
@@ -2791,7 +2791,7 @@ func TestFlowMatrix(t *testing.T) {
 			column: "MoveWhileMutablyBorrowed",
 			site:   "Destructuring",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {f: {x: 1}}
 					val r = &mut p
 					val {f: d} = p
@@ -2805,7 +2805,7 @@ func TestFlowMatrix(t *testing.T) {
 			site:   "Argument",
 			src: `
 				declare fn take(d: {x: number}) -> undefined
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					val r = &mut p
 					take(p)
@@ -2826,7 +2826,7 @@ func TestFlowMatrixMissingBorrow(t *testing.T) {
 			column: "UnwrittenBorrow",
 			site:   "Binding",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val p = {x: 1}
 					val d: &{x: number} = p
 				}
@@ -2837,7 +2837,7 @@ func TestFlowMatrixMissingBorrow(t *testing.T) {
 			column: "UnwrittenBorrow",
 			site:   "Reassignment",
 			src: `
-				fn g(init: &{x: number}) {
+				fn g(init: &{x: number}) -> undefined {
 					val p = {x: 1}
 					var d: &{x: number} = init
 					d = p
@@ -2849,7 +2849,7 @@ func TestFlowMatrixMissingBorrow(t *testing.T) {
 			column: "UnwrittenBorrow",
 			site:   "FieldStore",
 			src: `
-				fn g(o: &mut {f: &{x: number}}) {
+				fn g(o: &mut {f: &{x: number}}) -> undefined {
 					val p = {x: 1}
 					o.f = p
 				}
@@ -2860,7 +2860,7 @@ func TestFlowMatrixMissingBorrow(t *testing.T) {
 			column: "UnwrittenBorrow",
 			site:   "ElementStore",
 			src: `
-				fn g(a: &mut Array<&{x: number}>) {
+				fn g(a: &mut Array<&{x: number}>) -> undefined {
 					val p = {x: 1}
 					a[0] = p
 				}
@@ -2873,7 +2873,7 @@ func TestFlowMatrixMissingBorrow(t *testing.T) {
 			column: "UnwrittenBorrow",
 			site:   "LiteralElement",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val p = {x: 1}
 					val o: {f: &{x: number}} = {f: p}
 				}
@@ -2896,7 +2896,7 @@ func TestFlowMatrixMissingBorrow(t *testing.T) {
 			site:   "ModuleLevelStore",
 			src: `
 				declare var sink: &{x: number}
-				fn g() {
+				fn g() -> undefined {
 					val p = {x: 1}
 					sink = p
 				}
@@ -2915,7 +2915,7 @@ func TestFlowMatrixMissingFieldBorrow(t *testing.T) {
 			column: "UnwrittenFieldBorrow",
 			site:   "Binding",
 			src: `
-				fn g(h: &{f: {x: number}}) {
+				fn g(h: &{f: {x: number}}) -> undefined {
 					val d = h.f
 				}
 			`,
@@ -2925,7 +2925,7 @@ func TestFlowMatrixMissingFieldBorrow(t *testing.T) {
 			column: "UnwrittenFieldBorrow",
 			site:   "Reassignment",
 			src: `
-				fn g(init: &{x: number}, h: &{f: {x: number}}) {
+				fn g(init: &{x: number}, h: &{f: {x: number}}) -> undefined {
 					var d: &{x: number} = init
 					d = h.f
 				}
@@ -2936,7 +2936,7 @@ func TestFlowMatrixMissingFieldBorrow(t *testing.T) {
 			column: "UnwrittenFieldBorrow",
 			site:   "FieldStore",
 			src: `
-				fn g(o: &mut {f: &{x: number}}, h: &{f: {x: number}}) {
+				fn g(o: &mut {f: &{x: number}}, h: &{f: {x: number}}) -> undefined {
 					o.f = h.f
 				}
 			`,
@@ -2946,7 +2946,7 @@ func TestFlowMatrixMissingFieldBorrow(t *testing.T) {
 			column: "UnwrittenFieldBorrow",
 			site:   "ElementStore",
 			src: `
-				fn g(a: &mut Array<&{x: number}>, h: &{f: {x: number}}) {
+				fn g(a: &mut Array<&{x: number}>, h: &{f: {x: number}}) -> undefined {
 					a[0] = h.f
 				}
 			`,
@@ -2956,7 +2956,7 @@ func TestFlowMatrixMissingFieldBorrow(t *testing.T) {
 			column: "UnwrittenFieldBorrow",
 			site:   "LiteralElement",
 			src: `
-				fn g(h: &{f: {x: number}}) {
+				fn g(h: &{f: {x: number}}) -> undefined {
 					val o = {g: h.f}
 				}
 			`,
@@ -2967,7 +2967,7 @@ func TestFlowMatrixMissingFieldBorrow(t *testing.T) {
 			site:   "Argument",
 			src: `
 				declare fn take(d: &{x: number}) -> undefined
-				fn g(h: &{f: {x: number}}) {
+				fn g(h: &{f: {x: number}}) -> undefined {
 					take(h.f)
 				}
 			`,
@@ -2988,7 +2988,7 @@ func TestFlowMatrixMissingFieldBorrow(t *testing.T) {
 			site:   "ModuleLevelStore",
 			src: `
 				declare var sink: &{x: number}
-				fn g(h: &{f: {x: number}}) {
+				fn g(h: &{f: {x: number}}) -> undefined {
 					sink = h.f
 				}
 			`,
@@ -3007,7 +3007,7 @@ func TestFlowMatrixModuleLevelMove(t *testing.T) {
 			src: `
 				val cfg = {x: 1}
 				declare fn take(d: {x: number}) -> undefined
-				fn g() {
+				fn g() -> undefined {
 					take(cfg)
 				}
 			`,
@@ -3255,7 +3255,7 @@ func TestFlowMatrixStaticBorrow(t *testing.T) {
 			column: "WriteAfterStaticImmutableBorrow",
 			site:   "Binding",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					val d: &'static {x: number} = &p
 					p.x = 2
@@ -3267,7 +3267,7 @@ func TestFlowMatrixStaticBorrow(t *testing.T) {
 			column: "WriteAfterStaticImmutableBorrow",
 			site:   "Reassignment",
 			src: `
-				fn g(init: &'static {x: number}) {
+				fn g(init: &'static {x: number}) -> undefined {
 					val mut p = {x: 1}
 					var d: &'static {x: number} = init
 					d = &p
@@ -3280,7 +3280,7 @@ func TestFlowMatrixStaticBorrow(t *testing.T) {
 			column: "WriteAfterStaticImmutableBorrow",
 			site:   "FieldStore",
 			src: `
-				fn g(o: &mut {f: &'static {x: number}}) {
+				fn g(o: &mut {f: &'static {x: number}}) -> undefined {
 					val mut p = {x: 1}
 					o.f = &p
 					p.x = 2
@@ -3293,7 +3293,7 @@ func TestFlowMatrixStaticBorrow(t *testing.T) {
 			site:   "Argument",
 			src: `
 				declare fn track(value: &'static {x: number}) -> undefined
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					track(&p)
 					p.x = 2
@@ -3306,7 +3306,7 @@ func TestFlowMatrixStaticBorrow(t *testing.T) {
 			site:   "ModuleLevelStore",
 			src: `
 				declare var sink: &'static {x: number}
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					sink = &p
 					p.x = 2
@@ -3318,7 +3318,7 @@ func TestFlowMatrixStaticBorrow(t *testing.T) {
 			column: "ImmutableBorrowAfterStaticMutableBorrow",
 			site:   "Binding",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					val d: &'static mut {x: number} = &mut p
 					val r = &p
@@ -3330,7 +3330,7 @@ func TestFlowMatrixStaticBorrow(t *testing.T) {
 			column: "ImmutableBorrowAfterStaticMutableBorrow",
 			site:   "Reassignment",
 			src: `
-				fn g(init: &'static mut {x: number}) {
+				fn g(init: &'static mut {x: number}) -> undefined {
 					val mut p = {x: 1}
 					var d: &'static mut {x: number} = init
 					d = &mut p
@@ -3343,7 +3343,7 @@ func TestFlowMatrixStaticBorrow(t *testing.T) {
 			column: "ImmutableBorrowAfterStaticMutableBorrow",
 			site:   "FieldStore",
 			src: `
-				fn g(o: &mut {f: &'static mut {x: number}}) {
+				fn g(o: &mut {f: &'static mut {x: number}}) -> undefined {
 					val mut p = {x: 1}
 					o.f = &mut p
 					val r = &p
@@ -3356,7 +3356,7 @@ func TestFlowMatrixStaticBorrow(t *testing.T) {
 			site:   "Argument",
 			src: `
 				declare fn track(value: &'static mut {x: number}) -> undefined
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					track(&mut p)
 					val r = &p
@@ -3376,7 +3376,7 @@ func TestFlowMatrixStaticBorrowAndOwnershipPass(t *testing.T) {
 			column: "WriteAfterStaticImmutableBorrow",
 			site:   "ElementStore",
 			src: `
-				fn g(arr: &mut Array<&'static {x: number}>) {
+				fn g(arr: &mut Array<&'static {x: number}>) -> undefined {
 					val mut p = {x: 1}
 					arr[0] = &p
 					p.x = 2
@@ -3390,7 +3390,7 @@ func TestFlowMatrixStaticBorrowAndOwnershipPass(t *testing.T) {
 			column: "WriteAfterStaticImmutableBorrow",
 			site:   "LiteralElement",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					val o: {f: &'static {x: number}} = {f: &p}
 					p.x = 2
@@ -3403,7 +3403,7 @@ func TestFlowMatrixStaticBorrowAndOwnershipPass(t *testing.T) {
 			column: "WriteAfterStaticImmutableBorrow",
 			site:   "Destructuring",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {f: {x: 1}}
 					val {f: d}: &'static {f: {x: number}} = &p
 					p.f.x = 2
@@ -3420,7 +3420,7 @@ func TestFlowMatrixStaticBorrowAndOwnershipPass(t *testing.T) {
 				fn keep(p: &'static {x: number}) -> &'static {x: number} {
 					return p
 				}
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					val d = keep(&p)
 					p.x = 2
@@ -3433,7 +3433,7 @@ func TestFlowMatrixStaticBorrowAndOwnershipPass(t *testing.T) {
 			column: "ImmutableBorrowAfterStaticMutableBorrow",
 			site:   "ElementStore",
 			src: `
-				fn g(arr: &mut Array<&'static mut {x: number}>) {
+				fn g(arr: &mut Array<&'static mut {x: number}>) -> undefined {
 					val mut p = {x: 1}
 					arr[0] = &mut p
 					val r = &p
@@ -3447,7 +3447,7 @@ func TestFlowMatrixStaticBorrowAndOwnershipPass(t *testing.T) {
 			column: "ImmutableBorrowAfterStaticMutableBorrow",
 			site:   "LiteralElement",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					val o: {f: &'static mut {x: number}} = {f: &mut p}
 					val r = &p
@@ -3460,7 +3460,7 @@ func TestFlowMatrixStaticBorrowAndOwnershipPass(t *testing.T) {
 			column: "ImmutableBorrowAfterStaticMutableBorrow",
 			site:   "Destructuring",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {f: {x: 1}}
 					val {f: d}: &'static mut {f: {x: number}} = &mut p
 					val r = &p
@@ -3477,7 +3477,7 @@ func TestFlowMatrixStaticBorrowAndOwnershipPass(t *testing.T) {
 				fn keepMut(p: &'static mut {x: number}) -> &'static mut {x: number} {
 					return p
 				}
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					val d = keepMut(&mut p)
 					val r = &p
@@ -3612,7 +3612,7 @@ func TestFlowMatrixBindingMutability(t *testing.T) {
 					writeRead(&mut self, r: &R) -> undefined {},
 					take(self) -> number { return self.x },
 				}
-				fn g() {
+				fn g() -> undefined {
 					val mut p: {a: R, b: R} = {a: R(1), b: R(2)}
 					p.a.readWith(&mut p.b)
 				}
@@ -3662,7 +3662,7 @@ func TestFlowMatrixBindingMutability(t *testing.T) {
 				declare fn readWrite(a: &{x: number}, b: &mut {x: number}) -> undefined
 				declare fn writeWrite(a: &mut {x: number}, b: &mut {x: number}) -> undefined
 				declare fn writeRead(a: &mut {x: number}, b: &{x: number}) -> undefined
-				fn g() {
+				fn g() -> undefined {
 					val mut xs: Array<{x: number}> = [{x: 1}, {x: 2}]
 					readWrite(&xs[0], &mut xs[1])
 				}
@@ -3713,7 +3713,7 @@ func TestFlowMatrixBindingMutability(t *testing.T) {
 			site:   "Argument",
 			src: `
 				declare fn readWrite(a: &{x: number}, b: &mut {x: number}) -> undefined
-				fn g(i: number) {
+				fn g(i: number) -> undefined {
 					val mut xs: Array<{x: number}> = [{x: 1}, {x: 2}]
 					readWrite(&xs[0], &mut xs[i])
 				}
@@ -3933,7 +3933,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			column: "MutableBorrow",
 			site:   "ElementStore",
 			src: `
-				fn g(a: &mut Array<&mut {x: number}>) {
+				fn g(a: &mut Array<&mut {x: number}>) -> undefined {
 					val mut p = {x: 1}
 					a[0] = &mut p
 					a[0].x = 2
@@ -3944,7 +3944,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			column: "MutableBorrowThroughVal",
 			site:   "ElementStore",
 			src: `
-				fn g(a: &mut Array<&mut {x: number}>) {
+				fn g(a: &mut Array<&mut {x: number}>) -> undefined {
 					val p: {x: number} = {x: 1}
 					a[0] = &mut p
 				}
@@ -3957,7 +3957,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			column: "ImmutableBorrowIntoOwned",
 			site:   "LiteralElement",
 			src: `
-				fn g(r: &{x: number}) {
+				fn g(r: &{x: number}) -> undefined {
 					val o: {f: {x: number}} = {f: r}
 				}
 			`,
@@ -3969,7 +3969,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			site:   "ModuleLevelStore",
 			src: `
 				declare var sink: {x: number}
-				fn g(r: &{x: number}) {
+				fn g(r: &{x: number}) -> undefined {
 					sink = r
 				}
 			`,
@@ -3981,7 +3981,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			column: "MutableBorrowIntoOwned",
 			site:   "LiteralElement",
 			src: `
-				fn g(m: &mut {x: number}) {
+				fn g(m: &mut {x: number}) -> undefined {
 					val o: {f: {x: number}} = {f: m}
 				}
 			`,
@@ -3993,7 +3993,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			site:   "ModuleLevelStore",
 			src: `
 				declare var sink: {x: number}
-				fn g(m: &mut {x: number}) {
+				fn g(m: &mut {x: number}) -> undefined {
 					sink = m
 				}
 			`,
@@ -4004,7 +4004,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			column: "MoveInALoop",
 			site:   "ClosureCapture",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val p = {x: 1}
 					for i in [1, 2] {
 						val f = fn () {
@@ -4021,7 +4021,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			column: "PartialMove",
 			site:   "ClosureCapture",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val p = {a: {x: 1}, b: {x: 2}}
 					val f = fn () {
 						val q = p.a
@@ -4114,7 +4114,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 					writeRead(&mut self, r: &R) -> undefined {},
 					take(self) -> number { return self.x },
 				}
-				fn g() {
+				fn g() -> undefined {
 					val mut p = R(1)
 					p.readWith(&mut p)
 				}
@@ -4137,7 +4137,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			column: "WriteDuringMutableBorrow",
 			site:   "ElementStore",
 			src: `
-				fn g(arr: &mut Array<&mut {x: number}>) {
+				fn g(arr: &mut Array<&mut {x: number}>) -> undefined {
 					val mut p = {x: 1}
 					arr[0] = &mut p
 					p.x = 2
@@ -4215,7 +4215,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 					writeRead(&mut self, r: &R) -> undefined {},
 					take(self) -> number { return self.x },
 				}
-				fn g() {
+				fn g() -> undefined {
 					val mut p = R(1)
 					p.writeRead(&p)
 				}
@@ -4273,7 +4273,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 					writeRead(&mut self, r: &R) -> undefined {},
 					take(self) -> number { return self.x },
 				}
-				fn g(i: number) {
+				fn g(i: number) -> undefined {
 					val mut xs: Array<R> = [R(1), R(2)]
 					xs[0].readWith(&mut xs[i])
 				}
@@ -4408,7 +4408,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			site:   "ModuleLevelStore",
 			src: `
 				declare var sink: {x: number}
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					val r = &mut p
 					sink = p
@@ -4421,7 +4421,7 @@ func TestFlowMatrixOwnershipPass(t *testing.T) {
 			column: "MoveWhileMutablyBorrowed",
 			site:   "ClosureCapture",
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					val bump = fn () { p.x = 2 }
 					val q = p
@@ -4579,7 +4579,7 @@ func TestFlowMatrixReturnedBorrow(t *testing.T) {
 				fn pickMut(p: &mut {x: number}) -> &mut {x: number} {
 					return p
 				}
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					val d = pickMut(&mut p)
 					val q = p

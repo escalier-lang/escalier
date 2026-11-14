@@ -20,17 +20,17 @@ func TestDeepMutEnablesNestedWrite(t *testing.T) {
 	}{
 		{
 			name: "owned mut, one level",
-			src:  "fn f(mut p: {a: {x: number}}) { p.a.x = 5 }",
+			src:  "fn f(mut p: {a: {x: number}}) -> undefined { p.a.x = 5 }",
 			want: "fn (p: {a: {x: number}}) -> undefined",
 		},
 		{
 			name: "borrowed &mut, one level",
-			src:  "fn f(p: &mut {a: {x: number}}) { p.a.x = 5 }",
+			src:  "fn f(p: &mut {a: {x: number}}) -> undefined { p.a.x = 5 }",
 			want: "fn (p: &mut {a: {x: number}}) -> undefined",
 		},
 		{
 			name: "owned mut, three levels",
-			src:  "fn f(mut p: {a: {b: {c: number}}}) { p.a.b.c = 5 }",
+			src:  "fn f(mut p: {a: {b: {c: number}}}) -> undefined { p.a.b.c = 5 }",
 			want: "fn (p: {a: {b: {c: number}}}) -> undefined",
 		},
 	}
@@ -51,8 +51,8 @@ func TestImmutableAnnotationRejectsNestedWrite(t *testing.T) {
 		src  string
 		want string
 	}{
-		{"owned immutable", "fn f(p: {a: {x: number}}) { p.a.x = 5 }", "1:29-1:38: cannot mutate 'p' because its binding is immutable; declare it as `mut p`"},
-		{"immutable borrow", "fn f(p: &{a: {x: number}}) { p.a.x = 5 }", "1:30-1:39: cannot constrain immutable object <: mutable object"},
+		{"owned immutable", "fn f(p: {a: {x: number}}) -> undefined { p.a.x = 5 }", "1:42-1:51: cannot mutate 'p' because its binding is immutable; declare it as `mut p`"},
+		{"immutable borrow", "fn f(p: &{a: {x: number}}) -> undefined { p.a.x = 5 }", "1:43-1:52: cannot constrain immutable object <: mutable object"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -90,21 +90,21 @@ func TestNestedMutFieldAnnotationRejected(t *testing.T) {
 
 // `readonly` rejects `obj.a = …` even on an owned-mutable enclosing object.
 func TestReadonlyRejectsFieldReassignment(t *testing.T) {
-	_, _, errs := inferSource(t, "fn f(mut obj: {readonly a: number}) { obj.a = 5 }")
-	require.Equal(t, []string{"1:39-1:44: cannot assign to 'a' because it is a readonly property"}, messagesWithSpan(t, errs))
+	_, _, errs := inferSource(t, "fn f(mut obj: {readonly a: number}) -> undefined { obj.a = 5 }")
+	require.Equal(t, []string{"1:52-1:57: cannot assign to 'a' because it is a readonly property"}, messagesWithSpan(t, errs))
 }
 
 // `readonly` forbids reassigning the field but not mutating through it: `obj.a.b
 // = 5` checks while `obj.a = …` is rejected.
 func TestReadonlyPermitsValueMutationButNotReassignment(t *testing.T) {
 	t.Run("mutate the value", func(t *testing.T) {
-		values, _, errs := inferSource(t, "fn f(mut obj: {readonly a: {b: number}}) { obj.a.b = 5 }")
+		values, _, errs := inferSource(t, "fn f(mut obj: {readonly a: {b: number}}) -> undefined { obj.a.b = 5 }")
 		require.Empty(t, errs)
 		require.Equal(t, "fn (obj: {readonly a: {b: number}}) -> undefined", values["f"])
 	})
 	t.Run("reassign the field", func(t *testing.T) {
-		_, _, errs := inferSource(t, "fn f(mut obj: {readonly a: {b: number}}) { obj.a = {b: 9} }")
-		require.Equal(t, []string{"1:44-1:49: cannot assign to 'a' because it is a readonly property"}, messagesWithSpan(t, errs))
+		_, _, errs := inferSource(t, "fn f(mut obj: {readonly a: {b: number}}) -> undefined { obj.a = {b: 9} }")
+		require.Equal(t, []string{"1:57-1:62: cannot assign to 'a' because it is a readonly property"}, messagesWithSpan(t, errs))
 	})
 }
 
@@ -130,7 +130,7 @@ func TestExplicitBorrowOfBorrowFieldFlowsFieldLifetime(t *testing.T) {
 // mutable borrow of its bare inner. Routing the read through the fresh check var
 // instead would let the co-occurrence pass widen it to a union and strip the borrow.
 func TestExplicitBorrowOfDeepMutFieldPeels(t *testing.T) {
-	src := "fn f(mut p: {a: {x: number}}) { return &mut p.a }"
+	src := "fn f(mut p: {a: {x: number}}) -> &mut {x: number} { return &mut p.a }"
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (p: {a: {x: number}}) -> &mut {x: number}", values["f"])
@@ -141,26 +141,26 @@ func TestExplicitBorrowOfDeepMutFieldPeels(t *testing.T) {
 // source can fill it through width subtyping.
 func TestReadonlySubtypingFlowsThroughCallAndReturn(t *testing.T) {
 	t.Run("call: readonly source into writable param", func(t *testing.T) {
-		src := `fn sink(o: &mut {a: number}) {}
-fn f(mut obj: {readonly a: number}) { sink(&mut obj) }`
+		src := `fn sink(o: &mut {a: number}) -> undefined {}
+fn f(mut obj: {readonly a: number}) -> undefined { sink(&mut obj) }`
 		_, _, errs := inferSource(t, src)
-		require.Equal(t, []string{"2:44-2:52: readonly field 'a' cannot satisfy a writable field requirement"}, messagesWithSpan(t, errs))
+		require.Equal(t, []string{"2:57-2:65: readonly field 'a' cannot satisfy a writable field requirement"}, messagesWithSpan(t, errs))
 	})
 	t.Run("binding: readonly source into a `val mut` binding", func(t *testing.T) {
-		src := "fn f(obj: {readonly a: number}) { val mut r: {a: number} = obj }"
+		src := "fn f(obj: {readonly a: number}) -> undefined { val mut r: {a: number} = obj }"
 		_, _, errs := inferSource(t, src)
-		require.Equal(t, []string{"1:60-1:63: readonly field 'a' cannot satisfy a writable field requirement"}, messagesWithSpan(t, errs))
+		require.Equal(t, []string{"1:73-1:76: readonly field 'a' cannot satisfy a writable field requirement"}, messagesWithSpan(t, errs))
 	})
 	t.Run("call: writable source into readonly param is fine", func(t *testing.T) {
-		src := `fn sink(o: &mut {readonly a: number}) {}
-fn f(mut obj: {a: number}) { sink(&mut obj) }`
+		src := `fn sink(o: &mut {readonly a: number}) -> undefined {}
+fn f(mut obj: {a: number}) -> undefined { sink(&mut obj) }`
 		_, _, errs := inferSource(t, src)
 		require.Empty(t, errs)
 	})
 	t.Run("call: wider source field fills inexact readonly target", func(t *testing.T) {
 		// The write-back is skipped for readonly targets, so width subtyping accepts.
-		src := `fn sink(o: &mut {readonly a: {x: number, ...}}) {}
-fn f(mut obj: {a: {x: number, y: number}}) { sink(&mut obj) }`
+		src := `fn sink(o: &mut {readonly a: {x: number, ...}}) -> undefined {}
+fn f(mut obj: {a: {x: number, y: number}}) -> undefined { sink(&mut obj) }`
 		_, _, errs := inferSource(t, src)
 		require.Empty(t, errs)
 	})
@@ -171,18 +171,18 @@ fn f(mut obj: {a: {x: number, y: number}}) { sink(&mut obj) }`
 // OwnedMutTypeError and recovers to the bare `{a: {x}}`, so the body's write through the
 // immutable binding then fails on its own.
 func TestOwnedMutFieldAnnotationRejected(t *testing.T) {
-	src := "fn f(p: {a: mut {x: number}}) { p.a.x = 5 }"
+	src := "fn f(p: {a: mut {x: number}}) -> undefined { p.a.x = 5 }"
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, []string{
 		"1:13-1:16: " + ownedMutTypeMsg,
-		"1:33-1:42: cannot mutate 'p' because its binding is immutable; declare it as `mut p`",
+		"1:46-1:55: cannot mutate 'p' because its binding is immutable; declare it as `mut p`",
 	}, messagesWithSpan(t, errs))
 }
 
 // Chained reads through three deep-mut layers stay mutable, so a depth-3 write
 // checks.
 func TestDeepMutChainedReadsAllowDeepWrite(t *testing.T) {
-	src := "fn f(mut p: {a: {b: {c: number}}}) { p.a.b.c = 5 }"
+	src := "fn f(mut p: {a: {b: {c: number}}}) -> undefined { p.a.b.c = 5 }"
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (p: {a: {b: {c: number}}}) -> undefined", values["f"])
@@ -191,9 +191,9 @@ func TestDeepMutChainedReadsAllowDeepWrite(t *testing.T) {
 // A readonly field on an immutable container still reports the readonly error,
 // not the immutable-receiver one.
 func TestReadonlyFieldOnImmutableContainerStillRejectsWrite(t *testing.T) {
-	src := "fn f(p: {readonly a: number}) { p.a = 5 }"
+	src := "fn f(p: {readonly a: number}) -> undefined { p.a = 5 }"
 	_, _, errs := inferSource(t, src)
-	require.Equal(t, []string{"1:33-1:36: cannot assign to 'a' because it is a readonly property"}, messagesWithSpan(t, errs))
+	require.Equal(t, []string{"1:46-1:49: cannot assign to 'a' because it is a readonly property"}, messagesWithSpan(t, errs))
 }
 
 // A fresh tuple literal fills a `val mut` binding's annotation the same way.
@@ -206,7 +206,7 @@ func TestDeepMutLowersFreshTupleLiteral(t *testing.T) {
 // A readonly field's value is still deep-mutable, so multiple writes through it
 // check independently.
 func TestReadonlyFieldValueIsDeepMutable(t *testing.T) {
-	src := `fn f(mut obj: {readonly a: {x: number, y: number}}) { obj.a.x = 5
+	src := `fn f(mut obj: {readonly a: {x: number, y: number}}) -> undefined { obj.a.x = 5
  obj.a.y = 6 }`
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
@@ -228,10 +228,10 @@ func TestReadonlyRendersOnReadField(t *testing.T) {
 // `{a: {x: number}}` value cannot fill a `&mut {a: {x: number | string}}` destination —
 // the same invariance the eager per-cell `mut` lowering produced.
 func TestLazyDeepMutPinsNestedFieldInvariant(t *testing.T) {
-	src := `fn sink(q: &mut {a: {x: number | string}}) {}
-fn f(mut p: {a: {x: number}}) { sink(&mut p) }`
+	src := `fn sink(q: &mut {a: {x: number | string}}) -> undefined {}
+fn f(mut p: {a: {x: number}}) -> undefined { sink(&mut p) }`
 	_, _, errs := inferSource(t, src)
-	require.Equal(t, []string{"2:38-2:44: cannot constrain string <: number"}, messagesWithSpan(t, errs))
+	require.Equal(t, []string{"2:51-2:57: cannot constrain string <: number"}, messagesWithSpan(t, errs))
 }
 
 // The same shapes under an immutable wrapper are covariant, so the strict-subtype
@@ -239,8 +239,8 @@ fn f(mut p: {a: {x: number}}) { sink(&mut p) }`
 // that the mut-context flag draws: invariant inside a mutable wrapper, covariant
 // outside one.
 func TestImmutableWrapperKeepsNestedFieldCovariant(t *testing.T) {
-	src := `fn sink(q: {a: {x: number | string}}) {}
-fn f(p: {a: {x: number}}) { sink(p) }`
+	src := `fn sink(q: {a: {x: number | string}}) -> undefined {}
+fn f(p: {a: {x: number}}) -> undefined { sink(p) }`
 	_, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
 }
@@ -256,7 +256,7 @@ func TestBorrowFieldInImmutableContainerIsLegal(t *testing.T) {
 		require.Equal(t, "fn <'a>(p: {a: &'a {x: number}}) -> &'a {x: number}", values["f"])
 	})
 	t.Run("mutable borrow field", func(t *testing.T) {
-		values, _, errs := inferSource(t, "fn f(p: {a: &mut {x: number}}) { p.a.x = 5 }")
+		values, _, errs := inferSource(t, "fn f(p: {a: &mut {x: number}}) -> undefined { p.a.x = 5 }")
 		require.Empty(t, errs)
 		require.Equal(t, "fn (p: {a: &mut {x: number}}) -> undefined", values["f"])
 	})
@@ -296,7 +296,7 @@ func TestNestedWriteInfersMutContainerAndRoundTrips(t *testing.T) {
 	// A declared `foo` would accept that type by construction.
 	t.Run("round-trip caller", func(t *testing.T) {
 		src := `fn foo(mut obj) { obj.p.x = 5 }
-fn caller(a: {p: {x: number}}) { foo(a) }`
+fn caller(a: {p: {x: number}}) -> undefined { foo(a) }`
 		_, _, errs := inferSource(t, src)
 		require.Empty(t, errs)
 	})
@@ -566,7 +566,7 @@ func TestMutSelfMethodNeedsAMutableReceiver(t *testing.T) {
 				class Base {
 					n: number,
 					constructor(&mut self, n: number) { self.n = n },
-					bump(&mut self) { self.n = 1 },
+					bump(&mut self) -> undefined { self.n = 1 },
 				}
 				class Derived extends Base {
 					constructor(&mut self) { super(0) },
@@ -731,7 +731,7 @@ func TestOwnedCallResultFlowsIntoAMutDestination(t *testing.T) {
 		class Counter {
 			n: number,
 			constructor(&mut self, n: number) { self.n = n },
-			bump(&mut self) { self.n = 1 },
+			bump(&mut self) -> undefined { self.n = 1 },
 		}
 		declare fn shared() -> Counter
 `
@@ -754,11 +754,11 @@ func TestOwnedCallResultFlowsIntoAMutDestination(t *testing.T) {
 		},
 		{
 			name: "an owned object into an annotated binding",
-			src:  "declare fn obj() -> {x: number}\nfn go() { val mut d: {x: number} = obj()\nd.x = 2 }",
+			src:  "declare fn obj() -> {x: number}\nfn go() -> undefined { val mut d: {x: number} = obj()\nd.x = 2 }",
 		},
 		{
 			name: "an owned object into a wider annotated binding",
-			src:  "declare fn obj() -> {x: number}\nfn go() { val mut d: {x: number | string} = obj()\nd.x = \"s\" }",
+			src:  "declare fn obj() -> {x: number}\nfn go() -> undefined { val mut d: {x: number | string} = obj()\nd.x = \"s\" }",
 		},
 		{
 			name: "a call into a `mut` parameter",
@@ -813,7 +813,7 @@ func TestInferReturnOfLiteralIsOwned(t *testing.T) {
 	}{
 		{
 			name: "an object literal",
-			src:  "fn make() { return {p: 1} }",
+			src:  "fn make() -> {p: 1} { return {p: 1} }",
 			want: "fn () -> {p: 1}",
 		},
 	}
@@ -863,15 +863,15 @@ func TestAClassOrAliasValueMovesLikeAnObject(t *testing.T) {
 		},
 		{
 			name: "an interface parameter into a `val mut` binding",
-			src:  "export declare interface I { n: number }\nfn go(c: I) { val mut d = c\nd.n = 2 }",
+			src:  "export declare interface I { n: number }\nfn go(c: I) -> undefined { val mut d = c\nd.n = 2 }",
 		},
 		{
 			name: "an alias parameter into a `val mut` binding",
-			src:  "type A = {n: number}\nfn go(c: A) { val mut d = c\nd.n = 2 }",
+			src:  "type A = {n: number}\nfn go(c: A) -> undefined { val mut d = c\nd.n = 2 }",
 		},
 		{
 			name: "an alias naming a primitive copies",
-			src:  "type N = number\nfn go(c: N) { val d = c\nval e = c + 1 }",
+			src:  "type N = number\nfn go(c: N) -> undefined { val d = c\nval e = c + 1 }",
 		},
 		{
 			name:    "a class parameter read after a move",
@@ -890,7 +890,7 @@ func TestAClassOrAliasValueMovesLikeAnObject(t *testing.T) {
 		},
 		{
 			name:    "an alias parameter read after a move",
-			src:     "type A = {n: number}\nfn go(c: A) { val d = c\nval e = c.n }",
+			src:     "type A = {n: number}\nfn go(c: A) -> undefined { val d = c\nval e = c.n }",
 			wantErr: "use of moved value 'c'",
 		},
 		{

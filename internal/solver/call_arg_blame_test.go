@@ -48,8 +48,8 @@ func TestACallBlamesTheArgumentThatDoesNotFit(t *testing.T) {
 		},
 		{
 			name: "AConstructorCall",
-			src:  "class Foo {\n\tv: number,\n}\nfn g(a: string) { return Foo(a) }",
-			want: []string{"4:30-4:31: cannot constrain string <: number"},
+			src:  "class Foo {\n\tv: number,\n}\nfn g(a: string) -> Foo { return Foo(a) }",
+			want: []string{"4:37-4:38: cannot constrain string <: number"},
 		},
 		{
 			name: "AMethodCall",

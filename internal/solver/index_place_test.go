@@ -143,7 +143,7 @@ func TestLiteralIndexConflicts(t *testing.T) {
 			name: "BorrowsOfDifferentLiteralIndices",
 			src: `
 				declare fn readWrite(a: &{x: number}, b: &mut {x: number}) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					val mut xs: Array<{x: number}> = [{x: 1}, {x: 2}]
 					readWrite(&xs[0], &mut xs[1])
 				}
@@ -153,7 +153,7 @@ func TestLiteralIndexConflicts(t *testing.T) {
 			name: "BorrowsOfTheSameLiteralIndex",
 			src: `
 				declare fn readWrite(a: &{x: number}, b: &mut {x: number}) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					val mut xs: Array<{x: number}> = [{x: 1}, {x: 2}]
 					readWrite(&xs[0], &mut xs[0])
 				}
@@ -164,7 +164,7 @@ func TestLiteralIndexConflicts(t *testing.T) {
 			name: "BorrowsOfALiteralIndexAndANumberIndex",
 			src: `
 				declare fn readWrite(a: &{x: number}, b: &mut {x: number}) -> undefined
-				fn go(i: number) {
+				fn go(i: number) -> undefined {
 					val mut xs: Array<{x: number}> = [{x: 1}, {x: 2}]
 					readWrite(&xs[0], &mut xs[i])
 				}
@@ -174,7 +174,7 @@ func TestLiteralIndexConflicts(t *testing.T) {
 		{
 			name: "ReadsOfTwoLiteralIndices",
 			src: `
-				fn go() {
+				fn go() -> undefined {
 					val xs: Array<{x: number}> = [{x: 1}, {x: 2}]
 					val a = xs[0]
 					val b = xs[1]
@@ -184,7 +184,7 @@ func TestLiteralIndexConflicts(t *testing.T) {
 		{
 			name: "ReadsOfOneLiteralIndexTwice",
 			src: `
-				fn go() {
+				fn go() -> undefined {
 					val xs: Array<{x: number}> = [{x: 1}, {x: 2}]
 					val a = xs[0]
 					val b = xs[0]
@@ -196,7 +196,7 @@ func TestLiteralIndexConflicts(t *testing.T) {
 			// The pattern moves t[0], which the read names again.
 			name: "PatternElementThenIndexReadOfTheSameElement",
 			src: `
-				fn go() {
+				fn go() -> undefined {
 					val t: [{x: number}, {x: number}] = [{x: 1}, {x: 2}]
 					val [a, _] = t
 					val c = t[0]
@@ -208,7 +208,7 @@ func TestLiteralIndexConflicts(t *testing.T) {
 			// The pattern moves t[0], and the read names t[1].
 			name: "PatternElementThenIndexReadOfAnotherElement",
 			src: `
-				fn go() {
+				fn go() -> undefined {
 					val t: [{x: number}, {x: number}] = [{x: 1}, {x: 2}]
 					val [a, _] = t
 					val c = t[1]
@@ -234,7 +234,7 @@ func TestLiteralIndexConflicts(t *testing.T) {
 			src: `
 				declare fn mk() -> {x: number}
 				declare fn sink(p: {x: number}) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					var mut t: [{x: number}, {x: number}, {x: number}] = [mk(), mk(), mk()]
 					val [_, ...rest] = t
 					t[1] = mk()
@@ -249,7 +249,7 @@ func TestLiteralIndexConflicts(t *testing.T) {
 			src: `
 				declare fn mk() -> {x: number}
 				declare fn sink(p: {x: number}) -> undefined
-				fn go(i: number) {
+				fn go(i: number) -> undefined {
 					val mut xs: Array<{x: number}> = [mk(), mk()]
 					sink(xs[0])
 					xs[i].x = 3
@@ -303,7 +303,7 @@ func TestLiteralIndexConflicts(t *testing.T) {
 			// The rest's tuple pattern binds a to t[1], so the read of t[1][1] reads moved data.
 			name: "NestedRestPatternThenIndexReadUnderIt",
 			src: `
-				fn go(t: [[{x: number}, {x: number}], [{x: number}, {x: number}]]) {
+				fn go(t: [[{x: number}, {x: number}], [{x: number}, {x: number}]]) -> [[{x: number}, {x: number}], {x: number}] {
 					val [_, ...[a]] = t
 					val b = t[1][1]
 					return [a, b]
@@ -315,7 +315,7 @@ func TestLiteralIndexConflicts(t *testing.T) {
 			// The rest's tuple pattern moves t[1] into a, which leaves t[0] usable.
 			name: "NestedRestPatternThenIndexReadBeforeIt",
 			src: `
-				fn go(t: [[{x: number}, {x: number}], [{x: number}, {x: number}]]) {
+				fn go(t: [[{x: number}, {x: number}], [{x: number}, {x: number}]]) -> [[{x: number}, {x: number}], {x: number}] {
 					val [_, ...[a]] = t
 					val b = t[0][1]
 					return [a, b]
@@ -327,7 +327,7 @@ func TestLiteralIndexConflicts(t *testing.T) {
 			name: "FieldSpelledLikeARest",
 			src: `
 				declare fn sink(p: {x: number}) -> undefined
-				fn go() {
+				fn go() -> undefined {
 					val o: {"1...": {x: number}, "2": {x: number}} = {"1...": {x: 1}, "2": {x: 2}}
 					sink(o["1..."])
 					sink(o["2"])

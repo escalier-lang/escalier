@@ -44,7 +44,7 @@ func TestCallStoreEdge(t *testing.T) {
 					item: &'a mut {value: number},
 				) -> undefined
 
-				fn build(mut p: {value: number}, mut q: {value: number}, out: &mut {slot: &mut {value: number}}) {
+				val build = fn (mut p: {value: number}, mut q: {value: number}, out: &mut {slot: &mut {value: number}}) {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p, spare: &mut q}
 					store(&mut a, &mut b)
@@ -94,7 +94,7 @@ func TestCallStoreEdge(t *testing.T) {
 					item: &'a mut {value: number},
 				) -> undefined
 
-				fn build(mut p: {value: number}, mut q: {value: number}, out: &mut {slot: &mut {value: number}}) {
+				val build = fn (mut p: {value: number}, mut q: {value: number}, out: &mut {slot: &mut {value: number}}) {
 					val mut b = {value: 2}
 					val mut a = {inner: {peer: &mut p, spare: &mut q}}
 					store(&mut a.inner, &mut b)
@@ -220,7 +220,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					item: &'a mut {value: number},
 				) -> undefined
 				declare fn take(x: [&mut {value: number}]) -> undefined
-				fn build(mut p: {value: number}) {
+				val build = fn (mut p: {value: number}) {
 					val mut b = {value: 2}
 					val mut a = [&mut p]
 					store(&mut a, &mut b)
@@ -243,7 +243,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					item: &'a mut {value: number},
 				) -> undefined
 				declare fn take(x: [&'static mut {value: number}]) -> undefined
-				fn build(mut p: {value: number}) {
+				val build = fn (mut p: {value: number}) {
 					val mut b = {value: 2}
 					val mut a = [&mut p]
 					store(&mut a, &mut b)
@@ -268,7 +268,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					target: &'c mut {box: &'d mut Box<&'a mut {value: number}>},
 					item: &'a mut {value: number},
 				) -> undefined
-				fn build(mut seeded: Box<&mut {value: number}>, out: &mut {slot: &mut Box<&mut {value: number}>}) {
+				val build = fn (mut seeded: Box<&mut {value: number}>, out: &mut {slot: &mut Box<&mut {value: number}>}) {
 					val mut b = {value: 2}
 					val mut a = {box: &mut seeded}
 					store(&mut a, &mut b)
@@ -290,7 +290,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 			src: `
 				type Holder<'a> = {peer: &'a mut {value: number}}
 				declare fn store<'a, 'c>(target: &'c mut Holder<'a>, item: &'a mut {value: number}) -> undefined
-				fn build(mut p: {value: number}, out: &mut {slot: &mut {value: number}}) {
+				val build = fn (mut p: {value: number}, out: &mut {slot: &mut {value: number}}) {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p}
 					store(&mut a, &mut b)
@@ -314,7 +314,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					target: &'c mut {peer: &'a mut {value: number}},
 					item: &'d {inner: &'a mut {value: number}},
 				) -> undefined
-				fn build(mut p: {value: number}, mut q: {value: number}, out: &mut {slot: &mut {value: number}}) {
+				val build = fn (mut p: {value: number}, mut q: {value: number}, out: &mut {slot: &mut {value: number}}) {
 					val mut b = {inner: &mut q}
 					val mut a = {peer: &mut p}
 					store(&mut a, &b)
@@ -344,7 +344,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					target: &'c mut {peer: &'a mut {value: number} | &'a mut {other: number}},
 					item: &'a mut {value: number},
 				) -> undefined
-				fn build(mut p: {value: number}, out: &mut {slot: &mut {value: number} | &mut {other: number}}) {
+				val build = fn (mut p: {value: number}, out: &mut {slot: &mut {value: number} | &mut {other: number}}) {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p}
 					store(&mut a, &mut b)
@@ -353,7 +353,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					val z = out
 				}
 			`,
-			want: []string{"6:29-6:35: object is missing property: value", "3:71-3:77: object has extra property: other", "11:14-11:15: cannot move 'b' while it is borrowed"},
+			want: []string{"6:36-6:42: object is missing property: value", "3:71-3:77: object has extra property: other", "11:14-11:15: cannot move 'b' while it is borrowed"},
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut {peer: &'a mut {value: number} | &'a mut {other: number}}, " +
 					"item: &'a mut {value: number}) -> undefined",
@@ -368,7 +368,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					target: &'c mut {peer: &'a mut {value: number}},
 					item: &'d {inner: &'a mut {value: number}},
 				) -> undefined
-				fn build(mut p: {value: number}, out: &mut {slot: &mut {value: number}}) {
+				val build = fn (mut p: {value: number}, out: &mut {slot: &mut {value: number}}) {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p}
 					store(&mut a, &{inner: &mut b})
@@ -391,7 +391,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					target: &'c mut {peers: &'d mut {[key: string]?: &'a mut {value: number}}},
 					item: &'a mut {value: number},
 				) -> undefined
-				fn build(mut seeded: {[key: string]?: &mut {value: number}}, out: &mut {slot: &mut {[key: string]?: &mut {value: number}}}) {
+				val build = fn (mut seeded: {[key: string]?: &mut {value: number}}, out: &mut {slot: &mut {[key: string]?: &mut {value: number}}}) {
 					val mut b = {value: 2}
 					val mut a = {peers: &mut seeded}
 					store(&mut a, &mut b)
@@ -416,7 +416,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					target: &'c mut {peer: &'a {value: number}},
 					item: &'a {value: number},
 				) -> undefined
-				fn build(p: {value: number}, out: &mut {slot: &{value: number}}) {
+				val build = fn (p: {value: number}, out: &mut {slot: &{value: number}}) {
 					val b = {value: 2}
 					val mut a = {peer: &p}
 					store(&mut a, &b)
@@ -569,7 +569,7 @@ func TestCallStoreEdgeNonStores(t *testing.T) {
 			src: `
 				declare fn pair<'a>(x: &'a mut {value: number}, y: &'a mut {value: number}) -> undefined
 				declare fn take(mut x: {peer: &mut {value: number}}) -> undefined
-				fn build(mut p: {value: number}) -> undefined {
+				val build = fn (mut p: {value: number}) {
 					val mut b = {value: 2}
 					val mut c = {value: 3}
 					val mut a = {peer: &mut p}
@@ -664,7 +664,7 @@ func TestCallStoreEdgeNonStores(t *testing.T) {
 					mut target: {peer: &'a mut {value: number}},
 					item: &'a mut {value: number},
 				) -> undefined
-				fn build(mut p: {value: number}) -> undefined {
+				val build = fn (mut p: {value: number}) {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p}
 					keep(a, &mut b)

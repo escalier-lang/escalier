@@ -95,7 +95,7 @@ func TestAmbiguousUnionCommitInGenericCode(t *testing.T) {
 			// variable without a lower bound, so h returns `never`.
 			name: "CallArgumentInsideGenericBodyNamesRigidParam",
 			src: `
-				fn h<T>(t: T, k: fn <A>(x: A | T | number) -> A) { return k(5) }
+				fn h<T>(t: T, k: fn <A>(x: A | T | number) -> A) -> never { return k(5) }
 			`,
 			wantValues: map[string]string{"h": "fn <T>(t: T, k: fn <A>(x: A | T | number) -> A) -> never"},
 			wantMsgs: []string{

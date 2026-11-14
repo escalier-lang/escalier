@@ -936,7 +936,7 @@ func TestInferWarnsAboutAFunctionReadOffAnInferredReceiver(t *testing.T) {
 			src: `
 				class Foo { m(&self) -> number { return 1 } }
 				fn each(x: Foo, k: fn (y: Foo) -> number) -> number { return k(x) }
-				fn h(x: Foo) { return each(x, fn (o) { val g = o.m
+				val h = fn (x: Foo) { return each(x, fn (o) { val g = o.m
 					return g() }) }
 			`,
 			types: map[string]string{
@@ -959,7 +959,7 @@ func TestInferWarnsAboutAFunctionReadOffAnInferredReceiver(t *testing.T) {
 		},
 		{
 			name: "AnAnnotatedMethodReceiver",
-			src: `fn f(o: {m(&self) -> number}) {
+			src: `fn f(o: {m(&self) -> number}) -> number {
 					val g = o.m
 					return g()
 				}`,
@@ -967,7 +967,7 @@ func TestInferWarnsAboutAFunctionReadOffAnInferredReceiver(t *testing.T) {
 		},
 		{
 			name: "AnAnnotatedFieldReceiver",
-			src: `fn f(o: {m: fn () -> number}) {
+			src: `fn f(o: {m: fn () -> number}) -> number {
 					val g = o.m
 					return g()
 				}`,
