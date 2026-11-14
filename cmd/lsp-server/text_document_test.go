@@ -901,6 +901,22 @@ func TestHoverFromSolver(t *testing.T) {
 			expected: escalierCode("(type parameter) K in keyof T"),
 		},
 		{
+			name: "InferRefInExtends",
+			files: map[string]string{
+				"lib/a.esc": "export type Same<T> = if T : [infer A, A] { A } else { never }",
+			},
+			open: "lib/a.esc", line: 0, col: 39,
+			expected: escalierCode("(type parameter) A"),
+		},
+		{
+			name: "RegexCaptureRef",
+			files: map[string]string{
+				"lib/a.esc": "export type Strip<T> = if T : /^_*(?<Ident>[a-zA-Z]+)_*$/ { Ident } else { T }",
+			},
+			open: "lib/a.esc", line: 0, col: 60,
+			expected: escalierCode("(type parameter) Ident"),
+		},
+		{
 			name:  "Keyword",
 			files: map[string]string{"bin/main.esc": "val x = 5"},
 			open:  "bin/main.esc", line: 0, col: 1,
