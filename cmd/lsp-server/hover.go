@@ -127,19 +127,40 @@ func typeRefText(q hoverQuery, ref *ast.TypeRefTypeAnn) (string, bool) {
 			return text, true
 		}
 	}
-	if q.info == nil || q.scope == nil {
+	decl, ok := refDecl(q, ref)
+	if !ok {
 		return "", false
+	}
+	if text := refDeclText(q, decl); text != "" {
+		return text, true
+	}
+	return "", false
+}
+
+// refDeclText returns declHoverText for decl, the declaration a type reference in q
+// names, read against the records of the file that declares it.
+func refDeclText(q hoverQuery, decl ast.Decl) string {
+	// A bin/ script reading a lib/ alias has a table of its own, which holds nothing
+	// about the alias's annotation.
+	return declHoverText(q.infoFor(decl.Span().SourceID), decl)
+}
+
+// refDecl returns the declaration of the type the type reference ref names, and false
+// when the name resolves to no declared type in the file's scope.
+func refDecl(q hoverQuery, ref *ast.TypeRefTypeAnn) (ast.Decl, bool) {
+	if q.info == nil || q.scope == nil {
+		return nil, false
 	}
 	refName := typeName(q.info.TypeOf(ref))
 	if refName == "" {
-		return "", false
+		return nil, false
 	}
 	binding, ok := q.scope.GetType(ast.QualIdentToString(ref.Name))
 	// A type a function body declares is not in the file's scope, and a binding of the
 	// same name outside the body is a different type, which the solver names
 	// differently.
 	if !ok || typeName(binding.Type) != refName {
-		return "", false
+		return nil, false
 	}
 	for _, src := range binding.Sources {
 		np, ok := src.(*ast.NodeProvenance)
@@ -147,14 +168,10 @@ func typeRefText(q hoverQuery, ref *ast.TypeRefTypeAnn) (string, bool) {
 			continue
 		}
 		if decl, ok := np.Node.(ast.Decl); ok {
-			// The alias's annotation is recorded in the table of the file that declares it.
-			// A bin/ script reading a lib/ alias has a table of its own.
-			if text := declHoverText(q.infoFor(decl.Span().SourceID), decl); text != "" {
-				return text, true
-			}
+			return decl, true
 		}
 	}
-	return "", false
+	return nil, false
 }
 
 // typeName returns the qualified name of the declared type t refers to, or "" when t

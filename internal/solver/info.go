@@ -234,3 +234,30 @@ func (i *Info) Evaluate(t soltype.Type) soltype.Type {
 	}
 	return t.Accept(&operatorEvaluator{eval: newTypeEvaluator(i.ctx, newSeenPairs())}, soltype.Positive)
 }
+
+// ExpandAlias returns the type the alias reference t stands for, one step deep, with
+// its type arguments substituted for the alias's type parameters. `Box<string>` for
+// `type Box<T> = {value: T}` expands to `{value: string}`, and an alias the body names
+// stays a reference. It returns false when t names no alias the run registered, and on
+// a table built by NewInfo. Call it only once a run has finished, for the reason
+// MemberObject gives.
+func (i *Info) ExpandAlias(t *soltype.AliasType) (soltype.Type, bool) {
+	if i.ctx == nil || t == nil {
+		return nil, false
+	}
+	return i.ctx.aliasBody(t)
+}
+
+// AliasTypeParams returns the type parameters of the alias t names, in declaration
+// order, whose variables are the ones the alias's body reads. It returns false when t
+// names no alias the run registered, and on a table built by NewInfo.
+func (i *Info) AliasTypeParams(t *soltype.AliasType) ([]*soltype.TypeParam, bool) {
+	if i.ctx == nil || t == nil {
+		return nil, false
+	}
+	def, ok := i.ctx.aliasDef(t.Name)
+	if !ok {
+		return nil, false
+	}
+	return def.TypeParams, true
+}

@@ -7,6 +7,7 @@ import {
     provideCompletionItems,
     resolveCompletionItem,
 } from './completions';
+import { createHoverProvider } from './hover';
 import type { Client } from './lsp-client/client';
 import { monarchLanguage } from './monarch-language';
 import {
@@ -349,27 +350,13 @@ export function setupLanguage(
         },
     });
 
-    monaco.languages.registerHoverProvider(languageID, {
-        async provideHover(model, position, _token, _context) {
-            flushPendingChanges(model.uri.toString());
-            const hover = await client.textDocumentHover({
-                textDocument: { uri: model.uri.toString() },
-                position: monacoPosToLspPos(position),
-            });
-            // The server sends its hover as Markdown, or nothing when the
-            // cursor is on nothing with a hover to show.
-            if (!hover || !lsp.MarkupContent.is(hover.contents)) {
-                return null;
-            }
-            return {
-                contents: [
-                    {
-                        value: hover.contents.value,
-                    },
-                ],
-            };
-        },
-    });
+    monaco.languages.registerHoverProvider(
+        languageID,
+        createHoverProvider({
+            request: (params) => client.textDocumentHover(params),
+            flushPendingChanges,
+        }),
+    );
 
     const signatureHelpOptions = capabilities.signatureHelpProvider;
     if (signatureHelpOptions) {
