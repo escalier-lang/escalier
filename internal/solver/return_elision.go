@@ -128,7 +128,14 @@ func (c *checker) returnBorrowLifetime(ann ast.Node, lvl int) soltype.Lifetime {
 	r := c.retLts
 	if r.tiesBorrows {
 		lt := c.ctx.freshLifetime(lvl)
-		c.tieToInputs(lt)
+		// Each input outlives the thrown borrow, and the bounds stay one way so the
+		// signature renders as `<'a: 'c, 'b: 'c, 'c>` rather than merging the inputs into one
+		// lifetime.
+		for _, in := range r.inputs {
+			if _, static := in.(*soltype.StaticLifetime); !static {
+				c.ctx.constrainLt(in, lt)
+			}
+		}
 		return lt
 	}
 	if r.borrow != nil {
