@@ -1244,6 +1244,54 @@ func TestHoverFromSolver(t *testing.T) {
 			expected: escalierCode("(variant) Result.Err(error: E)"),
 		},
 		{
+			name: "StaticFieldDecl",
+			files: map[string]string{
+				"lib/a.esc": "export class C { static max: number = 5, static make() -> number { return 1 } }",
+			},
+			open: "lib/a.esc", line: 0, col: 24,
+			expected: escalierCode("(property) C.max: number"),
+		},
+		{
+			name: "StaticMethodDecl",
+			files: map[string]string{
+				"lib/a.esc": "export class C { static max: number = 5, static make() -> number { return 1 } }",
+			},
+			open: "lib/a.esc", line: 0, col: 48,
+			expected: escalierCode("(method) C.make() -> number"),
+		},
+		{
+			name: "InterfaceMethodDecl",
+			files: map[string]string{
+				"lib/a.esc": "export interface Shape { area(self) -> number, describe?(self) -> string, get label(self) -> string }",
+			},
+			open: "lib/a.esc", line: 0, col: 25,
+			expected: escalierCode("(method) area() -> number"),
+		},
+		{
+			name: "InterfaceOptionalMethodDecl",
+			files: map[string]string{
+				"lib/a.esc": "export interface Shape { area(self) -> number, describe?(self) -> string, get label(self) -> string }",
+			},
+			open: "lib/a.esc", line: 0, col: 47,
+			expected: escalierCode("(method) describe?() -> string"),
+		},
+		{
+			name: "InterfaceGetterDecl",
+			files: map[string]string{
+				"lib/a.esc": "export interface Shape { area(self) -> number, describe?(self) -> string, get label(self) -> string }",
+			},
+			open: "lib/a.esc", line: 0, col: 78,
+			expected: escalierCode("(getter) label: string"),
+		},
+		{
+			name: "ObjectTypeMethodDecl",
+			files: map[string]string{
+				"lib/a.esc": "export type S = {area(self) -> number}",
+			},
+			open: "lib/a.esc", line: 0, col: 17,
+			expected: escalierCode("(method) area() -> number"),
+		},
+		{
 			name:  "Keyword",
 			files: map[string]string{"bin/main.esc": "val x = 5"},
 			open:  "bin/main.esc", line: 0, col: 1,
