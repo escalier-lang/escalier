@@ -161,9 +161,9 @@ func typeName(t soltype.Type) string {
 }
 
 // declText returns the declaration header decl shows on hover, without its `export` or
-// `declare` modifier, or "" for a declaration it does not render. A function shows its
-// signature, a class and an enum show their name and type parameters, and an interface
-// shows its members as well.
+// `declare` modifier, or "" for a declaration it does not render. A type alias shows its
+// whole declaration, a class and an enum show their name and type parameters, and an
+// interface shows its members as well.
 func declText(decl ast.Decl) string {
 	switch decl := decl.(type) {
 	case *ast.TypeDecl:
