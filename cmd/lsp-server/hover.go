@@ -833,7 +833,7 @@ func objTypePropText(obj *ast.ObjectTypeAnn, loc ast.Location) (string, bool) {
 		if !ok || !prop.Name.Span().Contains(loc) {
 			continue
 		}
-		return propertyText("", objKeyName(prop.Name), printCompact(prop.Value)), true
+		return modifiedPropertyText("", objKeyName(prop.Name), printCompact(prop.Value), prop.Readonly, prop.Optional), true
 	}
 	return "", false
 }
