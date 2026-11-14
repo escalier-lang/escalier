@@ -360,3 +360,261 @@ func typeParamText(tp *ast.TypeParam) string {
 	}
 	return text
 }
+
+// memberHover returns the hover text for a member read or an object-literal property key,
+// and false when the cursor is on neither. A member of a named type carries that name, as
+// `(property) Response.status: number`, and a member of an object literal or object type
+// carries none, as `(property) volume: number`.
+func memberHover(q hoverQuery) (string, bool) {
+	if q.info == nil {
+		return "", false
+	}
+	switch n := q.node.(type) {
+	case *ast.MemberExpr:
+		if !n.Prop.Span().Contains(q.loc) {
+			return "", false
+		}
+		return memberReadText(q.info, n)
+	case *ast.PropertyExpr:
+		if !n.Name.Span().Contains(q.loc) {
+			return "", false
+		}
+		return objLiteralPropText(q.info, n)
+	}
+	return "", false
+}
+
+// memberReadText returns the hover text for the member read m, and false when its type was
+// not recorded. The owning type's members name the kind, so `res.json` reads as
+// `(method) Response.json() -> Promise<unknown>` rather than as a plain property.
+func memberReadText(info *solver.Info, m *ast.MemberExpr) (string, bool) {
+	t := info.DisplayTypeOf(m)
+	if t == nil {
+		return "", false
+	}
+	objType := info.ResolvedTypeOf(m.Object)
+	owner := memberOwner(info, m.Object, objType)
+	if obj, ok := info.MemberObject(objType); ok {
+		for _, elem := range obj.Elems {
+			if soltype.ObjElemName(elem) == m.Prop.Name {
+				return memberElemText(owner, elem), true
+			}
+		}
+	}
+	// The member resolved to a type with no fixed member set, such as an index
+	// signature, so its recorded type stands in and the kind defaults to a property.
+	return propertyText(owner, m.Prop.Name, soltype.PrintAsScheme(t)), true
+}
+
+// memberOwner returns the name of the type a member read through object belongs to, where
+// objType is object's resolved type, or "" for an object with no name. A read of a class
+// name, as in `Thermostat.minimum`, reads the class's static side, whose type is an
+// unnamed object, so the class's name is taken from its declaration.
+func memberOwner(info *solver.Info, object ast.Expr, objType soltype.Type) string {
+	if ident, ok := object.(*ast.IdentExpr); ok {
+		if decl, ok := info.DeclOf(ident); ok {
+			if class, ok := decl.(*ast.ClassDecl); ok {
+				return class.Name.Name
+			}
+		}
+	}
+	return baseName(typeName(info.Expand(objType)))
+}
+
+// objLiteralPropText returns the hover text for the key of an object-literal property, as
+// `(property) volume: number`, and false when prop is shorthand or its value has no
+// recorded type.
+func objLiteralPropText(info *solver.Info, prop *ast.PropertyExpr) (string, bool) {
+	if prop.Value == nil {
+		return "", false
+	}
+	name := objKeyName(prop.Name)
+	if name == "" {
+		return "", false
+	}
+	t := info.DisplayTypeOf(prop.Value)
+	if t == nil {
+		return "", false
+	}
+	return propertyText("", name, soltype.PrintAsScheme(t)), true
+}
+
+// memberElemText renders one member of an object type under owner, which is the name of
+// the type the member belongs to or "" for an object with no name.
+func memberElemText(owner string, elem soltype.ObjTypeElem) string {
+	switch elem := elem.(type) {
+	case *soltype.PropertyElem:
+		return modifiedPropertyText(owner, elem.Name, soltype.Print(elem.Type), elem.Readonly, elem.Optional)
+	case *soltype.GetterElem:
+		return "(getter) " + qualify(owner, elem.Name) + ": " + soltype.Print(elem.Type)
+	case *soltype.SetterElem:
+		return "(setter) " + qualify(owner, elem.Name) + ": " + soltype.Print(elem.Param.Type)
+	case *soltype.MethodElem:
+		if len(elem.Signatures) == 0 {
+			return propertyText(owner, elem.Name, "")
+		}
+		name := qualify(owner, elem.Name)
+		if elem.Optional {
+			name += "?"
+		}
+		text := "(method) " + name + methodSignature(elem.Signatures[0])
+		if extra := len(elem.Signatures) - 1; extra > 0 {
+			text += " (+" + strconv.Itoa(extra) + " overload" + plural(extra) + ")"
+		}
+		return text
+	}
+	return propertyText(owner, soltype.ObjElemName(elem), "")
+}
+
+// propertyText renders a property member as `(property) owner.name: type`, dropping the
+// owner when it is empty.
+func propertyText(owner, name, typ string) string {
+	return "(property) " + qualify(owner, name) + ": " + typ
+}
+
+// modifiedPropertyText renders a property member as propertyText does, adding the
+// `readonly` and `?` modifiers the property declares, as
+// `(property) readonly Task.id: number` and `(property) Point.y?: number`.
+func modifiedPropertyText(owner, name, typ string, readonly, optional bool) string {
+	text := "(property) "
+	if readonly {
+		text += "readonly "
+	}
+	text += qualify(owner, name)
+	if optional {
+		text += "?"
+	}
+	return text + ": " + typ
+}
+
+// methodSignature renders a method's parameters and return without its receiver, as
+// `() -> Promise<unknown>` for a `json` method, so the caller prepends the method name.
+func methodSignature(sig *soltype.FuncType) string {
+	withoutSelf := *sig
+	withoutSelf.SelfParam = nil
+	return strings.TrimPrefix(soltype.Print(&withoutSelf), "fn ")
+}
+
+// qualify joins an owner name and a member name with a dot, or returns the member name
+// alone when the owner is empty.
+func qualify(owner, name string) string {
+	if owner == "" {
+		return name
+	}
+	return owner + "." + name
+}
+
+// baseName returns a qualified type name's last dotted segment, so the builtin
+// `import:std:async.web__fetch.Response` shows on a member as `Response`.
+func baseName(name string) string {
+	if i := strings.LastIndex(name, "."); i >= 0 {
+		return name[i+1:]
+	}
+	return name
+}
+
+// objKeyName returns the name an object key writes, or "" for a computed key.
+func objKeyName(key ast.ObjKey) string {
+	switch key := key.(type) {
+	case *ast.IdentExpr:
+		return key.Name
+	case *ast.StrLit:
+		return key.Value
+	}
+	return ""
+}
+
+// selfHover returns the hover text for a `self` receiver read inside a method, as
+// `self: &mut HttpError`, and false when the cursor is not on such a read. The borrow
+// comes from the method's receiver and the type name from the enclosing class.
+func selfHover(q hoverQuery) (string, bool) {
+	ident, ok := q.node.(*ast.IdentExpr)
+	if !ok || ident.Name != "self" || q.info == nil {
+		return "", false
+	}
+	// The checker binds `self` without a declaration, so a node with one is an ordinary
+	// read, not a receiver.
+	if _, declared := q.info.DeclOf(ident); declared {
+		return "", false
+	}
+	class := enclosingClass(q.ancestors)
+	if class == nil {
+		return "", false
+	}
+	text := "self: " + classRefName(class)
+	if recv := enclosingReceiver(q.ancestors, class); recv != nil && recv.Mode == ast.BorrowReceiver {
+		if recv.Mut {
+			text = "self: &mut " + classRefName(class)
+		} else {
+			text = "self: &" + classRefName(class)
+		}
+	}
+	return text, true
+}
+
+// enclosingClass returns the nearest class declaration among ancestors, or nil when the
+// cursor is in none.
+func enclosingClass(ancestors []ast.Node) *ast.ClassDecl {
+	for i := len(ancestors) - 1; i >= 0; i-- {
+		if class, ok := ancestors[i].(*ast.ClassDecl); ok {
+			return class
+		}
+	}
+	return nil
+}
+
+// enclosingReceiver returns the `self` receiver of the nearest method whose body holds the
+// cursor, found by matching a function-expression ancestor to a member of class. A closure
+// inside a method is not a member, so `self` read in it resolves to that method's
+// receiver. It returns nil when no method body encloses the cursor.
+func enclosingReceiver(ancestors []ast.Node, class *ast.ClassDecl) *ast.MethodReceiver {
+	for i := len(ancestors) - 1; i >= 0; i-- {
+		fn, ok := ancestors[i].(*ast.FuncExpr)
+		if !ok {
+			continue
+		}
+		if recv, ok := receiverOfFn(class, fn); ok {
+			return recv
+		}
+	}
+	return nil
+}
+
+// receiverOfFn returns the receiver of the member of class whose function is fn, and false
+// when no member has that function.
+func receiverOfFn(class *ast.ClassDecl, fn *ast.FuncExpr) (*ast.MethodReceiver, bool) {
+	for _, elem := range class.Body {
+		switch elem := elem.(type) {
+		case *ast.MethodElem:
+			if elem.Fn == fn {
+				return elem.Receiver, true
+			}
+		case *ast.GetterElem:
+			if elem.Fn == fn {
+				return elem.Receiver, true
+			}
+		case *ast.SetterElem:
+			if elem.Fn == fn {
+				return elem.Receiver, true
+			}
+		case *ast.ConstructorElem:
+			if elem.Fn == fn {
+				return elem.Receiver, true
+			}
+		}
+	}
+	return nil, false
+}
+
+// classRefName renders a class name with its type parameters as arguments, as `Box<T>`
+// for a generic class and `Dog` for a plain one.
+func classRefName(class *ast.ClassDecl) string {
+	if len(class.TypeParams) == 0 {
+		return class.Name.Name
+	}
+	names := make([]string, len(class.TypeParams))
+	for i, tp := range class.TypeParams {
+		names[i] = tp.Name
+	}
+	return class.Name.Name + "<" + strings.Join(names, ", ") + ">"
+}

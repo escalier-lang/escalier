@@ -269,6 +269,12 @@ func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.
 	if text, ok := valueHover(q); ok {
 		return codeHover(text), nil
 	}
+	if text, ok := selfHover(q); ok {
+		return codeHover(text), nil
+	}
+	if text, ok := memberHover(q); ok {
+		return codeHover(text), nil
+	}
 	switch q.node.(type) {
 	// A literal or template string already shows its value in the source, so a hover
 	// on it adds nothing.
