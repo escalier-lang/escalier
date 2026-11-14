@@ -255,14 +255,23 @@ func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.
 	if co := server.checkOutput; co != nil {
 		q.node, q.ancestors = findNodeWithAncestorsAt(co, sourceID, loc)
 		q.info = co.InfoFor(sourceID)
+		q.infoFor = co.InfoFor
 		q.scope = scopeOfFile(co, sourceID)
 	}
 	server.mu.RUnlock()
 	if q.info == nil {
 		return nil, nil
 	}
-	server.solverMu.RLock()
-	defer server.solverMu.RUnlock()
+	// A hover on a type alias's name or on a type reference evaluates the alias's type,
+	// and deciding a conditional in it writes the run's Context while it runs. Only those
+	// hovers hold solverMu for writing.
+	if evaluatesAlias(q.node) {
+		server.solverMu.Lock()
+		defer server.solverMu.Unlock()
+	} else {
+		server.solverMu.RLock()
+		defer server.solverMu.RUnlock()
+	}
 	if text, ok := typeHover(q); ok {
 		return codeHover(text), nil
 	}
@@ -292,6 +301,16 @@ func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.
 		}
 	}
 	return nil, nil
+}
+
+// evaluatesAlias reports whether a hover on node can evaluate a type alias's type, which
+// it does on a type declaration and on a type reference.
+func evaluatesAlias(node ast.Node) bool {
+	switch node.(type) {
+	case *ast.TypeDecl, *ast.TypeRefTypeAnn:
+		return true
+	}
+	return false
 }
 
 // codeHover returns a hover that shows code as an Escalier code block.

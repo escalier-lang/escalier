@@ -2232,3 +2232,42 @@ func (f *freeVarFinder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.
 func (f *freeVarFinder) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	return t
 }
+
+// operatorEvaluator is a rewriting visitor that replaces each operator it reaches by the
+// type the operator reduces to. It reduces outermost first, since reducing an operator
+// reduces its operands too. The value an operator reduces to can hold operators of its own, such as the
+// object `{y: Point["y"]}` a conditional selects, so the visitor walks that value's
+// children in turn. An operator that stays as written is not walked again.
+//
+// A meet and a complement are reduced on the way out instead, once their members are
+// evaluated, because a meet that is not a set difference stays a meet and its members
+// still need walking.
+type operatorEvaluator struct {
+	eval *typeEvaluator
+}
+
+func (v *operatorEvaluator) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	if !isEvaluableOp(t) {
+		return soltype.EnterResult{}
+	}
+	reduced := v.eval.reduce(t)
+	if isEvaluableOp(reduced) {
+		return soltype.EnterResult{Type: reduced, SkipChildren: true}
+	}
+	return soltype.EnterResult{Type: reduced.Accept(v, pol), SkipChildren: true}
+}
+
+func (v *operatorEvaluator) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
+	switch t.(type) {
+	case *soltype.IntersectionType, *soltype.NegationType:
+		return v.eval.reduce(t)
+	}
+	return t
+}
+
+// isEvaluableOp reports whether t is an operator operatorEvaluator reduces on the way
+// into it: a residual operator, an object carrying a spread or mapped member, or a tuple
+// carrying a spread.
+func isEvaluableOp(t soltype.Type) bool {
+	return isResidualOp(t) || objectIsResidual(t) || tupleHasSpread(t)
+}

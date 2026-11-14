@@ -100,6 +100,8 @@ type Server struct {
 	// library's run and every script checked against it share one set of registries,
 	// and re-checking a script writes them. validateBinScript holds it for writing
 	// around the check, and a request that queries a run's Info holds it for reading.
+	// A request that calls Info.Evaluate holds it for writing, since Evaluate writes the
+	// run's Context while it runs.
 	solverMu sync.RWMutex
 	// validated is broadcast after validate() updates the checkOutput.
 	// The completion handler waits on this when the cached version is

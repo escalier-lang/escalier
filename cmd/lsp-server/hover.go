@@ -21,6 +21,9 @@ type hoverQuery struct {
 	node      ast.Node
 	ancestors []ast.Node
 	info      *solver.Info
+	// infoFor returns the records of the file a SourceID names. For a declaration in
+	// another file, those are not info.
+	infoFor func(sourceID int) *solver.Info
 	// scope is the scope names in the file resolve in. A name a function body
 	// declares is not in it.
 	scope *solver.Scope
@@ -48,7 +51,7 @@ func typeHover(q hoverQuery) (string, bool) {
 	switch n := q.node.(type) {
 	case *ast.TypeDecl:
 		if n.Name.Span().Contains(q.loc) {
-			return declText(n), true
+			return declHoverText(q.info, n), true
 		}
 	case *ast.FuncDecl:
 		if n.Name != nil && n.Name.Span().Contains(q.loc) && q.info != nil {
@@ -144,7 +147,9 @@ func typeRefText(q hoverQuery, ref *ast.TypeRefTypeAnn) (string, bool) {
 			continue
 		}
 		if decl, ok := np.Node.(ast.Decl); ok {
-			if text := declText(decl); text != "" {
+			// The alias's annotation is recorded in the table of the file that declares it.
+			// A bin/ script reading a lib/ alias has a table of its own.
+			if text := declHoverText(q.infoFor(decl.Span().SourceID), decl); text != "" {
 				return text, true
 			}
 		}
@@ -183,6 +188,27 @@ func declText(decl ast.Decl) string {
 		return printCompact(&bare)
 	}
 	return ""
+}
+
+// declHoverText returns declText for decl, followed for a type alias by a line holding
+// the alias's evaluated type when that prints differently from the type as written.
+// `type Y = Point["y"]` for `type Point = {x: number, y?: number}` shows
+// `type Y = Point["y"]` and then `= number`.
+func declHoverText(info *solver.Info, decl ast.Decl) string {
+	text := declText(decl)
+	alias, ok := decl.(*ast.TypeDecl)
+	if !ok || text == "" || info == nil {
+		return text
+	}
+	written := info.TypeOf(alias.TypeAnn)
+	if written == nil {
+		return text
+	}
+	evaluated := soltype.PrintAsScheme(info.Evaluate(written))
+	if evaluated == soltype.PrintAsScheme(written) {
+		return text
+	}
+	return text + "\n= " + evaluated
 }
 
 // funcText renders the function type t under name, as in

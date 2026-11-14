@@ -398,3 +398,85 @@ func TestNeedsMutReceiver(t *testing.T) {
 		})
 	}
 }
+
+func TestInfoEvaluate(t *testing.T) {
+	tests := []struct {
+		name string
+		// src declares v, and Evaluate is asked about the type v was declared at.
+		src      string
+		expected string
+	}{
+		{
+			name:     "IndexedAccess",
+			src:      "type Point = {x: number, y?: number}\ndeclare val v: Point[\"y\"]",
+			expected: "number",
+		},
+		{
+			name:     "Keyof",
+			src:      "type Point = {x: number, y?: number}\ndeclare val v: keyof Point",
+			expected: "\"x\" | \"y\"",
+		},
+		{
+			name:     "Conditional",
+			src:      "declare val v: if \"a\" : string { 1 } else { 2 }",
+			expected: "1",
+		},
+		{
+			name:     "Mapped",
+			src:      "type Point = {x: number, y?: number}\ndeclare val v: {[K]: boolean for K in keyof Point}",
+			expected: "{x: boolean, y?: boolean}",
+		},
+		{
+			name:     "NestedOperator",
+			src:      "type Point = {x: number, y?: number}\ndeclare val v: {y: Point[\"y\"]}",
+			expected: "{y: number}",
+		},
+		{
+			name:     "OperatorInSelectedBranch",
+			src:      "type Point = {x: number, y?: number}\ndeclare val v: if \"a\" : string { {k: keyof Point} } else { 2 }",
+			expected: "{k: \"x\" | \"y\"}",
+		},
+		{
+			// The annotation resolves the meet but leaves the `keyof` in it unreduced,
+			// so Evaluate reduces the meet once its members are evaluated.
+			name:     "Difference",
+			src:      "type Point = {x: number, y?: number}\ndeclare val v: keyof Point & ~\"x\"",
+			expected: "\"y\"",
+		},
+		{
+			name:     "Complement",
+			src:      "type Point = {x: number, y?: number}\ndeclare val v: ~keyof Point",
+			expected: "~(\"x\" | \"y\")",
+		},
+		{
+			name:     "SpreadOfAlias",
+			src:      "type Point = {x: number, y?: number}\ndeclare val v: {...Point, z: number}",
+			expected: "{x: number, y?: number, z: number}",
+		},
+		{
+			name:     "AliasLeftUnexpanded",
+			src:      "type Point = {x: number, y?: number}\ndeclare val v: {p: Point}",
+			expected: "{p: Point}",
+		},
+		{
+			name:     "OperatorOverTypeParam",
+			src:      "declare fn f<T>(x: T) -> keyof T\nval v = f",
+			expected: "fn <T>(x: T) -> keyof T",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := InferModuleWithSource(parseModule(t, tt.src), testStdlibSource())
+			require.Empty(t, res.Errors)
+
+			binding, ok := res.Scope.OwnValue("v")
+			require.True(t, ok)
+			require.Equal(t, tt.expected, soltype.Print(res.Info.Evaluate(binding.DisplayType())))
+		})
+	}
+}
+
+func TestInfoEvaluateOnNewInfo(t *testing.T) {
+	access := &soltype.IndexType{Target: &soltype.AliasType{Name: "Point"}, Index: &soltype.LitType{Lit: &soltype.StrLit{Value: "y"}}}
+	require.Same(t, access, NewInfo().Evaluate(access))
+}

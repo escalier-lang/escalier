@@ -842,7 +842,66 @@ func TestHoverFromSolver(t *testing.T) {
 				"lib/a.esc": "export type Point = {x: number, y?: number}\nexport type Y = Point[\"y\"]",
 			},
 			open: "lib/a.esc", line: 1, col: 12,
-			expected: escalierCode("type Y = Point[\"y\"]"),
+			expected: escalierCode("type Y = Point[\"y\"]\n= number"),
+		},
+		{
+			name: "IndexedAccessAliasRef",
+			files: map[string]string{
+				"lib/a.esc": "export type Point = {x: number, y?: number}\nexport type Y = Point[\"y\"]\nexport val y: Y = 1",
+			},
+			open: "lib/a.esc", line: 2, col: 14,
+			expected: escalierCode("type Y = Point[\"y\"]\n= number"),
+		},
+		{
+			name: "IndexedAccessAliasRefFromBin",
+			files: map[string]string{
+				"lib/a.esc":    "export type Point = {x: number, y?: number}\nexport type Y = Point[\"y\"]",
+				"bin/main.esc": "val y: Y = 1",
+			},
+			open: "bin/main.esc", line: 0, col: 7,
+			expected: escalierCode("type Y = Point[\"y\"]\n= number"),
+		},
+		{
+			name: "KeyofAliasDecl",
+			files: map[string]string{
+				"lib/a.esc": "export type Point = {x: number, y?: number}\nexport type K = keyof Point",
+			},
+			open: "lib/a.esc", line: 1, col: 12,
+			expected: escalierCode("type K = keyof Point\n= \"x\" | \"y\""),
+		},
+		{
+			name: "ConditionalAliasDecl",
+			files: map[string]string{
+				"lib/a.esc": "export type C = if \"a\" : string { 1 } else { 2 }",
+			},
+			open: "lib/a.esc", line: 0, col: 12,
+			expected: escalierCode("type C = if \"a\" : string { 1 } else { 2 }\n= 1"),
+		},
+		{
+			name: "MappedAliasDecl",
+			files: map[string]string{
+				"lib/a.esc": "export type Point = {x: number, y?: number}\nexport type Flags = {[K]: boolean for K in keyof Point}",
+			},
+			open: "lib/a.esc", line: 1, col: 12,
+			expected: escalierCode("type Flags = { [K]: boolean for K in keyof Point }\n= {x: boolean, y?: boolean}"),
+		},
+		{
+			// The conditional reads the alias's own type parameter, so it has no value
+			// to evaluate to and the hover adds no line.
+			name: "GenericConditionalAliasDecl",
+			files: map[string]string{
+				"lib/a.esc": "export type IsStr<T> = if T : string { true } else { false }",
+			},
+			open: "lib/a.esc", line: 0, col: 12,
+			expected: escalierCode("type IsStr<T> = if T : string { true } else { false }"),
+		},
+		{
+			name: "AliasOfAliasDecl",
+			files: map[string]string{
+				"lib/a.esc": "export type Point = {x: number, y?: number}\nexport type P = Point",
+			},
+			open: "lib/a.esc", line: 1, col: 12,
+			expected: escalierCode("type P = Point"),
 		},
 		{
 			name: "GenericAliasDecl",
