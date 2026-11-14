@@ -21,6 +21,9 @@ type hoverQuery struct {
 	node      ast.Node
 	ancestors []ast.Node
 	info      *solver.Info
+	// infoFor returns the records of the file a SourceID names. For a declaration in
+	// another file, those are not info.
+	infoFor func(sourceID int) *solver.Info
 	// scope is the scope names in the file resolve in. A name a function body
 	// declares is not in it.
 	scope *solver.Scope
@@ -48,7 +51,7 @@ func typeHover(q hoverQuery) (string, bool) {
 	switch n := q.node.(type) {
 	case *ast.TypeDecl:
 		if n.Name.Span().Contains(q.loc) {
-			return declText(n), true
+			return declHoverText(q.info, n), true
 		}
 	case *ast.FuncDecl:
 		if n.Name != nil && n.Name.Span().Contains(q.loc) && q.info != nil {
@@ -143,7 +146,16 @@ func typeRefText(q hoverQuery, ref *ast.TypeRefTypeAnn) (string, bool) {
 		return "", false
 	}
 	// A reference shows the name as written, so `shapes.E` reads `enum shapes.E`.
-	return typeBindingText(ref.Name, binding)
+	text, ok := typeBindingText(ref.Name, binding)
+	if !ok {
+		return "", false
+	}
+	if decl, ok := bindingDecl(binding); ok {
+		// The alias's annotation is recorded in the table of the file that declares it.
+		// A bin/ script reading a lib/ alias has a table of its own.
+		text += evaluatedLine(q.infoFor(decl.Span().SourceID), decl)
+	}
+	return text, true
 }
 
 // typeName returns the qualified name of the declared type t refers to, or "" when t
@@ -184,6 +196,49 @@ func declTextAs(decl ast.Decl, name string) string {
 		return printCompact(&bare)
 	}
 	return ""
+}
+
+// declHoverText returns declText for decl, followed by evaluatedLine for it.
+func declHoverText(info *solver.Info, decl ast.Decl) string {
+	text := declText(decl)
+	if text == "" {
+		return ""
+	}
+	return text + evaluatedLine(info, decl)
+}
+
+// evaluatedLine returns, for a type alias decl, a line holding the alias's evaluated type
+// when that prints differently from the type as written, and "" otherwise.
+// `type Y = Point["y"]` for `type Point = {x: number, y?: number}` gives `\n= number`.
+func evaluatedLine(info *solver.Info, decl ast.Decl) string {
+	alias, ok := decl.(*ast.TypeDecl)
+	if !ok || info == nil {
+		return ""
+	}
+	written := info.TypeOf(alias.TypeAnn)
+	if written == nil {
+		return ""
+	}
+	evaluated := soltype.PrintAsScheme(info.Evaluate(written))
+	if evaluated == soltype.PrintAsScheme(written) {
+		return ""
+	}
+	return "\n= " + evaluated
+}
+
+// bindingDecl returns the declaration that binds the type binding, and false when it has
+// none.
+func bindingDecl(binding solver.TypeBinding) (ast.Decl, bool) {
+	for _, src := range binding.Sources {
+		np, ok := src.(*ast.NodeProvenance)
+		if !ok {
+			continue
+		}
+		if decl, ok := np.Node.(ast.Decl); ok {
+			return decl, true
+		}
+	}
+	return nil, false
 }
 
 // renamed returns ident with its name replaced by name, or ident itself when name is "".
