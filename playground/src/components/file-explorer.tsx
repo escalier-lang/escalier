@@ -10,6 +10,8 @@ type FileExplorerProps = {
     onFileOpen: (path: string) => void;
     onFileDelete?: (path: string) => void;
     onFileRename?: (oldPath: string, newPath: string) => void;
+    /** Called after the user creates, renames or deletes a file or directory. */
+    onFilesChange?: () => void;
 };
 
 type ContextMenuState = {
@@ -64,6 +66,7 @@ export const FileExplorer = ({
     onFileOpen,
     onFileDelete,
     onFileRename,
+    onFilesChange,
 }: FileExplorerProps) => {
     const [, setRev] = useState(0);
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(
@@ -182,6 +185,7 @@ export const FileExplorer = ({
                 }
                 fs.rename(oldPath, newPath, (err) => {
                     if (err) return;
+                    onFilesChange?.();
                     onFileRename?.(oldPath, newPath);
                     setInlineInput(null);
                 });
@@ -190,19 +194,21 @@ export const FileExplorer = ({
                 if (inlineInput.kind === 'dir') {
                     fs.mkdir(fullPath, (err) => {
                         if (err) return;
+                        onFilesChange?.();
                         setInlineInput(null);
                     });
                 } else {
                     const content = new TextEncoder().encode('');
                     fs.writeFile(fullPath, content, (err) => {
                         if (err) return;
+                        onFilesChange?.();
                         onFileOpen(fullPath);
                         setInlineInput(null);
                     });
                 }
             }
         },
-        [inlineInput, fs, onFileOpen, onFileRename],
+        [inlineInput, fs, onFileOpen, onFileRename, onFilesChange],
     );
 
     const handleDeleteConfirm = useCallback(() => {
@@ -211,10 +217,11 @@ export const FileExplorer = ({
         const remove = kind === 'dir' ? fs.rmdir.bind(fs) : fs.unlink.bind(fs);
         remove(path, (err) => {
             if (err) return;
+            onFilesChange?.();
             onFileDelete?.(path);
             setDeleteConfirm(null);
         });
-    }, [deleteConfirm, fs, onFileDelete]);
+    }, [deleteConfirm, fs, onFileDelete, onFilesChange]);
 
     return (
         <div className={styles.explorer}>

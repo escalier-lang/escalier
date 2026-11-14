@@ -9,16 +9,24 @@ export type ValidationResult =
 export type PlaygroundState = {
     initialCompileDone: boolean;
     validationResult: ValidationResult;
+    /**
+     * Whether the user has changed the project since it was loaded, by editing a
+     * file or by creating, renaming or deleting one.
+     */
+    projectModified: boolean;
 };
 
 export type PlaygroundAction =
     | { type: 'setInitialCompileDone' }
     | { type: 'resetCompile' }
-    | { type: 'setValidationResult'; result: ValidationResult };
+    | { type: 'setValidationResult'; result: ValidationResult }
+    | { type: 'markProjectModified' }
+    | { type: 'projectLoaded' };
 
 export const initialPlaygroundState: PlaygroundState = {
     initialCompileDone: false,
     validationResult: { mode: 'single-package', packageJson: {} },
+    projectModified: false,
 };
 
 export function playgroundReducer(
@@ -36,6 +44,15 @@ export function playgroundReducer(
 
         case 'setValidationResult': {
             return { ...state, validationResult: action.result };
+        }
+
+        case 'markProjectModified': {
+            if (state.projectModified) return state;
+            return { ...state, projectModified: true };
+        }
+
+        case 'projectLoaded': {
+            return { ...state, projectModified: false };
         }
 
         default: {
