@@ -1198,7 +1198,10 @@ func (c *checker) typeofPath(scope *Scope, ta *ast.TypeOfTypeAnn, ident ast.Qual
 			// var that would coalesce to `unknown` in a negative position such as the operand
 			// of `keyof typeof v`. The dep graph orders v first, so its scheme is final here.
 			// A definition-less binding yields nil and resolves to nothing.
-			return pathResult{value: bindingType(b)}
+			value := bindingType(b)
+			// Hover reads the type of each name in the path from these records.
+			c.recordTypeofSegment(id, value)
+			return pathResult{value: value}
 		}
 		if ns, ok := scope.GetNamespace(id.Name); ok {
 			return pathResult{ns: ns}
@@ -1218,14 +1221,26 @@ func (c *checker) typeofPath(scope *Scope, ta *ast.TypeOfTypeAnn, ident ast.Qual
 				c.report(&UnknownNamespaceMemberError{Node: ta, NS: left.ns, Name: name})
 				return pathResult{err: true}
 			}
-			return pathResult{value: bindingType(b)}
+			value := bindingType(b)
+			c.recordTypeofSegment(id.Right, value)
+			return pathResult{value: value}
 		case left.value != nil:
 			if t, ok := c.typeofMember(left.value, name); ok {
+				c.recordTypeofSegment(id.Right, t)
 				return pathResult{value: t}
 			}
 		}
 	}
 	return pathResult{}
+}
+
+// recordTypeofSegment records t, the type a name in a `typeof` path reads, against
+// that name, so `typeof a.b` records the type of `a` on `a` and the type of `a.b` on
+// `b`. A nil t records nothing.
+func (c *checker) recordTypeofSegment(name *ast.Ident, t soltype.Type) {
+	if t != nil {
+		c.recordType(name, t)
+	}
 }
 
 // lookupValueBinding resolves a bare value name, ranking its sources the way
