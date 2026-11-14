@@ -97,8 +97,8 @@ type DepGraph struct {
 
 	// ImportNamespaces maps a source id to the import bindings that file makes
 	// for packages merged into this module, each naming the namespace the
-	// package's declarations bind under. It is nil for a
-	// module that merges no imported package.
+	// package's declarations bind under. It is nil for a module that merges no
+	// imported package.
 	//
 	// A module merges imported packages when pseudo-packages that import each
 	// other in a cycle load as one group, as `std:map`, `std:set` and
@@ -353,8 +353,8 @@ type DependencyVisitor struct {
 // importedName rewrites a dotted name whose head is one of the file's import
 // bindings to the key the imported declaration binds under, so
 // `weak_ref.WeakKey` becomes `std__weak_ref.WeakKey` when the file's
-// `import "std:weak_ref"` stands for the `std__weak_ref` namespace. It returns false
-// for any other name, a bare one included.
+// `import "std:weak_ref"` stands for the `std__weak_ref` namespace. It returns
+// false for any other name, a bare one included.
 func (v *DependencyVisitor) importedName(name string) (string, bool) {
 	head, rest, dotted := strings.Cut(name, ".")
 	if !dotted {

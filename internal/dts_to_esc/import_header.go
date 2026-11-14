@@ -202,8 +202,8 @@ func setImportHeader(mod *StandaloneModule, targets []string) {
 // `file.Blob`. A reference already written qualified has its head qualified
 // instead, and the member rides along.
 //
-// The prelude is skipped, since every scope binds its exports unprefixed and a
-// qualifier on one would name nothing.
+// The prelude is skipped, since it binds its exports unprefixed and a qualifier
+// on one would name nothing.
 func qualifyCrossPackageRefs(mod *StandaloneModule, uri string, owner map[string]string) {
 	qualifiers := map[string]string{}
 	for _, name := range TypeRefNames(mod.Module).ToSlice() {

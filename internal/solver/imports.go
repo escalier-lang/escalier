@@ -1,7 +1,6 @@
 package solver
 
 import (
-
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/resolver"
 	"github.com/escalier-lang/escalier/internal/set"
@@ -171,5 +170,3 @@ func topLevelValueNames(module *ast.Module) set.Set[string] {
 	})
 	return declared
 }
-
-
