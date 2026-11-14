@@ -69,10 +69,17 @@ func typeHover(q hoverQuery) (string, bool) {
 			return declText(n), true
 		}
 		if variant, ok := variantNamedAt(n, q.loc); ok {
-			return variantDeclText(n, variant), true
+			return variantDeclText(n.Name.Name, variant), true
 		}
 	case *ast.InferTypeAnn:
 		return "(type parameter) " + n.Name, true
+	case *ast.WildcardTypeAnn:
+		if q.info == nil {
+			return "", false
+		}
+		if t := q.info.DisplayTypeOf(n); t != nil {
+			return soltype.PrintAsScheme(t), true
+		}
 	case *ast.TypeRefTypeAnn:
 		return typeRefText(q, n)
 	}
@@ -669,9 +676,9 @@ func variantNamedAt(decl *ast.EnumDecl, loc ast.Location) (*ast.EnumVariant, boo
 	return nil, false
 }
 
-// variantDeclText renders the variant of decl as it is declared, as
-// `(variant) Expr.Num(value: number)`, the form a read of the variant shows.
-func variantDeclText(decl *ast.EnumDecl, variant *ast.EnumVariant) string {
+// variantDeclText renders variant, a variant of the enum named enumName, as it is
+// declared, as `(variant) Expr.Num(value: number)`, the form a read of the variant shows.
+func variantDeclText(enumName string, variant *ast.EnumVariant) string {
 	params := make([]string, len(variant.Params))
 	for i, param := range variant.Params {
 		text := printCompact(param.Pattern)
@@ -683,7 +690,7 @@ func variantDeclText(decl *ast.EnumDecl, variant *ast.EnumVariant) string {
 		}
 		params[i] = text
 	}
-	return "(variant) " + decl.Name.Name + "." + variant.Name.Name + "(" + strings.Join(params, ", ") + ")"
+	return "(variant) " + enumName + "." + variant.Name.Name + "(" + strings.Join(params, ", ") + ")"
 }
 
 // variantConstructor returns an enum variant's constructor signature when t is the type a
@@ -1027,4 +1034,225 @@ func sameObjTypeMemberKind(member ast.ObjTypeAnnElem, elem soltype.ObjTypeElem) 
 		return ok
 	}
 	return false
+}
+
+// importHover returns the hover text for an import statement, as
+// `(alias) namespace math` above the statement `import "std:math"`. It returns false
+// when the cursor is on no import, on its `import` keyword, or on an import that bound
+// no namespace.
+func importHover(q hoverQuery) (string, bool) {
+	stmt, ok := q.node.(*ast.ImportStmt)
+	if !ok || q.scope == nil {
+		return "", false
+	}
+	if q.loc.Offset < stmt.Span().Start.Offset+len("import") {
+		return "", false
+	}
+	name := stmt.LocalName()
+	if _, ok := q.scope.GetNamespace(name); !ok {
+		return "", false
+	}
+	return "(alias) namespace " + name + "\n" + printCompact(stmt), true
+}
+
+// patternHover returns the hover text for the name an extractor or instance pattern
+// tests, or for a field an instance pattern reads. It returns false when the cursor is
+// on none of these. A class shows as `class HttpError`, an enum variant as
+// `(variant) Expr.Num(value: number)`, and a field as `(property) HttpError.status: number`.
+func patternHover(q hoverQuery) (string, bool) {
+	if q.scope == nil {
+		return "", false
+	}
+	switch n := q.node.(type) {
+	case *ast.ExtractorPat:
+		if n.Name.Span().Contains(q.loc) {
+			return patternNameText(q, n.Name)
+		}
+	case *ast.ObjectPat:
+		// An instance pattern's object pattern spans the class name too, so the cursor on
+		// either the name or a field lands on the object pattern.
+		if len(q.ancestors) == 0 {
+			return "", false
+		}
+		inst, ok := q.ancestors[len(q.ancestors)-1].(*ast.InstancePat)
+		if !ok || inst.Object != n {
+			return "", false
+		}
+		if inst.ClassName.Span().Contains(q.loc) {
+			return patternNameText(q, inst.ClassName)
+		}
+		return instanceFieldText(q, inst)
+	}
+	return "", false
+}
+
+// patternNameText renders the declaration of the class or enum variant a pattern names
+// with qi, or of the part of qi under the cursor. In `Expr.Num` the cursor on `Num`
+// shows the variant and on `Expr` shows `enum Expr`. It returns false when qi does not
+// name the class the solver resolved it to from q.scope, or the part names no declaration.
+func patternNameText(q hoverQuery, qi ast.QualIdent) (string, bool) {
+	if _, ok := patternClassBinding(q, qi); !ok {
+		return "", false
+	}
+	return qualNameText(q, qi)
+}
+
+// qualNameText renders the declaration the part of the qualified name qi under the cursor
+// names in q.scope. It returns false when that part names no declaration or namespace.
+func qualNameText(q hoverQuery, qi ast.QualIdent) (string, bool) {
+	member, isMember := qi.(*ast.Member)
+	if isMember && member.Left.Span().Contains(q.loc) {
+		return qualNameText(q, member.Left)
+	}
+	if binding, ok := qualTypeBinding(q.scope, qi); ok {
+		for _, src := range binding.Sources {
+			np, ok := src.(*ast.NodeProvenance)
+			if !ok {
+				continue
+			}
+			switch decl := np.Node.(type) {
+			case *ast.EnumVariant:
+				if isMember {
+					return variantDeclText(ast.QualIdentToString(member.Left), decl), true
+				}
+			case ast.Decl:
+				if text := declText(decl); text != "" {
+					return text, true
+				}
+			}
+		}
+	}
+	if _, ok := namespaceOfQualIdent(qi, newSolverScopeView(q.scope, q.info)); ok {
+		return "namespace " + ast.QualIdentToString(qi), true
+	}
+	return "", false
+}
+
+// patternClassBinding returns the type binding of the class a pattern names with qi. It
+// returns false when the solver recorded no class for the pattern, or when qi resolves in
+// q.scope to a different class. Inside a namespace, `HttpError` names the namespace's own
+// class first, which the file scope does not see.
+func patternClassBinding(q hoverQuery, qi ast.QualIdent) (solver.TypeBinding, bool) {
+	if q.info == nil {
+		return solver.TypeBinding{}, false
+	}
+	recorded := typeName(q.info.TypeOf(ast.LastIdent(qi)))
+	binding, ok := qualTypeBinding(q.scope, qi)
+	if !ok || recorded == "" || typeName(binding.Type) != recorded {
+		return solver.TypeBinding{}, false
+	}
+	return binding, true
+}
+
+// qualTypeBinding returns the type binding the qualified name qi names in scope, and
+// false when it names none. `Expr.Num` names the type `Num` in the namespace `Expr`.
+func qualTypeBinding(scope *solver.Scope, qi ast.QualIdent) (solver.TypeBinding, bool) {
+	switch qi := qi.(type) {
+	case *ast.Ident:
+		return scope.GetType(qi.Name)
+	case *ast.Member:
+		ns, ok := namespaceOfQualIdent(qi.Left, newSolverScopeView(scope, nil))
+		if !ok {
+			return solver.TypeBinding{}, false
+		}
+		binding, ok := ns.Types[qi.Right.Name]
+		return binding, ok
+	}
+	return solver.TypeBinding{}, false
+}
+
+// instanceFieldText renders the field of the class inst tests whose key in inst holds the
+// cursor, as `(property) HttpError.status: number`. It returns false when the cursor is on
+// no key or the class has no member of that name.
+func instanceFieldText(q hoverQuery, inst *ast.InstancePat) (string, bool) {
+	var name string
+	for _, elem := range inst.Object.Elems {
+		var key *ast.Ident
+		switch elem := elem.(type) {
+		case *ast.ObjShorthandPat:
+			key = elem.Key
+		case *ast.ObjKeyValuePat:
+			key = elem.Key
+		}
+		if key != nil && key.Span().Contains(q.loc) {
+			name = key.Name
+			break
+		}
+	}
+	if name == "" {
+		return "", false
+	}
+	binding, ok := patternClassBinding(q, inst.ClassName)
+	if !ok {
+		return "", false
+	}
+	obj, ok := q.info.MemberObject(binding.Type)
+	if !ok {
+		return "", false
+	}
+	owner := baseName(typeName(binding.Type))
+	for _, elem := range obj.Elems {
+		if soltype.ObjElemName(elem) == name {
+			return memberElemText(owner, elem), true
+		}
+	}
+	return "", false
+}
+
+// typeOfHover returns the hover text for a name in a `typeof` type, and false when the
+// cursor is on none. The value the first name reads shows as a binding does, as
+// `defaults: {x: number}`, and a member after it shows as a member read does, as
+// `(property) p: {x: number}`.
+func typeOfHover(q hoverQuery) (string, bool) {
+	ann, ok := q.node.(*ast.TypeOfTypeAnn)
+	if !ok || q.info == nil || q.scope == nil || !ann.Value.Span().Contains(q.loc) {
+		return "", false
+	}
+	return typeOfPathText(q, ann.Value)
+}
+
+// typeOfPathText returns the hover text for the name under the cursor in the `typeof`
+// path qi, reading the type the solver recorded for each name of the path. It returns
+// false when that name reads nothing the solver recorded.
+func typeOfPathText(q hoverQuery, qi ast.QualIdent) (string, bool) {
+	switch qi := qi.(type) {
+	case *ast.Ident:
+		t := q.info.TypeOf(qi)
+		if t == nil {
+			// A namespace is not a value, so the solver records no type for its name.
+			if _, ok := q.scope.GetNamespace(qi.Name); ok {
+				return "namespace " + qi.Name, true
+			}
+			return "", false
+		}
+		// The solver resolved the name in the scope the type sits in, which can be a
+		// function body. The hover reads `mut` from the file scope's binding of the name
+		// only when that binding is the one the solver read.
+		binding, ok := q.scope.GetValue(qi.Name)
+		mut := ok && binding.Mut && binding.DisplayType() == t
+		return bindingText(qi.Name, mut, t), true
+	case *ast.Member:
+		if qi.Left.Span().Contains(q.loc) {
+			return typeOfPathText(q, qi.Left)
+		}
+		t := q.info.TypeOf(qi.Right)
+		if t == nil {
+			return "", false
+		}
+		leftType := q.info.TypeOf(ast.LastIdent(qi.Left))
+		if leftType == nil {
+			// The left side is a namespace, so the name reads one of its values.
+			return bindingText(ast.QualIdentToString(qi), false, t), true
+		}
+		owner := baseName(typeName(q.info.Expand(leftType)))
+		if obj, ok := q.info.MemberObject(leftType); ok {
+			for _, elem := range obj.Elems {
+				if soltype.ObjElemName(elem) == qi.Right.Name {
+					return memberElemText(owner, elem), true
+				}
+			}
+		}
+		return propertyText(owner, qi.Right.Name, soltype.PrintAsScheme(t)), true
+	}
+	return "", false
 }

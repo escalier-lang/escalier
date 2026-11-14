@@ -281,6 +281,15 @@ func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.
 	if text, ok := declMemberHover(q); ok {
 		return codeHover(text), nil
 	}
+	if text, ok := importHover(q); ok {
+		return codeHover(text), nil
+	}
+	if text, ok := patternHover(q); ok {
+		return codeHover(text), nil
+	}
+	if text, ok := typeOfHover(q); ok {
+		return codeHover(text), nil
+	}
 	switch q.node.(type) {
 	// A literal or template string already shows its value in the source, so a hover
 	// on it adds nothing.
@@ -313,10 +322,17 @@ func hoverText(info *solver.Info, node ast.Node, t soltype.Type) string {
 	if !ok {
 		return soltype.PrintAsScheme(t)
 	}
+	return bindingText(name, mut, t)
+}
+
+// bindingText renders a binding of name to a value of type t, as `p: {x: number}`, or as
+// `mut p: {x: number}` when mut is true.
+func bindingText(name string, mut bool, t soltype.Type) string {
+	text := name + ": " + soltype.PrintAsScheme(t)
 	if mut {
-		return "mut " + name + ": " + soltype.PrintAsScheme(t)
+		return "mut " + text
 	}
-	return name + ": " + soltype.PrintAsScheme(t)
+	return text
 }
 
 // bindingOf returns the name node binds or reads, and whether that binding is mutable.

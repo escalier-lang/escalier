@@ -1324,6 +1324,219 @@ func TestHoverFromSolver(t *testing.T) {
 			expected: escalierCode("(method) area() -> number"),
 		},
 		{
+			name: "ImportBinding",
+			files: map[string]string{
+				"lib/a.esc": "import \"std:math\"\nexport val pi: number = math.PI",
+			},
+			open: "lib/a.esc", line: 0, col: 13,
+			expected: escalierCode("(alias) namespace math\nimport \"std:math\""),
+		},
+		{
+			name: "ImportAlias",
+			files: map[string]string{
+				"lib/a.esc": "import \"std:math\" as m\nexport val pi: number = m.PI",
+			},
+			open: "lib/a.esc", line: 0, col: 21,
+			expected: escalierCode("(alias) namespace m\nimport \"std:math\" as m"),
+		},
+		{
+			name: "ImportKeyword",
+			files: map[string]string{
+				"lib/a.esc": "import \"std:math\"\nexport val pi: number = math.PI",
+			},
+			open: "lib/a.esc", line: 0, col: 3,
+		},
+		{
+			name: "ExtractorPatternVariant",
+			files: map[string]string{
+				"lib/a.esc": "export enum E { Num(value: number), Str(s: string) }\nexport fn f(e: E) -> number { return match e { E.Num(v) => v, E.Str(s) => 0 } }",
+			},
+			open: "lib/a.esc", line: 1, col: 50,
+			expected: escalierCode("(variant) E.Num(value: number)"),
+		},
+		{
+			name: "ExtractorPatternEnumQualifier",
+			files: map[string]string{
+				"lib/a.esc": "export enum E { Num(value: number), Str(s: string) }\nexport fn f(e: E) -> number { return match e { E.Num(v) => v, E.Str(s) => 0 } }",
+			},
+			open: "lib/a.esc", line: 1, col: 47,
+			expected: escalierCode("enum E"),
+		},
+		{
+			name: "ExtractorPatternClass",
+			files: map[string]string{
+				"lib/a.esc": "export class C {\n    msg: string,\n    static [Symbol.customMatcher](subject: C) -> [string] {\n        return [subject.msg]\n    }\n}\nval subject = C(\"hello\")\nval C(msg) = subject",
+			},
+			open: "lib/a.esc", line: 7, col: 4,
+			expected: escalierCode("class C"),
+		},
+		{
+			name: "InstancePatternClass",
+			files: map[string]string{
+				"lib/a.esc": "export class HttpError { status: number }\nexport fn f(e: HttpError) -> number { return match e { HttpError {status} => status } }",
+			},
+			open: "lib/a.esc", line: 1, col: 59,
+			expected: escalierCode("class HttpError"),
+		},
+		{
+			name: "InstancePatternShorthandField",
+			files: map[string]string{
+				"lib/a.esc": "export class HttpError { status: number }\nexport fn f(e: HttpError) -> number { return match e { HttpError {status} => status } }",
+			},
+			open: "lib/a.esc", line: 1, col: 68,
+			expected: escalierCode("(property) HttpError.status: number"),
+		},
+		{
+			name: "InstancePatternKeyValueField",
+			files: map[string]string{
+				"lib/a.esc": "export class HttpError { status: number }\nexport fn f(e: HttpError) -> number { return match e { HttpError {status: s} => s } }",
+			},
+			open: "lib/a.esc", line: 1, col: 68,
+			expected: escalierCode("(property) HttpError.status: number"),
+		},
+		{
+			name: "TypeofBinding",
+			files: map[string]string{
+				"lib/a.esc": "val defaults = {x: 1, y: 2}\nexport type D = typeof defaults",
+			},
+			open: "lib/a.esc", line: 1, col: 26,
+			expected: escalierCode("defaults: {x: 1, y: 2}"),
+		},
+		{
+			name: "TypeofMutBinding",
+			files: map[string]string{
+				"lib/a.esc": "val mut defaults = {x: 1}\nexport type D = typeof defaults",
+			},
+			open: "lib/a.esc", line: 1, col: 26,
+			expected: escalierCode("mut defaults: {x: number}"),
+		},
+		{
+			name: "TypeofMember",
+			files: map[string]string{
+				"lib/a.esc": "val defaults = {p: {x: 1}}\nexport type D = typeof defaults.p",
+			},
+			open: "lib/a.esc", line: 1, col: 32,
+			expected: escalierCode("(property) p: {x: 1}"),
+		},
+		{
+			name: "TypeofMemberHead",
+			files: map[string]string{
+				"lib/a.esc": "val defaults = {p: {x: 1}}\nexport type D = typeof defaults.p",
+			},
+			open: "lib/a.esc", line: 1, col: 26,
+			expected: escalierCode("defaults: {p: {x: 1}}"),
+		},
+		{
+			name: "TypeofKeyword",
+			files: map[string]string{
+				"lib/a.esc": "val defaults = {x: 1}\nexport type D = typeof defaults",
+			},
+			open: "lib/a.esc", line: 1, col: 20,
+		},
+		{
+			name: "WildcardTypeArg",
+			files: map[string]string{
+				"lib/a.esc": "export val xs: Array<_> = [1, 2]",
+			},
+			open: "lib/a.esc", line: 0, col: 21,
+			expected: escalierCode("1 | 2"),
+		},
+		{
+			name: "WildcardPromiseArg",
+			files: map[string]string{
+				"lib/a.esc": "export async fn f() -> Promise<_, _> { return 5 }",
+			},
+			open: "lib/a.esc", line: 0, col: 31,
+			expected: escalierCode("5"),
+		},
+		{
+			name: "WildcardTuplePattern",
+			files: map[string]string{
+				"lib/a.esc": "export val [a, _] = [1, \"s\"]",
+			},
+			open: "lib/a.esc", line: 0, col: 15,
+			expected: escalierCode("\"s\""),
+		},
+		{
+			name: "TypeofNamespaceMember",
+			files: map[string]string{
+				"lib/a.esc": "import \"std:math\"\nexport type P = typeof math.PI",
+			},
+			open: "lib/a.esc", line: 1, col: 28,
+			expected: escalierCode("math.PI: number"),
+		},
+		{
+			name: "TypeofNamespaceHead",
+			files: map[string]string{
+				"lib/a.esc": "import \"std:math\"\nexport type P = typeof math.PI",
+			},
+			open: "lib/a.esc", line: 1, col: 25,
+			expected: escalierCode("namespace math"),
+		},
+		{
+			name: "TypeofShadowingLocal",
+			files: map[string]string{
+				"lib/a.esc": "val x = 1\nexport fn f() -> number {\n    val x = \"s\"\n    val y: typeof x = x\n    return 1\n}",
+			},
+			open: "lib/a.esc", line: 3, col: 18,
+			expected: escalierCode("x: \"s\""),
+		},
+		{
+			name: "WildcardInConditionalExtends",
+			files: map[string]string{
+				"lib/a.esc": "export type F<T> = T extends Array<_> ? 1 : 2",
+			},
+			open: "lib/a.esc", line: 0, col: 35,
+		},
+		{
+			name: "GenericEnumTypeRef",
+			files: map[string]string{
+				"lib/a.esc": "export enum MyOption<T> {\n    Some(value: T),\n    None(),\n}\nexport fn unwrap(o: MyOption<number>) -> number {\n    return match o {\n        MyOption.Some(value) => value,\n        MyOption.None() => 0,\n    }\n}",
+			},
+			open: "lib/a.esc", line: 4, col: 22,
+			expected: escalierCode("enum MyOption<T>"),
+		},
+		{
+			name: "GenericEnumExtractorVariant",
+			files: map[string]string{
+				"lib/a.esc": "export enum MyOption<T> {\n    Some(value: T),\n    None(),\n}\nexport fn unwrap(o: MyOption<number>) -> number {\n    return match o {\n        MyOption.Some(value) => value,\n        MyOption.None() => 0,\n    }\n}",
+			},
+			open: "lib/a.esc", line: 6, col: 18,
+			expected: escalierCode("(variant) MyOption.Some(value: T)"),
+		},
+		{
+			name: "GenericEnumExtractorQualifier",
+			files: map[string]string{
+				"lib/a.esc": "export enum MyOption<T> {\n    Some(value: T),\n    None(),\n}\nexport fn unwrap(o: MyOption<number>) -> number {\n    return match o {\n        MyOption.Some(value) => value,\n        MyOption.None() => 0,\n    }\n}",
+			},
+			open: "lib/a.esc", line: 6, col: 10,
+			expected: escalierCode("enum MyOption<T>"),
+		},
+		{
+			name: "GenericEnumNullaryExtractor",
+			files: map[string]string{
+				"lib/a.esc": "export enum MyOption<T> {\n    Some(value: T),\n    None(),\n}\nexport fn unwrap(o: MyOption<number>) -> number {\n    return match o {\n        MyOption.Some(value) => value,\n        MyOption.None() => 0,\n    }\n}",
+			},
+			open: "lib/a.esc", line: 7, col: 18,
+			expected: escalierCode("(variant) MyOption.None()"),
+		},
+		{
+			name: "GenericEnumExtractorBinding",
+			files: map[string]string{
+				"lib/a.esc": "export enum MyOption<T> {\n    Some(value: T),\n    None(),\n}\nexport fn unwrap(o: MyOption<number>) -> number {\n    return match o {\n        MyOption.Some(value) => value,\n        MyOption.None() => 0,\n    }\n}",
+			},
+			open: "lib/a.esc", line: 6, col: 23,
+			expected: escalierCode("value: number"),
+		},
+		{
+			name: "GenericEnumArmBindingRead",
+			files: map[string]string{
+				"lib/a.esc": "export enum MyOption<T> {\n    Some(value: T),\n    None(),\n}\nexport fn unwrap(o: MyOption<number>) -> number {\n    return match o {\n        MyOption.Some(value) => value,\n        MyOption.None() => 0,\n    }\n}",
+			},
+			open: "lib/a.esc", line: 6, col: 33,
+			expected: escalierCode("value: number"),
+		},
+		{
 			name:  "Keyword",
 			files: map[string]string{"bin/main.esc": "val x = 5"},
 			open:  "bin/main.esc", line: 0, col: 1,
