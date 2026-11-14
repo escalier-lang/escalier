@@ -117,6 +117,18 @@ A function holding `p: &{x: number}` cannot pass it to a parameter typed `&mut
 {x: number}`, and the call reports `cannot constrain immutable object <: mutable
 object`.
 
+T3 and T4 together make a borrow's permissions deep and its type shallow. A
+borrow reaches every layer the borrowed value owns, with the borrow's own
+mutability. With `b: &{inner: {x: number}}`, the write `b.inner.x = 1` is
+rejected, and with `b: &mut {inner: {x: number}}` it is accepted. A field read
+through the borrow has the field's own type, not a borrowed one. `b.inner` has
+type `{x: number}`, so a reference to it is written `&b.inner` by F4, and T6
+keeps `b.inner` out of an owned destination. A read that ends at a value type,
+such as `b.inner.x`, copies. A pattern over a borrow is the one place the borrow
+carries into the bound type, as F4 and D14 state. Rust behaves the same way: a
+field read through `&self` has the field's type, so a method returning a borrow
+of it writes `&self.inner`.
+
 **T5. `readonly` forbids reassigning a slot.** A write to a `readonly` field is
 rejected after the field's one initialization. A `readonly` field does not
 satisfy a writable field, because a holder of the writable type could reassign
