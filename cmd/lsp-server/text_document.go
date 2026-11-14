@@ -251,26 +251,29 @@ func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.
 	loc := posToLoc(server.lineMapForURI(params.TextDocument.URI), params.Position)
 	sourceID := server.sourceIDForURI(params.TextDocument.URI)
 	server.mu.RLock()
-	var hoverNode ast.Node
-	var info *solver.Info
+	q := hoverQuery{loc: loc}
 	if co := server.checkOutput; co != nil {
-		hoverNode = findNodeAtLocation(co, sourceID, loc)
-		info = co.InfoFor(sourceID)
+		q.node, q.ancestors = findNodeWithAncestorsAt(co, sourceID, loc)
+		q.info = co.InfoFor(sourceID)
+		q.scope = scopeOfFile(co, sourceID)
 	}
 	server.mu.RUnlock()
-	if info == nil {
+	if q.info == nil {
 		return nil, nil
 	}
-	switch hoverNode.(type) {
+	server.solverMu.RLock()
+	defer server.solverMu.RUnlock()
+	if text, ok := typeHover(q); ok {
+		return codeHover(text), nil
+	}
+	switch q.node.(type) {
 	// A literal or template string already shows its value in the source, so a hover
 	// on it adds nothing.
 	case *ast.LiteralExpr, *ast.TemplateLitExpr, *ast.LitPat:
 		return nil, nil
 	case ast.Expr, ast.Pat:
-		server.solverMu.RLock()
-		defer server.solverMu.RUnlock()
-		if t := info.DisplayTypeOf(hoverNode); t != nil {
-			return codeHover(hoverText(info, hoverNode, t)), nil
+		if t := q.info.DisplayTypeOf(q.node); t != nil {
+			return codeHover(hoverText(q.info, q.node, t)), nil
 		}
 	}
 	return nil, nil

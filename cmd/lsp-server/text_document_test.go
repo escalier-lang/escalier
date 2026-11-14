@@ -805,6 +805,150 @@ func TestHoverFromSolver(t *testing.T) {
 			open:  "bin/main.esc", line: 1, col: 18,
 		},
 		{
+			name: "TypeAliasDecl",
+			files: map[string]string{
+				"lib/a.esc": "export type Point = {x: number, y?: number}",
+			},
+			open: "lib/a.esc", line: 0, col: 13,
+			expected: escalierCode("type Point = { x: number, y?: number }"),
+		},
+		{
+			name: "TypeAliasKeyword",
+			files: map[string]string{
+				"lib/a.esc": "export type Point = {x: number, y?: number}",
+			},
+			open: "lib/a.esc", line: 0, col: 8,
+		},
+		{
+			name: "TypeAliasUseFromBin",
+			files: map[string]string{
+				"lib/a.esc":    "export type Point = {x: number, y?: number}",
+				"bin/main.esc": "val p: Point = {x: 1}",
+			},
+			open: "bin/main.esc", line: 0, col: 8,
+			expected: escalierCode("type Point = { x: number, y?: number }"),
+		},
+		{
+			name: "TypeAliasInIndexedAccess",
+			files: map[string]string{
+				"lib/a.esc": "export type Point = {x: number, y?: number}\nexport type Y = Point[\"y\"]",
+			},
+			open: "lib/a.esc", line: 1, col: 17,
+			expected: escalierCode("type Point = { x: number, y?: number }"),
+		},
+		{
+			name: "IndexedAccessAliasDecl",
+			files: map[string]string{
+				"lib/a.esc": "export type Point = {x: number, y?: number}\nexport type Y = Point[\"y\"]",
+			},
+			open: "lib/a.esc", line: 1, col: 12,
+			expected: escalierCode("type Y = Point[\"y\"]"),
+		},
+		{
+			name: "GenericAliasDecl",
+			files: map[string]string{
+				"lib/a.esc": "export type Unwrap<T> = if T : Promise<infer V> { Unwrap<V> } else { T }",
+			},
+			open: "lib/a.esc", line: 0, col: 13,
+			expected: escalierCode("type Unwrap<T> = if T : Promise<infer V> { Unwrap<V> } else { T }"),
+		},
+		{
+			name: "GenericAliasUse",
+			files: map[string]string{
+				"lib/a.esc": "export type Box<T> = {value: T}\nexport val b: Box<string> = {value: \"a\"}",
+			},
+			open: "lib/a.esc", line: 1, col: 14,
+			expected: escalierCode("type Box<T> = { value: T }"),
+		},
+		{
+			name: "BuiltinAlias",
+			files: map[string]string{
+				"lib/a.esc": "export type Point = {x: number, y?: number}\nexport val p: Partial<Point> = {}",
+			},
+			open: "lib/a.esc", line: 1, col: 15,
+			expected: escalierCode("type Partial<T> = { [P]+?: T[P] for P in keyof T }"),
+		},
+		{
+			name: "AliasTypeParamDecl",
+			files: map[string]string{
+				"lib/a.esc": "export type Box<T> = {value: T}",
+			},
+			open: "lib/a.esc", line: 0, col: 16,
+			expected: escalierCode("(type parameter) T"),
+		},
+		{
+			name: "AliasTypeParamRef",
+			files: map[string]string{
+				"lib/a.esc": "export type Box<T> = {value: T}",
+			},
+			open: "lib/a.esc", line: 0, col: 29,
+			expected: escalierCode("(type parameter) T"),
+		},
+		{
+			name: "FuncTypeParamDecl",
+			files: map[string]string{
+				"lib/a.esc": "export fn id<T: number>(x: T) -> T { return x }",
+			},
+			open: "lib/a.esc", line: 0, col: 13,
+			expected: escalierCode("(type parameter) T: number"),
+		},
+		{
+			name: "FuncTypeParamRef",
+			files: map[string]string{
+				"lib/a.esc": "export fn id<T: number>(x: T) -> T { return x }",
+			},
+			open: "lib/a.esc", line: 0, col: 27,
+			expected: escalierCode("(type parameter) T: number"),
+		},
+		{
+			name: "TypeParamDefault",
+			files: map[string]string{
+				"lib/a.esc": "export type Box<T = string> = {value: T}",
+			},
+			open: "lib/a.esc", line: 0, col: 38,
+			expected: escalierCode("(type parameter) T = string"),
+		},
+		{
+			name: "InferDecl",
+			files: map[string]string{
+				"lib/a.esc": "export type Unwrap<T> = if T : Promise<infer V> { Unwrap<V> } else { T }",
+			},
+			open: "lib/a.esc", line: 0, col: 46,
+			expected: escalierCode("(type parameter) V"),
+		},
+		{
+			name: "InferRef",
+			files: map[string]string{
+				"lib/a.esc": "export type Unwrap<T> = if T : Promise<infer V> { Unwrap<V> } else { T }",
+			},
+			open: "lib/a.esc", line: 0, col: 58,
+			expected: escalierCode("(type parameter) V"),
+		},
+		{
+			name: "MappedTypeKey",
+			files: map[string]string{
+				"lib/a.esc": "export type Patch<T> = {[K]+?: T[K] for K in keyof T}",
+			},
+			open: "lib/a.esc", line: 0, col: 33,
+			expected: escalierCode("(type parameter) K in keyof T"),
+		},
+		{
+			name: "InferRefInExtends",
+			files: map[string]string{
+				"lib/a.esc": "export type Same<T> = if T : [infer A, A] { A } else { never }",
+			},
+			open: "lib/a.esc", line: 0, col: 39,
+			expected: escalierCode("(type parameter) A"),
+		},
+		{
+			name: "RegexCaptureRef",
+			files: map[string]string{
+				"lib/a.esc": "export type Strip<T> = if T : /^_*(?<Ident>[a-zA-Z]+)_*$/ { Ident } else { T }",
+			},
+			open: "lib/a.esc", line: 0, col: 60,
+			expected: escalierCode("(type parameter) Ident"),
+		},
+		{
 			name:  "Keyword",
 			files: map[string]string{"bin/main.esc": "val x = 5"},
 			open:  "bin/main.esc", line: 0, col: 1,
