@@ -247,17 +247,22 @@ func signatureParams(sig *soltype.FuncType) string {
 
 // dropTypeBinder returns s without a leading `<…>` type-parameter binder, matching the
 // closing `>` by angle-bracket depth so a nested generic in a bound stays inside the
-// binder. A string with no leading binder is returned unchanged.
+// binder. The `>` of a function type's `->` is not a bracket, so a function-typed bound
+// such as `<T: fn (x: number) -> number>` stays inside the binder too. A string with no
+// leading binder is returned unchanged.
 func dropTypeBinder(s string) string {
 	if !strings.HasPrefix(s, "<") {
 		return s
 	}
 	depth := 0
-	for i, r := range s {
-		switch r {
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
 		case '<':
 			depth++
 		case '>':
+			if i > 0 && s[i-1] == '-' {
+				continue
+			}
 			depth--
 			if depth == 0 {
 				return strings.TrimPrefix(s[i+1:], " ")
