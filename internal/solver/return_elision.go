@@ -29,6 +29,21 @@ type returnLifetimes struct {
 	// reported is set once the error is reported, so a return type with several borrows
 	// reports it once.
 	reported bool
+	// tiesBorrows makes a borrow written with no lifetime take a fresh lifetime that every
+	// input outlives, as a function type does, rather than the receiver's or the one input's.
+	// A throws clause resolves this way, since D17 rule 2 ties an elided output lifetime to
+	// every input and section 5.4's rules cover only a returned borrow.
+	tiesBorrows bool
+}
+
+// throwsLifetimes returns the elision for a throws clause of the signature whose return
+// type r is the elision for, or nil when r is nil because the signature has no input
+// lifetime.
+func (r *returnLifetimes) throwsLifetimes() *returnLifetimes {
+	if r == nil {
+		return nil
+	}
+	return &returnLifetimes{inputs: r.inputs, tiesBorrows: true}
 }
 
 // newReturnLifetimes returns the elision for the return type of a signature whose receiver
@@ -106,10 +121,16 @@ func (c *checker) lifetimeNamesInScope() set.Set[string] {
 }
 
 // returnBorrowLifetime returns the lifetime a borrow written with no lifetime takes at the
-// return type's own level. When elision picks none, it reports AmbiguousReturnLifetimeError
+// return type's own level. Under a throws clause's elision it is a fresh lifetime tied to
+// every input. Otherwise, when elision picks none, it reports AmbiguousReturnLifetimeError
 // against ann once and returns a fresh lifetime at lvl.
 func (c *checker) returnBorrowLifetime(ann ast.Node, lvl int) soltype.Lifetime {
 	r := c.retLts
+	if r.tiesBorrows {
+		lt := c.ctx.freshLifetime(lvl)
+		c.tieToInputs(lt)
+		return lt
+	}
 	if r.borrow != nil {
 		return r.borrow
 	}

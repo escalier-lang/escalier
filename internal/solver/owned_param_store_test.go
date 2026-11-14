@@ -168,7 +168,7 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 					target: &'c mut {slot: &'a mut {value: number}},
 					item: &'a mut {value: number},
 				) -> undefined
-				fn f(mut p: {peer: &mut {value: number}}, out: &mut {slot: &mut {value: number}}) -> undefined {
+				fn f<'a>(mut p: {peer: &'a mut {value: number}}, out: &mut {slot: &'a mut {value: number}}) -> undefined {
 					val mut b = {value: 0}
 					p.peer = &mut b
 					store(out, p.peer)
