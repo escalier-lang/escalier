@@ -54,15 +54,18 @@ func TestInferModuleTopLevelLetPolymorphism(t *testing.T) {
 // ["hello", 5]. This is the headline Category-A render — compact in PR1 because
 // every remaining variable coalesces to a concrete literal.
 func TestInferModuleIdentityPolymorphism(t *testing.T) {
-	values, _, errs := inferSource(t, `
+	src := `
 		val identity = fn (x) { return x }
-		val pair = fn () { return [identity("hello"), identity(5)] }
-	`)
+		fn main() -> undefined {
+			val pair = fn () { return [identity("hello"), identity(5)] }
+		}
+	`
+	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
-	require.Equal(t, map[string]string{
-		"identity": "fn <T0>(x: T0) -> T0",
-		"pair":     `fn () -> ["hello", 5]`,
-	}, values)
+	require.Equal(t, "fn <T0>(x: T0) -> T0", values["identity"])
+	// pair is bound inside a body, where it keeps its inferred return type.
+	pair, _ := inferLocal(t, src, "pair")
+	require.Equal(t, `fn () -> ["hello", 5]`, pair)
 }
 
 // A body-level inner function that captures an outer parameter keeps the capture
@@ -90,14 +93,17 @@ func TestInferModuleInnerCapturesOuterParam(t *testing.T) {
 // used at two types within the same body resolves each use independently. A
 // monomorphic body-level binding (M2) would render [5 | "hi", 5 | "hi"].
 func TestInferModuleBodyLevelLetPolymorphism(t *testing.T) {
-	values, _, errs := inferSource(t, `
-		val f = fn () {
-			val id = fn (x) { return x }
-			return [id(5), id("hi")]
+	// f is bound inside a body, where it keeps its inferred return type.
+	f, errs := inferLocal(t, `
+		fn main() -> undefined {
+			val f = fn () {
+				val id = fn (x) { return x }
+				return [id(5), id("hi")]
+			}
 		}
-	`)
+	`, "f")
 	require.Empty(t, errs)
-	require.Equal(t, map[string]string{"f": `fn () -> [5, "hi"]`}, values)
+	require.Equal(t, `fn () -> [5, "hi"]`, f)
 }
 
 // Two parameters that flow to independent result positions do NOT co-occur, so

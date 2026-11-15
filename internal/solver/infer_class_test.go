@@ -4169,7 +4169,7 @@ func TestInferReaderOfLaterClassMemberType(t *testing.T) {
 			name: "ReaderChainBeforeMember",
 			src: `
 				val f = fn (b: B) -> 1 { return b.m() }
-				val g = fn (b: B) { return f(b) }
+				val g = fn (b: B) -> 1 { return f(b) }
 				class B { m(&self) -> 1 { return 1 }, n(&self, b: B) -> 1 { return g(b) } }
 			`,
 			wantValues: map[string]string{

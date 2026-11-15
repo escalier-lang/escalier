@@ -20,7 +20,7 @@ func TestEveryCallableFillsFunction(t *testing.T) {
 		"ACallableObject":       {decl: `declare val f: {(n: number) -> string, tag: string}`},
 		"AConstructorSignature": {decl: `declare val f: {new (n: number) -> {n: number}}`},
 		"AClassValue":           {decl: "class Box<T> { value: T }\nval f = Box"},
-		"AFunctionExpression":   {decl: `val f = fn (x: number) { return x }`},
+		"AFunctionExpression":   {decl: `val f = fn (x: number) -> number { return x }`},
 		"FunctionItself":        {decl: `declare val f: function`},
 	}
 	for name, tc := range tests {

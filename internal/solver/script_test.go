@@ -620,7 +620,7 @@ func TestScriptFnCaptureParity(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			// Each form runs as its own subtest, so a failure in one still infers the other.
-			for _, form := range []string{"fn f()", "val f = fn ()"} {
+			for _, form := range []string{"fn f() -> undefined", "val f = fn () -> undefined"} {
 				t.Run(form, func(t *testing.T) {
 					_, _, errs := inferScriptSource(t, strings.ReplaceAll(tt.src, "FN", form))
 					require.Equal(t, tt.want, messagesWithSpan(t, errs))
