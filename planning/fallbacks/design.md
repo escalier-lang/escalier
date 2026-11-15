@@ -401,11 +401,11 @@ val cfg = loadConfig(path) catch ({port: 8080, host: "localhost"})
 This keeps every existing `try` parsing as it does now, and it gives the
 expression form the same rule once the arms extension lands.
 
-A `finally` block may follow any of the three forms on a `try` block:
-
-```esc
-val n = try { read(fd) } catch 0 finally { close(fd) }
-```
+Neither `catch` on an expression nor `catch` on a `try` block takes a `finally`
+block. Cleanup in a `finally` sits at the end of the guarded block, which in a
+long block is far from where the resource was acquired. Cleanup tied to the
+acquisition is designed separately, in
+[escalier-lang/escalier#2787](https://github.com/escalier-lang/escalier/issues/2787).
 
 #### Representation
 
@@ -423,7 +423,6 @@ type CatchHandler struct {
 type TryCatchExpr struct {
     Try     Block
     Handler *CatchHandler
-    Finally *Block
     // …
 }
 
@@ -593,8 +592,6 @@ fallback.
 - When throwing is restricted to `Error` subclasses, the binding's type becomes
   `Error` for Escalier code. Should the binding follow the same setting that
   decides this for `try`?
-- Should `catch` also accept a `finally` block, or is the block form the place for
-  cleanup?
 - Should the checker suggest `try { … } catch h` when it sees
   `do { … } catch h`? The two compile to the same code, so a suggestion would
   only enforce the style that marks where the guarded region starts.
