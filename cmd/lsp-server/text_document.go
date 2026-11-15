@@ -404,6 +404,8 @@ func (s *Server) textDocumentCodeAction(context *glsp.Context, params *protocol.
 			}
 		}
 	}
+	codeActions = append(codeActions, s.fillArmsActions(
+		params.TextDocument.URI, params.Range, params.Context.Diagnostics, params.Context.Only)...)
 	if wantsCodeActionKind(params.Context.Only, signatureActionKind) {
 		if action, ok := s.signatureActionAt(params.TextDocument.URI, params.Range.Start); ok {
 			codeActions = append(codeActions, action)

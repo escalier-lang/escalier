@@ -396,7 +396,12 @@ func awaitDiagnostics(
 	version protocol.UInteger,
 ) []string {
 	t.Helper()
-	diags := awaitPublished(t, published, uri, version)
+	return renderDiagnostics(awaitPublished(t, published, uri, version))
+}
+
+// renderDiagnostics renders each of diags as "line:col-line:col message". Lines and columns
+// are the LSP's, counted from 0.
+func renderDiagnostics(diags []protocol.Diagnostic) []string {
 	rendered := make([]string, len(diags))
 	for i, d := range diags {
 		rendered[i] = fmt.Sprintf(
