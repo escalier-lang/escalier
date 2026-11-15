@@ -43,11 +43,15 @@ func (s *Server) fillArmsActions(
 	diags []protocol.Diagnostic,
 	only []protocol.CodeActionKind,
 ) []protocol.CodeAction {
+	// Return early when the request asks for neither kind, before taking any lock.
 	wantsFix := wantsCodeActionKind(only, protocol.CodeActionKindQuickFix) && len(diags) > 0
 	wantsRefactor := wantsCodeActionKind(only, fillArmsRefactorKind)
 	if !wantsFix && !wantsRefactor {
 		return nil
 	}
+
+	// Collect the file's `match` and `try` targets from the last check, keyed by their node
+	// so a diagnostic can find its target.
 	file, fileErrs, ok := s.checkedFileAt(uri)
 	if !ok {
 		return nil
@@ -67,6 +71,9 @@ func (s *Server) fillArmsActions(
 	lineMap := file.src.LineMap()
 	var actions []protocol.CodeAction
 	fixed := set.NewSet[ast.Node]()
+
+	// Offer a quick fix for each request diagnostic that reports a target. A diagnostic is
+	// matched to its error by range and message, and the error names its target's node.
 	if wantsFix {
 		for _, diag := range diags {
 			for _, err := range fileErrs {
@@ -89,6 +96,8 @@ func (s *Server) fillArmsActions(
 			}
 		}
 	}
+	// Offer a refactor for the innermost target around the cursor, unless a quick fix above
+	// already covers it.
 	if wantsRefactor {
 		loc := posToLoc(lineMap, rng.Start)
 		var innermost *armTarget
@@ -130,6 +139,7 @@ type armTarget struct {
 // reports, and each `try` whose block throws a value no catch arm names.
 func armTargets(file checkedFile, errs []compiler.Diagnostic) []armTarget {
 	var targets []armTarget
+	// Each non-exhaustive `match` is a target, with the values its error reports.
 	for _, err := range errs {
 		ne, ok := err.(*solver.NonExhaustiveMatchError)
 		if !ok {
@@ -150,6 +160,7 @@ func armTargets(file checkedFile, errs []compiler.Diagnostic) []armTarget {
 			title:    fillMatchArmsTitle,
 		})
 	}
+	// Each `try` the check recorded uncaught throws for is a target, with those throws.
 	for _, try := range file.info.TriesWithUncaughtThrows(file.id) {
 		if len(try.Catch) == 0 {
 			continue
@@ -239,6 +250,7 @@ func checkedFileOf(co *compiler.CheckOutput, sourceID int) checkedFile {
 // names, and a catch-all arm when target needs one. The returned action carries no kind. It
 // returns false when file does not hold target's braces where target places them.
 func fillArmsAction(file checkedFile, uri protocol.DocumentUri, target armTarget) (protocol.CodeAction, bool) {
+	// Write a pattern for each value no arm names, then `_` when a catch-all is needed.
 	patterns := make([]string, 0, len(target.unnamed)+1)
 	for _, t := range target.unnamed {
 		// A `boolean` that no arm names holds two values, and a literal arm for each reads
@@ -255,6 +267,7 @@ func fillArmsAction(file checkedFile, uri protocol.DocumentUri, target armTarget
 	if len(patterns) == 0 {
 		return protocol.CodeAction{}, false
 	}
+	// Give each pattern the placeholder body and work out where the arms go.
 	arms := make([]string, len(patterns))
 	for i, p := range patterns {
 		arms[i] = p + " => " + todoArmBody
@@ -263,6 +276,7 @@ func fillArmsAction(file checkedFile, uri protocol.DocumentUri, target armTarget
 	if !ok {
 		return protocol.CodeAction{}, false
 	}
+	// Convert the byte-offset edits to LSP ranges.
 	lineMap := file.src.LineMap()
 	textEdits := make([]protocol.TextEdit, len(edits))
 	for i, e := range edits {
@@ -299,6 +313,8 @@ func armInsertion(contents string, start, closing int, cases []*ast.MatchCase, a
 	if closing < 0 || closing >= len(contents) || contents[closing] != '}' {
 		return nil, false
 	}
+
+	// With no arms, replace whatever lies between the braces with one arm per line.
 	if len(cases) == 0 {
 		opening := skipSpaceBefore(contents, closing) - 1
 		if opening < 0 || contents[opening] != '{' {
@@ -314,6 +330,7 @@ func armInsertion(contents string, start, closing int, cases []*ast.MatchCase, a
 		return []textEdit{{start: opening + 1, end: closing, text: b.String()}}, true
 	}
 
+	// Find where the last arm ends and whether a trailing comma follows it.
 	last := cases[len(cases)-1]
 	armEnd := armEndOffset(contents, last)
 	if armEnd > closing {
@@ -330,6 +347,7 @@ func armInsertion(contents string, start, closing int, cases []*ast.MatchCase, a
 		after = armEnd
 	}
 
+	// With the last arm on the closing brace's line, add the new arms on that line.
 	if !strings.Contains(contents[after:closing], "\n") {
 		if trailingComma {
 			return []textEdit{{start: after, end: after, text: " " + strings.Join(arms, ", ") + ","}}, true
@@ -337,8 +355,8 @@ func armInsertion(contents string, start, closing int, cases []*ast.MatchCase, a
 		return []textEdit{{start: after, end: after, text: ", " + strings.Join(arms, ", ")}}, true
 	}
 
-	// The arms go at the end of the line the last arm ends on, after any comment there, so a
-	// line comment stays with the arm it follows.
+	// Otherwise add one arm per line. The arms go at the end of the line the last arm ends
+	// on, after any comment there, so a line comment stays with the arm it follows.
 	lineEnd := after + strings.IndexByte(contents[after:closing], '\n')
 	indent := lineIndent(contents, last.Pattern.Span().Start.Offset)
 	var b strings.Builder
