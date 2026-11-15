@@ -49,8 +49,18 @@ class SimpleStream {
         this.emitter.emit('data', chunk);
     }
 
-    read() {
-        return this.chunks.shift();
+    /**
+     * Removes and returns up to maxLength bytes from the front of the stream, or
+     * undefined when the stream is empty. A chunk longer than maxLength stays
+     * queued with its first maxLength bytes removed.
+     */
+    read(maxLength = Number.POSITIVE_INFINITY): Uint8Array | undefined {
+        const chunk = this.chunks.shift();
+        if (chunk && chunk.length > maxLength) {
+            this.chunks.unshift(chunk.subarray(maxLength));
+            return chunk.subarray(0, maxLength);
+        }
+        return chunk;
     }
 }
 
@@ -303,11 +313,14 @@ export class Client {
                 ) => void,
             ) => {
                 if (fd === 0) {
-                    const srcBuf = this.stdin.read();
+                    // The server reads stdin through the 4,096-byte bufio.Reader
+                    // that sourcegraph/jsonrpc2 creates, and a message can be longer.
+                    // Reading at most length bytes leaves the rest of the chunk
+                    // queued for the next call.
+                    const srcBuf = this.stdin.read(length);
                     if (srcBuf) {
-                        // TODO: handle the case where srcBuffer is larger than buffer
-                        buffer.set(srcBuf, 0);
-                        callback(null, srcBuf.length, srcBuf);
+                        buffer.set(srcBuf, offset);
+                        callback(null, srcBuf.length, buffer);
                         return;
                     }
 

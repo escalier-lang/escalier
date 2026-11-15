@@ -330,6 +330,46 @@ test(
     },
 );
 
+// The server reads stdin through a 4,096-byte buffer, so this test asserts that a
+// message longer than that reaches it whole and gets checked.
+test(
+    'textDocument/didOpen with a message larger than the read buffer',
+    { timeout: CHECK_TEST_TIMEOUT_MS },
+    async () => {
+        const published: string[][] = [];
+        client.onTextDocumentPublishDiagnostics((params) => {
+            published.push(params.diagnostics.map((d) => d.message));
+        });
+
+        const padding = Array.from(
+            { length: 300 },
+            (_, i) => `export val v${i} = ${i} // padding padding\n`,
+        ).join('');
+        const text = `${padding}val last: number = "end"\n`;
+        expect(new TextEncoder().encode(text).length).toBeGreaterThan(8192);
+        fs.writeFileSync(filePath(), text);
+
+        await client.initialize({
+            processId: process.pid,
+            rootUri,
+            capabilities: {},
+        });
+        client.textDocumentDidOpen({
+            textDocument: {
+                uri: fileUri(),
+                version: 1,
+                languageId: 'escalier',
+                text,
+            },
+        });
+
+        await vi.waitFor(() => expect(published).not.toEqual([]), {
+            timeout: 10000,
+        });
+        expect(published[0]).toEqual(['cannot constrain "end" <: number']);
+    },
+);
+
 test('textDocument/didChange', { timeout: CHECK_TEST_TIMEOUT_MS }, async () => {
     let diagnostics: lsp.PublishDiagnosticsParams['diagnostics'] | null = null;
 
