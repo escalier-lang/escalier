@@ -51,9 +51,8 @@ Three goals follow:
 
 Goal 2 is a soundness property. It holds on every accepted program apart from
 two gaps: a direct call to a dispose method that borrows its receiver, which
-section 4.3 covers with a lint, and the copying `Array` methods until
-[#2788](https://github.com/escalier-lang/escalier/issues/2788) lands, which
-section 4.8 describes. Goal 3 is checked where the checker can see the
+section 4.3 covers with a lint, and the standard-library methods that hand out
+an element a collection still holds, which section 4.8 describes. Goal 3 is checked where the checker can see the
 resource's type, and section 6 lists where it cannot.
 
 ## 3. Background
@@ -754,14 +753,28 @@ keeps going when one raises a value no signature named. It lowers to a
 errors combine into a `SuppressedError`. A loop of `dispose` calls would stop at
 the first raise and leave the remaining elements open.
 
-An array owns each element in exactly one slot only if no method makes a second
-owner. `slice`, `filter`, `concat`, `flat`, `toReversed`, `toSorted`,
-`toSpliced` and `with` take `&self` and return an owned `Array<T>`, so the copy
-and the receiver both own each element they share. Goal 2 needs those methods
-to return borrows, as
-[#2788](https://github.com/escalier-lang/escalier/issues/2788) proposes. Until
-then, a program can read a resource through a copy after `disposeAll` has
-consumed the original.
+A collection owns each element in exactly one slot only if no method hands out
+a second owner. Several standard-library methods do, by typing an element the
+collection keeps as owned:
+
+- `Array` methods that copy elements, such as `slice` and `filter`, return an
+  element, such as `at` and `find`, or pass one to a callback, such as `map`
+  and `forEach`, in [#2788](https://github.com/escalier-lang/escalier/issues/2788).
+- `Map.get`, `WeakMap.get`, the `forEach` callbacks of `Map` and `Set`, and
+  `Map.groupBy` and `Object.groupBy`, in [#2789](https://github.com/escalier-lang/escalier/issues/2789).
+- The `Set` methods `union`, `intersection`, `difference` and
+  `symmetricDifference`, in [#2790](https://github.com/escalier-lang/escalier/issues/2790).
+- `WeakRef.deref`, in [#2792](https://github.com/escalier-lang/escalier/issues/2792).
+
+The iterator methods of all three collections are covered by [#2442](https://github.com/escalier-lang/escalier/issues/2442). Goal 2
+needs each of these methods to return borrows. Until they do, a program can
+read a resource through a second owner after `disposeAll` has consumed the
+first.
+
+Lookups have the opposite problem. `has`, `get`, `delete`, `includes` and
+`indexOf` take the value to search for by value, so looking up a resource moves
+it, and `cache.delete(&file)` in section 4.3 is rejected today.
+[#2791](https://github.com/escalier-lang/escalier/issues/2791) makes those parameters borrows.
 
 A `DisposableStack` holds resources of different types, and values paired with
 a disposer of the program's choosing through `adopt`. The interop overlay
@@ -959,8 +972,10 @@ program holds would be noise.
    ([#2585](https://github.com/escalier-lang/escalier/issues/2585)) lands, then
    type it as a resource.
 5. **Collections.** Retype `DisposableStack` and `AsyncDisposableStack` in the
-   interop overlay, as section 4.8 describes. Goal 2 for arrays of resources
-   depends on [#2788](https://github.com/escalier-lang/escalier/issues/2788).
+   interop overlay, as section 4.8 describes. Goal 2 for collections of resources
+   depends on [#2788](https://github.com/escalier-lang/escalier/issues/2788), [#2789](https://github.com/escalier-lang/escalier/issues/2789),
+   [#2790](https://github.com/escalier-lang/escalier/issues/2790) and [#2792](https://github.com/escalier-lang/escalier/issues/2792). Section
+   4.3's `cache.delete(&file)` depends on [#2791](https://github.com/escalier-lang/escalier/issues/2791).
 6. **`finally`.** Report `finally` with the fix-it of section 4.9, then remove it
    from the parser a release later. Update
    [06 Error Handling](../../docs/06_error_handling.md) for `defer`, and the
