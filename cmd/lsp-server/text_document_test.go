@@ -1601,6 +1601,24 @@ func TestHoverFromSolver(t *testing.T) {
 			open: "lib/errs/use.esc", line: 3, col: 20,
 		},
 		{
+			name: "ExtractorPatternNestedQualifier",
+			files: map[string]string{
+				"lib/a.esc":        "export fn f(e: shapes.E) -> number {\n    return match e {\n        shapes.E.Num(v) => v,\n    }\n}",
+				"lib/shapes/e.esc": "export enum E { Num(value: number) }\n",
+			},
+			open: "lib/a.esc", line: 2, col: 15,
+			expected: escalierCode("enum E"),
+		},
+		{
+			name: "ExtractorPatternNamespacedVariant",
+			files: map[string]string{
+				"lib/a.esc":        "export fn f(e: shapes.E) -> number {\n    return match e {\n        shapes.E.Num(v) => v,\n    }\n}",
+				"lib/shapes/e.esc": "export enum E { Num(value: number) }\n",
+			},
+			open: "lib/a.esc", line: 2, col: 18,
+			expected: escalierCode("(variant) shapes.E.Num(value: number)"),
+		},
+		{
 			name:  "KeywordHasNoHover",
 			files: map[string]string{"bin/main.esc": "val x = 5"},
 			open:  "bin/main.esc", line: 0, col: 1,

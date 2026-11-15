@@ -205,6 +205,19 @@ func (c *checker) routeToNamespace(scope *Scope, key string) {
 	}
 }
 
+// linkToParentNamespace hangs ns, the namespace qualified as qname, off the namespace
+// pre-bound for qname's prefix, so `geo.Shape` reaches ns through geo's Nested map. A
+// qname with no prefix, or a prefix this module does not pre-bind, links nothing.
+func (c *checker) linkToParentNamespace(qname string, ns *Namespace) {
+	dot := strings.LastIndex(qname, ".")
+	if dot < 0 {
+		return
+	}
+	if parent, held := c.nsIndex[qname[:dot]]; held {
+		parent.Nested[qname[dot+1:]] = ns
+	}
+}
+
 // importBindsNamespace reports whether any file of the module being inferred binds
 // name as an imported package. Imports are bound before the walk, so every one is
 // in place by the time a block is pre-bound.

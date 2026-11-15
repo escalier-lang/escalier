@@ -1,0 +1,4 @@
+export enum Shape {
+    Circle(radius: number),
+    Rect(width: number, height: number),
+}

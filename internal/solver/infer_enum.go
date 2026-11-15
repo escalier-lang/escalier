@@ -203,12 +203,16 @@ func (c *checker) inferEnumBody(sh *enumShell) {
 			Sources: []provenance.Provenance{&ast.NodeProvenance{Node: variant}},
 		}
 	}
-	c.declTarget(sh.scope).defineNamespace(sh.decl.Name.Name, &Namespace{
+	enumNs := &Namespace{
 		Name:   sh.qname,
 		Values: nsValues,
 		Types:  nsTypes,
 		Nested: map[string]*Namespace{},
-	})
+	}
+	c.declTarget(sh.scope).defineNamespace(sh.decl.Name.Name, enumNs)
+	// An enum declared in a namespace is reached from outside it as `shapes.E.Num`,
+	// which walks Nested down from `shapes`.
+	c.linkToParentNamespace(sh.qname, enumNs)
 
 	if !sh.preBindClean || !quiet() {
 		return
