@@ -19,6 +19,9 @@ func TestInferRefUnion(t *testing.T) {
 		src      string
 		want     string   // rendered type of values["f"] when wantErrs is nil
 		wantErrs []string // exact diagnostics; nil means the source must check cleanly
+		// local reads f as a closure bound inside a function body, which inferSource does
+		// not return.
+		local bool
 	}{
 		// --- unions/intersections as RefInner ---
 		{
@@ -100,10 +103,13 @@ func TestInferRefUnion(t *testing.T) {
 			// mixed union, so the uniform-ownership check leaves them alone. The join
 			// lifetime 'c stays named, with each source lifetime bounded above it.
 			name: "uniform borrow union",
-			src: `fn f<'a: 'c, 'b: 'c, 'c>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &'c mut {x: number} {
-  if true { return p } else { return q }
+			src: `fn main() -> undefined {
+  val f = fn (p: &mut {x: number}, q: &mut {x: number}) {
+    if true { return p } else { return q }
+  }
 }`,
-			want: "fn <'a: 'c, 'b: 'c, 'c>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &'c mut {x: number}",
+			local: true,
+			want:  "fn <'a: 'c, 'b: 'c, 'c>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &'c mut {x: number}",
 		},
 
 		// --- nested-borrow normalization ---
@@ -131,7 +137,11 @@ func TestInferRefUnion(t *testing.T) {
 				return
 			}
 			require.Empty(t, errs)
-			require.Equal(t, tc.want, values["f"])
+			got := values["f"]
+			if tc.local {
+				got, _ = inferLocal(t, tc.src, "f")
+			}
+			require.Equal(t, tc.want, got)
 		})
 	}
 }
@@ -439,11 +449,13 @@ func TestBorrowUnionLeafBindsAsBorrow(t *testing.T) {
 // return type IS the leaf's and the signature shows the outlives bounds.
 func TestBorrowUnionLeafLifetime(t *testing.T) {
 	t.Run("distinct member lifetimes take a join", func(t *testing.T) {
-		values, _, errs := inferSource(t, `fn f<'a: 'c, 'b: 'c, 'c>(p: &'a {x: {a: number}} | &'b {y: string}) -> &'c {a: number} {
-  if val {x: v} = p {
-    return v
-  }
-}`)
+		values, errs := inferLocals(t, `fn main() -> undefined {
+	val f = fn (p: &{x: {a: number}} | &{y: string}) {
+	  if val {x: v} = p {
+	    return v
+	  }
+	}
+}`, "f")
 		require.Empty(t, errs)
 		// 'c is the join, with the two member lifetimes bounded above it.
 		require.Equal(t,
