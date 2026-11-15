@@ -716,6 +716,36 @@ func TestUncaughtThrows(t *testing.T) {
 			want: []string{"A"},
 		},
 		{
+			// A guarded object pattern names the object it fits, so only the string is left.
+			name: "GuardedObjectArmNamesItsShape",
+			src: `fn f(c: boolean) throws _ {
+					try {
+						if c { throw {code: 1} } else { throw "boom" }
+					} catch {
+						{code} if code > 0 => 0,
+					}
+				}`,
+			want: []string{`"boom"`},
+		},
+		{
+			name: "NullArmLeavesTheString",
+			src: `fn f(c: boolean) throws _ {
+					try {
+						if c { throw null } else { throw "boom" }
+					} catch {
+						null => 0,
+					}
+				}`,
+			want: []string{`"boom"`},
+		},
+		{
+			// `A{a: 0}` matches only some `A` values, but it names `A`.
+			name: "RefutableInstanceArmNamesItsClass",
+			src: `declare fn g() -> number throws A | B
+				fn f() -> number throws _ { return try { g() } catch { A{a: 0} => 1 } }`,
+			want: []string{"B"},
+		},
+		{
 			name: "CatchAllLeavesNothing",
 			src: `declare fn g() -> number throws A | B
 				fn f() -> number { return try { g() } catch { _ => 1 } }`,
@@ -742,6 +772,30 @@ func TestUncaughtThrows(t *testing.T) {
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+// TestTriesWithUncaughtThrows asserts that Info.TriesWithUncaughtThrows returns the tries of
+// one file that leave a member uncaught, in source order, and none for another file.
+func TestTriesWithUncaughtThrows(t *testing.T) {
+	src := `
+		class A { a: number }
+		class B { b: number }
+		declare fn g() -> number throws A | B
+		fn first() -> number throws _ { return try { g() } catch { A{} => 1 } }
+		fn caught() -> number { return try { g() } catch { _ => 1 } }
+		fn second() -> number throws _ { return try { g() } catch { B{} => 1 } }
+	`
+	info, fileDecls := inferForSignatures(t, src)
+	finder := &tryCatchFinder{}
+	for _, d := range fileDecls {
+		d.Accept(finder)
+	}
+	require.Len(t, finder.found, 3)
+	sourceID := finder.found[0].Span().SourceID
+	require.Equal(t,
+		[]*ast.TryCatchExpr{finder.found[0], finder.found[2]},
+		info.TriesWithUncaughtThrows(sourceID))
+	require.Empty(t, info.TriesWithUncaughtThrows(sourceID+1))
 }
 
 // tryCatchFinder collects every try/catch expression it visits.
