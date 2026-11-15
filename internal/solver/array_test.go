@@ -18,6 +18,9 @@ func TestArrayResolvesToTheIngestedClass(t *testing.T) {
 		name string
 		src  string
 		want map[string]string
+		// locals are the types of closures the source binds inside a function body, which
+		// keep their inferred return types.
+		locals map[string]string
 	}{
 		{
 			// The annotation resolves with nothing imported. The handle is read from the
@@ -29,38 +32,56 @@ func TestArrayResolvesToTheIngestedClass(t *testing.T) {
 		{
 			// A member the declaration names, which the retired concrete could not answer.
 			name: "LengthReads",
-			src:  `val f = fn (xs: Array<number>) { return xs.length }`,
-			want: map[string]string{"f": "fn (xs: Array<number>) -> number"},
+			src: `
+				fn main() -> undefined {
+					val f = fn (xs: Array<number>) { return xs.length }
+				}
+			`,
+			locals: map[string]string{"f": "fn (xs: Array<number>) -> number"},
 		},
 		{
 			// A method the declaration names, checked against its signature.
 			name: "PushChecks",
-			src:  `val f = fn (mut xs: Array<number>) { return xs.push(1) }`,
-			want: map[string]string{"f": "fn (xs: Array<number>) -> number"},
+			src: `
+				fn main() -> undefined {
+					val f = fn (mut xs: Array<number>) { return xs.push(1) }
+				}
+			`,
+			locals: map[string]string{"f": "fn (xs: Array<number>) -> number"},
 		},
 		{
 			// A numeric key reads the element. An array declares no position for the key to
 			// land on, so the element is the answer whatever the index is.
 			name: "NumericLiteralIndexYieldsTheElement",
-			src:  `val f = fn (xs: Array<number>) { return xs[0] }`,
-			want: map[string]string{"f": "fn (xs: Array<number>) -> number"},
+			src: `
+				fn main() -> undefined {
+					val f = fn (xs: Array<number>) { return xs[0] }
+				}
+			`,
+			locals: map[string]string{"f": "fn (xs: Array<number>) -> number"},
 		},
 		{
 			name: "NumberTypedIndexYieldsTheElement",
-			src:  `val f = fn (xs: Array<string>, k: number) { return xs[k] }`,
-			want: map[string]string{"f": "fn (xs: Array<string>, k: number) -> string"},
+			src: `
+				fn main() -> undefined {
+					val f = fn (xs: Array<string>, k: number) { return xs[k] }
+				}
+			`,
+			locals: map[string]string{"f": "fn (xs: Array<string>, k: number) -> string"},
 		},
 		{
 			// Iteration binds the loop variable at the element type.
 			name: "ForInBindsTheElement",
 			src: `
-				val f = fn (xs: Array<number>) {
-					for x in xs {
-						return x
+				fn main() -> undefined {
+					val f = fn (xs: Array<number>) {
+						for x in xs {
+							return x
+						}
 					}
 				}
 			`,
-			want: map[string]string{"f": "fn (xs: Array<number>) -> number"},
+			locals: map[string]string{"f": "fn (xs: Array<number>) -> number"},
 		},
 	}
 	for _, tt := range tests {
@@ -70,6 +91,10 @@ func TestArrayResolvesToTheIngestedClass(t *testing.T) {
 			require.Empty(t, errorMessagesOf(errs))
 			for name, want := range tt.want {
 				require.Equal(t, want, values[name], "binding %q", name)
+			}
+			for name, want := range tt.locals {
+				got, _ := inferLocal(t, tt.src, name)
+				require.Equal(t, want, got, "binding %q", name)
 			}
 		})
 	}
@@ -325,7 +350,7 @@ func TestIterationCallbacksBorrowTheReceiver(t *testing.T) {
 func TestArrayMethodRejectsAWrongElement(t *testing.T) {
 	t.Parallel()
 
-	_, _, errs := inferSource(t, `val f = fn (mut xs: Array<number>) { return xs.push("a") }`)
+	_, _, errs := inferSource(t, `val f = fn (mut xs: Array<number>) -> number { return xs.push("a") }`)
 	require.Equal(t, []string{`cannot constrain "a" <: number`}, errorMessagesOf(errs))
 }
 
@@ -449,24 +474,24 @@ func TestTupleIntoArray(t *testing.T) {
 		{
 			name: "SpreadElementFits",
 			src: `fn h(xs: &Array<number>) -> number { return 0 }
-				val f = fn (t: &[number, ...Array<number>]) { return h(t) }`,
+				val f = fn (t: &[number, ...Array<number>]) -> number { return h(t) }`,
 		},
 		{
 			name: "LeadingElementBeforeSpreadDoesNotFit",
 			src: `fn h(xs: &Array<number>) -> number { return 0 }
-				val f = fn (t: &[string, ...Array<number>]) { return h(t) }`,
+				val f = fn (t: &[string, ...Array<number>]) -> number { return h(t) }`,
 			want: []string{"cannot constrain string <: number"},
 		},
 		{
 			name: "InexactTuple",
 			src: `fn h(xs: &Array<number>) -> number { return 0 }
-				val f = fn (t: &[number, ...]) { return h(t) }`,
+				val f = fn (t: &[number, ...]) -> number { return h(t) }`,
 			want: []string{"cannot constrain unknown <: number"},
 		},
 		{
 			name: "MutTupleThroughAnImmutableView",
 			src: `fn h(xs: &Array<number>) -> number { return 0 }
-				val f = fn (t: &mut [number, number]) { return h(t) }`,
+				val f = fn (t: &mut [number, number]) -> number { return h(t) }`,
 		},
 		{
 			name: "LiteralIntoMutAnnotationThenPush",
@@ -483,7 +508,7 @@ func TestTupleIntoArray(t *testing.T) {
 		{
 			name: "MutTupleIntoMutArrayOfItsElement",
 			src: `fn h(xs: &mut Array<number>) -> number { return 0 }
-				val f = fn (t: &mut [number, number]) { return h(t) }`,
+				val f = fn (t: &mut [number, number]) -> number { return h(t) }`,
 			want: []string{"cannot constrain tuple <: Array<number>"},
 		},
 	}

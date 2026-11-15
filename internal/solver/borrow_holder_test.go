@@ -19,7 +19,7 @@ func TestBorrowHoldersAcrossReassignment(t *testing.T) {
 		// to the caller.
 		"VarReassignClearsReplacedEdge": {
 			src: `
-				val f = fn (out: &mut {slot: &mut {value: number}}) {
+				val f = fn (out: &mut {slot: &mut {value: number}}) -> undefined {
 					val mut c = {value: 1}
 					val mut d = {value: 0}
 					var a = &mut c
@@ -36,7 +36,7 @@ func TestBorrowHoldersAcrossReassignment(t *testing.T) {
 		// `seed` is a parameter, so the fall-through path holds no loan of a local.
 		"BorrowSetOnOneBranchReachesMerge": {
 			src: `
-				val f = fn (seed: &mut {value: number}, cond: boolean, out: &mut {slot: &mut {value: number}}, view: &mut {r: &{value: number}}) {
+				val f = fn (seed: &mut {value: number}, cond: boolean, out: &mut {slot: &mut {value: number}}, view: &mut {r: &{value: number}}) -> undefined {
 					var a = seed
 					val mut d = {value: 0}
 					if cond {
@@ -59,7 +59,7 @@ func TestBorrowHoldersAcrossReassignment(t *testing.T) {
 		// the frame uses either local afterwards, so L1 accepts the store.
 		"BranchesUnionReferents": {
 			src: `
-				val f = fn (cond: boolean, out: &mut {slot: &mut {value: number}}) {
+				val f = fn (cond: boolean, out: &mut {slot: &mut {value: number}}) -> undefined {
 					val mut c = {value: 1}
 					val mut d = {value: 0}
 					var a = &mut c
@@ -115,8 +115,8 @@ func TestFieldStoreBorrowHolders(t *testing.T) {
 		// frame uses d afterwards.
 		"FieldStoreMoveWhileExternallyAliased": {
 			src: `
-				val store = fn (x: {peer: &mut {x: number}}) {}
-				val f = fn () {
+				val store = fn (x: {peer: &mut {x: number}}) -> undefined {}
+				val f = fn () -> undefined {
 					val mut d = {x: 0}
 					val mut b = {peer: &mut d}
 					val keep = &b
@@ -155,8 +155,8 @@ func TestMutableBorrowCarrier(t *testing.T) {
 		// a `&mut` field.
 		"BorrowableAsMut": {
 			src: `
-				val read = fn (x: &mut {peer: &mut {x: number}}) {}
-				val f = fn () {
+				val read = fn (x: &mut {peer: &mut {x: number}}) -> undefined {}
+				val f = fn () -> undefined {
 					val mut d = {x: 0}
 					val mut b = {peer: &mut d}
 					read(&mut b)
@@ -172,7 +172,7 @@ func TestMutableBorrowCarrier(t *testing.T) {
 		// through the `&mut` the field holds.
 		"WriteThroughBorrowField": {
 			src: `
-				val f = fn () {
+				val f = fn () -> undefined {
 					val mut d = {x: 0}
 					val mut b = {peer: &mut d}
 					b.peer.x = 5

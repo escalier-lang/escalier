@@ -936,7 +936,7 @@ func TestInferWarnsAboutAFunctionReadOffAnInferredReceiver(t *testing.T) {
 			src: `
 				class Foo { m(&self) -> number { return 1 } }
 				fn each(x: Foo, k: fn (y: Foo) -> number) -> number { return k(x) }
-				val h = fn (x: Foo) { return each(x, fn (o) { val g = o.m
+				val h = fn (x: Foo) -> number { return each(x, fn (o) { val g = o.m
 					return g() }) }
 			`,
 			types: map[string]string{

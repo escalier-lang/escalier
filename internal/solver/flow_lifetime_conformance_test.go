@@ -74,7 +74,7 @@ func TestFlowLifetimeRules(t *testing.T) {
 					return a + p.x                  // p is still usable
 				}
 
-				val returned = fn () {
+				val returned = fn () -> fn () -> 1 {
 					val p = {x: 1}
 					return fn () { return p.x }     // owns p, since it outlives the frame
 				}
@@ -320,7 +320,7 @@ func TestFlowLifetimeStaticBorrow(t *testing.T) {
 
 				var cache: &{x: number} = &{x: 0}
 
-				val remember = fn () {
+				val remember = fn () -> undefined {
 					val mut p = {x: 1}
 					cache = &p         // the borrow's lifetime is 'static
 					p.x = 2            // rejected by E2, since cache can still read p
