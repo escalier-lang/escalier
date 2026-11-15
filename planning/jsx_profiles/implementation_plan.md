@@ -24,7 +24,12 @@ parallel. The React profile lands after #2099 and reuses everything built here.
 ## Non-goals for the framework-less milestone
 
 - A runtime. Codegen keeps emitting `react/jsx-runtime` imports until the import
-  source setting described under PR 7 lands.
+  source setting described under PR 7 lands. Until a DOM runtime exists, the
+  types `web:jsx` gives JSX expressions describe values the generated code does
+  not yet produce.
+- Typing JSX the same way under every framework. `web:jsx` types `<div />` as
+  `HTMLDivElement`, while React types it as `JSX.Element`. Code written
+  against one profile's element types may not check under another.
 - `ref`, class components, `LibraryManagedAttributes`, and default props. These
   are React concepts and arrive with the React profile.
 - Per-tag attributes and DOM event handler types such as
@@ -41,8 +46,10 @@ the first JSX expression it infers.
 // jsxProfile holds the types JSX inference reads. Each field is nil when the
 // profile package does not declare that type.
 type jsxProfile struct {
-	Element             soltype.Type // the type of every JSX expression
-	Node                soltype.Type // what a child or a component's result may be
+	Element             soltype.Type // the type of every JSX expression, when the profile fixes one
+	IntrinsicTypes      soltype.Type // object type from tag name to element type, read when Element is nil
+	Fragment            soltype.Type // the type of a fragment, read when Element is nil
+	Child               soltype.Type // what a child or a component's result may be
 	IntrinsicElements   soltype.Type // object type from tag name to props
 	IntrinsicAttributes soltype.Type // props every element accepts, such as `key`
 	ChildrenProp        string       // the prop that receives children, "children" by default
@@ -56,8 +63,11 @@ Where the types come from depends on the profile source:
 - A third-party profile reads them from the `JSX` namespace that
   `<source>/jsx-runtime` exports, using TypeScript's names
   (`JSX.Element`, `JSX.IntrinsicElements`, `JSX.IntrinsicAttributes`,
-  `JSX.ElementChildrenAttribute`). `Node` maps to the profile's child type,
+  `JSX.ElementChildrenAttribute`). `Child` maps to the profile's child type,
   `React.ReactNode` for React.
+
+`web:jsx` leaves `Element` unset, so each JSX expression gets its own type.
+React sets it, so every JSX expression is `JSX.Element`.
 
 A new `Options.JSXImportSource` field selects the source. The compiler and
 the LSP server fill it from the `escalier.jsxImportSource` field of the
@@ -87,16 +97,18 @@ diagnostic naming the source, and every JSX expression in the run infers to
 `web:jsx` is a hand-written Escalier file at
 `internal/interop/data/web/jsx.esc`. It lives under `web/` because JSX
 renders to DOM elements, and it imports `web:dom` for the tag list. That puts
-it in the browser tier, next to `web:dom`. A first draft:
+it in the browser tier, next to `web:dom`. The file is listed in
+`dts_to_esc.HandAuthoredPackages`, so the generator neither writes nor
+removes it. A first draft:
 
 ```esc
-import "web:dom" { HTMLElementTagNameMap }
+import "web:dom" { DocumentFragment, HTMLElementTagNameMap, Node }
 
-// Opaque so that programs do not depend on the shape of an element, which
-// differs between frameworks.
-export declare class Element {}
+export type IntrinsicTypes = HTMLElementTagNameMap
 
-export type Node = Element | string | number | boolean | null | undefined | Array<Node>
+export type Fragment = DocumentFragment
+
+export type Child = Node | string | number | boolean | null | undefined | Array<Child>
 
 export type IntrinsicAttributes = {key?: string | number}
 
@@ -107,13 +119,14 @@ type GlobalAttributes = {
 	title?: string,
 	hidden?: boolean,
 	tabindex?: number,
-	children?: Node,
+	children?: Child,
 }
 
 export type IntrinsicElements = {[K]: GlobalAttributes for K in keyof HTMLElementTagNameMap}
 ```
 
-The mapped type gives every tag `HTMLElementTagNameMap` declares, about 110 of
+`IntrinsicTypes` makes `<div />` an `HTMLDivElement` and `<a />` an
+`HTMLAnchorElement`. The mapped type gives every tag `HTMLElementTagNameMap` declares, about 110 of
 them, and no others. `<div>` and `<button>` are valid and `<dvi>` is an
 unknown tag. SVG and MathML tags are left out until a later PR adds
 `SVGElementTagNameMap` and `MathMLElementTagNameMap` with their own attribute
@@ -146,18 +159,21 @@ The solver builds one object type from the attributes and children:
   literal spread.
 - Children set the `ChildrenProp` key. With no children the key is absent. One
   child gives its own type. Several children give a tuple of their types, which
-  is a subtype of `Array<Node>`.
+  is a subtype of `Array<Child>`.
 
 Child types follow codegen's JSX whitespace rules, which PR 1 also moves into
 `internal/ast`. Text becomes a string literal after normalization,
 whitespace-only text and empty `{}` containers are dropped, `{expr}` is the type
-of `expr`, and a nested element or fragment is `Element`.
+of `expr`, and a nested element or fragment has the type the rules below
+give it.
 
 ### Intrinsic elements
 
 For `<div ...>` the solver constrains the props object against
 `IntrinsicElements["div"]` intersected with `IntrinsicAttributes`. An unknown
-tag reports a diagnostic naming the tag. The element's type is `Element`.
+tag reports a diagnostic naming the tag. The element's type is `Element` when
+the profile sets it, and otherwise `IntrinsicTypes["div"]`, which is
+`HTMLDivElement` under `web:jsx`.
 
 ### Components
 
@@ -173,7 +189,7 @@ Arity, overloads, generic components, unknown identifiers and argument blame all
 come from that path.
 
 ```esc
-fn Button(props: {label: string}) -> Element { ... }
+fn Button(props: {label: string}) -> HTMLButtonElement { ... }
 
 <Button label="Click me" />          // ok
 <Button />                           // missing `label`
@@ -181,9 +197,10 @@ fn Button(props: {label: string}) -> Element { ... }
 <Button label="x">child</Button>     // `children` is extra
 ```
 
-The result of the call is constrained to `Node`, which rejects a component that
-returns, say, an object. The element's own type is `Element` whatever the
-component returns.
+The result of the call is constrained to `Child`, which rejects a component
+that returns, say, a plain object. The element's type is `Element` when the
+profile sets it, and otherwise the type the call returns, so `<Button />` is
+`HTMLButtonElement` under `web:jsx`.
 
 The synthetic nodes are built once per JSX expression and cached on the checker.
 Later passes that need to see the call, such as ownership events and closure
@@ -191,7 +208,9 @@ captures, read the cached nodes instead of building their own.
 
 ### Fragments
 
-`<>...</>` checks each child against `Node` and has type `Element`.
+`<>...</>` checks each child against `Child`. Its type is `Element` when the
+profile sets it, and otherwise `Fragment`, which is `DocumentFragment` under
+`web:jsx`.
 
 ## Pull requests
 
@@ -202,8 +221,8 @@ captures, read the cached nodes instead of building their own.
    `isIntrinsicElement` and the child whitespace normalization from
    `internal/codegen/jsx.go` to `internal/ast`. Done when codegen and liveness
    tests pass unchanged.
-2. **Load the JSX profile.** Add `web:jsx` and its entry in the
-   `dts_to_esc` partition and tier tables. Add `escalier.jsxImportSource` to
+2. **Load the JSX profile.** Add `web:jsx`, list it in
+   `HandAuthoredPackages`, and give it a browser-tier entry in the tier table. Add `escalier.jsxImportSource` to
    `ReadPackageConfig`, `Options.JSXImportSource`, `jsxProfile`, and the
    loader for the built-in source. Report a missing
    profile once per run. Done when a solver test loads the profile and asserts
@@ -212,7 +231,7 @@ captures, read the cached nodes instead of building their own.
    object, intrinsic lookup, `key` handling and fragments. Add
    `TestInferJSXFramework`, a table that runs against `web:jsx`, and a fixture
    under `fixtures/jsx_framework_less/`.
-4. **Infer components.** Add the synthetic call, the `Node` check on the result,
+4. **Infer components.** Add the synthetic call, the `Child` check on the result,
    and member tags. Extend `TestInferJSXFramework` with component rows. Test
    components written with explicit signatures or as `declare fn`, and test the
    inferred signature of an unannotated component in its own row.
@@ -245,13 +264,3 @@ PRs 1 and 2 can land in either order. PRs 3 to 7 depend on 2. Only PR 8 waits on
   types, following `infer_class_test.go`.
 - Each component row uses a component with an explicit signature, so a failure
   points at the JSX rules rather than at function inference.
-
-## Open questions
-
-- `internal/interop/data/web/` is generated by `dts_to_esc` from `lib.dom.d.ts`.
-  `web:jsx` has no `.d.ts` origin, so the partition table needs a way to
-  list a hand-written file, or the generator needs to leave `jsx.esc` in place.
-- Should an intrinsic element type as its DOM element, so `<div />` is
-  `HTMLDivElement` through `HTMLElementTagNameMap`? That fits a DOM-only
-  runtime, but React, Preact and Solid each return a different element type, so
-  code written against it would not carry over to a framework profile.
