@@ -603,6 +603,61 @@ extent-bound requirements from its own `throws`, and capture at creation from Ef
    separate declaration form, or a fixed set of built-in extent-bound kinds.
    The answer also decides whether a library can define its own, as a
    database client would for a transaction.
+7. **What syntax meets C9?** A `with` can list several bindings, as in
+   `with Theme = dark, Logger = consoleLogger { ... }`, with each binding able
+   to use the ones before it. Nothing in section 6 lets a function provide a
+   reusable set. The candidates:
+
+   - **`given` on a callback type.** The provider runs a callback with the
+     values supplied. It is the only candidate that supplies an extent-bound
+     requirement without the callback writing anything, and it adds a clause
+     and a subtyping rule.
+
+     ```esc
+     fn withTestEnv<T>(seed: number, body: fn () -> T given Clock | Random) -> T {
+         with Clock = fixedClock(seed), Random = seeded(seed) { return body() }
+     }
+
+     withTestEnv(42, fn () => runSimulation())
+     ```
+
+   - **First-class provider values.** A `provide` expression builds a value of
+     type `Provides<...>`, a plain record at runtime, and `with` accepts it.
+     Bundles compose by listing them in one `with` or by spreading one into
+     another. An owned bundle can outlive the call that built it, so it holds
+     only capturable requirements. A borrowed bundle, `&Provides<...>`, can
+     carry extent-bound ones, since the borrow can't outlive its call.
+
+     ```esc
+     fn testEnv(seed: number) -> Provides<Clock | Random> {
+         return provide Clock = fixedClock(seed), Random = seeded(seed)
+     }
+
+     with testEnv(42), Theme = dark { runSimulation() }
+     ```
+
+   - **Named provider declarations.** Declaration syntax for the previous
+     candidate, close to Scala's `given` instances. It adds a declaration form
+     for something a function returning `Provides` already expresses.
+
+     ```esc
+     provider TestEnv(seed: number) {
+         Clock = fixedClock(seed)
+         Random = seeded(seed)
+     }
+
+     with TestEnv(42) { runSimulation() }
+     ```
+
+   - **Records keyed by context.** `with` accepts an object whose keys must be
+     context names, and bundles compose by object spread. It adds no type, but
+     an ordinary object type then doubles as a provider, so a mistyped key
+     reports that the name is not a context.
+
+     ```esc
+     val testEnv = {Clock: fixedClock(0), Random: seeded(0)}
+     with {...testEnv, Theme: dark} { runSimulation() }
+     ```
 
 ## 10. Non-goals
 
