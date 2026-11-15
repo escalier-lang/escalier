@@ -1848,6 +1848,21 @@ func TestInferMatchCatchAllNarrowedByArmsAbove(t *testing.T) {
 			want: "fn (x: {a: number} | string) -> true | string",
 		},
 		{
+			name: "ObjectPatternOverMemberWithoutTheKey",
+			src: `fn f(x: {a: number} | {b: string}) {
+				return match x { {a} => true, other => other }
+			}`,
+			want: "fn (x: {a: number} | {b: string}) -> true | {b: string}",
+		},
+		{
+			name: "ObjectPatternOverClassInstance",
+			src: `class P { a: number }
+			fn f(x: P | string) {
+				return match x { {a} => true, other => other }
+			}`,
+			want: "fn (x: P | string) -> true | string",
+		},
+		{
 			name: "ObjectPatternOverOptionalKey",
 			src: `fn f(x: {a?: number} | string) {
 				return match x { {a} => true, other => other }
