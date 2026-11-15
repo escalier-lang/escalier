@@ -179,7 +179,7 @@ func (w *condWalk) walkSplit(cur, fall condState, matched *pathBinder, split *uc
 	// A value reaching the tail through matched failed every test this split made.
 	// walkFallthrough does not use matched for a tail that is a join, which a passing value
 	// can reach too.
-	w.walkFallthrough(fall, matched.excludingRegexAnns(cur.scope, split), split.Default)
+	w.walkFallthrough(fall, matched.excludingTested(cur.scope, split), split.Default)
 }
 
 // walkBind resolves the projection a bind names and defines its leaf, then types what

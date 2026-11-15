@@ -1767,3 +1767,93 @@ func TestInferMatchNarrowsByAbsentKeys(t *testing.T) {
 		})
 	}
 }
+
+// TestInferMatchCatchAllNarrowedByArmsAbove covers what a catch-all arm binds once the arms above it
+// have tested part of the scrutinee. An arm whose test captures a whole member removes it. A
+// guard, a nested sub-pattern, an object pattern, and a literal that covers part of a member
+// each leave the type alone.
+func TestInferMatchCatchAllNarrowedByArmsAbove(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "AnnotationArm",
+			src: `fn f(x: number | string) {
+				return match x { n: number => "n", other => other }
+			}`,
+			want: "fn (x: number | string) -> string",
+		},
+		{
+			name: "TwoAnnotationArms",
+			src: `fn f(x: number | string | boolean) {
+				return match x { n: number => 0, s: string => 1, other => other }
+			}`,
+			want: "fn (x: number | string | boolean) -> 0 | 1 | boolean",
+		},
+		{
+			name: "ClassArm",
+			src: `class A { a: number }
+			class B { b: string }
+			fn f(x: A | B) {
+				return match x { A {a} => "a", other => other.b }
+			}`,
+			want: "fn (x: A | B) -> string",
+		},
+		{
+			name: "EnumVariantArm",
+			src: `enum E { A(n: number), B(s: string), C(b: boolean) }
+			fn f(e: E) {
+				return match e { E.A(n) => n, other => other }
+			}`,
+			want: "fn (e: E) -> number | E.B | E.C",
+		},
+		{
+			name: "LiteralArmOverLiteralUnion",
+			src: `fn f(x: 1 | 2 | 3) {
+				return match x { 1 => 0, other => other }
+			}`,
+			want: "fn (x: 1 | 2 | 3) -> 0 | 2 | 3",
+		},
+		{
+			name: "LiteralArmCoversPartOfAMember",
+			src: `fn f(x: number | string) {
+				return match x { 0 => true, other => other }
+			}`,
+			want: "fn (x: number | string) -> true | number | string",
+		},
+		{
+			name: "GuardedArm",
+			src: `fn f(x: number | string) {
+				return match x { n: number if n > 0 => true, other => other }
+			}`,
+			want: "fn (x: number | string) -> true | number | string",
+		},
+		{
+			name: "NestedSubPattern",
+			src: `enum E { A(n: number), B(s: string) }
+			fn f(e: E) {
+				return match e { E.A(0) => true, other => other }
+			}`,
+			want: "fn (e: E) -> true | E",
+		},
+		{
+			name: "ObjectPattern",
+			src: `fn f(x: {a: number} | string) {
+				return match x { {a} => true, other => other }
+			}`,
+			want: "fn (x: {a: number} | string) -> true | {a: number} | string",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}
