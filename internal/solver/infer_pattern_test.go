@@ -961,9 +961,10 @@ func TestInferRestPatternRejectedPositions(t *testing.T) {
 		{
 			// A tuple rest before another element stands for a run of elements whose
 			// length nothing pins down, so no position after it names a fixed element.
+			// #2782 tracks accepting it when the scrutinee's length is known.
 			name: "TupleNonTrailingRest",
 			src: `
-				fn f(t: [number, string, boolean]) -> [never, never] {
+				fn f(t: [number, string, boolean]) -> [[number, string], boolean] {
 					val [...rest, b] = t
 					return [rest, b]
 				}`,
@@ -985,7 +986,7 @@ func TestInferRestPatternRejectedPositions(t *testing.T) {
 			// property the fields do not name. The non-final one is the rejected one.
 			name: "ObjectSecondRest",
 			src: `
-				fn f(p: {x: number, y: string}) -> [never, {y: string}] {
+				fn f(p: {x: number, y: string}) -> [{y: string}, {y: string}] {
 					val {x, ...rest, ...more} = p
 					return [rest, more]
 				}`,

@@ -88,7 +88,8 @@ func TestInferTupleSpreadNonTuple(t *testing.T) {
 
 // Spreading an inexact tuple before another element is rejected: the inexact
 // operand ([number, ...]) has unknown length, so the trailing 1 would land at an
-// unknown position.
+// unknown position. #2783 tracks accepting it as the variadic tuple
+// [number, ...Array<unknown>, 1].
 func TestInferTupleSpreadInexactNotLast(t *testing.T) {
 	// fn f(z: [number, ...]) -> Array<number> { return [...z, 1] }
 	_, _, errs := inferSource(t, `

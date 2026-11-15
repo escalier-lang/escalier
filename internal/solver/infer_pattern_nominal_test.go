@@ -69,7 +69,7 @@ func TestInferExtractorPatExplicitConstructor(t *testing.T) {
 				self.degrees = degrees
 			},
 		}
-		fn f(c: Celsius) -> [never, never] {
+		fn f(c: Celsius) -> [string, number] {
 			return match c {
 				Celsius(label, degrees) => [label, degrees]
 			}
