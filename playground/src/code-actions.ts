@@ -1,6 +1,8 @@
 import type * as monaco from 'monaco-editor-core';
 import type * as lsp from 'vscode-languageserver-protocol';
 
+import { lspRangeToMonacoRange, monacoRangeToLspRange } from './ranges';
+
 // Monaco is imported for its types alone, so this module loads no Monaco code and
 // its tests run without a browser. The provider receives the model's Uri from
 // Monaco and hands it back as each edit's resource.
@@ -17,27 +19,6 @@ export type CodeActionProviderOptions = {
     /** Returns the diagnostics the server last published for the document at uri. */
     publishedDiagnostics: (uri: string) => lsp.Diagnostic[];
 };
-
-// Monaco counts lines and columns from 1, and LSP from 0.
-
-function toLspRange(range: monaco.IRange): lsp.Range {
-    return {
-        start: {
-            line: range.startLineNumber - 1,
-            character: range.startColumn - 1,
-        },
-        end: { line: range.endLineNumber - 1, character: range.endColumn - 1 },
-    };
-}
-
-function toMonacoRange(range: lsp.Range): monaco.IRange {
-    return {
-        startLineNumber: range.start.line + 1,
-        startColumn: range.start.character + 1,
-        endLineNumber: range.end.line + 1,
-        endColumn: range.end.character + 1,
-    };
-}
 
 function sameRange(a: lsp.Range, b: lsp.Range): boolean {
     return (
@@ -58,7 +39,7 @@ export function markerDiagnostics(
     published: lsp.Diagnostic[],
 ): lsp.Diagnostic[] {
     return markers.map((marker) => {
-        const range = toLspRange(marker);
+        const range = monacoRangeToLspRange(marker);
         return (
             published.find(
                 (d) =>
@@ -115,7 +96,7 @@ export function convertCodeActions(
             markers.filter(
                 (m) =>
                     m.message === d.message &&
-                    sameRange(toLspRange(m), d.range),
+                    sameRange(monacoRangeToLspRange(m), d.range),
             ),
         );
         result.push({
@@ -128,7 +109,7 @@ export function convertCodeActions(
                     resource,
                     versionId,
                     textEdit: {
-                        range: toMonacoRange(edit.range),
+                        range: lspRangeToMonacoRange(edit.range),
                         text: edit.newText,
                     },
                 })),
@@ -158,7 +139,7 @@ export function createCodeActionProvider({
                 const versionId = model.getVersionId();
                 const actions = await request({
                     textDocument: { uri },
-                    range: toLspRange(range),
+                    range: monacoRangeToLspRange(range),
                     context: {
                         diagnostics: markerDiagnostics(
                             context.markers,

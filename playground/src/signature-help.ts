@@ -1,6 +1,8 @@
 import type * as monaco from 'monaco-editor-core';
 import type * as lsp from 'vscode-languageserver-protocol';
 
+import { monacoPosToLspPos } from './ranges';
+
 // These types mirror Monaco's SignatureHelp types. Monaco is imported for its
 // types alone, so this module loads no Monaco code and its tests run without a
 // browser.
@@ -94,11 +96,11 @@ export function createSignatureHelpProvider({
                 // The `(` or `,` that triggered the request is usually still
                 // in a debounced didChange, and the server must see it.
                 flushPendingChanges(uri);
-                const value = await provideSignatureHelp(request, uri, {
-                    // Monaco counts lines and columns from 1, and LSP from 0.
-                    line: position.lineNumber - 1,
-                    character: position.column - 1,
-                });
+                const value = await provideSignatureHelp(
+                    request,
+                    uri,
+                    monacoPosToLspPos(position),
+                );
                 if (!value) {
                     return null;
                 }

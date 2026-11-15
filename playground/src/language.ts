@@ -10,6 +10,7 @@ import {
 } from './completions';
 import type { Client } from './lsp-client/client';
 import { monarchLanguage } from './monarch-language';
+import { lspRangeToMonacoRange, monacoPosToLspPos } from './ranges';
 import {
     coalesced,
     createSemanticTokensProvider,
@@ -51,22 +52,6 @@ type ErrorMesage = {
     message: string;
     span: Span;
 };
-
-function monacoPosToLspPos(position: monaco.Position): lsp.Position {
-    return {
-        line: position.lineNumber - 1, // LSP uses 0-based line numbers
-        character: position.column - 1, // LSP uses 0-based character indices
-    };
-}
-
-function lspRangeToMonacoRange(range: lsp.Range): monaco.Range {
-    return new monaco.Range(
-        range.start.line + 1,
-        range.start.character + 1,
-        range.end.line + 1,
-        range.end.character + 1,
-    );
-}
 
 export function setupLanguage(
     client: Client,
