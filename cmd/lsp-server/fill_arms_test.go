@@ -9,11 +9,13 @@ import (
 	protocol "github.com/tliron/glsp/protocol_3_16"
 )
 
-// TestFillArmsAction covers the code action that adds the arms a `match` is missing. Each
-// case opens path from files and requests the action twice: as a quick fix for the
-// diagnostic the check reports, and as a refactor at the start of cursor's first occurrence
-// in the file. Both must produce expected, the file with the action's edits applied. after
-// is the diagnostics the edited file reports.
+// TestFillArmsAction covers the code action that adds the arms a `match` or a `catch` is
+// missing. Each case opens path from files, which reports the one diagnostic in diagnostic.
+// It requests the action as a quick fix for that diagnostic, and as a refactor at the start
+// of cursor's first occurrence in the file. Both must produce expected, the file with the
+// action's edits applied. A case whose diagnostic is "" reports nothing, so only the
+// refactor is requested. title is the action's title, or "" for the `match` title. after is
+// the diagnostics the edited file reports.
 func TestFillArmsAction(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -21,6 +23,7 @@ func TestFillArmsAction(t *testing.T) {
 		path       string
 		cursor     string
 		diagnostic string
+		title      string
 		expected   string
 		after      []string
 	}{
@@ -273,6 +276,139 @@ func TestFillArmsAction(t *testing.T) {
 				"\t\"b\" => throw \"todo\"\n" +
 				"}\n",
 		},
+		{
+			name: "CatchRethrowingWhatTheClauseRejects",
+			files: map[string]string{"bin/main.esc": "class A { a: number }\n" +
+				"class B { b: number }\n" +
+				"class C { c: number }\n" +
+				"declare fn g() -> number throws A | B | C\n" +
+				"fn f() -> number {\n" +
+				"\treturn try {\n" +
+				"\t\tg()\n" +
+				"\t} catch {\n" +
+				"\t\tA{} => 1,\n" +
+				"\t}\n" +
+				"}\n"},
+			path:       "bin/main.esc",
+			cursor:     "catch",
+			diagnostic: "5:8-8:10 the catch arms leave B | C uncovered, so it is rethrown, and the enclosing `throws never` does not admit it. Cover it with a catch arm, or widen the enclosing clause",
+			title:      fillCatchArmsTitle,
+			expected: "class A { a: number }\n" +
+				"class B { b: number }\n" +
+				"class C { c: number }\n" +
+				"declare fn g() -> number throws A | B | C\n" +
+				"fn f() -> number {\n" +
+				"\treturn try {\n" +
+				"\t\tg()\n" +
+				"\t} catch {\n" +
+				"\t\tA{} => 1,\n" +
+				"\t\tB{} => throw \"todo\",\n" +
+				"\t\tC{} => throw \"todo\",\n" +
+				"\t}\n" +
+				"}\n",
+			after: []string{
+				"9:15-9:21 `f` can throw `\"todo\"`, but it doesn't declare it; add `throws string` to `f`'s signature",
+				"10:15-10:21 `f` can throw `\"todo\"`, but it doesn't declare it; add `throws string` to `f`'s signature",
+			},
+		},
+		{
+			// What the arms leave reaches the inferred clause, so the check reports nothing
+			// and the action is offered as a refactor only.
+			name: "CatchOfImportedClassInLib",
+			files: map[string]string{"lib/index.esc": "import \"std:error\"\n" +
+				"class A { a: number }\n" +
+				"declare fn g() -> number throws A | error.Error\n" +
+				"export fn f() -> number throws _ {\n" +
+				"\treturn try { g() } catch { A{} => 1 }\n" +
+				"}\n"},
+			path:   "lib/index.esc",
+			cursor: "A{}",
+			title:  fillCatchArmsTitle,
+			expected: "import \"std:error\"\n" +
+				"class A { a: number }\n" +
+				"declare fn g() -> number throws A | error.Error\n" +
+				"export fn f() -> number throws _ {\n" +
+				"\treturn try { g() } catch { A{} => 1, error.Error{} => throw \"todo\" }\n" +
+				"}\n",
+		},
+		{
+			// The cursor sits in a `match` inside the try block, and the `match` is innermost.
+			name: "MatchInsideTryIsInnermost",
+			files: map[string]string{"bin/main.esc": "class A { a: number }\n" +
+				"declare fn g() -> \"x\" | \"y\" throws A | string\n" +
+				"fn f() -> number throws _ {\n" +
+				"\treturn try { match g() { \"x\" => 1 } } catch { A{} => 1 }\n" +
+				"}\n"},
+			path:       "bin/main.esc",
+			cursor:     "match",
+			diagnostic: "3:14-3:36 match is not exhaustive; add a branch for `\"y\"`",
+			expected: "class A { a: number }\n" +
+				"declare fn g() -> \"x\" | \"y\" throws A | string\n" +
+				"fn f() -> number throws _ {\n" +
+				"\treturn try { match g() { \"x\" => 1, \"y\" => throw \"todo\" } } catch { A{} => 1 }\n" +
+				"}\n",
+		},
+		{
+			name: "CatchWithParenthesizedLastBody",
+			files: map[string]string{"bin/main.esc": "class A { a: number }\n" +
+				"class B { b: number }\n" +
+				"declare fn g() -> number throws A | B\n" +
+				"fn f() -> number throws _ {\n" +
+				"\treturn try { g() } catch { A{} => (1) }\n" +
+				"}\n"},
+			path:   "bin/main.esc",
+			cursor: "}\n}",
+			title:  fillCatchArmsTitle,
+			expected: "class A { a: number }\n" +
+				"class B { b: number }\n" +
+				"declare fn g() -> number throws A | B\n" +
+				"fn f() -> number throws _ {\n" +
+				"\treturn try { g() } catch { A{} => (1), B{} => throw \"todo\" }\n" +
+				"}\n",
+		},
+		{
+			// The comma goes before the comment, and the new arm after it.
+			name: "CatchWithCommentAfterLastArm",
+			files: map[string]string{"bin/main.esc": "class A { a: number }\n" +
+				"class B { b: number }\n" +
+				"declare fn g() -> number throws A | B\n" +
+				"fn f() -> number throws _ {\n" +
+				"\treturn try { g() } catch {\n" +
+				"\t\tA{} => 1 // the common case\n" +
+				"\t}\n" +
+				"}\n"},
+			path:   "bin/main.esc",
+			cursor: "catch",
+			title:  fillCatchArmsTitle,
+			expected: "class A { a: number }\n" +
+				"class B { b: number }\n" +
+				"declare fn g() -> number throws A | B\n" +
+				"fn f() -> number throws _ {\n" +
+				"\treturn try { g() } catch {\n" +
+				"\t\tA{} => 1, // the common case\n" +
+				"\t\tB{} => throw \"todo\"\n" +
+				"\t}\n" +
+				"}\n",
+		},
+		{
+			// `A{a: 0}` catches only some `A` values, so an irrefutable `A{}` arm follows it.
+			name: "CatchAfterRefutableArm",
+			files: map[string]string{"bin/main.esc": "class A { a: number }\n" +
+				"class B { b: number }\n" +
+				"declare fn g() -> number throws A | B\n" +
+				"fn f() -> number throws _ {\n" +
+				"\treturn try { g() } catch { A{a: 0} => 1 }\n" +
+				"}\n"},
+			path:   "bin/main.esc",
+			cursor: "catch",
+			title:  fillCatchArmsTitle,
+			expected: "class A { a: number }\n" +
+				"class B { b: number }\n" +
+				"declare fn g() -> number throws A | B\n" +
+				"fn f() -> number throws _ {\n" +
+				"\treturn try { g() } catch { A{a: 0} => 1, A{} => throw \"todo\", B{} => throw \"todo\" }\n" +
+				"}\n",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -280,24 +416,31 @@ func TestFillArmsAction(t *testing.T) {
 			s := integrationServer(t, tt.files)
 			ctx, published := publishedDiagnostics()
 			uri := openFileIn(t, s, ctx, tt.path, src)
+			title := tt.title
+			if title == "" {
+				title = fillMatchArmsTitle
+			}
 			diags := awaitPublished(t, published, uri, 1)
-			require.Equal(t, []string{tt.diagnostic}, renderDiagnostics(diags))
-
-			quickFix := requestCodeActions(t, s, uri, diags[0].Range.Start, diags,
-				[]protocol.CodeActionKind{protocol.CodeActionKindQuickFix})
-			require.Len(t, quickFix, 1)
-			require.Equal(t, fillArmsTitle, quickFix[0].Title)
-			require.Equal(t, addr(protocol.CodeActionKindQuickFix), quickFix[0].Kind)
-			require.Equal(t, diags, quickFix[0].Diagnostics)
-			edited := applyEdits(src, quickFix[0].Edit.Changes[uri])
-			require.Equal(t, tt.expected, edited)
+			if tt.diagnostic == "" {
+				require.Empty(t, diags)
+			} else {
+				require.Equal(t, []string{tt.diagnostic}, renderDiagnostics(diags))
+				quickFix := requestCodeActions(t, s, uri, diags[0].Range.Start, diags,
+					[]protocol.CodeActionKind{protocol.CodeActionKindQuickFix})
+				require.Len(t, quickFix, 1)
+				require.Equal(t, title, quickFix[0].Title)
+				require.Equal(t, addr(protocol.CodeActionKindQuickFix), quickFix[0].Kind)
+				require.Equal(t, diags, quickFix[0].Diagnostics)
+				require.Equal(t, tt.expected, applyEdits(src, quickFix[0].Edit.Changes[uri]))
+			}
 
 			refactor := requestCodeActions(t, s, uri, cursorPosition(t, src, tt.cursor), nil,
 				[]protocol.CodeActionKind{protocol.CodeActionKindRefactor})
 			require.Len(t, refactor, 1)
-			require.Equal(t, fillArmsTitle, refactor[0].Title)
+			require.Equal(t, title, refactor[0].Title)
 			require.Equal(t, addr(fillArmsRefactorKind), refactor[0].Kind)
-			require.Equal(t, tt.expected, applyEdits(src, refactor[0].Edit.Changes[uri]))
+			edited := applyEdits(src, refactor[0].Edit.Changes[uri])
+			require.Equal(t, tt.expected, edited)
 
 			require.NoError(t, s.textDocumentDidChange(ctx, &protocol.DidChangeTextDocumentParams{
 				TextDocument: protocol.VersionedTextDocumentIdentifier{

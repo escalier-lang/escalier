@@ -5906,6 +5906,7 @@ func (c *checker) walkTryBlock(scope *Scope, lvl int, b *ast.Block, sink soltype
 // no signature named its type, so recording it would widen the clause to `unknown`.
 func (c *checker) rethrowUnhandled(scope *Scope, lvl int, e *ast.TryCatchExpr, collected, enclosing soltype.Type) {
 	if ast.HasUnguardedCatchAll(e.Catch) {
+		delete(c.info.uncaught, e)
 		return
 	}
 	handled := c.armsCatchType(scope, lvl, e.Catch)
@@ -5917,6 +5918,11 @@ func (c *checker) rethrowUnhandled(scope *Scope, lvl int, e *ast.TryCatchExpr, c
 		}
 		uncovered = append(uncovered, part)
 	}
+	// A member a guarded arm names is still uncovered, since the guard can fail. Whether
+	// the guard should cover it is the user's call, so the record leaves that member out. A
+	// member named only by an unguarded arm whose sub-pattern can fail, as `A{a: 0}` names
+	// `A`, is recorded, since an irrefutable arm after it covers the rest.
+	c.recordUncaught(scope, lvl, e, uncovered)
 	rethrown := newUnion(c.ctx, uncovered)
 	if isNeverType(rethrown) {
 		// Every known throw is covered. Codegen still emits a runtime rethrow for a value that
@@ -5932,6 +5938,50 @@ func (c *checker) rethrowUnhandled(scope *Scope, lvl int, e *ast.TryCatchExpr, c
 		c.report(&UnhandledRethrowError{Try: e, Rethrown: rethrown, Sink: enclosing})
 	}
 	c.markRaised()
+}
+
+// recordUncaught records, for e, each member of uncovered that no guarded catch arm names,
+// whatever that arm's sub-patterns test. uncovered is the members of what e's try block
+// throws that the arms do not catch. It replaces any earlier record for e, and leaves none
+// when no member is left.
+func (c *checker) recordUncaught(scope *Scope, lvl int, e *ast.TryCatchExpr, uncovered []soltype.Type) {
+	delete(c.info.uncaught, e)
+	if len(uncovered) == 0 {
+		return
+	}
+	guarded := make([]*ast.MatchCase, 0, len(e.Catch))
+	parts := make([]soltype.Type, 0, len(e.Catch))
+	for _, arm := range e.Catch {
+		if arm.Guard == nil {
+			continue
+		}
+		guarded = append(guarded, arm)
+		if named, ok := c.armNamedType(scope, lvl, arm.Pattern); ok {
+			parts = append(parts, named)
+		}
+	}
+	named := newUnion(c.ctx, parts)
+	unnamed := make([]soltype.Type, 0, len(uncovered))
+	for _, member := range uncovered {
+		if c.memberSubtracted(member, named) || c.ctx.memberShapeNamed(member, guarded) {
+			continue
+		}
+		unnamed = append(unnamed, member)
+	}
+	if len(unnamed) > 0 {
+		c.info.uncaught[e] = unnamed
+	}
+}
+
+// memberShapeNamed reports whether the object or tuple pattern of one of arms fits the shape
+// of member, whatever that arm's guard and sub-patterns test.
+func (c *Context) memberShapeNamed(member soltype.Type, arms []*ast.MatchCase) bool {
+	for _, arm := range arms {
+		if c.patternMatchesMemberShape(arm.Pattern, member) {
+			return true
+		}
+	}
+	return false
 }
 
 // expandAliasChain follows a chain of transparent aliases to the type it stands for, so a
@@ -6042,6 +6092,24 @@ func (c *checker) armsCatchType(scope *Scope, lvl int, arms []*ast.MatchCase) so
 // which members a branch reaches. Rule 2 of memberCaught is where such a pattern is weighed.
 func (c *checker) armCatchType(scope *Scope, lvl int, p ast.Pat) (soltype.Type, bool) {
 	switch pat := p.(type) {
+	case *ast.InstancePat:
+		if !irrefutablePat(pat.Object) {
+			return nil, false
+		}
+	case *ast.ExtractorPat:
+		if !allIrrefutable(pat.Args) {
+			return nil, false
+		}
+	}
+	return c.armNamedType(scope, lvl, p)
+}
+
+// armNamedType returns the type one arm's pattern names, and reports whether the pattern
+// names a type at all. It reads each pattern the way armCatchType does, except that an
+// instance or extractor pattern names its class whatever its sub-patterns test, so
+// `Color.RGB(0, g, b)` names `Color.RGB`.
+func (c *checker) armNamedType(scope *Scope, lvl int, p ast.Pat) (soltype.Type, bool) {
+	switch pat := p.(type) {
 	case *ast.WildcardPat, *ast.IdentPat:
 		return &soltype.UnknownType{}, true
 	case *ast.LitPat:
@@ -6052,13 +6120,11 @@ func (c *checker) armCatchType(scope *Scope, lvl int, p ast.Pat) (soltype.Type, 
 			return lt, true
 		}
 	case *ast.InstancePat:
-		ct, ok := c.instancePatClass(scope, ast.QualIdentToString(pat.ClassName))
-		if ok && irrefutablePat(pat.Object) {
+		if ct, ok := c.instancePatClass(scope, ast.QualIdentToString(pat.ClassName)); ok {
 			return c.freshClassInstance(ct, lvl), true
 		}
 	case *ast.ExtractorPat:
-		ct, ok := c.resolveQualClassType(scope, pat.Name)
-		if ok && allIrrefutable(pat.Args) {
+		if ct, ok := c.resolveQualClassType(scope, pat.Name); ok {
 			return c.freshClassInstance(ct, lvl), true
 		}
 	}

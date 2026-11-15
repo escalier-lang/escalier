@@ -3,6 +3,8 @@ package solver
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -649,4 +651,172 @@ func TestInferTryCatchArmTestLeavesTheCaughtValue(t *testing.T) {
 			want: `fn () -> number | "x"`,
 		},
 	})
+}
+
+// TestUncaughtThrows covers the members Info.UncaughtThrows reports for the one `try` in each
+// case's source. want holds each member printed in Escalier type syntax, and is nil when
+// UncaughtThrows returns nil.
+func TestUncaughtThrows(t *testing.T) {
+	const decls = `
+		class A { a: number }
+		class B { b: number }
+		class C { c: number }
+		enum Color { RGB(r: number, g: number, b: number), Hex(code: string) }
+	`
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "ClassArmLeavesTheOtherClasses",
+			src: `declare fn g() -> number throws A | B | C
+				fn f() -> number throws _ { return try { g() } catch { A{} => 1 } }`,
+			want: []string{"B", "C"},
+		},
+		{
+			name: "EveryClassCaught",
+			src: `declare fn g() -> number throws A | B
+				fn f() -> number { return try { g() } catch { A{} => 1, B{} => 2 } }`,
+			want: nil,
+		},
+		{
+			name: "LiteralArmLeavesTheOtherLiterals",
+			src: `fn f(n: number) throws _ {
+					try {
+						if n == 0 { throw "zero" } else if n == 1 { throw "one" } else { throw "many" }
+					} catch {
+						"zero" => 0,
+					}
+				}`,
+			want: []string{`"one"`, `"many"`},
+		},
+		{
+			// A guarded arm names `A`, so covering it is left to whoever wrote the guard.
+			name: "GuardedArmNamesItsClass",
+			src: `declare fn g() -> number throws A | B
+				declare val strict: boolean
+				fn f() -> number throws _ { return try { g() } catch { A{} if strict => 1 } }`,
+			want: []string{"B"},
+		},
+		{
+			// `Color.RGB(0, g, b)` matches only some `Color.RGB` values, so the variant is
+			// left for an irrefutable arm after it.
+			name: "RefutableArmLeavesItsVariant",
+			src: `declare fn g() -> number throws Color
+				fn f() -> number throws _ { return try { g() } catch { Color.RGB(0, g, b) => g } }`,
+			want: []string{"Color.RGB", "Color.Hex"},
+		},
+		{
+			// A guarded refutable arm names its variant, which is left to whoever wrote the
+			// guard.
+			name: "GuardedRefutableArmNamesItsVariant",
+			src: `declare fn g() -> number throws Color
+				declare val strict: boolean
+				fn f() -> number throws _ { return try { g() } catch { Color.RGB(0, g, b) if strict => g } }`,
+			want: []string{"Color.Hex"},
+		},
+		{
+			name: "SubclassCaughtByBaseClassArm",
+			src: `class Base { code: number, constructor(&mut self) { self.code = 0 } }
+				class Sub extends Base { constructor(&mut self) { super() } }
+				declare fn g() -> number throws Sub | A
+				fn f() -> number throws _ { return try { g() } catch { Base{} => 1 } }`,
+			want: []string{"A"},
+		},
+		{
+			// A guarded object pattern names the object it fits, so only the string is left.
+			name: "GuardedObjectArmNamesItsShape",
+			src: `fn f(c: boolean) throws _ {
+					try {
+						if c { throw {code: 1} } else { throw "boom" }
+					} catch {
+						{code} if code > 0 => 0,
+					}
+				}`,
+			want: []string{`"boom"`},
+		},
+		{
+			name: "NullArmLeavesTheString",
+			src: `fn f(c: boolean) throws _ {
+					try {
+						if c { throw null } else { throw "boom" }
+					} catch {
+						null => 0,
+					}
+				}`,
+			want: []string{`"boom"`},
+		},
+		{
+			// `A{a: 0}` matches only some `A` values, so `A` is left for an irrefutable arm
+			// after it.
+			name: "RefutableInstanceArmLeavesItsClass",
+			src: `declare fn g() -> number throws A | B
+				fn f() -> number throws _ { return try { g() } catch { A{a: 0} => 1 } }`,
+			want: []string{"A", "B"},
+		},
+		{
+			name: "CatchAllLeavesNothing",
+			src: `declare fn g() -> number throws A | B
+				fn f() -> number { return try { g() } catch { _ => 1 } }`,
+			want: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			info, fileDecls := inferForSignatures(t, decls+tt.src)
+			finder := &tryCatchFinder{}
+			for _, d := range fileDecls {
+				d.Accept(finder)
+			}
+			require.Len(t, finder.found, 1)
+			uncaught := info.UncaughtThrows(finder.found[0])
+			if tt.want == nil {
+				require.Nil(t, uncaught)
+				return
+			}
+			got := make([]string, len(uncaught))
+			for i, member := range uncaught {
+				got[i] = soltype.Print(member)
+			}
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// TestTriesWithUncaughtThrows asserts that Info.TriesWithUncaughtThrows returns the tries of
+// one file that leave a member uncaught, in source order, and none for another file.
+func TestTriesWithUncaughtThrows(t *testing.T) {
+	src := `
+		class A { a: number }
+		class B { b: number }
+		declare fn g() -> number throws A | B
+		fn first() -> number throws _ { return try { g() } catch { A{} => 1 } }
+		fn caught() -> number { return try { g() } catch { _ => 1 } }
+		fn second() -> number throws _ { return try { g() } catch { B{} => 1 } }
+	`
+	info, fileDecls := inferForSignatures(t, src)
+	finder := &tryCatchFinder{}
+	for _, d := range fileDecls {
+		d.Accept(finder)
+	}
+	require.Len(t, finder.found, 3)
+	sourceID := finder.found[0].Span().SourceID
+	require.Equal(t,
+		[]*ast.TryCatchExpr{finder.found[0], finder.found[2]},
+		info.TriesWithUncaughtThrows(sourceID))
+	require.Empty(t, info.TriesWithUncaughtThrows(sourceID+1))
+}
+
+// tryCatchFinder collects every try/catch expression it visits.
+type tryCatchFinder struct {
+	ast.DefaultVisitor
+	found []*ast.TryCatchExpr
+}
+
+func (v *tryCatchFinder) EnterExpr(e ast.Expr) bool {
+	if tc, ok := e.(*ast.TryCatchExpr); ok {
+		v.found = append(v.found, tc)
+	}
+	return true
 }
