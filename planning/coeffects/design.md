@@ -1,6 +1,8 @@
 # Design: Coeffects
 
-## 1. Scope
+## Part I. Context
+
+### 1. Scope
 
 This document proposes adding coeffects to Escalier. A *coeffect* is a
 requirement a computation places on the context it runs in. An *effect* is the
@@ -22,7 +24,7 @@ The environments design is a coeffect system with one context per entrypoint.
 This design moves its requirements onto function types, so they are inferred
 per function and flow from callee to caller. Section 4.2 compares the two.
 
-## 2. Background
+### 2. Background
 
 The idea comes from Petricek, Orchard and Mycroft, "Coeffects: a calculus of
 context-dependent computation" (ICFP 2014). An effect system annotates a
@@ -37,10 +39,10 @@ the program removes it:
 | Removed by | `catch` | a provider, or the entrypoint's target |
 | Union means | may raise either | requires both |
 
-The last row is the one difference in how the two combine, and section 6.3
+The last row is the one difference in how the two combine, and section 8.3
 returns to it.
 
-## 3. Problem statement
+### 3. Problem statement
 
 JavaScript code depends on its context in ways TypeScript does not see. Each of
 the following is a runtime failure today that a `needs` clause would report at
@@ -64,9 +66,9 @@ compile time:
 - **Unaudited capabilities.** Nothing in a module's types says whether it can
   reach the network or the filesystem.
 
-## 4. Current state
+### 4. Current state
 
-### 4.1 `throws`
+#### 4.1 `throws`
 
 [docs/02_functions.md](../../docs/02_functions.md) has the rules. Omitting the
 clause declares that a function raises nothing, `throws _` reads the clause off
@@ -84,7 +86,7 @@ is the model:
 then<TResult1 = T, F = never>(&self, onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F) -> Promise<TResult1, E | F>
 ```
 
-### 4.2 Environments
+#### 4.2 Environments
 
 The environments design attaches `@env` to each declaration and gives each
 entrypoint one target environment, stated in `package.json` (F9) or inferred
@@ -108,11 +110,41 @@ What it lacks, measured against a coeffect system:
 - Nothing inside a program can provide an environment. Runtime feature
   detection is a non-goal of that design (its §11).
 
-## 5. Requirements
+### 5. Prior art
+
+- **Hack** calls the feature "contexts and capabilities" and grew it from a
+  coeffect proposal. A function lists its contexts in brackets. A function with
+  no list gets the `defaults` context, which is a broad set of capabilities but
+  not every one, so existing code keeps compiling. `[ctx $f]` makes a function
+  require whatever its function-typed parameter `$f` requires. See the
+  [introduction](https://docs.hhvm.com/hack/contexts-and-capabilities/introduction),
+  [available contexts](https://docs.hhvm.com/hack/contexts-and-capabilities/available-contexts-and-capabilities/)
+  and [dependent contexts](https://docs.hhvm.com/hack/contexts-and-capabilities/dependent-contexts-continued/).
+- **Haskell** infers implicit parameters (`?logger`) and `MonadReader`
+  constraints along with types, so requirement polymorphism is ordinary type
+  polymorphism.
+- **Scala 3** declares context parameters with `using` and bundles them under
+  context-function aliases such as `type Logged[T] = Logger ?=> T`. Its
+  experimental `saferExceptions` turns checked exceptions into a `CanThrow[E]`
+  capability.
+- **Effekt** treats effects as capabilities and makes function arguments
+  second-class, so a callback can use its caller's capabilities without
+  polymorphism annotations.
+- **Kotlin** context parameters are declared in the signature and passed
+  implicitly where a scope provides them. They are not inferred.
+- **Swift** global-actor isolation such as `@MainActor` is an environment
+  requirement, inferred from enclosing types and inherited by closures.
+
+Escalier's design takes inference from Haskell, requirement variables for
+extent-bound requirements from its own `throws`, and capture at creation from Effekt.
+
+## Part II. Requirements
+
+### 6. Requirements
 
 **C1. One mechanism for effects and coeffects.** `throws` and `needs` share one
 set of rules for inference, polymorphism, printing and interop defaults. A rule
-stated for one holds for the other unless section 6 names an exception.
+stated for one holds for the other unless Part III names an exception.
 
 **C2. A requirement is inferable.** `needs _` reads the clause off the body, as
 `throws _` does, and W5 allows it on module-level functions for the same reason
@@ -161,11 +193,22 @@ every runtime version an entrypoint supports provides an API, no function needs
 a requirement for it, and changing the supported versions changes no function's
 source.
 
-## 6. Design
+### 7. Non-goals
 
-All syntax in this section is a proposal.
+- Grades or usage counts on requirements, as in Granule. Ownership already
+  covers how many times a value is used.
+- A capability-security model for third-party code. The design makes network
+  and filesystem access visible in types, but it does not sandbox them.
+- Changing what the environments design says about which declarations exist
+  where. This design changes how that fact is checked, not the fact.
 
-### 6.1 Declaring a context
+## Part III. Design
+
+All syntax in this part is a proposal.
+
+### 8. Core
+
+#### 8.1 Declaring a context
 
 A context declaration introduces a name that is both a type, which a `needs`
 clause names, and a value, which the body reads:
@@ -183,7 +226,7 @@ fn label(text: string) -> string needs Theme {
 }
 ```
 
-### 6.2 Providing a context
+#### 8.2 Providing a context
 
 `with` provides a value for the block it encloses:
 
@@ -197,29 +240,49 @@ fn main() -> undefined {
 
 `with` removes `Theme` from the requirements of the calls in its block, as
 `catch` removes the exceptions its arms match. A `with` whose result is a React
-element also removes it from the element's type (section 6.6.3).
+element also removes it from the element's type (section 11.3).
 
-### 6.3 Combining requirements
+A `with` can provide several contexts at once. The bindings are sequential, so
+each initializer can use the contexts bound before it, and the form means the
+same as nested `with` blocks:
+
+```esc
+with Logger = makeLogger(), Metrics = makeMetrics() {   // makeMetrics needs Logger
+    run()
+}
+```
+
+#### 8.3 Combining requirements
 
 A `needs` clause is a union, and a union means the function requires every
 member. For context values that is the plain union: a function that reads
-`Theme` and `Logger` has `needs Theme | Logger`.
+`Theme` and `Logger` has `needs Theme | Logger`. Environment requirements
+combine by intersecting their sets instead (section 12.1), which is the only
+place the shared rules need a case for one requirement kind.
 
-An environment fact is a set of places a declaration exists, written
-`Env<window | dedicated_worker>`. Requiring two such facts means running where
-both hold, so the union of two environment requirements normalizes to the
-intersection of their sets:
+#### 8.4 Capturable and extent-bound requirements
 
-```esc
-// Env<window | worker> | Env<window>  normalizes to  Env<window>
-```
+Requirement kinds fall into two classes:
 
-This is the only place the shared rules need a case for one requirement kind.
+- A *capturable* requirement, such as a context value, is a value the code
+  reads. A closure, an async call or a generator captures it where it is
+  created, so it still holds wherever that code later runs (section 9).
+- An *extent-bound* requirement describes a span of time. `Render` holds only
+  while React is running a component's render, and a database transaction holds
+  only until it commits. An extent-bound requirement holds only while the call
+  that established it is running, and a captured record can't put later code
+  back inside that call. Using one after an `await` or `yield` is an error,
+  and so is a closure that needs one and escapes.
 
-### 6.4 Higher-order functions
+Environment and feature requirements are capturable. A closure runs in the
+global scope it was created in, on the runtime it was created on.
+
+### 9. Functions and control flow
+
+#### 9.1 Higher-order functions
 
 A closure's capturable requirements are owed where the closure is created
-(section 6.5), not where it is called. Environment requirements are owed there
+(section 9.2), not where it is called. Environment requirements are owed there
 too, since a closure runs in the global scope it was created in. So a
 higher-order function such as `map` takes no part in them:
 
@@ -239,7 +302,7 @@ calls `renderItem`. A capturable requirement never appears on a function value's
 type.
 
 A requirement variable is needed only for extent-bound requirements, which
-section 6.8 defines. On a callback's type, `needs R` declares that the callee
+section 8.4 defines. On a callback's type, `needs R` declares that the callee
 calls the callback before it returns, so an extent-bound requirement the caller
 holds still holds inside the callback:
 
@@ -254,7 +317,7 @@ passing it to `setTimeout` is an error, since `setTimeout`'s callback type has
 no `needs` clause. `R` is inferred at each call, as `E` is. Only library
 signatures write a requirement variable.
 
-### 6.5 Callbacks that escape
+#### 9.2 Callbacks that escape
 
 A callback passed to `setTimeout` or `addEventListener` runs after its caller
 returns. An exception it raises goes to whoever calls it, but a context value it
@@ -267,14 +330,111 @@ that covers what it reads.
 Environments are unaffected, because a callback runs in the global scope it was
 created in.
 
-### 6.6 React
+#### 9.3 Promises and generators
+
+A promise or generator separates where its body starts from where it resumes,
+as a callback that escapes does. They follow the rule in section 9.2: a
+requirement is owed where the function is called, and the body reads the record
+captured at that call.
+
+- **Async functions.** `$ctx` is a parameter, so it lives in the async
+  function's closure and survives every `await`. The returned promise carries no
+  requirement, because the requirement was satisfied before the promise existed.
+  An `async fn` absorbs its throws into the promise's rejection type, but its
+  `needs` clause stays on the function:
+
+  ```esc
+  async fn load(id: string) -> Promise<Data, _> needs Logger { ... }
+
+  fn main() -> undefined {
+      with Logger = consoleLogger {
+          load("a").then(fn (data) => show(data))   // Logger is captured at the call
+      }
+  }
+  ```
+
+- **Promise callbacks.** A callback's capturable requirements are owed where it
+  is created, whether the callee runs it at once, as `map` does, or later, as
+  `then` does. Passing a function by name binds the current record (section
+  10). `then` runs its callback after it returns, so its callback type has no
+  `needs` clause, and a callback that needs an extent-bound requirement can't be
+  passed to it.
+
+- **Generators.** Calling a generator function creates the iterator and captures
+  `$ctx`. The body runs on each `next()` and reads the captured record. The
+  requirement belongs to the generator function and not to
+  `Generator<T, TReturn, TNext>`, so an iterator can be consumed outside the
+  `with` block that created it.
+
+- **Environments.** A continuation resumes in the global scope it started in, so
+  environment requirements are unaffected.
+
+An extent-bound requirement (section 8.4) does not survive a suspension point:
+
+```esc
+async fn Profile(props: {id: string}) -> Promise<Element> needs _ {
+    val user = await fetchUser(props.id)
+    val theme = useTheme()
+    // error: useTheme needs Render, which does not hold after the await above
+    return <Card theme={theme} user={user} />
+}
+```
+
+React's rule that a component can't call hooks after an `await` is this check.
+
+### 10. Codegen
+
+A function with a non-empty `needs` clause for context values takes one hidden
+first parameter, `$ctx`, a record of the values its caller provides. `with`
+builds a new record, spreading the enclosing one when it is nested:
+
+```esc
+fn main() -> undefined {
+    with Theme = dark {
+        console.log(["a", "b"].map(fn (s) => label(s)))
+    }
+}
+```
+
+```js
+function label($ctx, text) { return $ctx.Theme.prefix + text; }
+
+function main() {
+    {
+        const $ctx = { Theme: dark };
+        console.log(["a", "b"].map((s) => label($ctx, s)));
+    }
+}
+```
+
+A function value never takes `$ctx`. Three rules keep it that way:
+
+- A direct call to a declared function with a context requirement passes
+  `$ctx`, as in `label($ctx, s)`.
+- A closure captures `$ctx` where it is created, which is the rule in section
+  9.2.
+- A declared function used as a value, whether passed as an argument, stored in
+  a variable or assigned to a field, is wrapped in a closure that binds the
+  current record. `p.then(label)` compiles to
+  `p.then((x) => label($ctx, x))`.
+
+Every function value therefore has the plain JavaScript calling convention. A
+JavaScript built-in such as `Array.prototype.map` calls an Escalier closure
+unchanged and needs no wrapper. Requirement variables and environment
+requirements add no parameter. They are checked and erased. The runtime cost is
+one closure allocation each time a declared function with a context requirement
+is used as a value.
+
+Section 11.4 has how React contexts compile.
+
+### 11. Frontend frameworks
 
 React calls a child component after its parent returns, and it resolves a
 context by the element's position in the tree, not by where the element was
 created. So a requirement belongs on the element type, not on the call. This is
 the one place a capturable requirement stays on a value's type.
 
-The section uses React as its example, but the design applies to any frontend
+This section uses React as its example, but the design applies to any frontend
 framework that resolves a context by position in the component tree. Vue's
 `provide` and `inject`, SolidJS's `createContext` and `useContext`, Svelte's
 `setContext` and `getContext`, and Preact's context API all work this way. Each
@@ -287,7 +447,7 @@ called while the component initializes. The typing rules carry over unchanged:
 - element-typed props pass requirements through by default;
 - a `with` whose result is an element is the provider.
 
-#### 6.6.1 Components
+#### 11.1 Components
 
 A component reads a context the way any function does, and its requirements are
 inferred the same way. A context declared without a default value is a
@@ -312,7 +472,7 @@ renders `<Button/>` needs `Theme` itself unless it provides it.
 
 `Render` is a requirement only a component body has, so calling a hook outside a
 component is an error. That replaces the hooks lint rule. `Render` is
-extent-bound (section 6.8).
+extent-bound (section 8.4).
 
 `Root.render` accepts only an element whose requirements are environments:
 
@@ -323,7 +483,7 @@ fn render(self, el: Element needs Env<window>) -> undefined
 A context requirement that reaches it is an error naming the component that
 needs the context and the chain of elements down to it.
 
-#### 6.6.2 Pass-through
+#### 11.2 Pass-through
 
 An element-typed parameter or prop with no `needs` clause gets a fresh
 requirement variable. A returned `Element` includes the variables of the
@@ -373,7 +533,7 @@ parameter is `Element needs never` is an error inside the component's body, at
 the hand-off, and writing `needs never` on the prop moves that error to the
 callers. React portals keep context, so a portal is not one of these cases.
 
-#### 6.6.3 Providers
+#### 11.3 Providers
 
 A `with` block whose result is an `Element` removes the requirement from the
 result's type and compiles to a React provider around it. A provider component
@@ -405,7 +565,7 @@ the prelude is a conditional type, and a conditional type on an unsolved
 variable does not reduce during inference. Open question 1 lists the two ways
 out.
 
-#### 6.6.4 Codegen
+#### 11.4 Codegen
 
 A context declaration compiles to `React.createContext(undefined)`. A component
 body builds its own `$ctx` from `React.use` for the contexts it reads directly,
@@ -430,227 +590,24 @@ The React planning in
 types `createContext` and `useContext` as ordinary functions. This design
 replaces that section's typing and keeps its runtime behaviour.
 
-### 6.7 Codegen
+### 12. Environments and features
 
-A function with a non-empty `needs` clause for context values takes one hidden
-first parameter, `$ctx`, a record of the values its caller provides. `with`
-builds a new record, spreading the enclosing one when it is nested:
+This section covers the two requirement kinds that carry no value.
+Environments say which kind of runtime code runs in, and features say which
+platform APIs a runtime version has. Both are checked and erased.
 
-```esc
-fn main() -> undefined {
-    with Theme = dark {
-        console.log(["a", "b"].map(fn (s) => label(s)))
-    }
-}
-```
+#### 12.1 Combining environment requirements
 
-```js
-function label($ctx, text) { return $ctx.Theme.prefix + text; }
-
-function main() {
-    {
-        const $ctx = { Theme: dark };
-        console.log(["a", "b"].map((s) => label($ctx, s)));
-    }
-}
-```
-
-A function value never takes `$ctx`. Three rules keep it that way:
-
-- A direct call to a declared function with a context requirement passes
-  `$ctx`, as in `label($ctx, s)`.
-- A closure captures `$ctx` where it is created, which is the rule in section
-  6.5.
-- A declared function used as a value, whether passed as an argument, stored in
-  a variable or assigned to a field, is wrapped in a closure that binds the
-  current record. `p.then(label)` compiles to
-  `p.then((x) => label($ctx, x))`.
-
-Every function value therefore has the plain JavaScript calling convention. A
-JavaScript built-in such as `Array.prototype.map` calls an Escalier closure
-unchanged and needs no wrapper. Requirement variables and environment
-requirements add no parameter. They are checked and erased. The runtime cost is
-one closure allocation each time a declared function with a context requirement
-is used as a value.
-
-Section 6.6.4 has how React contexts compile.
-
-### 6.8 Promises and generators
-
-A promise or generator separates where its body starts from where it resumes,
-as a callback that escapes does. They follow the rule in section 6.5: a
-requirement is owed where the function is called, and the body reads the record
-captured at that call.
-
-- **Async functions.** `$ctx` is a parameter, so it lives in the async
-  function's closure and survives every `await`. The returned promise carries no
-  requirement, because the requirement was satisfied before the promise existed.
-  An `async fn` absorbs its throws into the promise's rejection type, but its
-  `needs` clause stays on the function:
-
-  ```esc
-  async fn load(id: string) -> Promise<Data, _> needs Logger { ... }
-
-  fn main() -> undefined {
-      with Logger = consoleLogger {
-          load("a").then(fn (data) => show(data))   // Logger is captured at the call
-      }
-  }
-  ```
-
-- **Promise callbacks.** A callback's capturable requirements are owed where it
-  is created, whether the callee runs it at once, as `map` does, or later, as
-  `then` does. Passing a function by name binds the current record (section
-  6.7). `then` runs its callback after it returns, so its callback type has no
-  `needs` clause, and a callback that needs an extent-bound requirement can't be
-  passed to it.
-
-- **Generators.** Calling a generator function creates the iterator and captures
-  `$ctx`. The body runs on each `next()` and reads the captured record. The
-  requirement belongs to the generator function and not to
-  `Generator<T, TReturn, TNext>`, so an iterator can be consumed outside the
-  `with` block that created it.
-
-- **Environments.** A continuation resumes in the global scope it started in, so
-  environment requirements are unaffected.
-
-Capture covers a requirement whose value is all the body needs. Some
-requirements describe a span of time instead. `Render` holds only while React is
-running the component's render, and a database transaction holds only until it
-commits. A captured record can't put a continuation back inside that span, so
-requirement kinds fall into two classes:
-
-- A *capturable* requirement, such as a context value, is captured where the
-  closure, async call or generator is created, as above.
-- An *extent-bound* requirement, such as `Render` or an open transaction, holds
-  only while the call that established it is running. Using one after an
-  `await` or `yield` is an error, and so is an escaping closure that needs one.
+An environment fact is a set of places a declaration exists, written
+`Env<window | dedicated_worker>`. Requiring two such facts means running where
+both hold, so the union of two environment requirements normalizes to the
+intersection of their sets:
 
 ```esc
-async fn Profile(props: {id: string}) -> Promise<Element> needs _ {
-    val user = await fetchUser(props.id)
-    val theme = useTheme()
-    // error: useTheme needs Render, which does not hold after the await above
-    return <Card theme={theme} user={user} />
-}
+// Env<window | worker> | Env<window>  normalizes to  Env<window>
 ```
 
-React's rule that a component can't call hooks after an `await` is this check.
-
-### 6.9 Features and targets
-
-A *feature* is a platform API that some version of a supported runtime lacks,
-such as `OffscreenCanvas` before Safari 16.4. A feature requirement is a third
-requirement kind. Like an environment requirement, it carries no value and is
-erased.
-
-#### 6.9.1 Targets
-
-Each entrypoint states the runtime versions it supports, beside its
-environments in `package.json` (environments F9). Node versions come from the
-existing `engines` field. Browser versions come from a browserslist query or a
-[Baseline](https://web.dev/baseline) year, which names the APIs every major
-browser has supported for a stated period. A library states its targets the
-same way, and an app's targets must fall within those of every library it uses.
-
-#### 6.9.2 What is present, polyfilled or absent
-
-For each API a build references, the compiler compares its targets against
-per-version compatibility data, such as MDN's
-[browser-compat-data](https://github.com/mdn/browser-compat-data), which
-records when each API shipped in each browser and in Node and Deno. The API then
-falls into one of three groups:
-
-1. *Present.* Every target version supports it, so nothing is emitted.
-2. *Polyfilled.* Some target lacks it and the standard library ships a polyfill,
-   as for `Promise.withResolvers` or the newer `Set` methods. The build
-   includes the polyfill.
-3. *Possibly absent.* Some target lacks it and no polyfill exists, as for
-   WebGPU or `OffscreenCanvas`. A reference adds the API's feature to the
-   requirement.
-
-Only the list of polyfills is maintained by hand. Everything else derives from
-the targets and the compatibility data, which is the environments design's N3.
-
-The checker knows which declaration each reference resolves to, so a build
-includes exactly the polyfills it uses. It can tell `x.at()` on an array from
-`x.at()` on a string, which a tool working without types cannot. Polyfills are
-injected when the app is built, not inside each library, so two libraries don't
-each ship a copy.
-
-An API a target ships with a known defect is marked as a partial implementation
-in the compatibility data. It is treated as possibly absent.
-
-#### 6.9.3 Inferring feature requirements
-
-A package's targets provide every feature that all of its target versions
-support. Inference subtracts those as it goes, so they never appear in a
-function's type:
-
-```esc
-fn makeSurface(w: number, h: number) -> OffscreenCanvas needs _ {
-    return OffscreenCanvas(w, h)
-}
-// targets include Safari 16: inferred needs web.OffscreenCanvas
-// targets all support it:     inferred needs nothing
-
-fn startRenderer() -> undefined needs _ { ... makeSurface(800, 600) ... }
-// needs whatever makeSurface needs
-```
-
-Raising the targets so that every version supports `OffscreenCanvas` removes the
-requirement from `makeSurface` and from its whole call chain, with no edit to
-the source. Lowering them adds it back. A function with no written clause then
-reports an error at the reference, and a function with `needs _` picks the
-requirement up.
-
-A feature is named after its compatibility-data key, under the scheme of the
-package that declares the API, as in `web.OffscreenCanvas`. A member that ships
-separately from its type, such as `navigator.gpu`, has a feature of its own.
-
-#### 6.9.4 Providing a feature
-
-`with` provides a feature after checking for it at runtime. A feature carries
-no value, so the binding has no `=`, and an `else` block runs when the check
-fails:
-
-```esc
-fn main() -> undefined {
-    with web.OffscreenCanvas {
-        startRenderer()
-    } else {
-        startFallbackRenderer()
-    }
-}
-```
-
-```js
-if (typeof OffscreenCanvas !== "undefined") { startRenderer(); } else { startFallbackRenderer(); }
-```
-
-A feature `with` may appear anywhere, not only near the entrypoint. When every
-target supports the feature, codegen drops the check and keeps the first block,
-and a lint can suggest removing the `with`.
-
-#### 6.9.5 Rules
-
-- Inference runs against the targets of the package that contains the code.
-  Since an app's targets fall within a library's, a feature the library's
-  targets provide is provided for the app as well.
-- A module that entrypoints with different targets share is checked against the
-  widest of their target sets, so its inferred clause holds for each of them.
-- A written clause that names a feature the targets already provide is wider
-  than it needs to be, which is allowed, as it is for `throws`. A lint can flag
-  it.
-- A polyfilled API adds no requirement, since the polyfill provides it.
-- Versions stay out of `Env`. An environment requirement names kinds of runtime,
-  and a version range applies per entrypoint. A function's type does not change
-  when an app raises its minimum browser version, except to lose feature
-  requirements.
-
-### 6.10 Environment-specific declarations
-
-#### 6.10.1 `@env` on user functions
+#### 12.2 `@env` on user functions
 
 `@env` on a user function means what it means on a platform declaration: the
 function exists only in the environments it names. A reference to it adds that
@@ -687,7 +644,7 @@ leaves the others out. An entrypoint that targets `window` emits only the first
 code that runs in more than one environment needs no runtime check of which one
 it is in.
 
-#### 6.10.2 References from several environments
+#### 12.3 References from several environments
 
 Some platform APIs have a different type in different environments:
 
@@ -717,69 +674,151 @@ fn debounce(f: fn () -> undefined, ms: number) -> fn () -> undefined needs Env<w
 environments, but it can't be used as a number. When the versions share nothing
 a caller can use, as with `location` between a page and a worker, a reference is
 an error. The function then narrows its requirement to one environment or uses
-per-environment versions of its own (section 6.10.1). Each build still emits the
+per-environment versions of its own (section 12.2). Each build still emits the
 exact version for its target.
 
-## 7. Alternatives considered
+#### 12.4 Features and targets
 
-### 7.1 Ship environments first, then lift them into coeffects
+A *feature* is a platform API that some version of a supported runtime lacks,
+such as `OffscreenCanvas` before Safari 16.4. A feature requirement carries no
+value and is erased, as an environment requirement is.
+
+Each entrypoint states the runtime versions it supports, beside its
+environments in `package.json` (environments F9). Node versions come from the
+existing `engines` field. Browser versions come from a browserslist query or a
+[Baseline](https://web.dev/baseline) year, which names the APIs every major
+browser has supported for a stated period. A library states its targets the
+same way, and an app's targets must fall within those of every library it uses.
+
+#### 12.5 What is present, polyfilled or absent
+
+For each API a build references, the compiler compares its targets against
+per-version compatibility data, such as MDN's
+[browser-compat-data](https://github.com/mdn/browser-compat-data), which
+records when each API shipped in each browser and in Node and Deno. The API then
+falls into one of three groups:
+
+1. *Present.* Every target version supports it, so nothing is emitted.
+2. *Polyfilled.* Some target lacks it and the standard library ships a polyfill,
+   as for `Promise.withResolvers` or the newer `Set` methods. The build
+   includes the polyfill.
+3. *Possibly absent.* Some target lacks it and no polyfill exists, as for
+   WebGPU or `OffscreenCanvas`. A reference adds the API's feature to the
+   requirement.
+
+Only the list of polyfills is maintained by hand. Everything else derives from
+the targets and the compatibility data, which is the environments design's N3.
+
+The checker knows which declaration each reference resolves to, so a build
+includes exactly the polyfills it uses. It can tell `x.at()` on an array from
+`x.at()` on a string, which a tool working without types cannot. Polyfills are
+injected when the app is built, not inside each library, so two libraries don't
+each ship a copy.
+
+An API a target ships with a known defect is marked as a partial implementation
+in the compatibility data. It is treated as possibly absent.
+
+#### 12.6 Inferring feature requirements
+
+A package's targets provide every feature that all of its target versions
+support. Inference subtracts those as it goes, so they never appear in a
+function's type:
+
+```esc
+fn makeSurface(w: number, h: number) -> OffscreenCanvas needs _ {
+    return OffscreenCanvas(w, h)
+}
+// targets include Safari 16: inferred needs web.OffscreenCanvas
+// targets all support it:     inferred needs nothing
+
+fn startRenderer() -> undefined needs _ { ... makeSurface(800, 600) ... }
+// needs whatever makeSurface needs
+```
+
+Raising the targets so that every version supports `OffscreenCanvas` removes the
+requirement from `makeSurface` and from its whole call chain, with no edit to
+the source. Lowering them adds it back. A function with no written clause then
+reports an error at the reference, and a function with `needs _` picks the
+requirement up.
+
+A feature is named after its compatibility-data key, under the scheme of the
+package that declares the API, as in `web.OffscreenCanvas`. A member that ships
+separately from its type, such as `navigator.gpu`, has a feature of its own.
+
+#### 12.7 Providing a feature
+
+`with` provides a feature after checking for it at runtime. A feature carries
+no value, so the binding has no `=`, and an `else` block runs when the check
+fails:
+
+```esc
+fn main() -> undefined {
+    with web.OffscreenCanvas {
+        startRenderer()
+    } else {
+        startFallbackRenderer()
+    }
+}
+```
+
+```js
+if (typeof OffscreenCanvas !== "undefined") { startRenderer(); } else { startFallbackRenderer(); }
+```
+
+A feature `with` may appear anywhere, not only near the entrypoint. When every
+target supports the feature, codegen drops the check and keeps the first block,
+and a lint can suggest removing the `with`.
+
+#### 12.8 Rules for features
+
+- Inference runs against the targets of the package that contains the code.
+  Since an app's targets fall within a library's, a feature the library's
+  targets provide is provided for the app as well.
+- A module that entrypoints with different targets share is checked against the
+  widest of their target sets, so its inferred clause holds for each of them.
+- A written clause that names a feature the targets already provide is wider
+  than it needs to be, which is allowed, as it is for `throws`. A lint can flag
+  it.
+- A polyfilled API adds no requirement, since the polyfill provides it.
+- Versions stay out of `Env`. An environment requirement names kinds of runtime,
+  and a version range applies per entrypoint. A function's type does not change
+  when an app raises its minimum browser version, except to lose feature
+  requirements.
+
+## Part IV. Decisions
+
+### 13. Alternatives considered
+
+#### 13.1 Ship environments first, then lift them into coeffects
 
 Environments ship as designed, per entrypoint, and context values follow as a
 separate feature. This leaves the language with three unrelated ways to state a
 dependency: `throws`, `@env` targets and context values. It fails C1.
 
-### 7.2 A `needs` clause with its own machinery
+#### 13.2 A `needs` clause with its own machinery
 
-The surface syntax matches section 6, but `needs` is implemented beside `throws`
+The surface syntax matches Part III, but `needs` is implemented beside `throws`
 instead of on shared rules. Details such as requirement variables and interop
 defaults can then be decided differently for each. It fails C1 over time, though
 not on the first day.
 
-### 7.3 Capabilities as values
+#### 13.3 Capabilities as values
 
 `window`, `document` and `fs` become implicit parameters, and feature detection
 becomes acquiring one, as in `if let dom = Env.window() { ... }`. This unifies
 environments with context values, but in a different idiom from `throws`, and it
 conflicts with the ambient globals every `.d.ts` file assumes.
 
-### 7.4 Dynamic scoping with `AsyncContext`
+#### 13.4 Dynamic scoping with `AsyncContext`
 
 `with` compiles to `Theme.run(dark, () => { ... })` and a read to `Theme.get()`,
 using the TC39 `AsyncContext.Variable` proposal. There is no hidden parameter,
 so the JavaScript boundary needs nothing, and values carry across `await`. It
 resolves a context where a callback runs, not where it was created, which
-contradicts section 6.5. It also depends on a proposal that is not yet standard
+contradicts section 9.2. It also depends on a proposal that is not yet standard
 and adds a lookup to every read, which fails C8.
 
-## 8. Prior art
-
-- **Hack** calls the feature "contexts and capabilities" and grew it from a
-  coeffect proposal. A function lists its contexts in brackets. A function with
-  no list gets the `defaults` context, which is a broad set of capabilities but
-  not every one, so existing code keeps compiling. `[ctx $f]` makes a function
-  require whatever its function-typed parameter `$f` requires. See the
-  [introduction](https://docs.hhvm.com/hack/contexts-and-capabilities/introduction),
-  [available contexts](https://docs.hhvm.com/hack/contexts-and-capabilities/available-contexts-and-capabilities/)
-  and [dependent contexts](https://docs.hhvm.com/hack/contexts-and-capabilities/dependent-contexts-continued/).
-- **Haskell** infers implicit parameters (`?logger`) and `MonadReader`
-  constraints along with types, so requirement polymorphism is ordinary type
-  polymorphism.
-- **Scala 3** declares context parameters with `using` and bundles them under
-  context-function aliases such as `type Logged[T] = Logger ?=> T`. Its
-  experimental `saferExceptions` turns checked exceptions into a `CanThrow[E]`
-  capability.
-- **Effekt** treats effects as capabilities and makes function arguments
-  second-class, so a callback can use its caller's capabilities without
-  polymorphism annotations.
-- **Kotlin** context parameters are declared in the signature and passed
-  implicitly where a scope provides them. They are not inferred.
-- **Swift** global-actor isolation such as `@MainActor` is an environment
-  requirement, inferred from enclosing types and inherited by closures.
-
-Escalier's design takes inference from Haskell, requirement variables for
-extent-bound requirements from its own `throws`, and capture at creation from Effekt.
-
-## 9. Open questions
+### 14. Open questions
 
 1. **How does a provider remove a requirement from a variable?** `ThemeProvider`
    needs `R` minus `Theme`. Either the provider gets a built-in typing rule, as
@@ -797,20 +836,19 @@ extent-bound requirements from its own `throws`, and capture at creation from Ef
 4. **Is feature detection a provider for environments?** *Decided: no.* An
    environment stays per entrypoint, and a build for each target selects the
    declarations whose `@env` covers it. Detection provides only a feature
-   requirement (section 6.9.4), which records whether a target version has an
+   requirement (section 12.7), which records whether a target version has an
    API, not which kind of runtime the code is in.
 5. **Do inferred requirements print?** Hover and diagnostics could show the
    clause always, only when non-empty, or only on request.
-6. **How does a requirement kind declare that it is extent-bound?** Section 6.8
+6. **How does a requirement kind declare that it is extent-bound?** Section 8.4
    needs `Render` and a transaction to be extent-bound and a context value to be
    capturable. The choice could be a modifier on the `context` declaration, a
    separate declaration form, or a fixed set of built-in extent-bound kinds.
    The answer also decides whether a library can define its own, as a
    database client would for a transaction.
-7. **What syntax meets C9?** A `with` can list several bindings, as in
-   `with Theme = dark, Logger = consoleLogger { ... }`, with each binding able
-   to use the ones before it. Nothing in section 6 lets a function provide a
-   reusable set. The candidates:
+7. **What syntax meets C9?** A `with` can provide several contexts at once
+   (section 8.2), but nothing in Part III lets a function provide a reusable
+   set. The candidates:
 
    - **`given` on a callback type.** The provider runs a callback with the
      values supplied. It is the only candidate that supplies an extent-bound
@@ -863,23 +901,14 @@ extent-bound requirements from its own `throws`, and capture at creation from Ef
      with {...testEnv, Theme: dark} { runSimulation() }
      ```
 
-## 10. Non-goals
-
-- Grades or usage counts on requirements, as in Granule. Ownership already
-  covers how many times a value is used.
-- A capability-security model for third-party code. The design makes network
-  and filesystem access visible in types, but it does not sandbox them.
-- Changing what the environments design says about which declarations exist
-  where. This design changes how that fact is checked, not the fact.
-
-## 11. Related work
+### 15. Related work
 
 - [planning/environments/design.md](../environments/design.md), which this design
   generalizes.
 - [planning/explicit_signatures/design.md](../explicit_signatures/design.md) W5,
   which C2 extends to `needs _`.
 - [planning/react_and_jsx/requirements.md](../react_and_jsx/requirements.md)
-  §4.5, whose context typing section 6.6 replaces.
+  §4.5, whose context typing section 11 replaces.
 - [escalier-lang/escalier#2396](https://github.com/escalier-lang/escalier/issues/2396),
   the environment reference check, which becomes the leaf case of `needs`
   inference under C7.
