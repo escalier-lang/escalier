@@ -5918,9 +5918,10 @@ func (c *checker) rethrowUnhandled(scope *Scope, lvl int, e *ast.TryCatchExpr, c
 		}
 		uncovered = append(uncovered, part)
 	}
-	// A member an arm names is still uncovered when that arm's guard or one of its
-	// sub-patterns can fail. Covering it means editing that arm, which the record leaves to
-	// the user, so only the members no arm names are recorded.
+	// A member a guarded arm names is still uncovered, since the guard can fail. Whether
+	// the guard should cover it is the user's call, so the record leaves that member out. A
+	// member named only by an unguarded arm whose sub-pattern can fail, as `A{a: 0}` names
+	// `A`, is recorded, since an irrefutable arm after it covers the rest.
 	c.recordUncaught(scope, lvl, e, uncovered)
 	rethrown := newUnion(c.ctx, uncovered)
 	if isNeverType(rethrown) {
@@ -5939,8 +5940,8 @@ func (c *checker) rethrowUnhandled(scope *Scope, lvl int, e *ast.TryCatchExpr, c
 	c.markRaised()
 }
 
-// recordUncaught records, for e, each member of uncovered that no catch arm names, whatever
-// the arm's guard and sub-patterns test. uncovered is the members of what e's try block
+// recordUncaught records, for e, each member of uncovered that no guarded catch arm names,
+// whatever that arm's sub-patterns test. uncovered is the members of what e's try block
 // throws that the arms do not catch. It replaces any earlier record for e, and leaves none
 // when no member is left.
 func (c *checker) recordUncaught(scope *Scope, lvl int, e *ast.TryCatchExpr, uncovered []soltype.Type) {
@@ -5948,8 +5949,13 @@ func (c *checker) recordUncaught(scope *Scope, lvl int, e *ast.TryCatchExpr, unc
 	if len(uncovered) == 0 {
 		return
 	}
+	guarded := make([]*ast.MatchCase, 0, len(e.Catch))
 	parts := make([]soltype.Type, 0, len(e.Catch))
 	for _, arm := range e.Catch {
+		if arm.Guard == nil {
+			continue
+		}
+		guarded = append(guarded, arm)
 		if named, ok := c.armNamedType(scope, lvl, arm.Pattern); ok {
 			parts = append(parts, named)
 		}
@@ -5957,7 +5963,7 @@ func (c *checker) recordUncaught(scope *Scope, lvl int, e *ast.TryCatchExpr, unc
 	named := newUnion(c.ctx, parts)
 	unnamed := make([]soltype.Type, 0, len(uncovered))
 	for _, member := range uncovered {
-		if c.memberSubtracted(member, named) || c.ctx.memberShapeNamed(member, e.Catch) {
+		if c.memberSubtracted(member, named) || c.ctx.memberShapeNamed(member, guarded) {
 			continue
 		}
 		unnamed = append(unnamed, member)
@@ -5967,8 +5973,8 @@ func (c *checker) recordUncaught(scope *Scope, lvl int, e *ast.TryCatchExpr, unc
 	}
 }
 
-// memberShapeNamed reports whether some arm's object or tuple pattern fits the shape of
-// member, whatever the arm's guard and sub-patterns test.
+// memberShapeNamed reports whether the object or tuple pattern of one of arms fits the shape
+// of member, whatever that arm's guard and sub-patterns test.
 func (c *Context) memberShapeNamed(member soltype.Type, arms []*ast.MatchCase) bool {
 	for _, arm := range arms {
 		if c.patternMatchesMemberShape(arm.Pattern, member) {

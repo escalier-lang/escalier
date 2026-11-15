@@ -700,11 +700,20 @@ func TestUncaughtThrows(t *testing.T) {
 			want: []string{"B"},
 		},
 		{
-			// `Color.RGB(0, g, b)` matches only some `Color.RGB` values, but it names the
-			// variant, so the variant is left to whoever wrote that arm.
-			name: "RefutableArmNamesItsVariant",
+			// `Color.RGB(0, g, b)` matches only some `Color.RGB` values, so the variant is
+			// left for an irrefutable arm after it.
+			name: "RefutableArmLeavesItsVariant",
 			src: `declare fn g() -> number throws Color
 				fn f() -> number throws _ { return try { g() } catch { Color.RGB(0, g, b) => g } }`,
+			want: []string{"Color.RGB", "Color.Hex"},
+		},
+		{
+			// A guarded refutable arm names its variant, which is left to whoever wrote the
+			// guard.
+			name: "GuardedRefutableArmNamesItsVariant",
+			src: `declare fn g() -> number throws Color
+				declare val strict: boolean
+				fn f() -> number throws _ { return try { g() } catch { Color.RGB(0, g, b) if strict => g } }`,
 			want: []string{"Color.Hex"},
 		},
 		{
@@ -739,11 +748,12 @@ func TestUncaughtThrows(t *testing.T) {
 			want: []string{`"boom"`},
 		},
 		{
-			// `A{a: 0}` matches only some `A` values, but it names `A`.
-			name: "RefutableInstanceArmNamesItsClass",
+			// `A{a: 0}` matches only some `A` values, so `A` is left for an irrefutable arm
+			// after it.
+			name: "RefutableInstanceArmLeavesItsClass",
 			src: `declare fn g() -> number throws A | B
 				fn f() -> number throws _ { return try { g() } catch { A{a: 0} => 1 } }`,
-			want: []string{"B"},
+			want: []string{"A", "B"},
 		},
 		{
 			name: "CatchAllLeavesNothing",

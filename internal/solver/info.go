@@ -52,8 +52,8 @@ type Info struct {
 	// indexSegments holds indexSegment's answer for each index key it read through the key's
 	// recorded type. It is nil until the first such key.
 	indexSegments map[ast.Expr]indexSegmentAnswer
-	// uncaught holds, per `try` whose block throws a value no catch arm names, the members
-	// of what the block throws that no arm names. recordUncaught fills it.
+	// uncaught holds, per `try` that leaves a thrown member uncaught, the uncaught members
+	// no guarded catch arm names. recordUncaught fills it.
 	uncaught map[*ast.TryCatchExpr][]soltype.Type
 	// ctx is the Context of the run that recorded this table, or nil for a table built
 	// by NewInfo. MemberObject reads the class and alias registries it holds.
@@ -74,11 +74,11 @@ func NewInfo() *Info {
 	}
 }
 
-// UncaughtThrows returns the members of what the try block of e throws that no catch arm
-// names, in the order the thrown union lists them. A member an arm names is left out even
-// when that arm's guard or a sub-pattern can fail. It returns nil when every member is
-// named, and when e has an unguarded catch-all arm. `try { g() } catch { A{} => 1 }` over a
-// `g` declared `throws A | B` returns `B`.
+// UncaughtThrows returns the members of what the try block of e throws that the catch arms
+// do not catch and no guarded arm names, in the order the thrown union lists them. A member
+// named only by an unguarded arm whose sub-pattern can fail is returned. It returns nil when
+// no such member is left, and when e has an unguarded catch-all arm.
+// `try { g() } catch { A{a: 0} => 1 }` over a `g` declared `throws A | B` returns `A` and `B`.
 func (i *Info) UncaughtThrows(e *ast.TryCatchExpr) []soltype.Type {
 	return i.uncaught[e]
 }

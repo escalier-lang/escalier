@@ -390,6 +390,25 @@ func TestFillArmsAction(t *testing.T) {
 				"\t}\n" +
 				"}\n",
 		},
+		{
+			// `A{a: 0}` catches only some `A` values, so an irrefutable `A{}` arm follows it.
+			name: "CatchAfterRefutableArm",
+			files: map[string]string{"bin/main.esc": "class A { a: number }\n" +
+				"class B { b: number }\n" +
+				"declare fn g() -> number throws A | B\n" +
+				"fn f() -> number throws _ {\n" +
+				"\treturn try { g() } catch { A{a: 0} => 1 }\n" +
+				"}\n"},
+			path:   "bin/main.esc",
+			cursor: "catch",
+			title:  fillCatchArmsTitle,
+			expected: "class A { a: number }\n" +
+				"class B { b: number }\n" +
+				"declare fn g() -> number throws A | B\n" +
+				"fn f() -> number throws _ {\n" +
+				"\treturn try { g() } catch { A{a: 0} => 1, A{} => throw \"todo\", B{} => throw \"todo\" }\n" +
+				"}\n",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
