@@ -9,12 +9,14 @@ effect in its types, the `throws` clause, which records the exceptions a functio
 may raise. This design adds a `needs` clause, which records what a function
 requires from its caller's context, and builds both clauses on one set of rules.
 
-It covers two kinds of requirement:
+It covers three kinds of requirement:
 
 - *Context values*, such as a theme, a logger or the current request, which a
   function reads without taking them as parameters.
 - *Environments*, the browser global scopes and non-browser runtimes that
   [planning/environments/design.md](../environments/design.md) defines.
+- *Features*, platform APIs that some version of a supported runtime lacks and
+  that no polyfill supplies.
 
 The environments design is a coeffect system with one context per entrypoint.
 This design moves its requirements onto function types, so they are inferred
@@ -153,6 +155,11 @@ Using one after that call returns is an error. This covers a use after an
 `await` or `yield` and a use from a closure that escapes. C9 applies to
 extent-bound requirements too, so a provider can supply them alongside
 capturable ones.
+
+**C11. Raising the targets removes requirements without source edits.** When
+every runtime version an entrypoint supports provides an API, no function needs
+a requirement for it, and changing the supported versions changes no function's
+source.
 
 ## 6. Design
 
@@ -530,6 +537,117 @@ async fn Profile(props: {id: string}) -> Promise<Element> needs _ {
 
 React's rule that a component can't call hooks after an `await` is this check.
 
+### 6.9 Features and targets
+
+A *feature* is a platform API that some version of a supported runtime lacks,
+such as `OffscreenCanvas` before Safari 16.4. A feature requirement is a third
+requirement kind. Like an environment requirement, it carries no value and is
+erased.
+
+#### 6.9.1 Targets
+
+Each entrypoint states the runtime versions it supports, beside its
+environments in `package.json` (environments F9). Node versions come from the
+existing `engines` field. Browser versions come from a browserslist query or a
+[Baseline](https://web.dev/baseline) year, which names the APIs every major
+browser has supported for a stated period. A library states its targets the
+same way, and an app's targets must fall within those of every library it uses.
+
+#### 6.9.2 What is present, polyfilled or absent
+
+For each API a build references, the compiler compares its targets against
+per-version compatibility data, such as MDN's
+[browser-compat-data](https://github.com/mdn/browser-compat-data), which
+records when each API shipped in each browser and in Node and Deno. The API then
+falls into one of three groups:
+
+1. *Present.* Every target version supports it, so nothing is emitted.
+2. *Polyfilled.* Some target lacks it and the standard library ships a polyfill,
+   as for `Promise.withResolvers` or the newer `Set` methods. The build
+   includes the polyfill.
+3. *Possibly absent.* Some target lacks it and no polyfill exists, as for
+   WebGPU or `OffscreenCanvas`. A reference adds the API's feature to the
+   requirement.
+
+Only the list of polyfills is maintained by hand. Everything else derives from
+the targets and the compatibility data, which is the environments design's N3.
+
+The checker knows which declaration each reference resolves to, so a build
+includes exactly the polyfills it uses. It can tell `x.at()` on an array from
+`x.at()` on a string, which a tool working without types cannot. Polyfills are
+injected when the app is built, not inside each library, so two libraries don't
+each ship a copy.
+
+An API a target ships with a known defect is marked as a partial implementation
+in the compatibility data. It is treated as possibly absent.
+
+#### 6.9.3 Inferring feature requirements
+
+A package's targets provide every feature that all of its target versions
+support. Inference subtracts those as it goes, so they never appear in a
+function's type:
+
+```esc
+fn makeSurface(w: number, h: number) -> OffscreenCanvas needs _ {
+    return OffscreenCanvas(w, h)
+}
+// targets include Safari 16: inferred needs web.OffscreenCanvas
+// targets all support it:     inferred needs nothing
+
+fn startRenderer() -> undefined needs _ { ... makeSurface(800, 600) ... }
+// needs whatever makeSurface needs
+```
+
+Raising the targets so that every version supports `OffscreenCanvas` removes the
+requirement from `makeSurface` and from its whole call chain, with no edit to
+the source. Lowering them adds it back. A function with no written clause then
+reports an error at the reference, and a function with `needs _` picks the
+requirement up.
+
+A feature is named after its compatibility-data key, under the scheme of the
+package that declares the API, as in `web.OffscreenCanvas`. A member that ships
+separately from its type, such as `navigator.gpu`, has a feature of its own.
+
+#### 6.9.4 Providing a feature
+
+`with` provides a feature after checking for it at runtime. A feature carries
+no value, so the binding has no `=`, and an `else` block runs when the check
+fails:
+
+```esc
+fn main() -> undefined {
+    with web.OffscreenCanvas {
+        startRenderer()
+    } else {
+        startFallbackRenderer()
+    }
+}
+```
+
+```js
+if (typeof OffscreenCanvas !== "undefined") { startRenderer(); } else { startFallbackRenderer(); }
+```
+
+A feature `with` may appear anywhere, not only near the entrypoint. When every
+target supports the feature, codegen drops the check and keeps the first block,
+and a lint can suggest removing the `with`.
+
+#### 6.9.5 Rules
+
+- Inference runs against the targets of the package that contains the code.
+  Since an app's targets fall within a library's, a feature the library's
+  targets provide is provided for the app as well.
+- A module that entrypoints with different targets share is checked against the
+  widest of their target sets, so its inferred clause holds for each of them.
+- A written clause that names a feature the targets already provide is wider
+  than it needs to be, which is allowed, as it is for `throws`. A lint can flag
+  it.
+- A polyfilled API adds no requirement, since the polyfill provides it.
+- Versions stay out of `Env`. An environment requirement names kinds of runtime,
+  and a version range applies per entrypoint. A function's type does not change
+  when an app raises its minimum browser version, except to lose feature
+  requirements.
+
 ## 7. Alternatives considered
 
 ### 7.1 Ship environments first, then lift them into coeffects
@@ -604,10 +722,11 @@ extent-bound requirements from its own `throws`, and capture at creation from Ef
    requirements. Reading it as needing nothing is unsound for code that reads
    ambient state. Reading it as needing everything makes every import
    unprovidable.
-4. **Is feature detection a provider for environments?** Narrowing on
-   `typeof OffscreenCanvas !== "undefined"` could remove the matching
-   environment requirement in its branch. The environments design lists this as
-   a non-goal, and adopting it reopens that decision.
+4. **Is feature detection a provider for environments?** *Decided: no.* An
+   environment stays per entrypoint, and a build for each target selects the
+   declarations whose `@env` covers it. Detection provides only a feature
+   requirement (section 6.9.4), which records whether a target version has an
+   API, not which kind of runtime the code is in.
 5. **Do inferred requirements print?** Hover and diagnostics could show the
    clause always, only when non-empty, or only on request.
 6. **How does a requirement kind declare that it is extent-bound?** Section 6.8
