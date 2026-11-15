@@ -13,5 +13,7 @@ export default defineConfig({
         // monacoCorePlugin could redirect it.
         exclude: ['monaco-editor'],
     },
+    // SPIKE: the codingame editor worker imports modules that split into chunks.
+    worker: { format: 'es' },
     base: process.env.APP_ENV === 'prod' ? '/escalier/' : '/',
 });

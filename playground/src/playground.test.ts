@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from 'vitest';
 
 vi.mock('monaco-editor-core');
+vi.mock('./language-client', () => ({ languageID: 'escalier' }));
 
 import { slugToLabel } from './playground';
 

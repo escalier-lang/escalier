@@ -49,8 +49,14 @@ class SimpleStream {
         this.emitter.emit('data', chunk);
     }
 
-    read() {
-        return this.chunks.shift();
+    /** Removes and returns up to maxLength bytes from the front of the stream. */
+    read(maxLength = Number.POSITIVE_INFINITY) {
+        const chunk = this.chunks.shift();
+        if (chunk && chunk.length > maxLength) {
+            this.chunks.unshift(chunk.subarray(maxLength));
+            return chunk.subarray(0, maxLength);
+        }
+        return chunk;
     }
 }
 
@@ -108,8 +114,14 @@ export class Client {
     private go: any;
     private stdin: SimpleStream;
     private stdout: SimpleStream;
-    /** Sends requests and notifications over stdin and reads the replies from stdout. */
-    private connection: MessageConnection;
+    private reader: ReadableStreamMessageReader;
+    private writer: WriteableStreamMessageWriter;
+    /**
+     * Sends requests and notifications over stdin and reads the replies from stdout.
+     * Created on first use, so a caller that takes the transports instead never
+     * creates a second reader of stdout.
+     */
+    private connectionValue: MessageConnection | undefined;
     private wasmBuf: ArrayBuffer;
     private errorBuffer: string;
     /** Set by `stop()`. Silences the server's output and drops notifications from then on. */
@@ -139,11 +151,8 @@ export class Client {
         this.stdout = new SimpleStream();
         this.wasmBuf = wasmBuf;
         this.errorBuffer = '';
-        this.connection = createMessageConnection(
-            new ReadableStreamMessageReader(readableOf(this.stdout)),
-            new WriteableStreamMessageWriter(writableOf(this.stdin)),
-        );
-        this.connection.listen();
+        this.reader = new ReadableStreamMessageReader(readableOf(this.stdout));
+        this.writer = new WriteableStreamMessageWriter(writableOf(this.stdin));
 
         // const enosys = () => {
         //     const err = new Error('not implemented');
@@ -303,11 +312,10 @@ export class Client {
                 ) => void,
             ) => {
                 if (fd === 0) {
-                    const srcBuf = this.stdin.read();
+                    const srcBuf = this.stdin.read(length);
                     if (srcBuf) {
-                        // TODO: handle the case where srcBuffer is larger than buffer
-                        buffer.set(srcBuf, 0);
-                        callback(null, srcBuf.length, srcBuf);
+                        buffer.set(srcBuf, offset);
+                        callback(null, srcBuf.length, buffer);
                         return;
                     }
 
@@ -426,6 +434,22 @@ export class Client {
         // virtual-filesystem path where the compiler's
         // `internal/interop/data` directory has been mirrored.
         this.go.env = { ...(this.go.env ?? {}), ...env };
+    }
+
+    /** Returns the reader of the server's stdout and the writer to its stdin. */
+    messageTransports() {
+        return { reader: this.reader, writer: this.writer };
+    }
+
+    private get connection(): MessageConnection {
+        if (this.connectionValue === undefined) {
+            this.connectionValue = createMessageConnection(
+                this.reader,
+                this.writer,
+            );
+            this.connectionValue.listen();
+        }
+        return this.connectionValue;
     }
 
     async run() {

@@ -11,7 +11,7 @@ import { FileExplorer } from './components/file-explorer';
 import { Toast } from './components/toast';
 import { useEditorStore } from './editor-store';
 import type { BrowserFS } from './fs/browser-fs';
-import { languageID } from './language';
+import { languageID } from './language-client';
 import { monacoThemeName, useThemeStore } from './theme';
 
 import styles from './editor.module.css';

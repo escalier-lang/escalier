@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 vi.mock('monaco-editor-core');
 
 // Mock the language module to avoid Monaco language registration side effects.
-vi.mock('./language', () => ({ languageID: 'escalier' }));
+vi.mock('./language-client', () => ({ languageID: 'escalier' }));
 
 import { Editor } from './editor';
 import type { EditorState } from './editor-state';

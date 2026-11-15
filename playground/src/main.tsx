@@ -1,9 +1,5 @@
 import ReactDOM from 'react-dom/client';
-import {
-    FileChangeType,
-    type FileEvent,
-    type InitializeResult,
-} from 'vscode-languageserver-protocol';
+import { FileChangeType, type FileEvent } from 'vscode-languageserver-protocol';
 
 import wasmUrl from '../../bin/lsp-server.wasm?url';
 
@@ -11,7 +7,7 @@ import type { LoadingStatus } from './components/loading-screen';
 import { useEditorStore } from './editor-store';
 import { BrowserFS } from './fs/browser-fs';
 import type { Manifest } from './fs/volume';
-import { setupLanguage } from './language';
+import { startLanguageClient, startVscodeApi } from './language-client';
 import { Client } from './lsp-client/client';
 import { Playground } from './playground';
 import { loadProject } from './project-loader';
@@ -27,6 +23,7 @@ async function start(
     showStatus: (status: LoadingStatus) => void,
 ) {
     const baseUrl = import.meta.env.BASE_URL;
+    const vscodeApiStarted = startVscodeApi();
 
     const manifest: Manifest = await fetch(
         `${baseUrl}types/manifest.json`,
@@ -111,12 +108,8 @@ async function start(
         ESCALIER_STDLIB_DIR: '/node_modules/escalier-builtins',
     });
     client.run();
-    const initResponse: InitializeResult = await client.initialize({
-        processId: process.pid,
-        rootUri: 'file:///',
-        capabilities: {},
-    });
-    console.log('initialize response', initResponse);
+    await vscodeApiStarted;
+    const languageClient = await startLanguageClient(client);
 
     // Forward filesystem change events to the LSP server.
     fs.events.on((event) => {
@@ -162,10 +155,10 @@ async function start(
                 ];
                 break;
         }
-        client.workspaceDidChangeWatchedFiles({ changes });
+        languageClient.sendNotification('workspace/didChangeWatchedFiles', {
+            changes,
+        });
     });
-
-    setupLanguage(client, initResponse.capabilities);
 
     reactRoot.render(
         <Playground fs={fs} manifest={manifest} baseUrl={baseUrl} />,
