@@ -2083,7 +2083,7 @@ func TestOwnershipDataflowMessagesAndSpans(t *testing.T) {
 			// The rest element is rejected, so the pattern moves nothing out of p.
 			name: "RejectedRestPatternMovesNothing",
 			src: `
-				fn go(p: {x: number, y: string}) -> [never, string] {
+				fn go(p: {x: number, y: string}) -> [{y: string}, string] {
 					val {...rest, x} = p
 					return [rest, p.y]
 				}

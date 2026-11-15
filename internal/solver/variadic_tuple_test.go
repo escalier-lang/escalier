@@ -296,10 +296,11 @@ func TestVariadicTupleInference(t *testing.T) {
 
 // TestVariadicTupleInexactSpreadNotLast asserts that an inexact variadic tuple spread before
 // another element is rejected, since its open tail leaves no position for what follows.
+// #2783 tracks accepting it as a variadic tuple.
 func TestVariadicTupleInexactSpreadNotLast(t *testing.T) {
-	_, _, errs := inferSource(t, `fn f(t: [number, ...Array<string>, ...]) -> [1] { return [...t, 1] }`)
+	_, _, errs := inferSource(t, `fn f(t: [number, ...Array<string>, ...]) -> Array<unknown> { return [...t, 1] }`)
 	require.Equal(t, []string{
-		"1:59-1:63: cannot spread an inexact tuple except as the last element",
+		"1:70-1:74: cannot spread an inexact tuple except as the last element",
 	}, messagesWithSpan(t, errs))
 }
 
