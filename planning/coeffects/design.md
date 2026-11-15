@@ -267,6 +267,19 @@ context by the element's position in the tree, not by where the element was
 created. So a requirement belongs on the element type, not on the call. This is
 the one place a capturable requirement stays on a value's type.
 
+The section uses React as its example, but the design applies to any frontend
+framework that resolves a context by position in the component tree. Vue's
+`provide` and `inject`, SolidJS's `createContext` and `useContext`, Svelte's
+`setContext` and `getContext`, and Preact's context API all work this way. Each
+framework needs its own codegen for a context declaration, a read and a
+provider, and its own extent-bound requirement in place of `Render`. Vue's
+`inject` must be called during `setup`, and Svelte's `getContext` must be
+called while the component initializes. The typing rules carry over unchanged:
+
+- requirements travel on the framework's element or node type;
+- element-typed props pass requirements through by default;
+- a `with` whose result is an element is the provider.
+
 #### 6.6.1 Components
 
 A component reads a context the way any function does, and its requirements are
