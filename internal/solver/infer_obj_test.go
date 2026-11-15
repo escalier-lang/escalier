@@ -90,12 +90,12 @@ func TestInferTupleSpreadNonTuple(t *testing.T) {
 // operand ([number, ...]) has unknown length, so the trailing 1 would land at an
 // unknown position.
 func TestInferTupleSpreadInexactNotLast(t *testing.T) {
-	// fn f(z: [number, ...]) { return [...z, 1] }
+	// fn f(z: [number, ...]) -> Array<number> { return [...z, 1] }
 	_, _, errs := inferSource(t, `
-		fn f(z: [number, ...]) -> [1] { return [...z, 1] }
+		fn f(z: [number, ...]) -> Array<number> { return [...z, 1] }
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "2:43-2:47: cannot spread an inexact tuple except as the last element", msgWithSpan(t, errs[0]))
+	require.Equal(t, "2:53-2:57: cannot spread an inexact tuple except as the last element", msgWithSpan(t, errs[0]))
 }
 
 // A trailing inexact spread is sound: the operand's known prefix extends the
