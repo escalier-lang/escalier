@@ -19,8 +19,8 @@ func inferAgainstTree(t *testing.T, src string) (map[string]string, []string) {
 	return renderedValues(res), msgs
 }
 
-// inferLocalAgainstTree is inferLocal checked against the standard library tree: it returns
-// the type of the binding named name, as hover displays it, with the error messages.
+// inferLocalAgainstTree is inferLocal checked against the standard library tree. It returns
+// the type of the last pattern that binds name, with the error messages.
 func inferLocalAgainstTree(t *testing.T, src, name string) (string, []string) {
 	t.Helper()
 	module := parseModule(t, src)

@@ -13,6 +13,9 @@ func TestPrimitiveMemberReadsWrapper(t *testing.T) {
 		name string
 		src  string
 		want map[string]string
+		// locals are the types of closures the source binds inside a function body, which
+		// keep their inferred return types.
+		locals map[string]string
 	}{
 		{
 			name: "NumberLiteral",
@@ -124,19 +127,31 @@ func TestPrimitiveMemberReadsWrapper(t *testing.T) {
 			// Each member reads `toString` off its own wrapper, `Number` for `number`
 			// and `String` for `string`, and the two results join.
 			name: "MixedPrimitiveUnion",
-			src:  `val g = fn (x: number | string) { return x.toString() }`,
-			want: map[string]string{"g": "fn (x: number | string) -> string"},
+			src: `
+				fn main() -> undefined {
+					val g = fn (x: number | string) { return x.toString() }
+				}
+			`,
+			locals: map[string]string{"g": "fn (x: number | string) -> string"},
 		},
 		{
 			name: "PrimitiveAndClassInstanceUnion",
-			src:  `val len = fn (x: string | &Array<number>) { return x.length }`,
-			want: map[string]string{"len": "fn (x: string | &Array<number>) -> number"},
+			src: `
+				fn main() -> undefined {
+					val len = fn (x: string | &Array<number>) { return x.length }
+				}
+			`,
+			locals: map[string]string{"len": "fn (x: string | &Array<number>) -> number"},
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			values, errs := inferAgainstTreeWithSpans(t, test.src)
 			require.Empty(t, errs)
+			for name, want := range test.locals {
+				got, _ := inferLocalAgainstTree(t, test.src, name)
+				require.Equal(t, want, got, "local binding %q", name)
+			}
 			for name, want := range test.want {
 				require.Equal(t, want, values[name], "value binding %q", name)
 			}
@@ -163,7 +178,7 @@ func TestPrimitiveMemberRejected(t *testing.T) {
 			// call rejects it.
 			name: "MixedReceiver",
 			src: `
-				val f = fn (c: boolean, x: &{a: number}) {
+				val f = fn (c: boolean, x: &{a: number}) -> string {
 					val y = if c { 1 } else { x }
 					return y.toFixed(1)
 				}
@@ -209,8 +224,8 @@ func TestPrimitiveMemberRejected(t *testing.T) {
 			// rule that every member must carry the property. `number` carries
 			// `toString` through `Number`, so only `undefined` is reported.
 			name: "UnionWithUndefined",
-			src:  `val g = fn (x: number | undefined) { return x.toString() }`,
-			want: []string{"1:45-1:55: cannot constrain undefined <: object"},
+			src:  `val g = fn (x: number | undefined) -> string { return x.toString() }`,
+			want: []string{"1:55-1:65: cannot constrain undefined <: object"},
 		},
 		{
 			name: "ObjectAnnotationWithMethodType",

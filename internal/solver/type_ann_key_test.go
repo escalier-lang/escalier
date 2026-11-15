@@ -40,7 +40,7 @@ func TestAnnKeyNamesOneMember(t *testing.T) {
 	runAnnKeyCases(t, []annKeyCase{
 		{
 			name:   "UniqueSymbol",
-			src:    "declare val sym: unique symbol\nval f = fn (o: &{[sym]: number}) { return o[sym] }",
+			src:    "declare val sym: unique symbol\nval f = fn (o: &{[sym]: number}) -> number { return o[sym] }",
 			values: map[string]string{"f": "fn (o: &{[sym]: number}) -> number"},
 		},
 		{

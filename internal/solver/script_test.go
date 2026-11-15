@@ -244,7 +244,7 @@ func TestInferScriptTypeAndFuncDecls(t *testing.T) {
 		{
 			name: "FnWithBody",
 			src: `
-				val add = fn (a: number, b: number) {
+				val add = fn (a: number, b: number) -> number {
 					return a + b
 				}
 				val sum = add(1, 2)
@@ -332,7 +332,7 @@ func TestInferScriptTypeAndFuncDecls(t *testing.T) {
 			name: "FnCapturesAnEarlierVal",
 			src: `
 				val base = 10
-				val addBase = fn (x: number) {
+				val addBase = fn (x: number) -> number {
 					return x + base
 				}
 				val r = addBase(1)
@@ -346,7 +346,7 @@ func TestInferScriptTypeAndFuncDecls(t *testing.T) {
 			name: "FnCapturesAnEarlierVar",
 			src: `
 				var count = 0
-				val bump = fn () {
+				val bump = fn () -> number {
 					count = count + 1
 					return count
 				}
@@ -739,7 +739,7 @@ func TestScriptReassignTransition(t *testing.T) {
 // binds the same `id`, and the two rendered types must match. The script entry
 // point and the module entry point thread the borrow lifetime the same way.
 func TestScriptBorrowLifetimeParity(t *testing.T) {
-	const src = `val id = fn (p: &mut {x: number}) { return p }`
+	const src = `val id = fn (p: &mut {x: number}) -> &mut {x: number} { return p }`
 
 	scriptValues, _, scriptErrs := inferScriptSource(t, src)
 	require.Empty(t, scriptErrs)

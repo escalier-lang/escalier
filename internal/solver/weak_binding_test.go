@@ -272,7 +272,7 @@ val b = f("s")
 			src: `
 fn makeId<T0>() -> fn (x: T0) -> T0 { return fn (x) { return x } }
 val g = makeId()
-val use = fn () { return g(1) }
+val use = fn () -> 1 { return g(1) }
 `,
 			values: map[string]string{
 				"g":   "fn (x: 1) -> 1",

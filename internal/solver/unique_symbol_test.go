@@ -418,7 +418,7 @@ func TestUniqueSymbolPosition(t *testing.T) {
 		},
 		{
 			name:     "Parameter",
-			src:      "val f = fn (s: unique symbol) { return s }",
+			src:      "val f = fn (s: unique symbol) -> symbol { return s }",
 			want:     map[string]string{"f": "fn (s: symbol) -> symbol"},
 			wantErrs: []string{"1:16-1:29: A `unique symbol` type is only allowed on a `val` declaration, a `static readonly` class field, or a `readonly` property."},
 		},

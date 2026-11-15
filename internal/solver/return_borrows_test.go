@@ -28,6 +28,9 @@ func TestReturnValueBorrows(t *testing.T) {
 		src   string
 		want  []string
 		types map[string]string
+		// locals are the types of closures the source binds inside a function body, which
+		// keep their inferred return types.
+		locals map[string]string
 	}{
 		// The first repro in #1264. The bare borrow `return &mut b` leaves as the only path to
 		// b, so the return owns what it borrowed. The owned form is immutable, and the
@@ -359,16 +362,18 @@ func TestReturnValueBorrows(t *testing.T) {
 		// rejects for mixing ownership. Holding the rewrite back leaves the function uniform.
 		"MixedLocalAndParamReturnsStayBorrowed": {
 			src: `
-				val f = fn (p: &mut {value: number}, cond: boolean) {
-					val mut b = {value: 0}
-					if cond {
-						return &mut b
+				fn main() -> undefined {
+					val f = fn (p: &mut {value: number}, cond: boolean) {
+						val mut b = {value: 0}
+						if cond {
+							return &mut b
+						}
+						return p
 					}
-					return p
 				}
 			`,
-			want:  nil,
-			types: map[string]string{"f": "fn <'a>(p: &'a mut {value: number}, cond: boolean) -> &'a mut {value: number}"},
+			want:   nil,
+			locals: map[string]string{"f": "fn <'a>(p: &'a mut {value: number}, cond: boolean) -> &'a mut {value: number}"},
 		},
 		// Stripping reaches through an immutable borrow of a carrier that itself holds a `&mut`
 		// field, so the returned tree owns c as well as a. The owned form is immutable, like
@@ -455,7 +460,13 @@ func TestReturnValueBorrows(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tc.src)
 			require.Equal(t, tc.want, messagesWithSpan(t, errs))
-			require.Equal(t, tc.types, values)
+			if tc.locals == nil {
+				require.Equal(t, tc.types, values)
+			}
+			for local, want := range tc.locals {
+				got, _ := inferLocal(t, tc.src, local)
+				require.Equal(t, want, got)
+			}
 		})
 	}
 }
@@ -498,7 +509,7 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 		// so the store is accepted.
 		"StoreLocalBorrowIntoParamFieldOk": {
 			src: `
-				val f = fn (p: &mut {peer: &mut {value: number}}) {
+				val f = fn (p: &mut {peer: &mut {value: number}}) -> undefined {
 					val mut b = {value: 0}
 					p.peer = &mut b
 				}
@@ -510,7 +521,7 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 		// carries the caller's lifetime, which outlives the frame.
 		"StoreParamBorrowIntoParamFieldOk": {
 			src: `
-				val f = fn (mut p: {peer: &mut {value: number}}, q: &mut {value: number}) {
+				val f = fn (mut p: {peer: &mut {value: number}}, q: &mut {value: number}) -> undefined {
 					p.peer = q
 				}
 			`,
@@ -524,7 +535,7 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 		// E3, as in TestStoreIntoCallerOwnedTarget/MovingIntoALocalAfterAnImmutableStoreConflicts.
 		"StoreCarrierIntoParamFieldMovesComponent": {
 			src: `
-				val f = fn (p: &mut {node: {peer: &mut {value: number}}}) {
+				val f = fn (p: &mut {node: {peer: &mut {value: number}}}) -> undefined {
 					val mut b = {value: 0}
 					p.node = {peer: &mut b}
 					val y = b
@@ -537,8 +548,8 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 		// for the call rather than consuming, so the local outlives the borrow.
 		"BorrowArgToRefParamOk": {
 			src: `
-				val read = fn (x: &mut {value: number}) {}
-				val f = fn () {
+				val read = fn (x: &mut {value: number}) -> undefined {}
+				val f = fn () -> undefined {
 					val mut b = {value: 0}
 					read(&mut b)
 				}
@@ -553,8 +564,8 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 		// into the callee with no escape.
 		"ConsumingArgOwnedValueOk": {
 			src: `
-				val store = fn (x: {value: number}) {}
-				val f = fn () {
+				val store = fn (x: {value: number}) -> undefined {}
+				val f = fn () -> undefined {
 					val a = {value: 0}
 					store(a)
 				}
@@ -573,8 +584,8 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 				fn read(x: &mut {value: number}) -> {value: number} {
 					return {value: 1}
 				}
-				val store = fn (y: {value: number}) {}
-				val f = fn () {
+				val store = fn (y: {value: number}) -> undefined {}
+				val f = fn () -> undefined {
 					val mut b = {value: 0}
 					store(read(&mut b))
 				}
@@ -697,8 +708,8 @@ func TestConnectedComponentMove(t *testing.T) {
 		// A consuming argument moves the component into the callee, which now owns the graph.
 		"ConsumingArgComponentMove": {
 			src: `
-				val store = fn (x: {peer: &mut {value: number}}) {}
-				val f = fn () {
+				val store = fn (x: {peer: &mut {value: number}}) -> undefined {}
+				val f = fn () -> undefined {
 					val mut b = {value: 0}
 					val a = {peer: &mut b}
 					store(a)
@@ -714,8 +725,8 @@ func TestConnectedComponentMove(t *testing.T) {
 		// so b is not moved, and the borrow ends with the call. Moving b into y is accepted.
 		"ComponentMoveConsumesBorrowedLocal": {
 			src: `
-				val store = fn (x: {peer: &mut {value: number}}) {}
-				val f = fn () {
+				val store = fn (x: {peer: &mut {value: number}}) -> undefined {}
+				val f = fn () -> undefined {
 					val mut b = {value: 0}
 					val a = {peer: &mut b}
 					store(a)
@@ -814,8 +825,8 @@ func TestConnectedComponentMove(t *testing.T) {
 		// than a return, because at a return every local is dead. See DeadExternalRefAllowsMove.
 		"MutableAliasOutsideTheComponent": {
 			src: `
-				val store = fn (x: {peer: &mut {x: number}}) {}
-				val f = fn () {
+				val store = fn (x: {peer: &mut {x: number}}) -> undefined {}
+				val f = fn () -> undefined {
 					val mut d = {x: 0}
 					val b = {peer: &mut d}
 					val c = {peer: &mut d}
@@ -856,8 +867,8 @@ func TestConnectedComponentMove(t *testing.T) {
 		// is accepted.
 		"InternalMutableAliasConsumesSharedNode": {
 			src: `
-				val store = fn (x: {l: &{peer: &mut {x: number}}, r: &{peer: &mut {x: number}}}) {}
-				val f = fn () {
+				val store = fn (x: {l: &{peer: &mut {x: number}}, r: &{peer: &mut {x: number}}}) -> undefined {}
+				val f = fn () -> undefined {
 					val mut d = {x: 0}
 					val mut b = {peer: &mut d}
 					val mut c = {peer: &mut d}
@@ -876,8 +887,8 @@ func TestConnectedComponentMove(t *testing.T) {
 		// into y after the call is accepted.
 		"ChainMoveConsumesDeepestNode": {
 			src: `
-				val store = fn (x: {peer: &{peer: &{peer: &{value: number}}}}) {}
-				val f = fn () {
+				val store = fn (x: {peer: &{peer: &{peer: &{value: number}}}}) -> undefined {}
+				val f = fn () -> undefined {
 					val d = {value: 4}
 					val c = {peer: &d}
 					val b = {peer: &c}
@@ -917,8 +928,8 @@ func TestConnectedComponentMove(t *testing.T) {
 		// DeadExternalRefAllowsMove, where the same borrow was dead at a return.
 		"LiveExternalRefOutsideTheComponent": {
 			src: `
-				val store = fn (x: {peer: &{value: number}}) {}
-				val f = fn () {
+				val store = fn (x: {peer: &{value: number}}) -> undefined {}
+				val f = fn () -> undefined {
 					val mut b = {value: 2}
 					val a = {peer: &b}
 					val keep = &b
