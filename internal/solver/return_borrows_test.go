@@ -222,14 +222,16 @@ func TestReturnValueBorrows(t *testing.T) {
 		// first rule. The return stays a borrow, and the signature ties it to the field of p.
 		"ReturnOfALocalAlsoStoredIntoAParam": {
 			src: `
-				fn f<'a>(p: &mut {node: {peer: &'a mut {value: number}}}) -> &'a mut {value: number} {
-					val mut b = {value: 0}
-					p.node = {peer: &mut b}
-					return &mut b
+				fn main() -> undefined {
+					val f = fn (p: &mut {node: {peer: &mut {value: number}}}) {
+						val mut b = {value: 0}
+						p.node = {peer: &mut b}
+						return &mut b
+					}
 				}
 			`,
-			want:  nil,
-			types: map[string]string{"f": "fn <'a>(p: &mut {node: {peer: &'a mut {value: number}}}) -> &'a mut {value: number}"},
+			want:   nil,
+			locals: map[string]string{"f": "fn <'a>(p: &mut {node: {peer: &'a mut {value: number}}}) -> &'a mut {value: number}"},
 		},
 		// The same store made through an immutable borrow leaves the caller reading b through
 		// `p.node.peer` while the return writes it. A write through the return would change what
@@ -257,14 +259,16 @@ func TestReturnValueBorrows(t *testing.T) {
 		// borrows' lifetime under D16's first rule, as in ReturnOfALocalAlsoStoredIntoAParam.
 		"ReturnOfALocalAlsoStoredThroughAnIfElse": {
 			src: `
-				fn f<'a>(cond: boolean, p: &mut {node: {peer: &'a mut {value: number}}}) -> &'a mut {value: number} {
-					val mut b = {value: 0}
-					p.node = {peer: if cond { &mut b } else { &mut b }}
-					return &mut b
+				fn main() -> undefined {
+					val f = fn (cond: boolean, p: &mut {node: {peer: &mut {value: number}}}) {
+						val mut b = {value: 0}
+						p.node = {peer: if cond { &mut b } else { &mut b }}
+						return &mut b
+					}
 				}
 			`,
 			want: nil,
-			types: map[string]string{
+			locals: map[string]string{
 				"f": "fn <'a>(cond: boolean, p: &mut {node: {peer: &'a mut {value: number}}}) -> &'a mut {value: number}",
 			},
 		},

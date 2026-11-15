@@ -25,7 +25,9 @@ func TestMethodLifetimesPerCall(t *testing.T) {
 					p: {x: number},
 					peek<'a>(&'a self) -> &'a {x: number} { return &self.p },
 				}
-				fn read(v: &View) -> &{x: number} { return v.peek() }
+				fn main() -> undefined {
+					val read = fn (v: &View) { return v.peek() }
+				}
 			`,
 			value: "read",
 			want:  "fn <'a>(v: &'a View) -> &'a {x: number}",
@@ -37,9 +39,11 @@ func TestMethodLifetimesPerCall(t *testing.T) {
 					p: {x: number},
 					peek<'a>(&'a self) -> &'a {x: number} { return &self.p },
 				}
-				fn read<'a: 'c, 'b: 'c, 'c>(a: &'a View, b: &'b View, k: boolean) -> &'c {x: number} {
-					val v = if k { a } else { b }
-					return v.peek()
+				fn main() -> undefined {
+					val read = fn (a: &View, b: &View, k: boolean) {
+						val v = if k { a } else { b }
+						return v.peek()
+					}
 				}
 			`,
 			value: "read",
@@ -52,7 +56,9 @@ func TestMethodLifetimesPerCall(t *testing.T) {
 					p: {x: number},
 					edit<'a>(&'a mut self) -> &'a mut {x: number} { return &mut self.p },
 				}
-				fn write(v: &mut View) -> &mut {x: number} { return v.edit() }
+				fn main() -> undefined {
+					val write = fn (v: &mut View) { return v.edit() }
+				}
 			`,
 			value: "write",
 			want:  "fn <'a>(v: &'a mut View) -> &'a mut {x: number}",
@@ -64,8 +70,10 @@ func TestMethodLifetimesPerCall(t *testing.T) {
 					a: {x: number},
 					pick<'r>(&'r self, other: &'r {x: number}) -> &'r {x: number} { return other },
 				}
-				fn first<'a: 'c, 'b: 'c, 'c>(p: &'a Pair, s: &'b {x: number}) -> &'c {x: number} { return p.pick(s) }
-				fn second<'a: 'c, 'b: 'c, 'c>(p: &'a Pair, l: &'b {x: number}) -> &'c {x: number} { return p.pick(l) }
+				fn main() -> undefined {
+					val first = fn (p: &Pair, s: &{x: number}) { return p.pick(s) }
+					val second = fn (p: &Pair, l: &{x: number}) { return p.pick(l) }
+				}
 			`,
 			value: "second",
 			want:  "fn <'a: 'c, 'b: 'c, 'c>(p: &'a Pair, l: &'b {x: number}) -> &'c {x: number}",
@@ -77,9 +85,11 @@ func TestMethodLifetimesPerCall(t *testing.T) {
 					a: {x: number},
 					pick<'r>(&'r self, other: &'r {x: number}) -> &'r {x: number} { return other },
 				}
-				fn both<'a: 'c, 'b: 'c, 'c>(p: &Pair, a: &{x: number}, q: &'a Pair, b: &'b {x: number}) -> &'c {x: number} {
-					val first = p.pick(a)
-					return q.pick(b)
+				fn main() -> undefined {
+					val both = fn (p: &Pair, a: &{x: number}, q: &Pair, b: &{x: number}) {
+						val first = p.pick(a)
+						return q.pick(b)
+					}
 				}
 			`,
 			value: "both",
@@ -93,7 +103,9 @@ func TestMethodLifetimesPerCall(t *testing.T) {
 					peer: &'h {x: number},
 					get(&'h self) -> &'h {x: number} { return self.peer },
 				}
-				fn g<'q>(h: &Holder<'q>) { return h.get() }
+				fn main() -> undefined {
+					val g = fn <'q>(h: &Holder<'q>) { return h.get() }
+				}
 			`,
 			value: "g",
 			want:  "fn <'a>(h: &Holder<'a>) -> &'a {x: number}",
@@ -104,7 +116,9 @@ func TestMethodLifetimesPerCall(t *testing.T) {
 				class K {
 					static pick<'r>(a: &'r {x: number}, b: &'r {x: number}) -> &'r {x: number} { return a },
 				}
-				fn h<'a: 'c, 'b: 'c, 'c>(a: &'a {x: number}, b: &'b {x: number}) -> &'c {x: number} { return K.pick(a, b) }
+				fn main() -> undefined {
+					val h = fn (a: &{x: number}, b: &{x: number}) { return K.pick(a, b) }
+				}
 			`,
 			value: "h",
 			want:  "fn <'a: 'c, 'b: 'c, 'c>(a: &'a {x: number}, b: &'b {x: number}) -> &'c {x: number}",
@@ -116,9 +130,11 @@ func TestMethodLifetimesPerCall(t *testing.T) {
 					p: {x: number},
 					peek<'a>(&'a self) -> &'a {x: number} { return &self.p },
 				}
-				fn read(v: &View) -> &{x: number} {
-					val f = v.peek
-					return f()
+				fn main() -> undefined {
+					val read = fn (v: &View) {
+						val f = v.peek
+						return f()
+					}
 				}
 			`,
 			value: "read",
@@ -127,7 +143,7 @@ func TestMethodLifetimesPerCall(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			values, _, errs := inferSource(t, tt.src)
+			values, errs := inferLocals(t, tt.src, tt.value)
 			require.Empty(t, messagesWithSpan(t, errs))
 			require.Equal(t, tt.want, values[tt.value])
 		})
@@ -186,9 +202,11 @@ func TestAStoredMethodValueBindsItsLifetimesPerCall(t *testing.T) {
 		{
 			name: "a lifetime the receiver does not write stays on the value's binder",
 			src: view + `
-				fn reader(v: &View) {
-					val f = v.id
-					return f
+				fn main() -> undefined {
+					val reader = fn (v: &View) {
+						val f = v.id
+						return f
+					}
 				}
 			`,
 			want: map[string]string{"reader": "fn (v: &View) -> fn <'a>(q: &'a {x: number}) -> &'a {x: number}"},
@@ -196,11 +214,13 @@ func TestAStoredMethodValueBindsItsLifetimesPerCall(t *testing.T) {
 		{
 			name: "each call of the value binds its own lifetime",
 			src: view + `
-				fn both(v: &View, a: &{x: number}, b: &{x: number}) {
-					val f = v.id
-					val ra = f(a)
-					val rb = f(b)
-					return [ra, rb]
+				fn main() -> undefined {
+					val both = fn (v: &View, a: &{x: number}, b: &{x: number}) {
+						val f = v.id
+						val ra = f(a)
+						val rb = f(b)
+						return [ra, rb]
+					}
 				}
 			`,
 			want: map[string]string{"both": "fn <'a, 'b>(v: &View, a: &'a {x: number}, b: &'b {x: number}) -> [&'a {x: number}, &'b {x: number}]"},
@@ -209,10 +229,12 @@ func TestAStoredMethodValueBindsItsLifetimesPerCall(t *testing.T) {
 			// A parameter annotated with its own binder is quantified the same way, so the
 			// annotation's `'a` names neither argument and each call binds it afresh.
 			name: "a callback parameter's binder is instantiated per call",
-			src: `fn both<'b, 'c>(f: fn <'a>(q: &'a {x: number}) -> &'a {x: number}, a: &'b {x: number}, b: &'c {x: number}) -> [&'b {x: number}, &'c {x: number}] {
-				val ra = f(a)
-				val rb = f(b)
-				return [ra, rb]
+			src: `fn main() -> undefined {
+				val both = fn (f: fn <'a>(q: &'a {x: number}) -> &'a {x: number}, a: &{x: number}, b: &{x: number}) {
+					val ra = f(a)
+					val rb = f(b)
+					return [ra, rb]
+				}
 			}`,
 			want: map[string]string{"both": "fn <'b, 'c>(f: fn <'a>(q: &'a {x: number}) -> &'a {x: number}, a: &'b {x: number}, b: &'c {x: number}) -> [&'b {x: number}, &'c {x: number}]"},
 		},
@@ -222,10 +244,12 @@ func TestAStoredMethodValueBindsItsLifetimesPerCall(t *testing.T) {
 			name: "a declared callback type shared by two sites couples neither to the other",
 			src: `type Cb = fn <'a>(q: &'a {x: number}) -> &'a {x: number}
 				fn mk() -> Cb { return fn (q) { return q } }
-				fn both<'a, 'b>(f: Cb, b: &'a {x: number}, c: &'b {x: number}) -> [&'a {x: number}, &'b {x: number}] {
-					val rb = f(b)
-					val rc = f(c)
-					return [rb, rc]
+				fn main() -> undefined {
+					val both = fn (f: Cb, b: &{x: number}, c: &{x: number}) {
+						val rb = f(b)
+						val rc = f(c)
+						return [rb, rc]
+					}
 				}`,
 			want: map[string]string{"both": "fn <'a, 'b>(f: Cb, b: &'a {x: number}, c: &'b {x: number}) -> [&'a {x: number}, &'b {x: number}]"},
 		},
@@ -234,11 +258,13 @@ func TestAStoredMethodValueBindsItsLifetimesPerCall(t *testing.T) {
 			// argument has to outlive each result.
 			name: "a receiver lifetime is shared by every call of the value",
 			src: view + `
-				fn both(v: &View, a: &{x: number}, b: &{x: number}) {
-					val f = v.pick
-					val ra = f(a)
-					val rb = f(b)
-					return [ra, rb]
+				fn main() -> undefined {
+					val both = fn (v: &View, a: &{x: number}, b: &{x: number}) {
+						val f = v.pick
+						val ra = f(a)
+						val rb = f(b)
+						return [ra, rb]
+					}
 				}
 			`,
 			want: map[string]string{"both": "fn <'a: 'd & 'e, 'b: 'd & 'e, 'c: 'd & 'e, 'd, 'e>(v: &'a View, a: &'b {x: number}, b: &'c {x: number}) -> [&'d {x: number}, &'e {x: number}]"},
@@ -250,7 +276,13 @@ func TestAStoredMethodValueBindsItsLifetimesPerCall(t *testing.T) {
 			values, _, errs := inferSource(t, tt.src)
 			require.Empty(t, errorMessagesOf(errs))
 			for name, want := range tt.want {
-				require.Equal(t, want, values[name], name)
+				// A closure bound inside a function body is not a top-level binding, so its
+				// type is read from the body.
+				got, ok := values[name]
+				if !ok {
+					got, _ = inferLocal(t, tt.src, name)
+				}
+				require.Equal(t, want, got, name)
 			}
 		})
 	}
