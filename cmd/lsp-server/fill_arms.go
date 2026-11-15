@@ -14,8 +14,12 @@ import (
 	protocol "github.com/tliron/glsp/protocol_3_16"
 )
 
-// fillArmsTitle is the title of the code action that adds the arms a `match` is missing.
-const fillArmsTitle = "Add missing match arms"
+// fillMatchArmsTitle and fillCatchArmsTitle are the titles of the code action that adds the
+// arms a `match` or a `catch` is missing.
+const (
+	fillMatchArmsTitle = "Add missing match arms"
+	fillCatchArmsTitle = "Add missing catch arms"
+)
 
 // fillArmsRefactorKind is the kind the action is offered under when it is requested at the
 // cursor rather than for a diagnostic.
@@ -27,54 +31,53 @@ const fillArmsRefactorKind = protocol.CodeActionKindRefactorRewrite
 const todoArmBody = `throw "todo"`
 
 // fillArmsActions returns the actions that add missing arms in the document uri. It returns
-// a quick fix for each diagnostic in diags that reports a non-exhaustive `match`. When only
-// asks for refactors, it also returns a refactor for the innermost non-exhaustive `match`
-// containing rng's start, unless a quick fix already covers that `match`. It returns none
-// while the document has changed since the last check, since the edits are offsets into the
-// text that check read.
+// a quick fix for each diagnostic in diags that reports a non-exhaustive `match`, or a value
+// a `catch` rethrows that its enclosing `throws` clause does not admit. When only asks for
+// refactors, it also returns a refactor for the innermost `match` or `try` containing rng's
+// start that leaves a value no arm names, unless a quick fix already covers it. It returns
+// none while the document has changed since the last check, since the edits are offsets into
+// the text that check read.
 func (s *Server) fillArmsActions(
 	uri protocol.DocumentUri,
 	rng protocol.Range,
 	diags []protocol.Diagnostic,
 	only []protocol.CodeActionKind,
 ) []protocol.CodeAction {
-	// Return early when the request asks for neither kind, before taking any lock.
 	wantsFix := wantsCodeActionKind(only, protocol.CodeActionKindQuickFix) && len(diags) > 0
 	wantsRefactor := wantsCodeActionKind(only, fillArmsRefactorKind)
 	if !wantsFix && !wantsRefactor {
 		return nil
 	}
-
-	// Collect the file's non-exhaustive `match` errors from the last check.
 	file, fileErrs, ok := s.checkedFileAt(uri)
 	if !ok {
-		return nil
-	}
-	var errs []*solver.NonExhaustiveMatchError
-	for _, err := range fileErrs {
-		if ne, ok := err.(*solver.NonExhaustiveMatchError); ok {
-			errs = append(errs, ne)
-		}
-	}
-	if len(errs) == 0 {
 		return nil
 	}
 	s.solverMu.RLock()
 	defer s.solverMu.RUnlock()
 
+	targets := armTargets(file, fileErrs)
+	if len(targets) == 0 {
+		return nil
+	}
+	byNode := map[ast.Node]armTarget{}
+	for _, target := range targets {
+		byNode[target.node] = target
+	}
+
 	lineMap := file.src.LineMap()
 	var actions []protocol.CodeAction
-	fixed := set.NewSet[*solver.NonExhaustiveMatchError]()
-
-	// Offer a quick fix for each request diagnostic that one of those errors produced. A
-	// diagnostic is matched to its error by range and message.
+	fixed := set.NewSet[ast.Node]()
 	if wantsFix {
 		for _, diag := range diags {
-			for _, err := range errs {
+			for _, err := range fileErrs {
 				if spanToRange(lineMap, err.Span()) != diag.Range || err.Message() != diag.Message {
 					continue
 				}
-				action, ok := fillArmsAction(file, uri, err)
+				target, ok := byNode[diagnosedNode(err)]
+				if !ok {
+					continue
+				}
+				action, ok := fillArmsAction(file, uri, target)
 				if !ok {
 					continue
 				}
@@ -82,32 +85,104 @@ func (s *Server) fillArmsActions(
 				action.Diagnostics = []protocol.Diagnostic{diag}
 				action.IsPreferred = addr(true)
 				actions = append(actions, action)
-				fixed.Add(err)
+				fixed.Add(target.node)
 			}
 		}
 	}
-	// Offer a refactor for the innermost `match` around the cursor, unless a quick fix
-	// above already covers it.
 	if wantsRefactor {
 		loc := posToLoc(lineMap, rng.Start)
-		var innermost *solver.NonExhaustiveMatchError
-		for _, err := range errs {
-			span := err.Span()
-			if !span.Contains(loc) {
+		var innermost *armTarget
+		for i, target := range targets {
+			if !target.span.Contains(loc) {
 				continue
 			}
-			if innermost == nil || innermost.Span().ContainsSpan(span) {
-				innermost = err
+			if innermost == nil || innermost.span.ContainsSpan(target.span) {
+				innermost = &targets[i]
 			}
 		}
-		if innermost != nil && !fixed.Contains(innermost) {
-			if action, ok := fillArmsAction(file, uri, innermost); ok {
+		if innermost != nil && !fixed.Contains(innermost.node) {
+			if action, ok := fillArmsAction(file, uri, *innermost); ok {
 				action.Kind = addr(fillArmsRefactorKind)
 				actions = append(actions, action)
 			}
 		}
 	}
 	return actions
+}
+
+// armTarget is a `match` or a `try` that leaves values no arm names.
+type armTarget struct {
+	// node is the *ast.MatchExpr or *ast.TryCatchExpr.
+	node ast.Node
+	// span runs from node's start to just past the `}` that closes its arms.
+	span ast.Span
+	// closing is the offset of the `}` that closes node's arms.
+	closing int
+	cases   []*ast.MatchCase
+	// unnamed holds the values no arm names, one arm each.
+	unnamed []soltype.Type
+	// catchAll says a catch-all arm is needed as well.
+	catchAll bool
+	title    string
+}
+
+// armTargets returns the targets in file: each `match` a NonExhaustiveMatchError in errs
+// reports, and each `try` whose block throws a value no catch arm names.
+func armTargets(file checkedFile, errs []compiler.Diagnostic) []armTarget {
+	var targets []armTarget
+	for _, err := range errs {
+		ne, ok := err.(*solver.NonExhaustiveMatchError)
+		if !ok {
+			continue
+		}
+		match, ok := ne.Origin.Node.(*ast.MatchExpr)
+		if !ok {
+			continue
+		}
+		// A `match` span ends just past the `}` that closes its arms.
+		targets = append(targets, armTarget{
+			node:     match,
+			span:     match.Span(),
+			closing:  match.Span().End.Offset - 1,
+			cases:    match.Cases,
+			unnamed:  ne.Unmatched,
+			catchAll: ne.OpenTail != nil,
+			title:    fillMatchArmsTitle,
+		})
+	}
+	for _, try := range file.info.TriesWithUncaughtThrows(file.id) {
+		if len(try.Catch) == 0 {
+			continue
+		}
+		// A `try` span ends with its last arm, before any trailing comma and the `}`.
+		closing := closingBraceAfter(file.src.Contents, armEndOffset(file.src.Contents, try.Catch[len(try.Catch)-1]))
+		if closing < 0 {
+			continue
+		}
+		targets = append(targets, armTarget{
+			node:    try,
+			span:    ast.Span{Start: try.Span().Start, End: ast.Location{Offset: closing + 1}},
+			closing: closing,
+			cases:   try.Catch,
+			unnamed: file.info.UncaughtThrows(try),
+			title:   fillCatchArmsTitle,
+		})
+	}
+	return targets
+}
+
+// diagnosedNode returns the `match` or `try` whose missing arms err reports, and nil when err
+// reports none.
+func diagnosedNode(err compiler.Diagnostic) ast.Node {
+	switch err := err.(type) {
+	case *solver.NonExhaustiveMatchError:
+		if match, ok := err.Origin.Node.(*ast.MatchExpr); ok {
+			return match
+		}
+	case *solver.UnhandledRethrowError:
+		return err.Try
+	}
+	return nil
 }
 
 // checkedFileAt returns the checked file the document uri names, with the type errors the
@@ -160,19 +235,12 @@ func checkedFileOf(co *compiler.CheckOutput, sourceID int) checkedFile {
 	return file
 }
 
-// fillArmsAction returns the code action that adds an arm for each value err reports no arm
-// names, and a catch-all arm when err reports an open tail. The returned action carries no
-// kind. It returns false when err names no `match` in file, or reports nothing such an arm
-// would cover.
-func fillArmsAction(file checkedFile, uri protocol.DocumentUri, err *solver.NonExhaustiveMatchError) (protocol.CodeAction, bool) {
-	match, ok := err.Origin.Node.(*ast.MatchExpr)
-	if !ok {
-		return protocol.CodeAction{}, false
-	}
-
-	// Write a pattern for each value no arm names, then `_` for an open tail.
-	patterns := make([]string, 0, len(err.Unmatched)+1)
-	for _, t := range err.Unmatched {
+// fillArmsAction returns the code action that adds an arm to target for each value no arm
+// names, and a catch-all arm when target needs one. The returned action carries no kind. It
+// returns false when file does not hold target's braces where target places them.
+func fillArmsAction(file checkedFile, uri protocol.DocumentUri, target armTarget) (protocol.CodeAction, bool) {
+	patterns := make([]string, 0, len(target.unnamed)+1)
+	for _, t := range target.unnamed {
 		// A `boolean` that no arm names holds two values, and a literal arm for each reads
 		// better than an annotated binding.
 		if prim, ok := t.(*soltype.PrimType); ok && prim.Prim == soltype.BoolPrim {
@@ -181,22 +249,20 @@ func fillArmsAction(file checkedFile, uri protocol.DocumentUri, err *solver.NonE
 		}
 		patterns = append(patterns, witnessPattern(file, t))
 	}
-	if err.OpenTail != nil {
+	if target.catchAll {
 		patterns = append(patterns, "_")
 	}
 	if len(patterns) == 0 {
 		return protocol.CodeAction{}, false
 	}
-	// Give each pattern the placeholder body and work out where the arms go.
 	arms := make([]string, len(patterns))
 	for i, p := range patterns {
 		arms[i] = p + " => " + todoArmBody
 	}
-	edits, ok := armInsertion(file.src.Contents, match.Span(), match.Cases, arms)
+	edits, ok := armInsertion(file.src.Contents, target.span.Start.Offset, target.closing, target.cases, arms)
 	if !ok {
 		return protocol.CodeAction{}, false
 	}
-	// Convert the byte-offset edits to LSP ranges.
 	lineMap := file.src.LineMap()
 	textEdits := make([]protocol.TextEdit, len(edits))
 	for i, e := range edits {
@@ -204,7 +270,7 @@ func fillArmsAction(file checkedFile, uri protocol.DocumentUri, err *solver.NonE
 		textEdits[i] = protocol.TextEdit{Range: spanToRange(lineMap, span), NewText: e.text}
 	}
 	return protocol.CodeAction{
-		Title: fillArmsTitle,
+		Title: target.title,
 		Edit: &protocol.WorkspaceEdit{
 			Changes: map[protocol.DocumentUri][]protocol.TextEdit{uri: textEdits},
 		},
@@ -218,8 +284,8 @@ type textEdit struct {
 }
 
 // armInsertion returns the edits that add arms after the last of cases, inside the braces
-// of the construct whose span is span in contents. span ends just past the construct's
-// closing `}`. The new arms copy the layout of the existing ones:
+// of a construct in contents. start is the construct's first byte and closing is the offset
+// of the `}` that closes its arms. The new arms copy the layout of the existing ones:
 //
 //   - Arms written one per line get one new line each, at the last arm's indentation.
 //   - Arms written on one line get the new arms on that line.
@@ -228,20 +294,17 @@ type textEdit struct {
 //
 // With no cases, the arms go one per line, indented one level past the line the construct
 // starts on, each with a trailing comma. It returns false when contents does not hold the
-// braces where span and cases place them.
-func armInsertion(contents string, span ast.Span, cases []*ast.MatchCase, arms []string) ([]textEdit, bool) {
-	closing := span.End.Offset - 1
+// braces where start, closing and cases place them.
+func armInsertion(contents string, start, closing int, cases []*ast.MatchCase, arms []string) ([]textEdit, bool) {
 	if closing < 0 || closing >= len(contents) || contents[closing] != '}' {
 		return nil, false
 	}
-
-	// With no arms, replace whatever lies between the braces with one arm per line.
 	if len(cases) == 0 {
 		opening := skipSpaceBefore(contents, closing) - 1
 		if opening < 0 || contents[opening] != '{' {
 			return nil, false
 		}
-		indent := lineIndent(contents, span.Start.Offset)
+		indent := lineIndent(contents, start)
 		inner := indent + indentUnit(contents)
 		var b strings.Builder
 		for _, arm := range arms {
@@ -251,14 +314,8 @@ func armInsertion(contents string, span ast.Span, cases []*ast.MatchCase, arms [
 		return []textEdit{{start: opening + 1, end: closing, text: b.String()}}, true
 	}
 
-	// Find where the last arm ends and whether a trailing comma follows it.
 	last := cases[len(cases)-1]
-	armEnd := last.Pattern.Span().End.Offset
-	if body, ok := ucs.BodySpan(last.Body); ok {
-		// The span of a parenthesized body leaves out its parentheses, so `(x + 1)` would
-		// end before the `)`.
-		armEnd = parenthesizedEnd(contents, body)
-	}
+	armEnd := armEndOffset(contents, last)
 	if armEnd > closing {
 		return nil, false
 	}
@@ -273,7 +330,6 @@ func armInsertion(contents string, span ast.Span, cases []*ast.MatchCase, arms [
 		after = armEnd
 	}
 
-	// With the last arm on the closing brace's line, add the new arms on that line.
 	if !strings.Contains(contents[after:closing], "\n") {
 		if trailingComma {
 			return []textEdit{{start: after, end: after, text: " " + strings.Join(arms, ", ") + ","}}, true
@@ -281,8 +337,8 @@ func armInsertion(contents string, span ast.Span, cases []*ast.MatchCase, arms [
 		return []textEdit{{start: after, end: after, text: ", " + strings.Join(arms, ", ")}}, true
 	}
 
-	// Otherwise add one arm per line. The arms go at the end of the line the last arm ends
-	// on, after any comment there, so a line comment stays with the arm it follows.
+	// The arms go at the end of the line the last arm ends on, after any comment there, so a
+	// line comment stays with the arm it follows.
 	lineEnd := after + strings.IndexByte(contents[after:closing], '\n')
 	indent := lineIndent(contents, last.Pattern.Span().Start.Offset)
 	var b strings.Builder
@@ -305,6 +361,45 @@ func armInsertion(contents string, span ast.Span, cases []*ast.MatchCase, arms [
 		{start: armEnd, end: armEnd, text: ","},
 		{start: lineEnd, end: lineEnd, text: b.String()},
 	}, true
+}
+
+// armEndOffset returns the offset just past the end of arm's body in contents, or of its
+// pattern when it has no body.
+func armEndOffset(contents string, arm *ast.MatchCase) int {
+	body, ok := ucs.BodySpan(arm.Body)
+	if !ok {
+		return arm.Pattern.Span().End.Offset
+	}
+	// The span of a parenthesized body leaves out its parentheses, so `(x + 1)` would end
+	// before the `)`.
+	return parenthesizedEnd(contents, body)
+}
+
+// closingBraceAfter returns the offset of the first `}` at or after offset in contents,
+// skipping whitespace, commas and comments, and -1 when anything else comes first.
+func closingBraceAfter(contents string, offset int) int {
+	for i := offset; i < len(contents); i++ {
+		switch {
+		case contents[i] == '}':
+			return i
+		case strings.IndexByte(" \t\r\n,", contents[i]) >= 0:
+		case strings.HasPrefix(contents[i:], "//"):
+			n := strings.IndexByte(contents[i:], '\n')
+			if n < 0 {
+				return -1
+			}
+			i += n
+		case strings.HasPrefix(contents[i:], "/*"):
+			n := strings.Index(contents[i+2:], "*/")
+			if n < 0 {
+				return -1
+			}
+			i += n + 3
+		default:
+			return -1
+		}
+	}
+	return -1
 }
 
 // parenthesizedEnd returns the offset just past the parentheses that wrap span in contents,

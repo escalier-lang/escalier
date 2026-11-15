@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"slices"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -50,6 +52,9 @@ type Info struct {
 	// indexSegments holds indexSegment's answer for each index key it read through the key's
 	// recorded type. It is nil until the first such key.
 	indexSegments map[ast.Expr]indexSegmentAnswer
+	// uncaught holds, per `try` whose block throws a value no catch arm names, the members
+	// of what the block throws that no arm names. recordUncaught fills it.
+	uncaught map[*ast.TryCatchExpr][]soltype.Type
 	// ctx is the Context of the run that recorded this table, or nil for a table built
 	// by NewInfo. MemberObject reads the class and alias registries it holds.
 	ctx *Context
@@ -65,7 +70,32 @@ func NewInfo() *Info {
 		decls:       map[*ast.IdentExpr]ast.Node{},
 		mutPlaces:   set.NewSet[ast.Node](),
 		inertMut:    set.NewSet[*ast.IdentPat](),
+		uncaught:    map[*ast.TryCatchExpr][]soltype.Type{},
 	}
+}
+
+// UncaughtThrows returns the members of what the try block of e throws that no catch arm
+// names, in the order the thrown union lists them. A member an arm names is left out even
+// when that arm's guard or a sub-pattern can fail. It returns nil when every member is
+// named, and when e has an unguarded catch-all arm. `try { g() } catch { A{} => 1 }` over a
+// `g` declared `throws A | B` returns `B`.
+func (i *Info) UncaughtThrows(e *ast.TryCatchExpr) []soltype.Type {
+	return i.uncaught[e]
+}
+
+// TriesWithUncaughtThrows returns, ordered by where they start, the try/catch expressions in
+// the file sourceID names for which UncaughtThrows returns a member.
+func (i *Info) TriesWithUncaughtThrows(sourceID int) []*ast.TryCatchExpr {
+	var tries []*ast.TryCatchExpr
+	for e := range i.uncaught {
+		if e.Span().SourceID == sourceID {
+			tries = append(tries, e)
+		}
+	}
+	slices.SortFunc(tries, func(a, b *ast.TryCatchExpr) int {
+		return a.Span().Start.Offset - b.Span().Start.Offset
+	})
+	return tries
 }
 
 // AbsentKeys returns the keys the runtime test of the object pattern p also checks are
