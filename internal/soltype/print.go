@@ -1883,24 +1883,12 @@ func (p *namedPrinter) scopeLifetimeNames(lps []*LifetimeParam) func() {
 // lifetime-sort twin of typeParamBinders, joined into the same combined quantifier
 // prefix so a method renders `fn <U, 'a>(...)`.
 func (p *namedPrinter) lifetimeParamBinders(lps []*LifetimeParam) []string {
-	binders := make([]string, len(lps))
-	for i, lp := range lps {
-		s := p.printLifetime(lp.Var) // the registered source name, else 'l{ID}
-		if len(lp.Bounds) > 0 {
-			rendered := make([]string, len(lp.Bounds))
-			for j, b := range lp.Bounds {
-				rendered[j] = p.printLifetime(b)
-			}
-			s += ": " + strings.Join(rendered, " & ")
-		}
-		binders[i] = s
-	}
-	return binders
+	return p.lifetimeParamBindersWith(lps, nil)
 }
 
-// lifetimeParamBindersWith renders each of lps as lifetimeParamBinders does, with the bounds
-// extra lists for the parameter's variable added after the ones it declares. A bound already
-// declared is not repeated.
+// lifetimeParamBindersWith renders each of lps as a binder string, as lifetimeParamBinders
+// describes, with the bounds extra lists for the parameter's variable after the ones it
+// declares. A bound already declared is not repeated. A nil extra adds nothing.
 func (p *namedPrinter) lifetimeParamBindersWith(lps []*LifetimeParam, extra map[*LifetimeVar][]*LifetimeVar) []string {
 	binders := make([]string, len(lps))
 	for i, lp := range lps {

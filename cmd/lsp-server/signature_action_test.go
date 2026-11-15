@@ -262,9 +262,6 @@ func TestSignatureAction(t *testing.T) {
 	}
 }
 
-// TestSignatureActionStaleDocument asserts that the action is not offered while the
-// document holds an edit the last check has not read, since its edits are offsets into the
-// text that check read.
 // TestWrittenNamedLifetimeSignatureChecks asserts that the signature the code action writes
 // for a method that names a lifetime checks without a diagnostic.
 func TestWrittenNamedLifetimeSignatureChecks(t *testing.T) {
@@ -275,6 +272,9 @@ func TestWrittenNamedLifetimeSignatureChecks(t *testing.T) {
 	require.Empty(t, awaitDiagnostics(t, published, uri, 1))
 }
 
+// TestSignatureActionStaleDocument asserts that the action is not offered while the
+// document holds an edit the last check has not read, since its edits are offsets into the
+// text that check read.
 func TestSignatureActionStaleDocument(t *testing.T) {
 	src := "fn noop(x: number) {}"
 	s := integrationServer(t, map[string]string{"bin/main.esc": src})
