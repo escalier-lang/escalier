@@ -2,6 +2,7 @@ import * as monaco from 'monaco-editor-core';
 import * as lsp from 'vscode-languageserver-protocol';
 
 import { registerBasicLanguages } from './basic-languages';
+import { createCodeActionProvider } from './code-actions';
 import {
     type CompletionSuggestion,
     provideCompletionItems,
@@ -9,6 +10,7 @@ import {
 } from './completions';
 import type { Client } from './lsp-client/client';
 import { monarchLanguage } from './monarch-language';
+import { lspRangeToMonacoRange, monacoPosToLspPos } from './ranges';
 import {
     coalesced,
     createSemanticTokensProvider,
@@ -50,22 +52,6 @@ type ErrorMesage = {
     message: string;
     span: Span;
 };
-
-function monacoPosToLspPos(position: monaco.Position): lsp.Position {
-    return {
-        line: position.lineNumber - 1, // LSP uses 0-based line numbers
-        character: position.column - 1, // LSP uses 0-based character indices
-    };
-}
-
-function lspRangeToMonacoRange(range: lsp.Range): monaco.Range {
-    return new monaco.Range(
-        range.start.line + 1,
-        range.start.character + 1,
-        range.end.line + 1,
-        range.end.character + 1,
-    );
-}
 
 export function setupLanguage(
     client: Client,
@@ -117,8 +103,13 @@ export function setupLanguage(
         }
     }
 
+    // The diagnostics the server last published for each document, keyed by URI. A
+    // code action request sends them back with the `data` the markers drop.
+    const publishedDiagnostics = new Map<string, lsp.Diagnostic[]>();
+
     client.onTextDocumentPublishDiagnostics(
         (params: lsp.PublishDiagnosticsParams) => {
+            publishedDiagnostics.set(params.uri, params.diagnostics);
             const models = monaco.editor.getModels();
 
             const model = models.find(
@@ -370,6 +361,25 @@ export function setupLanguage(
             };
         },
     });
+
+    const codeActionOptions = capabilities.codeActionProvider;
+    if (codeActionOptions) {
+        monaco.languages.registerCodeActionProvider(
+            languageID,
+            createCodeActionProvider({
+                request: (params) => client.textDocumentCodeAction(params),
+                flushPendingChanges,
+                publishedDiagnostics: (uri) =>
+                    publishedDiagnostics.get(uri) ?? [],
+            }),
+            {
+                providedCodeActionKinds:
+                    typeof codeActionOptions === 'object'
+                        ? codeActionOptions.codeActionKinds
+                        : undefined,
+            },
+        );
+    }
 
     const signatureHelpOptions = capabilities.signatureHelpProvider;
     if (signatureHelpOptions) {

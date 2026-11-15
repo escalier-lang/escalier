@@ -2,12 +2,11 @@ import { describe, expect, test, vi } from 'vitest';
 import * as lsp from 'vscode-languageserver-protocol';
 
 import {
-    type MonacoRange,
     lspKindToMonacoKind,
-    lspRangeToMonacoRange,
     provideCompletionItems,
     resolveCompletionItem,
 } from './completions';
+import { type MonacoRange, lspRangeToMonacoRange } from './ranges';
 
 const defaultRange: MonacoRange = {
     startLineNumber: 1,
@@ -311,21 +310,6 @@ describe('lspKindToMonacoKind', () => {
         expect(lspKindToMonacoKind(undefined)).toBe(
             lsp.CompletionItemKind.Text,
         );
-    });
-});
-
-describe('lspRangeToMonacoRange', () => {
-    test('converts 0-based LSP range to 1-based Monaco range', () => {
-        const lspRange: lsp.Range = {
-            start: { line: 2, character: 5 },
-            end: { line: 2, character: 10 },
-        };
-        expect(lspRangeToMonacoRange(lspRange)).toEqual({
-            startLineNumber: 3,
-            startColumn: 6,
-            endLineNumber: 3,
-            endColumn: 11,
-        });
     });
 });
 

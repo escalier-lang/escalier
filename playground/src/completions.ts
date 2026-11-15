@@ -1,11 +1,6 @@
 import * as lsp from 'vscode-languageserver-protocol';
 
-export type MonacoRange = {
-    startLineNumber: number;
-    startColumn: number;
-    endLineNumber: number;
-    endColumn: number;
-};
+import { type MonacoRange, lspRangeToMonacoRange } from './ranges';
 
 // Monaco's CompletionItemInsertTextRule.InsertAsSnippet = 4
 const INSERT_AS_SNIPPET = 4;
@@ -31,15 +26,6 @@ export function lspKindToMonacoKind(kind?: lsp.CompletionItemKind): number {
     // LSP and Monaco use the same integer values for CompletionItemKind.
     // Default to Text (1) for undefined.
     return kind ?? lsp.CompletionItemKind.Text;
-}
-
-export function lspRangeToMonacoRange(range: lsp.Range): MonacoRange {
-    return {
-        startLineNumber: range.start.line + 1,
-        startColumn: range.start.character + 1,
-        endLineNumber: range.end.line + 1,
-        endColumn: range.end.character + 1,
-    };
 }
 
 export async function provideCompletionItems(
