@@ -643,7 +643,7 @@ func TestInferKeyofAnnotationStaysSymbolic(t *testing.T) {
 	}{
 		{
 			name: "InlineObject",
-			src:  `val h = fn (k: keyof {x: number, y: string}) {}`,
+			src:  `val h = fn (k: keyof {x: number, y: string}) -> undefined {}`,
 			want: map[string]string{"h": "fn (k: keyof {x: number, y: string}) -> undefined"},
 		},
 		{
@@ -670,7 +670,7 @@ func TestInferKeyofAnnotationStaysSymbolic(t *testing.T) {
 // keys of its own.
 func TestInferKeyofNested(t *testing.T) {
 	t.Run("TypeParamInSignature", func(t *testing.T) {
-		values, _, errs := inferSource(t, `val f = fn <T>(k: keyof keyof T) {}`)
+		values, _, errs := inferSource(t, `val f = fn <T>(k: keyof keyof T) -> undefined {}`)
 		require.Empty(t, errs)
 		require.Equal(t, "fn <T>(k: keyof keyof T) -> undefined", values["f"])
 	})
@@ -1377,12 +1377,12 @@ func TestInferIndexStaysSymbolic(t *testing.T) {
 		},
 		{
 			name: "InlineObjectTarget",
-			src:  `val h = fn (k: {x: number, y: string}["x"]) {}`,
+			src:  `val h = fn (k: {x: number, y: string}["x"]) -> undefined {}`,
 			want: map[string]string{"h": `fn (k: {x: number, y: string}["x"]) -> undefined`},
 		},
 		{
 			name: "KeyofIndex",
-			src:  `val g = fn <T>(k: T[keyof T]) {}`,
+			src:  `val g = fn <T>(k: T[keyof T]) -> undefined {}`,
 			want: map[string]string{"g": "fn <T>(k: T[keyof T]) -> undefined"},
 		},
 	}
@@ -2088,12 +2088,12 @@ func TestInferCondSignatureStaysSymbolic(t *testing.T) {
 	}{
 		{
 			name: "TypeParamCheck",
-			src:  `val f = fn <T>(x: if T : number { string } else { boolean }) {}`,
+			src:  `val f = fn <T>(x: if T : number { string } else { boolean }) -> undefined {}`,
 			want: map[string]string{"f": "fn <T>(x: if T : number { string } else { boolean }) -> undefined"},
 		},
 		{
 			name: "TypeParamExtends",
-			src:  `val g = fn <T>(x: if number : T { string } else { boolean }) {}`,
+			src:  `val g = fn <T>(x: if number : T { string } else { boolean }) -> undefined {}`,
 			want: map[string]string{"g": "fn <T>(x: if number : T { string } else { boolean }) -> undefined"},
 		},
 	}
@@ -2609,7 +2609,7 @@ func TestInferCondDistribution(t *testing.T) {
 // renders the way the source wrote it: the Extends operand shows the `infer U` binder and the Then
 // branch shows the bare reference `U`.
 func TestInferCondInferStaysSymbolic(t *testing.T) {
-	values, _, errs := inferSource(t, `val f = fn <T>(x: if T : [infer U] { U } else { boolean }) {}`)
+	values, _, errs := inferSource(t, `val f = fn <T>(x: if T : [infer U] { U } else { boolean }) -> undefined {}`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn <T>(x: if T : [infer U] { U } else { boolean }) -> undefined", values["f"])
 }

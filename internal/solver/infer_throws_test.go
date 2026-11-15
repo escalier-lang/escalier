@@ -74,8 +74,8 @@ func TestInferThrowsRequiresAClause(t *testing.T) {
 		},
 		{
 			name:     "ThrowInAClauselessFunctionExpression",
-			src:      `val f = fn () { throw "x" }`,
-			wantErrs: []string{"1:23-1:26: the enclosing function can throw `\"x\"`, but it doesn't declare it; add `throws string` to the enclosing function's signature"},
+			src:      `val f = fn () -> never { throw "x" }`,
+			wantErrs: []string{"1:32-1:35: the enclosing function can throw `\"x\"`, but it doesn't declare it; add `throws string` to the enclosing function's signature"},
 		},
 		{
 			name:     "ThrowInAClauselessMethod",

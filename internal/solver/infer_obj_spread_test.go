@@ -150,7 +150,7 @@ func TestInferObjectSpreadSignatureStaysSymbolic(t *testing.T) {
 		},
 		{
 			name: "InlineOperand",
-			src:  `val g = fn (x: {...{a: number}, b: string}) {}`,
+			src:  `val g = fn (x: {...{a: number}, b: string}) -> undefined {}`,
 			want: map[string]string{"g": "fn (x: {...{a: number}, b: string}) -> undefined"},
 		},
 	}

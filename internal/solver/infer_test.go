@@ -465,7 +465,7 @@ func TestInferModuleSCCOrdering(t *testing.T) {
 			// component is inferred first, so the call sees its concrete type.
 			name: "OutOfOrderFuncReference",
 			src: `
-				val caller = fn (n: number) { return callee(n) }
+				val caller = fn (n: number) -> number { return callee(n) }
 				fn callee(n: number) -> number { return n }
 			`,
 			want: map[string]string{
@@ -478,7 +478,7 @@ func TestInferModuleSCCOrdering(t *testing.T) {
 			// never returns, so its return type coalesces to never. It resolves
 			// because the SCC driver pre-binds foo to a var before its body.
 			name: "SelfRecursive",
-			src:  `val foo = fn (x: number) { return foo(x) }`,
+			src:  `val foo = fn (x: number) -> never { return foo(x) }`,
 			want: map[string]string{"foo": "fn (x: number) -> never"},
 		},
 		{

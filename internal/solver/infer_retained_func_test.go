@@ -1743,7 +1743,7 @@ func TestStaticFuncKept(t *testing.T) {
 	src := `declare fn onClick(handler: 'static fn () -> undefined) -> undefined
 var sink: fn () -> undefined = fn () {}
 fn handle() -> undefined {}
-val handleExpr = fn () {}
+val handleExpr = fn () -> undefined {}
 declare fn mk() -> fn () -> undefined
 fn setup() -> undefined {
     onClick(handle)
