@@ -14,7 +14,7 @@ Terms and rule names such as F2 come from
 [planning/ownership_rules/requirements.md](../ownership_rules/requirements.md).
 Rules A1 to A8 and G1 to G5 come from
 [planning/ownership_extensions/design.md](../ownership_extensions/design.md).
-The rules this document adds are numbered C1 to C10.
+The rules this document adds are numbered C1 to C11.
 
 ## 2. Problem
 
@@ -49,9 +49,12 @@ Three goals follow:
 3. A resource that is never disposed is reported, so forgetting the cleanup is
    caught.
 
-Goal 2 is a soundness property and holds on every accepted program. Goal 3 is
-checked where the checker can see the resource's type, and section 9 lists where
-it cannot.
+Goal 2 is a soundness property. It holds on every accepted program apart from
+two gaps: a direct call to a dispose method that borrows its receiver, which
+section 4.3 covers with a lint, and the copying `Array` methods until
+[#2788](https://github.com/escalier-lang/escalier/issues/2788) lands, which
+section 4.8 describes. Goal 3 is checked where the checker can see the
+resource's type, and section 6 lists where it cannot.
 
 ## 3. Background
 
@@ -144,6 +147,15 @@ stop a program from using a value after disposing it.
   ends the value's lifetime, and the compiler rejects a later use. `discard self`
   inside such a method skips `deinit`.
 - *Hylo* consumes a value through a `sink` parameter and rejects a later use.
+- [Congard, Munch-Maccagnoni and Douence](https://arxiv.org/abs/2510.23517)
+  (ESOP 2026) give a formal model of C++ and Rust destructors with exceptions.
+  When every resource type has a destructor, a raise frees what is in scope in
+  reverse order and every resource is freed exactly once. The model needs
+  destructors that cannot raise and exceptions that hold no resources. A `move`
+  changes the order destructors run in, which a program needs in order to free
+  resources in anything other than reverse order. A closure that captures a
+  resource is itself a resource, of a different type from a closure that can be
+  copied.
 
 **Linear types.** A *linear* value must be consumed exactly once, which rules
 out forgetting it as well as using it twice.
@@ -271,8 +283,8 @@ for path in paths {
 }                      // each `file` is disposed before the next opens
 ```
 
-A resource that must outlive the loop goes into a `DisposableStack`, as section
-4.8 describes.
+A resource that must outlive the loop goes into an array or a
+`DisposableStack`, as section 4.8 describes.
 
 **C2. Deferred code runs at exit and sees the bindings as they are then.** The
 whole deferral is evaluated when the block exits, as in Zig and Swift. Go
@@ -289,7 +301,7 @@ label = "second"
 **C3. Deferred code cannot leave the deferral.** `return`, and a `break` or
 `continue` that targets a loop outside the deferral, are rejected inside
 deferred code. So is `yield`. `await` is accepted only inside an `async fn` or
-`async gen fn`, by C10. Swift and Zig impose the same restriction. JavaScript lets
+`async gen fn`, by C11. Swift and Zig impose the same restriction. JavaScript lets
 a `finally` block `return`, which discards the exception in flight, and that is
 the behaviour C3 rules out.
 
@@ -357,6 +369,34 @@ is `self`. Calling the method directly on a type whose receiver is `&self` or
 `&mut self` leaves `x` usable, which is the one way to reach a disposed value
 in an accepted program. A lint suggests `dispose(x)` at such a call.
 
+A resource held in a field or an array slot cannot be moved out through a
+borrow, so a `&mut self` method has no way to dispose the connection in
+`self.conn` and store a new one. The prelude adds `replace` for this, as Rust
+has `mem::replace`:
+
+```esc
+export declare fn replace<T>(place: &mut T, value: T) -> T
+```
+
+`replace(&mut p, v)` moves `v` into the place `p` and returns the value `p` held,
+owned:
+
+```esc
+class Client {
+    conn: Conn,
+    [Symbol.dispose](self) -> undefined { dispose(self.conn) },
+    reconnect(&mut self, url: string) -> undefined throws NetError {
+        val old = replace(&mut self.conn, Conn.open(url))
+        dispose(old)
+    },
+}
+```
+
+JavaScript has no reference to a place, so `replace` is an intrinsic. Codegen
+evaluates `value` first, then reads the place into a temporary and assigns the
+place, as in `const $v = Conn.open(url); const old = this.conn; this.conn = $v;`.
+If `Conn.open` raises, the place still holds the old connection.
+
 ### 4.4 Resource types
 
 **C4. A class whose dispose method consumes its receiver is a resource type.**
@@ -387,6 +427,27 @@ number of levels of ownership:
   types.
 - `{file: &File}`, `fn () -> File` and `Promise<File>` are not. A borrow does
   not own its referent, and functions and promises are value types.
+
+A closure that moves a resource it captures owns that resource, so it is a
+resource too. By D2 it can be called once, and calling it consumes it, so C6
+requires it to be called or moved on every path. Its type is a `move fn` type
+from [#2585](https://github.com/escalier-lang/escalier/issues/2585), which F2
+never copies:
+
+```esc
+fn closer(file: File) -> move fn () -> undefined {
+    return move fn () { dispose(file) }
+}
+
+fn f(path: string) {
+    val close = closer(File.open(path))
+    defer close()
+}
+```
+
+Until #2585 lands, a closure that moves a resource capture is rejected, since an
+ordinary `fn` value can be copied and a copy that disposes its capture would
+dispose it twice.
 
 A class that owns a resource in a field must itself be a resource type, since
 nothing else can dispose the field once an instance is dropped:
@@ -555,9 +616,21 @@ its `suppressed` field rather than lost, as a raising `finally` would lose it.
 A resource type's dispose method declared with a `throws` clause is reported at
 the declaration, with a note that `dispose` has nowhere to send it.
 
+**C10. A raised value holds no resource.** A `throw` whose operand has a
+resource type is rejected, and so is a promise type whose rejection type is a
+resource type. A catch arm binds what it catches as `unknown`, so C6 could never
+require the arm to dispose it, and the raise frees what is in scope while the
+thrown value is still on its way out:
+
+```esc
+throw ConnectError(conn)
+// ERROR: a thrown value cannot hold the resource 'conn'; dispose it and throw
+// what describes the failure, such as `ConnectError(conn.url)`
+```
+
 ### 4.6 Async cleanup and generators
 
-**C10. A deferral may `await` inside an `async fn` or `async gen fn`.** The
+**C11. A deferral may `await` inside an `async fn` or `async gen fn`.** The
 `await` is written in the deferral, so every suspension point in the function
 is still visible in its source:
 
@@ -648,12 +721,51 @@ declaration runs. A value whose `[Symbol.dispose]` is missing fails at the call
 to `dispose` at exit. The checker has already required `T: Disposable` there,
 so only a value whose type lies about it reaches that failure.
 
-### 4.8 `DisposableStack` for a dynamic number of resources
+### 4.8 Collections of resources
 
 A deferral is attached to a block, so resources that must live until a later
-point, and whose number is decided at run time, are collected in a
-`DisposableStack`. The interop overlay retypes its members so that the stack
-owns what it holds:
+point, and whose number is decided at run time, are collected in an array or a
+`DisposableStack`.
+
+An array of resources is a resource type by C4, so C6 requires it to be
+consumed. `push` takes its items by value and moves a resource in, and `pop`
+hands one back owned. The prelude adds `disposeAll`, which disposes every
+element:
+
+```esc
+export declare fn disposeAll<T: Disposable>(resources: Array<T>) -> undefined
+```
+
+```esc
+fn mergeAll(paths: Array<string>) -> undefined throws IOError {
+    val mut files: Array<File> = []
+    defer disposeAll(files)
+    for path in paths {
+        files.push(File.open(path))
+    }
+    merge(&files)
+}
+```
+
+By C5, `files` stays usable after the `defer`, so the loop can push into it.
+`disposeAll` disposes the newest element first, as a block's deferrals run, and
+keeps going when one raises a value no signature named. It lowers to a
+`DisposableStack` that takes every element and is then disposed, so those
+errors combine into a `SuppressedError`. A loop of `dispose` calls would stop at
+the first raise and leave the remaining elements open.
+
+An array owns each element in exactly one slot only if no method makes a second
+owner. `slice`, `filter`, `concat`, `flat`, `toReversed`, `toSorted`,
+`toSpliced` and `with` take `&self` and return an owned `Array<T>`, so the copy
+and the receiver both own each element they share. Goal 2 needs those methods
+to return borrows, as
+[#2788](https://github.com/escalier-lang/escalier/issues/2788) proposes. Until
+then, a program can read a resource through a copy after `disposeAll` has
+consumed the original.
+
+A `DisposableStack` holds resources of different types, and values paired with
+a disposer of the program's choosing through `adopt`. The interop overlay
+retypes its members so that the stack owns what it holds:
 
 ```esc
 declare class DisposableStack {
@@ -808,12 +920,6 @@ program holds would be noise.
   Closing the hole needs a bound saying a type parameter may be instantiated
   with a resource, with C6 applied to the body under that bound. The proposal is
   to accept the hole in the first version.
-- **Closures that take a resource.** A returned closure moves the owned values it
-  captures, but functions are value types and can be copied. A copied closure
-  that disposes its capture would dispose it twice. Until `move fn`
-  ([#2585](https://github.com/escalier-lang/escalier/issues/2585)) gives such a
-  closure a type that cannot be copied, a closure that moves a resource capture
-  is rejected.
 - **Promises of resources.** `Promise<File>` is a value type, so a promise
   dropped without being awaited leaks the file it settles to. C6 starts to apply
   when the promise is awaited and the result bound. Section 8.4 of the ownership
@@ -821,8 +927,11 @@ program holds would be noise.
   be extended to a promise whose fulfilment type is a resource.
 - **Sugar for acquire-then-defer.** If `val x = acquire()` followed by
   `defer dispose(x)` proves common enough to want one line, a form such as
-  `defer val x = acquire()` could register `dispose(x)` and bind `x`. This waits
-  on usage.
+  `defer val x = acquire()` could register `dispose(x)` and bind `x`. A variant
+  that names its disposer, such as `defer(close) val x = acquire()`, would
+  register `close(x)` and give any value a disposer at the binding. Both are
+  sugar for a binding followed by a `defer`, so C5 and C7 apply unchanged. This
+  waits on usage.
 - **`errdefer`**, as section 5.3 describes.
 
 ## 7. Implementation plan
@@ -832,7 +941,8 @@ program holds would be noise.
    `continue` that leaves the deferral, by C3.
 2. **Checking and codegen of deferred code.** Check deferred code against a
    `never` throws sink, by C9, and accept `await` in it only inside an async
-   body, by C10. Add `dispose` and `disposeAsync` to the prelude. Lower a block
+   body, by C11. Add `dispose`, `disposeAsync`, `disposeAll` and the `replace`
+   intrinsic to the prelude. Lower a block
    with deferrals to a `DisposableStack` or `AsyncDisposableStack` with the
    downlevel helper, as section 4.7 describes. Fixture tests cover the order of
    deferrals, each kind of exit, and an unknown throw from a disposer producing
@@ -844,9 +954,13 @@ program holds would be noise.
 4. **Resource types.** Mark a class a resource type by C4, extend that to object,
    tuple and array types that own one, and report a class that owns a resource
    but does not consume itself on disposal. Add the C6 check on every exit edge,
-   raise edges included.
-5. **`DisposableStack`.** Retype `DisposableStack` and `AsyncDisposableStack` in
-   the interop overlay, as section 4.8 describes.
+   raise edges included, and reject a raised value that holds a resource, by
+   C10. Reject a closure that moves a resource capture until `move fn`
+   ([#2585](https://github.com/escalier-lang/escalier/issues/2585)) lands, then
+   type it as a resource.
+5. **Collections.** Retype `DisposableStack` and `AsyncDisposableStack` in the
+   interop overlay, as section 4.8 describes. Goal 2 for arrays of resources
+   depends on [#2788](https://github.com/escalier-lang/escalier/issues/2788).
 6. **`finally`.** Report `finally` with the fix-it of section 4.9, then remove it
    from the parser a release later. Update
    [06 Error Handling](../../docs/06_error_handling.md) for `defer`, and the
