@@ -38,11 +38,14 @@ func (s *Server) fillArmsActions(
 	diags []protocol.Diagnostic,
 	only []protocol.CodeActionKind,
 ) []protocol.CodeAction {
+	// Return early when the request asks for neither kind, before taking any lock.
 	wantsFix := wantsCodeActionKind(only, protocol.CodeActionKindQuickFix) && len(diags) > 0
 	wantsRefactor := wantsCodeActionKind(only, fillArmsRefactorKind)
 	if !wantsFix && !wantsRefactor {
 		return nil
 	}
+
+	// Collect the file's non-exhaustive `match` errors from the last check.
 	file, fileErrs, ok := s.checkedFileAt(uri)
 	if !ok {
 		return nil
@@ -62,6 +65,9 @@ func (s *Server) fillArmsActions(
 	lineMap := file.src.LineMap()
 	var actions []protocol.CodeAction
 	fixed := set.NewSet[*solver.NonExhaustiveMatchError]()
+
+	// Offer a quick fix for each request diagnostic that one of those errors produced. A
+	// diagnostic is matched to its error by range and message.
 	if wantsFix {
 		for _, diag := range diags {
 			for _, err := range errs {
@@ -80,6 +86,8 @@ func (s *Server) fillArmsActions(
 			}
 		}
 	}
+	// Offer a refactor for the innermost `match` around the cursor, unless a quick fix
+	// above already covers it.
 	if wantsRefactor {
 		loc := posToLoc(lineMap, rng.Start)
 		var innermost *solver.NonExhaustiveMatchError
@@ -161,6 +169,8 @@ func fillArmsAction(file checkedFile, uri protocol.DocumentUri, err *solver.NonE
 	if !ok {
 		return protocol.CodeAction{}, false
 	}
+
+	// Write a pattern for each value no arm names, then `_` for an open tail.
 	patterns := make([]string, 0, len(err.Unmatched)+1)
 	for _, t := range err.Unmatched {
 		// A `boolean` that no arm names holds two values, and a literal arm for each reads
@@ -177,6 +187,7 @@ func fillArmsAction(file checkedFile, uri protocol.DocumentUri, err *solver.NonE
 	if len(patterns) == 0 {
 		return protocol.CodeAction{}, false
 	}
+	// Give each pattern the placeholder body and work out where the arms go.
 	arms := make([]string, len(patterns))
 	for i, p := range patterns {
 		arms[i] = p + " => " + todoArmBody
@@ -185,6 +196,7 @@ func fillArmsAction(file checkedFile, uri protocol.DocumentUri, err *solver.NonE
 	if !ok {
 		return protocol.CodeAction{}, false
 	}
+	// Convert the byte-offset edits to LSP ranges.
 	lineMap := file.src.LineMap()
 	textEdits := make([]protocol.TextEdit, len(edits))
 	for i, e := range edits {
@@ -222,6 +234,8 @@ func armInsertion(contents string, span ast.Span, cases []*ast.MatchCase, arms [
 	if closing < 0 || closing >= len(contents) || contents[closing] != '}' {
 		return nil, false
 	}
+
+	// With no arms, replace whatever lies between the braces with one arm per line.
 	if len(cases) == 0 {
 		opening := skipSpaceBefore(contents, closing) - 1
 		if opening < 0 || contents[opening] != '{' {
@@ -237,6 +251,7 @@ func armInsertion(contents string, span ast.Span, cases []*ast.MatchCase, arms [
 		return []textEdit{{start: opening + 1, end: closing, text: b.String()}}, true
 	}
 
+	// Find where the last arm ends and whether a trailing comma follows it.
 	last := cases[len(cases)-1]
 	armEnd := last.Pattern.Span().End.Offset
 	if body, ok := ucs.BodySpan(last.Body); ok {
@@ -258,6 +273,7 @@ func armInsertion(contents string, span ast.Span, cases []*ast.MatchCase, arms [
 		after = armEnd
 	}
 
+	// With the last arm on the closing brace's line, add the new arms on that line.
 	if !strings.Contains(contents[after:closing], "\n") {
 		if trailingComma {
 			return []textEdit{{start: after, end: after, text: " " + strings.Join(arms, ", ") + ","}}, true
@@ -265,8 +281,8 @@ func armInsertion(contents string, span ast.Span, cases []*ast.MatchCase, arms [
 		return []textEdit{{start: after, end: after, text: ", " + strings.Join(arms, ", ")}}, true
 	}
 
-	// The arms go at the end of the line the last arm ends on, after any comment there, so a
-	// line comment stays with the arm it follows.
+	// Otherwise add one arm per line. The arms go at the end of the line the last arm ends
+	// on, after any comment there, so a line comment stays with the arm it follows.
 	lineEnd := after + strings.IndexByte(contents[after:closing], '\n')
 	indent := lineIndent(contents, last.Pattern.Span().Start.Offset)
 	var b strings.Builder
