@@ -140,6 +140,20 @@ unchanged. Its reference check becomes the leaf case of `needs` inference.
 **C8. A requirement adds no runtime lookup.** Every requirement is known at
 compile time, so reading a context value compiles to a property read.
 
+**C9. Providers are composable.** A single function can provide several
+requirements at once, and a caller can combine what several such functions
+provide in one place. A test suite, for example, can define its standard set of
+context values once and reuse it in every test, adding or overriding individual
+values where a test needs to.
+
+**C10. A requirement can be extent-bound.** An *extent-bound* requirement holds
+only while the call that established it is running, as `Render` holds only
+during a component's render and a transaction holds only until it commits.
+Using one after that call returns is an error. This covers a use after an
+`await` or `yield` and a use from a closure that escapes. C9 applies to
+extent-bound requirements too, so a provider can supply them alongside
+capturable ones.
+
 ## 6. Design
 
 All syntax in this section is a proposal.
