@@ -39,8 +39,9 @@ parallel. The React profile lands after #2099 and reuses everything built here.
 
 ## The JSX profile
 
-The solver holds the resolved profile in one Go struct, built once per run on
-the first JSX expression it infers.
+The solver holds a resolved profile in one Go struct. It builds a profile the
+first time a file needs that source and caches it by source name, so one run can
+hold several profiles.
 
 ```go
 // jsxProfile holds the types JSX inference reads. Each field is nil when the
@@ -87,6 +88,13 @@ A missing field, or an empty string, selects `web:jsx`. Any other value names an
 `<value>/jsx-runtime` the solver loads through the third-party chain. Inference
 code reads only `jsxProfile`, so nothing past the loader knows which framework
 is in use.
+
+The source is chosen per file by one function, `jsxSourceFor(file)`. At first
+it returns the package's `jsxImportSource`. PR 9 lets a file override it, so a
+single package can mix `web:jsx`, React, Solid and Vue files, and `<div />`
+gets the type its own file's profile gives. Codegen reads the same function, so
+a file's emitted runtime import always matches the profile it was checked
+against.
 
 When the profile cannot be loaded, the first JSX expression reports one
 diagnostic naming the source, and every JSX expression in the run infers to
@@ -252,7 +260,12 @@ profile sets it, and otherwise `Fragment`, which is `DocumentFragment` under
    `react/jsx-runtime`, add `ref` and `LibraryManagedAttributes`, and remove the
    `t.Skip` from `TestInferJSX`. That closes #2100.
 
-PRs 1 and 2 can land in either order. PRs 3 to 7 depend on 2. Only PR 8 waits on
+9. **Per-file profile selection.** Let a file override the package's source
+   with a `/** @jsxImportSource solid-js */` comment at its top, the pragma
+   TypeScript reads. Add a fixture package whose files use two different
+   profiles and assert that `<div />` has a different type in each.
+
+PRs 1 and 2 can land in either order. PR 9 depends on 7. PRs 3 to 7 depend on 2. Only PR 8 waits on
 #2099.
 
 ## Testing
