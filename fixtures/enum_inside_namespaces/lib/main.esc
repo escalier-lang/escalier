@@ -1,0 +1,8 @@
+export fn area(s: shapes.Shape) -> number {
+    return match s {
+        shapes.Shape.Circle(r) => 3 * r * r,
+        shapes.Shape.Rect(w, h) => w * h,
+    }
+}
+
+export val unit = area(shapes.Shape.Rect(1, 1))

@@ -151,7 +151,8 @@ func typeRefText(q hoverQuery, ref *ast.TypeRefTypeAnn) (string, bool) {
 			continue
 		}
 		if decl, ok := np.Node.(ast.Decl); ok {
-			if text := declText(decl); text != "" {
+			// A reference shows the name as written, so `shapes.E` reads `enum shapes.E`.
+			if text := declTextAs(decl, ast.QualIdentToString(ref.Name)); text != "" {
 				return text, true
 			}
 		}
@@ -176,20 +177,35 @@ func typeName(t soltype.Type) string {
 // whole declaration, a class and an enum show their name and type parameters, and an
 // interface shows its members as well.
 func declText(decl ast.Decl) string {
+	return declTextAs(decl, "")
+}
+
+// declTextAs returns the header declText returns for decl, with name in place of the name
+// decl declares, or with decl's own name when name is "".
+func declTextAs(decl ast.Decl, name string) string {
 	switch decl := decl.(type) {
 	case *ast.TypeDecl:
-		bare := ast.NewTypeDecl(decl.Name, decl.TypeParams, decl.TypeAnn, false, false, decl.Span())
+		bare := ast.NewTypeDecl(renamed(decl.Name, name), decl.TypeParams, decl.TypeAnn, false, false, decl.Span())
 		return printCompact(bare)
 	case *ast.ClassDecl:
-		return "class " + decl.Name.Name + typeParamsText(decl.TypeParams)
+		return "class " + renamed(decl.Name, name).Name + typeParamsText(decl.TypeParams)
 	case *ast.EnumDecl:
-		return "enum " + decl.Name.Name + typeParamsText(decl.TypeParams)
+		return "enum " + renamed(decl.Name, name).Name + typeParamsText(decl.TypeParams)
 	case *ast.InterfaceDecl:
 		bare := *decl
 		bare.SetExport(false)
+		bare.Name = renamed(decl.Name, name)
 		return printCompact(&bare)
 	}
 	return ""
+}
+
+// renamed returns ident with its name replaced by name, or ident itself when name is "".
+func renamed(ident *ast.Ident, name string) *ast.Ident {
+	if name == "" {
+		return ident
+	}
+	return ast.NewIdentifier(name, ident.Span())
 }
 
 // funcText renders the function type t under name, as in
@@ -1124,8 +1140,9 @@ func qualNameText(q hoverQuery, qi ast.QualIdent) (string, bool) {
 }
 
 // typeBindingText renders the declaration of binding, the type binding the qualified name
-// qi names, as `class HttpError` or `(variant) Expr.Num(value: number)`. A variant takes
-// its enum's name from qi. It returns false when binding has no declaration to render.
+// qi names, as `class errs.HttpError` or `(variant) Expr.Num(value: number)`. The
+// declaration shows the name as qi writes it, and a variant takes its enum's name from qi.
+// It returns false when binding has no declaration to render.
 func typeBindingText(qi ast.QualIdent, binding solver.TypeBinding) (string, bool) {
 	member, isMember := qi.(*ast.Member)
 	for _, src := range binding.Sources {
@@ -1139,7 +1156,7 @@ func typeBindingText(qi ast.QualIdent, binding solver.TypeBinding) (string, bool
 				return variantDeclText(ast.QualIdentToString(member.Left), decl), true
 			}
 		case ast.Decl:
-			if text := declText(decl); text != "" {
+			if text := declTextAs(decl, ast.QualIdentToString(qi)); text != "" {
 				return text, true
 			}
 		}

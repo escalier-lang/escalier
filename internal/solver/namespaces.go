@@ -82,13 +82,20 @@ func (c *checker) preBindNamespaceDecls(scope *Scope, module *ast.Module, handle
 // name alone.
 func linkNamespacesToParents(byName map[string]*Namespace) {
 	for qname, ns := range byName {
-		dot := strings.LastIndex(qname, ".")
-		if dot < 0 {
-			continue
-		}
-		if parent, held := byName[qname[:dot]]; held {
-			parent.Nested[qname[dot+1:]] = ns
-		}
+		linkToParent(byName, qname, ns)
+	}
+}
+
+// linkToParent hangs ns, the namespace qualified as qname, off the namespace byName
+// holds for qname's prefix, so `geo.Shape` reaches ns through geo's Nested map. A
+// qname with no prefix, or a prefix byName does not hold, links nothing.
+func linkToParent(byName map[string]*Namespace, qname string, ns *Namespace) {
+	dot := strings.LastIndex(qname, ".")
+	if dot < 0 {
+		return
+	}
+	if parent, held := byName[qname[:dot]]; held {
+		parent.Nested[qname[dot+1:]] = ns
 	}
 }
 
