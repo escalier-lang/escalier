@@ -48,15 +48,9 @@ binds a value whose `@js` path is dotted, such as `@js("Math.sqrt") export
 declare fn sqrt`, into a namespace named by the prefix. Those `Math` and `Intl`
 namespaces are what a `.d.ts` sees. A project file never does.
 
-`web:core` is the one exception to qualified access. `bindCoreExports` in
-`imports.go` binds its exports unprefixed into the importing file.
-
-### After #2537
-
-#2537 is still open. It renames `web:core` to `web:prelude`, makes it ambient
-beside `std:prelude`, and removes `bindCoreExports`. After it lands, `Event`
-and `AbortController` need no import, and every other name outside the two
-preludes does.
+Every package binds qualified, since #2736. That PR renamed `web:core` to
+`web:web` and removed `bindCoreExports`, so `import "web:web"` binds `web` and a
+program writes `web.Event`. No `web:*` package is ambient.
 
 ### What the user writes after the import
 
@@ -152,11 +146,14 @@ file, so no package load is needed to show a signature.
 
 ### Code actions
 
-`textDocumentCodeAction` in `cmd/lsp-server/text_document.go` returns three
+`textDocumentCodeAction` in `cmd/lsp-server/text_document.go` returns four
 kinds of action. It returns the `compile` action, one `borrowFixAction` per
-diagnostic for `quickfix`, and the `signatureActionAt` rewrite from
-`cmd/lsp-server/signature_action.go` for `refactor.rewrite`. `borrowFixAction`
-in `cmd/lsp-server/borrow_fix.go` is the model to follow. `toDiagnostic` attaches `borrowFixData` to the published diagnostic, the
+diagnostic for `quickfix`, the `fillArmsActions` from
+`cmd/lsp-server/fill_arms.go` that add a match's or a catch's missing arms, and
+the `signatureActionAt` rewrite from `cmd/lsp-server/signature_action.go` for
+`refactor.rewrite`. `borrowFixAction` in `cmd/lsp-server/borrow_fix.go` is the
+model to follow.
+`toDiagnostic` attaches `borrowFixData` to the published diagnostic, the
 client echoes it back in the code action request, and the action is built from it
 with no re-check.
 
@@ -175,7 +172,8 @@ Both carry the name and the span, which is enough to build the fix. Neither
 records the scope the name was looked up in, so the fix cannot tell on its own
 whether the binding name, such as `math`, is free in that scope. The handler can
 answer that from the file's imports and the module's top-level declarations,
-which `topLevelNames` already reads off the AST.
+which `topLevelValueNames` in `internal/solver/imports.go` already reads off
+the AST.
 
 ## Where the import goes
 
@@ -194,20 +192,18 @@ the parser requires anyway.
 
 ## Playground
 
-`playground/src/language.ts` passes neither feature through to Monaco.
+The playground already forwards code actions, since #2747. `language.ts`
+registers the provider from `playground/src/code-actions.ts`, which keeps the
+diagnostics the server last published and matches them to Monaco markers by range
+and message, so a fix that reads a diagnostic's `data` works. The quick fix
+needs no client change.
 
-- `provideCompletionItems` in `playground/src/completions.ts` maps `textEdit`,
-  `insertText` and `insertTextFormat`, but drops `additionalTextEdits`. It needs
-  to convert each edit's range with `lspRangeToMonacoRange` and set Monaco's
-  `additionalTextEdits`. `resolveCompletionItem` copies only `detail` back, which
-  is fine as long as the server computes the edits up front.
-- No code action provider is registered. `LspClient.textDocumentCodeAction`
-  exists in `playground/src/lsp-client/client.ts`, so the borrow quick fix is
-  also unreachable in the playground today. A provider needs the original LSP
-  diagnostics, but `onTextDocumentPublishDiagnostics` turns each one into an
-  `IMarkerData` that has no `data` field. The client has to keep the published
-  diagnostics per model and match them to `context.markers` by range and message.
-  Each returned `WorkspaceEdit` then becomes a Monaco `IWorkspaceTextEdit`.
+Completion is the remaining gap. `provideCompletionItems` in
+`playground/src/completions.ts` maps `textEdit`, `insertText` and
+`insertTextFormat`, but drops `additionalTextEdits`. It needs to convert each
+edit's range with `lspRangeToMonacoRange` and set Monaco's `additionalTextEdits`.
+`resolveCompletionItem` copies only `detail` back, which is fine as long as the
+server computes the edits up front.
 
 ## Performance
 
@@ -253,9 +249,8 @@ the parser requires anyway.
 - **A name already imported.** When the file imports the package, offer the
   qualified name with no import edit. A name reached through the prelude is
   already in scope and needs nothing.
-- **The prelude packages.** Leave `std:prelude` out of the index, and
-  `web:prelude` once #2537 lands. Until then, offer `web:core` names as an
-  import alone with no qualifier, since its import binds its exports unprefixed.
+- **The prelude.** Leave `std:prelude` out of the index, since its names are
+  already in scope.
 - **npm packages.** Their exports come from `.d.ts` files under `node_modules`.
   They are out of scope here, and the index's interface should leave room to add
   them.
@@ -282,13 +277,9 @@ the parser requires anyway.
    `sortAndLimit` honour `SortText` with a separate cap, and print details in
    `completionItemResolve`. About 400 lines with tests. The risk is moderate,
    since the sort change affects every existing completion test.
-5. **Playground.** Map `additionalTextEdits` in `completions.ts`, keep the
-   published diagnostics per model, and register a code action provider in
-   `language.ts`. The borrow quick fix starts working in the playground too.
-   About 200 lines with Vitest coverage and a Playwright test that accepts a fix.
-   The risk is moderate, mostly from matching markers to diagnostics.
+5. **Playground.** Map `additionalTextEdits` in `completions.ts`. About 50
+   lines with Vitest coverage and a Playwright test that accepts an item. The
+   risk is low.
 
 Step 1 has no dependencies. Steps 3 and 4 need steps 1 and 2 and can land in
-either order, and step 5 needs whichever of them it exposes. Landing step 1
-after #2537 lets its exclusion list name `web:prelude` directly instead of
-special-casing `web:core`.
+either order. Step 5 needs step 4.
