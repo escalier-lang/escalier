@@ -359,6 +359,91 @@ them apart. `{a, b} => …` (an object pattern) and `{a, b}` (an object literal)
 share a prefix, so the scan can be long. The first version rejects `{` directly
 after `catch` and asks for parentheses or a `do` block.
 
+### The same forms on `try` blocks
+
+A handler is the part after `catch`. It comes in three forms:
+
+| Form | After an expression | After a `try` block |
+|---|---|---|
+| Fallback | `a() catch 0` | `try { … } catch 0` |
+| Binding | `a() catch e => report(e)` | `try { … } catch e => report(e)` |
+| Arms | `a() catch { ParseError => 0 }` (extension) | `try { … } catch { ParseError => 0 }` (exists today) |
+
+A `try` block accepts all three. The fallback and binding forms on a `try` block
+are part of the first version, since the block form needs them as much as the
+expression form does:
+
+```esc
+val cfg = try {
+    val text = fs.readFileSync(path)
+    JSON.parse(text)
+} catch defaults
+```
+
+The forms mean the same thing in both positions:
+
+- A fallback is a single unguarded `_` arm.
+- A binding is a single unguarded arm whose pattern is that identifier, so
+  `catch e => x` and `catch { e => x }` are equivalent.
+- Arms follow the rules in
+  [06 Error Handling](../../docs/06_error_handling.md#try--catch--finally),
+  including the rethrow of known throws no arm covers.
+
+After a `try` block, a `{` following `catch` always starts an arm list, as it
+does today. A fallback that needs statements is written `catch do { … }`. This
+keeps every existing `try` parsing as it does now, and it gives the expression
+form the same rule once the arms extension lands.
+
+A `finally` block may follow any of the three forms on a `try` block:
+
+```esc
+val n = try { read(fd) } catch 0 finally { close(fd) }
+```
+
+#### Representation
+
+Both nodes hold the handler in one type, so the checker and codegen handle each
+form in one place, and the printer reproduces the form the user wrote:
+
+```go
+type CatchHandler struct {
+    Binding  *IdentPat   // set for the binding form
+    Fallback Expr        // set for the fallback and binding forms
+    Arms     []*MatchCase // set for the arms form
+    span     Span
+}
+
+type TryCatchExpr struct {
+    Try     Block
+    Handler *CatchHandler
+    Finally *Block
+    // …
+}
+
+type CatchExpr struct {
+    Expr    Expr
+    Handler *CatchHandler
+    // …
+}
+```
+
+The checker and codegen read the fallback and binding forms as the single arm
+each is equivalent to. They then reuse the arm code `TryCatchExpr` already has.
+
+#### Whether `try` is still needed
+
+With infix `catch` on any expression, `try { … } catch h` and `do { … } catch h`
+mean the same thing. This proposal keeps `try` for two reasons:
+
+1. It marks where the guarded region starts. In `do { … } catch h` a reader
+   learns the block is guarded only on reaching its end, which for a long block
+   is a screen away.
+2. Every `try` written today keeps working, with no migration.
+
+`do { … } catch h` is accepted, since it is ordinary infix `catch` on a `do`
+expression, and the printer leaves it as written. Whether the checker should
+suggest `try` for it is listed under the open questions.
+
 ### Type checks
 
 Nullability already has its fallback, `??`. A failed type check has
@@ -405,9 +490,11 @@ val r = Result.Ok(parse(s)) catch e => Result.Err(e)
 
 1. Parser. Lex `catch` after a complete expression as an infix keyword at the
    lowest binary precedence, right-associative, with the `ident =>` binding form.
-   Add `CatchExpr` to [internal/ast/](../../internal/ast/) with visitor support,
-   and print it in [internal/printer/](../../internal/printer/) with parentheses
-   wherever precedence needs them. Snapshot tests cover chains, precedence
+   Add `CatchHandler` and `CatchExpr` to [internal/ast/](../../internal/ast/)
+   with visitor support, and move `TryCatchExpr`'s arms into a `CatchHandler`.
+   Parse the fallback and binding forms after a `try` block. Print both nodes
+   in [internal/printer/](../../internal/printer/) with parentheses wherever
+   precedence needs them. Snapshot tests cover chains, precedence
    against `??`, `||` and `+`, `await`, and assignment.
 2. Solver. Factor the sink install and restore out of `inferTryCatch` and check
    `CatchExpr` with it. Add the no-raise-site error and the unawaited-promise
@@ -434,3 +521,6 @@ val r = Result.Ok(parse(s)) catch e => Result.Err(e)
   decides this for `try`?
 - Should `catch` also accept a `finally` block, or is the block form the place for
   cleanup?
+- Should the checker suggest `try { … } catch h` when it sees
+  `do { … } catch h`? The two compile to the same code, so a suggestion would
+  only enforce the style that marks where the guarded region starts.
