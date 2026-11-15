@@ -2,12 +2,14 @@ import { type Page, expect, test } from '@playwright/test';
 
 import { loadPlayground } from './helpers';
 
+// The modifier Monaco's shortcuts use on this platform.
+const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+
 // replaceSource replaces the open file's text with lines and leaves the cursor
 // at the end of the last line.
 async function replaceSource(page: Page, lines: string[]) {
     const inputPanel = page.locator('#input-panel');
     await inputPanel.locator('.view-lines').click();
-    const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
     await page.keyboard.press(`${modifier}+A`);
     // insertText adds the text as one edit, so Monaco closes no brackets.
     await page.keyboard.insertText(lines.join('\n'));
@@ -40,7 +42,7 @@ test.describe('Code actions', () => {
             },
         );
 
-        await page.keyboard.press('Control+.');
+        await page.keyboard.press(`${modifier}+.`);
         const action = page
             .locator('.action-widget')
             .getByText('Add missing match arms');

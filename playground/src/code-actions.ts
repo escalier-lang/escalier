@@ -68,6 +68,26 @@ export function markerDiagnostics(
     });
 }
 
+// documentTextEdits returns the text edits edit makes to the document at uri, from
+// its `changes` map and from each of its `documentChanges` entries that edits
+// that document. A file create, rename or delete in `documentChanges` is left out.
+export function documentTextEdits(
+    edit: lsp.WorkspaceEdit,
+    uri: string,
+): lsp.TextEdit[] {
+    const edits = [...(edit.changes?.[uri] ?? [])];
+    for (const change of edit.documentChanges ?? []) {
+        if ('textDocument' in change && change.textDocument.uri === uri) {
+            for (const e of change.edits) {
+                if ('newText' in e) {
+                    edits.push(e);
+                }
+            }
+        }
+    }
+    return edits;
+}
+
 // convertCodeActions returns the Monaco form of each action in the server's
 // response that carries an edit to the document at uri. A bare command and an
 // action with only a command are left out, since the playground registers no
@@ -84,10 +104,10 @@ export function convertCodeActions(
 ): monaco.languages.CodeAction[] {
     const result: monaco.languages.CodeAction[] = [];
     for (const action of actions ?? []) {
-        if (!('edit' in action) || !action.edit?.changes) {
+        if (!('edit' in action) || !action.edit) {
             continue;
         }
-        const textEdits = action.edit.changes[uri] ?? [];
+        const textEdits = documentTextEdits(action.edit, uri);
         if (textEdits.length === 0) {
             continue;
         }

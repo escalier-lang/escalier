@@ -5,6 +5,7 @@ import type * as lsp from 'vscode-languageserver-protocol';
 import {
     convertCodeActions,
     createCodeActionProvider,
+    documentTextEdits,
     markerDiagnostics,
 } from './code-actions';
 
@@ -59,6 +60,46 @@ describe('markerDiagnostics', () => {
     test('rebuilds a diagnostic for a marker nothing published matches', () => {
         expect(markerDiagnostics([marker], [])).toEqual([
             { range: diagnostic.range, message: marker.message },
+        ]);
+    });
+});
+
+describe('documentTextEdits', () => {
+    const edit: lsp.TextEdit = {
+        range: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 0 },
+        },
+        newText: 'x',
+    };
+
+    test('reads the edits to the document from documentChanges', () => {
+        expect(
+            documentTextEdits(
+                {
+                    documentChanges: [
+                        {
+                            textDocument: { uri, version: 1 },
+                            edits: [edit],
+                        },
+                        {
+                            textDocument: {
+                                uri: 'file:///lib/index.esc',
+                                version: 1,
+                            },
+                            edits: [edit],
+                        },
+                        { kind: 'create', uri: 'file:///lib/new.esc' },
+                    ],
+                },
+                uri,
+            ),
+        ).toEqual([edit]);
+    });
+
+    test('reads the edits to the document from changes', () => {
+        expect(documentTextEdits({ changes: { [uri]: [edit] } }, uri)).toEqual([
+            edit,
         ]);
     });
 });
