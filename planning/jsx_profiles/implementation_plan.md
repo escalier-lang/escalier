@@ -27,8 +27,10 @@ parallel. The React profile lands after #2099 and reuses everything built here.
   source setting described under PR 7 lands.
 - `ref`, class components, `LibraryManagedAttributes`, and default props. These
   are React concepts and arrive with the React profile.
-- DOM event handler types such as `onclick: fn(event: MouseEvent) -> void`.
-  They need `web:dom`, and the first profile avoids that dependency.
+- Per-tag attributes and DOM event handler types such as
+  `onclick: fn(event: MouseEvent) -> void`. Every tag takes the same global
+  attributes at first. Both can later be derived from `web:dom`, which
+  `web:jsx` already imports for its tag list.
 
 ## The JSX profile
 
@@ -50,15 +52,28 @@ type jsxProfile struct {
 Where the types come from depends on the profile source:
 
 - The built-in profile reads them from the top-level type exports of a
-  compiler-shipped package, `std:jsx`.
+  compiler-shipped package, `web:jsx`.
 - A third-party profile reads them from the `JSX` namespace that
   `<source>/jsx-runtime` exports, using TypeScript's names
   (`JSX.Element`, `JSX.IntrinsicElements`, `JSX.IntrinsicAttributes`,
   `JSX.ElementChildrenAttribute`). `Node` maps to the profile's child type,
   `React.ReactNode` for React.
 
-A new `Options.JSXImportSource` field selects the source. The empty string
-selects `std:jsx`. Any other value names an npm package whose
+A new `Options.JSXImportSource` field selects the source. The compiler and
+the LSP server fill it from the `escalier.jsxImportSource` field of the
+package's `package.json`, read by `ReadPackageConfig` alongside the
+dependencies it already reads. Each package in a monorepo can then pick its own
+framework.
+
+```json
+{
+  "escalier": {
+    "jsxImportSource": "react"
+  }
+}
+```
+
+A missing field, or an empty string, selects `web:jsx`. Any other value names an npm package whose
 `<value>/jsx-runtime` the solver loads through the third-party chain. Inference
 code reads only `jsxProfile`, so nothing past the loader knows which framework
 is in use.
@@ -67,11 +82,16 @@ When the profile cannot be loaded, the first JSX expression reports one
 diagnostic naming the source, and every JSX expression in the run infers to
 `ErrorType` so no cascade follows.
 
-## The `std:jsx` package
+## The `web:jsx` package
 
-`std:jsx` is a hand-written Escalier file. A first draft:
+`web:jsx` is a hand-written Escalier file at
+`internal/interop/data/web/jsx.esc`. It lives under `web/` because JSX
+renders to DOM elements, and it imports `web:dom` for the tag list. That puts
+it in the browser tier, next to `web:dom`. A first draft:
 
 ```esc
+import "web:dom" { HTMLElementTagNameMap }
+
 // Opaque so that programs do not depend on the shape of an element, which
 // differs between frameworks.
 export declare class Element {}
@@ -90,16 +110,14 @@ type GlobalAttributes = {
 	children?: Node,
 }
 
-export type IntrinsicElements = {
-	div: GlobalAttributes,
-	span: GlobalAttributes,
-	button: {...GlobalAttributes, disabled?: boolean, type?: "button" | "submit" | "reset"},
-	a: {...GlobalAttributes, href?: string, target?: string},
-	img: {...GlobalAttributes, src: string, alt: string},
-	input: {...GlobalAttributes, value?: string, type?: string, disabled?: boolean},
-	// The remaining tags take GlobalAttributes until a later PR adds their own.
-}
+export type IntrinsicElements = {[K]: GlobalAttributes for K in keyof HTMLElementTagNameMap}
 ```
+
+The mapped type gives every tag `HTMLElementTagNameMap` declares, about 110 of
+them, and no others. `<div>` and `<button>` are valid and `<dvi>` is an
+unknown tag. SVG and MathML tags are left out until a later PR adds
+`SVGElementTagNameMap` and `MathMLElementTagNameMap` with their own attribute
+types.
 
 Attribute names follow HTML (`class`, `tabindex`), not React (`className`,
 `tabIndex`), because no framework sits in between to rename them. Each props
@@ -184,13 +202,15 @@ captures, read the cached nodes instead of building their own.
    `isIntrinsicElement` and the child whitespace normalization from
    `internal/codegen/jsx.go` to `internal/ast`. Done when codegen and liveness
    tests pass unchanged.
-2. **Load the JSX profile.** Add `std:jsx`, `Options.JSXImportSource`,
-   `jsxProfile`, and its loader for the built-in source. Report a missing
+2. **Load the JSX profile.** Add `web:jsx` and its entry in the
+   `dts_to_esc` partition and tier tables. Add `escalier.jsxImportSource` to
+   `ReadPackageConfig`, `Options.JSXImportSource`, `jsxProfile`, and the
+   loader for the built-in source. Report a missing
    profile once per run. Done when a solver test loads the profile and asserts
    each field's rendered type.
 3. **Infer intrinsic elements and fragments.** Add `infer_jsx.go` with the props
    object, intrinsic lookup, `key` handling and fragments. Add
-   `TestInferJSXFramework`, a table that runs against `std:jsx`, and a fixture
+   `TestInferJSXFramework`, a table that runs against `web:jsx`, and a fixture
    under `fixtures/jsx_framework_less/`.
 4. **Infer components.** Add the synthetic call, the `Node` check on the result,
    and member tags. Extend `TestInferJSXFramework` with component rows. Test
@@ -228,13 +248,10 @@ PRs 1 and 2 can land in either order. PRs 3 to 7 depend on 2. Only PR 8 waits on
 
 ## Open questions
 
-- Should `std:jsx` live under `internal/interop/data/std/`, which
-  `dts_to_esc` generates from `lib.d.ts`, or in a directory for hand-written
-  packages? The generator's partition table may need an entry that has no
-  `.d.ts` origin.
-- Where does `JSXImportSource` come from? A key in `escalier.toml`, a
-  `package.json` field, or a per-file pragma such as `@jsxImportSource`.
-  TypeScript supports both a config key and the pragma.
-- Should a later `std:jsx` derive its tag set from `web:dom`'s
-  `HTMLElementTagNameMap`? That gives every tag and its element type, at the
-  cost of making `std:jsx` a browser-tier package.
+- `internal/interop/data/web/` is generated by `dts_to_esc` from `lib.dom.d.ts`.
+  `web:jsx` has no `.d.ts` origin, so the partition table needs a way to
+  list a hand-written file, or the generator needs to leave `jsx.esc` in place.
+- Should an intrinsic element type as its DOM element, so `<div />` is
+  `HTMLDivElement` through `HTMLElementTagNameMap`? That fits a DOM-only
+  runtime, but React, Preact and Solid each return a different element type, so
+  code written against it would not carry over to a framework profile.
