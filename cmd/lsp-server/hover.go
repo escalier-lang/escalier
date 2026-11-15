@@ -138,16 +138,8 @@ func typeRefText(q hoverQuery, ref *ast.TypeRefTypeAnn) (string, bool) {
 	if refName == "" {
 		return "", false
 	}
-	binding, ok := q.scope.GetType(ast.QualIdentToString(ref.Name))
-	if !ok || typeName(binding.Type) != refName {
-		// A bare name in a file inside a namespace can name a sibling declaration, which
-		// the module scope binds under the qualified name the solver resolved it to.
-		binding, ok = q.scope.GetType(refName)
-	}
-	// A type a function body declares is not in the file's scope, and a binding of the
-	// same name outside the body is a different type, which the solver names
-	// differently.
-	if !ok || typeName(binding.Type) != refName {
+	binding, ok := typeBindingNamed(q.scope, ref.Name, refName)
+	if !ok {
 		return "", false
 	}
 	// A reference shows the name as written, so `shapes.E` reads `enum shapes.E`.
@@ -1129,14 +1121,18 @@ func patternNameText(q hoverQuery, qi ast.QualIdent, binding solver.TypeBinding)
 
 // ownerTypeBinding returns the type binding of the type whose qualified name prefixes the
 // name of binding's type, as `shapes.E` prefixes the variant `shapes.E.Num`. It returns
-// false when the name has no prefix or the prefix names no type in scope.
+// false when the name has no prefix, or when scope binds no type of that qualified name.
 func ownerTypeBinding(scope *solver.Scope, binding solver.TypeBinding) (solver.TypeBinding, bool) {
 	name := typeName(binding.Type)
 	dot := strings.LastIndex(name, ".")
 	if dot < 0 {
 		return solver.TypeBinding{}, false
 	}
-	return scope.GetType(name[:dot])
+	owner, ok := scope.GetType(name[:dot])
+	if !ok || typeName(owner.Type) != name[:dot] {
+		return solver.TypeBinding{}, false
+	}
+	return owner, true
 }
 
 // qualNameText renders the declaration the part of the qualified name qi under the cursor
@@ -1193,11 +1189,18 @@ func patternClassBinding(q hoverQuery, qi ast.QualIdent) (solver.TypeBinding, bo
 	if recorded == "" {
 		return solver.TypeBinding{}, false
 	}
-	binding, ok := qualTypeBinding(q.scope, qi)
+	return typeBindingNamed(q.scope, qi, recorded)
+}
+
+// typeBindingNamed returns the binding in scope of the type the solver resolved qi to,
+// where recorded is that type's qualified name. It looks qi up as written, then under
+// recorded, and returns false when neither lookup binds a type named recorded.
+func typeBindingNamed(scope *solver.Scope, qi ast.QualIdent, recorded string) (solver.TypeBinding, bool) {
+	binding, ok := qualTypeBinding(scope, qi)
 	if !ok || typeName(binding.Type) != recorded {
 		// A bare name in a file inside a namespace can name a sibling declaration, which
-		// the module scope binds under the qualified name the solver resolved it to.
-		binding, ok = q.scope.GetType(recorded)
+		// the module scope binds under its qualified name.
+		binding, ok = scope.GetType(recorded)
 	}
 	if !ok || typeName(binding.Type) != recorded {
 		return solver.TypeBinding{}, false

@@ -1588,7 +1588,7 @@ func TestHoverFromSolver(t *testing.T) {
 			name: "InstancePatternPrefersNamespaceSibling",
 			files: map[string]string{
 				"lib/errs/use.esc": "export class HttpError { code: number }\nexport fn f(e: HttpError) -> number {\n    return match e {\n        HttpError {code} => code,\n    }\n}",
-				"lib/main.esc":     "export class HttpError { code: string }\n",
+				"lib/main.esc":     "export class HttpError<T> { code: T }\n",
 			},
 			open: "lib/errs/use.esc", line: 3, col: 10,
 			expected: escalierCode("class HttpError"),
@@ -1597,7 +1597,7 @@ func TestHoverFromSolver(t *testing.T) {
 			name: "InstancePatternFieldPrefersNamespaceSibling",
 			files: map[string]string{
 				"lib/errs/use.esc": "export class HttpError { code: number }\nexport fn f(e: HttpError) -> number {\n    return match e {\n        HttpError {code} => code,\n    }\n}",
-				"lib/main.esc":     "export class HttpError { code: string }\n",
+				"lib/main.esc":     "export class HttpError<T> { code: T }\n",
 			},
 			open: "lib/errs/use.esc", line: 3, col: 20,
 			expected: escalierCode("(property) HttpError.code: number"),
@@ -1681,6 +1681,15 @@ func TestHoverFromSolver(t *testing.T) {
 				"lib/errs/http.esc": "export class HttpError { status: number }\n",
 			},
 			open: "lib/errs/use.esc", line: 0, col: 16,
+			expected: escalierCode("class HttpError"),
+		},
+		{
+			name: "TypeRefPrefersNamespaceSibling",
+			files: map[string]string{
+				"lib/errs/use.esc": "export class HttpError { code: number }\nexport fn f(e: HttpError) -> number {\n    return match e {\n        HttpError {code} => code,\n    }\n}",
+				"lib/main.esc":     "export class HttpError<T> { code: T }\n",
+			},
+			open: "lib/errs/use.esc", line: 1, col: 16,
 			expected: escalierCode("class HttpError"),
 		},
 		{
