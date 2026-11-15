@@ -390,9 +390,16 @@ The forms mean the same thing in both positions:
   including the rethrow of known throws no arm covers.
 
 After a `try` block, a `{` following `catch` always starts an arm list, as it
-does today. A fallback that needs statements is written `catch do { … }`. This
-keeps every existing `try` parsing as it does now, and it gives the expression
-form the same rule once the arms extension lands.
+does today. A fallback that needs statements is written `catch do { … }`, and an
+object literal fallback is written in parentheses:
+
+```esc
+val cfg = try { loadConfig(path) } catch ({port: 8080, host: "localhost"})
+val cfg = loadConfig(path) catch ({port: 8080, host: "localhost"})
+```
+
+This keeps every existing `try` parsing as it does now, and it gives the
+expression form the same rule once the arms extension lands.
 
 A `finally` block may follow any of the three forms on a `try` block:
 
