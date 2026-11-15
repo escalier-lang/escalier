@@ -366,6 +366,30 @@ func TestFillArmsAction(t *testing.T) {
 				"\treturn try { g() } catch { A{} => (1), B{} => throw \"todo\" }\n" +
 				"}\n",
 		},
+		{
+			// The comma goes before the comment, and the new arm after it.
+			name: "CatchWithCommentAfterLastArm",
+			files: map[string]string{"bin/main.esc": "class A { a: number }\n" +
+				"class B { b: number }\n" +
+				"declare fn g() -> number throws A | B\n" +
+				"fn f() -> number throws _ {\n" +
+				"\treturn try { g() } catch {\n" +
+				"\t\tA{} => 1 // the common case\n" +
+				"\t}\n" +
+				"}\n"},
+			path:   "bin/main.esc",
+			cursor: "catch",
+			title:  fillCatchArmsTitle,
+			expected: "class A { a: number }\n" +
+				"class B { b: number }\n" +
+				"declare fn g() -> number throws A | B\n" +
+				"fn f() -> number throws _ {\n" +
+				"\treturn try { g() } catch {\n" +
+				"\t\tA{} => 1, // the common case\n" +
+				"\t\tB{} => throw \"todo\"\n" +
+				"\t}\n" +
+				"}\n",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -5906,6 +5906,7 @@ func (c *checker) walkTryBlock(scope *Scope, lvl int, b *ast.Block, sink soltype
 // no signature named its type, so recording it would widen the clause to `unknown`.
 func (c *checker) rethrowUnhandled(scope *Scope, lvl int, e *ast.TryCatchExpr, collected, enclosing soltype.Type) {
 	if ast.HasUnguardedCatchAll(e.Catch) {
+		delete(c.info.uncaught, e)
 		return
 	}
 	handled := c.armsCatchType(scope, lvl, e.Catch)
@@ -5940,8 +5941,10 @@ func (c *checker) rethrowUnhandled(scope *Scope, lvl int, e *ast.TryCatchExpr, c
 
 // recordUncaught records, for e, each member of uncovered that no catch arm names, whatever
 // the arm's guard and sub-patterns test. uncovered is the members of what e's try block
-// throws that the arms do not catch. It records nothing when no member is left.
+// throws that the arms do not catch. It replaces any earlier record for e, and leaves none
+// when no member is left.
 func (c *checker) recordUncaught(scope *Scope, lvl int, e *ast.TryCatchExpr, uncovered []soltype.Type) {
+	delete(c.info.uncaught, e)
 	if len(uncovered) == 0 {
 		return
 	}
