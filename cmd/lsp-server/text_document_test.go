@@ -1585,20 +1585,22 @@ func TestHoverFromSolver(t *testing.T) {
 			open: "lib/a.esc", line: 4, col: 17,
 		},
 		{
-			name: "InstancePatternShadowedByNamespaceSiblingHasNoHover",
+			name: "InstancePatternPrefersNamespaceSibling",
 			files: map[string]string{
 				"lib/errs/use.esc": "export class HttpError { code: number }\nexport fn f(e: HttpError) -> number {\n    return match e {\n        HttpError {code} => code,\n    }\n}",
 				"lib/main.esc":     "export class HttpError { code: string }\n",
 			},
 			open: "lib/errs/use.esc", line: 3, col: 10,
+			expected: escalierCode("class HttpError"),
 		},
 		{
-			name: "InstancePatternFieldShadowedByNamespaceSiblingHasNoHover",
+			name: "InstancePatternFieldPrefersNamespaceSibling",
 			files: map[string]string{
 				"lib/errs/use.esc": "export class HttpError { code: number }\nexport fn f(e: HttpError) -> number {\n    return match e {\n        HttpError {code} => code,\n    }\n}",
 				"lib/main.esc":     "export class HttpError { code: string }\n",
 			},
 			open: "lib/errs/use.esc", line: 3, col: 20,
+			expected: escalierCode("(property) HttpError.code: number"),
 		},
 		{
 			name: "ExtractorPatternNestedQualifier",
@@ -1635,6 +1637,51 @@ func TestHoverFromSolver(t *testing.T) {
 			},
 			open: "lib/a.esc", line: 2, col: 14,
 			expected: escalierCode("class errs.HttpError"),
+		},
+		{
+			name: "TypeRefToSiblingInNamespace",
+			files: map[string]string{
+				"lib/shapes/use.esc": "export fn g(e: E) -> number {\n    return match e {\n        E.Num(v) => v,\n    }\n}",
+				"lib/shapes/e.esc":   "export enum E { Num(value: number) }\n",
+			},
+			open: "lib/shapes/use.esc", line: 0, col: 15,
+			expected: escalierCode("enum E"),
+		},
+		{
+			name: "ExtractorPatternQualifierInSiblingFile",
+			files: map[string]string{
+				"lib/shapes/use.esc": "export fn g(e: E) -> number {\n    return match e {\n        E.Num(v) => v,\n    }\n}",
+				"lib/shapes/e.esc":   "export enum E { Num(value: number) }\n",
+			},
+			open: "lib/shapes/use.esc", line: 2, col: 8,
+			expected: escalierCode("enum E"),
+		},
+		{
+			name: "ExtractorPatternVariantInSiblingFile",
+			files: map[string]string{
+				"lib/shapes/use.esc": "export fn g(e: E) -> number {\n    return match e {\n        E.Num(v) => v,\n    }\n}",
+				"lib/shapes/e.esc":   "export enum E { Num(value: number) }\n",
+			},
+			open: "lib/shapes/use.esc", line: 2, col: 11,
+			expected: escalierCode("(variant) E.Num(value: number)"),
+		},
+		{
+			name: "InstancePatternClassInSiblingFile",
+			files: map[string]string{
+				"lib/errs/use.esc":  "export fn g(e: HttpError) -> number {\n    return match e {\n        HttpError {status} => status,\n    }\n}",
+				"lib/errs/http.esc": "export class HttpError { status: number }\n",
+			},
+			open: "lib/errs/use.esc", line: 2, col: 9,
+			expected: escalierCode("class HttpError"),
+		},
+		{
+			name: "TypeRefToSiblingClassInNamespace",
+			files: map[string]string{
+				"lib/errs/use.esc":  "export fn g(e: HttpError) -> number {\n    return match e {\n        HttpError {status} => status,\n    }\n}",
+				"lib/errs/http.esc": "export class HttpError { status: number }\n",
+			},
+			open: "lib/errs/use.esc", line: 0, col: 16,
+			expected: escalierCode("class HttpError"),
 		},
 		{
 			name:  "KeywordHasNoHover",

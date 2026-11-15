@@ -139,25 +139,19 @@ func typeRefText(q hoverQuery, ref *ast.TypeRefTypeAnn) (string, bool) {
 		return "", false
 	}
 	binding, ok := q.scope.GetType(ast.QualIdentToString(ref.Name))
+	if !ok || typeName(binding.Type) != refName {
+		// A bare name in a file inside a namespace can name a sibling declaration, which
+		// the module scope binds under the qualified name the solver resolved it to.
+		binding, ok = q.scope.GetType(refName)
+	}
 	// A type a function body declares is not in the file's scope, and a binding of the
 	// same name outside the body is a different type, which the solver names
 	// differently.
 	if !ok || typeName(binding.Type) != refName {
 		return "", false
 	}
-	for _, src := range binding.Sources {
-		np, ok := src.(*ast.NodeProvenance)
-		if !ok {
-			continue
-		}
-		if decl, ok := np.Node.(ast.Decl); ok {
-			// A reference shows the name as written, so `shapes.E` reads `enum shapes.E`.
-			if text := declTextAs(decl, ast.QualIdentToString(ref.Name)); text != "" {
-				return text, true
-			}
-		}
-	}
-	return "", false
+	// A reference shows the name as written, so `shapes.E` reads `enum shapes.E`.
+	return typeBindingText(ref.Name, binding)
 }
 
 // typeName returns the qualified name of the declared type t refers to, or "" when t
@@ -1117,9 +1111,32 @@ func patternHover(q hoverQuery) (string, bool) {
 // returns false when that part names no declaration or namespace.
 func patternNameText(q hoverQuery, qi ast.QualIdent, binding solver.TypeBinding) (string, bool) {
 	if member, ok := qi.(*ast.Member); ok && member.Left.Span().Contains(q.loc) {
+		// The qualifier just before the class names the type that holds it, as `E` holds
+		// `E.Num`. Reading that type through the class's qualified name finds it even
+		// where its bare name is bound under a qualified one, as in a sibling file inside
+		// a namespace.
+		if ast.LastIdent(member.Left).Span().Contains(q.loc) {
+			if owner, ok := ownerTypeBinding(q.scope, binding); ok {
+				if text, ok := typeBindingText(member.Left, owner); ok {
+					return text, true
+				}
+			}
+		}
 		return qualNameText(q, member.Left)
 	}
 	return typeBindingText(qi, binding)
+}
+
+// ownerTypeBinding returns the type binding of the type whose qualified name prefixes the
+// name of binding's type, as `shapes.E` prefixes the variant `shapes.E.Num`. It returns
+// false when the name has no prefix or the prefix names no type in scope.
+func ownerTypeBinding(scope *solver.Scope, binding solver.TypeBinding) (solver.TypeBinding, bool) {
+	name := typeName(binding.Type)
+	dot := strings.LastIndex(name, ".")
+	if dot < 0 {
+		return solver.TypeBinding{}, false
+	}
+	return scope.GetType(name[:dot])
 }
 
 // qualNameText renders the declaration the part of the qualified name qi under the cursor
@@ -1164,17 +1181,25 @@ func typeBindingText(qi ast.QualIdent, binding solver.TypeBinding) (string, bool
 	return "", false
 }
 
-// patternClassBinding returns the type binding of the class a pattern names with qi. It
-// returns false when the solver recorded no class for the pattern, or when qi resolves in
-// q.scope to a different class. Inside a namespace, `HttpError` names the namespace's own
-// class first, which the file scope does not see.
+// patternClassBinding returns the type binding of the class a pattern names with qi, which
+// is the class the solver recorded for the pattern. It returns false when the solver
+// recorded no class, or when q.scope binds that class neither under qi nor under its
+// qualified name.
 func patternClassBinding(q hoverQuery, qi ast.QualIdent) (solver.TypeBinding, bool) {
 	if q.info == nil {
 		return solver.TypeBinding{}, false
 	}
 	recorded := typeName(q.info.TypeOf(ast.LastIdent(qi)))
+	if recorded == "" {
+		return solver.TypeBinding{}, false
+	}
 	binding, ok := qualTypeBinding(q.scope, qi)
-	if !ok || recorded == "" || typeName(binding.Type) != recorded {
+	if !ok || typeName(binding.Type) != recorded {
+		// A bare name in a file inside a namespace can name a sibling declaration, which
+		// the module scope binds under the qualified name the solver resolved it to.
+		binding, ok = q.scope.GetType(recorded)
+	}
+	if !ok || typeName(binding.Type) != recorded {
 		return solver.TypeBinding{}, false
 	}
 	return binding, true
