@@ -35,6 +35,7 @@ const monacoMock = vi.hoisted(() => {
             IndentAction: { None: 0, Indent: 1, IndentOutdent: 2, Outdent: 3 },
             onLanguage: vi.fn(),
             register: vi.fn(),
+            registerCodeActionProvider: vi.fn(),
             registerCompletionItemProvider: vi.fn(),
             registerDeclarationProvider: vi.fn(),
             registerDefinitionProvider: vi.fn(),
@@ -59,6 +60,7 @@ type FakeClient = {
     publishDiagnostics: (params: lsp.PublishDiagnosticsParams) => void;
     textDocumentSemanticTokensFull: ReturnType<typeof vi.fn>;
     textDocumentHover: ReturnType<typeof vi.fn>;
+    textDocumentCodeAction: ReturnType<typeof vi.fn>;
 };
 
 function fakeClient(): FakeClient {
@@ -68,6 +70,7 @@ function fakeClient(): FakeClient {
         .fn()
         .mockResolvedValue({ data: [0, 8, 1, 0, 1] });
     const textDocumentHover = vi.fn();
+    const textDocumentCodeAction = vi.fn().mockResolvedValue([]);
     const client = {
         onTextDocumentPublishDiagnostics: (
             handler: (params: lsp.PublishDiagnosticsParams) => void,
@@ -77,12 +80,14 @@ function fakeClient(): FakeClient {
         workspaceExecuteCommand: vi.fn().mockResolvedValue(undefined),
         textDocumentSemanticTokensFull,
         textDocumentHover,
+        textDocumentCodeAction,
     } as unknown as Client;
     return {
         client,
         publishDiagnostics: (params) => onDiagnostics(params),
         textDocumentSemanticTokensFull,
         textDocumentHover,
+        textDocumentCodeAction,
     };
 }
 
@@ -235,5 +240,65 @@ describe('setupLanguage', () => {
             column: 5,
         });
         expect(hover).toBeNull();
+    });
+
+    test('sends a code action request the diagnostics the server published', async () => {
+        const { client, publishDiagnostics, textDocumentCodeAction } =
+            fakeClient();
+        setupLanguage(client, {
+            codeActionProvider: { codeActionKinds: ['quickfix'] },
+        });
+
+        const register = monacoMock.languages.registerCodeActionProvider;
+        expect(register).toHaveBeenCalledTimes(1);
+        const [languageID, provider, metadata] = register.mock.calls[0];
+        expect(languageID).toBe('escalier');
+        expect(metadata).toEqual({ providedCodeActionKinds: ['quickfix'] });
+
+        const diagnostic: lsp.Diagnostic = {
+            range: {
+                start: { line: 0, character: 4 },
+                end: { line: 0, character: 5 },
+            },
+            message: 'borrow it',
+            data: { borrow: '&' },
+        };
+        publishDiagnostics({ uri, diagnostics: [diagnostic] });
+
+        const model = { uri: { toString: () => uri }, getVersionId: () => 1 };
+        const marker = {
+            startLineNumber: 1,
+            startColumn: 5,
+            endLineNumber: 1,
+            endColumn: 6,
+            message: 'borrow it',
+        };
+        await provider.provideCodeActions(
+            model,
+            {
+                startLineNumber: 1,
+                startColumn: 5,
+                endLineNumber: 1,
+                endColumn: 5,
+            },
+            { markers: [marker], trigger: 1 },
+            {},
+        );
+        expect(textDocumentCodeAction).toHaveBeenCalledWith({
+            textDocument: { uri },
+            range: {
+                start: { line: 0, character: 4 },
+                end: { line: 0, character: 4 },
+            },
+            context: { diagnostics: [diagnostic], only: undefined },
+        });
+    });
+
+    test('registers no code action provider when the server offers none', () => {
+        const { client } = fakeClient();
+        setupLanguage(client, {});
+        expect(
+            monacoMock.languages.registerCodeActionProvider,
+        ).not.toHaveBeenCalled();
     });
 });
