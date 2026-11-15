@@ -555,7 +555,9 @@ func PrintFuncSignature(
 	p.scopeLifetimeNames(own)
 	sig := FuncSignature{Binders: append([]string{}, b.labels...)}
 	sig.Binders = append(sig.Binders, p.typeParamBinders(t.TypeParams)...)
-	sig.Binders = append(sig.Binders, p.lifetimeParamBinders(own)...)
+	// A written signature has to declare every bound the body relies on, so a lifetime the
+	// declaration names takes the bounds ltBounds computed for it beside the ones it wrote.
+	sig.Binders = append(sig.Binders, p.lifetimeParamBindersWith(own, ltBounds)...)
 	sig.Binders = append(sig.Binders, b.ltLabels...)
 	if t.SelfParam != nil {
 		sig.Receiver = p.printSelfReceiver(t.SelfParam)
@@ -1889,6 +1891,36 @@ func (p *namedPrinter) lifetimeParamBinders(lps []*LifetimeParam) []string {
 			for j, b := range lp.Bounds {
 				rendered[j] = p.printLifetime(b)
 			}
+			s += ": " + strings.Join(rendered, " & ")
+		}
+		binders[i] = s
+	}
+	return binders
+}
+
+// lifetimeParamBindersWith renders each of lps as lifetimeParamBinders does, with the bounds
+// extra lists for the parameter's variable added after the ones it declares. A bound already
+// declared is not repeated.
+func (p *namedPrinter) lifetimeParamBindersWith(lps []*LifetimeParam, extra map[*LifetimeVar][]*LifetimeVar) []string {
+	binders := make([]string, len(lps))
+	for i, lp := range lps {
+		var rendered []string
+		seen := set.NewSet[string]()
+		add := func(b Lifetime) {
+			name := p.printLifetime(b)
+			if !seen.Contains(name) {
+				seen.Add(name)
+				rendered = append(rendered, name)
+			}
+		}
+		for _, b := range lp.Bounds {
+			add(b)
+		}
+		for _, b := range extra[lp.Var] {
+			add(b)
+		}
+		s := p.printLifetime(lp.Var)
+		if len(rendered) > 0 {
 			s += ": " + strings.Join(rendered, " & ")
 		}
 		binders[i] = s

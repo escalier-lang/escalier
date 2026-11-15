@@ -179,6 +179,7 @@ func TestMethodSignature(t *testing.T) {
 			inner: Flat,
 			peek(&self, other: &Flat) -> &Flat { return &self.inner },
 			pick(&self, other: &Flat) { return either(&self.inner, other) },
+			pickNamed<'s>(&'s self, other: &Flat) { return either(&self.inner, other) },
 			get(&self) { return self.inner.x },
 			reader(&self) -> fn () -> number { return fn () { return self.inner.x } },
 			at(&self, i: number) -> number { return i },
@@ -207,6 +208,7 @@ func TestMethodSignature(t *testing.T) {
 	require.Equal(t, []string{
 		"(&self, &Flat) -> &Flat",
 		"<'a>(&'a self, &'a Flat) -> &'a Flat",
+		"<'s: 'b, 'a: 'b, 'b>(&'s self, &'a Flat) -> &'b Flat",
 		"(&self) -> number",
 		"(&self) -> fn () -> number",
 		"(&self, number) -> number",
