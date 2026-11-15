@@ -6147,17 +6147,7 @@ func (c *Context) patternMatchesMemberShape(pat ast.Pat, member soltype.Type) bo
 // itself, shared by a written object pattern and the UCS IR's object test so the two cannot
 // disagree about which members a branch narrows to.
 func (c *Context) objectMemberHasKeys(member soltype.Type, names []string) bool {
-	carrier := soltype.CarrierOf(member)
-	// A class instance carries the members its projected body lists, inherited ones
-	// included, so `{kind}` destructures an instance of `class Event { kind: string }`.
-	if ct, isClass := carrier.(*soltype.ClassType); isClass {
-		body, ok := c.projectClassBody(ct)
-		if !ok {
-			return false
-		}
-		carrier = body
-	}
-	obj, ok := carrier.(*soltype.ObjectType)
+	obj, ok := c.memberObjectCarrier(member)
 	if !ok {
 		return false
 	}
@@ -6167,6 +6157,42 @@ func (c *Context) objectMemberHasKeys(member soltype.Type, names []string) bool 
 		}
 	}
 	return true
+}
+
+// objectMemberRequiresKeys reports whether every value of the union member carries each of
+// names, so an object test naming them matches the whole member. It is objectMemberHasKeys
+// with an optional property left out, since a `{a?: number}` value can lack `a`.
+func (c *Context) objectMemberRequiresKeys(member soltype.Type, names []string) bool {
+	obj, ok := c.memberObjectCarrier(member)
+	if !ok {
+		return false
+	}
+	for _, name := range names {
+		if !readsAsProperty(obj, name) {
+			return false
+		}
+		if prop, isProp := obj.Prop(name); isProp && prop.Optional {
+			return false
+		}
+	}
+	return true
+}
+
+// memberObjectCarrier returns the object type that lists the members of the union member,
+// and false when member is not an object or a class instance.
+func (c *Context) memberObjectCarrier(member soltype.Type) (*soltype.ObjectType, bool) {
+	carrier := soltype.CarrierOf(member)
+	// A class instance carries the members its projected body lists, inherited ones
+	// included, so `{kind}` destructures an instance of `class Event { kind: string }`.
+	if ct, isClass := carrier.(*soltype.ClassType); isClass {
+		body, ok := c.projectClassBody(ct)
+		if !ok {
+			return nil, false
+		}
+		carrier = body
+	}
+	obj, ok := carrier.(*soltype.ObjectType)
+	return obj, ok
 }
 
 // readsAsProperty reports whether obj answers a read of name the way a property does. A

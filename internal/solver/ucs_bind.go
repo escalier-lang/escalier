@@ -467,45 +467,134 @@ func (b *pathBinder) applyTest(scope *Scope, node ast.Node, s *ucs.Scrutinee, v 
 	}
 }
 
-// excludingRegexAnns returns b with the scrutinee split tests read as the strings that fail
-// every regex annotation among the split's tests. `other` in
-// `match s { d: /^\d+$/ => d, other => other }` over `string` binds `string & ~/^\d+$/`. It
-// returns b itself when no such test applies. That is also the case for a scrutinee whose type
-// is not `string` or a meet of `string` with complements, which covers a borrow and a type
-// still being inferred.
-func (b *pathBinder) excludingRegexAnns(scope *Scope, split *ucs.NormSplit) *pathBinder {
-	var tests []ucs.Test
-	for _, branch := range split.Branches {
-		if _, isAnn := branch.Test.(*ucs.AnnTest); isAnn {
-			tests = append(tests, branch.Test)
-		}
-	}
-	if len(tests) == 0 {
+// excludingTested returns b with the scrutinee split tests read as the values that fail every
+// test the split makes. It returns b itself when no test removes anything.
+//
+// Two kinds of test narrow the scrutinee:
+//
+//   - A regex annotation leaves the strings the regex rejects. `other` in
+//     `match s { d: /^\d+$/ => d, other => other }` over `string` binds `string & ~/^\d+$/`.
+//     This applies only to a scrutinee whose type is `string` or a meet of `string` with
+//     complements, which leaves out a borrow and a type still being inferred.
+//   - Any other annotation, a class or extractor test, and a literal test remove each member
+//     of the scrutinee's union that the tested type covers. `other` in
+//     `match x { n: number => n, other => other }` over `number | string` binds `string`.
+//     A member the tests cover only in part, such as `number` against a `0` arm, stays.
+//   - An object or tuple test removes each member whose every value fits its shape. `{a}`
+//     removes `{a: number}` but not `{a?: number}`, and `[x, y]` removes a two-element
+//     tuple.
+func (b *pathBinder) excludingTested(scope *Scope, split *ucs.NormSplit) *pathBinder {
+	if len(split.Branches) == 0 {
 		return b
 	}
 	v := b.viewOf(scope, split.Scrutinee)
 	shape := v.shape
-	// The walk resolved each annotation already and reported any it could not support, so
+	// The walk resolved each test already and reported any it could not support, so
 	// resolving them again runs under a discarded probe.
 	p := b.c.openProbe()
-	anns := b.c.annTypes(scope, b.lvl, tests)
-	b.c.closeProbe(p, false)
+	var handled []soltype.Type
+	var shapes []ucs.Test
 	changed := false
-	for _, ann := range anns {
-		re, isRegex := b.c.expandAliasChain(ann).(*soltype.RegexType)
-		if !isRegex || !splitsByRegex(shape, re) {
-			continue
+	for _, branch := range split.Branches {
+		switch test := branch.Test.(type) {
+		case *ucs.AnnTest:
+			for _, ann := range b.c.annTypes(scope, b.lvl, []ucs.Test{test}) {
+				if re, isRegex := b.c.expandAliasChain(ann).(*soltype.RegexType); isRegex {
+					if splitsByRegex(shape, re) {
+						shape = regexComplement(b.c.ctx, shape, re)
+						changed = true
+					}
+					continue
+				}
+				handled = append(handled, ann)
+			}
+		case *ucs.ClassTest:
+			if ct, ok := b.c.instancePatClass(scope, ast.QualIdentToString(test.Name)); ok {
+				handled = append(handled, b.c.freshClassInstance(ct, b.lvl))
+			}
+		case *ucs.ExtractorTest:
+			if ct, ok := b.c.resolveQualClassType(scope, test.Name); ok {
+				handled = append(handled, b.c.freshClassInstance(ct, b.lvl))
+			}
+		case *ucs.LitTest:
+			if atom, _, isAtom := atomLitOf(test.Lit); isAtom {
+				handled = append(handled, atom)
+			} else if lt, ok := b.c.litTypeOf(test.Lit); ok {
+				handled = append(handled, lt)
+			}
+		case *ucs.ObjectTest, *ucs.TupleTest:
+			shapes = append(shapes, test)
 		}
-		shape = regexComplement(b.c.ctx, shape, re)
-		changed = true
 	}
+	if len(handled) > 0 || len(shapes) > 0 {
+		if rest, removed := b.c.withoutCovered(shape, handled, shapes); removed {
+			shape = rest
+			changed = true
+		}
+	}
+	b.c.closeProbe(p, false)
 	if !changed {
 		return b
 	}
-	next := &pathBinder{c: b.c, lvl: b.lvl, blame: b.blame, views: maps.Clone(b.views), openRoot: b.openRoot}
+	next := &pathBinder{c: b.c, lvl: b.lvl, blame: b.blame, views: maps.Clone(b.views), rootShape: b.rootShape, openRoot: b.openRoot}
 	v.ty, v.concrete, v.shape = shape, shape, shape
 	next.views[split.Scrutinee] = v
 	return next
+}
+
+// withoutCovered returns the members of the union t that neither the types in handled nor
+// the object and tuple tests in shapes cover, as one type, and whether it removed any. It
+// removes nothing when t is not a union once its aliases are expanded, or when every member
+// is covered, since a value that reaches no member is a case for the coverage check to
+// report rather than a type to bind.
+func (c *checker) withoutCovered(t soltype.Type, handled []soltype.Type, shapes []ucs.Test) (soltype.Type, bool) {
+	members := unionParts(c.expandAliasChain(t))
+	if len(members) < 2 {
+		return t, false
+	}
+	var handledType soltype.Type
+	if len(handled) > 0 {
+		handledType = newUnion(nil, handled)
+	}
+	var kept []soltype.Type
+	for _, member := range members {
+		if handledType != nil && c.memberSubtracted(member, handledType) {
+			continue
+		}
+		if c.memberFitsShape(member, shapes) {
+			continue
+		}
+		kept = append(kept, member)
+	}
+	if len(kept) == len(members) || len(kept) == 0 {
+		return t, false
+	}
+	return newUnion(nil, kept), true
+}
+
+// memberFitsShape reports whether every value of the union member passes one of the object
+// or tuple tests in shapes. An object test's optional keys, which a destructuring default
+// writes, are left out, since the test matches a value without them.
+func (c *checker) memberFitsShape(member soltype.Type, shapes []ucs.Test) bool {
+	for _, test := range shapes {
+		switch test := test.(type) {
+		case *ucs.ObjectTest:
+			var names []string
+			for _, key := range test.Keys {
+				if !key.Optional {
+					names = append(names, key.Name)
+				}
+			}
+			if c.ctx.objectMemberRequiresKeys(member, names) {
+				return true
+			}
+		case *ucs.TupleTest:
+			if tupleMemberFitsArity(member, test.Len, test.Rest == ucs.TrailingRest) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // testedAt returns the view a literal or class test at s constrains into. That is v itself,
