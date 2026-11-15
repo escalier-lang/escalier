@@ -36,8 +36,8 @@ func TestEncodeLike(t *testing.T) {
 	}
 }
 
-// TestUnresolvedType covers which rendered types unresolvedType treats as unresolved.
-func TestUnresolvedType(t *testing.T) {
+// TestUnwritableType covers which rendered types unwritableType treats as unwritable.
+func TestUnwritableType(t *testing.T) {
 	tests := []struct {
 		text     string
 		expected bool
@@ -54,7 +54,7 @@ func TestUnresolvedType(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.text, func(t *testing.T) {
-			require.Equal(t, tt.expected, unresolvedType.MatchString(tt.text))
+			require.Equal(t, tt.expected, unwritableType.MatchString(tt.text))
 		})
 	}
 }

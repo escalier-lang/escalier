@@ -229,9 +229,10 @@ func writeSource(src string) (rewritten, unresolved string, unwritable int) {
 		}
 		// A type the checker could not resolve renders as `error`, and a variable it left
 		// unsolved as t{ID}. Either means the literal does not check on its own, as one file
-		// of a several-file test does, so its signature is not the one the test means.
+		// of a several-file test does, so its signature is not the one the test means. A
+		// recursive type renders as `μX0.T`, which no source can write.
 		for _, e := range edits {
-			if unresolvedType.MatchString(e.Text) {
+			if unwritableType.MatchString(e.Text) {
 				return src, e.Text, unwritable
 			}
 		}
@@ -250,10 +251,11 @@ func writeSource(src string) (rewritten, unresolved string, unwritable int) {
 	return src, "", 0
 }
 
-// unresolvedType matches a rendered type that holds an unresolved type, a raw variable such
-// as t4, or a recursive type, which renders as `μX0.T` and has no source form. A word
-// followed by `:` or `?:` is a field name, as in `{t1: number}`, so it is not a variable.
-var unresolvedType = regexp.MustCompile(`(?:^|[^\w"-])error(?:[^\w"-]|$)|(?:^|[^\w"-])t[0-9]+(?:[^\w"?:-]|$)|μ`)
+// unwritableType matches a rendered type that cannot be written back as source: one that
+// holds an unresolved type, which renders as `error`, a raw variable such as t4, or a
+// recursive type, which renders as `μX0.T`. A word followed by `:` or `?:` is a field
+// name, as in `{t1: number}`, so it is not a variable.
+var unwritableType = regexp.MustCompile(`(?:^|[^\w"-])error(?:[^\w"-]|$)|(?:^|[^\w"-])t[0-9]+(?:[^\w"?:-]|$)|μ`)
 
 // neverType matches a rendered type that names `never`.
 var neverType = regexp.MustCompile(`\bnever\b`)
