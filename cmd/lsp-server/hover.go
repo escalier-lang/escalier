@@ -151,8 +151,7 @@ func typeRefText(q hoverQuery, ref *ast.TypeRefTypeAnn) (string, bool) {
 			continue
 		}
 		if decl, ok := np.Node.(ast.Decl); ok {
-			// A reference shows the name as written, so `shapes.E` in a file outside
-			// `shapes` reads `enum shapes.E` and `E` inside it reads `enum E`.
+			// A reference shows the name as written, so `shapes.E` reads `enum shapes.E`.
 			if text := declTextAs(decl, ast.QualIdentToString(ref.Name)); text != "" {
 				return text, true
 			}
@@ -182,8 +181,7 @@ func declText(decl ast.Decl) string {
 }
 
 // declTextAs returns the header declText returns for decl, with name in place of the name
-// decl declares, or with decl's own name when name is "". A reference written through a
-// namespace passes the qualified name, so `shapes.E` shows `enum shapes.E`.
+// decl declares, or with decl's own name when name is "".
 func declTextAs(decl ast.Decl, name string) string {
 	switch decl := decl.(type) {
 	case *ast.TypeDecl:
@@ -1143,7 +1141,8 @@ func qualNameText(q hoverQuery, qi ast.QualIdent) (string, bool) {
 
 // typeBindingText renders the declaration of binding, the type binding the qualified name
 // qi names, as `class errs.HttpError` or `(variant) Expr.Num(value: number)`. The
-// declaration shows the name as qi writes it, and a variant takes its enum's name from qi. It returns false when binding has no declaration to render.
+// declaration shows the name as qi writes it, and a variant takes its enum's name from qi.
+// It returns false when binding has no declaration to render.
 func typeBindingText(qi ast.QualIdent, binding solver.TypeBinding) (string, bool) {
 	member, isMember := qi.(*ast.Member)
 	for _, src := range binding.Sources {
