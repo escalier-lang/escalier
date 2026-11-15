@@ -286,8 +286,8 @@ func TestInferYieldFrom(t *testing.T) {
 			// reported at its own site. The ErrorType that walk yields then absorbs, so
 			// the delegation adds no second diagnostic on top.
 			name:     "ABrokenDelegateReportsOnlyItsOwnError",
-			src:      `gen fn f() -> Generator<never, undefined, unknown> { yield from missing() }`,
-			wantErrs: []string{"1:65-1:72: Unknown identifier: missing"},
+			src:      `gen fn f() -> Generator<number, undefined, unknown> { yield from missing() }`,
+			wantErrs: []string{"1:66-1:73: Unknown identifier: missing"},
 		},
 		{
 			// A union delegate is legal only when every branch is. A sync generator body
@@ -440,8 +440,8 @@ func TestInferGenReturnAnnotationShape(t *testing.T) {
 		},
 		{
 			name:     "YieldFromNonIterable",
-			src:      `gen fn f() -> Generator<never, undefined, unknown> { yield from 5 }`,
-			wantErrs: []string{"1:65-1:66: 5 is not iterable"},
+			src:      `gen fn f() -> Generator<number, undefined, unknown> { yield from 5 }`,
+			wantErrs: []string{"1:66-1:67: 5 is not iterable"},
 		},
 	})
 }
