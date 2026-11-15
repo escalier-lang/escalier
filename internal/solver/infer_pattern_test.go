@@ -1768,10 +1768,10 @@ func TestInferMatchNarrowsByAbsentKeys(t *testing.T) {
 	}
 }
 
-// TestInferMatchCatchAllNarrowedByArmsAbove covers what a catch-all arm binds once the arms above it
-// have tested part of the scrutinee. An arm whose test captures a whole member removes it. A
-// guard, a nested sub-pattern, an object pattern, and a literal that covers part of a member
-// each leave the type alone.
+// TestInferMatchCatchAllNarrowedByArmsAbove covers what a catch-all arm binds once the arms
+// above it have tested part of the scrutinee. An arm whose test matches every value of a
+// member removes it. A guard, a refutable sub-pattern, an optional key, and a literal that
+// covers part of a member each leave the type alone.
 func TestInferMatchCatchAllNarrowedByArmsAbove(t *testing.T) {
 	t.Parallel()
 
@@ -1845,7 +1845,28 @@ func TestInferMatchCatchAllNarrowedByArmsAbove(t *testing.T) {
 			src: `fn f(x: {a: number} | string) {
 				return match x { {a} => true, other => other }
 			}`,
+			want: "fn (x: {a: number} | string) -> true | string",
+		},
+		{
+			name: "ObjectPatternOverOptionalKey",
+			src: `fn f(x: {a?: number} | string) {
+				return match x { {a} => true, other => other }
+			}`,
+			want: "fn (x: {a?: number} | string) -> true | {a?: number} | string",
+		},
+		{
+			name: "ObjectPatternWithRefutableField",
+			src: `fn f(x: {a: number} | string) {
+				return match x { {a: 1} => true, other => other }
+			}`,
 			want: "fn (x: {a: number} | string) -> true | {a: number} | string",
+		},
+		{
+			name: "TuplePattern",
+			src: `fn f(x: [number, number] | string) {
+				return match x { [a, b] => true, other => other }
+			}`,
+			want: "fn (x: [number, number] | string) -> true | string",
 		},
 	}
 	for _, tt := range tests {

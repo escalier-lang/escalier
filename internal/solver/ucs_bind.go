@@ -480,8 +480,9 @@ func (b *pathBinder) applyTest(scope *Scope, node ast.Node, s *ucs.Scrutinee, v 
 //     of the scrutinee's union that the tested type covers. `other` in
 //     `match x { n: number => n, other => other }` over `number | string` binds `string`.
 //     A member the tests cover only in part, such as `number` against a `0` arm, stays.
-//
-// An object or tuple test names a shape rather than a type, so it removes nothing.
+//   - An object or tuple test removes each member whose every value fits its shape. `{a}`
+//     removes `{a: number}` but not `{a?: number}`, and `[x, y]` removes a two-element
+//     tuple.
 func (b *pathBinder) excludingTested(scope *Scope, split *ucs.NormSplit) *pathBinder {
 	if len(split.Branches) == 0 {
 		return b
@@ -492,6 +493,7 @@ func (b *pathBinder) excludingTested(scope *Scope, split *ucs.NormSplit) *pathBi
 	// resolving them again runs under a discarded probe.
 	p := b.c.openProbe()
 	var handled []soltype.Type
+	var shapes []ucs.Test
 	changed := false
 	for _, branch := range split.Branches {
 		switch test := branch.Test.(type) {
@@ -520,10 +522,12 @@ func (b *pathBinder) excludingTested(scope *Scope, split *ucs.NormSplit) *pathBi
 			} else if lt, ok := b.c.litTypeOf(test.Lit); ok {
 				handled = append(handled, lt)
 			}
+		case *ucs.ObjectTest, *ucs.TupleTest:
+			shapes = append(shapes, test)
 		}
 	}
-	if len(handled) > 0 {
-		if rest, removed := b.c.withoutCovered(shape, newUnion(nil, handled)); removed {
+	if len(handled) > 0 || len(shapes) > 0 {
+		if rest, removed := b.c.withoutCovered(shape, handled, shapes); removed {
 			shape = rest
 			changed = true
 		}
@@ -538,25 +542,59 @@ func (b *pathBinder) excludingTested(scope *Scope, split *ucs.NormSplit) *pathBi
 	return next
 }
 
-// withoutCovered returns the members of the union t that handled does not cover, as one
-// type, and whether it removed any. It removes nothing when t is not a union once its aliases
-// are expanded, or when handled covers every member, since a value that reaches no member is
-// a case for the coverage check to report rather than a type to bind.
-func (c *checker) withoutCovered(t, handled soltype.Type) (soltype.Type, bool) {
+// withoutCovered returns the members of the union t that neither the types in handled nor
+// the object and tuple tests in shapes cover, as one type, and whether it removed any. It
+// removes nothing when t is not a union once its aliases are expanded, or when every member
+// is covered, since a value that reaches no member is a case for the coverage check to
+// report rather than a type to bind.
+func (c *checker) withoutCovered(t soltype.Type, handled []soltype.Type, shapes []ucs.Test) (soltype.Type, bool) {
 	members := unionParts(c.expandAliasChain(t))
 	if len(members) < 2 {
 		return t, false
 	}
+	var handledType soltype.Type
+	if len(handled) > 0 {
+		handledType = newUnion(nil, handled)
+	}
 	var kept []soltype.Type
 	for _, member := range members {
-		if !c.memberSubtracted(member, handled) {
-			kept = append(kept, member)
+		if handledType != nil && c.memberSubtracted(member, handledType) {
+			continue
 		}
+		if c.memberFitsShape(member, shapes) {
+			continue
+		}
+		kept = append(kept, member)
 	}
 	if len(kept) == len(members) || len(kept) == 0 {
 		return t, false
 	}
 	return newUnion(nil, kept), true
+}
+
+// memberFitsShape reports whether every value of the union member passes one of the object
+// or tuple tests in shapes. An object test's optional keys, which a destructuring default
+// writes, are left out, since the test matches a value without them.
+func (c *checker) memberFitsShape(member soltype.Type, shapes []ucs.Test) bool {
+	for _, test := range shapes {
+		switch test := test.(type) {
+		case *ucs.ObjectTest:
+			var names []string
+			for _, key := range test.Keys {
+				if !key.Optional {
+					names = append(names, key.Name)
+				}
+			}
+			if c.ctx.objectMemberRequiresKeys(member, names) {
+				return true
+			}
+		case *ucs.TupleTest:
+			if tupleMemberFitsArity(member, test.Len, test.Rest == ucs.TrailingRest) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // testedAt returns the view a literal or class test at s constrains into. That is v itself,
