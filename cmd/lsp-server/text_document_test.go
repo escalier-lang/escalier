@@ -1637,6 +1637,22 @@ func TestHoverFromSolver(t *testing.T) {
 			expected: escalierCode("class errs.HttpError"),
 		},
 		{
+			name: "MatchCatchAllNarrowedByArmAbove",
+			files: map[string]string{
+				"lib/a.esc": "export fn f(x: number | string) -> string {\n    return match x {\n        n: number => \"n\",\n        other => other,\n    }\n}",
+			},
+			open: "lib/a.esc", line: 3, col: 9,
+			expected: escalierCode("other: string"),
+		},
+		{
+			name: "MatchWildcardArmNarrowedByArmAbove",
+			files: map[string]string{
+				"lib/a.esc": "export fn f(x: number | string) -> number {\n    return match x {\n        n: number => n,\n        _ => 0,\n    }\n}",
+			},
+			open: "lib/a.esc", line: 3, col: 8,
+			expected: escalierCode("string"),
+		},
+		{
 			name:  "KeywordHasNoHover",
 			files: map[string]string{"bin/main.esc": "val x = 5"},
 			open:  "bin/main.esc", line: 0, col: 1,
