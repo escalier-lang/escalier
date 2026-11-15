@@ -152,7 +152,7 @@ stop a program from using a value after disposing it.
   When every resource type has a destructor, a raise frees what is in scope in
   reverse order and every resource is freed exactly once. The model needs
   destructors that cannot raise and exceptions that hold no resources. A `move`
-  changes the order destructors run in, which a program needs in order to free
+  changes the order destructors run in, which a program needs to free
   resources in anything other than reverse order. A closure that captures a
   resource is itself a resource, of a different type from a closure that can be
   copied.
