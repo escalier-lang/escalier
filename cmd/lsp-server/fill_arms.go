@@ -435,7 +435,7 @@ func classSpelling(file checkedFile, ct *soltype.ClassType) (string, *ast.EnumVa
 			}
 		}
 		for _, name := range cur.NamespaceNames() {
-			if ns, ok := file.scope.GetNamespace(name); ok {
+			if ns, ok := file.scope.GetNamespace(name); ok && namespaceReadsAs(file, ns, name) {
 				findInNamespace(ns, name, ct, namespaceSearchDepth, consider)
 			}
 		}
@@ -473,6 +473,18 @@ func findInNamespace(ns *solver.Namespace, spelling string, ct *soltype.ClassTyp
 	for _, name := range slices.Sorted(maps.Keys(ns.Nested)) {
 		findInNamespace(ns.Nested[name], spelling+"."+name, ct, depth-1, consider)
 	}
+}
+
+// namespaceReadsAs reports whether file writes the namespace ns under name. An import
+// binds a package's namespace under the name the file reads it by, as `import "std:error"`
+// binds `error`. A namespace of this package reads as name only from the namespace that
+// declares it. The module scope also binds an enum declared in `geo` under the bare name
+// `Shape`, which a file outside `geo` writes as `geo.Shape`.
+func namespaceReadsAs(file checkedFile, ns *solver.Namespace, name string) bool {
+	if strings.Contains(ns.Name, ":") {
+		return true
+	}
+	return ns.Name == name || file.namespace != "" && ns.Name == file.namespace+"."+name
 }
 
 // namesClass reports whether t is an instance of the class ct, at any type arguments.

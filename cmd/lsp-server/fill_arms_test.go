@@ -237,8 +237,8 @@ func TestFillArmsAction(t *testing.T) {
 			diagnostic: "1:8-2:2 match is not exhaustive; add branches for `Shape.Circle`, `Shape.Square`",
 			expected: "export fn size(s: geo.Shape) -> number throws _ {\n" +
 				"\treturn match s {\n" +
-				"\t\tShape.Circle(radius) => throw \"todo\",\n" +
-				"\t\tShape.Square(side) => throw \"todo\",\n" +
+				"\t\tgeo.Shape.Circle(radius) => throw \"todo\",\n" +
+				"\t\tgeo.Shape.Square(side) => throw \"todo\",\n" +
 				"\t}\n" +
 				"}\n",
 		},
