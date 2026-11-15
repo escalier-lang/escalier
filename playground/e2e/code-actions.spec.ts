@@ -34,9 +34,11 @@ test.describe('Code actions', () => {
 
         const inputPanel = page.locator('#input-panel');
         // A marker over several lines draws one squiggle per line.
-        await expect(inputPanel.locator('.squiggly-error').first()).toBeVisible({
-            timeout: 15_000,
-        });
+        await expect(inputPanel.locator('.squiggly-error').first()).toBeVisible(
+            {
+                timeout: 15_000,
+            },
+        );
 
         await page.keyboard.press('Control+.');
         const action = page
