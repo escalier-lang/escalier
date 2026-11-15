@@ -1,7 +1,10 @@
 package solver
 
 import (
+	"fmt"
 	"testing"
+
+	"github.com/escalier-lang/escalier/internal/ast"
 
 	"github.com/stretchr/testify/require"
 )
@@ -1194,4 +1197,96 @@ func TestInferInstancePatBaseClassOverSubclass(t *testing.T) {
 			require.Equal(t, test.want, values["f"])
 		})
 	}
+}
+
+// TestInferExtractorPatNamespacedEnum covers an extractor pattern that names a variant of
+// an enum declared in a namespace, reached through the namespace's qualified name. The
+// enum's arms count toward exhaustiveness like any other variant's.
+func TestInferExtractorPatNamespacedEnum(t *testing.T) {
+	t.Parallel()
+
+	shape := `export enum Shape { Circle(radius: number), Rect(width: number, height: number) }`
+	tests := []struct {
+		name     string
+		files    map[string]string
+		wantErrs []string
+	}{
+		{
+			name: "DirectoryNamespace",
+			files: map[string]string{
+				"lib/shapes/shape.esc": shape,
+				"lib/index.esc": `
+					export fn area(s: shapes.Shape) -> number {
+						return match s {
+							shapes.Shape.Circle(r) => r * r,
+							shapes.Shape.Rect(w, h) => w * h,
+						}
+					}
+				`,
+			},
+			wantErrs: []string{},
+		},
+		{
+			name: "BlockNamespace",
+			files: map[string]string{
+				"lib/index.esc": `
+					namespace geo { ` + shape + ` }
+					export fn area(s: geo.Shape) -> number {
+						return match s {
+							geo.Shape.Circle(r) => r * r,
+							geo.Shape.Rect(w, h) => w * h,
+						}
+					}
+				`,
+			},
+			wantErrs: []string{},
+		},
+		{
+			name: "MissingVariant",
+			files: map[string]string{
+				"lib/shapes/shape.esc": shape,
+				"lib/index.esc": `
+					export fn area(s: shapes.Shape) -> number {
+						return match s {
+							shapes.Shape.Circle(r) => r * r,
+						}
+					}
+				`,
+			},
+			wantErrs: []string{"match is not exhaustive; add a branch for `Shape.Rect`"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			res := InferModuleWithSource(parseModuleFiles(t, tt.files), preludeFallback(t, nil))
+			require.Equal(t, tt.wantErrs, errorMessagesOf(res.Errors))
+		})
+	}
+}
+
+// TestInferExtractorPatNamespacedEnumFromPackage asserts that an importer matches a
+// package's namespaced enum through the package's binding.
+func TestInferExtractorPatNamespacedEnumFromPackage(t *testing.T) {
+	t.Parallel()
+
+	source := preludeFallback(t, func(uri string) (*ast.Module, string, error) {
+		if uri != "geo" {
+			return nil, "", fmt.Errorf("no such package")
+		}
+		return parseModuleFiles(t, map[string]string{
+			"lib/index.esc":        `export val version = 1`,
+			"lib/shapes/shape.esc": `export enum Shape { Circle(radius: number), Rect(width: number, height: number) }`,
+		}), "lib/index.esc", nil
+	})
+	res := InferModuleWithSource(parseModule(t, `
+		import "geo"
+		export fn area(s: geo.shapes.Shape) -> number {
+			return match s {
+				geo.shapes.Shape.Circle(r) => r * r,
+				geo.shapes.Shape.Rect(w, h) => w * h,
+			}
+		}
+	`), source)
+	require.Empty(t, errorMessagesOf(res.Errors))
 }

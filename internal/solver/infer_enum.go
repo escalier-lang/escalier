@@ -212,7 +212,7 @@ func (c *checker) inferEnumBody(sh *enumShell) {
 	c.declTarget(sh.scope).defineNamespace(sh.decl.Name.Name, enumNs)
 	// An enum declared in a namespace is reached from outside it as `shapes.E.Num`,
 	// which walks Nested down from `shapes`.
-	c.linkToParentNamespace(sh.qname, enumNs)
+	linkToParent(c.nsIndex, sh.qname, enumNs)
 
 	if !sh.preBindClean || !quiet() {
 		return
