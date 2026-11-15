@@ -87,4 +87,98 @@ test.describe('Syntax highlighting', () => {
         await expect(hello).toBeVisible();
         await expect(hello).not.toHaveAttribute('class', keywordClass);
     });
+
+    test('colours keys and values in JSON', async ({ page }) => {
+        // The explorer opens files in the input panel.
+        await page
+            .getByRole('button', { name: 'package.json', exact: true })
+            .click();
+        const lines = page.locator('#input-panel .view-lines');
+        await expect(lines).toContainText('"version"');
+
+        const spans = (text: string) =>
+            lines
+                .locator('span > span')
+                .filter({ hasText: new RegExp(`^${text}$`) });
+        // hello-world's package.json holds `"name": "hello-world"`.
+        const keyClass =
+            (await spans('"name"').first().getAttribute('class')) ?? '';
+        expect(keyClass).not.toBe('');
+        await expect(spans('"version"').first()).toHaveAttribute(
+            'class',
+            keyClass,
+        );
+        await expect(spans('"hello-world"').first()).not.toHaveAttribute(
+            'class',
+            keyClass,
+        );
+    });
+
+    test('colours table headers and keys in TOML', async ({ page }) => {
+        // The explorer opens files in the input panel.
+        await page
+            .getByRole('button', { name: 'escalier.toml', exact: true })
+            .click();
+        const lines = page.locator('#input-panel .view-lines');
+        await expect(lines).toContainText('project');
+
+        const spans = (text: string) =>
+            lines
+                .locator('span > span')
+                .filter({ hasText: new RegExp(`^${text}$`) });
+        // hello-world's escalier.toml holds `[project]` then `name = "hello-world"`.
+        // Monaco draws `[project]` as three spans; the `project` one carries the
+        // table-header colour.
+        const header = spans('project').first();
+        await expect(header).toBeVisible();
+        const headerClass = (await header.getAttribute('class')) ?? '';
+        expect(headerClass).not.toBe('');
+
+        // The `name` key and the `"hello-world"` value each get a colour of their own.
+        const key = spans('name').first();
+        await expect(key).toBeVisible();
+        await expect(key).not.toHaveAttribute('class', headerClass);
+
+        const value = spans('"hello-world"').first();
+        await expect(value).toBeVisible();
+        await expect(value).not.toHaveAttribute('class', headerClass);
+    });
+
+    test('colours the rows of a multi-line TOML array as values', async ({
+        page,
+    }) => {
+        await page
+            .getByRole('button', { name: 'escalier.toml', exact: true })
+            .click();
+        const inputPanel = page.locator('#input-panel');
+        await expect(inputPanel.locator('.view-lines')).toContainText(
+            'project',
+        );
+        await inputPanel.locator('.view-lines').click();
+        const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+        await page.keyboard.press(`${modifier}+A`);
+        // insertText adds the text as one edit, so Monaco closes no brackets.
+        await page.keyboard.insertText(
+            [
+                '[project]',
+                'edition = 2026',
+                'points = [',
+                '  [7, 8],',
+                ']',
+            ].join('\n'),
+        );
+
+        const lines = inputPanel.locator('.view-lines');
+        const spans = (text: string) =>
+            lines
+                .locator('span > span')
+                .filter({ hasText: new RegExp(`^${text}$`) });
+        const numberClass =
+            (await spans('2026').first().getAttribute('class')) ?? '';
+        expect(numberClass).not.toBe('');
+        // `[7, 8],` is a row of the `points` array, not a table header, so its
+        // numbers get the number colour.
+        await expect(spans('7').first()).toHaveAttribute('class', numberClass);
+        await expect(spans('8').first()).toHaveAttribute('class', numberClass);
+    });
 });
