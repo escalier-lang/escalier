@@ -1607,7 +1607,7 @@ func TestHoverFromSolver(t *testing.T) {
 				"lib/shapes/e.esc": "export enum E { Num(value: number) }\n",
 			},
 			open: "lib/a.esc", line: 2, col: 15,
-			expected: escalierCode("enum E"),
+			expected: escalierCode("enum shapes.E"),
 		},
 		{
 			name: "ExtractorPatternNamespacedVariant",
@@ -1617,6 +1617,24 @@ func TestHoverFromSolver(t *testing.T) {
 			},
 			open: "lib/a.esc", line: 2, col: 18,
 			expected: escalierCode("(variant) shapes.E.Num(value: number)"),
+		},
+		{
+			name: "QualifiedTypeRefShowsNameAsWritten",
+			files: map[string]string{
+				"lib/a.esc":        "export fn f(e: shapes.E) -> number {\n    return match e {\n        shapes.E.Num(v) => v,\n    }\n}",
+				"lib/shapes/e.esc": "export enum E { Num(value: number) }\n",
+			},
+			open: "lib/a.esc", line: 0, col: 22,
+			expected: escalierCode("enum shapes.E"),
+		},
+		{
+			name: "InstancePatternQualifiedClass",
+			files: map[string]string{
+				"lib/a.esc":         "export fn f(e: errs.HttpError) -> number {\n    return match e {\n        errs.HttpError {status} => status,\n    }\n}",
+				"lib/errs/http.esc": "export class HttpError { status: number }\n",
+			},
+			open: "lib/a.esc", line: 2, col: 14,
+			expected: escalierCode("class errs.HttpError"),
 		},
 		{
 			name:  "KeywordHasNoHover",
