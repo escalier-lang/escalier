@@ -70,6 +70,7 @@ When a one-off task needs more logic than a short shell pipeline (parsing JSON, 
 
 - When a PR addresses a specific GitHub issue, say so in the PR body. Put a line such as `Fixes #123` near the top of the summary, before the details of the change. Use `Fixes` when merging the PR resolves the issue and `Refs` when the PR is only part of the work.
 - Name every issue the PR touches on its own line when there is more than one.
+- To show a screenshot on a PR, post the image in the chat and I'll upload it. Don't commit an image to the repo, on any branch, to link it from a PR.
 
 ## Responding to CodeRabbit
 
