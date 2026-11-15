@@ -532,7 +532,7 @@ func (b *pathBinder) excludingTested(scope *Scope, split *ucs.NormSplit) *pathBi
 	if !changed {
 		return b
 	}
-	next := &pathBinder{c: b.c, lvl: b.lvl, blame: b.blame, views: maps.Clone(b.views), openRoot: b.openRoot}
+	next := &pathBinder{c: b.c, lvl: b.lvl, blame: b.blame, views: maps.Clone(b.views), rootShape: b.rootShape, openRoot: b.openRoot}
 	v.ty, v.concrete, v.shape = shape, shape, shape
 	next.views[split.Scrutinee] = v
 	return next
