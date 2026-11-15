@@ -493,6 +493,69 @@ direction:
 val r = Result.Ok(parse(s)) catch e => Result.Err(e)
 ```
 
+## Editor cues
+
+A call's name rarely says whether it raises, so a reader can't tell where a
+`catch` belongs without checking each callee's signature. The checker already
+reports an unhandled known throw in a function with no `throws` clause. The
+gap is in a function that propagates with `throws _` or a declared clause,
+where a raising call is legal and nothing on the line shows it. The language
+server closes that gap without changing the language.
+
+### A `throws` semantic token modifier
+
+The server adds a `throws` modifier to the legend in
+[cmd/lsp-server/semantic_tokens.go](../../cmd/lsp-server/semantic_tokens.go) and
+sets it on every raise site whose known throws are not `never`. The token it
+marks depends on the site:
+
+| Raise site | Marked token |
+|---|---|
+| A call or constructor call | the callee's name, e.g. `parse` in `json.parse(s)` |
+| A getter read or setter write | the property name, e.g. `size` in `obj.size` |
+| An `await` | the `await` keyword |
+| Advancing an iterator in `yield*` | the `yield` keyword |
+
+A `throw` expression is not marked, since its keyword already says it raises.
+
+The modifier is set whether or not the site sits inside a `catch` or `try`.
+The style then reads as "this raises" everywhere, and a reader can see which
+expressions a `catch` guards.
+
+Monaco theme rules accept four font styles: `italic`, `bold`, `underline` and
+`strikethrough`. The playground in
+[playground/src/semantic-tokens.ts](../../playground/src/semantic-tokens.ts)
+already underlines a `mutable` name and bolds a `reassignable` one, so `throws`
+takes italic. A token can carry more than one modifier, and the playground's
+`modifierTokenRules` already emits a combined rule for each set, so a `mut`
+binding holding a raising getter reads as underlined italic. The VS Code
+extension in [packages/vscode-escalier/](../../packages/vscode-escalier/) maps
+the modifier to the same style.
+
+### Hover
+
+Hover on a marked token shows what that site raises, e.g.
+`raises ParseError | RangeError`. This is the site's own known throws, not the
+callee's full signature, so a getter on a union receiver shows the union of
+what each member's getter raises.
+
+### Quick fixes
+
+The unhandled-throw diagnostic offers three code actions:
+
+1. **Add a `catch` fallback.** It appends ` catch ?fallback` to the full
+   expression of the statement that holds the raise site, which is what the
+   left operand of `catch` covers given its precedence. `?fallback` is a typed
+   hole ([planning/typed_holes/design.md](../typed_holes/design.md)), so the
+   checker reports the type the fallback needs. Until typed holes land, the
+   action inserts `catch undefined` and selects `undefined`.
+2. **Wrap in `try`.** It wraps the statement in `try { … } catch ?fallback`.
+3. **Declare `throws _`.** It adds `throws _` to the enclosing function, so the
+   throws propagate to its callers.
+
+The no-raise-site error offers one action, which removes the `catch` and its
+fallback.
+
 ## Implementation plan
 
 1. Parser. Lex `catch` after a complete expression as an infix keyword at the
@@ -514,7 +577,11 @@ val r = Result.Ok(parse(s)) catch e => Result.Err(e)
    source-node mapping above. Fixtures cover a chain, a binding, a fallback that
    throws, the argument-order case `f(g(), a() catch 0)`, and the source map for
    each.
-4. Docs. Add a section to
+4. Editor. Add the `throws` modifier, hover text and quick fixes from
+   [Editor cues](#editor-cues) to [cmd/lsp-server/](../../cmd/lsp-server/), and
+   style the modifier in the playground and the VS Code extension. Tests in
+   `cmd/lsp-server/semantic_tokens_test.go` cover each raise site in the table.
+5. Docs. Add a section to
    [docs/06_error_handling.md](../../docs/06_error_handling.md) and replace the
    description of `try`/`catch` as heavy for a single call.
 
@@ -531,3 +598,10 @@ val r = Result.Ok(parse(s)) catch e => Result.Err(e)
 - Should the checker suggest `try { … } catch h` when it sees
   `do { … } catch h`? The two compile to the same code, so a suggestion would
   only enforce the style that marks where the guarded region starts.
+- Should `catch` on an expression require a `try` before it, as in
+  `try parse(s) catch 0`? Swift requires `try` before every expression that
+  calls a throwing function, and the marker would show where the guarded region
+  starts in source as well as in an editor. It costs a word on every fallback,
+  and a chain becomes `try a() catch try b() catch c`. An alternative is to
+  require `try expr` only where the expression's throws propagate rather than
+  being caught, which marks the sites the checker does not otherwise report.
