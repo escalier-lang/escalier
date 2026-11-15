@@ -22,6 +22,9 @@ func TestInferIfValAndValElse(t *testing.T) {
 		src  string
 		// binding is the name whose inferred type is checked; defaults to "f".
 		binding string
+		// local reads binding as a closure bound inside a function body, which inferSource
+		// does not return.
+		local bool
 		// want is the expected printed type of binding, checked when wantErrs is nil.
 		want string
 		// wantErrs, when non-nil, is the full set of error messages expected; the
@@ -167,14 +170,17 @@ func TestInferIfValAndValElse(t *testing.T) {
 			// `mut {x: number}` picks the matching borrow branch; the write checks
 			// against it and the scrutinee keeps its full borrow-union type.
 			name: "if-val narrows borrow union for write",
-			src: `fn f<'a, 'b>(p: &'a mut {x: number}, q: &'b mut {x: string}) -> &'a mut {x: number} | &'b mut {x: string} {
-				val r = if true { p } else { q }
-				if val r2: &mut {x: number} = r {
-					r2.x = 5
+			src: `fn main() -> undefined {
+				val f = fn (p: &mut {x: number}, q: &mut {x: string}) {
+					val r = if true { p } else { q }
+					if val r2: &mut {x: number} = r {
+						r2.x = 5
+					}
+					return r
 				}
-				return r
 			}`,
-			want: "fn <'a, 'b>(p: &'a mut {x: number}, q: &'b mut {x: string}) -> &'a mut {x: number} | &'b mut {x: string}",
+			local: true,
+			want:  "fn <'a, 'b>(p: &'a mut {x: number}, q: &'b mut {x: string}) -> &'a mut {x: number} | &'b mut {x: string}",
 		},
 		{
 			// r2 binds at &mut {x: number}, so a string write to r2.x is rejected.
@@ -295,7 +301,11 @@ func TestInferIfValAndValElse(t *testing.T) {
 			if binding == "" {
 				binding = "f"
 			}
-			require.Equal(t, tt.want, values[binding])
+			got := values[binding]
+			if tt.local {
+				got, _ = inferLocal(t, tt.src, binding)
+			}
+			require.Equal(t, tt.want, got)
 		})
 	}
 }

@@ -36,7 +36,9 @@ func TestInferFreshObjectReturn(t *testing.T) {
 // the output. `p` is returned, so its lifetime is named `'a`. `q` connects
 // nothing, so its lifetime name is elided but the `&mut` is kept.
 func TestInferDistinctParamLifetimes(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f<'a>(p: &'a mut {x: number}, q: &mut {y: number}) -> &'a mut {x: number} { return p }`)
+	values, errs := inferLocals(t, `fn main() -> undefined {
+	val f = fn (p: &mut {x: number}, q: &mut {y: number}) { return p }
+}`, "f")
 	require.Empty(t, errs)
 	require.Equal(t, "fn <'a>(p: &'a mut {x: number}, q: &mut {y: number}) -> &'a mut {x: number}", values["f"])
 }
@@ -163,14 +165,16 @@ func TestInferFieldWriteToImmutableObjectRejected(t *testing.T) {
 // lifetimes 'l0/'l1 stay named on the borrows they originate, and each outlives 'c, so
 // the quantifier prefix carries the bounds `'a: 'c, 'b: 'c`.
 func TestInferConditionalUnionReturn(t *testing.T) {
-	src := `fn f<'a: 'c, 'b: 'c, 'c>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &'c mut {x: number} {
-  if true {
-    return p
-  } else {
-    return q
-  }
+	src := `fn main() -> undefined {
+	val f = fn (p: &mut {x: number}, q: &mut {x: number}) {
+	  if true {
+	    return p
+	  } else {
+	    return q
+	  }
+	}
 }`
-	values, _, errs := inferSource(t, src)
+	values, errs := inferLocals(t, src, "f")
 	require.Empty(t, errs)
 	require.Equal(t,
 		"fn <'a: 'c, 'b: 'c, 'c>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &'c mut {x: number}",
@@ -183,14 +187,16 @@ func TestInferConditionalUnionReturn(t *testing.T) {
 // return falls back to the generic union, preserving both borrows with their own
 // lifetimes (M4 D3).
 func TestInferMismatchedBorrowsFallBackToUnion(t *testing.T) {
-	src := `fn f<'a, 'b>(p: &'a mut {x: number}, q: &'b mut {y: number}) -> &'a mut {x: number} | &'b mut {y: number} {
-  if true {
-    return p
-  } else {
-    return q
-  }
+	src := `fn main() -> undefined {
+	val f = fn (p: &mut {x: number}, q: &mut {y: number}) {
+	  if true {
+	    return p
+	  } else {
+	    return q
+	  }
+	}
 }`
-	values, _, errs := inferSource(t, src)
+	values, errs := inferLocals(t, src, "f")
 	require.Empty(t, errs)
 	require.Equal(t,
 		"fn <'a, 'b>(p: &'a mut {x: number}, q: &'b mut {y: number}) -> &'a mut {x: number} | &'b mut {y: number}",
@@ -202,18 +208,20 @@ func TestInferMismatchedBorrowsFallBackToUnion(t *testing.T) {
 // bound `: 'd` in the prefix. This confirms the join generalizes past the two-branch
 // case to an n-ary return set.
 func TestInferThreeWayBorrowJoin(t *testing.T) {
-	src := `fn f<'a: 'd, 'b: 'd, 'c: 'd, 'd>(p: &'a mut {x: number}, q: &'b mut {x: number}, r: &'c mut {x: number}) -> &'d mut {x: number} {
-  if true {
-    return p
-  } else {
-    if true {
-      return q
-    } else {
-      return r
-    }
-  }
+	src := `fn main() -> undefined {
+	val f = fn (p: &mut {x: number}, q: &mut {x: number}, r: &mut {x: number}) {
+	  if true {
+	    return p
+	  } else {
+	    if true {
+	      return q
+	    } else {
+	      return r
+	    }
+	  }
+	}
 }`
-	values, _, errs := inferSource(t, src)
+	values, errs := inferLocals(t, src, "f")
 	require.Empty(t, errs)
 	require.Equal(t,
 		"fn <'a: 'd, 'b: 'd, 'c: 'd, 'd>(p: &'a mut {x: number}, q: &'b mut {x: number}, r: &'c mut {x: number}) -> &'d mut {x: number}",
@@ -232,13 +240,15 @@ func TestInferThreeWayBorrowJoin(t *testing.T) {
 // lifetimes, so `use` renders the same clean bounded form over `a` and `b` rather than
 // the raw freshened ids.
 func TestInferInstantiatedJoinReturnsUnion(t *testing.T) {
-	src := `fn pick<'a: 'c, 'b: 'c, 'c>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &'c mut {x: number} {
-  if true { return p } else { return q }
-}
-fn use<'a: 'c, 'b: 'c, 'c>(a: &'a mut {x: number}, b: &'b mut {x: number}) -> &'c mut {x: number} {
-  return pick(a, b)
+	src := `fn main() -> undefined {
+	val pick = fn (p: &mut {x: number}, q: &mut {x: number}) {
+	  if true { return p } else { return q }
+	}
+	val use = fn (a: &mut {x: number}, b: &mut {x: number}) {
+	  return pick(a, b)
+	}
 }`
-	values, _, errs := inferSource(t, src)
+	values, errs := inferLocals(t, src, "pick", "use")
 	require.Empty(t, errs)
 	require.Equal(t,
 		"fn <'a: 'c, 'b: 'c, 'c>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &'c mut {x: number}",
@@ -254,14 +264,16 @@ fn use<'a: 'c, 'b: 'c, 'c>(a: &'a mut {x: number}, b: &'b mut {x: number}) -> &'
 // `string` fails that pin, so the join falls back to the type-level union, readable
 // everywhere and writable at `x` only after narrowing.
 func TestInferIncompatibleBorrowJoinReturnsUnion(t *testing.T) {
-	src := `fn f<'a, 'b>(p: &'a mut {x: number}, q: &'b mut {x: string}) -> &'a mut {x: number} | &'b mut {x: string} {
-  if true {
-    return p
-  } else {
-    return q
-  }
+	src := `fn main() -> undefined {
+	val f = fn (p: &mut {x: number}, q: &mut {x: string}) {
+	  if true {
+	    return p
+	  } else {
+	    return q
+	  }
+	}
 }`
-	values, _, errs := inferSource(t, src)
+	values, errs := inferLocals(t, src, "f")
 	require.Empty(t, errs)
 	require.Equal(t,
 		"fn <'a, 'b>(p: &'a mut {x: number}, q: &'b mut {x: string}) -> &'a mut {x: number} | &'b mut {x: string}",
@@ -295,15 +307,17 @@ func TestInferIncompatibleBorrowUnionFieldReads(t *testing.T) {
 // member field types rather than collapsing to a single lifetime, so the per-branch
 // borrows survive the read.
 func TestInferIncompatibleBorrowUnionReadsBorrowedField(t *testing.T) {
-	src := `fn f<'a, 'b>(p: &mut {a: &'a mut {x: number}}, q: &mut {a: &'b mut {x: string}}) -> &'a mut {x: number} | &'b mut {x: string} {
-  val r = if true {
-    p
-  } else {
-    q
-  }
-  return r.a
+	src := `fn main() -> undefined {
+	val f = fn (p: &mut {a: &mut {x: number}}, q: &mut {a: &mut {x: string}}) {
+	  val r = if true {
+	    p
+	  } else {
+	    q
+	  }
+	  return r.a
+	}
 }`
-	values, _, errs := inferSource(t, src)
+	values, errs := inferLocals(t, src, "f")
 	require.Empty(t, errs)
 	require.Equal(t,
 		"fn <'a, 'b>(p: &mut {a: &'a mut {x: number}}, q: &mut {a: &'b mut {x: string}}) -> &'a mut {x: number} | &'b mut {x: string}",

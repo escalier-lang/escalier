@@ -158,6 +158,22 @@ func inferLocal(t *testing.T, src, name string) (string, []SolverError) {
 	return localType(t, module, c.info, name), c.errs
 }
 
+// inferLocals infers src as a module and returns the type of the last pattern that binds
+// each of names, with the errors the inference reported. Each name may be a `val` inside a
+// function body, which inferSource does not return.
+func inferLocals(t *testing.T, src string, names ...string) (map[string]string, []SolverError) {
+	t.Helper()
+	module := parseModuleFiles(t, map[string]string{"input.esc": src})
+	c := newTestChecker()
+	scope := c.preludeScope().Child()
+	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
+	types := make(map[string]string, len(names))
+	for _, name := range names {
+		types[name] = localType(t, module, c.info, name)
+	}
+	return types, c.errs
+}
+
 // localType returns the type info records for the last pattern in module that binds name,
 // as hover displays it.
 func localType(t *testing.T, module *ast.Module, info *Info, name string) string {
@@ -165,9 +181,11 @@ func localType(t *testing.T, module *ast.Module, info *Info, name string) string
 	finder := &identPatFinder{name: name}
 	module.Accept(finder)
 	require.NotNil(t, finder.found, "no binding named %q", name)
-	ty := info.DisplayTypeOf(finder.found)
+	ty := info.TypeOf(finder.found)
 	require.NotNil(t, ty, "no type recorded for %q", name)
-	return soltype.Print(ty)
+	// The recorded type is already the binding's display type, so it prints as it stands,
+	// with the bounds between its lifetimes.
+	return soltype.PrintAsSchemeWith(ty, func(*soltype.TypeVarType) bool { return true }, displayLtBounds(ty, soltype.Positive), nil, nil)
 }
 
 // inferSources is the multi-file table harness (§3.6): several in-memory sources
