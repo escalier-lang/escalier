@@ -176,10 +176,12 @@ func (w *condWalk) walkSplit(cur, fall condState, matched *pathBinder, split *uc
 		tested := cur.binder.narrowedBy(cur.scope, split.Scrutinee, branch.Test, branch.Origin.Node)
 		w.walkNorm(condState{scope: cur.scope, binder: tested}, fall, tested, branch.Cont)
 	}
-	// A value reaching the tail through matched failed every test this split made.
-	// walkFallthrough does not use matched for a tail that is a join, which a passing value
-	// can reach too.
-	w.walkFallthrough(fall, matched.excludingRegexAnns(cur.scope, split), split.Default)
+	// A value reaching the tail through matched failed every test this split made, so each
+	// tested type can be removed from it. A value that passes a test but fails the branch's
+	// guard or nested sub-pattern continues into the branch's fallthrough instead. When that
+	// fallthrough also reaches the tail, the tail is a join, and walkFallthrough does not use
+	// matched for a join.
+	w.walkFallthrough(fall, matched.excludingTested(cur.scope, split), split.Default)
 }
 
 // walkBind resolves the projection a bind names and defines its leaf, then types what

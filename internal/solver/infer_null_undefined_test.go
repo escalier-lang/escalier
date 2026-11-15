@@ -179,9 +179,9 @@ func TestInferNullUndefinedUnionKeepsWrittenOrder(t *testing.T) {
 }
 
 // A `null` match arm binds against a union scrutinee that carries the atom, and the two arms
-// together cover every member, so the match needs no catch-all. The catch-all arm still binds
-// the whole union, since only an object or tuple pattern narrows a union scrutinee — a `null`
-// arm leaves the members after it alone, exactly as a literal arm does.
+// together cover every member, so the match needs no catch-all. The `null` arm removes the
+// `null` member from what reaches the arm below it, so `n` binds `number` and the match
+// returns `number`.
 func TestInferMatchNullArmCoversUnionMember(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(x: number | null) {
@@ -192,7 +192,7 @@ func TestInferMatchNullArmCoversUnionMember(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (x: number | null) -> number | null", values["f"])
+	require.Equal(t, "fn (x: number | null) -> number", values["f"])
 }
 
 // A union member no arm names leaves the match non-exhaustive. The `null` arm covers the
