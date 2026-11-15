@@ -16,22 +16,8 @@ const signatureActionKind = protocol.CodeActionKindRefactorRewrite
 // last check offers none there. It offers none while the document has changed since the last
 // check, since the edits are offsets into the text that check read.
 func (s *Server) signatureActionAt(uri protocol.DocumentUri, pos protocol.Position) (protocol.CodeAction, bool) {
-	sourceID := s.sourceIDForURI(uri)
-	// validateBinScript replaces a script's entries in the check output under mu, so the
-	// entries for this file are read together under it.
-	var file checkedFile
-	s.mu.RLock()
-	if co := s.checkOutput; co != nil && !s.isCacheStale(uri) {
-		file = checkedFile{
-			id:     sourceID,
-			src:    co.SourceByID(sourceID),
-			info:   co.InfoFor(sourceID),
-			script: co.Scripts[sourceID],
-			module: co.Module,
-		}
-	}
-	s.mu.RUnlock()
-	if file.src == nil || file.info == nil {
+	file, _, ok := s.checkedFileAt(uri)
+	if !ok {
 		return protocol.CodeAction{}, false
 	}
 	loc := posToLoc(file.src.LineMap(), pos)
@@ -49,6 +35,12 @@ type checkedFile struct {
 	script *ast.Script
 	// module is the lib/ module, which holds a lib/ file's declarations.
 	module *ast.Module
+	// scope is the scope the file's top level was checked in, or nil when the check output
+	// holds none for it.
+	scope *solver.Scope
+	// namespace is the dotted namespace a lib/ file's directory places it in, and "" for a
+	// bin/ script and for a lib/ file at the root.
+	namespace string
 }
 
 // signatureAction returns the code action that writes the inferred signature of the
