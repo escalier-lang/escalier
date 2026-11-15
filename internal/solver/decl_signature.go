@@ -158,6 +158,22 @@ func (i *Info) FuncDeclSignature(d *ast.FuncDecl) (DeclSignature, bool) {
 	return DeclSignature{Type: ft}, true
 }
 
+// ClosureBindingSignature returns the signature of the function expression d binds, for a
+// `val` or `var` that binds a function expression to a name and writes no type annotation.
+// ok is false for any other declaration, and when the checker recorded no function type for
+// the name.
+func (i *Info) ClosureBindingSignature(d *ast.VarDecl) (DeclSignature, bool) {
+	pat, isIdent := d.Pattern.(*ast.IdentPat)
+	if _, isFunc := d.Init.(*ast.FuncExpr); !isFunc || !isIdent || d.TypeAnn != nil {
+		return DeclSignature{}, false
+	}
+	ft, ok := i.TypeOf(pat).(*soltype.FuncType)
+	if !ok {
+		return DeclSignature{}, false
+	}
+	return DeclSignature{Type: ft}, true
+}
+
 // MethodSignature returns the signature of the method m, which class declares. A method
 // declared under one name more than once is an overload set, and each declaration gets the
 // signature of its own arm. ok is false when the checker registered no such method, when

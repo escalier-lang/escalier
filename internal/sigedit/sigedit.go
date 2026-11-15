@@ -13,11 +13,16 @@ import (
 	"github.com/escalier-lang/escalier/internal/solver"
 )
 
-// Target is a function or method whose inferred signature can be written.
+// Target is a function, method or bound function expression whose inferred signature can be
+// written.
 type Target struct {
-	// Name is the declared name, which a binder list is written after.
+	// Name is the declared name, or the name a function expression is bound to. A binder
+	// list is written after it, except for a function expression.
 	Name ast.Node
 	Sig  *ast.FuncSig
+	// Closure is the function expression a `val` or `var` binds, whose binder list is
+	// written after its `fn` keyword. It is nil for a function or a method.
+	Closure *ast.FuncExpr
 	// Receiver is a method's receiver, or nil.
 	Receiver *ast.MethodReceiver
 	// SignatureSpan runs from the start of the declaration to the start of its body.
@@ -61,9 +66,10 @@ func FileDecls(script *ast.Script, module *ast.Module, sourceID int) []ast.Decl 
 	return decls
 }
 
-// Targets returns each function decls declares with a body, and each method with a body of
-// a class decls declares, for which info records a signature. sourceID is the file decls
-// are declared in.
+// Targets returns each function decls declares with a body, each method with a body of a
+// class decls declares, and each function expression a `val` or `var` of decls binds to a
+// name with no type annotation, for which info records a signature. sourceID is the file
+// decls are declared in.
 func Targets(info *solver.Info, decls []ast.Decl, sourceID int) []Target {
 	var targets []Target
 	for _, d := range decls {
@@ -79,6 +85,20 @@ func Targets(info *solver.Info, decls []ast.Decl, sourceID int) []Target {
 			span := ast.Span{Start: d.Span().Start, End: d.Body.Span.Start, SourceID: sourceID}
 			targets = append(targets, Target{
 				Name: d.Name, Sig: &d.FuncSig, SignatureSpan: span, DeclSpan: d.Span(), Signature: signature,
+			})
+		case *ast.VarDecl:
+			fe, ok := d.Init.(*ast.FuncExpr)
+			if !ok || fe.Body == nil {
+				continue
+			}
+			signature, ok := info.ClosureBindingSignature(d)
+			if !ok {
+				continue
+			}
+			span := ast.Span{Start: d.Span().Start, End: fe.Body.Span.Start, SourceID: sourceID}
+			targets = append(targets, Target{
+				Name: d.Pattern, Sig: &fe.FuncSig, Closure: fe, SignatureSpan: span, DeclSpan: d.Span(),
+				Signature: signature,
 			})
 		case *ast.ClassDecl:
 			for _, elem := range d.Body {
@@ -216,7 +236,11 @@ func (target Target) Edits(contents string) ([]Edit, bool) {
 		if span, ok := binderSpan(sig); ok {
 			replaceSpan(span, binders)
 		} else {
-			insert(target.Name.Span().End.Offset, "<"+binders+">")
+			at, ok := binderOffset(target, contents)
+			if !ok {
+				return nil, false
+			}
+			insert(at, "<"+binders+">")
 		}
 	}
 	namesAdded := func(text string) bool {
@@ -306,7 +330,10 @@ func binderSpan(sig *ast.FuncSig) (ast.Span, bool) {
 // `p: &({a: number} | {b: number})` closes its own parentheses inside the list, and the span
 // of that type ends inside them, so the last parameter's span does not mark the list's end.
 func paramListEnd(target Target, contents string) (int, bool) {
-	from := target.Name.Span().End.Offset
+	from, ok := binderOffset(target, contents)
+	if !ok {
+		return 0, false
+	}
 	if span, ok := binderSpan(target.Sig); ok {
 		var closed bool
 		// A binder list may end in a comma.
@@ -320,6 +347,26 @@ func paramListEnd(target Target, contents string) (int, bool) {
 	}
 	return closingParen(contents, from)
 }
+
+// binderOffset returns the offset in contents a binder list is written at when target writes
+// none: just past a function's or method's name, or just past a function expression's `fn`
+// keyword and the space after it, so the list is written as `fn <T>(`. ok is false when
+// contents does not hold the keyword where the expression starts.
+func binderOffset(target Target, contents string) (int, bool) {
+	if target.Closure == nil {
+		return target.Name.Span().End.Offset, true
+	}
+	start := target.Closure.Span().Start.Offset
+	m := fnKeyword.FindStringIndex(contents[start:])
+	if m == nil {
+		return 0, false
+	}
+	return start + m[1], true
+}
+
+// fnKeyword matches the start of a function expression through its `fn` keyword and the
+// space after it, as in `async fn ` or `gen fn `.
+var fnKeyword = regexp.MustCompile(`^(?:(?:async|gen)\s+)*fn\b\s*`)
 
 // closingParen returns the offset just past the `)` that closes a `(` ending just before
 // from, and false when contents ends first. Parentheses inside a comment, a string literal or

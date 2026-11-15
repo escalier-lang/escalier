@@ -34,6 +34,21 @@ func TestSignatureAction(t *testing.T) {
 			},
 		},
 		{
+			name:        "ClosureBoundAtTopLevel",
+			src:         "val f = fn (x: number) { return x }",
+			cursor:      "fn",
+			expected:    "val f = fn (x: number) -> number { return x }",
+			diagnostics: []string{"0:4-0:5 'f' is a closure at a script's top level, so it needs a return type; write `-> number` on the closure, or annotate 'f'"},
+		},
+		{
+			// A function expression's binder list goes after its `fn` keyword.
+			name:        "ClosureGetsBinderList",
+			src:         "val g = fn (x) { return x }",
+			cursor:      "val",
+			expected:    "val g = fn <T0>(x: T0) -> T0 { return x }",
+			diagnostics: []string{"0:4-0:5 'g' is a closure at a script's top level, so parameter 'x' needs a type and 'g' needs a return type; write them on the closure, or annotate 'g'"},
+		},
+		{
 			name:        "UnannotatedParam",
 			src:         "fn read(p) { return p.x }",
 			cursor:      "read",
