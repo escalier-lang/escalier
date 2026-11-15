@@ -332,6 +332,21 @@ This holds for every disposable, including one typed by a `.d.ts` file. It does
 not depend on how the dispose method's receiver is written, since the move
 happens at the `dispose` call.
 
+TC39 leaves a disposed value reachable, and expects each resource to reject
+calls made after it is disposed. Its reasons, given in
+[tc39/proposal-explicit-resource-management#161](https://github.com/tc39/proposal-explicit-resource-management/issues/161),
+are that making the binding unreachable would put it back into its temporal
+dead zone, which implementers objected to, and that a resource created without
+`using` must guard itself anyway. Neither constraint applies to a compile-time
+check. The thread also gives using a resource as a `Map` key as a reason, since
+a program may want to remove the key after disposing the resource. A key needs
+only the value's identity, and the Escalier program removes the key first. A
+`Map<&File, V>` that holds a borrow of `file` as a key keeps `dispose(file)`
+from checking while the borrow is live, so the checker requires
+`cache.delete(&file)` before the dispose. A map that owns its resources, such as
+a `Map<string, File>`, hands the owned value back on removal, and the program
+disposes that.
+
 They belong in the prelude because the language's own rules name
 them. C6 below reports a resource that is never disposed, and its diagnostic
 suggests `defer dispose(x)`. A program should not need an import to follow the
