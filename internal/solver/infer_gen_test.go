@@ -82,7 +82,7 @@ func TestInferGenExternalGeneratorFace(t *testing.T) {
 		},
 		{
 			name: "GenFuncExpr",
-			src:  `val f = gen fn () { yield 1 }`,
+			src:  `val f = gen fn () -> Generator<1, undefined, unknown> { yield 1 }`,
 			want: `fn () -> Generator<1, undefined, unknown>`,
 		},
 		{

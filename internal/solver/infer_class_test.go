@@ -521,7 +521,7 @@ func TestInferDeclareClassImplementsInterface(t *testing.T) {
 			src: `
 				interface Named { readonly name: string }
 				declare class Person implements Named { readonly age: number }
-				val f = fn (p: Person) { return p.name }
+				val f = fn (p: Person) -> string { return p.name }
 			`,
 			want: map[string]string{"f": "fn (p: Person) -> string"},
 		},
@@ -530,7 +530,7 @@ func TestInferDeclareClassImplementsInterface(t *testing.T) {
 			src: `
 				interface HasId { readonly id: string | number }
 				declare class Row implements HasId { readonly id: number }
-				val f = fn (r: Row) { return r.id }
+				val f = fn (r: Row) -> number { return r.id }
 			`,
 			want: map[string]string{"f": "fn (r: Row) -> number"},
 		},
@@ -540,7 +540,7 @@ func TestInferDeclareClassImplementsInterface(t *testing.T) {
 				interface HasId { readonly id: string | number }
 				declare class Base { readonly id: number }
 				declare class Row extends Base implements HasId { constructor(&mut self) }
-				val f = fn (r: Row) { return r.id }
+				val f = fn (r: Row) -> number { return r.id }
 			`,
 			want: map[string]string{"f": "fn (r: Row) -> number"},
 		},
@@ -549,7 +549,7 @@ func TestInferDeclareClassImplementsInterface(t *testing.T) {
 			src: `
 				interface Box<T> { readonly value: T }
 				declare class NumBox implements Box<number> {}
-				val f = fn (b: NumBox) { return b.value }
+				val f = fn (b: NumBox) -> number { return b.value }
 			`,
 			want: map[string]string{"f": "fn (b: NumBox) -> number"},
 		},
@@ -559,7 +559,7 @@ func TestInferDeclareClassImplementsInterface(t *testing.T) {
 				interface A { readonly x: number | string, readonly y: boolean }
 				interface B extends A { readonly x: number }
 				declare class C implements B {}
-				val f = fn (c: C) { return [c.x, c.y] }
+				val f = fn (c: C) -> [number, boolean] { return [c.x, c.y] }
 			`,
 			want: map[string]string{"f": "fn (c: C) -> [number, boolean]"},
 		},
@@ -569,7 +569,7 @@ func TestInferDeclareClassImplementsInterface(t *testing.T) {
 				interface First { readonly v: number }
 				interface Second { readonly v: number }
 				declare class C implements First, Second {}
-				val f = fn (c: C) { return c.v }
+				val f = fn (c: C) -> number { return c.v }
 			`,
 			want: map[string]string{"f": "fn (c: C) -> number"},
 		},
@@ -581,7 +581,7 @@ func TestInferDeclareClassImplementsInterface(t *testing.T) {
 				interface First { id<T>(self, x: T) -> T }
 				interface Second { id<U>(self, x: U) -> U }
 				declare class C implements First, Second {}
-				val f = fn (c: C) { return c.id(1) }
+				val f = fn (c: C) -> 1 { return c.id(1) }
 			`,
 			want: map[string]string{"f": "fn (c: C) -> 1"},
 		},
@@ -621,7 +621,7 @@ func TestInferDeclareClassImplementsConflictingInterfaces(t *testing.T) {
 		interface First { readonly v: number }
 		interface Second { readonly v: string }
 		declare class C implements First, Second {}
-		val f = fn (c: C) { return c.v }
+		val f = fn (c: C) -> number { return c.v }
 	`)
 	require.Equal(t, []string{
 		"class `C` implements `First` and `Second`, which declare `v` differently: `{readonly v: number}` and `{readonly v: string}`",
@@ -4116,7 +4116,7 @@ func TestInferClassReadsLaterClassMember(t *testing.T) {
 			// walked. The mismatch is reported once.
 			name: "FuncReadsStubInCycle",
 			src: `
-				val f = fn (b: B) { return b.m() }
+				val f = fn (b: B) -> number { return b.m() }
 				class B { m(&self) -> number { return 1 }, n(&self, b: B) -> number { return f(b) } }
 				fn g(b: B) -> string { return f(b) }
 			`,
@@ -4168,7 +4168,7 @@ func TestInferReaderOfLaterClassMemberType(t *testing.T) {
 		{
 			name: "ReaderChainBeforeMember",
 			src: `
-				val f = fn (b: B) { return b.m() }
+				val f = fn (b: B) -> 1 { return b.m() }
 				val g = fn (b: B) { return f(b) }
 				class B { m(&self) -> 1 { return 1 }, n(&self, b: B) -> 1 { return g(b) } }
 			`,

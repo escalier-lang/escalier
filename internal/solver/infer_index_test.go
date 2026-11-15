@@ -14,6 +14,9 @@ type indexCase struct {
 	src      string
 	want     map[string]string
 	wantErrs []string
+	// locals are the types of closures the source binds inside a function body, which keep
+	// their inferred return types.
+	locals map[string]string
 }
 
 func runIndexCases(t *testing.T, tests []indexCase) {
@@ -24,6 +27,10 @@ func runIndexCases(t *testing.T, tests []indexCase) {
 			require.Equal(t, tt.wantErrs, messagesWithSpan(t, errs))
 			for name, want := range tt.want {
 				require.Equal(t, want, values[name], name)
+			}
+			for name, want := range tt.locals {
+				got, _ := inferLocal(t, tt.src, name)
+				require.Equal(t, want, got, name)
 			}
 		})
 	}
@@ -42,13 +49,21 @@ func TestInferIndexRead(t *testing.T) {
 		},
 		{
 			name: "ArrayAtANumber",
-			src:  "val f = fn (a: Array<string>, i: number) { return a[i] }",
-			want: map[string]string{"f": "fn (a: Array<string>, i: number) -> string"},
+			src: `
+				fn main() -> undefined {
+					val f = fn (a: Array<string>, i: number) { return a[i] }
+				}
+			`,
+			locals: map[string]string{"f": "fn (a: Array<string>, i: number) -> string"},
 		},
 		{
 			name: "BorrowedArray",
-			src:  "val f = fn (a: &Array<string>) { return a[0] }",
-			want: map[string]string{"f": "fn (a: &Array<string>) -> string"},
+			src: `
+				fn main() -> undefined {
+					val f = fn (a: &Array<string>) { return a[0] }
+				}
+			`,
+			locals: map[string]string{"f": "fn (a: &Array<string>) -> string"},
 		},
 		{
 			name: "TupleAtALiteral",
@@ -62,8 +77,13 @@ func TestInferIndexRead(t *testing.T) {
 		},
 		{
 			name: "IndexSignature",
-			src:  "declare val d: {[K: string]?: number}\nval f = fn (k: string) { return d[k] }",
-			want: map[string]string{"f": "fn (k: string) -> number | undefined"},
+			src: `
+				declare val d: {[K: string]?: number}
+				fn main() -> undefined {
+					val f = fn (k: string) { return d[k] }
+				}
+			`,
+			locals: map[string]string{"f": "fn (k: string) -> number | undefined"},
 		},
 		{
 			name: "IndexSignatureBesideANamedProperty",
@@ -356,8 +376,8 @@ val g = C()[other]`,
 		},
 		{
 			name:     "WriteAtSymbolWithNoIndexSignature",
-			src:      "class C { [sym]: number }\nval go = fn (c: &mut C, s: symbol) { c[s] = 5 }",
-			wantErrs: []string{"4:38-4:42: object {[sym]: number, ...} has no index signature to read a key of type symbol"},
+			src:      "class C { [sym]: number }\nval go = fn (c: &mut C, s: symbol) -> undefined { c[s] = 5 }",
+			wantErrs: []string{"4:51-4:55: object {[sym]: number, ...} has no index signature to read a key of type symbol"},
 		},
 		{
 			name:     "WriteThroughAnImmutableReceiver",
@@ -402,85 +422,85 @@ func TestInferAssignToMemberOrIndex(t *testing.T) {
 	runIndexCases(t, []indexCase{
 		{
 			name: "MemberOnAMutableReceiver",
-			src:  "val f = fn (o: &mut {x: number}) { o.x = 5 }",
+			src:  "val f = fn (o: &mut {x: number}) -> undefined { o.x = 5 }",
 			want: map[string]string{"f": "fn (o: &mut {x: number}) -> undefined"},
 		},
 		{
 			name:     "MemberOnAnImmutableReceiver",
-			src:      "val f = fn (o: &{x: number}) { o.x = 5 }",
+			src:      "val f = fn (o: &{x: number}) -> undefined { o.x = 5 }",
 			wantErrs: []string{"1:16-1:28: cannot constrain immutable object <: mutable object"},
 		},
 		{
 			name: "ArrayElementOnAMutableReceiver",
-			src:  "val f = fn (a: &mut Array<number>) { a[0] = 5 }",
+			src:  "val f = fn (a: &mut Array<number>) -> undefined { a[0] = 5 }",
 			want: map[string]string{"f": "fn (a: &mut Array<number>) -> undefined"},
 		},
 		{
 			name:     "ArrayElementOnAnImmutableReceiver",
-			src:      "val f = fn (a: &Array<number>) { a[0] = 5 }",
+			src:      "val f = fn (a: &Array<number>) -> undefined { a[0] = 5 }",
 			wantErrs: []string{"1:16-1:30: cannot constrain immutable Array<number> <: mutable Array<number>"},
 		},
 		{
 			name:     "ArrayElementOfTheWrongType",
-			src:      "val f = fn (a: &mut Array<number>) { a[0] = \"x\" }",
-			wantErrs: []string{`1:45-1:48: cannot constrain "x" <: number`},
+			src:      "val f = fn (a: &mut Array<number>) -> undefined { a[0] = \"x\" }",
+			wantErrs: []string{`1:58-1:61: cannot constrain "x" <: number`},
 		},
 		{
 			name: "AssignmentEvaluatesToTheStoredValue",
-			src:  "val f = fn (a: &mut Array<number>, i: number) { val r = (a[i] = 3)\n return r }",
+			src:  "val f = fn (a: &mut Array<number>, i: number) -> number { val r = (a[i] = 3)\n return r }",
 			want: map[string]string{"f": "fn (a: &mut Array<number>, i: number) -> number"},
 		},
 		{
 			name: "TupleElementAtALiteral",
-			src:  "val f = fn (t: &mut [number, string]) { t[1] = \"x\"\n t[0] = 1 }",
+			src:  "val f = fn (t: &mut [number, string]) -> undefined { t[1] = \"x\"\n t[0] = 1 }",
 			want: map[string]string{"f": "fn (t: &mut [number, string]) -> undefined"},
 		},
 		{
 			name:     "TupleElementOutOfRange",
-			src:      "val f = fn (t: &mut [number, string]) { t[2] = \"x\" }",
-			wantErrs: []string{"1:41-1:45: index 2 is out of range for tuple [number, string]"},
+			src:      "val f = fn (t: &mut [number, string]) -> undefined { t[2] = \"x\" }",
+			wantErrs: []string{"1:54-1:58: index 2 is out of range for tuple [number, string]"},
 		},
 		{
 			// A `number` key may land on either position, so the value has to fit both.
 			name:     "TupleElementAtANumber",
-			src:      "val f = fn (t: &mut [number, string], i: number) { t[i] = 1 }",
-			wantErrs: []string{"1:59-1:60: cannot constrain 1 <: string"},
+			src:      "val f = fn (t: &mut [number, string], i: number) -> undefined { t[i] = 1 }",
+			wantErrs: []string{"1:72-1:73: cannot constrain 1 <: string"},
 		},
 		{
 			name: "IndexSignatureSlot",
-			src:  "val f = fn (d: &mut {[K: string]?: number}, k: string) { d[k] = 1 }",
+			src:  "val f = fn (d: &mut {[K: string]?: number}, k: string) -> undefined { d[k] = 1 }",
 			want: map[string]string{"f": "fn (d: &mut {[K: string]?: number}, k: string) -> undefined"},
 		},
 		{
 			name:     "IndexSignatureSlotOfTheWrongType",
-			src:      "val f = fn (d: &mut {[K: string]?: number}, k: string) { d[k] = \"s\" }",
-			wantErrs: []string{`1:65-1:68: cannot constrain "s" <: number`},
+			src:      "val f = fn (d: &mut {[K: string]?: number}, k: string) -> undefined { d[k] = \"s\" }",
+			wantErrs: []string{`1:78-1:81: cannot constrain "s" <: number`},
 		},
 		{
 			// A `string` key may name `a` as well as a key the signature covers.
 			name:     "IndexSignatureKeyThatMayNameAProperty",
-			src:      "val f = fn (o: &mut {[K: string]?: number, a: string}, k: string) { o[k] = 1 }",
-			wantErrs: []string{"1:76-1:77: cannot constrain 1 <: string"},
+			src:      "val f = fn (o: &mut {[K: string]?: number, a: string}, k: string) -> undefined { o[k] = 1 }",
+			wantErrs: []string{"1:89-1:90: cannot constrain 1 <: string"},
 		},
 		{
 			name:     "ReadonlyIndexSignature",
-			src:      "val f = fn (d: &mut {readonly [K: string]?: number}, k: string) { d[k] = 1 }",
-			wantErrs: []string{"1:67-1:71: cannot assign to '[string]' because it is a readonly property"},
+			src:      "val f = fn (d: &mut {readonly [K: string]?: number}, k: string) -> undefined { d[k] = 1 }",
+			wantErrs: []string{"1:80-1:84: cannot assign to '[string]' because it is a readonly property"},
 		},
 		{
 			name: "KeyTypedByOneStringLiteralWritesTheField",
-			src:  "val k = \"x\"\nval f = fn (o: &mut {x: number}) { o[k] = 1 }",
+			src:  "val k = \"x\"\nval f = fn (o: &mut {x: number}) -> undefined { o[k] = 1 }",
 			want: map[string]string{"f": "fn (o: &mut {x: number}) -> undefined"},
 		},
 		{
 			name:     "KeyTypedByOneStringLiteralOnAnImmutableReceiver",
-			src:      "val k = \"x\"\nval f = fn (o: &{x: number}) { o[k] = 1 }",
+			src:      "val k = \"x\"\nval f = fn (o: &{x: number}) -> undefined { o[k] = 1 }",
 			wantErrs: []string{"2:16-2:28: cannot constrain immutable object <: mutable object"},
 		},
 		{
 			name:     "ReadonlyFieldThroughABracket",
-			src:      "val f = fn (o: &mut {readonly x: number}) { o[\"x\"] = 1 }",
-			wantErrs: []string{"1:45-1:51: cannot assign to 'x' because it is a readonly property"},
+			src:      "val f = fn (o: &mut {readonly x: number}) -> undefined { o[\"x\"] = 1 }",
+			wantErrs: []string{"1:58-1:64: cannot assign to 'x' because it is a readonly property"},
 		},
 		{
 			name:     "ReceiverInferredFromUse",
@@ -496,7 +516,7 @@ func TestInferParamDefault(t *testing.T) {
 	runIndexCases(t, []indexCase{
 		{
 			name: "AnnotatedParameter",
-			src:  "val g = fn (v: number = 4) { return v }\nval r = g()",
+			src:  "val g = fn (v: number = 4) -> number { return v }\nval r = g()",
 			want: map[string]string{"g": "fn (v?: number) -> number", "r": "number"},
 		},
 		{
@@ -507,17 +527,17 @@ func TestInferParamDefault(t *testing.T) {
 		},
 		{
 			name:     "DefaultOfTheWrongType",
-			src:      "val g = fn (v: number = \"x\") { return v }",
+			src:      "val g = fn (v: number = \"x\") -> number { return v }",
 			wantErrs: []string{`1:25-1:28: cannot constrain "x" <: number`},
 		},
 		{
 			name: "DefaultReadsAnEarlierParameter",
-			src:  "val g = fn (a: number, b: number = a) { return b }",
+			src:  "val g = fn (a: number, b: number = a) -> number { return b }",
 			want: map[string]string{"g": "fn (a: number, b?: number) -> number"},
 		},
 		{
 			name:     "DefaultDoesNotSeeALaterParameter",
-			src:      "val g = fn (a: number, b: number = c, c: number = 1) { return b }",
+			src:      "val g = fn (a: number, b: number = c, c: number = 1) -> number { return b }",
 			wantErrs: []string{"1:36-1:37: Unknown identifier: c"},
 		},
 		{

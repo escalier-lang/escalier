@@ -575,6 +575,9 @@ func TestIterationAgainstStdlib(t *testing.T) {
 		name string
 		src  string
 		want map[string]string
+		// locals are the types of closures the source binds inside a function body, which
+		// keep their inferred return types.
+		locals map[string]string
 	}{
 		{
 			name: "ForInOverAString",
@@ -592,13 +595,21 @@ func TestIterationAgainstStdlib(t *testing.T) {
 		},
 		{
 			name: "SpreadAString",
-			src:  `val chars = fn (s: string) { return [...s] }`,
-			want: map[string]string{"chars": "fn (s: string) -> Array<string>"},
+			src: `
+				fn main() -> undefined {
+					val chars = fn (s: string) { return [...s] }
+				}
+			`,
+			locals: map[string]string{"chars": "fn (s: string) -> Array<string>"},
 		},
 		{
 			name: "SpreadAnArrayBesideAnElement",
-			src:  `val withZero = fn (xs: Array<number>) { return [0, ...xs] }`,
-			want: map[string]string{"withZero": "fn (xs: Array<number>) -> [0, ...Array<number>]"},
+			src: `
+				fn main() -> undefined {
+					val withZero = fn (xs: Array<number>) { return [0, ...xs] }
+				}
+			`,
+			locals: map[string]string{"withZero": "fn (xs: Array<number>) -> [0, ...Array<number>]"},
 		},
 		{
 			name: "SpreadAGenerator",
@@ -607,19 +618,29 @@ func TestIterationAgainstStdlib(t *testing.T) {
 					yield 1
 					yield 2
 				}
-				val all = fn () { return [...count()] }
+				fn main() -> undefined {
+					val all = fn () { return [...count()] }
+				}
 			`,
-			want: map[string]string{"all": "fn () -> Array<1 | 2>"},
+			locals: map[string]string{"all": "fn () -> Array<1 | 2>"},
 		},
 		{
 			name: "InexactTupleTailWidensTheArray",
-			src:  `val f = fn (xs: Array<number>, t: [string, ...]) { return [...xs, ...t] }`,
-			want: map[string]string{"f": "fn (xs: Array<number>, t: [string, ...]) -> Array<unknown>"},
+			src: `
+				fn main() -> undefined {
+					val f = fn (xs: Array<number>, t: [string, ...]) { return [...xs, ...t] }
+				}
+			`,
+			locals: map[string]string{"f": "fn (xs: Array<number>, t: [string, ...]) -> Array<unknown>"},
 		},
 		{
 			name: "InexactTupleBeforeAnIterableSpread",
-			src:  `val f = fn (xs: Array<number>, t: [string, ...]) { return [...t, ...xs] }`,
-			want: map[string]string{"f": "fn (xs: Array<number>, t: [string, ...]) -> [string, ...Array<unknown>]"},
+			src: `
+				fn main() -> undefined {
+					val f = fn (xs: Array<number>, t: [string, ...]) { return [...t, ...xs] }
+				}
+			`,
+			locals: map[string]string{"f": "fn (xs: Array<number>, t: [string, ...]) -> [string, ...Array<unknown>]"},
 		},
 		{
 			// `IterableIterator` extends `Iterator` and declares `[Symbol.iterator]` in its
@@ -627,10 +648,12 @@ func TestIterationAgainstStdlib(t *testing.T) {
 			name: "ForInOverAnIterableIterator",
 			src: `
 				import "std:iterator"
-				declare val it: iterator.IterableIterator<number>
-				val first = fn () { for x in it { return x } }
+				fn main() -> undefined {
+					declare val it: iterator.IterableIterator<number>
+					val first = fn () { for x in it { return x } }
+				}
 			`,
-			want: map[string]string{"first": "fn () -> number"},
+			locals: map[string]string{"first": "fn () -> number"},
 		},
 		{
 			name: "ForAwaitOverAnAsyncIterableIterator",
@@ -647,28 +670,34 @@ func TestIterationAgainstStdlib(t *testing.T) {
 			name: "ForInOverMapKeys",
 			src: `
 				import "std:map"
-				declare val m: map.Map<string, number>
-				val first = fn () { for x in m.keys() { return x } }
+				fn main() -> undefined {
+					declare val m: map.Map<string, number>
+					val first = fn () { for x in m.keys() { return x } }
+				}
 			`,
-			want: map[string]string{"first": "fn () -> string"},
+			locals: map[string]string{"first": "fn () -> string"},
 		},
 		{
 			name: "SpreadMapKeys",
 			src: `
 				import "std:map"
-				declare val m: map.Map<string, number>
-				val all = fn () { return [...m.keys()] }
+				fn main() -> undefined {
+					declare val m: map.Map<string, number>
+					val all = fn () { return [...m.keys()] }
+				}
 			`,
-			want: map[string]string{"all": "fn () -> Array<string>"},
+			locals: map[string]string{"all": "fn () -> Array<string>"},
 		},
 		{
 			name: "SpreadAnIterableIterator",
 			src: `
 				import "std:iterator"
-				declare val it: iterator.IterableIterator<number>
-				val all = fn () { return [...it] }
+				fn main() -> undefined {
+					declare val it: iterator.IterableIterator<number>
+					val all = fn () { return [...it] }
+				}
 			`,
-			want: map[string]string{"all": "fn () -> Array<number>"},
+			locals: map[string]string{"all": "fn () -> Array<number>"},
 		},
 		{
 			name: "YieldFromAnIterableIterator",
@@ -696,6 +725,10 @@ func TestIterationAgainstStdlib(t *testing.T) {
 			require.Empty(t, errs)
 			for name, want := range tt.want {
 				require.Equal(t, want, values[name], "value binding %q", name)
+			}
+			for name, want := range tt.locals {
+				got, _ := inferLocalAgainstTree(t, tt.src, name)
+				require.Equal(t, want, got, "local binding %q", name)
 			}
 		})
 	}

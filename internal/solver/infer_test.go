@@ -155,12 +155,19 @@ func inferLocal(t *testing.T, src, name string) (string, []SolverError) {
 	c := newTestChecker()
 	scope := c.preludeScope().Child()
 	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
+	return localType(t, module, c.info, name), c.errs
+}
+
+// localType returns the type info records for the last pattern in module that binds name,
+// as hover displays it.
+func localType(t *testing.T, module *ast.Module, info *Info, name string) string {
+	t.Helper()
 	finder := &identPatFinder{name: name}
 	module.Accept(finder)
 	require.NotNil(t, finder.found, "no binding named %q", name)
-	ty := c.info.DisplayTypeOf(finder.found)
+	ty := info.DisplayTypeOf(finder.found)
 	require.NotNil(t, ty, "no type recorded for %q", name)
-	return soltype.Print(ty), c.errs
+	return soltype.Print(ty)
 }
 
 // inferSources is the multi-file table harness (§3.6): several in-memory sources
