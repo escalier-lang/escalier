@@ -648,6 +648,78 @@ and a lint can suggest removing the `with`.
   when an app raises its minimum browser version, except to lose feature
   requirements.
 
+### 6.10 Environment-specific declarations
+
+#### 6.10.1 `@env` on user functions
+
+`@env` on a user function means what it means on a platform declaration: the
+function exists only in the environments it names. A reference to it adds that
+environment set to the caller's requirement, as a reference to `document` adds
+`Env<window>`. The decorator also acts as a written `needs Env<...>` clause, so
+the body is checked against it, and a body that references something those
+environments lack is an error.
+
+Two declarations of one name with disjoint `@env` sets are per-environment
+versions of one function, as environments F5 describes for platform
+declarations. They are not an overload set, so a call does not choose between
+them by argument type.
+
+```esc
+@env("window")
+fn saveDraft(text: string) -> undefined {
+    localStorage.setItem("draft", text)
+}
+
+@env("node")
+fn saveDraft(text: string) -> undefined {
+    fs.writeFileSync(".draft", text)
+}
+
+fn onEdit(text: string) -> undefined needs _ {
+    saveDraft(text)
+}
+// inferred: needs Env<window | node>
+```
+
+A build selects, for its target, the version whose `@env` covers that target and
+leaves the others out. An entrypoint that targets `window` emits only the first
+`saveDraft`. Each environment's version is a separate choice at build time, so
+code that runs in more than one environment needs no runtime check of which one
+it is in.
+
+#### 6.10.2 References from several environments
+
+Some platform APIs have a different type in different environments:
+
+- `setTimeout` returns a `number` in a browser and a `Timeout` object in Node.
+- A page calls `postMessage(message, targetOrigin, transfer)` and a worker calls
+  `postMessage(message, transfer)`.
+- `location` is a `Location` in a page and a `WorkerLocation` in a worker.
+- `onmessage` receives a `MessageEvent` in a dedicated worker and an
+  `ExtendableMessageEvent` in a service worker.
+
+A reference from a function whose requirement covers several environments has
+the type that every version available in those environments shares. A function
+type shares the parameters every version accepts and the union of what the
+versions return:
+
+```esc
+fn debounce(f: fn () -> undefined, ms: number) -> fn () -> undefined needs Env<window | node> {
+    var timer = setTimeout(f, ms)    // timer: number | Timeout
+    return fn () => {
+        clearTimeout(timer)          // accepts number | Timeout in both
+        timer = setTimeout(f, ms)
+    }
+}
+```
+
+`timer` can be passed to `clearTimeout`, which accepts either type in both
+environments, but it can't be used as a number. When the versions share nothing
+a caller can use, as with `location` between a page and a worker, a reference is
+an error. The function then narrows its requirement to one environment or uses
+per-environment versions of its own (section 6.10.1). Each build still emits the
+exact version for its target.
+
 ## 7. Alternatives considered
 
 ### 7.1 Ship environments first, then lift them into coeffects
