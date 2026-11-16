@@ -304,11 +304,39 @@ deferred code. So is `yield`. `await` is accepted only inside an `async fn` or
 a `finally` block `return`, which discards the exception in flight, and that is
 the behaviour C3 rules out.
 
-`defer` is rejected at module top level. A module's top-level block exits when
-the module finishes evaluating, and code that runs then would surprise readers
-who expect module-level resources to live as long as the program does. A
-resource that lives for the whole program is held in a module-level binding and
-never disposed, and C6 does not apply to module-level bindings.
+`defer` is rejected at module top level, and so is a module-level binding of a
+resource type. A module's top-level code runs when the module is first
+imported, so a resource acquired there is opened as a side effect of the
+import. Nothing would dispose it either. A module's top-level block finishes
+before the program does its work, and JavaScript has no reliable hook that runs
+at program exit. Node's `process.on("exit")` runs only synchronous code,
+browsers do not guarantee `pagehide`, and a `FinalizationRegistry` callback may
+never run. The operating system reclaims file descriptors and sockets when the
+process ends, but whatever the dispose method does, such as flushing a buffer,
+is lost.
+
+```esc
+val log = File.create("app.log")
+// ERROR: a module-level binding cannot hold the resource 'log'; acquire it in the
+// function that uses it, or in the program's entry function, and pass it down
+```
+
+The rule covers `var` bindings too, so a lazily filled singleton such as
+`var pool: Pool | undefined` is rejected. A resource that lives as long as the
+program is acquired in the entry function under a `defer` and passed to the
+code that needs it. It is disposed when the entry function's block exits, which
+is before the program ends only if the entry function waits for the program's
+work. An entry function that starts a server and returns hands control to the
+event loop, and its deferral closes the server at once. It has to be `async`
+and wait until the work is done:
+
+```esc
+async fn main() {
+    val server = await Server.listen(8080)
+    defer await disposeAsync(server)
+    await server.closed()          // settles when the server shuts down
+}
+```
 
 `defer` is a statement, so it can appear in any block, including the block of
 an `if`, `match` arm, or `do` expression. A deferral in a block that produces a
@@ -1091,8 +1119,8 @@ disposing.
 4. **Resource types.** Mark a class a resource type by C4, extend that to object,
    tuple and array types that own one, and report a class that owns a resource
    but does not consume itself on disposal. Add the C6 check on every exit edge,
-   raise edges included, and reject a raised value that holds a resource, by
-   C10. Reject a closure that moves a resource capture until `move fn`
+   raise edges included. Reject a module-level binding of a resource type, as
+   section 4.2 describes, and a raised value that holds a resource, by C10. Reject a closure that moves a resource capture until `move fn`
    ([#2585](https://github.com/escalier-lang/escalier/issues/2585)) lands, then
    type it as a resource. Add `ResourceGenerator` and `ResourceAsyncGenerator`
    to the prelude, and check each generator body against its return type by
