@@ -14,7 +14,7 @@ Terms and rule names such as F2 come from
 [planning/ownership_rules/requirements.md](../ownership_rules/requirements.md).
 Rules A1 to A8 and G1 to G5 come from
 [planning/ownership_extensions/design.md](../ownership_extensions/design.md).
-The rules this document adds are numbered C1 to C11.
+The rules this document adds are numbered C1 to C12.
 
 ## 2. Problem
 
@@ -416,7 +416,8 @@ ownership. A consuming receiver says the value cannot be used afterwards, which
 is the property a resource needs. A class whose dispose method borrows its
 receiver, such as an iterator whose `[Symbol.dispose]` calls `return()`, is
 disposable but not a resource. Every iterator in the prelude is disposable in
-that weaker sense, and C6 does not apply to it.
+that weaker sense, and C6 does not apply to it. A generator whose body holds
+cleanup at a `yield` is a resource by C12.
 
 A structural type can also be a resource. An object type, tuple type or array
 type that owns a value of a resource type is a resource type, through any
@@ -653,9 +654,112 @@ rejection type, and a deferral awaiting a promise whose rejection type is not
 In a `gen fn` or `async gen fn`, a block exits when the generator's body leaves
 it, as for any function. A generator that is abandoned without being finished
 runs its deferrals when `return()` is called on it, which is what a `for … in`
-loop does on `break`. A generator that is never finished and never has
-`return()` called on it never runs them. JavaScript's `finally` has the same
-limit.
+loop does on `break`. `return()` resumes the body at the paused `yield` as if a
+`return` statement ran there. An iterator's `[Symbol.dispose]` calls
+`return()`, and calling `return()` does not call `[Symbol.dispose]`. A
+generator that is never finished and never has `return()` called on it never
+runs its deferrals, which C12 makes the checker report.
+
+**C12. A generator whose body holds cleanup at a `yield` is a resource.** Its
+return type is a `ResourceGenerator`, a prelude type whose `return` and
+`[Symbol.dispose]` consume the generator, so C4 makes it a resource type:
+
+```esc
+export declare interface ResourceGenerator<T, TReturn, TNext> {
+    next(&mut self, value: TNext) -> IteratorResult<T, TReturn>,
+    return(self, value?: TReturn) -> IteratorResult<T, TReturn>,
+    [Symbol.dispose](self) -> undefined,
+}
+```
+
+A body *holds cleanup* at a `yield` when a deferral is registered at that point,
+or when it owns a value of a resource type there. The signature writes the
+type, and the checker verifies it against the body, since a written type means
+exactly what it says
+([planning/explicit_signatures/design.md](../explicit_signatures/design.md)).
+`throws` clauses are left out of the examples below to keep them short.
+
+```esc
+gen fn lines(path: string) -> ResourceGenerator<string, undefined, undefined> {
+    val file = File.open(path)
+    defer dispose(file)
+    for line in file.lines() {
+        yield line
+    }
+}
+
+gen fn badLines(path: string) -> Generator<string, undefined, undefined> {
+    val file = File.open(path)
+    defer dispose(file)
+    for line in file.lines() {
+        yield line
+        // ERROR: 'file' is still to be disposed at this yield, so abandoning the
+        // generator would leak it; declare the return type ResourceGenerator<…>
+    }
+}
+```
+
+A `for` loop consumes the generator by R1, and `break` or `return` inside the
+loop calls `return()`, so a loop needs nothing written:
+
+```esc
+fn firstError(path: string) -> string | undefined {
+    for line in lines(path) {
+        if line.startsWith("ERROR") {
+            return line            // the loop calls return(), which closes the file
+        }
+    }
+    return undefined
+}
+```
+
+A generator driven by hand is consumed by `dispose(it)` or `it.return()`, and C6
+reports one that is neither:
+
+```esc
+fn header(path: string) -> string | undefined {
+    val mut it = lines(path)
+    defer dispose(it)
+    return it.next(undefined).value
+}
+
+fn headerLeaks(path: string) -> string | undefined {
+    val mut it = lines(path)
+    return it.next(undefined).value
+}
+// ERROR: the resource 'it' is never disposed; write `defer dispose(it)` after it
+// is acquired, or move it
+```
+
+Returning the generator moves it, which hands the duty to dispose it to the
+caller, as for any resource:
+
+```esc
+fn errors(path: string) -> ResourceGenerator<string, undefined, undefined> {
+    return lines(path)
+}
+```
+
+`return` can consume the generator because C3 rejects `yield` inside deferred
+code. In JavaScript a `finally` block can `yield`, which leaves a generator
+suspended after `return()`. In Escalier `return()` always runs the generator to
+completion, so the generator can do nothing afterwards.
+
+Other iterators are not resources. Under
+[#2442](https://github.com/escalier-lang/escalier/issues/2442), `arr.values()`
+is an `ArrayIterator<&'a T>`, which has no `return()` and releases nothing when
+it is dropped. A generator whose body holds no cleanup at any `yield` keeps the
+plain `Generator` type.
+
+An `async gen fn` follows the same rule with a `ResourceAsyncGenerator`, whose
+`return` and `[Symbol.asyncDispose]` consume the generator. A generator driven by
+hand is disposed with `defer await disposeAsync(it)`.
+
+Iterator helpers take their source by value, by X5, so `lines(path).filter(f)`
+owns a resource. C4's containment rule covers object, tuple and array types, but
+a helper returns a declared `IteratorObject`, whose dispose method borrows its
+receiver. Section 6 leaves open how the helpers return a resource form when
+their source is a `ResourceGenerator`.
 
 ### 4.7 Code generation
 
@@ -934,7 +1038,9 @@ codegen needs no flags. It is not taken because it rules out the case section
 C6 could apply to every type with a dispose method rather than to classes whose
 dispose method consumes its receiver. It is not taken because the prelude's
 iterators are disposable, and requiring `defer dispose(it)` for every iterator a
-program holds would be noise.
+program holds would be noise. Disposing most of them does nothing. C12 picks out
+the generators whose `return()` runs cleanup, which are the iterators that need
+disposing.
 
 ## 6. Open questions
 
@@ -957,6 +1063,12 @@ program holds would be noise.
   register `close(x)` and give any value a disposer at the binding. Both are
   sugar for a binding followed by a `defer`, so C5 and C7 apply unchanged. This
   waits on usage.
+- **Iterator helpers over a `ResourceGenerator`.** A helper such as `filter`
+  takes its source by value, so it owns the generator, but it returns an
+  `IteratorObject` that is not a resource type. Each helper could gain an
+  overload that returns a `ResourceIterator<T>` when its source is a
+  `ResourceGenerator`, or `IteratorObject` could take a parameter saying whether
+  it owns a resource.
 - **`errdefer`**, as section 5.3 describes.
 
 ## 7. Implementation plan
@@ -982,7 +1094,9 @@ program holds would be noise.
    raise edges included, and reject a raised value that holds a resource, by
    C10. Reject a closure that moves a resource capture until `move fn`
    ([#2585](https://github.com/escalier-lang/escalier/issues/2585)) lands, then
-   type it as a resource.
+   type it as a resource. Add `ResourceGenerator` and `ResourceAsyncGenerator`
+   to the prelude, and check each generator body against its return type by
+   C12.
 5. **Collections.** Retype `DisposableStack` and `AsyncDisposableStack` in the
    interop overlay, as section 4.8 describes. Goal 2 for collections of resources
    depends on [#2788](https://github.com/escalier-lang/escalier/issues/2788), [#2789](https://github.com/escalier-lang/escalier/issues/2789),
