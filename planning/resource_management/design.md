@@ -648,14 +648,46 @@ val file = if c {
 A `defer dispose(file)` after the `if` would dispose the first branch's file
 twice, so the fix is a `defer` next to each acquisition.
 
-Only a deferral that consumes exactly one binding can follow it. A block
-deferral that consumes two bindings is cancelled when either moves, so the
-other becomes unscheduled again and C6 reports it if nothing else consumes it.
-A deferral that consumes one binding is the form to prefer.
+A deferral moves or is cancelled as a whole. A block deferral that consumes one
+binding goes with it, along with its other statements:
 
-**C8. A deferral that reads a binding keeps it from moving.** A deferral that
-reads or borrows a binding without consuming it needs the binding at exit. A
-move of that binding after the `defer` is rejected:
+```esc
+val conn = Conn.open(url)
+defer {
+    metrics.record("closed", conn.id)
+    dispose(conn)
+}
+```
+
+Moving `conn` into another local binding carries both statements, so the record
+runs when the connection is disposed. Returning `conn` cancels both, since the
+caller holds an open connection and nothing should record that it closed.
+
+A deferral that goes with its value runs at a later exit, so every other
+binding it reads must live until the destination block exits. A move that
+would carry a deferral past the end of a binding it reads is rejected:
+
+```esc
+var kept: Conn | undefined = undefined
+do {
+    val metrics = Metrics()
+    val conn = Conn.open(url)
+    defer {
+        metrics.record("closed", conn.id)
+        dispose(conn)
+    }
+    kept = conn
+    // ERROR: cannot move 'conn' to 'kept', because the deferral at line 5 goes
+    // with it and reads 'metrics', which does not live that long
+}
+```
+
+A deferral that consumes more than one binding cannot move, by C8.
+
+**C8. A deferral that reads a binding, or consumes more than one, keeps them
+from moving.** A deferral that reads or borrows a binding without consuming it
+needs the binding at exit. A move of that binding after the `defer` is
+rejected:
 
 ```esc
 val mut stats = Stats()
@@ -668,6 +700,26 @@ archive(stats)
 The borrow rules apply to the deferral at each exit. A deferral that borrows
 `stats` mutably conflicts with an immutable borrow of `stats` that is live at
 the exit, such as one held by a closure stored in a `'static` slot.
+
+A deferral that consumes two or more bindings keeps each of them from moving.
+Going with one of them would carry the disposal of the others to a block where
+they do not live, and cancelling it would leave the others undisposed:
+
+```esc
+fn pick(a: File, b: File) -> File {
+    defer {
+        dispose(a)
+        dispose(b)
+    }
+    return a
+    // ERROR: cannot move 'a', because the deferral at line 2 also disposes 'b';
+    // give each resource its own `defer`
+}
+```
+
+A deferral that consumes one binding moves with it, by C7, whenever the other
+bindings it reads live long enough, so one `defer` per resource is the form to
+prefer. `pick` checks with `defer dispose(b)` alone.
 
 ### 4.5 Errors raised by cleanup
 
