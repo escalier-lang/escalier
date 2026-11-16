@@ -88,7 +88,8 @@ Its semantics, from the spec text:
   `suppressed` is the one that was propagating. Several failures nest, so the
   body's exception ends up at the bottom of the `suppressed` chain.
 - Bindings are identifiers. Destructuring is not allowed.
-- `using` is rejected at script top level and allowed at module top level.
+- `using` is rejected at the top level of a classic script and allowed at the
+  top level of an ES module.
 - `for (using x of xs)` disposes each element at the end of its iteration.
 
 `DisposableStack` is the same machinery as an object. `use(v)` registers `v` and
@@ -305,39 +306,69 @@ deferred code. So is `yield`. `await` is accepted only inside an `async fn` or
 a `finally` block `return`, which discards the exception in flight, and that is
 the behaviour C3 rules out.
 
-`defer` is rejected at module top level, and so is a module-level binding of a
+Where `defer` and resource bindings may appear at top level depends on the kind
+of file. An Escalier package's `lib/` files form one module that other code
+imports, and its `bin/` files are scripts that run top to bottom
+([10 Code Organization](../../docs/10_code_organization.md)).
+
+In `lib/`, `defer` is rejected at top level, and so is a top-level binding of a
 resource type. A module's top-level code runs when the module is first
 imported, so a resource acquired there is opened as a side effect of the
-import. Nothing would dispose it either. A module's top-level block finishes
-before the program does its work, and JavaScript has no reliable hook that runs
-at program exit. Node's `process.on("exit")` runs only synchronous code,
+import. Nothing would dispose it either. JavaScript has no reliable hook that
+runs at program exit. Node's `process.on("exit")` runs only synchronous code,
 browsers do not guarantee `pagehide`, and a `FinalizationRegistry` callback may
 never run. The operating system reclaims file descriptors and sockets when the
 process ends, but whatever the dispose method does, such as flushing a buffer,
 is lost.
 
 ```esc
+// lib/log.esc
 val log = File.create("app.log")
 // ERROR: a module-level binding cannot hold the resource 'log'; acquire it in the
-// function that uses it, or in the program's entry function, and pass it down
+// function that uses it, or in a bin/ script, and pass it down
 ```
 
 The rule covers `var` bindings too, so a lazily filled singleton such as
-`var pool: Pool | undefined` is rejected. A resource that lives as long as the
-program is acquired in the entry function under a `defer` and passed to the
-code that needs it. It is disposed when the entry function's block exits, which
-is before the program ends only if the entry function waits for the program's
-work. An entry function that starts a server and returns hands control to the
-event loop, and its deferral closes the server at once. It has to be `async`
-and wait until the work is done:
+`var pool: Pool | undefined` is rejected.
+
+A `bin/` script's top level is the program's entry point, so both forms are
+accepted there. A resource that lives as long as the program is acquired at the
+script's top level under a `defer` and passed to the code that needs it:
 
 ```esc
-async fn main() {
+// bin/count.esc
+import "std:console"
+
+val input = File.open("data.csv")
+defer dispose(input)
+console.log(countRows(&input))
+```
+
+The script's top level is a block like any other. Its deferrals run when the
+script's top-level code finishes. A `bin/` script compiles to an ES module, and
+codegen lowers its deferrals to a module-level `using` declaration, which TC39
+allows there.
+
+That point comes before the program ends only if the top-level code waits for
+the program's work. A script that starts a server and finishes hands control to
+the event loop, and its deferral closes the server at once. The code that holds
+the server has to wait until the work is done. The checker rejects `await` at a
+script's top level today, so a script waits inside an `async fn` and calls it:
+
+```esc
+// bin/serve.esc
+async fn serve() {
     val server = await Server.listen(8080)
     defer await disposeAsync(server)
     await server.closed()          // settles when the server shuts down
 }
+
+serve()
 ```
+
+Once the checker accepts `await` at a script's top level, the body of `serve`
+can be written at top level directly, and compiles to a module-level
+`await using`.
 
 `defer` is a statement, so it can appear in any block, including the block of
 an `if`, `match` arm, or `do` expression. A deferral in a block that produces a
@@ -1306,8 +1337,8 @@ or with `catch`, where the rewrite is visible at the call site.
 ## 7. Implementation plan
 
 1. **Syntax.** Add `DeferStmt` to the AST, visitor, parser and printer. Report
-   `defer` at module top level, and `return`, `yield`, and a `break` or
-   `continue` that leaves the deferral, by C3.
+   `defer` at the top level of a `lib/` file, and `return`, `yield`, and a
+   `break` or `continue` that leaves the deferral, by C3.
 2. **Checking and codegen of deferred code.** Check deferred code against a
    `never` throws sink, by C9, and accept `await` in it only inside an async
    body, by C11. Add `dispose`, `disposeAsync`, `disposeAll` and the `replace`
@@ -1323,8 +1354,8 @@ or with `catch`, where the rewrite is visible at the call site.
 4. **Resource types.** Mark a class a resource type by C4, extend that to object,
    tuple and array types that own one, and report a class that owns a resource
    but does not consume itself on disposal. Add the C6 check on every exit edge,
-   raise edges included. Reject a module-level binding of a resource type, as
-   section 4.2 describes, and a raised value that holds a resource, by C10. Reject a closure that moves a resource capture until `move fn`
+   raise edges included. Reject a top-level binding of a resource type in a
+   `lib/` file, as section 4.2 describes, and a raised value that holds a resource, by C10. Reject a closure that moves a resource capture until `move fn`
    ([#2585](https://github.com/escalier-lang/escalier/issues/2585)) lands, then
    type it as a resource. Add `ResourceGenerator` and `ResourceAsyncGenerator`
    to the prelude, and check each generator body against its return type by
