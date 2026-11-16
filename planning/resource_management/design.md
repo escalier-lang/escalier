@@ -1206,6 +1206,74 @@ program holds would be noise. Disposing most of them does nothing. C12 picks out
 the generators whose `return()` runs cleanup, which are the iterators that need
 disposing.
 
+### 5.6 Deferrals attached to the function
+
+Go attaches a deferral to the function, not the block. That would make the
+second `defer` in C7's `report` unnecessary without carrying deferrals between
+blocks, since the deferral written inside the `try` block would run when
+`report` returns.
+
+It is not taken for two reasons:
+
+- A deferral in a loop body would hold every iteration's resource until the
+  function returns. That is the best-known problem with Go's `defer`, and C1's
+  loop example avoids it.
+- On a raise, the cleanup would run after the catch arm, not before it. Section
+  4.9 relies on a deferral in a `try` block releasing its resource before the arm
+  runs.
+
+C7 gives `report` one `defer` per acquisition and keeps block scoping.
+
+### 5.7 A `try` block that does not scope deferrals
+
+A deferral written in a `try` block could attach to the enclosing block, while
+bindings declared in the `try` block stay scoped to it. That also fixes
+`report`. It is not taken because braces that scope bindings and not cleanup
+would mislead readers, and section 4.9's pattern of releasing a resource before
+the catch arm would stop working.
+
+### 5.8 Cancelling a deferral when its value moves to a local binding
+
+C7 could cancel a deferral on every move, including a move into another binding
+of the same function. That is simpler, since no deferral changes blocks. It is
+not taken because the new owner would then need a second `defer` for a resource
+that already has one, which is the problem C7's `report` shows. Writing the
+cleanup next to the acquisition is goal 1, and the second `defer` would sit
+after the code that hands the resource over, far from the acquisition.
+
+### 5.9 Splitting a block deferral, or moving it with one of several resources
+
+Three other treatments of a block deferral were considered.
+
+- **Moving only the statement that consumes the binding.** In the `metrics`
+  example under C7, only `dispose(conn)` would go with `conn`. The record of the
+  close would run when the inner block exits, while the connection is still
+  open. The author wrote the block as one unit, and splitting it changes what it
+  says.
+- **Cancelling a deferral that consumes several bindings when one of them
+  moves.** The others become unscheduled, and C6 reports them somewhere other
+  than the move that caused it. C8 reports the move itself, with the fix.
+- **Carrying a deferral that consumes several bindings with any one of them.**
+  The others would be disposed at the end of a block where they do not live,
+  and nothing in the source would show it.
+
+### 5.10 Deferred code that reads or replaces the return value
+
+In Go, a deferred closure can read and assign the function's named results
+after `return` has set them. The common use is reporting an error from
+`Close` through the function's `err` result. It is not taken for three reasons:
+
+- Escalier raises errors, it does not return them. The Escalier form of that
+  idiom is a deferral that raises, which C9 rules out.
+- An owned return value has moved to the caller by the time deferrals run, so
+  reading it would read a moved value, and assigning it would replace a value
+  the caller owns.
+- `DisposableStack` never shows its callbacks the return value. Supporting it
+  would mean a lowering of Escalier's own with a temporary for the result.
+
+A change to the result after the body finishes is written by wrapping the call,
+or with `catch`, where the rewrite is visible at the call site.
+
 ## 6. Open questions
 
 - **Generic code.** A type parameter is affine, so a generic body can drop a
