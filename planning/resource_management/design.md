@@ -1263,7 +1263,7 @@ In Go, a deferred closure can read and assign the function's named results
 after `return` has set them. The common use is reporting an error from
 `Close` through the function's `err` result. It is not taken for three reasons:
 
-- Escalier raises errors, it does not return them. The Escalier form of that
+- Escalier raises errors rather than returning them. The Escalier form of that
   idiom is a deferral that raises, which C9 rules out.
 - An owned return value has moved to the caller by the time deferrals run, so
   reading it would read a moved value, and assigning it would replace a value
