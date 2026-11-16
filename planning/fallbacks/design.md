@@ -212,6 +212,95 @@ fn f(v: Buffer) -> Buffer {
 Whatever rule the liveness pass applies between a `try` block and its arms
 applies here unchanged.
 
+#### Raise edges
+
+The ownership post-pass walks a control-flow graph that has an edge from each
+known raise site. The [`defer` design][defer] checks its C6 rule on those edges,
+since a raise that leaves a scope before a resource is scheduled for disposal
+leaks it. A raise site in the left operand of `catch` has its edge to the
+fallback's entry, not to the exit of the enclosing scope. So a guarded call
+between an acquisition and its `defer` does not count as a leak path:
+
+```esc
+fn f(path: string, s: string) -> number throws IOError {
+    val file = File.open(path)
+    val n = parse(s) catch 0     // a raise here goes to the fallback, not out of f
+    defer dispose(file)
+    return n
+}
+```
+
+#### Fallbacks that produce a resource
+
+When both operands produce a value of a resource type, the C7 rule of the
+[`defer` design][defer] carries a deferral along with the value into the binding.
+Each operand is one path into that binding, so C6 requires both to agree on
+whether the value arrives scheduled:
+
+```esc
+val file = do {
+    val f = File.open(p)
+    defer dispose(f)
+    f.checkHeader()
+    f
+} catch File.open(q)
+// ERROR: 'file' is scheduled for disposal on only some paths; write
+// `defer dispose(…)` next to the acquisition in the fallback
+```
+
+Either both operands schedule their resource:
+
+```esc
+val file = do {
+    val f = File.open(p)
+    defer dispose(f)
+    f.checkHeader()
+    f
+} catch do {
+    val g = File.open(q)
+    defer dispose(g)
+    g
+}
+```
+
+Or neither does, and one `defer` follows the binding:
+
+```esc
+val file = File.open(p) catch File.open(q)
+defer dispose(file)
+```
+
+The second form only fits when nothing can raise between an acquisition and the
+end of its operand. Above, `f.checkHeader()` can raise after `f` is acquired, so
+leaving `f` unscheduled there would be a leak path.
+
+### Inside a deferral
+
+The C9 rule of the [`defer` design][defer] gives deferred code a `never` throws
+sink, so a deferral cannot raise anything the checker knows of. A cleanup that
+can fail is handled with a `catch`, usually the binding form, so the failure is
+still recorded:
+
+```esc
+defer flush(&mut output) catch e => log.warn("flush failed", e)
+```
+
+`defer` takes an expression, and `catch` binds more loosely than every other
+operator, so the whole `flush(…) catch …` is the deferred expression.
+
+The fallback is part of the deferral too, so it is also checked against the
+`never` sink. A fallback that translates the error is rejected there:
+
+```esc
+defer flush(&mut output) catch throw FlushError()
+// ERROR: rejected by C9, since the fallback raises FlushError inside a deferral
+```
+
+C9's diagnostic suggests `catch`, so the binding form has to land no later than
+`defer` does.
+
+[defer]: https://github.com/escalier-lang/escalier/blob/claude/blissful-bell-aoxtyn/planning/resource_management/design.md
+
 ## Representation and lowering
 
 ### Keep a dedicated AST node
@@ -299,6 +388,44 @@ const x = $temp;
 ```
 
 A binding becomes the `catch` parameter, renamed if it would collide.
+
+A block with deferrals lowers to a `DisposableStack` held in a `using`
+declaration (section 4.7 of the [`defer` design][defer]). When that block is the
+left operand of `catch`, the stack sits inside the JavaScript `try` block. Its
+deferrals therefore run before the fallback, which is the order section 4.9 of
+the `defer` design specifies for a `try` block and its arms:
+
+```esc
+val n = do {
+    val f = File.open(p)
+    defer dispose(f)
+    countLines(&f)
+} catch 0
+```
+
+```js
+let $temp;
+try {
+  using $stack = new DisposableStack();
+  const f = File.open(p);
+  $stack.defer(() => dispose(f));
+  $temp = countLines(f);
+} catch {
+  $temp = 0;
+}
+const n = $temp;
+```
+
+This shows the native form. Targets without native `using` get the downlevel
+helper the `defer` design describes.
+
+When a resource moves out of a block into a binding, C7 registers its deferral
+again on the destination block's stack, at the point of the move. In this
+lowering the value reaches the binding through `$temp`, so codegen treats
+`const file = $temp` as the move and registers the deferral there. The inner
+block clears its own cancellation flag at the assignment to `$temp`. Both
+operands reach the binding through `$temp`, so one registration covers both
+paths.
 
 ### Source maps and provenance
 
@@ -403,9 +530,9 @@ expression form the same rule once the arms extension lands.
 
 Neither `catch` on an expression nor `catch` on a `try` block takes a `finally`
 block. Cleanup in a `finally` sits at the end of the guarded block, which in a
-long block is far from where the resource was acquired. Cleanup tied to the
-acquisition is designed separately, in
-[escalier-lang/escalier#2787](https://github.com/escalier-lang/escalier/issues/2787).
+long block is far from where the resource was acquired. The [`defer` design][defer]
+removes `finally` and replaces it with a `defer` statement written next to the
+acquisition (its section 4.9).
 
 #### Representation
 
@@ -570,7 +697,11 @@ fallback.
    warning. Tests in a new `internal/solver/infer_catch_expr_test.go` assert the
    result type, that known throws do not reach the enclosing clause, that the
    fallback's throws do, and that a move in the left operand blocks a use in the
-   fallback.
+   fallback. The binding form lands no later than the `defer` design's C9
+   check, whose diagnostic suggests it. Once `defer` lands, add tests for the
+   raise edges and resource-typed fallbacks in [Ownership and
+   liveness](#ownership-and-liveness), and fixtures for a `do` block with
+   deferrals as the left operand.
 3. Codegen. Lower `CatchExpr` beside `TryCatchExpr` in
    [internal/codegen/builder.go](../../internal/codegen/builder.go) with the
    source-node mapping above. Fixtures cover a chain, a binding, a fallback that
