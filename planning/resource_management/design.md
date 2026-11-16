@@ -220,9 +220,10 @@ fn copy(src: string, dst: string) throws IOError {
   in `[Symbol.dispose](self)`. An owned value of a resource type must be
   consumed on every path out of its scope. Writing `defer dispose(x)` counts,
   and so does moving it out. Forgetting to do either is a compile error.
-- Moving a scheduled resource out of its scope, such as returning it, cancels
-  the deferral that would have disposed it. Ownership of the resource and the
-  duty to dispose it move together.
+- A deferral goes where its resource goes. Moving a scheduled resource into
+  another local binding carries the deferral to that binding's block, and
+  moving it out of the function, such as by returning it, cancels the
+  deferral. Ownership of the resource and the duty to dispose it move together.
 - Deferred code raises nothing the checker knows of. A cleanup that can fail is
   written with a `catch` fallback.
 - No `using` keyword. Acquiring a resource is an ordinary `val` binding.
@@ -558,10 +559,42 @@ Handling](../../docs/06_error_handling.md#uncovered-exceptions-are-rethrown)
 places on `throws`. Writing `defer dispose(x)` on the line after the acquisition
 is the habit C6 rewards, and it is never reported.
 
-**C7. Moving a scheduled binding out cancels its deferral.** A scheduled
-binding can still be moved, by `return`, into a field, or to a consuming
-parameter. The move hands the resource to a new owner, and the deferral that
-would have disposed it does not run on that path:
+**C7. A deferral goes where its binding's value goes.** A scheduled binding can
+still be moved. What happens to its deferral depends on the destination:
+
+- A move into another binding of the same function, a `val` or `var` in any
+  block, carries the deferral with it. The deferral now runs when the
+  destination binding's block exits.
+- Any other move cancels the deferral. That is a `return`, a store into a field
+  or element, or a consuming argument. The new owner takes the
+  duty to dispose the resource along with the resource.
+
+Either way, ownership of the resource and the duty to dispose it move together.
+
+A value that a block produces moves into the binding the block initializes, so
+a `try` block can acquire and check a resource and hand it to the enclosing
+block without a second `defer`:
+
+```esc
+fn report(path: string) -> Report throws IOError {
+    val file = try {
+        val f = File.open(path)
+        defer dispose(f)          // follows `f` into `file`
+        f.checkHeader()           // if this raises, `f` is disposed before the arm runs
+        f
+    } catch {
+        FormatError => {
+            val g = File.open(defaultPath)
+            defer dispose(g)      // follows `g` into `file`
+            g
+        }
+    }
+    return summarize(&file)       // `file` is disposed when `report` returns
+}
+```
+
+A move out of the function hands the resources on. A failure part way through
+still releases what was acquired before it:
 
 ```esc
 fn openPair(a: string, b: string) -> Pair throws IOError {
@@ -575,14 +608,50 @@ fn openPair(a: string, b: string) -> Pair throws IOError {
 
 This is how Rust's `Drop` behaves: a value is dropped by whoever owns it when
 its scope ends. It covers what Zig needs `errdefer` for and what TC39's
-`DisposableStack` needs `move()` for, which is acquiring several resources where
-a failure part way must release the earlier ones and success must hand all of
-them on.
+`DisposableStack` needs `move()` for. The difference from Rust is that the
+deferral is written, so a reader sees which values are disposed, though not
+always where without following their moves.
 
-Cancellation applies to a whole deferral. A block deferral that consumes two
-bindings is cancelled when either moves, so the other becomes unscheduled again
-and C6 reports it if nothing else consumes it. A deferral that consumes one
-binding is the form to prefer.
+The move is decided per path. A binding moved on one path and not on another
+is disposed wherever its value ended up on each path:
+
+```esc
+fn f(c: boolean, p: string) {
+    var kept: File | undefined = undefined
+    do {
+        val file = File.open(p)
+        defer dispose(file)
+        if c {
+            kept = file          // this path: the deferral moves to f's body
+        }
+    }                            // other path: `file` is disposed here
+    // … `kept` is disposed when f returns, if it holds the file
+}
+```
+
+After the `if`, `kept` is scheduled on one path and holds no resource on the
+other, and C6 accepts both. A binding that holds a resource on every path but
+is scheduled on only some is reported where the paths join:
+
+```esc
+val file = if c {
+    val a = File.open(p)
+    defer dispose(a)
+    a                            // scheduled; the deferral follows into `file`
+} else {
+    File.open(q)                 // unscheduled
+}
+// ERROR: 'file' is scheduled for disposal on only some paths; write
+// `defer dispose(…)` next to the acquisition in the `else` branch
+```
+
+A `defer dispose(file)` after the `if` would dispose the first branch's file
+twice, so the fix is a `defer` next to each acquisition.
+
+Only a deferral that consumes exactly one binding can follow it. A block
+deferral that consumes two bindings is cancelled when either moves, so the
+other becomes unscheduled again and C6 reports it if nothing else consumes it.
+A deferral that consumes one binding is the form to prefer.
 
 **C8. A deferral that reads a binding keeps it from moving.** A deferral that
 reads or borrows a binding without consuming it needs the binding at exit. A
@@ -838,6 +907,21 @@ function openPair(a, b) {
 
 The flags are cleared before the call that receives the moved values, so the
 callee owns them if it raises.
+
+A move that carries a deferral into another binding clears the inner flag and
+registers the deferral again on the destination block's stack, at the point of
+the move. That gives it its place in the destination block's reverse order.
+The registered closure captures the moved value in a constant, not the
+destination variable, so a later reassignment of a `var` destination does not
+change what it disposes:
+
+```js
+// kept = file, in the example under C7
+$file = false;
+kept = file;
+const $kept = kept;
+$outer.defer(() => dispose($kept));
+```
 
 Native `using` declarations need a runtime that ships the proposal, and Safari
 does not yet. Until the target setting says otherwise, codegen emits the
