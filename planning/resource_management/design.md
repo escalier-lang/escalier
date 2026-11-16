@@ -813,22 +813,34 @@ TC39's pattern for handing a set of resources on after acquiring them all.
 
 ### 4.9 Replacing `finally`
 
-`try … finally` is removed once `defer` lands. A `do` block with a `defer`
-expresses the same thing with the cleanup at the top:
+`try … finally` is removed once `defer` lands. Cleanup that a `finally` block
+did is written as a `defer` next to the acquisition, in the block that uses the
+resource:
 
 ```esc
-try { work() } catch { e => recover(e) } finally { cleanup() }
-
-do {
-    defer cleanup()
-    try { work() } catch { e => recover(e) }
+fn load(path: string) -> Config {
+    return try {
+        val file = File.open(path)
+        defer dispose(file)
+        parseConfig(file.read())
+    } catch {
+        e => defaults(e)
+    }
 }
 ```
 
-The parser keeps recognizing `finally` for one release and reports it with a
-fix-it that performs this rewrite. A `finally` block that raises or contains a
-`return` has no direct translation by C3 and C9, and the fix-it is not offered
-for it.
+The deferral belongs to the `try` block, so on a raise it runs before the catch
+arm. The file is closed by the time `defaults(e)` runs, and the arm cannot reach
+it, since `file` is not in scope there. A `finally` block runs after the arms,
+and the design does not reproduce that order. A cleanup that has to run after the arms
+goes in a `defer` in the enclosing block, placed after the code that acquires
+what it releases.
+
+No fix-it rewrites a `finally` block. Where its `defer` belongs depends on
+where the resource it releases was acquired, which is often outside the `try`.
+For one release the parser keeps recognizing `finally` and reports it with a
+diagnostic that suggests a `defer` next to the acquisition. The release after
+that removes it.
 
 ### 4.10 Interop
 
@@ -976,7 +988,7 @@ program holds would be noise.
    depends on [#2788](https://github.com/escalier-lang/escalier/issues/2788), [#2789](https://github.com/escalier-lang/escalier/issues/2789),
    [#2790](https://github.com/escalier-lang/escalier/issues/2790) and [#2792](https://github.com/escalier-lang/escalier/issues/2792). Section
    4.3's `cache.delete(&file)` depends on [#2791](https://github.com/escalier-lang/escalier/issues/2791).
-6. **`finally`.** Report `finally` with the fix-it of section 4.9, then remove it
+6. **`finally`.** Report `finally` with the diagnostic of section 4.9, then remove it
    from the parser a release later. Update
    [06 Error Handling](../../docs/06_error_handling.md) for `defer`, and the
    "Affine, not linear" section of [09 Ownership](../../docs/09_ownership.md)
