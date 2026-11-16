@@ -660,9 +660,19 @@ fn f(c: boolean, p: string) {
 }
 ```
 
-After the `if`, `kept` is scheduled on one path and holds no resource on the
-other, and C6 accepts both. A binding that holds a resource on every path but
-is scheduled on only some is reported where the paths join:
+Where paths join, every path on which a binding holds a resource must agree on
+whether that resource is scheduled. A path on which the binding holds no
+resource, such as `kept` holding `undefined`, agrees with either state. So
+after the `if` above, `kept` is accepted. A binding that is unscheduled on
+every path is accepted too, and a single `defer` after the join schedules it:
+
+```esc
+val file = if c { File.open(p) } else { File.open(q) }
+defer dispose(file)
+```
+
+A binding that is scheduled on some paths and unscheduled on others is reported
+where the paths join:
 
 ```esc
 val file = if c {
@@ -673,11 +683,15 @@ val file = if c {
     File.open(q)                 // unscheduled
 }
 // ERROR: 'file' is scheduled for disposal on only some paths; write
-// `defer dispose(…)` next to the acquisition in the `else` branch
+// `defer dispose(…)` next to the acquisition in the branch that leaves it
+// unscheduled
 ```
 
-A `defer dispose(file)` after the `if` would dispose the first branch's file
-twice, so the fix is a `defer` next to each acquisition.
+No statement after the join can dispose such a binding exactly once. A
+`defer dispose(file)` there would dispose the first branch's file twice, and
+leaving it out leaks the second's. The fix is a `defer` next to each
+acquisition. The same rule applies where a `try` block and its catch arms
+join, and where the arms of a `match` join.
 
 A deferral moves or is cancelled as a whole. A block deferral that consumes one
 binding goes with it, along with its other statements:
