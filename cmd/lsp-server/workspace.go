@@ -35,10 +35,7 @@ func (s *Server) workspaceExecuteCommand(context *glsp.Context, params *protocol
 			return nil, fmt.Errorf("unsupported file type: %s", uri)
 		}
 
-		s.mu.RLock()
-		_, isOpen := s.documents[uri]
-		s.mu.RUnlock()
-		if !isOpen {
+		if _, isOpen := s.openDocument(uri); !isOpen {
 			return nil, fmt.Errorf("document not open: %s", uri)
 		}
 
@@ -196,15 +193,18 @@ func (s *Server) collectSources(rootPath string) ([]*ast.Source, error) {
 	allFiles = append(allFiles, binFiles...)
 
 	// Snapshot in-memory documents under the lock.
-	s.mu.RLock()
-	openDocs := make(map[protocol.DocumentUri]string)
-	for _, absPath := range allFiles {
-		fileURI := protocol.DocumentUri(pathToURI(absPath))
-		if doc, ok := s.documents[fileURI]; ok {
-			openDocs[fileURI] = doc.Text
+	openDocs := func() map[protocol.DocumentUri]string {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		openDocs := make(map[protocol.DocumentUri]string)
+		for _, absPath := range allFiles {
+			fileURI := protocol.DocumentUri(pathToURI(absPath))
+			if doc, ok := s.documents[fileURI]; ok {
+				openDocs[fileURI] = doc.Text
+			}
 		}
-	}
-	s.mu.RUnlock()
+		return openDocs
+	}()
 
 	// Errors from filepath.Rel and os.ReadFile are logged and skipped rather
 	// than propagated. A file can disappear between the cache scan and the
@@ -249,17 +249,19 @@ func (s *Server) refreshBinFilesCache() error {
 	}
 
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.binFilesCache = set.FromSlice(files)
-	s.mu.Unlock()
 
 	return nil
 }
 
 // cachedBinFilesSnapshot returns a stable snapshot of cached bin file paths.
 func (s *Server) cachedBinFilesSnapshot() []string {
-	s.mu.RLock()
-	files := s.binFilesCache.ToSlice()
-	s.mu.RUnlock()
+	files := func() []string {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		return s.binFilesCache.ToSlice()
+	}()
 
 	sort.Strings(files)
 	return files

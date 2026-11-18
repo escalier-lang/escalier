@@ -2,7 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -299,4 +303,34 @@ func TestRequestPanicLeavesOutStaleDiagnostics(t *testing.T) {
 	require.Equal(t, []string{
 		"2:4-2:4 the Escalier language server crashed while handling textDocument/hover: boom. See the console for the stack trace.",
 	}, awaitDiagnostics(t, published, uri, 2))
+}
+
+// TestEveryLockIsReleasedByDefer asserts that each place the server takes mu or solverMu
+// releases it with a deferred unlock on the next line. A panic that unwinds through a
+// section with a plain unlock leaves the lock held, and handleRequestPanic and
+// handleCheckPanic, which take mu themselves, would then deadlock instead of recovering.
+func TestEveryLockIsReleasedByDefer(t *testing.T) {
+	paths, err := filepath.Glob("*.go")
+	require.NoError(t, err)
+	lockCall := regexp.MustCompile(`\b(\w+)\.(mu|solverMu)\.(R?Lock)\(\)$`)
+	var undeferred []string
+	for _, path := range paths {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		data, err := os.ReadFile(path)
+		require.NoError(t, err)
+		lines := strings.Split(string(data), "\n")
+		for i, line := range lines {
+			m := lockCall.FindStringSubmatch(strings.TrimSpace(line))
+			if m == nil {
+				continue
+			}
+			unlock := "defer " + m[1] + "." + m[2] + "." + strings.Replace(m[3], "Lock", "Unlock", 1) + "()"
+			if i+1 >= len(lines) || strings.TrimSpace(lines[i+1]) != unlock {
+				undeferred = append(undeferred, fmt.Sprintf("%s:%d: %s", path, i+1, strings.TrimSpace(line)))
+			}
+		}
+	}
+	require.Empty(t, undeferred)
 }
