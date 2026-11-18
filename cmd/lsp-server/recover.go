@@ -56,9 +56,11 @@ func (loc requestLocation) documentURI() (protocol.DocumentUri, bool) {
 // the start of the document when the request carries neither. The diagnostics the last
 // check found are published with it when that check read the document's current text.
 //
-// Request handlers read the server's state without writing it. Every lock held while
-// checker or AST code runs is released by a deferred unlock as the panic unwinds, so
-// nothing needs resetting for the server to answer the next request.
+// Every section of the server that holds mu or solverMu releases it with a deferred
+// unlock, so a panic unwinding through one leaves both locks free, which the read lock
+// here depends on. Request handlers read the server's state without writing it. The
+// notifications that write it, such as didOpen and didChange, update the document map and
+// the generation counters under mu, and leave nothing half-written for the next request.
 func (s *Server) handleRequestPanic(context *glsp.Context, p panicReport) error {
 	msg := p.message("handling " + context.Method)
 	logPanic(context, msg, p)
@@ -76,10 +78,7 @@ func (s *Server) handleRequestPanic(context *glsp.Context, p panicReport) error 
 		} else if loc.Range != nil {
 			pos = loc.Range.Start
 		}
-		s.mu.RLock()
-		doc, opened := s.documents[uri]
-		s.mu.RUnlock()
-		if opened {
+		if doc, opened := s.openDocument(uri); opened {
 			s.publishPanicDiagnostic(context, uri, doc.Version, pos, msg, true)
 		}
 	}
@@ -102,10 +101,12 @@ func (s *Server) handleCheckPanic(context *glsp.Context, uri protocol.DocumentUr
 	msg := p.message("checking " + string(uri))
 	logPanic(context, msg, p)
 
-	s.mu.Lock()
-	s.needsFullCheck = true
-	s.panickedVersion[uri] = version
-	s.mu.Unlock()
+	func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.needsFullCheck = true
+		s.panickedVersion[uri] = version
+	}()
 	s.validated.Broadcast()
 
 	// The diagnostics from the last finished check describe older text, so their ranges

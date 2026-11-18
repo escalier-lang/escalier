@@ -1040,14 +1040,27 @@ test.each<[string, CrashFacts, RestartDecision]>([
         { kind: 'restart', delayMs: 0 },
     ],
     [
-        'a replacement that crashes before an edit waits for one, however long it ran',
+        // Loading the standard library can take most of this window on a slow machine.
+        'a replacement that crashes before an edit, within the same-input window, waits for one',
         {
             wasRestart: true,
             inputChanged: false,
-            ranForMs: 60_000,
+            ranForMs: 45_000,
             quickCrashes: 0,
         },
         { kind: 'wait-for-edit' },
+    ],
+    [
+        // A crash this long after the restart came from something other than the documents
+        // the server opened, such as a request or running out of memory.
+        'a replacement that ran past the same-input window restarts without an edit',
+        {
+            wasRestart: true,
+            inputChanged: false,
+            ranForMs: 10 * 60_000,
+            quickCrashes: 0,
+        },
+        { kind: 'restart', delayMs: 0 },
     ],
     [
         'a replacement that an edit reached restarts',
