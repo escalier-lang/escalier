@@ -120,6 +120,14 @@ function writableOf(stream: SimpleStream): RAL.WritableStream {
  */
 export const QUICK_CRASH_MS = 10_000;
 
+/**
+ * How long a server that replaced a crashed one has to run before its crash no longer
+ * counts as a crash on the same input as the one before. A new server loads the standard
+ * library before its first check, which can take tens of seconds on a slow machine, so
+ * this is well past QUICK_CRASH_MS.
+ */
+export const SAME_INPUT_CRASH_MS = 60_000;
+
 /** The longest the client waits before it starts a server again after a crash. */
 export const MAX_RESTART_DELAY_MS = 30_000;
 
@@ -142,19 +150,22 @@ export type RestartDecision =
 
 /**
  * Returns what the client does after a crash.
- * - A server that replaced a crashed one, and crashed before any edit reached it, crashed
- *   on the input that killed the server before it. Another would crash the same way, so
- *   the client waits for an edit.
- * - Any other server that ran for QUICK_CRASH_MS or longer is started again at once.
+ * - A server that replaced a crashed one, and crashed within SAME_INPUT_CRASH_MS before
+ *   any edit reached it, crashed on the input that killed the server before it. Another
+ *   would crash the same way, so the client waits for an edit.
+ * - Any other server that ran for QUICK_CRASH_MS or longer is started again at once. That
+ *   includes a replacement that ran past SAME_INPUT_CRASH_MS, whose crash came from
+ *   something other than the documents it opened, such as a request or running out of
+ *   memory.
  * - A quicker crash is started again after a delay that doubles with each such crash in
  *   a row, up to MAX_RESTART_DELAY_MS.
- *
- * Whether the input changed decides the first case rather than how long the server ran,
- * since a new server loads the standard library before its first check, and how long that
- * takes depends on the machine.
  */
 export function decideRestart(facts: CrashFacts): RestartDecision {
-    if (facts.wasRestart && !facts.inputChanged) {
+    if (
+        facts.wasRestart &&
+        !facts.inputChanged &&
+        facts.ranForMs < SAME_INPUT_CRASH_MS
+    ) {
         return { kind: 'wait-for-edit' };
     }
     if (facts.ranForMs >= QUICK_CRASH_MS) {
