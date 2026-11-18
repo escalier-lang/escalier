@@ -756,33 +756,23 @@ func (server *Server) validateFull(
 	server.runTestHooks(contents)
 	output := compiler.CheckPackage(sources, packageConfig(rootPath))
 
-	// Verify that no document versions changed during validation.
-	server.mu.Lock()
-	currentDoc := server.documents[uri]
-	if currentDoc.Version != version || server.packageGen != snapshotPackageGen || server.libGen != snapshotLibGen {
-		server.mu.Unlock()
-		server.validated.Broadcast()
+	// Verify that no document versions changed during validation. handleCheckPanic takes
+	// mu for writing, so the unlock is deferred to release mu before a panic here reaches
+	// it.
+	stale := func() bool {
+		server.mu.Lock()
+		defer server.mu.Unlock()
+		currentDoc := server.documents[uri]
+		if currentDoc.Version != version || server.packageGen != snapshotPackageGen || server.libGen != snapshotLibGen {
+			return true
+		}
+		server.recordFullCheck(uri, version, &output)
+		return false
+	}()
+	server.validated.Broadcast()
+	if stale {
 		return
 	}
-	server.checkOutput = &output
-	server.needsFullCheck = false
-	server.packageValidatedGen = server.packageGen
-	server.libValidatedGen = server.libGen
-	server.validatedVersion[uri] = version
-	// Also update validatedVersion for all other open Escalier documents.
-	// This iterates server.documents rather than sources because all open
-	// lib/ and bin/ .esc files are included in sources (collectSources uses
-	// the editor buffer for open files). If a non-package file somehow gets
-	// stamped, the only effect is that isCacheStale returns false for it,
-	// which is harmless — there is nothing to wait for since it won't be
-	// re-validated through the full-package path.
-	for docURI, doc := range server.documents {
-		if docURI != uri && doc.LanguageID == "escalier" {
-			server.validatedVersion[docURI] = doc.Version
-		}
-	}
-	server.mu.Unlock()
-	server.validated.Broadcast()
 
 	// Publish diagnostics for all files.
 	severity := protocol.DiagnosticSeverityError
@@ -845,6 +835,29 @@ func (server *Server) validateFull(
 			params.Version = &v
 		}
 		go lspContext.Notify(protocol.ServerTextDocumentPublishDiagnostics, params)
+	}
+}
+
+// recordFullCheck stores output, the full check of the package that uri at version
+// started, as the cached check output, and records every open document as checked. The
+// caller holds mu for writing.
+func (server *Server) recordFullCheck(uri protocol.DocumentUri, version protocol.Integer, output *compiler.CheckOutput) {
+	server.checkOutput = output
+	server.needsFullCheck = false
+	server.packageValidatedGen = server.packageGen
+	server.libValidatedGen = server.libGen
+	server.validatedVersion[uri] = version
+	// Also update validatedVersion for all other open Escalier documents.
+	// This iterates server.documents rather than sources because all open
+	// lib/ and bin/ .esc files are included in sources (collectSources uses
+	// the editor buffer for open files). If a non-package file somehow gets
+	// stamped, the only effect is that isCacheStale returns false for it,
+	// which is harmless — there is nothing to wait for since it won't be
+	// re-validated through the full-package path.
+	for docURI, doc := range server.documents {
+		if docURI != uri && doc.LanguageID == "escalier" {
+			server.validatedVersion[docURI] = doc.Version
+		}
 	}
 }
 
