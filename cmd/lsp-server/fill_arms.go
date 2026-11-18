@@ -205,16 +205,18 @@ func (s *Server) checkedFileAt(uri protocol.DocumentUri) (checkedFile, []compile
 	var errs []compiler.Diagnostic
 	// validateBinScript replaces a script's entries in the check output under mu, so the
 	// entries for this file are read together under it.
-	s.mu.RLock()
-	if co := s.checkOutput; co != nil && !s.isCacheStale(uri) {
-		file = checkedFileOf(co, sourceID)
-		for _, err := range co.TypeErrors {
-			if err.Span().SourceID == sourceID {
-				errs = append(errs, err)
+	func() {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		if co := s.checkOutput; co != nil && !s.isCacheStale(uri) {
+			file = checkedFileOf(co, sourceID)
+			for _, err := range co.TypeErrors {
+				if err.Span().SourceID == sourceID {
+					errs = append(errs, err)
+				}
 			}
 		}
-	}
-	s.mu.RUnlock()
+	}()
 	if file.src == nil || file.info == nil {
 		return checkedFile{}, nil, false
 	}

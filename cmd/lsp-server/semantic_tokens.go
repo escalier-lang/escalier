@@ -65,20 +65,22 @@ func (s *Server) textDocumentSemanticTokensFull(context *glsp.Context, params *p
 
 	// validateBinScript replaces a script's entries in the check output under the write
 	// lock, so the file's AST, source, and Info are read together under the read lock.
-	s.mu.RLock()
-	s.waitForFreshCheck(uri)
 	sourceID := s.sourceIDForURI(uri)
 	var script *ast.Script
 	var module *ast.Module
 	var src *ast.Source
 	var info *solver.Info
-	if co := s.checkOutput; co != nil {
-		script = co.Scripts[sourceID]
-		module = co.Module
-		src = co.SourceByID(sourceID)
-		info = co.InfoFor(sourceID)
-	}
-	s.mu.RUnlock()
+	func() {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		s.waitForFreshCheck(uri)
+		if co := s.checkOutput; co != nil {
+			script = co.Scripts[sourceID]
+			module = co.Module
+			src = co.SourceByID(sourceID)
+			info = co.InfoFor(sourceID)
+		}
+	}()
 
 	if src == nil || info == nil {
 		return &protocol.SemanticTokens{Data: []protocol.UInteger{}}, nil
