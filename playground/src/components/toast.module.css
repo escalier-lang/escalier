@@ -37,6 +37,21 @@
     opacity: 0.8;
 }
 
+.details {
+    background: none;
+    border: 1px solid var(--color-text-on-accent);
+    border-radius: 4px;
+    color: var(--color-text-on-accent);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 2px 8px;
+    opacity: 0.8;
+}
+
+.details:hover {
+    opacity: 1;
+}
+
 .dismiss:hover {
     opacity: 1;
 }

@@ -7,8 +7,10 @@ import {
     useState,
 } from 'react';
 
+import { CrashReportDialog } from './components/crash-report-dialog';
 import { FileExplorer } from './components/file-explorer';
 import { Toast } from './components/toast';
+import type { CrashReport } from './editor-state';
 import { useEditorStore } from './editor-store';
 import type { BrowserFS } from './fs/browser-fs';
 import { languageID } from './language';
@@ -360,6 +362,17 @@ export const Editor = ({
         [dispatch],
     );
 
+    // The crash report the dialog shows, or null when it is closed. It is kept apart from
+    // the toast, so dismissing the toast leaves an open report showing.
+    const [shownCrashReport, setShownCrashReport] =
+        useState<CrashReport | null>(null);
+    const crashReport = state.notification?.crashReport;
+    const handleShowCrashReport = useCallback(() => {
+        if (crashReport) {
+            setShownCrashReport(crashReport);
+        }
+    }, [crashReport]);
+
     return (
         <div className={styles['editor-root']}>
             {/* Banner (e.g. validation errors) */}
@@ -517,7 +530,14 @@ export const Editor = ({
             <Toast
                 notification={state.notification}
                 onDismiss={handleDismissNotification}
+                onShowCrashReport={handleShowCrashReport}
             />
+            {shownCrashReport && (
+                <CrashReportDialog
+                    report={shownCrashReport}
+                    onClose={() => setShownCrashReport(null)}
+                />
+            )}
         </div>
     );
 };

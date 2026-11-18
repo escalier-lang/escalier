@@ -7,11 +7,13 @@ import type * as lsp from 'vscode-languageserver-protocol';
 import {
     Client,
     type CrashFacts,
+    type PanicReport,
     RequestGate,
     type RestartDecision,
     SERVER_DOWN_MESSAGE,
     type ServerCrashEvent,
     asNodeBuffer,
+    crashReportFrom,
     decideRestart,
 } from './client';
 
@@ -755,6 +757,8 @@ test(
         const diagnostics = recordDiagnostics(client);
         const events: ServerCrashEvent[] = [];
         client.onServerCrash((event) => events.push(event));
+        const panics: PanicReport[] = [];
+        client.onServerPanic((report) => panics.push(report));
         const text = `${PANIC_MARKER}\nval x: number = 1\n`;
         fs.writeFileSync(filePath(), text);
         await client.initialize({
@@ -777,6 +781,11 @@ test(
         expect(diagnostics.get(1)).toEqual([
             `the Escalier language server crashed while checking ${fileUri()}: forced by @escalier-lsp-test-panic. See the console for the stack trace.`,
         ]);
+        await vi.waitFor(() => expect(panics).toHaveLength(1));
+        expect(panics[0].message).toBe(
+            `the Escalier language server crashed while checking ${fileUri()}: forced by @escalier-lsp-test-panic`,
+        );
+        expect(panics[0].stack).toContain('(*Server).runTestHooks(');
 
         changeFile(2, 'val y: number = "a"\n');
         await vi.waitFor(() => expect(diagnostics.get(2)).toBeDefined(), {
@@ -799,7 +808,11 @@ test(
     async () => {
         const diagnostics = recordDiagnostics(client);
         const events: ServerCrashEvent['kind'][] = [];
-        client.onServerCrash((event) => events.push(event.kind));
+        const reports: string[] = [];
+        client.onServerCrash((event) => {
+            events.push(event.kind);
+            reports.push(event.report);
+        });
         const text = 'val x: number = 1\n';
         fs.writeFileSync(filePath(), text);
         await client.initialize({
@@ -827,6 +840,12 @@ test(
             { timeout: 30_000 },
         );
         await expect(hoverOnFirstName()).rejects.toThrow(SERVER_DOWN_MESSAGE);
+        // Each crash carries the Go runtime's account of the panic that ended the server.
+        for (const report of reports) {
+            expect(report).toMatch(
+                /^panic: forced by @escalier-lsp-test-crash\n\ngoroutine \d+ \[running\]:\n/,
+            );
+        }
 
         // The next edit starts a server, which checks the new text.
         changeFile(3, 'val y: number = "a"\n');
@@ -910,7 +929,11 @@ test(
                 fs,
             );
             const events: ServerCrashEvent['kind'][] = [];
-            broken.onServerCrash((event) => events.push(event.kind));
+            const reports: string[] = [];
+            broken.onServerCrash((event) => {
+                events.push(event.kind);
+                reports.push(event.report);
+            });
             const run = broken.run();
 
             await vi.waitFor(
@@ -923,6 +946,7 @@ test(
                 '[Escalier LSP] the server failed:',
                 expect.any(Error),
             );
+            expect(reports[0]).toContain('CompileError');
             await expect(
                 broken.textDocumentHover({
                     textDocument: { uri: fileUri() },
@@ -961,6 +985,37 @@ test('a trap thrown out of _resume ends the server the way an exit does', async 
         error.mockRestore();
     }
     await testClient.stop();
+});
+
+test.each<[string, string, string]>([
+    [
+        'starts at the panic header',
+        'Hello, from lsp-server\npanic: boom\n\ngoroutine 9 [running]:\nmain.main()\n',
+        'panic: boom\n\ngoroutine 9 [running]:\nmain.main()',
+    ],
+    [
+        'takes the last of several headers',
+        'panic: first\nmore\nfatal error: out of memory\n\ngoroutine 1:\n',
+        'fatal error: out of memory\n\ngoroutine 1:',
+    ],
+    [
+        // A recovered panic's stack has frames such as `panic({...})`, which are not a header.
+        'skips a stack frame named panic',
+        'recovered\npanic({0x1, 0x2})\n\tpanic.go:860\n',
+        'recovered\npanic({0x1, 0x2})\n\tpanic.go:860',
+    ],
+    [
+        'says so when the server printed nothing',
+        '  \n',
+        'The language server exited without printing an error.',
+    ],
+])('crashReportFrom %s', (_name, stderr, expected) => {
+    expect(crashReportFrom(stderr)).toBe(expected);
+});
+
+test('crashReportFrom keeps the last 4 KiB when no header is found', () => {
+    const stderr = `${'a'.repeat(10_000)}${'b'.repeat(4096)}`;
+    expect(crashReportFrom(stderr)).toBe('b'.repeat(4096));
 });
 
 test.each<[string, CrashFacts, RestartDecision]>([

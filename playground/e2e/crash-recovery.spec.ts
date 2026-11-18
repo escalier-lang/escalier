@@ -41,6 +41,33 @@ async function errorHoverText(page: Page): Promise<string> {
     return (await hover.textContent()) ?? '';
 }
 
+// openCrashReport opens the crash report from the toast, checks that it holds each of
+// expected, and closes it. It returns the link the report's issue button opens.
+async function openCrashReport(
+    page: Page,
+    expected: string[],
+): Promise<string> {
+    await page
+        .getByRole('alert')
+        .getByRole('button', { name: 'Details' })
+        .click();
+    const dialog = page.getByRole('dialog', {
+        name: 'Language server crash report',
+    });
+    await expect(dialog).toBeVisible();
+    const report = dialog.getByLabel('Crash report');
+    for (const text of expected) {
+        await expect(report).toContainText(text);
+    }
+    const href =
+        (await dialog
+            .getByRole('link', { name: 'Open GitHub issue' })
+            .getAttribute('href')) ?? '';
+    await dialog.getByRole('button', { name: 'Close' }).click();
+    await expect(dialog).toBeHidden();
+    return href;
+}
+
 test.describe('Crash recovery', () => {
     test.beforeEach(async ({ page }) => {
         await recordAlerts(page);
@@ -58,6 +85,17 @@ test.describe('Crash recovery', () => {
         expect(await errorHoverText(page)).toContain(
             'the Escalier language server crashed while checking file:///lib/index.esc: forced by @escalier-lsp-test-panic',
         );
+        // A toast says the server recovered, and its report holds the panic and stack.
+        await expect(
+            page.getByRole('alert').filter({
+                hasText:
+                    'The language server hit an internal error and recovered.',
+            }),
+        ).toBeVisible();
+        await openCrashReport(page, [
+            'the Escalier language server crashed while checking file:///lib/index.esc: forced by @escalier-lsp-test-panic',
+            '(*Server).runTestHooks(',
+        ]);
 
         // The same server checks the next edit, which finds a type error.
         await replaceSource(page, ['export val x: number = "a"']);
@@ -88,6 +126,20 @@ test.describe('Crash recovery', () => {
                 'The language server crashed again on the same code. It will restart when you next edit a file.',
             );
         }).toPass({ timeout: RECOVERY_TIMEOUT_MS });
+
+        // The report holds what the Go runtime printed as the panic ended the server, and
+        // the issue link carries it too.
+        const issueUrl = await openCrashReport(page, [
+            'The language server crashed again on the same code.',
+            'panic: forced by @escalier-lsp-test-crash',
+            'goroutine',
+        ]);
+        expect(issueUrl).toMatch(
+            /^https:\/\/github\.com\/escalier-lang\/escalier\/issues\/new\?/,
+        );
+        expect(new URL(issueUrl).searchParams.get('body')).toContain(
+            'panic: forced by @escalier-lsp-test-crash',
+        );
 
         // The edit starts a server, whose diagnostics show up in the editor.
         await replaceSource(page, ['export val x: number = "a"']);
