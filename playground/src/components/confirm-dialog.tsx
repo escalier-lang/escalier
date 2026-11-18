@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useRef } from 'react';
 
 import styles from './confirm-dialog.module.css';
+import { useModalDialog } from './use-modal-dialog';
 
 type ConfirmDialogProps = {
     title: string;
@@ -21,29 +22,8 @@ export const ConfirmDialog = ({
     onConfirm,
     onCancel,
 }: ConfirmDialogProps) => {
-    const dialogRef = useRef<HTMLDialogElement>(null);
     const cancelRef = useRef<HTMLButtonElement>(null);
-    const onCancelRef = useRef(onCancel);
-    onCancelRef.current = onCancel;
-
-    useEffect(() => {
-        const dialog = dialogRef.current;
-        if (!dialog) return;
-
-        dialog.showModal();
-        cancelRef.current?.focus();
-
-        const handleCancel = (e: Event) => {
-            e.preventDefault();
-            onCancelRef.current();
-        };
-        dialog.addEventListener('cancel', handleCancel);
-
-        return () => {
-            dialog.removeEventListener('cancel', handleCancel);
-            dialog.close();
-        };
-    }, []);
+    const { dialogRef, onBackdropClick } = useModalDialog(onCancel, cancelRef);
 
     return (
         <dialog
@@ -52,12 +32,7 @@ export const ConfirmDialog = ({
             aria-labelledby="confirm-dialog-title"
             aria-describedby="confirm-dialog-message"
             aria-modal="true"
-            onClick={(e) => {
-                // Close when clicking the backdrop (the dialog element itself)
-                if (e.target === dialogRef.current) {
-                    onCancel();
-                }
-            }}
+            onClick={onBackdropClick}
             // Satisfies jsx-a11y/click-events-have-key-events; keyboard
             // dismissal is handled by the native dialog cancel event.
             onKeyDown={() => {}}
