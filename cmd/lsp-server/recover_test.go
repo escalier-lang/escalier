@@ -12,11 +12,17 @@ import (
 )
 
 // recordedNotifications returns a context whose notifications are sent to the returned
-// channels: published diagnostics to the first and `window/logMessage` messages to the
-// second.
-func recordedNotifications() (*glsp.Context, <-chan *protocol.PublishDiagnosticsParams, <-chan string) {
+// channels: published diagnostics to the first, `window/logMessage` messages to the
+// second, and panic reports to the third.
+func recordedNotifications() (
+	*glsp.Context,
+	<-chan *protocol.PublishDiagnosticsParams,
+	<-chan string,
+	<-chan *panicReportParams,
+) {
 	published := make(chan *protocol.PublishDiagnosticsParams, 64)
 	logged := make(chan string, 64)
+	reported := make(chan *panicReportParams, 64)
 	ctx := &glsp.Context{
 		Notify: func(method string, params any) {
 			switch method {
@@ -24,10 +30,24 @@ func recordedNotifications() (*glsp.Context, <-chan *protocol.PublishDiagnostics
 				published <- params.(*protocol.PublishDiagnosticsParams)
 			case protocol.ServerWindowLogMessage:
 				logged <- params.(*protocol.LogMessageParams).Message
+			case panicReportMethod:
+				reported <- params.(*panicReportParams)
 			}
 		},
 	}
-	return ctx, published, logged
+	return ctx, published, logged, reported
+}
+
+// awaitPanicReport returns the next panic report sent to the client.
+func awaitPanicReport(t *testing.T, reported <-chan *panicReportParams) *panicReportParams {
+	t.Helper()
+	select {
+	case report := <-reported:
+		return report
+	case <-time.After(10 * time.Second):
+		t.Fatal("no panic report sent")
+		return nil
+	}
 }
 
 // awaitLogged returns the next message sent through `window/logMessage`.
@@ -136,7 +156,7 @@ func TestHandleAnswersAPanickingRequestWithAnError(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			src := `val x: number = "a"`
 			s := integrationServer(t, map[string]string{"bin/main.esc": src})
-			ctx, published, logged := recordedNotifications()
+			ctx, published, logged, reported := recordedNotifications()
 			uri := openFileIn(t, s, ctx, "bin/main.esc", src)
 			require.Equal(t, []string{`0:16-0:19 cannot constrain "a" <: number`},
 				awaitDiagnostics(t, published, uri, 1))
@@ -155,6 +175,10 @@ func TestHandleAnswersAPanickingRequestWithAnError(t *testing.T) {
 			require.True(t, validParams)
 			require.EqualError(t, err, msg)
 			require.Equal(t, msg, awaitLogged(t, logged))
+			report := awaitPanicReport(t, reported)
+			require.Equal(t, msg, report.Message)
+			// The stack is the goroutine that panicked, which ran the handler.
+			require.Contains(t, report.Stack, "(*Server).Handle(")
 			// The crash is reported beside the error the check found.
 			require.Equal(t, []string{
 				`0:16-0:19 cannot constrain "a" <: number`,
@@ -216,7 +240,7 @@ func TestValidateRecoversFromAPanickingCheck(t *testing.T) {
 			}
 			s := integrationServer(t, map[string]string{test.file: opened})
 			s.testHooks = true
-			ctx, published, logged := recordedNotifications()
+			ctx, published, logged, reported := recordedNotifications()
 			uri := openFileIn(t, s, ctx, test.file, opened)
 			version := protocol.Integer(1)
 			if !test.panicOnOpen {
@@ -229,6 +253,9 @@ func TestValidateRecoversFromAPanickingCheck(t *testing.T) {
 			msg := "the Escalier language server crashed while checking " + pathToURI(path) +
 				": forced by " + panicMarker
 			require.Equal(t, msg, awaitLogged(t, logged))
+			report := awaitPanicReport(t, reported)
+			require.Equal(t, msg, report.Message)
+			require.Contains(t, report.Stack, "(*Server).runTestHooks(")
 			require.Equal(t, []string{"0:0-0:0 " + msg + ". See the console for the stack trace."},
 				awaitDiagnostics(t, published, uri, protocol.UInteger(version)))
 			requireLocksFree(t, s)
@@ -269,7 +296,7 @@ func TestValidateRecoversFromAPanickingCheck(t *testing.T) {
 func TestRequestPanicLeavesOutStaleDiagnostics(t *testing.T) {
 	src := `val x: number = "a"`
 	s := integrationServer(t, map[string]string{"bin/main.esc": src})
-	ctx, published, _ := recordedNotifications()
+	ctx, published, _, _ := recordedNotifications()
 	uri := openFileIn(t, s, ctx, "bin/main.esc", src)
 	require.Equal(t, []string{`0:16-0:19 cannot constrain "a" <: number`},
 		awaitDiagnostics(t, published, uri, 1))
