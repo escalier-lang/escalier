@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"time"
@@ -459,14 +460,22 @@ func (s *Server) isCacheStale(uri protocol.DocumentUri) bool {
 }
 
 // waitForFreshCheck blocks until the cached check output reflects the latest text of
-// uri, or until 2s pass, whichever comes first. The caller holds s.mu's read lock, which
-// the wait releases while it sleeps and holds again when it returns.
+// uri, until the check of that text panics, or until 2s pass, whichever comes first. The
+// caller holds s.mu's read lock, which the wait releases while it sleeps and holds again
+// when it returns.
 func (s *Server) waitForFreshCheck(uri protocol.DocumentUri) {
 	deadline := time.Now().Add(2 * time.Second)
-	for s.isCacheStale(uri) && time.Now().Before(deadline) {
+	for s.isCacheStale(uri) && !s.checkPanicked(uri) && time.Now().Before(deadline) {
 		// Sleeps until validation calls `Broadcast()`.
 		s.validated.Wait()
 	}
+}
+
+// checkPanicked reports whether the check of uri's latest text panicked. The caller holds
+// s.mu.
+func (s *Server) checkPanicked(uri protocol.DocumentUri) bool {
+	panicked, ok := s.panickedVersion[uri]
+	return ok && panicked == s.documents[uri].Version
 }
 
 // isModuleFile checks if a URI corresponds to a file under the lib/ directory.
@@ -553,25 +562,31 @@ func (s *Server) sourceIDForURI(uri protocol.DocumentUri) int {
 }
 
 func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUri, contents string, version protocol.Integer) {
-	// Check staleness before doing expensive work.
-	server.mu.RLock()
-	currentDoc := server.documents[uri]
-	isBinFile := !server.isModuleFile(uri)
-	// We can incrementally re-check just this one bin/ script (instead of
-	// doing a full package check) when all three conditions hold:
-	//   1. The file is a bin/ script (lib/ changes always need a full check).
-	//   2. A prior full check has run (checkOutput != nil), so we have a
-	//      cached lib surface to type-check the script against.
-	//   3. No lib/ files have changed since that full check
-	//      (libGen == libValidatedGen), so the cached surface is still valid.
-	canIncrCheck := isBinFile && server.checkOutput != nil && server.libGen == server.libValidatedGen
+	// textDocumentDidChange runs validate on a goroutine of its own, where a panic would
+	// end the process, so the check recovers here rather than in Handle.
+	defer func() {
+		if value := recover(); value != nil {
+			server.handleCheckPanic(lspContext, uri, version, panicReport{value: value, stack: debug.Stack()})
+		}
+	}()
+
+	// Check staleness before doing expensive work. handleCheckPanic takes mu for
+	// writing, so the read lock is released by a deferred unlock.
+	var currentDoc protocol.TextDocumentItem
+	var canIncrCheck bool
 	var cachedLib compiler.LibScope
-	if canIncrCheck && server.checkOutput != nil {
-		cachedLib = server.checkOutput.LibScope
-	}
-	snapshotPackageGen := server.packageGen
-	snapshotLibGen := server.libGen
-	server.mu.RUnlock()
+	var snapshotPackageGen, snapshotLibGen int64
+	func() {
+		server.mu.RLock()
+		defer server.mu.RUnlock()
+		currentDoc = server.documents[uri]
+		canIncrCheck = server.canCheckScriptAlone(uri)
+		if canIncrCheck {
+			cachedLib = server.checkOutput.LibScope
+		}
+		snapshotPackageGen = server.packageGen
+		snapshotLibGen = server.libGen
+	}()
 	if currentDoc.Version != version {
 		server.validated.Broadcast()
 		return
@@ -588,6 +603,23 @@ func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUr
 
 	// Slow path: full package check.
 	server.validateFull(lspContext, uri, contents, version, rootPath, snapshotPackageGen, snapshotLibGen)
+}
+
+// canCheckScriptAlone reports whether a change to uri can be checked by re-checking that
+// one file against the cached library run, rather than by checking the whole package.
+// The caller holds mu.
+func (server *Server) canCheckScriptAlone(uri protocol.DocumentUri) bool {
+	isBinFile := !server.isModuleFile(uri)
+	// We can incrementally re-check just this one bin/ script (instead of
+	// doing a full package check) when all four conditions hold:
+	//   1. The file is a bin/ script (lib/ changes always need a full check).
+	//   2. A prior full check has run (checkOutput != nil), so we have a
+	//      cached lib surface to type-check the script against.
+	//   3. No lib/ files have changed since that full check
+	//      (libGen == libValidatedGen), so the cached surface is still valid.
+	//   4. No check has panicked since that full check (see needsFullCheck).
+	return isBinFile && server.checkOutput != nil && server.libGen == server.libValidatedGen &&
+		!server.needsFullCheck
 }
 
 // validateBinScript re-checks a single bin/ script against the cached library
@@ -622,18 +654,47 @@ func (server *Server) validateBinScript(
 		server.solverMu.Lock()
 		// The unlock is deferred so that a panic in the checker still releases the lock.
 		defer server.solverMu.Unlock()
+		server.runTestHooks(contents)
 		return compiler.CheckBinScript(ctx, lib, src, packageConfig(rootPath))
 	}()
 
-	// Verify staleness and update caches.
-	server.mu.Lock()
-	currentDoc := server.documents[uri]
-	if currentDoc.Version != version || server.packageGen != snapshotPackageGen || server.libGen != snapshotLibGen {
-		server.mu.Unlock()
-		server.validated.Broadcast()
+	// Verify staleness and update caches. handleCheckPanic takes mu for writing, so the
+	// unlock is deferred to release mu before a panic here reaches it.
+	stale := func() bool {
+		server.mu.Lock()
+		defer server.mu.Unlock()
+		currentDoc := server.documents[uri]
+		if currentDoc.Version != version || server.packageGen != snapshotPackageGen || server.libGen != snapshotLibGen {
+			return true
+		}
+		server.updateScriptCheck(uri, version, triggerSourceID, src, result)
+		return false
+	}()
+	server.validated.Broadcast()
+	if stale {
 		return
 	}
+
+	// Publish diagnostics for just this file.
+	server.publishDiagnosticsForScript(lspContext, uri, version, triggerSourceID, src, result.ParseErrors, result.TypeErrors)
+}
+
+// updateScriptCheck replaces the entries for the bin/ script sourceID in the cached check
+// output with result, the re-check of src, and records uri as checked at version. The
+// caller holds mu for writing.
+func (server *Server) updateScriptCheck(
+	uri protocol.DocumentUri,
+	version protocol.Integer,
+	triggerSourceID int,
+	src *ast.Source,
+	result compiler.BinScriptOutput,
+) {
 	co := server.checkOutput
+	// Every value is computed before any is assigned, so a panic partway leaves
+	// checkOutput as it was rather than holding this script's AST beside another
+	// revision's errors.
+	parseErrors := append(filterOutSourceID(co.ParseErrors, triggerSourceID), result.ParseErrors...)
+	typeErrors := append(filterOutTypeErrors(co.TypeErrors, triggerSourceID), result.TypeErrors...)
 	// Update only this script's entries in the existing checkOutput.
 	co.Scripts[triggerSourceID] = result.Script
 	co.ScriptInfos[triggerSourceID] = result.Info
@@ -645,18 +706,10 @@ func (server *Server) validateBinScript(
 		co.Sources = map[int]*ast.Source{}
 	}
 	co.Sources[triggerSourceID] = src
-	// Rebuild errors: keep non-script errors, replace this script's errors.
-	co.ParseErrors = filterOutSourceID(co.ParseErrors, triggerSourceID)
-	co.ParseErrors = append(co.ParseErrors, result.ParseErrors...)
-	co.TypeErrors = filterOutTypeErrors(co.TypeErrors, triggerSourceID)
-	co.TypeErrors = append(co.TypeErrors, result.TypeErrors...)
+	co.ParseErrors = parseErrors
+	co.TypeErrors = typeErrors
 	server.packageValidatedGen = server.packageGen
 	server.validatedVersion[uri] = version
-	server.mu.Unlock()
-	server.validated.Broadcast()
-
-	// Publish diagnostics for just this file.
-	server.publishDiagnosticsForScript(lspContext, uri, version, triggerSourceID, src, result.ParseErrors, result.TypeErrors)
 }
 
 // packageConfig reads the PackageConfig from the package.json in rootPath. A file that
@@ -700,34 +753,26 @@ func (server *Server) validateFull(
 	}
 
 	// Run package-level type checking (no codegen).
+	server.runTestHooks(contents)
 	output := compiler.CheckPackage(sources, packageConfig(rootPath))
 
-	// Verify that no document versions changed during validation.
-	server.mu.Lock()
-	currentDoc := server.documents[uri]
-	if currentDoc.Version != version || server.packageGen != snapshotPackageGen || server.libGen != snapshotLibGen {
-		server.mu.Unlock()
-		server.validated.Broadcast()
+	// Verify that no document versions changed during validation. handleCheckPanic takes
+	// mu for writing, so the unlock is deferred to release mu before a panic here reaches
+	// it.
+	stale := func() bool {
+		server.mu.Lock()
+		defer server.mu.Unlock()
+		currentDoc := server.documents[uri]
+		if currentDoc.Version != version || server.packageGen != snapshotPackageGen || server.libGen != snapshotLibGen {
+			return true
+		}
+		server.recordFullCheck(uri, version, &output)
+		return false
+	}()
+	server.validated.Broadcast()
+	if stale {
 		return
 	}
-	server.checkOutput = &output
-	server.packageValidatedGen = server.packageGen
-	server.libValidatedGen = server.libGen
-	server.validatedVersion[uri] = version
-	// Also update validatedVersion for all other open Escalier documents.
-	// This iterates server.documents rather than sources because all open
-	// lib/ and bin/ .esc files are included in sources (collectSources uses
-	// the editor buffer for open files). If a non-package file somehow gets
-	// stamped, the only effect is that isCacheStale returns false for it,
-	// which is harmless — there is nothing to wait for since it won't be
-	// re-validated through the full-package path.
-	for docURI, doc := range server.documents {
-		if docURI != uri && doc.LanguageID == "escalier" {
-			server.validatedVersion[docURI] = doc.Version
-		}
-	}
-	server.mu.Unlock()
-	server.validated.Broadcast()
 
 	// Publish diagnostics for all files.
 	severity := protocol.DiagnosticSeverityError
@@ -793,6 +838,29 @@ func (server *Server) validateFull(
 	}
 }
 
+// recordFullCheck stores output, the full check of the package that uri at version
+// started, as the cached check output, and records every open document as checked. The
+// caller holds mu for writing.
+func (server *Server) recordFullCheck(uri protocol.DocumentUri, version protocol.Integer, output *compiler.CheckOutput) {
+	server.checkOutput = output
+	server.needsFullCheck = false
+	server.packageValidatedGen = server.packageGen
+	server.libValidatedGen = server.libGen
+	server.validatedVersion[uri] = version
+	// Also update validatedVersion for all other open Escalier documents.
+	// This iterates server.documents rather than sources because all open
+	// lib/ and bin/ .esc files are included in sources (collectSources uses
+	// the editor buffer for open files). If a non-package file somehow gets
+	// stamped, the only effect is that isCacheStale returns false for it,
+	// which is harmless — there is nothing to wait for since it won't be
+	// re-validated through the full-package path.
+	for docURI, doc := range server.documents {
+		if docURI != uri && doc.LanguageID == "escalier" {
+			server.validatedVersion[docURI] = doc.Version
+		}
+	}
+}
+
 // publishDiagnosticsForScript publishes diagnostics for a single bin/ script.
 func (server *Server) publishDiagnosticsForScript(
 	lspContext *glsp.Context,
@@ -806,13 +874,28 @@ func (server *Server) publishDiagnosticsForScript(
 	if lspContext.Notify == nil {
 		return
 	}
+	diags := fileDiagnostics(sourceID, src, parseErrors, typeErrors)
+
+	diagVersion := protocol.UInteger(version)
+
+	go lspContext.Notify(protocol.ServerTextDocumentPublishDiagnostics, &protocol.PublishDiagnosticsParams{
+		URI:         uri,
+		Diagnostics: emptyIfNil(diags),
+		Version:     &diagVersion,
+	})
+}
+
+// fileDiagnostics returns the diagnostics for the errors among parseErrors and typeErrors
+// that belong to the file sourceID. src is that file, or nil when the check output holds
+// none for it.
+func fileDiagnostics(sourceID int, src *ast.Source, parseErrors []*parser.Error, typeErrors []compiler.Diagnostic) []protocol.Diagnostic {
 	severity := protocol.DiagnosticSeverityError
 	source := "escalier"
 	var diags []protocol.Diagnostic
 	for _, err := range parseErrors {
 		if err.Span.SourceID == sourceID {
 			diags = append(diags, protocol.Diagnostic{
-				Range:    spanToRange(src.LineMap(), err.Span),
+				Range:    spanToRange(lineMapFor(src), err.Span),
 				Severity: &severity,
 				Source:   &source,
 				Message:  err.Message,
@@ -824,14 +907,7 @@ func (server *Server) publishDiagnosticsForScript(
 			diags = append(diags, toDiagnostic(err, src))
 		}
 	}
-
-	diagVersion := protocol.UInteger(version)
-
-	go lspContext.Notify(protocol.ServerTextDocumentPublishDiagnostics, &protocol.PublishDiagnosticsParams{
-		URI:         uri,
-		Diagnostics: emptyIfNil(diags),
-		Version:     &diagVersion,
-	})
+	return diags
 }
 
 // toDiagnostic converts a type error into the diagnostic published for it. src is the file
