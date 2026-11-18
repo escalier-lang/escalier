@@ -5,21 +5,14 @@ import { afterEach, beforeAll, expect, test, vi } from 'vitest';
 
 import { crashIssueUrl } from '../crash-notification';
 import { CrashReportDialog } from './crash-report-dialog';
+import { stubModalDialogs } from './dialog-stub';
 
 const report = {
     headline: 'panic: boom',
     text: 'The language server crashed and was restarted.\n\npanic: boom\n',
 };
 
-beforeAll(() => {
-    // jsdom has no modal dialogs, so these open and close the element by its attribute.
-    HTMLDialogElement.prototype.showModal = function () {
-        this.open = true;
-    };
-    HTMLDialogElement.prototype.close = function () {
-        this.open = false;
-    };
-});
+beforeAll(stubModalDialogs);
 
 afterEach(() => {
     cleanup();

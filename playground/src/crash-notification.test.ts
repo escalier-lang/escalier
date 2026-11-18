@@ -106,13 +106,68 @@ test.each([
     },
 );
 
-test('firstOfEachPanic shows each message once', () => {
+/** Returns a Go stack trace whose panic happened in fn, on goroutine number goroutine. */
+function goStack(fn: string, goroutine: number): string {
+    return [
+        `goroutine ${goroutine} [running]:`,
+        'main.(*Server).Handle.func1()',
+        '\t/src/main.go:176 +0xbf',
+        'panic({0xa7cf20, 0xbcf930})',
+        '\t/go/src/runtime/panic.go:860 +0x13a',
+        `${fn}()`,
+        '\t/src/hover.go:10 +0x25',
+        '',
+    ].join('\n');
+}
+
+test('firstOfEachPanic shows a panic once however often it recurs', () => {
     const shown: string[] = [];
     const show = firstOfEachPanic((report) => shown.push(report.message));
 
-    show({ message: 'a', stack: '1' });
-    show({ message: 'b', stack: '2' });
-    show({ message: 'a', stack: '3' });
+    show({ message: 'a', stack: goStack('main.hover', 9) });
+    show({ message: 'b', stack: goStack('main.hover', 10) });
+    // The same panic on another goroutine.
+    show({ message: 'a', stack: goStack('main.hover', 11) });
 
     expect(shown).toEqual(['a', 'b']);
+});
+
+test('firstOfEachPanic shows a message again when it panics somewhere new', () => {
+    const sites: string[] = [];
+    const show = firstOfEachPanic((report) => sites.push(report.stack));
+
+    show({ message: 'a', stack: goStack('main.hover', 9) });
+    show({ message: 'a', stack: goStack('main.complete', 9) });
+
+    expect(sites).toEqual([
+        goStack('main.hover', 9),
+        goStack('main.complete', 9),
+    ]);
+});
+
+test('firstOfEachPanic forgets what it has seen after 100 distinct panics', () => {
+    const shown: string[] = [];
+    const show = firstOfEachPanic((report) => shown.push(report.message));
+
+    for (let i = 0; i <= 100; i++) {
+        show({ message: `panic ${i}`, stack: goStack('main.hover', 1) });
+    }
+    show({ message: 'panic 0', stack: goStack('main.hover', 1) });
+
+    expect(shown).toHaveLength(102);
+    expect(shown.at(-1)).toBe('panic 0');
+});
+
+test('crashIssueUrl never splits a surrogate pair', () => {
+    // Every cut point in a run of emoji falls between or inside a surrogate pair.
+    const { title, body } = issueFields(
+        crashIssueUrl({
+            // The 119-unit cut falls between the two halves of the emoji.
+            headline: `${'a'.repeat(118)}😀b`,
+            text: '😀'.repeat(10_000),
+        }),
+    );
+    expect(title).toBe(`Playground language server crash: ${'a'.repeat(118)}…`);
+    expect(body).not.toContain('\ufffd');
+    expect(body).toContain('😀😀\n…\n');
 });

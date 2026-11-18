@@ -81,7 +81,7 @@ function withReport(
 export function crashIssueUrl(report: CrashReport): string {
     let headline = report.headline;
     if (headline.length > ISSUE_HEADLINE_CHARS) {
-        headline = `${headline.slice(0, ISSUE_HEADLINE_CHARS - 1)}…`;
+        headline = `${prefixOf(headline, ISSUE_HEADLINE_CHARS - 1)}…`;
     }
     const title = `Playground language server crash: ${headline}`;
     const text = report.text.trimEnd();
@@ -96,7 +96,7 @@ export function crashIssueUrl(report: CrashReport): string {
     while (tooLong - fits > 1) {
         const mid = Math.floor((fits + tooLong) / 2);
         if (
-            issueUrl(title, text.slice(0, mid), true).length <=
+            issueUrl(title, prefixOf(text, mid), true).length <=
             MAX_ISSUE_URL_CHARS
         ) {
             fits = mid;
@@ -104,7 +104,18 @@ export function crashIssueUrl(report: CrashReport): string {
             tooLong = mid;
         }
     }
-    return issueUrl(title, text.slice(0, fits), true);
+    return issueUrl(title, prefixOf(text, fits), true);
+}
+
+/**
+ * Returns the first length UTF-16 code units of text, or one fewer when the cut would
+ * split a surrogate pair. URLSearchParams encodes a lone surrogate as U+FFFD, so a split
+ * pair would end the issue body with a replacement character.
+ */
+function prefixOf(text: string, length: number): string {
+    const last = text.charCodeAt(length - 1);
+    const splitsPair = length < text.length && last >= 0xd800 && last <= 0xdbff;
+    return text.slice(0, splitsPair ? length - 1 : length);
 }
 
 /**
@@ -134,19 +145,43 @@ function issueUrl(title: string, text: string, truncated: boolean): string {
     return `${NEW_ISSUE_URL}?${params.toString()}`;
 }
 
+/** How many distinct panics firstOfEachPanic remembers before it starts over. */
+const SEEN_PANICS_LIMIT = 100;
+
 /**
- * Returns a function that passes each panic report to show the first time its message
- * arrives, and drops later reports with the same message.
+ * Returns a function that passes each panic report to show the first time its panic
+ * arrives, and drops later reports of the same panic. Two reports are the same panic when
+ * they have the same message and panicked at the same place, which is the stack frame
+ * below the `panic(` frame. After SEEN_PANICS_LIMIT distinct panics it forgets them all, so
+ * a long session's memory of them stays bounded.
  */
 export function firstOfEachPanic(
     show: (report: PanicReport) => void,
 ): (report: PanicReport) => void {
     const seen = new Set<string>();
     return (report) => {
-        if (seen.has(report.message)) {
+        const key = `${report.message}\n${panicSite(report.stack)}`;
+        if (seen.has(key)) {
             return;
         }
-        seen.add(report.message);
+        if (seen.size >= SEEN_PANICS_LIMIT) {
+            seen.clear();
+        }
+        seen.add(key);
         show(report);
     };
+}
+
+/**
+ * Returns the function that panicked in a Go stack trace: the line after the `panic(`
+ * frame. It returns the whole stack when the trace has no such frame.
+ */
+function panicSite(stack: string): string {
+    const lines = stack.split('\n');
+    const panicFrame = lines.findIndex((line) => line.startsWith('panic('));
+    if (panicFrame === -1) {
+        return stack;
+    }
+    // Each frame is a function line followed by an indented file:line line.
+    return lines[panicFrame + 2] ?? stack;
 }
