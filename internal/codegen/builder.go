@@ -668,19 +668,7 @@ func (b *Builder) buildStmt(stmt ast.Stmt) []Stmt {
 			return []Stmt{}
 		default:
 			expr, exprStmts := b.buildExpr(s.Expr, nil)
-
-			// If the expr is an EmptyExpr (used for terminal expressions),
-			// don't create an ExprStmt for it
-			if _, ok := expr.(*EmptyExpr); ok {
-				return exprStmts
-			}
-
-			stmt := &ExprStmt{
-				Expr:   expr,
-				span:   nil,
-				source: stmt,
-			}
-			return append(exprStmts, stmt)
+			return slices.Concat(exprStmts, exprStmt(expr, stmt))
 		}
 	case *ast.DeclStmt:
 		return b.buildDecl(s.Decl)
@@ -1723,14 +1711,7 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 				} else if expr.Alt.Expr != nil {
 					// Alternative is an expression
 					altExpr, altExprStmts := b.buildExpr(expr.Alt.Expr, expr)
-					altStmts = slices.Concat(altStmts, altExprStmts)
-
-					// If it's a terminal expression, it should be a statement
-					altStmts = append(altStmts, &ExprStmt{
-						Expr:   altExpr,
-						span:   nil,
-						source: expr.Alt.Expr,
-					})
+					altStmts = slices.Concat(altStmts, altExprStmts, exprStmt(altExpr, expr.Alt.Expr))
 				}
 
 				// Always wrap alternative in a block for proper formatting
@@ -1771,14 +1752,7 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 			} else if expr.Alt.Expr != nil {
 				// Alternative is an expression
 				altExpr, altExprStmts := b.buildExpr(expr.Alt.Expr, expr)
-				altStmts = slices.Concat(altStmts, altExprStmts)
-
-				assignment := NewBinaryExpr(tempVar, Assign, altExpr, expr.Alt.Expr)
-				altStmts = append(altStmts, &ExprStmt{
-					Expr:   assignment,
-					span:   nil,
-					source: expr.Alt.Expr,
-				})
+				altStmts = slices.Concat(altStmts, altExprStmts, tempAssignment(tempVar, altExpr, expr.Alt.Expr))
 			}
 
 			// Always wrap alternative in a block for proper formatting
@@ -1916,15 +1890,7 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 			} else if expr.Alt.Expr != nil {
 				// Alternative is an expression
 				altExpr, altExprStmts := b.buildExpr(expr.Alt.Expr, expr)
-				altStmts = slices.Concat(altStmts, altExprStmts)
-
-				// Assign expression result to temp variable
-				assignment := NewBinaryExpr(tempVar, Assign, altExpr, expr.Alt.Expr)
-				altStmts = append(altStmts, &ExprStmt{
-					Expr:   assignment,
-					span:   nil,
-					source: expr.Alt.Expr,
-				})
+				altStmts = slices.Concat(altStmts, altExprStmts, tempAssignment(tempVar, altExpr, expr.Alt.Expr))
 			}
 
 			// Always wrap alternative in a block for proper formatting
@@ -2168,27 +2134,10 @@ func (b *Builder) buildBlockStmtsWithTempAssignment(stmts []ast.Stmt, tempVar Ex
 
 		// Handle the last statement specially
 		lastStmt := stmts[len(stmts)-1]
-		if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
+		if tailStmt, ok := lastStmt.(*ast.ExprStmt); ok {
 			// Convert the last expression statement to an assignment to temp variable
-			lastExpr, lastExprStmts := b.buildExpr(exprStmt.Expr, nil)
-			blockStmts = slices.Concat(blockStmts, lastExprStmts)
-
-			// Don't create assignment for throw expressions since they never return
-			_, isThrow := exprStmt.Expr.(*ast.ThrowExpr)
-			if !isThrow {
-				// Create assignment: tempVar = lastExpr
-				assignment := NewBinaryExpr(
-					tempVar,
-					Assign,
-					lastExpr,
-					exprStmt.Expr,
-				)
-				blockStmts = append(blockStmts, &ExprStmt{
-					Expr:   assignment,
-					span:   nil,
-					source: lastStmt,
-				})
-			}
+			lastExpr, lastExprStmts := b.buildExpr(tailStmt.Expr, nil)
+			blockStmts = slices.Concat(blockStmts, lastExprStmts, tempAssignment(tempVar, lastExpr, tailStmt.Expr))
 		} else {
 			// Last statement is not an expression, add it as-is
 			builtLastStmts := b.buildStmt(lastStmt)
@@ -2733,12 +2682,27 @@ func (b *Builder) buildArmBody(body ast.BlockOrExpr, tempVar Expr, source ast.Ex
 		return nil
 	}
 	bodyExpr, stmts := b.buildExpr(body.Expr, source)
-	assignment := &ExprStmt{
-		Expr:   NewBinaryExpr(tempVar, Assign, bodyExpr, body.Expr),
-		span:   nil,
-		source: body.Expr,
+	return slices.Concat(stmts, tempAssignment(tempVar, bodyExpr, body.Expr))
+}
+
+// exprStmt returns the statement that evaluates value, or no statement when value is an
+// EmptyExpr. buildExpr returns an EmptyExpr for an expression that never produces a value,
+// such as `throw "x"` or an `if` whose every branch throws, and the statements it returns
+// alongside already end in that exit.
+func exprStmt(value Expr, source ast.Node) []Stmt {
+	if _, ok := value.(*EmptyExpr); ok {
+		return nil
 	}
-	return slices.Concat(stmts, []Stmt{assignment})
+	return []Stmt{&ExprStmt{Expr: value, span: nil, source: source}}
+}
+
+// tempAssignment returns the statement that assigns value to tempVar, or no statement when
+// value is an EmptyExpr, for the reason exprStmt gives.
+func tempAssignment(tempVar Expr, value Expr, source ast.Node) []Stmt {
+	if _, ok := value.(*EmptyExpr); ok {
+		return nil
+	}
+	return exprStmt(NewBinaryExpr(tempVar, Assign, value, source), source)
 }
 
 func (b *Builder) buildMatchExpr(expr *ast.MatchExpr) (Expr, []Stmt) {

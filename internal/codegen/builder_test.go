@@ -1512,3 +1512,93 @@ func TestTheGuardForAnAliasMapsBackToTheAnnotation(t *testing.T) {
 		require.Equal(t, ast.Node(ref), node.Source())
 	}
 }
+
+// TestBuildDivergingBranchAssignsNoTemp asserts that a branch ending in `throw` emits no
+// assignment to the enclosing expression's temp, since the branch produces no value. It
+// also asserts that the source map for the emitted code builds.
+func TestBuildDivergingBranchAssignsNoTemp(t *testing.T) {
+	tests := map[string]struct {
+		src      string
+		expected string
+	}{
+		"ThrowMatchArm": {
+			src: "fn f(n) {\n\treturn match n {\n\t\t0 => 1,\n\t\t_ => throw \"x\",\n\t}\n}",
+			expected: `export function f(temp1) {
+  const n = temp1;
+  let temp2;
+  let temp3;
+  temp3 = n;
+  if (temp3 == 0) {
+    temp2 = 1;
+  } else {
+    throw "x";
+  }
+  return temp2;
+}`,
+		},
+		// Every branch of the arm's `if` throws, so the `if` has no value to assign.
+		"MatchArmWhoseIfAlwaysThrows": {
+			src: "fn f(n, c) {\n\treturn match n {\n\t\t0 => 1,\n\t\t_ => if c { throw \"a\" } else { throw \"b\" },\n\t}\n}",
+			expected: `export function f(temp1, temp2) {
+  const n = temp1;
+  const c = temp2;
+  let temp3;
+  let temp4;
+  temp4 = n;
+  if (temp4 == 0) {
+    temp3 = 1;
+  } else if (c) {
+    throw "a";
+  } else {
+    throw "b";
+  }
+  return temp3;
+}`,
+		},
+		// Every branch throws, so the `if` is emitted as statements with no temp. Its
+		// else is the `else if` expression, whose value never arrives either.
+		"IfWhoseEveryBranchThrows": {
+			src: "fn f(a, b) {\n\tif a { throw 1 } else if b { throw 2 } else { throw 3 }\n}",
+			expected: `export function f(temp1, temp2) {
+  const a = temp1;
+  const b = temp2;
+  if (a) {
+    throw 1;
+  } else {
+    if (b) {
+      throw 2;
+    } else {
+      throw 3;
+    }
+  }
+}`,
+		},
+		// An `else if` is the outer `if`'s else expression. Both of its branches throw.
+		"ElseIfThatAlwaysThrows": {
+			src: "fn f(a, b) {\n\treturn if a { 1 } else if b { throw \"x\" } else { throw \"y\" }\n}",
+			expected: `export function f(temp1, temp2) {
+  const a = temp1;
+  const b = temp2;
+  let temp3;
+  if (a) {
+    temp3 = 1;
+  } else {
+    if (b) {
+      throw "x";
+    } else {
+      throw "y";
+    }
+  }
+  return temp3;
+}`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			output, outModule, sources := buildSourceModule(t, test.src)
+			require.Equal(t, test.expected, output)
+			require.NotPanics(t, func() { GenerateSourceMap(sources, outModule, "main.js") })
+		})
+	}
+}

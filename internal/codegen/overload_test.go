@@ -20,11 +20,18 @@ import (
 // checker installed. A fieldless class therefore emits an empty `constructor() {}`.
 func buildSource(t *testing.T, src string) string {
 	t.Helper()
+	output, _, _ := buildSourceModule(t, src)
+	return output
+}
+
+// buildSourceModule is buildSource that also returns the built module and the one
+// source it was parsed from, for a test that runs a later stage such as GenerateSourceMap.
+func buildSourceModule(t *testing.T, src string) (string, *Module, []*ast.Source) {
+	t.Helper()
 	ctx := context.Background()
 
-	module, errs := parser.ParseLibFiles(ctx, []*ast.Source{
-		{ID: 0, Path: "main.esc", Contents: src},
-	})
+	sources := []*ast.Source{{ID: 0, Path: "main.esc", Contents: src}}
+	module, errs := parser.ParseLibFiles(ctx, sources)
 	require.Empty(t, errs, "parse errors: %v", errs)
 
 	depGraph := dep_graph.BuildDepGraph(module)
@@ -38,7 +45,7 @@ func buildSource(t *testing.T, src string) string {
 		}
 		printer.PrintStmt(stmt)
 	}
-	return printer.Output
+	return printer.Output, out, sources
 }
 
 // An overloaded method emits one JS method carrying a dispatch chain. Emitting one

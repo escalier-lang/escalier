@@ -1069,3 +1069,98 @@ func TestInferUndeclaredRaiseMessages(t *testing.T) {
 		},
 	})
 }
+
+// mutuallyRecursiveThrows declares `f` and `g`, which call each other and each throw a
+// value of their own.
+const mutuallyRecursiveThrows = `
+	fn f(n: number) -> number throws _ {
+		if n > 100 { throw "too big" }
+		return if n > 0 { g(n - 1) } else { 0 }
+	}
+	fn g(n: number) -> number throws _ {
+		if n < 0 { throw "negative" }
+		return f(n)
+	}
+`
+
+// A recursive call raises whatever the function's own `throws _` clause holds. The clause
+// therefore infers to the union of what the rest of the body throws, and the recursive
+// call adds nothing to it.
+func TestInferThrowsThroughRecursion(t *testing.T) {
+	runThrowsCases(t, []throwsCase{
+		{
+			name: "SelfCallThatNeverThrows",
+			src:  `fn f(n: number) -> number throws _ { return if n > 0 { f(n - 1) } else { 0 } }`,
+			want: "fn (n: number) -> number",
+		},
+		{
+			name: "SelfCallBesideAThrow",
+			src: `
+				fn f(n: number) -> number throws _ {
+					if n < 0 { throw "negative" }
+					return if n > 0 { f(n - 1) } else { 0 }
+				}
+			`,
+			want: `fn (n: number) -> number throws "negative"`,
+		},
+		{
+			// Like `evaluate` in the playground's enums example, the function calls
+			// itself from several arms of a `match`, and one arm throws.
+			name: "SelfCallsFromMatchArms",
+			src: `
+				enum Expr {
+					Num(value: number),
+					Neg(operand: Expr),
+					Div(left: Expr, right: Expr),
+				}
+				fn f(expr: Expr) -> number throws _ {
+					return match expr {
+						Expr.Num(value) => value,
+						Expr.Neg(operand) => -f(operand),
+						Expr.Div(left, right) => if f(right) == 0 { throw "division by zero" } else { f(left) / f(right) },
+					}
+				}
+			`,
+			want: `fn (expr: Expr) -> number throws "division by zero"`,
+		},
+		{
+			// Each function raises its own throws and what the other raises, so both
+			// clauses settle on the same union.
+			name: "MutualRecursion",
+			src:  mutuallyRecursiveThrows,
+			want: `fn (n: number) -> number throws "too big" | "negative"`,
+		},
+		{
+			name:    "MutualRecursionOtherSide",
+			src:     mutuallyRecursiveThrows,
+			binding: "g",
+			want:    `fn (n: number) -> number throws "negative" | "too big"`,
+		},
+		{
+			name: "RecursiveMethod",
+			src: `
+				class C {
+					f(self, n: number) -> number throws _ {
+						if n < 0 { throw "negative" }
+						return if n > 0 { self.f(n - 1) } else { 0 }
+					},
+				}
+				val m = C().f
+			`,
+			binding: "m",
+			want:    `fn (n: number) -> number throws "negative"`,
+		},
+		{
+			// A written clause is what the recursive call raises, so the call checks
+			// against the clause rather than adding to it.
+			name: "SelfCallUnderAWrittenClause",
+			src: `
+				fn f(n: number) -> number throws string {
+					if n < 0 { throw "negative" }
+					return if n > 0 { f(n - 1) } else { 0 }
+				}
+			`,
+			want: "fn (n: number) -> number throws string",
+		},
+	})
+}
