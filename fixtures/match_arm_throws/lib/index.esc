@@ -1,0 +1,33 @@
+// A `match` arm that throws assigns nothing to the match's result. `checked` writes
+// the arm as a bare `throw`, and `sign` writes it as an `if` whose branches all throw.
+export enum Expr {
+    Num(value: number),
+    Neg(operand: Expr),
+    Div(left: Expr, right: Expr),
+}
+
+export fn evaluate(expr: Expr) -> number throws _ {
+    return match expr {
+        Expr.Num(value) => value,
+        Expr.Neg(operand) => -evaluate(operand),
+        Expr.Div(left, right) => if evaluate(right) == 0 {
+            throw "division by zero"
+        } else {
+            evaluate(left) / evaluate(right)
+        },
+    }
+}
+
+export fn checked(n: number) -> number throws _ {
+    return match n {
+        0 => throw "zero",
+        _ => n,
+    }
+}
+
+export fn sign(n: number, strict: boolean) -> number throws _ {
+    return match n {
+        0 => if strict { throw "zero" } else { throw "no sign" },
+        _ => if n > 0 { 1 } else { -1 },
+    }
+}
