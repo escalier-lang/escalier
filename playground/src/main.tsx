@@ -8,12 +8,12 @@ import {
 import wasmUrl from '../../bin/lsp-server.wasm?url';
 
 import type { LoadingStatus } from './components/loading-screen';
-import type { Notification } from './editor-state';
+import { crashNotification } from './crash-notification';
 import { useEditorStore } from './editor-store';
 import { BrowserFS } from './fs/browser-fs';
 import type { Manifest } from './fs/volume';
 import { setupLanguage } from './language';
-import { Client, type ServerCrashEvent } from './lsp-client/client';
+import { Client } from './lsp-client/client';
 import { Playground } from './playground';
 import { loadProject } from './project-loader';
 import { downloadStartupFiles, runStartup } from './startup';
@@ -181,23 +181,6 @@ async function start(
     reactRoot.render(
         <Playground fs={fs} manifest={manifest} baseUrl={baseUrl} />,
     );
-}
-
-/** Returns the toast that tells the user the language server crashed. */
-function crashNotification(event: ServerCrashEvent): Notification {
-    switch (event.kind) {
-        case 'restarted':
-            return {
-                message: 'The language server crashed and was restarted.',
-                type: 'warning',
-            };
-        case 'waiting-for-edit':
-            return {
-                message:
-                    'The language server crashed again on the same code. It will restart when you next edit a file.',
-                type: 'error',
-            };
-    }
 }
 
 async function main() {

@@ -844,6 +844,125 @@ test(
     },
 );
 
+test(
+    'a new server gets the edits, notifications and initialize sent while it starts',
+    { timeout: RESTART_TEST_TIMEOUT_MS },
+    async () => {
+        const diagnostics = recordDiagnostics(client);
+        const events: ServerCrashEvent['kind'][] = [];
+        client.onServerCrash((event) => events.push(event.kind));
+        const text = 'val x: number = 1\n';
+        fs.writeFileSync(filePath(), text);
+        await client.initialize({
+            processId: process.pid,
+            rootUri,
+            capabilities: {},
+        });
+        client.textDocumentDidOpen({
+            textDocument: {
+                uri: fileUri(),
+                version: 1,
+                languageId: 'escalier',
+                text,
+            },
+        });
+        await vi.waitFor(() => expect(diagnostics.get(1)).toEqual([]), {
+            timeout: 30_000,
+        });
+
+        changeFile(2, `${CRASH_MARKER}\nval x: number = 1\n`);
+        await vi.waitFor(
+            // @ts-expect-error: state is private
+            () => expect(client.state).toBe('restarting'),
+            { timeout: 30_000 },
+        );
+        // The new server opens the latest text rather than the text that crashed.
+        changeFile(3, 'val y: number = "a"\n');
+        await client.workspaceDidChangeWatchedFiles({ changes: [] });
+        // The new server is sent `initialize` once, and this call gets its answer.
+        const init = await client.initialize({
+            processId: process.pid,
+            rootUri,
+            capabilities: {},
+        });
+
+        expect(init.capabilities.hoverProvider).toBe(true);
+        await vi.waitFor(() => expect(diagnostics.get(3)).toBeDefined(), {
+            timeout: 30_000,
+        });
+        expect(diagnostics.get(3)).toEqual(['cannot constrain "a" <: number']);
+        expect(events).toEqual(['restarted']);
+    },
+);
+
+test(
+    'a server that fails to compile is restarted once, then waits for an edit',
+    { timeout: RESTART_TEST_TIMEOUT_MS },
+    async () => {
+        // Only one Client can run at a time.
+        await client.stop();
+        await awaitServerExit();
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            const broken = new Client(
+                new Uint8Array([0, 1, 2, 3]).buffer,
+                process.cwd(),
+                fs,
+            );
+            const events: ServerCrashEvent['kind'][] = [];
+            broken.onServerCrash((event) => events.push(event.kind));
+            const run = broken.run();
+
+            await vi.waitFor(
+                () => expect(events).toEqual(['waiting-for-edit']),
+                {
+                    timeout: 10_000,
+                },
+            );
+            expect(error).toHaveBeenCalledWith(
+                '[Escalier LSP] the server failed:',
+                expect.any(Error),
+            );
+            await expect(
+                broken.textDocumentHover({
+                    textDocument: { uri: fileUri() },
+                    position: { line: 0, character: 0 },
+                }),
+            ).rejects.toThrow(SERVER_DOWN_MESSAGE);
+            // Nothing is listening, and the next server rescans the workspace.
+            await expect(
+                broken.workspaceDidChangeWatchedFiles({ changes: [] }),
+            ).resolves.toBeUndefined();
+
+            // stop() ends the wait for an edit, and run() returns.
+            await broken.stop();
+            await run;
+        } finally {
+            error.mockRestore();
+        }
+    },
+);
+
+test('a trap thrown out of _resume ends the server the way an exit does', async () => {
+    const testClient = standaloneClient();
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+        // @ts-expect-error: go is private
+        const go = testClient.go;
+        // The instance never ran, so resuming it throws, as a trap would.
+        go._resume();
+
+        expect(go.exited).toBe(true);
+        expect(error).toHaveBeenCalledWith(
+            '[Escalier LSP] the server trapped:',
+            expect.any(TypeError),
+        );
+    } finally {
+        error.mockRestore();
+    }
+    await testClient.stop();
+});
+
 test.each<[string, CrashFacts, RestartDecision]>([
     [
         'a server that ran a while restarts at once',
