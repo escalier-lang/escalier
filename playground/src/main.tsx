@@ -8,11 +8,12 @@ import {
 import wasmUrl from '../../bin/lsp-server.wasm?url';
 
 import type { LoadingStatus } from './components/loading-screen';
+import type { Notification } from './editor-state';
 import { useEditorStore } from './editor-store';
 import { BrowserFS } from './fs/browser-fs';
 import type { Manifest } from './fs/volume';
 import { setupLanguage } from './language';
-import { Client } from './lsp-client/client';
+import { Client, type ServerCrashEvent } from './lsp-client/client';
 import { Playground } from './playground';
 import { loadProject } from './project-loader';
 import { downloadStartupFiles, runStartup } from './startup';
@@ -109,6 +110,16 @@ async function start(
         // The same directory holds the standard library's `.esc` files, which the
         // type checker resolves `std:prelude` and the ambient builtins from.
         ESCALIER_STDLIB_DIR: '/node_modules/escalier-builtins',
+        // The dev server, which the e2e tests run against, lets a marker comment crash
+        // the language server so the tests can exercise recovery. See runTestHooks in
+        // cmd/lsp-server/recover.go.
+        ...(import.meta.env.DEV ? { ESCALIER_LSP_TEST_HOOKS: '1' } : {}),
+    });
+    client.onServerCrash((event) => {
+        useEditorStore.getState().dispatch({
+            type: 'showNotification',
+            notification: crashNotification(event),
+        });
     });
     client.run();
     const initResponse: InitializeResult = await client.initialize({
@@ -170,6 +181,23 @@ async function start(
     reactRoot.render(
         <Playground fs={fs} manifest={manifest} baseUrl={baseUrl} />,
     );
+}
+
+/** Returns the toast that tells the user the language server crashed. */
+function crashNotification(event: ServerCrashEvent): Notification {
+    switch (event.kind) {
+        case 'restarted':
+            return {
+                message: 'The language server crashed and was restarted.',
+                type: 'warning',
+            };
+        case 'waiting-for-edit':
+            return {
+                message:
+                    'The language server crashed again on the same code. It will restart when you next edit a file.',
+                type: 'error',
+            };
+    }
 }
 
 async function main() {

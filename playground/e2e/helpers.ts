@@ -60,7 +60,13 @@ export async function recordAlerts(page: Page): Promise<void> {
                     alerts.push(text);
                 }
             }
-        }).observe(document, { childList: true, subtree: true });
+            // A toast that shows a new message while it is open keeps its element and
+            // changes only the text, which is a characterData mutation.
+        }).observe(document, {
+            childList: true,
+            characterData: true,
+            subtree: true,
+        });
     });
 }
 
