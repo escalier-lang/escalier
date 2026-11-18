@@ -114,16 +114,170 @@ function writableOf(stream: SimpleStream): RAL.WritableStream {
     };
 }
 
+/**
+ * How long a server has to run before its crash restarts the next one at once. Crashes
+ * that come sooner, one after another, wait longer each time.
+ */
+export const QUICK_CRASH_MS = 10_000;
+
+/** The longest the client waits before it starts a server again after a crash. */
+export const MAX_RESTART_DELAY_MS = 30_000;
+
+/** The facts about a crash that decide what the client does next. */
+export type CrashFacts = {
+    /** Whether the crashed server was started to replace one that crashed before it. */
+    wasRestart: boolean;
+    /** Whether the open documents changed while the crashed server ran. */
+    inputChanged: boolean;
+    /** How long the crashed server ran, in milliseconds. */
+    ranForMs: number;
+    /** How many crashes in a row, before this one, came within QUICK_CRASH_MS of a start. */
+    quickCrashes: number;
+};
+
+/** What the client does after a crash. */
+export type RestartDecision =
+    | { kind: 'restart'; delayMs: number }
+    | { kind: 'wait-for-edit' };
+
+/**
+ * Returns what the client does after a crash.
+ * - A server that replaced a crashed one, and crashed before any edit reached it, crashed
+ *   on the input that killed the server before it. Another would crash the same way, so
+ *   the client waits for an edit.
+ * - Any other server that ran for QUICK_CRASH_MS or longer is started again at once.
+ * - A quicker crash is started again after a delay that doubles with each such crash in
+ *   a row, up to MAX_RESTART_DELAY_MS.
+ *
+ * Whether the input changed decides the first case rather than how long the server ran,
+ * since a new server loads the standard library before its first check, and how long that
+ * takes depends on the machine.
+ */
+export function decideRestart(facts: CrashFacts): RestartDecision {
+    if (facts.wasRestart && !facts.inputChanged) {
+        return { kind: 'wait-for-edit' };
+    }
+    if (facts.ranForMs >= QUICK_CRASH_MS) {
+        return { kind: 'restart', delayMs: 0 };
+    }
+    return {
+        kind: 'restart',
+        delayMs: Math.min(1000 * 2 ** facts.quickCrashes, MAX_RESTART_DELAY_MS),
+    };
+}
+
+/**
+ * What the client reports when the server stops without being asked to.
+ * - `restarted`: a new server is running and has the open documents.
+ * - `waiting-for-edit`: the server crashed again on the same documents, and the client
+ *   starts a new one at the next edit.
+ */
+export type ServerCrashEvent =
+    | { kind: 'restarted' }
+    | { kind: 'waiting-for-edit' };
+
+/** The message a request rejects with while the client waits for an edit to restart. */
+export const SERVER_DOWN_MESSAGE =
+    'the language server crashed and restarts at the next edit';
+
+/**
+ * Holds requests while a server starts after a crash. Once it is known whether a server
+ * will answer, the held requests either go ahead or fail.
+ */
+export class RequestGate {
+    private gate: Promise<void> = Promise.resolve();
+    private settle: ((err?: Error) => void) | undefined;
+
+    /** Returns a promise that settles when requests may go, or rejects when they fail. */
+    wait(): Promise<void> {
+        return this.gate;
+    }
+
+    /** Makes later calls to wait() pend. A gate that is already closed stays as it is. */
+    close() {
+        if (this.settle) {
+            return;
+        }
+        let resolve!: () => void;
+        let reject!: (err: Error) => void;
+        this.gate = new Promise<void>((res, rej) => {
+            resolve = res;
+            reject = rej;
+        });
+        // A gate can fail with no request waiting on it.
+        this.gate.catch(() => {});
+        this.settle = (err) => {
+            this.settle = undefined;
+            this.gate = Promise.resolve();
+            if (err) {
+                reject(err);
+            } else {
+                resolve();
+            }
+        };
+    }
+
+    /** Lets the waiting requests, and later ones, go. */
+    open() {
+        this.settle?.();
+    }
+
+    /**
+     * Rejects the waiting requests with err. Later calls to wait() resolve until the gate
+     * is closed again.
+     */
+    fail(err: Error) {
+        this.settle?.(err);
+    }
+}
+
+/** The state of the client's server. */
+type ServerState =
+    /** A server is running and takes messages. A client that hasn't run() yet is here too. */
+    | 'running'
+    /** A server is starting after a crash. Requests wait for it. */
+    | 'restarting'
+    /**
+     * A server that replaced a crashed one crashed before any edit reached it. Requests
+     * fail until the next edit starts another.
+     */
+    | 'waiting-for-edit';
+
 export class Client {
+    // The runtime's parts, assigned by createRuntime(). The fs shim reads the streams
+    // through `this` on every call, so a restart's new streams serve the new runtime.
     private go: any;
-    private stdin: SimpleStream;
-    private stdout: SimpleStream;
+    private stdin!: SimpleStream;
+    private stdout!: SimpleStream;
     /** Sends requests and notifications over stdin and reads the replies from stdout. */
-    private connection: MessageConnection;
+    private connection!: MessageConnection;
     private wasmBuf: ArrayBuffer;
     private errorBuffer: string;
     /** Set by `stop()`. Silences the server's output and drops notifications from then on. */
     private stopped = false;
+    /** Set when `stop()` begins, so the server's exit isn't taken for a crash. */
+    private stopping = false;
+
+    private env: Record<string, string>;
+    /** The compiled server, kept so a restart doesn't compile it again. */
+    private wasmModule: WebAssembly.Module | undefined;
+    private state: ServerState = 'running';
+    /** Holds requests while a server starts after a crash. */
+    private requests = new RequestGate();
+    /**
+     * Notifications other than document changes, sent while a server starts after a crash.
+     * The server gets them once it has opened the documents.
+     */
+    private queuedNotifications: Array<[string, unknown]> = [];
+    /** The answer to the `initialize` that a restart sends when it reopens. */
+    private initializeResult: lsp.InitializeResult | undefined;
+    /** Wakes run() while it waits for an edit, from the next edit or from stop(). */
+    private wake: () => void = () => {};
+    /** The params of the last `initialize`, which a restart sends again. */
+    private initializeParams: lsp.InitializeParams | undefined;
+    /** The text of every open document, which a restart opens again. */
+    private documents = new Map<string, lsp.TextDocumentItem>();
+    private crashEvents = new EventEmitter();
 
     /**
      * Calls every listener registered for a notification's method. A
@@ -145,15 +299,9 @@ export class Client {
         fs: FSAPI,
         env: Record<string, string> = {},
     ) {
-        this.stdin = new SimpleStream();
-        this.stdout = new SimpleStream();
         this.wasmBuf = wasmBuf;
+        this.env = env;
         this.errorBuffer = '';
-        this.connection = createMessageConnection(
-            new ReadableStreamMessageReader(readableOf(this.stdout)),
-            new WriteableStreamMessageWriter(writableOf(this.stdin)),
-        );
-        this.connection.listen();
 
         // const enosys = () => {
         //     const err = new Error('not implemented');
@@ -432,13 +580,60 @@ export class Client {
 
         // };
 
+        this.createRuntime();
+    }
+
+    /**
+     * Creates the streams, the connection and the Go instance for a server, either the
+     * first one or one that replaces a crashed server.
+     */
+    private createRuntime() {
+        this.stdin = new SimpleStream();
+        this.stdout = new SimpleStream();
+        this.errorBuffer = '';
+        this.connection = createMessageConnection(
+            new ReadableStreamMessageReader(readableOf(this.stdout)),
+            new WriteableStreamMessageWriter(writableOf(this.stdin)),
+        );
+        // A MessageConnection keeps its handlers, so the new one needs every method a
+        // listener was registered for.
+        for (const method of this.notifications.eventNames()) {
+            this.connection.onNotification(String(method), (params) =>
+                this.notifications.emit(method, params),
+            );
+        }
+        this.connection.listen();
+
         this.go = new Go();
         // Forward caller-supplied env vars to the Go runtime so
         // `os.Getenv` sees them. The playground passes
         // ESCALIER_BUILTINS_DIR to point the interop loader at the
         // virtual-filesystem path where the compiler's
         // `internal/interop/data` directory has been mirrored.
-        this.go.env = { ...(this.go.env ?? {}), ...env };
+        this.go.env = { ...(this.go.env ?? {}), ...this.env };
+
+        // A Go panic ends the program through `wasmExit`, which settles `go.run()`. A
+        // WebAssembly trap, such as running out of memory, instead throws out of
+        // `_resume()` into whichever callback called it, and `go.run()` never settles.
+        // Marking the instance exited and settling `go.run()` here reports a trap the
+        // way an exit is reported. wasm_exec.js is vendored, so its private `_resume` is
+        // safe to wrap.
+        const go = this.go;
+        const resume = go._resume.bind(go);
+        go._resume = () => {
+            try {
+                resume();
+            } catch (err) {
+                // A callback scheduled before the program exited can still call
+                // `_resume()`, which then throws on the torn-down instance. Only an error
+                // from a running instance is a trap.
+                if (!go.exited) {
+                    console.error('[Escalier LSP] the server trapped:', err);
+                    go.exited = true;
+                }
+                go._resolveExitPromise();
+            }
+        };
     }
 
     async run() {
@@ -457,21 +652,177 @@ export class Client {
         globalThis.process = this.processShim as typeof globalThis.process;
 
         try {
-            const { instance } = await WebAssembly.instantiate(
-                this.wasmBuf,
-                this.go.importObject,
-            );
-            return await this.go.run(instance);
+            let quickCrashes = 0;
+            for (let restart = false; ; restart = true) {
+                const startedAt = Date.now();
+                const input = this.documentsKey();
+                try {
+                    await this.runServer(restart);
+                } catch (err) {
+                    // Compiling or instantiating the server failed, or it trapped before
+                    // its first callback. That is a crash like any other.
+                    console.error('[Escalier LSP] the server failed:', err);
+                }
+                if (this.stopping) {
+                    return;
+                }
+
+                const decision = decideRestart({
+                    wasRestart: restart,
+                    inputChanged: this.documentsKey() !== input,
+                    ranForMs: Date.now() - startedAt,
+                    quickCrashes,
+                });
+                this.beginRestart();
+                if (decision.kind === 'wait-for-edit') {
+                    this.state = 'waiting-for-edit';
+                    this.queuedNotifications = [];
+                    this.requests.fail(new Error(SERVER_DOWN_MESSAGE));
+                    this.crashEvents.emit('crash', {
+                        kind: 'waiting-for-edit',
+                    });
+                    await new Promise<void>((resolve) => {
+                        this.wake = resolve;
+                    });
+                    this.requests.close();
+                    quickCrashes = 0;
+                } else {
+                    quickCrashes =
+                        decision.delayMs === 0 ? 0 : quickCrashes + 1;
+                    await new Promise((resolve) =>
+                        setTimeout(resolve, decision.delayMs),
+                    );
+                }
+                if (this.stopping) {
+                    return;
+                }
+                this.state = 'restarting';
+                this.createRuntime();
+            }
         } finally {
             runningClient = undefined;
         }
+    }
+
+    /**
+     * Runs the current Go instance until it exits. When restart is true, the instance
+     * replaces a crashed server, so it is sent the last `initialize` and opens every
+     * document, and the client reports `restarted` once it has them.
+     */
+    private async runServer(restart: boolean) {
+        this.wasmModule ??= await WebAssembly.compile(this.wasmBuf);
+        const instance = await WebAssembly.instantiate(
+            this.wasmModule,
+            this.go.importObject,
+        );
+        const exited = this.go.run(instance).then(() => 'exited' as const);
+        if (restart) {
+            const reopened = this.reopen().then(
+                () => 'reopened' as const,
+                // The server crashed before it answered, and the exit below reports it.
+                () => 'exited' as const,
+            );
+            if ((await Promise.race([reopened, exited])) === 'reopened') {
+                this.state = 'running';
+                this.requests.open();
+                this.crashEvents.emit('crash', { kind: 'restarted' });
+            }
+        }
+        await exited;
+    }
+
+    /**
+     * Sends the new server the last `initialize`, opens every open document, and then
+     * sends the notifications queued while it started.
+     */
+    private async reopen() {
+        if (this.initializeParams) {
+            this.initializeResult = await this.connection.sendRequest(
+                'initialize',
+                this.initializeParams,
+            );
+        }
+        // An edit can land while a didOpen is being written. Each pass opens the documents
+        // that changed since the pass before and closes the ones that were closed, until a
+        // pass finds nothing to send. The caller marks the server running in the same
+        // microtask chain as the last pass, so no edit lands in between.
+        const sent = new Map<string, lsp.TextDocumentItem>();
+        for (;;) {
+            const opened = [...this.documents.values()].filter(
+                (doc) => sent.get(doc.uri) !== doc,
+            );
+            const closed = [...sent.keys()].filter(
+                (uri) => !this.documents.has(uri),
+            );
+            if (opened.length === 0 && closed.length === 0) {
+                break;
+            }
+            for (const uri of closed) {
+                sent.delete(uri);
+                await this.connection.sendNotification(
+                    'textDocument/didClose',
+                    { textDocument: { uri } },
+                );
+            }
+            for (const textDocument of opened) {
+                sent.set(textDocument.uri, textDocument);
+                await this.connection.sendNotification('textDocument/didOpen', {
+                    textDocument,
+                });
+            }
+        }
+        for (
+            let next = this.queuedNotifications.shift();
+            next;
+            next = this.queuedNotifications.shift()
+        ) {
+            await this.connection.sendNotification(...next);
+        }
+    }
+
+    /**
+     * Makes requests wait for the next server. A request pending on the crashed server's
+     * connection rejects, since nothing will answer it.
+     */
+    private beginRestart() {
+        this.state = 'restarting';
+        this.initializeResult = undefined;
+        this.requests.close();
+        this.connection.dispose();
+    }
+
+    /** Returns a key that changes whenever an open document's text does. */
+    private documentsKey(): string {
+        return JSON.stringify(
+            [...this.documents.values()].map((doc) => [doc.uri, doc.text]),
+        );
+    }
+
+    /**
+     * Calls callback when the server stops without being asked to, once the client has
+     * decided what to do about it.
+     */
+    onServerCrash(callback: (event: ServerCrashEvent) => void) {
+        this.crashEvents.on('crash', callback);
     }
 
     //
     // Lifecycle methods
     //
 
-    async initialize(params: lsp.InitializeParams) {
+    async initialize(
+        params: lsp.InitializeParams,
+    ): Promise<lsp.InitializeResult> {
+        this.initializeParams = params;
+        if (this.state !== 'running') {
+            // The server starting after a crash is sent these params when it reopens, and
+            // a second `initialize` would break its lifecycle. The reopen's answer serves,
+            // unless the reopen began before the params were recorded.
+            await this.requests.wait();
+            if (this.initializeResult) {
+                return this.initializeResult;
+            }
+        }
         return this.sendRequest('initialize', params);
     }
 
@@ -484,6 +835,9 @@ export class Client {
     }
 
     async stop() {
+        this.stopping = true;
+        // run() may be waiting for an edit, with no server to send `exit` to.
+        this.wake();
         // A server that is stopping may never answer `shutdown`, or may reject it
         // before `initialize`, so stop() sends it without waiting on the reply.
         this.shutdown().catch(() => {});
@@ -506,7 +860,15 @@ export class Client {
     }
 
     async exit() {
-        return this.sendNotification('exit', null);
+        if (this.stopped) {
+            return;
+        }
+        // Sent whatever the state, so a server that is starting after a crash still ends.
+        // Between a crash and the next server the connection is disposed and throws, and
+        // there is no server to end.
+        try {
+            await this.connection.sendNotification('exit', null);
+        } catch {}
     }
 
     //
@@ -514,11 +876,22 @@ export class Client {
     //
 
     textDocumentDidOpen(params: lsp.DidOpenTextDocumentParams) {
-        return this.sendNotification('textDocument/didOpen', params);
+        this.documents.set(params.textDocument.uri, params.textDocument);
+        return this.sendDocumentNotification('textDocument/didOpen', params);
     }
 
     textDocumentDidChange(params: lsp.DidChangeTextDocumentParams) {
-        return this.sendNotification('textDocument/didChange', params);
+        const doc = this.documents.get(params.textDocument.uri);
+        const last = params.contentChanges.at(-1);
+        // The server takes whole-document changes only, so the last change holds the text.
+        if (doc && last && !('range' in last)) {
+            this.documents.set(doc.uri, {
+                ...doc,
+                version: params.textDocument.version,
+                text: last.text,
+            });
+        }
+        return this.sendDocumentNotification('textDocument/didChange', params);
     }
 
     textDocumentWillSave(params: lsp.WillSaveTextDocumentParams) {
@@ -532,7 +905,8 @@ export class Client {
     }
 
     textDocumentDidClose(params: lsp.DidCloseTextDocumentParams) {
-        return this.sendNotification('textDocument/didClose', params);
+        this.documents.delete(params.textDocument.uri);
+        return this.sendDocumentNotification('textDocument/didClose', params);
     }
 
     workspaceDidChangeWatchedFiles(params: lsp.DidChangeWatchedFilesParams) {
@@ -607,10 +981,45 @@ export class Client {
         if (this.stopped) {
             return Promise.resolve();
         }
-        return this.connection.sendNotification(method, params);
+        switch (this.state) {
+            case 'running':
+                return this.connection.sendNotification(method, params);
+            case 'restarting':
+                this.queuedNotifications.push([method, params]);
+                return Promise.resolve();
+            case 'waiting-for-edit':
+                // The next server rescans the workspace when it initializes, so it learns
+                // about the files this notification describes.
+                return Promise.resolve();
+        }
     }
 
-    private sendRequest(method: string, params: unknown): Promise<any> {
+    /**
+     * Sends a notification that opens, changes or closes a document, after the caller has
+     * recorded the change in `documents`. While a server is starting after a crash, the
+     * notification is dropped, since the server opens every document from `documents`
+     * once it is up. An edit while the client waits for one starts the new server.
+     */
+    private sendDocumentNotification(
+        method: string,
+        params: unknown,
+    ): Promise<void> {
+        switch (this.state) {
+            case 'running':
+                return this.sendNotification(method, params);
+            case 'waiting-for-edit':
+                this.wake();
+                return Promise.resolve();
+            case 'restarting':
+                return Promise.resolve();
+        }
+    }
+
+    private async sendRequest(method: string, params: unknown): Promise<any> {
+        if (this.state === 'waiting-for-edit') {
+            throw new Error(SERVER_DOWN_MESSAGE);
+        }
+        await this.requests.wait();
         return this.connection.sendRequest(method, params);
     }
 
