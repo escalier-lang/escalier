@@ -525,14 +525,14 @@ export class Client {
         // before `initialize`, so stop() sends it without waiting on the reply.
         this.shutdown().catch(() => {});
         await this.exit();
-        // A server in this thread keeps running past this point. `exit` is a
-        // notification, so nothing waits for the server to act on it. The callbacks
-        // that drain its writes run on timers that outlive this call. Disposing
-        // silences it, because whatever it prints from here on describes a server
-        // nobody reads. Under Vitest that output reaches the main process as an
-        // `onUserConsoleLog` message. One that arrives after the worker has begun
-        // closing its rpc channel fails the whole run with an EnvironmentTeardownError,
-        // while every test passes.
+        // Disposing ends a server in a worker at once. A server in this thread keeps
+        // running past this point. `exit` is a notification, so nothing waits for the
+        // server to act on it. The callbacks that drain its writes run on timers that
+        // outlive this call. Disposing silences it, because whatever it prints from
+        // here on describes a server nobody reads. Under Vitest that output reaches
+        // the main process as an `onUserConsoleLog` message. One that arrives after
+        // the worker has begun closing its rpc channel fails the whole run with an
+        // EnvironmentTeardownError, while every test passes.
         this.process?.dispose();
         // `stopped` makes later notifications no-ops. Editor teardown can still send
         // didChange or didClose after stop(), and the disposed connection would reject

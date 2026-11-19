@@ -1,7 +1,6 @@
 import type { Mode, OpenMode, PathLike, Stats } from 'node:fs';
 
 import EventEmitter from 'eventemitter3';
-import { Disposable } from 'vscode-languageserver-protocol/browser';
 
 import type { FSAPI } from '#fs/fs-api';
 
@@ -13,6 +12,12 @@ const Go = globalThis.Go;
 let runtimeRunning = false;
 
 const decoder = new TextDecoder();
+
+/**
+ * Removes the listener that a stream's `on` added. The worker imports this module, so
+ * it declares the type rather than importing vscode-jsonrpc's.
+ */
+export type Disposable = { dispose(): void };
 
 const enosys = () => {
     const err = new Error('not implemented');
@@ -36,7 +41,7 @@ export class SimpleStream {
 
     on(event: string, listener: (chunk: Uint8Array) => void): Disposable {
         this.emitter.on(event, listener);
-        return Disposable.create(() => this.emitter.off(event, listener));
+        return { dispose: () => this.emitter.off(event, listener) };
     }
 
     write(chunk: Uint8Array) {
@@ -68,7 +73,7 @@ export class OutputStream {
 
     on(event: 'data', listener: (chunk: Uint8Array) => void): Disposable {
         this.emitter.on(event, listener);
-        return Disposable.create(() => this.emitter.off(event, listener));
+        return { dispose: () => this.emitter.off(event, listener) };
     }
 
     write(chunk: Uint8Array) {

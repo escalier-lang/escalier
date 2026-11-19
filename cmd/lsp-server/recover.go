@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
@@ -195,14 +198,36 @@ const (
 	// crashMarker makes the check panic on a goroutine with no recover, which ends the
 	// process. The client has to notice the exit and start a new server.
 	crashMarker = "@escalier-lsp-test-crash"
+	// spinMarker, followed by a number of milliseconds, makes the check keep the CPU
+	// busy for that long before it runs. A busy loop holds the thread the way a slow
+	// check does, where a sleep would yield it.
+	spinMarker = "@escalier-lsp-test-spin"
 )
+
+// spinPattern matches spinMarker and the milliseconds that follow it.
+var spinPattern = regexp.MustCompile(regexp.QuoteMeta(spinMarker) + ` (\d+)`)
+
+// spinDuration returns how long spinMarker in contents asks the check to spin, and
+// false when contents holds no spinMarker followed by a number.
+func spinDuration(contents string) (time.Duration, bool) {
+	match := spinPattern.FindStringSubmatch(contents)
+	if match == nil {
+		return 0, false
+	}
+	ms, err := strconv.Atoi(match[1])
+	if err != nil {
+		return 0, false
+	}
+	return time.Duration(ms) * time.Millisecond, true
+}
 
 // testHooksEnv is the environment variable that turns the test hooks on when set to "1".
 const testHooksEnv = "ESCALIER_LSP_TEST_HOOKS"
 
-// runTestHooks panics, or ends the process, when contents holds panicMarker or
-// crashMarker and the server runs with test hooks on. It does nothing otherwise. A
-// check calls it at the point where the checker runs.
+// runTestHooks ends the process when contents holds crashMarker, panics when it holds
+// panicMarker, and spins when it holds spinMarker, as long as the server runs with test
+// hooks on. It does nothing otherwise. A check calls it at the point where the checker
+// runs.
 func (s *Server) runTestHooks(contents string) {
 	if !s.testHooks {
 		return
@@ -217,5 +242,9 @@ func (s *Server) runTestHooks(contents string) {
 	}
 	if strings.Contains(contents, panicMarker) {
 		panic("forced by " + panicMarker)
+	}
+	if d, ok := spinDuration(contents); ok {
+		for start := time.Now(); time.Since(start) < d; {
+		}
 	}
 }

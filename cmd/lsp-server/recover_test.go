@@ -361,3 +361,23 @@ func TestEveryLockIsReleasedByDefer(t *testing.T) {
 	}
 	require.Empty(t, undeferred)
 }
+
+func TestSpinDuration(t *testing.T) {
+	tests := []struct {
+		name     string
+		contents string
+		want     time.Duration
+		wantOK   bool
+	}{
+		{name: "Marker", contents: "// @escalier-lsp-test-spin 2500\nval x = 1", want: 2500 * time.Millisecond, wantOK: true},
+		{name: "NoMarker", contents: "val x = 1", want: 0, wantOK: false},
+		{name: "NoNumber", contents: "// @escalier-lsp-test-spin\nval x = 1", want: 0, wantOK: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, ok := spinDuration(test.contents)
+			require.Equal(t, test.wantOK, ok)
+			require.Equal(t, test.want, got)
+		})
+	}
+}

@@ -2,10 +2,26 @@ import { type Page, expect } from '@playwright/test';
 
 /**
  * How long a test waits for the playground's first compile. That compile loads the
- * standard library in WebAssembly on the page's main thread, which takes several
- * seconds and longer on a loaded CI runner.
+ * standard library in WebAssembly, which takes several seconds and longer on a loaded
+ * CI runner.
  */
 export const COMPILE_TIMEOUT_MS = 30_000;
+
+// The modifier Monaco's shortcuts use on this platform.
+const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+
+/** The keys that move Monaco's cursor to the start of the file on this platform. */
+export const fileStartKey =
+    process.platform === 'darwin' ? 'Meta+ArrowUp' : 'Control+Home';
+
+/** Replaces the text of the file open in the input panel with lines. */
+export async function replaceSource(page: Page, lines: string[]) {
+    const inputPanel = page.locator('#input-panel');
+    await inputPanel.locator('.view-lines').click();
+    await page.keyboard.press(`${modifier}+A`);
+    // insertText adds the text as one edit, so Monaco closes no brackets.
+    await page.keyboard.insertText(lines.join('\n'));
+}
 
 /**
  * Wait for the WASM LSP to initialize and compilation to complete.
@@ -45,8 +61,8 @@ export async function waitForCompilation(
 
 /**
  * Record the text of every alert the page shows, from before the page loads. A toast
- * dismisses itself after a few seconds, and the first compile can hold the main thread
- * for longer than that, so a test reads the record rather than polling the DOM.
+ * dismisses itself after a few seconds, so a test reads the record rather than polling
+ * the DOM.
  */
 export async function recordAlerts(page: Page): Promise<void> {
     await page.addInitScript(() => {

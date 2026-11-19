@@ -1,9 +1,11 @@
 import { type Page, expect, test } from '@playwright/test';
 
-import { loadPlayground, recordAlerts, recordedAlerts } from './helpers';
-
-// The modifier Monaco's shortcuts use on this platform.
-const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+import {
+    loadPlayground,
+    recordAlerts,
+    recordedAlerts,
+    replaceSource,
+} from './helpers';
 
 // Comments that crash the language server when it runs with test hooks on, as it does
 // under the dev server. See runTestHooks in cmd/lsp-server/recover.go.
@@ -13,15 +15,6 @@ const CRASH_MARKER = '// @escalier-lsp-test-crash';
 // A new language server loads the standard library again, which takes several seconds
 // in WebAssembly and longer on a loaded CI runner.
 const RECOVERY_TIMEOUT_MS = 30_000;
-
-// replaceSource replaces the open file's text with lines.
-async function replaceSource(page: Page, lines: string[]) {
-    const inputPanel = page.locator('#input-panel');
-    await inputPanel.locator('.view-lines').click();
-    await page.keyboard.press(`${modifier}+A`);
-    // insertText adds the text as one edit, so Monaco closes no brackets.
-    await page.keyboard.insertText(lines.join('\n'));
-}
 
 // errorHoverText hovers over the first error squiggle in the editor and returns the text
 // of the hover that opens, which holds the diagnostic's message.
