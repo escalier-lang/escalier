@@ -136,6 +136,41 @@ describe('Playground', () => {
         ).not.toBeInTheDocument();
     });
 
+    test('choosing an example after a permalink drops the link and waits for the compile', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() =>
+                Promise.resolve({
+                    ok: true,
+                    text: () => Promise.resolve('// enums'),
+                }),
+            ),
+        );
+        history.replaceState(null, '', '/#project=abc');
+        render(
+            <Playground
+                fs={new BrowserFS({})}
+                manifest={{
+                    ...manifest,
+                    examples: { enums: ['lib/index.esc'] },
+                }}
+                baseUrl="/"
+                layoutRestored
+            />,
+        );
+        expect(usePlaygroundStore.getState().initialCompileDone).toBe(true);
+
+        fireEvent.click(screen.getByRole('button', { name: /Examples/ }));
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Enums' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Replace' }));
+
+        await vi.waitFor(() =>
+            expect(window.location.search).toBe('?example=enums'),
+        );
+        expect(window.location.hash).toBe('');
+        expect(usePlaygroundStore.getState().initialCompileDone).toBe(false);
+    });
+
     test('restored tabs show without waiting for the compile', () => {
         renderPlayground(true);
 

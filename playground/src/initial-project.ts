@@ -1,8 +1,39 @@
 import { useEditorStore } from './editor-store';
 import type { BrowserFS } from './fs/browser-fs';
 import type { Manifest } from './fs/volume';
-import { decodeSnapshot } from './permalink';
+import { decodeSnapshot, snapshotParam } from './permalink';
 import { loadProject, writeProjectFiles } from './project-loader';
+
+/**
+ * Opens the project the page's URL names: the permalink snapshot in its hash, or
+ * else the example in its query (see openExample). Returns true when the tabs came
+ * from a snapshot.
+ */
+export async function openInitialProject(
+    manifest: Manifest,
+    baseUrl: string,
+    fs: BrowserFS,
+): Promise<boolean> {
+    const encoded = snapshotParam(window.location.hash);
+    if (encoded !== null && (await openSnapshot(encoded, fs))) {
+        return true;
+    }
+    await openExample(manifest, baseUrl, fs);
+    return false;
+}
+
+/** Reloads win's page whenever its hash changes to one that holds a permalink. */
+export function reloadOnPastedPermalink(
+    win: Pick<Window, 'addEventListener' | 'location'>,
+): void {
+    // A link pasted into the address bar of an open playground changes only the
+    // hash, which loads nothing, so the page reloads to open it.
+    win.addEventListener('hashchange', () => {
+        if (snapshotParam(win.location.hash) !== null) {
+            win.location.reload();
+        }
+    });
+}
 
 /**
  * Writes the project in an encoded permalink snapshot to fs and opens its tabs.

@@ -5,7 +5,12 @@ import { initialEditorState } from './editor-state';
 import { useEditorStore } from './editor-store';
 import { BrowserFS } from './fs/browser-fs';
 import type { Manifest } from './fs/volume';
-import { openExample, openSnapshot } from './initial-project';
+import {
+    openExample,
+    openInitialProject,
+    openSnapshot,
+    reloadOnPastedPermalink,
+} from './initial-project';
 import { collectProjectFiles, encodeSnapshot } from './permalink';
 
 let fs: BrowserFS;
@@ -128,5 +133,76 @@ describe('openExample', () => {
                 'Failed to load initial project: Failed to fetch /examples/hello-world/lib/index.esc: Not Found',
             type: 'error',
         });
+    });
+});
+
+describe('openInitialProject', () => {
+    const manifest: Manifest = {
+        types: [],
+        templates: {},
+        examples: { 'hello-world': ['lib/index.esc'] },
+        builtins: [],
+    };
+
+    beforeEach(() => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() =>
+                Promise.resolve({
+                    ok: true,
+                    text: () => Promise.resolve('// hello'),
+                }),
+            ),
+        );
+    });
+
+    test('opens the snapshot in the hash and reports restored tabs', async () => {
+        const encoded = await encodeSnapshot({
+            files: { '/lib/index.esc': 'shared' },
+            left: { paths: ['/lib/index.esc'], active: 0 },
+            right: { paths: [], active: null },
+        });
+        history.replaceState(null, '', `/#project=${encoded}`);
+
+        expect(await openInitialProject(manifest, '/', fs)).toBe(true);
+        expect(projectFiles()).toEqual({ '/lib/index.esc': 'shared' });
+    });
+
+    test('opens an example when the hash holds no snapshot', async () => {
+        expect(await openInitialProject(manifest, '/', fs)).toBe(false);
+        expect(projectFiles()).toEqual({ '/lib/index.esc': '// hello' });
+    });
+
+    test('opens an example when the snapshot is damaged', async () => {
+        history.replaceState(null, '', '/#project=damaged');
+
+        expect(await openInitialProject(manifest, '/', fs)).toBe(false);
+        expect(projectFiles()).toEqual({ '/lib/index.esc': '// hello' });
+    });
+});
+
+describe('reloadOnPastedPermalink', () => {
+    function fakeWindow(hash: string) {
+        let onHashChange = () => {};
+        const win = {
+            location: { hash, reload: vi.fn() },
+            addEventListener: (_type: string, listener: () => void) => {
+                onHashChange = listener;
+            },
+        };
+        reloadOnPastedPermalink(win as unknown as Window);
+        return { win, change: () => onHashChange() };
+    }
+
+    test('reloads when the hash changes to a permalink', () => {
+        const { win, change } = fakeWindow('#project=abc');
+        change();
+        expect(win.location.reload).toHaveBeenCalledOnce();
+    });
+
+    test('ignores a hash without a permalink', () => {
+        const { win, change } = fakeWindow('#section');
+        change();
+        expect(win.location.reload).not.toHaveBeenCalled();
     });
 });
