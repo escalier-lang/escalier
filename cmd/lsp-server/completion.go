@@ -78,9 +78,11 @@ func buildScopeCompletionsNoDetail(view scopeView, items *[]protocol.CompletionI
 // on first access from preludeView, the first builtin level of a script's or module's
 // scope chain.
 func (s *Server) getPreludeCompletions(preludeView scopeView) []protocol.CompletionItem {
-	s.mu.RLock()
-	cached := s.preludeCompletions
-	s.mu.RUnlock()
+	cached := func() []protocol.CompletionItem {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		return s.preludeCompletions
+	}()
 	if cached != nil {
 		return cached
 	}
@@ -88,13 +90,12 @@ func (s *Server) getPreludeCompletions(preludeView scopeView) []protocol.Complet
 	items := buildPreludeCompletions(preludeView)
 
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	// Double-check in case another goroutine built it concurrently.
 	if s.preludeCompletions == nil {
 		s.preludeCompletions = items
 	}
-	cached = s.preludeCompletions
-	s.mu.Unlock()
-	return cached
+	return s.preludeCompletions
 }
 
 // completionItemResolve handles completionItem/resolve requests by computing

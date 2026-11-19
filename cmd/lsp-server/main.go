@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"runtime/debug"
 	"sync"
 
 	"github.com/tliron/glsp"
@@ -35,6 +36,7 @@ func main() {
 	fmt.Fprintf(os.Stderr, "Hello, from lsp-server\n")
 
 	s := NewServer()
+	s.testHooks = os.Getenv(testHooksEnv) == "1"
 	server := glsp_server.NewServer(s, lsName, false)
 
 	// The server stops on either signal. A client that closes the pipe
@@ -74,6 +76,12 @@ type Server struct {
 	// handler can detect when the cache is stale.
 	validatedVersion map[protocol.DocumentUri]protocol.Integer
 
+	// panickedVersion records, per URI, the document version whose check panicked.
+	// waitForFreshCheck stops waiting once it sees that version, since no check of it
+	// will finish. The cached output still describes an older version, so isCacheStale
+	// stays true and the requests that need a fresh check decline.
+	panickedVersion map[protocol.DocumentUri]protocol.Integer
+
 	// packageGen is incremented whenever any .esc file changes.
 	// packageValidatedGen records the packageGen at which checkOutput was built.
 	// The completion handler uses these to detect when the cache is stale
@@ -85,6 +93,14 @@ type Server struct {
 	// whether the cached lib output can be reused for bin/-only changes.
 	libGen          int64
 	libValidatedGen int64
+
+	// needsFullCheck is set when a check panicked, and cleared by the next full check.
+	// While it is set, a bin/ change takes the full check too, since the panicked check
+	// may have left the cached library run's solver registries half-written.
+	needsFullCheck bool
+
+	// testHooks turns on runTestHooks, which lets a test crash a check on purpose.
+	testHooks bool
 
 	// Cached absolute paths to .esc files under lib/ and bin/, refreshed at
 	// startup and on workspace file create/rename/delete notifications.
@@ -113,6 +129,7 @@ func NewServer() *Server {
 	s := Server{
 		documents:        map[protocol.DocumentUri]protocol.TextDocumentItem{},
 		validatedVersion: map[protocol.DocumentUri]protocol.Integer{},
+		panickedVersion:  map[protocol.DocumentUri]protocol.Integer{},
 		libFilesCache:    set.NewSet[string](),
 		binFilesCache:    set.NewSet[string](),
 		exited:           make(chan struct{}),
@@ -150,6 +167,15 @@ func NewServer() *Server {
 }
 
 func (s *Server) Handle(context *glsp.Context) (r any, validMethod bool, validParams bool, err error) {
+	// glsp calls Handle on the goroutine that reads every message, so a panic that got
+	// past here would end the process. The failed request answers with an error instead,
+	// and the server goes on to the next message.
+	defer func() {
+		if value := recover(); value != nil {
+			r, validMethod, validParams = nil, true, true
+			err = s.handleRequestPanic(context, panicReport{value: value, stack: debug.Stack()})
+		}
+	}()
 	// glsp answers every method but `initialize` with "server not
 	// initialized" until initialization completes, and it applies that
 	// rule to `exit` as well. LSP puts `exit` outside the lifecycle: a
