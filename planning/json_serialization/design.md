@@ -316,6 +316,48 @@ here beyond having a decoder helper each. Implicit
 decoder passing, in the style of Scala's `given`, is left for later. It can be
 added on top of this without changing the generated code.
 
+#### Why decoding doesn't use a reviver
+
+`JSON.parse` accepts a reviver, a function it calls on each parsed value to
+replace it. The decoder runs as a separate pass after a plain `JSON.parse`
+instead, for three reasons.
+
+A reviver has no type context. `JSON.parse` calls it on the innermost values
+first, with the key and the enclosing object as `this`, but not the path from
+the root. The type a value should decode to depends on that path, and for an
+enum on the parent's tag. A reviver that reaches
+`"at": "2026-11-19T00:00:00.000Z"` can't tell whether the field is a `Date` or
+a `string`. The reviver's third argument doesn't help. `JSON.parse` creates it,
+the caller can't supply one, and it holds only `{source}`, the raw text of a
+primitive value.
+
+`json.decode` has to accept a value that is already parsed, such as the result
+of `response.json()`. That input never passes through `JSON.parse`, so the
+decoder has to walk a `JsonValue` regardless, and a reviver path would be a
+second implementation.
+
+A reviver is slower. The spec runs it as a second walk after parsing, calling
+into JavaScript once per value. A benchmark in Node 22 decoded 200,000 `Shape`
+values from about 10 MB of JSON, taking the mean of 20 runs:
+
+| Approach | Time |
+|---|---|
+| `JSON.parse` only | 37 ms |
+| `JSON.parse` plus the generated decoder | 69 ms |
+| `JSON.parse` with an identity reviver | 364 ms |
+| `JSON.parse` with an identity reviver that reads `context.source` | 369 ms |
+
+The identity revivers return each value unchanged, so they are a lower bound on
+any reviver-based decoder. They are still more than five times slower than
+parsing plus the full generated decoder, which the JIT compiles like any other
+JavaScript.
+
+The raw source text in the reviver's context could still matter for one case.
+If the planned integer types encode as JSON numbers (see
+[Open questions](#open-questions)), a reviver that reads `context.source`
+could decode a value past 2^53 exactly. That would be a targeted reviver for
+those fields, not the general decoding mechanism.
+
 ### Classes
 
 The generated `toJSON` writes every instance field into an object, in
