@@ -171,3 +171,24 @@ test('answers each call, even when replies arrive out of order', async () => {
     expect(results[1]).toEqual(['index.esc']);
     expect(results[2].mode).toBe(0o40755);
 });
+
+test('fstat, lstat, writeFile, symlink and unlink cross the bridge', async () => {
+    const fd = await call<number>((cb) =>
+        remote.open('/lib/index.esc', 0, undefined, cb),
+    );
+    const byFd = await call<Stats>((cb) => remote.fstat(fd, cb));
+    await call<void>((cb) => remote.close(fd, (err) => cb(err, undefined)));
+    await call<void>((cb) =>
+        remote.writeFile('/notes.txt', encoder.encode('hi'), cb),
+    );
+    await call<void>((cb) => remote.symlink('/notes.txt', '/link.txt', cb));
+    const link = await call<Stats>((cb) => remote.lstat('/link.txt', cb));
+    await call<void>((cb) => remote.unlink('/link.txt', cb));
+
+    expect(byFd.size).toBe(10);
+    expect(link.mode & 0o170000).toBe(0o120000);
+    expect(await call<string[]>((cb) => remote.readdir('/', cb))).toEqual([
+        'lib',
+        'notes.txt',
+    ]);
+});
