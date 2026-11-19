@@ -38,7 +38,7 @@ describe('slugToLabel', () => {
 
 test('oversizedLinkMessage gives the link length and the limit', () => {
     expect(oversizedLinkMessage(45_678)).toBe(
-        "A link to this project would be 45,678 characters, and a link can hold at most 32,000. Remove the files and code that the problem doesn't need, then share again.",
+        "A link to this project would be 45,678 characters long, but the playground makes links of at most 32,000 characters. Remove the files and code that the problem doesn't need, then share again.",
     );
 });
 

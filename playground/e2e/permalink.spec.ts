@@ -139,7 +139,7 @@ test('Share explains when the project is too large to link to', async ({
     });
     await expect(dialog).toBeVisible();
     await expect(dialog).toContainText(
-        "and a link can hold at most 32,000. Remove the files and code that the problem doesn't need, then share again.",
+        "characters long, but the playground makes links of at most 32,000 characters. Remove the files and code that the problem doesn't need, then share again.",
     );
     expect(page.url()).toBe(urlBefore);
     await dialog.getByRole('button', { name: 'OK' }).click();

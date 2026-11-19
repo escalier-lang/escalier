@@ -28,7 +28,7 @@ export function slugToLabel(slug: string): string {
  */
 export function oversizedLinkMessage(length: number): string {
     const format = (n: number) => n.toLocaleString('en-US');
-    return `A link to this project would be ${format(length)} characters, and a link can hold at most ${format(MAX_PERMALINK_CHARS)}. Remove the files and code that the problem doesn't need, then share again.`;
+    return `A link to this project would be ${format(length)} characters long, but the playground makes links of at most ${format(MAX_PERMALINK_CHARS)} characters. Remove the files and code that the problem doesn't need, then share again.`;
 }
 
 type PlaygroundProps = {
