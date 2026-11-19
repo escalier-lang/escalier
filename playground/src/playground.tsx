@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { capturePermalink } from './capture-permalink';
+import { MessageDialog } from './components/message-dialog';
 import { Toolbar } from './components/toolbar';
 import { Editor } from './editor';
 import { useEditorStore } from './editor-store';
 import type { BrowserFS } from './fs/browser-fs';
 import type { Manifest } from './fs/volume';
+import { MAX_PERMALINK_CHARS } from './permalink';
 import { usePlaygroundStore } from './playground-store';
-import { loadProject } from './project-loader';
+import { isBuildPath, loadProject } from './project-loader';
 
 import styles from './playground.module.css';
 
@@ -19,13 +22,32 @@ export function slugToLabel(slug: string): string {
     return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
+/**
+ * Returns what the dialog says when a project's link would be length characters,
+ * longer than MAX_PERMALINK_CHARS.
+ */
+export function oversizedLinkMessage(length: number): string {
+    const format = (n: number) => n.toLocaleString('en-US');
+    return `A link to this project would be ${format(length)} characters, and a link can hold at most ${format(MAX_PERMALINK_CHARS)}. Remove the files and code that the problem doesn't need, then share again.`;
+}
+
 type PlaygroundProps = {
     fs: BrowserFS;
     manifest: Manifest;
     baseUrl: string;
+    /**
+     * True when the tabs came from a permalink. The playground then keeps the tabs as
+     * they are instead of opening the build output of the open source files.
+     */
+    layoutRestored?: boolean;
 };
 
-export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
+export const Playground = ({
+    fs,
+    manifest,
+    baseUrl,
+    layoutRestored = false,
+}: PlaygroundProps) => {
     const { dispatch: editorDispatch, ...editorState } = useEditorStore();
     const { dispatch: playgroundDispatch, ...playgroundState } =
         usePlaygroundStore();
@@ -33,17 +55,22 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
 
     const { leftTabs, rightTabs } = editorState;
 
-    const isReadOnly = useCallback(
-        (path: string) =>
-            path.startsWith('/build/') ||
-            /^\/packages\/[^/]+\/build\//.test(path),
-        [],
-    );
+    // Whether the next compile opens the build output of the open source files. A
+    // permalink's tabs already list the build files that were open, so loading one
+    // turns this off until the user loads another project.
+    const autoOpenBuildFilesRef = useRef(!layoutRestored);
 
     // After initial compilation, open the build output files as right tabs.
     // Only auto-open build files whose source is currently open on the left.
     useEffect(() => {
         if (initialCompileDone) return;
+        if (!autoOpenBuildFilesRef.current) {
+            // Restored tabs show without waiting for the compile, since a project
+            // shared for a bug report may never produce build output. The editor
+            // fills an open build tab in when the compiler writes its file.
+            playgroundDispatch({ type: 'setInitialCompileDone' });
+            return;
+        }
 
         // Build a set of expected output prefixes from the open left-side
         // .esc files. The compiler maps all outputs under /build/ at the root:
@@ -81,10 +108,7 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
             )
                 return;
 
-            const isBuildFile =
-                event.path.startsWith('/build/') ||
-                /^\/packages\/[^/]+\/build\//.test(event.path);
-            if (!isBuildFile) return;
+            if (!isBuildPath(event.path)) return;
 
             // Only auto-open if it matches a left-side source file
             const matchesSource = [...buildPrefixes].some((prefix) =>
@@ -146,6 +170,7 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
     const handleSelectTemplate = useCallback(
         (slug: string) => {
             const id = ++loadIdRef.current;
+            autoOpenBuildFilesRef.current = true;
             playgroundDispatch({ type: 'resetCompile' });
             loadProject(slug, 'template', manifest, baseUrl, fs).then(
                 (primaryFile) => {
@@ -173,14 +198,17 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
     const handleSelectExample = useCallback(
         (slug: string) => {
             const id = ++loadIdRef.current;
+            autoOpenBuildFilesRef.current = true;
             playgroundDispatch({ type: 'resetCompile' });
             loadProject(slug, 'example', manifest, baseUrl, fs).then(
                 (primaryFile) => {
                     if (id !== loadIdRef.current) return;
                     editorDispatch({ type: 'resetTabs', primaryFile });
-                    // Update URL query param for deep linking
+                    // Update URL query param for deep linking, and drop any
+                    // permalink so a reload shows the example.
                     const url = new URL(window.location.href);
                     url.searchParams.set('example', slug);
+                    url.hash = '';
                     history.replaceState(null, '', url.toString());
                 },
                 (err) => {
@@ -198,6 +226,43 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
         },
         [manifest, baseUrl, fs, editorDispatch, playgroundDispatch],
     );
+
+    // The length of the last link Share made that was too long to hand out, or null
+    // when no dialog about one is open.
+    const [oversizedLinkLength, setOversizedLinkLength] = useState<
+        number | null
+    >(null);
+
+    const handleShare = useCallback(async () => {
+        try {
+            const url = await capturePermalink(fs, window.location.href);
+            if (url.length > MAX_PERMALINK_CHARS) {
+                setOversizedLinkLength(url.length);
+                return;
+            }
+            // The address bar shows the link too, for a user whose browser refuses
+            // the clipboard write.
+            history.replaceState(null, '', url);
+            await navigator.clipboard.writeText(url);
+            editorDispatch({
+                type: 'showNotification',
+                notification: {
+                    message: 'Copied a link to this project.',
+                    type: 'info',
+                },
+            });
+        } catch (err) {
+            console.error('Failed to share the project:', err);
+            editorDispatch({
+                type: 'showNotification',
+                notification: {
+                    message:
+                        'Could not copy a link to this project. If the address bar shows a #project link, copy it from there.',
+                    type: 'warning',
+                },
+            });
+        }
+    }, [fs, editorDispatch]);
 
     const rightPaneVisible = rightTabs.length > 0 && initialCompileDone;
 
@@ -218,18 +283,28 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
         ) : null;
 
     const toolbar = (
-        <Toolbar
-            templates={templateItems}
-            examples={exampleItems}
-            onSelectTemplate={handleSelectTemplate}
-            onSelectExample={handleSelectExample}
-        />
+        <>
+            <Toolbar
+                templates={templateItems}
+                examples={exampleItems}
+                onSelectTemplate={handleSelectTemplate}
+                onSelectExample={handleSelectExample}
+                onShare={handleShare}
+            />
+            {oversizedLinkLength !== null && (
+                <MessageDialog
+                    title="Project too large to share"
+                    message={oversizedLinkMessage(oversizedLinkLength)}
+                    onClose={() => setOversizedLinkLength(null)}
+                />
+            )}
+        </>
     );
 
     return (
         <Editor
             fs={fs}
-            isReadOnly={isReadOnly}
+            isReadOnly={isBuildPath}
             rightPaneVisible={rightPaneVisible}
             rightPaneOverlay={rightPaneOverlay}
             banner={banner}
