@@ -1,5 +1,10 @@
 import type { CrashReport, Notification } from './editor-state';
-import type { PanicReport, ServerCrashEvent } from './lsp-client/client';
+import type {
+    Client,
+    PanicReport,
+    ServerCrashEvent,
+} from './lsp-client/client';
+import { MAX_PERMALINK_CHARS } from './permalink';
 
 /** Where the issue link in a crash report opens a new issue. */
 export const NEW_ISSUE_URL =
@@ -16,12 +21,21 @@ export const MAX_ISSUE_URL_CHARS = 7500;
 const ISSUE_HEADLINE_CHARS = 120;
 
 /**
+ * The least of the report an issue link holds beside the playground link. When the
+ * playground link leaves less room than this, the issue link leaves it out and holds
+ * more of the report.
+ */
+const MIN_ISSUE_REPORT_CHARS = 1500;
+
+/**
  * Returns the toast that tells the user the language server crashed, carrying the crash
- * report. userAgent describes the browser, for the report.
+ * report. userAgent describes the browser, for the report. permalink links to the
+ * project, or is undefined when the playground couldn't make a link.
  */
 export function crashNotification(
     event: ServerCrashEvent,
     userAgent: string,
+    permalink?: string,
 ): Notification {
     switch (event.kind) {
         case 'restarted':
@@ -30,6 +44,7 @@ export function crashNotification(
                 'warning',
                 event.report,
                 userAgent,
+                permalink,
             );
         case 'waiting-for-edit':
             return withReport(
@@ -37,6 +52,7 @@ export function crashNotification(
                 'error',
                 event.report,
                 userAgent,
+                permalink,
             );
     }
 }
@@ -44,39 +60,64 @@ export function crashNotification(
 /**
  * Returns the toast that tells the user the language server recovered from a panic,
  * carrying the panic's message and stack. userAgent describes the browser, for the report.
+ * permalink links to the project, or is undefined when the playground couldn't make a
+ * link.
  */
 export function panicNotification(
     report: PanicReport,
     userAgent: string,
+    permalink?: string,
 ): Notification {
     return withReport(
         'The language server hit an internal error and recovered.',
         'warning',
         `${report.message}\n\n${report.stack}`,
         userAgent,
+        permalink,
     );
 }
 
 /**
  * Returns a toast with message whose crash report holds details, the server's own account
  * of the crash. The report's text opens with message and the browser so that a pasted
- * copy stands on its own.
+ * copy stands on its own. The report carries permalink when it is at most
+ * MAX_PERMALINK_CHARS long, and its text says the project is too large to link to when
+ * permalink is longer.
  */
 function withReport(
     message: string,
     type: Notification['type'],
     details: string,
     userAgent: string,
+    permalink: string | undefined,
 ): Notification {
     const headline = details.trim().split('\n', 1)[0] ?? '';
-    const text = `${message}\nBrowser: ${userAgent}\n\n${details.trim()}\n`;
-    return { message, type, crashReport: { headline, text } };
+    const tooLong =
+        permalink !== undefined && permalink.length > MAX_PERMALINK_CHARS;
+    const linkNote = tooLong
+        ? 'Playground link: none, because the project is too large to link to.\n'
+        : '';
+    const text = `${message}\nBrowser: ${userAgent}\n${linkNote}\n${details.trim()}\n`;
+    const crashReport: CrashReport = { headline, text };
+    if (permalink !== undefined && !tooLong) {
+        crashReport.permalink = permalink;
+    }
+    return { message, type, crashReport };
+}
+
+/** Returns the text of report that the user reads and copies, with its playground link. */
+export function crashReportText(report: CrashReport): string {
+    return report.permalink === undefined
+        ? report.text
+        : `${report.text}\nPlayground link: ${report.permalink}\n`;
 }
 
 /**
  * Returns the link that opens a new GitHub issue for report, with its title and body
- * filled in. When the whole report would make the link longer than MAX_ISSUE_URL_CHARS,
- * the body holds as much of the report as fits and says to paste the rest.
+ * filled in. The body holds the report's playground link when the link leaves room for
+ * at least MIN_ISSUE_REPORT_CHARS of the report, and otherwise says to paste the link.
+ * When the whole report would make the link longer than MAX_ISSUE_URL_CHARS, the body
+ * holds as much of the report as fits and says to paste the rest.
  */
 export function crashIssueUrl(report: CrashReport): string {
     let headline = report.headline;
@@ -85,9 +126,40 @@ export function crashIssueUrl(report: CrashReport): string {
     }
     const title = `Playground language server crash: ${headline}`;
     const text = report.text.trimEnd();
-    const whole = issueUrl(title, text, false);
+    if (report.permalink === undefined) {
+        return fittedIssueUrl(title, text, { kind: 'none' }).url;
+    }
+    const withLink = fittedIssueUrl(title, text, {
+        kind: 'link',
+        url: report.permalink,
+    });
+    if (withLink.reportChars >= Math.min(MIN_ISSUE_REPORT_CHARS, text.length)) {
+        return withLink.url;
+    }
+    return fittedIssueUrl(title, text, { kind: 'omitted' }).url;
+}
+
+/**
+ * What an issue body says about the playground link: nothing, when the report has
+ * none; the link itself; or that the link was left out and is in the copied report.
+ */
+type IssueLink =
+    | { kind: 'none' }
+    | { kind: 'link'; url: string }
+    | { kind: 'omitted' };
+
+/**
+ * Returns the new-issue link with title, link and the longest prefix of text that keeps
+ * it within MAX_ISSUE_URL_CHARS, along with how many characters of text it holds.
+ */
+function fittedIssueUrl(
+    title: string,
+    text: string,
+    link: IssueLink,
+): { url: string; reportChars: number } {
+    const whole = issueUrl(title, text, false, link);
     if (whole.length <= MAX_ISSUE_URL_CHARS) {
-        return whole;
+        return { url: whole, reportChars: text.length };
     }
     // Encoding lengthens some characters more than others, so the longest prefix of the
     // report that fits is found by measuring the encoded link.
@@ -96,7 +168,7 @@ export function crashIssueUrl(report: CrashReport): string {
     while (tooLong - fits > 1) {
         const mid = Math.floor((fits + tooLong) / 2);
         if (
-            issueUrl(title, prefixOf(text, mid), true).length <=
+            issueUrl(title, prefixOf(text, mid), true, link).length <=
             MAX_ISSUE_URL_CHARS
         ) {
             fits = mid;
@@ -104,7 +176,8 @@ export function crashIssueUrl(report: CrashReport): string {
             tooLong = mid;
         }
     }
-    return issueUrl(title, prefixOf(text, fits), true);
+    const kept = prefixOf(text, fits);
+    return { url: issueUrl(title, kept, true, link), reportChars: kept.length };
 }
 
 /**
@@ -119,15 +192,21 @@ function prefixOf(text: string, length: number): string {
 }
 
 /**
- * Returns the new-issue link with title and a body that holds text. When truncated is
- * true, the body marks text as cut short.
+ * Returns the new-issue link with title and a body that holds text and link. When
+ * truncated is true, the body marks text as cut short.
  */
-function issueUrl(title: string, text: string, truncated: boolean): string {
+function issueUrl(
+    title: string,
+    text: string,
+    truncated: boolean,
+    link: IssueLink,
+): string {
     const body = [
         '## What happened',
         '',
         '<!-- What were you doing when the language server crashed? Paste the code that triggers it if you can. -->',
         '',
+        ...issueLinkSection(link),
         '## Crash report',
         '',
         ...(truncated
@@ -143,6 +222,83 @@ function issueUrl(title: string, text: string, truncated: boolean): string {
     ].join('\n');
     const params = new URLSearchParams({ title, body });
     return `${NEW_ISSUE_URL}?${params.toString()}`;
+}
+
+/** Returns the lines of an issue body's section about the playground link. */
+function issueLinkSection(link: IssueLink): string[] {
+    switch (link.kind) {
+        case 'none':
+            return [];
+        case 'link':
+            return ['## Playground link', '', link.url, ''];
+        case 'omitted':
+            return [
+                '## Playground link',
+                '',
+                'The link to the project is too long for this form. Paste it from the full report, which **Copy report** puts on the clipboard.',
+                '',
+            ];
+    }
+}
+
+/**
+ * Returns a function that shows the crash toast its argument builds from a permalink.
+ * Each call starts capture at once, and the toast shows after the toasts of earlier
+ * calls, so toasts show in the order of the calls. When capture rejects, the toast
+ * gets undefined in place of a permalink. A toast that throws while it is built or
+ * shown is logged, and later toasts still show.
+ */
+export function crashToasts(
+    capture: () => Promise<string>,
+    show: (notification: Notification) => void,
+): (toast: (permalink: string | undefined) => Notification) => void {
+    let lastShown = Promise.resolve();
+    return (toast) => {
+        const permalink = capture().catch((err) => {
+            console.error(
+                'Failed to link to the project for a crash report:',
+                err,
+            );
+            return undefined;
+        });
+        // A toast that fails to build or show is logged and skipped, so the next
+        // toast still waits on a settled promise rather than a rejected one.
+        lastShown = lastShown
+            .then(async () => show(toast(await permalink)))
+            .catch((err) => {
+                console.error('Failed to show a crash toast:', err);
+            });
+    };
+}
+
+/**
+ * Shows a toast for each crash and panic that client reports. Each toast carries a
+ * crash report whose permalink comes from capture, as crashToasts describes, and
+ * userAgent describes the browser, for the report. A panic shows once however often
+ * it recurs, as firstOfEachPanic describes.
+ */
+export function showServerCrashes(
+    client: Pick<Client, 'onServerCrash' | 'onServerPanic'>,
+    userAgent: string,
+    capture: () => Promise<string>,
+    show: (notification: Notification) => void,
+): void {
+    const showCrashToast = crashToasts(capture, show);
+    client.onServerCrash((event) =>
+        showCrashToast((permalink) =>
+            crashNotification(event, userAgent, permalink),
+        ),
+    );
+    // A panic in a request handler recurs on every request that reaches the same
+    // code, such as each hover as the mouse moves. Its toast would come back each time
+    // the user dismissed it, so each panic is shown once.
+    client.onServerPanic(
+        firstOfEachPanic((report) =>
+            showCrashToast((permalink) =>
+                panicNotification(report, userAgent, permalink),
+            ),
+        ),
+    );
 }
 
 /** How many distinct panics firstOfEachPanic remembers before it starts over. */

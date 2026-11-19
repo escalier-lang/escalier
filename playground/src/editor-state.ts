@@ -2,8 +2,10 @@
 export type CrashReport = {
     /** The first line of the server's account of the crash, for an issue title. */
     headline: string;
-    /** The whole report, as the user copies it. */
+    /** The report without its playground link. crashReportText adds the link. */
     text: string;
+    /** A permalink to the project as it was when the server crashed. */
+    permalink?: string;
 };
 
 export type Notification = {

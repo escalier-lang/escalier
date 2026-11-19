@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { crashIssueUrl } from '../crash-notification';
+import { crashIssueUrl, crashReportText } from '../crash-notification';
 import type { CrashReport } from '../editor-state';
 import styles from './crash-report-dialog.module.css';
 import { useModalDialog } from './use-modal-dialog';
@@ -33,6 +33,7 @@ export const CrashReportDialog = ({
     const copyRef = useRef<HTMLButtonElement>(null);
     const { dialogRef, onBackdropClick } = useModalDialog(onClose, copyRef);
     const [copyState, setCopyState] = useState<CopyState>('idle');
+    const text = crashReportText(report);
 
     // The outcome of a copy shows for a moment, so pressing the button again shows the
     // outcome of that copy.
@@ -44,7 +45,7 @@ export const CrashReportDialog = ({
 
     const copy = async () => {
         try {
-            await navigator.clipboard.writeText(report.text);
+            await navigator.clipboard.writeText(text);
             setCopyState('copied');
         } catch {
             // The clipboard can refuse, as on a page served over plain http.
@@ -68,11 +69,12 @@ export const CrashReportDialog = ({
                 Language server crash report
             </h2>
             <p id="crash-report-help" className={styles.message}>
-                Copy this report into a GitHub issue, with the code that
-                triggers the crash if you can share it.
+                {report.permalink === undefined
+                    ? 'Copy this report into a GitHub issue, with the code that triggers the crash if you can share it.'
+                    : 'Copy this report into a GitHub issue. Its playground link opens the project as it was when the server crashed.'}
             </p>
             <pre className={styles.report} aria-label="Crash report">
-                {report.text}
+                {text}
             </pre>
             <div className={styles.buttons}>
                 <button

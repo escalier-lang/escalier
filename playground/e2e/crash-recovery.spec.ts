@@ -95,6 +95,7 @@ test.describe('Crash recovery', () => {
         await openCrashReport(page, [
             'the Escalier language server crashed while checking file:///lib/index.esc: forced by @escalier-lsp-test-panic',
             '(*Server).runTestHooks(',
+            'Playground link: http://localhost:5173/#project=',
         ]);
 
         // The same server checks the next edit, which finds a type error.
@@ -133,12 +134,17 @@ test.describe('Crash recovery', () => {
             'The language server crashed again on the same code.',
             'panic: forced by @escalier-lsp-test-crash',
             'goroutine',
+            'Playground link: http://localhost:5173/#project=',
         ]);
         expect(issueUrl).toMatch(
             /^https:\/\/github\.com\/escalier-lang\/escalier\/issues\/new\?/,
         );
-        expect(new URL(issueUrl).searchParams.get('body')).toContain(
+        const issueBody = new URL(issueUrl).searchParams.get('body') ?? '';
+        expect(issueBody).toContain(
             'panic: forced by @escalier-lsp-test-crash',
+        );
+        expect(issueBody).toMatch(
+            /## Playground link\n\nhttp:\/\/localhost:5173\/#project=[A-Za-z0-9_-]+\n/,
         );
 
         // The edit starts a server, whose diagnostics show up in the editor.
