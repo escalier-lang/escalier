@@ -59,6 +59,23 @@ export class SimpleStream {
     }
 }
 
+/**
+ * Passes each byte chunk written to it to the listeners on `data`, and keeps none. The
+ * server writes its stdout to one.
+ */
+export class OutputStream {
+    private emitter = new EventEmitter();
+
+    on(event: 'data', listener: (chunk: Uint8Array) => void): Disposable {
+        this.emitter.on(event, listener);
+        return Disposable.create(() => this.emitter.off(event, listener));
+    }
+
+    write(chunk: Uint8Array) {
+        this.emitter.emit('data', chunk);
+    }
+}
+
 /** How much of a server's stderr a StderrTail keeps. */
 export const STDERR_TAIL_CHARS = 64 * 1024;
 
@@ -101,7 +118,7 @@ export type ServerRuntimeOptions = {
     /** The bytes the server reads from stdin. */
     stdin: SimpleStream;
     /** Takes the bytes the server writes to stdout. */
-    stdout: SimpleStream;
+    stdout: OutputStream;
     /** Called with each piece of text the server writes to stderr. */
     onStderr?: (text: string) => void;
 };
@@ -114,7 +131,7 @@ export class ServerRuntime {
     private go: any;
     private module: WebAssembly.Module;
     private stdin: SimpleStream;
-    private stdout: SimpleStream;
+    private stdout: OutputStream;
     private stderr = new StderrTail();
     private onStderr: (text: string) => void;
     /** The stderr text since the last newline, which writeSync prints as one line. */
@@ -180,7 +197,9 @@ export class ServerRuntime {
                 ) => void,
             ) => {
                 if (fd === 1) {
-                    this.stdout.write(buffer);
+                    // The caller reuses buffer once the callback runs, so the stream
+                    // gets a copy.
+                    this.stdout.write(buffer.slice(0, length));
                     setTimeout(() => {
                         callback(null, length, buffer);
                     }, 0);
@@ -269,23 +288,24 @@ export class ServerRuntime {
                     // that sourcegraph/jsonrpc2 creates, and a message can be longer.
                     // Reading at most length bytes leaves the rest of the chunk
                     // queued for the next call.
-                    const srcBuf = this.stdin.read(length);
-                    if (srcBuf) {
+                    //
+                    // An empty stdin answers once the next chunk arrives, so an idle
+                    // server waits without polling. That answer goes on a timer
+                    // because a chunk arrives inside the writer's call, and the
+                    // callback runs the server.
+                    const answer = () => {
+                        const srcBuf = this.stdin.read(length);
+                        if (!srcBuf) {
+                            const subscription = this.stdin.on('data', () => {
+                                subscription.dispose();
+                                setTimeout(answer, 0);
+                            });
+                            return;
+                        }
                         buffer.set(srcBuf, offset);
                         callback(null, srcBuf.length, buffer);
-                        return;
-                    }
-
-                    // An empty stdin answers EAGAIN on a timer rather than at once.
-                    // The server reads again as soon as it is answered, so an
-                    // immediate answer would keep every other callback and promise
-                    // from running.
-                    setTimeout(() => {
-                        const error = new Error();
-                        // @ts-ignore
-                        error.code = 'EAGAIN';
-                        callback(error, 0, buffer);
-                    }, 0);
+                    };
+                    answer();
                 } else {
                     return fs.read(
                         fd,
