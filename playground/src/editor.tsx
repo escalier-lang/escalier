@@ -9,7 +9,7 @@ import {
 
 import { CrashReportDialog } from './components/crash-report-dialog';
 import { FileExplorer } from './components/file-explorer';
-import { Toast } from './components/toast';
+import { Toast, ToastButton } from './components/toast';
 import type { CrashReport } from './editor-state';
 import { useEditorStore } from './editor-store';
 import type { BrowserFS } from './fs/browser-fs';
@@ -373,6 +373,19 @@ export const Editor = ({
         }
     }, [crashReport]);
 
+    // Counts the notifications shown so far, to key each one's Toast. A notification that
+    // replaces one on screen then gets a fresh Toast, whose auto-dismiss timer starts over.
+    const [keyedNotification, setKeyedNotification] = useState({
+        notification: state.notification,
+        key: 0,
+    });
+    if (keyedNotification.notification !== state.notification) {
+        setKeyedNotification({
+            notification: state.notification,
+            key: keyedNotification.key + 1,
+        });
+    }
+
     return (
         <div className={styles['editor-root']}>
             {/* Banner (e.g. validation errors) */}
@@ -527,11 +540,22 @@ export const Editor = ({
                 </div>
             )}
 
-            <Toast
-                notification={state.notification}
-                onDismiss={handleDismissNotification}
-                onShowCrashReport={handleShowCrashReport}
-            />
+            {state.notification && (
+                <Toast
+                    key={keyedNotification.key}
+                    type={state.notification.type}
+                    // A crash toast stays up so the user has time to open its report.
+                    persistent={Boolean(crashReport)}
+                    onDismiss={handleDismissNotification}
+                >
+                    <span>{state.notification.message}</span>
+                    {crashReport && (
+                        <ToastButton onClick={handleShowCrashReport}>
+                            Details
+                        </ToastButton>
+                    )}
+                </Toast>
+            )}
             {shownCrashReport && (
                 <CrashReportDialog
                     report={shownCrashReport}

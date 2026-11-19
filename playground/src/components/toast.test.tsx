@@ -9,67 +9,61 @@ import {
 } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { Toast } from './toast';
+import { Toast, ToastButton } from './toast';
 
 afterEach(() => {
     cleanup();
     vi.useRealTimers();
 });
 
-const crashToast = {
-    message: 'The language server crashed and was restarted.',
-    type: 'warning' as const,
-    crashReport: { headline: 'panic: boom', text: 'panic: boom\n' },
-};
-
-test('a crash toast offers its report and stays until dismissed', () => {
+test('shows its children and dismisses itself after four seconds', () => {
     vi.useFakeTimers();
     const onDismiss = vi.fn();
-    const onShowCrashReport = vi.fn();
     render(
-        <Toast
-            notification={crashToast}
-            onDismiss={onDismiss}
-            onShowCrashReport={onShowCrashReport}
-        />,
+        <Toast type="info" onDismiss={onDismiss}>
+            <span>Saved.</span>
+        </Toast>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Details' }));
-    expect(onShowCrashReport).toHaveBeenCalledOnce();
+    expect(screen.getByRole('alert')).toHaveTextContent('Saved.');
+    act(() => {
+        vi.advanceTimersByTime(3999);
+    });
+    expect(onDismiss).not.toHaveBeenCalled();
+    act(() => {
+        vi.advanceTimersByTime(1);
+    });
+    expect(onDismiss).toHaveBeenCalledOnce();
+});
+
+test('a persistent toast stays until dismissed', () => {
+    vi.useFakeTimers();
+    const onDismiss = vi.fn();
+    render(
+        <Toast type="warning" persistent onDismiss={onDismiss}>
+            <span>The language server crashed and was restarted.</span>
+        </Toast>,
+    );
 
     act(() => {
         vi.advanceTimersByTime(60_000);
     });
     expect(onDismiss).not.toHaveBeenCalled();
-});
 
-// Without a way to open the report, the toast has no reason to stay.
-test('a crash toast with no report handler dismisses itself', () => {
-    vi.useFakeTimers();
-    const onDismiss = vi.fn();
-    render(<Toast notification={crashToast} onDismiss={onDismiss} />);
-
-    expect(screen.queryByRole('button', { name: 'Details' })).toBeNull();
-    act(() => {
-        vi.advanceTimersByTime(4000);
-    });
+    fireEvent.click(
+        screen.getByRole('button', { name: 'Dismiss notification' }),
+    );
     expect(onDismiss).toHaveBeenCalledOnce();
 });
 
-test('any other toast offers no details and dismisses itself', () => {
-    vi.useFakeTimers();
-    const onDismiss = vi.fn();
+test('a ToastButton calls its handler when clicked', () => {
+    const onClick = vi.fn();
     render(
-        <Toast
-            notification={{ message: 'Saved.', type: 'info' }}
-            onDismiss={onDismiss}
-            onShowCrashReport={() => {}}
-        />,
+        <Toast type="warning" persistent onDismiss={() => {}}>
+            <ToastButton onClick={onClick}>Details</ToastButton>
+        </Toast>,
     );
 
-    expect(screen.queryByRole('button', { name: 'Details' })).toBeNull();
-    act(() => {
-        vi.advanceTimersByTime(4000);
-    });
-    expect(onDismiss).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('button', { name: 'Details' }));
+    expect(onClick).toHaveBeenCalledOnce();
 });

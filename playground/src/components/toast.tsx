@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { type ReactNode, useEffect } from 'react';
 
 import type { Notification } from '../editor-state';
 import styles from './toast.module.css';
@@ -6,45 +6,33 @@ import styles from './toast.module.css';
 const AUTO_DISMISS_MS = 4000;
 
 type ToastProps = {
-    notification: Notification | null;
+    type: Notification['type'];
+    /** When true, the toast stays until it is dismissed instead of closing after four seconds. */
+    persistent?: boolean;
     onDismiss: () => void;
-    /** Called when the user asks for a crash toast's report. */
-    onShowCrashReport?: () => void;
+    /** The toast's content: its message and any action buttons. */
+    children: ReactNode;
 };
 
+/**
+ * Shows children in a toast with a dismiss button. A non-persistent toast starts its
+ * timer when it mounts, so give each notification its own `key`.
+ */
 export const Toast = ({
-    notification,
+    type,
+    persistent = false,
     onDismiss,
-    onShowCrashReport,
+    children,
 }: ToastProps) => {
-    const offersCrashReport = Boolean(
-        notification?.crashReport && onShowCrashReport,
-    );
     useEffect(() => {
-        // A toast that offers a crash report stays until it is dismissed, so the user has
-        // time to open the report.
-        if (!notification || offersCrashReport) return;
+        if (persistent) return;
         const timer = setTimeout(onDismiss, AUTO_DISMISS_MS);
         return () => clearTimeout(timer);
-    }, [notification, offersCrashReport, onDismiss]);
-
-    if (!notification) return null;
+    }, [persistent, onDismiss]);
 
     return (
-        <div
-            className={`${styles.toast} ${styles[notification.type]}`}
-            role="alert"
-        >
-            <span>{notification.message}</span>
-            {offersCrashReport && (
-                <button
-                    type="button"
-                    className={styles.details}
-                    onClick={onShowCrashReport}
-                >
-                    Details
-                </button>
-            )}
+        <div className={`${styles.toast} ${styles[type]}`} role="alert">
+            {children}
             <button
                 type="button"
                 className={styles.dismiss}
@@ -56,3 +44,15 @@ export const Toast = ({
         </div>
     );
 };
+
+type ToastButtonProps = {
+    onClick: () => void;
+    children: ReactNode;
+};
+
+/** A button styled to sit inside a Toast. */
+export const ToastButton = ({ onClick, children }: ToastButtonProps) => (
+    <button type="button" className={styles.action} onClick={onClick}>
+        {children}
+    </button>
+);

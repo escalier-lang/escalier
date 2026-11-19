@@ -37,7 +37,7 @@
     opacity: 0.8;
 }
 
-.details {
+.action {
     background: none;
     border: 1px solid var(--color-text-on-accent);
     border-radius: 4px;
@@ -48,7 +48,7 @@
     opacity: 0.8;
 }
 
-.details:hover {
+.action:hover {
     opacity: 1;
 }
 
