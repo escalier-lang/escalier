@@ -200,8 +200,12 @@ async function transform(
     bytes: Uint8Array<ArrayBuffer>,
     stream: CompressionStream | DecompressionStream,
 ): Promise<Uint8Array<ArrayBuffer>> {
-    const output = new Blob([bytes]).stream().pipeThrough(stream);
-    return new Uint8Array(await new Response(output).arrayBuffer());
+    const input = new Response(bytes).body;
+    if (!input) {
+        throw new Error('A Response made from bytes has no body.');
+    }
+    const output = new Response(input.pipeThrough(stream));
+    return new Uint8Array(await output.arrayBuffer());
 }
 
 function toBase64Url(bytes: Uint8Array): string {
