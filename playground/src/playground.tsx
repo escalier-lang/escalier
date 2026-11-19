@@ -1,12 +1,13 @@
-import * as monaco from 'monaco-editor-core';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { capturePermalink } from './capture-permalink';
+import { MessageDialog } from './components/message-dialog';
 import { Toolbar } from './components/toolbar';
 import { Editor } from './editor';
 import { useEditorStore } from './editor-store';
 import type { BrowserFS } from './fs/browser-fs';
 import type { Manifest } from './fs/volume';
-import { collectProjectFiles, encodeSnapshot, permalinkUrl } from './permalink';
+import { MAX_PERMALINK_CHARS } from './permalink';
 import { usePlaygroundStore } from './playground-store';
 import { isBuildPath, loadProject } from './project-loader';
 
@@ -19,6 +20,15 @@ import styles from './playground.module.css';
 export function slugToLabel(slug: string): string {
     const words = slug.split('-').join(' ');
     return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * Returns what the dialog says when a project's link would be length characters,
+ * longer than MAX_PERMALINK_CHARS.
+ */
+export function oversizedLinkMessage(length: number): string {
+    const format = (n: number) => n.toLocaleString('en-US');
+    return `A link to this project would be ${format(length)} characters, and a link can hold at most ${format(MAX_PERMALINK_CHARS)}. Remove the files and code that the problem doesn't need, then share again.`;
 }
 
 type PlaygroundProps = {
@@ -217,28 +227,19 @@ export const Playground = ({
         [manifest, baseUrl, fs, editorDispatch, playgroundDispatch],
     );
 
+    // The length of the last link Share made that was too long to hand out, or null
+    // when no dialog about one is open.
+    const [oversizedLinkLength, setOversizedLinkLength] = useState<
+        number | null
+    >(null);
+
     const handleShare = useCallback(async () => {
-        const state = useEditorStore.getState();
         try {
-            // The editor holds edits that haven't reached the filesystem, so a
-            // file's text comes from its model when it has one.
-            const files = collectProjectFiles(fs.rootDir, (path) =>
-                monaco.editor
-                    .getModel(monaco.Uri.parse(`file://${path}`))
-                    ?.getValue(),
-            );
-            const encoded = await encodeSnapshot({
-                files,
-                left: {
-                    paths: state.leftTabs.map((tab) => tab.path),
-                    active: state.activeLeftTabIndex,
-                },
-                right: {
-                    paths: state.rightTabs.map((tab) => tab.path),
-                    active: state.activeRightTabIndex,
-                },
-            });
-            const url = permalinkUrl(window.location.href, encoded);
+            const url = await capturePermalink(fs, window.location.href);
+            if (url.length > MAX_PERMALINK_CHARS) {
+                setOversizedLinkLength(url.length);
+                return;
+            }
             // The address bar shows the link too, for a user whose browser refuses
             // the clipboard write.
             history.replaceState(null, '', url);
@@ -282,13 +283,22 @@ export const Playground = ({
         ) : null;
 
     const toolbar = (
-        <Toolbar
-            templates={templateItems}
-            examples={exampleItems}
-            onSelectTemplate={handleSelectTemplate}
-            onSelectExample={handleSelectExample}
-            onShare={handleShare}
-        />
+        <>
+            <Toolbar
+                templates={templateItems}
+                examples={exampleItems}
+                onSelectTemplate={handleSelectTemplate}
+                onSelectExample={handleSelectExample}
+                onShare={handleShare}
+            />
+            {oversizedLinkLength !== null && (
+                <MessageDialog
+                    title="Project too large to share"
+                    message={oversizedLinkMessage(oversizedLinkLength)}
+                    onClose={() => setOversizedLinkLength(null)}
+                />
+            )}
+        </>
     );
 
     return (

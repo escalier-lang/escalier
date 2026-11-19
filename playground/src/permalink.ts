@@ -17,6 +17,12 @@ export type PlaygroundSnapshot = {
 /** The version written into each permalink, so a later format can tell old links apart. */
 const PERMALINK_VERSION = 1;
 
+/**
+ * The longest permalink the playground hands out. GitHub holds at most 65,536
+ * characters in an issue body, so a link this long still fits beside a crash report.
+ */
+export const MAX_PERMALINK_CHARS = 32_000;
+
 /** The URL hash parameter that carries an encoded snapshot. */
 export const PERMALINK_PARAM = 'project';
 

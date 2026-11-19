@@ -109,3 +109,33 @@ test('when the clipboard refuses the link, the address bar holds it', async ({
     ).toBeVisible();
     expect(page.url()).toMatch(/#project=[A-Za-z0-9_-]+$/);
 });
+
+test('Share explains when the project is too large to link to', async ({
+    page,
+}) => {
+    await loadPlayground(page);
+
+    // Random text barely compresses, so this comment makes the link longer than the
+    // playground hands out.
+    const noise = Array.from({ length: 4500 }, () =>
+        Math.random().toString(36).slice(2, 12),
+    ).join('');
+    const inputPanel = page.locator('#input-panel');
+    await inputPanel.locator('.view-lines').click();
+    await page.keyboard.press(`${modifier}+A`);
+    await page.keyboard.insertText(`// ${noise}`);
+    const urlBefore = page.url();
+
+    await page.getByRole('button', { name: 'Share' }).click();
+
+    const dialog = page.getByRole('dialog', {
+        name: 'Project too large to share',
+    });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText(
+        "and a link can hold at most 32,000. Remove the files and code that the problem doesn't need, then share again.",
+    );
+    expect(page.url()).toBe(urlBefore);
+    await dialog.getByRole('button', { name: 'OK' }).click();
+    await expect(dialog).toBeHidden();
+});

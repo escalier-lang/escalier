@@ -7,6 +7,7 @@ import {
 
 import wasmUrl from '../../bin/lsp-server.wasm?url';
 
+import { capturePermalink } from './capture-permalink';
 import type { LoadingStatus } from './components/loading-screen';
 import {
     crashNotification,
@@ -87,20 +88,41 @@ async function start(
         // cmd/lsp-server/recover.go.
         ...(import.meta.env.DEV ? { ESCALIER_LSP_TEST_HOOKS: '1' } : {}),
     });
-    client.onServerCrash((event) => {
+    // A crash report links to the project as it was when the server crashed, which
+    // holds the code that crashed it. The report goes without a link when the
+    // playground can't make one.
+    const crashPermalink = () =>
+        capturePermalink(fs, window.location.href).catch((err) => {
+            console.error(
+                'Failed to link to the project for a crash report:',
+                err,
+            );
+            return undefined;
+        });
+    client.onServerCrash(async (event) => {
+        const permalink = await crashPermalink();
         useEditorStore.getState().dispatch({
             type: 'showNotification',
-            notification: crashNotification(event, navigator.userAgent),
+            notification: crashNotification(
+                event,
+                navigator.userAgent,
+                permalink,
+            ),
         });
     });
     // A panic in a request handler recurs on every request that reaches the same code,
     // such as each hover as the mouse moves. Its toast would come back each time the user
     // dismissed it, so each panic is shown once.
     client.onServerPanic(
-        firstOfEachPanic((report) => {
+        firstOfEachPanic(async (report) => {
+            const permalink = await crashPermalink();
             useEditorStore.getState().dispatch({
                 type: 'showNotification',
-                notification: panicNotification(report, navigator.userAgent),
+                notification: panicNotification(
+                    report,
+                    navigator.userAgent,
+                    permalink,
+                ),
             });
         }),
     );

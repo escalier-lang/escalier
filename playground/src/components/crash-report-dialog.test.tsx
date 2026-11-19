@@ -82,3 +82,20 @@ test('closes from its Close button', () => {
 
     expect(onClose).toHaveBeenCalledOnce();
 });
+
+test('shows and copies the playground link with the report', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    const linked = { ...report, permalink: 'https://example.com/#project=abc' };
+    render(<CrashReportDialog report={linked} onClose={() => {}} />);
+
+    expect(screen.getByLabelText('Crash report')).toHaveTextContent(
+        'Playground link: https://example.com/#project=abc',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Copy report' }));
+
+    await screen.findByRole('button', { name: 'Copied' });
+    expect(writeText).toHaveBeenCalledWith(
+        `${linked.text}\nPlayground link: https://example.com/#project=abc\n`,
+    );
+});

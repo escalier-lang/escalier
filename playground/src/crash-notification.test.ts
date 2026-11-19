@@ -5,9 +5,11 @@ import {
     NEW_ISSUE_URL,
     crashIssueUrl,
     crashNotification,
+    crashReportText,
     firstOfEachPanic,
     panicNotification,
 } from './crash-notification';
+import { MAX_PERMALINK_CHARS } from './permalink';
 
 const userAgent = 'TestBrowser/1.0';
 const report =
@@ -170,4 +172,91 @@ test('crashIssueUrl never splits a surrogate pair', () => {
     expect(title).toBe(`Playground language server crash: ${'a'.repeat(118)}…`);
     expect(body).not.toContain('\ufffd');
     expect(body).toContain('😀😀\n…\n');
+});
+
+const permalink = 'https://example.com/playground/#project=abc_-';
+
+test('a crash report carries the permalink, which its text ends with', () => {
+    const { crashReport } = crashNotification(
+        { kind: 'restarted', report },
+        userAgent,
+        permalink,
+    );
+
+    expect(crashReport?.permalink).toBe(permalink);
+    expect(crashReport && crashReportText(crashReport)).toBe(
+        `The language server crashed and was restarted.\nBrowser: TestBrowser/1.0\n\npanic: TODO - TraverseExpr\n\ngoroutine 9 [running]:\nmain.main()\n\nPlayground link: ${permalink}\n`,
+    );
+});
+
+test('a crash report says when the project is too large to link to', () => {
+    const tooLong = `https://example.com/#project=${'a'.repeat(MAX_PERMALINK_CHARS)}`;
+    const { crashReport } = panicNotification(
+        { message: 'boom', stack: 'goroutine 7 [running]:\n' },
+        userAgent,
+        tooLong,
+    );
+
+    expect(crashReport).toEqual({
+        headline: 'boom',
+        text: 'The language server hit an internal error and recovered.\nBrowser: TestBrowser/1.0\nPlayground link: none, because the project is too large to link to.\n\nboom\n\ngoroutine 7 [running]:\n',
+    });
+});
+
+test('crashIssueUrl puts the playground link in its own section', () => {
+    const { body } = issueFields(
+        crashIssueUrl({ headline: 'panic: boom', text: 'line 1\n', permalink }),
+    );
+
+    expect(body).toBe(
+        [
+            '## What happened',
+            '',
+            '<!-- What were you doing when the language server crashed? Paste the code that triggers it if you can. -->',
+            '',
+            '## Playground link',
+            '',
+            permalink,
+            '',
+            '## Crash report',
+            '',
+            '```',
+            'line 1',
+            '```',
+            '',
+        ].join('\n'),
+    );
+});
+
+test('crashIssueUrl leaves out a playground link that crowds out the report', () => {
+    const longLink = `https://example.com/#project=${'a'.repeat(6500)}`;
+    const text = 'x'.repeat(20_000);
+    const url = crashIssueUrl({
+        headline: 'panic: boom',
+        text,
+        permalink: longLink,
+    });
+
+    expect(url.length).toBeLessThanOrEqual(MAX_ISSUE_URL_CHARS);
+    const { body } = issueFields(url);
+    expect(body).not.toContain(longLink);
+    expect(body).toContain(
+        'The link to the project is too long for this form. Paste it from the full report, which **Copy report** puts on the clipboard.',
+    );
+    expect(body).toContain('x'.repeat(5000));
+});
+
+test('crashIssueUrl keeps a playground link that leaves room for the report', () => {
+    const link = `https://example.com/#project=${'a'.repeat(3000)}`;
+    const text = 'x'.repeat(20_000);
+    const url = crashIssueUrl({
+        headline: 'panic: boom',
+        text,
+        permalink: link,
+    });
+
+    expect(url.length).toBeLessThanOrEqual(MAX_ISSUE_URL_CHARS);
+    const { body } = issueFields(url);
+    expect(body).toContain(link);
+    expect(body).toContain('x'.repeat(1500));
 });
