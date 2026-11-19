@@ -22,8 +22,8 @@ export const PERMALINK_PARAM = 'project';
 
 /**
  * Returns the text of every project file under root, keyed by absolute path. It skips
- * node_modules and build output. currentText returns the editor's text for a path
- * when the editor holds one, since an edit reaches the editor before the file.
+ * node_modules and build output. currentText returns the text to record for a path,
+ * or undefined to record the file's content.
  */
 export function collectProjectFiles(
     root: FSDir,
@@ -135,6 +135,19 @@ function validateLayout(value: unknown, side: string): TabLayout {
         throw new Error(`The link holds no tabs for the ${side} side.`);
     }
     const { paths, active } = value;
+    for (const path of paths) {
+        // A tab may show build output, which the snapshot's files leave out.
+        if (!isAbsolutePath(path) || isInNodeModules(path)) {
+            throw new Error(
+                `The link opens a tab for ${path}, outside the project.`,
+            );
+        }
+    }
+    if (new Set(paths).size !== paths.length) {
+        throw new Error(
+            `The link opens the same file twice on the ${side} side.`,
+        );
+    }
     const activeIsValid =
         active === null
             ? paths.length === 0
@@ -148,17 +161,29 @@ function validateLayout(value: unknown, side: string): TabLayout {
 }
 
 /**
- * Reports whether path is an absolute path a snapshot may write. That excludes
- * node_modules, which holds the standard library, build output and any `.` or `..`
- * segment.
+ * Reports whether path is a file a snapshot may write: an absolute path outside
+ * node_modules, which holds the standard library, and outside build output.
  */
 function isProjectPath(path: string): boolean {
-    if (!path.startsWith('/')) return false;
-    const segments = path.slice(1).split('/');
-    if (segments.some((s) => s === '' || s === '.' || s === '..')) {
-        return false;
-    }
-    return segments[0] !== 'node_modules' && !isBuildPath(path);
+    return isAbsolutePath(path) && !isInNodeModules(path) && !isBuildPath(path);
+}
+
+/** Reports whether path starts with `/` and has no empty, `.` or `..` segment. */
+function isAbsolutePath(path: string): boolean {
+    return (
+        path.startsWith('/') &&
+        path
+            .slice(1)
+            .split('/')
+            .every(
+                (segment) =>
+                    segment !== '' && segment !== '.' && segment !== '..',
+            )
+    );
+}
+
+function isInNodeModules(path: string): boolean {
+    return path === '/node_modules' || path.startsWith('/node_modules/');
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

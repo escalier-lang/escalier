@@ -86,4 +86,26 @@ test('a damaged permalink says so and loads an example', async ({ page }) => {
         }),
     ).toBeVisible({ timeout: 30_000 });
     await waitForCompilation(page);
+    // The address bar drops the damaged link, so a reload shows no error.
+    expect(page.url()).not.toContain('#project');
+});
+
+test('when the clipboard refuses the link, the address bar holds it', async ({
+    page,
+}) => {
+    await page.addInitScript(() => {
+        navigator.clipboard.writeText = () =>
+            Promise.reject(new Error('denied'));
+    });
+    await loadPlayground(page);
+
+    await page.getByRole('button', { name: 'Share' }).click();
+
+    await expect(
+        page.getByRole('alert').filter({
+            hasText:
+                'Could not copy a link to this project. If the address bar shows a #project link, copy it from there.',
+        }),
+    ).toBeVisible();
+    expect(page.url()).toMatch(/#project=[A-Za-z0-9_-]+$/);
 });

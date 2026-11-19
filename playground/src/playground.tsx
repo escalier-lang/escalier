@@ -54,7 +54,13 @@ export const Playground = ({
     // Only auto-open build files whose source is currently open on the left.
     useEffect(() => {
         if (initialCompileDone) return;
-        const autoOpen = autoOpenBuildFilesRef.current;
+        if (!autoOpenBuildFilesRef.current) {
+            // Restored tabs show without waiting for the compile, since a project
+            // shared for a bug report may never produce build output. The editor
+            // fills an open build tab in when the compiler writes its file.
+            playgroundDispatch({ type: 'setInitialCompileDone' });
+            return;
+        }
 
         // Build a set of expected output prefixes from the open left-side
         // .esc files. The compiler maps all outputs under /build/ at the root:
@@ -70,13 +76,11 @@ export const Playground = ({
         let markedDone = false;
 
         const openBuildFile = (path: string) => {
-            if (autoOpen) {
-                editorDispatch({
-                    type: 'openFile',
-                    path,
-                    side: 'right',
-                });
-            }
+            editorDispatch({
+                type: 'openFile',
+                path,
+                side: 'right',
+            });
             if (!markedDone) {
                 markedDone = true;
                 queueMicrotask(() => {
@@ -96,13 +100,10 @@ export const Playground = ({
 
             if (!isBuildPath(event.path)) return;
 
-            // Only auto-open if it matches a left-side source file. With restored
-            // tabs, any build output shows that the compile finished.
-            const matchesSource =
-                !autoOpen ||
-                [...buildPrefixes].some((prefix) =>
-                    event.path.startsWith(prefix),
-                );
+            // Only auto-open if it matches a left-side source file
+            const matchesSource = [...buildPrefixes].some((prefix) =>
+                event.path.startsWith(prefix),
+            );
             if (matchesSource) {
                 openBuildFile(event.path);
             }
@@ -114,22 +115,15 @@ export const Playground = ({
         // set up. This handles the race where the WASM LSP compiles and
         // writes output before React runs this effect.
         const suffixes = ['.js', '.js.map', '.d.ts'];
-        const existingPaths = autoOpen
-            ? [...buildPrefixes].flatMap((prefix) =>
-                  suffixes.map((suffix) => prefix + suffix),
-              )
-            : // Opening a build file changes the right tabs, so the effect reads them
-              // from the store rather than re-running when they change.
-              useEditorStore
-                  .getState()
-                  .rightTabs.map((tab) => tab.path)
-                  .filter(isBuildPath);
-        for (const path of existingPaths) {
-            fs.stat(path, (err) => {
-                if (!err && !cancelled) {
-                    openBuildFile(path);
-                }
-            });
+        for (const prefix of buildPrefixes) {
+            for (const suffix of suffixes) {
+                const path = prefix + suffix;
+                fs.stat(path, (err) => {
+                    if (!err && !cancelled) {
+                        openBuildFile(path);
+                    }
+                });
+            }
         }
 
         return () => {

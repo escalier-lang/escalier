@@ -194,6 +194,10 @@ async function openSnapshot(encoded: string, fs: BrowserFS): Promise<boolean> {
         return true;
     } catch (err) {
         console.error('Failed to open the permalink:', err);
+        // Drop the link from the address bar so a reload doesn't repeat the error.
+        const url = new URL(window.location.href);
+        url.hash = '';
+        history.replaceState(null, '', url.toString());
         dispatch({
             type: 'showNotification',
             notification: {

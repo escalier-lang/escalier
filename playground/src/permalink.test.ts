@@ -156,6 +156,41 @@ describe('decodeSnapshot rejects', () => {
             message: 'The link holds no tabs for the left side.',
         },
         {
+            name: 'a tab outside the project',
+            value: {
+                v: 1,
+                files: {},
+                ...layouts,
+                left: { paths: ['/node_modules/lib.esc'], active: 0 },
+            },
+            message:
+                'The link opens a tab for /node_modules/lib.esc, outside the project.',
+        },
+        {
+            name: 'a relative tab path',
+            value: {
+                v: 1,
+                files: {},
+                ...layouts,
+                left: { paths: ['lib/index.esc'], active: 0 },
+            },
+            message:
+                'The link opens a tab for lib/index.esc, outside the project.',
+        },
+        {
+            name: 'the same tab twice on one side',
+            value: {
+                v: 1,
+                files: {},
+                ...layouts,
+                right: {
+                    paths: ['/build/lib/index.js', '/build/lib/index.js'],
+                    active: 0,
+                },
+            },
+            message: 'The link opens the same file twice on the right side.',
+        },
+        {
             name: 'an active tab past the last tab',
             value: {
                 v: 1,
