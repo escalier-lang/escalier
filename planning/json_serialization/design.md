@@ -107,8 +107,9 @@ can't express, such as a class with invariants to check or a wire format that
 doesn't follow the field layout.
 
 `toJSON` is the method `JSON.stringify` already calls on every object it
-visits. Generating it means encoding needs no Escalier runtime support at all.
-`JSON.stringify(shape)` produces the right output in plain JavaScript.
+visits. Generating it means `JSON.stringify(shape)` produces the right output
+in plain JavaScript, so TypeScript code that stringifies an Escalier value
+needs nothing from Escalier.
 
 `JsonValue` is an ordinary alias in a new `std:json` module:
 
@@ -134,7 +135,7 @@ Decoding reports failure through `throws` because Escalier checks a `throws`
 clause. A caller that forgets to handle a decode failure gets a diagnostic,
 which is what a `Result` would give, without a second error convention.
 
-### The `Serializable` predicate
+### Which types are serializable
 
 The checker decides whether a type `T` is serializable:
 
@@ -145,15 +146,12 @@ The checker decides whether a type `T` is serializable:
 - An object type is when every field is. A function-typed field fails it.
 - A class or enum is when it has the `toJSON`/`fromJSON` pair, generated or
   written by hand.
+- `Date`, `bigint`, `Set<T>`, and `Map<K, V>` are, when `T`, `K` and `V` are.
+  See [Built-in types](#built-in-types) for their encodings.
 - A union is when its members are, and when a decoder can tell them apart from
   the JSON alone (see [Unions](#unions)).
-- Everything else is not: `bigint`, `symbol`, functions, `Map`, `Set`, `Date`,
-  and classes without the pair.
-
-`Date` is excluded on purpose. It has a native `toJSON` that yields an ISO
-string, but nothing reads one back, and a decode that returns a `string` where
-the type says `Date` is the bug this proposal exists to prevent. A program that
-needs dates wraps one in a class with a hand-written pair.
+- Everything else is not: `symbol`, functions, other built-in classes such as
+  `RegExp` and `WeakMap`, and classes without the pair.
 
 `@json` on a class or enum whose fields fail the predicate is an error at the
 decorator, naming the field:
@@ -168,15 +166,42 @@ class Job {
 //        which is not serializable
 ```
 
-`Serializable` is also available as a constraint, `T: Serializable`, which
-the checker resolves with the rules above rather than structurally. It is a
-checker-resident predicate in the same way `NoInfer` is a checker-resident
-type.
+#### Self-encoding types
+
+Call `Date`, `bigint`, `Set` and `Map` the built-in types. They differ from the
+rest of the list because `JSON.stringify` encodes them wrongly by itself. It
+writes a `Map` or `Set` as `{}` and throws on a `bigint`. `Date` comes out
+right, but the generated encoders treat it with the others so that its encoding
+is fixed by this design rather than by the runtime.
+
+A serializable type is *self-encoding* when `JSON.stringify` encodes its runtime
+value correctly with no help. That holds when the type contains no built-in
+type, except inside a class or enum, whose `toJSON` converts its own fields. So
+`Array<Event>` is self-encoding even when `Event` has a `Date` field, and
+`{at: Date}` and `Map<string, number>` are not.
+
+`Serializable` is available as a constraint, `T: Serializable`, and admits
+self-encoding types only. Generic code encodes with plain `JSON.stringify`
+(see [Encoding](#encoding)), so a type argument that needs conversion would
+encode wrongly there. Instantiating the bound with one is an error at the
+instantiation:
+
+```esc
+fn save<T: Serializable>(key: string, value: &T) { ... }
+
+save("tags", Set(["a", "b"]))
+// error: `Set<string>` does not satisfy `Serializable` in a type parameter:
+//        it needs a type-directed encoder; wrap it in a `@json` class or
+//        pass an `Encoder<Set<string>>`
+```
+
+The checker resolves `Serializable` with these rules rather than structurally.
+It is a checker-resident predicate in the same way `NoInfer` is a
+checker-resident type.
 
 ### Encoding
 
-`json.stringify` in `std:json` is `JSON.stringify` with a `Serializable`
-constraint on its argument:
+`json.stringify` in `std:json` encodes a value to a JSON string:
 
 ```esc
 import "std:json"
@@ -186,29 +211,63 @@ val text = json.stringify(Shape.Circle(Point(0, 0), 5))
 ```
 
 ```esc
-declare fn stringify<T: Serializable>(value: &T, indent?: number) -> string
+declare fn stringify<T>(value: &T, indent?: number) -> string
+declare fn stringify<T>(value: &T, encoder: Encoder<T>, indent?: number) -> string
 ```
 
-Encoding needs no type information at runtime. Plain objects, arrays and
-primitives are already JSON. Classes and enum variants carry their own
-`toJSON`, and `JSON.stringify` calls it recursively. So a generic function can
-encode any `T: Serializable` with nothing passed in.
+The first form is a compiler intrinsic. The compiler checks that `T` is
+serializable at each call and picks a lowering:
+
+- When `T` is self-encoding, the call lowers to `JSON.stringify(value)`.
+  Plain objects, arrays and primitives are already JSON. Classes and enum
+  variants carry their own `toJSON`, and `JSON.stringify` calls it recursively.
+  This is the case whether `T` is concrete or a type parameter bounded by
+  `Serializable`.
+- When `T` is concrete but contains a built-in type outside a class, the
+  compiler emits a converter for `T` at the call, the same way `json.parse`
+  emits a decoder.
+- When `T` is a type parameter without a `Serializable` bound, the call is an
+  error, and the function has to take an `Encoder<T>` and use the second form.
+
+```esc
+val tags: Set<string> = Set(["a", "b"])
+val text = json.stringify(tags)
+```
+
+lowers to:
+
+```js
+const text = JSON.stringify(__json.encodeSet(tags, __json.encodeIdentity));
+```
+
+`Encoder<T>` mirrors `Decoder<T>` (see [Decoding](#decoding)):
+
+```esc
+type Encoder<T> = {
+    toJSON(value: &T) -> JsonValue,
+}
+```
+
+`json.encoder<T>()` is the intrinsic that turns a concrete `T` into an
+`Encoder<T>` value, the same way `json.decoder<T>()` does for decoding. A
+class value does not satisfy `Encoder<C>`, because its `toJSON` is an instance
+method. `json.encoder<C>()` wraps it.
 
 The argument is an immutable borrow because encoding only reads it.
 
 ### Decoding
 
 Decoding needs the type, because `JSON.parse` has no idea whether
-`{"x":0,"y":0}` should become a `Point`. `std:json` exports a compiler
-intrinsic:
+`{"x":0,"y":0}` should become a `Point`. `std:json` exports compiler
+intrinsics:
 
 ```esc
-declare fn parse<T: Serializable>(text: string) -> T throws DecodeError | SyntaxError
-declare fn decode<T: Serializable>(value: JsonValue) -> T throws DecodeError
+declare fn parse<T>(text: string) -> T throws DecodeError | SyntaxError
+declare fn decode<T>(value: JsonValue) -> T throws DecodeError
 ```
 
-At each call the compiler reads the instantiated `T` and emits a decoder for
-it in place. `T` must be given explicitly or inferred from an annotation:
+At each call the compiler checks that the instantiated `T` is serializable
+and emits a decoder for it in place. `T` must be given explicitly or inferred from an annotation:
 
 ```esc
 val shapes = json.parse<Array<Shape>>(text)
@@ -227,7 +286,7 @@ A `T` that is still a type parameter at the call can't be decoded, because
 nothing at runtime says what it stands for:
 
 ```esc
-fn load<T: Serializable>(text: string) -> T throws DecodeError {
+fn load<T: Serializable>(text: string) -> T throws DecodeError | SyntaxError {
     return json.parse<T>(text)
     // error: cannot build a decoder for type parameter `T`;
     //        take a `Decoder<T>` parameter and call it instead
@@ -251,7 +310,9 @@ val xs = load(text, json.decoder<Array<Point>>()) // intrinsic for a structural 
 
 A class value satisfies `Decoder<C>` structurally through its static
 `fromJSON`, so the common case passes the class by name. `json.decoder<T>()` is
-the intrinsic that turns any concrete `T` into a `Decoder<T>` value. Implicit
+the intrinsic that turns any concrete `T` into a `Decoder<T>` value.
+Decoding is type-directed for every type, so the built-in types need no rule
+here beyond having a decoder helper each. Implicit
 decoder passing, in the style of Scala's `given`, is left for later. It can be
 added on top of this without changing the generated code.
 
@@ -418,10 +479,14 @@ enum MyOption<T> {
 `MyOption.fromJSON(JSON.parse(text), Point)`. This is Kotlin's
 `Box.serializer(Int.serializer())` with the compiler filling in the arguments.
 
-Encoding a generic value needs nothing extra, for the reason given under
-[Encoding](#encoding). The type parameters of a `@json` class or enum get an
-implicit `Serializable` bound, so `MyOption<fn () -> void>` is an error where
-it is written.
+The type parameters of a `@json` class or enum get an implicit `Serializable`
+bound. So `MyOption<fn () -> void>` is an error where it is written, and so is
+`MyOption<Date>`. The generated `toJSON` returns `this.value` unconverted
+because it doesn't know what `T` is, so `T` must be self-encoding (see
+[Self-encoding types](#self-encoding-types)). This keeps encoding a generic
+value free of extra arguments. A program that needs an optional date wraps the
+`Date` in a `@json` class, or declares the field as `at?: Date` instead of
+`MyOption<Date>`.
 
 A generic class with a hand-written pair must give `fromJSON` the same
 signature, with one `Decoder` per type parameter, so that generated code can
@@ -454,6 +519,112 @@ Numbers. `JSON.stringify` writes `NaN` and the infinities as `null`, which then
 fails to decode as `number`. Encoding leaves this as is, matching JavaScript.
 The decoder reports it as a `DecodeError` at the field, which points at the
 cause.
+
+### Built-in types
+
+`Date`, `bigint`, `Set` and `Map` have fixed encodings:
+
+| Type | JSON | Example |
+|---|---|---|
+| `Date` | ISO 8601 string from `toISOString()` | `"2026-11-19T00:00:00.000Z"` |
+| `bigint` | Decimal string | `"9007199254740993"` |
+| `Set<T>` | Array of encoded elements, in insertion order | `["a", "b"]` |
+| `Map<K, V>` | Array of `[key, value]` pairs, in insertion order | `[["ada", 36], ["alan", 41]]` |
+
+A `bigint` encodes as a string because a JSON number past 2^53 loses precision
+in every JavaScript reader. A `Map` encodes as pairs rather than an object
+because its keys need not be strings. A `Map<number, V>` written as an object
+would come back with string keys.
+
+None of these encodings say which type produced them. `"2026-11-19T00:00:00.000Z"`
+is also a valid `string`. The decoder relies on the static type to choose, as it
+does for every other value.
+
+A `@json` class with a field of a built-in type converts the field in its
+generated `toJSON`, because it knows the field's type:
+
+```esc
+@json
+class Event {
+    name: string,
+    at: Date,
+    tags: Set<string>,
+}
+```
+
+lowers to:
+
+```js
+export class Event {
+  // constructor unchanged
+  toJSON() {
+    return {
+      name: this.name,
+      at: __json.encodeDate(this.at),
+      tags: __json.encodeSet(this.tags, __json.encodeIdentity),
+    };
+  }
+  static fromJSON(v, path = []) {
+    const o = __json.expectObject(v, path, "Event");
+    const self = Object.create(Event.prototype);
+    self.name = __json.decodeString(o.name, [...path, "name"]);
+    self.at = __json.decodeDate(o.at, [...path, "at"]);
+    self.tags = __json.decodeSet(o.tags, [...path, "tags"], __json.decodeString);
+    return self;
+  }
+}
+```
+
+This is what makes `Event`, and any array or object holding it, self-encoding.
+`JSON.stringify` calls `Event.prototype.toJSON` and gets JSON back, so generic
+code can encode an `Event` with no encoder passed in.
+
+The runtime helpers for the built-in types:
+
+```js
+export const encodeIdentity = (x) => x;
+export const encodeDate = (d) => d.toISOString();
+export const encodeBigInt = (n) => n.toString();
+export const encodeSet = (s, encItem) => Array.from(s, encItem);
+export const encodeMap = (m, encKey, encVal) =>
+  Array.from(m, ([k, val]) => [encKey(k), encVal(val)]);
+
+export function decodeDate(v, path) {
+  const s = decodeString(v, path);
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) throw new DecodeError(path, "ISO date string", v);
+  return d;
+}
+
+export function decodeBigInt(v, path) {
+  const s = decodeString(v, path);
+  if (!/^-?\d+$/.test(s)) throw new DecodeError(path, "decimal integer string", v);
+  return BigInt(s);
+}
+
+export function decodeSet(v, path, decItem) {
+  const arr = expectArray(v, path, "Set");
+  return new Set(arr.map((x, i) => decItem(x, [...path, i])));
+}
+
+export function decodeMap(v, path, decKey, decVal) {
+  const arr = expectArray(v, path, "Map");
+  return new Map(arr.map((pair, i) => {
+    const p = [...path, i];
+    const [k, val] = expectTuple(pair, p, 2);
+    return [decKey(k, [...p, 0]), decVal(val, [...p, 1])];
+  }));
+}
+```
+
+`encodeIdentity` is the element encoder for a self-encoding element type, since
+`JSON.stringify` already handles those. A `Set<Set<string>>` nests
+`encodeSet` instead.
+
+No prototype of a built-in gets a `toJSON` method. Adding one, such as
+`Map.prototype.toJSON`, would change `JSON.stringify` for every library in the
+process, and it would still leave decoding with no way to know a string should
+become a `Date`.
 
 ### Unions
 
@@ -507,18 +678,23 @@ the rest until then.
 
 ## Implementation outline
 
-1. Add `std:json` with `JsonValue`, `DecodeError`, `Decoder<T>`, and the
-   `stringify`, `parse`, `decode` and `decoder` declarations.
-2. Add the `__json` decode helpers to `@escalier/runtime`.
+1. Add `std:json` with `JsonValue`, `DecodeError`, `Decoder<T>`, `Encoder<T>`,
+   and the `stringify`, `parse`, `decode`, `encoder` and `decoder`
+   declarations.
+2. Add the `__json` encode and decode helpers to `@escalier/runtime`,
+   including the ones for the built-in types.
 3. Allow decorators on `enum` declarations in the parser. They are rejected
    today in [internal/parser/decl.go](../../internal/parser/decl.go). Validate
    `@json` and its argument in the checker.
-4. Add the `Serializable` predicate to the solver, and the diagnostic for a
-   `@json` type whose fields fail it.
+4. Add the serializable and self-encoding predicates to the solver, the
+   diagnostic for a `@json` type whose fields fail the first, and the
+   diagnostic for a `Serializable` bound instantiated with a type that fails
+   the second.
 5. Synthesize `toJSON` and `fromJSON` member types on `@json` classes and enum
    namespaces, so that `Point.fromJSON` and `Point: Decoder<Point>` type-check.
-6. Emit the generated methods in codegen, and the decoders at the intrinsic call
-   sites.
+6. Emit the generated methods in codegen, the decoders at the intrinsic call
+   sites, and the converters at `json.stringify` calls whose type is not
+   self-encoding.
 7. Add the union disambiguation rule and its diagnostic.
 8. Later: member-level decorators and the field options, then `@json` on
    `sealed` class hierarchies once #842 lands.
@@ -537,6 +713,9 @@ JavaScript through a round trip.
 - Should dropping unknown keys be configurable per type, as Kotlin's
   `ignoreUnknownKeys` is per format? A `@json({strict: true})` option would
   cover security-sensitive inputs.
-- Should `bigint` and the planned integer types encode as strings? JSON numbers
-  lose precision past 2^53, so a number encoding is unsafe and a string
-  encoding needs agreement with the reader.
+- Should `Map<string, V>` encode as an object instead of pairs? An object is
+  what a TypeScript reader expects for a string-keyed map, at the cost of a
+  second `Map` encoding to explain.
+- Should the planned integer types encode as numbers when they fit in 2^53?
+  That makes the wire format depend on the integer width, where `bigint`
+  always uses a string.
