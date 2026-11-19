@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 // Mock monaco-editor-core — uses the auto mock in __mocks__/monaco-editor-core.ts.
 // vi.mock calls are hoisted by vitest automatically.
 vi.mock('monaco-editor-core');
+import * as monaco from 'monaco-editor-core';
 
 // Mock the language module to avoid Monaco language registration side effects.
 vi.mock('./language', () => ({ languageID: 'escalier' }));
@@ -388,6 +389,79 @@ describe('Editor', () => {
             );
 
             expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+        });
+    });
+
+    describe('project modification', () => {
+        /** Returns the content-change listener the editor attached to the model it created last. */
+        function lastModelChangeListener() {
+            const created = vi
+                .mocked(monaco.editor.createModel)
+                .mock.results.at(-1)?.value as {
+                onDidChangeContent: ReturnType<typeof vi.fn>;
+            };
+            return created.onDidChangeContent.mock.calls[0]?.[0] as
+                | ((event: { isFlush: boolean }) => void)
+                | undefined;
+        }
+
+        test('reports a user edit to a writable file', () => {
+            setStoreState({
+                leftTabs: [{ path: '/bin/main.esc' }],
+                activeLeftTabIndex: 0,
+            });
+            const onProjectModified = vi.fn();
+            render(
+                <Editor
+                    fs={makeFakeFS()}
+                    isReadOnly={() => false}
+                    onProjectModified={onProjectModified}
+                />,
+            );
+
+            const listener = lastModelChangeListener();
+            listener?.({ isFlush: true });
+            expect(onProjectModified).not.toHaveBeenCalled();
+            listener?.({ isFlush: false });
+            expect(onProjectModified).toHaveBeenCalledTimes(1);
+        });
+
+        test('reports a file created in the file explorer', () => {
+            const fs = makeFakeFS();
+            Object.assign(fs, {
+                writeFile: vi.fn(
+                    (
+                        _path: string,
+                        _data: Uint8Array,
+                        cb: (err: Error | null) => void,
+                    ) => cb(null),
+                ),
+            });
+            const onProjectModified = vi.fn();
+            render(<Editor fs={fs} onProjectModified={onProjectModified} />);
+
+            fireEvent.click(screen.getByLabelText('New File'));
+            const input = screen.getByLabelText('New file name');
+            fireEvent.change(input, { target: { value: 'notes.esc' } });
+            fireEvent.keyDown(input, { key: 'Enter' });
+
+            expect(onProjectModified).toHaveBeenCalledTimes(1);
+        });
+
+        test('ignores a read-only file', () => {
+            setStoreState({
+                leftTabs: [{ path: '/build/bin/main.js' }],
+                activeLeftTabIndex: 0,
+            });
+            render(
+                <Editor
+                    fs={makeFakeFS()}
+                    isReadOnly={() => true}
+                    onProjectModified={vi.fn()}
+                />,
+            );
+
+            expect(lastModelChangeListener()).toBeUndefined();
         });
     });
 });

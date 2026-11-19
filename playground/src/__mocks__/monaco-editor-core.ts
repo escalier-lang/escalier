@@ -12,7 +12,10 @@ function createMockEditor() {
 
 export const editor = {
     create: vi.fn(() => createMockEditor()),
-    createModel: vi.fn(() => ({ getValue: vi.fn(() => '') })),
+    createModel: vi.fn(() => ({
+        getValue: vi.fn(() => ''),
+        onDidChangeContent: vi.fn(() => ({ dispose: vi.fn() })),
+    })),
     getModel: vi.fn(() => null),
 };
 

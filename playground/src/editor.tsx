@@ -139,6 +139,12 @@ export type EditorProps = {
     rightPaneOverlay?: ReactNode;
     banner?: ReactNode;
     toolbar?: ReactNode;
+    /**
+     * Called when the user changes the project: an edit to a file that isn't
+     * read-only, or a file or directory created, renamed or deleted in the
+     * file explorer.
+     */
+    onProjectModified?: () => void;
 };
 
 export const Editor = ({
@@ -148,8 +154,12 @@ export const Editor = ({
     rightPaneOverlay,
     banner,
     toolbar,
+    onProjectModified,
 }: EditorProps) => {
     const { dispatch, ...state } = useEditorStore();
+    // Model listeners outlive a render, so they read the latest callback from a ref.
+    const onProjectModifiedRef = useRef(onProjectModified);
+    onProjectModifiedRef.current = onProjectModified;
     const inputDivRef = useRef<HTMLDivElement>(null);
     const outputDivRef = useRef<HTMLDivElement>(null);
     const inputEditorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(
@@ -205,10 +215,19 @@ export const Editor = ({
                 const lang = languageForPath(path);
                 const text = content ?? loadFileContent(fs, path) ?? '';
                 model = monaco.editor.createModel(text, lang, uri);
+                if (!isReadOnly?.(path)) {
+                    model.onDidChangeContent((event) => {
+                        // A flush replaces the whole value from code, such as a
+                        // file reloaded from the filesystem, rather than a user edit.
+                        if (!event.isFlush) {
+                            onProjectModifiedRef.current?.();
+                        }
+                    });
+                }
             }
             return model;
         },
-        [fs],
+        [fs, isReadOnly],
     );
 
     // Initialize editors
@@ -349,6 +368,11 @@ export const Editor = ({
         [dispatch],
     );
 
+    const handleFilesChange = useCallback(
+        () => onProjectModifiedRef.current?.(),
+        [],
+    );
+
     const handleFileRename = useCallback(
         (oldPath: string, newPath: string) =>
             dispatch({ type: 'renameFile', oldPath, newPath }),
@@ -374,6 +398,7 @@ export const Editor = ({
                 onFileOpen={handleFileOpen}
                 onFileDelete={handleFileDelete}
                 onFileRename={handleFileRename}
+                onFilesChange={handleFilesChange}
             />
 
             {/* Input tabs */}

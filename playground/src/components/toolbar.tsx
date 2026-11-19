@@ -14,6 +14,11 @@ type ToolbarProps = {
     examples: DropdownItem[];
     onSelectTemplate: (slug: string) => void;
     onSelectExample: (slug: string) => void;
+    /**
+     * Whether the user has changed the current project. Replacing a project asks
+     * for confirmation only when this is true.
+     */
+    projectModified: boolean;
 };
 
 const themeLabels: Record<ThemePreference, string> = {
@@ -38,6 +43,7 @@ export const Toolbar = ({
     examples,
     onSelectTemplate,
     onSelectExample,
+    projectModified,
 }: ToolbarProps) => {
     const themePreference = useThemeStore((state) => state.preference);
     const setThemePreference = useThemeStore((state) => state.setPreference);
@@ -55,13 +61,27 @@ export const Toolbar = ({
         null,
     );
 
-    const handleSelectTemplate = useCallback((slug: string, label: string) => {
-        setPendingAction({ kind: 'template', slug, label });
-    }, []);
+    const handleSelectTemplate = useCallback(
+        (slug: string, label: string) => {
+            if (!projectModified) {
+                onSelectTemplate(slug);
+                return;
+            }
+            setPendingAction({ kind: 'template', slug, label });
+        },
+        [projectModified, onSelectTemplate],
+    );
 
-    const handleSelectExample = useCallback((slug: string, label: string) => {
-        setPendingAction({ kind: 'example', slug, label });
-    }, []);
+    const handleSelectExample = useCallback(
+        (slug: string, label: string) => {
+            if (!projectModified) {
+                onSelectExample(slug);
+                return;
+            }
+            setPendingAction({ kind: 'example', slug, label });
+        },
+        [projectModified, onSelectExample],
+    );
 
     const handleConfirm = useCallback(() => {
         if (!pendingAction) return;
