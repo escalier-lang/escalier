@@ -18,6 +18,7 @@ import { BrowserFS } from './fs/browser-fs';
 import type { Manifest } from './fs/volume';
 import { setupLanguage } from './language';
 import { Client } from './lsp-client/client';
+import { workerLauncher } from './lsp-client/worker-launcher';
 import { Playground } from './playground';
 import { loadProject } from './project-loader';
 import { downloadStartupFiles, runStartup } from './startup';
@@ -103,22 +104,34 @@ async function start(
         });
     }
 
-    // Create a new client for the language server and
-    // initialize it with the process ID and root URI.
-    const client = new Client(wasm, '/', fs, {
-        // The interop loader walks for `escalier.toml`+`internal/interop/data`
-        // to find its built-in override files; that walk can't succeed in
-        // the playground's virtual filesystem, so point it at the path
-        // where copy-files.js mirrors the data dir (see volume.ts).
-        ESCALIER_BUILTINS_DIR: '/node_modules/escalier-builtins',
-        // The same directory holds the standard library's `.esc` files, which the
-        // type checker resolves `std:prelude` and the ambient builtins from.
-        ESCALIER_STDLIB_DIR: '/node_modules/escalier-builtins',
-        // The dev server, which the e2e tests run against, lets a marker comment crash
-        // the language server so the tests can exercise recovery. See runTestHooks in
-        // cmd/lsp-server/recover.go.
-        ...(import.meta.env.DEV ? { ESCALIER_LSP_TEST_HOOKS: '1' } : {}),
-    });
+    // The language server runs in a worker, so a long check leaves the page responsive.
+    // It reads and writes this thread's filesystem by sending the page messages.
+    const launcher = workerLauncher(
+        {
+            wasm,
+            cwd: '/',
+            env: {
+                // The interop loader looks for `escalier.toml` beside
+                // `internal/interop/data` to find its built-in override files. That
+                // search fails in the playground's virtual filesystem, so this points
+                // it at the path where copy-files.js mirrors the data directory (see
+                // volume.ts).
+                ESCALIER_BUILTINS_DIR: '/node_modules/escalier-builtins',
+                // The same directory holds the standard library's `.esc` files, which the
+                // type checker resolves `std:prelude` and the ambient builtins from.
+                ESCALIER_STDLIB_DIR: '/node_modules/escalier-builtins',
+                // The dev server, which the e2e tests run against, lets marker comments
+                // crash or slow down the language server, so the tests can exercise
+                // recovery and a slow check. See runTestHooks in
+                // cmd/lsp-server/recover.go.
+                ...(import.meta.env.DEV
+                    ? { ESCALIER_LSP_TEST_HOOKS: '1' }
+                    : {}),
+            },
+        },
+        fs,
+    );
+    const client = new Client(launcher);
     client.onServerCrash((event) => {
         useEditorStore.getState().dispatch({
             type: 'showNotification',
@@ -138,7 +151,8 @@ async function start(
     );
     client.run();
     const initResponse: InitializeResult = await client.initialize({
-        processId: process.pid,
+        // The server runs in a worker, which has no process of its own.
+        processId: null,
         rootUri: 'file:///',
         capabilities: {},
     });

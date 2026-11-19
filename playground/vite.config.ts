@@ -13,5 +13,8 @@ export default defineConfig({
         // monacoCorePlugin could redirect it.
         exclude: ['monaco-editor'],
     },
+    // The language server's worker is a module worker, which the page starts with
+    // `new Worker(url, { type: 'module' })`.
+    worker: { format: 'es' },
     base: process.env.APP_ENV === 'prod' ? '/escalier/' : '/',
 });
