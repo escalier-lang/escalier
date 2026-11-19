@@ -302,6 +302,26 @@ test('crashToasts shows toasts in call order when a later link is ready first', 
     );
 });
 
+test('crashToasts still shows later toasts after one throws', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const shown: string[] = [];
+    const show = crashToasts(
+        () => Promise.resolve('link'),
+        (notification) => shown.push(notification.message),
+    );
+
+    show(() => {
+        throw new Error('bad toast');
+    });
+    show(linkToast('next'));
+
+    await vi.waitFor(() => expect(shown).toEqual(['next: link']));
+    expect(console.error).toHaveBeenCalledWith(
+        'Failed to show a crash toast:',
+        new Error('bad toast'),
+    );
+});
+
 test('crashToasts shows the toast without a link when capture fails', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const shown: string[] = [];

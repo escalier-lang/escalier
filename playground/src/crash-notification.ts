@@ -245,7 +245,8 @@ function issueLinkSection(link: IssueLink): string[] {
  * Returns a function that shows the crash toast its argument builds from a permalink.
  * Each call starts capture at once, and the toast shows after the toasts of earlier
  * calls, so toasts show in the order of the calls. When capture rejects, the toast
- * gets undefined in place of a permalink.
+ * gets undefined in place of a permalink. A toast that throws while it is built or
+ * shown is logged, and later toasts still show.
  */
 export function crashToasts(
     capture: () => Promise<string>,
@@ -260,7 +261,13 @@ export function crashToasts(
             );
             return undefined;
         });
-        lastShown = lastShown.then(async () => show(toast(await permalink)));
+        // A toast that fails to build or show is logged and skipped, so the next
+        // toast still waits on a settled promise rather than a rejected one.
+        lastShown = lastShown
+            .then(async () => show(toast(await permalink)))
+            .catch((err) => {
+                console.error('Failed to show a crash toast:', err);
+            });
     };
 }
 
