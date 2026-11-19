@@ -17,6 +17,7 @@ import {
     crashReportFrom,
     decideRestart,
 } from './client';
+import { type ServerLauncher, inProcessLauncher } from './server-process';
 
 let client: Client;
 let runPromise: Promise<unknown>;
@@ -27,6 +28,32 @@ const buffer = fs.readFileSync(
     path.join(__dirname, '../../../bin/lsp-server.wasm'),
 );
 
+// The compiler's interop data, which holds the standard library's `.esc` files.
+const interopData = path.join(__dirname, '../../../internal/interop/data');
+
+/** Returns a launcher that runs wasm in this thread, reading files from disk. */
+function testLauncher(wasm: ArrayBufferLike): ServerLauncher {
+    return inProcessLauncher(
+        {
+            wasm: wasm as ArrayBuffer,
+            cwd: process.cwd(),
+            env: {
+                // The server finds the interop override directory through
+                // ESCALIER_BUILTINS_DIR. main.tsx points it into the playground's
+                // virtual filesystem, and the tests point it at the source on disk.
+                ESCALIER_BUILTINS_DIR: interopData,
+                // The type checker resolves `std:prelude` and the ambient builtins
+                // from the same directory.
+                ESCALIER_STDLIB_DIR: interopData,
+                // Lets a test crash the server with a marker comment. See
+                // runTestHooks in cmd/lsp-server/recover.go.
+                ESCALIER_LSP_TEST_HOOKS: '1',
+            },
+        },
+        fs,
+    );
+}
+
 const fileUri = () => `${rootUri}/bin/foo.esc`;
 const filePath = () => path.join(tmpDir, 'bin', 'foo.esc');
 
@@ -36,25 +63,7 @@ beforeEach(() => {
     fs.mkdirSync(path.join(tmpDir, 'bin'), { recursive: true });
     rootUri = `file://${tmpDir}`;
 
-    const cwd = process.cwd();
-    client = new Client(buffer, cwd, fs, {
-        // The WASM Go runtime needs ESCALIER_BUILTINS_DIR to find the
-        // interop override directory; in production this is set by
-        // main.tsx, but here we point directly at the on-disk source.
-        ESCALIER_BUILTINS_DIR: path.join(
-            __dirname,
-            '../../../internal/interop/data',
-        ),
-        // The type checker resolves `std:prelude` and the ambient builtins from
-        // the same directory.
-        ESCALIER_STDLIB_DIR: path.join(
-            __dirname,
-            '../../../internal/interop/data',
-        ),
-        // Lets a test crash the server with a marker comment. See runTestHooks in
-        // cmd/lsp-server/recover.go.
-        ESCALIER_LSP_TEST_HOOKS: '1',
-    });
+    client = new Client(testLauncher(buffer));
     runPromise = client.run();
 });
 
@@ -692,11 +701,11 @@ test(
 );
 
 test('constructing a second client leaves the running one usable', async () => {
-    // Go resolves `globalThis.fs` on every syscall. Building a Client used to
-    // install its shim there, which repointed this already-running server's
-    // stdin at the new streams, and it never read another message. This
+    // Go resolves `globalThis.fs` on every syscall. A client that installed its
+    // shim there on construction would repoint this already-running server's
+    // stdin at the new streams, and it would never read another message. This
     // initialize would hang.
-    const second = new Client(buffer, process.cwd(), fs);
+    const second = new Client(testLauncher(buffer));
     expect(second).toBeDefined();
 
     const initResult = await client.initialize({
@@ -705,15 +714,6 @@ test('constructing a second client leaves the running one usable', async () => {
         capabilities: {},
     });
     expect(initResult).toBeDefined();
-});
-
-test('a second client refuses to run while one is already running', async () => {
-    // One set of globals serves every runtime, so the second would take over
-    // the first's streams. Refusing says so where the mistake is.
-    const second = new Client(buffer, process.cwd(), fs);
-    await expect(second.run()).rejects.toThrow(
-        'an LSP server is already running: only one Client can run at a time',
-    );
 });
 
 // A comment that makes the server's check panic, which the server recovers from.
@@ -926,9 +926,7 @@ test(
         const error = vi.spyOn(console, 'error').mockImplementation(() => {});
         try {
             const broken = new Client(
-                new Uint8Array([0, 1, 2, 3]).buffer,
-                process.cwd(),
-                fs,
+                testLauncher(new Uint8Array([0, 1, 2, 3]).buffer),
             );
             const events: ServerCrashEvent['kind'][] = [];
             const reports: string[] = [];
@@ -968,26 +966,6 @@ test(
         }
     },
 );
-
-test('a trap thrown out of _resume ends the server the way an exit does', async () => {
-    const testClient = standaloneClient();
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
-    try {
-        // @ts-expect-error: go is private
-        const go = testClient.go;
-        // The instance never ran, so resuming it throws, as a trap would.
-        go._resume();
-
-        expect(go.exited).toBe(true);
-        expect(error).toHaveBeenCalledWith(
-            '[Escalier LSP] the server trapped:',
-            expect.any(TypeError),
-        );
-    } finally {
-        error.mockRestore();
-    }
-    await testClient.stop();
-});
 
 test.each<[string, string, string]>([
     [
@@ -1148,13 +1126,9 @@ test('RequestGate fails a request held across a second close', async () => {
 
 /** Returns a Client that no server reads from or writes to. */
 function standaloneClient(): Client {
-    const mockFS = {
-        fstat: vi.fn(),
-        lstat: vi.fn(),
-        open: vi.fn(),
-        read: vi.fn(),
-    };
-    return new Client(buffer, process.cwd(), mockFS as any);
+    return new Client({
+        launch: () => Promise.reject(new Error('the test runs no server')),
+    });
 }
 
 /** Returns payload framed with a Content-Length header that counts its UTF-8 bytes. */

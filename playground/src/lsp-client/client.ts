@@ -1,5 +1,3 @@
-import type { Mode, OpenMode, PathLike, Stats } from 'node:fs';
-
 import EventEmitter from 'eventemitter3';
 import type * as lsp from 'vscode-languageserver-protocol';
 import {
@@ -11,59 +9,14 @@ import {
     createMessageConnection,
 } from 'vscode-languageserver-protocol/browser';
 
-import type { FSAPI } from '#fs/fs-api';
-
-import './wasm_exec'; // run for side-effects
-
-const Go = globalThis.Go;
-
-// The Client whose shims `globalThis` currently carries, or undefined when no
-// runtime is running. See run().
-let runningClient: Client | undefined;
+import type { ServerLauncher, ServerProcess } from './server-process';
+import {
+    STDERR_TAIL_CHARS,
+    SimpleStream,
+    describeError,
+} from './server-runtime';
 
 const encoder = new TextEncoder();
-const decoder = new TextDecoder();
-
-const enosys = () => {
-    const err = new Error('not implemented');
-    // @ts-ignore
-    err.code = 'ENOSYS';
-    return err;
-};
-
-class SimpleStream {
-    private chunks: Array<Uint8Array>;
-    private emitter: EventEmitter;
-
-    constructor() {
-        this.chunks = [];
-        this.emitter = new EventEmitter();
-    }
-
-    on(event: string, listener: (chunk: Uint8Array) => void): Disposable {
-        this.emitter.on(event, listener);
-        return Disposable.create(() => this.emitter.off(event, listener));
-    }
-
-    write(chunk: Uint8Array) {
-        this.chunks.push(chunk);
-        this.emitter.emit('data', chunk);
-    }
-
-    /**
-     * Removes and returns up to maxLength bytes from the front of the stream, or
-     * undefined when the stream is empty. A chunk longer than maxLength stays
-     * queued with its first maxLength bytes removed.
-     */
-    read(maxLength = Number.POSITIVE_INFINITY): Uint8Array | undefined {
-        const chunk = this.chunks.shift();
-        if (chunk && chunk.length > maxLength) {
-            this.chunks.unshift(chunk.subarray(maxLength));
-            return chunk.subarray(0, maxLength);
-        }
-        return chunk;
-    }
-}
 
 /**
  * Returns a Node `Buffer` view of chunk where `Buffer` exists, and chunk itself
@@ -198,9 +151,6 @@ export type ServerCrashEvent = {
  */
 export type PanicReport = { message: string; stack: string };
 
-/** How much of the server's stderr the client keeps for a crash report. */
-const STDERR_TAIL_CHARS = 64 * 1024;
-
 /** How much of the server's stderr a crash report holds when no panic header is found. */
 const CRASH_REPORT_FALLBACK_CHARS = 4 * 1024;
 
@@ -289,11 +239,6 @@ type ServerState =
      */
     | 'waiting-for-edit';
 
-/** Returns err as text, with its stack when it has one. */
-function describeError(err: unknown): string {
-    return err instanceof Error ? (err.stack ?? String(err)) : String(err);
-}
-
 /**
  * The params of an `initialize` request, without the deprecated rootUri. The caller
  * names the workspace in workspaceFolders.
@@ -301,28 +246,21 @@ function describeError(err: unknown): string {
 export type InitializeParams = Omit<lsp.InitializeParams, 'rootUri'>;
 
 export class Client {
-    // The runtime's parts, assigned by createRuntime(). The fs shim reads the streams
-    // through `this` on every call, so a restart's new streams serve the new runtime.
-    private go: any;
+    /** Starts each server, the first one and every one that replaces a crashed server. */
+    private launcher: ServerLauncher;
+    /** The running server, or undefined before the first one starts. */
+    private process: ServerProcess | undefined;
+    // The streams the connection writes to and reads from, which createRuntime()
+    // replaces for each server. A launched server reads stdin and writes stdout.
     private stdin!: SimpleStream;
     private stdout!: SimpleStream;
     /** Sends requests and notifications over stdin and reads the replies from stdout. */
     private connection!: MessageConnection;
-    private wasmBuf: ArrayBuffer;
-    private errorBuffer: string;
-    /**
-     * What the current server wrote to stderr, at least the last STDERR_TAIL_CHARS of it
-     * and at most twice that.
-     */
-    private stderrTail = '';
-    /** Set by `stop()`. Silences the server's output and drops notifications from then on. */
+    /** Set by `stop()`. Drops notifications from then on. */
     private stopped = false;
     /** Set when `stop()` begins, so the server's exit isn't taken for a crash. */
     private stopping = false;
 
-    private env: Record<string, string>;
-    /** The compiled server, kept so a restart doesn't compile it again. */
-    private wasmModule: WebAssembly.Module | undefined;
     private state: ServerState = 'running';
     /** Holds requests while a server starts after a crash. */
     private requests = new RequestGate();
@@ -350,312 +288,22 @@ export class Client {
      */
     private notifications = new EventEmitter();
 
-    // Go resolves `globalThis.fs` and `globalThis.process` on every syscall,
-    // so whichever value is installed last serves every runtime rather than
-    // the one that installed it. These are built here and installed in run(),
-    // which keeps constructing a Client from reaching into a running one.
-    private fsShim: unknown;
-    private processShim: unknown;
-
-    constructor(
-        wasmBuf: ArrayBuffer,
-        cwd: string,
-        fs: FSAPI,
-        env: Record<string, string> = {},
-    ) {
-        this.wasmBuf = wasmBuf;
-        this.env = env;
-        this.errorBuffer = '';
-
-        // const enosys = () => {
-        //     const err = new Error('not implemented');
-        //     // @ts-ignore
-        //     err.code = 'ENOSYS';
-        //     return err;
-        // };
-
-        this.fsShim = {
-            // Defined in src/syscall/syscall_js.go in https://github.com/golang
-            constants: {
-                O_WRONLY: 1,
-                O_RDWR: 2,
-                O_CREAT: 64,
-                O_TRUNC: 512,
-                O_APPEND: 1024,
-                O_EXCL: 128,
-                O_DIRECTORY: 8192,
-            },
-            // writeSync(fd, buf) {
-            //     outputBuf += decoder.decode(buf);
-            //     const nl = outputBuf.lastIndexOf("\n");
-            //     if (nl != -1) {
-            //         console.log(outputBuf.substring(0, nl));
-            //         outputBuf = outputBuf.substring(nl + 1);
-            //     }
-            //     return buf.length;
-            // },
-            writeSync: (fd: number, buffer: Uint8Array) => {
-                if (fd === 1) {
-                    const value = decoder.decode(buffer);
-                    console.log('writeSync:', value);
-                } else if (fd === 2) {
-                    const value = decoder.decode(buffer);
-                    this.recordStderr(value);
-                    if (value === '\n') {
-                        console.error(this.errorBuffer);
-                        this.errorBuffer = '';
-                    } else {
-                        this.errorBuffer += value;
-                    }
-                } else {
-                    console.log('writeSync:', fd, buffer);
-                }
-            },
-            // write(fd, buf, offset, length, position, callback) {
-            //     if (offset !== 0 || length !== buf.length || position !== null) {
-            //         callback(enosys());
-            //         return;
-            //     }
-            //     const n = this.writeSync(fd, buf);
-            //     callback(null, n);
-            // },
-            write: (
-                fd: number,
-                buffer: Uint8Array,
-                _offset: number,
-                length: number,
-                _position: number | null | undefined,
-                callback: (
-                    err: NodeJS.ErrnoException | null,
-                    written: number,
-                    buffer: Uint8Array,
-                ) => void,
-            ) => {
-                if (fd === 1) {
-                    this.stdout.write(buffer);
-                    setTimeout(() => {
-                        callback(null, length, buffer);
-                    }, 0);
-                } else if (fd === 2) {
-                    const value = decoder.decode(buffer);
-                    this.recordStderr(value);
-                    if (!this.stopped) {
-                        console.warn('[Escalier LSP] -', value);
-                    }
-                    setTimeout(() => {
-                        callback(null, length, buffer);
-                    }, 0);
-                } else {
-                    fs.write(
-                        fd,
-                        buffer,
-                        0,
-                        length,
-                        null,
-                        (err, bytesWritten, buf) => {
-                            setTimeout(() => {
-                                callback(err, bytesWritten, buf);
-                            }, 0);
-                        },
-                    );
-                }
-            },
-            // chmod(path, mode, callback) {callback(enosys())},
-            // chown(path, uid, gid, callback) {callback(enosys())},
-            close(fd: number, callback: (error: Error | null) => void) {
-                if (fd > 2) {
-                    return fs.close(fd, callback);
-                }
-                setTimeout(() => {
-                    callback(null);
-                }, 0);
-            },
-            // fchmod(fd, mode, callback) {callback(enosys())},
-            // fchown(fd, uid, gid, callback) {callback(enosys())},
-            fstat(
-                fd: number,
-                callback: (
-                    err: NodeJS.ErrnoException | null,
-                    stats: Stats,
-                ) => void,
-            ) {
-                return fs.fstat(fd, callback);
-            },
-            // fsync(fd, callback) {callback(null)},
-            // ftruncate(fd, length, callback) {callback(enosys())},
-            // lchown(path, uid, gid, callback) {callback(enosys())},
-            // link(path, link, callback) {callback(enosys())},
-            lstat(
-                path: PathLike,
-                callback: (
-                    err: NodeJS.ErrnoException | null,
-                    stats: Stats,
-                ) => void,
-            ) {
-                return fs.lstat(path, callback);
-            },
-            mkdir(
-                path: PathLike,
-                _perm: number,
-                callback: (err: NodeJS.ErrnoException | null) => void,
-            ) {
-                return fs.mkdir(path, callback);
-            },
-            open(
-                path: PathLike,
-                flags: OpenMode | undefined,
-                mode: Mode | undefined,
-                callback: (
-                    err: NodeJS.ErrnoException | null,
-                    fd: number,
-                ) => void,
-            ) {
-                return fs.open(path, flags, mode, callback);
-            },
-            read: (
-                fd: number,
-                buffer: Uint8Array,
-                offset: number,
-                length: number,
-                position: number | bigint | null,
-                callback: (
-                    err: NodeJS.ErrnoException | null,
-                    bytesRead: number,
-                    buffer: Uint8Array,
-                ) => void,
-            ) => {
-                if (fd === 0) {
-                    // The server reads stdin through the 4,096-byte bufio.Reader
-                    // that sourcegraph/jsonrpc2 creates, and a message can be longer.
-                    // Reading at most length bytes leaves the rest of the chunk
-                    // queued for the next call.
-                    const srcBuf = this.stdin.read(length);
-                    if (srcBuf) {
-                        buffer.set(srcBuf, offset);
-                        callback(null, srcBuf.length, buffer);
-                        return;
-                    }
-
-                    // We use setImmediate before calling the callback so that
-                    // other async code can run before we call the callback.
-                    // Calling the callback immediately prevents all promises
-                    // from running because the server immediately tries to read
-                    // again.
-                    setTimeout(() => {
-                        const error = new Error();
-                        // @ts-ignore
-                        error.code = 'EAGAIN';
-                        callback(error, 0, buffer);
-                    }, 0);
-                } else {
-                    return fs.read(
-                        fd,
-                        buffer,
-                        offset,
-                        length,
-                        position,
-                        callback,
-                    );
-                }
-            },
-            // readSync(...args) {console.log('readFileSync:', args)},
-            readdir(
-                path: PathLike,
-                callback: (
-                    err: NodeJS.ErrnoException | null,
-                    files: string[],
-                ) => void,
-            ) {
-                return fs.readdir(path, callback);
-            },
-            // readlink(path, callback) {callback(enosys())},
-            rename(
-                from: PathLike,
-                to: PathLike,
-                callback: (err: NodeJS.ErrnoException | null) => void,
-            ) {
-                return fs.rename(from, to, callback);
-            },
-            rmdir(
-                path: PathLike,
-                callback: (err: NodeJS.ErrnoException | null) => void,
-            ) {
-                return fs.rmdir(path, callback);
-            },
-            stat(
-                path: PathLike,
-                callback: (
-                    err: NodeJS.ErrnoException | null,
-                    stats: Stats,
-                ) => void,
-            ) {
-                return fs.stat(path, callback);
-            },
-            symlink(
-                target: PathLike,
-                path: PathLike,
-                callback: (err: NodeJS.ErrnoException | null) => void,
-            ) {
-                return fs.symlink(target, path, callback);
-            },
-            // truncate(path, length, callback) {callback(enosys())},
-            unlink(
-                path: PathLike,
-                callback: (err: NodeJS.ErrnoException | null) => void,
-            ) {
-                return fs.unlink(path, callback);
-            },
-            // utimes(path, atime, mtime, callback) {callback(enosys())},
-        };
-
-        // @ts-ignore
-        this.processShim = {
-            getuid() {
-                return -1;
-            },
-            getgid() {
-                return -1;
-            },
-            geteuid() {
-                return -1;
-            },
-            getegid() {
-                return -1;
-            },
-            getgroups() {
-                throw enosys();
-            },
-            pid: -1,
-            ppid: -1,
-            umask() {
-                throw enosys();
-            },
-            cwd() {
-                return cwd;
-            },
-            chdir() {
-                throw enosys();
-            },
-        };
-
-        // TODO: make this a proxy object so that we can trap other fs methods
-        // globalThis.fs = {
-        //     // ...fs,
-
-        // };
-
+    /**
+     * Creates a client whose servers launcher starts. The first one starts in run(), and
+     * messages sent before then wait for it.
+     */
+    constructor(launcher: ServerLauncher) {
+        this.launcher = launcher;
         this.createRuntime();
     }
 
     /**
-     * Creates the streams, the connection and the Go instance for a server, either the
-     * first one or one that replaces a crashed server.
+     * Creates the streams and the connection for a server, either the first one or one
+     * that replaces a crashed server.
      */
     private createRuntime() {
         this.stdin = new SimpleStream();
         this.stdout = new SimpleStream();
-        this.errorBuffer = '';
-        this.stderrTail = '';
         this.connection = createMessageConnection(
             new ReadableStreamMessageReader(readableOf(this.stdout)),
             new WriteableStreamMessageWriter(writableOf(this.stdin)),
@@ -668,134 +316,93 @@ export class Client {
             );
         }
         this.connection.listen();
-
-        this.go = new Go();
-        // Forward caller-supplied env vars to the Go runtime so
-        // `os.Getenv` sees them. The playground passes
-        // ESCALIER_BUILTINS_DIR to point the interop loader at the
-        // virtual-filesystem path where the compiler's
-        // `internal/interop/data` directory has been mirrored.
-        this.go.env = { ...this.go.env, ...this.env };
-
-        // A Go panic ends the program through `wasmExit`, which settles `go.run()`. A
-        // WebAssembly trap, such as running out of memory, instead throws out of
-        // `_resume()` into whichever callback called it, and `go.run()` never settles.
-        // Marking the instance exited and settling `go.run()` here reports a trap the
-        // way an exit is reported. wasm_exec.js is vendored, so its private `_resume` is
-        // safe to wrap.
-        const go = this.go;
-        const resume = go._resume.bind(go);
-        go._resume = () => {
-            try {
-                resume();
-            } catch (err) {
-                // A callback scheduled before the program exited can still call
-                // `_resume()`, which then throws on the torn-down instance. Only an error
-                // from a running instance is a trap.
-                if (!go.exited) {
-                    console.error('[Escalier LSP] the server trapped:', err);
-                    this.recordStderr(`\n${describeError(err)}\n`);
-                    go.exited = true;
-                }
-                go._resolveExitPromise();
-            }
-        };
     }
 
+    /**
+     * Starts the server and keeps one running until stop(). Resolves once stop() has
+     * ended the last server.
+     */
     async run() {
-        // One set of globals serves every runtime, so a second one started
-        // while the first is alive would take over the first's streams and
-        // the first would never read another message. Refusing says so at the
-        // point of the mistake.
-        if (runningClient !== undefined) {
-            throw new Error(
-                'an LSP server is already running: only one Client can run at a time',
-            );
-        }
-        // oxlint-disable-next-line typescript/no-this-alias -- runningClient records the one Client that may run, not an alias for this method
-        runningClient = this;
-
-        globalThis.fs = this.fsShim as typeof globalThis.fs;
-        globalThis.process = this.processShim as typeof globalThis.process;
-
-        try {
-            let quickCrashes = 0;
-            for (let restart = false; ; restart = true) {
-                const startedAt = Date.now();
-                const input = this.documentsKey();
-                try {
-                    await this.runServer(restart);
-                } catch (err) {
-                    // Compiling or instantiating the server failed, or it trapped before
-                    // its first callback. That is a crash like any other.
-                    console.error('[Escalier LSP] the server failed:', err);
-                    this.recordStderr(`\n${describeError(err)}\n`);
-                }
-                if (this.stopping) {
-                    return;
-                }
-                // Read before createRuntime() starts the next server's stderr.
-                this.crashReport = crashReportFrom(
-                    this.stderrTail.slice(-STDERR_TAIL_CHARS),
-                );
-
-                const decision = decideRestart({
-                    wasRestart: restart,
-                    inputChanged: this.documentsKey() !== input,
-                    ranForMs: Date.now() - startedAt,
-                    quickCrashes,
-                });
-                this.beginRestart();
-                if (decision.kind === 'wait-for-edit') {
-                    this.state = 'waiting-for-edit';
-                    this.queuedNotifications = [];
-                    this.requests.fail(new Error(SERVER_DOWN_MESSAGE));
-                    this.crashEvents.emit('crash', {
-                        kind: 'waiting-for-edit',
-                        report: this.crashReport,
-                    });
-                    await new Promise<void>((resolve) => {
-                        this.wake = resolve;
-                    });
-                    this.requests.close();
-                    quickCrashes = 0;
-                } else {
-                    quickCrashes =
-                        decision.delayMs === 0 ? 0 : quickCrashes + 1;
-                    await new Promise((resolve) =>
-                        setTimeout(resolve, decision.delayMs),
-                    );
-                }
-                if (this.stopping) {
-                    return;
-                }
-                this.state = 'restarting';
-                this.createRuntime();
+        let quickCrashes = 0;
+        for (let restart = false; ; restart = true) {
+            const startedAt = Date.now();
+            const input = this.documentsKey();
+            let stderr: string;
+            try {
+                stderr = await this.runServer(restart);
+            } catch (err) {
+                // The server couldn't be started, such as when its WebAssembly doesn't
+                // compile. That is a crash like any other.
+                console.error('[Escalier LSP] the server failed:', err);
+                stderr = `\n${describeError(err)}\n`;
             }
-        } finally {
-            runningClient = undefined;
+            if (this.stopping) {
+                return;
+            }
+            this.crashReport = crashReportFrom(
+                stderr.slice(-STDERR_TAIL_CHARS),
+            );
+
+            const decision = decideRestart({
+                wasRestart: restart,
+                inputChanged: this.documentsKey() !== input,
+                ranForMs: Date.now() - startedAt,
+                quickCrashes,
+            });
+            this.beginRestart();
+            if (decision.kind === 'wait-for-edit') {
+                this.state = 'waiting-for-edit';
+                this.queuedNotifications = [];
+                this.requests.fail(new Error(SERVER_DOWN_MESSAGE));
+                this.crashEvents.emit('crash', {
+                    kind: 'waiting-for-edit',
+                    report: this.crashReport,
+                });
+                await new Promise<void>((resolve) => {
+                    this.wake = resolve;
+                });
+                this.requests.close();
+                quickCrashes = 0;
+            } else {
+                quickCrashes = decision.delayMs === 0 ? 0 : quickCrashes + 1;
+                await new Promise((resolve) =>
+                    setTimeout(resolve, decision.delayMs),
+                );
+            }
+            if (this.stopping) {
+                return;
+            }
+            this.state = 'restarting';
+            this.createRuntime();
         }
     }
 
     /**
-     * Runs the current Go instance until it exits. When restart is true, the instance
-     * replaces a crashed server, so it is sent the last `initialize` and opens every
-     * document, and the client reports `restarted` once it has them.
+     * Launches a server and waits for it to end, then returns the end of what it wrote to
+     * stderr. When restart is true, the server replaces a crashed one, so it is sent the
+     * last `initialize` and opens every document, and the client reports `restarted`
+     * once it has them.
      */
-    private async runServer(restart: boolean) {
-        this.wasmModule ??= await WebAssembly.compile(this.wasmBuf);
-        const instance = await WebAssembly.instantiate(
-            this.wasmModule,
-            this.go.importObject,
-        );
-        const exited = this.go.run(instance).then(() => 'exited' as const);
+    private async runServer(restart: boolean): Promise<string> {
+        // Messages the client sent before the server started wait on stdin for it to
+        // read.
+        this.process = await this.launcher.launch(this.stdin, this.stdout);
+        if (this.stopping) {
+            // stop() ran while the server started, so its dispose() found no server.
+            this.process.dispose();
+        }
+        const exited = this.process.exited;
         if (restart) {
             const reopened = this.reopen().then(
                 () => 'reopened' as const,
                 // The server crashed before it answered, and the exit below reports it.
                 () => 'exited' as const,
             );
-            if ((await Promise.race([reopened, exited])) === 'reopened') {
+            const first = await Promise.race([
+                reopened,
+                exited.then(() => 'exited' as const),
+            ]);
+            if (first === 'reopened') {
                 this.state = 'running';
                 this.requests.open();
                 this.crashEvents.emit('crash', {
@@ -804,7 +411,7 @@ export class Client {
                 });
             }
         }
-        await exited;
+        return exited;
     }
 
     /**
@@ -867,18 +474,6 @@ export class Client {
         this.connection.dispose();
     }
 
-    /**
-     * Appends text to stderrTail. The Go runtime prints a panic in many small writes, so
-     * the tail is cut back to STDERR_TAIL_CHARS only once it reaches twice that, rather
-     * than copied on every write.
-     */
-    private recordStderr(text: string) {
-        this.stderrTail += text;
-        if (this.stderrTail.length > 2 * STDERR_TAIL_CHARS) {
-            this.stderrTail = this.stderrTail.slice(-STDERR_TAIL_CHARS);
-        }
-    }
-
     /** Returns a key that changes whenever an open document's text does. */
     private documentsKey(): string {
         return JSON.stringify(
@@ -929,19 +524,17 @@ export class Client {
         // before `initialize`, so stop() sends it without waiting on the reply.
         this.shutdown().catch(() => {});
         await this.exit();
-        // `stopped` silences the server's output from here on, and makes later
-        // notifications no-ops.
-        //
-        // The Go runtime keeps running past this point. `exit` is a
-        // notification, and the callbacks that drain the server's writes are
-        // scheduled on timers that outlive this call. Whatever it prints from
-        // here on describes a server nobody reads. Under Vitest that output
-        // reaches the main process as an `onUserConsoleLog` message. One that
-        // arrives after the worker has begun closing its rpc channel fails the
-        // whole run with an EnvironmentTeardownError, while every test passes.
-        //
-        // Editor teardown can still send didChange or didClose after stop(), and
-        // the disposed connection would reject them with no one to catch it.
+        // A server in this thread keeps running past this point, since `exit` is a notification and the callbacks
+        // that drain its writes are scheduled on timers that outlive this call.
+        // Disposing silences it, because whatever it prints from here on describes a
+        // server nobody reads. Under Vitest that output reaches the main process as an
+        // `onUserConsoleLog` message. One that arrives after the worker has begun
+        // closing its rpc channel fails the whole run with an EnvironmentTeardownError,
+        // while every test passes.
+        this.process?.dispose();
+        // `stopped` makes later notifications no-ops. Editor teardown can still send
+        // didChange or didClose after stop(), and the disposed connection would reject
+        // them with no one to catch it.
         this.stopped = true;
         this.connection.dispose();
     }
