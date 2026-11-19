@@ -258,11 +258,67 @@ test('writeSync prints stderr a line at a time and records it', async () => {
     }
 });
 
-test('the process shim reports the cwd it was given', async () => {
+test('the process shim reports the cwd it was given, and no user or group', async () => {
     const { runtime } = await shimmedRuntime();
     // @ts-expect-error: processShim is private
-    const shim = runtime.processShim as { cwd(): string; getuid(): number };
+    const shim = runtime.processShim as Record<string, () => unknown>;
 
     expect(shim.cwd()).toBe('/');
-    expect(shim.getuid()).toBe(-1);
+    expect([
+        shim.getuid(),
+        shim.getgid(),
+        shim.geteuid(),
+        shim.getegid(),
+    ]).toEqual([-1, -1, -1, -1]);
+});
+
+test.each(['getgroups', 'umask', 'chdir'])(
+    'the process shim throws ENOSYS from %s',
+    async (method) => {
+        const { runtime } = await shimmedRuntime();
+        // @ts-expect-error: processShim is private
+        const shim = runtime.processShim as Record<string, () => unknown>;
+
+        expect(() => shim[method]()).toThrow(
+            expect.objectContaining({ code: 'ENOSYS' }),
+        );
+    },
+);
+
+test('writeSync logs what the server prints to stdout or another fd', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+        const { shim } = await shimmedRuntime();
+        const other = bytes('x');
+
+        shim.writeSync(1, bytes('hello'));
+        shim.writeSync(3, other);
+
+        expect(log.mock.calls).toEqual([
+            ['writeSync:', 'hello'],
+            ['writeSync:', 3, other],
+        ]);
+    } finally {
+        log.mockRestore();
+    }
+});
+
+test('runToEnd resolves with the error when the server fails to start', async () => {
+    // The smallest valid module, which has none of the exports Go's run() needs.
+    const empty = await WebAssembly.compile(
+        new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]),
+    );
+    const runtime = idleRuntime(empty);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+        const stderr = await runtime.runToEnd();
+
+        expect(error).toHaveBeenCalledWith(
+            '[Escalier LSP] the server failed:',
+            expect.any(Error),
+        );
+        expect(stderr).toMatch(/^\n\w*Error/);
+    } finally {
+        error.mockRestore();
+    }
 });
