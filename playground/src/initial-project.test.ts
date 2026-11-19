@@ -179,6 +179,36 @@ describe('openInitialProject', () => {
         expect(await openInitialProject(manifest, '/', fs)).toBe(false);
         expect(projectFiles()).toEqual({ '/lib/index.esc': '// hello' });
     });
+
+    test('replaces the files of a snapshot that fails after they are written', async () => {
+        const encoded = await encodeSnapshot({
+            files: {
+                '/lib/index.esc': 'from the link',
+                '/lib/extra.esc': 'only in the link',
+            },
+            left: { paths: ['/lib/index.esc'], active: 0 },
+            right: { paths: [], active: null },
+        });
+        history.replaceState(null, '', `/#project=${encoded}`);
+        // restoreTabs runs after the snapshot's files are written, so making it
+        // throw leaves those files in fs when the example loads.
+        const { dispatch } = useEditorStore.getState();
+        useEditorStore.setState({
+            dispatch: (action) => {
+                if (action.type === 'restoreTabs') {
+                    throw new Error('restore failed');
+                }
+                dispatch(action);
+            },
+        });
+
+        try {
+            expect(await openInitialProject(manifest, '/', fs)).toBe(false);
+            expect(projectFiles()).toEqual({ '/lib/index.esc': '// hello' });
+        } finally {
+            useEditorStore.setState({ dispatch });
+        }
+    });
 });
 
 describe('reloadOnPastedPermalink', () => {
