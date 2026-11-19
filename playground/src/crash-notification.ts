@@ -1,10 +1,6 @@
+import { LINK_LEFT_OUT_NOTE } from './bug-report';
 import type { CrashReport, Notification } from './editor-state';
-import {
-    MAX_ISSUE_URL_CHARS,
-    NEW_ISSUE_URL,
-    issueTitle,
-    prefixOf,
-} from './issue-link';
+import { type FieldCut, bugFormUrl, issueTitle } from './issue-link';
 import type {
     Client,
     PanicReport,
@@ -13,11 +9,16 @@ import type {
 import { MAX_PERMALINK_CHARS } from './permalink';
 
 /**
- * The least of the report an issue link holds beside the playground link. When the
- * playground link leaves less room than this, the issue link leaves it out and holds
- * more of the report.
+ * The order in which crashIssueUrl shrinks the form's fields until the issue link fits.
+ * The report keeps its first 1500 characters beside the playground link. When the link
+ * leaves less room than that, the link is left out, since the copied report holds it,
+ * and the report takes the room.
  */
-const MIN_ISSUE_REPORT_CHARS = 1500;
+const CRASH_ISSUE_CUTS: readonly FieldCut[] = [
+    { field: 'crash-report', kind: 'truncate', keep: 1500 },
+    { field: 'playground-link', kind: 'omit', note: LINK_LEFT_OUT_NOTE },
+    { field: 'crash-report', kind: 'truncate', keep: 0 },
+];
 
 /**
  * Returns the toast that tells the user the language server crashed, carrying the crash
@@ -105,120 +106,23 @@ export function crashReportText(report: CrashReport): string {
 }
 
 /**
- * Returns the link that opens a new GitHub issue for report, with its title and body
- * filled in. The body holds the report's playground link when the link leaves room for
- * at least MIN_ISSUE_REPORT_CHARS of the report, and otherwise says to paste the link.
- * When the whole report would make the link longer than MAX_ISSUE_URL_CHARS, the body
- * holds as much of the report as fits and says to paste the rest.
+ * Returns the link that opens the playground bug form for report, with the report, its
+ * playground link and environment filled in. environment describes the browser and the
+ * playground build, as environmentText writes it.
  */
-export function crashIssueUrl(report: CrashReport): string {
-    const title = issueTitle(
-        'Playground language server crash',
-        report.headline,
-    );
-    const text = report.text.trimEnd();
-    if (report.permalink === undefined) {
-        return fittedIssueUrl(title, text, { kind: 'none' }).url;
-    }
-    const withLink = fittedIssueUrl(title, text, {
-        kind: 'link',
-        url: report.permalink,
-    });
-    if (withLink.reportChars >= Math.min(MIN_ISSUE_REPORT_CHARS, text.length)) {
-        return withLink.url;
-    }
-    return fittedIssueUrl(title, text, { kind: 'omitted' }).url;
-}
-
-/**
- * What an issue body says about the playground link: nothing, when the report has
- * none; the link itself; or that the link was left out and is in the copied report.
- */
-type IssueLink =
-    | { kind: 'none' }
-    | { kind: 'link'; url: string }
-    | { kind: 'omitted' };
-
-/**
- * Returns the new-issue link with title, link and the longest prefix of text that keeps
- * it within MAX_ISSUE_URL_CHARS, along with how many characters of text it holds.
- */
-function fittedIssueUrl(
-    title: string,
-    text: string,
-    link: IssueLink,
-): { url: string; reportChars: number } {
-    const whole = issueUrl(title, text, false, link);
-    if (whole.length <= MAX_ISSUE_URL_CHARS) {
-        return { url: whole, reportChars: text.length };
-    }
-    // Encoding lengthens some characters more than others, so the longest prefix of the
-    // report that fits is found by measuring the encoded link.
-    let fits = 0;
-    let tooLong = text.length;
-    while (tooLong - fits > 1) {
-        const mid = Math.floor((fits + tooLong) / 2);
-        if (
-            issueUrl(title, prefixOf(text, mid), true, link).length <=
-            MAX_ISSUE_URL_CHARS
-        ) {
-            fits = mid;
-        } else {
-            tooLong = mid;
-        }
-    }
-    const kept = prefixOf(text, fits);
-    return { url: issueUrl(title, kept, true, link), reportChars: kept.length };
-}
-
-/**
- * Returns the new-issue link with title and a body that holds text and link. When
- * truncated is true, the body marks text as cut short.
- */
-function issueUrl(
-    title: string,
-    text: string,
-    truncated: boolean,
-    link: IssueLink,
+export function crashIssueUrl(
+    report: CrashReport,
+    environment: string,
 ): string {
-    const body = [
-        '## What happened',
-        '',
-        '<!-- What were you doing when the language server crashed? Paste the code that triggers it if you can. -->',
-        '',
-        ...issueLinkSection(link),
-        '## Crash report',
-        '',
-        ...(truncated
-            ? [
-                  'The report below is cut short. Paste the full report, which **Copy report** puts on the clipboard.',
-                  '',
-              ]
-            : []),
-        '```',
-        truncated ? `${text}\n…` : text,
-        '```',
-        '',
-    ].join('\n');
-    const params = new URLSearchParams({ title, body });
-    return `${NEW_ISSUE_URL}?${params.toString()}`;
-}
-
-/** Returns the lines of an issue body's section about the playground link. */
-function issueLinkSection(link: IssueLink): string[] {
-    switch (link.kind) {
-        case 'none':
-            return [];
-        case 'link':
-            return ['## Playground link', '', link.url, ''];
-        case 'omitted':
-            return [
-                '## Playground link',
-                '',
-                'The link to the project is too long for this form. Paste it from the full report, which **Copy report** puts on the clipboard.',
-                '',
-            ];
-    }
+    return bugFormUrl(
+        issueTitle('Playground language server crash', report.headline),
+        {
+            'crash-report': report.text.trimEnd(),
+            'playground-link': report.permalink,
+            environment,
+        },
+        CRASH_ISSUE_CUTS,
+    );
 }
 
 /**

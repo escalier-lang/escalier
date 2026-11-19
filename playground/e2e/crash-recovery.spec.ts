@@ -139,12 +139,16 @@ test.describe('Crash recovery', () => {
         expect(issueUrl).toMatch(
             /^https:\/\/github\.com\/escalier-lang\/escalier\/issues\/new\?/,
         );
-        const issueBody = new URL(issueUrl).searchParams.get('body') ?? '';
-        expect(issueBody).toContain(
+        const fields = new URL(issueUrl).searchParams;
+        expect(fields.get('template')).toBe('playground-bug.yml');
+        expect(fields.get('crash-report')).toContain(
             'panic: forced by @escalier-lsp-test-crash',
         );
-        expect(issueBody).toMatch(
-            /## Playground link\n\nhttp:\/\/localhost:5173\/#project=[A-Za-z0-9_-]+\n/,
+        expect(fields.get('playground-link')).toMatch(
+            /^http:\/\/localhost:5173\/#project=[A-Za-z0-9_-]+$/,
+        );
+        expect(fields.get('environment')).toMatch(
+            /^Browser: .+\nPlayground build: [0-9a-f]{40}$/,
         );
 
         // The edit starts a server, whose diagnostics show up in the editor.

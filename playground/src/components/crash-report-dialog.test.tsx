@@ -3,6 +3,7 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeAll, expect, test, vi } from 'vitest';
 
+import { environmentText } from '../bug-report';
 import { crashIssueUrl } from '../crash-notification';
 import { CrashReportDialog } from './crash-report-dialog';
 import { stubModalDialogs } from './dialog-stub';
@@ -30,7 +31,10 @@ test('shows the report and links to a new issue for it', () => {
     );
     expect(
         screen.getByRole('link', { name: 'Open GitHub issue' }),
-    ).toHaveAttribute('href', crashIssueUrl(report));
+    ).toHaveAttribute(
+        'href',
+        crashIssueUrl(report, environmentText(navigator.userAgent, undefined)),
+    );
 });
 
 test('copies the report to the clipboard', async () => {

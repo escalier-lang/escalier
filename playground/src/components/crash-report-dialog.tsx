@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 
+import { environmentText } from '../bug-report';
 import { crashIssueUrl, crashReportText } from '../crash-notification';
 import type { CrashReport } from '../editor-state';
 import styles from './crash-report-dialog.module.css';
@@ -57,7 +58,13 @@ export const CrashReportDialog = ({
                 </button>
                 <a
                     className={`${styles.button} ${styles.secondaryButton}`}
-                    href={crashIssueUrl(report)}
+                    href={crashIssueUrl(
+                        report,
+                        environmentText(
+                            navigator.userAgent,
+                            import.meta.env.VITE_PLAYGROUND_COMMIT,
+                        ),
+                    )}
                     target="_blank"
                     rel="noreferrer"
                 >

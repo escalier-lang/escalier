@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest';
 
+import { LINK_LEFT_OUT_NOTE } from './bug-report';
 import {
     crashIssueUrl,
     crashNotification,
@@ -9,7 +10,11 @@ import {
     panicNotification,
     showServerCrashes,
 } from './crash-notification';
-import { MAX_ISSUE_URL_CHARS, NEW_ISSUE_URL } from './issue-link';
+import {
+    MAX_ISSUE_URL_CHARS,
+    NEW_ISSUE_URL,
+    TRUNCATION_NOTE,
+} from './issue-link';
 import type { PanicReport, ServerCrashEvent } from './lsp-client/client';
 import { MAX_PERMALINK_CHARS } from './permalink';
 
@@ -57,32 +62,41 @@ test('panicNotification puts the message above the stack', () => {
     });
 });
 
-/** Returns the title and body that url fills in on a new issue. */
-function issueFields(url: string): { title: string; body: string } {
+const environment = 'Browser: TestBrowser/1.0\nPlayground build: abc123';
+
+/** Returns the fields that url fills in on the playground bug form. */
+function formFields(url: string): Record<string, string> {
     expect(url.startsWith(`${NEW_ISSUE_URL}?`)).toBe(true);
-    const params = new URL(url).searchParams;
-    return { title: params.get('title') ?? '', body: params.get('body') ?? '' };
+    return Object.fromEntries(new URL(url).searchParams);
 }
 
-test('crashIssueUrl fills in the headline and the whole report', () => {
-    const { title, body } = issueFields(
-        crashIssueUrl({ headline: 'panic: boom', text: 'line 1\nline 2\n' }),
-    );
-    expect(title).toBe('Playground language server crash: panic: boom');
-    expect(body).toBe(
-        [
-            '## What happened',
-            '',
-            '<!-- What were you doing when the language server crashed? Paste the code that triggers it if you can. -->',
-            '',
-            '## Crash report',
-            '',
-            '```',
-            'line 1\nline 2',
-            '```',
-            '',
-        ].join('\n'),
-    );
+test('crashIssueUrl fills in the bug form with the report and the environment', () => {
+    expect(
+        formFields(
+            crashIssueUrl(
+                { headline: 'panic: boom', text: 'line 1\nline 2\n' },
+                environment,
+            ),
+        ),
+    ).toEqual({
+        template: 'playground-bug.yml',
+        title: 'Playground language server crash: panic: boom',
+        'crash-report': 'line 1\nline 2',
+        environment,
+    });
+});
+
+test('crashIssueUrl fills in the playground link', () => {
+    const permalink = 'https://example.com/playground/#project=abc_-';
+
+    expect(
+        formFields(
+            crashIssueUrl(
+                { headline: 'panic: boom', text: 'line 1\n', permalink },
+                environment,
+            ),
+        )['playground-link'],
+    ).toBe(permalink);
 });
 
 test.each([
@@ -93,23 +107,73 @@ test.each([
 ])(
     'crashIssueUrl cuts a long report short to fit the link: %s',
     (_name, text) => {
-        const url = crashIssueUrl({ headline: 'h'.repeat(200), text });
+        const url = crashIssueUrl(
+            { headline: 'h'.repeat(200), text },
+            environment,
+        );
         expect(url.length).toBeLessThanOrEqual(MAX_ISSUE_URL_CHARS);
 
-        const { title, body } = issueFields(url);
-        expect(title).toBe(
+        const fields = formFields(url);
+        expect(fields.title).toBe(
             `Playground language server crash: ${'h'.repeat(119)}…`,
         );
-        expect(body).toContain(
-            'The report below is cut short. Paste the full report, which **Copy report** puts on the clipboard.',
-        );
-        const shown = body.split('```\n')[1].replace(/\n…\n$/, '');
+        const crashReport = fields['crash-report'] ?? '';
+        expect(crashReport.endsWith(`\n${TRUNCATION_NOTE}`)).toBe(true);
+        const shown = crashReport.slice(0, -`\n${TRUNCATION_NOTE}`.length);
         expect(text.startsWith(shown)).toBe(true);
         // The link holds most of its budget, not a sliver of the report.
         expect(url.length).toBeGreaterThan(MAX_ISSUE_URL_CHARS - 100);
     },
 );
 
+test('crashIssueUrl never splits a surrogate pair', () => {
+    // Every cut point in a run of emoji falls between or inside a surrogate pair.
+    const fields = formFields(
+        crashIssueUrl(
+            {
+                // The 119-unit cut falls between the two halves of the emoji.
+                headline: `${'a'.repeat(118)}😀b`,
+                text: '😀'.repeat(10_000),
+            },
+            environment,
+        ),
+    );
+    expect(fields.title).toBe(
+        `Playground language server crash: ${'a'.repeat(118)}…`,
+    );
+    expect(fields['crash-report']).not.toContain('\ufffd');
+    expect(fields['crash-report']).toContain(`😀😀\n${TRUNCATION_NOTE}`);
+});
+
+test('crashIssueUrl leaves out a playground link that crowds out the report', () => {
+    const longLink = `https://example.com/#project=${'a'.repeat(6500)}`;
+    const url = crashIssueUrl(
+        {
+            headline: 'panic: boom',
+            text: 'x'.repeat(20_000),
+            permalink: longLink,
+        },
+        environment,
+    );
+
+    expect(url.length).toBeLessThanOrEqual(MAX_ISSUE_URL_CHARS);
+    const fields = formFields(url);
+    expect(fields['playground-link']).toBe(LINK_LEFT_OUT_NOTE);
+    expect(fields['crash-report']).toContain('x'.repeat(5000));
+});
+
+test('crashIssueUrl keeps a playground link that leaves room for the report', () => {
+    const link = `https://example.com/#project=${'a'.repeat(3000)}`;
+    const url = crashIssueUrl(
+        { headline: 'panic: boom', text: 'x'.repeat(20_000), permalink: link },
+        environment,
+    );
+
+    expect(url.length).toBeLessThanOrEqual(MAX_ISSUE_URL_CHARS);
+    const fields = formFields(url);
+    expect(fields['playground-link']).toBe(link);
+    expect(fields['crash-report']).toContain('x'.repeat(1500));
+});
 /** Returns a Go stack trace whose panic happened in fn, on goroutine number goroutine. */
 function goStack(fn: string, goroutine: number): string {
     return [
@@ -162,20 +226,6 @@ test('firstOfEachPanic forgets what it has seen after 100 distinct panics', () =
     expect(shown.at(-1)).toBe('panic 0');
 });
 
-test('crashIssueUrl never splits a surrogate pair', () => {
-    // Every cut point in a run of emoji falls between or inside a surrogate pair.
-    const { title, body } = issueFields(
-        crashIssueUrl({
-            // The 119-unit cut falls between the two halves of the emoji.
-            headline: `${'a'.repeat(118)}😀b`,
-            text: '😀'.repeat(10_000),
-        }),
-    );
-    expect(title).toBe(`Playground language server crash: ${'a'.repeat(118)}…`);
-    expect(body).not.toContain('\ufffd');
-    expect(body).toContain('😀😀\n…\n');
-});
-
 const permalink = 'https://example.com/playground/#project=abc_-';
 
 test('a crash report carries the permalink, which its text ends with', () => {
@@ -203,64 +253,6 @@ test('a crash report says when the project is too large to link to', () => {
         headline: 'boom',
         text: 'The language server hit an internal error and recovered.\nBrowser: TestBrowser/1.0\nPlayground link: none, because the project is too large to link to.\n\nboom\n\ngoroutine 7 [running]:\n',
     });
-});
-
-test('crashIssueUrl puts the playground link in its own section', () => {
-    const { body } = issueFields(
-        crashIssueUrl({ headline: 'panic: boom', text: 'line 1\n', permalink }),
-    );
-
-    expect(body).toBe(
-        [
-            '## What happened',
-            '',
-            '<!-- What were you doing when the language server crashed? Paste the code that triggers it if you can. -->',
-            '',
-            '## Playground link',
-            '',
-            permalink,
-            '',
-            '## Crash report',
-            '',
-            '```',
-            'line 1',
-            '```',
-            '',
-        ].join('\n'),
-    );
-});
-
-test('crashIssueUrl leaves out a playground link that crowds out the report', () => {
-    const longLink = `https://example.com/#project=${'a'.repeat(6500)}`;
-    const text = 'x'.repeat(20_000);
-    const url = crashIssueUrl({
-        headline: 'panic: boom',
-        text,
-        permalink: longLink,
-    });
-
-    expect(url.length).toBeLessThanOrEqual(MAX_ISSUE_URL_CHARS);
-    const { body } = issueFields(url);
-    expect(body).not.toContain(longLink);
-    expect(body).toContain(
-        'The link to the project is too long for this form. Paste it from the full report, which **Copy report** puts on the clipboard.',
-    );
-    expect(body).toContain('x'.repeat(5000));
-});
-
-test('crashIssueUrl keeps a playground link that leaves room for the report', () => {
-    const link = `https://example.com/#project=${'a'.repeat(3000)}`;
-    const text = 'x'.repeat(20_000);
-    const url = crashIssueUrl({
-        headline: 'panic: boom',
-        text,
-        permalink: link,
-    });
-
-    expect(url.length).toBeLessThanOrEqual(MAX_ISSUE_URL_CHARS);
-    const { body } = issueFields(url);
-    expect(body).toContain(link);
-    expect(body).toContain('x'.repeat(1500));
 });
 
 /** Returns a promise along with the function that resolves it. */
