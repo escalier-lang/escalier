@@ -719,3 +719,18 @@ JavaScript through a round trip.
 - Should the planned integer types encode as numbers when they fit in 2^53?
   That makes the wire format depend on the integer width, where `bigint`
   always uses a string.
+- Should a decode failure report every mismatch instead of the first? The
+  helpers throw at the first bad value, so `DecodeError` names one path.
+  Collecting all of them, as Zod and pydantic do, means threading an issue list
+  through every helper and throwing once at the end. It helps form input and
+  config files, where a user fixes several fields in one pass, and costs a
+  slower failure path and a `DecodeError` that holds a list.
+- Should generated decoders implement
+  [Standard Schema](https://standardschema.dev)? It is the interface Zod,
+  Valibot and ArkType share: a `~standard` property whose `validate(value)`
+  returns `{value}` or `{issues}`. Adding it to every `fromJSON` owner would let
+  TypeScript tools that accept any Standard Schema validator, such as form
+  libraries and tRPC, take an Escalier decoder as is. It covers decoding only,
+  and a TypeScript caller gets a typed result only if Escalier emits `.d.ts`
+  declarations for the type. Its `issues` list fits best if failures are
+  collected as in the previous question.
