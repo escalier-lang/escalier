@@ -1,6 +1,11 @@
 import { expect, test } from '@playwright/test';
 
-import { loadPlayground, waitForCompilation } from './helpers';
+import {
+    loadPlayground,
+    recordAlerts,
+    recordedAlerts,
+    waitForCompilation,
+} from './helpers';
 
 // The modifier Monaco's shortcuts use on this platform.
 const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -12,6 +17,7 @@ test('a permalink reopens the project with its edits and tabs', async ({
         permissions: ['clipboard-read', 'clipboard-write'],
     });
     const page = await context.newPage();
+    await recordAlerts(page);
     await loadPlayground(page);
 
     // Edit lib/index.esc without saving. The link takes the editor's text.
@@ -37,11 +43,11 @@ test('a permalink reopens the project with its edits and tabs', async ({
     expect(rightNames.at(-1)).toContain('main.esc');
 
     await page.getByRole('button', { name: 'Share' }).click();
-    await expect(
-        page.getByRole('alert').filter({
-            hasText: 'Copied a link to this project.',
-        }),
-    ).toBeVisible();
+    await expect(async () => {
+        expect((await recordedAlerts(page)).join('\n')).toContain(
+            'Copied a link to this project.',
+        );
+    }).toPass();
     const link = await page.evaluate(() => navigator.clipboard.readText());
     expect(link).toBe(page.url());
     expect(link).toMatch(/#project=[A-Za-z0-9_-]+$/);
@@ -77,15 +83,15 @@ test('a permalink reopens the project with its edits and tabs', async ({
 });
 
 test('a damaged permalink says so and loads an example', async ({ page }) => {
+    // The error toast shows during startup and dismisses itself after a few seconds,
+    // which the first compile can outlast, so the test reads the record of alerts.
+    await recordAlerts(page);
     await page.goto('/#project=damaged', { waitUntil: 'networkidle' });
 
-    await expect(
-        page.getByRole('alert').filter({
-            hasText:
-                'Could not open the project in this link. The link is damaged or incomplete. Loading an example instead.',
-        }),
-    ).toBeVisible({ timeout: 30_000 });
     await waitForCompilation(page);
+    expect((await recordedAlerts(page)).join('\n')).toContain(
+        'Could not open the project in this link. The link is damaged or incomplete. Loading an example instead.',
+    );
     // The address bar drops the damaged link, so a reload shows no error.
     expect(page.url()).not.toContain('#project');
 });
@@ -97,16 +103,16 @@ test('when the clipboard refuses the link, the address bar holds it', async ({
         navigator.clipboard.writeText = () =>
             Promise.reject(new Error('denied'));
     });
+    await recordAlerts(page);
     await loadPlayground(page);
 
     await page.getByRole('button', { name: 'Share' }).click();
 
-    await expect(
-        page.getByRole('alert').filter({
-            hasText:
-                'Could not copy a link to this project. If the address bar shows a #project link, copy it from there.',
-        }),
-    ).toBeVisible();
+    await expect(async () => {
+        expect((await recordedAlerts(page)).join('\n')).toContain(
+            'Could not copy a link to this project. If the address bar shows a #project link, copy it from there.',
+        );
+    }).toPass();
     expect(page.url()).toMatch(/#project=[A-Za-z0-9_-]+$/);
 });
 
