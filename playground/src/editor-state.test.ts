@@ -416,6 +416,26 @@ describe('editorReducer', () => {
         });
     });
 
+    describe('restoreTabs', () => {
+        test('opens the tabs on each side and shows the active ones', () => {
+            const state = stateWith(['/a.esc'], 0);
+            const next = editorReducer(state, {
+                type: 'restoreTabs',
+                left: { paths: ['/lib/index.esc', '/bin/main.esc'], active: 1 },
+                right: { paths: ['/build/lib/index.js'], active: 0 },
+            });
+            expect(next.leftTabs).toEqual([
+                { path: '/lib/index.esc' },
+                { path: '/bin/main.esc' },
+            ]);
+            expect(next.activeLeftTabIndex).toBe(1);
+            expect(next.rightTabs).toEqual([{ path: '/build/lib/index.js' }]);
+            expect(next.activeRightTabIndex).toBe(0);
+            expect(next.focusedSide).toBe('left');
+            expect(next.refreshKey).toBe(state.refreshKey + 1);
+        });
+    });
+
     describe('showNotification', () => {
         test('sets the notification', () => {
             const notification = { message: 'hello', type: 'info' as const };

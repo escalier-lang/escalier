@@ -6,7 +6,7 @@ import { useEditorStore } from './editor-store';
 import type { BrowserFS } from './fs/browser-fs';
 import type { Manifest } from './fs/volume';
 import { usePlaygroundStore } from './playground-store';
-import { loadProject } from './project-loader';
+import { isBuildPath, loadProject } from './project-loader';
 
 import styles from './playground.module.css';
 
@@ -32,13 +32,6 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
     const { initialCompileDone, validationResult } = playgroundState;
 
     const { leftTabs, rightTabs } = editorState;
-
-    const isReadOnly = useCallback(
-        (path: string) =>
-            path.startsWith('/build/') ||
-            /^\/packages\/[^/]+\/build\//.test(path),
-        [],
-    );
 
     // After initial compilation, open the build output files as right tabs.
     // Only auto-open build files whose source is currently open on the left.
@@ -81,10 +74,7 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
             )
                 return;
 
-            const isBuildFile =
-                event.path.startsWith('/build/') ||
-                /^\/packages\/[^/]+\/build\//.test(event.path);
-            if (!isBuildFile) return;
+            if (!isBuildPath(event.path)) return;
 
             // Only auto-open if it matches a left-side source file
             const matchesSource = [...buildPrefixes].some((prefix) =>
@@ -229,7 +219,7 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
     return (
         <Editor
             fs={fs}
-            isReadOnly={isReadOnly}
+            isReadOnly={isBuildPath}
             rightPaneVisible={rightPaneVisible}
             rightPaneOverlay={rightPaneOverlay}
             banner={banner}

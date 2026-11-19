@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { BrowserFS } from './fs/browser-fs';
 import type { Manifest } from './fs/volume';
-import { loadProject } from './project-loader';
+import { isBuildPath, loadProject, writeProjectFiles } from './project-loader';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -299,4 +299,32 @@ describe('loadProject', () => {
         const toml = await readFile(fs, '/escalier.toml');
         expect(toml).toContain('no-esc');
     });
+});
+
+describe('writeProjectFiles', () => {
+    test('replaces the project with the files, creating their directories', async () => {
+        await loadProject('hello-world', 'example', manifest, '/', fs);
+
+        writeProjectFiles(fs, [
+            {
+                path: '/packages/foo/lib/index.esc',
+                content: 'export val x = 1',
+            },
+        ]);
+
+        expect(await readFile(fs, '/packages/foo/lib/index.esc')).toBe(
+            'export val x = 1',
+        );
+        await expect(readFile(fs, '/lib/index.esc')).rejects.toThrow();
+    });
+});
+
+test.each([
+    { path: '/build/lib/index.js', expected: true },
+    { path: '/packages/foo/build/index.js', expected: true },
+    { path: '/lib/index.esc', expected: false },
+    { path: '/packages/foo/lib/build.esc', expected: false },
+    { path: '/buildings/index.esc', expected: false },
+])('isBuildPath($path) is $expected', ({ path, expected }) => {
+    expect(isBuildPath(path)).toBe(expected);
 });
