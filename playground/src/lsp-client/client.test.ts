@@ -4,7 +4,16 @@ import * as path from 'node:path';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type * as lsp from 'vscode-languageserver-protocol';
 
-import { Client, asNodeBuffer } from './client';
+import {
+    Client,
+    type CrashFacts,
+    RequestGate,
+    type RestartDecision,
+    SERVER_DOWN_MESSAGE,
+    type ServerCrashEvent,
+    asNodeBuffer,
+    decideRestart,
+} from './client';
 
 let client: Client;
 let runPromise: Promise<unknown>;
@@ -39,6 +48,9 @@ beforeEach(() => {
             __dirname,
             '../../../internal/interop/data',
         ),
+        // Lets a test crash the server with a marker comment. See runTestHooks in
+        // cmd/lsp-server/recover.go.
+        ESCALIER_LSP_TEST_HOOKS: '1',
     });
     runPromise = client.run();
 });
@@ -698,6 +710,380 @@ test('a second client refuses to run while one is already running', async () => 
     await expect(second.run()).rejects.toThrow(
         'an LSP server is already running: only one Client can run at a time',
     );
+});
+
+// A comment that makes the server's check panic, which the server recovers from.
+const PANIC_MARKER = '// @escalier-lsp-test-panic';
+// A comment that makes the server panic on a goroutine with no recover, which ends it.
+const CRASH_MARKER = '// @escalier-lsp-test-crash';
+
+/** Returns the published diagnostics' messages for each version of fileUri(), as they arrive. */
+function recordDiagnostics(testClient: Client): Map<number, string[]> {
+    const byVersion = new Map<number, string[]>();
+    testClient.onTextDocumentPublishDiagnostics((params) => {
+        if (params.uri === fileUri() && params.version !== undefined) {
+            byVersion.set(
+                params.version,
+                params.diagnostics.map((d) => d.message),
+            );
+        }
+    });
+    return byVersion;
+}
+
+function changeFile(version: number, text: string) {
+    client.textDocumentDidChange({
+        textDocument: { uri: fileUri(), version },
+        contentChanges: [{ text }],
+    });
+}
+
+function hoverOnFirstName() {
+    return client.textDocumentHover({
+        textDocument: { uri: fileUri() },
+        position: { line: 0, character: 4 },
+    });
+}
+
+// Each new server loads the standard library again, which takes several seconds.
+const RESTART_TEST_TIMEOUT_MS = 90_000;
+
+test(
+    'the server keeps serving after a check panics',
+    { timeout: RESTART_TEST_TIMEOUT_MS },
+    async () => {
+        const diagnostics = recordDiagnostics(client);
+        const events: ServerCrashEvent[] = [];
+        client.onServerCrash((event) => events.push(event));
+        const text = `${PANIC_MARKER}\nval x: number = 1\n`;
+        fs.writeFileSync(filePath(), text);
+        await client.initialize({
+            processId: process.pid,
+            rootUri,
+            capabilities: {},
+        });
+        client.textDocumentDidOpen({
+            textDocument: {
+                uri: fileUri(),
+                version: 1,
+                languageId: 'escalier',
+                text,
+            },
+        });
+
+        await vi.waitFor(() => expect(diagnostics.get(1)).toBeDefined(), {
+            timeout: 30_000,
+        });
+        expect(diagnostics.get(1)).toEqual([
+            `the Escalier language server crashed while checking ${fileUri()}: forced by @escalier-lsp-test-panic. See the console for the stack trace.`,
+        ]);
+
+        changeFile(2, 'val y: number = "a"\n');
+        await vi.waitFor(() => expect(diagnostics.get(2)).toBeDefined(), {
+            timeout: 30_000,
+        });
+        expect(diagnostics.get(2)).toEqual(['cannot constrain "a" <: number']);
+        expect(await hoverOnFirstName()).toEqual({
+            contents: {
+                kind: 'markdown',
+                value: '```escalier\ny: number\n```',
+            },
+        });
+        expect(events).toEqual([]);
+    },
+);
+
+test(
+    'starts a new server after a crash, and waits for an edit when it crashes again on the same input',
+    { timeout: RESTART_TEST_TIMEOUT_MS },
+    async () => {
+        const diagnostics = recordDiagnostics(client);
+        const events: ServerCrashEvent['kind'][] = [];
+        client.onServerCrash((event) => events.push(event.kind));
+        const text = 'val x: number = 1\n';
+        fs.writeFileSync(filePath(), text);
+        await client.initialize({
+            processId: process.pid,
+            rootUri,
+            capabilities: {},
+        });
+        client.textDocumentDidOpen({
+            textDocument: {
+                uri: fileUri(),
+                version: 1,
+                languageId: 'escalier',
+                text,
+            },
+        });
+        await vi.waitFor(() => expect(diagnostics.get(1)).toEqual([]), {
+            timeout: 30_000,
+        });
+
+        // The edit kills the server. A new one opens the edited text, crashes on it the
+        // same way, and the client stops starting servers until the text changes.
+        changeFile(2, `${CRASH_MARKER}\nval x: number = 1\n`);
+        await vi.waitFor(
+            () => expect(events).toEqual(['restarted', 'waiting-for-edit']),
+            { timeout: 30_000 },
+        );
+        await expect(hoverOnFirstName()).rejects.toThrow(SERVER_DOWN_MESSAGE);
+
+        // The next edit starts a server, which checks the new text.
+        changeFile(3, 'val y: number = "a"\n');
+        await vi.waitFor(() => expect(diagnostics.get(3)).toBeDefined(), {
+            timeout: 30_000,
+        });
+        expect(events).toEqual(['restarted', 'waiting-for-edit', 'restarted']);
+        expect(diagnostics.get(3)).toEqual(['cannot constrain "a" <: number']);
+        expect(await hoverOnFirstName()).toEqual({
+            contents: {
+                kind: 'markdown',
+                value: '```escalier\ny: number\n```',
+            },
+        });
+    },
+);
+
+test(
+    'a new server gets the edits, notifications and initialize sent while it starts',
+    { timeout: RESTART_TEST_TIMEOUT_MS },
+    async () => {
+        const diagnostics = recordDiagnostics(client);
+        const events: ServerCrashEvent['kind'][] = [];
+        client.onServerCrash((event) => events.push(event.kind));
+        const text = 'val x: number = 1\n';
+        fs.writeFileSync(filePath(), text);
+        await client.initialize({
+            processId: process.pid,
+            rootUri,
+            capabilities: {},
+        });
+        client.textDocumentDidOpen({
+            textDocument: {
+                uri: fileUri(),
+                version: 1,
+                languageId: 'escalier',
+                text,
+            },
+        });
+        await vi.waitFor(() => expect(diagnostics.get(1)).toEqual([]), {
+            timeout: 30_000,
+        });
+
+        changeFile(2, `${CRASH_MARKER}\nval x: number = 1\n`);
+        await vi.waitFor(
+            // @ts-expect-error: state is private
+            () => expect(client.state).toBe('restarting'),
+            { timeout: 30_000 },
+        );
+        // The new server opens the latest text rather than the text that crashed.
+        changeFile(3, 'val y: number = "a"\n');
+        await client.workspaceDidChangeWatchedFiles({ changes: [] });
+        // The new server is sent `initialize` once, and this call gets its answer.
+        const init = await client.initialize({
+            processId: process.pid,
+            rootUri,
+            capabilities: {},
+        });
+
+        expect(init.capabilities.hoverProvider).toBe(true);
+        await vi.waitFor(() => expect(diagnostics.get(3)).toBeDefined(), {
+            timeout: 30_000,
+        });
+        expect(diagnostics.get(3)).toEqual(['cannot constrain "a" <: number']);
+        expect(events).toEqual(['restarted']);
+    },
+);
+
+test(
+    'a server that fails to compile is restarted once, then waits for an edit',
+    { timeout: RESTART_TEST_TIMEOUT_MS },
+    async () => {
+        // Only one Client can run at a time.
+        await client.stop();
+        await awaitServerExit();
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            const broken = new Client(
+                new Uint8Array([0, 1, 2, 3]).buffer,
+                process.cwd(),
+                fs,
+            );
+            const events: ServerCrashEvent['kind'][] = [];
+            broken.onServerCrash((event) => events.push(event.kind));
+            const run = broken.run();
+
+            await vi.waitFor(
+                () => expect(events).toEqual(['waiting-for-edit']),
+                {
+                    timeout: 10_000,
+                },
+            );
+            expect(error).toHaveBeenCalledWith(
+                '[Escalier LSP] the server failed:',
+                expect.any(Error),
+            );
+            await expect(
+                broken.textDocumentHover({
+                    textDocument: { uri: fileUri() },
+                    position: { line: 0, character: 0 },
+                }),
+            ).rejects.toThrow(SERVER_DOWN_MESSAGE);
+            // Nothing is listening, and the next server rescans the workspace.
+            await expect(
+                broken.workspaceDidChangeWatchedFiles({ changes: [] }),
+            ).resolves.toBeUndefined();
+
+            // stop() ends the wait for an edit, and run() returns.
+            await broken.stop();
+            await run;
+        } finally {
+            error.mockRestore();
+        }
+    },
+);
+
+test('a trap thrown out of _resume ends the server the way an exit does', async () => {
+    const testClient = standaloneClient();
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+        // @ts-expect-error: go is private
+        const go = testClient.go;
+        // The instance never ran, so resuming it throws, as a trap would.
+        go._resume();
+
+        expect(go.exited).toBe(true);
+        expect(error).toHaveBeenCalledWith(
+            '[Escalier LSP] the server trapped:',
+            expect.any(TypeError),
+        );
+    } finally {
+        error.mockRestore();
+    }
+    await testClient.stop();
+});
+
+test.each<[string, CrashFacts, RestartDecision]>([
+    [
+        'a server that ran a while restarts at once',
+        {
+            wasRestart: false,
+            inputChanged: true,
+            ranForMs: 60_000,
+            quickCrashes: 3,
+        },
+        { kind: 'restart', delayMs: 0 },
+    ],
+    [
+        'the first server restarts even when no edit reached it',
+        {
+            wasRestart: false,
+            inputChanged: false,
+            ranForMs: 60_000,
+            quickCrashes: 0,
+        },
+        { kind: 'restart', delayMs: 0 },
+    ],
+    [
+        // Loading the standard library can take most of this window on a slow machine.
+        'a replacement that crashes before an edit, within the same-input window, waits for one',
+        {
+            wasRestart: true,
+            inputChanged: false,
+            ranForMs: 45_000,
+            quickCrashes: 0,
+        },
+        { kind: 'wait-for-edit' },
+    ],
+    [
+        // A crash this long after the restart came from something other than the documents
+        // the server opened, such as a request or running out of memory.
+        'a replacement that ran past the same-input window restarts without an edit',
+        {
+            wasRestart: true,
+            inputChanged: false,
+            ranForMs: 10 * 60_000,
+            quickCrashes: 0,
+        },
+        { kind: 'restart', delayMs: 0 },
+    ],
+    [
+        'a replacement that an edit reached restarts',
+        {
+            wasRestart: true,
+            inputChanged: true,
+            ranForMs: 60_000,
+            quickCrashes: 0,
+        },
+        { kind: 'restart', delayMs: 0 },
+    ],
+    [
+        'a first quick crash restarts after a second',
+        {
+            wasRestart: false,
+            inputChanged: true,
+            ranForMs: 500,
+            quickCrashes: 0,
+        },
+        { kind: 'restart', delayMs: 1000 },
+    ],
+    [
+        'each quick crash in a row doubles the delay',
+        {
+            wasRestart: true,
+            inputChanged: true,
+            ranForMs: 500,
+            quickCrashes: 3,
+        },
+        { kind: 'restart', delayMs: 8000 },
+    ],
+    [
+        'the delay stops growing at 30 seconds',
+        {
+            wasRestart: true,
+            inputChanged: true,
+            ranForMs: 500,
+            quickCrashes: 10,
+        },
+        { kind: 'restart', delayMs: 30_000 },
+    ],
+])('decideRestart: %s', (_name, facts, expected) => {
+    expect(decideRestart(facts)).toEqual(expected);
+});
+
+test('RequestGate lets requests through until it is closed', async () => {
+    const gate = new RequestGate();
+    await expect(gate.wait()).resolves.toBeUndefined();
+});
+
+test('RequestGate holds a request until it opens', async () => {
+    const gate = new RequestGate();
+    gate.close();
+    let settled = false;
+    const waiting = gate.wait().then(() => {
+        settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    gate.open();
+    await waiting;
+    expect(settled).toBe(true);
+});
+
+// A request that starts waiting during one restart keeps waiting through a second, and
+// fails with the rest when the client gives up on the input.
+test('RequestGate fails a request held across a second close', async () => {
+    const gate = new RequestGate();
+    gate.close();
+    const waiting = gate.wait();
+    gate.close();
+    const later = gate.wait();
+
+    gate.fail(new Error(SERVER_DOWN_MESSAGE));
+    await expect(waiting).rejects.toThrow(SERVER_DOWN_MESSAGE);
+    await expect(later).rejects.toThrow(SERVER_DOWN_MESSAGE);
+    await expect(gate.wait()).resolves.toBeUndefined();
 });
 
 // The tests below drive a Client's stdin and stdout directly. They build their own

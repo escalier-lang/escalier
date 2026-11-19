@@ -8,6 +8,7 @@ import {
 import wasmUrl from '../../bin/lsp-server.wasm?url';
 
 import type { LoadingStatus } from './components/loading-screen';
+import { crashNotification } from './crash-notification';
 import { useEditorStore } from './editor-store';
 import { BrowserFS } from './fs/browser-fs';
 import type { Manifest } from './fs/volume';
@@ -109,6 +110,16 @@ async function start(
         // The same directory holds the standard library's `.esc` files, which the
         // type checker resolves `std:prelude` and the ambient builtins from.
         ESCALIER_STDLIB_DIR: '/node_modules/escalier-builtins',
+        // The dev server, which the e2e tests run against, lets a marker comment crash
+        // the language server so the tests can exercise recovery. See runTestHooks in
+        // cmd/lsp-server/recover.go.
+        ...(import.meta.env.DEV ? { ESCALIER_LSP_TEST_HOOKS: '1' } : {}),
+    });
+    client.onServerCrash((event) => {
+        useEditorStore.getState().dispatch({
+            type: 'showNotification',
+            notification: crashNotification(event),
+        });
     });
     client.run();
     const initResponse: InitializeResult = await client.initialize({
