@@ -43,7 +43,7 @@ test('copies the report to the clipboard', async () => {
     expect(writeText).toHaveBeenCalledWith(report.text);
 });
 
-test('the copy button reads as before a moment after a copy', async () => {
+test('the copy button goes back to "Copy report" two seconds after it shows "Copied"', async () => {
     vi.stubGlobal('navigator', {
         clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
     });
