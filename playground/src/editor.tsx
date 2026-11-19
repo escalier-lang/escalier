@@ -317,16 +317,22 @@ export const Editor = ({
         isReadOnly,
     ]);
 
-    // Listen for FS events to update Monaco models for open right tabs
+    // Listen for FS events to update the Monaco models of open read-only files. Those
+    // are the build output, which the compiler rewrites. Every right tab counts, and a
+    // read-only left tab counts too, such as a build file a permalink opened there.
     useEffect(() => {
-        if (rightTabs.length === 0) return;
-
-        const openRightPaths = new Set(rightTabs.map((t) => t.path));
+        const watchedPaths = new Set([
+            ...rightTabs.map((t) => t.path),
+            ...leftTabs
+                .map((t) => t.path)
+                .filter((path) => isReadOnly?.(path) ?? false),
+        ]);
+        if (watchedPaths.size === 0) return;
 
         const listener = (event: import('./fs/fs-events').FSEvent) => {
             if (
                 (event.type === 'change' || event.type === 'create') &&
-                openRightPaths.has(event.path)
+                watchedPaths.has(event.path)
             ) {
                 const content = loadFileContent(fs, event.path) ?? '';
                 const uri = monaco.Uri.parse(pathToUri(event.path));
@@ -339,7 +345,7 @@ export const Editor = ({
 
         fs.events.on(listener);
         return () => fs.events.off(listener);
-    }, [rightTabs, fs]);
+    }, [leftTabs, rightTabs, isReadOnly, fs]);
 
     const handleFileOpen = useCallback(
         (path: string) => dispatch({ type: 'openFile', path }),

@@ -20,6 +20,13 @@ export type Tab = {
 
 export type Side = 'left' | 'right';
 
+/** The paths of the tabs open on one side, in order, and the index of the visible one. */
+export type TabLayout = {
+    paths: string[];
+    /** The index into paths of the visible tab, or null when paths is empty. */
+    active: number | null;
+};
+
 export type EditorState = {
     leftTabs: Tab[];
     activeLeftTabIndex: number | null;
@@ -45,6 +52,7 @@ export type EditorAction =
     | { type: 'renameFile'; oldPath: string; newPath: string }
     | { type: 'deleteFile'; path: string }
     | { type: 'resetTabs'; primaryFile?: string }
+    | { type: 'restoreTabs'; left: TabLayout; right: TabLayout }
     | { type: 'showNotification'; notification: Notification }
     | { type: 'dismissNotification' };
 
@@ -205,6 +213,20 @@ export function editorReducer(
                 activeLeftTabIndex: 0,
                 rightTabs: [],
                 activeRightTabIndex: null,
+                focusedSide: 'left',
+                refreshKey: state.refreshKey + 1,
+            };
+        }
+
+        case 'restoreTabs': {
+            const toTabs = (layout: TabLayout) =>
+                layout.paths.map((path) => ({ path }));
+            return {
+                ...state,
+                leftTabs: toTabs(action.left),
+                activeLeftTabIndex: action.left.active,
+                rightTabs: toTabs(action.right),
+                activeRightTabIndex: action.right.active,
                 focusedSide: 'left',
                 refreshKey: state.refreshKey + 1,
             };
