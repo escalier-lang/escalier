@@ -1,5 +1,9 @@
 import type { CrashReport, Notification } from './editor-state';
-import type { PanicReport, ServerCrashEvent } from './lsp-client/client';
+import type {
+    Client,
+    PanicReport,
+    ServerCrashEvent,
+} from './lsp-client/client';
 import { MAX_PERMALINK_CHARS } from './permalink';
 
 /** Where the issue link in a crash report opens a new issue. */
@@ -258,6 +262,36 @@ export function crashToasts(
         });
         lastShown = lastShown.then(async () => show(toast(await permalink)));
     };
+}
+
+/**
+ * Shows a toast for each crash and panic that client reports. Each toast carries a
+ * crash report whose permalink comes from capture, as crashToasts describes, and
+ * userAgent describes the browser, for the report. A panic shows once however often
+ * it recurs, as firstOfEachPanic describes.
+ */
+export function showServerCrashes(
+    client: Pick<Client, 'onServerCrash' | 'onServerPanic'>,
+    userAgent: string,
+    capture: () => Promise<string>,
+    show: (notification: Notification) => void,
+): void {
+    const showCrashToast = crashToasts(capture, show);
+    client.onServerCrash((event) =>
+        showCrashToast((permalink) =>
+            crashNotification(event, userAgent, permalink),
+        ),
+    );
+    // A panic in a request handler recurs on every request that reaches the same
+    // code, such as each hover as the mouse moves. Its toast would come back each time
+    // the user dismissed it, so each panic is shown once.
+    client.onServerPanic(
+        firstOfEachPanic((report) =>
+            showCrashToast((permalink) =>
+                panicNotification(report, userAgent, permalink),
+            ),
+        ),
+    );
 }
 
 /** How many distinct panics firstOfEachPanic remembers before it starts over. */

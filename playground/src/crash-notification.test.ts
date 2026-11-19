@@ -9,7 +9,9 @@ import {
     crashToasts,
     firstOfEachPanic,
     panicNotification,
+    showServerCrashes,
 } from './crash-notification';
+import type { PanicReport, ServerCrashEvent } from './lsp-client/client';
 import { MAX_PERMALINK_CHARS } from './permalink';
 
 const userAgent = 'TestBrowser/1.0';
@@ -311,4 +313,48 @@ test('crashToasts shows the toast without a link when capture fails', async () =
     show(linkToast('crash'));
 
     await vi.waitFor(() => expect(shown).toEqual(['crash: no link']));
+});
+
+test('showServerCrashes shows each crash and the first of each panic with a link', async () => {
+    let onCrash: (event: ServerCrashEvent) => void = () => {};
+    let onPanic: (report: PanicReport) => void = () => {};
+    const client = {
+        onServerCrash: (callback: (event: ServerCrashEvent) => void) => {
+            onCrash = callback;
+        },
+        onServerPanic: (callback: (report: PanicReport) => void) => {
+            onPanic = callback;
+        },
+    };
+    const shown: (string | undefined)[] = [];
+    showServerCrashes(
+        client,
+        userAgent,
+        () => Promise.resolve(permalink),
+        (notification) =>
+            shown.push(
+                notification.crashReport &&
+                    crashReportText(notification.crashReport),
+            ),
+    );
+
+    onCrash({ kind: 'restarted', report });
+    const panic = { message: 'boom', stack: goStack('main.hover', 7) };
+    onPanic(panic);
+    onPanic(panic);
+
+    await vi.waitFor(() =>
+        expect(shown).toEqual([
+            crashReportText({
+                headline: 'panic: TODO - TraverseExpr',
+                text: `The language server crashed and was restarted.\nBrowser: TestBrowser/1.0\n\n${report}`,
+                permalink,
+            }),
+            crashReportText({
+                headline: 'boom',
+                text: `The language server hit an internal error and recovered.\nBrowser: TestBrowser/1.0\n\nboom\n\n${goStack('main.hover', 7).trim()}\n`,
+                permalink,
+            }),
+        ]),
+    );
 });

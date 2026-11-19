@@ -9,12 +9,7 @@ import wasmUrl from '../../bin/lsp-server.wasm?url';
 
 import { capturePermalink } from './capture-permalink';
 import type { LoadingStatus } from './components/loading-screen';
-import {
-    crashNotification,
-    crashToasts,
-    firstOfEachPanic,
-    panicNotification,
-} from './crash-notification';
+import { showServerCrashes } from './crash-notification';
 import { useEditorStore } from './editor-store';
 import { BrowserFS } from './fs/browser-fs';
 import type { Manifest } from './fs/volume';
@@ -92,27 +87,14 @@ async function start(
     // A crash report links to the project as it was when the server crashed, which
     // holds the code that crashed it. capturePermalink reads the project before its
     // first await, so the link shows the project as the event found it.
-    const showCrashToast = crashToasts(
+    showServerCrashes(
+        client,
+        navigator.userAgent,
         () => capturePermalink(fs, window.location.href),
         (notification) =>
             useEditorStore
                 .getState()
                 .dispatch({ type: 'showNotification', notification }),
-    );
-    client.onServerCrash((event) =>
-        showCrashToast((permalink) =>
-            crashNotification(event, navigator.userAgent, permalink),
-        ),
-    );
-    // A panic in a request handler recurs on every request that reaches the same code,
-    // such as each hover as the mouse moves. Its toast would come back each time the user
-    // dismissed it, so each panic is shown once.
-    client.onServerPanic(
-        firstOfEachPanic((report) =>
-            showCrashToast((permalink) =>
-                panicNotification(report, navigator.userAgent, permalink),
-            ),
-        ),
     );
     client.run();
     const initResponse: InitializeResult = await client.initialize({
