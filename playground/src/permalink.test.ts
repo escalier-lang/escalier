@@ -124,6 +124,12 @@ describe('decodeSnapshot rejects', () => {
                 'The link holds a file at /build/lib/index.js, outside the project.',
         },
         {
+            name: 'a file where the build directory goes',
+            value: { v: 1, files: { '/packages/foo/build': '' }, ...layouts },
+            message:
+                'The link holds a file at /packages/foo/build, outside the project.',
+        },
+        {
             name: 'a relative path',
             value: { v: 1, files: { 'lib/index.esc': '' }, ...layouts },
             message:

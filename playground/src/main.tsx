@@ -13,10 +13,9 @@ import { showServerCrashes } from './crash-notification';
 import { useEditorStore } from './editor-store';
 import { BrowserFS } from './fs/browser-fs';
 import type { Manifest } from './fs/volume';
-import { openExample, openSnapshot } from './initial-project';
+import { openInitialProject, reloadOnPastedPermalink } from './initial-project';
 import { setupLanguage } from './language';
 import { Client } from './lsp-client/client';
-import { snapshotParam } from './permalink';
 import { Playground } from './playground';
 import { downloadStartupFiles, runStartup } from './startup';
 import { localStorageIfAvailable, prefersLightQuery, syncTheme } from './theme';
@@ -53,20 +52,8 @@ async function start(
     // LSP server. The LSP scans the workspace during initialize — if no
     // project files exist yet (escalier.toml, package.json, *.esc), it won't
     // find a valid project and diagnostics will never be published.
-    const encodedSnapshot = snapshotParam(window.location.hash);
-    const layoutRestored =
-        encodedSnapshot !== null && (await openSnapshot(encodedSnapshot, fs));
-    if (!layoutRestored) {
-        await openExample(manifest, baseUrl, fs);
-    }
-
-    // A link pasted into the address bar of an open playground changes only the hash,
-    // which loads nothing, so the page reloads to open it.
-    window.addEventListener('hashchange', () => {
-        if (snapshotParam(window.location.hash) !== null) {
-            window.location.reload();
-        }
-    });
+    const layoutRestored = await openInitialProject(manifest, baseUrl, fs);
+    reloadOnPastedPermalink(window);
 
     // Create a new client for the language server and
     // initialize it with the process ID and root URI.
