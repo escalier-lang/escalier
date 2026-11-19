@@ -4,13 +4,21 @@ import type { Manifest } from './fs/volume';
 export type ProjectKind = 'template' | 'example';
 
 /**
+ * Reports whether path is compiler output, which lives under `/build/` or under a
+ * package's own `build/` directory.
+ */
+export function isBuildPath(path: string): boolean {
+    return (
+        path.startsWith('/build/') || /^\/packages\/[^/]+\/build\//.test(path)
+    );
+}
+
+/**
  * Load a template or example project into the virtual filesystem.
  *
  * 1. Fetches file contents from the public directory.
- * 2. Clears the filesystem (preserving node_modules/).
- * 3. Writes the fetched files (BrowserFS emits FS events, which the
- *    main.tsx listener forwards to the LSP as workspaceDidChangeWatchedFiles).
- * 4. Returns the primary file to open (defaults to lib/index.esc).
+ * 2. Replaces the project in the filesystem with them (see writeProjectFiles).
+ * 3. Returns the primary file to open (defaults to lib/index.esc).
  */
 export async function loadProject(
     slug: string,
@@ -43,13 +51,33 @@ export async function loadProject(
         }),
     );
 
-    // Clear the filesystem (preserves node_modules/)
+    writeProjectFiles(fs, fetched);
+
+    // Determine the primary file to open
+    const hasLibIndex = fileList.includes('lib/index.esc');
+    const firstEsc = fileList.find((f) => f.endsWith('.esc'));
+    return hasLibIndex
+        ? '/lib/index.esc'
+        : firstEsc
+          ? `/${firstEsc}`
+          : `/${fileList[0]}`;
+}
+
+/**
+ * Replaces the project in the filesystem with files. It clears everything outside
+ * node_modules, then writes each file, creating its parent directories. BrowserFS
+ * emits an FS event for each write, which the main.tsx listener forwards to the LSP
+ * as workspaceDidChangeWatchedFiles.
+ */
+export function writeProjectFiles(
+    fs: BrowserFS,
+    files: readonly { path: string; content: string }[],
+): void {
     fs.clear();
 
-    // Write all files to the filesystem
     const encoder = new TextEncoder();
 
-    for (const { path, content } of fetched) {
+    for (const { path, content } of files) {
         // Ensure parent directories exist
         const parts = path.split('/').filter((p) => p.length > 0);
         for (let i = 1; i < parts.length; i++) {
@@ -71,13 +99,4 @@ export async function loadProject(
             }
         });
     }
-
-    // Determine the primary file to open
-    const hasLibIndex = fileList.includes('lib/index.esc');
-    const firstEsc = fileList.find((f) => f.endsWith('.esc'));
-    return hasLibIndex
-        ? '/lib/index.esc'
-        : firstEsc
-          ? `/${firstEsc}`
-          : `/${fileList[0]}`;
 }

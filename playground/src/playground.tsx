@@ -1,3 +1,4 @@
+import * as monaco from 'monaco-editor-core';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { Toolbar } from './components/toolbar';
@@ -5,8 +6,9 @@ import { Editor } from './editor';
 import { useEditorStore } from './editor-store';
 import type { BrowserFS } from './fs/browser-fs';
 import type { Manifest } from './fs/volume';
+import { collectProjectFiles, encodeSnapshot, permalinkUrl } from './permalink';
 import { usePlaygroundStore } from './playground-store';
-import { loadProject } from './project-loader';
+import { isBuildPath, loadProject } from './project-loader';
 
 import styles from './playground.module.css';
 
@@ -23,9 +25,19 @@ type PlaygroundProps = {
     fs: BrowserFS;
     manifest: Manifest;
     baseUrl: string;
+    /**
+     * True when the tabs came from a permalink. The playground then keeps the tabs as
+     * they are instead of opening the build output of the open source files.
+     */
+    layoutRestored?: boolean;
 };
 
-export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
+export const Playground = ({
+    fs,
+    manifest,
+    baseUrl,
+    layoutRestored = false,
+}: PlaygroundProps) => {
     const { dispatch: editorDispatch, ...editorState } = useEditorStore();
     const { dispatch: playgroundDispatch, ...playgroundState } =
         usePlaygroundStore();
@@ -33,17 +45,16 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
 
     const { leftTabs, rightTabs } = editorState;
 
-    const isReadOnly = useCallback(
-        (path: string) =>
-            path.startsWith('/build/') ||
-            /^\/packages\/[^/]+\/build\//.test(path),
-        [],
-    );
+    // Whether the next compile opens the build output of the open source files. A
+    // permalink's tabs already list the build files that were open, so loading one
+    // turns this off until the user loads another project.
+    const autoOpenBuildFilesRef = useRef(!layoutRestored);
 
     // After initial compilation, open the build output files as right tabs.
     // Only auto-open build files whose source is currently open on the left.
     useEffect(() => {
         if (initialCompileDone) return;
+        const autoOpen = autoOpenBuildFilesRef.current;
 
         // Build a set of expected output prefixes from the open left-side
         // .esc files. The compiler maps all outputs under /build/ at the root:
@@ -59,11 +70,13 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
         let markedDone = false;
 
         const openBuildFile = (path: string) => {
-            editorDispatch({
-                type: 'openFile',
-                path,
-                side: 'right',
-            });
+            if (autoOpen) {
+                editorDispatch({
+                    type: 'openFile',
+                    path,
+                    side: 'right',
+                });
+            }
             if (!markedDone) {
                 markedDone = true;
                 queueMicrotask(() => {
@@ -81,15 +94,15 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
             )
                 return;
 
-            const isBuildFile =
-                event.path.startsWith('/build/') ||
-                /^\/packages\/[^/]+\/build\//.test(event.path);
-            if (!isBuildFile) return;
+            if (!isBuildPath(event.path)) return;
 
-            // Only auto-open if it matches a left-side source file
-            const matchesSource = [...buildPrefixes].some((prefix) =>
-                event.path.startsWith(prefix),
-            );
+            // Only auto-open if it matches a left-side source file. With restored
+            // tabs, any build output shows that the compile finished.
+            const matchesSource =
+                !autoOpen ||
+                [...buildPrefixes].some((prefix) =>
+                    event.path.startsWith(prefix),
+                );
             if (matchesSource) {
                 openBuildFile(event.path);
             }
@@ -101,15 +114,22 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
         // set up. This handles the race where the WASM LSP compiles and
         // writes output before React runs this effect.
         const suffixes = ['.js', '.js.map', '.d.ts'];
-        for (const prefix of buildPrefixes) {
-            for (const suffix of suffixes) {
-                const path = prefix + suffix;
-                fs.stat(path, (err) => {
-                    if (!err && !cancelled) {
-                        openBuildFile(path);
-                    }
-                });
-            }
+        const existingPaths = autoOpen
+            ? [...buildPrefixes].flatMap((prefix) =>
+                  suffixes.map((suffix) => prefix + suffix),
+              )
+            : // Opening a build file changes the right tabs, so the effect reads them
+              // from the store rather than re-running when they change.
+              useEditorStore
+                  .getState()
+                  .rightTabs.map((tab) => tab.path)
+                  .filter(isBuildPath);
+        for (const path of existingPaths) {
+            fs.stat(path, (err) => {
+                if (!err && !cancelled) {
+                    openBuildFile(path);
+                }
+            });
         }
 
         return () => {
@@ -146,6 +166,7 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
     const handleSelectTemplate = useCallback(
         (slug: string) => {
             const id = ++loadIdRef.current;
+            autoOpenBuildFilesRef.current = true;
             playgroundDispatch({ type: 'resetCompile' });
             loadProject(slug, 'template', manifest, baseUrl, fs).then(
                 (primaryFile) => {
@@ -173,14 +194,17 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
     const handleSelectExample = useCallback(
         (slug: string) => {
             const id = ++loadIdRef.current;
+            autoOpenBuildFilesRef.current = true;
             playgroundDispatch({ type: 'resetCompile' });
             loadProject(slug, 'example', manifest, baseUrl, fs).then(
                 (primaryFile) => {
                     if (id !== loadIdRef.current) return;
                     editorDispatch({ type: 'resetTabs', primaryFile });
-                    // Update URL query param for deep linking
+                    // Update URL query param for deep linking, and drop any
+                    // permalink so a reload shows the example.
                     const url = new URL(window.location.href);
                     url.searchParams.set('example', slug);
+                    url.hash = '';
                     history.replaceState(null, '', url.toString());
                 },
                 (err) => {
@@ -198,6 +222,52 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
         },
         [manifest, baseUrl, fs, editorDispatch, playgroundDispatch],
     );
+
+    const handleShare = useCallback(async () => {
+        const state = useEditorStore.getState();
+        try {
+            // The editor holds edits that haven't reached the filesystem, so a
+            // file's text comes from its model when it has one.
+            const files = collectProjectFiles(fs.rootDir, (path) =>
+                monaco.editor
+                    .getModel(monaco.Uri.parse(`file://${path}`))
+                    ?.getValue(),
+            );
+            const encoded = await encodeSnapshot({
+                files,
+                left: {
+                    paths: state.leftTabs.map((tab) => tab.path),
+                    active: state.activeLeftTabIndex,
+                },
+                right: {
+                    paths: state.rightTabs.map((tab) => tab.path),
+                    active: state.activeRightTabIndex,
+                },
+            });
+            const url = permalinkUrl(window.location.href, encoded);
+            // The address bar shows the link too, for a user whose browser refuses
+            // the clipboard write.
+            history.replaceState(null, '', url);
+            await navigator.clipboard.writeText(url);
+            editorDispatch({
+                type: 'showNotification',
+                notification: {
+                    message: 'Copied a link to this project.',
+                    type: 'info',
+                },
+            });
+        } catch (err) {
+            console.error('Failed to share the project:', err);
+            editorDispatch({
+                type: 'showNotification',
+                notification: {
+                    message:
+                        'Could not copy a link to this project. If the address bar shows a #project link, copy it from there.',
+                    type: 'warning',
+                },
+            });
+        }
+    }, [fs, editorDispatch]);
 
     const rightPaneVisible = rightTabs.length > 0 && initialCompileDone;
 
@@ -223,13 +293,14 @@ export const Playground = ({ fs, manifest, baseUrl }: PlaygroundProps) => {
             examples={exampleItems}
             onSelectTemplate={handleSelectTemplate}
             onSelectExample={handleSelectExample}
+            onShare={handleShare}
         />
     );
 
     return (
         <Editor
             fs={fs}
-            isReadOnly={isReadOnly}
+            isReadOnly={isBuildPath}
             rightPaneVisible={rightPaneVisible}
             rightPaneOverlay={rightPaneOverlay}
             banner={banner}

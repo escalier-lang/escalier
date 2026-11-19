@@ -1,21 +1,35 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { useThemeStore } from '../theme';
 import { Toolbar } from './toolbar';
 
-function renderToolbar() {
+function renderToolbar(onShare: () => void = () => {}) {
     render(
         <Toolbar
             templates={[]}
             examples={[]}
             onSelectTemplate={() => {}}
             onSelectExample={() => {}}
+            onShare={onShare}
         />,
     );
 }
+
+afterEach(() => {
+    cleanup();
+});
+
+test('the Share button asks for a permalink', () => {
+    const onShare = vi.fn();
+    renderToolbar(onShare);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Share' }));
+
+    expect(onShare).toHaveBeenCalledOnce();
+});
 
 describe('Toolbar theme menu', () => {
     beforeEach(() => {
@@ -24,10 +38,6 @@ describe('Toolbar theme menu', () => {
             systemPrefersLight: false,
             theme: 'dark',
         });
-    });
-
-    afterEach(() => {
-        cleanup();
     });
 
     test('checks the current preference', () => {
