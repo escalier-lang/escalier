@@ -1,6 +1,16 @@
+/** What the playground shows about a language server crash, for a bug report. */
+export type CrashReport = {
+    /** The first line of the server's account of the crash, for an issue title. */
+    headline: string;
+    /** The whole report, as the user copies it. */
+    text: string;
+};
+
 export type Notification = {
     message: string;
     type: 'info' | 'warning' | 'error';
+    /** Set on a toast about a language server crash. The toast offers its details. */
+    crashReport?: CrashReport;
 };
 
 export type Tab = {

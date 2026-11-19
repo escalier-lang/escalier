@@ -7,8 +7,10 @@ import {
     useState,
 } from 'react';
 
+import { CrashReportDialog } from './components/crash-report-dialog';
 import { FileExplorer } from './components/file-explorer';
-import { Toast } from './components/toast';
+import { Toast, ToastButton } from './components/toast';
+import type { CrashReport } from './editor-state';
 import { useEditorStore } from './editor-store';
 import type { BrowserFS } from './fs/browser-fs';
 import { languageID } from './language';
@@ -360,6 +362,30 @@ export const Editor = ({
         [dispatch],
     );
 
+    // The crash report the dialog shows, or null when it is closed. It is kept apart from
+    // the toast, so dismissing the toast leaves an open report showing.
+    const [shownCrashReport, setShownCrashReport] =
+        useState<CrashReport | null>(null);
+    const crashReport = state.notification?.crashReport;
+    const handleShowCrashReport = useCallback(() => {
+        if (crashReport) {
+            setShownCrashReport(crashReport);
+        }
+    }, [crashReport]);
+
+    // Counts the notifications shown so far, to key each one's Toast. A notification that
+    // replaces one on screen then gets a fresh Toast, whose auto-dismiss timer starts over.
+    const [keyedNotification, setKeyedNotification] = useState({
+        notification: state.notification,
+        key: 0,
+    });
+    if (keyedNotification.notification !== state.notification) {
+        setKeyedNotification({
+            notification: state.notification,
+            key: keyedNotification.key + 1,
+        });
+    }
+
     return (
         <div className={styles['editor-root']}>
             {/* Banner (e.g. validation errors) */}
@@ -514,10 +540,28 @@ export const Editor = ({
                 </div>
             )}
 
-            <Toast
-                notification={state.notification}
-                onDismiss={handleDismissNotification}
-            />
+            {state.notification && (
+                <Toast
+                    key={keyedNotification.key}
+                    type={state.notification.type}
+                    // A crash toast stays up so the user has time to open its report.
+                    persistent={Boolean(crashReport)}
+                    onDismiss={handleDismissNotification}
+                >
+                    <span>{state.notification.message}</span>
+                    {crashReport && (
+                        <ToastButton onClick={handleShowCrashReport}>
+                            Details
+                        </ToastButton>
+                    )}
+                </Toast>
+            )}
+            {shownCrashReport && (
+                <CrashReportDialog
+                    report={shownCrashReport}
+                    onClose={() => setShownCrashReport(null)}
+                />
+            )}
         </div>
     );
 };

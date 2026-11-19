@@ -1,7 +1,21 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import {
+    act,
+    cleanup,
+    fireEvent,
+    render,
+    screen,
+} from '@testing-library/react';
+import {
+    afterEach,
+    beforeAll,
+    beforeEach,
+    describe,
+    expect,
+    test,
+    vi,
+} from 'vitest';
 
 // Mock monaco-editor-core — uses the auto mock in __mocks__/monaco-editor-core.ts.
 // vi.mock calls are hoisted by vitest automatically.
@@ -10,6 +24,7 @@ vi.mock('monaco-editor-core');
 // Mock the language module to avoid Monaco language registration side effects.
 vi.mock('./language', () => ({ languageID: 'escalier' }));
 
+import { stubModalDialogs } from './components/dialog-stub';
 import { Editor, languageForPath } from './editor';
 import type { EditorState } from './editor-state';
 import { initialEditorState } from './editor-state';
@@ -45,7 +60,11 @@ function getTabsInTablist(index: number): NodeListOf<Element> {
     return tablists[index].querySelectorAll('[role="tab"]');
 }
 
-afterEach(cleanup);
+beforeAll(stubModalDialogs);
+afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+});
 
 beforeEach(() => {
     // Reset store to initial state before each test.
@@ -387,6 +406,62 @@ describe('Editor', () => {
                 screen.getByRole('button', { name: 'Dismiss notification' }),
             );
 
+            expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+        });
+
+        test('a crash toast stays up and its Details button opens the report', () => {
+            vi.useFakeTimers();
+            setStoreState({
+                notification: {
+                    message: 'The language server crashed and was restarted.',
+                    type: 'warning',
+                    crashReport: {
+                        headline: 'panic: boom',
+                        text: 'panic: boom\n',
+                    },
+                },
+            });
+            render(<Editor fs={makeFakeFS()} />);
+
+            act(() => {
+                vi.advanceTimersByTime(60_000);
+            });
+            fireEvent.click(screen.getByRole('button', { name: 'Details' }));
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Dismiss notification' }),
+            );
+
+            // Dismissing the toast leaves the report open.
+            expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+            expect(screen.getByLabelText('Crash report')).toHaveTextContent(
+                'panic: boom',
+            );
+        });
+
+        test('a notification that replaces another gets the full four seconds', () => {
+            vi.useFakeTimers();
+            setStoreState({
+                notification: { message: 'Saved!', type: 'info' },
+            });
+            render(<Editor fs={makeFakeFS()} />);
+
+            act(() => {
+                vi.advanceTimersByTime(3000);
+            });
+            act(() => {
+                useEditorStore.getState().dispatch({
+                    type: 'showNotification',
+                    notification: { message: 'Saved again!', type: 'info' },
+                });
+            });
+            act(() => {
+                vi.advanceTimersByTime(3000);
+            });
+
+            expect(screen.getByRole('alert')).toHaveTextContent('Saved again!');
+            act(() => {
+                vi.advanceTimersByTime(1000);
+            });
             expect(screen.queryByRole('alert')).not.toBeInTheDocument();
         });
     });

@@ -8,7 +8,11 @@ import {
 import wasmUrl from '../../bin/lsp-server.wasm?url';
 
 import type { LoadingStatus } from './components/loading-screen';
-import { crashNotification } from './crash-notification';
+import {
+    crashNotification,
+    firstOfEachPanic,
+    panicNotification,
+} from './crash-notification';
 import { useEditorStore } from './editor-store';
 import { BrowserFS } from './fs/browser-fs';
 import type { Manifest } from './fs/volume';
@@ -118,9 +122,20 @@ async function start(
     client.onServerCrash((event) => {
         useEditorStore.getState().dispatch({
             type: 'showNotification',
-            notification: crashNotification(event),
+            notification: crashNotification(event, navigator.userAgent),
         });
     });
+    // A panic in a request handler recurs on every request that reaches the same code,
+    // such as each hover as the mouse moves. Its toast would come back each time the user
+    // dismissed it, so each panic is shown once.
+    client.onServerPanic(
+        firstOfEachPanic((report) => {
+            useEditorStore.getState().dispatch({
+                type: 'showNotification',
+                notification: panicNotification(report, navigator.userAgent),
+            });
+        }),
+    );
     client.run();
     const initResponse: InitializeResult = await client.initialize({
         processId: process.pid,

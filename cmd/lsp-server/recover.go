@@ -114,8 +114,19 @@ func (s *Server) handleCheckPanic(context *glsp.Context, uri protocol.DocumentUr
 	s.publishPanicDiagnostic(context, uri, version, protocol.Position{}, msg, false)
 }
 
-// logPanic writes msg and the panic's stack to stderr, and sends msg to the client as
-// an error through `window/logMessage`.
+// panicReportMethod is the notification that sends the client a recovered panic's
+// message and stack, so the client can offer them for a bug report.
+const panicReportMethod = "escalier/panicReport"
+
+// panicReportParams is the params of a panicReportMethod notification.
+type panicReportParams struct {
+	Message string `json:"message"`
+	Stack   string `json:"stack"`
+}
+
+// logPanic writes msg and the panic's stack to stderr. It sends msg to the client as an
+// error through `window/logMessage`, and sends msg and the stack through
+// panicReportMethod.
 func logPanic(context *glsp.Context, msg string, p panicReport) {
 	fmt.Fprintf(os.Stderr, "%s\n%s", msg, p.stack)
 	if context.Notify == nil {
@@ -125,6 +136,7 @@ func logPanic(context *glsp.Context, msg string, p panicReport) {
 		Type:    protocol.MessageTypeError,
 		Message: msg,
 	})
+	go context.Notify(panicReportMethod, &panicReportParams{Message: msg, Stack: string(p.stack)})
 }
 
 // publishPanicDiagnostic publishes an error diagnostic for msg at pos in uri, the document

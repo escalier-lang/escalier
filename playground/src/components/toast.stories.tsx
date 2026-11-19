@@ -1,11 +1,12 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
-import type { Notification } from '../editor-state';
-
 import { Toast } from './toast';
 
 const dismissSpy = fn();
+
+const LONG_MESSAGE =
+    'This is a much longer notification message to see how the toast handles text that might wrap to multiple lines in the UI.';
 
 const meta = {
     title: 'Components/Toast',
@@ -20,10 +21,8 @@ type Story = StoryObj<typeof meta>;
 
 export const InfoToast: Story = {
     args: {
-        notification: {
-            message: 'File saved successfully.',
-            type: 'info',
-        },
+        type: 'info',
+        children: <span>File saved successfully.</span>,
         onDismiss: dismissSpy,
     },
     play: async ({ canvasElement }) => {
@@ -50,10 +49,8 @@ export const InfoToast: Story = {
 
 export const WarningToast: Story = {
     args: {
-        notification: {
-            message: 'Workspace validation found issues.',
-            type: 'warning',
-        },
+        type: 'warning',
+        children: <span>Workspace validation found issues.</span>,
         onDismiss: dismissSpy,
     },
     play: async ({ canvasElement }) => {
@@ -68,10 +65,8 @@ export const WarningToast: Story = {
 
 export const ErrorToast: Story = {
     args: {
-        notification: {
-            message: 'Compilation failed with 3 errors.',
-            type: 'error',
-        },
+        type: 'error',
+        children: <span>Compilation failed with 3 errors.</span>,
         onDismiss: dismissSpy,
     },
     play: async ({ canvasElement }) => {
@@ -86,10 +81,8 @@ export const ErrorToast: Story = {
 
 export const DismissToast: Story = {
     args: {
-        notification: {
-            message: 'Click dismiss to close.',
-            type: 'info',
-        },
+        type: 'info',
+        children: <span>Click dismiss to close.</span>,
         onDismiss: dismissSpy,
     },
     play: async ({ canvasElement }) => {
@@ -114,21 +107,16 @@ export const DismissToast: Story = {
 
 export const LongMessage: Story = {
     args: {
-        notification: {
-            message:
-                'This is a much longer notification message to see how the toast handles text that might wrap to multiple lines in the UI.',
-            type: 'info',
-        },
+        type: 'info',
+        children: <span>{LONG_MESSAGE}</span>,
         onDismiss: dismissSpy,
     },
-    play: async ({ canvasElement, args }) => {
+    play: async ({ canvasElement }) => {
         const canvas = within(canvasElement.ownerDocument.body);
 
         // Verify the long message renders and is visible
         await waitFor(() =>
-            expect(
-                canvas.getByText((args.notification as Notification).message),
-            ).toBeVisible(),
+            expect(canvas.getByText(LONG_MESSAGE)).toBeVisible(),
         );
     },
 };

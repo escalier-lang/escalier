@@ -182,10 +182,44 @@ export function decideRestart(facts: CrashFacts): RestartDecision {
  * - `restarted`: a new server is running and has the open documents.
  * - `waiting-for-edit`: the server crashed again on the same documents, and the client
  *   starts a new one at the next edit.
+ *
+ * `report` is what the crashed server printed about the crash, for a bug report. See
+ * crashReportFrom.
  */
-export type ServerCrashEvent =
-    | { kind: 'restarted' }
-    | { kind: 'waiting-for-edit' };
+export type ServerCrashEvent = {
+    kind: 'restarted' | 'waiting-for-edit';
+    report: string;
+};
+
+/**
+ * A panic the server recovered from, as its `escalier/panicReport` notification sends it.
+ * The server keeps running after one.
+ */
+export type PanicReport = { message: string; stack: string };
+
+/** How much of the server's stderr the client keeps for a crash report. */
+const STDERR_TAIL_CHARS = 64 * 1024;
+
+/** How much of the server's stderr a crash report holds when no panic header is found. */
+const CRASH_REPORT_FALLBACK_CHARS = 4 * 1024;
+
+/**
+ * Returns the crash report in stderr, the tail of what a server printed before it exited.
+ * The report runs from the last line that starts `panic: ` or `fatal error: `, which is
+ * where the Go runtime begins what it prints when a panic ends the program. Without such
+ * a line, the report is the last few kilobytes.
+ */
+export function crashReportFrom(stderr: string): string {
+    const headers = [...stderr.matchAll(/^(?:panic|fatal error): /gm)];
+    const start = headers.at(-1)?.index;
+    const report =
+        start === undefined
+            ? stderr.slice(-CRASH_REPORT_FALLBACK_CHARS)
+            : stderr.slice(start);
+    return (
+        report.trim() || 'The language server exited without printing an error.'
+    );
+}
 
 /** The message a request rejects with while the client waits for an edit to restart. */
 export const SERVER_DOWN_MESSAGE =
@@ -254,6 +288,11 @@ type ServerState =
      */
     | 'waiting-for-edit';
 
+/** Returns err as text, with its stack when it has one. */
+function describeError(err: unknown): string {
+    return err instanceof Error ? (err.stack ?? String(err)) : String(err);
+}
+
 export class Client {
     // The runtime's parts, assigned by createRuntime(). The fs shim reads the streams
     // through `this` on every call, so a restart's new streams serve the new runtime.
@@ -264,6 +303,11 @@ export class Client {
     private connection!: MessageConnection;
     private wasmBuf: ArrayBuffer;
     private errorBuffer: string;
+    /**
+     * What the current server wrote to stderr, at least the last STDERR_TAIL_CHARS of it
+     * and at most twice that.
+     */
+    private stderrTail = '';
     /** Set by `stop()`. Silences the server's output and drops notifications from then on. */
     private stopped = false;
     /** Set when `stop()` begins, so the server's exit isn't taken for a crash. */
@@ -280,6 +324,8 @@ export class Client {
      * The server gets them once it has opened the documents.
      */
     private queuedNotifications: Array<[string, unknown]> = [];
+    /** The report on the last crash, which the crash event that follows it carries. */
+    private crashReport = '';
     /** The answer to the `initialize` that a restart sends when it reopens. */
     private initializeResult: lsp.InitializeResult | undefined;
     /** Wakes run() while it waits for an edit, from the next edit or from stop(). */
@@ -347,6 +393,7 @@ export class Client {
                     console.log('writeSync:', value);
                 } else if (fd === 2) {
                     const value = decoder.decode(buffer);
+                    this.recordStderr(value);
                     if (value === '\n') {
                         console.error(this.errorBuffer);
                         this.errorBuffer = '';
@@ -383,11 +430,10 @@ export class Client {
                         callback(null, length, buffer);
                     }, 0);
                 } else if (fd === 2) {
+                    const value = decoder.decode(buffer);
+                    this.recordStderr(value);
                     if (!this.stopped) {
-                        console.warn(
-                            '[Escalier LSP] -',
-                            decoder.decode(buffer),
-                        );
+                        console.warn('[Escalier LSP] -', value);
                     }
                     setTimeout(() => {
                         callback(null, length, buffer);
@@ -602,6 +648,7 @@ export class Client {
         this.stdin = new SimpleStream();
         this.stdout = new SimpleStream();
         this.errorBuffer = '';
+        this.stderrTail = '';
         this.connection = createMessageConnection(
             new ReadableStreamMessageReader(readableOf(this.stdout)),
             new WriteableStreamMessageWriter(writableOf(this.stdin)),
@@ -640,6 +687,7 @@ export class Client {
                 // from a running instance is a trap.
                 if (!go.exited) {
                     console.error('[Escalier LSP] the server trapped:', err);
+                    this.recordStderr(`\n${describeError(err)}\n`);
                     go.exited = true;
                 }
                 go._resolveExitPromise();
@@ -673,10 +721,15 @@ export class Client {
                     // Compiling or instantiating the server failed, or it trapped before
                     // its first callback. That is a crash like any other.
                     console.error('[Escalier LSP] the server failed:', err);
+                    this.recordStderr(`\n${describeError(err)}\n`);
                 }
                 if (this.stopping) {
                     return;
                 }
+                // Read before createRuntime() starts the next server's stderr.
+                this.crashReport = crashReportFrom(
+                    this.stderrTail.slice(-STDERR_TAIL_CHARS),
+                );
 
                 const decision = decideRestart({
                     wasRestart: restart,
@@ -691,6 +744,7 @@ export class Client {
                     this.requests.fail(new Error(SERVER_DOWN_MESSAGE));
                     this.crashEvents.emit('crash', {
                         kind: 'waiting-for-edit',
+                        report: this.crashReport,
                     });
                     await new Promise<void>((resolve) => {
                         this.wake = resolve;
@@ -736,7 +790,10 @@ export class Client {
             if ((await Promise.race([reopened, exited])) === 'reopened') {
                 this.state = 'running';
                 this.requests.open();
-                this.crashEvents.emit('crash', { kind: 'restarted' });
+                this.crashEvents.emit('crash', {
+                    kind: 'restarted',
+                    report: this.crashReport,
+                });
             }
         }
         await exited;
@@ -800,6 +857,18 @@ export class Client {
         this.initializeResult = undefined;
         this.requests.close();
         this.connection.dispose();
+    }
+
+    /**
+     * Appends text to stderrTail. The Go runtime prints a panic in many small writes, so
+     * the tail is cut back to STDERR_TAIL_CHARS only once it reaches twice that, rather
+     * than copied on every write.
+     */
+    private recordStderr(text: string) {
+        this.stderrTail += text;
+        if (this.stderrTail.length > 2 * STDERR_TAIL_CHARS) {
+            this.stderrTail = this.stderrTail.slice(-STDERR_TAIL_CHARS);
+        }
     }
 
     /** Returns a key that changes whenever an open document's text does. */
@@ -1038,6 +1107,11 @@ export class Client {
         callback: (params: lsp.PublishDiagnosticsParams) => void,
     ) {
         this.on('textDocument/publishDiagnostics', callback);
+    }
+
+    /** Calls callback with each panic the server recovers from. */
+    onServerPanic(callback: (report: PanicReport) => void) {
+        this.on('escalier/panicReport', callback);
     }
 
     onWindowLogMessage(callback: (params: lsp.LogMessageParams) => void) {
