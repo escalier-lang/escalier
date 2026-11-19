@@ -40,7 +40,7 @@ export function collectProjectFiles(
     const visit = (dir: FSDir, dirPath: string) => {
         for (const [name, node] of dir.children) {
             const path = `${dirPath}/${name}`;
-            if (path === '/node_modules' || isBuildPath(`${path}/`)) {
+            if (isInNodeModules(path) || isBuildOutput(path)) {
                 continue;
             }
             if (node.type === 'dir') {
@@ -171,7 +171,9 @@ function validateLayout(value: unknown, side: string): TabLayout {
  * node_modules, which holds the standard library, and outside build output.
  */
 function isProjectPath(path: string): boolean {
-    return isAbsolutePath(path) && !isInNodeModules(path) && !isBuildPath(path);
+    return (
+        isAbsolutePath(path) && !isInNodeModules(path) && !isBuildOutput(path)
+    );
 }
 
 /** Reports whether path starts with `/` and has no empty, `.` or `..` segment. */
@@ -186,6 +188,14 @@ function isAbsolutePath(path: string): boolean {
                     segment !== '' && segment !== '.' && segment !== '..',
             )
     );
+}
+
+/**
+ * Reports whether path is a build directory or anything under one, so a file named
+ * `build` where a build directory goes counts as build output too.
+ */
+function isBuildOutput(path: string): boolean {
+    return isBuildPath(`${path}/`);
 }
 
 function isInNodeModules(path: string): boolean {
