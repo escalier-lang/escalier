@@ -1,0 +1,32 @@
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 13px;
+    margin: 0 0 12px 0;
+}
+
+.text {
+    font-family: sans-serif;
+    font-size: 13px;
+    padding: 6px 8px;
+    color: var(--color-text);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border-strong);
+    border-radius: 4px;
+    resize: vertical;
+}
+
+.check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    margin: 0 0 4px 0;
+}
+
+.status {
+    font-size: 12px;
+    margin: 0 0 12px 22px;
+    opacity: 0.8;
+}

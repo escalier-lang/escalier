@@ -397,6 +397,17 @@ describe('editorReducer', () => {
     });
 
     describe('resetTabs', () => {
+        test('forgets the last crash report', () => {
+            const state = editorReducer(
+                {
+                    ...initialEditorState,
+                    lastCrashReport: { headline: 'panic: boom', text: 'boom' },
+                },
+                { type: 'resetTabs' },
+            );
+            expect(state.lastCrashReport).toBeNull();
+        });
+
         test('resets to default primary file', () => {
             const state = stateWith(['/a.esc', '/b.esc', '/c.esc'], 2);
             const next = editorReducer(state, { type: 'resetTabs' });
@@ -444,6 +455,24 @@ describe('editorReducer', () => {
                 notification,
             });
             expect(next.notification).toBe(notification);
+        });
+
+        test('keeps the latest crash report after other toasts', () => {
+            const crashReport = { headline: 'panic: boom', text: 'boom' };
+            let state = editorReducer(initialEditorState, {
+                type: 'showNotification',
+                notification: {
+                    message: 'crashed',
+                    type: 'warning',
+                    crashReport,
+                },
+            });
+            state = editorReducer(state, { type: 'dismissNotification' });
+            state = editorReducer(state, {
+                type: 'showNotification',
+                notification: { message: 'Saved.', type: 'info' },
+            });
+            expect(state.lastCrashReport).toBe(crashReport);
         });
     });
 

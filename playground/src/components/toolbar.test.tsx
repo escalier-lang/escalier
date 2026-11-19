@@ -6,7 +6,10 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { useThemeStore } from '../theme';
 import { Toolbar } from './toolbar';
 
-function renderToolbar(onShare: () => void = () => {}) {
+function renderToolbar(
+    onShare: () => void = () => {},
+    onReportBug: () => void = () => {},
+) {
     render(
         <Toolbar
             templates={[]}
@@ -14,12 +17,22 @@ function renderToolbar(onShare: () => void = () => {}) {
             onSelectTemplate={() => {}}
             onSelectExample={() => {}}
             onShare={onShare}
+            onReportBug={onReportBug}
         />,
     );
 }
 
 afterEach(() => {
     cleanup();
+});
+
+test('the Report a bug button asks for a bug report', () => {
+    const onReportBug = vi.fn();
+    renderToolbar(undefined, onReportBug);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Report a bug' }));
+
+    expect(onReportBug).toHaveBeenCalledOnce();
 });
 
 test('the Share button asks for a permalink', () => {

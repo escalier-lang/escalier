@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { type ShownError, environmentText } from './bug-report';
 import { capturePermalink } from './capture-permalink';
+import { BugReportDialog } from './components/bug-report-dialog';
 import { MessageDialog } from './components/message-dialog';
 import { Toolbar } from './components/toolbar';
 import { Editor } from './editor';
+import { shownErrors } from './editor-errors';
 import { useEditorStore } from './editor-store';
 import type { BrowserFS } from './fs/browser-fs';
 import type { Manifest } from './fs/volume';
@@ -282,6 +285,28 @@ export const Playground = ({
             </div>
         ) : null;
 
+    // What the open bug report holds besides the user's text, or null while the report
+    // is closed. It is read once, when the user opens the report, so the report
+    // describes the moment the user chose to report.
+    const [bugReport, setBugReport] = useState<{
+        errors: readonly ShownError[];
+        crashReport?: string;
+    } | null>(null);
+    const handleReportBug = useCallback(() => {
+        const { leftTabs, rightTabs, lastCrashReport } =
+            useEditorStore.getState();
+        setBugReport({
+            errors: shownErrors(
+                [...leftTabs, ...rightTabs].map((tab) => tab.path),
+            ),
+            crashReport: lastCrashReport?.text,
+        });
+    }, []);
+    const captureBugReportLink = useCallback(
+        () => capturePermalink(fs, window.location.href),
+        [fs],
+    );
+
     const toolbar = (
         <>
             <Toolbar
@@ -290,12 +315,25 @@ export const Playground = ({
                 onSelectTemplate={handleSelectTemplate}
                 onSelectExample={handleSelectExample}
                 onShare={handleShare}
+                onReportBug={handleReportBug}
             />
             {oversizedLinkLength !== null && (
                 <MessageDialog
                     title="Project too large to share"
                     message={oversizedLinkMessage(oversizedLinkLength)}
                     onClose={() => setOversizedLinkLength(null)}
+                />
+            )}
+            {bugReport !== null && (
+                <BugReportDialog
+                    capturePermalink={captureBugReportLink}
+                    errors={bugReport.errors}
+                    crashReport={bugReport.crashReport}
+                    environment={environmentText(
+                        navigator.userAgent,
+                        import.meta.env.VITE_PLAYGROUND_COMMIT,
+                    )}
+                    onClose={() => setBugReport(null)}
                 />
             )}
         </>

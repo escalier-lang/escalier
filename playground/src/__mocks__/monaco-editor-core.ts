@@ -15,7 +15,10 @@ export const editor = {
     createModel: vi.fn(() => ({ getValue: vi.fn(() => '') })),
     getModel: vi.fn(() => null),
     getModels: vi.fn(() => []),
+    getModelMarkers: vi.fn(() => []),
 };
+
+export const MarkerSeverity = { Hint: 1, Info: 2, Warning: 4, Error: 8 };
 
 export const Uri = {
     parse: vi.fn((s: string) => s),

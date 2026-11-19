@@ -16,6 +16,8 @@ type ToolbarProps = {
     onSelectExample: (slug: string) => void;
     /** Called when the user asks for a permalink to the project. */
     onShare: () => void;
+    /** Called when the user asks to report a bug. */
+    onReportBug: () => void;
 };
 
 const themeLabels: Record<ThemePreference, string> = {
@@ -41,6 +43,7 @@ export const Toolbar = ({
     onSelectTemplate,
     onSelectExample,
     onShare,
+    onReportBug,
 }: ToolbarProps) => {
     const themePreference = useThemeStore((state) => state.preference);
     const setThemePreference = useThemeStore((state) => state.setPreference);
@@ -98,6 +101,13 @@ export const Toolbar = ({
                 onClick={onShare}
             >
                 Share
+            </button>
+            <button
+                type="button"
+                className={styles.dropdownButton}
+                onClick={onReportBug}
+            >
+                Report a bug
             </button>
             <div className={styles.spacer} />
             <Dropdown
