@@ -237,6 +237,29 @@ function issueLinkSection(link: IssueLink): string[] {
     }
 }
 
+/**
+ * Returns a function that shows the crash toast its argument builds from a permalink.
+ * Each call starts capture at once, and the toast shows after the toasts of earlier
+ * calls, so toasts show in the order of the calls. When capture rejects, the toast
+ * gets undefined in place of a permalink.
+ */
+export function crashToasts(
+    capture: () => Promise<string>,
+    show: (notification: Notification) => void,
+): (toast: (permalink: string | undefined) => Notification) => void {
+    let lastShown = Promise.resolve();
+    return (toast) => {
+        const permalink = capture().catch((err) => {
+            console.error(
+                'Failed to link to the project for a crash report:',
+                err,
+            );
+            return undefined;
+        });
+        lastShown = lastShown.then(async () => show(toast(await permalink)));
+    };
+}
+
 /** How many distinct panics firstOfEachPanic remembers before it starts over. */
 const SEEN_PANICS_LIMIT = 100;
 

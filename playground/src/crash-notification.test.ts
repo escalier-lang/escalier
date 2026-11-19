@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import {
     MAX_ISSUE_URL_CHARS,
@@ -6,6 +6,7 @@ import {
     crashIssueUrl,
     crashNotification,
     crashReportText,
+    crashToasts,
     firstOfEachPanic,
     panicNotification,
 } from './crash-notification';
@@ -259,4 +260,55 @@ test('crashIssueUrl keeps a playground link that leaves room for the report', ()
     const { body } = issueFields(url);
     expect(body).toContain(link);
     expect(body).toContain('x'.repeat(1500));
+});
+
+/** Returns a promise along with the function that resolves it. */
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+    let resolve: (value: T) => void = () => {};
+    const promise = new Promise<T>((r) => {
+        resolve = r;
+    });
+    return { promise, resolve };
+}
+
+/** Returns a notification whose message records the permalink it was built with. */
+function linkToast(name: string) {
+    return (permalink: string | undefined) => ({
+        message: `${name}: ${permalink ?? 'no link'}`,
+        type: 'warning' as const,
+    });
+}
+
+test('crashToasts shows toasts in call order when a later link is ready first', async () => {
+    const links = [deferred<string>(), deferred<string>()];
+    let call = 0;
+    const shown: string[] = [];
+    const show = crashToasts(
+        () => links[call++].promise,
+        (notification) => shown.push(notification.message),
+    );
+
+    show(linkToast('first'));
+    show(linkToast('second'));
+    links[1].resolve('link 2');
+    await vi.waitFor(() => expect(call).toBe(2));
+    expect(shown).toEqual([]);
+    links[0].resolve('link 1');
+
+    await vi.waitFor(() =>
+        expect(shown).toEqual(['first: link 1', 'second: link 2']),
+    );
+});
+
+test('crashToasts shows the toast without a link when capture fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const shown: string[] = [];
+    const show = crashToasts(
+        () => Promise.reject(new Error('no CompressionStream')),
+        (notification) => shown.push(notification.message),
+    );
+
+    show(linkToast('crash'));
+
+    await vi.waitFor(() => expect(shown).toEqual(['crash: no link']));
 });

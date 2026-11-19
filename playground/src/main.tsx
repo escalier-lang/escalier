@@ -11,10 +11,10 @@ import { capturePermalink } from './capture-permalink';
 import type { LoadingStatus } from './components/loading-screen';
 import {
     crashNotification,
+    crashToasts,
     firstOfEachPanic,
     panicNotification,
 } from './crash-notification';
-import type { Notification } from './editor-state';
 import { useEditorStore } from './editor-store';
 import { BrowserFS } from './fs/browser-fs';
 import type { Manifest } from './fs/volume';
@@ -90,32 +90,15 @@ async function start(
         ...(import.meta.env.DEV ? { ESCALIER_LSP_TEST_HOOKS: '1' } : {}),
     });
     // A crash report links to the project as it was when the server crashed, which
-    // holds the code that crashed it. The report goes without a link when the
-    // playground can't make one.
-    const crashPermalink = () =>
-        capturePermalink(fs, window.location.href).catch((err) => {
-            console.error(
-                'Failed to link to the project for a crash report:',
-                err,
-            );
-            return undefined;
-        });
-    let lastCrashToast = Promise.resolve();
-    const showCrashToast = (
-        toast: (permalink: string | undefined) => Notification,
-    ) => {
-        // capturePermalink reads the project before its first await, so the link
-        // shows the project as the event found it.
-        const permalink = crashPermalink();
-        // Each toast waits for the one before it, so they show in the order the
-        // events arrived even when one link takes longer to make.
-        lastCrashToast = lastCrashToast.then(async () => {
-            useEditorStore.getState().dispatch({
-                type: 'showNotification',
-                notification: toast(await permalink),
-            });
-        });
-    };
+    // holds the code that crashed it. capturePermalink reads the project before its
+    // first await, so the link shows the project as the event found it.
+    const showCrashToast = crashToasts(
+        () => capturePermalink(fs, window.location.href),
+        (notification) =>
+            useEditorStore
+                .getState()
+                .dispatch({ type: 'showNotification', notification }),
+    );
     client.onServerCrash((event) =>
         showCrashToast((permalink) =>
             crashNotification(event, navigator.userAgent, permalink),
