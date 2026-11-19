@@ -1,6 +1,6 @@
 import { type Page, expect, test } from '@playwright/test';
 
-import { loadPlayground } from './helpers';
+import { COMPILE_TIMEOUT_MS, loadPlayground } from './helpers';
 
 /** Returns the background colour of the input editor. */
 function editorBackground(page: Page): Promise<string> {
@@ -35,8 +35,10 @@ test.describe('Theme', () => {
         await page.emulateMedia({ colorScheme: 'dark' });
         await page.reload();
         await expect(root).toHaveAttribute('data-theme', 'light');
+        // The toolbar shows once the reloaded page finishes starting up, which can
+        // take longer than the default timeout on a loaded runner.
         await expect(
             page.getByRole('button', { name: 'Theme: Light' }),
-        ).toBeVisible();
+        ).toBeVisible({ timeout: COMPILE_TIMEOUT_MS });
     });
 });
