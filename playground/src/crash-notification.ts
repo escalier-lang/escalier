@@ -1,24 +1,16 @@
 import type { CrashReport, Notification } from './editor-state';
+import {
+    MAX_ISSUE_URL_CHARS,
+    NEW_ISSUE_URL,
+    issueTitle,
+    prefixOf,
+} from './issue-link';
 import type {
     Client,
     PanicReport,
     ServerCrashEvent,
 } from './lsp-client/client';
 import { MAX_PERMALINK_CHARS } from './permalink';
-
-/** Where the issue link in a crash report opens a new issue. */
-export const NEW_ISSUE_URL =
-    'https://github.com/escalier-lang/escalier/issues/new';
-
-/**
- * The longest issue link crashIssueUrl returns, counted after encoding. GitHub refuses a
- * URL much past 8 KB, so a longer report is cut short and the rest comes from the
- * clipboard.
- */
-export const MAX_ISSUE_URL_CHARS = 7500;
-
-/** The longest headline an issue title takes from a crash report. */
-const ISSUE_HEADLINE_CHARS = 120;
 
 /**
  * The least of the report an issue link holds beside the playground link. When the
@@ -120,11 +112,10 @@ export function crashReportText(report: CrashReport): string {
  * holds as much of the report as fits and says to paste the rest.
  */
 export function crashIssueUrl(report: CrashReport): string {
-    let headline = report.headline;
-    if (headline.length > ISSUE_HEADLINE_CHARS) {
-        headline = `${prefixOf(headline, ISSUE_HEADLINE_CHARS - 1)}…`;
-    }
-    const title = `Playground language server crash: ${headline}`;
+    const title = issueTitle(
+        'Playground language server crash',
+        report.headline,
+    );
     const text = report.text.trimEnd();
     if (report.permalink === undefined) {
         return fittedIssueUrl(title, text, { kind: 'none' }).url;
@@ -178,17 +169,6 @@ function fittedIssueUrl(
     }
     const kept = prefixOf(text, fits);
     return { url: issueUrl(title, kept, true, link), reportChars: kept.length };
-}
-
-/**
- * Returns the first length UTF-16 code units of text, or one fewer when the cut would
- * split a surrogate pair. URLSearchParams encodes a lone surrogate as U+FFFD, so a split
- * pair would end the issue body with a replacement character.
- */
-function prefixOf(text: string, length: number): string {
-    const last = text.charCodeAt(length - 1);
-    const splitsPair = length < text.length && last >= 0xd800 && last <= 0xdbff;
-    return text.slice(0, splitsPair ? length - 1 : length);
 }
 
 /**

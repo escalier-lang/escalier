@@ -1,0 +1,44 @@
+name: Playground bug
+description: Report a problem in the Escalier playground.
+title: "Playground: "
+type: Bug
+labels: ["bug", "Playground"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The playground's **Report a bug** button fills in the link, the errors and the environment. Add what happened and what you expected.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, and what the playground or the compiler did.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+  - type: textarea
+    id: playground-link
+    attributes:
+      label: Playground link
+      description: A link that opens the project and its tabs as they were.
+  - type: textarea
+    id: errors
+    attributes:
+      label: Errors shown
+      description: The errors the editor showed in the open files.
+      render: text
+  - type: textarea
+    id: crash-report
+    attributes:
+      label: Crash report
+      description: The language server's report, if it crashed.
+      render: text
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: The browser and the playground build.
+      render: text
