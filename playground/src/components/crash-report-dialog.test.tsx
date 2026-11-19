@@ -22,6 +22,9 @@ afterEach(() => {
 test('shows the report and links to a new issue for it', () => {
     render(<CrashReportDialog report={report} onClose={() => {}} />);
 
+    expect(screen.getByRole('dialog')).toHaveAccessibleDescription(
+        'Copy this report into a GitHub issue, with the code that triggers the crash if you can share it.',
+    );
     expect(screen.getByLabelText('Crash report')).toHaveTextContent(
         'The language server crashed and was restarted. panic: boom',
     );
@@ -89,6 +92,9 @@ test('shows and copies the playground link with the report', async () => {
     const linked = { ...report, permalink: 'https://example.com/#project=abc' };
     render(<CrashReportDialog report={linked} onClose={() => {}} />);
 
+    expect(screen.getByRole('dialog')).toHaveAccessibleDescription(
+        'Copy this report into a GitHub issue. Its playground link opens the project as it was when the server crashed.',
+    );
     expect(screen.getByLabelText('Crash report')).toHaveTextContent(
         'Playground link: https://example.com/#project=abc',
     );

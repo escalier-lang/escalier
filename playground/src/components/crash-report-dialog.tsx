@@ -69,8 +69,9 @@ export const CrashReportDialog = ({
                 Language server crash report
             </h2>
             <p id="crash-report-help" className={styles.message}>
-                Copy this report into a GitHub issue. Its playground link opens
-                the project as it was when the server crashed.
+                {report.permalink === undefined
+                    ? 'Copy this report into a GitHub issue, with the code that triggers the crash if you can share it.'
+                    : 'Copy this report into a GitHub issue. Its playground link opens the project as it was when the server crashed.'}
             </p>
             <pre className={styles.report} aria-label="Crash report">
                 {text}

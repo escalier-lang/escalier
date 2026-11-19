@@ -14,6 +14,7 @@ import {
     firstOfEachPanic,
     panicNotification,
 } from './crash-notification';
+import type { Notification } from './editor-state';
 import { useEditorStore } from './editor-store';
 import { BrowserFS } from './fs/browser-fs';
 import type { Manifest } from './fs/volume';
@@ -99,32 +100,36 @@ async function start(
             );
             return undefined;
         });
-    client.onServerCrash(async (event) => {
-        const permalink = await crashPermalink();
-        useEditorStore.getState().dispatch({
-            type: 'showNotification',
-            notification: crashNotification(
-                event,
-                navigator.userAgent,
-                permalink,
-            ),
+    let lastCrashToast = Promise.resolve();
+    const showCrashToast = (
+        toast: (permalink: string | undefined) => Notification,
+    ) => {
+        // capturePermalink reads the project before its first await, so the link
+        // shows the project as the event found it.
+        const permalink = crashPermalink();
+        // Each toast waits for the one before it, so they show in the order the
+        // events arrived even when one link takes longer to make.
+        lastCrashToast = lastCrashToast.then(async () => {
+            useEditorStore.getState().dispatch({
+                type: 'showNotification',
+                notification: toast(await permalink),
+            });
         });
-    });
+    };
+    client.onServerCrash((event) =>
+        showCrashToast((permalink) =>
+            crashNotification(event, navigator.userAgent, permalink),
+        ),
+    );
     // A panic in a request handler recurs on every request that reaches the same code,
     // such as each hover as the mouse moves. Its toast would come back each time the user
     // dismissed it, so each panic is shown once.
     client.onServerPanic(
-        firstOfEachPanic(async (report) => {
-            const permalink = await crashPermalink();
-            useEditorStore.getState().dispatch({
-                type: 'showNotification',
-                notification: panicNotification(
-                    report,
-                    navigator.userAgent,
-                    permalink,
-                ),
-            });
-        }),
+        firstOfEachPanic((report) =>
+            showCrashToast((permalink) =>
+                panicNotification(report, navigator.userAgent, permalink),
+            ),
+        ),
     );
     client.run();
     const initResponse: InitializeResult = await client.initialize({
