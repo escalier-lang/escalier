@@ -21,33 +21,37 @@ import (
 func (s *Server) textDocumentSignatureHelp(context *glsp.Context, params *protocol.SignatureHelpParams) (*protocol.SignatureHelp, error) {
 	uri := params.TextDocument.URI
 
-	s.mu.RLock()
-	// The client sends this request right after typing `(` or `,`, so the edit that
-	// typed it is usually still being checked.
-	s.waitForFreshCheck(uri)
 	var call *ast.CallExpr
 	var active int
 	var info *solver.Info
 	var scope *solver.Scope
-	if co := s.checkOutput; co != nil {
-		sourceID := s.sourceIDForURI(uri)
-		if src := co.SourceByID(sourceID); src != nil {
-			// The cursor is converted against the text the AST was parsed from, so the
-			// offset indexes the same revision the spans do.
-			loc := posToLoc(lineMapFor(src), params.Position)
-			call, active = findCallAtLocation(co, sourceID, src.Contents, loc)
+	func() {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		// The client sends this request right after typing `(` or `,`, so the edit that
+		// typed it is usually still being checked.
+		s.waitForFreshCheck(uri)
+		if co := s.checkOutput; co != nil {
+			sourceID := s.sourceIDForURI(uri)
+			if src := co.SourceByID(sourceID); src != nil {
+				// The cursor is converted against the text the AST was parsed from, so the
+				// offset indexes the same revision the spans do.
+				loc := posToLoc(lineMapFor(src), params.Position)
+				call, active = findCallAtLocation(co, sourceID, src.Contents, loc)
+			}
+			info = co.InfoFor(sourceID)
+			scope = topLevelScope(co, sourceID)
 		}
-		info = co.InfoFor(sourceID)
-		scope = topLevelScope(co, sourceID)
-	}
-	s.mu.RUnlock()
+	}()
 	if call == nil || info == nil {
 		return nil, nil
 	}
 
-	s.solverMu.RLock()
-	sigs := calleeSignatures(info, scope, call.Callee)
-	s.solverMu.RUnlock()
+	sigs := func() []*soltype.FuncType {
+		s.solverMu.RLock()
+		defer s.solverMu.RUnlock()
+		return calleeSignatures(info, scope, call.Callee)
+	}()
 	if len(sigs) == 0 {
 		return nil, nil
 	}

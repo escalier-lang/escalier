@@ -102,24 +102,28 @@ func (*Server) textDocumentDeclaration(context *glsp.Context, params *protocol.D
 func (s *Server) textDocumentDefinition(context *glsp.Context, params *protocol.DefinitionParams) (any, error) {
 	loc := posToLoc(s.lineMapForURI(params.TextDocument.URI), params.Position)
 	sourceID := s.sourceIDForURI(params.TextDocument.URI)
-	s.mu.RLock()
 	var node ast.Node
 	var info *solver.Info
 	var declSrc *ast.Source
-	co := s.checkOutput
-	if co != nil {
-		node = findNodeAtLocation(co, sourceID, loc)
-		info = co.InfoFor(sourceID)
-	}
-	ident, isIdent := node.(*ast.IdentExpr)
+	var ident *ast.IdentExpr
+	var isIdent bool
 	var span ast.Span
-	if isIdent && info != nil {
-		if decl, ok := info.DeclOf(ident); ok {
-			declSrc = co.SourceByID(decl.Span().SourceID)
-			span = definitionSpan(decl, declSrc)
+	func() {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		co := s.checkOutput
+		if co != nil {
+			node = findNodeAtLocation(co, sourceID, loc)
+			info = co.InfoFor(sourceID)
 		}
-	}
-	s.mu.RUnlock()
+		ident, isIdent = node.(*ast.IdentExpr)
+		if isIdent && info != nil {
+			if decl, ok := info.DeclOf(ident); ok {
+				declSrc = co.SourceByID(decl.Span().SourceID)
+				span = definitionSpan(decl, declSrc)
+			}
+		}
+	}()
 	if node == nil {
 		return nil, fmt.Errorf("textDocument/definition: node not found")
 	}
@@ -250,14 +254,16 @@ func (s *Server) textDocumentDidChange(context *glsp.Context, params *protocol.D
 func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.HoverParams) (*protocol.Hover, error) {
 	loc := posToLoc(server.lineMapForURI(params.TextDocument.URI), params.Position)
 	sourceID := server.sourceIDForURI(params.TextDocument.URI)
-	server.mu.RLock()
 	q := hoverQuery{loc: loc}
-	if co := server.checkOutput; co != nil {
-		q.node, q.ancestors = findNodeWithAncestorsAt(co, sourceID, loc)
-		q.info = co.InfoFor(sourceID)
-		q.scope = scopeOfFile(co, sourceID)
-	}
-	server.mu.RUnlock()
+	func() {
+		server.mu.RLock()
+		defer server.mu.RUnlock()
+		if co := server.checkOutput; co != nil {
+			q.node, q.ancestors = findNodeWithAncestorsAt(co, sourceID, loc)
+			q.info = co.InfoFor(sourceID)
+			q.scope = scopeOfFile(co, sourceID)
+		}
+	}()
 	if q.info == nil {
 		return nil, nil
 	}
@@ -612,9 +618,12 @@ func (server *Server) validateBinScript(
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	server.solverMu.Lock()
-	result := compiler.CheckBinScript(ctx, lib, src, packageConfig(rootPath))
-	server.solverMu.Unlock()
+	result := func() compiler.BinScriptOutput {
+		server.solverMu.Lock()
+		// The unlock is deferred so that a panic in the checker still releases the lock.
+		defer server.solverMu.Unlock()
+		return compiler.CheckBinScript(ctx, lib, src, packageConfig(rootPath))
+	}()
 
 	// Verify staleness and update caches.
 	server.mu.Lock()
@@ -744,6 +753,7 @@ func (server *Server) validateFull(
 		return
 	}
 	server.mu.RLock()
+	defer server.mu.RUnlock()
 	if output.Module != nil {
 		for _, file := range output.Module.Files {
 			fileURI := protocol.DocumentUri(pathToURI(filepath.Join(rootPath, file.Path)))
@@ -781,7 +791,6 @@ func (server *Server) validateFull(
 		}
 		go lspContext.Notify(protocol.ServerTextDocumentPublishDiagnostics, params)
 	}
-	server.mu.RUnlock()
 }
 
 // publishDiagnosticsForScript publishes diagnostics for a single bin/ script.

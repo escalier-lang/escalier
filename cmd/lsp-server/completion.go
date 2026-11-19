@@ -145,23 +145,25 @@ func (s *Server) completionItemResolve(context *glsp.Context, params *protocol.C
 // It selects the appropriate scope (prelude, script, or module) based on
 // data.Scope and searches for the binding by name.
 func (s *Server) resolveDetail(data completionResolveData) string {
-	s.mu.RLock()
 	var view scopeView
-	switch data.Scope {
-	case "prelude":
-		if co := s.checkOutput; co != nil {
-			view = builtinScopeView(co)
+	func() {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		switch data.Scope {
+		case "prelude":
+			if co := s.checkOutput; co != nil {
+				view = builtinScopeView(co)
+			}
+		case "script":
+			if co := s.checkOutput; co != nil {
+				view = scriptScopeView(co, s.sourceIDForURI(protocol.DocumentUri(data.URI)))
+			}
+		case "module":
+			if co := s.checkOutput; co != nil {
+				view = moduleScopeView(co)
+			}
 		}
-	case "script":
-		if co := s.checkOutput; co != nil {
-			view = scriptScopeView(co, s.sourceIDForURI(protocol.DocumentUri(data.URI)))
-		}
-	case "module":
-		if co := s.checkOutput; co != nil {
-			view = moduleScopeView(co)
-		}
-	}
-	s.mu.RUnlock()
+	}()
 	if view == nil {
 		return ""
 	}
@@ -233,25 +235,29 @@ func shouldSuppressCompletions(script *ast.Script, module *ast.Module, sourceID 
 func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.CompletionParams) (any, error) {
 	uri := params.TextDocument.URI
 
-	s.mu.RLock()
-	s.waitForFreshCheck(uri)
 	var module *ast.Module
 	var script *ast.Script
 	var checkedSrc *ast.Source
 	var info *solver.Info
 	var moduleView, fileView, scriptView scopeView
+	var doc protocol.TextDocumentItem
+	var opened bool
 	sourceID := s.sourceIDForURI(uri)
-	if co := s.checkOutput; co != nil {
-		module = co.Module
-		script = co.Scripts[sourceID]
-		checkedSrc = co.SourceByID(sourceID)
-		info = co.InfoFor(sourceID)
-		moduleView = moduleScopeView(co)
-		fileView = fileScopeView(co, sourceID)
-		scriptView = scriptScopeView(co, sourceID)
-	}
-	doc, opened := s.documents[uri]
-	s.mu.RUnlock()
+	func() {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		s.waitForFreshCheck(uri)
+		if co := s.checkOutput; co != nil {
+			module = co.Module
+			script = co.Scripts[sourceID]
+			checkedSrc = co.SourceByID(sourceID)
+			info = co.InfoFor(sourceID)
+			moduleView = moduleScopeView(co)
+			fileView = fileScopeView(co, sourceID)
+			scriptView = scriptScopeView(co, sourceID)
+		}
+		doc, opened = s.documents[uri]
+	}()
 
 	// The cursor comes from the same snapshot as the AST, so the offset the
 	// position converts to indexes the text the AST was parsed from. Reading
