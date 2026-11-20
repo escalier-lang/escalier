@@ -63,9 +63,11 @@ test('a permalink reopens the Diagnostics tab, filled from a fresh check', async
 
     const reopened = await context.newPage();
     await reopened.goto(page.url());
+    // The tabs show once the reopened page has started the language server, which
+    // can take as long as a first compile on a loaded runner.
     await expect(
         reopened.getByRole('tab', { name: /^Diagnostics/ }),
-    ).toHaveAttribute('aria-selected', 'true');
+    ).toHaveAttribute('aria-selected', 'true', { timeout: COMPILE_TIMEOUT_MS });
     // The link holds the edited source but none of the diagnostics. The reopened page
     // checks the project and lists the error again.
     await expect(
