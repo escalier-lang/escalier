@@ -1,4 +1,4 @@
-import type { DownloadProgress } from '../downloads';
+import type { DownloadProgress } from '../project/downloads';
 
 import styles from './loading-screen.module.css';
 

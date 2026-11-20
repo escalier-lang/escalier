@@ -3,12 +3,12 @@ import { afterEach, expect, test, vi } from 'vitest';
 
 vi.mock('monaco-editor-core');
 
+import { DIAGNOSTICS_TAB_PATH } from '../diagnostics/project-diagnostics';
+import { initialEditorState } from '../editor/editor-state';
+import { useEditorStore } from '../editor/editor-store';
+import { BrowserFS } from '../fs/browser-fs';
 import { capturePermalink } from './capture-permalink';
-import { initialEditorState } from './editor-state';
-import { useEditorStore } from './editor-store';
-import { BrowserFS } from './fs/browser-fs';
 import { decodeSnapshot, snapshotParam } from './permalink';
-import { DIAGNOSTICS_TAB_PATH } from './project-diagnostics';
 import { writeProjectFiles } from './project-loader';
 
 afterEach(() => {

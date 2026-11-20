@@ -1,8 +1,11 @@
 import { useRef } from 'react';
 
-import { playgroundEnvironment } from '../bug-report';
-import { crashIssueUrl, crashReportText } from '../crash-notification';
-import type { CrashReport } from '../editor-state';
+import { playgroundEnvironment } from '../bug-report/bug-report';
+import {
+    crashIssueUrl,
+    crashReportText,
+} from '../bug-report/crash-notification';
+import type { CrashReport } from '../editor/editor-state';
 import styles from './crash-report-dialog.module.css';
 import { useCopyButton } from './use-copy-button';
 import { useModalDialog } from './use-modal-dialog';

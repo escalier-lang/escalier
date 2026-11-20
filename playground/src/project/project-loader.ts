@@ -1,6 +1,6 @@
-import type { BrowserFS } from './fs/browser-fs';
-import type { Manifest } from './fs/volume';
-import { useProjectDiagnosticsStore } from './project-diagnostics-store';
+import { useProjectDiagnosticsStore } from '../diagnostics/project-diagnostics-store';
+import type { BrowserFS } from '../fs/browser-fs';
+import type { Manifest } from '../fs/volume';
 
 export type ProjectKind = 'template' | 'example';
 

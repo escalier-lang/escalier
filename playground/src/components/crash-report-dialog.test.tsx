@@ -9,8 +9,8 @@ import {
 } from '@testing-library/react';
 import { afterEach, beforeAll, expect, test, vi } from 'vitest';
 
-import { playgroundEnvironment } from '../bug-report';
-import { crashIssueUrl } from '../crash-notification';
+import { playgroundEnvironment } from '../bug-report/bug-report';
+import { crashIssueUrl } from '../bug-report/crash-notification';
 import { CrashReportDialog } from './crash-report-dialog';
 import { stubModalDialogs } from './dialog-stub';
 

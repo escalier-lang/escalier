@@ -1,13 +1,13 @@
 import type { ReactNode } from 'react';
 
 import { LoadingScreen, type LoadingStatus } from './components/loading-screen';
+import { type Manifest, type Volume, createVolume } from './fs/volume';
 import {
     type Download,
     type DownloadProgress,
     downloadAll,
     frameThrottled,
-} from './downloads';
-import { type Manifest, type Volume, createVolume } from './fs/volume';
+} from './project/downloads';
 
 /** The files the playground needs before it can start the language server. */
 export type StartupFiles = {

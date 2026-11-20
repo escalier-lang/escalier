@@ -21,7 +21,7 @@ function params(url: string): Record<string, string> {
 test('the bug form declares exactly the fields BugFormFields names', () => {
     const form = readFileSync(
         new URL(
-            `../../.github/ISSUE_TEMPLATE/${PLAYGROUND_BUG_FORM}`,
+            `../../../.github/ISSUE_TEMPLATE/${PLAYGROUND_BUG_FORM}`,
             import.meta.url,
         ),
         'utf8',

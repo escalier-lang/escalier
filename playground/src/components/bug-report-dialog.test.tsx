@@ -3,8 +3,8 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeAll, expect, test, vi } from 'vitest';
 
-import type { ShownError } from '../bug-report';
-import { MAX_PERMALINK_CHARS } from '../permalink';
+import type { ShownError } from '../bug-report/bug-report';
+import { MAX_PERMALINK_CHARS } from '../project/permalink';
 import { BugReportDialog } from './bug-report-dialog';
 import { stubModalDialogs } from './dialog-stub';
 

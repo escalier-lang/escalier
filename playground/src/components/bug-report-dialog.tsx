@@ -5,8 +5,8 @@ import {
     type ShownError,
     bugReportText,
     bugReportUrl,
-} from '../bug-report';
-import { MAX_PERMALINK_CHARS } from '../permalink';
+} from '../bug-report/bug-report';
+import { MAX_PERMALINK_CHARS } from '../project/permalink';
 import styles from './bug-report-dialog.module.css';
 import dialogStyles from './crash-report-dialog.module.css';
 import { useCopyButton } from './use-copy-button';
