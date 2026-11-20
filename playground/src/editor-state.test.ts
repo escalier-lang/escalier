@@ -4,6 +4,7 @@ import {
     type EditorState,
     editorReducer,
     initialEditorState,
+    sideBeside,
 } from './editor-state';
 
 /** Helper to create state with specific open tabs. */
@@ -563,4 +564,33 @@ describe('editorReducer', () => {
             expect(next.notification).toBeNull();
         });
     });
+});
+
+describe('sideBeside', () => {
+    const state = (left: string[], right: string[]): EditorState => ({
+        ...initialEditorState,
+        leftTabs: left.map((path) => ({ path })),
+        rightTabs: right.map((path) => ({ path })),
+    });
+
+    test.each([
+        { left: [], right: [], side: 'left', expected: 'right' },
+        { left: [], right: [], side: 'right', expected: 'left' },
+        { left: ['/a.esc'], right: [], side: 'left', expected: 'left' },
+        { left: [], right: ['/a.esc'], side: 'left', expected: 'right' },
+        {
+            left: ['/a.esc'],
+            right: ['/a.esc'],
+            side: 'left',
+            expected: 'right',
+        },
+        { left: [], right: ['/a.esc'], side: 'right', expected: 'right' },
+    ] as const)(
+        'sideBeside(left: $left, right: $right, $side) is $expected',
+        ({ left, right, side, expected }) => {
+            expect(
+                sideBeside(state([...left], [...right]), '/a.esc', side),
+            ).toBe(expected);
+        },
+    );
 });
