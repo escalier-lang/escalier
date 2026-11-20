@@ -35,7 +35,8 @@ type LinkState =
  * Asks the user to describe a bug, then opens the playground bug form on GitHub filled
  * in with the description, a permalink to the project, the errors shown, the latest
  * crash report and the environment. A button copies the same report as Markdown. Once
- * the user opens the form, the dialog says that it opened and offers to open it again.
+ * the user opens the form, the dialog says that it opened, offers to open it again, and
+ * can go back to the report.
  */
 export const BugReportDialog = ({
     capturePermalink,
@@ -130,6 +131,15 @@ export const BugReportDialog = ({
                         report into a new issue.
                     </p>
                     <div className={dialogStyles.buttons}>
+                        {/* The report's fields keep their text, so the user can fix it and
+                            open the form again. */}
+                        <button
+                            type="button"
+                            className={`${dialogStyles.button} ${dialogStyles.secondaryButton}`}
+                            onClick={() => setIssueOpened(false)}
+                        >
+                            Back
+                        </button>
                         <button
                             type="button"
                             className={`${dialogStyles.button} ${dialogStyles.secondaryButton}`}
