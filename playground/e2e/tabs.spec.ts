@@ -63,4 +63,61 @@ test.describe('Tab Management', () => {
             outputTablist.getByRole('tab', { name: /index\.esc/ }),
         ).toBeVisible();
     });
+
+    test('drag a tab to the other side', async ({ page }) => {
+        const inputTablist = page.getByTestId('input-tablist');
+        const outputTablist = page.getByTestId('output-tablist');
+        const indexTab = inputTablist.getByRole('tab', { name: /index\.esc/ });
+
+        await indexTab.dragTo(outputTablist);
+
+        await expect(indexTab).toBeHidden();
+        await expect(
+            outputTablist.getByRole('tab', { name: /index\.esc/ }),
+        ).toHaveAttribute('aria-selected', 'true');
+
+        // Dragging it back returns it to the left side.
+        await outputTablist
+            .getByRole('tab', { name: /index\.esc/ })
+            .dragTo(inputTablist);
+        await expect(indexTab).toHaveAttribute('aria-selected', 'true');
+        await expect(
+            outputTablist.getByRole('tab', { name: /index\.esc/ }),
+        ).toBeHidden();
+    });
+
+    test('after closing every tab, clicking the right pane opens files there', async ({
+        page,
+    }) => {
+        const inputTablist = page.getByTestId('input-tablist');
+        const outputTablist = page.getByTestId('output-tablist');
+        // Closing the right side first leaves the left side focused.
+        for (const tablist of [outputTablist, inputTablist]) {
+            while ((await tablist.getByRole('tab').count()) > 0) {
+                await tablist
+                    .getByRole('tab')
+                    .first()
+                    .click({ button: 'right' });
+                await page
+                    .getByRole('button', { name: 'Close', exact: true })
+                    .click();
+            }
+        }
+
+        await page
+            .getByRole('button', {
+                name: 'Click to open files here, or drag a tab here',
+            })
+            .click();
+        await page.getByRole('button', { name: 'main.esc' }).click();
+
+        await expect(
+            outputTablist.getByRole('tab', { name: /main\.esc/ }),
+        ).toHaveAttribute('aria-selected', 'true');
+        await expect(
+            page.getByRole('button', {
+                name: 'Click to open files here, or drag a tab here',
+            }),
+        ).toBeVisible();
+    });
 });

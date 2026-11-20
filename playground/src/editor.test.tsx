@@ -176,9 +176,9 @@ describe('Editor', () => {
 
             expect(getTabsInTablist(0)).toHaveLength(0);
             expect(
-                screen.getByText(
-                    'Open a file from the explorer to start editing',
-                ),
+                screen.getByRole('button', {
+                    name: 'Open a file from the explorer or drag a tab here',
+                }),
             ).toBeInTheDocument();
         });
 
@@ -286,19 +286,193 @@ describe('Editor', () => {
         });
     });
 
+    describe('dragging a tab', () => {
+        /** Returns a dataTransfer stand-in that records what a drag sets. */
+        const dataTransfer = () => ({
+            setData: vi.fn(),
+            effectAllowed: '',
+            dropEffect: '',
+        });
+
+        test('dropping a left tab on the right tab list moves it there', () => {
+            setStoreState({
+                leftTabs: [{ path: '/a.esc' }, { path: '/b.esc' }],
+                activeLeftTabIndex: 0,
+            });
+            render(<Editor fs={makeFakeFS()} />);
+            const transfer = dataTransfer();
+            const rightList = screen.getByTestId('output-tablist');
+
+            fireEvent.dragStart(getTabsInTablist(0)[0], {
+                dataTransfer: transfer,
+            });
+            fireEvent.dragOver(rightList, { dataTransfer: transfer });
+            expect(rightList.className).toContain('dropTarget');
+            fireEvent.drop(rightList, { dataTransfer: transfer });
+
+            expect(transfer.setData).toHaveBeenCalledWith(
+                'application/x-escalier-tab',
+                '/a.esc',
+            );
+            expect(rightList.className).not.toContain('dropTarget');
+            const state = useEditorStore.getState();
+            expect(state.leftTabs).toEqual([{ path: '/b.esc' }]);
+            expect(state.rightTabs).toEqual([{ path: '/a.esc' }]);
+            expect(state.activeRightTabIndex).toBe(0);
+        });
+
+        test('dropping a tab on the empty right pane moves it there', () => {
+            setStoreState({
+                leftTabs: [{ path: '/a.esc' }, { path: '/b.esc' }],
+                activeLeftTabIndex: 0,
+            });
+            render(<Editor fs={makeFakeFS()} />);
+            const transfer = dataTransfer();
+            const emptyPane = screen.getByRole('button', {
+                name: 'Click to open files here, or drag a tab here',
+            });
+
+            fireEvent.dragStart(getTabsInTablist(0)[0], {
+                dataTransfer: transfer,
+            });
+            fireEvent.dragOver(emptyPane, { dataTransfer: transfer });
+            expect(emptyPane.className).toContain('dropTarget');
+            fireEvent.drop(emptyPane, { dataTransfer: transfer });
+
+            const state = useEditorStore.getState();
+            expect(state.leftTabs).toEqual([{ path: '/b.esc' }]);
+            expect(state.rightTabs).toEqual([{ path: '/a.esc' }]);
+        });
+
+        test('dropping a tab on the right pane overlay moves it to the right', () => {
+            setStoreState({
+                leftTabs: [{ path: '/a.esc' }, { path: '/b.esc' }],
+                activeLeftTabIndex: 0,
+            });
+            render(
+                <Editor
+                    fs={makeFakeFS()}
+                    rightPaneOverlay={<span>Compiling...</span>}
+                />,
+            );
+            const transfer = dataTransfer();
+            const overlay = screen.getByText('Compiling...').parentElement;
+            expect(overlay).not.toBeNull();
+            if (!overlay) return;
+
+            fireEvent.dragStart(getTabsInTablist(0)[0], {
+                dataTransfer: transfer,
+            });
+            fireEvent.dragOver(overlay, { dataTransfer: transfer });
+            expect(overlay.className).toContain('dropTarget');
+            fireEvent.drop(overlay, { dataTransfer: transfer });
+
+            expect(useEditorStore.getState().rightTabs).toEqual([
+                { path: '/a.esc' },
+            ]);
+        });
+
+        test('dropping a tab on its own tab list leaves it in place', () => {
+            setStoreState({
+                leftTabs: [{ path: '/a.esc' }],
+                activeLeftTabIndex: 0,
+                rightTabs: [{ path: '/build/a.js' }],
+                activeRightTabIndex: 0,
+            });
+            render(<Editor fs={makeFakeFS()} />);
+            const transfer = dataTransfer();
+            const rightList = screen.getByTestId('output-tablist');
+
+            fireEvent.dragStart(getTabsInTablist(1)[0], {
+                dataTransfer: transfer,
+            });
+            fireEvent.dragOver(rightList, { dataTransfer: transfer });
+            fireEvent.drop(rightList, { dataTransfer: transfer });
+
+            expect(rightList.className).not.toContain('dropTarget');
+            const state = useEditorStore.getState();
+            expect(state.leftTabs).toEqual([{ path: '/a.esc' }]);
+            expect(state.rightTabs).toEqual([{ path: '/build/a.js' }]);
+        });
+
+        test('ending a drag outside a tab list moves nothing', () => {
+            setStoreState({
+                leftTabs: [{ path: '/a.esc' }],
+                activeLeftTabIndex: 0,
+            });
+            render(<Editor fs={makeFakeFS()} />);
+            const transfer = dataTransfer();
+            const tab = getTabsInTablist(0)[0];
+            const rightList = screen.getByTestId('output-tablist');
+
+            fireEvent.dragStart(tab, { dataTransfer: transfer });
+            fireEvent.dragOver(rightList, { dataTransfer: transfer });
+            fireEvent.dragLeave(rightList, {
+                dataTransfer: transfer,
+                relatedTarget: document.body,
+            });
+            expect(rightList.className).not.toContain('dropTarget');
+            fireEvent.dragEnd(tab, { dataTransfer: transfer });
+            fireEvent.drop(rightList, { dataTransfer: transfer });
+
+            expect(useEditorStore.getState().rightTabs).toEqual([]);
+        });
+    });
+
     describe('empty state', () => {
-        test('shows empty state message when no left tabs are open', () => {
+        test('shows an empty pane on each side with no tabs, marking the focused one', () => {
             setStoreState({
                 leftTabs: [],
                 activeLeftTabIndex: null,
+                focusedSide: 'left',
             });
             render(<Editor fs={makeFakeFS()} />);
 
+            const panes = screen.getAllByRole('button', {
+                name: /drag a tab here/,
+            });
+            expect(panes.map((pane) => pane.textContent)).toEqual([
+                'Open a file from the explorer or drag a tab here',
+                'Click to open files here, or drag a tab here',
+            ]);
+        });
+
+        test('clicking an empty pane makes its side the one files open on', () => {
+            setStoreState({
+                leftTabs: [],
+                activeLeftTabIndex: null,
+                focusedSide: 'left',
+            });
+            render(<Editor fs={makeFakeFS()} />);
+
+            fireEvent.click(
+                screen.getByRole('button', {
+                    name: 'Click to open files here, or drag a tab here',
+                }),
+            );
+
+            expect(useEditorStore.getState().focusedSide).toBe('right');
+            useEditorStore
+                .getState()
+                .dispatch({ type: 'openFile', path: '/a.esc' });
+            expect(useEditorStore.getState().rightTabs).toEqual([
+                { path: '/a.esc' },
+            ]);
+        });
+
+        test('shows the overlay in place of the right empty pane', () => {
+            setStoreState({ leftTabs: [], activeLeftTabIndex: null });
+            render(
+                <Editor
+                    fs={makeFakeFS()}
+                    rightPaneOverlay={<span>Compiling...</span>}
+                />,
+            );
+
+            expect(screen.getByText('Compiling...')).toBeInTheDocument();
             expect(
-                screen.getByText(
-                    'Open a file from the explorer to start editing',
-                ),
-            ).toBeInTheDocument();
+                screen.getAllByRole('button', { name: /drag a tab here/ }),
+            ).toHaveLength(1);
         });
 
         test('hides input panel when no left tabs are open', () => {

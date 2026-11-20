@@ -162,6 +162,32 @@ describe('editorReducer', () => {
     });
 
     describe('closeTab', () => {
+        test.each([
+            {
+                name: 'moves focus to the other side when it has tabs',
+                right: ['/build/a.js'],
+                expected: 'right',
+            },
+            {
+                name: 'keeps focus when both sides are empty',
+                right: [],
+                expected: 'left',
+            },
+        ] as const)('closing the last tab $name', ({ right, expected }) => {
+            const state: EditorState = {
+                ...stateWith(['/bin/main.esc'], 0),
+                rightTabs: right.map((path) => ({ path })),
+                activeRightTabIndex: right.length > 0 ? 0 : null,
+                focusedSide: 'left',
+            };
+            const next = editorReducer(state, {
+                type: 'closeTab',
+                side: 'left',
+                index: 0,
+            });
+            expect(next.focusedSide).toBe(expected);
+        });
+
         test('closes the only tab, activeTabIndex becomes null', () => {
             const state = stateWith(['/bin/main.esc'], 0);
             const next = editorReducer(state, {
@@ -364,6 +390,37 @@ describe('editorReducer', () => {
             expect(next.rightTabs).toHaveLength(1);
             expect(next.rightTabs[0].path).toBe('/a.esc');
             expect(next.activeRightTabIndex).toBe(0);
+        });
+
+        test('moving a tab to a side that has the same file merges the two tabs', () => {
+            const state: EditorState = {
+                ...initialEditorState,
+                leftTabs: [
+                    { path: '/a.esc', scrollPos: 100 },
+                    { path: '/b.esc' },
+                ],
+                activeLeftTabIndex: 0,
+                rightTabs: [
+                    { path: '/c.esc' },
+                    { path: '/a.esc', scrollPos: 40 },
+                ],
+                activeRightTabIndex: 0,
+                focusedSide: 'left',
+            };
+            const next = editorReducer(state, {
+                type: 'moveTab',
+                from: 'left',
+                index: 0,
+            });
+            expect(next.leftTabs).toEqual([{ path: '/b.esc' }]);
+            // The right side keeps its own tab for the file, with its scroll position,
+            // and makes it active.
+            expect(next.rightTabs).toEqual([
+                { path: '/c.esc' },
+                { path: '/a.esc', scrollPos: 40 },
+            ]);
+            expect(next.activeRightTabIndex).toBe(1);
+            expect(next.focusedSide).toBe('right');
         });
 
         test('ignores out-of-bounds index when moving right', () => {

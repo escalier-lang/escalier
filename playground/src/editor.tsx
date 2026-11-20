@@ -1,5 +1,6 @@
 import * as monaco from 'monaco-editor-core';
 import {
+    type DragEvent,
     type ReactNode,
     useCallback,
     useEffect,
@@ -13,6 +14,7 @@ import { Toast, ToastButton } from './components/toast';
 import { diagnosticsLanguageID } from './diagnostics-language';
 import {
     type CrashReport,
+    type Side,
     type TextPosition,
     sideBeside,
 } from './editor-state';
@@ -53,22 +55,78 @@ function pathToUri(path: string): string {
 
 type ContextMenuState = {
     tabPath: string;
-    side: 'left' | 'right';
+    side: Side;
     x: number;
     y: number;
 };
+
+/**
+ * The drag data type a tab sets. Monaco ignores it, so a tab dropped on an editor
+ * inserts no text.
+ */
+const TAB_DRAG_TYPE = 'application/x-escalier-tab';
+
+/** The tab being dragged. */
+type DraggedTab = { side: Side; index: number };
+
+type DropHandlers = {
+    onDragOver: (e: DragEvent) => void;
+    onDragLeave: (e: DragEvent) => void;
+    onDrop: (e: DragEvent) => void;
+};
+
+type EmptyPaneProps = {
+    side: Side;
+    /** Whether files opened from the explorer open on this side. */
+    isFocused: boolean;
+    isDropTarget: boolean;
+    dropHandlers: DropHandlers;
+    onFocus: () => void;
+};
+
+/**
+ * Fills a side that has no tabs. Clicking it makes the side the one files open on,
+ * and a tab dragged from the other side can be dropped on it.
+ */
+const EmptyPane = ({
+    side,
+    isFocused,
+    isDropTarget,
+    dropHandlers,
+    onFocus,
+}: EmptyPaneProps) => (
+    <button
+        type="button"
+        className={[
+            styles.emptyState,
+            side === 'left' ? styles.inputEmpty : styles.outputEmpty,
+            isFocused ? styles.focusedEmpty : '',
+            isDropTarget ? styles.dropTarget : '',
+        ]
+            .filter(Boolean)
+            .join(' ')}
+        onClick={onFocus}
+        {...dropHandlers}
+    >
+        {isFocused
+            ? 'Open a file from the explorer or drag a tab here'
+            : 'Click to open files here, or drag a tab here'}
+    </button>
+);
 
 type TabItemProps = {
     path: string;
     isActive: boolean;
     isFocused: boolean;
     panelId: string;
-    side: 'left' | 'right';
+    side: Side;
     contextMenu: ContextMenuState | null;
     onActivate: () => void;
     onClose: () => void;
     onMove: () => void;
     onContextMenu: (x: number, y: number) => void;
+    onDragStart: () => void;
+    onDragEnd: () => void;
 };
 
 const TabItem = ({
@@ -82,6 +140,8 @@ const TabItem = ({
     onClose,
     onMove,
     onContextMenu,
+    onDragStart,
+    onDragEnd,
 }: TabItemProps) => {
     const name = displayName(path);
     const className = `${styles.tab} ${isActive && isFocused ? styles.activeTab : styles.visibleTab}`;
@@ -105,6 +165,14 @@ const TabItem = ({
                 e.preventDefault();
                 onContextMenu(e.clientX, e.clientY);
             }}
+            draggable
+            onDragStart={(e) => {
+                // Firefox starts a drag only when the drag carries data.
+                e.dataTransfer.setData(TAB_DRAG_TYPE, path);
+                e.dataTransfer.effectAllowed = 'move';
+                onDragStart();
+            }}
+            onDragEnd={onDragEnd}
         >
             <span className={styles.tabLabel}>{name}</span>
             <button
@@ -179,6 +247,8 @@ export const Editor = ({
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(
         null,
     );
+    const [draggedTab, setDraggedTab] = useState<DraggedTab | null>(null);
+    const [dropSide, setDropSide] = useState<Side | null>(null);
     const {
         leftTabs,
         activeLeftTabIndex,
@@ -303,10 +373,7 @@ export const Editor = ({
         // the tab set to reveal the diagnostic. The model switch below moves there. A
         // drag that selects text opens nothing, so the user can still copy a message.
         const openClickedDiagnostic =
-            (
-                editor: monaco.editor.IStandaloneCodeEditor,
-                side: 'left' | 'right',
-            ) =>
+            (editor: monaco.editor.IStandaloneCodeEditor, side: Side) =>
             (e: monaco.editor.IEditorMouseEvent) => {
                 const model = editor.getModel();
                 const lineNumber = e.target.position?.lineNumber;
@@ -529,6 +596,46 @@ export const Editor = ({
         });
     }
 
+    /**
+     * Returns the drag handlers that let an element on side take a tab dragged from the
+     * other side. Dropping the tab moves it, as "Move to Right" and "Move to Left" do.
+     */
+    const dropHandlers = (side: Side): DropHandlers => {
+        const accepts = draggedTab !== null && draggedTab.side !== side;
+        return {
+            onDragOver: (e: DragEvent) => {
+                if (!accepts) return;
+                // Cancelling dragover marks the element as a drop target.
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                setDropSide(side);
+            },
+            onDragLeave: (e: DragEvent) => {
+                // dragleave also fires on moving between the element's children.
+                if (e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                    return;
+                }
+                setDropSide(null);
+            },
+            onDrop: (e: DragEvent) => {
+                if (!accepts) return;
+                e.preventDefault();
+                setDropSide(null);
+                setDraggedTab(null);
+                dispatch({
+                    type: 'moveTab',
+                    from: draggedTab.side,
+                    index: draggedTab.index,
+                });
+            },
+        };
+    };
+
+    const endTabDrag = () => {
+        setDraggedTab(null);
+        setDropSide(null);
+    };
+
     return (
         <div className={styles['editor-root']}>
             {/* Banner (e.g. validation errors) */}
@@ -547,7 +654,8 @@ export const Editor = ({
 
             {/* Input tabs */}
             <div
-                className={styles.inputTabs}
+                {...dropHandlers('left')}
+                className={`${styles.inputTabs} ${dropSide === 'left' ? styles.dropTarget : ''}`}
                 role="tablist"
                 data-testid="input-tablist"
             >
@@ -592,13 +700,19 @@ export const Editor = ({
                                 y,
                             })
                         }
+                        onDragStart={() => {
+                            setContextMenu(null);
+                            setDraggedTab({ side: 'left', index: i });
+                        }}
+                        onDragEnd={endTabDrag}
                     />
                 ))}
             </div>
 
             {/* Output tabs */}
             <div
-                className={styles.outputTabs}
+                {...dropHandlers('right')}
+                className={`${styles.outputTabs} ${dropSide === 'right' ? styles.dropTarget : ''}`}
                 role="tablist"
                 data-testid="output-tablist"
             >
@@ -643,6 +757,11 @@ export const Editor = ({
                                 y,
                             })
                         }
+                        onDragStart={() => {
+                            setContextMenu(null);
+                            setDraggedTab({ side: 'right', index: i });
+                        }}
+                        onDragEnd={endTabDrag}
                     />
                 ))}
             </div>
@@ -658,11 +777,16 @@ export const Editor = ({
                 }}
             />
 
-            {/* Empty state when no tabs are open */}
             {leftTabs.length === 0 && (
-                <div className={styles.emptyState}>
-                    Open a file from the explorer to start editing
-                </div>
+                <EmptyPane
+                    side="left"
+                    isFocused={focusedSide === 'left'}
+                    isDropTarget={dropSide === 'left'}
+                    dropHandlers={dropHandlers('left')}
+                    onFocus={() =>
+                        dispatch({ type: 'setFocusedSide', side: 'left' })
+                    }
+                />
             )}
 
             {/* Output editor */}
@@ -678,9 +802,24 @@ export const Editor = ({
 
             {/* Right pane overlay (e.g. compile spinner) */}
             {!showRightPane && rightPaneOverlay && (
-                <div className={styles.rightPaneOverlay}>
+                // The overlay takes a dropped tab as the empty pane it covers would.
+                <div
+                    {...dropHandlers('right')}
+                    className={`${styles.rightPaneOverlay} ${dropSide === 'right' ? styles.dropTarget : ''}`}
+                >
                     {rightPaneOverlay}
                 </div>
+            )}
+            {!showRightPane && !rightPaneOverlay && (
+                <EmptyPane
+                    side="right"
+                    isFocused={focusedSide === 'right'}
+                    isDropTarget={dropSide === 'right'}
+                    dropHandlers={dropHandlers('right')}
+                    onFocus={() =>
+                        dispatch({ type: 'setFocusedSide', side: 'right' })
+                    }
+                />
             )}
 
             {statusBar && <div className={styles.statusBar}>{statusBar}</div>}
