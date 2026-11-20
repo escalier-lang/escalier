@@ -392,6 +392,37 @@ describe('editorReducer', () => {
             expect(next.activeRightTabIndex).toBe(0);
         });
 
+        test('moving a tab to a side that has the same file merges the two tabs', () => {
+            const state: EditorState = {
+                ...initialEditorState,
+                leftTabs: [
+                    { path: '/a.esc', scrollPos: 100 },
+                    { path: '/b.esc' },
+                ],
+                activeLeftTabIndex: 0,
+                rightTabs: [
+                    { path: '/c.esc' },
+                    { path: '/a.esc', scrollPos: 40 },
+                ],
+                activeRightTabIndex: 0,
+                focusedSide: 'left',
+            };
+            const next = editorReducer(state, {
+                type: 'moveTab',
+                from: 'left',
+                index: 0,
+            });
+            expect(next.leftTabs).toEqual([{ path: '/b.esc' }]);
+            // The right side keeps its own tab for the file, with its scroll position,
+            // and makes it active.
+            expect(next.rightTabs).toEqual([
+                { path: '/c.esc' },
+                { path: '/a.esc', scrollPos: 40 },
+            ]);
+            expect(next.activeRightTabIndex).toBe(1);
+            expect(next.focusedSide).toBe('right');
+        });
+
         test('ignores out-of-bounds index when moving right', () => {
             const state = stateWith(['/a.esc'], 0);
             expect(
