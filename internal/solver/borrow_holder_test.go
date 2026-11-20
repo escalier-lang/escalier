@@ -36,7 +36,7 @@ func TestBorrowHoldersAcrossReassignment(t *testing.T) {
 		// `seed` is a parameter, so the fall-through path holds no loan of a local.
 		"BorrowSetOnOneBranchReachesMerge": {
 			src: `
-				fn f(seed: &mut {value: number}, cond: boolean, out: &mut {slot: &mut {value: number}}, view: &mut {r: &{value: number}}) {
+				fn f<'s>(seed: &'s mut {value: number}, cond: boolean, out: &mut {slot: &'s mut {value: number}}, view: &mut {r: &{value: number}}) {
 					var a = seed
 					val mut d = {value: 0}
 					if cond {
@@ -50,7 +50,7 @@ func TestBorrowHoldersAcrossReassignment(t *testing.T) {
 			// breaks E2 against the `&mut d` that `out.slot` holds.
 			want: []string{"9:15-9:17: cannot borrow 'd' as immutable while it is borrowed as mutable"},
 			types: map[string]string{
-				"f": "fn (seed: &mut {value: number}, cond: boolean, out: &mut {slot: &mut {value: number}}, " +
+				"f": "fn <'a>(seed: &'a mut {value: number}, cond: boolean, out: &mut {slot: &'a mut {value: number}}, " +
 					"view: &mut {r: &{value: number}}) -> undefined",
 			},
 		},

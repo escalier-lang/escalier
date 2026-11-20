@@ -268,7 +268,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					target: &'c mut {box: &'d mut Box<&'a mut {value: number}>},
 					item: &'a mut {value: number},
 				) -> undefined
-				fn build(mut seeded: Box<&mut {value: number}>, out: &mut {slot: &mut Box<&mut {value: number}>}) {
+				fn build<'s>(mut seeded: Box<&'s mut {value: number}>, out: &mut {slot: &mut Box<&'s mut {value: number}>}) {
 					val mut b = {value: 2}
 					val mut a = {box: &mut seeded}
 					store(&mut a, &mut b)
@@ -281,7 +281,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 			types: map[string]string{
 				"Box":   "{new <T>(value: T) -> Box<T>}",
 				"store": "fn <'a>(target: &mut {box: &mut Box<&'a mut {value: number}>}, item: &'a mut {value: number}) -> undefined",
-				"build": "fn (seeded: Box<&mut {value: number}>, out: &mut {slot: &mut Box<&mut {value: number}>}) -> undefined",
+				"build": "fn <'a>(seeded: Box<&'a mut {value: number}>, out: &mut {slot: &mut Box<&'a mut {value: number}>}) -> undefined",
 			},
 		},
 		// An alias is transparent, so a target's referent written under an alias name is
@@ -391,7 +391,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					target: &'c mut {peers: &'d mut {[key: string]?: &'a mut {value: number}}},
 					item: &'a mut {value: number},
 				) -> undefined
-				fn build(mut seeded: {[key: string]?: &mut {value: number}}, out: &mut {slot: &mut {[key: string]?: &mut {value: number}}}) {
+				fn build<'s>(mut seeded: {[key: string]?: &'s mut {value: number}}, out: &mut {slot: &mut {[key: string]?: &'s mut {value: number}}}) {
 					val mut b = {value: 2}
 					val mut a = {peers: &mut seeded}
 					store(&mut a, &mut b)
@@ -404,8 +404,8 @@ func TestCallStoreEdgePositions(t *testing.T) {
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut {peers: &mut {[key: string]?: &'a mut {value: number}}}, " +
 					"item: &'a mut {value: number}) -> undefined",
-				"build": "fn (seeded: {[key: string]?: &mut {value: number}}, " +
-					"out: &mut {slot: &mut {[key: string]?: &mut {value: number}}}) -> undefined",
+				"build": "fn <'a>(seeded: {[key: string]?: &'a mut {value: number}}, " +
+					"out: &mut {slot: &mut {[key: string]?: &'a mut {value: number}}}) -> undefined",
 			},
 		},
 		// An immutable borrow is stored the way a mutable one is, so the item's local leaves
