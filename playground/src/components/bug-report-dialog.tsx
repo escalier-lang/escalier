@@ -35,8 +35,7 @@ type LinkState =
  * Asks the user to describe a bug, then opens the playground bug form on GitHub filled
  * in with the description, a permalink to the project, the errors shown, the latest
  * crash report and the environment. A button copies the same report as Markdown. Once
- * the user opens the form, the dialog says that it opened, offers to open it again, and
- * can go back to the report.
+ * the user opens the form, the dialog says that it opened and offers to open it again.
  */
 export const BugReportDialog = ({
     capturePermalink,
@@ -55,10 +54,8 @@ export const BugReportDialog = ({
     // leaves this one as it was, so the dialog then says the form opened.
     const [issueOpened, setIssueOpened] = useState(false);
     const doneRef = useRef<HTMLButtonElement>(null);
-    // Switching views unmounts the focused button, so focus moves to the first control
-    // of the view that replaces it.
     useEffect(() => {
-        (issueOpened ? doneRef : describeRef).current?.focus();
+        if (issueOpened) doneRef.current?.focus();
     }, [issueOpened]);
 
     // The link captures the project as it is when the dialog opens, which is the code
@@ -133,15 +130,6 @@ export const BugReportDialog = ({
                         report into a new issue.
                     </p>
                     <div className={dialogStyles.buttons}>
-                        {/* The report's fields keep their text, so the user can fix it and
-                            open the form again. */}
-                        <button
-                            type="button"
-                            className={`${dialogStyles.button} ${dialogStyles.secondaryButton} ${styles.back}`}
-                            onClick={() => setIssueOpened(false)}
-                        >
-                            Back
-                        </button>
                         <button
                             type="button"
                             className={`${dialogStyles.button} ${dialogStyles.secondaryButton}`}

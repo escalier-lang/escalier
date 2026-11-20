@@ -178,24 +178,6 @@ test('says the issue form opened once the user opens it, and Done closes the dia
     expect(onClose).toHaveBeenCalledOnce();
 });
 
-test('Back returns from the opened view to the report as the user left it', async () => {
-    renderDialog(() => Promise.resolve(link));
-    fireEvent.change(screen.getByLabelText('What happened'), {
-        target: { value: 'Hover is blank.' },
-    });
-    fireEvent.click(
-        await screen.findByRole('link', { name: 'Open GitHub issue' }),
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
-
-    expect(screen.getByRole('dialog')).toHaveAccessibleName('Report a bug');
-    expect(screen.getByLabelText('What happened')).toHaveValue(
-        'Hover is blank.',
-    );
-    expect(screen.getByLabelText('What happened')).toHaveFocus();
-});
-
 test('Cancel closes the dialog', () => {
     const onClose = renderDialog(() => Promise.resolve(link));
 
