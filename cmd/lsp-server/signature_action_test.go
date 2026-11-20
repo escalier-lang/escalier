@@ -130,6 +130,15 @@ func TestSignatureAction(t *testing.T) {
 			diagnostic: "1:48-1:53 the return type borrows from 'q', 'a' or 'b', and elision cannot tell which; write a lifetime, as in `fn pick<'x, 'q>(q: &'q Flat, a: &'x Flat, b: &Flat) -> &'x Flat`",
 		},
 		{
+			// The type's span ends inside its parentheses, so the return type goes after the
+			// `)` that closes the parameter list, not the type's own.
+			name:       "ParenthesizedParamType",
+			src:        "fn f(p: &({a: number} | {b: number})) { return p }",
+			cursor:     "f(",
+			expected:   "fn f(p: &({a: number} | {b: number})) -> &({a: number} | {b: number}) { return p }",
+			diagnostic: "0:3-0:4 'f' is declared at a script's top level, so it needs a return type; write `-> &({a: number} | {b: number})`",
+		},
+		{
 			name:       "CommentsInParamList",
 			src:        "fn f(\n\tx: number, // the input\n\ty: number /* scale */\n) { return x * y }",
 			cursor:     "f(",
