@@ -10,10 +10,18 @@ import {
 import { CrashReportDialog } from './components/crash-report-dialog';
 import { FileExplorer } from './components/file-explorer';
 import { Toast, ToastButton } from './components/toast';
-import type { CrashReport } from './editor-state';
+import { diagnosticsLanguageID } from './diagnostics-language';
+import type { CrashReport, TextPosition } from './editor-state';
 import { useEditorStore } from './editor-store';
 import type { BrowserFS } from './fs/browser-fs';
 import { languageID } from './language';
+import { collectProjectFiles } from './permalink';
+import {
+    DIAGNOSTICS_TAB_PATH,
+    diagnosticLocation,
+    projectDiagnosticsText,
+} from './project-diagnostics';
+import { useProjectDiagnosticsStore } from './project-diagnostics-store';
 import { monacoThemeName, useThemeStore } from './theme';
 
 import styles from './editor.module.css';
@@ -25,6 +33,7 @@ function displayName(path: string): string {
 
 /** Returns the Monaco language id for a file path. */
 export function languageForPath(path: string): string {
+    if (path === DIAGNOSTICS_TAB_PATH) return diagnosticsLanguageID;
     if (path.endsWith('.esc')) return languageID;
     if (path.endsWith('.js')) return 'javascript';
     if (path.endsWith('.ts') || path.endsWith('.d.ts')) return 'typescript';
@@ -141,6 +150,8 @@ export type EditorProps = {
     rightPaneOverlay?: ReactNode;
     banner?: ReactNode;
     toolbar?: ReactNode;
+    /** Shown in the bar along the bottom of the playground. */
+    statusBar?: ReactNode;
 };
 
 export const Editor = ({
@@ -150,6 +161,7 @@ export const Editor = ({
     rightPaneOverlay,
     banner,
     toolbar,
+    statusBar,
 }: EditorProps) => {
     const { dispatch, ...state } = useEditorStore();
     const inputDivRef = useRef<HTMLDivElement>(null);
@@ -205,12 +217,49 @@ export const Editor = ({
             let model = monaco.editor.getModel(uri);
             if (!model) {
                 const lang = languageForPath(path);
-                const text = content ?? loadFileContent(fs, path) ?? '';
+                // The diagnostics tab names no file. Its text comes from the project's
+                // diagnostics, and the effect below keeps it up to date.
+                const text =
+                    path === DIAGNOSTICS_TAB_PATH
+                        ? projectDiagnosticsText(
+                              useProjectDiagnosticsStore.getState().diagnostics,
+                          )
+                        : (content ?? loadFileContent(fs, path) ?? '');
                 model = monaco.editor.createModel(text, lang, uri);
             }
             return model;
         },
         [fs],
+    );
+
+    // The options an editor takes while it shows the file at path. Nothing can edit the
+    // diagnostics tab, since its text comes from the language server, and its lines wrap
+    // so a long message reads without scrolling sideways.
+    const editorOptionsFor = useCallback(
+        (path: string): monaco.editor.IEditorOptions => {
+            const isDiagnostics = path === DIAGNOSTICS_TAB_PATH;
+            return {
+                readOnly: isDiagnostics || (isReadOnly?.(path) ?? false),
+                wordWrap: isDiagnostics ? 'on' : 'off',
+            };
+        },
+        [isReadOnly],
+    );
+
+    // Rewrites the diagnostics tab's text each time the project's diagnostics change.
+    useEffect(
+        () =>
+            useProjectDiagnosticsStore.subscribe((current, previous) => {
+                if (current.diagnostics === previous.diagnostics) return;
+                const model = monaco.editor.getModel(
+                    monaco.Uri.parse(pathToUri(DIAGNOSTICS_TAB_PATH)),
+                );
+                const text = projectDiagnosticsText(current.diagnostics);
+                if (model && model.getValue() !== text) {
+                    model.setValue(text);
+                }
+            }),
+        [],
     );
 
     // Initialize editors
@@ -246,9 +295,51 @@ export const Editor = ({
             dispatch({ type: 'setFocusedSide', side: 'right' }),
         );
 
+        // A click on a line of the diagnostics tab opens the file the line names, on
+        // the same side, with the tab set to reveal the diagnostic. The model switch
+        // below moves there. A drag
+        // that selects text opens nothing, so the user can still copy a message.
+        const openClickedDiagnostic =
+            (
+                editor: monaco.editor.IStandaloneCodeEditor,
+                side: 'left' | 'right',
+            ) =>
+            (e: monaco.editor.IEditorMouseEvent) => {
+                const model = editor.getModel();
+                const lineNumber = e.target.position?.lineNumber;
+                if (
+                    model?.uri.path !== DIAGNOSTICS_TAB_PATH ||
+                    lineNumber === undefined ||
+                    !editor.getSelection()?.isEmpty()
+                ) {
+                    return;
+                }
+                const location = diagnosticLocation(
+                    model.getLineContent(lineNumber),
+                );
+                if (location === null) return;
+                dispatch({
+                    type: 'openFile',
+                    path: location.path,
+                    side,
+                    revealAt: {
+                        lineNumber: location.line,
+                        column: location.column,
+                    },
+                });
+            };
+        const inputClickDisposable = inputEditor.onMouseUp(
+            openClickedDiagnostic(inputEditor, 'left'),
+        );
+        const outputClickDisposable = outputEditor.onMouseUp(
+            openClickedDiagnostic(outputEditor, 'right'),
+        );
+
         return () => {
             inputFocusDisposable.dispose();
             outputFocusDisposable.dispose();
+            inputClickDisposable.dispose();
+            outputClickDisposable.dispose();
             inputEditor.dispose();
             outputEditor.dispose();
             inputEditorRef.current = null;
@@ -277,7 +368,7 @@ export const Editor = ({
         }
 
         const model = getOrCreateModel(activePath);
-        editor.updateOptions({ readOnly: isReadOnly?.(activePath) ?? false });
+        editor.updateOptions(editorOptionsFor(activePath));
         editor.setModel(model);
 
         // Restore scroll position
@@ -288,7 +379,7 @@ export const Editor = ({
         activePath,
         getOrCreateModel,
         activeTab?.scrollPos,
-        isReadOnly,
+        editorOptionsFor,
         refreshKey,
     ]);
 
@@ -301,9 +392,7 @@ export const Editor = ({
         }
 
         const model = getOrCreateModel(activeRightPath);
-        editor.updateOptions({
-            readOnly: isReadOnly?.(activeRightPath) ?? false,
-        });
+        editor.updateOptions(editorOptionsFor(activeRightPath));
         editor.setModel(model);
 
         // Restore scroll position
@@ -314,8 +403,47 @@ export const Editor = ({
         activeRightPath,
         getOrCreateModel,
         activeRightTab?.scrollPos,
-        isReadOnly,
+        editorOptionsFor,
     ]);
+
+    // Moves each editor to its active tab's revealAt, then clears it. These run after the
+    // model switches above, in the same commit, so the editor shows the tab's file by
+    // then. Clearing revealAt leaves the model switches alone, so the tab's scroll
+    // position isn't restored over the reveal.
+    const leftRevealAt = activeTab?.revealAt;
+    useEffect(() => {
+        const editor = inputEditorRef.current;
+        if (!editor || !activePath || !leftRevealAt) return;
+        revealPosition(editor, leftRevealAt);
+        dispatch({ type: 'revealed', side: 'left', path: activePath });
+    }, [activePath, leftRevealAt, dispatch]);
+    const rightRevealAt = activeRightTab?.revealAt;
+    useEffect(() => {
+        const editor = outputEditorRef.current;
+        if (!editor || !activeRightPath || !rightRevealAt) return;
+        revealPosition(editor, rightRevealAt);
+        dispatch({ type: 'revealed', side: 'right', path: activeRightPath });
+    }, [activeRightPath, rightRevealAt, dispatch]);
+
+    // The language server checks the project once an Escalier file opens, and a file opens
+    // when the editor makes a model for it. A model for every Escalier tab gets the
+    // project checked whichever tab is active, as when a permalink restores the
+    // diagnostics tab as the active one. When the diagnostics tab is open and no Escalier
+    // tab is, the project's first Escalier file opens without a tab.
+    useEffect(() => {
+        const tabPaths = [...leftTabs, ...rightTabs].map((tab) => tab.path);
+        const escalierPaths = tabPaths.filter((path) => path.endsWith('.esc'));
+        if (
+            escalierPaths.length === 0 &&
+            tabPaths.includes(DIAGNOSTICS_TAB_PATH)
+        ) {
+            const first = firstEscalierFile(fs);
+            if (first !== null) escalierPaths.push(first);
+        }
+        for (const path of escalierPaths) {
+            getOrCreateModel(path);
+        }
+    }, [leftTabs, rightTabs, getOrCreateModel, fs]);
 
     // Listen for FS events to update the Monaco models of open read-only files. Those
     // are the build output, which the compiler rewrites. Every right tab counts, and a
@@ -546,6 +674,8 @@ export const Editor = ({
                 </div>
             )}
 
+            {statusBar && <div className={styles.statusBar}>{statusBar}</div>}
+
             {state.notification && (
                 <Toast
                     key={keyedNotification.key}
@@ -571,6 +701,27 @@ export const Editor = ({
         </div>
     );
 };
+
+/** Puts editor's cursor at position, scrolls it to the centre and focuses editor. */
+function revealPosition(
+    editor: monaco.editor.IStandaloneCodeEditor,
+    position: TextPosition,
+): void {
+    editor.setPosition(position);
+    editor.revealPositionInCenter(position);
+    editor.focus();
+}
+
+/**
+ * Returns the path of the project's first Escalier file in path order, preferring one under
+ * `/lib/`, or null when the project has none.
+ */
+function firstEscalierFile(fs: BrowserFS): string | null {
+    const paths = Object.keys(collectProjectFiles(fs.rootDir, () => ''))
+        .filter((path) => path.endsWith('.esc'))
+        .sort();
+    return paths.find((path) => path.startsWith('/lib/')) ?? paths[0] ?? null;
+}
 
 /**
  * Load file content from BrowserFS. BrowserFS callbacks fire synchronously

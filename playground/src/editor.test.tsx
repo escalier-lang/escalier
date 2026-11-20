@@ -24,6 +24,8 @@ vi.mock('monaco-editor-core');
 // Mock the language module to avoid Monaco language registration side effects.
 vi.mock('./language', () => ({ languageID: 'escalier' }));
 
+import * as monaco from 'monaco-editor-core';
+
 import { stubModalDialogs } from './components/dialog-stub';
 import { Editor, languageForPath } from './editor';
 import type { EditorState } from './editor-state';
@@ -31,6 +33,11 @@ import { initialEditorState } from './editor-state';
 import { useEditorStore } from './editor-store';
 import type { BrowserFS } from './fs/browser-fs';
 import { FSEventEmitter } from './fs/fs-events';
+import {
+    DIAGNOSTICS_TAB_PATH,
+    type ProjectDiagnostic,
+} from './project-diagnostics';
+import { useProjectDiagnosticsStore } from './project-diagnostics-store';
 
 function makeFakeFS(): BrowserFS {
     return {
@@ -464,6 +471,188 @@ describe('Editor', () => {
             });
             expect(screen.queryByRole('alert')).not.toBeInTheDocument();
         });
+    });
+});
+
+describe('diagnostics tab', () => {
+    const error: ProjectDiagnostic = {
+        path: '/lib/index.esc',
+        line: 1,
+        column: 2,
+        severity: 'error',
+        message: 'bad',
+    };
+
+    beforeEach(() => {
+        useProjectDiagnosticsStore.setState({
+            diagnostics: { '/lib/index.esc': [error] },
+        });
+    });
+
+    afterEach(() => {
+        vi.mocked(monaco.editor.getModel).mockReset();
+        vi.mocked(monaco.editor.createModel).mockClear();
+    });
+
+    test('shows every diagnostic, read-only and wrapped, in the diagnostics language', () => {
+        setStoreState({
+            leftTabs: [{ path: DIAGNOSTICS_TAB_PATH }],
+            activeLeftTabIndex: 0,
+        });
+        render(<Editor fs={makeFakeFS()} />);
+
+        expect(monaco.editor.createModel).toHaveBeenCalledWith(
+            '/lib/index.esc:1:2: error: bad\n',
+            'escalier-diagnostics',
+            `file://${DIAGNOSTICS_TAB_PATH}`,
+        );
+        const inputEditor = vi.mocked(monaco.editor.create).mock.results.at(-2)
+            ?.value as { updateOptions: ReturnType<typeof vi.fn> };
+        expect(inputEditor.updateOptions).toHaveBeenCalledWith({
+            readOnly: true,
+            wordWrap: 'on',
+        });
+    });
+
+    test('rewrites its text when the diagnostics change', () => {
+        const model = { getValue: vi.fn(() => 'old\n'), setValue: vi.fn() };
+        vi.mocked(monaco.editor.getModel).mockImplementation((uri) =>
+            String(uri) === `file://${DIAGNOSTICS_TAB_PATH}`
+                ? (model as unknown as monaco.editor.ITextModel)
+                : null,
+        );
+        render(<Editor fs={makeFakeFS()} />);
+
+        act(() => {
+            useProjectDiagnosticsStore.getState().dispatch({
+                type: 'setFileDiagnostics',
+                path: '/lib/index.esc',
+                diagnostics: [],
+            });
+        });
+
+        expect(model.setValue).toHaveBeenCalledWith('No diagnostics.\n');
+    });
+});
+
+describe('clicking a diagnostic', () => {
+    type MockEditor = {
+        onMouseUp: ReturnType<typeof vi.fn>;
+        getModel: ReturnType<typeof vi.fn>;
+        getSelection: ReturnType<typeof vi.fn>;
+        setPosition: ReturnType<typeof vi.fn>;
+        revealPositionInCenter: ReturnType<typeof vi.fn>;
+        focus: ReturnType<typeof vi.fn>;
+    };
+
+    test('opens the file on the same side and reveals the diagnostic', () => {
+        setStoreState({
+            leftTabs: [{ path: DIAGNOSTICS_TAB_PATH }],
+            activeLeftTabIndex: 0,
+        });
+        render(<Editor fs={makeFakeFS()} />);
+        const inputEditor = vi.mocked(monaco.editor.create).mock.results.at(-2)
+            ?.value as MockEditor;
+        inputEditor.getModel.mockReturnValue({
+            uri: { path: DIAGNOSTICS_TAB_PATH },
+            getLineContent: () => '/lib/index.esc:3:7: error: bad',
+        });
+        inputEditor.getSelection.mockReturnValue({ isEmpty: () => true });
+        const [onMouseUp] = inputEditor.onMouseUp.mock.calls[0];
+
+        act(() => onMouseUp({ target: { position: { lineNumber: 1 } } }));
+
+        const { leftTabs, activeLeftTabIndex } = useEditorStore.getState();
+        expect(leftTabs.map((tab) => tab.path)).toEqual([
+            DIAGNOSTICS_TAB_PATH,
+            '/lib/index.esc',
+        ]);
+        expect(activeLeftTabIndex).toBe(1);
+        const position = { lineNumber: 3, column: 7 };
+        expect(inputEditor.setPosition).toHaveBeenCalledWith(position);
+        expect(inputEditor.revealPositionInCenter).toHaveBeenCalledWith(
+            position,
+        );
+        expect(inputEditor.focus).toHaveBeenCalled();
+        // The editor clears the reveal once it has moved there.
+        expect(useEditorStore.getState().leftTabs[1]).toEqual({
+            path: '/lib/index.esc',
+        });
+    });
+
+    test('opens nothing after a drag that selects text', () => {
+        setStoreState({
+            leftTabs: [{ path: DIAGNOSTICS_TAB_PATH }],
+            activeLeftTabIndex: 0,
+        });
+        render(<Editor fs={makeFakeFS()} />);
+        const inputEditor = vi.mocked(monaco.editor.create).mock.results.at(-2)
+            ?.value as MockEditor;
+        inputEditor.getModel.mockReturnValue({
+            uri: { path: DIAGNOSTICS_TAB_PATH },
+            getLineContent: () => '/lib/index.esc:3:7: error: bad',
+        });
+        inputEditor.getSelection.mockReturnValue({ isEmpty: () => false });
+        const [onMouseUp] = inputEditor.onMouseUp.mock.calls[0];
+
+        act(() => onMouseUp({ target: { position: { lineNumber: 1 } } }));
+
+        expect(useEditorStore.getState().leftTabs).toHaveLength(1);
+    });
+});
+
+describe('language server models', () => {
+    afterEach(() => {
+        vi.mocked(monaco.editor.createModel).mockClear();
+    });
+
+    /** Returns the paths Editor made models for. */
+    const modelPaths = () =>
+        vi
+            .mocked(monaco.editor.createModel)
+            .mock.calls.map(([, , uri]) => String(uri).replace('file://', ''));
+
+    test('opens every Escalier tab, not only the active one', () => {
+        setStoreState({
+            leftTabs: [
+                { path: DIAGNOSTICS_TAB_PATH },
+                { path: '/lib/index.esc' },
+            ],
+            activeLeftTabIndex: 0,
+            rightTabs: [{ path: '/bin/main.esc' }, { path: '/build/a.js' }],
+            activeRightTabIndex: 1,
+        });
+        render(<Editor fs={makeFakeFS()} />);
+
+        expect(modelPaths()).toEqual(
+            expect.arrayContaining(['/lib/index.esc', '/bin/main.esc']),
+        );
+    });
+
+    test("opens the project's first Escalier file when only the diagnostics tab is open", () => {
+        const file = (name: string) => ({
+            type: 'file' as const,
+            name,
+            content: new Uint8Array(),
+        });
+        const dir = (name: string, children: { name: string }[]) => ({
+            type: 'dir' as const,
+            name,
+            children: new Map(children.map((child) => [child.name, child])),
+        });
+        const fakeFS = makeFakeFS();
+        (fakeFS as { rootDir: unknown }).rootDir = dir('/', [
+            dir('bin', [file('main.esc')]),
+            dir('lib', [file('index.esc')]),
+            file('package.json'),
+        ]);
+        setStoreState({
+            leftTabs: [{ path: DIAGNOSTICS_TAB_PATH }],
+            activeLeftTabIndex: 0,
+        });
+        render(<Editor fs={fakeFS} />);
+
+        expect(modelPaths()).toEqual([DIAGNOSTICS_TAB_PATH, '/lib/index.esc']);
     });
 });
 

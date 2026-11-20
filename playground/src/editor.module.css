@@ -8,11 +8,12 @@
        panes can grow but never shrink. minmax(0, 1fr) lets them shrink with the window,
        and each editor follows its pane. */
     grid-template-columns: 220px minmax(0, 1fr) minmax(0, 1fr);
-    grid-template-rows: 36px 40px minmax(0, 1fr);
+    grid-template-rows: 36px 40px minmax(0, 1fr) 24px;
     grid-template-areas:
         "toolbar    toolbar     toolbar"
         "explorer   input-tabs  output-tabs"
-        "explorer   input       output";
+        "explorer   input       output"
+        "status     status      status";
 }
 
 .toolbar {
@@ -136,6 +137,10 @@
 
 .outputPane {
     grid-area: output;
+}
+
+.statusBar {
+    grid-area: status;
 }
 
 .emptyState {

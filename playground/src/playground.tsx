@@ -4,6 +4,7 @@ import { type ShownError, playgroundEnvironment } from './bug-report';
 import { capturePermalink } from './capture-permalink';
 import { BugReportDialog } from './components/bug-report-dialog';
 import { MessageDialog } from './components/message-dialog';
+import { StatusBar } from './components/status-bar';
 import { Toolbar } from './components/toolbar';
 import { Editor } from './editor';
 import { shownErrors } from './editor-errors';
@@ -344,6 +345,7 @@ export const Playground = ({
             rightPaneOverlay={rightPaneOverlay}
             banner={banner}
             toolbar={toolbar}
+            statusBar={<StatusBar />}
         />
     );
 };

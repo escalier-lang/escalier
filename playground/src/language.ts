@@ -8,8 +8,17 @@ import {
     provideCompletionItems,
     resolveCompletionItem,
 } from './completions';
+import {
+    diagnosticsTokenRules,
+    registerDiagnosticsLanguage,
+} from './diagnostics-language';
 import type { Client } from './lsp-client/client';
 import { monarchLanguage } from './monarch-language';
+import type {
+    DiagnosticSeverity,
+    ProjectDiagnostic,
+} from './project-diagnostics';
+import { useProjectDiagnosticsStore } from './project-diagnostics-store';
 import { lspRangeToMonacoRange, monacoPosToLspPos } from './ranges';
 import {
     coalesced,
@@ -36,6 +45,43 @@ function convertSeverity(
         default:
             return monaco.MarkerSeverity.Error;
     }
+}
+
+/** Returns the path of a `file://` URI, such as `/lib/index.esc`. */
+export function uriToPath(uri: string): string {
+    return decodeURIComponent(new URL(uri).pathname);
+}
+
+/**
+ * Returns the name of an LSP severity. A diagnostic with no severity is an error, as
+ * convertSeverity shows it.
+ */
+function severityName(severity?: lsp.DiagnosticSeverity): DiagnosticSeverity {
+    switch (severity) {
+        case lsp.DiagnosticSeverity.Warning:
+            return 'warning';
+        case lsp.DiagnosticSeverity.Information:
+            return 'info';
+        case lsp.DiagnosticSeverity.Hint:
+            return 'hint';
+        default:
+            return 'error';
+    }
+}
+
+/** Returns diagnostics as the ProjectDiagnostics of the file at uri. */
+export function projectDiagnostics(
+    uri: string,
+    diagnostics: readonly lsp.Diagnostic[],
+): ProjectDiagnostic[] {
+    const path = uriToPath(uri);
+    return diagnostics.map((d) => ({
+        path,
+        line: d.range.start.line + 1,
+        column: d.range.start.character + 1,
+        severity: severityName(d.severity),
+        message: d.message,
+    }));
 }
 
 type Loc = {
@@ -110,6 +156,13 @@ export function setupLanguage(
     client.onTextDocumentPublishDiagnostics(
         (params: lsp.PublishDiagnosticsParams) => {
             publishedDiagnostics.set(params.uri, params.diagnostics);
+            // The status bar counts the diagnostics of every file the server checked,
+            // open or not, so they are recorded before the check for an open model below.
+            useProjectDiagnosticsStore.getState().dispatch({
+                type: 'setFileDiagnostics',
+                path: uriToPath(params.uri),
+                diagnostics: projectDiagnostics(params.uri, params.diagnostics),
+            });
             const models = monaco.editor.getModels();
 
             const model = models.find(
@@ -414,18 +467,19 @@ export function setupLanguage(
         );
     }
 
+    registerDiagnosticsLanguage();
     const rules = modifierTokenRules(legend);
     monaco.editor.defineTheme(monacoThemeName('dark'), {
         base: 'vs-dark',
         inherit: true,
         colors: {},
-        rules,
+        rules: [...rules, ...diagnosticsTokenRules.dark],
     });
     monaco.editor.defineTheme(monacoThemeName('light'), {
         base: 'vs',
         inherit: true,
         colors: {},
-        rules,
+        rules: [...rules, ...diagnosticsTokenRules.light],
     });
     // Monaco applies one theme to every editor, so following the store here also
     // restyles the editors that exist already.

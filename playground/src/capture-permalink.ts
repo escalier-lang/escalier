@@ -21,6 +21,8 @@ export async function capturePermalink(
     );
     const encoded = await encodeSnapshot({
         files,
+        // A tab is recorded by its path, so the diagnostics tab records none of the
+        // diagnostics it shows. The reopened page fills it from a fresh check.
         left: {
             paths: state.leftTabs.map((tab) => tab.path),
             active: state.activeLeftTabIndex,

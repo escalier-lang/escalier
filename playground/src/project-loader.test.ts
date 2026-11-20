@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { BrowserFS } from './fs/browser-fs';
 import type { Manifest } from './fs/volume';
+import { useProjectDiagnosticsStore } from './project-diagnostics-store';
 import { isBuildPath, loadProject, writeProjectFiles } from './project-loader';
 
 const encoder = new TextEncoder();
@@ -302,6 +303,26 @@ describe('loadProject', () => {
 });
 
 describe('writeProjectFiles', () => {
+    test('forgets the diagnostics of the project it replaces', () => {
+        useProjectDiagnosticsStore.setState({
+            diagnostics: {
+                '/lib/old.esc': [
+                    {
+                        path: '/lib/old.esc',
+                        line: 1,
+                        column: 1,
+                        severity: 'error',
+                        message: 'bad',
+                    },
+                ],
+            },
+        });
+
+        writeProjectFiles(fs, [{ path: '/lib/index.esc', content: '' }]);
+
+        expect(useProjectDiagnosticsStore.getState().diagnostics).toEqual({});
+    });
+
     test('replaces the project with the files, creating their directories', async () => {
         await loadProject('hello-world', 'example', manifest, '/', fs);
 

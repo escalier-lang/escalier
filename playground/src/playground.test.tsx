@@ -27,6 +27,11 @@ import { MAX_PERMALINK_CHARS } from './permalink';
 import { Playground, oversizedLinkMessage, slugToLabel } from './playground';
 import { initialPlaygroundState } from './playground-state';
 import { usePlaygroundStore } from './playground-store';
+import {
+    DIAGNOSTICS_TAB_PATH,
+    type DiagnosticSeverity,
+} from './project-diagnostics';
+import { useProjectDiagnosticsStore } from './project-diagnostics-store';
 
 describe('slugToLabel', () => {
     test.each([
@@ -68,6 +73,7 @@ describe('Playground', () => {
     beforeEach(() => {
         useEditorStore.setState({ ...initialEditorState });
         usePlaygroundStore.setState({ ...initialPlaygroundState });
+        useProjectDiagnosticsStore.setState({ diagnostics: {} });
         vi.spyOn(console, 'error').mockImplementation(() => {});
     });
 
@@ -213,6 +219,37 @@ describe('Playground', () => {
         expect(
             screen.queryByRole('dialog', { name: 'Report a bug' }),
         ).not.toBeInTheDocument();
+    });
+
+    test("the status bar counts the project's diagnostics and opens them in a tab", () => {
+        const diagnostic = (path: string, severity: DiagnosticSeverity) => ({
+            path,
+            line: 1,
+            column: 1,
+            severity,
+            message: 'bad',
+        });
+        useProjectDiagnosticsStore.setState({
+            diagnostics: {
+                '/lib/a.esc': [
+                    diagnostic('/lib/a.esc', 'error'),
+                    diagnostic('/lib/a.esc', 'warning'),
+                ],
+                '/lib/b.esc': [diagnostic('/lib/b.esc', 'error')],
+            },
+        });
+        renderPlayground();
+
+        fireEvent.click(
+            screen.getByRole('button', { name: '2 errors, 1 warning' }),
+        );
+
+        expect(
+            useEditorStore.getState().leftTabs.map((tab) => tab.path),
+        ).toContain(DIAGNOSTICS_TAB_PATH);
+        expect(
+            screen.getByRole('tab', { name: /^Diagnostics/ }),
+        ).toHaveAttribute('aria-selected', 'true');
     });
 
     test('restored tabs show without waiting for the compile', () => {
