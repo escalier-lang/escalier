@@ -84,7 +84,13 @@ test.describe('Syntax highlighting', () => {
         // hello-world's `Language.English() => "Hello"` compiles to a string literal,
         // which gets a colour of its own.
         const hello = spans('["\']Hello["\']').first();
-        await expect(hello).toBeVisible();
+        // The literal sits near the end of the output. Monaco draws only the lines in
+        // view, so the editor scrolls until it draws the literal's line.
+        await lines.hover();
+        await expect(async () => {
+            await page.mouse.wheel(0, 200);
+            await expect(hello).toBeVisible({ timeout: 500 });
+        }).toPass();
         await expect(hello).not.toHaveAttribute('class', keywordClass);
     });
 
