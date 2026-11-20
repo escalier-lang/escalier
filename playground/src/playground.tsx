@@ -4,6 +4,7 @@ import { type ShownError, playgroundEnvironment } from './bug-report';
 import { capturePermalink } from './capture-permalink';
 import { BugReportDialog } from './components/bug-report-dialog';
 import { MessageDialog } from './components/message-dialog';
+import { StatusBar } from './components/status-bar';
 import { Toolbar } from './components/toolbar';
 import { Editor } from './editor';
 import { shownErrors } from './editor-errors';
@@ -12,6 +13,8 @@ import type { BrowserFS } from './fs/browser-fs';
 import type { Manifest } from './fs/volume';
 import { MAX_PERMALINK_CHARS } from './permalink';
 import { usePlaygroundStore } from './playground-store';
+import { ERRORS_TAB_PATH, errorCount } from './project-errors';
+import { useProjectErrorsStore } from './project-errors-store';
 import { isBuildPath, loadProject } from './project-loader';
 
 import styles from './playground.module.css';
@@ -336,6 +339,14 @@ export const Playground = ({
         </>
     );
 
+    const projectErrorCount = useProjectErrorsStore((state) =>
+        errorCount(state.errors),
+    );
+    const handleShowErrors = useCallback(
+        () => editorDispatch({ type: 'openFile', path: ERRORS_TAB_PATH }),
+        [editorDispatch],
+    );
+
     return (
         <Editor
             fs={fs}
@@ -344,6 +355,12 @@ export const Playground = ({
             rightPaneOverlay={rightPaneOverlay}
             banner={banner}
             toolbar={toolbar}
+            statusBar={
+                <StatusBar
+                    errorCount={projectErrorCount}
+                    onShowErrors={handleShowErrors}
+                />
+            }
         />
     );
 };

@@ -14,6 +14,8 @@ import type { CrashReport } from './editor-state';
 import { useEditorStore } from './editor-store';
 import type { BrowserFS } from './fs/browser-fs';
 import { languageID } from './language';
+import { ERRORS_TAB_PATH, projectErrorsText } from './project-errors';
+import { useProjectErrorsStore } from './project-errors-store';
 import { monacoThemeName, useThemeStore } from './theme';
 
 import styles from './editor.module.css';
@@ -141,6 +143,8 @@ export type EditorProps = {
     rightPaneOverlay?: ReactNode;
     banner?: ReactNode;
     toolbar?: ReactNode;
+    /** Shown in the bar along the bottom of the playground. */
+    statusBar?: ReactNode;
 };
 
 export const Editor = ({
@@ -150,6 +154,7 @@ export const Editor = ({
     rightPaneOverlay,
     banner,
     toolbar,
+    statusBar,
 }: EditorProps) => {
     const { dispatch, ...state } = useEditorStore();
     const inputDivRef = useRef<HTMLDivElement>(null);
@@ -205,12 +210,43 @@ export const Editor = ({
             let model = monaco.editor.getModel(uri);
             if (!model) {
                 const lang = languageForPath(path);
-                const text = content ?? loadFileContent(fs, path) ?? '';
+                // The errors tab names no file. Its text comes from the project's errors,
+                // and the effect below keeps it up to date.
+                const text =
+                    path === ERRORS_TAB_PATH
+                        ? projectErrorsText(
+                              useProjectErrorsStore.getState().errors,
+                          )
+                        : (content ?? loadFileContent(fs, path) ?? '');
                 model = monaco.editor.createModel(text, lang, uri);
             }
             return model;
         },
         [fs],
+    );
+
+    // Whether the editor keeps the user from editing the file at path. Nothing can edit
+    // the errors tab, since its text comes from the language server.
+    const pathIsReadOnly = useCallback(
+        (path: string) =>
+            path === ERRORS_TAB_PATH || (isReadOnly?.(path) ?? false),
+        [isReadOnly],
+    );
+
+    // Rewrites the errors tab's text each time the project's errors change.
+    useEffect(
+        () =>
+            useProjectErrorsStore.subscribe((current, previous) => {
+                if (current.errors === previous.errors) return;
+                const model = monaco.editor.getModel(
+                    monaco.Uri.parse(pathToUri(ERRORS_TAB_PATH)),
+                );
+                const text = projectErrorsText(current.errors);
+                if (model && model.getValue() !== text) {
+                    model.setValue(text);
+                }
+            }),
+        [],
     );
 
     // Initialize editors
@@ -277,7 +313,7 @@ export const Editor = ({
         }
 
         const model = getOrCreateModel(activePath);
-        editor.updateOptions({ readOnly: isReadOnly?.(activePath) ?? false });
+        editor.updateOptions({ readOnly: pathIsReadOnly(activePath) });
         editor.setModel(model);
 
         // Restore scroll position
@@ -288,7 +324,7 @@ export const Editor = ({
         activePath,
         getOrCreateModel,
         activeTab?.scrollPos,
-        isReadOnly,
+        pathIsReadOnly,
         refreshKey,
     ]);
 
@@ -301,9 +337,7 @@ export const Editor = ({
         }
 
         const model = getOrCreateModel(activeRightPath);
-        editor.updateOptions({
-            readOnly: isReadOnly?.(activeRightPath) ?? false,
-        });
+        editor.updateOptions({ readOnly: pathIsReadOnly(activeRightPath) });
         editor.setModel(model);
 
         // Restore scroll position
@@ -314,7 +348,7 @@ export const Editor = ({
         activeRightPath,
         getOrCreateModel,
         activeRightTab?.scrollPos,
-        isReadOnly,
+        pathIsReadOnly,
     ]);
 
     // Listen for FS events to update the Monaco models of open read-only files. Those
@@ -545,6 +579,8 @@ export const Editor = ({
                     {rightPaneOverlay}
                 </div>
             )}
+
+            {statusBar && <div className={styles.statusBar}>{statusBar}</div>}
 
             {state.notification && (
                 <Toast

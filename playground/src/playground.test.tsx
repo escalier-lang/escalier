@@ -27,6 +27,8 @@ import { MAX_PERMALINK_CHARS } from './permalink';
 import { Playground, oversizedLinkMessage, slugToLabel } from './playground';
 import { initialPlaygroundState } from './playground-state';
 import { usePlaygroundStore } from './playground-store';
+import { ERRORS_TAB_PATH } from './project-errors';
+import { useProjectErrorsStore } from './project-errors-store';
 
 describe('slugToLabel', () => {
     test.each([
@@ -68,6 +70,7 @@ describe('Playground', () => {
     beforeEach(() => {
         useEditorStore.setState({ ...initialEditorState });
         usePlaygroundStore.setState({ ...initialPlaygroundState });
+        useProjectErrorsStore.setState({ errors: {} });
         vi.spyOn(console, 'error').mockImplementation(() => {});
     });
 
@@ -213,6 +216,32 @@ describe('Playground', () => {
         expect(
             screen.queryByRole('dialog', { name: 'Report a bug' }),
         ).not.toBeInTheDocument();
+    });
+
+    test("the status bar counts the project's errors and opens them in a tab", () => {
+        const error = (path: string) => ({
+            path,
+            line: 1,
+            column: 1,
+            message: 'bad',
+        });
+        useProjectErrorsStore.setState({
+            errors: {
+                '/lib/a.esc': [error('/lib/a.esc'), error('/lib/a.esc')],
+                '/lib/b.esc': [error('/lib/b.esc')],
+            },
+        });
+        renderPlayground();
+
+        fireEvent.click(screen.getByRole('button', { name: '3 errors' }));
+
+        expect(
+            useEditorStore.getState().leftTabs.map((tab) => tab.path),
+        ).toContain(ERRORS_TAB_PATH);
+        expect(screen.getByRole('tab', { name: /^Errors/ })).toHaveAttribute(
+            'aria-selected',
+            'true',
+        );
     });
 
     test('restored tabs show without waiting for the compile', () => {

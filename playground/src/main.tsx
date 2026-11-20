@@ -17,6 +17,7 @@ import { openInitialProject, reloadOnPastedPermalink } from './initial-project';
 import { setupLanguage } from './language';
 import { Client } from './lsp-client/client';
 import { Playground } from './playground';
+import { forgetRemovedFiles } from './project-errors-store';
 import { downloadStartupFiles, runStartup } from './startup';
 import { localStorageIfAvailable, prefersLightQuery, syncTheme } from './theme';
 
@@ -139,6 +140,7 @@ async function start(
     });
 
     setupLanguage(client, initResponse.capabilities);
+    forgetRemovedFiles(fs.events);
 
     reactRoot.render(
         <Playground

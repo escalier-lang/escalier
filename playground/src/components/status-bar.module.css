@@ -1,0 +1,34 @@
+.statusBar {
+    display: flex;
+    align-items: center;
+    height: 100%;
+    padding: 0 8px;
+    background-color: var(--color-bg-raised);
+    border-top: 1px solid var(--color-border);
+    font-family: sans-serif;
+    font-size: 12px;
+}
+
+.item {
+    background: none;
+    border: none;
+    border-radius: 3px;
+    color: var(--color-text-muted);
+    font: inherit;
+    padding: 2px 6px;
+    cursor: pointer;
+}
+
+.item:hover {
+    background-color: var(--color-bg-hover);
+    color: var(--color-text);
+}
+
+.item:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: -2px;
+}
+
+.hasErrors {
+    color: var(--color-text-error);
+}

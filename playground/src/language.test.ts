@@ -3,6 +3,7 @@ import type * as lsp from 'vscode-languageserver-protocol';
 
 import { setupLanguage } from './language';
 import type { Client } from './lsp-client/client';
+import { useProjectErrorsStore } from './project-errors-store';
 import { useThemeStore } from './theme';
 
 const monacoMock = vi.hoisted(() => {
@@ -178,6 +179,51 @@ describe('setupLanguage', () => {
         expect(monacoMock.editor.setTheme).toHaveBeenLastCalledWith(
             'escalier-light',
         );
+    });
+
+    test('records the errors of a file that no editor has open', () => {
+        useProjectErrorsStore.setState({ errors: {} });
+        const { client, publishDiagnostics } = fakeClient();
+        setupLanguage(client, {});
+        const at = (line: number, character: number) => ({
+            start: { line, character },
+            end: { line, character: character + 1 },
+        });
+
+        publishDiagnostics({
+            uri: 'file:///lib/my%20file.esc',
+            diagnostics: [
+                {
+                    range: at(2, 4),
+                    severity: 1 satisfies typeof lsp.DiagnosticSeverity.Error,
+                    message: 'bad',
+                },
+                // A diagnostic with no severity is an error.
+                { range: at(0, 0), message: 'worse' },
+                {
+                    range: at(1, 0),
+                    severity: 2 satisfies typeof lsp.DiagnosticSeverity.Warning,
+                    message: 'unused',
+                },
+            ],
+        });
+
+        expect(useProjectErrorsStore.getState().errors).toEqual({
+            '/lib/my file.esc': [
+                {
+                    path: '/lib/my file.esc',
+                    line: 3,
+                    column: 5,
+                    message: 'bad',
+                },
+                {
+                    path: '/lib/my file.esc',
+                    line: 1,
+                    column: 1,
+                    message: 'worse',
+                },
+            ],
+        });
     });
 
     test('asks Monaco for new tokens once after a burst of diagnostics', () => {

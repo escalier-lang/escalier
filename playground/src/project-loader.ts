@@ -1,5 +1,6 @@
 import type { BrowserFS } from './fs/browser-fs';
 import type { Manifest } from './fs/volume';
+import { useProjectErrorsStore } from './project-errors-store';
 
 export type ProjectKind = 'template' | 'example';
 
@@ -65,7 +66,8 @@ export async function loadProject(
 
 /**
  * Replaces the project in the filesystem with files. It clears everything outside
- * node_modules, then writes each file, creating its parent directories. BrowserFS
+ * node_modules and forgets the errors recorded for the old files, then writes each
+ * file, creating its parent directories. BrowserFS
  * emits an FS event for each write, which the main.tsx listener forwards to the LSP
  * as workspaceDidChangeWatchedFiles.
  */
@@ -74,6 +76,10 @@ export function writeProjectFiles(
     files: readonly { path: string; content: string }[],
 ): void {
     fs.clear();
+    // fs.clear emits no delete events, and the language server never clears the
+    // diagnostics of a file it no longer sees, so the old project's errors would stay
+    // in the count.
+    useProjectErrorsStore.getState().dispatch({ type: 'forgetAll' });
 
     const encoder = new TextEncoder();
 

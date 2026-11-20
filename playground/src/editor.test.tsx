@@ -24,6 +24,8 @@ vi.mock('monaco-editor-core');
 // Mock the language module to avoid Monaco language registration side effects.
 vi.mock('./language', () => ({ languageID: 'escalier' }));
 
+import * as monaco from 'monaco-editor-core';
+
 import { stubModalDialogs } from './components/dialog-stub';
 import { Editor, languageForPath } from './editor';
 import type { EditorState } from './editor-state';
@@ -31,6 +33,8 @@ import { initialEditorState } from './editor-state';
 import { useEditorStore } from './editor-store';
 import type { BrowserFS } from './fs/browser-fs';
 import { FSEventEmitter } from './fs/fs-events';
+import { ERRORS_TAB_PATH } from './project-errors';
+import { useProjectErrorsStore } from './project-errors-store';
 
 function makeFakeFS(): BrowserFS {
     return {
@@ -464,6 +468,65 @@ describe('Editor', () => {
             });
             expect(screen.queryByRole('alert')).not.toBeInTheDocument();
         });
+    });
+});
+
+describe('errors tab', () => {
+    const error = {
+        path: '/lib/index.esc',
+        line: 1,
+        column: 2,
+        message: 'bad',
+    };
+
+    beforeEach(() => {
+        useProjectErrorsStore.setState({
+            errors: { '/lib/index.esc': [error] },
+        });
+    });
+
+    afterEach(() => {
+        vi.mocked(monaco.editor.getModel).mockReset();
+        vi.mocked(monaco.editor.createModel).mockClear();
+    });
+
+    test('shows every error, read-only', () => {
+        setStoreState({
+            leftTabs: [{ path: ERRORS_TAB_PATH }],
+            activeLeftTabIndex: 0,
+        });
+        render(<Editor fs={makeFakeFS()} />);
+
+        expect(monaco.editor.createModel).toHaveBeenCalledWith(
+            '/lib/index.esc:1:2: bad\n',
+            'plaintext',
+            `file://${ERRORS_TAB_PATH}`,
+        );
+        const inputEditor = vi.mocked(monaco.editor.create).mock.results.at(-2)
+            ?.value as { updateOptions: ReturnType<typeof vi.fn> };
+        expect(inputEditor.updateOptions).toHaveBeenCalledWith({
+            readOnly: true,
+        });
+    });
+
+    test('rewrites its text when the errors change', () => {
+        const model = { getValue: vi.fn(() => 'old\n'), setValue: vi.fn() };
+        vi.mocked(monaco.editor.getModel).mockImplementation((uri) =>
+            String(uri) === `file://${ERRORS_TAB_PATH}`
+                ? (model as unknown as monaco.editor.ITextModel)
+                : null,
+        );
+        render(<Editor fs={makeFakeFS()} />);
+
+        act(() => {
+            useProjectErrorsStore.getState().dispatch({
+                type: 'setFileErrors',
+                path: '/lib/index.esc',
+                errors: [],
+            });
+        });
+
+        expect(model.setValue).toHaveBeenCalledWith('No errors.\n');
     });
 });
 

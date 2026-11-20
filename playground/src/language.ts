@@ -2,6 +2,7 @@ import * as monaco from 'monaco-editor-core';
 import * as lsp from 'vscode-languageserver-protocol';
 
 import { registerBasicLanguages } from './basic-languages';
+import type { ShownError } from './bug-report';
 import { createCodeActionProvider } from './code-actions';
 import {
     type CompletionSuggestion,
@@ -10,6 +11,7 @@ import {
 } from './completions';
 import type { Client } from './lsp-client/client';
 import { monarchLanguage } from './monarch-language';
+import { useProjectErrorsStore } from './project-errors-store';
 import { lspRangeToMonacoRange, monacoPosToLspPos } from './ranges';
 import {
     coalesced,
@@ -36,6 +38,34 @@ function convertSeverity(
         default:
             return monaco.MarkerSeverity.Error;
     }
+}
+
+/** Returns the path of a `file://` URI, such as `/lib/index.esc`. */
+export function uriToPath(uri: string): string {
+    return decodeURIComponent(new URL(uri).pathname);
+}
+
+/**
+ * Returns the diagnostics that are errors, as ShownErrors for the file at uri. A
+ * diagnostic with no severity counts as an error, as Monaco shows it.
+ */
+export function diagnosticErrors(
+    uri: string,
+    diagnostics: readonly lsp.Diagnostic[],
+): ShownError[] {
+    const path = uriToPath(uri);
+    return diagnostics
+        .filter(
+            (d) =>
+                d.severity === undefined ||
+                d.severity === lsp.DiagnosticSeverity.Error,
+        )
+        .map((d) => ({
+            path,
+            line: d.range.start.line + 1,
+            column: d.range.start.character + 1,
+            message: d.message,
+        }));
 }
 
 type Loc = {
@@ -110,6 +140,13 @@ export function setupLanguage(
     client.onTextDocumentPublishDiagnostics(
         (params: lsp.PublishDiagnosticsParams) => {
             publishedDiagnostics.set(params.uri, params.diagnostics);
+            // The status bar counts the errors in every file the server checked, open or
+            // not, so they are recorded before the check for an open model below.
+            useProjectErrorsStore.getState().dispatch({
+                type: 'setFileErrors',
+                path: uriToPath(params.uri),
+                errors: diagnosticErrors(params.uri, params.diagnostics),
+            });
             const models = monaco.editor.getModels();
 
             const model = models.find(
