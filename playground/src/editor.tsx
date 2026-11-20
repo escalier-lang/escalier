@@ -12,7 +12,7 @@ import { CrashReportDialog } from './components/crash-report-dialog';
 import { FileExplorer } from './components/file-explorer';
 import { Toast, ToastButton } from './components/toast';
 import { diagnosticsLanguageID } from './diagnostics-language';
-import type { CrashReport, TextPosition } from './editor-state';
+import type { CrashReport, Side, TextPosition } from './editor-state';
 import { useEditorStore } from './editor-store';
 import type { BrowserFS } from './fs/browser-fs';
 import { languageID } from './language';
@@ -50,7 +50,7 @@ function pathToUri(path: string): string {
 
 type ContextMenuState = {
     tabPath: string;
-    side: 'left' | 'right';
+    side: Side;
     x: number;
     y: number;
 };
@@ -62,7 +62,7 @@ type ContextMenuState = {
 const TAB_DRAG_TYPE = 'application/x-escalier-tab';
 
 /** The tab being dragged. */
-type DraggedTab = { side: 'left' | 'right'; index: number };
+type DraggedTab = { side: Side; index: number };
 
 type DropHandlers = {
     onDragOver: (e: DragEvent) => void;
@@ -71,7 +71,7 @@ type DropHandlers = {
 };
 
 type EmptyPaneProps = {
-    side: 'left' | 'right';
+    side: Side;
     /** Whether files opened from the explorer open on this side. */
     isFocused: boolean;
     isDropTarget: boolean;
@@ -97,7 +97,9 @@ const EmptyPane = ({
             side === 'left' ? styles.inputEmpty : styles.outputEmpty,
             isFocused ? styles.focusedEmpty : '',
             isDropTarget ? styles.dropTarget : '',
-        ].join(' ')}
+        ]
+            .filter(Boolean)
+            .join(' ')}
         onClick={onFocus}
         {...dropHandlers}
     >
@@ -112,7 +114,7 @@ type TabItemProps = {
     isActive: boolean;
     isFocused: boolean;
     panelId: string;
-    side: 'left' | 'right';
+    side: Side;
     contextMenu: ContextMenuState | null;
     onActivate: () => void;
     onClose: () => void;
@@ -241,7 +243,7 @@ export const Editor = ({
         null,
     );
     const [draggedTab, setDraggedTab] = useState<DraggedTab | null>(null);
-    const [dropSide, setDropSide] = useState<'left' | 'right' | null>(null);
+    const [dropSide, setDropSide] = useState<Side | null>(null);
     const {
         leftTabs,
         activeLeftTabIndex,
@@ -367,10 +369,7 @@ export const Editor = ({
         // below moves there. A drag
         // that selects text opens nothing, so the user can still copy a message.
         const openClickedDiagnostic =
-            (
-                editor: monaco.editor.IStandaloneCodeEditor,
-                side: 'left' | 'right',
-            ) =>
+            (editor: monaco.editor.IStandaloneCodeEditor, side: Side) =>
             (e: monaco.editor.IEditorMouseEvent) => {
                 const model = editor.getModel();
                 const lineNumber = e.target.position?.lineNumber;
@@ -591,7 +590,7 @@ export const Editor = ({
      * Returns the drag handlers that let an element on side take a tab dragged from the
      * other side. Dropping the tab moves it, as "Move to Right" and "Move to Left" do.
      */
-    const dropHandlers = (side: 'left' | 'right'): DropHandlers => {
+    const dropHandlers = (side: Side): DropHandlers => {
         const accepts = draggedTab !== null && draggedTab.side !== side;
         return {
             onDragOver: (e: DragEvent) => {
@@ -793,7 +792,11 @@ export const Editor = ({
 
             {/* Right pane overlay (e.g. compile spinner) */}
             {!showRightPane && rightPaneOverlay && (
-                <div className={styles.rightPaneOverlay}>
+                // The overlay takes a dropped tab as the empty pane it covers would.
+                <div
+                    {...dropHandlers('right')}
+                    className={`${styles.rightPaneOverlay} ${dropSide === 'right' ? styles.dropTarget : ''}`}
+                >
                     {rightPaneOverlay}
                 </div>
             )}

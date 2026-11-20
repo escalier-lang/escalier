@@ -344,6 +344,34 @@ describe('Editor', () => {
             expect(state.rightTabs).toEqual([{ path: '/a.esc' }]);
         });
 
+        test('dropping a tab on the right pane overlay moves it to the right', () => {
+            setStoreState({
+                leftTabs: [{ path: '/a.esc' }, { path: '/b.esc' }],
+                activeLeftTabIndex: 0,
+            });
+            render(
+                <Editor
+                    fs={makeFakeFS()}
+                    rightPaneOverlay={<span>Compiling...</span>}
+                />,
+            );
+            const transfer = dataTransfer();
+            const overlay = screen.getByText('Compiling...').parentElement;
+            expect(overlay).not.toBeNull();
+            if (!overlay) return;
+
+            fireEvent.dragStart(getTabsInTablist(0)[0], {
+                dataTransfer: transfer,
+            });
+            fireEvent.dragOver(overlay, { dataTransfer: transfer });
+            expect(overlay.className).toContain('dropTarget');
+            fireEvent.drop(overlay, { dataTransfer: transfer });
+
+            expect(useEditorStore.getState().rightTabs).toEqual([
+                { path: '/a.esc' },
+            ]);
+        });
+
         test('dropping a tab on its own tab list leaves it in place', () => {
             setStoreState({
                 leftTabs: [{ path: '/a.esc' }],
