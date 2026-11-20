@@ -55,8 +55,10 @@ export const BugReportDialog = ({
     // leaves this one as it was, so the dialog then says the form opened.
     const [issueOpened, setIssueOpened] = useState(false);
     const doneRef = useRef<HTMLButtonElement>(null);
+    // Switching views unmounts the focused button, so focus moves to the first control
+    // of the view that replaces it.
     useEffect(() => {
-        if (issueOpened) doneRef.current?.focus();
+        (issueOpened ? doneRef : describeRef).current?.focus();
     }, [issueOpened]);
 
     // The link captures the project as it is when the dialog opens, which is the code

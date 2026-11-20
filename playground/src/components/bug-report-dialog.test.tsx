@@ -193,6 +193,7 @@ test('Back returns from the opened view to the report as the user left it', asyn
     expect(screen.getByLabelText('What happened')).toHaveValue(
         'Hover is blank.',
     );
+    expect(screen.getByLabelText('What happened')).toHaveFocus();
 });
 
 test('Cancel closes the dialog', () => {
