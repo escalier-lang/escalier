@@ -1,6 +1,8 @@
+/** The Escalier repository on GitHub. */
+export const REPO_URL = 'https://github.com/escalier-lang/escalier';
+
 /** Where an issue link opens a new issue. */
-export const NEW_ISSUE_URL =
-    'https://github.com/escalier-lang/escalier/issues/new';
+export const NEW_ISSUE_URL = `${REPO_URL}/issues/new`;
 
 /**
  * The longest issue link the playground makes, counted after encoding. GitHub refuses a
