@@ -86,9 +86,9 @@ test.describe('Window resize', () => {
             const [input, output] = await expectEditorsFillPanes(page);
 
             // The grid is 220px of explorer plus two equal editor columns, and 36px of
-            // toolbar plus 40px of tabs above the editors.
+            // toolbar plus 40px of tabs above the editors and 24px of status bar below.
             const paneWidth = (viewport.width - 220) / 2;
-            const paneHeight = viewport.height - 36 - 40;
+            const paneHeight = viewport.height - 36 - 40 - 24;
             for (const pane of [input, output]) {
                 expect(Math.abs(pane.width - paneWidth)).toBeLessThanOrEqual(
                     TOLERANCE_PX,
