@@ -220,18 +220,21 @@ func acceptSet(f *soltype.FuncType) (lo, hi int) {
 }
 
 // canAbsorbRest reports whether the sub's params from k on are a group a super rest param can
-// absorb. The group may end in the sub's own rest param when that param is an `Array<E>` at or
-// past k, since its element type says what each value past the fixed params is. An inexact sub
-// absorbs when it has no rest param, since it ignores every value past its listed params. A sub
-// shorter than k, an inexact sub with a rest param, or one whose rest has no element type to read
-// does not.
-func (c *Context) canAbsorbRest(sub *soltype.FuncType, k int) bool {
+// absorb. arraySlot reports whether that rest param is typed `Array<E>` rather than an inference
+// variable.
+//
+// The group may end in the sub's own rest param when that param is an `Array<E>` at or past k,
+// since its element type says what each value past the fixed params is. An inexact sub absorbs
+// when it has no rest param, since it ignores every value past its listed params. An exact sub
+// with no rest param absorbs only when arraySlot is false. A sub shorter than k, an inexact sub
+// with a rest param, or one whose rest has no element type to read does not absorb.
+func (c *Context) canAbsorbRest(sub *soltype.FuncType, k int, arraySlot bool) bool {
 	j := restIndex(sub)
 	if sub.Inexact && j >= 0 {
 		return false
 	}
 	if j < 0 {
-		return len(sub.Params) >= k
+		return len(sub.Params) >= k && (sub.Inexact || !arraySlot)
 	}
 	_, isArray := c.restSlotElem(sub.Params[j].Type)
 	return j >= k && isArray
@@ -1480,16 +1483,23 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			// unexpanded sub and sup are what a diagnostic reports.
 			subX, supX := c.expandTupleRest(sub, seen), c.expandTupleRest(sup, seen)
 			// An ABSORBING super rest param at index k stands for the sub params from k on. Two
-			// slot types absorb that group: an `infer` hole binds it as one tuple, which is how
-			// `Parameters<F>` captures a parameter list, and an `Array<E>` checks each absorbed
-			// param against E. Either way the check is contravariant, the orientation the fixed
-			// positions use. A written tuple never reaches here, expandTupleRest having split it.
+			// slot types absorb that group. A variable slot, such as an `infer` hole or a `_`,
+			// binds it as one tuple, which is how `Parameters<F>` captures a parameter list. An
+			// `Array<E>` slot checks each absorbed param against E. Either way the check is
+			// contravariant, the orientation the fixed positions use. A written tuple never
+			// reaches here, expandTupleRest having split it.
+			//
+			// An exact sub with no rest param absorbs only into a variable slot. Against an
+			// `Array<E>` slot it goes through the full accept-set gate below, because such a slot
+			// may pass more arguments than the sub accepts. Absorbing it would accept this pair:
+			//
+			//	fn (x: string) -> undefined  <:  fn (x: string, ...extras: Array<number>) -> undefined
 			absorbAt, absorbElem := -1, soltype.Type(nil)
-			if k := restIndex(supX); k >= 0 && c.canAbsorbRest(subX, k) {
+			if k := restIndex(supX); k >= 0 {
 				slot := supX.Params[k].Type
-				if _, isVar := slot.(*soltype.TypeVarType); isVar {
+				if _, isVar := slot.(*soltype.TypeVarType); isVar && c.canAbsorbRest(subX, k, false) {
 					absorbAt = k
-				} else if elem, isArray := c.restSlotElem(slot); isArray {
+				} else if elem, isArray := c.restSlotElem(slot); isArray && c.canAbsorbRest(subX, k, true) {
 					absorbAt, absorbElem = k, elem
 				}
 			}
@@ -1560,9 +1570,9 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 				}
 			}
 			// A SUB rest slot the scatter could not read stands for the super positions from its
-			// index on, and declares no element type to check them against, so it is arity-only.
-			// That is the same reading the surplus-param loop below gives such a slot. Pairing it
-			// with one super position instead would check a single argument against the whole
+			// index on, and declares no element type to check them against, so the walk stops
+			// before it. A variable slot is checked against those positions by the gather below,
+			// and any other shape is arity-only. Pairing it with one super position instead would check a single argument against the whole
 			// slot: `f(1, "a")` against `fn (...args: [...T, string]) -> R` would ask for
 			// `1 <: [...T, string]`, which is neither true nor what the slot means. A super
 			// carrying its own rest at that index is a different pairing — two slots compared
@@ -1570,6 +1580,19 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			if absorbAt < 0 && scatterAt < 0 {
 				if j := restIndex(subX); j >= 0 && j < n && !supX.Params[j].Rest {
 					n = j
+				}
+			}
+			// A SUB rest slot typed by a variable binds the super positions from its index on as
+			// one tuple, the mirror of the gather an absorbing super runs. The check is
+			// contravariant, so the gathered tuple is the sub of the pair. At a call this ties the
+			// arguments to the slot, so `f(1)` against `fn (...args: []) -> R` checks `[1] <: []`.
+			// A super with its own rest param is left to the shared-position walk.
+			if absorbAt < 0 && !hasRest(supX) {
+				if j := restIndex(subX); j >= 0 {
+					if slot, isVar := subX.Params[j].Type.(*soltype.TypeVarType); isVar {
+						gathered := c.gatherRestParams(supX.Params[min(j, len(supX.Params)):], supX.Inexact)
+						errs = append(errs, c.constrain(gathered, slot, seen, false)...) // contravariant
+					}
 				}
 			}
 			for i := 0; i < n; i++ {
@@ -1587,8 +1610,9 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 				for i := n; i < len(subX.Params); i++ {
 					if subX.Params[i].Rest {
 						// The scatter above already checked an `Array<E>` rest against every
-						// super position. A rest of any other shape declares no element type to
-						// check the open tail's arguments against, so it stays arity-only.
+						// super position, and the gather checked a variable rest against the
+						// open tail. A rest of any other shape declares no element type to check
+						// the open tail's arguments against, so it stays arity-only.
 						continue
 					}
 					errs = append(errs, c.constrain(unknownT, subX.Params[i].Type, seen, false)...)

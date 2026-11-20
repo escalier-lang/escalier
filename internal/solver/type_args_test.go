@@ -826,7 +826,7 @@ func TestTypeArgBoundHoles(t *testing.T) {
 		{
 			name: "TwoReferencesLeaveTheHolesUnbounded",
 			src: `
-				type Params<F: fn (...args: Array<_>) -> _> = if F : fn (...args: infer P) -> _ { P } else { never }
+				type Params<F: fn (...args: _) -> _> = if F : fn (...args: infer P) -> _ { P } else { never }
 				type A = Params<fn (x: number) -> string>
 				type B = Params<fn (y: boolean) -> null>
 			`,

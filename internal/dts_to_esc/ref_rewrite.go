@@ -700,6 +700,7 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		*ast.NeverTypeAnn,
 		*ast.InferTypeAnn,
 		*ast.WildcardTypeAnn,
+		*ast.FunctionTopTypeAnn,
 		*ast.IntrinsicTypeAnn,
 		*ast.ErrorTypeAnn:
 		return tt
