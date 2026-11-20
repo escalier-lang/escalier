@@ -61,6 +61,34 @@ func TestFuncDeclSignaturePrintWritten(t *testing.T) {
 			expected: "<'a>(&'a Flat, &Flat) -> &'a Flat",
 		},
 		{
+			name: "InputsOutlivingTheOutputShareOneLifetime",
+			src:  "type Flat = {x: number}\ndeclare fn pick<'r>(a: &'r Flat, b: &'r Flat) -> &'r Flat\nfn f(a: &Flat, b: &Flat) { return pick(a, b) }",
+			// The inferred scheme is <'a: 'c, 'b: 'c, 'c>. Each input lifetime only outlives the
+			// output's, so one lifetime on both inputs and the output accepts the same calls.
+			expected: "<'a>(&'a Flat, &'a Flat) -> &'a Flat",
+		},
+		{
+			name: "AnInputThatAlsoOutlivesAnotherLifetimeStaysApart",
+			src:  "type Flat = {x: number}\ndeclare fn pick<'r>(a: &'r Flat, b: &'r Flat) -> &'r Flat\nfn f(a: &Flat, b: &Flat) { return [pick(a, b), a] }",
+			// 'a also reaches the output, so writing it on b would claim the second element
+			// borrows from b too. The lifetimes stay apart.
+			expected: "<'a: 'c, 'b: 'c, 'c>(&'a Flat, &'b Flat) -> [&'c Flat, &'a Flat]",
+		},
+		{
+			name: "WrittenJoinLifetimesShareOneLifetime",
+			// The lifetimes the source names reach the scheme as free variables, so they
+			// collapse like inferred ones.
+			src:      "type Flat = {x: number}\ndeclare fn pick<'r>(a: &'r Flat, b: &'r Flat) -> &'r Flat\nfn f<'a: 'c, 'b: 'c, 'c>(a: &'a Flat, b: &'b Flat) -> &'c Flat { return pick(a, b) }",
+			expected: "<'a>(&'a Flat, &'a Flat) -> &'a Flat",
+		},
+		{
+			name: "AnInputOutlivingTwoOutputsStaysApart",
+			src:  "type Flat = {x: number}\ndeclare fn pick<'r>(a: &'r Flat, b: &'r Flat) -> &'r Flat\nfn f(a: &Flat, b: &Flat, c: &Flat) { return [pick(a, b), pick(a, c)] }",
+			// Each input lifetime is bounded by both outputs' lifetimes, so no group has one
+			// output lifetime to share.
+			expected: "<'a: 'd & 'e, 'b: 'd & 'e, 'c: 'd & 'e, 'd, 'e>(&'a Flat, &'b Flat, &'c Flat) -> [&'d Flat, &'e Flat]",
+		},
+		{
 			name:     "LifetimeNotInOutput",
 			src:      "type Flat = {x: number}\nfn f(a: &Flat, b: &Flat) -> number { return a.x + b.x }",
 			expected: "(&Flat, &Flat) -> number",
@@ -146,9 +174,12 @@ func TestFuncDeclSignaturePrintWritten(t *testing.T) {
 func TestMethodSignature(t *testing.T) {
 	src := `
 		type Flat = {x: number}
+		declare fn either<'r>(a: &'r Flat, b: &'r Flat) -> &'r Flat
 		class Box {
 			inner: Flat,
 			peek(&self, other: &Flat) -> &Flat { return &self.inner },
+			pick(&self, other: &Flat) { return either(&self.inner, other) },
+			pickNamed<'s>(&'s self, other: &Flat) { return either(&self.inner, other) },
 			get(&self) { return self.inner.x },
 			reader(&self) -> fn () -> number { return fn () { return self.inner.x } },
 			at(&self, i: number) -> number { return i },
@@ -176,6 +207,8 @@ func TestMethodSignature(t *testing.T) {
 	}
 	require.Equal(t, []string{
 		"(&self, &Flat) -> &Flat",
+		"<'a>(&'a self, &'a Flat) -> &'a Flat",
+		"<'s: 'b, 'a: 'b, 'b>(&'s self, &'a Flat) -> &'b Flat",
 		"(&self) -> number",
 		"(&self) -> fn () -> number",
 		"(&self, number) -> number",
