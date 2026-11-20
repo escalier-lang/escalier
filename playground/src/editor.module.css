@@ -3,8 +3,12 @@
     height: 100vh;
     background-color: var(--color-bg);
     display: grid;
-    grid-template-columns: 220px 1fr 1fr;
-    grid-template-rows: 36px 40px 1fr;
+    /* A plain 1fr track never shrinks below the minimum content size of its items. Monaco
+       gives its DOM the fixed pixel size of the pane it last laid out in, so with 1fr the
+       panes can grow but never shrink. minmax(0, 1fr) lets them shrink with the window,
+       and each editor follows its pane. */
+    grid-template-columns: 220px minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: 36px 40px minmax(0, 1fr);
     grid-template-areas:
         "toolbar    toolbar     toolbar"
         "explorer   input-tabs  output-tabs"
@@ -30,6 +34,8 @@
     background-color: var(--color-bg);
     display: flex;
     align-items: stretch;
+    overflow-x: auto;
+    overflow-y: hidden;
 }
 
 .tab {
@@ -124,8 +130,12 @@
     background-color: var(--color-bg-selected);
 }
 
-.editorPane {
-    min-width: 0;
+.inputPane {
+    grid-area: input;
+}
+
+.outputPane {
+    grid-area: output;
 }
 
 .emptyState {

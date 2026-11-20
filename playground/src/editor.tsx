@@ -514,7 +514,7 @@ export const Editor = ({
             <div
                 id="input-panel"
                 role="tabpanel"
-                className={styles.editorPane}
+                className={styles.inputPane}
                 ref={inputDivRef}
                 style={{
                     display: leftTabs.length === 0 ? 'none' : undefined,
@@ -532,7 +532,7 @@ export const Editor = ({
             <div
                 id="output-panel"
                 role="tabpanel"
-                className={styles.editorPane}
+                className={styles.outputPane}
                 ref={outputDivRef}
                 style={{
                     display: showRightPane ? undefined : 'none',
