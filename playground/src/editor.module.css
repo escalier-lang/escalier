@@ -148,13 +148,32 @@
 }
 
 .emptyState {
-    grid-area: input;
     display: flex;
     align-items: center;
     justify-content: center;
+    margin: 0;
+    border: none;
+    border-top: 2px solid transparent;
+    background-color: var(--color-bg);
     color: var(--color-text-faint);
     font-family: sans-serif;
     font-size: 14px;
+    cursor: pointer;
+}
+
+.inputEmpty {
+    grid-area: input;
+}
+
+.outputEmpty {
+    grid-area: output;
+    border-left: 1px solid var(--color-border);
+}
+
+/* Marks the side files open on, as the accent line marks the active tab. */
+.focusedEmpty {
+    border-top-color: var(--color-accent);
+    color: var(--color-text-muted);
 }
 
 .banner {

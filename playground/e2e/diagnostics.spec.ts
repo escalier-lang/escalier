@@ -27,6 +27,11 @@ test('the status bar counts diagnostics in closed files and lists them in a tab'
     // The close button shows while the pointer is over its tab.
     await page.getByRole('tab', { name: /index\.esc/ }).hover();
     await page.getByLabel('Close index.esc').click();
+    // Closing the last tab on the left moves focus to the right. Clicking the
+    // empty left pane makes the Diagnostics tab open on the left.
+    await page
+        .getByRole('button', { name: /^Click to open files here/ })
+        .click();
     await expect(counts).toHaveAccessibleName('1 error, 0 warnings');
 
     await counts.click();
@@ -92,6 +97,11 @@ test('clicking a diagnostic opens its file with the cursor at the diagnostic', a
     });
     await page.getByRole('tab', { name: /index\.esc/ }).hover();
     await page.getByLabel('Close index.esc').click();
+    // Closing the last tab on the left moves focus to the right. Clicking the
+    // empty left pane makes the Diagnostics tab open on the left.
+    await page
+        .getByRole('button', { name: /^Click to open files here/ })
+        .click();
     await counts.click();
 
     await inputPanel

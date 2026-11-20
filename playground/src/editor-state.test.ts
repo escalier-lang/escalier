@@ -161,6 +161,32 @@ describe('editorReducer', () => {
     });
 
     describe('closeTab', () => {
+        test.each([
+            {
+                name: 'moves focus to the other side when it has tabs',
+                right: ['/build/a.js'],
+                expected: 'right',
+            },
+            {
+                name: 'keeps focus when both sides are empty',
+                right: [],
+                expected: 'left',
+            },
+        ] as const)('closing the last tab $name', ({ right, expected }) => {
+            const state: EditorState = {
+                ...stateWith(['/bin/main.esc'], 0),
+                rightTabs: right.map((path) => ({ path })),
+                activeRightTabIndex: right.length > 0 ? 0 : null,
+                focusedSide: 'left',
+            };
+            const next = editorReducer(state, {
+                type: 'closeTab',
+                side: 'left',
+                index: 0,
+            });
+            expect(next.focusedSide).toBe(expected);
+        });
+
         test('closes the only tab, activeTabIndex becomes null', () => {
             const state = stateWith(['/bin/main.esc'], 0);
             const next = editorReducer(state, {

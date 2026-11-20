@@ -64,6 +64,49 @@ const TAB_DRAG_TYPE = 'application/x-escalier-tab';
 /** The tab being dragged. */
 type DraggedTab = { side: 'left' | 'right'; index: number };
 
+type DropHandlers = {
+    onDragOver: (e: DragEvent) => void;
+    onDragLeave: (e: DragEvent) => void;
+    onDrop: (e: DragEvent) => void;
+};
+
+type EmptyPaneProps = {
+    side: 'left' | 'right';
+    /** Whether files opened from the explorer open on this side. */
+    isFocused: boolean;
+    isDropTarget: boolean;
+    dropHandlers: DropHandlers;
+    onFocus: () => void;
+};
+
+/**
+ * Fills a side that has no tabs. Clicking it makes the side the one files open on,
+ * and a tab dragged from the other side can be dropped on it.
+ */
+const EmptyPane = ({
+    side,
+    isFocused,
+    isDropTarget,
+    dropHandlers,
+    onFocus,
+}: EmptyPaneProps) => (
+    <button
+        type="button"
+        className={[
+            styles.emptyState,
+            side === 'left' ? styles.inputEmpty : styles.outputEmpty,
+            isFocused ? styles.focusedEmpty : '',
+            isDropTarget ? styles.dropTarget : '',
+        ].join(' ')}
+        onClick={onFocus}
+        {...dropHandlers}
+    >
+        {isFocused
+            ? 'Open a file from the explorer or drag a tab here'
+            : 'Click to open files here, or drag a tab here'}
+    </button>
+);
+
 type TabItemProps = {
     path: string;
     isActive: boolean;
@@ -545,24 +588,21 @@ export const Editor = ({
     }
 
     /**
-     * Returns the props that let side's tab list take a tab dragged from the other
-     * side. Dropping the tab moves it, as "Move to Right" and "Move to Left" do.
+     * Returns the drag handlers that let an element on side take a tab dragged from the
+     * other side. Dropping the tab moves it, as "Move to Right" and "Move to Left" do.
      */
-    const tabListDropProps = (side: 'left' | 'right') => {
+    const dropHandlers = (side: 'left' | 'right'): DropHandlers => {
         const accepts = draggedTab !== null && draggedTab.side !== side;
         return {
-            className: `${side === 'left' ? styles.inputTabs : styles.outputTabs} ${
-                dropSide === side ? styles.dropTarget : ''
-            }`,
             onDragOver: (e: DragEvent) => {
                 if (!accepts) return;
-                // Cancelling dragover marks the tab list as a drop target.
+                // Cancelling dragover marks the element as a drop target.
                 e.preventDefault();
                 e.dataTransfer.dropEffect = 'move';
                 setDropSide(side);
             },
             onDragLeave: (e: DragEvent) => {
-                // dragleave also fires on moving between the list's own tabs.
+                // dragleave also fires on moving between the element's children.
                 if (e.currentTarget.contains(e.relatedTarget as Node | null)) {
                     return;
                 }
@@ -605,7 +645,8 @@ export const Editor = ({
 
             {/* Input tabs */}
             <div
-                {...tabListDropProps('left')}
+                {...dropHandlers('left')}
+                className={`${styles.inputTabs} ${dropSide === 'left' ? styles.dropTarget : ''}`}
                 role="tablist"
                 data-testid="input-tablist"
             >
@@ -661,7 +702,8 @@ export const Editor = ({
 
             {/* Output tabs */}
             <div
-                {...tabListDropProps('right')}
+                {...dropHandlers('right')}
+                className={`${styles.outputTabs} ${dropSide === 'right' ? styles.dropTarget : ''}`}
                 role="tablist"
                 data-testid="output-tablist"
             >
@@ -726,11 +768,16 @@ export const Editor = ({
                 }}
             />
 
-            {/* Empty state when no tabs are open */}
             {leftTabs.length === 0 && (
-                <div className={styles.emptyState}>
-                    Open a file from the explorer to start editing
-                </div>
+                <EmptyPane
+                    side="left"
+                    isFocused={focusedSide === 'left'}
+                    isDropTarget={dropSide === 'left'}
+                    dropHandlers={dropHandlers('left')}
+                    onFocus={() =>
+                        dispatch({ type: 'setFocusedSide', side: 'left' })
+                    }
+                />
             )}
 
             {/* Output editor */}
@@ -749,6 +796,17 @@ export const Editor = ({
                 <div className={styles.rightPaneOverlay}>
                     {rightPaneOverlay}
                 </div>
+            )}
+            {!showRightPane && !rightPaneOverlay && (
+                <EmptyPane
+                    side="right"
+                    isFocused={focusedSide === 'right'}
+                    isDropTarget={dropSide === 'right'}
+                    dropHandlers={dropHandlers('right')}
+                    onFocus={() =>
+                        dispatch({ type: 'setFocusedSide', side: 'right' })
+                    }
+                />
             )}
 
             {statusBar && <div className={styles.statusBar}>{statusBar}</div>}

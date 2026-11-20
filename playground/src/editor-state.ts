@@ -180,7 +180,17 @@ export function editorReducer(
                 newActiveIndex = activeIndex - 1;
             }
 
-            return setTabsForSide(state, side, newTabs, newActiveIndex);
+            const result = setTabsForSide(state, side, newTabs, newActiveIndex);
+            // Files open on the focused side. Once this side has no tabs, they open
+            // beside the other side's tabs, if it has any, rather than in the empty pane.
+            const other: Side = side === 'left' ? 'right' : 'left';
+            if (
+                newTabs.length === 0 &&
+                getTabsForSide(state, other).length > 0
+            ) {
+                return { ...result, focusedSide: other };
+            }
+            return result;
         }
 
         case 'setActiveTab': {
