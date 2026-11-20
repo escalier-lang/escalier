@@ -211,7 +211,7 @@ func TestInferEnumUnnamedParams(t *testing.T) {
 // level and script top level, not inside a function body.
 func TestInferEnumInFunctionBodyRejected(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f() {
+		fn f() -> 0 {
 			enum Local { A, B }
 			return 0
 		}

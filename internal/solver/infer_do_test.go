@@ -61,7 +61,7 @@ func TestInferDoScope(t *testing.T) {
 // enclosing function, so the block diverges and contributes nothing to `x`.
 func TestInferDoReturn(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(c: boolean) {
+		fn f(c: boolean) -> "early" | 1 {
 			val x = if c { do { return "early" } } else { 1 }
 			return x
 		}

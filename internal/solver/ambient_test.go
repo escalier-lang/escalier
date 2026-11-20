@@ -19,6 +19,19 @@ func inferAgainstTree(t *testing.T, src string) (map[string]string, []string) {
 	return renderedValues(res), msgs
 }
 
+// inferLocalAgainstTree is inferLocal checked against the standard library tree: it returns
+// the type of the binding named name, as hover displays it, with the error messages.
+func inferLocalAgainstTree(t *testing.T, src, name string) (string, []string) {
+	t.Helper()
+	module := parseModule(t, src)
+	res := InferModuleAgainstStdlib(module, benchTree, Options{})
+	msgs := make([]string, len(res.Errors))
+	for i, e := range res.Errors {
+		msgs[i] = e.Message()
+	}
+	return localType(t, module, res.Info, name), msgs
+}
+
 // inferAgainstTreeWithSpans is inferAgainstTree with each error rendered as
 // "line:col-line:col: message", the form msgWithSpan produces.
 func inferAgainstTreeWithSpans(t *testing.T, src string) (map[string]string, []string) {

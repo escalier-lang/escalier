@@ -188,7 +188,7 @@ func TestInferGenericMethodResolves(t *testing.T) {
 		class Box {
 			wrap<T>(&self, x: T) -> T { return x }
 		}
-		fn probe(b: Box) { return b.wrap }
+		fn probe(b: Box) -> fn <T>(x: T) -> T { return b.wrap }
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (b: Box) -> fn <T>(x: T) -> T", values["probe"])
