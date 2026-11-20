@@ -1,5 +1,6 @@
 import * as monaco from 'monaco-editor-core';
 import {
+    type DragEvent,
     type ReactNode,
     useCallback,
     useEffect,
@@ -54,6 +55,15 @@ type ContextMenuState = {
     y: number;
 };
 
+/**
+ * The drag data type a tab sets. Monaco ignores it, so a tab dropped on an editor
+ * inserts no text.
+ */
+const TAB_DRAG_TYPE = 'application/x-escalier-tab';
+
+/** The tab being dragged. */
+type DraggedTab = { side: 'left' | 'right'; index: number };
+
 type TabItemProps = {
     path: string;
     isActive: boolean;
@@ -65,6 +75,8 @@ type TabItemProps = {
     onClose: () => void;
     onMove: () => void;
     onContextMenu: (x: number, y: number) => void;
+    onDragStart: () => void;
+    onDragEnd: () => void;
 };
 
 const TabItem = ({
@@ -78,6 +90,8 @@ const TabItem = ({
     onClose,
     onMove,
     onContextMenu,
+    onDragStart,
+    onDragEnd,
 }: TabItemProps) => {
     const name = displayName(path);
     const className = `${styles.tab} ${isActive && isFocused ? styles.activeTab : styles.visibleTab}`;
@@ -101,6 +115,14 @@ const TabItem = ({
                 e.preventDefault();
                 onContextMenu(e.clientX, e.clientY);
             }}
+            draggable
+            onDragStart={(e) => {
+                // Firefox starts a drag only when the drag carries data.
+                e.dataTransfer.setData(TAB_DRAG_TYPE, path);
+                e.dataTransfer.effectAllowed = 'move';
+                onDragStart();
+            }}
+            onDragEnd={onDragEnd}
         >
             <span className={styles.tabLabel}>{name}</span>
             <button
@@ -175,6 +197,8 @@ export const Editor = ({
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(
         null,
     );
+    const [draggedTab, setDraggedTab] = useState<DraggedTab | null>(null);
+    const [dropSide, setDropSide] = useState<'left' | 'right' | null>(null);
     const {
         leftTabs,
         activeLeftTabIndex,
@@ -520,6 +544,49 @@ export const Editor = ({
         });
     }
 
+    /**
+     * Returns the props that let side's tab list take a tab dragged from the other
+     * side. Dropping the tab moves it, as "Move to Right" and "Move to Left" do.
+     */
+    const tabListDropProps = (side: 'left' | 'right') => {
+        const accepts = draggedTab !== null && draggedTab.side !== side;
+        return {
+            className: `${side === 'left' ? styles.inputTabs : styles.outputTabs} ${
+                dropSide === side ? styles.dropTarget : ''
+            }`,
+            onDragOver: (e: DragEvent) => {
+                if (!accepts) return;
+                // Cancelling dragover marks the tab list as a drop target.
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                setDropSide(side);
+            },
+            onDragLeave: (e: DragEvent) => {
+                // dragleave also fires on moving between the list's own tabs.
+                if (e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                    return;
+                }
+                setDropSide(null);
+            },
+            onDrop: (e: DragEvent) => {
+                if (!accepts) return;
+                e.preventDefault();
+                setDropSide(null);
+                setDraggedTab(null);
+                dispatch({
+                    type: 'moveTab',
+                    from: draggedTab.side,
+                    index: draggedTab.index,
+                });
+            },
+        };
+    };
+
+    const endTabDrag = () => {
+        setDraggedTab(null);
+        setDropSide(null);
+    };
+
     return (
         <div className={styles['editor-root']}>
             {/* Banner (e.g. validation errors) */}
@@ -538,7 +605,7 @@ export const Editor = ({
 
             {/* Input tabs */}
             <div
-                className={styles.inputTabs}
+                {...tabListDropProps('left')}
                 role="tablist"
                 data-testid="input-tablist"
             >
@@ -583,13 +650,18 @@ export const Editor = ({
                                 y,
                             })
                         }
+                        onDragStart={() => {
+                            setContextMenu(null);
+                            setDraggedTab({ side: 'left', index: i });
+                        }}
+                        onDragEnd={endTabDrag}
                     />
                 ))}
             </div>
 
             {/* Output tabs */}
             <div
-                className={styles.outputTabs}
+                {...tabListDropProps('right')}
                 role="tablist"
                 data-testid="output-tablist"
             >
@@ -634,6 +706,11 @@ export const Editor = ({
                                 y,
                             })
                         }
+                        onDragStart={() => {
+                            setContextMenu(null);
+                            setDraggedTab({ side: 'right', index: i });
+                        }}
+                        onDragEnd={endTabDrag}
                     />
                 ))}
             </div>

@@ -286,6 +286,88 @@ describe('Editor', () => {
         });
     });
 
+    describe('dragging a tab', () => {
+        /** Returns a dataTransfer stand-in that records what a drag sets. */
+        const dataTransfer = () => ({
+            setData: vi.fn(),
+            effectAllowed: '',
+            dropEffect: '',
+        });
+
+        test('dropping a left tab on the right tab list moves it there', () => {
+            setStoreState({
+                leftTabs: [{ path: '/a.esc' }, { path: '/b.esc' }],
+                activeLeftTabIndex: 0,
+            });
+            render(<Editor fs={makeFakeFS()} />);
+            const transfer = dataTransfer();
+            const rightList = screen.getByTestId('output-tablist');
+
+            fireEvent.dragStart(getTabsInTablist(0)[0], {
+                dataTransfer: transfer,
+            });
+            fireEvent.dragOver(rightList, { dataTransfer: transfer });
+            expect(rightList.className).toContain('dropTarget');
+            fireEvent.drop(rightList, { dataTransfer: transfer });
+
+            expect(transfer.setData).toHaveBeenCalledWith(
+                'application/x-escalier-tab',
+                '/a.esc',
+            );
+            expect(rightList.className).not.toContain('dropTarget');
+            const state = useEditorStore.getState();
+            expect(state.leftTabs).toEqual([{ path: '/b.esc' }]);
+            expect(state.rightTabs).toEqual([{ path: '/a.esc' }]);
+            expect(state.activeRightTabIndex).toBe(0);
+        });
+
+        test('dropping a tab on its own tab list leaves it in place', () => {
+            setStoreState({
+                leftTabs: [{ path: '/a.esc' }],
+                activeLeftTabIndex: 0,
+                rightTabs: [{ path: '/build/a.js' }],
+                activeRightTabIndex: 0,
+            });
+            render(<Editor fs={makeFakeFS()} />);
+            const transfer = dataTransfer();
+            const rightList = screen.getByTestId('output-tablist');
+
+            fireEvent.dragStart(getTabsInTablist(1)[0], {
+                dataTransfer: transfer,
+            });
+            fireEvent.dragOver(rightList, { dataTransfer: transfer });
+            fireEvent.drop(rightList, { dataTransfer: transfer });
+
+            expect(rightList.className).not.toContain('dropTarget');
+            const state = useEditorStore.getState();
+            expect(state.leftTabs).toEqual([{ path: '/a.esc' }]);
+            expect(state.rightTabs).toEqual([{ path: '/build/a.js' }]);
+        });
+
+        test('ending a drag outside a tab list moves nothing', () => {
+            setStoreState({
+                leftTabs: [{ path: '/a.esc' }],
+                activeLeftTabIndex: 0,
+            });
+            render(<Editor fs={makeFakeFS()} />);
+            const transfer = dataTransfer();
+            const tab = getTabsInTablist(0)[0];
+            const rightList = screen.getByTestId('output-tablist');
+
+            fireEvent.dragStart(tab, { dataTransfer: transfer });
+            fireEvent.dragOver(rightList, { dataTransfer: transfer });
+            fireEvent.dragLeave(rightList, {
+                dataTransfer: transfer,
+                relatedTarget: document.body,
+            });
+            expect(rightList.className).not.toContain('dropTarget');
+            fireEvent.dragEnd(tab, { dataTransfer: transfer });
+            fireEvent.drop(rightList, { dataTransfer: transfer });
+
+            expect(useEditorStore.getState().rightTabs).toEqual([]);
+        });
+    });
+
     describe('empty state', () => {
         test('shows empty state message when no left tabs are open', () => {
             setStoreState({

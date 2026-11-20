@@ -39,6 +39,10 @@
     overflow-y: hidden;
 }
 
+.dropTarget {
+    box-shadow: inset 0 0 0 2px var(--color-accent);
+}
+
 .tab {
     background-color: var(--color-bg);
     color: var(--color-text-muted);
