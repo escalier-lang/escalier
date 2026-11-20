@@ -38,3 +38,33 @@ test('the status bar counts diagnostics in closed files and lists them in a tab'
         /\/lib\/index\.esc:\d+:26:\serror:\scannot\sconstrain\s"a"\s<:\snumber/,
     );
 });
+
+test('a permalink leaves the Diagnostics tab out and the reopened page counts afresh', async ({
+    page,
+    context,
+}) => {
+    await loadPlayground(page);
+    const inputPanel = page.locator('#input-panel');
+    await inputPanel.locator('.view-lines').click();
+    await page.keyboard.press(`${modifier}+End`);
+    await page.keyboard.insertText('\nexport val bad: number = "a"');
+    const counts = page.locator('footer').getByRole('button');
+    await expect(counts).toHaveAccessibleName('1 error, 0 warnings', {
+        timeout: COMPILE_TIMEOUT_MS,
+    });
+    await counts.click();
+
+    // Share puts the link in the address bar whether or not the clipboard takes it.
+    await page.getByRole('button', { name: 'Share' }).click();
+    await expect(page).toHaveURL(/#project=[A-Za-z0-9_-]+$/);
+
+    const reopened = await context.newPage();
+    await reopened.goto(page.url());
+    const reopenedTabs = reopened.getByTestId('input-tablist').getByRole('tab');
+    await expect(reopenedTabs).toHaveText([/^index\.esc/]);
+    await expect(
+        reopened.locator('footer').getByRole('button'),
+    ).toHaveAccessibleName('1 error, 0 warnings', {
+        timeout: COMPILE_TIMEOUT_MS,
+    });
+});

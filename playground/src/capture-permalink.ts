@@ -1,8 +1,10 @@
 import * as monaco from 'monaco-editor-core';
 
+import type { Tab, TabLayout } from './editor-state';
 import { useEditorStore } from './editor-store';
 import type { BrowserFS } from './fs/browser-fs';
 import { collectProjectFiles, encodeSnapshot, permalinkUrl } from './permalink';
+import { DIAGNOSTICS_TAB_PATH } from './project-diagnostics';
 
 /**
  * Returns a permalink to the project in fs and to the tabs the editor has open. The
@@ -21,14 +23,35 @@ export async function capturePermalink(
     );
     const encoded = await encodeSnapshot({
         files,
-        left: {
-            paths: state.leftTabs.map((tab) => tab.path),
-            active: state.activeLeftTabIndex,
-        },
-        right: {
-            paths: state.rightTabs.map((tab) => tab.path),
-            active: state.activeRightTabIndex,
-        },
+        left: fileTabsLayout(state.leftTabs, state.activeLeftTabIndex),
+        right: fileTabsLayout(state.rightTabs, state.activeRightTabIndex),
     });
     return permalinkUrl(href, encoded);
+}
+
+/**
+ * Returns the layout of tabs without the diagnostics tab. The active tab keeps its
+ * place. When the diagnostics tab is the active one, the tab before it becomes active,
+ * or the tab after it when it is first. The layout has no active tab when it has no
+ * tabs.
+ */
+export function fileTabsLayout(
+    tabs: readonly Tab[],
+    active: number | null,
+): TabLayout {
+    // A link opens the project somewhere else, where the language server reports the
+    // diagnostics afresh. A restored diagnostics tab that opens active also leaves the
+    // server unchecked, since the server checks the project once an Escalier file opens.
+    const removed = tabs.findIndex((tab) => tab.path === DIAGNOSTICS_TAB_PATH);
+    const paths = tabs.filter((_, i) => i !== removed).map((tab) => tab.path);
+    if (removed === -1 || active === null) {
+        return { paths, active };
+    }
+    if (paths.length === 0) {
+        return { paths, active: null };
+    }
+    return {
+        paths,
+        active: active < removed ? active : Math.max(active - 1, 0),
+    };
 }
