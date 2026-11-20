@@ -785,31 +785,98 @@ and a lint can suggest removing the `with`.
   when an app raises its minimum browser version, except to lose feature
   requirements.
 
+### 13. Third-party code
+
+Third-party code reaches Escalier through `.d.ts` declarations, which state no
+requirements. Calls into it work for capturable requirements. What the checker
+can't see, it learns from overlays, the files that correct a declaration's
+types, such as
+[internal/interop/overlay/std/prelude.replace.esc](../../internal/interop/overlay/std/prelude.replace.esc).
+
+#### 13.1 Third-party higher-order functions
+
+A function value never takes `$ctx` (section 10), so an Escalier closure passed
+to a third-party function carries its context values with it. That holds for
+lodash's `map`, `Array.prototype.forEach`, an event emitter or a scheduler,
+whether the callee calls the closure at once or later. No wrapper is needed.
+
+Extent-bound requirements depend on the callee's type. A callback parameter in a
+`.d.ts` file has no `needs R`, so it reads as one the callee may call after it
+returns, which is the conservative reading. A closure that needs `Render`
+therefore can't be passed to lodash's `map`, although `map` calls its callback
+before it returns. An overlay that adds `needs R` to the parameter accepts it:
+
+```esc
+// overlay for lodash
+declare fn map<T, U, R = never>(xs: [T], f: fn (T) -> U needs R) -> [U] needs R
+```
+
+#### 13.2 Third-party functions' own requirements
+
+A declaration file says nothing about ambient state a library reads, platform
+APIs it touches, or features it needs. A library that reads `AsyncLocalStorage`
+or touches `window` therefore adds no requirement to its callers, and the
+checker misses it. An overlay can add the requirement the library has:
+
+```esc
+// overlay for a library that touches the DOM
+declare fn measureText(text: string) -> number needs Env<window>
+```
+
+Open question 3 asks what a declaration with no overlay needs.
+
+#### 13.3 Third-party code calling Escalier
+
+Passing a declared Escalier function to third-party code binds `$ctx` where it
+is passed (section 10), so JavaScript calls it with the plain calling
+convention. An exported function with a context requirement, called directly
+from JavaScript, is open question 2.
+
+#### 13.4 Third-party components
+
+The pass-through default (section 11.2) applies to a library component's
+element-typed props, so in `<Box><Button/></Box>` the `Theme` that `Button`
+needs passes through `Box`. That is unsound only when the library renders its
+children under a separate root or through a registry, and the design accepts
+that risk.
+
+A library component that reads a context adds no requirement unless an overlay
+says so. A component that calls react-router's `useNavigate` under no router
+is missed, and an overlay on `useNavigate` adding `needs Router | Render`
+catches it.
+
+#### 13.5 Summary
+
+The design is sound for code Escalier can see. At the third-party boundary it
+relies on overlays, and without one it misses requirements but rejects no
+correct program. The exception is extent-bound callbacks, which are rejected
+until an overlay states that the callee calls them before it returns.
+
 ## Part IV. Decisions
 
-### 13. Alternatives considered
+### 14. Alternatives considered
 
-#### 13.1 Ship environments first, then lift them into coeffects
+#### 14.1 Ship environments first, then lift them into coeffects
 
 Environments ship as designed, per entrypoint, and context values follow as a
 separate feature. This leaves the language with three unrelated ways to state a
 dependency: `throws`, `@env` targets and context values. It fails C1.
 
-#### 13.2 A `needs` clause with its own machinery
+#### 14.2 A `needs` clause with its own machinery
 
 The surface syntax matches Part III, but `needs` is implemented beside `throws`
 instead of on shared rules. Details such as requirement variables and interop
 defaults can then be decided differently for each. It fails C1 over time, though
 not on the first day.
 
-#### 13.3 Capabilities as values
+#### 14.3 Capabilities as values
 
 `window`, `document` and `fs` become implicit parameters, and feature detection
 becomes acquiring one, as in `if let dom = Env.window() { ... }`. This unifies
 environments with context values, but in a different idiom from `throws`, and it
 conflicts with the ambient globals every `.d.ts` file assumes.
 
-#### 13.4 Dynamic scoping with `AsyncContext`
+#### 14.4 Dynamic scoping with `AsyncContext`
 
 `with` compiles to `Theme.run(dark, () => { ... })` and a read to `Theme.get()`,
 using the TC39 `AsyncContext.Variable` proposal. There is no hidden parameter,
@@ -818,7 +885,29 @@ resolves a context where a callback runs, not where it was created, which
 contradicts section 9.2. It also depends on a proposal that is not yet standard
 and adds a lookup to every read, which fails C8.
 
-### 14. Open questions
+The proposal's polyfill can't stand in for an engine that implements it:
+
+- Native `await` on a native promise does not call `Promise.prototype.then`,
+  so a patched `then` can't carry a value across it, and the value is lost
+  after the first `await`.
+- The polyfill exports a wrapped `then` but does not install it, so even
+  `.then` callbacks lose the value unless the program installs it.
+- Host callbacks, such as those of `setTimeout`, `queueMicrotask` and event
+  listeners, lose the value unless each is wrapped by hand.
+- The spec captures a snapshot when a generator is created and restores it on
+  each resume. The polyfill does not, so a generator body sees the value
+  current at each `next()`.
+- Every read is a `Map` lookup, and the first `run` after any snapshot copies
+  the whole map.
+
+The `$ctx` design carries values across `await`, generators and host
+callbacks as ordinary captured variables, so it has none of these gaps. Once
+runtimes implement `AsyncContext`, it may still help at the JavaScript
+boundary, by letting a JavaScript caller provide context to an exported
+function (open question 2) and by letting Escalier code read ambient state that
+JavaScript libraries set (open question 3).
+
+### 15. Open questions
 
 1. **How does a provider remove a requirement from a variable?** `ThemeProvider`
    needs `R` minus `Theme`. Either the provider gets a built-in typing rule, as
@@ -832,7 +921,9 @@ and adds a lookup to every read, which fails C8.
 3. **What does an imported `.d.ts` function need?** A declaration file states no
    requirements. Reading it as needing nothing is unsound for code that reads
    ambient state. Reading it as needing everything makes every import
-   unprovidable.
+   unprovidable. Section 13 reads it as needing nothing and adds what is known
+   through overlays. The open part is whether that default should change, for
+   example per package or behind a strict mode.
 4. **Is feature detection a provider for environments?** *Decided: no.* An
    environment stays per entrypoint, and a build for each target selects the
    declarations whose `@env` covers it. Detection provides only a feature
@@ -901,7 +992,7 @@ and adds a lookup to every read, which fails C8.
      with {...testEnv, Theme: dark} { runSimulation() }
      ```
 
-### 15. Related work
+### 16. Related work
 
 - [planning/environments/design.md](../environments/design.md), which this design
   generalizes.
