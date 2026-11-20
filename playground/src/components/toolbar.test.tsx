@@ -35,6 +35,17 @@ test('the Report a bug button asks for a bug report', () => {
     expect(onReportBug).toHaveBeenCalledOnce();
 });
 
+test('links to the repository on GitHub in a new tab', () => {
+    renderToolbar();
+
+    const link = screen.getByRole('link', { name: 'GitHub' });
+    expect(link).toHaveAttribute(
+        'href',
+        'https://github.com/escalier-lang/escalier',
+    );
+    expect(link).toHaveAttribute('target', '_blank');
+});
+
 test('the Share button asks for a permalink', () => {
     const onShare = vi.fn();
     renderToolbar(onShare);

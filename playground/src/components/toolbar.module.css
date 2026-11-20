@@ -28,6 +28,19 @@
     gap: 4px;
 }
 
+.link {
+    gap: 6px;
+    text-decoration: none;
+}
+
+/* Below this width the toolbar's controls fill it, so the link would push the theme
+   menu past the window's edge. */
+@media (max-width: 479px) {
+    .link {
+        display: none;
+    }
+}
+
 .dropdownButton:hover {
     background-color: var(--color-bg-button);
 }
