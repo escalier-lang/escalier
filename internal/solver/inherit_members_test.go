@@ -66,7 +66,7 @@ func TestInferClassInheritedWholeBody(t *testing.T) {
 						self.breed = breed
 					},
 				}
-				fn f(a: Animal) {
+				fn f(a: Animal) -> [string, string] {
 					return match a {
 						Dog { name, breed } => [name, breed]
 					}

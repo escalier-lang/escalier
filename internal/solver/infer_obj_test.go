@@ -88,14 +88,15 @@ func TestInferTupleSpreadNonTuple(t *testing.T) {
 
 // Spreading an inexact tuple before another element is rejected: the inexact
 // operand ([number, ...]) has unknown length, so the trailing 1 would land at an
-// unknown position.
+// unknown position. #2783 tracks accepting it as the variadic tuple
+// [number, ...Array<unknown>, 1].
 func TestInferTupleSpreadInexactNotLast(t *testing.T) {
-	// fn f(z: [number, ...]) { return [...z, 1] }
+	// fn f(z: [number, ...]) -> Array<number> { return [...z, 1] }
 	_, _, errs := inferSource(t, `
-		fn f(z: [number, ...]) { return [...z, 1] }
+		fn f(z: [number, ...]) -> Array<number> { return [...z, 1] }
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "2:36-2:40: cannot spread an inexact tuple except as the last element", msgWithSpan(t, errs[0]))
+	require.Equal(t, "2:53-2:57: cannot spread an inexact tuple except as the last element", msgWithSpan(t, errs[0]))
 }
 
 // A trailing inexact spread is sound: the operand's known prefix extends the
@@ -104,12 +105,12 @@ func TestInferTupleSpreadInexactNotLast(t *testing.T) {
 // element keeps its place: [a, ...z] yields [typeof a, number, ...].
 func TestInferTupleSpreadInexactLast(t *testing.T) {
 	t.Run("spread alone", func(t *testing.T) {
-		vals, _, errs := inferSource(t, `fn f(z: [number, ...]) { return [...z] }`)
+		vals, _, errs := inferSource(t, `fn f(z: [number, ...]) -> [number, ...] { return [...z] }`)
 		require.Empty(t, errs)
 		require.Equal(t, "fn (z: [number, ...]) -> [number, ...]", vals["f"])
 	})
 	t.Run("element before a trailing spread", func(t *testing.T) {
-		vals, _, errs := inferSource(t, `fn f(z: [number, ...]) { return ["hi", ...z] }`)
+		vals, _, errs := inferSource(t, `fn f(z: [number, ...]) -> ["hi", number, ...] { return ["hi", ...z] }`)
 		require.Empty(t, errs)
 		require.Equal(t, `fn (z: [number, ...]) -> ["hi", number, ...]`, vals["f"])
 	})
@@ -255,7 +256,7 @@ func TestInferObjectShorthand(t *testing.T) {
 		// use-after-move.
 		"OwnedValueMoves": {
 			src: `
-				fn f() {
+				fn f() -> undefined {
 					val a = {x: 1}
 					val o = PROP
 					a.x

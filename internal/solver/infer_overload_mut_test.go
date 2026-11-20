@@ -100,8 +100,8 @@ func TestInferOverloadOwnedMutArgumentLosingArmRollsBack(t *testing.T) {
 func TestInferOverloadRestSlotChecksElement(t *testing.T) {
 	t.Run("matching elements accept", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
-			fn g(...mut xs: Array<number>) { return 1 }
-			fn g(a: string, b: string) { return a }
+			fn g(...mut xs: Array<number>) -> 1 { return 1 }
+			fn g(a: string, b: string) -> string { return a }
 			val r = g(1, 2)
 		`)
 		require.Empty(t, messagesWithSpan(t, errs))
@@ -109,8 +109,8 @@ func TestInferOverloadRestSlotChecksElement(t *testing.T) {
 	})
 	t.Run("a mismatched element rejects", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
-			fn g(...mut xs: Array<number>) { return 1 }
-			fn g(a: string, b: string) { return a }
+			fn g(...mut xs: Array<number>) -> 1 { return 1 }
+			fn g(a: string, b: string) -> string { return a }
 			val r = g(1, true)
 		`)
 		require.Equal(t,

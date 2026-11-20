@@ -137,8 +137,8 @@ func TestInferOverloadPathsAgreeOnAnArrayParameter(t *testing.T) {
 	require.Empty(t, messagesWithSpan(t, errs))
 
 	unannotated, _, errs := inferSource(t, `
-		fn g(...mut xs: Array<number>) { return 1 }
-		fn g(a: string, b: string) { return a }
+		fn g(...mut xs: Array<number>) -> 1 { return 1 }
+		fn g(a: string, b: string) -> string { return a }
 	`)
 	require.Empty(t, messagesWithSpan(t, errs))
 

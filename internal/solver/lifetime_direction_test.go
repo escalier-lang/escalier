@@ -18,6 +18,9 @@ func TestBorrowOutlivesItsDestination(t *testing.T) {
 		want  []string
 		value string
 		typ   string
+		// local reads value as a closure bound inside a function body, which inferSource
+		// does not return.
+		local bool
 	}{
 		{
 			name: "returning a borrow proves its lifetime outlives the result's",
@@ -35,9 +38,12 @@ func TestBorrowOutlivesItsDestination(t *testing.T) {
 			name: "each argument funneled into one lifetime parameter outlives the result",
 			src: `
 				fn twoArgs<'r>(a: &'r {x: number}, b: &'r {x: number}) -> &'r {x: number} { return a }
-				fn callTwo(a: &{x: number}, b: &{x: number}) { return twoArgs(a, b) }
+				fn main() -> undefined {
+					val callTwo = fn (a: &{x: number}, b: &{x: number}) { return twoArgs(a, b) }
+				}
 			`,
 			value: "callTwo",
+			local: true,
 			typ:   "fn <'a: 'c, 'b: 'c, 'c>(a: &'a {x: number}, b: &'b {x: number}) -> &'c {x: number}",
 		},
 	}
@@ -46,7 +52,11 @@ func TestBorrowOutlivesItsDestination(t *testing.T) {
 			values, _, errs := inferSource(t, tt.src)
 			require.Equal(t, tt.want, messagesWithSpan(t, errs))
 			if tt.value != "" {
-				require.Equal(t, tt.typ, values[tt.value])
+				got := values[tt.value]
+				if tt.local {
+					got, _ = inferLocal(t, tt.src, tt.value)
+				}
+				require.Equal(t, tt.typ, got)
 			}
 		})
 	}

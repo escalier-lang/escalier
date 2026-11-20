@@ -185,9 +185,9 @@ func TestInferOverloadMutualRecursionRequiresAnnotation(t *testing.T) {
 // bodies are inferred and nothing has to be annotated to make that choice possible.
 func TestInferOverloadMutualRecursionInfersUnannotatedReturns(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x: number) { return g(x) }
-		fn f(x: string) { return x }
-		fn g(n: number) { return f("hi") }
+		fn f(x: number) -> string { return g(x) }
+		fn f(x: string) -> string { return x }
+		fn g(n: number) -> string { return f("hi") }
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, "(fn (x: number) -> string) & (fn (x: string) -> string)", values["f"])
@@ -200,9 +200,9 @@ func TestInferOverloadMutualRecursionInfersUnannotatedReturns(t *testing.T) {
 // decomposition.
 func TestInferOverloadMutualRecursionResolvesPerArm(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x: number) { return 1 }
-		fn f(x: string) { return g(x) }
-		fn g(s: string) { return f(1) }
+		fn f(x: number) -> 1 { return 1 }
+		fn f(x: string) -> 1 { return g(x) }
+		fn g(s: string) -> 1 { return f(1) }
 		val a = f(5)
 		val b = f("hi")
 	`)
