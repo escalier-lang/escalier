@@ -545,59 +545,70 @@ describe('clicking a diagnostic', () => {
         focus: ReturnType<typeof vi.fn>;
     };
 
-    test('opens the file on the same side and reveals the diagnostic', () => {
+    /** Renders the diagnostics tab on the left and returns the editors. */
+    function renderDiagnosticsTab(left: string[] = []) {
         setStoreState({
-            leftTabs: [{ path: DIAGNOSTICS_TAB_PATH }],
+            leftTabs: [DIAGNOSTICS_TAB_PATH, ...left].map((path) => ({ path })),
             activeLeftTabIndex: 0,
         });
         render(<Editor fs={makeFakeFS()} />);
-        const inputEditor = vi.mocked(monaco.editor.create).mock.results.at(-2)
-            ?.value as MockEditor;
+        const [inputEditor, outputEditor] = vi
+            .mocked(monaco.editor.create)
+            .mock.results.slice(-2)
+            .map((result) => result.value as MockEditor);
         inputEditor.getModel.mockReturnValue({
             uri: { path: DIAGNOSTICS_TAB_PATH },
             getLineContent: () => '/lib/index.esc:3:7: error: bad',
         });
         inputEditor.getSelection.mockReturnValue({ isEmpty: () => true });
         const [onMouseUp] = inputEditor.onMouseUp.mock.calls[0];
+        return { inputEditor, outputEditor, onMouseUp };
+    }
+
+    test('opens a file that is not open beside the diagnostics tab and reveals the diagnostic', () => {
+        const { outputEditor, onMouseUp } = renderDiagnosticsTab();
 
         act(() => onMouseUp({ target: { position: { lineNumber: 1 } } }));
 
-        const { leftTabs, activeLeftTabIndex } = useEditorStore.getState();
-        expect(leftTabs.map((tab) => tab.path)).toEqual([
-            DIAGNOSTICS_TAB_PATH,
-            '/lib/index.esc',
-        ]);
-        expect(activeLeftTabIndex).toBe(1);
+        const state = useEditorStore.getState();
+        expect(state.leftTabs).toEqual([{ path: DIAGNOSTICS_TAB_PATH }]);
+        expect(state.activeLeftTabIndex).toBe(0);
+        // The editor clears the reveal once it has moved there.
+        expect(state.rightTabs).toEqual([{ path: '/lib/index.esc' }]);
+        expect(state.activeRightTabIndex).toBe(0);
         const position = { lineNumber: 3, column: 7 };
-        expect(inputEditor.setPosition).toHaveBeenCalledWith(position);
-        expect(inputEditor.revealPositionInCenter).toHaveBeenCalledWith(
+        expect(outputEditor.setPosition).toHaveBeenCalledWith(position);
+        expect(outputEditor.revealPositionInCenter).toHaveBeenCalledWith(
             position,
         );
-        expect(inputEditor.focus).toHaveBeenCalled();
-        // The editor clears the reveal once it has moved there.
-        expect(useEditorStore.getState().leftTabs[1]).toEqual({
-            path: '/lib/index.esc',
+        expect(outputEditor.focus).toHaveBeenCalled();
+    });
+
+    test("switches to the file's tab when only the diagnostics tab's side has it", () => {
+        const { inputEditor, onMouseUp } = renderDiagnosticsTab([
+            '/lib/index.esc',
+        ]);
+
+        act(() => onMouseUp({ target: { position: { lineNumber: 1 } } }));
+
+        const state = useEditorStore.getState();
+        expect(state.activeLeftTabIndex).toBe(1);
+        expect(state.rightTabs).toEqual([]);
+        expect(inputEditor.setPosition).toHaveBeenCalledWith({
+            lineNumber: 3,
+            column: 7,
         });
     });
 
     test('opens nothing after a drag that selects text', () => {
-        setStoreState({
-            leftTabs: [{ path: DIAGNOSTICS_TAB_PATH }],
-            activeLeftTabIndex: 0,
-        });
-        render(<Editor fs={makeFakeFS()} />);
-        const inputEditor = vi.mocked(monaco.editor.create).mock.results.at(-2)
-            ?.value as MockEditor;
-        inputEditor.getModel.mockReturnValue({
-            uri: { path: DIAGNOSTICS_TAB_PATH },
-            getLineContent: () => '/lib/index.esc:3:7: error: bad',
-        });
+        const { inputEditor, onMouseUp } = renderDiagnosticsTab();
         inputEditor.getSelection.mockReturnValue({ isEmpty: () => false });
-        const [onMouseUp] = inputEditor.onMouseUp.mock.calls[0];
 
         act(() => onMouseUp({ target: { position: { lineNumber: 1 } } }));
 
-        expect(useEditorStore.getState().leftTabs).toHaveLength(1);
+        const state = useEditorStore.getState();
+        expect(state.leftTabs).toHaveLength(1);
+        expect(state.rightTabs).toEqual([]);
     });
 });
 
