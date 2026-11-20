@@ -22,7 +22,7 @@ func TestInferSubsumesInferredUnion(t *testing.T) {
 		{
 			name: "literal into primitive",
 			src: `
-				fn f(b: boolean, n: number) {
+				fn f(b: boolean, n: number) -> number {
 					return if b { 1 } else { n }
 				}
 			`,
@@ -31,7 +31,7 @@ func TestInferSubsumesInferredUnion(t *testing.T) {
 		{
 			name: "several literals into primitive",
 			src: `
-				fn f(b: boolean, n: number) {
+				fn f(b: boolean, n: number) -> number {
 					return if b { 1 } else { if b { 2 } else { n } }
 				}
 			`,
@@ -40,7 +40,7 @@ func TestInferSubsumesInferredUnion(t *testing.T) {
 		{
 			name: "string literal into string",
 			src: `
-				fn f(b: boolean, s: string) {
+				fn f(b: boolean, s: string) -> string {
 					return if b { "a" } else { s }
 				}
 			`,
@@ -49,7 +49,7 @@ func TestInferSubsumesInferredUnion(t *testing.T) {
 		{
 			name: "union nested in a tuple",
 			src: `
-				fn f(b: boolean, n: number) {
+				fn f(b: boolean, n: number) -> [number] {
 					return [if b { 1 } else { n }]
 				}
 			`,
@@ -58,7 +58,7 @@ func TestInferSubsumesInferredUnion(t *testing.T) {
 		{
 			name: "distinct literals are not subsumed",
 			src: `
-				fn f(b: boolean) {
+				fn f(b: boolean) -> 1 | 2 {
 					return if b { 1 } else { 2 }
 				}
 			`,
@@ -79,7 +79,7 @@ func TestInferSubsumesInferredUnion(t *testing.T) {
 // resolves to `number`; after subsumption the two are equalType-equal.
 func TestInferSubsumedTypeEqualsAnnotation(t *testing.T) {
 	scope, _, errs := InferModule(parseModule(t, `
-		fn inferred(b: boolean, n: number) {
+		fn inferred(b: boolean, n: number) -> number {
 			return if b { 1 } else { n }
 		}
 		val annotated: number = 0
@@ -107,7 +107,7 @@ func TestInferSubsumedTypePreservesAssignability(t *testing.T) {
 		{
 			name: "number sink accepts",
 			src: `
-				fn f(b: boolean, n: number) {
+				fn f(b: boolean, n: number) -> undefined {
 					val r = if b { 1 } else { n }
 					val s: number = r
 				}
@@ -117,7 +117,7 @@ func TestInferSubsumedTypePreservesAssignability(t *testing.T) {
 		{
 			name: "string sink rejects both union members",
 			src: `
-				fn f(b: boolean, n: number) {
+				fn f(b: boolean, n: number) -> undefined {
 					val r = if b { 1 } else { n }
 					val s: string = r
 				}

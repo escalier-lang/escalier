@@ -25,7 +25,7 @@ func TestReceiverLifetimeDeclarations(t *testing.T) {
 					p: {x: number},
 					lend<'a>(&'a self, out: &mut {r: &'a {x: number}}) -> undefined { out.r = &self.p },
 				}
-				fn f(out: &mut {r: &{x: number}}) {
+				fn f(out: &mut {r: &{x: number}}) -> undefined {
 					val c = C({x: 1})
 					c.lend(out)
 				}
@@ -41,7 +41,7 @@ func TestReceiverLifetimeDeclarations(t *testing.T) {
 					p: {x: number},
 					lend<'a>(&'a self, out: &mut {r: &'a {x: number}}) -> undefined { out.r = &self.p },
 				}
-				fn f(out: &mut {r: &{x: number}}) {
+				fn f(out: &mut {r: &{x: number}}) -> undefined {
 					val mut c = C({x: 1})
 					c.lend(out)
 					c.p = {x: 2}
@@ -59,7 +59,7 @@ func TestReceiverLifetimeDeclarations(t *testing.T) {
 						out.r = q
 					},
 				}
-				fn f(out: &mut {r: &{x: number}}, q: &{x: number}) {
+				fn f(out: &mut {r: &{x: number}}, q: &{x: number}) -> undefined {
 					val c = C({x: 1})
 					c.lend(out, q)
 				}

@@ -141,7 +141,7 @@ func TestASetterWriteResolvesThroughAnAlias(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		type C = { get v(&self) -> number, set v(&mut self, x: number) }
 		declare val mut c: C
-		fn f() { c.v = 5 }
+		fn f() -> undefined { c.v = 5 }
 	`)
 	require.Empty(t, errorMessagesOf(errs))
 }
