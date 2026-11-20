@@ -77,3 +77,35 @@ test('a permalink reopens the Diagnostics tab, filled from a fresh check', async
         /\/lib\/index\.esc:\d+:26:\serror:\scannot\sconstrain/,
     );
 });
+
+test('clicking a diagnostic opens its file with the cursor at the diagnostic', async ({
+    page,
+}) => {
+    await loadPlayground(page);
+    const inputPanel = page.locator('#input-panel');
+    await inputPanel.locator('.view-lines').click();
+    await page.keyboard.press(`${modifier}+End`);
+    await page.keyboard.insertText('\nexport val bad: number = "a"');
+    const counts = page.locator('footer').getByRole('button');
+    await expect(counts).toHaveAccessibleName('1 error, 0 warnings', {
+        timeout: COMPILE_TIMEOUT_MS,
+    });
+    await page.getByRole('tab', { name: /index\.esc/ }).hover();
+    await page.getByLabel('Close index.esc').click();
+    await counts.click();
+
+    await inputPanel
+        .locator('.view-line')
+        .filter({ hasText: /cannot\sconstrain/ })
+        .click();
+
+    await expect(
+        page.getByRole('tab', { name: /^index\.esc/ }),
+    ).toHaveAttribute('aria-selected', 'true');
+    // The cursor sits where the diagnostic starts, at the string literal, so typed
+    // text lands just before it.
+    await page.keyboard.insertText('X');
+    await expect(inputPanel.locator('.view-lines')).toContainText(
+        /export\sval\sbad:\snumber\s=\sX"a"/,
+    );
+});

@@ -99,6 +99,23 @@ export function projectDiagnosticsText(
         .join('');
 }
 
+/** Where a diagnostic is: a file and a line and column that count from 1. */
+export type DiagnosticLocation = { path: string; line: number; column: number };
+
+/**
+ * Returns the location a line of projectDiagnosticsText starts with, or null when the
+ * line names none, as "No diagnostics." does.
+ */
+export function diagnosticLocation(line: string): DiagnosticLocation | null {
+    const match = /^(\/[^:]*):(\d+):(\d+): /.exec(line);
+    if (match === null) return null;
+    return {
+        path: match[1],
+        line: Number(match[2]),
+        column: Number(match[3]),
+    };
+}
+
 /**
  * Returns the action that drops the diagnostics of what event removed, or null when
  * event removes nothing. A delete removes its path and a rename removes its old path.

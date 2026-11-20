@@ -535,6 +535,68 @@ describe('diagnostics tab', () => {
     });
 });
 
+describe('clicking a diagnostic', () => {
+    type MockEditor = {
+        onMouseUp: ReturnType<typeof vi.fn>;
+        getModel: ReturnType<typeof vi.fn>;
+        getSelection: ReturnType<typeof vi.fn>;
+        setPosition: ReturnType<typeof vi.fn>;
+        revealPositionInCenter: ReturnType<typeof vi.fn>;
+        focus: ReturnType<typeof vi.fn>;
+    };
+
+    test('opens the file on the same side and reveals the diagnostic', () => {
+        setStoreState({
+            leftTabs: [{ path: DIAGNOSTICS_TAB_PATH }],
+            activeLeftTabIndex: 0,
+        });
+        render(<Editor fs={makeFakeFS()} />);
+        const inputEditor = vi.mocked(monaco.editor.create).mock.results.at(-2)
+            ?.value as MockEditor;
+        inputEditor.getModel.mockReturnValue({
+            uri: { path: DIAGNOSTICS_TAB_PATH },
+            getLineContent: () => '/lib/index.esc:3:7: error: bad',
+        });
+        inputEditor.getSelection.mockReturnValue({ isEmpty: () => true });
+        const [onMouseUp] = inputEditor.onMouseUp.mock.calls[0];
+
+        act(() => onMouseUp({ target: { position: { lineNumber: 1 } } }));
+
+        const { leftTabs, activeLeftTabIndex } = useEditorStore.getState();
+        expect(leftTabs.map((tab) => tab.path)).toEqual([
+            DIAGNOSTICS_TAB_PATH,
+            '/lib/index.esc',
+        ]);
+        expect(activeLeftTabIndex).toBe(1);
+        const position = { lineNumber: 3, column: 7 };
+        expect(inputEditor.setPosition).toHaveBeenCalledWith(position);
+        expect(inputEditor.revealPositionInCenter).toHaveBeenCalledWith(
+            position,
+        );
+        expect(inputEditor.focus).toHaveBeenCalled();
+    });
+
+    test('opens nothing after a drag that selects text', () => {
+        setStoreState({
+            leftTabs: [{ path: DIAGNOSTICS_TAB_PATH }],
+            activeLeftTabIndex: 0,
+        });
+        render(<Editor fs={makeFakeFS()} />);
+        const inputEditor = vi.mocked(monaco.editor.create).mock.results.at(-2)
+            ?.value as MockEditor;
+        inputEditor.getModel.mockReturnValue({
+            uri: { path: DIAGNOSTICS_TAB_PATH },
+            getLineContent: () => '/lib/index.esc:3:7: error: bad',
+        });
+        inputEditor.getSelection.mockReturnValue({ isEmpty: () => false });
+        const [onMouseUp] = inputEditor.onMouseUp.mock.calls[0];
+
+        act(() => onMouseUp({ target: { position: { lineNumber: 1 } } }));
+
+        expect(useEditorStore.getState().leftTabs).toHaveLength(1);
+    });
+});
+
 describe('language server models', () => {
     afterEach(() => {
         vi.mocked(monaco.editor.createModel).mockClear();

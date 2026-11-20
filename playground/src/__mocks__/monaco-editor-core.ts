@@ -7,6 +7,12 @@ function createMockEditor() {
         setScrollTop: vi.fn(),
         dispose: vi.fn(),
         onDidFocusEditorWidget: vi.fn(() => ({ dispose: vi.fn() })),
+        onMouseUp: vi.fn(() => ({ dispose: vi.fn() })),
+        getModel: vi.fn(() => null),
+        getSelection: vi.fn(() => null),
+        setPosition: vi.fn(),
+        revealPositionInCenter: vi.fn(),
+        focus: vi.fn(),
     };
 }
 

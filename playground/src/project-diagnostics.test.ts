@@ -6,6 +6,7 @@ import {
     type ProjectDiagnostics,
     countOf,
     diagnosticCounts,
+    diagnosticLocation,
     forgetRemovedAction,
     projectDiagnosticsReducer,
     projectDiagnosticsText,
@@ -160,5 +161,22 @@ describe('forgetRemovedAction', () => {
         { type: 'change', kind: 'file', path: '/lib/a.esc' } as const,
     ])('ignores a $type event', (event) => {
         expect(forgetRemovedAction(event)).toBeNull();
+    });
+});
+
+describe('diagnosticLocation', () => {
+    test.each([
+        [
+            '/lib/index.esc:25:26: error: cannot constrain "a" <: number',
+            { path: '/lib/index.esc', line: 25, column: 26 },
+        ],
+        [
+            '/lib/my file.esc:1:2: warning: unused: x',
+            { path: '/lib/my file.esc', line: 1, column: 2 },
+        ],
+        ['No diagnostics.', null],
+        ['', null],
+    ])('reads %j', (line, location) => {
+        expect(diagnosticLocation(line)).toEqual(location);
     });
 });

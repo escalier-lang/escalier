@@ -18,6 +18,8 @@ import { languageID } from './language';
 import { collectProjectFiles } from './permalink';
 import {
     DIAGNOSTICS_TAB_PATH,
+    type DiagnosticLocation,
+    diagnosticLocation,
     projectDiagnosticsText,
 } from './project-diagnostics';
 import { useProjectDiagnosticsStore } from './project-diagnostics-store';
@@ -294,15 +296,71 @@ export const Editor = ({
             dispatch({ type: 'setFocusedSide', side: 'right' }),
         );
 
+        // A click on a line of the diagnostics tab opens the file the line names, on
+        // the same side. The model switch below then reveals the diagnostic. A drag
+        // that selects text opens nothing, so the user can still copy a message.
+        const openClickedDiagnostic =
+            (
+                editor: monaco.editor.IStandaloneCodeEditor,
+                side: 'left' | 'right',
+            ) =>
+            (e: monaco.editor.IEditorMouseEvent) => {
+                const model = editor.getModel();
+                const lineNumber = e.target.position?.lineNumber;
+                if (
+                    model?.uri.path !== DIAGNOSTICS_TAB_PATH ||
+                    lineNumber === undefined ||
+                    !editor.getSelection()?.isEmpty()
+                ) {
+                    return;
+                }
+                const location = diagnosticLocation(
+                    model.getLineContent(lineNumber),
+                );
+                if (location === null) return;
+                pendingRevealRef.current = location;
+                dispatch({ type: 'openFile', path: location.path, side });
+            };
+        const inputClickDisposable = inputEditor.onMouseUp(
+            openClickedDiagnostic(inputEditor, 'left'),
+        );
+        const outputClickDisposable = outputEditor.onMouseUp(
+            openClickedDiagnostic(outputEditor, 'right'),
+        );
+
         return () => {
             inputFocusDisposable.dispose();
             outputFocusDisposable.dispose();
+            inputClickDisposable.dispose();
+            outputClickDisposable.dispose();
             inputEditor.dispose();
             outputEditor.dispose();
             inputEditorRef.current = null;
             outputEditorRef.current = null;
         };
     }, [dispatch]);
+
+    // The diagnostic a click on the diagnostics tab asked to see, until the editor that
+    // opens its file reveals it.
+    const pendingRevealRef = useRef<DiagnosticLocation | null>(null);
+
+    // Moves editor's cursor to the pending diagnostic and scrolls it into view, when the
+    // diagnostic is in the file at path, which editor has just switched to.
+    const revealPendingDiagnostic = useCallback(
+        (editor: monaco.editor.IStandaloneCodeEditor, path: string) => {
+            const location = pendingRevealRef.current;
+            if (location?.path !== path) return;
+            pendingRevealRef.current = null;
+            const position = {
+                lineNumber: location.line,
+                column: location.column,
+            };
+            editor.setPosition(position);
+            editor.revealPositionInCenter(position);
+            editor.focus();
+        },
+        [],
+    );
 
     // Switch input editor model when active tab changes or project is switched.
     // refreshKey changes on project switch (resetTabs), which disposes all
@@ -332,12 +390,14 @@ export const Editor = ({
         if (activeTab?.scrollPos) {
             editor.setScrollTop(activeTab.scrollPos);
         }
+        revealPendingDiagnostic(editor, activePath);
     }, [
         activePath,
         getOrCreateModel,
         activeTab?.scrollPos,
         editorOptionsFor,
         refreshKey,
+        revealPendingDiagnostic,
     ]);
 
     // Switch output editor model when active right tab changes
@@ -356,11 +416,13 @@ export const Editor = ({
         if (activeRightTab?.scrollPos) {
             editor.setScrollTop(activeRightTab.scrollPos);
         }
+        revealPendingDiagnostic(editor, activeRightPath);
     }, [
         activeRightPath,
         getOrCreateModel,
         activeRightTab?.scrollPos,
         editorOptionsFor,
+        revealPendingDiagnostic,
     ]);
 
     // The language server checks the project once an Escalier file opens, and a file opens
