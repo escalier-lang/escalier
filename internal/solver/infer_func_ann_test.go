@@ -16,6 +16,50 @@ func TestInferFuncAnnotationAdopted(t *testing.T) {
 	require.Equal(t, "fn (x: number) -> string", values["f"])
 }
 
+// A closure bound to a function-type alias takes its parameter and return types from
+// the alias, so neither the parameters nor the return need their own annotations.
+func TestInferFuncAliasAnnotation(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want string
+		errs []string
+	}{
+		"AliasAdopted": {
+			src: `
+				type Foo = fn(a: number, b: string) -> boolean
+				val foo: Foo = fn (a, b) { return true }
+			`,
+			want: "Foo",
+		},
+		"ParamsTakeTheAliasTypes": {
+			src: `
+				type Foo = fn(a: number, b: string) -> string
+				val foo: Foo = fn (a, b) { return b }
+			`,
+			want: "Foo",
+		},
+		"MismatchedBodyRejected": {
+			src: `
+				type Foo = fn(a: number, b: string) -> boolean
+				val foo: Foo = fn (a, b) { return a }
+			`,
+			want: "Foo",
+			errs: []string{"3:20-3:42: cannot constrain number <: boolean"},
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			var msgs []string
+			for _, e := range errs {
+				msgs = append(msgs, msgWithSpan(t, e))
+			}
+			require.Equal(t, tt.errs, msgs)
+			require.Equal(t, tt.want, values["foo"])
+		})
+	}
+}
+
 // A body whose return type does not satisfy the annotated return is rejected,
 // constrained body <: declared return.
 func TestInferFuncAnnotationRejectsMismatchedBody(t *testing.T) {
