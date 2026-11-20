@@ -7,19 +7,33 @@ import { StatusBar } from './status-bar';
 
 afterEach(cleanup);
 
-test('shows the error count and asks for the list when clicked', () => {
-    const onShowErrors = vi.fn();
-    render(<StatusBar errorCount={3} onShowErrors={onShowErrors} />);
+test('shows the error and warning counts and asks for the list when clicked', () => {
+    const onShowDiagnostics = vi.fn();
+    render(
+        <StatusBar
+            counts={{ errors: 3, warnings: 1 }}
+            onShowDiagnostics={onShowDiagnostics}
+        />,
+    );
 
-    fireEvent.click(screen.getByRole('button', { name: '3 errors' }));
+    const button = screen.getByRole('button', {
+        name: '3 errors, 1 warning',
+    });
+    expect(button).toHaveTextContent('31');
+    fireEvent.click(button);
 
-    expect(onShowErrors).toHaveBeenCalledOnce();
+    expect(onShowDiagnostics).toHaveBeenCalledOnce();
 });
 
-test('says when there are no errors', () => {
-    render(<StatusBar errorCount={0} onShowErrors={() => {}} />);
+test('names the counts when there are none', () => {
+    render(
+        <StatusBar
+            counts={{ errors: 0, warnings: 0 }}
+            onShowDiagnostics={() => {}}
+        />,
+    );
 
     expect(
-        screen.getByRole('button', { name: 'No errors' }),
+        screen.getByRole('button', { name: '0 errors, 0 warnings' }),
     ).toBeInTheDocument();
 });

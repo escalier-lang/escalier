@@ -1,61 +1,71 @@
 import { describe, expect, test } from 'vitest';
 
-import type { ShownError } from './bug-report';
 import {
-    type ProjectErrors,
-    errorCount,
-    errorCountLabel,
+    type DiagnosticSeverity,
+    type ProjectDiagnostic,
+    type ProjectDiagnostics,
+    countOf,
+    diagnosticCounts,
     forgetRemovedAction,
-    projectErrorsReducer,
-    projectErrorsText,
-} from './project-errors';
+    projectDiagnosticsReducer,
+    projectDiagnosticsText,
+} from './project-diagnostics';
 
-function shownError(path: string, line: number, message: string): ShownError {
-    return { path, line, column: 1, message };
+function diagnostic(
+    path: string,
+    line: number,
+    message: string,
+    severity: DiagnosticSeverity = 'error',
+): ProjectDiagnostic {
+    return { path, line, column: 1, severity, message };
 }
 
-const a1 = shownError('/lib/a.esc', 1, 'a1');
-const a2 = shownError('/lib/a.esc', 2, 'a2');
-const b1 = shownError('/lib/b.esc', 1, 'b1');
-const nested = shownError('/lib/sub/c.esc', 1, 'c1');
+const a1 = diagnostic('/lib/a.esc', 1, 'a1');
+const a2 = diagnostic('/lib/a.esc', 2, 'a2', 'warning');
+const b1 = diagnostic('/lib/b.esc', 1, 'b1');
+const nested = diagnostic('/lib/sub/c.esc', 1, 'c1');
 
-describe('projectErrorsReducer', () => {
-    test.each<[string, ProjectErrors, ProjectErrors]>([
+describe('projectDiagnosticsReducer', () => {
+    test.each<[string, ProjectDiagnostics, ProjectDiagnostics]>([
         [
             'adds a file',
             { '/lib/a.esc': [a1] },
             { '/lib/a.esc': [a1], '/lib/b.esc': [b1] },
         ],
         ['replaces a file', { '/lib/b.esc': [a1] }, { '/lib/b.esc': [b1] }],
-    ])('setFileErrors %s', (_name, before, after) => {
+    ])('setFileDiagnostics %s', (_name, before, after) => {
         expect(
-            projectErrorsReducer(before, {
-                type: 'setFileErrors',
+            projectDiagnosticsReducer(before, {
+                type: 'setFileDiagnostics',
                 path: '/lib/b.esc',
-                errors: [b1],
+                diagnostics: [b1],
             }),
         ).toEqual(after);
     });
 
+    test('setFileDiagnostics with no diagnostics drops the file', () => {
+        expect(
+            projectDiagnosticsReducer(
+                { '/lib/a.esc': [a1], '/lib/b.esc': [b1] },
+                {
+                    type: 'setFileDiagnostics',
+                    path: '/lib/b.esc',
+                    diagnostics: [],
+                },
+            ),
+        ).toEqual({ '/lib/a.esc': [a1] });
+    });
+
     test('forgetAll drops every file', () => {
         expect(
-            projectErrorsReducer(
+            projectDiagnosticsReducer(
                 { '/lib/a.esc': [a1], '/lib/b.esc': [b1] },
                 { type: 'forgetAll' },
             ),
         ).toEqual({});
     });
 
-    test('setFileErrors with no errors drops the file', () => {
-        expect(
-            projectErrorsReducer(
-                { '/lib/a.esc': [a1], '/lib/b.esc': [b1] },
-                { type: 'setFileErrors', path: '/lib/b.esc', errors: [] },
-            ),
-        ).toEqual({ '/lib/a.esc': [a1] });
-    });
-
-    test.each<[string, string, ProjectErrors]>([
+    test.each<[string, string, ProjectDiagnostics]>([
         [
             'a file',
             '/lib/a.esc',
@@ -78,7 +88,7 @@ describe('projectErrorsReducer', () => {
         ],
     ])('forgetPath drops %s', (_name, path, after) => {
         expect(
-            projectErrorsReducer(
+            projectDiagnosticsReducer(
                 {
                     '/lib/a.esc': [a1],
                     '/lib/b.esc': [b1],
@@ -90,27 +100,37 @@ describe('projectErrorsReducer', () => {
     });
 });
 
-test('errorCount adds up the errors of every file', () => {
-    expect(errorCount({ '/lib/a.esc': [a1, a2], '/lib/b.esc': [b1] })).toBe(3);
+test('diagnosticCounts counts the errors and warnings of every file', () => {
+    expect(
+        diagnosticCounts({
+            '/lib/a.esc': [a1, a2, diagnostic('/lib/a.esc', 3, 'a3', 'info')],
+            '/lib/b.esc': [b1],
+        }),
+    ).toEqual({ errors: 2, warnings: 1 });
 });
 
 test.each([
-    [0, 'No errors'],
+    [0, '0 errors'],
     [1, '1 error'],
     [2, '2 errors'],
-])('errorCountLabel(%i) is "%s"', (count, label) => {
-    expect(errorCountLabel(count)).toBe(label);
+])('countOf(%i, "error") is "%s"', (count, text) => {
+    expect(countOf(count, 'error')).toBe(text);
 });
 
-describe('projectErrorsText', () => {
-    test('lists every error sorted by path and line', () => {
+describe('projectDiagnosticsText', () => {
+    test('lists every diagnostic with its severity, sorted by path and line', () => {
         expect(
-            projectErrorsText({ '/lib/b.esc': [b1], '/lib/a.esc': [a2, a1] }),
-        ).toBe('/lib/a.esc:1:1: a1\n/lib/a.esc:2:1: a2\n/lib/b.esc:1:1: b1\n');
+            projectDiagnosticsText({
+                '/lib/b.esc': [b1],
+                '/lib/a.esc': [a2, a1],
+            }),
+        ).toBe(
+            '/lib/a.esc:1:1: error: a1\n/lib/a.esc:2:1: warning: a2\n/lib/b.esc:1:1: error: b1\n',
+        );
     });
 
-    test('says when there are no errors', () => {
-        expect(projectErrorsText({})).toBe('No errors.\n');
+    test('says when there are no diagnostics', () => {
+        expect(projectDiagnosticsText({})).toBe('No diagnostics.\n');
     });
 });
 

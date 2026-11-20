@@ -33,8 +33,11 @@ import { initialEditorState } from './editor-state';
 import { useEditorStore } from './editor-store';
 import type { BrowserFS } from './fs/browser-fs';
 import { FSEventEmitter } from './fs/fs-events';
-import { ERRORS_TAB_PATH } from './project-errors';
-import { useProjectErrorsStore } from './project-errors-store';
+import {
+    DIAGNOSTICS_TAB_PATH,
+    type ProjectDiagnostic,
+} from './project-diagnostics';
+import { useProjectDiagnosticsStore } from './project-diagnostics-store';
 
 function makeFakeFS(): BrowserFS {
     return {
@@ -471,17 +474,18 @@ describe('Editor', () => {
     });
 });
 
-describe('errors tab', () => {
-    const error = {
+describe('diagnostics tab', () => {
+    const error: ProjectDiagnostic = {
         path: '/lib/index.esc',
         line: 1,
         column: 2,
+        severity: 'error',
         message: 'bad',
     };
 
     beforeEach(() => {
-        useProjectErrorsStore.setState({
-            errors: { '/lib/index.esc': [error] },
+        useProjectDiagnosticsStore.setState({
+            diagnostics: { '/lib/index.esc': [error] },
         });
     });
 
@@ -490,43 +494,44 @@ describe('errors tab', () => {
         vi.mocked(monaco.editor.createModel).mockClear();
     });
 
-    test('shows every error, read-only', () => {
+    test('shows every diagnostic, read-only and wrapped, in the diagnostics language', () => {
         setStoreState({
-            leftTabs: [{ path: ERRORS_TAB_PATH }],
+            leftTabs: [{ path: DIAGNOSTICS_TAB_PATH }],
             activeLeftTabIndex: 0,
         });
         render(<Editor fs={makeFakeFS()} />);
 
         expect(monaco.editor.createModel).toHaveBeenCalledWith(
-            '/lib/index.esc:1:2: bad\n',
-            'plaintext',
-            `file://${ERRORS_TAB_PATH}`,
+            '/lib/index.esc:1:2: error: bad\n',
+            'escalier-diagnostics',
+            `file://${DIAGNOSTICS_TAB_PATH}`,
         );
         const inputEditor = vi.mocked(monaco.editor.create).mock.results.at(-2)
             ?.value as { updateOptions: ReturnType<typeof vi.fn> };
         expect(inputEditor.updateOptions).toHaveBeenCalledWith({
             readOnly: true,
+            wordWrap: 'on',
         });
     });
 
-    test('rewrites its text when the errors change', () => {
+    test('rewrites its text when the diagnostics change', () => {
         const model = { getValue: vi.fn(() => 'old\n'), setValue: vi.fn() };
         vi.mocked(monaco.editor.getModel).mockImplementation((uri) =>
-            String(uri) === `file://${ERRORS_TAB_PATH}`
+            String(uri) === `file://${DIAGNOSTICS_TAB_PATH}`
                 ? (model as unknown as monaco.editor.ITextModel)
                 : null,
         );
         render(<Editor fs={makeFakeFS()} />);
 
         act(() => {
-            useProjectErrorsStore.getState().dispatch({
-                type: 'setFileErrors',
+            useProjectDiagnosticsStore.getState().dispatch({
+                type: 'setFileDiagnostics',
                 path: '/lib/index.esc',
-                errors: [],
+                diagnostics: [],
             });
         });
 
-        expect(model.setValue).toHaveBeenCalledWith('No errors.\n');
+        expect(model.setValue).toHaveBeenCalledWith('No diagnostics.\n');
     });
 });
 

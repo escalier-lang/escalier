@@ -10,12 +10,16 @@ import {
 import { CrashReportDialog } from './components/crash-report-dialog';
 import { FileExplorer } from './components/file-explorer';
 import { Toast, ToastButton } from './components/toast';
+import { diagnosticsLanguageID } from './diagnostics-language';
 import type { CrashReport } from './editor-state';
 import { useEditorStore } from './editor-store';
 import type { BrowserFS } from './fs/browser-fs';
 import { languageID } from './language';
-import { ERRORS_TAB_PATH, projectErrorsText } from './project-errors';
-import { useProjectErrorsStore } from './project-errors-store';
+import {
+    DIAGNOSTICS_TAB_PATH,
+    projectDiagnosticsText,
+} from './project-diagnostics';
+import { useProjectDiagnosticsStore } from './project-diagnostics-store';
 import { monacoThemeName, useThemeStore } from './theme';
 
 import styles from './editor.module.css';
@@ -27,6 +31,7 @@ function displayName(path: string): string {
 
 /** Returns the Monaco language id for a file path. */
 export function languageForPath(path: string): string {
+    if (path === DIAGNOSTICS_TAB_PATH) return diagnosticsLanguageID;
     if (path.endsWith('.esc')) return languageID;
     if (path.endsWith('.js')) return 'javascript';
     if (path.endsWith('.ts') || path.endsWith('.d.ts')) return 'typescript';
@@ -210,12 +215,12 @@ export const Editor = ({
             let model = monaco.editor.getModel(uri);
             if (!model) {
                 const lang = languageForPath(path);
-                // The errors tab names no file. Its text comes from the project's errors,
-                // and the effect below keeps it up to date.
+                // The diagnostics tab names no file. Its text comes from the project's
+                // diagnostics, and the effect below keeps it up to date.
                 const text =
-                    path === ERRORS_TAB_PATH
-                        ? projectErrorsText(
-                              useProjectErrorsStore.getState().errors,
+                    path === DIAGNOSTICS_TAB_PATH
+                        ? projectDiagnosticsText(
+                              useProjectDiagnosticsStore.getState().diagnostics,
                           )
                         : (content ?? loadFileContent(fs, path) ?? '');
                 model = monaco.editor.createModel(text, lang, uri);
@@ -225,23 +230,29 @@ export const Editor = ({
         [fs],
     );
 
-    // Whether the editor keeps the user from editing the file at path. Nothing can edit
-    // the errors tab, since its text comes from the language server.
-    const pathIsReadOnly = useCallback(
-        (path: string) =>
-            path === ERRORS_TAB_PATH || (isReadOnly?.(path) ?? false),
+    // The options an editor takes while it shows the file at path. Nothing can edit the
+    // diagnostics tab, since its text comes from the language server, and its lines wrap
+    // so a long message reads without scrolling sideways.
+    const editorOptionsFor = useCallback(
+        (path: string): monaco.editor.IEditorOptions => {
+            const isDiagnostics = path === DIAGNOSTICS_TAB_PATH;
+            return {
+                readOnly: isDiagnostics || (isReadOnly?.(path) ?? false),
+                wordWrap: isDiagnostics ? 'on' : 'off',
+            };
+        },
         [isReadOnly],
     );
 
-    // Rewrites the errors tab's text each time the project's errors change.
+    // Rewrites the diagnostics tab's text each time the project's diagnostics change.
     useEffect(
         () =>
-            useProjectErrorsStore.subscribe((current, previous) => {
-                if (current.errors === previous.errors) return;
+            useProjectDiagnosticsStore.subscribe((current, previous) => {
+                if (current.diagnostics === previous.diagnostics) return;
                 const model = monaco.editor.getModel(
-                    monaco.Uri.parse(pathToUri(ERRORS_TAB_PATH)),
+                    monaco.Uri.parse(pathToUri(DIAGNOSTICS_TAB_PATH)),
                 );
-                const text = projectErrorsText(current.errors);
+                const text = projectDiagnosticsText(current.diagnostics);
                 if (model && model.getValue() !== text) {
                     model.setValue(text);
                 }
@@ -313,7 +324,7 @@ export const Editor = ({
         }
 
         const model = getOrCreateModel(activePath);
-        editor.updateOptions({ readOnly: pathIsReadOnly(activePath) });
+        editor.updateOptions(editorOptionsFor(activePath));
         editor.setModel(model);
 
         // Restore scroll position
@@ -324,7 +335,7 @@ export const Editor = ({
         activePath,
         getOrCreateModel,
         activeTab?.scrollPos,
-        pathIsReadOnly,
+        editorOptionsFor,
         refreshKey,
     ]);
 
@@ -337,7 +348,7 @@ export const Editor = ({
         }
 
         const model = getOrCreateModel(activeRightPath);
-        editor.updateOptions({ readOnly: pathIsReadOnly(activeRightPath) });
+        editor.updateOptions(editorOptionsFor(activeRightPath));
         editor.setModel(model);
 
         // Restore scroll position
@@ -348,7 +359,7 @@ export const Editor = ({
         activeRightPath,
         getOrCreateModel,
         activeRightTab?.scrollPos,
-        pathIsReadOnly,
+        editorOptionsFor,
     ]);
 
     // Listen for FS events to update the Monaco models of open read-only files. Those

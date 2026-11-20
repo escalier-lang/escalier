@@ -17,7 +17,7 @@ import { openInitialProject, reloadOnPastedPermalink } from './initial-project';
 import { setupLanguage } from './language';
 import { Client } from './lsp-client/client';
 import { Playground } from './playground';
-import { forgetRemovedFiles } from './project-errors-store';
+import { forgetRemovedFiles } from './project-diagnostics-store';
 import { downloadStartupFiles, runStartup } from './startup';
 import { localStorageIfAvailable, prefersLightQuery, syncTheme } from './theme';
 

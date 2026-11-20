@@ -5,12 +5,12 @@ import { COMPILE_TIMEOUT_MS, loadPlayground } from './helpers';
 // The modifier Monaco's shortcuts use on this platform.
 const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
 
-test('the status bar counts errors in closed files and lists them in a tab', async ({
+test('the status bar counts diagnostics in closed files and lists them in a tab', async ({
     page,
 }) => {
     await loadPlayground(page);
-    const errorCount = page.locator('footer').getByRole('button');
-    await expect(errorCount).toHaveText('No errors', {
+    const counts = page.locator('footer').getByRole('button');
+    await expect(counts).toHaveAccessibleName('0 errors, 0 warnings', {
         timeout: COMPILE_TIMEOUT_MS,
     });
 
@@ -19,7 +19,7 @@ test('the status bar counts errors in closed files and lists them in a tab', asy
     // An added line leaves the rest of the file, and the files that import it, intact.
     await page.keyboard.press(`${modifier}+End`);
     await page.keyboard.insertText('\nexport val bad: number = "a"');
-    await expect(errorCount).toHaveText('1 error', {
+    await expect(counts).toHaveAccessibleName('1 error, 0 warnings', {
         timeout: COMPILE_TIMEOUT_MS,
     });
 
@@ -27,15 +27,14 @@ test('the status bar counts errors in closed files and lists them in a tab', asy
     // The close button shows while the pointer is over its tab.
     await page.getByRole('tab', { name: /index\.esc/ }).hover();
     await page.getByLabel('Close index.esc').click();
-    await expect(errorCount).toHaveText('1 error');
+    await expect(counts).toHaveAccessibleName('1 error, 0 warnings');
 
-    await errorCount.click();
-    await expect(page.getByRole('tab', { name: /^Errors/ })).toHaveAttribute(
-        'aria-selected',
-        'true',
-    );
+    await counts.click();
+    await expect(
+        page.getByRole('tab', { name: /^Diagnostics/ }),
+    ).toHaveAttribute('aria-selected', 'true');
     // Monaco draws spaces as non-breaking spaces, which \s matches.
     await expect(inputPanel.locator('.view-lines')).toContainText(
-        /\/lib\/index\.esc:\d+:26:\scannot\sconstrain\s"a"\s<:\snumber/,
+        /\/lib\/index\.esc:\d+:26:\serror:\scannot\sconstrain\s"a"\s<:\snumber/,
     );
 });

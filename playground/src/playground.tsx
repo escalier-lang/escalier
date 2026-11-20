@@ -13,8 +13,8 @@ import type { BrowserFS } from './fs/browser-fs';
 import type { Manifest } from './fs/volume';
 import { MAX_PERMALINK_CHARS } from './permalink';
 import { usePlaygroundStore } from './playground-store';
-import { ERRORS_TAB_PATH, errorCount } from './project-errors';
-import { useProjectErrorsStore } from './project-errors-store';
+import { DIAGNOSTICS_TAB_PATH, diagnosticCounts } from './project-diagnostics';
+import { useProjectDiagnosticsStore } from './project-diagnostics-store';
 import { isBuildPath, loadProject } from './project-loader';
 
 import styles from './playground.module.css';
@@ -339,11 +339,15 @@ export const Playground = ({
         </>
     );
 
-    const projectErrorCount = useProjectErrorsStore((state) =>
-        errorCount(state.errors),
+    const projectDiagnostics = useProjectDiagnosticsStore(
+        (state) => state.diagnostics,
     );
-    const handleShowErrors = useCallback(
-        () => editorDispatch({ type: 'openFile', path: ERRORS_TAB_PATH }),
+    const counts = useMemo(
+        () => diagnosticCounts(projectDiagnostics),
+        [projectDiagnostics],
+    );
+    const handleShowDiagnostics = useCallback(
+        () => editorDispatch({ type: 'openFile', path: DIAGNOSTICS_TAB_PATH }),
         [editorDispatch],
     );
 
@@ -357,8 +361,8 @@ export const Playground = ({
             toolbar={toolbar}
             statusBar={
                 <StatusBar
-                    errorCount={projectErrorCount}
-                    onShowErrors={handleShowErrors}
+                    counts={counts}
+                    onShowDiagnostics={handleShowDiagnostics}
                 />
             }
         />

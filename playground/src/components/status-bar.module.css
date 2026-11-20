@@ -10,6 +10,9 @@
 }
 
 .item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
     background: none;
     border: none;
     border-radius: 3px;
@@ -29,6 +32,16 @@
     outline-offset: -2px;
 }
 
+.count {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
 .hasErrors {
     color: var(--color-text-error);
+}
+
+.hasWarnings {
+    color: var(--color-text-warning);
 }

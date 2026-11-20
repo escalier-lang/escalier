@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type * as lsp from 'vscode-languageserver-protocol';
 
+import { diagnosticsTokenRules } from './diagnostics-language';
 import { setupLanguage } from './language';
 import type { Client } from './lsp-client/client';
-import { useProjectErrorsStore } from './project-errors-store';
+import { useProjectDiagnosticsStore } from './project-diagnostics-store';
 import { useThemeStore } from './theme';
 
 const monacoMock = vi.hoisted(() => {
@@ -129,11 +130,17 @@ describe('setupLanguage', () => {
         const rules = [{ token: 'variable.mutable', fontStyle: 'underline' }];
         expect(monacoMock.editor.defineTheme).toHaveBeenCalledWith(
             'escalier-dark',
-            expect.objectContaining({ base: 'vs-dark', rules }),
+            expect.objectContaining({
+                base: 'vs-dark',
+                rules: [...rules, ...diagnosticsTokenRules.dark],
+            }),
         );
         expect(monacoMock.editor.defineTheme).toHaveBeenCalledWith(
             'escalier-light',
-            expect.objectContaining({ base: 'vs', rules }),
+            expect.objectContaining({
+                base: 'vs',
+                rules: [...rules, ...diagnosticsTokenRules.light],
+            }),
         );
     });
 
@@ -149,6 +156,7 @@ describe('setupLanguage', () => {
             'typescript',
             'json',
             'toml',
+            'escalier-diagnostics',
         ]);
     });
 
@@ -162,7 +170,7 @@ describe('setupLanguage', () => {
         ).not.toHaveBeenCalled();
         expect(monacoMock.editor.defineTheme).toHaveBeenCalledWith(
             'escalier-dark',
-            expect.objectContaining({ rules: [] }),
+            expect.objectContaining({ rules: diagnosticsTokenRules.dark }),
         );
     });
 
@@ -181,8 +189,8 @@ describe('setupLanguage', () => {
         );
     });
 
-    test('records the errors of a file that no editor has open', () => {
-        useProjectErrorsStore.setState({ errors: {} });
+    test('records the diagnostics of a file that no editor has open', () => {
+        useProjectDiagnosticsStore.setState({ diagnostics: {} });
         const { client, publishDiagnostics } = fakeClient();
         setupLanguage(client, {});
         const at = (line: number, character: number) => ({
@@ -198,7 +206,7 @@ describe('setupLanguage', () => {
                     severity: 1 satisfies typeof lsp.DiagnosticSeverity.Error,
                     message: 'bad',
                 },
-                // A diagnostic with no severity is an error.
+                // A diagnostic with no severity is an error, as Monaco shows it.
                 { range: at(0, 0), message: 'worse' },
                 {
                     range: at(1, 0),
@@ -208,19 +216,28 @@ describe('setupLanguage', () => {
             ],
         });
 
-        expect(useProjectErrorsStore.getState().errors).toEqual({
+        expect(useProjectDiagnosticsStore.getState().diagnostics).toEqual({
             '/lib/my file.esc': [
                 {
                     path: '/lib/my file.esc',
                     line: 3,
                     column: 5,
+                    severity: 'error',
                     message: 'bad',
                 },
                 {
                     path: '/lib/my file.esc',
                     line: 1,
                     column: 1,
+                    severity: 'error',
                     message: 'worse',
+                },
+                {
+                    path: '/lib/my file.esc',
+                    line: 2,
+                    column: 1,
+                    severity: 'warning',
+                    message: 'unused',
                 },
             ],
         });
