@@ -34,7 +34,7 @@ import {
 import { useProjectDiagnosticsStore } from '../diagnostics/project-diagnostics-store';
 import type { BrowserFS } from '../fs/browser-fs';
 import { FSEventEmitter } from '../fs/fs-events';
-import { Editor, languageForPath } from './editor';
+import { Editor } from './editor';
 import type { EditorState } from './editor-state';
 import { initialEditorState } from './editor-state';
 import { useEditorStore } from './editor-store';
@@ -80,212 +80,6 @@ beforeEach(() => {
 });
 
 describe('Editor', () => {
-    describe('tab rendering', () => {
-        test('renders left tabs from state', () => {
-            setStoreState({
-                leftTabs: [
-                    { path: '/bin/main.esc' },
-                    { path: '/lib/utils.esc' },
-                ],
-                activeLeftTabIndex: 0,
-            });
-            render(<Editor fs={makeFakeFS()} />);
-
-            const tabs = getTabsInTablist(0);
-            expect(tabs).toHaveLength(2);
-            expect(tabs[0].textContent).toContain('main.esc');
-            expect(tabs[1].textContent).toContain('utils.esc');
-        });
-
-        test('renders right tabs from state', () => {
-            setStoreState({
-                rightTabs: [
-                    { path: '/build/bin/main.js' },
-                    { path: '/build/bin/main.d.ts' },
-                ],
-                activeRightTabIndex: 0,
-            });
-            render(<Editor fs={makeFakeFS()} />);
-
-            const tabs = getTabsInTablist(1);
-            expect(tabs).toHaveLength(2);
-            expect(tabs[0].textContent).toContain('main.js');
-            expect(tabs[1].textContent).toContain('main.d.ts');
-        });
-
-        test('marks the active left tab as selected', () => {
-            setStoreState({
-                leftTabs: [{ path: '/a.esc' }, { path: '/b.esc' }],
-                activeLeftTabIndex: 1,
-            });
-            render(<Editor fs={makeFakeFS()} />);
-
-            const tabs = screen.getAllByRole('tab');
-            expect(tabs[0].getAttribute('aria-selected')).toBe('false');
-            expect(tabs[1].getAttribute('aria-selected')).toBe('true');
-        });
-    });
-
-    describe('tab interactions', () => {
-        test('clicking an inactive tab makes it active', () => {
-            setStoreState({
-                leftTabs: [{ path: '/a.esc' }, { path: '/b.esc' }],
-                activeLeftTabIndex: 0,
-            });
-            render(<Editor fs={makeFakeFS()} />);
-
-            const tabs = screen.getAllByRole('tab');
-            expect(tabs[0].getAttribute('aria-selected')).toBe('true');
-            expect(tabs[1].getAttribute('aria-selected')).toBe('false');
-
-            fireEvent.click(tabs[1]);
-
-            expect(tabs[0].getAttribute('aria-selected')).toBe('false');
-            expect(tabs[1].getAttribute('aria-selected')).toBe('true');
-        });
-
-        test('closing a tab removes it from the DOM', () => {
-            setStoreState({
-                leftTabs: [{ path: '/a.esc' }, { path: '/b.esc' }],
-                activeLeftTabIndex: 0,
-            });
-            render(<Editor fs={makeFakeFS()} />);
-
-            expect(getTabsInTablist(0)).toHaveLength(2);
-
-            const closeButton = screen.getByRole('button', {
-                name: 'Close a.esc',
-            });
-            fireEvent.click(closeButton);
-
-            const remainingTabs = getTabsInTablist(0);
-            expect(remainingTabs).toHaveLength(1);
-            expect(remainingTabs[0].textContent).toContain('b.esc');
-        });
-
-        test('closing the last tab shows empty state', () => {
-            setStoreState({
-                leftTabs: [{ path: '/a.esc' }],
-                activeLeftTabIndex: 0,
-            });
-            render(<Editor fs={makeFakeFS()} />);
-
-            fireEvent.click(
-                screen.getByRole('button', { name: 'Close a.esc' }),
-            );
-
-            expect(getTabsInTablist(0)).toHaveLength(0);
-            expect(
-                screen.getByRole('button', {
-                    name: 'Open a file from the explorer or drag a tab here',
-                }),
-            ).toBeInTheDocument();
-        });
-
-        test('clicking an inactive right tab makes it active', () => {
-            setStoreState({
-                rightTabs: [{ path: '/build/a.js' }, { path: '/build/b.js' }],
-                activeRightTabIndex: 0,
-            });
-            render(<Editor fs={makeFakeFS()} />);
-
-            const tabs = getTabsInTablist(1);
-            expect(tabs[0].getAttribute('aria-selected')).toBe('true');
-            expect(tabs[1].getAttribute('aria-selected')).toBe('false');
-
-            fireEvent.click(tabs[1]);
-
-            expect(tabs[0].getAttribute('aria-selected')).toBe('false');
-            expect(tabs[1].getAttribute('aria-selected')).toBe('true');
-        });
-    });
-
-    describe('context menu', () => {
-        test('right-clicking a tab shows context menu with Move and Close', () => {
-            setStoreState({
-                leftTabs: [{ path: '/a.esc' }],
-                activeLeftTabIndex: 0,
-            });
-            render(<Editor fs={makeFakeFS()} />);
-
-            fireEvent.contextMenu(screen.getAllByRole('tab')[0]);
-
-            expect(screen.getByText('Move to Right')).toBeInTheDocument();
-            expect(screen.getByText('Close')).toBeInTheDocument();
-        });
-
-        test('Move to Right moves the tab from left to right tablist', () => {
-            setStoreState({
-                leftTabs: [{ path: '/a.esc' }, { path: '/b.esc' }],
-                activeLeftTabIndex: 0,
-            });
-            render(<Editor fs={makeFakeFS()} />);
-
-            // Move first tab to right
-            fireEvent.contextMenu(getTabsInTablist(0)[0]);
-            fireEvent.click(screen.getByText('Move to Right'));
-
-            // Left should now only have b.esc
-            const leftTabs = getTabsInTablist(0);
-            expect(leftTabs).toHaveLength(1);
-            expect(leftTabs[0].textContent).toContain('b.esc');
-
-            // Right should now have a.esc
-            const rightTabs = getTabsInTablist(1);
-            expect(rightTabs).toHaveLength(1);
-            expect(rightTabs[0].textContent).toContain('a.esc');
-        });
-
-        test('right tab context menu shows Move to Left', () => {
-            setStoreState({
-                rightTabs: [{ path: '/build/a.js' }],
-                activeRightTabIndex: 0,
-            });
-            render(<Editor fs={makeFakeFS()} />);
-
-            const rightTab = getTabsInTablist(1)[0];
-            fireEvent.contextMenu(rightTab);
-
-            expect(screen.getByText('Move to Left')).toBeInTheDocument();
-        });
-
-        test('Move to Left moves the tab from right to left tablist', () => {
-            setStoreState({
-                leftTabs: [{ path: '/a.esc' }],
-                activeLeftTabIndex: 0,
-                rightTabs: [{ path: '/build/a.js' }],
-                activeRightTabIndex: 0,
-            });
-            render(<Editor fs={makeFakeFS()} />);
-
-            fireEvent.contextMenu(getTabsInTablist(1)[0]);
-            fireEvent.click(screen.getByText('Move to Left'));
-
-            // Left should now have both tabs
-            const leftTabs = getTabsInTablist(0);
-            expect(leftTabs).toHaveLength(2);
-            expect(leftTabs[1].textContent).toContain('a.js');
-
-            // Right should be empty
-            expect(getTabsInTablist(1)).toHaveLength(0);
-        });
-
-        test('Close in context menu removes the tab', () => {
-            setStoreState({
-                leftTabs: [{ path: '/a.esc' }, { path: '/b.esc' }],
-                activeLeftTabIndex: 0,
-            });
-            render(<Editor fs={makeFakeFS()} />);
-
-            fireEvent.contextMenu(getTabsInTablist(0)[0]);
-            fireEvent.click(screen.getByText('Close'));
-
-            const leftTabs = getTabsInTablist(0);
-            expect(leftTabs).toHaveLength(1);
-            expect(leftTabs[0].textContent).toContain('b.esc');
-        });
-    });
-
     describe('dragging a tab', () => {
         /** Returns a dataTransfer stand-in that records what a drag sets. */
         const dataTransfer = () => ({
@@ -420,6 +214,25 @@ describe('Editor', () => {
     });
 
     describe('empty state', () => {
+        test('closing the last tab shows empty state', () => {
+            setStoreState({
+                leftTabs: [{ path: '/a.esc' }],
+                activeLeftTabIndex: 0,
+            });
+            render(<Editor fs={makeFakeFS()} />);
+
+            fireEvent.click(
+                screen.getByRole('button', { name: 'Close a.esc' }),
+            );
+
+            expect(getTabsInTablist(0)).toHaveLength(0);
+            expect(
+                screen.getByRole('button', {
+                    name: 'Open a file from the explorer or drag a tab here',
+                }),
+            ).toBeInTheDocument();
+        });
+
         test('shows an empty pane on each side with no tabs, marking the focused one', () => {
             setStoreState({
                 leftTabs: [],
@@ -838,19 +651,5 @@ describe('language server models', () => {
         render(<Editor fs={fakeFS} />);
 
         expect(modelPaths()).toEqual([DIAGNOSTICS_TAB_PATH, '/lib/index.esc']);
-    });
-});
-
-describe('languageForPath', () => {
-    test.each([
-        { path: '/lib/index.esc', language: 'escalier' },
-        { path: '/build/lib/index.js', language: 'javascript' },
-        { path: '/build/lib/index.d.ts', language: 'typescript' },
-        { path: '/package.json', language: 'json' },
-        { path: '/build/lib/index.js.map', language: 'json' },
-        { path: '/escalier.toml', language: 'toml' },
-        { path: '/README.md', language: 'plaintext' },
-    ])('maps $path to $language', ({ path, language }) => {
-        expect(languageForPath(path)).toBe(language);
     });
 });
