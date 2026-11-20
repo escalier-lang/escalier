@@ -35,7 +35,7 @@ func TestInferAsyncFnWrapsReturnInPromise(t *testing.T) {
 // `Promise<undefined>`, not `Promise<"hi">`.
 func TestInferAsyncFnNoReturnIsPromiseUndefined(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		async fn greet() {
+		async fn greet() -> Promise<undefined> {
 			"hi"
 		}
 	`)
@@ -66,7 +66,7 @@ func TestInferAwaitUnwrapsPromise(t *testing.T) {
 // layer (a full flatten would give `number`, wrapping to `Promise<number>`).
 func TestInferAwaitNoAutoFlatten(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		async fn f(p: Promise<Promise<number>>) {
+		async fn f(p: Promise<Promise<number>>) -> Promise<Promise<number>> {
 			return await p
 		}
 	`)
@@ -133,7 +133,7 @@ func TestInferAsyncPromiseWildcardReturnInferred(t *testing.T) {
 // recovery placeholder (PR8) so a downstream consumer doesn't cascade.
 func TestInferAwaitOutsideAsyncRejected(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f(p: Promise<string>) {
+		fn f(p: Promise<string>) -> undefined {
 			await p
 		}
 	`)
@@ -145,11 +145,11 @@ func TestInferAwaitOutsideAsyncRejected(t *testing.T) {
 // function — the one to mark `async` — so an IDE can offer the fix. Primary span is
 // the await; related is the whole enclosing fn.
 func TestInferAwaitOutsideAsyncBlamesEnclosingFn(t *testing.T) {
-	src := "fn f(p: Promise<string>) { await p }"
+	src := "fn f(p: Promise<string>) -> undefined { await p }"
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs,
-		"1:28-1:35: await can only be used inside an async function", "await p",
-		"fn f(p: Promise<string>) { await p }")
+		"1:41-1:48: await can only be used inside an async function", "await p",
+		"fn f(p: Promise<string>) -> undefined { await p }")
 }
 
 // At module top-level there is no enclosing function, so Related() is empty and there
@@ -176,7 +176,7 @@ func TestInferAwaitOutsideAsyncTopLevelNoRelated(t *testing.T) {
 // point the constraint fails, so the message shows it as one.
 func TestInferAwaitOfNonPromiseFails(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		async fn f(n: number) {
+		async fn f(n: number) -> Promise<undefined> {
 			await n
 		}
 	`)
@@ -189,7 +189,7 @@ func TestInferAwaitOfNonPromiseFails(t *testing.T) {
 // of `inner` wraps in Promise<…>; the outer is non-async so does NOT wrap.
 func TestInferAwaitInNestedAsyncOK(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn outer(p: Promise<number>) {
+		fn outer(p: Promise<number>) -> fn () -> Promise<number> {
 			val inner = async fn () {
 				return await p
 			}
@@ -205,7 +205,7 @@ func TestInferAwaitInNestedAsyncOK(t *testing.T) {
 // is popped before the outer's `await` is walked.
 func TestInferAwaitInOuterAfterInnerAsync(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn outer(p: Promise<number>) {
+		fn outer(p: Promise<number>) -> undefined {
 			val inner = async fn () { 1 }
 			await p
 		}
@@ -221,7 +221,7 @@ func TestInferAwaitInOuterAfterInnerAsync(t *testing.T) {
 // 1 | "x".
 func TestInferBlockReturnJoinAcrossIf(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn h(c: boolean) {
+		fn h(c: boolean) -> 1 | "x" {
 			if c { return 1 }
 			return "x"
 		}
@@ -268,7 +268,7 @@ func TestInferBlockNonTailReturnCheckedAgainstAnnotation(t *testing.T) {
 // external return is Promise<1 | "x">, in the order the body returns them.
 func TestInferAsyncFnWithJoinedReturnsWrapped(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		async fn f(c: boolean) {
+		async fn f(c: boolean) -> Promise<1 | "x"> {
 			if c { return 1 }
 			return "x"
 		}
@@ -285,7 +285,7 @@ func TestInferAsyncFnWithJoinedReturnsWrapped(t *testing.T) {
 // fn`), the binding here is monomorphic-frozen to the join.
 func TestInferIfElseExprValueIsBranchJoin(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn pick(c: boolean) {
+		fn pick(c: boolean) -> 1 | "x" {
 			return if c { 1 } else { "x" }
 		}
 	`)
@@ -298,7 +298,7 @@ func TestInferIfElseExprValueIsBranchJoin(t *testing.T) {
 // data member 5 leads.
 func TestInferIfElseExprMissingAltIsUndefined(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn pick(c: boolean) {
+		fn pick(c: boolean) -> 5 | undefined {
 			return if c { 5 }
 		}
 	`)
@@ -309,7 +309,7 @@ func TestInferIfElseExprMissingAltIsUndefined(t *testing.T) {
 // The if's condition must be boolean; a string condition is rejected.
 func TestInferIfElseConditionMustBeBool(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn pick(c: string) {
+		fn pick(c: string) -> undefined {
 			if c { 1 } else { 2 }
 		}
 	`)
@@ -378,7 +378,7 @@ func TestInferNestedFnReturnsScoped(t *testing.T) {
 // join.
 func TestInferIfElseUnknownConditionNoCascade(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn pick() {
+		fn pick() -> 1 | 2 {
 			return if undeclared { 1 } else { 2 }
 		}
 	`)
@@ -393,7 +393,7 @@ func TestInferIfElseUnknownConditionNoCascade(t *testing.T) {
 // Promise<never>.
 func TestInferAwaitUnknownArgNoCascade(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		async fn f() {
+		async fn f() -> Promise<never> {
 			return await undeclared
 		}
 	`)
@@ -410,7 +410,7 @@ func TestInferAwaitUnknownArgNoCascade(t *testing.T) {
 // to `unknown`.
 func TestInferPromiseUnsupportedInnerKeepsWrapper(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: Promise< /(?=x)/ >) {
+		fn f(p: Promise< /(?=x)/ >) -> 0 {
 			return 0
 		}
 	`)
@@ -461,7 +461,7 @@ func TestPromiseMembersResolveThroughTheClass(t *testing.T) {
 // declares none, which is what makes `Promise<'a, number>` an arity mismatch rather
 // than a silently dropped annotation.
 func TestPromiseLifetimeArgumentRejected(t *testing.T) {
-	_, _, errs := inferSource(t, "fn f(p: Promise<'a, number>) { 0 }")
+	_, _, errs := inferSource(t, "fn f(p: Promise<'a, number>) -> undefined { 0 }")
 	require.Len(t, errs, 1)
 	require.Equal(t, "1:9-1:28: class `Promise` expects 0 lifetime arguments but got 1",
 		msgWithSpan(t, errs[0]))
@@ -509,7 +509,7 @@ func TestInferReturnOutsideFunctionRejected(t *testing.T) {
 // gives `["y"]`, the bug would give `[1 | "y"]`.
 func TestInferIfElseDivergingBranchDropsFromValue(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(c: boolean) {
+		fn f(c: boolean) -> 1 | ["y"] {
 			val x = if c { return 1 } else { "y" }
 			return [x]
 		}
@@ -530,7 +530,7 @@ func TestInferIfElseDivergingBranchDropsFromValue(t *testing.T) {
 // diverging branch into the if's value would render 3 | [3 | "z"]).
 func TestInferIfElseDivergingBranchReturnJoin(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(c: boolean) {
+		fn f(c: boolean) -> 3 | ["z"] {
 			return [if c { return 3 } else { "z" }]
 		}
 	`)
@@ -560,7 +560,7 @@ func TestInferIfElseBothBranchesDivergeYieldsNever(t *testing.T) {
 // return type is exactly the join of its return points, 1 | 2.
 func TestInferDeadTailAfterDivergingValDiscarded(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(c: boolean) {
+		fn f(c: boolean) -> 1 | 2 {
 			val x = if c { return 1 } else { return 2 }
 			[x]
 		}
@@ -573,7 +573,7 @@ func TestInferDeadTailAfterDivergingValDiscarded(t *testing.T) {
 // to the function's value — `fn g() { return 1; 2 }` is `1`, not `1 | 2`.
 func TestInferStatementAfterReturnDiscarded(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn g() {
+		fn g() -> 1 {
 			return 1
 			2
 		}

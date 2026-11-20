@@ -6,6 +6,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
+	"github.com/escalier-lang/escalier/internal/solver"
 
 	"github.com/stretchr/testify/require"
 )
@@ -101,6 +102,84 @@ func TestParamListEnd(t *testing.T) {
 			fn, ok := decls[0].(*ast.FuncDecl)
 			require.True(t, ok)
 			got, ok := paramListEnd(Target{Name: fn.Name, Sig: &fn.FuncSig}, tt.contents)
+			if tt.expected < 0 {
+				require.False(t, ok)
+				return
+			}
+			require.True(t, ok)
+			require.Equal(t, tt.expected, got)
+		})
+	}
+}
+
+// spanDiag is a diagnostic that blames span.
+type spanDiag struct{ span ast.Span }
+
+func (d spanDiag) Span() ast.Span { return d.span }
+
+// TestWritesNeverWhileDiagnosed covers when edits that write `never` are held back for a
+// diagnostic inside the declaration, which spans offsets 10 to 50.
+func TestWritesNeverWhileDiagnosed(t *testing.T) {
+	at := func(start, end int) ast.Span {
+		return ast.Span{Start: ast.Location{Offset: start}, End: ast.Location{Offset: end}}
+	}
+	missing := &solver.MissingSignatureError{Node: ast.NewIdentifier("f", at(13, 14))}
+	never := []Edit{{Start: 20, End: 20, Text: " -> never"}}
+	tests := []struct {
+		name     string
+		edits    []Edit
+		diags    []interface{ Span() ast.Span }
+		expected bool
+	}{
+		{name: "NeverWithDiagnosticInside", edits: never, diags: []interface{ Span() ast.Span }{spanDiag{at(30, 35)}}, expected: true},
+		{name: "OtherTypeWithDiagnosticInside", edits: []Edit{{Start: 20, End: 20, Text: " -> number"}}, diags: []interface{ Span() ast.Span }{spanDiag{at(30, 35)}}, expected: false},
+		{name: "NeverWithDiagnosticOutside", edits: never, diags: []interface{ Span() ast.Span }{spanDiag{at(60, 65)}}, expected: false},
+		{name: "NeverWithOnlyMissingSignature", edits: never, diags: []interface{ Span() ast.Span }{missing}, expected: false},
+		{name: "NeverWithNoDiagnostic", edits: never, expected: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := Target{DeclSpan: at(10, 50)}
+			require.Equal(t, tt.expected, WritesNeverWhileDiagnosed(target, tt.edits, tt.diags))
+		})
+	}
+}
+
+// TestTargetsSkipsBindingsWithoutSignatures asserts that Targets returns no target for a
+// `val` that binds something other than a function expression, or a function expression
+// info records no signature for.
+func TestTargetsSkipsBindingsWithoutSignatures(t *testing.T) {
+	src := "val n = 5\nval f = fn (x: number) -> number { return x }\nval g: fn () -> number = fn () { return 1 }"
+	decls, errs := parser.ParseDecls(context.Background(), &ast.Source{Path: "t.esc", Contents: src})
+	require.Empty(t, errs)
+	require.Len(t, decls, 3)
+	require.Empty(t, Targets(solver.NewInfo(), decls, 0))
+}
+
+// TestBinderOffset covers where binderOffset writes a function expression's binder list.
+// Each case parses src as one `val` binding a function expression, then scans contents.
+// expected is the offset binderOffset returns, or -1 when it fails.
+func TestBinderOffset(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		contents string
+		expected int
+	}{
+		{name: "AfterFnKeyword", src: "val f = fn (x: number) {}", contents: "val f = fn (x: number) {}", expected: 11},
+		{name: "AfterAsyncFnKeyword", src: "val f = async fn () {}", contents: "val f = async fn () {}", expected: 17},
+		{name: "NoFnKeyword", src: "val f = fn (x: number) {}", contents: "val f = gn (x: number) {}", expected: -1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			decls, errs := parser.ParseDecls(context.Background(), &ast.Source{Path: "t.esc", Contents: tt.src})
+			require.Empty(t, errs)
+			require.Len(t, decls, 1)
+			d, ok := decls[0].(*ast.VarDecl)
+			require.True(t, ok)
+			fe, ok := d.Init.(*ast.FuncExpr)
+			require.True(t, ok)
+			got, ok := binderOffset(Target{Name: d.Pattern, Sig: &fe.FuncSig, Closure: fe}, tt.contents)
 			if tt.expected < 0 {
 				require.False(t, ok)
 				return

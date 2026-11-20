@@ -22,7 +22,7 @@ func TestInferAssignAnnotatedVar(t *testing.T) {
 	t.Run("matching type checks", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
 			var a: number = 5
-			fn f() { a = 6 }
+			fn f() -> undefined { a = 6 }
 		`)
 		require.Empty(t, errs)
 		require.Equal(t, "number", values["a"])
@@ -30,9 +30,9 @@ func TestInferAssignAnnotatedVar(t *testing.T) {
 	})
 	t.Run("mismatched type reports one subtype error", func(t *testing.T) {
 		src := `var a: number = 5
-fn f() { a = "x" }`
+fn f() -> undefined { a = "x" }`
 		_, _, errs := inferSource(t, src)
-		requireBlame(t, src, errs, `2:14-2:17: cannot constrain "x" <: number`, `"x"`, "number")
+		requireBlame(t, src, errs, `2:27-2:30: cannot constrain "x" <: number`, `"x"`, "number")
 	})
 }
 
@@ -41,7 +41,7 @@ fn f() { a = "x" }`
 // checks. A `val` keeps the literal singleton (see TestInferAssignToValRejected).
 func TestInferAssignUnannotatedVarLiteralWidened(t *testing.T) {
 	values, _, errs := inferSource(t, `var a = 5
-fn f() { a = 6 }`)
+fn f() -> undefined { a = 6 }`)
 	require.Empty(t, errs)
 	require.Equal(t, "number", values["a"])
 }
@@ -50,10 +50,10 @@ fn f() { a = 6 }`)
 // the assignment and relates the `val` declaration ("declared immutable here").
 func TestInferAssignToValRejected(t *testing.T) {
 	src := `val a = 5
-fn f() { a = 6 }`
+fn f() -> undefined { a = 6 }`
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs,
-		"2:10-2:15: Cannot assign to immutable binding: a", "a = 6", "val a = 5")
+		"2:23-2:28: Cannot assign to immutable binding: a", "a = 6", "val a = 5")
 }
 
 // A function name and a parameter are likewise immutable. A parameter carries no
@@ -61,17 +61,17 @@ fn f() { a = 6 }`
 func TestInferAssignToImmutableNonVal(t *testing.T) {
 	t.Run("function name", func(t *testing.T) {
 		src := `fn h() -> number { return 5 }
-fn f() { h = 6 }`
+fn f() -> undefined { h = 6 }`
 		_, _, errs := inferSource(t, src)
 		requireBlame(t, src, errs,
-			"2:10-2:15: Cannot assign to immutable binding: h", "h = 6", "fn h() -> number { return 5 }")
+			"2:23-2:28: Cannot assign to immutable binding: h", "h = 6", "fn h() -> number { return 5 }")
 	})
 	t.Run("parameter", func(t *testing.T) {
-		src := "fn f(p: number) { p = 6 }"
+		src := "fn f(p: number) -> undefined { p = 6 }"
 		_, _, errs := inferSource(t, src)
 		// A parameter's binding records its pattern as the source, so Related() points
 		// at the param ("declared immutable here").
-		requireBlame(t, src, errs, "1:19-1:24: Cannot assign to immutable binding: p", "p = 6", "p")
+		requireBlame(t, src, errs, "1:32-1:37: Cannot assign to immutable binding: p", "p = 6", "p")
 	})
 }
 
@@ -81,16 +81,16 @@ fn f() { h = 6 }`
 func TestInferAssignInvalidTarget(t *testing.T) {
 	t.Run("literal target", func(t *testing.T) {
 		src := `val a = 5
-fn g() { 5 = a }`
+fn g() -> undefined { 5 = a }`
 		_, _, errs := inferSource(t, src)
-		requireBlame(t, src, errs, "2:10-2:11: Invalid assignment target: LiteralExpr", "5")
+		requireBlame(t, src, errs, "2:23-2:24: Invalid assignment target: LiteralExpr", "5")
 	})
 	t.Run("call target", func(t *testing.T) {
 		src := `fn f() -> number { return 5 }
 var a: number = 0
-fn g() { f() = a }`
+fn g() -> undefined { f() = a }`
 		_, _, errs := inferSource(t, src)
-		requireBlame(t, src, errs, "3:10-3:13: Invalid assignment target: CallExpr", "f()")
+		requireBlame(t, src, errs, "3:23-3:26: Invalid assignment target: CallExpr", "f()")
 	})
 }
 
@@ -112,7 +112,7 @@ func TestInferAssignValuePositionIsTargetType(t *testing.T) {
 // `cannot constrain … <: never`.
 func TestInferAssignThroughBrokenBindingNoCascade(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f() {
+		fn f() -> undefined {
 			var a = missing
 			a = 5
 			a = "hello"
@@ -125,9 +125,9 @@ func TestInferAssignThroughBrokenBindingNoCascade(t *testing.T) {
 // Assigning to an undeclared name surfaces an UnknownIdentifierError on the target
 // (an assignment must not silently accept an unbound place).
 func TestInferAssignUnknownTarget(t *testing.T) {
-	src := "fn f() { nope = 5 }"
+	src := "fn f() -> undefined { nope = 5 }"
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "1:10-1:14: Unknown identifier: nope", "nope")
+	requireBlame(t, src, errs, "1:23-1:27: Unknown identifier: nope", "nope")
 }
 
 // TestInferAssignWeakVarWritesItsVariables asserts that a `var` does not generalize, so a
@@ -138,7 +138,7 @@ func TestInferAssignUnknownTarget(t *testing.T) {
 func TestInferAssignWeakVarWritesItsVariables(t *testing.T) {
 	values, errs := inferAgainstTreeWithSpans(t, `
 		var id = fn (x) { return x }
-		fn f() { id = fn (n: number) -> number { return n + 1 } }
+		fn f() -> undefined { id = fn (n: number) -> number { return n + 1 } }
 		val r = id("hello")
 	`)
 	require.Equal(t, []string{`4:14-4:21: cannot constrain "hello" <: number`}, errs)
@@ -156,7 +156,7 @@ func TestInferAssignBodyLevelWeakVarWritesItsVariables(t *testing.T) {
 	}{
 		{
 			name: "an identical function checks",
-			src: `fn f() {
+			src: `fn f() -> undefined {
 	var k = fn (x) { return x }
 	k = fn (x) { return x }
 }`,
@@ -164,7 +164,7 @@ func TestInferAssignBodyLevelWeakVarWritesItsVariables(t *testing.T) {
 		},
 		{
 			name: "an identical function with an unread parameter checks",
-			src: `fn f() {
+			src: `fn f() -> undefined {
 	var k = fn (x, y) { return x }
 	k = fn (x, y) { return x }
 }`,
@@ -172,7 +172,7 @@ func TestInferAssignBodyLevelWeakVarWritesItsVariables(t *testing.T) {
 		},
 		{
 			name: "a reassignment settles the parameter for a later call",
-			src: `fn f() {
+			src: `fn f() -> undefined {
 	var k = fn (x) { return x }
 	k = fn (x: number) { return x }
 	k("s")
@@ -181,7 +181,7 @@ func TestInferAssignBodyLevelWeakVarWritesItsVariables(t *testing.T) {
 		},
 		{
 			name: "an earlier call constrains the reassignment",
-			src: `fn f() {
+			src: `fn f() -> undefined {
 	var k = fn (x) { return x }
 	k(1)
 	k = fn (x: string) { return x }
@@ -218,7 +218,7 @@ func TestInferAssignBodyLevelWeakVarLeavesCapturedVariables(t *testing.T) {
 func TestInferAssignTopLevelBrokenBindingNoCascade(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		var a = missing
-		fn f() { a = 5 }
+		fn f() -> undefined { a = 5 }
 	`)
 	require.Len(t, errs, 1)
 	require.Equal(t, "2:11-2:18: Unknown identifier: missing", msgWithSpan(t, errs[0]))
@@ -232,7 +232,7 @@ func TestInferAssignTopLevelBrokenBindingNoCascade(t *testing.T) {
 func TestInferAssignUnionTarget(t *testing.T) {
 	t.Run("member assigns", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
-			fn f(c: boolean) {
+			fn f(c: boolean) -> undefined {
 				var a: 1 | 2 = if c { 1 } else { 2 }
 				a = 1
 			}
@@ -240,7 +240,7 @@ func TestInferAssignUnionTarget(t *testing.T) {
 		require.Empty(t, errs)
 	})
 	t.Run("non-member rejected once", func(t *testing.T) {
-		src := `fn f(c: boolean) {
+		src := `fn f(c: boolean) -> undefined {
   var a: 1 | 2 = if c { 1 } else { 2 }
   a = 3
 }`
@@ -286,9 +286,9 @@ func TestInferAssignNamespaceTarget(t *testing.T) {
 // cannot fill the mutable destination (the C2 gate's mutability rule).
 func TestInferAssignMemberTargetImmutable(t *testing.T) {
 	src := `val o = {x: 5}
-fn f() { o.x = 6 }`
+fn f() -> undefined { o.x = 6 }`
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "2:10-2:17: cannot mutate 'o' because its binding is immutable; declare it as `val mut o`", "o.x = 6", "val o = {x: 5}")
+	requireBlame(t, src, errs, "2:23-2:30: cannot mutate 'o' because its binding is immutable; declare it as `val mut o`", "o.x = 6", "val o = {x: 5}")
 }
 
 // An index target `xs[i] = …` writes an element, which needs a mutable receiver the
@@ -296,9 +296,9 @@ fn f() { o.x = 6 }`
 // write is rejected at the assignment.
 func TestInferAssignIndexTargetImmutable(t *testing.T) {
 	src := `val xs = [1, 2]
-fn f() { xs[0] = 6 }`
+fn f() -> undefined { xs[0] = 6 }`
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "2:10-2:19: cannot mutate 'xs' because its binding is immutable; declare it as `val mut xs`", "xs[0] = 6", "val xs = [1, 2]")
+	requireBlame(t, src, errs, "2:23-2:32: cannot mutate 'xs' because its binding is immutable; declare it as `val mut xs`", "xs[0] = 6", "val xs = [1, 2]")
 }
 
 // An immutable target with an independently-broken source reports BOTH errors — they
@@ -307,11 +307,11 @@ fn f() { xs[0] = 6 }`
 func TestInferAssignImmutableWithBadRHSReportsBoth(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		val a = 5
-		fn f() { a = missing }
+		fn f() -> undefined { a = missing }
 	`)
 	require.Equal(t, []string{
-		"3:16-3:23: Unknown identifier: missing",
-		"3:12-3:23: Cannot assign to immutable binding: a",
+		"3:29-3:36: Unknown identifier: missing",
+		"3:25-3:36: Cannot assign to immutable binding: a",
 	}, messagesWithSpan(t, errs))
 }
 
@@ -341,7 +341,7 @@ func TestInferAssignDestructuredLeaf(t *testing.T) {
 	}{
 		{
 			name: "var object shorthand",
-			src: `fn main() {
+			src: `fn main() -> undefined {
     var {x} = {x: 1}
     x = 2
 }`,
@@ -349,7 +349,7 @@ func TestInferAssignDestructuredLeaf(t *testing.T) {
 		},
 		{
 			name: "var object key-value",
-			src: `fn main() {
+			src: `fn main() -> undefined {
     var {x, y: z} = {x: 1, y: 2}
     z = x
 }`,
@@ -357,7 +357,7 @@ func TestInferAssignDestructuredLeaf(t *testing.T) {
 		},
 		{
 			name: "var nested",
-			src: `fn main() {
+			src: `fn main() -> undefined {
     var {p: {q}, r: [s]} = {p: {q: 1}, r: ["a"]}
     q = 2
     s = "b"
@@ -366,7 +366,7 @@ func TestInferAssignDestructuredLeaf(t *testing.T) {
 		},
 		{
 			name: "var tuple",
-			src: `fn main() {
+			src: `fn main() -> undefined {
     var [a, b] = [1, 2]
     a = b
 }`,
@@ -374,7 +374,7 @@ func TestInferAssignDestructuredLeaf(t *testing.T) {
 		},
 		{
 			name: "val object shorthand",
-			src: `fn main() {
+			src: `fn main() -> undefined {
     val {x} = {x: 1}
     x = 2
 }`,
@@ -382,7 +382,7 @@ func TestInferAssignDestructuredLeaf(t *testing.T) {
 		},
 		{
 			name: "val object key-value",
-			src: `fn main() {
+			src: `fn main() -> undefined {
     val {x, y: z} = {x: 1, y: 2}
     z = x
 }`,
@@ -390,7 +390,7 @@ func TestInferAssignDestructuredLeaf(t *testing.T) {
 		},
 		{
 			name: "val tuple",
-			src: `fn main() {
+			src: `fn main() -> undefined {
     val [a, b] = [1, 2]
     a = b
 }`,

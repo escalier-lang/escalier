@@ -25,7 +25,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			src: `
 				declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					readWrite(&x, &mut x)
 				}
@@ -39,7 +39,7 @@ func TestBorrowExclusivity(t *testing.T) {
 				type M = &mut {v: number}
 				declare fn writeRead(a: M, b: &{v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					writeRead(&mut x, &x)
 				}
@@ -51,7 +51,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			src: `
 				declare fn writeRead(a: &mut {v: number} | undefined, b: &{v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					writeRead(&mut x, &x)
 				}
@@ -64,7 +64,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			src: `
 				declare fn writeRead(a: &mut {v: number} | &{v: number}, b: &{v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					writeRead(&mut x, &x)
 				}
@@ -77,7 +77,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			src: `
 				declare fn readWrite(a: &mut {v: number} | &{v: number}, b: &mut {v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					readWrite(&x, &mut x)
 				}
@@ -90,7 +90,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			src: `
 				declare fn readWrite(a: &{v: number} | number, b: &mut {v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					readWrite(x.v, &mut x)
 				}
@@ -105,7 +105,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			src: `
 				declare fn writeWrite(a: &mut {v: number}, b: &mut {v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					writeWrite(&mut x, &mut x)
 				}
@@ -117,7 +117,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					readRead(&x, &x)
 				}
@@ -131,7 +131,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					readRead(&mut x, &x)
 				}
@@ -144,7 +144,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			src: `
 				declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {p: {v: 1}, q: {v: 2}}
 					readWrite(&x.p, &mut x.q)
 				}
@@ -156,7 +156,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			src: `
 				declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {p: {v: 1}, q: {v: 2}}
 					readWrite(&x.p, &mut x.p)
 				}
@@ -170,7 +170,7 @@ func TestBorrowExclusivity(t *testing.T) {
 		"WholeBindingOverlapsItsField": {
 			src: `
 				declare fn readWhole(a: &{v: number}, b: &mut {p: {v: number}}) -> undefined
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {p: {v: 1}}
 					readWhole(&x.p, &mut x)
 				}
@@ -182,7 +182,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			src: `
 				declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val mut y = {v: 2}
 					readWrite(&x, &mut y)
@@ -197,7 +197,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			src: `
 				declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
 
-				fn g(m: &mut {v: number}) {
+				fn g(m: &mut {v: number}) -> undefined {
 					readWrite(m, m)
 				}
 			`,
@@ -209,7 +209,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			src: `
 				declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val a = &x
 					val b = &mut x
@@ -224,7 +224,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			src: `
 				declare fn write(a: &mut {v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val a = &x
 					val b = &mut x
@@ -239,7 +239,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val a = &x
 					val y = x
@@ -253,7 +253,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val a = &x
 					readRead(a, a)
@@ -271,7 +271,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			src: `
 				declare fn write(a: &mut {v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val a = &mut x
 					val t = {y: &mut x}
@@ -286,7 +286,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			src: `
 				declare fn write(a: &mut {v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val a = &mut x
 					val t = {y: &x}
@@ -301,7 +301,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			src: `
 				declare fn write(a: &mut {v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val a = &mut x
 					val n = x.v
@@ -314,7 +314,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val a = &x
 					val n = x.v
@@ -329,7 +329,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			src: `
 				declare fn write(a: &mut {v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val a = &mut x
 					x.v = 5
@@ -344,7 +344,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val a = &x
 					x.v = 5
@@ -359,7 +359,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {a: {v: 1}, b: {v: 2}}
 					val r = &x.a
 					x.b.v = 5
@@ -372,7 +372,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {a: {v: 1}, b: {v: 2}}
 					val r = &x.a
 					x.a.v = 5
@@ -406,7 +406,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					var mut x = {v: 1}
 					val a = &x
 					x = {v: 2}
@@ -419,7 +419,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			src: `
 				declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val b = &mut x
 					readWrite(&x, b)
@@ -433,7 +433,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			src: `
 				declare fn write(a: &mut {v: number}) -> undefined
 
-				fn g(mut x: {v: number}, mut y: {v: number}) {
+				fn g(mut x: {v: number}, mut y: {v: number}) -> undefined {
 					var a = &mut x
 					a = &mut y
 					val b = &mut x
@@ -448,7 +448,7 @@ func TestBorrowExclusivity(t *testing.T) {
 			src: `
 				declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
 
-				fn g(mut x: {v: number}, mut y: {v: number}) {
+				fn g(mut x: {v: number}, mut y: {v: number}) -> undefined {
 					var a = &mut y
 					a = &mut x
 					val b = &x
@@ -496,7 +496,7 @@ func TestExplicitBorrowArgs(t *testing.T) {
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 				declare fn write(a: &mut {v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					write(&mut x)
 					readRead(x, &x)
@@ -509,7 +509,7 @@ func TestExplicitBorrowArgs(t *testing.T) {
 			src: `
 				declare fn write(a: &mut {v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					write(x)
 				}
@@ -522,7 +522,7 @@ func TestExplicitBorrowArgs(t *testing.T) {
 			src: `
 				declare fn read(a: &{v: number} | number) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val x = {v: 1}
 					read(x)
 				}
@@ -534,7 +534,7 @@ func TestExplicitBorrowArgs(t *testing.T) {
 			src: `
 				declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val mut y = {v: 2}
 					readWrite(&x, &mut y)
@@ -548,7 +548,7 @@ func TestExplicitBorrowArgs(t *testing.T) {
 			src: `
 				declare fn write(a: &mut {v: number}) -> undefined
 
-				fn g(m: &mut {v: number}) {
+				fn g(m: &mut {v: number}) -> undefined {
 					write(m)
 				}
 			`,
@@ -559,7 +559,7 @@ func TestExplicitBorrowArgs(t *testing.T) {
 		"OwnedParamTakesABarePlaceOk": {
 			src: `
 				declare fn consume(a: {v: number}) -> undefined
-				fn g() {
+				fn g() -> undefined {
 					val x = {v: 1}
 					consume(x)
 				}
@@ -575,7 +575,7 @@ func TestExplicitBorrowArgs(t *testing.T) {
 					n: number,
 					bump(&mut self) -> undefined { self.n = 1 },
 				}
-				fn g() {
+				fn g() -> undefined {
 					val mut c = Counter(0)
 					c.bump()
 				}
@@ -590,7 +590,7 @@ func TestExplicitBorrowArgs(t *testing.T) {
 					v: number,
 					take(&self, a: &{v: number}) -> undefined {},
 				}
-				fn g() {
+				fn g() -> undefined {
 					val h = Holder(0)
 					val x = {v: 1}
 					h.take(x)
@@ -668,7 +668,7 @@ func TestExplicitBorrowFlowSites(t *testing.T) {
 		// value reports on its own.
 		"EachBranchReports": {
 			src: `
-				fn g(cond: boolean) {
+				fn g(cond: boolean) -> undefined {
 					val p = {x: 1}
 					val mut q = {x: 2}
 					val a: &{x: number} = if cond { p } else { q }
@@ -716,7 +716,7 @@ func TestExplicitBorrowFlowSites(t *testing.T) {
 		// shape is still reported.
 		"MissingMutBorrowWrongShape": {
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val mut q = {y: "a"}
 					val b: &mut {x: number} = do { q }
 				}
@@ -729,7 +729,7 @@ func TestExplicitBorrowFlowSites(t *testing.T) {
 		},
 		"MissingMutBorrowInReassignment": {
 			src: `
-				fn g(cond: boolean) {
+				fn g(cond: boolean) -> undefined {
 					val mut q = {x: 2}
 					var b: &mut {x: number} = &mut q
 					b = if cond { q } else { q }
@@ -742,7 +742,7 @@ func TestExplicitBorrowFlowSites(t *testing.T) {
 		},
 		"MissingMutBorrowInFieldStore": {
 			src: `
-				fn g(mut h: {slot: &mut {x: number}}) {
+				fn g(mut h: {slot: &mut {x: number}}) -> undefined {
 					val mut q = {x: 2}
 					h.slot = do { q }
 				}
@@ -793,7 +793,7 @@ func TestExplicitBorrowFlowSites(t *testing.T) {
 				type U = {a: number} | {b: number}
 				type R = &{f: &{x: number}}
 				type B = &{x: number}
-				fn g(u: U) {
+				fn g(u: U) -> undefined {
 					val p = {x: 1}
 					val a: &U = u
 					val b: &{x: number} | undefined = p
@@ -844,7 +844,7 @@ func TestLiteralSlotOfMappedType(t *testing.T) {
 		"MissingBorrowInField": {
 			src: `
 				type RO<T> = {readonly [K]: T[K] for K in keyof T}
-				fn g() {
+				fn g() -> undefined {
 					val p = {x: 1}
 					val o: RO<{f: &{x: number}}> = {f: p}
 				}
@@ -856,7 +856,7 @@ func TestLiteralSlotOfMappedType(t *testing.T) {
 		"StaticBorrowInField": {
 			src: `
 				type RO<T> = {readonly [K]: T[K] for K in keyof T}
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					val o: RO<{f: &'static {x: number}}> = {f: &p}
 					p.x = 2
@@ -886,7 +886,7 @@ func TestLiteralSlotOfNamedDestination(t *testing.T) {
 		"MissingBorrowInAliasField": {
 			src: `
 				type D = {f: &{x: number}}
-				fn g() {
+				fn g() -> undefined {
 					val p = {x: 1}
 					val o: D = {f: p}
 				}
@@ -896,7 +896,7 @@ func TestLiteralSlotOfNamedDestination(t *testing.T) {
 		"StaticBorrowInAliasField": {
 			src: `
 				type D = {f: &'static {x: number}}
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					val o: D = {f: &p}
 					p.x = 2
@@ -909,7 +909,7 @@ func TestLiteralSlotOfNamedDestination(t *testing.T) {
 		"MissingBorrowInClassField": {
 			src: `
 				class Box<T> { value: T }
-				fn g() {
+				fn g() -> undefined {
 					val p = {x: 1}
 					val o: Box<&{x: number}> = {value: p}
 				}
@@ -922,7 +922,7 @@ func TestLiteralSlotOfNamedDestination(t *testing.T) {
 		"StaticBorrowInClassField": {
 			src: `
 				class Box<T> { value: T }
-				fn g() {
+				fn g() -> undefined {
 					val mut p = {x: 1}
 					val o: Box<&'static {x: number}> = {value: &p}
 					p.x = 2
@@ -937,7 +937,7 @@ func TestLiteralSlotOfNamedDestination(t *testing.T) {
 		// reports only the failed assignment.
 		"FieldBesideASpreadOfATypeParameter": {
 			src: `
-				fn g<T>(t: T) {
+				fn g<T>(t: T) -> undefined {
 					val p = {x: 1}
 					val o: {...T, f: &{x: number}} = {f: p}
 				}
@@ -946,7 +946,7 @@ func TestLiteralSlotOfNamedDestination(t *testing.T) {
 		},
 		"FieldOfAMappedTypeOverATypeParameter": {
 			src: `
-				fn g<T>(t: T) {
+				fn g<T>(t: T) -> undefined {
 					val p = {x: 1}
 					val o: {[K]: &{x: number} for K in keyof T} = {f: p}
 				}
@@ -989,7 +989,7 @@ func TestFieldReadThroughBorrow(t *testing.T) {
 		// `&mut` asks for `&mut`.
 		"MutableReceiverAsksForMut": {
 			src: `
-				fn g(h: &mut {f: {x: number}}) {
+				fn g(h: &mut {f: {x: number}}) -> undefined {
 					val d = h.f
 				}
 			`,
@@ -1009,7 +1009,7 @@ func TestFieldReadThroughBorrow(t *testing.T) {
 		// unannotated literal are destinations like any other.
 		"ChainsReturnsAndLiterals": {
 			src: `
-				fn g(h: &{f: {g: {x: number}}}) {
+				fn g(h: &{f: {g: {x: number}}}) -> &{x: number} {
 					val o = [h.f.g, {k: h.f}]
 					return h.f.g
 				}
@@ -1024,7 +1024,7 @@ func TestFieldReadThroughBorrow(t *testing.T) {
 		// written.
 		"OptionalField": {
 			src: `
-				fn g(h: &{f?: {x: number}}) {
+				fn g(h: &{f?: {x: number}}) -> undefined {
 					val d = h.f
 				}
 			`,
@@ -1034,7 +1034,7 @@ func TestFieldReadThroughBorrow(t *testing.T) {
 		// the program to bind the receiver first instead of suggesting `&`.
 		"OptionalChain": {
 			src: `
-				fn g(h: &{f: {x: number}} | undefined) {
+				fn g(h: &{f: {x: number}} | undefined) -> undefined {
 					val d = h?.f
 				}
 			`,
@@ -1045,7 +1045,7 @@ func TestFieldReadThroughBorrow(t *testing.T) {
 		// Binding the receiver with `if val` lets the plain read be borrowed.
 		"BoundOptionalReceiverOk": {
 			src: `
-				fn g(h: &{f: {x: number}} | undefined) {
+				fn g(h: &{f: {x: number}} | undefined) -> undefined {
 					if val k = h {
 						val d = &k.f
 					}
@@ -1056,7 +1056,7 @@ func TestFieldReadThroughBorrow(t *testing.T) {
 		// fill it either.
 		"OwnedDestinationReportsT6": {
 			src: `
-				fn g(h: &{f: {x: number}}) {
+				fn g(h: &{f: {x: number}}) -> undefined {
 					val d: {x: number} = h.f
 				}
 			`,
@@ -1109,7 +1109,7 @@ func TestFieldReadThroughBorrow(t *testing.T) {
 		"AliasedObjectField": {
 			src: `
 				type P = {x: number}
-				fn g(h: &{p: P}) {
+				fn g(h: &{p: P}) -> undefined {
 					val p = h.p
 				}
 			`,
@@ -1119,7 +1119,7 @@ func TestFieldReadThroughBorrow(t *testing.T) {
 		"AliasedBorrowReceiver": {
 			src: `
 				type HP = &{p: {x: number}}
-				fn g(h: HP) {
+				fn g(h: HP) -> undefined {
 					val p = h.p
 				}
 			`,
@@ -1131,7 +1131,7 @@ func TestFieldReadThroughBorrow(t *testing.T) {
 		"GenericParameter": {
 			src: `
 				fn id<T>(x: T) -> T { return x }
-				fn g(h: &{f: {x: number}}) {
+				fn g(h: &{f: {x: number}}) -> undefined {
 					val s = id(h.f)
 				}
 			`,
@@ -1140,7 +1140,7 @@ func TestFieldReadThroughBorrow(t *testing.T) {
 		"GenericParameterBorrowWritten": {
 			src: `
 				fn id<T>(x: T) -> T { return x }
-				fn g(h: &{f: {x: number}}) {
+				fn g(h: &{f: {x: number}}) -> undefined {
 					val s = id(&h.f)
 				}
 			`,
@@ -1150,7 +1150,7 @@ func TestFieldReadThroughBorrow(t *testing.T) {
 		"GenericParameterResultBorrowed": {
 			src: `
 				fn id<T>(x: T) -> T { return x }
-				fn g(h: &{f: {x: number}}) {
+				fn g(h: &{f: {x: number}}) -> undefined {
 					val s = &id(h.f)
 				}
 			`,
@@ -1162,7 +1162,7 @@ func TestFieldReadThroughBorrow(t *testing.T) {
 			src: `
 				class Box { v: number }
 				class C { readonly inner: &mut Box }
-				fn g(c: &C) {
+				fn g(c: &C) -> undefined {
 					val b = c.inner
 				}
 			`,

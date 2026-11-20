@@ -144,6 +144,25 @@ func inferSource(t *testing.T, src string) (values, types map[string]string, err
 	return inferSources(t, map[string]string{"input.esc": src})
 }
 
+// inferLocal infers src as a module and returns the type of the binding named name, as
+// hover displays it, with the errors the inference reported. The binding is the last pattern
+// that binds name, so it may be a `val` inside a function body, which inferSource does not
+// return. A closure bound there keeps its inferred return type, so a test of return-type
+// inference binds its closure inside a body and reads its type with inferLocal.
+func inferLocal(t *testing.T, src, name string) (string, []SolverError) {
+	t.Helper()
+	module := parseModuleFiles(t, map[string]string{"input.esc": src})
+	c := newTestChecker()
+	scope := c.preludeScope().Child()
+	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
+	finder := &identPatFinder{name: name}
+	module.Accept(finder)
+	require.NotNil(t, finder.found, "no binding named %q", name)
+	ty := c.info.DisplayTypeOf(finder.found)
+	require.NotNil(t, ty, "no type recorded for %q", name)
+	return soltype.Print(ty), c.errs
+}
+
 // inferSources is the multi-file table harness (§3.6): several in-memory sources
 // keyed by file path, parsed into one combined module and inferred together. This
 // exercises the exact dep-graph-spanning-files path an on-disk fixture would, with

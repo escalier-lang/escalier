@@ -23,7 +23,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val a = &x
 					val f = fn () { x.v = 5 }
@@ -39,7 +39,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 			src: `
 				declare fn bump(x: &mut {v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val m = &mut x
 					val f = fn () { return x.v }
@@ -53,7 +53,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val a = &x
 					x.v = 5
@@ -68,7 +68,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 			src: `
 				declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val f = fn () { readWrite(&x, &mut x) }
 					f()
@@ -80,16 +80,16 @@ func TestClosureCapturedPlaces(t *testing.T) {
 			src: `
 				declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
 
-				fn g(x: &mut {v: number}) { readWrite(&x, &mut x) }
+				fn g(x: &mut {v: number}) -> undefined { readWrite(&x, &mut x) }
 			`,
-			want: []string{"4:47-4:53: cannot borrow 'x' as mutable while it is borrowed as immutable"},
+			want: []string{"4:60-4:66: cannot borrow 'x' as mutable while it is borrowed as immutable"},
 		},
 		// Inside the closure, the first call moves x and the second reads the moved value.
 		"CaptureMovedTwiceInsideClosure": {
 			src: `
 				declare fn take(x: {v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val x = {v: 1}
 					val f = fn () {
 						take(x)
@@ -104,7 +104,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 			src: `
 				declare fn take(x: {v: number}) -> undefined
 
-				fn g(x: {v: number}) {
+				fn g(x: {v: number}) -> undefined {
 					take(x)
 					take(x)
 				}
@@ -117,7 +117,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val a = &x
 					val f = fn () { readRead(&x, &x) }
@@ -130,7 +130,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 		// Calling a closure that writes x takes a mutable loan, which sits beside a live `&mut`.
 		"WriteThroughCaptureBesideLiveMutableBorrowOk": {
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val a = &mut x
 					val f = fn () { x.v = 5 }
@@ -146,7 +146,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 				declare fn take(x: {v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val x = {v: 1}
 					val f = fn () { readRead(&x, &x) }
 					take(x)
@@ -160,7 +160,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 			src: `
 				declare fn take(x: {v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val f = fn () { x.v = 5 }
 					take(x)
@@ -175,7 +175,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 				declare fn take(x: {v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val x = {v: 1}
 					val f = fn () { readRead(&x, &x) }
 					f()
@@ -189,7 +189,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val f = fn () { readRead(&x, &x) }
 					f()
@@ -204,7 +204,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val a = &x
 					val f = fn () { x.v = 5 }
@@ -219,7 +219,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 
 				declare fn call(f: fn () -> undefined) -> undefined
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val a = &x
 					val f = fn () { x.v = 5 }
@@ -234,7 +234,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val a = &x
 					val f = fn () { x.v = 5 }
@@ -248,7 +248,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val a = &x
 					val f = fn () { x.v = 5 }
@@ -266,7 +266,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 				declare fn take(x: {v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val x = {v: 1}
 					val f = fn () { readRead(&x, &x) }
 					val h = f
@@ -280,7 +280,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 		"ClosureArgumentHoldsItsLoanForTheCall": {
 			src: `
 				declare fn run(a: &{v: number}, f: fn () -> undefined) -> undefined
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val a = &x
 					run(a, fn () { x.v = 5 })
@@ -294,7 +294,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 
 				declare fn run(f: fn () -> undefined) -> undefined
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					run(fn () { x.v = 5 })
 					val a = &x
@@ -308,7 +308,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 			src: `
 				declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val f = fn () {
 						val h = fn () { readWrite(&x, &mut x) }
@@ -324,7 +324,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 			src: `
 				declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
 
-				fn g(x: &mut {v: number}) {
+				fn g(x: &mut {v: number}) -> undefined {
 					val f = fn () { readWrite(&x, &mut x) }
 					f()
 				}
@@ -336,7 +336,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 			src: `
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val a = &x
 					val f = fn () {
@@ -356,7 +356,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 				declare fn take(x: {v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val x = {v: 1}
 					val f = fn () {
 						val h = fn () { readRead(&x, &x) }
@@ -374,7 +374,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 				declare fn bump(x: &mut {v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val mut x = {v: 1}
 					val a = &x
 					val f = fn () { bump(&mut x) }
@@ -391,7 +391,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 				declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
 				declare fn take(x: {v: number}) -> undefined
 
-				fn g() {
+				fn g() -> undefined {
 					val x = {v: 1}
 					take(x)
 					val f = fn () { readRead(&x, &x) }
@@ -406,7 +406,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 		// Moving `p.a` leaves `p.b` in place, so a closure that reads only `p.b` reads nothing moved.
 		"ClosureCapturingAFieldDisjointFromAMovedField": {
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val p = {a: {x: 1}, b: {x: 2}}
 					val d = p.a
 					val f = fn () { return p.b.x }
@@ -419,7 +419,7 @@ func TestClosureCapturedPlaces(t *testing.T) {
 		// at each call.
 		"ClosureCapturingAFieldUnderAMovedField": {
 			src: `
-				fn g() {
+				fn g() -> undefined {
 					val p = {a: {x: 1}, b: {x: 2}}
 					val d = p.a
 					val f = fn () { return p.a.x }

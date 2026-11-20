@@ -300,3 +300,42 @@ func TestMethodSignatureOwnLifetime(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "<'a>(&self, &'a Flat, &Flat) -> &'a Flat", renderWritten(sig))
 }
+
+// TestClosureBindingSignature covers which `val` declarations ClosureBindingSignature
+// returns a signature for. Each case's source declares one `val`. expected is the rendered
+// signature, or "" when there is none.
+func TestClosureBindingSignature(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		expected string
+	}{
+		{name: "FunctionExpression", src: "val f = fn (x: number) -> number { return x }", expected: "(number) -> number"},
+		{name: "Annotated", src: "val f: fn (x: number) -> number = fn (x) { return x }", expected: ""},
+		{name: "NotAFunctionExpression", src: "val n = 5", expected: ""},
+		{name: "DestructuringPattern", src: "val {f} = {f: fn (x: number) -> number { return x }}", expected: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			info, decls := inferForSignatures(t, tt.src)
+			require.Len(t, decls, 1)
+			d, ok := decls[0].(*ast.VarDecl)
+			require.True(t, ok)
+			sig, ok := info.ClosureBindingSignature(d)
+			if tt.expected == "" {
+				require.False(t, ok)
+				return
+			}
+			require.True(t, ok)
+			require.Equal(t, tt.expected, renderWritten(sig))
+		})
+	}
+}
+
+// TestClosureBindingSignatureWithoutRecordedType asserts that ClosureBindingSignature
+// returns no signature from a table built by NewInfo, which records no types.
+func TestClosureBindingSignatureWithoutRecordedType(t *testing.T) {
+	_, decls := inferForSignatures(t, "val f = fn (x: number) -> number { return x }")
+	_, ok := NewInfo().ClosureBindingSignature(decls[0].(*ast.VarDecl))
+	require.False(t, ok)
+}
