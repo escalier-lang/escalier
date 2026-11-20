@@ -1,8 +1,6 @@
 import { expect, test, vi } from 'vitest';
 
 import {
-    MAX_ISSUE_URL_CHARS,
-    NEW_ISSUE_URL,
     crashIssueUrl,
     crashNotification,
     crashReportText,
@@ -11,6 +9,7 @@ import {
     panicNotification,
     showServerCrashes,
 } from './crash-notification';
+import { MAX_ISSUE_URL_CHARS, NEW_ISSUE_URL } from './issue-link';
 import type { PanicReport, ServerCrashEvent } from './lsp-client/client';
 import { MAX_PERMALINK_CHARS } from './permalink';
 
