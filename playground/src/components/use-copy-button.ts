@@ -21,25 +21,30 @@ export function useCopyButton(text: string): {
     label: string;
     copy: () => Promise<void>;
 } {
-    const [copyState, setCopyState] = useState<CopyState>('idle');
+    // Each press stores a new object, so the effect below runs again and the outcome of a
+    // second press shows for the full COPY_FEEDBACK_MS even when it matches the first.
+    const [outcome, setOutcome] = useState<{ state: CopyState }>({
+        state: 'idle',
+    });
 
-    // The outcome of a copy shows for a moment, so pressing the button again shows the
-    // outcome of that copy.
     useEffect(() => {
-        if (copyState === 'idle') return;
-        const timer = setTimeout(() => setCopyState('idle'), COPY_FEEDBACK_MS);
+        if (outcome.state === 'idle') return;
+        const timer = setTimeout(
+            () => setOutcome({ state: 'idle' }),
+            COPY_FEEDBACK_MS,
+        );
         return () => clearTimeout(timer);
-    }, [copyState]);
+    }, [outcome]);
 
     const copy = async () => {
         try {
             await navigator.clipboard.writeText(text);
-            setCopyState('copied');
+            setOutcome({ state: 'copied' });
         } catch {
             // The clipboard can refuse, as on a page served over plain http.
-            setCopyState('failed');
+            setOutcome({ state: 'failed' });
         }
     };
 
-    return { label: copyLabels[copyState], copy };
+    return { label: copyLabels[outcome.state], copy };
 }

@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import {
+    act,
+    cleanup,
+    fireEvent,
+    render,
+    screen,
+} from '@testing-library/react';
 import { afterEach, beforeAll, expect, test, vi } from 'vitest';
 
 import { crashIssueUrl } from '../crash-notification';
@@ -17,6 +23,7 @@ beforeAll(stubModalDialogs);
 afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    vi.useRealTimers();
 });
 
 test('shows the report and links to a new issue for it', () => {
@@ -61,6 +68,24 @@ test('the copy button goes back to "Copy report" two seconds after it shows "Cop
             { timeout: 3000 },
         ),
     ).toBeInTheDocument();
+});
+
+test('a second copy shows "Copied" for two seconds from the second press', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    vi.stubGlobal('navigator', {
+        clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
+    });
+    render(<CrashReportDialog report={report} onClose={() => {}} />);
+    const copyButton = screen.getByRole('button', { name: 'Copy report' });
+
+    await act(async () => fireEvent.click(copyButton));
+    await act(async () => vi.advanceTimersByTime(1500));
+    await act(async () => fireEvent.click(copyButton));
+    await act(async () => vi.advanceTimersByTime(1500));
+    expect(copyButton).toHaveTextContent('Copied');
+
+    await act(async () => vi.advanceTimersByTime(600));
+    expect(copyButton).toHaveTextContent('Copy report');
 });
 
 test('says so when the clipboard refuses', async () => {
