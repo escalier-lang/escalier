@@ -11,14 +11,13 @@ import { CrashReportDialog } from './components/crash-report-dialog';
 import { FileExplorer } from './components/file-explorer';
 import { Toast, ToastButton } from './components/toast';
 import { diagnosticsLanguageID } from './diagnostics-language';
-import type { CrashReport } from './editor-state';
+import type { CrashReport, TextPosition } from './editor-state';
 import { useEditorStore } from './editor-store';
 import type { BrowserFS } from './fs/browser-fs';
 import { languageID } from './language';
 import { collectProjectFiles } from './permalink';
 import {
     DIAGNOSTICS_TAB_PATH,
-    type DiagnosticLocation,
     diagnosticLocation,
     projectDiagnosticsText,
 } from './project-diagnostics';
@@ -297,7 +296,8 @@ export const Editor = ({
         );
 
         // A click on a line of the diagnostics tab opens the file the line names, on
-        // the same side. The model switch below then reveals the diagnostic. A drag
+        // the same side, with the tab set to reveal the diagnostic. The model switch
+        // below moves there. A drag
         // that selects text opens nothing, so the user can still copy a message.
         const openClickedDiagnostic =
             (
@@ -318,8 +318,15 @@ export const Editor = ({
                     model.getLineContent(lineNumber),
                 );
                 if (location === null) return;
-                pendingRevealRef.current = location;
-                dispatch({ type: 'openFile', path: location.path, side });
+                dispatch({
+                    type: 'openFile',
+                    path: location.path,
+                    side,
+                    revealAt: {
+                        lineNumber: location.line,
+                        column: location.column,
+                    },
+                });
             };
         const inputClickDisposable = inputEditor.onMouseUp(
             openClickedDiagnostic(inputEditor, 'left'),
@@ -339,28 +346,6 @@ export const Editor = ({
             outputEditorRef.current = null;
         };
     }, [dispatch]);
-
-    // The diagnostic a click on the diagnostics tab asked to see, until the editor that
-    // opens its file reveals it.
-    const pendingRevealRef = useRef<DiagnosticLocation | null>(null);
-
-    // Moves editor's cursor to the pending diagnostic and scrolls it into view, when the
-    // diagnostic is in the file at path, which editor has just switched to.
-    const revealPendingDiagnostic = useCallback(
-        (editor: monaco.editor.IStandaloneCodeEditor, path: string) => {
-            const location = pendingRevealRef.current;
-            if (location?.path !== path) return;
-            pendingRevealRef.current = null;
-            const position = {
-                lineNumber: location.line,
-                column: location.column,
-            };
-            editor.setPosition(position);
-            editor.revealPositionInCenter(position);
-            editor.focus();
-        },
-        [],
-    );
 
     // Switch input editor model when active tab changes or project is switched.
     // refreshKey changes on project switch (resetTabs), which disposes all
@@ -390,14 +375,12 @@ export const Editor = ({
         if (activeTab?.scrollPos) {
             editor.setScrollTop(activeTab.scrollPos);
         }
-        revealPendingDiagnostic(editor, activePath);
     }, [
         activePath,
         getOrCreateModel,
         activeTab?.scrollPos,
         editorOptionsFor,
         refreshKey,
-        revealPendingDiagnostic,
     ]);
 
     // Switch output editor model when active right tab changes
@@ -416,14 +399,31 @@ export const Editor = ({
         if (activeRightTab?.scrollPos) {
             editor.setScrollTop(activeRightTab.scrollPos);
         }
-        revealPendingDiagnostic(editor, activeRightPath);
     }, [
         activeRightPath,
         getOrCreateModel,
         activeRightTab?.scrollPos,
         editorOptionsFor,
-        revealPendingDiagnostic,
     ]);
+
+    // Moves each editor to its active tab's revealAt, then clears it. These run after the
+    // model switches above, in the same commit, so the editor shows the tab's file by
+    // then. Clearing revealAt leaves the model switches alone, so the tab's scroll
+    // position isn't restored over the reveal.
+    const leftRevealAt = activeTab?.revealAt;
+    useEffect(() => {
+        const editor = inputEditorRef.current;
+        if (!editor || !activePath || !leftRevealAt) return;
+        revealPosition(editor, leftRevealAt);
+        dispatch({ type: 'revealed', side: 'left', path: activePath });
+    }, [activePath, leftRevealAt, dispatch]);
+    const rightRevealAt = activeRightTab?.revealAt;
+    useEffect(() => {
+        const editor = outputEditorRef.current;
+        if (!editor || !activeRightPath || !rightRevealAt) return;
+        revealPosition(editor, rightRevealAt);
+        dispatch({ type: 'revealed', side: 'right', path: activeRightPath });
+    }, [activeRightPath, rightRevealAt, dispatch]);
 
     // The language server checks the project once an Escalier file opens, and a file opens
     // when the editor makes a model for it. A model for every Escalier tab gets the
@@ -701,6 +701,16 @@ export const Editor = ({
         </div>
     );
 };
+
+/** Puts editor's cursor at position, scrolls it to the centre and focuses editor. */
+function revealPosition(
+    editor: monaco.editor.IStandaloneCodeEditor,
+    position: TextPosition,
+): void {
+    editor.setPosition(position);
+    editor.revealPositionInCenter(position);
+    editor.focus();
+}
 
 /**
  * Returns the path of the project's first Escalier file in path order, preferring one under

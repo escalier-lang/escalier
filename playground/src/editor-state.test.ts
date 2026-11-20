@@ -19,7 +19,82 @@ function stateWith(
 }
 
 describe('editorReducer', () => {
+    describe('revealed', () => {
+        test('clears revealAt from the tab and keeps the active tab', () => {
+            const before = {
+                ...initialEditorState,
+                rightTabs: [
+                    { path: '/lib/a.esc' },
+                    {
+                        path: '/lib/b.esc',
+                        scrollPos: 40,
+                        revealAt: { lineNumber: 3, column: 7 },
+                    },
+                ],
+                activeRightTabIndex: 1,
+            };
+            const state = editorReducer(before, {
+                type: 'revealed',
+                side: 'right',
+                path: '/lib/b.esc',
+            });
+            expect(state.rightTabs).toEqual([
+                { path: '/lib/a.esc' },
+                { path: '/lib/b.esc', scrollPos: 40 },
+            ]);
+            expect(state.activeRightTabIndex).toBe(1);
+        });
+
+        test('returns the same state when nothing waits to be revealed', () => {
+            expect(
+                editorReducer(initialEditorState, {
+                    type: 'revealed',
+                    side: 'left',
+                    path: '/bin/main.esc',
+                }),
+            ).toBe(initialEditorState);
+        });
+    });
+
     describe('openFile', () => {
+        test('sets revealAt on a new tab', () => {
+            const state = editorReducer(initialEditorState, {
+                type: 'openFile',
+                path: '/lib/a.esc',
+                side: 'left',
+                revealAt: { lineNumber: 3, column: 7 },
+            });
+            expect(state.leftTabs.at(-1)).toEqual({
+                path: '/lib/a.esc',
+                revealAt: { lineNumber: 3, column: 7 },
+            });
+        });
+
+        test('sets revealAt on an open tab and activates it', () => {
+            const state = editorReducer(
+                {
+                    ...initialEditorState,
+                    leftTabs: [
+                        { path: '/lib/a.esc', scrollPos: 40 },
+                        { path: '/lib/b.esc' },
+                    ],
+                    activeLeftTabIndex: 1,
+                },
+                {
+                    type: 'openFile',
+                    path: '/lib/a.esc',
+                    side: 'left',
+                    revealAt: { lineNumber: 3, column: 7 },
+                },
+            );
+            expect(state.leftTabs[0]).toEqual({
+                path: '/lib/a.esc',
+                scrollPos: 40,
+                revealAt: { lineNumber: 3, column: 7 },
+            });
+            expect(state.activeLeftTabIndex).toBe(0);
+        });
+
         test('opens a new tab and activates it', () => {
             const state = stateWith(['/bin/main.esc']);
             const next = editorReducer(state, {

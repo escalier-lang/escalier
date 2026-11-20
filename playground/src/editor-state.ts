@@ -15,9 +15,17 @@ export type Notification = {
     crashReport?: CrashReport;
 };
 
+/** A place in a file: a line and a column that count from 1, as Monaco counts them. */
+export type TextPosition = { lineNumber: number; column: number };
+
 export type Tab = {
     path: string;
     scrollPos?: number;
+    /**
+     * Where the editor puts the cursor and scrolls to when it next shows the tab. The
+     * editor clears it with a revealed action once it has moved there.
+     */
+    revealAt?: TextPosition;
 };
 
 export type Side = 'left' | 'right';
@@ -51,7 +59,15 @@ export type EditorState = {
 };
 
 export type EditorAction =
-    | { type: 'openFile'; path: string; side?: Side; scrollPos?: number }
+    | {
+          type: 'openFile';
+          path: string;
+          side?: Side;
+          scrollPos?: number;
+          revealAt?: TextPosition;
+      }
+    /** Clears the revealAt of the tab for path on side. */
+    | { type: 'revealed'; side: Side; path: string }
     | { type: 'closeTab'; side: Side; index: number }
     | { type: 'setActiveTab'; side: Side; index: number }
     | { type: 'setFocusedSide'; side: Side }
@@ -101,14 +117,44 @@ export function editorReducer(
                 (tab) => tab.path === action.path,
             );
             if (existingIndex !== -1) {
-                return setTabsForSide(state, side, tabs, existingIndex);
+                const { revealAt } = action;
+                const updated =
+                    revealAt === undefined
+                        ? tabs
+                        : tabs.map((tab, i) =>
+                              i === existingIndex ? { ...tab, revealAt } : tab,
+                          );
+                return setTabsForSide(state, side, updated, existingIndex);
             }
             const newTab: Tab = { path: action.path };
             if (action.scrollPos !== undefined) {
                 newTab.scrollPos = action.scrollPos;
             }
+            if (action.revealAt !== undefined) {
+                newTab.revealAt = action.revealAt;
+            }
             const newTabs = [...tabs, newTab];
             return setTabsForSide(state, side, newTabs, newTabs.length - 1);
+        }
+
+        case 'revealed': {
+            const tabs = getTabsForSide(state, action.side);
+            if (!tabs.some((tab) => tab.path === action.path && tab.revealAt)) {
+                return state;
+            }
+            const updated = tabs.map((tab) => {
+                if (tab.path !== action.path) return tab;
+                const { revealAt: _done, ...rest } = tab;
+                return rest;
+            });
+            return setTabsForSide(
+                state,
+                action.side,
+                updated,
+                action.side === 'left'
+                    ? state.activeLeftTabIndex
+                    : state.activeRightTabIndex,
+            );
         }
 
         case 'closeTab': {

@@ -574,6 +574,10 @@ describe('clicking a diagnostic', () => {
             position,
         );
         expect(inputEditor.focus).toHaveBeenCalled();
+        // The editor clears the reveal once it has moved there.
+        expect(useEditorStore.getState().leftTabs[1]).toEqual({
+            path: '/lib/index.esc',
+        });
     });
 
     test('opens nothing after a drag that selects text', () => {
