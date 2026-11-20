@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { type ShownError, environmentText } from './bug-report';
+import { type ShownError, playgroundEnvironment } from './bug-report';
 import { capturePermalink } from './capture-permalink';
 import { BugReportDialog } from './components/bug-report-dialog';
 import { MessageDialog } from './components/message-dialog';
@@ -329,10 +329,7 @@ export const Playground = ({
                     capturePermalink={captureBugReportLink}
                     errors={bugReport.errors}
                     crashReport={bugReport.crashReport}
-                    environment={environmentText(
-                        navigator.userAgent,
-                        import.meta.env.VITE_PLAYGROUND_COMMIT,
-                    )}
+                    environment={playgroundEnvironment()}
                     onClose={() => setBugReport(null)}
                 />
             )}

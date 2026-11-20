@@ -57,6 +57,14 @@ export function environmentText(
     return `Browser: ${userAgent}\nPlayground build: ${commit ?? 'unknown'}`;
 }
 
+/** Returns environmentText for this browser and the build the page was served from. */
+export function playgroundEnvironment(): string {
+    return environmentText(
+        navigator.userAgent,
+        import.meta.env.VITE_PLAYGROUND_COMMIT,
+    );
+}
+
 /**
  * Returns errors as `path:line:column: message` lines, sorted by path, line and column,
  * or an empty string when there are none.
