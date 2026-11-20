@@ -174,6 +174,7 @@ test('crashIssueUrl keeps a playground link that leaves room for the report', ()
     expect(fields['playground-link']).toBe(link);
     expect(fields['crash-report']).toContain('x'.repeat(1500));
 });
+
 /** Returns a Go stack trace whose panic happened in fn, on goroutine number goroutine. */
 function goStack(fn: string, goroutine: number): string {
     return [
