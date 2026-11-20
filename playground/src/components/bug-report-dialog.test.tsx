@@ -75,12 +75,13 @@ test('fills the issue link in with the description and the project link', async 
     ).toBeInTheDocument();
 });
 
-test('waits for the project link before it offers the issue', () => {
+test('waits for the project link before it offers the issue or the copy', () => {
     renderDialog(() => new Promise(() => {}));
 
     expect(
         screen.getByRole('button', { name: 'Open GitHub issue' }),
     ).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Copy report' })).toBeDisabled();
     expect(
         screen.getByText('Making a link to the project…'),
     ).toBeInTheDocument();

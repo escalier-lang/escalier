@@ -156,6 +156,8 @@ export const BugReportDialog = ({
                     type="button"
                     className={`${dialogStyles.button} ${dialogStyles.secondaryButton}`}
                     onClick={copy}
+                    // A report copied now would leave out the link the user asked for.
+                    disabled={includeLink && link.kind === 'pending'}
                 >
                     {copyLabel}
                 </button>
