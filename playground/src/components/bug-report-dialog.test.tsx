@@ -150,6 +150,34 @@ test('copies the report as Markdown', async () => {
     );
 });
 
+test('says the issue form opened once the user opens it, and Done closes the dialog', async () => {
+    const onClose = renderDialog(() => Promise.resolve(link));
+    fireEvent.change(screen.getByLabelText('What happened'), {
+        target: { value: 'Hover is blank.' },
+    });
+    const issueLink = await screen.findByRole('link', {
+        name: 'Open GitHub issue',
+    });
+    const href = issueLink.getAttribute('href');
+
+    fireEvent.click(issueLink);
+
+    expect(screen.getByRole('dialog')).toHaveAccessibleName(
+        'Issue form opened',
+    );
+    expect(screen.getByRole('dialog')).toHaveAccessibleDescription(
+        'The GitHub issue form opened in a new tab with your report filled in. Check it there and submit it to file the bug.',
+    );
+    expect(
+        screen.getByRole('link', { name: 'Open the form again' }),
+    ).toHaveAttribute('href', href);
+    const done = screen.getByRole('button', { name: 'Done' });
+    expect(done).toHaveFocus();
+
+    fireEvent.click(done);
+    expect(onClose).toHaveBeenCalledOnce();
+});
+
 test('Cancel closes the dialog', () => {
     const onClose = renderDialog(() => Promise.resolve(link));
 

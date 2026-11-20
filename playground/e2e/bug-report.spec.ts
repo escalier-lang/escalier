@@ -42,6 +42,17 @@ test('Report a bug fills in an issue with the errors, a project link and the bui
         /^Browser: .+\nPlayground build: [0-9a-f]{40}$/,
     );
 
-    await dialog.getByRole('button', { name: 'Cancel' }).click();
-    await expect(dialog).toBeHidden();
+    // The form opens in a new tab, which gets an empty page in place of GitHub's.
+    await page
+        .context()
+        .route('https://github.com/**', (route) => route.fulfill({ body: '' }));
+    const popup = page.waitForEvent('popup');
+    await issueLink.click();
+    expect((await popup).url()).toBe(href);
+
+    // The playground's tab stays as it was, so the dialog says the form opened.
+    const opened = page.getByRole('dialog', { name: 'Issue form opened' });
+    await expect(opened).toBeVisible();
+    await opened.getByRole('button', { name: 'Done' }).click();
+    await expect(opened).toBeHidden();
 });
