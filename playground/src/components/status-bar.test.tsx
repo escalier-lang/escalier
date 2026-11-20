@@ -1,20 +1,41 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test } from 'vitest';
 
+import { initialEditorState } from '../editor-state';
+import { useEditorStore } from '../editor-store';
+import {
+    DIAGNOSTICS_TAB_PATH,
+    type DiagnosticSeverity,
+    type ProjectDiagnostic,
+} from '../project-diagnostics';
+import { useProjectDiagnosticsStore } from '../project-diagnostics-store';
 import { StatusBar } from './status-bar';
+
+function diagnostic(severity: DiagnosticSeverity): ProjectDiagnostic {
+    return { path: '/lib/a.esc', line: 1, column: 1, severity, message: 'bad' };
+}
+
+beforeEach(() => {
+    useEditorStore.setState({ ...initialEditorState });
+    useProjectDiagnosticsStore.setState({ diagnostics: {} });
+});
 
 afterEach(cleanup);
 
-test('shows the error and warning counts and asks for the list when clicked', () => {
-    const onShowDiagnostics = vi.fn();
-    render(
-        <StatusBar
-            counts={{ errors: 3, warnings: 1 }}
-            onShowDiagnostics={onShowDiagnostics}
-        />,
-    );
+test("shows the project's error and warning counts and opens the diagnostics tab", () => {
+    useProjectDiagnosticsStore.setState({
+        diagnostics: {
+            '/lib/a.esc': [
+                diagnostic('error'),
+                diagnostic('error'),
+                diagnostic('warning'),
+            ],
+            '/lib/b.esc': [diagnostic('error'), diagnostic('info')],
+        },
+    });
+    render(<StatusBar />);
 
     const button = screen.getByRole('button', {
         name: '3 errors, 1 warning',
@@ -22,16 +43,13 @@ test('shows the error and warning counts and asks for the list when clicked', ()
     expect(button).toHaveTextContent('31');
     fireEvent.click(button);
 
-    expect(onShowDiagnostics).toHaveBeenCalledOnce();
+    const { leftTabs, activeLeftTabIndex } = useEditorStore.getState();
+    expect(leftTabs.map((tab) => tab.path)).toContain(DIAGNOSTICS_TAB_PATH);
+    expect(activeLeftTabIndex).toBe(leftTabs.length - 1);
 });
 
 test('names the counts when there are none', () => {
-    render(
-        <StatusBar
-            counts={{ errors: 0, warnings: 0 }}
-            onShowDiagnostics={() => {}}
-        />,
-    );
+    render(<StatusBar />);
 
     expect(
         screen.getByRole('button', { name: '0 errors, 0 warnings' }),

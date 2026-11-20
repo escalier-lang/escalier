@@ -1,12 +1,13 @@
-import { type DiagnosticCounts, countOf } from '../project-diagnostics';
-import styles from './status-bar.module.css';
+import { useMemo } from 'react';
 
-type StatusBarProps = {
-    /** How many errors and warnings the language server reports across the project. */
-    counts: DiagnosticCounts;
-    /** Called when the user asks to see the list of diagnostics. */
-    onShowDiagnostics: () => void;
-};
+import { useEditorStore } from '../editor-store';
+import {
+    DIAGNOSTICS_TAB_PATH,
+    countOf,
+    diagnosticCounts,
+} from '../project-diagnostics';
+import { useProjectDiagnosticsStore } from '../project-diagnostics-store';
+import styles from './status-bar.module.css';
 
 /** A circle with a cross in it, the error icon. */
 const ErrorIcon = () => (
@@ -41,30 +42,40 @@ const WarningIcon = () => (
 );
 
 /**
- * The bar along the bottom of the playground. It shows the project's error and warning
- * counts, which open the diagnostics tab when clicked.
+ * The bar along the bottom of the playground. It shows the error and warning counts of
+ * the project's diagnostics, which open the diagnostics tab when clicked.
  */
-export const StatusBar = ({ counts, onShowDiagnostics }: StatusBarProps) => (
-    <footer className={styles.statusBar}>
-        <button
-            type="button"
-            className={styles.item}
-            onClick={onShowDiagnostics}
-            aria-label={`${countOf(counts.errors, 'error')}, ${countOf(counts.warnings, 'warning')}`}
-            title="Show all diagnostics"
-        >
-            <span
-                className={`${styles.count} ${counts.errors > 0 ? styles.hasErrors : ''}`}
+export const StatusBar = () => {
+    const diagnostics = useProjectDiagnosticsStore(
+        (state) => state.diagnostics,
+    );
+    const counts = useMemo(() => diagnosticCounts(diagnostics), [diagnostics]);
+    const dispatch = useEditorStore((state) => state.dispatch);
+
+    return (
+        <footer className={styles.statusBar}>
+            <button
+                type="button"
+                className={styles.item}
+                onClick={() =>
+                    dispatch({ type: 'openFile', path: DIAGNOSTICS_TAB_PATH })
+                }
+                aria-label={`${countOf(counts.errors, 'error')}, ${countOf(counts.warnings, 'warning')}`}
+                title="Show all diagnostics"
             >
-                <ErrorIcon />
-                {counts.errors}
-            </span>
-            <span
-                className={`${styles.count} ${counts.warnings > 0 ? styles.hasWarnings : ''}`}
-            >
-                <WarningIcon />
-                {counts.warnings}
-            </span>
-        </button>
-    </footer>
-);
+                <span
+                    className={`${styles.count} ${counts.errors > 0 ? styles.hasErrors : ''}`}
+                >
+                    <ErrorIcon />
+                    {counts.errors}
+                </span>
+                <span
+                    className={`${styles.count} ${counts.warnings > 0 ? styles.hasWarnings : ''}`}
+                >
+                    <WarningIcon />
+                    {counts.warnings}
+                </span>
+            </button>
+        </footer>
+    );
+};
