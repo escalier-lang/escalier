@@ -12,7 +12,12 @@ import { CrashReportDialog } from './components/crash-report-dialog';
 import { FileExplorer } from './components/file-explorer';
 import { Toast, ToastButton } from './components/toast';
 import { diagnosticsLanguageID } from './diagnostics-language';
-import type { CrashReport, Side, TextPosition } from './editor-state';
+import {
+    type CrashReport,
+    type Side,
+    type TextPosition,
+    sideBeside,
+} from './editor-state';
 import { useEditorStore } from './editor-store';
 import type { BrowserFS } from './fs/browser-fs';
 import { languageID } from './language';
@@ -364,10 +369,9 @@ export const Editor = ({
             dispatch({ type: 'setFocusedSide', side: 'right' }),
         );
 
-        // A click on a line of the diagnostics tab opens the file the line names, on
-        // the same side, with the tab set to reveal the diagnostic. The model switch
-        // below moves there. A drag
-        // that selects text opens nothing, so the user can still copy a message.
+        // A click on a line of the diagnostics tab opens the file the line names, with
+        // the tab set to reveal the diagnostic. The model switch below moves there. A
+        // drag that selects text opens nothing, so the user can still copy a message.
         const openClickedDiagnostic =
             (editor: monaco.editor.IStandaloneCodeEditor, side: Side) =>
             (e: monaco.editor.IEditorMouseEvent) => {
@@ -387,7 +391,13 @@ export const Editor = ({
                 dispatch({
                     type: 'openFile',
                     path: location.path,
-                    side,
+                    // The file opens in the other pane so the diagnostics tab stays
+                    // in view beside it.
+                    side: sideBeside(
+                        useEditorStore.getState(),
+                        location.path,
+                        side,
+                    ),
                     revealAt: {
                         lineNumber: location.line,
                         column: location.column,

@@ -68,9 +68,11 @@ test('a permalink reopens the Diagnostics tab, filled from a fresh check', async
 
     const reopened = await context.newPage();
     await reopened.goto(page.url());
+    // The tabs show once the reopened page has started the language server, which
+    // can take as long as a first compile on a loaded runner.
     await expect(
         reopened.getByRole('tab', { name: /^Diagnostics/ }),
-    ).toHaveAttribute('aria-selected', 'true');
+    ).toHaveAttribute('aria-selected', 'true', { timeout: COMPILE_TIMEOUT_MS });
     // The link holds the edited source but none of the diagnostics. The reopened page
     // checks the project and lists the error again.
     await expect(
@@ -83,7 +85,7 @@ test('a permalink reopens the Diagnostics tab, filled from a fresh check', async
     );
 });
 
-test('clicking a diagnostic opens its file with the cursor at the diagnostic', async ({
+test('clicking a diagnostic opens its file beside the Diagnostics tab with the cursor at the diagnostic', async ({
     page,
 }) => {
     await loadPlayground(page);
@@ -109,13 +111,21 @@ test('clicking a diagnostic opens its file with the cursor at the diagnostic', a
         .filter({ hasText: /cannot\sconstrain/ })
         .click();
 
+    // The file opens in the right pane, and the Diagnostics tab stays open on the left.
     await expect(
-        page.getByRole('tab', { name: /^index\.esc/ }),
+        page
+            .getByTestId('output-tablist')
+            .getByRole('tab', { name: /^index\.esc/ }),
+    ).toHaveAttribute('aria-selected', 'true');
+    await expect(
+        page
+            .getByTestId('input-tablist')
+            .getByRole('tab', { name: /^Diagnostics/ }),
     ).toHaveAttribute('aria-selected', 'true');
     // The cursor sits where the diagnostic starts, at the string literal, so typed
     // text lands just before it.
     await page.keyboard.insertText('X');
-    await expect(inputPanel.locator('.view-lines')).toContainText(
+    await expect(page.locator('#output-panel .view-lines')).toContainText(
         /export\sval\sbad:\snumber\s=\sX"a"/,
     );
 });

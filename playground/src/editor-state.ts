@@ -105,6 +105,17 @@ function setTabsForSide(
         : { ...state, rightTabs: tabs, activeRightTabIndex: activeIndex };
 }
 
+/**
+ * Returns the side to open path on so that it shows beside side's active tab. That is
+ * the other side, unless side is the only one with a tab for path.
+ */
+export function sideBeside(state: EditorState, path: string, side: Side): Side {
+    const other: Side = side === 'left' ? 'right' : 'left';
+    const hasPath = (s: Side) =>
+        getTabsForSide(state, s).some((tab) => tab.path === path);
+    return hasPath(side) && !hasPath(other) ? side : other;
+}
+
 export function editorReducer(
     state: EditorState,
     action: EditorAction,
