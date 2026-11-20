@@ -30,3 +30,8 @@
     margin: 0 0 12px 22px;
     opacity: 0.8;
 }
+
+/* Back leads away from the actions, so it sits apart from them at the start of the row. */
+.back {
+    margin-inline-end: auto;
+}

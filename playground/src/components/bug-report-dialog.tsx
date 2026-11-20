@@ -137,7 +137,7 @@ export const BugReportDialog = ({
                             open the form again. */}
                         <button
                             type="button"
-                            className={`${dialogStyles.button} ${dialogStyles.secondaryButton}`}
+                            className={`${dialogStyles.button} ${dialogStyles.secondaryButton} ${styles.back}`}
                             onClick={() => setIssueOpened(false)}
                         >
                             Back
