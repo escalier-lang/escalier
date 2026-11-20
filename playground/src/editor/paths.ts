@@ -1,8 +1,8 @@
-import { diagnosticsLanguageID } from '../diagnostics/diagnostics-language';
-import { DIAGNOSTICS_TAB_PATH } from '../diagnostics/project-diagnostics';
-import type { BrowserFS } from '../fs/browser-fs';
-import { languageID } from '../language/language';
-import { collectProjectFiles } from '../project/permalink';
+import { diagnosticsLanguageID } from '#diagnostics/diagnostics-language';
+import { DIAGNOSTICS_TAB_PATH } from '#diagnostics/project-diagnostics';
+import type { BrowserFS } from '#fs/browser-fs';
+import { languageID } from '#language/language';
+import { collectProjectFiles } from '#project/permalink';
 
 /** Returns the file name at the end of path. */
 export function displayName(path: string): string {

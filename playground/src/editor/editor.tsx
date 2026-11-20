@@ -7,17 +7,17 @@ import {
     useState,
 } from 'react';
 
-import { CrashReportDialog } from '../components/crash-report-dialog';
-import { FileExplorer } from '../components/file-explorer';
-import { Toast, ToastButton } from '../components/toast';
+import { CrashReportDialog } from '#components/crash-report-dialog';
+import { FileExplorer } from '#components/file-explorer';
+import { Toast, ToastButton } from '#components/toast';
 import {
     DIAGNOSTICS_TAB_PATH,
     diagnosticLocation,
     projectDiagnosticsText,
-} from '../diagnostics/project-diagnostics';
-import { useProjectDiagnosticsStore } from '../diagnostics/project-diagnostics-store';
-import type { BrowserFS } from '../fs/browser-fs';
-import { monacoThemeName, useThemeStore } from '../theme/theme';
+} from '#diagnostics/project-diagnostics';
+import { useProjectDiagnosticsStore } from '#diagnostics/project-diagnostics-store';
+import type { BrowserFS } from '#fs/browser-fs';
+import { monacoThemeName, useThemeStore } from '#theme/theme';
 import {
     type CrashReport,
     type Side,
@@ -335,7 +335,7 @@ export const Editor = ({
         ]);
         if (watchedPaths.size === 0) return;
 
-        const listener = (event: import('../fs/fs-events').FSEvent) => {
+        const listener = (event: import('#fs/fs-events').FSEvent) => {
             if (
                 (event.type === 'change' || event.type === 'create') &&
                 watchedPaths.has(event.path)

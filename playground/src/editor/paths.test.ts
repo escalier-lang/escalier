@@ -2,9 +2,9 @@ import { describe, expect, test, vi } from 'vitest';
 
 vi.mock('monaco-editor-core');
 // Mock the language module to avoid Monaco language registration side effects.
-vi.mock('../language/language', () => ({ languageID: 'escalier' }));
+vi.mock('#language/language', () => ({ languageID: 'escalier' }));
 
-import { DIAGNOSTICS_TAB_PATH } from '../diagnostics/project-diagnostics';
+import { DIAGNOSTICS_TAB_PATH } from '#diagnostics/project-diagnostics';
 import { displayName, languageForPath } from './paths';
 
 describe('languageForPath', () => {

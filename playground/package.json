@@ -3,6 +3,9 @@
     "private": true,
     "version": "0.0.0",
     "type": "module",
+    "imports": {
+        "#*": "./src/*"
+    },
     "scripts": {
         "dev": "node scripts/copy-files.js && APP_ENV=dev vite",
         "build:dev": "node scripts/copy-files.js && tsc -b && APP_ENV=dev vite build",

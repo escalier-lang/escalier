@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-import type { FSEventEmitter } from '../fs/fs-events';
+import type { FSEventEmitter } from '#fs/fs-events';
 import {
     type ProjectDiagnostics,
     type ProjectDiagnosticsAction,

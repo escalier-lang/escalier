@@ -1,10 +1,6 @@
-import type { CrashReport, Notification } from '../editor/editor-state';
-import type {
-    Client,
-    PanicReport,
-    ServerCrashEvent,
-} from '../lsp-client/client';
-import { MAX_PERMALINK_CHARS } from '../project/permalink';
+import type { CrashReport, Notification } from '#editor/editor-state';
+import type { Client, PanicReport, ServerCrashEvent } from '#lsp-client/client';
+import { MAX_PERMALINK_CHARS } from '#project/permalink';
 import { LINK_LEFT_OUT_NOTE } from './bug-report';
 import { type FieldCut, bugFormUrl, issueTitle } from './issue-link';
 

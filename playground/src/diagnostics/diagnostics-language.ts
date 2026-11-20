@@ -1,6 +1,6 @@
 import * as monaco from 'monaco-editor-core';
 
-import type { Theme } from '../theme/theme';
+import type { Theme } from '#theme/theme';
 
 /** The Monaco language of the diagnostics tab, which colours each line's severity. */
 export const diagnosticsLanguageID = 'escalier-diagnostics';
