@@ -1,25 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef } from 'react';
 
 import { crashIssueUrl, crashReportText } from '../crash-notification';
 import type { CrashReport } from '../editor-state';
 import styles from './crash-report-dialog.module.css';
+import { useCopyButton } from './use-copy-button';
 import { useModalDialog } from './use-modal-dialog';
 
 type CrashReportDialogProps = {
     report: CrashReport;
     onClose: () => void;
-};
-
-/** What the copy button says, which changes after the user presses it. */
-type CopyState = 'idle' | 'copied' | 'failed';
-
-/** How long the copy button shows the outcome of a copy before it reads as before. */
-const COPY_FEEDBACK_MS = 2000;
-
-const copyLabels: Record<CopyState, string> = {
-    idle: 'Copy report',
-    copied: 'Copied',
-    failed: 'Copy failed. Select the text instead.',
 };
 
 /**
@@ -32,26 +21,8 @@ export const CrashReportDialog = ({
 }: CrashReportDialogProps) => {
     const copyRef = useRef<HTMLButtonElement>(null);
     const { dialogRef, onBackdropClick } = useModalDialog(onClose, copyRef);
-    const [copyState, setCopyState] = useState<CopyState>('idle');
     const text = crashReportText(report);
-
-    // The outcome of a copy shows for a moment, so pressing the button again shows the
-    // outcome of that copy.
-    useEffect(() => {
-        if (copyState === 'idle') return;
-        const timer = setTimeout(() => setCopyState('idle'), COPY_FEEDBACK_MS);
-        return () => clearTimeout(timer);
-    }, [copyState]);
-
-    const copy = async () => {
-        try {
-            await navigator.clipboard.writeText(text);
-            setCopyState('copied');
-        } catch {
-            // The clipboard can refuse, as on a page served over plain http.
-            setCopyState('failed');
-        }
-    };
+    const { label: copyLabel, copy } = useCopyButton(text);
 
     return (
         <dialog
@@ -98,7 +69,7 @@ export const CrashReportDialog = ({
                     className={`${styles.button} ${styles.primaryButton}`}
                     onClick={copy}
                 >
-                    {copyLabels[copyState]}
+                    {copyLabel}
                 </button>
             </div>
         </dialog>

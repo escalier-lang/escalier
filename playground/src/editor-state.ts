@@ -37,6 +37,11 @@ export type EditorState = {
     focusedSide: Side;
     notification: Notification | null;
     /**
+     * The crash report of the latest crash or panic toast since the project loaded, kept
+     * after the toast is dismissed, or null when none has shown.
+     */
+    lastCrashReport: CrashReport | null;
+    /**
      * Incremented by resetTabs when the user switches projects. This causes
      * the editor to dispose all existing Monaco models so they get recreated
      * with fresh content from BrowserFS, rather than showing stale content
@@ -65,6 +70,7 @@ export const initialEditorState: EditorState = {
     activeRightTabIndex: null,
     focusedSide: 'left',
     notification: null,
+    lastCrashReport: null,
     refreshKey: 0,
 };
 
@@ -216,6 +222,8 @@ export function editorReducer(
                 rightTabs: [],
                 activeRightTabIndex: null,
                 focusedSide: 'left',
+                // A crash in the previous project says nothing about this one.
+                lastCrashReport: null,
                 refreshKey: state.refreshKey + 1,
             };
         }
@@ -235,7 +243,12 @@ export function editorReducer(
         }
 
         case 'showNotification': {
-            return { ...state, notification: action.notification };
+            return {
+                ...state,
+                notification: action.notification,
+                lastCrashReport:
+                    action.notification.crashReport ?? state.lastCrashReport,
+            };
         }
 
         case 'dismissNotification': {

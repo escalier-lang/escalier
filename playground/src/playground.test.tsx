@@ -15,6 +15,8 @@ vi.mock('monaco-editor-core');
 vi.mock('./language', () => ({ languageID: 'escalier' }));
 vi.mock('./capture-permalink', () => ({ capturePermalink: vi.fn() }));
 
+import * as monaco from 'monaco-editor-core';
+
 import { capturePermalink } from './capture-permalink';
 import { stubModalDialogs } from './components/dialog-stub';
 import { initialEditorState } from './editor-state';
@@ -169,6 +171,48 @@ describe('Playground', () => {
         );
         expect(window.location.hash).toBe('');
         expect(usePlaygroundStore.getState().initialCompileDone).toBe(false);
+    });
+
+    test('Report a bug opens a report with the errors and the latest crash', async () => {
+        vi.mocked(capturePermalink).mockResolvedValue(
+            `${window.location.origin}/#project=abc`,
+        );
+        vi.mocked(monaco.editor.getModelMarkers).mockReturnValue([
+            {
+                resource: { path: '/lib/index.esc' },
+                severity: monaco.MarkerSeverity.Error,
+                message: 'bad',
+                startLineNumber: 1,
+                startColumn: 2,
+            },
+        ] as unknown as monaco.editor.IMarker[]);
+        useEditorStore.setState({
+            leftTabs: [{ path: '/lib/index.esc' }],
+            lastCrashReport: { headline: 'panic: boom', text: 'panic: boom' },
+        });
+        renderPlayground();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Report a bug' }));
+
+        expect(
+            await screen.findByRole('dialog', { name: 'Report a bug' }),
+        ).toHaveTextContent(
+            'The report also holds 1 error shown in the open files, the latest crash report and your browser and the playground build.',
+        );
+        const issueLink = await screen.findByRole('link', {
+            name: 'Open GitHub issue',
+        });
+        const fields = new URL(issueLink.getAttribute('href') ?? '')
+            .searchParams;
+        expect(fields.get('errors')).toBe('/lib/index.esc:1:2: bad');
+        expect(fields.get('environment')).toMatch(
+            /^Browser: .+\nPlayground build: unknown$/,
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+        expect(
+            screen.queryByRole('dialog', { name: 'Report a bug' }),
+        ).not.toBeInTheDocument();
     });
 
     test('restored tabs show without waiting for the compile', () => {
