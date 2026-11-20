@@ -1,10 +1,10 @@
 import * as monaco from 'monaco-editor-core';
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 
 vi.mock('monaco-editor-core');
 
-import { capturePermalink, fileTabsLayout } from './capture-permalink';
-import { type Tab, type TabLayout, initialEditorState } from './editor-state';
+import { capturePermalink } from './capture-permalink';
+import { initialEditorState } from './editor-state';
 import { useEditorStore } from './editor-store';
 import { BrowserFS } from './fs/browser-fs';
 import { decodeSnapshot, snapshotParam } from './permalink';
@@ -52,50 +52,33 @@ test("captures the project with the editor's text and the open tabs", async () =
     });
 });
 
-describe('fileTabsLayout', () => {
-    const tab = (path: string) => ({ path });
-    const a = tab('/lib/a.esc');
-    const b = tab('/lib/b.esc');
-    const diagnostics = tab(DIAGNOSTICS_TAB_PATH);
+test('records the diagnostics tab by its path and none of its diagnostics', async () => {
+    const fs = new BrowserFS({});
+    writeProjectFiles(fs, [
+        { path: '/lib/index.esc', content: 'export val x = 1' },
+    ]);
+    // The editor's model for the tab holds the diagnostics it shows.
+    vi.mocked(monaco.editor.getModel).mockImplementation(
+        (uri) =>
+            (String(uri) === `file://${DIAGNOSTICS_TAB_PATH}`
+                ? { getValue: () => '/lib/index.esc:1:1: error: bad\n' }
+                : null) as ReturnType<typeof monaco.editor.getModel>,
+    );
+    useEditorStore.setState({
+        ...initialEditorState,
+        leftTabs: [{ path: '/lib/index.esc' }, { path: DIAGNOSTICS_TAB_PATH }],
+        activeLeftTabIndex: 1,
+        rightTabs: [],
+        activeRightTabIndex: null,
+    });
 
-    test.each<[string, Tab[], number | null, TabLayout]>([
-        [
-            'keeps tabs without the diagnostics tab',
-            [a, b],
-            1,
-            { paths: [a.path, b.path], active: 1 },
-        ],
-        [
-            'keeps an active tab before the diagnostics tab',
-            [a, diagnostics, b],
-            0,
-            { paths: [a.path, b.path], active: 0 },
-        ],
-        [
-            'shifts an active tab after the diagnostics tab',
-            [a, diagnostics, b],
-            2,
-            { paths: [a.path, b.path], active: 1 },
-        ],
-        [
-            'activates the tab before an active diagnostics tab',
-            [a, diagnostics, b],
-            1,
-            { paths: [a.path, b.path], active: 0 },
-        ],
-        [
-            'activates the tab after an active first diagnostics tab',
-            [diagnostics, a],
-            0,
-            { paths: [a.path], active: 0 },
-        ],
-        [
-            'leaves no active tab when only the diagnostics tab was open',
-            [diagnostics],
-            0,
-            { paths: [], active: null },
-        ],
-    ])('%s', (_name, tabs, active, layout) => {
-        expect(fileTabsLayout(tabs, active)).toEqual(layout);
+    const url = await capturePermalink(fs, 'https://example.com/');
+
+    expect(
+        await decodeSnapshot(snapshotParam(new URL(url).hash) ?? ''),
+    ).toEqual({
+        files: { '/lib/index.esc': 'export val x = 1' },
+        left: { paths: ['/lib/index.esc', DIAGNOSTICS_TAB_PATH], active: 1 },
+        right: { paths: [], active: null },
     });
 });

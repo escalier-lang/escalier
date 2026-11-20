@@ -15,6 +15,7 @@ import type { CrashReport } from './editor-state';
 import { useEditorStore } from './editor-store';
 import type { BrowserFS } from './fs/browser-fs';
 import { languageID } from './language';
+import { collectProjectFiles } from './permalink';
 import {
     DIAGNOSTICS_TAB_PATH,
     projectDiagnosticsText,
@@ -362,6 +363,26 @@ export const Editor = ({
         editorOptionsFor,
     ]);
 
+    // The language server checks the project once an Escalier file opens, and a file opens
+    // when the editor makes a model for it. A model for every Escalier tab gets the
+    // project checked whichever tab is active, as when a permalink restores the
+    // diagnostics tab as the active one. When the diagnostics tab is open and no Escalier
+    // tab is, the project's first Escalier file opens without a tab.
+    useEffect(() => {
+        const tabPaths = [...leftTabs, ...rightTabs].map((tab) => tab.path);
+        const escalierPaths = tabPaths.filter((path) => path.endsWith('.esc'));
+        if (
+            escalierPaths.length === 0 &&
+            tabPaths.includes(DIAGNOSTICS_TAB_PATH)
+        ) {
+            const first = firstEscalierFile(fs);
+            if (first !== null) escalierPaths.push(first);
+        }
+        for (const path of escalierPaths) {
+            getOrCreateModel(path);
+        }
+    }, [leftTabs, rightTabs, getOrCreateModel, fs]);
+
     // Listen for FS events to update the Monaco models of open read-only files. Those
     // are the build output, which the compiler rewrites. Every right tab counts, and a
     // read-only left tab counts too, such as a build file a permalink opened there.
@@ -618,6 +639,17 @@ export const Editor = ({
         </div>
     );
 };
+
+/**
+ * Returns the path of the project's first Escalier file in path order, preferring one under
+ * `/lib/`, or null when the project has none.
+ */
+function firstEscalierFile(fs: BrowserFS): string | null {
+    const paths = Object.keys(collectProjectFiles(fs.rootDir, () => ''))
+        .filter((path) => path.endsWith('.esc'))
+        .sort();
+    return paths.find((path) => path.startsWith('/lib/')) ?? paths[0] ?? null;
+}
 
 /**
  * Load file content from BrowserFS. BrowserFS callbacks fire synchronously

@@ -535,6 +535,61 @@ describe('diagnostics tab', () => {
     });
 });
 
+describe('language server models', () => {
+    afterEach(() => {
+        vi.mocked(monaco.editor.createModel).mockClear();
+    });
+
+    /** Returns the paths Editor made models for. */
+    const modelPaths = () =>
+        vi
+            .mocked(monaco.editor.createModel)
+            .mock.calls.map(([, , uri]) => String(uri).replace('file://', ''));
+
+    test('opens every Escalier tab, not only the active one', () => {
+        setStoreState({
+            leftTabs: [
+                { path: DIAGNOSTICS_TAB_PATH },
+                { path: '/lib/index.esc' },
+            ],
+            activeLeftTabIndex: 0,
+            rightTabs: [{ path: '/bin/main.esc' }, { path: '/build/a.js' }],
+            activeRightTabIndex: 1,
+        });
+        render(<Editor fs={makeFakeFS()} />);
+
+        expect(modelPaths()).toEqual(
+            expect.arrayContaining(['/lib/index.esc', '/bin/main.esc']),
+        );
+    });
+
+    test("opens the project's first Escalier file when only the diagnostics tab is open", () => {
+        const file = (name: string) => ({
+            type: 'file' as const,
+            name,
+            content: new Uint8Array(),
+        });
+        const dir = (name: string, children: { name: string }[]) => ({
+            type: 'dir' as const,
+            name,
+            children: new Map(children.map((child) => [child.name, child])),
+        });
+        const fakeFS = makeFakeFS();
+        (fakeFS as { rootDir: unknown }).rootDir = dir('/', [
+            dir('bin', [file('main.esc')]),
+            dir('lib', [file('index.esc')]),
+            file('package.json'),
+        ]);
+        setStoreState({
+            leftTabs: [{ path: DIAGNOSTICS_TAB_PATH }],
+            activeLeftTabIndex: 0,
+        });
+        render(<Editor fs={fakeFS} />);
+
+        expect(modelPaths()).toEqual([DIAGNOSTICS_TAB_PATH, '/lib/index.esc']);
+    });
+});
+
 describe('languageForPath', () => {
     test.each([
         { path: '/lib/index.esc', language: 'escalier' },

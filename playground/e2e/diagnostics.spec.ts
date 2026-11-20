@@ -39,7 +39,7 @@ test('the status bar counts diagnostics in closed files and lists them in a tab'
     );
 });
 
-test('a permalink leaves the Diagnostics tab out and the reopened page counts afresh', async ({
+test('a permalink reopens the Diagnostics tab, filled from a fresh check', async ({
     page,
     context,
 }) => {
@@ -53,6 +53,9 @@ test('a permalink leaves the Diagnostics tab out and the reopened page counts af
         timeout: COMPILE_TIMEOUT_MS,
     });
     await counts.click();
+    // With the source tab closed, the Diagnostics tab is the only tab on the left.
+    await page.getByRole('tab', { name: /index\.esc/ }).hover();
+    await page.getByLabel('Close index.esc').click();
 
     // Share puts the link in the address bar whether or not the clipboard takes it.
     await page.getByRole('button', { name: 'Share' }).click();
@@ -60,11 +63,17 @@ test('a permalink leaves the Diagnostics tab out and the reopened page counts af
 
     const reopened = await context.newPage();
     await reopened.goto(page.url());
-    const reopenedTabs = reopened.getByTestId('input-tablist').getByRole('tab');
-    await expect(reopenedTabs).toHaveText([/^index\.esc/]);
+    await expect(
+        reopened.getByRole('tab', { name: /^Diagnostics/ }),
+    ).toHaveAttribute('aria-selected', 'true');
+    // The link holds the edited source but none of the diagnostics. The reopened page
+    // checks the project and lists the error again.
     await expect(
         reopened.locator('footer').getByRole('button'),
     ).toHaveAccessibleName('1 error, 0 warnings', {
         timeout: COMPILE_TIMEOUT_MS,
     });
+    await expect(reopened.locator('#input-panel .view-lines')).toContainText(
+        /\/lib\/index\.esc:\d+:26:\serror:\scannot\sconstrain/,
+    );
 });
