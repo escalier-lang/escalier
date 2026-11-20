@@ -1091,9 +1091,9 @@ func (s *Server) completionsFromScope(script *ast.Script, view scopeView, info *
 	// Values are already collected by collectBlockBindings above.
 	collectScopeTypeBindings(view, seen, &items)
 
-	// Walk up the scope chain to collect bindings from intermediate scopes
-	// (e.g., the lib namespace scope between the script scope and prelude).
-	// Skip the builtins — they're handled separately below with caching.
+	// Walk up the scope chain to collect bindings from intermediate scopes, such
+	// as the scope holding the lib/ exports between the script scope and the
+	// prelude. Skip the builtins, which the cached prelude items below cover.
 	for cur := view.parent(); cur != nil && !cur.isBuiltin(); cur = cur.parent() {
 		for _, name := range cur.valueNames() {
 			if !seen[name] {
@@ -1106,6 +1106,9 @@ func (s *Server) completionsFromScope(script *ast.Script, view scopeView, info *
 				})
 			}
 		}
+		// An exported enum such as `Language` binds a type and a namespace but no
+		// value, so the value names above leave it out.
+		collectScopeTypeBindings(cur, seen, &items)
 	}
 
 	// Append cached prelude/global bindings, skipping any that are shadowed.

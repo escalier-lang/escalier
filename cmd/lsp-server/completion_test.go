@@ -2674,3 +2674,89 @@ func TestExtractorPatternCompletionFallsBack(t *testing.T) {
 		})
 	}
 }
+
+// TestLibEnumCompletionInValuePosition covers completing the prefix `La` to the
+// enum `Language` that lib/index.esc exports. Each case writes the prefix in a
+// different value position, and runs once from a bin/ script and once from a
+// second lib/ file.
+func TestLibEnumCompletionInValuePosition(t *testing.T) {
+	lib := "export enum Language {\n    English,\n    French,\n}\n"
+	tests := []struct {
+		name string
+		src  string
+		// line and col are the 1-based cursor position in src, just after `La`.
+		line, col int
+	}{
+		{name: "PropertyValue", src: "val x = {language: La}\n", line: 1, col: 22},
+		{name: "Shorthand", src: "val x = {La}\n", line: 1, col: 12},
+		{name: "NestedObject", src: "val x = {a: {b: La}}\n", line: 1, col: 18},
+		{
+			name: "CallArgument",
+			src:  "declare fn f(x: {a: Language}) -> number\nval r = f({a: La})\n",
+			line: 2,
+			col:  17,
+		},
+		{name: "ValInitializer", src: "val x = La\n", line: 1, col: 11},
+		{name: "ArrayElement", src: "val xs = [{a: La}]\n", line: 1, col: 17},
+		{name: "Return", src: "fn g() {\n    return {a: La}\n}\n", line: 2, col: 18},
+	}
+	for _, tt := range tests {
+		for _, path := range []string{"bin/main.esc", "lib/main.esc"} {
+			t.Run(tt.name+"/"+strings.Split(path, "/")[0], func(t *testing.T) {
+				files := map[string]string{"lib/index.esc": lib, path: tt.src}
+				var labels []string
+				for _, item := range completionItemsAt(t, files, path, tt.line, tt.col) {
+					labels = append(labels, item.Label)
+				}
+				require.Equal(t, []string{"Language"}, labels)
+			})
+		}
+	}
+}
+
+// TestLibEnumCompletionInBinObjectLiteral asserts that a bin/ script offers the
+// lib/ enum `Language` after `La` in an object literal inside an array literal.
+// The files reproduce a playground project from a bug report.
+func TestLibEnumCompletionInBinObjectLiteral(t *testing.T) {
+	files := map[string]string{
+		"lib/index.esc": `export enum Language {
+    English,
+    French,
+    Japanese,
+    German,
+}
+
+export fn greeting(language: Language) -> string {
+    return match language {
+        Language.English() => "Hello",
+        Language.French() => "Bonjour",
+        Language.Japanese() => "こんにちは",
+        Language.German() => "Guten",
+    }
+}
+
+export fn greet(name: string, language: Language) -> string {
+    return ` + "`${greeting(language)}, ${name}!`" + `
+}
+`,
+		"bin/main.esc": `import "std:console"
+
+// The names ` + "`lib/index.esc`" + ` exports are in scope here without an import.
+val guests = [
+    {name: "World", language: Language.English()},
+    {name: "le monde", language: Language.French()},
+    {name: "世界", language: Language.Japanese()},
+    {name: "Earth", language: La}
+]
+
+for {name, language} in guests {
+    console.log(greet(name, language))
+}
+`,
+	}
+	var labels []string
+	for _, item := range completionItemsAt(t, files, "bin/main.esc", 8, 31) {
+		labels = append(labels, item.Label)
+	}
+	require.Equal(t, []string{"Language"}, labels)
+}
