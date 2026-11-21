@@ -44,9 +44,10 @@ func newVerboseHover(code string) *verboseHover {
 //
 // Level 0 is the hover typeHover renders. Level n renders the alias's type with n layers
 // of aliases expanded, each layer evaluated by Info.Evaluate. A declaration expands the
-// type it writes, so `type Y = Point["y"]` renders at level 1 as `type Y = number`. A
-// reference expands itself as the first layer, so `Box<string>` for
-// `type Box<T> = {value: T}` renders at level 1 as `type Box<string> = {value: string}`.
+// type it writes, so `type Y = Point["y"]` renders at level 1 as
+// `type Y = number | undefined`. A reference expands itself as the first layer, so
+// `Box<string>` for `type Box<T> = {value: T}` renders at level 1 as
+// `type Box<string> = {value: string}`.
 func aliasHover(q hoverQuery, level int) (*verboseHover, bool) {
 	if q.info == nil {
 		return nil, false
