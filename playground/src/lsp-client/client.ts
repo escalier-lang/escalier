@@ -294,6 +294,12 @@ function describeError(err: unknown): string {
     return err instanceof Error ? (err.stack ?? String(err)) : String(err);
 }
 
+/**
+ * The params of an `initialize` request, without the deprecated rootUri. The caller
+ * names the workspace in workspaceFolders.
+ */
+export type InitializeParams = Omit<lsp.InitializeParams, 'rootUri'>;
+
 export class Client {
     // The runtime's parts, assigned by createRuntime(). The fs shim reads the streams
     // through `this` on every call, so a restart's new streams serve the new runtime.
@@ -332,7 +338,7 @@ export class Client {
     /** Wakes run() while it waits for an edit, from the next edit or from stop(). */
     private wake: () => void = () => {};
     /** The params of the last `initialize`, which a restart sends again. */
-    private initializeParams: lsp.InitializeParams | undefined;
+    private initializeParams: InitializeParams | undefined;
     /** The text of every open document, which a restart opens again. */
     private documents = new Map<string, lsp.TextDocumentItem>();
     private crashEvents = new EventEmitter();
@@ -892,20 +898,9 @@ export class Client {
     // Lifecycle methods
     //
 
-    /**
-     * Sends the server `initialize`. The caller names the workspace in
-     * workspaceFolders, and the request's rootUri is the first folder's URI, or null
-     * when there is none.
-     */
-    async initialize(
-        params: Omit<lsp.InitializeParams, 'rootUri'>,
-    ): Promise<lsp.InitializeResult> {
-        const request: lsp.InitializeParams = {
-            ...params,
-            // oxlint-disable-next-line typescript/no-deprecated -- the protocol still requires rootUri, and servers that predate workspaceFolders read only it
-            rootUri: params.workspaceFolders?.[0]?.uri ?? null,
-        };
-        this.initializeParams = request;
+    /** Sends the server `initialize` with params. */
+    async initialize(params: InitializeParams): Promise<lsp.InitializeResult> {
+        this.initializeParams = params;
         if (this.state !== 'running') {
             // The server starting after a crash is sent these params when it reopens, and
             // a second `initialize` would break its lifecycle. The reopen's answer serves,
@@ -915,7 +910,7 @@ export class Client {
                 return this.initializeResult;
             }
         }
-        return this.sendRequest('initialize', request);
+        return this.sendRequest('initialize', params);
     }
 
     async setTrace(params: lsp.SetTraceParams) {
