@@ -288,13 +288,13 @@ func CompilePackage(sources []*ast.Source, config PackageConfig) CompilerOutput 
 
 		// A parse error leaves an error node in the tree where a declaration or type
 		// annotation belongs, and codegen has no lowering for one. `buildTypeAnn`
-		// panics with `unknown type: <error>` on reaching it. A construct the checker
-		// reports as unsupported, such as an enum spread, can have no lowering either.
+		// panics with `unknown type: <error>` on reaching it. Codegen has no lowering
+		// for an enum spread either, which the checker reports as unsupported.
 		// Inference above tolerates both, so only the emit half is skipped and the
 		// diagnostics still reach the caller. Any other type error needs no such skip.
 		// The tree is well formed, so codegen runs and the caller decides whether to
 		// keep its output.
-		if len(parseErrors) == 0 && !reportsUnsupported(lib.diagnostics) {
+		if len(parseErrors) == 0 && !reportsEnumSpread(lib.diagnostics) {
 			// The graph comes from the run rather than a second call to
 			// dep_graph.BuildDepGraph, so the emitter walks the declarations in the
 			// order inference typed them.
@@ -422,9 +422,8 @@ func compileScript(b backend, lib LibScope, source *ast.Source) CompilerOutput {
 	result := checkScriptIn(ctx, b, lib, inMod)
 	typeErrors := result.diagnostics
 
-	// A construct the checker reports as unsupported, such as an enum spread, can have
-	// no lowering, so the script emits no unit.
-	if reportsUnsupported(typeErrors) {
+	// Codegen has no lowering for an enum spread, so a script holding one emits no unit.
+	if reportsEnumSpread(typeErrors) {
 		return CompilerOutput{
 			ParseErrors: parseErrors,
 			TypeErrors:  typeErrors,

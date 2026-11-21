@@ -427,6 +427,9 @@ func (b *Builder) buildPattern(
 
 	var checks []Expr
 	var stmts []Stmt
+	// litTests holds a test for each literal in the pattern. They run after the
+	// declaration binds the temps they read.
+	var litTests []Stmt
 
 	var buildPatternRec func(p ast.Pat, target Expr) Pat
 
@@ -620,10 +623,31 @@ func (b *Builder) buildPattern(
 			// The checker has matched the class, so `val Point {x} = p` destructures
 			// as the object pattern `{x}` alone.
 			return buildPatternRec(p.Object, target)
-		case *ast.LitPat, *ast.WildcardPat:
-			// A destructuring is irrefutable once it checks, so `val [1, b] = [1, 2]`
-			// needs no test of the literal. Either pattern binds its slot to an
-			// unused temp, since a JS destructuring has no literal or wildcard form.
+		case *ast.LitPat:
+			// The checker accepts a literal the value's type admits, so
+			// `val [1, b] = xs` checks with `xs: [number, number]`. A JS destructuring
+			// has no literal form, so the slot binds a temp and a test after the
+			// declaration throws when the temp differs from the literal. The test uses
+			// `!=`, the negation of the `==` a match arm's literal test uses.
+			tempId := b.NewTempId()
+			litExpr, _ := b.buildExpr(&ast.LiteralExpr{Lit: p.Lit}, nil)
+			mismatch := NewThrowStmt(
+				NewNewExpr(
+					NewIdentExpr("TypeError", "", nil),
+					[]Expr{NewLitExpr(NewStrLit("The value does not match the literal in the destructuring pattern", nil), nil)},
+					nil,
+				),
+				p,
+			)
+			litTests = append(litTests, NewIfStmt(
+				NewBinaryExpr(NewIdentExpr(tempId, "", nil), NotEqual, litExpr, p),
+				NewBlockStmt([]Stmt{mismatch}, p),
+				nil,
+				p,
+			))
+			return NewIdentPat(tempId, nil, p)
+		case *ast.WildcardPat:
+			// A JS destructuring has no wildcard form, so the slot binds an unused temp.
 			return NewIdentPat(b.NewTempId(), nil, p)
 		default:
 			// TODO
@@ -660,6 +684,7 @@ func (b *Builder) buildPattern(
 			source: nil,
 		})
 	}
+	stmts = append(stmts, litTests...)
 
 	return checks, stmts
 }

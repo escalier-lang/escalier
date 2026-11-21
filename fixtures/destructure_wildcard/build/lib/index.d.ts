@@ -1,3 +1,4 @@
+export declare function afterOne([arg0, b]: [number, number]): number;
 declare const other: 2;
 export declare const fromLiteral: 2;
 declare const second: 2;

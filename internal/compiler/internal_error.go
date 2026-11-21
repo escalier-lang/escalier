@@ -7,8 +7,7 @@ import (
 )
 
 // InternalError is the value CompilePackage and CompileScript panic with when a phase
-// of the compile panics. A panic in a phase marks a bug in the compiler rather than a
-// fault in the program, and a caller that recovers it can report the file and phase.
+// of the compile panics. It names the file and phase the panic was raised in.
 type InternalError struct {
 	// File is the source file the phase was compiling. A phase that compiles every
 	// lib/ file at once names `lib/` unless the library has a single file.
@@ -38,8 +37,8 @@ func (s *compileStep) enter(file, phase string) {
 
 // wrapPanic re-raises a panic as an *InternalError naming s's file and phase. It
 // re-raises an *InternalError unchanged, so the innermost step names the phase. It
-// does nothing when there is no panic. A caller must defer it directly, since recover
-// sees the panic only from a function the deferred call runs.
+// does nothing when there is no panic. A caller must defer it directly, because recover
+// stops a panic only when the deferred function itself calls it.
 func (s *compileStep) wrapPanic() {
 	value := recover()
 	if value == nil {
@@ -51,7 +50,7 @@ func (s *compileStep) wrapPanic() {
 	panic(&InternalError{File: s.file, Phase: s.phase, Value: value})
 }
 
-// emitError reports that writing a compile unit's output failed.
+// emitError reports that producing a compile unit's output failed.
 type emitError struct {
 	span ast.Span
 	err  error

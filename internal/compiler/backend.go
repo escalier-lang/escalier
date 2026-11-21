@@ -24,12 +24,15 @@ func IsWarning(d Diagnostic) bool {
 	return ok && w.IsWarning()
 }
 
-// reportsUnsupported reports whether any diagnostic in diags says the program uses a
-// node or a feature of one that the checker does not support.
-func reportsUnsupported(diags []Diagnostic) bool {
+// reportsEnumSpread reports whether diags hold the UnsupportedFeatureError the checker
+// reports for an enum spread, as in `enum B { ...A, Y(s: string) }`.
+func reportsEnumSpread(diags []Diagnostic) bool {
 	for _, d := range diags {
-		switch d.(type) {
-		case *solver.UnsupportedNodeError, *solver.UnsupportedFeatureError:
+		unsupported, ok := d.(*solver.UnsupportedFeatureError)
+		if !ok {
+			continue
+		}
+		if _, spread := unsupported.Node.(*ast.EnumSpread); spread {
 			return true
 		}
 	}

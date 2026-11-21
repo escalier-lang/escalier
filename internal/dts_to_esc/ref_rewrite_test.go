@@ -26,7 +26,7 @@ func TestRefRewriterReportsAnUnhandledNode(t *testing.T) {
 	}{
 		"a type annotation": {
 			rewrite: func(r *refRewriter) { r.rewrite(ast.NewFunctionTopTypeAnn(ast.Span{})) },
-			wantErr: "unsupported type annotation FunctionTopTypeAnn",
+			wantErr: "unsupported type annotation FunctionTopTypeAnn (refRewriter.rewrite has no case for it)",
 		},
 		"a type annotation inside a declaration": {
 			rewrite: func(r *refRewriter) {
@@ -36,7 +36,7 @@ func TestRefRewriterReportsAnUnhandledNode(t *testing.T) {
 				)
 				r.rewriteDecl(decl)
 			},
-			wantErr: "unsupported type annotation FunctionTopTypeAnn",
+			wantErr: "unsupported type annotation FunctionTopTypeAnn (refRewriter.rewrite has no case for it)",
 		},
 	}
 

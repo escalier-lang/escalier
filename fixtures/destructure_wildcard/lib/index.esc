@@ -4,6 +4,10 @@ export val fromWildcard = second
 val [1, other] = [1, 2]
 export val fromLiteral = other
 
+export fn afterOne([1, b]: [number, number]) -> number {
+    return b
+}
+
 export fn secondOf([_, b]: [number, number]) -> number {
     return b
 }

@@ -15,16 +15,19 @@ import (
 type unhandledNodeError struct {
 	// construct names the kind of node, such as `type annotation`.
 	construct string
-	node      any
+	// switchName names the refRewriter method whose switch has no case for node.
+	switchName string
+	node       any
 }
 
 func (e unhandledNodeError) Error() string {
-	return fmt.Sprintf("unsupported %s %s", e.construct, strings.TrimPrefix(fmt.Sprintf("%T", e.node), "*ast."))
+	return fmt.Sprintf("unsupported %s %s (%s has no case for it)",
+		e.construct, strings.TrimPrefix(fmt.Sprintf("%T", e.node), "*ast."), e.switchName)
 }
 
 // recoverUnhandledNode stores an unhandledNodeError panic in *err. Any other panic
-// is re-raised. A caller must defer it directly, since recover sees the panic only
-// from a function the deferred call runs.
+// is re-raised. A caller must defer it directly, because recover stops a panic only
+// when the deferred function itself calls it.
 func recoverUnhandledNode(err *error) {
 	value := recover()
 	if value == nil {
@@ -410,7 +413,7 @@ func (r *refRewriter) rewriteDecl(decl ast.Decl) {
 			r.rewriteDecl(inner)
 		}
 	default:
-		panic(unhandledNodeError{construct: "declaration", node: decl})
+		panic(unhandledNodeError{construct: "declaration", switchName: "refRewriter.rewriteDecl", node: decl})
 	}
 }
 
@@ -485,7 +488,7 @@ func (r *refRewriter) rewriteClassElem(elem ast.ClassElem) {
 			r.rewriteFuncSig(&e.Fn.FuncSig)
 		}
 	default:
-		panic(unhandledNodeError{construct: "class member", node: elem})
+		panic(unhandledNodeError{construct: "class member", switchName: "refRewriter.rewriteClassElem", node: elem})
 	}
 }
 
@@ -734,7 +737,7 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		*ast.ErrorTypeAnn:
 		return tt
 	default:
-		panic(unhandledNodeError{construct: "type annotation", node: t})
+		panic(unhandledNodeError{construct: "type annotation", switchName: "refRewriter.rewrite", node: t})
 	}
 }
 
@@ -784,7 +787,7 @@ func (r *refRewriter) rewriteObject(obj *ast.ObjectTypeAnn) {
 		case *ast.RestSpreadTypeAnn:
 			e.Value = r.rewrite(e.Value)
 		default:
-			panic(unhandledNodeError{construct: "object type member", node: elem})
+			panic(unhandledNodeError{construct: "object type member", switchName: "refRewriter.rewriteObject", node: elem})
 		}
 	}
 }

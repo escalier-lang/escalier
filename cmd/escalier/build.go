@@ -184,7 +184,8 @@ func writeModuleOutputs(stderr io.Writer, moduleName string, output compiler.Com
 //
 // A parse error stops the write, and not as a policy: it leaves an error node in the tree
 // that codegen has no lowering for, so CompilePackage skips lib codegen rather than
-// panicking. A construct the checker reports as unsupported stops it for the same reason.
+// panicking. An enum spread, which the checker reports as unsupported, stops it for the
+// same reason.
 //
 // A panic while compiling a package is reported as one internal-error diagnostic that
 // names the file and phase. The package writes nothing and the build fails.
@@ -250,8 +251,9 @@ func build(stdout io.Writer, stderr io.Writer, pkgs []string) bool {
 			printErrors(&diags, output, idToSource)
 		})
 		if !compiled {
-			// A crash leaves no output to write, and the one diagnostic is the error.
-			finish(fmt.Sprintf("failed (%s)", errorCount(1)))
+			// A crash leaves no output to write. The failure counts the internal-error
+			// diagnostic with each file loadSources could not read.
+			finish(fmt.Sprintf("failed (%s)", errorCount(unreadable+1)))
 			_ = os.Chdir(cwd)
 			allOK = false
 			continue
@@ -286,7 +288,7 @@ func build(stdout io.Writer, stderr io.Writer, pkgs []string) bool {
 	return allOK
 }
 
-// compilePackage compiles one package's sources. Tests replace it to force a panic.
+// compilePackage compiles one package's sources, checking them as the config says.
 var compilePackage = compiler.CompilePackage
 
 // recoverCompilerPanic runs compile and returns true when it finishes. When compile

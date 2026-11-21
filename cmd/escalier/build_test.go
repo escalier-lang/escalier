@@ -525,6 +525,8 @@ func TestBuildReportsACompilerPanic(t *testing.T) {
 			t.Cleanup(func() { _ = os.Chdir(oldCwd) })
 			require.NoError(t, os.Chdir(tmpDir))
 
+			// No known program makes the compiler panic, so the test replaces the
+			// compile with one that does.
 			original := compilePackage
 			t.Cleanup(func() { compilePackage = original })
 			compilePackage = func([]*ast.Source, compiler.PackageConfig) compiler.CompilerOutput {
