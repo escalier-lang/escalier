@@ -716,6 +716,20 @@ func TestContentsBorrowedByMutableCall(t *testing.T) {
 			`,
 			want: []string{"11:11-11:19: cannot borrow 'arr' as mutable for this call while a borrow of its contents is live"},
 		},
+		// One loan, a, fills both slots of the call, and the error blames the first slot.
+		"OneLoanInTwoSlotsBlamesTheFirst": {
+			src: `
+				declare fn both(a: &mut Array<Flat>, b: &mut Array<Flat>) -> undefined
+
+				fn g(mut arr: Array<Flat>) -> undefined {
+					val a = &mut arr
+					val f = first(&mut arr)
+					both(a, a)
+					f.x = 1
+				}
+			`,
+			want: []string{"12:11-12:12: cannot borrow 'a' as mutable for this call while a borrow of its contents is live"},
+		},
 		// Two dynamic indices borrow whole elements, and neither reaches inside the other.
 		"TwoDynamicElementBorrowsOk": {
 			src: `

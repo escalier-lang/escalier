@@ -1527,6 +1527,7 @@ func (d *bodyDataflow) checkContentsBorrowed(ev *callEvent, at liveness.StmtRef,
 			continue
 		}
 
+		depth := d.borrowDepth(r)
 		for _, m := range loans {
 			// A borrow of the contents of `r.ev.place` is a mutable loan of an overlapping place.
 			// An immutable one already conflicts with r under E2. A closure's capture names a
@@ -1535,7 +1536,7 @@ func (d *bodyDataflow) checkContentsBorrowed(ev *callEvent, at liveness.StmtRef,
 			if m == r || !m.checked() || m.closure() || m.ev.borrow != mutableBorrow || !placesOverlap(m.ev.place, r.ev.place) {
 				continue
 			}
-			held, live := d.contentsHold(m, d.borrowDepth(r), ev, at)
+			held, live := d.contentsHold(m, depth, ev, at)
 			if !live {
 				continue
 			}
@@ -1556,14 +1557,17 @@ func (d *bodyDataflow) checkContentsBorrowed(ev *callEvent, at liveness.StmtRef,
 	}
 }
 
-// ownSlotOf returns a slot of `call` that holds l's borrow itself, and whether there is one.
+// ownSlotOf returns the slot of `call` with the lowest index among those that hold l's borrow
+// itself, and whether there is one. A receiver comes before every argument.
 func (l *liveLoan) ownSlotOf(call *ast.CallExpr) (callSlot, bool) {
+	var found callSlot
+	ok := false
 	for slot := range l.ownSlots {
-		if slot.call == call {
-			return slot, true
+		if slot.call == call && (!ok || slot.index < found.index) {
+			found, ok = slot, true
 		}
 	}
-	return callSlot{}, false
+	return found, ok
 }
 
 // slotExpr returns the expression that fills `slot` of `call`, which is the receiver of a
