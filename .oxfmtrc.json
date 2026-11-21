@@ -1,0 +1,43 @@
+{
+    "$schema": "./node_modules/oxfmt/configuration_schema.json",
+    "useTabs": false,
+    "tabWidth": 4,
+    "printWidth": 80,
+    "singleQuote": true,
+    "jsxSingleQuote": false,
+    "quoteProps": "as-needed",
+    "trailingComma": "all",
+    "semi": true,
+    "arrowParens": "always",
+    "bracketSameLine": false,
+    "bracketSpacing": true,
+    "sortImports": true,
+    "ignorePatterns": [
+        "**/out/**",
+        "**/dist/**",
+        "**/examples/**",
+        "**/fixtures/**",
+        "playground/public/types/**",
+        "**/wasm_exec.js",
+        "**/web-assembly.d.ts",
+        "**/wasm-client.ts",
+        "**/*.json",
+        "**/*.jsonc",
+        "**/*.md",
+        "**/*.yaml",
+        "**/*.yml",
+        "**/*.html",
+        "**/*.toml",
+        "**/.prettierrc"
+    ],
+    "overrides": [
+        {
+            "files": [
+                "**/*.css"
+            ],
+            "options": {
+                "singleQuote": false
+            }
+        }
+    ]
+}

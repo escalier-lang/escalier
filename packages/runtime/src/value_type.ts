@@ -13,5 +13,5 @@ export type ValueType =
     | symbol
     | null
     | undefined
-    // biome-ignore lint/complexity/noBannedTypes: Escalier's `function` admits every callable value, which is what `Function` names.
+    // Escalier's `function` admits every callable value, which is what `Function` names.
     | Function;

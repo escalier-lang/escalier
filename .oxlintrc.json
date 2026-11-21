@@ -1,0 +1,45 @@
+{
+    "$schema": "./node_modules/oxlint/configuration_schema.json",
+    "plugins": [
+        "eslint",
+        "typescript",
+        "unicorn",
+        "oxc",
+        "import",
+        "react",
+        "jsx-a11y",
+        "vitest"
+    ],
+    "categories": {
+        "correctness": "error"
+    },
+    "options": {
+        "typeAware": true,
+        "denyWarnings": true,
+        "reportUnusedDisableDirectives": "error"
+    },
+    "ignorePatterns": [
+        "**/out/**",
+        "**/dist/**",
+        "**/examples/**",
+        "**/fixtures/**",
+        "playground/public/types/**",
+        "wasm_exec.js",
+        "web-assembly.d.ts",
+        "wasm-client.ts"
+    ],
+    "rules": {
+        "vitest/require-mock-type-parameters": "off",
+        "import/default": "off"
+    },
+    "overrides": [
+        {
+            "files": [
+                ".github/scripts/*.test.mjs"
+            ],
+            "rules": {
+                "typescript/no-floating-promises": "off"
+            }
+        }
+    ]
+}

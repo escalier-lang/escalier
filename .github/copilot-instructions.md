@@ -95,7 +95,7 @@ pnpm check      # Check formatting + linting
 pnpm typecheck  # Type check TypeScript
 ```
 
-The project uses **Biome** for JavaScript/TypeScript linting and formatting.
+The project lints JavaScript and TypeScript with oxlint, including its type-aware rules, and formats them with oxfmt. `.oxlintrc.json` and `.oxfmtrc.json` hold their settings.
 
 ### Development Workflow
 
