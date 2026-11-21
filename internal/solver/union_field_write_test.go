@@ -6,13 +6,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestUnionFieldWrite covers field writes through a receiver whose type is a union. Each
-// form of holding the value reports UnionFieldWriteError, naming the first member whose field
-// rejects the written value, or the union when every member accepts it. An immutable binding,
-// an immutable borrow and a readonly field report their own diagnostic instead. A write
-// through a narrowed binding, a whole-binding reassignment, a write to a field some member
-// lacks, and a write through a variable that joins several values keep the behaviour they
-// have without a union receiver.
+// TestUnionFieldWrite covers field writes through a receiver whose type is a union. A write
+// whose value fits the field in every member checks. Otherwise each form of holding the value
+// reports UnionFieldWriteError, naming the first member whose field rejects the written
+// value. An immutable binding, an immutable borrow and a readonly field report their own
+// diagnostic instead. A write through a narrowed binding, a whole-binding reassignment, a
+// write to a field some member lacks, and a write through a variable that joins several
+// values keep the behaviour they have without a union receiver.
 func TestUnionFieldWrite(t *testing.T) {
 	const decls = `type A = {kind: "a", a: number}
 type B = {kind: "b", b: string}
@@ -108,7 +108,26 @@ declare val ns: number | string
     val mut u: A | C = init
     u.a = 2
 }`,
-			want: []string{"10:5-10:8: cannot assign to 'u.a', since 'u' has the union type 'A | C' and a write through it could leave the value matching none of its members; narrow 'u' with a `match` and write through the narrowed binding"},
+			want: nil,
+		},
+		{
+			name: "EveryMemberAcceptsThroughBorrow",
+			src:  `fn f(q: &mut (A | C)) { q.a = 2 }`,
+			want: nil,
+		},
+		{
+			name: "UndefinedIntoFieldOptionalInOneMember",
+			src: `type MA = {kind: "a", n?: number}
+type MC = {kind: "c", n: number}
+fn f(q: &mut (MA | MC)) { q.n = undefined }`,
+			want: []string{"10:27-10:30: cannot assign undefined to 'q.n', since 'q' may hold a 'MC', whose 'n' is number; narrow 'q' with a `match` and write through the narrowed binding"},
+		},
+		{
+			name: "NumberIntoFieldOptionalInOneMember",
+			src: `type MA = {kind: "a", n?: number}
+type MC = {kind: "c", n: number}
+fn f(q: &mut (MA | MC)) { q.n = 2 }`,
+			want: nil,
 		},
 		{
 			name: "OptionalReceiverIsNotAUnionWrite",
@@ -192,4 +211,15 @@ fn f(q: &mut (RA | RB)) { q.kind = "a" }`,
 			require.Equal(t, tt.want, messagesWithSpan(t, errs))
 		})
 	}
+}
+
+// TestUnionFieldWriteSignature asserts the signature inferred for a function that writes an
+// unannotated parameter into a field every member of a union receiver declares. The write
+// bounds the parameter by each member's field type.
+func TestUnionFieldWriteSignature(t *testing.T) {
+	values, _, errs := inferSource(t, `type A = {kind: "a", a: number}
+type C = {kind: "c", a: number}
+fn f(q: &mut (A | C), v) { q.a = v }`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (q: &mut (A | C), v: number) -> undefined", values["f"])
 }
