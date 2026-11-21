@@ -104,17 +104,11 @@ func (c *checker) snapshotWrittenLifetimes(
 	}
 	// Record the upper bounds of every lifetime the signature's lifetimes reach, so the
 	// relations the resolved signature implies can be told from those the body adds.
-	stack := append([]*soltype.LifetimeVar{}, w.order...)
-	for len(stack) > 0 {
-		lv := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-		if _, seen := w.bounds[lv]; seen {
-			continue
-		}
+	for _, lv := range w.order {
 		w.bounds[lv] = len(lv.UpperBounds)
-		for _, ub := range lv.UpperBounds {
+		for _, ub := range outlivedBy(lv) {
 			if next, ok := ub.(*soltype.LifetimeVar); ok {
-				stack = append(stack, next)
+				w.bounds[next] = len(next.UpperBounds)
 			}
 		}
 	}
@@ -254,72 +248,18 @@ func (w *writtenLifetimes) sources(lt *soltype.LifetimeVar) string {
 	return strings.Join(inputs[:len(inputs)-1], ", ") + " and " + inputs[len(inputs)-1]
 }
 
-// outlivesThrough reports whether sub outlives super by a chain of upper bounds. When
-// limit is not nil it reads only the first limit[v] upper bounds of each lifetime v, and
-// none of a lifetime limit leaves out, so it sees the relations as limit recorded them.
+// outlivesThrough reports whether sub outlives super by a chain of upper bounds. When limit is
+// not nil it reads the bounds as outlivedByWithin does, so it sees the relations as limit
+// recorded them.
 func outlivesThrough(sub, super *soltype.LifetimeVar, limit map[*soltype.LifetimeVar]int) bool {
-	seen := set.NewSet[*soltype.LifetimeVar]()
-	stack := []*soltype.LifetimeVar{sub}
-	for len(stack) > 0 {
-		lv := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-		if seen.Contains(lv) {
-			continue
-		}
-		seen.Add(lv)
-		ubs := lv.UpperBounds
-		if limit != nil {
-			n, ok := limit[lv]
-			if !ok {
-				continue
-			}
-			ubs = ubs[:n]
-		}
-		for _, ub := range ubs {
-			next, ok := ub.(*soltype.LifetimeVar)
-			if !ok {
-				continue
-			}
-			if next == super {
-				return true
-			}
-			stack = append(stack, next)
-		}
-	}
-	return false
+	return slices.Contains(outlivedByWithin(sub, limit), soltype.Lifetime(super))
 }
 
-// reachesStatic reports whether lt outlives 'static by a chain of upper bounds, which a
-// body forces when it keeps a borrow for the whole program. When limit is not nil it reads
-// the bounds as outlivesThrough does.
+// reachesStatic reports whether lt outlives 'static by a chain of upper bounds, which a body
+// forces when it keeps a borrow for the whole program. limit is read as outlivesThrough reads
+// it.
 func reachesStatic(lt *soltype.LifetimeVar, limit map[*soltype.LifetimeVar]int) bool {
-	seen := set.NewSet[*soltype.LifetimeVar]()
-	stack := []*soltype.LifetimeVar{lt}
-	for len(stack) > 0 {
-		lv := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-		if seen.Contains(lv) {
-			continue
-		}
-		seen.Add(lv)
-		ubs := lv.UpperBounds
-		if limit != nil {
-			n, ok := limit[lv]
-			if !ok {
-				continue
-			}
-			ubs = ubs[:n]
-		}
-		for _, ub := range ubs {
-			switch ub := ub.(type) {
-			case *soltype.StaticLifetime:
-				return true
-			case *soltype.LifetimeVar:
-				stack = append(stack, ub)
-			}
-		}
-	}
-	return false
+	return soltype.ContainsLifetime(outlivedByWithin(lt, limit), soltype.Static)
 }
 
 // writtenLifetimeCollector gathers, in order, the lifetime variables a written type holds
