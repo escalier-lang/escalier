@@ -1245,9 +1245,6 @@ test(
     'calls the server exit listeners when a server ends, before the next starts, and when stop() ends one',
     { timeout: 10_000 },
     async () => {
-        // Only one Client can run at a time.
-        await client.stop();
-        await awaitServerExit();
         const ends: Array<() => void> = [];
         const launcher: ServerLauncher = {
             launch: () => {
