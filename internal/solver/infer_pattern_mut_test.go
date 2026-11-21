@@ -310,7 +310,8 @@ func TestMatchBorrowedScrutineeMutLeaf(t *testing.T) {
 // as it binds, so a write later in the same body checks against the widened type. Each case
 // returns the binding, so its signature shows the type the binding renders at. A leaf with an
 // inline annotation binds at the annotation as written, and a plain leaf keeps its literal.
-// A `mut` leaf whose projected type is a union widens each member.
+// A `mut` leaf whose projected type is a union applies those rules to each member, so an
+// object member widens and a literal member keeps its literal.
 func TestMutLeafWidensEagerly(t *testing.T) {
 	tests := map[string]struct {
 		src  string
@@ -367,6 +368,46 @@ func TestMutLeafWidensEagerly(t *testing.T) {
 				return x
 			}`,
 			sig: `fn (p: [{a: 1} | {b: "s"}]) -> {a: number} | {b: string}`,
+		},
+		"LiteralLeafKeepsLiteral": {
+			src: `
+			fn f(p: {x: "a"}) {
+				val {mut x} = p
+				return x
+			}`,
+			sig: `fn (p: {x: "a"}) -> "a"`,
+		},
+		"LiteralUnionFieldKeepsLiterals": {
+			src: `
+			fn f(p: {x: "a" | "b"}) {
+				val {mut x} = p
+				return x
+			}`,
+			sig: `fn (p: {x: "a" | "b"}) -> "a" | "b"`,
+		},
+		"LiteralUnionTupleElemKeepsLiterals": {
+			src: `
+			fn f(p: [1 | 2]) {
+				val [mut x] = p
+				return x
+			}`,
+			sig: "fn (p: [1 | 2]) -> 1 | 2",
+		},
+		"MixedLiteralUnionKeepsLiterals": {
+			src: `
+			fn f(p: [1 | "a"]) {
+				val [mut x] = p
+				return x
+			}`,
+			sig: `fn (p: [1 | "a"]) -> 1 | "a"`,
+		},
+		"MixedUnionWidensOnlyObjectMember": {
+			src: `
+			fn f(p: [{a: 1} | "s"]) {
+				val [mut x] = p
+				return x
+			}`,
+			sig: `fn (p: [{a: 1} | "s"]) -> {a: number} | "s"`,
 		},
 		"PlainLeafDefaultKeepsLiteral": {
 			src: `

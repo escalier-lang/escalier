@@ -1558,30 +1558,35 @@ func (c *checker) applyBindMode(lvl int, node ast.Node, mut bool, leafType, conc
 // The leaf's binding may write every owned layer of the value, so the value's literals widen
 // to their primitives, the destructuring analogue of `val mut q = p` in inferVarDeclInit.
 // When the leaf's projected type is statically known, the result is that type widened, so
-// `val [mut p] = [{y: 1}]` binds `p: {y: number}`. A union widens member by member. With
-// `p: {x: {a: number} | undefined}`, `val {mut x = {a: 1, b: "s"}} = p` binds
-// `x: {a: number} | {a: number, b: string}`.
+// `val [mut p] = [{y: 1}]` binds `p: {y: number}`. A primitive or function has no layer to
+// write, so it keeps its literal, mirroring `val mut a = 1`. A union applies both rules
+// member by member, so `p: [{a: 1} | "s"]` with `val [mut x] = p` binds
+// `x: {a: number} | "s"`. When no member has a layer, the leaf keeps its leaf type.
 //
 // When the projected type is not statically known, concrete is nil. The leaf type then flows
 // into the variable mutableSlotOf returns.
 func (c *checker) widenOwnedLeaf(lvl int, node ast.Node, leafType, concrete soltype.Type) soltype.Type {
 	if concrete != nil {
-		var widened soltype.Type
+		members := []soltype.Type{concrete}
 		if union, ok := concrete.(*soltype.UnionType); ok {
-			members := make([]soltype.Type, len(union.Types))
-			for i, member := range union.Types {
-				members[i] = widen(member)
-			}
-			widened = newUnion(c.ctx, members)
-		} else {
-			widened = widen(concrete)
+			members = union.Types
 		}
-		if _, ok := widened.(soltype.RefInner); !ok {
-			// A primitive or function leaf has no layer to write, so it keeps its leaf type,
-			// mirroring `val mut a = 1` keeping the literal.
+		widened := make([]soltype.Type, len(members))
+		hasLayer := false
+		for i, member := range members {
+			widened[i] = member
+			if w, ok := widen(member).(soltype.RefInner); ok {
+				widened[i] = w
+				hasLayer = true
+			}
+		}
+		if !hasLayer {
 			return leafType
 		}
-		return widened
+		if len(widened) == 1 {
+			return widened[0]
+		}
+		return newUnion(c.ctx, widened)
 	}
 	return c.mutableSlotOf(lvl, node, leafType)
 }
