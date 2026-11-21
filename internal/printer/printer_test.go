@@ -2563,6 +2563,11 @@ func (w *failingWriter) Write(b []byte) (int, error) {
 // partway through.
 func TestPrintReturnsTheWriterError(t *testing.T) {
 	script := parseScript(t, "val x = 1\nval y = 2")
+	decl := parseDecl(t, "val [a, b] = pair")
+	module, parseErrs := parser.ParseLibFiles(context.Background(), []*ast.Source{
+		{ID: 0, Path: "lib/index.esc", Contents: "val x = 1"},
+	})
+	require.Empty(t, parseErrs)
 
 	tests := map[string]struct {
 		limit int
@@ -2579,6 +2584,28 @@ func TestPrintReturnsTheWriterError(t *testing.T) {
 		"statement": {
 			limit: 0,
 			print: func(w io.Writer) error { return PrintToWriter(script.Stmts[0], w, DefaultOptions()) },
+		},
+		"module": {
+			limit: 0,
+			print: func(w io.Writer) error { return PrintModuleToWriter(module, w, DefaultOptions()) },
+		},
+		"expression": {
+			limit: 0,
+			print: func(w io.Writer) error { return PrintToWriter(parseExpr(t, "a + b"), w, DefaultOptions()) },
+		},
+		"declaration": {
+			limit: 0,
+			print: func(w io.Writer) error { return PrintToWriter(decl, w, DefaultOptions()) },
+		},
+		"pattern": {
+			limit: 0,
+			print: func(w io.Writer) error {
+				return PrintToWriter(decl.(*ast.VarDecl).Pattern, w, DefaultOptions())
+			},
+		},
+		"type annotation": {
+			limit: 0,
+			print: func(w io.Writer) error { return PrintToWriter(parseTypeAnn(t, "number"), w, DefaultOptions()) },
 		},
 	}
 

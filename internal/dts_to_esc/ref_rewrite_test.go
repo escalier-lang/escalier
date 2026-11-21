@@ -15,10 +15,17 @@ func rewriteRecovering(rewrite func()) (err error) {
 	return nil
 }
 
+// newDecl, newClassElem and newObjMember stand in for a node variant a later change
+// could add to ast. Embedding the interface gives each the interface's unexported
+// marker method, and no refRewriter switch lists them.
+type newDecl struct{ ast.Decl }
+type newClassElem struct{ ast.ClassElem }
+type newObjMember struct{ ast.ObjTypeAnnElem }
+
 // TestRefRewriterReportsAnUnhandledNode asserts that refRewriter reports a node variant
 // its switches don't list as an error naming the construct. The conversion never
-// produces a `function` keyword type, so FunctionTopTypeAnn stands in for a variant a
-// later converter change could introduce.
+// produces a `function` keyword type, so FunctionTopTypeAnn stands in for a type
+// annotation a later converter change could introduce.
 func TestRefRewriterReportsAnUnhandledNode(t *testing.T) {
 	tests := map[string]struct {
 		rewrite func(r *refRewriter)
@@ -37,6 +44,20 @@ func TestRefRewriterReportsAnUnhandledNode(t *testing.T) {
 				r.rewriteDecl(decl)
 			},
 			wantErr: "unsupported type annotation FunctionTopTypeAnn (refRewriter.rewrite has no case for it)",
+		},
+		"a declaration": {
+			rewrite: func(r *refRewriter) { r.rewriteDecl(newDecl{}) },
+			wantErr: "unsupported declaration dts_to_esc.newDecl (refRewriter.rewriteDecl has no case for it)",
+		},
+		"a class member": {
+			rewrite: func(r *refRewriter) { r.rewriteClassElem(newClassElem{}) },
+			wantErr: "unsupported class member dts_to_esc.newClassElem (refRewriter.rewriteClassElem has no case for it)",
+		},
+		"an object type member": {
+			rewrite: func(r *refRewriter) {
+				r.rewriteObject(ast.NewObjectTypeAnn([]ast.ObjTypeAnnElem{newObjMember{}}, ast.Span{}))
+			},
+			wantErr: "unsupported object type member dts_to_esc.newObjMember (refRewriter.rewriteObject has no case for it)",
 		},
 	}
 

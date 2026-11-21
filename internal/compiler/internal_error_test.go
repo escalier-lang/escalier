@@ -1,8 +1,10 @@
 package compiler
 
 import (
+	"errors"
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/stretchr/testify/require"
 )
 
@@ -51,6 +53,23 @@ func TestCompileStepWrapsAPanic(t *testing.T) {
 			require.EqualError(t, internalErr, test.wantMsg)
 		})
 	}
+}
+
+// TestEmitErrorNamesTheCause asserts that the diagnostic for a failed emit carries the
+// unit's span and a message ending in the cause. The source map is the only output
+// that can fail to emit, and encoding its JSON fails on no input the compiler builds,
+// so the test constructs the diagnostic directly.
+func TestEmitErrorNamesTheCause(t *testing.T) {
+	span := ast.Span{SourceID: 3}
+	diag := &emitError{
+		span: span,
+		err:  errors.New("serializing the source map for ./index.js: unsupported value"),
+	}
+
+	require.Equal(t, span, diag.Span())
+	require.Equal(t,
+		"cannot emit the output: serializing the source map for ./index.js: unsupported value",
+		diag.Message())
 }
 
 // TestCompileStepWithoutAPanic asserts that a step that finishes raises nothing.
