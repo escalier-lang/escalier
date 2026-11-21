@@ -63,6 +63,13 @@ func TestMissingSignature(t *testing.T) {
 			src:  `val double: fn (x: number) -> number = fn (x) { return x * 2 }`,
 		},
 		{
+			name: "AliasAnnotatedModuleLevelClosure",
+			src: `
+				type Foo = fn(a: number, b: string) -> boolean
+				val foo: Foo = fn (a, b) { return true }
+			`,
+		},
+		{
 			name: "ClosureInsideBody",
 			src: `
 				fn twice(x: number) -> number {

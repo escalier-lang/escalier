@@ -30,13 +30,13 @@ func TestACallBlamesTheArgumentThatDoesNotFit(t *testing.T) {
 		},
 		{
 			name: "AnAnnotatedLocal",
-			src:  add + "fn g() {\n\tval s: string = \"x\"\n\treturn add(1, s)\n}",
+			src:  add + "fn g() -> number {\n\tval s: string = \"x\"\n\treturn add(1, s)\n}",
 			want: []string{"4:16-4:17: cannot constrain string <: number"},
 		},
 		{
 			name: "ABoundedTypeParameter",
-			src:  add + `fn strs<A: string>(a: A) { return add(1, a) }`,
-			want: []string{"2:42-2:43: cannot constrain string <: number"},
+			src:  add + `fn strs<A: string>(a: A) -> number { return add(1, a) }`,
+			want: []string{"2:52-2:53: cannot constrain string <: number"},
 		},
 		{
 			name: "EachArgumentThatDoesNotFit",

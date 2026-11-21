@@ -545,7 +545,7 @@ func TestInferObjectRestOverUnion(t *testing.T) {
 		{
 			name: "a rest inside a function parameter pattern",
 			src: fb + `
-				fn f({kind, id, ...rest}: FB) { return rest }
+				fn f({kind, id, ...rest}: FB) -> {foo: string} | {bar: boolean} { return rest }
 			`,
 			binding: "f",
 			want:    "fn ({kind, id, ...rest}: FB) -> {foo: string} | {bar: boolean}",
@@ -553,7 +553,7 @@ func TestInferObjectRestOverUnion(t *testing.T) {
 		{
 			name: "a rest in a match arm pattern",
 			src: fb + `
-				fn f(p: FB) {
+				fn f(p: FB) -> {foo: string} | {bar: boolean} {
 					return match p {
 						{kind, id, ...rest} => rest,
 					}

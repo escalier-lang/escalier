@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -151,11 +150,13 @@ func TestPromiseOfFollowsTheDeclaredShape(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			res := inferAgainstExactStdlib(t, `val f = async fn () { return 1 }`,
-				map[string]string{"std/prelude.esc": tt.decl + arrayForPromiseTests})
+			// The closure is bound inside a body, where it keeps its inferred return type.
+			module := parseModule(t, "fn main() -> undefined {\n\tval f = async fn () { return 1 }\n}")
+			res := InferModuleWithSource(module,
+				StdlibSource(seedStdlib(t, map[string]string{"std/prelude.esc": tt.decl + arrayForPromiseTests})))
 
 			require.Empty(t, errorMessagesOf(res.Errors))
-			require.Equal(t, tt.want, soltype.Print(inferredValueType(t, res.Scope, "f")))
+			require.Equal(t, tt.want, localType(t, module, res.Info, "f"))
 		})
 	}
 }
