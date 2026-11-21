@@ -167,6 +167,46 @@ test('a message from the worker that is lost ends the server', async () => {
     expect(worker.terminated).toBe(true);
 });
 
+test('ignores a message from the worker that has no kind', async () => {
+    const { worker, launcher, stdin, stdout } = launchFake();
+    const heard: Uint8Array[] = [];
+    stdout.on('data', (chunk) => heard.push(chunk));
+    const server = await launcher.launch(stdin, stdout);
+    let exited = false;
+    void server.exited.then(() => (exited = true));
+
+    worker.send({} as FromWorkerMessage);
+    await Promise.resolve();
+
+    expect(heard).toEqual([]);
+    expect(worker.terminated).toBe(false);
+    expect(exited).toBe(false);
+    server.dispose();
+});
+
+test('the worker ignores a message from the page that has no kind', async () => {
+    const channel = new MessageChannel();
+    channel.port1.start();
+    channel.port2.start();
+    runServerInWorker(channel.port2);
+    const replies: unknown[] = [];
+    channel.port1.addEventListener('message', (event) =>
+        replies.push(event.data),
+    );
+    try {
+        channel.port1.postMessage({});
+        // A stdin message sends nothing back either, and it arrives after the empty
+        // one, so a reply to the empty message would arrive before the wait ends.
+        channel.port1.postMessage({ kind: 'stdin', chunk: new Uint8Array() });
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        expect(replies).toEqual([]);
+    } finally {
+        channel.port1.close();
+        channel.port2.close();
+    }
+});
+
 test('rejects when the server does not compile', async () => {
     const launcher = workerLauncher(
         { wasm: new Uint8Array([0, 1, 2, 3]).buffer, cwd: '/' },
