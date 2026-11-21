@@ -300,16 +300,12 @@ export class BrowserFS implements FSAPI {
         let stats: Stats;
         if (node.type === 'file') {
             this.ensureContent(pathStr, node);
-            stats = new SimpleStats(
-                node.content.length,
-                true,
-                false,
-            ) as unknown as Stats;
+            stats = new SimpleStats(node.content.length, true, false);
         } else if (node.type === 'symlink') {
-            stats = new SimpleStats(0, false, false, true) as unknown as Stats;
+            stats = new SimpleStats(0, false, false, true);
         } else {
             // Directory
-            stats = new SimpleStats(0, false, true) as unknown as Stats;
+            stats = new SimpleStats(0, false, true);
         }
         callback(null, stats);
     }
@@ -689,10 +685,7 @@ export class BrowserFS implements FSAPI {
         }
 
         const file = openFD.node;
-        const writePos =
-            position != null
-                ? position
-                : (openFD.readPosition ?? file.content.length);
+        const writePos = position ?? openFD.readPosition;
         const data = buffer.subarray(offset, offset + length);
         const endPos = writePos + data.length;
 

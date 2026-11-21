@@ -179,6 +179,52 @@ describe('Playground', () => {
         expect(usePlaygroundStore.getState().initialCompileDone).toBe(false);
     });
 
+    test.each([
+        {
+            menu: /New Project/,
+            kind: 'template',
+            reason: new Error('offline'),
+        },
+        // A rejection that isn't an Error shows as its string form.
+        { menu: /Examples/, kind: 'example', reason: 'offline' },
+    ])(
+        'a $kind that fails to download shows the error and ends the wait for the compile',
+        async ({ menu, kind, reason }) => {
+            vi.stubGlobal(
+                'fetch',
+                vi.fn(() => Promise.reject(reason)),
+            );
+            render(
+                <Playground
+                    fs={new BrowserFS({})}
+                    manifest={{
+                        ...manifest,
+                        templates: { blank: ['lib/index.esc'] },
+                        examples: { enums: ['lib/index.esc'] },
+                    }}
+                    baseUrl="/"
+                    layoutRestored
+                />,
+            );
+
+            fireEvent.click(screen.getByRole('button', { name: menu }));
+            fireEvent.click(
+                screen.getByRole('menuitem', {
+                    name: kind === 'template' ? 'Blank' : 'Enums',
+                }),
+            );
+            fireEvent.click(screen.getByRole('button', { name: 'Replace' }));
+
+            await vi.waitFor(() =>
+                expect(useEditorStore.getState().notification).toEqual({
+                    message: `Failed to load ${kind}: offline`,
+                    type: 'error',
+                }),
+            );
+            expect(usePlaygroundStore.getState().initialCompileDone).toBe(true);
+        },
+    );
+
     test('Report a bug opens a report with the errors and the latest crash', async () => {
         vi.mocked(capturePermalink).mockResolvedValue(
             `${window.location.origin}/#project=abc`,

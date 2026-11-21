@@ -93,6 +93,7 @@ async function start(
     void client.run();
     const initResponse: InitializeResult = await client.initialize({
         processId: process.pid,
+        // oxlint-disable-next-line typescript/no-deprecated -- the language server reads rootUri, not workspaceFolders
         rootUri: 'file:///',
         capabilities: {},
     });

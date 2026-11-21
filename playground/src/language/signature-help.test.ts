@@ -158,9 +158,9 @@ describe('createSignatureHelpProvider', () => {
         const flushPendingChanges = vi.fn(() => {
             calls.push('flush');
         });
-        const request = vi.fn(async () => {
+        const request = vi.fn(() => {
             calls.push('request');
-            return {
+            return Promise.resolve({
                 signatures: [
                     {
                         label: 'f(x: number) -> number',
@@ -169,7 +169,7 @@ describe('createSignatureHelpProvider', () => {
                 ],
                 activeSignature: 0,
                 activeParameter: 0,
-            } satisfies lsp.SignatureHelp;
+            } satisfies lsp.SignatureHelp);
         });
         const provider = createSignatureHelpProvider({
             options,

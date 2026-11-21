@@ -90,7 +90,7 @@ export function writeProjectFiles(
             const dirPath = `/${parts.slice(0, i).join('/')}`;
             fs.mkdir(dirPath, (err) => {
                 // Ignore EEXIST errors — the directory may already exist
-                if (err && (err as NodeJS.ErrnoException).code !== 'EEXIST') {
+                if (err && err.code !== 'EEXIST') {
                     console.error(
                         `Failed to create directory ${dirPath}:`,
                         err,

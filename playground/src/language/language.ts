@@ -190,8 +190,8 @@ export function setupLanguage(
                         command: 'compile',
                         arguments: [params.uri],
                     })
-                    .catch((err) => {
-                        if (err.message) {
+                    .catch((err: unknown) => {
+                        if (err instanceof Error && err.message) {
                             try {
                                 const errorMessages: Array<ErrorMesage> =
                                     JSON.parse(err.message);
@@ -283,7 +283,7 @@ export function setupLanguage(
         });
     });
 
-    monaco.languages.onLanguage(languageID, async () => {
+    monaco.languages.onLanguage(languageID, () => {
         console.log(`onLanguage called for ${languageID}`);
     });
 

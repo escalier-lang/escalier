@@ -24,10 +24,15 @@ function streamingResponse(chunks: number[][]): Response {
 function stubFetch(bodies: Record<string, number[][]>) {
     vi.stubGlobal(
         'fetch',
-        vi.fn(async (url: string) =>
-            url in bodies
-                ? streamingResponse(bodies[url])
-                : new Response(null, { status: 404, statusText: 'Not Found' }),
+        vi.fn((url: string) =>
+            Promise.resolve(
+                url in bodies
+                    ? streamingResponse(bodies[url])
+                    : new Response(null, {
+                          status: 404,
+                          statusText: 'Not Found',
+                      }),
+            ),
         ),
     );
 }
@@ -50,11 +55,14 @@ describe('fetchBytes', () => {
     test('reads the whole body when the response has no stream', async () => {
         vi.stubGlobal(
             'fetch',
-            vi.fn(async () => ({
-                ok: true,
-                body: null,
-                arrayBuffer: async () => new Uint8Array([7, 8]).buffer,
-            })),
+            vi.fn(() =>
+                Promise.resolve({
+                    ok: true,
+                    body: null,
+                    arrayBuffer: () =>
+                        Promise.resolve(new Uint8Array([7, 8]).buffer),
+                }),
+            ),
         );
         const counts: number[] = [];
 

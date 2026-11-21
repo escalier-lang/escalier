@@ -73,7 +73,7 @@ export const BugReportDialog = ({
                         : { kind: 'ready', url },
                 );
             },
-            (err) => {
+            (err: unknown) => {
                 console.error(
                     'Failed to link to the project for a bug report:',
                     err,
@@ -136,7 +136,7 @@ export const BugReportDialog = ({
                         <button
                             type="button"
                             className={`${dialogStyles.button} ${dialogStyles.secondaryButton}`}
-                            onClick={copy}
+                            onClick={() => void copy()}
                         >
                             {copyLabel}
                         </button>
@@ -211,7 +211,7 @@ export const BugReportDialog = ({
                         <button
                             type="button"
                             className={`${dialogStyles.button} ${dialogStyles.secondaryButton}`}
-                            onClick={copy}
+                            onClick={() => void copy()}
                             // A report copied now would leave out the link the user asked for.
                             disabled={includeLink && link.kind === 'pending'}
                         >

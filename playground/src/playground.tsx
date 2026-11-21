@@ -186,13 +186,13 @@ export const Playground = ({
                     // Clear the query param when switching to a template
                     history.replaceState(null, '', window.location.pathname);
                 },
-                (err) => {
+                (err: unknown) => {
                     if (id !== loadIdRef.current) return;
                     playgroundDispatch({ type: 'setInitialCompileDone' });
                     editorDispatch({
                         type: 'showNotification',
                         notification: {
-                            message: `Failed to load template: ${err.message}`,
+                            message: `Failed to load template: ${err instanceof Error ? err.message : String(err)}`,
                             type: 'error',
                         },
                     });
@@ -218,13 +218,13 @@ export const Playground = ({
                     url.hash = '';
                     history.replaceState(null, '', url.toString());
                 },
-                (err) => {
+                (err: unknown) => {
                     if (id !== loadIdRef.current) return;
                     playgroundDispatch({ type: 'setInitialCompileDone' });
                     editorDispatch({
                         type: 'showNotification',
                         notification: {
-                            message: `Failed to load example: ${err.message}`,
+                            message: `Failed to load example: ${err instanceof Error ? err.message : String(err)}`,
                             type: 'error',
                         },
                     });
@@ -318,7 +318,7 @@ export const Playground = ({
                 examples={exampleItems}
                 onSelectTemplate={handleSelectTemplate}
                 onSelectExample={handleSelectExample}
-                onShare={handleShare}
+                onShare={() => void handleShare()}
                 onReportBug={handleReportBug}
             />
             {oversizedLinkLength !== null && (
