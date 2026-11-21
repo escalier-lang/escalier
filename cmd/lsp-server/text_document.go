@@ -276,8 +276,8 @@ func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.
 }
 
 // textDocumentVerboseHover returns the hover at the level params asks for, for the node
-// at the cursor, or nil when the cursor is on nothing with a hover to show. No hover has
-// a level above 0, so every hover renders its level-0 text and reports no other level.
+// at the cursor, or nil when the cursor is on nothing with a hover to show. Only a hover
+// on a type alias's name or on a reference to a type alias has levels above 0.
 func (server *Server) textDocumentVerboseHover(context *glsp.Context, params *hoverParams) (*verboseHover, error) {
 	loc := posToLoc(server.lineMapForURI(params.TextDocument.URI), params.Position)
 	sourceID := server.sourceIDForURI(params.TextDocument.URI)
@@ -304,6 +304,9 @@ func (server *Server) textDocumentVerboseHover(context *glsp.Context, params *ho
 	} else {
 		server.solverMu.RLock()
 		defer server.solverMu.RUnlock()
+	}
+	if h, ok := aliasHover(q, params.VerbosityLevel); ok {
+		return h, nil
 	}
 	if text, ok := typeHover(q); ok {
 		return newVerboseHover(text), nil
