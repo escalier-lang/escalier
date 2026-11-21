@@ -22,7 +22,7 @@ func TestMoveSemantics(t *testing.T) {
 		// the source is a use-after-move.
 		"ValBindingConsumesSource": {
 			src: `
-				fn test() {
+				fn test() -> undefined {
 					val mut p: {x: number} = {x: 0}
 					val q = p
 					p.x
@@ -33,7 +33,7 @@ func TestMoveSemantics(t *testing.T) {
 		// An optional link reads the place the plain link names, so `p?.x` reads `p.x`.
 		"OptionalLinkReadsAMovedBinding": {
 			src: `
-				fn test() {
+				fn test() -> undefined {
 					val mut p: {x: number} = {x: 0}
 					val q = p
 					p?.x
@@ -43,7 +43,7 @@ func TestMoveSemantics(t *testing.T) {
 		},
 		"OptionalLinkReadsAMovedField": {
 			src: `
-				fn test() {
+				fn test() -> undefined {
 					val mut b = {v: {x: 1}}
 					val n = b.v
 					b.v?.x
@@ -53,7 +53,7 @@ func TestMoveSemantics(t *testing.T) {
 		},
 		"OptionalLinkMovesAnObjectField": {
 			src: `
-				fn test() {
+				fn test() -> undefined {
 					val mut b = {v: {x: 1}}
 					val n = b?.v
 					val m = b?.v
@@ -63,7 +63,7 @@ func TestMoveSemantics(t *testing.T) {
 		},
 		"OptionalLinkAfterASiblingMoveOk": {
 			src: `
-				fn test() {
+				fn test() -> undefined {
 					val mut b = {v: {x: 1}, w: {x: 2}}
 					val n = b.v
 					b?.w.x
@@ -75,7 +75,7 @@ func TestMoveSemantics(t *testing.T) {
 		"AliasOfBorrowBoundTwiceOk": {
 			src: `
 				type R = &{x: number}
-				fn test(r: R) {
+				fn test(r: R) -> undefined {
 					val a = r
 					val b = r
 				}
@@ -85,7 +85,7 @@ func TestMoveSemantics(t *testing.T) {
 		// object stay usable.
 		"ValueFieldReadTwiceOk": {
 			src: `
-				fn test() {
+				fn test() -> undefined {
 					val mut b = {v: 1}
 					val n = b.v
 					val m = b.v
@@ -103,7 +103,7 @@ func TestMoveSemantics(t *testing.T) {
 		},
 		"ValueFieldOfAnnotatedBindingOk": {
 			src: `
-				fn test() {
+				fn test() -> undefined {
 					val mut b: {v: number} = {v: 1}
 					val n = b.v
 					val m = b.v
@@ -121,7 +121,7 @@ func TestMoveSemantics(t *testing.T) {
 		// An object-typed field is owned, so binding it moves it out of its object.
 		"ObjectFieldReadTwiceMoves": {
 			src: `
-				fn test() {
+				fn test() -> undefined {
 					val mut b = {v: {x: 1}}
 					val n = b.v
 					val m = b.v
@@ -142,7 +142,7 @@ func TestMoveSemantics(t *testing.T) {
 		// An explicit `&` borrow does not move the source.
 		"BorrowBindingKeepsSource": {
 			src: `
-				fn test() {
+				fn test() -> undefined {
 					val mut p: {x: number} = {x: 0}
 					val q = &p
 					p.x
@@ -153,7 +153,7 @@ func TestMoveSemantics(t *testing.T) {
 		// usable.
 		"BorrowAnnotationKeepsSource": {
 			src: `
-				fn test() {
+				fn test() -> undefined {
 					val mut p: {x: number} = {x: 0}
 					val q: &{x: number} = &p
 					p.x
@@ -163,8 +163,8 @@ func TestMoveSemantics(t *testing.T) {
 		// Passing an owned value to a bare owned parameter moves it into the callee.
 		"OwnedArgumentConsumed": {
 			src: `
-				fn store(p: {x: number}) {}
-				fn test() {
+				fn store(p: {x: number}) -> undefined {}
+				fn test() -> undefined {
 					val p = {x: 0}
 					store(p)
 					p.x
@@ -176,8 +176,8 @@ func TestMoveSemantics(t *testing.T) {
 		// usable afterwards. The borrow is written at the call, which #1541 requires.
 		"BorrowParameterKeepsArgument": {
 			src: `
-				fn read(p: &{x: number}) {}
-				fn test() {
+				fn read(p: &{x: number}) -> undefined {}
+				fn test() -> undefined {
 					val p = {x: 0}
 					read(&p)
 					p.x
@@ -189,8 +189,8 @@ func TestMoveSemantics(t *testing.T) {
 		// use-after-move. The surplus second argument has no parameter to move into.
 		"ArityMismatchConsumesMatchedArgs": {
 			src: `
-				fn store(p: {x: number}) {}
-				fn test() {
+				fn store(p: {x: number}) -> undefined {}
+				fn test() -> undefined {
 					val p = {x: 0}
 					store(p, p)
 					p.x
@@ -225,7 +225,7 @@ func TestMoveSemantics(t *testing.T) {
 		// Spreading an owned tuple moves its elements into the new tuple.
 		"TupleSpreadConsumesSource": {
 			src: `
-				fn test() {
+				fn test() -> undefined {
 					val xs: [{a: number}] = [{a: 1}]
 					val ys = [...xs]
 					xs
@@ -237,8 +237,8 @@ func TestMoveSemantics(t *testing.T) {
 		// read, since some reaching path moved it.
 		"ConditionalUseAfterMove": {
 			src: `
-				fn store(p: {x: number}) {}
-				fn test(cond: boolean) {
+				fn store(p: {x: number}) -> undefined {}
+				fn test(cond: boolean) -> undefined {
 					val p = {x: 0}
 					if cond {
 						store(p)
@@ -253,7 +253,7 @@ func TestMoveSemantics(t *testing.T) {
 		// makes. b.x moves into x, so reading b whole afterwards reads a moved field.
 		"DestructuringMovesTheBoundField": {
 			src: `
-				fn f() {
+				fn f() -> undefined {
 					val b = {x: {v: 1}, y: {v: 2}}
 					val {x} = b
 					val z = b
@@ -264,7 +264,7 @@ func TestMoveSemantics(t *testing.T) {
 		// A field the pattern does not bind stays with b.
 		"DestructuringLeavesAnUnboundFieldUsable": {
 			src: `
-				fn f() {
+				fn f() -> undefined {
 					val b = {x: {v: 1}, y: {v: 2}}
 					val {x} = b
 					val z = b.y
@@ -274,7 +274,7 @@ func TestMoveSemantics(t *testing.T) {
 		// An object rest element moves the fields the pattern does not name.
 		"DestructuringARestElementMovesTheRemainingFields": {
 			src: `
-				fn f() {
+				fn f() -> undefined {
 					val b = {x: {v: 1}, y: {v: 2}}
 					val {x, ...rest} = b
 					val z = b.y
@@ -285,7 +285,7 @@ func TestMoveSemantics(t *testing.T) {
 		// A rest element moves every field the pattern does not name, not only the first.
 		"DestructuringARestElementMovesEachRemainingField": {
 			src: `
-				fn f() {
+				fn f() -> undefined {
 					val b = {x: {v: 1}, y: {v: 2}, z: {v: 3}}
 					val {x, ...rest} = b
 					val n = b.z
@@ -296,7 +296,7 @@ func TestMoveSemantics(t *testing.T) {
 		// A tuple rest element moves the tuple, as every tuple leaf does.
 		"DestructuringATupleRestMovesTheTuple": {
 			src: `
-				fn f() {
+				fn f() -> undefined {
 					val b = [{v: 1}, {v: 2}]
 					val [x, ...rest] = b
 					val z = b
@@ -307,7 +307,7 @@ func TestMoveSemantics(t *testing.T) {
 		// A tuple element has no field segment, so two leaves of one tuple move the tuple once.
 		"DestructuringATupleMovesItOnce": {
 			src: `
-				fn f() {
+				fn f() -> undefined {
 					val b = [{v: 1}, {v: 2}]
 					val [x, y] = b
 					val z = b
@@ -319,8 +319,8 @@ func TestMoveSemantics(t *testing.T) {
 		// read.
 		"BothBranchesUseAfterMove": {
 			src: `
-				fn store(p: {x: number}) {}
-				fn test(cond: boolean) {
+				fn store(p: {x: number}) -> undefined {}
+				fn test(cond: boolean) -> undefined {
 					val p = {x: 0}
 					if cond {
 						store(p)
@@ -336,8 +336,8 @@ func TestMoveSemantics(t *testing.T) {
 		// not move it, so a use inside the untouched branch is allowed.
 		"BranchLocalDoesNotLeak": {
 			src: `
-				fn store(p: {x: number}) {}
-				fn test(cond: boolean) {
+				fn store(p: {x: number}) -> undefined {}
+				fn test(cond: boolean) -> undefined {
 					val p = {x: 0}
 					if cond {
 						store(p)
@@ -350,7 +350,7 @@ func TestMoveSemantics(t *testing.T) {
 		// Storing an owned value into a field moves it into the receiver.
 		"FieldStoreConsumesSource": {
 			src: `
-				fn test() {
+				fn test() -> undefined {
 					val mut obj: {f: {x: number}} = {f: {x: 0}}
 					val p = {x: 1}
 					obj.f = p
@@ -364,8 +364,8 @@ func TestMoveSemantics(t *testing.T) {
 		// not moved, so the write to p while snapshot still borrows it is reported.
 		"PathSensitiveExclusivityKept": {
 			src: `
-				fn store(p: {x: number}) {}
-				fn test(cond: boolean) {
+				fn store(p: {x: number}) -> undefined {}
+				fn test(cond: boolean) -> undefined {
 					val mut p: {x: number} = {x: 0}
 					if cond {
 						store(p)
@@ -399,7 +399,7 @@ func TestMoveSemantics(t *testing.T) {
 		"GlobalEscapeReportsStaticImmutablePath": {
 			src: `
 				var sink = &{x: 0}
-				fn cache(p: &mut {x: number}) {
+				fn cache(p: &mut {x: number}) -> undefined {
 					sink = p
 					p.x = 1
 				}
@@ -411,7 +411,7 @@ func TestMoveSemantics(t *testing.T) {
 		// value q reads as immutable.
 		"MoveWithLiveBorrowRejected": {
 			src: `
-				fn test() {
+				fn test() -> undefined {
 					val mut p: {x: number} = {x: 0}
 					val r: &mut {x: number} = &mut p
 					val q: {x: number} = p
@@ -428,7 +428,7 @@ func TestMoveSemantics(t *testing.T) {
 		// the opt-in for an alias.
 		"BorrowedIntoOwnedAnnotationRejected": {
 			src: `
-				fn f(p: &mut {x: number}) {
+				fn f(p: &mut {x: number}) -> {x: number} {
 					val q: {x: number} = p
 					return q
 				}
@@ -442,8 +442,8 @@ func TestMoveSemantics(t *testing.T) {
 		// naming the field place (PR 7).
 		"PartialMoveConsumesFieldKeepsSibling": {
 			src: `
-				fn store(p: {id: number}) {}
-				fn test() {
+				fn store(p: {id: number}) -> undefined {}
+				fn test() -> undefined {
 					val pair = {a: {id: 1}, b: {id: 2}}
 					store(pair.a)
 					pair.b.id
@@ -455,8 +455,8 @@ func TestMoveSemantics(t *testing.T) {
 		// Reading a sibling field after a partial move is allowed on its own.
 		"SiblingAfterPartialMoveAccepted": {
 			src: `
-				fn store(p: {id: number}) {}
-				fn test() {
+				fn store(p: {id: number}) -> undefined {}
+				fn test() -> undefined {
 					val pair = {a: {id: 1}, b: {id: 2}}
 					store(pair.a)
 					pair.b.id
@@ -467,8 +467,8 @@ func TestMoveSemantics(t *testing.T) {
 		// is a use-after-move even though a sibling is still live.
 		"WholeObjectReadAfterPartialMove": {
 			src: `
-				fn store(p: {id: number}) {}
-				fn test() {
+				fn store(p: {id: number}) -> undefined {}
+				fn test() -> undefined {
 					val pair = {a: {id: 1}, b: {id: 2}}
 					store(pair.a)
 					pair
@@ -480,7 +480,7 @@ func TestMoveSemantics(t *testing.T) {
 		// use-after-move.
 		"PartialMoveViaBinding": {
 			src: `
-				fn test() {
+				fn test() -> undefined {
 					val pair = {a: {id: 1}, b: {id: 2}}
 					val q = pair.a
 					pair.a.id
@@ -491,7 +491,7 @@ func TestMoveSemantics(t *testing.T) {
 		// Storing a field into a longer-lived object moves it; the sibling stays usable.
 		"PartialMoveViaFieldStore": {
 			src: `
-				fn test() {
+				fn test() -> undefined {
 					val pair = {a: {id: 1}, b: {id: 2}}
 					val mut obj: {f: {id: number}} = {f: {id: 0}}
 					obj.f = pair.a
@@ -505,7 +505,7 @@ func TestMoveSemantics(t *testing.T) {
 		// for PR 7 to close; the sibling stays usable.
 		"PartialMoveIntoLiteral": {
 			src: `
-				fn test() {
+				fn test() -> undefined {
 					val pair = {a: {id: 1}, b: {id: 2}}
 					val ys = [pair.a]
 					pair.b.id
@@ -518,8 +518,8 @@ func TestMoveSemantics(t *testing.T) {
 		// read, joined to MaybeMoved at the branch merge.
 		"ConditionalPartialMove": {
 			src: `
-				fn store(p: {id: number}) {}
-				fn test(cond: boolean) {
+				fn store(p: {id: number}) -> undefined {}
+				fn test(cond: boolean) -> undefined {
 					val pair = {a: {id: 1}, b: {id: 2}}
 					if cond {
 						store(pair.a)
@@ -535,8 +535,8 @@ func TestMoveSemantics(t *testing.T) {
 		// field is a use-after-move naming the full path.
 		"NestedFieldPartialMove": {
 			src: `
-				fn store(p: {id: number}) {}
-				fn test() {
+				fn store(p: {id: number}) -> undefined {}
+				fn test() -> undefined {
 					val pair = {a: {inner: {id: 1}, keep: {id: 2}}, b: {id: 3}}
 					store(pair.a.inner)
 					pair.a.keep.id
@@ -550,8 +550,8 @@ func TestMoveSemantics(t *testing.T) {
 		// `pair["a.b"]` rather than collapsing into the `pair.a.b` nested access.
 		"BracketKeyPartialMove": {
 			src: `
-				fn store(p: {x: number}) {}
-				fn test() {
+				fn store(p: {x: number}) -> undefined {}
+				fn test() -> undefined {
 					val pair = {"a.b": {x: 1}, c: {x: 2}}
 					store(pair["a.b"])
 					pair["a.b"].x
@@ -577,7 +577,7 @@ func TestMoveSemantics(t *testing.T) {
 // example.
 func TestThawMove(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn test() {
+		fn test() -> undefined {
 			val p = {x: 0}
 			val mut q = p
 			q.x = 5
@@ -594,7 +594,7 @@ func TestThawMove(t *testing.T) {
 // Both diagnostics stand. This is the plan's freeze example.
 func TestFreezeMove(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn test() {
+		fn test() -> undefined {
 			val mut p = {x: 0}
 			p.x = 42
 			val q = p
@@ -616,7 +616,7 @@ func TestFreezeMove(t *testing.T) {
 // TestInferValMutThawFromVariable, which thaws an owned-immutable source into an
 // owned-mutable binding.
 func TestFreezeMoveAllowed(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(mut p: {x: number}) {
+	values, _, errs := inferSource(t, `fn f(mut p: {x: number}) -> {x: number} {
   val q = p
   return q
 }`)
@@ -639,7 +639,7 @@ func TestRestParamConsumesEveryArgument(t *testing.T) {
 			// reads below stand and a value the callee owns stays readable here.
 			name: "SecondGatheredArgumentIsMoved",
 			src: `fn store(...xs: Array<{x: number}>) -> number { return 1 }
-fn f() {
+fn f() -> undefined {
   val p = {x: 1}
   val q = {x: 2}
   store(p, q)
@@ -650,7 +650,7 @@ fn f() {
 		{
 			name: "FirstGatheredArgumentIsMoved",
 			src: `fn store(...xs: Array<{x: number}>) -> number { return 1 }
-fn f() {
+fn f() -> undefined {
   val p = {x: 1}
   val q = {x: 2}
   store(p, q)
@@ -1155,7 +1155,7 @@ func TestCallToInferredDestructuredParam(t *testing.T) {
 		{
 			name: "BorrowedPatternLends",
 			src: `fn take({x}) { return x }
-fn h() {
+fn h() -> number {
   val o = {x: {v: 1}}
   val r = take(&o)
   return o.x.v + r.v
@@ -1164,7 +1164,7 @@ fn h() {
 		{
 			name: "BorrowedPatternNeedsWrittenBorrow",
 			src: `fn take({x}) { return x }
-fn h() {
+fn h() -> undefined {
   val o = {x: {v: 1}}
   val r = take(o)
   val s = o
@@ -1174,7 +1174,7 @@ fn h() {
 		{
 			name: "ReturnedLeafHoldsBorrow",
 			src: `fn take({x}) { return x }
-fn h() {
+fn h() -> 1 {
   val o = {x: {v: 1}}
   val r = take(&o)
   val s = o
@@ -1187,7 +1187,7 @@ fn h() {
 			src: `fn f({x}) {
   return fn () { return x }
 }
-fn h() {
+fn h() -> undefined {
   val o = {x: {v: 1}}
   val r = f(o)
   val s = o
@@ -1198,7 +1198,7 @@ fn h() {
 			name: "StoredValueTypeLeafKeepsArgument",
 			src: `var total = 0
 fn keep({n}) { total = n }
-fn h() {
+fn h() -> undefined {
   val o = {n: 1}
   keep(o)
   val s = o
@@ -1226,7 +1226,7 @@ func TestCallToDestructuredParamSignature(t *testing.T) {
 		{
 			name: "OwnedObjectMoves",
 			src: `declare fn take(p: {x: {v: number}}) -> {v: number}
-fn h() {
+fn h() -> undefined {
   val o = {x: {v: 1}}
   val r = take(o)
   val s = o
@@ -1236,7 +1236,7 @@ fn h() {
 		{
 			name: "BorrowedObjectLends",
 			src: `declare fn read(p: &{x: {v: number}}) -> number
-fn h() {
+fn h() -> undefined {
   val o = {x: {v: 1}}
   val n = read(&o)
   val s = o
@@ -1245,7 +1245,7 @@ fn h() {
 		{
 			name: "BorrowedObjectNeedsWrittenBorrow",
 			src: `declare fn read(p: &{x: {v: number}}) -> number
-fn h() {
+fn h() -> undefined {
   val o = {x: {v: 1}}
   val n = read(o)
   val s = o
@@ -1255,7 +1255,7 @@ fn h() {
 		{
 			name: "OwnedTupleMoves",
 			src: `declare fn first(t: [{v: number}, {v: number}]) -> {v: number}
-fn h() {
+fn h() -> undefined {
   val t = [{v: 1}, {v: 2}]
   val u = first(t)
   val w = t
@@ -1265,7 +1265,7 @@ fn h() {
 		{
 			name: "BorrowedTupleLends",
 			src: `declare fn first<'a>(t: &'a [{v: number}, {v: number}]) -> &'a {v: number}
-fn h() {
+fn h() -> undefined {
   val t = [{v: 1}, {v: 2}]
   val u = first(&t)
   val w = t
@@ -1274,7 +1274,7 @@ fn h() {
 		{
 			name: "BorrowedTupleNeedsWrittenBorrow",
 			src: `declare fn first<'a>(t: &'a [{v: number}, {v: number}]) -> &'a {v: number}
-fn h() {
+fn h() -> undefined {
   val t = [{v: 1}, {v: 2}]
   val u = first(t)
   val w = t
@@ -1304,7 +1304,7 @@ func TestOverloadCallConsumesArguments(t *testing.T) {
 			name: "NamedOverloadSet",
 			src: `fn take(a: {x: number}) -> number { return 1 }
 fn take(a: {x: number}, b: number) -> number { return 2 }
-fn f() {
+fn f() -> undefined {
   val p = {x: 1}
   take(p)
   p.x
@@ -1317,7 +1317,7 @@ fn f() {
   m(&self, a: {x: number}) -> number,
   m(&self, a: {x: number}, b: number) -> number,
 }
-fn f(b: Box) {
+fn f(b: Box) -> undefined {
   val p = {x: 1}
   b.m(p)
   p.x
@@ -1330,7 +1330,7 @@ fn f(b: Box) {
   constructor(&mut self, a: {x: number}),
   constructor(&mut self, a: {x: number}, b: number),
 }
-fn f() {
+fn f() -> undefined {
   val p = {x: 1}
   Box(p)
   p.x
@@ -1345,7 +1345,7 @@ fn f() {
   constructor(&mut self, a: number),
   constructor(&mut self, a: number, b: number),
 }
-fn f() {
+fn f() -> undefined {
   val p = {x: 1}
   Box(p)
   p.x

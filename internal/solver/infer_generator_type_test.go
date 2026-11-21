@@ -18,12 +18,12 @@ func TestResolveGeneratorAnnotation(t *testing.T) {
 	}{
 		{
 			name: "SyncGeneratorParam",
-			src:  `fn f(g: Generator<number, string, never>) { return g }`,
+			src:  `fn f(g: Generator<number, string, never>) -> Generator<number, string, never> { return g }`,
 			want: `fn (g: Generator<number, string, never>) -> Generator<number, string, never>`,
 		},
 		{
 			name: "AsyncGeneratorParam",
-			src:  `fn f(g: AsyncGenerator<number, string, never>) { return g }`,
+			src:  `fn f(g: AsyncGenerator<number, string, never>) -> AsyncGenerator<number, string, never> { return g }`,
 			want: `fn (g: AsyncGenerator<number, string, never>) -> AsyncGenerator<number, string, never>`,
 		},
 		{
@@ -125,19 +125,19 @@ func TestResolveGeneratorRaiseAnnotation(t *testing.T) {
 	}{
 		{
 			name: "RaisingGeneratorKeepsItsFourthArgument",
-			src:  `fn f(g: Generator<number, string, never, boolean>) { return g }`,
+			src:  `fn f(g: Generator<number, string, never, boolean>) -> Generator<number, string, never, boolean> { return g }`,
 			want: `fn (g: Generator<number, string, never, boolean>) -> Generator<number, string, never, boolean>`,
 		},
 		{
 			// An explicit `never` collapses to the unwritten form, since ThrowsOrNever
 			// reads both through one canonical value.
 			name: "ExplicitNeverRendersAsThreeArguments",
-			src:  `fn f(g: Generator<number, string, never, never>) { return g }`,
+			src:  `fn f(g: Generator<number, string, never, never>) -> Generator<number, string, never> { return g }`,
 			want: `fn (g: Generator<number, string, never>) -> Generator<number, string, never>`,
 		},
 		{
 			name: "AsyncGeneratorCarriesItToo",
-			src:  `fn f(g: AsyncGenerator<number, string, never, boolean>) { return g }`,
+			src:  `fn f(g: AsyncGenerator<number, string, never, boolean>) -> AsyncGenerator<number, string, never, boolean> { return g }`,
 			want: `fn (g: AsyncGenerator<number, string, never, boolean>) -> AsyncGenerator<number, string, never, boolean>`,
 		},
 	}
