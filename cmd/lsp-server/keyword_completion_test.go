@@ -190,7 +190,6 @@ func TestPositionalKeywordCompletion(t *testing.T) {
 		excludes []string
 	}{
 		{name: "StatementInBody", src: "fn f() {\n    va|\n}\n", includes: []string{"val", "var"}},
-		{name: "BlankLineInBody", src: "fn f() {\n    val a = 1\n    |\n}\n", includes: []string{"if", "return", "val"}},
 		{name: "ReturnInBody", src: "fn f() {\n    re|\n}\n", includes: []string{"return"}},
 		{name: "StatementAfterStatement", src: "fn f() {\n    val a = 1\n    i|\n}\n", includes: []string{"if", "interface"}, excludes: []string{"import"}},
 		{name: "StatementInIfBlock", src: "fn f(c: boolean) {\n    if c {\n        fo|\n    }\n}\n", includes: []string{"for"}},
@@ -293,4 +292,44 @@ func TestSortAndLimitKeepsKeywords(t *testing.T) {
 	require.Contains(t, labels, "val")
 	require.Contains(t, labels, "item098")
 	require.NotContains(t, labels, "item099")
+}
+
+// TestBlankLineKeywordCompletion asserts the whole set of keyword items on a blank line,
+// beside the names in scope that the list also holds.
+func TestBlankLineKeywordCompletion(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		expected []string
+	}{
+		{
+			name: "FunctionBody",
+			src:  "fn f() {\n    val a = 1\n    |\n}\n",
+			expected: []string{
+				"async", "class", "do", "enum", "false", "fn", "for", "gen", "if", "interface",
+				"match", "null", "return", "throw", "true", "try", "type", "undefined", "val", "var",
+			},
+		},
+		{
+			name: "AsyncFunctionBody",
+			src:  "async fn f() {\n    val a = 1\n    |\n}\n",
+			expected: []string{
+				"async", "await", "class", "do", "enum", "false", "fn", "for", "gen", "if", "interface",
+				"match", "null", "return", "throw", "true", "try", "type", "undefined", "val", "var",
+			},
+		},
+	}
+	for _, tt := range tests {
+		for _, path := range keywordTestPaths {
+			t.Run(tt.name+"/"+path, func(t *testing.T) {
+				var keywords []protocol.CompletionItem
+				for _, item := range completionItemsAtMark(t, path, tt.src, false) {
+					if item.Kind != nil && *item.Kind == protocol.CompletionItemKindKeyword {
+						keywords = append(keywords, item)
+					}
+				}
+				require.Equal(t, tt.expected, getCompletionLabels(keywords))
+			})
+		}
+	}
 }
