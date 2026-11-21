@@ -3049,10 +3049,12 @@ func (c *checker) fieldWriteMember(name string, recv soltype.Type) (soltype.ObjT
 // the assignment and e.Left is `object.name` or a bracket form naming the same field, such
 // as `object["name"]`. The rules are the ones inferMemberAssign documents.
 func (c *checker) inferFieldAssign(lvl int, e *ast.BinaryExpr, object ast.Expr, name string, recv soltype.Type, place *ownedPlace, source soltype.Type) soltype.Type {
-	// A union receiver has no single member to check the source against, and the structural
-	// requirement below checks an owned receiver's field only in the read direction. So
-	// `u.kind = "b"` on `val mut u: {kind: "a"} | {kind: "b"}` would pass it, leaving a value
-	// that matches neither member. Such a write is rejected here. A write through an immutable
+	// A union receiver has no single member to check the source against. For an owned
+	// receiver, the structural requirement below checks that each member's field type fits
+	// the written type, which is the check a read makes, and never that the written value
+	// fits the field. So `u.kind = "b"` on `val mut u: {kind: "a"} | {kind: "b"}` would pass
+	// it, since `"a"` fits `string`, and leave a value that matches neither member. Such a
+	// write is rejected here. A write through an immutable
 	// borrow skips this check, so the requirement reports the immutability instead. A variable
 	// whose lower bounds disagree is not checked here, since it joins values that flow into it,
 	// as `val {mut x} = p else { {x: {a: 1}} }` joins `p.x` with a literal.
@@ -3208,7 +3210,7 @@ func (c *checker) rejectUnionFieldWrite(e *ast.BinaryExpr, object ast.Expr, name
 		// ownedOrUnsettledMutation reported the immutable binding.
 	case uw.readonly:
 		// Narrowing to the member that declares the field readonly would not make the write
-		// legal, so the readonly diagnostic names the fault the UnionFieldWriteError fix would not.
+		// legal. So the message names the readonly field rather than suggesting a narrowing.
 		c.report(&ReadonlyFieldError{Field: name, site: e.Left})
 	default:
 		err := &UnionFieldWriteError{

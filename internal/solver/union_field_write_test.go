@@ -8,9 +8,11 @@ import (
 
 // TestUnionFieldWrite covers field writes through a receiver whose type is a union. Each
 // form of holding the value reports UnionFieldWriteError, naming the first member whose field
-// rejects the written value, or the union when every member accepts it. A write through a
-// narrowed binding, a whole-binding reassignment, and a write to a field some member lacks
-// keep their own behaviour.
+// rejects the written value, or the union when every member accepts it. An immutable binding,
+// an immutable borrow and a readonly field report their own diagnostic instead. A write
+// through a narrowed binding, a whole-binding reassignment, a write to a field some member
+// lacks, and a write through a variable that joins several values keep the behaviour they
+// have without a union receiver.
 func TestUnionFieldWrite(t *testing.T) {
 	const decls = `type A = {kind: "a", a: number}
 type B = {kind: "b", b: string}
