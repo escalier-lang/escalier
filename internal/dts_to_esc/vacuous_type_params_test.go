@@ -108,6 +108,12 @@ func TestElideVacuousTypeParams(t *testing.T) {
 			want: "fn f<T>(v: T) -> boolean throws T",
 		},
 		{
+			// std:prelude's `ReturnType`. A `function` bound has no type to rewrite inside it.
+			name: "AFunctionBoundStays",
+			src:  `export declare type RT<T: function> = if T : fn (...args: _) -> infer R { R } else { unknown }`,
+			want: "type RT<T: function> = if T : fn (...args: _) -> infer R { R } else { unknown }",
+		},
+		{
 			// A shadowing signature's own constraint is outside the binding it
 			// introduces, so `T` there is an occurrence of the outer parameter.
 			name: "AShadowingSignaturesConstraintCountsAsAnOccurrence",

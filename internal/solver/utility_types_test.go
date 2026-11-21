@@ -35,12 +35,9 @@ import (
 // source never wrote. So `ReturnType` captures the return past any parameter list and `Parameters`
 // captures the parameter list past any return.
 //
-// Both bound `F` by `fn (...args: Array<_>) -> _`, the written top of the function lattice. Its
-// rest parameter absorbs whatever parameter list the argument declares, and the two `_` are the
-// other form of the marker: a bound is not a conditional's operand, so nothing matches against it
-// and each `_` is an inference variable the argument's own type fills. Either way neither position
-// constrains the argument. The bound is checked at the reference, so `ReturnType<number>` is
-// rejected there rather than reducing through the Else branch to `never`.
+// Both bound `F` by `function`, the type of every callable value. The bound is checked at the
+// reference, so `ReturnType<number>` is rejected there rather than reducing through the Else branch
+// to `never`.
 //
 // `NonNullable<T>` is a conditional here, where TypeScript writes the intersection `T & {}`. That
 // intersection is not translatable, for two independent reasons.
@@ -76,11 +73,11 @@ const utilityTypeDecls = `
 	type Record<Ks, V> = {[K: Ks]: V}
 	type Exclude<U, V> = if U : V { never } else { U }
 	type Extract<U, V> = if U : V { U } else { never }
-	type ReturnType<F: fn (...args: Array<_>) -> _> = if F : fn (...args: Array<_>) -> infer R { R } else { never }
-	type Parameters<F: fn (...args: Array<_>) -> _> = if F : fn (...args: infer P) -> _ { P } else { never }
+	type ReturnType<F: function> = if F : fn (...args: _) -> infer R { R } else { never }
+	type Parameters<F: function> = if F : fn (...args: infer P) -> _ { P } else { never }
 	type NonNullable<T> = if T : null | undefined { never } else { T }
 	type ConstructorParameters<C> = if C : {new (...args: infer P) -> unknown, ...} { P } else { never }
-	type InstanceType<C> = if C : {new (...args: Array<_>) -> infer R, ...} { R } else { never }
+	type InstanceType<C> = if C : {new (...args: _) -> infer R, ...} { R } else { never }
 	type Awaited<T> = if T : Promise<infer U> { Awaited<U> } else { T }
 	type EventName<K> = ` + "`on${Capitalize<K>}`" + `
 	type Point = {x: number, y: string}
@@ -759,6 +756,11 @@ func TestStdlibFunctionUtilities(t *testing.T) {
 		{"ParametersOfAnInexactNullaryFunction", "Parameters<fn (...) -> string>", "Array<unknown>"},
 		{"ReturnType", "ReturnType<fn (a: number, ...rest: Array<string>) -> boolean>", "boolean"},
 		{"ReturnTypeOfAnInexactFunction", "ReturnType<fn (a: number, ...) -> boolean>", "boolean"},
+		// The `function` bound admits every callable value, so an object with a call signature and
+		// a class value both reach the pattern.
+		{"ParametersOfACallableObject", "Parameters<{(a: number) -> string}>", "[number]"},
+		{"ReturnTypeOfACallableObject", "ReturnType<{(a: number) -> string}>", "string"},
+		{"ReturnTypeOfAClass", "ReturnType<typeof Point>", "Point"},
 		{"ConstructorParametersOfAClass", "ConstructorParameters<typeof Point>", "[number, number]"},
 		{"ConstructorParametersOfARestParam", "ConstructorParameters<typeof Words>", "[number, ...Array<string>]"},
 		{"ConstructorParametersOfAnInexactConstructor", "ConstructorParameters<{new (a: number, ...) -> Point}>", "[number, ...Array<unknown>]"},
@@ -799,7 +801,7 @@ func TestStdlibFunctionUtilityBounds(t *testing.T) {
 	}
 }
 
-// The `fn (...args: Array<_>) -> _` bound rejects a non-function argument at the reference, so the
+// The `function` bound rejects a non-function argument at the reference, so the
 // utility never reaches its Else branch for one. TypeScript reports the same error for the same reason, since its
 // `ReturnType` constrains its parameter to a function type too.
 func TestUtilityTypeFunctionBoundRejectsNonFunction(t *testing.T) {
@@ -836,7 +838,7 @@ func TestUtilityTypeFunctionBoundRejectsNonFunction(t *testing.T) {
 // A bound on an alias's type parameter is checked at the reference, so an argument that fails it is
 // rejected there rather than substituted into the body. These cases assert that on the simplest alias
 // that can carry a bound. TestUtilityTypeFunctionBoundRejectsNonFunction covers the one bound the
-// corpus itself carries, `F: fn (...args: Array<_>) -> _`.
+// corpus itself carries, `F: function`.
 func TestUtilityTypeAliasParameterConstraint(t *testing.T) {
 	tests := []struct {
 		name    string
