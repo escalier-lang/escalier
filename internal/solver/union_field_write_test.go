@@ -114,12 +114,17 @@ declare val ns: number | string
 			name: "OptionalReceiverIsNotAUnionWrite",
 			src: `fn f(init: A | undefined) {
     val mut u: A | undefined = init
-    match u {
-        x: A => {},
-        _ => {},
-    }
+    u.a = 2
 }`,
-			want: nil,
+			want: []string{"10:5-10:12: cannot constrain undefined <: object"},
+		},
+		{
+			name: "NullableReceiverIsNotAUnionWrite",
+			src: `fn f(init: A | null) {
+    val mut u: A | null = init
+    u.a = 2
+}`,
+			want: []string{"10:5-10:12: cannot constrain null <: object"},
 		},
 		{
 			name: "ImmutableBindingReportsOnlyTheBinding",
