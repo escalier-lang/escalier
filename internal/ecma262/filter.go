@@ -341,7 +341,7 @@ func (f *coercionFilter) threadsToReceiver(hops []hop, depth int) bool {
 		}
 		outer := f.summary.originsOf(hops[i].fn).Eval(call.Args[pos])
 		switch {
-		case outer.Interior:
+		case outer.Interior, outer.Shallow:
 			return false
 		case i == 0:
 			return outer.Kind == OriginReceiver
@@ -385,7 +385,7 @@ func (f *coercionFilter) coerced(fn *Func, site *ThrowSite) coercionGuard {
 	switch {
 	case inner.ao == "":
 		return coercionGuard{}
-	case !inner.threaded || inner.value.Kind != OriginParam || inner.value.Interior:
+	case !inner.threaded || inner.value.Kind != OriginParam || !inner.value.Exact():
 		return coercionGuard{ao: inner.ao}
 	}
 	call, ok := site.Node.(*CallNode)
@@ -393,7 +393,7 @@ func (f *coercionFilter) coerced(fn *Func, site *ThrowSite) coercionGuard {
 		return coercionGuard{ao: inner.ao}
 	}
 	switch outer := origins.Eval(call.Args[inner.value.Index]); {
-	case outer.Interior:
+	case outer.Interior, outer.Shallow:
 		return coercionGuard{ao: inner.ao}
 	case outer.Kind == OriginReceiver, outer.Kind == OriginParam:
 		return coercionGuard{ao: inner.ao, value: outer, threaded: true}

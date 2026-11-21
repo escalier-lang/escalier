@@ -214,14 +214,13 @@ func joinFixture() *Facts {
 			"Object.assign": {Receiver: RecvNone, Returns: returnsParam(0)},
 			// A namespace function, which has no receiver.
 			"Math.max": {Receiver: RecvNone, Returns: ReturnFact{Kind: AliasUnknown}},
-			// Two methods whose returns the walk never read, which the type
+			// Two methods whose returns the walk could not name, which the type
 			// source settles apart. `lib.es5.d.ts` declares
 			// `localeCompare(that: string): number`, a primitive, so the
-			// return is owned. It declares `exec(string: string):
-			// RegExpExecArray | null`, a union with a member that is not, so
-			// the `unknown` stands.
+			// return is owned. It declares `pop(): T | undefined`, a union with
+			// a member that is not, so the `unknown` stands.
 			"String.prototype.localeCompare": {Receiver: RecvBorrow, Returns: ReturnFact{Kind: AliasUnknown}},
-			"RegExp.prototype.exec":          {Receiver: RecvMutBorrow, Returns: ReturnFact{Kind: AliasUnknown}},
+			"Array.prototype.pop":            {Receiver: RecvMutBorrow, Returns: ReturnFact{Kind: AliasUnknown}},
 			// A fact whose receiver claim is withheld while its return alias
 			// stands. See the note above.
 			"Fixture.prototype.withheldReceiver": {Returns: ReturnFact{Kind: AliasFresh}},
@@ -366,8 +365,8 @@ func TestJoinMatch(t *testing.T) {
 		{
 			// The same return against a declaration that hands back an
 			// object, which the type cannot settle.
-			Ref:        MemberRef{Owner: "RegExp", Member: StrMember("exec"), Sort: SortInstance},
-			Signatures: []Signature{{Params: 1}},
+			Ref:        MemberRef{Owner: "Array", Member: StrMember("pop"), Sort: SortInstance},
+			Signatures: []Signature{{Params: 0}},
 		},
 	}
 
@@ -403,7 +402,7 @@ func TestJoinMatch(t *testing.T) {
 Fixture.prototype.returnsSecond -> instance Fixture.returnsSecond receiverApplies:yes [ receiver:borrow returns:unknown | receiver:borrow returns:param(1) ]
 get Map.prototype.size -> get instance Map.size receiverApplies:no [ receiver:borrow returns:fresh ]
 String.prototype.localeCompare -> instance String.localeCompare receiverApplies:yes [ receiver:borrow returns:unknown settled:owned ]
-RegExp.prototype.exec -> instance RegExp.exec receiverApplies:yes [ receiver:mutBorrow returns:unknown ]
+Array.prototype.pop -> instance Array.pop receiverApplies:yes [ receiver:mutBorrow returns:unknown ]
 no fact: instance Array.toSorted
 no declaration: Fixture.prototype.withheldReceiver
 no declaration: Math.max
@@ -429,8 +428,8 @@ func TestJoinMatchCountsSettledReturns(t *testing.T) {
 			Signatures: []Signature{{Params: 1, PrimitiveReturn: true}, {Params: 2}},
 		},
 		{
-			Ref:        MemberRef{Owner: "RegExp", Member: StrMember("exec"), Sort: SortInstance},
-			Signatures: []Signature{{Params: 1}},
+			Ref:        MemberRef{Owner: "Array", Member: StrMember("pop"), Sort: SortInstance},
+			Signatures: []Signature{{Params: 0}},
 		},
 		// A return the walk read, which neither count covers.
 		{
@@ -461,7 +460,7 @@ func TestWriteJoinReport(t *testing.T) {
 			// One return the declared type settles and one it leaves, so the
 			// report's return counts carry both.
 			{Ref: MemberRef{Owner: "String", Member: StrMember("localeCompare"), Sort: SortInstance}, Signatures: []Signature{{Params: 1, PrimitiveReturn: true}}},
-			{Ref: MemberRef{Owner: "RegExp", Member: StrMember("exec"), Sort: SortInstance}, Signatures: []Signature{{Params: 1}}},
+			{Ref: MemberRef{Owner: "Array", Member: StrMember("pop"), Sort: SortInstance}, Signatures: []Signature{{Params: 0}}},
 		},
 		Unkeyed: []string{"parseInt"},
 	})

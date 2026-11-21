@@ -28,8 +28,11 @@ func TestOriginJoin(t *testing.T) {
 	// of the lattice, a name no definition has bound yet. Joining it with an
 	// origin yields that origin, which is what lets a definition the walk has
 	// not evaluated yet contribute nothing to the name it defines instead of
-	// pinning it at Unknown. The three origins above the bottom have
-	// package-level names, so only this one is written as a literal.
+	// pinning it at Unknown. The origins above the bottom have package-level
+	// names or constructors, so only this one and the shallow marks are written
+	// as literals.
+	shallowParam := Origin{Kind: OriginParam, Index: 1, Shallow: true}
+	shallowInterior := Origin{Kind: OriginReceiver, Interior: true, Shallow: true}
 	tests := map[string]struct {
 		left, right, want Origin
 	}{
@@ -37,8 +40,20 @@ func TestOriginJoin(t *testing.T) {
 		"OtherTakesUnset":          {Fresh, Origin{}, Fresh},
 		"EqualOriginsSurvive":      {Param(1), Param(1), Param(1)},
 		"DifferentIndicesCollapse": {Param(0), Param(1), Unknown},
-		"DifferentKindsCollapse":   {Receiver, Fresh, Unknown},
+		"DifferentKindsCollapse":   {Receiver, Param(0), Unknown},
 		"UnknownAbsorbs":           {Unknown, Receiver, Unknown},
+		// A value that is a parameter on one path and fresh on the other is
+		// the parameter marked shallow. See Origin.
+		"FreshJoinsAParameterAsShallow": {Param(1), Fresh, shallowParam},
+		"ShallowFreshJoinsAParameter":   {Param(1), ShallowFresh, shallowParam},
+		"FreshJoinsAnInterior":          {interiorOf(Receiver), Fresh, shallowInterior},
+		"ShallowAgreesWithItsValue":     {shallowParam, Param(1), shallowParam},
+		"FreshAgreesWithShallowFresh":   {Fresh, ShallowFresh, ShallowFresh},
+		// A module-level value is no value the caller passed, so it agrees
+		// only with itself.
+		"GlobalAgreesWithItself": {Global, Global, Global},
+		"GlobalAndFreshCollapse": {Global, Fresh, Unknown},
+		"GlobalAndParamCollapse": {Global, Param(0), Unknown},
 	}
 
 	for name, test := range tests {
@@ -54,6 +69,7 @@ func TestOriginString(t *testing.T) {
 	require.Equal(t, "Param(2)", Param(2).String())
 	require.Equal(t, "Fresh", Fresh.String())
 	require.Equal(t, "Unknown", Unknown.String())
+	require.Equal(t, "Global", Global.String())
 	require.Equal(t, "unset", Origin{}.String())
 	require.Equal(t, "Interior(Receiver)", interiorOf(Receiver).String())
 	require.Equal(t, "Interior(Param(2))", interiorOf(Param(2)).String())
@@ -74,6 +90,10 @@ func TestInteriorOf(t *testing.T) {
 	require.Equal(t, Fresh, interiorOf(Fresh))
 	require.Equal(t, Unknown, interiorOf(ShallowFresh))
 	require.Equal(t, Unknown, interiorOf(Unknown))
+	require.Equal(t, Global, interiorOf(Global))
+
+	// A parameter joined with a fresh value holds what either half holds.
+	require.Equal(t, Unknown, interiorOf(Param(1).join(Fresh)))
 
 	// The lattice bottom stays at the bottom. A name whose definition the walk
 	// has not reached yet takes its origin on the next pass, and answering
@@ -92,17 +112,21 @@ func TestInteriorIsNotItsHolder(t *testing.T) {
 	require.Equal(t, Unknown, Receiver.join(interiorOf(Receiver)))
 }
 
-// A property read keeps an interior origin and breaks every other chain. The
-// entries of a List a collection keeps in a backing-store slot are inside that
-// collection, so a write to one is a write to the collection.
+// A property read off the receiver, a parameter, or an interior value is
+// interior to it. The entries of a List a collection keeps in a backing-store
+// slot are inside that collection, and so is a field of an options object, so a
+// write to either is a write to its holder.
 func TestInsideOf(t *testing.T) {
 	require.Equal(t, interiorOf(Receiver), insideOf(interiorOf(Receiver)))
 	require.Equal(t, interiorOf(Param(1)), insideOf(interiorOf(Param(1))))
+	require.Equal(t, interiorOf(Receiver), insideOf(Receiver))
+	require.Equal(t, interiorOf(Param(1)), insideOf(Param(1)))
+	require.Equal(t, Global, insideOf(Global))
 
-	// Reading a property off the object itself yields a different object.
-	require.Equal(t, Unknown, insideOf(Receiver))
-	require.Equal(t, Unknown, insideOf(Param(1)))
+	// A fresh value may hold one of the caller's values, and so may a
+	// parameter joined with one.
 	require.Equal(t, Unknown, insideOf(Fresh))
+	require.Equal(t, Unknown, insideOf(Param(1).join(Fresh)))
 	require.Equal(t, Unknown, insideOf(Unknown))
 
 	// The lattice bottom stays at the bottom, for the reason TestInteriorOf
@@ -229,12 +253,11 @@ func TestOriginMapSampleFunctions(t *testing.T) {
 // A name bound on two branches takes the join of both definitions. In
 // `Map.prototype.set`, `p` is the entry holding the key. One branch reads it
 // out of the receiver's [[MapData]] list and the other allocates it as a fresh
-// record. The two disagree, so `p` collapses to `Unknown`. §4.1 then reads a
-// write to `p` as a mutation it cannot attribute, which leaves the method
-// unclassified rather than claiming an effect it cannot place.
+// record. The join is the receiver's interior marked shallow, so §4.1 charges a
+// write to `p` to the receiver, which is sound on both paths.
 func TestOriginMapJoinsBranches(t *testing.T) {
 	m := originsOf(t, "Map.prototype.set")
-	require.Equal(t, Unknown, m.Of("p"))
+	require.Equal(t, Origin{Kind: OriginReceiver, Interior: true, Shallow: true}, m.Of("p"))
 }
 
 // A rest parameter names the List the call builds out of the arguments the
@@ -292,13 +315,15 @@ func TestOriginMapEval(t *testing.T) {
 	readOther := &SlotExpr{Object: &VarExpr{Var: "O"}, Slot: "Prototype"}
 	require.Equal(t, Unknown, m.Eval(readOther))
 
-	// A property read off that payload is still the receiver's own state, while
-	// one off the receiver reaches a separate object it only references. The
-	// Origin doc comment spells out the difference.
+	// A property read off that payload, or off the receiver itself, is
+	// reachable from the receiver. The Origin doc comment says why.
 	readEntry := &PropExpr{Object: readData}
 	require.Equal(t, Origin{Kind: OriginReceiver, Interior: true}, m.Eval(readEntry))
 	readProp := &PropExpr{Object: &VarExpr{Var: "O"}}
-	require.Equal(t, Unknown, m.Eval(readProp))
+	require.Equal(t, Origin{Kind: OriginReceiver, Interior: true}, m.Eval(readProp))
+
+	// A module-level value has an origin of its own.
+	require.Equal(t, Global, m.Eval(&GlobalExpr{Var: "cache"}))
 
 	// A nested call resolves through the same lists a call node does.
 	toObject := &CallExpr{Callee: "ToObject", Args: []Expr{&ThisExpr{}}}
@@ -448,7 +473,7 @@ func TestOriginMapString(t *testing.T) {
 %7: Receiver
 M: Receiver
 key: Param(0)
-p: Unknown
+p: Interior(Receiver(shallow))
 value: Param(1)
 `))
 }
@@ -456,10 +481,11 @@ value: Param(1)
 // Every function in the committed graph analyzes, and two invariants hold
 // across all of them. No name is left at the lattice bottom, so every name the
 // walk bound reached a definition it could evaluate. A declared parameter's own
-// name reads back as the origin it was seeded with or as `Unknown`. It can
-// never read back as an origin the walk invented, because the only other
-// definitions of that name are assignments the algorithm makes to it, and those
-// join to `Unknown`.
+// name reads back as the origin it was seeded with, that origin marked shallow,
+// or `Unknown`. It can never read back as another value, because the only other
+// definitions of that name are assignments the algorithm makes to it. An
+// assignment of a fresh value marks the parameter shallow and any other one
+// joins to `Unknown`.
 func TestOriginMapCoversEveryFunction(t *testing.T) {
 	cfg := testCFG(t)
 
@@ -470,7 +496,8 @@ func TestOriginMapCoversEveryFunction(t *testing.T) {
 			require.NotEqual(t, originUnset, m.origins[name].Kind, "%s: %s left unset", fn.Name, name)
 		}
 		for i, param := range fn.Params {
-			require.Contains(t, []Origin{paramOrigin(fn, i), Unknown}, m.Of(param), "%s: %s", fn.Name, param)
+			seeded := paramOrigin(fn, i)
+			require.Contains(t, []Origin{seeded, seeded.join(Fresh), Unknown}, m.Of(param), "%s: %s", fn.Name, param)
 		}
 	}
 }

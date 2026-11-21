@@ -50,9 +50,11 @@ func TestMutationsString(t *testing.T) {
 		"SeveralArgs":    {Mutations{Args: []int{0, 2}}, "args{0,2}"},
 		"Unattributable": {Mutations{Unattributable: true}, "unattributable"},
 		"Incomplete":     {Mutations{Incomplete: true}, "incomplete"},
+		"Callbacks":      {Mutations{Callbacks: []int{0, 3}}, "callbacks{0,3}"},
+		"Stored":         {Mutations{Stored: []string{"Handler", "Listener"}}, "stored{Handler,Listener}"},
 		"Every": {
-			Mutations{Args: []int{1}, Receiver: true, Unattributable: true, Incomplete: true},
-			"receiver args{1} unattributable incomplete",
+			Mutations{Args: []int{1}, Receiver: true, Callbacks: []int{2}, Stored: []string{"Handler"}, Unattributable: true, Incomplete: true},
+			"receiver args{1} callbacks{2} stored{Handler} unattributable incomplete",
 		},
 	}
 
@@ -118,11 +120,11 @@ func TestMutationSummarySampleFunctions(t *testing.T) {
 		// arguments, so the buffer is fresh and the write is discarded.
 		// Only the prose step §3 could not lower is left to report.
 		"InteriorOfAFreshAllocation": {"TypedArray.prototype.slice", "incomplete"},
-		// InitializeTypedArrayFromTypedArray writes the buffer behind an
-		// AllocateTypedArray result, and that allocator stores the name it was
-		// given into the array, so reading inside its result can reach a
-		// caller's value and the write cannot be placed.
-		"InteriorOfAShallowAllocation": {"InitializeTypedArrayFromTypedArray", "args{0} unattributable"},
+		// InitializeTypedArrayFromTypedArray stores bytes into `data`, a buffer
+		// that either CloneArrayBuffer or AllocateArrayBuffer allocated. Both
+		// return a fresh buffer, so the store reaches nothing the caller holds,
+		// and only the slot writes onto `O` are charged.
+		"WriteIntoAFreshBuffer": {"InitializeTypedArrayFromTypedArray", "args{0}"},
 		// indexOf only reads the receiver, and every String method coerces its
 		// receiver to a fresh string before touching it.
 		"ReadOnlyMethod": {"Array.prototype.indexOf", "none"},
@@ -139,10 +141,11 @@ func TestMutationSummarySampleFunctions(t *testing.T) {
 		"ParameterPastReadOnlyInternalMethods": {"Object.assign", "args{0}"},
 		// @@replace calls `Set(rx, "lastIndex", 0, true)` on its receiver, and
 		// separately appends to three lists through writes whose slot the
-		// algorithm computes. The appends land on values the analysis cannot
-		// place, so the mutation it found stands alongside the warning that it
-		// could not read the whole algorithm.
-		"MutatingAndIncomplete": {"RegExp.prototype [ @@replace ]", "receiver incomplete"},
+		// algorithm computes. Every list is fresh. `replacerArgs` is the one
+		// `__FLAT_LIST__` returns, which takes its origin from that operation's
+		// own return, so the appends are discarded and the receiver write stands
+		// alone.
+		"MutatingThroughFreshLists": {"RegExp.prototype [ @@replace ]", "receiver"},
 		// setPrototypeOf performs no write of its own. It ends in
 		// `O.[[SetPrototypeOf]](proto)`, a dispatch that resolves to no body,
 		// and the internal-method table is what reports the write at all.
@@ -271,16 +274,34 @@ func TestMutationSummarySkipsNonBackingStoreSlots(t *testing.T) {
 // which the algorithm addresses by index. `GetModifySetValueInBuffer` reaches
 // the block through `arrayBuffer.[[ArrayBufferData]]`, so the store lands on
 // `arrayBuffer`, and `AtomicReadModifyWrite` passes the buffer behind its own
-// typed array as it.
+// typed array as it. `GetModifySetValueInBuffer` also calls the modification
+// function it was passed at position 4. `AtomicReadModifyWrite` passes on the
+// one it was passed at position 3, and `Atomics.add` hands it a closure it
+// allocated, which the callback contract covers.
 func TestMutationSummaryChargesAComputedSlotWriteOnAnInterior(t *testing.T) {
-	require.Equal(t, "args{0} incomplete", mutationsOf(t, "GetModifySetValueInBuffer").String())
-	require.Equal(t, "args{0}", mutationsOf(t, "AtomicReadModifyWrite").String())
+	require.Equal(t, "args{0} callbacks{4} incomplete", mutationsOf(t, "GetModifySetValueInBuffer").String())
+	require.Equal(t, "args{0} callbacks{3}", mutationsOf(t, "AtomicReadModifyWrite").String())
+	require.Equal(t, "args{0}", mutationsOf(t, "Atomics.add").String())
 }
 
 // A write whose slot the algorithm computes leaves the function incomplete when
 // the written value is neither fresh nor an interior. The analysis knows
-// neither what the write reached nor whose value it was.
+// neither what the write reached nor whose value it was. Here `y` is the result
+// of a call the graph holds no body for.
 func TestMutationSummaryComputedSlotWriteOnAnUnplaceableValue(t *testing.T) {
+	cfg, err := ParseCFG([]byte(
+		`{"specTarget":"abc","funcs":[` +
+			`{"name":"Demo","kind":"builtin-static","params":["x"],"nodes":[` +
+			`{"kind":"call","target":"y","callee":"Elsewhere","args":[{"kind":"var","var":"x"}],"guard":"plain"},` +
+			`{"kind":"slotwrite","object":{"kind":"var","var":"y"},"value":{"kind":"lit"}}]}]}`))
+	require.NoError(t, err)
+
+	require.Equal(t, "incomplete", NewMutationSummary(cfg).Of(cfg.Builtin("Demo")).String())
+}
+
+// A write whose slot the algorithm computes is charged to the parameter it lands
+// inside of, since a property read off a parameter is interior to it.
+func TestMutationSummaryComputedSlotWriteInsideAParameter(t *testing.T) {
 	cfg, err := ParseCFG([]byte(
 		`{"specTarget":"abc","funcs":[` +
 			`{"name":"Demo","kind":"builtin-static","params":["x"],"nodes":[` +
@@ -288,7 +309,29 @@ func TestMutationSummaryComputedSlotWriteOnAnUnplaceableValue(t *testing.T) {
 			`{"kind":"slotwrite","object":{"kind":"var","var":"y"},"value":{"kind":"lit"}}]}]}`))
 	require.NoError(t, err)
 
-	require.Equal(t, "incomplete", NewMutationSummary(cfg).Of(cfg.Builtin("Demo")).String())
+	require.Equal(t, "args{0}", NewMutationSummary(cfg).Of(cfg.Builtin("Demo")).String())
+}
+
+// A write onto a module-level value charges nothing, since the caller did not
+// pass it, and leaves no warning behind.
+func TestMutationSummaryWriteOnAGlobal(t *testing.T) {
+	cfg, err := ParseCFG([]byte(
+		`{"specTarget":"abc","funcs":[` +
+			`{"name":"Set","kind":"abstract-op","params":["O","P","V"],"nodes":[]},` +
+			`{"name":"Demo","kind":"builtin-static","params":["x"],"nodes":[` +
+			`{"kind":"call","callee":"Set","args":[{"kind":"global","var":"cache"},{"kind":"lit"},{"kind":"var","var":"x"}],"guard":"plain"},` +
+			`{"kind":"call","callee":"Set","args":[{"kind":"prop","object":{"kind":"global","var":"cache"}},{"kind":"lit"},{"kind":"lit"}],"guard":"plain"}]}]}`))
+	require.NoError(t, err)
+
+	require.Equal(t, "none", NewMutationSummary(cfg).Of(cfg.Builtin("Demo")).String())
+}
+
+// A parameter an algorithm reassigns to a fresh value on one path is charged
+// for a write on either path, since writing the fresh one is invisible.
+// `MakeConstructor ( F [ , writablePrototype [ , prototype ] ] )` allocates
+// `prototype` when the caller omits it and then writes it.
+func TestMutationSummaryWriteOnAParameterJoinedWithAFreshValue(t *testing.T) {
+	require.Equal(t, "args{0,2}", mutationsOf(t, "MakeConstructor").String())
 }
 
 // A write whose slot the algorithm computes is discarded when it lands on a
@@ -338,6 +381,8 @@ CopyDataBlockBytes: toBlock
 GatherAvailableAncestors: execList
 InnerModuleEvaluation: stack
 InnerModuleLinking: stack
+Record[SourceTextModuleRecord].GetExportedNames: exportStarSet
+Record[SourceTextModuleRecord].ResolveExport: resolveSet
 __APPEND_LIST__: to
 __REMOVE_ELEM__: list`))
 }
@@ -348,9 +393,9 @@ __REMOVE_ELEM__: list`))
 // write the callback may never perform.
 //
 // This asserts the order of those two checks. The graph holds callbacks, and
-// `chargeUnresolved` treats them as unreadable bodies on every one, but none
-// carries a seeded name, so reversing the order would leave every real answer
-// and every tally unchanged. `TestGraphHoldsNoneOfTheHandWrittenShapes` is what
+// `chargeUnresolved` records each one under its parameter, but none carries a
+// seeded name, so reversing the order would leave every real answer and every
+// tally unchanged. `TestGraphHoldsNoneOfTheHandWrittenShapes` is what
 // reports the day the graph grows a collision.
 func TestMutationSummaryCalleeNamingAParameterIsACallback(t *testing.T) {
 	cfg, err := ParseCFG([]byte(
@@ -362,7 +407,7 @@ func TestMutationSummaryCalleeNamingAParameterIsACallback(t *testing.T) {
 
 	s := NewMutationSummary(cfg)
 	require.Equal(t, "args{0}", s.Of(cfg.AbstractOp("Set")).String())
-	require.Equal(t, "incomplete", s.Of(cfg.Builtin("Demo")).String())
+	require.Equal(t, "callbacks{0}", s.Of(cfg.Builtin("Demo")).String())
 }
 
 // A call that omits the argument its callee mutates leaves the write with no
@@ -492,7 +537,136 @@ func TestInternalMethodTableSkipsACallback(t *testing.T) {
 
 	fn := cfg.AbstractOp("Demo")
 	require.NotNil(t, fn)
-	require.Equal(t, "incomplete", NewMutationSummary(cfg).Of(fn).String())
+	require.Equal(t, "callbacks{0}", NewMutationSummary(cfg).Of(fn).String())
+}
+
+// A callback takes its arguments as `&` borrows, so a call through one charges
+// nothing to the values it passes. What the caller passes at the callback's
+// position decides the rest. Each graph below holds `Each`, which calls the
+// function at position 1 with the value at position 0, and a `Caller` that
+// passes `Each` a different kind of function.
+func TestMutationSummaryCallbacks(t *testing.T) {
+	const each = `{"name":"Each","kind":"abstract-op","params":["xs","fn"],"nodes":[` +
+		`{"kind":"call","callee":"fn","args":[{"kind":"prop","object":{"kind":"var","var":"xs"}}],"guard":"plain"}]},` +
+		`{"name":"Set","kind":"abstract-op","params":["O","P","V","Throw"]},` +
+		`{"name":"Write","kind":"abstract-op","params":["v"],"nodes":[` +
+		`{"kind":"call","callee":"Set","args":[{"kind":"var","var":"v"}],"guard":"plain"}]},` +
+		`{"name":"Read","kind":"abstract-op","params":["v"],"nodes":[]},`
+	tests := map[string]struct {
+		passed string
+		want   string
+	}{
+		// A function the caller was handed stays a callback, now the caller's.
+		"Parameter": {`{"kind":"var","var":"g"}`, "callbacks{1}"},
+		// A function of the graph that writes its argument writes what `Each`
+		// passes it, which is inside the caller's parameter 0.
+		"WritingFunction": {`{"kind":"var","var":"Write"}`, "args{0}"},
+		"ReadingFunction": {`{"kind":"var","var":"Read"}`, "none"},
+		// A closure the caller allocated is held to the callback contract.
+		"Closure": {`{"kind":"alloc"}`, "none"},
+		// A value the analysis cannot read as a function.
+		"UnknownValue": {`{"kind":"var","var":"?"}`, "incomplete"},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg, err := ParseCFG([]byte(`{"specTarget":"abc","funcs":[` + each +
+				`{"name":"Caller","kind":"abstract-op","params":["ys","g"],"nodes":[` +
+				`{"kind":"call","callee":"Each","args":[{"kind":"var","var":"ys"},` + test.passed + `],"guard":"plain"}]}]}`))
+			require.NoError(t, err)
+
+			s := NewMutationSummary(cfg)
+			require.Equal(t, "callbacks{1}", s.Of(cfg.AbstractOp("Each")).String())
+			require.Equal(t, test.want, s.Of(cfg.AbstractOp("Caller")).String())
+		})
+	}
+}
+
+// A stored callback is a function read out of state rather than passed in,
+// and the call's Via names its declared type. One the caller supplied keeps
+// the callback contract, so the call charges nothing. One of the graph's own
+// functions that implements the type is charged against the call's arguments.
+// Each graph below holds `Emit`, which reads a handler out of its receiver
+// and calls it with parameter 0.
+func TestMutationSummaryStoredCallbacks(t *testing.T) {
+	const emit = `{"name":"Emit","kind":"builtin-method","params":["evt"],"nodes":[` +
+		`{"kind":"let","target":"h","source":{"kind":"prop","object":{"kind":"this"}}},` +
+		`{"kind":"call","callee":"h","args":[{"kind":"var","var":"evt"}],"guard":"plain","via":"Handler"}]},` +
+		`{"name":"Set","kind":"abstract-op","params":["O","P","V","Throw"]}`
+	tests := map[string]struct {
+		implementer string
+		want        string
+	}{
+		"CallerSuppliedOnly": {"", "stored{Handler}"},
+		"WritingImplementer": {
+			`,{"name":"Log","kind":"abstract-op","params":["e"],"implements":["Handler"],"nodes":[` +
+				`{"kind":"call","callee":"Set","args":[{"kind":"var","var":"e"}],"guard":"plain"}]}`,
+			"args{0} stored{Handler}",
+		},
+		"ReadingImplementer": {
+			`,{"name":"Log","kind":"abstract-op","params":["e"],"implements":["Handler"],"nodes":[]}`,
+			"stored{Handler}",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg, err := ParseCFG([]byte(`{"specTarget":"abc","funcs":[` + emit + test.implementer + `]}`))
+			require.NoError(t, err)
+
+			require.Equal(t, test.want, NewMutationSummary(cfg).Of(cfg.Builtin("Emit")).String())
+		})
+	}
+}
+
+// A Via on a callee bound to a parameter leaves the call to the callback rule,
+// which records it under the parameter's position.
+func TestMutationSummaryViaOnAParameterIsACallback(t *testing.T) {
+	cfg, err := ParseCFG([]byte(`{"specTarget":"abc","funcs":[` +
+		`{"name":"Demo","kind":"abstract-op","params":["fn"],"nodes":[` +
+		`{"kind":"call","callee":"fn","guard":"plain","via":"Handler"}]}]}`))
+	require.NoError(t, err)
+
+	require.Equal(t, "callbacks{0}", NewMutationSummary(cfg).Of(cfg.AbstractOp("Demo")).String())
+}
+
+// A stored callback's result is the owned value the contract promises, joined
+// with what the graph's implementers of its type return in the call's terms.
+func TestOriginOfAStoredCallbackResult(t *testing.T) {
+	const demo = `{"name":"Demo","kind":"abstract-op","params":["x"],"nodes":[` +
+		`{"kind":"let","target":"h","source":{"kind":"var","var":"?"}},` +
+		`{"kind":"call","target":"r","callee":"h","args":[{"kind":"var","var":"x"}],"guard":"plain","via":"Handler"}]}`
+	tests := map[string]struct {
+		implementer string
+		want        Origin
+	}{
+		"CallerSuppliedOnly": {"", Fresh},
+		"IdentityImplementer": {
+			`,{"name":"Id","kind":"abstract-op","params":["e"],"implements":["Handler"],"nodes":[` +
+				`{"kind":"return","value":{"kind":"var","var":"e"}}]}`,
+			Origin{Kind: OriginParam, Index: 0, Shallow: true},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg, err := ParseCFG([]byte(`{"specTarget":"abc","funcs":[` + demo + test.implementer + `]}`))
+			require.NoError(t, err)
+
+			require.Equal(t, test.want, NewOriginMaps(cfg)[cfg.AbstractOp("Demo")].Of("r"))
+		})
+	}
+}
+
+// A callback's result is the owned value the contract promises, so it aliases
+// nothing the calling function was given.
+func TestOriginOfACallbackResult(t *testing.T) {
+	cfg, err := ParseCFG([]byte(`{"specTarget":"abc","funcs":[` +
+		`{"name":"Demo","kind":"abstract-op","params":["x","fn"],"nodes":[` +
+		`{"kind":"call","target":"r","callee":"fn","args":[{"kind":"var","var":"x"}],"guard":"plain"}]}]}`))
+	require.NoError(t, err)
+
+	require.Equal(t, Fresh, NewOriginMap(cfg.AbstractOp("Demo")).Of("r"))
 }
 
 // handWrittenShapes are the four shapes the committed graph does not hold, each
@@ -586,7 +760,12 @@ func TestGraphHoldsNoneOfTheHandWrittenShapes(t *testing.T) {
 		"a callee bound to a parameter shares a name with a seed or internal-method entry; "+
 			"TestMutationSummaryCalleeNamingAParameterIsACallback and "+
 			"TestInternalMethodTableSkipsACallback describe how that call is treated")
-	require.Empty(t, found.shortCall,
+	// CreateDynamicFunction calls MakeConstructor without its optional
+	// `prototype`, which MakeConstructor then allocates and writes. The write
+	// is charged to that position, as
+	// TestMutationSummaryWriteOnAParameterJoinedWithAFreshValue describes, so
+	// the call leaves CreateDynamicFunction incomplete.
+	require.Equal(t, []string{"CreateDynamicFunction calls MakeConstructor"}, found.shortCall,
 		"a call omits an argument position its callee mutates; "+
 			"TestMutationSummaryCallOmittingTheMutatedArgument describes how it is treated")
 	require.Empty(t, found.shortDispatch,
@@ -685,7 +864,7 @@ func TestMutationSummaryTallies(t *testing.T) {
 			kind, byKind["total"], byKind["receiver"], byKind["args"], byKind["unattributable"], byKind["incomplete"], byKind["classifiable"]))
 	}
 	sort.Strings(kinds)
-	snaps.MatchInlineSnapshot(t, strings.Join(kinds, "\n"), snaps.Inline(`abstract-op: total 701, receiver 0, args 50, unattributable 39, incomplete 226, classifiable 449
-builtin-method: total 313, receiver 65, args 0, unattributable 3, incomplete 22, classifiable 289
-builtin-static: total 188, receiver 0, args 20, unattributable 21, incomplete 38, classifiable 145`))
+	snaps.MatchInlineSnapshot(t, strings.Join(kinds, "\n"), snaps.Inline(`abstract-op: total 701, receiver 0, args 51, unattributable 35, incomplete 227, classifiable 452
+builtin-method: total 313, receiver 65, args 0, unattributable 3, incomplete 21, classifiable 290
+builtin-static: total 188, receiver 0, args 20, unattributable 5, incomplete 34, classifiable 149`))
 }

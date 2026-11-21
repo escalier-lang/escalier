@@ -72,12 +72,6 @@
       "reviewedAt": "c2cb8f3fdb97",
       "receiver": "borrow"
     },
-    "RegExp.prototype [ @@replace ]": {
-      "reason": "Writes lastIndex on the receiver through Set(rx, \"lastIndex\", ...) when the pattern is global. The opaque steps build the replacement string.",
-      "evidence": "ECMA-262 \"RegExp.prototype [ %Symbol.replace% ]\"",
-      "reviewedAt": "4b29b7f53c9e",
-      "receiver": "mutBorrow"
-    },
     "RegExp.prototype [ @@split ]": {
       "reason": "Writes only into A, the array it allocates, and into splitter, the object SpeciesConstructor built. Every step touching the receiver reads it. Same species exception as RegExp.prototype [ @@matchAll ].",
       "evidence": "ECMA-262 \"RegExp.prototype [ %Symbol.split% ]\"",
