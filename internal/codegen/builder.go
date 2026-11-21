@@ -1291,15 +1291,27 @@ func buildPropertyInObjectCheck(propName string, objectExpr Expr, source ast.Nod
 
 // buildTypeGuard generates a runtime type check expression for a given type annotation
 func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
-	// A reference to an alias hides the regex type or the union it names from typeAnn. Any
-	// other reference keeps the guard below, such as `instanceof` for a class.
+	// The checker works out the test of an object type annotation from the scrutinee's
+	// type, which tells the members apart by a property with a literal type.
+	if d, recorded := b.types().AnnDiscriminant(typeAnn); recorded {
+		return buildDiscriminantTest(valueExpr, d, typeAnn)
+	}
+	// A reference to an alias hides the regex type, the union, or the object type it names
+	// from typeAnn. Any other reference keeps the guard below, such as `instanceof` for a
+	// class.
 	if ref, isRef := typeAnn.(*ast.TypeRefTypeAnn); isRef {
 		switch t := b.types().ExpandedTypeOf(ref).(type) {
-		case *soltype.RegexType, *soltype.UnionType:
+		case *soltype.RegexType, *soltype.UnionType, *soltype.ObjectType:
 			return b.buildSolTypeGuard(valueExpr, t, ref, set.NewSet[string]())
 		}
 	}
 	switch t := typeAnn.(type) {
+	case *ast.RefTypeAnn:
+		// A borrow reads the value it borrows, so the value is tested against the type
+		// inside it.
+		return b.buildTypeGuard(valueExpr, t.Inner)
+	case *ast.MutableTypeAnn:
+		return b.buildTypeGuard(valueExpr, t.Target)
 	case *ast.UnionTypeAnn:
 		guards := make([]Expr, len(t.Types))
 		for i, member := range t.Types {
@@ -1395,6 +1407,43 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 	}
 }
 
+// buildDiscriminantTest returns the runtime test d describes for valueExpr. `&B` with
+// `type B = {kind: "b", b: string}` over a `{kind: "a", a: number} | B` scrutinee tests
+// `value.kind === "b"`. source is the annotation every node of the test maps back to.
+func buildDiscriminantTest(valueExpr Expr, d Discriminant, source ast.Node) Expr {
+	if d.Always {
+		return NewLitExpr(NewBoolLit(true, source), source)
+	}
+	var conditions []Expr
+	if d.NullCheck {
+		conditions = append(conditions,
+			NewBinaryExpr(valueExpr, NotEqual, NewLitExpr(NewNullLit(source), source), source))
+	}
+	if len(d.Lits) > 0 {
+		read := buildPropertyRead(valueExpr, d.Key, source)
+		equalities := make([]Expr, len(d.Lits))
+		for i, lit := range d.Lits {
+			equalities[i] = NewBinaryExpr(read, StrictEqual, NewLitExpr(buildSolLit(lit, source), source), source)
+		}
+		conditions = append(conditions, anyCondition(equalities, source))
+	}
+	return combineConditions(conditions, source)
+}
+
+// buildSolLit converts a string, number, or boolean literal type to a codegen Lit, and
+// returns nil for any other literal. source is the node the literal maps back to.
+func buildSolLit(lit *soltype.LitType, source ast.Node) Lit {
+	switch l := lit.Lit.(type) {
+	case *soltype.StrLit:
+		return NewStrLit(l.Value, source)
+	case *soltype.NumLit:
+		return NewNumLit(l.Value, source)
+	case *soltype.BoolLit:
+		return NewBoolLit(l.Value, source)
+	}
+	return nil
+}
+
 // buildSolTypeGuard returns a runtime test that value is of type t, for a type an alias
 // names rather than one written as an annotation. It tests primitives, literals, regex
 // types, `null`, `undefined`, object types by their properties, tuples, unions of them, and
@@ -1429,16 +1478,7 @@ func (b *Builder) buildSolTypeGuard(valueExpr Expr, t soltype.Type, source ast.N
 			return b.buildTypeOfCheck(valueExpr, "boolean", StrictEqual, source)
 		}
 	case *soltype.LitType:
-		var lit Lit
-		switch l := t.Lit.(type) {
-		case *soltype.StrLit:
-			lit = NewStrLit(l.Value, source)
-		case *soltype.NumLit:
-			lit = NewNumLit(l.Value, source)
-		case *soltype.BoolLit:
-			lit = NewBoolLit(l.Value, source)
-		}
-		if lit != nil {
+		if lit := buildSolLit(t, source); lit != nil {
 			return NewBinaryExpr(valueExpr, StrictEqual, NewLitExpr(lit, source), source)
 		}
 	case *soltype.RegexType:

@@ -1,0 +1,14 @@
+type A = {kind: "a", a: number}
+type B = {kind: "b", b: string}
+type U = A | B
+
+// Each arm tests the `kind` field, so a value of `A` skips the `&B` arm.
+export fn plain(u: &U) -> number {
+    return match u {
+        x: &B => x.b.length,
+        y: &A => y.a,
+    }
+}
+
+export val fromA = plain({kind: "a", a: 1})
+export val fromB = plain({kind: "b", b: "hi"})

@@ -460,6 +460,12 @@ func (b *pathBinder) applyTest(scope *Scope, node ast.Node, s *ucs.Scrutinee, v 
 		if !s.IsRoot() {
 			return b.applyNestedAnnTest(scope, node, v, t)
 		}
+		// The test is worked out over the root's unnarrowed shape, since codegen emits one
+		// runtime test per annotation and every path reaching it runs that test. An open
+		// root can hold values its type does not name, so no property tells them apart.
+		if !b.openRoot {
+			b.c.recordAnnDiscriminant(scope, b.lvl, b.rootShape, t.Ann)
+		}
 		v.tested = &testedAnn{ann: t.Ann}
 		return v
 	default:

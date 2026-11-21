@@ -32,6 +32,9 @@ type JSTypes interface {
 	// AbsentKeys returns the keys an object pattern's runtime test also checks are absent,
 	// beyond the keys the pattern names. Each emits `!("key" in value)`.
 	AbsentKeys(p *ast.ObjectPat) []string
+	// AnnDiscriminant returns the runtime test of a narrowing annotation that names an
+	// object type, and reports whether inference recorded one.
+	AnnDiscriminant(ta ast.TypeAnn) (Discriminant, bool)
 	// ExpandedTypeOf returns the type an annotation resolved to, with each alias on the
 	// outside expanded, or nil when it records none. `Digits` under `type Digits = /^\d+$/`
 	// returns the regex type `/^\d+$/`.
@@ -50,18 +53,29 @@ type JSTypes interface {
 	MemberJSExpr(m *ast.MemberExpr) (string, bool)
 }
 
+// Discriminant is the runtime test of a narrowing annotation that names an object type. A
+// value passes when it is not `null` or `undefined`, if NullCheck is set, and its Key
+// property equals one of Lits. Always marks an annotation every value passes.
+type Discriminant struct {
+	Always    bool
+	Key       string
+	Lits      []*soltype.LitType
+	NullCheck bool
+}
+
 // noJSTypes answers as an untyped tree does. A nil JSTypes field reads as this, so
 // every question has one answer path rather than a nil check at each call site.
 type noJSTypes struct{}
 
-func (noJSTypes) IsNominalTypeRef(*ast.TypeRefTypeAnn) bool   { return false }
-func (noJSTypes) CalleeConstructs(ast.Expr) bool              { return false }
-func (noJSTypes) IsMethodRead(ast.Expr) bool                  { return false }
-func (noJSTypes) AbsentKeys(*ast.ObjectPat) []string          { return nil }
-func (noJSTypes) ExpandedTypeOf(ast.TypeAnn) soltype.Type     { return nil }
-func (noJSTypes) Expand(t soltype.Type) soltype.Type          { return t }
-func (noJSTypes) NullableArms(ast.Expr) (bool, bool)          { return false, false }
-func (noJSTypes) MemberJSExpr(*ast.MemberExpr) (string, bool) { return "", false }
+func (noJSTypes) IsNominalTypeRef(*ast.TypeRefTypeAnn) bool        { return false }
+func (noJSTypes) CalleeConstructs(ast.Expr) bool                   { return false }
+func (noJSTypes) IsMethodRead(ast.Expr) bool                       { return false }
+func (noJSTypes) AbsentKeys(*ast.ObjectPat) []string               { return nil }
+func (noJSTypes) AnnDiscriminant(ast.TypeAnn) (Discriminant, bool) { return Discriminant{}, false }
+func (noJSTypes) ExpandedTypeOf(ast.TypeAnn) soltype.Type          { return nil }
+func (noJSTypes) Expand(t soltype.Type) soltype.Type               { return t }
+func (noJSTypes) NullableArms(ast.Expr) (bool, bool)               { return false, false }
+func (noJSTypes) MemberJSExpr(*ast.MemberExpr) (string, bool)      { return "", false }
 
 // types returns the oracle to ask, which is noJSTypes for a Builder that was given
 // none.

@@ -280,6 +280,55 @@ func TestEmitsJSForTypeDrivenForms(t *testing.T) {
 			declare val v: unknown
 			export val hit = match v { p: Point => 1, _ => 0 }
 		`,
+		"AnObjectAnnotatedArmTestsTheDiscriminant": `
+			type A = {kind: "a", a: number}
+			type B = {kind: "b", b: string}
+			type U = A | B
+			export fn plain(u: &U) -> number {
+			    return match u {
+			        x: &B => x.b.length,
+			        y: &A => y.a,
+			    }
+			}
+		`,
+		"AnObjectAnnotatedArmChecksNullFirst": `
+			type A = {kind: "a", a: number}
+			type B = {kind: "b", b: string}
+			export fn nullable(u: A | B | null) -> number {
+			    return match u {
+			        x: B => x.b.length,
+			        y: A => y.a,
+			        _ => 0,
+			    }
+			}
+		`,
+		"AnArmAnnotatedWithAUnionOfObjectsTestsEachLiteral": `
+			type A = {kind: "a", a: number}
+			type B = {kind: "b", b: number}
+			type C = {kind: "c", c: string}
+			export fn grouped(u: A | B | C | null) -> number {
+			    return match u {
+			        x: A | B => 1,
+			        y: C => y.c.length,
+			        _ => 0,
+			    }
+			}
+		`,
+		"AnIfValAnnotatedWithAnObjectTestsTheDiscriminant": `
+			type A = {kind: "a", a: number}
+			type B = {kind: "b", b: string}
+			export fn pick(u: A | B) -> number {
+			    return if val x: B = u { x.b.length } else { 0 }
+			}
+		`,
+		"AnArmAdmittingTheWholeScrutineeRunsUntested": `
+			type A = {kind: "a", a: number}
+			export fn whole(u: A) -> number {
+			    return match u {
+			        x: A => x.a,
+			    }
+			}
+		`,
 		"AFunctionFieldReadOffSelfIsNotBound": `
 			class Fix {
 			    f: fn (a: number) -> number,
@@ -300,7 +349,9 @@ func TestEmitsJSForTypeDrivenForms(t *testing.T) {
 
 	for name, source := range tests {
 		t.Run(name, func(t *testing.T) {
-			js := CompilePackage(libSources(source), PackageConfig{}).CompUnits["lib/index"].JS
+			out := CompilePackage(libSources(source), PackageConfig{})
+			require.Empty(t, messages(out.TypeErrors))
+			js := out.CompUnits["lib/index"].JS
 			require.NotEmpty(t, js)
 			snaps.MatchSnapshot(t, js)
 		})
