@@ -276,3 +276,33 @@ func TestHoverBeforeInitialize(t *testing.T) {
 	})
 	require.EqualError(t, err, "server not initialized")
 }
+
+// TestHoverParamsDecode asserts that a hover request's JSON decodes into hoverParams with
+// its verbosity level and its position.
+func TestHoverParamsDecode(t *testing.T) {
+	tests := []struct {
+		name     string
+		json     string
+		expected int
+	}{
+		{
+			name:     "WithLevel",
+			json:     `{"textDocument": {"uri": "file:///lib/a.esc"}, "position": {"line": 1, "character": 12}, "verbosityLevel": 2}`,
+			expected: 2,
+		},
+		{
+			name:     "WithoutLevel",
+			json:     `{"textDocument": {"uri": "file:///lib/a.esc"}, "position": {"line": 1, "character": 12}}`,
+			expected: 0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var params hoverParams
+			require.NoError(t, json.Unmarshal([]byte(tt.json), &params))
+			require.Equal(t, tt.expected, params.VerbosityLevel)
+			require.Equal(t, protocol.DocumentUri("file:///lib/a.esc"), params.TextDocument.URI)
+			require.Equal(t, protocol.Position{Line: 1, Character: 12}, params.Position)
+		})
+	}
+}
