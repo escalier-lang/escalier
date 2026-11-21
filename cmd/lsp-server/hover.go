@@ -209,7 +209,7 @@ func declHoverText(info *solver.Info, decl ast.Decl) string {
 
 // evaluatedLine returns, for a type alias decl, a line holding the alias's evaluated type
 // when that prints differently from the type as written, and "" otherwise.
-// `type Y = Point["y"]` for `type Point = {x: number, y?: number}` gives `\n= number`.
+// `type Y = Point["y"]` for `type Point = {x: number, y?: number}` gives `\n= number | undefined`.
 func evaluatedLine(info *solver.Info, decl ast.Decl) string {
 	alias, ok := decl.(*ast.TypeDecl)
 	if !ok || info == nil {

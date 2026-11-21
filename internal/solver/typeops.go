@@ -126,6 +126,10 @@ type typeEvaluator struct {
 	// `{x: number}["z"]` surfaces at the constraint site. It records diagnostics, not solver
 	// state, so no bound or variable is mutated.
 	errs []SolverError
+	// homomorphicKey names the source property whose field a homomorphic mapped type is
+	// reducing, or is "" outside one. Reading that property by name adds no `undefined` for
+	// its being optional, since the field's own `?` marker carries that. mappedFields sets it.
+	homomorphicKey string
 }
 
 func newTypeEvaluator(ctx *Context, seen *seenPairs) *typeEvaluator {
@@ -1047,7 +1051,15 @@ func (e *typeEvaluator) mappedFields(t *soltype.MappedElem, key soltype.Type, so
 		}
 	}
 	optional, readonly := mappedMarkers(t, name, source, homomorphic)
+	// `Partial<{a?: number}>` gives `{a?: number}` and `Required<{a?: number}>` gives
+	// `{a: number}`, as in TypeScript. The field's marker decides whether it may be absent, so
+	// `T[K]` adds no `undefined` for the source property being optional.
+	saved := e.homomorphicKey
+	if homomorphic {
+		e.homomorphicKey = name
+	}
 	value := e.reduce(substituteMappedKey(t.Value, t.Key, key))
+	e.homomorphicKey = saved
 	fields := make([]*soltype.PropertyElem, len(names))
 	for i, n := range names {
 		fields[i] = &soltype.PropertyElem{Name: n, Type: value, Optional: optional, Readonly: readonly}
@@ -1694,11 +1706,16 @@ func (e *typeEvaluator) indexObject(obj *soltype.ObjectType, index soltype.Type,
 		e.errs = append(e.errs, &UnknownObjectKeyError{Object: obj, Key: name})
 		return &soltype.ErrorType{}
 	}
-	read, hasValue, _ := memberReadContribution(obj, name)
+	read, hasValue, mayUndef := memberReadContribution(obj, name)
 	if !hasValue {
 		// The member is a write-only setter, which exposes no readable value. Leave the access
 		// symbolic rather than resolving a write slot to a read type.
 		return &soltype.IndexType{Target: obj, Index: index, Inexact: inexact}
+	}
+	if mayUndef && name != e.homomorphicKey {
+		// An optional property may be absent, so reading it can give `undefined`, the same as
+		// a read of the value does.
+		return newUnion(nil, []soltype.Type{read, &soltype.UndefinedType{}})
 	}
 	return read
 }
