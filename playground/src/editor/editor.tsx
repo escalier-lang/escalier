@@ -1,6 +1,5 @@
 import * as monaco from 'monaco-editor-core';
 import {
-    type DragEvent,
     type ReactNode,
     useCallback,
     useEffect,
@@ -11,7 +10,6 @@ import {
 import { CrashReportDialog } from '../components/crash-report-dialog';
 import { FileExplorer } from '../components/file-explorer';
 import { Toast, ToastButton } from '../components/toast';
-import { diagnosticsLanguageID } from '../diagnostics/diagnostics-language';
 import {
     DIAGNOSTICS_TAB_PATH,
     diagnosticLocation,
@@ -19,8 +17,6 @@ import {
 } from '../diagnostics/project-diagnostics';
 import { useProjectDiagnosticsStore } from '../diagnostics/project-diagnostics-store';
 import type { BrowserFS } from '../fs/browser-fs';
-import { languageID } from '../language/language';
-import { collectProjectFiles } from '../project/permalink';
 import { monacoThemeName, useThemeStore } from '../theme/theme';
 import {
     type CrashReport,
@@ -29,191 +25,17 @@ import {
     sideBeside,
 } from './editor-state';
 import { useEditorStore } from './editor-store';
+import { EmptyPane } from './empty-pane';
+import {
+    firstEscalierFile,
+    languageForPath,
+    loadFileContent,
+    pathToUri,
+} from './paths';
+import { useTabDrag } from './tab-drag';
+import { TabList } from './tab-list';
 
 import styles from './editor.module.css';
-
-/** Get the display name (filename) from a path. */
-function displayName(path: string): string {
-    return path.split('/').pop() ?? path;
-}
-
-/** Returns the Monaco language id for a file path. */
-export function languageForPath(path: string): string {
-    if (path === DIAGNOSTICS_TAB_PATH) return diagnosticsLanguageID;
-    if (path.endsWith('.esc')) return languageID;
-    if (path.endsWith('.js')) return 'javascript';
-    if (path.endsWith('.ts') || path.endsWith('.d.ts')) return 'typescript';
-    if (path.endsWith('.json') || path.endsWith('.js.map')) return 'json';
-    if (path.endsWith('.toml')) return 'toml';
-    return 'plaintext';
-}
-
-/** Convert a filesystem path to a Monaco URI string. */
-function pathToUri(path: string): string {
-    return `file://${path}`;
-}
-
-type ContextMenuState = {
-    tabPath: string;
-    side: Side;
-    x: number;
-    y: number;
-};
-
-/**
- * The drag data type a tab sets. Monaco ignores it, so a tab dropped on an editor
- * inserts no text.
- */
-const TAB_DRAG_TYPE = 'application/x-escalier-tab';
-
-/** The tab being dragged. */
-type DraggedTab = { side: Side; index: number };
-
-type DropHandlers = {
-    onDragOver: (e: DragEvent) => void;
-    onDragLeave: (e: DragEvent) => void;
-    onDrop: (e: DragEvent) => void;
-};
-
-type EmptyPaneProps = {
-    side: Side;
-    /** Whether files opened from the explorer open on this side. */
-    isFocused: boolean;
-    isDropTarget: boolean;
-    dropHandlers: DropHandlers;
-    onFocus: () => void;
-};
-
-/**
- * Fills a side that has no tabs. Clicking it makes the side the one files open on,
- * and a tab dragged from the other side can be dropped on it.
- */
-const EmptyPane = ({
-    side,
-    isFocused,
-    isDropTarget,
-    dropHandlers,
-    onFocus,
-}: EmptyPaneProps) => (
-    <button
-        type="button"
-        className={[
-            styles.emptyState,
-            side === 'left' ? styles.inputEmpty : styles.outputEmpty,
-            isFocused ? styles.focusedEmpty : '',
-            isDropTarget ? styles.dropTarget : '',
-        ]
-            .filter(Boolean)
-            .join(' ')}
-        onClick={onFocus}
-        {...dropHandlers}
-    >
-        {isFocused
-            ? 'Open a file from the explorer or drag a tab here'
-            : 'Click to open files here, or drag a tab here'}
-    </button>
-);
-
-type TabItemProps = {
-    path: string;
-    isActive: boolean;
-    isFocused: boolean;
-    panelId: string;
-    side: Side;
-    contextMenu: ContextMenuState | null;
-    onActivate: () => void;
-    onClose: () => void;
-    onMove: () => void;
-    onContextMenu: (x: number, y: number) => void;
-    onDragStart: () => void;
-    onDragEnd: () => void;
-};
-
-const TabItem = ({
-    path,
-    isActive,
-    isFocused,
-    panelId,
-    side,
-    contextMenu,
-    onActivate,
-    onClose,
-    onMove,
-    onContextMenu,
-    onDragStart,
-    onDragEnd,
-}: TabItemProps) => {
-    const name = displayName(path);
-    const className = `${styles.tab} ${isActive && isFocused ? styles.activeTab : styles.visibleTab}`;
-    const isMenuOpen =
-        contextMenu !== null &&
-        contextMenu.tabPath === path &&
-        contextMenu.side === side;
-
-    return (
-        <div
-            role="tab"
-            tabIndex={0}
-            aria-selected={isActive}
-            aria-controls={panelId}
-            className={className}
-            onClick={onActivate}
-            onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') onActivate();
-            }}
-            onContextMenu={(e) => {
-                e.preventDefault();
-                onContextMenu(e.clientX, e.clientY);
-            }}
-            draggable
-            onDragStart={(e) => {
-                // Firefox starts a drag only when the drag carries data.
-                e.dataTransfer.setData(TAB_DRAG_TYPE, path);
-                e.dataTransfer.effectAllowed = 'move';
-                onDragStart();
-            }}
-            onDragEnd={onDragEnd}
-        >
-            <span className={styles.tabLabel}>{name}</span>
-            <button
-                type="button"
-                className={styles.closeButton}
-                onClick={(e) => {
-                    e.stopPropagation();
-                    onClose();
-                }}
-                aria-label={`Close ${name}`}
-                tabIndex={0}
-            >
-                &times;
-            </button>
-            {isMenuOpen && (
-                <div
-                    className={styles.contextMenu}
-                    style={{ left: contextMenu.x, top: contextMenu.y }}
-                    onClick={(e) => e.stopPropagation()}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                >
-                    <button
-                        type="button"
-                        className={styles.contextMenuItem}
-                        onClick={() => onMove()}
-                    >
-                        {side === 'left' ? 'Move to Right' : 'Move to Left'}
-                    </button>
-                    <button
-                        type="button"
-                        className={styles.contextMenuItem}
-                        onClick={() => onClose()}
-                    >
-                        Close
-                    </button>
-                </div>
-            )}
-        </div>
-    );
-};
 
 export type EditorProps = {
     fs: BrowserFS;
@@ -244,11 +66,7 @@ export const Editor = ({
     const outputEditorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(
         null,
     );
-    const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(
-        null,
-    );
-    const [draggedTab, setDraggedTab] = useState<DraggedTab | null>(null);
-    const [dropSide, setDropSide] = useState<Side | null>(null);
+    const { dropSide, dropHandlers, startDrag, endDrag } = useTabDrag();
     const {
         leftTabs,
         activeLeftTabIndex,
@@ -259,22 +77,6 @@ export const Editor = ({
     } = state;
 
     const showRightPane = rightPaneVisible ?? rightTabs.length > 0;
-
-    // Dismiss context menu on click or pointer-down elsewhere.
-    // pointerdown covers both left- and right-clicks and fires before
-    // contextmenu, so it dismisses the menu before a new one opens.
-    // We intentionally omit 'contextmenu' because it would bubble from
-    // the tab and immediately clear the menu that was just opened.
-    useEffect(() => {
-        if (!contextMenu) return;
-        const dismiss = () => setContextMenu(null);
-        window.addEventListener('click', dismiss);
-        window.addEventListener('pointerdown', dismiss);
-        return () => {
-            window.removeEventListener('click', dismiss);
-            window.removeEventListener('pointerdown', dismiss);
-        };
-    }, [contextMenu]);
 
     const activeTab =
         activeLeftTabIndex !== null ? leftTabs[activeLeftTabIndex] : null;
@@ -596,46 +398,6 @@ export const Editor = ({
         });
     }
 
-    /**
-     * Returns the drag handlers that let an element on side take a tab dragged from the
-     * other side. Dropping the tab moves it, as "Move to Right" and "Move to Left" do.
-     */
-    const dropHandlers = (side: Side): DropHandlers => {
-        const accepts = draggedTab !== null && draggedTab.side !== side;
-        return {
-            onDragOver: (e: DragEvent) => {
-                if (!accepts) return;
-                // Cancelling dragover marks the element as a drop target.
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
-                setDropSide(side);
-            },
-            onDragLeave: (e: DragEvent) => {
-                // dragleave also fires on moving between the element's children.
-                if (e.currentTarget.contains(e.relatedTarget as Node | null)) {
-                    return;
-                }
-                setDropSide(null);
-            },
-            onDrop: (e: DragEvent) => {
-                if (!accepts) return;
-                e.preventDefault();
-                setDropSide(null);
-                setDraggedTab(null);
-                dispatch({
-                    type: 'moveTab',
-                    from: draggedTab.side,
-                    index: draggedTab.index,
-                });
-            },
-        };
-    };
-
-    const endTabDrag = () => {
-        setDraggedTab(null);
-        setDropSide(null);
-    };
-
     return (
         <div className={styles['editor-root']}>
             {/* Banner (e.g. validation errors) */}
@@ -652,119 +414,26 @@ export const Editor = ({
                 onFileRename={handleFileRename}
             />
 
-            {/* Input tabs */}
-            <div
-                {...dropHandlers('left')}
-                className={`${styles.inputTabs} ${dropSide === 'left' ? styles.dropTarget : ''}`}
-                role="tablist"
-                data-testid="input-tablist"
-            >
-                {leftTabs.map((tab, i) => (
-                    <TabItem
-                        key={tab.path}
-                        path={tab.path}
-                        isActive={i === activeLeftTabIndex}
-                        isFocused={focusedSide === 'left'}
-                        panelId="input-panel"
-                        side="left"
-                        contextMenu={contextMenu}
-                        onActivate={() => {
-                            dispatch({ type: 'setFocusedSide', side: 'left' });
-                            dispatch({
-                                type: 'setActiveTab',
-                                side: 'left',
-                                index: i,
-                            });
-                        }}
-                        onClose={() => {
-                            setContextMenu(null);
-                            dispatch({
-                                type: 'closeTab',
-                                side: 'left',
-                                index: i,
-                            });
-                        }}
-                        onMove={() => {
-                            setContextMenu(null);
-                            dispatch({
-                                type: 'moveTab',
-                                from: 'left',
-                                index: i,
-                            });
-                        }}
-                        onContextMenu={(x, y) =>
-                            setContextMenu({
-                                tabPath: tab.path,
-                                side: 'left',
-                                x,
-                                y,
-                            })
-                        }
-                        onDragStart={() => {
-                            setContextMenu(null);
-                            setDraggedTab({ side: 'left', index: i });
-                        }}
-                        onDragEnd={endTabDrag}
-                    />
-                ))}
-            </div>
-
-            {/* Output tabs */}
-            <div
-                {...dropHandlers('right')}
-                className={`${styles.outputTabs} ${dropSide === 'right' ? styles.dropTarget : ''}`}
-                role="tablist"
-                data-testid="output-tablist"
-            >
-                {rightTabs.map((tab, i) => (
-                    <TabItem
-                        key={tab.path}
-                        path={tab.path}
-                        isActive={i === activeRightTabIndex}
-                        isFocused={focusedSide === 'right'}
-                        panelId="output-panel"
-                        side="right"
-                        contextMenu={contextMenu}
-                        onActivate={() => {
-                            dispatch({ type: 'setFocusedSide', side: 'right' });
-                            dispatch({
-                                type: 'setActiveTab',
-                                side: 'right',
-                                index: i,
-                            });
-                        }}
-                        onClose={() => {
-                            setContextMenu(null);
-                            dispatch({
-                                type: 'closeTab',
-                                side: 'right',
-                                index: i,
-                            });
-                        }}
-                        onMove={() => {
-                            setContextMenu(null);
-                            dispatch({
-                                type: 'moveTab',
-                                from: 'right',
-                                index: i,
-                            });
-                        }}
-                        onContextMenu={(x, y) =>
-                            setContextMenu({
-                                tabPath: tab.path,
-                                side: 'right',
-                                x,
-                                y,
-                            })
-                        }
-                        onDragStart={() => {
-                            setContextMenu(null);
-                            setDraggedTab({ side: 'right', index: i });
-                        }}
-                        onDragEnd={endTabDrag}
-                    />
-                ))}
-            </div>
+            <TabList
+                side="left"
+                tabs={leftTabs}
+                activeIndex={activeLeftTabIndex}
+                isFocused={focusedSide === 'left'}
+                isDropTarget={dropSide === 'left'}
+                dropHandlers={dropHandlers('left')}
+                onDragStart={(index) => startDrag('left', index)}
+                onDragEnd={endDrag}
+            />
+            <TabList
+                side="right"
+                tabs={rightTabs}
+                activeIndex={activeRightTabIndex}
+                isFocused={focusedSide === 'right'}
+                isDropTarget={dropSide === 'right'}
+                dropHandlers={dropHandlers('right')}
+                onDragStart={(index) => startDrag('right', index)}
+                onDragEnd={endDrag}
+            />
 
             {/* Input editor */}
             <div
@@ -858,52 +527,4 @@ function revealPosition(
     editor.setPosition(position);
     editor.revealPositionInCenter(position);
     editor.focus();
-}
-
-/**
- * Returns the path of the project's first Escalier file in path order, preferring one under
- * `/lib/`, or null when the project has none.
- */
-function firstEscalierFile(fs: BrowserFS): string | null {
-    const paths = Object.keys(collectProjectFiles(fs.rootDir, () => ''))
-        .filter((path) => path.endsWith('.esc'))
-        .sort();
-    return paths.find((path) => path.startsWith('/lib/')) ?? paths[0] ?? null;
-}
-
-/**
- * Load file content from BrowserFS. BrowserFS callbacks fire synchronously
- * (it's all in-memory), so we can collect the result in a closure.
- * Returns null if the file doesn't exist.
- */
-function loadFileContent(fs: BrowserFS, path: string): string | null {
-    let result: string | null = null;
-
-    let called = false;
-    fs.open(path, 'r', undefined, (openErr, fd) => {
-        called = true;
-        if (openErr || fd === undefined) return;
-
-        fs.fstat(fd, (statErr, stats) => {
-            if (statErr) {
-                fs.close(fd, () => {});
-                return;
-            }
-
-            const buf = new Uint8Array(stats.size);
-            fs.read(fd, buf, 0, stats.size, 0, (readErr) => {
-                fs.close(fd, () => {});
-                if (readErr) return;
-                result = new TextDecoder().decode(buf);
-            });
-        });
-    });
-
-    if (!called) {
-        throw new Error(
-            'BrowserFS callback was not synchronous — loadFileContent requires synchronous callbacks',
-        );
-    }
-
-    return result;
 }
