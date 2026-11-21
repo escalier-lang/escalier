@@ -3,6 +3,7 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test } from 'vitest';
 
+import { useCheckStore } from '#diagnostics/check-monitor';
 import {
     DIAGNOSTICS_TAB_PATH,
     type DiagnosticSeverity,
@@ -21,6 +22,7 @@ function diagnostic(severity: DiagnosticSeverity): ProjectDiagnostic {
 beforeEach(() => {
     useEditorStore.setState({ ...initialEditorState });
     useProjectDiagnosticsStore.setState({ diagnostics: {} });
+    useCheckStore.setState({ status: { kind: 'idle', lastCheckMs: null } });
 });
 
 afterEach(cleanup);
@@ -55,4 +57,11 @@ test('names the counts when there are none', () => {
     expect(
         screen.getByRole('button', { name: '0 errors, 0 warnings' }),
     ).toBeInTheDocument();
+});
+
+test('shows how long the last check took', () => {
+    useCheckStore.setState({ status: { kind: 'idle', lastCheckMs: 420 } });
+    render(<StatusBar />);
+
+    expect(screen.getByRole('status')).toHaveTextContent('Checked in 0.4 s');
 });

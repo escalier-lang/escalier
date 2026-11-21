@@ -4,8 +4,8 @@
     padding: 0 8px;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
-    /* The status sits in the toolbar's spacer, which a narrow window can shrink to
-       nothing. The status is cut short rather than widening the page. */
+    /* A narrow window leaves the status bar little room beside the diagnostic counts.
+       The status is cut short rather than widening the page. */
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;

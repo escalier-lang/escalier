@@ -2,7 +2,7 @@ import { checkStatusText, useCheckStore } from '#diagnostics/check-monitor';
 
 import styles from './check-status.module.css';
 
-/** Shows in the toolbar how long the last check took, or that one is running long. */
+/** Shows how long the last check took, or how long a check has run past its budget. */
 export const CheckStatusIndicator = () => {
     const status = useCheckStore((state) => state.status);
     return (

@@ -8,6 +8,8 @@ import {
 import { useProjectDiagnosticsStore } from '#diagnostics/project-diagnostics-store';
 import { useEditorStore } from '#editor/editor-store';
 
+import { CheckStatusIndicator } from './check-status';
+
 import styles from './status-bar.module.css';
 
 /** A circle with a cross in it, the error icon. */
@@ -43,8 +45,9 @@ const WarningIcon = () => (
 );
 
 /**
- * The bar along the bottom of the playground. It shows the error and warning counts of
- * the project's diagnostics, which open the diagnostics tab when clicked.
+ * The bar along the bottom of the playground. On the left it shows the error and warning
+ * counts of the project's diagnostics, which open the diagnostics tab when clicked. On
+ * the right it shows how long the last check took.
  */
 export const StatusBar = () => {
     const diagnostics = useProjectDiagnosticsStore(
@@ -77,6 +80,8 @@ export const StatusBar = () => {
                     {counts.warnings}
                 </span>
             </button>
+            <div className={styles.spacer} />
+            <CheckStatusIndicator />
         </footer>
     );
 };
