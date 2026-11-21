@@ -189,6 +189,11 @@ fn f(q: &mut (RA | RB)) { q.kind = "a" }`,
 }`,
 			want: []string{"10:5-10:11: cannot assign \"b\" to 'x.kind', since 'x' may hold an 'A', whose 'kind' is \"a\"; narrow 'x' with a `match` and write through the narrowed binding"},
 		},
+		// The two literals look like members of a discriminated union, but `x` is a `mut`
+		// binding with no annotation, so its literals widen to their primitives. `kind`
+		// becomes `string` in both members, `{kind: string, a: number} | {kind: string, b:
+		// string}`, and no longer tells them apart. `"c"` fits `string` in both, so the write
+		// checks.
 		{
 			name: "JoinOfFreshLiterals",
 			src: `fn f(c: boolean) {
