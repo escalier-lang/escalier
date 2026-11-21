@@ -847,7 +847,7 @@ func TestHoverFromSolver(t *testing.T) {
 				"lib/a.esc": "export type Point = {x: number, y?: number}\nexport type Y = Point[\"y\"]",
 			},
 			open: "lib/a.esc", line: 1, col: 12,
-			expected: escalierCode("type Y = Point[\"y\"]\n= number"),
+			expected: escalierCode("type Y = Point[\"y\"]\n= number | undefined"),
 		},
 		{
 			name: "IndexedAccessAliasRef",
@@ -855,7 +855,7 @@ func TestHoverFromSolver(t *testing.T) {
 				"lib/a.esc": "export type Point = {x: number, y?: number}\nexport type Y = Point[\"y\"]\nexport val y: Y = 1",
 			},
 			open: "lib/a.esc", line: 2, col: 14,
-			expected: escalierCode("type Y = Point[\"y\"]\n= number"),
+			expected: escalierCode("type Y = Point[\"y\"]\n= number | undefined"),
 		},
 		{
 			name: "IndexedAccessAliasRefFromBin",
@@ -864,7 +864,7 @@ func TestHoverFromSolver(t *testing.T) {
 				"bin/main.esc": "val y: Y = 1",
 			},
 			open: "bin/main.esc", line: 0, col: 7,
-			expected: escalierCode("type Y = Point[\"y\"]\n= number"),
+			expected: escalierCode("type Y = Point[\"y\"]\n= number | undefined"),
 		},
 		{
 			name: "KeyofAliasDecl",
