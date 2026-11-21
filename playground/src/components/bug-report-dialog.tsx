@@ -7,10 +7,12 @@ import {
     bugReportUrl,
 } from '#bug-report/bug-report';
 import { MAX_PERMALINK_CHARS } from '#project/permalink';
-import styles from './bug-report-dialog.module.css';
-import dialogStyles from './crash-report-dialog.module.css';
+
 import { useCopyButton } from './use-copy-button';
 import { useModalDialog } from './use-modal-dialog';
+
+import styles from './bug-report-dialog.module.css';
+import dialogStyles from './crash-report-dialog.module.css';
 
 type BugReportDialogProps = {
     /** Returns a permalink to the project as it is now. */

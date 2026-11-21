@@ -79,9 +79,8 @@ test('bugReportUrl leaves out a link that crowds out the crash report', () => {
 });
 
 test('bugReportText holds a section for each field with text', () => {
-    expect(
-        bugReportText({ ...report, expected: '', crashReport: 'boom' }),
-    ).toBe(`### What happened
+    expect(bugReportText({ ...report, expected: '', crashReport: 'boom' }))
+        .toBe(`### What happened
 
 Hover shows nothing.
 It used to show the type.

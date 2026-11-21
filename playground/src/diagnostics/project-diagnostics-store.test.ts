@@ -1,6 +1,7 @@
 import { beforeEach, expect, test } from 'vitest';
 
 import { FSEventEmitter } from '#fs/fs-events';
+
 import type { ProjectDiagnostic } from './project-diagnostics';
 import {
     forgetRemovedFiles,

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import type { FSDir, FSNode } from '#fs/fs-node';
+
 import {
     type PlaygroundSnapshot,
     collectProjectFiles,

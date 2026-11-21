@@ -6,8 +6,10 @@ import {
     themePreferences,
     useThemeStore,
 } from '#theme/theme';
+
 import { ConfirmDialog } from './confirm-dialog';
 import { Dropdown, type DropdownItem } from './dropdown';
+
 import styles from './toolbar.module.css';
 
 type ToolbarProps = {

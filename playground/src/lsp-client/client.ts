@@ -1,4 +1,5 @@
 import type { Mode, OpenMode, PathLike, Stats } from 'node:fs';
+
 import EventEmitter from 'eventemitter3';
 import type * as lsp from 'vscode-languageserver-protocol';
 import {

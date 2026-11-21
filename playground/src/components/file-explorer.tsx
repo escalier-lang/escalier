@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { BrowserFS } from '#fs/browser-fs';
 import type { FSDir, FSNode } from '#fs/fs-node';
+
 import { ConfirmDialog } from './confirm-dialog';
+
 import styles from './file-explorer.module.css';
 
 type FileExplorerProps = {

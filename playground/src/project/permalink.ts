@@ -1,5 +1,6 @@
 import type { TabLayout } from '#editor/editor-state';
 import type { FSDir } from '#fs/fs-node';
+
 import { isBuildPath } from './project-loader';
 
 /**

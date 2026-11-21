@@ -5,6 +5,7 @@ import { initialEditorState } from '#editor/editor-state';
 import { useEditorStore } from '#editor/editor-store';
 import { BrowserFS } from '#fs/browser-fs';
 import type { Manifest } from '#fs/volume';
+
 import {
     openExample,
     openInitialProject,

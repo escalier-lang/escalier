@@ -34,6 +34,7 @@ import {
 import { useProjectDiagnosticsStore } from '#diagnostics/project-diagnostics-store';
 import type { BrowserFS } from '#fs/browser-fs';
 import { FSEventEmitter } from '#fs/fs-events';
+
 import { Editor } from './editor';
 import type { EditorState } from './editor-state';
 import { initialEditorState } from './editor-state';

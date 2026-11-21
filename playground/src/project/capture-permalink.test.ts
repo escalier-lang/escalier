@@ -7,6 +7,7 @@ import { DIAGNOSTICS_TAB_PATH } from '#diagnostics/project-diagnostics';
 import { initialEditorState } from '#editor/editor-state';
 import { useEditorStore } from '#editor/editor-store';
 import { BrowserFS } from '#fs/browser-fs';
+
 import { capturePermalink } from './capture-permalink';
 import { decodeSnapshot, snapshotParam } from './permalink';
 import { writeProjectFiles } from './project-loader';

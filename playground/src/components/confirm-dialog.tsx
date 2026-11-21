@@ -1,7 +1,8 @@
 import { useRef } from 'react';
 
-import styles from './confirm-dialog.module.css';
 import { useModalDialog } from './use-modal-dialog';
+
+import styles from './confirm-dialog.module.css';
 
 type ConfirmDialogProps = {
     title: string;

@@ -6,7 +6,6 @@ import {
 } from 'vscode-languageserver-protocol';
 
 import wasmUrl from '../../bin/lsp-server.wasm?url';
-
 import { showServerCrashes } from './bug-report/crash-notification';
 import type { LoadingStatus } from './components/loading-screen';
 import { forgetRemovedFiles } from './diagnostics/project-diagnostics-store';

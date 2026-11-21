@@ -12,6 +12,7 @@ import type {
 import { useProjectDiagnosticsStore } from '#diagnostics/project-diagnostics-store';
 import type { Client } from '#lsp-client/client';
 import { monacoThemeName, useThemeStore } from '#theme/theme';
+
 import { registerBasicLanguages } from './basic-languages';
 import { createCodeActionProvider } from './code-actions';
 import {
