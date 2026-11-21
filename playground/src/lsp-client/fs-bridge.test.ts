@@ -75,7 +75,7 @@ test('stat returns the fields and the method Go reads', async () => {
 
 test('an error keeps its code', async () => {
     const err = await call((cb) => remote.stat('/missing.esc', cb)).catch(
-        (e: NodeJS.ErrnoException) => e,
+        (e: unknown) => e,
     );
 
     expect(err).toMatchObject({ code: 'ENOENT' });
@@ -87,7 +87,7 @@ test('a call that throws answers with an error', async () => {
     };
 
     const err = await call((cb) => remote.stat('/lib', cb)).catch(
-        (e: NodeJS.ErrnoException) => e,
+        (e: unknown) => e,
     );
 
     expect(err).toMatchObject({ message: 'Unexpected value', code: 'EIO' });
@@ -98,7 +98,7 @@ test('an error passed to the callback without a code answers as EIO', async () =
         callback(new Error('no code'), {} as never);
 
     const err = await call((cb) => remote.stat('/lib', cb)).catch(
-        (e: NodeJS.ErrnoException) => e,
+        (e: unknown) => e,
     );
 
     expect(err).toMatchObject({ message: 'no code', code: 'EIO' });
@@ -109,7 +109,7 @@ test('a reply that cannot be sent answers as EIO', async () => {
         callback(null, [Symbol('entry')] as unknown as string[]);
 
     const err = await call((cb) => remote.readdir('/', cb)).catch(
-        (e: NodeJS.ErrnoException) => e,
+        (e: unknown) => e,
     );
 
     expect(err).toMatchObject({
@@ -122,7 +122,7 @@ test('a reply that cannot be sent answers as EIO', async () => {
 test('a request that cannot be sent fails through its callback as EIO', async () => {
     const err = await call((cb) =>
         remote.open('/lib/index.esc', Symbol('flags') as never, undefined, cb),
-    ).catch((e: NodeJS.ErrnoException) => e);
+    ).catch((e: unknown) => e);
 
     expect(err).toMatchObject({
         message:

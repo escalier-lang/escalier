@@ -276,10 +276,7 @@ export function remoteFS(endpoint: MessageEndpoint): FSAPI {
         const id = nextId++;
         pending.set(id, callback);
         try {
-            endpoint.postMessage(
-                { kind: 'fs', id, op, args } as FSRequest,
-                transfer,
-            );
+            endpoint.postMessage({ kind: 'fs', id, op, args }, transfer);
         } catch (err) {
             // A request that can't be sent fails through its callback, as any other
             // fs error does, rather than throwing into the server.
