@@ -179,6 +179,25 @@ test('says the issue form opened once the user opens it, and Done closes the dia
     expect(onClose).toHaveBeenCalledOnce();
 });
 
+test('the issue form opened view copies the report', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    renderDialog(() => Promise.resolve(link));
+    fireEvent.change(screen.getByLabelText('What happened'), {
+        target: { value: 'Hover is blank.' },
+    });
+    fireEvent.click(
+        await screen.findByRole('link', { name: 'Open GitHub issue' }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy report' }));
+
+    await screen.findByRole('button', { name: 'Copied' });
+    expect(writeText).toHaveBeenCalledWith(
+        expect.stringMatching(/^### What happened\n\nHover is blank\.\n/),
+    );
+});
+
 test('Cancel closes the dialog', () => {
     const onClose = renderDialog(() => Promise.resolve(link));
 
