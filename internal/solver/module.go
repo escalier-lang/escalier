@@ -344,6 +344,7 @@ func classBodiesFirst(g *dep_graph.DepGraph) [][]dep_graph.BindingKey {
 	successors := func(i int) []int {
 		var out []int
 		for _, key := range g.CheckComponents[i] {
+			prefersClassBodies := !g.IsSignatureBound(key)
 			deps := g.CheckDeps(key)
 			iter := deps.Iter()
 			for ok := iter.First(); ok; ok = iter.Next() {
@@ -351,7 +352,7 @@ func classBodiesFirst(g *dep_graph.DepGraph) [][]dep_graph.BindingKey {
 				if j, found := index[dep]; found && j != i {
 					out = append(out, j)
 				}
-				if dep.Kind() != dep_graph.DepKindType || !declaresClassWithInferredMember(g, dep) || g.IsSignatureBound(key) {
+				if !prefersClassBodies || dep.Kind() != dep_graph.DepKindType || !declaresClassWithInferredMember(g, dep) {
 					continue
 				}
 				if j, found := index[dep_graph.ValueBindingKey(dep.Name())]; found && j != i {
