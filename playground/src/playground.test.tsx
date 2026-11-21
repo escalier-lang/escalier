@@ -12,26 +12,26 @@ import {
 } from 'vitest';
 
 vi.mock('monaco-editor-core');
-vi.mock('./language', () => ({ languageID: 'escalier' }));
-vi.mock('./capture-permalink', () => ({ capturePermalink: vi.fn() }));
+vi.mock('./language/language', () => ({ languageID: 'escalier' }));
+vi.mock('./project/capture-permalink', () => ({ capturePermalink: vi.fn() }));
 
 import * as monaco from 'monaco-editor-core';
 
-import { capturePermalink } from './capture-permalink';
 import { stubModalDialogs } from './components/dialog-stub';
-import { initialEditorState } from './editor-state';
-import { useEditorStore } from './editor-store';
-import { BrowserFS } from './fs/browser-fs';
-import type { Manifest } from './fs/volume';
-import { MAX_PERMALINK_CHARS } from './permalink';
-import { Playground, oversizedLinkMessage, slugToLabel } from './playground';
-import { initialPlaygroundState } from './playground-state';
-import { usePlaygroundStore } from './playground-store';
 import {
     DIAGNOSTICS_TAB_PATH,
     type DiagnosticSeverity,
-} from './project-diagnostics';
-import { useProjectDiagnosticsStore } from './project-diagnostics-store';
+} from './diagnostics/project-diagnostics';
+import { useProjectDiagnosticsStore } from './diagnostics/project-diagnostics-store';
+import { initialEditorState } from './editor/editor-state';
+import { useEditorStore } from './editor/editor-store';
+import { BrowserFS } from './fs/browser-fs';
+import type { Manifest } from './fs/volume';
+import { Playground, oversizedLinkMessage, slugToLabel } from './playground';
+import { initialPlaygroundState } from './playground-state';
+import { usePlaygroundStore } from './playground-store';
+import { capturePermalink } from './project/capture-permalink';
+import { MAX_PERMALINK_CHARS } from './project/permalink';
 
 describe('slugToLabel', () => {
     test.each([

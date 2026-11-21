@@ -1,11 +1,11 @@
 import { useCallback, useState } from 'react';
 
-import { REPO_URL } from '../issue-link';
+import { REPO_URL } from '../bug-report/issue-link';
 import {
     type ThemePreference,
     themePreferences,
     useThemeStore,
-} from '../theme';
+} from '../theme/theme';
 import { ConfirmDialog } from './confirm-dialog';
 import { Dropdown, type DropdownItem } from './dropdown';
 import styles from './toolbar.module.css';

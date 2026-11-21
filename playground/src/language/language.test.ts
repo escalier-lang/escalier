@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type * as lsp from 'vscode-languageserver-protocol';
 
-import { diagnosticsTokenRules } from './diagnostics-language';
+import { diagnosticsTokenRules } from '../diagnostics/diagnostics-language';
+import { useProjectDiagnosticsStore } from '../diagnostics/project-diagnostics-store';
+import type { Client } from '../lsp-client/client';
+import { useThemeStore } from '../theme/theme';
 import { setupLanguage } from './language';
-import type { Client } from './lsp-client/client';
-import { useProjectDiagnosticsStore } from './project-diagnostics-store';
-import { useThemeStore } from './theme';
 
 const monacoMock = vi.hoisted(() => {
     class Emitter<T> {

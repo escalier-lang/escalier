@@ -7,21 +7,28 @@ import {
 
 import wasmUrl from '../../bin/lsp-server.wasm?url';
 
-import { capturePermalink } from './capture-permalink';
+import { showServerCrashes } from './bug-report/crash-notification';
 import type { LoadingStatus } from './components/loading-screen';
-import { showServerCrashes } from './crash-notification';
-import { useEditorStore } from './editor-store';
+import { forgetRemovedFiles } from './diagnostics/project-diagnostics-store';
+import { useEditorStore } from './editor/editor-store';
 import { BrowserFS } from './fs/browser-fs';
 import type { Manifest } from './fs/volume';
-import { openInitialProject, reloadOnPastedPermalink } from './initial-project';
-import { setupLanguage } from './language';
+import { setupLanguage } from './language/language';
 import { Client } from './lsp-client/client';
 import { Playground } from './playground';
-import { forgetRemovedFiles } from './project-diagnostics-store';
+import { capturePermalink } from './project/capture-permalink';
+import {
+    openInitialProject,
+    reloadOnPastedPermalink,
+} from './project/initial-project';
 import { downloadStartupFiles, runStartup } from './startup';
-import { localStorageIfAvailable, prefersLightQuery, syncTheme } from './theme';
+import {
+    localStorageIfAvailable,
+    prefersLightQuery,
+    syncTheme,
+} from './theme/theme';
 
-import './theme.css';
+import './theme/theme.css';
 
 import './user-worker'; // sets up the monaco editor worker
 

@@ -1,19 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { type ShownError, playgroundEnvironment } from './bug-report';
-import { capturePermalink } from './capture-permalink';
+import {
+    type ShownError,
+    playgroundEnvironment,
+} from './bug-report/bug-report';
+import { shownErrors } from './bug-report/editor-errors';
 import { BugReportDialog } from './components/bug-report-dialog';
 import { MessageDialog } from './components/message-dialog';
 import { StatusBar } from './components/status-bar';
 import { Toolbar } from './components/toolbar';
-import { Editor } from './editor';
-import { shownErrors } from './editor-errors';
-import { useEditorStore } from './editor-store';
+import { Editor } from './editor/editor';
+import { useEditorStore } from './editor/editor-store';
 import type { BrowserFS } from './fs/browser-fs';
 import type { Manifest } from './fs/volume';
-import { MAX_PERMALINK_CHARS } from './permalink';
 import { usePlaygroundStore } from './playground-store';
-import { isBuildPath, loadProject } from './project-loader';
+import { capturePermalink } from './project/capture-permalink';
+import { MAX_PERMALINK_CHARS } from './project/permalink';
+import { isBuildPath, loadProject } from './project/project-loader';
 
 import styles from './playground.module.css';
 

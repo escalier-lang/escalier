@@ -1,7 +1,7 @@
 import * as monaco from 'monaco-editor-core';
 
-import { useEditorStore } from './editor-store';
-import type { BrowserFS } from './fs/browser-fs';
+import { useEditorStore } from '../editor/editor-store';
+import type { BrowserFS } from '../fs/browser-fs';
 import { collectProjectFiles, encodeSnapshot, permalinkUrl } from './permalink';
 
 /**

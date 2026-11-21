@@ -3,14 +3,14 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test } from 'vitest';
 
-import { initialEditorState } from '../editor-state';
-import { useEditorStore } from '../editor-store';
 import {
     DIAGNOSTICS_TAB_PATH,
     type DiagnosticSeverity,
     type ProjectDiagnostic,
-} from '../project-diagnostics';
-import { useProjectDiagnosticsStore } from '../project-diagnostics-store';
+} from '../diagnostics/project-diagnostics';
+import { useProjectDiagnosticsStore } from '../diagnostics/project-diagnostics-store';
+import { initialEditorState } from '../editor/editor-state';
+import { useEditorStore } from '../editor/editor-store';
 import { StatusBar } from './status-bar';
 
 function diagnostic(severity: DiagnosticSeverity): ProjectDiagnostic {

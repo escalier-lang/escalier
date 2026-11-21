@@ -22,22 +22,22 @@ import {
 vi.mock('monaco-editor-core');
 
 // Mock the language module to avoid Monaco language registration side effects.
-vi.mock('./language', () => ({ languageID: 'escalier' }));
+vi.mock('../language/language', () => ({ languageID: 'escalier' }));
 
 import * as monaco from 'monaco-editor-core';
 
-import { stubModalDialogs } from './components/dialog-stub';
+import { stubModalDialogs } from '../components/dialog-stub';
+import {
+    DIAGNOSTICS_TAB_PATH,
+    type ProjectDiagnostic,
+} from '../diagnostics/project-diagnostics';
+import { useProjectDiagnosticsStore } from '../diagnostics/project-diagnostics-store';
+import type { BrowserFS } from '../fs/browser-fs';
+import { FSEventEmitter } from '../fs/fs-events';
 import { Editor, languageForPath } from './editor';
 import type { EditorState } from './editor-state';
 import { initialEditorState } from './editor-state';
 import { useEditorStore } from './editor-store';
-import type { BrowserFS } from './fs/browser-fs';
-import { FSEventEmitter } from './fs/fs-events';
-import {
-    DIAGNOSTICS_TAB_PATH,
-    type ProjectDiagnostic,
-} from './project-diagnostics';
-import { useProjectDiagnosticsStore } from './project-diagnostics-store';
 
 function makeFakeFS(): BrowserFS {
     return {

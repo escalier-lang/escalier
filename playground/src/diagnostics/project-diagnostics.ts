@@ -1,5 +1,5 @@
-import type { ShownError } from './bug-report';
-import type { FSEvent } from './fs/fs-events';
+import type { ShownError } from '../bug-report/bug-report';
+import type { FSEvent } from '../fs/fs-events';
 
 /** How serious a diagnostic is, as the language server rates it. */
 export type DiagnosticSeverity = 'error' | 'warning' | 'info' | 'hint';

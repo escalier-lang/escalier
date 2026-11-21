@@ -1,6 +1,17 @@
 import * as monaco from 'monaco-editor-core';
 import * as lsp from 'vscode-languageserver-protocol';
 
+import {
+    diagnosticsTokenRules,
+    registerDiagnosticsLanguage,
+} from '../diagnostics/diagnostics-language';
+import type {
+    DiagnosticSeverity,
+    ProjectDiagnostic,
+} from '../diagnostics/project-diagnostics';
+import { useProjectDiagnosticsStore } from '../diagnostics/project-diagnostics-store';
+import type { Client } from '../lsp-client/client';
+import { monacoThemeName, useThemeStore } from '../theme/theme';
 import { registerBasicLanguages } from './basic-languages';
 import { createCodeActionProvider } from './code-actions';
 import {
@@ -8,17 +19,7 @@ import {
     provideCompletionItems,
     resolveCompletionItem,
 } from './completions';
-import {
-    diagnosticsTokenRules,
-    registerDiagnosticsLanguage,
-} from './diagnostics-language';
-import type { Client } from './lsp-client/client';
 import { monarchLanguage } from './monarch-language';
-import type {
-    DiagnosticSeverity,
-    ProjectDiagnostic,
-} from './project-diagnostics';
-import { useProjectDiagnosticsStore } from './project-diagnostics-store';
 import { lspRangeToMonacoRange, monacoPosToLspPos } from './ranges';
 import {
     coalesced,
@@ -26,7 +27,6 @@ import {
     modifierTokenRules,
 } from './semantic-tokens';
 import { createSignatureHelpProvider } from './signature-help';
-import { monacoThemeName, useThemeStore } from './theme';
 
 export const languageID = 'escalier';
 
