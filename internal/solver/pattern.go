@@ -1425,7 +1425,8 @@ func (c *checker) freshClassInstance(ct *soltype.ClassType, lvl int) *soltype.Cl
 // annotation the union is read from it, since leafType is often a projection variable.
 //
 // The second result is the leaf's statically known type once the default applies. It is
-// the narrowed union when the default removed `undefined`, and concrete otherwise.
+// the narrowed union when concrete is non-nil and the default removed `undefined` from it,
+// and concrete otherwise.
 func (c *checker) applyLeafExtras(scope *Scope, lvl int, node ast.Node, leafType, concrete soltype.Type, typeAnn ast.TypeAnn, def ast.Expr) (soltype.Type, soltype.Type) {
 	bound := leafType
 	shape := concrete
@@ -1450,7 +1451,11 @@ func (c *checker) applyLeafExtras(scope *Scope, lvl int, node ast.Node, leafType
 		c.markOpenVar(bound)
 		if narrowed {
 			bound = newUnion(c.ctx, []soltype.Type{present, defT})
-			return bound, bound
+			// Without a known shape, present came from leafType's lower bounds, which can
+			// still grow. The leaf's type stays unknown so it binds through a variable.
+			if concrete != nil {
+				return bound, bound
+			}
 		}
 	}
 	return bound, concrete
@@ -1553,20 +1558,23 @@ func (c *checker) applyBindMode(lvl int, node ast.Node, mut bool, leafType, conc
 // The leaf's binding may write every owned layer of the value, so the value's literals widen
 // to their primitives, the destructuring analogue of `val mut q = p` in inferVarDeclInit.
 // When the leaf's projected type is statically known, the result is that type widened, so
-// `val [mut p] = [{y: 1}]` binds `p: {y: number}`. A union widens member by member, so
-// `{a: number} | {a: 1, b: "s"}` binds as `{a: number} | {a: number, b: string}`.
+// `val [mut p] = [{y: 1}]` binds `p: {y: number}`. A union widens member by member. With
+// `p: {x: {a: number} | undefined}`, `val {mut x = {a: 1, b: "s"}} = p` binds
+// `x: {a: number} | {a: number, b: string}`.
 //
 // When the projected type is not statically known, concrete is nil. The leaf type then flows
 // into the variable mutableSlotOf returns.
 func (c *checker) widenOwnedLeaf(lvl int, node ast.Node, leafType, concrete soltype.Type) soltype.Type {
 	if concrete != nil {
-		widened := widen(concrete)
+		var widened soltype.Type
 		if union, ok := concrete.(*soltype.UnionType); ok {
 			members := make([]soltype.Type, len(union.Types))
 			for i, member := range union.Types {
 				members[i] = widen(member)
 			}
 			widened = newUnion(c.ctx, members)
+		} else {
+			widened = widen(concrete)
 		}
 		if _, ok := widened.(soltype.RefInner); !ok {
 			// A primitive or function leaf has no layer to write, so it keeps its leaf type,

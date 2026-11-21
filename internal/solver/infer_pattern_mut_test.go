@@ -310,6 +310,7 @@ func TestMatchBorrowedScrutineeMutLeaf(t *testing.T) {
 // as it binds, so a write later in the same body checks against the widened type. Each case
 // returns the binding, so its signature shows the type the binding renders at. A leaf with an
 // inline annotation binds at the annotation as written, and a plain leaf keeps its literal.
+// A `mut` leaf whose projected type is a union widens each member.
 func TestMutLeafWidensEagerly(t *testing.T) {
 	tests := map[string]struct {
 		src  string
@@ -359,6 +360,14 @@ func TestMutLeafWidensEagerly(t *testing.T) {
 			}`,
 			sig: "fn (p: {x: {a: number}} | {y: string}) -> {a: number}",
 		},
+		"UnionLeafWidensEachMember": {
+			src: `
+			fn f(p: [{a: 1} | {b: "s"}]) {
+				val [mut x] = p
+				return x
+			}`,
+			sig: `fn (p: [{a: 1} | {b: "s"}]) -> {a: number} | {b: string}`,
+		},
 		"PlainLeafDefaultKeepsLiteral": {
 			src: `
 			fn f(p) {
@@ -388,9 +397,9 @@ func TestMutLeafDefaultSignature(t *testing.T) {
 
 // TestDefaultedLeafDropsUndefined covers a defaulted leaf whose position the scrutinee types
 // as a union with `undefined`, for a plain leaf and a `mut` leaf. The default replaces an
-// `undefined` value, so each binding renders without `undefined`. Each case returns the
-// binding, so its signature shows the type the binding renders at. A `mut` case also writes
-// through the binding, which checks against that type.
+// `undefined` value, so each binding renders without `undefined`. A case that returns the
+// binding shows the type it renders at in the signature. A `mut` case also writes through
+// the binding, which checks against that type, and a write outside it is rejected.
 func TestDefaultedLeafDropsUndefined(t *testing.T) {
 	tests := map[string]struct {
 		src  string
@@ -424,7 +433,7 @@ func TestDefaultedLeafDropsUndefined(t *testing.T) {
 		},
 		"TupleElemPrimMut": {
 			src: `
-			fn f(p: [number | undefined]) -> number {
+			fn f(p: [number | undefined]) {
 				val [mut x = 0] = p
 				return x
 			}`,
@@ -455,6 +464,15 @@ func TestDefaultedLeafDropsUndefined(t *testing.T) {
 				return x
 			}`,
 			sig: "fn (p: {x: {a: number} | undefined}) -> {a: number} | {a: number, b: string}",
+		},
+		"FieldMutRejectsWriteOutsideNarrowedType": {
+			src: `
+			fn f(p: {x: {a: number} | undefined}) {
+				val {mut x = {a: 1}} = p
+				x.b = 2
+			}`,
+			sig:  "fn (p: {x: {a: number} | undefined}) -> undefined",
+			want: []string{"4:5-4:12: object is missing property: b"},
 		},
 		"KeyValueFieldMut": {
 			src: `
