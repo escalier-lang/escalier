@@ -139,6 +139,9 @@ export class ServerRuntime {
     /** Set by silence(). Keeps the server's stderr out of the console. */
     private silenced = false;
 
+    /** The listener an empty stdin read waits on, until a chunk arrives. */
+    private pendingStdinRead: Disposable | undefined;
+
     // Go resolves `globalThis.fs` and `globalThis.process` on every syscall,
     // so whichever value is installed last serves every runtime in the thread
     // rather than the one that installed it. These are built here and installed
@@ -289,17 +292,31 @@ export class ServerRuntime {
                     // Reading at most length bytes leaves the rest of the chunk
                     // queued for the next call.
                     //
+                    // A read of no bytes answers at once rather than waiting for data
+                    // it didn't ask for.
+                    if (length === 0) {
+                        callback(null, 0, buffer);
+                        return;
+                    }
                     // An empty stdin answers once the next chunk arrives, so an idle
                     // server waits without polling. That answer goes on a timer
                     // because a chunk arrives inside the writer's call, and the
                     // callback runs the server.
                     const answer = () => {
+                        // The server can exit between a chunk arriving and this timer.
+                        if (this.go.exited) {
+                            return;
+                        }
                         const srcBuf = this.stdin.read(length);
                         if (!srcBuf) {
-                            const subscription = this.stdin.on('data', () => {
-                                subscription.dispose();
-                                setTimeout(answer, 0);
-                            });
+                            this.pendingStdinRead = this.stdin.on(
+                                'data',
+                                () => {
+                                    this.pendingStdinRead?.dispose();
+                                    this.pendingStdinRead = undefined;
+                                    setTimeout(answer, 0);
+                                },
+                            );
                             return;
                         }
                         buffer.set(srcBuf, offset);
@@ -444,6 +461,10 @@ export class ServerRuntime {
             );
             await this.go.run(instance);
         } finally {
+            // A read still waiting on stdin would otherwise run the ended server on
+            // the next write, and keep this runtime reachable from the stream.
+            this.pendingStdinRead?.dispose();
+            this.pendingStdinRead = undefined;
             runtimeRunning = false;
         }
     }

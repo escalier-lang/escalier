@@ -69,6 +69,32 @@ test('a runtime refuses to run while another in the same thread is running', asy
     await running;
 });
 
+test('a stdin read still waiting when the server ends stops listening to stdin', async () => {
+    const { runtime, shim, stdin } = await shimmedRuntime();
+    // @ts-expect-error: emitter is private
+    const listeners = () => stdin.emitter.listenerCount('data');
+    shim.read(0, new Uint8Array(4), 0, 4, null, vi.fn());
+    expect(listeners()).toBe(1);
+
+    // A server that ends at once, as one that panics in another goroutine would
+    // while its stdin read waits.
+    // @ts-expect-error: go is private
+    runtime.go.run = async () => {};
+    await runtime.run();
+
+    expect(listeners()).toBe(0);
+});
+
+test('the fs shim answers a read of no bytes from stdin at once', async () => {
+    const { shim } = await shimmedRuntime();
+    const buffer = new Uint8Array(4);
+    const callback = vi.fn();
+
+    shim.read(0, buffer, 0, 0, null, callback);
+
+    expect(callback).toHaveBeenCalledWith(null, 0, buffer);
+});
+
 test('OutputStream passes each chunk to its listeners', () => {
     const stream = new OutputStream();
     const heard: number[][] = [];
