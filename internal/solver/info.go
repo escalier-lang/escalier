@@ -34,6 +34,9 @@ type Info struct {
 	// annDiscriminants holds, per narrowing annotation of an object type that a root split
 	// tested, the runtime test codegen emits for it. recordAnnDiscriminant fills it.
 	annDiscriminants map[ast.TypeAnn]Discriminant
+	// annTested holds each narrowing annotation recordAnnDiscriminant has decided, whether
+	// it recorded a Discriminant, reported an AnnotationTestError, or skipped it.
+	annTested set.Set[ast.TypeAnn]
 	// decls maps an identifier read to the node that bound the name it read. That
 	// node is the binding's first source, which is a declaration such as a
 	// *ast.VarDecl or *ast.FuncDecl, or a pattern for a parameter or a
@@ -71,6 +74,7 @@ func NewInfo() *Info {
 		methodReads:      set.NewSet[ast.Node](),
 		absentKeys:       map[*ast.ObjectPat][]string{},
 		annDiscriminants: map[ast.TypeAnn]Discriminant{},
+		annTested:        set.NewSet[ast.TypeAnn](),
 		decls:            map[*ast.IdentExpr]ast.Node{},
 		mutPlaces:        set.NewSet[ast.Node](),
 		inertMut:         set.NewSet[*ast.IdentPat](),

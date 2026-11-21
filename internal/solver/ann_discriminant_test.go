@@ -1,8 +1,10 @@
 package solver
 
 import (
+	"context"
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/stretchr/testify/require"
 )
 
@@ -11,6 +13,71 @@ import (
 func annTestMsg(ann string) string {
 	return "no runtime test tells `" + ann + "` apart from the scrutinee's other members. " +
 		"Give each object type a property such as `kind` with a distinct literal type."
+}
+
+// TestRecordAnnDiscriminantDecidesEachAnnotationOnce asserts that recordAnnDiscriminant
+// decides an annotation on its first call and records and reports nothing on a later call
+// for the same annotation node, unless a discarded probe undid the first call.
+func TestRecordAnnDiscriminantDecidesEachAnnotationOnce(t *testing.T) {
+	shapeOnly := `{x: number} | {y: string}`
+	tagged := `{k: "a", x: number} | {k: "b", y: string}`
+	tests := []struct {
+		name string
+		ann  string
+		// shapes holds the scrutinee each call passes, in call order.
+		shapes []string
+		// discardFirst runs the first call under a probe that is then discarded.
+		discardFirst bool
+		wantMsgs     []string
+		wantKey      string
+	}{
+		{
+			name:     "a missing discriminant is reported once",
+			ann:      `{x: number}`,
+			shapes:   []string{shapeOnly, shapeOnly},
+			wantMsgs: []string{annTestMsg("{x: number}")},
+		},
+		{
+			// The second shape has no discriminant, so a second decision would report.
+			name:    "a recorded discriminant is kept",
+			ann:     `{k: "a", x: number}`,
+			shapes:  []string{tagged, `{k: "a", x: number} | {y: string}`},
+			wantKey: "k",
+		},
+		{
+			name:         "a discarded probe forgets the decision",
+			ann:          `{x: number}`,
+			shapes:       []string{shapeOnly, shapeOnly},
+			discardFirst: true,
+			wantMsgs:     []string{annTestMsg("{x: number}")},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ann, parseErrs := parser.ParseTypeAnn(context.Background(), test.ann)
+			require.Empty(t, parseErrs)
+			c := newTestChecker()
+			scope := c.preludeScope().Child()
+			for i, shape := range test.shapes {
+				if i == 0 && test.discardFirst {
+					p := c.openProbe()
+					c.recordAnnDiscriminant(scope, 0, parseType(t, shape), ann)
+					c.closeProbe(p, false)
+					continue
+				}
+				c.recordAnnDiscriminant(scope, 0, parseType(t, shape), ann)
+			}
+			var msgs []string
+			for _, err := range c.errs {
+				msgs = append(msgs, err.Message())
+			}
+			require.Equal(t, test.wantMsgs, msgs)
+			d, recorded := c.info.AnnDiscriminant(ann)
+			require.Equal(t, test.wantKey != "", recorded)
+			require.Equal(t, test.wantKey, d.Key)
+		})
+	}
 }
 
 // TestObjectAnnotationNeedsARuntimeTest covers narrowing annotations that name an object

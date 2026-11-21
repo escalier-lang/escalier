@@ -31,9 +31,20 @@ type Discriminant struct {
 // from the scrutinee's other members. Codegen emits one test per annotation, so a caller
 // passes the same shape for every test of one annotation.
 //
+// It decides each annotation once. A later call for the same ann records and reports
+// nothing.
+//
 // It records nothing for an annotation that names no object type, and nothing for a
 // scrutinee that annDiscriminant cannot list the members of.
 func (c *checker) recordAnnDiscriminant(scope *Scope, lvl int, shape soltype.Type, ann ast.TypeAnn) {
+	if c.info.annTested.Contains(ann) {
+		return
+	}
+	// A probe that discards this walk also discards the diagnostic reported below, so it
+	// forgets the decision too and the walk that keeps its results decides again.
+	snapshotMapEntry(c, c.info.annTested, ann)
+	snapshotMapEntry(c, c.info.annDiscriminants, ann)
+	c.info.annTested.Add(ann)
 	// The typing walk resolves the annotation again when it binds the arm's name, and reports
 	// any fault there, so resolving it here runs under a discarded probe.
 	p := c.openProbe()
