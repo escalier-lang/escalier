@@ -201,7 +201,7 @@ func TestInferBareNamespaceSibling(t *testing.T) {
 			name: "Assignment",
 			files: map[string]string{
 				"math/count.esc": "var count = 0\n",
-				"math/use.esc":   "fn reset() { count = 5 }\n",
+				"math/use.esc":   "fn reset() -> undefined { count = 5 }\n",
 			},
 			want: map[string]string{"math.reset": "fn () -> undefined"},
 		},
@@ -244,7 +244,7 @@ func TestInferBareNamespaceSibling(t *testing.T) {
 			name: "ParameterShadowsSibling",
 			files: map[string]string{
 				"math/base.esc": "val base = 10\n",
-				"math/use.esc":  "fn f(base: string) { return base }\n",
+				"math/use.esc":  "fn f(base: string) -> string { return base }\n",
 			},
 			want: map[string]string{"math.f": "fn (base: string) -> string"},
 		},

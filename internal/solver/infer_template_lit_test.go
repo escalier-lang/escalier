@@ -641,7 +641,7 @@ func TestTemplateWithinTemplate(t *testing.T) {
 // TestTemplateOverATypeParameterWithinString asserts that a template over a type parameter is
 // within `string` and within a template whose interpolation admits any string.
 func TestTemplateOverATypeParameterWithinString(t *testing.T) {
-	_, _, errs := inferSource(t, "fn f<T: string>(x: `on${T}`) {\n    val s: string = x\n    val t: `on${string}` = x\n    return s\n}")
+	_, _, errs := inferSource(t, "fn f<T: string>(x: `on${T}`) -> string {\n    val s: string = x\n    val t: `on${string}` = x\n    return s\n}")
 	require.Empty(t, errs)
 }
 

@@ -169,12 +169,12 @@ func TestNonReturningRecursionAccepts(t *testing.T) {
 			// structure, so no knot forms and the return type is `never` rather than a knot with no
 			// base case. It is a tight infinite loop and wants its own diagnostic.
 			name: "a recursion that emits no structure is out of scope",
-			src:  `fn serve() { return serve() }`,
+			src:  `fn serve() -> never { return serve() }`,
 		},
 		{
 			// The statement-position twin of the case above, whose return type is `void`.
 			name: "a discarded recursive call is out of scope",
-			src:  `fn serve() { serve() }`,
+			src:  `fn serve() -> undefined { serve() }`,
 		},
 		{
 			// A function that only throws returns `never`, which nothing inhabits, but it diverges

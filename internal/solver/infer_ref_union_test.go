@@ -19,34 +19,37 @@ func TestInferRefUnion(t *testing.T) {
 		src      string
 		want     string   // rendered type of values["f"] when wantErrs is nil
 		wantErrs []string // exact diagnostics; nil means the source must check cleanly
+		// local reads f as a closure bound inside a function body, which inferSource does
+		// not return.
+		local bool
 	}{
 		// --- unions/intersections as RefInner ---
 		{
 			name: "immutable borrow over a union",
-			src:  `fn f(p: &({a: number} | {b: number})) { return p }`,
+			src:  `fn f(p: &({a: number} | {b: number})) -> &({a: number} | {b: number}) { return p }`,
 			want: "fn <'a>(p: &'a ({a: number} | {b: number})) -> &'a ({a: number} | {b: number})",
 		},
 		{
 			name: "mutable borrow over a union",
-			src:  `fn f(p: &mut ({a: number} | {b: number})) { return p }`,
+			src:  `fn f(p: &mut ({a: number} | {b: number})) -> &mut ({a: number} | {b: number}) { return p }`,
 			want: "fn <'a>(p: &'a mut ({a: number} | {b: number})) -> &'a mut ({a: number} | {b: number})",
 		},
 		{
 			// A `mut` binding of a union keeps the union as its type.
 			name: "mut union parameter accepted",
-			src:  `fn f(mut p: {a: number} | {b: number}) { return p }`,
+			src:  `fn f(mut p: {a: number} | {b: number}) -> {a: number} | {b: number} { return p }`,
 			want: "fn (p: {a: number} | {b: number}) -> {a: number} | {b: number}",
 		},
 		{
 			name: "immutable borrow over an intersection",
-			src:  `fn f(p: &({a: number} & {b: number})) { return p }`,
+			src:  `fn f(p: &({a: number} & {b: number})) -> &({a: number} & {b: number}) { return p }`,
 			want: "fn <'a>(p: &'a ({a: number} & {b: number})) -> &'a ({a: number} & {b: number})",
 		},
 
 		// --- mixed-ownership rejection at join sites ---
 		{
 			name: "mixed ownership in an if/else value",
-			src: `fn f(p: &mut {x: number}) {
+			src: `fn f(p: &mut {x: number}) -> &mut {x: number} | {x: 5} {
   val q = if true { p } else { {x: 5} }
   return q
 }`,
@@ -54,14 +57,14 @@ func TestInferRefUnion(t *testing.T) {
 		},
 		{
 			name: "mixed ownership across return points",
-			src: `fn f(p: &mut {x: number}) {
+			src: `fn f(p: &mut {x: number}) -> &mut {x: number} | {x: 5} {
   if true { return p } else { return {x: 5} }
 }`,
 			wantErrs: []string{"1:1-3:2: " + mixedOwnershipMsg},
 		},
 		{
 			name: "mixed ownership across match arms",
-			src: `fn f(p: &mut {x: number}) {
+			src: `fn f(p: &mut {x: number}) -> &mut {x: number} | {x: 5} {
   val r = match 1 {
     1 => p,
     _ => ({x: 5}),
@@ -74,7 +77,7 @@ func TestInferRefUnion(t *testing.T) {
 			// An `if val` joins its two halves into one value the same way an `if/else`
 			// does, so the same ownership rule applies to it.
 			name: "mixed ownership across an if val",
-			src: `fn f(p: &mut {x: number}, u: number | string) {
+			src: `fn f(p: &mut {x: number}, u: number | string) -> &mut {x: number} | {x: 5} {
   val r = if val n: number = u { p } else { {x: 5} }
   return r
 }`,
@@ -82,7 +85,7 @@ func TestInferRefUnion(t *testing.T) {
 		},
 		{
 			name: "uniform owned union",
-			src: `fn f() {
+			src: `fn f() -> {x: 5} | {x: 6} {
   if true { return {x: 5} } else { return {x: 6} }
 }`,
 			want: "fn () -> {x: 5} | {x: 6}",
@@ -90,7 +93,7 @@ func TestInferRefUnion(t *testing.T) {
 		{
 			// Value types carry no ownership, so a union of them never trips the check.
 			name: "uniform value union",
-			src: `fn f() {
+			src: `fn f() -> 5 | "x" {
   if true { return 5 } else { return "x" }
 }`,
 			want: `fn () -> 5 | "x"`,
@@ -100,10 +103,13 @@ func TestInferRefUnion(t *testing.T) {
 			// mixed union, so the uniform-ownership check leaves them alone. The join
 			// lifetime 'c stays named, with each source lifetime bounded above it.
 			name: "uniform borrow union",
-			src: `fn f(p: &mut {x: number}, q: &mut {x: number}) {
-  if true { return p } else { return q }
+			src: `fn main() -> undefined {
+  val f = fn (p: &mut {x: number}, q: &mut {x: number}) {
+    if true { return p } else { return q }
+  }
 }`,
-			want: "fn <'a: 'c, 'b: 'c, 'c>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &'c mut {x: number}",
+			local: true,
+			want:  "fn <'a: 'c, 'b: 'c, 'c>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &'c mut {x: number}",
 		},
 
 		// --- nested-borrow normalization ---
@@ -112,15 +118,15 @@ func TestInferRefUnion(t *testing.T) {
 		// target compiles every borrow to the same bare object reference.
 		{
 			name: "immutable nested borrow collapses to depth one",
-			src:  `fn f(p: &(&{x: number})) { return p }`,
+			src:  `fn f(p: &(&{x: number})) -> &{x: number} { return p }`,
 			want: "fn <'a>(p: &'a {x: number}) -> &'a {x: number}",
 		},
 		{
 			// `&mut (&mut {x})` would have to repoint the inner borrow, which needs a
 			// storage cell the JS target cannot express, so it is uninhabitable.
 			name:     "mutable nested borrow rejected",
-			src:      `fn f(p: &mut (&mut {x: number})) { return p }`,
-			wantErrs: []string{"1:9-1:31: Unsupported: mutable borrow of a borrow is uninhabitable"},
+			src:      `fn f<T0>(p: &mut (&mut {x: number})) -> T0 { return p }`,
+			wantErrs: []string{"1:13-1:35: Unsupported: mutable borrow of a borrow is uninhabitable"},
 		},
 	}
 	for _, tc := range cases {
@@ -131,7 +137,11 @@ func TestInferRefUnion(t *testing.T) {
 				return
 			}
 			require.Empty(t, errs)
-			require.Equal(t, tc.want, values["f"])
+			got := values["f"]
+			if tc.local {
+				got, _ = inferLocal(t, tc.src, "f")
+			}
+			require.Equal(t, tc.want, got)
 		})
 	}
 }
@@ -153,7 +163,7 @@ func TestInferDestructureBorrowUnion(t *testing.T) {
 	}{
 		{
 			name: "val else over a borrow union",
-			src: `fn f(p: &{x: number} | &{y: string}) {
+			src: `fn f(p: &{x: number} | &{y: string}) -> number {
   val {x: v} = p else { return 0 }
   return v
 }`,
@@ -161,7 +171,7 @@ func TestInferDestructureBorrowUnion(t *testing.T) {
 		},
 		{
 			name: "match over a borrow union",
-			src: `fn f(p: &{x: number} | &{y: string}) {
+			src: `fn f(p: &{x: number} | &{y: string}) -> number {
   return match p {
     {x: v} => v,
     _ => 0,
@@ -171,7 +181,7 @@ func TestInferDestructureBorrowUnion(t *testing.T) {
 		},
 		{
 			name: "if val over a borrow union",
-			src: `fn f(p: &{x: number} | &{y: string}) {
+			src: `fn f(p: &{x: number} | &{y: string}) -> number {
   return if val {x: v} = p { v } else { 0 }
 }`,
 			want: "fn (p: &{x: number} | &{y: string}) -> number",
@@ -182,13 +192,13 @@ func TestInferDestructureBorrowUnion(t *testing.T) {
 			// irrefutable, so nothing narrows the union and `x` reads through both members,
 			// picking up the `undefined` the member without it answers.
 			name: "destructured parameter of a borrow union",
-			src:  `fn f({x: v}: &{x: number} | &{y: string}) { return v }`,
+			src:  `fn f({x: v}: &{x: number} | &{y: string}) -> number | undefined { return v }`,
 			want: "fn ({x: v}: &{x: number} | &{y: string}) -> number | undefined",
 		},
 		{
 			// Every member is mutable, so the mode is too and the leaf stays writable.
 			name: "mut borrow union leaves stay writable",
-			src: `fn f(p: &mut {x: {a: number}} | &mut {y: string}) {
+			src: `fn f(p: &mut {x: {a: number}} | &mut {y: string}) -> 0 {
   if val {x: v} = p {
     v.a = 2
   }
@@ -200,7 +210,7 @@ func TestInferDestructureBorrowUnion(t *testing.T) {
 			// A write through a leaf that several surviving members reach is accepted too, since
 			// the leaf carries the mutable mode rather than being moved out immutable.
 			name: "mut leaf of several surviving members is writable",
-			src: `fn f(p: &mut {x: {a: number}} | &mut {x: {a: number}, y: string}) {
+			src: `fn f(p: &mut {x: {a: number}} | &mut {x: {a: number}, y: string}) -> 0 {
   if val {x: v} = p {
     v.a = 2
   }
@@ -212,7 +222,7 @@ func TestInferDestructureBorrowUnion(t *testing.T) {
 			// A leaf reached through an immutable member cannot be written, so the write is
 			// rejected rather than silently going through the mutable member.
 			name: "immutable borrow union leaves reject a write",
-			src: `fn f(p: &{x: {a: number}} | &{y: string}) {
+			src: `fn f(p: &{x: {a: number}} | &{y: string}) -> 0 {
   if val {x: v} = p {
     v.a = 2
   }
@@ -226,7 +236,7 @@ func TestInferDestructureBorrowUnion(t *testing.T) {
 			// narrowed with the members would accept it. peelBorrowUnion fixes the mode at the
 			// whole scrutinee instead, which is #1087. This row flips to a clean check there.
 			name: "mixed mutability binds immutable leaves",
-			src: `fn f(p: &mut {x: {a: number}} | &{y: string}) {
+			src: `fn f(p: &mut {x: {a: number}} | &{y: string}) -> 0 {
   if val {x: v} = p {
     v.a = 2
   }
@@ -236,7 +246,7 @@ func TestInferDestructureBorrowUnion(t *testing.T) {
 		},
 		{
 			name: "tuple destructure over a borrow union",
-			src: `fn f(p: &[number, number] | &[string]) {
+			src: `fn f(p: &[number, number] | &[string]) -> number {
   return match p {
     [a, b] => a,
     _ => 0,
@@ -249,7 +259,7 @@ func TestInferDestructureBorrowUnion(t *testing.T) {
 			// fresh owned value, so the two cannot join. The declaration reports it rather than
 			// leaving the author to meet the mismatch at a later write through the name.
 			name: "val else leaf join rejects a mixed-ownership fallback",
-			src: `fn f(p: &{x: {a: number}} | &{y: string}) {
+			src: `fn f(p: &{x: {a: number}} | &{y: string}) -> 0 {
   val {x: v} = p else { {x: {a: 1}} }
   return 0
 }`,
@@ -259,7 +269,7 @@ func TestInferDestructureBorrowUnion(t *testing.T) {
 			// Each leaf a pattern binds joins separately and every join blames the whole
 			// declaration, so the two mixed leaves here report it once.
 			name: "val else reports a mixed-ownership declaration once",
-			src: `fn f(p: &{x: {a: number}, y: {b: number}} | &{z: string}) {
+			src: `fn f(p: &{x: {a: number}, y: {b: number}} | &{z: string}) -> 0 {
   val {x: v, y: w} = p else { {x: {a: 1}, y: {b: 2}} }
   return 0
 }`,
@@ -306,7 +316,7 @@ func TestInferDestructureBorrowUnion(t *testing.T) {
 			// requirements meet its carrier. Its leaves reach the borrow through the mode, which
 			// is what makes this join uniform rather than mixed.
 			name: "val else leaf join accepts a fallback that is itself a borrow union",
-			src: `fn f(p: &{x: {a: number}} | &{y: string}, q: &{x: {a: number}} | &{x: {b: number}}) {
+			src: `fn f(p: &{x: {a: number}} | &{y: string}, q: &{x: {a: number}} | &{x: {b: number}}) -> 0 {
   val {x: v} = p else { q }
   return 0
 }`,
@@ -316,7 +326,7 @@ func TestInferDestructureBorrowUnion(t *testing.T) {
 			// The reverse mix reports too. An owned initializer and a borrowed fallback cannot
 			// both be what one name binds.
 			name: "val else leaf join rejects a borrowed fallback for an owned scrutinee",
-			src: `fn f(p: {x: {a: number}} | {y: string}, q: &{x: {a: number}}) {
+			src: `fn f(p: {x: {a: number}} | {y: string}, q: &{x: {a: number}}) -> 0 {
   val {x: v} = p else { q }
   return 0
 }`,
@@ -351,7 +361,7 @@ func TestBorrowUnionLeafBindsAsBorrow(t *testing.T) {
 	}{
 		{
 			name: "immutable members give an immutable leaf",
-			src: `fn f(p: &{x: {a: number}} | &{y: string}) {
+			src: `fn f(p: &{x: {a: number}} | &{y: string}) -> 0 {
   val {x: v} = p else { return 0 }
   return 0
 }`,
@@ -359,7 +369,7 @@ func TestBorrowUnionLeafBindsAsBorrow(t *testing.T) {
 		},
 		{
 			name: "mutable members give a mutable leaf",
-			src: `fn f(p: &mut {x: {a: number}} | &mut {y: string}) {
+			src: `fn f(p: &mut {x: {a: number}} | &mut {y: string}) -> 0 {
   val {x: v} = p else { return 0 }
   return 0
 }`,
@@ -370,7 +380,7 @@ func TestBorrowUnionLeafBindsAsBorrow(t *testing.T) {
 			// a union. Deciding whether to borrow needs that union's field shape, which is the
 			// union of what each member holds at `x`.
 			name: "a leaf of several surviving members stays borrowed",
-			src: `fn f(p: &{x: {a: number}} | &{x: {b: string}}) {
+			src: `fn f(p: &{x: {a: number}} | &{x: {b: string}}) -> 0 {
   val {x: v} = p else { return 0 }
   return 0
 }`,
@@ -380,7 +390,7 @@ func TestBorrowUnionLeafBindsAsBorrow(t *testing.T) {
 			// A member that is itself a union flattens into the peeled union, so narrowing sees
 			// its members rather than one nested node it cannot look inside.
 			name: "a union member flattens into the peel",
-			src: `fn f(p: &({x: {a: number}} | {x: {b: number}}) | &{x: {c: number}}) {
+			src: `fn f(p: &({x: {a: number}} | {x: {b: number}}) | &{x: {c: number}}) -> 0 {
   val {x: v} = p else { return 0 }
   return 0
 }`,
@@ -390,7 +400,7 @@ func TestBorrowUnionLeafBindsAsBorrow(t *testing.T) {
 			// A tuple element takes the same elementwise read an object field does, so an element
 			// of several surviving members is borrowed rather than moved out.
 			name: "a tuple element of several surviving members stays borrowed",
-			src: `fn f(p: &[{a: number}, string] | &[{b: number}, string]) {
+			src: `fn f(p: &[{a: number}, string] | &[{b: number}, string]) -> 0 {
   val [v, s] = p else { return 0 }
   return 0
 }`,
@@ -400,7 +410,7 @@ func TestBorrowUnionLeafBindsAsBorrow(t *testing.T) {
 			// An owned member carries no lifetime, so it is a value rather than a borrow and
 			// its leaves move out.
 			name: "owned members are not peeled",
-			src: `fn f(p: {x: {a: number}} | {y: string}) {
+			src: `fn f(p: {x: {a: number}} | {y: string}) -> 0 {
   val {x: v} = p else { return 0 }
   return 0
 }`,
@@ -410,7 +420,7 @@ func TestBorrowUnionLeafBindsAsBorrow(t *testing.T) {
 			// One owned member leaves no single borrow to lift out, so the scrutinee binds owned.
 			// Both members carry `x`, so no tag test narrows the union and the leaf reads both.
 			name: "a union holding an owned member is not peeled",
-			src: `fn f(p: &{x: {a: number}} | {x: {b: string}}) {
+			src: `fn f(p: &{x: {a: number}} | {x: {b: string}}) -> 0 {
   val {x: v} = p else { return 0 }
   return 0
 }`,
@@ -439,11 +449,13 @@ func TestBorrowUnionLeafBindsAsBorrow(t *testing.T) {
 // return type IS the leaf's and the signature shows the outlives bounds.
 func TestBorrowUnionLeafLifetime(t *testing.T) {
 	t.Run("distinct member lifetimes take a join", func(t *testing.T) {
-		values, _, errs := inferSource(t, `fn f(p: &{x: {a: number}} | &{y: string}) {
-  if val {x: v} = p {
-    return v
-  }
-}`)
+		values, errs := inferLocals(t, `fn main() -> undefined {
+	val f = fn (p: &{x: {a: number}} | &{y: string}) {
+	  if val {x: v} = p {
+	    return v
+	  }
+	}
+}`, "f")
 		require.Empty(t, errs)
 		// 'c is the join, with the two member lifetimes bounded above it.
 		require.Equal(t,
@@ -452,7 +464,7 @@ func TestBorrowUnionLeafLifetime(t *testing.T) {
 	})
 
 	t.Run("one shared member lifetime needs no join", func(t *testing.T) {
-		values, _, errs := inferSource(t, `fn f<'a>(p: &'a {x: {a: number}} | &'a {y: string}) {
+		values, _, errs := inferSource(t, `fn f<'a>(p: &'a {x: {a: number}} | &'a {y: string}) -> &'a {a: number} {
   if val {x: v} = p {
     return v
   }
