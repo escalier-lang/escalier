@@ -99,6 +99,15 @@ type coercion struct {
 // any other Object. Reading them as raising on every Object keeps a throw the
 // filter cannot prove unreachable.
 //
+// `RequireInternalSlot` is the brand check a class method opens with. It raises
+// on a value that is not an Object or that lacks the slot it names, and calls
+// nothing. A declaration that types the receiver as the method's own class
+// promises that slot, because every instance of the class carries it. The graph
+// serializes the slot argument as a bare literal, so the filter cannot confirm
+// that the slot checked is the receiver's own. TestRequireInternalSlotDrops
+// pins every class the entry drops a site for, each read against the spec as
+// checking the slot its own class carries.
+//
 // `ToPrimitive` is the coercion absent from the map. Its one `Throw` step is
 // the one reached after an `@@toPrimitive` method has handed back an object, so
 // it reports the caller's code failing rather than a wrong dynamic type, and no
@@ -117,6 +126,8 @@ var coercions = map[string]coercion{
 	// applies ToNumeric to a parameter rather than a receiver, so no drop turns
 	// on it today.
 	"ToNumeric": {accepts: everyLangType, returnsAtOnce: set.NewSet[langType]()},
+
+	"RequireInternalSlot": {accepts: set.FromSlice([]langType{typeObject}), returnsAtOnce: set.FromSlice([]langType{typeObject})},
 
 	"ThisBigIntValue":  thisValue(typeBigInt),
 	"ThisBooleanValue": thisValue(typeBoolean),
