@@ -892,10 +892,20 @@ export class Client {
     // Lifecycle methods
     //
 
+    /**
+     * Sends the server `initialize`. The caller names the workspace in
+     * workspaceFolders, and the request's rootUri is the first folder's URI, or null
+     * when there is none.
+     */
     async initialize(
-        params: lsp.InitializeParams,
+        params: Omit<lsp.InitializeParams, 'rootUri'>,
     ): Promise<lsp.InitializeResult> {
-        this.initializeParams = params;
+        const request: lsp.InitializeParams = {
+            ...params,
+            // oxlint-disable-next-line typescript/no-deprecated -- the protocol still requires rootUri, and servers that predate workspaceFolders read only it
+            rootUri: params.workspaceFolders?.[0]?.uri ?? null,
+        };
+        this.initializeParams = request;
         if (this.state !== 'running') {
             // The server starting after a crash is sent these params when it reopens, and
             // a second `initialize` would break its lifecycle. The reopen's answer serves,
@@ -905,7 +915,7 @@ export class Client {
                 return this.initializeResult;
             }
         }
-        return this.sendRequest('initialize', params);
+        return this.sendRequest('initialize', request);
     }
 
     async setTrace(params: lsp.SetTraceParams) {

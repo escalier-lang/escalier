@@ -1,4 +1,3 @@
-/* oxlint-disable typescript/no-deprecated -- the language server reads rootUri, not workspaceFolders */
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -90,7 +89,7 @@ afterEach(async () => {
 test('initialize', async () => {
     const initResult = await client.initialize({
         processId: process.pid,
-        rootUri,
+        workspaceFolders: [{ uri: rootUri, name: 'test' }],
         capabilities: {},
     });
 
@@ -233,7 +232,7 @@ test('initialize', async () => {
 test('foo/bar', async () => {
     await client.initialize({
         processId: process.pid,
-        rootUri,
+        workspaceFolders: [{ uri: rootUri, name: 'test' }],
         capabilities: {},
     });
 
@@ -265,7 +264,7 @@ test('textDocument/didOpen', { timeout: CHECK_TEST_TIMEOUT_MS }, async () => {
 
     await client.initialize({
         processId: process.pid,
-        rootUri,
+        workspaceFolders: [{ uri: rootUri, name: 'test' }],
         capabilities: {},
     });
 
@@ -325,7 +324,7 @@ test(
 
         await client.initialize({
             processId: process.pid,
-            rootUri,
+            workspaceFolders: [{ uri: rootUri, name: 'test' }],
             capabilities: {},
         });
         void client.textDocumentDidOpen({
@@ -367,7 +366,7 @@ test(
 
         await client.initialize({
             processId: process.pid,
-            rootUri,
+            workspaceFolders: [{ uri: rootUri, name: 'test' }],
             capabilities: {},
         });
         void client.textDocumentDidOpen({
@@ -398,7 +397,7 @@ test('textDocument/didChange', { timeout: CHECK_TEST_TIMEOUT_MS }, async () => {
 
     await client.initialize({
         processId: process.pid,
-        rootUri,
+        workspaceFolders: [{ uri: rootUri, name: 'test' }],
         capabilities: {},
     });
 
@@ -466,7 +465,7 @@ test(
 
         await client.initialize({
             processId: process.pid,
-            rootUri,
+            workspaceFolders: [{ uri: rootUri, name: 'test' }],
             capabilities: {},
         });
 
@@ -517,7 +516,7 @@ test(
 test('textDocument/codeAction', async () => {
     await client.initialize({
         processId: process.pid,
-        rootUri,
+        workspaceFolders: [{ uri: rootUri, name: 'test' }],
         capabilities: {},
     });
 
@@ -555,7 +554,7 @@ test.skip('workspace/executeCommand', async () => {
 
     await client.initialize({
         processId: process.pid,
-        rootUri,
+        workspaceFolders: [{ uri: rootUri, name: 'test' }],
         capabilities: {},
     });
 
@@ -604,7 +603,7 @@ test(
 
         await client.initialize({
             processId: process.pid,
-            rootUri,
+            workspaceFolders: [{ uri: rootUri, name: 'test' }],
             capabilities: {},
         });
 
@@ -649,7 +648,7 @@ test(
 
         const initResult = await client.initialize({
             processId: process.pid,
-            rootUri,
+            workspaceFolders: [{ uri: rootUri, name: 'test' }],
             capabilities: {},
         });
         const legend = initResult.capabilities.semanticTokensProvider?.legend;
@@ -702,7 +701,7 @@ test('constructing a second client leaves the running one usable', async () => {
 
     const initResult = await client.initialize({
         processId: process.pid,
-        rootUri,
+        workspaceFolders: [{ uri: rootUri, name: 'test' }],
         capabilities: {},
     });
     expect(initResult).toBeDefined();
@@ -766,7 +765,7 @@ test(
         fs.writeFileSync(filePath(), text);
         await client.initialize({
             processId: process.pid,
-            rootUri,
+            workspaceFolders: [{ uri: rootUri, name: 'test' }],
             capabilities: {},
         });
         void client.textDocumentDidOpen({
@@ -820,7 +819,7 @@ test(
         fs.writeFileSync(filePath(), text);
         await client.initialize({
             processId: process.pid,
-            rootUri,
+            workspaceFolders: [{ uri: rootUri, name: 'test' }],
             capabilities: {},
         });
         void client.textDocumentDidOpen({
@@ -877,7 +876,7 @@ test(
         fs.writeFileSync(filePath(), text);
         await client.initialize({
             processId: process.pid,
-            rootUri,
+            workspaceFolders: [{ uri: rootUri, name: 'test' }],
             capabilities: {},
         });
         void client.textDocumentDidOpen({
@@ -904,7 +903,7 @@ test(
         // The new server is sent `initialize` once, and this call gets its answer.
         const init = await client.initialize({
             processId: process.pid,
-            rootUri,
+            workspaceFolders: [{ uri: rootUri, name: 'test' }],
             capabilities: {},
         });
 

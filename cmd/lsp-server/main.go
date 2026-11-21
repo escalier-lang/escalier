@@ -209,14 +209,24 @@ func pathToURI(path string) string {
 	return u.String()
 }
 
+// workspaceRootURI returns the URI of the workspace root a client names in params: its
+// first workspace folder, or else its rootUri, or else the empty string.
+func workspaceRootURI(params *protocol.InitializeParams) string {
+	if len(params.WorkspaceFolders) > 0 {
+		return string(params.WorkspaceFolders[0].URI)
+	}
+	if params.RootURI != nil {
+		return string(*params.RootURI)
+	}
+	return ""
+}
+
 func (s *Server) initialize(context *glsp.Context, params *protocol.InitializeParams) (any, error) {
 	// TODO: store the client capabilities so that we can use them to customize
 	// repsonses.
 	// x := params.Capabilities.TextDocument.CodeAction.IsPreferredSupport
 
-	if params.RootURI != nil {
-		s.rootURI = string(*params.RootURI)
-	}
+	s.rootURI = workspaceRootURI(params)
 
 	capabilities := s.handler.CreateServerCapabilities()
 	capabilities.TextDocumentSync = protocol.TextDocumentSyncKindFull
