@@ -34,7 +34,7 @@ func TestHoverVerbosityOverJSON(t *testing.T) {
 	encoded, err := json.Marshal(result)
 	require.NoError(t, err)
 	require.JSONEq(t, `{
-		"contents": {"kind": "markdown", "value": "`+"```escalier\\ntype Y = Point[\\\"y\\\"]\\n= number\\n```"+`"}
+		"contents": {"kind": "markdown", "value": "`+"```escalier\\ntype Y = Point[\\\"y\\\"]\\n= number | undefined\\n```"+`"}
 	}`, string(encoded))
 }
 
