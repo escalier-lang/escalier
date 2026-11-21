@@ -685,7 +685,7 @@ export class BrowserFS implements FSAPI {
         }
 
         const file = openFD.node;
-        const writePos = position ?? openFD.readPosition ?? file.content.length;
+        const writePos = position ?? openFD.readPosition;
         const data = buffer.subarray(offset, offset + length);
         const endPos = writePos + data.length;
 

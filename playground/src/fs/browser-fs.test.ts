@@ -449,6 +449,34 @@ describe('BrowserFS', () => {
         });
     });
 
+    describe('write', () => {
+        /** Writes text to fd at position and returns the file's contents. */
+        async function writeAndRead(
+            text: string,
+            position: number | null,
+        ): Promise<string> {
+            const fd = await open(fs, '/hello.txt', 2 /* O_RDWR */);
+            const data = encoder.encode(text);
+            await new Promise<void>((resolve, reject) => {
+                fs.write(fd, data, 0, data.length, position, (err) => {
+                    if (err) reject(err);
+                    else resolve();
+                });
+            });
+            const buffer = new Uint8Array(20);
+            const { bytesRead } = await read(fs, fd, buffer, 0, 20, 0);
+            return new TextDecoder().decode(buffer.subarray(0, bytesRead));
+        }
+
+        test('writes at the position it is given', async () => {
+            expect(await writeAndRead('Y', 7)).toBe('Hello, Yorld!');
+        });
+
+        test('writes at the read position when the position is null', async () => {
+            expect(await writeAndRead('J', null)).toBe('Jello, World!');
+        });
+    });
+
     describe('writeFile', () => {
         test('creates a new file', async () => {
             await writeFile(fs, '/new.txt', encoder.encode('new content'));
