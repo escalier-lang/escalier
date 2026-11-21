@@ -137,10 +137,13 @@ func readSources(dir string) ([]*ast.Source, error) {
 	return sources, nil
 }
 
-// nameOf returns the name target is declared under, for a message.
+// nameOf returns the name target is declared or bound under, for a message.
 func nameOf(target sigedit.Target) string {
 	if ident, ok := target.Name.(*ast.Ident); ok {
 		return "'" + ident.Name + "'"
+	}
+	if pat, ok := target.Name.(*ast.IdentPat); ok {
+		return "'" + pat.Name + "'"
 	}
 	return "a method"
 }

@@ -44,7 +44,7 @@ func TestBindingMutabilityChecks(t *testing.T) {
 		},
 		{
 			name: "ReadonlyFieldIntoValMut",
-			src: `fn g() {
+			src: `fn g() -> undefined {
 	val q: {readonly a: number} = {a: 1}
 	val mut p: {a: number} = q
 }`,
@@ -63,7 +63,7 @@ fn g() -> number {
 		},
 		{
 			name: "PushOntoMutParam",
-			src:  `fn f(mut xs: Array<number>) { xs.push(1) }`,
+			src:  `fn f(mut xs: Array<number>) -> undefined { xs.push(1) }`,
 		},
 		{
 			name: "UseAfterMoveIntoMutParam",
@@ -93,23 +93,23 @@ fn g() -> number {
 		{
 			name: "WriteThroughDeclareVarMut",
 			src: `declare var mut sink: {x: number}
-fn f() { sink.x = 1 }`,
+fn f() -> undefined { sink.x = 1 }`,
 		},
 		{
 			name: "ReassignMutParam",
-			src:  `fn f(mut p: {x: number}) { p = {x: 2} }`,
-			want: []string{"1:28-1:38: Cannot assign to immutable binding: p"},
+			src:  `fn f(mut p: {x: number}) -> undefined { p = {x: 2} }`,
+			want: []string{"1:41-1:51: Cannot assign to immutable binding: p"},
 		},
 		{
 			name: "WriteThroughConstStringIndex",
-			src: `fn g() {
+			src: `fn g() -> undefined {
 	val mut p = {a: {x: 1}}
 	p["a"].x = 2
 }`,
 		},
 		{
 			name: "WriteThroughConstStringIndexOfValBinding",
-			src: `fn g() {
+			src: `fn g() -> undefined {
 	val p = {a: {x: 1}}
 	p["a"].x = 2
 }`,
@@ -134,18 +134,18 @@ fn f() { sink.x = 1 }`,
 		{
 			name: "WriteThroughCallbackParamLentMutably",
 			src: `declare fn each(cb: fn (p: &mut {x: number}) -> undefined) -> undefined
-fn g() { each(fn(p) { p.x = 1 }) }`,
+fn g() -> undefined { each(fn(p) { p.x = 1 }) }`,
 		},
 		{
 			name: "WriteThroughCallbackParamGivenOwned",
 			src: `declare fn each(cb: fn (p: {x: number}) -> undefined) -> undefined
-fn g() { each(fn(p) { p.x = 1 }) }`,
-			want: []string{"2:23-2:30: cannot mutate 'p' because its binding is immutable; declare it as `mut p`"},
+fn g() -> undefined { each(fn(p) { p.x = 1 }) }`,
+			want: []string{"2:36-2:43: cannot mutate 'p' because its binding is immutable; declare it as `mut p`"},
 		},
 		// A number has no layer to mutate, so the binding's `mut` does not make it borrowable.
 		{
 			name: "MutBorrowOfValMutNumber",
-			src: `fn g() {
+			src: `fn g() -> undefined {
 	val mut n = 5
 	val r = &mut n
 }`,
@@ -154,13 +154,13 @@ fn g() { each(fn(p) { p.x = 1 }) }`,
 		// No binding owns a temporary, so a `&mut` of one is checked against its own type.
 		{
 			name: "MutBorrowOfTemporary",
-			src:  `fn g() { val r = &mut {x: 1} }`,
-			want: []string{"1:18-1:29: cannot constrain immutable object <: mutable object"},
+			src:  `fn g() -> undefined { val r = &mut {x: 1} }`,
+			want: []string{"1:31-1:42: cannot constrain immutable object <: mutable object"},
 		},
 		{
 			name: "ValMutNumberIntoMutBorrowParam",
 			src: `declare fn f(n: &mut {x: number}) -> undefined
-fn g() {
+fn g() -> undefined {
 	val mut n = 5
 	f(n)
 }`,
@@ -168,8 +168,8 @@ fn g() {
 		},
 		{
 			name: "ObjectIntoValMutNumber",
-			src:  `fn g() { val mut p: number = {a: 1} }`,
-			want: []string{"1:30-1:36: cannot constrain object <: number"},
+			src:  `fn g() -> undefined { val mut p: number = {a: 1} }`,
+			want: []string{"1:43-1:49: cannot constrain object <: number"},
 		},
 	}
 
@@ -193,7 +193,7 @@ func TestMutParamSignature(t *testing.T) {
 	}{
 		{
 			name: "Write",
-			src:  `fn f(mut p: {x: number}) { p.x = 1 }`,
+			src:  `fn f(mut p: {x: number}) -> undefined { p.x = 1 }`,
 			want: "fn (p: {x: number}) -> undefined",
 		},
 		// An unannotated `mut` parameter is mutable, and its type comes from its uses.
@@ -216,21 +216,21 @@ func TestMutParamSignature(t *testing.T) {
 		// effect and the write is rejected.
 		{
 			name: "UnionWrite",
-			src:  `fn f(mut p: {x: number} | {x: string}) { p.x = 1 }`,
+			src:  `fn f(mut p: {x: number} | {x: string}) -> undefined { p.x = 1 }`,
 			want: "fn (p: {x: number} | {x: string}) -> undefined",
-			errs: []string{"1:42-1:49: cannot mutate 'p': a call moves its argument only into a parameter typed as an object, tuple, or class, so `mut` has no effect on this one; annotate it as `mut p: T` with such a type, or as `p: &mut T`"},
+			errs: []string{"1:55-1:62: cannot mutate 'p': a call moves its argument only into a parameter typed as an object, tuple, or class, so `mut` has no effect on this one; annotate it as `mut p: T` with such a type, or as `p: &mut T`"},
 		},
 		{
 			name: "RestPush",
-			src:  `fn f(...mut rest: Array<number>) { rest.push(1) }`,
+			src:  `fn f(...mut rest: Array<number>) -> undefined { rest.push(1) }`,
 			want: "fn (...rest: Array<number>) -> undefined",
 		},
 		// A borrow cannot fill the owned parameter. The solver blames the borrow's
 		// annotation on `q`.
 		{
 			name: "BorrowedArgument",
-			src: `fn f(mut p: {x: number}) { p.x = 1 }
-fn g(q: &{x: number}) { f(q) }`,
+			src: `fn f(mut p: {x: number}) -> undefined { p.x = 1 }
+fn g(q: &{x: number}) -> undefined { f(q) }`,
 			want: "fn (p: {x: number}) -> undefined",
 			errs: []string{"2:9-2:21: cannot use borrowed &object as owned object"},
 		},
@@ -238,7 +238,7 @@ fn g(q: &{x: number}) { f(q) }`,
 		// referent writable. The solver blames the parameter's annotation.
 		{
 			name: "BorrowParamKeepsItsMutability",
-			src:  `fn f(mut p: &{x: number}) { p.x = 1 }`,
+			src:  `fn f(mut p: &{x: number}) -> undefined { p.x = 1 }`,
 			want: "fn (p: &{x: number}) -> undefined",
 			errs: []string{"1:13-1:25: cannot constrain immutable object <: mutable object"},
 		},
@@ -257,7 +257,7 @@ fn g(q: &{x: number}) { f(q) }`,
 // owned value a call returns, since every owned layer of the value is writable.
 func TestValMutCallResultWidens(t *testing.T) {
 	values, errs := inferAgainstTreeWithSpans(t, `
-		fn mk() { return {x: 1} }
+		fn mk() -> {x: 1} { return {x: 1} }
 		val mut d = mk()
 		val n = d.x
 	`)
@@ -298,7 +298,7 @@ func TestDynamicIndexPlace(t *testing.T) {
 		},
 		{
 			name: "ReadTwoElements",
-			src: `fn g() {
+			src: `fn g() -> undefined {
 	val xs: Array<{x: number}> = [{x: 1}, {x: 2}]
 	val a = xs[0]
 	val b = xs[1]
@@ -325,13 +325,13 @@ func TestValMutBorrowedInitializer(t *testing.T) {
 		{
 			// The solver blames the borrow's annotation on `q`.
 			name: "BorrowedParameter",
-			src:  `fn g(q: &{x: number}) { val mut p: {x: number} = q }`,
+			src:  `fn g(q: &{x: number}) -> undefined { val mut p: {x: number} = q }`,
 			want: []string{"1:9-1:21: cannot use borrowed &object as owned object"},
 		},
 		{
 			name: "BorrowReturnedByCall",
 			src: `fn h(a: &{x: number}) -> &{x: number} { return a }
-fn g() {
+fn g() -> undefined {
 	val o = {x: 1}
 	val mut p: {x: number} = h(&o)
 }`,
@@ -351,7 +351,7 @@ fn g() {
 // annotation is a union with a borrow member, since the borrow carries its own
 // mutability. The write through `p` is rejected.
 func TestValMutUnionWithBorrow(t *testing.T) {
-	_, errs := inferAgainstTreeWithSpans(t, `fn g() {
+	_, errs := inferAgainstTreeWithSpans(t, `fn g() -> undefined {
 	val mut p: {x: number} | &{x: number} = {x: 1}
 	p.x = 2
 }`)
@@ -370,7 +370,7 @@ func TestAwaitedCallResultOwned(t *testing.T) {
 		{
 			name: "ValMut",
 			src: `declare fn load() -> Promise<Array<number>>
-async fn g() {
+async fn g() -> Promise<undefined> {
 	val mut r = await load()
 	r.push(1)
 }`,
@@ -378,7 +378,7 @@ async fn g() {
 		{
 			name: "AnnotatedMut",
 			src: `declare fn load() -> Promise<Array<number>>
-async fn g() {
+async fn g() -> Promise<undefined> {
 	val mut r: Array<number> = await load()
 	r.push(1)
 }`,
@@ -388,7 +388,7 @@ async fn g() {
 		{
 			name: "SettlesToBorrow",
 			src: `declare fn shared() -> Promise<&'static Array<number>>
-async fn g() {
+async fn g() -> Promise<undefined> {
 	val mut r = await shared()
 	r.push(1)
 }`,
@@ -402,7 +402,7 @@ async fn g() {
 		{
 			name: "AwaitedVariable",
 			src: `declare fn load() -> Promise<Array<number>>
-async fn g() {
+async fn g() -> Promise<undefined> {
 	val p = load()
 	val mut r = await p
 	r.push(1)
@@ -414,7 +414,7 @@ async fn g() {
 		{
 			name: "AwaitedVariableIntoMutLeaf",
 			src: `declare fn load() -> Promise<{a: Array<number>}>
-async fn g() {
+async fn g() -> Promise<undefined> {
 	val p = load()
 	val {mut a} = await p
 	a.push(1)
@@ -425,7 +425,7 @@ async fn g() {
 		{
 			name: "AwaitedVariableSettlesToPrimitive",
 			src: `declare fn count() -> Promise<number>
-async fn g() {
+async fn g() -> Promise<undefined> {
 	val p = count()
 	val mut n = await p
 }`,

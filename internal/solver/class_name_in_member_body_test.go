@@ -53,7 +53,7 @@ func TestAMemberBodyReadsItsOwnClassValue(t *testing.T) {
 			name: "a generic method constructs its own generic class",
 			src: `class Box<T> {
 				v: T,
-				map<U>(&self, f: fn (x: T) -> U) { return Box(f(self.v)) },
+				map<U>(&self, f: fn (x: T) -> U) -> Box<U> { return Box(f(self.v)) },
 			}
 			val b: Box<number> = Box(1)
 			val r = b.map(fn (x: number) -> string { return "a" })`,
