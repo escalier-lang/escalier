@@ -27,7 +27,8 @@ export fn shiftLength(start: number, end: number) -> number {
     return elapsed(start, end)
 }
 
-// Uncomment to see the error: cannot constrain "9:00" <: number
+// Uncomment the line below to see the error:
+// > cannot constrain "9:00" <: number
 // val shift = shiftLength("9:00", "17:00")
 
 // A generic function works on any type. Each call instantiates it on its own,
