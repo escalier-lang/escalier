@@ -178,6 +178,15 @@ func findNodeAndParent(script *ast.Script, loc ast.Location) (ast.Node, ast.Node
 	return visitor.Node, visitor.Parent
 }
 
+// parentOf returns the innermost of ancestors, which lists a node's ancestors
+// outermost first, or nil when ancestors is empty.
+func parentOf(ancestors []ast.Node) ast.Node {
+	if len(ancestors) == 0 {
+		return nil
+	}
+	return ancestors[len(ancestors)-1]
+}
+
 // findNodeWithAncestors returns the deepest node at loc and its full ancestor chain
 // (outermost first, excluding the node itself).
 func findNodeWithAncestors(script *ast.Script, loc ast.Location) (ast.Node, []ast.Node) {

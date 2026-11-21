@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -179,8 +180,7 @@ func TestClientSupportsSnippets(t *testing.T) {
 }
 
 // TestPositionalKeywordCompletion covers which keywords the list holds at each kind of
-// position. Each case types the start of a word, since an unfiltered list is cut to
-// maxCompletionItems before the keywords sort in.
+// position.
 func TestPositionalKeywordCompletion(t *testing.T) {
 	tests := []struct {
 		name string
@@ -191,6 +191,7 @@ func TestPositionalKeywordCompletion(t *testing.T) {
 		excludes []string
 	}{
 		{name: "StatementInBody", src: "fn f() {\n    va‸\n}\n", includes: []string{"val", "var"}},
+		{name: "BlankLineInBody", src: "fn f() {\n    val a = 1\n    ‸\n}\n", includes: []string{"if", "return", "val"}},
 		{name: "ReturnInBody", src: "fn f() {\n    re‸\n}\n", includes: []string{"return"}},
 		{name: "StatementAfterStatement", src: "fn f() {\n    val a = 1\n    i‸\n}\n", includes: []string{"if", "interface"}, excludes: []string{"import"}},
 		{name: "StatementInIfBlock", src: "fn f(c: boolean) {\n    if c {\n        fo‸\n    }\n}\n", includes: []string{"for"}},
@@ -253,6 +254,7 @@ func TestClassBodyKeywordCompletion(t *testing.T) {
 	}{
 		{name: "BlankLine", src: "class C {\n    x: number,\n    ‸\n}\n", expected: []string{"async", "constructor", "gen", "get", "private", "readonly", "set", "static"}},
 		{name: "Partial", src: "class C {\n    st‸\n}\n", expected: []string{"static"}},
+		{name: "PartialAfterObjectTypeInHeader", src: "class B<T> {}\nclass C extends B<{a: number}> {\n    st‸\n}\n", expected: []string{"static"}},
 		{name: "PartialGetOrGen", src: "class C {\n    ge‸\n}\n", expected: []string{"gen", "get"}},
 	}
 	for _, tt := range tests {
@@ -263,4 +265,33 @@ func TestClassBodyKeywordCompletion(t *testing.T) {
 			})
 		}
 	}
+}
+
+// TestClassHeaderKeywordCompletion asserts that a line inside a multi-line class header
+// gets no member modifiers, even when an object type in the header holds a `{`.
+func TestClassHeaderKeywordCompletion(t *testing.T) {
+	src := "class C<\n    T: {a: number},\n    ‸\n> {\n}\n"
+	for _, path := range keywordTestPaths {
+		t.Run(path, func(t *testing.T) {
+			labels := getCompletionLabels(completionItemsAtMark(t, path, src, false))
+			require.NotContains(t, labels, "static")
+		})
+	}
+}
+
+// TestSortAndLimitKeepsKeywords asserts that cutting a list to maxCompletionItems
+// takes only from the items that aren't keywords.
+func TestSortAndLimitKeepsKeywords(t *testing.T) {
+	variable := protocol.CompletionItemKindVariable
+	var items []protocol.CompletionItem
+	for i := range 150 {
+		items = append(items, protocol.CompletionItem{Label: fmt.Sprintf("item%03d", i), Kind: &variable})
+	}
+	items = append(items, keywordCompletion("val", "", "", false))
+
+	labels := getCompletionLabels(sortAndLimit(items))
+	require.Len(t, labels, maxCompletionItems)
+	require.Contains(t, labels, "val")
+	require.Contains(t, labels, "item098")
+	require.NotContains(t, labels, "item099")
 }

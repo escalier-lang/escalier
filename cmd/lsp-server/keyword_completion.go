@@ -278,10 +278,7 @@ func keywordSiteAt(node ast.Node, ancestors []ast.Node, text string, loc ast.Loc
 	lineStart := strings.LastIndexByte(text[:wordStart], '\n') + 1
 	startsLine := strings.TrimSpace(text[lineStart:wordStart]) == ""
 
-	var parent ast.Node
-	if len(ancestors) > 0 {
-		parent = ancestors[len(ancestors)-1]
-	}
+	parent := parentOf(ancestors)
 	switch n := node.(type) {
 	case nil:
 		// Only the top level of a file has no node around the cursor.
@@ -300,7 +297,7 @@ func keywordSiteAt(node ast.Node, ancestors []ast.Node, text string, loc ast.Loc
 			if member := classMemberAt(p, loc); member != nil && member.Span().Start.Offset != wordStart {
 				return expressionSite
 			}
-			if startsLine {
+			if body := classBodyStart(p, text); startsLine && body >= 0 && body < wordStart {
 				return classBodySite
 			}
 			return noKeywordSite
@@ -323,8 +320,7 @@ func keywordSiteAt(node ast.Node, ancestors []ast.Node, text string, loc ast.Loc
 			return expressionSite
 		}
 	case *ast.ClassDecl:
-		// The class's header ends at the body's `{`.
-		if startsLine && strings.Contains(text[n.Span().Start.Offset:wordStart], "{") {
+		if body := classBodyStart(n, text); startsLine && body >= 0 && body < wordStart {
 			return classBodySite
 		}
 		return noKeywordSite
@@ -334,6 +330,35 @@ func keywordSiteAt(node ast.Node, ancestors []ast.Node, text string, loc ast.Loc
 		}
 		return noKeywordSite
 	}
+}
+
+// classBodyStart returns the byte offset of the `{` that opens class's body in text,
+// or -1 when the class has none. The body's `{` is the first one after the class's
+// name, type parameters, `extends` clause and `implements` clause. Each of those can
+// hold a `{` of an object type, as in `class C extends Base<{a: number}> {`.
+func classBodyStart(class *ast.ClassDecl, text string) int {
+	headerEnd := class.Span().Start.Offset
+	extend := func(span ast.Span) { headerEnd = max(headerEnd, span.End.Offset) }
+	if class.Name != nil {
+		extend(class.Name.Span())
+	}
+	for _, param := range class.TypeParams {
+		extend(param.Span())
+	}
+	if class.Extends != nil {
+		extend(class.Extends.Span())
+	}
+	for _, iface := range class.Implements {
+		extend(iface.Span())
+	}
+	if headerEnd > len(text) {
+		return -1
+	}
+	brace := strings.IndexByte(text[headerEnd:], '{')
+	if brace < 0 {
+		return -1
+	}
+	return headerEnd + brace
 }
 
 // classMemberAt returns the member of class whose span contains loc, or nil.

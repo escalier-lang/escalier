@@ -294,10 +294,7 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 	}
 
 	node, ancestors := findNodeWithAncestors(script, loc)
-	var parent ast.Node
-	if len(ancestors) > 0 {
-		parent = ancestors[len(ancestors)-1]
-	}
+	parent := parentOf(ancestors)
 	keywords, onlyKeywords := positionalKeywords(node, ancestors, doc.Text, loc, script.Comments, script.Accept, false)
 
 	var items []protocol.CompletionItem
@@ -397,19 +394,14 @@ func (s *Server) moduleCompletion(
 	}
 
 	node, ancestors := findNodeWithAncestorsInFile(module, sourceID, loc)
-	var parent ast.Node
-	if len(ancestors) > 0 {
-		parent = ancestors[len(ancestors)-1]
-	}
+	parent := parentOf(ancestors)
 	walkFile := func(v ast.Visitor) { walkModuleFile(v, module, sourceID) }
 	keywords, onlyKeywords := positionalKeywords(node, ancestors, docText, loc, module.Comments[sourceID], walkFile, true)
 
 	var items []protocol.CompletionItem
 
-	// The parser drops a half-typed `th` after a return type or reads it as the next
-	// statement, so the node at the cursor doesn't show a `throws` position.
-	// throwsCompletions reads the text before the cursor instead, so it runs before
-	// the checks that read the node.
+	// throwsCompletions runs before the checks that read the node, for the reason
+	// given at its call in textDocumentCompletion.
 	if throws, ok := throwsCompletions(walkFile, docText, loc, s.snippetSupport); ok {
 		items = throws
 	} else if onlyKeywords {
@@ -1655,14 +1647,30 @@ func filterByPrefix(items []protocol.CompletionItem, prefix string) []protocol.C
 	return filtered
 }
 
+// sortAndLimit sorts items by label and cuts them to maxCompletionItems. Keyword
+// items are always kept, and the cut takes only from the other items. A keyword
+// fits the cursor's position, while the scope list holds every builtin, so an
+// alphabetical cut would drop the lower-case keywords first.
+//
 // TODO: Sort by relevance (e.g. prefix-match score) instead of alphabetically,
 // so that truncation keeps the most relevant items rather than the first alphabetically.
 func sortAndLimit(items []protocol.CompletionItem) []protocol.CompletionItem {
-	sort.Slice(items, func(i, j int) bool {
-		return items[i].Label < items[j].Label
-	})
-	if len(items) > maxCompletionItems {
-		items = items[:maxCompletionItems]
+	var keywords, others []protocol.CompletionItem
+	for _, item := range items {
+		if item.Kind != nil && *item.Kind == protocol.CompletionItemKindKeyword {
+			keywords = append(keywords, item)
+		} else {
+			others = append(others, item)
+		}
 	}
+	byLabel := func(list []protocol.CompletionItem) {
+		sort.Slice(list, func(i, j int) bool { return list[i].Label < list[j].Label })
+	}
+	byLabel(others)
+	if limit := max(maxCompletionItems-len(keywords), 0); len(others) > limit {
+		others = others[:limit]
+	}
+	items = append(others, keywords...)
+	byLabel(items)
 	return items
 }
