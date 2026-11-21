@@ -810,6 +810,43 @@ fn moved() -> number {
 }
 ```
 
+**E5. A call rejects a closure argument that writes a place the call borrows as
+mutable.** A call that takes `&mut p`, as its receiver or as any `&mut`
+parameter, rejects an argument that holds a closure that writes a place
+overlapping `p`. A closure writes a place when it assigns the place, borrows it
+as `&mut`, or passes it as a `&mut self` receiver. An argument holds each
+closure it names or contains, and each closure such a closure captures. So a
+closure that calls another closure that writes `p` is rejected too. A closure
+that only reads `p` is accepted, since a read cannot give a value a second
+owner.
+
+E2 alone does not reject such a call, since it lets the closure's mutable path
+be live beside the call's `&mut`. E4 counts the closure's captures only at each
+call, but the callee may call the closure in the middle of its own access to
+`p`. `sort` takes `&mut self`. It reads every element into a list, sorts the
+list while it calls the compare function, and then writes the list back into the
+array. In `sortPop` below, the elements the compare function pops are written
+back into `arr` while `stash` also holds them, so each has two owners.
+
+```esc
+type Flat = {x: number}
+
+fn sortPop(mut arr: Array<Flat>, mut stash: Array<Flat>) -> undefined {
+    // error: this call may run the 'compareFn' passed to 'sort', which writes 'arr' while the call borrows it as mutable for 'self'
+    arr.sort(fn (a, b) {
+        match arr.pop() {
+            p: Flat => { stash.push(p) },
+            _ => {},
+        }
+        return 0
+    })
+}
+
+fn sortLen(mut arr: Array<number>) -> undefined {
+    arr.sort(fn (a, b) { return arr.length })    // accepted, since the closure only reads arr
+}
+```
+
 ## Derived behaviour
 
 The rules above produce each of the following. None of them is a separate rule.
@@ -886,6 +923,7 @@ Rust has no matching feature.
 | E2 no immutable and mutable path live together | Aliasing XOR mutability over non-lexical lifetimes: one `&mut`, or any number of `&` | Differs | Escalier allows several live mutable paths at once. The target is single-threaded and garbage collected, so the only hazard left is an immutable path observing a write |
 | E3 no move while borrowed | Rejected with E0505 | Same | |
 | E4 closure calls use its borrows | A closure holds its captured borrows from creation to its last use | Differs | Escalier counts the borrows only at each call, so a write to a captured value between two calls is accepted. Rust rejects it |
+| E5 no closure argument writes a place the call borrows as mutable | A closure that captures `v` cannot be passed while `v` is mutably borrowed, rejected with E0500, E0501, or E0502 | Differs | Escalier accepts a closure that only reads the place. Rust rejects it with E0502 |
 | D1 no move out of module-level state | Moving out of a `static` is rejected with E0507 | Same | |
 | D2 a moving closure is called once | `FnOnce` | Same | |
 | T8 branches agree on ownership | `if` branches must have one type, so `T` and `&T` do not join | Same | |
@@ -938,8 +976,8 @@ The checker runs in three steps:
 2. Once inference finishes, the lifetime solver settles F3's escape questions
    from the outlives constraints. Each provisional flow then becomes the copy,
    borrow, or move event that F2 gives for the settled destination type.
-3. One forward dataflow pass over the control-flow graph checks E1, E2, and E3
-   against the events and the liveness of each holder.
+3. One forward dataflow pass over the control-flow graph checks E1, E2, E3, and
+   E5 against the events and the liveness of each holder.
 
 The type rules stay in the type checker, where they already sit.
 

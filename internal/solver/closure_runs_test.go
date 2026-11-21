@@ -517,3 +517,143 @@ func TestRetainedClosureWritesFollowCaptures(t *testing.T) {
 		})
 	}
 }
+
+// TestClosureArgWritesMutableSlot covers a closure passed to a call that also borrows a place
+// as mutable, through a `&mut self` receiver or a `&mut` parameter. A closure that writes an
+// overlapping place is rejected, whether it assigns the place, passes it as a `&mut self`
+// receiver, or calls another closure that does. Each rejected program pairs with an accepted
+// twin where the closure only reads the place or writes a disjoint one.
+func TestClosureArgWritesMutableSlot(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want []string
+	}{
+		"CompareFnPopsTheReceiver": {
+			src: `
+				type Flat = {x: number}
+				export fn sortPop(mut arr: Array<Flat>, mut stash: Array<Flat>) -> undefined {
+					arr.sort(fn (a, b) {
+						match arr.pop() {
+							p: Flat => { stash.push(p) },
+							_ => {},
+						}
+						return 0
+					})
+				}
+			`,
+			want: []string{"4:15-10:7: this call may run the 'compareFn' passed to 'sort', which writes 'arr' while the call borrows it as mutable for 'self'"},
+		},
+		"CompareFnReadsTheReceiverOk": {
+			src: `
+				export fn sortLen(mut arr: Array<number>) -> undefined {
+					arr.sort(fn (a, b) { return arr.length })
+				}
+			`,
+			want: nil,
+		},
+		"CompareFnPopsAnotherArrayOk": {
+			src: `
+				export fn sortPop(mut arr: Array<number>, mut other: Array<number>) -> undefined {
+					arr.sort(fn (a, b) {
+						other.pop()
+						return 0
+					})
+				}
+			`,
+			want: nil,
+		},
+		"CompareFnPopsABorrowedReceiver": {
+			src: `
+				export fn sortPop(arr: &mut Array<number>) -> undefined {
+					arr.sort(fn (a, b) {
+						arr.pop()
+						return 0
+					})
+				}
+			`,
+			want: []string{"3:15-6:7: this call may run the 'compareFn' passed to 'sort', which writes 'arr' while the call borrows it as mutable for 'self'"},
+		},
+		"CompareFnCallsAClosureThatPops": {
+			src: `
+				export fn sortPop(mut arr: Array<number>) -> undefined {
+					val pop = fn () { arr.pop() }
+					arr.sort(fn (a, b) {
+						pop()
+						return 0
+					})
+				}
+			`,
+			want: []string{"4:15-7:7: this call may run the 'compareFn' passed to 'sort', which writes 'arr' while the call borrows it as mutable for 'self'"},
+		},
+		"CallbackCallsAMutMethodOfTheReceiver": {
+			src: `
+				class Box {
+					x: number,
+					run(&mut self, f: fn () -> undefined) -> undefined { f() },
+					bump(&mut self) -> undefined { self.x = self.x + 1 },
+				}
+				export fn go(mut b: Box) -> undefined {
+					b.run(fn () { b.bump() })
+				}
+			`,
+			want: []string{"8:12-8:30: this call may run the 'f' passed to 'run', which writes 'b' while the call borrows it as mutable for 'self'"},
+		},
+		"CallbackAssignsAMutParam": {
+			src: `
+				declare fn apply(target: &mut {x: number}, f: fn () -> undefined) -> undefined
+				export fn go() -> undefined {
+					val mut p = {x: 1}
+					apply(&mut p, fn () { p.x = 2 })
+				}
+			`,
+			want: []string{"5:20-5:37: this call may run the 'f' passed to 'apply', which writes 'p' while the call borrows it as mutable for 'target'"},
+		},
+		"NamedCallbackAssignsAMutParam": {
+			src: `
+				declare fn apply(target: &mut {x: number}, f: fn () -> undefined) -> undefined
+				export fn go() -> undefined {
+					val mut p = {x: 1}
+					val assign = fn () { p.x = 2 }
+					apply(&mut p, assign)
+				}
+			`,
+			want: []string{"6:20-6:26: this call may run the 'f' passed to 'apply', which writes 'p' while the call borrows it as mutable for 'target'"},
+		},
+		"CallbackAssignsAFieldOfAMutParam": {
+			src: `
+				declare fn apply(target: &mut {a: {x: number}}, f: fn () -> undefined) -> undefined
+				export fn go() -> undefined {
+					val mut p = {a: {x: 1}}
+					apply(&mut p, fn () { p.a.x = 2 })
+				}
+			`,
+			want: []string{"5:20-5:39: this call may run the 'f' passed to 'apply', which writes 'p.a' while the call borrows 'p' as mutable for 'target'"},
+		},
+		"CallbackAssignsADisjointFieldOk": {
+			src: `
+				declare fn apply(target: &mut {x: number}, f: fn () -> undefined) -> undefined
+				export fn go() -> undefined {
+					val mut p = {a: {x: 1}, b: {x: 1}}
+					apply(&mut p.a, fn () { p.b.x = 2 })
+				}
+			`,
+			want: nil,
+		},
+		"CallbackWithoutAMutSlotOk": {
+			src: `
+				declare fn run(f: fn () -> undefined) -> undefined
+				export fn go() -> undefined {
+					val mut p = {x: 1}
+					run(fn () { p.x = 2 })
+				}
+			`,
+			want: nil,
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, msgs := inferAgainstTreeWithSpans(t, tc.src)
+			require.Equal(t, tc.want, msgs)
+		})
+	}
+}

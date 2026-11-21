@@ -41,6 +41,9 @@ func (c *checker) recordClosureCaptures(scope *Scope, closure ast.Func) {
 
 	// moved maps each captured name the closure's body moves to the expression that moves it.
 	moved := c.capturesMovedBy[closure]
+	// mutCalls maps the declaration of each local the closure's body passes as a `&mut self`
+	// receiver to the field path of each such receiver.
+	mutCalls := c.mutReceiverPaths(closure)
 
 	for _, capture := range c.closureCaptures(closure) {
 		// Resolve the captured name to its binding in the scope the closure is written in. A
@@ -75,8 +78,49 @@ func (c *checker) recordClosureCaptures(scope *Scope, closure ast.Func) {
 		// owned local.
 		if t := c.eventTable(); t != nil {
 			t.captureTypes[root] = bindingType(b)
+			for _, path := range mutCalls[bindingDecl(b)] {
+				t.callWrites[closure] = append(t.callWrites[closure], movePlace{root: root, path: path})
+			}
 		}
 	}
+}
+
+// mutReceiverPaths returns the receivers of the `&mut self` method calls in the body of
+// `closure`, including the bodies of the functions nested in it. Each receiver is a chain
+// rooted at a local, such as `arr` in `arr.pop()` or `o.list` in `o.list.push(x)`. The map
+// takes the declaration of that local to the field path of each receiver rooted at it. A
+// chain with a dynamic index or a getter ends its path at the link before it. The body must
+// have been inferred, since the receiver a call declares is recorded as the walk types it.
+func (c *checker) mutReceiverPaths(closure ast.Func) map[ast.Node][][]placeSeg {
+	body := closure.FuncBody()
+	if body == nil {
+		return nil
+	}
+	v := &mutReceiverFinder{c: c, paths: map[ast.Node][][]placeSeg{}}
+	body.Accept(v)
+	return v.paths
+}
+
+// mutReceiverFinder walks a body for mutReceiverPaths.
+type mutReceiverFinder struct {
+	ast.DefaultVisitor
+	c     *checker
+	paths map[ast.Node][][]placeSeg
+}
+
+func (v *mutReceiverFinder) EnterExpr(e ast.Expr) bool {
+	call, ok := e.(*ast.CallExpr)
+	if !ok {
+		return true
+	}
+	recv, self := v.c.calleeReceiver(call.Callee)
+	if recv == nil || !selfParamMut(self) {
+		return true
+	}
+	if cp, ok := v.c.capturedChain(recv); ok && cp.decl != nil {
+		v.paths[cp.decl] = append(v.paths[cp.decl], cp.segs)
+	}
+	return true
 }
 
 // setClosureRetention gives ft, the type of `closure`, a lifetime when the closure holds a

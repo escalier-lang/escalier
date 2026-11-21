@@ -1423,7 +1423,7 @@ func (d *bodyDataflow) pass(ev *passEvent, s *dataflowState) {
 	}
 }
 
-// callEnd applies the callEvent ev in two steps:
+// callEnd applies the callEvent ev in three steps:
 //
 //  1. A mutable receiver the call reserved takes effect. E2 rejects an immutable path to an
 //     overlapping place that is still live. A path is still live when an argument of a call
@@ -1431,11 +1431,13 @@ func (d *bodyDataflow) pass(ev *passEvent, s *dataflowState) {
 //     the statement or after it. So `val r = &v; v.push(r.len())` checks clean, since r is
 //     dead once the arguments are evaluated. The later of the two paths is blamed, so
 //     `p.writeRead(&p)` reports `&p`.
-//  2. Each loan a slot of the call holds is released, and a loan nothing else holds ends.
+//  2. A closure argument that writes a place another slot of the call borrows as mutable is
+//     rejected, as checkClosureArgWrites describes.
+//  3. Each loan a slot of the call holds is released, and a loan nothing else holds ends.
 //
-// Between the two, checkContentsBorrowed checks the call's mutable slots against live borrows
-// of their contents, and each argument a parameter keeps for 'static keeps its closures' loans
-// of their captures, as keepCaptureLoans does.
+// Between steps 1 and 2, checkContentsBorrowed checks the call's mutable slots against live
+// borrows of their contents. Between steps 2 and 3, each argument a parameter keeps for
+// 'static keeps its closures' loans of their captures, as keepCaptureLoans does.
 func (d *bodyDataflow) callEnd(ev *callEvent, at liveness.StmtRef, s *dataflowState) {
 	// Step 1 checks each receiver this call reserved, scanning the loans in sorted order.
 	// Most calls reserve no receiver, and those skip the sort.
@@ -1494,6 +1496,7 @@ func (d *bodyDataflow) callEnd(ev *callEvent, at liveness.StmtRef, s *dataflowSt
 	// a tuple slot cannot be removed this way. Reading one through `&mut` yields a borrow, which
 	// cannot fill an owned slot, so a borrow of one does not conflict.
 	d.checkContentsBorrowed(ev, at, s)
+	d.checkClosureArgWrites(ev, s)
 
 	// A parameter that keeps a closure for 'static keeps the closure's loans of its captures
 	// before the call releases the loans its arguments hold.
@@ -1503,7 +1506,7 @@ func (d *bodyDataflow) callEnd(ev *callEvent, at liveness.StmtRef, s *dataflowSt
 		}
 	}
 
-	// Step 2 releases every slot of this call. A loan with no holder, no slot of another call,
+	// Step 3 releases every slot of this call. A loan with no holder, no slot of another call,
 	// and no hold that lasts to the end of the statement ends here.
 	for k, l := range s.loans {
 		for slot := range l.slots {
@@ -1717,6 +1720,104 @@ func (d *bodyDataflow) placeUsedLaterAt(p movePlace, ev ownershipEvent, at liven
 		}
 	}
 	return false
+}
+
+// checkClosureArgWrites reports each closure an argument of the call `ev` holds that writes a
+// place overlapping one that another slot of the call borrows as mutable. The slot is the
+// receiver of a `&mut self` method or an argument that fills a `&mut` parameter. The callee
+// may run the closure while it holds that borrow. A closure writes a place it assigns, borrows
+// as `&mut`, or passes as a `&mut self` receiver. A closure that only reads the place is
+// accepted. The argument holds each closure it names or writes, and each closure such a
+// closure captures, so a closure that calls another closure that writes the place is
+// rejected too.
+//
+// The error blames the argument that holds the closure, once per argument.
+func (d *bodyDataflow) checkClosureArgWrites(ev *callEvent, s *dataflowState) {
+	var closures, borrows []*liveLoan
+	for _, l := range d.sortedLoans(s) {
+		switch {
+		case l.closure():
+			closures = append(closures, l)
+		case l.ev.borrow == mutableBorrow && !l.alias:
+			borrows = append(borrows, l)
+		}
+	}
+	if len(closures) == 0 || len(borrows) == 0 {
+		return
+	}
+
+	for i, arg := range ev.call.Args {
+		if err := d.closureArgWrite(ev, i, closures, borrows); err != nil {
+			err.node = arg
+			d.report(err)
+		}
+	}
+}
+
+// closureArgWrite returns the error for the first place that a closure the argument at
+// `index` of the call `ev` holds writes, where the place overlaps a loan of `borrows` that
+// another slot of the call holds as its own borrow. It returns nil when there is no such
+// place. `closures` lists the live closure captures, and `borrows` the live mutable loans
+// that are not closure captures.
+func (d *bodyDataflow) closureArgWrite(ev *callEvent, index int, closures, borrows []*liveLoan) *ClosureArgWriteError {
+	slot := callSlot{call: ev.call, index: index}
+	for _, w := range closures {
+		if !w.slots.Contains(slot) {
+			continue
+		}
+		for _, place := range d.closureWrites(w) {
+			for _, b := range borrows {
+				if !placesOverlap(place, b.ev.place) {
+					continue
+				}
+				if param, ok := d.borrowParam(ev, b, index); ok {
+					return &ClosureArgWriteError{
+						Closure:     ev.params[index],
+						Callee:      calleeName(ev.call.Callee),
+						Place:       d.placeName(place),
+						Borrowed:    d.placeName(b.ev.place),
+						BorrowParam: param,
+						borrow:      b.ev.node.Span(),
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// closureWrites returns the places the closure capture `w` lets its closure write. That is the
+// captured place when the capture is mutable, and each place under the captured local that the
+// closure passes as a `&mut self` receiver.
+func (d *bodyDataflow) closureWrites(w *liveLoan) []movePlace {
+	var out []movePlace
+	if w.ev.borrow == mutableBorrow {
+		out = append(out, w.ev.place)
+	}
+	closure, _ := w.ev.node.(ast.Func)
+	for _, p := range d.table.callWrites[closure] {
+		if p.root == w.ev.place.root {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// borrowParam returns the parameter through which the call `ev` holds the loan `b` as its own
+// borrow, at a slot other than the argument at `skip`. The receiver's parameter is `self`, and
+// an argument's is the name ev.params gives it. ok is false when no such slot holds `b`. The
+// receiver comes first, then the arguments in order, so the result is the same on every run.
+func (d *bodyDataflow) borrowParam(ev *callEvent, b *liveLoan, skip int) (string, bool) {
+	for j := selfIndex; j < len(ev.call.Args); j++ {
+		if j == skip || !b.ownSlots.Contains(callSlot{call: ev.call, index: j}) {
+			continue
+		}
+		if j == selfIndex {
+			return "self", true
+		}
+		return ev.params[j], true
+	}
+	return "", false
 }
 
 // `run` applies the runEvent `ev`. The call uses each capture of each closure it runs or may
