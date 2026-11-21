@@ -5,6 +5,7 @@ import { diagnosticsTokenRules } from '#diagnostics/diagnostics-language';
 import { useProjectDiagnosticsStore } from '#diagnostics/project-diagnostics-store';
 import type { Client } from '#lsp-client/client';
 import { useThemeStore } from '#theme/theme';
+
 import { setupLanguage } from './language';
 
 const monacoMock = vi.hoisted(() => {
@@ -66,8 +67,9 @@ type FakeClient = {
 };
 
 function fakeClient(): FakeClient {
-    let onDiagnostics: (params: lsp.PublishDiagnosticsParams) => void =
-        () => {};
+    let onDiagnostics: (
+        params: lsp.PublishDiagnosticsParams,
+    ) => void = () => {};
     const textDocumentSemanticTokensFull = vi
         .fn()
         .mockResolvedValue({ data: [0, 8, 1, 0, 1] });

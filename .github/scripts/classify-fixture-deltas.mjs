@@ -82,7 +82,7 @@ export function diffDiagnostics(before, after) {
 
     const position = (d) => `${d.file}:${d.line}:${d.column}`;
     const reworded = [];
-    for (const old of [...removed]) {
+    for (const old of removed) {
         const match = added.find((d) => position(d) === position(old));
         if (match) {
             reworded.push({ before: old, after: match });

@@ -18,6 +18,7 @@ import {
 import { useProjectDiagnosticsStore } from '#diagnostics/project-diagnostics-store';
 import type { BrowserFS } from '#fs/browser-fs';
 import { monacoThemeName, useThemeStore } from '#theme/theme';
+
 import {
     type CrashReport,
     type Side,

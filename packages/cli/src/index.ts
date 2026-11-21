@@ -4,7 +4,6 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import './wasm_exec.js'; // run for side-effects
-
 import wasmUrl from '../../../bin/escalier.wasm?url';
 
 const Go = globalThis.Go;
@@ -39,4 +38,4 @@ async function loadWasm() {
     }
 }
 
-loadWasm();
+void loadWasm();

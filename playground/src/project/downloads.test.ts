@@ -93,7 +93,7 @@ describe('downloadAll', () => {
         expect(reports[0]).toEqual({ loaded: 0, total: 4 });
         expect(reports.at(-1)).toEqual({ loaded: 4, total: 4 });
         expect(reports.map((r) => r.loaded)).toEqual(
-            [...reports.map((r) => r.loaded)].sort((x, y) => x - y),
+            reports.map((r) => r.loaded).sort((x, y) => x - y),
         );
     });
 

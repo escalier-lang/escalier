@@ -6,7 +6,6 @@ import {
 } from 'vscode-languageserver-protocol';
 
 import wasmUrl from '../../bin/lsp-server.wasm?url';
-
 import { showServerCrashes } from './bug-report/crash-notification';
 import type { LoadingStatus } from './components/loading-screen';
 import { forgetRemovedFiles } from './diagnostics/project-diagnostics-store';
@@ -91,7 +90,7 @@ async function start(
                 .getState()
                 .dispatch({ type: 'showNotification', notification }),
     );
-    client.run();
+    void client.run();
     const initResponse: InitializeResult = await client.initialize({
         processId: process.pid,
         rootUri: 'file:///',
@@ -143,7 +142,7 @@ async function start(
                 ];
                 break;
         }
-        client.workspaceDidChangeWatchedFiles({ changes });
+        void client.workspaceDidChangeWatchedFiles({ changes });
     });
 
     setupLanguage(client, initResponse.capabilities);
@@ -179,4 +178,4 @@ async function main() {
     );
 }
 
-main();
+void main();

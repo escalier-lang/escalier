@@ -11,6 +11,7 @@ import {
 import { useProjectDiagnosticsStore } from '#diagnostics/project-diagnostics-store';
 import { initialEditorState } from '#editor/editor-state';
 import { useEditorStore } from '#editor/editor-store';
+
 import { StatusBar } from './status-bar';
 
 function diagnostic(severity: DiagnosticSeverity): ProjectDiagnostic {

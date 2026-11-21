@@ -7,10 +7,12 @@ import {
     bugReportUrl,
 } from '#bug-report/bug-report';
 import { MAX_PERMALINK_CHARS } from '#project/permalink';
-import styles from './bug-report-dialog.module.css';
-import dialogStyles from './crash-report-dialog.module.css';
+
 import { useCopyButton } from './use-copy-button';
 import { useModalDialog } from './use-modal-dialog';
+
+import styles from './bug-report-dialog.module.css';
+import dialogStyles from './crash-report-dialog.module.css';
 
 type BugReportDialogProps = {
     /** Returns a permalink to the project as it is now. */
@@ -104,6 +106,7 @@ export const BugReportDialog = ({
     const issueUrl = bugReportUrl(report);
 
     return (
+        // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- a click on the backdrop closes the dialog, and its cancel event handles Escape
         <dialog
             ref={dialogRef}
             className={dialogStyles.dialog}

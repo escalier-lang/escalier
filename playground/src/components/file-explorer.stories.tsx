@@ -255,8 +255,8 @@ export const CollapseDirectory: Story = {
         await userEvent.click(canvas.getByText('lib'));
 
         // Children should no longer be visible
-        expect(canvas.queryByText('utils.esc')).toBeNull();
-        expect(canvas.queryByText('math.esc')).toBeNull();
+        await expect(canvas.queryByText('utils.esc')).toBeNull();
+        await expect(canvas.queryByText('math.esc')).toBeNull();
 
         // Click again to expand
         await userEvent.click(canvas.getByText('lib'));
@@ -279,8 +279,8 @@ export const WithBuildAndNodeModules: Story = {
         await expect(canvas.getByText('node_modules')).toBeVisible();
 
         // Their children are not visible
-        expect(canvas.queryByText('main.js')).toBeNull();
-        expect(canvas.queryByText('typescript')).toBeNull();
+        await expect(canvas.queryByText('main.js')).toBeNull();
+        await expect(canvas.queryByText('typescript')).toBeNull();
 
         // Expand build directory
         await userEvent.click(canvas.getByText('build'));
@@ -307,7 +307,7 @@ export const EmptyProject: Story = {
         const nonHeaderButtons = buttons.filter(
             (btn) => !btn.getAttribute('aria-label')?.startsWith('New'),
         );
-        expect(nonHeaderButtons).toHaveLength(0);
+        await expect(nonHeaderButtons).toHaveLength(0);
     },
 };
 

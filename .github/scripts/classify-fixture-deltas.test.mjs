@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
+
 import {
     COMMENT_MARKER,
     classifyFixture,
@@ -181,7 +182,7 @@ describe('renderComment', () => {
         const report = `## Fixture deltas\n\n\`\`\`diff\n${line.repeat(1000)}\`\`\`\n`;
         const body = renderComment(report);
         assert.ok(body.length < 65536);
-        assert.equal((body.match(/^\`\`\`/gm) ?? []).length, 2);
+        assert.equal((body.match(/^```/gm) ?? []).length, 2);
         assert.ok(
             body.endsWith(
                 'The report is too long for a comment. The job summary of ' +

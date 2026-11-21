@@ -5,6 +5,7 @@ vi.mock('monaco-editor-core');
 vi.mock('#language/language', () => ({ languageID: 'escalier' }));
 
 import { DIAGNOSTICS_TAB_PATH } from '#diagnostics/project-diagnostics';
+
 import { displayName, languageForPath } from './paths';
 
 describe('languageForPath', () => {

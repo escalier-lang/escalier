@@ -1,6 +1,7 @@
 import { useEditorStore } from '#editor/editor-store';
 import type { BrowserFS } from '#fs/browser-fs';
 import type { Manifest } from '#fs/volume';
+
 import { decodeSnapshot, snapshotParam } from './permalink';
 import { loadProject, writeProjectFiles } from './project-loader';
 
@@ -68,7 +69,7 @@ export async function openSnapshot(
         dispatch({
             type: 'showNotification',
             notification: {
-                message: `Could not open the project in this link. ${err instanceof Error ? err.message : err} Loading an example instead.`,
+                message: `Could not open the project in this link. ${err instanceof Error ? err.message : String(err)} Loading an example instead.`,
                 type: 'error',
             },
         });
@@ -127,7 +128,7 @@ export async function openExample(
         useEditorStore.getState().dispatch({
             type: 'showNotification',
             notification: {
-                message: `Failed to load initial project: ${err instanceof Error ? err.message : err}`,
+                message: `Failed to load initial project: ${err instanceof Error ? err.message : String(err)}`,
                 type: 'error',
             },
         });

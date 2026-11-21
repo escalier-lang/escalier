@@ -1,7 +1,8 @@
 import { useRef } from 'react';
 
-import styles from './confirm-dialog.module.css';
 import { useModalDialog } from './use-modal-dialog';
+
+import styles from './confirm-dialog.module.css';
 
 type MessageDialogProps = {
     title: string;
@@ -20,6 +21,7 @@ export const MessageDialog = ({
     const { dialogRef, onBackdropClick } = useModalDialog(onClose, closeRef);
 
     return (
+        // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- a click on the backdrop closes the dialog, and its cancel event handles Escape
         <dialog
             ref={dialogRef}
             className={styles.dialog}

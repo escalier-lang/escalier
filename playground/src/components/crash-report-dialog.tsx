@@ -3,9 +3,11 @@ import { useRef } from 'react';
 import { playgroundEnvironment } from '#bug-report/bug-report';
 import { crashIssueUrl, crashReportText } from '#bug-report/crash-notification';
 import type { CrashReport } from '#editor/editor-state';
-import styles from './crash-report-dialog.module.css';
+
 import { useCopyButton } from './use-copy-button';
 import { useModalDialog } from './use-modal-dialog';
+
+import styles from './crash-report-dialog.module.css';
 
 type CrashReportDialogProps = {
     report: CrashReport;
@@ -26,6 +28,7 @@ export const CrashReportDialog = ({
     const { label: copyLabel, copy } = useCopyButton(text);
 
     return (
+        // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- a click on the backdrop closes the dialog, and its cancel event handles Escape
         <dialog
             ref={dialogRef}
             className={styles.dialog}

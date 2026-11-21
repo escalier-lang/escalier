@@ -1,6 +1,6 @@
 import * as path from 'node:path';
-import { type ExtensionContext, workspace } from 'vscode';
 
+import { type ExtensionContext, workspace } from 'vscode';
 import {
     LanguageClient,
     type LanguageClientOptions,
@@ -47,7 +47,7 @@ export function activate(context: ExtensionContext) {
     client.outputChannel.appendLine('Client started');
 
     // Start the client. This will also launch the server
-    client.start();
+    void client.start();
 }
 
 export function deactivate(): Thenable<void> | undefined {

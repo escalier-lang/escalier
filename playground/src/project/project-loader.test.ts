@@ -1,9 +1,11 @@
 import type { Stats } from 'node:fs';
+
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { useProjectDiagnosticsStore } from '#diagnostics/project-diagnostics-store';
 import { BrowserFS } from '#fs/browser-fs';
 import type { Manifest } from '#fs/volume';
+
 import { isBuildPath, loadProject, writeProjectFiles } from './project-loader';
 
 const encoder = new TextEncoder();
@@ -336,7 +338,9 @@ describe('writeProjectFiles', () => {
         expect(await readFile(fs, '/packages/foo/lib/index.esc')).toBe(
             'export val x = 1',
         );
-        await expect(readFile(fs, '/lib/index.esc')).rejects.toThrow();
+        await expect(readFile(fs, '/lib/index.esc')).rejects.toThrow(
+            'No such file or directory',
+        );
     });
 });
 

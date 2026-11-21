@@ -12,6 +12,7 @@ export function useModalDialog(
 ) {
     const dialogRef = useRef<HTMLDialogElement>(null);
     const onCancelRef = useRef(onCancel);
+    // oxlint-disable-next-line react/refs -- the ref holds the latest onCancel, which the dialog's handlers read after render
     onCancelRef.current = onCancel;
 
     useEffect(() => {

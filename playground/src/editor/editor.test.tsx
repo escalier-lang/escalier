@@ -34,6 +34,7 @@ import {
 import { useProjectDiagnosticsStore } from '#diagnostics/project-diagnostics-store';
 import type { BrowserFS } from '#fs/browser-fs';
 import { FSEventEmitter } from '#fs/fs-events';
+
 import { Editor } from './editor';
 import type { EditorState } from './editor-state';
 import { initialEditorState } from './editor-state';
@@ -555,7 +556,9 @@ describe('clicking a diagnostic', () => {
     test('opens a file that is not open beside the diagnostics tab and reveals the diagnostic', () => {
         const { outputEditor, onMouseUp } = renderDiagnosticsTab();
 
-        act(() => onMouseUp({ target: { position: { lineNumber: 1 } } }));
+        act(() => {
+            onMouseUp({ target: { position: { lineNumber: 1 } } });
+        });
 
         const state = useEditorStore.getState();
         expect(state.leftTabs).toEqual([{ path: DIAGNOSTICS_TAB_PATH }]);
@@ -576,7 +579,9 @@ describe('clicking a diagnostic', () => {
             '/lib/index.esc',
         ]);
 
-        act(() => onMouseUp({ target: { position: { lineNumber: 1 } } }));
+        act(() => {
+            onMouseUp({ target: { position: { lineNumber: 1 } } });
+        });
 
         const state = useEditorStore.getState();
         expect(state.activeLeftTabIndex).toBe(1);
@@ -591,7 +596,9 @@ describe('clicking a diagnostic', () => {
         const { inputEditor, onMouseUp } = renderDiagnosticsTab();
         inputEditor.getSelection.mockReturnValue({ isEmpty: () => false });
 
-        act(() => onMouseUp({ target: { position: { lineNumber: 1 } } }));
+        act(() => {
+            onMouseUp({ target: { position: { lineNumber: 1 } } });
+        });
 
         const state = useEditorStore.getState();
         expect(state.leftTabs).toHaveLength(1);

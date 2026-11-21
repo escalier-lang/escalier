@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect } from 'react';
 
 import type { Notification } from '#editor/editor-state';
+
 import styles from './toast.module.css';
 
 const AUTO_DISMISS_MS = 4000;

@@ -1,4 +1,5 @@
 import type { Stats } from 'node:fs';
+
 import { beforeEach, describe, expect, test } from 'vitest';
 
 import { BrowserFS } from './browser-fs';

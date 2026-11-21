@@ -192,7 +192,7 @@ const rows = [...index.entries()]
     .map(([name, v]) => ({
         name,
         envs: ALL.filter((e) => v.envs.has(e)),
-        scopes: [...v.scopes].sort(),
+        scopes: [...v.scopes].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
         inDomGlobals: flat.dom.has(name),
         inWorkerGlobals: flat.worker.has(name),
         texts: [...v.texts],

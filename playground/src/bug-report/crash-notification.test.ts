@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest';
 
 import type { PanicReport, ServerCrashEvent } from '#lsp-client/client';
 import { MAX_PERMALINK_CHARS } from '#project/permalink';
+
 import { LINK_LEFT_OUT_NOTE } from './bug-report';
 import {
     crashIssueUrl,

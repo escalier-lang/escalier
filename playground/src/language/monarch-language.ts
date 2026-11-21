@@ -6,7 +6,7 @@ import type * as monaco from 'monaco-editor-core';
  * (in Monarch format)
  */
 export const monarchLanguage: monaco.languages.IMonarchLanguage = {
-    // biome-ignore format:
+    // prettier-ignore
     keywords: [
         // declarations
         'var', 'val', 'fn', 'type', 'class', 'enum', 'extends', 'implements',
@@ -22,12 +22,12 @@ export const monarchLanguage: monaco.languages.IMonarchLanguage = {
         'async', 'await', 'gen', 'yield',
     ],
 
-    // biome-ignore format:
+    // prettier-ignore
     typeKeywords: [
         'boolean', 'number', 'string',
     ],
 
-    // biome-ignore format:
+    // prettier-ignore
     operators: [
         '+', '-', '*', '/', '++',
         '==', '!=', '>', '>=', '<', '<=',

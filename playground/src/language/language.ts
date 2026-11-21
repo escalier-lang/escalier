@@ -12,6 +12,7 @@ import type {
 import { useProjectDiagnosticsStore } from '#diagnostics/project-diagnostics-store';
 import type { Client } from '#lsp-client/client';
 import { monacoThemeName, useThemeStore } from '#theme/theme';
+
 import { registerBasicLanguages } from './basic-languages';
 import { createCodeActionProvider } from './code-actions';
 import {
@@ -127,7 +128,7 @@ export function setupLanguage(
     function sendDidChange(state: ModelState) {
         clearTimeout(state.debounceTimer);
         state.debounceTimer = undefined;
-        client.textDocumentDidChange({
+        void client.textDocumentDidChange({
             textDocument: {
                 uri: state.model.uri.toString(),
                 version: state.model.getVersionId(),
@@ -201,7 +202,7 @@ export function setupLanguage(
                                         `ERROR: ${start}-${end} ${message.message}`,
                                     );
                                 }
-                            } catch (e) {
+                            } catch {
                                 console.error('Error message:', err.message);
                             }
                         }
@@ -241,7 +242,7 @@ export function setupLanguage(
             return;
         }
 
-        client.textDocumentDidOpen({
+        void client.textDocumentDidOpen({
             textDocument: {
                 uri: model.uri.toString(),
                 languageId: model.getLanguageId(),
@@ -275,7 +276,7 @@ export function setupLanguage(
             state.debounceTimer = undefined;
         }
         modelStates.delete(model.uri.toString());
-        client.textDocumentDidClose({
+        void client.textDocumentDidClose({
             textDocument: {
                 uri: model.uri.toString(),
             },

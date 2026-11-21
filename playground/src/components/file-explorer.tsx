@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { BrowserFS } from '#fs/browser-fs';
 import type { FSDir, FSNode } from '#fs/fs-node';
+
 import { ConfirmDialog } from './confirm-dialog';
+
 import styles from './file-explorer.module.css';
 
 type FileExplorerProps = {
@@ -274,6 +276,7 @@ export const FileExplorer = ({
                     className={styles.contextMenu}
                     style={{ left: contextMenu.x, top: contextMenu.y }}
                     role="menu"
+                    tabIndex={-1}
                     onClick={(e) => e.stopPropagation()}
                     onPointerDown={(e) => e.stopPropagation()}
                     onKeyDown={(e) => {

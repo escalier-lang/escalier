@@ -190,7 +190,7 @@ for (const g of globals) {
         const envs = ALL.filter((e) =>
             variants.some((v) => v.envs.includes(e)),
         );
-        const readonly = variants.every((v) => /^readonly /.test(v.text));
+        const readonly = variants.every((v) => v.text.startsWith('readonly '));
         variants = [
             {
                 text: `${readonly ? 'readonly ' : ''}${g.name}: ${merge.type}`,
