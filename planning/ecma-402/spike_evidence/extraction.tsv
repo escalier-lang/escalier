@@ -1,0 +1,17 @@
+file	emu-alg	algorithms	steps	yet-steps	incomplete-algorithms
+locales-currencies-tz.html	9	9	148	34	7
+intl.html	2	2	32	0	0
+negotiation.html	14	12	245	16	6
+collator.html	5	5	100	18	5
+datetimeformat.html	22	22	608	82	15
+displaynames.html	6	6	94	26	6
+durationformat.html	20	20	452	35	12
+listformat.html	10	10	131	17	6
+locale.html	21	21	205	28	10
+numberformat.html	39	48	914	103	26
+pluralrules.html	7	7	74	10	5
+relativetimeformat.html	11	10	138	17	5
+segmenter.html	11	11	108	10	5
+locale-sensitive-functions.html	10	10	84	4	2
+TOTAL	187	193	3333	400	110
+ECMA-262	-	2864	22003	713	365
