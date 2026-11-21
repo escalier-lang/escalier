@@ -134,17 +134,16 @@ func typeRefText(q hoverQuery, ref *ast.TypeRefTypeAnn) (string, bool) {
 			return text, true
 		}
 	}
-	if q.info == nil || q.scope == nil {
-		return "", false
-	}
-	refName := typeName(q.info.TypeOf(ref))
-	if refName == "" {
-		return "", false
-	}
-	binding, ok := typeBindingNamed(q.scope, ref.Name, refName)
+	binding, ok := refBinding(q, ref)
 	if !ok {
 		return "", false
 	}
+	return refBindingText(q, ref, binding)
+}
+
+// refBindingText returns the hover text for binding, the type binding the type reference
+// ref names, and false when binding has no declaration to render.
+func refBindingText(q hoverQuery, ref *ast.TypeRefTypeAnn, binding solver.TypeBinding) (string, bool) {
 	// A reference shows the name as written, so `shapes.E` reads `enum shapes.E`.
 	text, ok := typeBindingText(ref.Name, binding)
 	if !ok {
@@ -156,6 +155,19 @@ func typeRefText(q hoverQuery, ref *ast.TypeRefTypeAnn) (string, bool) {
 		text += evaluatedLine(q.infoFor(decl.Span().SourceID), decl)
 	}
 	return text, true
+}
+
+// refBinding returns the type binding the type reference ref names, and false when the
+// name resolves to no declared type.
+func refBinding(q hoverQuery, ref *ast.TypeRefTypeAnn) (solver.TypeBinding, bool) {
+	if q.info == nil || q.scope == nil {
+		return solver.TypeBinding{}, false
+	}
+	refName := typeName(q.info.TypeOf(ref))
+	if refName == "" {
+		return solver.TypeBinding{}, false
+	}
+	return typeBindingNamed(q.scope, ref.Name, refName)
 }
 
 // typeName returns the qualified name of the declared type t refers to, or "" when t

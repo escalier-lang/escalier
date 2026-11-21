@@ -265,9 +265,20 @@ func (s *Server) textDocumentDidChange(context *glsp.Context, params *protocol.D
 	return nil
 }
 
-// textDocumentHover returns the hover for the node at the cursor, or nil when the cursor
-// is on nothing with a hover to show.
+// textDocumentHover returns the hover at verbosity level 0 for the node at the cursor, or
+// nil when the cursor is on nothing with a hover to show.
 func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.HoverParams) (*protocol.Hover, error) {
+	h, err := server.textDocumentVerboseHover(context, &hoverParams{HoverParams: *params})
+	if h == nil || err != nil {
+		return nil, err
+	}
+	return &protocol.Hover{Contents: h.Contents}, nil
+}
+
+// textDocumentVerboseHover returns the hover at the level params asks for, for the node
+// at the cursor, or nil when the cursor is on nothing with a hover to show. No hover has
+// a level above 0, so every hover renders its level-0 text and reports no other level.
+func (server *Server) textDocumentVerboseHover(context *glsp.Context, params *hoverParams) (*verboseHover, error) {
 	loc := posToLoc(server.lineMapForURI(params.TextDocument.URI), params.Position)
 	sourceID := server.sourceIDForURI(params.TextDocument.URI)
 	q := hoverQuery{loc: loc}
@@ -295,31 +306,31 @@ func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.
 		defer server.solverMu.RUnlock()
 	}
 	if text, ok := typeHover(q); ok {
-		return codeHover(text), nil
+		return newVerboseHover(text), nil
 	}
 	if text, ok := valueHover(q); ok {
-		return codeHover(text), nil
+		return newVerboseHover(text), nil
 	}
 	if text, ok := selfHover(q); ok {
-		return codeHover(text), nil
+		return newVerboseHover(text), nil
 	}
 	if text, ok := memberHover(q); ok {
-		return codeHover(text), nil
+		return newVerboseHover(text), nil
 	}
 	if text, ok := namespaceHover(q); ok {
-		return codeHover(text), nil
+		return newVerboseHover(text), nil
 	}
 	if text, ok := declMemberHover(q); ok {
-		return codeHover(text), nil
+		return newVerboseHover(text), nil
 	}
 	if text, ok := importHover(q); ok {
-		return codeHover(text), nil
+		return newVerboseHover(text), nil
 	}
 	if text, ok := patternHover(q); ok {
-		return codeHover(text), nil
+		return newVerboseHover(text), nil
 	}
 	if text, ok := typeOfHover(q); ok {
-		return codeHover(text), nil
+		return newVerboseHover(text), nil
 	}
 	switch q.node.(type) {
 	// A literal or template string already shows its value in the source, so a hover
@@ -328,7 +339,7 @@ func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.
 		return nil, nil
 	case ast.Expr, ast.Pat:
 		if t := q.info.DisplayTypeOf(q.node); t != nil {
-			return codeHover(hoverText(q.info, q.node, t)), nil
+			return newVerboseHover(hoverText(q.info, q.node, t)), nil
 		}
 	}
 	return nil, nil

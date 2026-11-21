@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net/url"
@@ -124,6 +125,9 @@ type Server struct {
 	// behind the document version.
 	validated *sync.Cond
 	rootURI   string // workspace root URI (from InitializeParams)
+	// hoverHandler answers `textDocument/hover` once the server is initialized. It is
+	// textDocumentVerboseHover, held in a field so a test can replace it.
+	hoverHandler func(*glsp.Context, *hoverParams) (*verboseHover, error)
 }
 
 func NewServer() *Server {
@@ -137,6 +141,7 @@ func NewServer() *Server {
 		exited:           make(chan struct{}),
 	}
 	s.validated = sync.NewCond(s.mu.RLocker())
+	s.hoverHandler = s.textDocumentVerboseHover
 	// nolint: exhaustruct
 	s.handler = protocol.Handler{
 		Initialize:  s.initialize,
@@ -145,11 +150,13 @@ func NewServer() *Server {
 		SetTrace:    s.setTrace,
 
 		// TextDocument
-		TextDocumentDeclaration:        s.textDocumentDeclaration,
-		TextDocumentDefinition:         s.textDocumentDefinition,
-		TextDocumentTypeDefinition:     s.textDocumentTypeDefinition,
-		TextDocumentDidOpen:            s.textDocumentDidOpen,
-		TextDocumentDidChange:          s.textDocumentDidChange,
+		TextDocumentDeclaration:    s.textDocumentDeclaration,
+		TextDocumentDefinition:     s.textDocumentDefinition,
+		TextDocumentTypeDefinition: s.textDocumentTypeDefinition,
+		TextDocumentDidOpen:        s.textDocumentDidOpen,
+		TextDocumentDidChange:      s.textDocumentDidChange,
+		// Handle answers `textDocument/hover` itself once the server is initialized. The
+		// handler registered here makes glsp advertise hoverProvider.
 		TextDocumentHover:              s.textDocumentHover,
 		TextDocumentCompletion:         s.textDocumentCompletion,
 		TextDocumentSignatureHelp:      s.textDocumentSignatureHelp,
@@ -186,6 +193,17 @@ func (s *Server) Handle(context *glsp.Context) (r any, validMethod bool, validPa
 	// keeps that true.
 	if context.Method == string(protocol.MethodExit) {
 		return nil, true, true, s.exit(context)
+	}
+	// glsp decodes `textDocument/hover` into protocol.HoverParams, which drops the
+	// verbosity level Escalier's hover extension adds, so the server decodes the request
+	// itself. Before initialization completes, glsp answers it with its usual error.
+	if context.Method == string(protocol.MethodTextDocumentHover) && s.handler.IsInitialized() {
+		var params hoverParams
+		if err := json.Unmarshal(context.Params, &params); err != nil {
+			return nil, true, false, err
+		}
+		h, err := s.hoverHandler(context, &params)
+		return h, true, true, err
 	}
 	return s.handler.Handle(context)
 }

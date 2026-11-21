@@ -106,7 +106,7 @@ func TestHandleAnswersAPanickingRequestWithAnError(t *testing.T) {
 			name:   "Hover",
 			method: protocol.MethodTextDocumentHover,
 			panicIn: func(s *Server) {
-				s.handler.TextDocumentHover = func(*glsp.Context, *protocol.HoverParams) (*protocol.Hover, error) {
+				s.hoverHandler = func(*glsp.Context, *hoverParams) (*verboseHover, error) {
 					panic("boom")
 				}
 			},
@@ -209,16 +209,16 @@ func TestHandleServesTheRequestAfterAPanic(t *testing.T) {
 	require.NoError(t, err)
 	reqCtx := &glsp.Context{Method: string(protocol.MethodTextDocumentHover), Params: params}
 
-	s.handler.TextDocumentHover = func(*glsp.Context, *protocol.HoverParams) (*protocol.Hover, error) {
+	s.hoverHandler = func(*glsp.Context, *hoverParams) (*verboseHover, error) {
 		panic("boom")
 	}
 	_, _, _, err = s.Handle(reqCtx)
 	require.EqualError(t, err, "the Escalier language server crashed while handling textDocument/hover: boom")
 
-	s.handler.TextDocumentHover = s.textDocumentHover
+	s.hoverHandler = s.textDocumentVerboseHover
 	result, _, _, err := s.Handle(reqCtx)
 	require.NoError(t, err)
-	require.Equal(t, codeHover("x: number"), result)
+	require.Equal(t, newVerboseHover("x: number"), result)
 }
 
 func TestValidateRecoversFromAPanickingCheck(t *testing.T) {
@@ -315,7 +315,7 @@ func TestRequestPanicLeavesOutStaleDiagnostics(t *testing.T) {
 	s.mu.Unlock()
 
 	s.handler.SetInitialized(true)
-	s.handler.TextDocumentHover = func(*glsp.Context, *protocol.HoverParams) (*protocol.Hover, error) {
+	s.hoverHandler = func(*glsp.Context, *hoverParams) (*verboseHover, error) {
 		panic("boom")
 	}
 	params, err := json.Marshal(protocol.HoverParams{
