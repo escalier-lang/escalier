@@ -178,6 +178,13 @@ export const SERVER_DOWN_MESSAGE =
     'the language server crashed and restarts at the next edit';
 
 /**
+ * The params of the server's `escalier/checkStarted` and `escalier/checkFinished`
+ * notifications, which bracket each check. It names the document version whose change
+ * started the check.
+ */
+export type CheckEvent = { uri: string; version: number };
+
+/**
  * Holds requests while a server starts after a crash. Once it is known whether a server
  * will answer, the held requests either go ahead or fail.
  */
@@ -281,6 +288,8 @@ export class Client {
     /** The text of every open document, which a restart opens again. */
     private documents = new Map<string, lsp.TextDocumentItem>();
     private crashEvents = new EventEmitter();
+    /** Emits `exit` each time a server ends, other than through stop(). */
+    private serverEvents = new EventEmitter();
 
     /**
      * Calls every listener registered for a notification's method. A
@@ -340,6 +349,7 @@ export class Client {
             if (this.stopping) {
                 return;
             }
+            this.serverEvents.emit('exit');
             this.crashReport = crashReportFrom(
                 stderr.slice(-STDERR_TAIL_CHARS),
             );
@@ -480,6 +490,14 @@ export class Client {
         return JSON.stringify(
             [...this.documents.values()].map((doc) => [doc.uri, doc.text]),
         );
+    }
+
+    /**
+     * Calls callback each time a server ends, before the client starts the next one. Any
+     * check the server was running ends with it, and no `escalier/checkFinished` follows.
+     */
+    onServerExit(callback: () => void) {
+        this.serverEvents.on('exit', callback);
     }
 
     /**
@@ -714,6 +732,16 @@ export class Client {
     /** Calls callback with each panic the server recovers from. */
     onServerPanic(callback: (report: PanicReport) => void) {
         this.on('escalier/panicReport', callback);
+    }
+
+    /** Calls callback as the server starts each check. */
+    onCheckStarted(callback: (event: CheckEvent) => void) {
+        this.on('escalier/checkStarted', callback);
+    }
+
+    /** Calls callback as the server finishes each check that it started. */
+    onCheckFinished(callback: (event: CheckEvent) => void) {
+        this.on('escalier/checkFinished', callback);
     }
 
     onWindowLogMessage(callback: (params: lsp.LogMessageParams) => void) {

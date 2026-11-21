@@ -579,6 +579,10 @@ func (s *Server) sourceIDForURI(uri protocol.DocumentUri) int {
 }
 
 func (server *Server) validate(lspContext *glsp.Context, uri protocol.DocumentUri, contents string, version protocol.Integer) {
+	notifyCheck(lspContext, checkStartedMethod, uri, version)
+	// Deferred before the recover below, so it runs after a panic has been handled.
+	defer notifyCheck(lspContext, checkFinishedMethod, uri, version)
+
 	// textDocumentDidChange runs validate on a goroutine of its own, where a panic would
 	// end the process, so the check recovers here rather than in Handle.
 	defer func() {

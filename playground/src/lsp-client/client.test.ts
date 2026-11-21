@@ -1218,6 +1218,69 @@ test('calls every listener registered for a notification', async () => {
     await testClient.stop();
 });
 
+test("passes the server's check notifications to their listeners", async () => {
+    const testClient = standaloneClient();
+    const events: string[] = [];
+    testClient.onCheckStarted((e) => events.push(`started ${e.version}`));
+    testClient.onCheckFinished((e) => events.push(`finished ${e.version}`));
+    const notify = (method: string) =>
+        framed(
+            JSON.stringify({
+                jsonrpc: '2.0',
+                method,
+                params: { uri: 'file:///lib/index.esc', version: 3 },
+            }),
+        );
+
+    // @ts-expect-error: stdout is private
+    testClient.stdout.write(notify('escalier/checkStarted'));
+    // @ts-expect-error: stdout is private
+    testClient.stdout.write(notify('escalier/checkFinished'));
+
+    await vi.waitFor(() => expect(events).toEqual(['started 3', 'finished 3']));
+    await testClient.stop();
+});
+
+test(
+    'calls the server exit listeners when a server ends, before the next starts',
+    { timeout: 10_000 },
+    async () => {
+        // Only one Client can run at a time.
+        await client.stop();
+        await awaitServerExit();
+        const ends: Array<() => void> = [];
+        const launcher: ServerLauncher = {
+            launch: () => {
+                let end!: () => void;
+                const exited = new Promise<string>((resolve) => {
+                    end = () => resolve('');
+                });
+                ends.push(end);
+                return Promise.resolve({ exited, dispose: end });
+            },
+        };
+        const testClient = new Client(launcher);
+        const launchesAtExit: number[] = [];
+        testClient.onServerExit(() => launchesAtExit.push(ends.length));
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const run = testClient.run();
+        try {
+            await vi.waitFor(() => expect(ends).toHaveLength(1));
+
+            ends[0]();
+
+            await vi.waitFor(() => expect(launchesAtExit).toEqual([1]));
+            await testClient.stop();
+            // stop() ends a server without calling the listeners.
+            ends.at(-1)?.();
+            await run;
+            expect(launchesAtExit).toEqual([1]);
+        } finally {
+            error.mockRestore();
+        }
+    },
+);
+
 test.each<[string, (client: Client) => Promise<void>]>([
     [
         'textDocument/willSave',

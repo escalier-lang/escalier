@@ -76,6 +76,10 @@
 
 .spacer {
     flex: 1;
+    min-width: 0;
+    display: flex;
+    justify-content: flex-end;
+    overflow: hidden;
 }
 
 .dropdownItem[aria-checked="true"]::before {

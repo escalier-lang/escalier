@@ -8,6 +8,7 @@ import {
 import wasmUrl from '../../bin/lsp-server.wasm?url';
 import { showServerCrashes } from './bug-report/crash-notification';
 import type { LoadingStatus } from './components/loading-screen';
+import { monitorChecks } from './diagnostics/check-monitor';
 import { forgetRemovedFiles } from './diagnostics/project-diagnostics-store';
 import { useEditorStore } from './editor/editor-store';
 import { BrowserFS } from './fs/browser-fs';
@@ -103,6 +104,8 @@ async function start(
                 .getState()
                 .dispatch({ type: 'showNotification', notification }),
     );
+    // The toolbar shows how long checks take.
+    monitorChecks(client);
     void client.run();
     const initResponse: InitializeResult = await client.initialize({
         // LSP's value for a client with no process for the server to watch. The page

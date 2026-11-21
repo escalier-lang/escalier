@@ -10,6 +10,13 @@ export const COMPILE_TIMEOUT_MS = 30_000;
 // The modifier Monaco's shortcuts use on this platform.
 const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
 
+/**
+ * A comment that makes the language server's check spin the CPU when it runs with test
+ * hooks on, as it does under the dev server. The number of milliseconds follows it after
+ * a space. See runTestHooks in cmd/lsp-server/recover.go.
+ */
+export const SPIN_MARKER = '// @escalier-lsp-test-spin';
+
 /** The keys that move Monaco's cursor to the start of the file on this platform. */
 export const fileStartKey =
     process.platform === 'darwin' ? 'Meta+ArrowUp' : 'Control+Home';
