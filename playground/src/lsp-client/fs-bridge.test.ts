@@ -112,10 +112,11 @@ test('a reply that cannot be sent answers as EIO', async () => {
         (e: NodeJS.ErrnoException) => e,
     );
 
-    expect(err).toMatchObject({ code: 'EIO' });
-    expect(err.message).toBe(
-        'the reply could not be sent: Symbol(entry) could not be cloned.',
-    );
+    expect(err).toMatchObject({
+        message:
+            'the reply could not be sent: Symbol(entry) could not be cloned.',
+        code: 'EIO',
+    });
 });
 
 test('a call that calls back and then throws answers once', async () => {
