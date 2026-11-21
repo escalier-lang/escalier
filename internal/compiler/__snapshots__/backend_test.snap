@@ -211,3 +211,33 @@ export function whole(temp1) {
 //# sourceMappingURL=./index.js.map
 
 ---
+
+[TestEmitsJSForTypeDrivenForms/ABorrowOfAnObjectTestsEachPropertyOverUnknown - 1]
+let temp1;
+let temp2;
+temp2 = v;
+if (temp2 !== null && typeof temp2 === "object" && "my-key" in temp2 && typeof temp2["my-key"] === "number" && (!("a" in temp2) || typeof temp2.a === "string")) {
+  const o = temp2;
+  temp1 = 1;
+} else {
+  temp1 = 0;
+}
+export const hit = temp1;
+//# sourceMappingURL=./index.js.map
+
+---
+
+[TestEmitsJSForTypeDrivenForms/AnArmAnnotatedWithACallableAliasTestsForAFunction - 1]
+let temp1;
+let temp2;
+temp2 = v;
+if (typeof temp2 === "function" && "tag" in temp2 && typeof temp2.tag === "string") {
+  const f = temp2;
+  temp1 = 1;
+} else {
+  temp1 = 0;
+}
+export const hit = temp1;
+//# sourceMappingURL=./index.js.map
+
+---

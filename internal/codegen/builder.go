@@ -1291,8 +1291,10 @@ func buildPropertyInObjectCheck(propName string, objectExpr Expr, source ast.Nod
 
 // buildTypeGuard generates a runtime type check expression for a given type annotation
 func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
-	// The checker works out the test of an object type annotation from the scrutinee's
-	// type, which tells the members apart by a property with a literal type.
+	// The checker records a test for an object type annotation at the root of a conditional
+	// form. The test reads a property whose literal type tells the scrutinee's members
+	// apart, which the annotation alone cannot say. An annotation with no recorded test
+	// takes the guard built from the annotation below.
 	if d, recorded := b.types().AnnDiscriminant(typeAnn); recorded {
 		return buildDiscriminantTest(valueExpr, d, typeAnn)
 	}
@@ -1369,10 +1371,17 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 				}
 
 				propExistsCheck := buildPropertyInObjectCheck(propName, valueExpr, nil)
-				conditions = append(conditions, propExistsCheck)
-				propAccess := NewMemberExpr(valueExpr, NewIdentifier(propName, nil), false, nil)
+				propAccess := buildPropertyRead(valueExpr, propName, nil)
 				propTypeGuard := b.buildTypeGuard(propAccess, objElem.Value)
-				conditions = append(conditions, propTypeGuard)
+				if !objElem.Optional {
+					conditions = append(conditions, propExistsCheck, propTypeGuard)
+					continue
+				}
+				// An optional property passes when it is absent.
+				if !isTrueLiteral(propTypeGuard) {
+					absent := NewUnaryExpr(LogicalNot, propExistsCheck, nil)
+					conditions = append(conditions, NewBinaryExpr(absent, LogicalOr, propTypeGuard, nil))
+				}
 			}
 		}
 
@@ -1494,6 +1503,11 @@ func (b *Builder) buildSolTypeGuard(valueExpr Expr, t soltype.Type, source ast.N
 			NewBinaryExpr(valueExpr, StrictNotEqual, NewLitExpr(NewNullLit(source), source), source),
 			b.buildTypeOfCheck(valueExpr, "object", StrictEqual, source),
 		}
+		if isCallableObject(t) {
+			// A value with a call or constructor signature is a function, whose `typeof`
+			// reads "function" and which is never `null`.
+			conditions = []Expr{b.buildTypeOfCheck(valueExpr, "function", StrictEqual, source)}
+		}
 		for _, elem := range t.Elems {
 			prop, isProp := elem.(*soltype.PropertyElem)
 			if !isProp {
@@ -1521,6 +1535,17 @@ func (b *Builder) buildSolTypeGuard(valueExpr Expr, t soltype.Type, source ast.N
 		return anyCondition(guards, source)
 	}
 	return NewLitExpr(NewBoolLit(true, source), source)
+}
+
+// isCallableObject reports whether t declares a call or constructor signature.
+func isCallableObject(t *soltype.ObjectType) bool {
+	for _, elem := range t.Elems {
+		switch elem.(type) {
+		case *soltype.CallableElem, *soltype.ConstructorElem:
+			return true
+		}
+	}
+	return false
 }
 
 // buildPropertyRead returns the read of the property name off valueExpr, as `value.name`

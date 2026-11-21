@@ -329,6 +329,15 @@ func TestEmitsJSForTypeDrivenForms(t *testing.T) {
 			    }
 			}
 		`,
+		"AnArmAnnotatedWithACallableAliasTestsForAFunction": `
+			type Tagged = {(a: number) -> boolean, tag: string}
+			declare val v: unknown
+			export val hit = match v { f: Tagged => 1, _ => 0 }
+		`,
+		"ABorrowOfAnObjectTestsEachPropertyOverUnknown": `
+			declare val v: unknown
+			export val hit = match v { o: &{"my-key": number, a?: string} => 1, _ => 0 }
+		`,
 		"AFunctionFieldReadOffSelfIsNotBound": `
 			class Fix {
 			    f: fn (a: number) -> number,

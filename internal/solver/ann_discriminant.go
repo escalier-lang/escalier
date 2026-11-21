@@ -32,8 +32,7 @@ type Discriminant struct {
 // Discriminant, so a caller passes the same shape for every test of one annotation.
 //
 // It records nothing for an annotation that names no object type, and nothing for a
-// scrutinee that annDiscriminant cannot list the members of. Codegen tests such an
-// annotation with the guard it builds from the annotation alone.
+// scrutinee that annDiscriminant cannot list the members of.
 func (c *checker) recordAnnDiscriminant(scope *Scope, lvl int, shape soltype.Type, ann ast.TypeAnn) {
 	if _, done := c.info.annDiscriminants[ann]; done {
 		return
@@ -77,8 +76,8 @@ const (
 //   - A primitive or a primitive literal. A property read off one never yields a literal,
 //     except that a string's `length` and its integer indices do.
 //
-// Any other member, such as `unknown`, a function, or a scrutinee still being inferred,
-// skips the question, since no property read is known to reject its values.
+// Any other member, such as `unknown`, a function, `never`, or an unsolved variable, skips
+// the question, since no property read is known to reject its values.
 //
 // The tested property is the first property of the first object type ann names that every
 // object type ann names declares as required with literal types, and that rejects every
@@ -100,6 +99,13 @@ func (c *checker) annDiscriminant(
 	nullCheck := false
 	for _, member := range c.unionMembers(c.ctx.expandedCarrier(shape)) {
 		member = c.ctx.expandedCarrier(member)
+		switch member.(type) {
+		case *soltype.NeverType, *soltype.TypeVarType, *soltype.ErrorType:
+			// Every annotation admits these, so they are skipped before the admits check
+			// below. A scrutinee still being inferred can snapshot as `never` or keep an
+			// unsolved variable, though a caller may pass any value.
+			return nil, Discriminant{}, discriminantSkipped
+		}
 		if c.typeAdmits(carrier, member) {
 			continue
 		}
@@ -117,8 +123,6 @@ func (c *checker) annDiscriminant(
 		case *soltype.PrimType, *soltype.LitType:
 			prims = append(prims, m)
 		default:
-			// `never` lands here too. A scrutinee still being inferred can snapshot as
-			// `never`, which every annotation admits, though a caller may pass any value.
 			return nil, Discriminant{}, discriminantSkipped
 		}
 	}
@@ -215,35 +219,45 @@ func (c *checker) propLits(obj *soltype.ObjectType, name string) ([]*soltype.Lit
 
 // primsReadNoLiteral reports whether reading the property name off a value of each type in
 // prims yields no string, number, or boolean literal. Every type in prims is a PrimType or
-// a LitType. A primitive carries no own properties apart from a string's `length` and
-// integer indices, and the methods a primitive's prototype holds are functions.
-// `"ab".length` is `2` and `"ab"[0]` is `"a"`, so a string fails for those names.
+// a LitType. The methods a primitive's prototype holds are functions, so only these reads
+// can yield a literal:
+//
+//   - a string's `length` and integer indices, as `"ab".length` is `2` and `"ab"[0]` is `"a"`,
+//   - a symbol's `description`, as `Symbol("x").description` is `"x"`.
 func primsReadNoLiteral(prims []soltype.Type, name string) bool {
-	stringIndex := name == "length"
-	if _, err := strconv.ParseUint(name, 10, 64); err == nil {
-		stringIndex = true
-	}
-	if !stringIndex {
-		return true
-	}
+	_, indexErr := strconv.ParseUint(name, 10, 64)
+	stringRead := name == "length" || indexErr == nil
 	for _, t := range prims {
-		if isStringLike(t) {
-			return false
+		switch primKind(t) {
+		case soltype.StrPrim:
+			if stringRead {
+				return false
+			}
+		case soltype.SymPrim:
+			if name == "description" {
+				return false
+			}
 		}
 	}
 	return true
 }
 
-// isStringLike reports whether t is `string` or a string literal.
-func isStringLike(t soltype.Type) bool {
+// primKind returns the primitive t is or is a literal of. t is a PrimType or a LitType.
+func primKind(t soltype.Type) soltype.Prim {
 	switch t := t.(type) {
 	case *soltype.PrimType:
-		return t.Prim == soltype.StrPrim
+		return t.Prim
 	case *soltype.LitType:
-		_, isStr := t.Lit.(*soltype.StrLit)
-		return isStr
+		switch t.Lit.(type) {
+		case *soltype.StrLit:
+			return soltype.StrPrim
+		case *soltype.NumLit:
+			return soltype.NumPrim
+		case *soltype.BoolLit:
+			return soltype.BoolPrim
+		}
 	}
-	return false
+	return soltype.NumPrim
 }
 
 // containsLit reports whether lits holds a literal equal to lit.

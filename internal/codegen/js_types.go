@@ -54,8 +54,9 @@ type JSTypes interface {
 }
 
 // Discriminant is the runtime test of a narrowing annotation that names an object type. A
-// value passes when it is not `null` or `undefined`, if NullCheck is set, and its Key
-// property equals one of Lits. Always marks an annotation every value passes.
+// value passes when its Key property equals one of Lits. NullCheck adds a check, run first,
+// that the value is not `null` or `undefined`. Key and Lits are unset when that check is the
+// whole test. Always marks an annotation every value passes.
 type Discriminant struct {
 	Always    bool
 	Key       string

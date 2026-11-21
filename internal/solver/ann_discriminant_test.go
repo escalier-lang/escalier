@@ -84,6 +84,15 @@ val r = match v {
 }`,
 		},
 		{
+			name: "a scrutinee still being inferred",
+			src: `fn f(v) {
+	return match v {
+		x: {x: number} => 1,
+		_ => 0,
+	}
+}`,
+		},
+		{
 			name: "members told apart only by shape",
 			src: `declare val v: {x: number} | {y: string}
 val r = match v {
@@ -126,6 +135,17 @@ val r = match v {
 	_ => 2,
 }`,
 			wantErrs: []string{"3:5-3:16: " + annTestMsg("{length: 2}")},
+		},
+		{
+			// `Symbol("x").description` reads `"x"`, so a symbol passes a test of
+			// `description`.
+			name: "a symbol member beside a description discriminant",
+			src: `declare val v: {description: "x"} | symbol
+val r = match v {
+	o: {description: "x"} => 1,
+	_ => 2,
+}`,
+			wantErrs: []string{"3:5-3:23: " + annTestMsg(`{description: "x"}`)},
 		},
 		{
 			name: "an if val annotation",
