@@ -709,8 +709,8 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			if def := paramDefault(p); def != nil {
 				// A default sees only the parameters ahead of it, so it is inferred later in a
 				// scope holding just the bindings made so far. An unannotated `mut` parameter
-				// may write what the default fills it with, so its default widens as T9 widens
-				// a `mut` binding's initializer. An annotated one checks the default against
+				// may write what the default fills it with, so its default's literals widen to
+				// their primitives, as a `mut` binding's initializer does. An annotated one checks the default against
 				// the annotation as written.
 				ip, isIdent := pat.(*ast.IdentPat)
 				widens := isIdent && ip.Mutable && p.TypeAnn == nil

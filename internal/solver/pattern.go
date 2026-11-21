@@ -1474,8 +1474,9 @@ func (c *checker) definedMembers(t soltype.Type) (soltype.Type, bool) {
 // binding mode and the leaf's own `mut` marker. It returns the type the leaf binds at.
 //
 //   - Owned scrutinee: the leaf is moved out. An unannotated `mut` leaf's binding may write
-//     what it owns, so its literals widen, as T9 states. An annotated leaf and a plain leaf
-//     keep the leaf's type.
+//     what it owns, so its literals widen to their primitives, as rule T9 in
+//     planning/ownership_rules/requirements.md states for a writable slot. An annotated leaf
+//     and a plain leaf keep the leaf's type.
 //   - `&` scrutinee: the leaf is a shared borrow bounded by the scrutinee's lifetime.
 //     A `mut` leaf is rejected and recovers as the shared borrow. Mutable access cannot
 //     be projected out of an immutable borrow.
@@ -1565,8 +1566,9 @@ func (c *checker) widenOwnedLeaf(lvl int, node ast.Node, leafType, concrete solt
 }
 
 // mutableSlotOf returns a fresh variable that t flows into, whose every lower bound has its
-// literals widened as T9 widens the owned layers of a `mut` binding. So `{a: 1}` flowing in
-// reads as `{a: number}`. The widening happens as each bound arrives, not when the variable
+// literals widened to their primitives. So `{a: 1}` flowing in reads as `{a: number}`. This is
+// the widening rule T9 in planning/ownership_rules/requirements.md gives a writable slot,
+// such as the owned layers of a `mut` binding. The widening happens as each bound arrives, not when the variable
 // is coalesced, so a write later in the same body checks against the widened bound. A
 // primitive bound keeps its literal, as `val mut n = 1` does. The variable is also marked
 // `Widenable`, which widens such a primitive in the coalesced display. node blames a widened
