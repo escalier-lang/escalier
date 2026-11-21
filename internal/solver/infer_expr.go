@@ -3049,6 +3049,22 @@ func (c *checker) fieldWriteMember(name string, recv soltype.Type) (soltype.ObjT
 // the assignment and e.Left is `object.name` or a bracket form naming the same field, such
 // as `object["name"]`. The rules are the ones inferMemberAssign documents.
 func (c *checker) inferFieldAssign(lvl int, e *ast.BinaryExpr, object ast.Expr, name string, recv soltype.Type, place *ownedPlace, source soltype.Type) soltype.Type {
+	// A union receiver has no single member to check the source against. For an owned
+	// receiver, the structural requirement below checks only that each member's field type
+	// fits the written type. That is the check a read makes. It never checks that the written
+	// value fits the field. So `u.kind = "b"` on `val mut u: {kind: "a"} | {kind: "b"}` would
+	// pass, since `"a"` fits `string`, and leave a value that matches neither member. Such a
+	// write is checked against each member's field here instead.
+	//
+	// A write through an immutable borrow skips this check, so the requirement reports the
+	// immutability. A variable whose lower bounds disagree is not checked either. It joins the
+	// values that flow into it, as `val {mut x} = p else { {x: {a: 1}} }` joins `p.x` with a
+	// literal.
+	if ref, isRef := recv.(*soltype.RefType); !isRef || ref.Mut {
+		if uw, ok := c.unionWriteReceiver(name, recv); ok {
+			return c.inferUnionFieldWrite(e, object, name, recv, place, uw, source)
+		}
+	}
 	member, _ := c.fieldWriteMember(name, recv)
 	// An accessor named prop resolves here rather than through the structural requirement
 	// below, whose element is a PropertyElem. constrain's object arm matches the sub side
@@ -3131,6 +3147,111 @@ func (c *checker) inferFieldAssign(lvl int, e *ast.BinaryExpr, object ast.Expr, 
 	c.recordWritten(recv, name, w)
 	// The assignment evaluates to the value just stored. recordType overwrites the
 	// `undefined` recovery type inferAssign recorded on e before dispatching here.
+	c.recordType(e, w)
+	return w
+}
+
+// unionFieldWrite is the union a field write lands on. Its fields are:
+//
+//   - members, the union's members other than `undefined` and `null`;
+//   - fields, the type a write to the field may store in each member, in the order of members;
+//   - readonly, whether some member declares the field readonly.
+type unionFieldWrite struct {
+	members  []soltype.Type
+	fields   []soltype.Type
+	readonly bool
+}
+
+// unionWriteReceiver returns the union a write of field name through recv lands on. It reports
+// true when recv is a union with at least two members other than `undefined` and `null`, and
+// each of those members declares name as a property. It reports false for any other receiver,
+// including a union with a member that lacks the field. A borrow is looked through. An
+// inference variable reads as the union its lower bounds agree on, and a variable whose lower
+// bounds are several different types reports false.
+func (c *checker) unionWriteReceiver(name string, recv soltype.Type) (unionFieldWrite, bool) {
+	carrier, found := soleLowerBound(soltype.CarrierOf(recv), func(t soltype.Type) (soltype.Type, bool) {
+		t = soltype.CarrierOf(t)
+		_, isUnion := c.memberCarrier(t).(*soltype.UnionType)
+		return t, isUnion
+	})
+	if !found {
+		return unionFieldWrite{}, false
+	}
+	u := c.memberCarrier(carrier).(*soltype.UnionType)
+	uw := unionFieldWrite{}
+	for _, m := range u.Types {
+		switch m.(type) {
+		case *soltype.UndefinedType, *soltype.NullType:
+			continue
+		}
+		elem, found := c.writeMember(name, m)
+		prop, isProp := elem.(*soltype.PropertyElem)
+		if !found || !isProp {
+			return unionFieldWrite{}, false
+		}
+		uw.members = append(uw.members, m)
+		uw.fields = append(uw.fields, writableFieldType(prop))
+		uw.readonly = uw.readonly || prop.Readonly
+	}
+	if len(uw.members) < 2 {
+		return unionFieldWrite{}, false
+	}
+	return uw, true
+}
+
+// inferUnionFieldWrite types a write of field name through a union receiver and returns the
+// written type. The write is accepted when the written value fits the field in every member,
+// and the value is then constrained against each member's field. Otherwise it reports
+// UnionFieldWriteError, naming the first member whose field rejects the value. Its parameters
+// are:
+//
+//   - e, the assignment;
+//   - object, the receiver as written;
+//   - name, the written field;
+//   - recv, the receiver's type;
+//   - place, the place recv is an owned layer of, or nil;
+//   - uw, the union recv denotes, from unionWriteReceiver;
+//   - source, the written value's type.
+//
+// A write through an immutable binding reports that binding and nothing else. A field some
+// member declares readonly reports ReadonlyFieldError and nothing else.
+func (c *checker) inferUnionFieldWrite(e *ast.BinaryExpr, object ast.Expr, name string, recv soltype.Type, place *ownedPlace, uw unionFieldWrite, source soltype.Type) soltype.Type {
+	w := widen(source)
+	owned, unsettled := c.ownedOrUnsettledMutation(e, recv, place)
+	switch {
+	case owned && !unsettled && !place.b.Mut:
+		// ownedOrUnsettledMutation reported the immutable binding.
+	case uw.readonly:
+		// Narrowing to the member that declares the field readonly would not make the write
+		// legal. So the message names the readonly field rather than suggesting a narrowing.
+		c.report(&ReadonlyFieldError{Field: name, site: e.Left})
+	default:
+		rejected := -1
+		for i, field := range uw.fields {
+			if hasHardError(c.ctx.trialUnderProbe(source, field)) {
+				rejected = i
+				break
+			}
+		}
+		if rejected >= 0 {
+			c.report(&UnionFieldWriteError{
+				Receiver:  object,
+				Target:    e.Left,
+				Field:     name,
+				Source:    coalesce(source, soltype.Positive),
+				Member:    uw.members[rejected],
+				FieldType: uw.fields[rejected],
+			})
+			break
+		}
+		// The trials ran under a probe and left no bounds behind. Constraining for real records
+		// what the write tells inference, so `fn f(q: &mut (A | C), v) { q.a = v }` bounds v
+		// by each member's field type.
+		for _, field := range uw.fields {
+			c.constrain(e.Right, source, field)
+		}
+	}
+	c.recordWritten(recv, name, w)
 	c.recordType(e, w)
 	return w
 }

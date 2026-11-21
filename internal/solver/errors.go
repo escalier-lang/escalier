@@ -413,6 +413,28 @@ type ReadonlyFieldError struct {
 	site  ast.Node
 }
 
+// UnionFieldWriteError fires on an assignment such as `u.kind = "b"` or `u["kind"] = "b"`
+// whose receiver is a union of members that each declare the field, when the written value
+// does not fit the field in some member. The write could leave the value matching none of
+// the union's members. The way to write the field is to narrow the receiver with a `match`
+// and write through the narrowed binding.
+//
+// Its fields are:
+//
+//   - Receiver and Target, the receiver and the assignment target as written;
+//   - Field, the written field;
+//   - Source, the written value's type;
+//   - Member and FieldType, the first member in declaration order whose field type rejects
+//     Source, and that field's type.
+type UnionFieldWriteError struct {
+	Receiver  ast.Node
+	Target    ast.Node
+	Field     string
+	Source    soltype.Type
+	Member    soltype.Type
+	FieldType soltype.Type
+}
+
 // ReadonlyFieldSubtypeError fires when a readonly source field flows into a
 // non-readonly target field. A `&mut {readonly a: T}` cannot fill a `&mut {a: T}`
 // target, since a holder of the target could write the field. An owned
@@ -594,6 +616,7 @@ func (*OwnedMutTypeError) isSolverError()            {}
 func (*ImmutableBindingError) isSolverError()        {}
 func (*SharedAwaitIntoMutError) isSolverError()      {}
 func (*ReadonlyFieldError) isSolverError()           {}
+func (*UnionFieldWriteError) isSolverError()         {}
 func (*ReadonlyFieldSubtypeError) isSolverError()    {}
 func (*RaisingGetterPropertyError) isSolverError()   {}
 func (*FuncArityMismatchError) isSolverError()       {}
@@ -3726,6 +3749,29 @@ func (e *ReadonlyFieldError) Span() ast.Span      { return spanOfNode(e.site) }
 func (e *ReadonlyFieldError) Related() []ast.Span { return nil }
 func (e *ReadonlyFieldError) Message() string {
 	return fmt.Sprintf("cannot assign to '%s' because it is a readonly property", soltype.DisplayMemberName(e.Field))
+}
+
+func (e *UnionFieldWriteError) Span() ast.Span      { return spanOfNode(e.Target) }
+func (e *UnionFieldWriteError) Related() []ast.Span { return nil }
+func (e *UnionFieldWriteError) Message() string {
+	receiver := writtenPlaceName(e.Receiver, "the receiver")
+	target := writtenPlaceName(e.Target, soltype.DisplayMemberName(e.Field))
+	fix := fmt.Sprintf("narrow '%s' with a `match` and write through the narrowed binding", receiver)
+	member := soltype.Print(e.Member)
+	return fmt.Sprintf(
+		"cannot assign %s to '%s', since '%s' may hold %s '%s', whose '%s' is %s; %s",
+		soltype.Print(e.Source), target, receiver, indefiniteArticle(member), member,
+		soltype.DisplayMemberName(e.Field), soltype.Print(e.FieldType), fix,
+	)
+}
+
+// indefiniteArticle returns "an" when name starts with a vowel letter and "a" otherwise, so a
+// message reads "an 'A'" and "a 'B'".
+func indefiniteArticle(name string) string {
+	if name != "" && strings.ContainsRune("AEIOUaeiou", rune(name[0])) {
+		return "an"
+	}
+	return "a"
 }
 
 func (e *RaisingGetterPropertyError) Span() ast.Span      { return spanOfNode(e.site) }
