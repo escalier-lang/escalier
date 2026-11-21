@@ -30,7 +30,21 @@
     ],
     "rules": {
         "vitest/require-mock-type-parameters": "off",
-        "import/default": "off"
+        "import/default": "off",
+        "typescript/no-misused-promises": "error",
+        "typescript/switch-exhaustiveness-check": [
+            "error",
+            {
+                "considerDefaultExhaustiveForUnions": true
+            }
+        ],
+        "typescript/only-throw-error": "error",
+        "typescript/no-unnecessary-type-assertion": "error",
+        "typescript/use-unknown-in-catch-callback-variable": "error",
+        "typescript/no-deprecated": "error",
+        "typescript/require-await": "error",
+        "typescript/prefer-nullish-coalescing": "error",
+        "typescript/no-unsafe-enum-assignment": "error"
     },
     "overrides": [
         {
@@ -39,6 +53,15 @@
             ],
             "rules": {
                 "typescript/no-floating-promises": "off"
+            }
+        },
+        {
+            "files": [
+                "**/*.js",
+                "**/*.mjs"
+            ],
+            "rules": {
+                "typescript/prefer-nullish-coalescing": "off"
             }
         }
     ]

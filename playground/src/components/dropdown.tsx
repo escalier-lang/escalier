@@ -33,7 +33,7 @@ export const Dropdown = ({
     const handleBlur = useCallback((e: React.FocusEvent<HTMLDivElement>) => {
         if (
             containerRef.current &&
-            !containerRef.current.contains(e.relatedTarget as Node)
+            !containerRef.current.contains(e.relatedTarget)
         ) {
             setOpen(false);
         }

@@ -14,6 +14,7 @@ const resource = { toString: () => uri } as monaco.Uri;
 
 // The marker Monaco shows for diagnostic, which covers 1:8-3:1 in LSP terms.
 const marker: monaco.editor.IMarkerData = {
+    // oxlint-disable-next-line typescript/no-unsafe-enum-assignment -- the test imports only Monaco's types, so it writes MarkerSeverity.Error by value
     severity: 8,
     startLineNumber: 2,
     startColumn: 9,
@@ -175,6 +176,7 @@ describe('createCodeActionProvider', () => {
     } as monaco.Range;
     const context = {
         markers: [marker],
+        // oxlint-disable-next-line typescript/no-unsafe-enum-assignment -- CodeActionTriggerType.Invoke, by value for the same reason
         trigger: 1,
         only: 'quickfix',
     } as monaco.languages.CodeActionContext;

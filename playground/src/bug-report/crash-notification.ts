@@ -135,7 +135,7 @@ export function crashToasts(
 ): (toast: (permalink: string | undefined) => Notification) => void {
     let lastShown = Promise.resolve();
     return (toast) => {
-        const permalink = capture().catch((err) => {
+        const permalink = capture().catch((err: unknown) => {
             console.error(
                 'Failed to link to the project for a crash report:',
                 err,
@@ -146,7 +146,7 @@ export function crashToasts(
         // toast still waits on a settled promise rather than a rejected one.
         lastShown = lastShown
             .then(async () => show(toast(await permalink)))
-            .catch((err) => {
+            .catch((err: unknown) => {
                 console.error('Failed to show a crash toast:', err);
             });
     };

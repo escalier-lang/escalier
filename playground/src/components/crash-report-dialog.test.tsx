@@ -80,6 +80,8 @@ test('a second copy shows "Copied" for two seconds from the second press', async
     render(<CrashReportDialog report={report} onClose={() => {}} />);
     const copyButton = screen.getByRole('button', { name: 'Copy report' });
 
+    // act(async …) lets the clipboard write each click starts settle before the next step.
+    /* oxlint-disable typescript/require-await */
     await act(async () => fireEvent.click(copyButton));
     await act(async () => vi.advanceTimersByTime(1500));
     await act(async () => fireEvent.click(copyButton));
@@ -87,6 +89,7 @@ test('a second copy shows "Copied" for two seconds from the second press', async
     expect(copyButton).toHaveTextContent('Copied');
 
     await act(async () => vi.advanceTimersByTime(600));
+    /* oxlint-enable typescript/require-await */
     expect(copyButton).toHaveTextContent('Copy report');
 });
 

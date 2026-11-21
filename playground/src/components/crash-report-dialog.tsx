@@ -71,7 +71,7 @@ export const CrashReportDialog = ({
                     type="button"
                     ref={copyRef}
                     className={`${styles.button} ${styles.primaryButton}`}
-                    onClick={copy}
+                    onClick={() => void copy()}
                 >
                     {copyLabel}
                 </button>

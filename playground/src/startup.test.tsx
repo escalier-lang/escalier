@@ -24,10 +24,15 @@ const bodies: Record<string, number[]> = {
 function stubFetch() {
     vi.stubGlobal(
         'fetch',
-        vi.fn(async (url: string) =>
-            url in bodies
-                ? new Response(new Uint8Array(bodies[url]))
-                : new Response(null, { status: 404, statusText: 'Not Found' }),
+        vi.fn((url: string) =>
+            Promise.resolve(
+                url in bodies
+                    ? new Response(new Uint8Array(bodies[url]))
+                    : new Response(null, {
+                          status: 404,
+                          statusText: 'Not Found',
+                      }),
+            ),
         ),
     );
 }
@@ -171,8 +176,9 @@ describe('runStartup', () => {
         const log = vi.spyOn(console, 'log').mockImplementation(() => {});
         const render = vi.fn();
 
-        const started = await runStartup(render, async (showStatus) => {
+        const started = await runStartup(render, (showStatus) => {
             showStatus({ kind: 'starting' });
+            return Promise.resolve();
         });
 
         expect(started).toBe(true);
@@ -187,9 +193,11 @@ describe('runStartup', () => {
         vi.spyOn(console, 'error').mockImplementation(() => {});
         const render = vi.fn();
 
-        const started = await runStartup(render, async () => {
-            throw new Error('Failed to fetch /lsp-server.wasm: Not Found');
-        });
+        const started = await runStartup(render, () =>
+            Promise.reject(
+                new Error('Failed to fetch /lsp-server.wasm: Not Found'),
+            ),
+        );
 
         expect(started).toBe(false);
         expect(renderedStatuses(render).at(-1)).toEqual({
@@ -202,9 +210,8 @@ describe('runStartup', () => {
         vi.spyOn(console, 'error').mockImplementation(() => {});
         const render = vi.fn();
 
-        await runStartup(render, async () => {
-            throw 'offline';
-        });
+        // The test covers a start that rejects with a string rather than an Error.
+        await runStartup(render, () => Promise.reject('offline'));
 
         expect(renderedStatuses(render).at(-1)).toEqual({
             kind: 'failed',
