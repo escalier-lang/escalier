@@ -35,3 +35,6 @@ export fn othersOf({x: _, ...others}: {x: number, y: number}) -> {y: number} {
 export fn yWhenXIsOne({x: 1, y}: {x: number, y: number}) -> number {
     return y
 }
+
+export fn afterNull([null, b]: [null | undefined, number]) -> number {
+    return b

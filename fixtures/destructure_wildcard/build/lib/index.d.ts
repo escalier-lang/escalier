@@ -1,3 +1,4 @@
+export declare function afterNull([arg0, b]: [null | undefined, number]): number;
 export declare function afterOne([arg0, b]: [number, number]): number;
 declare const other: 2;
 export declare const fromLiteral: 2;

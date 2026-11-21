@@ -641,8 +641,12 @@ func (b *Builder) buildPattern(
 			// `val [1, b] = xs` checks with `xs: [number, number]`. A JS destructuring
 			// has no literal form, so the slot is a hole and a test after the
 			// declaration throws when the slot's value differs from the literal. The
-			// test uses `!=`, the negation of the `==` a match arm's literal test uses.
+			// test uses `!==`, the negation of the guard a literal type annotation
+			// emits, so `undefined` fails the `null` in `val [null, b] = xs`. The
+			// checker reports a regex literal pattern as unsupported, so no regex
+			// reaches this test.
 			litExpr, _ := b.buildExpr(&ast.LiteralExpr{Lit: p.Lit}, nil)
+			differs := NewBinaryExpr(target, StrictNotEqual, litExpr, p)
 			mismatch := NewThrowStmt(
 				NewNewExpr(
 					NewIdentExpr("TypeError", "", nil),
@@ -652,7 +656,7 @@ func (b *Builder) buildPattern(
 				p,
 			)
 			litTests = append(litTests, NewIfStmt(
-				NewBinaryExpr(target, NotEqual, litExpr, p),
+				differs,
 				NewBlockStmt([]Stmt{mismatch}, p),
 				nil,
 				p,
