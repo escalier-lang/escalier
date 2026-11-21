@@ -47,7 +47,7 @@ export function activate(context: ExtensionContext) {
     client.outputChannel.appendLine('Client started');
 
     // Start the client. This will also launch the server
-    client.start();
+    void client.start();
 }
 
 export function deactivate(): Thenable<void> | undefined {

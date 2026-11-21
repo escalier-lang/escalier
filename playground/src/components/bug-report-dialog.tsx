@@ -106,6 +106,7 @@ export const BugReportDialog = ({
     const issueUrl = bugReportUrl(report);
 
     return (
+        // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- a click on the backdrop closes the dialog, and its cancel event handles Escape
         <dialog
             ref={dialogRef}
             className={dialogStyles.dialog}

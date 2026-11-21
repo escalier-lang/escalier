@@ -20,6 +20,7 @@ export const TabContextMenu = ({
     onMove,
     onClose,
 }: TabContextMenuProps) => (
+    // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- the handlers only keep events inside the menu from closing it
     <div
         className={styles.contextMenu}
         style={{ left: x, top: y }}

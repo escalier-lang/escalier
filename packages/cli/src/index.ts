@@ -38,4 +38,4 @@ async function loadWasm() {
     }
 }
 
-loadWasm();
+void loadWasm();

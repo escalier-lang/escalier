@@ -19,7 +19,7 @@ const constants = {
 };
 
 function assertNever(x: never): never {
-    throw new Error(`Unexpected value: ${x}`);
+    throw new Error(`Unexpected value: ${String(x)}`);
 }
 
 /** State associated with an open file descriptor. */

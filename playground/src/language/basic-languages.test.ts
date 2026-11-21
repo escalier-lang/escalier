@@ -55,6 +55,7 @@ describe('registerBasicLanguages', () => {
             expect(language.tokenPostfix).toBe(tokenPostfix);
             expect(language.tokenizer.root).toBeDefined();
             if (keyword !== undefined) {
+                // oxlint-disable-next-line vitest/no-conditional-expect -- only the rows that name a keyword check one
                 expect(language.keywords).toContain(keyword);
             }
 

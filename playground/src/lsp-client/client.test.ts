@@ -268,7 +268,7 @@ test('textDocument/didOpen', { timeout: CHECK_TEST_TIMEOUT_MS }, async () => {
         capabilities: {},
     });
 
-    client.textDocumentDidOpen({
+    void client.textDocumentDidOpen({
         textDocument: {
             uri: fileUri(),
             version: 2,
@@ -327,7 +327,7 @@ test(
             rootUri,
             capabilities: {},
         });
-        client.textDocumentDidOpen({
+        void client.textDocumentDidOpen({
             textDocument: {
                 uri: fileUri(),
                 version: 1,
@@ -369,7 +369,7 @@ test(
             rootUri,
             capabilities: {},
         });
-        client.textDocumentDidOpen({
+        void client.textDocumentDidOpen({
             textDocument: {
                 uri: fileUri(),
                 version: 1,
@@ -401,7 +401,7 @@ test('textDocument/didChange', { timeout: CHECK_TEST_TIMEOUT_MS }, async () => {
         capabilities: {},
     });
 
-    client.textDocumentDidOpen({
+    void client.textDocumentDidOpen({
         textDocument: {
             uri: fileUri(),
             version: 2,
@@ -410,7 +410,7 @@ test('textDocument/didChange', { timeout: CHECK_TEST_TIMEOUT_MS }, async () => {
         },
     });
 
-    client.textDocumentDidChange({
+    void client.textDocumentDidChange({
         textDocument: {
             uri: fileUri(),
             version: 2,
@@ -469,7 +469,7 @@ test(
             capabilities: {},
         });
 
-        client.textDocumentDidOpen({
+        void client.textDocumentDidOpen({
             textDocument: {
                 uri: fileUri(),
                 version: 1,
@@ -548,6 +548,7 @@ test('textDocument/codeAction', async () => {
 });
 
 // TODO: Re-enable once we can infer member expressions
+// oxlint-disable-next-line vitest/no-disabled-tests -- skipped until member expressions infer
 test.skip('workspace/executeCommand', async () => {
     fs.writeFileSync(filePath(), '');
 
@@ -563,7 +564,7 @@ test.skip('workspace/executeCommand', async () => {
         diagnosticsPublished = true;
     });
 
-    client.textDocumentDidOpen({
+    void client.textDocumentDidOpen({
         textDocument: {
             uri: fileUri(),
             version: 2,
@@ -606,7 +607,7 @@ test(
             capabilities: {},
         });
 
-        client.textDocumentDidOpen({
+        void client.textDocumentDidOpen({
             textDocument: {
                 uri: fileUri(),
                 version: 1,
@@ -653,7 +654,7 @@ test(
         const legend = initResult.capabilities.semanticTokensProvider?.legend;
         expect(legend?.tokenModifiers).toEqual(['mutable', 'reassignable']);
 
-        client.textDocumentDidOpen({
+        void client.textDocumentDidOpen({
             textDocument: {
                 uri: fileUri(),
                 version: 1,
@@ -735,7 +736,7 @@ function recordDiagnostics(testClient: Client): Map<number, string[]> {
 }
 
 function changeFile(version: number, text: string) {
-    client.textDocumentDidChange({
+    void client.textDocumentDidChange({
         textDocument: { uri: fileUri(), version },
         contentChanges: [{ text }],
     });
@@ -767,7 +768,7 @@ test(
             rootUri,
             capabilities: {},
         });
-        client.textDocumentDidOpen({
+        void client.textDocumentDidOpen({
             textDocument: {
                 uri: fileUri(),
                 version: 1,
@@ -821,7 +822,7 @@ test(
             rootUri,
             capabilities: {},
         });
-        client.textDocumentDidOpen({
+        void client.textDocumentDidOpen({
             textDocument: {
                 uri: fileUri(),
                 version: 1,
@@ -878,7 +879,7 @@ test(
             rootUri,
             capabilities: {},
         });
-        client.textDocumentDidOpen({
+        void client.textDocumentDidOpen({
             textDocument: {
                 uri: fileUri(),
                 version: 1,

@@ -276,6 +276,7 @@ export const FileExplorer = ({
                     className={styles.contextMenu}
                     style={{ left: contextMenu.x, top: contextMenu.y }}
                     role="menu"
+                    tabIndex={-1}
                     onClick={(e) => e.stopPropagation()}
                     onPointerDown={(e) => e.stopPropagation()}
                     onKeyDown={(e) => {

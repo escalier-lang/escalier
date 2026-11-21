@@ -669,7 +669,7 @@ export class Client {
         // ESCALIER_BUILTINS_DIR to point the interop loader at the
         // virtual-filesystem path where the compiler's
         // `internal/interop/data` directory has been mirrored.
-        this.go.env = { ...(this.go.env ?? {}), ...this.env };
+        this.go.env = { ...this.go.env, ...this.env };
 
         // A Go panic ends the program through `wasmExit`, which settles `go.run()`. A
         // WebAssembly trap, such as running out of memory, instead throws out of
@@ -706,6 +706,7 @@ export class Client {
                 'an LSP server is already running: only one Client can run at a time',
             );
         }
+        // oxlint-disable-next-line typescript/no-this-alias -- runningClient records the one Client that may run, not an alias for this method
         runningClient = this;
 
         globalThis.fs = this.fsShim as typeof globalThis.fs;

@@ -338,7 +338,9 @@ describe('writeProjectFiles', () => {
         expect(await readFile(fs, '/packages/foo/lib/index.esc')).toBe(
             'export val x = 1',
         );
-        await expect(readFile(fs, '/lib/index.esc')).rejects.toThrow();
+        await expect(readFile(fs, '/lib/index.esc')).rejects.toThrow(
+            'No such file or directory',
+        );
     });
 });
 

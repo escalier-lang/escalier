@@ -27,6 +27,7 @@ export const ConfirmDialog = ({
     const { dialogRef, onBackdropClick } = useModalDialog(onCancel, cancelRef);
 
     return (
+        // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- a click on the backdrop closes the dialog, and its cancel event handles Escape
         <dialog
             ref={dialogRef}
             className={styles.dialog}

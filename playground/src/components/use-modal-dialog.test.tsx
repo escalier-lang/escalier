@@ -18,7 +18,7 @@ const TestDialog = ({ onCancel }: { onCancel: () => void }) => {
     const buttonRef = useRef<HTMLButtonElement>(null);
     const { dialogRef, onBackdropClick } = useModalDialog(onCancel, buttonRef);
     return (
-        // biome-ignore lint/a11y/useKeyWithClickEvents: the dialog's cancel event handles keys
+        // oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions -- the dialog's cancel event handles keys
         <dialog ref={dialogRef} aria-label="Test" onClick={onBackdropClick}>
             <button type="button" ref={buttonRef}>
                 Inside

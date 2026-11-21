@@ -90,7 +90,7 @@ async function start(
                 .getState()
                 .dispatch({ type: 'showNotification', notification }),
     );
-    client.run();
+    void client.run();
     const initResponse: InitializeResult = await client.initialize({
         processId: process.pid,
         rootUri: 'file:///',
@@ -142,7 +142,7 @@ async function start(
                 ];
                 break;
         }
-        client.workspaceDidChangeWatchedFiles({ changes });
+        void client.workspaceDidChangeWatchedFiles({ changes });
     });
 
     setupLanguage(client, initResponse.capabilities);
@@ -178,4 +178,4 @@ async function main() {
     );
 }
 
-main();
+void main();
