@@ -109,8 +109,10 @@ function remoteStats(data: StatsData): Stats {
     } as Stats;
 }
 
+/** Returns err as an FSReply carries it, with EIO for an error that has no code. */
 function errorData(err: NodeJS.ErrnoException): FSError {
-    return { message: err.message, code: err.code };
+    // Go panics on an error code it has no errno for.
+    return { message: err.message, code: err.code ?? 'EIO' };
 }
 
 /**
@@ -148,15 +150,14 @@ export function serveFS(endpoint: MessageEndpoint, fs: FSAPI): () => void {
             reply(err, err ? undefined : statsData(st));
 
         // A call that throws instead of calling back still answers, or the server would
-        // wait for the answer forever. Go panics on an error code it has no errno for,
-        // so a thrown error without a code is answered as EIO.
+        // wait for the answer forever.
         try {
             dispatch(request, fs, reply, done, stats);
         } catch (err) {
             const thrown = err as NodeJS.ErrnoException;
             reply(
                 new ErrnoException(String(thrown?.message ?? err), {
-                    code: thrown?.code ?? 'EIO',
+                    code: thrown?.code,
                 }),
             );
         }

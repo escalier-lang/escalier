@@ -93,6 +93,17 @@ test('a call that throws answers with an error', async () => {
     expect(err).toMatchObject({ message: 'Unexpected value', code: 'EIO' });
 });
 
+test('an error passed to the callback without a code answers as EIO', async () => {
+    local.stat = (_path, callback) =>
+        callback(new Error('no code'), {} as never);
+
+    const err = await call((cb) => remote.stat('/lib', cb)).catch(
+        (e: NodeJS.ErrnoException) => e,
+    );
+
+    expect(err).toMatchObject({ message: 'no code', code: 'EIO' });
+});
+
 test('a call that calls back and then throws answers once', async () => {
     const replies: unknown[] = [];
     channel.port2.addEventListener('message', (event) => {
