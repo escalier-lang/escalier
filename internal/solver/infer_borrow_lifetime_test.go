@@ -415,19 +415,6 @@ fn cache(p: &'static {x: number}) -> undefined {
 	require.Equal(t, "fn (p: &'static {x: number}) -> undefined", values["cache"])
 }
 
-// DISABLED until #2721 reports a body that makes an elided input lifetime outlive
-// 'static. `cache` binds from its signature, which leaves p's lifetime elided, so a
-// caller may pass a short-lived borrow that the store into `sink` would keep.
-func TestInferGlobalWriteOfElidedBorrowIsRejected(t *testing.T) {
-	/*
-		src := "var sink = &{x: 0}\nfn cache(p: &{x: number}) -> undefined {\n  sink = p\n}"
-		_, errs := inferAgainstTreeWithSpans(t, src)
-		require.Equal(t, []string{
-			"3:3-3:11: 'p' flows into 'sink', which outlives every borrow; write `&'static` on 'p'",
-		}, errs)
-	*/
-}
-
 // TestBorrowIntoAnUnannotatedLiteral covers the elements of each literal an unannotated
 // binding's initializer produces. With no expected type, an element takes its source's type,
 // as F1 states. A borrow source is copied into the literal, and an owned source is moved. A
