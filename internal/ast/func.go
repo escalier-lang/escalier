@@ -19,3 +19,42 @@ func (d *FuncDecl) Signature() *FuncSig { return &d.FuncSig }
 
 // FuncBody returns the function declaration's body, nil for a declaration without one.
 func (d *FuncDecl) FuncBody() *Block { return d.Body }
+
+// IsComplete reports whether the signature states the function's whole type: every
+// parameter and the return type are written, and no type in it is the `_` placeholder.
+// A complete signature gives the function its type without its body.
+func (sig *FuncSig) IsComplete() bool {
+	if sig.Return == nil {
+		return false
+	}
+	anns := []TypeAnn{sig.Return, sig.Throws}
+	for _, p := range sig.Params {
+		if p.TypeAnn == nil {
+			return false
+		}
+		anns = append(anns, p.TypeAnn)
+	}
+	for _, tp := range sig.TypeParams {
+		anns = append(anns, tp.LowerBound, tp.UpperBound, tp.Default)
+	}
+	finder := &wildcardFinder{}
+	for _, ta := range anns {
+		if ta != nil {
+			ta.Accept(finder)
+		}
+	}
+	return !finder.found
+}
+
+// wildcardFinder records whether a type annotation contains the `_` placeholder.
+type wildcardFinder struct {
+	DefaultVisitor
+	found bool
+}
+
+func (v *wildcardFinder) EnterTypeAnn(t TypeAnn) bool {
+	if _, ok := t.(*WildcardTypeAnn); ok {
+		v.found = true
+	}
+	return !v.found
+}

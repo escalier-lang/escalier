@@ -15,6 +15,9 @@ type DepKind int
 const (
 	DepKindValue DepKind = iota
 	DepKindType
+	// DepKindBody is the body of a function whose signature is complete, as
+	// IsSignatureBound decides. Its key appears only in CheckComponents.
+	DepKindBody
 )
 
 // DeclID represents a unique identifier for each declaration
@@ -36,6 +39,12 @@ func TypeBindingKey(qualifiedName string) BindingKey {
 	return BindingKey("type:" + qualifiedName)
 }
 
+// BodyBindingKey creates the BindingKey for the body of the signature-bound function
+// with the given qualified name.
+func BodyBindingKey(qualifiedName string) BindingKey {
+	return BindingKey("body:" + qualifiedName)
+}
+
 // NewBindingKey creates a BindingKey from a qualified name and dependency kind.
 func NewBindingKey(qualifiedName string, kind DepKind) BindingKey {
 	if kind == DepKindType {
@@ -44,10 +53,13 @@ func NewBindingKey(qualifiedName string, kind DepKind) BindingKey {
 	return ValueBindingKey(qualifiedName)
 }
 
-// Kind returns the dependency kind (DepKindValue or DepKindType) for this binding key.
+// Kind returns the dependency kind of this binding key.
 func (k BindingKey) Kind() DepKind {
-	if strings.HasPrefix(string(k), "type:") {
+	switch {
+	case strings.HasPrefix(string(k), "type:"):
 		return DepKindType
+	case strings.HasPrefix(string(k), "body:"):
+		return DepKindBody
 	}
 	return DepKindValue
 }
@@ -85,6 +97,17 @@ type DepGraph struct {
 	// Each component is a slice of BindingKeys that form a cycle.
 	Components [][]BindingKey
 
+	// SignatureDeps holds, for each signature-bound function key, the dependencies
+	// of its signatures alone. A key is signature-bound when every declaration under
+	// it is a function whose signature is complete, as ast.FuncSig.IsComplete
+	// decides, so its type needs nothing from its bodies.
+	SignatureDeps btree.Map[BindingKey, btree.Set[BindingKey]]
+
+	// CheckComponents is the order the checker infers the module's bindings in. It
+	// is Components computed over CheckDeps, so it also holds a body key for each
+	// signature-bound function that has a body.
+	CheckComponents [][]BindingKey
+
 	// All namespace names in the module, indexed by NamespaceID.
 	Namespaces []string
 
@@ -120,6 +143,74 @@ func NewDepGraph(namespaceMap []string) *DepGraph {
 		Namespaces:      namespaceMap,
 		IdentNamespaces: map[*ast.IdentExpr]ast.NamespaceID{},
 	}
+}
+
+// IsSignatureBound reports whether key is a function binding whose type its
+// signatures give. See SignatureDeps.
+func (g *DepGraph) IsSignatureBound(key BindingKey) bool {
+	_, ok := g.SignatureDeps.Get(key)
+	return ok
+}
+
+// CheckDeps returns the dependencies key has in CheckComponents. A signature-bound
+// function's key depends on what its signatures name. Its body key depends on the
+// function's key and on everything its declarations name. Every other key has its
+// DeclDeps.
+func (g *DepGraph) CheckDeps(key BindingKey) btree.Set[BindingKey] {
+	if key.Kind() == DepKindBody {
+		valueKey := ValueBindingKey(key.Name())
+		deps := g.GetDeps(valueKey)
+		deps = *deps.Copy()
+		deps.Insert(valueKey)
+		return deps
+	}
+	if deps, ok := g.SignatureDeps.Get(key); ok {
+		return deps
+	}
+	return g.GetDeps(key)
+}
+
+// HasBodyKey reports whether CheckComponents holds a body key for key, which it does
+// for a signature-bound function with at least one body.
+func (g *DepGraph) HasBodyKey(key BindingKey) bool {
+	if !g.IsSignatureBound(key) {
+		return false
+	}
+	for _, d := range g.GetDecls(key) {
+		if fd, ok := d.(*ast.FuncDecl); ok && fd.Body != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// checkBindings returns every binding of the graph, each followed by its body key when
+// HasBodyKey reports one.
+func (g *DepGraph) checkBindings() []BindingKey {
+	var keys []BindingKey
+	for _, key := range g.AllBindings() {
+		keys = append(keys, key)
+		if g.HasBodyKey(key) {
+			keys = append(keys, BodyBindingKey(key.Name()))
+		}
+	}
+	return keys
+}
+
+// signatureBound reports whether every declaration under key is a function with a
+// complete signature.
+func signatureBound(graph *DepGraph, key BindingKey) bool {
+	if key.Kind() != DepKindValue {
+		return false
+	}
+	decls := graph.GetDecls(key)
+	for _, d := range decls {
+		fd, ok := d.(*ast.FuncDecl)
+		if !ok || !fd.IsComplete() {
+			return false
+		}
+	}
+	return len(decls) > 0
 }
 
 // GetDecls returns all declarations for a binding key
@@ -914,26 +1005,13 @@ func (v *DependencyVisitor) buildQualifiedName(expr *ast.MemberExpr) string {
 func FindDeclDependencies(key BindingKey, graph *DepGraph) btree.Set[BindingKey] {
 	decls := graph.GetDecls(key)
 	currentNamespace := graph.GetNamespace(key)
-
-	// Build namespace map for recording DepGraph.IdentNamespaces
-	namespaceMap := make(map[string]ast.NamespaceID)
-	for i, nsName := range graph.Namespaces {
-		namespaceMap[nsName] = ast.NamespaceID(i)
-	}
+	namespaceMap := graph.namespaceIDs()
 
 	var allDeps btree.Set[BindingKey]
 
 	// Process each declaration and union their dependencies
 	for _, decl := range decls {
-		visitor := &DependencyVisitor{
-			DefaultVisitor:   ast.DefaultVisitor{},
-			Graph:            graph,
-			NamespaceMap:     namespaceMap,
-			Dependencies:     btree.Set[BindingKey]{},
-			CurrentNamespace: currentNamespace,
-			LocalScopes:      make([]LocalScope, 0),
-			Imports:          graph.ImportNamespaces[decl.Span().SourceID],
-		}
+		visitor := graph.newDependencyVisitor(key, decl, namespaceMap)
 
 		// Create a scope for type parameters
 		visitor.pushScope()
@@ -955,24 +1033,7 @@ func FindDeclDependencies(key BindingKey, graph *DepGraph) btree.Set[BindingKey]
 				visitor.collectNominalPatternDeps(d.Pattern)
 			}
 		case *ast.FuncDecl:
-			visitor.processTypeParams(d.TypeParams)
-
-			// Visit parameter type annotations
-			for _, param := range d.Params {
-				if param.TypeAnn != nil {
-					param.TypeAnn.Accept(visitor)
-				}
-			}
-
-			// Visit return type annotation
-			if d.Return != nil {
-				d.Return.Accept(visitor)
-			}
-
-			// Visit throws type annotation
-			if d.Throws != nil {
-				d.Throws.Accept(visitor)
-			}
+			visitor.visitFuncSig(d)
 
 			// Visit the function body
 			if d.Body != nil {
@@ -1073,6 +1134,70 @@ func FindDeclDependencies(key BindingKey, graph *DepGraph) btree.Set[BindingKey]
 	return allDeps
 }
 
+// FindSignatureDependencies returns what the signatures of the functions declared
+// under key name: their type parameters' bounds and defaults, their parameter types,
+// and their return and throws types.
+func FindSignatureDependencies(key BindingKey, graph *DepGraph) btree.Set[BindingKey] {
+	namespaceMap := graph.namespaceIDs()
+	var allDeps btree.Set[BindingKey]
+	for _, decl := range graph.GetDecls(key) {
+		fd, ok := decl.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+		visitor := graph.newDependencyVisitor(key, decl, namespaceMap)
+		visitor.pushScope()
+		visitor.visitFuncSig(fd)
+		visitor.popScope()
+		iter := visitor.Dependencies.Iter()
+		for ok := iter.First(); ok; ok = iter.Next() {
+			allDeps.Insert(iter.Key())
+		}
+	}
+	return allDeps
+}
+
+// visitFuncSig visits the parts of d's signature that can name another binding. The
+// type parameters are added to the visitor's innermost scope, so a parameter that
+// names one does not record a dependency.
+func (v *DependencyVisitor) visitFuncSig(d *ast.FuncDecl) {
+	v.processTypeParams(d.TypeParams)
+	for _, param := range d.Params {
+		if param.TypeAnn != nil {
+			param.TypeAnn.Accept(v)
+		}
+	}
+	if d.Return != nil {
+		d.Return.Accept(v)
+	}
+	if d.Throws != nil {
+		d.Throws.Accept(v)
+	}
+}
+
+// namespaceIDs maps each of the graph's namespace names to its NamespaceID.
+func (g *DepGraph) namespaceIDs() map[string]ast.NamespaceID {
+	ids := make(map[string]ast.NamespaceID, len(g.Namespaces))
+	for i, nsName := range g.Namespaces {
+		ids[nsName] = ast.NamespaceID(i)
+	}
+	return ids
+}
+
+// newDependencyVisitor returns a visitor that collects what decl, declared under key,
+// depends on.
+func (g *DepGraph) newDependencyVisitor(key BindingKey, decl ast.Decl, namespaceMap map[string]ast.NamespaceID) *DependencyVisitor {
+	return &DependencyVisitor{
+		DefaultVisitor:   ast.DefaultVisitor{},
+		Graph:            g,
+		NamespaceMap:     namespaceMap,
+		Dependencies:     btree.Set[BindingKey]{},
+		CurrentNamespace: g.GetNamespace(key),
+		LocalScopes:      make([]LocalScope, 0),
+		Imports:          g.ImportNamespaces[decl.Span().SourceID],
+	}
+}
+
 // FindStronglyConnectedComponents uses Tarjan's algorithm to find SCCs using BindingKey.
 // The returned components appear in topological order, meaning that if component
 // A depends on component B, then A will appear after B in the result.
@@ -1081,10 +1206,18 @@ func FindDeclDependencies(key BindingKey, graph *DepGraph) btree.Set[BindingKey]
 // component to be reported. If a component has size equal to threshold, it is
 // reported only if it contains a self-reference.
 func (g *DepGraph) FindStronglyConnectedComponents(threshold int) [][]BindingKey {
+	return g.stronglyConnectedComponents(g.AllBindings(), g.GetDeps, threshold)
+}
+
+// stronglyConnectedComponents is FindStronglyConnectedComponents over the given keys
+// and dependency function.
+func (g *DepGraph) stronglyConnectedComponents(
+	keys []BindingKey, depsOf func(BindingKey) btree.Set[BindingKey], threshold int,
+) [][]BindingKey {
 	// Read each binding's out-neighbours from its btree dep set, in the set's
 	// own sorted order, so the shared pass seeds and traverses deterministically.
 	successors := func(v BindingKey) []BindingKey {
-		deps := g.GetDeps(v)
+		deps := depsOf(v)
 		out := make([]BindingKey, 0, deps.Len())
 		iter := deps.Iter()
 		for ok := iter.First(); ok; ok = iter.Next() {
@@ -1094,11 +1227,11 @@ func (g *DepGraph) FindStronglyConnectedComponents(threshold int) [][]BindingKey
 	}
 
 	sccs := make([][]BindingKey, 0)
-	for _, scc := range graphalg.StronglyConnectedComponents(g.AllBindings(), successors) {
+	for _, scc := range graphalg.StronglyConnectedComponents(keys, successors) {
 		// Report cycles: either more members than the threshold, or exactly the
 		// threshold with a self-reference. scc[0] is the first member popped;
 		// for the size-1 self-loop case it is the sole member.
-		deps := g.GetDeps(scc[0])
+		deps := depsOf(scc[0])
 		if len(scc) > threshold || (len(scc) == threshold && deps.Contains(scc[0])) {
 			sccs = append(sccs, scc)
 		}
@@ -1179,8 +1312,14 @@ func BuildDepGraphWithImports(module *ast.Module, imports map[int]map[string]str
 	}
 
 	// Compute strongly connected components
-	// Note: FindStronglyConnectedComponents will be implemented in Phase 3
 	graph.Components = graph.FindStronglyConnectedComponents(0)
+
+	for _, key := range allKeys {
+		if signatureBound(graph, key) {
+			graph.SignatureDeps.Set(key, FindSignatureDependencies(key, graph))
+		}
+	}
+	graph.CheckComponents = graph.stronglyConnectedComponents(graph.checkBindings(), graph.CheckDeps, 0)
 
 	return graph
 }

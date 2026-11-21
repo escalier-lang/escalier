@@ -75,10 +75,10 @@ func TestAMethodTypeParamBoundIsCheckedInItsBody(t *testing.T) {
 			want: []string{"3:47-3:48: cannot constrain string <: number"},
 		},
 		{
-			name: "FreeFunctionInTheSameComponent",
+			name: "MutuallyRecursiveFreeFunctions",
 			src: `fn add(a: number, b: number) -> number { if a > 0 { strs("x") } return a + b }
 			fn strs<A: string>(a: A) -> number { return add(a, a) }`,
-			want: []string{"1:1-1:79: cannot constrain string <: number"},
+			want: []string{"2:52-2:53: cannot constrain string <: number", "2:55-2:56: cannot constrain string <: number"},
 		},
 	}
 

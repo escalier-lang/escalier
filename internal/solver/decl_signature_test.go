@@ -102,7 +102,7 @@ func TestFuncDeclSignaturePrintWritten(t *testing.T) {
 		},
 		{
 			name: "LifetimeInsideFuncParam",
-			src:  "type Flat = {x: number}\nfn f(a: &Flat, g: fn (x: &Flat) -> number) -> number { return g(a) }",
+			src:  "type Flat = {x: number}\nfn f(a: &Flat, g: fn (x: &Flat) -> number) { return g(a) }",
 			// The call ties x to a, so the lifetime occurs inside g's type and stays written.
 			expected: "<'a>(&'a Flat, fn (x: &'a Flat) -> number) -> number",
 		},

@@ -619,7 +619,7 @@ func TestInferKeyofUnionWithUnreadableMember(t *testing.T) {
 				fn f<T>(k: keyof ({a: number, x: string} | {b: number, x: string} | T)) -> undefined {}
 				val r = f("a")
 			`,
-			wantErr: `cannot constrain "a" <: keyof object | object | t8`,
+			wantErr: `cannot constrain "a" <: keyof object | object | t12`,
 		},
 	}
 	for _, tt := range tests {

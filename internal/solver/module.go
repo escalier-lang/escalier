@@ -319,19 +319,20 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	return soltype.ModuleSymbols{Minted: declaredSymbols(module, c.info), Owners: c.symbolOwners}
 }
 
-// classBodiesFirst returns g.Components reordered so that a component naming a class's
-// type comes after the component holding that class's value key, wherever the dep graph
-// allows it. Every component still comes after the components it depends on. Components
+// classBodiesFirst returns g.CheckComponents reordered so that a component naming a
+// class's type comes after the component holding that class's value key, wherever the dep
+// graph allows it. A signature-bound function's key reads no member's type, so it takes
+// no such edge. Every component still comes after the components it depends on. Components
 // that cannot be ordered that way are merged into one component, with their keys in their
 // original relative order.
 func classBodiesFirst(g *dep_graph.DepGraph) [][]dep_graph.BindingKey {
 	index := make(map[dep_graph.BindingKey]int)
-	for i, component := range g.Components {
+	for i, component := range g.CheckComponents {
 		for _, key := range component {
 			index[key] = i
 		}
 	}
-	nodes := make([]int, len(g.Components))
+	nodes := make([]int, len(g.CheckComponents))
 	for i := range nodes {
 		nodes[i] = i
 	}
@@ -341,15 +342,15 @@ func classBodiesFirst(g *dep_graph.DepGraph) [][]dep_graph.BindingKey {
 	// type key only, while B's member bodies are inferred at its value key.
 	successors := func(i int) []int {
 		var out []int
-		for _, key := range g.Components[i] {
-			deps := g.GetDeps(key)
+		for _, key := range g.CheckComponents[i] {
+			deps := g.CheckDeps(key)
 			iter := deps.Iter()
 			for ok := iter.First(); ok; ok = iter.Next() {
 				dep := iter.Key()
 				if j, found := index[dep]; found && j != i {
 					out = append(out, j)
 				}
-				if dep.Kind() != dep_graph.DepKindType || !declaresClass(g, dep) {
+				if dep.Kind() != dep_graph.DepKindType || !declaresClass(g, dep) || g.IsSignatureBound(key) {
 					continue
 				}
 				if j, found := index[dep_graph.ValueBindingKey(dep.Name())]; found && j != i {
@@ -365,16 +366,16 @@ func classBodiesFirst(g *dep_graph.DepGraph) [][]dep_graph.BindingKey {
 	// group is inferred as one component, so a reader of B in it is generalized together
 	// with B's value key, after linkMemberSig has bounded the member stubs the reader saw.
 	// Sorting the indices keeps the original order, which respects every real dependency.
-	ordered := make([][]dep_graph.BindingKey, 0, len(g.Components))
+	ordered := make([][]dep_graph.BindingKey, 0, len(g.CheckComponents))
 	for _, group := range graph.StronglyConnectedComponents(nodes, successors) {
 		sort.Ints(group)
 		if len(group) == 1 {
-			ordered = append(ordered, g.Components[group[0]])
+			ordered = append(ordered, g.CheckComponents[group[0]])
 			continue
 		}
 		var merged []dep_graph.BindingKey
 		for _, i := range group {
-			merged = append(merged, g.Components[i]...)
+			merged = append(merged, g.CheckComponents[i]...)
 		}
 		ordered = append(ordered, merged)
 	}
@@ -448,6 +449,10 @@ type componentBinding struct {
 	// on the group-var path, where fuseOverloadArms records the whole set as one lower
 	// bound on that var. See annotatedOverloadArms.
 	signatureBound bool
+	// bodiesAtBodyKey marks a signature-bound binding whose bodies are checked at the
+	// graph's body key for it, in a later component, rather than in phase 2 of this one.
+	// dep_graph.DepGraph.IsSignatureBound decides it.
+	bodiesAtBodyKey bool
 }
 
 // identVarDecl returns the `val` or `var` declaration that binds key with a plain identifier
@@ -505,6 +510,7 @@ func (c *checker) inferComponent(
 	// mutually-recursive reference resolves through the var. M2 only infers value
 	// bindings; type-sort keys are handled (as unsupported) after the value walk.
 	bindings := make(map[dep_graph.BindingKey]*componentBinding, len(component))
+	var sigKeys []signatureKey
 	for _, key := range component {
 		if key.Kind() != dep_graph.DepKindValue {
 			continue
@@ -517,39 +523,17 @@ func (c *checker) inferComponent(
 		// and gets that arm's own return type, which is sharper than what the fused
 		// lower bound below derives. A set with any un-annotated arm cannot be built
 		// body-free, so it takes the fused path instead.
-		if armDecls := annotatedOverloadArms(g, key); armDecls != nil {
-			// The arm signatures resolve their type annotations here, so a bare
-			// sibling name in them needs the key's namespace the way phase 2 does.
-			prevNS := c.classNamespace
-			c.classNamespace = g.GetNamespace(key)
+		atBodyKey := g.IsSignatureBound(key)
+		armDecls := annotatedOverloadArms(g, key)
+		if atBodyKey {
+			armDecls = funcOnlyDecls(g, key)
+		}
+		if armDecls != nil {
+			// The signatures are built once every type the component declares is bound,
+			// since a signature can name a class whose type key shares this component.
 			sortArmDecls(module, armDecls)
-			arms := make([]overloadArm, len(armDecls))
-			schemes := make([]TypeScheme, len(armDecls))
-			for i, fd := range armDecls {
-				// Build the signature body-free under a probe, so phase 2's inferFunc —
-				// which re-derives the signature while checking the body — stays the
-				// single reporter of any signature error.
-				//
-				// The probe COMMITS. A written `<T: C>` constraint records an upper bound on
-				// the parameter's var, and a discard would truncate it, leaving the arm with
-				// a bare `<T>` that enforces nothing. Committing keeps that bound and costs
-				// nothing else, since the arm is fully annotated and its signature is
-				// otherwise concrete.
-				//
-				// The single-reporter rule is about the diagnostics rather than the bounds,
-				// so those are dropped by hand. A commit does not run the rollback openProbe
-				// registers to truncate them, which is why errsLen is taken here.
-				p := c.openProbe()
-				errsLen := len(c.errs)
-				sig := c.inferFunc(c.lookupScope(scope, fd), inner, fd.FuncSig, nil, fd, true, false)
-				c.closeProbe(p, true)
-				c.errs = c.errs[:errsLen]
-				arms[i] = overloadArm{decl: fd, t: sig}
-				schemes[i] = monoScheme(sig)
-			}
-			c.classNamespace = prevNS
-			bindings[key] = &componentBinding{arms: arms, bound: true, signatureBound: true}
-			scope.defineValue(key.Name(), ValueBinding{Schemes: schemes})
+			bindings[key] = &componentBinding{bound: true, signatureBound: true, bodiesAtBodyKey: atBodyKey}
+			sigKeys = append(sigKeys, signatureKey{key: key, decls: armDecls})
 			continue
 		}
 		// A weak binding's var sits at lvl with the variables its initializer mints, so
@@ -729,6 +713,9 @@ func (c *checker) inferComponent(
 	for i, decl := range classDecls {
 		c.buildClassSigs(c.lookupScope(scope, decl), inner, decl, classNamespaces[i])
 	}
+	for _, sk := range sigKeys {
+		c.bindFromSignatures(scope, inner, g, sk, bindings[sk.key], handled)
+	}
 
 	// Non-value keys such as type aliases are outside the M2 subset. Report each remaining
 	// contributing decl once as unsupported, skipping any already handled by a value key. A
@@ -814,9 +801,16 @@ func (c *checker) inferComponent(
 		// Two declarations that both write `&'a` get independent lifetimes rather than
 		// sharing one through a stale map. A function decl re-clears this inside inferFunc.
 		c.namedLifetimes = nil
+		if key.Kind() == dep_graph.DepKindBody {
+			c.checkSignatureBoundBodies(scope, inner, module, g, key)
+			continue
+		}
 		b, isValue := bindings[key]
 		if !isValue {
 			continue // non-value keys handled above
+		}
+		if b.bodiesAtBodyKey {
+			continue
 		}
 		if b.signatureBound {
 			// The schemes are already bound in scope from phase 1, so phase 2 does not
@@ -1054,6 +1048,18 @@ func (c *checker) inferComponent(
 				}
 			}
 			scope.defineValue(key.Name(), ValueBinding{Schemes: schemes, Sources: srcs, ModuleLevel: true})
+			continue
+		}
+		// A lone function bound from its signature generalizes that signature. Its body
+		// adds nothing to the binding, so the binding reads no weak binding either.
+		if b.signatureBound {
+			arm := b.arms[0]
+			sc := c.generalize(arm.t, lvl)
+			if arm.decl.Name != nil {
+				c.recordType(arm.decl.Name, schemeType(sc))
+			}
+			srcs := []provenance.Provenance{&ast.NodeProvenance{Node: arm.decl}}
+			scope.defineValue(key.Name(), ValueBinding{Schemes: []TypeScheme{sc}, Sources: srcs, ModuleLevel: true})
 			continue
 		}
 		// Generalize the binding var at the component's level (was: coalesce to a
@@ -1327,6 +1333,70 @@ func funcOnlyDecls(g *dep_graph.DepGraph, key dep_graph.BindingKey) []*ast.FuncD
 		funcs = append(funcs, fd)
 	}
 	return funcs
+}
+
+// signatureKey is a value key phase 1 of inferComponent binds from its functions'
+// signatures, with those functions in source order.
+type signatureKey struct {
+	key   dep_graph.BindingKey
+	decls []*ast.FuncDecl
+}
+
+// bindFromSignatures builds the signature of each function sk names, without its body,
+// records them on b as its arms, and binds sk's name in scope to the whole set.
+//
+// Each signature's errors are dropped when a later pass infers the function with its
+// body and reports them: phase 2 of the same component, or the key's body key. A key
+// with neither keeps them.
+func (c *checker) bindFromSignatures(
+	scope *Scope, lvl int, g *dep_graph.DepGraph, sk signatureKey, b *componentBinding, handled set.Set[ast.Decl],
+) {
+	// The signatures resolve their type annotations here, so a bare sibling name in
+	// them needs the key's namespace the way phase 2 does.
+	prevNS := c.classNamespace
+	c.classNamespace = g.GetNamespace(sk.key)
+	defer func() { c.classNamespace = prevNS }()
+	reported := b.bodiesAtBodyKey && !g.HasBodyKey(sk.key)
+	b.arms = make([]overloadArm, len(sk.decls))
+	schemes := make([]TypeScheme, len(sk.decls))
+	for i, fd := range sk.decls {
+		// The probe COMMITS. A written `<T: C>` constraint records an upper bound on the
+		// parameter's var, and a discard would truncate it, leaving the function with a
+		// bare `<T>` that enforces nothing. Committing keeps that bound and costs nothing
+		// else, since the signature is otherwise concrete.
+		//
+		// A commit does not run the rollback openProbe registers to truncate the
+		// diagnostics, which is why errsLen is taken here.
+		p := c.openProbe()
+		errsLen := len(c.errs)
+		sig := c.inferFunc(c.lookupScope(scope, fd), lvl, fd.FuncSig, nil, fd, true, false)
+		c.closeProbe(p, true)
+		if !reported {
+			c.errs = c.errs[:errsLen]
+		}
+		b.arms[i] = overloadArm{decl: fd, t: sig}
+		schemes[i] = monoScheme(sig)
+		if b.bodiesAtBodyKey {
+			handled.Add(fd)
+			b.sources = append(b.sources, &ast.NodeProvenance{Node: fd})
+		}
+	}
+	scope.defineValue(sk.key.Name(), ValueBinding{Schemes: schemes})
+}
+
+// checkSignatureBoundBodies checks each function declared under the value key bodyKey
+// stands for against the signature it was bound from, in source order. A declaration
+// with no body is inferred too, so its signature's errors are reported once.
+func (c *checker) checkSignatureBoundBodies(
+	scope *Scope, lvl int, module *ast.Module, g *dep_graph.DepGraph, bodyKey dep_graph.BindingKey,
+) {
+	valueKey := dep_graph.ValueBindingKey(bodyKey.Name())
+	c.classNamespace = g.GetNamespace(valueKey)
+	decls := funcOnlyDecls(g, valueKey)
+	sortArmDecls(module, decls)
+	for _, fd := range decls {
+		c.inferFunc(c.lookupScope(scope, fd), lvl, fd.FuncSig, fd.Body, fd, true, false)
+	}
 }
 
 // annotatedOverloadArms returns key's FuncDecls when it is a function-only overload
