@@ -258,14 +258,17 @@ func positionalKeywords(
 
 	// A half-typed `el` or `ca` after a block parses as a statement of its own, so the
 	// `if` or `try` it continues is found from the block's end instead.
-	blockEnd := len(strings.TrimRight(text[:wordStart], " \t\r\n"))
-	finder := &openBlockFinder{end: blockEnd}
-	walk(finder)
-	if finder.ifWithoutElse {
-		keywords = append(keywords, "else")
-	}
-	if finder.tryWithoutCatch {
-		keywords = append(keywords, "catch")
+	// Only a `}` can end the block, so the walk is skipped for any other text.
+	before := strings.TrimRight(text[:wordStart], " \t\r\n")
+	if strings.HasSuffix(before, "}") {
+		finder := &openBlockFinder{end: len(before)}
+		walk(finder)
+		if finder.ifWithoutElse {
+			keywords = append(keywords, "else")
+		}
+		if finder.tryWithoutCatch {
+			keywords = append(keywords, "catch")
+		}
 	}
 	return keywordItems(keywords), false
 }
