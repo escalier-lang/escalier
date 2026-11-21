@@ -3059,14 +3059,14 @@ func (c *checker) inferFieldAssign(lvl int, e *ast.BinaryExpr, object ast.Expr, 
 	// fits the written type. That is the check a read makes. It never checks that the written
 	// value fits the field. So `u.kind = "b"` on `val mut u: {kind: "a"} | {kind: "b"}` would
 	// pass, since `"a"` fits `string`, and leave a value that matches neither member. Such a
-	// write is rejected here.
+	// write is checked against each member's field here instead.
 	//
 	// A write through an immutable borrow skips this check, so the requirement reports the
 	// immutability. A variable that joins values of different members, as
 	// `val mut x = if c { a } else { b }` does, is checked as the union of what it joins.
 	if ref, isRef := recv.(*soltype.RefType); !isRef || ref.Mut {
 		if uw, ok := c.unionWriteReceiver(name, recv); ok {
-			return c.rejectUnionFieldWrite(e, object, name, recv, place, uw, source)
+			return c.inferUnionFieldWrite(e, object, name, recv, place, uw, source)
 		}
 	}
 	member, _ := c.fieldWriteMember(name, recv)
@@ -3157,12 +3157,10 @@ func (c *checker) inferFieldAssign(lvl int, e *ast.BinaryExpr, object ast.Expr, 
 
 // unionFieldWrite is the union a field write lands on. Its fields are:
 //
-//   - union, the receiver's type;
 //   - members, the union's members other than `undefined` and `null`;
 //   - fields, the type a write to the field may store in each member, in the order of members;
 //   - readonly, whether some member declares the field readonly.
 type unionFieldWrite struct {
-	union    soltype.Type
 	members  []soltype.Type
 	fields   []soltype.Type
 	readonly bool
@@ -3182,7 +3180,7 @@ func (c *checker) unionWriteReceiver(name string, recv soltype.Type) (unionField
 	if !isUnion {
 		return unionFieldWrite{}, false
 	}
-	uw := unionFieldWrite{union: carrier}
+	uw := unionFieldWrite{}
 	for _, m := range u.Types {
 		switch m.(type) {
 		case *soltype.UndefinedType, *soltype.NullType:
@@ -3241,8 +3239,11 @@ func (c *checker) writeReceiverCarrier(recv soltype.Type) (soltype.Type, bool) {
 	return newUnion(c.ctx, bounds), true
 }
 
-// rejectUnionFieldWrite reports a write of field name through a union receiver and returns the
-// written type. Its parameters are:
+// inferUnionFieldWrite types a write of field name through a union receiver and returns the
+// written type. The write is accepted when the written value fits the field in every member,
+// and the value is then constrained against each member's field. Otherwise it reports
+// UnionFieldWriteError, naming the first member whose field rejects the value. Its parameters
+// are:
 //
 //   - e, the assignment;
 //   - object, the receiver as written;
@@ -3254,7 +3255,7 @@ func (c *checker) writeReceiverCarrier(recv soltype.Type) (soltype.Type, bool) {
 //
 // A write through an immutable binding reports that binding and nothing else. A field some
 // member declares readonly reports ReadonlyFieldError and nothing else.
-func (c *checker) rejectUnionFieldWrite(e *ast.BinaryExpr, object ast.Expr, name string, recv soltype.Type, place *ownedPlace, uw unionFieldWrite, source soltype.Type) soltype.Type {
+func (c *checker) inferUnionFieldWrite(e *ast.BinaryExpr, object ast.Expr, name string, recv soltype.Type, place *ownedPlace, uw unionFieldWrite, source soltype.Type) soltype.Type {
 	w := widen(source)
 	owned, unsettled := c.ownedOrUnsettledMutation(e, recv, place)
 	switch {
@@ -3265,20 +3266,30 @@ func (c *checker) rejectUnionFieldWrite(e *ast.BinaryExpr, object ast.Expr, name
 		// legal. So the message names the readonly field rather than suggesting a narrowing.
 		c.report(&ReadonlyFieldError{Field: name, site: e.Left})
 	default:
-		err := &UnionFieldWriteError{
-			Receiver: object,
-			Target:   e.Left,
-			Field:    name,
-			Union:    uw.union,
-			Source:   coalesce(source, soltype.Positive),
-		}
+		rejected := -1
 		for i, field := range uw.fields {
 			if hasHardError(c.ctx.trialUnderProbe(source, field)) {
-				err.Member, err.FieldType = uw.members[i], field
+				rejected = i
 				break
 			}
 		}
-		c.report(err)
+		if rejected >= 0 {
+			c.report(&UnionFieldWriteError{
+				Receiver:  object,
+				Target:    e.Left,
+				Field:     name,
+				Source:    coalesce(source, soltype.Positive),
+				Member:    uw.members[rejected],
+				FieldType: uw.fields[rejected],
+			})
+			break
+		}
+		// The trials ran under a probe and left no bounds behind. Constraining for real records
+		// what the write tells inference, so `fn f(q: &mut (A | C), v) { q.a = v }` bounds v
+		// by each member's field type.
+		for _, field := range uw.fields {
+			c.constrain(e.Right, source, field)
+		}
 	}
 	c.recordWritten(recv, name, w)
 	c.recordType(e, w)
