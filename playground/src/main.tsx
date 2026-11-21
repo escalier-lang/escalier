@@ -14,7 +14,7 @@ import { BrowserFS } from './fs/browser-fs';
 import type { Manifest } from './fs/volume';
 import { setupLanguage } from './language/language';
 import { Client } from './lsp-client/client';
-import { inProcessLauncher } from './lsp-client/server-process';
+import { workerLauncher } from './lsp-client/worker-launcher';
 import { Playground } from './playground';
 import { capturePermalink } from './project/capture-permalink';
 import {
@@ -63,9 +63,9 @@ async function start(
     const layoutRestored = await openInitialProject(manifest, baseUrl, fs);
     reloadOnPastedPermalink(window);
 
-    // Create a new client for the language server and
-    // initialize it with the process ID and root URI.
-    const launcher = inProcessLauncher(
+    // The language server runs in a worker, so a long check leaves the page responsive.
+    // It reads and writes this thread's filesystem by sending the page messages.
+    const launcher = workerLauncher(
         {
             wasm,
             cwd: '/',
@@ -79,9 +79,10 @@ async function start(
                 // The same directory holds the standard library's `.esc` files, which the
                 // type checker resolves `std:prelude` and the ambient builtins from.
                 ESCALIER_STDLIB_DIR: '/node_modules/escalier-builtins',
-                // The dev server, which the e2e tests run against, lets a marker
-                // comment crash the language server so the tests can exercise
-                // recovery. See runTestHooks in cmd/lsp-server/recover.go.
+                // The dev server, which the e2e tests run against, lets marker comments
+                // crash or slow down the language server, so the tests can exercise
+                // recovery and a slow check. See runTestHooks in
+                // cmd/lsp-server/recover.go.
                 ...(import.meta.env.DEV
                     ? { ESCALIER_LSP_TEST_HOOKS: '1' }
                     : {}),
@@ -104,7 +105,9 @@ async function start(
     );
     void client.run();
     const initResponse: InitializeResult = await client.initialize({
-        processId: process.pid,
+        // LSP's value for a client with no process for the server to watch. The page
+        // has no process ID, and the server doesn't read this field.
+        processId: null,
         workspaceFolders: [{ uri: 'file:///', name: 'playground' }],
         capabilities: {},
     });

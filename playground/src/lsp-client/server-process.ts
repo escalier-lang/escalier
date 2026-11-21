@@ -14,9 +14,9 @@ export interface ServerProcess {
      */
     readonly exited: Promise<string>;
     /**
-     * Stops listening to the server. It doesn't always end the server. A server in this
-     * thread can't be ended from outside, so disposing it only stops its console output,
-     * and `exited` resolves when it exits by itself.
+     * Stops listening to the server. A server in a worker ends at once and `exited`
+     * resolves. A server in this thread can't be ended from outside, so it only stops
+     * printing to the console, and `exited` resolves when it exits by itself.
      */
     dispose(): void;
 }
