@@ -1,9 +1,9 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, fn, userEvent, within } from 'storybook/test';
 
-import type { BrowserFS } from '../fs/browser-fs';
-import { FSEventEmitter } from '../fs/fs-events';
-import type { FSDir } from '../fs/fs-node';
+import type { BrowserFS } from '#fs/browser-fs';
+import { FSEventEmitter } from '#fs/fs-events';
+import type { FSDir } from '#fs/fs-node';
 
 import { FileExplorer } from './file-explorer';
 

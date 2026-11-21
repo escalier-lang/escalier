@@ -4,9 +4,9 @@ import {
     DIAGNOSTICS_TAB_PATH,
     countOf,
     diagnosticCounts,
-} from '../diagnostics/project-diagnostics';
-import { useProjectDiagnosticsStore } from '../diagnostics/project-diagnostics-store';
-import { useEditorStore } from '../editor/editor-store';
+} from '#diagnostics/project-diagnostics';
+import { useProjectDiagnosticsStore } from '#diagnostics/project-diagnostics-store';
+import { useEditorStore } from '#editor/editor-store';
 import styles from './status-bar.module.css';
 
 /** A circle with a cross in it, the error icon. */

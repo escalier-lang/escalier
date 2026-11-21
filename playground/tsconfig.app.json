@@ -14,6 +14,11 @@
     "moduleDetection": "force",
     "noEmit": true,
     "jsx": "react-jsx",
+    /* Mirrors the "#*" entry in package.json's "imports". TypeScript doesn't try
+       extensions on an "imports" target, so it resolves #-imports through paths. */
+    "paths": {
+      "#*": ["./src/*"]
+    },
 
     /* Linting */
     "strict": true,

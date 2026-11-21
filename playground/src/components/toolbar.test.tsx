@@ -3,7 +3,7 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { useThemeStore } from '../theme/theme';
+import { useThemeStore } from '#theme/theme';
 import { Toolbar } from './toolbar';
 
 function renderToolbar(

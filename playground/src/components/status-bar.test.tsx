@@ -7,10 +7,10 @@ import {
     DIAGNOSTICS_TAB_PATH,
     type DiagnosticSeverity,
     type ProjectDiagnostic,
-} from '../diagnostics/project-diagnostics';
-import { useProjectDiagnosticsStore } from '../diagnostics/project-diagnostics-store';
-import { initialEditorState } from '../editor/editor-state';
-import { useEditorStore } from '../editor/editor-store';
+} from '#diagnostics/project-diagnostics';
+import { useProjectDiagnosticsStore } from '#diagnostics/project-diagnostics-store';
+import { initialEditorState } from '#editor/editor-state';
+import { useEditorStore } from '#editor/editor-store';
 import { StatusBar } from './status-bar';
 
 function diagnostic(severity: DiagnosticSeverity): ProjectDiagnostic {

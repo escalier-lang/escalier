@@ -4,14 +4,14 @@ import * as lsp from 'vscode-languageserver-protocol';
 import {
     diagnosticsTokenRules,
     registerDiagnosticsLanguage,
-} from '../diagnostics/diagnostics-language';
+} from '#diagnostics/diagnostics-language';
 import type {
     DiagnosticSeverity,
     ProjectDiagnostic,
-} from '../diagnostics/project-diagnostics';
-import { useProjectDiagnosticsStore } from '../diagnostics/project-diagnostics-store';
-import type { Client } from '../lsp-client/client';
-import { monacoThemeName, useThemeStore } from '../theme/theme';
+} from '#diagnostics/project-diagnostics';
+import { useProjectDiagnosticsStore } from '#diagnostics/project-diagnostics-store';
+import type { Client } from '#lsp-client/client';
+import { monacoThemeName, useThemeStore } from '#theme/theme';
 import { registerBasicLanguages } from './basic-languages';
 import { createCodeActionProvider } from './code-actions';
 import {

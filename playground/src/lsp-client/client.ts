@@ -10,7 +10,7 @@ import {
     createMessageConnection,
 } from 'vscode-languageserver-protocol/browser';
 
-import type { FSAPI } from '../fs/fs-api';
+import type { FSAPI } from '#fs/fs-api';
 
 import './wasm_exec'; // run for side-effects
 
