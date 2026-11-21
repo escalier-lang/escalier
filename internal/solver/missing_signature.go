@@ -30,8 +30,7 @@ const (
 // MissingSignatureError reports a function that leaves out a parameter type or its return
 // type where its signature has to be written in full: a function declared at a module's or
 // a script's top level, a method, getter or setter, and a function expression bound to a
-// top-level variable with no type annotation. It is a warning while existing code is
-// migrated.
+// top-level variable with no type annotation.
 type MissingSignatureError struct {
 	// Name is the function's declared name, or the name of the variable it is bound to.
 	Name string
@@ -52,7 +51,6 @@ type MissingSignatureError struct {
 func (*MissingSignatureError) isSolverError()        {}
 func (e *MissingSignatureError) Span() ast.Span      { return e.Node.Span() }
 func (e *MissingSignatureError) Related() []ast.Span { return nil }
-func (e *MissingSignatureError) IsWarning() bool     { return true }
 func (e *MissingSignatureError) Message() string {
 	var where string
 	closure := false

@@ -365,7 +365,7 @@ func TestSignatureActionInLib(t *testing.T) {
 		applyEdits(src, actions[0].Edit.Changes[uri]))
 }
 
-// TestMissingSignatureSeverity asserts that MissingSignatureError is published as a warning.
+// TestMissingSignatureSeverity asserts that MissingSignatureError is published as an error.
 func TestMissingSignatureSeverity(t *testing.T) {
 	src := "fn noop(x: number) {}"
 	s := integrationServer(t, map[string]string{"bin/main.esc": src})
@@ -373,5 +373,5 @@ func TestMissingSignatureSeverity(t *testing.T) {
 	uri := openFileIn(t, s, ctx, "bin/main.esc", src)
 	diags := awaitPublished(t, published, uri, 1)
 	require.Len(t, diags, 1)
-	require.Equal(t, addr(protocol.DiagnosticSeverityWarning), diags[0].Severity)
+	require.Equal(t, addr(protocol.DiagnosticSeverityError), diags[0].Severity)
 }

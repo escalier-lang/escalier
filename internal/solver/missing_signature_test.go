@@ -211,7 +211,7 @@ func TestMissingSignature(t *testing.T) {
 			}
 			require.Equal(t, tt.expected, got)
 			for _, e := range errs {
-				require.True(t, isWarning(e))
+				require.False(t, isWarning(e))
 			}
 		})
 	}
