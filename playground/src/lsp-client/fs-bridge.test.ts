@@ -119,6 +119,18 @@ test('a reply that cannot be sent answers as EIO', async () => {
     });
 });
 
+test('a request that cannot be sent fails through its callback as EIO', async () => {
+    const err = await call((cb) =>
+        remote.open('/lib/index.esc', Symbol('flags') as never, undefined, cb),
+    ).catch((e: NodeJS.ErrnoException) => e);
+
+    expect(err).toMatchObject({
+        message:
+            'the request could not be sent: Symbol(flags) could not be cloned.',
+        code: 'EIO',
+    });
+});
+
 test('a call that calls back and then throws answers once', async () => {
     const replies: unknown[] = [];
     channel.port2.addEventListener('message', (event) => {

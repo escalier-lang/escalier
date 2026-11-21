@@ -275,10 +275,23 @@ export function remoteFS(endpoint: MessageEndpoint): FSAPI {
     ) {
         const id = nextId++;
         pending.set(id, callback);
-        endpoint.postMessage(
-            { kind: 'fs', id, op, args } as FSRequest,
-            transfer,
-        );
+        try {
+            endpoint.postMessage(
+                { kind: 'fs', id, op, args } as FSRequest,
+                transfer,
+            );
+        } catch (err) {
+            // A request that can't be sent fails through its callback, as any other
+            // fs error does, rather than throwing into the server.
+            pending.delete(id);
+            callback(
+                new ErrnoException(
+                    `the request could not be sent: ${String((err as Error)?.message ?? err)}`,
+                    { code: 'EIO' },
+                ),
+                undefined,
+            );
+        }
     }
 
     const path = (p: PathLike) => String(p);
