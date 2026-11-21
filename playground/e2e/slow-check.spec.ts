@@ -1,11 +1,12 @@
 import { expect, test } from '@playwright/test';
 
-import { fileStartKey, loadPlayground, replaceSource } from './helpers';
+import {
+    SPIN_MARKER,
+    fileStartKey,
+    loadPlayground,
+    replaceSource,
+} from './helpers';
 
-// A comment that makes the language server's check spin the CPU for the given number of
-// milliseconds when it runs with test hooks on, as it does under the dev server. See
-// runTestHooks in cmd/lsp-server/recover.go.
-const SPIN_MARKER = '// @escalier-lsp-test-spin';
 const SPIN_MS = 8_000;
 
 // How long a test allows the page to take over one interaction while the server spins.

@@ -1,0 +1,12 @@
+.status {
+    color: var(--color-text-muted);
+    font-size: 12px;
+    padding: 0 8px;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    /* The status sits in the toolbar's spacer, which a narrow window can shrink to
+       nothing. The status is cut short rather than widening the page. */
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
