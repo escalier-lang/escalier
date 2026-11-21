@@ -72,15 +72,15 @@ func TestInferVarLiteralWidening(t *testing.T) {
 func TestInferVarWideningReassignment(t *testing.T) {
 	t.Run("same-primitive reassignment checks", func(t *testing.T) {
 		values, _, errs := inferSource(t, `var a = 5
-fn f() { a = 6 }`)
+fn f() -> undefined { a = 6 }`)
 		require.Empty(t, errs)
 		require.Equal(t, "number", values["a"])
 	})
 	t.Run("different-primitive reassignment rejected", func(t *testing.T) {
 		src := `var a = 5
-fn f() { a = "x" }`
+fn f() -> undefined { a = "x" }`
 		_, _, errs := inferSource(t, src)
-		requireBlame(t, src, errs, `2:14-2:17: cannot constrain "x" <: number`, `"x"`)
+		requireBlame(t, src, errs, `2:27-2:30: cannot constrain "x" <: number`, `"x"`)
 	})
 }
 
@@ -167,7 +167,7 @@ var y = x`)
 	t.Run("reassigning the widened var checks", func(t *testing.T) {
 		values, _, errs := inferSource(t, `val x = 5
 var y = x
-fn f() { y = 6 }`)
+fn f() -> undefined { y = 6 }`)
 		require.Empty(t, errs)
 		require.Equal(t, "number", values["y"])
 	})
@@ -207,7 +207,7 @@ val q = p`)
 // inside the same function checks and the binding reads back as the primitive.
 func TestInferVarWideningBodyLevel(t *testing.T) {
 	t.Run("direct literal widens and reassigns", func(t *testing.T) {
-		values, _, errs := inferSource(t, `fn f() { var a = 5
+		values, _, errs := inferSource(t, `fn f() -> number { var a = 5
   a = 6
   return a }`)
 		require.Empty(t, errs)
@@ -228,7 +228,7 @@ func TestInferVarWideningBodyLevel(t *testing.T) {
 	// Widenable flag, so the reassignment target is the primitive and `y = 6` checks
 	// — the body-level twin of TestInferVarWideningThroughReference.
 	t.Run("reference widens and reassigns", func(t *testing.T) {
-		_, _, errs := inferSource(t, `fn f() { val x = 5
+		_, _, errs := inferSource(t, `fn f() -> undefined { val x = 5
   var y = x
   y = 6 }`)
 		require.Empty(t, errs)

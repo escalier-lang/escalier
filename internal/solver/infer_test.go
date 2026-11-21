@@ -144,11 +144,10 @@ func inferSource(t *testing.T, src string) (values, types map[string]string, err
 	return inferSources(t, map[string]string{"input.esc": src})
 }
 
-// inferLocal infers src as a module and returns the type of the binding named name, as
-// hover displays it, with the errors the inference reported. The binding is the last pattern
-// that binds name, so it may be a `val` inside a function body, which inferSource does not
-// return. A closure bound there keeps its inferred return type, so a test of return-type
-// inference binds its closure inside a body and reads its type with inferLocal.
+// inferLocal infers src as a module and returns the type of the last pattern that binds
+// name, with the errors the inference reported. The pattern may be a `val` inside a function
+// body, which inferSource does not return. The type renders as inferSource renders a
+// top-level binding.
 func inferLocal(t *testing.T, src, name string) (string, []SolverError) {
 	t.Helper()
 	module := parseModuleFiles(t, map[string]string{"input.esc": src})
@@ -175,7 +174,7 @@ func inferLocals(t *testing.T, src string, names ...string) (map[string]string, 
 }
 
 // localType returns the type info records for the last pattern in module that binds name,
-// as hover displays it.
+// rendered the way inferSource renders a top-level binding, with its lifetime binders.
 func localType(t *testing.T, module *ast.Module, info *Info, name string) string {
 	t.Helper()
 	finder := &identPatFinder{name: name}

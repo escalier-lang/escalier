@@ -556,7 +556,7 @@ func TestTheCommittedEventTargetRejectsANullListener(t *testing.T) {
 	}{
 		{
 			name: "a listener",
-			src:  "import \"web:web\"\nfn go(mut t: web.EventTarget, l: web.EventListenerOrEventListenerObject) { t.addEventListener(\"x\", l) }",
+			src:  "import \"web:web\"\nfn go(mut t: web.EventTarget, l: web.EventListenerOrEventListenerObject) -> undefined { t.addEventListener(\"x\", l) }",
 		},
 		{
 			name:    "null",

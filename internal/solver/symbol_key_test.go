@@ -118,7 +118,7 @@ func TestAStringKeySpellingTheReservedNameIsDeclined(t *testing.T) {
 	t.Run("ItDoesNotAnswerAnIteratorLookup", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			declare fn mk() -> { "@@iterator": fn () -> Iterator<string> }
-			fn use() { for x in mk() { x } }
+			fn use() -> undefined { for x in mk() { x } }
 		`)
 		require.Contains(t, errorMessagesOf(errs), "Unsupported: StrLit")
 	})

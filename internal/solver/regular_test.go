@@ -367,7 +367,7 @@ func TestMemberReadOnRegularAliasKeepsTheAliasName(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		type H<T> = {a: keyof T, b: H<{c: T}>}
 		declare fn mk() -> H<{c: number}>
-		fn field() { return mk().b }
+		fn field() -> H<{c: {c: number}}> { return mk().b }
 	`)
 	require.Empty(t, Messages(errs))
 	require.Equal(t, "fn () -> H<{c: {c: number}}>", values["field"])
