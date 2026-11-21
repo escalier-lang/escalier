@@ -1565,7 +1565,7 @@ func (c *checker) widenOwnedLeaf(lvl int, node ast.Node, leafType, concrete solt
 // reads as `{a: number}`. The widening happens as each bound arrives, not when the variable
 // is coalesced, so a write later in the same body checks against the widened bound. A
 // primitive bound keeps its literal, as `val mut n = 1` does. The variable is also marked
-// Widenable, which widens such a primitive in the coalesced display. node blames a widened
+// `Widenable`, which widens such a primitive in the coalesced display. node blames a widened
 // bound that fails one of the variable's upper bounds.
 func (c *checker) mutableSlotOf(lvl int, node ast.Node, t soltype.Type) *soltype.TypeVarType {
 	v := c.freshAt(lvl)

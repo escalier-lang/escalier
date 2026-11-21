@@ -3205,10 +3205,10 @@ func (c *checker) unionWriteReceiver(name string, recv soltype.Type) (unionField
 
 // writeReceiverCarrier returns the type of the value a field write through recv lands on,
 // with any borrow looked through. A type that is not an inference variable is returned as is.
-// A variable reads as the union of its lower bounds, each resolved through coalescing, so a
-// variable joining an `A` and a `B` reads as `A | B`, and one whose bounds are all `{a: number}`
-// reads as `{a: number}`. It returns false for a variable with no lower bound, and for one
-// with an immutable borrow among its lower bounds.
+// A variable reads as the union of its lower bounds, each coalesced to a type. A variable
+// joining an `A` and a `B` reads as `A | B`. One whose bounds are all `{a: number}` reads as
+// `{a: number}`. It returns false for a variable with no lower bound, and for one with an
+// immutable borrow among its lower bounds.
 func (c *checker) writeReceiverCarrier(recv soltype.Type) (soltype.Type, bool) {
 	carrier := soltype.CarrierOf(recv)
 	v, isVar := carrier.(*soltype.TypeVarType)
@@ -3230,8 +3230,8 @@ func (c *checker) writeReceiverCarrier(recv soltype.Type) (soltype.Type, bool) {
 	if len(bounds) == 0 {
 		return nil, false
 	}
-	// Bounds that are all one type need no coalescing, which a write through an ordinary
-	// `val mut` binding would otherwise pay on every write.
+	// Bounds that are all one type skip coalescing. A write through an ordinary `val mut`
+	// binding would otherwise coalesce its receiver on every write.
 	if agree {
 		return groundedCarrier(bounds[0]), true
 	}
