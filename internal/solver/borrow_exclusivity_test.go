@@ -690,10 +690,70 @@ func TestContentsBorrowedByMutableCall(t *testing.T) {
 			`,
 			want: nil,
 		},
+		// The error blames the receiver of the call that takes arr, not the earlier statement
+		// that borrowed arr into a.
+		"PopThroughAWholeBorrowTakenLater": {
+			src: `
+				fn g(mut arr: Array<Flat>) -> undefined {
+					val f = first(&mut arr)
+					val a = &mut arr
+					val popped = a.pop()
+					f.x = 1
+				}
+			`,
+			want: []string{"10:19-10:20: cannot borrow 'a' as mutable for this call while a borrow of its contents is live"},
+		},
+		// A call with two slots that take arr reports once.
+		"TwoSlotsOfOneCallReportOnce": {
+			src: `
+				declare fn both(a: &mut Array<Flat>, b: &mut Array<Flat>) -> undefined
+
+				fn g(mut arr: Array<Flat>) -> undefined {
+					val f = first(&mut arr)
+					both(&mut arr, &mut arr)
+					f.x = 1
+				}
+			`,
+			want: []string{"11:11-11:19: cannot borrow 'arr' as mutable for this call while a borrow of its contents is live"},
+		},
+		// Two dynamic indices borrow whole elements, and neither reaches inside the other.
+		"TwoDynamicElementBorrowsOk": {
+			src: `
+				declare fn touch(b: &mut Flat) -> undefined
+
+				fn g(mut arr: Array<Flat>, i: number, j: number) -> undefined {
+					val f = &mut arr[i]
+					touch(&mut arr[j])
+					f.x = 1
+				}
+			`,
+			want: nil,
+		},
+		// The temporary borrow is read before the push starts.
+		"TemporaryElementBorrowInTheArgumentsOk": {
+			src: `
+				fn g(mut arr: Array<Flat>) -> undefined {
+					arr.push({x: (&mut arr[0]).x})
+				}
+			`,
+			want: nil,
+		},
+		// The second argument holds a borrow of arr itself inside an object, so both slots
+		// hold mutable borrows of the whole array.
+		"WholeBorrowInsideAnArgumentOk": {
+			src: `
+				declare fn two(a: &mut Array<Flat>, b: {inner: &mut Array<Flat>}) -> undefined
+
+				fn g(mut arr: Array<Flat>) -> undefined {
+					two(&mut arr, {inner: &mut arr})
+				}
+			`,
+			want: nil,
+		},
 		// DISABLED until #2444 binds the loop variable of `for f in &mut arr` as a borrow of
 		// the element. Each loop below then holds f across a mutable use of arr, and the call
 		// reports. Today f binds an owned Flat, and the write to it reports that its binding is
-		// immutable. The spans below are a guess; confirm them when re-enabling.
+		// immutable.
 		/*
 			"PopInsideALoopOverAMutableBorrow": {
 				src: `
@@ -704,7 +764,7 @@ func TestContentsBorrowedByMutableCall(t *testing.T) {
 						}
 					}
 				`,
-				want: []string{"10:19-10:22: cannot borrow 'arr' as mutable for this call while a borrow of its contents is live"},
+				want: []string{"9:20-9:23: cannot borrow 'arr' as mutable for this call while a borrow of its contents is live"},
 			},
 			"HelperCallInsideALoopOverAMutableBorrow": {
 				src: `
@@ -715,7 +775,7 @@ func TestContentsBorrowedByMutableCall(t *testing.T) {
 						}
 					}
 				`,
-				want: []string{"10:26-10:34: cannot borrow 'arr' as mutable for this call while a borrow of its contents is live"},
+				want: []string{"9:27-9:35: cannot borrow 'arr' as mutable for this call while a borrow of its contents is live"},
 			},
 		*/
 		// R1's grow example. The checker does not yet bind the loop variable of
