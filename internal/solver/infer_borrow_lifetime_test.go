@@ -350,16 +350,10 @@ func TestInferIncompatibleBorrowJoinKeepsDistinctLifetimes(t *testing.T) {
 }
 
 // A write to a conflicting field through an un-narrowed incompatible-borrow union is
-// rejected. The union of mutable objects is read-only at `x`, since `x` is `number`
-// in one branch and `string` in the other, so writing `5` must satisfy both and
-// fails the invariant pin in each direction. The read-until-narrowed contract is
-// sound only because this write is rejected. To write, narrow to one branch first.
-//
-// The write reports two messages for the one mistake: the `string` member's `x` is
-// pinned invariant against the `number` write requirement, so both the read view
-// (`string <: number`) and the write view (`number <: string`) fail. Collapsing this
-// to a single diagnostic is tracked in escalier-lang/escalier#806; update this
-// assertion when that lands.
+// rejected. `r` joins a `&mut {x: number}` and a `&mut {x: string}`, so a write to `r.x`
+// lands on a union and reports UnionFieldWriteError, naming the member whose `x` rejects
+// `5`. The read-until-narrowed contract is sound only because this write is rejected. To
+// write, narrow to one branch first.
 func TestInferIncompatibleBorrowUnionWriteRejected(t *testing.T) {
 	src := `fn f(p: &mut {x: number}, q: &mut {x: string}) -> undefined {
   val r = if true {
@@ -371,8 +365,7 @@ func TestInferIncompatibleBorrowUnionWriteRejected(t *testing.T) {
 }`
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, []string{
-		"7:3-7:10: cannot constrain string <: number",
-		"7:3-7:10: cannot constrain number <: string",
+		"7:3-7:6: cannot assign 5 to 'r.x', since 'r' may hold a '{x: string}', whose 'x' is string; narrow 'r' with a `match` and write through the narrowed binding",
 	}, messagesWithSpan(t, errs))
 }
 

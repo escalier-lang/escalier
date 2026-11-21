@@ -182,6 +182,45 @@ fn f(q: &mut (RA | RB)) { q.kind = "a" }`,
 			want: nil,
 		},
 		{
+			name: "JoinOfDeclaredMembers",
+			src: `fn f(c: boolean, a: A, b: B) {
+    val mut x = if c { a } else { b }
+    x.kind = "b"
+}`,
+			want: []string{"10:5-10:11: cannot assign \"b\" to 'x.kind', since 'x' may hold an 'A', whose 'kind' is \"a\"; narrow 'x' with a `match` and write through the narrowed binding"},
+		},
+		// The two literals look like members of a discriminated union, but `x` is a `mut`
+		// binding with no annotation, so its literals widen to their primitives. `kind`
+		// becomes `string` in both members, `{kind: string, a: number} | {kind: string, b:
+		// string}`, and no longer tells them apart. `"c"` fits `string` in both, so the write
+		// checks.
+		{
+			name: "JoinOfFreshLiterals",
+			src: `fn f(c: boolean) {
+    val mut x = if c { {kind: "a", a: 1} } else { {kind: "b", b: "s"} }
+    x.kind = "c"
+}`,
+			want: nil,
+		},
+		{
+			name: "JoinOfClassInstances",
+			src: `class Foo { n: number }
+class Bar { n: number }
+fn f(c: boolean) {
+    val mut x = if c { Foo(1) } else { Bar(2) }
+    x.n = 3
+}`,
+			want: nil,
+		},
+		{
+			name: "JoinOfSameShape",
+			src: `fn f(c: boolean, p: {a: number}) {
+    val mut x = if c { p } else { {a: 1} }
+    x.a = 2
+}`,
+			want: nil,
+		},
+		{
 			name: "NarrowedBindingWrite",
 			src: `fn f(q: &mut U) {
     match q {

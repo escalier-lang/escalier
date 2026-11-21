@@ -1473,8 +1473,10 @@ func (c *checker) definedMembers(t soltype.Type) (soltype.Type, bool) {
 // applyBindMode wraps a destructured leaf's leaf type according to the scrutinee's
 // binding mode and the leaf's own `mut` marker. It returns the type the leaf binds at.
 //
-//   - Owned scrutinee: the leaf is moved out. A `mut` leaf's binding may write what it
-//     owns, so its literals widen, as T9 states. A plain leaf keeps the leaf's type.
+//   - Owned scrutinee: the leaf is moved out. An unannotated `mut` leaf's binding may write
+//     what it owns, so its literals widen to their primitives, as rule T9 in
+//     planning/ownership_rules/requirements.md states for a writable slot. An annotated leaf
+//     and a plain leaf keep the leaf's type.
 //   - `&` scrutinee: the leaf is a shared borrow bounded by the scrutinee's lifetime.
 //     A `mut` leaf is rejected and recovers as the shared borrow. Mutable access cannot
 //     be projected out of an immutable borrow.
@@ -1532,7 +1534,10 @@ func (c *checker) applyBindMode(lvl int, node ast.Node, mut bool, leafType, conc
 		}
 		return leafType
 	default: // bmOwned
-		if mut {
+		// An annotated leaf binds at its annotation as written, as an annotated `val mut`
+		// declaration does. Widening it would let `val {mut q::{kind: "a"}} = p` write
+		// `q.kind = "z"`.
+		if mut && leafTypeAnn(node) == nil {
 			return c.widenOwnedLeaf(lvl, node, leafType, concrete)
 		}
 		return leafType
@@ -1546,8 +1551,7 @@ func (c *checker) applyBindMode(lvl int, node ast.Node, mut bool, leafType, conc
 // `val [mut p] = [{y: 1}]` binds `p: {y: number}`.
 //
 // When the projected type is not statically known, concrete is nil. The leaf type then flows
-// into a fresh widenable variable as a lower bound, and widening at coalesce time turns a
-// literal field into its primitive.
+// into the variable mutableSlotOf returns.
 func (c *checker) widenOwnedLeaf(lvl int, node ast.Node, leafType, concrete soltype.Type) soltype.Type {
 	if concrete != nil {
 		widened := widen(concrete)
@@ -1558,9 +1562,22 @@ func (c *checker) widenOwnedLeaf(lvl int, node ast.Node, leafType, concrete solt
 		}
 		return widened
 	}
+	return c.mutableSlotOf(lvl, node, leafType)
+}
+
+// mutableSlotOf returns a fresh variable that t flows into, whose every lower bound has its
+// literals widened to their primitives. So `{a: 1}` flowing in reads as `{a: number}`. This is
+// the widening rule T9 in planning/ownership_rules/requirements.md gives a writable slot,
+// such as the owned layers of a `mut` binding. The widening happens as each bound arrives, not when the variable
+// is coalesced, so a write later in the same body checks against the widened bound. A
+// primitive bound keeps its literal, as `val mut n = 1` does. The variable is also marked
+// `Widenable`, which widens such a primitive in the coalesced display. node blames a widened
+// bound that fails one of the variable's upper bounds.
+func (c *checker) mutableSlotOf(lvl int, node ast.Node, t soltype.Type) *soltype.TypeVarType {
 	v := c.freshAt(lvl)
 	v.Widenable = true
-	c.constrain(node, leafType, v)
+	c.ctx.setSlotMode(v, slotMode{mutable: true})
+	c.constrain(node, t, v)
 	return v
 }
 
