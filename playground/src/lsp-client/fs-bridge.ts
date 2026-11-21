@@ -143,7 +143,23 @@ export function serveFS(endpoint: MessageEndpoint, fs: FSAPI): () => void {
                 error: err ? errorData(err) : null,
                 value,
             };
-            endpoint.postMessage(message, err ? [] : transfer);
+            try {
+                endpoint.postMessage(message, err ? [] : transfer);
+            } catch (postErr) {
+                // A value that can't be cloned, or a buffer that can't be
+                // transferred, still gets an answer, or the server would wait for
+                // it forever.
+                const failed: FSReply = {
+                    kind: 'fs-reply',
+                    id: request.id,
+                    error: {
+                        message: `the reply could not be sent: ${String((postErr as Error)?.message ?? postErr)}`,
+                        code: 'EIO',
+                    },
+                    value: undefined,
+                };
+                endpoint.postMessage(failed);
+            }
         };
         const done = (err: NodeJS.ErrnoException | null) => reply(err);
         const stats = (err: NodeJS.ErrnoException | null, st: Stats) =>

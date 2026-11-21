@@ -104,6 +104,20 @@ test('an error passed to the callback without a code answers as EIO', async () =
     expect(err).toMatchObject({ message: 'no code', code: 'EIO' });
 });
 
+test('a reply that cannot be sent answers as EIO', async () => {
+    local.readdir = (_path, callback) =>
+        callback(null, [Symbol('entry')] as unknown as string[]);
+
+    const err = await call((cb) => remote.readdir('/', cb)).catch(
+        (e: NodeJS.ErrnoException) => e,
+    );
+
+    expect(err).toMatchObject({ code: 'EIO' });
+    expect(err.message).toBe(
+        'the reply could not be sent: Symbol(entry) could not be cloned.',
+    );
+});
+
 test('a call that calls back and then throws answers once', async () => {
     const replies: unknown[] = [];
     channel.port2.addEventListener('message', (event) => {
