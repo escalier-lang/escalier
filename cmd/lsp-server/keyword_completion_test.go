@@ -10,9 +10,9 @@ import (
 	protocol "github.com/tliron/glsp/protocol_3_16"
 )
 
-// cursorMark stands for the cursor in a test source. `|` is a union in Escalier, so a
-// character the language doesn't use marks the spot.
-const cursorMark = "‸"
+// cursorMark stands for the cursor in a test source. `|` is also Escalier's union
+// operator, so a source written with a union type can't use this mark.
+const cursorMark = "|"
 
 // keywordTestPaths are the files each keyword case runs in, so a case covers both the
 // script and the module completion handlers.
@@ -23,8 +23,8 @@ var keywordTestPaths = []string{"bin/main.esc", "lib/index.esc"}
 // snippet syntax.
 func completionItemsAtMark(t *testing.T, path, src string, snippets bool) []protocol.CompletionItem {
 	t.Helper()
+	require.Equal(t, 1, strings.Count(src, cursorMark), "source must hold exactly one cursor mark")
 	offset := strings.Index(src, cursorMark)
-	require.GreaterOrEqual(t, offset, 0, "source has no cursor mark")
 	text := src[:offset] + src[offset+len(cursorMark):]
 
 	s := integrationServer(t, map[string]string{path: text})
@@ -36,8 +36,7 @@ func completionItemsAtMark(t *testing.T, path, src string, snippets bool) []prot
 			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
 			Position: protocol.Position{
 				Line: protocol.UInteger(len(lines) - 1),
-				// The sources are ASCII apart from the mark, so a byte count is the
-				// UTF-16 column.
+				// The sources are ASCII, so a byte count is the UTF-16 column.
 				Character: protocol.UInteger(len(lines[len(lines)-1])),
 			},
 		},
@@ -58,21 +57,21 @@ func TestThrowsCompletionOffered(t *testing.T) {
 		name string
 		src  string
 	}{
-		{name: "FuncDeclNothingTyped", src: "fn f(x: number) -> number ‸ {\n    return x\n}\n"},
-		{name: "FuncDeclPartial", src: "fn f() -> number th‸ {\n    return 1\n}\n"},
-		{name: "FuncDeclPartialNoBody", src: "fn f() -> number th‸\n"},
-		{name: "FuncDeclKeywordTyped", src: "fn f() -> number throws‸ {\n    return 1\n}\n"},
-		{name: "FuncDeclGenericReturn", src: "fn f() -> Array<number> th‸ {\n    return []\n}\n"},
-		{name: "FuncExpr", src: "val g = fn () -> number th‸ {\n    return 1\n}\n"},
-		{name: "DeclareFn", src: "declare fn f() -> number th‸\nval y = 1\n"},
-		{name: "Method", src: "class C {\n    m(self) -> number th‸ {\n        return 1\n    }\n}\n"},
-		{name: "StaticMethod", src: "class C {\n    static m() -> number th‸ {\n        return 1\n    }\n}\n"},
-		{name: "Getter", src: "class C {\n    get x(self) -> number th‸ {\n        return 1\n    }\n}\n"},
-		{name: "FuncTypeAnn", src: "type F = fn () -> number th‸\nval y = 1\n"},
-		{name: "ParamFuncTypeAnn", src: "fn f(cb: fn () -> number th‸) {}\n"},
-		{name: "ObjectTypeMethod", src: "type O = {m(self) -> number th‸}\n"},
-		{name: "ObjectTypeGetter", src: "type O = {get x(self) -> number th‸}\n"},
-		{name: "InterfaceMethod", src: "interface I {\n    m(self) -> number th‸\n}\n"},
+		{name: "FuncDeclNothingTyped", src: "fn f(x: number) -> number | {\n    return x\n}\n"},
+		{name: "FuncDeclPartial", src: "fn f() -> number th| {\n    return 1\n}\n"},
+		{name: "FuncDeclPartialNoBody", src: "fn f() -> number th|\n"},
+		{name: "FuncDeclKeywordTyped", src: "fn f() -> number throws| {\n    return 1\n}\n"},
+		{name: "FuncDeclGenericReturn", src: "fn f() -> Array<number> th| {\n    return []\n}\n"},
+		{name: "FuncExpr", src: "val g = fn () -> number th| {\n    return 1\n}\n"},
+		{name: "DeclareFn", src: "declare fn f() -> number th|\nval y = 1\n"},
+		{name: "Method", src: "class C {\n    m(self) -> number th| {\n        return 1\n    }\n}\n"},
+		{name: "StaticMethod", src: "class C {\n    static m() -> number th| {\n        return 1\n    }\n}\n"},
+		{name: "Getter", src: "class C {\n    get x(self) -> number th| {\n        return 1\n    }\n}\n"},
+		{name: "FuncTypeAnn", src: "type F = fn () -> number th|\nval y = 1\n"},
+		{name: "ParamFuncTypeAnn", src: "fn f(cb: fn () -> number th|) {}\n"},
+		{name: "ObjectTypeMethod", src: "type O = {m(self) -> number th|}\n"},
+		{name: "ObjectTypeGetter", src: "type O = {get x(self) -> number th|}\n"},
+		{name: "InterfaceMethod", src: "interface I {\n    m(self) -> number th|\n}\n"},
 	}
 	for _, tt := range tests {
 		for _, path := range keywordTestPaths {
@@ -91,17 +90,17 @@ func TestThrowsCompletionNotOffered(t *testing.T) {
 		name string
 		src  string
 	}{
-		{name: "InBody", src: "fn f() -> number {\n    th‸\n}\n"},
-		{name: "BeforeArrow", src: "fn f() ‸ -> number {\n    return 1\n}\n"},
-		{name: "InParams", src: "fn f(x: num‸) -> number {\n    return 1\n}\n"},
-		{name: "OnReturnType", src: "fn f() -> number‸ {\n    return 1\n}\n"},
-		{name: "AfterThrowsClause", src: "fn f() -> number throws string ‸ {\n    return 1\n}\n"},
-		{name: "NextLineAfterDeclareFn", src: "declare fn f() -> number\nth‸\n"},
-		{name: "Expression", src: "val x = 1\nval y = th‸\n"},
-		{name: "MemberAccess", src: "val p = {thing: 1}\nval q = p.th‸\n"},
-		{name: "String", src: "val s = \"fn f() -> number th‸\"\n"},
-		{name: "Comment", src: "// fn f() -> number th‸\nval y = 1\n"},
-		{name: "InsideWord", src: "fn f() -> number th‸rows string {\n    return 1\n}\n"},
+		{name: "InBody", src: "fn f() -> number {\n    th|\n}\n"},
+		{name: "BeforeArrow", src: "fn f() | -> number {\n    return 1\n}\n"},
+		{name: "InParams", src: "fn f(x: num|) -> number {\n    return 1\n}\n"},
+		{name: "OnReturnType", src: "fn f() -> number| {\n    return 1\n}\n"},
+		{name: "AfterThrowsClause", src: "fn f() -> number throws string | {\n    return 1\n}\n"},
+		{name: "NextLineAfterDeclareFn", src: "declare fn f() -> number\nth|\n"},
+		{name: "Expression", src: "val x = 1\nval y = th|\n"},
+		{name: "MemberAccess", src: "val p = {thing: 1}\nval q = p.th|\n"},
+		{name: "String", src: "val s = \"fn f() -> number th|\"\n"},
+		{name: "Comment", src: "// fn f() -> number th|\nval y = 1\n"},
+		{name: "InsideWord", src: "fn f() -> number th|rows string {\n    return 1\n}\n"},
 	}
 	for _, tt := range tests {
 		for _, path := range keywordTestPaths {
@@ -118,7 +117,7 @@ func TestThrowsCompletionNotOffered(t *testing.T) {
 // as plain text when it doesn't. A name already after the cursor is the clause's type,
 // so the item inserts its label alone there.
 func TestThrowsCompletionInsertText(t *testing.T) {
-	const bodyFollows = "fn f() -> number th‸ {\n    return 1\n}\n"
+	const bodyFollows = "fn f() -> number th| {\n    return 1\n}\n"
 	tests := []struct {
 		name     string
 		src      string
@@ -130,7 +129,7 @@ func TestThrowsCompletionInsertText(t *testing.T) {
 	}{
 		{name: "Snippet", src: bodyFollows, snippets: true, text: "throws ${1:_}", format: protocol.InsertTextFormatSnippet},
 		{name: "PlainText", src: bodyFollows, snippets: false, text: "throws _", format: protocol.InsertTextFormatPlainText},
-		{name: "TypeFollows", src: "fn f() -> number thr‸ string {\n    return 1\n}\n", snippets: true},
+		{name: "TypeFollows", src: "fn f() -> number thr| string {\n    return 1\n}\n", snippets: true},
 	}
 	for _, tt := range tests {
 		for _, path := range keywordTestPaths {
