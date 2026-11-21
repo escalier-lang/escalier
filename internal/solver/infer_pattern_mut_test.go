@@ -308,9 +308,8 @@ func TestMatchBorrowedScrutineeMutLeaf(t *testing.T) {
 // TestMutLeafWidensEagerly covers the `mut` bindings that take a value from a pattern
 // default, a parameter default or a `val … else` fallback. Each widens that value's literals
 // as it binds, so a write later in the same body checks against the widened type. Each case
-// returns the binding, so its signature shows the type the binding renders at. An annotated
-// parameter keeps checking its default against the annotation, and a plain leaf keeps its
-// literal.
+// returns the binding, so its signature shows the type the binding renders at. A leaf with an
+// inline annotation binds at the annotation as written, and a plain leaf keeps its literal.
 func TestMutLeafWidensEagerly(t *testing.T) {
 	tests := map[string]struct {
 		src  string
@@ -319,12 +318,12 @@ func TestMutLeafWidensEagerly(t *testing.T) {
 	}{
 		"PatternDefault": {
 			src: `
-			fn f(p: {y: number}) {
-				val {mut x = {a: 1}, y} = {y: p.y}
+			fn f(p) {
+				val {mut x = {a: 1}} = p
 				x.a = 2
 				return x
 			}`,
-			sig: "fn (p: {y: number}) -> {a: number}",
+			sig: "fn <T0: {a: number, ...}>(p: {x?: T0}) -> T0 | {a: number}",
 		},
 		"ParamDefault": {
 			src: `
@@ -334,13 +333,22 @@ func TestMutLeafWidensEagerly(t *testing.T) {
 			}`,
 			sig: "fn <T0: {a: number, ...}>(q?: T0) -> T0 | {a: number}",
 		},
-		"AnnotatedParamDefaultKeepsLiteralTag": {
+		"InlineAnnotatedDefaultKeepsLiteralTag": {
 			src: `
-			fn f(mut q: {kind: "a", n: number} = {kind: "a", n: 1}) {
+			fn f({mut q::{kind: "a", n: number} = {kind: "a", n: 1}}) {
 				q.n = 2
 				return q.kind
 			}`,
-			sig: `fn (q?: {kind: "a", n: number}) -> "a"`,
+			sig: `fn ({q}: {q?: {kind: "a", n: number}}) -> "a"`,
+		},
+		"InlineAnnotatedLeafRejectsWriteOutsideAnnotation": {
+			src: `
+			fn f(p: {q?: {kind: "a", n: number}}) {
+				val {mut q::{kind: "a", n: number} = {kind: "a", n: 1}} = p
+				q.kind = "z"
+			}`,
+			sig:  `fn (p: {q?: {kind: "a", n: number}}) -> undefined`,
+			want: []string{`4:14-4:17: cannot constrain "z" <: "a"`},
 		},
 		"ValElseFallback": {
 			src: `
@@ -353,11 +361,11 @@ func TestMutLeafWidensEagerly(t *testing.T) {
 		},
 		"PlainLeafDefaultKeepsLiteral": {
 			src: `
-			fn f(p: {y: number}) {
-				val {x = {a: 1}, y} = {y: p.y}
+			fn f(p) {
+				val {x = {a: 1}} = p
 				return x
 			}`,
-			sig: "fn (p: {y: number}) -> {a: 1}",
+			sig: "fn <T0>(p: {x?: T0}) -> T0 | {a: 1}",
 		},
 	}
 	for name, tt := range tests {

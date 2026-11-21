@@ -1473,8 +1473,9 @@ func (c *checker) definedMembers(t soltype.Type) (soltype.Type, bool) {
 // applyBindMode wraps a destructured leaf's leaf type according to the scrutinee's
 // binding mode and the leaf's own `mut` marker. It returns the type the leaf binds at.
 //
-//   - Owned scrutinee: the leaf is moved out. A `mut` leaf's binding may write what it
-//     owns, so its literals widen, as T9 states. A plain leaf keeps the leaf's type.
+//   - Owned scrutinee: the leaf is moved out. An unannotated `mut` leaf's binding may write
+//     what it owns, so its literals widen, as T9 states. An annotated leaf and a plain leaf
+//     keep the leaf's type.
 //   - `&` scrutinee: the leaf is a shared borrow bounded by the scrutinee's lifetime.
 //     A `mut` leaf is rejected and recovers as the shared borrow. Mutable access cannot
 //     be projected out of an immutable borrow.
@@ -1532,7 +1533,10 @@ func (c *checker) applyBindMode(lvl int, node ast.Node, mut bool, leafType, conc
 		}
 		return leafType
 	default: // bmOwned
-		if mut {
+		// An annotated leaf binds at its annotation as written, as an annotated `val mut`
+		// declaration does. Widening it would let `val {mut q::{kind: "a"}} = p` write
+		// `q.kind = "z"`.
+		if mut && leafTypeAnn(node) == nil {
 			return c.widenOwnedLeaf(lvl, node, leafType, concrete)
 		}
 		return leafType
