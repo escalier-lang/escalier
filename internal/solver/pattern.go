@@ -241,7 +241,7 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 	case *ast.IdentPat:
 		t := scrutinee
 		if purpose == forBinding {
-			t = c.applyLeafExtras(scope, lvl, p, scrutinee, concrete, p.TypeAnn, p.Default)
+			t, concrete = c.applyLeafExtras(scope, lvl, p, scrutinee, concrete, p.TypeAnn, p.Default)
 		}
 		t = c.applyBindMode(lvl, p, leafMut(p.Mutable, purpose), t, c.concreteLeaf(concrete, p.TypeAnn), scrutineeMode)
 		c.bindLeaf(scope, p.Name, t, p, leafTypes, emit, purpose)
@@ -327,10 +327,11 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 				// absent, so the requirement must not demand it.
 				beta := c.readPatternField(e, lvl, scrutinee, e.Key.Name, e.Default != nil, purpose)
 				var t soltype.Type = beta
+				leafConcrete := fieldConcrete(concrete, e.Key.Name)
 				if purpose == forBinding {
-					t = c.applyLeafExtras(scope, lvl, e, beta, fieldConcrete(concrete, e.Key.Name), e.TypeAnn, e.Default)
+					t, leafConcrete = c.applyLeafExtras(scope, lvl, e, beta, leafConcrete, e.TypeAnn, e.Default)
 				}
-				t = c.applyBindMode(lvl, e, leafMut(e.Mutable, purpose), t, c.concreteLeaf(fieldConcrete(concrete, e.Key.Name), e.TypeAnn), scrutineeMode)
+				t = c.applyBindMode(lvl, e, leafMut(e.Mutable, purpose), t, c.concreteLeaf(leafConcrete, e.TypeAnn), scrutineeMode)
 				c.bindLeaf(scope, e.Key.Name, t, e, leafTypes, emit, purpose)
 				named.Add(e.Key.Name)
 				fields = append(fields, &soltype.ObjectPatField{
@@ -1422,7 +1423,10 @@ func (c *checker) freshClassInstance(ct *soltype.ClassType, lvl int) *soltype.Cl
 // `[string | undefined]` with `[x = "hello"]` binds `x` as `string`. concrete is the
 // leaf's statically known type, the same value bindPatMode receives, or nil. Without an
 // annotation the union is read from it, since leafType is often a projection variable.
-func (c *checker) applyLeafExtras(scope *Scope, lvl int, node ast.Node, leafType, concrete soltype.Type, typeAnn ast.TypeAnn, def ast.Expr) soltype.Type {
+//
+// The second result is the leaf's statically known type once the default applies. It is
+// the narrowed union when the default removed `undefined`, and concrete otherwise.
+func (c *checker) applyLeafExtras(scope *Scope, lvl int, node ast.Node, leafType, concrete soltype.Type, typeAnn ast.TypeAnn, def ast.Expr) (soltype.Type, soltype.Type) {
 	bound := leafType
 	shape := concrete
 	if typeAnn != nil {
@@ -1446,9 +1450,10 @@ func (c *checker) applyLeafExtras(scope *Scope, lvl int, node ast.Node, leafType
 		c.markOpenVar(bound)
 		if narrowed {
 			bound = newUnion(c.ctx, []soltype.Type{present, defT})
+			return bound, bound
 		}
 	}
-	return bound
+	return bound, concrete
 }
 
 // definedMembers returns the members of t other than `undefined`, and false when t is not
@@ -1548,13 +1553,21 @@ func (c *checker) applyBindMode(lvl int, node ast.Node, mut bool, leafType, conc
 // The leaf's binding may write every owned layer of the value, so the value's literals widen
 // to their primitives, the destructuring analogue of `val mut q = p` in inferVarDeclInit.
 // When the leaf's projected type is statically known, the result is that type widened, so
-// `val [mut p] = [{y: 1}]` binds `p: {y: number}`.
+// `val [mut p] = [{y: 1}]` binds `p: {y: number}`. A union widens member by member, so
+// `{a: number} | {a: 1, b: "s"}` binds as `{a: number} | {a: number, b: string}`.
 //
 // When the projected type is not statically known, concrete is nil. The leaf type then flows
 // into the variable mutableSlotOf returns.
 func (c *checker) widenOwnedLeaf(lvl int, node ast.Node, leafType, concrete soltype.Type) soltype.Type {
 	if concrete != nil {
 		widened := widen(concrete)
+		if union, ok := concrete.(*soltype.UnionType); ok {
+			members := make([]soltype.Type, len(union.Types))
+			for i, member := range union.Types {
+				members[i] = widen(member)
+			}
+			widened = newUnion(c.ctx, members)
+		}
 		if _, ok := widened.(soltype.RefInner); !ok {
 			// A primitive or function leaf has no layer to write, so it keeps its leaf type,
 			// mirroring `val mut a = 1` keeping the literal.

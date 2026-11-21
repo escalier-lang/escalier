@@ -385,3 +385,138 @@ func TestMutLeafDefaultSignature(t *testing.T) {
 	require.Empty(t, errs)
 	require.Equal(t, "fn (q?: {a: number}) -> number", values["f"])
 }
+
+// TestDefaultedLeafDropsUndefined covers a defaulted leaf whose position the scrutinee types
+// as a union with `undefined`, for a plain leaf and a `mut` leaf. The default replaces an
+// `undefined` value, so each binding renders without `undefined`. Each case returns the
+// binding, so its signature shows the type the binding renders at. A `mut` case also writes
+// through the binding, which checks against that type.
+func TestDefaultedLeafDropsUndefined(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		sig  string
+		want []string
+	}{
+		"TupleElemPlain": {
+			src: `
+			fn f(p: [{a: number} | undefined]) {
+				val [x = {a: 1}] = p
+				return x
+			}`,
+			sig: "fn (p: [{a: number} | undefined]) -> {a: number}",
+		},
+		"TupleElemMut": {
+			src: `
+			fn f(p: [{a: number} | undefined]) {
+				val [mut x = {a: 1}] = p
+				x.a = 2
+				return x
+			}`,
+			sig: "fn (p: [{a: number} | undefined]) -> {a: number}",
+		},
+		"TupleElemPrimPlain": {
+			src: `
+			fn f(p: [number | undefined]) {
+				val [x = 0] = p
+				return x
+			}`,
+			sig: "fn (p: [number | undefined]) -> number",
+		},
+		"TupleElemPrimMut": {
+			src: `
+			fn f(p: [number | undefined]) -> number {
+				val [mut x = 0] = p
+				return x
+			}`,
+			sig: "fn (p: [number | undefined]) -> number",
+		},
+		"FieldPlain": {
+			src: `
+			fn f(p: {x: {a: number} | undefined}) {
+				val {x = {a: 1}} = p
+				return x
+			}`,
+			sig: "fn (p: {x: {a: number} | undefined}) -> {a: number}",
+		},
+		"FieldMut": {
+			src: `
+			fn f(p: {x: {a: number} | undefined}) {
+				val {mut x = {a: 1}} = p
+				x.a = 2
+				return x
+			}`,
+			sig: "fn (p: {x: {a: number} | undefined}) -> {a: number}",
+		},
+		"FieldMutDefaultOfOtherType": {
+			src: `
+			fn f(p: {x: {a: number} | undefined}) {
+				val {mut x = {a: 1, b: "s"}} = p
+				x.a = 2
+				return x
+			}`,
+			sig: "fn (p: {x: {a: number} | undefined}) -> {a: number} | {a: number, b: string}",
+		},
+		"KeyValueFieldMut": {
+			src: `
+			fn f(p: {x: {a: number} | undefined}) {
+				val {x: mut y = {a: 1}} = p
+				y.a = 2
+				return y
+			}`,
+			sig: "fn (p: {x: {a: number} | undefined}) -> {a: number}",
+		},
+		"OptionalFieldPlain": {
+			src: `
+			fn f(p: {x?: {a: number}}) {
+				val {x = {a: 1}} = p
+				return x
+			}`,
+			sig: "fn (p: {x?: {a: number}}) -> {a: number}",
+		},
+		"OptionalFieldMut": {
+			src: `
+			fn f(p: {x?: {a: number}}) {
+				val {mut x = {a: 1}} = p
+				x.a = 2
+				return x
+			}`,
+			sig: "fn (p: {x?: {a: number}}) -> {a: number}",
+		},
+		"NestedTupleInFieldPlain": {
+			src: `
+			fn f(p: {q: [{a: number} | undefined]}) {
+				val {q: [x = {a: 1}]} = p
+				return x
+			}`,
+			sig: "fn (p: {q: [{a: number} | undefined]}) -> {a: number}",
+		},
+		"NestedTupleInFieldMut": {
+			src: `
+			fn f(p: {q: [{a: number} | undefined]}) {
+				val {q: [mut x = {a: 1}]} = p
+				x.a = 2
+				return x
+			}`,
+			sig: "fn (p: {q: [{a: number} | undefined]}) -> {a: number}",
+		},
+		"MatchArmFieldMut": {
+			src: `
+			fn f(p: {x: {a: number} | undefined}) {
+				return match p {
+					{mut x = {a: 1}} => {
+						x.a = 2
+						x
+					}
+				}
+			}`,
+			sig: "fn (p: {x: {a: number} | undefined}) -> {a: number}",
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
+			require.Equal(t, tt.sig, values["f"])
+		})
+	}
+}

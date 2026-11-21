@@ -233,8 +233,8 @@ func (b *pathBinder) bindAtWith(
 // reject a `mut` leaf the written pattern accepts.
 func (b *pathBinder) bindElemAt(scope *Scope, s *ucs.Scrutinee, elem *ast.ObjShorthandPat) {
 	v := b.shorthandView(scope, s, elem)
-	t := b.c.applyLeafExtras(scope, b.lvl, elem, v.ty, v.concrete, elem.TypeAnn, elem.Default)
-	t = b.c.applyBindMode(b.lvl, elem, elem.Mutable, t, b.c.concreteLeaf(v.concrete, elem.TypeAnn), v.mode)
+	t, concrete := b.c.applyLeafExtras(scope, b.lvl, elem, v.ty, v.concrete, elem.TypeAnn, elem.Default)
+	t = b.c.applyBindMode(b.lvl, elem, elem.Mutable, t, b.c.concreteLeaf(concrete, elem.TypeAnn), v.mode)
 	b.c.bindLeaf(scope, elem.Key.Name, t, elem, nil, defineLeafMono, forBinding)
 }
 
