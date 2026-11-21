@@ -294,6 +294,12 @@ function describeError(err: unknown): string {
     return err instanceof Error ? (err.stack ?? String(err)) : String(err);
 }
 
+/**
+ * The params of an `initialize` request, without the deprecated rootUri. The caller
+ * names the workspace in workspaceFolders.
+ */
+export type InitializeParams = Omit<lsp.InitializeParams, 'rootUri'>;
+
 export class Client {
     // The runtime's parts, assigned by createRuntime(). The fs shim reads the streams
     // through `this` on every call, so a restart's new streams serve the new runtime.
@@ -332,7 +338,7 @@ export class Client {
     /** Wakes run() while it waits for an edit, from the next edit or from stop(). */
     private wake: () => void = () => {};
     /** The params of the last `initialize`, which a restart sends again. */
-    private initializeParams: lsp.InitializeParams | undefined;
+    private initializeParams: InitializeParams | undefined;
     /** The text of every open document, which a restart opens again. */
     private documents = new Map<string, lsp.TextDocumentItem>();
     private crashEvents = new EventEmitter();
@@ -892,9 +898,8 @@ export class Client {
     // Lifecycle methods
     //
 
-    async initialize(
-        params: lsp.InitializeParams,
-    ): Promise<lsp.InitializeResult> {
+    /** Sends the server `initialize` with params. */
+    async initialize(params: InitializeParams): Promise<lsp.InitializeResult> {
         this.initializeParams = params;
         if (this.state !== 'running') {
             // The server starting after a crash is sent these params when it reopens, and
