@@ -3216,6 +3216,7 @@ func (c *checker) writeReceiverCarrier(recv soltype.Type) (soltype.Type, bool) {
 		return carrier, true
 	}
 	var bounds []soltype.Type
+	agree := true
 	for _, lb := range v.LowerBounds {
 		if lb == soltype.Type(v) {
 			continue
@@ -3223,10 +3224,19 @@ func (c *checker) writeReceiverCarrier(recv soltype.Type) (soltype.Type, bool) {
 		if ref, isRef := lb.(*soltype.RefType); isRef && !ref.Mut {
 			return nil, false
 		}
-		bounds = append(bounds, groundedCarrier(lb))
+		agree = agree && (len(bounds) == 0 || equalType(bounds[0], lb))
+		bounds = append(bounds, lb)
 	}
 	if len(bounds) == 0 {
 		return nil, false
+	}
+	// Bounds that are all one type need no coalescing, which a write through an ordinary
+	// `val mut` binding would otherwise pay on every write.
+	if agree {
+		return groundedCarrier(bounds[0]), true
+	}
+	for i, lb := range bounds {
+		bounds[i] = groundedCarrier(lb)
 	}
 	return newUnion(c.ctx, bounds), true
 }

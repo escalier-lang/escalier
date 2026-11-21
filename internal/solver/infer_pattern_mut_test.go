@@ -307,46 +307,64 @@ func TestMatchBorrowedScrutineeMutLeaf(t *testing.T) {
 
 // TestMutLeafWidensEagerly covers the `mut` bindings that take a value from a pattern
 // default, a parameter default or a `val … else` fallback. Each widens that value's literals
-// as it binds, so a write later in the same body checks against the widened type. An
-// annotated leaf or parameter keeps checking its default against the annotation.
+// as it binds, so a write later in the same body checks against the widened type. Each case
+// returns the binding, so its signature shows the type the binding renders at. An annotated
+// parameter keeps checking its default against the annotation, and a plain leaf keeps its
+// literal.
 func TestMutLeafWidensEagerly(t *testing.T) {
 	tests := map[string]struct {
 		src  string
+		sig  string
 		want []string
 	}{
-		"PatternDefault": {src: `
+		"PatternDefault": {
+			src: `
 			fn f(p: {y: number}) {
 				val {mut x = {a: 1}, y} = {y: p.y}
 				x.a = 2
-			}`},
-		"PatternDefaultFromUnannotatedParam": {src: `
-			fn f(p) {
-				val {mut x = {a: 1}} = p
-				x.a = 2
-			}`},
-		"ParamDefault": {src: `
+				return x
+			}`,
+			sig: "fn (p: {y: number}) -> {a: number}",
+		},
+		"ParamDefault": {
+			src: `
 			fn f(mut q = {a: 1}) {
 				q.a = 2
-			}`},
-		"AnnotatedParamDefaultKeepsLiteralTag": {src: `
+				return q
+			}`,
+			sig: "fn <T0: {a: number, ...}>(q?: T0) -> T0 | {a: number}",
+		},
+		"AnnotatedParamDefaultKeepsLiteralTag": {
+			src: `
 			fn f(mut q: {kind: "a", n: number} = {kind: "a", n: 1}) {
 				q.n = 2
-			}`},
-		"ValElseFallback": {src: `
+				return q.kind
+			}`,
+			sig: `fn (q?: {kind: "a", n: number}) -> "a"`,
+		},
+		"ValElseFallback": {
+			src: `
 			fn f(p: {x: {a: number}} | {y: string}) {
 				val {mut x} = p else { {x: {a: 1}} }
 				x.a = 2
-			}`},
-		"PlainLeafDefaultKeepsLiteral": {src: `
-			fn f(p: {y: number}) -> number {
+				return x
+			}`,
+			sig: "fn (p: {x: {a: number}} | {y: string}) -> {a: number}",
+		},
+		"PlainLeafDefaultKeepsLiteral": {
+			src: `
+			fn f(p: {y: number}) {
 				val {x = {a: 1}, y} = {y: p.y}
-				return x.a
-			}`},
+				return x
+			}`,
+			sig: "fn (p: {y: number}) -> {a: 1}",
+		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			_, _, errs := inferSource(t, tt.src)
+			values, _, errs := inferSource(t, tt.src)
 			require.Equal(t, tt.want, messagesWithSpan(t, errs))
+			require.Equal(t, tt.sig, values["f"])
 		})
 	}
 }

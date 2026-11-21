@@ -179,6 +179,16 @@ fn f(q: &mut (RA | RB)) { q.kind = "a" }`,
 			want: []string{"10:5-10:11: cannot assign to 'x.kind', since 'x' has the union type '{kind: string, a: number} | {kind: string, b: string}' and a write through it could leave the value matching none of its members; narrow 'x' with a `match` and write through the narrowed binding"},
 		},
 		{
+			name: "JoinOfClassInstances",
+			src: `class Foo { n: number }
+class Bar { n: number }
+fn f(c: boolean) {
+    val mut x = if c { Foo(1) } else { Bar(2) }
+    x.n = 3
+}`,
+			want: []string{"12:5-12:8: cannot assign to 'x.n', since 'x' has the union type 'Foo | Bar' and a write through it could leave the value matching none of its members; narrow 'x' with a `match` and write through the narrowed binding"},
+		},
+		{
 			name: "JoinOfSameShape",
 			src: `fn f(c: boolean, p: {a: number}) {
     val mut x = if c { p } else { {a: 1} }
