@@ -2,6 +2,7 @@ package codegen
 
 import (
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -16,12 +17,13 @@ type SourceMap struct {
 	Mappings       string    `json:"mappings"`
 }
 
-func SerializeSourceMap(sourcemap SourceMap) string {
+// SerializeSourceMap renders sourcemap as JSON, or returns the error encoding it.
+func SerializeSourceMap(sourcemap SourceMap) (string, error) {
 	bytes, err := json.Marshal(sourcemap)
 	if err != nil {
-		panic(err)
+		return "", fmt.Errorf("serializing the source map for %s: %w", sourcemap.File, err)
 	}
-	return string(bytes)
+	return string(bytes), nil
 }
 
 // represents a single segment of a generated line
@@ -367,15 +369,18 @@ func (s *SourceMapGenerator) TraverseExpr(expr Expr) {
 		if ek.Value != nil {
 			s.TraverseExpr(ek.Value)
 		}
-	case *IdentExpr, *LitExpr:
+	case *IdentExpr, *LitExpr, *EmptyExpr:
 		// leave nodes are handled by the AddSegmentForNode call at the	top
-		// of this function
+		// of this function. An EmptyExpr stands where a `throw` was written
+		// as an operand, as in `f(throw "x")`, and prints nothing.
 	default:
 		panic("TODO - TraverseExpr")
 	}
 }
 
-func GenerateSourceMap(srcs []*ast.Source, jsMod *Module, outName string) string {
+// GenerateSourceMap returns the JSON source map from jsMod, printed as outName, back to
+// srcs, or the error serializing it.
+func GenerateSourceMap(srcs []*ast.Source, jsMod *Module, outName string) (string, error) {
 	sourcesByID := make(map[int]*ast.Source, len(srcs))
 	sourceIndex := make(map[int]int, len(srcs))
 	for i, src := range srcs {

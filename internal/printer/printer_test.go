@@ -2,6 +2,8 @@ package printer
 
 import (
 	"context"
+	"errors"
+	"io"
 	"strings"
 	"testing"
 
@@ -2540,4 +2542,50 @@ func TestPrintRoundTripsConverterOutput(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, input, result)
 	})
+}
+
+// failingWriter accepts limit bytes and then fails every write.
+type failingWriter struct {
+	limit   int
+	written int
+}
+
+func (w *failingWriter) Write(b []byte) (int, error) {
+	if w.written+len(b) > w.limit {
+		return 0, errors.New("disk full")
+	}
+	w.written += len(b)
+	return len(b), nil
+}
+
+// TestPrintReturnsTheWriterError asserts that each entry point taking a writer returns
+// the writer's first error rather than panicking, whether the write fails at once or
+// partway through.
+func TestPrintReturnsTheWriterError(t *testing.T) {
+	script := parseScript(t, "val x = 1\nval y = 2")
+
+	tests := map[string]struct {
+		limit int
+		print func(w io.Writer) error
+	}{
+		"script, first write": {
+			limit: 0,
+			print: func(w io.Writer) error { return PrintScriptToWriter(script, w, DefaultOptions()) },
+		},
+		"script, later write": {
+			limit: 5,
+			print: func(w io.Writer) error { return PrintScriptToWriter(script, w, DefaultOptions()) },
+		},
+		"statement": {
+			limit: 0,
+			print: func(w io.Writer) error { return PrintToWriter(script.Stmts[0], w, DefaultOptions()) },
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := test.print(&failingWriter{limit: test.limit})
+			require.EqualError(t, err, "writing the printed source: disk full")
+		})
+	}
 }

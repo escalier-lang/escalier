@@ -221,7 +221,10 @@ func Compile(source *ast.Source) CompilerOutput {
 	jsOutput := printer.PrintModule(jsMod)
 
 	jsFile := "./index.js"
-	sourceMap := codegen.GenerateSourceMap([]*ast.Source{source}, jsMod, jsFile)
+	sourceMap, err := codegen.GenerateSourceMap([]*ast.Source{source}, jsMod, jsFile)
+	if err != nil {
+		typeErrors = append(typeErrors, &emitError{span: scriptSpan(inMod), err: err})
+	}
 
 	outmap := "./index.js.map"
 	jsOutput += "//# sourceMappingURL=" + outmap + "\n"
@@ -267,9 +270,16 @@ func CompilePackage(sources []*ast.Source, config PackageConfig) CompilerOutput 
 
 	var libScope LibScope
 
+	var step compileStep
+	defer step.wrapPanic()
+
 	if len(libSources) > 0 {
+		libName := libUnitName(libSources)
+
+		step.enter(libName, "parsing")
 		inMod, parseErrors := parser.ParseLibFiles(ctx, libSources)
 
+		step.enter(libName, "checking")
 		lib := selected.checkLib(ctx, inMod)
 		libScope = lib.lib
 
@@ -278,28 +288,36 @@ func CompilePackage(sources []*ast.Source, config PackageConfig) CompilerOutput 
 
 		// A parse error leaves an error node in the tree where a declaration or type
 		// annotation belongs, and codegen has no lowering for one. `buildTypeAnn`
-		// panics with `unknown type: <error>` on reaching it. Inference above
-		// tolerates those nodes, so only the emit half is skipped and the diagnostics
-		// still reach the caller. A type error needs no such skip. The tree is well
-		// formed, so codegen runs and the caller decides whether to keep its output.
-		if len(parseErrors) == 0 {
+		// panics with `unknown type: <error>` on reaching it. A construct the checker
+		// reports as unsupported, such as an enum spread, can have no lowering either.
+		// Inference above tolerates both, so only the emit half is skipped and the
+		// diagnostics still reach the caller. Any other type error needs no such skip.
+		// The tree is well formed, so codegen runs and the caller decides whether to
+		// keep its output.
+		if len(parseErrors) == 0 && !reportsUnsupported(lib.diagnostics) {
 			// The graph comes from the run rather than a second call to
 			// dep_graph.BuildDepGraph, so the emitter walks the declarations in the
 			// order inference typed them.
+			step.enter(libName, "generating JavaScript for")
 			builder := codegen.NewBuilder(lib.jsTypes)
 			jsMod := builder.BuildTopLevelDecls(lib.depGraph)
 
 			printer := codegen.NewPrinter()
 			jsOutput := printer.PrintModule(jsMod)
 
+			step.enter(libName, "generating a source map for")
 			jsFile := "./index.js"
-			sourceMap := codegen.GenerateSourceMap(sources, jsMod, jsFile)
+			sourceMap, err := codegen.GenerateSourceMap(sources, jsMod, jsFile)
+			if err != nil {
+				output.TypeErrors = append(output.TypeErrors, &emitError{span: moduleSpan(inMod), err: err})
+			}
 
 			outmap := "./index.js.map"
 			jsOutput += "//# sourceMappingURL=" + outmap + "\n"
 
 			// A .d.ts is rendered from the library's type surface, so the run that
 			// produced it carries the renderer.
+			step.enter(libName, "generating type definitions for")
 			dtsOutput := ""
 			if lib.dts != nil {
 				dtsMod := lib.dts.buildDefinitions(builder, lib.depGraph)
@@ -324,13 +342,19 @@ func CompilePackage(sources []*ast.Source, config PackageConfig) CompilerOutput 
 	}
 
 	for _, src := range binSources {
+		// compileScript names its own phases, so this step names the script only for
+		// a panic outside them.
+		step.enter(src.Path, "compiling")
 		scriptOutput := compileScript(selected, libScope, src)
 		output.ParseErrors = append(output.ParseErrors, scriptOutput.ParseErrors...)
 		output.TypeErrors = append(output.TypeErrors, scriptOutput.TypeErrors...)
 
-		ext := filepath.Ext(src.Path)
-		name := src.Path[:len(src.Path)-len(ext)]
-		output.CompUnits[name] = scriptOutput.CompUnits["bin/index"]
+		// compileScript emits no unit for a script it skipped codegen for.
+		if unit, emitted := scriptOutput.CompUnits["bin/index"]; emitted {
+			ext := filepath.Ext(src.Path)
+			name := src.Path[:len(src.Path)-len(ext)]
+			output.CompUnits[name] = unit
+		}
 	}
 
 	return output
@@ -386,12 +410,29 @@ func CompileScript(lib LibScope, source *ast.Source) CompilerOutput {
 func compileScript(b backend, lib LibScope, source *ast.Source) CompilerOutput {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
+	var step compileStep
+	defer step.wrapPanic()
+
+	step.enter(source.Path, "parsing")
 	p := parser.NewParser(ctx, source)
 	inMod, parseErrors := p.ParseScript()
 
+	step.enter(source.Path, "checking")
 	result := checkScriptIn(ctx, b, lib, inMod)
 	typeErrors := result.diagnostics
 
+	// A construct the checker reports as unsupported, such as an enum spread, can have
+	// no lowering, so the script emits no unit.
+	if reportsUnsupported(typeErrors) {
+		return CompilerOutput{
+			ParseErrors: parseErrors,
+			TypeErrors:  typeErrors,
+			CompUnits:   map[string]CompUnitOutput{},
+		}
+	}
+
+	step.enter(source.Path, "generating JavaScript for")
 	builder := codegen.NewBuilder(result.jsTypes)
 	jsMod := builder.BuildScript(inMod)
 
@@ -426,9 +467,13 @@ func compileScript(b backend, lib LibScope, source *ast.Source) CompilerOutput {
 	printer.PrintShebang("/usr/bin/env node")
 	jsOutput := printer.PrintModule(jsMod)
 
+	step.enter(source.Path, "generating a source map for")
 	baseName := strings.TrimSuffix(filepath.Base(source.Path), filepath.Ext(source.Path)) + ".js"
 	jsFile := "./" + baseName
-	sourceMap := codegen.GenerateSourceMap([]*ast.Source{source}, jsMod, jsFile)
+	sourceMap, err := codegen.GenerateSourceMap([]*ast.Source{source}, jsMod, jsFile)
+	if err != nil {
+		typeErrors = append(typeErrors, &emitError{span: scriptSpan(inMod), err: err})
+	}
 
 	outmap := jsFile + ".map"
 	jsOutput += "//# sourceMappingURL=" + outmap + "\n"

@@ -1,0 +1,21 @@
+val [_, second] = [1, 2]
+export val fromWildcard = second
+
+val [1, other] = [1, 2]
+export val fromLiteral = other
+
+export fn secondOf([_, b]: [number, number]) -> number {
+    return b
+}
+
+export val secondOfClosure = fn([_, b]: [number, number]) -> number {
+    return b
+}
+
+export fn sumSeconds(pairs: Array<[number, number]>) -> number {
+    var sum = 0
+    for [_, b] in pairs {
+        sum = sum + b
+    }
+    return sum
+}

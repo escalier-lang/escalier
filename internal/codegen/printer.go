@@ -429,8 +429,11 @@ func (p *Printer) PrintExpr(expr Expr) {
 					p.PrintExpr(elem.Value)
 				}
 			case *RestSpreadExpr:
+				// The source map reads the spread's span.
+				start := p.location
 				p.print("...")
 				p.PrintExpr(elem.Arg)
+				elem.SetSpan(&Span{Start: start, End: p.location})
 			default:
 				panic(fmt.Sprintf("PrintExpr: unknown object expression element type: %T", elem))
 			}

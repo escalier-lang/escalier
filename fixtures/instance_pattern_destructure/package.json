@@ -1,0 +1,6 @@
+{
+    "name": "instance_pattern_destructure",
+    "version": "0.0.1",
+    "type": "module",
+    "main": "build/lib/index.js"
+}

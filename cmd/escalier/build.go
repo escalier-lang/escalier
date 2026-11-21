@@ -182,9 +182,12 @@ func writeModuleOutputs(stderr io.Writer, moduleName string, output compiler.Com
 // nothing reads the output as a clean build. A warning reaches stderr as well, and leaves
 // the package's build a success.
 //
-// A parse error is the one thing that stops the write, and not as a policy: it leaves an
-// error node in the tree that codegen has no lowering for, so CompilePackage skips lib
-// codegen rather than panicking.
+// A parse error stops the write, and not as a policy: it leaves an error node in the tree
+// that codegen has no lowering for, so CompilePackage skips lib codegen rather than
+// panicking. A construct the checker reports as unsupported stops it for the same reason.
+//
+// A panic while compiling a package is reported as one internal-error diagnostic that
+// names the file and phase. The package writes nothing and the build fails.
 //
 // What this trades away is worth knowing. Codegen reads inferred types at a handful of
 // decisions, so a rejected program can lower to one that runs and does the wrong thing,
@@ -237,10 +240,22 @@ func build(stdout io.Writer, stderr io.Writer, pkgs []string) bool {
 			continue
 		}
 
-		sources, idToSource, unreadable := loadSources(&diags, files)
-		output := compiler.CompilePackage(sources, config)
-
-		printErrors(&diags, output, idToSource)
+		var output compiler.CompilerOutput
+		var unreadable int
+		compiled := recoverCompilerPanic(&diags, pkg, func() {
+			var sources []*ast.Source
+			var idToSource map[int]*ast.Source
+			sources, idToSource, unreadable = loadSources(&diags, files)
+			output = compilePackage(sources, config)
+			printErrors(&diags, output, idToSource)
+		})
+		if !compiled {
+			// A crash leaves no output to write, and the one diagnostic is the error.
+			finish(fmt.Sprintf("failed (%s)", errorCount(1)))
+			_ = os.Chdir(cwd)
+			allOK = false
+			continue
+		}
 
 		// CompilePackage produces no compilation unit when the parse failed, so the loop
 		// writes nothing in that case without needing to test for it here.
@@ -269,6 +284,30 @@ func build(stdout io.Writer, stderr io.Writer, pkgs []string) bool {
 		finish(fmt.Sprintf("ok (%s)", time.Since(start)))
 	}
 	return allOK
+}
+
+// compilePackage compiles one package's sources. Tests replace it to force a panic.
+var compilePackage = compiler.CompilePackage
+
+// recoverCompilerPanic runs compile and returns true when it finishes. When compile
+// panics, it writes one internal-error diagnostic to stderr and returns false. The
+// diagnostic names the file and phase a *compiler.InternalError carries, or names pkg
+// for a panic raised outside a compiler phase.
+func recoverCompilerPanic(stderr io.Writer, pkg string, compile func()) (finished bool) {
+	defer func() {
+		value := recover()
+		if value == nil {
+			return
+		}
+		internalErr, ok := value.(*compiler.InternalError)
+		if !ok {
+			internalErr = &compiler.InternalError{File: pkg, Phase: "building", Value: value}
+		}
+		fmt.Fprintf(stderr, "%s. This is a bug in the compiler; please report it.\n", internalErr.Error())
+		finished = false
+	}()
+	compile()
+	return true
 }
 
 // errorCount renders n as the count phrase the failure line ends with, so a

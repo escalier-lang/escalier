@@ -548,10 +548,10 @@ func (b *Builder) buildPattern(
 				case *ast.RestPat:
 					// For rest patterns, wrap the IdentPat in a RestPat
 					tempVarPat = NewRestPat(NewIdentPat(tempId, nil, p), arg)
-				case *ast.ExtractorPat:
-					tempVarPat = NewIdentPat(tempId, init, p)
 				default:
-					panic("TODO - buildPattern - ExtractorPat - default case")
+					// A nested pattern such as `E.V([a, b])` or `E.V(_)` binds the
+					// argument to the temp, and the loop below destructures the temp.
+					tempVarPat = NewIdentPat(tempId, init, p)
 				}
 
 				tempVarPats = append(tempVarPats, tempVarPat)
@@ -616,10 +616,15 @@ func (b *Builder) buildPattern(
 				span:    nil,
 				source:  p,
 			}
-		case *ast.LitPat:
-			// TODO
-		case *ast.WildcardPat:
-			// TODO
+		case *ast.InstancePat:
+			// The checker has matched the class, so `val Point {x} = p` destructures
+			// as the object pattern `{x}` alone.
+			return buildPatternRec(p.Object, target)
+		case *ast.LitPat, *ast.WildcardPat:
+			// A destructuring is irrefutable once it checks, so `val [1, b] = [1, 2]`
+			// needs no test of the literal. Either pattern binds its slot to an
+			// unused temp, since a JS destructuring has no literal or wildcard form.
+			return NewIdentPat(b.NewTempId(), nil, p)
 		default:
 			// TODO
 		}
@@ -1654,6 +1659,10 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 				} else {
 					elems[i] = NewPropertyExpr(key, nil, elem)
 				}
+			case *ast.ObjSpreadExpr:
+				argExpr, argStmts := b.buildExpr(elem.Value, expr)
+				stmts = slices.Concat(stmts, argStmts)
+				elems[i] = NewRestSpreadExpr(argExpr, elem)
 			default:
 				panic(fmt.Sprintf("TODO - buildExpr - ObjectExpr - default case: %#v", elem))
 			}

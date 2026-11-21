@@ -24,6 +24,18 @@ func IsWarning(d Diagnostic) bool {
 	return ok && w.IsWarning()
 }
 
+// reportsUnsupported reports whether any diagnostic in diags says the program uses a
+// node or a feature of one that the checker does not support.
+func reportsUnsupported(diags []Diagnostic) bool {
+	for _, d := range diags {
+		switch d.(type) {
+		case *solver.UnsupportedNodeError, *solver.UnsupportedFeatureError:
+			return true
+		}
+	}
+	return false
+}
+
 // newBackend returns the checker every entry point runs, configured by config.
 func newBackend(config PackageConfig) backend {
 	return solverBackend{options: solver.Options{

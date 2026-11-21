@@ -1,0 +1,10 @@
+lib/index.esc:2:10: Unsupported: EnumSpread
+
+2:  enum B { ...A, Y(s: string) }
+             ^^^^
+
+bin/main.esc:2:10: Unsupported: EnumSpread
+
+2:  enum D { ...C, Y(s: string) }
+             ^^^^
+

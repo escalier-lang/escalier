@@ -57,6 +57,9 @@ type Printer struct {
 	// resolved once the next token arrives. Holding it lets a separator before a closing
 	// brace soften to a space, so a block ends `return 2 }` rather than `return 2; }`.
 	pendingSep string
+	// err is the first error the writer returned. Once it is set, every later write is
+	// skipped and the exported entry points return it.
+	err error
 }
 
 // NewPrinter creates a new printer with the given options
@@ -113,10 +116,15 @@ func (p *Printer) writeString(s string) {
 }
 
 // write sends a string to the writer without consulting the pending separator or the
-// indentation state, and records the last byte for space() and the separator logic.
+// indentation state, and records the last byte for space() and the separator logic. It
+// records the writer's first error in p.err and writes nothing after it.
 func (p *Printer) write(s string) {
+	if p.err != nil {
+		return
+	}
 	if _, err := io.WriteString(p.writer, s); err != nil {
-		panic(fmt.Sprintf("Printer write error: %v", err))
+		p.err = fmt.Errorf("writing the printed source: %w", err)
+		return
 	}
 	if len(s) > 0 {
 		p.lastChar = s[len(s)-1]
@@ -185,7 +193,7 @@ func (p *Printer) PrintScript(script *ast.Script) error {
 		p.printStmt(stmt)
 		first = false
 	}
-	return nil
+	return p.err
 }
 
 // PrintModule prints a Module node
@@ -214,7 +222,7 @@ func (p *Printer) PrintModule(module *ast.Module) error {
 		}
 		return true
 	})
-	return nil
+	return p.err
 }
 
 // Statement printing
@@ -2266,19 +2274,19 @@ func PrintToWriter(node ast.Node, writer io.Writer, opts Options) error {
 		return printer.PrintScript(n)
 	case ast.Expr:
 		printer.printExpr(n)
-		return nil
+		return printer.err
 	case ast.Stmt:
 		printer.printStmt(n)
-		return nil
+		return printer.err
 	case ast.Decl:
 		printer.printDecl(n)
-		return nil
+		return printer.err
 	case ast.Pat:
 		printer.printPattern(n)
-		return nil
+		return printer.err
 	case ast.TypeAnn:
 		printer.printTypeAnn(n)
-		return nil
+		return printer.err
 	default:
 		return fmt.Errorf("unsupported node type: %T", node)
 	}
