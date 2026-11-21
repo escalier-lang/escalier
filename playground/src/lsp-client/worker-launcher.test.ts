@@ -239,7 +239,7 @@ test(
 
         const init = await client.initialize({
             processId: null,
-            rootUri: `file://${tmpDir}`,
+            workspaceFolders: [{ uri: `file://${tmpDir}`, name: 'test' }],
             capabilities: {},
         });
         void client.textDocumentDidOpen({

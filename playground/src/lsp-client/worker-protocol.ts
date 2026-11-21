@@ -46,6 +46,10 @@ export function runServerInWorker(endpoint: MessageEndpoint) {
     endpoint.addEventListener('message', (event: MessageEvent) => {
         const message = event.data as ToWorkerMessage | undefined;
         switch (message?.kind) {
+            // A message with no kind is not one of the page's. An FSReply has its own
+            // kind, matches no case here, and is left to remoteFS's listener.
+            case undefined:
+                break;
             case 'stdin':
                 stdin.write(message.chunk);
                 break;

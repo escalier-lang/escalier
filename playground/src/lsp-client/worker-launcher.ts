@@ -65,6 +65,10 @@ export function workerLauncher(
             const onMessage = (event: MessageEvent) => {
                 const message = event.data as FromWorkerMessage | undefined;
                 switch (message?.kind) {
+                    // A message with no kind is not one of the worker's. An FSRequest
+                    // has its own kind, matches no case here, and is left to serveFS.
+                    case undefined:
+                        break;
                     case 'stdout':
                         stdout.write(message.chunk);
                         break;
