@@ -3245,8 +3245,8 @@ func (c *checker) inferUnionFieldWrite(e *ast.BinaryExpr, object ast.Expr, name 
 			break
 		}
 		// The trials ran under a probe and left no bounds behind. Constraining for real records
-		// what the write tells inference, so `fn f(q: &mut A, v) { q.n = v }` bounds v by
-		// each member's field type.
+		// what the write tells inference, so `fn f(q: &mut (A | C), v) { q.a = v }` bounds v
+		// by each member's field type.
 		for _, field := range uw.fields {
 			c.constrain(e.Right, source, field)
 		}
