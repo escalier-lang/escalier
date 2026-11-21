@@ -241,3 +241,21 @@ export const hit = temp1;
 //# sourceMappingURL=./index.js.map
 
 ---
+
+[TestEmitsJSForTypeDrivenForms/AnObjectAnnotatedArmBesideLiteralMembersReadsTheDiscriminant - 1]
+export function lits(temp1) {
+  const u = temp1;
+  let temp2;
+  let temp3;
+  temp3 = u;
+  if (temp3 != null && temp3.kind === "a") {
+    const x = temp3;
+    temp2 = x.a;
+  } else {
+    temp2 = 0;
+  }
+  return temp2;
+}
+//# sourceMappingURL=./index.js.map
+
+---

@@ -56,6 +56,36 @@ val r = match u {
 }`,
 		},
 		{
+			name: "literal members beside the objects",
+			src: `type A = {kind: "a", a: number}
+type B = {kind: "b", b: string}
+declare val u: A | B | 0 | true | "none"
+val r = match u {
+	x: B => 1,
+	y: A => 2,
+	_ => 3,
+}`,
+		},
+		{
+			name: "a symbol member beside a discriminant other than description",
+			src: `type A = {kind: "a", a: number}
+declare val u: A | symbol
+val r = match u {
+	x: A => 1,
+	_ => 2,
+}`,
+		},
+		{
+			name: "a discriminant declared after a method",
+			src: `type A = {area() -> number, kind: "a"}
+type B = {area() -> number, kind: "b"}
+declare val u: A | B
+val r = match u {
+	x: B => 1,
+	y: A => 2,
+}`,
+		},
+		{
 			name: "a class member declaring a distinct literal",
 			src: `class Circle { kind: "circle", r: number }
 type Square = {kind: "square", w: number}
@@ -116,6 +146,18 @@ val r = match v {
 			wantErrs: []string{"5:5-5:6: " + annTestMsg("A")},
 		},
 		{
+			name: "a member lacking the discriminant",
+			src: `type A = {kind: "a", n: number}
+type B = {kind: "b", s: string}
+type C = {n: number, s: string}
+declare val v: A | B | C
+val r = match v {
+	x: A => 1,
+	_ => 2,
+}`,
+			wantErrs: []string{"6:5-6:6: " + annTestMsg("A")},
+		},
+		{
 			name: "an optional discriminant",
 			src: `type A = {kind?: "a", n: number}
 type B = {kind: "b", s: string}
@@ -168,6 +210,12 @@ fn f() -> number {
 		t.Run(test.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, test.src)
 			require.Equal(t, test.wantErrs, messagesWithSpan(t, errs))
+			// The error blames the annotation alone and names no related node.
+			for _, err := range errs {
+				if annErr, isAnnErr := err.(*AnnotationTestError); isAnnErr {
+					require.Empty(t, annErr.Related())
+				}
+			}
 		})
 	}
 }

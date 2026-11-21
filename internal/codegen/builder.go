@@ -1312,8 +1312,6 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 		// A borrow reads the value it borrows, so the value is tested against the type
 		// inside it.
 		return b.buildTypeGuard(valueExpr, t.Inner)
-	case *ast.MutableTypeAnn:
-		return b.buildTypeGuard(valueExpr, t.Target)
 	case *ast.UnionTypeAnn:
 		guards := make([]Expr, len(t.Types))
 		for i, member := range t.Types {
@@ -1439,18 +1437,16 @@ func buildDiscriminantTest(valueExpr Expr, d Discriminant, source ast.Node) Expr
 	return combineConditions(conditions, source)
 }
 
-// buildSolLit converts a string, number, or boolean literal type to a codegen Lit, and
-// returns nil for any other literal. source is the node the literal maps back to.
+// buildSolLit converts a literal type to a codegen Lit. A soltype literal is a string,
+// number, or boolean. source is the node the literal maps back to.
 func buildSolLit(lit *soltype.LitType, source ast.Node) Lit {
 	switch l := lit.Lit.(type) {
 	case *soltype.StrLit:
 		return NewStrLit(l.Value, source)
 	case *soltype.NumLit:
 		return NewNumLit(l.Value, source)
-	case *soltype.BoolLit:
-		return NewBoolLit(l.Value, source)
 	}
-	return nil
+	return NewBoolLit(lit.Lit.(*soltype.BoolLit).Value, source)
 }
 
 // buildSolTypeGuard returns a runtime test that value is of type t, for a type an alias
@@ -1487,9 +1483,7 @@ func (b *Builder) buildSolTypeGuard(valueExpr Expr, t soltype.Type, source ast.N
 			return b.buildTypeOfCheck(valueExpr, "boolean", StrictEqual, source)
 		}
 	case *soltype.LitType:
-		if lit := buildSolLit(t, source); lit != nil {
-			return NewBinaryExpr(valueExpr, StrictEqual, NewLitExpr(lit, source), source)
-		}
+		return NewBinaryExpr(valueExpr, StrictEqual, NewLitExpr(buildSolLit(t, source), source), source)
 	case *soltype.RegexType:
 		return b.buildRegexGuard(valueExpr, t.Source, source)
 	case *soltype.FunctionTopType:

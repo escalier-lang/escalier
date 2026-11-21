@@ -28,15 +28,12 @@ type Discriminant struct {
 // recordAnnDiscriminant works out the Discriminant of the narrowing annotation ann when the
 // root scrutinee has type shape, and records it in Info for ann. It reports an
 // AnnotationTestError when ann names an object type and no Discriminant tells it apart
-// from the scrutinee's other members. An annotation already recorded keeps its first
-// Discriminant, so a caller passes the same shape for every test of one annotation.
+// from the scrutinee's other members. Codegen emits one test per annotation, so a caller
+// passes the same shape for every test of one annotation.
 //
 // It records nothing for an annotation that names no object type, and nothing for a
 // scrutinee that annDiscriminant cannot list the members of.
 func (c *checker) recordAnnDiscriminant(scope *Scope, lvl int, shape soltype.Type, ann ast.TypeAnn) {
-	if _, done := c.info.annDiscriminants[ann]; done {
-		return
-	}
 	// The typing walk resolves the annotation again when it binds the arm's name, and reports
 	// any fault there, so resolving it here runs under a discarded probe.
 	p := c.openProbe()
@@ -195,7 +192,7 @@ func (c *checker) litsExclude(objs []*soltype.ObjectType, name string, lits []*s
 
 // propLits returns the literals the required property name of obj can hold. It reports
 // false when obj lacks the property, marks it optional, or gives it a type other than a
-// string, number, or boolean literal or a union of them.
+// literal or a union of literals. A soltype literal is a string, number, or boolean.
 func (c *checker) propLits(obj *soltype.ObjectType, name string) ([]*soltype.LitType, bool) {
 	prop, found := obj.Prop(name)
 	if !found || prop.Optional {
@@ -207,12 +204,7 @@ func (c *checker) propLits(obj *soltype.ObjectType, name string) ([]*soltype.Lit
 		if !isLit {
 			return nil, false
 		}
-		switch lit.Lit.(type) {
-		case *soltype.StrLit, *soltype.NumLit, *soltype.BoolLit:
-			lits = append(lits, lit)
-		default:
-			return nil, false
-		}
+		lits = append(lits, lit)
 	}
 	return lits, len(lits) > 0
 }
@@ -242,20 +234,17 @@ func primsReadNoLiteral(prims []soltype.Type, name string) bool {
 	return true
 }
 
-// primKind returns the primitive t is or is a literal of. t is a PrimType or a LitType.
+// primKind returns the primitive t is or is a literal of. t is a PrimType or a LitType, and
+// a soltype literal is a string, number, or boolean.
 func primKind(t soltype.Type) soltype.Prim {
-	switch t := t.(type) {
-	case *soltype.PrimType:
-		return t.Prim
-	case *soltype.LitType:
-		switch t.Lit.(type) {
-		case *soltype.StrLit:
-			return soltype.StrPrim
-		case *soltype.NumLit:
-			return soltype.NumPrim
-		case *soltype.BoolLit:
-			return soltype.BoolPrim
-		}
+	if p, isPrim := t.(*soltype.PrimType); isPrim {
+		return p.Prim
+	}
+	switch t.(*soltype.LitType).Lit.(type) {
+	case *soltype.StrLit:
+		return soltype.StrPrim
+	case *soltype.BoolLit:
+		return soltype.BoolPrim
 	}
 	return soltype.NumPrim
 }

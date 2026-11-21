@@ -314,6 +314,15 @@ func TestEmitsJSForTypeDrivenForms(t *testing.T) {
 			    }
 			}
 		`,
+		"AnObjectAnnotatedArmBesideLiteralMembersReadsTheDiscriminant": `
+			type A = {kind: "a", a: number}
+			export fn lits(u: A | 0 | true | "none" | undefined) -> number {
+			    return match u {
+			        x: A => x.a,
+			        _ => 0,
+			    }
+			}
+		`,
 		"AnIfValAnnotatedWithAnObjectTestsTheDiscriminant": `
 			type A = {kind: "a", a: number}
 			type B = {kind: "b", b: string}

@@ -68,15 +68,18 @@ type Discriminant struct {
 // every question has one answer path rather than a nil check at each call site.
 type noJSTypes struct{}
 
-func (noJSTypes) IsNominalTypeRef(*ast.TypeRefTypeAnn) bool        { return false }
-func (noJSTypes) CalleeConstructs(ast.Expr) bool                   { return false }
-func (noJSTypes) IsMethodRead(ast.Expr) bool                       { return false }
-func (noJSTypes) AbsentKeys(*ast.ObjectPat) []string               { return nil }
-func (noJSTypes) AnnDiscriminant(ast.TypeAnn) (Discriminant, bool) { return Discriminant{}, false }
-func (noJSTypes) ExpandedTypeOf(ast.TypeAnn) soltype.Type          { return nil }
-func (noJSTypes) Expand(t soltype.Type) soltype.Type               { return t }
-func (noJSTypes) NullableArms(ast.Expr) (bool, bool)               { return false, false }
-func (noJSTypes) MemberJSExpr(*ast.MemberExpr) (string, bool)      { return "", false }
+func (noJSTypes) IsNominalTypeRef(*ast.TypeRefTypeAnn) bool   { return false }
+func (noJSTypes) CalleeConstructs(ast.Expr) bool              { return false }
+func (noJSTypes) IsMethodRead(ast.Expr) bool                  { return false }
+func (noJSTypes) AbsentKeys(*ast.ObjectPat) []string          { return nil }
+func (noJSTypes) ExpandedTypeOf(ast.TypeAnn) soltype.Type     { return nil }
+func (noJSTypes) Expand(t soltype.Type) soltype.Type          { return t }
+func (noJSTypes) NullableArms(ast.Expr) (bool, bool)          { return false, false }
+func (noJSTypes) MemberJSExpr(*ast.MemberExpr) (string, bool) { return "", false }
+
+func (noJSTypes) AnnDiscriminant(ast.TypeAnn) (Discriminant, bool) {
+	return Discriminant{}, false
+}
 
 // types returns the oracle to ask, which is noJSTypes for a Builder that was given
 // none.
