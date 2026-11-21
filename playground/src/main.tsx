@@ -105,7 +105,8 @@ async function start(
     );
     void client.run();
     const initResponse: InitializeResult = await client.initialize({
-        // The server runs in a worker, which has no process of its own.
+        // LSP's value for a client with no process for the server to watch. The page
+        // has no process ID, and the server doesn't read this field.
         processId: null,
         workspaceFolders: [{ uri: 'file:///', name: 'playground' }],
         capabilities: {},
