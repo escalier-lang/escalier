@@ -2235,9 +2235,9 @@ func (f *freeVarFinder) ExitType(t soltype.Type, pol soltype.Polarity) soltype.T
 
 // operatorEvaluator is a rewriting visitor that replaces each operator it reaches by the
 // type the operator reduces to. It reduces outermost first, since reducing an operator
-// reduces its operands too. The value an operator reduces to can hold operators of its own, such as the
-// object `{y: Point["y"]}` a conditional selects, so the visitor walks that value's
-// children in turn. An operator that stays as written is not walked again.
+// reduces its operands too. The value an operator reduces to can hold operators of its
+// own, such as the object `{y: Point["y"]}` a conditional selects, so the visitor walks
+// that value's children in turn. An operator that stays as written is not walked again.
 //
 // A meet and a complement are reduced on the way out instead, once their members are
 // evaluated, because a meet that is not a set difference stays a meet and its members
