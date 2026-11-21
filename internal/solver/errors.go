@@ -1022,6 +1022,13 @@ type UnsupportedNodeError struct {
 	Node ast.Node
 }
 
+// ExprWithoutTypeError fires when inferring Expr produced no type. Every arm of the
+// expression walk returns a type, so this marks a checker bug rather than a fault in the
+// program. The expression then takes the ErrorType sentinel as its type.
+type ExprWithoutTypeError struct {
+	Expr ast.Expr
+}
+
 // UnsupportedFeatureError is the sibling of UnsupportedNodeError for the case
 // where the node kind IS supported but a feature of it is not — e.g. a generic
 // function (the FuncExpr is fine, type params are M3) or a borrow of an optional
@@ -1438,6 +1445,7 @@ func (*CannotAssignToImmutableError) isSolverError()        {}
 func (*TooManyArgsError) isSolverError()                    {}
 func (*NotEnoughArgsError) isSolverError()                  {}
 func (*UnsupportedNodeError) isSolverError()                {}
+func (*ExprWithoutTypeError) isSolverError()                {}
 func (*UnsupportedFeatureError) isSolverError()             {}
 func (*OptionalChainAssignmentError) isSolverError()        {}
 func (*BodyDeclNotAllowedError) isSolverError()             {}
@@ -3250,6 +3258,12 @@ func (e *NotEnoughArgsError) Related() []ast.Span {
 func (e *NotEnoughArgsError) Message() string {
 	return fmt.Sprintf("Not enough arguments: expected at least %d, but got %d",
 		requiredCount(e.Fn), len(e.Call.Args))
+}
+
+func (e *ExprWithoutTypeError) Span() ast.Span      { return e.Expr.Span() }
+func (e *ExprWithoutTypeError) Related() []ast.Span { return nil }
+func (e *ExprWithoutTypeError) Message() string {
+	return fmt.Sprintf("internal error: the checker inferred no type for this %s; please report this as a bug", astKind(e.Expr))
 }
 
 func (e *UnsupportedNodeError) Span() ast.Span      { return e.Node.Span() }

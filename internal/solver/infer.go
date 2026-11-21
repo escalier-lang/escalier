@@ -1185,11 +1185,30 @@ func (c *checker) recordType(n ast.Node, t soltype.Type) {
 	c.info.setType(n, t)
 }
 
-// inferExpr dispatches on the concrete expression kind. The function and call arms
+// inferExpr returns the type of e and records it in Info. It never returns nil. An
+// expression it cannot type yields the ErrorType sentinel, which constrain absorbs in both
+// directions, alongside the diagnostic that explains it.
+func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
+	return c.nonNilExprType(e, c.inferExprKind(scope, lvl, e))
+}
+
+// nonNilExprType returns t, the type inferExprKind produced for e, when t is not nil.
+// Otherwise it reports ExprWithoutTypeError at e, records the ErrorType sentinel as e's
+// type, and returns that sentinel.
+func (c *checker) nonNilExprType(e ast.Expr, t soltype.Type) soltype.Type {
+	if t != nil {
+		return t
+	}
+	t = c.report(&ExprWithoutTypeError{Expr: e})
+	c.recordType(e, t)
+	return t
+}
+
+// inferExprKind dispatches on the concrete expression kind. The function and call arms
 // drive a walk over blocks and statements, which lives in infer_stmt.go. An
 // expression kind with no arm here falls through to a clean UnsupportedNodeError,
 // never a panic.
-func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
+func (c *checker) inferExprKind(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 	c.markLifetimes(e)
 	// The CFG builder runs some expressions in a statement of its own, such as a branch's
 	// condition, a match arm's expression body, or a guard. The ownership events such an
