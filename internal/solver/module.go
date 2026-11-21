@@ -274,7 +274,7 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	// no error.
 	//
 	//	fn f(b: B) { return b.m() }
-	//	class B { m(&self) { return 1 }, }
+	//	class B { m(&self) { return 1 } }
 	for _, component := range classBodiesFirst(g) {
 		c.inferComponent(scope, lvl, module, g, component, handled, destructured)
 	}
