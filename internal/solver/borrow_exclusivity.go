@@ -117,9 +117,9 @@ func (e *ContentsBorrowedError) Message() string {
 	return fmt.Sprintf("cannot borrow '%s' as mutable for this call while a borrow of its contents is live", e.Place)
 }
 
-// ClosureArgWriteError reports a closure passed to a call that writes a place the call also
-// borrows as mutable, through its receiver or another argument. The callee may run the closure
-// while it holds that borrow. In
+// ClosureArgWriteError reports a closure that a call's argument holds and that writes a place
+// the call also borrows as mutable, through its receiver or another argument. The callee may
+// run the closure while it holds that borrow. In
 //
 //	declare fn apply(target: &mut {x: number}, f: fn () -> undefined) -> undefined
 //	fn go() -> undefined {
@@ -127,13 +127,11 @@ func (e *ContentsBorrowedError) Message() string {
 //		apply(&mut p, fn () { p.x = 2 })
 //	}
 //
-// the closure is the 'f' passed to 'apply', it writes 'p.x', and the call borrows 'p' for
+// the closure is the 'f' passed to 'apply'. It writes 'p.x', and the call borrows 'p' for
 // 'target'.
 type ClosureArgWriteError struct {
-	// Closure is the name of the parameter the closure's argument fills, and Callee is the
-	// name of the callee. Either is empty when the call does not name it.
-	Closure string
-	Callee  string
+	// Via names the closure, as in `the 'f' passed to 'apply'`. passedVia produces it.
+	Via string
 	// Place is the place the closure writes, and Borrowed the place the call borrows as
 	// mutable. They overlap.
 	Place    string
@@ -149,13 +147,6 @@ func (*ClosureArgWriteError) isSolverError()        {}
 func (e *ClosureArgWriteError) Span() ast.Span      { return e.node.Span() }
 func (e *ClosureArgWriteError) Related() []ast.Span { return []ast.Span{e.borrow} }
 func (e *ClosureArgWriteError) Message() string {
-	closure := "the function"
-	if e.Closure != "" {
-		closure = fmt.Sprintf("the '%s'", e.Closure)
-	}
-	if e.Callee != "" {
-		closure += fmt.Sprintf(" passed to '%s'", e.Callee)
-	}
 	held := "it"
 	if e.Place != e.Borrowed {
 		held = fmt.Sprintf("'%s'", e.Borrowed)
@@ -164,7 +155,7 @@ func (e *ClosureArgWriteError) Message() string {
 	if e.BorrowParam != "" {
 		slot = fmt.Sprintf(" for '%s'", e.BorrowParam)
 	}
-	return fmt.Sprintf("this call may run %s, which writes '%s' while the call borrows %s as mutable%s", closure, e.Place, held, slot)
+	return fmt.Sprintf("this call may run %s, which writes '%s' while the call borrows %s as mutable%s", e.Via, e.Place, held, slot)
 }
 
 // MoveWhileBorrowedError reports a move of data a live borrow still reaches. After

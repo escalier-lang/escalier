@@ -518,11 +518,11 @@ func TestRetainedClosureWritesFollowCaptures(t *testing.T) {
 	}
 }
 
-// TestClosureArgWritesMutableSlot covers a closure passed to a call that also borrows a place
-// as mutable, through a `&mut self` receiver or a `&mut` parameter. A closure that writes an
-// overlapping place is rejected, whether it assigns the place, passes it as a `&mut self`
-// receiver, or calls another closure that does. Each rejected program pairs with an accepted
-// twin where the closure only reads the place or writes a disjoint one.
+// TestClosureArgWritesMutableSlot covers a closure that a call's argument holds, where the
+// call also borrows a place as mutable through a `&mut self` receiver or a `&mut` parameter. A closure that writes an overlapping place is rejected, whether it assigns the
+// place, passes it as a `&mut self` receiver or a `&mut` argument, or calls another closure
+// that does. The accepted cases cover a closure that only reads the place, one that writes a
+// disjoint place, and a call with no `&mut` slot.
 func TestClosureArgWritesMutableSlot(t *testing.T) {
 	tests := map[string]struct {
 		src  string
@@ -606,7 +606,7 @@ func TestClosureArgWritesMutableSlot(t *testing.T) {
 					apply(&mut p, fn () { p.x = 2 })
 				}
 			`,
-			want: []string{"5:20-5:37: this call may run the 'f' passed to 'apply', which writes 'p' while the call borrows it as mutable for 'target'"},
+			want: []string{"5:20-5:37: this call may run the 'f' passed to 'apply', which writes 'p.x' while the call borrows 'p' as mutable for 'target'"},
 		},
 		"NamedCallbackAssignsAMutParam": {
 			src: `
@@ -617,7 +617,7 @@ func TestClosureArgWritesMutableSlot(t *testing.T) {
 					apply(&mut p, assign)
 				}
 			`,
-			want: []string{"6:20-6:26: this call may run the 'f' passed to 'apply', which writes 'p' while the call borrows it as mutable for 'target'"},
+			want: []string{"6:20-6:26: this call may run the 'f' passed to 'apply', which writes 'p.x' while the call borrows 'p' as mutable for 'target'"},
 		},
 		"CallbackAssignsAFieldOfAMutParam": {
 			src: `
@@ -627,7 +627,7 @@ func TestClosureArgWritesMutableSlot(t *testing.T) {
 					apply(&mut p, fn () { p.a.x = 2 })
 				}
 			`,
-			want: []string{"5:20-5:39: this call may run the 'f' passed to 'apply', which writes 'p.a' while the call borrows 'p' as mutable for 'target'"},
+			want: []string{"5:20-5:39: this call may run the 'f' passed to 'apply', which writes 'p.a.x' while the call borrows 'p' as mutable for 'target'"},
 		},
 		"CallbackAssignsADisjointFieldOk": {
 			src: `
@@ -638,6 +638,31 @@ func TestClosureArgWritesMutableSlot(t *testing.T) {
 				}
 			`,
 			want: nil,
+		},
+		"CallbackReadsTheBorrowedFieldAndWritesAnotherOk": {
+			src: `
+				declare fn apply(target: &mut {x: number}, f: fn () -> undefined) -> undefined
+				export fn go() -> undefined {
+					val mut p = {a: {x: 1}, b: {x: 1}}
+					apply(&mut p.a, fn () {
+						val y = p.a.x
+						p.b.x = y
+					})
+				}
+			`,
+			want: nil,
+		},
+		"CompareFnPassesTheReceiverToAMutParam": {
+			src: `
+				declare fn clear(a: &mut Array<number>) -> undefined
+				export fn sortClear(arr: &mut Array<number>) -> undefined {
+					arr.sort(fn (a, b) {
+						clear(arr)
+						return 0
+					})
+				}
+			`,
+			want: []string{"4:15-7:7: this call may run the 'compareFn' passed to 'sort', which writes 'arr' while the call borrows it as mutable for 'self'"},
 		},
 		"CallbackWithoutAMutSlotOk": {
 			src: `

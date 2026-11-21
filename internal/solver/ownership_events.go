@@ -367,8 +367,8 @@ type ownershipEvents struct {
 	// may call it there.
 	boundClosures set.Set[ast.Func]
 	// callWrites maps each closure written in the body to each place under a local it captures
-	// that its body passes as a `&mut self` receiver, as mutReceiverPaths finds them. Such a
-	// call may write the place, though the capture's own loan reads it.
+	// that its body passes as a `&mut self` receiver or a `&mut` argument, as mutCallPaths finds
+	// them. Such a call may write the place even when the capture's own loan is immutable.
 	callWrites map[ast.Func][]movePlace
 	// `retained` lists each store of a closure into a place that keeps it past its statement,
 	// in the order the walk meets them. retainedResults maps a call to the stores whose

@@ -42,8 +42,9 @@ func (c *checker) recordClosureCaptures(scope *Scope, closure ast.Func) {
 	// moved maps each captured name the closure's body moves to the expression that moves it.
 	moved := c.capturesMovedBy[closure]
 	// mutCalls maps the declaration of each local the closure's body passes as a `&mut self`
-	// receiver to the field path of each such receiver.
-	mutCalls := c.mutReceiverPaths(closure)
+	// receiver or a `&mut` argument to the field path of each such value.
+	mutCalls := c.mutCallPaths(closure)
+	var callWrites []movePlace
 
 	for _, capture := range c.closureCaptures(closure) {
 		// Resolve the captured name to its binding in the scope the closure is written in. A
@@ -79,48 +80,76 @@ func (c *checker) recordClosureCaptures(scope *Scope, closure ast.Func) {
 		if t := c.eventTable(); t != nil {
 			t.captureTypes[root] = bindingType(b)
 			for _, path := range mutCalls[bindingDecl(b)] {
-				t.callWrites[closure] = append(t.callWrites[closure], movePlace{root: root, path: path})
+				callWrites = append(callWrites, movePlace{root: root, path: path})
 			}
 		}
 	}
+
+	// The walk can type the closure more than once. Each pass finds the same calls, so the list
+	// replaces the one an earlier pass recorded.
+	if t := c.eventTable(); t != nil {
+		t.callWrites[closure] = callWrites
+	}
 }
 
-// mutReceiverPaths returns the receivers of the `&mut self` method calls in the body of
-// `closure`, including the bodies of the functions nested in it. Each receiver is a chain
-// rooted at a local, such as `arr` in `arr.pop()` or `o.list` in `o.list.push(x)`. The map
-// takes the declaration of that local to the field path of each receiver rooted at it. A
-// chain with a dynamic index or a getter ends its path at the link before it. The body must
-// have been inferred, since the receiver a call declares is recorded as the walk types it.
-func (c *checker) mutReceiverPaths(closure ast.Func) map[ast.Node][][]placeSeg {
+// mutCallPaths returns the values that the calls in the body of `closure` take as `&mut`,
+// including the calls in the bodies of the functions nested in it. Such a value is the
+// receiver of a `&mut self` method, or an argument that fills a `&mut` parameter of a callee
+// whose type resolveFunc reads one signature from.
+//
+// Only a value written as a chain rooted at a local counts, such as `arr` in `arr.pop()` or
+// `o.list` in `o.list.push(x)`. The map is keyed by the declaration of that local, and holds
+// the field path of each such chain. A chain with a dynamic index or a getter ends its path at
+// the link before it.
+//
+// The body must have been inferred, since the walk records the receiver each call declares and
+// the type of each callee as it types the call.
+func (c *checker) mutCallPaths(closure ast.Func) map[ast.Node][][]placeSeg {
 	body := closure.FuncBody()
 	if body == nil {
 		return nil
 	}
-	v := &mutReceiverFinder{c: c, paths: map[ast.Node][][]placeSeg{}}
+	v := &mutCallFinder{c: c, paths: map[ast.Node][][]placeSeg{}}
 	body.Accept(v)
 	return v.paths
 }
 
-// mutReceiverFinder walks a body for mutReceiverPaths.
-type mutReceiverFinder struct {
+// mutCallFinder walks a body for mutCallPaths.
+type mutCallFinder struct {
 	ast.DefaultVisitor
 	c     *checker
 	paths map[ast.Node][][]placeSeg
 }
 
-func (v *mutReceiverFinder) EnterExpr(e ast.Expr) bool {
+func (v *mutCallFinder) EnterExpr(e ast.Expr) bool {
 	call, ok := e.(*ast.CallExpr)
 	if !ok {
 		return true
 	}
-	recv, self := v.c.calleeReceiver(call.Callee)
-	if recv == nil || !selfParamMut(self) {
+	if recv, self := v.c.calleeReceiver(call.Callee); recv != nil && selfParamMut(self) {
+		v.record(recv)
+	}
+	fn, ok := resolveFunc(v.c.info.TypeOf(call.Callee))
+	if !ok {
 		return true
 	}
-	if cp, ok := v.c.capturedChain(recv); ok && cp.decl != nil {
-		v.paths[cp.decl] = append(v.paths[cp.decl], cp.segs)
+	for i, arg := range call.Args {
+		param, ok := paramForArg(fn, i)
+		if !ok {
+			break
+		}
+		if ref, isRef := param.Type.(*soltype.RefType); isRef && ref.Mut {
+			v.record(borrowOperand(arg))
+		}
 	}
 	return true
+}
+
+// record adds the chain `e` to the paths when it is rooted at a local.
+func (v *mutCallFinder) record(e ast.Expr) {
+	if cp, ok := v.c.capturedChain(e); ok && cp.decl != nil {
+		v.paths[cp.decl] = append(v.paths[cp.decl], cp.segs)
+	}
 }
 
 // setClosureRetention gives ft, the type of `closure`, a lifetime when the closure holds a

@@ -814,7 +814,8 @@ fn moved() -> number {
 mutable.** A call that takes `&mut p`, as its receiver or as any `&mut`
 parameter, rejects an argument that holds a closure that writes a place
 overlapping `p`. A closure writes a place when it assigns the place, borrows it
-as `&mut`, or passes it as a `&mut self` receiver. An argument holds each
+as `&mut`, or passes it to a call as a `&mut self` receiver or a `&mut`
+argument. An argument holds each
 closure it names or contains, and each closure such a closure captures. So a
 closure that calls another closure that writes `p` is rejected too. A closure
 that only reads `p` is accepted, since a read cannot give a value a second

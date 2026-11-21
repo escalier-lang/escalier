@@ -1722,14 +1722,14 @@ func (d *bodyDataflow) placeUsedLaterAt(p movePlace, ev ownershipEvent, at liven
 	return false
 }
 
-// checkClosureArgWrites reports each closure an argument of the call `ev` holds that writes a
-// place overlapping one that another slot of the call borrows as mutable. The slot is the
-// receiver of a `&mut self` method or an argument that fills a `&mut` parameter. The callee
+// checkClosureArgWrites reports each closure that an argument of the call `ev` holds and that
+// writes a place overlapping a place another slot of the call borrows as mutable. The other slot
+// is the receiver of a `&mut self` method or an argument that fills a `&mut` parameter. The callee
 // may run the closure while it holds that borrow. A closure writes a place it assigns, borrows
-// as `&mut`, or passes as a `&mut self` receiver. A closure that only reads the place is
-// accepted. The argument holds each closure it names or writes, and each closure such a
-// closure captures, so a closure that calls another closure that writes the place is
-// rejected too.
+// as `&mut`, or passes as a `&mut self` receiver or a `&mut` argument. A closure that only
+// reads the place is accepted. An argument holds each closure it names or contains, and each
+// closure such a closure captures, so a closure that calls another closure that writes the
+// place is rejected too.
 //
 // The error blames the argument that holds the closure, once per argument.
 func (d *bodyDataflow) checkClosureArgWrites(ev *callEvent, s *dataflowState) {
@@ -1747,19 +1747,19 @@ func (d *bodyDataflow) checkClosureArgWrites(ev *callEvent, s *dataflowState) {
 	}
 
 	for i, arg := range ev.call.Args {
-		if err := d.closureArgWrite(ev, i, closures, borrows); err != nil {
+		if err := d.closureArgWrite(ev, i, passedVia(ev.params[i], calleeName(ev.call.Callee)), closures, borrows); err != nil {
 			err.node = arg
 			d.report(err)
 		}
 	}
 }
 
-// closureArgWrite returns the error for the first place that a closure the argument at
-// `index` of the call `ev` holds writes, where the place overlaps a loan of `borrows` that
-// another slot of the call holds as its own borrow. It returns nil when there is no such
-// place. `closures` lists the live closure captures, and `borrows` the live mutable loans
-// that are not closure captures.
-func (d *bodyDataflow) closureArgWrite(ev *callEvent, index int, closures, borrows []*liveLoan) *ClosureArgWriteError {
+// closureArgWrite returns the error for the first place that a closure the argument at `index`
+// of the call `ev` holds writes, where the place overlaps a loan of `borrows` that another slot
+// of the call holds as its own borrow. It returns nil when there is no such place. `via` names
+// the closure in the error. `closures` lists the live closure captures, and `borrows` the live
+// mutable loans that are not closure captures.
+func (d *bodyDataflow) closureArgWrite(ev *callEvent, index int, via string, closures, borrows []*liveLoan) *ClosureArgWriteError {
 	slot := callSlot{call: ev.call, index: index}
 	for _, w := range closures {
 		if !w.slots.Contains(slot) {
@@ -1772,8 +1772,7 @@ func (d *bodyDataflow) closureArgWrite(ev *callEvent, index int, closures, borro
 				}
 				if param, ok := d.borrowParam(ev, b, index); ok {
 					return &ClosureArgWriteError{
-						Closure:     ev.params[index],
-						Callee:      calleeName(ev.call.Callee),
+						Via:         via,
 						Place:       d.placeName(place),
 						Borrowed:    d.placeName(b.ev.place),
 						BorrowParam: param,
@@ -1786,17 +1785,31 @@ func (d *bodyDataflow) closureArgWrite(ev *callEvent, index int, closures, borro
 	return nil
 }
 
-// closureWrites returns the places the closure capture `w` lets its closure write. That is the
-// captured place when the capture is mutable, and each place under the captured local that the
-// closure passes as a `&mut self` receiver.
+// closureWrites returns the places under the captured local of `w` that the closure holding the
+// capture `w` may write:
+//
+//   - For a mutable capture, each place under it that the closure assigns or borrows as
+//     `&mut`, as keptAccesses records them. With no record, it is the captured place itself.
+//   - For any capture, each place under its local that the closure passes as a `&mut self`
+//     receiver or a `&mut` argument, as callWrites records them.
 func (d *bodyDataflow) closureWrites(w *liveLoan) []movePlace {
+	closure, _ := w.ev.node.(ast.Func)
+	root := w.ev.place.root
 	var out []movePlace
 	if w.ev.borrow == mutableBorrow {
-		out = append(out, w.ev.place)
+		accesses, found := d.table.keptAccesses[closure][root]
+		if !found {
+			out = append(out, w.ev.place)
+		}
+		for _, a := range accesses {
+			p := movePlace{root: root, path: a.path}
+			if a.mut && placesOverlap(p, w.ev.place) {
+				out = append(out, p)
+			}
+		}
 	}
-	closure, _ := w.ev.node.(ast.Func)
 	for _, p := range d.table.callWrites[closure] {
-		if p.root == w.ev.place.root {
+		if p.root == root {
 			out = append(out, p)
 		}
 	}
